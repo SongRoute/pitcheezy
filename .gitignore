@@ -1,0 +1,22 @@
+# 데이터·실행 산출물은 Google Drive (규약 §2, §5). data/는 versions.md만 커밋
+data/*
+!data/versions.md
+runs/
+wandb/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# 로컬 환경
+.env
+.DS_Store
+.claude/settings.local.json

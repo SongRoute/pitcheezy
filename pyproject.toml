@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pitcheezy"
+description = "MLB Statcast 투구 추천 + 4자 책임 분해"
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["version"]
+dependencies = [
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "pyyaml",
+  "pybaseball",
+  "wandb",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "pitcheezy.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,14 @@
+# 실험 설정 템플릿 (규약 §4).
+# 복사해서 configs/p{phase}/{ID}.yaml 로 저장. 파일명 = id. 한 ID = 베이스라인 대비 변경 하나.
+# 실험은 configs/ 파일로만 정의한다. 코드에 파라미터를 하드코딩하지 않는다.
+
+id: EXP-P0-A-000                 # EXP-P{phase}-{track}-{seq}. 000은 템플릿용 자리값
+phase: 0
+track: A                         # A | B | C
+baseline: null                   # 비교 대상 실험 ID (베이스라인 자체면 null)
+change: ""                       # 베이스라인 대비 변경 한 줄
+data_version: d20260908-s2326    # data/versions.md 의 버전 ID
+seeds: [0, 1, 2]                 # 탐색 {0,1,2} / 채택 판정 {0,1,2,3,4}
+wandb:
+  project: pitcheezy             # run 이름 {id}/s{seed}
+params: {}                       # 모듈별 하이퍼파라미터
