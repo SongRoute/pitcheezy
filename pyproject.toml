@@ -10,8 +10,8 @@ requires-python = ">=3.11"
 dynamic = ["version"]
 dependencies = [
   "numpy",
-  "pandas",
-  "pyarrow",
+  "pandas>=2.2",
+  "pyarrow>=14",  # concat_tables(promote_options=) — data/statcast_fetch.py
   "pyyaml",
   "pybaseball",
   "wandb",

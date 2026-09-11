@@ -1,29 +1,27 @@
-"""데이터 수집 CLI (규약 §5). 로직은 src/pitcheezy/data/statcast_fetch.py 에 있고 여기는 인자 처리만.
+"""데이터 수집 CLI (규약 §5). 로직은 src/pitcheezy/data/statcast_fetch.py, 여기는 인자 처리와 출력만.
 
 사용:
-    python scripts/fetch_data.py --version-id d20260908-s2326 --seasons 2023 2024 2025 2026   # 수집
-    python scripts/fetch_data.py --version-id d20260908-s2326 --verify                         # 해시 대조
-    python scripts/fetch_data.py --version-id d20260908-s2326 --sample --sample-season 2025    # 픽스처
+    python scripts/fetch_data.py --seasons 2023 2024 2025 --holdout 2026 --tag s2325 --out data/raw
+    python scripts/fetch_data.py --seasons 2023 2024 2025 --holdout 2026 --tag s2325 --dry-run   # 시즌마다 첫 하루만
+    python scripts/fetch_data.py --verify d20260910-s2325 --out data/raw                          # sha256·행 수 대조
 
 규칙:
-    - 수집은 이 스크립트로만. 창 길이(14일)·시즌 범위(3/15~11/15)·game_type=R·정렬 키는 코드 상수로 고정.
-      실제 사용한 날짜 하한/상한(--start-date/--end-date)은 manifest.json 과 data/versions.md 에 기록된다.
-    - 출력: {out_dir}/{version}/statcast_{season}.parquet + manifest.json. out_dir 기본값은
-      $PITCHEEZY_DATA_DIR (colab_runner.ipynb 가 Drive 경로로 설정), 없으면 <repo>/data.
-    - 창마다 _parts/ 에 중간 저장하므로 세션이 끊기면 같은 명령을 다시 실행해 이어받는다.
-    - 완료 시 data/versions.md 에 한 줄 append 하고 같은 줄을 출력한다. Colab 클론에서는 커밋할 수 없으니
-      그 줄을 로컬 장부에 붙여 커밋한다.
-    - 2026 검증셋은 정규시즌 종료 직후 새 버전 ID 로 다시 받아 고정(frozen). 포스트시즌 제외 (ADR-2).
-    - --sample: 시즌 parquet 에서 투수 2명 × ~100구(타석 단위) → tests/fixtures/sample.parquet.
-      로컬 테스트는 이 경로만. 풀 수집은 Colab.
+    - 버전 ID = d{오늘 YYYYMMDD}-{tag}. 시즌 날짜·청크(월)·정렬 키·dtype 은 코드 상수 (statcast_fetch.py).
+    - 출력: {out}/{version}/statcast_{season}.parquet, 홀드아웃은 {out}/{version}/holdout_{season}/ 아래.
+      Drive 경로는 --out 으로만 준다 (기본 <repo>/data/raw, gitignore).
+    - 청크마다 _chunks/ 에 중간 저장하므로 세션이 끊기면 같은 명령을 다시 실행해 이어받는다.
+      날이 바뀌었으면 --date 로 원래 버전 날짜를 지정해야 같은 버전으로 이어진다.
+    - 완료 시 data/versions.md 에 시즌(파일)마다 한 행 append. 같은 버전 ID 가 이미 있으면 시작 전에 거부.
+      Colab 클론에서는 커밋할 수 없으니 출력된 행을 로컬 장부에 붙여 커밋한다.
+    - 정규시즌이 끝나지 않은 시즌은 --holdout 으로만 받는다 (frozen=false). 종료 후 재수집 시 --freeze.
+    - --dry-run 은 {out}/_dryrun/{version}/ 에 쓰고 장부도 그 안의 versions.md 에 쓴다. 로컬은 이것만.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -31,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 try:
     from pitcheezy.data import statcast_fetch as sf
 except ModuleNotFoundError as exc:  # pragma: no cover
-    sys.exit(f"{exc}. 먼저 `pip install -e .` (레포 루트) 를 실행할 것")
+    sys.exit(f"{exc}. 먼저 레포 루트에서 `pip install -e .` 를 실행할 것")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,36 +38,38 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=__doc__.split("\n", 1)[1],
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version-id", required=True, help="데이터 버전 ID. 형식 d{YYYYMMDD}-{tag}")
     parser.add_argument(
-        "--out-dir", type=Path, default=None, help="기본 $PITCHEEZY_DATA_DIR, 없으면 <repo>/data"
-    )
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument(
-        "--verify", action="store_true", help="수집하지 않고 manifest 의 행 수·sha256 과 장부 행을 대조만"
-    )
-    mode.add_argument(
-        "--sample", action="store_true", help="시즌 parquet 에서 픽스처 샘플 생성 (네트워크 없음)"
-    )
-    parser.add_argument("--seasons", type=int, nargs="+", metavar="YYYY", help="수집할 시즌 (수집 모드 필수)")
-    parser.add_argument(
-        "--start-date", type=date.fromisoformat, metavar="YYYY-MM-DD", help="전역 하한. 테스트·부분 수집용"
+        "--seasons", type=int, nargs="+", default=[], metavar="YYYY",
+        help=f"학습 시즌 (정규시즌이 끝난 시즌만). 가능: {sorted(sf.SEASON_DATES)}",
     )
     parser.add_argument(
-        "--end-date", type=date.fromisoformat, metavar="YYYY-MM-DD", help="전역 상한. 기본 어제 (당일 데이터 미완)"
+        "--holdout", type=int, nargs="+", default=[], metavar="YYYY",
+        help="검증 시즌. holdout_{YYYY}/ 아래 별도 저장, frozen=false",
+    )
+    parser.add_argument("--tag", metavar="TAG", help="버전 태그 → 버전 ID d{오늘}-{tag} (예 s2325)")
+    parser.add_argument(
+        "--out", type=Path, default=REPO_ROOT / "data" / "raw", metavar="DIR",
+        help="출력 루트. Drive 경로는 여기로만 (기본 <repo>/data/raw)",
     )
     parser.add_argument(
-        "--ledger",
-        type=Path,
-        default=REPO_ROOT / "data" / "versions.md",
-        help="데이터 버전 장부. 기본 <repo>/data/versions.md",
+        "--dry-run", action="store_true",
+        help="시즌마다 첫 하루만 받아 파이프라인 검증. {out}/_dryrun/ 에 쓰고 실제 장부는 건드리지 않음",
     )
-    parser.add_argument("--sample-season", type=int, metavar="YYYY", help="--sample 대상 시즌. 기본 manifest 의 최신 시즌")
     parser.add_argument(
-        "--sample-out",
-        type=Path,
-        default=REPO_ROOT / "tests" / "fixtures" / "sample.parquet",
-        help="--sample 출력 경로. tests/fixtures 안이면 README 표도 갱신",
+        "--date", metavar="YYYYMMDD",
+        help="버전 ID 의 날짜 (기본 오늘). 날이 바뀐 뒤 끊긴 수집을 같은 버전으로 이어받을 때만",
+    )
+    parser.add_argument(
+        "--freeze", action="store_true",
+        help="홀드아웃을 frozen=true 로 기록 (정규시즌 종료 후 재수집 시)",
+    )
+    parser.add_argument(
+        "--versions-file", type=Path, default=REPO_ROOT / "data" / "versions.md", metavar="PATH",
+        help="데이터 버전 장부 (기본 <repo>/data/versions.md)",
+    )
+    parser.add_argument(
+        "--verify", metavar="VERSION",
+        help="수집하지 않고 장부의 sha256·행 수와 {out}/{VERSION}/ 의 파일을 대조",
     )
     return parser
 
@@ -77,43 +77,58 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not sf.VERSION_RE.match(args.version_id):
-        parser.error(f"--version-id 형식 오류: {args.version_id!r} (d{{YYYYMMDD}}-{{tag}})")
-    out_dir = args.out_dir or Path(os.environ.get("PITCHEEZY_DATA_DIR") or REPO_ROOT / "data")
-    version_dir = out_dir / args.version_id
+
+    if args.verify:
+        if args.seasons or args.holdout or args.tag or args.dry_run or args.freeze:
+            parser.error("--verify 는 --out/--versions-file 외의 옵션과 같이 쓸 수 없음")
+        problems = sf.verify(args.verify, args.out, args.versions_file)
+        if problems:
+            for p in problems:
+                print(f"FAIL {p}", file=sys.stderr)
+            return 1
+        print(f"OK {args.verify}: 장부와 파일이 일치")
+        return 0
+
+    if not args.tag:
+        parser.error("--tag 필요 (예: --tag s2325)")
+    if not args.seasons and not args.holdout:
+        parser.error("--seasons 또는 --holdout 필요 (예: --seasons 2023 2024 2025 --holdout 2026)")
+    if args.date:
+        try:
+            today = datetime.strptime(args.date, "%Y%m%d").date()
+        except ValueError:
+            parser.error(f"--date 형식 오류: {args.date!r} (YYYYMMDD)")
+    else:
+        today = date.today()
 
     try:
-        if args.verify:
-            problems = sf.verify(version_dir, args.ledger)
-            if problems:
-                for p in problems:
-                    print(f"FAIL {p}", file=sys.stderr)
-                return 1
-            print(f"OK {args.version_id}: manifest 와 파일·장부가 일치")
-            return 0
-        if args.sample:
-            sf.run_sample(
-                version_dir,
-                out_path=args.sample_out,
-                fixtures_dir=REPO_ROOT / "tests" / "fixtures",
-                season=args.sample_season,
-            )
-            return 0
-        if not args.seasons:
-            parser.error("수집 모드에는 --seasons 가 필요 (예: --seasons 2023 2024 2025 2026)")
-        sf.run_fetch(
-            version=args.version_id,
+        version = sf.version_id(args.tag, today)
+        run = sf.run_fetch(
+            version=version,
             seasons=args.seasons,
-            out_dir=out_dir,
-            ledger=args.ledger,
+            holdouts=args.holdout,
+            out_dir=args.out,
+            ledger=args.versions_file,
             repo_root=REPO_ROOT,
-            floor=args.start_date,
-            ceiling=args.end_date,
+            today=today,
+            dry_run=args.dry_run,
+            freeze=args.freeze,
         )
-        return 0
-    except (ValueError, FileNotFoundError, RuntimeError) as exc:
+    except sf.FetchError as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 2
+
+    print()
+    print(f"{'DRY-RUN ' if args.dry_run else ''}완료 {run.version} → {run.version_dir}")
+    for r in run.results:
+        print(
+            f"  {r.season}{' holdout' if r.holdout else ''}: {r.start}..{r.end}  "
+            f"{r.rows:,}행 × {r.columns}컬럼  청크 {r.chunks_fetched}/{r.chunks_total} 수집"
+            f"{'  (최종본 재사용)' if r.reused else f'  {r.fetch_seconds:.1f}s'}"
+            f"{f'  중복키 {r.duplicate_keys:,}' if r.duplicate_keys else ''}  frozen={str(r.frozen).lower()}"
+        )
+    print(f"  장부: {run.ledger}")
+    return 0
 
 
 if __name__ == "__main__":
