@@ -13,7 +13,8 @@
       날이 바뀌었으면 --date 로 원래 버전 날짜를 지정해야 같은 버전으로 이어진다.
     - 완료 시 data/versions.md 에 시즌(파일)마다 한 행 append. 같은 버전 ID 가 이미 있으면 시작 전에 거부.
       Colab 클론에서는 커밋할 수 없으니 출력된 행을 로컬 장부에 붙여 커밋한다.
-    - 정규시즌이 끝나지 않은 시즌은 --holdout 으로만 받는다 (frozen=false). 종료 후 재수집 시 --freeze.
+    - 홀드아웃 전용 시즌(HOLDOUT_SEASONS = {2026}, OPE·분해 전용)은 시즌 종료 여부와 무관하게 --seasons 로 거부한다.
+      --holdout 으로만 받는다 (frozen=false). --freeze 는 수집 상한(실행일−2일)이 정규시즌 종료일 이상일 때만.
     - --dry-run 은 {out}/_dryrun/{version}/ 에 쓰고 장부도 그 안의 versions.md 에 쓴다. 로컬은 이것만.
 """
 
@@ -40,7 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--seasons", type=int, nargs="+", default=[], metavar="YYYY",
-        help=f"학습 시즌 (정규시즌이 끝난 시즌만). 가능: {sorted(sf.SEASON_DATES)}",
+        help=(
+            f"학습 시즌. 가능: {sorted(set(sf.SEASON_DATES) - sf.HOLDOUT_SEASONS)} "
+            f"(홀드아웃 전용 {sorted(sf.HOLDOUT_SEASONS)} 은 항상 거부)"
+        ),
     )
     parser.add_argument(
         "--holdout", type=int, nargs="+", default=[], metavar="YYYY",
@@ -61,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--freeze", action="store_true",
-        help="홀드아웃을 frozen=true 로 기록 (정규시즌 종료 후 재수집 시)",
+        help="홀드아웃을 frozen=true 로 기록. 수집 상한(실행일−2일)이 정규시즌 종료일 이상일 때만 허용",
     )
     parser.add_argument(
         "--versions-file", type=Path, default=REPO_ROOT / "data" / "versions.md", metavar="PATH",

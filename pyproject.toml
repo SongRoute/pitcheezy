@@ -13,7 +13,7 @@ dependencies = [
   "pandas>=2.2",
   "pyarrow>=14",  # concat_tables(promote_options=) — data/statcast_fetch.py
   "pyyaml",
-  "pybaseball",
+  "pybaseball==2.2.7",  # data/statcast_fetch.py 가 이 버전의 내부 동작(requests.get 경로, 날짜 창)에 의존. 장부에 버전 기록
   "wandb",
 ]
 

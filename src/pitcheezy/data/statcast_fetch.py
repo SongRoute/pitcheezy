@@ -6,6 +6,7 @@
     모든 청크가 끝나면 합쳐 dtype 을 고정하고 (game_pk, at_bat_number, pitch_number) 로 정렬해
     statcast_{season}.parquet 을 쓴다. 홀드아웃 시즌은 holdout_{season}/ 아래 (학습 시즌과 같은 디렉터리에 두지 않음).
     끝나면 manifest.json 을 쓰고 data/versions.md 에 시즌(파일)마다 한 행을 append 한다.
+    HOLDOUT_SEASONS(2026) 는 --seasons 로 항상 거부한다 (홀드아웃 전용). --freeze 는 수집 상한 ≥ 시즌 종료일일 때만.
 
 확인된 pybaseball 2.2.7 동작 (site-packages/pybaseball/statcast.py, utils.py, datasources/statcast.py)
     - statcast()는 하루 단위 요청을 스레드로 병렬 실행한다. 검색 URL 이 R|PO|S 고정이라 정규·포스트·스프링이
@@ -51,8 +52,13 @@ SEASON_DATES: dict[int, tuple[date, date]] = {
     2025: (date(2025, 3, 18), date(2025, 9, 28)),
     2026: (date(2026, 3, 25), date(2026, 9, 27)),
 }
+# 홀드아웃 전용 시즌 (CLAUDE.md: 2026 은 OPE·분해 전용, 전이 모델 학습·튜닝·모델 선택에 쓰지 않는다).
+# 시즌이 끝났든 아니든 --seasons 로는 항상 거부하고 --holdout 으로만 받는다.
+HOLDOUT_SEASONS: frozenset[int] = frozenset({2026})
+
 # 수집 상한 = 실행일 − CEILING_LAG 일. 미국 서부 야간 경기는 UTC 09:00 (KST 18:00) 께 끝나므로 KST·UTC 어느 쪽
 # 달력으로도 "이틀 전"은 항상 완료된 날이다 (전날은 실행 시각에 따라 진행 중일 수 있음).
+# --freeze 도 같은 상한을 쓴다: 상한 ≥ 시즌 종료일이어야 마지막 날 경기까지 완료된 상태로 고정된다.
 CEILING_LAG_DAYS = 2
 
 GAME_TYPE = "R"
@@ -108,7 +114,10 @@ MANIFEST_NAME = "manifest.json"
 
 LEDGER_COLUMNS = (
     "버전 ID", "시즌", "파일", "날짜 범위", "행 수", "parquet sha256", "pybaseball 버전", "수집 커밋", "frozen",
+    "pyarrow 버전", "수집 상한일",
 )
+# 2026-09-12 이전 행은 앞 9열만 있다 (pyarrow 버전·수집 상한일 없음). 파서는 두 형태를 모두 읽는다.
+LEDGER_LEGACY_COLUMN_COUNT = 9
 LEDGER_HEADER_LINE = "| " + " | ".join(LEDGER_COLUMNS) + " |"
 LEDGER_SEPARATOR_LINE = "|" + "---|" * len(LEDGER_COLUMNS)
 
@@ -490,23 +499,29 @@ class LedgerRow:
     pybaseball_version: str
     commit: str
     frozen: bool
+    pyarrow_version: str = ""  # 구형(9열) 행은 빈 값
+    ceiling: str = ""  # 수집 상한일 YYYY-MM-DD (data_ceiling). 구형 행은 빈 값
 
     def render(self) -> str:
         cells = [
             self.version, str(self.season), self.file, f"{self.start}~{self.end}", str(self.rows),
             self.sha256, self.pybaseball_version, self.commit, "true" if self.frozen else "false",
+            self.pyarrow_version, self.ceiling,
         ]
         return "| " + " | ".join(cells) + " |"
 
     @classmethod
     def parse(cls, line: str) -> Optional["LedgerRow"]:
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) != len(LEDGER_COLUMNS) or not cells[0].startswith("d") or not cells[1].isdigit():
+        if len(cells) not in (LEDGER_LEGACY_COLUMN_COUNT, len(LEDGER_COLUMNS)):
+            return None
+        if not cells[0].startswith("d") or not cells[1].isdigit():
             return None
         start, _, end = cells[3].partition("~")
+        extra = cells[LEDGER_LEGACY_COLUMN_COUNT:] + [""] * (len(LEDGER_COLUMNS) - len(cells))
         return cls(
             cells[0], int(cells[1]), cells[2], start, end, int(cells[4].replace(",", "")),
-            cells[5], cells[6], cells[7], cells[8].lower() == "true",
+            cells[5], cells[6], cells[7], cells[8].lower() == "true", extra[0], extra[1],
         )
 
 
@@ -552,17 +567,22 @@ def _pkg_version(name: str) -> str:
         return "unknown"
 
 
+DIRTY_IGNORED_PATHS = frozenset({"data/versions.md"})  # 장부는 수집이 직접 쓰는 파일이라 코드 변경으로 보지 않음
+
+
 def git_commit(repo_root: Path) -> str:
-    """짧은 HEAD 해시. 워킹트리에 변경(추적·미추적)이 있으면 -dirty 접미. git 없으면 unknown."""
+    """짧은 HEAD 해시. 워킹트리에 변경(추적·미추적)이 있으면 -dirty 접미 (DIRTY_IGNORED_PATHS 제외). git 없으면 unknown."""
 
     def run(*args: str) -> str:
-        return subprocess.run(
-            ["git", *args], cwd=repo_root, capture_output=True, text=True, check=True
-        ).stdout.strip()
+        return subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True, check=True).stdout
 
     try:
-        head = run("rev-parse", "--short", "HEAD")
-        return head + ("-dirty" if run("status", "--porcelain") else "")
+        head = run("rev-parse", "--short", "HEAD").strip()
+        # porcelain v1: "XY path" — 첫 두 글자가 상태(공백 포함)라 strip 하면 안 된다. 경로는 레포 루트 기준(cwd=repo_root),
+        # 이름 변경은 "old -> new".
+        changed = [line[3:].split(" -> ")[-1] for line in run("status", "--porcelain").splitlines() if len(line) > 3]
+        dirty = any(p not in DIRTY_IGNORED_PATHS for p in changed)
+        return head + ("-dirty" if dirty else "")
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 
@@ -577,14 +597,23 @@ def environment() -> dict[str, str]:
 
 
 def write_manifest(
-    version_dir: Path, version: str, results: list[SeasonResult], fetch_commit: str, *, dry_run: bool
+    version_dir: Path,
+    version: str,
+    results: list[SeasonResult],
+    fetch_commit: str,
+    *,
+    today: date,
+    ceiling: date,
+    dry_run: bool,
 ) -> Path:
     manifest = {
         "version": version,
         "dry_run": dry_run,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "today": today.isoformat(),  # 버전 ID 의 날짜 (--date 또는 실행일)
+        "data_ceiling": ceiling.isoformat(),  # 수집 상한일 = today − CEILING_LAG_DAYS. 장부의 "수집 상한일" 과 같음
         "fetch_commit": fetch_commit,
-        "environment": environment(),
+        "environment": environment(),  # pyarrow 항목이 장부의 "pyarrow 버전" 과 같음
         "parameters": {
             "season_dates": {str(s): [a.isoformat(), b.isoformat()] for s, (a, b) in SEASON_DATES.items()},
             "game_type": GAME_TYPE,
@@ -678,13 +707,19 @@ def run_fetch(
     for season in seasons:
         if season not in SEASON_DATES:
             raise FetchError(f"{season}: SEASON_DATES 에 없는 시즌")
-        if SEASON_DATES[season][1] >= today:
-            raise FetchError(f"{season}: 정규시즌이 끝나지 않은 시즌은 학습 시즌으로 받지 않는다 → --holdout {season}")
+        if season in HOLDOUT_SEASONS:
+            raise FetchError(
+                f"{season}: 홀드아웃 전용 시즌 (OPE·분해 전용, 학습 시즌으로 받지 않는다) → --holdout {season}"
+            )
     for season in holdouts:
         if season not in SEASON_DATES:
             raise FetchError(f"{season}: SEASON_DATES 에 없는 시즌")
-        if freeze and SEASON_DATES[season][1] >= today:
-            raise FetchError(f"{season}: 정규시즌 종료({SEASON_DATES[season][1]}) 전에는 --freeze 할 수 없음")
+        season_end = SEASON_DATES[season][1]
+        if freeze and ceiling < season_end:
+            raise FetchError(
+                f"{season}: --freeze 는 수집 상한(실행일 − {CEILING_LAG_DAYS}일 = {ceiling})이 "
+                f"정규시즌 종료일({season_end}) 이상일 때만 가능"
+            )
 
     if dry_run:
         version_dir = out_dir / DRYRUN_DIR / version
@@ -711,10 +746,15 @@ def run_fetch(
         )
 
     fetch_commit = git_commit(repo_root)
-    manifest = write_manifest(version_dir, version, results, fetch_commit, dry_run=dry_run)
-    pyb = environment()["pybaseball"]
+    manifest = write_manifest(
+        version_dir, version, results, fetch_commit, today=today, ceiling=ceiling, dry_run=dry_run
+    )
+    env = environment()
     rows = [
-        LedgerRow(version, r.season, r.file, r.start, r.end, r.rows, r.sha256, pyb, fetch_commit, r.frozen)
+        LedgerRow(
+            version, r.season, r.file, r.start, r.end, r.rows, r.sha256, env["pybaseball"], fetch_commit, r.frozen,
+            env["pyarrow"], ceiling.isoformat(),
+        )
         for r in results
     ]
     append_ledger(ledger, rows, allow_existing=dry_run)

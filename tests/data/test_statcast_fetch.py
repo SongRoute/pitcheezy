@@ -362,8 +362,10 @@ def test_fetch_season_holdout_path_and_dry_run(tmp_path):
 
 def test_ledger_row_roundtrip_and_append(tmp_path):
     ledger = tmp_path / "versions.md"
-    row = sf.LedgerRow("d20260910-s2325", 2024, "statcast_2024.parquet", "2024-03-20", "2024-09-30", 123456, "a" * 64, "2.2.7", "abc1234", True)
-    parsed = sf.LedgerRow.parse(row.render())
+    row = sf.LedgerRow("d20260910-s2325", 2024, "statcast_2024.parquet", "2024-03-20", "2024-09-30", 123456, "a" * 64, "2.2.7", "abc1234", True, "25.0.1", "2026-09-08")
+    rendered = row.render()
+    assert rendered.count("|") == len(sf.LEDGER_COLUMNS) + 1 and rendered.endswith("| 25.0.1 | 2026-09-08 |")
+    parsed = sf.LedgerRow.parse(rendered)
     assert parsed == row
     assert sf.LedgerRow.parse(sf.LEDGER_HEADER_LINE) is None and sf.LedgerRow.parse(sf.LEDGER_SEPARATOR_LINE) is None
 
@@ -387,9 +389,52 @@ def test_append_ledger_rejects_unexpected_header(tmp_path):
         sf.append_ledger(ledger, [row])
 
 
-def test_repo_ledger_has_expected_header():
+def test_ledger_parse_accepts_legacy_nine_column_rows():
+    """2026-09-12 이전 행(pyarrow 버전·수집 상한일 없음)도 읽힌다. 새 열은 빈 값."""
+    legacy = "| d20260911-s2325 | 2026 | holdout_2026/statcast_2026.parquet | 2026-03-25~2026-09-09 | 647896 | " + "c" * 64 + " | 2.2.7 | 9ebc6bb | false |"
+    row = sf.LedgerRow.parse(legacy)
+    assert row is not None
+    assert (row.version, row.season, row.end, row.rows, row.commit, row.frozen) == ("d20260911-s2325", 2026, "2026-09-09", 647896, "9ebc6bb", False)
+    assert row.pyarrow_version == "" and row.ceiling == ""
+    assert sf.LedgerRow.parse(legacy + " x |") is None  # 10열은 어느 형식도 아님
+    assert sf.LedgerRow.parse(row.render()).pyarrow_version == ""  # 다시 렌더하면 11열 (빈 칸)
+
+
+def test_repo_ledger_has_expected_header_and_parses():
     repo_ledger = sf.Path(__file__).resolve().parents[2] / "data" / "versions.md"
     assert sf.LEDGER_HEADER_LINE in repo_ledger.read_text(encoding="utf-8").splitlines()
+    rows = sf.ledger_rows(repo_ledger)
+    assert rows, "레포 장부의 행이 하나도 파싱되지 않음"
+    assert all(r.version.startswith("d") and r.sha256 and len(r.sha256) == 64 for r in rows)
+
+
+def test_git_commit_ignores_ledger_changes(tmp_path):
+    import shutil
+    import subprocess
+
+    if not shutil.which("git"):
+        pytest.skip("git 없음")
+
+    def run(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    run("init", "-q")
+    run("config", "user.email", "t@t")
+    run("config", "user.name", "t")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "versions.md").write_text("# x\n", encoding="utf-8")
+    (tmp_path / "code.py").write_text("a = 1\n", encoding="utf-8")
+    run("add", ".")
+    run("commit", "-q", "-m", "init")
+    head = sf.git_commit(tmp_path)
+    assert head != "unknown" and not head.endswith("-dirty")
+    (tmp_path / "data" / "versions.md").write_text("# x\n| row |\n", encoding="utf-8")
+    assert sf.git_commit(tmp_path) == head  # 장부 변경만으로는 dirty 아님
+    (tmp_path / "code.py").write_text("a = 2\n", encoding="utf-8")
+    assert sf.git_commit(tmp_path) == head + "-dirty"
+    (tmp_path / "code.py").write_text("a = 1\n", encoding="utf-8")
+    (tmp_path / "new.txt").write_text("u\n", encoding="utf-8")  # 미추적 파일도 dirty
+    assert sf.git_commit(tmp_path) == head + "-dirty"
 
 
 # ---------------------------------------------------------------- run_fetch·verify
@@ -432,6 +477,13 @@ def test_run_fetch_end_to_end_then_verify(tmp_path):
     assert rows[0].rows == 7 * 6 and rows[1].rows == 7 * 6
     assert rows[0].sha256 == sf.sha256_file(vdir / "statcast_2024.parquet")
     assert rows[0].pybaseball_version and rows[0].commit
+    assert rows[0].pyarrow_version == pa.__version__ and rows[0].ceiling == "2026-09-08"
+    assert rows[1].ceiling == "2026-09-08"  # 완료 시즌·홀드아웃 모두 같은 상한일 기록
+    import json
+
+    manifest = json.loads((vdir / sf.MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert manifest["data_ceiling"] == "2026-09-08" and manifest["today"] == "2026-09-10"
+    assert manifest["environment"]["pyarrow"] == pa.__version__
 
     assert sf.verify("d20260910-s2325", out, ledger) == []
     # 파일이 바뀌면 FAIL
@@ -458,7 +510,7 @@ def test_run_fetch_rejects_existing_version_before_fetching(tmp_path):
 def test_run_fetch_guards(tmp_path):
     out, ledger = tmp_path / "raw", tmp_path / "versions.md"
     kw = dict(out_dir=out, ledger=ledger, repo_root=tmp_path, today=TODAY, fetcher=full_fetcher())
-    with pytest.raises(sf.FetchError, match="--holdout 2026"):  # 진행 중 시즌은 학습 시즌으로 못 받음
+    with pytest.raises(sf.FetchError, match="홀드아웃 전용.*--holdout 2026"):  # 홀드아웃 전용 시즌은 학습 시즌으로 못 받음
         sf.run_fetch(version="d20260910-x", seasons=[2026], holdouts=[], **kw)
     with pytest.raises(sf.FetchError, match="겹침"):
         sf.run_fetch(version="d20260910-x", seasons=[2024], holdouts=[2024], **kw)
@@ -474,7 +526,32 @@ def test_run_fetch_guards(tmp_path):
         sf.run_fetch(version="bad", seasons=[2024], holdouts=[], **kw)
     # 시즌 종료 후에는 --freeze 가능 → frozen=true, 전체 구간
     run = sf.run_fetch(version="d20261005-x", seasons=[], holdouts=[2026], freeze=True, out_dir=out, ledger=ledger, repo_root=tmp_path, today=date(2026, 10, 5), fetcher=full_fetcher())
-    assert run.rows[0].frozen is True and run.rows[0].end == "2026-09-27"
+    assert run.rows[0].frozen is True and run.rows[0].end == "2026-09-27" and run.rows[0].ceiling == "2026-10-03"
+
+
+def test_holdout_season_rejected_as_training_even_after_season_end(tmp_path):
+    """2026 은 시즌 종료 여부와 무관하게 홀드아웃 전용 (CLAUDE.md: 학습·튜닝·모델 선택 금지)."""
+    assert 2026 in sf.HOLDOUT_SEASONS
+    kw = dict(out_dir=tmp_path / "raw", ledger=tmp_path / "versions.md", repo_root=tmp_path, fetcher=full_fetcher())
+    with pytest.raises(sf.FetchError, match="홀드아웃 전용"):
+        sf.run_fetch(version="d20261005-x", seasons=[2026], holdouts=[], today=date(2026, 10, 5), **kw)
+    with pytest.raises(sf.FetchError, match="홀드아웃 전용"):  # 완료 시즌과 섞여 있어도 거부
+        sf.run_fetch(version="d20261005-x", seasons=[2024, 2026], holdouts=[], today=date(2026, 10, 5), **kw)
+    assert (tmp_path / "raw").exists() is False  # 수집 시작 전에 거부
+
+
+def test_freeze_gate_uses_ceiling_not_today(tmp_path):
+    """--freeze 는 today − CEILING_LAG_DAYS ≥ 시즌 종료일(2026-09-27) 일 때만 → 9/28 거부, 9/29 통과."""
+    assert sf.SEASON_DATES[2026][1] == date(2026, 9, 27) and sf.CEILING_LAG_DAYS == 2
+    kw = dict(out_dir=tmp_path / "raw", ledger=tmp_path / "versions.md", repo_root=tmp_path, fetcher=full_fetcher())
+    with pytest.raises(sf.FetchError, match="--freeze.*2026-09-26.*2026-09-27"):
+        sf.run_fetch(version="d20260928-x", seasons=[], holdouts=[2026], freeze=True, today=date(2026, 9, 28), **kw)
+    assert not (tmp_path / "raw").exists()
+    # --freeze 없이는 같은 날에도 수집 가능 (frozen=false, 상한 9/26 까지)
+    run = sf.run_fetch(version="d20260928-y", seasons=[], holdouts=[2026], today=date(2026, 9, 28), **kw)
+    assert run.rows[0].frozen is False and run.rows[0].end == "2026-09-26" and run.rows[0].ceiling == "2026-09-26"
+    run = sf.run_fetch(version="d20260929-x", seasons=[], holdouts=[2026], freeze=True, today=date(2026, 9, 29), **kw)
+    assert run.rows[0].frozen is True and run.rows[0].end == "2026-09-27" and run.rows[0].ceiling == "2026-09-27"
 
 
 def test_run_fetch_dry_run_isolated_from_real_ledger(tmp_path):
@@ -515,6 +592,11 @@ def test_cli_fetch_verify_and_errors(tmp_path, monkeypatch, capsys):
     assert cli.main(["--seasons", "2024", "--holdout", "2026", "--tag", "s2325", *common]) == 0
     printed = capsys.readouterr().out
     assert "완료 d20260910-s2325" in printed and "2026 holdout" in printed and "frozen=false" in printed
+    # 홀드아웃 전용 시즌을 --seasons 로 → 2, 프리즈 게이트 미충족 → 2
+    assert cli.main(["--seasons", "2026", "--tag", "x", *common]) == 2
+    assert "홀드아웃 전용" in capsys.readouterr().err
+    assert cli.main(["--holdout", "2026", "--tag", "x", "--freeze", "--out", str(out), "--versions-file", str(ledger), "--date", "20260928"]) == 2
+    assert "--freeze" in capsys.readouterr().err
     assert cli.main(["--verify", "d20260910-s2325", "--out", str(out), "--versions-file", str(ledger)]) == 0
     assert cli.main(["--verify", "d20260910-none", "--out", str(out), "--versions-file", str(ledger)]) == 1
     # 같은 버전 재수집 거부 → 2
