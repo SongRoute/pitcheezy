@@ -26,7 +26,7 @@ MLB Statcast 투구 추천 모델. 개인 개발 (Song).
 - 의존성은 pyproject.toml에. pip install만 하고 끝내지 말 것
 
 ## 세션 (D11)
-- 시작: `scripts/dev.sh` (tmux 세션 pitcheezy, 창 claude / runs). 폰은 Remote Control, 맥북은 SSH + tmux attach
+- 시작: `scripts/dev.sh` (tmux 세션 pz, 창 claude / runs). 폰은 Remote Control(자동 시작), 맥북은 SSH + tmux attach. 명령어 모음 docs/daily.md
 - 아침 세션 첫 일: results/·runs/_logs/ 읽고 밤사이 실험을 experiments.md에 한 행씩 → 다음 한 가지 제안
 - 긴 실험은 Claude 세션 밖(runs 창, nohup)에서. Claude는 로그를 읽고 요약만
 - 첫 메시지 세 줄: 산출물 / 읽을 것 / 오늘 안 할 것
