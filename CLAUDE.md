@@ -19,10 +19,17 @@ MLB Statcast 투구 추천 모델. 개인 개발 (Song).
 - 시드·데이터 버전·커밋 없는 결과는 결과가 아님
 - 비교는 재구현으로만. 논문이 보고한 숫자를 우리 표에 옮기지 않는다
 
-## 환경
-- 로컬은 테스트만: `pytest tests -q`. 풀 실행은 Colab 러너 (notebooks/colab_runner.ipynb)
-- data/, runs/는 gitignore. Drive에 있음. 수집은 scripts/fetch_data.py로만
+## 환경 (D10)
+- 맥미니(M4, 24GB, 상시 가동)가 주 실행기. 테스트도 실험도 여기서: `pytest tests -q`
+- Colab Pro는 예비. 로컬 예상 2시간 초과 또는 메모리 초과일 때만 (notebooks/colab_runner.ipynb)
+- 경로: `$PITCHEEZY_DATA_DIR`, `$PITCHEEZY_RUNS_DIR` (~/.zshrc). data/, runs/는 gitignore. 원본은 Drive, 수집은 scripts/fetch_data.py로만
 - 의존성은 pyproject.toml에. pip install만 하고 끝내지 말 것
+
+## 세션 (D11)
+- 시작: `scripts/dev.sh` (tmux 세션 pitcheezy, 창 claude / runs). 폰은 Remote Control, 맥북은 SSH + tmux attach
+- 아침 세션 첫 일: results/·runs/_logs/ 읽고 밤사이 실험을 experiments.md에 한 행씩 → 다음 한 가지 제안
+- 긴 실험은 Claude 세션 밖(runs 창, nohup)에서. Claude는 로그를 읽고 요약만
+- 첫 메시지 세 줄: 산출물 / 읽을 것 / 오늘 안 할 것
 
 ## 작업 흐름
 1. 세션 브랜치 그대로 사용. 테스트 통과 → 커밋 → PR → self-merge
