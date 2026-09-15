@@ -1,10 +1,10 @@
-"""실험 실행 진입점 (규약 §4·§6).
+"""실험 실행 진입점 (CLAUDE.md 실험 절).
 
 사용:
-    python scripts/run_experiment.py --config configs/p0/EXP-P0-A-001.yaml --seed 0
+    python scripts/run_experiment.py --config configs/EXP-P0-001.yaml --seed 0
 
 규칙:
-    - 설정 파일명 = 실험 ID (EXP-P{phase}-{track}-{seq}). 실험은 configs/ 파일로만 정의한다.
+    - 설정 파일명 = 실험 ID (EXP-P{phase}-{seq}). 실험은 configs/ 파일로만 정의한다.
     - 산출물(텐서·Q·가중치·체크포인트): $PITCHEEZY_RUNS_DIR/{ID}/{seed}/  (기본 ./runs)
     - 데이터 입력: $PITCHEEZY_DATA_DIR  (기본 ./data).
       두 환경변수는 notebooks/colab_runner.ipynb가 Drive 경로로 설정한다.

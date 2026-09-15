@@ -1,4 +1,4 @@
-"""데이터 수집 CLI (규약 §5). 로직은 src/pitcheezy/data/statcast_fetch.py, 여기는 인자 처리와 출력만.
+"""데이터 수집 CLI. 로직은 src/pitcheezy/data/statcast_fetch.py, 여기는 인자 처리와 출력만.
 
 사용:
     python scripts/fetch_data.py --seasons 2023 2024 2025 --holdout 2026 --tag s2325 --out data/raw

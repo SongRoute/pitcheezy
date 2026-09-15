@@ -1,6 +1,5 @@
 # pitcheezy
 
-MLB Statcast 투구 추천 + 4자 책임 분해. 3인 졸업 캡스톤.
+MLB Statcast 투구 추천 모델. 기존 연구(SmartPitch, Takamido & Nakamoto)를 같은 데이터·같은 OPE 저울에서 재구현해 비교하고 개선한다. 개인 개발.
 
-노션(설계·결정·로그 SSOT):https://app.notion.com/p/3d43f25d549481dd89b7d54dadbe90d1
-
+시작: `CLAUDE.md` → `docs/design.md` → `docs/plan.md`
