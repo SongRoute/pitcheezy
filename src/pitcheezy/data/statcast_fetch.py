@@ -1,4 +1,4 @@
-"""Statcast 수집 로직 (규약 §5). CLI는 scripts/fetch_data.py.
+"""Statcast 수집 로직 (CLAUDE.md 환경·절대 규칙). CLI는 scripts/fetch_data.py.
 
 흐름
     시즌별 정규시즌 날짜 구간(SEASON_DATES, 코드 상수)을 월 단위 청크로 나눠 pybaseball.statcast()로 받는다.
@@ -10,7 +10,7 @@
 
 확인된 pybaseball 2.2.7 동작 (site-packages/pybaseball/statcast.py, utils.py, datasources/statcast.py)
     - statcast()는 하루 단위 요청을 스레드로 병렬 실행한다. 검색 URL 이 R|PO|S 고정이라 정규·포스트·스프링이
-      함께 온다 → 여기서 game_type == "R" 만 남긴다 (규약 §5, ADR-2).
+      함께 온다 → 여기서 game_type == "R" 만 남긴다 (docs/decisions.md D2).
     - 2021+ 시즌은 3/15~11/15 밖 날짜를 요청 없이 건너뛴다. SEASON_DATES 는 모두 그 안에 있다.
     - requests.get(url, timeout=None) 이고 재시도 없음. timeout=None 을 명시해 넘기므로 socket.setdefaulttimeout 은
       무시된다 (requests/urllib3 가 sock.settimeout(None) 을 다시 건다) → pybaseball 모듈이 보는 requests.get 을
@@ -37,7 +37,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-# ---------------------------------------------------------------- 고정 파라미터 (규약 §5 "파라미터 고정")
+# ---------------------------------------------------------------- 고정 파라미터 (바꾸면 데이터 버전이 달라져야 한다)
 # 바꾸면 데이터 버전이 달라져야 한다.
 
 # 정규시즌 첫 경기일 ~ 마지막 경기일. 출처: MLB Stats API schedule?gameType=R (조회 2026-09-11, PR 본문에 기록).
