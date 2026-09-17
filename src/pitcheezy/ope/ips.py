@@ -32,12 +32,14 @@ def logged_probs(df: pd.DataFrame, state_id: np.ndarray, pi_e: np.ndarray) -> np
     return out
 
 
-def pa_weights(df: pd.DataFrame, pe_logged: np.ndarray, pb_logged: np.ndarray, *, clip: float | None) -> pd.DataFrame:
-    """타석별 (game_pk, at_bat_number, w_traj, w_onestep, n_decisions, n_zero). pe_logged·pb_logged 는 df 위치 정렬."""
+def pa_weights(df: pd.DataFrame, pe_logged: np.ndarray, pb_logged: np.ndarray, *, clip: float | None, slice_mask: np.ndarray | None = None) -> pd.DataFrame:
+    """타석별 (game_pk, at_bat_number, w_traj, w_onestep, w_onestep_slice, n_decisions, n_zero). pe_logged·pb_logged·slice_mask 는 df 위치 정렬.
+    slice_mask (bool[N]) 가 있으면 그 투구의 결정만 더한 1스텝 가중치 w_onestep_slice 도 낸다 (예: 2스트라이크 결정)."""
     d = df.sort_values(SORT, kind="stable")
     order = d.index.to_numpy()
     pel = pe_logged[order]
     pbl = pb_logged[order]
+    sl = np.ones(len(d), dtype=bool) if slice_mask is None else slice_mask[order]
     a = d["action_id"].to_numpy(dtype=np.int64)
     has = (a >= 0) & ~np.isnan(pbl) & ~np.isnan(pel)
     rho = np.ones(len(d), dtype=np.float64)
@@ -46,8 +48,10 @@ def pa_weights(df: pd.DataFrame, pe_logged: np.ndarray, pb_logged: np.ndarray, *
         r = np.minimum(r, clip)
     rho[has] = r
     rho_dec = np.where(has, rho, 0.0)
-    g = pd.DataFrame({"game_pk": d["game_pk"].to_numpy(), "at_bat_number": d["at_bat_number"].to_numpy(), "rho": rho, "rho_dec": rho_dec, "has": has, "zero": has & (rho == 0)})
-    out = g.groupby(["game_pk", "at_bat_number"], sort=True).agg(w_traj=("rho", "prod"), w_onestep=("rho_dec", "sum"), n_decisions=("has", "sum"), n_zero=("zero", "sum")).reset_index()
+    g = pd.DataFrame({"game_pk": d["game_pk"].to_numpy(), "at_bat_number": d["at_bat_number"].to_numpy(), "rho": rho, "rho_dec": rho_dec, "rho_slice": np.where(sl, rho_dec, 0.0),
+                      "has": has, "has_slice": has & sl, "zero": has & (rho == 0)})
+    out = g.groupby(["game_pk", "at_bat_number"], sort=True).agg(w_traj=("rho", "prod"), w_onestep=("rho_dec", "sum"), w_onestep_slice=("rho_slice", "sum"),
+                                                                  n_decisions=("has", "sum"), n_decisions_slice=("has_slice", "sum"), n_zero=("zero", "sum")).reset_index()
     return out
 
 

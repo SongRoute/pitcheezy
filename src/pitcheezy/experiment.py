@@ -166,11 +166,12 @@ class Experiment:
         nxt = VI.next_state_table(self.K)
         Q, V, iters, delta = VI.value_iteration(t.P, t.valid, R, nxt)
         kind = pp.get("kind", "softmax")
+        # tilt 는 평가 시즌 π_b 가 필요해 여기서 못 만든다 → value/policy.npy 에는 같은 τ 의 softmax 를 저장 (meta.relax 에 기록)
         pol = VI.relax(Q, t.valid, method=kind if kind in ("softmax", "topk", "greedy") else "softmax", temperature=float(pp.get("temperature", 0.05)), top_k=int(pp.get("top_k", 5)))
         sha = dict(line.split()[::-1] for line in (self.s0_dir / "transition" / "sha256.txt").read_text().splitlines() if line.strip())
         meta = {"transition_dir": str(self.s0_dir / "transition"), "transition_sha256": sha, "re24_version": self.cfg["re24_version"], "dre24_version": self.cfg["re24_version"],
                 "terminal_reward": "-dRE24[outcome, base_out] (투수 관점)", "in_play_reward": "actual_league_mean (ASM-7)", "gamma": 1,
-                "relax": {"method": kind, "temperature": pp.get("temperature"), "top_k": pp.get("top_k")}, "lookup_mode": "snap", "seed": 0, "train_commit": self.commit,
+                "relax": {"method": kind if kind in ("softmax", "topk", "greedy") else f"softmax (stored stand-in for {kind}; tilt is built in OPE stage)", "temperature": pp.get("temperature"), "top_k": pp.get("top_k")}, "lookup_mode": "snap", "seed": 0, "train_commit": self.commit,
                 "vi": {"iters": int(iters), "max_delta": float(delta), "V_mean": float(V.mean()), "V_min": float(V.min()), "V_max": float(V.max()),
                        "n_states_no_valid_action": int((~t.valid.any(-1)).sum())}}
         vb = ValueBundle(Q=Q.astype(np.float32), V=V.astype(np.float32), policy=pol, meta=meta)
@@ -190,7 +191,11 @@ class Experiment:
         menu: dict[str, np.ndarray | None] = {}
         for kind in op.get("menu", ["primary"]):
             if kind == "primary":
-                menu[self.primary_name()] = vb.policy
+                kind = self.primary_name()  # 아래 분기로 실제 정책을 만든다 (tilt 는 폴드별 π_b 필요 → "tilt" 표식)
+            if kind in menu:
+                continue
+            if kind == self.primary_name() and self.p["policy"].get("kind", "softmax") not in ("tilt",) and not kind.startswith(("softmax_t", "topk", "greedy", "uniform")):
+                menu[kind] = vb.policy
             elif kind == "behavior":
                 menu["behavior"] = None
             elif kind == "uniform":
@@ -248,9 +253,12 @@ class Experiment:
         nxt = VI.next_state_table(self.K)
         first = ev.groupby(["game_pk", "at_bat_number"], sort=False).head(1)
         f_p, f_s = first["pitcher_idx"].to_numpy(dtype=np.int64), self.sid(first)
-        n_dec = key.merge(ev[ev["action_id"] >= 0].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
+        has_a = ev["action_id"] >= 0
+        two_strike = (ev["count_id"].to_numpy() % 3 == 2)
+        n_dec = key.merge(ev[has_a].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
+        n_dec_2s = key.merge(ev[has_a & two_strike].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
         results = {}
-        variants = [("traj_clip", "w_traj", op.get("clip")), ("traj_noclip", "w_traj", None), ("onestep_clip", "w_onestep", op.get("clip"))]
+        variants = [("traj_clip", "w_traj", op.get("clip")), ("traj_noclip", "w_traj", None), ("onestep_clip", "w_onestep", op.get("clip")), ("onestep2s_clip", "w_onestep_slice", op.get("clip"))]
         for name, pol in menu.items():
             model_value = None
             if isinstance(pol, str):  # tilt
@@ -266,9 +274,9 @@ class Experiment:
                 pol_arr = pol_arr.astype(np.float32)
             for vname, col, clip in variants:
                 if pol_arr is None:  # π_b 자체: 궤적은 타석당 1, 1스텝은 결정 수 (다른 정책과 같은 가중 방식)
-                    w = np.ones(len(pa)) if col == "w_traj" else n_dec; nd = None
+                    w = np.ones(len(pa)) if col == "w_traj" else (n_dec_2s if col == "w_onestep_slice" else n_dec); nd = None
                 else:
-                    pw = key.merge(IPS.pa_weights(ev, pe_logged, pb_logged, clip=clip), on=["game_pk", "at_bat_number"], how="left")
+                    pw = key.merge(IPS.pa_weights(ev, pe_logged, pb_logged, clip=clip, slice_mask=two_strike), on=["game_pk", "at_bat_number"], how="left")
                     w = pw[col].fillna(1.0 if col == "w_traj" else 0.0).to_numpy(); nd = pw
                 est = IPS.estimate(w, r)
                 est.update(IPS.bootstrap(w, r, games, n_boot=int(op["n_boot"]), seed=self.seed))
@@ -279,10 +287,8 @@ class Experiment:
                 log.info("OPE %-16s %-12s SN %+.4f [%+.4f, %+.4f] wmean %8.3f ESS %5.1f%% wmax %9.1f zero %4.1f%% model %s",
                          name, vname, est["snips"], est["ci_low"], est["ci_high"], est["w_mean"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"],
                          "-" if model_value is None else f"{model_value:+.4f}")
-                if pol_arr is None and vname == "onestep_clip":
-                    break
-                if pol_arr is None and vname == "traj_clip":
-                    continue
+                if pol_arr is None and vname == "traj_noclip":
+                    results.pop(f"{name}/{vname}", None)
         summary = {"seed": self.seed, "eval_season": op["eval_season"], "n_pa": int(len(pa)), "n_pa_dropped_multi_pitcher": int((~keep).sum()), "n_games": int(len(np.unique(games))),
                    "n_pitches": int(len(ev)), "frac_pitches_no_action": float((ev["action_id"] < 0).mean()),
                    "support_min_pitches_eval": op.get("support_min_pitches_eval", 0), "frac_support_actions": float(support.sum() / max(t.valid.sum(), 1)),
@@ -319,7 +325,7 @@ def aggregate(cfg: dict, runs_dir: Path, results_dir: Path) -> dict:
     primary = r0["ope"].get("primary")
     pol = {}
     for name in r0["ope"]["results"]:
-        per = {str(r["seed"]): r["ope"]["results"][name] for r in runs}
+        per = {str(r["seed"]): r["ope"]["results"][name] for r in runs if name in r["ope"]["results"]}
         pol[name] = {"point_snips": r0["ope"]["results"][name]["snips"], "point_ips": r0["ope"]["results"][name]["ips"],
                      "ci_low_min": min(v["ci_low"] for v in per.values()), "ci_high_max": max(v["ci_high"] for v in per.values()),
                      "boot_std_mean": float(np.mean([v["boot_std"] for v in per.values()])), "ess_frac": r0["ope"]["results"][name]["ess_frac"],
