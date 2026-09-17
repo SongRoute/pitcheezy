@@ -79,3 +79,22 @@ def relax(Q: np.ndarray, valid: np.ndarray, *, method: str = "softmax", temperat
         raise ValueError(f"알 수 없는 완화: {method}")
     s = e.sum(-1, keepdims=True)
     return np.where(s > 0, e / np.where(s > 0, s, 1.0), 0.0).astype(np.float32)
+
+
+def policy_evaluation(P: np.ndarray, policy: np.ndarray, R: np.ndarray, nxt: np.ndarray, *, tol: float = 1e-9, max_iter: int = 200) -> np.ndarray:
+    """모델 안에서 고정 정책의 가치 V^π [P, S] (진단: 모델이 말하는 값 vs OPE 가 말하는 값 → 착취 폭)."""
+    n_p, S_, A, O_ = P.shape
+    Pf = P.astype(np.float64)
+    pol = policy.astype(np.float64)
+    Pmix = np.einsum("psao,psa->pso", Pf, pol)  # [P, S, O]
+    V = np.zeros((n_p, S_))
+    nxt_safe = np.where(nxt >= 0, nxt, 0)
+    is_next = (nxt >= 0)[None]
+    for _ in range(max_iter):
+        Vn = np.where(is_next, V[:, nxt_safe], 0.0)
+        Vnew = (Pmix * (R[None] + Vn)).sum(-1)
+        delta = float(np.abs(Vnew - V).max())
+        V = Vnew
+        if delta < tol:
+            break
+    return V

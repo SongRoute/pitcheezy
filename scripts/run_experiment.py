@@ -41,7 +41,7 @@ def main() -> int:
         rec = E.Experiment(cfg, a.seed, a.data_dir, a.runs_dir).run()
         E.log_wandb(cfg, rec)
     out = E.aggregate(cfg, a.runs_dir, REPO / "results")
-    main_pol = next(iter(out["ope"]["policies"]))
+    main_pol = out["ope"].get("primary") or next(iter(out["ope"]["policies"]))
     p = out["ope"]["policies"][main_pol]
     print(f"OK results/{cfg['id']}.json  seeds={out['seeds']}  {main_pol}: SNIPS {p['point_snips']:+.4f} CI[{p['ci_low_min']:+.4f}, {p['ci_high_max']:+.4f}]  "
           f"holdout NLL {out['transition']['holdout_nll']}")

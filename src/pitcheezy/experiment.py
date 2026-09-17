@@ -171,63 +171,93 @@ class Experiment:
         return {"reused": False, **meta["vi"]}
 
     # ------------------------------------------------------------ OPE
+    def policy_menu(self, vb: ValueBundle, valid: np.ndarray) -> dict[str, np.ndarray | None]:
+        """평가할 정책 메뉴 (모든 실험 공통, 싸다). None = π_b 자체."""
+        op = self.p["ope"]
+        Q = vb.Q.astype(np.float64)
+        menu: dict[str, np.ndarray | None] = {}
+        for kind in op.get("menu", ["primary"]):
+            if kind == "primary":
+                menu[self.primary_name()] = vb.policy
+            elif kind == "behavior":
+                menu["behavior"] = None
+            elif kind == "uniform":
+                menu["uniform"] = VI.relax(Q, valid, method="uniform")
+            elif kind == "greedy":
+                menu["greedy"] = VI.relax(Q, valid, method="greedy")
+            elif kind.startswith("topk"):
+                menu[kind] = VI.relax(Q, valid, method="topk", top_k=int(kind[4:]))
+            elif kind.startswith("softmax_t"):
+                menu[kind] = VI.relax(Q, valid, method="softmax", temperature=float(kind[9:]))
+            else:
+                raise ValueError(f"메뉴 항목 모름: {kind}")
+        return menu
+
+    def primary_name(self) -> str:
+        pp = self.p["policy"]
+        k = pp.get("kind", "softmax")
+        if k == "softmax":
+            return f"softmax_t{pp['temperature']}"
+        if k == "topk":
+            return f"topk{pp['top_k']}"
+        return k
+
     def stage_ope(self) -> dict:
         t0 = time.time()
-        op, pp = self.p["ope"], self.p["policy"]
+        op = self.p["ope"]
         out = self.seed_dir / "ope"
         out.mkdir(exist_ok=True)
-        ev = self.pitches(op["eval_season"], holdout=True)
+        ev = self.pitches(op["eval_season"], holdout=True).reset_index(drop=True)
         sid = self.sid(ev)
         t = TransitionTensor.load(self.s0_dir / "transition", check_hash=False, mmap=True)
         vb = ValueBundle.load(self.s0_dir / "value", check_hash=False)
-        pb_path = self.s0_dir / "ope" / "pi_b.npy"
+        pb_path = self.s0_dir / "ope" / f"pi_b_logged_cf{op['n_folds']}_a{op['behavior_alpha']}.npy"
         if pb_path.exists():
-            pi_b = np.load(pb_path)
+            pb_logged = np.load(pb_path)
         else:
-            pi_b = BH.fit_behavior(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]))
+            pb_logged = BH.behavior_logged_crossfit(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]))
             pb_path.parent.mkdir(exist_ok=True)
-            np.save(pb_path, pi_b)
+            np.save(pb_path, pb_logged)
         pa = PR.pa_rewards(ev, self.re24.RE24)
         keep = pa["n_pitchers"] == 1
         pa = pa[keep].reset_index(drop=True)
         r = -pa["delta_re24"].to_numpy()  # 투수 관점
         games = pa["game_pk"].to_numpy()
         key = pa[["game_pk", "at_bat_number"]]
-        kinds = pp["kinds"] if "kinds" in pp else [pp.get("kind", "softmax")]
+        # 모델 안 가치 (착취 진단): 상태 방문 가중 평균 = 2026 타석 첫 투구 상태 분포
+        R = VI.reward_table(self.re24.dRE24, self.K)
+        nxt = VI.next_state_table(self.K)
+        first = ev.groupby(["game_pk", "at_bat_number"], sort=False).head(1)
+        f_p, f_s = first["pitcher_idx"].to_numpy(dtype=np.int64), self.sid(first)
+        menu = self.policy_menu(vb, t.valid)
         results = {}
-        for kind in kinds:
-            pols = {}
-            if kind == "behavior":
-                pols["behavior"] = None
-            elif kind == "uniform":
-                pols["uniform"] = VI.relax(vb.Q.astype(np.float64), t.valid, method="uniform")
-            elif kind == "greedy":
-                pols["greedy"] = VI.relax(vb.Q.astype(np.float64), t.valid, method="greedy")
-            elif kind == "topk":
-                pols[f"topk{pp['top_k']}"] = vb.policy
-            else:  # softmax: 주 온도 + 민감도
-                pols[f"softmax_t{pp['temperature']}"] = vb.policy
-                for tau in op.get("sensitivity_temperatures", []):
-                    if float(tau) != float(pp["temperature"]):
-                        pols[f"sens_softmax_t{tau}"] = VI.relax(vb.Q.astype(np.float64), t.valid, method="softmax", temperature=float(tau))
-            for name, pol in pols.items():
-                for clip_name, clip in (("clip", op.get("clip")), ("noclip", None)):
-                    if pol is None:
-                        w = np.ones(len(pa)); nd = None
-                    else:
-                        pw = IPS.pa_weights(ev, sid, pol, pi_b, clip=clip)
-                        pw = key.merge(pw, on=["game_pk", "at_bat_number"], how="left")
-                        w = pw["w"].fillna(1.0).to_numpy(); nd = pw
-                    est = IPS.estimate(w, r)
-                    est.update(IPS.bootstrap(w, r, games, n_boot=int(op["n_boot"]), seed=self.seed, key="snips"))
-                    if nd is not None:
-                        est["n_decisions_mean"] = float(nd["n_decisions"].mean()); est["frac_pa_with_zero_rho"] = float((nd["n_zero"] > 0).mean())
-                    results[f"{name}/{clip_name}"] = est
-                    log.info("OPE %-28s %-6s SNIPS %+.4f [%+.4f, %+.4f] IPS %+.4f ESS %.1f%% wmax %.1f zero %.1f%%", name, clip_name, est["snips"], est["ci_low"], est["ci_high"], est["ips"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"])
-                    if pol is None:
-                        break
+        variants = [("clip", op.get("clip"), "drop"), ("noclip", None, "drop"), ("clip_pass", op.get("clip"), "passthrough")]
+        for name, pol in menu.items():
+            model_value = None
+            if pol is not None:
+                Vpi = VI.policy_evaluation(t.P, pol, R, nxt)
+                model_value = float(Vpi[f_p, f_s].mean())
+            for vname, clip, oos in variants:
+                if pol is None:
+                    w = np.ones(len(pa)); nd = None
+                else:
+                    pw = key.merge(IPS.pa_weights(ev, sid, pol, pb_logged, clip=clip, oos=oos), on=["game_pk", "at_bat_number"], how="left")
+                    w = pw["w"].fillna(1.0).to_numpy(); nd = pw
+                est = IPS.estimate(w, r)
+                est.update(IPS.bootstrap(w, r, games, n_boot=int(op["n_boot"]), seed=self.seed, key="snips"))
+                est["model_value"] = model_value
+                if nd is not None:
+                    est["n_decisions_mean"] = float(nd["n_decisions"].mean()); est["frac_pa_with_zero_rho"] = float((nd["n_zero"] > 0).mean())
+                results[f"{name}/{vname}"] = est
+                log.info("OPE %-16s %-9s SNIPS %+.4f [%+.4f, %+.4f] IPS %+.4f wmean %.3f ESS %5.1f%% wmax %6.1f zero %4.1f%% model %s",
+                         name, vname, est["snips"], est["ci_low"], est["ci_high"], est["ips"], est["w_mean"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"],
+                         "-" if model_value is None else f"{model_value:+.4f}")
+                if pol is None:
+                    break
         summary = {"seed": self.seed, "eval_season": op["eval_season"], "n_pa": int(len(pa)), "n_pa_dropped_multi_pitcher": int((~keep).sum()), "n_games": int(len(np.unique(games))),
-                   "mean_reward_behavior": float(r.mean()), "behavior_alpha": op["behavior_alpha"], "clip": op.get("clip"), "n_boot": op["n_boot"], "results": results}
+                   "n_pitches": int(len(ev)), "frac_pitches_no_action": float((ev["action_id"] < 0).mean()),
+                   "mean_reward_behavior": float(r.mean()), "behavior_alpha": op["behavior_alpha"], "n_folds": op["n_folds"], "clip": op.get("clip"), "n_boot": op["n_boot"],
+                   "primary": f"{self.primary_name()}/clip", "results": results}
         (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
         self.timing["ope"] = time.time() - t0
         return summary
@@ -256,20 +286,22 @@ def aggregate(cfg: dict, runs_dir: Path, results_dir: Path) -> dict:
     if not runs:
         raise FileNotFoundError("run.json 없음")
     r0 = runs[0]
+    primary = r0["ope"].get("primary")
     pol = {}
     for name in r0["ope"]["results"]:
         per = {str(r["seed"]): r["ope"]["results"][name] for r in runs}
         pol[name] = {"point_snips": r0["ope"]["results"][name]["snips"], "point_ips": r0["ope"]["results"][name]["ips"],
                      "ci_low_min": min(v["ci_low"] for v in per.values()), "ci_high_max": max(v["ci_high"] for v in per.values()),
                      "boot_std_mean": float(np.mean([v["boot_std"] for v in per.values()])), "ess_frac": r0["ope"]["results"][name]["ess_frac"],
-                     "w_max": r0["ope"]["results"][name]["w_max"], "frac_zero_w": r0["ope"]["results"][name]["frac_zero_w"], "seeds": per}
+                     "w_max": r0["ope"]["results"][name]["w_max"], "w_mean": r0["ope"]["results"][name]["w_mean"], "frac_zero_w": r0["ope"]["results"][name]["frac_zero_w"],
+                     "model_value": r0["ope"]["results"][name].get("model_value"), "seeds": per}
     out = {"id": cfg["id"], "phase": cfg["phase"], "baseline": cfg.get("baseline"), "change": cfg.get("change"), "data_version": cfg["data_version"],
            "pool_version": cfg["pool_version"], "re24_version": cfg["re24_version"], "commits": sorted({r["commit"] for r in runs}), "seeds": [r["seed"] for r in runs],
            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "params": cfg["params"],
            "transition": {k: r0["transition"].get(k) for k in ("alpha", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers")},
            "holdout_metrics": r0["transition"].get("holdout_metrics"), "value": r0["value"],
            "ope": {"eval_season": r0["ope"]["eval_season"], "n_pa": r0["ope"]["n_pa"], "n_games": r0["ope"]["n_games"], "mean_reward_behavior": r0["ope"]["mean_reward_behavior"],
-                   "clip": r0["ope"]["clip"], "n_boot": r0["ope"]["n_boot"], "policies": pol},
+                   "n_pitches": r0["ope"].get("n_pitches"), "clip": r0["ope"]["clip"], "n_folds": r0["ope"].get("n_folds"), "n_boot": r0["ope"]["n_boot"], "primary": primary, "policies": pol},
            "timing_seconds": r0["timing_seconds"]}
     Path(results_dir).mkdir(exist_ok=True)
     (Path(results_dir) / f"{cfg['id']}.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
