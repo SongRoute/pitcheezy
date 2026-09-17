@@ -1,0 +1,8 @@
+# 레귤러 선발 필터 설정 (design.md §1 "시즌당 일정 이닝 이상"). 실험 ID 가 아니라 자산 설정.
+# 산출: data/pitchers/{pool_version}/ (pitchers.parquet, seasons.parquet, meta.json, sha256.txt, table.md). 커밋 대상.
+# pool_version = pool-ip{min_ip}-{seasons}-{data_version}-{계산 커밋7}
+
+data_version: d20260911-s2325
+seasons: [2023, 2024, 2025]   # 학습 창. 2026 은 넣지 않는다 (OPE 전용). 2026 대상 투수 = 이 풀 ∩ 2026 등판
+min_ip: 150                   # D25 비교용. 시즌 58~71명, 풀 130명
+rule: any_season              # any_season: 창 안 어느 시즌이든 하한 이상이면 풀에 넣고, 그 투수의 창 안 모든 정규시즌 투구를 쓴다
