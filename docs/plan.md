@@ -16,7 +16,7 @@
 
 밤 실험이 없는 날은 아침 확인이 비므로, 저녁에 걸어둘 것이 없으면 "없음"이라고 적는다. 실험이 실패해도 행을 남긴다.
 
-**다음 아침 확인**: 없음 (아직 러너 미구현)
+**다음 아침 확인** (2026-09-18): `docs/results-p0.md` (P0 결과표 초안) → `docs/experiments.md` EXP-P0-001/002/003 행 → `docs/decisions.md` D16~D20 잠정 결정. 로그 `runs/_logs/EXP-P0-00*_s*.log`, 요약 `results/EXP-P0-00*.json`, W&B pitcheezy/{ID}/s{seed}. 실행 `runs/_logs/run_p0.sh` (전체 5분).
 
 ## Phase
 - **P0** 베이스라인 e2e. 우리 모델 + B1(SmartPitch류) + π_b·랜덤 기준선을 같은 표에. 결과: 표 하나
@@ -50,5 +50,7 @@
 - 타자 군집 v0 (좌우 층화, K ≤ 8)
 - 타석 중 주자·아웃 변화 비율 실측 (design.md §1-e)
 
-**다음 주 후보**
-- 전이 모델 ⓐ 시드 0, B1 config, run_experiment.py 본 로직
+**빨리 끝나면**
+- ~~타석 중 주자·아웃 변화 비율 실측~~ (9/17, ASM-1 실측 기록)
+
+**W3 항목을 9/17 밤에 당겨서 완료** (PR #10): 전이 모델 ⓐ + 계층 평활, VI, π_b(교차 적합), 1스텝·궤적 SNIPS OPE, run_experiment.py, EXP-P0-001/002/003 시드 3개. 결과 docs/results-p0.md. 남은 W3: 없음. W4 로: freeze(9/27 이후) → 재실행 → p0-baseline 태그
