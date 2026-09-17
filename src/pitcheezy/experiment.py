@@ -189,6 +189,8 @@ class Experiment:
                 menu[kind] = VI.relax(Q, valid, method="topk", top_k=int(kind[4:]))
             elif kind.startswith("softmax_t"):
                 menu[kind] = VI.relax(Q, valid, method="softmax", temperature=float(kind[9:]))
+            elif kind.startswith("tilt_t"):
+                menu[kind] = "tilt"  # π_b 기울임: 폴드별 π_b 로 stage_ope 에서 계산
             else:
                 raise ValueError(f"메뉴 항목 모름: {kind}")
         return menu
@@ -196,11 +198,19 @@ class Experiment:
     def primary_name(self) -> str:
         pp = self.p["policy"]
         k = pp.get("kind", "softmax")
-        if k == "softmax":
-            return f"softmax_t{pp['temperature']}"
+        if k in ("softmax", "tilt"):
+            return f"{k}_t{pp['temperature']}"
         if k == "topk":
             return f"topk{pp['top_k']}"
         return k
+
+    def eval_support(self, ev: pd.DataFrame, valid: np.ndarray) -> np.ndarray:
+        """공통 지지 [P,S,A] = valid ∩ (평가 시즌 투수×구종 투구 수 ≥ support_min_pitches_eval)."""
+        from pitcheezy.transition.count import repertoire_counts
+        from pitcheezy.interfaces.grid import decode_action
+        rep = repertoire_counts(ev, self.n_p) >= int(self.p["ope"].get("support_min_pitches_eval", 0))  # [P, 9]
+        group = decode_action(np.arange(valid.shape[-1]))[0]
+        return valid & rep[:, group][:, None, :]
 
     def stage_ope(self) -> dict:
         t0 = time.time()
@@ -211,53 +221,60 @@ class Experiment:
         sid = self.sid(ev)
         t = TransitionTensor.load(self.s0_dir / "transition", check_hash=False, mmap=True)
         vb = ValueBundle.load(self.s0_dir / "value", check_hash=False)
-        pb_path = self.s0_dir / "ope" / f"pi_b_logged_cf{op['n_folds']}_a{op['behavior_alpha']}.npy"
-        if pb_path.exists():
-            pb_logged = np.load(pb_path)
-        else:
-            pb_logged = BH.behavior_logged_crossfit(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]))
-            pb_path.parent.mkdir(exist_ok=True)
-            np.save(pb_path, pb_logged)
+        support = self.eval_support(ev, t.valid)
+        menu = self.policy_menu(vb, t.valid)
+        tilts = {name: (vb.Q, support, float(name[6:])) for name, pol in menu.items() if isinstance(pol, str) and pol == "tilt"}
+        pb_logged, pe_tilt = BH.crossfit_logged(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts=tilts)
+        pb_full = BH.fit_behavior(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]))  # 진단(모델 내 가치)용
         pa = PR.pa_rewards(ev, self.re24.RE24)
         keep = pa["n_pitchers"] == 1
         pa = pa[keep].reset_index(drop=True)
         r = -pa["delta_re24"].to_numpy()  # 투수 관점
         games = pa["game_pk"].to_numpy()
         key = pa[["game_pk", "at_bat_number"]]
-        # 모델 안 가치 (착취 진단): 상태 방문 가중 평균 = 2026 타석 첫 투구 상태 분포
         R = VI.reward_table(self.re24.dRE24, self.K)
         nxt = VI.next_state_table(self.K)
         first = ev.groupby(["game_pk", "at_bat_number"], sort=False).head(1)
         f_p, f_s = first["pitcher_idx"].to_numpy(dtype=np.int64), self.sid(first)
-        menu = self.policy_menu(vb, t.valid)
+        n_dec = key.merge(ev[ev["action_id"] >= 0].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
         results = {}
-        variants = [("clip", op.get("clip"), "drop"), ("noclip", None, "drop"), ("clip_pass", op.get("clip"), "passthrough")]
+        variants = [("traj_clip", "w_traj", op.get("clip")), ("traj_noclip", "w_traj", None), ("onestep_clip", "w_onestep", op.get("clip"))]
         for name, pol in menu.items():
             model_value = None
-            if pol is not None:
-                Vpi = VI.policy_evaluation(t.P, pol, R, nxt)
-                model_value = float(Vpi[f_p, f_s].mean())
-            for vname, clip, oos in variants:
-                if pol is None:
-                    w = np.ones(len(pa)); nd = None
+            if isinstance(pol, str):  # tilt
+                pol_arr = BH.tilt(pb_full, vb.Q, support, tilts[name][2])
+                pe_logged = pe_tilt[name]
+            elif pol is not None:
+                pol_arr = IPS.restrict_support(pol, support)
+                pe_logged = IPS.logged_probs(ev, sid, pol_arr)
+            else:
+                pol_arr = None
+            if pol_arr is not None:
+                model_value = float(VI.policy_evaluation(t.P, pol_arr, R, nxt)[f_p, f_s].mean())
+            for vname, col, clip in variants:
+                if pol_arr is None:  # π_b 자체: 궤적은 타석당 1, 1스텝은 결정 수 (다른 정책과 같은 가중 방식)
+                    w = np.ones(len(pa)) if col == "w_traj" else n_dec; nd = None
                 else:
-                    pw = key.merge(IPS.pa_weights(ev, sid, pol, pb_logged, clip=clip, oos=oos), on=["game_pk", "at_bat_number"], how="left")
-                    w = pw["w"].fillna(1.0).to_numpy(); nd = pw
+                    pw = key.merge(IPS.pa_weights(ev, pe_logged, pb_logged, clip=clip), on=["game_pk", "at_bat_number"], how="left")
+                    w = pw[col].fillna(1.0 if col == "w_traj" else 0.0).to_numpy(); nd = pw
                 est = IPS.estimate(w, r)
-                est.update(IPS.bootstrap(w, r, games, n_boot=int(op["n_boot"]), seed=self.seed, key="snips"))
+                est.update(IPS.bootstrap(w, r, games, n_boot=int(op["n_boot"]), seed=self.seed))
                 est["model_value"] = model_value
                 if nd is not None:
                     est["n_decisions_mean"] = float(nd["n_decisions"].mean()); est["frac_pa_with_zero_rho"] = float((nd["n_zero"] > 0).mean())
                 results[f"{name}/{vname}"] = est
-                log.info("OPE %-16s %-9s SNIPS %+.4f [%+.4f, %+.4f] IPS %+.4f wmean %.3f ESS %5.1f%% wmax %6.1f zero %4.1f%% model %s",
-                         name, vname, est["snips"], est["ci_low"], est["ci_high"], est["ips"], est["w_mean"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"],
+                log.info("OPE %-16s %-12s SN %+.4f [%+.4f, %+.4f] wmean %8.3f ESS %5.1f%% wmax %9.1f zero %4.1f%% model %s",
+                         name, vname, est["snips"], est["ci_low"], est["ci_high"], est["w_mean"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"],
                          "-" if model_value is None else f"{model_value:+.4f}")
-                if pol is None:
+                if pol_arr is None and vname == "onestep_clip":
                     break
+                if pol_arr is None and vname == "traj_clip":
+                    continue
         summary = {"seed": self.seed, "eval_season": op["eval_season"], "n_pa": int(len(pa)), "n_pa_dropped_multi_pitcher": int((~keep).sum()), "n_games": int(len(np.unique(games))),
                    "n_pitches": int(len(ev)), "frac_pitches_no_action": float((ev["action_id"] < 0).mean()),
+                   "support_min_pitches_eval": op.get("support_min_pitches_eval", 0), "frac_support_actions": float(support.sum() / max(t.valid.sum(), 1)),
                    "mean_reward_behavior": float(r.mean()), "behavior_alpha": op["behavior_alpha"], "n_folds": op["n_folds"], "clip": op.get("clip"), "n_boot": op["n_boot"],
-                   "primary": f"{self.primary_name()}/clip", "results": results}
+                   "primary": f"{self.primary_name()}/{op.get('primary_variant', 'onestep_clip')}", "results": results}
         (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
         self.timing["ope"] = time.time() - t0
         return summary
@@ -301,7 +318,7 @@ def aggregate(cfg: dict, runs_dir: Path, results_dir: Path) -> dict:
            "transition": {k: r0["transition"].get(k) for k in ("alpha", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers")},
            "holdout_metrics": r0["transition"].get("holdout_metrics"), "value": r0["value"],
            "ope": {"eval_season": r0["ope"]["eval_season"], "n_pa": r0["ope"]["n_pa"], "n_games": r0["ope"]["n_games"], "mean_reward_behavior": r0["ope"]["mean_reward_behavior"],
-                   "n_pitches": r0["ope"].get("n_pitches"), "clip": r0["ope"]["clip"], "n_folds": r0["ope"].get("n_folds"), "n_boot": r0["ope"]["n_boot"], "primary": primary, "policies": pol},
+                   "n_pitches": r0["ope"].get("n_pitches"), "support_min_pitches_eval": r0["ope"].get("support_min_pitches_eval"), "clip": r0["ope"]["clip"], "n_folds": r0["ope"].get("n_folds"), "n_boot": r0["ope"]["n_boot"], "primary": primary, "policies": pol},
            "timing_seconds": r0["timing_seconds"]}
     Path(results_dir).mkdir(exist_ok=True)
     (Path(results_dir) / f"{cfg['id']}.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
