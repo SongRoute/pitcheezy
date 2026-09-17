@@ -115,17 +115,22 @@ class Experiment:
         hev = hev[hev["pitcher_idx"].isin(present)]
         pitchers_h = self.pitchers_table(htr)
         alphas = tp["alpha_grid"] if tp["alpha"] == "auto" else [tp["alpha"]]
+        ap_cfg = tp.get("alpha_pitcher")
+        alphas_p = tp["alpha_pitcher_grid"] if ap_cfg == "auto" else [ap_cfg]  # None → 리그와 같은 값
         screen = {}
         best = None
         for a in alphas:
-            t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), alpha_pitcher=tp.get("alpha_pitcher"), pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(),
-                       meta={**common, "season_window": f"{tp['holdout']['train_seasons'][0]}-{tp['holdout']['train_seasons'][-1]}", "holdout_split": f"season:{tp['holdout']['eval_season']}", "excluded_pitchers": excluded})
-            m = TC.holdout_metrics(t, hev, self.sid(hev))
-            screen[str(a)] = m
-            log.info("α=%s 홀드아웃 NLL %.4f ECE %.4f ECE_HR %.4f (n=%d)", a, m["holdout_nll"], m["holdout_ece"], m["holdout_ece_hr"], m["holdout_n_pitches"])
-            if best is None or m["holdout_nll"] < best[1]["holdout_nll"]:
-                best = (float(a), m, t)
-        alpha, hm, th = best
+            for ap in alphas_p:
+                t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), alpha_pitcher=ap, pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(),
+                           meta={**common, "season_window": f"{tp['holdout']['train_seasons'][0]}-{tp['holdout']['train_seasons'][-1]}", "holdout_split": f"season:{tp['holdout']['eval_season']}", "excluded_pitchers": excluded})
+                m = TC.holdout_metrics(t, hev, self.sid(hev))
+                key = str(a) if ap is None else f"{a}/{ap}"
+                screen[key] = m
+                log.info("α=%s 홀드아웃 NLL %.4f ECE %.4f ECE_HR %.4f (n=%d)", key, m["holdout_nll"], m["holdout_ece"], m["holdout_ece_hr"], m["holdout_n_pitches"])
+                if best is None or m["holdout_nll"] < best[1]["holdout_nll"]:
+                    best = (float(a), m, t, ap)
+        alpha, hm, th, alpha_p = best
+        tp = {**tp, "alpha_pitcher": alpha_p}
         th.meta.update({k: hm[k] for k in ("holdout_nll", "holdout_ece", "holdout_ece_hr")})
         th.meta["holdout_metrics"] = hm
         th.meta["alpha_screen"] = {a: {"holdout_nll": v["holdout_nll"], "holdout_ece": v["holdout_ece"], "holdout_ece_hr": v["holdout_ece_hr"]} for a, v in screen.items()}
@@ -162,7 +167,7 @@ class Experiment:
             log.info("가치함수 재사용 %s", out)
             return {"reused": True, **json.loads((out / "meta.json").read_text()).get("vi", {})}
         t = TransitionTensor.load(self.s0_dir / "transition", mmap=True)
-        R = VI.reward_table(self.re24.dRE24, self.K)
+        R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(pp.get("reward_collapse_base_out", False)))
         nxt = VI.next_state_table(self.K)
         Q, V, iters, delta = VI.value_iteration(t.P, t.valid, R, nxt)
         kind = pp.get("kind", "softmax")
@@ -170,7 +175,7 @@ class Experiment:
         pol = VI.relax(Q, t.valid, method=kind if kind in ("softmax", "topk", "greedy") else "softmax", temperature=float(pp.get("temperature", 0.05)), top_k=int(pp.get("top_k", 5)))
         sha = dict(line.split()[::-1] for line in (self.s0_dir / "transition" / "sha256.txt").read_text().splitlines() if line.strip())
         meta = {"transition_dir": str(self.s0_dir / "transition"), "transition_sha256": sha, "re24_version": self.cfg["re24_version"], "dre24_version": self.cfg["re24_version"],
-                "terminal_reward": "-dRE24[outcome, base_out] (투수 관점)", "in_play_reward": "actual_league_mean (ASM-7)", "gamma": 1,
+                "terminal_reward": "-dRE24[outcome, base_out] (투수 관점)" + (" — base_out 붕괴(대조군)" if pp.get("reward_collapse_base_out") else ""), "in_play_reward": "actual_league_mean (ASM-7)", "gamma": 1,
                 "relax": {"method": kind if kind in ("softmax", "topk", "greedy") else f"softmax (stored stand-in for {kind}; tilt is built in OPE stage)", "temperature": pp.get("temperature"), "top_k": pp.get("top_k")}, "lookup_mode": "snap", "seed": 0, "train_commit": self.commit,
                 "vi": {"iters": int(iters), "max_delta": float(delta), "V_mean": float(V.mean()), "V_min": float(V.min()), "V_max": float(V.max()),
                        "n_states_no_valid_action": int((~t.valid.any(-1)).sum())}}
@@ -248,7 +253,7 @@ class Experiment:
         r = -pa["delta_re24"].to_numpy()  # 투수 관점
         games = pa["game_pk"].to_numpy()
         key = pa[["game_pk", "at_bat_number"]]
-        R = VI.reward_table(self.re24.dRE24, self.K)
+        R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(self.p["policy"].get("reward_collapse_base_out", False)))
         nxt = VI.next_state_table(self.K)
         first = ev.groupby(["game_pk", "at_bat_number"], sort=False).head(1)
         f_p, f_s = first["pitcher_idx"].to_numpy(dtype=np.int64), self.sid(first)

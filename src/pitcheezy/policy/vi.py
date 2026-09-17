@@ -15,10 +15,12 @@ from pitcheezy.interfaces import outcomes as O
 from pitcheezy.interfaces import states as S
 
 
-def reward_table(dRE24: np.ndarray, K: int) -> np.ndarray:
-    """R [S, O] 투수 관점 (= −ΔRE24). dRE24 [8, 24] 는 outcomes.TERMINAL 순서."""
+def reward_table(dRE24: np.ndarray, K: int, *, collapse_base_out: bool = False) -> np.ndarray:
+    """R [S, O] 투수 관점 (= −ΔRE24). dRE24 [8, 24] 는 outcomes.TERMINAL 순서. collapse_base_out 이면 모든 상태에 무주자 0아웃 보상 (대조군)."""
     S_ = S.n_states(K)
     _, bid, _ = S.decode_state(np.arange(S_), K)
+    if collapse_base_out:
+        bid = np.zeros_like(bid)
     R = np.zeros((S_, O.N_OUTCOMES), dtype=np.float64)
     for i, o in enumerate(O.TERMINAL):
         R[:, o] = -dRE24[i, bid]
