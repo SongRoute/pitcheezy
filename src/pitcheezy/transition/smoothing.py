@@ -33,12 +33,13 @@ def smooth_hierarchical(
 ) -> np.ndarray:
     """n [P, S, A, V] int → 확률 [P, S, A, V]. 투수 축은 루프 (메모리). league_only=True 면 L0 를 [1, S, A, V] 로 돌려준다."""
     P_, S, A, V = n.shape
-    n = n.astype(np.float64, copy=False)
     mask_s = np.ones((S, V), dtype=bool) if rule_mask is None else rule_mask.astype(bool)
     mask_c = _mask_c(mask_s, count_of_state, n_counts)
     cs = count_of_state
-    # base league(c)
-    n_sa = n.sum(axis=0)  # [S, A, V]
+    # base league(c). 리그 합은 투수별 누적 (전체 float64 캐스트 금지: K=6 이면 7.5GB)
+    n_sa = np.zeros((S, A, V), dtype=np.float64)
+    for p in range(P_):
+        n_sa += n[p]
     n_c = np.zeros((n_counts, V)); np.add.at(n_c, cs, n_sa.sum(axis=1))
     base = _norm(n_c * mask_c)
     empty = base.sum(-1) == 0
@@ -56,7 +57,7 @@ def smooth_hierarchical(
     Lcg = _shrink(n_cg, base[:, None, :], alpha, mask_c[:, None, :])
     out = np.empty((P_, S, A, V), dtype=out_dtype)
     for p in range(P_):
-        n2 = n[p]
+        n2 = n[p].astype(np.float64)
         n1 = np.zeros((n_counts, n_groups, V)); np.add.at(n1, (cs[:, None], group_of_action[None, :]), n2)
         L1 = _shrink(n1, Lcg, alpha, mask_c[:, None, :])
         ratio = L1 / np.maximum(Lcg, EPS)
