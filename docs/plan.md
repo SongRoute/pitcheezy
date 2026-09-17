@@ -16,7 +16,7 @@
 
 밤 실험이 없는 날은 아침 확인이 비므로, 저녁에 걸어둘 것이 없으면 "없음"이라고 적는다. 실험이 실패해도 행을 남긴다.
 
-**다음 아침 확인** (2026-09-18): `docs/results-p0.md` (P0 결과표 초안) → `docs/experiments.md` EXP-P0-001/002/003 행 → `docs/decisions.md` D16~D20 잠정 결정. 로그 `runs/_logs/EXP-P0-00*_s*.log`, 요약 `results/EXP-P0-00*.json`, W&B pitcheezy/{ID}/s{seed}. 실행 `runs/_logs/run_p0.sh` (전체 5분).
+**다음 아침 확인** (2026-09-18): `docs/results-p0.md` (P0 결과표 초안 — 실험 8개, 짝지은 비교 표, 위약·민감도) → `docs/experiments.md` EXP-P0-001/002/003 행 → `docs/decisions.md` D16~D20 잠정 결정. 로그 `runs/_logs/EXP-P0-00*_s*.log`, 요약 `results/EXP-P0-00*.json`, W&B pitcheezy/{ID}/s{seed}. 실행 `runs/_logs/run_p0.sh` (전체 5분).
 
 ## Phase
 - **P0** 베이스라인 e2e. 우리 모델 + B1(SmartPitch류) + π_b·랜덤 기준선을 같은 표에. 결과: 표 하나
