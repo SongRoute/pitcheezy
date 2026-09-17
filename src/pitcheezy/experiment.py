@@ -104,7 +104,7 @@ class Experiment:
         if (out_f / "sha256.txt").exists() and (out_h / "meta.json").exists():
             log.info("전이 텐서 재사용 %s", out_f)
             meta = json.loads((out_f / "meta.json").read_text())
-            return {"reused": True, **{k: meta.get(k) for k in ("alpha", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers", "holdout_metrics")}}
+            return {"reused": True, **{k: meta.get(k) for k in ("alpha", "alpha_pitcher", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers", "holdout_metrics")}}
         common = {"data_version": self.cfg["data_version"], "pool_version": self.cfg["pool_version"], "seed": 0, "train_commit": self.commit,
                   "cluster_file_version": self.cluster_version or f"K{self.K}-none", "pitch_type_map_version": "v1", "collapse_base_out": self.collapse}
         # 홀드아웃: 2023–24 → 2025
@@ -118,7 +118,7 @@ class Experiment:
         screen = {}
         best = None
         for a in alphas:
-            t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(),
+            t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), alpha_pitcher=tp.get("alpha_pitcher"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(),
                        meta={**common, "season_window": f"{tp['holdout']['train_seasons'][0]}-{tp['holdout']['train_seasons'][-1]}", "holdout_split": f"season:{tp['holdout']['eval_season']}", "excluded_pitchers": excluded})
             m = TC.holdout_metrics(t, hev, self.sid(hev))
             screen[str(a)] = m
@@ -140,7 +140,7 @@ class Experiment:
         del th
         # 전체: 2023–25
         ftr = pd.concat([self.pitches(s) for s in tp["train_seasons"]], ignore_index=True)
-        tf = TC.fit(ftr, self.sid(ftr), self.pitchers_table(ftr), self.K, alpha=alpha, repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(),
+        tf = TC.fit(ftr, self.sid(ftr), self.pitchers_table(ftr), self.K, alpha=alpha, alpha_pitcher=tp.get("alpha_pitcher"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(),
                     meta={**common, "season_window": f"{tp['train_seasons'][0]}-{tp['train_seasons'][-1]}", "holdout_split": "none",
                           "holdout_nll": hm["holdout_nll"], "holdout_ece": hm["holdout_ece"], "holdout_ece_hr": hm["holdout_ece_hr"], "holdout_metrics": hm,
                           "holdout_tensor_dir": str(out_h), "alpha_screen": th_screen(screen), "excluded_pitchers": excluded})
@@ -150,7 +150,7 @@ class Experiment:
         tf.save(out_f)
         self.timing["transition"] = time.time() - t0
         log.info("전이 텐서 저장 %s (α=%s, %.0fs)", out_f, alpha, self.timing["transition"])
-        return {"reused": False, "alpha": alpha, "alpha_screen": tf.meta["alpha_screen"], "holdout_metrics": hm, "excluded_pitchers": excluded,
+        return {"reused": False, "alpha": alpha, "alpha_pitcher": tp.get("alpha_pitcher"), "alpha_screen": tf.meta["alpha_screen"], "holdout_metrics": hm, "excluded_pitchers": excluded,
                 "holdout_nll": hm["holdout_nll"], "holdout_ece": hm["holdout_ece"], "holdout_ece_hr": hm["holdout_ece_hr"]}
 
     # ------------------------------------------------------------ 가치
@@ -338,7 +338,7 @@ def aggregate(cfg: dict, runs_dir: Path, results_dir: Path) -> dict:
     out = {"id": cfg["id"], "phase": cfg["phase"], "baseline": cfg.get("baseline"), "change": cfg.get("change"), "data_version": cfg["data_version"],
            "pool_version": cfg["pool_version"], "re24_version": cfg["re24_version"], "commits": sorted({r["commit"] for r in runs}), "seeds": [r["seed"] for r in runs],
            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "params": cfg["params"],
-           "transition": {k: r0["transition"].get(k) for k in ("alpha", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers")},
+           "transition": {k: r0["transition"].get(k) for k in ("alpha", "alpha_pitcher", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers")},
            "holdout_metrics": r0["transition"].get("holdout_metrics"), "value": r0["value"],
            "ope": {"eval_season": r0["ope"]["eval_season"], "n_pa": r0["ope"]["n_pa"], "n_games": r0["ope"]["n_games"], "mean_reward_behavior": r0["ope"]["mean_reward_behavior"],
                    "n_pitches": r0["ope"].get("n_pitches"), "support_min_pitches_eval": r0["ope"].get("support_min_pitches_eval"), "clip": r0["ope"]["clip"], "n_folds": r0["ope"].get("n_folds"), "n_boot": r0["ope"]["n_boot"], "primary": primary, "policies": pol},

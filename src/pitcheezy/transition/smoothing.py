@@ -29,9 +29,11 @@ def _shrink(n: np.ndarray, prior: np.ndarray, alpha: float, mask=None) -> np.nda
 
 def smooth_hierarchical(
     n: np.ndarray, *, count_of_state: np.ndarray, group_of_action: np.ndarray, n_counts: int, n_groups: int,
-    alpha: float, rule_mask: np.ndarray | None = None, out_dtype=np.float32, league_only: bool = False,
+    alpha: float, rule_mask: np.ndarray | None = None, out_dtype=np.float32, league_only: bool = False, alpha_pitcher: float | None = None,
 ) -> np.ndarray:
-    """n [P, S, A, V] int → 확률 [P, S, A, V]. 투수 축은 루프 (메모리). league_only=True 면 L0 를 [1, S, A, V] 로 돌려준다."""
+    """n [P, S, A, V] int → 확률 [P, S, A, V]. 투수 축은 루프 (메모리). league_only=True 면 L0 를 [1, S, A, V] 로 돌려준다.
+    alpha 는 리그 층(Lca·L0·Lcg), alpha_pitcher 는 투수 층(L1·L2). None 이면 같은 값 (EXP-P0-005 이전 동작)."""
+    ap = alpha if alpha_pitcher is None else float(alpha_pitcher)
     P_, S, A, V = n.shape
     mask_s = np.ones((S, V), dtype=bool) if rule_mask is None else rule_mask.astype(bool)
     mask_c = _mask_c(mask_s, count_of_state, n_counts)
@@ -59,10 +61,10 @@ def smooth_hierarchical(
     for p in range(P_):
         n2 = n[p].astype(np.float64)
         n1 = np.zeros((n_counts, n_groups, V)); np.add.at(n1, (cs[:, None], group_of_action[None, :]), n2)
-        L1 = _shrink(n1, Lcg, alpha, mask_c[:, None, :])
+        L1 = _shrink(n1, Lcg, ap, mask_c[:, None, :])
         ratio = L1 / np.maximum(Lcg, EPS)
         m = _norm(L0 * ratio[cs][:, group_of_action, :] * mask_s[:, None, :])
-        out[p] = _shrink(n2, m, alpha, mask_s[:, None, :])
+        out[p] = _shrink(n2, m, ap, mask_s[:, None, :])
     return out
 
 
