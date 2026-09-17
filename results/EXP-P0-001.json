@@ -7,14 +7,15 @@
   "pool_version": "pool-ip100-2023_2025-d20260911-s2325-2b19cc1",
   "re24_version": "re24-2023_2025-d20260911-s2325-82b008b",
   "commits": [
-    "9ef3b10-dirty"
+    "cecae67",
+    "cecae67-dirty"
   ],
   "seeds": [
     0,
     1,
     2
   ],
-  "created_at": "2026-09-17T12:59:54+00:00",
+  "created_at": "2026-09-17T13:13:09+00:00",
   "params": {
     "state": {
       "K": 1,
@@ -5908,6 +5909,6 @@
     }
   },
   "timing_seconds": {
-    "ope": 22.43336009979248
+    "ope": 22.484423875808716
   }
 }
