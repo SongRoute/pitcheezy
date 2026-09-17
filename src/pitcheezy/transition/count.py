@@ -54,7 +54,7 @@ def repertoire_counts(df: pd.DataFrame, n_pitchers: int) -> np.ndarray:
 
 def fit(
     df: pd.DataFrame, state_id: np.ndarray, pitchers: pd.DataFrame, K: int, *, alpha: float, alpha_pitcher: float | None = None,
-    repertoire_min: int = DEFAULT_REPERTOIRE_MIN_PITCHES, valid_states: np.ndarray | None = None, meta: dict | None = None,
+    pitcher_group: str = "pitch", repertoire_min: int = DEFAULT_REPERTOIRE_MIN_PITCHES, valid_states: np.ndarray | None = None, meta: dict | None = None,
 ) -> TransitionTensor:
     """학습 표 → TransitionTensor. valid_states [S] bool 로 B1 처럼 쓰지 않는 상태 행을 통째로 무효화."""
     n_p = len(pitchers)
@@ -62,8 +62,15 @@ def fit(
     n = count_transitions(df, state_id, n_p, K)
     cid = S.decode_state(np.arange(S_), K)[0]
     group = decode_action(np.arange(N_ACTIONS))[0]
+    if pitcher_group == "pitch":  # 투수 층 = (카운트, 구종 9)
+        pgroup, n_groups = group, N_PITCH
+    elif pitcher_group == "coarse":  # 투수 층 = (카운트, 구종×3×3 구역 81) — EXP-P0-006
+        from pitcheezy.ope.ips import coarse_groups
+        pgroup, n_groups = coarse_groups(), 81
+    else:
+        raise ValueError(f"pitcher_group 모름: {pitcher_group}")
     P = smooth_hierarchical(
-        n, count_of_state=cid, group_of_action=group, n_counts=S.N_COUNTS, n_groups=N_PITCH,
+        n, count_of_state=cid, group_of_action=pgroup, n_counts=S.N_COUNTS, n_groups=n_groups,
         alpha=alpha, alpha_pitcher=alpha_pitcher, rule_mask=O.rule_mask_table()[cid],
     )
     rep = repertoire_counts(df, n_p)  # [P, 9]
@@ -77,7 +84,7 @@ def fit(
         n_obs[i] = n[i].sum(-1, dtype=np.int64)
     m = {
         "spec_version": SPEC_VERSION, "model_arch": "count_hierarchical_dirichlet", "K": int(K),
-        "repertoire_min_pitches": int(repertoire_min), "row_sum_tol": DEFAULT_ROW_SUM_TOL, "alpha": float(alpha), "alpha_pitcher": None if alpha_pitcher is None else float(alpha_pitcher),
+        "repertoire_min_pitches": int(repertoire_min), "row_sum_tol": DEFAULT_ROW_SUM_TOL, "alpha": float(alpha), "alpha_pitcher": None if alpha_pitcher is None else float(alpha_pitcher), "pitcher_group": pitcher_group,
         "n_train_pitches_with_action": int(n.sum()), "holdout_nll": None, "holdout_ece": None, "holdout_ece_hr": None,
         "excluded_pitchers": [],
     }
