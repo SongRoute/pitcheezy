@@ -61,12 +61,20 @@ git status && git log --oneline -5             # 어제 커밋 상태
 .venv/bin/pytest tests -q                      # 테스트 (편집 시 훅이 자동으로도 돌림)
 ```
 
-## 데이터 (Drive 설치 후 한 번)
+## 데이터 (Drive, 2026-09-17 연결 완료)
+
+Drive 마운트: `~/Library/CloudStorage/GoogleDrive-sdstbbd@gmail.com/내 드라이브/pitcheezy` (한국어 앱이라 "내 드라이브". 경로에 한글·공백이 있으니 항상 따옴표).
+`pitcheezy` 폴더 전체 "오프라인 사용 가능" 고정. 레포에는 심볼릭 링크 두 개만 있고 환경변수(`$PITCHEEZY_DATA_DIR`, `$PITCHEEZY_RUNS_DIR`)는 레포 경로 그대로:
+
+```
+data/raw/d20260911-s2325 -> "$DRIVE/data/raw/d20260911-s2325"   # 버전별로 링크 하나씩. data/versions.md 는 레포 파일
+runs                     -> "$DRIVE/runs"                        # runs/_logs 포함
+```
 
 ```bash
-brew install --cask google-drive && open -a "Google Drive"
-# 화면에서 로그인 → Finder에서 My Drive/pitcheezy/data/raw 우클릭 → "오프라인 사용 가능"
-# 그다음 Claude에게 "Drive 설치했어" → 경로 연결 + 해시 대조
+DRIVE="$HOME/Library/CloudStorage/GoogleDrive-sdstbbd@gmail.com/내 드라이브/pitcheezy"
+ln -s "$DRIVE/data/raw/{버전}" data/raw/{버전}                   # 새 데이터 버전이 생기면
+.venv/bin/python scripts/fetch_data.py --verify d20260911-s2325   # 장부(data/versions.md) sha256·행 수 대조, 1초
 ```
 
 ## 가끔
