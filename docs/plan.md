@@ -40,8 +40,8 @@
 ## 이번 주 (W2, 9/14–20)
 
 **필수**
-1. 규칙·문서 전환 PR (이 커밋)
-2. `src/pitcheezy/interfaces/` 코드화: states, pitch_types, outcomes, grid, tensor, validate, value.lookup. `tests/interfaces/` 계약 테스트로 교체
+1. ~~규칙·문서 전환 PR~~ (9/17 머지, PR #5)
+2. ~~`src/pitcheezy/interfaces/` 코드화: states, pitch_types, outcomes, grid, tensor, validate, value.lookup. `tests/interfaces/` 계약 테스트로 교체~~ (9/17 완료, D13)
 3. `tests/fixtures/` 소형 parquet (투수 2명 × ~100구), 출처 버전 기록
 4. RE24 테이블(2023–25) + dRE24 표 산출, 버전 부여
 5. 레귤러 선발 필터(시즌 100이닝) → 투수 목록·투구 수 문서화
