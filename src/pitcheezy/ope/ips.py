@@ -16,6 +16,25 @@ import pandas as pd
 SORT = ["game_pk", "at_bat_number", "pitch_number"]
 
 
+def coarse_groups() -> np.ndarray:
+    """행동 225 → 거친 그룹 81 (구종 9 × 3×3 구역). 행 0-1/2/3-4, 열 0-1/2/3-4."""
+    from pitcheezy.interfaces.grid import N_ACTIONS, decode_action, decode_loc
+    pid, lid = decode_action(np.arange(N_ACTIONS))
+    zr, xc = decode_loc(lid)
+    z3 = np.where(zr <= 1, 0, np.where(zr == 2, 1, 2))
+    x3 = np.where(xc <= 1, 0, np.where(xc == 2, 1, 2))
+    return pid * 9 + z3 * 3 + x3
+
+
+def coarsen(policy: np.ndarray, groups: np.ndarray) -> np.ndarray:
+    """[P,S,A] → [P,S,A] 각 행동 자리에 그 행동이 속한 그룹의 질량 합 (로그 행동 조회용)."""
+    G = int(groups.max()) + 1
+    P_, S, A = policy.shape
+    agg = np.zeros((P_, S, G), dtype=np.float64)
+    np.add.at(agg, (slice(None), slice(None), groups), policy.astype(np.float64))
+    return agg[:, :, groups]
+
+
 def restrict_support(policy: np.ndarray, support: np.ndarray) -> np.ndarray:
     """policy [P,S,A] 를 support [P,S,A] bool 위로 재정규화. 지지 없는 상태는 0."""
     q = np.where(support, policy.astype(np.float64), 0.0)

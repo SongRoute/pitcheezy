@@ -88,7 +88,8 @@ def test_behavior_factored_and_tilt():
     assert (pb > 0).all()
     # 던진 구종(0,3,6)의 질량이 나머지보다 훨씬 큼
     thrown = pb[0, 0].reshape(9, 25)[[0, 3, 6]].sum(); assert thrown > 0.9
-    pbl, pe = BH.crossfit_logged(df, sid, 2, 1, alpha=5.0, n_folds=3, tilts={"t": (np.zeros((2, 288, 225)), np.ones((2, 288, 225), bool), 1.0)})
+    pbl, pe, pbc, pec = BH.crossfit_logged(df, sid, 2, 1, alpha=5.0, n_folds=3, tilts={"t": (np.zeros((2, 288, 225)), np.ones((2, 288, 225), bool), 1.0)}, groups=IPS.coarse_groups())
+    assert (pbc[~np.isnan(pbc)] >= pbl[~np.isnan(pbl)] - 1e-9).all()  # 그룹 질량 ≥ 행동 질량
     assert np.isnan(pbl).sum() == 0 and np.allclose(pe["t"], pbl)  # Q=0 이면 tilt = π_b
     Q = np.zeros((2, 288, 225)); Q[:, :, 0] = 5.0
     tl = BH.tilt(pb, Q, np.ones_like(pb, dtype=bool), 0.1)
@@ -102,3 +103,11 @@ def test_smoothing_rows_sum_and_mask():
     mask = np.ones((12, 3), bool); mask[:, 2] = False
     P = smooth_hierarchical(n, count_of_state=cs, group_of_action=ga, n_counts=12, n_groups=2, alpha=1.0, rule_mask=mask)
     assert np.allclose(P.sum(-1), 1.0, atol=1e-6) and (P[..., 2] == 0).all()
+
+
+def test_coarse_groups_and_coarsen():
+    g = IPS.coarse_groups()
+    assert g.shape == (225,) and g.max() == 80 and len(np.unique(g)) == 81
+    pol = np.full((1, 1, 225), 1 / 225)
+    c = IPS.coarsen(pol, g)
+    assert np.allclose(c[0, 0], np.bincount(g)[g] / 225)

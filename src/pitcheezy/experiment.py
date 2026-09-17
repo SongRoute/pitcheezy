@@ -184,30 +184,28 @@ class Experiment:
         return {"reused": False, **meta["vi"]}
 
     # ------------------------------------------------------------ OPE
-    def policy_menu(self, vb: ValueBundle, valid: np.ndarray) -> dict[str, np.ndarray | None]:
-        """평가할 정책 메뉴 (모든 실험 공통, 싸다). None = π_b 자체."""
+    def policy_menu(self, vb: ValueBundle, valid: np.ndarray) -> dict:
+        """평가할 정책 메뉴 (모든 실험 공통, 싸다). 값: None = π_b 자체, "tilt" = 폴드별 π_b 로 stage_ope 에서 생성, callable = 지연 생성."""
         op = self.p["ope"]
         Q = vb.Q.astype(np.float64)
-        menu: dict[str, np.ndarray | None] = {}
+        menu: dict = {}
         for kind in op.get("menu", ["primary"]):
             if kind == "primary":
-                kind = self.primary_name()  # 아래 분기로 실제 정책을 만든다 (tilt 는 폴드별 π_b 필요 → "tilt" 표식)
+                kind = self.primary_name()
             if kind in menu:
                 continue
-            if kind == self.primary_name() and self.p["policy"].get("kind", "softmax") not in ("tilt",) and not kind.startswith(("softmax_t", "topk", "greedy", "uniform")):
-                menu[kind] = vb.policy
-            elif kind == "behavior":
-                menu["behavior"] = None
+            if kind == "behavior":
+                menu[kind] = None
             elif kind == "uniform":
-                menu["uniform"] = lambda: VI.relax(Q, valid, method="uniform")
+                menu[kind] = lambda: VI.relax(Q, valid, method="uniform")
             elif kind == "greedy":
-                menu["greedy"] = lambda: VI.relax(Q, valid, method="greedy")
+                menu[kind] = lambda: VI.relax(Q, valid, method="greedy")
             elif kind.startswith("topk"):
                 menu[kind] = (lambda k=int(kind[4:]): VI.relax(Q, valid, method="topk", top_k=k))
             elif kind.startswith("softmax_t"):
                 menu[kind] = (lambda t=float(kind[9:]): VI.relax(Q, valid, method="softmax", temperature=t))
             elif kind.startswith("tilt_t"):
-                menu[kind] = "tilt"  # π_b 기울임: 폴드별 π_b 로 stage_ope 에서 계산
+                menu[kind] = "tilt"
             else:
                 raise ValueError(f"메뉴 항목 모름: {kind}")
         return menu
@@ -241,7 +239,8 @@ class Experiment:
         support = self.eval_support(ev, t.valid)
         menu = self.policy_menu(vb, t.valid)
         tilts = {name: (vb.Q, support, float(name[6:])) for name, pol in menu.items() if isinstance(pol, str) and pol == "tilt"}
-        pb_logged, pe_tilt = BH.crossfit_logged(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts=tilts)
+        groups = IPS.coarse_groups()
+        pb_logged, pe_tilt, pb_coarse, pe_tilt_coarse = BH.crossfit_logged(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts=tilts, groups=groups)
         pb_full = BH.fit_behavior(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]))  # 진단(모델 내 가치)용
         pa = PR.pa_rewards(ev, self.re24.RE24)
         keep = pa["n_pitchers"] == 1
@@ -258,25 +257,30 @@ class Experiment:
         n_dec = key.merge(ev[has_a].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
         n_dec_2s = key.merge(ev[has_a & two_strike].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
         results = {}
-        variants = [("traj_clip", "w_traj", op.get("clip")), ("traj_noclip", "w_traj", None), ("onestep_clip", "w_onestep", op.get("clip")), ("onestep2s_clip", "w_onestep_slice", op.get("clip"))]
+        variants = [("traj_clip", "w_traj", op.get("clip"), "fine"), ("traj_noclip", "w_traj", None, "fine"), ("onestep_clip", "w_onestep", op.get("clip"), "fine"),
+                    ("onestep2s_clip", "w_onestep_slice", op.get("clip"), "fine"), ("traj_coarse_clip", "w_traj", op.get("clip"), "coarse"), ("onestep_coarse_clip", "w_onestep", op.get("clip"), "coarse")]
         for name, pol in menu.items():
             model_value = None
             if isinstance(pol, str):  # tilt
                 pol_arr = BH.tilt(pb_full, vb.Q, support, tilts[name][2])
-                pe_logged = pe_tilt[name]
+                pe_logged, pe_logged_coarse = pe_tilt[name], pe_tilt_coarse[name]
             elif pol is not None:
                 pol_arr = IPS.restrict_support(pol() if callable(pol) else pol, support)
                 pe_logged = IPS.logged_probs(ev, sid, pol_arr)
+                pe_logged_coarse = IPS.logged_probs(ev, sid, IPS.coarsen(pol_arr, groups))
             else:
                 pol_arr = None
             if pol_arr is not None:
                 model_value = float(VI.policy_evaluation(t.P, pol_arr, R, nxt)[f_p, f_s].mean())
                 pol_arr = pol_arr.astype(np.float32)
-            for vname, col, clip in variants:
+            for vname, col, clip, level in variants:
                 if pol_arr is None:  # π_b 자체: 궤적은 타석당 1, 1스텝은 결정 수 (다른 정책과 같은 가중 방식)
+                    if level == "coarse":
+                        continue
                     w = np.ones(len(pa)) if col == "w_traj" else (n_dec_2s if col == "w_onestep_slice" else n_dec); nd = None
                 else:
-                    pw = key.merge(IPS.pa_weights(ev, pe_logged, pb_logged, clip=clip, slice_mask=two_strike), on=["game_pk", "at_bat_number"], how="left")
+                    pe_l, pb_l = (pe_logged_coarse, pb_coarse) if level == "coarse" else (pe_logged, pb_logged)
+                    pw = key.merge(IPS.pa_weights(ev, pe_l, pb_l, clip=clip, slice_mask=two_strike), on=["game_pk", "at_bat_number"], how="left")
                     w = pw[col].fillna(1.0 if col == "w_traj" else 0.0).to_numpy(); nd = pw
                 est = IPS.estimate(w, r)
                 est.update(IPS.bootstrap(w, r, games, n_boot=int(op["n_boot"]), seed=self.seed))
