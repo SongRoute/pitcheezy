@@ -4,7 +4,7 @@ phase: 0
 baseline: null
 change: "B1 SmartPitch류(카운트만) + 풀 150이닝"
 data_version: d20260911-s2325
-pool_version: pool-ip150-2023_2025-d20260911-s2325-87b3074-dirty
+pool_version: pool-ip150-2023_2025-d20260911-s2325-8bfd1f9
 re24_version: re24-2023_2025-d20260911-s2325-82b008b
 seeds: [0, 1, 2]                 # 집계 모델은 난수 없음 → 시드는 OPE 부트스트랩에만
 wandb:

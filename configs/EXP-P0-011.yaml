@@ -4,7 +4,7 @@ phase: 0
 baseline: EXP-P0-012
 change: "009 구조(투수층 구종×구역 + K=6) + 풀 150이닝. 짝은 012(B1, 같은 풀)"
 data_version: d20260911-s2325
-pool_version: pool-ip150-2023_2025-d20260911-s2325-87b3074-dirty
+pool_version: pool-ip150-2023_2025-d20260911-s2325-8bfd1f9
 re24_version: re24-2023_2025-d20260911-s2325-82b008b
 seeds: [0, 1, 2]
 wandb:
