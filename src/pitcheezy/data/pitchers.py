@@ -67,6 +67,10 @@ def markdown_summary(seasons_tbl: pd.DataFrame, pool: pd.DataFrame, min_ip: floa
     for s, g in seasons_tbl[seasons_tbl["ip"] >= min_ip].groupby("season"):
         excl = 1 - g["pitches_action"].sum() / g["pitches"].sum()
         lines.append(f"| {s} | {len(g)} | {g['pitches'].sum():,} | {int(g['pitches'].median()):,} | {excl:.2%} |")
+    lines += ["", "## 기준별 인원 (참고, design.md 추정치 대조용)", "", "| 이닝 하한 | " + " | ".join(str(s) for s in sorted(seasons_tbl["season"].unique())) + " | 풀(any_season) |", "|---|" + "---|" * (seasons_tbl["season"].nunique() + 1)]
+    for th in (100, 130, 150, 162):
+        per = [int((g["ip"] >= th).sum()) for _, g in seasons_tbl.groupby("season")]
+        lines.append(f"| {th} | " + " | ".join(str(n) for n in per) + f" | {seasons_tbl.loc[seasons_tbl['ip'] >= th, 'mlbam_id'].nunique()} |")
     lines += ["", f"## 풀 (any_season): {len(pool)}명, 투구 {pool['pitches_total'].sum():,}", "",
               "| # | MLBAM | 이름 | 투 | 자격 시즌 | 창 안 시즌 | 투구 | 이닝 | 선발 |", "|---|---|---|---|---|---|---|---|---|"]
     for i, r in pool.iterrows():
