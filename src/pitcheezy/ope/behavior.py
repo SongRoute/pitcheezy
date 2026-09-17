@@ -88,12 +88,16 @@ def tilt(pb: np.ndarray, Q: np.ndarray, support: np.ndarray, tau: float) -> np.n
 
 def crossfit_logged(
     df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, K: int, *, alpha: float, n_folds: int,
-    tilts: dict[str, tuple[np.ndarray, np.ndarray, float]] | None = None, floor: float = 1e-6,
-) -> tuple[np.ndarray, dict[str, np.ndarray]]:
-    """교차 적합. 반환 (pb_logged [N], {tilt 이름: pe_logged [N]}). tilts = {이름: (Q, support, τ)} 는 같은 폴드의 π_b 로 기울인 π_e 의 로그 행동 확률."""
+    tilts: dict[str, tuple[np.ndarray, np.ndarray, float]] | None = None, floor: float = 1e-6, groups: np.ndarray | None = None,
+) -> tuple[np.ndarray, dict[str, np.ndarray], np.ndarray | None, dict[str, np.ndarray]]:
+    """교차 적합. 반환 (pb_logged [N], {tilt 이름: pe_logged [N]}, pb_logged_coarse, {tilt 이름: pe_logged_coarse}).
+    tilts = {이름: (Q, support, τ)} 는 같은 폴드의 π_b 로 기울인 π_e. groups [A] 가 있으면 거친 그룹 질량도 낸다."""
+    from pitcheezy.ope.ips import coarsen
     tilts = tilts or {}
     pb_out = np.full(len(df), np.nan)
     pe_out = {k: np.full(len(df), np.nan) for k in tilts}
+    pbc_out = np.full(len(df), np.nan) if groups is not None else None
+    pec_out = {k: np.full(len(df), np.nan) for k in tilts} if groups is not None else {}
     p_all = df["pitcher_idx"].to_numpy(dtype=np.int64)
     a_all = df["action_id"].to_numpy(dtype=np.int64)
     s_all = state_id.astype(np.int64)
@@ -103,7 +107,11 @@ def crossfit_logged(
         pb = fit_behavior(df[tr], state_id[tr], n_pitchers, K, alpha=alpha, floor=floor)
         te = np.where((~tr if n_folds > 1 else tr) & (a_all >= 0))[0]
         pb_out[te] = pb[p_all[te], s_all[te], a_all[te]]
+        if groups is not None:
+            pbc_out[te] = coarsen(pb, groups)[p_all[te], s_all[te], a_all[te]]
         for name, (Q, support, tau) in tilts.items():
             pe = tilt(pb, Q, support, tau)
             pe_out[name][te] = pe[p_all[te], s_all[te], a_all[te]]
-    return pb_out, pe_out
+            if groups is not None:
+                pec_out[name][te] = coarsen(pe, groups)[p_all[te], s_all[te], a_all[te]]
+    return pb_out, pe_out, pbc_out, pec_out
