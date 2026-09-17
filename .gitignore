@@ -1,6 +1,7 @@
 # 데이터·실행 산출물은 Google Drive (규약 §2, §5). data/는 versions.md만 커밋
 data/*
 !data/versions.md
+!data/re24/                # RE24·dRE24 표 (작음, 버전별 디렉터리, 커밋)
 runs/
 wandb/
 
