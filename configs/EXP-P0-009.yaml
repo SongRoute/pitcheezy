@@ -1,0 +1,38 @@
+# EXP-P0-009 — 006(투수 층 구종×구역) + 타자 군집 K=6 (004 의 군집). 두 개선 후보 결합.
+id: EXP-P0-009
+phase: 0
+baseline: EXP-P0-006
+change: "006 구조 + 타자 군집 K=6 (clusters-K6). 변경 = state.K·cluster_version"
+data_version: d20260911-s2325
+pool_version: pool-ip100-2023_2025-d20260911-s2325-2b19cc1
+re24_version: re24-2023_2025-d20260911-s2325-82b008b
+seeds: [0, 1, 2]                 # 집계 모델은 난수 없음 → 시드는 OPE 부트스트랩에만
+wandb:
+  project: pitcheezy
+  mode: online
+params:
+  state:
+    K: 6
+    cluster_version: clusters-K6-2023_2025-d20260911-s2325-9fd6570
+    collapse_base_out: false
+  transition:
+    train_seasons: [2023, 2024, 2025]
+    holdout: {train_seasons: [2023, 2024], eval_season: 2025}
+    alpha: auto                  # 계층 디리클레 평활 강도. auto = alpha_grid 를 2025 홀드아웃 NLL 로 스크리닝 (D16)
+    alpha_grid: [20, 50, 100]
+    pitcher_group: coarse
+    save_holdout_tensor: false
+    repertoire_min_pitches: 100
+  policy:
+    kind: tilt                   # tilt(π_b·exp(Q/τ), D20) | softmax | topk | greedy | uniform | behavior
+    temperature: 0.02            # 잠정 (D17). 단위 RE24. Q 폭(상태별 max−mean 중앙값 0.07)에 맞춤. 메뉴는 ope.menu
+    top_k: 5
+  ope:
+    eval_season: 2026
+    behavior_alpha: 10           # π_b 인수분해 계층 평활 (D18)
+    n_folds: 5                   # π_b 경기 단위 교차 적합 (D18). 같은 데이터로 맞추면 가중치 평균이 0.05 로 붕괴했음
+    support_min_pitches_eval: 20 # 공통 지지: 평가 시즌에 투수가 20구 이상 던진 구종만 (D19). 버린 구종에 π_e 가 질량을 주면 비가 폭발
+    clip: 20                     # 투구 단위 비 상한
+    primary_variant: onestep_clip # P0 저울 = 1스텝 편차 SNIPS (D19). 궤적 SNIPS(traj_clip)는 ESS≈0 으로 기록만
+    n_boot: 1000
+    menu: [primary, behavior, uniform, greedy, topk3, topk5, softmax_t0.005, softmax_t0.01, softmax_t0.02, softmax_t0.05, tilt_t0.005, tilt_t0.01, tilt_t0.02, tilt_t0.05, tilt_t0.1]  # 모든 실험 공통 진단 메뉴

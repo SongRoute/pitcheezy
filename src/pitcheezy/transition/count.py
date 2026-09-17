@@ -67,6 +67,8 @@ def fit(
     elif pitcher_group == "coarse":  # 투수 층 = (카운트, 구종×3×3 구역 81) — EXP-P0-006
         from pitcheezy.ope.ips import coarse_groups
         pgroup, n_groups = coarse_groups(), 81
+    elif pitcher_group == "action":  # 투수 층 = (카운트, 행동 225) — EXP-P0-008. 주자아웃만 붕괴
+        pgroup, n_groups = np.arange(N_ACTIONS), N_ACTIONS
     else:
         raise ValueError(f"pitcher_group 모름: {pitcher_group}")
     P = smooth_hierarchical(
