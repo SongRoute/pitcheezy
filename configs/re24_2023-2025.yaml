@@ -1,0 +1,8 @@
+# 공통 자산 0 — RE24 테이블 설정 (docs/interface-spec.md). 실험 ID 가 아니라 자산 설정.
+# 산출: data/re24/{re24_version}/ (RE24.npy, dRE24.npy, meta.json, sha256.txt, table.md). 커밋 대상 (작다).
+# re24_version = re24-{seasons}-{data_version}-{compute_commit7}
+
+data_version: d20260911-s2325
+seasons: [2023, 2024, 2025]        # 학습 창. 2026 은 절대 넣지 않는다 (OPE 전용)
+exclude_last_half_inning: true     # 경기의 마지막 하프이닝은 3아웃 전에 끝날 수 있어(끝내기) 제외
+min_cell_n: 1                      # dRE24 셀 최소 표본. 미달 셀은 실패 (NaN 금지)
