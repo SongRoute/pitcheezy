@@ -44,7 +44,7 @@
 2. ~~`src/pitcheezy/interfaces/` 코드화: states, pitch_types, outcomes, grid, tensor, validate, value.lookup. `tests/interfaces/` 계약 테스트로 교체~~ (9/17 완료, D13)
 3. ~~`tests/fixtures/` 소형 parquet (투수 2명 × ~100구), 출처 버전 기록~~ (9/17 완료)
 4. ~~RE24 테이블(2023–25) + dRE24 표 산출, 버전 부여~~ (9/17 완료, D14, `data/re24/re24-2023_2025-d20260911-s2325-82b008b`)
-5. 레귤러 선발 필터(시즌 100이닝) → 투수 목록·투구 수 문서화
+5. ~~레귤러 선발 필터(시즌 100이닝) → 투수 목록·투구 수 문서화~~ (9/17 완료, D15, 시즌 ~127명·풀 219명)
 
 **빨리 끝나면**
 - 타자 군집 v0 (좌우 층화, K ≤ 8)
