@@ -1,0 +1,32 @@
+# EXP-P0-002 — B1 SmartPitch류 재구현 (카운트만). 텐서는 같고 K=1 + base_out 붕괴 (D6).
+id: EXP-P0-002
+phase: 0
+baseline: EXP-P0-001
+change: "B1 SmartPitch류: 카운트만 (K=1, base_out 붕괴). 나머지 동일. 보상은 RE24 (ASM-8)"
+data_version: d20260911-s2325
+pool_version: pool-ip100-2023_2025-d20260911-s2325-2b19cc1
+re24_version: re24-2023_2025-d20260911-s2325-82b008b
+seeds: [0, 1, 2]                 # 집계 모델은 난수 없음 → 시드는 OPE 부트스트랩에만
+wandb:
+  project: pitcheezy
+  mode: online
+params:
+  state:
+    K: 1                         # 타자 군집 없음 (v0). 군집은 별도 실험으로
+    collapse_base_out: true
+  transition:
+    train_seasons: [2023, 2024, 2025]
+    holdout: {train_seasons: [2023, 2024], eval_season: 2025}
+    alpha: auto                  # 계층 디리클레 평활 강도. auto = alpha_grid 를 2025 홀드아웃 NLL 로 스크리닝 (D16)
+    alpha_grid: [5, 10, 20, 50, 100]
+    repertoire_min_pitches: 100
+  policy:
+    kind: softmax                # softmax | topk | greedy | uniform | behavior
+    temperature: 0.05            # 잠정 (D17). 단위 RE24. 민감도는 ope.sensitivity_temperatures
+    top_k: 5
+  ope:
+    eval_season: 2026
+    behavior_alpha: 20           # π_b 계층 평활 (D18)
+    clip: 20                     # 투구 단위 비 상한. 주 추정량 = SNIPS + clip (D19). noclip 도 같이 기록
+    n_boot: 1000
+    sensitivity_temperatures: [0.02, 0.1, 0.2, 0.5]

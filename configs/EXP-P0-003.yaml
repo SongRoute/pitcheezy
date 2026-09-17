@@ -1,0 +1,33 @@
+# EXP-P0-003 — 내부 기준선: π_b 자체 OPE(= 실제 평균) + 랜덤(레퍼토리 위 균등) 정책 OPE. 텐서·valid 는 001 과 같은 설정.
+id: EXP-P0-003
+phase: 0
+baseline: null
+change: "기준선: π_b 자체 OPE (실제 평균과 일치해야 함) + 랜덤 정책 OPE. 표의 위·아래 경계"
+data_version: d20260911-s2325
+pool_version: pool-ip100-2023_2025-d20260911-s2325-2b19cc1
+re24_version: re24-2023_2025-d20260911-s2325-82b008b
+seeds: [0, 1, 2]                 # 집계 모델은 난수 없음 → 시드는 OPE 부트스트랩에만
+wandb:
+  project: pitcheezy
+  mode: online
+params:
+  state:
+    K: 1                         # 타자 군집 없음 (v0). 군집은 별도 실험으로
+    collapse_base_out: false
+  transition:
+    reuse_from: EXP-P0-001         # 텐서·Q 는 001 의 s0 을 그대로 (같은 설정). 001 seed 0 이 먼저 끝나 있어야 함
+    train_seasons: [2023, 2024, 2025]
+    holdout: {train_seasons: [2023, 2024], eval_season: 2025}
+    alpha: auto                  # 계층 디리클레 평활 강도. auto = alpha_grid 를 2025 홀드아웃 NLL 로 스크리닝 (D16)
+    alpha_grid: [5, 10, 20, 50, 100]
+    repertoire_min_pitches: 100
+  policy:
+    kinds: [behavior, uniform]   # 두 기준선을 한 ID 에서
+    temperature: 0.05            # 잠정 (D17). 단위 RE24. 민감도는 ope.sensitivity_temperatures
+    top_k: 5
+  ope:
+    eval_season: 2026
+    behavior_alpha: 20           # π_b 계층 평활 (D18)
+    clip: 20                     # 투구 단위 비 상한. 주 추정량 = SNIPS + clip (D19). noclip 도 같이 기록
+    n_boot: 1000
+    sensitivity_temperatures: [0.02, 0.1, 0.2, 0.5]
