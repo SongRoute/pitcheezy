@@ -1,0 +1,9 @@
+# 타자 군집 v0 설정 (design.md §1-d, interface-spec 상태 축 cluster_id). 자산 설정.
+# 산출 data/batters/{cluster_version}/ (batter_clusters.parquet, centroids.parquet, meta.json, sha256.txt, table.md)
+# cluster_version = clusters-K{K}-{seasons}-{data_version}-{계산 커밋7}
+data_version: d20260911-s2325
+seasons: [2023, 2024, 2025]      # 학습 창. 2026 타자는 이 창의 특징으로 배정, 없으면 좌우별 기본 군집
+K: 6                             # 좌우 층화 필수: 좌 3 + 우 3 (스펙 K ≤ 8)
+min_pa: 100                      # 특징 산출 최소 타석. 미만은 기본 군집(리그 평균에 가장 가까운 중심)
+features: [k_rate, bb_rate, swing_rate, chase_rate, contact_rate, gb_rate, fb_rate, hard_hit_rate, xwoba_contact, avg_launch_angle]
+kmeans: {n_init: 20, max_iter: 300, seed: 0}
