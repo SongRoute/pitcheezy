@@ -1,27 +1,24 @@
-# EXP-P0-009 — 006(투수 층 구종×구역) + 타자 군집 K=6 (004 의 군집). 두 개선 후보 결합.
-id: EXP-P0-009
+# EXP-P0-012 — B1 을 150이닝 풀에서. 011 의 짝.
+id: EXP-P0-012
 phase: 0
-baseline: EXP-P0-006
-change: "006 구조 + 타자 군집 K=6 (clusters-K6). 변경 = state.K·cluster_version"
+baseline: null
+change: "B1 SmartPitch류(카운트만) + 풀 150이닝"
 data_version: d20260911-s2325
-pool_version: pool-ip100-2023_2025-d20260911-s2325-2b19cc1
+pool_version: pool-ip150-2023_2025-d20260911-s2325-8bfd1f9
 re24_version: re24-2023_2025-d20260911-s2325-82b008b
-seeds: [0, 1, 2, 3, 4]           # 채택 판정 5시드 (D23). 집계 모델은 난수 없음 → 시드는 OPE 부트스트랩에만
+seeds: [0, 1, 2]                 # 집계 모델은 난수 없음 → 시드는 OPE 부트스트랩에만
 wandb:
   project: pitcheezy
   mode: online
 params:
   state:
-    K: 6
-    cluster_version: clusters-K6-2023_2025-d20260911-s2325-9fd6570
-    collapse_base_out: false
+    K: 1                         # 타자 군집 없음 (v0). 군집은 별도 실험으로
+    collapse_base_out: true
   transition:
     train_seasons: [2023, 2024, 2025]
     holdout: {train_seasons: [2023, 2024], eval_season: 2025}
     alpha: auto                  # 계층 디리클레 평활 강도. auto = alpha_grid 를 2025 홀드아웃 NLL 로 스크리닝 (D16)
-    alpha_grid: [20, 50, 100]
-    pitcher_group: coarse
-    save_holdout_tensor: false
+    alpha_grid: [5, 10, 20, 50, 100, 200, 500]
     repertoire_min_pitches: 100
   policy:
     kind: tilt                   # tilt(π_b·exp(Q/τ), D20) | softmax | topk | greedy | uniform | behavior
