@@ -74,3 +74,4 @@ sha256.txt              위 파일 전부
 - v1 (2026-09-08, D4): 슬롯 전부 채움. 공통 자산 0에 Phase 0 `dRE24` 스칼라표. 군집 좌우 층화 제약. 마스크 3층·동봉 배열. 홀드아웃 분할 구체화. `lookup` 인터페이스
 - v1 (2026-09-15, D5·D6): 노션에서 레포로 이관. 생산·소비 주체를 트랙에서 모듈명으로. 베이스라인 재구현 절 추가. 스키마 변경 없음
 - v0 (2026-09-07): 템플릿
+- v1 (2026-09-17, D13): `src/pitcheezy/interfaces/` 코드화 + `tests/interfaces/` 계약 테스트. 규칙 마스크에 같은 규칙의 뒷면(BB 는 3볼, K 는 2스트에서만) 명시. Statcast 매핑에 데이터에서 실제로 보인 값 추가: automatic_ball/automatic_strike(피치클록, 구종 null → 행동 제외·카운트만 진행), intent_ball·intent_walk, bunt_foul_tip, foul_pitchout, field_error·catcher_interf → 인플레이 아웃("나머지 전부"). 종결은 events, 비종결은 description 으로 판정(주자 사건은 무시). 축·형상·저장 포맷 변경 없음
