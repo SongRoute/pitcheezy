@@ -34,15 +34,16 @@ OUT_COLUMNS = (
 )
 
 
-def cache_path(runs_dir: Path, data_version: str, pool_version: str, season: int) -> Path:
-    return Path(runs_dir) / "_cache" / f"pitches_{data_version}_{pool_version}_{season}.parquet"
+def cache_path(runs_dir: Path, data_version: str, pool_version: str, season: int, cluster_version: str | None = None) -> Path:
+    tag = f"_{cluster_version}" if cluster_version else ""
+    return Path(runs_dir) / "_cache" / f"pitches_{data_version}_{pool_version}{tag}_{season}.parquet"
 
 
 def prepare_season(
     data_dir: Path, data_version: str, season: int, pitcher_index: dict[int, int], *, holdout: bool = False,
-    cluster_of_batter: dict[int, int] | None = None,
+    clusters: tuple[dict[tuple[int, str], int], dict[str, int]] | None = None,
 ) -> pd.DataFrame:
-    """한 시즌. pitcher_index: MLBAM id → pitcher_idx (풀 순서). cluster_of_batter 없으면 K=1 (cluster 0)."""
+    """한 시즌. pitcher_index: MLBAM id → pitcher_idx (풀 순서). clusters = ({(batter, stand): cluster_id}, {stand: 기본}) 없으면 K=1 (cluster 0)."""
     rel = f"holdout_{season}/statcast_{season}.parquet" if holdout else f"statcast_{season}.parquet"
     df = pq.read_table(Path(data_dir) / "raw" / data_version / rel, columns=list(RAW_COLUMNS)).to_pandas()
     df = df[df["pitcher"].isin(pitcher_index)].sort_values(SORT, kind="stable").reset_index(drop=True)
@@ -63,10 +64,12 @@ def prepare_season(
             "base_out_id": S.base_out_id(df["outs_when_up"].to_numpy(), df["on_1b"].to_numpy(), df["on_2b"].to_numpy(), df["on_3b"].to_numpy()).astype(np.int16),
         }
     )
-    if cluster_of_batter is None:
+    if clusters is None:
         out["cluster_id"] = np.zeros(n, dtype=np.int16)
     else:
-        out["cluster_id"] = df["batter"].map(cluster_of_batter).fillna(-1).to_numpy(dtype=np.int16)
+        cmap, default = clusters
+        keys = list(zip(df["batter"].to_numpy(dtype=int).tolist(), df["stand"].astype(str).tolist()))
+        out["cluster_id"] = np.array([cmap.get(k, default.get(k[1], 0)) for k in keys], dtype=np.int16)
     pid = PT.pitch_ids(df["pitch_type"].to_numpy(dtype=object))
     zn = G.z_norm(df["plate_z"].to_numpy(dtype=float), df["sz_bot"].to_numpy(dtype=float), df["sz_top"].to_numpy(dtype=float))
     px = df["plate_x"].to_numpy(dtype=float)
@@ -98,12 +101,12 @@ def state_ids(df: pd.DataFrame, K: int, *, collapse_base_out: bool = False) -> n
 
 def load_or_prepare(
     runs_dir: Path, data_dir: Path, data_version: str, pool_version: str, season: int,
-    pitcher_index: dict[int, int], *, holdout: bool = False,
+    pitcher_index: dict[int, int], *, holdout: bool = False, cluster_version: str | None = None, clusters=None,
 ) -> pd.DataFrame:
-    p = cache_path(runs_dir, data_version, pool_version, season)
+    p = cache_path(runs_dir, data_version, pool_version, season, cluster_version)
     if p.exists():
         return pd.read_parquet(p)
-    df = prepare_season(data_dir, data_version, season, pitcher_index, holdout=holdout)
+    df = prepare_season(data_dir, data_version, season, pitcher_index, holdout=holdout, clusters=clusters)
     p.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(p, index=False)
     return df

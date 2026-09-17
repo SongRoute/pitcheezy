@@ -21,16 +21,27 @@ ECE_BINS = 15
 
 
 def count_transitions(df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, K: int) -> np.ndarray:
-    """n [P, S, A, O] int32. action_id ≥ 0, outcome_id ≥ 0 인 투구만."""
+    """n [P, S, A, O] 정수. action_id ≥ 0, outcome_id ≥ 0 인 투구만. 투수별로 세서 전체 int64 임시 배열을 만들지 않는다 (K=6 이면 7.5GB)."""
     S_ = S.n_states(K)
     ok = (df["action_id"].to_numpy() >= 0) & (df["outcome_id"].to_numpy() >= 0)
     p = df["pitcher_idx"].to_numpy(dtype=np.int64)[ok]
     s = state_id[ok].astype(np.int64)
     a = df["action_id"].to_numpy(dtype=np.int64)[ok]
     o = df["outcome_id"].to_numpy(dtype=np.int64)[ok]
-    flat = ((p * S_ + s) * N_ACTIONS + a) * O.N_OUTCOMES + o
-    n = np.bincount(flat, minlength=n_pitchers * S_ * N_ACTIONS * O.N_OUTCOMES)
-    return n.reshape(n_pitchers, S_, N_ACTIONS, O.N_OUTCOMES).astype(np.int32)
+    cell = (s * N_ACTIONS + a) * O.N_OUTCOMES + o
+    dtype = np.int16 if S_ * N_ACTIONS * O.N_OUTCOMES * n_pitchers > 2**30 else np.int32
+    n = np.zeros((n_pitchers, S_, N_ACTIONS, O.N_OUTCOMES), dtype=dtype)
+    order = np.argsort(p, kind="stable")
+    p_sorted, cell_sorted = p[order], cell[order]
+    bounds = np.searchsorted(p_sorted, np.arange(n_pitchers + 1))
+    for i in range(n_pitchers):
+        c = cell_sorted[bounds[i]:bounds[i + 1]]
+        if len(c):
+            cnt = np.bincount(c, minlength=S_ * N_ACTIONS * O.N_OUTCOMES)
+            if cnt.max() >= np.iinfo(dtype).max:
+                raise OverflowError(f"셀 관측 수가 {dtype} 범위를 넘음")
+            n[i] = cnt.reshape(S_, N_ACTIONS, O.N_OUTCOMES).astype(dtype)
+    return n
 
 
 def repertoire_counts(df: pd.DataFrame, n_pitchers: int) -> np.ndarray:
@@ -61,7 +72,9 @@ def fit(
     if valid_states is not None:
         valid &= np.asarray(valid_states, dtype=bool)[None, :, None]
     P[~valid] = 0.0
-    n_obs = n.sum(-1).astype(np.int32)
+    n_obs = np.empty(n.shape[:3], dtype=np.int32)
+    for i in range(n_p):
+        n_obs[i] = n[i].sum(-1, dtype=np.int64)
     m = {
         "spec_version": SPEC_VERSION, "model_arch": "count_hierarchical_dirichlet", "K": int(K),
         "repertoire_min_pitches": int(repertoire_min), "row_sum_tol": DEFAULT_ROW_SUM_TOL, "alpha": float(alpha),
@@ -82,7 +95,9 @@ def holdout_metrics(t: TransitionTensor, df: pd.DataFrame, state_id: np.ndarray)
     o = df["outcome_id"].to_numpy(dtype=np.int64)[ok]
     v = t.valid[p, s, a]
     p, s, a, o = p[v], s[v], a[v], o[v]
-    probs = t.P[p, s, a].astype(np.float64)  # [N, O]
+    probs = np.empty((len(o), O.N_OUTCOMES), dtype=np.float64)
+    for i in range(0, len(o), 200_000):  # mmap 텐서에서 청크로 gather
+        probs[i:i + 200_000] = t.P[p[i:i + 200_000], s[i:i + 200_000], a[i:i + 200_000]]
     p_obs = probs[np.arange(len(o)), o]
     nll = float(-np.log(np.maximum(p_obs, 1e-12)).mean())
     ece = []

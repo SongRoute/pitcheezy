@@ -40,24 +40,31 @@ def next_state_table(K: int) -> np.ndarray:
     return nxt
 
 
-def value_iteration(P: np.ndarray, valid: np.ndarray, R: np.ndarray, nxt: np.ndarray, *, tol: float = 1e-9, max_iter: int = 200):
-    """P [P,S,A,O] float32, valid [P,S,A] → Q [P,S,A], V [P,S] float64, iters, max_delta."""
+def value_iteration(P: np.ndarray, valid: np.ndarray, R: np.ndarray, nxt: np.ndarray, *, tol: float = 1e-9, max_iter: int = 200, chunk: int = 16):
+    """P [P,S,A,O] float32 (mmap 가능), valid [P,S,A] → Q [P,S,A], V [P,S] float64, iters, max_delta. 투수는 서로 독립이라 청크로."""
     n_p, S_, A, O_ = P.shape
-    Pf = P.astype(np.float64)
+    Q = np.empty((n_p, S_, A))
     V = np.zeros((n_p, S_))
-    has_valid = valid.any(-1)  # [P, S]
     nxt_safe = np.where(nxt >= 0, nxt, 0)
-    is_next = (nxt >= 0)[None, :, :]  # [1, S, O]
-    for it in range(max_iter):
-        Vn = np.where(is_next, V[:, nxt_safe], 0.0)  # [P, S, O]
-        T = R[None] + Vn  # [P, S, O]
-        Q = np.einsum("psao,pso->psa", Pf, T)
-        Vnew = np.where(has_valid, np.where(valid, Q, -np.inf).max(-1), 0.0)
-        delta = float(np.abs(Vnew - V).max())
-        V = Vnew
-        if delta < tol:
-            break
-    return Q, V, it + 1, delta
+    is_next = (nxt >= 0)[None, :, :]
+    iters_max, delta_max = 0, 0.0
+    for lo in range(0, n_p, chunk):
+        hi = min(lo + chunk, n_p)
+        Pf = np.asarray(P[lo:hi], dtype=np.float64)
+        vd = valid[lo:hi]
+        has_valid = vd.any(-1)
+        Vc = np.zeros((hi - lo, S_))
+        for it in range(max_iter):
+            Vn = np.where(is_next, Vc[:, nxt_safe], 0.0)
+            Qc = np.einsum("psao,pso->psa", Pf, R[None] + Vn)
+            Vnew = np.where(has_valid, np.where(vd, Qc, -np.inf).max(-1), 0.0)
+            delta = float(np.abs(Vnew - Vc).max())
+            Vc = Vnew
+            if delta < tol:
+                break
+        Q[lo:hi], V[lo:hi] = Qc, Vc
+        iters_max, delta_max = max(iters_max, it + 1), max(delta_max, delta)
+    return Q, V, iters_max, delta_max
 
 
 def relax(Q: np.ndarray, valid: np.ndarray, *, method: str = "softmax", temperature: float = 0.05, top_k: int = 5) -> np.ndarray:
@@ -81,12 +88,13 @@ def relax(Q: np.ndarray, valid: np.ndarray, *, method: str = "softmax", temperat
     return np.where(s > 0, e / np.where(s > 0, s, 1.0), 0.0).astype(np.float32)
 
 
-def policy_evaluation(P: np.ndarray, policy: np.ndarray, R: np.ndarray, nxt: np.ndarray, *, tol: float = 1e-9, max_iter: int = 200) -> np.ndarray:
+def policy_evaluation(P: np.ndarray, policy: np.ndarray, R: np.ndarray, nxt: np.ndarray, *, tol: float = 1e-9, max_iter: int = 200, chunk: int = 16) -> np.ndarray:
     """모델 안에서 고정 정책의 가치 V^π [P, S] (진단: 모델이 말하는 값 vs OPE 가 말하는 값 → 착취 폭)."""
     n_p, S_, A, O_ = P.shape
-    Pf = P.astype(np.float64)
-    pol = policy.astype(np.float64)
-    Pmix = np.einsum("psao,psa->pso", Pf, pol)  # [P, S, O]
+    Pmix = np.empty((n_p, S_, O_))
+    for lo in range(0, n_p, chunk):
+        hi = min(lo + chunk, n_p)
+        Pmix[lo:hi] = np.einsum("psao,psa->pso", np.asarray(P[lo:hi], dtype=np.float64), policy[lo:hi].astype(np.float64))
     V = np.zeros((n_p, S_))
     nxt_safe = np.where(nxt >= 0, nxt, 0)
     is_next = (nxt >= 0)[None]

@@ -69,11 +69,19 @@ class Experiment:
         self.pitcher_index = PR.pitcher_index_from_pool(pool)
         self.pool = pool
         self.n_p = len(pool)
+        self.cluster_version = self.p["state"].get("cluster_version")
+        self.clusters = None
+        if self.cluster_version:
+            from pitcheezy.data.batters import load_cluster_map
+            self.clusters = load_cluster_map(REPO / "data" / "batters" / self.cluster_version)
+            if self.K == 1:
+                raise ValueError("cluster_version 이 있으면 K > 1 이어야 함")
         self.timing: dict[str, float] = {}
 
     # ------------------------------------------------------------ 데이터
     def pitches(self, season: int, *, holdout: bool = False) -> pd.DataFrame:
-        return PR.load_or_prepare(self.runs_dir, self.data_dir, self.cfg["data_version"], self.cfg["pool_version"], season, self.pitcher_index, holdout=holdout)
+        return PR.load_or_prepare(self.runs_dir, self.data_dir, self.cfg["data_version"], self.cfg["pool_version"], season, self.pitcher_index, holdout=holdout,
+                                  cluster_version=self.cluster_version, clusters=self.clusters)
 
     def sid(self, df: pd.DataFrame) -> np.ndarray:
         return PR.state_ids(df, self.K, collapse_base_out=self.collapse)
@@ -98,7 +106,7 @@ class Experiment:
             meta = json.loads((out_f / "meta.json").read_text())
             return {"reused": True, **{k: meta.get(k) for k in ("alpha", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers", "holdout_metrics")}}
         common = {"data_version": self.cfg["data_version"], "pool_version": self.cfg["pool_version"], "seed": 0, "train_commit": self.commit,
-                  "cluster_file_version": f"K{self.K}-none", "pitch_type_map_version": "v1", "collapse_base_out": self.collapse}
+                  "cluster_file_version": self.cluster_version or f"K{self.K}-none", "pitch_type_map_version": "v1", "collapse_base_out": self.collapse}
         # 홀드아웃: 2023–24 → 2025
         htr = pd.concat([self.pitches(s) for s in tp["holdout"]["train_seasons"]], ignore_index=True)
         hev = self.pitches(tp["holdout"]["eval_season"])
@@ -124,7 +132,11 @@ class Experiment:
         pr = validate_transition(th)
         if pr:
             raise RuntimeError(f"홀드아웃 텐서 계약 위반: {pr}")
-        th.save(out_h)
+        if tp.get("save_holdout_tensor", True):
+            th.save(out_h)
+        else:  # 큰 텐서(K>1)는 meta·지표만 (D21). 재현은 같은 config 로 재실행
+            out_h.mkdir(parents=True, exist_ok=True)
+            (out_h / "meta.json").write_text(json.dumps({**th.meta, "tensor_saved": False}, ensure_ascii=False, indent=2))
         del th
         # 전체: 2023–25
         ftr = pd.concat([self.pitches(s) for s in tp["train_seasons"]], ignore_index=True)
@@ -182,13 +194,13 @@ class Experiment:
             elif kind == "behavior":
                 menu["behavior"] = None
             elif kind == "uniform":
-                menu["uniform"] = VI.relax(Q, valid, method="uniform")
+                menu["uniform"] = lambda: VI.relax(Q, valid, method="uniform")
             elif kind == "greedy":
-                menu["greedy"] = VI.relax(Q, valid, method="greedy")
+                menu["greedy"] = lambda: VI.relax(Q, valid, method="greedy")
             elif kind.startswith("topk"):
-                menu[kind] = VI.relax(Q, valid, method="topk", top_k=int(kind[4:]))
+                menu[kind] = (lambda k=int(kind[4:]): VI.relax(Q, valid, method="topk", top_k=k))
             elif kind.startswith("softmax_t"):
-                menu[kind] = VI.relax(Q, valid, method="softmax", temperature=float(kind[9:]))
+                menu[kind] = (lambda t=float(kind[9:]): VI.relax(Q, valid, method="softmax", temperature=t))
             elif kind.startswith("tilt_t"):
                 menu[kind] = "tilt"  # π_b 기울임: 폴드별 π_b 로 stage_ope 에서 계산
             else:
@@ -245,12 +257,13 @@ class Experiment:
                 pol_arr = BH.tilt(pb_full, vb.Q, support, tilts[name][2])
                 pe_logged = pe_tilt[name]
             elif pol is not None:
-                pol_arr = IPS.restrict_support(pol, support)
+                pol_arr = IPS.restrict_support(pol() if callable(pol) else pol, support)
                 pe_logged = IPS.logged_probs(ev, sid, pol_arr)
             else:
                 pol_arr = None
             if pol_arr is not None:
                 model_value = float(VI.policy_evaluation(t.P, pol_arr, R, nxt)[f_p, f_s].mean())
+                pol_arr = pol_arr.astype(np.float32)
             for vname, col, clip in variants:
                 if pol_arr is None:  # π_b 자체: 궤적은 타석당 1, 1스텝은 결정 수 (다른 정책과 같은 가중 방식)
                     w = np.ones(len(pa)) if col == "w_traj" else n_dec; nd = None
