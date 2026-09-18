@@ -20,7 +20,6 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 from pitcheezy import experiment as E  # noqa: E402
 from pitcheezy.data import prepare as PR  # noqa: E402
-from pitcheezy.interfaces.tensor import TransitionTensor  # noqa: E402
 from pitcheezy.interfaces.value import ValueBundle  # noqa: E402
 from pitcheezy.ope import behavior as BH  # noqa: E402
 from pitcheezy.ope import ips as IPS  # noqa: E402
@@ -28,9 +27,9 @@ from pitcheezy.ope import ips as IPS  # noqa: E402
 COL = {"onestep_clip": "w_onestep", "traj_clip": "w_traj", "onestep2s_clip": "w_onestep_slice"}
 
 
-def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str):
+def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str, model_seed: int = 0):
     cfg = E.load_config(REPO / "configs" / f"{exp_id}.yaml")
-    ex = E.Experiment(cfg, 0, data_dir, runs_dir)
+    ex = E.Experiment(cfg, model_seed, data_dir, runs_dir)  # arch=neural 이면 그 시드의 Q, count 면 항상 s0
     op = ex.p["ope"]
     ev = ex.pitches(op["eval_season"], holdout=True).reset_index(drop=True)
     sid = ex.sid(ev)
@@ -44,9 +43,9 @@ def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str):
         n = key.merge(ev[m].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(float)
         w = np.ones(len(pa)) if variant == "traj_clip" else n
         return key, w, r, "behavior"
-    t = TransitionTensor.load(ex.s0_dir / "transition", check_hash=False, mmap=True)
+    valid = np.load(ex.s0_dir / "transition" / "valid.npy")  # P.npy 는 시드 ≠ 0 에서 지워져 있을 수 있다
     vb = ValueBundle.load(ex.s0_dir / "value", check_hash=False)
-    support = ex.eval_support(ev, t.valid)
+    support = ex.eval_support(ev, valid)
     name = ex.primary_name()
     if name.startswith("tilt_t"):
         tau = float(name[6:])
@@ -66,12 +65,13 @@ def main() -> int:
     ap.add_argument("--variant", default="onestep_clip", choices=list(COL))
     ap.add_argument("--n-boot", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--model-seed", type=int, default=0, help="arch=neural 실험에서 쓸 학습 시드 (count 실험은 무시)")
     ap.add_argument("--runs-dir", type=Path, default=Path(os.environ.get("PITCHEEZY_RUNS_DIR", REPO / "runs")))
     ap.add_argument("--data-dir", type=Path, default=Path(os.environ.get("PITCHEEZY_DATA_DIR", REPO / "data")))
     a = ap.parse_args()
     logging.basicConfig(level=logging.WARNING)
-    ka, wa, ra, na = weights_for(a.a, a.data_dir, a.runs_dir, a.variant)
-    kb, wb, rb, nb = weights_for(a.b, a.data_dir, a.runs_dir, a.variant)
+    ka, wa, ra, na = weights_for(a.a, a.data_dir, a.runs_dir, a.variant, a.model_seed)
+    kb, wb, rb, nb = weights_for(a.b, a.data_dir, a.runs_dir, a.variant, a.model_seed)
     assert (ka[["game_pk", "at_bat_number"]].to_numpy() == kb[["game_pk", "at_bat_number"]].to_numpy()).all(), "타석 키 불일치"
     keep = (ka["n_pitchers"] == 1).to_numpy()
     wa, wb, r, games = wa[keep], wb[keep], ra[keep], ka["game_pk"].to_numpy()[keep]
@@ -87,10 +87,10 @@ def main() -> int:
     lo, hi = np.percentile(d, [2.5, 97.5])
     p_le0 = float((d <= 0).mean())
     verdict = "A > B (CI 가 0 을 제외)" if lo > 0 else ("A < B (CI 가 0 을 제외)" if hi < 0 else "구분 안 됨")
-    out = {"a": a.a, "b": a.b, "policy_a": na, "policy_b": nb, "variant": a.variant, "snips_a": pa_, "snips_b": pb_, "delta": pa_ - pb_, "ci": [float(lo), float(hi)], "p_delta_le_0": p_le0, "n_pa": int(keep.sum()), "n_games": int(n_g), "n_boot": a.n_boot, "verdict": verdict}
-    print(f"{a.a}({na}) − {a.b}({nb}) [{a.variant}]: Δ = {pa_ - pb_:+.4f}  95% CI [{lo:+.4f}, {hi:+.4f}]  P(Δ≤0)={p_le0:.3f}  → {verdict}")
+    out = {"a": a.a, "b": a.b, "policy_a": na, "policy_b": nb, "variant": a.variant, "snips_a": pa_, "snips_b": pb_, "delta": pa_ - pb_, "ci": [float(lo), float(hi)], "p_delta_le_0": p_le0, "n_pa": int(keep.sum()), "n_games": int(n_g), "n_boot": a.n_boot, "model_seed": a.model_seed, "verdict": verdict}
+    print(f"[model seed {a.model_seed}] {a.a}({na}) − {a.b}({nb}) [{a.variant}]: Δ = {pa_ - pb_:+.4f}  95% CI [{lo:+.4f}, {hi:+.4f}]  P(Δ≤0)={p_le0:.3f}  → {verdict}")
     d_dir = a.runs_dir / "_diag" / "compare"; d_dir.mkdir(parents=True, exist_ok=True)
-    (d_dir / f"{a.a}_vs_{a.b}_{a.variant}.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
+    (d_dir / f"{a.a}_vs_{a.b}_{a.variant}" + (f"_ms{a.model_seed}" if a.model_seed else "") + ".json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
     return 0
 
 

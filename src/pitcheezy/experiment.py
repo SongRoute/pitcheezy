@@ -109,7 +109,8 @@ class Experiment:
         if (out_f / "sha256.txt").exists() and (out_h / "meta.json").exists():
             log.info("전이 텐서 재사용 %s", out_f)
             meta = json.loads((out_f / "meta.json").read_text())
-            return {"reused": True, **{k: meta.get(k) for k in ("alpha", "alpha_pitcher", "pitcher_group", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers", "holdout_metrics")}}
+            return {"reused": True, **{k: meta.get(k) for k in ("alpha", "alpha_pitcher", "pitcher_group", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers", "holdout_metrics")},
+                    **({"arch": "neural", "n_epochs": meta["neural"]["best_epoch"], "neural": {k: meta["neural"][k] for k in meta["neural"] if k not in ("epochs", "best_epoch", "device", "fit_seconds")}} if "neural" in meta else {})}
         common = {"data_version": self.cfg["data_version"], "pool_version": self.cfg["pool_version"], "seed": 0, "train_commit": self.commit,
                   "cluster_file_version": self.cluster_version or f"K{self.K}-none", "pitch_type_map_version": "v1", "collapse_base_out": self.collapse}
         # 홀드아웃: 2023–24 → 2025
@@ -199,14 +200,13 @@ class Experiment:
                 "holdout_nll": hm["holdout_nll"], "holdout_ece": hm["holdout_ece"], "holdout_ece_hr": hm["holdout_ece_hr"]}
 
     def prune_big_files(self) -> None:
-        """neural 의 시드 ≠ 0 은 OPE 뒤 큰 배열(P·Q 등)을 지운다 (디스크). meta·요약은 남긴다. 짝지은 비교(ope_compare)는 s0 을 쓴다."""
+        """neural 의 시드 ≠ 0 은 OPE 뒤 P.npy(0.65GB~)만 지운다 (디스크). valid·Q·meta 는 남겨 ope_compare --model-seed 가 시드별로 비교한다."""
         if self.arch != "neural" or self.seed == 0 or self.s0_dir != self.seed_dir or not self.p["transition"].get("prune_nonzero_seeds", True):
             return
-        for f in list((self.seed_dir / "transition").glob("*.npy")) + list((self.seed_dir / "value").glob("*.npy")):
-            f.unlink()
-        for d in ("transition", "value"):
+        (self.seed_dir / "transition" / "P.npy").unlink(missing_ok=True)  # valid·n_obs·Q 는 작아서 남긴다 → 시드별 짝지은 비교 가능
+        for d in ("transition",):
             (self.seed_dir / d / "sha256.txt").unlink(missing_ok=True)
-            (self.seed_dir / d / "PRUNED").write_text("큰 배열 삭제됨 (prune_nonzero_seeds). 같은 config·시드로 재실행하면 복원\n")
+            (self.seed_dir / d / "PRUNED").write_text("P.npy 삭제됨 (prune_nonzero_seeds). 같은 config·시드로 재실행하면 복원\n")
 
     # ------------------------------------------------------------ 가치
     def stage_value(self) -> dict:
