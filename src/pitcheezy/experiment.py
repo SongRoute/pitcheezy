@@ -60,7 +60,12 @@ class Experiment:
         self.collapse = bool(self.p["state"].get("collapse_base_out", False))
         self.seed_dir = self.runs_dir / self.id / f"s{self.seed}"
         # transition·value 는 결정론적 → s0 에만. transition.reuse_from 이 있으면 그 실험의 s0 을 그대로 쓴다 (예: 003 기준선은 001 텐서)
-        self.s0_dir = self.runs_dir / self.p["transition"].get("reuse_from", self.id) / "s0"
+        # 예외: arch=neural 은 학습에 난수가 있어 시드마다 자기 디렉터리에 둔다
+        self.arch = self.p["transition"].get("arch", "count")
+        if self.arch not in ("count", "neural"):
+            raise ValueError(f"transition.arch 모름: {self.arch}")
+        own = self.arch == "neural" and "reuse_from" not in self.p["transition"]
+        self.s0_dir = self.seed_dir if own else self.runs_dir / self.p["transition"].get("reuse_from", self.id) / "s0"
         self.seed_dir.mkdir(parents=True, exist_ok=True)
         self.commit = git_commit()
         self.pool_dir = REPO / "data" / "pitchers" / cfg["pool_version"]
@@ -104,7 +109,8 @@ class Experiment:
         if (out_f / "sha256.txt").exists() and (out_h / "meta.json").exists():
             log.info("전이 텐서 재사용 %s", out_f)
             meta = json.loads((out_f / "meta.json").read_text())
-            return {"reused": True, **{k: meta.get(k) for k in ("alpha", "alpha_pitcher", "pitcher_group", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers", "holdout_metrics")}}
+            return {"reused": True, **{k: meta.get(k) for k in ("alpha", "alpha_pitcher", "pitcher_group", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers", "holdout_metrics")},
+                    **({"arch": "neural", "n_epochs": meta["neural"]["best_epoch"], "neural": {k: meta["neural"][k] for k in meta["neural"] if k not in ("epochs", "best_epoch", "device", "fit_seconds")}} if "neural" in meta else {})}
         common = {"data_version": self.cfg["data_version"], "pool_version": self.cfg["pool_version"], "seed": 0, "train_commit": self.commit,
                   "cluster_file_version": self.cluster_version or f"K{self.K}-none", "pitch_type_map_version": "v1", "collapse_base_out": self.collapse}
         # 홀드아웃: 2023–24 → 2025
@@ -114,6 +120,8 @@ class Experiment:
         excluded = [int(m) for i, m in enumerate(self.pool["mlbam_id"]) if i not in present]
         hev = hev[hev["pitcher_idx"].isin(present)]
         pitchers_h = self.pitchers_table(htr)
+        if self.arch == "neural":
+            return self._stage_transition_neural(tp, common, htr, hev, pitchers_h, excluded, out_h, out_f, t0)
         alphas = tp["alpha_grid"] if tp["alpha"] == "auto" else [tp["alpha"]]
         ap_cfg = tp.get("alpha_pitcher")
         alphas_p = tp["alpha_pitcher_grid"] if ap_cfg == "auto" else [ap_cfg]  # None → 리그와 같은 값
@@ -157,6 +165,48 @@ class Experiment:
         log.info("전이 텐서 저장 %s (α=%s, %.0fs)", out_f, alpha, self.timing["transition"])
         return {"reused": False, "alpha": alpha, "alpha_pitcher": tp.get("alpha_pitcher"), "pitcher_group": tp.get("pitcher_group", "pitch"), "alpha_screen": tf.meta["alpha_screen"], "holdout_metrics": hm, "excluded_pitchers": excluded,
                 "holdout_nll": hm["holdout_nll"], "holdout_ece": hm["holdout_ece"], "holdout_ece_hr": hm["holdout_ece_hr"]}
+
+    def _stage_transition_neural(self, tp, common, htr, hev, pitchers_h, excluded, out_h, out_f, t0) -> dict:
+        """ⓑ 공유 신경망 + 투수 임베딩. 에폭 수를 2025 홀드아웃 NLL 로 고른 뒤(조기 종료) 같은 에폭으로 2023–25 재학습."""
+        from pitcheezy.transition import neural as TN
+        hp = TN.hparams(tp.get("neural"))
+        kw = {"hp": hp, "seed": self.seed, "repertoire_min": tp["repertoire_min_pitches"], "valid_states": self.valid_states()}
+        th = TN.fit(htr, self.sid(htr), pitchers_h, self.K, eval_df=hev, eval_state_id=self.sid(hev), **kw,
+                    meta={**common, "seed": self.seed, "season_window": f"{tp['holdout']['train_seasons'][0]}-{tp['holdout']['train_seasons'][-1]}", "holdout_split": f"season:{tp['holdout']['eval_season']}", "excluded_pitchers": excluded})
+        hm = TC.holdout_metrics(th, hev, self.sid(hev))
+        n_epochs = int(th.meta["neural"]["best_epoch"])
+        log.info("neural 홀드아웃 NLL %.4f ECE %.4f ECE_HR %.4f (에폭 %d, n=%d)", hm["holdout_nll"], hm["holdout_ece"], hm["holdout_ece_hr"], n_epochs, hm["holdout_n_pitches"])
+        th.meta.update({k: hm[k] for k in ("holdout_nll", "holdout_ece", "holdout_ece_hr")})
+        th.meta["holdout_metrics"] = hm
+        pr = validate_transition(th)
+        if pr:
+            raise RuntimeError(f"홀드아웃 텐서 계약 위반: {pr}")
+        out_h.mkdir(parents=True, exist_ok=True)  # 홀드아웃 텐서는 저장하지 않는다 (디스크). 재현은 같은 config·시드로 재실행
+        (out_h / "meta.json").write_text(json.dumps({**th.meta, "tensor_saved": False}, ensure_ascii=False, indent=2))
+        epochs_log = th.meta["neural"]["epochs"]
+        del th
+        ftr = pd.concat([self.pitches(s) for s in tp["train_seasons"]], ignore_index=True)
+        tf = TN.fit(ftr, self.sid(ftr), self.pitchers_table(ftr), self.K, n_epochs=n_epochs, **kw,
+                    meta={**common, "seed": self.seed, "season_window": f"{tp['train_seasons'][0]}-{tp['train_seasons'][-1]}", "holdout_split": "none",
+                          "holdout_nll": hm["holdout_nll"], "holdout_ece": hm["holdout_ece"], "holdout_ece_hr": hm["holdout_ece_hr"], "holdout_metrics": hm,
+                          "holdout_tensor_dir": str(out_h), "holdout_epochs": epochs_log, "excluded_pitchers": excluded})
+        pr = validate_transition(tf)
+        if pr:
+            raise RuntimeError(f"전체 텐서 계약 위반: {pr}")
+        tf.save(out_f)
+        self.timing["transition"] = time.time() - t0
+        log.info("전이 텐서 저장 %s (neural, 에폭 %d, %.0fs)", out_f, n_epochs, self.timing["transition"])
+        return {"reused": False, "arch": "neural", "n_epochs": n_epochs, "neural": hp, "holdout_metrics": hm, "excluded_pitchers": excluded,
+                "holdout_nll": hm["holdout_nll"], "holdout_ece": hm["holdout_ece"], "holdout_ece_hr": hm["holdout_ece_hr"]}
+
+    def prune_big_files(self) -> None:
+        """neural 의 시드 ≠ 0 은 OPE 뒤 P.npy(0.65GB~)만 지운다 (디스크). valid·Q·meta 는 남겨 ope_compare --model-seed 가 시드별로 비교한다."""
+        if self.arch != "neural" or self.seed == 0 or self.s0_dir != self.seed_dir or not self.p["transition"].get("prune_nonzero_seeds", True):
+            return
+        (self.seed_dir / "transition" / "P.npy").unlink(missing_ok=True)  # valid·n_obs·Q 는 작아서 남긴다 → 시드별 짝지은 비교 가능
+        for d in ("transition",):
+            (self.seed_dir / d / "sha256.txt").unlink(missing_ok=True)
+            (self.seed_dir / d / "PRUNED").write_text("P.npy 삭제됨 (prune_nonzero_seeds). 같은 config·시드로 재실행하면 복원\n")
 
     # ------------------------------------------------------------ 가치
     def stage_value(self) -> dict:
@@ -313,6 +363,7 @@ class Experiment:
         tr = self.stage_transition()
         va = self.stage_value()
         op = self.stage_ope()
+        self.prune_big_files()
         rec = {"id": self.id, "seed": self.seed, "commit": self.commit, "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                "transition": tr, "value": va, "ope": op, "timing_seconds": self.timing}
         (self.seed_dir / "run.json").write_text(json.dumps(rec, ensure_ascii=False, indent=2))
@@ -339,11 +390,13 @@ def aggregate(cfg: dict, runs_dir: Path, results_dir: Path) -> dict:
                      "ci_low_min": min(v["ci_low"] for v in per.values()), "ci_high_max": max(v["ci_high"] for v in per.values()),
                      "boot_std_mean": float(np.mean([v["boot_std"] for v in per.values()])), "ess_frac": r0["ope"]["results"][name]["ess_frac"],
                      "w_max": r0["ope"]["results"][name]["w_max"], "w_mean": r0["ope"]["results"][name]["w_mean"], "frac_zero_w": r0["ope"]["results"][name]["frac_zero_w"],
-                     "model_value": r0["ope"]["results"][name].get("model_value"), "seeds": per}
+                     "model_value": r0["ope"]["results"][name].get("model_value"),
+                     "seed_mean_snips": float(np.mean([v["snips"] for v in per.values()])), "seed_std_snips": float(np.std([v["snips"] for v in per.values()])), "seeds": per}
     out = {"id": cfg["id"], "phase": cfg["phase"], "baseline": cfg.get("baseline"), "change": cfg.get("change"), "data_version": cfg["data_version"],
            "pool_version": cfg["pool_version"], "re24_version": cfg["re24_version"], "commits": sorted({r["commit"] for r in runs}), "seeds": [r["seed"] for r in runs],
            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "params": cfg["params"],
-           "transition": {k: r0["transition"].get(k) for k in ("alpha", "alpha_pitcher", "pitcher_group", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers")},
+           "transition": {k: r0["transition"].get(k) for k in ("alpha", "alpha_pitcher", "pitcher_group", "alpha_screen", "holdout_nll", "holdout_ece", "holdout_ece_hr", "excluded_pitchers", "arch", "n_epochs", "neural")},
+           "holdout_nll_by_seed": {str(r["seed"]): r["transition"].get("holdout_nll") for r in runs},
            "holdout_metrics": r0["transition"].get("holdout_metrics"), "value": r0["value"],
            "ope": {"eval_season": r0["ope"]["eval_season"], "n_pa": r0["ope"]["n_pa"], "n_games": r0["ope"]["n_games"], "mean_reward_behavior": r0["ope"]["mean_reward_behavior"],
                    "n_pitches": r0["ope"].get("n_pitches"), "support_min_pitches_eval": r0["ope"].get("support_min_pitches_eval"), "clip": r0["ope"]["clip"], "n_folds": r0["ope"].get("n_folds"), "n_boot": r0["ope"]["n_boot"], "primary": primary, "policies": pol},
