@@ -88,6 +88,9 @@ class SharedNet(nn.Module):
 def _rows(df: pd.DataFrame, state_id: np.ndarray, K: int):
     """행동·결과가 있는 투구 → (p, c, b, k, g, l, o) int64 배열. 상태 성분은 state_id 에서 복원 (B1 의 주자아웃 붕괴와 일치)."""
     ok = (df["action_id"].to_numpy() >= 0) & (df["outcome_id"].to_numpy() >= 0)
+    # 규칙 마스크가 막는 결과가 찍힌 행(데이터 이상, 시즌당 2~5구)은 뺀다: 마스크된 로짓이 정답이면 손실이 inf
+    cnt = S.decode_state(state_id, K)[0]
+    ok &= O.rule_mask_table()[cnt, np.maximum(df["outcome_id"].to_numpy(dtype=np.int64), 0)]
     c, b, k = S.decode_state(state_id[ok], K)
     g, l = decode_action(df["action_id"].to_numpy(dtype=np.int64)[ok])
     cols = (df["pitcher_idx"].to_numpy(dtype=np.int64)[ok], c, b, k, g, l, df["outcome_id"].to_numpy(dtype=np.int64)[ok])
