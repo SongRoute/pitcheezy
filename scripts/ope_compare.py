@@ -90,7 +90,7 @@ def main() -> int:
     out = {"a": a.a, "b": a.b, "policy_a": na, "policy_b": nb, "variant": a.variant, "snips_a": pa_, "snips_b": pb_, "delta": pa_ - pb_, "ci": [float(lo), float(hi)], "p_delta_le_0": p_le0, "n_pa": int(keep.sum()), "n_games": int(n_g), "n_boot": a.n_boot, "model_seed": a.model_seed, "verdict": verdict}
     print(f"[model seed {a.model_seed}] {a.a}({na}) − {a.b}({nb}) [{a.variant}]: Δ = {pa_ - pb_:+.4f}  95% CI [{lo:+.4f}, {hi:+.4f}]  P(Δ≤0)={p_le0:.3f}  → {verdict}")
     d_dir = a.runs_dir / "_diag" / "compare"; d_dir.mkdir(parents=True, exist_ok=True)
-    (d_dir / f"{a.a}_vs_{a.b}_{a.variant}" + (f"_ms{a.model_seed}" if a.model_seed else "") + ".json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
+    (d_dir / (f"{a.a}_vs_{a.b}_{a.variant}" + (f"_ms{a.model_seed}" if a.model_seed else "") + ".json")).write_text(json.dumps(out, ensure_ascii=False, indent=2))
     return 0
 
 
