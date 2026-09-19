@@ -1,0 +1,50 @@
+# EXP-P1-010 — P1 세 번째 축(D35): 시퀀스 맥락 v1 (직전 구 구종 계열 × 존 안/밖). 베이스라인 EXP-P1-005
+id: EXP-P1-010
+phase: 1
+baseline: EXP-P1-005
+change: "neural + 맥락 v1 (C=7). OPE 메뉴 축소"
+data_version: d20260911-s2325
+pool_version: pool-ip100-2023_2025-d20260911-s2325-2b19cc1
+re24_version: re24-2023_2025-d20260911-s2325-82b008b
+seeds: [0, 1, 2]                 # 신경망 학습에 난수 있음 → 시드마다 전이 텐서·Q 가 다르다
+wandb:
+  project: pitcheezy
+  mode: online
+params:
+  state:
+    K: 1                         # 타자 군집 없음 (v0). 군집은 별도 실험으로
+    collapse_base_out: false
+    context: {kind: prev_pitch_family_zone, C: 7}  # 맥락 v1: 0 없음 / 1+(계열−1)×2+존안 (계열 1 속구·2 변화·3 오프스피드, 존 = 5×5 격자 가운데 3×3). S = 288×K×C
+  transition:
+    train_seasons: [2023, 2024, 2025]
+    holdout: {train_seasons: [2023, 2024], eval_season: 2025}
+    arch: neural                 # count(투수별 집계+계층 평활, P0) | neural(공유 MLP + 투수 임베딩 ⓑ, D24)
+    neural:
+      pitcher_dim: 16              # 투수 임베딩 차원. 0 = 리그 공통 모델 (대조군)
+      pitcher_pitch_dim: 0         # 투수×구종 임베딩 차원. 0 = 없음
+      cat_dim: 8                 # 카운트·주자아웃·군집·구종·위치 임베딩 차원
+      hidden: 256
+      n_layers: 2
+      dropout: 0.0
+      lr: 0.002
+      weight_decay: 0.0001
+      embed_l2: 0.0
+      batch_size: 4096
+      max_epochs: 30             # 에폭 수는 2025 홀드아웃 NLL 조기 종료로 선택 (2026 은 쓰지 않음), 그 에폭으로 2023–25 재학습
+      patience: 3
+      device: auto               # mps 있으면 mps
+    prune_nonzero_seeds: true    # 시드 ≠ 0 은 OPE 뒤 P·Q 배열 삭제 (디스크 12GB). 짝지은 비교는 s0
+    repertoire_min_pitches: 100
+  policy:
+    kind: tilt                   # tilt(π_b·exp(Q/τ), D20) | softmax | topk | greedy | uniform | behavior
+    temperature: 0.02            # 잠정 (D17). 단위 RE24. Q 폭(상태별 max−mean 중앙값 0.07)에 맞춤. 메뉴는 ope.menu
+    top_k: 5
+  ope:
+    eval_season: 2026
+    behavior_alpha: 10           # π_b 인수분해 계층 평활 (D18)
+    n_folds: 5                   # π_b 경기 단위 교차 적합 (D18). 같은 데이터로 맞추면 가중치 평균이 0.05 로 붕괴했음
+    support_min_pitches_eval: 20 # 공통 지지: 평가 시즌에 투수가 20구 이상 던진 구종만 (D19). 버린 구종에 π_e 가 질량을 주면 비가 폭발
+    clip: 20                     # 투구 단위 비 상한
+    primary_variant: onestep_clip # P0 저울 = 1스텝 편차 SNIPS (D19). 궤적 SNIPS(traj_clip)는 ESS≈0 으로 기록만
+    n_boot: 1000
+    menu: [primary, behavior, uniform, tilt_t0.005]  # 정책 메뉴를 줄인 것은 시간 때문 (C=7 은 S 가 004 의 1.75배). 주 저울 값(primary)은 메뉴와 무관하게 불변
