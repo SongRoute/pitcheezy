@@ -73,6 +73,11 @@ class TransitionTensor:
         """맥락 수. 옛 산출물(키 없음)은 1."""
         return int(self.meta.get("C", 1))
 
+    @property
+    def context_kind(self) -> str | None:
+        """맥락 종류. C=1 이거나 옛 산출물이면 None."""
+        return self.meta.get("context_kind")
+
     def save(self, d: Path) -> None:
         d = Path(d)
         d.mkdir(parents=True, exist_ok=True)

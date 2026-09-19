@@ -4,14 +4,17 @@ state_id = ((count_id × 24 + base_out_id) × K + cluster_id) × C + context_id,
 count_id = 볼 × 3 + 스트라이크 (0..11)
 base_out_id = 아웃 × 8 + 주자 비트마스크(1루=1, 2루=2, 3루=4) (0..23). 전이 텐서·Q·RE24 모두 이 id
 cluster_id 0..K−1, K ≤ 8, 좌우 층화 필수 (군집 배정 파일 쪽 책임)
-context_id 0..C−1 — 시퀀스 맥락 (v1.1). C=1 이면 v1 과 같은 id (맥락 없음)
-  v0 맥락 = 직전 구의 구종 계열: 0 타석 첫 구(또는 직전 구가 행동 제외) / 1 속구 / 2 변화 / 3 오프스피드
+context_id 0..C−1 — 시퀀스 맥락 (v1.2). C=1 이면 v1 과 같은 id (맥락 없음)
+  v0 `prev_pitch_family` (C=4) = 직전 구의 구종 계열: 0 타석 첫 구(또는 직전 구가 행동 제외) / 1 속구 / 2 변화 / 3 오프스피드
+  v1 `prev_pitch_family_zone` (C=7) = 계열 × 존 안/밖: 0 없음 / 1+(계열−1)·2+존안. 존 = 5×5 격자 가운데 3×3 (z행·x열 모두 1..3)
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+from .grid import N_X, N_Z, decode_loc
 
 N_BALLS = 4
 N_STRIKES = 3
@@ -20,9 +23,13 @@ N_OUTS = 3
 N_BASE_OUT = N_OUTS * 8  # 24
 N_COUNT_BASE_OUT = N_COUNTS * N_BASE_OUT  # 288
 MAX_K = 8
-MAX_C = 4
-N_CONTEXT_V0 = 4  # 맥락 v0 의 C
-CONTEXT_KIND_V0 = "prev_pitch_family"
+
+CONTEXT_KIND_V0 = "prev_pitch_family"  # 직전 구 구종 계열 (D32)
+CONTEXT_KIND_V1 = "prev_pitch_family_zone"  # 계열 × 존 안/밖 (D35)
+CONTEXT_KINDS: dict[str, int] = {CONTEXT_KIND_V0: 4, CONTEXT_KIND_V1: 7}  # 맥락 종류 → C
+N_CONTEXT_V0 = CONTEXT_KINDS[CONTEXT_KIND_V0]  # 4
+N_CONTEXT_V1 = CONTEXT_KINDS[CONTEXT_KIND_V1]  # 7
+MAX_C = max(CONTEXT_KINDS.values())  # 7
 
 STATES_COLUMNS = ("state_id", "count_id", "base_out_id", "cluster_id", "context_id")
 STATES_COLUMNS_V1 = ("state_id", "count_id", "base_out_id", "cluster_id")  # 맥락 이전(v1) 산출물. C=1 일 때만 허용 (context_id = 0 으로 봄)
@@ -50,6 +57,40 @@ def context_family_of_pitch(pid):
     if (g >= 9).any():
         raise ValueError("pitch_id 0..8 범위 밖")
     out = np.where(g < 0, 0, g // 3 + 1)
+    return int(out) if out.ndim == 0 else out
+
+
+def n_context(kind: str) -> int:
+    """맥락 종류 → C. 모르는 종류면 ValueError."""
+    if kind not in CONTEXT_KINDS:
+        raise ValueError(f"맥락 종류 모름: {kind!r} (있는 것: {sorted(CONTEXT_KINDS)})")
+    return CONTEXT_KINDS[kind]
+
+
+def in_zone(lid):
+    """loc_id → 스트라이크 존 안(5×5 격자 가운데 3×3, z행·x열 모두 1..3)이면 True."""
+    zr, xc = decode_loc(lid)
+    out = (np.asarray(zr) >= 1) & (np.asarray(zr) <= N_Z - 2) & (np.asarray(xc) >= 1) & (np.asarray(xc) <= N_X - 2)
+    return bool(out) if out.ndim == 0 else out
+
+
+def context_of_action(pitch_id, loc_id=None, kind: str = CONTEXT_KIND_V0):
+    """행동(구종·위치) → 그 행동 뒤의 맥락 id. 벡터화. 행동 없음(pitch_id < 0, v1 은 loc_id < 0 도)은 0.
+
+    v0 는 loc_id 를 무시한다 (None 허용). v1 = 1 + (계열−1)·2 + 존안.
+    """
+    n_context(kind)  # 종류 검증
+    fam = context_family_of_pitch(pitch_id)
+    if kind == CONTEXT_KIND_V0:
+        return fam
+    if loc_id is None:
+        raise ValueError(f"{kind!r} 은 loc_id 가 필요함")
+    g = np.asarray(pitch_id, dtype=np.int64)
+    l = np.asarray(loc_id, dtype=np.int64)
+    f = np.asarray(fam, dtype=np.int64)
+    none = (g < 0) | (l < 0)  # 행동 제외 → 맥락 0
+    z = np.asarray(in_zone(np.where(none, 0, l)), dtype=np.int64)
+    out = np.where(none, 0, 1 + (f - 1) * 2 + z)
     return int(out) if out.ndim == 0 else out
 
 
