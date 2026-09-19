@@ -28,8 +28,11 @@ def reward_table(dRE24: np.ndarray, K: int, *, collapse_base_out: bool = False, 
     return R
 
 
-def next_state_table(K: int, C: int = 1) -> np.ndarray:
-    """C=1: next [S, O] 다음 state_id. C>1: next [S, A, O] — 다음 맥락이 행동의 구종 계열이라 행동에 의존. 종결·불허면 −1."""
+def next_state_table(K: int, C: int = 1, context_kind: str | None = None) -> np.ndarray:
+    """C=1: next [S, O] 다음 state_id. C>1: next [S, A, O] — 다음 맥락이 행동에서 나오므로 행동에 의존. 종결·불허면 −1.
+
+    context_kind 는 C>1 에서 필수. 뒤 호환으로 C=4 이고 생략하면 맥락 v0 으로 본다.
+    """
     S_ = S.n_states(K)
     cid, bid, kid = S.decode_state(np.arange(S_), K)
     nxt = np.full((S_, O.N_OUTCOMES), -1, dtype=np.int64)
@@ -43,8 +46,15 @@ def next_state_table(K: int, C: int = 1) -> np.ndarray:
     if C == 1:
         return nxt
     S.check_C(C)
+    if context_kind is None:
+        if C != S.N_CONTEXT_V0:
+            raise ValueError(f"C={C} 이면 context_kind 가 필요함 (있는 것: {sorted(S.CONTEXT_KINDS)})")
+        context_kind = S.CONTEXT_KIND_V0  # 뒤 호환 (D32)
+    if C != S.n_context(context_kind):
+        raise ValueError(f"C={C} 와 context_kind={context_kind!r} (C={S.n_context(context_kind)}) 가 안 맞음")
     base = nxt[np.arange(S.n_states(K, C)) // C]  # 맥락을 뺀 (카운트, 주자아웃, 군집) 자리의 다음 상태
-    nctx = S.context_family_of_pitch(decode_action(np.arange(N_ACTIONS))[0])  # [A] 행동 뒤의 맥락 (늘 1..3)
+    pid_a, loc_a = decode_action(np.arange(N_ACTIONS))
+    nctx = S.context_of_action(pid_a, loc_a, context_kind)  # [A] 행동 뒤의 맥락 (늘 ≥ 1)
     return np.where(base[:, None, :] >= 0, base[:, None, :] * C + nctx[None, :, None], -1)
 
 

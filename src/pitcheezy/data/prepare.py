@@ -90,8 +90,12 @@ def prepare_season(
     return out[list(OUT_COLUMNS)]
 
 
-def context_ids(df: pd.DataFrame) -> np.ndarray:
-    """맥락 v0 [N] int64 (df 행 순서). 같은 타석 직전 구의 구종 계열, 타석 첫 구·직전 구가 행동 제외면 0."""
+def context_ids(df: pd.DataFrame, kind: str = S.CONTEXT_KIND_V0) -> np.ndarray:
+    """맥락 id [N] int64 (df 행 순서). 같은 타석 직전 구에 kind 규칙을 적용, 타석 첫 구·직전 구가 행동 제외면 0.
+
+    v0 는 직전 구의 pitch_id 만, v1 은 loc_id 까지 본다 (존 안/밖).
+    """
+    S.n_context(kind)
     n = len(df)
     if n == 0:
         return np.zeros(0, dtype=np.int64)
@@ -102,7 +106,11 @@ def context_ids(df: pd.DataFrame) -> np.ndarray:
     same = np.zeros(n, dtype=bool)
     same[1:] = (g[order][1:] == g[order][:-1]) & (ab[order][1:] == ab[order][:-1])
     prev = np.concatenate(([-1], pid[:-1]))
-    ctx = np.where(same, S.context_family_of_pitch(prev), 0)
+    prev_loc = None
+    if kind != S.CONTEXT_KIND_V0:
+        lid = df["loc_id"].to_numpy(dtype=np.int64)[order]
+        prev_loc = np.concatenate(([-1], lid[:-1]))
+    ctx = np.where(same, S.context_of_action(prev, prev_loc, kind), 0)
     out = np.empty(n, dtype=np.int64)
     out[order] = ctx
     return out
@@ -116,9 +124,11 @@ def state_ids(df: pd.DataFrame, K: int, *, collapse_base_out: bool = False, C: i
         k = np.zeros_like(k)
     if C == 1:
         return S.state_id(df["count_id"].to_numpy(dtype=np.int64), b, k, K)
-    if context_kind != S.CONTEXT_KIND_V0:
-        raise ValueError(f"C>1 이면 context_kind 는 {S.CONTEXT_KIND_V0!r} 여야 함: {context_kind!r}")
-    return S.state_id(df["count_id"].to_numpy(dtype=np.int64), b, k, K, context_ids(df), C)
+    if context_kind is None:
+        raise ValueError(f"C>1 이면 context_kind 가 필요함 (있는 것: {sorted(S.CONTEXT_KINDS)})")
+    if C != S.n_context(context_kind):  # 모르는 종류면 여기서 ValueError
+        raise ValueError(f"C={C} 와 context_kind={context_kind!r} (C={S.n_context(context_kind)}) 가 안 맞음")
+    return S.state_id(df["count_id"].to_numpy(dtype=np.int64), b, k, K, context_ids(df, context_kind), C)
 
 
 def load_or_prepare(

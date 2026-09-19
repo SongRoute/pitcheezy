@@ -73,7 +73,7 @@ def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str, model
         raise FileNotFoundError(f"{ex.s0_dir/'transition'/'P.npy'} 없음 — DR 은 전이 텐서가 필요하다 (prune 된 시드면 같은 config·시드로 재실행)")
     t = TransitionTensor.load(ex.s0_dir / "transition", check_hash=False, mmap=True)
     R = VI.reward_table(ex.re24.dRE24, ex.K, collapse_base_out=bool(ex.p["policy"].get("reward_collapse_base_out", False)), C=ex.C)
-    nxt = VI.next_state_table(ex.K, ex.C)  # C>1 이면 [S,A,O] — dr.q_from_v·VI.policy_evaluation 이 둘 다 받는다
+    nxt = VI.next_state_table(ex.K, ex.C, ex.context_kind)  # C>1 이면 [S,A,O] — dr.q_from_v·VI.policy_evaluation 이 둘 다 받는다
     pb_full = BH.fit_behavior(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), C=ex.C)
     pol_arr = BH.tilt(pb_full, vb.Q, support, float(name[6:])) if name.startswith("tilt_t") else IPS.restrict_support(vb.policy, support)
     q_b = DR.behavior_q(t.P, pb_full, support, R, nxt)
