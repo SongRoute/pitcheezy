@@ -51,25 +51,21 @@ def logged_probs(df: pd.DataFrame, state_id: np.ndarray, pi_e: np.ndarray) -> np
     return out
 
 
-def pitch_ratios(df: pd.DataFrame, pe_logged: np.ndarray, pb_logged: np.ndarray, *, clip: float | None) -> tuple[np.ndarray, np.ndarray]:
-    """투구별 (ρ [N], has [N]) — df 행 순서 그대로. has = 행동이 있고 π_e·π_b 가 둘 다 있는 투구(= 결정). 결정이 아니면 ρ = 1."""
-    a = df["action_id"].to_numpy(dtype=np.int64)
-    has = (a >= 0) & ~np.isnan(pb_logged) & ~np.isnan(pe_logged)
-    rho = np.ones(len(df), dtype=np.float64)
-    r = pe_logged[has] / np.maximum(pb_logged[has], 1e-12)
-    if clip is not None:
-        r = np.minimum(r, clip)
-    rho[has] = r
-    return rho, has
-
-
 def pa_weights(df: pd.DataFrame, pe_logged: np.ndarray, pb_logged: np.ndarray, *, clip: float | None, slice_mask: np.ndarray | None = None) -> pd.DataFrame:
     """타석별 (game_pk, at_bat_number, w_traj, w_onestep, w_onestep_slice, n_decisions, n_zero). pe_logged·pb_logged·slice_mask 는 df 위치 정렬.
     slice_mask (bool[N]) 가 있으면 그 투구의 결정만 더한 1스텝 가중치 w_onestep_slice 도 낸다 (예: 2스트라이크 결정)."""
     d = df.sort_values(SORT, kind="stable")
     order = d.index.to_numpy()
+    pel = pe_logged[order]
+    pbl = pb_logged[order]
     sl = np.ones(len(d), dtype=bool) if slice_mask is None else slice_mask[order]
-    rho, has = pitch_ratios(d, pe_logged[order], pb_logged[order], clip=clip)
+    a = d["action_id"].to_numpy(dtype=np.int64)
+    has = (a >= 0) & ~np.isnan(pbl) & ~np.isnan(pel)
+    rho = np.ones(len(d), dtype=np.float64)
+    r = pel[has] / np.maximum(pbl[has], 1e-12)
+    if clip is not None:
+        r = np.minimum(r, clip)
+    rho[has] = r
     rho_dec = np.where(has, rho, 0.0)
     g = pd.DataFrame({"game_pk": d["game_pk"].to_numpy(), "at_bat_number": d["at_bat_number"].to_numpy(), "rho": rho, "rho_dec": rho_dec, "rho_slice": np.where(sl, rho_dec, 0.0),
                       "has": has, "has_slice": has & sl, "zero": has & (rho == 0)})

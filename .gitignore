@@ -23,3 +23,6 @@ dist/
 .env
 .DS_Store
 .claude/settings.local.json
+
+# 에이전트 워크트리 (내장 저장소)
+.claude/worktrees/
