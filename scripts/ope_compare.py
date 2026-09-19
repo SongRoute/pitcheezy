@@ -59,10 +59,10 @@ def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str, model
     support = ex.eval_support(ev, valid)
     if name.startswith("tilt_t"):
         tau = float(name[6:])
-        pb_logged, pe, _, _ = BH.crossfit_logged(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts={"p": (vb.Q, support, tau)})
+        pb_logged, pe, _, _ = BH.crossfit_logged(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts={"p": (vb.Q, support, tau)}, C=ex.C)
         pe_logged = pe["p"]
     else:
-        pb_logged, _, _, _ = BH.crossfit_logged(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]))
+        pb_logged, _, _, _ = BH.crossfit_logged(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), C=ex.C)
         pe_logged = IPS.logged_probs(ev, sid, IPS.restrict_support(vb.policy, support))
     if variant not in DR_VARIANTS:
         pw = key.merge(IPS.pa_weights(ev, pe_logged, pb_logged, clip=op.get("clip"), slice_mask=two_strike), on=["game_pk", "at_bat_number"], how="left")

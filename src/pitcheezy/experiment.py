@@ -20,7 +20,7 @@ import yaml
 from pitcheezy.data import prepare as PR
 from pitcheezy.interfaces import outcomes as O
 from pitcheezy.interfaces.re24 import RE24Table
-from pitcheezy.interfaces.states import N_BASE_OUT, decode_state, n_states
+from pitcheezy.interfaces.states import N_BASE_OUT, decode_state_full, n_states
 from pitcheezy.interfaces.tensor import TransitionTensor
 from pitcheezy.interfaces.validate import validate_transition, validate_value
 from pitcheezy.interfaces.value import ValueBundle
@@ -59,6 +59,9 @@ class Experiment:
         self.p = cfg["params"]
         self.K = int(self.p["state"]["K"])
         self.collapse = bool(self.p["state"].get("collapse_base_out", False))
+        ctx = self.p["state"].get("context") or {}  # 없으면 맥락 없음 (C=1, v1 과 동일)
+        self.C = int(ctx.get("C", 1))
+        self.context_kind = ctx.get("kind")
         self.seed_dir = self.runs_dir / self.id / f"s{self.seed}"
         # transition·value 는 결정론적 → s0 에만. transition.reuse_from 이 있으면 그 실험의 s0 을 그대로 쓴다 (예: 003 기준선은 001 텐서)
         # 예외: arch=neural 은 학습에 난수가 있어 시드마다 자기 디렉터리에 둔다
@@ -90,7 +93,7 @@ class Experiment:
                                   cluster_version=self.cluster_version, clusters=self.clusters)
 
     def sid(self, df: pd.DataFrame) -> np.ndarray:
-        return PR.state_ids(df, self.K, collapse_base_out=self.collapse)
+        return PR.state_ids(df, self.K, collapse_base_out=self.collapse, C=self.C, context_kind=self.context_kind)
 
     def pitchers_table(self, train: pd.DataFrame) -> pd.DataFrame:
         n = train.groupby("pitcher_idx").size().reindex(range(self.n_p)).fillna(0).astype(np.int32)
@@ -100,7 +103,7 @@ class Experiment:
     def valid_states(self) -> np.ndarray | None:
         if not self.collapse:
             return None
-        return decode_state(np.arange(n_states(self.K)), self.K)[1] == 0
+        return decode_state_full(np.arange(n_states(self.K, self.C)), self.K, self.C)[1] == 0
 
     # ------------------------------------------------------------ 전이
     def stage_transition(self) -> dict:
@@ -130,7 +133,7 @@ class Experiment:
         best = None
         for a in alphas:
             for ap in alphas_p:
-                t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), alpha_pitcher=ap, pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(),
+                t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), alpha_pitcher=ap, pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind,
                            meta={**common, "season_window": f"{tp['holdout']['train_seasons'][0]}-{tp['holdout']['train_seasons'][-1]}", "holdout_split": f"season:{tp['holdout']['eval_season']}", "excluded_pitchers": excluded})
                 m = TC.holdout_metrics(t, hev, self.sid(hev))
                 key = str(a) if ap is None else f"{a}/{ap}"
@@ -154,7 +157,7 @@ class Experiment:
         del th
         # 전체: 2023–25
         ftr = pd.concat([self.pitches(s) for s in tp["train_seasons"]], ignore_index=True)
-        tf = TC.fit(ftr, self.sid(ftr), self.pitchers_table(ftr), self.K, alpha=alpha, alpha_pitcher=tp.get("alpha_pitcher"), pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(),
+        tf = TC.fit(ftr, self.sid(ftr), self.pitchers_table(ftr), self.K, alpha=alpha, alpha_pitcher=tp.get("alpha_pitcher"), pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind,
                     meta={**common, "season_window": f"{tp['train_seasons'][0]}-{tp['train_seasons'][-1]}", "holdout_split": "none",
                           "holdout_nll": hm["holdout_nll"], "holdout_ece": hm["holdout_ece"], "holdout_ece_hr": hm["holdout_ece_hr"], "holdout_metrics": hm,
                           "holdout_tensor_dir": str(out_h), "alpha_screen": th_screen(screen), "excluded_pitchers": excluded})
@@ -171,7 +174,7 @@ class Experiment:
         """ⓑ 공유 신경망 + 투수 임베딩. 에폭 수를 2025 홀드아웃 NLL 로 고른 뒤(조기 종료) 같은 에폭으로 2023–25 재학습."""
         from pitcheezy.transition import neural as TN
         hp = TN.hparams(tp.get("neural"))
-        kw = {"hp": hp, "seed": self.seed, "repertoire_min": tp["repertoire_min_pitches"], "valid_states": self.valid_states()}
+        kw = {"hp": hp, "seed": self.seed, "repertoire_min": tp["repertoire_min_pitches"], "valid_states": self.valid_states(), "C": self.C, "context_kind": self.context_kind}
         th = TN.fit(htr, self.sid(htr), pitchers_h, self.K, eval_df=hev, eval_state_id=self.sid(hev), **kw,
                     meta={**common, "seed": self.seed, "season_window": f"{tp['holdout']['train_seasons'][0]}-{tp['holdout']['train_seasons'][-1]}", "holdout_split": f"season:{tp['holdout']['eval_season']}", "excluded_pitchers": excluded})
         hm = TC.holdout_metrics(th, hev, self.sid(hev))
@@ -218,8 +221,8 @@ class Experiment:
             log.info("가치함수 재사용 %s", out)
             return {"reused": True, **json.loads((out / "meta.json").read_text()).get("vi", {})}
         t = TransitionTensor.load(self.s0_dir / "transition", mmap=True)
-        R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(pp.get("reward_collapse_base_out", False)))
-        nxt = VI.next_state_table(self.K)
+        R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(pp.get("reward_collapse_base_out", False)), C=self.C)
+        nxt = VI.next_state_table(self.K, self.C)
         Q, V, iters, delta = VI.value_iteration(t.P, t.valid, R, nxt)
         kind = pp.get("kind", "softmax")
         # tilt 는 평가 시즌 π_b 가 필요해 여기서 못 만든다 → value/policy.npy 에는 같은 τ 의 softmax 를 저장 (meta.relax 에 기록)
@@ -296,16 +299,16 @@ class Experiment:
         menu = self.policy_menu(vb, t.valid)
         tilts = {name: (vb.Q, support, float(name[6:])) for name, pol in menu.items() if isinstance(pol, str) and pol == "tilt"}
         groups = IPS.coarse_groups()
-        pb_logged, pe_tilt, pb_coarse, pe_tilt_coarse = BH.crossfit_logged(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts=tilts, groups=groups)
-        pb_full = BH.fit_behavior(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]))  # 진단(모델 내 가치)용
+        pb_logged, pe_tilt, pb_coarse, pe_tilt_coarse = BH.crossfit_logged(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts=tilts, groups=groups, C=self.C)
+        pb_full = BH.fit_behavior(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), C=self.C)  # 진단(모델 내 가치)용
         pa = PR.pa_rewards(ev, self.re24.RE24)
         keep = pa["n_pitchers"] == 1
         pa = pa[keep].reset_index(drop=True)
         r = -pa["delta_re24"].to_numpy()  # 투수 관점
         games = pa["game_pk"].to_numpy()
         key = pa[["game_pk", "at_bat_number"]]
-        R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(self.p["policy"].get("reward_collapse_base_out", False)))
-        nxt = VI.next_state_table(self.K)
+        R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(self.p["policy"].get("reward_collapse_base_out", False)), C=self.C)
+        nxt = VI.next_state_table(self.K, self.C)
         first = ev.groupby(["game_pk", "at_bat_number"], sort=False).head(1)
         f_p, f_s = first["pitcher_idx"].to_numpy(dtype=np.int64), self.sid(first)
         has_a = ev["action_id"] >= 0

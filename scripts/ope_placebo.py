@@ -52,7 +52,7 @@ def main() -> int:
     variants["perm_action"] = Qp
     variants["perm_pitcher"] = Q[rng.permutation(Q.shape[0])]
     tilts = {k: (v, support, a.tau) for k, v in variants.items()}
-    pb_logged, pe, _, _ = BH.crossfit_logged(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts=tilts)
+    pb_logged, pe, _, _ = BH.crossfit_logged(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts=tilts, C=ex.C)
     pa = PR.pa_rewards(ev, ex.re24.RE24)
     pa = pa[pa["n_pitchers"] == 1].reset_index(drop=True)
     r = -pa["delta_re24"].to_numpy(); games = pa["game_pk"].to_numpy(); key = pa[["game_pk", "at_bat_number"]]

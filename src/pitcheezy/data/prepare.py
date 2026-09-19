@@ -90,13 +90,35 @@ def prepare_season(
     return out[list(OUT_COLUMNS)]
 
 
-def state_ids(df: pd.DataFrame, K: int, *, collapse_base_out: bool = False) -> np.ndarray:
-    """state_id 열 계산. collapse_base_out (B1): base_out 을 0 으로 접는다."""
+def context_ids(df: pd.DataFrame) -> np.ndarray:
+    """맥락 v0 [N] int64 (df 행 순서). 같은 타석 직전 구의 구종 계열, 타석 첫 구·직전 구가 행동 제외면 0."""
+    n = len(df)
+    if n == 0:
+        return np.zeros(0, dtype=np.int64)
+    g = df["game_pk"].to_numpy(dtype=np.int64)
+    ab = df["at_bat_number"].to_numpy(dtype=np.int64)
+    order = np.lexsort((df["pitch_number"].to_numpy(dtype=np.int64), ab, g))
+    pid = df["pitch_id"].to_numpy(dtype=np.int64)[order]
+    same = np.zeros(n, dtype=bool)
+    same[1:] = (g[order][1:] == g[order][:-1]) & (ab[order][1:] == ab[order][:-1])
+    prev = np.concatenate(([-1], pid[:-1]))
+    ctx = np.where(same, S.context_family_of_pitch(prev), 0)
+    out = np.empty(n, dtype=np.int64)
+    out[order] = ctx
+    return out
+
+
+def state_ids(df: pd.DataFrame, K: int, *, collapse_base_out: bool = False, C: int = 1, context_kind: str | None = None) -> np.ndarray:
+    """state_id 열 계산. collapse_base_out (B1): base_out 을 0 으로 접는다. C > 1 이면 맥락을 id 뒤에 접는다."""
     b = np.zeros(len(df), dtype=np.int64) if collapse_base_out else df["base_out_id"].to_numpy(dtype=np.int64)
     k = df["cluster_id"].to_numpy(dtype=np.int64)
     if K == 1:
         k = np.zeros_like(k)
-    return S.state_id(df["count_id"].to_numpy(dtype=np.int64), b, k, K)
+    if C == 1:
+        return S.state_id(df["count_id"].to_numpy(dtype=np.int64), b, k, K)
+    if context_kind != S.CONTEXT_KIND_V0:
+        raise ValueError(f"C>1 이면 context_kind 는 {S.CONTEXT_KIND_V0!r} 여야 함: {context_kind!r}")
+    return S.state_id(df["count_id"].to_numpy(dtype=np.int64), b, k, K, context_ids(df), C)
 
 
 def load_or_prepare(

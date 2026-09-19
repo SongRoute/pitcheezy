@@ -39,7 +39,7 @@ META_REQUIRED_KEYS: tuple[str, ...] = (
     "holdout_ece",
     "holdout_ece_hr",
     "excluded_pitchers",
-)
+)  # C·context_kind 는 필수가 아니다 (옛 산출물 호환. 없으면 C=1)
 PITCHERS_COLUMNS = ("pitcher_idx", "mlbam_id", "name", "n_pitches_train")
 FILES = ("P.npy", "valid.npy", "n_obs.npy", "states.parquet", "outcomes.parquet", "pitchers.parquet", "meta.json")
 
@@ -56,7 +56,7 @@ class TransitionTensor:
 
     def __post_init__(self) -> None:
         if self.states is None:
-            self.states = states_table(int(self.meta["K"]))
+            self.states = states_table(int(self.meta["K"]), self.C)
         if self.outcomes is None:
             self.outcomes = outcomes_table()
 
@@ -67,6 +67,11 @@ class TransitionTensor:
     @property
     def K(self) -> int:
         return int(self.meta["K"])
+
+    @property
+    def C(self) -> int:
+        """맥락 수. 옛 산출물(키 없음)은 1."""
+        return int(self.meta.get("C", 1))
 
     def save(self, d: Path) -> None:
         d = Path(d)
@@ -97,5 +102,5 @@ class TransitionTensor:
         )
 
 
-def expected_shape(n_pitchers: int, K: int) -> tuple[int, int, int, int]:
-    return (n_pitchers, n_states(K), N_ACTIONS, N_OUTCOMES)
+def expected_shape(n_pitchers: int, K: int, C: int = 1) -> tuple[int, int, int, int]:
+    return (n_pitchers, n_states(K, C), N_ACTIONS, N_OUTCOMES)

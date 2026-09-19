@@ -20,9 +20,9 @@ from pitcheezy.transition.smoothing import smooth_hierarchical
 ECE_BINS = 15
 
 
-def count_transitions(df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, K: int) -> np.ndarray:
+def count_transitions(df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, K: int, C: int = 1) -> np.ndarray:
     """n [P, S, A, O] 정수. action_id ≥ 0, outcome_id ≥ 0 인 투구만. 투수별로 세서 전체 int64 임시 배열을 만들지 않는다 (K=6 이면 7.5GB)."""
-    S_ = S.n_states(K)
+    S_ = S.n_states(K, C)
     ok = (df["action_id"].to_numpy() >= 0) & (df["outcome_id"].to_numpy() >= 0)
     p = df["pitcher_idx"].to_numpy(dtype=np.int64)[ok]
     s = state_id[ok].astype(np.int64)
@@ -55,12 +55,13 @@ def repertoire_counts(df: pd.DataFrame, n_pitchers: int) -> np.ndarray:
 def fit(
     df: pd.DataFrame, state_id: np.ndarray, pitchers: pd.DataFrame, K: int, *, alpha: float, alpha_pitcher: float | None = None,
     pitcher_group: str = "pitch", repertoire_min: int = DEFAULT_REPERTOIRE_MIN_PITCHES, valid_states: np.ndarray | None = None, meta: dict | None = None,
+    C: int = 1, context_kind: str | None = None,
 ) -> TransitionTensor:
     """학습 표 → TransitionTensor. valid_states [S] bool 로 B1 처럼 쓰지 않는 상태 행을 통째로 무효화."""
     n_p = len(pitchers)
-    S_ = S.n_states(K)
-    n = count_transitions(df, state_id, n_p, K)
-    cid = S.decode_state(np.arange(S_), K)[0]
+    S_ = S.n_states(K, C)
+    n = count_transitions(df, state_id, n_p, K, C)
+    cid = S.decode_state_full(np.arange(S_), K, C)[0]
     group = decode_action(np.arange(N_ACTIONS))[0]
     if pitcher_group == "pitch":  # 투수 층 = (카운트, 구종 9)
         pgroup, n_groups = group, N_PITCH
@@ -85,7 +86,7 @@ def fit(
     for i in range(n_p):
         n_obs[i] = n[i].sum(-1, dtype=np.int64)
     m = {
-        "spec_version": SPEC_VERSION, "model_arch": "count_hierarchical_dirichlet", "K": int(K),
+        "spec_version": SPEC_VERSION, "model_arch": "count_hierarchical_dirichlet", "K": int(K), "C": int(C), "context_kind": context_kind,
         "repertoire_min_pitches": int(repertoire_min), "row_sum_tol": DEFAULT_ROW_SUM_TOL, "alpha": float(alpha), "alpha_pitcher": None if alpha_pitcher is None else float(alpha_pitcher), "pitcher_group": pitcher_group,
         "n_train_pitches_with_action": int(n.sum()), "holdout_nll": None, "holdout_ece": None, "holdout_ece_hr": None,
         "excluded_pitchers": [],

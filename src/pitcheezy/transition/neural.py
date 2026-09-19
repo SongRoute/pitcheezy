@@ -1,6 +1,6 @@
 """전이 모델 ⓑ — 공유 신경망 + 투수 임베딩 (design.md ② ⓑ, D24). 산출은 count.fit 과 같은 TransitionTensor.
 
-입력 = 범주 임베딩 [카운트 12, 주자아웃 24, 타자 군집 K, 구종 9, 위치 25] + 투수 임베딩 (+ 선택: 투수×구종 임베딩)
+입력 = 범주 임베딩 [카운트 12, 주자아웃 24, 타자 군집 K, 구종 9, 위치 25] + 투수 임베딩 (+ 선택: 투수×구종, 맥락 C>1 임베딩)
       → MLP → 결과 11 로짓. 규칙 마스크(카운트별 불허 결과)는 로짓에서 −inf 로 막는다.
 모든 투수가 몸통(MLP)을 공유하고, 투수 고유 정보는 임베딩 벡터에만 들어간다. pitcher_dim = 0 이면 리그 공통 모델(대조군).
 에폭 수는 2023–24 학습 → 2025 홀드아웃 NLL 로 고른다 (count 모델의 α 스크리닝과 같은 자리, 2026 은 쓰지 않음).
@@ -47,7 +47,7 @@ def pick_device(name: str) -> torch.device:
 
 
 class SharedNet(nn.Module):
-    def __init__(self, n_pitchers: int, K: int, hp: dict):
+    def __init__(self, n_pitchers: int, K: int, hp: dict, C: int = 1):
         super().__init__()
         d = int(hp["cat_dim"])
         self.e_count = nn.Embedding(S.N_COUNTS, d)
@@ -55,13 +55,14 @@ class SharedNet(nn.Module):
         self.e_cl = nn.Embedding(K, d)
         self.e_pitch = nn.Embedding(N_PITCH, d)
         self.e_loc = nn.Embedding(N_LOC, d)
+        self.e_ctx = nn.Embedding(C, d) if C > 1 else None  # C=1 이면 파라미터까지 v1 과 동일
         self.dp, self.dpp = int(hp["pitcher_dim"]), int(hp["pitcher_pitch_dim"])
         self.e_p = nn.Embedding(n_pitchers, self.dp) if self.dp else None
         self.e_pp = nn.Embedding(n_pitchers * N_PITCH, self.dpp) if self.dpp else None
         for e in (self.e_p, self.e_pp):  # 0 에서 출발 = 리그 공통 모델에서 출발, 데이터가 있을 때만 벌어진다
             if e is not None:
                 nn.init.zeros_(e.weight)
-        layers, w = [], 5 * d + self.dp + self.dpp
+        layers, w = [], (6 if self.e_ctx is not None else 5) * d + self.dp + self.dpp
         for _ in range(int(hp["n_layers"])):
             layers += [nn.Linear(w, int(hp["hidden"])), nn.GELU()]
             if hp["dropout"]:
@@ -71,13 +72,16 @@ class SharedNet(nn.Module):
         self.mlp = nn.Sequential(*layers)
         self.register_buffer("rule", torch.from_numpy(O.rule_mask_table().astype(bool)))
 
-    def forward(self, p, c, b, k, g, l):
-        x = [self.e_count(c), self.e_bo(b), self.e_cl(k), self.e_pitch(g), self.e_loc(l)]
+    def forward(self, p, c, b, k, g, l, x=None):
+        """x = context_id (C>1 일 때만 쓴다)."""
+        z = [self.e_count(c), self.e_bo(b), self.e_cl(k), self.e_pitch(g), self.e_loc(l)]
+        if self.e_ctx is not None:
+            z.append(self.e_ctx(x))
         if self.e_p is not None:
-            x.append(self.e_p(p))
+            z.append(self.e_p(p))
         if self.e_pp is not None:
-            x.append(self.e_pp(p * N_PITCH + g))
-        logits = self.mlp(torch.cat(x, dim=-1))
+            z.append(self.e_pp(p * N_PITCH + g))
+        logits = self.mlp(torch.cat(z, dim=-1))
         return logits.masked_fill(~self.rule[c], float("-inf"))
 
     def embed_l2(self) -> torch.Tensor:
@@ -85,16 +89,16 @@ class SharedNet(nn.Module):
         return torch.stack(z).sum() if z else torch.zeros((), device=self.rule.device)
 
 
-def _rows(df: pd.DataFrame, state_id: np.ndarray, K: int):
-    """행동·결과가 있는 투구 → (p, c, b, k, g, l, o) int64 배열. 상태 성분은 state_id 에서 복원 (B1 의 주자아웃 붕괴와 일치)."""
+def _rows(df: pd.DataFrame, state_id: np.ndarray, K: int, C: int = 1):
+    """행동·결과가 있는 투구 → (p, c, b, k, g, l, ctx, o) int64 배열. 상태 성분은 state_id 에서 복원 (B1 의 주자아웃 붕괴와 일치)."""
     ok = (df["action_id"].to_numpy() >= 0) & (df["outcome_id"].to_numpy() >= 0)
     # 규칙 마스크가 막는 결과가 찍힌 행(데이터 이상, 시즌당 2~5구)은 뺀다: 마스크된 로짓이 정답이면 손실이 inf
-    cnt = S.decode_state(state_id, K)[0]
+    cnt = S.decode_state_full(state_id, K, C)[0]
     ok &= O.rule_mask_table()[cnt, np.maximum(df["outcome_id"].to_numpy(dtype=np.int64), 0)]
-    c, b, k = S.decode_state(state_id[ok], K)
+    c, b, k, x = S.decode_state_full(state_id[ok], K, C)
     g, l = decode_action(df["action_id"].to_numpy(dtype=np.int64)[ok])
-    cols = (df["pitcher_idx"].to_numpy(dtype=np.int64)[ok], c, b, k, g, l, df["outcome_id"].to_numpy(dtype=np.int64)[ok])
-    return tuple(np.ascontiguousarray(x, dtype=np.int64) for x in cols)
+    cols = (df["pitcher_idx"].to_numpy(dtype=np.int64)[ok], c, b, k, g, l, x, df["outcome_id"].to_numpy(dtype=np.int64)[ok])
+    return tuple(np.ascontiguousarray(z, dtype=np.int64) for z in cols)
 
 
 def _nll(net: SharedNet, rows, dev, bs: int = 65536) -> float:
@@ -103,16 +107,16 @@ def _nll(net: SharedNet, rows, dev, bs: int = 65536) -> float:
     with torch.no_grad():
         for i in range(0, len(rows[0]), bs):
             t = [torch.from_numpy(x[i:i + bs]).to(dev) for x in rows]
-            tot += float(nn.functional.cross_entropy(net(*t[:6]), t[6], reduction="sum"))
+            tot += float(nn.functional.cross_entropy(net(*t[:7]), t[7], reduction="sum"))
     return tot / max(len(rows[0]), 1)
 
 
-def train(train_rows, n_pitchers: int, K: int, hp: dict, seed: int, *, eval_rows=None, n_epochs: int | None = None):
+def train(train_rows, n_pitchers: int, K: int, hp: dict, seed: int, *, eval_rows=None, n_epochs: int | None = None, C: int = 1):
     """n_epochs 가 없으면 eval_rows NLL 로 조기 종료해 최적 에폭을 찾는다. 반환 (net, 이력). 이력.best_epoch = 쓸 에폭 수."""
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     dev = pick_device(hp["device"])
-    net = SharedNet(n_pitchers, K, hp).to(dev)
+    net = SharedNet(n_pitchers, K, hp, C).to(dev)
     opt = torch.optim.AdamW(net.parameters(), lr=float(hp["lr"]), weight_decay=float(hp["weight_decay"]))
     data = [torch.from_numpy(x).to(dev) for x in train_rows]
     n, bs = len(train_rows[0]), int(hp["batch_size"])
@@ -125,7 +129,7 @@ def train(train_rows, n_pitchers: int, K: int, hp: dict, seed: int, *, eval_rows
         for i in range(0, n, bs):
             idx = perm[i:i + bs]
             t = [x[idx] for x in data]
-            loss = nn.functional.cross_entropy(net(*t[:6]), t[6])
+            loss = nn.functional.cross_entropy(net(*t[:7]), t[7])
             if hp["embed_l2"]:
                 loss = loss + float(hp["embed_l2"]) * net.embed_l2()
             opt.zero_grad(set_to_none=True)
@@ -149,12 +153,12 @@ def train(train_rows, n_pitchers: int, K: int, hp: dict, seed: int, *, eval_rows
     return net, {"epochs": hist, "best_epoch": best[0] if best[0] else max_epochs, "device": str(dev)}
 
 
-def predict_tensor(net: SharedNet, n_pitchers: int, K: int, dev) -> np.ndarray:
+def predict_tensor(net: SharedNet, n_pitchers: int, K: int, dev, C: int = 1) -> np.ndarray:
     """P [P, S, A, O] float32. 투수 한 명씩 (S×A 행) 추론."""
-    S_ = S.n_states(K)
-    c, b, k = S.decode_state(np.repeat(np.arange(S_), N_ACTIONS), K)
+    S_ = S.n_states(K, C)
+    c, b, k, x = S.decode_state_full(np.repeat(np.arange(S_), N_ACTIONS), K, C)
     g, l = decode_action(np.tile(np.arange(N_ACTIONS), S_))
-    fixed = [torch.from_numpy(np.ascontiguousarray(x, dtype=np.int64)).to(dev) for x in (c, b, k, g, l)]
+    fixed = [torch.from_numpy(np.ascontiguousarray(z, dtype=np.int64)).to(dev) for z in (c, b, k, g, l, x)]
     out = np.empty((n_pitchers, S_, N_ACTIONS, O.N_OUTCOMES), dtype=np.float32)
     net.eval()
     with torch.no_grad():
@@ -171,24 +175,25 @@ def fit(
     df: pd.DataFrame, state_id: np.ndarray, pitchers: pd.DataFrame, K: int, *, hp: dict, seed: int, n_epochs: int | None = None,
     eval_df: pd.DataFrame | None = None, eval_state_id: np.ndarray | None = None,
     repertoire_min: int = DEFAULT_REPERTOIRE_MIN_PITCHES, valid_states: np.ndarray | None = None, meta: dict | None = None,
+    C: int = 1, context_kind: str | None = None,
 ) -> TransitionTensor:
     t0 = time.time()
-    n_p, S_ = len(pitchers), S.n_states(K)
-    eval_rows = _rows(eval_df, eval_state_id, K) if eval_df is not None else None
-    net, info = train(_rows(df, state_id, K), n_p, K, hp, seed, eval_rows=eval_rows, n_epochs=n_epochs)
-    P = predict_tensor(net, n_p, K, pick_device(hp["device"]))
+    n_p, S_ = len(pitchers), S.n_states(K, C)
+    eval_rows = _rows(eval_df, eval_state_id, K, C) if eval_df is not None else None
+    net, info = train(_rows(df, state_id, K, C), n_p, K, hp, seed, eval_rows=eval_rows, n_epochs=n_epochs, C=C)
+    P = predict_tensor(net, n_p, K, pick_device(hp["device"]), C)
     group = decode_action(np.arange(N_ACTIONS))[0]
     valid = (repertoire_counts(df, n_p) >= repertoire_min)[:, group]
     valid = np.broadcast_to(valid[:, None, :], (n_p, S_, N_ACTIONS)).copy()
     if valid_states is not None:
         valid &= np.asarray(valid_states, dtype=bool)[None, :, None]
     P[~valid] = 0.0
-    n = count_transitions(df, state_id, n_p, K)
+    n = count_transitions(df, state_id, n_p, K, C)
     n_obs = np.empty(n.shape[:3], dtype=np.int32)
     for i in range(n_p):
         n_obs[i] = n[i].sum(-1, dtype=np.int64)
     m = {
-        "spec_version": SPEC_VERSION, "model_arch": "shared_mlp_pitcher_embedding", "K": int(K), "repertoire_min_pitches": int(repertoire_min),
+        "spec_version": SPEC_VERSION, "model_arch": "shared_mlp_pitcher_embedding", "K": int(K), "C": int(C), "context_kind": context_kind, "repertoire_min_pitches": int(repertoire_min),
         "row_sum_tol": DEFAULT_ROW_SUM_TOL, "neural": {**hp, **info, "fit_seconds": time.time() - t0},
         "n_train_pitches_with_action": int(n.sum()), "holdout_nll": None, "holdout_ece": None, "holdout_ece_hr": None, "excluded_pitchers": [],
     }
