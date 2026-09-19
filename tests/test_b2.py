@@ -1,5 +1,8 @@
 """B2 재구현(모듈 층) 계약: 피처 빌더(창·패딩·좌타 반전), 타자 전 시즌 규칙, 마스크된 로짓, 학습 루프. 원본 데이터 없이 합성 표로만."""
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -171,3 +174,78 @@ def test_train_two_epochs_returns_finite_nll():
 def test_unknown_hparam_rejected():
     with pytest.raises(ValueError):
         B2.hparams({"d_modl": 8})
+
+
+# ---------------------------------------------------------------- 절제 플래그 (EXP-P1-007/008)
+def test_flags_default_true_and_must_be_bool():
+    hp = B2.hparams(HP)
+    assert hp["current_phys"] is True and hp["use_window"] is True  # 006 동작이 기본
+    for k in B2.FLAG_KEYS:
+        with pytest.raises(ValueError):
+            B2.hparams({**HP, k: "false"})  # yaml 문자열이 조용히 참이 되지 않게
+
+
+def test_existing_006_config_hparams_still_validate():
+    """EXP-P1-006 이 기록한 하이퍼파라미터(config·results·run meta)가 새 스키마에서도 그대로 통과한다."""
+    import json
+
+    import yaml
+
+    repo = Path(__file__).resolve().parents[1]
+    checked = []
+    cfg = yaml.safe_load((repo / "configs" / "EXP-P1-006.yaml").read_text())
+    checked.append(("config", B2.hparams(cfg["params"]["b2"])))
+    res = repo / "results" / "EXP-P1-006.json"
+    if res.exists():
+        checked.append(("results", B2.hparams(json.loads(res.read_text())["transition"]["b2"])))
+    runs = Path(os.environ.get("PITCHEEZY_RUNS_DIR", repo / "runs"))
+    for meta in sorted(runs.glob("EXP-P1-006/s*/b2/meta.json")):
+        checked.append((str(meta), B2.hparams(json.loads(meta.read_text())["b2"])))
+    for src, hp in checked:
+        assert hp["current_phys"] is True and hp["use_window"] is True, src  # 006 은 절제 없음
+
+
+FLAG_CASES = [(True, True), (False, True), (True, False), (False, False)]
+
+
+@pytest.mark.parametrize(("current_phys", "use_window"), FLAG_CASES)
+def test_flag_combinations_forward(current_phys, use_window):
+    ds, _, _ = make_ds()
+    ds = B2.Scaler.fit(ds).apply(ds)
+    net = B2.B2Net(B2.hparams({**HP, "current_phys": current_phys, "use_window": use_window}))
+    p = B2.predict_probs(net, ds, torch.device("cpu"))
+    assert np.isfinite(p).all()
+    np.testing.assert_allclose(p.sum(1), 1.0, atol=1e-6)
+    assert (p[~O.rule_mask_table()[ds.count]] == 0).all()
+    assert hasattr(net, "enc") == use_window  # 절제 시 인코더를 만들지 않는다
+
+
+@pytest.mark.parametrize(("current_phys", "use_window"), FLAG_CASES)
+def test_flags_ignore_the_inputs_they_ablate(current_phys, use_window):
+    """current_phys=False 면 현재 투구 물리 피처를, use_window=False 면 창을 흔들어도 출력이 그대로여야 한다."""
+    ds, _, _ = make_ds()
+    ds = B2.Scaler.fit(ds).apply(ds)
+    net = B2.B2Net(B2.hparams({**HP, "current_phys": current_phys, "use_window": use_window}))
+    dev = torch.device("cpu")
+    base = B2.predict_probs(net, ds, dev)
+    rng = np.random.default_rng(7)
+
+    cur_p = ds.take(np.arange(len(ds)))
+    cur_p.cur = (ds.cur + rng.normal(0, 3.0, ds.cur.shape)).astype(np.float32)
+    moved_cur = B2.predict_probs(net, cur_p, dev)
+
+    win_p = ds.take(np.arange(len(ds)))
+    win_p.win = (ds.win + rng.normal(0, 3.0, ds.win.shape)).astype(np.float32)
+    moved_win = B2.predict_probs(net, win_p, dev)
+
+    for probs, uses in ((moved_cur, current_phys), (moved_win, use_window)):
+        if uses:
+            assert not np.allclose(probs, base, atol=1e-6)
+        else:
+            np.testing.assert_allclose(probs, base, atol=1e-6)
+
+
+def test_ablations_change_parameter_count_only_as_declared():
+    n = {f: sum(p.numel() for p in B2.B2Net(B2.hparams({**HP, "current_phys": f[0], "use_window": f[1]})).parameters()) for f in FLAG_CASES}
+    assert n[(False, True)] < n[(True, True)]   # 현재 투구 물리 입력만큼 작다
+    assert n[(False, False)] < n[(False, True)]  # 인코더가 통째로 빠진다

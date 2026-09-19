@@ -33,6 +33,12 @@ EXP-P0-006·EXP-P1-001 과 한 표에 놓을 수 있다. 2026 은 어디에도 �
   2023 행에는 2022 가 없으므로 2023 시즌 자체의 리그 평균을 대치값으로 쓴다 (그 해 전체를 같은 상수로 채우므로 정보 누출 없음).
 
 결측 물리 피처: 학습 평균/표준편차로 표준화한 뒤 NaN → 0 (= 학습 평균으로 대치).
+
+절제 플래그 (기본 둘 다 True = EXP-P1-006 그대로)
+  current_phys=False → 현재 투구 블록에서 연속 물리 피처 7 을 뺀다 (구종 임베딩 + 위치 셀 임베딩만).
+     우리 전이 모델이 행동에 대해 가진 정보량(구종 9 × 위치 25)과 같아진다. EXP-P1-007.
+  use_window=False → 6구 시퀀스 인코더를 통째로 뺀다 (풀링 벡터를 결합하지 않는다). EXP-P1-008.
+  둘 다 Linear 입력 차원에서 빼므로 한 config 안에서 파라미터 수가 일정하다.
 """
 
 from __future__ import annotations
@@ -69,6 +75,8 @@ HP_DEFAULTS = {
     "d_model": 256, "n_heads": 4, "ff": 512, "n_layers": 2, "dropout": 0.1, "window": 6,
     "dense_pitch": 64, "dense_ctx": 32, "dense_head": 64,
     "lr": 1e-4, "batch_size": 512, "max_epochs": 200, "patience": 10, "device": "auto",
+    "current_phys": True,  # False = 현재 투구의 연속 물리 피처 7 제거 (구종·위치 임베딩만)
+    "use_window": True,    # False = 6구 시퀀스 인코더 제거
     "eval_subset": 0,  # > 0 이면 조기 종료용 홀드아웃 NLL 을 이 행 수의 고정 부분집합에서만 (최종 지표는 항상 전체)
 }
 
@@ -89,11 +97,17 @@ NOT_A_PA_EVENTS = frozenset({"truncated_pa"})
 TOTAL_BASES = {"single": 1, "double": 2, "triple": 3, "home_run": 4}
 
 
+FLAG_KEYS: tuple[str, ...] = ("current_phys", "use_window")
+
+
 def hparams(cfg: dict | None) -> dict:
     hp = {**HP_DEFAULTS, **(cfg or {})}
     unknown = set(hp) - set(HP_DEFAULTS)
     if unknown:
         raise ValueError(f"b2 하이퍼파라미터 모름: {sorted(unknown)}")
+    for k in FLAG_KEYS:  # yaml 의 "false" 같은 문자열이 조용히 참이 되지 않게
+        if not isinstance(hp[k], bool):
+            raise ValueError(f"b2.{k} 는 bool 이어야 함: {hp[k]!r}")
     return hp
 
 
@@ -303,29 +317,38 @@ class B2Net(nn.Module):
         super().__init__()
         d, w = int(hp["d_model"]), int(hp["window"])
         self.window = w
-        self.inp = nn.Linear(N_PHYS, d)
-        self.pos = nn.Embedding(w, d)
-        layer = nn.TransformerEncoderLayer(d, int(hp["n_heads"]), int(hp["ff"]), float(hp["dropout"]), batch_first=True)
-        self.enc = nn.TransformerEncoder(layer, int(hp["n_layers"]), enable_nested_tensor=False)  # 패딩 마스크 + MPS 에서 경로가 갈리지 않게
+        self.current_phys = bool(hp.get("current_phys", True))
+        self.use_window = bool(hp.get("use_window", True))
+        if self.use_window:  # 절제 시에는 인코더를 만들지도 않는다 (파라미터 수가 config 를 그대로 반영하도록)
+            self.inp = nn.Linear(N_PHYS, d)
+            self.pos = nn.Embedding(w, d)
+            layer = nn.TransformerEncoderLayer(d, int(hp["n_heads"]), int(hp["ff"]), float(hp["dropout"]), batch_first=True)
+            self.enc = nn.TransformerEncoder(layer, int(hp["n_layers"]), enable_nested_tensor=False)  # 패딩 마스크 + MPS 에서 경로가 갈리지 않게
+            self.register_buffer("posidx", torch.arange(w))
         dp, dc, dh = int(hp["dense_pitch"]), int(hp["dense_ctx"]), int(hp["dense_head"])
         self.e_pitch = nn.Embedding(N_PITCH, dp)
         self.e_loc = nn.Embedding(N_LOC, dp)
-        self.cur = nn.Sequential(nn.Linear(N_PHYS + 2 * dp, dp), nn.GELU())
+        self.cur = nn.Sequential(nn.Linear((N_PHYS if self.current_phys else 0) + 2 * dp, dp), nn.GELU())
         self.ctx = nn.Sequential(nn.Linear(N_CTX, dc), nn.GELU())
-        self.head = nn.Sequential(nn.Linear(d + dp + dc, dh), nn.GELU(), nn.Linear(dh, O.N_OUTCOMES))
+        self.head = nn.Sequential(nn.Linear((d if self.use_window else 0) + dp + dc, dh), nn.GELU(), nn.Linear(dh, O.N_OUTCOMES))
         self.register_buffer("rule", torch.from_numpy(O.rule_mask_table().astype(bool)))
-        self.register_buffer("posidx", torch.arange(w))
 
     def forward(self, win, pad, cur, pid, lid, ctx, count):
-        all_pad = pad.all(dim=1)
-        m = pad.clone()
-        m[all_pad] = False  # 전부 패딩이면 softmax 가 NaN → 일단 풀고 아래에서 0 으로 덮는다
-        h = self.enc(self.inp(win) + self.pos(self.posidx)[None], src_key_padding_mask=m)
-        keep = (~m).to(h.dtype)[..., None]
-        z = (h * keep).sum(1) / keep.sum(1).clamp(min=1.0)
-        z = z.masked_fill(all_pad[:, None], 0.0)
-        c = self.cur(torch.cat([cur, self.e_pitch(pid), self.e_loc(lid)], dim=-1))
-        logits = self.head(torch.cat([z, c, self.ctx(ctx)], dim=-1))
+        parts = []
+        if self.use_window:
+            all_pad = pad.all(dim=1)
+            m = pad.clone()
+            m[all_pad] = False  # 전부 패딩이면 softmax 가 NaN → 일단 풀고 아래에서 0 으로 덮는다
+            h = self.enc(self.inp(win) + self.pos(self.posidx)[None], src_key_padding_mask=m)
+            keep = (~m).to(h.dtype)[..., None]
+            z = (h * keep).sum(1) / keep.sum(1).clamp(min=1.0)
+            parts.append(z.masked_fill(all_pad[:, None], 0.0))
+        blocks = [self.e_pitch(pid), self.e_loc(lid)]
+        if self.current_phys:
+            blocks.insert(0, cur)
+        parts.append(self.cur(torch.cat(blocks, dim=-1)))
+        parts.append(self.ctx(ctx))
+        logits = self.head(torch.cat(parts, dim=-1))
         return logits.masked_fill(~self.rule[count], float("-inf"))
 
 
