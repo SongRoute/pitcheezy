@@ -1,0 +1,172 @@
+{
+  "id": "EXP-P1-007",
+  "phase": 1,
+  "baseline": "EXP-P1-006",
+  "change": "B2 에서 현재 투구의 연속 물리 피처 제거(구종·위치 셀만) — 시퀀스 맥락 효과 분리",
+  "data_version": "d20260911-s2325",
+  "pool_version": "pool-ip100-2023_2025-d20260911-s2325-2b19cc1",
+  "re24_version": "re24-2023_2025-d20260911-s2325-82b008b",
+  "commits": [
+    "1899bdc"
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "created_at": "2026-09-19T21:12:07+00:00",
+  "params": {
+    "train_seasons": [
+      2023,
+      2024
+    ],
+    "eval_season": 2025,
+    "ref_experiment": "EXP-P0-006",
+    "b2": {
+      "d_model": 256,
+      "n_heads": 4,
+      "ff": 512,
+      "n_layers": 2,
+      "dropout": 0.1,
+      "window": 6,
+      "dense_pitch": 64,
+      "dense_ctx": 32,
+      "dense_head": 64,
+      "lr": 0.0001,
+      "batch_size": 512,
+      "max_epochs": 200,
+      "patience": 10,
+      "eval_subset": 0,
+      "device": "auto",
+      "current_phys": false,
+      "use_window": true
+    }
+  },
+  "transition": {
+    "arch": "b2_transformer",
+    "holdout_nll": 1.168840200625689,
+    "holdout_ece": 0.0032262854287783945,
+    "holdout_ece_hr": 0.0010315725284404612,
+    "n_epochs": 24,
+    "b2": {
+      "d_model": 256,
+      "n_heads": 4,
+      "ff": 512,
+      "n_layers": 2,
+      "dropout": 0.1,
+      "window": 6,
+      "dense_pitch": 64,
+      "dense_ctx": 32,
+      "dense_head": 64,
+      "lr": 0.0001,
+      "batch_size": 512,
+      "max_epochs": 200,
+      "patience": 10,
+      "device": "auto",
+      "current_phys": false,
+      "use_window": true,
+      "eval_subset": 0
+    },
+    "excluded_pitchers": [
+      608372,
+      681343,
+      702070,
+      695418,
+      694477,
+      690990,
+      687473,
+      678024
+    ]
+  },
+  "holdout_nll_by_seed": {
+    "0": 1.168840200625689,
+    "1": 1.169457019677075,
+    "2": 1.1683677600295599
+  },
+  "holdout_metrics": {
+    "b2_rows": {
+      "holdout_nll": 1.168840200625689,
+      "holdout_ece": 0.0032262854287783945,
+      "holdout_ece_hr": 0.0010315725284404612,
+      "holdout_ece_by_outcome": {
+        "ball": 0.012752132519848497,
+        "strike": 0.0019204596734729881,
+        "foul": 0.01017905394115979,
+        "K": 0.0024981758434627264,
+        "BB": 0.001453389540378964,
+        "HBP": 0.00016761291340364437,
+        "1B": 0.002720933159849162,
+        "2B": 0.00034899499574100136,
+        "3B": 0.0001007556146190036,
+        "HR": 0.0010315725284404612,
+        "in_play_out": 0.0023160589861861113
+      },
+      "holdout_n_pitches": 349797,
+      "holdout_accuracy_top1": 0.5588155415855481
+    },
+    "common_rows": {
+      "b2": {
+        "holdout_nll": 1.1696956585205702,
+        "holdout_ece": 0.003162929311436077,
+        "holdout_ece_hr": 0.0010439515987490208,
+        "holdout_ece_by_outcome": {
+          "ball": 0.011781363005891582,
+          "strike": 0.001862035037229977,
+          "foul": 0.010365045813201279,
+          "K": 0.00255010723015101,
+          "BB": 0.0014740028306661156,
+          "HBP": 0.0001604021715456325,
+          "1B": 0.0027660053607100206,
+          "2B": 0.00038197286541061964,
+          "3B": 0.00010399415226012177,
+          "HR": 0.0010439515987490208,
+          "in_play_out": 0.0023033423599814616
+        },
+        "holdout_n_pitches": 322662,
+        "holdout_accuracy_top1": 0.5581909242489044
+      },
+      "ref_EXP-P0-006": {
+        "holdout_nll": 1.2098643828559403,
+        "holdout_ece": 0.004946239724212351,
+        "holdout_ece_hr": 0.0006026849503884021,
+        "holdout_ece_by_outcome": {
+          "ball": 0.022939168812558447,
+          "strike": 0.00844062178981894,
+          "foul": 0.005068361061555172,
+          "K": 0.002865312448196104,
+          "BB": 0.004087574639107213,
+          "HBP": 0.00045988125305754734,
+          "1B": 0.0050214051572275336,
+          "2B": 0.0009503635407974055,
+          "3B": 0.0001149921672190181,
+          "HR": 0.0006026849503884021,
+          "in_play_out": 0.003858271146410077
+        },
+        "holdout_n_pitches": 322662,
+        "holdout_accuracy_top1": 0.5516732680018099
+      }
+    }
+  },
+  "ref": {
+    "ref_valid_source": "/Volumes/T7 Shield/pitcheezy/runs/EXP-P0-006/s0/transition_holdout",
+    "ref_valid_is_holdout_window": true,
+    "n_common_rows": 322662,
+    "ref_P_source": "/Volumes/T7 Shield/pitcheezy/runs/EXP-P0-006/s0/transition_holdout/P.npy"
+  },
+  "data": {
+    "n_train_rows": 735943,
+    "n_eval_rows": 349797,
+    "n_eval_rows_dropped_pitcher_absent": 16479,
+    "prev_season_missing_frac_eval": 0.12460369871668425,
+    "prev_season_missing_frac_train": 0.5495683768987544
+  },
+  "value": null,
+  "ope": {
+    "note": "모듈층만 — OPE 해당 없음"
+  },
+  "timing_seconds": {
+    "build": 1.708055019378662,
+    "train": 1465.8027460575104,
+    "total": 1476.592768907547
+  }
+}

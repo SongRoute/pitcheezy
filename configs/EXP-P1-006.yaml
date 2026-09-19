@@ -1,0 +1,33 @@
+# EXP-P1-006 — B2(Takamido & Nakamoto 류) Transformer 를 우리 결과 공간 11-way 로 재구현. 모듈 층만 (텐서·VI·OPE 없음).
+# 저울: 2023–24 학습 → 2025 홀드아웃 NLL·ECE·ECE_HR·top-1. 006·P1-001 과 같은 행 집합(common_rows)에서도 함께 낸다.
+id: EXP-P1-006
+phase: 1
+baseline: EXP-P0-006
+change: "B2 Takamido류 Transformer 재구현 — 모듈층(2025 홀드아웃 NLL·ECE)만"
+data_version: d20260911-s2325
+pool_version: pool-ip100-2023_2025-d20260911-s2325-2b19cc1
+re24_version: re24-2023_2025-d20260911-s2325-82b008b
+seeds: [0, 1, 2]                 # 신경망 학습에 난수 있음
+wandb:
+  project: pitcheezy
+  mode: online
+params:
+  train_seasons: [2023, 2024]    # 2026 은 어디에도 쓰지 않는다 (OPE 전용, 이 실험엔 OPE 없음)
+  eval_season: 2025
+  ref_experiment: EXP-P0-006     # common_rows 를 정의하는 우리 전이 모델 (holdout 텐서의 valid·P)
+  b2:
+    d_model: 256                 # 논문: 임베딩 256
+    n_heads: 4
+    ff: 512
+    n_layers: 2
+    dropout: 0.1
+    window: 6                    # 같은 타석 직전 6구
+    dense_pitch: 64              # 현재 투구 블록 + 구종·위치 임베딩 차원
+    dense_ctx: 32                # 맥락 블록
+    dense_head: 64               # 결합 후 dense
+    lr: 0.0001
+    batch_size: 512
+    max_epochs: 200              # 조기 종료(2025 홀드아웃 NLL, patience 10)로 실제 에폭 결정
+    patience: 10
+    eval_subset: 0               # > 0 이면 조기 종료 판정만 이 행 수의 고정 부분집합에서. 최종 지표는 항상 전체
+    device: auto                 # mps 있으면 mps
