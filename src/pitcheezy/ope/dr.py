@@ -24,15 +24,19 @@ from pitcheezy.policy import vi as VI
 
 
 def q_from_v(P: np.ndarray, R: np.ndarray, nxt: np.ndarray, V: np.ndarray, *, chunk: int = 16) -> np.ndarray:
-    """Q[p,s,a] = Σ_o P[p,s,a,o]·(R[s,o] + 1[nxt≥0]·V[p, nxt[s,o]]) float64. P 는 mmap 가능 → 투수 청크로."""
+    """Q[p,s,a] = Σ_o P[p,s,a,o]·(R[s,o] + 1[nxt≥0]·V[p, nxt[…]]) float64. P 는 mmap 가능 → 투수 청크로.
+
+    nxt 는 [S, O] (C=1) 와 [S, A, O] (맥락 C>1 — 다음 맥락이 행동의 구종 계열이라 다음 상태가 행동에 의존) 를 모두 받는다.
+    VI.value_iteration 과 같은 식 (gather_next + 행동 의존이면 psao,psao→psa).
+    """
     n_p = P.shape[0]
     Q = np.empty(P.shape[:3])
-    nxt_safe = np.where(nxt >= 0, nxt, 0)
-    is_next = (nxt >= 0)[None]
+    act_dep = nxt.ndim == 3
     for lo in range(0, n_p, chunk):
         hi = min(lo + chunk, n_p)
-        Vn = np.where(is_next, V[lo:hi][:, nxt_safe], 0.0)  # [c, S, O]
-        Q[lo:hi] = np.einsum("psao,pso->psa", np.asarray(P[lo:hi], dtype=np.float64), R[None] + Vn)
+        Vn = VI.gather_next(V[lo:hi], nxt)  # [c, S, O] 또는 [c, S, A, O]
+        Pc = np.asarray(P[lo:hi], dtype=np.float64)
+        Q[lo:hi] = np.einsum("psao,psao->psa", Pc, R[:, None, :] + Vn) if act_dep else np.einsum("psao,pso->psa", Pc, R[None] + Vn)
     return Q
 
 

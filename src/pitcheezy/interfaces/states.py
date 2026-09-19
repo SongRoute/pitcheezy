@@ -25,6 +25,7 @@ N_CONTEXT_V0 = 4  # 맥락 v0 의 C
 CONTEXT_KIND_V0 = "prev_pitch_family"
 
 STATES_COLUMNS = ("state_id", "count_id", "base_out_id", "cluster_id", "context_id")
+STATES_COLUMNS_V1 = ("state_id", "count_id", "base_out_id", "cluster_id")  # 맥락 이전(v1) 산출물. C=1 일 때만 허용 (context_id = 0 으로 봄)
 
 
 def n_states(K: int, C: int = 1) -> int:

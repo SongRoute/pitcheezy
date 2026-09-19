@@ -45,7 +45,7 @@
 P.npy          float32 [P, S, A, O]
 valid.npy      bool    [P, S, A]
 n_obs.npy      int32   [P, S, A]
-states.parquet          state_id ↔ count_id, base_out_id, cluster_id
+states.parquet          state_id ↔ count_id, base_out_id, cluster_id, context_id (v1.1)
 outcomes.parquet        outcome_id, terminal, count_rule, statcast 매핑
 pitchers.parquet        pitcher_idx ↔ MLBAM id, 이름, 학습 창 투구 수
 meta.json
@@ -78,4 +78,4 @@ sha256.txt              위 파일 전부
 - v1 (2026-09-15, D5·D6): 노션에서 레포로 이관. 생산·소비 주체를 트랙에서 모듈명으로. 베이스라인 재구현 절 추가. 스키마 변경 없음
 - v0 (2026-09-07): 템플릿
 - v1 (2026-09-17, D13): `src/pitcheezy/interfaces/` 코드화 + `tests/interfaces/` 계약 테스트. 규칙 마스크에 같은 규칙의 뒷면(BB 는 3볼, K 는 2스트에서만) 명시. Statcast 매핑에 데이터에서 실제로 보인 값 추가: automatic_ball/automatic_strike(피치클록, 구종 null → 행동 제외·카운트만 진행), intent_ball·intent_walk, bunt_foul_tip, foul_pitchout, field_error·catcher_interf → 인플레이 아웃("나머지 전부"). 종결은 events, 비종결은 description 으로 판정(주자 사건은 무시). 축·형상·저장 포맷 변경 없음
-- v1.1 (2026-09-20, D32): 시퀀스 맥락 v0 — 별도 축 대신 state id 뒤에 접음(C=1 이면 v1 과 동일). states.parquet 에 context_id 열. meta 에 C·context_kind(선택). next_state 가 행동 의존 [S,A,O]
+- v1.1 (2026-09-20, D32): 시퀀스 맥락 v0 — 별도 축 대신 state id 뒤에 접음(C=1 이면 v1 과 동일). states.parquet 에 context_id 열. meta 에 C·context_kind(선택). next_state 가 행동 의존 [S,A,O]. 검증 계약은 C=1 일 때 context_id 열이 없는 v1 states.parquet 도 받는다(옛 산출물 재검증용, context_id ≡ 0). C>1 은 5열 필수

@@ -130,3 +130,21 @@ def test_b1_collapse_shape_is_same_family():
     t = make_tensor(K=1)
     assert t.P.shape == (2, 288, 225, 11)
     assert validate_transition(t) == []
+
+
+def test_legacy_states_table_without_context_id():
+    """맥락 이전(v1) 산출물의 states.parquet 에는 context_id 열이 없다 → C=1 이면 그대로 통과 (재검증 가능)."""
+    t = make_tensor(K=2)
+    t.states = t.states.drop(columns=["context_id"])
+    assert validate_transition(t) == []
+    t.states = t.states.iloc[:-1]  # 길이가 틀리면 여전히 실패
+    assert any("states 표" in p for p in validate_transition(t))
+
+
+def test_context_tensor_requires_context_id_column():
+    """C > 1 이면 5열 states 표를 그대로 요구한다 (맥락을 잃은 표는 실패)."""
+    t = make_tensor(n_pitchers=1, K=1, C=4)
+    assert t.C == 4 and t.P.shape == (1, 1152, 225, 11)
+    assert validate_transition(t) == []
+    t.states = t.states.drop(columns=["context_id"])
+    assert any("states 표" in p for p in validate_transition(t))

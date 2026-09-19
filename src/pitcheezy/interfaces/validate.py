@@ -13,7 +13,7 @@ from . import tensor as T
 from . import value as V
 from .grid import ACTIONS_COLUMNS, N_ACTIONS  # noqa: F401 - re-export for tests
 from .outcomes import N_OUTCOMES, OUTCOMES_COLUMNS, rule_mask_table
-from .states import N_COUNT_BASE_OUT, STATES_COLUMNS, decode_state_full, n_states
+from .states import N_COUNT_BASE_OUT, STATES_COLUMNS, STATES_COLUMNS_V1, decode_state_full, n_states
 
 
 def validate_transition(t: T.TransitionTensor, *, row_sum_tol: float | None = None) -> list[str]:
@@ -71,8 +71,12 @@ def validate_transition(t: T.TransitionTensor, *, row_sum_tol: float | None = No
         p.append(f"규칙 마스크 셀 ≠ 0: {int(viol.sum())}개")
 
     # 룩업 표
-    if tuple(t.states.columns) != STATES_COLUMNS or len(t.states) != S:
-        p.append(f"states 표 {list(t.states.columns)}×{len(t.states)} ≠ {list(STATES_COLUMNS)}×{S}")
+    cols = tuple(t.states.columns)
+    # 맥락 이전(v1) 산출물은 context_id 열이 없다 → C=1 이면 그대로 통과 (context_id ≡ 0). C>1 은 5열을 요구한다.
+    cols_ok = cols == STATES_COLUMNS or (C == 1 and cols == STATES_COLUMNS_V1)
+    if not cols_ok or len(t.states) != S:
+        want = list(STATES_COLUMNS) + ([f"(또는 v1 {list(STATES_COLUMNS_V1)})"] if C == 1 else [])
+        p.append(f"states 표 {list(cols)}×{len(t.states)} ≠ {want}×{S}")
     elif not (t.states["state_id"].to_numpy() == np.arange(S)).all():
         p.append("states.state_id 가 0..S−1 순서가 아님")
     if tuple(t.outcomes.columns) != OUTCOMES_COLUMNS or len(t.outcomes) != N_OUTCOMES:
