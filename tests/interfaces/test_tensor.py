@@ -8,6 +8,7 @@ import pytest
 
 from pitcheezy.interfaces import outcomes as O
 from pitcheezy.interfaces import tensor as T
+from pitcheezy.interfaces import validate as VD
 from pitcheezy.interfaces.states import count_id, state_id
 from pitcheezy.interfaces.validate import validate_transition
 
@@ -148,3 +149,26 @@ def test_context_tensor_requires_context_id_column():
     assert validate_transition(t) == []
     t.states = t.states.drop(columns=["context_id"])
     assert any("states 표" in p for p in validate_transition(t))
+
+
+def test_row_sum_and_mask_checks_are_chunked():
+    """행 합·마스크 검사는 투수 청크로 돈다 (C=7 에서 전체 float64 복사가 9GB). 청크 경계 너머의 위반도 세야 한다."""
+    n_p = VD.P_CHUNK + 1  # 청크 2개 (마지막은 투수 1명)
+    t = make_tensor(n_pitchers=n_p, K=1)
+    assert validate_transition(t) == []
+    last = n_p - 1
+    s_v, a_v = (int(x) for x in np.argwhere(t.valid[last])[0])
+    t.P[last, s_v, a_v] *= 1.01  # 마지막 청크에 valid 행 합 위반 1개
+    s_m, a_m = state_id(count_id(3, 1), 0, 0, 1), 0  # 3볼에 '볼' = 규칙 마스크 위반. 합은 1 로 맞춰 행 합 검사와 분리
+    assert (s_m, a_m) != (s_v, a_v)
+    row = np.zeros(O.N_OUTCOMES, dtype=np.float32)
+    row[O.BALL], row[O.FOUL] = 0.5, 0.5
+    t.valid[last, s_m, a_m] = True
+    t.P[last, s_m, a_m] = row
+    probs = validate_transition(t)
+    assert any("valid 행 합" in x and "1개" in x for x in probs)
+    assert any("규칙 마스크 셀 ≠ 0: 1개" in x for x in probs)
+    # 첫 청크에도 같은 위반을 넣으면 개수가 청크를 가로질러 합산된다
+    t.valid[0, s_m, a_m] = True
+    t.P[0, s_m, a_m] = row
+    assert any("규칙 마스크 셀 ≠ 0: 2개" in x for x in validate_transition(t))

@@ -15,4 +15,6 @@ params: {}                       # 모듈별 하이퍼파라미터
 #   state:
 #     K: 1
 #     collapse_base_out: false
-#     context: {kind: prev_pitch_family, C: 4}   # 시퀀스 맥락 v0 = 직전 구 구종 계열. 없으면 C=1 (맥락 없음)
+#     context: {kind: prev_pitch_family, C: 4}        # 시퀀스 맥락 v0 = 직전 구 구종 계열 (D32)
+#     context: {kind: prev_pitch_family_zone, C: 7}   # 시퀀스 맥락 v1 = 계열 × 존 안/밖 (D35)
+#   context 키가 없으면 C=1 (맥락 없음). kind 는 interfaces/states.py 의 CONTEXT_KINDS 에 있는 것만, C 는 그 종류의 값과 같아야 한다

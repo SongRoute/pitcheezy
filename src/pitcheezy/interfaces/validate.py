@@ -15,6 +15,8 @@ from .grid import ACTIONS_COLUMNS, N_ACTIONS  # noqa: F401 - re-export for tests
 from .outcomes import N_OUTCOMES, OUTCOMES_COLUMNS, rule_mask_table
 from .states import N_COUNT_BASE_OUT, STATES_COLUMNS, STATES_COLUMNS_V1, decode_state_full, n_states
 
+P_CHUNK = 16  # 행 합·마스크 검사의 투수 청크 (봉우리 메모리)
+
 
 def validate_transition(t: T.TransitionTensor, *, row_sum_tol: float | None = None) -> list[str]:
     """계약 위반 목록. 비어 있으면 통과. 재정규화 없음 (실패는 실패)."""
@@ -47,28 +49,38 @@ def validate_transition(t: T.TransitionTensor, *, row_sum_tol: float | None = No
     if p:
         return p  # 형상이 틀리면 아래 검사는 의미 없음
 
-    if np.isnan(t.P).any():
-        p.append("P 에 NaN")
-    if (t.P < 0).any():
-        p.append("P 에 음수")
-    if (t.n_obs < 0).any():
-        p.append("n_obs 에 음수")
-
-    row = t.P.astype(np.float64).sum(axis=-1)
-    bad_valid = t.valid & (np.abs(row - 1.0) > tol)
-    if bad_valid.any():
-        p.append(f"valid 행 합 1±{tol} 위반 {int(bad_valid.sum())}개 (최대 편차 {float(np.abs(row[t.valid] - 1).max()):.2e})")
-    bad_invalid = (~t.valid) & (row != 0.0)
-    if bad_invalid.any():
-        p.append(f"valid=False 행 합 0 위반 {int(bad_invalid.sum())}개")
-
-    # 규칙 마스크: state → count_id → 불허 outcome 셀은 0
+    # P 전체 검사(NaN·음수·행 합·규칙 마스크)는 투수 청크로 돈다.
+    # 전체 텐서를 float64 로 복사하면 C=7 에서 9GB → 봉우리 메모리를 O(chunk × S × A × O) 로 묶는다. (D35)
     S = n_states(K, C)
     count_of_state = decode_state_full(np.arange(S), K, C)[0]
     allowed = rule_mask_table()[count_of_state]  # [S, O]
-    viol = (t.P != 0) & ~allowed[None, :, None, :]
-    if viol.any():
-        p.append(f"규칙 마스크 셀 ≠ 0: {int(viol.sum())}개")
+    has_nan = has_neg = False
+    n_bad_valid = n_bad_invalid = n_viol = 0
+    max_dev = 0.0
+    for lo in range(0, n_p, P_CHUNK):
+        hi = min(lo + P_CHUNK, n_p)
+        blk = np.asarray(t.P[lo:hi])  # mmap 이면 여기서만 실체화
+        has_nan = has_nan or bool(np.isnan(blk).any())
+        has_neg = has_neg or bool((blk < 0).any())
+        row = blk.sum(axis=-1, dtype=np.float64)
+        vd = t.valid[lo:hi]
+        n_bad_valid += int((vd & (np.abs(row - 1.0) > tol)).sum())
+        if vd.any():
+            max_dev = max(max_dev, float(np.abs(row[vd] - 1).max()))
+        n_bad_invalid += int(((~vd) & (row != 0.0)).sum())
+        n_viol += int(((blk != 0) & ~allowed[None, :, None, :]).sum())
+    if has_nan:
+        p.append("P 에 NaN")
+    if has_neg:
+        p.append("P 에 음수")
+    if (t.n_obs < 0).any():
+        p.append("n_obs 에 음수")
+    if n_bad_valid:
+        p.append(f"valid 행 합 1±{tol} 위반 {n_bad_valid}개 (최대 편차 {max_dev:.2e})")
+    if n_bad_invalid:
+        p.append(f"valid=False 행 합 0 위반 {n_bad_invalid}개")
+    if n_viol:
+        p.append(f"규칙 마스크 셀 ≠ 0: {n_viol}개")
 
     # 룩업 표
     cols = tuple(t.states.columns)

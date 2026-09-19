@@ -10,6 +10,7 @@ import pytest
 from pitcheezy.data import prepare as PR
 from pitcheezy.interfaces import outcomes as O
 from pitcheezy.interfaces.grid import N_ACTIONS, decode_action
+from pitcheezy.interfaces import states as S
 from pitcheezy.interfaces.states import context_family_of_pitch, count_id, decode_state_full, n_states, state_id
 from pitcheezy.interfaces.validate import validate_transition
 from pitcheezy.ope import behavior as BH
@@ -207,3 +208,71 @@ def test_fit_behavior_with_context():
     assert (pb > 0).all()
     pbl = BH.behavior_logged_crossfit(df, sid, 2, 1, alpha=5.0, n_folds=3, C=4)
     assert np.isnan(pbl).sum() == 0 and (pbl > 0).all()
+
+
+# ---------------------------------------------------------------- 맥락 v1 (C=7)
+def test_next_state_table_context_v1():
+    K, C, kind = 1, 7, S.CONTEXT_KIND_V1
+    nxt = VI.next_state_table(K, C, kind)
+    S_ = n_states(K, C)
+    assert nxt.shape == (S_, N_ACTIONS, O.N_OUTCOMES) == (2016, 225, 11) and nxt.dtype == np.int64
+    c, b, k, _ = decode_state_full(np.arange(S_), K, C)
+    pid_a, loc_a = decode_action(np.arange(N_ACTIONS))
+    nctx = S.context_of_action(pid_a, loc_a, kind)  # [A]
+    assert set(np.unique(nctx).tolist()) == {1, 2, 3, 4, 5, 6}  # 행동에는 "없음"(0) 이 안 나온다
+    nc = np.full((12, O.N_OUTCOMES), -1)
+    for ci in range(12):
+        for o in O.NONTERMINAL:
+            try:
+                nc[ci, o] = O.next_count(ci, o)
+            except ValueError:
+                pass
+    ok = nxt >= 0
+    assert (ok == (nc[c][:, None, :] >= 0)).all()
+    assert (nxt[:, :, list(O.TERMINAL)] == -1).all()
+    c2, b2, k2, x2 = decode_state_full(np.where(ok, nxt, 0), K, C)
+    big = lambda a: np.broadcast_to(a, nxt.shape)  # noqa: E731
+    assert (x2[ok] == big(nctx[None, :, None])[ok]).all()  # 다음 맥락 = context_of_action(행동)
+    assert (c2[ok] == big(nc[c][:, None, :])[ok]).all()
+    assert (b2[ok] == big(b[:, None, None])[ok]).all() and (k2[ok] == big(k[:, None, None])[ok]).all()
+    # 2스트라이크 파울: 카운트·주자아웃 그대로, 맥락만 행동을 따라간다. 행동 0 = FF loc 0 (존 밖) → 1
+    s = state_id(count_id(3, 2), 7, 0, K, 5, C)
+    assert decode_state_full(int(nxt[s, 0, O.FOUL]), K, C) == (count_id(3, 2), 7, 0, 1)
+    assert decode_state_full(int(nxt[s, 12, O.FOUL]), K, C) == (count_id(3, 2), 7, 0, 2)  # FF loc 12 = 존 안
+    assert nxt[s, 0, O.BALL] == -1
+
+
+def test_next_state_table_context_kind_checks():
+    with pytest.raises(ValueError):
+        VI.next_state_table(1, 7)  # C>1 인데 kind 없음 (v0 뒤 호환은 C=4 만)
+    with pytest.raises(ValueError):
+        VI.next_state_table(1, 4, S.CONTEXT_KIND_V1)  # C 와 kind 불일치
+    with pytest.raises(ValueError):
+        VI.next_state_table(1, 7, "prev_pitch_family_quadrant")
+
+
+def test_next_state_table_v0_regression():
+    """v0 회귀: C=4 는 kind 를 안 줘도 변경 전(계열 인라인)과 완전히 같아야 한다."""
+    K, C = 1, 4
+    nxt = VI.next_state_table(K, C)
+    assert np.array_equal(nxt, VI.next_state_table(K, C, S.CONTEXT_KIND_V0))
+    base2 = VI.next_state_table(K)  # [S, O] — C=1 경로도 불변
+    base = base2[np.arange(n_states(K, C)) // C]
+    fam = context_family_of_pitch(decode_action(np.arange(N_ACTIONS))[0])
+    want = np.where(base[:, None, :] >= 0, base[:, None, :] * C + fam[None, :, None], -1)
+    assert np.array_equal(nxt, want)
+
+
+def test_count_fit_with_context_v1(tmp_path):
+    """C=7 e2e: state_ids → count.fit → 검증 계약. 맥락을 접어도 관측 수는 보존된다."""
+    df, index = _fixture_prepared(tmp_path)
+    pit = pd.DataFrame({"pitcher_idx": np.arange(2, dtype=np.int32), "mlbam_id": np.array(sorted(index), dtype=np.int64),
+                        "name": ["a", "b"], "n_pitches_train": np.full(2, len(df) // 2, dtype=np.int32)})
+    kind = S.CONTEXT_KIND_V1
+    sid7 = PR.state_ids(df, 1, C=7, context_kind=kind)
+    t7 = TC.fit(df, sid7, pit, 1, C=7, context_kind=kind, alpha=5.0, repertoire_min=1, meta=CTX_META)
+    assert validate_transition(t7) == []
+    assert t7.C == 7 and t7.context_kind == kind and t7.P.shape == (2, n_states(1, 7), N_ACTIONS, O.N_OUTCOMES)
+    assert len(t7.states) == n_states(1, 7)
+    assert int(t7.n_obs.sum()) == int(((df["action_id"] >= 0) & (df["outcome_id"] >= 0)).sum())
+    assert (sid7 // 7 == PR.state_ids(df, 1)).all()  # 맥락을 빼면 C=1 과 같은 상태

@@ -20,7 +20,7 @@ import yaml
 from pitcheezy.data import prepare as PR
 from pitcheezy.interfaces import outcomes as O
 from pitcheezy.interfaces.re24 import RE24Table
-from pitcheezy.interfaces.states import N_BASE_OUT, decode_state_full, n_states
+from pitcheezy.interfaces.states import N_BASE_OUT, decode_state_full, n_context, n_states
 from pitcheezy.interfaces.tensor import TransitionTensor
 from pitcheezy.interfaces.validate import validate_transition, validate_value
 from pitcheezy.interfaces.value import ValueBundle
@@ -62,6 +62,8 @@ class Experiment:
         ctx = self.p["state"].get("context") or {}  # 없으면 맥락 없음 (C=1, v1 과 동일)
         self.C = int(ctx.get("C", 1))
         self.context_kind = ctx.get("kind")
+        if self.C != 1 and self.C != n_context(self.context_kind or ""):  # config 오타를 여기서 잡는다
+            raise ValueError(f"state.context 의 C={self.C} 와 kind={self.context_kind!r} 가 안 맞음")
         self.seed_dir = self.runs_dir / self.id / f"s{self.seed}"
         # transition·value 는 결정론적 → s0 에만. transition.reuse_from 이 있으면 그 실험의 s0 을 그대로 쓴다 (예: 003 기준선은 001 텐서)
         # 예외: arch=neural 은 학습에 난수가 있어 시드마다 자기 디렉터리에 둔다
@@ -222,7 +224,7 @@ class Experiment:
             return {"reused": True, **json.loads((out / "meta.json").read_text()).get("vi", {})}
         t = TransitionTensor.load(self.s0_dir / "transition", mmap=True)
         R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(pp.get("reward_collapse_base_out", False)), C=self.C)
-        nxt = VI.next_state_table(self.K, self.C)
+        nxt = VI.next_state_table(self.K, self.C, self.context_kind)
         Q, V, iters, delta = VI.value_iteration(t.P, t.valid, R, nxt)
         kind = pp.get("kind", "softmax")
         # tilt 는 평가 시즌 π_b 가 필요해 여기서 못 만든다 → value/policy.npy 에는 같은 τ 의 softmax 를 저장 (meta.relax 에 기록)
@@ -308,7 +310,7 @@ class Experiment:
         games = pa["game_pk"].to_numpy()
         key = pa[["game_pk", "at_bat_number"]]
         R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(self.p["policy"].get("reward_collapse_base_out", False)), C=self.C)
-        nxt = VI.next_state_table(self.K, self.C)
+        nxt = VI.next_state_table(self.K, self.C, self.context_kind)
         first = ev.groupby(["game_pk", "at_bat_number"], sort=False).head(1)
         f_p, f_s = first["pitcher_idx"].to_numpy(dtype=np.int64), self.sid(first)
         has_a = ev["action_id"] >= 0
