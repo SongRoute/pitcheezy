@@ -62,3 +62,44 @@ def test_state_id_rejects_out_of_range():
         S.n_states(9)
     with pytest.raises(ValueError):
         S.decode_state(288, 1)
+
+
+# ---------------------------------------------------------------- 시퀀스 맥락 (v1.1)
+def test_context_constants_and_family_table():
+    assert (S.MAX_C, S.N_CONTEXT_V0, S.CONTEXT_KIND_V0) == (4, 4, "prev_pitch_family")
+    assert [S.context_family_of_pitch(g) for g in range(9)] == [1, 1, 1, 2, 2, 2, 3, 3, 3]
+    assert S.context_family_of_pitch(-1) == 0  # 행동 없음(PO·IN·UN·null)
+    assert S.context_family_of_pitch(np.array([-1, 0, 2, 3, 5, 6, 8])).tolist() == [0, 1, 1, 2, 2, 3, 3]
+    with pytest.raises(ValueError):
+        S.context_family_of_pitch(9)
+    with pytest.raises(ValueError):
+        S.n_states(1, 5)
+    with pytest.raises(ValueError):
+        S.n_states(1, 0)
+
+
+@pytest.mark.parametrize("K", [1, 2])
+@pytest.mark.parametrize("C", [1, 4])
+def test_state_id_context_roundtrip(K, C):
+    S_ = S.n_states(K, C)
+    assert S_ == 288 * K * C
+    sid = np.arange(S_)
+    c, b, k, x = S.decode_state_full(sid, K, C)
+    assert (S.state_id(c, b, k, K, x, C) == sid).all()
+    assert (x < C).all() and (k < K).all() and (c < 12).all() and (b < 24).all()
+    assert len(S.decode_state(sid, K, C)) == (3 if C == 1 else 4)
+    if C == 1:  # v1 공식과 완전히 같은 id
+        assert (sid == (c * 24 + b) * K + k).all()
+        assert (S.state_id(c, b, k, K) == S.state_id(c, b, k, K, 0, 1)).all()
+    else:
+        assert (sid // C == S.state_id(c, b, k, K)).all()  # 맥락은 뒤에 접힌다
+    with pytest.raises(ValueError):
+        S.state_id(0, 0, 0, K, C, C)  # ctx 범위 밖
+
+
+def test_states_table_context_column():
+    t = S.states_table(1, 4)
+    assert tuple(t.columns) == S.STATES_COLUMNS and len(t) == 1152
+    assert t["context_id"].to_numpy()[:8].tolist() == [0, 1, 2, 3, 0, 1, 2, 3]
+    assert (t["state_id"].to_numpy() == np.arange(1152)).all()
+    assert (S.states_table(2)["context_id"].to_numpy() == 0).all()  # C=1 은 전부 0

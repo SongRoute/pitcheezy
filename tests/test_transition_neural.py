@@ -74,3 +74,18 @@ def test_early_stopping_picks_epoch_and_seed_reproducible():
 def test_unknown_hparam_rejected():
     with pytest.raises(ValueError):
         TN.hparams({"hiden": 3})
+
+
+def test_context_fit_and_c1_net_has_no_context_embedding():
+    """C=4: 상태 id 에 맥락이 접혀도 계약 통과. C=1: 맥락 임베딩이 아예 없어 v1 과 같은 파라미터."""
+    df, sid = synth()
+    rng = np.random.default_rng(0)
+    sid4 = sid * 4 + rng.integers(0, 4, len(sid))
+    t = TN.fit(df, sid4, pitchers(), 1, hp=TN.hparams(HP), seed=0, n_epochs=1, repertoire_min=100, meta=META, C=4, context_kind="prev_pitch_family")
+    assert validate_transition(t) == []
+    assert t.C == 4 and t.P.shape == (2, S.n_states(1, 4), N_ACTIONS, O.N_OUTCOMES)
+    assert t.meta["context_kind"] == "prev_pitch_family"
+    d = int(HP["cat_dim"])
+    net1, net4 = TN.SharedNet(2, 1, TN.hparams(HP)), TN.SharedNet(2, 1, TN.hparams(HP), 4)
+    assert net1.e_ctx is None and "e_ctx.weight" not in net1.state_dict()
+    assert net4.e_ctx is not None and net4.mlp[0].in_features == net1.mlp[0].in_features + d
