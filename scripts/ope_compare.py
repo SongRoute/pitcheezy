@@ -27,7 +27,7 @@ from pitcheezy.ope import ips as IPS  # noqa: E402
 COL = {"onestep_clip": "w_onestep", "traj_clip": "w_traj", "onestep2s_clip": "w_onestep_slice"}
 
 
-def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str, model_seed: int = 0):
+def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str, model_seed: int = 0, policy: str | None = None):
     cfg = E.load_config(REPO / "configs" / f"{exp_id}.yaml")
     ex = E.Experiment(cfg, model_seed, data_dir, runs_dir)  # arch=neural 이면 그 시드의 Q, count 면 항상 s0
     op = ex.p["ope"]
@@ -37,7 +37,8 @@ def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str, model
     key = pa[["game_pk", "at_bat_number", "n_pitchers"]]
     r = -pa["delta_re24"].to_numpy()
     two_strike = ev["count_id"].to_numpy() % 3 == 2
-    if ex.primary_name() == "behavior":
+    name = policy or ex.primary_name()  # --policy 로 주 정책 대신 메뉴의 다른 정책(예: tilt_t0.005)을 같은 텐서·Q 로 만든다
+    if name == "behavior":
         has = ev["action_id"] >= 0
         m = has if variant != "onestep2s_clip" else (has & two_strike)
         n = key.merge(ev[m].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(float)
@@ -46,7 +47,6 @@ def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str, model
     valid = np.load(ex.s0_dir / "transition" / "valid.npy")  # P.npy 는 시드 ≠ 0 에서 지워져 있을 수 있다
     vb = ValueBundle.load(ex.s0_dir / "value", check_hash=False)
     support = ex.eval_support(ev, valid)
-    name = ex.primary_name()
     if name.startswith("tilt_t"):
         tau = float(name[6:])
         pb_logged, pe, _, _ = BH.crossfit_logged(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts={"p": (vb.Q, support, tau)})
@@ -66,12 +66,13 @@ def main() -> int:
     ap.add_argument("--n-boot", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--model-seed", type=int, default=0, help="arch=neural 실험에서 쓸 학습 시드 (count 실험은 무시)")
+    ap.add_argument("--policy", default=None, help="두 실험 모두 주 정책 대신 이 정책으로 (tilt_t{τ} | behavior). 고감도 τ 읽기용; 판정 규칙(D22)은 주 정책")
     ap.add_argument("--runs-dir", type=Path, default=Path(os.environ.get("PITCHEEZY_RUNS_DIR", REPO / "runs")))
     ap.add_argument("--data-dir", type=Path, default=Path(os.environ.get("PITCHEEZY_DATA_DIR", REPO / "data")))
     a = ap.parse_args()
     logging.basicConfig(level=logging.WARNING)
-    ka, wa, ra, na = weights_for(a.a, a.data_dir, a.runs_dir, a.variant, a.model_seed)
-    kb, wb, rb, nb = weights_for(a.b, a.data_dir, a.runs_dir, a.variant, a.model_seed)
+    ka, wa, ra, na = weights_for(a.a, a.data_dir, a.runs_dir, a.variant, a.model_seed, a.policy)
+    kb, wb, rb, nb = weights_for(a.b, a.data_dir, a.runs_dir, a.variant, a.model_seed, a.policy)
     assert (ka[["game_pk", "at_bat_number"]].to_numpy() == kb[["game_pk", "at_bat_number"]].to_numpy()).all(), "타석 키 불일치"
     keep = (ka["n_pitchers"] == 1).to_numpy()
     wa, wb, r, games = wa[keep], wb[keep], ra[keep], ka["game_pk"].to_numpy()[keep]
@@ -87,10 +88,10 @@ def main() -> int:
     lo, hi = np.percentile(d, [2.5, 97.5])
     p_le0 = float((d <= 0).mean())
     verdict = "A > B (CI 가 0 을 제외)" if lo > 0 else ("A < B (CI 가 0 을 제외)" if hi < 0 else "구분 안 됨")
-    out = {"a": a.a, "b": a.b, "policy_a": na, "policy_b": nb, "variant": a.variant, "snips_a": pa_, "snips_b": pb_, "delta": pa_ - pb_, "ci": [float(lo), float(hi)], "p_delta_le_0": p_le0, "n_pa": int(keep.sum()), "n_games": int(n_g), "n_boot": a.n_boot, "model_seed": a.model_seed, "verdict": verdict}
+    out = {"a": a.a, "b": a.b, "policy_a": na, "policy_b": nb, "variant": a.variant, "snips_a": pa_, "snips_b": pb_, "delta": pa_ - pb_, "ci": [float(lo), float(hi)], "p_delta_le_0": p_le0, "n_pa": int(keep.sum()), "n_games": int(n_g), "n_boot": a.n_boot, "model_seed": a.model_seed, "policy_override": a.policy, "verdict": verdict}
     print(f"[model seed {a.model_seed}] {a.a}({na}) − {a.b}({nb}) [{a.variant}]: Δ = {pa_ - pb_:+.4f}  95% CI [{lo:+.4f}, {hi:+.4f}]  P(Δ≤0)={p_le0:.3f}  → {verdict}")
     d_dir = a.runs_dir / "_diag" / "compare"; d_dir.mkdir(parents=True, exist_ok=True)
-    (d_dir / (f"{a.a}_vs_{a.b}_{a.variant}" + (f"_ms{a.model_seed}" if a.model_seed else "") + ".json")).write_text(json.dumps(out, ensure_ascii=False, indent=2))
+    (d_dir / (f"{a.a}_vs_{a.b}_{a.variant}" + (f"_ms{a.model_seed}" if a.model_seed else "") + (f"_{a.policy}" if a.policy else "") + ".json")).write_text(json.dumps(out, ensure_ascii=False, indent=2))
     return 0
 
 
