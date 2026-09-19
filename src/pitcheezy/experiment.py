@@ -25,6 +25,7 @@ from pitcheezy.interfaces.tensor import TransitionTensor
 from pitcheezy.interfaces.validate import validate_transition, validate_value
 from pitcheezy.interfaces.value import ValueBundle
 from pitcheezy.ope import behavior as BH
+from pitcheezy.ope import dr as DR
 from pitcheezy.ope import ips as IPS
 from pitcheezy.policy import vi as VI
 from pitcheezy.transition import count as TC
@@ -311,6 +312,7 @@ class Experiment:
         two_strike = (ev["count_id"].to_numpy() % 3 == 2)
         n_dec = key.merge(ev[has_a].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
         n_dec_2s = key.merge(ev[has_a & two_strike].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
+        q_b = DR.behavior_q(t.P, pb_full, support, R, nxt)  # 1스텝 DR 제어변량 (π_e 와 무관 → 한 번만)
         results = {}
         variants = [("traj_clip", "w_traj", op.get("clip"), "fine"), ("traj_noclip", "w_traj", None, "fine"), ("onestep_clip", "w_onestep", op.get("clip"), "fine"),
                     ("onestep2s_clip", "w_onestep_slice", op.get("clip"), "fine"), ("traj_coarse_clip", "w_traj", op.get("clip"), "coarse"), ("onestep_coarse_clip", "w_onestep", op.get("clip"), "coarse")]
@@ -325,8 +327,10 @@ class Experiment:
                 pe_logged_coarse = IPS.logged_probs(ev, sid, IPS.coarsen(pol_arr, groups))
             else:
                 pol_arr = None
+            V_e = None
             if pol_arr is not None:
-                model_value = float(VI.policy_evaluation(t.P, pol_arr, R, nxt)[f_p, f_s].mean())
+                V_e = VI.policy_evaluation(t.P, pol_arr, R, nxt)
+                model_value = float(V_e[f_p, f_s].mean())
                 pol_arr = pol_arr.astype(np.float32)
             for vname, col, clip, level in variants:
                 if pol_arr is None:  # π_b 자체: 궤적은 타석당 1, 1스텝은 결정 수 (다른 정책과 같은 가중 방식)
@@ -348,6 +352,31 @@ class Experiment:
                          "-" if model_value is None else f"{model_value:+.4f}")
                 if pol_arr is None and vname == "traj_noclip":
                     results.pop(f"{name}/{vname}", None)
+            if pol_arr is None:  # π_b 자체는 DR 할 게 없다 (제어변량과 정책이 같음)
+                continue
+            td0 = time.time()
+            rho_pitch, has_pitch = IPS.pitch_ratios(ev, pe_logged, pb_logged, clip=op.get("clip"))
+            v_e_b, _, q_e = DR.dr_inputs(t.P, pol_arr, q_b, R, nxt, V_e=V_e)
+            ot = key.merge(DR.onestep_dr_terms(ev, sid, rho_pitch, has_pitch, q_b, v_e_b), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
+            est = DR.estimate_dr1(ot, r)
+            est.update(DR.bootstrap_dr1(ot, r, games, n_boot=int(op["n_boot"]), seed=self.seed))
+            est["model_value"] = model_value
+            est["n_decisions_mean"] = float(ot["n_dec"].mean())
+            est["frac_pa_with_zero_rho"] = float((ot["n_zero"] > 0).mean())
+            results[f"{name}/onestep_dr"] = est
+            log.info("OPE %-16s %-12s SN %+.4f [%+.4f, %+.4f] wmean %8.3f ESS %5.1f%% wmax %9.1f zero %4.1f%% model %+.4f  dm %+.4f corr %+.4f",
+                     name, "onestep_dr", est["snips"], est["ci_low"], est["ci_high"], est["w_mean"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"],
+                     model_value, est["dm"], est["corr"])
+            tt = key.merge(DR.traj_dr_terms(ev, sid, rho_pitch, has_pitch, q_e, V_e), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
+            dr_plain, dr_wdr = DR.traj_dr_values(tt, r)  # 보상은 병합 뒤에 붙인다 (다투수 타석 제외·정렬을 key 에 맡김)
+            est = DR.estimate_traj_dr(dr_wdr, dr_plain, tt["w_last"].to_numpy())
+            est.update(DR.bootstrap_traj_dr(dr_wdr, games, n_boot=int(op["n_boot"]), seed=self.seed))
+            est["model_value"] = model_value
+            results[f"{name}/traj_dr"] = est
+            log.info("OPE %-16s %-12s SN %+.4f [%+.4f, %+.4f] wmean %8.3f ESS %5.1f%% wmax %9.1f zero %4.1f%% model %+.4f  (DR %.1fs)",
+                     name, "traj_dr", est["snips"], est["ci_low"], est["ci_high"], est["w_mean"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"],
+                     model_value, time.time() - td0)
+            del q_e
         summary = {"seed": self.seed, "eval_season": op["eval_season"], "n_pa": int(len(pa)), "n_pa_dropped_multi_pitcher": int((~keep).sum()), "n_games": int(len(np.unique(games))),
                    "n_pitches": int(len(ev)), "frac_pitches_no_action": float((ev["action_id"] < 0).mean()),
                    "support_min_pitches_eval": op.get("support_min_pitches_eval", 0), "frac_support_actions": float(support.sum() / max(t.valid.sum(), 1)),
