@@ -13,7 +13,7 @@ from . import tensor as T
 from . import value as V
 from .grid import ACTIONS_COLUMNS, N_ACTIONS  # noqa: F401 - re-export for tests
 from .outcomes import N_OUTCOMES, OUTCOMES_COLUMNS, rule_mask_table
-from .states import N_COUNT_BASE_OUT, STATES_COLUMNS, decode_state, n_states
+from .states import N_COUNT_BASE_OUT, STATES_COLUMNS, STATES_COLUMNS_V1, decode_state_full, n_states
 
 
 def validate_transition(t: T.TransitionTensor, *, row_sum_tol: float | None = None) -> list[str]:
@@ -27,10 +27,11 @@ def validate_transition(t: T.TransitionTensor, *, row_sum_tol: float | None = No
     if "K" not in meta:
         return p + ["meta.K 없음 — 형상 검증 불가"]
     K = int(meta["K"])
+    C = t.C
     tol = float(meta.get("row_sum_tol", T.DEFAULT_ROW_SUM_TOL)) if row_sum_tol is None else row_sum_tol
 
     n_p = t.P.shape[0] if t.P.ndim == 4 else -1
-    shape = T.expected_shape(max(n_p, 0), K)
+    shape = T.expected_shape(max(n_p, 0), K, C)
     if t.P.shape != shape:
         p.append(f"P 형상 {t.P.shape} ≠ {shape}")
     if t.P.dtype != np.float32:
@@ -62,16 +63,20 @@ def validate_transition(t: T.TransitionTensor, *, row_sum_tol: float | None = No
         p.append(f"valid=False 행 합 0 위반 {int(bad_invalid.sum())}개")
 
     # 규칙 마스크: state → count_id → 불허 outcome 셀은 0
-    S = n_states(K)
-    count_of_state = decode_state(np.arange(S), K)[0]
+    S = n_states(K, C)
+    count_of_state = decode_state_full(np.arange(S), K, C)[0]
     allowed = rule_mask_table()[count_of_state]  # [S, O]
     viol = (t.P != 0) & ~allowed[None, :, None, :]
     if viol.any():
         p.append(f"규칙 마스크 셀 ≠ 0: {int(viol.sum())}개")
 
     # 룩업 표
-    if tuple(t.states.columns) != STATES_COLUMNS or len(t.states) != S:
-        p.append(f"states 표 {list(t.states.columns)}×{len(t.states)} ≠ {list(STATES_COLUMNS)}×{S}")
+    cols = tuple(t.states.columns)
+    # 맥락 이전(v1) 산출물은 context_id 열이 없다 → C=1 이면 그대로 통과 (context_id ≡ 0). C>1 은 5열을 요구한다.
+    cols_ok = cols == STATES_COLUMNS or (C == 1 and cols == STATES_COLUMNS_V1)
+    if not cols_ok or len(t.states) != S:
+        want = list(STATES_COLUMNS) + ([f"(또는 v1 {list(STATES_COLUMNS_V1)})"] if C == 1 else [])
+        p.append(f"states 표 {list(cols)}×{len(t.states)} ≠ {want}×{S}")
     elif not (t.states["state_id"].to_numpy() == np.arange(S)).all():
         p.append("states.state_id 가 0..S−1 순서가 아님")
     if tuple(t.outcomes.columns) != OUTCOMES_COLUMNS or len(t.outcomes) != N_OUTCOMES:

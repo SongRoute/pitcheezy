@@ -13,12 +13,13 @@ import numpy as np
 
 from pitcheezy.interfaces import outcomes as O
 from pitcheezy.interfaces import states as S
+from pitcheezy.interfaces.grid import N_ACTIONS, decode_action
 
 
-def reward_table(dRE24: np.ndarray, K: int, *, collapse_base_out: bool = False) -> np.ndarray:
+def reward_table(dRE24: np.ndarray, K: int, *, collapse_base_out: bool = False, C: int = 1) -> np.ndarray:
     """R [S, O] 투수 관점 (= −ΔRE24). dRE24 [8, 24] 는 outcomes.TERMINAL 순서. collapse_base_out 이면 모든 상태에 무주자 0아웃 보상 (대조군)."""
-    S_ = S.n_states(K)
-    _, bid, _ = S.decode_state(np.arange(S_), K)
+    S_ = S.n_states(K, C)
+    bid = S.decode_state_full(np.arange(S_), K, C)[1]
     if collapse_base_out:
         bid = np.zeros_like(bid)
     R = np.zeros((S_, O.N_OUTCOMES), dtype=np.float64)
@@ -27,8 +28,8 @@ def reward_table(dRE24: np.ndarray, K: int, *, collapse_base_out: bool = False) 
     return R
 
 
-def next_state_table(K: int) -> np.ndarray:
-    """next [S, O] 다음 state_id, 종결·불허면 −1."""
+def next_state_table(K: int, C: int = 1) -> np.ndarray:
+    """C=1: next [S, O] 다음 state_id. C>1: next [S, A, O] — 다음 맥락이 행동의 구종 계열이라 행동에 의존. 종결·불허면 −1."""
     S_ = S.n_states(K)
     cid, bid, kid = S.decode_state(np.arange(S_), K)
     nxt = np.full((S_, O.N_OUTCOMES), -1, dtype=np.int64)
@@ -39,7 +40,18 @@ def next_state_table(K: int) -> np.ndarray:
             except ValueError:
                 continue  # 규칙상 불가 (P 도 0)
             nxt[s, o] = S.state_id(c2, int(bid[s]), int(kid[s]), K)
-    return nxt
+    if C == 1:
+        return nxt
+    S.check_C(C)
+    base = nxt[np.arange(S.n_states(K, C)) // C]  # 맥락을 뺀 (카운트, 주자아웃, 군집) 자리의 다음 상태
+    nctx = S.context_family_of_pitch(decode_action(np.arange(N_ACTIONS))[0])  # [A] 행동 뒤의 맥락 (늘 1..3)
+    return np.where(base[:, None, :] >= 0, base[:, None, :] * C + nctx[None, :, None], -1)
+
+
+def gather_next(V: np.ndarray, nxt: np.ndarray) -> np.ndarray:
+    """다음 상태 가치. V [p, S] + nxt [S, O] → [p, S, O], nxt [S, A, O] → [p, S, A, O]. nxt < 0 (종결·불허)은 0."""
+    ok = nxt >= 0
+    return np.where(ok[None], V[:, np.where(ok, nxt, 0)], 0.0)
 
 
 def value_iteration(P: np.ndarray, valid: np.ndarray, R: np.ndarray, nxt: np.ndarray, *, tol: float = 1e-9, max_iter: int = 200, chunk: int = 16):
@@ -47,8 +59,7 @@ def value_iteration(P: np.ndarray, valid: np.ndarray, R: np.ndarray, nxt: np.nda
     n_p, S_, A, O_ = P.shape
     Q = np.empty((n_p, S_, A))
     V = np.zeros((n_p, S_))
-    nxt_safe = np.where(nxt >= 0, nxt, 0)
-    is_next = (nxt >= 0)[None, :, :]
+    act_dep = nxt.ndim == 3  # 맥락 C>1: 다음 상태가 행동에 의존
     iters_max, delta_max = 0, 0.0
     for lo in range(0, n_p, chunk):
         hi = min(lo + chunk, n_p)
@@ -57,8 +68,8 @@ def value_iteration(P: np.ndarray, valid: np.ndarray, R: np.ndarray, nxt: np.nda
         has_valid = vd.any(-1)
         Vc = np.zeros((hi - lo, S_))
         for it in range(max_iter):
-            Vn = np.where(is_next, Vc[:, nxt_safe], 0.0)
-            Qc = np.einsum("psao,pso->psa", Pf, R[None] + Vn)
+            Vn = gather_next(Vc, nxt)
+            Qc = np.einsum("psao,psao->psa", Pf, R[:, None, :] + Vn) if act_dep else np.einsum("psao,pso->psa", Pf, R[None] + Vn)
             Vnew = np.where(has_valid, np.where(vd, Qc, -np.inf).max(-1), 0.0)
             delta = float(np.abs(Vnew - Vc).max())
             Vc = Vnew
@@ -93,6 +104,22 @@ def relax(Q: np.ndarray, valid: np.ndarray, *, method: str = "softmax", temperat
 def policy_evaluation(P: np.ndarray, policy: np.ndarray, R: np.ndarray, nxt: np.ndarray, *, tol: float = 1e-9, max_iter: int = 200, chunk: int = 16) -> np.ndarray:
     """모델 안에서 고정 정책의 가치 V^π [P, S] (진단: 모델이 말하는 값 vs OPE 가 말하는 값 → 착취 폭)."""
     n_p, S_, A, O_ = P.shape
+    if nxt.ndim == 3:  # 맥락 C>1: 행동을 섞어 Pmix 로 줄일 수 없다 → 투수 청크마다 반복
+        V = np.zeros((n_p, S_))
+        for lo in range(0, n_p, chunk):
+            hi = min(lo + chunk, n_p)
+            Pf = np.asarray(P[lo:hi], dtype=np.float64)
+            pol = policy[lo:hi].astype(np.float64)
+            Vc = np.zeros((hi - lo, S_))
+            for _ in range(max_iter):
+                Qc = np.einsum("psao,psao->psa", Pf, R[:, None, :] + gather_next(Vc, nxt))
+                Vnew = (Qc * pol).sum(-1)
+                delta = float(np.abs(Vnew - Vc).max())
+                Vc = Vnew
+                if delta < tol:
+                    break
+            V[lo:hi] = Vc
+        return V
     Pmix = np.empty((n_p, S_, O_))
     for lo in range(0, n_p, chunk):
         hi = min(lo + chunk, n_p)

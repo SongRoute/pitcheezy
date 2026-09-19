@@ -13,7 +13,7 @@ from pitcheezy.interfaces import value as V
 from pitcheezy.interfaces.grid import N_ACTIONS
 
 
-def make_meta(K: int = 2, **over) -> dict:
+def make_meta(K: int = 2, C: int = 1, **over) -> dict:
     m = {
         "spec_version": T.SPEC_VERSION,
         "data_version": "test-fixture",
@@ -32,17 +32,20 @@ def make_meta(K: int = 2, **over) -> dict:
         "holdout_ece_hr": None,
         "excluded_pitchers": [],
     }
+    if C != 1:
+        m["C"] = C
+        m["context_kind"] = S.CONTEXT_KIND_V0
     m.update(over)
     return m
 
 
-def make_tensor(n_pitchers: int = 2, K: int = 2, seed: int = 0, invalid_frac: float = 0.3) -> T.TransitionTensor:
+def make_tensor(n_pitchers: int = 2, K: int = 2, seed: int = 0, invalid_frac: float = 0.3, C: int = 1) -> T.TransitionTensor:
     rng = np.random.default_rng(seed)
-    S_ = S.n_states(K)
+    S_ = S.n_states(K, C)
     shape = (n_pitchers, S_, N_ACTIONS, O.N_OUTCOMES)
     P = rng.random(shape, dtype=np.float32)
     # 규칙 마스크 적용 후 행 정규화
-    cid = S.decode_state(np.arange(S_), K)[0]
+    cid = S.decode_state_full(np.arange(S_), K, C)[0]
     allowed = O.rule_mask_table()[cid]  # [S, O]
     P *= allowed[None, :, None, :]
     valid = rng.random(shape[:3]) >= invalid_frac
@@ -58,7 +61,7 @@ def make_tensor(n_pitchers: int = 2, K: int = 2, seed: int = 0, invalid_frac: fl
             "n_pitches_train": np.full(n_pitchers, 2500, dtype=np.int32),
         }
     )
-    return T.TransitionTensor(P=P, valid=valid, n_obs=n_obs, pitchers=pitchers, meta=make_meta(K))
+    return T.TransitionTensor(P=P, valid=valid, n_obs=n_obs, pitchers=pitchers, meta=make_meta(K, C))
 
 
 def make_value(t: T.TransitionTensor, seed: int = 0) -> V.ValueBundle:

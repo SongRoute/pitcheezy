@@ -1,16 +1,25 @@
-"""정책·OPE 계약: VI 항등식, 완화 정책, IPS 추정량, π_b 인수분해, tilt."""
+"""정책·OPE 계약: VI 항등식, 완화 정책, IPS 추정량, π_b 인수분해, tilt, 시퀀스 맥락(C>1)."""
+
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from pitcheezy.data import prepare as PR
 from pitcheezy.interfaces import outcomes as O
-from pitcheezy.interfaces.grid import N_ACTIONS
-from pitcheezy.interfaces.states import count_id, n_states, state_id
+from pitcheezy.interfaces.grid import N_ACTIONS, decode_action
+from pitcheezy.interfaces.states import context_family_of_pitch, count_id, decode_state_full, n_states, state_id
+from pitcheezy.interfaces.validate import validate_transition
 from pitcheezy.ope import behavior as BH
 from pitcheezy.ope import ips as IPS
 from pitcheezy.policy import vi as VI
+from pitcheezy.transition import count as TC
 from pitcheezy.transition.smoothing import smooth_hierarchical
+
+sys.path.insert(0, str(Path(__file__).parent / "interfaces"))
+from conftest import make_tensor  # noqa: E402  계약 테스트용 소형 텐서 빌더
 
 
 def test_next_state_table_and_reward_sign():
@@ -111,3 +120,90 @@ def test_coarse_groups_and_coarsen():
     pol = np.full((1, 1, 225), 1 / 225)
     c = IPS.coarsen(pol, g)
     assert np.allclose(c[0, 0], np.bincount(g)[g] / 225)
+
+
+# ---------------------------------------------------------------- 시퀀스 맥락 (C>1)
+CTX_META = {"data_version": "test", "season_window": "2024-2024", "holdout_split": "none", "seed": 0, "train_commit": "0000000",
+            "cluster_file_version": "K1-none", "pitch_type_map_version": "v1"}
+
+
+def _fixture_prepared(tmp_path):
+    """tests/fixtures 의 실제 Statcast 행 → prepare_season 산출 표 (투수 2명, 196구)."""
+    raw = pd.read_parquet(Path(__file__).parent / "fixtures" / "statcast_2024_d20260911-s2325_p2.parquet")
+    d = tmp_path / "raw" / "vtest"
+    d.mkdir(parents=True)
+    raw.to_parquet(d / "statcast_2024.parquet", index=False)
+    index = {int(m): i for i, m in enumerate(sorted(raw["pitcher"].unique()))}
+    return PR.prepare_season(tmp_path, "vtest", 2024, index), index
+
+
+def test_next_state_table_action_dependent_context():
+    K, C = 1, 4
+    nxt = VI.next_state_table(K, C)
+    S_ = n_states(K, C)
+    assert nxt.shape == (S_, N_ACTIONS, O.N_OUTCOMES) and nxt.dtype == np.int64
+    c, b, k, _ = decode_state_full(np.arange(S_), K, C)
+    fam = context_family_of_pitch(decode_action(np.arange(N_ACTIONS))[0])  # [A] 늘 1..3
+    assert set(np.unique(fam).tolist()) == {1, 2, 3}
+    nc = np.full((12, O.N_OUTCOMES), -1)  # 카운트 규칙표
+    for ci in range(12):
+        for o in O.NONTERMINAL:
+            try:
+                nc[ci, o] = O.next_count(ci, o)
+            except ValueError:
+                pass
+    ok = nxt >= 0
+    assert (ok == (nc[c][:, None, :] >= 0)).all()  # 종결·규칙 불가 = −1, 나머지는 전부 다음 상태
+    assert (nxt[:, :, list(O.TERMINAL)] == -1).all()
+    c2, b2, k2, x2 = decode_state_full(np.where(ok, nxt, 0), K, C)
+    big = lambda a: np.broadcast_to(a, nxt.shape)  # noqa: E731
+    assert (x2[ok] == big(fam[None, :, None])[ok]).all()  # 다음 맥락 = 행동의 구종 계열
+    assert (c2[ok] == big(nc[c][:, None, :])[ok]).all()
+    assert (b2[ok] == big(b[:, None, None])[ok]).all() and (k2[ok] == big(k[:, None, None])[ok]).all()
+    # 2스트라이크 파울: 카운트·주자아웃은 그대로, 맥락만 행동을 따라간다
+    s = state_id(count_id(3, 2), 7, 0, K, 2, C)
+    assert decode_state_full(int(nxt[s, 0, O.FOUL]), K, C) == (count_id(3, 2), 7, 0, 1)
+    assert nxt[s, 0, O.BALL] == -1
+
+
+def test_value_iteration_and_policy_eval_accept_3d_next_state():
+    """3차원 next 를 2차원의 브로드캐스트로 만들면 Q·V 가 완전히 같아야 한다 (C=1 경로 불변 확인)."""
+    t = make_tensor(n_pitchers=2, K=2)
+    d = np.zeros((8, 24)); d[O.TERMINAL.index(O.HR), :] = 1.0; d[O.TERMINAL.index(O.K), :] = -0.3
+    R = VI.reward_table(d, 2)
+    nxt2 = VI.next_state_table(2)
+    nxt3 = np.broadcast_to(nxt2[:, None, :], (nxt2.shape[0], N_ACTIONS, O.N_OUTCOMES)).copy()
+    Q2, V2, _, _ = VI.value_iteration(t.P, t.valid, R, nxt2)
+    Q3, V3, _, _ = VI.value_iteration(t.P, t.valid, R, nxt3)
+    np.testing.assert_allclose(Q3, Q2, atol=1e-12)
+    np.testing.assert_allclose(V3, V2, atol=1e-12)
+    pol = VI.relax(Q2, t.valid, method="greedy")
+    np.testing.assert_allclose(VI.policy_evaluation(t.P, pol, R, nxt3), VI.policy_evaluation(t.P, pol, R, nxt2), atol=1e-12)
+
+
+def test_count_fit_with_context_and_c1_unchanged(tmp_path):
+    df, index = _fixture_prepared(tmp_path)
+    pit = pd.DataFrame({"pitcher_idx": np.arange(2, dtype=np.int32), "mlbam_id": np.array(sorted(index), dtype=np.int64),
+                        "name": ["a", "b"], "n_pitches_train": np.full(2, len(df) // 2, dtype=np.int32)})
+    kw = dict(alpha=5.0, repertoire_min=1, meta=CTX_META)
+    t4 = TC.fit(df, PR.state_ids(df, 1, C=4, context_kind="prev_pitch_family"), pit, 1, C=4, context_kind="prev_pitch_family", **kw)
+    assert validate_transition(t4) == []
+    assert t4.C == 4 and t4.P.shape == (2, n_states(1, 4), N_ACTIONS, O.N_OUTCOMES)
+    assert t4.meta["context_kind"] == "prev_pitch_family" and len(t4.states) == n_states(1, 4)
+    assert int(t4.n_obs.sum()) == int(((df["action_id"] >= 0) & (df["outcome_id"] >= 0)).sum())
+    sid1 = PR.state_ids(df, 1)
+    t1 = TC.fit(df, sid1, pit, 1, **kw)  # C 인자 없이 = 변경 전 호출
+    t1c = TC.fit(df, sid1, pit, 1, C=1, context_kind=None, **kw)
+    assert validate_transition(t1) == [] and t1.C == 1
+    assert np.array_equal(t1.P, t1c.P) and np.array_equal(t1.valid, t1c.valid) and np.array_equal(t1.n_obs, t1c.n_obs)
+
+
+def test_fit_behavior_with_context():
+    df = _toy_pitches()
+    rng = np.random.default_rng(0)
+    sid = state_id(rng.integers(0, 12, len(df)), 0, 0, 1, rng.integers(0, 4, len(df)), 4)
+    pb = BH.fit_behavior(df, sid, 2, 1, alpha=5.0, C=4)
+    assert pb.shape == (2, n_states(1, 4), N_ACTIONS) and np.allclose(pb.sum(-1), 1.0, atol=1e-5)
+    assert (pb > 0).all()
+    pbl = BH.behavior_logged_crossfit(df, sid, 2, 1, alpha=5.0, n_folds=3, C=4)
+    assert np.isnan(pbl).sum() == 0 and (pbl > 0).all()

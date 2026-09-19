@@ -136,3 +136,20 @@ def test_shapes_and_no_nan(world):
     assert (ot["n_dec"].to_numpy() > 0).all() and (tt["w_last"].to_numpy() >= 0).all()
     with pytest.raises(ValueError):
         DR.traj_dr_terms(w["df"], w["sid"], rho, has, q_e, V_e, r_pa=w["r"][:-1])
+
+
+def test_q_from_v_accepts_action_dependent_nxt():
+    """맥락 C>1 이면 next_state_table 이 [S, A, O] 다 → q_from_v 가 2-D 를 행동 축으로 브로드캐스트한 3-D 와 같은 Q 를 내야 한다."""
+    rng = np.random.default_rng(7)
+    n_p, S_, A, O_, chunk = 3, 9, 4, 6, 2  # 청크 경계도 지나가게 (3 투수 / 청크 2)
+    P = rng.dirichlet(np.ones(O_), (n_p, S_, A)).astype(np.float32)
+    R = rng.normal(0, 1.0, (S_, O_))
+    V = rng.normal(0, 1.0, (n_p, S_))
+    nxt = rng.integers(-1, S_, (S_, O_))  # −1 = 종결·불허
+    q2 = DR.q_from_v(P, R, nxt, V, chunk=chunk)
+    q3 = DR.q_from_v(P, R, np.broadcast_to(nxt[:, None, :], (S_, A, O_)), V, chunk=chunk)
+    assert q2.shape == q3.shape == (n_p, S_, A)
+    assert np.allclose(q2, q3)
+    # 행동마다 다음 상태가 다르면 Q 도 달라진다 (3-D 경로가 정말 행동 축을 쓴다)
+    nxt3 = rng.integers(0, S_, (S_, A, O_))
+    assert not np.allclose(DR.q_from_v(P, R, nxt3, V, chunk=chunk), q3)

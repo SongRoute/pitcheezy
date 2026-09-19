@@ -13,11 +13,14 @@
 
 ### 축 `P[투수, state, action, outcome]` — 4차원 dense
 - 투수 `pitcher_idx` 0..P−1 ← `pitchers.parquet` (MLBAM id, 이름, 학습 창 투구 수)
-- 상태 `state_id` = (count_id × 24 + base_out_id) × K + cluster_id, S = 288 × K
+- 상태 `state_id` = ((count_id × 24 + base_out_id) × K + cluster_id) × C + context_id, S = 288 × K × C
   - `count_id` = 볼 × 3 + 스트라이크 (0..11)
   - `base_out_id` 위와 동일
   - `cluster_id` 0..K−1, K ≤ 8, **좌우 층화 필수** (cluster = 타자 좌우 × 성향 군집). 배정 파일 `batter_clusters_{버전}.parquet`
-  - 맥락 피처 없음. 추가 시 `[투수, state, context, action, outcome]`로 state 뒤에 삽입 (변경 이력 + decisions 한 줄). Phase 1 "시퀀스 맥락" 축이 이 자리를 쓴다
+  - `context_id` 0..C−1 — 시퀀스 맥락. **별도 축이 아니라 state id 뒤에 접는다** (`state_id' = state_id × C + context_id`). 텐서는 4차원 그대로, C=1 이면 v1 과 완전히 같은 id
+    - 맥락 v0 (`context_kind: prev_pitch_family`, C=4): 같은 타석 직전 구의 구종 계열 — 0 타석 첫 구(또는 직전 구가 행동 제외) / 1 속구 FF·SI·FC / 2 변화 SL·ST·CU / 3 오프스피드 CH·FS·OT
+    - C > 1 이면 다음 상태가 행동에 의존한다 (다음 맥락 = 그 행동의 구종 계열) → `policy/vi.py::next_state_table` 이 `[S, A, O]`
+    - config `state.context: {kind: prev_pitch_family, C: 4}`. 없으면 C=1. `meta.C`·`meta.context_kind` 는 선택 키 (옛 산출물은 C=1)
 - 행동 `action_id` = pitch_id × 25 + loc_id, A = 225
   - `pitch_id` 0..8: FF{FF,FA} / SI / FC / SL{SL,SV} / ST / CU{CU,KC,CS} / CH / FS{FS,FO} / OT{KN,SC,EP}. PO·IN·UN·null은 행동에서 제외 (카운트만 진행, 비율은 data/versions.md)
   - `loc_id` = z행 × 5 + x열 (0..24). x: `plate_x` 경계 −0.83 / −0.28 / +0.28 / +0.83 ft, 바깥 클립. z: `(plate_z − sz_bot) / (sz_top − sz_bot)` 경계 0 / ⅓ / ⅔ / 1, 바깥 클립. 포수 시점 절대 좌표, 좌우 반전 없음
@@ -42,7 +45,7 @@
 P.npy          float32 [P, S, A, O]
 valid.npy      bool    [P, S, A]
 n_obs.npy      int32   [P, S, A]
-states.parquet          state_id ↔ count_id, base_out_id, cluster_id
+states.parquet          state_id ↔ count_id, base_out_id, cluster_id, context_id (v1.1)
 outcomes.parquet        outcome_id, terminal, count_rule, statcast 매핑
 pitchers.parquet        pitcher_idx ↔ MLBAM id, 이름, 학습 창 투구 수
 meta.json
@@ -75,3 +78,4 @@ sha256.txt              위 파일 전부
 - v1 (2026-09-15, D5·D6): 노션에서 레포로 이관. 생산·소비 주체를 트랙에서 모듈명으로. 베이스라인 재구현 절 추가. 스키마 변경 없음
 - v0 (2026-09-07): 템플릿
 - v1 (2026-09-17, D13): `src/pitcheezy/interfaces/` 코드화 + `tests/interfaces/` 계약 테스트. 규칙 마스크에 같은 규칙의 뒷면(BB 는 3볼, K 는 2스트에서만) 명시. Statcast 매핑에 데이터에서 실제로 보인 값 추가: automatic_ball/automatic_strike(피치클록, 구종 null → 행동 제외·카운트만 진행), intent_ball·intent_walk, bunt_foul_tip, foul_pitchout, field_error·catcher_interf → 인플레이 아웃("나머지 전부"). 종결은 events, 비종결은 description 으로 판정(주자 사건은 무시). 축·형상·저장 포맷 변경 없음
+- v1.1 (2026-09-20, D32): 시퀀스 맥락 v0 — 별도 축 대신 state id 뒤에 접음(C=1 이면 v1 과 동일). states.parquet 에 context_id 열. meta 에 C·context_kind(선택). next_state 가 행동 의존 [S,A,O]. 검증 계약은 C=1 일 때 context_id 열이 없는 v1 states.parquet 도 받는다(옛 산출물 재검증용, context_id ≡ 0). C>1 은 5열 필수

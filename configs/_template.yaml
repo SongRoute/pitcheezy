@@ -11,3 +11,8 @@ seeds: [0, 1, 2]                 # 탐색 {0,1,2} / 채택 판정 {0,1,2,3,4}
 wandb:
   project: pitcheezy             # run 이름 {id}/s{seed}
 params: {}                       # 모듈별 하이퍼파라미터
+# params.state 의 선택 키 (자세한 값은 실제 실험 config 참고):
+#   state:
+#     K: 1
+#     collapse_base_out: false
+#     context: {kind: prev_pitch_family, C: 4}   # 시퀀스 맥락 v0 = 직전 구 구종 계열. 없으면 C=1 (맥락 없음)
