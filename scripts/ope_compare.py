@@ -22,7 +22,7 @@ from pitcheezy import experiment as E  # noqa: E402
 from pitcheezy.data import prepare as PR  # noqa: E402
 from pitcheezy.interfaces.tensor import TransitionTensor  # noqa: E402
 from pitcheezy.interfaces.value import ValueBundle  # noqa: E402
-from pitcheezy.ope import behavior as BH  # noqa: E402
+from pitcheezy.ope import blocks as BK  # noqa: E402
 from pitcheezy.ope import dr as DR  # noqa: E402
 from pitcheezy.ope import ips as IPS  # noqa: E402
 from pitcheezy.policy import vi as VI  # noqa: E402
@@ -54,37 +54,32 @@ def weights_for(exp_id: str, data_dir: Path, runs_dir: Path, variant: str, model
         n = key.merge(ev[m].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(float)
         w = np.ones(len(pa)) if variant == "traj_clip" else n
         return key, (w * r, w, z, z), r, "behavior"
-    valid = np.load(ex.s0_dir / "transition" / "valid.npy")  # P.npy 는 시드 ≠ 0 에서 지워져 있을 수 있다
-    vb = ValueBundle.load(ex.s0_dir / "value", check_hash=False)
-    support = ex.eval_support(ev, valid)
-    if name.startswith("tilt_t"):
-        tau = float(name[6:])
-        pb_logged, pe, _, _ = BH.crossfit_logged(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts={"p": (vb.Q, support, tau)}, C=ex.C)
-        pe_logged = pe["p"]
-    else:
-        pb_logged, _, _, _ = BH.crossfit_logged(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), C=ex.C)
-        pe_logged = IPS.logged_probs(ev, sid, IPS.restrict_support(vb.policy, support))
-    if variant not in DR_VARIANTS:
+    # 재료는 stage_ope 와 같은 단일 출처 (ope.blocks — 투수 블록 단위, D37). valid·Q·P 는 mmap
+    dr = variant in DR_VARIANTS
+    if dr and not (ex.s0_dir / "transition" / "P.npy").exists():
+        raise FileNotFoundError(f"{ex.s0_dir/'transition'/'P.npy'} 없음 — DR 은 전이 텐서가 필요하다 (prune 된 시드면 같은 config·시드로 재실행)")
+    valid = np.load(ex.s0_dir / "transition" / "valid.npy", mmap_mode="r")  # P.npy 는 시드 ≠ 0 에서 지워져 있을 수 있다
+    vb = ValueBundle.load(ex.s0_dir / "value", check_hash=False, mmap=True)
+    kw = {}
+    if dr:
+        t = TransitionTensor.load(ex.s0_dir / "transition", check_hash=False, mmap=True)
+        kw = {"P": t.P, "R": VI.reward_table(ex.re24.dRE24, ex.K, collapse_base_out=bool(ex.p["policy"].get("reward_collapse_base_out", False)), C=ex.C),
+              "nxt": VI.next_state_table(ex.K, ex.C, ex.context_kind), "with_dr": True}
+    spec = BK.parse_spec(name) if name.startswith("tilt_t") else ("stored",)
+    rows = BK.compute_rows(ev, sid, ex.n_p, ex.K, ex.C, specs={name: spec}, valid=valid, rep_ok=ex.eval_repertoire(ev), Q=vb.Q, stored_policy=vb.policy,
+                           alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), **kw)
+    pr, pb_logged = rows.policies[name], rows.pb
+    pe_logged = pr.pe
+    if not dr:
         pw = key.merge(IPS.pa_weights(ev, pe_logged, pb_logged, clip=op.get("clip"), slice_mask=two_strike), on=["game_pk", "at_bat_number"], how="left")
         w = pw[COL[variant]].fillna(1.0 if variant == "traj_clip" else 0.0).to_numpy()
         return key, (w * r, w, z, z), r, name
-    # --- DR: stage_ope 와 같은 재료 (pitcheezy.ope.dr 가 단일 출처)
-    if not (ex.s0_dir / "transition" / "P.npy").exists():
-        raise FileNotFoundError(f"{ex.s0_dir/'transition'/'P.npy'} 없음 — DR 은 전이 텐서가 필요하다 (prune 된 시드면 같은 config·시드로 재실행)")
-    t = TransitionTensor.load(ex.s0_dir / "transition", check_hash=False, mmap=True)
-    R = VI.reward_table(ex.re24.dRE24, ex.K, collapse_base_out=bool(ex.p["policy"].get("reward_collapse_base_out", False)), C=ex.C)
-    nxt = VI.next_state_table(ex.K, ex.C, ex.context_kind)  # C>1 이면 [S,A,O] — dr.q_from_v·VI.policy_evaluation 이 둘 다 받는다
-    pb_full = BH.fit_behavior(ev, sid, ex.n_p, ex.K, alpha=float(op["behavior_alpha"]), C=ex.C)
-    pol_arr = BH.tilt(pb_full, vb.Q, support, float(name[6:])) if name.startswith("tilt_t") else IPS.restrict_support(vb.policy, support)
-    q_b = DR.behavior_q(t.P, pb_full, support, R, nxt)
-    v_e_b, V_e, q_e = DR.dr_inputs(t.P, pol_arr, q_b, R, nxt)
     rho, has = IPS.pitch_ratios(ev, pe_logged, pb_logged, clip=op.get("clip"))
     if variant == "onestep_dr":
-        ot = key.merge(DR.onestep_dr_terms(ev, sid, rho, has, q_b, v_e_b), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
+        ot = key.merge(DR.onestep_dr_terms_rows(ev, sid, rho, has, rows.qb_row, pr.veb_row), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
         return key, (ot["sum_rho"].to_numpy() * r - ot["sum_rho_q"].to_numpy(), ot["sum_rho"].to_numpy(), ot["sum_v"].to_numpy(), ot["n_dec"].to_numpy()), r, name
-    tt = key.merge(DR.traj_dr_terms(ev, sid, rho, has, q_e, V_e), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
+    tt = key.merge(DR.traj_dr_terms_rows(ev, sid, rho, has, pr.qe_row, pr.V_row), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
     return key, (DR.traj_dr_values(tt, r)[1], np.ones(len(pa)), z, z), r, name  # WDR 평균
-
 
 def main() -> int:
     ap = argparse.ArgumentParser()

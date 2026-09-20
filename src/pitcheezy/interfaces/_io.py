@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+
+import numpy as np
 from typing import Iterable
 
 SHA256_NAME = "sha256.txt"
@@ -51,3 +53,12 @@ def verify_sha256(d: Path, files: Iterable[str]) -> None:
     p = sha256_problems(d, files)
     if p:
         raise ValueError("; ".join(p))
+
+
+def save_array(path: Path, a: np.ndarray, dtype) -> None:
+    """a 가 이미 path 의 memmap 이면 (생산자가 그 자리에 직접 씀, D37) flush 만 한다 — 큰 배열을 RAM 으로 읽어 같은 파일에 다시 쓰지 않는다."""
+    path = Path(path)
+    if isinstance(a, np.memmap) and a.filename is not None and Path(a.filename).resolve() == path.resolve() and a.dtype == dtype:
+        a.flush()
+        return
+    np.save(path, np.asarray(a, dtype=dtype))

@@ -82,16 +82,31 @@ def onestep_dr_terms(df: pd.DataFrame, state_id: np.ndarray, rho: np.ndarray, ha
     sum_rho = Σ_i ρ_i, sum_rho_q = Σ_i ρ_i·q̂_b(p_i,s_i,a_i), sum_v = Σ_i v̂_e(p_i,s_i), n_dec = 결정 수 (모두 행동 있는 투구만).
     r 은 여기 안 들어간다 — DR1 = Σ(sum_rho·r − sum_rho_q)/Σ sum_rho + Σ sum_v/Σ n_dec 로 나중에 붙인다 (estimate_dr1).
     """
-    d, (s_, rho_, has_), inv, keys, _ = _sorted_view(df, state_id, rho, has)
+    qb_row, v_row = gather_rows(df, state_id, q_b, v_e)
+    return onestep_dr_terms_rows(df, state_id, rho, has, qb_row, v_row)
+
+
+def gather_rows(df: pd.DataFrame, state_id: np.ndarray, q: np.ndarray, v: np.ndarray, *, lo: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """투구별 (q[p,s,a] — 행동 없으면 0, v[p,s]) — df 행 순서. q·v 가 투수 블록 [lo:hi] 이면 lo 를 준다 (df 는 그 블록 투수의 행만)."""
+    p = df["pitcher_idx"].to_numpy(dtype=np.int64) - lo
+    s = state_id.astype(np.int64)
+    a = df["action_id"].to_numpy(dtype=np.int64)
+    m = a >= 0
+    q_row = np.zeros(len(df))
+    q_row[m] = q[p[m], s[m], a[m]]
+    return q_row, np.asarray(v[p, s], dtype=np.float64)
+
+
+def onestep_dr_terms_rows(df: pd.DataFrame, state_id: np.ndarray, rho: np.ndarray, has: np.ndarray, qb_row: np.ndarray, v_row: np.ndarray) -> pd.DataFrame:
+    """onestep_dr_terms 의 행 단위 판: qb_row = q̂_b(p_i,s_i,a_i), v_row = v̂_e(p_i,s_i) (df 행 순서, gather_rows)."""
+    d, (s_, rho_, has_, qb_, v_), inv, keys, _ = _sorted_view(df, state_id, rho, has, qb_row, v_row)
     n = len(keys)
-    p_ = d["pitcher_idx"].to_numpy(dtype=np.int64)
-    a_ = d["action_id"].to_numpy(dtype=np.int64)
     hd = has_.astype(bool)
     rq = np.zeros(len(d))
     vv = np.zeros(len(d))
     if hd.any():
-        rq[hd] = rho_[hd] * q_b[p_[hd], s_[hd], a_[hd]]
-        vv[hd] = v_e[p_[hd], s_[hd]]
+        rq[hd] = rho_[hd] * qb_[hd]
+        vv[hd] = v_[hd]
     return pd.DataFrame({
         "game_pk": keys[:, 0], "at_bat_number": keys[:, 1],
         "sum_rho": np.bincount(inv, weights=np.where(hd, rho_, 0.0), minlength=n),
@@ -111,10 +126,14 @@ def traj_dr_terms(df: pd.DataFrame, state_id: np.ndarray, rho: np.ndarray, has: 
     정규화 상수는 넘긴 df 의 모든 타석에서 계산한다 (다투수 타석 제외 전 — 차이는 무시할 수준).
     r_pa 를 주면 (정렬된 타석 키 순서) dr_plain·dr_wdr 도 같이 낸다.
     """
-    d, (s_, rho_, has_), inv, keys, pos = _sorted_view(df, state_id, rho, has)
+    qe_row, v_row = gather_rows(df, state_id, q_e, v_e)
+    return traj_dr_terms_rows(df, state_id, rho, has, qe_row, v_row, r_pa=r_pa)
+
+
+def traj_dr_terms_rows(df: pd.DataFrame, state_id: np.ndarray, rho: np.ndarray, has: np.ndarray, qe_row: np.ndarray, v_row: np.ndarray, *, r_pa: np.ndarray | None = None) -> pd.DataFrame:
+    """traj_dr_terms 의 행 단위 판: qe_row = q̂_e(p_t,s_t,a_t), v_row = v̂_e(p_t,s_t) (df 행 순서, gather_rows)."""
+    d, (s_, rho_, has_, qe_, v_), inv, keys, pos = _sorted_view(df, state_id, rho, has, qe_row, v_row)
     n = len(keys)
-    p_ = d["pitcher_idx"].to_numpy(dtype=np.int64)
-    a_ = d["action_id"].to_numpy(dtype=np.int64)
     hd = has_.astype(bool)
     # ρ_{1:t} — [타석, 스텝] 행렬에 흩뿌린 뒤 누적곱 (0 이 섞여도 안전, 타석 길이는 20 남짓)
     T = int(pos.max()) + 1 if n else 0
@@ -128,18 +147,18 @@ def traj_dr_terms(df: pd.DataFrame, state_id: np.ndarray, rho: np.ndarray, has: 
     w_t = C[inv, pos]
     w_t_wdr = np.where(norm[pos] > 0, w_t / np.where(norm[pos] > 0, norm[pos], 1.0), 0.0)
     # q̂_t, v̂_e(s_{t+1}) — 같은 타석의 실제 다음 투구, 종결 뒤는 0
-    q_t = v_e[p_, s_].copy()
+    q_t = v_.copy()
     if hd.any():
-        q_t[hd] = q_e[p_[hd], s_[hd], a_[hd]]
+        q_t[hd] = qe_[hd]
     same = np.zeros(len(d), dtype=bool)
     same[:-1] = inv[1:] == inv[:-1]
     v_next = np.zeros(len(d))
-    v_next[same] = v_e[p_[1:][same[:-1]], s_[1:][same[:-1]]]
+    v_next[same] = v_[1:][same[:-1]]
     step = v_next - q_t
     last = np.flatnonzero(~same) if len(d) else np.zeros(0, dtype=np.int64)
     first = np.flatnonzero(pos == 0) if len(d) else np.zeros(0, dtype=np.int64)
     v1 = np.zeros(n)
-    v1[inv[first]] = v_e[p_[first], s_[first]]
+    v1[inv[first]] = v_[first]
     out = pd.DataFrame({
         "game_pk": keys[:, 0], "at_bat_number": keys[:, 1],
         "base_plain": v1 + np.bincount(inv, weights=w_t * step, minlength=n),

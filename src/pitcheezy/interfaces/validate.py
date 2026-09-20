@@ -119,18 +119,29 @@ def validate_value(v: V.ValueBundle, valid: np.ndarray | None = None, *, tol: fl
             p.append(f"{name} dtype {a.dtype} ≠ float32")
     if p:
         return p
-    if np.isnan(v.V).any() or np.isnan(v.policy).any():
+    if valid is not None and valid.shape != v.Q.shape:
+        return p + [f"valid 형상 {valid.shape} ≠ {v.Q.shape}"]
+    # 투수 청크로 돈다 (Q·policy 가 mmap 이어도 봉우리 메모리는 청크 크기, D37)
+    nan = bool(np.isnan(v.V).any())
+    bad_max = bad_mass = bad_sum = False
+    for lo in range(0, P_, P_CHUNK):
+        hi = min(lo + P_CHUNK, P_)
+        pol = np.asarray(v.policy[lo:hi])
+        nan = nan or bool(np.isnan(pol).any())
+        if valid is None:
+            continue
+        vd = np.asarray(valid[lo:hi])
+        has = vd.any(axis=-1)
+        qmax = np.where(vd, np.asarray(v.Q[lo:hi], dtype=np.float64), -np.inf).max(axis=-1)
+        bad_max = bad_max or bool((np.abs(qmax[has] - v.V[lo:hi][has]) > tol).any())
+        bad_mass = bad_mass or bool((pol[~vd] != 0).any())
+        bad_sum = bad_sum or bool((np.abs(pol.astype(np.float64).sum(axis=-1)[has] - 1.0) > tol).any())
+    if nan:
         p.append("V/policy 에 NaN")
-    if valid is not None:
-        if valid.shape != v.Q.shape:
-            return p + [f"valid 형상 {valid.shape} ≠ {v.Q.shape}"]
-        has = valid.any(axis=-1)
-        qmax = np.where(valid, v.Q.astype(np.float64), -np.inf).max(axis=-1)
-        if (np.abs(qmax[has] - v.V[has]) > tol).any():
-            p.append("V ≠ valid 행동 위 max Q")
-        if (v.policy[~valid] != 0).any():
-            p.append("policy 가 valid=False 행동에 질량")
-        psum = v.policy.astype(np.float64).sum(axis=-1)
-        if (np.abs(psum[has] - 1.0) > tol).any():
-            p.append(f"policy 합 1±{tol} 위반 (valid 행동 있는 상태)")
+    if bad_max:
+        p.append("V ≠ valid 행동 위 max Q")
+    if bad_mass:
+        p.append("policy 가 valid=False 행동에 질량")
+    if bad_sum:
+        p.append(f"policy 합 1±{tol} 위반 (valid 행동 있는 상태)")
     return p

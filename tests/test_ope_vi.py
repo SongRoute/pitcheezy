@@ -199,6 +199,34 @@ def test_count_fit_with_context_and_c1_unchanged(tmp_path):
     assert np.array_equal(t1.P, t1c.P) and np.array_equal(t1.valid, t1c.valid) and np.array_equal(t1.n_obs, t1c.n_obs)
 
 
+def test_count_fit_streaming_matches_dense_and_memmap(tmp_path):
+    """D37: 투수별 스트리밍 fit = 옛 dense 경로(count_transitions → smooth_hierarchical) 와 비트 단위로 같고, out_dir memmap 도 같다."""
+    from pitcheezy.interfaces.states import decode_state_full
+    from pitcheezy.ope.ips import coarse_groups
+    from pitcheezy.interfaces.tensor import TransitionTensor
+
+    df, index = _fixture_prepared(tmp_path)
+    pit = pd.DataFrame({"pitcher_idx": np.arange(2, dtype=np.int32), "mlbam_id": np.array(sorted(index), dtype=np.int64),
+                        "name": ["a", "b"], "n_pitches_train": np.full(2, len(df) // 2, dtype=np.int32)})
+    kind = "prev_pitch_family_zone"
+    sid = PR.state_ids(df, 1, C=7, context_kind=kind)
+    kw = dict(C=7, context_kind=kind, alpha=5.0, alpha_pitcher=2.0, pitcher_group="coarse", repertoire_min=1, meta=CTX_META)
+    t = TC.fit(df, sid, pit, 1, **kw)
+    cid = decode_state_full(np.arange(n_states(1, 7)), 1, 7)[0]
+    dense = smooth_hierarchical(TC.count_transitions(df, sid, 2, 1, 7), count_of_state=cid, group_of_action=coarse_groups(), n_counts=12, n_groups=81,
+                                alpha=5.0, alpha_pitcher=2.0, rule_mask=O.rule_mask_table()[cid])
+    dense[~t.valid] = 0.0
+    assert np.array_equal(t.P, dense)
+    d = tmp_path / "transition"
+    tm = TC.fit(df, sid, pit, 1, out_dir=d, **kw)
+    assert isinstance(tm.P, np.memmap) and np.array_equal(tm.P, t.P) and np.array_equal(tm.n_obs, t.n_obs)
+    assert validate_transition(tm) == []
+    tm.save(d)  # P·n_obs 는 이미 그 자리 → flush 만
+    del tm
+    t2 = TransitionTensor.load(d, mmap=True)  # 해시 검증 포함
+    assert np.array_equal(t2.P, t.P) and np.array_equal(t2.n_obs, t.n_obs) and np.array_equal(t2.valid, t.valid)
+
+
 def test_fit_behavior_with_context():
     df = _toy_pitches()
     rng = np.random.default_rng(0)

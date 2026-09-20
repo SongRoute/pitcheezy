@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
 import sys
 import time
@@ -24,7 +25,7 @@ from pitcheezy.interfaces.states import N_BASE_OUT, decode_state_full, n_context
 from pitcheezy.interfaces.tensor import TransitionTensor
 from pitcheezy.interfaces.validate import validate_transition, validate_value
 from pitcheezy.interfaces.value import ValueBundle
-from pitcheezy.ope import behavior as BH
+from pitcheezy.ope import blocks as BK
 from pitcheezy.ope import dr as DR
 from pitcheezy.ope import ips as IPS
 from pitcheezy.policy import vi as VI
@@ -133,17 +134,27 @@ class Experiment:
         alphas_p = tp["alpha_pitcher_grid"] if ap_cfg == "auto" else [ap_cfg]  # None → 리그와 같은 값
         screen = {}
         best = None
+        # 텐서는 RAM 이 아니라 디스크 memmap 에 쓴다 (D37). α 후보마다 임시 디렉터리, 가장 좋은 것만 남긴다
+        scratch = self.s0_dir / "_fit_scratch"
+        shutil.rmtree(scratch, ignore_errors=True)
         for a in alphas:
             for ap in alphas_p:
-                t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), alpha_pitcher=ap, pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind,
+                key = str(a) if ap is None else f"{a}/{ap}"
+                d = scratch / key.replace("/", "_")
+                t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), alpha_pitcher=ap, pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind, out_dir=d,
                            meta={**common, "season_window": f"{tp['holdout']['train_seasons'][0]}-{tp['holdout']['train_seasons'][-1]}", "holdout_split": f"season:{tp['holdout']['eval_season']}", "excluded_pitchers": excluded})
                 m = TC.holdout_metrics(t, hev, self.sid(hev))
-                key = str(a) if ap is None else f"{a}/{ap}"
                 screen[key] = m
                 log.info("α=%s 홀드아웃 NLL %.4f ECE %.4f ECE_HR %.4f (n=%d)", key, m["holdout_nll"], m["holdout_ece"], m["holdout_ece_hr"], m["holdout_n_pitches"])
                 if best is None or m["holdout_nll"] < best[1]["holdout_nll"]:
-                    best = (float(a), m, t, ap)
-        alpha, hm, th, alpha_p = best
+                    drop, best = (best[4] if best else None), (float(a), m, t, ap, d)
+                else:
+                    drop = d
+                del t
+                if drop is not None:
+                    shutil.rmtree(drop, ignore_errors=True)
+        alpha, hm, th, alpha_p, best_dir = best
+        del best
         tp = {**tp, "alpha_pitcher": alpha_p}
         th.meta.update({k: hm[k] for k in ("holdout_nll", "holdout_ece", "holdout_ece_hr")})
         th.meta["holdout_metrics"] = hm
@@ -152,14 +163,18 @@ class Experiment:
         if pr:
             raise RuntimeError(f"홀드아웃 텐서 계약 위반: {pr}")
         if tp.get("save_holdout_tensor", True):
-            th.save(out_h)
+            th.save(best_dir)  # P·n_obs 는 이미 그 자리의 memmap → 나머지 파일과 해시만 쓴다
+            del th
+            shutil.rmtree(out_h, ignore_errors=True)
+            shutil.move(str(best_dir), str(out_h))
         else:  # 큰 텐서(K>1)는 meta·지표만 (D21). 재현은 같은 config 로 재실행
             out_h.mkdir(parents=True, exist_ok=True)
             (out_h / "meta.json").write_text(json.dumps({**th.meta, "tensor_saved": False}, ensure_ascii=False, indent=2))
-        del th
+            del th
+        shutil.rmtree(scratch, ignore_errors=True)
         # 전체: 2023–25
         ftr = pd.concat([self.pitches(s) for s in tp["train_seasons"]], ignore_index=True)
-        tf = TC.fit(ftr, self.sid(ftr), self.pitchers_table(ftr), self.K, alpha=alpha, alpha_pitcher=tp.get("alpha_pitcher"), pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind,
+        tf = TC.fit(ftr, self.sid(ftr), self.pitchers_table(ftr), self.K, alpha=alpha, alpha_pitcher=tp.get("alpha_pitcher"), pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind, out_dir=out_f,
                     meta={**common, "season_window": f"{tp['train_seasons'][0]}-{tp['train_seasons'][-1]}", "holdout_split": "none",
                           "holdout_nll": hm["holdout_nll"], "holdout_ece": hm["holdout_ece"], "holdout_ece_hr": hm["holdout_ece_hr"], "holdout_metrics": hm,
                           "holdout_tensor_dir": str(out_h), "alpha_screen": th_screen(screen), "excluded_pitchers": excluded})
@@ -225,17 +240,30 @@ class Experiment:
         t = TransitionTensor.load(self.s0_dir / "transition", mmap=True)
         R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(pp.get("reward_collapse_base_out", False)), C=self.C)
         nxt = VI.next_state_table(self.K, self.C, self.context_kind)
-        Q, V, iters, delta = VI.value_iteration(t.P, t.valid, R, nxt)
         kind = pp.get("kind", "softmax")
-        # tilt 는 평가 시즌 π_b 가 필요해 여기서 못 만든다 → value/policy.npy 에는 같은 τ 의 softmax 를 저장 (meta.relax 에 기록)
-        pol = VI.relax(Q, t.valid, method=kind if kind in ("softmax", "topk", "greedy") else "softmax", temperature=float(pp.get("temperature", 0.05)), top_k=int(pp.get("top_k", 5)))
+        # 투수 블록마다 VI → Q·policy 를 memmap 에 바로 쓴다 (D37. [P,S,A] float64 를 통째로 들지 않는다). 블록 = VI 의 chunk 라 값은 통짜 계산과 같다
+        out.mkdir(parents=True, exist_ok=True)
+        n_p, S_, A_ = t.valid.shape
+        Q = np.lib.format.open_memmap(out / "Q.npy", mode="w+", dtype=np.float32, shape=(n_p, S_, A_))
+        pol = np.lib.format.open_memmap(out / "policy.npy", mode="w+", dtype=np.float32, shape=(n_p, S_, A_))
+        V = np.zeros((n_p, S_))
+        iters, delta = 0, 0.0
+        blk = BK.block_size(S_, A_, t.P.shape[3])
+        for lo in range(0, n_p, blk):
+            hi = min(lo + blk, n_p)
+            vd = np.asarray(t.valid[lo:hi])
+            Qc, V[lo:hi], it, dl = VI.value_iteration(np.asarray(t.P[lo:hi]), vd, R, nxt, chunk=blk)
+            iters, delta = max(iters, it), max(delta, dl)
+            Q[lo:hi] = Qc.astype(np.float32)
+            # tilt 는 평가 시즌 π_b 가 필요해 여기서 못 만든다 → value/policy.npy 에는 같은 τ 의 softmax 를 저장 (meta.relax 에 기록)
+            pol[lo:hi] = VI.relax(Qc, vd, method=kind if kind in ("softmax", "topk", "greedy") else "softmax", temperature=float(pp.get("temperature", 0.05)), top_k=int(pp.get("top_k", 5)))
         sha = dict(line.split()[::-1] for line in (self.s0_dir / "transition" / "sha256.txt").read_text().splitlines() if line.strip())
         meta = {"transition_dir": str(self.s0_dir / "transition"), "transition_sha256": sha, "re24_version": self.cfg["re24_version"], "dre24_version": self.cfg["re24_version"],
                 "terminal_reward": "-dRE24[outcome, base_out] (투수 관점)" + (" — base_out 붕괴(대조군)" if pp.get("reward_collapse_base_out") else ""), "in_play_reward": "actual_league_mean (ASM-7)", "gamma": 1,
                 "relax": {"method": kind if kind in ("softmax", "topk", "greedy") else f"softmax (stored stand-in for {kind}; tilt is built in OPE stage)", "temperature": pp.get("temperature"), "top_k": pp.get("top_k")}, "lookup_mode": "snap", "seed": 0, "train_commit": self.commit,
                 "vi": {"iters": int(iters), "max_delta": float(delta), "V_mean": float(V.mean()), "V_min": float(V.min()), "V_max": float(V.max()),
-                       "n_states_no_valid_action": int((~t.valid.any(-1)).sum())}}
-        vb = ValueBundle(Q=Q.astype(np.float32), V=V.astype(np.float32), policy=pol, meta=meta)
+                       "n_states_no_valid_action": int((~np.asarray(t.valid).any(-1)).sum())}}
+        vb = ValueBundle(Q=Q, V=V.astype(np.float32), policy=pol, meta=meta)
         pr = validate_value(vb, t.valid)
         if pr:
             raise RuntimeError(f"가치함수 계약 위반: {pr}")
@@ -245,31 +273,15 @@ class Experiment:
         return {"reused": False, **meta["vi"]}
 
     # ------------------------------------------------------------ OPE
-    def policy_menu(self, vb: ValueBundle, valid: np.ndarray) -> dict:
-        """평가할 정책 메뉴 (모든 실험 공통, 싸다). 값: None = π_b 자체, "tilt" = 폴드별 π_b 로 stage_ope 에서 생성, callable = 지연 생성."""
-        op = self.p["ope"]
-        Q = vb.Q.astype(np.float64)
-        menu: dict = {}
-        for kind in op.get("menu", ["primary"]):
+    def policy_specs(self) -> dict:
+        """평가할 정책 메뉴 (모든 실험 공통). 이름 → blocks.parse_spec 의 명세 (behavior 는 None = π_b 자체)."""
+        specs: dict = {}
+        for kind in self.p["ope"].get("menu", ["primary"]):
             if kind == "primary":
                 kind = self.primary_name()
-            if kind in menu:
-                continue
-            if kind == "behavior":
-                menu[kind] = None
-            elif kind == "uniform":
-                menu[kind] = lambda: VI.relax(Q, valid, method="uniform")
-            elif kind == "greedy":
-                menu[kind] = lambda: VI.relax(Q, valid, method="greedy")
-            elif kind.startswith("topk"):
-                menu[kind] = (lambda k=int(kind[4:]): VI.relax(Q, valid, method="topk", top_k=k))
-            elif kind.startswith("softmax_t"):
-                menu[kind] = (lambda t=float(kind[9:]): VI.relax(Q, valid, method="softmax", temperature=t))
-            elif kind.startswith("tilt_t"):
-                menu[kind] = "tilt"
-            else:
-                raise ValueError(f"메뉴 항목 모름: {kind}")
-        return menu
+            if kind not in specs:
+                specs[kind] = BK.parse_spec(kind)
+        return specs
 
     def primary_name(self) -> str:
         pp = self.p["policy"]
@@ -280,13 +292,16 @@ class Experiment:
             return f"topk{pp['top_k']}"
         return k
 
-    def eval_support(self, ev: pd.DataFrame, valid: np.ndarray) -> np.ndarray:
-        """공통 지지 [P,S,A] = valid ∩ (평가 시즌 투수×구종 투구 수 ≥ support_min_pitches_eval)."""
+    def eval_repertoire(self, ev: pd.DataFrame) -> np.ndarray:
+        """[P, A] bool — 평가 시즌 투수×구종 투구 수 ≥ support_min_pitches_eval. 공통 지지 = valid ∩ 이것 (blocks.compute_rows 가 블록마다 결합)."""
         from pitcheezy.transition.count import repertoire_counts
-        from pitcheezy.interfaces.grid import decode_action
+        from pitcheezy.interfaces.grid import N_ACTIONS, decode_action
         rep = repertoire_counts(ev, self.n_p) >= int(self.p["ope"].get("support_min_pitches_eval", 0))  # [P, 9]
-        group = decode_action(np.arange(valid.shape[-1]))[0]
-        return valid & rep[:, group][:, None, :]
+        return rep[:, decode_action(np.arange(N_ACTIONS))[0]]
+
+    def eval_support(self, ev: pd.DataFrame, valid: np.ndarray) -> np.ndarray:
+        """공통 지지 [P,S,A] 통짜 (진단 스크립트용. 큰 텐서에서는 eval_repertoire + 블록)."""
+        return valid & self.eval_repertoire(ev)[:, None, :]
 
     def stage_ope(self) -> dict:
         t0 = time.time()
@@ -296,49 +311,46 @@ class Experiment:
         ev = self.pitches(op["eval_season"], holdout=True).reset_index(drop=True)
         sid = self.sid(ev)
         t = TransitionTensor.load(self.s0_dir / "transition", check_hash=False, mmap=True)
-        vb = ValueBundle.load(self.s0_dir / "value", check_hash=False)
-        support = self.eval_support(ev, t.valid)
-        menu = self.policy_menu(vb, t.valid)
-        tilts = {name: (vb.Q, support, float(name[6:])) for name, pol in menu.items() if isinstance(pol, str) and pol == "tilt"}
-        groups = IPS.coarse_groups()
-        pb_logged, pe_tilt, pb_coarse, pe_tilt_coarse = BH.crossfit_logged(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), tilts=tilts, groups=groups, C=self.C)
-        pb_full = BH.fit_behavior(ev, sid, self.n_p, self.K, alpha=float(op["behavior_alpha"]), C=self.C)  # 진단(모델 내 가치)용
+        vb = ValueBundle.load(self.s0_dir / "value", check_hash=False, mmap=True)
+        specs = self.policy_specs()
+        R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(self.p["policy"].get("reward_collapse_base_out", False)), C=self.C)
+        nxt = VI.next_state_table(self.K, self.C, self.context_kind)
+        # 행 단위 재료를 투수 블록으로 (D37). [P,S,A] 배열(π_b·π_e·q̂)은 블록 안에서만 산다
+        # 재료는 부트스트랩 시드와 무관 → 텐서·가치가 있는 디렉터리(s0_dir)에 캐시하고 다른 시드는 읽는다. key = OPE 설정 + 메뉴 + 전이·가치 해시
+        cache = self.s0_dir / "ope_rows.npz"
+        ckey = json.dumps({"ope": {k: v for k, v in op.items() if k not in ("n_boot", "menu", "primary_variant")}, "specs": list(specs), "data_version": self.cfg["data_version"],
+                           "sha": [(self.s0_dir / d / "sha256.txt").read_text() if (self.s0_dir / d / "sha256.txt").exists() else None for d in ("transition", "value")]}, sort_keys=True)
+        rows = BK.load_rows(cache, ckey)
+        if rows is None:
+            rows = BK.compute_rows(ev, sid, self.n_p, self.K, self.C, specs={k: v for k, v in specs.items() if v is not None}, valid=t.valid, rep_ok=self.eval_repertoire(ev), Q=vb.Q,
+                                   alpha=float(op["behavior_alpha"]), n_folds=int(op["n_folds"]), groups=IPS.coarse_groups(), P=t.P, R=R, nxt=nxt, with_value=True, with_dr=True)
+            BK.save_rows(cache, rows, ckey)
+            log.info("OPE 행 단위 재료 계산 %.0fs → %s", time.time() - t0, cache)
+        else:
+            log.info("OPE 행 단위 재료 재사용 %s", cache)
+        pb_logged, pb_coarse = rows.pb, rows.pb_coarse
         pa = PR.pa_rewards(ev, self.re24.RE24)
         keep = pa["n_pitchers"] == 1
         pa = pa[keep].reset_index(drop=True)
         r = -pa["delta_re24"].to_numpy()  # 투수 관점
         games = pa["game_pk"].to_numpy()
         key = pa[["game_pk", "at_bat_number"]]
-        R = VI.reward_table(self.re24.dRE24, self.K, collapse_base_out=bool(self.p["policy"].get("reward_collapse_base_out", False)), C=self.C)
-        nxt = VI.next_state_table(self.K, self.C, self.context_kind)
         first = ev.groupby(["game_pk", "at_bat_number"], sort=False).head(1)
-        f_p, f_s = first["pitcher_idx"].to_numpy(dtype=np.int64), self.sid(first)
+        first_idx = first.index.to_numpy()  # ev 는 reset_index 된 상태 → 위치
         has_a = ev["action_id"] >= 0
         two_strike = (ev["count_id"].to_numpy() % 3 == 2)
         n_dec = key.merge(ev[has_a].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
         n_dec_2s = key.merge(ev[has_a & two_strike].groupby(["game_pk", "at_bat_number"]).size().rename("n").reset_index(), on=["game_pk", "at_bat_number"], how="left")["n"].fillna(0).to_numpy(dtype=float)
-        q_b = DR.behavior_q(t.P, pb_full, support, R, nxt)  # 1스텝 DR 제어변량 (π_e 와 무관 → 한 번만)
         results = {}
         variants = [("traj_clip", "w_traj", op.get("clip"), "fine"), ("traj_noclip", "w_traj", None, "fine"), ("onestep_clip", "w_onestep", op.get("clip"), "fine"),
                     ("onestep2s_clip", "w_onestep_slice", op.get("clip"), "fine"), ("traj_coarse_clip", "w_traj", op.get("clip"), "coarse"), ("onestep_coarse_clip", "w_onestep", op.get("clip"), "coarse")]
-        for name, pol in menu.items():
-            model_value = None
-            if isinstance(pol, str):  # tilt
-                pol_arr = BH.tilt(pb_full, vb.Q, support, tilts[name][2])
-                pe_logged, pe_logged_coarse = pe_tilt[name], pe_tilt_coarse[name]
-            elif pol is not None:
-                pol_arr = IPS.restrict_support(pol() if callable(pol) else pol, support)
-                pe_logged = IPS.logged_probs(ev, sid, pol_arr)
-                pe_logged_coarse = IPS.logged_probs(ev, sid, IPS.coarsen(pol_arr, groups))
-            else:
-                pol_arr = None
-            V_e = None
-            if pol_arr is not None:
-                V_e = VI.policy_evaluation(t.P, pol_arr, R, nxt)
-                model_value = float(V_e[f_p, f_s].mean())
-                pol_arr = pol_arr.astype(np.float32)
+        for name, spec in specs.items():
+            pr = rows.policies.get(name)
+            model_value = None if spec is None else float(pr.V_row[first_idx].mean())
+            if pr is not None:
+                pe_logged, pe_logged_coarse = pr.pe, pr.pe_coarse
             for vname, col, clip, level in variants:
-                if pol_arr is None:  # π_b 자체: 궤적은 타석당 1, 1스텝은 결정 수 (다른 정책과 같은 가중 방식)
+                if pr is None:  # π_b 자체: 궤적은 타석당 1, 1스텝은 결정 수 (다른 정책과 같은 가중 방식)
                     if level == "coarse":
                         continue
                     w = np.ones(len(pa)) if col == "w_traj" else (n_dec_2s if col == "w_onestep_slice" else n_dec); nd = None
@@ -355,14 +367,13 @@ class Experiment:
                 log.info("OPE %-16s %-12s SN %+.4f [%+.4f, %+.4f] wmean %8.3f ESS %5.1f%% wmax %9.1f zero %4.1f%% model %s",
                          name, vname, est["snips"], est["ci_low"], est["ci_high"], est["w_mean"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"],
                          "-" if model_value is None else f"{model_value:+.4f}")
-                if pol_arr is None and vname == "traj_noclip":
+                if pr is None and vname == "traj_noclip":
                     results.pop(f"{name}/{vname}", None)
-            if pol_arr is None:  # π_b 자체는 DR 할 게 없다 (제어변량과 정책이 같음)
+            if pr is None:  # π_b 자체는 DR 할 게 없다 (제어변량과 정책이 같음)
                 continue
             td0 = time.time()
             rho_pitch, has_pitch = IPS.pitch_ratios(ev, pe_logged, pb_logged, clip=op.get("clip"))
-            v_e_b, _, q_e = DR.dr_inputs(t.P, pol_arr, q_b, R, nxt, V_e=V_e)
-            ot = key.merge(DR.onestep_dr_terms(ev, sid, rho_pitch, has_pitch, q_b, v_e_b), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
+            ot = key.merge(DR.onestep_dr_terms_rows(ev, sid, rho_pitch, has_pitch, rows.qb_row, pr.veb_row), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
             est = DR.estimate_dr1(ot, r)
             est.update(DR.bootstrap_dr1(ot, r, games, n_boot=int(op["n_boot"]), seed=self.seed))
             est["model_value"] = model_value
@@ -372,7 +383,7 @@ class Experiment:
             log.info("OPE %-16s %-12s SN %+.4f [%+.4f, %+.4f] wmean %8.3f ESS %5.1f%% wmax %9.1f zero %4.1f%% model %+.4f  dm %+.4f corr %+.4f",
                      name, "onestep_dr", est["snips"], est["ci_low"], est["ci_high"], est["w_mean"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"],
                      model_value, est["dm"], est["corr"])
-            tt = key.merge(DR.traj_dr_terms(ev, sid, rho_pitch, has_pitch, q_e, V_e), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
+            tt = key.merge(DR.traj_dr_terms_rows(ev, sid, rho_pitch, has_pitch, pr.qe_row, pr.V_row), on=["game_pk", "at_bat_number"], how="left").fillna(0.0)
             dr_plain, dr_wdr = DR.traj_dr_values(tt, r)  # 보상은 병합 뒤에 붙인다 (다투수 타석 제외·정렬을 key 에 맡김)
             est = DR.estimate_traj_dr(dr_wdr, dr_plain, tt["w_last"].to_numpy())
             est.update(DR.bootstrap_traj_dr(dr_wdr, games, n_boot=int(op["n_boot"]), seed=self.seed))
@@ -381,10 +392,9 @@ class Experiment:
             log.info("OPE %-16s %-12s SN %+.4f [%+.4f, %+.4f] wmean %8.3f ESS %5.1f%% wmax %9.1f zero %4.1f%% model %+.4f  (DR %.1fs)",
                      name, "traj_dr", est["snips"], est["ci_low"], est["ci_high"], est["w_mean"], 100 * est["ess_frac"], est["w_max"], 100 * est["frac_zero_w"],
                      model_value, time.time() - td0)
-            del q_e
         summary = {"seed": self.seed, "eval_season": op["eval_season"], "n_pa": int(len(pa)), "n_pa_dropped_multi_pitcher": int((~keep).sum()), "n_games": int(len(np.unique(games))),
                    "n_pitches": int(len(ev)), "frac_pitches_no_action": float((ev["action_id"] < 0).mean()),
-                   "support_min_pitches_eval": op.get("support_min_pitches_eval", 0), "frac_support_actions": float(support.sum() / max(t.valid.sum(), 1)),
+                   "support_min_pitches_eval": op.get("support_min_pitches_eval", 0), "frac_support_actions": float(rows.n_support / max(rows.n_valid, 1)),
                    "mean_reward_behavior": float(r.mean()), "behavior_alpha": op["behavior_alpha"], "n_folds": op["n_folds"], "clip": op.get("clip"), "n_boot": op["n_boot"],
                    "primary": f"{self.primary_name()}/{op.get('primary_variant', 'onestep_clip')}", "results": results}
         (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))

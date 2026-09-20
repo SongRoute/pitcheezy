@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ._io import verify_sha256, write_sha256
+from ._io import save_array, verify_sha256, write_sha256
 from .grid import N_ACTIONS
 from .outcomes import N_OUTCOMES, outcomes_table
 from .states import n_states, states_table
@@ -81,9 +81,9 @@ class TransitionTensor:
     def save(self, d: Path) -> None:
         d = Path(d)
         d.mkdir(parents=True, exist_ok=True)
-        np.save(d / "P.npy", np.asarray(self.P, dtype=np.float32))
+        save_array(d / "P.npy", self.P, np.float32)
         np.save(d / "valid.npy", np.asarray(self.valid, dtype=bool))
-        np.save(d / "n_obs.npy", np.asarray(self.n_obs, dtype=np.int32))
+        save_array(d / "n_obs.npy", self.n_obs, np.int32)
         self.states.to_parquet(d / "states.parquet", index=False)
         self.outcomes.to_parquet(d / "outcomes.parquet", index=False)
         self.pitchers.to_parquet(d / "pitchers.parquet", index=False)

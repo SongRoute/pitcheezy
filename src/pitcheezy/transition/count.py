@@ -1,11 +1,14 @@
 """전이 모델 ⓐ — 투수별 집계 + 계층 평활 (design.md ② ⓐ, Phase 0). 산출은 interfaces.tensor.TransitionTensor.
 
 n[p, s, a, o] = 학습 창에서 (투수, 상태, 행동) 뒤에 결과 o 가 난 횟수 (행동 있는 투구만).
-P = smoothing.smooth_hierarchical(n, alpha). 규칙 마스크 적용. valid[p, s, a] = 투수의 구종(pitch_id) 학습 투구 수 ≥ repertoire_min.
+P = 계층 평활(smoothing.LeagueLayers + pitcher_layer, smooth_hierarchical 과 같은 값). 규칙 마스크 적용. valid[p, s, a] = 투수의 구종(pitch_id) 학습 투구 수 ≥ repertoire_min.
+fit 은 투수 한 명씩 세고 평활해 바로 쓴다 — dense n[P,S,A,O] 를 만들지 않는다. out_dir 을 주면 P·n_obs 를 그 디렉터리의 npy memmap 에 쓴다 (K=6×C=7 은 P 26GB, D37).
 holdout: 2023–24 학습 → 2025 NLL·ECE. 2025 에만 있는 투수는 집계 제외·목록 기록.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -15,7 +18,7 @@ from pitcheezy.interfaces import states as S
 from pitcheezy.interfaces.grid import N_ACTIONS, N_LOC, decode_action
 from pitcheezy.interfaces.pitch_types import N_PITCH
 from pitcheezy.interfaces.tensor import DEFAULT_REPERTOIRE_MIN_PITCHES, DEFAULT_ROW_SUM_TOL, SPEC_VERSION, TransitionTensor
-from pitcheezy.transition.smoothing import smooth_hierarchical
+from pitcheezy.transition.smoothing import LeagueLayers, pitcher_layer
 
 ECE_BINS = 15
 
@@ -44,6 +47,33 @@ def count_transitions(df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, K
     return n
 
 
+class _PitcherCells:
+    """(투수별로 정렬한) 셀 번호. dense n[P,S,A,O] 없이 리그 합과 투수 한 명의 n[S,A,O] 를 만든다."""
+
+    def __init__(self, df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, S_: int):
+        ok = (df["action_id"].to_numpy() >= 0) & (df["outcome_id"].to_numpy() >= 0)
+        p = df["pitcher_idx"].to_numpy(dtype=np.int64)[ok]
+        cell = (state_id[ok].astype(np.int64) * N_ACTIONS + df["action_id"].to_numpy(dtype=np.int64)[ok]) * O.N_OUTCOMES + df["outcome_id"].to_numpy(dtype=np.int64)[ok]
+        order = np.argsort(p, kind="stable")
+        self.cell = cell[order]
+        self.bounds = np.searchsorted(p[order], np.arange(n_pitchers + 1))
+        self.shape = (S_, N_ACTIONS, O.N_OUTCOMES)
+        self.size = S_ * N_ACTIONS * O.N_OUTCOMES
+
+    def league(self) -> np.ndarray:
+        return np.bincount(self.cell, minlength=self.size).reshape(self.shape).astype(np.float64)
+
+    def pitcher(self, i: int) -> np.ndarray:
+        return np.bincount(self.cell[self.bounds[i]:self.bounds[i + 1]], minlength=self.size).reshape(self.shape)
+
+
+def _alloc(out_dir: Path | None, name: str, shape: tuple, dtype) -> np.ndarray:
+    if out_dir is None:
+        return np.empty(shape, dtype=dtype)
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    return np.lib.format.open_memmap(Path(out_dir) / name, mode="w+", dtype=dtype, shape=shape)
+
+
 def repertoire_counts(df: pd.DataFrame, n_pitchers: int) -> np.ndarray:
     """[P, N_PITCH] 투수별 구종 투구 수 (행동 있는 투구)."""
     ok = df["action_id"].to_numpy() >= 0
@@ -55,12 +85,15 @@ def repertoire_counts(df: pd.DataFrame, n_pitchers: int) -> np.ndarray:
 def fit(
     df: pd.DataFrame, state_id: np.ndarray, pitchers: pd.DataFrame, K: int, *, alpha: float, alpha_pitcher: float | None = None,
     pitcher_group: str = "pitch", repertoire_min: int = DEFAULT_REPERTOIRE_MIN_PITCHES, valid_states: np.ndarray | None = None, meta: dict | None = None,
-    C: int = 1, context_kind: str | None = None,
+    C: int = 1, context_kind: str | None = None, out_dir: Path | None = None,
 ) -> TransitionTensor:
-    """학습 표 → TransitionTensor. valid_states [S] bool 로 B1 처럼 쓰지 않는 상태 행을 통째로 무효화."""
+    """학습 표 → TransitionTensor. valid_states [S] bool 로 B1 처럼 쓰지 않는 상태 행을 통째로 무효화.
+
+    out_dir 을 주면 P·n_obs 는 out_dir/P.npy·n_obs.npy 의 memmap (그 뒤 t.save(out_dir) 는 두 파일을 다시 쓰지 않는다). 값은 out_dir 유무와 무관하게 같다.
+    """
     n_p = len(pitchers)
     S_ = S.n_states(K, C)
-    n = count_transitions(df, state_id, n_p, K, C)
+    cells = _PitcherCells(df, state_id, n_p, S_)
     cid = S.decode_state_full(np.arange(S_), K, C)[0]
     group = decode_action(np.arange(N_ACTIONS))[0]
     if pitcher_group == "pitch":  # 투수 층 = (카운트, 구종 9)
@@ -72,28 +105,32 @@ def fit(
         pgroup, n_groups = np.arange(N_ACTIONS), N_ACTIONS
     else:
         raise ValueError(f"pitcher_group 모름: {pitcher_group}")
-    P = smooth_hierarchical(
-        n, count_of_state=cid, group_of_action=pgroup, n_counts=S.N_COUNTS, n_groups=n_groups,
-        alpha=alpha, alpha_pitcher=alpha_pitcher, rule_mask=O.rule_mask_table()[cid],
-    )
+    lg = LeagueLayers(cells.league(), count_of_state=cid, group_of_action=pgroup, n_counts=S.N_COUNTS, n_groups=n_groups, alpha=alpha, rule_mask=O.rule_mask_table()[cid])
+    ap = alpha if alpha_pitcher is None else float(alpha_pitcher)
     rep = repertoire_counts(df, n_p)  # [P, 9]
     valid = (rep >= repertoire_min)[:, group]  # [P, A]
     valid = np.broadcast_to(valid[:, None, :], (n_p, S_, N_ACTIONS)).copy()
     if valid_states is not None:
         valid &= np.asarray(valid_states, dtype=bool)[None, :, None]
-    P[~valid] = 0.0
-    n_obs = np.empty(n.shape[:3], dtype=np.int32)
+    P = _alloc(out_dir, "P.npy", (n_p, S_, N_ACTIONS, O.N_OUTCOMES), np.float32)
+    n_obs = _alloc(out_dir, "n_obs.npy", (n_p, S_, N_ACTIONS), np.int32)
+    n_total = 0
     for i in range(n_p):
-        n_obs[i] = n[i].sum(-1, dtype=np.int64)
+        n2 = cells.pitcher(i)
+        row = pitcher_layer(n2.astype(np.float64), lg, ap).astype(np.float32)
+        row[~valid[i]] = 0.0
+        P[i] = row
+        n_obs[i] = n2.sum(-1)
+        n_total += int(n2.sum())
     m = {
         "spec_version": SPEC_VERSION, "model_arch": "count_hierarchical_dirichlet", "K": int(K), "C": int(C), "context_kind": context_kind,
         "repertoire_min_pitches": int(repertoire_min), "row_sum_tol": DEFAULT_ROW_SUM_TOL, "alpha": float(alpha), "alpha_pitcher": None if alpha_pitcher is None else float(alpha_pitcher), "pitcher_group": pitcher_group,
-        "n_train_pitches_with_action": int(n.sum()), "holdout_nll": None, "holdout_ece": None, "holdout_ece_hr": None,
+        "n_train_pitches_with_action": n_total, "holdout_nll": None, "holdout_ece": None, "holdout_ece_hr": None,
         "excluded_pitchers": [],
     }
     if meta:
         m.update(meta)
-    return TransitionTensor(P=P.astype(np.float32), valid=valid, n_obs=n_obs, pitchers=pitchers, meta=m)
+    return TransitionTensor(P=P, valid=valid, n_obs=n_obs, pitchers=pitchers, meta=m)
 
 
 def holdout_metrics(t: TransitionTensor, df: pd.DataFrame, state_id: np.ndarray) -> dict:
