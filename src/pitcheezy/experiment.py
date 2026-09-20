@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
 import sys
 import time
@@ -133,17 +134,27 @@ class Experiment:
         alphas_p = tp["alpha_pitcher_grid"] if ap_cfg == "auto" else [ap_cfg]  # None → 리그와 같은 값
         screen = {}
         best = None
+        # 텐서는 RAM 이 아니라 디스크 memmap 에 쓴다 (D37). α 후보마다 임시 디렉터리, 가장 좋은 것만 남긴다
+        scratch = self.s0_dir / "_fit_scratch"
+        shutil.rmtree(scratch, ignore_errors=True)
         for a in alphas:
             for ap in alphas_p:
-                t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), alpha_pitcher=ap, pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind,
+                key = str(a) if ap is None else f"{a}/{ap}"
+                d = scratch / key.replace("/", "_")
+                t = TC.fit(htr, self.sid(htr), pitchers_h, self.K, alpha=float(a), alpha_pitcher=ap, pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind, out_dir=d,
                            meta={**common, "season_window": f"{tp['holdout']['train_seasons'][0]}-{tp['holdout']['train_seasons'][-1]}", "holdout_split": f"season:{tp['holdout']['eval_season']}", "excluded_pitchers": excluded})
                 m = TC.holdout_metrics(t, hev, self.sid(hev))
-                key = str(a) if ap is None else f"{a}/{ap}"
                 screen[key] = m
                 log.info("α=%s 홀드아웃 NLL %.4f ECE %.4f ECE_HR %.4f (n=%d)", key, m["holdout_nll"], m["holdout_ece"], m["holdout_ece_hr"], m["holdout_n_pitches"])
                 if best is None or m["holdout_nll"] < best[1]["holdout_nll"]:
-                    best = (float(a), m, t, ap)
-        alpha, hm, th, alpha_p = best
+                    drop, best = (best[4] if best else None), (float(a), m, t, ap, d)
+                else:
+                    drop = d
+                del t
+                if drop is not None:
+                    shutil.rmtree(drop, ignore_errors=True)
+        alpha, hm, th, alpha_p, best_dir = best
+        del best
         tp = {**tp, "alpha_pitcher": alpha_p}
         th.meta.update({k: hm[k] for k in ("holdout_nll", "holdout_ece", "holdout_ece_hr")})
         th.meta["holdout_metrics"] = hm
@@ -152,14 +163,18 @@ class Experiment:
         if pr:
             raise RuntimeError(f"홀드아웃 텐서 계약 위반: {pr}")
         if tp.get("save_holdout_tensor", True):
-            th.save(out_h)
+            th.save(best_dir)  # P·n_obs 는 이미 그 자리의 memmap → 나머지 파일과 해시만 쓴다
+            del th
+            shutil.rmtree(out_h, ignore_errors=True)
+            shutil.move(str(best_dir), str(out_h))
         else:  # 큰 텐서(K>1)는 meta·지표만 (D21). 재현은 같은 config 로 재실행
             out_h.mkdir(parents=True, exist_ok=True)
             (out_h / "meta.json").write_text(json.dumps({**th.meta, "tensor_saved": False}, ensure_ascii=False, indent=2))
-        del th
+            del th
+        shutil.rmtree(scratch, ignore_errors=True)
         # 전체: 2023–25
         ftr = pd.concat([self.pitches(s) for s in tp["train_seasons"]], ignore_index=True)
-        tf = TC.fit(ftr, self.sid(ftr), self.pitchers_table(ftr), self.K, alpha=alpha, alpha_pitcher=tp.get("alpha_pitcher"), pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind,
+        tf = TC.fit(ftr, self.sid(ftr), self.pitchers_table(ftr), self.K, alpha=alpha, alpha_pitcher=tp.get("alpha_pitcher"), pitcher_group=tp.get("pitcher_group", "pitch"), repertoire_min=tp["repertoire_min_pitches"], valid_states=self.valid_states(), C=self.C, context_kind=self.context_kind, out_dir=out_f,
                     meta={**common, "season_window": f"{tp['train_seasons'][0]}-{tp['train_seasons'][-1]}", "holdout_split": "none",
                           "holdout_nll": hm["holdout_nll"], "holdout_ece": hm["holdout_ece"], "holdout_ece_hr": hm["holdout_ece_hr"], "holdout_metrics": hm,
                           "holdout_tensor_dir": str(out_h), "alpha_screen": th_screen(screen), "excluded_pitchers": excluded})

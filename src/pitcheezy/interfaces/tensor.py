@@ -81,9 +81,9 @@ class TransitionTensor:
     def save(self, d: Path) -> None:
         d = Path(d)
         d.mkdir(parents=True, exist_ok=True)
-        np.save(d / "P.npy", np.asarray(self.P, dtype=np.float32))
+        _save_array(d / "P.npy", self.P, np.float32)
         np.save(d / "valid.npy", np.asarray(self.valid, dtype=bool))
-        np.save(d / "n_obs.npy", np.asarray(self.n_obs, dtype=np.int32))
+        _save_array(d / "n_obs.npy", self.n_obs, np.int32)
         self.states.to_parquet(d / "states.parquet", index=False)
         self.outcomes.to_parquet(d / "outcomes.parquet", index=False)
         self.pitchers.to_parquet(d / "pitchers.parquet", index=False)
@@ -105,6 +105,14 @@ class TransitionTensor:
             states=pd.read_parquet(d / "states.parquet"),
             outcomes=pd.read_parquet(d / "outcomes.parquet"),
         )
+
+
+def _save_array(path: Path, a: np.ndarray, dtype) -> None:
+    """a 가 이미 path 의 memmap 이면 (count.fit 의 out_dir) flush 만 한다 — 26GB 를 RAM 으로 읽어 같은 파일에 다시 쓰지 않는다."""
+    if isinstance(a, np.memmap) and a.filename is not None and Path(a.filename).resolve() == path.resolve() and a.dtype == dtype:
+        a.flush()
+        return
+    np.save(path, np.asarray(a, dtype=dtype))
 
 
 def expected_shape(n_pitchers: int, K: int, C: int = 1) -> tuple[int, int, int, int]:
