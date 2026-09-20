@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ._io import verify_sha256, write_sha256
+from ._io import save_array, verify_sha256, write_sha256
 from .grid import action_id, loc_id
 
 LOOKUP_MODES = ("snap", "bilinear")
@@ -43,21 +43,22 @@ class ValueBundle:
     def save(self, d: Path) -> None:
         d = Path(d)
         d.mkdir(parents=True, exist_ok=True)
-        np.save(d / "Q.npy", np.asarray(self.Q, dtype=np.float32))
+        save_array(d / "Q.npy", self.Q, np.float32)
         np.save(d / "V.npy", np.asarray(self.V, dtype=np.float32))
-        np.save(d / "policy.npy", np.asarray(self.policy, dtype=np.float32))
+        save_array(d / "policy.npy", self.policy, np.float32)
         (d / "meta.json").write_text(json.dumps(self.meta, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         write_sha256(d, FILES)
 
     @classmethod
-    def load(cls, d: Path, *, check_hash: bool = True) -> "ValueBundle":
+    def load(cls, d: Path, *, check_hash: bool = True, mmap: bool = False) -> "ValueBundle":
         d = Path(d)
         if check_hash:
             verify_sha256(d, FILES)
+        mm = "r" if mmap else None
         return cls(
-            Q=np.load(d / "Q.npy"),
+            Q=np.load(d / "Q.npy", mmap_mode=mm),
             V=np.load(d / "V.npy"),
-            policy=np.load(d / "policy.npy"),
+            policy=np.load(d / "policy.npy", mmap_mode=mm),
             meta=json.loads((d / "meta.json").read_text(encoding="utf-8")),
         )
 

@@ -24,8 +24,26 @@ def _shrink(n: np.ndarray, prior: np.ndarray, alpha: float) -> np.ndarray:
     return np.where(s > 0, out / np.where(s > 0, s, 1.0), 0.0)
 
 
+class BehaviorFactors:
+    """π_b 의 인수 (t_psg [P,S,G], l_pcgl [P,NC,G,L]). [P,S,A] 는 block(lo, hi) 로 투수 구간만 만든다 (K=6×C=7 은 전체가 2.4GB, D37)."""
+
+    def __init__(self, t_psg: np.ndarray, l_pcgl: np.ndarray, cid_of_state: np.ndarray, floor: float):
+        self.t_psg, self.l_pcgl, self.cid_of_state, self.floor = t_psg, l_pcgl, cid_of_state, floor
+
+    def block(self, lo: int, hi: int) -> np.ndarray:
+        """π_b[lo:hi] float32 [hi−lo, S, A]."""
+        pb = self.t_psg[lo:hi, :, :, None] * self.l_pcgl[lo:hi][:, self.cid_of_state, :, :]
+        pb = pb.reshape(hi - lo, pb.shape[1], N_ACTIONS) + self.floor
+        pb /= pb.sum(-1, keepdims=True)
+        return pb.astype(np.float32)
+
+
 def fit_behavior(df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, K: int, *, alpha: float, floor: float = 1e-6, C: int = 1) -> np.ndarray:
     """π_b [P, S, A] float32. C = 맥락 수 (상태 id 에 접혀 있다)."""
+    return behavior_factors(df, state_id, n_pitchers, K, alpha=alpha, floor=floor, C=C).block(0, n_pitchers)
+
+
+def behavior_factors(df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, K: int, *, alpha: float, floor: float = 1e-6, C: int = 1) -> BehaviorFactors:
     S_ = S.n_states(K, C)
     NC = S.N_COUNTS
     cid_of_state = S.decode_state_full(np.arange(S_), K, C)[0]
@@ -50,11 +68,7 @@ def fit_behavior(df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, K: int
     league_gl = _shrink(n_gl, np.full((N_PITCH, N_LOC), 1.0 / N_LOC), alpha)  # [G, L]
     l_pgl = _shrink(n_pgl, league_gl[None], alpha)  # [P, G, L]
     l_pcgl = _shrink(n_pcgl, l_pgl[:, None, :, :], alpha)  # [P, NC, G, L]
-    # --- 결합 [P, S, G, L] → [P, S, A]
-    pb = t_psg[:, :, :, None] * l_pcgl[:, cid_of_state, :, :]
-    pb = pb.reshape(n_pitchers, S_, N_ACTIONS) + floor
-    pb /= pb.sum(-1, keepdims=True)
-    return pb.astype(np.float32)
+    return BehaviorFactors(t_psg, l_pcgl, cid_of_state, floor)  # 결합 [P, S, G, L] → [P, S, A] 은 block()
 
 
 def behavior_logged_crossfit(df: pd.DataFrame, state_id: np.ndarray, n_pitchers: int, K: int, *, alpha: float, n_folds: int, floor: float = 1e-6, C: int = 1) -> np.ndarray:
