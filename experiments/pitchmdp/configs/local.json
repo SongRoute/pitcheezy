@@ -1,0 +1,24 @@
+{
+  "artifact_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp",
+  "raw_root": "/Users/song/Projects/pitcheezy/data/raw/d20260911-s2325",
+  "raw_allowlist": ["statcast_2023.parquet", "statcast_2024.parquet", "statcast_2025.parquet"],
+  "python": "/Users/song/Projects/pitcheezy/.venv/bin/python",
+  "cohort": {
+    "team": "LAD",
+    "role": "starter",
+    "count": 4,
+    "rank_by": "outs_recorded_in_LAD_starts",
+    "period_start": "2023-05-15",
+    "period_end": "2025-04-30",
+    "period_status": "confirmed_by_user_2026-09-21",
+    "batter_filter": null
+  },
+  "execution": {
+    "first_result_hours": 6,
+    "pilot_hours": 24,
+    "clock_starts": "next_session_development_start",
+    "max_parallel_training_jobs": 1,
+    "seed": 42,
+    "wandb_mode": "offline"
+  }
+}

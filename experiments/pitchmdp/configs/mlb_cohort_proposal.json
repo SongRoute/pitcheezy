@@ -1,0 +1,55 @@
+{
+  "status": "selection_proposal_frozen_before_new_MLB_cohort_model_metrics",
+  "frozen_at_utc": "2026-09-21T01:42:46.790558+00:00",
+  "artifact_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp",
+  "processed_source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet",
+  "processed_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+  "count": 6,
+  "team_filter": null,
+  "role": "pitcher equals first defensive pitcher of game",
+  "periods": {
+    "train": [
+      "2023-05-15",
+      "2025-04-30"
+    ],
+    "calibration": [
+      "2025-05-01",
+      "2025-06-30"
+    ],
+    "dev": [
+      "2025-07-01",
+      "2025-09-28"
+    ]
+  },
+  "eval_split": "dev",
+  "min_eval_innings": 50,
+  "eligibility": "positive train starter outs and dev starter outs lower bound >= 150 (50 IP)",
+  "selection_rule": "train starter outs descending; train starts descending; MLBAM ID ascending",
+  "pitcher_ids": [
+    657277,
+    669302,
+    621244,
+    622491,
+    664285,
+    605135
+  ],
+  "batter_filter": null,
+  "boundary_stable_under_outs_uncertainty": true,
+  "retrospective_exposure_selection": true,
+  "causal_effect_claim": false,
+  "raw_2026_access": false,
+  "new_model_metrics_read": false,
+  "cohort_training_filter": "all teams, selected persistent pitcher IDs, starter appearances",
+  "shared_model_training_pool": "league-wide training data remains permitted; distinguish it from reporting cohort",
+  "original_LAD_artifacts": "preserved; this proposal does not activate a new model run",
+  "report": "/Volumes/T7 Shield/pitcheezy/pitchmdp/reports/mlb_cohort_candidates.json",
+  "limitations": [
+    "Evaluation exposure is used in eligibility. This is a retrospective surviving high-workload population, not a prospective no-lookahead cohort.",
+    "Exposure-only selection avoids choosing pitchers by new model metrics, but availability/workload can depend on health, performance and team decisions; MLB-wide causal or prospective generalization is unsupported.",
+    "Balanced ranking uses evaluation workload continuously and is descriptive; train-top with a fixed 50-IP eligibility threshold is the recommended simpler rule.",
+    "Out totals are exact integer sums of existing reconstructed outs, not pitch-count proxies or independently reconciled official box-score IP. Substitution-attribution uncertainty is reported as lower/upper bounds.",
+    "Eligible PA excludes observed unsupported trajectories; this is outcome-dependent support restriction. All batter identities are retained without an individual sample threshold.",
+    "The July–September 2025 period is development evaluation, not an untouched confirmatory test. No 2026 data is read.",
+    "Training period is longer than evaluation; raw IP totals should not be compared as equal-duration rates. Balanced score uses within-period ranks over the same eligible population."
+  ]
+}

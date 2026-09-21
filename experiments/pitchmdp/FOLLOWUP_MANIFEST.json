@@ -1,0 +1,44 @@
+{
+  "finished_at_utc": "2026-09-21T03:58:19.199357+00:00",
+  "status": "complete",
+  "allowed_raw_years": [
+    2023,
+    2024,
+    2025
+  ],
+  "raw_2026_access": false,
+  "dev_pitches": 7276,
+  "dev_games": 87,
+  "fixed_neural_checkpoints": 30,
+  "primary_forecast": {
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/robustness-20260921T023616Z/integration100-20260921T033810Z/calibration100/context-reblend-20260921T034254Z",
+    "name": "100-draw five-Transformer ensemble plus fixed game-state frequency baseline; CAL log-loss blend",
+    "metrics": {
+      "log_loss": 1.4989280881333171,
+      "brier_multiclass": 0.7260345269839872
+    },
+    "reference_metrics": {
+      "log_loss": 1.5105507728046899,
+      "brier_multiclass": 0.729043702205936
+    },
+    "selection_file": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/robustness-20260921T023616Z/integration100-20260921T033810Z/calibration100/context-reblend-20260921T034254Z/selection.json"
+  },
+  "experiments": {
+    "fixed_seed_robustness_25": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/robustness-20260921T023616Z",
+    "integration100_and_400": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/robustness-20260921T023616Z/integration100-20260921T033810Z",
+    "primary_context_blend100": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/robustness-20260921T023616Z/integration100-20260921T033810Z/calibration100/context-reblend-20260921T034254Z",
+    "exact_fixed_temperature_diagnostic": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/exact-dev-diagnostic-20260921T035425Z",
+    "same_sequence_policy_rollout": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/sequence-rollout-20260921T032938Z",
+    "delivery_adaptation": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/delivery-adaptation-20260921T032817Z",
+    "strong_frequency_baselines": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/frequency-baselines-20260921T030038Z",
+    "context_frequency25": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/robustness-20260921T023616Z/calibration-20260921T031450Z/frequency-blend-20260921T031904Z/context-frequency-20260921T033016Z"
+  },
+  "tests": {
+    "passed": 128,
+    "log": "/Volumes/T7 Shield/pitcheezy/pitchmdp/logs/tests_followup_final.log",
+    "sha256": "e54697f66ba09b0863d9b4274b6569ee038afa80d610bce9b1a02cdb6738c712"
+  },
+  "scope": "Exploratory inspected-DEV forecasting and model-internal policy diagnostics; not independent confirmation or real policy benefit",
+  "report": "/Users/song/Projects/pitcheezy/experiments/pitchmdp/FOLLOWUP_RESULTS.md",
+  "figure": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/sequence-20260921T020823Z/figures/integration100_results.png"
+}
