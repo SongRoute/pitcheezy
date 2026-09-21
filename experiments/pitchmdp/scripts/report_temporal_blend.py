@@ -8,6 +8,7 @@ os.environ.setdefault('MPLCONFIGDIR', '/tmp/pitchmdp-matplotlib')
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator, FormatStrFormatter
 import numpy as np
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -80,10 +81,15 @@ def main():
     insert = lines.index('## 예측 결과')
     lines[insert:insert] = summary
     lines += ['## 검증 범위', '', '독립 검증기는 처리 데이터에서 선정·표본·정답을 다시 구성하고, 저장 예측에서 앙상블·혼합 최적값·점수·경기 bootstrap을 재계산한다. 물리 표본 적분과 온도 최적값은 동결 코드·설정·파일 해시를 확인한 범위이며, 온도 보정용 후보 logits를 독립 추론해 재현한 것은 아니다.', '']
+    lines += ['## 학습 비용', '', '동일 장비의 저장된 fit 시간 평균이다. 최종400표본 적분 추론 시간은 제외한다.', '', '| 모델 | 파라미터 | 10회 평균 fit 시간(초) |', '|---|---:|---:|']
+    for kind, label in [('flatten_mlp', 'MLP'), ('transformer', 'Transformer')]:
+        fits = [json.loads((run/year/f'{kind}_{seed}_fit.json').read_text()) for year in results['folds'] for seed in range(42,47)]
+        lines.append(f"| {label} | {fits[0]['parameter_count']:,} | {np.mean([fit['seconds'] for fit in fits]):.1f} |")
+    lines += ['', '## 완료 검증과 다음 우선순위', '', '전체138개 테스트와 두 연도·20모델의 독립 감사가 통과했다. 감사 결과는 같은 실행 폴더의 `final_audit.json`에 있다. 신경망 학습·추론 프로세스는 모두 종료됐다.', '', '두 연도 모두 두 혼합의 기준선 대비 로그손실·Brier 개선 구간은0 아래에 있었다. 반면 Transformer 혼합과 MLP 혼합의 차이는 두 연도 모두0을 포함했다. 동일하다고 증명된 것은 아니지만, 약7배의 학습 비용을 정당화할 일관된 추가 우위는 이번 비교에서 확인하지 못했다.', '', '다음 우선순위는 저렴한 MLP 혼합을 중심으로 주자·아웃, 점수차·이닝·홈원정, 과거 타자 성향, 이전 투구 이력을 각각 제거하는 실험이다. 동일 시간 분할·기준선·보정 조건을 유지해 추가 요소별 기여가 두 연도에 재현되는지 확인하고, 중요한 비교를 Transformer에서 교차 확인하는 방식이 적절하다. 이 후속 제거 실험은 이번20모델 배치의 결과에 포함되지 않는다.', '']
     report='\n'.join(lines)
     (PROJECT/'TEMPORAL_BLEND_RESULTS.md').write_text(report)
     (run/'TEMPORAL_BLEND_RESULTS.md').write_text(report)
-    fig,axes=plt.subplots(1,2,figsize=(12,4.8),sharey=True)
+    fig,axes=plt.subplots(1,2,figsize=(12,4.8),sharey=True,sharex=True)
     labels=['MLP blend − frequency', 'Transformer blend − frequency', 'Transformer blend − MLP blend']
     for ax,(year,result) in zip(axes,results['folds'].items()):
         for i,(a,b) in enumerate(comparisons):
@@ -91,6 +97,9 @@ def main():
             mean=m['model_minus_reference'];lo,hi=m['game_only_bootstrap95']
             ax.errorbar(mean,i,xerr=np.array([[mean-lo],[hi-mean]]),fmt='o',color=['#4878d0','#ee854a','#6acc64'][i],capsize=5)
         ax.axvline(0,color='black',linewidth=.8,linestyle='--')
+        ax.set_xlim(-.0225,.003)
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
         ax.set_title(year);ax.set_yticks(range(3),labels);ax.set_xlabel('Log-loss difference (lower is better)');ax.grid(axis='x',alpha=.2)
     axes[0].invert_yaxis()
     fig.suptitle('Rolling evaluation: matched frequency blends\n95% paired game bootstrap; fixed fitted pipelines')

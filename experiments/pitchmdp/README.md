@@ -1,20 +1,42 @@
 # PitchMDP 실제 데이터 파일럿
 
-기존 pitcheezy의 라벨·캐시·RE24 모델과 분리한 연구용 구현이다. 현재 범위는
-짧은 투구 이력의 결과 예측, 타석 종료 전이, 수비 팀 승리 확률 continuation,
-구종×목표 위치 추천이다. 최신 후속 결과는 [FOLLOWUP_RESULTS.md](FOLLOWUP_RESULTS.md),
-첫 시퀀스 결과는 [SEQUENCE_RESULT.md](SEQUENCE_RESULT.md)다.
-다섯 초기값 반복에서 경기 상황과 타자 성향의 로그손실 개선이 남았고,
-Transformer는 같은 파라미터 수의 MLP보다 좋았다. 강한 구종 빈도 기준선과의
-단독 모델 비교에서는 우위가 입증되지 않았다. CAL에서만 비율을 정한 앙상블·빈도
-혼합은 예측을 개선했다. 주자·아웃을 포함한 기준선과100표본 앙상블의 혼합은
-로그손실1.498928/Brier0.726035였다. 작은 MLP 대비 Transformer의 우위와
-5개 군집 유사도 추가 효과는 불확실하다. 실제 승률 개선은 미확인이다.
-모든 후속 비교는 이미 본 DEV를 사용하는 탐색 연구다.
-이전 MLB 결과는 [REVISED_PILOT.md](REVISED_PILOT.md), 최초 LAD 실행은
-[FIRST_RESULT.md](FIRST_RESULT.md)에 보존한다.
+기존 pitcheezy의 라벨·캐시·RE24 모델과 분리한 연구용 구현이다. 짧은 투구 이력의 결과 예측,
+타석 종료 전이와 구종×목표 위치 추천을 연구한다. 최신 결과는
+**[HISTORY_BATTER_VALIDATION_RESULTS.md](HISTORY_BATTER_VALIDATION_RESULTS.md)**다.
+
+이번 실행에서는 기존5구 모델60개를 재사용하고 신규0구 모델60개를 약32분에 학습했다.
+6개 타자 표현 모두 두 연도에서0구와5구의 차이를 확인하지 못했다. 군집을 추가할
+이득도 확인되지 않았다. 전체157개 테스트와 저장 예측의 점수·구간 재계산이 통과했다.
+
+이전 표현·길이 결과는 **[REPRESENTATION_HISTORY_RESULTS.md](REPRESENTATION_HISTORY_RESULTS.md)**다.
+
+주자·아웃 등 경기 상황을 유지하고, 타자 표현과 같은 타석의 이전1~5구를 각각 비교했다.
+2024/2025·초기값5개·신규110개 MLP 실험에서 기존 성향+군집 구성은 좌·우타만 또는
+개인 ID 방식보다 두 연도 모두 로그손실이 낮았다(비교군 보정95%구간).
+최적 군집 수와5구 이력의 추가 이득은 확인되지 않았다. 전체148개 테스트와 독립 감사가 통과했다.
+ID와 성향 방식은 과거 정보량·갱신 시점도 달라 순수 인코딩 효과로 단정할 수 없다.
+이미 사용한 역사 데이터의 탐색적 비교이며, 실제 추천의 승률 개선을 입증한 것은 아니다.
+
+앞선 [TEMPORAL_BLEND_RESULTS.md](TEMPORAL_BLEND_RESULTS.md)에서는 같은 상황 빈도 기준선과
+혼합한 MLP와 Transformer가 모두 기준선보다 좋았지만, 두 신경망의 우열은 미확정이었다.
+
+이전 후속 배치는 [FOLLOWUP_RESULTS.md](FOLLOWUP_RESULTS.md), 첫 시퀀스는
+[SEQUENCE_RESULT.md](SEQUENCE_RESULT.md), 최초 MLB/LAD 결과는
+[REVISED_PILOT.md](REVISED_PILOT.md)와 [FIRST_RESULT.md](FIRST_RESULT.md)에 보존한다.
+현재 실행·인수인계 상태는 [HANDOFF.md](HANDOFF.md)를 따른다.
 
 ## 실행
+
+과거 투구0/5구와 타자 표현6종을 함께 검증하는 실행은 완료했다.
+기존 모델60개를 재사용하고 신규60개를 순차 학습했다. [설계·M4 설정·재개 안내](docs/HISTORY_BATTER_VALIDATION.md).
+
+```sh
+.venv/bin/python experiments/pitchmdp/scripts/run_history_batter_validation.py --dry-run
+caffeinate -i .venv/bin/python experiments/pitchmdp/scripts/run_history_batter_validation.py
+```
+
+첫 명령은 계획만 출력하고, 두 번째 명령은 완료 실행의 해시를 검사한 뒤 종료한다.
+새 학습을 실행하려면 별도 SSD `--output`을 지정한다.
 
 저장소 루트에서 기존 `.venv`를 사용한다. 설치나 업그레이드는 필요하지 않다.
 T7 Shield가 마운트되어 있어야 하며, 원본·중간 데이터·모델·그림은 설정된 SSD에 둔다.
