@@ -10,6 +10,7 @@ from datetime import date
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import logging
 from pathlib import Path
 import pickle
 import sys
@@ -38,7 +39,7 @@ ASSUMPTIONS = [
     "Current deliveries are marginalized over 400 joint TRAIN vectors, not observed future deliveries.",
     "IDs select repertoire, delivery pools, frequency tables or profile snapshots; no player-ID neural features.",
     "Double-play mass is conditioned away with two outs or empty bases for every predictor.",
-    "Full-PA defensive WE uses the frozen continuation and runner-advancement models; baseline is uniform pitch types.",
+    "Full-PA defensive WE uses frozen continuation and runner advancement; baseline uses TRAIN repertoire frequencies, or uniform types when counts are absent.",
     "Model probabilities and WE differences are internal estimates, not causal gains or validated live performance.",
     "Regular-season rules include an automatic runner in extra innings; no steals, substitutions or fatigue dynamics.",
 ]
@@ -221,13 +222,16 @@ class Engine:
             neural = np.zeros((n, len(OUTCOMES)), dtype=np.float64)
             for model in self.models:
                 logits = model.logits((tokens, valid, context)).reshape(n, count, len(OUTCOMES))
-                neural += softmax(logits / model.delivery_temperature, axis=-1).mean(axis=1) / len(self.models)
+                neural += softmax(logits / model.delivery_temperature, axis=-1).mean(axis=1, dtype=np.float64) / len(self.models)
             frequency = temperature_predictions(self.baseline.predict(frame), self.baseline_temperature)
             predictions = {"neural": neural, "frequency": frequency,
                            "blend": self.weight * neural + (1 - self.weight) * frequency}
             impossible = np.full(n, row["outs"] == 2 or row["bases"] == 0)
             shape = (4, 3, 1, len(row["pitch_types"]), len(OUTCOMES))
-            row["probabilities"] = {name: condition_on_legality(p, impossible).reshape(shape) for name, p in predictions.items()}
+            # Remove float32 softmax/averaging drift before the planner's stricter
+            # mass check; this does not change relative outcome probabilities.
+            row["probabilities"] = {name: condition_on_legality(p / p.sum(axis=-1, keepdims=True), impossible).reshape(shape)
+                                    for name, p in predictions.items()}
             row["delivery_tiers"] = {str(int(tier)): int((tiers == tier).sum()) for tier in np.unique(tiers)}
             return row
 
@@ -237,16 +241,26 @@ class Engine:
             result = self.predict_counts(request)
             terminal = terminal_values(result["state"], self.we, self.advancement)
             probabilities = result["probabilities"]["blend"]
-            plan = solve_pa(probabilities, terminal, [0] * len(result["pitch_types"]))
+            counts = self.metadata.get("repertoire_counts", {}).get(str(result["pitcher_id"]))
+            baseline_weights = None
+            baseline_label = "uniform_pitch_types"
+            if counts is not None:
+                baseline_weights = np.array([counts.get(name, 0) for name in result["pitch_types"]], dtype=float)
+                if not np.isfinite(baseline_weights).all() or (baseline_weights < 0).any() or baseline_weights.sum() <= 0:
+                    raise ValueError("Invalid TRAIN repertoire counts in bundle")
+                baseline_weights /= baseline_weights.sum()
+                baseline_label = "train_repertoire_frequency"
+            plan = solve_pa(probabilities, terminal, [0] * len(result["pitch_types"]), baseline_policy=baseline_weights)
             balls, strikes = result["balls"], result["strikes"]
             recommendations = []
             for entry in plan.topk(balls, strikes, 0, result["top_k"]):
                 action = entry["action_index"]
                 recommendations.append({"pitch_type": result["pitch_types"][action],
-                    "defensive_we": entry["value"], "delta_vs_uniform_policy": entry["delta_vs_baseline"],
+                    "defensive_we": entry["value"], "delta_vs_baseline_policy": entry["delta_vs_baseline"],
                     "outcome_probabilities": dict(zip(OUTCOMES, probabilities[balls, strikes, 0, action].tolist()))})
             return {"recommendations": recommendations, "objective": "full_pa_defensive_we",
                 "baseline_defensive_we": float(plan.baseline_values[balls, strikes, 0]),
+                "baseline_policy": baseline_label,
                 "probability_kind": "model_internal_next_pitch_outcomes",
                 "profile_source": result["profile_source"], "profile_as_of": result["profile_as_of"],
                 "neural_weight": self.weight, "delivery_tiers": result["delivery_tiers"],
@@ -296,7 +310,7 @@ def make_handler(engine):
             except TimeoutError:
                 self._reply(408, {"error": "request_timeout"})
             except Exception:
-                self.log_error("Recommendation failed", exc_info=True)
+                logging.exception("Recommendation failed")
                 self._reply(500, {"error": "inference_failed", "message": "Inspect local service logs"})
 
     return Handler

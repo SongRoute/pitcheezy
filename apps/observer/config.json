@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "model_version": "observer-zone-v1",
+  "target_sigma_ft": 0.45,
+  "minimum_effective_draws": 20,
+  "minimum_kernel_mass": 0.01,
+  "repertoire_lookback_days": 90,
+  "repertoire_minimum_pitches": 20,
+  "demo_games": 3,
+  "demo_pas_per_game": 8,
+  "demo_start_date": "2025-08-16",
+  "cv_version": "no-media-v1",
+  "cv_max_attempts": 2,
+  "cv_lease_seconds": 30,
+  "profile_cutoff_policy": "strictly_prior_date",
+  "location_model_kind": "gaussian_reweighted_observed_joint_deliveries",
+  "location_model_scope": "Experimental target proxy; not identified intended-target intervention or measured command error"
+}

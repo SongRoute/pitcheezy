@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "candidate": "seed_roi_sparse_lk_median_v1",
+  "post_hoc": true,
+  "selection": "One alternative after fixed-template failure; same four reused exploratory montage windows, not a new holdout",
+  "seed_reference_spec_sha256": "a0c5555ce44ea5dc5fe78c039a0c8cb99c77d982ab04b56a978884abe53ab065",
+  "shi_tomasi": {"max_corners": 40, "quality_level": 0.01, "min_distance": 3, "block_size": 3},
+  "minimum_seed_points": 8,
+  "lk": {"window_size": 15, "pyramid_levels": 2, "iterations": 30, "epsilon": 0.01, "minimum_eigenvalue": 0.0001},
+  "maximum_forward_backward_error_px": 1.5,
+  "maximum_photometric_error_gray": 25,
+  "median_motion_residual_threshold_px": 3,
+  "minimum_retained_points": 6,
+  "minimum_previous_point_fraction": 0.6,
+  "minimum_seed_point_fraction": 0.4,
+  "maximum_step_px": 20,
+  "scene_difference_threshold": 0.2,
+  "endpoint_reference_uncertainty_pixels": 10,
+  "rationale": {
+    "corners": "Multiple locally textured seed points reduce dependence on one fixed whole-glove appearance; no later detection or replenishment.",
+    "forward_backward": "Reject points that fail a short round trip;1.5pixels is an engineering consistency tolerance, not an accuracy calibration.",
+    "photometric": "Reject large local8-bit appearance differences;25gray-level error is conservative and fixed before alternative outputs.",
+    "robust_motion": "Median translation with3pixel inliers avoids fitting an unstable affine map to a small changing glove region.",
+    "retention": "Require6points plus60percent of previous and40percent of seed tracks; otherwise abstain instead of silently tracking a few survivors.",
+    "step_and_cut": "Reject per-frame jumps above20pixels and global mean absolute difference above20percent; do not expand search or redetect."
+  },
+  "forbidden": ["new_detection_after_seed", "parameter_tuning_on_four_windows", "actual_pitch_location_input", "endpoint_reference_input_to_tracker", "service_default_change", "physical_coordinate_or_accuracy_claim"],
+  "reference_scope": "Assistant visual estimates, unreviewed; compare final endpoint only when the entire frozen window completes. Abstentions are not endpoint successes or failures."
+}

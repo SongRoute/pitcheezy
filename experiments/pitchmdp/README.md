@@ -1,5 +1,13 @@
 # PitchMDP 실제 데이터 파일럿
 
+최신 후속: **[분리 평가·선수 정보 갱신·개선 실험 결과](SERVICE_FOLLOWUP_RESULTS.md)**.
+CLI 날짜별 조회까지 검증했고 전체206개 테스트가 통과했다. 분리 학습 평가의150타석에서는
+전체 타석 계획의 우위를 확인하지 못했으며, 원 모델의 확률 보정 후보는 기각했다.
+
+최신: **[최소 구종 추천 서비스 결과](MINIMAL_SERVICE_RESULTS.md)** · **[로컬 API 실행](MINIMAL_SERVICE.md)**.
+기존 학습 모델을 약13MB 번들로 묶어 실제51상황에서 추천과 추론 재현을 확인했다.
+이전 실험 기록은 아래에 보존한다.
+
 기존 pitcheezy의 라벨·캐시·RE24 모델과 분리한 연구용 구현이다. 짧은 투구 이력의 결과 예측,
 타석 종료 전이와 구종×목표 위치 추천을 연구한다. 최신 결과는
 **[HISTORY_BATTER_VALIDATION_RESULTS.md](HISTORY_BATTER_VALIDATION_RESULTS.md)**다.

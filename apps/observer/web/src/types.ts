@@ -1,0 +1,14 @@
+export interface GameState { inning: number; half: string; outs: number; bases: number; home_score: number; away_score: number; balls: number; strikes: number }
+export interface Bounds { bottom: number; top: number }
+export interface Candidate { pitch_type: string; pitch_label: string; zone_id: string; zone_label: string; target: { x: number; z: number }; value: number; delta_pp: number; support: number }
+export interface Recommendation { id: string; status: string; mode: string; model_version: string; candidates: Candidate[]; baseline_value: number; zone_bounds: Bounds; basis: string[]; reason: string | null }
+export interface Pitch { id: string | number; pitch_number: number; pitch_type: string; pitch_label: string; x: number | null; z: number | null; speed_mph: number | null; description: string; result_label: string; pre_state: GameState; recommendation: Recommendation | null; zone_bounds: Bounds }
+export interface Analysis { id: string; status: string; source: string; selected_pitch_id: string | number; selected_pitch_number: number; selection_reason: string; cv_status: string; message: string; manual_zone_id: string | null; comparisons: null | { recommended_zone_label: string; intended_zone_label: string; actual_zone_label: string; target_error_zone_units: number | null; interpretation: string }; narrative: string[]; version: number }
+export interface PA { id: number; batter_label: string; pitcher_label: string; inning?: number; half?: string; batter_stand?: string }
+export interface Game { id: number; date: string; home_team: string; away_team: string; title: string; plate_appearances?: PA[] }
+export interface ObservedSpeed { pitch_type: string; pitch_label: string; recent_pitch_count: number; recent_measured_count: number; recent_mean_mph: number | null; prior90_measured_count: number; prior90_mean_mph: number | null; delta_mph: number | null }
+export interface ObservedPitchContext { prior_pitch_count: number; times_facing_batter: number; speed_by_pitch_type: ObservedSpeed[]; condition_inference: boolean; reference_window_days?: number; speed_window?: string; reference_cutoff?: string }
+export interface View { id: string; revision: number; cursor: number; complete: boolean; game: Game; plate_appearance: PA; state: GameState; recommendation: Recommendation | null; last_pitch: Pitch | null; history: Pitch[]; analysis: Analysis | null; summary: null | { headline: string; result_label: string; pitch_count: number; selected_pitch_number: number; notes: string[] }; context?: ObservedPitchContext | null; context_notes: string[]; notices: string[] }
+export interface Catalog { games: Game[]; model_version: string; limitations: string[] }
+export interface Zone { id: string; label: string; column: number; row: number }
+export interface Zones { zones: Zone[]; coordinate_frame: string }

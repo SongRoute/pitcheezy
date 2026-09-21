@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "frozen_at": "2026-09-21T13:34:00Z",
+  "clip_id": "seven_strikeouts",
+  "clip_sha256": "4c2146f2f1b837d9a8d09efafcb4260dafdb8d4e38d3a6ead8744240f801be78",
+  "source_url": "https://www.mlb.com/giants/video/logan-webb-s-seven-strikeout-performance",
+  "image_dimensions": {"width": 1280, "height": 720},
+  "label_source": "assistant_visual_estimate",
+  "review_status": "unreviewed",
+  "endpoint_reference_uncertainty_pixels": 10,
+  "limitations": [
+    "Assistant visual estimates were frozen before tracker outputs or actual pitch locations were inspected; these are not independently reviewed human ground truth.",
+    "release_time is a conservative visually estimated exclusion boundary, not a measured release instant.",
+    "The reference point is the approximate glove center in the raw endpoint frame; changing glove shape makes template-center error ambiguous.",
+    "Four selected pre-release windows from one strikeout montage cannot establish general video performance, intended targets, plate coordinates, or command accuracy.",
+    "No calibration or physical target inference is authorized by these labels."
+  ],
+  "windows": [
+    {"id": "webb_07", "seed_time": 7.0, "end_time": 7.6, "release_time": 7.8, "roi": {"x": 694, "y": 267, "w": 48, "h": 34}, "endpoint_reference": {"x": 728, "y": 266}},
+    {"id": "webb_22", "seed_time": 22.0, "end_time": 22.8, "release_time": 23.0, "roi": {"x": 649, "y": 270, "w": 51, "h": 31}, "endpoint_reference": {"x": 680, "y": 289}},
+    {"id": "webb_26", "seed_time": 26.0, "end_time": 26.8, "release_time": 27.2, "roi": {"x": 668, "y": 320, "w": 46, "h": 31}, "endpoint_reference": {"x": 666, "y": 270}},
+    {"id": "webb_40", "seed_time": 40.0, "end_time": 40.8, "release_time": 41.0, "roi": {"x": 644, "y": 287, "w": 39, "h": 28}, "endpoint_reference": {"x": 658, "y": 257}}
+  ]
+}

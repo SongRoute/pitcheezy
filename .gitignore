@@ -14,6 +14,10 @@ __pycache__/
 build/
 dist/
 .venv/
+.venv-observer/
+.venv-observer-standalone/
+node_modules/
+*.tsbuildinfo
 .pytest_cache/
 
 # Jupyter
