@@ -6,6 +6,7 @@ MLB Statcast 투구 추천 모델. 개인 개발 (Song).
 4자 책임 분해는 Phase 2 후순위. 레포가 유일한 출처 (노션은 아카이브).
 
 ## 먼저 읽을 것
+- docs/roadmap.md — 최종 목표와 단계(D43). 목표·순서의 출처
 - docs/design.md — 확정 설계. 바꾸려면 docs/decisions.md에 한 줄 추가한 뒤 수정
 - docs/interface-spec.md — 텐서·Q·RE24 스키마. src/pitcheezy/interfaces/가 코드로 강제
 - docs/baselines.md — 비교 대상 논문. 확인된 것과 미확인인 것을 구분
