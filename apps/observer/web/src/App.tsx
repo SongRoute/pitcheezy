@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Analysis, Bounds, Catalog, GameState, Pitch, Recommendation, View, Zone, Zones } from './types';
 import CatalogPicker from './CatalogPicker';
+import ChoiceExplanation from './ChoiceExplanation';
 import ObservedContext, { PitcherContextSummary } from './ObservedContext';
 import { bookmarkKey, readBookmarks, rememberSession } from './catalog';
 
@@ -67,6 +68,7 @@ function RecommendationCards({ recommendation, comparing }: { recommendation: Re
       <div className="recommendation-basis"><h3>이 선택을 살펴볼 근거</h3>{recommendation?.basis?.length ? <ul>{recommendation.basis.map((item, i) => <li key={i}>{item}</li>)}</ul> : <p>이 추천에 함께 제공된 상세 근거는 없습니다.</p>}</div>
       <div className="candidate-list">{candidates.map((candidate, i) => <article className={`candidate ${i === 0 ? 'first' : ''}`} key={`${candidate.pitch_type}-${candidate.zone_id}-${i}`}><span className="rank">0{i + 1}</span><div className="candidate-main"><div className="candidate-title"><h3>{candidate.pitch_label || candidate.pitch_type}</h3><span>{candidate.pitch_type}</span></div><p>{candidate.zone_label}</p></div><span className="choice-tag">{i === 0 ? '첫 번째 제안' : '다른 선택'}</span></article>)}</div>
       <p className="recommendation-note">구역은 근사 모델의 제안입니다. 실제 투구 의도나 승률 향상을 확인한 결과는 아니에요.</p>
+      {recommendation && <ChoiceExplanation recommendation={recommendation} />}
       <details className="probability-details"><summary>모델 내부 비교값 보기<span aria-hidden="true">＋</span></summary><p>같은 상황에서 구종·구역을 비교하기 위한 모델의 수비팀 승률 추정치입니다. 실제 경기에서 이 선택의 효과가 검증되었다는 뜻은 아닙니다.</p><div className="probability-table" role="table" aria-label="추천별 모델 내부 비교값"><div role="row" className="probability-row probability-head"><span role="columnheader">추천 순위</span><span role="columnheader">모델 수비 승률</span><span role="columnheader">기준 대비</span></div>{candidates.map((candidate, i) => <div role="row" className="probability-row" key={i}><span role="cell">{i + 1} · {candidate.pitch_label || candidate.pitch_type}</span><span role="cell">{finite(candidate.value) ? `${(candidate.value * 100).toFixed(1)}%` : '정보 없음'}</span><span role="cell">{finite(candidate.delta_pp) ? `${signed(candidate.delta_pp)}%p` : '정보 없음'}</span></div>)}</div>{finite(recommendation?.baseline_value) && <p className="probability-baseline">모델의 기준 선택 승률 · {(recommendation!.baseline_value * 100).toFixed(1)}%</p>}</details>
     </>}
   </section>;

@@ -59,6 +59,13 @@ export default function VideoLab() {
   const dirty = !!saved && draftKey(draft) !== draftKey(draftFromAnnotation(saved.annotation));
 
   useEffect(() => { void refreshRecords(); }, []);
+  useEffect(() => {
+    if (dimensions.width && pendingSeek.current !== null) {
+      const time = pendingSeek.current;
+      pendingSeek.current = null;
+      seekTo(time);
+    }
+  }, [dimensions.width]);
 
   async function refreshRecords() {
     setRecordsLoading(true); setRecordsError(null);
@@ -250,11 +257,14 @@ export default function VideoLab() {
           <section className="lab-card"><span className="eyebrow">03 · 선택 사항</span><h2>이미지 구역의 네 모서리</h2><p className="lab-help">왼쪽 위 → 오른쪽 위 → 오른쪽 아래 → 왼쪽 아래. 이미지 안의 상대 구역을 정할 때만 사용하세요.</p><div className="lab-button-row"><button className="button secondary" disabled={!usable || seeking || draft.seed_time === null} onClick={() => begin('calibration')}>{draft.calibration_corners ? '보정점 다시 표시' : '네 모서리 표시'}</button><button className="button text-button" disabled={!draft.calibration_corners} onClick={() => { update({ calibration_corners: null }); setMode('inspect'); setCorners([]); }}>보정점 지우기</button></div><p className="coordinate-caution">좌표계: annotated_image_zone · 포수 시점이 보장되지 않으며, 피트(ft) 등 실제 길이로 변환하지 않습니다.</p>{draft.calibration_corners && <ol className="corner-readout">{draft.calibration_corners.map((point, index) => <li key={index}>{cornerLabels[index]} · {point.x.toFixed(1)}, {point.y.toFixed(1)} px</li>)}</ol>}</section>
         </aside></div>
         <section className="lab-export"><div><span className="eyebrow">04 · 검토 전 수동 라벨</span><h2>표시한 내용을 JSON으로 저장</h2><p>이 표시는 추정값이며 검토 상태는 항상 <b>unreviewed</b>입니다. 투구 ID는 연결하지 않고, 클립 ID로 로컬 영상과 연결합니다.</p><label htmlFor="label-source">표시한 사람 / 라벨 출처<select aria-label="표시한 사람 / 라벨 출처" id="label-source" value={draft.label_source} disabled={!usable} onChange={(event) => update({ label_source: event.target.value as LabelSource | '' })}><option value="">라벨 출처를 선택하세요</option><option value="user_manual">사용자가 직접 보고 표시</option><option value="assistant_visual_estimate">어시스턴트의 육안 추정</option></select></label></div><div className="lab-export-actions"><button className="button primary" disabled={!!issues.length || !usable || mode !== 'inspect' || seeking} onClick={download}>라벨 JSON 내려받기 ↓</button><button className="button text-button" onClick={() => { update(emptyVideoDraft()); setMode('inspect'); setAnchor(null); setCorners([]); setNote('현재 클립의 입력을 모두 초기화했습니다.'); }}>이 클립 입력 초기화</button>{downloaded && <span className="lab-download-status">JSON을 내려받았습니다.</span>}</div>
-          {!!issues.length && <ul className="lab-issues" aria-label="내보내기 전 필요한 입력">{issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}<p className="lab-local-only">파일은 브라우저에서 생성됩니다. 라벨을 서버나 외부 서비스에 전송하지 않으며, 내려받은 JSON을 로컬 추적 검증 CLI의 입력으로 사용할 수 있습니다.</p>
+          {!!issues.length && <ul className="lab-issues" aria-label="내보내기 전 필요한 입력">{issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}<p className="lab-local-only">JSON 다운로드는 브라우저에서 파일만 만듭니다. 아래 저장 버튼은 라벨을 로컬 서버에 보관하며, 추적 버튼은 저장본에만 별도로 실행됩니다.</p>
         </section>
+        <div className="lab-button-row"><button className="button primary" disabled={!!issues.length || !usable || mode !== 'inspect' || seeking} onClick={saveRecord}>{labBusy === 'saving' ? '저장 중…' : '라벨을 로컬 서버에 저장'}</button>{saveError && <p role="alert">{saveError}</p>}</div>
+        <SavedVideoLibrary records={records} clips={clips} activeId={saved?.id || null} busy={!!labBusy} loading={recordsLoading} error={recordsError} onLoad={loadRecord} onRefresh={refreshRecords} />
+        <VideoTrackingPanel saved={saved} dirty={dirty} busy={labBusy} error={trackingError} onTrack={trackRecord} />
         <div className="lab-notice" role="status" aria-live="polite">{note}</div>
       </>}
-      <details className="model-details"><summary>영상 실험의 범위와 제한<span aria-hidden="true">＋</span></summary><div className="details-content"><p>포수의 미트 위치와 선수의 실제 의도는 같은 정보가 아닙니다. 이 화면은 수동 라벨만 만들며, 자동 검출·추적·투구 성과 귀속을 수행하지 않습니다.</p>{limitations.map((item, index) => <p key={index}>{item}</p>)}</div></details>
+      <details className="model-details"><summary>영상 실험의 범위와 제한<span aria-hidden="true">＋</span></summary><div className="details-content"><p>포수의 미트 위치와 선수의 실제 의도는 같은 정보가 아닙니다. 명시적으로 요청한 저장 라벨에만 이미지 추적을 수행하며 투구 성과를 선수에게 귀속하지 않습니다.</p>{limitations.map((item, index) => <p key={index}>{item}</p>)}</div></details>
     </main><footer><a className="footer-brand" href="/">pitcheezy.</a><p>영상 검토실 · 실험용 수동 라벨</p><a className="lab-back-link" href="/">관전 화면으로 돌아가기</a></footer>
   </>;
 }

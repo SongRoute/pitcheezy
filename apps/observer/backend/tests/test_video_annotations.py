@@ -25,6 +25,10 @@ def test_immutable_versions_and_restart(lab):
     store, annotation = lab
     first = store.save(annotation)
     assert store.save(annotation) == first
+    browser_round_trip = copy.deepcopy(annotation)
+    browser_round_trip['seed_time'] = int(annotation['seed_time'])
+    browser_round_trip['release_time'] = int(annotation['release_time'])
+    assert store.save(browser_round_trip) == first
     changed = copy.deepcopy(annotation)
     changed['roi']['x'] += 1
     changed['annotation_version'] = 2

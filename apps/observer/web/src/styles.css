@@ -18,3 +18,6 @@
 @media(min-width:561px) and (max-width:800px){.observed-speed-card{grid-column:1/-1}}
 @media(max-width:560px){.observed-summary-card{margin-top:13px;padding-top:13px}.observed-speed-card{padding:18px 19px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important}}
+.choice-explanation dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.choice-explanation dd { margin: 0; font-variant-numeric: tabular-nums; }
+.choice-explanation > details { margin: 12px 0; }

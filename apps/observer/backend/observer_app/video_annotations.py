@@ -82,6 +82,14 @@ class VideoAnnotations:
         annotation = self._validated(raw)
         key = identity(annotation)
         with closing(self.connect()) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            # JavaScript serializes 40.0 as 40. Preserve the existing immutable
+            # identity when a browser round-trip changes only JSON number syntax.
+            for row in db.execute('SELECT id,payload FROM annotations WHERE json_extract(payload,\'$.clip_id\')=? AND json_extract(payload,\'$.annotated_at\')=? ORDER BY rowid',
+                                  (annotation['clip_id'], annotation['annotated_at'])):
+                if json.loads(row['payload']) == annotation:
+                    key = row['id']
+                    break
             db.execute('INSERT OR IGNORE INTO annotations VALUES (?,?)', (key, encoded(annotation)))
         return self.get(key)
 
