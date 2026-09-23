@@ -1,0 +1,98 @@
+{
+  "artifact_id": "C-D-UI-001",
+  "code_commit": "62945c77dfbd9865ec31f19498cfd5ec9510d3e7",
+  "recorded_at": "2026-09-23T13:19:23.819015+00:00",
+  "route": "/inning-decisions",
+  "checks": {
+    "backend_passed": 38,
+    "backend_seconds": 0.44,
+    "client": "passed identity/mismatch/error cases",
+    "production_build": "passed",
+    "browser": {
+      "desktop": {
+        "real_api": true,
+        "explicit_selection": true,
+        "session_untouched": true,
+        "width": 1440,
+        "scroll": 1440
+      },
+      "desktop_conflict_retry": true,
+      "mobile": {
+        "real_api": true,
+        "explicit_selection": true,
+        "session_untouched": true,
+        "width": 390,
+        "scroll": 390
+      },
+      "mobile_conflict_retry": true,
+      "empty": true,
+      "invalid_200_hidden": true,
+      "synthetic_unavailable_no_numbers": true,
+      "late_result_after_selection_hidden": true,
+      "offline_retry": true,
+      "home_navigation": {
+        "width": 390,
+        "scroll": 390
+      }
+    },
+    "page_errors": []
+  },
+  "database": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-UI-001/observer.sqlite3",
+  "database_counts": {
+    "inning_decisions": 1,
+    "sessions": 0,
+    "recommendations": 0,
+    "jobs": 0
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8771,
+    "pid": 93726,
+    "shutdown": "SIGTERM requested after checks",
+    "injected": "real decision DB + empty PA catalog, no model/worker"
+  },
+  "default_database_modified": false,
+  "source_result_sha256": "8c2d700508fd98c41bba04d94f09114f5f60e627259ab63f976a7147c4af56b2",
+  "code_sha256": {
+    "apps/observer/web/src/InningDecisions.tsx": "1f29c6b7b207632a2465d5db935b120881b13bc141645315854da2ae239dc2ae",
+    "apps/observer/web/src/inning-decisions.css": "512a429ad80a63704d72d2b6b6ea046f06a808c1827aed632a5b33776e1f617c",
+    "apps/observer/web/src/inningDecisionApi.ts": "be86779c3f4332c3dcde2c9d4f3de90da1a0d8ea30556f8f8e95f7588fe9805c",
+    "apps/observer/web/src/App.tsx": "8299470431da9323b4eb2cca7f12ccab87352254fcf6e1ec2e3ea97fb8b364c7",
+    "apps/observer/web/src/main.tsx": "775d262e72f8fd648e1d3d2880e68265536f6b3b5d5feda477ed8738f2d61c5a",
+    "apps/observer/backend/observer_app/inning_decision_store.py": "8fcee62e6a75ecc641f97cfa2d0baea154146580a00c6ef08f9b851f4092e35d",
+    "apps/observer/backend/observer_app/main.py": "1a153f7321dd70ab4fccccb34c8c275a4b6b56cd3f355b2673c9490a864fa9cb",
+    "apps/observer/backend/observer_app/service.py": "ba16779f0cc9c38876bffdde86bf985122be2dfa17292247b9fcb410fa37bb7a"
+  },
+  "logs_sha256": {
+    "client-final.log": "1b570ba5440a970d91ee5e2bb03f273ccfb8bff7ad196adc43e7b5559d8d4afd",
+    "build-final.log": "a8fa657e3722275b5951ba6a0547e3c337382292492de63a0b9de80f1f333aab",
+    "browser-final.log": "460afb561fff223912f39a59a2946dac885bac138b8a2be708ecd5d216a3af6c",
+    "pytest.log": "6657a68d1c152c0b7d43e7f6a24e41f7be6ee649c5de66c2a524f0de7794743b"
+  },
+  "screenshots": {
+    "desktop.png": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-UI-001/browser-final/desktop.png",
+      "sha256": "a102e570069ea73b1a5712c9b0d70c755db24a7dac6741453a3cd586d51fb514"
+    },
+    "mobile.png": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-UI-001/browser-final/mobile.png",
+      "sha256": "dae9d736a18039bcc7b004c42731dca58600ba3e27fcc95467b5e138f81fa9bf"
+    },
+    "empty-mobile.png": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-UI-001/browser-final/empty-mobile.png",
+      "sha256": "05839a04f01c9ab1262c190f2be3e606240e1c14e6c87b1f08aa1ea337d46c70"
+    }
+  },
+  "browser_tool": "Installed project Playwright; Browser skill read, in-app JS tool unavailable after discovery",
+  "roles": {
+    "root": "Astra role; exact runtime model ID not exposed",
+    "inning_ui_catalog": "gpt-6-sol medium",
+    "inning_ui_page": "gpt-6-sol medium"
+  },
+  "tokens": null,
+  "cost": null,
+  "model_calls": 0,
+  "new_source_fetches": 0,
+  "cv": "excluded",
+  "actual_replacement_value": null
+}
