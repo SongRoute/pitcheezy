@@ -18,6 +18,8 @@ import resource
 import shutil
 import sys
 import time
+import platform
+import subprocess
 
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
@@ -26,6 +28,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import softmax
 import torch
+import scipy
 
 from pitchmdp.archetypes import add_batter_style_history
 from pitchmdp.data import KEY, hash_file
@@ -101,6 +104,8 @@ def check_location(local: dict, output: Path) -> Path:
 def manifest_identity(config: dict, local_path: Path) -> dict:
     return {"config_sha256": canonical_hash(config), "local_config_sha256": hash_file(local_path),
             "source_hashes": source_hashes(), "python": str(Path(sys.executable).resolve()),
+            "python_version": platform.python_version(), "python_prefix": sys.prefix,
+            "machine": platform.machine(), "scipy": scipy.__version__,
             "torch": torch.__version__, "numpy": np.__version__, "pandas": pd.__version__}
 
 
@@ -217,6 +222,10 @@ def prepare(config: dict, local: dict, output: Path, identity: dict) -> None:
     atomic_json(output / "samples.json", scope)
     files = [str(path.relative_to(output)) for path in output.rglob("*") if path.is_file()]
     report = {"identity": identity, "dataset_identity": data_identity,
+              "execution_git_commit": subprocess.check_output(
+                  ["git", "rev-parse", "HEAD"], cwd=PROJECT, text=True).strip(),
+              "execution_git_status": subprocess.check_output(
+                  ["git", "status", "--short"], cwd=PROJECT, text=True).strip(),
               "source_provenance": source_provenance,
               "dataset_identity_sha256": canonical_hash(data_identity), "scope": scope,
               "artifact_hashes": artifact_hashes(output, files), "seconds": time.perf_counter()-started,
