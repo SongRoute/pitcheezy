@@ -62,6 +62,12 @@ For actual records with no linked, validated pre-release intent, the result is n
 
 The `event_results` table keeps immutable `(session_id,pitch_id,revision)` payloads and validates the saved recommendation ID and canonical SHA before insertion. A late/corrected source creates a higher event input revision; the saved pre-pitch recommendation row does not change. New recommendations save the frozen model SHA, adapter identity, value spec and baseline policy ID. An older or mismatched recommendation baseline is never relabeled with the current evaluator: its reference and total are unavailable. Manual zone notes are spatial user annotations and do not become model intent or change the event result. Old sessions that predate recommendation timestamps have `event_analysis:null` because their original storage time cannot be reconstructed. The UI never renders synthetic `development_only` numeric results as actual contributions.
 
+## Separate conditional inning result (handoff v1)
+
+`inning-result-v1` is a standalone C-to-D research payload defined in `docs/contracts/inning-result-v1.md`. It is not currently a session View field, an API route, or a persisted PA event result. It describes the frozen initial defender's final-game win probability after propagating a fixed keep-pitcher scenario to the current half-inning boundary. Its unresolved-mass bounds are probabilities; the UI formats them as percent, never percentage-point contribution or confidence intervals. Actual replacement value stays null.
+
+D consumes validated JSON through `web/src/inningResult.ts`; the examples live in `results/C-D-INNING-001/`. A future route/card must match the game, pre-pitching-change event and initial state before displaying a result. The later first observed pitch is a reference only. Do not attach this payload to a completed PA merely because its pitch ID matches, add it to event components, or replace `event_analysis.replacement` with its keep scenario. The unavailable example is development-only; malformed payloads fail validation instead of displaying 0%.
+
 ## UI direction
 
 Warm ivory + dark ink, deep teal accent, orange actual-pitch marker; polished sports editorial, Korean text. Clear scoreboard, large zone, rank3 recommendations, count/base diamonds, pitch timeline, terminal analysis card with optional manual target selector. Responsive layout with useful empty/loading/error states and visible data date. No login/billing/public hosting. Avoid technical jargon in main flow. Show model details only when expanded.

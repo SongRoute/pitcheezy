@@ -50,6 +50,8 @@ provenance: {
 
 `bounded`는 point=null, 0≤lower≤upper≤1, resolved+unresolved≈1, upper−lower≈unresolved, lower≤resolved, sum(unresolved_reasons)≈unresolved를 만족한다(절대 허용 오차 1e−8). 모든 수치는 유한해야 하며 bool을 숫자로 받지 않는다. `unavailable`은 estimate의 숫자와 coverage 질량/호출 수가 전부 null, reasons={}여야 한다. 둘 모두 replacement 숫자는 null이다. 수치를 지워 unavailable로 바꿀 때도 연결/출처/가정은 보존한다. malformed 입력을 조용히 unavailable로 변환하지 않는다.
 
+evaluation_identity 필드는 기존 원문의 provider_identity, initial_state_and_count, lineup_sha256, evaluation_config_sha256, policy_id, horizon, initial_defender로 고정한다. policy_id는 `frozen_train_repertoire_frequency_v1`. state는 date, inning, topbot, outs, bases, home_score, away_score, balls, strikes이며 원문 topbot 규약은 `Top`/`Bot`이다. Top의 초기 수비팀은 home, Bot은 away. date는 linkage 공식 날짜와 같다. inning≥1, outs 0~2, bases 0~7, 점수≥0, balls 0~3, strikes 0~2이며 모두 정수다. 모든 정수는 JavaScript 안전 정수 범위 이내다. UTC 문자열은 실제로 존재하는 날짜/시각이어야 하고 Z 또는 +00:00을 받는다. 첫 관측 pitch_id 형식은 `game_pk:양의타석번호:1`이며 game_pk가 linkage와 일치해야 한다.
+
 ## 변환과 연결 검증
 
 원문은 `results/EXP-C-INNING-001/conditional_keep_777063.json`, anchor는 별도 `C-ROSTER-001/decision_anchor_777063.json`이다. 실제 파일 bytes SHA를 계산하고 원문 source_anchor_sha256와 일치시킨다. 게임/투수/anchor 종류·초기 상태·수비 관점·원문 evaluation_identity의 bundle/horizon을 교차 확인한다. 원문 kind는 `conditional_fixed_prechange_lineup_keep_pitcher`, status는 bounded만 수용한다. 원문의 값·질량·호출 수·기본 프로필을 그대로 전달하며 중간값/95% 신뢰구간/교체 우위는 계산하지 않는다.
