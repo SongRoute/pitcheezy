@@ -82,6 +82,7 @@ try {
   assert.equal(first.last_pitch, null);
   assert.equal(await page.locator('.actual-strip').count(), 0);
   if (first.recommendation?.status === 'ready') {
+    await page.locator('.candidate-details > summary').click();
     assert.deepEqual(await page.locator('.recommendation-basis li').allTextContents(), first.recommendation.basis);
     assert.equal(await page.locator('.probability-details:not(.choice-explanation)').evaluate((element) => element.open), false);
     await page.locator('.probability-details:not(.choice-explanation) > summary').click();
@@ -96,6 +97,7 @@ try {
   const revealed = await sessionAction(page.getByRole('button', { name: /다음 실제 공 확인/ }), (result) => pathname(result) === `/api/sessions/${first.id}/advance` && result.request().method() === 'POST');
   assert.equal(revealed.history.length, 1);
   const before = revealed.last_pitch.pre_state;
+  await page.locator('.observation-details > summary').click();
   assert.match(await page.locator('.chart-caption').innerText(), new RegExp(`${before.balls}볼 ${before.strikes}스트라이크`));
   if (revealed.last_pitch.recommendation?.status === 'ready') {
     assert.deepEqual(await page.locator('.recommendation-basis li').allTextContents(), revealed.last_pitch.recommendation.basis);

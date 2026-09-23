@@ -58,8 +58,10 @@ async function runCase({ game, pa, count, event, width, height }) {
     assert.equal(analysis.components[name].abs_share, null);
   }
   assert.match(await page.locator('.event-total').innerText(), /마지막 공의 사전 기준/);
+  await page.locator('.event-technical > summary').click();
   assert.equal(await page.locator('.event-components strong').allTextContents().then(x => x.filter(y => y === '계산 불가').length), 3);
   await page.locator('.timeline-pitch').first().click();
+  await page.locator('.observation-details > summary').click();
   assert.match(await page.locator('.chart-caption').innerText(), /0볼 0스트라이크/);
   await page.locator('.zone-buttons button').first().click();
   view = await postView(page, () => page.getByRole('button', { name: '목표 메모 저장' }).click());
