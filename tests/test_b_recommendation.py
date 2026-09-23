@@ -1,7 +1,6 @@
 """Frozen model boundary and strict within-PA history checks."""
 from copy import deepcopy
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -17,9 +16,12 @@ from observer_app.recommendation_adapter import ObservedDeliveryKernel
 
 
 @pytest.fixture(scope='module')
-def model():
-    os.environ['PITCHEEZY_OBSERVER_RUNTIME'] = 'research'
-    return Recommender()
+def model(tmp_path_factory):
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv('PITCHEEZY_OBSERVER_RUNTIME', 'research')
+        instance = Recommender()
+        instance.cache = tmp_path_factory.mktemp('b-model-cache')
+        yield instance
 
 
 def example():
@@ -92,7 +94,7 @@ def test_execution_distribution_interface_on_synthetic_draws():
     assert np.all(ess >= 1) and np.all(mass > 0)
 
 
-def test_adapter_source_revision_changes_cache_identity(model, monkeypatch):
+def test_adapter_source_revision_changes_cache_identity(model, monkeypatch, tmp_path):
     inputs = example()['input']
     original_recommendation = model.recommend(**inputs)
     original_read = Path.read_bytes
@@ -104,6 +106,7 @@ def test_adapter_source_revision_changes_cache_identity(model, monkeypatch):
     with monkeypatch.context() as patch:
         patch.setattr(Path, 'read_bytes', revised_source)
         revised = Recommender()
+    revised.cache = tmp_path
     assert revised.identity != model.identity
     assert revised.recommend(**inputs)['id'] != original_recommendation['id']
     assert revised.cache_hits == 0 and revised.computations == 1
