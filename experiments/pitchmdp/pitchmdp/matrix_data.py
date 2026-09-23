@@ -1,7 +1,7 @@
 """Pure sampling and identity helpers for the registered ML matrix pilot.
 
-The pilot has one 2025 temporal fold.  Sampling uses game identity and
-pre-pitch metadata only; labels are deliberately absent from this module.
+The pilot has one 2025 temporal fold. Sampling uses TRAIN game identity and
+recorded game composition; labels are deliberately absent from this module.
 """
 from __future__ import annotations
 
@@ -42,8 +42,11 @@ def validate_config(config: dict) -> dict:
     """Reject undefined axes before a costly data load or fit starts."""
     required = {"protocol", "experiment_id", "input_mode", "year", "sample_seed", "draws",
                 "epochs", "patience", "batch_size", "learning_rate", "width"}
-    if set(config) != required or config["protocol"] != "ml_matrix_v1":
+    if not isinstance(config, dict) or not required.issubset(config) or set(config) - required - {"registration"} or config["protocol"] != "ml_matrix_v1":
         raise ValueError("Unsupported ML matrix config schema or protocol")
+    if "registration" in config and (not isinstance(config["registration"], dict) or
+                                  any(not isinstance(key, str) or not key for key in config["registration"])):
+        raise ValueError("Optional registration must be a structured object with named fields")
     if not isinstance(config["experiment_id"], str) or not config["experiment_id"].strip():
         raise ValueError("experiment_id is required")
     if config["input_mode"] != "verified_processed_cache":
@@ -103,10 +106,10 @@ def load_verified_processed_cache(local: dict) -> pd.DataFrame:
 def nested_game_samples(full: pd.DataFrame, seed: int = 42) -> tuple[dict[str, np.ndarray], dict]:
     """Return nested 25/50/100% TRAIN game sets, stratified by month and role mix.
 
-    Role mix is the share of eligible pitches from the recorded starting pitcher.
-    It is known before the outcome and only affects game inclusion.  Within each
-    month/role stratum the seeded ranking is fixed; quarter and half prefixes
-    therefore stay nested, including in small strata.
+    Role mix is the retrospective share of eligible TRAIN pitches from the
+    recorded starting pitcher. It uses no DEV rows or pitch outcome labels and
+    only affects TRAIN game inclusion. Within each month/role stratum the
+    seeded ranking is fixed; quarter and half prefixes stay nested.
     """
     needed = set(KEY + ["game_date", "pitcher", "starter_pitcher"])
     if not needed.issubset(full.columns) or full.empty:
@@ -149,6 +152,7 @@ def nested_game_samples(full: pd.DataFrame, seed: int = 42) -> tuple[dict[str, n
               "d50": np.array(sorted(selected50), dtype=np.int64),
               "d100": np.array(sorted(all_ids), dtype=np.int64)}
     report = {"sampling_seed": seed, "unit": "whole game", "strata": "month x starting-pitch share band",
+              "role_mix_timing": "retrospective eligible TRAIN game composition; not pre-pitch known",
               "role_bands": ["0-25", "25-50", "50-75", "75-100"], "fractions": {}}
     for name, ids in result.items():
         chosen = full.game_pk.isin(ids)

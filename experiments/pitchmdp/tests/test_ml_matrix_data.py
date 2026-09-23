@@ -10,6 +10,7 @@ from pitchmdp.data import RAW_ALLOWLIST, hash_file
 from pitchmdp.matrix_data import (canonical_hash, load_verified_processed_cache,
                                   nested_game_samples, ordered_key_hash, validate_config)
 from pitchmdp.sequence_data import CACHE_VERSION, SIDECAR_COLUMNS
+from scripts.run_ml_matrix import integrated_probabilities
 
 
 def sample_frame() -> pd.DataFrame:
@@ -59,9 +60,25 @@ def test_ordered_pitch_identity_and_frozen_config():
               "sample_seed": 42, "draws": 400, "epochs": 30, "patience": 5,
               "batch_size": 1024, "learning_rate": .0005, "width": 128}
     assert validate_config(config) == config
+    assert validate_config({**config, "registration": {"matrix_id": "MX-D1", "hypothesis": "more TRAIN games"}})["registration"]["matrix_id"] == "MX-D1"
     assert canonical_hash(config) == canonical_hash(dict(reversed(list(config.items()))))
     with pytest.raises(ValueError, match="training settings"):
         validate_config({**config, "draws": 400, "width": 64})
+    with pytest.raises(ValueError, match="registration"):
+        validate_config({**config, "registration": ["MX-D1"]})
+
+
+def test_integrated_probabilities_use_one_tensor_and_strict_mass_checks():
+    logits = np.zeros((2, 3, 10), dtype=np.float32)
+    logits[0, :, 1] = 1.
+    calibrated, raw = integrated_probabilities(logits, temperature=2.)
+    assert calibrated.shape == raw.shape == (2, 10)
+    assert calibrated[0, 1] < raw[0, 1]
+    assert np.allclose(calibrated.sum(1), 1., rtol=0, atol=1e-6)
+    with pytest.raises(ValueError, match="logits"):
+        integrated_probabilities(np.full((1, 3, 10), np.inf), 1.)
+    with pytest.raises(ValueError, match="temperature"):
+        integrated_probabilities(logits, 0.)
 
 
 def test_verified_processed_cache_checks_bytes_keys_and_historical_source_identity(tmp_path):

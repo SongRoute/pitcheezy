@@ -21,8 +21,10 @@ import time
 
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
+sys.path.insert(0, str(PROJECT / "scripts"))
 import numpy as np
 import pandas as pd
+from scipy.special import softmax
 import torch
 
 from pitchmdp.archetypes import add_batter_style_history
@@ -164,7 +166,9 @@ def _baseline_artifacts(output: Path, scope: str, parts: dict[str, pd.DataFrame]
     archive = {}
     for name in ("blend", "dev"):
         part = parts[name]
-        archive[name] = temperature_predictions(baseline.predict(part), chosen["temperature"])
+        raw = baseline.predict(part)
+        archive[name + "_raw"] = raw
+        archive[name] = temperature_predictions(raw, chosen["temperature"])
         archive[name + "_keys"] = part[KEY].to_numpy(np.int64)
         archive[name + "_y"] = outcome_labels(part)
         archive[name + "_game_pk"] = part.game_pk.to_numpy(np.int64)
@@ -271,6 +275,22 @@ def member_identity(prep: dict, cell: str, seed: int) -> dict:
             "train_rows_sha256": prep["scope"]["legacy" if sample == "legacy" else "regular"]["samples"]["train" if sample == "legacy" else sample]["rows_sha256"]}
 
 
+def integrated_probabilities(logits: np.ndarray, temperature: float) -> tuple[np.ndarray, np.ndarray]:
+    """Calibrated/raw marginal probabilities from one delivery-logit tensor."""
+    logits = np.asarray(logits)
+    if logits.ndim != 3 or logits.shape[-1] != 10 or not np.isfinite(logits).all():
+        raise ValueError("Expected finite [pitch,draw,10] delivery logits")
+    if not np.isfinite(temperature) or temperature <= 0:
+        raise ValueError("Delivery temperature must be positive and finite")
+    calibrated = softmax(logits / temperature, axis=-1).mean(axis=1)
+    raw = softmax(logits, axis=-1).mean(axis=1)
+    for value in (calibrated, raw):
+        if (not np.isfinite(value).all() or (value < 0).any() or (value > 1).any() or
+                not np.allclose(value.sum(axis=1), 1, atol=1e-6, rtol=0)):
+            raise ValueError("Integrated probability mass is invalid")
+    return calibrated, raw
+
+
 def fit(config: dict, local: dict, output: Path, prep: dict, cell: str, seed: int) -> None:
     dest = member_dir(output, cell, seed)
     identity = member_identity(prep, cell, seed)
@@ -333,22 +353,28 @@ def predict(local: dict, output: Path, prep: dict, cell: str, seed: int) -> None
     model = SequenceModel.load(dest / "model.pt")
     if model.kind != CELLS[cell][0] or model.seed != seed:
         raise ValueError("Checkpoint model/seed differs from cell")
-    values = {}
+    values, tier_counts = {}, {}
     for name in ("blend", "dev"):
         part = parts[name]
-        p = aux["delivery"].predict(model, store, aux["context"], part.index.to_numpy())
-        if p.shape != (len(part), 10) or not np.isfinite(p).all() or not np.allclose(p.sum(1), 1, atol=1e-6):
-            raise ValueError("Integrated prediction probabilities are invalid")
+        logits, levels = aux["delivery"].logits(model, store, aux["context"], part.index.to_numpy())
+        if logits.shape != (len(part), aux["delivery"].draws, 10):
+            raise ValueError("Integrated logits differ from frozen 400-draw contract")
+        p, raw = integrated_probabilities(logits, model.delivery_temperature)
         values[name] = p
+        values[name + "_raw"] = raw
+        values[name + "_delivery_level"] = levels
         values[name + "_keys"] = part[KEY].to_numpy(np.int64)
         values[name + "_y"] = outcome_labels(part)
         values[name + "_game_pk"] = part.game_pk.to_numpy(np.int64)
         values[name + "_pitcher"] = part.pitcher.to_numpy(np.int64)
+        unique, counts = np.unique(levels, return_counts=True)
+        tier_counts[name] = {str(int(level)): int(count) for level, count in zip(unique, counts)}
     np.savez_compressed(dest / "predictions.npz", **values)
     if source_hashes() != prep["identity"]["source_hashes"]:
         raise ValueError("Runner source changed during prediction")
     atomic_json(dest / "prediction_runtime.json", {"seconds": time.perf_counter()-started,
                 "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                "delivery_tier_counts": tier_counts,
                 "note": "Pre-pitch 400-draw joint delivery integration; no logged current physics at inference"})
     atomic_json(predstate, {"fit_state_sha256": hash_file(dest / "fit_state.json"),
                "artifact_hashes": artifact_hashes(dest, ["predictions.npz", "prediction_runtime.json"]),
