@@ -21,3 +21,41 @@
 .choice-explanation dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
 .choice-explanation dd { margin: 0; font-variant-numeric: tabular-nums; }
 .choice-explanation > details { margin: 12px 0; }
+
+/* D observer: the saved first choice is the primary pre-pitch decision. */
+.lead-choice{padding:22px;border:1px solid #b9d4bd;border-radius:10px;background:#eaf2e7;color:var(--deep)}
+.lead-choice>span{display:block;font-size:10px;font-weight:700;letter-spacing:1px;color:#527d60}
+.lead-choice strong{display:block;margin-top:10px;font-size:28px;line-height:1.4;letter-spacing:-1px}
+.lead-choice strong small{margin-left:8px;font-size:11px;font-weight:600;letter-spacing:0;color:#628671}
+.lead-choice b{display:block;font-size:18px;margin-top:1px}
+.lead-choice p{font-size:10px;color:#698573;margin-top:9px}
+.candidate-details{margin-top:14px;border-top:1px solid #d9e0cf}
+.candidate-details summary{list-style:none;display:flex;justify-content:space-between;cursor:pointer;font-size:11px;font-weight:700;color:#506e54;padding:14px 2px}
+.candidate-details summary::-webkit-details-marker{display:none}
+.candidate-details[open] summary>span{transform:rotate(45deg)}
+.candidate-details .candidate-list{margin:0 0 16px}
+.candidate-details .candidate{min-height:65px;padding:12px}
+.candidate-details .recommendation-basis{margin-top:12px}
+.same-pitch-comparison{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;margin-top:14px;padding:14px;border-radius:8px;background:#f2f3e9;border:1px solid #dde3d5}
+.same-pitch-comparison>div{min-width:0}
+.same-pitch-comparison>div>span{display:block;font-size:10px;color:#708272;margin-bottom:5px}
+.same-pitch-comparison strong{display:block;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.same-pitch-comparison>span{font-size:18px;color:#7b9781}
+@media(max-width:560px){.lead-choice{padding:17px}.lead-choice strong{font-size:23px}.same-pitch-comparison{gap:7px;padding:11px}.same-pitch-comparison strong{font-size:10px}}
+.event-card{margin-top:24px;padding:25px 28px;background:var(--paper);border:1px solid var(--line);border-radius:13px}
+.event-card .section-heading{margin-bottom:14px}
+.event-status{padding:7px 10px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;background:#e9efe6;color:#3e7455}
+.event-status.partial,.event-status.unavailable{background:#fff0dc;color:#965e33}
+.event-status.failed{background:#fae9e4;color:#a7513b}
+.event-total{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;border-bottom:1px solid #e3e7de;padding:7px 0 20px}
+.event-total strong{font-size:30px;font-variant-numeric:tabular-nums;color:var(--deep)}
+.event-total span,.event-empty{font-size:12px;line-height:1.7;color:#65766c}
+.event-callout{margin:16px 0;padding:12px 15px;background:#fff5e8;border-left:3px solid #dc8957;font-size:11px;line-height:1.8;color:#865c3f}
+.event-components{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:18px 0}
+.event-components>div{padding:14px;border:1px solid #e1e6dc;border-radius:7px;min-width:0}
+.event-components span,.event-components small{display:block;color:#718474;font-size:10px;line-height:1.6}
+.event-components strong{display:block;font-size:17px;margin:5px 0;font-variant-numeric:tabular-nums}
+.event-residual,.event-evidence,.event-reason,.event-caveat{font-size:10px;line-height:1.8;color:#738177;margin-top:8px}
+.event-residual{font-weight:700;color:#526657}
+.event-caveat{border-top:1px solid #e3e7de;padding-top:12px;margin-top:16px}
+@media(max-width:560px){.event-card{padding:20px 17px}.event-components{grid-template-columns:1fr}.event-components>div{padding:10px}.event-status{font-size:9px}}

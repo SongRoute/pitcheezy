@@ -33,6 +33,7 @@ Errors are JSON `{detail: string}` with 400/404/409/503. Catch and show a retrya
   "last_pitch":null,
   "history":[],
   "analysis":null,
+  "event_analysis":null,
   "summary":null,
   "context_notes":["이 투구 전까지 던진 공 54개"],
   "notices":["기록 재생 · 실제 승률 향상이 검증된 추천은 아닙니다."]
@@ -52,6 +53,14 @@ Analysis on PA completion: `{id,status,source,selected_pitch_id,selected_pitch_n
 - narrative: list of Korean grounded sentences.
 
 Summary: `{headline,result_label,pitch_count,selected_pitch_number,notes:[str]}`. Available only after completion. Worker marks no-media jobs unavailable and retains manual annotation separately. Returning manual annotation raises analysis version; original pre-pitch recommendations immutable.
+
+## PA event result (integration v1)
+
+`event_analysis` is null until the selected terminal pitch is revealed. On completion it is a separate persisted `event-analysis-v1` result, independent of the no-media CV `analysis` job. Its `linkage.pitch_id`, recommendation ID and canonical SHA identify the saved recommendation for **that same terminal pitch**. The recommendation is stored before reveal with a UTC creation timestamp. The source contract and numeric definitions are in `docs/contracts/event-analysis-v1.md`.
+
+For actual records with no linked, validated pre-release intent, the result is normally `partial`: the saved pre-pitch baseline and actual post-PA state are valued by the same frozen defensive WE; `values.total_pp` is signed percentage points for the initial defending team. Strategy, execution, outcome residual and shares stay null, with the entire difference in `components.unallocated_residual_pp`. This is a descriptive model comparison, never a player responsibility or causal effect. `unavailable` carries missing compatible values; `failed` carries a calculation error with all numeric fields null. No-media CV status cannot turn a WE event calculation into success or block it.
+
+The `event_results` table keeps immutable `(session_id,pitch_id,revision)` payloads. A late/corrected source creates a higher event input revision; the saved pre-pitch recommendation row does not change. Manual zone notes are spatial user annotations and do not become model intent or change the event result. Old sessions that predate recommendation timestamps have `event_analysis:null` because their original storage time cannot be reconstructed. The UI never renders synthetic `development_only` numeric results as actual contributions.
 
 ## UI direction
 

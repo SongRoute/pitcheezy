@@ -246,3 +246,41 @@ def test_no_media_adapter_never_claims_cv_even_with_media_reference():
     supplied = adapter.analyze(CVRequest('p1', media_ref='local-video', setup_before_pitch=100.))
     assert supplied.status == 'unavailable' and supplied.cv_status == 'unavailable:adapter_not_configured'
     assert supplied.source == 'none'
+
+
+def test_event_result_revealed_only_after_pa_and_versioned_separately(service, monkeypatch):
+    initial = service.create(10, 1)
+    assert initial['event_analysis'] is None
+    assert service.advance(initial['id'], initial['revision'])['event_analysis'] is None
+    saved = deepcopy(service.get(initial['id'])['recommendation'])
+    calls = []
+    def event_result(session_id, pitch, _pa, recommendation, _created_at):
+        calls.append(pitch['id'])
+        assert recommendation == saved
+        return {'revision': 1, 'status': 'partial', 'linkage': {'recommendation_id': recommendation['id']},
+                'values': {'total_pp': 1.25}, 'evidence': {'development_only': False}}
+    monkeypatch.setattr(service, '_calculate_event', event_result)
+    done = service.advance(initial['id'], 1)
+    assert done['event_analysis']['status'] == 'partial'
+    assert calls == ['p2']
+    assert service.get(initial['id'])['event_analysis'] == done['event_analysis']
+    assert calls == ['p2']
+    manual = service.manual_intent(done['id'], done['revision'], 'low_left')
+    assert manual['event_analysis'] == done['event_analysis']
+    with service.store.transaction() as db:
+        Store.save_event_result(db, done['id'], 'p2', done['event_analysis'] | {'revision': 2, 'status': 'unavailable'})
+    revised = service.get(done['id'])
+    assert revised['event_analysis']['revision'] == 2
+    assert revised['last_pitch']['recommendation'] == saved
+
+
+def test_event_calculation_failure_has_no_invented_values(service, monkeypatch):
+    def broken(*_args):
+        raise RuntimeError('synthetic event calculation error')
+    monkeypatch.setattr(service, '_calculate_event', broken)
+    done = finish(service, service.create(10, 1))
+    event = done['event_analysis']
+    assert event['status'] == 'failed'
+    assert event['values']['total_pp'] is None
+    assert event['components']['unallocated_residual_pp'] is None
+    assert service.get(done['id'])['event_analysis'] == event

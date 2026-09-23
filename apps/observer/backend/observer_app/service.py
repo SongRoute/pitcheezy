@@ -1,8 +1,12 @@
 """Explicit public views: only advancing exposes the next recorded actual pitch."""
 import hashlib
+import json
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
+
+from .settings import BUNDLE
 
 from .dataset import DemoDataset
 from .domain import ZONE_BY_ID, spatial_comparison
@@ -73,6 +77,7 @@ class ObserverService:
             return self._view(db, session_id)
 
     def get(self, session_id):
+        self._ensure_event_result(session_id)
         # A transaction makes cursor/recommendations/job reads one consistent snapshot.
         with self.store.transaction(write=False) as db:
             return self._view(db, session_id)
@@ -107,7 +112,100 @@ class ObserverService:
                 Store.save_recommendation(db, session_id, pitch['id'], recommendation)
             else:
                 Store.enqueue(db, pa['pitches'][-1]['id'], CONFIG['cv_version'])
-            return self._view(db, session_id)
+            view = self._view(db, session_id)
+        if view['complete']:
+            return self.get(session_id)
+        return view
+
+    def _ensure_event_result(self, session_id):
+        """Value the revealed PA outside the SQLite writer lock, once per input revision."""
+        with self.store.transaction(write=False) as db:
+            session, _, pa = self._session(db, session_id)
+            if session['cursor'] != len(pa['pitches']):
+                return
+            pitch = pa['pitches'][-1]
+            if Store.event_result(db, session_id, pitch['id']):
+                return
+            recommendation = Store.recommendation(db, session_id, pitch['id'])
+            metadata = db.execute('SELECT created_at FROM recommendation_meta WHERE session_id=? AND pitch_id=?',
+                                  (session_id, pitch['id'])).fetchone()
+        if recommendation is None or metadata is None:
+            return  # Legacy sessions have no trustworthy pre-pitch recommendation timestamp.
+        try:
+            result = self._calculate_event(session_id, pitch, pa, recommendation, metadata['created_at'])
+        except Exception:
+            LOGGER.exception('Event analysis failed for revealed pitch %s', pitch['id'])
+            result = self._failed_event(session_id, pitch, recommendation, metadata['created_at'])
+        if result is None:
+            return
+        with self.store.transaction() as db:
+            session, _, _ = self._session(db, session_id)
+            if session['cursor'] == len(pa['pitches']):
+                Store.save_event_result(db, session_id, pitch['id'], result)
+
+    @staticmethod
+    def _failed_event(session_id, pitch, recommendation, created_at):
+        """A calculation exception must never become invented numeric attribution."""
+        pitch_id = pitch['id']
+        missing = lambda: {'value_pp': None, 'status': 'unavailable', 'reason': 'calculation_error', 'abs_share': None}
+        model_sha = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest() if (BUNDLE/'bundle_manifest.json').is_file() else 'unavailable-frozen-evaluator'
+        return {'schema_version': 'event-analysis-v1', 'analysis_id': f'{session_id}:{pitch_id}',
+                'revision': 1, 'status': 'failed', 'reason': 'calculation_error',
+                'linkage': {'session_id': session_id, 'pitch_id': pitch_id,
+                            'recommendation_id': recommendation['id'], 'recommendation_created_at': created_at,
+                            'recommendation_sha256': hashlib.sha256(json.dumps(recommendation, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest(),
+                            'event_input_revision': 1},
+                'identity': {'model_version': recommendation.get('model_version') or CONFIG['model_version'],
+                             'model_sha256': model_sha, 'value_spec_version': 'defense-we-pa-v1',
+                             'baseline_policy_id': 'observer-repertoire-kernel-v1'},
+                'scope': {'horizon': 'current_pa', 'initial_defender': 'home' if pitch['state']['half'] == 'Top' else 'away',
+                          'unit': 'defense_win_probability', 'difference_unit': 'percentage_points'},
+                'values': {'reference': None, 'plan': None, 'execution': None, 'observed': None, 'total_pp': None},
+                'components': {'strategy_contrast_pp': missing(), 'execution_contrast_pp': missing(),
+                               'outcome_residual_pp': missing(), 'unallocated_residual_pp': None},
+                'shares': {'stable': False, 'denominator_pp': None},
+                'interactions': {'status': 'unallocated', 'value_pp': None, 'reason': 'calculation_error'},
+                'evidence': {'actual_source': 'historical_replay_record', 'intent_source': None,
+                             'intent_is_proxy': None, 'intent_review_status': None, 'development_only': False,
+                             'references': [pitch_id], 'use_for_performance_evaluation': False},
+                'provenance': {'received_at': datetime.now(timezone.utc).isoformat(),
+                               'generated_at': datetime.now(timezone.utc).isoformat(), 'correction_of_revision': None},
+                'replacement': {'status': 'unavailable', 'horizon': 'inning_end', 'value_pp': None,
+                                'reason': 'missing_contemporaneous_candidates_and_inning_evaluator'}}
+
+    def _calculate_event(self, session_id, pitch, pa, recommendation, created_at):
+        try:
+            from .event_analysis import analyze_event, frozen_observed_value, recommendation_sha256, value_point
+        except ImportError:
+            return None  # C module is integrated in the shared checkout after its handoff.
+        now = datetime.now(timezone.utc).isoformat()
+        engine = getattr(self.recommender, 'engine', None)
+        model_sha = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest() if engine else 'unavailable-frozen-evaluator'
+        identity = {'model_version': recommendation.get('model_version') or CONFIG['model_version'],
+                    'model_sha256': model_sha, 'value_spec_version': 'defense-we-pa-v1',
+                    'baseline_policy_id': 'observer-repertoire-kernel-v1'}
+        defender = 'home' if pitch['state']['half'] == 'Top' else 'away'
+        reference = recommendation.get('baseline_value') if recommendation.get('status') == 'ready' else None
+        values = {'reference': value_point(reference, identity=identity, initial_defender=defender,
+                                          source='saved_pre_pitch_policy_baseline') if isinstance(reference, (int, float)) else None,
+                  'plan': None, 'execution': None, 'observed': None}
+        if engine is not None:
+            from pitchmdp.game import GameState
+            def game_state(row):
+                return GameState(row['inning'], row['half'], row['outs'], row['bases'],
+                                 row['home_score'], row['away_score'])
+            values['observed'] = frozen_observed_value(engine=engine, initial_state=game_state(pitch['state']),
+                                                        post_state=game_state(pa['terminal_state']), identity=identity)
+        return analyze_event(
+            linkage={'session_id': session_id, 'pitch_id': pitch['id'],
+                     'recommendation_id': recommendation['id'], 'recommendation_created_at': created_at,
+                     'recommendation_sha256': recommendation_sha256(recommendation), 'event_input_revision': 1},
+            identity=identity, initial_defender=defender, values=values,
+            evidence={'actual_source': 'historical_replay_record', 'action_mapping': None,
+                      'references': [pitch['id']], 'development_only': False,
+                      'use_for_performance_evaluation': False},
+            provenance={'received_at': now, 'generated_at': now, 'correction_of_revision': None},
+            stored_recommendation=recommendation)
 
     def manual_intent(self, session_id, revision, zone_id):
         if zone_id not in ZONE_BY_ID:
@@ -161,7 +259,8 @@ class ObserverService:
                 'state': pa['terminal_state'] if complete else current['state'],
                 'recommendation': None if complete else Store.recommendation(db, session_id, current['id']),
                 'last_pitch': history[-1] if history else None, 'history': history,
-                'analysis': analysis, 'summary': summary,
+                'analysis': analysis, 'event_analysis': Store.event_result(db, session_id, pitches[-1]['id']) if complete else None,
+                'summary': summary,
                 'context_notes': [] if complete else current.get('context_notes', []),
                 'context': None if complete else current.get('context'),
                 'notices': ['기록 재생 · 실제 승률 향상이 검증된 추천은 아닙니다.']}
