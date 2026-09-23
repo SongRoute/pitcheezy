@@ -21,6 +21,21 @@ Prediction quality, internal WE, and identifiable policy value remain separate;
 OPE is null. A will review this diagnosis and only then run at most two frozen
 offline candidates using the cached Q values.
 
+## Two frozen follow-up screens
+
+A subsequently froze exactly two current-action rules as `23b9de4`.
+`scripts/b_choice_candidates.py` evaluated them from the 151 immutable Q
+checkpoints; `tests/test_b_choice_candidates.py` added four focused tests,
+including one that would catch leakage from a held-out model into its own
+selection. [Candidate result](../../results/CHOICE-CANDIDATES-003/README.md)
+records the paired changes, result hash and rejection. Both decrease the
+frozen ensemble's current-action Q and are rejected for service adoption by
+the predetermined rule. The baseline already maximizes this same Q, so
+improvement on that measure was mechanically impossible for a changed action;
+the screens measured robustness and concentration tradeoffs. Minimax reduces
+worst-member regret but its held-out/member stability check does not establish
+a benefit. Actual match is only a descriptive diagnostic.
+
 Model used for this B work: `gpt-6-sol` with medium reasoning. Token/cost usage
-was not exposed. No heavy process remains after the audit run. The existing
-user review server on port 8766 was untouched.
+was not exposed. No heavy process remains. The existing user review server on
+port 8766 was untouched.
