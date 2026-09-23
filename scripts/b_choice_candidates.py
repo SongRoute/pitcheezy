@@ -59,11 +59,14 @@ def load_inputs(cfg, cfg_path):
         raise ValueError('Candidate config differs from committed preregistration')
     cdir = Path(cfg['checkpoint_dir'])
     diagnosis_path = cdir.parent/'results.json'
+    pinned = json.loads((ROOT/'results/CHOICE-DIAG-002/summary.json').read_text())
+    if sha(diagnosis_path) != pinned['raw_result_sha256']:
+        raise ValueError('SSD diagnosis result differs from committed audited summary pin')
     diagnosis = json.loads(diagnosis_path.read_text())
     if diagnosis['experiment_id'] != cfg['parent_diagnosis']:
         raise ValueError('Parent diagnosis ID mismatch')
     checkpoints = []
-    if len(diagnosis['checkpoint_sha256']) != 151:
+    if len(diagnosis['checkpoint_sha256']) != 151 or diagnosis['coverage']['eligible_pitches'] != 563:
         raise ValueError('Expected 151 frozen diagnosis checkpoints')
     for name, expected in sorted(diagnosis['checkpoint_sha256'].items()):
         path = cdir/name
@@ -113,6 +116,7 @@ def compare_pitch(item, index, epsilon_pp):
                         'top_type': actions[index_selected]['pitch_type'],
                         'ensemble_delta_pp': float(100*(q[0, index_selected]-q[0, frozen])),
                         'worst_member_regret_pp': float(member_regret.max()),
+                        'baseline_worst_member_regret_pp': float(np.max(100*(q[1:].max(axis=1)-q[1:, frozen]))),
                         'member_delta_pp': {f'seed{s}': float(100*(q[i, index_selected]-q[i, frozen]))
                                             for i, s in enumerate(range(42, 47), start=1)}}
         heldout = []
@@ -128,6 +132,8 @@ def compare_pitch(item, index, epsilon_pp):
         row['heldout'] = heldout
         row['heldout_action_unanimous'] = len({x['chosen_index'] for x in heldout}) == 1
         row['heldout_type_unanimous'] = len({x['chosen_action']['pitch_type'] for x in heldout}) == 1
+        row['heldout_reference_action_unanimous'] = len({x['reference_index'] for x in heldout}) == 1
+        row['heldout_reference_type_unanimous'] = len({actions[x['reference_index']]['pitch_type'] for x in heldout}) == 1
         out.append(row)
     return out
 
@@ -160,11 +166,15 @@ def summarize(rows, cfg):
             'type_concentration_by_pitcher_count': concentration(types),
             'support_unchanged': all(r['support_unchanged'] for r in part),
             'mean_worst_member_regret_pp': float(np.mean([r['worst_member_regret_pp'] for r in part])),
+            'mean_baseline_worst_member_regret_pp': float(np.mean([r['baseline_worst_member_regret_pp'] for r in part])),
+            'mean_worst_member_regret_change_pp': float(np.mean([r['worst_member_regret_pp']-r['baseline_worst_member_regret_pp'] for r in part])),
             'judge_current_action_delta_pp': intervals,
             'heldout_member_delta_vs_four_member_mean_control_pp': heldout_by_seed,
             'heldout_mean_delta_pp': float(np.mean([h['heldout_delta_pp'] for h in heldout])),
             'heldout_action_unanimity_rate': float(np.mean([r['heldout_action_unanimous'] for r in part])),
             'heldout_type_unanimity_rate': float(np.mean([r['heldout_type_unanimous'] for r in part])),
+            'heldout_reference_action_unanimity_rate': float(np.mean([r['heldout_reference_action_unanimous'] for r in part])),
+            'heldout_reference_type_unanimity_rate': float(np.mean([r['heldout_reference_type_unanimous'] for r in part])),
             'decision': ('reject_internal_ensemble_worsening' if intervals['frozen_ensemble']['mean'] < 0
                          else 'defer_no_identified_policy_evaluation')}
     return result

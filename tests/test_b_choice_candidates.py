@@ -35,3 +35,25 @@ def test_comparison_rejects_member_action_support_change():
         assert 'Action support/order differs' in str(exc)
     else:
         raise AssertionError('Changed support was accepted')
+
+
+def test_leave_one_out_selection_excludes_held_member_then_scores_on_it():
+    actions = [{'pitch_type': 'FF', 'zone_id': 'low'},
+               {'pitch_type': 'SI', 'zone_id': 'low'}]
+    def evaluation(name, q):
+        return {'variant': name, 'actions': actions,
+                'pitches': [{'pitch_key': [1, 1, 1], 'q_values': q,
+                             'q_by_action': {'FF|low': q[0], 'SI|low': q[1]},
+                             'pitcher': 1, 'balls': 0, 'strikes': 0,
+                             'actual_type': 'FF'}]}
+    item = {'repertoire_counts': {'FF': 10, 'SI': 100},
+            'evaluations': [evaluation('ensemble', [.6, .6]),
+                            evaluation('member_seed_42', [.9, .1])] +
+                           [evaluation(f'member_seed_{seed}', [.6, .5998])
+                            for seed in range(43, 47)]}
+    near, _ = compare_pitch(item, 0, .05)
+    held = near['heldout'][0]
+    assert held['held_seed'] == 42
+    assert held['chosen_index'] == 1  # four other members favor repertoire SI within .05 pp
+    assert held['reference_index'] == 0
+    assert held['heldout_delta_pp'] == -80  # scored on excluded seed42 Q
