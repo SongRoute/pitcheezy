@@ -1,5 +1,7 @@
 # 선행연구의 역할과 확인 상태
 
+**최신 문헌 검토(2026-09-24):** [ML0·ML1 실행 전 문헌 검토](../../docs/reports/ML-literature-review-2026-09-24.md). 아래는 초기 확인 기록이다. SmartPitch·Melville의 원문 미열람 상태는 이후 해소됐으며, 현재 해석은 새 검토와 [연구 차이 검토](docs/RESEARCH_GAP_REVIEW.md)를 따른다.
+
 2026-09-21 확인. 사용자 제공 요약과 원문에서 확인한 내용을 구분한다. 다음 목록은 초기 비교 설계이며 완전한 문헌조사는 아니다.
 
 ## SmartPitch — Otremba, MIT MEng, 2022

@@ -1,6 +1,12 @@
 # 다음 세션 — 논문 기준 ML 예측 성능 실험
 
+**최신 설계 — D53 (2026-09-24):** 사용자가 실행보다 전체 실험 설계를 먼저 요청했다. [MLB 확률 정책 전체 실험 설계](../ML_EXPERIMENT_DESIGN.md)를 함께 읽는다. 첫 일반화 검증 범위는 사용자 선택에 따라 **MLB 정규시즌 선발·불펜 전체**다. 기존 코호트의 ML0/ML1을 출발점으로 두고 데이터량·선수 정보 공유·특성·구조·강건성·offline RL·목표 위치 정책으로 이어간다. 현재는 설계 완료이며 학습 미실행이다. 이 문서의 첫 실행 순서는 유지하고, 일반화 범위·세부 비교·정책 후속은 새 설계를 따른다.
+
+**행별 실행 기준:** [실험 매트릭스](../ML_EXPERIMENT_MATRIX.md). 대조군, 바꿀 축, 고정할 정보/표본, 판정 기준 v0와 진행 조건을 정리했다. 첫 묶음은 MX-R0~R2 이후 MX-D1이며, 제안 수치는 ML0 감사 후 새 후보 결과 전에 확정한다. 기존 `docs/experiments.md`의 RE24/2026 OPE 규칙을 이번 공통 10-class 예측 비교에 그대로 적용하지 않는다.
+
 2026-09-24 사용자 우선순위 변경(D52). 이번 세션은 **계획·인수인계까지만 완료**하고 새 학습·평가는 다음 대화에서 시작한다. 실행 기준은 `ec84c89`와 이 문서를 포함한 문서 커밋이다. 이전 [ABCD 결과](ABCD-quality-v3.md)는 보존하며 그 실행 계획을 다시 시작하지 않는다.
+
+후속 문헌 정리(2026-09-24): [ML0·ML1 실행 전 문헌 검토](../reports/ML-literature-review-2026-09-24.md). 기존 5편·추가 야구 6편·방법론 4편의 핵심과 적용 범위를 정리했다. Melville 자체 recurrent 구조, Takamido 양성 클래스·validation 임계·후보의 평가 시즌 물리 평균, 기존 학습량/seed 차이를 확인했다. 이는 문헌 검토이며 ML0 사양 고정·ML1 실행 완료를 뜻하지 않는다.
 
 ## 1. 개발 순서와 이번 연구의 목표
 
@@ -23,7 +29,7 @@
 | SmartPitch, Otremba 2022 | §7.1.2–7.1.3, pp.73–76: 4개 결과의 categorical cross-entropy, Brier; 빈도·logistic regression·random forest·GBDT·신경망 비교 | 빈도/선형/신경망 기준선, NLL·Brier | 개인 타자 성향·존 정보, 실제 물리 입력, 2019 자료와 분할. 기존 B1 축소 MDP를 충실 재현으로 부르지 않음 |
 | Melville et al. 2023 | §4.1, pp.11–13: 9개 결과 보정 곡선, cross-entropy, 타석 내 공 번호별 memoryless 절제 | 같은 입력의 비시퀀스/순환 모형, 공 번호별 성능·보정 | 2021–22 타석 무작위 75/25 분할과 우리 시간 분할의 차이, 현재 공 물리 입력, recurrent cell 정확한 구현 |
 | Takamido & Nakamoto 2026 | §3.1 p.18: 2스트라이크 종결구 이진 분류 accuracy .756, precision .755, recall .879, F1 .812, ROC-AUC .811; 임계 .43 | Transformer와 이진 보조 과제의 같은 지표; 임계 선정은 CAL에서만 | 현재 공 포함 물리 시퀀스, positive label·혼동행렬 방향, 원문 임계 선정 방식, 2018–24 학습/2025 평가(2020 제외) |
-| Douglas et al. 2021 | §6.1: 스윙 조건부 4개 결과의 예측/관측 빈도 비교; 제구 공분산 MSE는 별도 모듈 | 계층적 결과 모형의 참고 및 조건별 보정 비교 | 스윙 조건부 분모를 전체 투구와 혼동하지 않음. 제구 모듈 검증은 실제 의도 자료 단계로 분리 |
+| Douglas et al. 2021 | v1 HTML §5, Outcome Predictions: 스윙 조건부 4개 결과의 예측/관측 빈도 비교; 제구 공분산 MSE는 별도 모듈 | 계층적 결과 모형의 참고 및 조건별 보정 비교 | 스윙 조건부 분모를 전체 투구와 혼동하지 않음. 제구 모듈 검증은 실제 의도 자료 단계로 분리 |
 
 출처: [SmartPitch 공식 PDF](https://dspace.mit.edu/server/api/core/bitstreams/64b16c4f-a7e6-49a6-a7e5-806f9234f2a9/content), [Melville 공식 PDF](https://cdn.prod.website-files.com/68d6be744d7efccc2207f571/68d6be744d7efccc22080794_A%20Game%20Theoretical%20Approach%20to%20Optimal%20Pitch%20Sequencing.pdf), [Takamido 원문](https://arxiv.org/pdf/2606.17345), [Douglas 원문](https://arxiv.org/html/2110.04321v1). SmartPitch/Melville은 앞선 세션의 공식 PDF 추출본을 이번에 다시 확인했다. SmartPitch의 타자 성향 부재/원문 미열람이라는 오래된 설명은 사용하지 않는다.
 
