@@ -34,3 +34,35 @@
 전체 TRAIN 부모+문맥 표를 최종 한 번 적합했고 189개 문맥 셀을 저장했다. 실제 JSON 파일을 다시 읽은 복원 예측이 동일했다. 체크포인트 SHA256 `11bb5b40ecaed50d068bbbe2a70e58ebd57bc4f2e7d2ba5dcfcf08e6435c04bf`, config SHA256 `183c9b4aae26f5132fcce58ef9a6dd31743316213a39ad07f03c20429b4868f2`. `results/EXP-B-PAHISTORY-002/train_selection.json`과 `checkpoint.json`을 DEV 전에 커밋한다. SSD `B-PAHISTORY-002/`에 같은 파일과 모든 alpha의 TRAIN 검증 예측을 보존한다. 실제 TRAIN 실행 1.018초, 최대 RSS 321,290,240 bytes(macOS). 큰 학습 없음.
 
 다음 단계는 이 선택을 바꾸지 않고 `.venv-observer-standalone/bin/python scripts/b_pa_history_v2.py dev`를 한 번 실행하는 것이다. DEV 결과는 아래에 별도로 기록한다.
+
+## DEV 실행 결과와 최종 판정
+
+TRAIN 선택과 체크포인트를 **`fa07bbb`**에 커밋한 뒤 DEV 명령을 한 번 실행했다. 같은 노출된 2025년 7월 6경기, 완료 151타석/563구다. 기존 A 공통 비교의 키·정답·부모 예측과 정확히 일치했다. 설정/소스/체크포인트의 커밋 및 hash를 확인하기 전에 DEV를 읽지 않는다.
+
+| 평가 범위 | 부모 NLL | B002 NLL | 차이 | 경기 bootstrap 95% |
+|---|---:|---:|---:|---|
+| 전체 563구 | 1.595015 | 1.600157 | +.005142 | [.004219, .006470] |
+| 2스트라이크 159구 | 1.692350 | 1.697883 | +.005533 | [.001809, .010625] |
+
+전체 Brier는 .747412→.748526, top-label ECE10은 .018103→.041093이다. 2스트라이크 Brier는 .766428→.767989, ECE는 .030473→.022140이다. ECE 한 지표의 개선을 NLL 악화나 추천 가치와 바꾸어 해석하지 않는다. 경기 bootstrap은 고정 seed 20260923, 1,000회이며 6경기의 탐색 평가라는 한계가 있다.
+
+문맥 지원 319/563구(56.66%), 첫 공 151구와 미관측 문맥 93구를 합친 244구는 부모와 **원소 단위로 동일**했다. 첫 공 ΔNLL은 정확히 0이다. 저장 예측만 집계한 사후 점검에서 6경기 모두 NLL이 악화했다(+.003513~+.007926). 이는 첫 공의 중복 평활 문제를 제거한 뒤에도 이번 과거 구종 후보의 개발셋 개선이 재현되지 않았다는 결과다. 잔여 악화의 인과 원인이나 과거 이력 전체가 쓸모없다는 결론은 아니다. alpha 재선택·재학습·두 번째 DEV 실행을 하지 않았다.
+
+**최종: B002 미채택.** TRAIN 선택 통과와 서비스 채택을 구분한다. 동결 서비스 모형과 추천은 유지한다. 정책 가치·OPE·추천 효과는 측정하지 않았고 null이다. 최종/2026/CV 자료도 열람하지 않았다. 기존 B001와 부모가 다른 B002의 절대 점수를 직접 비교해 개선이라고 하지 않는다.
+
+## 검증·산출물·종료 상태
+
+- 실제 DEV 실행 .612초, 최대 RSS 322,338,816 bytes(macOS). 전체 실제 적합은 시간순 fold 2회+최종 TRAIN 1회, 신경망 학습 없음.
+- 새 합성 검사 6개 통과 후, 기존 A/B 관련 검사까지 묶어 **13개 통과(1.16초)**. 이력 경계·누수 날짜·두 블록 veto·동률·부모 복귀·JSON 복원·미커밋 거절·alpha0 DEV 거절을 검증했다.
+- `results/EXP-B-PAHISTORY-002/`의 `train_selection.json`, `checkpoint.json`, `dev_results.json`, `execution_audit.json`에 결과/코드 버전/해시를 기록했다. 각 파일의 SSD 사본 일치와 예측/체크포인트 SHA를 독립적으로 확인했다.
+- SSD `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/B-PAHISTORY-002/`에는 모든 alpha의 TRAIN 검증 예측, 단일 DEV 예측, 결과/체크포인트 사본, `pytest-final.log`를 보존했다. 원자료·기존 결과·동결 모형은 덮어쓰지 않았다.
+
+검사 재현:
+
+```sh
+PYTHONPATH=.:apps/observer/backend .venv-observer-standalone/bin/python -m pytest tests/test_b_pa_history_v2.py tests/test_b_history_diagnosis.py tests/test_a_common_comparison.py tests/test_a_small_eval.py -q
+```
+
+실험 `train`/`dev` 명령은 이미 있는 산출물을 거절한다. 독립 재현은 새 출력 경로/실험 사본을 먼저 기록하고 동일한 소스→TRAIN→선택 커밋→DEV 순서를 지켜야 한다. 이번 실행의 `config`와 설계 계약은 변경하지 않았다. 완료 후 작업용 학습/서버 프로세스 없음. Sol 구현 작업도 완료했다. 루트 검토의 핵심은 시간순 적합 경계, 첫 공/미관측 행의 혼합 연산 생략, 실제 파일 복원, DEV 전 체크포인트 커밋이었다.
+
+다음 한 가지는 **C의 조건부 이닝 평가 결과 형식을 고정해 D에 넘기는 것**이다. 계산 범위·미해결 질량·기본 프로필·가정·가용성 미확인을 함께 표현하고, 실제 교체 우위와 구분한다. B의 DEV 재튜닝이나 표본 확대를 자동 시작하지 않는다.
