@@ -32,6 +32,9 @@ class ObserverService:
     def list_inning_decisions(self, game_id):
         return self._decision_call(self.inning_decisions.list_decisions, game_id)
 
+    def list_inning_decision_games(self):
+        return self._decision_call(self.inning_decisions.list_games)
+
     def resolve_inning_decision(self, decision_id, revision, context):
         return self._decision_call(self.inning_decisions.resolve, decision_id, revision, context)
 

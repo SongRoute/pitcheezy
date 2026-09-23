@@ -133,6 +133,10 @@ def create_app(service=None, *, start_worker=None):
     def catalog():
         return active().catalog()
 
+    @app.get('/api/inning-decision-games')
+    def list_inning_decision_games():
+        return active().list_inning_decision_games()
+
     @app.get('/api/inning-decisions')
     def list_inning_decisions(game_id: str = Query(...)):
         if re.fullmatch(r'[0-9]+', game_id) is None:

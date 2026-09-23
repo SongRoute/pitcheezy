@@ -171,6 +171,23 @@ class InningDecisionRepository:
                 decisions.append({"decision_id": row["decision_id"], "revision": REVISION, "context": context})
         return {"schema_version": SCHEMA, "mode": MODE, "decisions": decisions}
 
+    def list_games(self) -> dict:
+        games = {}
+        with self.store.transaction(write=False) as db:
+            rows = db.execute("SELECT * FROM inning_decisions ORDER BY game_id, decision_id").fetchall()
+            for row in rows:
+                context, _ = _read_row(row)
+                game_id = row["game_id"]
+                game_date = context["linkage"]["official_game_date"]
+                if game_id in games:
+                    if games[game_id]["date"] != game_date:
+                        raise DecisionCorrupt("stored inning decisions have inconsistent game dates")
+                    games[game_id]["decision_count"] += 1
+                else:
+                    games[game_id] = {"game_id": game_id, "date": game_date, "decision_count": 1}
+        return {"schema_version": SCHEMA, "mode": MODE,
+                "games": sorted(games.values(), key=lambda game: (game["date"], game["game_id"]))}
+
     def resolve(self, decision_id, revision, context) -> dict:
         _require(type(decision_id) is str and _ID_PATTERN.fullmatch(decision_id) is not None, "decision_id")
         _integer(revision, "revision", 1)

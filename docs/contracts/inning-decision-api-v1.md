@@ -26,6 +26,7 @@ SQLite `inning_decisions` 별도 테이블에 ID·game_id·revision·canonical c
 
 ## API
 
+- `GET /api/inning-decision-games` → `{schema_version:"inning-decision-v1",mode:"historical_decision_review",games:[{game_id,date,decision_count}]}`. 등록된 기록만 날짜/game_id 순으로 반환한다. 모든 row를 검증하며 같은 game의 날짜가 다르면 503. 경기/선수 이름을 추측하지 않고 UI에서 날짜와 식별자로 구분한다. 자료가 없으면 games=[]이다.
 - `GET /api/inning-decisions?game_id=<positive integer>` → `{schema_version:"inning-decision-v1",mode:"historical_decision_review",decisions:[{decision_id,revision:1,context}]}`. 결과 수치·미래 타순·이후 대타를 목록에 넣지 않는다. 자료가 없는 game은 빈 목록.
 - `POST /api/inning-decisions/{decision_id}/resolve` body `{revision:1,context:<expected context>}` → `{schema_version:"inning-decision-v1",mode:"historical_decision_review",decision_id,revision:1,context,result:<inning-result-v1>}`. body는 추가 필드 금지. D가 선택한 문맥과 저장 문맥을 모두 일치시켜야 수치를 반환한다. 동일 시각의 Z/+00:00 표기는 정규화 후 같다.
 - missing/malformed query/body/ID/context는 400, 없는 유효 ID는 404, 유효하지만 다른 revision·게임·시점·선수·초기 상태·phase는 409, 저장 row 훼손/서비스 미준비는 503. 오류 응답은 기존 `{detail:string}` 형식이며 result/수치를 포함하지 않는다. 다른 phase는 형태가 맞는 문자열일 때 문맥 불일치 409로 처리한다.
@@ -37,3 +38,5 @@ Repository 인터페이스는 `InningDecisionRepository(store)`의 `import_resul
 실제 기존 C 파일→새 격리 SQLite→앱 재생성→목록→일치 문맥 resolve→기존 D parser까지 확인한다. 잘못된 게임/날짜/이벤트/선수/초기 상태/phase/revision, 멱등/충돌·손상·동시성, 등록 실패 rollback과 기존 세션의 미래 정보 비공개를 검증한다. 기본 운영 DB를 자동 변경하지 않는다. 검사 DB/응답/로그는 새 `C-D-API-001` 경로에 보존한다.
 
 D의 다음 화면은 이 목록에서 **독립된 교체 직전 기록**을 명시적으로 선택하고 resolve 결과를 기존 `buildInningPresentation`에 넘긴다. 일반 PA 추천·기여도와 합산하지 않는다. 실제 교체 효과는 계속 null이며 CV가 없어도 이 기록 조회는 작동한다.
+
+구현 화면은 `/inning-decisions`다. 첫 등록 경기의 목록을 불러올 수 있지만 이닝 결과는 사용자가 시점을 선택하고 버튼을 누른 뒤에만 resolve한다. 경기/시점 변경·재시도에서는 기존 결과를 지우고 이전 요청을 취소하며 늦은 응답을 무시한다. 클라이언트도 응답 ID/revision/context/result의 문맥을 다시 대조한다. PA 세션 조회/advance/localStorage 변경을 하지 않는다.
