@@ -479,9 +479,174 @@ def collect_lineup_supplement_v2(cfg: dict, folder: Path) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def decision_anchor_777063(plays: list[dict], decision: dict) -> dict:
+    """One frozen case, just before its recorded pitching-change action."""
+    if decision['game_pk'] != 777063 or decision['decision_first_observed_pitch_id'] != '777063:49:1':
+        raise ValueError('anchor case identity changed')
+    if decision['keep_pitcher_id'] != 554430:
+        raise ValueError('frozen keep identity changed')
+    by_index = {p['about']['atBatIndex']: p for p in plays}
+    if len(by_index) != len(plays) or any(i not in by_index for i in range(49)):
+        raise ValueError('play-by-play index identity incomplete')
+    current = by_index[48]
+    actions = current.get('playEvents', [])
+    changes = [(i, e) for i, e in enumerate(actions)
+               if e.get('details', {}).get('eventType') == 'pitching_substitution']
+    if len(changes) != 1 or changes[0][0] != 0:
+        raise ValueError('expected first pitching-change event absent or shifted')
+    _, change = changes[0]
+    anchor_time = datetime.fromisoformat(change['startTime'].replace('Z', '+00:00'))
+    if change.get('index') != 0 or int(change.get('player', {}).get('id', -1)) != decision['observed_incoming_pitcher_id_audit_only']:
+        raise ValueError('pitching-change action identity mismatch')
+    state = decision['state_at_first_observed_pitch']
+    if (current['about']['inning'], current['about']['halfInning']) != (7, 'top'):
+        raise ValueError('selected half changed')
+    if (change['count']['balls'], change['count']['strikes'], change['count']['outs']) != (0, 0, 0):
+        raise ValueError('pitching-change count is not clean inning start')
+    if (change['details']['homeScore'], change['details']['awayScore']) != (state['home_score'], state['away_score']):
+        raise ValueError('pitching-change score differs from first-pitch state')
+    previous = by_index[47]
+    if (previous['about']['inning'], previous['about']['halfInning'], previous['count']['outs']) != (6, 'bottom', 3):
+        raise ValueError('previous half did not end with third out')
+    if (previous['result']['homeScore'], previous['result']['awayScore']) != (state['home_score'], state['away_score']):
+        raise ValueError('previous final score differs from anchor')
+    if state['bases'] != 0 or state['outs'] != 0:
+        raise ValueError('new half base/out state not independently consistent')
+
+    slots: list[dict | None] = [None] * 9
+    completed_batter_pas = 0
+    excluded = []
+    source_indices = []
+    source_times = []
+    stand_evidence: dict[int, list[dict]] = {}
+    for i in range(48):
+        play = by_index[i]
+        if not play['about'].get('isComplete'):
+            raise ValueError('earlier play incomplete')
+        end_time = datetime.fromisoformat(play['about']['endTime'].replace('Z', '+00:00'))
+        if not end_time <= anchor_time:
+            raise ValueError('future cutoff: earlier play ends after anchor')
+        source_indices.append(i)
+        source_times.append(play['about']['endTime'])
+        for event in play.get('playEvents', []):
+            kind = event.get('details', {}).get('eventType')
+            relevant = (kind == 'offensive_substitution' and play['about']['halfInning'] == 'top' or
+                        kind == 'defensive_substitution' and play['about']['halfInning'] == 'bottom')
+            if not relevant:
+                continue
+            order = str(event.get('battingOrder', ''))
+            if not re.fullmatch(r'[1-9]\d{2}', order):
+                raise ValueError('prior substitution slot missing')
+            slot = int(order[0]) - 1
+            replaced = event.get('replacedPlayer', {}).get('id')
+            new_id = event.get('player', {}).get('id')
+            if slots[slot] is None or slots[slot]['batter_id'] != replaced or new_id is None:
+                raise ValueError('prior substitution identity mismatch')
+            slots[slot] = {'slot': slot + 1, 'batter_id': int(new_id), 'source_at_bat_index': i}
+        if play['about']['halfInning'] != 'top':
+            continue
+        event_type = str(play.get('result', {}).get('eventType') or '')
+        if event_type.startswith(('caught_stealing', 'pickoff')):
+            excluded.append({'at_bat_index': i, 'event_type': event_type})
+            continue
+        if not event_type:
+            raise ValueError('earlier batter PA terminal event unknown')
+        slot = completed_batter_pas % 9
+        batter_id = int(play['matchup']['batter']['id'])
+        stand = play['matchup'].get('batSide', {}).get('code')
+        if slots[slot] is None:
+            slots[slot] = {'slot': slot + 1, 'batter_id': batter_id, 'source_at_bat_index': i}
+        elif slots[slot]['batter_id'] != batter_id:
+            raise ValueError('unverified batting order change')
+        if int(play['matchup']['pitcher']['id']) == decision['keep_pitcher_id']:
+            stand_evidence.setdefault(batter_id, []).append({'at_bat_index': i,
+                                                               'play_end_time': play['about']['endTime'],
+                                                               'observed_stand': stand,
+                                                               'pitcher_id': decision['keep_pitcher_id']})
+        completed_batter_pas += 1
+    next_slot = completed_batter_pas % 9
+    missing = []
+    for slot in slots:
+        if slot is None:
+            missing.append('announced_batting_slot_unobserved')
+            continue
+        evidence = stand_evidence.get(slot['batter_id'], [])
+        stands = {e['observed_stand'] for e in evidence}
+        if not evidence or stands - {'L', 'R'} or len(stands) != 1:
+            missing.append(f"stand_vs_keep_unverified_slot_{slot['slot']}")
+            slot['stand_vs_keep'] = None
+            slot['stand_evidence'] = evidence
+        else:
+            slot['stand_vs_keep'] = next(iter(stands))
+            slot['stand_evidence'] = evidence
+    # Cutoff #1: every lineup/stance source index is before this PA.
+    if any(i >= 48 for i in source_indices) or any(e['at_bat_index'] >= 48 for slot in slots if slot
+                                                for e in slot.get('stand_evidence', [])):
+        raise ValueError('future cutoff: source play index reaches current PA')
+    # Cutoff #2: every source end time is at or before event start; current actions inspected below are no later.
+    if any(datetime.fromisoformat(t.replace('Z', '+00:00')) > anchor_time for t in source_times):
+        raise ValueError('future cutoff: source timestamp exceeds anchor')
+    if slots[next_slot] is None:
+        missing.append('next_batter_slot_unverified')
+    audit = []
+    for event in actions[1:]:
+        if event.get('details', {}).get('eventType') != 'offensive_substitution':
+            continue
+        audit.append({'event_index': event.get('index'), 'event_type': 'offensive_substitution',
+                      'start_time': event.get('startTime'), 'player_id': event.get('player', {}).get('id'),
+                      'replaced_player_id': event.get('replacedPlayer', {}).get('id'),
+                      'excluded_from_anchor_features': True})
+    return {
+        'schema_version': 1, 'game_pk': 777063, 'decision_first_observed_pitch_id': decision['decision_first_observed_pitch_id'],
+        'anchor': 'immediately_before_logged_pitching_substitution_action',
+        'anchor_action_index': 0, 'anchor_action_start_time_utc': change['startTime'],
+        'anchor_source_exposure': 'retrospective_historical_feed_not_live_publication_snapshot',
+        'keep_pitcher_id': decision['keep_pitcher_id'],
+        'state_as_of_anchor': {'inning': 7, 'half': 'Top', 'outs': 0, 'bases': 0,
+                               'home_score': state['home_score'], 'away_score': state['away_score'],
+                               'balls': 0, 'strikes': 0},
+        'lineup_as_of': None if missing else {'ordered_slots': slots, 'next_slot_one_based': next_slot + 1,
+                                             'next_batter_id': slots[next_slot]['batter_id'],
+                                             'next_batter_stand_vs_keep': slots[next_slot]['stand_vs_keep']},
+        'lineup_missing_reasons': missing, 'completed_predecision_batter_pa_count': completed_batter_pas,
+        'excluded_non_pa_plays': excluded,
+        'excluded_after_anchor_audit_events': audit,
+        'source_play_index_max': max(source_indices), 'source_play_end_time_max': max(source_times),
+        'cutoff_index_verified': True, 'cutoff_timestamp_verified': True,
+        'scenario_assumption': 'Opponent announced lineup held fixed after decision, conditional keep only',
+        'actual_manager_availability': None, 'eligible_replacements': None, 'policy_value': None,
+    }
+
+
+def collect_decision_anchor(cfg: dict, folder: Path) -> None:
+    packet_path = folder / 'replacement_packets.json'
+    d = next(x for x in json.loads(packet_path.read_text())['decisions'] if x['game_pk'] == 777063)
+    url = f'{API}/game/777063/playByPlay'
+    key = hashlib.sha256(url.encode()).hexdigest()[:20]
+    raw = folder / 'raw_lineup' / f'{key}.json'
+    meta = folder / 'raw_lineup' / f'{key}.meta.json'
+    record = json.loads(meta.read_text())
+    if record['url'] != url or record['sha256'] != sha(raw):
+        raise ValueError('cached play-by-play source identity mismatch')
+    anchor = decision_anchor_777063(json.loads(raw.read_text())['allPlays'], d)
+    anchor.update({'source_url': url, 'source_sha256': sha(raw),
+                   'original_packet_sha256': sha(packet_path),
+                   'protocol_commit': 'db8a6a0'})
+    output = folder / 'decision_anchor_777063.json'
+    write_new(output, anchor)
+    summary = {'experiment_id': cfg['experiment_id'], 'output_path': str(output),
+               'output_sha256': sha(output), 'script_sha256': sha(Path(__file__)),
+               'source_sha256': sha(raw), 'original_packet_sha256': sha(packet_path),
+               'protocol_commit': 'db8a6a0', 'lineup_ready': anchor['lineup_as_of'] is not None,
+               'new_raw_fetch_count': 0, 'eligible_replacements': None, 'policy_value': None}
+    write_new(folder / 'decision_anchor_777063_manifest.json', summary)
+    write_new(ROOT / 'results/EXP-C-ROSTER-001/decision_anchor_777063_manifest.json', summary)
+    print(json.dumps(summary, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('phase', choices=['prepare', 'collect', 'lineup-supplement', 'lineup-supplement-v2'])
+    parser.add_argument('phase', choices=['prepare', 'collect', 'lineup-supplement', 'lineup-supplement-v2', 'decision-anchor-777063'])
     args = parser.parse_args()
     cfg = json.loads(CONFIG.read_text())
     frame, events, games, sm_path, parquet, a_path = load_inputs(cfg)
@@ -505,6 +670,9 @@ def main():
         return
     if args.phase == 'lineup-supplement-v2':
         collect_lineup_supplement_v2(cfg, folder)
+        return
+    if args.phase == 'decision-anchor-777063':
+        collect_decision_anchor(cfg, folder)
         return
     result = collect(cfg, frozen['selection'], folder)
     output = folder / 'replacement_packets.json'

@@ -144,3 +144,47 @@ def test_lineup_v2_handles_non_pa_and_current_prepitch_substitution():
                                       'details': {'eventType': 'offensive_substitution'}})
     assert module.reconstruct_predecision_lineup_v2(changed, decision)['missing_reason'] == \
            'current_pa_pre_first_pitch_nonpitching_substitution'
+
+
+def test_777063_anchor_precedes_pitching_change_and_excludes_later_pinch_hitter():
+    folder = Path(json.loads(module.CONFIG.read_text())['output_dir'])
+    report = json.loads((ROOT / 'results/EXP-C-ROSTER-001/decision_anchor_777063_manifest.json').read_text())
+    path = folder / 'decision_anchor_777063.json'
+    assert module.sha(path) == report['output_sha256']
+    anchor = json.loads(path.read_text())
+    assert anchor['lineup_missing_reasons'] == []
+    assert anchor['anchor_action_index'] == 0
+    assert anchor['keep_pitcher_id'] == 554430
+    assert anchor['state_as_of_anchor'] == {'inning': 7, 'half': 'Top', 'outs': 0, 'bases': 0,
+                                           'home_score': 2, 'away_score': 2, 'balls': 0, 'strikes': 0}
+    lineup = anchor['lineup_as_of']
+    assert lineup['next_slot_one_based'] == 7
+    assert lineup['next_batter_id'] == 691785  # Marcelo Mayer before the pitcher decision
+    assert lineup['next_batter_stand_vs_keep'] == 'L'
+    assert len(lineup['ordered_slots']) == 9
+    assert all(slot['stand_evidence'] and slot['stand_vs_keep'] in ('L', 'R')
+               for slot in lineup['ordered_slots'])
+    assert all(e['at_bat_index'] < 48 and e['pitcher_id'] == 554430
+               for slot in lineup['ordered_slots'] for e in slot['stand_evidence'])
+    assert anchor['source_play_index_max'] == 47
+    assert anchor['source_play_end_time_max'] < anchor['anchor_action_start_time_utc']
+    assert anchor['excluded_non_pa_plays'] == [{'at_bat_index': 25, 'event_type': 'caught_stealing_2b'}]
+    assert anchor['excluded_after_anchor_audit_events'] == [{
+        'event_index': 1, 'event_type': 'offensive_substitution',
+        'start_time': '2025-07-22T00:22:07.083Z', 'player_id': 663853,
+        'replaced_player_id': 691785, 'excluded_from_anchor_features': True,
+    }]
+    assert anchor['eligible_replacements'] is None and anchor['policy_value'] is None
+
+
+def test_anchor_rejects_prior_play_with_future_timestamp():
+    folder = Path(json.loads(module.CONFIG.read_text())['output_dir'])
+    url = 'https://statsapi.mlb.com/api/v1/game/777063/playByPlay'
+    key = hashlib.sha256(url.encode()).hexdigest()[:20]
+    plays = json.loads((folder / 'raw_lineup' / f'{key}.json').read_text())['allPlays']
+    decision = next(x for x in json.loads((folder / 'replacement_packets.json').read_text())['decisions']
+                    if x['game_pk'] == 777063)
+    shifted = copy.deepcopy(plays)
+    shifted[47]['about']['endTime'] = '2025-07-22T00:21:00.000Z'
+    with pytest.raises(ValueError, match='future cutoff'):
+        module.decision_anchor_777063(shifted, decision)
