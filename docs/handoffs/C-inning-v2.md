@@ -12,6 +12,10 @@ The roster screen in `results/EXP-C-INNING-001/roster_packet_screen.json` uses t
 
 `scripts/c_inning_source_audit.py` joins the three immutable inputs by all six fixed game and decision pitch IDs, verifies their SHA-256 hashes, and writes `results/EXP-C-INNING-001/source_admissibility_audit.json` by exclusive create. The audit records five verified prior batting orders, one supported keep pitcher, **zero games in their intersection**, and zero verified actually eligible substitutes. For `777063` it uses the stable reason `invalid_for_replacement_current_batter_after_pitcher_decision`; the earlier `[0,1]` numeric screen is preserved unchanged and excluded from actual replacement interpretation. The independent two-out demo is unaffected. The later structured pinch hitter is a source-admissibility finding, not an input to the earlier probability calculation.
 
+After that audit, the roster agent supplied a distinct anchor immediately **before** the logged pitching-change action in `777063`. All nine batting slots and their stances against Wheeler are supported by earlier completed PAs ending before `2025-07-22T00:20:56.827Z`; the later Gonzalez-for-Mayer pinch hitter is excluded. Commit `fc0b980` froze `EXP-C-INNING-001-ANCHOR.json` and the source checks before the conditional value run. Official game date `2025-07-21` comes from the hashed roster packet, not the UTC anchor date. The scenario holds the pre-change lineup and Wheeler fixed through the current half-inning. Frozen player profiles were available for seven hitters; Mayer (`691785`) and `701350` used the bundle's explicit zero-reliability default profile dated 2023-01-01.
+
+`results/EXP-C-INNING-001/conditional_keep_777063.json` reports the initial home defender's frozen final-game WE interval **[0.5210473532, 0.5346788630]**. The deterministic propagation absorbed `.9863684902` probability mass and left `.0136315098` unresolved: `.0133452685` below the preregistered `.001` state-mass call threshold and `.0002862413` beyond the nine-PA horizon cap. It used 85 of 128 allowed model calls and had mass error `−2.22e−16`. This is a conditional keep-pitcher model bound, not a confidence interval, measured bullpen substitution value, or policy gain. Candidate eligibility remains unknown, so replacement `value_pp` is null. The first-observed-pitch roster screen stays inadmissible for the decision; the two runs use different source cutoffs and are not combined.
+
 `tests/test_c_inning_eval.py` covers exact fixed-policy terminal extraction, half-end absorption, partial mass bounds, missing lineup, walkoff, extra-inning abstention, prior-date profile/order checks, and same-evaluator comparison gating. Run with `/Users/song/Projects/pitcheezy/.venv-observer-standalone/bin/python -m pytest tests/test_c_inning_eval.py -q`.
 
 Reproducibility identifiers (SHA-256):
@@ -24,13 +28,16 @@ Reproducibility identifiers (SHA-256):
 | Lineup supplement v2 | `70ec1a13869b7a73f6a2dc6eb97fc5b813c2a03e0300f3b67205018ad6cd4605` |
 | Main config | `50f54b3b1d98318a36061d694cb52bc8270a4ca7ec89dff36f802fa3c024d579` |
 | Two-out amendment config | `f4e83e39dbb599f7fed51393792b9fbc1be24b54cc739fb6d66d554ad7fac333` |
-| Final evaluator script | `d08323c9fc1127aacb5093192ffcb872a480241411f811262d873509e177c700` |
+| Current evaluator script | `512c1e3773210402f35f92a57e5dbe4e11b41d3f831635f271b71698a2f35bde` |
+| Conditional anchor source | `e2a64575286160c6a30591a2a59b213b467393323a8884b0a802fb184611ac3c` |
+| Conditional anchor config | `350acee28edbe021e61d8f1577c980a803ee4829e19d70b7cad99c65ad798e5c` |
 | Source audit script | `42b298184267375cc1b152e3e0890dd853b84aa0b2ad73fcde26d7d472b0d219` |
 | C0 result | `98abe4ef0d856e26530c2f3d7832fc9ad9dc3623dacd03a0977c6af3083ca022` |
 | Roster screen result | `e33ba90e5b10c2641d9dc41f85ff4b7c17590fcd0a2f12feab204608597b2ecb` |
 | Two-out result | `f1ed2f18f10eac0024f44c7cf197e5c8890d359410d1ea119ba482917d6831ca` |
 | Source audit result | `2da9176df04fa6c8aa4c1f0c1bae477e0c31b0c85e7919652bbafbe911643910` |
+| Conditional keep result | `8c2d700508fd98c41bba04d94f09114f5f60e627259ab63f976a7147c4af56b2` |
 
-Each CLI result writer uses exclusive create and refuses an existing output path. New hypotheses require a new amendment and output name. The measured test run was 9 focused tests; the real outputs each used one frozen model call where supported. Wall-clock times are not a performance claim because they include local bundle loading and filesystem cache effects.
+Each CLI result writer uses exclusive create and refuses an existing output path. New hypotheses require a new amendment and output name. The measured test run was 9 focused tests. The original real-state screens each used one frozen model call where supported; the conditional pre-change scenario used 85. Wall-clock times are not a performance claim because they include local bundle loading and filesystem cache effects.
 
 The checked-in source files for the frozen service, PA solver, game transition/WE, legality conditioning, and frequency baseline exactly match their five entries in the bundle's `source_hashes.json`. This source check used the current worktree at finalization. The six decision records are games, the one supported keep result is one first PA/model call, and its nine terminal probabilities sum to one; none of these counts is a number of validated substitutions.

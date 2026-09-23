@@ -1,0 +1,92 @@
+{
+  "status": "bounded",
+  "reason": "unresolved_horizon_mass",
+  "horizon": "inning_end",
+  "initial_defender": "home",
+  "evaluation_identity": {
+    "provider_identity": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+    "initial_state_and_count": {
+      "date": "2025-07-21",
+      "inning": 7,
+      "topbot": "Top",
+      "outs": 0,
+      "bases": 0,
+      "home_score": 2,
+      "away_score": 2,
+      "balls": 0,
+      "strikes": 0
+    },
+    "lineup_sha256": "6746024bf2b3c5fd8f0fe2b788ea26ed071e7946e421c5e10d70936473d412fe",
+    "evaluation_config_sha256": "2fb6aa0bcfa3b428afaf8b6860beefa79383b8f757f776e0302ee324621abb4e",
+    "policy_id": "frozen_train_repertoire_frequency_v1",
+    "horizon": "inning_end",
+    "initial_defender": "home"
+  },
+  "pitcher_id": 554430,
+  "value": null,
+  "value_interval": [
+    0.5210473531762911,
+    0.5346788629874398
+  ],
+  "absorbed_mass": 0.9863684901888511,
+  "unresolved_mass": 0.013631509811148742,
+  "unresolved_reasons": {
+    "minimum_state_mass": 0.013345268513175145,
+    "maximum_pas": 0.00028624129797359676
+  },
+  "mass_error": -2.220446049250313e-16,
+  "processed_pas": 85,
+  "model_calls": 85,
+  "lineup_slots_provided": 9,
+  "amendment_id": "EXP-C-INNING-001-ANCHOR",
+  "game_pk": 777063,
+  "case_kind": "conditional_fixed_prechange_lineup_keep_pitcher",
+  "decision_anchor": "immediately_before_logged_pitching_substitution_action",
+  "source_anchor_sha256": "e2a64575286160c6a30591a2a59b213b467393323a8884b0a802fb184611ac3c",
+  "source_roster_sha256": "a327f1fecd7c9b97e4e2575328497520e373f9bcc325b28b341ae17303360371",
+  "model_bundle_manifest_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+  "first_pa_terminal_distribution": {
+    "walk": 0.0844795275073698,
+    "strikeout": 0.2916048103116444,
+    "out": 0.41670309704465586,
+    "single": 0.12630679184519564,
+    "double": 0.03899029584076982,
+    "triple": 0.004326560472421231,
+    "home_run": 0.02692306647833431,
+    "hbp": 0.010665850499609025,
+    "double_play": 0.0
+  },
+  "lineup_batter_ids": [
+    691785,
+    665966,
+    647351,
+    680776,
+    608324,
+    701350,
+    596115,
+    677800,
+    678882
+  ],
+  "lineup_profile_sources": [
+    "frozen_default_zero_reliability",
+    "frozen_batter_snapshot",
+    "frozen_batter_snapshot",
+    "frozen_batter_snapshot",
+    "frozen_batter_snapshot",
+    "frozen_default_zero_reliability",
+    "frozen_batter_snapshot",
+    "frozen_batter_snapshot",
+    "frozen_batter_snapshot"
+  ],
+  "default_profile_batter_ids": [
+    691785,
+    701350
+  ],
+  "scenario_assumption": "pre_pitching_change_order_and_stances_vs_keep; no_future_substitutions_within_horizon",
+  "actual_replacement": {
+    "status": "unavailable",
+    "horizon": "inning_end",
+    "value_pp": null,
+    "reason": "actual_eligible_substitutes_unverified"
+  }
+}
