@@ -21,7 +21,7 @@
 - 평가 고정 config `configs/EXP-B-PAHISTORY-001.json`, 코드 `scripts/b_pa_history_eval.py`는 점수 계산 전에 `1113e60`으로 커밋했다. 수치·지원 분모·코드/config/A 부모 hash는 `results/EXP-B-PAHISTORY-001/results.json`.
 - SSD `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/B-PAHISTORY-001/`: `predictions.npz`에는 `pitch_keys`, `game_pk`, `y`, `count_only`, `count_plus_prior_family`, `previous_family`; `results.json` 복사본. A의 `predictions.npz`와 동일 키/라벨/대조군 확률을 검증했다. A 결과를 덮어쓰지 않았다.
 - `scripts/b_archive_fit.py`는 점수 후 동일 고정 설정으로 작은 두 count table을 결정적 재적합해 `fitted_count_tables.pkl`에 저장했다. 복원한 두 모델의 DEV 확률은 이미 저장된 `predictions.npz`와 배열 단위 정확히 일치한다. 해시와 범위는 `results/EXP-B-PAHISTORY-001/checkpoint_manifest.json`; 이 별도 보관 단계에서 새 점수나 튜닝을 만들지 않았다.
-- `PYTHONPATH=.:apps/observer/backend .venv-observer-standalone/bin/python -m pytest tests/test_b_recommendation.py -q`: 4 passed. 별도 standalone 실모델 smoke도 ready/39 후보/확률합/공개 추천 일치를 확인했다.
+- `PYTHONPATH=.:apps/observer/backend .venv-observer-standalone/bin/python -m pytest tests/test_b_recommendation.py -q`: 5 passed. 합성 실행 분포 입출력 검사도 포함한다. 별도 standalone 실모델 smoke도 ready/39 후보/확률합/공개 추천 일치를 확인했다.
 
 실험 실행시간·RSS는 당시 계측하지 않아 미측정이다. 결과 파일의 script/config SHA256은 점수 시 사용 파일과 일치한다.
 
