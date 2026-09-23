@@ -1,4 +1,6 @@
 """Checks the real frozen decision boundary and the future-date guard."""
+import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -109,3 +111,36 @@ def test_lineup_supplement_uses_frozen_decisions_and_abstains_on_ambiguous_order
             assert lineup['ordered_slots'][lineup['next_slot_one_based'] - 1]['batter_id'] == lineup['current_batter_id']
         else:
             assert entry['missing_reason']
+
+
+def test_lineup_v2_handles_non_pa_and_current_prepitch_substitution():
+    folder = Path(json.loads(module.CONFIG.read_text())['output_dir'])
+    manifest = json.loads((ROOT / 'results/EXP-C-ROSTER-001/lineup_supplement_v2_manifest.json').read_text())
+    path = folder / 'lineup_supplement_v2.json'
+    assert module.sha(path) == manifest['output_sha256']
+    packet = json.loads(path.read_text())
+    by_game = {x['game_pk']: x for x in packet['lineups']}
+    assert {g for g, x in by_game.items() if x['lineup_as_of']} == {777094, 777126, 777143, 777217, 777227}
+    assert by_game[777063]['missing_reason'] == 'current_pa_pre_first_pitch_nonpitching_substitution'
+    assert by_game[777063]['current_pa_pre_first_pitch_action_types'] == ['offensive_substitution']
+    assert by_game[777217]['excluded_non_pa_plays'] == [{'at_bat_index': 28, 'event_type': 'caught_stealing_2b'}]
+    assert by_game[777126]['applied_predecision_substitutions'][0]['slot'] == 4
+    assert any(len(s['observed_stands']) == 2 for s in by_game[777227]['lineup_as_of']['ordered_slots'])
+    assert all(s['stand_for_substitute'] is None for x in by_game.values() if x['lineup_as_of']
+               for s in x['lineup_as_of']['ordered_slots'])
+
+    def cached_feed(game):
+        url = f'https://statsapi.mlb.com/api/v1/game/{game}/playByPlay'
+        key = hashlib.sha256(url.encode()).hexdigest()[:20]
+        return json.loads((folder / 'raw_lineup' / f'{key}.json').read_text())['allPlays']
+
+    decision = next(x for x in json.loads((folder / 'replacement_packets.json').read_text())['decisions']
+                    if x['game_pk'] == 777094)
+    plays = cached_feed(777094)
+    assert module.reconstruct_predecision_lineup_v2(plays, decision)['lineup_as_of'] is not None
+    changed = copy.deepcopy(plays)
+    current = changed[int(decision['decision_first_observed_pitch_id'].split(':')[1]) - 1]
+    current['playEvents'].insert(0, {'isSubstitution': True,
+                                      'details': {'eventType': 'offensive_substitution'}})
+    assert module.reconstruct_predecision_lineup_v2(changed, decision)['missing_reason'] == \
+           'current_pa_pre_first_pitch_nonpitching_substitution'
