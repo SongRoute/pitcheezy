@@ -1,5 +1,7 @@
 # B002 TRAIN 선택과 조건부 DEV 실행
 
+후속 C→D 결과 계약/변환/소비는 [C→D 인수인계](C-D-inning-v1.md)에서 완료했다. 아래 B002 실험 기록과 미채택 판정은 그대로다.
+
 2026-09-23. 사용자의 ‘다음으로’ 지시에 따라 `901d3ed`에서 시작한다. 설계는 `d75fe92`의 `configs/EXP-B-PAHISTORY-002.json` 및 `docs/contracts/B-next-experiment-v2.md`를 그대로 따른다. 기존 config의 `frozen_not_run`은 설계 당시 상태이며 실제 실행 상태는 이 문서와 별도 결과에 기록한다.
 
 ## 실행 순서와 판정

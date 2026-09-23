@@ -18,4 +18,28 @@ D의 기본 문구는 ‘조건부 이닝 전망’, ‘초기 수비팀 관점�
 
 루트는 Astra 역할로 가치/시점/연결 계약과 핵심 diff를 검토한다(정확한 런타임 모델 ID 미노출). `c_result_contract`, `d_result_consumer`에 각각 `gpt-6-sol/medium`을 명시해 분리된 파일 범위를 위임했다. 전체 대화 상속·재귀 위임 없음. 토큰/비용은 미노출이며 추정하지 않는다.
 
-실제 변환 결과·검증·재현 명령·최종 상태는 완료 후 아래에 기록한다.
+## 실제 전달 결과와 검증
+
+변환/소비 구현 기준 커밋 **`8979588`**(계약의 identity/시각 세부 규칙 포함). `results/C-D-INNING-001/`에 실제 변환 `bounded.json`, 개발 전용 `development_unavailable.json`, 출처/합성 여부 manifest, D가 실제 생성한 `presentation_examples.json`, 실행 hash/검사 기록 `execution_audit.json`을 저장했다. 같은 파일과 검사 로그는 SSD `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-INNING-001/`에 보존했다.
+
+실제 D 소비 결과는 **52.10%–53.47%**, 미해결 확률 **1.36%**, 기본 프로필 **2명**, ‘현 투수 유지 + 당시 타순 유지’, ‘실제 교체 효과 미측정’이다. unavailable 예제는 숫자가 전부 null이고 ‘계산 결과 없음 · 평가 결과가 없습니다’로 변환된다. 원래 평가 결과와 anchor의 hash를 대조했고 기존 결과는 변경하지 않았다. 새 모델 호출·학습·자료 수집은 모두 0회다.
+
+최종 **Python 관련 검사 80개 통과(0.91초)**: 새 변환/계약 49개와 기존 PA 사건/이닝 평가 검사를 함께 확인했다. **D의 실제 exported fixture 소비 검사 및 TypeScript noEmit 검사 통과.** 검증은 파일→C 검증/변환→JSON→D 검증/한국어 표시 모델까지이며 브라우저 화면 연결 테스트를 수행했다고 하지 않는다. 화면/서버는 이번에 시작하지 않았다.
+
+핵심 거절 사례는 확률을 % 수치로 전달, 미해결 질량 불일치, 가짜 point/교체 가치, unavailable의 잔존 숫자, 다른 game/투수/초기 상태/타순, 교체 이후 근거, 상대 투수의 타격 자세 오용, 기본 프로필 불일치, 잘못된 날짜·수비 관점·평가 버전이다. 초/말은 기존 모형의 Top/Bot 규약을 보존하며 공식 경기 날짜와 UTC 이벤트 날짜를 강제로 같게 하지 않는다.
+
+재현 명령(프로젝트 루트):
+
+```sh
+# 변환은 아직 없는 출력 폴더를 지정한다. 기존 파일은 덮어쓰지 않는다.
+.venv-observer-standalone/bin/python scripts/export_inning_result.py --anchor '/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/decision_anchor_777063.json' --output-dir /tmp/pitcheezy-inning-result-reproduction
+PYTHONPATH=.:apps/observer/backend .venv-observer-standalone/bin/python -m pytest apps/observer/backend/tests/test_inning_result.py apps/observer/backend/tests/test_event_analysis.py tests/test_c_inning_eval.py -q
+node apps/observer/web/tests/inning-result-contract.mjs results/C-D-INNING-001
+apps/observer/web/node_modules/.bin/tsc --noEmit -p apps/observer/web/tsconfig.json
+```
+
+## D 시작 가능 범위와 다음 한 가지
+
+**D는 이 계약·실제 JSON 예제·표시 함수를 사용한 별도 이닝 카드 연결 개발을 시작할 수 있다.** 새 C 결과 형식을 기다릴 필요는 없다. 다만 기존 세션의 PA 완료 이벤트에 자동으로 붙일 수 있는 결과는 아니다. 다음 한 가지는 **교체 이벤트 직전 상태를 식별하는 저장/API 연결을 구현하는 것**이며, 연결 검증 후 별도 카드에 전달한다. 실제 교체 후보 가용성 검증과 교체 우위 계산은 계속 미완료다. B002 미채택, 동결 서비스 유지, CV 인수 대기는 그대로다.
+
+두 Sol 구현 작업은 완료했고 실행 중인 작업용 서버/계산 프로세스는 없다. 루트가 확률 단위·결정 전 정보 경계·Python/TypeScript 규약 일치·실제 예제 소비·원문 보존을 검토했다. API나 운영 화면 연결 완료를 뜻하지 않는다.

@@ -1,0 +1,51 @@
+{
+  "artifact_id": "C-D-INNING-001",
+  "schema_version": "inning-result-v1",
+  "code_commit": "8979588e2b6497841708b6f1cb60308202954bfb",
+  "recorded_at": "2026-09-23T07:53:31.971666+00:00",
+  "source_result_path": "/Users/song/Projects/pitcheezy/results/EXP-C-INNING-001/conditional_keep_777063.json",
+  "anchor_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/decision_anchor_777063.json",
+  "source_sha256": {
+    "/Users/song/Projects/pitcheezy/results/EXP-C-INNING-001/conditional_keep_777063.json": "8c2d700508fd98c41bba04d94f09114f5f60e627259ab63f976a7147c4af56b2",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/decision_anchor_777063.json": "e2a64575286160c6a30591a2a59b213b467393323a8884b0a802fb184611ac3c"
+  },
+  "code_sha256": {
+    "docs/contracts/inning-result-v1.md": "939a0012a80d27bf8a54a9236aa8ec0c90a1bbfda1ccb4a36ad2204372ade40a",
+    "scripts/export_inning_result.py": "d350a45386e5bb57803386e7dc5407bc6a2813d4d1279f955c57d8ee00698fc4",
+    "apps/observer/backend/observer_app/inning_result.py": "c2c667c4dc300bfee4eca1484d82b3aee200e0b7527a30efbf0cf439e4381228",
+    "apps/observer/web/src/inningResult.ts": "6c5ce73cd557659a1782eb40313606082a61bc9938aef0ada79d1864c2aaff94"
+  },
+  "outputs_sha256": {
+    "presentation_examples.json": "9301cb4d82162a8352a43cb18afa43f264fc4951bc26a5d354bcb8a74bba657d",
+    "development_unavailable.json": "647e45db977b4bbb279b85265395e8967efe5358c3b40b9f449b5de86d9ad6fc",
+    "bounded.json": "9a9b869b8935c70bfb61b423b242b351b605dcd173815e9bbef45d022fc01ab6",
+    "manifest.json": "27299d2e0db65faaa2b134cfb3241aca6998894ec976c1b4cc44aceaedeafb81"
+  },
+  "checks": {
+    "python_tests": {
+      "passed": 80,
+      "seconds": 0.91
+    },
+    "d_fixture_contract": "passed actual bounded + development unavailable + negative cases",
+    "typescript": "passed noEmit",
+    "logs_sha256": {
+      "pytest.log": "b2febcff802873089b24a5caa622e91b4942ec172378e1e9f940df3caf69246b",
+      "d-contract.log": "20b14a2b66ce33c05967f20943b004e68fc4895561f382230f654be70cdcc8e5",
+      "tsc.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "original_result_unchanged": true
+  },
+  "new_model_calls": 0,
+  "new_training_runs": 0,
+  "new_data_fetches": 0,
+  "cv": "excluded",
+  "actual_replacement_value": null,
+  "session_api_or_ui_connected": false,
+  "roles": {
+    "root": "Astra role; exact runtime model ID not exposed",
+    "c_result_contract": "gpt-6-sol medium",
+    "d_result_consumer": "gpt-6-sol medium"
+  },
+  "tokens": null,
+  "cost": null
+}
