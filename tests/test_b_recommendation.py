@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT/'apps/observer/backend'), str(ROOT/'scripts')]
 from scripts.b_pa_history_eval import add_prior
 from observer_app.recommender import Recommender
+from observer_app.recommendation_adapter import ObservedDeliveryKernel
 
 
 @pytest.fixture(scope='module')
@@ -78,3 +79,14 @@ def test_previous_family_never_crosses_pa_boundary():
                           'pitch_number': [2, 1, 1, 1], 'pitch_type': ['CH', 'FF', 'SL', 'SI']})
     out = add_prior(frame, cfg)
     assert out.previous_family.tolist() == ['NONE', 'NONE', 'NONE', 'fastball']
+
+
+def test_execution_distribution_interface_on_synthetic_draws():
+    draws = np.array([[[0., 0.], [1., 0.], [2., 0.]]])
+    targets = np.array([[0., 0.], [2., 0.]])
+    weights, ess, mass = ObservedDeliveryKernel().weights(draws, targets, sigma=.45)
+    assert weights.shape == (1, 3, 2) and ess.shape == mass.shape == (1, 2)
+    np.testing.assert_allclose(weights.sum(axis=1), 1)
+    assert weights[0, 0, 0] > weights[0, 1, 0] > weights[0, 2, 0]
+    assert weights[0, 2, 1] > weights[0, 1, 1] > weights[0, 0, 1]
+    assert np.all(ess >= 1) and np.all(mass > 0)
