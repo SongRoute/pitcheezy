@@ -66,7 +66,10 @@ def select_decisions(frame: pd.DataFrame, events: dict, games: list[int]) -> lis
             r = by_id.get(pid)
             if r is None:
                 raise ValueError(f'A substitution key absent: {pid}')
-            if int(r.pitch_number) == 1 and int(r.outs_when_up) == 0 and int(r.inning) <= 8:
+            first_half_pa = int(rows.loc[rows.inning.eq(r.inning) & rows.inning_topbot.eq(r.inning_topbot),
+                                          'at_bat_number'].min())
+            if (int(r.pitch_number) == 1 and int(r.outs_when_up) == 0 and int(r.inning) <= 8
+                    and int(r.at_bat_number) == first_half_pa):
                 eligible.append((int(r.at_bat_number), pid, sub, r))
         if not eligible:
             out.append({'game_pk': game, 'status': 'missing',
@@ -180,6 +183,8 @@ def prior_games(fetch: Fetcher, team_id: int, day: date, lookback: int) -> list[
                 raise ValueError('future/prior-season game crossed cutoff')
             if team_id not in [g['teams'][side]['team']['id'] for side in ('home', 'away')]:
                 raise ValueError('prior schedule team mismatch')
+            if g.get('status', {}).get('abstractGameState') != 'Final':
+                raise ValueError('prior schedule game is not reported Final')
             games.append((g['officialDate'], int(g['gamePk'])))
     return sorted(set(games))
 
@@ -267,13 +272,98 @@ def collect(cfg: dict, decisions: list[dict], folder: Path) -> dict:
         packet.append(item)
     return {'schema_version': 1, 'experiment_id': cfg['experiment_id'], 'decisions': packet,
             'raw_response_records': sorted(fetch.records.values(), key=lambda x: x['url']),
-            'future_cutoff_assertion': 'Only selected-game schedule identifiers and predecision Statcast rows; workload boxscores have official_date strictly before selected game date. Selected-game final boxscore/later appearances excluded.',
+            'future_cutoff_assertion': 'Only selected-game schedule identifiers and predecision Statcast rows; workload boxscores are reported Final with official_date strictly before selected game date. Selected-game final boxscore/later appearances excluded. Actual prior game completion time was not independently archived/verified.',
             'policy_value': None, 'actual_manager_availability': None}
+
+
+def reconstruct_predecision_lineup(plays: list[dict], decision: dict) -> dict:
+    """Require nine stable, previously observed batting slots; abstain on changes."""
+    at_bat = int(decision['decision_first_observed_pitch_id'].split(':')[1])
+    index = at_bat - 1
+    current = next((p for p in plays if p['about']['atBatIndex'] == index), None)
+    if current is None or int(current['matchup']['batter']['id']) != decision['state_at_first_observed_pitch']['current_batter_id']:
+        return {'lineup_as_of': None, 'missing_reason': 'play_by_play_current_pa_identity_mismatch'}
+    if int(current['matchup']['pitcher']['id']) != decision['observed_incoming_pitcher_id_audit_only']:
+        return {'lineup_as_of': None, 'missing_reason': 'play_by_play_current_pitcher_identity_mismatch'}
+    half = 'top' if decision['state_at_first_observed_pitch']['half'] == 'Top' else 'bottom'
+    if current['about']['halfInning'] != half:
+        return {'lineup_as_of': None, 'missing_reason': 'play_by_play_half_mismatch'}
+    prior = [p for p in plays if p['about']['atBatIndex'] < index]
+    if any(p['about']['atBatIndex'] != i for i, p in enumerate(prior)):
+        return {'lineup_as_of': None, 'missing_reason': 'play_by_play_noncontiguous_pa_index'}
+    batting = [p for p in prior if p['about']['halfInning'] == half]
+    offensive_actions = [e for p in prior for e in p.get('playEvents', [])
+                         if e.get('details', {}).get('eventType') in
+                         ('offensive_substitution', 'defensive_substitution', 'runner_placed_on_base')]
+    if offensive_actions:
+        return {'lineup_as_of': None, 'missing_reason': 'predecision_substitution_or_runner_action_requires_slot_verification',
+                'predecision_batting_pa_count': len(batting)}
+    if len(batting) < 9:
+        return {'lineup_as_of': None, 'missing_reason': 'fewer_than_nine_predecision_batting_pas',
+                'predecision_batting_pa_count': len(batting)}
+    slots: list[dict | None] = [None] * 9
+    for i, play in enumerate(batting):
+        batter_id = int(play['matchup']['batter']['id'])
+        stand = play['matchup'].get('batSide', {}).get('code')
+        slot = i % 9
+        if stand not in ('L', 'R'):
+            return {'lineup_as_of': None, 'missing_reason': 'batter_stance_unknown'}
+        if slots[slot] is None:
+            slots[slot] = {'slot': slot + 1, 'batter_id': batter_id, 'stand': stand}
+        elif slots[slot]['batter_id'] != batter_id or slots[slot]['stand'] != stand:
+            return {'lineup_as_of': None, 'missing_reason': 'batting_slot_or_stance_changed_before_decision'}
+    next_slot = len(batting) % 9
+    if slots[next_slot]['batter_id'] != int(current['matchup']['batter']['id']):
+        return {'lineup_as_of': None, 'missing_reason': 'current_batter_does_not_follow_reconstructed_order'}
+    return {'lineup_as_of': {'ordered_slots': slots,
+                            'next_slot_one_based': next_slot + 1,
+                            'current_batter_id': slots[next_slot]['batter_id'],
+                            'current_batter_stand': slots[next_slot]['stand'],
+                            'source': 'strictly_predecision_play_by_play_observed_batting_cycle',
+                            'historical_feed_retrieved_now': True},
+            'missing_reason': None, 'predecision_batting_pa_count': len(batting)}
+
+
+def collect_lineup_supplement(cfg: dict, frozen: dict, folder: Path) -> None:
+    existing = folder / 'replacement_packets.json'
+    original = json.loads(existing.read_text())
+    decisions = original['decisions']
+    fetch = Fetcher(folder / 'raw_lineup')
+    items = []
+    for d in decisions:
+        if d['status'] != 'selected':
+            items.append({'game_pk': d['game_pk'], 'lineup_as_of': None,
+                          'missing_reason': d['missing_reason']})
+            continue
+        url = f"{API}/game/{d['game_pk']}/playByPlay"
+        feed = fetch.get(url)
+        if feed is None:
+            reconstructed = {'lineup_as_of': None, 'missing_reason': 'play_by_play_fetch_failed'}
+        else:
+            reconstructed = reconstruct_predecision_lineup(feed['allPlays'], d)
+        items.append({'game_pk': d['game_pk'], 'decision_first_observed_pitch_id': d['decision_first_observed_pitch_id'],
+                      'source_url': url, **reconstructed})
+    supplement = {'schema_version': 1, 'experiment_id': cfg['experiment_id'],
+                  'selection_sha256': sha(ROOT / 'results/EXP-C-ROSTER-001/selection.json'),
+                  'original_packet_sha256': sha(existing),
+                  'exposure_rule': 'Finalized historical play-by-play feed retrieved now; parser uses only complete PAs with atBatIndex strictly before selected first-pitch PA and current-PA identity for verification. Raw feed contains later events, quarantined from reconstruction.',
+                  'lineups': items, 'raw_response_records': list(fetch.records.values()),
+                  'actual_manager_availability': None, 'policy_value': None}
+    output = folder / 'lineup_supplement.json'
+    write_new(output, supplement)
+    summary = {'experiment_id': cfg['experiment_id'], 'selection_sha256': supplement['selection_sha256'],
+               'original_packet_sha256': supplement['original_packet_sha256'],
+               'script_sha256': sha(Path(__file__)), 'output_path': str(output), 'output_sha256': sha(output),
+               'verified_lineup_count': sum(x['lineup_as_of'] is not None for x in items),
+               'raw_response_count': len(fetch.records), 'actual_manager_availability': None, 'policy_value': None}
+    write_new(folder / 'lineup_supplement_manifest.json', summary)
+    write_new(ROOT / 'results/EXP-C-ROSTER-001/lineup_supplement_manifest.json', summary)
+    print(json.dumps(summary, indent=2))
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('phase', choices=['prepare', 'collect'])
+    parser.add_argument('phase', choices=['prepare', 'collect', 'lineup-supplement'])
     args = parser.parse_args()
     cfg = json.loads(CONFIG.read_text())
     frame, events, games, sm_path, parquet, a_path = load_inputs(cfg)
@@ -292,6 +382,9 @@ def main():
         raise ValueError('selection input changed after freeze')
     if frozen['selection'] != select_decisions(frame, events, games):
         raise ValueError('frozen decision selection changed')
+    if args.phase == 'lineup-supplement':
+        collect_lineup_supplement(cfg, frozen, folder)
+        return
     result = collect(cfg, frozen['selection'], folder)
     output = folder / 'replacement_packets.json'
     write_new(output, result)
