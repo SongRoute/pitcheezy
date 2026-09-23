@@ -28,7 +28,7 @@
   },
   "interactions": {"status": "unallocated", "value_pp": null, "reason": "single ordered path does not identify order-dependent interaction"},
   "shares": {"basis": "sum_abs_assigned_components", "denominator_pp": 10.0, "stable": true},
-  "evidence": {"actual_source": "synthetic_contract_example", "intent_source": "synthetic_contract_example", "intent_is_proxy": true, "intent_review_status": "unreviewed", "intent_uncertainty": "unmeasured", "action_mapping": "synthetic compatible model actions", "references": [], "development_only": true, "use_for_performance_evaluation": false},
+  "evidence": {"actual_source": "synthetic_contract_example", "intent_source": "synthetic_contract_example", "intent_is_proxy": true, "intent_review_status": "unreviewed", "intent_uncertainty": "unmeasured", "plan_action": {"pitch_type": "FF", "zone_id": "middle_middle", "source": "synthetic_fixture"}, "execution_action": {"pitch_type": "FF", "zone_id": "high_middle", "source": "recorded_delivery"}, "references": [], "development_only": true, "use_for_performance_evaluation": false},
   "provenance": {"received_at": "2026-09-23T12:02:01Z", "generated_at": "2026-09-23T12:02:02Z", "correction_of_revision": null},
   "replacement": {"status": "unavailable", "horizon": "inning_end", "value_pp": null, "reason": "missing_contemporaneous_candidates_and_inning_evaluator"}
 }

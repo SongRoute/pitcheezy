@@ -27,8 +27,9 @@ def fixture(*, reference=.5, plan=.49, execution=.47, observed=.4, intent=INTENT
               for key, value in [('reference', reference), ('plan', plan),
                                  ('execution', execution), ('observed', observed)]}
     return dict(linkage=linkage, identity=IDENTITY, initial_defender='home', values=points,
-                evidence={'development_only': True, 'action_mapping': 'synthetic plan action',
-                          'actual_action_mapping': 'synthetic delivery action'},
+                evidence={'development_only': True,
+                          'plan_action': {'pitch_type': 'FF', 'zone_id': 'middle_middle', 'source': 'synthetic_fixture'},
+                          'execution_action': {'pitch_type': 'FF', 'zone_id': 'high_middle', 'source': 'recorded_delivery'}},
                 provenance={'received_at': '2026-09-23T12:02:01Z',
                             'generated_at': '2026-09-23T12:02:02Z'},
                 intent_estimate=intent, release_frame_time=8.,
@@ -78,7 +79,7 @@ def test_near_zero_denominator_has_null_shares():
                                 'denominator_pp': None, 'stable': False}
 
 
-@pytest.mark.parametrize('change', ['pitch', 'clip', 'late', 'wrong_model', 'wrong_defender', 'actual_as_intent', 'wrong_recommendation'])
+@pytest.mark.parametrize('change', ['pitch', 'clip', 'late', 'wrong_model', 'wrong_defender', 'actual_as_intent', 'wrong_recommendation', 'plan_from_actual_zone', 'plan_from_actual_type'])
 def test_wrong_linkage_frame_or_value_identity_rejected(change):
     args = fixture()
     if change == 'pitch':
@@ -93,6 +94,10 @@ def test_wrong_linkage_frame_or_value_identity_rejected(change):
         args['values']['observed']['initial_defender'] = 'away'
     elif change == 'actual_as_intent':
         args['evidence']['actual_is_intent'] = True
+    elif change == 'plan_from_actual_zone':
+        args['evidence']['plan_action']['zone_id'] = 'high_middle'
+    elif change == 'plan_from_actual_type':
+        args['evidence']['plan_action']['source'] = 'recorded_delivery'
     else:
         args['stored_recommendation']['baseline_value'] = .9
     with pytest.raises(ValueError):

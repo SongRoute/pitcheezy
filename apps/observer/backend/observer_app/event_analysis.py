@@ -145,20 +145,35 @@ def analyze_event(*, linkage, identity, initial_defender, values, evidence, prov
             raise ValueError('stored same-pitch recommendation identity mismatch')
     if not isinstance(evidence, Mapping) or not isinstance(provenance, Mapping):
         raise ValueError('evidence and provenance must be mappings')
+    if not evidence.get('development_only') and stored_recommendation is None:
+        raise ValueError('production event analysis requires the saved same-pitch recommendation')
     _timestamp(provenance.get('received_at'), 'received_at')
     _timestamp(provenance.get('generated_at'), 'generated_at')
     if not isinstance(values, Mapping):
         raise ValueError('values must be mapping of tagged frozen values')
     numeric = {key: _validated_point(values.get(key), key, ident, initial_defender) for key in VALUE_KEYS}
+    if stored_recommendation is not None and numeric['reference'] is not None:
+        saved_baseline = stored_recommendation.get('baseline_value')
+        if (isinstance(saved_baseline, bool) or not isinstance(saved_baseline, (int, float)) or
+                not math.isfinite(saved_baseline) or abs(numeric['reference'] - saved_baseline) > 1e-10):
+            raise ValueError('reference must equal saved same-pitch recommendation baseline_value')
     intent_reason = _intent_reason(intent_estimate, linkage, release_frame_time, clip_pitch_id)
     if intent_reason is not None and (numeric['plan'] is not None or numeric['execution'] is not None):
         raise ValueError('plan/execution cannot be assigned without usable linked pre-release intent')
     if numeric['execution'] is not None and numeric['plan'] is None:
         raise ValueError('execution path requires plan value')
-    if numeric['plan'] is not None and not evidence.get('action_mapping'):
-        raise ValueError('plan requires explicit frozen action mapping evidence')
-    if numeric['execution'] is not None and not evidence.get('actual_action_mapping'):
-        raise ValueError('execution requires explicit frozen delivered-action mapping evidence')
+    if numeric['plan'] is not None:
+        planned = evidence.get('plan_action')
+        if (not isinstance(planned, Mapping) or
+                planned.get('zone_id') != intent_estimate['points']['zone9']['zone_id'] or
+                not planned.get('pitch_type') or
+                planned.get('source') not in ('pre_release_signal', 'synthetic_fixture')):
+            raise ValueError('plan action must match linked intent zone and pre-release pitch type evidence')
+    if numeric['execution'] is not None:
+        delivered = evidence.get('execution_action')
+        if (not isinstance(delivered, Mapping) or not delivered.get('pitch_type') or
+                not delivered.get('zone_id') or delivered.get('source') != 'recorded_delivery'):
+            raise ValueError('execution requires mapped recorded delivery action')
     if evidence.get('actual_is_intent') is True:
         raise ValueError('actual delivered action cannot masquerade as intent')
 
