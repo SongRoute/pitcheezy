@@ -101,6 +101,7 @@ def run():
     engine = Engine(bundle)
     train, train_reasons, train_pas = cohort_pa_rows(pd.read_parquet(paths['train']), cfg['pitchers'])
     dev, dev_reasons, dev_pas = cohort_pa_rows(pd.read_parquet(paths['dev']), cfg['pitchers'], engine.metadata['pitchers'])
+    dev = dev.sort_values(KEY, kind='stable').reset_index(drop=True)
     assert (len(train), len(dev), train.groupby(KEY[:2]).ngroups, dev.groupby(KEY[:2]).ngroups) == (578, 563, 145, 151)
     parent_support = a_result['support']
     assert (train_pas, dev_pas, train_reasons, dev_reasons) == (
