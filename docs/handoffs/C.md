@@ -1,5 +1,9 @@
 # C — first event-analysis increment, 2026-09-23
 
+## Follow-up: fixed replacement evidence, 2026-09-24
+
+[C-EVIDENCE-003](C-evidence-v3.md) audits the six previously fixed pitching changes from stored sources. It records 65 retrospective roster-screened pitchers with prior-seven-day workload, rest, and previous-day consecutive use; decision-time manager availability is unknown for all. Only one keep and one screened substitute have frozen pitcher/repertoire support, in different games. Therefore there is no valid same-state `inning_end` keep/substitute comparison, and replacement value remains null. The prior Wheeler calculation is a conditional keep-only bound. The separate evidence JSON changes no event-analysis or Observer API contract.
+
 ## Delivered
 
 - C1 result contract `docs/contracts/event-analysis-v1.md` and synthetic `docs/contracts/examples/event-analysis-v1.json` (initial commit `7075730`). The C1 schema was sent to D before implementation.

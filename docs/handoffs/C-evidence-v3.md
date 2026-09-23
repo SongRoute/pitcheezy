@@ -1,0 +1,29 @@
+# C-EVIDENCE-003 — fixed replacement evidence audit
+
+Six July 2025 DEV games and the first observed fresh-half-inning pitching change in each were fixed before this audit. This pass reuses `C-ROSTER-001`'s hashed roster, prior-game boxscore, play-by-play, and pre-change anchor files; it makes no new source requests, model calls, or selection changes. The roster query was retrieved after the games for a historical date, so it is not a contemporaneous publication or evidence that a listed pitcher was available to the manager. Prior boxscores use dates strictly before each selected game; their actual completion times were not independently archived. The selected changes condition the sample on a later observed substitution, so these cases are descriptive rather than a policy-effect sample.
+
+The evidence artifact is `results/C-EVIDENCE-003/evidence.json`, built by `scripts/c_candidate_evidence.py`. It retains all 65 screened entries with seven-day appearances, pitch counts, full rest calendar days where observed, and consecutive appearances ending on the previous date. A seven-day window with no appearance has `full_rest_calendar_days_since_last_appearance:null`; it does not imply seven or more exact rest days. The script verifies pinned source SHA-256 identities and future-date cutoffs before writing by exclusive create. Each game's keep pitcher is evidenced as on the mound before the change, while feasibility of continued use remains unknown. Each screened replacement is *conditional roster-screen evidence*; all 65 decision-time manager-availability values are null. A later observed deployment is recorded separately for each game, never used to construct the screen or to assert what was known at the decision. Pitchers outside the screen have unknown availability rather than an inferred exclusion reason.
+
+| Game | Initial defender | Keep/model | Screened | Frozen-supported replacement | Pre-change lineup/time evidence |
+|---:|---|---|---:|---|---|
+| 777063 | home PHI | Wheeler 554430 / yes | 11 | none | Logged action before substitution, UTC 2025-07-22 00:20:56.827; nine slots and stances versus Wheeler verified before it |
+| 777094 | home TOR | 641778 / no | 12 | Berríos 621244 | Nine ordered slots before first observed pitch; substitute-specific stances null; actual manager decision time unknown |
+| 777126 | home SD | 663773 / no | 10 | none | Nine ordered slots before first observed pitch; substitute-specific stances null; actual decision time unknown |
+| 777143 | away LAD | 607455 / no | 11 | none | Nine ordered slots before first observed pitch; substitute-specific stances null; actual decision time unknown |
+| 777217 | away CIN | 594580 / no | 11 | none | Nine ordered slots before first observed pitch; substitute-specific stances null; actual decision time unknown |
+| 777227 | home ATH | 686993 / no | 10 | none | Nine ordered slots before first observed pitch; substitute-specific stances null; actual decision time unknown |
+
+The support check requires both a frozen pitcher entry and frozen TRAIN repertoire counts. Berríos's Toronto screen has a July 13 prior appearance (61 pitches, nine outs), five full rest days before July 19, and no consecutive-day use ending July 18. This is workload evidence, not a managerial availability determination. The opposing lineup's nine IDs are reconstructed but every `stand_for_substitute` is null. More decisively, Toronto's keep pitcher is outside frozen support. Wheeler is the sole supported keep, and Philadelphia has no supported screened substitute. Thus zero of six games has a same-state supported keep/substitute pair; no new model-heavy evaluation is warranted under the fixed comparison specification.
+
+The Philadelphia pre-change anchor remains a **conditional keep-only** calculation: hold the announced lineup and its observed stances against Wheeler fixed from 7th-inning top, 2–2, no outs or runners. The existing frozen-model, fixed-policy inning-end initial-home-defender WE bound is [0.5210473532, 0.5346788630], with 0.0136315098 unresolved probability mass. The later Gonzalez pinch hit is excluded from this earlier scenario. It says nothing about substitution benefit or how the opponent would have responded had Wheeler continued. The first-observed-pitch proxy in the original roster packet includes that post-decision pinch hitter and is inadmissible for the earlier keep decision; the two source cutoffs are never joined.
+
+Any future comparison must use one game's identical pre-substitution state, initial defending team, announced lineup and pitcher-specific stance evidence, frozen model, fixed PA policy, evaluator caps, and `inning_end` horizon. Subtracting bounded inning results yields an interval in percentage points. A PA recommendation/event value is a different horizon and must never be added to an inning result. Actual substitution value stays null until decision-time candidate availability and the required common model inputs are established. Even if those inputs arrive, model-conditional bounds are not causal policy effects or empirical confidence intervals.
+
+Reproduce with the root project interpreter from this worktree, choosing a *new* output path (the committed result is exclusive-create):
+
+```sh
+/Users/song/Projects/pitcheezy/.venv-observer-standalone/bin/python scripts/c_candidate_evidence.py --output /tmp/C-EVIDENCE-003-reproduction.json
+PYTHONPATH=.:apps/observer/backend /Users/song/Projects/pitcheezy/.venv-observer-standalone/bin/python -m pytest tests/test_c_candidate_evidence.py tests/test_c_replacement_data.py tests/test_c_inning_eval.py -q
+```
+
+The targeted suite passed 21 tests. The audit result is also saved under SSD `C-EVIDENCE-003/evidence.json`; its source SHA-256 fields and companion handoff identify the exact inputs. No 2026 or final-evaluation data, raw/frozen/runtime files, Observer server, or DB 8766 were touched.
