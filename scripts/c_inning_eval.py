@@ -5,7 +5,7 @@ This is a research artifact. It never infers a future lineup or candidate availa
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 import hashlib
 import json
 import math
@@ -366,6 +366,92 @@ def run_two_out_amendment(amendment_path: Path) -> None:
     _write_new_result(output, result)
 
 
+def run_conditional_anchor(amendment_path: Path) -> None:
+    """Evaluate only a fixed-lineup keep scenario from a pre-change source anchor."""
+    from minimal_pitch_service import Engine
+
+    config = json.loads(amendment_path.read_text())
+    anchor_path = Path(config["source_anchor_path"])
+    roster_path = Path(config["source_roster_path"])
+    anchor_bytes, roster_bytes = anchor_path.read_bytes(), roster_path.read_bytes()
+    if hashlib.sha256(anchor_bytes).hexdigest() != config["source_anchor_sha256"] or \
+       hashlib.sha256(roster_bytes).hexdigest() != config["source_roster_sha256"]:
+        raise ValueError("conditional anchor source SHA mismatch")
+    anchor, roster = json.loads(anchor_bytes), json.loads(roster_bytes)
+    game = config["game_pk"]
+    matches = [row for row in roster["decisions"] if row["game_pk"] == game]
+    if len(matches) != 1 or matches[0]["game_date"] != config["game_date"]:
+        raise ValueError("official roster game date does not match frozen amendment")
+    if (anchor["game_pk"] != game or anchor["keep_pitcher_id"] != config["expected_keep_pitcher_id"] or
+            anchor["decision_first_observed_pitch_id"] != matches[0]["decision_first_observed_pitch_id"] or
+            anchor["anchor"] != "immediately_before_logged_pitching_substitution_action" or
+            anchor["cutoff_index_verified"] is not True or anchor["cutoff_timestamp_verified"] is not True or
+            anchor["eligible_replacements"] is not None):
+        raise ValueError("pre-change anchor or eligibility evidence mismatch")
+    cutoff = datetime.fromisoformat(anchor["anchor_action_start_time_utc"].replace("Z", "+00:00"))
+    latest = datetime.fromisoformat(anchor["source_play_end_time_max"].replace("Z", "+00:00"))
+    if latest >= cutoff:
+        raise ValueError("lineup source play reaches pitching decision")
+    slots = sorted(anchor["lineup_as_of"]["ordered_slots"], key=lambda entry: entry["slot"])
+    if [item["slot"] for item in slots] != list(range(1, 10)) or len({item["batter_id"] for item in slots}) != 9:
+        raise ValueError("predecision batting slots incomplete or duplicated")
+    next_slot = anchor["lineup_as_of"]["next_slot_one_based"]
+    if not 1 <= next_slot <= 9 or slots[next_slot - 1]["batter_id"] != anchor["lineup_as_of"]["next_batter_id"]:
+        raise ValueError("current predecision batting slot mismatch")
+    bundle = Path(json.loads((PROJECT / "docs/contracts/model-v1.json").read_text())["bundle_path"])
+    engine = Engine(bundle)
+    if str(anchor["keep_pitcher_id"]) not in engine.metadata["pitchers"]:
+        raise ValueError("frozen model does not support anchored keep pitcher")
+    ordered = slots[next_slot - 1:] + slots[:next_slot - 1]
+    lineup = []
+    default_ids = []
+    for item in ordered:
+        stand = item["stand_vs_keep"]
+        if stand not in ("L", "R") or not item["stand_evidence"]:
+            raise ValueError("missing stance evidence against keep pitcher")
+        for evidence in item["stand_evidence"]:
+            time = datetime.fromisoformat(evidence["play_end_time"].replace("Z", "+00:00"))
+            if time >= cutoff or evidence["pitcher_id"] != anchor["keep_pitcher_id"] or \
+               evidence["observed_stand"] != stand:
+                raise ValueError("stance evidence postdates or conflicts with decision")
+        batter_id = item["batter_id"]
+        profile = engine.metadata["profiles"].get(str(batter_id))
+        profile_source = "frozen_batter_snapshot"
+        if profile is None:
+            profile = engine.metadata["default_profile"]
+            profile_source = "frozen_default_zero_reliability"
+            default_ids.append(batter_id)
+        if date.fromisoformat(profile["as_of"]) >= date.fromisoformat(config["game_date"]):
+            raise ValueError("batter profile is not prior date")
+        lineup.append({"batter_id": batter_id, "batter_stand": stand,
+                       "batter_profile": profile, "profile_source": profile_source,
+                       "known_before_decision": True})
+    state = anchor["state_as_of_anchor"]
+    first = lineup[0]
+    request = {"date": matches[0]["game_date"], "pitcher_id": anchor["keep_pitcher_id"],
+               "inning": state["inning"], "topbot": state["half"], "outs": state["outs"],
+               "bases": state["bases"], "home_score": state["home_score"], "away_score": state["away_score"],
+               "balls": state["balls"], "strikes": state["strikes"],
+               "batter_stand": first["batter_stand"], "batter_profile": first["batter_profile"]}
+    provider = FrozenPAProvider(engine)
+    result = evaluate_inning(initial_request=request, lineup=lineup, provider=provider,
+                             we=engine.we, advancement=engine.advancement, config=config)
+    result.update(amendment_id=config["amendment_id"], game_pk=game,
+                  case_kind="conditional_fixed_prechange_lineup_keep_pitcher",
+                  decision_anchor="immediately_before_logged_pitching_substitution_action",
+                  source_anchor_sha256=config["source_anchor_sha256"],
+                  source_roster_sha256=config["source_roster_sha256"],
+                  model_bundle_manifest_sha256=hashlib.sha256((bundle / "bundle_manifest.json").read_bytes()).hexdigest(),
+                  first_pa_terminal_distribution=provider.first_distribution,
+                  lineup_batter_ids=[h["batter_id"] for h in lineup],
+                  lineup_profile_sources=[h["profile_source"] for h in lineup],
+                  default_profile_batter_ids=default_ids,
+                  scenario_assumption=config["lineup_assumption"],
+                  actual_replacement={"status": "unavailable", "horizon": "inning_end",
+                                      "value_pp": None, "reason": "actual_eligible_substitutes_unverified"})
+    _write_new_result(PROJECT / config["output"], result)
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -373,8 +459,11 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, default=PROJECT / "results/EXP-C-INNING-001/real_state.json")
     parser.add_argument("--roster-packet", type=Path)
     parser.add_argument("--two-out-amendment", type=Path)
+    parser.add_argument("--conditional-anchor", type=Path)
     args = parser.parse_args()
-    if args.two_out_amendment:
+    if args.conditional_anchor:
+        run_conditional_anchor(args.conditional_anchor)
+    elif args.two_out_amendment:
         run_two_out_amendment(args.two_out_amendment)
     elif args.roster_packet:
         run_roster_packet_screen(args.config, args.roster_packet, args.output)
