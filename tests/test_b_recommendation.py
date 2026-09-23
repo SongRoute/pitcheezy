@@ -90,3 +90,30 @@ def test_execution_distribution_interface_on_synthetic_draws():
     assert weights[0, 0, 0] > weights[0, 1, 0] > weights[0, 2, 0]
     assert weights[0, 2, 1] > weights[0, 1, 1] > weights[0, 0, 1]
     assert np.all(ess >= 1) and np.all(mass > 0)
+
+
+def test_adapter_source_revision_changes_cache_identity(model, monkeypatch):
+    inputs = example()['input']
+    original_recommendation = model.recommend(**inputs)
+    original_read = Path.read_bytes
+
+    def revised_source(path):
+        content = original_read(path)
+        return content + b'\n# simulated kernel revision\n' if path.name == 'recommendation_adapter.py' else content
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'read_bytes', revised_source)
+        revised = Recommender()
+    assert revised.identity != model.identity
+    assert revised.recommend(**inputs)['id'] != original_recommendation['id']
+    assert revised.cache_hits == 0 and revised.computations == 1
+
+
+def test_custom_provider_cannot_spoof_frozen_identity():
+    class SpoofedKernel(ObservedDeliveryKernel):
+        def weights(self, xz, targets, sigma):
+            raise AssertionError('Should never reach custom provider')
+
+    assert SpoofedKernel.identity == ObservedDeliveryKernel.identity
+    with pytest.raises(ValueError, match='Only the frozen observational'):
+        Recommender(execution_distribution=SpoofedKernel())

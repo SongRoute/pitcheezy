@@ -40,6 +40,10 @@ def supported_actions(support, mass):
 
 class Recommender:
     def __init__(self, execution_distribution=None):
+        self.execution_distribution = (ObservedDeliveryKernel() if execution_distribution is None
+                                       else execution_distribution)
+        if type(self.execution_distribution) is not ObservedDeliveryKernel:
+            raise ValueError('Only the frozen observational execution distribution is validated for current recommendations')
         require_storage()
         source = BUNDLE/'source'
         hashes = json.loads((BUNDLE/'source_hashes.json').read_text())
@@ -69,12 +73,11 @@ class Recommender:
         self.identity = digest({'bundle': json.loads((BUNDLE/'bundle_manifest.json').read_text()),
                                 'source': hashes, 'utilities': utilities, 'config': CONFIG,
                                 'adapter': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                                'recommendation_adapter': hashlib.sha256(Path(__file__).with_name('recommendation_adapter.py').read_bytes()).hexdigest(),
+                                'execution_distribution': self.execution_distribution.identity,
                                 'explanations': hashlib.sha256(Path(__file__).with_name('explanations.py').read_bytes()).hexdigest(),
                                 'domain': hashlib.sha256(Path(__file__).with_name('domain.py').read_bytes()).hexdigest()})
-        self.execution_distribution = execution_distribution or ObservedDeliveryKernel()
         self.model_sha256 = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest()
-        if self.execution_distribution.identity != ObservedDeliveryKernel.identity:
-            raise ValueError('Only the frozen observational execution distribution is validated for current recommendations')
         self.cache = RUN/'recommendation_cache'
         self.cache.mkdir(exist_ok=True)
         self._lock = threading.RLock()
@@ -97,7 +100,7 @@ class Recommender:
         if type(balls) is not int or type(strikes) is not int or not 0 <= balls <= 3 or not 0 <= strikes <= 2:
             raise ValueError('Invalid pre-pitch count')
         bounds, repertoire = inputs.zone_bounds, inputs.repertoire_counts
-        key = digest([self.identity, request, bounds, repertoire])
+        key = digest([self.identity, self.execution_distribution.identity, request, bounds, repertoire])
         path = self.cache/f'{key}.json'
         with self._lock:
             started = time.perf_counter()
@@ -128,9 +131,11 @@ class Recommender:
         balls, strikes = request.pop('balls'), request.pop('strikes')
         if type(balls) is not int or type(strikes) is not int or not 0 <= balls <= 3 or not 0 <= strikes <= 2:
             raise ValueError('Invalid pre-pitch count')
-        key = digest([self.identity, request, inputs.zone_bounds, inputs.repertoire_counts])
-        recommendations, detail = self._compute(request | {'balls': 0, 'strikes': 0},
-            inputs.zone_bounds, inputs.repertoire_counts, key, include_detail=True)
+        key = digest([self.identity, self.execution_distribution.identity, request,
+                      inputs.zone_bounds, inputs.repertoire_counts])
+        with self._lock:
+            recommendations, detail = self._compute(request | {'balls': 0, 'strikes': 0},
+                inputs.zone_bounds, inputs.repertoire_counts, key, include_detail=True)
         result = recommendations[f'{balls}-{strikes}']
         if detail is None:
             return PrePitchEvaluation(result['status'], result['reason'], self.identity,
