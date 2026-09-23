@@ -1,6 +1,5 @@
 """Explicit public views: only advancing exposes the next recorded actual pitch."""
 import hashlib
-import json
 import logging
 import time
 import uuid
@@ -38,7 +37,15 @@ class ObserverService:
         try:
             if not self.recommender.ready:
                 raise RuntimeError('model unavailable')
-            return self.recommender.recommend(pitch, pa)
+            result = dict(self.recommender.recommend(pitch, pa))
+            engine = getattr(self.recommender, 'engine', None)
+            model_sha = getattr(self.recommender, 'model_sha256', None)
+            if model_sha is None and engine is not None and (BUNDLE/'bundle_manifest.json').is_file():
+                model_sha = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest()
+            result.update(model_identity=getattr(self.recommender, 'identity', None),
+                          model_sha256=model_sha, value_spec_version='defense-we-pa-v1',
+                          baseline_policy_id='observer-repertoire-kernel-v1')
+            return result
         except Exception:
             LOGGER.exception('Recommendation unavailable for pitch %s', pitch['id'])
             # A recommendation failure must not prevent historical replay.
@@ -146,32 +153,24 @@ class ObserverService:
     @staticmethod
     def _failed_event(session_id, pitch, recommendation, created_at):
         """A calculation exception must never become invented numeric attribution."""
-        pitch_id = pitch['id']
-        missing = lambda: {'value_pp': None, 'status': 'unavailable', 'reason': 'calculation_error', 'abs_share': None}
-        model_sha = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest() if (BUNDLE/'bundle_manifest.json').is_file() else 'unavailable-frozen-evaluator'
-        return {'schema_version': 'event-analysis-v1', 'analysis_id': f'{session_id}:{pitch_id}',
-                'revision': 1, 'status': 'failed', 'reason': 'calculation_error',
-                'linkage': {'session_id': session_id, 'pitch_id': pitch_id,
-                            'recommendation_id': recommendation['id'], 'recommendation_created_at': created_at,
-                            'recommendation_sha256': hashlib.sha256(json.dumps(recommendation, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest(),
-                            'event_input_revision': 1},
-                'identity': {'model_version': recommendation.get('model_version') or CONFIG['model_version'],
-                             'model_sha256': model_sha, 'value_spec_version': 'defense-we-pa-v1',
-                             'baseline_policy_id': 'observer-repertoire-kernel-v1'},
-                'scope': {'horizon': 'current_pa', 'initial_defender': 'home' if pitch['state']['half'] == 'Top' else 'away',
-                          'unit': 'defense_win_probability', 'difference_unit': 'percentage_points'},
-                'values': {'reference': None, 'plan': None, 'execution': None, 'observed': None, 'total_pp': None},
-                'components': {'strategy_contrast_pp': missing(), 'execution_contrast_pp': missing(),
-                               'outcome_residual_pp': missing(), 'unallocated_residual_pp': None},
-                'shares': {'stable': False, 'denominator_pp': None},
-                'interactions': {'status': 'unallocated', 'value_pp': None, 'reason': 'calculation_error'},
-                'evidence': {'actual_source': 'historical_replay_record', 'intent_source': None,
-                             'intent_is_proxy': None, 'intent_review_status': None, 'development_only': False,
-                             'references': [pitch_id], 'use_for_performance_evaluation': False},
-                'provenance': {'received_at': datetime.now(timezone.utc).isoformat(),
-                               'generated_at': datetime.now(timezone.utc).isoformat(), 'correction_of_revision': None},
-                'replacement': {'status': 'unavailable', 'horizon': 'inning_end', 'value_pp': None,
-                                'reason': 'missing_contemporaneous_candidates_and_inning_evaluator'}}
+        try:
+            from .event_analysis import failed_event, recommendation_sha256
+        except ImportError:
+            return None
+        now = datetime.now(timezone.utc).isoformat()
+        return failed_event(
+            linkage={'session_id': session_id, 'pitch_id': pitch['id'],
+                     'recommendation_id': recommendation['id'], 'recommendation_created_at': created_at,
+                     'recommendation_sha256': recommendation_sha256(recommendation), 'event_input_revision': 1},
+            identity={'model_version': recommendation.get('model_version') or CONFIG['model_version'],
+                      'model_sha256': recommendation.get('model_sha256') or 'unavailable-frozen-evaluator',
+                      'value_spec_version': 'defense-we-pa-v1',
+                      'baseline_policy_id': recommendation.get('baseline_policy_id') or 'observer-repertoire-kernel-v1'},
+            initial_defender='home' if pitch['state']['half'] == 'Top' else 'away',
+            evidence={'actual_source': 'historical_replay_record', 'references': [pitch['id']],
+                      'development_only': False, 'use_for_performance_evaluation': False},
+            provenance={'received_at': now, 'generated_at': now, 'correction_of_revision': None},
+            error_code='calculation_error', stored_recommendation=recommendation)
 
     def _calculate_event(self, session_id, pitch, pa, recommendation, created_at):
         try:
@@ -180,12 +179,20 @@ class ObserverService:
             return None  # C module is integrated in the shared checkout after its handoff.
         now = datetime.now(timezone.utc).isoformat()
         engine = getattr(self.recommender, 'engine', None)
-        model_sha = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest() if engine else 'unavailable-frozen-evaluator'
+        model_sha = getattr(self.recommender, 'model_sha256', None)
+        if model_sha is None and engine is not None and (BUNDLE/'bundle_manifest.json').is_file():
+            model_sha = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest()
+        model_sha = model_sha or 'unavailable-frozen-evaluator'
         identity = {'model_version': recommendation.get('model_version') or CONFIG['model_version'],
                     'model_sha256': model_sha, 'value_spec_version': 'defense-we-pa-v1',
                     'baseline_policy_id': 'observer-repertoire-kernel-v1'}
         defender = 'home' if pitch['state']['half'] == 'Top' else 'away'
-        reference = recommendation.get('baseline_value') if recommendation.get('status') == 'ready' else None
+        same_evaluator = (recommendation.get('model_identity') == getattr(self.recommender, 'identity', None)
+                          and recommendation.get('model_identity') is not None
+                          and recommendation.get('model_sha256') == model_sha
+                          and recommendation.get('value_spec_version') == identity['value_spec_version']
+                          and recommendation.get('baseline_policy_id') == identity['baseline_policy_id'])
+        reference = recommendation.get('baseline_value') if same_evaluator and recommendation.get('status') == 'ready' else None
         values = {'reference': value_point(reference, identity=identity, initial_defender=defender,
                                           source='saved_pre_pitch_policy_baseline') if isinstance(reference, (int, float)) else None,
                   'plan': None, 'execution': None, 'observed': None}
@@ -203,6 +210,7 @@ class ObserverService:
             identity=identity, initial_defender=defender, values=values,
             evidence={'actual_source': 'historical_replay_record', 'action_mapping': None,
                       'references': [pitch['id']], 'development_only': False,
+                      'reference_status': 'compatible' if same_evaluator else 'saved_evaluator_identity_missing_or_changed',
                       'use_for_performance_evaluation': False},
             provenance={'received_at': now, 'generated_at': now, 'correction_of_revision': None},
             stored_recommendation=recommendation)

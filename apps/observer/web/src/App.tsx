@@ -117,7 +117,7 @@ function EventCard({ event }: { event: EventAnalysis | null | undefined }) {
   ] as const;
   return <section className="event-card" aria-labelledby="event-title"><div className="section-heading"><div><span className="eyebrow">중요 사건 · 수비팀 승률 모델</span><h2 id="event-title">이번 타석의 변화</h2></div><span className={`event-status ${event.status}`}>{statusLabel}</span></div>
     {developmentOnly ? <p className="event-empty">개발용 합성 사례입니다. 실제 경기의 기여 수치로 표시하지 않습니다.</p> : <>
-      <p className="event-total">{finite(event.values?.total_pp) ? <><strong>{displayNumber(event.values.total_pp)}</strong><span>이 타석 전 기준과 종료 후 수비팀 승률 추정치의 차이</span></> : <span>이 사건의 승률 변화를 계산할 수 없습니다.</span>}</p>
+      <p className="event-total">{finite(event.values?.total_pp) ? <><strong>{displayNumber(event.values.total_pp)}</strong><span>마지막 공의 사전 기준과 타석 종료 후 수비팀 승률 추정치의 차이</span></> : <span>이 사건의 승률 변화를 계산할 수 없습니다.</span>}</p>
       {event.status === 'partial' && <p className="event-callout">투구 의도 정보가 없어 선택·실행의 몫은 분리할 수 없습니다. 남은 차이를 선수에게 배분하지 않습니다.</p>}
       {event.status === 'failed' && <p className="event-callout">분석 계산이 실패했습니다. 기록과 저장된 사전 추천은 계속 볼 수 있습니다.</p>}
       {(event.status === 'complete' || event.status === 'partial') && <div className="event-components">{components.map(([label, component]) => <div key={label}><span>{label}</span><strong>{displayNumber(component?.value_pp)}</strong>{finite(component?.abs_share) && event.shares?.stable && <small>계산된 절댓값 중 {(component.abs_share * 100).toFixed(0)}%</small>}</div>)}</div>}
