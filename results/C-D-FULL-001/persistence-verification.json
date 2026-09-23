@@ -1,0 +1,69 @@
+{
+  "passed": true,
+  "source_database_unchanged": true,
+  "tables": {
+    "event_results": {
+      "original_rows": 2,
+      "preserved": true
+    },
+    "jobs": {
+      "original_rows": 2,
+      "preserved": true
+    },
+    "manual_annotations": {
+      "original_rows": 2,
+      "preserved": true
+    },
+    "recommendation_meta": {
+      "original_rows": 6,
+      "preserved": true
+    },
+    "recommendations": {
+      "original_rows": 6,
+      "preserved": true
+    },
+    "sessions": {
+      "original_rows": 3,
+      "preserved": true
+    }
+  },
+  "restored_sessions": [
+    {
+      "id": "c80d73f2-48ee-47e0-a954-89c6e9bda836",
+      "cursor": 0,
+      "revision": 0,
+      "history": 0,
+      "event_unchanged": false
+    },
+    {
+      "id": "a245dac4-3db6-495a-916f-500f10b77247",
+      "cursor": 3,
+      "revision": 4,
+      "history": 3,
+      "event_unchanged": true
+    },
+    {
+      "id": "05fbc6da-ab83-4b5e-ad65-ab24e060cdb6",
+      "cursor": 2,
+      "revision": 3,
+      "history": 2,
+      "event_unchanged": true
+    }
+  ],
+  "health": {
+    "status": "ok",
+    "model_ready": true,
+    "dataset_ready": true,
+    "mode": "historical_replay",
+    "cv_mode": "unavailable:no_media"
+  },
+  "runtime": {
+    "mode": "historical_replay",
+    "model_version": "observer-zone-v1",
+    "scientific_runtime": "standalone",
+    "dataset_identity": "8ad2b369884265bb5197137499e002a32354930cce036253f92b91671dde479b",
+    "worker_status": "running",
+    "cv_status": "unavailable:no_media",
+    "startup_error": null
+  }
+}

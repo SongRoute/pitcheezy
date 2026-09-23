@@ -1,0 +1,35 @@
+{
+  "schema_version": "full-rehearsal-v1",
+  "code_commit": "a8cd5d5",
+  "application_code": "62945c7",
+  "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-FULL-001",
+  "passed": true,
+  "files": {
+    "preparation.json": "2e3c6995b5b214ac53ebfe03798caea8790c15e1b1cbad4f4451f14e7f872834",
+    "persistence-verification.json": "cbe2ac66e1606660843b9144044bff27da0c2b351fb8fbee86ae0bdd9f2616b1",
+    "browser-report.json": "5fa4a8d3c9cbc72ae274e9eb5d0f769e2bea8c95e3e95e13a048f2a3e3a925e6",
+    "catalog-report.json": "8ec26dbb96ca4929f0c49e01ebdbf2dbc8b88208a36f14151f31f14243850e2d"
+  },
+  "processes": {
+    "server_pid": 94628,
+    "worker_pid": 94642,
+    "state": "left_running_for_user",
+    "bind": "127.0.0.1:8766"
+  },
+  "remote_access": {
+    "method": "SSH over Tailscale",
+    "ssh_alias": "macmini",
+    "local_port": 18766,
+    "user_confirmed_access": true
+  },
+  "roles": {
+    "root": "Astra role; exact runtime model id not exposed",
+    "browser_agent": "gpt-6-sol/medium; no recursion",
+    "tokens_and_cost": "not_measured"
+  },
+  "limitations": [
+    "CV excluded",
+    "actual replacement effect unmeasured",
+    "historical integration checks are not S1 or final performance evaluation"
+  ]
+}
