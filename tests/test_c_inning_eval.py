@@ -128,7 +128,8 @@ def test_frozen_provider_basis_uses_fixed_baseline_policy():
 
 def test_comparison_requires_eligibility_and_keeps_bounds():
     identity = {"provider_identity": "synthetic", "initial_state_and_count": {"outs": 2},
-                "lineup_sha256": "fixture", "policy_id": "fixed", "horizon": "inning_end",
+                "lineup_sha256": "fixture", "evaluation_config_sha256": "fixture-config",
+                "policy_id": "fixed", "horizon": "inning_end",
                 "initial_defender": "home"}
     keep = {"status": "bounded", "value_interval": [0.3, 0.5],
             "evaluation_identity": identity, "pitcher_id": 1}
@@ -140,3 +141,11 @@ def test_comparison_requires_eligibility_and_keeps_bounds():
     assert result["value_interval_pp"] == pytest.approx([-10, 30])
     assert mod.compare(keep, {**sub, "evaluation_identity": {**identity, "lineup_sha256": "other"}},
                        eligibility_verified=True)["reason"] == "mismatched_evaluation_identity_or_pitcher"
+
+
+def test_result_writer_refuses_overwrite(tmp_path):
+    path = tmp_path / "result.json"
+    mod._write_new_result(path, {"value": 1})
+    with pytest.raises(FileExistsError):
+        mod._write_new_result(path, {"value": 2})
+    assert path.read_text() == '{\n  "value": 1\n}\n'

@@ -94,8 +94,10 @@ def _identity(initial_request: dict, lineup: list[dict], provider, config: dict,
     state_and_count = {key: initial_request[key] for key in
                        ("date", "inning", "topbot", "outs", "bases", "home_score", "away_score", "balls", "strikes")}
     lineup_sha = hashlib.sha256(json.dumps(lineup, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+    config_sha = hashlib.sha256(json.dumps(config, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     return {"provider_identity": provider_identity, "initial_state_and_count": state_and_count,
-            "lineup_sha256": lineup_sha, "policy_id": config["pa_policy_id"],
+            "lineup_sha256": lineup_sha, "evaluation_config_sha256": config_sha,
+            "policy_id": config["pa_policy_id"],
             "horizon": "inning_end", "initial_defender": "home" if initial_request["topbot"] == "Top" else "away"}
 
 
@@ -205,7 +207,10 @@ def compare(keep: dict, substitute: dict, *, eligibility_verified: bool) -> dict
     if any(result.get("status") not in ("complete", "bounded") for result in (keep, substitute)):
         return {"status": "unavailable", "horizon": "inning_end", "value_pp": None,
                 "reason": "inning_evaluation_unavailable"}
-    if (not keep.get("evaluation_identity") or
+    required_identity = {"provider_identity", "initial_state_and_count", "lineup_sha256",
+                         "evaluation_config_sha256", "policy_id", "horizon", "initial_defender"}
+    if (not isinstance(keep.get("evaluation_identity"), dict) or
+            not required_identity.issubset(keep["evaluation_identity"]) or
             keep["evaluation_identity"] != substitute.get("evaluation_identity") or
             keep.get("pitcher_id") == substitute.get("pitcher_id")):
         return {"status": "unavailable", "horizon": "inning_end", "value_pp": None,
@@ -216,6 +221,13 @@ def compare(keep: dict, substitute: dict, *, eligibility_verified: bool) -> dict
     return {"status": "complete" if complete else "bounded", "horizon": "inning_end",
             "value_pp": lo if complete else None, "value_interval_pp": [lo, hi],
             "reason": None if complete else "unresolved_horizon_mass"}
+
+
+def _write_new_result(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x") as stream:
+        json.dump(payload, stream, indent=2, allow_nan=False)
+        stream.write("\n")
 
 
 def run_c0_example(config_path: Path, output_path: Path) -> None:
@@ -242,8 +254,7 @@ def run_c0_example(config_path: Path, output_path: Path) -> None:
                   first_pa_terminal_distribution=provider.first_distribution,
                   actual_replacement={"status": "unavailable", "horizon": "inning_end",
                                       "value_pp": None, "reason": "no_verified_eligible_substitute_or_predecision_lineup"})
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
+    _write_new_result(output_path, result)
 
 
 def run_roster_packet_screen(config_path: Path, packet_path: Path, output_path: Path) -> None:
@@ -261,6 +272,8 @@ def run_roster_packet_screen(config_path: Path, packet_path: Path, output_path: 
         record = {"game_pk": decision["game_pk"],
                   "decision_first_observed_pitch_id": decision["decision_first_observed_pitch_id"],
                   "keep_pitcher_id": keep_id,
+                  "current_batter_stand_source": "observed_under_incoming_pitcher",
+                  "stand_transfer_to_keep_verified": False,
                   "actual_eligible_replacement_candidates": decision.get("actual_eligible_replacement_candidates"),
                   "replacement": {"status": "unavailable", "horizon": "inning_end", "value_pp": None,
                                   "reason": "candidate_eligibility_and_predecision_lineup_unverified"}}
@@ -294,8 +307,7 @@ def run_roster_packet_screen(config_path: Path, packet_path: Path, output_path: 
                "roster_packet_path": str(packet_path),
                "model_bundle_manifest_sha256": hashlib.sha256((bundle / "bundle_manifest.json").read_bytes()).hexdigest(),
                "decisions": decisions}
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n")
+    _write_new_result(output_path, payload)
 
 
 def run_two_out_amendment(amendment_path: Path) -> None:
@@ -351,8 +363,7 @@ def run_two_out_amendment(amendment_path: Path) -> None:
                   actual_replacement={"status": "unavailable", "horizon": "inning_end",
                                       "value_pp": None, "reason": "no_verified_eligible_substitute_or_predecision_lineup"})
     output = PROJECT / amendment["output"]
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
+    _write_new_result(output, result)
 
 
 if __name__ == "__main__":

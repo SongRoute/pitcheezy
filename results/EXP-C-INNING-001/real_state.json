@@ -1,0 +1,98 @@
+{
+  "status": "bounded",
+  "reason": "unresolved_horizon_mass",
+  "horizon": "inning_end",
+  "initial_defender": "home",
+  "evaluation_identity": {
+    "provider_identity": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+    "initial_state_and_count": {
+      "date": "2025-08-17",
+      "inning": 1,
+      "topbot": "Top",
+      "outs": 0,
+      "bases": 0,
+      "home_score": 0,
+      "away_score": 0,
+      "balls": 0,
+      "strikes": 0
+    },
+    "lineup_sha256": "6b705bbe1ee94b7f9bf82b1739af62048804ba65a2df4b9cac2019c446b3f62d",
+    "evaluation_config_sha256": "bcc1c2c0215208a0a7543749968c6384aa2b89a0c9fcb888b62644f1c27e8e3a",
+    "policy_id": "frozen_train_repertoire_frequency_v1",
+    "horizon": "inning_end",
+    "initial_defender": "home"
+  },
+  "pitcher_id": 657277,
+  "value": null,
+  "value_interval": [
+    0.0,
+    1.0
+  ],
+  "absorbed_mass": 0.0,
+  "unresolved_mass": 1.0,
+  "unresolved_reasons": {
+    "predecision_lineup_exhausted": 1.0
+  },
+  "mass_error": 0.0,
+  "processed_pas": 1,
+  "model_calls": 1,
+  "lineup_slots_provided": 1,
+  "experiment_id": "EXP-C-INNING-001",
+  "algorithm_version": "C-INNING-001",
+  "case_kind": "real_predecision_state_one_known_hitter_only",
+  "pitch_id": "776703:1:1",
+  "game_pk": 776703,
+  "initial_request": {
+    "inning": 1,
+    "outs": 0,
+    "bases": 0,
+    "home_score": 0,
+    "away_score": 0,
+    "balls": 0,
+    "strikes": 0,
+    "topbot": "Top",
+    "pitcher_id": 657277,
+    "batter_stand": "L",
+    "date": "2025-08-17",
+    "top_k": 3,
+    "batter_profile": {
+      "rates": [
+        0.876476526260376,
+        0.47008609771728516,
+        0.05698970705270767,
+        0.11896280944347382,
+        0.07127364724874496,
+        0.5689902901649475
+      ],
+      "reliabilities": [
+        0.8191681504249573,
+        0.8286203742027283,
+        0.8280802369117737,
+        0.8280802369117737,
+        0.8187311291694641,
+        0.8032786846160889
+      ],
+      "as_of": "2025-08-16"
+    }
+  },
+  "model_bundle_manifest_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+  "baseline_policy_id": "frozen_train_repertoire_frequency_v1",
+  "source_dataset_sha256": "8ad2b369884265bb5197137499e002a32354930cce036253f92b91671dde479b",
+  "first_pa_terminal_distribution": {
+    "walk": 0.07297250133781491,
+    "strikeout": 0.15058772972446122,
+    "out": 0.5177906544558523,
+    "single": 0.19459613829807174,
+    "double": 0.03879347241537274,
+    "triple": 0.004149973931552458,
+    "home_run": 0.014867648197749023,
+    "hbp": 0.006241881639125674,
+    "double_play": 0.0
+  },
+  "actual_replacement": {
+    "status": "unavailable",
+    "horizon": "inning_end",
+    "value_pp": null,
+    "reason": "no_verified_eligible_substitute_or_predecision_lineup"
+  }
+}
