@@ -72,6 +72,7 @@ class Recommender:
                                 'explanations': hashlib.sha256(Path(__file__).with_name('explanations.py').read_bytes()).hexdigest(),
                                 'domain': hashlib.sha256(Path(__file__).with_name('domain.py').read_bytes()).hexdigest()})
         self.execution_distribution = execution_distribution or ObservedDeliveryKernel()
+        self.model_sha256 = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest()
         if self.execution_distribution.identity != ObservedDeliveryKernel.identity:
             raise ValueError('Only the frozen observational execution distribution is validated for current recommendations')
         self.cache = RUN/'recommendation_cache'
@@ -133,12 +134,12 @@ class Recommender:
         result = recommendations[f'{balls}-{strikes}']
         if detail is None:
             return PrePitchEvaluation(result['status'], result['reason'], self.identity,
-                CONFIG['model_version'], VALUE_SPEC_VERSION, 'observer-repertoire-kernel-v1',
-                OUTCOMES, (), None, None, None, None, None, None, result)
+                self.model_sha256, CONFIG['model_version'], VALUE_SPEC_VERSION, 'observer-repertoire-kernel-v1',
+                OUTCOMES, (), None, None, None, None, None, None, None, result)
         return PrePitchEvaluation(result['status'], result['reason'], self.identity,
-            CONFIG['model_version'], VALUE_SPEC_VERSION, 'observer-repertoire-kernel-v1',
+            self.model_sha256, CONFIG['model_version'], VALUE_SPEC_VERSION, 'observer-repertoire-kernel-v1',
             OUTCOMES, detail['actions'], detail['probabilities'], detail['support'],
-            detail['mass'], detail['baseline'], detail['values'], detail['baseline_values'], result)
+            detail['mass'], detail['baseline'], detail['q_values'], detail['values'], detail['baseline_values'], result)
 
     def _compute(self, request, bounds, repertoire, key, include_detail=False):
         import numpy as np
@@ -205,7 +206,8 @@ class Recommender:
                        for i, action in enumerate(indices)),
                       'probabilities': probabilities.copy(), 'support': support[:, :, supported].copy(),
                       'mass': all_mass[:, :, supported].copy(), 'baseline': baseline.copy(),
-                      'values': plan.values.copy(), 'baseline_values': plan.baseline_values.copy()}
+                      'q_values': plan.q_values.copy(), 'values': plan.values.copy(),
+                      'baseline_values': plan.baseline_values.copy()}
         results = {}
         for balls in range(4):
             for strikes in range(3):

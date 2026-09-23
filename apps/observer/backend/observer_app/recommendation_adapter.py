@@ -45,6 +45,7 @@ class PrePitchEvaluation:
     status: str
     reason: str | None
     model_identity: str
+    model_sha256: str
     model_version: str
     value_spec_version: str
     baseline_policy_id: str
@@ -54,6 +55,7 @@ class PrePitchEvaluation:
     support_ess: np.ndarray | None      # 4 × 3 × supported actions
     kernel_mass: np.ndarray | None      # 4 × 3 × supported actions
     baseline_policy: np.ndarray | None  # supported action probabilities
+    candidate_values: np.ndarray | None # 4 × 3 × 1 × supported actions, PA WE Q
     values: np.ndarray | None           # 4 × 3 × 1, optimized PA WE
     baseline_values: np.ndarray | None  # 4 × 3 × 1, reference PA WE
     recommendation: dict
