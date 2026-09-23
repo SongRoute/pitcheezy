@@ -108,6 +108,19 @@ try {
     assert.equal(buildInningPresentation(missing).rangeLabel, null);
     assert.equal(buildInningPresentation(missing).reasonLabel, '계산 결과 없음 · 평가 결과가 없습니다');
   }
+  if (process.argv[3]) {
+    const response = JSON.parse(readFileSync(resolve(process.argv[3]), 'utf8'));
+    assert.equal(response.schema_version, 'inning-decision-v1');
+    assert.equal(response.mode, 'historical_decision_review');
+    assert.equal(response.context.phase, 'before_pitching_change');
+    assert.equal(response.context.linkage.game_pk, response.result.linkage.game_pk);
+    assert.deepEqual(response.context.initial_state, response.result.provenance.evaluation_identity.initial_state_and_count);
+    parseInningResult(response.result);
+    const shown = buildInningPresentation(response.result);
+    assert.equal(shown.rangeLabel, '52.10%–53.47%');
+    assert.equal(shown.unresolvedLabel, '미해결 확률 1.36%');
+    assert.equal(shown.replacementLabel, '실제 교체 효과 미측정');
+  }
   console.log('inning result contract: ok');
 } finally {
   rmSync(scratch, { recursive: true, force: true });
