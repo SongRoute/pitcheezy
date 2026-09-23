@@ -12,6 +12,8 @@ Local browser / FastAPI. Frontend calls relative `/api` paths. All labels Korean
 - `POST /api/sessions/{id}/manual-intent` body `{revision:int,zone_id:str}` -> view. Only complete PA. Annotation concerns selected terminal pitch, not next recommendation.
 - `GET /api/zones`: `{zones:[{id,label,column,row}],coordinate_frame:"catcher_view"}`; ids `low_left,low_middle,low_right,middle_left,middle_middle,middle_right,high_left,high_middle,high_right`. row0=low,row2=high; column0=left in catcher view. Don't mirror by batter hand.
 - `GET /api/runtime`: compact diagnostics for optional details panel (not main product UI).
+- `GET /api/inning-decisions?game_id=<positive integer>`: separately stored historical pre-pitching-change decision contexts; no result values in list.
+- `POST /api/inning-decisions/{decision_id}/resolve` body `{revision:1,context}`: returns a conditional inning result only after exact normalized context matching. See `docs/contracts/inning-decision-api-v1.md`.
 
 Errors are JSON `{detail: string}` with 400/404/409/503. Catch and show a retryable error without losing current view. Frontend polls GET session every2s only when analysis.status queued/running. No background auto-advance.
 
@@ -64,9 +66,9 @@ The `event_results` table keeps immutable `(session_id,pitch_id,revision)` paylo
 
 ## Separate conditional inning result (handoff v1)
 
-`inning-result-v1` is a standalone C-to-D research payload defined in `docs/contracts/inning-result-v1.md`. It is not currently a session View field, an API route, or a persisted PA event result. It describes the frozen initial defender's final-game win probability after propagating a fixed keep-pitcher scenario to the current half-inning boundary. Its unresolved-mass bounds are probabilities; the UI formats them as percent, never percentage-point contribution or confidence intervals. Actual replacement value stays null.
+`inning-result-v1` is a standalone C-to-D research payload defined in `docs/contracts/inning-result-v1.md`. It is persisted in a separate immutable decision table and returned by the context-matched decision API; it is not a session View field or a persisted PA event result. It describes the frozen initial defender's final-game win probability after propagating a fixed keep-pitcher scenario to the current half-inning boundary. Its unresolved-mass bounds are probabilities; the UI formats them as percent, never percentage-point contribution or confidence intervals. Actual replacement value stays null.
 
-D consumes validated JSON through `web/src/inningResult.ts`; the examples live in `results/C-D-INNING-001/`. A future route/card must match the game, pre-pitching-change event and initial state before displaying a result. The later first observed pitch is a reference only. Do not attach this payload to a completed PA merely because its pitch ID matches, add it to event components, or replace `event_analysis.replacement` with its keep scenario. The unavailable example is development-only; malformed payloads fail validation instead of displaying 0%.
+D consumes validated JSON through `web/src/inningResult.ts`; the examples live in `results/C-D-INNING-001/`. The `inning-decision-v1` API compares the full decision context before returning its `result`. A future card must explicitly select this separate historical decision, rather than pretend that a PA cursor is at the same point. The later first observed pitch is a reference only. Do not attach this payload to a completed PA merely because its pitch ID matches, add it to event components, or replace `event_analysis.replacement` with its keep scenario. The unavailable example is development-only and is not imported through the file-backed registration path. Malformed payloads fail validation instead of displaying 0%.
 
 ## UI direction
 

@@ -3,10 +3,11 @@ from contextlib import asynccontextmanager
 import logging
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -35,6 +36,12 @@ class Advance(BaseModel):
 
 class ManualIntent(Advance):
     zone_id: str
+
+
+class ResolveInningDecision(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    revision: int = Field(strict=True, gt=0)
+    context: dict
 
 
 class UnavailableRecommender:
@@ -125,6 +132,22 @@ def create_app(service=None, *, start_worker=None):
     @app.get('/api/catalog')
     def catalog():
         return active().catalog()
+
+    @app.get('/api/inning-decisions')
+    def list_inning_decisions(game_id: str = Query(...)):
+        if re.fullmatch(r'[0-9]+', game_id) is None:
+            raise ServiceError(400, 'game_id는 양의 정수여야 합니다.')
+        try:
+            parsed_game_id = int(game_id)
+        except ValueError:
+            raise ServiceError(400, 'game_id는 양의 정수여야 합니다.') from None
+        if parsed_game_id < 1:
+            raise ServiceError(400, 'game_id는 양의 정수여야 합니다.')
+        return active().list_inning_decisions(parsed_game_id)
+
+    @app.post('/api/inning-decisions/{decision_id}/resolve')
+    def resolve_inning_decision(decision_id: str, body: ResolveInningDecision):
+        return active().resolve_inning_decision(decision_id, body.revision, body.context)
 
     @app.post('/api/sessions')
     def create(body: CreateSession):

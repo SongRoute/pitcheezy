@@ -9,6 +9,9 @@ from .settings import BUNDLE
 
 from .dataset import DemoDataset
 from .domain import ZONE_BY_ID, spatial_comparison
+from .inning_decision_store import (
+    DecisionConflict, DecisionCorrupt, DecisionNotFound, InningDecisionRepository,
+)
 from .settings import CONFIG
 from .store import Store
 
@@ -24,6 +27,26 @@ class ServiceError(Exception):
 class ObserverService:
     def __init__(self, dataset, recommender, store):
         self.dataset, self.recommender, self.store = dataset, recommender, store
+        self.inning_decisions = InningDecisionRepository(store)
+
+    def list_inning_decisions(self, game_id):
+        return self._decision_call(self.inning_decisions.list_decisions, game_id)
+
+    def resolve_inning_decision(self, decision_id, revision, context):
+        return self._decision_call(self.inning_decisions.resolve, decision_id, revision, context)
+
+    @staticmethod
+    def _decision_call(operation, *args):
+        try:
+            return operation(*args)
+        except DecisionNotFound:
+            raise ServiceError(404, '교체 직전 기록을 찾을 수 없습니다.') from None
+        except DecisionConflict:
+            raise ServiceError(409, '선택한 교체 시점이나 경기 상태가 저장된 기록과 다릅니다.') from None
+        except DecisionCorrupt:
+            raise ServiceError(503, '저장된 교체 직전 기록을 확인할 수 없습니다.') from None
+        except ValueError:
+            raise ServiceError(400, '교체 시점 조회 요청 형식을 확인해 주세요.') from None
 
     def catalog(self):
         return {'games': self.dataset.catalog(), 'model_version': CONFIG['model_version'],
