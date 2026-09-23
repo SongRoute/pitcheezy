@@ -147,7 +147,7 @@ class ObserverService:
             return
         with self.store.transaction() as db:
             session, _, _ = self._session(db, session_id)
-            if session['cursor'] == len(pa['pitches']):
+            if session['cursor'] == len(pa['pitches']) and Store.event_result(db, session_id, pitch['id']) is None:
                 Store.save_event_result(db, session_id, pitch['id'], result)
 
     @staticmethod

@@ -289,6 +289,24 @@ def test_event_result_revealed_only_after_pa_and_versioned_separately(service, m
     assert revised['last_pitch']['recommendation'] == saved
 
 
+def test_concurrent_event_calculation_reads_first_committed_result(service, monkeypatch):
+    view = service.create(10, 1)
+    view = service.advance(view['id'], view['revision'])
+    def racing_result(session_id, pitch, _pa, recommendation, _created_at):
+        digest = hashlib.sha256(json.dumps(recommendation, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+        winner = {'revision': 1, 'status': 'partial', 'linkage': {
+            'session_id': session_id, 'pitch_id': pitch['id'],
+            'recommendation_id': recommendation['id'], 'recommendation_sha256': digest,
+            'event_input_revision': 1}, 'values': {'total_pp': 1.25}}
+        with service.store.transaction() as db:
+            Store.save_event_result(db, session_id, pitch['id'], winner)
+        return winner | {'status': 'failed'}
+    monkeypatch.setattr(service, '_calculate_event', racing_result)
+    done = service.advance(view['id'], view['revision'])
+    assert done['event_analysis']['status'] == 'partial'
+    assert done['event_analysis']['values']['total_pp'] == 1.25
+
+
 def test_event_calculation_failure_has_no_invented_values(service, monkeypatch):
     pytest.importorskip('observer_app.event_analysis')
     def broken(*_args):
