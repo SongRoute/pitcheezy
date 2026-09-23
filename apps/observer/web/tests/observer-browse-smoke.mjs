@@ -83,10 +83,10 @@ try {
   assert.equal(await page.locator('.actual-strip').count(), 0);
   if (first.recommendation?.status === 'ready') {
     assert.deepEqual(await page.locator('.recommendation-basis li').allTextContents(), first.recommendation.basis);
-    assert.equal(await page.locator('.probability-details').evaluate((element) => element.open), false);
-    await page.locator('.probability-details > summary').click();
-    assert.match(await page.locator('.probability-details').innerText(), /모델/);
-    assert.match(await page.locator('.probability-details').innerText(), /실제 경기.*검증/);
+    assert.equal(await page.locator('.probability-details:not(.choice-explanation)').evaluate((element) => element.open), false);
+    await page.locator('.probability-details:not(.choice-explanation) > summary').click();
+    assert.match(await page.locator('.probability-details:not(.choice-explanation)').innerText(), /모델/);
+    assert.match(await page.locator('.probability-details:not(.choice-explanation)').innerText(), /실제 경기.*검증/);
     report.checks.server_grounded_basis_and_explicit_model_values = true;
   } else {
     assert.match(await page.locator('.recommendations').innerText(), /추천을 제공할 수 없어요/);
