@@ -1,0 +1,14 @@
+{
+  "experiment_id": "EXP-C-ROSTER-001",
+  "source_selection_manifest": "results/EXP-A-S0S1-001/selection_manifest.json",
+  "source_event_packets": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-events-v1/event_packets.json",
+  "source_event_manifest": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-events-v1/manifest.json",
+  "output_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001",
+  "selection_rule": "For each of six fixed 2025 DEV games, select chronologically first A-observed pitcher substitution whose first observed pitch is first pitch of a PA at a fresh half inning (outs_when_up=0), inning<=8; retain explicit missing if none. Do not use outcome or incoming identity to rank.",
+  "source_rule": "Use dated MLB StatsAPI active roster for screening only, selected game schedule for team IDs only, and seven prior calendar days of schedule plus completed boxscores for pitcher workload. Never use selected-game final boxscore or any later appearance for candidate inclusion.",
+  "lookback_calendar_days": 7,
+  "max_selected_games": 6,
+  "roster_status": "retrospective_dated_query_not_proven_contemporaneous",
+  "actual_manager_availability": null,
+  "policy_value": null
+}
