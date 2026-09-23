@@ -14,6 +14,7 @@ IDENTITY = {'model_version': 'observer-zone-v1', 'model_sha256': 'synthetic-mode
             'baseline_policy_id': 'observer-repertoire-kernel-v1'}
 INTENTS = json.loads((Path(__file__).parents[4] / 'docs/contracts/examples/c0-v1.json').read_text())
 INTENT = next(x['estimate'] for x in INTENTS['examples'] if x['case'] == 'normal_complete_chain')
+UNAVAILABLE_INTENT = next(x['estimate'] for x in INTENTS['examples'] if x['case'] == 'missing_intent')
 
 
 def fixture(*, reference=.5, plan=.49, execution=.47, observed=.4, intent=INTENT, revision=1):
@@ -27,7 +28,7 @@ def fixture(*, reference=.5, plan=.49, execution=.47, observed=.4, intent=INTENT
               for key, value in [('reference', reference), ('plan', plan),
                                  ('execution', execution), ('observed', observed)]}
     return dict(linkage=linkage, identity=IDENTITY, initial_defender='home', values=points,
-                evidence={'development_only': True,
+                evidence={'development_only': True, 'use_for_performance_evaluation': False,
                           'plan_action': {'pitch_type': 'FF', 'zone_id': 'middle_middle', 'source': 'synthetic_fixture'},
                           'execution_action': {'pitch_type': 'FF', 'zone_id': 'high_middle', 'source': 'recorded_delivery'}},
                 provenance={'received_at': '2026-09-23T12:02:01Z',
@@ -58,6 +59,48 @@ def test_no_intent_retains_total_without_player_credit():
         assert result['components'][key]['value_pp'] is None
         assert result['components'][key]['abs_share'] is None
     assert result['shares']['denominator_pp'] is None
+
+
+@pytest.mark.parametrize('promotion', ['production', 'performance_evaluation', 'missing_evaluation_flag'])
+def test_synthetic_intent_cannot_be_promoted(promotion):
+    args = fixture()
+    if promotion == 'production':
+        args['evidence']['development_only'] = False
+    elif promotion == 'performance_evaluation':
+        args['evidence']['use_for_performance_evaluation'] = True
+    else:
+        del args['evidence']['use_for_performance_evaluation']
+    with pytest.raises(ValueError, match='synthetic intent or plan'):
+        analyze_event(**args)
+
+
+def test_synthetic_plan_source_alone_cannot_be_promoted():
+    args = fixture()
+    args['intent_estimate'] = {**INTENT, 'method': {'kind': 'independent_development_source', 'version': '1'}}
+    args['evidence']['development_only'] = False
+    with pytest.raises(ValueError, match='synthetic intent or plan'):
+        analyze_event(**args)
+
+
+def test_synthetic_intent_method_alone_cannot_be_promoted():
+    args = fixture()
+    args['evidence']['plan_action']['source'] = 'pre_release_signal'
+    args['evidence']['development_only'] = False
+    with pytest.raises(ValueError, match='synthetic intent or plan'):
+        analyze_event(**args)
+
+
+def test_abstained_intent_without_release_or_clip_link_is_explicit_partial():
+    args = fixture(plan=None, execution=None, intent=UNAVAILABLE_INTENT)
+    args['release_frame_time'] = None
+    args['clip_pitch_id'] = None
+    result = analyze_event(**args)
+    assert result['status'] == 'partial' and result['reason'] == 'no_media'
+    assert result['values']['total_pp'] == pytest.approx(-10)
+    assert result['components']['strategy_contrast_pp']['value_pp'] is None
+    args['intent_estimate'] = {**UNAVAILABLE_INTENT, 'pitch_id': '990001:12:4'}
+    with pytest.raises(ValueError, match='pitch_id differs'):
+        analyze_event(**args)
 
 
 def test_unavailable_and_failed_states_have_no_numeric_credit():

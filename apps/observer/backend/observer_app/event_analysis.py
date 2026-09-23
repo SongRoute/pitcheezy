@@ -109,14 +109,16 @@ def _intent_reason(intent, linkage, release_frame_time, clip_pitch_id):
     validate_intent_estimate(intent)
     if intent['pitch_id'] != linkage['pitch_id']:
         raise ValueError('IntentEstimate pitch_id differs from event pitch_id')
+    if intent['status'] == 'unavailable':
+        if clip_pitch_id is not None and clip_pitch_id != linkage['pitch_id']:
+            raise ValueError('clip-to-pitch evidence does not match event pitch_id')
+        return intent['unavailable_reason']
     if clip_pitch_id is None or clip_pitch_id != linkage['pitch_id']:
         raise ValueError('clip-to-pitch evidence does not match event pitch_id')
     if release_frame_time is None or not math.isfinite(release_frame_time):
         raise ValueError('release_frame_time in clip clock is required')
     if intent['evidence']['frame_time'] >= release_frame_time:
         raise ValueError('intent evidence must precede release in the same clip clock')
-    if intent['status'] == 'unavailable':
-        return intent['unavailable_reason']
     if intent['deepest_frame'] != 'zone9' or intent['points']['zone9']['zone_id'] is None:
         return intent.get('blocked_by') or 'intent_action_unavailable'
     return None
@@ -145,6 +147,14 @@ def analyze_event(*, linkage, identity, initial_defender, values, evidence, prov
             raise ValueError('stored same-pitch recommendation identity mismatch')
     if not isinstance(evidence, Mapping) or not isinstance(provenance, Mapping):
         raise ValueError('evidence and provenance must be mappings')
+    plan_action = evidence.get('plan_action')
+    synthetic_input = (intent_estimate is not None and isinstance(intent_estimate, Mapping) and
+                       isinstance(intent_estimate.get('method'), Mapping) and
+                       intent_estimate['method'].get('kind') == 'synthetic_contract_fixture')
+    synthetic_plan = isinstance(plan_action, Mapping) and plan_action.get('source') == 'synthetic_fixture'
+    if (synthetic_input or synthetic_plan) and (evidence.get('development_only') is not True or
+                                                 evidence.get('use_for_performance_evaluation') is not False):
+        raise ValueError('synthetic intent or plan requires development_only and excludes performance evaluation')
     if not evidence.get('development_only') and stored_recommendation is None:
         raise ValueError('production event analysis requires the saved same-pitch recommendation')
     _timestamp(provenance.get('received_at'), 'received_at')

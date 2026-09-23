@@ -29,3 +29,5 @@ PYTHONPATH=apps/observer/backend:apps/observer/runtime_src \
 ```
 
 At handoff: 16 targeted tests passed; standalone real smoke completed. No 2026 data, retraining, or live CV ingestion was used.
+
+Final boundary review: a `synthetic_contract_fixture` intent or `synthetic_fixture` plan action requires `evidence.development_only=true` and `use_for_performance_evaluation=false`; it cannot be promoted to production attribution. An `unavailable` IntentEstimate with the correct pitch ID can return its explicit reason without a release frame or clip mapping, because it supplies no plan action. A supplied mismatched pitch or clip ID still raises. The focused event-analysis suite now has 22 passing tests; the real model smoke was not rerun for this guard-only change.
