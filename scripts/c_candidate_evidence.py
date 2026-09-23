@@ -36,8 +36,11 @@ def build(packet_path: Path, lineup_path: Path, anchor_path: Path,
     lineup = json.loads(lineup_path.read_text())
     anchor = json.loads(anchor_path.read_text())
     metadata = json.loads(metadata_path.read_text())
+    bundle_manifest = json.loads(bundle_manifest_path.read_text())
     if packet_sha != lineup['original_packet_sha256'] or packet_sha != anchor['original_packet_sha256']:
         raise ValueError('roster source hash mismatch')
+    if digest(metadata_path) != bundle_manifest['sha256']['metadata.json']:
+        raise ValueError('frozen metadata hash mismatch against pinned bundle manifest')
     if packet['actual_manager_availability'] is not None or anchor['eligible_replacements'] is not None:
         raise ValueError('unexpected manager availability assertion')
     if len(packet['decisions']) != 6 or {d['game_pk'] for d in packet['decisions']} != {777063, 777094, 777126, 777143, 777217, 777227}:
@@ -95,7 +98,9 @@ def build(packet_path: Path, lineup_path: Path, anchor_path: Path,
                 'inning_evaluation_ready': False,
                 'unready_reasons': ['decision_time_availability_unknown',
                                     'stances_against_substitute_unknown'] +
-                                   ([] if str(pid) in supported else ['frozen_pitcher_unsupported']),
+                                   ([] if str(pid) in supported else ['frozen_pitcher_unsupported']) +
+                                   ([] if str(keep_id) in supported else ['keep_model_unsupported']) +
+                                   ([] if anchor_ready else ['pre_change_anchor_missing']),
             })
         if sum(r['observed_deployment_after_decision'] for r in screened) != 1:
             raise ValueError('observed incoming pitcher not in retrospective screen')
@@ -140,7 +145,7 @@ def build(packet_path: Path, lineup_path: Path, anchor_path: Path,
     if counts['jointly_supported_keep_and_replacement_games'] != 0:
         raise ValueError('joint support changed; revisit fixed comparison plan')
     return {
-        'schema_version': 1, 'audit_id': 'C-EVIDENCE-003',
+        'schema_version': 2, 'audit_id': 'C-EVIDENCE-003-v2',
         'scope': 'six fixed 2025 DEV observed pitching changes; retrospective descriptive evidence',
         'source_sha256': {'roster_packet': packet_sha, 'lineup_supplement_v2': lineup_sha,
                           'decision_anchor_777063': anchor_sha, 'model_metadata': digest(metadata_path),

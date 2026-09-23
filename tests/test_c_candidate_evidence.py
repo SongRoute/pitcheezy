@@ -24,7 +24,21 @@ def test_fixed_source_audit_preserves_availability_and_model_limits():
     assert all(c['model_comparison']['value_pp'] is None for c in result['cases'])
     assert all(r['manager_available_at_decision'] is None and not r['inning_evaluation_ready']
                for c in result['cases'] for r in c['candidates'])
+    for case in result['cases']:
+        for candidate in case['candidates']:
+            assert ('keep_model_unsupported' in candidate['unready_reasons']) != case['keep']['model_supported']
+            assert ('pre_change_anchor_missing' in candidate['unready_reasons']) != case['pre_change_anchor_lineup_verified']
     assert result['comparison_spec']['pa_values_may_be_combined'] is False
+
+
+def test_rejects_metadata_not_matching_pinned_bundle(tmp_path: Path):
+    packet, lineup, anchor, metadata, manifest = sources()
+    changed = json.loads(metadata.read_text())
+    changed['pitchers']['999999'] = changed['pitchers'][next(iter(changed['pitchers']))]
+    new_metadata = tmp_path / 'metadata.json'
+    new_metadata.write_text(json.dumps(changed))
+    with pytest.raises(ValueError, match='frozen metadata hash mismatch'):
+        build(packet, lineup, anchor, new_metadata, manifest)
 
 
 def test_rejects_promoted_manager_availability(tmp_path: Path, monkeypatch):
