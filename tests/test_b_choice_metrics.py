@@ -50,11 +50,16 @@ def test_concentration_compares_same_rows_and_counts_types_once():
 
 def test_stability_requires_aligned_keys_and_distinguishes_action_type():
     a = {'top_action': {'pitch_type': 'FF', 'zone_id': 'low'}, 'top_type': 'FF',
+         'q_by_action': {'FF|low': .8, 'FF|high': .7, 'SI|low': .6},
          'actual_type_supported': True, 'actual_best_rank': 2}
-    b = a | {'top_action': {'pitch_type': 'FF', 'zone_id': 'high'}, 'actual_best_rank': 3}
-    got = stability({1: {(2, 3, 1): a}, 2: {(2, 3, 1): b}})
+    b = a | {'top_action': {'pitch_type': 'FF', 'zone_id': 'high'}, 'actual_best_rank': 3,
+             'q_by_action': {'FF|low': .7, 'FF|high': .8, 'SI|low': .6}}
+    got = stability({1: {(2, 3, 1): a}, 2: {(2, 3, 1): b}}, {(2, 3, 1): a})
     assert got['top_action_agreement_rate'] == 0
     assert got['top_type_agreement_rate'] == 1
+    assert got['mean_pairwise_top_action_agreement'] == 0
+    assert got['mean_top_action_agreement_with_ensemble'] == .5
+    assert got['mean_pairwise_action_rank_spearman'] == pytest.approx(.5)
     assert got['per_pitch'][0]['actual_rank_min'] == 2
     assert got['per_pitch'][0]['actual_rank_max'] == 3
     with pytest.raises(ValueError, match='different pitch keys'):

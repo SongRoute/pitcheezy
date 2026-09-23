@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 
 import numpy as np
@@ -73,7 +74,9 @@ def compact_evaluation(ev, rows, variant):
         accounting = action_accounting(ev.actions, q if q is not None else [], row.pitch_type)
         result['pitches'].append({'pitch_key': list(pitch_key(row)),
             'pitcher': int(row.pitcher), 'balls': b, 'strikes': s,
-            'actual_type': row.pitch_type, **accounting})
+            'actual_type': row.pitch_type, 'q_values': q.tolist() if q is not None else [],
+            'q_by_action': {f'{a.pitch_type}|{a.zone_id}': float(q[i]) for i, a in enumerate(ev.actions)} if q is not None else {},
+            **accounting})
     if ev.support_ess is not None:
         result['action_support'] = [
             {'pitch_type': a.pitch_type, 'zone_id': a.zone_id,
@@ -142,8 +145,11 @@ def main():
     parser.add_argument('--config', type=Path, required=True)
     args = parser.parse_args()
     cfg = json.loads(args.config.read_text())
-    if cfg.get('phase') != 'frozen_before_results':
-        raise ValueError('A must mark the committed preregistration frozen_before_results')
+    relative_cfg = args.config.resolve().relative_to(ROOT)
+    committed = subprocess.run(['git', 'show', f'HEAD:{relative_cfg}'], cwd=ROOT,
+                               capture_output=True, check=True).stdout
+    if args.config.read_bytes() != committed:
+        raise ValueError('Diagnosis config must match committed preregistration')
     manifest_path = ROOT / cfg['parent_manifest']
     manifest = json.loads(manifest_path.read_text())
     dest = Path(cfg['artifact_dir'])
@@ -157,7 +163,7 @@ def main():
     metadata = json.loads((Path(cfg['bundle_dir'])/'metadata.json').read_text())
     pitchers = list(map(int, cfg['pitchers']))
     eligible, reasons, cohort_pa_count = cohort_pa_rows(dev, pitchers, metadata['pitchers'])
-    if len(eligible) != cfg['expected_eligible_pitches'] or eligible.groupby(PA_KEY).ngroups != cfg['expected_eligible_pas']:
+    if len(eligible) != 563 or eligible.groupby(PA_KEY).ngroups != 151:
         raise ValueError('Frozen eligible row count mismatch')
     os.environ['PITCHEEZY_OBSERVER_RUN'] = str(dest)
     os.environ['PITCHEEZY_OBSERVER_RUNTIME'] = 'research'
@@ -177,7 +183,7 @@ def main():
         pitcher = int(rows.iloc[0].pitcher)
         bounds, repertoire_counts = prior_zone_inputs(train, pitcher,
             metadata['pitchers'][str(pitcher)]['pitch_types'])
-        pitch = {'request': request_for(rows, metadata, cfg['train_end'])}
+        pitch = {'request': request_for(rows, metadata, cfg['train_period'][1])}
         pitch['request']['balls'] = int(rows.iloc[0].balls)
         pitch['request']['strikes'] = int(rows.iloc[0].strikes)
         pa_input = {'zone_bounds': bounds, 'repertoire_counts': repertoire_counts}
@@ -185,7 +191,7 @@ def main():
         evaluations.append(compact_evaluation(model.evaluate_pre_pitch(pitch, pa_input), rows, 'ensemble'))
         original_models = model.engine.models
         try:
-            for member in original_models if cfg.get('member_sensitivity', False) else []:
+            for member in original_models:
                 model.engine.models = [member]
                 evaluations.append(compact_evaluation(model.evaluate_pre_pitch(pitch, pa_input), rows,
                     f'member_seed_{member.seed}'))
@@ -207,7 +213,8 @@ def main():
         by_variant = {v: {tuple(row['pitch_key']): row
                           for item in checkpoints for e in item['evaluations'] if e['variant'] == v
                           for row in e['pitches']} for v in variants}
-        aggregate_result['member_sensitivity'] = stability(by_variant)
+        ensemble_rows = {tuple(row['pitch_key']): row for row in aggregate_result['per_pitch']}
+        aggregate_result['member_sensitivity'] = stability(by_variant, ensemble_rows)
         aggregate_result['member_sensitivity']['scope'] = 'existing frozen trained-member sensitivity; not independent sampling seeds or full-pipeline retraining'
     aggregate_result['experiment_id'] = cfg['experiment_id']
     aggregate_result['interpretation'] = {'prediction_quality': 'separate existing A S1 NLL/Brier; no refit',
