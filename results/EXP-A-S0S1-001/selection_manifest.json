@@ -1,0 +1,120 @@
+{
+  "dataset_paths": {
+    "dev": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-S0S1-001/dev_full_games.parquet",
+    "train": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-S0S1-001/train_full_games.parquet"
+  },
+  "elapsed_seconds": 0.55,
+  "experiment_id": "EXP-A-S0S1-001",
+  "maxrss_kib_or_bytes_platform": 2686697472,
+  "note": "Selection used only game date, pitcher/starter IDs, and game_pk; no prediction or metric computed.",
+  "phase": "prepared_unscored",
+  "pre_result_amendment": "Evaluation parameters and diagnostics added after selection; selected game IDs, full row parquet hashes, and pitch-key hashes unchanged.",
+  "selected_full_rows": {
+    "dev": {
+      "games": 6,
+      "pas": 439,
+      "pitch_key_sha256": "0631b4a3c71c356c5cef4c4b8c5850fc63a7ccc025bcc0560acefcc6bb0cb7fe",
+      "pitches": 1690
+    },
+    "train": {
+      "games": 6,
+      "pas": 429,
+      "pitch_key_sha256": "1076cabc4238ade0d9e5f87554253e4783295acf7c88e1dbd2cfe7d9b7066675",
+      "pitches": 1655
+    }
+  },
+  "selection": {
+    "dev": {
+      "554430": [
+        {
+          "game_date": "2025-07-06",
+          "game_pk": 777217
+        },
+        {
+          "game_date": "2025-07-12",
+          "game_pk": 777126
+        },
+        {
+          "game_date": "2025-07-21",
+          "game_pk": 777063
+        }
+      ],
+      "657277": [
+        {
+          "game_date": "2025-07-05",
+          "game_pk": 777227
+        },
+        {
+          "game_date": "2025-07-11",
+          "game_pk": 777143
+        },
+        {
+          "game_date": "2025-07-19",
+          "game_pk": 777094
+        }
+      ]
+    },
+    "train": {
+      "554430": [
+        {
+          "game_date": "2025-04-02",
+          "game_pk": 778482
+        },
+        {
+          "game_date": "2025-04-08",
+          "game_pk": 778406
+        },
+        {
+          "game_date": "2025-04-13",
+          "game_pk": 778336
+        }
+      ],
+      "657277": [
+        {
+          "game_date": "2025-04-01",
+          "game_pk": 778489
+        },
+        {
+          "game_date": "2025-04-07",
+          "game_pk": 778410
+        },
+        {
+          "game_date": "2025-04-13",
+          "game_pk": 778339
+        }
+      ]
+    }
+  },
+  "selection_config_sha256_at_prepare": "71cb8385a1a2725ff49169de83c59ac4c6d3ad007376c78468a958c9b6c5f8a9",
+  "sha256": {
+    "bundle_manifest": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+    "bundle_metadata": "46467ff5ed25b09b69ddb3d9b80aea3f60bfd906944489fd901a84f382d64731",
+    "config": "e2175b8858f67710f90ee5c99b401ce4c45fdffb3a6a26dc3db9df2fef1610f4",
+    "dev_full_games.parquet": "89130facf5a8854780a33755241129240be6d43ea2a8584afcd65fe6111c1199",
+    "script": "ab4e1bde54b09cc77456e1e3eb2136e8a6f93da0ac25f4773c9cccedaffe5a6c",
+    "source_config": "eb364ca79d553e7b8e16350f783572714f293033240468a2592083ce602ee967",
+    "train_full_games.parquet": "a75488855c59963c16826fb55e3e50b8e38fe80659e11847d52b5ad14c167852"
+  },
+  "source_identity": {
+    "data_quality_sha256": "c83606744daf3b567d8860cac005ad8b1b11ff3ff776bfec5905ec97c540552f",
+    "processed_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+    "raw_rehashed_this_run": false,
+    "raw_sources": [
+      {
+        "bytes": 95124285,
+        "file": "statcast_2023.parquet",
+        "sha256": "46c354beae196ce2d501fe989c491725f2ecc47601f58d4b8b0234b982984730"
+      },
+      {
+        "bytes": 103060977,
+        "file": "statcast_2024.parquet",
+        "sha256": "3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274"
+      },
+      {
+        "bytes": 104922105,
+        "file": "statcast_2025.parquet",
+        "sha256": "4c785756d8901f8c46c70891954a4c54b8ad1c6909db67f4a000221691dc0249"
+      }
+    ]
+  }
+}
