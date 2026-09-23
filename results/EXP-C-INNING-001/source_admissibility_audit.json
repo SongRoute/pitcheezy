@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "audit_id": "C-INNING-001-source-admissibility-v1",
+  "scope": "six fixed 2025 DEV observed pitching changes",
+  "source_sha256": {
+    "roster_packet": "a327f1fecd7c9b97e4e2575328497520e373f9bcc325b28b341ae17303360371",
+    "lineup_supplement_v2": "70ec1a13869b7a73f6a2dc6eb97fc5b813c2a03e0300f3b67205018ad6cd4605",
+    "saved_numeric_screen": "e33ba90e5b10c2641d9dc41f85ff4b7c17590fcd0a2f12feab204608597b2ecb"
+  },
+  "counts": {
+    "decision_games": 6,
+    "keep_model_supported": 1,
+    "predecision_order_verified": 5,
+    "both_supported_keep_and_verified_order": 0,
+    "actually_eligible_substitute_verified": 0,
+    "usable_actual_replacement": 0
+  },
+  "supported_keep_games": [
+    777063
+  ],
+  "verified_order_games": [
+    777094,
+    777126,
+    777143,
+    777217,
+    777227
+  ],
+  "joint_games": [],
+  "decisions": [
+    {
+      "game_pk": 777063,
+      "decision_first_observed_pitch_id": "777063:49:1",
+      "keep_pitcher_id": 554430,
+      "keep_model_supported": true,
+      "predecision_order_verified": false,
+      "current_batter_at_pitcher_decision_verified": false,
+      "substitute_matchup_stances_verified": false,
+      "actual_eligible_substitute_verified": false,
+      "usable_for_actual_replacement": false,
+      "replacement_value_pp": null,
+      "reason": "invalid_for_replacement_current_batter_after_pitcher_decision",
+      "lineup_missing_reason": "current_pa_pre_first_pitch_nonpitching_substitution"
+    },
+    {
+      "game_pk": 777094,
+      "decision_first_observed_pitch_id": "777094:50:1",
+      "keep_pitcher_id": 641778,
+      "keep_model_supported": false,
+      "predecision_order_verified": true,
+      "current_batter_at_pitcher_decision_verified": true,
+      "substitute_matchup_stances_verified": false,
+      "actual_eligible_substitute_verified": false,
+      "usable_for_actual_replacement": false,
+      "replacement_value_pp": null,
+      "reason": "unsupported_keep_pitcher",
+      "lineup_missing_reason": null
+    },
+    {
+      "game_pk": 777126,
+      "decision_first_observed_pitch_id": "777126:53:1",
+      "keep_pitcher_id": 663773,
+      "keep_model_supported": false,
+      "predecision_order_verified": true,
+      "current_batter_at_pitcher_decision_verified": true,
+      "substitute_matchup_stances_verified": false,
+      "actual_eligible_substitute_verified": false,
+      "usable_for_actual_replacement": false,
+      "replacement_value_pp": null,
+      "reason": "unsupported_keep_pitcher",
+      "lineup_missing_reason": null
+    },
+    {
+      "game_pk": 777143,
+      "decision_first_observed_pitch_id": "777143:54:1",
+      "keep_pitcher_id": 607455,
+      "keep_model_supported": false,
+      "predecision_order_verified": true,
+      "current_batter_at_pitcher_decision_verified": true,
+      "substitute_matchup_stances_verified": false,
+      "actual_eligible_substitute_verified": false,
+      "usable_for_actual_replacement": false,
+      "replacement_value_pp": null,
+      "reason": "unsupported_keep_pitcher",
+      "lineup_missing_reason": null
+    },
+    {
+      "game_pk": 777217,
+      "decision_first_observed_pitch_id": "777217:42:1",
+      "keep_pitcher_id": 594580,
+      "keep_model_supported": false,
+      "predecision_order_verified": true,
+      "current_batter_at_pitcher_decision_verified": true,
+      "substitute_matchup_stances_verified": false,
+      "actual_eligible_substitute_verified": false,
+      "usable_for_actual_replacement": false,
+      "replacement_value_pp": null,
+      "reason": "unsupported_keep_pitcher",
+      "lineup_missing_reason": null
+    },
+    {
+      "game_pk": 777227,
+      "decision_first_observed_pitch_id": "777227:65:1",
+      "keep_pitcher_id": 686993,
+      "keep_model_supported": false,
+      "predecision_order_verified": true,
+      "current_batter_at_pitcher_decision_verified": true,
+      "substitute_matchup_stances_verified": false,
+      "actual_eligible_substitute_verified": false,
+      "usable_for_actual_replacement": false,
+      "replacement_value_pp": null,
+      "reason": "unsupported_keep_pitcher",
+      "lineup_missing_reason": null
+    }
+  ],
+  "prior_numeric_outputs_unchanged": true,
+  "interpretation": "The 777063 keep one-PA screen conditions on a batter observed after the pitcher decision; it is invalid as an actual replacement-decision input. The independent two-out demonstration is unaffected."
+}
