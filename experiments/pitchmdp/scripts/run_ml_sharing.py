@@ -19,7 +19,8 @@ from pitchmdp.data import KEY, hash_file
 from pitchmdp.model import eligible, outcome_labels
 from pitchmdp.matrix_data import canonical_hash, ordered_key_hash
 from pitchmdp.matrix_panel import select_panel, evaluation_metadata
-from pitchmdp.matrix_sharing import fit_pitcher_clusters, SharingContext, SharingPredictor, training_arrays
+from pitchmdp.matrix_sharing import (fit_pitcher_clusters, SharingContext, SharingPredictor,
+                                   ContinuousPitcherContext, training_arrays)
 from pitchmdp.matrix_models import MatrixModel
 from pitchmdp.matrix_benchmark import predict_streamed
 from run_ml_benchmark import (SOURCES as ARCH_SOURCES, read_json, dump, regular_frame,
@@ -90,12 +91,6 @@ def prepare(config, local, output, expected):
         if hash_file(PROJECT / rel) != digest:
             raise ValueError('Frozen architecture implementation changed')
     external = {str(parent / 'preparation.json'): hash_file(parent / 'preparation.json')}
-    for seed in SEEDS:
-        member = parent / 'members' / 'A0-MLP' / f'seed{seed}'
-        state = read_json(member / 'fit_state.json')
-        assert_hashes(member, state['artifact_hashes'])
-        for name in ('model.pt', 'fit_state.json'):
-            external[str(member / name)] = hash_file(member / name)
     started = time.perf_counter()
     store, inherited, aux = load_arch_data(local, parent, arch)
     frame, train = store.frame, inherited['train']
@@ -110,7 +105,8 @@ def prepare(config, local, output, expected):
         if not len(parts[name]):
             raise ValueError('Empty panel split; no DEV-based replacement permitted')
     parts['mlb_dev'] = frame.loc[frame.split.eq('dev') & ok]
-    units = {'feature': {'mode': 'feature', 'train_n': len(train), 'earlystop_n': len(parts['earlystop'])}}
+    units = {name: {'mode': name, 'train_n': len(train), 'earlystop_n': len(parts['earlystop'])}
+             for name in ('global', 'feature')}
     eligibility = []
     train_c = train.pitcher.map(lambda pid: clusters['pitcher_cluster'][str(int(pid))])
     early_c = parts['earlystop'].pitcher.map(lambda pid: clusters['pitcher_cluster'].get(str(int(pid)), -1))
@@ -164,7 +160,9 @@ def prepare(config, local, output, expected):
     np.savez_compressed(output / 'baseline_predictions.npz', **saved)
     files = [str(path.relative_to(output)) for path in output.rglob('*') if path.is_file()]
     prep = {'identity': expected, 'external_hashes': external, 'samples': records,
-        'features': arch['features'], 'units': units, 'individual_eligibility': eligibility,
+        'features': {**arch['features'], 'context': ContinuousPitcherContext(aux['context'], clusters).report(),
+                     'parent_context': arch['features']['context']},
+        'units': units, 'individual_eligibility': eligibility,
         'panel': panel, 'clusters': clusters, 'baseline_temperature': chosen, 'coverage': coverage,
         'artifact_hashes': artifact_hashes(output, files), 'seconds': time.perf_counter() - started,
         'peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
@@ -214,7 +212,7 @@ def fit(config, local, output, prep, seed):
             tr, er = train.loc[tc.eq(spec['id'])], early.loc[ec.eq(spec['id'])]
         elif spec['mode'] == 'personal':
             tr, er = train.loc[train.pitcher.eq(spec['id'])], early.loc[early.pitcher.eq(spec['id'])]
-        enrich = spec['mode'] != 'personal'
+        enrich = spec['mode'] in ('feature', 'cluster')
         ta = training_arrays(arrays(store, context, tr.index.to_numpy()), enrich)
         ea = training_arrays(arrays(store, context, er.index.to_numpy()), enrich)
         model = MatrixModel('flatten_mlp', seed=seed, width=128).fit(ta, outcome_labels(tr), ea, outcome_labels(er),
@@ -232,12 +230,12 @@ def fit(config, local, output, prep, seed):
 
 
 def predictor(config, output, prep, cell, seed):
-    parent = Path(config['parent_run']) / 'members' / 'A0-MLP' / f'seed{seed}'
-    global_model = MatrixModel.load(parent / 'model.pt')
+    global_model = None
     personal, clusters, feature = {}, {}, None
     needed = {'G0-global': [], 'G1-personal': ['personal'], 'G2-feature': ['feature'],
               'G3-cluster': ['cluster'], 'G4-partial': ['personal', 'cluster']}[cell]
-    dependencies = {str(parent / 'model.pt'): hash_file(parent / 'model.pt')}
+    needed = [*needed, 'global']
+    dependencies = {}
     for name, spec in prep['units'].items():
         if spec['mode'] not in needed:
             continue
@@ -248,7 +246,8 @@ def predictor(config, output, prep, cell, seed):
         assert_hashes(dest, state['artifact_hashes'])
         dependencies[str(dest / 'model.pt')] = hash_file(dest / 'model.pt')
         model = MatrixModel.load(dest / 'model.pt')
-        if spec['mode'] == 'personal': personal[spec['id']] = model
+        if spec['mode'] == 'global': global_model = model
+        elif spec['mode'] == 'personal': personal[spec['id']] = model
         elif spec['mode'] == 'cluster': clusters[spec['id']] = model
         else: feature = model
     return SharingPredictor(cell, global_model, prep['clusters'], feature_model=feature,
@@ -265,6 +264,9 @@ def predict(config, local, output, prep, cell, seed, mlb=False):
         if state['identity'] != expected:
             raise ValueError('Sharing prediction identity changed')
         assert_hashes(dest, state['artifact_hashes'])
+        for path, digest in state['dependencies'].items():
+            if hash_file(Path(path)) != digest:
+                raise ValueError('Sharing predictor dependency changed')
         print('SHARING_PREDICT_COMPLETE', cell, seed, flush=True)
         return
     start = time.perf_counter()
@@ -274,6 +276,8 @@ def predict(config, local, output, prep, cell, seed, mlb=False):
     if mlb:
         # Freeze the exact panel-selected calibration for whole-MLB confirmation.
         panel_state = read_json(dest / 'prediction_state.json')
+        if panel_state['identity'] != expected or panel_state['dependencies'] != dependencies:
+            raise ValueError('MLB prediction differs from frozen panel model')
         assert_hashes(dest, panel_state['artifact_hashes'])
         model.delivery_temperature = read_json(dest / 'calibration.json')['delivery_temperature']
     else:

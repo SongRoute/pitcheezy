@@ -58,6 +58,7 @@ def fit_pitcher_clusters(train, *, k=4, seed=20260924):
             'columns': list(raw.columns), 'median': median.tolist(), 'mean': mean.tolist(),
             'scale': scale.tolist(), 'centers': centers.tolist(), 'iterations': iteration + 1,
             'pitcher_cluster': {str(int(pid)): int(label) for pid, label in zip(ids, labels)},
+            'pitcher_profiles': {str(int(pid)): profile.tolist() for pid, profile in zip(ids, x)},
             'pitcher_counts': {str(int(pid)): int(n) for pid, n in zip(ids, counts)},
             'cluster_counts': {str(c): int(counts.to_numpy()[labels == c].sum()) for c in range(k)},
             'cluster_players': {str(c): int((labels == c).sum()) for c in range(k)},
@@ -72,13 +73,37 @@ class SharingContext:
 
     def transform(self, frame):
         context = self.base.transform(frame)
+        profiles = self.clusters['pitcher_profiles']
+        width = len(self.clusters['columns'])
+        continuous = np.array([profiles.get(str(int(pid)), [0.] * width) for pid in frame.pitcher], dtype=np.float32)
+        support = np.array([np.log1p(self.clusters['pitcher_counts'].get(str(int(pid)), 0)) / 10.
+                            for pid in frame.pitcher], dtype=np.float32)
         cluster = np.array([self.mapping.get(int(pid), -1) for pid in frame.pitcher], dtype=int)
         flags = np.eye(5, dtype=np.float32)[np.where(cluster >= 0, cluster, 4)]
         # IDs fit exactly into float32 for the declared MLB identity range.
         ids = frame.pitcher.to_numpy(np.int64)
         if (np.abs(ids) >= 2**24).any():
             raise ValueError('Routing ID cannot be represented exactly')
-        return np.column_stack([context, flags, cluster, ids]).astype(np.float32)
+        return np.column_stack([context, continuous, support, flags, cluster, ids]).astype(np.float32)
+
+    def report(self):
+        from .matrix_data import canonical_hash
+        return {'base': self.base.report(), 'pitcher_representation_sha256': canonical_hash(self.clusters),
+            'continuous': 'TRAIN-fitted static standardized physical/type/hand profile plus log1p(TRAIN count)/10',
+            'unknown': 'zero standardized profile and count; routing uses league fallback',
+            'routing': 'last seven columns are five cluster flags, clusterID, pitcherID; wrapper strips IDs'}
+
+
+class ContinuousPitcherContext:
+    """Shared player representation without cluster flags or routing metadata."""
+    def __init__(self, base, clusters):
+        self.sharing = SharingContext(base, clusters)
+
+    def transform(self, frame):
+        return self.sharing.transform(frame)[:, :-7]
+
+    def report(self):
+        return {**self.sharing.report(), 'routing': 'all cluster flags and routing IDs omitted'}
 
 
 def training_arrays(arrays, cluster_features=False):
