@@ -241,7 +241,7 @@ def profile(config, local, output, prep):
     destination.mkdir(parents=True)
     started = time.perf_counter()
     store, context, parts, aux = load_data(local, output, prep)
-    times = {}
+    times, representatives = {}, {}
     for mode in sorted({spec['mode'] for spec in prep['units'].values()}):
         unit, spec = next((name, value) for name, value in prep['units'].items() if value['mode'] == mode)
         train, early = _unit_rows(parts, context, spec)
@@ -253,25 +253,32 @@ def profile(config, local, output, prep):
         model.fit(training_arrays(arrays(store, context, train.index.to_numpy()), enrich), outcome_labels(train),
                   training_arrays(arrays(store, context, early.index.to_numpy()), enrich), outcome_labels(early),
                   epochs=2, patience=2, batch_size=1024, learning_rate=.0005)
+        representatives[mode] = model
         times[mode] = {'unit': unit, 'train_rows': len(train), 'earlystop_rows': len(early),
                        'two_epoch_seconds': time.perf_counter()-before}
-    # May-only inference confirms the original 400-draw physical integration.
+    # May-only calibration and inference exercise the original 400-draw
+    # physical integration with a newly seeded representative model.
     temp = parts['temperature'].iloc[:64]
-    # A frozen G seed0 predictor exercises the identical delivery API on May.
-    from run_ml_sharing import predictor as g_predictor
-    inherited, _ = g_predictor(read_json(Path(prep['parent_run']) / 'registered_config.json'),
-                               Path(prep['parent_run']), read_json(Path(prep['parent_run']) / 'preparation.json'),
-                               'G0-global', 0)
+    probe = SharingPredictor('G0-global', representatives['global'], prep['clusters'])
     before = time.perf_counter()
-    p, _, _ = predict_streamed(inherited, aux['delivery'], store, context, temp.index.to_numpy())
+    aux['delivery'].calibrate(probe, store, context, temp.index.to_numpy(), outcome_labels(temp))
+    calibration = time.perf_counter()-before
+    before = time.perf_counter()
+    p, _, _ = predict_streamed(probe, aux['delivery'], store, context, temp.index.to_numpy())
     inference = time.perf_counter()-before
     projection = sum(times[spec['mode']]['two_epoch_seconds'] * spec['train_n'] /
                      max(times[spec['mode']]['train_rows'], 1) * 15 for spec in prep['units'].values())
     if source_hashes() != prep['identity']['source_hashes']:
         raise ValueError('C1 source changed during profile')
+    parent = Path(prep['parent_run'])
+    parent_prediction = {cell: [read_json(parent / 'members' / cell / f'seed{seed}' /
+                        'prediction_runtime.json')['seconds'] for seed in SEEDS[:3]]
+                         for cell in prep['cells']}
     dump(destination / 'profile.json', {'preparation_sha256': hash_file(output / 'preparation.json'),
         'per_mode': times, 'may_rows': len(temp), 'draws': config['draws'],
-        'may_inference_seconds': inference, 'maximum_mass_error': float(np.abs(p.sum(1)-1).max()),
+        'may_calibration_seconds': calibration, 'may_inference_seconds': inference,
+        'parent_full_cpanel_prediction_seconds': parent_prediction,
+        'maximum_mass_error': float(np.abs(p.sum(1)-1).max()),
         'rough_per_seed_fit_projection_seconds': projection,
         'two_seed_fit_projection_seconds': 2*projection,
         'seconds_total': time.perf_counter()-started,
