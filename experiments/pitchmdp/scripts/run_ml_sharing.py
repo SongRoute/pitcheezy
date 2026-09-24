@@ -189,7 +189,55 @@ def load_data(local, output, prep):
     return store, context, parts, aux
 
 
+def profile(config, local, output, prep):
+    dest = output / 'profile'
+    if dest.exists():
+        state = read_json(dest / 'state.json')
+        if state['preparation_sha256'] != hash_file(output / 'preparation.json'):
+            raise ValueError('Profile parent changed')
+        assert_hashes(dest, state['artifact_hashes'])
+        print('SHARING_PROFILE_COMPLETE', flush=True)
+        return
+    start = time.perf_counter()
+    store, context, parts, aux = load_data(local, output, prep)
+    train, early = parts['train'].iloc[:8192], parts['earlystop'].iloc[:2048]
+    ta = arrays(store, context, train.index.to_numpy())
+    ea = arrays(store, context, early.index.to_numpy())
+    times, models = {}, {}
+    for name, enriched in [('global', False), ('feature', True)]:
+        before = time.perf_counter()
+        model = MatrixModel('flatten_mlp', seed=0, width=128).fit(training_arrays(ta, enriched), outcome_labels(train),
+            training_arrays(ea, enriched), outcome_labels(early), epochs=2, patience=2, batch_size=1024, learning_rate=.0005)
+        times[name] = time.perf_counter() - before
+        models[name] = model
+    query = parts['temperature'].iloc[:64]
+    wrapped = SharingPredictor('G2-feature', models['global'], prep['clusters'], feature_model=models['feature'])
+    before = time.perf_counter()
+    p, _, _ = predict_streamed(wrapped, aux['delivery'], store, context, query.index.to_numpy())
+    inference = time.perf_counter() - before
+    projected = max(times.values()) * sum(u['train_n'] for u in prep['units'].values()) / len(train) * 15
+    result = {'train_rows': len(train), 'earlystop_rows': len(early), 'query_rows': len(query),
+        'epochs': 2, 'fit_seconds': times, 'inference_seconds': inference,
+        'rough_per_seed_fit_batch_projection_seconds': projected,
+        'resource_gate': projected < 7200,
+        'projection_note': 'Conservative linear 30-epoch extrapolation, not a guaranteed bound; caller also enforces timeout.',
+        'peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        'maximum_mass_error': float(np.abs(p.sum(1) - 1).max()),
+        'seconds_total': time.perf_counter() - start, 'dev_scores_read': False}
+    dest.mkdir()
+    dump(dest / 'profile.json', result)
+    dump(dest / 'state.json', {'preparation_sha256': hash_file(output / 'preparation.json'),
+         'artifact_hashes': artifact_hashes(dest, ['profile.json'])})
+    print('SHARING_PROFILE_COMPLETE', result, flush=True)
+
+
 def fit(config, local, output, prep, seed):
+    profile_state = read_json(output / 'profile' / 'state.json')
+    if profile_state['preparation_sha256'] != hash_file(output / 'preparation.json'):
+        raise ValueError('Matching sharing resource profile required')
+    assert_hashes(output / 'profile', profile_state['artifact_hashes'])
+    if read_json(output / 'profile' / 'profile.json')['resource_gate'] is not True:
+        raise ValueError('Sharing fit resource gate requires revised execution plan')
     store, context, parts, aux = load_data(local, output, prep)
     train, early = parts['train'], parts['earlystop']
     mapping = context.mapping
@@ -315,6 +363,7 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     sub = p.add_subparsers(dest='command', required=True)
     sub.add_parser('prepare')
+    sub.add_parser('profile')
     f = sub.add_parser('fit'); f.add_argument('--seed', type=int, choices=SEEDS, required=True)
     q = sub.add_parser('predict'); q.add_argument('--seed', type=int, choices=SEEDS, required=True)
     q.add_argument('--cell', choices=CELLS, required=True); q.add_argument('--mlb', action='store_true')
@@ -328,7 +377,8 @@ def main():
         if args.command == 'prepare': prepare(config, local, output, expected)
         else:
             prep = verify(output, expected)
-            if args.command == 'fit': fit(config, local, output, prep, args.seed)
+            if args.command == 'profile': profile(config, local, output, prep)
+            elif args.command == 'fit': fit(config, local, output, prep, args.seed)
             else: predict(config, local, output, prep, args.cell, args.seed, args.mlb)
 
 
