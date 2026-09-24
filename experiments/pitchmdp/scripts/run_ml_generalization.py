@@ -206,6 +206,7 @@ def build_fold(config, frame, axis, selection, parent_parts, panel):
         'aux_refit': 'all auxiliaries refitted; normalizer/type vocabulary use allowed whole-PA TRAIN, others eligible D100 TRAIN',
         'pitcher_adaptation': 'unknown league routing in Z/W/O; O may change permitted batter context but does not adapt pitcher profile, delivery or experts',
         'calibration': 'one allowed-May temperature per cell/seed and identical June predictions for all regimes',
+        'evaluation_metadata': 'canonical TRAIN count/seen/role from actual sanitized supervised TRAIN; volume uses frozen G thresholds; selection_* preserves original panel strata',
         'truth': 'original primitive labels/eligibility; sanitized statistical primitives never determine targets'}
     return fold, parts, aux, report
 
@@ -228,6 +229,25 @@ def _metadata_values(frame, prefix):
             prefix + '_pitcher': frame.pitcher.to_numpy(np.int64), prefix + '_batter': frame.batter.to_numpy(np.int64),
             prefix + '_game_pk': frame.game_pk.to_numpy(np.int64)}
 
+
+
+def fold_metadata(frame, panel, actual_train):
+    """Separate frozen panel-selection strata from actual supervised TRAIN exposure."""
+    result = evaluation_metadata(frame, panel)
+    for name in ('train_pitches', 'train_role', 'train_volume', 'seen_pitcher', 'seen_batter'):
+        result['selection_' + name] = result[name]
+    counts = actual_train.groupby('pitcher').size()
+    result['train_pitches'] = frame.pitcher.map(counts).fillna(0).to_numpy(np.int64)
+    result['seen_pitcher'] = frame.pitcher.isin(counts.index).to_numpy()
+    result['seen_batter'] = frame.batter.isin(actual_train.batter.unique()).to_numpy()
+    q25, q75 = (panel['volume_thresholds'][name] for name in ('q25', 'q75'))
+    n = result.train_pitches.to_numpy()
+    result['train_volume'] = np.select([n == 0, n <= q25, n <= q75], ['zero', 'low', 'middle'], default='high')
+    # Role is descriptive observed TRAIN role, not the original selection role.
+    shares = actual_train.assign(_starter=actual_train.pitcher.eq(actual_train.starter_pitcher)).groupby('pitcher')._starter.mean()
+    result['train_role'] = ['unseen' if int(pid) not in shares else
+                            'starter' if shares.loc[int(pid)] >= .5 else 'relief' for pid in frame.pitcher]
+    return result
 
 def prepare(config, local_path, local, output, expected):
     if output.exists() and any(output.iterdir()):
@@ -286,7 +306,7 @@ def prepare(config, local_path, local, output, expected):
             pickle.dump(aux, stream)
         baseline, report['baseline_temperature'] = _baseline_artifacts(parts, aux)
         np.savez_compressed(directory / 'baseline_predictions.npz', **baseline)
-        evaluation_metadata(parts['dev'], panel).to_parquet(directory / 'dev_metadata.parquet', index=False)
+        fold_metadata(parts['dev'], panel, parts['train']).to_parquet(directory / 'dev_metadata.parquet', index=False)
         frame.loc[fold.prefix, [*KEY, axis]].to_parquet(directory / 'exposure_keys.parquet', index=False)
         folds[axis] = report
         del fold, parts, aux, baseline
@@ -309,7 +329,10 @@ def prepare(config, local_path, local, output, expected):
         if not np.array_equal(archive['dev_keys'], parent_parts['dev'][KEY].to_numpy(np.int64)):
             raise ValueError('Natural matchup frequency baseline keys differ')
         values['frequency'] = archive['dev'][kept]
+    values['batter'] = parent_parts['dev'].iloc[kept].batter.to_numpy(np.int64)
     np.savez_compressed(output / 'natural_matchup_predictions.npz', **values)
+    fold_metadata(parent_parts['dev'].iloc[kept], panel, parent_parts['train']).to_parquet(
+        output / 'natural_matchup_metadata.parquet', index=False)
     natural['report']['eligible_archived_pitches'] = len(kept)
     dump(output / 'natural_matchup_audit.json', natural['report'])
     if source_hashes() != expected['source_hashes']:
