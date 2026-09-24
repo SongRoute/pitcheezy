@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from .matrix_benchmark import NEURAL, SEEDS
-from .matrix_data import canonical_hash
+from .matrix_data import canonical_hash, ordered_key_hash
+from .data import KEY
+from .matrix_metrics import validate_probabilities
 
 
 CELLS = {"I25-MLP": "flatten_mlp", "I25-TF": "transformer"}
@@ -60,3 +63,19 @@ def check_reference_archive(archive, expected_keys: dict, expected_labels: dict)
             expected_labels[name] = archive[name + "_y"].copy()
         elif not np.array_equal(archive[name + "_y"], expected_labels[name]):
             raise ValueError("D100 reference outcome labels differ between members")
+        validate_probabilities(expected_labels[name], archive[name])
+        validate_probabilities(expected_labels[name], archive[name + '_raw'])
+
+
+def check_nested_training(d25, d100):
+    """D25 must be an ordered subset containing every D100 pitch of its games."""
+    ordered_key_hash(d25)
+    ordered_key_hash(d100)
+    if not 0 < len(d25) < len(d100):
+        raise ValueError('D25 must be nonempty and smaller than D100')
+    positions = pd.MultiIndex.from_frame(d100[KEY]).get_indexer(pd.MultiIndex.from_frame(d25[KEY]))
+    if (positions < 0).any() or (np.diff(positions) <= 0).any():
+        raise ValueError('D25 must preserve its ordered D100 subsequence')
+    expected = d100.loc[d100.game_pk.isin(d25.game_pk), KEY]
+    if not np.array_equal(d25[KEY].to_numpy(), expected.to_numpy()):
+        raise ValueError('D25 must retain whole eligible games from D100')

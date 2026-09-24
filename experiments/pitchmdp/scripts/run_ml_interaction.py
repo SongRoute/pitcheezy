@@ -25,9 +25,10 @@ import pandas as pd
 from pitchmdp.data import KEY, hash_file
 from pitchmdp.matrix_data import canonical_hash
 from pitchmdp.matrix_interaction import (CELLS, REFERENCE_CELLS, SEEDS,
-                                         check_reference_archive, member_identity, validate_config)
+                                         check_reference_archive, check_nested_training, member_identity, validate_config)
 from pitchmdp.matrix_models import MatrixModel
-from pitchmdp.matrix_benchmark import predict_streamed
+from pitchmdp.matrix_benchmark import (predict_streamed, CELLS as ARCH_CELLS,
+    member_identity as reference_member_identity, validate_config as validate_architecture_config)
 from pitchmdp.model import outcome_labels
 from run_ml_matrix import assert_hashes, artifact_hashes, check_location, heavy_lock
 from run_ml_benchmark import (SOURCES as ARCH_SOURCES, identity as architecture_identity,
@@ -36,7 +37,7 @@ from run_sequence_pilot import arrays
 
 
 SOURCES = list(dict.fromkeys([*ARCH_SOURCES, "pitchmdp/matrix_interaction.py",
-                              "scripts/run_ml_interaction.py"]))
+                              "pitchmdp/matrix_metrics.py", "scripts/run_ml_interaction.py"]))
 
 
 def source_hashes() -> dict[str, str]:
@@ -62,18 +63,27 @@ def _reference_artifacts(parent: Path, preparation: dict) -> tuple[dict, dict[st
     members, hashes = {}, {}
     expected_keys = {name: pd.read_parquet(parent / preparation["samples"][name]["path"])[KEY].to_numpy(np.int64)
                      for name in ("blend", "dev")}
-    expected_labels = {}
+    with np.load(parent / 'baseline_predictions.npz', allow_pickle=False) as baseline:
+        expected_labels = {name: baseline[name + '_y'].copy() for name in ('blend', 'dev')}
+        metadata = {name + '_' + field: baseline[name + '_' + field].copy()
+                    for name in ('blend', 'dev') for field in ('game_pk', 'pitcher')}
+        check_reference_archive(baseline, expected_keys, expected_labels)
     for candidate in REFERENCE_CELLS.values():
         for seed in SEEDS:
             folder = parent / "members" / candidate / f"seed{seed}"
             fitted = read_json(folder / "fit_state.json")
             predicted = read_json(folder / "prediction_state.json")
+            if fitted['identity'] != reference_member_identity(preparation, candidate, seed):
+                raise ValueError('D100 reference member identity differs from its P3 preparation')
             assert_hashes(folder, fitted["artifact_hashes"])
             assert_hashes(folder, predicted["artifact_hashes"])
             if predicted["fit_state_sha256"] != hash_file(folder / "fit_state.json"):
                 raise ValueError("D100 reference prediction no longer matches checkpoint")
             with np.load(folder / "predictions.npz", allow_pickle=False) as archive:
                 check_reference_archive(archive, expected_keys, expected_labels)
+                for name, expected in metadata.items():
+                    if not np.array_equal(archive[name], expected):
+                        raise ValueError('D100 reference metadata differs from its baseline')
             paths = [folder / "fit_state.json", folder / "prediction_state.json"]
             paths += [folder / rel for rel in fitted["artifact_hashes"]]
             paths += [folder / rel for rel in predicted["artifact_hashes"]]
@@ -83,6 +93,18 @@ def _reference_artifacts(parent: Path, preparation: dict) -> tuple[dict, dict[st
                 "prediction_sha256": hash_file(folder / "predictions.npz")}
             hashes.update({str(path): hash_file(path) for path in paths})
     return members, hashes
+
+
+def validate_parent_science(config, architecture_config, architecture):
+    validate_architecture_config(architecture_config)
+    if canonical_hash(architecture_config) != architecture['identity']['config_sha256']:
+        raise ValueError('P3 registered configuration differs from its preparation')
+    for name in ('seeds', 'history_length', 'draws', 'width', 'device', 'neural'):
+        if architecture_config[name] != config[name]:
+            raise ValueError('I1 scientific setting differs from frozen P3: ' + name)
+    if (architecture_config['parent_preparation_sha256'] != config['parent_data_preparation_sha256']
+            or Path(architecture_config['parent_run']).resolve() != Path(config['parent_data_run']).resolve()):
+        raise ValueError('I1 data parent differs from the actual P3 lineage')
 
 
 def prepare(config: dict, local: dict, output: Path, expected: dict) -> None:
@@ -104,6 +126,12 @@ def prepare(config: dict, local: dict, output: Path, expected: dict) -> None:
     architecture, data = read_json(arch_prep_path), read_json(data_prep_path)
     assert_hashes(arch_path, architecture["artifact_hashes"])
     assert_hashes(data_path, data["artifact_hashes"])
+    architecture_config = read_json(arch_path / 'registered_config.json')
+    validate_parent_science(config, architecture_config, architecture)
+    missing = [f'{cell}/seed{seed}' for cell in ARCH_CELLS for seed in SEEDS
+               if not (arch_path / 'members' / cell / f'seed{seed}' / 'prediction_state.json').is_file()]
+    if missing:
+        raise ValueError('Complete P3 family required before I1 preparation: ' + ', '.join(missing))
     for rel, digest in architecture["identity"]["source_hashes"].items():
         if hash_file(PROJECT / rel) != digest:
             raise ValueError("Frozen architecture implementation changed: " + rel)
@@ -112,6 +140,8 @@ def prepare(config: dict, local: dict, output: Path, expected: dict) -> None:
     d25 = data["scope"]["regular"]["samples"]["d25"]
     if not d25["n"] < architecture["samples"]["train"]["n"]:
         raise ValueError("Registered D25 must be smaller than D100")
+    check_nested_training(pd.read_parquet(data_path / d25['path']),
+                          pd.read_parquet(arch_path / architecture['samples']['train']['path']))
     for split in ("earlystop", "temperature", "blend", "dev"):
         if data["scope"]["regular"]["samples"][split]["rows_sha256"] != architecture["samples"][split]["rows_sha256"]:
             raise ValueError("D25 comparison requires identical CAL/DEV pitch keys")
@@ -119,6 +149,8 @@ def prepare(config: dict, local: dict, output: Path, expected: dict) -> None:
     external.update({str(arch_prep_path): hash_file(arch_prep_path), str(data_prep_path): hash_file(data_prep_path)})
     output.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
+    dump(output / 'registered_config.json', config)
+    dump(output / 'architecture_config.json', architecture_config)
     for rel in SOURCES:
         snapshot = output / "source" / rel
         snapshot.parent.mkdir(parents=True, exist_ok=True)

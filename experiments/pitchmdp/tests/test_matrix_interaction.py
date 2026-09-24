@@ -62,3 +62,49 @@ def test_reference_archive_requires_common_keys_raw_predictions_and_labels():
         check_reference_archive({**archive, "dev_keys": np.array([[3, 1, 1]])}, keys, labels)
     with pytest.raises(ValueError, match="labels differ"):
         check_reference_archive({**archive, "dev_y": np.array([1])}, keys, labels)
+
+
+def test_reference_archive_rejects_invalid_raw_mass():
+    keys = {name: np.array([[1, 1, 1]]) for name in ('blend', 'dev')}
+    archive = {name + suffix: np.full((1, 10), .1)
+               for name in keys for suffix in ('', '_raw')}
+    archive.update({name + '_keys': value for name, value in keys.items()})
+    archive.update({name + '_y': np.array([0]) for name in keys})
+    archive['dev_raw'][0, 0] = .2
+    with pytest.raises(ValueError):
+        check_reference_archive(archive, keys, {})
+
+
+def test_d25_is_ordered_whole_game_subset():
+    import pandas as pd
+    from pitchmdp.data import KEY
+    from pitchmdp.matrix_interaction import check_nested_training
+    full = pd.DataFrame([[1, 1, 1], [1, 1, 2], [2, 1, 1], [3, 1, 1]], columns=KEY)
+    check_nested_training(full.iloc[[0, 1, 3]], full)
+    with pytest.raises(ValueError, match='whole eligible games'):
+        check_nested_training(full.iloc[[0, 3]], full)
+    with pytest.raises(ValueError, match='ordered D100'):
+        check_nested_training(full.iloc[[3, 0, 1]], full)
+    with pytest.raises(ValueError, match='ordered D100'):
+        check_nested_training(pd.DataFrame([[4, 1, 1]], columns=KEY), full)
+
+
+def test_parent_science_is_exact_and_hash_pinned():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+    from run_ml_interaction import validate_parent_science
+    from pitchmdp.matrix_benchmark import LIGHTGBM
+    own = config()
+    parent = {key: own[key] for key in ('seeds', 'history_length', 'draws', 'width', 'device', 'neural')}
+    parent.update(protocol='ml_architecture_v1', experiment_id='P3',
+                  parent_run=own['parent_data_run'], parent_preparation_sha256=own['parent_data_preparation_sha256'],
+                  data_sample='d100', lightgbm=LIGHTGBM)
+    prep = {'identity': {'config_sha256': canonical_hash(parent)}}
+    validate_parent_science(own, parent, prep)
+    with pytest.raises(ValueError, match='scientific setting'):
+        validate_parent_science({**own, 'device': 'cpu'}, parent, prep)
+    with pytest.raises(ValueError, match='registered configuration'):
+        validate_parent_science(own, {**parent, 'experiment_id': 'changed'}, prep)
+    with pytest.raises(ValueError, match='actual P3 lineage'):
+        validate_parent_science({**own, 'parent_data_run': '/other'}, parent, prep)
