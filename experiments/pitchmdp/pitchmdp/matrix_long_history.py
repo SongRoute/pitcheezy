@@ -36,14 +36,33 @@ class MatrixLongHistoryStore:
         work['game_date'] = dates
         if work.groupby('game_pk').game_date.nunique().gt(1).any():
             raise ValueError('A recorded game spanning dates needs an explicit suspended-game chronology contract')
-        if work.groupby(['game_pk', 'at_bat_number']).batter.nunique().gt(1).any():
-            raise ValueError('A PA cannot have multiple batter identities')
-        self.previous_global = work.groupby('batter', sort=False).position.shift().fillna(-1).to_numpy(np.int32)
-        self.previous_game = work.groupby(['game_pk', 'batter'], sort=False).position.shift().fillna(-1).to_numpy(np.int32)
-        first_date = work.groupby(['batter', 'game_date'], sort=False).position.transform('min').to_numpy(np.int32)
-        first_pa = work.groupby(['game_pk', 'at_bat_number'], sort=False).position.transform('min').to_numpy(np.int32)
-        self.date_root = self.previous_global[first_date]
-        self.game_root = self.previous_game[first_pa]
+        pa_keys = ['game_pk', 'at_bat_number']
+        self.excluded_long_rows = work.groupby(pa_keys, sort=False).batter.transform('nunique').gt(1).to_numpy()
+        # A completed PA with inconsistent batter identity is excluded wholesale
+        # from this stream only. Never filter base rows, labels or query positions.
+        # Construct links on retained rows, then scatter to original positions:
+        # excluded prefixes/interior rows cannot become a predecessor or root.
+        eligible = work.loc[~self.excluded_long_rows]
+        positions = eligible.position.to_numpy(np.int32)
+        self.previous_global = np.full(len(work), -1, dtype=np.int32)
+        self.previous_game = np.full(len(work), -1, dtype=np.int32)
+        self.date_root = np.full(len(work), -1, dtype=np.int32)
+        self.game_root = np.full(len(work), -1, dtype=np.int32)
+        self.previous_global[positions] = eligible.groupby('batter', sort=False).position.shift().fillna(-1).to_numpy(np.int32)
+        self.previous_game[positions] = eligible.groupby(['game_pk', 'batter'], sort=False).position.shift().fillna(-1).to_numpy(np.int32)
+        first_date = eligible.groupby(['batter', 'game_date'], sort=False).position.transform('min').to_numpy(np.int32)
+        first_pa = eligible.groupby(pa_keys, sort=False).position.transform('min').to_numpy(np.int32)
+        self.date_root[positions] = self.previous_global[first_date]
+        self.game_root[positions] = self.previous_game[first_pa]
+        excluded = self.frame.loc[self.excluded_long_rows]
+        self.identity_audit = {
+            'excluded_pa': int(len(excluded[pa_keys].drop_duplicates())),
+            'excluded_rows': int(self.excluded_long_rows.sum()),
+            'by_split': {str(split): {'excluded_pa': int(len(rows[pa_keys].drop_duplicates())),
+                                     'excluded_rows': int(len(rows))}
+                         for split, rows in excluded.groupby('split', sort=False, dropna=False)}
+                        if 'split' in excluded else {},
+        }
 
     @classmethod
     def from_frame(cls, frame, normalizer=None, type_vocabulary=None, long_length=32):
@@ -64,6 +83,8 @@ class MatrixLongHistoryStore:
         rows = np.asarray(rows, dtype=np.int64)
         if rows.ndim != 1 or (rows < 0).any() or (rows >= len(self.frame)).any():
             raise ValueError('Rows are outside the history store')
+        if self.excluded_long_rows[rows].any():
+            raise ValueError('Ambiguous-batter PA cannot be a long-history query, including H0')
         indices = np.full((len(rows), self.MAX_HISTORY), -1, dtype=np.int32)
         game, dated = self.game_root[rows].copy(), self.date_root[rows].copy()
         for offset in range(self.long_length):
@@ -89,7 +110,7 @@ class MatrixLongHistoryStore:
         return h5, h5_valid, np.ascontiguousarray(long), valid
 
     def report(self):
-        return {'version': 'batter_dual_stream_v1', 'h5': self.base.report(),
+        return {'version': 'batter_dual_stream_v2', 'h5': self.base.report(),
                 'long_length': self.long_length, 'max_capacity': self.MAX_HISTORY,
                 'link_storage_bytes': sum(a.nbytes for a in (self.previous_global, self.previous_game, self.date_root, self.game_root)),
                 'scope': 'same batter; previous completed PAs in same game plus strictly prior dates; current PA excluded',
@@ -97,7 +118,10 @@ class MatrixLongHistoryStore:
                 'prior_date_doubleheaders': 'date/game-key order; approximate ordering within a historical date',
                 'online_dev_history': 'earlier observed DEV pitches allowed by the same as-of rule',
                 'retrospective_pa_support': 'never enters outcome tokens or history availability',
-                'allocation': 'four int32 links per source row; batch-only expansion of max128 tokens'}
+                'ambiguous_batter_pa_rule': 'identity-only whole-PA exclusion from long stream; base/H5 unchanged; ambiguous queries rejected including H0',
+                'source_identity_audit': self.identity_audit,
+                'identity_mask_storage_bytes': self.excluded_long_rows.nbytes,
+                'allocation': 'four int32 links and one boolean identity mask per source row; batch-only expansion of max128 tokens'}
 
 
 @dataclass

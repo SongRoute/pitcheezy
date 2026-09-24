@@ -28,3 +28,23 @@
 4. 자원 초과 예상 시 결과를 열기 전에 실행 계획을 수정한다. 데이터·seed·draws·길이를 조용히 줄이지 않는다. 실패 attempt는 그대로 보존한다.
 
 bootstrap은 고정된 예측에 조건부이며 모델 선택·학습·보정 불확실성 전체를 포함하지 않는다. 2024/25 노출 DEV를 사용하며2026/최종 확인셋을 열지 않는다.
+
+## Identity-only source amendment, 2026-09-24
+
+The first F4 preparation stopped at the global multi-batter-PA guard, before any F4 profile, fit or quality score. The sole execution owner's metadata audit found 47 PAs / 248 source rows with two distinct non-null batter IDs among 2,145,111 rows. All were marked `supported_pa=False`, and none intersects frozen TRAIN, early-stop, temperature, blend, DEV or MLB query partitions. This support observation is diagnostic only and does not define the rule below.
+
+| Source split | Ambiguous PAs | Rows |
+|---|---:|---:|
+| TRAIN | 33 | 173 |
+| Early-stop | 1 | 4 |
+| Temperature | 0 | 0 |
+| Blend | 2 | 11 |
+| DEV | 9 | 48 |
+| Unused | 2 | 12 |
+| Total | 47 | 248 |
+
+Feature version **`batter_dual_stream_v2`** excludes the entire PA from the **long stream only** when its observed batter identities are inconsistent. The decision uses only `(game_pk, at_bat_number, batter)` identity fields, never outcomes, labels, `supported_pa`, scores or query membership. The queried history contains only prior completed PAs in the same game or strictly earlier dates, so this identity inconsistency is available when a source PA becomes eligible. For a query inside an ambiguous PA, long-history access explicitly fails, including H0; it does not choose one batter or infer a replacement identity. No frozen query is removed by this guard according to the owner's audit.
+
+All base/H5 rows and values, original row/query indices, parent keys, physical normalizer, type vocabulary and context fits remain unchanged. Four O(N) int32 predecessor/root arrays are built on identity-consistent rows and scattered back to original positions; excluded rows have no outgoing predecessor or root and can never be a long-stream token. Roots skip excluded date/game prefixes while retaining eligible prior dates. Same-game previous completed PAs remain available, current PAs remain entirely excluded, and other same-date games remain unavailable. A boolean identity mask adds one byte per source row. The report includes excluded PA/row counts overall and by source split, the exclusion rule and mask storage.
+
+Synthetic CPU checks cover excluded prefixes and interior PAs for both batter IDs, later-date ordering without duplicates, unchanged earlier queries after later identity changes, fully excluded/empty histories, explicit ambiguous-query failure, base/H5/normalizer preservation, and link invariance to outcomes and retrospective support. This is a source-validity repair before scores, not outcome-based filtering or a new model-quality choice. Preserve the failed preparation and use a fresh preparation/source identity. The optional long-encoding inference optimization is a separate unadopted change and is not part of this amendment.
