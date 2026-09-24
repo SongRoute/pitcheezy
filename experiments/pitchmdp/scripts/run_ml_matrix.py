@@ -291,8 +291,12 @@ def integrated_probabilities(logits: np.ndarray, temperature: float) -> tuple[np
         raise ValueError("Expected finite [pitch,draw,10] delivery logits")
     if not np.isfinite(temperature) or temperature <= 0:
         raise ValueError("Delivery temperature must be positive and finite")
-    calibrated = softmax(logits / temperature, axis=-1).mean(axis=1)
-    raw = softmax(logits, axis=-1).mean(axis=1)
+    # float32 summation over 400 draws can move otherwise valid mass beyond
+    # the registered absolute 1e-6 tolerance. Preserve model logits exactly,
+    # then do the softmax and marginal reduction in float64.
+    stable_logits = logits.astype(np.float64)
+    calibrated = softmax(stable_logits / temperature, axis=-1).mean(axis=1)
+    raw = softmax(stable_logits, axis=-1).mean(axis=1)
     for value in (calibrated, raw):
         if (not np.isfinite(value).all() or (value < 0).any() or (value > 1).any() or
                 not np.allclose(value.sum(axis=1), 1, atol=1e-6, rtol=0)):

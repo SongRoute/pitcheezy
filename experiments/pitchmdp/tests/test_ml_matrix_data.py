@@ -81,6 +81,18 @@ def test_integrated_probabilities_use_one_tensor_and_strict_mass_checks():
         integrated_probabilities(logits, 0.)
 
 
+def test_float64_integration_repairs_400_draw_float32_mass_error():
+    from scipy.special import softmax
+    logits = np.zeros((1, 400, 10), dtype=np.float32)
+    logits[:, :, 1] = .1
+    old_mass_error = abs(float(softmax(logits, axis=-1).mean(1).sum()-1))
+    assert old_mass_error > 1e-6
+    calibrated, raw = integrated_probabilities(logits, temperature=1.01)
+    assert calibrated.dtype == raw.dtype == np.float64
+    assert abs(float(calibrated.sum()-1)) < 1e-12
+    assert abs(float(raw.sum()-1)) < 1e-12
+
+
 def test_verified_processed_cache_checks_bytes_keys_and_historical_source_identity(tmp_path):
     root = tmp_path / "artifacts"
     (root / "processed").mkdir(parents=True)
