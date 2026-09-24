@@ -311,14 +311,23 @@ def rollouts(simulator, states, policy, uniforms, cutoff, *, first_actions=None)
         if not active:
             break
         actions = []
-        for i in active:
+        batched = None
+        if hasattr(policy, "batch_probabilities") and not (depth == 0 and first_actions is not None):
+            names, batched = policy.batch_probabilities([current[i] for i in active], depth)
+            batched = probabilities(batched, len(names))
+            if batched.shape != (len(active), len(names)):
+                raise ValueError("batched policy probabilities must have shape [states,actions]")
+        for row_index, i in enumerate(active):
             if depth == 0 and first_actions is not None:
                 actions.append(first_actions[i])
             else:
-                names, p = policy(current[i], depth)
-                p = probabilities(p, len(names))
-                if p.ndim != 1:
-                    raise ValueError("policy probabilities must be a vector")
+                if batched is None:
+                    names, p = policy(current[i], depth)
+                    p = probabilities(p, len(names))
+                    if p.ndim != 1:
+                        raise ValueError("policy probabilities must be a vector")
+                else:
+                    p = batched[row_index]
                 actions.append(names[_draw(p, u[i, depth, 0])])
         steps = simulator.step([current[i] for i in active], actions, u[active, depth, 1:])
         for i, step in zip(active, steps):
