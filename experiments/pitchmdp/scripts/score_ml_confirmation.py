@@ -72,6 +72,7 @@ def score(config, local_path, output):
         members[cell], member_costs[cell] = [], []
         for seed in SEEDS:
             reference = resolved[cell, seed]
+            inputs.update(reference['hashes'])
             folder = Path(reference['directory'])
             state = read_json(Path(reference['state_path']))
             member = archive(Path(reference['predictions_path']))
