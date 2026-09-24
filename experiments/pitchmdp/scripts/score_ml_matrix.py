@@ -49,6 +49,20 @@ def require_complete(output, cells, seeds):
         raise ValueError('Family incomplete; scores remain unopened: ' + ', '.join(missing))
 
 
+def require_reproduction_gate(output):
+    directory = output / 'analysis' / 'legacy'
+    manifest = read_json(directory / 'manifest.json')
+    for name in ('results', 'predictions'):
+        path = directory / (name + ('.json' if name == 'results' else '.npz'))
+        if hash_file(path) != manifest[name + '_sha256']:
+            raise ValueError('Reproduction analysis identity changed')
+    for name, digest in manifest['inputs'].items():
+        if hash_file(Path(name)) != digest:
+            raise ValueError('Reproduction input changed')
+    if read_json(directory / 'results.json')['reproduction_gate']['passed'] is not True:
+        raise ValueError('Reproduction gate did not pass; candidate scores remain unopened')
+
+
 def summarize_cell(members, baseline):
     y, cy = baseline['dev_y'], baseline['blend_y']
     ensemble = {part: np.mean([m[part] for m in members], axis=0) for part in ('blend', 'dev')}
@@ -90,6 +104,20 @@ def legacy_gate(output, config, baseline, reports, members_by_cell, input_hashes
         root = Path(config['registration']['base_run']) / 'fold2025'
     old = read_json(root / 'results.json')
     input_hashes[str(root / 'results.json')] = hash_file(root / 'results.json')
+    previous_aggregate = archive(root / 'predictions.npz')
+    input_hashes[str(root / 'predictions.npz')] = hash_file(root / 'predictions.npz')
+    for old_name, new_name in [('pitch_keys', 'dev_keys'), ('y', 'dev_y'),
+                               ('game_pk', 'dev_game_pk'), ('pitcher', 'dev_pitcher')]:
+        if not np.array_equal(previous_aggregate[old_name], baseline[new_name]):
+            raise ValueError('Archived aggregate metadata differs: ' + old_name)
+    old_p, y = np.asarray(previous_aggregate['frequency'], dtype=np.float64), baseline['dev_y']
+    old_frequency_nll = float(-np.log(np.clip(old_p[np.arange(len(y)), y], 1e-12, 1)).mean())
+    new_frequency_nll = prediction_metrics(y, baseline['dev'])['log_loss']
+    frequency = {'archived_nll': old_frequency_nll, 'reproduced_nll': new_frequency_nll,
+        'recomputation_error': abs(old_frequency_nll - old['metrics']['frequency']['log_loss']),
+        'reproduction_difference': new_frequency_nll - old_frequency_nll,
+        'recomputation_pass': abs(old_frequency_nll - old['metrics']['frequency']['log_loss']) <= 1e-8,
+        'reproduction_pass': abs(new_frequency_nll - old_frequency_nll) <= .001}
     tests = []
     for cell, kind in (('R2-MLP', 'flatten_mlp'), ('R2-TF', 'transformer')):
         for i, seed in enumerate(CELLS[cell][1]):
@@ -116,14 +144,19 @@ def legacy_gate(output, config, baseline, reports, members_by_cell, input_hashes
                 'retraining_pass': abs(new_nll - old_nll) <= .001,
                 'maximum_probability_difference': float(np.abs(members_by_cell[cell][i]['dev'] - p).max()),
                 'historical_probability_mass_error': float(np.abs(p.sum(1) - 1).max())})
-    return {'passed': all(t['recomputation_pass'] and t['retraining_pass'] for t in tests),
-            'members': tests, 'claim': 'reproduction only; no candidate superiority claim'}
+    return {'passed': frequency['recomputation_pass'] and frequency['reproduction_pass'] and
+                all(t['recomputation_pass'] and t['retraining_pass'] for t in tests),
+            'frequency': frequency, 'members': tests, 'claim': 'reproduction only; no candidate superiority claim'}
 
 
 def score(config, local_path, output, family):
     local = read_json(local_path)
     check_location(local, output)
     prep = verify_prepare(output, manifest_identity(config, local_path))
+    if family == 'data':
+        require_reproduction_gate(output)
+        if config['registration']['primary_comparisons'] != [['D1-50', 'D1-25'], ['D1-100', 'D1-25']]:
+            raise ValueError('Registered primary comparison family changed')
     cells = ['R2-MLP', 'R2-TF'] if family == 'legacy' else ['D1-25', 'D1-50', 'D1-100']
     seeds = list(CELLS[cells[0]][1])
     require_complete(output, cells, seeds)

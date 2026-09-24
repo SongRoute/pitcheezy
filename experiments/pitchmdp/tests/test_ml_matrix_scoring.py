@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from score_ml_matrix import assert_aligned, require_complete, summarize_cell
+from score_ml_matrix import assert_aligned, require_complete, summarize_cell, require_reproduction_gate
 
 
 def sample():
@@ -58,3 +58,21 @@ def test_blend_selection_uses_only_calibration_outcomes():
     assert a['selection'] == b['selection']
     np.testing.assert_array_equal(p['primary'], q['primary'])
     assert a['selection']['model_weight'] == 1
+
+
+def test_reproduction_failure_and_tamper_block_scoring(tmp_path):
+    import json
+    from pitchmdp.data import hash_file
+    directory = tmp_path / 'analysis' / 'legacy'
+    directory.mkdir(parents=True)
+    result = directory / 'results.json'
+    result.write_text(json.dumps({'reproduction_gate': {'passed': False}}))
+    prediction = directory / 'predictions.npz'
+    prediction.write_bytes(b'fixture')
+    manifest = {'results_sha256': hash_file(result), 'predictions_sha256': hash_file(prediction), 'inputs': {}}
+    (directory / 'manifest.json').write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match='did not pass'):
+        require_reproduction_gate(tmp_path)
+    result.write_text(json.dumps({'reproduction_gate': {'passed': True}}))
+    with pytest.raises(ValueError, match='identity changed'):
+        require_reproduction_gate(tmp_path)
