@@ -98,6 +98,14 @@ def prepare(config, local_path, local, output, expected):
     if (hash_file(parent / 'preparation.json') != config['parent_preparation_sha256'] or
         hash_file(analysis / 'results.json') != config['parent_analysis_sha256']):
         raise ValueError('Stress selection/preparation hashes differ')
+    parent_result = read_json(analysis / 'results.json')
+    ranked = parent_result['followup_candidates']
+    selected_status = 'screen_promoted' if ranked else 'diagnostic_only_not_promoted'
+    if not ranked:
+        ranked = sorted(CONTROLS, key=lambda c: (parent_result['reports'][c]['primary']['log_loss'],
+                               parent_result['logical_cell_costs'][c]['total_fit_seconds']))
+    if config['candidate'] != ranked[0] or config['selection_status'] != selected_status:
+        raise ValueError('Stress comparison differs from registered common selection rule')
     manifest = read_json(analysis / 'manifest.json')
     if manifest['results_sha256'] != config['parent_analysis_sha256'] or hash_file(analysis / 'predictions.npz') != manifest['predictions_sha256']:
         raise ValueError('Parent analysis integrity failed')
@@ -133,6 +141,7 @@ def prepare(config, local_path, local, output, expected):
         'external_hashes': external, 'artifact_hashes': artifact_hashes(output, files),
         'samples': {'dev': shared['samples']['dev']}, 'coverage': shared['coverage'],
         'candidate': config['candidate'], 'control': config['control'], 'seeds': list(SEEDS),
+        'selection_status': selected_status,
         'stress_protocol': protocol(), 'stress_scores_read': False,
         'frequency_component': 'Frozen league/type/count/outs/base baseline has no perturbed historical/player-profile features; unchanged by these scenarios.'})
     print('STRESS_PREPARED', flush=True)

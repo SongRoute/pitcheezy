@@ -102,6 +102,7 @@ def score(config, local_path, output):
                               predictions['clean', cell]['primary'], games, group_masks['overall']) for cell in cells}
     result = {'experiment_id': config['experiment_id'], 'scope': 'Cpanel input stress',
         'candidate': cells[0], 'control': cells[1], 'n': len(y), 'games': len(np.unique(games)),
+        'selection_status': prep['selection_status'],
         'reports': reports, 'relative': relative, 'stability': stability,
         'relative_R': combined_status([v for scenarios in relative.values()
                                       for name, v in scenarios.items() if name != 'seed_nll_deltas']),
