@@ -40,8 +40,8 @@ def bootstrap_difference(delta, games, *, draws=10000, seed=20260924, upper_alph
 
 def guardrails(labels, candidate, control, games, metadata, *, candidate_family_size=4, draws=100000):
     delta = pitch_losses(labels, candidate) - pitch_losses(labels, control)
-    if len(metadata) != len(delta) or candidate_family_size != 4:
-        raise ValueError('G family fixes four comparisons and aligned metadata')
+    if len(metadata) != len(delta) or candidate_family_size not in (2, 4):
+        raise ValueError('Registered G/F4 families require four/two comparisons and aligned metadata')
     alpha = .05 / (len(GROUPS) * 2 * candidate_family_size)
     results = {}
     for name, mask in masks(metadata).items():
