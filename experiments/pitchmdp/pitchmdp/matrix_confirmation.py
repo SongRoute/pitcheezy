@@ -58,11 +58,16 @@ def validate_config(config: dict) -> dict:
     if (config['seeds'] != list(SEEDS) or config['kind'] != 'flatten_mlp' or
             config['width'] != 128 or config['draws'] != 400 or config['budget'] != BUDGET or
             config['individual_tau'] != 1000 or config['cluster_tau'] != 10000 or
-            config['device'] not in ('auto', 'cpu', 'mps') or
+            config['device'] != 'auto' or
             not isinstance(config['registration'], dict)):
         raise ValueError('C1 fit, sharing and calibration settings differ from G')
     if config['registration'].get('c1_scoring') != SCORING:
         raise ValueError('C1 scoring family differs from frozen four-slot registration')
+    registration = config['registration']
+    if (registration.get('single_member_wall_limit_seconds') != 7200
+            or type(registration.get('batch_wall_budget_seconds')) is not int
+            or not 0 < registration['batch_wall_budget_seconds'] <= 28800):
+        raise ValueError('C1 resource registration requires member7200 and positive batch budget<=28800')
     return config
 
 

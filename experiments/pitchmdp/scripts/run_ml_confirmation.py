@@ -53,8 +53,72 @@ def identity(config, local_path):
     return {**architecture_identity(config, local_path), 'source_hashes': source_hashes()}
 
 
+
+def validate_parent_science(config, registered, parent_identity, expected_identity):
+    """Exact G extension, including the inherited automatic-device environment."""
+    if config['device'] != 'auto':
+        raise ValueError('Frozen G fits use automatic device selection')
+    for name in ('draws', 'individual_tau', 'cluster_tau'):
+        if registered[name] != config[name]:
+            raise ValueError('C1 setting differs from G parent: ' + name)
+    training = registered['registration']['training']
+    if (training['kind'] != config['kind'] or training['width'] != config['width'] or
+            {k: training[k] for k in BUDGET} != config['budget']):
+        raise ValueError('C1 neural training differs from G parent')
+    environment = {k: v for k, v in parent_identity.items() if k not in ('config_sha256', 'source_hashes')}
+    if environment != {k: v for k, v in expected_identity.items() if k not in ('config_sha256', 'source_hashes')}:
+        raise ValueError('C1 native/local environment differs from frozen G')
+
+
+def validate_unit_dependencies(root, prep, cell, seed, *, reused):
+    """Validate the exact routed union; never trust a prediction's arbitrary list."""
+    models, all_hashes = {}, {}
+    for unit, spec in prep['units'].items():
+        if spec['mode'] not in MODES[cell]: continue
+        folder = root / 'fits' / f'seed{seed}' / unit
+        path = folder / 'state.json'
+        state = read_json(path)
+        expected = ({'preparation_sha256': canonical_hash(prep), 'seed': seed, 'unit': unit, 'spec': spec}
+                    if reused else unit_identity(prep, unit, seed))
+        if state['identity'] != expected or set(state['artifact_hashes']) != {'model.pt', 'fit.json'}:
+            raise ValueError('C1 unit training identity/artifact family differs')
+        assert_hashes(folder, state['artifact_hashes'])
+        report = read_json(folder / 'fit.json')['report']
+        for name, value in {'kind': 'flatten_mlp', 'seed': seed, 'training_rows': spec['train_n'],
+                            'earlystop_rows': spec['earlystop_n']}.items():
+            if report.get(name) != value:
+                raise ValueError('C1 checkpoint fit report differs: ' + name)
+        models[str(folder / 'model.pt')] = state['artifact_hashes']['model.pt']
+        all_hashes[str(path)] = hash_file(path)
+        all_hashes.update({str(folder / name): digest for name, digest in state['artifact_hashes'].items()})
+    if not any(spec['mode'] == 'global' for spec in prep['units'].values()):
+        raise ValueError('C1 routed union lacks global fallback')
+    return models, all_hashes
+
+
+def validate_prediction_dependencies(root, prep, cell, seed, state, *, reused):
+    expected = ({'preparation_sha256': canonical_hash(prep), 'cell': cell, 'seed': seed}
+                if reused else member_identity(prep, cell, seed))
+    if state['identity'] != expected:
+        raise ValueError('C1 member prediction identity differs')
+    if set(state['artifact_hashes']) != {'calibration.json', 'predictions.npz', 'prediction_runtime.json'}:
+        raise ValueError('C1 member prediction artifact family differs')
+    models, all_hashes = validate_unit_dependencies(root, prep, cell, seed, reused=reused)
+    if state['dependencies'] != models:
+        raise ValueError('C1 exact routed checkpoint dependency union differs')
+    folder = root / 'members' / cell / f'seed{seed}'
+    assert_hashes(folder, state['artifact_hashes'])
+    calibration = read_json(folder / 'calibration.json')
+    if (calibration.get('cell') != cell or calibration.get('delivery_calibration_rows') != prep['samples']['temperature']['n']
+        or not np.isfinite(calibration.get('delivery_temperature', np.nan))
+        or not .5 <= calibration['delivery_temperature'] <= 2.5):
+        raise ValueError('C1 May calibration identity/count/temperature differs')
+    return all_hashes
+
 def resolve_member(config, output, prep, cell, seed):
     """Return immutable state/archive locations for an ordered five-seed cell."""
+    if (prep['cells'] != config['cells'] or prep['primary_comparisons'] != config['primary_comparisons']):
+        raise ValueError('C1 member request differs from registered ordered family')
     if cell not in prep['cells'] or seed not in SEEDS:
         raise ValueError('Unregistered C1 member')
     reused = seed not in NEW_SEEDS
@@ -62,20 +126,59 @@ def resolve_member(config, output, prep, cell, seed):
     folder = root / 'members' / cell / f'seed{seed}'
     state_path = folder / 'prediction_state.json'
     state = read_json(state_path)
-    expected = ({'preparation_sha256': canonical_hash(read_json(root / 'preparation.json')),
-                 'cell': cell, 'seed': seed} if reused else member_identity(prep, cell, seed))
-    if state['identity'] != expected:
-        raise ValueError('C1 member prediction identity differs')
-    assert_hashes(folder, state['artifact_hashes'])
-    for path, digest in state['dependencies'].items():
-        if hash_file(Path(path)) != digest:
-            raise ValueError('C1 member fit dependency changed: ' + path)
+    root_prep = read_json(root / 'preparation.json') if reused else prep
+    all_hashes = validate_prediction_dependencies(root, root_prep, cell, seed, state, reused=reused)
+    all_hashes.update({str(root / 'preparation.json'): hash_file(root / 'preparation.json'),
+                       str(state_path): hash_file(state_path)})
+    all_hashes.update({str(folder / name): digest for name, digest in state['artifact_hashes'].items()})
     result = {'directory': str(folder), 'state_path': str(state_path),
               'predictions_path': str(folder / 'predictions.npz'),
               'source_run': str(root), 'reused': reused,
               'state_sha256': hash_file(state_path),
-              'predictions_sha256': hash_file(folder / 'predictions.npz')}
+              'predictions_sha256': hash_file(folder / 'predictions.npz'), 'hashes': all_hashes}
     return result
+
+
+
+def validate_prepared_contract(config, prep, parent):
+    """Bind the ordered comparison and reused feature/population contract."""
+    validate_config(config)
+    if prep['identity']['config_sha256'] != canonical_hash(config):
+        raise ValueError('C1 registered configuration differs from preparation')
+    for name in ('cells', 'seeds', 'primary_comparisons', 'selection_status'):
+        if prep[name] != config[name]:
+            raise ValueError('C1 prepared ordered family differs: ' + name)
+    if prep['units'] != required_units(parent['units'], config['cells']):
+        raise ValueError('C1 prepared unit union differs from parent')
+    for name in ('samples', 'features', 'panel', 'clusters'):
+        if prep[name] != parent[name]:
+            raise ValueError('C1 prepared common input differs: ' + name)
+
+
+def resource_gate(config, profile):
+    projection = profile['rough_per_seed_fit_projection_seconds']
+    if not isinstance(projection, (int, float)) or not np.isfinite(projection) or projection <= 0:
+        raise ValueError('Finite positive C1 fit resource projection required')
+    registration = config['registration']
+    if projection > registration['single_member_wall_limit_seconds']:
+        raise ValueError('C1 per-seed fit batch projection exceeds7200 seconds')
+    prediction = profile['parent_full_cpanel_prediction_seconds']
+    if set(prediction) != set(config['cells']):
+        raise ValueError('C1 prediction cost projection must cover exactly selected cells')
+    for cell, times in prediction.items():
+        if len(times) != 3 or not np.isfinite(times).all() or any(t <= 0 for t in times):
+            raise ValueError('C1 frozen three-seed prediction runtimes required')
+        if max(times) > registration['single_member_wall_limit_seconds']:
+            raise ValueError('C1 parent prediction member exceeds7200 seconds')
+    # G prediction runtime includes loading, full May calibration and June/DEV
+    # 400-draw integration; do not double-count calibration as a separate job.
+    full_projection = 2*projection + 2*sum(max(times) for times in prediction.values())
+    if full_projection > registration['batch_wall_budget_seconds']:
+        raise ValueError('C1 aggregate fit/calibration/prediction projection exceeds registered batch budget')
+    return {'rough_fit_gate_passed': True, 'per_seed_fit_projection_seconds': projection,
+        'two_seed_fit_projection_seconds': 2*projection,
+        'aggregate_projection_seconds': full_projection,
+        'scope': 'Necessary projection gate only; owner must review/register full cost and enforce caller wall limits before first fit'}
 
 
 def verify(output, expected):
@@ -83,13 +186,18 @@ def verify(output, expected):
     if prep['identity'] != expected:
         raise ValueError('C1 config, source or native environment changed')
     assert_hashes(output, prep['artifact_hashes'])
+    config = read_json(output / 'registered_config.json')
+    validate_prepared_contract(config, prep, read_json(output / 'parent_preparation.json'))
+    if (hash_file(output / 'parent_preparation.json') != config['parent_preparation_sha256']
+            or hash_file(output / 'parent_analysis_manifest.json') != config['parent_analysis_sha256']):
+        raise ValueError('C1 copied parent preparation/analysis manifest identity differs')
     for path, digest in prep['external_hashes'].items():
         if hash_file(Path(path)) != digest:
             raise ValueError('C1 parent artifact changed: ' + path)
     return prep
 
 
-def _parent(config, local, output):
+def _parent(config, local, output, expected):
     root = Path(local['artifact_root']).resolve() / 'runs' / 'ML-MATRIX-20260924'
     parent = Path(config['parent_run']).resolve()
     if (not parent.is_relative_to(root) or parent == output or
@@ -109,13 +217,10 @@ def _parent(config, local, output):
     registered = g_config_check(read_json(parent / 'registered_config.json'))
     if prep['identity']['config_sha256'] != canonical_hash(registered):
         raise ValueError('G registered config differs from preparation')
-    for name in ('draws', 'individual_tau', 'cluster_tau'):
-        if registered[name] != config[name]:
-            raise ValueError('C1 setting differs from G parent: ' + name)
-    training = registered['registration']['training']
-    if (training['kind'] != config['kind'] or training['width'] != config['width'] or
-            {k: training[k] for k in BUDGET} != config['budget']):
-        raise ValueError('C1 neural training differs from G parent')
+    validate_parent_science(config, registered, prep['identity'], expected)
+    for name, digest in prep['external_hashes'].items():
+        if hash_file(Path(name)) != digest:
+            raise ValueError('Frozen G external lineage changed: ' + name)
     manifest = read_json(manifest_path)
     for name, suffix in (('results', '.json'), ('predictions', '.npz')):
         if hash_file(analysis / (name + suffix)) != manifest[name + '_sha256']:
@@ -127,40 +232,30 @@ def _parent(config, local, output):
 
 
 def _reuse(config, parent, parent_prep):
-    """Validate all selected 0–2 calibrated members and common Cpanel keys."""
+    """Validate all fifteen G members before selecting unchanged references."""
     common = archive(parent / 'baseline_predictions.npz')
-    reused, external = {}, {}
-    for cell in config['cells']:
+    assert_aligned(common, common)
+    reused, external = {}, {**parent_prep['external_hashes'],
+        **{str(parent / name): digest for name, digest in parent_prep['artifact_hashes'].items()}}
+    # G selection must originate in its full five-cell / three-seed family,
+    # even when this C1 registration selects only a subset or baseline stability.
+    missing = [f'{cell}/seed{seed}' for cell in CELLS for seed in SEEDS[:3]
+        if not (parent / 'members' / cell / f'seed{seed}' / 'prediction_state.json').is_file()]
+    if missing: raise ValueError('Complete G family required: ' + ', '.join(missing))
+    for cell in CELLS:
         for seed in SEEDS[:3]:
             folder = parent / 'members' / cell / f'seed{seed}'
             state_path = folder / 'prediction_state.json'
             state = read_json(state_path)
-            if state['identity'] != {'preparation_sha256': canonical_hash(parent_prep),
-                                    'cell': cell, 'seed': seed}:
-                raise ValueError('G reused member identity differs')
-            assert_hashes(folder, state['artifact_hashes'])
-            for path, digest in state['dependencies'].items():
-                if hash_file(Path(path)) != digest:
-                    raise ValueError('G reused fit dependency changed')
-                external[path] = digest
-                unit_folder = Path(path).parent
-                fit_state_path = unit_folder / 'state.json'
-                fit_state = read_json(fit_state_path)
-                unit = unit_folder.name
-                if (fit_state['identity'] != {'preparation_sha256': canonical_hash(parent_prep),
-                        'seed': seed, 'unit': unit, 'spec': parent_prep['units'][unit]}):
-                    raise ValueError('G reused unit training identity differs')
-                assert_hashes(unit_folder, fit_state['artifact_hashes'])
-                external[str(fit_state_path)] = hash_file(fit_state_path)
-                for rel in fit_state['artifact_hashes']:
-                    external[str(unit_folder / rel)] = hash_file(unit_folder / rel)
+            external.update(validate_prediction_dependencies(parent, parent_prep, cell, seed, state, reused=True))
             member = archive(folder / 'predictions.npz')
             assert_aligned(member, common)
             files = [state_path, *[folder / name for name in state['artifact_hashes']]]
             external.update({str(path): hash_file(path) for path in files})
-            reused[f'{cell}/seed{seed}'] = {'prediction_state_sha256': hash_file(state_path),
-                'predictions_sha256': hash_file(folder / 'predictions.npz'),
-                'calibration_sha256': hash_file(folder / 'calibration.json')}
+            if cell in config['cells']:
+                reused[f'{cell}/seed{seed}'] = {'prediction_state_sha256': hash_file(state_path),
+                    'predictions_sha256': hash_file(folder / 'predictions.npz'),
+                    'calibration_sha256': hash_file(folder / 'calibration.json')}
     return reused, external
 
 
@@ -169,8 +264,9 @@ def prepare(config, local, output, expected):
         verify(output, expected)
         print('CONFIRMATION_PREPARED', output, flush=True)
         return
-    parent, gprep, gconfig, analysis = _parent(config, local, output)
+    parent, gprep, gconfig, analysis = _parent(config, local, output, expected)
     selected, external = _reuse(config, parent, gprep)
+    external.update(read_json(analysis / 'manifest.json')['inputs'])
     units = required_units(gprep['units'], config['cells'])
     started = time.perf_counter()
     output.mkdir(parents=True)
@@ -296,6 +392,7 @@ def fit(config, local, output, prep, seed):
     if profile_state['preparation_sha256'] != hash_file(output / 'preparation.json'):
         raise ValueError('C1 matching profile required')
     assert_hashes(output / 'profile', profile_state['artifact_hashes'])
+    resource_gate(config, read_json(output / 'profile' / 'profile.json'))
     store, context, parts, _ = load_data(local, output, prep)
     for unit, spec in prep['units'].items():
         folder = output / 'fits' / f'seed{seed}' / unit
@@ -331,7 +428,7 @@ def fit(config, local, output, prep, seed):
 
 def _predictor(config, output, prep, cell, seed):
     models = {'personal': {}, 'cluster': {}}
-    dependencies = {}
+    dependencies, _ = validate_unit_dependencies(output, prep, cell, seed, reused=False)
     for unit, spec in prep['units'].items():
         if spec['mode'] not in MODES[cell]:
             continue
@@ -342,6 +439,8 @@ def _predictor(config, output, prep, cell, seed):
         assert_hashes(folder, state['artifact_hashes'])
         dependencies[str(folder / 'model.pt')] = hash_file(folder / 'model.pt')
         model = MatrixModel.load(folder / 'model.pt', device=None if config['device'] == 'auto' else config['device'])
+        if (model.kind, model.seed, model.width, model.n_classes) != (config['kind'], seed, config['width'], 10):
+            raise ValueError('C1 loaded checkpoint identity differs')
         if spec['mode'] in ('personal', 'cluster'):
             models[spec['mode']][spec['id']] = model
         else:
@@ -359,13 +458,7 @@ def predict(config, local, output, prep, cell, seed):
     state_path = folder / 'prediction_state.json'
     expected = member_identity(prep, cell, seed)
     if state_path.exists():
-        state = read_json(state_path)
-        if state['identity'] != expected:
-            raise ValueError('C1 prediction identity changed')
-        assert_hashes(folder, state['artifact_hashes'])
-        for path, digest in state['dependencies'].items():
-            if hash_file(Path(path)) != digest:
-                raise ValueError('C1 prediction fit dependency changed')
+        resolve_member(config, output, prep, cell, seed)
         print('CONFIRMATION_PREDICT_COMPLETE', cell, seed, flush=True)
         return
     if folder.exists() and any(folder.iterdir()):

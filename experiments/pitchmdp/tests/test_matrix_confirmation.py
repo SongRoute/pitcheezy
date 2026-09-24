@@ -17,7 +17,8 @@ def registration(cells, comparisons, status='candidate_comparison'):
             'draws': 400, 'device': 'auto',
             'budget': {'epochs': 30, 'patience': 5, 'batch_size': 1024, 'learning_rate': .0005},
             'individual_tau': 1000, 'cluster_tau': 10000,
-            'registration': {'c1_scoring': deepcopy(SCORING)}}
+            'registration': {'c1_scoring': deepcopy(SCORING), 'single_member_wall_limit_seconds': 7200,
+                             'batch_wall_budget_seconds': 28800}}
 
 
 def test_baseline_only_and_mapped_contrasts_are_exact():
@@ -36,7 +37,7 @@ def test_baseline_only_and_mapped_contrasts_are_exact():
 def test_config_rejects_changed_seed_training_or_posterior_route():
     base = registration(['G0-global'], [], 'baseline_stability_only')
     for name, value in [('seeds', [0, 1, 2, 3]), ('draws', 25),
-                        ('individual_tau', 500), ('kind', 'transformer')]:
+                        ('individual_tau', 500), ('kind', 'transformer'), ('device', 'cpu')]:
         modified = deepcopy(base)
         modified[name] = value
         with pytest.raises(ValueError, match='settings'):
