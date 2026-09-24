@@ -11,9 +11,9 @@
 | EXP-P2-001 / R2 | 빈도·기존 MLP·Transformer 재학습 | 원래42~46 | 혼합 NLL 1.491226 / 1.490642; per-seed 재현 차이 최대1.24e-8 | 재현 통과. attempt1 float32 적분 실패 보존, float64 attempt2 10개 완료 |
 | EXP-P2-001 / D1-50 vs D1-25 | 결과 모델 학습량25%→50% | 0,1,2 | 1.490928 vs1.492067; Δ−.001139 [−.002611,+.000383] | N 미확정; Holm p=.06679 |
 | EXP-P2-001 / D1-100 vs D1-25 | 결과 모델 학습량25%→100% | 0,1,2 | 1.488885 vs1.492067; Δ−.003182 [−.005346,−.001011] | **C6 예측 N 통과**; Holm p=.00420, Brier 통과,3/3seed개선. MLB 전체/정책 우위 아님 |
-| EXP-P3-001 | 동일 enrichedH5/D100의7구조 | 0,1,2 | 미측정 | 준비·7개 실제 profile 통과,21개fullfit 비교 실행 중 |
-| EXP-P4-001 | 전체·개인·군집·부분 공유, TRAIN 선정Cpanel | 0,1,2 | 미측정 | 48명 준비/profile 통과,17fit/seed=51fit 대기; G4는 고정 확률 수축 적응 |
-| EXP-P4-002 | 동일 dual-stream H5에 이전 타석32/128구 추가 | 0,1,2 | 미측정 | frozenG표본/aux 연결 사전 등록;9fit, 준비/profile 대기 |
+| EXP-P3-001 | 동일 enrichedH5/D100의7구조 | 0,1,2 | MLP1.487329; Melville Δ+.000507 [−.001677,+.002668], LightGBM Δ+.002711 [−.000033,+.005528] | 21개 완료. N 통과0; Melville/LightGBM 미확정, 나머지4후보 악화 또는 보호 기준 실패. MLP 유지 |
+| EXP-P4-001 | 전체·개인·군집·부분 공유, TRAIN 선정Cpanel | 0,1,2 | 미측정 | 48명 준비/profile 통과,17fit/seed=51fit 실행 중; G4는 고정 확률 수축 적응 |
+| EXP-P4-002 | 동일 dual-stream H5에 이전 타석32/128구 추가 | 0,1,2 | 미측정 | 첫 준비 실패 보존: 다중 타자47PA/248구. 공통query 영향0, long stream만 정제하는 규칙 검토;9fit 미시작 |
 | EXP-P5-001 | MLP/Transformer×D25/D100 상호작용 | 0,1,2 | 미측정 | I 차이의차이 사전 등록; D1006개 재사용+D25신규6fit, 전체완료 뒤 검정 |
 | EXP-P6-001 | 결과 모형과 auxiliary의 TRAIN 자료량 | 0,1,2 | 미측정 | D25 auxiliary 재적합3fit 등록, D1-D25/D100 각3fit 재사용; 준비/profile 대기 |
 
