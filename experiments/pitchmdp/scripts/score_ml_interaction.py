@@ -77,6 +77,9 @@ def score(config, local_path, output):
     for label in ORDER:
         reports[label], predictions[label] = summarize_cell(members[label], baseline)
     archived = archive(parent_analysis / 'predictions.npz')
+    for name in ('keys', 'y', 'game_pk', 'pitcher'):
+        if not np.array_equal(archived[name], baseline['dev_' + name]):
+            raise ValueError('Reused D100 analysis metadata is not byte-identical: ' + name)
     for label, cell in (('MLP100', 'A0-MLP'), ('TF100', 'A6-transformer')):
         for kind in ('primary', 'calibrated', 'raw', 'seed_primary'):
             if not np.array_equal(predictions[label][kind], archived[cell+'_'+kind]):
