@@ -38,6 +38,10 @@ from score_ml_matrix import archive, assert_aligned
 
 
 SOURCES = list(dict.fromkeys([*G_SOURCES, 'pitchmdp/matrix_confirmation.py',
+                              'pitchmdp/matrix_confirmation_metrics.py',
+                              'pitchmdp/matrix_group_metrics.py',
+                              'pitchmdp/matrix_metrics.py',
+                              'scripts/score_ml_matrix.py',
                               'scripts/run_ml_confirmation.py']))
 
 

@@ -5,6 +5,7 @@ import pytest
 
 from pitchmdp.matrix_confirmation import (SEEDS, member_identity, required_units,
                                           unit_identity, validate_config)
+from pitchmdp.matrix_confirmation_metrics import SCORING
 
 
 def registration(cells, comparisons, status='candidate_comparison'):
@@ -15,7 +16,8 @@ def registration(cells, comparisons, status='candidate_comparison'):
             'seeds': list(SEEDS), 'kind': 'flatten_mlp', 'width': 128,
             'draws': 400, 'device': 'auto',
             'budget': {'epochs': 30, 'patience': 5, 'batch_size': 1024, 'learning_rate': .0005},
-            'individual_tau': 1000, 'cluster_tau': 10000, 'registration': {}}
+            'individual_tau': 1000, 'cluster_tau': 10000,
+            'registration': {'c1_scoring': deepcopy(SCORING)}}
 
 
 def test_baseline_only_and_mapped_contrasts_are_exact():
@@ -39,6 +41,10 @@ def test_config_rejects_changed_seed_training_or_posterior_route():
         modified[name] = value
         with pytest.raises(ValueError, match='settings'):
             validate_config(modified)
+    modified = deepcopy(base)
+    modified['registration']['c1_scoring']['required_negative_seeds'] = 3
+    with pytest.raises(ValueError, match='scoring family'):
+        validate_config(modified)
 
 
 def test_unit_union_and_new_seed_identity():

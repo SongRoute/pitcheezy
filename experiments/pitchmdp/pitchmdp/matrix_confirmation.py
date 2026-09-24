@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .matrix_data import canonical_hash
+from .matrix_confirmation_metrics import SCORING
 
 
 CELLS = ('G0-global', 'G1-personal', 'G2-feature', 'G3-cluster', 'G4-partial')
@@ -60,6 +61,8 @@ def validate_config(config: dict) -> dict:
             config['device'] not in ('auto', 'cpu', 'mps') or
             not isinstance(config['registration'], dict)):
         raise ValueError('C1 fit, sharing and calibration settings differ from G')
+    if config['registration'].get('c1_scoring') != SCORING:
+        raise ValueError('C1 scoring family differs from frozen four-slot registration')
     return config
 
 
