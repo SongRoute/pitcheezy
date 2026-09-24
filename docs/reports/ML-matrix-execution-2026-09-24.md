@@ -132,6 +132,10 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사 단계다. 기존 WE/�
 
 C6은 기존 고표본 선발 중심 집단이고 Burnes의 DEV 0구도 유지한다. C6 점수 개선을 불펜·새 선수·전체 MLB 강건성으로 확대하지 않는다. 실제 도달 위치를 목표 위치 정답으로 사용하지 않는다. 관측 행동 일치, 결과 확률 예측, 모델 내부 정책 가치, 관측 OPE, 전향적 실제 효과는 분리한다.
 
+새 논문 비교는 공통 과제에 맞춘 적응 실험이다. SmartPitch의4-class, Melville의9-class, Takamido의2-strike 이진 과제 점수를 현재10-class NLL과 같은 순위표에 놓지 않는다. A5의 `h ← h + f(과거 공, 과거 결과)`는 상태에 순서 의존 갱신 함수를 적용하는 LSTM/GRU와 다르다. 현재 구현에서 과거 토큰의 합은 순서를 바꾸어도 같으므로 A5의 이득이 나오더라도 순서 학습의 증거로 삼지 않는다. F4는 같은 최대128구 용량의 별도 token encoder/평균 pooling 비교이며 Kneita의12층 Transformer·400구·다중과제를 재현한 것이 아니다.
+
+후속 활성화 검토는 [별도 규약](../contracts/ML-FOLLOWUP-REVIEW-v1.md),5seed 확인과 제거 대조는 [C1/C2 설계](../contracts/ML-CONFIRMATION-DESIGN-v1.md)에 기록했다. 개별 family의 다중 비교 보장을 전체60행의 전역 오류율 보장으로 확대하지 않는다. R 비열등 상한 실패는 허용폭 안임을 확인하지 못했다는 뜻이며 실제 악화의 증명과 구분한다.
+
 ## 과거 특성 실험의 재사용 감사
 
 Luna read-only 감사로 [타자 표현·이력 결과](../../experiments/pitchmdp/REPRESENTATION_HISTORY_RESULTS.md)와 [H0/H5 검증](../../experiments/pitchmdp/HISTORY_BATTER_VALIDATION_RESULTS.md)을 확인했다. 전자는 2024 7,737구/88경기, 2025 5,048구/60경기, 신경망 5개 초기화와 400draw를 사용했다. 2025의 표본 수가 현재 C6과 같지만 문서의 숫자 일치만으로 현재 키·피처·학습 목록의 해시 일치를 주장하지 않는다.
