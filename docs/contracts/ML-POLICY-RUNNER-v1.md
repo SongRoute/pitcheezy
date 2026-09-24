@@ -89,3 +89,7 @@ June P2/P3 RL comparator (P3 wins exact ties). A shared `tuning_freeze.json` pin
 the June result and manifest hashes, execution hash, tau and comparator. Both DEV
 worlds must use that same dependency; a prior completed world's manifest and
 tuning dependency are checked before the second world runs.
+
+## macOS metadata in new policy/RL artifacts
+
+New preparations and stage seals enumerate scientific files with the source-pinned `matrix_policy_artifacts.py` helper. A file is excluded as AppleDouble metadata only when its basename starts with `._` **and** its first four bytes are `00 05 16 07`. The same rule applies during stage verification, RL June dependency collection, and subgroup rollout-file enumeration. Same-prefix ordinary files remain hashed; unexpected ordinary files, including nested `manifest.json`, remain rejected. A registered scientific file changed into metadata still fails the exact family comparison. No files are removed, and no existing frozen experiment manifests are rewritten. This accommodates macOS creating `._manifest.json` after the stage manifest itself has been sealed; it does not waive scientific hash or completeness checks.

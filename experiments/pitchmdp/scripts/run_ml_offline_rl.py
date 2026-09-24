@@ -21,6 +21,7 @@ import pandas as pd
 import torch
 from pitchmdp.data import KEY, hash_file
 from pitchmdp.matrix_data import canonical_hash, ordered_key_hash
+from pitchmdp.matrix_policy_artifacts import artifact_names, is_appledouble
 from pitchmdp.matrix_policy import PolicyInputs, context_key
 from pitchmdp.matrix_offline_rl import (FIXED, METHODS, audit_trajectories, terminal_rewards,
     LazyFeatures, OfflinePolicy, AmortizedPolicy, rl_comparisons)
@@ -55,13 +56,13 @@ def config_check(config):
 
 
 def seal(directory):
-    files = [str(p.relative_to(directory)) for p in directory.rglob('*') if p.is_file() and p.name != 'manifest.json']
+    files = artifact_names(directory, exclude=('manifest.json',))
     dump(directory / 'manifest.json', {'artifact_hashes': artifact_hashes(directory, files)})
 
 
 def verify_sealed(directory):
     manifest = read_json(directory / 'manifest.json')
-    names = {str(p.relative_to(directory)) for p in directory.rglob('*') if p.is_file() and p.name != 'manifest.json'}
+    names = set(artifact_names(directory, exclude=('manifest.json',)))
     if names != set(manifest['artifact_hashes']): raise ValueError('Sealed RL artifact family changed')
     assert_hashes(directory, manifest['artifact_hashes'])
     return manifest
@@ -105,8 +106,9 @@ def prepare(config, local_path, local, output, expected):
     for name, digest in policy_prep['artifact_hashes'].items(): external[str(parent / name)] = digest
     june = parent / 'stages/blend-control'
     # Include every sealed tuning artifact, not only the selected scalar result.
-    for p in june.rglob('*'):
-        if p.is_file(): external[str(p)] = hash_file(p)
+    for name in artifact_names(june):
+        p = june / name
+        external[str(p)] = hash_file(p)
     fresh(output, {'identity': expected})
     started = time.perf_counter(); prepare_deadline = time.monotonic()+config['prepare_seconds']
     with (parent / 'inputs.pkl').open('rb') as stream: saved = pickle.load(stream)
@@ -145,12 +147,12 @@ def prepare(config, local_path, local, output, expected):
     dump(output / 'parent_policy_preparation.json', policy_prep)
     dump(output / 'parent_policy_execution.json', policy_execution)
     dump(output / 'tuning_dependency.json', tuning_dependency)
-    files = [str(p.relative_to(output)) for p in output.rglob('*') if p.is_file()]
+    files = artifact_names(output)
     dump(output / 'preparation.json', {'identity': expected, 'artifact_hashes': artifact_hashes(output, files),
         'external_hashes': external, 'parent_policy_run': str(parent), 'comparator': tuning['rl_comparator'],
         'tuning_dependency': tuning_dependency, 'trajectory_audit': report, 'train_keys_sha256': ordered_key_hash(frame.iloc[positions]),
         'preparation_peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-        'feature_bank_bytes': sum(p.stat().st_size for p in (output / 'features').glob('*.npy')),
+        'feature_bank_bytes': sum(p.stat().st_size for p in (output / 'features').glob('*.npy') if not is_appledouble(p)),
         'preparation_memory_note': 'Transition records and token/context payload are materialized before mmap write; lazy minibatch gathering applies to fits.',
         'actions': list(saved['bc'].actions), 'feature_width': LazyFeatures(output / 'features').width,
         'seconds': time.perf_counter()-started,

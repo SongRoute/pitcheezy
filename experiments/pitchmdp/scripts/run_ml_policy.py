@@ -23,6 +23,7 @@ import pandas as pd
 from pitchmdp.data import KEY, hash_file
 from pitchmdp.game import GameState
 from pitchmdp.matrix_data import canonical_hash
+from pitchmdp.matrix_policy_artifacts import artifact_names
 from pitchmdp.matrix_policy import (PolicyInputs, SupportedBC, FrozenGEnsemble, FrozenWE,
     context_key, safe_rows, state_from_row, fit_bc, select_pa_requests, game_policy_comparisons, POLICY_INFERENCE)
 from pitchmdp.rollout_policy import (PAState, PastPitch, RowBudget, BudgetExceeded,
@@ -34,7 +35,7 @@ from run_ml_transfer import chosen_comparison, CONTROLS
 from run_ml_matrix import heavy_lock, check_location, assert_hashes, artifact_hashes
 
 SOURCES = list(dict.fromkeys([*SHARING_SOURCES, 'pitchmdp/rollout_policy.py',
-    'pitchmdp/matrix_policy.py', 'pitchmdp/game.py', 'scripts/run_ml_policy.py', 'scripts/run_ml_transfer.py']))
+    'pitchmdp/matrix_policy.py', 'pitchmdp/matrix_policy_artifacts.py', 'pitchmdp/game.py', 'scripts/run_ml_policy.py', 'scripts/run_ml_transfer.py']))
 WE_SOURCE_FILES = ('pitchmdp/game.py', 'scripts/build_minimal_pitch_service.py', 'scripts/run_temporal_blend.py')
 
 
@@ -199,7 +200,7 @@ def prepare(config, local_path, local, output, expected):
     dump(output / 'parent_preparation.json', prep)
     dump(output / 'parent_config.json', parent_config)
     dump(output / 'parent_analysis.json', analysis)
-    files = [str(p.relative_to(output)) for p in output.rglob('*') if p.is_file()]
+    files = artifact_names(output)
     if source_hashes() != expected['source_hashes']: raise ValueError('Policy source changed during prepare')
     dump(output / 'preparation.json', {'identity': expected, 'external_hashes': external,
         'artifact_hashes': artifact_hashes(output, files), 'parent_run': str(parent), 'we_path': we_path,
@@ -258,7 +259,7 @@ def seal_stage(destination):
     path = destination / 'manifest.json'
     if path.exists(): raise ValueError('Policy stage is already sealed')
     started = read_json(destination / 'started.json')
-    names = sorted(str(p.relative_to(destination)) for p in destination.rglob('*') if p.is_file())
+    names = artifact_names(destination)
     dump(path, {'stage': destination.name, 'preparation_sha256': started['preparation_sha256'],
                 'artifact_hashes': artifact_hashes(destination, names)})
 
@@ -269,7 +270,7 @@ def verify_stage(output, stage):
     if (manifest['stage'] != stage or
             manifest['preparation_sha256'] != hash_file(output / 'preparation.json')):
         raise ValueError('Policy stage preparation identity differs')
-    names = {str(p.relative_to(destination)) for p in destination.rglob('*') if p.is_file() and p.name != 'manifest.json'}
+    names = set(artifact_names(destination, exclude=('manifest.json',)))
     if names != set(manifest['artifact_hashes']):
         raise ValueError('Policy stage artifact family differs')
     assert_hashes(destination, manifest['artifact_hashes'])

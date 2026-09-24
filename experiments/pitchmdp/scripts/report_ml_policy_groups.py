@@ -14,6 +14,7 @@ sys.path.insert(0, str(PROJECT))
 import numpy as np
 import pandas as pd
 from pitchmdp.matrix_policy_groups import p0_groups, rollout_groups, POLICY_PAIRS, RL_PAIRS
+from pitchmdp.matrix_policy_artifacts import artifact_names, is_appledouble
 
 
 def digest(path):
@@ -43,7 +44,7 @@ class Reader:
         return self.pin(root/name, prep['artifact_hashes'][name])
     def sealed(self, directory):
         manifest = self.json(directory/'manifest.json')
-        actual = {str(p.relative_to(directory)) for p in directory.rglob('*') if p.is_file() and p.name != 'manifest.json'}
+        actual = set(artifact_names(directory, exclude=('manifest.json',)))
         if actual != set(manifest['artifact_hashes']): raise ValueError('Sealed stage file family differs')
         for name, expected in manifest['artifact_hashes'].items():
             path = (directory/name).resolve()
@@ -73,7 +74,7 @@ def load_rollouts(reader, directory, result, names):
         if len(parts) != 3 or ':'.join(map(str, integers)) != key or any(v < 0 for v in integers):
             raise ValueError('Invalid archived PA key')
     if not keys or len(set(keys)) != len(keys): raise ValueError('Empty/duplicate archived PA family')
-    if {p.name for p in directory.glob('*.npz')} != {key.replace(':', '-')+'.npz' for key in keys}:
+    if {p.name for p in directory.glob('*.npz') if not is_appledouble(p)} != {key.replace(':', '-')+'.npz' for key in keys}:
         raise ValueError('Archived PA file family differs')
     values, flags = {n: [] for n in names}, {n: [] for n in names}
     for key in keys:
@@ -137,7 +138,8 @@ def report(policy_root, stage, output, rl_root=None):
             reports['rl'] = rollout_groups(requests, rr['pa_keys'], rr['game_ids'], rv, rf, RL_PAIRS, limit, panel)
             for name in ('requested_pa_starts', 'selected_pa_starts', 'supported_selected', 'selected_unsupported_reasons'):
                 if rr[name] != result[name]: raise ValueError('RL/request denominator differs')
-    sources = [Path(__file__), PROJECT/'pitchmdp/matrix_policy_groups.py']
+    sources = [Path(__file__), PROJECT/'pitchmdp/matrix_policy_groups.py',
+               PROJECT/'pitchmdp/matrix_policy_artifacts.py']
     for path in sources: reader.pin(path)
     reader.recheck()
     output.mkdir(parents=True)
