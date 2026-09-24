@@ -20,3 +20,8 @@ def test_missing_panel_role_and_zero_volume_cannot_pass_robustness():
     assert result['groups']['volume_zero']['passed'] is None
     assert result['family_size'] == 96
     assert masks(metadata)['role_starter'].all()
+    worse = np.full((n, 10), .99 / 9)
+    worse[:, 0] = .01
+    failed = guardrails(np.zeros(n, dtype=int), worse, p, np.repeat(np.arange(30), 20), metadata)
+    assert failed['status'] == 'failed'
+    assert failed['groups']['volume_zero']['passed'] is None

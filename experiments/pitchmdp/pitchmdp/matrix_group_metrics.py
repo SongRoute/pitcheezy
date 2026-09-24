@@ -51,8 +51,8 @@ def guardrails(labels, candidate, control, games, metadata, *, candidate_family_
         results[name] = {'reporting': gate, 'paired': measured, 'passed': passed}
     return {'groups': results, 'family_size': len(GROUPS) * 2 * candidate_family_size,
             'family_alpha': .05, 'per_bound_alpha': alpha,
-            'status': 'unconfirmed' if any(r['passed'] is None for r in results.values()) else
-                      'passed' if all(r['passed'] for r in results.values()) else 'failed',
+            'status': 'failed' if any(r['passed'] is False for r in results.values()) else
+                      'unconfirmed' if any(r['passed'] is None for r in results.values()) else 'passed',
             'note': 'All declared groups retained, including zero-TRAIN players absent from a TRAIN-selected panel.'}
 
 
