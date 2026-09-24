@@ -1,5 +1,7 @@
 # ML0·ML1 실행 전 문헌 검토
 
+이 문서는 실행 전 문헌 조사 기록이다. 이후 실제 실행·실패·비교 수치는 [매트릭스 실행 보고서](ML-matrix-execution-2026-09-24.md)를 우선한다. 아래 ‘미실행’ 표시는 조사 당시 상태다.
+
 확인일: 2026-09-24. 저장소 기준: `61ca0f9`(시작 시 clean). 요청 범위는 **기존 참고 논문과 추가 비교 후보의 정리**다. 이 문서는 문헌 검토와 실험 제안이며, ML0 사전 고정 사양이나 실행 결과가 아니다. 새 학습·평가, 2026 경기 데이터·최종셋 열람은 하지 않았다.
 
 읽은 시작점: [세션 인수인계](../SESSION_HANDOFF.md), [ML 실행 인수인계](../handoffs/ML-experiments-next-session.md), [기존 기준선](../baselines.md), [기존 문헌 목록](../../experiments/pitchmdp/LITERATURE.md), [기존 연구 차이 검토](../../experiments/pitchmdp/docs/RESEARCH_GAP_REVIEW.md).

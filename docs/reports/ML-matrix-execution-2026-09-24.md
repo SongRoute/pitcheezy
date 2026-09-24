@@ -4,6 +4,7 @@
 
 - 실행 브랜치: `codex/ml-matrix-execution`. 산출물: `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/`.
 - 첫 등록: [EXP-P2-001](../../configs/EXP-P2-001.yaml), 구조 비교: [EXP-P3-001](../../configs/EXP-P3-001.yaml). [실행 계약](../contracts/ML-MATRIX-EXECUTION-v1.md)을 따른다.
+- 논문 원래 과제·보고값·핵심 아이디어는 [문헌 검토](ML-literature-review-2026-09-24.md), 정책·RL 추가 방법론과 대응 대조군은 [전체 설계](../ML_EXPERIMENT_DESIGN.md)에 연결했다. 아래는 우리 공통 과제에 적응한 실행 결과다.
 - 2026/최종셋 개발 금지. 원자료·가공 자료·캐시·동결 서비스 모델·사용자 서버/DB를 변경하지 않는다.
 - 모든 새 fit/추론은 단일 heavy lock으로 실행한다. 요청 에이전트 모델은 단순 감사 Luna medium, 구현·실행 Sol medium, 복잡한 모델/누수·통계 검토 Astra high. backend 확정 모델·토큰·금액은 미측정이다.
 
