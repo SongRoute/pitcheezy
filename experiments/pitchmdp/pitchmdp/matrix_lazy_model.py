@@ -35,12 +35,22 @@ class DualStreamNetwork(nn.Module):
 
     def forward(self, h5, h5_valid, long, long_valid, context):
         h5 = h5.masked_fill(~h5_valid[..., None], 0.)
-        long = long.masked_fill(~long_valid[..., None], 0.)
         short = self.h5_path(torch.cat((h5.flatten(1), h5_valid.float()), dim=1))
+        pooled = self.encode_long(long, long_valid)
+        return self.head(torch.cat((short, pooled, context), dim=1))
+
+    def encode_long(self, long, long_valid):
+        """No current action/physics/context enters this per-query representation."""
+        long = long.masked_fill(~long_valid[..., None], 0.)
         codes = self.position_codes[None].expand(len(long), -1, -1)
         encoded = self.long_path(torch.cat((long, codes), dim=-1))
         encoded = encoded.masked_fill(~long_valid[..., None], 0.)
-        pooled = encoded.sum(1) / long_valid.sum(1, keepdim=True).clamp(min=1)
+        return encoded.sum(1) / long_valid.sum(1, keepdim=True).clamp(min=1)
+
+    def forward_with_pooled(self, h5, h5_valid, pooled, context):
+        """Inference reuse only; forward still computes both streams for training."""
+        h5 = h5.masked_fill(~h5_valid[..., None], 0.)
+        short = self.h5_path(torch.cat((h5.flatten(1), h5_valid.float()), dim=1))
         return self.head(torch.cat((short, pooled, context), dim=1))
 
 
@@ -180,14 +190,47 @@ class LazyJointDelivery:
     """Apply a frozen JointDelivery pool to lazy dual-stream models.
 
     Current physical replacement and candidate type are kept together. Logits are
-    expanded for a bounded pitch block and model evaluation gathers <=batch_size
-    histories at a time. Calibration caches only float32 logits, not histories.
+    expanded for a bounded pitch block. Reuse encodes the unchanged long stream
+    once per query; only H5/current/context expands over draws. The plain
+    model.logits route remains available with reuse_long=False for comparison.
+    Calibration caches only float32 logits, not histories.
     """
-    def __init__(self, delivery, pitch_chunk=16, model_batch_size=256):
+    def __init__(self, delivery, pitch_chunk=16, model_batch_size=256, *, reuse_long=True):
         if pitch_chunk < 1 or model_batch_size < 1:
             raise ValueError('Positive inference chunk sizes required')
         self.delivery, self.draws = delivery, delivery.draws
         self.pitch_chunk, self.model_batch_size = pitch_chunk, model_batch_size
+        self.reuse_long = reuse_long
+
+    def _reused_logits(self, model, selected, repeated):
+        if hasattr(model, 'feature_report') and _feature_contract(selected.store.report()) != _feature_contract(model.feature_report):
+            raise ValueError('Prediction stream differs from fitted feature contract')
+        model.net.eval()
+        pieces = []
+        with torch.no_grad():
+            _, _, long, valid, _ = selected.gather()
+            if (long.shape != (len(selected), 128, model.net.config['n_token']) or
+                    valid.shape != long.shape[:2] or valid.dtype != np.bool_ or not np.isfinite(long).all()):
+                raise ValueError('Invalid cached long-stream values/shapes/masks')
+            pooled = model.net.encode_long(torch.as_tensor(long, device=model.device),
+                                           torch.as_tensor(valid, device=model.device))
+            for begin in range(0, len(repeated), self.model_batch_size):
+                end = min(begin+self.model_batch_size, len(repeated))
+                current = repeated.subset(slice(begin, end))
+                h5, h5_valid = current.store.base.gather(current.rows, current=current.current,
+                                                       candidate_pitch_types=current.candidate_pitch_types)
+                context = np.asarray(current.context.transform(current.frame()), dtype=np.float32)
+                if (h5.ndim != 3 or h5.shape[1] != 6 or h5_valid.shape != h5.shape[:2] or
+                        h5_valid.dtype != np.bool_ or not h5_valid[:, -1].all() or
+                        context.ndim != 2 or len(context) != len(h5) or
+                        any(not np.isfinite(a).all() for a in (h5, context)) or np.any(h5[:, -1, -11:] != 0)):
+                    raise ValueError('Invalid reused dual-stream short/context inputs')
+                # JointDelivery flattens query-major, including chunks that cut
+                # through a query's 400 draws or span multiple candidate actions.
+                owner = torch.as_tensor(np.arange(begin, end)//self.draws, device=model.device)
+                tensors = [torch.as_tensor(a, device=model.device) for a in (h5, h5_valid, context)]
+                pieces.append(model.net.forward_with_pooled(tensors[0], tensors[1], pooled[owner], tensors[2]).cpu().numpy())
+        return np.concatenate(pieces)
 
     def logits(self, model, batch):
         pieces, levels = [], []
@@ -198,7 +241,9 @@ class LazyJointDelivery:
                            current=samples.reshape(-1, 8),
                            candidate_pitch_types=None if selected.candidate_pitch_types is None else
                            np.repeat(selected.candidate_pitch_types, self.draws))
-            scores = model.logits(repeated, batch_size=self.model_batch_size).reshape(len(selected), self.draws, 10)
+            scores = (self._reused_logits(model, selected, repeated) if self.reuse_long else
+                      model.logits(repeated, batch_size=self.model_batch_size))
+            scores = scores.reshape(len(selected), self.draws, 10)
             pieces.append(scores)
             levels.append(tier)
         return (np.concatenate(pieces), np.concatenate(levels)) if pieces else (
