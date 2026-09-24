@@ -55,7 +55,7 @@ SOURCES = list(dict.fromkeys([*SHARING_SOURCES, 'pitchmdp/matrix_generalization.
 
 def config_check(config):
     required = {'protocol', 'experiment_id', 'parent_run', 'parent_preparation_sha256', 'parent_analysis_sha256',
-                'candidate', 'control', 'selection_basis', 'scope', 'seeds', 'axes', 'regimes',
+                'candidate', 'control', 'selection_basis', 'selection_status', 'scope', 'seeds', 'axes', 'regimes',
                 'prefix_games', 'selector_seed', 'draws', 'width', 'budget', 'device', 'adaptation'}
     if not isinstance(config, dict) or set(config) - required - {'registration'} or not required <= set(config):
         raise ValueError('Invalid T2 configuration schema')
@@ -76,9 +76,34 @@ def config_check(config):
         raise ValueError('Run identity and pre-T2 selection rationale required')
     if config['device'] not in ('auto', 'cpu', 'mps'):
         raise ValueError('Local device must be auto/cpu/mps')
+    if config['selection_status'] not in ('screen_promoted', 'diagnostic_only_not_promoted'):
+        raise ValueError('Explicit promoted versus diagnostic-only selection status required')
     if 'registration' in config and not isinstance(config['registration'], dict):
         raise ValueError('Registration must be an object')
     return config
+
+
+def chosen_comparison(analysis):
+    """Recheck the common T2/T3/T4 rule using frozen Cpanel results only."""
+    comparisons = analysis['comparisons']
+    if [(c['candidate'], c['control']) for c in comparisons] != list(CONTROLS.items()):
+        raise ValueError('Frozen G analysis must contain its exact four comparisons')
+    ranks = {}
+    for cell in CONTROLS:
+        nll = analysis['reports'][cell]['primary']['log_loss']
+        seconds = analysis['logical_cell_costs'][cell]['total_fit_seconds']
+        if not np.isfinite(nll) or not np.isfinite(seconds) or nll < 0 or seconds < 0:
+            raise ValueError('Finite Cpanel loss and logical fit costs required for selection')
+        ranks[cell] = (nll, seconds)
+    eligible = [c['candidate'] for c in comparisons
+                if (c['N']['status'] == 'predictive_improvement' or c['G']['status'] == 'group_improvement')
+                and c['robustness']['status'] != 'failed']
+    ranked = sorted(eligible, key=ranks.__getitem__)[:2]
+    if analysis['followup_candidates'] != ranked:
+        raise ValueError('Frozen G follow-up ranking violates the predeclared rule')
+    candidate = ranked[0] if ranked else min(CONTROLS, key=ranks.__getitem__)
+    return {'candidate': candidate, 'control': CONTROLS[candidate],
+            'status': 'screen_promoted' if ranked else 'diagnostic_only_not_promoted'}
 
 
 def source_hashes():
@@ -222,8 +247,10 @@ def prepare(config, local_path, local, output, expected):
             or hash_file(analysis / 'predictions.npz') != manifest['predictions_sha256']):
         raise ValueError('Frozen G preparation/selection identity changed')
     result = read_json(analysis / 'results.json')
-    if (config['candidate'], config['control']) not in {(r['candidate'], r['control']) for r in result['comparisons']}:
-        raise ValueError('Selected comparison is absent from the completed G analysis')
+    chosen = chosen_comparison(result)
+    if (any(config[name] != chosen[name] for name in ('candidate', 'control'))
+            or config['selection_status'] != chosen['status']):
+        raise ValueError('Selected T2 comparison differs from the common transfer rule')
     external = {**manifest['inputs'], str(analysis / 'results.json'): config['parent_analysis_sha256'],
                 str(analysis / 'manifest.json'): hash_file(analysis / 'manifest.json'),
                 str(analysis / 'predictions.npz'): manifest['predictions_sha256'],
@@ -288,7 +315,7 @@ def prepare(config, local_path, local, output, expected):
     if source_hashes() != expected['source_hashes']:
         raise ValueError('T2 source changed during preparation')
     files = [str(path.relative_to(output)) for path in output.rglob('*') if path.is_file()]
-    dump(output / 'preparation.json', {'identity': expected, 'folds': folds, 'panel': panel,
+    dump(output / 'preparation.json', {'identity': expected, 'folds': folds, 'panel': panel, 'selection': chosen,
         'artifact_hashes': artifact_hashes(output, files), 'external_hashes': external,
         'natural_matchup': natural['report'], 'new_DEV_scores_read': False,
         'resource_limits': {'profile_seconds': 600, 'per_seed_fit_seconds': 7200,

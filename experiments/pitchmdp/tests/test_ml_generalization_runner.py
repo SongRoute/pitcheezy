@@ -20,6 +20,7 @@ def config(candidate='G3-cluster'):
     return {'protocol': 'ml_generalization_v1', 'experiment_id': 'EXP-TINY',
         'parent_run': '/frozen/g', 'parent_preparation_sha256': 'a'*64, 'parent_analysis_sha256': 'b'*64,
         'candidate': candidate, 'control': runner.CONTROLS[candidate], 'selection_basis': 'frozen G selection',
+        'selection_status': 'screen_promoted',
         'scope': 'Cpanel', 'seeds': [0, 1, 2], 'axes': ['pitcher', 'batter'], 'regimes': ['Z', 'W', 'O'],
         'prefix_games': 2, 'selector_seed': 20260924, 'draws': 400, 'width': 128,
         'budget': deepcopy(runner.BUDGET), 'device': 'cpu', 'adaptation': 'fixed_prefix_context_only_v1'}
@@ -59,6 +60,28 @@ def test_dependency_unions_include_global_and_only_eligible_experts():
         assert 'global' in units
         assert 'personal2' not in units and 'cluster1' not in units
         if eligibility: assert any(item['fallback'] is not None for item in eligibility)
+
+
+def test_common_transfer_rule_checks_promotion_r_failure_and_diagnostic_fallback():
+    comparisons = [{'candidate': candidate, 'control': control,
+                    'N': {'status': 'predictive_improvement'}, 'G': {'status': 'inconclusive'},
+                    'robustness': {'status': 'unconfirmed'}} for candidate, control in runner.CONTROLS.items()]
+    reports = {cell: {'primary': {'log_loss': 1.}} for cell in runner.CONTROLS}
+    costs = {cell: {'total_fit_seconds': i+1} for i, cell in enumerate(runner.CONTROLS)}
+    analysis = {'comparisons': comparisons, 'reports': reports, 'logical_cell_costs': costs,
+                'followup_candidates': ['G1-personal', 'G2-feature']}
+    assert runner.chosen_comparison(analysis) == {'candidate': 'G1-personal', 'control': 'G0-global', 'status': 'screen_promoted'}
+    comparisons[0]['robustness']['status'] = 'failed'
+    with pytest.raises(ValueError, match='ranking'): runner.chosen_comparison(analysis)
+    analysis['followup_candidates'] = ['G2-feature', 'G3-cluster']
+    assert runner.chosen_comparison(analysis)['candidate'] == 'G2-feature'
+    for comparison in comparisons:
+        comparison['N']['status'] = 'inconclusive'
+    analysis['followup_candidates'] = []
+    # The diagnostic rule includes failed candidates; it must never call them promoted.
+    assert runner.chosen_comparison(analysis) == {'candidate': 'G1-personal', 'control': 'G0-global', 'status': 'diagnostic_only_not_promoted'}
+    reports['G1-personal']['primary']['log_loss'] = np.nan
+    with pytest.raises(ValueError, match='Finite'): runner.chosen_comparison(analysis)
 
 
 def test_fold_refits_all_aux_on_exclusions_and_preserves_original_truth():

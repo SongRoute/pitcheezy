@@ -16,9 +16,15 @@ the complete hypothesis family and the one-heavy-job execution slot.
 - `protocol`: `ml_generalization_v1`; `scope`: `Cpanel`.
 - `experiment_id`, `parent_run`, `parent_preparation_sha256`, and
   `parent_analysis_sha256`: frozen G run and its completed panel analysis.
-- `candidate`, `control`, `selection_basis`: frozen comparison and rationale.
+- `candidate`, `control`, `selection_basis`, `selection_status`: frozen comparison,
+  rationale, and `screen_promoted` or `diagnostic_only_not_promoted` status.
   Supported mappings are G1-personal→G0-global, G2-feature→G0-global,
   G3-cluster→G2-feature, and G4-partial→G2-feature.
+  Preparation recomputes the exact common T2/T3/T4 selection rule from the pinned
+  G analysis: first N/G-passing candidate without a measured R failure, ranked by
+  primary Cpanel NLL then logical dependency fit time. If none qualify, it selects
+  the smallest NLL/time candidate among G1–G4 strictly for diagnosis. It rejects a
+  changed candidate, control, status or inconsistent archived follow-up ranking.
 - `seeds`: `[0,1,2]`; `axes`: `["pitcher","batter"]`;
   `regimes`: `["Z","W","O"]`.
 - `prefix_games`: 2; `selector_seed`: 20260924; `draws`: 400; `width`: 128.
