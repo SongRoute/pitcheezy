@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from pitchmdp.matrix_aux_data import restrict_train_games, validate_config
+from pitchmdp.sequence_data import HistoryStore
 from scripts.run_ml_aux_data import fit
 
 
@@ -28,7 +29,9 @@ def observations():
         rows.append({"game_pk": game, "at_bat_number": 1, "pitch_number": 1,
                      "game_date": pd.Timestamp(date), "game_type": "R", "batter": 7,
                      "pitch_type": "FF", "description": desc, "events": event,
-                     "is_pa_terminal": True, "plate_x": .1, "plate_z": 2.4})
+                     "is_pa_terminal": True, "plate_x": .1, "plate_z": 2.4,
+                     "effective_speed": 90. + game, "release_spin_rate": 2000. + game,
+                     "spin_axis": 10. + game, "pfx_x": .1, "pfx_z": .2})
     return pd.DataFrame(rows)
 
 
@@ -75,3 +78,25 @@ def test_restriction_refuses_partial_or_wrong_game_identity():
 def test_full_fit_requires_completed_preparation_bound_profile(tmp_path):
     with pytest.raises(ValueError, match="profile"):
         fit(config(), {}, tmp_path, {"samples": {"train": {"rows_sha256": "x"}}}, 0)
+
+
+def test_physical_normalizer_fits_all_retained_raw_train_rows_only():
+    raw = observations()
+    retained, _ = restrict_train_games(raw, np.array([2]))
+    # The normalizer uses raw TRAIN rows regardless of supervised eligibility.
+    store = HistoryStore.from_frame(retained)
+    assert store.normalizer.n_train == 1
+    assert store.normalizer.mean[0] == pytest.approx(92.)
+    assert 3 not in set(store.frame.game_pk)
+
+
+def test_later_dev_outcome_cannot_change_earlier_context():
+    ordinary, _ = restrict_train_games(observations(), np.array([2]))
+    mutated = observations()
+    mutated.loc[mutated.game_pk.eq(5), ["events", "description"]] = ["home_run", "hit_into_play"]
+    changed, _ = restrict_train_games(mutated, np.array([2]))
+    may = ordinary.loc[ordinary.game_pk.eq(4)].iloc[0]
+    changed_may = changed.loc[changed.game_pk.eq(4)].iloc[0]
+    fields = ["batter_pa_prior", "batter_obp_prior", "batter_k_prior",
+              "batter_style_isolated_power_prior", "batter_style_contact_prior"]
+    assert may[fields].tolist() == changed_may[fields].tolist()
