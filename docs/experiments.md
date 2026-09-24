@@ -15,6 +15,7 @@
 | EXP-P4-001 | 전체·개인·군집·부분 공유, TRAIN 선정Cpanel | 0,1,2 | 미측정 | 48명 준비/profile 통과,17fit/seed=51fit 대기; G4는 고정 확률 수축 적응 |
 | EXP-P4-002 | 동일 dual-stream H5에 이전 타석32/128구 추가 | 0,1,2 | 미측정 | frozenG표본/aux 연결 사전 등록;9fit, 준비/profile 대기 |
 | EXP-P5-001 | MLP/Transformer×D25/D100 상호작용 | 0,1,2 | 미측정 | I 차이의차이 사전 등록; D1006개 재사용+D25신규6fit, 전체완료 뒤 검정 |
+| EXP-P6-001 | 결과 모형과 auxiliary의 TRAIN 자료량 | 0,1,2 | 미측정 | D25 auxiliary 재적합3fit 등록, D1-D25/D100 각3fit 재사용; 준비/profile 대기 |
 
 ## 기존 RE24 연구 기록
 
