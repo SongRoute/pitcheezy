@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from pitchmdp.matrix_aux_data import restrict_train_games, validate_config
+from scripts.run_ml_aux_data import fit
 
 
 def config():
@@ -69,3 +70,8 @@ def test_restriction_refuses_partial_or_wrong_game_identity():
     duplicate = pd.concat([frame, frame.iloc[:1]], ignore_index=True)
     with pytest.raises(ValueError, match="unique"):
         restrict_train_games(duplicate, np.array([2]))
+
+
+def test_full_fit_requires_completed_preparation_bound_profile(tmp_path):
+    with pytest.raises(ValueError, match="profile"):
+        fit(config(), {}, tmp_path, {"samples": {"train": {"rows_sha256": "x"}}}, 0)

@@ -270,6 +270,8 @@ def profile(config: dict, local: dict, output: Path, prep: dict) -> None:
     prediction_seconds = time.perf_counter()-start-fit_seconds-calibration_seconds
     if source_hashes() != prep["identity"]["source_hashes"]:
         raise ValueError("D2 source changed during profile")
+    if time.perf_counter()-start > config.get("registration", {}).get("profile_wall_limit_seconds", 600):
+        raise TimeoutError("D2 real-data profile exceeded registered 600-second limit")
     dump(report_path, {"preparation_sha256": canonical_hash(prep), "train_rows": len(train),
          "earlystop_rows": len(early), "temperature_rows": len(temperature),
          "prediction_train_rows": 256, "draws": config["draws"],
@@ -282,6 +284,9 @@ def profile(config: dict, local: dict, output: Path, prep: dict) -> None:
 
 
 def fit(config: dict, local: dict, output: Path, prep: dict, seed: int) -> None:
+    profile_path = output / "profile" / "profile.json"
+    if not profile_path.is_file() or read_json(profile_path).get("preparation_sha256") != canonical_hash(prep):
+        raise ValueError("Registered D2 real-data profile must complete before any full fit")
     dest = member_dir(output, seed)
     statepath = dest / "fit_state.json"
     membership = member_identity(prep, seed)
