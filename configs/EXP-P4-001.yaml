@@ -24,7 +24,7 @@
     "multiplicity": "Eight one-sided null-centered whole-game bootstrap tests: four overallN and four low-volumeG, Holm alpha.05; missingG retainsfamily slot",
     "N": {"delta_nll_max": -0.003, "nll_ci95_upper_max": 0, "brier_ci95_upper_max": 0.001, "required_negative_seeds": 2},
     "G": "Low-volume N plus overall NLL upper<=.001 and overall Brier upper<=.001",
-    "R": {"groups": 12, "comparisons": 4, "metrics": 2, "bonferroni_family_size": 96, "family_alpha": 0.05, "nll_margin": 0.01, "brier_margin": 0.002, "minimum_games": 30, "minimum_pitches": 500},
+    "R": {"groups": 12, "comparisons": 4, "metrics": 2, "bonferroni_family_size": 96, "family_alpha": 0.05, "nll_margin": 0.01, "brier_margin": 0.002, "minimum_games": 30, "minimum_pitches": 500, "bootstrap_draws": 100000},
     "bootstrap": {"draws": 10000, "seed": 20260924, "unit": "whole game", "estimand": "pitch-weighted paired mean loss"},
     "rare_class_minimum_events": 30,
     "followup_ranking": "At most two candidates passing N or G, ascending Cpanel primary NLL; ties lower logical total dependency fit time. R remains unconfirmed until missinggroups/fullMLB assessed.",

@@ -38,7 +38,7 @@ def bootstrap_difference(delta, games, *, draws=10000, seed=20260924, upper_alph
             'upper_alpha': upper_alpha, 'draws': draws, 'seed': seed}
 
 
-def guardrails(labels, candidate, control, games, metadata, *, candidate_family_size=4):
+def guardrails(labels, candidate, control, games, metadata, *, candidate_family_size=4, draws=100000):
     delta = pitch_losses(labels, candidate) - pitch_losses(labels, control)
     if len(metadata) != len(delta) or candidate_family_size != 4:
         raise ValueError('G family fixes four comparisons and aligned metadata')
@@ -46,7 +46,7 @@ def guardrails(labels, candidate, control, games, metadata, *, candidate_family_
     results = {}
     for name, mask in masks(metadata).items():
         gate = group_reporting_status(games, mask)
-        measured = bootstrap_difference(delta[mask], np.asarray(games)[mask], upper_alpha=alpha) if gate['status'] == 'reporting_eligible' else None
+        measured = bootstrap_difference(delta[mask], np.asarray(games)[mask], upper_alpha=alpha, draws=draws) if gate['status'] == 'reporting_eligible' else None
         passed = measured['simultaneous_upper'][0] <= .010 and measured['simultaneous_upper'][1] <= .002 if measured else None
         results[name] = {'reporting': gate, 'paired': measured, 'passed': passed}
     return {'groups': results, 'family_size': len(GROUPS) * 2 * candidate_family_size,

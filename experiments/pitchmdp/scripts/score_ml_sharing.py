@@ -31,6 +31,8 @@ def score(config, local_path, output):
     prep = verify(output, identity(config, local_path))
     if config['registration']['primary_comparisons'] != [list(x) for x in COMPARISONS]:
         raise ValueError('G comparison family differs from preregistration')
+    if config['registration']['R']['bootstrap_draws'] != 100000:
+        raise ValueError('G robust upper bounds require the registered 100000 draws')
     require_complete(output, CELLS, SEEDS)
     destination = output / 'analysis' / 'panel'
     if destination.exists():
@@ -50,6 +52,7 @@ def score(config, local_path, output):
         for seed in SEEDS:
             dest = output / 'members' / cell / f'seed{seed}'
             state = read_json(dest / 'prediction_state.json')
+            inputs[str(dest / 'prediction_state.json')] = hash_file(dest / 'prediction_state.json')
             if state['identity'] != {'preparation_sha256': canonical_hash(prep), 'cell': cell, 'seed': seed}:
                 raise ValueError('Sharing prediction identity differs')
             assert_hashes(dest, state['artifact_hashes'])
@@ -93,6 +96,13 @@ def score(config, local_path, output):
                       'status': 'group_improvement' if decision['status'] == 'predictive_improvement' and whole_guard else 'inconclusive'}
     costs = {str(seed): {unit: read_json(output / 'fits' / f'seed{seed}' / unit / 'fit.json')
                         for unit in prep['units']} for seed in SEEDS}
+    for seed in SEEDS:
+        for unit in prep['units']:
+            fit_dir = output / 'fits' / f'seed{seed}' / unit
+            state = read_json(fit_dir / 'state.json')
+            assert_hashes(fit_dir, state['artifact_hashes'])
+            for name in ('state.json', 'fit.json'):
+                inputs[str(fit_dir / name)] = hash_file(fit_dir / name)
     temporal = {}
     for month in sorted(metadata.month.unique()):
         mask = metadata.month.eq(month).to_numpy(bool)

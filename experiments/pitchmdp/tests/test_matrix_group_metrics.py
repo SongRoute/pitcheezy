@@ -15,13 +15,13 @@ def test_missing_panel_role_and_zero_volume_cannot_pass_robustness():
     metadata = pd.DataFrame({'game_role': ['starter'] * n, 'throwing_hand': ['R'] * n,
         'train_volume': ['high'] * n, 'two_strikes': [True] * n, 'runners_on': [False] * n})
     p = np.full((n, 10), .1)
-    result = guardrails(np.zeros(n, dtype=int), p, p, np.repeat(np.arange(30), 20), metadata)
+    result = guardrails(np.zeros(n, dtype=int), p, p, np.repeat(np.arange(30), 20), metadata, draws=200)
     assert result['status'] == 'unconfirmed'
     assert result['groups']['volume_zero']['passed'] is None
     assert result['family_size'] == 96
     assert masks(metadata)['role_starter'].all()
     worse = np.full((n, 10), .99 / 9)
     worse[:, 0] = .01
-    failed = guardrails(np.zeros(n, dtype=int), worse, p, np.repeat(np.arange(30), 20), metadata)
+    failed = guardrails(np.zeros(n, dtype=int), worse, p, np.repeat(np.arange(30), 20), metadata, draws=200)
     assert failed['status'] == 'failed'
     assert failed['groups']['volume_zero']['passed'] is None
