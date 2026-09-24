@@ -248,47 +248,90 @@ class FrozenWE:
     def cutoff(self, state): return self.initial[state.context_key]
 
 
-def game_policy_comparisons(values, games, *, truncated=None, draws=10000, seed=20260924):
-    """PA-weighted whole-game bootstrap of conditional simulated mean WE.
+POLICY_INFERENCE = {'minimum_games': 30, 'minimum_supported_pa_starts': 50,
+    'primary_comparisons': [['P1', 'P0'], ['P2', 'P1'], ['P3', 'P2']],
+    'holm_alpha': .05, 'minimum_imputed_delta_we': .0001,
+    'robust_test': 'max(imputed_p,worst_case_p); same game bootstrap draws',
+    'bootstrap_draws': 10000, 'bootstrap_seed': 20260924}
 
-    Fixed trained/calibrated/planning models and fixed PA panel; this resamples
-    start-state games, not real policy outcomes, and omits model/selection error.
-    Simulation MC error is separately reported by the rollout evaluator.
+
+def game_policy_comparisons(values, games, *, truncated=None, draws=10000, seed=20260924):
+    return paired_policy_comparisons(values, games, POLICY_INFERENCE['primary_comparisons'],
+                                     truncated=truncated, draws=draws, seed=seed)
+
+
+def paired_policy_comparisons(values, games, pairs, *, truncated=None, draws=10000, seed=20260924):
+    """PA-weighted conditional game bootstrap with explicit truncation robustness.
+
+    Imputed-only Holm is a preliminary, tail-dependent screen. Strong model-
+    internal improvement uses the intersection of imputed and worst-case tests,
+    max(p_imputed,p_worst), then Holm across the caller's preregistered three/four contrasts.
+    Below 30 games / 50 supported starts all inference slots stay null.
     """
     from .matrix_metrics import holm_adjust
     games = np.asarray(games)
+    if games.ndim != 1 or not len(games) or draws < 1:
+        raise ValueError('Nonempty game vector and bootstrap draws required')
+    if pd.isna(games).any(): raise ValueError('Missing game IDs')
     unique, inverse = np.unique(games, return_inverse=True)
-    if not len(unique) or draws < 1: raise ValueError('Nonempty games and bootstrap draws required')
     counts = np.bincount(inverse)
-    samples = np.random.default_rng(seed).integers(len(unique), size=(draws, len(unique)))
-    result = []
-    for candidate, control in (('P1', 'P0'), ('P2', 'P1'), ('P3', 'P2')):
-        a, b = np.asarray(values[candidate]), np.asarray(values[control])
-        if a.shape != b.shape or a.ndim != 2 or len(a) != len(games):
-            raise ValueError('Paired [PAstarts,rollouts] arrays required')
-        delta = (a-b).mean(axis=1)
+    eligible = len(unique) >= 30 and len(games) >= 50
+    samples = np.random.default_rng(seed).integers(len(unique), size=(draws, len(unique))) if eligible else None
+    pairs = tuple(tuple(pair) for pair in pairs)
+    if (len(pairs) not in (3, 4) or len(set(pairs)) != len(pairs)
+            or any(len(pair) != 2 or pair[0] == pair[1] for pair in pairs)):
+        raise ValueError('Complete registered three/four comparison family required')
+    names = sorted({name for pair in pairs for name in pair})
+    if set(values) != set(names): raise ValueError('Policy value family differs from declared comparisons')
+    arrays = {name: np.asarray(values[name], dtype=float) for name in names}
+    shape = arrays[names[0]].shape
+    if (len(shape) != 2 or shape[0] != len(games) or shape[1] < 2
+        or any(a.shape != shape or not np.isfinite(a).all() or ((a < 0) | (a > 1)).any() for a in arrays.values())):
+        raise ValueError('Finite paired [PAstarts,rollouts>=2] WE arrays in [0,1] required')
+    flags = None
+    if truncated is not None:
+        flags = {name: np.asarray(truncated[name]) for name in arrays}
+        if any(a.shape != shape or a.dtype != np.bool_ for a in flags.values()):
+            raise ValueError('Boolean truncation flags must match rollout arrays')
+
+    def estimate(delta):
         mean = float(delta.mean())
+        if not eligible: return mean, None, None
         sums = np.bincount(inverse, weights=delta)
         boot = sums[samples].sum(axis=1)/counts[samples].sum(axis=1)
         p = float((1+np.count_nonzero(boot-mean >= mean))/(draws+1))
+        return mean, np.quantile(boot, [.025, .975]).tolist(), p
+
+    result = []
+    for candidate, control in pairs:
+        a, b = arrays[candidate], arrays[control]
+        mean, ci, p = estimate((a-b).mean(axis=1))
+        lower, worst_ci, worst_p = None, None, None
+        if flags is not None:
+            worst = np.where(flags[candidate], 0., a)-np.where(flags[control], 1., b)
+            lower, worst_ci, worst_p = estimate(worst.mean(axis=1))
         result.append({'candidate': candidate, 'control': control, 'mean_delta_we': mean,
-            'game_bootstrap_ci95': np.quantile(boot, [.025, .975]).tolist(), 'p_greater': p,
-            'games': len(unique), 'pa_starts': len(games)})
-    for row, adjusted in zip(result, holm_adjust([r['p_greater'] for r in result])):
-        row['holm_p'] = adjusted
-        row['model_internal_P_screen'] = bool(row['mean_delta_we'] >= .0001 and
-            row['game_bootstrap_ci95'][0] > 0 and adjusted <= .05)
-        lower = None
-        if truncated is not None:
-            a, b = row['candidate'], row['control']
-            at, bt = np.asarray(truncated[a], dtype=bool), np.asarray(truncated[b], dtype=bool)
-            if at.shape != np.asarray(values[a]).shape or bt.shape != np.asarray(values[b]).shape:
-                raise ValueError('Truncation flags must match rollout arrays')
-            lower = float((np.where(at, 0., values[a])-np.where(bt, 1., values[b])).mean())
-        row['worst_case_mean_delta_lower'] = lower
-        row['untruncated_pa_improvement_confirmed'] = bool(row['model_internal_P_screen'] and lower is not None and lower > 0)
-        row['model_internal_screen'] = ('improved_under_model_and_truncation_bound' if row['untruncated_pa_improvement_confirmed']
-            else 'tail_assumption_dependent' if row['model_internal_P_screen'] else 'inconclusive')
+            'game_bootstrap_ci95': ci, 'p_greater': p, 'games': len(unique), 'pa_starts': len(games),
+            'family_size': len(pairs), 'reporting': {'status': 'reporting_eligible' if eligible else 'descriptive_only',
+                          'minimum_games': 30, 'minimum_supported_pa_starts': 50},
+            'worst_case_mean_delta_lower': lower, 'worst_case_game_bootstrap_ci95': worst_ci,
+            'worst_case_p_greater': worst_p,
+            'combined_p_greater': max(p, worst_p) if p is not None and worst_p is not None else None})
+    preliminary = holm_adjust([row['p_greater'] for row in result])
+    robust = holm_adjust([row['combined_p_greater'] for row in result])
+    for row, imputed_holm, robust_holm in zip(result, preliminary, robust):
+        row['imputed_holm_p'] = imputed_holm
+        row['holm_p'] = robust_holm
+        screen = bool(eligible and row['mean_delta_we'] >= .0001 and
+                      row['game_bootstrap_ci95'][0] > 0 and imputed_holm <= .05)
+        row['model_internal_P_screen'] = screen
+        row['preliminary_screen_interpretation'] = 'Imputed-only, tail-assumption-dependent; not strong confirmation'
+        strong = bool(screen and row['worst_case_game_bootstrap_ci95'] is not None and
+            row['worst_case_game_bootstrap_ci95'][0] > 0 and row['worst_case_mean_delta_lower'] > 0
+            and robust_holm is not None and robust_holm <= .05)
+        row['untruncated_pa_improvement_confirmed'] = strong
+        row['model_internal_screen'] = ('improved_under_model_and_truncation_bound' if strong else
+            'tail_assumption_dependent' if screen else 'inconclusive' if eligible else 'descriptive_only')
         row['causal_P'] = None
         row['observational_ope'] = None
     return result

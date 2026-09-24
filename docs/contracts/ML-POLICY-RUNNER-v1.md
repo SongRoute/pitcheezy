@@ -32,7 +32,7 @@ Actual costs distinguish conditional rows, seed-wrapper rows, and routed neural 
 
 ## Registration schemas
 
-Preparation JSON fields (root fills real experiment ID, paths and SHA256 values):
+Preparation JSON fields (root fills real experiment ID, paths and SHA256 values). Add the exact `inference` object exported as `pitchmdp.matrix_policy.POLICY_INFERENCE`; preparation rejects any missing or changed object:
 
 ```json
 {
@@ -72,8 +72,20 @@ Final execution JSON contains `protocol="ml_policy_execution_v1"`, `preparation_
 
 June selects the tau with the largest original unpenalized mean defensive WE; exact ties prefer larger tau (closer BC). Tau is in absolute WE units: .001/.003/.01/.03 equals .1/.3/1/3 percentage points. Paired simulation MC error is descriptive, not a reason to retune on DEV.
 
-DEV primary family is P1−P0, P2−P1, P3−P2. The runner saves each PA/policy's trajectory WE, truncation flag and pitch count, plus game membership. It reports PA-weighted whole-game bootstrap intervals (10,000 shared resamples), one-sided null-centered p-values with Holm over these three tests, and separate stratified paired simulation MC SE. A model-internal preliminary P screen requires mean ΔWE≥.0001 (=.01 percentage points), bootstrap lower bound>0 and Holm≤.05. Truncation-difference worst-case bounds accompany this screen. An untruncated-PA model improvement is confirmed only if the worst-case mean delta lower bound also exceeds zero; otherwise even a passing imputed point/CI/Holm screen is explicitly tail-assumption-dependent. Final cap may be 24/32 if registered after profiling; existing primitive defaults are unchanged. Planning-seed uncertainty is not integrated, and three ensemble members do not provide independent policy seed confirmation. Bootstrap holds models/calibration/selection fixed and is start-state variation under a simulator, not observed policy-effect inference. Candidate-world success flags are sensitivity only, never a second chance at primary success. OPE, causal P and adoption remain null.
+DEV primary family is P1−P0, P2−P1, P3−P2. Inferential claims require at least **30 distinct games and 50 supported PA starts**; otherwise every comparison remains descriptive and all three Holm slots are null. The runner saves each PA/policy's trajectory WE, truncation flag and pitch count, plus game membership. It reports PA-weighted whole-game bootstrap intervals (10,000 shared resamples), one-sided null-centered p-values with Holm over these three tests, and separate stratified paired simulation MC SE. A model-internal preliminary P screen requires mean ΔWE≥.0001 (=.01 percentage points), bootstrap lower bound>0 and Holm≤.05. Truncation-difference worst-case bounds accompany this screen. For the strong model-internal claim, bootstrap the per-PA worst-case differences using the **same game resamples**, compute their centered one-sided p-value and CI, take max(imputed p, worst-case p) for each contrast, then Holm-adjust these three combined p-values. Require both CI lower endpoints > 0, imputed mean >= .0001, worst-case mean > 0, and combined Holm <= .05. A positive finite-panel worst-case point bound alone is insufficient. The original imputed-only Holm screen remains explicitly preliminary and tail-assumption-dependent. The generic helper applies this identical gate to the preregistered joint four-test RL family without dropping slots. Final cap may be 24/32 if registered after profiling; existing primitive defaults are unchanged. Planning-seed uncertainty is not integrated, and three ensemble members do not provide independent policy seed confirmation. Bootstrap holds models/calibration/selection fixed and is start-state variation under a simulator, not observed policy-effect inference. Candidate-world success flags are sensitivity only, never a second chance at primary success. OPE, causal P and adoption remain null.
 
 ## Verification status
 
 Synthetic-only tests cover frozen H5 token equivalence, count/history updates, poisoned-current-input invariance, exact400/type support, calibrated conditional blend, as-of history/date rejection, outcome-independent PA selection, and PA-weighted game bootstrap. Full real-data shape/provenance/performance validation remains the runner owner's next step under the heavy lock.
+
+
+## Completion and tuning integrity
+
+Every completed profile, P0 and policy stage has a final `manifest.json` pinning
+its full artifact family and preparation identity. Partial stages are not valid
+dependencies. DEV verifies the sealed June stage, recalculates all tau means and
+the exact larger-tau tie rule from saved per-PA rollouts, and recalculates the
+June P2/P3 RL comparator (P3 wins exact ties). A shared `tuning_freeze.json` pins
+the June result and manifest hashes, execution hash, tau and comparator. Both DEV
+worlds must use that same dependency; a prior completed world's manifest and
+tuning dependency are checked before the second world runs.

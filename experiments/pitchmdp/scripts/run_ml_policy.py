@@ -24,7 +24,7 @@ from pitchmdp.data import KEY, hash_file
 from pitchmdp.game import GameState
 from pitchmdp.matrix_data import canonical_hash
 from pitchmdp.matrix_policy import (PolicyInputs, SupportedBC, FrozenGEnsemble, FrozenWE,
-    context_key, safe_rows, state_from_row, fit_bc, select_pa_requests, game_policy_comparisons)
+    context_key, safe_rows, state_from_row, fit_bc, select_pa_requests, game_policy_comparisons, POLICY_INFERENCE)
 from pitchmdp.rollout_policy import (PAState, PastPitch, RowBudget, BudgetExceeded,
     JointSimulator, RolloutImprovement, Rollouts, rollouts, paired_summary)
 from run_ml_benchmark import read_json, dump, validate_native_runtime
@@ -45,6 +45,7 @@ def config_check(config):
     if (config['protocol'] != 'ml_policy_prepare_v1' or config['seeds'] != list(SEEDS)
         or config['draws'] != 400 or config['value_spec_version'] != 'defense-we-pa-v1'
         or config['common_support'] != 'bc_and_token_vocab_and_type_delivery_all_counts'
+        or config.get('inference') != POLICY_INFERENCE
         or config['evaluator'] != 'mapped_control' or config['bc'] != {'prior_strength': 20., 'minimum_action_count': 1}):
         raise ValueError('Unregistered policy preparation contract')
     if CONTROLS.get(config['candidate']) != config['control']:
@@ -251,6 +252,81 @@ def begin_stage(output, name, payload):
     return path
 
 
+
+def seal_stage(destination):
+    """A final manifest distinguishes complete immutable stages from partial work."""
+    path = destination / 'manifest.json'
+    if path.exists(): raise ValueError('Policy stage is already sealed')
+    started = read_json(destination / 'started.json')
+    names = sorted(str(p.relative_to(destination)) for p in destination.rglob('*') if p.is_file())
+    dump(path, {'stage': destination.name, 'preparation_sha256': started['preparation_sha256'],
+                'artifact_hashes': artifact_hashes(destination, names)})
+
+
+def verify_stage(output, stage):
+    destination = output / 'stages' / stage
+    manifest = read_json(destination / 'manifest.json')
+    if (manifest['stage'] != stage or
+            manifest['preparation_sha256'] != hash_file(output / 'preparation.json')):
+        raise ValueError('Policy stage preparation identity differs')
+    names = {str(p.relative_to(destination)) for p in destination.rglob('*') if p.is_file() and p.name != 'manifest.json'}
+    if names != set(manifest['artifact_hashes']):
+        raise ValueError('Policy stage artifact family differs')
+    assert_hashes(destination, manifest['artifact_hashes'])
+    started = read_json(destination / 'started.json')
+    if started['preparation_sha256'] != manifest['preparation_sha256']:
+        raise ValueError('Policy stage start identity differs')
+    return manifest, started
+
+
+def verify_tuning(output, execution):
+    """Audit June arrays/argmax and freeze one common dependency for both worlds."""
+    directory = output / 'stages' / 'blend-control'
+    manifest, started = verify_stage(output, 'blend-control')
+    tuning = read_json(directory / 'results.json')
+    expected = canonical_hash(execution)
+    if (canonical_hash(started['execution']) != expected or tuning['execution_sha256'] != expected
+            or started['world'] != 'control' or started['split'] != 'blend'
+            or tuning['world'] != 'control' or tuning['split'] != 'blend'):
+        raise ValueError('Tune/DEV execution or world differs')
+    keys = tuning['pa_keys']
+    if not keys or len(set(keys)) != len(keys) or len(keys) != tuning['supported_selected']:
+        raise ValueError('Invalid complete tuning PA family')
+    means = {}
+    for name in ['P2', *[f'P3-tau{tau}' for tau in execution['tau_grid']]]:
+        values = []
+        for key in keys:
+            with np.load(directory / (key.replace(':', '-') + '.npz'), allow_pickle=False) as archive:
+                p = archive[name + '_values']
+                if (p.shape != (execution['evaluation_rollouts'],) or not np.isfinite(p).all()
+                        or ((p < 0) | (p > 1)).any()):
+                    raise ValueError('Tuning rollout values differ from registered shape/range')
+                values.append(p.copy())
+        means[name] = float(np.stack(values).mean())
+        if means[name] != tuning['mean_original_defensive_we'][name]:
+            raise ValueError('Tuning result differs from archived rollout values')
+    chosen = max(execution['tau_grid'], key=lambda tau: (means[f'P3-tau{tau}'], tau))
+    if tuning['selected_tau'] != chosen:
+        raise ValueError('Selected tau differs from the fixed June argmax/tie rule')
+    comparator = 'P3' if means[f'P3-tau{chosen}'] >= means['P2'] else 'P2'
+    if tuning.get('rl_comparator') != comparator:
+        raise ValueError('RL comparator differs from archived June P2/P3 values')
+    dependency = {'path': str(directory / 'results.json'), 'sha256': hash_file(directory / 'results.json'),
+        'manifest_sha256': hash_file(directory / 'manifest.json'), 'execution_sha256': expected,
+        'selected_tau': chosen, 'rl_comparator': comparator}
+    for world in ('control', 'candidate'):
+        previous = output / 'stages' / ('dev-' + world)
+        if (previous / 'manifest.json').exists():
+            verify_stage(output, 'dev-' + world)
+            if read_json(previous / 'tuning_dependency.json') != dependency:
+                raise ValueError('DEV worlds reference different frozen tuning results')
+    frozen = output / 'stages' / 'tuning_freeze.json'
+    if frozen.exists():
+        if read_json(frozen) != dependency:
+            raise ValueError('Frozen common June tuning dependency changed')
+    else: dump(frozen, dependency)
+    return tuning, dependency
+
 def finish_runtime(destination, started, budget, models):
     payload = {'seconds': time.perf_counter()-started, 'peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
         'conditional_rows': budget.conditional_rows, 'seed_predictor_rows': budget.network_rows,
@@ -283,6 +359,7 @@ def profile(config, output, prep):
         'requested_starts': len(selected), 'supported_used': used, 'runtime': runtime,
         'conditional_rows_per_second_including_load': budget.conditional_rows/max(runtime['seconds'], 1e-9),
         'note': 'Resource feasibility only; final execution registration must be frozen separately.'})
+    seal_stage(destination)
 
 
 def p0_evaluate(config, output, prep):
@@ -323,9 +400,11 @@ def p0_evaluate(config, output, prep):
         np.savez_compressed(destination / f'{split}.npz', keys=rows[KEY].to_numpy(), labels=labels,
             bc=probability, frequency=frequency, supported=supported, observed_supported=observed_supported, fallback=fallback)
     dump(destination / 'results.json', {'results': results, 'seconds': time.perf_counter()-started, 'policy_effect': None})
+    seal_stage(destination)
 
 
 def execution_check(execution, output, config):
+    verify_stage(output, 'profile')
     if (execution['protocol'] != 'ml_policy_execution_v1'
         or execution['preparation_sha256'] != hash_file(output / 'preparation.json')
         or execution['profile_result_sha256'] != hash_file(output / 'stages/profile/result.json')
@@ -351,10 +430,8 @@ def policy_run(config, output, prep, execution, split, world):
     if split == 'blend':
         policies = [('P0', None), ('P2', None), *[(f'P3-tau{tau}', tau) for tau in execution['tau_grid']]]
     else:
-        tuning_path = output / 'stages/blend-control/results.json'
-        tuning = read_json(tuning_path)
-        if tuning['execution_sha256'] != canonical_hash(execution): raise ValueError('Tune/DEV execution differs')
-        dump(destination / 'tuning_dependency.json', {'path': str(tuning_path), 'sha256': hash_file(tuning_path)})
+        tuning, dependency = verify_tuning(output, execution)
+        dump(destination / 'tuning_dependency.json', dependency)
         policies = [('P0', None), ('P1', None), ('P2', None), ('P3', tuning['selected_tau'])]
     values = {name: [] for name, _ in policies}; truncation = {name: [] for name, _ in policies}
     games, pa_keys, diagnostics = [], [], []
@@ -402,6 +479,7 @@ def policy_run(config, output, prep, execution, split, world):
         'causal_effect': None, 'policy_adoption': None,
         'sampling_inference': 'PA-weighted whole-game bootstrap of simulated conditional means; fixed model, calibration and selection; separate MC SE',
         'truncation_tail': 'Frozen WE at initial game state, independent of count; bounds also reported'})
+    seal_stage(destination)
 
 
 def main():

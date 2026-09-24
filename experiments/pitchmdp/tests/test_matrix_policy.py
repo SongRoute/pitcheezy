@@ -154,22 +154,22 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(rows[0]['games'], 2)
         self.assertEqual(rows[0]['pa_starts'], 4)
         self.assertEqual(len(rows), 3)
-        self.assertEqual(rows[1]['holm_p'], 1)
+        self.assertIsNone(rows[1]['holm_p'])
         self.assertFalse(rows[1]['model_internal_P_screen'])
         self.assertIsNone(rows[0]['causal_P'])
 
     def test_p_screen_requires_positive_worst_case_truncation_bound(self):
-        values = {'P0': np.full((10, 3), .5), 'P1': np.full((10, 3), .51),
-                  'P2': np.full((10, 3), .51), 'P3': np.full((10, 3), .51)}
+        values = {'P0': np.full((60, 3), .5), 'P1': np.full((60, 3), .51),
+                  'P2': np.full((60, 3), .51), 'P3': np.full((60, 3), .51)}
         flags = {k: np.zeros_like(v, dtype=bool) for k, v in values.items()}
-        flags['P1'][0] = True
-        rows = game_policy_comparisons(values, np.arange(10), truncated=flags, draws=100, seed=7)
+        flags['P1'][:4] = True
+        rows = game_policy_comparisons(values, np.arange(60), truncated=flags, draws=100, seed=7)
         self.assertTrue(rows[0]['model_internal_P_screen'])
         self.assertFalse(rows[0]['untruncated_pa_improvement_confirmed'])
         self.assertEqual(rows[0]['model_internal_screen'], 'tail_assumption_dependent')
         self.assertLess(rows[0]['worst_case_mean_delta_lower'], 0)
         flags['P1'][:] = False
-        rows = game_policy_comparisons(values, np.arange(10), truncated=flags, draws=100, seed=7)
+        rows = game_policy_comparisons(values, np.arange(60), truncated=flags, draws=100, seed=7)
         self.assertTrue(rows[0]['untruncated_pa_improvement_confirmed'])
 
     def test_bc_fit_date_rejection_and_no_cross_pa_history(self):
