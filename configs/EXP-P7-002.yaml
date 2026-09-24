@@ -1,0 +1,99 @@
+{
+  "protocol": "ml_stress_v1",
+  "experiment_id": "EXP-P7-002",
+  "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+  "parent_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+  "parent_analysis_sha256": "06b53a9f0cf67bf55e16f5ae76b7ef3aeba6cf2153e060180b800bf6a886031c",
+  "candidate": "G3-cluster",
+  "control": "G2-feature",
+  "selection_status": "diagnostic_only_not_promoted",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "scope": "Cpanel",
+  "stress_protocol": {
+    "version": "ml_stress_h5_v1",
+    "seed": 20260924,
+    "scenarios": [
+      "clean",
+      "H2",
+      "H0",
+      "mask20",
+      "mask50",
+      "unknown_type_outcome",
+      "sensor01",
+      "sensor03",
+      "unknown_pitcher",
+      "unknown_batter"
+    ],
+    "history_length": 5,
+    "draws": 400,
+    "mask_probability": {
+      "mask20": 0.2,
+      "mask50": 0.5
+    },
+    "sensor_noise": {
+      "sensor01": {
+        "normalized_sigma": 0.1,
+        "spin_sd_degrees": 5.0
+      },
+      "sensor03": {
+        "normalized_sigma": 0.3,
+        "spin_sd_degrees": 15.0
+      }
+    },
+    "randomness": "SHA256(version|seed|domain|game_pk|at_bat_number|pitch_number); Box-Muller normal",
+    "shared_randomness": "same historical key across query positions, batches, models and all delivery draws; nested mask/noise strengths",
+    "current": "candidate type unchanged; current outcome channels zero; supplied delivery physics mandatory and untouched",
+    "pitcher_missing": "zero standardized profile/count, unknown cluster flag, cluster=-1 and routing pitcher=-1; frozen delivery still uses original identity",
+    "batter_missing": {
+      "rates": [
+        0.76,
+        0.47,
+        0.085,
+        0.225,
+        0.165,
+        0.43
+      ],
+      "evidence": "zero",
+      "membership": "recomputed by frozen encoder, hence uniform"
+    },
+    "frozen": [
+      "weights",
+      "normalizers",
+      "vocabularies",
+      "centroids",
+      "delivery pools/draws",
+      "temperature",
+      "blend weights",
+      "requested keys and labels"
+    ],
+    "scope": "hypothetical input perturbations; not an empirical sensor-error distribution; no training or calibration"
+  },
+  "registration": {
+    "contract": "docs/contracts/ML-STRESS-EXECUTION-v1.md",
+    "matrix_rows": [
+      "MX-T3"
+    ],
+    "selection_basis": "Frozen G has zero N/G-passing candidates; among G1-G4, G3 has the smallest Cpanel primary NLL. Diagnostic only; no promotion or retrospective selection using later results.",
+    "robustness": {
+      "family_size": 270,
+      "draws": 200000,
+      "nll_margin": 0.01,
+      "brier_margin": 0.002,
+      "family_alpha": 0.05
+    },
+    "minimum_group_games": 30,
+    "minimum_group_pitches": 500,
+    "max_heavy_jobs": 1,
+    "single_member_wall_limit_seconds": 7200,
+    "batch_wall_budget_seconds": 28800,
+    "profile_wall_limit_seconds": 600,
+    "resource_gate": "Scale actual G prediction costs to60new jobs. First both selected seed0 clean predictions must pass fresh1e-6 equivalence and observed costs before full stress family. Allow additional execution overhead; no changes to60members/400draws.",
+    "calibration": "All parent temperatures and ensemble/seed June weights frozen; no new fit or recalibration.",
+    "scope_note": "Hypothetical input errors in Cpanel; not empirical sensor error, retrained order ablation or final confirmation.",
+    "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P7-002"
+  }
+}

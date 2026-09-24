@@ -69,9 +69,10 @@ if __name__ == '__main__':
                 xticklabels=[s.replace('role_', '').replace('volume_', 'vol. ').replace('_', ' ') for s in group_names],
                 title='Group noninferiority: 96 joint bounds')
     axes[2].tick_params(axis='x', labelrotation=65, labelsize=8)
-    axes[2].legend(handles=[Patch(color=c, label=t) for c, t in zip(colors,
+    fig.get_layout_engine().set(rect=(0, .12, 1, .88))
+    fig.legend(handles=[Patch(color=c, label=t) for c, t in zip(colors,
         ['Insufficient sample', 'Within both margins', 'Margin not confirmed'])],
-        fontsize=8, loc='upper center', bbox_to_anchor=(.5, -.47), ncol=1, frameon=False)
+        fontsize=8, loc='lower center', bbox_to_anchor=(.77, .01), ncol=3, frameon=False)
     fig.suptitle(f"Pitcher sharing — 2025 Cpanel DEV, {result['n']:,} pitches / {result['games']} games", fontsize=14)
     args.output.mkdir(parents=True, exist_ok=True)
     stem = args.output / 'ML-G-sharing-comparison'
