@@ -80,7 +80,7 @@ G 준비는 48명, D100 TRAIN1,252,824구/early16,000구, Cpanel temperature2,60
 
 F4의3arm×3seed와 I1의신규6fit은 각각 [긴 이력 규약](../contracts/ML-LONG-HISTORY-EXECUTION-v1.md), `configs/EXP-P4-002.yaml`/`EXP-P5-001.yaml`에 등록했다. T2/T3/T4에는 [선수 제외·입력 오류 규약](../contracts/ML-T2-T3-PROTOCOL.md), [stress 판정](../contracts/ML-STRESS-EXECUTION-v1.md), [전체 MLB 이전·후속 선택 규칙](../contracts/ML-TRANSFER-EXECUTION-v1.md)을 마련했다. 코드/synthetic 검사 준비와 실제 실험 완료는 구분한다.
 
-F4 첫 준비는 약4.8초에 중단됐다. 한 타석에 두 타자 ID가 있는47타석/248구를 long-history 구현이 거부했으며 profile/fit/점수는 생성되지 않았다. 정규시즌 전체2,145,111구의 키 감사에서 이 행들은 frozen G의 TRAIN/early/temperature/blend/DEV/전체MLB query에 하나도 포함되지 않았다. 분할별 원본 수는 TRAIN33타석/173구, early1/4, temperature0, blend2/11, DEV9/48, 미사용2/12다. 실패 attempt와 `audit/f4-profiles/ambiguity.json`을 보존했다. 별도 긴 이력에서만 이러한 완료된 과거 타석을 제외하고 모든 base/H5/query 행과 고정 auxiliary를 유지하는 규칙을 구현·독립 검토 중이다. 현재 지원 여부나 결과를 보고 과거 이력을 제거하는 규칙은 사용하지 않는다.
+F4 첫 준비는 약4.8초에 중단됐다. 한 타석에 두 타자 ID가 있는47타석/248구를 long-history 구현이 거부했으며 profile/fit/점수는 생성되지 않았다. 정규시즌 전체2,145,111구의 키 감사에서 이 행들은 frozen G의 TRAIN/early/temperature/blend/DEV/전체MLB query에 하나도 포함되지 않았다. 분할별 원본 수는 TRAIN33타석/173구, early1/4, temperature0, blend2/11, DEV9/48, 미사용2/12다. 실패 attempt와 `audit/f4-profiles/ambiguity.json`을 보존했다. 별도 긴 이력에서만 이러한 완료된 과거 타석을 제외하고 모든 base/H5/query 행과 고정 auxiliary를 유지하는 수정이 독립 검토와10개 합성 검사를 통과했다. [fresh attempt2](../../configs/EXP-P4-002-v2.yaml)를 등록했으며 실제 profile 대기 상태다. 현재 지원 여부나 결과를 보고 과거 이력을 제거하는 규칙은 사용하지 않는다.
 
 D2는 `configs/EXP-P6-001.yaml`에 등록하고 실행·평가 코드를 마련했다. D25에서 제외한 TRAIN 경기 전체를 빼고 이력·선수 통계·정규화·빈도·delivery를 다시 만든다. 추가3fit을 D1의 보존된 D25/D100과 비교하며 각 기준선의 원래 빈도 혼합을 유지한다. 현재 준비/profile 전이다. T2는 정제된 TRAIN 이력의 실제 선수 표본 수와 자연 발생 새 대진 metadata까지 고정하는 [6개 주 비교 규약](../contracts/ML-T2-SCORING-v1.md)을 추가했다.
 
@@ -115,7 +115,7 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마치고 실제 �
 | MX-F1 | 근거 재사용 | 과거 근거 감사 완료·현재 범위 bridge 미실행 | 연속 타자 성향 vs 좌우-only의 과거 근거 유지; D100/새 입력·Cpanel에서의 신규 효과는 미측정 |
 | MX-F2 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-F3 | 근거 재사용 | 과거 H0/H5 근거 감사 완료 | 과거 MLP 12비교의 보정CI 모두0포함; 등가성 증명 아님. 새 enrichedH5/backbone과 동일 비교라고 하지 않음 |
-| MX-F4 | 우선 | 첫 준비 실패 보존·long stream 수정 검토 | 다중 타자47PA/248구, 공통query 영향0; 실제 profile/9fit 전 |
+| MX-F4 | 우선 | 첫 실패 보존·수정 검증·attempt2 등록 | 다중 타자47PA/248구, 공통query 영향0; 실제 profile/9fit 전 |
 | MX-F5 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-F6 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-F7 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
