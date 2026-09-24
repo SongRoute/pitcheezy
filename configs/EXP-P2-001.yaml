@@ -13,7 +13,9 @@
   "registration": {
     "matrix_rows": ["MX-R0", "MX-R1", "MX-R2", "MX-D1"],
     "base_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/temporal-blend-20260921T050400Z",
-    "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P2-001",
+    "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P2-001-v2",
+    "attempt": 2,
+    "numerical_amendment": "Before candidate DEV scoring: float64 softmax and delivery averaging retain strict mass tolerance; attempt1 float32 integration exceeded 1e-6 on June CAL. Attempt1 and completed seed42 fit preserved as failed-prediction provenance.",
     "allowed_seasons": [2023, 2024, 2025],
     "forbidden_development_season": 2026,
     "population": "MLB regular season; legacy population preserved for R2",
