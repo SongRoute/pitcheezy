@@ -1,5 +1,7 @@
 # A~D 작업 인수인계
 
+**실행 진척 — 2026-09-24, D58:** 필수 I1 자료량×구조 비교를 완료했다. 상호작용+.002753,95%CI[+.000363,+.005053],p=.02260,3/3양수이나 실용문턱.003미달로 미확정이다. G5는 군집 이득 미확인으로 현재 미활성화다. F4의3arm 실제 MPS 수치 검증을 통과해 반복 long encoding 재사용과 warm 비용 profile 개정을 독립 검토 후 채택했다. 원본 실패/검증 산출물을 보존하며 `configs/EXP-P4-002-v3.yaml`의 새 준비/3profile/실제prior비용+9member 예산 통과 전 fullfit은 금지한다. D2는 준비/profile·비용 gate를 통과해3seed 실제학습 중이다. [진행 보고서](reports/ML-matrix-execution-2026-09-24.md)를 우선한다.
+
 **실행 진척 — 2026-09-24, D57:** 선수 공유 G의51fit/15예측을 완료했다. Cpanel328경기·12,334구에서 G0 전체공유 NLL1.483479이며 개인/군집특성/군집전문가/고정부분공유의 N/G 개선 통과는0개다. G1/G4는 악화, G2/G3는 우열 미확정이다. 사전 규칙에 따른 **진단용G3−G2**를 T2/T3/T4(`EXP-P7-001/002/003`)와 구종 정책 준비(`EXP-P8-001`)에 고정했다. 승격은 아니다. F4v2는 키 보존과3개 profile까지 완료했으나 초기 비용 외삽이2시간/member상한을 넘어 fullfit전이다. 동일weights MPS 최적화 검증과 더 큰 TRAIN-only 비용 측정을 등록·검토하며 필수 I1실제학습을 진행한다. C1/C2최종 경로는 F4 등 남은 결과 뒤 정한다. [진행 보고서](reports/ML-matrix-execution-2026-09-24.md)가 현재 상태의 기준이다.
 
 **실행 진척 — 2026-09-24, D56:** ML2의 동일 D100/enrichedH5 7구조×3seed를 모두 완료했다. 최종 NLL은 MLP1.487329, Melville 적응1.487836, LightGBM1.490041이고, MLP 대비 개선 N을 통과한 구조는0개다. Melville/LightGBM은 미확정이며 선형/LSTM/GRU/Transformer는 악화 또는 보호 기준 실패다. MLP를 후속 기준으로 유지하고 필수 자료량×구조 I1은 예정대로 실행한다. 선수 공유 G의51fit+15predict를 실행 중이다. 긴 이력 F4의 첫 prepare는 다중 타자47타석에서 중단됐고 공통query 영향0을 감사했다. 실패 기록을 보존하여 long stream만 수정·독립 검토 후 fresh attempt로 진행한다. 최신 결과와 아직 남은 전체 행은 [진행 보고서](reports/ML-matrix-execution-2026-09-24.md)를 따른다.

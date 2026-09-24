@@ -2,6 +2,8 @@
 
 2026-09-24. **Source-only amendment, held from integration until the optional MPS equivalence proof has completed.** Do not modify the original frozen source/run while the proof compares it. This amendment requires a fresh F4 attempt/preparation and `ml_long_history_v2` configuration; neither original preparation nor its profiles can be resumed under these sources. No revised real resource measurement or model-quality result has been observed by the implementation agent.
 
+**Integration update:** all three actual MPS numerical screens completed under the original source identity, and independent review passed17 synthetic tests. Root adopted long-encoding reuse and this amendment for fresh `configs/EXP-P4-002-v3.yaml` only. Original attempts remain immutable; fresh resource gates are still required before full fitting. The numerical screen is bounded to the registered probes, not every possible input.
+
 The sole owner's original v2-identity-history preparation is `24394218e89ed3bb2d4e0e032ae1061b37f7f79d8466b0ff34a9e55e331d72b5`. All three original profiles completed and failed the 7,200-second projection gate. Their 8,192-row/two-epoch cold fits took about 3.65–3.89 seconds, projecting approximately 8,380–8,935 fit seconds, 136 calibration seconds and 872–899 prediction seconds per full member. Those are resource measurements, not quality findings. Fit projection dominates; inference reuse alone cannot make the original projection affordable. Preserve these measurements and costs.
 
 ## Fixed revised measurement

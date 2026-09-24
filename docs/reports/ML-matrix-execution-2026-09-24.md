@@ -117,9 +117,11 @@ F4의3arm×3seed와 I1의신규6fit은 각각 [긴 이력 규약](../contracts/M
 
 F4 첫 준비는 약4.8초에 중단됐다. 한 타석에 두 타자 ID가 있는47타석/248구를 long-history 구현이 거부했으며 profile/fit/점수는 생성되지 않았다. 정규시즌 전체2,145,111구의 키 감사에서 이 행들은 frozen G의 TRAIN/early/temperature/blend/DEV/전체MLB query에 하나도 포함되지 않았다. 분할별 원본 수는 TRAIN33타석/173구, early1/4, temperature0, blend2/11, DEV9/48, 미사용2/12다. 실패 attempt와 `audit/f4-profiles/ambiguity.json`을 보존했다. 별도 긴 이력에서만 이러한 완료된 과거 타석을 제외하고 모든 base/H5/query 행과 고정 auxiliary를 유지하는 수정이 독립 검토와10개 합성 검사를 통과했다. [fresh attempt2](../../configs/EXP-P4-002-v2.yaml)의 준비와3개 실제 profile도 완료했고 모든 공통 분할 키가 G와 정확히 일치했다. 현재 지원 여부나 결과를 보고 과거 이력을 제거하는 규칙은 사용하지 않는다.
 
-다만 F4의 작은 cold profile은 H0/H32/H128의 전체 member 비용을9,973/9,394/9,581초로 외삽해 개별7,200초 gate를 모두 넘었다. 실제 작은 fit은3.65~3.89초, 최고 RSS6.80GB이며 아직 full fit은0개다. 동일 이력의400회 반복 인코딩을 줄이는 최적화는 소스/합성 검토를 통과했지만 실제 MPS 동일 가중치 비교는 아직 전이다. 초기화 비용을 분리한 더 큰 TRAIN-only 시간 측정도 별도 개정 규약으로 준비 중이다. 모델·전체 학습량·seed·400draw를 줄이지 않고 새 provenance와 비용 gate 뒤에 진행한다.
+다만 F4의 작은 cold profile은 H0/H32/H128의 전체 member 비용을9,973/9,394/9,581초로 외삽해 개별7,200초 gate를 모두 넘었다. 실제 작은 fit은3.65~3.89초, 최고 RSS6.80GB이며 아직 full fit은0개다. 동일 이력의400회 반복 인코딩을 줄이는 최적화는 소스/합성 검토와 **세 arm 실제 MPS 동일 가중치 검증을 통과**했다. 주요 logits/확률/temperature 차이는0이었고, 순서·chunk 크기를 바꾼 추가 probe의 최대 logit 차이4.7684e-7/확률 차이4.2059e-8도 원래 허용치 안이었다. 이는 등록된 May 입력에 한정한 수치 검사이며 보편적 동등성이나 품질 개선 증거가 아니다. 검증 비용39.176534초에는 첫 summarize 실패와 retry를 포함한다. 실패 원인은 외장 SSD의 미등록 AppleDouble 메타데이터3개였으며 magic·해시·크기를 기록해 별도 보존하고 등록된 모든 파일은 유지한 채 summary를 완료했다. 근거는 `EXP-P4-002-equivalence/summary/manifest.json`(SHA256 `5ebf6a14805ab433ae3ed2b72deb8827331b876bc153304f6fbf9a1af6fda912`)이다.
 
-D2는 `configs/EXP-P6-001.yaml`에 등록하고 실행·평가 코드를 마련했다. D25에서 제외한 TRAIN 경기 전체를 빼고 이력·선수 통계·정규화·빈도·delivery를 다시 만든다. 추가3fit을 D1의 보존된 D25/D100과 비교하며 각 기준선의 원래 빈도 혼합을 유지한다. 현재 준비/profile 전이다. T2는 정제된 TRAIN 이력의 실제 선수 표본 수와 자연 발생 새 대진 metadata까지 고정하는 [6개 주 비교 규약](../contracts/ML-T2-SCORING-v1.md)을 추가했다.
+독립 검토17개/통합13개 합성 검사를 통과한 [비용 측정 개정](../contracts/ML-LONG-RESOURCE-PROFILE-v2.md)을 채택하고 [fresh attempt3](../../configs/EXP-P4-002-v3.yaml)에 등록했다. TRAIN8192구 warmup을 버리고 새 모델의65,536구×4epoch를 측정하며, 전체30epoch·member별 초기화와2회 로드·전체 보정/추론을 보수적으로 외삽한다. 모든3profile, 개별7,200초 및 기존 실패·준비·검증을 포함한9member 전체28,800초 예산을 다시 통과해야 fullfit을 시작한다. 모델·전체 학습량·seed·400draw를 줄이지 않는다.
+
+D2는 `configs/EXP-P6-001.yaml`에 등록하고 실행·평가 코드를 마련했다. D25에서 제외한 TRAIN 경기 전체를 빼고 이력·선수 통계·정규화·빈도·delivery를 다시 만든다. 추가3fit을 D1의 보존된 D25/D100과 비교하며 각 기준선의 원래 빈도 혼합을 유지한다. 준비/profile을 완료했으며 보수적 전체 member 외삽1,558.7초,3member와 준비/profile 합4,683.4초로7,200/14,400초 gate를 통과해 실제3seed 학습을 시작했다. T2는 정제된 TRAIN 이력의 실제 선수 표본 수와 자연 발생 새 대진 metadata까지 고정하는 [6개 주 비교 규약](../contracts/ML-T2-SCORING-v1.md)을 추가했다.
 
 P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-001`에 준비/May 비용 profile을 등록했다. 실제 profile 뒤 별도 실행 예산을 고정한다. 기존 WE/진루 모델의 학습 기간은 2025-04-30까지이며 실제 사용 전 동결 artifact 해시를 재검사한다. 정책 모델 내부 결과도 아직 없다. 최소30경기·50타석 시작 조건과 rollout 중단의 최악 경우를 반영한 paired CI/검정을 보강했다. IQL/CQL은 사용자의 강화학습 비교 요청과 rollout 비용을 근거로 활성화했다. [오프라인 RL 실행기](../contracts/ML-OFFLINE-RL-RUNNER-v1.md)는 같은 입력의 neural BC·IQL·CQL 각3seed, 공통 수비 WE 보상, TRAIN 비용 profile 및 4개 공동 주 비교를 구현했다. 관련 합성60검사+8subtest를 통과했으며 실제 RL 준비/profile/학습은 시작하지 않았다.
 
@@ -131,7 +133,7 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-R1 | 필수 | 기존 2024/25 산출물 감사 통과 | 보관 예측·체크포인트·표본·보정·지표 해시 감사; 새 학습과 구분 |
 | MX-R2 | 필수 | 재현 통과 | 빈도+MLP/Transformer seeds42–46의 완전 family 검증; 최대 seed NLL 차이 1.24e-8 |
 | MX-D1 | **첫 비교** | 완료: D100 N 통과, D50 미확정 | 9개 fit+추론 완료; D100−D25 ΔNLL−.003182, CI[−.005346,−.001011], Holm.00420 |
-| MX-D2 | 후속 | 활성화·등록·실행/평가 코드 준비 | EXP-P6-001; D25 auxiliary 재적합3fit, D1 기존6fit 재사용; 실제 profile 대기 |
+| MX-D2 | 후속 | 준비/profile·비용 gate 통과·학습 중 | EXP-P6-001; D25 auxiliary 재적합3fit, D1 기존6fit 재사용; 예상1559초/member |
 | MX-D3 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-D4 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-D5 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
@@ -152,7 +154,7 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-F1 | 근거 재사용 | 과거 근거 감사 완료·현재 범위 bridge 미실행 | 연속 타자 성향 vs 좌우-only의 과거 근거 유지; D100/새 입력·Cpanel에서의 신규 효과는 미측정 |
 | MX-F2 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-F3 | 근거 재사용 | 과거 H0/H5 근거 감사 완료 | 과거 MLP 12비교의 보정CI 모두0포함; 등가성 증명 아님. 새 enrichedH5/backbone과 동일 비교라고 하지 않음 |
-| MX-F4 | 우선 | 준비/3profile 완료·비용 gate 미통과 | 초기 외삽9394~9973초>7200,fullfit0;동일weights MPS최적화 검증·warm profile개정 준비 |
+| MX-F4 | 우선 | MPS 수치 검사 통과·fresh v3 비용 측정 등록 | 초기 cold외삽 gate실패/fullfit0보존; 세arm출력허용치통과, warm profile/전체비용 gate 재측정 |
 | MX-F5 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-F6 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-F7 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
