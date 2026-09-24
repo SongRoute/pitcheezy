@@ -12,22 +12,47 @@ sys.path.insert(0, str(PROJECT / 'scripts'))
 import numpy as np
 import pandas as pd
 from pitchmdp.data import KEY, hash_file
+from pitchmdp.matrix_data import canonical_hash
 from pitchmdp.matrix_metrics import prediction_metrics, pitch_losses, paired_game_comparison, holm_adjust, prediction_decision
 from pitchmdp.matrix_group_metrics import guardrails
 from pitchmdp.matrix_panel import group_reporting_status
-from pitchmdp.matrix_long_experiment import CELLS, SEEDS
+from pitchmdp.matrix_long_experiment import CELLS, SEEDS, _source_hashes
 from run_ml_long_history import config_check, identity, verify
 from run_ml_benchmark import read_json, dump, validate_native_runtime
 from run_ml_matrix import assert_hashes, check_location
 from score_ml_matrix import archive, assert_aligned, require_complete, summarize_cell, group_report
 
 
+def validate_fit_identity(saved, prep, config, cell, seed, preparation_sha256):
+    """Validate every saved fit field against the immutable preparation/config."""
+    if cell not in CELLS or seed not in SEEDS or set(prep['samples']) != {'train', 'earlystop', 'temperature', 'blend', 'dev'}:
+        raise ValueError('Long-history member or sample family differs')
+    expected = {'parent_preparation_sha256': preparation_sha256, 'cell': cell, 'seed': seed,
+        'samples': {split: {'n': record['n'], 'rows_sha256': record['rows_sha256']}
+                    for split, record in prep['samples'].items()},
+        'budget': config['budget'], 'width': config['width'],
+        'device_requested': None if config['device'] == 'auto' else config['device'],
+        'features': {**prep['features']['long_stream'], 'long_length': CELLS[cell]},
+        'source_hashes': {name: prep['identity']['source_hashes']['pitchmdp/' + name]
+                          for name in _source_hashes()},
+        'context_sha256': canonical_hash(prep['features']['context']),
+        'normalizer_sha256': prep['auxiliary_hashes']['normalizer_sha256'],
+        'delivery_sha256': prep['auxiliary_hashes']['delivery_sha256']}
+    if saved != expected:
+        raise ValueError('Long-history complete fit identity differs from preparation/config')
+
+
+def validate_comparisons(config):
+    registration = config['registration']
+    if registration.get('control') != 'F4-H0' or registration.get('primary_candidates') != ['F4-32', 'F4-128']:
+        raise ValueError('Long-history comparison family changed')
+
+
 def score(config, local_path, output):
     check_location(read_json(local_path), output)
     validate_native_runtime()
     prep = verify(output, identity(config, local_path))
-    if config['registration']['primary_candidates'] != ['F4-32', 'F4-128']:
-        raise ValueError('Long-history comparison family changed')
+    validate_comparisons(config)
     require_complete(output, CELLS, SEEDS)
     destination = output / 'analysis'
     if destination.exists():
@@ -46,13 +71,8 @@ def score(config, local_path, output):
         for seed in SEEDS:
             dest = output / 'members' / cell / f'seed{seed}'
             fitted = read_json(dest / 'fit_state.json')
-            saved = fitted['identity']
-            if (saved['parent_preparation_sha256'] != hash_file(output / 'preparation.json') or
-                saved['cell'] != cell or saved['seed'] != seed or saved['budget'] != config['budget']):
-                raise ValueError('Long-history fit identity differs')
-            for split, record in prep['samples'].items():
-                if saved['samples'][split] != {'n': record['n'], 'rows_sha256': record['rows_sha256']}:
-                    raise ValueError('Long-history fitted ordered samples differ')
+            validate_fit_identity(fitted['identity'], prep, config, cell, seed,
+                                  hash_file(output / 'preparation.json'))
             assert_hashes(dest, fitted['artifact_hashes'])
             pred = read_json(dest / 'prediction_state.json')
             if pred['fit_state_sha256'] != hash_file(dest / 'fit_state.json'):
@@ -109,7 +129,7 @@ def score(config, local_path, output):
         'scored_utc': datetime.now(timezone.utc).isoformat(),
         'scoring_sources': {str(p.relative_to(PROJECT)): hash_file(p) for p in
              (Path(__file__), PROJECT / 'scripts/score_ml_matrix.py', PROJECT / 'pitchmdp/matrix_metrics.py',
-              PROJECT / 'pitchmdp/matrix_group_metrics.py')}}
+              PROJECT / 'pitchmdp/matrix_group_metrics.py', PROJECT / 'scripts/run_sequence_calibration.py')}}
     destination.mkdir(parents=True)
     np.savez_compressed(destination / 'predictions.npz',
         **{name: baseline['dev_' + name] for name in ('keys', 'y', 'game_pk', 'pitcher')},

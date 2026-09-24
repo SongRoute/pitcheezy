@@ -26,7 +26,7 @@ from pitchmdp.data import hash_file
 from pitchmdp.matrix_data import canonical_hash
 from pitchmdp.matrix_benchmark import select_keys
 from pitchmdp.matrix_long_history import MatrixLongHistoryStore, LazyPitchBatch
-from pitchmdp.matrix_long_experiment import CELLS, SEEDS, DEFAULT_BUDGET, fit_member, predict_member
+from pitchmdp.matrix_long_experiment import CELLS, SEEDS, DEFAULT_BUDGET, fit_member, predict_member, _delivery_hash
 from pitchmdp.matrix_long_profile import profile_batches
 from pitchmdp.matrix_sharing import ContinuousPitcherContext
 from run_ml_matrix import check_location, heavy_lock, assert_hashes, artifact_hashes
@@ -64,6 +64,12 @@ def source_hashes():
 
 def identity(config, local_path):
     return {**base_identity(config, local_path), 'source_hashes': source_hashes()}
+
+
+def auxiliary_identity(aux):
+    """Pin fitted normalization and the actual frozen delivery vectors."""
+    return {'normalizer_sha256': canonical_hash(aux['normalizer'].report()),
+            'delivery_sha256': _delivery_hash(aux['delivery'])}
 
 
 def verify(output, expected):
@@ -153,7 +159,8 @@ def prepare(config, local, output, expected):
     files = [str(path.relative_to(output)) for path in output.rglob('*') if path.is_file()]
     report = {'identity': expected, 'parent_run': str(parent),
               'parent_preparation_sha256': config['parent_preparation_sha256'],
-              'samples': samples, 'features': features, 'clusters': shared['clusters'], 'panel': shared['panel'],
+              'samples': samples, 'features': features, 'auxiliary_hashes': auxiliary_identity(aux),
+              'clusters': shared['clusters'], 'panel': shared['panel'],
               'coverage': shared['coverage'], 'cells': CELLS, 'seeds': list(SEEDS),
               'artifact_hashes': artifact_hashes(output, files), 'seconds': time.perf_counter() - start,
               'peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
