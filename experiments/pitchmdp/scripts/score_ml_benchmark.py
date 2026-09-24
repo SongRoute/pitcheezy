@@ -22,10 +22,20 @@ from run_ml_matrix import assert_hashes, check_location
 from score_ml_matrix import archive, assert_aligned, require_complete, summarize_cell, group_report
 
 
+def comparison_family(config):
+    control = config['registration']['control']
+    candidates = config['registration']['primary_candidates']
+    if control != 'A0-MLP' or candidates != ['A1-linear', 'A2-lightgbm', 'A3-lstm',
+                                           'A4-gru', 'A5-melville', 'A6-transformer']:
+        raise ValueError('Comparison family differs from preregistration')
+    return control, candidates
+
+
 def score(config, local_path, output):
     check_location(read_json(local_path), output)
     validate_native_runtime()
     prep = verify(output, identity(config, local_path))
+    control, candidates = comparison_family(config)
     require_complete(output, CELLS, SEEDS)
     destination = output / 'analysis'
     if destination.exists():
@@ -51,16 +61,14 @@ def score(config, local_path, output):
             member = archive(path)
             assert_aligned(member, baseline)
             members[cell].append(member)
-            inputs[str(path)] = hash_file(path)
+            for name in ('fit_state.json', 'prediction_state.json', 'fit.json',
+                         'prediction_runtime.json', 'predictions.npz'):
+                inputs[str(dest / name)] = hash_file(dest / name)
             costs[cell].append({'seed': seed, 'fit': read_json(dest / 'fit.json'),
                                'prediction': read_json(dest / 'prediction_runtime.json')})
     reports, predictions = {}, {}
     for cell in CELLS:
         reports[cell], predictions[cell] = summarize_cell(members[cell], baseline)
-    control = config['registration']['control']
-    candidates = config['registration']['primary_candidates']
-    if control != 'A0-MLP' or set(candidates) != set(CELLS) - {control}:
-        raise ValueError('Comparison family differs from preregistration')
     comparisons = []
     for candidate in candidates:
         paired = paired_game_comparison(baseline['dev_y'], predictions[candidate]['primary'],

@@ -13,7 +13,7 @@ sys.path.insert(0, str(PROJECT / 'scripts'))
 import numpy as np
 from pitchmdp.data import KEY, hash_file
 from pitchmdp.matrix_data import canonical_hash
-from pitchmdp.matrix_stress import protocol, SCENARIOS, predict_stress_streamed
+from pitchmdp.matrix_stress import protocol, SCENARIOS, StressHistoryStore, predict_stress_streamed
 from run_ml_sharing import (SOURCES as SHARING_SOURCES, identity as sharing_identity,
                             verify as verify_sharing, load_data, predictor, SEEDS)
 from run_ml_benchmark import read_json, dump, validate_native_runtime
@@ -23,6 +23,34 @@ from score_ml_matrix import archive
 SOURCES = [*SHARING_SOURCES, 'pitchmdp/matrix_stress.py', 'scripts/run_ml_stress.py']
 CONTROLS = {'G1-personal': 'G0-global', 'G2-feature': 'G0-global',
             'G3-cluster': 'G2-feature', 'G4-partial': 'G2-feature'}
+
+
+def exposure_report(store, rows, scenario):
+    """Count query-history occurrences once, independently of delivery draws."""
+    wrapper = StressHistoryStore(store, scenario)
+    counts = {'present_occurrences': 0, 'dropped_occurrences': 0,
+              'changed_occurrences': 0, 'query_rows': len(rows)}
+    present_keys, changed_keys = set(), set()
+    for start in range(0, len(rows), 512):
+        selected = np.asarray(rows[start:start + 512], dtype=np.int64)
+        current = np.zeros((len(selected), 8), dtype=np.float32)
+        original, valid = store.gather(selected, current)
+        perturbed, kept = wrapper.gather(selected, current)
+        present = valid[:, :-1]
+        dropped = present & ~kept[:, :-1]
+        changed = present & ((original[:, :-1] != perturbed[:, :-1]).any(2) | dropped)
+        history = store.indices[selected]
+        counts['present_occurrences'] += int(present.sum())
+        counts['dropped_occurrences'] += int(dropped.sum())
+        counts['changed_occurrences'] += int(changed.sum())
+        present_keys.update(history[present].tolist())
+        changed_keys.update(history[changed].tolist())
+    counts.update(unique_present_pitches=len(present_keys), unique_changed_pitches=len(changed_keys))
+    denominator = counts['present_occurrences']
+    counts['dropped_fraction'] = counts['dropped_occurrences'] / denominator if denominator else None
+    counts['changed_fraction'] = counts['changed_occurrences'] / denominator if denominator else None
+    counts['context_outage'] = scenario if scenario.startswith('unknown_') and scenario != 'unknown_type_outcome' else None
+    return counts
 
 
 def config_check(config):
@@ -76,6 +104,7 @@ def prepare(config, local_path, local, output, expected):
     external = dict(manifest['inputs'])
     external[str(analysis / 'results.json')] = config['parent_analysis_sha256']
     external[str(analysis / 'manifest.json')] = hash_file(analysis / 'manifest.json')
+    external[str(analysis / 'predictions.npz')] = manifest['predictions_sha256']
     for cell in (config['candidate'], config['control']):
         for seed in SEEDS:
             dest = parent / 'members' / cell / f'seed{seed}'
@@ -127,33 +156,36 @@ def predict(config, local, output, prep, cell, seed, scenario):
     parent = Path(prep['parent_run'])
     member = parent / 'members' / cell / f'seed{seed}'
     archived = archive(member / 'predictions.npz')
+    parent_config = read_json(output / 'parent_config.json')
+    parent_prep = read_json(output / 'parent_preparation.json')
+    store, context, parts, aux = load_data(local, parent, parent_prep)
+    # All frequency keys are unaffected by the registered stress scenarios.
+    if aux['baseline'].include_pitcher or aux['baseline'].parent_type_model.include_pitcher:
+        raise ValueError('Unexpected pitcher-aware frequency baseline under outage scenario')
+    model, _ = predictor(parent_config, parent, parent_prep, cell, seed)
+    model.delivery_temperature = read_json(member / 'calibration.json')['delivery_temperature']
+    part = parts['dev']
+    if not np.array_equal(part[KEY].to_numpy(np.int64), archived['dev_keys']):
+        raise ValueError('Stress query keys differ from clean parent')
+    calibrated, raw, levels = predict_stress_streamed(model, aux['delivery'], store, context,
+                                                    part.index.to_numpy(), scenario)
+    values = {name: value for name, value in archived.items() if name.startswith('dev_')}
+    values.update(dev=calibrated, dev_raw=raw, dev_delivery_level=levels)
+    if not np.array_equal(levels, archived['dev_delivery_level']):
+        raise ValueError('Stress must preserve delivery support and tiers')
+    clean_error = None
     if scenario == 'clean':
-        values = {name: value for name, value in archived.items() if name.startswith('dev')}
-        reused = True
-    else:
-        parent_config = read_json(output / 'parent_config.json')
-        parent_prep = read_json(output / 'parent_preparation.json')
-        store, context, parts, aux = load_data(local, parent, parent_prep)
-        # All frequency keys are unaffected by the registered stress scenarios.
-        if aux['baseline'].include_pitcher or aux['baseline'].parent_type_model.include_pitcher:
-            raise ValueError('Unexpected pitcher-aware frequency baseline under outage scenario')
-        model, _ = predictor(parent_config, parent, parent_prep, cell, seed)
-        model.delivery_temperature = read_json(member / 'calibration.json')['delivery_temperature']
-        part = parts['dev']
-        if not np.array_equal(part[KEY].to_numpy(np.int64), archived['dev_keys']):
-            raise ValueError('Stress query keys differ from clean parent')
-        calibrated, raw, levels = predict_stress_streamed(model, aux['delivery'], store, context,
-                                                        part.index.to_numpy(), scenario)
-        values = {name: value for name, value in archived.items() if name.startswith('dev_')}
-        values.update(dev=calibrated, dev_raw=raw, dev_delivery_level=levels)
-        if not np.array_equal(levels, archived['dev_delivery_level']):
-            raise ValueError('Stress must preserve delivery support and tiers')
-        reused = False
+        clean_error = max(float(np.abs(values[name] - archived[name]).max()) for name in ('dev', 'dev_raw'))
+        if clean_error > 1e-6:
+            raise ValueError('Fresh clean inference differs from parent beyond registered tolerance')
+    exposure = exposure_report(store, part.index.to_numpy(), scenario)
     dest.mkdir(parents=True)
     np.savez_compressed(dest / 'predictions.npz', **values)
     dump(dest / 'runtime.json', {'seconds': time.perf_counter() - start,
         'peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-        'clean_archive_reused': reused, 'no_recalibration': True, 'source_member': str(member)})
+        'clean_archive_reused': False, 'clean_maximum_probability_error': clean_error,
+        'clean_equivalence_tolerance': 1e-6, 'exposure': exposure,
+        'no_recalibration': True, 'source_member': str(member)})
     if source_hashes() != prep['identity']['source_hashes']:
         raise ValueError('Stress sources changed during inference')
     dump(dest / 'prediction_state.json', {'identity': expected,
