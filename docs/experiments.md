@@ -15,7 +15,7 @@
 | EXP-P4-001 | 전체·개인·군집·부분 공유, TRAIN 선정Cpanel | 0,1,2 | G0 1.483479; G1/G2/G3/G4 등록대조 대비 Δ+.010458/+.000327/−.000079/+.005685 | 51fit/15예측 완료, N/G 통과0. G1/G4 악화, G2/G3 미확정; G3−G2 진단후속 고정 |
 | EXP-P4-002 | 동일 dual-stream H5에 이전 타석32/128구 추가 | 0,1,2 | 미측정 | 첫 실패/coldprofile gate실패 보존;3arm MPS수치검사 통과·fresh v3 warmprofile등록, fullfit0 |
 | EXP-P5-001 | MLP/Transformer×D25/D100 상호작용 | 0,1,2 | I+.002753 [+.000363,+.005053], p.02260 | 신규6fit+보존6fit 완료.3/3양수지만 실용문턱.003미달로 미확정; 이번 설정의 MLP 자료 증가 이득이 더 큼 |
-| EXP-P6-001 | 결과 모형과 auxiliary의 TRAIN 자료량 | 0,1,2 | 미측정 | D25 auxiliary 재적합3fit, D1-D25/D100 각3fit 재사용; 준비/profile·1559초/member gate통과, 학습 중 |
+| EXP-P6-001 | 결과 모형과 auxiliary의 TRAIN 자료량 | 0,1,2 | D2-25 NLL1.499665; D1-100/D1-25 대비Δ−.010781/−.007598 | 신규3fit/보존6fit 완료. 두 비교N통과,각Holm.000200/3seed개선; 공동auxiliary 효과 |
 | EXP-P7-001/002/003 | 새 선수/입력 stress/전체MLB | 0,1,2 | 미측정 | 동일 G3−G2 진단 비교 등록; 각 준비/자원 gate 대기,후속 점수로 후보변경 안 함 |
 | EXP-P8-001 | 행동 모방/한 번 선택/매 공 재계획/KL 정책 | 0,1,2 outcome ensemble | 미측정 | G3 계획/G2 공통평가,May4시작 자원 profile 등록. 실제비용 뒤 별도 실행 예산 고정 |
 
