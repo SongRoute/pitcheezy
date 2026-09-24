@@ -25,6 +25,26 @@ COMPARISONS = [('G1-personal', 'G0-global'), ('G2-feature', 'G0-global'),
                ('G3-cluster', 'G2-feature'), ('G4-partial', 'G2-feature')]
 
 
+def logical_costs(units, fitted):
+    modes = {'G0-global': {'global'}, 'G1-personal': {'global', 'personal'},
+             'G2-feature': {'global', 'feature'}, 'G3-cluster': {'global', 'cluster'},
+             'G4-partial': {'global', 'cluster', 'personal'}}
+    result = {}
+    for cell, allowed in modes.items():
+        selected = [name for name, spec in units.items() if spec['mode'] in allowed]
+        result[cell] = {'units_per_seed': selected, 'logical_fits': len(selected)*len(SEEDS),
+            'total_fit_seconds': sum(fitted[str(seed)][name]['seconds_total']
+                                     for seed in SEEDS for name in selected)}
+    return result
+
+
+def followup_candidates(comparisons, reports, costs):
+    eligible = [c['candidate'] for c in comparisons
+                if (c['N']['status'] == 'predictive_improvement' or c['G']['status'] == 'group_improvement')
+                and c['robustness']['status'] != 'failed']
+    return sorted(eligible, key=lambda c: (reports[c]['primary']['log_loss'], costs[c]['total_fit_seconds']))[:2]
+
+
 def score(config, local_path, output):
     check_location(read_json(local_path), output)
     validate_native_runtime()
@@ -46,6 +66,19 @@ def score(config, local_path, output):
         raise ValueError('Unpaired group metadata')
     inputs = {str(output / name): hash_file(output / name) for name in
               ('preparation.json', 'baseline_predictions.npz', 'dev_metadata.parquet')}
+    costs = {}
+    for seed in SEEDS:
+        costs[str(seed)] = {}
+        for unit, spec in prep['units'].items():
+            fit_dir = output / 'fits' / f'seed{seed}' / unit
+            state = read_json(fit_dir / 'state.json')
+            if state['identity'] != {'preparation_sha256': canonical_hash(prep), 'seed': seed, 'unit': unit, 'spec': spec}:
+                raise ValueError('Sharing fit-cost identity differs')
+            assert_hashes(fit_dir, state['artifact_hashes'])
+            costs[str(seed)][unit] = read_json(fit_dir / 'fit.json')
+            for name in ('state.json', 'fit.json'):
+                inputs[str(fit_dir / name)] = hash_file(fit_dir / name)
+    cell_costs = logical_costs(prep['units'], costs)
     members = {}
     for cell in CELLS:
         members[cell] = []
@@ -63,7 +96,8 @@ def score(config, local_path, output):
             member = archive(dest / 'predictions.npz')
             assert_aligned(member, baseline)
             members[cell].append(member)
-            inputs[str(dest / 'predictions.npz')] = hash_file(dest / 'predictions.npz')
+            for name, digest in state['artifact_hashes'].items():
+                inputs[str(dest / name)] = digest
     reports, predictions = {}, {}
     for cell in CELLS:
         reports[cell], predictions[cell] = summarize_cell(members[cell], baseline)
@@ -94,15 +128,6 @@ def score(config, local_path, output):
             whole_guard = c['paired']['nll']['ci95'][1] <= .001 and c['paired']['brier']['ci95'][1] <= .001
             c['G'] = {'low_group': decision, 'whole_population_noninferior': whole_guard,
                       'status': 'group_improvement' if decision['status'] == 'predictive_improvement' and whole_guard else 'inconclusive'}
-    costs = {str(seed): {unit: read_json(output / 'fits' / f'seed{seed}' / unit / 'fit.json')
-                        for unit in prep['units']} for seed in SEEDS}
-    for seed in SEEDS:
-        for unit in prep['units']:
-            fit_dir = output / 'fits' / f'seed{seed}' / unit
-            state = read_json(fit_dir / 'state.json')
-            assert_hashes(fit_dir, state['artifact_hashes'])
-            for name in ('state.json', 'fit.json'):
-                inputs[str(fit_dir / name)] = hash_file(fit_dir / name)
     temporal = {}
     for month in sorted(metadata.month.unique()):
         mask = metadata.month.eq(month).to_numpy(bool)
@@ -117,7 +142,11 @@ def score(config, local_path, output):
         'comparisons': comparisons, 'multiplicity': {'tests': 8, 'method': 'Holm, overall and low-group hypotheses together', 'adjusted_p': adjusted},
         'per_pitcher': group_report(baseline, predictions, prep['panel']['pitcher_ids']),
         'class_reporting': {'minimum_events': 30, 'eligible': [int((y == i).sum()) >= 30 for i in range(10)]},
-        'temporal': temporal, 'fit_units': costs, 'coverage': prep['coverage'],
+        'temporal': temporal, 'fit_units': costs, 'logical_cell_costs': cell_costs,
+        'unique_actual_fits': len(prep['units'])*len(SEEDS),
+        'followup_candidates': followup_candidates(comparisons, reports, cell_costs),
+        'selection_note': 'N/G passes ranked by primary NLL then dependency fit time, maximum two; measured R failure excludes promotion, missing R stays unconfirmed.',
+        'coverage': prep['coverage'],
         'individual_eligibility': prep['individual_eligibility'], 'input_hashes': inputs,
         'policy_effect': None, 'whole_mlb_robustness': None, 'independent_confirmation': None,
         'limits': ['TRAIN-selected development panel, no replacement of absent players',
