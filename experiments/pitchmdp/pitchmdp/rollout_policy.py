@@ -26,7 +26,7 @@ class PastPitch:
     strikes: int
 
     def __post_init__(self):
-        if self.outcome not in OUTCOMES or not self.action or not np.isfinite(self.physics).all():
+        if self.outcome not in (*OUTCOMES, "unknown") or not self.action or not np.isfinite(self.physics).all():
             raise ValueError("invalid generated/observed past pitch")
         _count(self.balls, self.strikes)
 
@@ -86,16 +86,18 @@ class CategoricalBC:
         return state.pitcher, state.balls, state.strikes, state.batter_side, previous
 
     def fit(self, records: Sequence[BCRecord]):
-        if not records or any(r.split != "train" for r in records):
-            raise ValueError("BC fit requires nonempty exclusively TRAIN records")
-        if any(not r.action for r in records):
-            raise ValueError("empty TRAIN action")
-        self.actions = tuple(sorted({r.action for r in records}))
-        self.league = Counter(r.action for r in records)
-        self.pitchers, self.cells = defaultdict(Counter), defaultdict(Counter)
+        # Single-pass iterable support avoids materializing millions of states.
+        league, pitchers, cells = Counter(), defaultdict(Counter), defaultdict(Counter)
         for row in records:
-            self.pitchers[row.state.pitcher][row.action] += 1
-            self.cells[self._key(row.state)][row.action] += 1
+            if row.split != "train" or not row.action:
+                raise ValueError("BC fit requires exclusively TRAIN records with actions")
+            league[row.action] += 1
+            pitchers[row.state.pitcher][row.action] += 1
+            cells[self._key(row.state)][row.action] += 1
+        if not league:
+            raise ValueError("BC fit requires nonempty exclusively TRAIN records")
+        self.actions = tuple(sorted(league))
+        self.league, self.pitchers, self.cells = league, pitchers, cells
         return self
 
     def support(self, state):
