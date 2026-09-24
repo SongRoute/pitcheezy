@@ -1,4 +1,7 @@
 import pytest
+import numpy as np
+import pandas as pd
+import pitchmdp.matrix_confirmation_metrics as metrics
 from pitchmdp.matrix_confirmation_metrics import finish_decisions
 
 
@@ -42,3 +45,26 @@ def test_baseline_only_has_no_superiority_test_and_missing_low_stays_null():
     assert record['G']['status'] == 'unmeasured'
     with pytest.raises(ValueError, match='At most two'):
         finish_decisions([row(), row(), row()])
+
+
+def test_family_wires_declared_order_five_seeds_and_fixed_robustness_budget(monkeypatch):
+    y = np.arange(600) % 10
+    control = np.full((600, 10), .1)
+    candidate = np.full((600, 10), .8/9)
+    candidate[np.arange(600), y] = .2
+    predictions = {name: {'primary': p, 'seed_primary': np.stack([p]*5)}
+                   for name, p in [('candidate', candidate), ('control', control)]}
+    calls = []
+    monkeypatch.setattr(metrics, 'paired_game_comparison', lambda *args, **kwargs: pair())
+    monkeypatch.setattr(metrics, 'guardrails', lambda *args, **kwargs: calls.append(kwargs) or {'status': 'unconfirmed'})
+    monkeypatch.setattr(metrics, 'volume_interaction', lambda *args, **kwargs: {'status': 'descriptive'})
+    records, family = metrics.compare_family(y, predictions, np.arange(600)%30,
+        pd.DataFrame({'train_volume': ['low']*600}), [('candidate', 'control')])
+    assert calls == [{'candidate_family_size': 2, 'draws': 100000}]
+    assert family['adjusted'] == pytest.approx([.016, .016, None, None], nan_ok=True)
+    assert records[0]['N']['status'] == 'predictive_improvement'
+    assert len(records[0]['seed_deltas']) == 5
+    predictions['candidate']['seed_primary'] = predictions['candidate']['seed_primary'][:3]
+    with pytest.raises(ValueError, match='five-seed'):
+        metrics.compare_family(y, predictions, np.arange(600)%30,
+            pd.DataFrame({'train_volume': ['low']*600}), [('candidate', 'control')])
