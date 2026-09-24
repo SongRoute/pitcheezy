@@ -349,7 +349,7 @@ def policy_run(config, output, prep, execution, split, world):
     table = pd.read_parquet(output / f'{split}_requests.parquet')
     selected = table.loc[table.selected].head(execution['requested_starts'][split])
     if split == 'blend':
-        policies = [('P0', None), *[(f'P3-tau{tau}', tau) for tau in execution['tau_grid']]]
+        policies = [('P0', None), ('P2', None), *[(f'P3-tau{tau}', tau) for tau in execution['tau_grid']]]
     else:
         tuning_path = output / 'stages/blend-control/results.json'
         tuning = read_json(tuning_path)
@@ -390,7 +390,9 @@ def policy_run(config, output, prep, execution, split, world):
         'requested_pa_starts': len(table), 'selected_pa_starts': len(selected), 'supported_selected': len(games),
         'selected_unsupported_reasons': selected.loc[~selected.supported].reason.value_counts().to_dict(),
         'pa_keys': pa_keys, 'game_ids': games, 'mean_original_defensive_we': means, 'comparisons': comparisons,
-        'selected_tau': chosen, 'runtime': runtime, 'planner_diagnostics': diagnostics,
+        'selected_tau': chosen,
+        'rl_comparator': ('P3' if means[f'P3-tau{chosen}'] >= means['P2'] else 'P2') if split == 'blend' else None,
+        'runtime': runtime, 'planner_diagnostics': diagnostics,
         'delivery_tier_draw_calls': {str(k): int(v) for k, v in inputs.pool_tiers.items()},
         'primary_family': game_policy_comparisons({k: r.values for k, r in arrays.items()}, games,
             truncated={k: r.truncated for k, r in arrays.items()},
