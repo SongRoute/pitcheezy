@@ -371,11 +371,103 @@ blend P0는 relief 1,396구 BC 1.3911, starter 3,816구 BC 1.3399다. 투수별 
 
 근거 SHA256: `stages/p0/results.json` `bb2bdf4a245c9432cf07d9e967e914b39338dcd27b57566cfb45c36d9d12bbf5`, `stages/blend-control/results.json` `83e6e85ebede54e840b25d5f89e007ba1ec888ffce8ac8a948f63974811a1167`, `stages/dev-control/results.json` `6e80349a79288268213843327fdb0ab79d6f4bc8eaf2e3e7268c440d5cfaa9a9`, `stages/dev-candidate/results.json` `12b6cdf823cc39a36819ae746bf6837bf48c462e9d2ac2f0c9db921fe4663248`, `stages/tuning_freeze.json` `fb0b8b222f401e385cae152be1c0371f0784a18e616dbfd423f7f1bd7ae7fece`, 하위집단 `audit/p8-policy/groups-p0/results.json` `bc535aa88ba4578cd5c523b4eac6985a7062337638c13a85712dfb2e73d28559`, `groups-dev-control/results.json` `77686afe3c9b9240bb3453374ca187526abb9ffe9aa5c9ec69d264dca116ec60`, `groups-dev-candidate/results.json` `febc6633e9c9f042678461a61cfd57198da7f04b58b2d074f2ebc68f286d8ac0`이다(`EXP-P8-001/` 기준 상대 경로, 하위집단은 `ML-MATRIX-20260924/` 기준).
 
+### P4/P5 offline RL 완료(모델 내부)
+
+`EXP-P8-002`는 [feasibility 규약](../contracts/ML-OFFLINE-RL-FEASIBILITY-v1.md)과 [러너 규약](../contracts/ML-OFFLINE-RL-RUNNER-v1.md)대로 같은 관측 TRAIN 타석·구종 어휘·보상으로 정보·구조를 맞춘 neural BC(NNBC)·IQL(P4)·CQL(P5)을 각 3seed 학습하고, `EXP-P8-001`과 같은 G2-feature 공통 평가기·타석 목록·시작 상태·cap·paired 난수로 평가했다. RL 비교기는 June에서 고정한 P2다(`tuning_freeze.json` `fb0b8b22…7ae7fece`). 2026-09-27 02:10~02:24 KST에 prepare와 TRAIN-only profile을, 02:27~03:11 KST에 fit 9회 → evaluate control → evaluate candidate를 단일 큐로 실행해 모두 exit0이었다. 실행 config `configs/EXP-P8-002-execution.json`(updates 20,000)은 fit 시작 전 커밋 d0aa4f1(02:26 KST)에 올렸고 내용은 실행 폴더 `final_execution.json`과 같다(서식만 다름). 고정 설정은 width128×2층, expectile .7, actor 온도 .01, weight clip 100, CQL α .01, lr 3e-4, Polyak .005, batch 1,024, gradient clip 10, γ=1이며 HPO·DEV early stopping·checkpoint 선택은 없다(최종 update만). evaluation rollout 4, cap 8, evaluation seed 1701, 경기 bootstrap 10,000회(seed 20260924). seed 3개는 동일 확률 혼합 정책으로 합쳤고(CQL은 seed별 greedy one-hot 혼합) seed별 값은 기술 통계다.
+
+**준비(궤적 감사).** prepare 큐 wall 791.65초(러너 789.13초), 자식 최고 RSS 8.89 GB(8,885,043,200 B), feature bank 549,778,723 B. TRAIN 355,625타석 → complete-D100 324,382타석 → 보존 **324,257타석/1,252,341전이**(엄격 종결 next-state 예외 0). 한 타석이 여러 사유에 동시에 걸릴 수 있어 아래 사유 합계는 제외 타석 수와 같지 않다.
+
+| 제외 사유 (`trajectory_audit.json`) | 타석 |
+|---|---:|
+| `not_complete_d100_pa` | 31,243 |
+| `source_unsupported_pa` | 31,243 |
+| `mid_pa_context_change` | 11,160 |
+| `unmapped_outcome` | 5,193 |
+| `missing_terminal_next_state` | 4,673 |
+| `terminal_label_mismatch` | 1,159 |
+| `deterministic_terminal_mismatch` | 838 |
+| `terminal_boundary_invalid` | 785 |
+| `illegal_terminal_outs` | 248 |
+| `observed_action_outside_common_support` | 171 |
+| `invalid_count_or_action` | 152 |
+| `post_score_next_state_mismatch` | 19 |
+| `support_unavailable` | 4 |
+| `nonterminal_count_or_event_mismatch` | 3 |
+| `illegal_terminal_half_transition` | 1 |
+
+역할×종결 구분에서 종결 `unknown` 타석 4,034개(relief 1,607, starter 2,427)와 역할 `unknown` 4타석은 complete-D100 단계에서 전부 빠졌다. 나머지 종결 클래스의 보존율(보존/요청)은 relief 삼진 86.1%·볼넷 82.0%, starter 삼진 93.3%·볼넷 90.8% 등으로 불펜과 볼넷·삼진에서 손실이 더 크다(`role_terminal_representativeness`). 행동 어휘는 18개(CH CS CU EP FA FC FF FO FS KC KN PO SC SI SL ST SV UN)이며 보존 전이의 관측 행동에서 **PO·UN은 0건**, CS 188·SC 162·FO 947처럼 희귀 구종도 있다. 보상은 중간 0, 종결 타석에서만 동결 `terminal_values`(defense-we-pa-v1)로 범위 [8.25e-14, 1.0], 종결 평균 .4842이다(비종결 보상 0이 아닌 행 0). 합법 행동 수는 전이당 평균 5.436(최소1, 최대10)이다. 보상·행동·합법 행동 값은 기록 담당이 `features/{reward,done,action,support}.npy`에서 직접 계산했다. 입력은 과거 H5+mask+안전 맥락이며 현재 토큰과 last2 routing ID는 넣지 않았다.
+
+**비용 profile(TRAIN-only, 256 updates, seed0, MPS).** 큐 wall 14.07초(학습 합 10.51초, 프로세스 오버헤드 3.56초), 최고 RSS 1.19 GB. 품질 점수는 읽지 않았다(`quality_scores_read=false`).
+
+| 방법 | 초/update | optimizer step/update | 학습 파라미터 | 20k 외삽/fit | ×2 외삽/fit | ×2 외삽 3seed |
+|---|---:|---:|---|---:|---:|---:|
+| NNBC | .009532 | 1 | actor 51,218 | 190.6 | 381.3 | 1,143.8 |
+| IQL | .021572 | 4 | actor·q1·q2 51,218 each, v 49,025 (+target q1·q2) | 431.4 | 862.9 | 2,588.7 |
+| CQL | .009937 | 1 | q 51,218 (+target q) | 198.7 | 397.5 | 1,192.5 |
+
+9 fit 외삽은 2,462.5초, ×2 4,925.0초(프로세스 오버헤드 ×2 포함 4,989.1초)로 코드 상한(member 3,600초·family 10,800초) 안이어서 상한값 **20,000 updates**를 등록했다(`audit/rl-prepare-profile/cost-gate.json`). evaluate 비용은 profile하지 않았다. 근거는 행 상한 12·N·R·C = 12×117×4×8 = 44,928행/세계가 상속 hard cap 460,000행보다 훨씬 작다는 것이며 1,500초/세계는 hard abort로 유지했다.
+
+**fit 비용.** 9회 모두 20,000 updates(전이 draw 20,480,000), exit0, 재시도 없음.
+
+| 방법 | seed0/1/2 러너 초 | seed0/1/2 큐 wall 초 | 최고 RSS | 외삽 대비 |
+|---|---|---|---:|---|
+| NNBC | 124.85 / 125.08 / 124.63 | 126.6 / 128.6 / 126.5 | 1.18 GB | 외삽 190.6초의 65~66% |
+| IQL | 573.95 / 503.01 / 465.33 | 576.3 / 505.9 / 467.9 | 1.19 GB | 외삽 431.4초보다 8~33% 김, ×2(862.9초) 안 |
+| CQL | 195.51 / 194.11 / 194.47 | 198.8 / 196.9 / 196.8 | 1.18 GB | 외삽 198.7초의 98% |
+
+fit family(큐 wall 합) 2,524.3초로 family 상한 10,800초의 23.4%, 최대 member 576.3초는 member 상한 3,600초의 16.0%다. evaluate control 큐 66.3초(내부 64.04초, 조건부 21,726행, seed wrapper 65,178행, prediction calls 8,130, RSS 1.13 GB), candidate 66.2초(내부 63.53초, 21,895행, 65,685행, 8,162, 1.13 GB). 조건부 행은 상한 44,928의 48.4%/48.7%, hard cap 460,000의 4.7%/4.8%다. 큐 총 **2,656.8초**. 기록은 `audit/rl-fit-evaluate/{queue-state.json,queue-summary.json}`과 각 `members/*/seed*/runtime.json`이다.
+
+**DEV 주 family(control 세계, joint four, Holm .05 on max(대체값 p, worst-case p)).** 요청 3,357타석 중 선택 128, 지원 117타석/91경기(사후 미지원 11)로 `EXP-P8-001`과 같고 최소 조건(30경기·50타석)을 충족해 `reporting_eligible`이다.
+
+| 비교 | ΔWE (95% 경기 CI) | 대체값 단측 p | 대체값 Holm | worst-case 평균 하한 | worst-case CI | worst-case p | 결합 Holm | screen | 판정 |
+|---|---|---:|---:|---:|---|---:|---:|---|---|
+| IQL−P2 | +.006304 [+.000646,+.012737] | .0276 | .0828 | −.007645 | [−.018499,+.002820] | .9144 | 1.0 | false | `inconclusive` |
+| CQL−P2 | +.006041 [+.000957,+.011460] | .0149 | .0596 | −.008120 | [−.018164,+.001723] | .9402 | 1.0 | false | `inconclusive` |
+| IQL−NNBC | +.001221 [−.000952,+.003646] | .1491 | .2982 | −.008986 | [−.019309,−.000549] | .9575 | 1.0 | false | `inconclusive` |
+| CQL−NNBC | +.000958 [−.004724,+.006247] | .3760 | .3760 | −.009462 | [−.018233,−.001437] | .9828 | 1.0 | false | `inconclusive` |
+
+네 비교 모두 `model_internal_P_screen=false`, `untruncated_pa_improvement_confirmed=false`이고 두 방법 모두 `rl_gain_over_both_controls=false`다. IQL/CQL−P2는 대체값 CI 하한이 0보다 크지만 대체값 Holm(.0828/.0596)이 .05를 넘어 **예비 screen도 통과하지 못했고**, worst-case CI가 0을 포함해 강한 기준도 실패했다. NNBC 대비 차이는 대체값 CI부터 0을 포함한다. NNBC 대비 worst-case CI 상한이 음수인 것은 절단 궤적을 가장 불리하게 둔 경계일 뿐 RL 악화의 증거가 아니다.
+
+**DEV candidate 세계(민감도, 두 번째 성공 기회 아님).** 같은 117타석/91경기.
+
+| 비교 | ΔWE (95% 경기 CI) | 대체값 p | 대체값 Holm | worst-case 평균 하한 (CI) | 결합 Holm | 판정 |
+|---|---|---:|---:|---|---:|---|
+| IQL−P2 | +.001530 [−.002855,+.006496] | .2528 | .7583 | −.013131 [−.024191,−.003130] | 1.0 | `inconclusive` |
+| CQL−P2 | +.002746 [−.002114,+.007488] | .1365 | .5459 | −.015598 [−.026935,−.005117] | 1.0 | `inconclusive` |
+| IQL−NNBC | +.000190 [−.001547,+.001787] | .4161 | .7583 | −.010153 [−.020749,−.001709] | 1.0 | `inconclusive` |
+| CQL−NNBC | +.001406 [−.003393,+.005783] | .2792 | .7583 | −.012620 [−.021992,−.004157] | 1.0 | `inconclusive` |
+
+RL−P2 점추정은 control(+.0063/+.0060)보다 candidate(+.0015/+.0027)에서 작다. P2가 계획 모델 자신이 평가하는 세계에서 덜 떨어지는 `EXP-P8-001`의 관찰과 같은 방향이며 MX-P8 검토용 기술 관찰로만 적는다.
+
+**평균 WE(부모 정책과 나란히, 같은 117타석).** 부모 P0~P3 값은 `EXP-P8-001` `stages/dev-{control,candidate}/results.json`의 `mean_original_defensive_we`이고 P2는 두 실행에서 소수점 끝까지 같다. RL과 부모의 차이는 아래 값의 단순 차이이며 검정하지 않았다.
+
+| 정책 | control | candidate |
+|---|---:|---:|
+| P0 (범주형 BC) | .465391 | .463062 |
+| P1 | .463391 | .463461 |
+| P2 (RL 비교기) | .458077 | .460843 |
+| P3 τ .003 | .465056 | .463184 |
+| NNBC (3seed 혼합) | .463159 | .462183 |
+| IQL (3seed 혼합) | .464380 | .462373 |
+| CQL (3seed 혼합) | .464117 | .463589 |
+
+control에서 세 방법 모두 P2보다 높고 P0·P3보다 낮다(IQL−P0 −.001011, CQL−P0 −.001274, IQL−P3 −.000676, CQL−P3 −.000939). candidate에서는 CQL만 네 부모보다 높고 IQL·NNBC는 P0보다 낮다. seed별 control 평균은 NNBC .465061/.464789/.462694, IQL .465492/.464812/.465035, CQL .462473/.464987/.465021로 방법 안 seed 범위(최대 CQL .002548)가 방법 간 혼합 정책 차이(최대 .001221)와 비슷하거나 크다. IQL 혼합 값 .464380은 세 seed 값보다 모두 낮은데, 혼합 정책의 rollout은 seed 값의 평균이 아니고 MC SE가 약 .003이므로 해석하지 않는다.
+
+**rollout 절단(cap 8)과 MC SE.** 117타석×4 rollout=468궤적 기준 절단 비율은 control NNBC 1.068%(5)·IQL .855%(4)·CQL 1.282%(6)·P2 1.068%(5), candidate NNBC .855%·IQL 1.068%·CQL **2.137%(10)**·P2 .855%다. candidate CQL 절단은 같은 세계 P2의 2.5배, control CQL의 1.67배다. 절단 궤적은 시작 상태 WE로 대체하고 [0,1] worst-case 경계를 함께 보고했다. P2 대비 paired MC SE는 control NNBC .003123·IQL .002923·CQL .002957, candidate .002805·.002796·.003234로 control P2 대비 점추정(+.005~+.006)의 절반 안팎이다.
+
+**학습 진단(마지막 update, `updates.jsonl`).** CQL 3seed의 conservative loss는 1.563/1.558/1.580으로 TD loss(.00095/.00099/.00053)보다 세 자릿수 크고, 마지막 배치 Q 중 진단 범위 [−.25, 1.25] 밖 값이 371/294/231개(Q 최소 −4.56/−3.21/−3.31, 최대 ≤1.08)였다. 규약대로 Q 클리핑·재조정 없이 진단으로만 기록한다. IQL은 Q 범위 밖 0(Q −.056~1.086), weight clip 비율 0(weight 최대 2.25/4.41/6.08, 상한 100), value loss ≈7e-6, Q loss ≈5~9e-4다. NNBC actor loss 1.156~1.191. 비유하면 CQL은 "안 던져 본 공은 나쁘다고 치는" 벌점이 학습의 대부분을 차지했다. NNBC가 범주형 P0보다 낮은 것(control −.002232)은 입력·구조가 다른 두 BC 사이의 bridge 진단이며 RL 효과로 귀속하지 않는다.
+
+**한계.** (1) 관측 행동에 PO·UN이 0건이라 두 행동은 학습 신호 없이 support mask로만 존재한다. (2) 종결 `unknown` 4,034타석을 포함해 complete-D100·엄격 종결 감사로 TRAIN의 8.8%(31,368타석)가 빠졌고 불펜·볼넷·삼진 대표성이 낮아졌다. 이는 사후 지원 부분집합이며 MLB 전체 적용 범위가 아니다. (3) evaluate는 사전 비용 profile 없이 행 상한 근거로 실행했다(실측은 위 표). (4) 117타석/91경기라 검정력이 제한된다. MC SE ≈.003이 P2 대비 점추정(+.005~+.006)과 같은 자릿수이고 NNBC 대비 점추정(+.001)보다 크다. (5) 한 번의 고정 설정·20,000 updates 결과이며 다른 설정·예산의 RL 성능을 말하지 않는다. (6) 관측 행동의 교란, 숨은 투구 의도, 희귀 구종 외삽이 남는다.
+
+해석 경계: 모든 값은 G2 시뮬레이터 안의 **모델 내부 평가**이며 관측 OPE·인과 효과·정책 채택은 null이다(`observational_ope`/`causal_effect`/`policy_adoption` null). IQL/CQL이 planner P2를 이기는 점추정은 있으나 절단 꼬리 가정에 의존하고 대체값 Holm부터 미통과이며, 같은 입력의 NNBC와는 차이가 없다. 사용자 요청으로 활성화한 P4/P5의 방법론 가설(상각된 정책 학습이 rollout 순위 매기기나 같은 입력의 BC보다 낫다)은 **이 표본·예산에서 확인되지 않았다**. 효과가 없다는 증명이 아니다. 학습 TD loss가 작거나 CQL이라는 이름이 관측 OPE를 뜻하지 않는다. seed 3개는 독립 경기 표본이 아니다.
+
+근거 SHA256(`EXP-P8-002/` 기준): `evaluation/control/results.json` `f49aedc9514abc98add2f1deaf8e91c6767a6c3d1ad2b288948e93748cb55047`, `evaluation/candidate/results.json` `bed835c0c6c64d57ee2c6692623e45985789312218e4942df7aa633334bd40d6`, `final_execution.json` `08318c624c1f75cc22241f01122aed014031a5fb16498048143681ec725d0308`, `preparation.json` `a524974ea9ef86d86c76fa850e63ff669a3074e916c5d76cece2088d4772988a`, `profile/results.json` `d386f841b45d12fce0a38db4d98c1f26c434af9ad28d557b63d3338fb70b8fba`, 비용 gate `audit/rl-prepare-profile/cost-gate.json` `188dec52d0aeb5cd739822b8b85b52812dd8f155bdada351e6599867616a0881`(`ML-MATRIX-20260924/` 기준). 두 evaluate 결과의 실행 hash는 `6195b575…5d005c427d`, 부모 정책 실행 hash는 `7f8fe129…4ec2c48c`다.
+
 ### 후속 실행 준비와 비용 확인
 
 F4의3arm×3seed와 I1의신규6fit은 각각 [긴 이력 규약](../contracts/ML-LONG-HISTORY-EXECUTION-v1.md), `configs/EXP-P4-002.yaml`/`EXP-P5-001.yaml`에 등록했다. T2/T3/T4에는 [선수 제외·입력 오류 규약](../contracts/ML-T2-T3-PROTOCOL.md), [stress 판정](../contracts/ML-STRESS-EXECUTION-v1.md), [전체 MLB 이전·후속 선택 규칙](../contracts/ML-TRANSFER-EXECUTION-v1.md)을 마련했다. 코드/synthetic 검사 준비와 실제 실험 완료는 구분한다.
 
-T3 `EXP-P7-002`는 2026-09-27 00:22~01:06 KST에 prepare(1.75초)·seed0 clean gate·나머지58회 추론(2,361.0초)과 scorer(76.3초)를 모두 exit0으로 마쳐 **완료**했고 결과는 위 **T3 입력 stress 완료** 절에 기록했다. T4 `EXP-P7-003`은 2026-09-27 01:11~01:58 KST에 prepare(1.34초)·G3 seed0 gate(444.86초)·나머지5회 추론(2,233.14초)과 scorer(27.76초)를 모두 exit0으로 마쳐 **완료**했고(큐 총2,679.35초, 예산의9.3%) 결과는 위 **T4 전체 MLB 이전 평가 완료** 절에 기록했다. P8 `EXP-P8-001` 정책 실행은 2026-09-27 02:01~02:06 KST에 p0(4.02초)·blend-control(114.49초)·dev-control(88.38초)·dev-candidate(86.39초)를 모두 exit0으로 마쳐 **완료**했고(큐 총293.31초, 최고 RSS1.02GB) 결과는 위 **P0~P3 구종 정책 실행 완료(모델 내부)** 절에 기록했다. 후속 offline RL(IQL/CQL, MX-P4/P5)은 **준비/profile 실행 중**(`audit/rl-prepare-profile/`)이며 결과는 아직 없다.
+T3 `EXP-P7-002`는 2026-09-27 00:22~01:06 KST에 prepare(1.75초)·seed0 clean gate·나머지58회 추론(2,361.0초)과 scorer(76.3초)를 모두 exit0으로 마쳐 **완료**했고 결과는 위 **T3 입력 stress 완료** 절에 기록했다. T4 `EXP-P7-003`은 2026-09-27 01:11~01:58 KST에 prepare(1.34초)·G3 seed0 gate(444.86초)·나머지5회 추론(2,233.14초)과 scorer(27.76초)를 모두 exit0으로 마쳐 **완료**했고(큐 총2,679.35초, 예산의9.3%) 결과는 위 **T4 전체 MLB 이전 평가 완료** 절에 기록했다. P8 `EXP-P8-001` 정책 실행은 2026-09-27 02:01~02:06 KST에 p0(4.02초)·blend-control(114.49초)·dev-control(88.38초)·dev-candidate(86.39초)를 모두 exit0으로 마쳐 **완료**했고(큐 총293.31초, 최고 RSS1.02GB) 결과는 위 **P0~P3 구종 정책 실행 완료(모델 내부)** 절에 기록했다. 후속 offline RL `EXP-P8-002`(NNBC/IQL/CQL, MX-P4/P5)는 2026-09-27 02:10~02:24 KST에 prepare(791.65초)·profile(14.07초), 02:27~03:11 KST에 fit 9회·evaluate control/candidate를 모두 exit0으로 마쳐 **완료**했고(큐 총2,656.8초, fit family 2,524.3초) 결과는 위 **P4/P5 offline RL 완료(모델 내부)** 절에 기록했다. F4 cache 감사는 **실행 중**(`audit/f4-cache-audit/`)이며 결과는 아직 없다.
 
 F4 첫 준비는 약4.8초에 중단됐다. 한 타석에 두 타자 ID가 있는47타석/248구를 long-history 구현이 거부했으며 profile/fit/점수는 생성되지 않았다. 정규시즌 전체2,145,111구의 키 감사에서 이 행들은 frozen G의 TRAIN/early/temperature/blend/DEV/전체MLB query에 하나도 포함되지 않았다. 분할별 원본 수는 TRAIN33타석/173구, early1/4, temperature0, blend2/11, DEV9/48, 미사용2/12다. 실패 attempt와 `audit/f4-profiles/ambiguity.json`을 보존했다. 별도 긴 이력에서만 이러한 완료된 과거 타석을 제외하고 모든 base/H5/query 행과 고정 auxiliary를 유지하는 수정이 독립 검토와10개 합성 검사를 통과했다. [fresh attempt2](../../configs/EXP-P4-002-v2.yaml)의 준비와3개 실제 profile도 완료했고 모든 공통 분할 키가 G와 정확히 일치했다. 현재 지원 여부나 결과를 보고 과거 이력을 제거하는 규칙은 사용하지 않는다.
 
@@ -389,7 +481,7 @@ D2는 신규3fit/보존6fit 검증과 두 주 비교를 완료했고 위에 결�
 
 T2 `EXP-P7-001`은 준비17.31초와 투수/타자 TRAIN-only profile7.67/8.75초를 마쳤다(`audit/t2-profiles/queue-state.json`). profile의 seed당 fit 외삽은 투수1,213.8초, 타자2,763.4초였다. **투수 축** G0-global fallback3seed의 fit+predict를 완료했다. seed0/1/2의 fit 내부 시간은89.22/95.03/85.56초, 최고 RSS11.07/11.87/11.76GB, predict는24.85/24.68/24.69초와11.95/12.03/11.97GB였다. 큐 누적406.52초, 실패0이다(`audit/t2-full/queue-state.json`, `EXP-P7-001/pitcher/fits/seed{S}/global/fit.json`, `members/G0-global/seed{S}/runtime.json`). **타자 축**은2026-09-26 23:48 KST에 단일 큐로 시작해 fit3개·G3-cluster/G2-feature predict6개가 모두 exit0으로 끝났다(총838.65초, `audit/t2-batter/`). 2026-09-24 `audit/t2-full/fit-batter-0.log`는 빈 파일이고 queue-state 기록이 없어 완료로 세지 않는다. 이어 scorer를 한 번 실행해(wall10.30초, exit0) T2를 완료했고 결과는 위 **T2 새 선수 일반화 완료** 절에 기록했다. 채점 전 predict runtime의 `new_DEV_scores_read=false`는 채점 이전 상태이며, 이제 새 DEV 점수는 열람됐다.
 
-P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-001`의 준비187.90초와 May16-31 temperature4시작 profile(내부4.83초, 최고 RSS0.98GB, 조건부1,501행, `quality_scores_read=false`)을 완료했다. 고정 예산으로 고른 시작 타석은 temperature4/729, blend128/1,338(지원120), DEV128/3,357(지원117)이다(`audit/p8-preparation-profile/queue-state.json`, `EXP-P8-001/stages/profile/result.json`). 당시 정책 실행은0개였고 최종 실행 예산은 별도로 고정했다. 이후 정책 실행을 완료했다(`audit/p8-policy/`, 위 절). 기존 WE/진루 모델의 학습 기간은 2025-04-30까지이며 실제 사용 전 동결 artifact 해시를 재검사했다. 최소30경기·50타석 시작 조건과 rollout 중단의 최악 경우를 반영한 paired CI/검정을 보강했다. IQL/CQL은 사용자의 강화학습 비교 요청과 rollout 비용을 근거로 활성화했다. [오프라인 RL 실행기](../contracts/ML-OFFLINE-RL-RUNNER-v1.md)는 같은 입력의 neural BC·IQL·CQL 각3seed, 공통 수비 WE 보상, TRAIN 비용 profile 및 4개 공동 주 비교를 구현했다. 관련 합성60검사+8subtest를 통과했다. 이 문단 작성 당시 실제 RL 준비/profile/학습은 시작하지 않았고, 현재 RL 준비/profile이 실행 중이다(`audit/rl-prepare-profile/`, 실제 학습 전).
+P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-001`의 준비187.90초와 May16-31 temperature4시작 profile(내부4.83초, 최고 RSS0.98GB, 조건부1,501행, `quality_scores_read=false`)을 완료했다. 고정 예산으로 고른 시작 타석은 temperature4/729, blend128/1,338(지원120), DEV128/3,357(지원117)이다(`audit/p8-preparation-profile/queue-state.json`, `EXP-P8-001/stages/profile/result.json`). 당시 정책 실행은0개였고 최종 실행 예산은 별도로 고정했다. 이후 정책 실행을 완료했다(`audit/p8-policy/`, 위 절). 기존 WE/진루 모델의 학습 기간은 2025-04-30까지이며 실제 사용 전 동결 artifact 해시를 재검사했다. 최소30경기·50타석 시작 조건과 rollout 중단의 최악 경우를 반영한 paired CI/검정을 보강했다. IQL/CQL은 사용자의 강화학습 비교 요청과 rollout 비용을 근거로 활성화했다. [오프라인 RL 실행기](../contracts/ML-OFFLINE-RL-RUNNER-v1.md)는 같은 입력의 neural BC·IQL·CQL 각3seed, 공통 수비 WE 보상, TRAIN 비용 profile 및 4개 공동 주 비교를 구현했다. 관련 합성60검사+8subtest를 통과했다. 이 문단 작성 당시 실제 RL 준비/profile/학습은 시작하지 않았다. 이후 준비·profile·fit·evaluate를 완료했다(`audit/rl-prepare-profile/`, `audit/rl-fit-evaluate/`, 위 절).
 
 ## 전체 60개 행 상태
 
@@ -445,8 +537,8 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-P1 | 필수 | 완료(모델 내부)·`inconclusive` | DEV control117타석/91경기 P1−P0 ΔWE−.002000 [−.005113,+.001105], Holm1.0, screen false; candidate 세계 +.000399 미통과; 관측 OPE·채택 null |
 | MX-P2 | 필수 | 완료(모델 내부)·`inconclusive` | P2−P1 ΔWE−.005315 [−.011462,−.000144], Holm1.0, screen false(P2−P0 −.007314); candidate −.002618 미통과; June RL 비교기 P2 |
 | MX-P3 | 필수 | 완료(모델 내부)·예비 screen 통과/강한 주장 실패(`tail_assumption_dependent`) | June τ=.003 선정; P3−P2 ΔWE+.006980 [+.001754,+.013207], 대체값 Holm.0441, worst-case CI[−.016143,+.004594] 결합 Holm1.0; P3−P0 −.000335로 BC 대비 개선 아님; candidate +.002341 미통과 |
-| MX-P4 | 후속 | 활성화·준비/profile 실행 중 | IQL 실행기·synthetic 감사 완료; 같은 입력 neural BC 추가, TRAIN-only 비용 profile 후 업데이트 수 동결(`audit/rl-prepare-profile/`); 실제 fit 전 |
-| MX-P5 | 후속 | 활성화·준비/profile 실행 중 | CQL 실행기·synthetic 감사 완료; IQL과 같은 관측 타석·구종·보상·공통 평가기(`audit/rl-prepare-profile/`); 실제 fit 전 |
+| MX-P4 | 후속 | 완료(모델 내부, EXP-P8-002)·`inconclusive` | IQL 3seed×20,000 updates; DEV control 117타석/91경기 IQL−P2 ΔWE+.006304 [+.000646,+.012737] 대체값 Holm.0828(예비 screen 미통과), worst-case CI[−.018499,+.002820] 결합 Holm1.0; IQL−NNBC +.001221 [−.000952,+.003646] Holm1.0; `rl_gain_over_both_controls=false`; candidate 세계 미통과; 관측 OPE·채택 null |
+| MX-P5 | 후속 | 완료(모델 내부, EXP-P8-002)·`inconclusive` | CQL 3seed×20,000 updates; CQL−P2 ΔWE+.006041 [+.000957,+.011460] 대체값 Holm.0596(예비 screen 미통과), worst-case CI[−.018164,+.001723] 결합 Holm1.0; CQL−NNBC +.000958 [−.004724,+.006247] Holm1.0; `rl_gain_over_both_controls=false`; Q 진단 범위 밖 231~371개/배치(클리핑 없음); candidate 절단2.137%; 관측 OPE·채택 null |
 | MX-P6 | 자료 필요 | 외부 자료 필요 | 실제 검토된 목표 위치 라벨 필요 |
 | MX-P7 | 후속 | 검토 완료·미활성화 | 명시된 타자 행동·정보·payoff 가정 없음; 고정 반응 결과를 균형 해법이라 하지 않음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-P8 | 후속 | 검토 완료·보류(EXP-P8-001·P4/P5 대기) | 계획/RL의 candidate-world·common-control-world 결과 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
