@@ -123,3 +123,11 @@ masked의 June seed/앙상블 혼합을 같은 `summarize_cell`로 적합한다.
 ## 범위 밖
 
 MLB 전체(`mlb_dev`) 예측, 추가 5seed 확인, F4 전이, 정책 가치·직접 목표 위치 주장.
+
+## 총괄 결정(2026-09-27, 실행 전)
+
+- full arm 재구성 검증의 June 64행 replay 허용오차 1e-6은 T3 stress 규약의 동등성 기준과 같으므로 유지한다. 정확한 비트 일치는 요구하지 않는다.
+- `prepare`의 시간 상한은 규약에 없으므로 중단 시 member 상한 7,200초로 보수 계상한다.
+- fit+predict 합산 7,200초 제한은 predict 상한을 `7,200 − 기록된 fit 초`로 강제하는 현재 구현을 따른다.
+- `volume_zero`는 이 panel에서 구조적 결측(D61)이므로 R은 `passed`가 아닌 `unconfirmed(structural)`까지만 나온다.
+- 실패한 fit은 부분 산출물을 보존하고 같은 ID에서 재시도하지 않는다. 필요하면 새 attempt ID를 등록한다(EXP-P2-001-v2 선례).
