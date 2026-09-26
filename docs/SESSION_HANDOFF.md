@@ -1,5 +1,7 @@
 # A~D 작업 인수인계
 
+**실행 진척 — 2026-09-26, D59:** T2(`EXP-P7-001`)의 준비와 투수/타자 profile을 마쳤고 투수 축 G0-global fallback3seed fit+predict를 완료했다(fit85.56~95.03초, 최고 RSS12.03GB, 실패0). 타자 축 fit3개·G3-cluster/G2-feature predict6개는 2026-09-26 23:48 KST부터 단일 큐로 실행 중이다(`audit/t2-batter/`). T2 scorer는 미실행이고 새 DEV 점수는 열람하지 않았다. P8(`EXP-P8-001`)은 준비와 May4시작 profile까지 완료했고 정책 실행은0개다. F4 v3의3profile은 개별7,200초 안이지만9member 외삽62,787.8초가28,800초 예산을 넘어 fullfit을 보류했다. 점수 해석은 없다. [진행 보고서](reports/ML-matrix-execution-2026-09-24.md)를 우선한다.
+
 **실행 진척 — 2026-09-24, D58:** 필수 I1 자료량×구조 비교를 완료했다. 상호작용+.002753,95%CI[+.000363,+.005053],p=.02260,3/3양수이나 실용문턱.003미달로 미확정이다. G5는 군집 이득 미확인으로 현재 미활성화다. F4의3arm 실제 MPS 수치 검증을 통과해 반복 long encoding 재사용과 warm 비용 profile 개정을 독립 검토 후 채택했다. 원본 실패/검증 산출물을 보존하며 `configs/EXP-P4-002-v3.yaml`의 새 준비/3profile/실제prior비용+9member 예산 통과 전 fullfit은 금지한다. D2는 준비/profile·비용 gate를 통과해3seed 실제학습 중이다. [진행 보고서](reports/ML-matrix-execution-2026-09-24.md)를 우선한다.
 
 **실행 진척 — 2026-09-24, D57:** 선수 공유 G의51fit/15예측을 완료했다. Cpanel328경기·12,334구에서 G0 전체공유 NLL1.483479이며 개인/군집특성/군집전문가/고정부분공유의 N/G 개선 통과는0개다. G1/G4는 악화, G2/G3는 우열 미확정이다. 사전 규칙에 따른 **진단용G3−G2**를 T2/T3/T4(`EXP-P7-001/002/003`)와 구종 정책 준비(`EXP-P8-001`)에 고정했다. 승격은 아니다. F4v2는 키 보존과3개 profile까지 완료했으나 초기 비용 외삽이2시간/member상한을 넘어 fullfit전이다. 동일weights MPS 최적화 검증과 더 큰 TRAIN-only 비용 측정을 등록·검토하며 필수 I1실제학습을 진행한다. C1/C2최종 경로는 F4 등 남은 결과 뒤 정한다. [진행 보고서](reports/ML-matrix-execution-2026-09-24.md)가 현재 상태의 기준이다.

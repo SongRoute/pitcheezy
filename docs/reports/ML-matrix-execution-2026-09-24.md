@@ -146,9 +146,13 @@ F4 첫 준비는 약4.8초에 중단됐다. 한 타석에 두 타자 ID가 있�
 
 독립 검토17개/통합13개 합성 검사를 통과한 [비용 측정 개정](../contracts/ML-LONG-RESOURCE-PROFILE-v2.md)을 채택하고 [fresh attempt3](../../configs/EXP-P4-002-v3.yaml)에 등록했다. TRAIN8192구 warmup을 버리고 새 모델의65,536구×4epoch를 측정하며, 전체30epoch·member별 초기화와2회 로드·전체 보정/추론을 보수적으로 외삽한다. 모든3profile, 개별7,200초 및 기존 실패·준비·검증을 포함한9member 전체28,800초 예산을 다시 통과해야 fullfit을 시작한다. 모델·전체 학습량·seed·400draw를 줄이지 않는다.
 
+v3 준비(6.06초)와3개 warm profile(50.63/51.22/52.55초)을 완료했다. member별 보수적 외삽(로드2회·fit30epoch·temperature·blend/DEV 추론)은 H0/H32/H128 각각6,858.1/6,934.2/7,137.0초로 개별7,200초 안이며 최고 RSS는6.79/6.76/6.80GB였다. 그러나 이 값을3seed로 합한9member 외삽만**62,787.8초**로28,800초 전체 예산을 넘는다(기존 실패·준비·검증 비용 미포함). 따라서 fullfit은0개로 **보류**한다. 모델·자료·seed·400draw를 줄여 예산에 맞추지 않는다. 근거는 `EXP-P4-002-v3/profiles/{F4-H0,F4-32,F4-128}/profile.json`의 `projection.load_fit_temperature_prediction_seconds`와 `audit/f4-v3-profiles/queue-state.json`이다.
+
 D2는 신규3fit/보존6fit 검증과 두 주 비교를 완료했고 위에 결과를 기록했다. T2는 정제된 TRAIN 이력의 실제 선수 표본 수와 자연 발생 새 대진 metadata까지 고정하는 [6개 주 비교 규약](../contracts/ML-T2-SCORING-v1.md)을 추가했다.
 
-P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-001`에 준비/May 비용 profile을 등록했다. 실제 profile 뒤 별도 실행 예산을 고정한다. 기존 WE/진루 모델의 학습 기간은 2025-04-30까지이며 실제 사용 전 동결 artifact 해시를 재검사한다. 정책 모델 내부 결과도 아직 없다. 최소30경기·50타석 시작 조건과 rollout 중단의 최악 경우를 반영한 paired CI/검정을 보강했다. IQL/CQL은 사용자의 강화학습 비교 요청과 rollout 비용을 근거로 활성화했다. [오프라인 RL 실행기](../contracts/ML-OFFLINE-RL-RUNNER-v1.md)는 같은 입력의 neural BC·IQL·CQL 각3seed, 공통 수비 WE 보상, TRAIN 비용 profile 및 4개 공동 주 비교를 구현했다. 관련 합성60검사+8subtest를 통과했으며 실제 RL 준비/profile/학습은 시작하지 않았다.
+T2 `EXP-P7-001`은 준비17.31초와 투수/타자 TRAIN-only profile7.67/8.75초를 마쳤다(`audit/t2-profiles/queue-state.json`). profile의 seed당 fit 외삽은 투수1,213.8초, 타자2,763.4초였다. **투수 축** G0-global fallback3seed의 fit+predict를 완료했다. seed0/1/2의 fit 내부 시간은89.22/95.03/85.56초, 최고 RSS11.07/11.87/11.76GB, predict는24.85/24.68/24.69초와11.95/12.03/11.97GB였다. 큐 누적406.52초, 실패0이다(`audit/t2-full/queue-state.json`, `EXP-P7-001/pitcher/fits/seed{S}/global/fit.json`, `members/G0-global/seed{S}/runtime.json`). **타자 축**은2026-09-26 23:48 KST에 단일 큐로 fit seed0부터 시작했다. fit3개 뒤 G3-cluster/G2-feature predict 각3개이며 step7,200초/전체28,800초 상한이다(`audit/t2-batter/`). 2026-09-24 `audit/t2-full/fit-batter-0.log`는 빈 파일이고 queue-state 기록이 없어 완료로 세지 않는다. T2 scorer는 미실행이며 저장된 predict runtime은 모두 `new_DEV_scores_read=false`다. 점수가 없으므로 해석하지 않는다.
+
+P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-001`의 준비187.90초와 May16-31 temperature4시작 profile(내부4.83초, 최고 RSS0.98GB, 조건부1,501행, `quality_scores_read=false`)을 완료했다. 고정 예산으로 고른 시작 타석은 temperature4/729, blend128/1,338(지원120), DEV128/3,357(지원117)이다(`audit/p8-preparation-profile/queue-state.json`, `EXP-P8-001/stages/profile/result.json`). 정책 실행은0개이며 최종 실행 예산은 별도로 고정한다. 기존 WE/진루 모델의 학습 기간은 2025-04-30까지이며 실제 사용 전 동결 artifact 해시를 재검사한다. 정책 모델 내부 결과도 아직 없다. 최소30경기·50타석 시작 조건과 rollout 중단의 최악 경우를 반영한 paired CI/검정을 보강했다. IQL/CQL은 사용자의 강화학습 비교 요청과 rollout 비용을 근거로 활성화했다. [오프라인 RL 실행기](../contracts/ML-OFFLINE-RL-RUNNER-v1.md)는 같은 입력의 neural BC·IQL·CQL 각3seed, 공통 수비 WE 보상, TRAIN 비용 profile 및 4개 공동 주 비교를 구현했다. 관련 합성60검사+8subtest를 통과했으며 실제 RL 준비/profile/학습은 시작하지 않았다.
 
 ## 전체 60개 행 상태
 
@@ -179,7 +183,7 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-F1 | 근거 재사용 | 현재 모집단 bridge 활성화·명세 고정 | 타자 성향6/신뢰도6/soft membership5를 함께 마스킹한 신규3fit vs기존G0;투수표현/H5고정,N1/R24 |
 | MX-F2 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-F3 | 근거 재사용 | 과거 H0/H5 근거 감사 완료 | 과거 MLP 12비교의 보정CI 모두0포함; 등가성 증명 아님. 새 enrichedH5/backbone과 동일 비교라고 하지 않음 |
-| MX-F4 | 우선 | MPS 수치 검사 통과·fresh v3 비용 측정 등록 | 초기 cold외삽 gate실패/fullfit0보존; 세arm출력허용치통과, warm profile/전체비용 gate 재측정 |
+| MX-F4 | 우선 | v3 3profile 완료·전체 예산 초과로 fullfit 보류 | member외삽6,858.1/6,934.2/7,137.0초로 개별7200초 안;9member합62,787.8초>28,800초, fullfit0 |
 | MX-F5 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-F6 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
 | MX-F7 | 후속 | 계획·선행 단계 대기 | 조건부 행: 앞 단계 결과와 구체적 가설을 검토한 뒤 활성화 여부·근거 기록; 아직 생략 판정 아님 |
@@ -196,14 +200,14 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-C1 | 필수 | G 계열 5-seed 확장 코드 준비·후보 검토 대기 | 동일0~2재사용/3~4추가,4개N/G자리·R48; 구체 후보/예산은 상위결과 후 등록 |
 | MX-C2 | 필수 | 계획·선행 단계 대기 | 후보 결과 전에 세부 사양·비교 family를 등록하고 실행 |
 | MX-T1 | 필수 | Cpanel 완료·전체 MLB 대기 | G 월별 NLL/Brier/보정/짝지은 차이; 추가 성공 선정에 사용 안 함 |
-| MX-T2 | 필수 | 진단용G3−G2 등록·준비/profile 대기 | EXP-P7-001;실제 제외fold의6개 고정 주 비교 |
+| MX-T2 | 필수 | 준비/profile 완료·투수 축 완료·타자 축 실행 중 | EXP-P7-001;투수G0-global 3seed fit+predict, fit85.56~95.03초/RSS최대12.03GB; 타자 큐 9/26 시작, scorer 미실행 |
 | MX-T3 | 필수 | 진단용G3−G2 등록·비용 gate 대기 | EXP-P7-002;2모형×3seed×10시나리오,270상한family |
 | MX-T4 | 필수 | 진단용G3−G2 등록·비용 gate 대기 | EXP-P7-003;동결2모형×3seed,전체적격311721구,보정불변 |
 | MX-T5 | 필수·자료 확인 | 외부 자료 필요 | 선정에 노출되지 않은 허용된 비2026 확인셋 미확보 |
-| MX-P0 | 필수 | EXP-P8-001 준비/profile 등록 | TRAIN-only BC; 실제 적합/평가 대기 |
-| MX-P1 | 필수 | 구종 rollout 준비/profile 등록 | 첫 행동 Q^BC 최댓값 후 BC 진행;G3계획/G2공통평가 |
-| MX-P2 | 필수 | 구종 rollout 준비/profile 등록 | 매 공 Q^BC 재계획하는 근사,정확한 전 타석 최적해 아님 |
-| MX-P3 | 필수 | 구종 rollout 준비/profile 등록 | 매 공 BC-KL 혼합;실제May비용 뒤 J/rollouts/caps 고정,이후6월τ선정 |
+| MX-P0 | 필수 | EXP-P8-001 준비/profile 완료 | TRAIN-only BC; May4시작 profile4.83초/RSS0.98GB, 실제 적합/평가 대기 |
+| MX-P1 | 필수 | 구종 rollout 준비/profile 완료 | 첫 행동 Q^BC 최댓값 후 BC 진행;G3계획/G2공통평가 |
+| MX-P2 | 필수 | 구종 rollout 준비/profile 완료 | 매 공 Q^BC 재계획하는 근사,정확한 전 타석 최적해 아님 |
+| MX-P3 | 필수 | 구종 rollout 준비/profile 완료 | 매 공 BC-KL 혼합;실제May비용 뒤 J/rollouts/caps 고정,이후6월τ선정 |
 | MX-P4 | 후속 | 활성화·IQL 실행기·synthetic 감사 완료 | 같은 입력 neural BC 추가, TRAIN-only 비용 profile 후 업데이트 수 동결; 실제 fit 전 |
 | MX-P5 | 후속 | 활성화·CQL 실행기·synthetic 감사 완료 | IQL과 같은 관측 타석·구종·보상·공통 평가기; 실제 fit 전 |
 | MX-P6 | 자료 필요 | 외부 자료 필요 | 실제 검토된 목표 위치 라벨 필요 |
