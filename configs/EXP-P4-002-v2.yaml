@@ -1,0 +1,75 @@
+{
+  "protocol": "ml_long_history_v1",
+  "experiment_id": "EXP-P4-002",
+  "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+  "parent_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "width": 128,
+  "budget": {
+    "epochs": 30,
+    "patience": 5,
+    "batch_size": 256,
+    "learning_rate": 0.0005
+  },
+  "draws": 400,
+  "device": "auto",
+  "registration": {
+    "contract": "docs/contracts/ML-LONG-HISTORY-EXECUTION-v1.md",
+    "matrix_rows": [
+      "MX-F4",
+      "MX-L5"
+    ],
+    "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-002-v2",
+    "control": "F4-H0",
+    "primary_candidates": [
+      "F4-32",
+      "F4-128"
+    ],
+    "features": "Common enriched within-PA H5, batter/game context and TRAIN continuous pitcher profile/count; second stream from previous completed batter PAs, lengths0/32/128, identical max128 network capacity. No cluster flags or experts.",
+    "history_scope": "Same-game prior completed PAs and strictly prior dates; current PA and other same-day games excluded; prior-date doubleheaders game-key ordered; legally earlier DEV observations allowed. Long-stream source excludes entire multi-batter-identity PAs, and ambiguous queries fail including H0; no supported_pa/outcome-based history filter.",
+    "hypothesis": "Additional observed batter history improves conditional pre-pitch outcome distributions relative to the same dual-stream architecture with second stream masked.",
+    "calibration": "May16-31 Cpanel temperature; three-seed calibrated probability mean then June frequency blend; per-seed own June blend for direction.",
+    "multiplicity": "Four one-sided NLL tests: two overall and two low-TRAIN-pitcher-volume, Holm.05, missing slots retained. Low pitcher volume is not rare-batter generalization.",
+    "N": {
+      "delta_nll_max": -0.003,
+      "nll_ci95_upper_max": 0,
+      "brier_ci95_upper_max": 0.001,
+      "required_negative_seeds": 2
+    },
+    "G": "Low-TRAIN-pitcher N plus overall NLL/Brier CI95 upper<=.001",
+    "R": {
+      "groups": 12,
+      "comparisons": 2,
+      "metrics": 2,
+      "bonferroni_family_size": 48,
+      "family_alpha": 0.05,
+      "nll_margin": 0.01,
+      "brier_margin": 0.002,
+      "minimum_games": 30,
+      "minimum_pitches": 500,
+      "bootstrap_draws": 100000
+    },
+    "bootstrap": {
+      "draws": 10000,
+      "seed": 20260924,
+      "unit": "whole game",
+      "estimand": "pitch-weighted paired mean loss"
+    },
+    "rare_class_minimum_events": 30,
+    "max_full_fits": 9,
+    "hpo_trials": 0,
+    "max_heavy_jobs": 1,
+    "profile_wall_limit_seconds": 600,
+    "single_member_wall_limit_seconds": 7200,
+    "batch_wall_budget_seconds": 28800,
+    "resource_gate": "All three small TRAIN/early/temp profiles before any full fit; no DEV features or quality scores in profiling. Evaluate per-member7200 and family28800 before authorizing full fits.",
+    "scope": "Cpanel exposed DEV prediction only; capacity-matched MLP adaptation, not faithful paper replication. No comparison of G0-vsF4H0 as history effect, no policy or wholeMLB/zero-shot/final confirmation claim.",
+    "attempt": 2,
+    "previous_attempt": "EXP-P4-002",
+    "amendment": "Before any F4 profile/fit/quality result: identity-only exclusion of completed multi-batter PAs from second history stream, preserving all base/H5/query rows and frozen preprocessing. Source audit47PAs/248rows; zero common queried rows affected. Failed attempt preserved; no change to model/draws/seeds/splits."
+  }
+}

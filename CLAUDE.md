@@ -1,24 +1,24 @@
 # Pitcheezy — CLAUDE.md
 
 ## 프로젝트
-MLB Statcast 투구 추천 모델. 개인 개발 (Song).
-목표: 기존 연구 모델(SmartPitch, Takamido & Nakamoto)을 같은 데이터·같은 저울(2026 OPE) 위에서 재구현하고, 우리 모델이 그보다 나은지 보인다.
-4자 책임 분해는 Phase 2 후순위. 레포가 유일한 출처 (노션은 아카이브).
+MLB Statcast 기반 야구팬 관전 서비스. 서비스·추천·사건 분석은 Song, CV 의도 모듈은 별도 팀원 담당(D46·D49).
+목표: 기존 연구 모델을 공정하게 재구현하고 예측 성능과 추천 정책 성능을 분리 검증한다. 현재 우선순위(D52)는 ML 예측 개선 → 지원 투수 확대·재검증 → CV/의도 → 팬 이해/UI·UX → 실경기 운영이다. 다음 실행은 docs/handoffs/ML-experiments-next-session.md를 따른다.
+사건 기여도는 필수 기능(D43). 투구 전에는 구종·목표 위치를 우선 표시하고 후보별 수치·이유 표시는 후순위(D49). 레포가 유일한 출처 (노션은 아카이브).
 
 ## 먼저 읽을 것
 - docs/roadmap.md — 최종 목표와 단계(D43). 목표·순서의 출처
 - docs/design.md — 확정 설계. 바꾸려면 docs/decisions.md에 한 줄 추가한 뒤 수정
 - docs/interface-spec.md — 텐서·Q·RE24 스키마. src/pitcheezy/interfaces/가 코드로 강제
 - docs/baselines.md — 비교 대상 논문. 확인된 것과 미확인인 것을 구분
-- docs/plan.md — 앵커와 이번 주 할 일
+- docs/plan.md — 병렬 업무·선행조건·합류 기준(D49), 일정 대신 의존성 관리(D44)
 
 ## 절대 규칙
 - IMPORTANT: 2026 시즌 데이터는 학습·튜닝·모델 선택에 쓰지 않는다. OPE 전용
 - IMPORTANT: 숫자를 추정하거나 지어내지 않는다. 없으면 "미측정"
 - 실험은 configs/ 파일로만. 파라미터 하드코딩 금지
-- 채택 판단은 e2e OPE로만. NLL·ECE는 스크리닝용
+- 서비스 추천 정책 채택은 e2e 정책 평가로 판단한다. D52의 예측 모델 연구 후보는 NLL·Brier·보정 등으로 선정할 수 있으며 정책 우위와 구분한다. 이번 ML 개발에서 2026은 추가 열람하지 않는다
 - 시드·데이터 버전·커밋 없는 결과는 결과가 아님
-- 비교는 재구현으로만. 논문이 보고한 숫자를 우리 표에 옮기지 않는다
+- 공통 성능 비교는 재구현으로 한다. 논문 보고값은 출처를 붙인 참고 표로만 기록하고 우리 재실행 점수와 구분한다
 
 ## 환경 (D10)
 - 맥미니(M4, 24GB, 상시 가동)가 주 실행기. 테스트도 실험도 여기서: `pytest tests -q`
@@ -38,6 +38,7 @@ MLB Statcast 투구 추천 모델. 개인 개발 (Song).
 3. interfaces/ 스키마 변경 = 계약 테스트 같이 변경 + docs/interface-spec.md 변경 이력 한 줄 + docs/decisions.md 한 줄
 
 ## 실험
+- 작은 실제 데이터에서 실행·학습·평가 경로를 검증한 뒤 선수·기간·상황을 단계적으로 확장한다(D50). 초기 실행 성공과 최종 정책 성능 통과를 구분하고, 분할·확장 규칙은 결과 열람 전에 고정한다. docs/plan.md 참고.
 - ID `EXP-P{phase}-{seq}`. 한 ID = 베이스라인 대비 변경 하나
 - configs/{ID}.yaml → runs/{ID}/{seed}/ → results/{ID}.json (커밋) → docs/experiments.md 한 행
 - 시드: 탐색 {0,1,2} / 채택 {0..4}. 시드마다 체크포인트

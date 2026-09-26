@@ -1,0 +1,52 @@
+{
+  "protocol": "ml_offline_rl_execution_v1",
+  "preparation_sha256": "a524974ea9ef86d86c76fa850e63ff669a3074e916c5d76cece2088d4772988a",
+  "profile_result_sha256": "d386f841b45d12fce0a38db4d98c1f26c434af9ad28d557b63d3338fb70b8fba",
+  "updates": 20000,
+  "member_seconds": 3600,
+  "family_seconds": 10800,
+  "registration": {
+    "status": "draft_not_executed",
+    "experiment_id": "EXP-P8-002",
+    "preparation_config": "configs/EXP-P8-002.yaml",
+    "contracts": ["docs/contracts/ML-OFFLINE-RL-FEASIBILITY-v1.md", "docs/contracts/ML-OFFLINE-RL-RUNNER-v1.md"],
+    "cost_gate": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/audit/rl-prepare-profile/cost-gate.json",
+    "updates_basis": "TRAIN-only 256-update profiles (seed 0): max conservative x2 per-fit projection at 20000 updates 862.9 s (IQL) <= 3600 s member cap; x2 nine-fit projection 4925.0 s <= 10800 s family cap. Ceiling 20000 used. Resource-only; no quality metric read.",
+    "fixed_training": {"batch_size": 1024, "learning_rate": 0.0003, "gradient_clip": 10.0, "hpo": false, "dev_early_stopping": false, "checkpoint_selection": "final registered update only", "sampler": "uniform over retained transitions, numpy default_rng(seed)"},
+    "members": {"methods": ["NNBC", "IQL", "CQL"], "seeds": [0, 1, 2], "order": "sequential under exclusive heavy lock", "retry": "none"},
+    "parent": {
+      "policy_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P8-001",
+      "policy_preparation_sha256": "7f911ad639eccaac3bc703b9f4f4682e501bfe2f43eadec27487e6c6567f10eb",
+      "policy_execution_config_sha256": "3ddedac1e9ec726a846774f5c23fd82624be3a8210e31a0959819a2cc446ed75",
+      "policy_execution_canonical_sha256": "7f8fe129fdcb9d95013e999088c06cb96ab49aab58aabcf4580957004ec2c48c",
+      "tuning_results_sha256": "83e6e85ebede54e840b25d5f89e007ba1ec888ffce8ac8a948f63974811a1167",
+      "tuning_freeze_sha256": "fb0b8b222f401e385cae152be1c0371f0784a18e616dbfd423f7f1bd7ae7fece",
+      "dev_control_results_sha256": "6e80349a79288268213843327fdb0ab79d6f4bc8eaf2e3e7268c440d5cfaa9a9",
+      "dev_candidate_results_sha256": "12b6cdf823cc39a36819ae746bf6837bf48c462e9d2ac2f0c9db921fe4663248",
+      "selected_tau": 0.003,
+      "rl_comparator": "P2",
+      "evaluation_rollouts": 4,
+      "evaluation_cap": 8,
+      "evaluation_seed": 1701,
+      "evaluation_row_budget_per_world": 460000,
+      "evaluation_seconds_budget_per_world": 1500
+    },
+    "stage_order": ["fit NNBC/IQL/CQL x seeds 0,1,2", "evaluate --world control", "evaluate --world candidate"],
+    "external_wall_limits_seconds": {"fit_member": 7200, "fit_family": 28800, "evaluate_world": 1800},
+    "code_enforced_cooperative_limits_seconds": {"fit_member": 3600, "fit_family": 10800},
+    "primary_family": "DEV control world joint four: IQL/planner(P2), CQL/planner(P2), IQL/NNBC, CQL/NNBC",
+    "decision_rule": {
+      "holm_alpha": 0.05,
+      "p_value": "max(imputed one-sided p, worst-case one-sided p); Holm across the four",
+      "preliminary_screen": "mean imputed dWE >= 0.0001 per PA, paired whole-game bootstrap CI lower > 0",
+      "strong_model_internal": "additionally worst-case truncation mean lower bound > 0 and worst-case game-bootstrap CI lower > 0",
+      "broad_rl_gain": "a method must pass both its planner and matched-NNBC comparisons",
+      "inference_minimum": "30 games and 50 supported PA starts, else descriptive only",
+      "bootstrap_draws": 10000,
+      "bootstrap_seed": 20260924,
+      "seed_aggregation": "equal-probability ensemble of three seed policies (CQL: mixture of seed-greedy one-hot); individual seeds descriptive"
+    },
+    "candidate_world": "sensitivity only; not a second success family",
+    "claims": {"observational_ope": null, "causal_effect": null, "policy_adoption": null}
+  }
+}

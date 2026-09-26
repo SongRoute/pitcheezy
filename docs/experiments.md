@@ -1,5 +1,33 @@
 # 실험 로그
 
+**새 ML 연구 계획(D52·D53, 2026-09-24):** [전체 설계](ML_EXPERIMENT_DESIGN.md)와 [실험 매트릭스](ML_EXPERIMENT_MATRIX.md)를 따른다. 설계 당시에는 전 행 미실행이었다. 현재 새 실행 상태는 아래 공통10-class 표와 실행 보고서를 우선하며 과거 결과와 구분한다. 새 공통 10-class 예측 실험은 NLL/Brier 등으로 완료·선정하고 정책 평가는 별도다. 실행 시 같은 ID 규칙으로 등록하되 지표/기간/가치 단위가 다른 새 결과는 별도 표에 기록한다. 2026·최종셋 개발 금지를 유지한다.
+
+## 새 공통 10-class 예측 연구 실행
+
+상세·60개 행 상태·실패·비용·그림은 [2026-09-24 실행 보고서](reports/ML-matrix-execution-2026-09-24.md)를 따른다. 아래 결과는 이미 노출된 **2025 C6 또는 Cpanel DEV**이며 각 행의 모집단을 따른다. 서비스 수비 WE/OPE 효과는 미측정이다.
+
+| 실행 ID·셀 | 비교 | seed | NLL / ΔNLL 95% CI | 판정·근거 |
+|---|---|---|---|---|
+| EXP-P2-001 / R2 | 빈도·기존 MLP·Transformer 재학습 | 원래42~46 | 혼합 NLL 1.491226 / 1.490642; per-seed 재현 차이 최대1.24e-8 | 재현 통과. attempt1 float32 적분 실패 보존, float64 attempt2 10개 완료 |
+| EXP-P2-001 / D1-50 vs D1-25 | 결과 모델 학습량25%→50% | 0,1,2 | 1.490928 vs1.492067; Δ−.001139 [−.002611,+.000383] | N 미확정; Holm p=.06679 |
+| EXP-P2-001 / D1-100 vs D1-25 | 결과 모델 학습량25%→100% | 0,1,2 | 1.488885 vs1.492067; Δ−.003182 [−.005346,−.001011] | **C6 예측 N 통과**; Holm p=.00420, Brier 통과,3/3seed개선. MLB 전체/정책 우위 아님 |
+| EXP-P3-001 | 동일 enrichedH5/D100의7구조 | 0,1,2 | MLP1.487329; Melville Δ+.000507 [−.001677,+.002668], LightGBM Δ+.002711 [−.000033,+.005528] | 21개 완료. N 통과0; Melville/LightGBM 미확정, 나머지4후보 악화 또는 보호 기준 실패. MLP 유지 |
+| EXP-P4-001 | 전체·개인·군집·부분 공유, TRAIN 선정Cpanel | 0,1,2 | G0 1.483479; G1/G2/G3/G4 등록대조 대비 Δ+.010458/+.000327/−.000079/+.005685 | 51fit/15예측 완료, N/G 통과0. G1/G4 악화, G2/G3 미확정; G3−G2 진단후속 고정 |
+| EXP-P4-002 | 동일 dual-stream H5에 이전 타석32/128구 추가 | 0,1,2 | 미측정 | 첫 실패/coldprofile gate실패 보존;3arm MPS수치검사 통과·v3 warm3profile 완료, 9member외삽62,787.8초>28,800초로 fullfit0 보류. cache 감사 부분(D67): 실제 감사 명령 부재로 1~3단계 미실행(synthetic34만), 채택/폐기 사용자 결정 대기 |
+| EXP-P5-001 | MLP/Transformer×D25/D100 상호작용 | 0,1,2 | I+.002753 [+.000363,+.005053], p.02260 | 신규6fit+보존6fit 완료.3/3양수지만 실용문턱.003미달로 미확정; 이번 설정의 MLP 자료 증가 이득이 더 큼 |
+| EXP-P6-001 | 결과 모형과 auxiliary의 TRAIN 자료량 | 0,1,2 | D2-25 NLL1.499665; D1-100/D1-25 대비Δ−.010781/−.007598 | 신규3fit/보존6fit 완료. 두 비교N통과,각Holm.000200/3seed개선; 공동auxiliary 효과 |
+| EXP-P7-001 | 새 선수(투수/타자 제외 fold) | 0,1,2 | 자연 새 대진 G3−G2 Δ+.000384 [−.001737,+.002546]; 제외 타자 Z/W/O G3−G2 Δ−.004418/−.004361/−.003743; 제외 투수 W−Z/O−Z Δ−.017682/−.017681 | **완료.** 자연 새 대진 미확정(Holm p.6386); 타자 Z/W/O **예측 N 통과**(Holm .0060/.0294/.0358,3/3seed); 투수 W/O 이력 적응 개선(구조 개선 아님). R 96슬롯 통과77/Brier 실패11/volume_zero 결측8. 진단용 쌍 승격 없음·노출 DEV 후속, 정책 효과 없음. [결과](reports/ML-matrix-execution-2026-09-24.md#t2-새-선수-일반화-완료) |
+| EXP-P7-002 | 입력 stress(Cpanel,10시나리오×2모델) | 0,1,2 | clean G3/G2 1.483727/1.483806; 9시나리오 G3−G2 전체 ΔNLL −.000043~−.001574 | **완료.** 60회 재추론(새 fit0). 270상한 통과228/실패24(상대5·안정성19)/미측정18(volume_zero 구조적 결측,D61). relative_R **failed**: 9시나리오 전체 통과·상대 NLL 상한 모두 통과이나 two_strikes ΔBrier 상한5개(.002006~.002971) 실패. 안정성 G3/G2 **failed**(통과 G3 H2·sensor01·sensor03, G2 sensor01·sensor03). 진단용 쌍 승격 없음·독립 확인 아님·정책 효과 없음. [결과](reports/ML-matrix-execution-2026-09-24.md#t3-입력-stress-완료) |
+| EXP-P7-003 | 전체MLB 이전(동결 G3−G2, 적격311,721구/1,161경기) | 0,1,2 | G3/G2/빈도 1.491304/1.490568/1.504081; N Δ+.000736 [+.000493,+.000978]; G 저표본 Δ+.001686 [+.000517,+.002872] | **완료.** 6회 추론(새 fit0, 보정 재적합 없음). N `worse_or_guardrail_failure`(Holm1.0,3/3seed 악화), G `inconclusive`(전체 비열등 true), R24 **passed**(12그룹 측정, TRAIN0 28,746구 ΔNLL−.000454). 새 선수 쪽 개선 방향은 기술 관찰뿐. 진단용 쌍 승격 없음·독립 확인 아님·정책 효과 없음. [결과](reports/ML-matrix-execution-2026-09-24.md#t4-전체-mlb-이전-평가-완료) |
+| EXP-P8-001 | 행동 모방/한 번 선택/매 공 재계획/KL 정책(G3 계획/G2 공통평가) | 0,1,2 outcome ensemble; planning701/eval1701 | P0 DEV BC/빈도 조건부 NLL 1.370029/1.441127; DEV control 평균 WE P0/P1/P2/P3 .465391/.463391/.458077/.465056; P3−P2 ΔWE+.006980 [+.001754,+.013207] | **완료(모델 내부).** 실행 config `3ddedac1…`, 4 stage exit0, 큐293.31초. June τ=.003·RL 비교기 P2. P1−P0/P2−P1 `inconclusive`(Holm1.0); P3−P2 예비 screen 통과(대체값 Holm .0441)·강한 주장 실패(worst-case 결합 Holm1.0, `tail_assumption_dependent`); P3−P0 −.000335로 BC 대비 개선 아님. candidate 세계 3비교 미통과(민감도). 117타석/91경기로 검정력 제한. 관측 OPE·인과·채택 null. [결과](reports/ML-matrix-execution-2026-09-24.md#p0p3-구종-정책-실행-완료모델-내부) |
+| EXP-P8-002 | offline RL: 정보·구조 맞춘 NNBC/IQL/CQL(보존 TRAIN 324,257타석/1,252,341전이, G2 공통평가, 비교기 P2) | 0,1,2 fit; eval1701 | DEV control 평균 WE NNBC/IQL/CQL .463159/.464380/.464117 (P2 .458077, P0 .465391); IQL−P2 ΔWE+.006304 [+.000646,+.012737]; CQL−P2 +.006041 [+.000957,+.011460]; IQL/CQL−NNBC +.001221/+.000958 | **완료(모델 내부).** 20,000 updates(fit 전 커밋 d0aa4f1), fit9·evaluate2 exit0, 큐2,656.8초. joint four 모두 `inconclusive`: RL−P2 대체값 Holm .0828/.0596로 예비 screen 미통과, worst-case 결합 Holm1.0; RL−NNBC CI 0 포함; `rl_gain_over_both_controls=false`. candidate 세계 4비교 미통과(민감도). CQL Q 진단 범위 밖 231~371개/배치. PO·UN 관측0, 종결 unknown 4,034타석 제외, 117타석/91경기로 검정력 제한. 관측 OPE·인과·채택 null. [결과](reports/ML-matrix-execution-2026-09-24.md#p4p5-offline-rl-완료모델-내부) |
+| EXP-P9-001 | F1 타자 표현 bridge: 기존 G0 full 3fit 보존 vs [11:28] 마스킹 신규 3fit | 0,1,2 | 미측정 | **실패 attempt(보존).** 2026-09-27 03:18 KST prepare에서 exFAT AppleDouble `._ledger.jsonl` 때문에 빈 폴더 검사 실패(ledger 0.008986초), fit·점수 없음. 재시도·코드 변경 없이 중단, `EXP-P9-001/ledger.jsonl`·`audit/f1-bridge/failure-review.json` 보존. 수정 67077f6 뒤 v2로 fresh attempt |
+| EXP-P9-001-v2 | F1 fresh attempt: 보존 G0-global full 3seed vs context[11:28]=0 masked 신규 3seed(Cpanel 12,334구/328경기) | 0,1,2 | full/masked/빈도 1.483479/1.488985/1.497173; full−masked ΔNLL −.005506 [−.007560,−.003486] | **완료.** prepare·profile·fit3·predict3·score exit0, 신규 ledger 349.0초+score 3.83초. **N 통과(`predictive_improvement`, 3seed bridge screen, 확인 미실행)**: p 9.999e-05, ΔBrier −.001466 [−.002264,−.000683], seed 3/3 음수. R24 통과22/실패0/미측정2 → `unconfirmed(structural: volume_zero)`(D61). 타자 표본 분할은 기술 통계. 기준선 구성 요소 검증이라 C1 새 후보 아님; 5seed 확인 검토 조건 충족·결정 대기. [결과](reports/ML-matrix-execution-2026-09-24.md#f1-타자-표현-bridge-완료) |
+
+## 기존 RE24 연구 기록
+
+아래 표와 판정 규칙은 당시 RE24/OPE 실험의 기록이다. 새 ML 연구에 과거의 ‘2026 OPE 칸이 있어야 완료’ 조건을 요구하지 않는다.
+
 한 실험 = 한 행. 원천 수치는 W&B(`{ID}/s{seed}`)와 `results/{ID}.json`, 여기는 요약과 판정만.
 e2e OPE 칸이 비면 "완료"가 아니다. 숫자는 results/에서 옮겨 적는다. 없으면 "미측정".
 

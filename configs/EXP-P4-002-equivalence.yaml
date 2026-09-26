@@ -1,0 +1,47 @@
+{
+  "protocol": "ml_long_equivalence_v1",
+  "original_f4_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-002-v2",
+  "original_preparation_sha256": "24394218e89ed3bb2d4e0e032ae1061b37f7f79d8466b0ff34a9e55e331d72b5",
+  "original_profile_evidence": {
+    "F4-H0": {
+      "kind": "completed_profile_manifest",
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-002-v2/profiles/F4-H0/manifest.json",
+      "sha256": "488481f3d99b52d4bd40b97a1dde68c7f88dcf5259741a8bfeb565d51307a267"
+    },
+    "F4-32": {
+      "kind": "completed_profile_manifest",
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-002-v2/profiles/F4-32/manifest.json",
+      "sha256": "652bda80971bd75353d05f4c0af25be20c8e6f6dde1b17a086c5b356cb29af49"
+    },
+    "F4-128": {
+      "kind": "completed_profile_manifest",
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-002-v2/profiles/F4-128/manifest.json",
+      "sha256": "123698a0fd0cea57963d5f781cdda0745af2083e004019f7339547a1362e2aa9"
+    }
+  },
+  "device": "mps",
+  "cells": [
+    "F4-H0",
+    "F4-32",
+    "F4-128"
+  ],
+  "tolerances": {
+    "logits": 2e-05,
+    "fixed_probability": 2e-06,
+    "probability_sum": 1e-06,
+    "fitted_temperature": 0.001,
+    "refitted_probability": 2e-05,
+    "objective": 2e-06
+  },
+  "limits": {
+    "train": 8192,
+    "earlystop": 2048,
+    "temperature": 16
+  },
+  "fixed_temperatures": [
+    0.5,
+    1.0,
+    2.5
+  ],
+  "cell_seconds": 1200
+}

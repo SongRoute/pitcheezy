@@ -1,0 +1,86 @@
+{
+  "timestamp_utc": "2026-09-23T21:59:56Z",
+  "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-D-FULL-001/observer.sqlite3",
+  "target": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/observer.sqlite3",
+  "method": "sqlite3.Connection.backup() from source connection with pragma query_only=on",
+  "tables": {
+    "sessions": {
+      "source": {
+        "rows": 22,
+        "sha256": "3ff6e1643a4b8ebd8de0727e0a1996a946975a82cd0c743e3aa82e28fe07116f"
+      },
+      "target": {
+        "rows": 22,
+        "sha256": "3ff6e1643a4b8ebd8de0727e0a1996a946975a82cd0c743e3aa82e28fe07116f"
+      },
+      "equal": true
+    },
+    "recommendations": {
+      "source": {
+        "rows": 56,
+        "sha256": "b83d3908ae4dd023f80f401220a850ba10af0e119dc2f1fd747680c22384c505"
+      },
+      "target": {
+        "rows": 56,
+        "sha256": "b83d3908ae4dd023f80f401220a850ba10af0e119dc2f1fd747680c22384c505"
+      },
+      "equal": true
+    },
+    "jobs": {
+      "source": {
+        "rows": 6,
+        "sha256": "189cd8d839c1f483116857ac472ab1b4ffafbfd3df89b8f1830288014a4c0a28"
+      },
+      "target": {
+        "rows": 6,
+        "sha256": "189cd8d839c1f483116857ac472ab1b4ffafbfd3df89b8f1830288014a4c0a28"
+      },
+      "equal": true
+    },
+    "manual_annotations": {
+      "source": {
+        "rows": 8,
+        "sha256": "93dc1c6b934622887978eac4bed9c855e85b802124d131a6ce21830ca000927f"
+      },
+      "target": {
+        "rows": 8,
+        "sha256": "93dc1c6b934622887978eac4bed9c855e85b802124d131a6ce21830ca000927f"
+      },
+      "equal": true
+    },
+    "recommendation_meta": {
+      "source": {
+        "rows": 56,
+        "sha256": "e5baa29be35625e769944cc5de36ddb51482c6dc1e9c5889a3e33ded3a141e8a"
+      },
+      "target": {
+        "rows": 56,
+        "sha256": "e5baa29be35625e769944cc5de36ddb51482c6dc1e9c5889a3e33ded3a141e8a"
+      },
+      "equal": true
+    },
+    "event_results": {
+      "source": {
+        "rows": 12,
+        "sha256": "d91adbe97a991c2ea844a6bc67670d0452fabb589a7c6e5201d0af262a02444f"
+      },
+      "target": {
+        "rows": 12,
+        "sha256": "d91adbe97a991c2ea844a6bc67670d0452fabb589a7c6e5201d0af262a02444f"
+      },
+      "equal": true
+    },
+    "inning_decisions": {
+      "source": {
+        "rows": 1,
+        "sha256": "51450bc04274bd33934a70a0ff048e22a0a7c824093cf808e8bf79e3bec27327"
+      },
+      "target": {
+        "rows": 1,
+        "sha256": "51450bc04274bd33934a70a0ff048e22a0a7c824093cf808e8bf79e3bec27327"
+      },
+      "equal": true
+    }
+  },
+  "target_integrity": "ok"
+}

@@ -1,0 +1,51 @@
+[
+  {
+    "case": "game",
+    "status": 409,
+    "response": {
+      "detail": "선택한 교체 시점이나 경기 상태가 저장된 기록과 다릅니다."
+    }
+  },
+  {
+    "case": "date",
+    "status": 409,
+    "response": {
+      "detail": "선택한 교체 시점이나 경기 상태가 저장된 기록과 다릅니다."
+    }
+  },
+  {
+    "case": "time",
+    "status": 409,
+    "response": {
+      "detail": "선택한 교체 시점이나 경기 상태가 저장된 기록과 다릅니다."
+    }
+  },
+  {
+    "case": "pitcher",
+    "status": 409,
+    "response": {
+      "detail": "선택한 교체 시점이나 경기 상태가 저장된 기록과 다릅니다."
+    }
+  },
+  {
+    "case": "outs",
+    "status": 409,
+    "response": {
+      "detail": "선택한 교체 시점이나 경기 상태가 저장된 기록과 다릅니다."
+    }
+  },
+  {
+    "case": "phase",
+    "status": 409,
+    "response": {
+      "detail": "선택한 교체 시점이나 경기 상태가 저장된 기록과 다릅니다."
+    }
+  },
+  {
+    "case": "revision",
+    "status": 409,
+    "response": {
+      "detail": "선택한 교체 시점이나 경기 상태가 저장된 기록과 다릅니다."
+    }
+  }
+]

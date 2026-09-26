@@ -1,0 +1,67 @@
+{
+  "base_commit": "122b421",
+  "integration_code_commit": "700d2e7",
+  "tests": {
+    "passed": 178,
+    "seconds": 1.39,
+    "warnings": 2,
+    "log": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-QUALITY-003/pytest-integration.log"
+  },
+  "source_result_hash_checks": {
+    "CHOICE-DIAG-002": true,
+    "CHOICE-CANDIDATES-003": true
+  },
+  "web_source_equal_to_tested_D_commit": "c99e493",
+  "agents": {
+    "limit_including_root": 4,
+    "recursive_delegation": false,
+    "B": "gpt-6-sol/medium",
+    "C": "gpt-6-sol/medium",
+    "D": "gpt-6-sol/medium",
+    "root_exact_model_id": null,
+    "token_usage": null,
+    "cost": null
+  },
+  "excluded": [
+    "CV algorithm implementation",
+    "actual CV quality validation",
+    "2026 data access",
+    "final evaluation use",
+    "raw/frozen/runtime_src overwrite"
+  ],
+  "policy_adopted": false,
+  "artifacts": {
+    "live-preservation.json": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-QUALITY-003/live-after.json",
+      "sha256": "26f2da83ea00cc857f3334b11c370b9549e7e775693d1db9676a6fbdea0a0241"
+    },
+    "frozen-integrity.json": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-QUALITY-003/frozen-integrity.json",
+      "sha256": "98893065648b97d9416784b9134d2432d071fd030e5edb474ba7aed0d7ad0750"
+    },
+    "replay-ops.json": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-QUALITY-003/replay-ops.json",
+      "sha256": "fb286de58488d0361fc65d21463cd22a1859028c71571d7c71dc01dc77fdca0a"
+    },
+    "preview-copy-equality.json": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/preparation-equality.json",
+      "sha256": "833dca5e80fe2187dfb78521d457fc4078554b0103c260774ef0029bfc256047"
+    },
+    "ui-report.json": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/browser/ui-v3-report.json",
+      "sha256": "11bc274666f02b2886fae8a0738af72d4d7e966437fb3af49ce541f2add485d3"
+    },
+    "full-rehearsal-report.json": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/regression/full/full-rehearsal-report.json",
+      "sha256": "34d9637f842ad8857e8690b7abea4a03e7e96fd299d64ab0cb44c0e2eaa01708"
+    },
+    "browse-report.json": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/regression/browse/browse-smoke.json",
+      "sha256": "07281e6c9a1bf67375694246ed0b5481254990590dc3d0a41cbf23b9b0661ea6"
+    },
+    "final-integration-report.json": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/regression/final/final-integration-smoke.json",
+      "sha256": "2850d937687e5b163caba533b69bd503fb8fecf82180831d9dfd00a9a9800d71"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "results_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P2-001-v2/analysis/data/results.json",
+  "results_sha256": "3a99415ddb8e9cc914289768447385fbda81f12d22b015e640070724c8c90e61",
+  "source_sha256": "5df3e3b37aeac9bcce5cdea2121049028cee889e8d7c336a74c5016aac31509f",
+  "matplotlib": "3.11.1",
+  "limits": "Previously exposed C6 DEV prediction; no whole-MLB or causal policy claim. Excludes interpreter startup, preparation, profiles and failed attempt cost."
+}

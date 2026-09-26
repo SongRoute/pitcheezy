@@ -12,6 +12,9 @@ Local browser / FastAPI. Frontend calls relative `/api` paths. All labels Korean
 - `POST /api/sessions/{id}/manual-intent` body `{revision:int,zone_id:str}` -> view. Only complete PA. Annotation concerns selected terminal pitch, not next recommendation.
 - `GET /api/zones`: `{zones:[{id,label,column,row}],coordinate_frame:"catcher_view"}`; ids `low_left,low_middle,low_right,middle_left,middle_middle,middle_right,high_left,high_middle,high_right`. row0=low,row2=high; column0=left in catcher view. Don't mirror by batter hand.
 - `GET /api/runtime`: compact diagnostics for optional details panel (not main product UI).
+- `GET /api/inning-decision-games`: dates and record counts for games with verified stored prechange decisions; empty list when none.
+- `GET /api/inning-decisions?game_id=<positive integer>`: separately stored historical pre-pitching-change decision contexts; no result values in list.
+- `POST /api/inning-decisions/{decision_id}/resolve` body `{revision:1,context}`: returns a conditional inning result only after exact normalized context matching. See `docs/contracts/inning-decision-api-v1.md`.
 
 Errors are JSON `{detail: string}` with 400/404/409/503. Catch and show a retryable error without losing current view. Frontend polls GET session every2s only when analysis.status queued/running. No background auto-advance.
 
@@ -33,6 +36,7 @@ Errors are JSON `{detail: string}` with 400/404/409/503. Catch and show a retrya
   "last_pitch":null,
   "history":[],
   "analysis":null,
+  "event_analysis":null,
   "summary":null,
   "context_notes":["이 투구 전까지 던진 공 54개"],
   "notices":["기록 재생 · 실제 승률 향상이 검증된 추천은 아닙니다."]
@@ -52,6 +56,22 @@ Analysis on PA completion: `{id,status,source,selected_pitch_id,selected_pitch_n
 - narrative: list of Korean grounded sentences.
 
 Summary: `{headline,result_label,pitch_count,selected_pitch_number,notes:[str]}`. Available only after completion. Worker marks no-media jobs unavailable and retains manual annotation separately. Returning manual annotation raises analysis version; original pre-pitch recommendations immutable.
+
+## PA event result (integration v1)
+
+`event_analysis` is null until the selected terminal pitch is revealed. On completion it is a separate persisted `event-analysis-v1` result, independent of the no-media CV `analysis` job. Its `linkage.pitch_id`, recommendation ID and canonical SHA identify the saved recommendation for **that same terminal pitch**. The recommendation is stored before reveal with a UTC creation timestamp. The source contract and numeric definitions are in `docs/contracts/event-analysis-v1.md`.
+
+For actual records with no linked, validated pre-release intent, the result is normally `partial`: the saved pre-pitch baseline and actual post-PA state are valued by the same frozen defensive WE; `values.total_pp` is signed percentage points for the initial defending team. Strategy, execution, outcome residual and shares stay null, with the entire difference in `components.unallocated_residual_pp`. This is a descriptive model comparison, never a player responsibility or causal effect. `unavailable` carries missing compatible values; `failed` carries a calculation error with all numeric fields null. No-media CV status cannot turn a WE event calculation into success or block it.
+
+The `event_results` table keeps immutable `(session_id,pitch_id,revision)` payloads and validates the saved recommendation ID and canonical SHA before insertion. A late/corrected source creates a higher event input revision; the saved pre-pitch recommendation row does not change. New recommendations save the frozen model SHA, adapter identity, value spec and baseline policy ID. An older or mismatched recommendation baseline is never relabeled with the current evaluator: its reference and total are unavailable. Manual zone notes are spatial user annotations and do not become model intent or change the event result. Old sessions that predate recommendation timestamps have `event_analysis:null` because their original storage time cannot be reconstructed. The UI never renders synthetic `development_only` numeric results as actual contributions.
+
+## Separate conditional inning result (handoff v1)
+
+`inning-result-v1` is a standalone C-to-D research payload defined in `docs/contracts/inning-result-v1.md`. It is persisted in a separate immutable decision table and returned by the context-matched decision API; it is not a session View field or a persisted PA event result. It describes the frozen initial defender's final-game win probability after propagating a fixed keep-pitcher scenario to the current half-inning boundary. Its unresolved-mass bounds are probabilities; the UI formats them as percent, never percentage-point contribution or confidence intervals. Actual replacement value stays null.
+
+D consumes validated JSON through `web/src/inningResult.ts`; the examples live in `results/C-D-INNING-001/`. The `inning-decision-v1` API compares the full decision context before returning its `result`. A future card must explicitly select this separate historical decision, rather than pretend that a PA cursor is at the same point. The later first observed pitch is a reference only. Do not attach this payload to a completed PA merely because its pitch ID matches, add it to event components, or replace `event_analysis.replacement` with its keep scenario. The unavailable example is development-only and is not imported through the file-backed registration path. Malformed payloads fail validation instead of displaying 0%.
+
+The `/inning-decisions` page now provides the independent selector and conditional inning card. The home header links to it. Registered-game discovery is separate from the PA catalog. Selecting a decision reveals its prechange scoreboard; clicking `이닝 전망 보기` resolves the exact selected context. The client checks returned ID/revision/context against that selection and checks result linkage again before rendering. Selection changes and retries clear the prior result and cancel stale requests. Errors and empty records never show numeric defaults. The page does not read/change the PA session cursor or its localStorage bookmark. Team/player display names are not invented when the source supplies only IDs.
 
 ## UI direction
 

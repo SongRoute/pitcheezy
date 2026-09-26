@@ -1,0 +1,81 @@
+{
+  "protocol": "ml_policy_prepare_v1",
+  "experiment_id": "EXP-P8-001",
+  "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+  "parent_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+  "parent_analysis_sha256": "06b53a9f0cf67bf55e16f5ae76b7ef3aeba6cf2153e060180b800bf6a886031c",
+  "candidate": "G3-cluster",
+  "control": "G2-feature",
+  "selection_status": "diagnostic_only_not_promoted",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "draws": 400,
+  "value_spec_version": "defense-we-pa-v1",
+  "we_contract": "/Users/song/Projects/pitcheezy/docs/contracts/model-v1.json",
+  "we_contract_sha256": "d0f1d452331d3f7ad32ca310442bad3ef61bab1b16747829f4190c0f0653ac13",
+  "evaluator": "mapped_control",
+  "common_support": "bc_and_token_vocab_and_type_delivery_all_counts",
+  "bc": {
+    "prior_strength": 20.0,
+    "minimum_action_count": 1
+  },
+  "selection_seed": 20260924,
+  "maximum_requested_starts": {
+    "temperature": 4,
+    "blend": 128,
+    "dev": 128
+  },
+  "profile": {
+    "requested_starts": 4,
+    "evaluation_rollouts": 4,
+    "search_rollouts": 2,
+    "search_cap": 8,
+    "evaluation_cap": 8,
+    "planning_seed": 701,
+    "evaluation_seed": 1701,
+    "row_budget": 1000000,
+    "seconds_budget": 1800
+  },
+  "inference": {
+    "minimum_games": 30,
+    "minimum_supported_pa_starts": 50,
+    "primary_comparisons": [
+      [
+        "P1",
+        "P0"
+      ],
+      [
+        "P2",
+        "P1"
+      ],
+      [
+        "P3",
+        "P2"
+      ]
+    ],
+    "holm_alpha": 0.05,
+    "minimum_imputed_delta_we": 0.0001,
+    "robust_test": "max(imputed_p,worst_case_p); same game bootstrap draws",
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 20260924
+  },
+  "registration": {
+    "contract": "docs/contracts/ML-POLICY-RUNNER-v1.md",
+    "matrix_rows": [
+      "MX-P0",
+      "MX-P1",
+      "MX-P2",
+      "MX-P3"
+    ],
+    "selection_basis": "Frozen G has zero N/G-passing candidates; among G1-G4, G3 has the smallest Cpanel primary NLL. Diagnostic only; no promotion or retrospective selection using later results.",
+    "max_heavy_jobs": 1,
+    "prepare_wall_limit_seconds": 1800,
+    "profile_wall_limit_seconds": 1800,
+    "resource_gate": "Preparation and May-only profile authorized first. Separate final execution config must freeze actual PA-prefix lengths, rollout/search/cap budgets and whole-family cost before June policy values. Four requested May starts alternate TRAIN role strata; unsupported starts not replaced.128maximum June/DEV prefixes selected before support checks.",
+    "scope_note": "G3plans/G2common evaluator; G3world sensitivity. Restricted pitch-type actions, no intended-location validation, observed OPE, causal effect or adoption. Companion NNBC/IQL/CQL only after shared support/reward and TRAIN cost profiling.",
+    "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P8-001"
+  }
+}

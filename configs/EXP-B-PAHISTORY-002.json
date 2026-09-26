@@ -1,0 +1,33 @@
+{
+  "experiment_id": "EXP-B-PAHISTORY-002",
+  "status": "frozen_not_run",
+  "parent_selection_manifest": "results/EXP-A-S0S1-001/selection_manifest.json",
+  "parent_common_comparison": "configs/EXP-A-COMMON-001.json",
+  "diagnostic_basis": "results/EXP-B-DIAG-001/results.json",
+  "artifact_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/B-PAHISTORY-002",
+  "hypothesis": "Strictly prior same-PA family adds incremental prediction information beyond known current action type after TRAIN-only shrinkage selection and exact no-history fallback",
+  "pitchers": [657277, 554430],
+  "baseline": "HierarchicalFrequencyBaseline(include_pitcher=False), global add1/count50/type50; fit identical selected TRAIN rows",
+  "feature": "previous_family mapped exactly as EXP-B-PAHISTORY-001; no current delivery or result",
+  "context_keys": ["pitch_type", "balls", "strikes", "stand", "p_throws", "previous_family"],
+  "context_parent_pseudocount": 50,
+  "no_history_rule": "NONE and unseen context must return parent probabilities exactly; never fit a separate NONE table",
+  "mixture": "(1-alpha)*parent + alpha*context; common impossible-DP conditioning before scoring",
+  "alpha_grid": [0.0, 0.25, 0.5, 0.75, 1.0],
+  "training_folds": [
+    {"fit_game_ids": [778489, 778482], "validation_game_ids": [778410, 778406]},
+    {"fit_game_ids": [778489, 778482, 778410, 778406], "validation_game_ids": [778339, 778336]}
+  ],
+  "selection": "Minimum pooled pitch-weighted forward-validation NLL; ties within 1e-10 choose smaller alpha. Adopt nonzero alpha only if pooled delta<0 AND delta<=0 separately in BOTH validation blocks; otherwise alpha=0.",
+  "fold_integrity": "max(fit game date)<min(validation game date); complete PA boundaries and same rows/actions/labels for all alphas; fold parents fitted only on fold fit rows",
+  "after_selection": "Commit selected alpha, full forward scores, source/config/data hashes and final TRAIN checkpoint identity BEFORE any DEV prediction",
+  "alpha_zero_rule": "If alpha=0, record TRAIN gate rejection and no new DEV model comparison; baseline exact-equivalence check suffices",
+  "dev_if_nonzero": "One evaluation on the unchanged exposed July2025 DEV; all and two_strikes NLL/Brier/ECE, per-game paired CI, support/fallback. Never refit or select using DEV.",
+  "seed": 20260923,
+  "bootstrap_replicates": 1000,
+  "maximum_fits": "2 forward folds x 1 fixed parent+context table; 1 final full TRAIN fit. No neural fitting, temperature search, or sample expansion.",
+  "policy_value": null,
+  "adoption": "Prediction screening only; known-type conditional score is not policy improvement. No service/target recommendation update from this experiment.",
+  "exposure": "All existing April/July aggregate and diagnostic results were known when designed; this is a prospective rule for the next exploratory run, not independent confirmation.",
+  "excluded": ["CV", "2026 data", "final holdout", "S2 expansion", "new WE", "roster features", "current realized location/speed/outcome"]
+}
