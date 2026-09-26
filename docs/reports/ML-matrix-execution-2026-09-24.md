@@ -15,6 +15,7 @@
 3. 결과 모형 TRAIN은 D25 313,513구/1,168경기, D50 626,312구/2,336경기, D100 1,252,824구/4,671경기. 표본은 중첩되며 모든 seed에 동일하다.
 4. 첫 attempt의 MLPseed42 fit 뒤 float32 적분 합 오차로 CAL 예측 저장이 중단됐다. 검사 문턱을 유지하고 float64 계산으로 수정했다. 실패 기록과 약26.5초 fit 비용을 보존했으며 fresh attempt2에서 재시작했다.
 5. 실제 목표 위치 라벨과 미개봉 확인셋은 확보되지 않았다. 구종×목표 위치 최적 정책의 현실 효과는 아직 측정하지 않았다.
+6. 2026-09-26 밤~27 새벽 세션에서 T2 타자 축·채점(`EXP-P7-001`), T3(`EXP-P7-002`), T4(`EXP-P7-003`), P0~P3 정책(`EXP-P8-001`), P4/P5 offline RL(`EXP-P8-002`), F1 bridge(`EXP-P9-001-v2`)를 완료했고 F4 cache 감사는 부분 완료(fullfit 미시작)다. 조건부 행 활성화 검토(D64)도 마쳤다. 각 결과는 아래 해당 절에 있으며 모두 이미 노출된 2025 DEV의 개발 결과다. 정책 결과는 모델 내부 평가이고 독립 확인·관측 OPE·정책 채택은 없다.
 
 ## 결과표
 
@@ -463,13 +464,75 @@ control에서 세 방법 모두 P2보다 높고 P0·P3보다 낮다(IQL−P0 −
 
 근거 SHA256(`EXP-P8-002/` 기준): `evaluation/control/results.json` `f49aedc9514abc98add2f1deaf8e91c6767a6c3d1ad2b288948e93748cb55047`, `evaluation/candidate/results.json` `bed835c0c6c64d57ee2c6692623e45985789312218e4942df7aa633334bd40d6`, `final_execution.json` `08318c624c1f75cc22241f01122aed014031a5fb16498048143681ec725d0308`, `preparation.json` `a524974ea9ef86d86c76fa850e63ff669a3074e916c5d76cece2088d4772988a`, `profile/results.json` `d386f841b45d12fce0a38db4d98c1f26c434af9ad28d557b63d3338fb70b8fba`, 비용 gate `audit/rl-prepare-profile/cost-gate.json` `188dec52d0aeb5cd739822b8b85b52812dd8f155bdada351e6599867616a0881`(`ML-MATRIX-20260924/` 기준). 두 evaluate 결과의 실행 hash는 `6195b575…5d005c427d`, 부모 정책 실행 hash는 `7f8fe129…4ec2c48c`다.
 
+### F1 타자 표현 bridge 완료
+
+`EXP-P9-001-v2`는 [F1 bridge 명세](../contracts/ML-BATTER-BRIDGE-v1.md)와 [러너 규약](../contracts/ML-BRIDGE-RUNNER-v1.md)대로 보존된 G0-global seed0/1/2(**full**)와, context `[11:28]`의 타자 표현17채널(성향6·신뢰도6·soft membership5)을 학습·early stopping·보정·추론에서 모두 0으로 둔 같은 구조의 신규3seed(**masked**)를 Cpanel DEV 328경기·12,334구에서 비교했다. 기본 경기·좌우 `[0:11]`, 투수 표현·표본 수 `[28:52]`, routing7채널, H5 이력은 두 arm에서 같다. H5의 과거 물리·구종·결과는 남으므로 모든 타자 관련 정보를 뺀 실험이 아니다. 정규화·타자 통계·투수 표현·frequency·delivery는 재적합하지 않았고 masked만 May temperature와 June 혼합을 같은 절차로 새로 적합했다. full은 부모 G0의 temperature·June 가중치·예측을 그대로 재사용하며, 재구성한 full 주 NLL 1.483479107은 ML3 절 G0 값과 같다.
+
+**첫 attempt 실패와 수정.** `EXP-P9-001`은 2026-09-27 03:18 KST prepare에서 0.009초(ledger 0.008986초, wrapper wall 1.02초) 만에 멈췄다. ledger가 출력 폴더에 `ledger.jsonl`을 만든 뒤 exFAT T7 볼륨에서 macOS가 AppleDouble `._ledger.jsonl`을 함께 썼고, prepare의 빈 폴더 검사가 `ledger.jsonl`만 예외로 두어 폴더를 "불완전"으로 판정했다(`ValueError: Incomplete F1 preparation requires failure review`). 지시대로 재시도·코드 변경 없이 멈췄고 폴더(ledger 두 파일만)와 `audit/f1-bridge/failure-review.json`을 보존했다. 이후 커밋 67077f6에서 검증된 `._*` AppleDouble 파일을 빈 폴더 검사와 artifact 해시에서 제외하고(정책/RL artifact helper와 같은 방식) 같은 부모 해시로 새 출력 폴더의 fresh attempt `EXP-P9-001-v2`를 등록했다.
+
+**실행.** 2026-09-27 03:22~03:29 KST 단일 큐, 모든 단계 exit0, 재시도 없음.
+
+| 단계 | 큐 wall 초 | ledger 초 | 비고 |
+|---|---:|---:|---|
+| prepare | 7.07 | 5.45 | RSS 6.58 GB |
+| profile | 6.06 | 4.77 | TRAIN65,536구×2epoch; 외삽 member 343.7초·family 1,041.3초로 gate(7,200/14,400초) 통과 |
+| masked fit seed0/1/2 | 86.72 / 76.63 / 104.84 | 84.63 / 75.48 / 103.09 | 내부 84.20/75.09/102.72초, epochs 17/15/21(best 12/10/16), RSS 9.99/11.45/11.95 GB |
+| masked predict seed0/1/2 | 26.26 / 26.24 / 27.26 | 24.91 / 25.28 / 25.37 | 64행 full-path probe 최대 절대 차이 0.0(허용 1e-6), RSS ≤6.76 GB |
+| score | 4.82 | 3.83 | 자식 최고 RSS 0.58 GB |
+
+신규 ledger는 349.0초(+score 3.83초 = 352.8초)로 family 예산 14,400초의 2.5%다. profile 외삽은 early stopping 없는 30epoch 가정이라 부모 G0 실측 fit(90.06/83.32/101.13초, epochs 19/18/22)의 3.07~3.73배였다. 보존 full 3fit의 논리적 학습 비용(274.51초)은 신규 지출로 세지 않는다. masked fit은 TRAIN/early-stop 행 해시가 보존 G0와 같다(`matches_preserved_g0_signature=true`).
+
+**주 비교(full−masked, 음수가 타자 표현 묶음의 이득).** 10,000회 경기 bootstrap(seed 20260924), 구 가중 평균, 단일 주 가설(다중 보정 없음).
+
+| 지표 | ΔNLL (95% 경기 CI) | 단측 p | ΔBrier (95% CI) | seed ΔNLL | 등록 판정 |
+|---|---|---:|---|---|---|
+| full−masked | **−.005506 [−.007560,−.003486]** | 9.999e-05 | −.001466 [−.002264,−.000683] | −.004957/−.005062/−.005255 (3/3 음수) | **`predictive_improvement`**(3seed bridge screen, 확인 미실행) |
+
+다섯 기준(실용 개선 ΔNLL≤−.003, CI 상한<0, 단측 p≤.05, ΔBrier CI 상한≤+.001, seed 2/3 이상 음수)을 모두 충족해 **N 통과**다.
+
+| Cpanel 12,334구 | 주 NLL | Brier 합 | 정확도 | top-label ECE10 | June 모델 가중치 |
+|---|---:|---:|---:|---:|---:|
+| full (보존 G0) | **1.483479** | **.723924** | .374574 | .005837 | .7481 |
+| masked (신규) | 1.488985 | .725390 | .375142 | .005227 | .6256 |
+| 빈도 기준선 | 1.497173 | .726906 | .375223 | .005848 | — |
+
+raw 앙상블 NLL은 full 1.489144/masked 1.496062, temperature 보정 후 1.489168/1.496123으로 두 arm 모두 보정이 raw보다 아주 조금 나빴다(ML2와 같은 양상, 규칙 변경 없음). masked의 seed별 June 모델 가중치는 .6204/.5667/.5820으로 full(.7361/.7110/.6662)보다 낮아, 타자 표현을 빼면 혼합이 빈도 기준선 쪽으로 더 기울었다.
+
+**R 24 상한.** 12그룹×2지표, 100,000회 경기 bootstrap의 단측 Bonferroni 상한(각 α .05/24), 허용폭 ΔNLL .010·ΔBrier .002. **통과22, 실패0, 미측정2**다. 미측정2는 TRAIN0 투수 그룹 `volume_zero`의 두 지표로, TRAIN에서 고른 Cpanel에는 TRAIN0 투수가 없어 경기0·구0이다(D61의 구조적 결측). 따라서 R 상태는 **`unconfirmed(structural: volume_zero)`**다. 측정된 11그룹의 ΔNLL·ΔBrier 점추정은 모두 음수(full 쪽이 좋음)였고, 최대 상한은 hand_R의 NLL .001974·Brier .001385다(hand_R 4,858구/140경기, 두 지표 95% CI 상한이 0을 넘음).
+
+**타자 표본 수 분할(기술 통계, 검정 아님).** D100 TRAIN 양의 타자 표본 수806명의 q25=253.25(linear, 경계 포함 low)로 나눴다. post-cutoff 누적 관측 수가 아니다.
+
+| 타자 TRAIN 표본 | 구/경기/타자 | ΔNLL (95% CI) | ΔBrier (95% CI) |
+|---|---:|---|---|
+| zero | 757/94/47 | −.000944 [−.007986,+.005649] | +.000561 [−.002370,+.003410] |
+| low (≤253.25) | 876/111/45 | −.013831 [−.022708,−.004902] | −.005336 [−.009000,−.001735] |
+| high | 10,701/323/365 | −.005147 [−.007325,−.002968] | −.001293 [−.002141,−.000442] |
+
+low 점추정이 가장 크지만 사전 등록된 가설이 아니고 표본이 작으며, 명세상 기존 G의 저표본 투수 가설을 저표본 타자 효과로 바꾸지 않는다. **저표본 타자에서 효과가 크다는 주장은 하지 않는다.** TRAIN 표본0 타자에서는 구간이 0을 포함했다.
+
+**이상 2건.** (1) 러너 규약은 결과 세 파일을 읽기 전용으로 바꾸도록 하지만 exFAT에서는 chmod가 반영되지 않아 권한이 `-rwx------` 그대로다. 봉인은 SHA256과 manifest가 맡는다. 결과 폴더에 미등록 AppleDouble `._results.json`/`._predictions.npz`/`._manifest.json`도 생겼다. (2) masked의 top-label ECE10(.005227)과 정확도(.375142)가 full(.005837/.374574)보다 조금 좋다. 주 판정 지표(NLL)가 아니며 해석하지 않는다.
+
+해석 경계: 기준선 G0에 이미 들어 있는 타자 표현17채널 묶음이 현재 D100/Cpanel에서 추가 정보를 준다는 **3seed bridge screen**이며, 확인은 미실행이다(`independent_confirmation=null`). 이미 노출된 Cpanel DEV의 적응적 개발 비교이고, bootstrap은 고정 예측 조건부로 학습·보정·선정 불확실성을 포함하지 않는다. masked는 정보 제거 대조로 유효 입력 용량이 다르다. 정책 가치·직접 목표 위치·전체 MLB 강건성·F4 전이 주장은 없다(`policy_effect`/`whole_mlb_robustness`/`f4_transfer_claim` null). 새 구성의 발견이 아니라 기준선 구성 요소의 검증이므로 C1의 "새 유망 구성"으로 세지 않는다. 명세의 "full의 N 통과 시만 추가 5seed 확인을 검토" 조항에는 해당한다(아래 상태표 MX-C1).
+
+근거 SHA256(`EXP-P9-001-v2/` 기준): `analysis/bridge/results.json` `870fdabb747ccda74e1cbaedbef547c2f3973d3b05f576171a39a482b052a0da`, `analysis/bridge/predictions.npz` `cc99bbb0abe912d840c1f29b2550fd9e9a22e253cc28603f4b3dde3ebc928e4c`, `analysis/bridge/manifest.json` `87b96cdf1d0c6d2f85c5e74c370b6443f62fcb0296fba08ff95d59256bad0bc5`, `preparation.json` `542e9bdbe999947c8f4b612e69d62f950d8e98c9fe04d0a44a5c84bff2c9002f`, `profile/profile.json` `a25a0a1da8a9adeb831d7d248fbf4cd0fe90fcb77cc47888ef976b842cd38ecd`, `batter_train_volume.json` `64c12a910e76184739e75c6cddf48c44e829103aa84b3d030021e4f661bcc2d7`, 비용 gate `audit/f1-bridge-v2/cost-gate.json` `ea39f78c298d2607a4c8fbd9c1378cfdc72c18ec26ae94fc22503c85aa79300e`(`ML-MATRIX-20260924/` 기준). 큐·채점 기록은 `audit/f1-bridge-v2/queue-state.json`, `audit/f1-score-v2/score-exit.json`, 실패 attempt는 `EXP-P9-001/ledger.jsonl`, `audit/f1-bridge/{failure-review.json,queue-state.json}`이다.
+
+### F4 context cache 감사(부분)
+
+[선택적 observed-context cache 규약](../contracts/ML-F4-CONTEXT-CACHE-OPTIONAL-v1.md)의 채택 전 실제 감사를 `configs/EXP-P4-002-v3-cache-audit.yaml`(SHA256 `55901a02…d75cf`, 커밋 09f0471)로 등록했다. 그러나 트리에 실제 F4 자료로 `FrozenObservedContext`를 만드는 감사 명령이 없어 규약 1단계(context 동등성·시간), 2단계(MPS forward/loss/gradient/optimizer 비교, 등록할 허용치도 선례 없음), 3단계(원래/cache 경로 자원 fit)를 **실행하지 않았다**. 실행한 것은 synthetic CPU 테스트뿐이다(34 passed, wall 2.10초, 2026-09-27 03:15 KST, heavy lock 불필요). 이는 MPS 속도나 실행 가능성의 증거가 아니다(`audit/f4-cache-audit/results.json`, `adoption=null`, `full_fit_started=false`).
+
+4단계 입력은 원래 경로 기준으로만 계산했다. member별 외삽은 H0/H32/H128 6,858.1/6,934.2/7,137.0초, 9member 62,787.8초에 이전 비용(f4 profile들·동등성 검증·감사 등) 244.08초를 더하면 **63,031.9초로 family 예산 28,800초를 넘는다**. 필요한 감소는 34,231.9초(9member 외삽의 54.5%)이고, 이전 비용을 뺀 허용 평균 member는 3,172.9초다. fit 외 비용(로드2회·temperature·blend/DEV 추론, member 평균 862.5초)을 그대로 두면 fit 30epoch 평균이 6,113.9초에서 2,310.4초로 **62.2% 줄어야** 하며, 이는 cache 구성·lookup·guard 비용을 0으로 둔 하한이다(마지막 두 값은 `results.json`의 member별 항목에서 기록 담당이 계산). cache 값 배열은 규약 공식(208 B/행)으로 TRAIN 260,587,392 B이고 exact input guard 바이트는 미측정이다. 규약 자체가 H0/H128 시간이 비슷하다는 것만으로 pandas context 변환이 주 원인이라고 할 수 없다고 명시하므로(고정 용량 네트워크가 H0에서도 128 slot을 모두 계산), 이 감소가 가능하다는 근거는 없다.
+
+상태: **미측정 자원 제안, fullfit 미시작.** cache 채택·폐기의 최종 결정은 사용자에게 넘긴다. 총괄 권고는 새 감사 스크립트를 구현하지 않고 현 상태로 닫으며, 예산 확대가 결정될 때만 재개하는 것이다. 규약대로 seed·자료·epoch·batch·draw를 줄이거나 예산을 암묵적으로 늘리지 않는다. 근거: `audit/f4-cache-audit/{results.json,queue-state.json,synthetic-test.log,SHA256SUMS.txt}`.
+
 ### 후속 실행 준비와 비용 확인
 
 F4의3arm×3seed와 I1의신규6fit은 각각 [긴 이력 규약](../contracts/ML-LONG-HISTORY-EXECUTION-v1.md), `configs/EXP-P4-002.yaml`/`EXP-P5-001.yaml`에 등록했다. T2/T3/T4에는 [선수 제외·입력 오류 규약](../contracts/ML-T2-T3-PROTOCOL.md), [stress 판정](../contracts/ML-STRESS-EXECUTION-v1.md), [전체 MLB 이전·후속 선택 규칙](../contracts/ML-TRANSFER-EXECUTION-v1.md)을 마련했다. 코드/synthetic 검사 준비와 실제 실험 완료는 구분한다.
 
-T3 `EXP-P7-002`는 2026-09-27 00:22~01:06 KST에 prepare(1.75초)·seed0 clean gate·나머지58회 추론(2,361.0초)과 scorer(76.3초)를 모두 exit0으로 마쳐 **완료**했고 결과는 위 **T3 입력 stress 완료** 절에 기록했다. T4 `EXP-P7-003`은 2026-09-27 01:11~01:58 KST에 prepare(1.34초)·G3 seed0 gate(444.86초)·나머지5회 추론(2,233.14초)과 scorer(27.76초)를 모두 exit0으로 마쳐 **완료**했고(큐 총2,679.35초, 예산의9.3%) 결과는 위 **T4 전체 MLB 이전 평가 완료** 절에 기록했다. P8 `EXP-P8-001` 정책 실행은 2026-09-27 02:01~02:06 KST에 p0(4.02초)·blend-control(114.49초)·dev-control(88.38초)·dev-candidate(86.39초)를 모두 exit0으로 마쳐 **완료**했고(큐 총293.31초, 최고 RSS1.02GB) 결과는 위 **P0~P3 구종 정책 실행 완료(모델 내부)** 절에 기록했다. 후속 offline RL `EXP-P8-002`(NNBC/IQL/CQL, MX-P4/P5)는 2026-09-27 02:10~02:24 KST에 prepare(791.65초)·profile(14.07초), 02:27~03:11 KST에 fit 9회·evaluate control/candidate를 모두 exit0으로 마쳐 **완료**했고(큐 총2,656.8초, fit family 2,524.3초) 결과는 위 **P4/P5 offline RL 완료(모델 내부)** 절에 기록했다. F4 cache 감사는 **실행 중**(`audit/f4-cache-audit/`)이며 결과는 아직 없다.
+T3 `EXP-P7-002`는 2026-09-27 00:22~01:06 KST에 prepare(1.75초)·seed0 clean gate·나머지58회 추론(2,361.0초)과 scorer(76.3초)를 모두 exit0으로 마쳐 **완료**했고 결과는 위 **T3 입력 stress 완료** 절에 기록했다. T4 `EXP-P7-003`은 2026-09-27 01:11~01:58 KST에 prepare(1.34초)·G3 seed0 gate(444.86초)·나머지5회 추론(2,233.14초)과 scorer(27.76초)를 모두 exit0으로 마쳐 **완료**했고(큐 총2,679.35초, 예산의9.3%) 결과는 위 **T4 전체 MLB 이전 평가 완료** 절에 기록했다. P8 `EXP-P8-001` 정책 실행은 2026-09-27 02:01~02:06 KST에 p0(4.02초)·blend-control(114.49초)·dev-control(88.38초)·dev-candidate(86.39초)를 모두 exit0으로 마쳐 **완료**했고(큐 총293.31초, 최고 RSS1.02GB) 결과는 위 **P0~P3 구종 정책 실행 완료(모델 내부)** 절에 기록했다. 후속 offline RL `EXP-P8-002`(NNBC/IQL/CQL, MX-P4/P5)는 2026-09-27 02:10~02:24 KST에 prepare(791.65초)·profile(14.07초), 02:27~03:11 KST에 fit 9회·evaluate control/candidate를 모두 exit0으로 마쳐 **완료**했고(큐 총2,656.8초, fit family 2,524.3초) 결과는 위 **P4/P5 offline RL 완료(모델 내부)** 절에 기록했다. F1 bridge는 첫 attempt `EXP-P9-001`이 03:18 KST prepare에서 AppleDouble 메타데이터 때문에 0.009초 만에 실패(보존)했고, 수정 커밋 67077f6 뒤 fresh attempt `EXP-P9-001-v2`가 03:22~03:29 KST에 prepare·profile·masked fit/predict 3seed·score를 모두 exit0으로 마쳐 **완료**했다(신규 ledger 349.0초+score 3.83초, 예산의 2.5%). full−masked ΔNLL −.005506으로 N 통과(3seed screen)이며 결과는 위 **F1 타자 표현 bridge 완료** 절에 기록했다. F4 cache 감사는 실제 감사 명령이 트리에 없어 규약 1~3단계를 실행하지 못하고 synthetic 34검사와 원래 경로 비용 계산만 마친 **부분 완료**이며(fullfit 미시작, 채택/폐기는 사용자 결정 대기) 위 **F4 context cache 감사(부분)** 절에 기록했다. 이로써 이번 세션의 큐는 모두 종료됐다.
 
 F4 첫 준비는 약4.8초에 중단됐다. 한 타석에 두 타자 ID가 있는47타석/248구를 long-history 구현이 거부했으며 profile/fit/점수는 생성되지 않았다. 정규시즌 전체2,145,111구의 키 감사에서 이 행들은 frozen G의 TRAIN/early/temperature/blend/DEV/전체MLB query에 하나도 포함되지 않았다. 분할별 원본 수는 TRAIN33타석/173구, early1/4, temperature0, blend2/11, DEV9/48, 미사용2/12다. 실패 attempt와 `audit/f4-profiles/ambiguity.json`을 보존했다. 별도 긴 이력에서만 이러한 완료된 과거 타석을 제외하고 모든 base/H5/query 행과 고정 auxiliary를 유지하는 수정이 독립 검토와10개 합성 검사를 통과했다. [fresh attempt2](../../configs/EXP-P4-002-v2.yaml)의 준비와3개 실제 profile도 완료했고 모든 공통 분할 키가 G와 정확히 일치했다. 현재 지원 여부나 결과를 보고 과거 이력을 제거하는 규칙은 사용하지 않는다.
+
+F1은 G/D2/I1 공개 뒤 활성화한 [bridge 명세](../contracts/ML-BATTER-BRIDGE-v1.md)와 [러너 규약](../contracts/ML-BRIDGE-RUNNER-v1.md)으로 실행기·scorer synthetic 검사와 부모 해시 등록(`EXP-P9-001`)을 마친 뒤, 위 AppleDouble 수정을 거친 `EXP-P9-001-v2`로 완료했다(신규3fit, 보존3fit). 5seed 확인은 명세상 검토 대상이 됐지만 등록·실행하지 않았다.
 
 다만 F4의 작은 cold profile은 H0/H32/H128의 전체 member 비용을9,973/9,394/9,581초로 외삽해 개별7,200초 gate를 모두 넘었다. 실제 작은 fit은3.65~3.89초, 최고 RSS6.80GB이며 아직 full fit은0개다. 동일 이력의400회 반복 인코딩을 줄이는 최적화는 소스/합성 검토와 **세 arm 실제 MPS 동일 가중치 검증을 통과**했다. 주요 logits/확률/temperature 차이는0이었고, 순서·chunk 크기를 바꾼 추가 probe의 최대 logit 차이4.7684e-7/확률 차이4.2059e-8도 원래 허용치 안이었다. 이는 등록된 May 입력에 한정한 수치 검사이며 보편적 동등성이나 품질 개선 증거가 아니다. 검증 비용39.176534초에는 첫 summarize 실패와 retry를 포함한다. 실패 원인은 외장 SSD의 미등록 AppleDouble 메타데이터3개였으며 magic·해시·크기를 기록해 별도 보존하고 등록된 모든 파일은 유지한 채 summary를 완료했다. 근거는 `EXP-P4-002-equivalence/summary/manifest.json`(SHA256 `5ebf6a14805ab433ae3ed2b72deb8827331b876bc153304f6fbf9a1af6fda912`)이다.
 
@@ -508,26 +571,26 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-G4 | 필수 | 완료·N 악화/G 미확정/R 실패 | G4−G2 Δ+.005685 [.002772,.008702];고정 확률수축 적응 |
 | MX-G5 | 후속 | 검토 완료·미활성화 | Cpanel G3 미확정, T2 제외 타자 통과는 진단쌍, T4 전체MLB +.000736 악화; 새 선수 군집 이득 주장 전 선등록 필요([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-G6 | 후속 | 검토 완료·미활성화 | 경로별(hard routing/fallback) 오류 분해 없음; G3 전체 악화·TRAIN0 개선 방향은 경로별 근거 아님([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
-| MX-G7 | 후속 | 검토 완료·미활성화 | T2 제외 타자 이득은 투수 군집 전문가 결과, T4 unseen 타자+.000260; F1 bridge가 표현 기여 부재를 보이면 재검토([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
-| MX-F1 | 근거 재사용 | 현재 모집단 bridge 활성화·명세 고정 | 타자 성향6/신뢰도6/soft membership5를 함께 마스킹한 신규3fit vs기존G0;투수표현/H5고정,N1/R24 |
+| MX-G7 | 후속 | 검토 완료·미활성화 | T2 제외 타자 이득은 투수 군집 전문가 결과, T4 unseen 타자+.000260; F1 bridge가 표현 기여 부재를 보이면 재검토; D67: F1은 기여를 보여(N 통과) 재검토 조건 미충족([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
+| MX-F1 | 근거 재사용 | 완료(EXP-P9-001-v2)·N 통과(`predictive_improvement`, 3seed screen·확인 미실행) | full−masked ΔNLL−.005506 [−.007560,−.003486], p9.999e-05, ΔBrier−.001466 [−.002264,−.000683], seed3/3 음수; R24 통과22/실패0/미측정2(`unconfirmed(structural: volume_zero)`, D61); 타자 표본 분할은 기술 통계; 첫 attempt EXP-P9-001 AppleDouble 실패 보존·67077f6 수정 |
 | MX-F2 | 후속 | 검토 완료·미활성화 | 제외 선수는 ID 미학습이라 fallback 전용; 새 선수 개선은 이력 허용에서 나옴([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F3 | 근거 재사용 | 과거 H0/H5 근거 감사 완료·새 backbone H0/H5 미활성화 | 과거 MLP 12비교 보정CI 모두0포함(등가성 증명 아님); ML2 N 통과0으로 후속 진입 backbone 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
-| MX-F4 | 우선 | v3 3profile 완료·전체 예산 초과로 fullfit 보류 | member외삽6,858.1/6,934.2/7,137.0초로 개별7200초 안;9member합62,787.8초>28,800초, fullfit0 |
+| MX-F4 | 우선 | v3 3profile 완료·cache 감사 부분 완료·fullfit 미시작·사용자 결정 대기 | member외삽6,858.1/6,934.2/7,137.0초로 개별7200초 안;9member합62,787.8초+이전244.08초=63,031.9초>28,800초, fullfit0; cache 감사는 실제 명령 부재로 1~3단계 미실행(synthetic34 통과만), fit 평균62.2% 감소가 필요(cache 비용0 하한) — 채택/폐기는 사용자 결정 |
 | MX-F5 | 후속 | 검토 완료·보류(F4 대기) | F4와 동시 추가 금지, 같은 긴 이력 경로의 F4 예산 초과 보류; 기준선 불펜/후반 잔여 오차 분석 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F6 | 후속 | 검토 완료·미활성화 | workload 블록 가용성 감사·불펜/후반 잔여 오차 근거 없음; 피로 인과 해석 안 함([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F7 | 후속 | 검토 완료·포수/구장 미활성화, 심판/날씨 외부 자료 필요 | 수집 열에 fielder_2는 있고 심판·날씨 없음; 당시 가용성 감사·새 환경 오류 분석 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F8 | 후속 | 검토 완료·보류(EXP-P8-001 비용 대기) | 예측 family 적분 추론은 fit보다 작음(ML1 D100 213.76 vs 14.93초); 정책 실행 비용 미기록([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F9 | 후속 | 검토 완료·보류(F4 대기) | sequence backbone 유망 없음, F4 fullfit0; F4 미통과면 미활성화([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-L1 | 후속 | 검토 완료·미활성화 | T4 10클래스 모두30사건 이상이나 희귀 결과 체계적 오차 진단 없음; 사건 수만으로 가정 안 함([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
-| MX-L2 | 후속 | 검토 완료·보류(F4·F1 대기) | F4/F1 결과·보조 라벨 관측 범위 감사 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
+| MX-L2 | 후속 | 검토 완료·보류(F4·F1 대기) | F4/F1 결과·보조 라벨 관측 범위 감사 없음; D67: F1 결과 나옴(N 통과), F4는 미측정 보류라 판정 유지([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-L3 | 후속 | 검토 완료·미활성화 | G 저표본 통과0, T4 저표본 inconclusive, 새 선수 개선은 온라인 이력 허용; I1은 근거로 안 씀([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-L4 | 후속 | 검토 완료·미활성화 | R 실패는 미채택 G1/G4와 진단쌍 상대 비교뿐, T4 R24 passed(two_strikes 포함); 기준선 그룹 실패 근거 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-L5 | 공통 진단 | ML2 완료·후속 family에도 적용 | 7구조 raw/temperature/혼합 저장; DEV temperature의 개선 보장은 없음 |
 | MX-L6 | 후속 | 검토 완료·보류(C1 대기) | C1 또는 closure 5seed 기준선 뒤 추가 fit 없이0/0~2/0~4 비교([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-I1 | 필수 | 완료·상호작용 미확정 | 신규6fit/보존6fit; I+.002753 CI[+.000363,+.005053], p.02260,3/3동방향이나 실용문턱.003미달 |
 | MX-I2 | 필수 | 완료·G와 동시 진단 | 4개 G 대비 저표본−고표본 효과 차이/경기 CI; G1/G4는 고표본의 상대 악화가 더 큼 |
-| MX-C1 | 필수 | 검토 완료·보류(F1·F4 대기), 현재 유망 구성0 | N 통과는 D100(이미 Bdata)·D2(기준선이 이미 D100 보조)뿐, 구조·공유0, G3 T4 악화; F4 미통과/미실행이면 preferred closure(G0 5seed 안정성+L6), config 미등록([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
-| MX-C2 | 필수 | 검토 완료·보류(C1 대기) | 결합할 유망 구성 없음; closure면 적용 불가와 근거·한계 기록, F4 통과 시 제거 대조 선등록([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
+| MX-C1 | 필수 | 검토 완료·보류: F1 N 통과로 5seed 확인 검토 조건 충족, 총괄/사용자 결정 대기(F4는 미측정 보류), 현재 유망 구성0 | N 통과는 D100(이미 Bdata)·D2(기준선이 이미 D100 보조)뿐, 구조·공유0, G3 T4 악화; F4 미통과/미실행이면 preferred closure(G0 5seed 안정성+L6), config 미등록; D67: F1은 기준선 G0 구성 요소 검증이라 새 유망 구성이 아니며, 검토할 5seed 확인은 bridge 효과 자체의 확인(full G0 seed3/4+masked seed3/4 추가, 비용 미측정)이고 G0 seed3/4는 closure와 공유 가능([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
+| MX-C2 | 필수 | 검토 완료·보류(C1 대기, F1 N 통과로 검토 조건 충족·결정 대기) | 결합할 유망 구성 없음; F1은 기준선 구성 요소 검증이라 새 결합 아님(D67); closure면 적용 불가와 근거·한계 기록, F4 통과 시 제거 대조 선등록([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-T1 | 필수 | Cpanel 완료; 전체 MLB 월별은 T4 기술 통계로 보고(구간 추정·검정 없음) | G 월별 NLL/Brier/보정/짝지은 차이; T4 월별 G3−G2 +.000658/+.000719/+.000831; 추가 성공 선정에 사용 안 함 |
 | MX-T2 | 필수 | 완료(채점) | EXP-P7-001;자연 새 대진 G3−G2 미확정(Holm p.6386), 제외 타자 Z/W/O G3−G2 N 통과(ΔNLL−.004418/−.004361/−.003743), 제외 투수 W−Z/O−Z 이력 적응 개선(−.017682/−.017681); R 96슬롯 통과77/실패11/결측8(자연·W·O failed, Z unconfirmed(structural: volume_zero), D61); 진단용 쌍 승격 없음·독립 확인 아님 |
 | MX-T3 | 필수 | 완료(채점) | EXP-P7-002;60회 재추론(새 fit0), 270상한 통과228/실패24(상대5·안정성19)/미측정18; relative_R failed(9시나리오 전체 통과, two_strikes ΔBrier 상한5개 실패), 안정성 G3/G2 failed; volume_zero 구조적 결측(D61); 진단용 쌍 승격 없음·독립 확인 아님 |
