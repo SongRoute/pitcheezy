@@ -35,6 +35,7 @@ from pitchmdp.matrix_bridge import (BATTER_START, BATTER_STOP, CONTEXT_WIDTH, RO
 from pitchmdp.matrix_benchmark import predict_streamed
 from pitchmdp.matrix_data import canonical_hash, ordered_key_hash
 from pitchmdp.matrix_models import MatrixModel
+from pitchmdp.matrix_policy_artifacts import is_appledouble
 from pitchmdp.matrix_sharing import SharingPredictor
 from pitchmdp.model import outcome_labels
 from run_ml_benchmark import read_json, dump, identity as base_identity, validate_native_runtime
@@ -294,7 +295,7 @@ def prepare(config, local_path, local, output, expected):
         verify(output, expected)
         print('BRIDGE_PREPARED', output, flush=True)
         return
-    if output.exists() and any(p.name != 'ledger.jsonl' for p in output.iterdir()):
+    if output.exists() and any(p.name != 'ledger.jsonl' and not is_appledouble(p) for p in output.iterdir()):
         raise ValueError('Incomplete F1 preparation requires failure review')
     _prepare(config, local_path, local, output, expected)
     print('BRIDGE_PREPARED', output, flush=True)
@@ -374,7 +375,7 @@ def _prepare(config, local_path, local, output, expected):
     if source_hashes() != expected['source_hashes']:
         raise ValueError('Sources changed during F1 preparation')
     files = [str(p.relative_to(output)) for p in output.rglob('*')
-             if p.is_file() and p.name != 'ledger.jsonl']
+             if p.is_file() and p.name != 'ledger.jsonl' and not is_appledouble(p)]
     prep = {'identity': expected, 'parent_run': str(parent), 'external_hashes': external,
             'samples': records, 'features': shared['features'], 'clusters': shared['clusters'],
             'panel': shared['panel'],
@@ -454,7 +455,7 @@ def profile(config, local, output, prep):
         assert_hashes(dest, state['artifact_hashes'])
         print('BRIDGE_PROFILE_COMPLETE', flush=True)
         return
-    if dest.exists() and any(dest.iterdir()):
+    if dest.exists() and any(not is_appledouble(p) for p in dest.iterdir()):
         raise ValueError('Incomplete F1 profile requires failure review')
     overhead, _ = active_elapsed(output)
     start = time.perf_counter()
@@ -565,7 +566,7 @@ def fit(config, local, output, prep, seed):
         assert_hashes(dest, state['artifact_hashes'])
         print('BRIDGE_FIT_COMPLETE', seed, flush=True)
         return
-    if dest.exists() and any(dest.iterdir()):
+    if dest.exists() and any(not is_appledouble(p) for p in dest.iterdir()):
         raise ValueError('Incomplete F1 member requires failure review')
     device = _require_parent_device(prep, seed)
     check_family_budget(output, projection['member_seconds'])

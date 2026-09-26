@@ -144,8 +144,11 @@ def test_batter_volume_linear_q25_train_only_and_inclusive_boundary():
 
 def test_config_template_matches_code_and_requires_real_hashes():
     template = json.loads((REPO / 'configs' / 'EXP-P9-001.yaml').read_text())
+    assert runner.config_check(template)['experiment_id'] == 'EXP-P9-001'
+    unassigned = dict(template, parent_preparation_sha256='ROOT_TO_ASSIGN',
+                      parent_analysis_sha256='ROOT_TO_ASSIGN')
     with pytest.raises(ValueError, match='SHA256'):
-        runner.config_check(template)
+        runner.config_check(unassigned)
     assert runner.config_check(valid_config())['experiment_id'] == 'EXP-P9-001'
     for key, value in [('mask', {'start': 11, 'stop': 29}), ('seeds', [0, 1]), ('draws', 25),
                        ('width', 64), ('parent_cell', 'G2-feature'), ('context_width', 59),
