@@ -168,9 +168,72 @@ Robustness는 자연·타자 Z/W/O의 4대비×12그룹×2손실=96개 동시 �
 
 근거는 `EXP-P7-001/analysis/{results.json,manifest.json,predictions.npz}`이며 SHA256은 각각 `3fe958c3af7a1e251d615eb5c34c4702ebb172127e78908489b235338c7433aa`, `4bb0da8fcc58a4e568920b92aeea9a7ba72192190bd0819c1eddf8b8c856eeff`, `2b2c2314378300a8fbe2d431068280b03b73e8c25716834424cf62ff3e09a1f8`이다.
 
+### T3 입력 stress 완료
+
+`EXP-P7-002`는 [stress 판정 규약](../contracts/ML-STRESS-EXECUTION-v1.md)대로 Cpanel DEV 328경기·12,334구에서 부모 G의 **진단용 고정쌍 G3-cluster(후보)−G2-feature(대조)**(`diagnostic_only_not_promoted`)를 clean 포함 10시나리오×2모델×3seed=60회 재추론한 뒤 한 번 채점했다. 새 fit은 없고 May temperature·June blend를 그대로 재사용했으며 재보정은 없다(`no_recalibration=true`). clean 재추론의 최대 확률 오차는 seed0 gate에서 G3 5.66e-08·G2 0.0, 3seed 전체에서 G3 7.41e-08 이하, seed 평균+혼합 최종 확률에서 G3 2.31e-08·G2 0.0으로 1e-6 허용치 안이었다. 키와 delivery tier도 동일했다.
+
+**상대 강건성(G3−G2, 전체 12,334구).** 상한은 200,000회 경기 bootstrap(seed 20260924)의 단측 동시 상한(각 α=.05/270)이다. 허용폭은 ΔNLL .010, ΔBrier .002다.
+
+| 시나리오 | ΔNLL | NLL 상한 | ΔBrier | Brier 상한 | 측정 실패 그룹 (ΔBrier 상한) | seed ΔNLL 개선 |
+|---|---:|---:|---:|---:|---|---|
+| H2 | −.000707 | .001514 | −.000715 | .000097 | 없음 | 3/3 |
+| H0 | −.001506 | .000566 | −.001076 | −.000324 | 없음 | 2/3 |
+| mask20 | −.000680 | .001830 | −.000679 | .000232 | two_strikes .002035 | 3/3 |
+| mask50 | −.000756 | .001576 | −.000784 | .000060 | two_strikes .002006 | 2/3 |
+| unknown_type_outcome | −.000043 | .002652 | −.000245 | .000675 | two_strikes .002971 | 2/3 |
+| sensor01 | −.000072 | .002477 | −.000402 | .000574 | two_strikes .002115 | 2/3 |
+| sensor03 | −.000068 | .002574 | −.000428 | .000593 | two_strikes .002072 | 2/3 |
+| unknown_pitcher | −.001203 | −.000534 | −.000668 | −.000392 | 없음 | 3/3 |
+| unknown_batter | −.001574 | .000947 | −.001023 | .000068 | 없음 | 2/3 |
+
+9개 시나리오 모두 전체 표본의 두 상한이 허용폭 안이고, 전체 표본의 후보 NLL이 모든 시나리오에서 대조군보다 낮았다. 13개 비교(전체+12그룹)의 ΔNLL 상한은 측정된 모든 그룹에서 .010 안이었다(최대 unknown_type_outcome two_strikes .009064). 측정 실패5개는 모두 two_strikes 그룹(3,690구/305경기)의 ΔBrier 상한이다. mask20/mask50은 허용폭을 각각 약3.5e-5/0.6e-5 넘어 극단 분위수의 Monte Carlo 오차에 민감한 구간이지만 규약대로 실패로 센다. 이 그룹의 점추정 ΔNLL은 다섯 시나리오 모두 양수였다(+.000337~+.002331). `volume_zero`는9개 시나리오 모두 경기0·구0으로 미측정이며 D61의 구조적 결측(`unconfirmed(structural: volume_zero)`)이다. 따라서 `relative_R`은 **failed**다.
+
+**입력 안정성(시나리오−각 모델 clean, 전체 12,334구).**
+
+| 시나리오 | G3 ΔNLL / 상한 | G3 ΔBrier / 상한 | G3 | G2 ΔNLL / 상한 | G2 ΔBrier / 상한 | G2 |
+|---|---|---|---|---|---|---|
+| H2 | +.001612 / .003590 | +.000764 / .001594 | 통과 | +.002240 / .004376 | +.001085 / .002031 | 실패(Brier) |
+| H0 | +.015275 / .020729 | +.005734 / .007900 | 실패 | +.016702 / .022465 | +.006416 / .008757 | 실패 |
+| mask20 | +.002667 / .005322 | +.001092 / .002161 | 실패(Brier) | +.003268 / .006115 | +.001377 / .002537 | 실패(Brier) |
+| mask50 | +.006413 / .010043 | +.002512 / .003991 | 실패 | +.007090 / .011144 | +.002902 / .004574 | 실패 |
+| unknown_type_outcome | +.003931 / .006666 | +.001569 / .002714 | 실패(Brier) | +.003896 / .006576 | +.001420 / .002560 | 실패(Brier) |
+| sensor01 | +.000068 / .000300 | +.000032 / .000120 | 통과 | +.000060 / .000240 | +.000040 / .000117 | 통과 |
+| sensor03 | +.000329 / .001029 | +.000139 / .000401 | 통과 | +.000318 / .000861 | +.000173 / .000412 | 통과 |
+| unknown_pitcher | +.002811 / .006601 | +.001723 / .003350 | 실패(Brier) | +.003935 / .007821 | +.001998 / .003734 | 실패(Brier) |
+| unknown_batter | +.008593 / .012590 | +.002842 / .004388 | 실패 | +.010088 / .014737 | +.003472 / .005194 | 실패 |
+
+G3는 H2·sensor01·sensor03, G2는 sensor01·sensor03만 통과해 `within_model_stability`는 두 모델 모두 **failed**다. mask50 G3의 NLL 상한 .010043도 허용폭을 약4e-5 넘는다. 두 모델의 clean→stress 악화는 같은 방향이며 상대 비교와 별도 상태로 보고한다.
+
+**270 상한 family.** `9 × ((전체+12그룹)+2모델) × 2지표 = 270`: 통과228, 측정 실패24(상대5·안정성19: NLL6·Brier13), 미측정18(`volume_zero` 9시나리오×2지표). 비교 단위135개로는 통과108·실패18(상대5·안정성13)·미측정9다. 규약 판정은 relative_R **failed**, stability G3 **failed**, G2 **failed**다.
+
+| 절대 주 NLL / Brier 합 | G3-cluster | G2-feature |
+|---|---|---|
+| clean | 1.483727 / .723495 | 1.483806 / .723888 |
+| H2 | 1.485339 / .724258 | 1.486046 / .724973 |
+| H0 | 1.499002 / .729229 | 1.500509 / .730304 |
+| mask20 | 1.486394 / .724587 | 1.487074 / .725266 |
+| mask50 | 1.490140 / .726006 | 1.490896 / .726790 |
+| unknown_type_outcome | 1.487659 / .725063 | 1.487702 / .725308 |
+| sensor01 | 1.483795 / .723526 | 1.483866 / .723928 |
+| sensor03 | 1.484057 / .723634 | 1.484125 / .724062 |
+| unknown_pitcher | 1.486538 / .725218 | 1.487742 / .725886 |
+| unknown_batter | 1.492321 / .726337 | 1.493894 / .727360 |
+
+클래스별 값은 `results.json`의 `reports`에 있다. 클래스6은 DEV 지지 8사건으로 30사건 미만이라 클래스별 보고 부적격이다.
+
+**실제 변경 비율.** 분모는 query-history occurrence 23,072개(고유 과거 구9,178개)이며 400회 delivery 반복은 넣지 않았다. H2 7,504개 drop(.3252, 고유4,068), H0 23,072개 전부 drop, mask20 4,644개(.2013, 고유1,863), mask50 11,505개(.4987, 고유4,603), unknown_type_outcome·sensor01·sensor03은 23,072개 전부 변경(drop0)이다. unknown_pitcher/unknown_batter는 이력 변경0이고 선수 context 누락(`context_outage`)으로 따로 표시했다. delivery tier는60개 산출물 모두 clean과 동일했다(0:4, 1:3,386, 2:2,753, 3:6,191).
+
+**비용.** prepare 1.75초 → seed0 clean gate2회(40.14/39.99초 wall, G 실측 기반 사전 최대 추정10,873.5초) → 나머지58회 단일 큐2,361.0초(회당34.5~43.2초 wall, 내부33.4~42.1초, 최고 RSS6.73~6.83GB, 모두 exit0). scorer는 2026-09-26T16:05:13Z~16:06:29Z, 76.3초(자식 최고 RSS0.81GB, exit0)였다. 추론 family는2,442.9초로 예산28,800초의8.5%이며 scorer 포함2,519.2초다. 기록은 `audit/t3-stress/{cost-gate.json,queue-state*.json,queue-summary*.json}`, `audit/t3-score/score-exit.json`이다.
+
+해석 경계: G3-cluster는 `diagnostic_only_not_promoted` 그대로이며 T3는 새로운 N 성공이나 독립 확인이 아니다(`policy_effect=null`, `whole_mlb_robustness=null`). bootstrap은 고정 예측 조건부로 학습·보정·선정 불확실성을 포함하지 않고, 극단 분위수에는 Monte Carlo 오차가 남는다. stress 강도는 가상의 고정 입력 오류이며 현장 센서 오차의 경험적 분포가 아니다. unknown_pitcher는 encoder/routing 특성만 가리고 delivery에는 기존 투수 ID를 유지한다. 상대 실패가 two_strikes의 ΔBrier에만 있고 상대 NLL 상한은 모두 통과했다는 것은 사실로 기록하되, 판정은 규약대로 failed이며 "사실상 통과"로 바꾸지 않는다. Cpanel의 zero-TRAIN 부재는 T4 전체 MLB에서 따로 측정한다.
+
+근거는 `EXP-P7-002/analysis/{results.json,predictions.npz,manifest.json}`과 `EXP-P7-002/preparation.json`이며 SHA256은 각각 `3d4a790e1ce7f302eae5b3b26f8b2acda7f57e349533b3198e55f51cd3df52fc`, `c6bba80ec2edbae0e42016805bb0d243f166c6df346350869f590b96a664ddcf`, `41fa16edc6def1032b2e9312b24999041fdcdd21bcc321e96fe1090755b85e30`, `229691488cb31c90e6b3c3cc77a97216c6873d9001f00b2ac24a1f1f8ed82c8c`이다.
+
 ### 후속 실행 준비와 비용 확인
 
 F4의3arm×3seed와 I1의신규6fit은 각각 [긴 이력 규약](../contracts/ML-LONG-HISTORY-EXECUTION-v1.md), `configs/EXP-P4-002.yaml`/`EXP-P5-001.yaml`에 등록했다. T2/T3/T4에는 [선수 제외·입력 오류 규약](../contracts/ML-T2-T3-PROTOCOL.md), [stress 판정](../contracts/ML-STRESS-EXECUTION-v1.md), [전체 MLB 이전·후속 선택 규칙](../contracts/ML-TRANSFER-EXECUTION-v1.md)을 마련했다. 코드/synthetic 검사 준비와 실제 실험 완료는 구분한다.
+
+T3 `EXP-P7-002`는 2026-09-27 00:22~01:06 KST에 prepare(1.75초)·seed0 clean gate·나머지58회 추론(2,361.0초)과 scorer(76.3초)를 모두 exit0으로 마쳐 **완료**했고 결과는 위 **T3 입력 stress 완료** 절에 기록했다. T4 `EXP-P7-003`은 현재 **실행 중**(`audit/t4-transfer/`)이며 점수는 아직 기록하지 않는다.
 
 F4 첫 준비는 약4.8초에 중단됐다. 한 타석에 두 타자 ID가 있는47타석/248구를 long-history 구현이 거부했으며 profile/fit/점수는 생성되지 않았다. 정규시즌 전체2,145,111구의 키 감사에서 이 행들은 frozen G의 TRAIN/early/temperature/blend/DEV/전체MLB query에 하나도 포함되지 않았다. 분할별 원본 수는 TRAIN33타석/173구, early1/4, temperature0, blend2/11, DEV9/48, 미사용2/12다. 실패 attempt와 `audit/f4-profiles/ambiguity.json`을 보존했다. 별도 긴 이력에서만 이러한 완료된 과거 타석을 제외하고 모든 base/H5/query 행과 고정 auxiliary를 유지하는 수정이 독립 검토와10개 합성 검사를 통과했다. [fresh attempt2](../../configs/EXP-P4-002-v2.yaml)의 준비와3개 실제 profile도 완료했고 모든 공통 분할 키가 G와 정확히 일치했다. 현재 지원 여부나 결과를 보고 과거 이력을 제거하는 규칙은 사용하지 않는다.
 
@@ -233,8 +296,8 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-C2 | 필수 | 계획·선행 단계 대기 | 후보 결과 전에 세부 사양·비교 family를 등록하고 실행 |
 | MX-T1 | 필수 | Cpanel 완료·전체 MLB 대기 | G 월별 NLL/Brier/보정/짝지은 차이; 추가 성공 선정에 사용 안 함 |
 | MX-T2 | 필수 | 완료(채점) | EXP-P7-001;자연 새 대진 G3−G2 미확정(Holm p.6386), 제외 타자 Z/W/O G3−G2 N 통과(ΔNLL−.004418/−.004361/−.003743), 제외 투수 W−Z/O−Z 이력 적응 개선(−.017682/−.017681); R 96슬롯 통과77/실패11/결측8(자연·W·O failed, Z unconfirmed(structural: volume_zero), D61); 진단용 쌍 승격 없음·독립 확인 아님 |
-| MX-T3 | 필수 | 진단용G3−G2 등록·비용 gate 대기 | EXP-P7-002;2모형×3seed×10시나리오,270상한family |
-| MX-T4 | 필수 | 진단용G3−G2 등록·비용 gate 대기 | EXP-P7-003;동결2모형×3seed,전체적격311721구,보정불변 |
+| MX-T3 | 필수 | 완료(채점) | EXP-P7-002;60회 재추론(새 fit0), 270상한 통과228/실패24(상대5·안정성19)/미측정18; relative_R failed(9시나리오 전체 통과, two_strikes ΔBrier 상한5개 실패), 안정성 G3/G2 failed; volume_zero 구조적 결측(D61); 진단용 쌍 승격 없음·독립 확인 아님 |
+| MX-T4 | 필수 | 진단용G3−G2 실행 중 | EXP-P7-003;동결2모형×3seed,전체적격311721구,보정불변 |
 | MX-T5 | 필수·자료 확인 | 외부 자료 필요 | 선정에 노출되지 않은 허용된 비2026 확인셋 미확보 |
 | MX-P0 | 필수 | EXP-P8-001 준비/profile 완료 | TRAIN-only BC; May4시작 profile4.83초/RSS0.98GB, 실제 적합/평가 대기 |
 | MX-P1 | 필수 | 구종 rollout 준비/profile 완료 | 첫 행동 Q^BC 최댓값 후 BC 진행;G3계획/G2공통평가 |
