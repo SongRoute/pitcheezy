@@ -157,7 +157,7 @@ CV의 목표 **위치**만으로 목표 **구종**이나 사인 결정자를 알
 - 2026-09-24 다음 세션의 병렬 묶음·후보 수 제한·독립 검토·통합·보고는 [ABCD 실행 인수인계](handoffs/ABCD-next-session.md)를 따른다. 이번 세션은 계획만 고정했으며 해당 새 작업은 미실행이다.
 - 다음 한 가지는 ‘가장 많은 후속 작업을 열 수 있는 미완료 작업’으로 고른다. C0·첫 통합·작은 공통 비교 실행을 완료했다. 사용자 일정에 따라 CV 인수는 약 일주일 뒤까지 제외한다. B002는 TRAIN 선택/체크포인트 커밋 후 DEV 1회 평가까지 완료했고 NLL 악화로 미채택했다([실행 기록](handoffs/B002-execution.md)). C의 조건부 이닝 결과 계약·변환·D 소비 검사도 완료했다([인수인계](handoffs/C-D-inning-v1.md)). 교체 직전의 독립 저장/API도 완료했다([인수인계](handoffs/C-D-api-v1.md)). 독립 기록 선택과 카드 UI도 실제 API/PC·모바일 검증까지 완료했다([인수인계](handoffs/C-D-ui-v1.md)). 실제 모델/데이터/기존 저장 세션의 전체 리허설과 맥북 원격 접속 확인도 완료했다([인수인계](handoffs/C-D-full-rehearsal.md)). 사용자는 정보 과밀과 큰 구종 불일치를 지적했다. 다음은 A·B의 추천 품질/순위 안정성 진단 사양을 먼저 고정하는 것이다([초기 진단](handoffs/recommendation-choice-diagnosis.md)). D의 정보 구조 개편도 후속 과제로 유지한다. 교체 자료/이닝 평가의 실제 가용성·지원 범위 검증과 기록 재생·팬 검증도 CV 없이 계속할 수 있다.
 
-**다음 아침 확인:** T2 `EXP-P7-001` 타자 축 큐(2026-09-26 23:48 KST 시작): `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/audit/t2-batter/{queue-state.json, queue-summary.json, fit-batter-seed{0,1,2}.log, predict-batter-{G3-cluster,G2-feature}-seed{0,1,2}.log}`. 기존 RE24 예약은 별도 유지: 정규시즌 종료 후 freeze → 009 재확인, P1-009 vs 006 재측정(D28·D36·D39). 이 결과를 서비스 WE 모델의 검증 결과로 대신하지 않는다. 2026은 정책 학습·튜닝·모델 선택에 쓰지 않는다.
+**다음 아침 확인:** 없음. T2 `EXP-P7-001` 타자 축 큐와 채점은 각각 2026-09-27 00:02·00:04 KST에 완료했다(D60, `audit/t2-batter/`, `audit/t2-score/`, `EXP-P7-001/analysis/results.json`). 다음 실행은 총괄이 정하며 여기서 지정하지 않는다. 기존 RE24 예약은 별도 유지: 정규시즌 종료 후 freeze → 009 재확인, P1-009 vs 006 재측정(D28·D36·D39). 이 결과를 서비스 WE 모델의 검증 결과로 대신하지 않는다. 2026은 정책 학습·튜닝·모델 선택에 쓰지 않는다.
 
 ## (기록) W2, 9/14–20
 
