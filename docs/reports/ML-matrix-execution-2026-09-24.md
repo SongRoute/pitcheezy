@@ -229,11 +229,78 @@ G3는 H2·sensor01·sensor03, G2는 sensor01·sensor03만 통과해 `within_mode
 
 근거는 `EXP-P7-002/analysis/{results.json,predictions.npz,manifest.json}`과 `EXP-P7-002/preparation.json`이며 SHA256은 각각 `3d4a790e1ce7f302eae5b3b26f8b2acda7f57e349533b3198e55f51cd3df52fc`, `c6bba80ec2edbae0e42016805bb0d243f166c6df346350869f590b96a664ddcf`, `41fa16edc6def1032b2e9312b24999041fdcdd21bcc321e96fe1090755b85e30`, `229691488cb31c90e6b3c3cc77a97216c6873d9001f00b2ac24a1f1f8ed82c8c`이다.
 
+### T4 전체 MLB 이전 평가 완료
+
+`EXP-P7-003`은 [전체 MLB 이전 규약](../contracts/ML-TRANSFER-EXECUTION-v1.md)대로 G의 TRAIN 선정48명 밖으로 평가 범위를 넓혀, 부모 G의 **진단용 고정쌍 G3-cluster(후보)−G2-feature(대조)**(`diagnostic_only_not_promoted`)를 2025 정규시즌 DEV 전체 MLB에서 2모델×3seed=6회 추론한 뒤 2026-09-27 01:58 KST에 한 번 채점했다. 적격311,721구/요청341,941구/1,161경기이며 ordered key hash(`afa9d8e3…36a516`)는 부모 `EXP-P4-001`의 `mlb_dev` 행 해시와 독립 재계산으로 일치했다. 새 fit은 없고 신경망·군집·선수 프로필·delivery400draw·Cpanel May temperature·June blend를 동결했으며 전체 MLB로 보정기를 재적합하지 않았다. 전체 MLB는 선정에 쓰인 Cpanel과 이미 노출된 2025 DEV를 포함하므로 독립 확인셋이 아니다.
+
+| 주 가설 (Holm 2개) | 경기/구 | ΔNLL (95% 경기 CI) | ΔBrier (95% CI) | Holm p | seed ΔNLL | 등록 판정 |
+|---|---:|---|---|---:|---|---|
+| N 전체 MLB G3−G2 | 1,161/311,721 | +.000736 [+.000493,+.000978] | −.0000992 [−.000191,−.000007] | 1.0 | +.000792/+.000517/+.000736 (3/3 악화) | `worse_or_guardrail_failure` |
+| G 저표본 TRAIN 투수 G3−G2 | 588/19,462 | +.001686 [+.000517,+.002872] | +.000299 [−.000117,+.000722] | 1.0 | +.001810/+.001944/+.000930 (3/3 악화) | G `inconclusive`(저표본 N 슬롯 `worse_or_guardrail_failure`, 전체 비열등 true) |
+
+10,000회 경기 bootstrap(seed 20260924), 구 가중 평균, 2개 슬롯 Holm α .05다(보정 p 1.0/1.0). N은 실용 개선·CI·Holm·seed 방향을 모두 통과하지 못했고 Brier 비열등만 통과했다. 전체 ΔBrier는 95% CI가 0 아래(단측 p .0158)지만 주 판정은 NLL이며 Brier 개선을 새 성공으로 세지 않는다. G는 저표본 N 슬롯이 실패했고 전체 NLL/Brier 상한 기준(`whole_population_noninferior`)은 true여서 G 상태가 `inconclusive`로 기록됐다.
+
+| 전체 MLB 주 지표 (311,721구) | NLL | Brier 합 | 정확도 | top-label ECE10 |
+|---|---:|---:|---:|---:|
+| G3-cluster | 1.491304 | .726472 | .372439 | .005377 |
+| G2-feature | 1.490568 | .726571 | .371659 | .006710 |
+| 빈도 기준선 | 1.504081 | .729481 | .371011 | .001660 |
+
+두 모델 모두 빈도 기준선보다 NLL이 약 .013 낮다. 10개 클래스 모두 30사건 이상으로 클래스별 보고 적격이며 클래스별 값은 `results.json`의 `reports`에 있다. Cpanel 부분집합의 G3/G2 NLL(1.483727/1.483806)은 T3 clean 값과 같다.
+
+**R 24 상한.** 12그룹×2지표, 100,000회 경기 bootstrap의 단측 Bonferroni 상한(각 α .05/24), 허용폭 ΔNLL .010·ΔBrier .002다. 12그룹 모두 30경기·500구 이상으로 측정됐고 24개 상한이 모두 허용폭 안이어서 R은 **passed**다. 최대 상한은 volume_low의 NLL .003394·Brier .000912다. `volume_zero`(온라인 TRAIN0 투수)는 28,746구/646경기로 실제 존재해 측정됐다. D61에서 T2/T3 Cpanel의 구조적 결측으로 남긴 zero-TRAIN 강건성을 이 그룹으로 측정한 것이며, 소급해서 T2/T3의 판정을 바꾸지 않는다.
+
+| R 그룹 | 경기/구 | ΔNLL (95% CI) | NLL 상한 | ΔBrier | Brier 상한 |
+|---|---:|---|---:|---:|---:|
+| role_starter | 1,161/184,397 | +.000924 [+.000616,+.001233] | .001375 | −.000060 | .000117 |
+| role_relief | 1,161/127,324 | +.000463 [+.000084,+.000844] | .001028 | −.000156 | .000060 |
+| hand_L | 1,108/88,337 | +.000964 [+.000475,+.001458] | .001685 | −.000041 | .000247 |
+| hand_R | 1,161/223,384 | +.000646 [+.000365,+.000928] | .001056 | −.000122 | .000037 |
+| volume_low | 588/19,462 | +.001686 [+.000525,+.002849] | .003394 | +.000299 | .000912 |
+| volume_middle | 1,151/108,351 | +.000083 [−.000333,+.000503] | .000697 | −.000374 | −.000135 |
+| volume_high | 1,128/155,162 | +.001293 [+.000938,+.001647] | .001814 | +.000066 | .000269 |
+| volume_zero (TRAIN0) | 646/28,746 | **−.000454 [−.000674,−.000243]** | −.000149 | −.000223 | −.000106 |
+| two_strikes | 1,161/92,977 | +.001244 [+.000703,+.001788] | .002043 | +.000075 | .000388 |
+| less_two_strikes | 1,161/218,744 | +.000520 [+.000265,+.000778] | .000897 | −.000173 | −.000030 |
+| runners_on | 1,161/121,391 | +.001107 [+.000689,+.001526] | .001723 | −.000063 | .000150 |
+| bases_empty | 1,161/190,330 | +.000499 [+.000204,+.000796] | .000929 | −.000123 | .000054 |
+
+TRAIN0 그룹만 ΔNLL 95% CI 전체가 0 아래로 G3 개선 방향이었고 나머지 11그룹의 점추정은 모두 양수(G3 악화 방향)였다. R은 비열등 상한이며 이 그룹 개선은 등록된 주 가설이 아니므로 새 성공으로 세지 않는다.
+
+**기술 통계(규약상 새 성공 선정에 쓰지 않음).**
+
+| 부분집합 | 경기/구 | G3 NLL | G2 NLL | ΔNLL (G3−G2) | ΔBrier |
+|---|---:|---:|---:|---:|---:|
+| Cpanel | 328/12,334 | 1.483727 | 1.483806 | −.000079 | −.000393 |
+| 비패널 | 1,161/299,387 | 1.491616 | 1.490846 | +.000770 | −.000087 |
+| seen 투수 | 1,161/282,975 | 1.491227 | 1.490371 | +.000857 | −.000087 |
+| unseen 투수 | 646/28,746 | 1.492055 | 1.492510 | −.000454 | −.000223 |
+| seen 타자 | 1,161/289,312 | 1.492240 | 1.491467 | +.000773 | −.000089 |
+| unseen 타자 | 850/22,409 | 1.479218 | 1.478958 | +.000260 | −.000233 |
+| 2025-07 | 368/97,961 | 1.500173 | 1.499515 | +.000658 | −.000091 |
+| 2025-08 | 420/113,592 | 1.489950 | 1.489231 | +.000719 | −.000107 |
+| 2025-09 | 373/100,168 | 1.484165 | 1.483333 | +.000831 | −.000098 |
+| 투수 722명 동일가중 macro | — | 1.503653 | 1.502943 | +.000710 | −.000138 |
+
+월별 G3 악화 폭은 7→8→9월로 커지는 방향이었지만 구간 추정이 없는 기술 통계다. 부분집합 ΔNLL은 두 모델 NLL의 차이로 계산했다.
+
+**경로 범위.** 개인 모형 적격 후보48명 중 실제 개인 모형이 있는 투수는11명이고 나머지는 동결 league/cluster 경로로 돌아간다(전체 MLB 개인화 모형을 새로 학습한 것이 아니다). 군집 전문가는 k=4이며 TRAIN 투수1,137명에서 만든 동결 군집이다. delivery tier는 6개 산출물 모두 {−1:34, 0:276, 1:83,480, 2:70,244, 3:157,687}으로 같았고 −1은 전역 fallback이다. 새 선수의 과거 DEV 이력은 기존 context 규칙대로 온라인 반영되므로 TRAIN0·unseen 그룹은 T2의 엄격한 선수 제외 zero-shot과 다르다.
+
+**비용.** prepare 1.34초(2026-09-26T16:11:14Z) → 사전 추정(G panel 실측 외삽 member당 최대1,092.3초, family 6,553.6초)으로 gate 진행 → G3 seed0 gate 444.86초 wall(내부442.36초, 최고 RSS6.69GB) → 나머지5회 단일 큐2,233.14초(회당441.1~452.5초 wall) → scorer 27.76초 wall(내부19.20초, 자식 최고 RSS1.44GB, exit0, 16:58:01~16:58:29Z)였다. 6회 내부 runtime은438.5~450.0초, 최고 RSS6.69~6.72GB로 모두 exit0이다. 큐 총합2,679.35초로 예산28,800초의9.3%이며 scorer 포함2,707.1초다. 기록은 `audit/t4-transfer/{cost-gate.json,queue-state*.json,queue-summary*.json}`, `audit/t4-score/score-exit.json`이다.
+
+**규약 이탈·이상 2건.**
+1. `cost-gate.json`의 첫 작성 시도가 JSON 형식 읽기 오류로 쓰기 전에 중단됐고, gate 멤버(G3 seed0)는 같은 셸 명령에서 16:12:00Z에 이미 시작됐다. 같은 입력으로 계산한 추정을 16:12:23Z(gate 시작 약23초 뒤)에 다시 썼으며 판단은 변하지 않았고 성능은 열지 않았다. 파일의 `deviation_note`에 기록돼 있다.
+2. 등록된 코드 경로(`run_ml_transfer.predict → run_ml_sharing.predict(mlb=True)`)가 부모 `EXP-P4-001/members/{G3-cluster,G2-feature}/seed{0,1,2}/`에 `mlb_predictions.npz`·`mlb_prediction_runtime.json`·`mlb_prediction_state.json`을 새로 만들었다. 기존 부모 파일은 변경되지 않았고 T4 이후 수정된 부모 member 파일은 이 `mlb_*` 파일뿐이다. 부모 run 디렉터리에 자식 산출물이 생긴 것은 기록해 두며 삭제하지 않는다.
+
+해석 경계: G3-cluster는 `diagnostic_only_not_promoted` 그대로이며 T4는 독립 확인이 아니고(`independent_confirmation=null`) 정책 효과도 아니다(`policy_effect=null`). 전체 MLB에서는 G3가 G2보다 NLL이 미세하게 나빴고(+.000736, 3/3seed), 학습에서 본 적 없는 투수(TRAIN0/unseen 투수28,746구)에서만 개선 방향이었다. T2의 제외 타자 개선과 함께 "새 선수 쪽에서만 군집 전문가 이득이 있을 수 있다"는 것은 **가설 수준의 기술 관찰**이며 새 성공이나 후보 변경의 근거로 세지 않는다. unseen 타자는 +.000260으로 같은 방향이 아니었다. bootstrap은 고정 예측 조건부로 학습·보정·선정 불확실성을 포함하지 않고, 사후 적격성은 투구 전 가용성과 다르다(`limits`).
+
+근거는 `EXP-P7-003/analysis/{results.json,predictions.npz,manifest.json}`과 `EXP-P7-003/preparation.json`이며 SHA256은 각각 `dfbdd919f63e5c16281d590e5fd121fff7f102c9526fe6bf6795d5ab59ad5932`, `3f8a197c553e094697fdbd5e2cb78b34ba372dab3a9f1766a6be35828d823a0a`, `0861844143093ca7643ff7d67f46829ee08cef7154ad47f37ddd85249c207d58`, `21986d47c9d39d79bb2cb268659eb78eecdcb87ce57cdf9be6a62d2bf10f49f3`이다.
+
 ### 후속 실행 준비와 비용 확인
 
 F4의3arm×3seed와 I1의신규6fit은 각각 [긴 이력 규약](../contracts/ML-LONG-HISTORY-EXECUTION-v1.md), `configs/EXP-P4-002.yaml`/`EXP-P5-001.yaml`에 등록했다. T2/T3/T4에는 [선수 제외·입력 오류 규약](../contracts/ML-T2-T3-PROTOCOL.md), [stress 판정](../contracts/ML-STRESS-EXECUTION-v1.md), [전체 MLB 이전·후속 선택 규칙](../contracts/ML-TRANSFER-EXECUTION-v1.md)을 마련했다. 코드/synthetic 검사 준비와 실제 실험 완료는 구분한다.
 
-T3 `EXP-P7-002`는 2026-09-27 00:22~01:06 KST에 prepare(1.75초)·seed0 clean gate·나머지58회 추론(2,361.0초)과 scorer(76.3초)를 모두 exit0으로 마쳐 **완료**했고 결과는 위 **T3 입력 stress 완료** 절에 기록했다. T4 `EXP-P7-003`은 현재 **실행 중**(`audit/t4-transfer/`)이며 점수는 아직 기록하지 않는다.
+T3 `EXP-P7-002`는 2026-09-27 00:22~01:06 KST에 prepare(1.75초)·seed0 clean gate·나머지58회 추론(2,361.0초)과 scorer(76.3초)를 모두 exit0으로 마쳐 **완료**했고 결과는 위 **T3 입력 stress 완료** 절에 기록했다. T4 `EXP-P7-003`은 2026-09-27 01:11~01:58 KST에 prepare(1.34초)·G3 seed0 gate(444.86초)·나머지5회 추론(2,233.14초)과 scorer(27.76초)를 모두 exit0으로 마쳐 **완료**했고(큐 총2,679.35초, 예산의9.3%) 결과는 위 **T4 전체 MLB 이전 평가 완료** 절에 기록했다. P8 `EXP-P8-001` 정책 실행은 현재 **실행 중**(`audit/p8-policy/`)이며 점수는 아직 기록하지 않는다.
 
 F4 첫 준비는 약4.8초에 중단됐다. 한 타석에 두 타자 ID가 있는47타석/248구를 long-history 구현이 거부했으며 profile/fit/점수는 생성되지 않았다. 정규시즌 전체2,145,111구의 키 감사에서 이 행들은 frozen G의 TRAIN/early/temperature/blend/DEV/전체MLB query에 하나도 포함되지 않았다. 분할별 원본 수는 TRAIN33타석/173구, early1/4, temperature0, blend2/11, DEV9/48, 미사용2/12다. 실패 attempt와 `audit/f4-profiles/ambiguity.json`을 보존했다. 별도 긴 이력에서만 이러한 완료된 과거 타석을 제외하고 모든 base/H5/query 행과 고정 auxiliary를 유지하는 수정이 독립 검토와10개 합성 검사를 통과했다. [fresh attempt2](../../configs/EXP-P4-002-v2.yaml)의 준비와3개 실제 profile도 완료했고 모든 공통 분할 키가 G와 정확히 일치했다. 현재 지원 여부나 결과를 보고 과거 이력을 제거하는 규칙은 사용하지 않는다.
 
@@ -247,7 +314,7 @@ D2는 신규3fit/보존6fit 검증과 두 주 비교를 완료했고 위에 결�
 
 T2 `EXP-P7-001`은 준비17.31초와 투수/타자 TRAIN-only profile7.67/8.75초를 마쳤다(`audit/t2-profiles/queue-state.json`). profile의 seed당 fit 외삽은 투수1,213.8초, 타자2,763.4초였다. **투수 축** G0-global fallback3seed의 fit+predict를 완료했다. seed0/1/2의 fit 내부 시간은89.22/95.03/85.56초, 최고 RSS11.07/11.87/11.76GB, predict는24.85/24.68/24.69초와11.95/12.03/11.97GB였다. 큐 누적406.52초, 실패0이다(`audit/t2-full/queue-state.json`, `EXP-P7-001/pitcher/fits/seed{S}/global/fit.json`, `members/G0-global/seed{S}/runtime.json`). **타자 축**은2026-09-26 23:48 KST에 단일 큐로 시작해 fit3개·G3-cluster/G2-feature predict6개가 모두 exit0으로 끝났다(총838.65초, `audit/t2-batter/`). 2026-09-24 `audit/t2-full/fit-batter-0.log`는 빈 파일이고 queue-state 기록이 없어 완료로 세지 않는다. 이어 scorer를 한 번 실행해(wall10.30초, exit0) T2를 완료했고 결과는 위 **T2 새 선수 일반화 완료** 절에 기록했다. 채점 전 predict runtime의 `new_DEV_scores_read=false`는 채점 이전 상태이며, 이제 새 DEV 점수는 열람됐다.
 
-P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-001`의 준비187.90초와 May16-31 temperature4시작 profile(내부4.83초, 최고 RSS0.98GB, 조건부1,501행, `quality_scores_read=false`)을 완료했다. 고정 예산으로 고른 시작 타석은 temperature4/729, blend128/1,338(지원120), DEV128/3,357(지원117)이다(`audit/p8-preparation-profile/queue-state.json`, `EXP-P8-001/stages/profile/result.json`). 정책 실행은0개이며 최종 실행 예산은 별도로 고정한다. 기존 WE/진루 모델의 학습 기간은 2025-04-30까지이며 실제 사용 전 동결 artifact 해시를 재검사한다. 정책 모델 내부 결과도 아직 없다. 최소30경기·50타석 시작 조건과 rollout 중단의 최악 경우를 반영한 paired CI/검정을 보강했다. IQL/CQL은 사용자의 강화학습 비교 요청과 rollout 비용을 근거로 활성화했다. [오프라인 RL 실행기](../contracts/ML-OFFLINE-RL-RUNNER-v1.md)는 같은 입력의 neural BC·IQL·CQL 각3seed, 공통 수비 WE 보상, TRAIN 비용 profile 및 4개 공동 주 비교를 구현했다. 관련 합성60검사+8subtest를 통과했으며 실제 RL 준비/profile/학습은 시작하지 않았다.
+P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-001`의 준비187.90초와 May16-31 temperature4시작 profile(내부4.83초, 최고 RSS0.98GB, 조건부1,501행, `quality_scores_read=false`)을 완료했다. 고정 예산으로 고른 시작 타석은 temperature4/729, blend128/1,338(지원120), DEV128/3,357(지원117)이다(`audit/p8-preparation-profile/queue-state.json`, `EXP-P8-001/stages/profile/result.json`). 당시 정책 실행은0개였고 최종 실행 예산은 별도로 고정했다. 이후 정책 실행을 시작해 현재 실행 중이다(`audit/p8-policy/`). 기존 WE/진루 모델의 학습 기간은 2025-04-30까지이며 실제 사용 전 동결 artifact 해시를 재검사한다. 정책 모델 내부 결과도 아직 없다. 최소30경기·50타석 시작 조건과 rollout 중단의 최악 경우를 반영한 paired CI/검정을 보강했다. IQL/CQL은 사용자의 강화학습 비교 요청과 rollout 비용을 근거로 활성화했다. [오프라인 RL 실행기](../contracts/ML-OFFLINE-RL-RUNNER-v1.md)는 같은 입력의 neural BC·IQL·CQL 각3seed, 공통 수비 WE 보상, TRAIN 비용 profile 및 4개 공동 주 비교를 구현했다. 관련 합성60검사+8subtest를 통과했으며 실제 RL 준비/profile/학습은 시작하지 않았다.
 
 ## 전체 60개 행 상태
 
@@ -297,12 +364,12 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-T1 | 필수 | Cpanel 완료·전체 MLB 대기 | G 월별 NLL/Brier/보정/짝지은 차이; 추가 성공 선정에 사용 안 함 |
 | MX-T2 | 필수 | 완료(채점) | EXP-P7-001;자연 새 대진 G3−G2 미확정(Holm p.6386), 제외 타자 Z/W/O G3−G2 N 통과(ΔNLL−.004418/−.004361/−.003743), 제외 투수 W−Z/O−Z 이력 적응 개선(−.017682/−.017681); R 96슬롯 통과77/실패11/결측8(자연·W·O failed, Z unconfirmed(structural: volume_zero), D61); 진단용 쌍 승격 없음·독립 확인 아님 |
 | MX-T3 | 필수 | 완료(채점) | EXP-P7-002;60회 재추론(새 fit0), 270상한 통과228/실패24(상대5·안정성19)/미측정18; relative_R failed(9시나리오 전체 통과, two_strikes ΔBrier 상한5개 실패), 안정성 G3/G2 failed; volume_zero 구조적 결측(D61); 진단용 쌍 승격 없음·독립 확인 아님 |
-| MX-T4 | 필수 | 진단용G3−G2 실행 중 | EXP-P7-003;동결2모형×3seed,전체적격311721구,보정불변 |
+| MX-T4 | 필수 | 완료(채점) | EXP-P7-003;동결2모형×3seed,적격311,721구/1,161경기,보정불변·새 fit0; N G3−G2 ΔNLL+.000736 [+.000493,+.000978] `worse_or_guardrail_failure`(Holm1.0,3/3악화), G 저표본19,462구 +.001686 `inconclusive`; R24 **passed**(12그룹 측정, volume_zero TRAIN0 28,746구 측정·ΔNLL−.000454); 진단용 쌍 승격 없음·독립 확인 아님·정책 효과 없음 |
 | MX-T5 | 필수·자료 확인 | 외부 자료 필요 | 선정에 노출되지 않은 허용된 비2026 확인셋 미확보 |
-| MX-P0 | 필수 | EXP-P8-001 준비/profile 완료 | TRAIN-only BC; May4시작 profile4.83초/RSS0.98GB, 실제 적합/평가 대기 |
-| MX-P1 | 필수 | 구종 rollout 준비/profile 완료 | 첫 행동 Q^BC 최댓값 후 BC 진행;G3계획/G2공통평가 |
-| MX-P2 | 필수 | 구종 rollout 준비/profile 완료 | 매 공 Q^BC 재계획하는 근사,정확한 전 타석 최적해 아님 |
-| MX-P3 | 필수 | 구종 rollout 준비/profile 완료 | 매 공 BC-KL 혼합;실제May비용 뒤 J/rollouts/caps 고정,이후6월τ선정 |
+| MX-P0 | 필수 | EXP-P8-001 실행 중 | TRAIN-only BC; May4시작 profile4.83초/RSS0.98GB 뒤 정책 실행 중(`audit/p8-policy/`), 점수 미기록 |
+| MX-P1 | 필수 | EXP-P8-001 실행 중 | 첫 행동 Q^BC 최댓값 후 BC 진행;G3계획/G2공통평가; 점수 미기록 |
+| MX-P2 | 필수 | EXP-P8-001 실행 중 | 매 공 Q^BC 재계획하는 근사,정확한 전 타석 최적해 아님; 점수 미기록 |
+| MX-P3 | 필수 | EXP-P8-001 실행 중 | 매 공 BC-KL 혼합;실제May비용 뒤 J/rollouts/caps 고정,이후6월τ선정; 점수 미기록 |
 | MX-P4 | 후속 | 활성화·IQL 실행기·synthetic 감사 완료 | 같은 입력 neural BC 추가, TRAIN-only 비용 profile 후 업데이트 수 동결; 실제 fit 전 |
 | MX-P5 | 후속 | 활성화·CQL 실행기·synthetic 감사 완료 | IQL과 같은 관측 타석·구종·보상·공통 평가기; 실제 fit 전 |
 | MX-P6 | 자료 필요 | 외부 자료 필요 | 실제 검토된 목표 위치 라벨 필요 |
