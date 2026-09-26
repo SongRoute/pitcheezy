@@ -101,3 +101,8 @@ selection/exposure metadata, inactive reasons, metrics, seed directions, model
 costs, all six adjusted slots and all 96 robustness slots. The immutable analysis
 manifest pins preparation, input predictions/checkpoints, and scoring source
 hashes. No policy-effect claim follows from these prediction tests.
+
+## 부록(2026-09-27, D61)
+
+이 부록은 해석 주석이며 위 판정 규칙(재정규화 금지, 측정 실패 우선, 결측 시 unconfirmed)은 바꾸지 않는다. 자연 새 대진과 타자 제외 fold에서는 투수가 항상 TRAIN에 있으므로 robustness의 `volume_zero` 그룹은 설계상 채워질 수 없는 구조적 결측이다.
+보고서는 이 경우를 다른 결측과 구분해 `unconfirmed(structural: volume_zero)`로 표기하고, zero-TRAIN 강건성은 온라인 TRAIN0 그룹이 실제로 있는 T4 전체 MLB에서 측정한다.
