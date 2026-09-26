@@ -132,6 +132,10 @@ D25에서 MLP/Transformer 각3seed를 새로 학습하고, 설정·표본·해�
 
 신규6fit/6predict 명령 모두 성공했고 준비 포함 실제 family 비용은 **759.6초**, 가장 긴 명령195.2초였다. scorer CLI1.8초는 별도다. 근거는 `EXP-P5-001/analysis/{results.json,manifest.json,predictions.npz}`이며 결과 SHA256은 `c34a3ef0ba1bbc01935aaa834cd5e51fbd2cd38639a494831d33127118b25008`이다. 공통 최대epoch·early-stop은 동일 시간/optimizer update 비교가 아니며, 상호작용은 보정·빈도 혼합까지 포함한 파이프라인 효과다. 이 결과만으로 Transformer의 자료 부족이나 더 큰 자료에서의 우위를 가정하지 않는다.
 
+![D2 결과·보조 자료량과 I1 자료량×구조 상호작용](figures/ML-D2-I1-data-followups.png)
+
+그림은 봉인된 `EXP-P6-001/analysis/results.json`(SHA256 `cbd8dfd5…6e11f`)과 `EXP-P5-001/analysis/results.json`(`c34a3ef0…b25008`)만 읽으며 provenance의 두 해시는 위 본문 해시와 일치한다. 두 family는 별도 bootstrap이고 입력 표현이 달라 D2와 I1의 절대 점수를 통제된 효과로 비교하지 않는다.
+
 ### 후속 실행 준비와 비용 확인
 
 F4의3arm×3seed와 I1의신규6fit은 각각 [긴 이력 규약](../contracts/ML-LONG-HISTORY-EXECUTION-v1.md), `configs/EXP-P4-002.yaml`/`EXP-P5-001.yaml`에 등록했다. T2/T3/T4에는 [선수 제외·입력 오류 규약](../contracts/ML-T2-T3-PROTOCOL.md), [stress 판정](../contracts/ML-STRESS-EXECUTION-v1.md), [전체 MLB 이전·후속 선택 규칙](../contracts/ML-TRANSFER-EXECUTION-v1.md)을 마련했다. 코드/synthetic 검사 준비와 실제 실험 완료는 구분한다.
