@@ -88,13 +88,17 @@ def test_seed_deltas_require_five_pairs_and_pair_by_index():
 def test_draft_configs_validate_as_drafts_and_real_mode_rejects_null_pins():
     ext = validate_extension_config(draft('EXP-P9-002.yaml'), real=False)
     assert ext['decision'] == DECISION and ext['held_out_confirmation'] is False and ext['independent_confirmation'] is None
+    unpinned_ext = deepcopy(ext)
+    unpinned_ext['parent_c1']['source_hashes'] = None
     with pytest.raises(ValueError, match='frozen before a real command'):
-        validate_extension_config(draft('EXP-P9-002.yaml'), real=True)
+        validate_extension_config(unpinned_ext, real=True)
     bundle = validate_bundle(draft('ML-G0-F1-FIVE-SEED-v1.json'), real=False)
     assert set(bundle['sources']) == set(runner.SOURCES) and 'scripts/score_ml_confirmation.py' in bundle['sources']
     assert 'scripts/score_ml_bridge.py' in bundle['sources'] and bundle['sequence'] == [list(s) for s in SEQUENCE]
+    unpinned_bundle = deepcopy(bundle)
+    unpinned_bundle['repo_commit'] = None
     with pytest.raises(ValueError, match='repo_commit'):
-        validate_bundle(draft('ML-G0-F1-FIVE-SEED-v1.json'), real=True)
+        validate_bundle(unpinned_bundle, real=True)
     from pitchmdp.matrix_confirmation import validate_config
     c1 = validate_c1_config_shape(validate_config(draft('EXP-P10-001.yaml')))
     assert c1['registration']['batch_wall_budget_seconds'] == 7200 and c1['cells'] == ['G0-global'] and c1['primary_comparisons'] == []
