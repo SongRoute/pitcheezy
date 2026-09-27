@@ -122,9 +122,30 @@ def validate_config(config, *, real=True):
     registration = config['registration']
     if not isinstance(registration, dict) or not isinstance(registration.get('status'), str):
         raise ValueError('Registration must be an object with a status string')
+    if not isinstance(registration.get('output'), str) or not registration['output']:
+        raise ValueError('Registration must name the registered output path')
     if real and 'DRAFT' in registration['status'].upper():
         raise ValueError('A DRAFT registration status cannot execute a real command')
     return config
+
+
+def output_guard(output, config):
+    """The requested output must be the registered output and disjoint from all three parents.
+
+    Runs before any write, including the internal ledger: an output equal to,
+    inside, or containing a sealed parent would otherwise mutate that parent
+    before the runner refuses.  Pure path arithmetic; nothing is touched.
+    """
+    from pathlib import Path
+    output = Path(output).resolve()
+    registered = Path(config['registration']['output']).resolve()
+    if output != registered:
+        raise ValueError(f'Output {output} differs from the registered output {registered}')
+    for name in ('parent_g', 'parent_c1', 'parent_t4'):
+        parent = Path(config[name]['run']).resolve()
+        if output == parent or output.is_relative_to(parent) or parent.is_relative_to(output):
+            raise ValueError(f'Output {output} is not disjoint from the sealed {name} run {parent}')
+    return output
 
 
 def validate_native_environment(parent_identity, expected):
@@ -237,6 +258,37 @@ def require_within_tolerance(report):
     return report
 
 
+def compare_levels(mine, sealed, *, name):
+    """Delivery tiers are discrete routing decisions: exact equality, no tolerance."""
+    mine, sealed = np.asarray(mine), np.asarray(sealed)
+    if mine.shape != sealed.shape or mine.ndim != 1 or not np.issubdtype(mine.dtype, np.integer) or not np.issubdtype(sealed.dtype, np.integer):
+        raise ValueError(f'{name}: delivery tier shapes/dtypes differ from the sealed reference')
+    mismatches = int((mine != sealed).sum())
+    return {'name': name, 'rows': int(len(mine)), 'mismatches': mismatches, 'equal': mismatches == 0}
+
+
+def require_equal_levels(report):
+    if report['equal'] is not True:
+        raise ValueError(f'{report["name"]}: {report["mismatches"]} delivery tiers differ from the sealed Cpanel member')
+    return report
+
+
+def cpanel_subset_alignment(values, sealed, positions, *, atol):
+    """Whole-MLB rows at the Cpanel positions versus the sealed member: probabilities within tolerance, tiers exact."""
+    positions = np.asarray(positions)
+    if not np.array_equal(values['dev_keys'][positions], sealed['dev_keys']) or not np.array_equal(values['dev_y'][positions], sealed['dev_y']):
+        raise ValueError('Sealed Cpanel keys/labels differ from the whole-MLB overlap rows')
+    return [compare_predictions(values['dev'][positions], sealed['dev'], atol=atol, name='cpanel_subset_calibrated'),
+            compare_predictions(values['dev_raw'][positions], sealed['dev_raw'], atol=atol, name='cpanel_subset_raw'),
+            compare_levels(values['dev_delivery_level'][positions], sealed['dev_delivery_level'], name='cpanel_subset_delivery_level')]
+
+
+def require_alignment(reports):
+    for report in reports:
+        (require_equal_levels if 'equal' in report else require_within_tolerance)(report)
+    return reports
+
+
 def validate_member_archive(values, baseline):
     """Whole-MLB member archive: exact keys/labels pairing and valid probability mass."""
     if set(values) != set(ARCHIVE_FIELDS):
@@ -261,7 +313,7 @@ def validate_member_archive(values, baseline):
 
 def project_costs(measured, *, n_dev, probe_rows, budget, prepare_seconds):
     """Linear per-row extrapolation of one measured member; a planning estimate, never a bound."""
-    for name in ('command_overhead_seconds', 'load_seconds', 'inference_seconds', 'wall_seconds'):
+    for name in ('command_overhead_seconds', 'load_seconds', 'model_load_seconds', 'inference_seconds', 'wall_seconds'):
         if not _finite(measured.get(name)) or measured[name] < 0:
             raise ValueError('Finite nonnegative profile measurement required: ' + name)
     rows = measured.get('rows')
@@ -270,7 +322,8 @@ def project_costs(measured, *, n_dev, probe_rows, budget, prepare_seconds):
     if not _finite(prepare_seconds) or prepare_seconds < 0:
         raise ValueError('Finite nonnegative prepare wall required')
     per_row = measured['inference_seconds'] / rows
-    overhead = measured['command_overhead_seconds'] + measured['load_seconds']
+    # Every predict command pays verification, data load and checkpoint load before its first row.
+    overhead = measured['command_overhead_seconds'] + measured['load_seconds'] + measured['model_load_seconds']
     member = overhead + per_row * (n_dev + probe_rows)
     family = prepare_seconds + measured['wall_seconds'] + len(SEEDS) * member
     return {'seconds_per_row': per_row, 'member_seconds': member, 'five_member_seconds': len(SEEDS) * member,

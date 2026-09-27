@@ -19,7 +19,8 @@ from pitchmdp.data import KEY, hash_file
 from pitchmdp.matrix_data import canonical_hash
 from pitchmdp.matrix_benchmark import predict_streamed
 from pitchmdp.matrix_g0_whole import (ARCHIVE_FIELDS, CELL, FIXED, SEEDS, SOURCE_ARM, check_eligible_population,
-    compare_predictions, cpanel_positions, frozen_weights, launch_gate, ledger_totals, member_identity, project_costs,
+    compare_levels, compare_predictions, cpanel_positions, cpanel_subset_alignment, frozen_weights, launch_gate,
+    ledger_totals, member_identity, output_guard, project_costs, require_alignment, require_equal_levels,
     require_within_tolerance, validate_config, validate_member_archive, validate_native_environment)
 from pitchmdp.matrix_models import MatrixModel
 from pitchmdp.matrix_sharing import training_arrays
@@ -61,7 +62,7 @@ def test_draft_validates_only_as_draft_and_real_mode_refuses_null_pins_and_draft
     pinned = frozen()
     assert validate_config(pinned, real=True) is pinned
     with pytest.raises(ValueError, match='DRAFT'):
-        validate_config({**pinned, 'registration': {'status': 'draft copy'}}, real=True)
+        validate_config({**pinned, 'registration': {'status': 'draft copy', 'output': pinned['registration']['output']}}, real=True)
     unbudgeted = deepcopy(pinned); unbudgeted['budget']['batch_wall_budget_seconds'] = None
     with pytest.raises(ValueError, match='frozen before a real command'):
         validate_config(unbudgeted, real=True)
@@ -235,12 +236,17 @@ def test_compare_predictions_and_member_archive_contract():
 # ---------------------------------------------------------------- cost projection and ledger
 
 def test_projection_is_linear_in_rows_and_gates_member_and_batch_budgets():
-    measured = {'rows': 256, 'command_overhead_seconds': 3., 'load_seconds': 40., 'probe_seconds': .5,
-                'inference_seconds': 2.56, 'wall_seconds': 50.}
+    measured = {'rows': 256, 'command_overhead_seconds': 3., 'load_seconds': 40., 'model_load_seconds': 2.,
+                'probe_seconds': .5, 'inference_seconds': 2.56, 'wall_seconds': 50.}
     budget = {'single_member_wall_limit_seconds': 7200, 'batch_wall_budget_seconds': 20000}
     out = project_costs(measured, n_dev=311721, probe_rows=64, budget=budget, prepare_seconds=10.)
     assert out['seconds_per_row'] == pytest.approx(.01)
-    assert out['member_seconds'] == pytest.approx(43. + .01 * (311721 + 64))
+    # Verification + data load + checkpoint load overhead, then per-row inference over population and probe rows.
+    assert out['member_seconds'] == pytest.approx(45. + .01 * (311721 + 64))
+    without_model = project_costs({**measured, 'model_load_seconds': 0.}, n_dev=311721, probe_rows=64, budget=budget, prepare_seconds=10.)
+    assert out['member_seconds'] - without_model['member_seconds'] == pytest.approx(2.)
+    with pytest.raises(ValueError, match='model_load_seconds'):
+        project_costs({k: v for k, v in measured.items() if k != 'model_load_seconds'}, n_dev=311721, probe_rows=64, budget=budget, prepare_seconds=10.)
     assert out['five_member_seconds'] == pytest.approx(5 * out['member_seconds'])
     assert out['family_seconds'] == pytest.approx(10. + 50. + out['five_member_seconds'])
     assert out['member_gate'] and out['batch_gate']
@@ -410,6 +416,9 @@ class FakeDelivery:
     """Deterministic per-row draws; the same rows always produce the same logits regardless of chunking."""
     draws = 4
 
+    def __init__(self, tier=3):
+        self.tier = tier
+
     def logits(self, model, store, context, rows):
         rows = np.asarray(rows)
         tokens, valid, ctx = [], [], []
@@ -420,7 +429,7 @@ class FakeDelivery:
             ctx.append(rng.normal(size=(self.draws, 59)).astype(np.float32))
         arrays = (np.concatenate(tokens), np.concatenate(valid), np.concatenate(ctx))
         arrays[0][:, -1, -11:] = 0
-        return model.logits(arrays).reshape(len(rows), self.draws, 10), np.full(len(rows), 3, dtype=np.int64)
+        return model.logits(arrays).reshape(len(rows), self.draws, 10), np.full(len(rows), self.tier, dtype=np.int64)
 
 
 def toy_arrays(n, seed):
@@ -472,11 +481,16 @@ def test_probe_reproduces_sealed_predictions_through_the_same_path_and_rejects_d
     dev = frame.iloc[:12]
     # Seal predictions the way the original panel path did: same wrapper, same integration, any chunking.
     predictor, _ = runner.load_member(config, member, {})
-    sealed_p, sealed_raw, _ = predict_streamed(predictor, delivery, None, None, dev.index.to_numpy(), chunk_size=5)
-    np.savez_compressed(folder / 'predictions.npz', dev=sealed_p, dev_raw=sealed_raw, dev_keys=dev[KEY].to_numpy(np.int64))
+    sealed_p, sealed_raw, sealed_levels = predict_streamed(predictor, delivery, None, None, dev.index.to_numpy(), chunk_size=5)
+    keys = dev[KEY].to_numpy(np.int64)
+    np.savez_compressed(folder / 'predictions.npz', dev=sealed_p, dev_raw=sealed_raw, dev_delivery_level=sealed_levels, dev_keys=keys)
     probe = runner.probe_cpanel(predictor, {'delivery': delivery}, None, None, dev, member, rows=7, atol=1e-6)
-    assert probe['rows'] == 7 and all(r['within_tolerance'] for r in probe['reports'])
-    assert probe['reports'][0]['maximum_absolute_difference'] <= 1e-6 and probe['reports'][1]['name'] == 'probe_raw'
+    assert probe['rows'] == 7 and [r['name'] for r in probe['reports']] == ['probe_calibrated', 'probe_raw', 'probe_delivery_level']
+    assert all(r['within_tolerance'] for r in probe['reports'][:2]) and probe['reports'][2] == {'name': 'probe_delivery_level', 'rows': 7, 'mismatches': 0, 'equal': True}
+    assert probe['reports'][0]['maximum_absolute_difference'] <= 1e-6
+    # Identical probabilities with a different delivery tier must fail: tiers are exact routing decisions.
+    with pytest.raises(ValueError, match='delivery tiers differ'):
+        runner.probe_cpanel(predictor, {'delivery': FakeDelivery(tier=2)}, None, None, dev, member, rows=7, atol=1e-6)
     # A whole-population pass over a superset reproduces the overlap rows exactly.
     whole_p, whole_raw, _ = predict_streamed(predictor, delivery, None, None, frame.index.to_numpy(), chunk_size=64)
     positions = np.arange(12)
@@ -488,6 +502,93 @@ def test_probe_reproduces_sealed_predictions_through_the_same_path_and_rejects_d
     drifted, _ = runner.load_member(config, {**member, 'delivery_temperature': 1.3}, {})
     with pytest.raises(ValueError, match='no longer reproduces'):
         runner.probe_cpanel(drifted, {'delivery': delivery}, None, None, dev, member, rows=7, atol=1e-6)
-    np.savez_compressed(folder / 'predictions.npz', dev=sealed_p, dev_raw=sealed_raw, dev_keys=dev[KEY].to_numpy(np.int64)[::-1])
+    np.savez_compressed(folder / 'predictions.npz', dev=sealed_p, dev_raw=sealed_raw, dev_delivery_level=sealed_levels, dev_keys=keys[::-1])
     with pytest.raises(ValueError, match='sealed Cpanel keys'):
         runner.probe_cpanel(predictor, {'delivery': delivery}, None, None, dev, member, rows=7, atol=1e-6)
+
+
+def test_full_subset_alignment_requires_exact_tiers_even_with_identical_probabilities():
+    rng = np.random.default_rng(4)
+    baseline, in_cpanel, _ = population()
+    positions = np.flatnonzero(in_cpanel)
+    p = rng.dirichlet(np.ones(10), 30)
+    levels = rng.integers(0, 4, 30).astype(np.int64)
+    values = {'dev': p, 'dev_raw': p, 'dev_delivery_level': levels, **baseline}
+    sealed = {'dev_keys': baseline['dev_keys'][positions], 'dev_y': baseline['dev_y'][positions], 'dev': p[positions] + 1e-8,
+              'dev_raw': p[positions], 'dev_delivery_level': levels[positions].copy()}
+    reports = cpanel_subset_alignment(values, sealed, positions, atol=1e-6)
+    assert [r['name'] for r in reports] == ['cpanel_subset_calibrated', 'cpanel_subset_raw', 'cpanel_subset_delivery_level']
+    assert require_alignment(reports) is reports and reports[2]['equal'] and reports[2]['rows'] == 6
+    drifted = dict(sealed); drifted['dev_delivery_level'] = sealed['dev_delivery_level'].copy(); drifted['dev_delivery_level'][2] = (drifted['dev_delivery_level'][2] + 1) % 4
+    broken = cpanel_subset_alignment(values, drifted, positions, atol=1e-6)
+    assert broken[0]['within_tolerance'] and broken[1]['within_tolerance'] and broken[2] == {'name': 'cpanel_subset_delivery_level', 'rows': 6, 'mismatches': 1, 'equal': False}
+    with pytest.raises(ValueError, match='1 delivery tiers differ'):
+        require_alignment(broken)
+    with pytest.raises(ValueError, match='keys/labels differ'):
+        cpanel_subset_alignment(values, {**sealed, 'dev_y': (sealed['dev_y'] + 1) % 10}, positions, atol=1e-6)
+    with pytest.raises(ValueError, match='shapes/dtypes'):
+        compare_levels(levels[:5].astype(float), levels[:5], name='x')
+    with pytest.raises(ValueError, match='no longer reproduces'):
+        require_alignment(cpanel_subset_alignment({**values, 'dev_raw': np.roll(p, 1, axis=0)}, sealed, positions, atol=1e-6))
+    assert require_equal_levels(compare_levels(levels, levels, name='same'))['mismatches'] == 0
+
+
+# ---------------------------------------------------------------- output guard: no write before disjointness
+
+def guarded_config(tmp_path, output):
+    config = frozen()
+    protocol = tmp_path / 'artifacts' / 'runs' / 'ML-MATRIX-20260924'
+    for name, experiment in (('parent_g', 'EXP-P4-001'), ('parent_c1', 'EXP-P10-001'), ('parent_t4', 'EXP-P7-003')):
+        config[name]['run'] = str(protocol / experiment)
+    config['registration']['output'] = str(output)
+    return config, protocol
+
+
+def test_output_guard_requires_registered_output_and_disjointness_from_all_parents(tmp_path):
+    config, protocol = guarded_config(tmp_path, tmp_path / 'artifacts' / 'runs' / 'ML-MATRIX-20260924' / 'EXP-P11-001')
+    assert output_guard(protocol / 'EXP-P11-001', config) == (protocol / 'EXP-P11-001').resolve()
+    with pytest.raises(ValueError, match='differs from the registered output'):
+        output_guard(protocol / 'EXP-P11-002', config)
+    for offending, name in ((protocol / 'EXP-P4-001', 'parent_g'), (protocol / 'EXP-P10-001' / 'members', 'parent_c1'),
+                            (protocol, 'parent_g'), (tmp_path, 'parent_g'), (protocol / 'EXP-P7-003', 'parent_t4')):
+        config['registration']['output'] = str(offending)
+        with pytest.raises(ValueError, match=f'not disjoint from the sealed {name}'):
+            output_guard(offending, config)
+    with pytest.raises(ValueError, match='registered output'):
+        validate_config({**frozen(), 'registration': {'status': 'frozen'}}, real=True)
+
+
+def test_main_refuses_parent_outputs_before_any_write_including_ledger(tmp_path, monkeypatch):
+    protocol = tmp_path / 'artifacts' / 'runs' / 'ML-MATRIX-20260924'
+    sentinels = {}
+    for experiment in ('EXP-P4-001', 'EXP-P10-001', 'EXP-P7-003'):
+        (protocol / experiment / 'members').mkdir(parents=True)
+        sentinel = protocol / experiment / 'members' / 'sealed.json'
+        sentinel.write_text('{"sealed": true}')
+        sentinels[experiment] = hash_file(sentinel)
+    local = tmp_path / 'local.json'; dump(local, {'artifact_root': str(tmp_path / 'artifacts')})
+    monkeypatch.setattr(runner, 'validate_native_runtime', lambda: None)
+    monkeypatch.setattr(runner, 'prepare', lambda *a, **k: pytest.fail('prepare must not run'))
+    before = sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob('*'))
+    cases = [(protocol / 'EXP-P4-001', 'parent_g'), (protocol / 'EXP-P10-001' / 'members', 'parent_c1'),
+             (protocol, 'parent_g'), (protocol / 'EXP-P7-003', 'parent_t4')]
+    for offending, name in cases:
+        config, _ = guarded_config(tmp_path, offending)
+        config_path = tmp_path / 'config.json'; dump(config_path, config)
+        before_run = sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob('*'))
+        monkeypatch.setattr(sys, 'argv', ['run_ml_g0_whole.py', '--config', str(config_path), '--local-config', str(local),
+                                          '--output', str(offending), 'prepare'])
+        with pytest.raises(ValueError, match=f'not disjoint from the sealed {name}'):
+            runner.main()
+        assert sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob('*')) == before_run
+        assert not list(tmp_path.rglob('ledger.jsonl')) and not list(protocol.rglob('.heavy.lock'))
+    for experiment, digest in sentinels.items():
+        assert hash_file(protocol / experiment / 'members' / 'sealed.json') == digest
+    # An unregistered but disjoint output is refused just as early.
+    config, _ = guarded_config(tmp_path, protocol / 'EXP-P11-001')
+    dump(tmp_path / 'config.json', config)
+    monkeypatch.setattr(sys, 'argv', ['run_ml_g0_whole.py', '--config', str(tmp_path / 'config.json'), '--local-config', str(local),
+                                      '--output', str(protocol / 'EXP-P11-002'), 'prepare'])
+    with pytest.raises(ValueError, match='differs from the registered output'):
+        runner.main()
+    assert not list(tmp_path.rglob('ledger.jsonl')) and set(before) <= set(str(p.relative_to(tmp_path)) for p in tmp_path.rglob('*'))

@@ -41,9 +41,10 @@ from pitchmdp.data import KEY, hash_file
 from pitchmdp.matrix_benchmark import predict_streamed
 from pitchmdp.matrix_data import canonical_hash, ordered_key_hash
 from pitchmdp.matrix_g0_whole import (CELL, C1_EXPERIMENT, DEV_FIELDS, FIXED, G_EXPERIMENT, SEEDS,
-    SOURCE_ARM, T4_EXPERIMENT, check_eligible_population, compare_predictions, cpanel_positions, frozen_weights,
-    launch_gate, ledger_totals, member_identity, project_costs, require_within_tolerance, validate_config,
-    validate_member_archive, validate_native_environment)
+    SOURCE_ARM, T4_EXPERIMENT, check_eligible_population, compare_levels, compare_predictions, cpanel_positions,
+    cpanel_subset_alignment, frozen_weights, launch_gate, ledger_totals, member_identity, output_guard, project_costs,
+    require_alignment, require_equal_levels, require_within_tolerance, validate_config, validate_member_archive,
+    validate_native_environment)
 from pitchmdp.matrix_models import MatrixModel
 from pitchmdp.matrix_policy_artifacts import is_appledouble
 from pitchmdp.matrix_sharing import SharingPredictor
@@ -436,10 +437,11 @@ def probe_cpanel(predictor, aux, store, context, dev_part, member, rows, atol):
     with np.load(Path(member['directory']) / 'predictions.npz', allow_pickle=False) as sealed:
         if not np.array_equal(sealed['dev_keys'][:rows], selected[KEY].to_numpy(np.int64)):
             raise ValueError('Probe rows differ from the sealed Cpanel keys')
-        reference = {'dev': sealed['dev'][:rows].copy(), 'dev_raw': sealed['dev_raw'][:rows].copy()}
-    calibrated, raw, _ = predict_streamed(predictor, aux['delivery'], store, context, selected.index.to_numpy())
+        reference = {name: sealed[name][:rows].copy() for name in ('dev', 'dev_raw', 'dev_delivery_level')}
+    calibrated, raw, levels = predict_streamed(predictor, aux['delivery'], store, context, selected.index.to_numpy())
     reports = [require_within_tolerance(compare_predictions(calibrated, reference['dev'], atol=atol, name='probe_calibrated')),
-               require_within_tolerance(compare_predictions(raw, reference['dev_raw'], atol=atol, name='probe_raw'))]
+               require_within_tolerance(compare_predictions(raw, reference['dev_raw'], atol=atol, name='probe_raw')),
+               require_equal_levels(compare_levels(levels, reference['dev_delivery_level'], name='probe_delivery_level'))]
     return {'rows': int(len(selected)), 'seed': member['seed'], 'reports': reports}
 
 
@@ -468,7 +470,9 @@ def profile(config, local, output, prep, active):
     _check_parts(prep, parts)
     load_seconds = time.perf_counter() - started
     member = prep['members']['0']
+    before = time.perf_counter()
     predictor, device = load_member(config, member, prep['clusters'])
+    model_load_seconds = time.perf_counter() - before
     before = time.perf_counter()
     probe = probe_cpanel(predictor, aux, store, context, parts['dev'], member, probe_config['rows'], probe_config['atol'])
     probe_seconds = time.perf_counter() - before
@@ -482,7 +486,8 @@ def profile(config, local, output, prep, active):
     if source_hashes() != prep['identity']['source_hashes']:
         raise ValueError('Sources changed during the whole-MLB profile')
     measured = {'rows': int(len(rows)), 'command_overhead_seconds': overhead, 'load_seconds': load_seconds,
-                'probe_seconds': probe_seconds, 'inference_seconds': inference_seconds, 'wall_seconds': wall}
+                'model_load_seconds': model_load_seconds, 'probe_seconds': probe_seconds,
+                'inference_seconds': inference_seconds, 'wall_seconds': wall}
     projection = project_costs(measured, n_dev=prep['samples']['dev']['n'], probe_rows=probe_config['rows'], budget=budget,
                                prepare_seconds=_stage_seconds(output, config, 'prepare'))
     t4 = Path(prep['parents']['t4']['run'])
@@ -569,10 +574,10 @@ def predict(config, local, output, prep, seed, active):
     cpanel_keys = pd.read_parquet(output / 'cpanel_dev_keys.parquet')[KEY].to_numpy(np.int64)
     overlap = cpanel_positions(values['dev_keys'], metadata.in_cpanel.to_numpy(bool), cpanel_keys, config['expected_samples'])
     with np.load(Path(member['directory']) / 'predictions.npz', allow_pickle=False) as sealed:
-        if not np.array_equal(sealed['dev_keys'], cpanel_keys) or not np.array_equal(sealed['dev_y'], values['dev_y'][overlap['positions']]):
-            raise ValueError('Sealed Cpanel keys/labels differ from the whole-MLB overlap rows')
-        alignment = [compare_predictions(values['dev'][overlap['positions']], sealed['dev'], atol=probe_config['atol'], name='cpanel_subset_calibrated'),
-                     compare_predictions(values['dev_raw'][overlap['positions']], sealed['dev_raw'], atol=probe_config['atol'], name='cpanel_subset_raw')]
+        if not np.array_equal(sealed['dev_keys'], cpanel_keys):
+            raise ValueError('Sealed Cpanel keys differ from the frozen Cpanel key file')
+        alignment = cpanel_subset_alignment(values, {name: sealed[name] for name in ('dev_keys', 'dev_y', 'dev', 'dev_raw', 'dev_delivery_level')},
+                                            overlap['positions'], atol=probe_config['atol'])
     unique, counts = np.unique(levels, return_counts=True)
     elapsed = time.perf_counter() - started
     command_seconds = active.elapsed()
@@ -586,8 +591,7 @@ def predict(config, local, output, prep, seed, active):
         'within_member_limit': command_seconds <= budget['single_member_wall_limit_seconds'],
         'projected_member_seconds': projection['member_seconds'], 'dev_scored': False})
     # Evidence is on disk before any refusal; a refusal leaves no prediction_state.json and no retry.
-    for report in alignment:
-        require_within_tolerance(report)
+    require_alignment(alignment)
     if command_seconds > budget['single_member_wall_limit_seconds']:
         raise TimeoutError(f'Member seed {seed} wall {command_seconds:.1f}s exceeded the registered '
                            f'{budget["single_member_wall_limit_seconds"]}s limit; output preserved for review')
@@ -634,7 +638,9 @@ def main():
     args = build_parser().parse_args()
     config = validate_config(read_json(args.config), real=True)
     local = read_json(args.local_config)
-    output = args.output.resolve()
+    # Registered output and disjointness from all three sealed parents are checked before
+    # any write, including the internal ledger; check_location alone is insufficient.
+    output = output_guard(args.output, config)
     root = check_location(local, output)
     validate_native_runtime()
     expected = identity(config, args.local_config)
