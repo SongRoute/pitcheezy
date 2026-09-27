@@ -26,4 +26,8 @@
 | COOP-001 | Claude 구현 → Codex 검토·실행 | F4 실데이터 context cache 감사 러너·회귀 검사·새 실행 등록 | 코드 검토, 실제 동등성/비용 측정 또는 보존된 실패 근거, 채택 여부와 기존 예산 적용 |
 | COOP-002 | Codex 설계 → Claude 독립 검토 | G0/F1 5seed 안정성·bridge 연장 및 G0 전체 MLB 평가 설계 | 재사용·보정·다중 비교·비용·기존 DEV 노출 한계를 명시하고 실행 공백 식별 |
 
+## G0/F1 5seed 후속 — D72
+
+사용자가 후속 목록1~4의 실제 수행을 승인했다. 새 작업대장은 SSD의 `ML-MATRIX-20260924/coordination/20260927-confirmation/board.json`이며, 첫 작업대장에서 이 경로를 연결한다. COOP-003은 Fable의 additive 실행기 구현, COOP-004는 Opus·Astra의 독립 검토, COOP-005는 Sol의 단일 실행 큐·보고다. C1과 F1연장 각각7,200초의 비용 대장을 분리하고 총14,400초를 넘기지 않는다. 전체 MLB 단독 평가는 이 묶음의 범위에 포함하지 않는다.
+
 이 문서는 협업 규칙이다. 실험의 실제 상태와 과학적 결론은 각 config·manifest·실행 보고서가 결정한다.
