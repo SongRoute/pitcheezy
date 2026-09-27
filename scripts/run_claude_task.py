@@ -73,6 +73,7 @@ def run(args):
                     exit_code = process.wait()
         result = None
         sessions = []
+        observed_models = set()
         for line in (job / 'events.jsonl').open():
             try:
                 event = json.loads(line)
@@ -80,9 +81,12 @@ def run(args):
                 continue
             if event.get('session_id') and event['session_id'] not in sessions:
                 sessions.append(event['session_id'])
+            observed_model = event.get('message', {}).get('model')
+            if observed_model and observed_model != '<synthetic>':
+                observed_models.add(observed_model)
             if event.get('type') == 'result':
                 result = event
-        state.update(exit_code=exit_code, session_ids=sessions)
+        state.update(exit_code=exit_code, session_ids=sessions, observed_models=sorted(observed_models))
         if result is not None:
             write_json(job / 'result.json', result)
             state['result_subtype'] = result.get('subtype')
@@ -90,6 +94,9 @@ def run(args):
         if state['status'] == 'running':
             success = exit_code == 0 and result is not None and not result.get('is_error', False)
             success = success and result.get('subtype') == 'success' and not result.get('permission_denials')
+            if args.model.startswith('claude-') and observed_models != {args.model}:
+                success = False
+                state['model_identity_error'] = 'Exact requested model was not the sole observed response model'
             state['status'] = 'returned_for_review' if success else 'failed'
         state['final_commit'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=worktree, text=True).strip()
         state['git_status'] = subprocess.check_output(['git', 'status', '--porcelain=v1'], cwd=worktree, text=True)
@@ -116,7 +123,7 @@ if __name__ == '__main__':
     parser.add_argument('--request', type=Path, required=True)
     parser.add_argument('--worktree', type=Path, required=True)
     parser.add_argument('--job-dir', type=Path, required=True)
-    parser.add_argument('--model', default='sonnet')
+    parser.add_argument('--model', default='claude-opus-5-5')
     parser.add_argument('--effort', choices=['low', 'medium', 'high', 'xhigh', 'max'], default='high')
     parser.add_argument('--max-turns', type=int, default=60)
     parser.add_argument('--timeout-seconds', type=float, default=1800)

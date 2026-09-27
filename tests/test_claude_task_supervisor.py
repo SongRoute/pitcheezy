@@ -15,12 +15,15 @@ ROOT = Path(__file__).resolve().parents[1]
     ('model_error', 'failed'),
     ('missing_result', 'failed'),
     ('permission_denied', 'failed'),
+    ('wrong_model', 'failed'),
     ('timeout', 'timed_out'),
 ])
 def test_recorded_completion_requires_result(tmp_path, scenario, expected):
     fake = tmp_path / 'fake-claude'
     fake.write_text(f'#!{sys.executable}\n' + '''import json, time
 scenario = SCENARIO
+print(json.dumps({'type': 'assistant', 'message': {'model':
+    'unexpected-model' if scenario == 'wrong_model' else 'claude-opus-5-5'}}), flush=True)
 if scenario == 'timeout':
     time.sleep(20)
 elif scenario != 'missing_result':
