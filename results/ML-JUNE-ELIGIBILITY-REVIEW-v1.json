@@ -1,0 +1,744 @@
+{
+  "review_id": "ML-JUNE-ELIGIBILITY-REVIEW-v1",
+  "status": "PASS",
+  "remaining_blockers": [],
+  "reviewed_at_utc": "2026-09-27T14:47:46.431804+00:00",
+  "source_C": "53ae9fd0b56650cf076a83919dc1d92cfe2f2da7",
+  "registration_D": "5025bd79577180bf90850642234bb1ddd8e5fc42",
+  "pins": {
+    "config": "afe19b81c0ce58bd5a433f2dda88e0155ce4c605d14c3b4335fa72ffe62e6b30",
+    "registration": "4a05946f639f19517802f6bdc438237cd314b92eb31f48006262d2d867259311",
+    "plan": "98f62700bd106078190423f1e6541e7a295d5a7bd2c8af77989a86a02303626d",
+    "manifest": "f564145deb6b6b58a079766d582573b95154c3515af39fb39b0dba56088bdc88",
+    "result": "d00606b8f59d0244cbd8346a09f4b6bf9a2ac45f54be59e6e892891b1095671c",
+    "supervisor_end_ledger": "4c82b9f8aae84eba3191da0692e9ba68a5dd38f214aab9be9a95b33b600cca10",
+    "reviewer_script": "a6da07653ef42a37531456941446388141b4a3ee9a558025c2d1cdf558d3bdfe"
+  },
+  "artifact_hashes": {
+    "requested_inventory.parquet": "edb9f57a3f32f473ff6e8527225ab7cde1549c61fed51698a483709da56ffd24",
+    "eligible_keys.parquet": "ff9db8e9a6b2f32a9f4279b30ac6a303b0dbb9d9267746f4cb0dc45741d5f037",
+    "eligible_metadata.parquet": "38507b7df491c210ccff46352c47ace4feb385e277c0b88dd3a96b62b5557c76",
+    "complement_eligible_keys.parquet": "962be8b7e37a6dc89ebb969a8adeab5861c96368d1384d74a567107f57043b43",
+    "complement_eligible_metadata.parquet": "a760cd9e3052f5529ed4ec0854491168a039ef24cf540279e062867b940dba02",
+    "excluded_reasons.parquet": "89d9a0a4c14819dd7fa443b60ae591f4b2804cba02ef5fbe5d255f78c2c30015",
+    "result.json": "d00606b8f59d0244cbd8346a09f4b6bf9a2ac45f54be59e6e892891b1095671c"
+  },
+  "checks": {
+    "terminal_manifest_binding": true,
+    "plan_registration_config_binding": true,
+    "source_identity": true,
+    "completion_required_fields": true,
+    "pin_sources.processed_pitches": true,
+    "pin_sources.blend_keys": true,
+    "pin_sources.blend_metadata": true,
+    "pin_sources.panel": true,
+    "pin_sources.p4_preparation": true,
+    "pin_sources.p4_model_source": true,
+    "pin_sources.prior_audit_config": true,
+    "pin_sources.prior_audit_result": true,
+    "pin_read_only_guards.g0_research_frozen": true,
+    "pin_read_only_guards.contract": true,
+    "pin_read_only_guards.supervisor_repository_source": true,
+    "pin_read_only_guards.supervisor_deployed": true,
+    "parents_reverified_flag": true,
+    "seven_artifact_hashes": true,
+    "schema_requested_inventory.parquet": true,
+    "inventory_requested_inventory.parquet": true,
+    "schema_eligible_keys.parquet": true,
+    "inventory_eligible_keys.parquet": true,
+    "schema_eligible_metadata.parquet": true,
+    "inventory_eligible_metadata.parquet": true,
+    "schema_complement_eligible_keys.parquet": true,
+    "inventory_complement_eligible_keys.parquet": true,
+    "schema_complement_eligible_metadata.parquet": true,
+    "inventory_complement_eligible_metadata.parquet": true,
+    "schema_excluded_reasons.parquet": true,
+    "inventory_excluded_reasons.parquet": true,
+    "chronological_order": true,
+    "dates_and_splits": true,
+    "bool_flags": true,
+    "stored_reason_or_equals_ineligible": true,
+    "all_11_population_censuses": true,
+    "ordered_cpanel_exact": true,
+    "cpanel_metadata_exact": true,
+    "frozen_membership_flags": true,
+    "exact_key_partitions": true,
+    "reported_partition_gates_true": true,
+    "output_alignment_eligible_keys.parquet": true,
+    "output_alignment_eligible_metadata.parquet": true,
+    "output_alignment_complement_eligible_keys.parquet": true,
+    "output_alignment_complement_eligible_metadata.parquet": true,
+    "output_alignment_excluded_reasons.parquet": true,
+    "panel_and_volume_metadata": true,
+    "no_unknown_metadata": true,
+    "support_train_volume/requested/zero": true,
+    "support_train_volume/requested/low": true,
+    "support_train_volume/requested/middle": true,
+    "support_train_volume/requested/high": true,
+    "support_train_volume/eligible/zero": true,
+    "support_train_volume/eligible/low": true,
+    "support_train_volume/eligible/middle": true,
+    "support_train_volume/eligible/high": true,
+    "support_train_volume/excluded/zero": true,
+    "support_train_volume/excluded/low": true,
+    "support_train_volume/excluded/middle": true,
+    "support_train_volume/excluded/high": true,
+    "support_train_volume/panel_requested/zero": true,
+    "support_train_volume/panel_requested/low": true,
+    "support_train_volume/panel_requested/middle": true,
+    "support_train_volume/panel_requested/high": true,
+    "support_train_volume/panel_eligible/zero": true,
+    "support_train_volume/panel_eligible/low": true,
+    "support_train_volume/panel_eligible/middle": true,
+    "support_train_volume/panel_eligible/high": true,
+    "support_train_volume/panel_excluded/zero": true,
+    "support_train_volume/panel_excluded/low": true,
+    "support_train_volume/panel_excluded/middle": true,
+    "support_train_volume/panel_excluded/high": true,
+    "support_train_volume/outside_requested/zero": true,
+    "support_train_volume/outside_requested/low": true,
+    "support_train_volume/outside_requested/middle": true,
+    "support_train_volume/outside_requested/high": true,
+    "support_train_volume/outside_eligible/zero": true,
+    "support_train_volume/outside_eligible/low": true,
+    "support_train_volume/outside_eligible/middle": true,
+    "support_train_volume/outside_eligible/high": true,
+    "support_train_volume/outside_excluded/zero": true,
+    "support_train_volume/outside_excluded/low": true,
+    "support_train_volume/outside_excluded/middle": true,
+    "support_train_volume/outside_excluded/high": true,
+    "support_train_volume/requested_minus_frozen_cpanel/zero": true,
+    "support_train_volume/requested_minus_frozen_cpanel/low": true,
+    "support_train_volume/requested_minus_frozen_cpanel/middle": true,
+    "support_train_volume/requested_minus_frozen_cpanel/high": true,
+    "support_train_volume/eligible_minus_frozen_cpanel/zero": true,
+    "support_train_volume/eligible_minus_frozen_cpanel/low": true,
+    "support_train_volume/eligible_minus_frozen_cpanel/middle": true,
+    "support_train_volume/eligible_minus_frozen_cpanel/high": true,
+    "support_game_role/requested/starter": true,
+    "support_game_role/requested/relief": true,
+    "support_game_role/eligible/starter": true,
+    "support_game_role/eligible/relief": true,
+    "support_game_role/excluded/starter": true,
+    "support_game_role/excluded/relief": true,
+    "support_game_role/panel_requested/starter": true,
+    "support_game_role/panel_requested/relief": true,
+    "support_game_role/panel_eligible/starter": true,
+    "support_game_role/panel_eligible/relief": true,
+    "support_game_role/panel_excluded/starter": true,
+    "support_game_role/panel_excluded/relief": true,
+    "support_game_role/outside_requested/starter": true,
+    "support_game_role/outside_requested/relief": true,
+    "support_game_role/outside_eligible/starter": true,
+    "support_game_role/outside_eligible/relief": true,
+    "support_game_role/outside_excluded/starter": true,
+    "support_game_role/outside_excluded/relief": true,
+    "support_game_role/requested_minus_frozen_cpanel/starter": true,
+    "support_game_role/requested_minus_frozen_cpanel/relief": true,
+    "support_game_role/eligible_minus_frozen_cpanel/starter": true,
+    "support_game_role/eligible_minus_frozen_cpanel/relief": true,
+    "support_throwing_hand/requested/L": true,
+    "support_throwing_hand/requested/R": true,
+    "support_throwing_hand/eligible/L": true,
+    "support_throwing_hand/eligible/R": true,
+    "support_throwing_hand/excluded/L": true,
+    "support_throwing_hand/excluded/R": true,
+    "support_throwing_hand/panel_requested/L": true,
+    "support_throwing_hand/panel_requested/R": true,
+    "support_throwing_hand/panel_eligible/L": true,
+    "support_throwing_hand/panel_eligible/R": true,
+    "support_throwing_hand/panel_excluded/L": true,
+    "support_throwing_hand/panel_excluded/R": true,
+    "support_throwing_hand/outside_requested/L": true,
+    "support_throwing_hand/outside_requested/R": true,
+    "support_throwing_hand/outside_eligible/L": true,
+    "support_throwing_hand/outside_eligible/R": true,
+    "support_throwing_hand/outside_excluded/L": true,
+    "support_throwing_hand/outside_excluded/R": true,
+    "support_throwing_hand/requested_minus_frozen_cpanel/L": true,
+    "support_throwing_hand/requested_minus_frozen_cpanel/R": true,
+    "support_throwing_hand/eligible_minus_frozen_cpanel/L": true,
+    "support_throwing_hand/eligible_minus_frozen_cpanel/R": true,
+    "support_role_x_volume/requested/starter|zero": true,
+    "support_role_x_volume/requested/starter|low": true,
+    "support_role_x_volume/requested/starter|middle": true,
+    "support_role_x_volume/requested/starter|high": true,
+    "support_role_x_volume/requested/relief|zero": true,
+    "support_role_x_volume/requested/relief|low": true,
+    "support_role_x_volume/requested/relief|middle": true,
+    "support_role_x_volume/requested/relief|high": true,
+    "support_role_x_volume/eligible/starter|zero": true,
+    "support_role_x_volume/eligible/starter|low": true,
+    "support_role_x_volume/eligible/starter|middle": true,
+    "support_role_x_volume/eligible/starter|high": true,
+    "support_role_x_volume/eligible/relief|zero": true,
+    "support_role_x_volume/eligible/relief|low": true,
+    "support_role_x_volume/eligible/relief|middle": true,
+    "support_role_x_volume/eligible/relief|high": true,
+    "support_role_x_volume/excluded/starter|zero": true,
+    "support_role_x_volume/excluded/starter|low": true,
+    "support_role_x_volume/excluded/starter|middle": true,
+    "support_role_x_volume/excluded/starter|high": true,
+    "support_role_x_volume/excluded/relief|zero": true,
+    "support_role_x_volume/excluded/relief|low": true,
+    "support_role_x_volume/excluded/relief|middle": true,
+    "support_role_x_volume/excluded/relief|high": true,
+    "support_role_x_volume/panel_requested/starter|zero": true,
+    "support_role_x_volume/panel_requested/starter|low": true,
+    "support_role_x_volume/panel_requested/starter|middle": true,
+    "support_role_x_volume/panel_requested/starter|high": true,
+    "support_role_x_volume/panel_requested/relief|zero": true,
+    "support_role_x_volume/panel_requested/relief|low": true,
+    "support_role_x_volume/panel_requested/relief|middle": true,
+    "support_role_x_volume/panel_requested/relief|high": true,
+    "support_role_x_volume/panel_eligible/starter|zero": true,
+    "support_role_x_volume/panel_eligible/starter|low": true,
+    "support_role_x_volume/panel_eligible/starter|middle": true,
+    "support_role_x_volume/panel_eligible/starter|high": true,
+    "support_role_x_volume/panel_eligible/relief|zero": true,
+    "support_role_x_volume/panel_eligible/relief|low": true,
+    "support_role_x_volume/panel_eligible/relief|middle": true,
+    "support_role_x_volume/panel_eligible/relief|high": true,
+    "support_role_x_volume/panel_excluded/starter|zero": true,
+    "support_role_x_volume/panel_excluded/starter|low": true,
+    "support_role_x_volume/panel_excluded/starter|middle": true,
+    "support_role_x_volume/panel_excluded/starter|high": true,
+    "support_role_x_volume/panel_excluded/relief|zero": true,
+    "support_role_x_volume/panel_excluded/relief|low": true,
+    "support_role_x_volume/panel_excluded/relief|middle": true,
+    "support_role_x_volume/panel_excluded/relief|high": true,
+    "support_role_x_volume/outside_requested/starter|zero": true,
+    "support_role_x_volume/outside_requested/starter|low": true,
+    "support_role_x_volume/outside_requested/starter|middle": true,
+    "support_role_x_volume/outside_requested/starter|high": true,
+    "support_role_x_volume/outside_requested/relief|zero": true,
+    "support_role_x_volume/outside_requested/relief|low": true,
+    "support_role_x_volume/outside_requested/relief|middle": true,
+    "support_role_x_volume/outside_requested/relief|high": true,
+    "support_role_x_volume/outside_eligible/starter|zero": true,
+    "support_role_x_volume/outside_eligible/starter|low": true,
+    "support_role_x_volume/outside_eligible/starter|middle": true,
+    "support_role_x_volume/outside_eligible/starter|high": true,
+    "support_role_x_volume/outside_eligible/relief|zero": true,
+    "support_role_x_volume/outside_eligible/relief|low": true,
+    "support_role_x_volume/outside_eligible/relief|middle": true,
+    "support_role_x_volume/outside_eligible/relief|high": true,
+    "support_role_x_volume/outside_excluded/starter|zero": true,
+    "support_role_x_volume/outside_excluded/starter|low": true,
+    "support_role_x_volume/outside_excluded/starter|middle": true,
+    "support_role_x_volume/outside_excluded/starter|high": true,
+    "support_role_x_volume/outside_excluded/relief|zero": true,
+    "support_role_x_volume/outside_excluded/relief|low": true,
+    "support_role_x_volume/outside_excluded/relief|middle": true,
+    "support_role_x_volume/outside_excluded/relief|high": true,
+    "support_role_x_volume/requested_minus_frozen_cpanel/starter|zero": true,
+    "support_role_x_volume/requested_minus_frozen_cpanel/starter|low": true,
+    "support_role_x_volume/requested_minus_frozen_cpanel/starter|middle": true,
+    "support_role_x_volume/requested_minus_frozen_cpanel/starter|high": true,
+    "support_role_x_volume/requested_minus_frozen_cpanel/relief|zero": true,
+    "support_role_x_volume/requested_minus_frozen_cpanel/relief|low": true,
+    "support_role_x_volume/requested_minus_frozen_cpanel/relief|middle": true,
+    "support_role_x_volume/requested_minus_frozen_cpanel/relief|high": true,
+    "support_role_x_volume/eligible_minus_frozen_cpanel/starter|zero": true,
+    "support_role_x_volume/eligible_minus_frozen_cpanel/starter|low": true,
+    "support_role_x_volume/eligible_minus_frozen_cpanel/starter|middle": true,
+    "support_role_x_volume/eligible_minus_frozen_cpanel/starter|high": true,
+    "support_role_x_volume/eligible_minus_frozen_cpanel/relief|zero": true,
+    "support_role_x_volume/eligible_minus_frozen_cpanel/relief|low": true,
+    "support_role_x_volume/eligible_minus_frozen_cpanel/relief|middle": true,
+    "support_role_x_volume/eligible_minus_frozen_cpanel/relief|high": true,
+    "support_hand_x_volume/requested/L|zero": true,
+    "support_hand_x_volume/requested/L|low": true,
+    "support_hand_x_volume/requested/L|middle": true,
+    "support_hand_x_volume/requested/L|high": true,
+    "support_hand_x_volume/requested/R|zero": true,
+    "support_hand_x_volume/requested/R|low": true,
+    "support_hand_x_volume/requested/R|middle": true,
+    "support_hand_x_volume/requested/R|high": true,
+    "support_hand_x_volume/eligible/L|zero": true,
+    "support_hand_x_volume/eligible/L|low": true,
+    "support_hand_x_volume/eligible/L|middle": true,
+    "support_hand_x_volume/eligible/L|high": true,
+    "support_hand_x_volume/eligible/R|zero": true,
+    "support_hand_x_volume/eligible/R|low": true,
+    "support_hand_x_volume/eligible/R|middle": true,
+    "support_hand_x_volume/eligible/R|high": true,
+    "support_hand_x_volume/excluded/L|zero": true,
+    "support_hand_x_volume/excluded/L|low": true,
+    "support_hand_x_volume/excluded/L|middle": true,
+    "support_hand_x_volume/excluded/L|high": true,
+    "support_hand_x_volume/excluded/R|zero": true,
+    "support_hand_x_volume/excluded/R|low": true,
+    "support_hand_x_volume/excluded/R|middle": true,
+    "support_hand_x_volume/excluded/R|high": true,
+    "support_hand_x_volume/panel_requested/L|zero": true,
+    "support_hand_x_volume/panel_requested/L|low": true,
+    "support_hand_x_volume/panel_requested/L|middle": true,
+    "support_hand_x_volume/panel_requested/L|high": true,
+    "support_hand_x_volume/panel_requested/R|zero": true,
+    "support_hand_x_volume/panel_requested/R|low": true,
+    "support_hand_x_volume/panel_requested/R|middle": true,
+    "support_hand_x_volume/panel_requested/R|high": true,
+    "support_hand_x_volume/panel_eligible/L|zero": true,
+    "support_hand_x_volume/panel_eligible/L|low": true,
+    "support_hand_x_volume/panel_eligible/L|middle": true,
+    "support_hand_x_volume/panel_eligible/L|high": true,
+    "support_hand_x_volume/panel_eligible/R|zero": true,
+    "support_hand_x_volume/panel_eligible/R|low": true,
+    "support_hand_x_volume/panel_eligible/R|middle": true,
+    "support_hand_x_volume/panel_eligible/R|high": true,
+    "support_hand_x_volume/panel_excluded/L|zero": true,
+    "support_hand_x_volume/panel_excluded/L|low": true,
+    "support_hand_x_volume/panel_excluded/L|middle": true,
+    "support_hand_x_volume/panel_excluded/L|high": true,
+    "support_hand_x_volume/panel_excluded/R|zero": true,
+    "support_hand_x_volume/panel_excluded/R|low": true,
+    "support_hand_x_volume/panel_excluded/R|middle": true,
+    "support_hand_x_volume/panel_excluded/R|high": true,
+    "support_hand_x_volume/outside_requested/L|zero": true,
+    "support_hand_x_volume/outside_requested/L|low": true,
+    "support_hand_x_volume/outside_requested/L|middle": true,
+    "support_hand_x_volume/outside_requested/L|high": true,
+    "support_hand_x_volume/outside_requested/R|zero": true,
+    "support_hand_x_volume/outside_requested/R|low": true,
+    "support_hand_x_volume/outside_requested/R|middle": true,
+    "support_hand_x_volume/outside_requested/R|high": true,
+    "support_hand_x_volume/outside_eligible/L|zero": true,
+    "support_hand_x_volume/outside_eligible/L|low": true,
+    "support_hand_x_volume/outside_eligible/L|middle": true,
+    "support_hand_x_volume/outside_eligible/L|high": true,
+    "support_hand_x_volume/outside_eligible/R|zero": true,
+    "support_hand_x_volume/outside_eligible/R|low": true,
+    "support_hand_x_volume/outside_eligible/R|middle": true,
+    "support_hand_x_volume/outside_eligible/R|high": true,
+    "support_hand_x_volume/outside_excluded/L|zero": true,
+    "support_hand_x_volume/outside_excluded/L|low": true,
+    "support_hand_x_volume/outside_excluded/L|middle": true,
+    "support_hand_x_volume/outside_excluded/L|high": true,
+    "support_hand_x_volume/outside_excluded/R|zero": true,
+    "support_hand_x_volume/outside_excluded/R|low": true,
+    "support_hand_x_volume/outside_excluded/R|middle": true,
+    "support_hand_x_volume/outside_excluded/R|high": true,
+    "support_hand_x_volume/requested_minus_frozen_cpanel/L|zero": true,
+    "support_hand_x_volume/requested_minus_frozen_cpanel/L|low": true,
+    "support_hand_x_volume/requested_minus_frozen_cpanel/L|middle": true,
+    "support_hand_x_volume/requested_minus_frozen_cpanel/L|high": true,
+    "support_hand_x_volume/requested_minus_frozen_cpanel/R|zero": true,
+    "support_hand_x_volume/requested_minus_frozen_cpanel/R|low": true,
+    "support_hand_x_volume/requested_minus_frozen_cpanel/R|middle": true,
+    "support_hand_x_volume/requested_minus_frozen_cpanel/R|high": true,
+    "support_hand_x_volume/eligible_minus_frozen_cpanel/L|zero": true,
+    "support_hand_x_volume/eligible_minus_frozen_cpanel/L|low": true,
+    "support_hand_x_volume/eligible_minus_frozen_cpanel/L|middle": true,
+    "support_hand_x_volume/eligible_minus_frozen_cpanel/L|high": true,
+    "support_hand_x_volume/eligible_minus_frozen_cpanel/R|zero": true,
+    "support_hand_x_volume/eligible_minus_frozen_cpanel/R|low": true,
+    "support_hand_x_volume/eligible_minus_frozen_cpanel/R|middle": true,
+    "support_hand_x_volume/eligible_minus_frozen_cpanel/R|high": true,
+    "reason_requested/unmapped_outcome": true,
+    "reason_requested/unsupported_pa": true,
+    "reason_requested/missing_type": true,
+    "reason_requested/missing_plate_x": true,
+    "reason_requested/missing_plate_z": true,
+    "reason_requested/invalid_balls": true,
+    "reason_requested/invalid_strikes": true,
+    "coordinates_requested": true,
+    "bitmask_requested": true,
+    "reason_panel_requested/unmapped_outcome": true,
+    "reason_panel_requested/unsupported_pa": true,
+    "reason_panel_requested/missing_type": true,
+    "reason_panel_requested/missing_plate_x": true,
+    "reason_panel_requested/missing_plate_z": true,
+    "reason_panel_requested/invalid_balls": true,
+    "reason_panel_requested/invalid_strikes": true,
+    "coordinates_panel_requested": true,
+    "bitmask_panel_requested": true,
+    "reason_outside_requested/unmapped_outcome": true,
+    "reason_outside_requested/unsupported_pa": true,
+    "reason_outside_requested/missing_type": true,
+    "reason_outside_requested/missing_plate_x": true,
+    "reason_outside_requested/missing_plate_z": true,
+    "reason_outside_requested/invalid_balls": true,
+    "reason_outside_requested/invalid_strikes": true,
+    "coordinates_outside_requested": true,
+    "bitmask_outside_requested": true,
+    "overlap_panel_eligible & eligible_minus_frozen_cpanel": true,
+    "overlap_panel_requested & outside_requested": true,
+    "overlap_panel_eligible & outside_eligible": true,
+    "overlap_eligible & excluded": true,
+    "registered_expected_counts": true,
+    "eligible_bounds": true,
+    "cost_within_cap": true,
+    "new_exposure_explicit": true,
+    "no_model_or_adoption": true,
+    "no_failure_output": true,
+    "root_result_exact_sealed_bytes": true,
+    "root_wrapper_manifest_and_ledger": true,
+    "root_exposure_exact": true,
+    "report_cross_group_exceptions": true
+  },
+  "checks_passed": 352,
+  "population_counts": {
+    "requested": {
+      "pitches": 115816,
+      "games": 397,
+      "pitchers": 552
+    },
+    "eligible": {
+      "pitches": 104970,
+      "games": 394,
+      "pitchers": 549
+    },
+    "excluded": {
+      "pitches": 10846,
+      "games": 397,
+      "pitchers": 478
+    },
+    "panel_requested": {
+      "pitches": 5212,
+      "games": 115,
+      "pitchers": 20
+    },
+    "panel_eligible": {
+      "pitches": 4821,
+      "games": 110,
+      "pitchers": 20
+    },
+    "panel_excluded": {
+      "pitches": 391,
+      "games": 50,
+      "pitchers": 17
+    },
+    "outside_requested": {
+      "pitches": 110604,
+      "games": 397,
+      "pitchers": 532
+    },
+    "outside_eligible": {
+      "pitches": 100149,
+      "games": 394,
+      "pitchers": 529
+    },
+    "outside_excluded": {
+      "pitches": 10455,
+      "games": 397,
+      "pitchers": 461
+    },
+    "requested_minus_frozen_cpanel": {
+      "pitches": 110995,
+      "games": 397,
+      "pitchers": 549
+    },
+    "eligible_minus_frozen_cpanel": {
+      "pitches": 100149,
+      "games": 394,
+      "pitchers": 529
+    }
+  },
+  "eligible_volume_support": {
+    "zero": {
+      "pitches": 4788,
+      "games": 127,
+      "pitchers": 49,
+      "supported": true
+    },
+    "low": {
+      "pitches": 5338,
+      "games": 184,
+      "pitchers": 53,
+      "supported": true
+    },
+    "middle": {
+      "pitches": 38546,
+      "games": 393,
+      "pitchers": 247,
+      "supported": true
+    },
+    "high": {
+      "pitches": 56298,
+      "games": 386,
+      "pitchers": 200,
+      "supported": true
+    }
+  },
+  "non_cpanel_eligible_volume_support": {
+    "zero": {
+      "pitches": 4788,
+      "games": 127,
+      "pitchers": 49,
+      "supported": true
+    },
+    "low": {
+      "pitches": 4703,
+      "games": 173,
+      "pitchers": 49,
+      "supported": true
+    },
+    "middle": {
+      "pitches": 37532,
+      "games": 393,
+      "pitchers": 244,
+      "supported": true
+    },
+    "high": {
+      "pitches": 53126,
+      "games": 382,
+      "pitchers": 187,
+      "supported": true
+    }
+  },
+  "shared_games": {
+    "panel_eligible & eligible_minus_frozen_cpanel": 110,
+    "panel_requested & outside_requested": 115,
+    "panel_eligible & outside_eligible": 110,
+    "eligible & excluded": 394
+  },
+  "exclusion_reasons": {
+    "requested": {
+      "overlapping": {
+        "unmapped_outcome": {
+          "pitches": 674,
+          "games": 250
+        },
+        "unsupported_pa": {
+          "pitches": 10846,
+          "games": 397
+        },
+        "missing_type": {
+          "pitches": 565,
+          "games": 134
+        },
+        "missing_plate_x": {
+          "pitches": 565,
+          "games": 134
+        },
+        "missing_plate_z": {
+          "pitches": 565,
+          "games": 134
+        },
+        "invalid_balls": {
+          "pitches": 0,
+          "games": 0
+        },
+        "invalid_strikes": {
+          "pitches": 0,
+          "games": 0
+        }
+      },
+      "missing_coordinates": {
+        "pitches": 565,
+        "games": 134
+      },
+      "disjoint_bitmask": {
+        "bit_order": [
+          "unmapped_outcome",
+          "unsupported_pa",
+          "missing_type",
+          "missing_plate_x",
+          "missing_plate_z",
+          "invalid_balls",
+          "invalid_strikes"
+        ],
+        "encoding": "string position i = reason i (1 = set); patterns partition excluded rows",
+        "counts": {
+          "0100000": 10057,
+          "1100000": 224,
+          "0111100": 115,
+          "1111100": 450
+        },
+        "sum": 10846
+      },
+      "note": "overlapping reason counts are not unique exclusion counts"
+    },
+    "panel_requested": {
+      "overlapping": {
+        "unmapped_outcome": {
+          "pitches": 26,
+          "games": 19
+        },
+        "unsupported_pa": {
+          "pitches": 391,
+          "games": 50
+        },
+        "missing_type": {
+          "pitches": 16,
+          "games": 9
+        },
+        "missing_plate_x": {
+          "pitches": 16,
+          "games": 9
+        },
+        "missing_plate_z": {
+          "pitches": 16,
+          "games": 9
+        },
+        "invalid_balls": {
+          "pitches": 0,
+          "games": 0
+        },
+        "invalid_strikes": {
+          "pitches": 0,
+          "games": 0
+        }
+      },
+      "missing_coordinates": {
+        "pitches": 16,
+        "games": 9
+      },
+      "disjoint_bitmask": {
+        "bit_order": [
+          "unmapped_outcome",
+          "unsupported_pa",
+          "missing_type",
+          "missing_plate_x",
+          "missing_plate_z",
+          "invalid_balls",
+          "invalid_strikes"
+        ],
+        "encoding": "string position i = reason i (1 = set); patterns partition excluded rows",
+        "counts": {
+          "0100000": 365,
+          "1100000": 10,
+          "1111100": 16
+        },
+        "sum": 391
+      },
+      "note": "overlapping reason counts are not unique exclusion counts"
+    },
+    "outside_requested": {
+      "overlapping": {
+        "unmapped_outcome": {
+          "pitches": 648,
+          "games": 243
+        },
+        "unsupported_pa": {
+          "pitches": 10455,
+          "games": 397
+        },
+        "missing_type": {
+          "pitches": 549,
+          "games": 130
+        },
+        "missing_plate_x": {
+          "pitches": 549,
+          "games": 130
+        },
+        "missing_plate_z": {
+          "pitches": 549,
+          "games": 130
+        },
+        "invalid_balls": {
+          "pitches": 0,
+          "games": 0
+        },
+        "invalid_strikes": {
+          "pitches": 0,
+          "games": 0
+        }
+      },
+      "missing_coordinates": {
+        "pitches": 549,
+        "games": 130
+      },
+      "disjoint_bitmask": {
+        "bit_order": [
+          "unmapped_outcome",
+          "unsupported_pa",
+          "missing_type",
+          "missing_plate_x",
+          "missing_plate_z",
+          "invalid_balls",
+          "invalid_strikes"
+        ],
+        "encoding": "string position i = reason i (1 = set); patterns partition excluded rows",
+        "counts": {
+          "0100000": 9692,
+          "1100000": 214,
+          "0111100": 115,
+          "1111100": 434
+        },
+        "sum": 10455
+      },
+      "note": "overlapping reason counts are not unique exclusion counts"
+    }
+  },
+  "cost": {
+    "official_worker_popen_to_wait_seconds": 1.219837540993467,
+    "cap_seconds": 600,
+    "supervisor_postflight_seconds": 0.0012692499440163374,
+    "worker_internal_total_before_result_seconds": 0.9353139579761773,
+    "reviewer_internal_seconds_excludes_imports": 0.6672924170270562,
+    "audit_is_separate_from_experiment_cost": true,
+    "reviewer_full_command_wall_seconds": 0.9590264998842031
+  },
+  "exposure": {
+    "record": "June 2025 regular-season eligibility fields newly decoded for preparation",
+    "fields_newly_read": [
+      "description",
+      "events",
+      "balls",
+      "strikes",
+      "supported_pa",
+      "pitch_type",
+      "plate_x",
+      "plate_z"
+    ],
+    "metadata_fields_read": [
+      "game_pk",
+      "at_bat_number",
+      "pitch_number",
+      "game_date",
+      "game_type",
+      "split",
+      "pitcher",
+      "batter",
+      "starter_pitcher",
+      "p_throws"
+    ],
+    "file": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet",
+    "file_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+    "rows_window": [
+      "2025-06-01",
+      "2025-06-30"
+    ],
+    "game_types": [
+      "R"
+    ],
+    "decoded_utc": "2026-09-27T14:45:07.391167+00:00",
+    "purpose": "eligibility mask and exclusion reason flags only",
+    "persisted_outcome_values": false,
+    "class_counts_reported": false,
+    "freshness_claim": null
+  },
+  "scope": {
+    "source_eligibility_fields_redecoded_by_reviewer": false,
+    "decoded_sealed_flags_keys_metadata": true,
+    "old_cpanel_keys_metadata_read": true,
+    "source_files_hashed_as_opaque_bytes": true,
+    "new_model_inference_fit_or_quality": false,
+    "data_2026_read": false
+  },
+  "limitations": [
+    "Stored eligibility flags were audited for internal consistency; the original eight source eligibility columns were not decoded again. Exact original semantics were independently reviewed and synthetically tested before registration.",
+    "Outside-Cpanel role/hand records were checked for permitted values and internal consistency, not independently reconstructed from source metadata.",
+    "Outcome class prevalence and predictive/calibration quality remain unmeasured by this preparation.",
+    "Support now measured does not retrospectively activate I2 or prove correction benefit/independent confirmation.",
+    "Package/executable identity was checked at registration; native/runtime binary hashes were not checked."
+  ],
+  "root_report_review": {
+    "path": "docs/reports/ML-June-eligibility-2026-09-27.md",
+    "status": "PASS",
+    "numeric_counts_support_exclusions_and_cost_checked": true,
+    "linear_inference_proxy_recomputed_seconds": 598.623402591232,
+    "interpretation": "Preparation only; quality/inference cost unmeasured, no retroactive I2 activation, no independent holdout.",
+    "pending_status_text_update": "Root may replace pending independent audit wording with this PASS."
+  },
+  "observed_invocations": {
+    "official_worker_start_records": 1,
+    "official_worker_end_records": 1,
+    "status": "completed",
+    "exit_code": 0,
+    "prior_shell_guard_refusal": "Reconstructed note from assistant tool observation says guard exited before subprocess.Popen due to board status spelling. Original guard log file and exact timestamp do not exist; this is not an original execution log. No extra supervisor/worker start is reported.",
+    "reconstructed_launch_guard_note_sha256": "7f57bb3a993708856797b6597bf6afcf73b5ed342a633d41c08e0cff1a80f1c7"
+  }
+}

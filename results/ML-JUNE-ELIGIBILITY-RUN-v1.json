@@ -1,0 +1,217 @@
+{
+  "prep_id": "ML-JUNE-ELIGIBILITY-v1",
+  "status": "completed_reviewed",
+  "code_commit_c": "53ae9fd0b56650cf076a83919dc1d92cfe2f2da7",
+  "registration_commit_d": "5025bd79577180bf90850642234bb1ddd8e5fc42",
+  "output_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1",
+  "seed": null,
+  "seed_reason": "deterministic inventory preparation; no randomization or fits",
+  "manifest": {
+    "prep_id": "ML-JUNE-ELIGIBILITY-v1",
+    "status": "complete",
+    "completed_utc": "2026-09-27T14:45:08.217786+00:00",
+    "config_sha256": "afe19b81c0ce58bd5a433f2dda88e0155ce4c605d14c3b4335fa72ffe62e6b30",
+    "executed_script_sha256": "98a144908fb1528993dea71427cfc8c78b35ee1a6ef72f884f4c2f68bd171249",
+    "registered_code_commit": "53ae9fd0b56650cf076a83919dc1d92cfe2f2da7",
+    "execution_head": "53ae9fd0b56650cf076a83919dc1d92cfe2f2da7",
+    "config_path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-ELIGIBILITY-v1.json",
+    "config_repository_head": "5025bd79577180bf90850642234bb1ddd8e5fc42",
+    "parent_hashes": {
+      "sources.processed_pitches": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+      "sources.blend_keys": "5bc1cf7830f39f31ca69093b8f855ac2c3530fc0b9f08de82770055dac22094f",
+      "sources.blend_metadata": "de4b784c5c2488993c3bfbb6f44515255ed03d085a76a6e4a1c957b06dee2773",
+      "sources.panel": "bf779e1d616c7921158816f9de9cafdf86e4015154810fc065265e2f28410f5a",
+      "sources.p4_preparation": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+      "sources.p4_model_source": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+      "sources.prior_audit_config": "b1c21f3f1ada028ea48c6514347b2c96964c5107a0c5865d1aa20820884c0050",
+      "sources.prior_audit_result": "6c98069e78ca2f3bdbbfb07eb88c7e9d6049f366ffaf15ae6b12c5fccde8259f",
+      "read_only_guards.g0_research_frozen": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+      "read_only_guards.contract": "97540749699096d2f6087928515a5d40924fdea517a056e29b31243fbc7396de",
+      "read_only_guards.supervisor_repository_source": "929ce9f8cf744c03dc0fdd1b16eb9ac10cc97d3a8469db7d4a72625f0e039e81",
+      "read_only_guards.supervisor_deployed": "929ce9f8cf744c03dc0fdd1b16eb9ac10cc97d3a8469db7d4a72625f0e039e81",
+      "p4_model_source.git_blob_sha1": "07f3389cf7c9300e122cacbf97b5c518921b2043"
+    },
+    "artifacts": {
+      "requested_inventory.parquet": {
+        "sha256": "edb9f57a3f32f473ff6e8527225ab7cde1549c61fed51698a483709da56ffd24",
+        "rows": 115816,
+        "columns": [
+          "game_pk",
+          "at_bat_number",
+          "pitch_number",
+          "game_date",
+          "research_split",
+          "pitcher",
+          "batter",
+          "in_cpanel",
+          "train_volume",
+          "game_role",
+          "throwing_hand",
+          "month",
+          "source_split",
+          "frozen_cpanel_eligible",
+          "eligible",
+          "unmapped_outcome",
+          "unsupported_pa",
+          "missing_type",
+          "missing_plate_x",
+          "missing_plate_z",
+          "invalid_balls",
+          "invalid_strikes"
+        ],
+        "ordered_key_sha256": "723dcd02450a5ec114b57253817bf7440c69ee67c5e8ef79527e73ea37620b39",
+        "games": 397
+      },
+      "eligible_keys.parquet": {
+        "sha256": "ff9db8e9a6b2f32a9f4279b30ac6a303b0dbb9d9267746f4cb0dc45741d5f037",
+        "rows": 104970,
+        "columns": [
+          "game_pk",
+          "at_bat_number",
+          "pitch_number"
+        ],
+        "ordered_key_sha256": "ddb3a0859240821056ea687713b68ab4d2e2d0d8debb8dbd2d64871796e37f82",
+        "games": 394
+      },
+      "eligible_metadata.parquet": {
+        "sha256": "38507b7df491c210ccff46352c47ace4feb385e277c0b88dd3a96b62b5557c76",
+        "rows": 104970,
+        "columns": [
+          "game_pk",
+          "at_bat_number",
+          "pitch_number",
+          "game_date",
+          "research_split",
+          "pitcher",
+          "batter",
+          "in_cpanel",
+          "train_volume",
+          "game_role",
+          "throwing_hand",
+          "month",
+          "frozen_cpanel_eligible"
+        ],
+        "ordered_key_sha256": "ddb3a0859240821056ea687713b68ab4d2e2d0d8debb8dbd2d64871796e37f82",
+        "games": 394
+      },
+      "complement_eligible_keys.parquet": {
+        "sha256": "962be8b7e37a6dc89ebb969a8adeab5861c96368d1384d74a567107f57043b43",
+        "rows": 100149,
+        "columns": [
+          "game_pk",
+          "at_bat_number",
+          "pitch_number"
+        ],
+        "ordered_key_sha256": "82cddb8a1a90e8a25c48849ba25a47ec94df1fc7c154c1e2bf16a9b53e6d2e12",
+        "games": 394
+      },
+      "complement_eligible_metadata.parquet": {
+        "sha256": "a760cd9e3052f5529ed4ec0854491168a039ef24cf540279e062867b940dba02",
+        "rows": 100149,
+        "columns": [
+          "game_pk",
+          "at_bat_number",
+          "pitch_number",
+          "game_date",
+          "research_split",
+          "pitcher",
+          "batter",
+          "in_cpanel",
+          "train_volume",
+          "game_role",
+          "throwing_hand",
+          "month"
+        ],
+        "ordered_key_sha256": "82cddb8a1a90e8a25c48849ba25a47ec94df1fc7c154c1e2bf16a9b53e6d2e12",
+        "games": 394
+      },
+      "excluded_reasons.parquet": {
+        "sha256": "89d9a0a4c14819dd7fa443b60ae591f4b2804cba02ef5fbe5d255f78c2c30015",
+        "rows": 10846,
+        "columns": [
+          "game_pk",
+          "at_bat_number",
+          "pitch_number",
+          "in_cpanel",
+          "unmapped_outcome",
+          "unsupported_pa",
+          "missing_type",
+          "missing_plate_x",
+          "missing_plate_z",
+          "invalid_balls",
+          "invalid_strikes"
+        ],
+        "ordered_key_sha256": "69a164ba68e36424ac918fcce020bc5f95bba7676942678747525f72b8e386b1",
+        "games": 397
+      },
+      "result.json": {
+        "sha256": "d00606b8f59d0244cbd8346a09f4b6bf9a2ac45f54be59e6e892891b1095671c"
+      }
+    }
+  },
+  "manifest_sha256": "f564145deb6b6b58a079766d582573b95154c3515af39fb39b0dba56088bdc88",
+  "worker_ledger": {
+    "at_utc": "2026-09-27T14:45:08.277139+00:00",
+    "cap_seconds": 600,
+    "completion_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/manifest.json",
+    "completion_sha256": "f564145deb6b6b58a079766d582573b95154c3515af39fb39b0dba56088bdc88",
+    "config_sha256": "afe19b81c0ce58bd5a433f2dda88e0155ce4c605d14c3b4335fa72ffe62e6b30",
+    "exit_code": 0,
+    "job_id": "june-prepare",
+    "note": "",
+    "outcome": "completed",
+    "plan_sha256": "98f62700bd106078190423f1e6541e7a295d5a7bd2c8af77989a86a02303626d",
+    "popen_wait_seconds": 1.219837540993467,
+    "postflight_seconds": 0.0012692499440163374,
+    "protocol": "june_eligibility_single_supervisor_v1",
+    "registration_sha256": "4a05946f639f19517802f6bdc438237cd314b92eb31f48006262d2d867259311",
+    "source_hashes": {
+      "/Users/song/Projects/pitcheezy-worktrees/june-eligibility-execution/docs/contracts/ML-JUNE-ELIGIBILITY-v1.md": "97540749699096d2f6087928515a5d40924fdea517a056e29b31243fbc7396de",
+      "/Users/song/Projects/pitcheezy-worktrees/june-eligibility-execution/experiments/pitchmdp/pitchmdp/model.py": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+      "/Users/song/Projects/pitcheezy-worktrees/june-eligibility-execution/scripts/prepare_june_eligibility.py": "98a144908fb1528993dea71427cfc8c78b35ee1a6ef72f884f4c2f68bd171249",
+      "/Users/song/Projects/pitcheezy-worktrees/june-eligibility-execution/scripts/supervise_june_eligibility.py": "929ce9f8cf744c03dc0fdd1b16eb9ac10cc97d3a8469db7d4a72625f0e039e81"
+    },
+    "supervisor_sha256": "929ce9f8cf744c03dc0fdd1b16eb9ac10cc97d3a8469db7d4a72625f0e039e81"
+  },
+  "evidence": {
+    "registration.json": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-june-eligibility/registration.json",
+      "sha256": "4a05946f639f19517802f6bdc438237cd314b92eb31f48006262d2d867259311"
+    },
+    "execution-plan.json": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-june-eligibility/execution-plan.json",
+      "sha256": "98f62700bd106078190423f1e6541e7a295d5a7bd2c8af77989a86a02303626d"
+    },
+    "registration-review.json": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-june-eligibility/registration-review.json",
+      "sha256": "dd452dbed5b669ec467d0c2e184aa8873357da6f820873f9103eeb71ea89f52d"
+    },
+    "readiness-audit-001.json": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-june-eligibility/readiness-audit-001.json",
+      "sha256": "cde6a80dc15b198a390be782ca7c0d5f0922218aa4d6e1fdc8dbc7e296e1737b"
+    },
+    "terminal-verification-001.json": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-june-eligibility/terminal-verification-001.json",
+      "sha256": "748a39602951640fbdbb53bde33b9c09f7edb44a477f832b1411c191a9478c02"
+    },
+    "launch-guard-note.json": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-june-eligibility/launch-guard-note.json",
+      "sha256": "7f57bb3a993708856797b6597bf6afcf73b5ed342a633d41c08e0cff1a80f1c7"
+    }
+  },
+  "tests": {
+    "root_suite": "315 passed in 24.96s",
+    "focused_worker": 16,
+    "focused_supervisor": 5,
+    "counts_not_additive": true
+  },
+  "new_fits": 0,
+  "new_inference": 0,
+  "independent_review": {
+    "path": "results/ML-JUNE-ELIGIBILITY-REVIEW-v1.json",
+    "sha256": "362424b5599178af1f7e1498e4e8710e52a3e4e695dddd4777abf6e3136c7500",
+    "status": "PASS",
+    "checks": 352,
+    "audit_wall_seconds_separate": 0.9590264998842031
+  }
+}

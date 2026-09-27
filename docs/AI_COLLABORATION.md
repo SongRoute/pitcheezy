@@ -32,3 +32,7 @@
 사용자가 후속 목록1~4의 실제 수행을 승인했다. 새 작업대장은 SSD의 `ML-MATRIX-20260924/coordination/20260927-confirmation/board.json`이며, 첫 작업대장에서 이 경로를 연결한다. COOP-003은 Fable의 additive 실행기 구현, COOP-004는 Opus·Astra의 독립 검토, COOP-005는 Sol의 단일 실행 큐·보고다. C1과 F1연장 각각7,200초의 비용 대장을 분리하고 총14,400초를 넘기지 않는다. 전체 MLB 단독 평가는 이 묶음의 범위에 포함하지 않는다.
 
 이 문서는 협업 규칙이다. 실험의 실제 상태와 과학적 결론은 각 config·manifest·실행 보고서가 결정한다.
+
+## 전체 June 적격 준비 — D79~D81
+
+Astra가 과학 계약·코드/등록/산출물을 독립 검토하고, COOP-011 Claude Opus5.5가 별도 worktree에서 worker와 합성 검사를 구현했다. 두 CLI attempt는 실제 응답 모델 `claude-opus-5-5`, 성공 반환 후 검토·통합됐으며, 두 번째는 외부 등록 config와 동결 C checkout을 연결하는 수정이다. Sol은 감독기·중단/비용 기록과 단일 실제 실행을 맡았다. Root는 통합315검사·등록·보고를 맡았다. 작업대장은 SSD `coordination/20260927-june-eligibility/board.json`, Claude 원본 로그는 그 아래 `COOP-011/attempt-001`, `attempt-002`다. 신규 Fable 호출은 없다. 실제 준비는104,970구·worker1.219838초이며 새fit/추론은0이다. [보고서](reports/ML-June-eligibility-2026-09-27.md).

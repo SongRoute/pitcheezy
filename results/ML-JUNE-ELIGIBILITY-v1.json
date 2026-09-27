@@ -1,0 +1,2204 @@
+{
+  "prep_id": "ML-JUNE-ELIGIBILITY-v1",
+  "status": "prepared",
+  "config": {
+    "path_as_passed": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-ELIGIBILITY-v1.json",
+    "resolved": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-ELIGIBILITY-v1.json",
+    "sha256": "afe19b81c0ce58bd5a433f2dda88e0155ce4c605d14c3b4335fa72ffe62e6b30"
+  },
+  "implementation": {
+    "registered_code_commit": "53ae9fd0b56650cf076a83919dc1d92cfe2f2da7",
+    "execution_head": "53ae9fd0b56650cf076a83919dc1d92cfe2f2da7",
+    "execution_root": "/Users/song/Projects/pitcheezy-worktrees/june-eligibility-execution",
+    "executed_script_sha256": "98a144908fb1528993dea71427cfc8c78b35ee1a6ef72f884f4c2f68bd171249",
+    "config_path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-ELIGIBILITY-v1.json",
+    "config_repository_root": "/Users/song/Projects/pitcheezy",
+    "config_repository_relpath": "configs/ML-JUNE-ELIGIBILITY-v1.json",
+    "config_repository_head": "5025bd79577180bf90850642234bb1ddd8e5fc42"
+  },
+  "runtime": {
+    "python": "3.12.14",
+    "executable": "/Users/song/Projects/pitcheezy/.venv/bin/python",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "numpy": "2.5.3",
+    "pandas": "3.0.5",
+    "pyarrow": "25.0.1"
+  },
+  "heavy_lock": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/.heavy.lock",
+  "pins_verified_before_read": {
+    "sources.processed_pitches": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+    "sources.blend_keys": "5bc1cf7830f39f31ca69093b8f855ac2c3530fc0b9f08de82770055dac22094f",
+    "sources.blend_metadata": "de4b784c5c2488993c3bfbb6f44515255ed03d085a76a6e4a1c957b06dee2773",
+    "sources.panel": "bf779e1d616c7921158816f9de9cafdf86e4015154810fc065265e2f28410f5a",
+    "sources.p4_preparation": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+    "sources.p4_model_source": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+    "sources.prior_audit_config": "b1c21f3f1ada028ea48c6514347b2c96964c5107a0c5865d1aa20820884c0050",
+    "sources.prior_audit_result": "6c98069e78ca2f3bdbbfb07eb88c7e9d6049f366ffaf15ae6b12c5fccde8259f",
+    "read_only_guards.g0_research_frozen": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+    "read_only_guards.contract": "97540749699096d2f6087928515a5d40924fdea517a056e29b31243fbc7396de",
+    "read_only_guards.supervisor_repository_source": "929ce9f8cf744c03dc0fdd1b16eb9ac10cc97d3a8469db7d4a72625f0e039e81",
+    "read_only_guards.supervisor_deployed": "929ce9f8cf744c03dc0fdd1b16eb9ac10cc97d3a8469db7d4a72625f0e039e81",
+    "p4_model_source.git_blob_sha1": "07f3389cf7c9300e122cacbf97b5c518921b2043"
+  },
+  "pins_reverified_after_write": true,
+  "window": {
+    "season": 2025,
+    "date_min": "2025-06-01",
+    "date_max": "2025-06-30",
+    "game_types": [
+      "R"
+    ],
+    "reject_year_min": 2026
+  },
+  "research_fold": {
+    "name": "blend",
+    "date_min": "2025-06-01",
+    "date_max": "2025-06-30",
+    "source": "archived EXP-P4-001 scripts/run_temporal_blend.py assign_fold(2025) periods; date-derived, not the stored split"
+  },
+  "source_split": {
+    "column": "split",
+    "expected": [
+      "calibration"
+    ],
+    "source": "experiments/pitchmdp/pitchmdp/data.py add_splits: 2025-05-01..2025-06-30 = calibration"
+  },
+  "exposure": {
+    "record": "June 2025 regular-season eligibility fields newly decoded for preparation",
+    "fields_newly_read": [
+      "description",
+      "events",
+      "balls",
+      "strikes",
+      "supported_pa",
+      "pitch_type",
+      "plate_x",
+      "plate_z"
+    ],
+    "metadata_fields_read": [
+      "game_pk",
+      "at_bat_number",
+      "pitch_number",
+      "game_date",
+      "game_type",
+      "split",
+      "pitcher",
+      "batter",
+      "starter_pitcher",
+      "p_throws"
+    ],
+    "file": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet",
+    "file_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+    "rows_window": [
+      "2025-06-01",
+      "2025-06-30"
+    ],
+    "game_types": [
+      "R"
+    ],
+    "decoded_utc": "2026-09-27T14:45:07.391167+00:00",
+    "purpose": "eligibility mask and exclusion reason flags only",
+    "persisted_outcome_values": false,
+    "class_counts_reported": false,
+    "freshness_claim": null
+  },
+  "frozen_volume": {
+    "q25": 170.0,
+    "q75": 1514.0,
+    "players": 1137,
+    "mismatches": 0
+  },
+  "unknown_metadata": {
+    "rows": {
+      "missing_starter_pitcher": 0,
+      "hand_outside_levels": 0
+    },
+    "diagnostic_census": {
+      "game_role_unknown": {
+        "pitches": 0,
+        "games": 0,
+        "pitchers": 0
+      },
+      "hand_unknown": {
+        "pitches": 0,
+        "games": 0,
+        "pitchers": 0
+      }
+    },
+    "policy": {
+      "missing_pitcher": "fail",
+      "missing_starter_pitcher": "fail",
+      "hand_outside_levels": "fail"
+    }
+  },
+  "counts": {
+    "requested": {
+      "pitches": 115816,
+      "games": 397,
+      "pitchers": 552
+    },
+    "eligible": {
+      "pitches": 104970,
+      "games": 394,
+      "pitchers": 549
+    },
+    "excluded": {
+      "pitches": 10846,
+      "games": 397,
+      "pitchers": 478
+    },
+    "panel_requested": {
+      "pitches": 5212,
+      "games": 115,
+      "pitchers": 20
+    },
+    "panel_eligible": {
+      "pitches": 4821,
+      "games": 110,
+      "pitchers": 20
+    },
+    "panel_excluded": {
+      "pitches": 391,
+      "games": 50,
+      "pitchers": 17
+    },
+    "outside_requested": {
+      "pitches": 110604,
+      "games": 397,
+      "pitchers": 532
+    },
+    "outside_eligible": {
+      "pitches": 100149,
+      "games": 394,
+      "pitchers": 529
+    },
+    "outside_excluded": {
+      "pitches": 10455,
+      "games": 397,
+      "pitchers": 461
+    },
+    "requested_minus_frozen_cpanel": {
+      "pitches": 110995,
+      "games": 397,
+      "pitchers": 549
+    },
+    "eligible_minus_frozen_cpanel": {
+      "pitches": 100149,
+      "games": 394,
+      "pitchers": 529
+    }
+  },
+  "cpanel_replay": {
+    "ordered_keys_equal": true,
+    "rows": 4821,
+    "ordered_key_sha256": "0f66807ba93c185e40416e6543183f389dac595fec310fb5a56cfe21bd9c4674",
+    "metadata_columns_equal": [
+      "pitcher",
+      "batter",
+      "in_cpanel",
+      "train_volume",
+      "game_role",
+      "throwing_hand",
+      "month"
+    ]
+  },
+  "partition_gates": {
+    "eligible ⊔ excluded = requested": true,
+    "panel ⊔ outside = requested": true,
+    "panel_eligible = frozen blend keys": true,
+    "panel_excluded = panel_requested − frozen": true,
+    "requested_minus_frozen = requested − frozen": true,
+    "eligible_minus_frozen = outside_eligible": true,
+    "outside_eligible ⊔ outside_excluded = outside": true,
+    "frozen ⊂ requested": true
+  },
+  "expected_gates": {
+    "requested.pitches": {
+      "expected": 115816,
+      "actual": 115816,
+      "status": "match"
+    },
+    "requested.games": {
+      "expected": 397,
+      "actual": 397,
+      "status": "match"
+    },
+    "requested.pitchers": {
+      "expected": 552,
+      "actual": 552,
+      "status": "match"
+    },
+    "panel_requested.pitches": {
+      "expected": 5212,
+      "actual": 5212,
+      "status": "match"
+    },
+    "panel_requested.games": {
+      "expected": 115,
+      "actual": 115,
+      "status": "match"
+    },
+    "panel_requested.pitchers": {
+      "expected": 20,
+      "actual": 20,
+      "status": "match"
+    },
+    "panel_eligible.pitches": {
+      "expected": 4821,
+      "actual": 4821,
+      "status": "match"
+    },
+    "panel_eligible.games": {
+      "expected": 110,
+      "actual": 110,
+      "status": "match"
+    },
+    "panel_eligible.pitchers": {
+      "expected": 20,
+      "actual": 20,
+      "status": "match"
+    },
+    "panel_excluded.pitches": {
+      "expected": 391,
+      "actual": 391,
+      "status": "match"
+    },
+    "panel_excluded.games": {
+      "expected": 50,
+      "actual": 50,
+      "status": "match"
+    },
+    "panel_excluded.pitchers": {
+      "expected": 17,
+      "actual": 17,
+      "status": "match"
+    },
+    "outside_requested.pitches": {
+      "expected": 110604,
+      "actual": 110604,
+      "status": "match"
+    },
+    "outside_requested.games": {
+      "expected": 397,
+      "actual": 397,
+      "status": "match"
+    },
+    "outside_requested.pitchers": {
+      "expected": 532,
+      "actual": 532,
+      "status": "match"
+    },
+    "requested_minus_frozen_cpanel.pitches": {
+      "expected": 110995,
+      "actual": 110995,
+      "status": "match"
+    },
+    "requested_minus_frozen_cpanel.games": {
+      "expected": 397,
+      "actual": 397,
+      "status": "match"
+    },
+    "requested_minus_frozen_cpanel.pitchers": {
+      "expected": 549,
+      "actual": 549,
+      "status": "match"
+    },
+    "p4 coverage.blend.requested_pitches": {
+      "expected": 5212,
+      "actual": 5212,
+      "status": "match"
+    },
+    "p4 coverage.blend.eligible_pitches": {
+      "expected": 4821,
+      "actual": 4821,
+      "status": "match"
+    },
+    "p4 coverage.blend.unsupported_pa": {
+      "expected": 391,
+      "actual": 391,
+      "status": "match"
+    },
+    "p4 coverage.blend.unmapped_outcome": {
+      "expected": 26,
+      "actual": 26,
+      "status": "match"
+    },
+    "p4 coverage.blend.missing_type": {
+      "expected": 16,
+      "actual": 16,
+      "status": "match"
+    },
+    "p4 coverage.blend.missing_coordinates": {
+      "expected": 16,
+      "actual": 16,
+      "status": "match"
+    },
+    "eligible within bounds": {
+      "bounds": [
+        4821,
+        115425
+      ],
+      "status": "match"
+    }
+  },
+  "exclusion_reasons": {
+    "requested": {
+      "overlapping": {
+        "unmapped_outcome": {
+          "pitches": 674,
+          "games": 250
+        },
+        "unsupported_pa": {
+          "pitches": 10846,
+          "games": 397
+        },
+        "missing_type": {
+          "pitches": 565,
+          "games": 134
+        },
+        "missing_plate_x": {
+          "pitches": 565,
+          "games": 134
+        },
+        "missing_plate_z": {
+          "pitches": 565,
+          "games": 134
+        },
+        "invalid_balls": {
+          "pitches": 0,
+          "games": 0
+        },
+        "invalid_strikes": {
+          "pitches": 0,
+          "games": 0
+        }
+      },
+      "missing_coordinates": {
+        "pitches": 565,
+        "games": 134
+      },
+      "disjoint_bitmask": {
+        "bit_order": [
+          "unmapped_outcome",
+          "unsupported_pa",
+          "missing_type",
+          "missing_plate_x",
+          "missing_plate_z",
+          "invalid_balls",
+          "invalid_strikes"
+        ],
+        "encoding": "string position i = reason i (1 = set); patterns partition excluded rows",
+        "counts": {
+          "0100000": 10057,
+          "1100000": 224,
+          "0111100": 115,
+          "1111100": 450
+        },
+        "sum": 10846
+      },
+      "note": "overlapping reason counts are not unique exclusion counts"
+    },
+    "panel_requested": {
+      "overlapping": {
+        "unmapped_outcome": {
+          "pitches": 26,
+          "games": 19
+        },
+        "unsupported_pa": {
+          "pitches": 391,
+          "games": 50
+        },
+        "missing_type": {
+          "pitches": 16,
+          "games": 9
+        },
+        "missing_plate_x": {
+          "pitches": 16,
+          "games": 9
+        },
+        "missing_plate_z": {
+          "pitches": 16,
+          "games": 9
+        },
+        "invalid_balls": {
+          "pitches": 0,
+          "games": 0
+        },
+        "invalid_strikes": {
+          "pitches": 0,
+          "games": 0
+        }
+      },
+      "missing_coordinates": {
+        "pitches": 16,
+        "games": 9
+      },
+      "disjoint_bitmask": {
+        "bit_order": [
+          "unmapped_outcome",
+          "unsupported_pa",
+          "missing_type",
+          "missing_plate_x",
+          "missing_plate_z",
+          "invalid_balls",
+          "invalid_strikes"
+        ],
+        "encoding": "string position i = reason i (1 = set); patterns partition excluded rows",
+        "counts": {
+          "0100000": 365,
+          "1100000": 10,
+          "1111100": 16
+        },
+        "sum": 391
+      },
+      "note": "overlapping reason counts are not unique exclusion counts"
+    },
+    "outside_requested": {
+      "overlapping": {
+        "unmapped_outcome": {
+          "pitches": 648,
+          "games": 243
+        },
+        "unsupported_pa": {
+          "pitches": 10455,
+          "games": 397
+        },
+        "missing_type": {
+          "pitches": 549,
+          "games": 130
+        },
+        "missing_plate_x": {
+          "pitches": 549,
+          "games": 130
+        },
+        "missing_plate_z": {
+          "pitches": 549,
+          "games": 130
+        },
+        "invalid_balls": {
+          "pitches": 0,
+          "games": 0
+        },
+        "invalid_strikes": {
+          "pitches": 0,
+          "games": 0
+        }
+      },
+      "missing_coordinates": {
+        "pitches": 549,
+        "games": 130
+      },
+      "disjoint_bitmask": {
+        "bit_order": [
+          "unmapped_outcome",
+          "unsupported_pa",
+          "missing_type",
+          "missing_plate_x",
+          "missing_plate_z",
+          "invalid_balls",
+          "invalid_strikes"
+        ],
+        "encoding": "string position i = reason i (1 = set); patterns partition excluded rows",
+        "counts": {
+          "0100000": 9692,
+          "1100000": 214,
+          "0111100": 115,
+          "1111100": 434
+        },
+        "sum": 10455
+      },
+      "note": "overlapping reason counts are not unique exclusion counts"
+    }
+  },
+  "shared_games": {
+    "panel_eligible & eligible_minus_frozen_cpanel": 110,
+    "panel_requested & outside_requested": 115,
+    "panel_eligible & outside_eligible": 110,
+    "eligible & excluded": 394
+  },
+  "support_rule": {
+    "min_games": 30,
+    "min_pitches": 500,
+    "combine": "AND"
+  },
+  "support_judged_populations": [
+    "eligible",
+    "eligible_minus_frozen_cpanel",
+    "outside_eligible",
+    "panel_eligible"
+  ],
+  "support": {
+    "train_volume": {
+      "requested": {
+        "zero": {
+          "pitches": 5154,
+          "games": 132,
+          "pitchers": 50
+        },
+        "low": {
+          "pitches": 5923,
+          "games": 191,
+          "pitchers": 54
+        },
+        "middle": {
+          "pitches": 43376,
+          "games": 395,
+          "pitchers": 248
+        },
+        "high": {
+          "pitches": 61363,
+          "games": 389,
+          "pitchers": 200
+        }
+      },
+      "eligible": {
+        "zero": {
+          "pitches": 4788,
+          "games": 127,
+          "pitchers": 49,
+          "supported": true
+        },
+        "low": {
+          "pitches": 5338,
+          "games": 184,
+          "pitchers": 53,
+          "supported": true
+        },
+        "middle": {
+          "pitches": 38546,
+          "games": 393,
+          "pitchers": 247,
+          "supported": true
+        },
+        "high": {
+          "pitches": 56298,
+          "games": 386,
+          "pitchers": 200,
+          "supported": true
+        }
+      },
+      "excluded": {
+        "zero": {
+          "pitches": 366,
+          "games": 55,
+          "pitchers": 29
+        },
+        "low": {
+          "pitches": 585,
+          "games": 78,
+          "pitchers": 36
+        },
+        "middle": {
+          "pitches": 4830,
+          "games": 364,
+          "pitchers": 226
+        },
+        "high": {
+          "pitches": 5065,
+          "games": 343,
+          "pitchers": 187
+        }
+      },
+      "panel_requested": {
+        "zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "low": {
+          "pitches": 663,
+          "games": 12,
+          "pitchers": 4
+        },
+        "middle": {
+          "pitches": 1079,
+          "games": 20,
+          "pitchers": 3
+        },
+        "high": {
+          "pitches": 3470,
+          "games": 90,
+          "pitchers": 13
+        }
+      },
+      "panel_eligible": {
+        "zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0,
+          "supported": false
+        },
+        "low": {
+          "pitches": 635,
+          "games": 12,
+          "pitchers": 4,
+          "supported": false
+        },
+        "middle": {
+          "pitches": 1014,
+          "games": 19,
+          "pitchers": 3,
+          "supported": false
+        },
+        "high": {
+          "pitches": 3172,
+          "games": 86,
+          "pitchers": 13,
+          "supported": true
+        }
+      },
+      "panel_excluded": {
+        "zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "low": {
+          "pitches": 28,
+          "games": 4,
+          "pitchers": 2
+        },
+        "middle": {
+          "pitches": 65,
+          "games": 10,
+          "pitchers": 3
+        },
+        "high": {
+          "pitches": 298,
+          "games": 37,
+          "pitchers": 12
+        }
+      },
+      "outside_requested": {
+        "zero": {
+          "pitches": 5154,
+          "games": 132,
+          "pitchers": 50
+        },
+        "low": {
+          "pitches": 5260,
+          "games": 180,
+          "pitchers": 50
+        },
+        "middle": {
+          "pitches": 42297,
+          "games": 395,
+          "pitchers": 245
+        },
+        "high": {
+          "pitches": 57893,
+          "games": 385,
+          "pitchers": 187
+        }
+      },
+      "outside_eligible": {
+        "zero": {
+          "pitches": 4788,
+          "games": 127,
+          "pitchers": 49,
+          "supported": true
+        },
+        "low": {
+          "pitches": 4703,
+          "games": 173,
+          "pitchers": 49,
+          "supported": true
+        },
+        "middle": {
+          "pitches": 37532,
+          "games": 393,
+          "pitchers": 244,
+          "supported": true
+        },
+        "high": {
+          "pitches": 53126,
+          "games": 382,
+          "pitchers": 187,
+          "supported": true
+        }
+      },
+      "outside_excluded": {
+        "zero": {
+          "pitches": 366,
+          "games": 55,
+          "pitchers": 29
+        },
+        "low": {
+          "pitches": 557,
+          "games": 74,
+          "pitchers": 34
+        },
+        "middle": {
+          "pitches": 4765,
+          "games": 363,
+          "pitchers": 223
+        },
+        "high": {
+          "pitches": 4767,
+          "games": 333,
+          "pitchers": 175
+        }
+      },
+      "requested_minus_frozen_cpanel": {
+        "zero": {
+          "pitches": 5154,
+          "games": 132,
+          "pitchers": 50
+        },
+        "low": {
+          "pitches": 5288,
+          "games": 184,
+          "pitchers": 52
+        },
+        "middle": {
+          "pitches": 42362,
+          "games": 395,
+          "pitchers": 248
+        },
+        "high": {
+          "pitches": 58191,
+          "games": 388,
+          "pitchers": 199
+        }
+      },
+      "eligible_minus_frozen_cpanel": {
+        "zero": {
+          "pitches": 4788,
+          "games": 127,
+          "pitchers": 49,
+          "supported": true
+        },
+        "low": {
+          "pitches": 4703,
+          "games": 173,
+          "pitchers": 49,
+          "supported": true
+        },
+        "middle": {
+          "pitches": 37532,
+          "games": 393,
+          "pitchers": 244,
+          "supported": true
+        },
+        "high": {
+          "pitches": 53126,
+          "games": 382,
+          "pitchers": 187,
+          "supported": true
+        }
+      }
+    },
+    "game_role": {
+      "requested": {
+        "starter": {
+          "pitches": 67318,
+          "games": 397,
+          "pitchers": 213
+        },
+        "relief": {
+          "pitches": 48498,
+          "games": 396,
+          "pitchers": 389
+        }
+      },
+      "eligible": {
+        "starter": {
+          "pitches": 62833,
+          "games": 394,
+          "pitchers": 213,
+          "supported": true
+        },
+        "relief": {
+          "pitches": 42137,
+          "games": 394,
+          "pitchers": 386,
+          "supported": true
+        }
+      },
+      "excluded": {
+        "starter": {
+          "pitches": 4485,
+          "games": 353,
+          "pitchers": 184
+        },
+        "relief": {
+          "pitches": 6361,
+          "games": 394,
+          "pitchers": 316
+        }
+      },
+      "panel_requested": {
+        "starter": {
+          "pitches": 3493,
+          "games": 39,
+          "pitchers": 10
+        },
+        "relief": {
+          "pitches": 1719,
+          "games": 86,
+          "pitchers": 12
+        }
+      },
+      "panel_eligible": {
+        "starter": {
+          "pitches": 3333,
+          "games": 39,
+          "pitchers": 10,
+          "supported": true
+        },
+        "relief": {
+          "pitches": 1488,
+          "games": 81,
+          "pitchers": 12,
+          "supported": true
+        }
+      },
+      "panel_excluded": {
+        "starter": {
+          "pitches": 160,
+          "games": 25,
+          "pitchers": 9
+        },
+        "relief": {
+          "pitches": 231,
+          "games": 27,
+          "pitchers": 9
+        }
+      },
+      "outside_requested": {
+        "starter": {
+          "pitches": 63825,
+          "games": 397,
+          "pitchers": 203
+        },
+        "relief": {
+          "pitches": 46779,
+          "games": 396,
+          "pitchers": 377
+        }
+      },
+      "outside_eligible": {
+        "starter": {
+          "pitches": 59500,
+          "games": 394,
+          "pitchers": 203,
+          "supported": true
+        },
+        "relief": {
+          "pitches": 40649,
+          "games": 394,
+          "pitchers": 374,
+          "supported": true
+        }
+      },
+      "outside_excluded": {
+        "starter": {
+          "pitches": 4325,
+          "games": 346,
+          "pitchers": 175
+        },
+        "relief": {
+          "pitches": 6130,
+          "games": 394,
+          "pitchers": 307
+        }
+      },
+      "requested_minus_frozen_cpanel": {
+        "starter": {
+          "pitches": 63985,
+          "games": 397,
+          "pitchers": 212
+        },
+        "relief": {
+          "pitches": 47010,
+          "games": 396,
+          "pitchers": 386
+        }
+      },
+      "eligible_minus_frozen_cpanel": {
+        "starter": {
+          "pitches": 59500,
+          "games": 394,
+          "pitchers": 203,
+          "supported": true
+        },
+        "relief": {
+          "pitches": 40649,
+          "games": 394,
+          "pitchers": 374,
+          "supported": true
+        }
+      }
+    },
+    "throwing_hand": {
+      "requested": {
+        "L": {
+          "pitches": 31858,
+          "games": 376,
+          "pitchers": 138
+        },
+        "R": {
+          "pitches": 83958,
+          "games": 397,
+          "pitchers": 414
+        }
+      },
+      "eligible": {
+        "L": {
+          "pitches": 29015,
+          "games": 372,
+          "pitchers": 137,
+          "supported": true
+        },
+        "R": {
+          "pitches": 75955,
+          "games": 394,
+          "pitchers": 412,
+          "supported": true
+        }
+      },
+      "excluded": {
+        "L": {
+          "pitches": 2843,
+          "games": 261,
+          "pitchers": 124
+        },
+        "R": {
+          "pitches": 8003,
+          "games": 386,
+          "pitchers": 354
+        }
+      },
+      "panel_requested": {
+        "L": {
+          "pitches": 2699,
+          "games": 70,
+          "pitchers": 10
+        },
+        "R": {
+          "pitches": 2513,
+          "games": 56,
+          "pitchers": 10
+        }
+      },
+      "panel_eligible": {
+        "L": {
+          "pitches": 2538,
+          "games": 67,
+          "pitchers": 10,
+          "supported": true
+        },
+        "R": {
+          "pitches": 2283,
+          "games": 54,
+          "pitchers": 10,
+          "supported": true
+        }
+      },
+      "panel_excluded": {
+        "L": {
+          "pitches": 161,
+          "games": 25,
+          "pitchers": 8
+        },
+        "R": {
+          "pitches": 230,
+          "games": 27,
+          "pitchers": 9
+        }
+      },
+      "outside_requested": {
+        "L": {
+          "pitches": 29159,
+          "games": 372,
+          "pitchers": 128
+        },
+        "R": {
+          "pitches": 81445,
+          "games": 397,
+          "pitchers": 404
+        }
+      },
+      "outside_eligible": {
+        "L": {
+          "pitches": 26477,
+          "games": 367,
+          "pitchers": 127,
+          "supported": true
+        },
+        "R": {
+          "pitches": 73672,
+          "games": 394,
+          "pitchers": 402,
+          "supported": true
+        }
+      },
+      "outside_excluded": {
+        "L": {
+          "pitches": 2682,
+          "games": 249,
+          "pitchers": 116
+        },
+        "R": {
+          "pitches": 7773,
+          "games": 386,
+          "pitchers": 345
+        }
+      },
+      "requested_minus_frozen_cpanel": {
+        "L": {
+          "pitches": 29320,
+          "games": 374,
+          "pitchers": 136
+        },
+        "R": {
+          "pitches": 81675,
+          "games": 397,
+          "pitchers": 413
+        }
+      },
+      "eligible_minus_frozen_cpanel": {
+        "L": {
+          "pitches": 26477,
+          "games": 367,
+          "pitchers": 127,
+          "supported": true
+        },
+        "R": {
+          "pitches": 73672,
+          "games": 394,
+          "pitchers": 402,
+          "supported": true
+        }
+      }
+    },
+    "role_x_volume": {
+      "requested": {
+        "starter|zero": {
+          "pitches": 2411,
+          "games": 32,
+          "pitchers": 13
+        },
+        "starter|low": {
+          "pitches": 1744,
+          "games": 24,
+          "pitchers": 10
+        },
+        "starter|middle": {
+          "pitches": 14206,
+          "games": 164,
+          "pitchers": 60
+        },
+        "starter|high": {
+          "pitches": 48957,
+          "games": 364,
+          "pitchers": 130
+        },
+        "relief|zero": {
+          "pitches": 2743,
+          "games": 107,
+          "pitchers": 41
+        },
+        "relief|low": {
+          "pitches": 4179,
+          "games": 175,
+          "pitchers": 49
+        },
+        "relief|middle": {
+          "pitches": 29170,
+          "games": 395,
+          "pitchers": 215
+        },
+        "relief|high": {
+          "pitches": 12406,
+          "games": 334,
+          "pitchers": 84
+        }
+      },
+      "eligible": {
+        "starter|zero": {
+          "pitches": 2278,
+          "games": 32,
+          "pitchers": 13,
+          "supported": true
+        },
+        "starter|low": {
+          "pitches": 1657,
+          "games": 24,
+          "pitchers": 10,
+          "supported": false
+        },
+        "starter|middle": {
+          "pitches": 13309,
+          "games": 164,
+          "pitchers": 60,
+          "supported": true
+        },
+        "starter|high": {
+          "pitches": 45589,
+          "games": 361,
+          "pitchers": 130,
+          "supported": true
+        },
+        "relief|zero": {
+          "pitches": 2510,
+          "games": 102,
+          "pitchers": 40,
+          "supported": true
+        },
+        "relief|low": {
+          "pitches": 3681,
+          "games": 168,
+          "pitchers": 48,
+          "supported": true
+        },
+        "relief|middle": {
+          "pitches": 25237,
+          "games": 393,
+          "pitchers": 214,
+          "supported": true
+        },
+        "relief|high": {
+          "pitches": 10709,
+          "games": 326,
+          "pitchers": 84,
+          "supported": true
+        }
+      },
+      "excluded": {
+        "starter|zero": {
+          "pitches": 133,
+          "games": 19,
+          "pitchers": 10
+        },
+        "starter|low": {
+          "pitches": 87,
+          "games": 13,
+          "pitchers": 6
+        },
+        "starter|middle": {
+          "pitches": 897,
+          "games": 119,
+          "pitchers": 50
+        },
+        "starter|high": {
+          "pitches": 3368,
+          "games": 280,
+          "pitchers": 118
+        },
+        "relief|zero": {
+          "pitches": 233,
+          "games": 37,
+          "pitchers": 20
+        },
+        "relief|low": {
+          "pitches": 498,
+          "games": 66,
+          "pitchers": 30
+        },
+        "relief|middle": {
+          "pitches": 3933,
+          "games": 347,
+          "pitchers": 192
+        },
+        "relief|high": {
+          "pitches": 1697,
+          "games": 197,
+          "pitchers": 74
+        }
+      },
+      "panel_requested": {
+        "starter|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "starter|low": {
+          "pitches": 527,
+          "games": 6,
+          "pitchers": 2
+        },
+        "starter|middle": {
+          "pitches": 936,
+          "games": 10,
+          "pitchers": 2
+        },
+        "starter|high": {
+          "pitches": 2030,
+          "games": 23,
+          "pitchers": 6
+        },
+        "relief|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "relief|low": {
+          "pitches": 136,
+          "games": 7,
+          "pitchers": 2
+        },
+        "relief|middle": {
+          "pitches": 143,
+          "games": 10,
+          "pitchers": 1
+        },
+        "relief|high": {
+          "pitches": 1440,
+          "games": 70,
+          "pitchers": 9
+        }
+      },
+      "panel_eligible": {
+        "starter|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0,
+          "supported": false
+        },
+        "starter|low": {
+          "pitches": 499,
+          "games": 6,
+          "pitchers": 2,
+          "supported": false
+        },
+        "starter|middle": {
+          "pitches": 889,
+          "games": 10,
+          "pitchers": 2,
+          "supported": false
+        },
+        "starter|high": {
+          "pitches": 1945,
+          "games": 23,
+          "pitchers": 6,
+          "supported": false
+        },
+        "relief|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0,
+          "supported": false
+        },
+        "relief|low": {
+          "pitches": 136,
+          "games": 7,
+          "pitchers": 2,
+          "supported": false
+        },
+        "relief|middle": {
+          "pitches": 125,
+          "games": 9,
+          "pitchers": 1,
+          "supported": false
+        },
+        "relief|high": {
+          "pitches": 1227,
+          "games": 66,
+          "pitchers": 9,
+          "supported": true
+        }
+      },
+      "panel_excluded": {
+        "starter|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "starter|low": {
+          "pitches": 28,
+          "games": 4,
+          "pitchers": 2
+        },
+        "starter|middle": {
+          "pitches": 47,
+          "games": 8,
+          "pitchers": 2
+        },
+        "starter|high": {
+          "pitches": 85,
+          "games": 13,
+          "pitchers": 5
+        },
+        "relief|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "relief|low": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "relief|middle": {
+          "pitches": 18,
+          "games": 2,
+          "pitchers": 1
+        },
+        "relief|high": {
+          "pitches": 213,
+          "games": 25,
+          "pitchers": 8
+        }
+      },
+      "outside_requested": {
+        "starter|zero": {
+          "pitches": 2411,
+          "games": 32,
+          "pitchers": 13
+        },
+        "starter|low": {
+          "pitches": 1217,
+          "games": 18,
+          "pitchers": 8
+        },
+        "starter|middle": {
+          "pitches": 13270,
+          "games": 155,
+          "pitchers": 58
+        },
+        "starter|high": {
+          "pitches": 46927,
+          "games": 356,
+          "pitchers": 124
+        },
+        "relief|zero": {
+          "pitches": 2743,
+          "games": 107,
+          "pitchers": 41
+        },
+        "relief|low": {
+          "pitches": 4043,
+          "games": 169,
+          "pitchers": 47
+        },
+        "relief|middle": {
+          "pitches": 29027,
+          "games": 395,
+          "pitchers": 214
+        },
+        "relief|high": {
+          "pitches": 10966,
+          "games": 312,
+          "pitchers": 75
+        }
+      },
+      "outside_eligible": {
+        "starter|zero": {
+          "pitches": 2278,
+          "games": 32,
+          "pitchers": 13,
+          "supported": true
+        },
+        "starter|low": {
+          "pitches": 1158,
+          "games": 18,
+          "pitchers": 8,
+          "supported": false
+        },
+        "starter|middle": {
+          "pitches": 12420,
+          "games": 155,
+          "pitchers": 58,
+          "supported": true
+        },
+        "starter|high": {
+          "pitches": 43644,
+          "games": 353,
+          "pitchers": 124,
+          "supported": true
+        },
+        "relief|zero": {
+          "pitches": 2510,
+          "games": 102,
+          "pitchers": 40,
+          "supported": true
+        },
+        "relief|low": {
+          "pitches": 3545,
+          "games": 162,
+          "pitchers": 46,
+          "supported": true
+        },
+        "relief|middle": {
+          "pitches": 25112,
+          "games": 393,
+          "pitchers": 213,
+          "supported": true
+        },
+        "relief|high": {
+          "pitches": 9482,
+          "games": 305,
+          "pitchers": 75,
+          "supported": true
+        }
+      },
+      "outside_excluded": {
+        "starter|zero": {
+          "pitches": 133,
+          "games": 19,
+          "pitchers": 10
+        },
+        "starter|low": {
+          "pitches": 59,
+          "games": 9,
+          "pitchers": 4
+        },
+        "starter|middle": {
+          "pitches": 850,
+          "games": 112,
+          "pitchers": 48
+        },
+        "starter|high": {
+          "pitches": 3283,
+          "games": 273,
+          "pitchers": 113
+        },
+        "relief|zero": {
+          "pitches": 233,
+          "games": 37,
+          "pitchers": 20
+        },
+        "relief|low": {
+          "pitches": 498,
+          "games": 66,
+          "pitchers": 30
+        },
+        "relief|middle": {
+          "pitches": 3915,
+          "games": 347,
+          "pitchers": 191
+        },
+        "relief|high": {
+          "pitches": 1484,
+          "games": 178,
+          "pitchers": 66
+        }
+      },
+      "requested_minus_frozen_cpanel": {
+        "starter|zero": {
+          "pitches": 2411,
+          "games": 32,
+          "pitchers": 13
+        },
+        "starter|low": {
+          "pitches": 1245,
+          "games": 22,
+          "pitchers": 10
+        },
+        "starter|middle": {
+          "pitches": 13317,
+          "games": 162,
+          "pitchers": 60
+        },
+        "starter|high": {
+          "pitches": 47012,
+          "games": 361,
+          "pitchers": 129
+        },
+        "relief|zero": {
+          "pitches": 2743,
+          "games": 107,
+          "pitchers": 41
+        },
+        "relief|low": {
+          "pitches": 4043,
+          "games": 169,
+          "pitchers": 47
+        },
+        "relief|middle": {
+          "pitches": 29045,
+          "games": 395,
+          "pitchers": 215
+        },
+        "relief|high": {
+          "pitches": 11179,
+          "games": 323,
+          "pitchers": 83
+        }
+      },
+      "eligible_minus_frozen_cpanel": {
+        "starter|zero": {
+          "pitches": 2278,
+          "games": 32,
+          "pitchers": 13,
+          "supported": true
+        },
+        "starter|low": {
+          "pitches": 1158,
+          "games": 18,
+          "pitchers": 8,
+          "supported": false
+        },
+        "starter|middle": {
+          "pitches": 12420,
+          "games": 155,
+          "pitchers": 58,
+          "supported": true
+        },
+        "starter|high": {
+          "pitches": 43644,
+          "games": 353,
+          "pitchers": 124,
+          "supported": true
+        },
+        "relief|zero": {
+          "pitches": 2510,
+          "games": 102,
+          "pitchers": 40,
+          "supported": true
+        },
+        "relief|low": {
+          "pitches": 3545,
+          "games": 162,
+          "pitchers": 46,
+          "supported": true
+        },
+        "relief|middle": {
+          "pitches": 25112,
+          "games": 393,
+          "pitchers": 213,
+          "supported": true
+        },
+        "relief|high": {
+          "pitches": 9482,
+          "games": 305,
+          "pitchers": 75,
+          "supported": true
+        }
+      }
+    },
+    "hand_x_volume": {
+      "requested": {
+        "L|zero": {
+          "pitches": 1196,
+          "games": 31,
+          "pitchers": 9
+        },
+        "L|low": {
+          "pitches": 1321,
+          "games": 59,
+          "pitchers": 9
+        },
+        "L|middle": {
+          "pitches": 10745,
+          "games": 290,
+          "pitchers": 60
+        },
+        "L|high": {
+          "pitches": 18596,
+          "games": 269,
+          "pitchers": 60
+        },
+        "R|zero": {
+          "pitches": 3958,
+          "games": 105,
+          "pitchers": 41
+        },
+        "R|low": {
+          "pitches": 4602,
+          "games": 153,
+          "pitchers": 45
+        },
+        "R|middle": {
+          "pitches": 32631,
+          "games": 389,
+          "pitchers": 188
+        },
+        "R|high": {
+          "pitches": 42767,
+          "games": 367,
+          "pitchers": 140
+        }
+      },
+      "eligible": {
+        "L|zero": {
+          "pitches": 1087,
+          "games": 29,
+          "pitchers": 8,
+          "supported": false
+        },
+        "L|low": {
+          "pitches": 1163,
+          "games": 56,
+          "pitchers": 9,
+          "supported": true
+        },
+        "L|middle": {
+          "pitches": 9668,
+          "games": 282,
+          "pitchers": 60,
+          "supported": true
+        },
+        "L|high": {
+          "pitches": 17097,
+          "games": 261,
+          "pitchers": 60,
+          "supported": true
+        },
+        "R|zero": {
+          "pitches": 3701,
+          "games": 102,
+          "pitchers": 41,
+          "supported": true
+        },
+        "R|low": {
+          "pitches": 4175,
+          "games": 148,
+          "pitchers": 44,
+          "supported": true
+        },
+        "R|middle": {
+          "pitches": 28878,
+          "games": 386,
+          "pitchers": 187,
+          "supported": true
+        },
+        "R|high": {
+          "pitches": 39201,
+          "games": 364,
+          "pitchers": 140,
+          "supported": true
+        }
+      },
+      "excluded": {
+        "L|zero": {
+          "pitches": 109,
+          "games": 11,
+          "pitchers": 7
+        },
+        "L|low": {
+          "pitches": 158,
+          "games": 20,
+          "pitchers": 7
+        },
+        "L|middle": {
+          "pitches": 1077,
+          "games": 140,
+          "pitchers": 55
+        },
+        "L|high": {
+          "pitches": 1499,
+          "games": 163,
+          "pitchers": 55
+        },
+        "R|zero": {
+          "pitches": 257,
+          "games": 44,
+          "pitchers": 22
+        },
+        "R|low": {
+          "pitches": 427,
+          "games": 59,
+          "pitchers": 29
+        },
+        "R|middle": {
+          "pitches": 3753,
+          "games": 341,
+          "pitchers": 171
+        },
+        "R|high": {
+          "pitches": 3566,
+          "games": 282,
+          "pitchers": 132
+        }
+      },
+      "panel_requested": {
+        "L|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "L|low": {
+          "pitches": 449,
+          "games": 6,
+          "pitchers": 2
+        },
+        "L|middle": {
+          "pitches": 628,
+          "games": 15,
+          "pitchers": 2
+        },
+        "L|high": {
+          "pitches": 1622,
+          "games": 49,
+          "pitchers": 6
+        },
+        "R|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "R|low": {
+          "pitches": 214,
+          "games": 7,
+          "pitchers": 2
+        },
+        "R|middle": {
+          "pitches": 451,
+          "games": 5,
+          "pitchers": 1
+        },
+        "R|high": {
+          "pitches": 1848,
+          "games": 47,
+          "pitchers": 7
+        }
+      },
+      "panel_eligible": {
+        "L|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0,
+          "supported": false
+        },
+        "L|low": {
+          "pitches": 424,
+          "games": 6,
+          "pitchers": 2,
+          "supported": false
+        },
+        "L|middle": {
+          "pitches": 587,
+          "games": 14,
+          "pitchers": 2,
+          "supported": false
+        },
+        "L|high": {
+          "pitches": 1527,
+          "games": 47,
+          "pitchers": 6,
+          "supported": true
+        },
+        "R|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0,
+          "supported": false
+        },
+        "R|low": {
+          "pitches": 211,
+          "games": 7,
+          "pitchers": 2,
+          "supported": false
+        },
+        "R|middle": {
+          "pitches": 427,
+          "games": 5,
+          "pitchers": 1,
+          "supported": false
+        },
+        "R|high": {
+          "pitches": 1645,
+          "games": 45,
+          "pitchers": 7,
+          "supported": true
+        }
+      },
+      "panel_excluded": {
+        "L|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "L|low": {
+          "pitches": 25,
+          "games": 3,
+          "pitchers": 1
+        },
+        "L|middle": {
+          "pitches": 41,
+          "games": 6,
+          "pitchers": 2
+        },
+        "L|high": {
+          "pitches": 95,
+          "games": 16,
+          "pitchers": 5
+        },
+        "R|zero": {
+          "pitches": 0,
+          "games": 0,
+          "pitchers": 0
+        },
+        "R|low": {
+          "pitches": 3,
+          "games": 1,
+          "pitchers": 1
+        },
+        "R|middle": {
+          "pitches": 24,
+          "games": 4,
+          "pitchers": 1
+        },
+        "R|high": {
+          "pitches": 203,
+          "games": 22,
+          "pitchers": 7
+        }
+      },
+      "outside_requested": {
+        "L|zero": {
+          "pitches": 1196,
+          "games": 31,
+          "pitchers": 9
+        },
+        "L|low": {
+          "pitches": 872,
+          "games": 53,
+          "pitchers": 7
+        },
+        "L|middle": {
+          "pitches": 10117,
+          "games": 286,
+          "pitchers": 58
+        },
+        "L|high": {
+          "pitches": 16974,
+          "games": 242,
+          "pitchers": 54
+        },
+        "R|zero": {
+          "pitches": 3958,
+          "games": 105,
+          "pitchers": 41
+        },
+        "R|low": {
+          "pitches": 4388,
+          "games": 147,
+          "pitchers": 43
+        },
+        "R|middle": {
+          "pitches": 32180,
+          "games": 389,
+          "pitchers": 187
+        },
+        "R|high": {
+          "pitches": 40919,
+          "games": 363,
+          "pitchers": 133
+        }
+      },
+      "outside_eligible": {
+        "L|zero": {
+          "pitches": 1087,
+          "games": 29,
+          "pitchers": 8,
+          "supported": false
+        },
+        "L|low": {
+          "pitches": 739,
+          "games": 50,
+          "pitchers": 7,
+          "supported": true
+        },
+        "L|middle": {
+          "pitches": 9081,
+          "games": 278,
+          "pitchers": 58,
+          "supported": true
+        },
+        "L|high": {
+          "pitches": 15570,
+          "games": 235,
+          "pitchers": 54,
+          "supported": true
+        },
+        "R|zero": {
+          "pitches": 3701,
+          "games": 102,
+          "pitchers": 41,
+          "supported": true
+        },
+        "R|low": {
+          "pitches": 3964,
+          "games": 142,
+          "pitchers": 42,
+          "supported": true
+        },
+        "R|middle": {
+          "pitches": 28451,
+          "games": 386,
+          "pitchers": 186,
+          "supported": true
+        },
+        "R|high": {
+          "pitches": 37556,
+          "games": 360,
+          "pitchers": 133,
+          "supported": true
+        }
+      },
+      "outside_excluded": {
+        "L|zero": {
+          "pitches": 109,
+          "games": 11,
+          "pitchers": 7
+        },
+        "L|low": {
+          "pitches": 133,
+          "games": 17,
+          "pitchers": 6
+        },
+        "L|middle": {
+          "pitches": 1036,
+          "games": 136,
+          "pitchers": 53
+        },
+        "L|high": {
+          "pitches": 1404,
+          "games": 152,
+          "pitchers": 50
+        },
+        "R|zero": {
+          "pitches": 257,
+          "games": 44,
+          "pitchers": 22
+        },
+        "R|low": {
+          "pitches": 424,
+          "games": 58,
+          "pitchers": 28
+        },
+        "R|middle": {
+          "pitches": 3729,
+          "games": 341,
+          "pitchers": 170
+        },
+        "R|high": {
+          "pitches": 3363,
+          "games": 276,
+          "pitchers": 125
+        }
+      },
+      "requested_minus_frozen_cpanel": {
+        "L|zero": {
+          "pitches": 1196,
+          "games": 31,
+          "pitchers": 9
+        },
+        "L|low": {
+          "pitches": 897,
+          "games": 56,
+          "pitchers": 8
+        },
+        "L|middle": {
+          "pitches": 10158,
+          "games": 287,
+          "pitchers": 60
+        },
+        "L|high": {
+          "pitches": 17069,
+          "games": 253,
+          "pitchers": 59
+        },
+        "R|zero": {
+          "pitches": 3958,
+          "games": 105,
+          "pitchers": 41
+        },
+        "R|low": {
+          "pitches": 4391,
+          "games": 148,
+          "pitchers": 44
+        },
+        "R|middle": {
+          "pitches": 32204,
+          "games": 389,
+          "pitchers": 188
+        },
+        "R|high": {
+          "pitches": 41122,
+          "games": 365,
+          "pitchers": 140
+        }
+      },
+      "eligible_minus_frozen_cpanel": {
+        "L|zero": {
+          "pitches": 1087,
+          "games": 29,
+          "pitchers": 8,
+          "supported": false
+        },
+        "L|low": {
+          "pitches": 739,
+          "games": 50,
+          "pitchers": 7,
+          "supported": true
+        },
+        "L|middle": {
+          "pitches": 9081,
+          "games": 278,
+          "pitchers": 58,
+          "supported": true
+        },
+        "L|high": {
+          "pitches": 15570,
+          "games": 235,
+          "pitchers": 54,
+          "supported": true
+        },
+        "R|zero": {
+          "pitches": 3701,
+          "games": 102,
+          "pitchers": 41,
+          "supported": true
+        },
+        "R|low": {
+          "pitches": 3964,
+          "games": 142,
+          "pitchers": 42,
+          "supported": true
+        },
+        "R|middle": {
+          "pitches": 28451,
+          "games": 386,
+          "pitchers": 186,
+          "supported": true
+        },
+        "R|high": {
+          "pitches": 37556,
+          "games": 360,
+          "pitchers": 133,
+          "supported": true
+        }
+      }
+    }
+  },
+  "artifacts": {
+    "requested_inventory.parquet": {
+      "sha256": "edb9f57a3f32f473ff6e8527225ab7cde1549c61fed51698a483709da56ffd24",
+      "rows": 115816,
+      "columns": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number",
+        "game_date",
+        "research_split",
+        "pitcher",
+        "batter",
+        "in_cpanel",
+        "train_volume",
+        "game_role",
+        "throwing_hand",
+        "month",
+        "source_split",
+        "frozen_cpanel_eligible",
+        "eligible",
+        "unmapped_outcome",
+        "unsupported_pa",
+        "missing_type",
+        "missing_plate_x",
+        "missing_plate_z",
+        "invalid_balls",
+        "invalid_strikes"
+      ],
+      "ordered_key_sha256": "723dcd02450a5ec114b57253817bf7440c69ee67c5e8ef79527e73ea37620b39",
+      "games": 397
+    },
+    "eligible_keys.parquet": {
+      "sha256": "ff9db8e9a6b2f32a9f4279b30ac6a303b0dbb9d9267746f4cb0dc45741d5f037",
+      "rows": 104970,
+      "columns": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number"
+      ],
+      "ordered_key_sha256": "ddb3a0859240821056ea687713b68ab4d2e2d0d8debb8dbd2d64871796e37f82",
+      "games": 394
+    },
+    "eligible_metadata.parquet": {
+      "sha256": "38507b7df491c210ccff46352c47ace4feb385e277c0b88dd3a96b62b5557c76",
+      "rows": 104970,
+      "columns": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number",
+        "game_date",
+        "research_split",
+        "pitcher",
+        "batter",
+        "in_cpanel",
+        "train_volume",
+        "game_role",
+        "throwing_hand",
+        "month",
+        "frozen_cpanel_eligible"
+      ],
+      "ordered_key_sha256": "ddb3a0859240821056ea687713b68ab4d2e2d0d8debb8dbd2d64871796e37f82",
+      "games": 394
+    },
+    "complement_eligible_keys.parquet": {
+      "sha256": "962be8b7e37a6dc89ebb969a8adeab5861c96368d1384d74a567107f57043b43",
+      "rows": 100149,
+      "columns": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number"
+      ],
+      "ordered_key_sha256": "82cddb8a1a90e8a25c48849ba25a47ec94df1fc7c154c1e2bf16a9b53e6d2e12",
+      "games": 394
+    },
+    "complement_eligible_metadata.parquet": {
+      "sha256": "a760cd9e3052f5529ed4ec0854491168a039ef24cf540279e062867b940dba02",
+      "rows": 100149,
+      "columns": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number",
+        "game_date",
+        "research_split",
+        "pitcher",
+        "batter",
+        "in_cpanel",
+        "train_volume",
+        "game_role",
+        "throwing_hand",
+        "month"
+      ],
+      "ordered_key_sha256": "82cddb8a1a90e8a25c48849ba25a47ec94df1fc7c154c1e2bf16a9b53e6d2e12",
+      "games": 394
+    },
+    "excluded_reasons.parquet": {
+      "sha256": "89d9a0a4c14819dd7fa443b60ae591f4b2804cba02ef5fbe5d255f78c2c30015",
+      "rows": 10846,
+      "columns": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number",
+        "in_cpanel",
+        "unmapped_outcome",
+        "unsupported_pa",
+        "missing_type",
+        "missing_plate_x",
+        "missing_plate_z",
+        "invalid_balls",
+        "invalid_strikes"
+      ],
+      "ordered_key_sha256": "69a164ba68e36424ac918fcce020bc5f95bba7676942678747525f72b8e386b1",
+      "games": 397
+    }
+  },
+  "timings_internal_nonadditive": {
+    "lock_acquired_s": 5.379202775657177e-05,
+    "verify_pins_s": 0.04556170804426074,
+    "parents_s": 0.027388874907046556,
+    "read_projection_s": 0.025346500100567937,
+    "eligibility_s": 0.07019850006327033,
+    "gates_s": 0.22198029095306993,
+    "aggregate_s": 0.3498715420719236,
+    "write_parquet_s": 0.09759404207579792,
+    "worker_internal_total_before_result_s": 0.9353139579761773
+  },
+  "budget": {
+    "external_worker_cap_seconds": 600,
+    "enforced_by": "Sol supervisor (Popen to wait, monotonic)",
+    "note": "internal timings exclude interpreter start/imports and are cross-checks only"
+  },
+  "g0_weights_changed": false,
+  "new_fit_count": 0,
+  "new_inference_count": 0,
+  "independent_confirmation": null,
+  "policy_effect": null,
+  "service_adoption": null
+}
