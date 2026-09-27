@@ -1,10 +1,18 @@
 {
   "audit_id": "ML-JUNE-SUPPORT-AUDIT-v1",
-  "config_sha256": "cf77ed772df6022bc51870212f2348d8c62abd39402b4355fa99da31947dc72b",
-  "code_commit_at_run": "7f27fea6af444d7d3afc7d6ff6226fae68af8eac",
+  "attempt": {
+    "number": 2,
+    "supersedes": "attempt 1 (config cf77ed77…, result 4ec64b40…, code 7f27fea) retained at coordination/20260927-g0-freeze-audits/COOP-009/first-audit-evidence",
+    "reason": "Astra review fixes: explicit complements, official cost source, verify all sources, fail-closed gates"
+  },
+  "implementation": {
+    "executed_source_commit": "c4b31073b8bc7785bada72d2d8ffc86ca6546c76",
+    "executed_script_sha256": "5f5da015a1470db0911354091533a7fd453c359211e1f6ddc869362c131e2fae",
+    "executed_config_sha256": "b1c21f3f1ada028ea48c6514347b2c96964c5107a0c5865d1aa20820884c0050"
+  },
   "python": "3.12.14",
   "platform": "macOS-26.6.2-arm64-arm-64bit",
-  "run_utc": "2026-09-27T12:26:40.287426+00:00",
+  "run_utc": "2026-09-27T12:32:08.004947+00:00",
   "seed": "not applicable (deterministic metadata counts; no sampling)",
   "data_version": {
     "processed_pitches": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
@@ -14,8 +22,20 @@
     "p4_preparation": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
     "p11_preparation": "aa831981ed84963e7dc27f7037fed166c2e6f83b0ed29cfba32d2a8b31a0d52a",
     "p11_profile": "d833b38cd4ece4f35a5cac3028d1a2ade292ca58ed8fcc0f08bb547f2b6207a6",
-    "p11_ledger": "e3e9cfab5a89307c12a97ec7d3358df86648b38cf55f4c2413234aaab6efd29a"
+    "p11_ledger": "e3e9cfab5a89307c12a97ec7d3358df86648b38cf55f4c2413234aaab6efd29a",
+    "official_queue_status": "c784953daebb8445de26ce87fe00b6550c2f9dc90acf6ed25061df1d05aaed70"
   },
+  "sources_verified_before_read": [
+    "blend_keys",
+    "blend_metadata",
+    "official_queue_status",
+    "p11_ledger",
+    "p11_preparation",
+    "p11_profile",
+    "p4_preparation",
+    "panel",
+    "processed_pitches"
+  ],
   "columns_read": {
     "processed_pitches": [
       "game_pk",
@@ -75,6 +95,16 @@
       "seed",
       "status",
       "seconds"
+    ],
+    "official_queue_status": [
+      "status",
+      "steps[].stage",
+      "steps[].phase",
+      "steps[].status",
+      "steps[].exit_code",
+      "steps[].worker_wall_seconds",
+      "authoritative_worker_charged_seconds",
+      "full_outer_queue_wall_seconds"
     ]
   },
   "window": {
@@ -97,10 +127,20 @@
     "players": 1137,
     "stored_label_vs_frozen_cutoff_mismatches": 0
   },
+  "population_definitions": {
+    "full_june_requested": "all 2025-06 regular-season rows in processed pitches (requested, eligibility unknown)",
+    "cpanel_pitcher_requested": "requested rows whose pitcher is one of the 48 EXP-P4-001 panel pitchers",
+    "cpanel_eligible_known_keys": "exact EXP-P4-001 blend_keys (known eligible)",
+    "cpanel_pitcher_known_ineligible": "cpanel_pitcher_requested minus cpanel_eligible_known_keys (known ineligible)",
+    "outside_cpanel_pitcher_requested": "requested rows whose pitcher is not a panel pitcher",
+    "complement_of_eligible_cpanel_keys": "full_june_requested minus exact cpanel_eligible_known_keys; includes the known-ineligible Cpanel rows",
+    "full_june_tight_eligible_upper": "full_june_requested minus cpanel_pitcher_known_ineligible"
+  },
   "eligibility": {
-    "cpanel": "known: EXP-P4-001 blend_keys (4,821 eligible of 5,212 requested)",
-    "full_june_and_complement": "unknown",
-    "reason": "No frozen eligible whole-MLB June key inventory exists: EXP-P4-001/EXP-P11-001 mlb_dev covers 2025-07..2025-09 only; eligibility needs outcome/coordinate fields that this audit must not read. Full/complement eligible support is bounded: lower = Cpanel eligible subset (full) or 0 (complement), upper = requested counts.",
+    "cpanel": "known: EXP-P4-001 blend_keys (4,821 eligible of 5,212 requested; 391 known ineligible)",
+    "full_june_and_non_cpanel": "unknown",
+    "reason": "No frozen eligible whole-MLB June key inventory exists: EXP-P4-001/EXP-P11-001 mlb_dev covers 2025-07..2025-09 only; eligibility needs outcome/coordinate fields that this audit must not read.",
+    "bounds": "full-June eligible: lower = cpanel_eligible_known_keys, tight upper = full_june_tight_eligible_upper (requested minus 391 known-ineligible Cpanel rows). Non-Cpanel eligible (the eligible part of both complements, identical): lower 0, upper = outside_cpanel_pitcher_requested.",
     "mlb_dev_reference": {
       "samples": {
         "path": "mlb_dev_keys.parquet",
@@ -120,28 +160,50 @@
       "games": 397,
       "pitchers": 552
     },
-    "cpanel_requested": {
+    "cpanel_pitcher_requested": {
       "pitches": 5212,
       "games": 115,
       "pitchers": 20
     },
-    "cpanel_eligible": {
+    "cpanel_eligible_known_keys": {
       "pitches": 4821,
       "games": 110,
       "pitchers": 20
     },
-    "complement_requested": {
+    "cpanel_pitcher_known_ineligible": {
+      "pitches": 391,
+      "games": 50,
+      "pitchers": 17
+    },
+    "outside_cpanel_pitcher_requested": {
       "pitches": 110604,
       "games": 397,
       "pitchers": 532
+    },
+    "complement_of_eligible_cpanel_keys": {
+      "pitches": 110995,
+      "games": 397,
+      "pitchers": 549
+    },
+    "full_june_tight_eligible_upper": {
+      "pitches": 115425,
+      "games": 397,
+      "pitchers": 552
     }
   },
   "overlap_and_exclusions": {
-    "cpanel_eligible_games_shared_with_complement": 110,
-    "cpanel_requested_games_shared_with_complement": 115,
-    "complement_only_games": 282,
-    "cpanel_requested_not_eligible_pitches": 391,
-    "key_partition_exact": true
+    "exact_key_partitions": {
+      "cpanel_pitcher_requested + outside_cpanel_pitcher_requested == full": true,
+      "cpanel_eligible_known_keys + complement_of_eligible_cpanel_keys == full": true,
+      "outside_cpanel_pitcher_requested + cpanel_pitcher_known_ineligible == complement_of_eligible_cpanel_keys": true
+    },
+    "games_shared": {
+      "cpanel_eligible_known_keys & complement_of_eligible_cpanel_keys": 110,
+      "cpanel_eligible_known_keys & outside_cpanel_pitcher_requested": 110,
+      "cpanel_pitcher_requested & outside_cpanel_pitcher_requested": 115
+    },
+    "outside_only_games": 282,
+    "known_ineligible_cpanel_pitches": 391
   },
   "cpanel_alignment": {
     "blend_keys_equal_blend_metadata_order": true,
@@ -159,28 +221,55 @@
     ]
   },
   "expected_count_check": {
-    "cpanel_eligible_pitches": [
-      4821,
-      4821
-    ],
-    "cpanel_eligible_games": [
-      110,
-      110
-    ],
-    "cpanel_requested_pitches": [
-      5212,
-      5212
-    ],
-    "p4_coverage_blend": {
-      "requested_pitches": 5212,
-      "eligible_pitches": 4821,
-      "unsupported_pa": 391,
-      "unmapped_outcome": 26,
-      "missing_type": 16,
-      "missing_coordinates": 16,
-      "note": "Reason counts overlap; retrospective eligible denominator is not pre-pitch availability."
+    "cpanel_eligible_pitches (config)": {
+      "expected": 4821,
+      "actual": 4821,
+      "status": "match"
     },
-    "all_match": true
+    "cpanel_eligible_games (config)": {
+      "expected": 110,
+      "actual": 110,
+      "status": "match"
+    },
+    "cpanel_requested_pitches (config)": {
+      "expected": 5212,
+      "actual": 5212,
+      "status": "match"
+    },
+    "p4 coverage.blend.requested_pitches": {
+      "expected": 5212,
+      "actual": 5212,
+      "status": "match"
+    },
+    "p4 coverage.blend.eligible_pitches": {
+      "expected": 4821,
+      "actual": 4821,
+      "status": "match"
+    },
+    "p4 samples.blend.games": {
+      "expected": 110,
+      "actual": 110,
+      "status": "match"
+    },
+    "first attempt full_june_requested": {
+      "expected": 115816,
+      "actual": 115816,
+      "status": "match"
+    },
+    "first attempt outside_cpanel_pitcher_requested": {
+      "expected": 110604,
+      "actual": 110604,
+      "status": "match"
+    },
+    "full_june_eligible_pitches (no frozen June eligible inventory)": {
+      "expected": null,
+      "actual": "unknown",
+      "status": "unknown"
+    },
+    "overall": "unknown_items_present",
+    "unknown_items": [
+      "full_june_eligible_pitches (no frozen June eligible inventory)"
+    ]
   },
   "support_rule": {
     "min_games": 30,
@@ -195,23 +284,38 @@
           "games": 132,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 0,
+          "games": 0,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
+          "pitches": 5154,
+          "games": 132,
+          "supported": true
+        },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 5154,
+          "games": 132,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
           "pitches": 5154,
           "games": 132,
           "supported": true
         },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "low": {
         "full_june_requested": {
@@ -219,23 +323,38 @@
           "games": 191,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 663,
           "games": 12,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 635,
           "games": 12,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 28,
+          "games": 4,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 5260,
           "games": 180,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 5288,
+          "games": 184,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 5895,
+          "games": 191,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "middle": {
         "full_june_requested": {
@@ -243,23 +362,38 @@
           "games": 395,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 1079,
           "games": 20,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 1014,
           "games": 19,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 65,
+          "games": 10,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 42297,
           "games": 395,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 42362,
+          "games": 395,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 43311,
+          "games": 395,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "high": {
         "full_june_requested": {
@@ -267,23 +401,38 @@
           "games": 389,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 3470,
           "games": 90,
           "supported": true
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 3172,
           "games": 86,
           "supported": true
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 298,
+          "games": 37,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 57893,
           "games": 385,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 58191,
+          "games": 388,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 61065,
+          "games": 389,
+          "supported": true
+        },
         "full_june_eligible_status": "supported",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       }
     },
     "game_role": {
@@ -293,23 +442,38 @@
           "games": 397,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 3493,
           "games": 39,
           "supported": true
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 3333,
           "games": 39,
           "supported": true
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 160,
+          "games": 25,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 63825,
           "games": 397,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 63985,
+          "games": 397,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 67158,
+          "games": 397,
+          "supported": true
+        },
         "full_june_eligible_status": "supported",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "relief": {
         "full_june_requested": {
@@ -317,23 +481,38 @@
           "games": 396,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 1719,
           "games": 86,
           "supported": true
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 1488,
           "games": 81,
           "supported": true
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 231,
+          "games": 27,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 46779,
           "games": 396,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 47010,
+          "games": 396,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 48267,
+          "games": 396,
+          "supported": true
+        },
         "full_june_eligible_status": "supported",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       }
     },
     "hand": {
@@ -343,23 +522,38 @@
           "games": 376,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 2699,
           "games": 70,
           "supported": true
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 2538,
           "games": 67,
           "supported": true
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 161,
+          "games": 25,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 29159,
           "games": 372,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 29320,
+          "games": 374,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 31697,
+          "games": 376,
+          "supported": true
+        },
         "full_june_eligible_status": "supported",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "R": {
         "full_june_requested": {
@@ -367,23 +561,38 @@
           "games": 397,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 2513,
           "games": 56,
           "supported": true
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 2283,
           "games": 54,
           "supported": true
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 230,
+          "games": 27,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 81445,
           "games": 397,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 81675,
+          "games": 397,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 83728,
+          "games": 397,
+          "supported": true
+        },
         "full_june_eligible_status": "supported",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       }
     },
     "role_x_volume": {
@@ -393,23 +602,38 @@
           "games": 32,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 0,
+          "games": 0,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
+          "pitches": 2411,
+          "games": 32,
+          "supported": true
+        },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 2411,
+          "games": 32,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
           "pitches": 2411,
           "games": 32,
           "supported": true
         },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "starter|low": {
         "full_june_requested": {
@@ -417,23 +641,38 @@
           "games": 24,
           "supported": false
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 527,
           "games": 6,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 499,
           "games": 6,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 28,
+          "games": 4,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 1217,
           "games": 18,
           "supported": false
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 1245,
+          "games": 22,
+          "supported": false
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 1716,
+          "games": 24,
+          "supported": false
+        },
         "full_june_eligible_status": "unsupported",
-        "complement_eligible_status": "unsupported"
+        "non_cpanel_eligible_status": "unsupported"
       },
       "starter|middle": {
         "full_june_requested": {
@@ -441,23 +680,38 @@
           "games": 164,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 936,
           "games": 10,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 889,
           "games": 10,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 47,
+          "games": 8,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 13270,
           "games": 155,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 13317,
+          "games": 162,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 14159,
+          "games": 164,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "starter|high": {
         "full_june_requested": {
@@ -465,23 +719,38 @@
           "games": 364,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 2030,
           "games": 23,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 1945,
           "games": 23,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 85,
+          "games": 13,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 46927,
           "games": 356,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 47012,
+          "games": 361,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 48872,
+          "games": 364,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "relief|zero": {
         "full_june_requested": {
@@ -489,23 +758,38 @@
           "games": 107,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 0,
+          "games": 0,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
+          "pitches": 2743,
+          "games": 107,
+          "supported": true
+        },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 2743,
+          "games": 107,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
           "pitches": 2743,
           "games": 107,
           "supported": true
         },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "relief|low": {
         "full_june_requested": {
@@ -513,23 +797,38 @@
           "games": 175,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 136,
           "games": 7,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 136,
           "games": 7,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 0,
+          "games": 0,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 4043,
           "games": 169,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 4043,
+          "games": 169,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 4179,
+          "games": 175,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "relief|middle": {
         "full_june_requested": {
@@ -537,23 +836,38 @@
           "games": 395,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 143,
           "games": 10,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 125,
           "games": 9,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 18,
+          "games": 2,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 29027,
           "games": 395,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 29045,
+          "games": 395,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 29152,
+          "games": 395,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "relief|high": {
         "full_june_requested": {
@@ -561,23 +875,38 @@
           "games": 334,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 1440,
           "games": 70,
           "supported": true
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 1227,
           "games": 66,
           "supported": true
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 213,
+          "games": 25,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 10966,
           "games": 312,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 11179,
+          "games": 323,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 12193,
+          "games": 331,
+          "supported": true
+        },
         "full_june_eligible_status": "supported",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       }
     },
     "hand_x_volume": {
@@ -587,23 +916,38 @@
           "games": 31,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 0,
+          "games": 0,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
+          "pitches": 1196,
+          "games": 31,
+          "supported": true
+        },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 1196,
+          "games": 31,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
           "pitches": 1196,
           "games": 31,
           "supported": true
         },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "L|low": {
         "full_june_requested": {
@@ -611,23 +955,38 @@
           "games": 59,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 449,
           "games": 6,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 424,
           "games": 6,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 25,
+          "games": 3,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 872,
           "games": 53,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 897,
+          "games": 56,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 1296,
+          "games": 59,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "L|middle": {
         "full_june_requested": {
@@ -635,23 +994,38 @@
           "games": 290,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 628,
           "games": 15,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 587,
           "games": 14,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 41,
+          "games": 6,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 10117,
           "games": 286,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 10158,
+          "games": 287,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 10704,
+          "games": 290,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "L|high": {
         "full_june_requested": {
@@ -659,23 +1033,38 @@
           "games": 269,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 1622,
           "games": 49,
           "supported": true
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 1527,
           "games": 47,
           "supported": true
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 95,
+          "games": 16,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 16974,
           "games": 242,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 17069,
+          "games": 253,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 18501,
+          "games": 268,
+          "supported": true
+        },
         "full_june_eligible_status": "supported",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "R|zero": {
         "full_june_requested": {
@@ -683,23 +1072,38 @@
           "games": 105,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 0,
           "games": 0,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 0,
+          "games": 0,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
+          "pitches": 3958,
+          "games": 105,
+          "supported": true
+        },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 3958,
+          "games": 105,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
           "pitches": 3958,
           "games": 105,
           "supported": true
         },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "R|low": {
         "full_june_requested": {
@@ -707,23 +1111,38 @@
           "games": 153,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 214,
           "games": 7,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 211,
           "games": 7,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 3,
+          "games": 1,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 4388,
           "games": 147,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 4391,
+          "games": 148,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 4599,
+          "games": 153,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "R|middle": {
         "full_june_requested": {
@@ -731,23 +1150,38 @@
           "games": 389,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 451,
           "games": 5,
           "supported": false
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 427,
           "games": 5,
           "supported": false
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 24,
+          "games": 4,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 32180,
           "games": 389,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 32204,
+          "games": 389,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 32607,
+          "games": 389,
+          "supported": true
+        },
         "full_june_eligible_status": "indeterminate",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       },
       "R|high": {
         "full_june_requested": {
@@ -755,105 +1189,154 @@
           "games": 367,
           "supported": true
         },
-        "cpanel_requested": {
+        "cpanel_pitcher_requested": {
           "pitches": 1848,
           "games": 47,
           "supported": true
         },
-        "cpanel_eligible": {
+        "cpanel_eligible_known_keys": {
           "pitches": 1645,
           "games": 45,
           "supported": true
         },
-        "complement_requested": {
+        "cpanel_pitcher_known_ineligible": {
+          "pitches": 203,
+          "games": 22,
+          "supported": false
+        },
+        "outside_cpanel_pitcher_requested": {
           "pitches": 40919,
           "games": 363,
           "supported": true
         },
+        "complement_of_eligible_cpanel_keys": {
+          "pitches": 41122,
+          "games": 365,
+          "supported": true
+        },
+        "full_june_tight_eligible_upper": {
+          "pitches": 42564,
+          "games": 367,
+          "supported": true
+        },
         "full_june_eligible_status": "supported",
-        "complement_eligible_status": "indeterminate"
+        "non_cpanel_eligible_status": "indeterminate"
       }
     }
   },
   "cost": {
     "measured_components": {
-      "source": "EXP-P11-001 profile.json and ledger.jsonl (existing; no new profile)",
-      "profile_draws": 400,
-      "profile_measured": {
-        "rows": 8192,
-        "command_overhead_seconds": 0.2311774999834597,
-        "load_seconds": 3.026969749946147,
-        "model_load_seconds": 0.02046587481163442,
-        "probe_seconds": 0.13725783303380013,
-        "inference_seconds": 9.085795499850065,
-        "wall_seconds": 12.501800207886845
+      "authoritative_source": "official supervisor queue status.json (SHA-pinned)",
+      "official": {
+        "per_member_worker_wall_seconds": {
+          "g0-predict-0": 354.2867696660105,
+          "g0-predict-1": 356.4457342501264,
+          "g0-predict-2": 354.83392454194836,
+          "g0-predict-3": 355.8842616248876,
+          "g0-predict-4": 356.2332737080287
+        },
+        "other_evaluation_steps_worker_wall_seconds": {
+          "g0-prepare": 2.778572167037055,
+          "g0-profile": 13.481078709010035,
+          "g0-score": 27.30232062493451
+        },
+        "authoritative_worker_charged_seconds": {
+          "evaluation": 1821.2459352919832,
+          "improvement": 34.42338987579569
+        },
+        "full_outer_queue_wall_seconds": 1857.4866603328846
       },
-      "profile_seconds_per_row_per_member": 0.001109105895977791,
-      "ledger_stages": [
-        {
-          "stage": "prepare",
-          "seed": null,
-          "status": "completed",
-          "seconds": 1.854252832941711
+      "observed_predict_bound": {
+        "rows_per_member": 311721,
+        "min_member_worker_wall_seconds": 354.2867696660105,
+        "max_member_worker_wall_seconds": 356.4457342501264,
+        "sum_5_member_worker_wall_seconds": 1777.6839637910016
+      },
+      "profile": {
+        "draws": 400,
+        "measured": {
+          "rows": 8192,
+          "command_overhead_seconds": 0.2311774999834597,
+          "load_seconds": 3.026969749946147,
+          "model_load_seconds": 0.02046587481163442,
+          "probe_seconds": 0.13725783303380013,
+          "inference_seconds": 9.085795499850065,
+          "wall_seconds": 12.501800207886845
         },
-        {
-          "stage": "profile",
-          "seed": null,
-          "status": "completed",
-          "seconds": 12.553508874960244
-        },
-        {
-          "stage": "predict",
-          "seed": 0,
-          "status": "completed",
-          "seconds": 353.31482037506066
-        },
-        {
-          "stage": "predict",
-          "seed": 1,
-          "status": "completed",
-          "seconds": 355.42050299979746
-        },
-        {
-          "stage": "predict",
-          "seed": 2,
-          "status": "completed",
-          "seconds": 353.83682416589
-        },
-        {
-          "stage": "predict",
-          "seed": 3,
-          "status": "completed",
-          "seconds": 354.8630394579377
-        },
-        {
-          "stage": "predict",
-          "seed": 4,
-          "status": "completed",
-          "seconds": 355.22303924988955
-        }
-      ],
-      "ledger_predict_total_seconds_5_members": 1772.6582262485754,
-      "ledger_predict_rows_per_member": 311721,
-      "ledger_seconds_per_row_5_members": 0.005686682085097172
+        "inference_seconds_per_row_per_member": 0.001109105895977791
+      },
+      "internal_ledger_crosscheck": {
+        "label": "internal run ledger; cross-check only, NOT authoritative",
+        "stages": [
+          {
+            "stage": "prepare",
+            "seed": null,
+            "status": "completed",
+            "seconds": 1.854252832941711
+          },
+          {
+            "stage": "profile",
+            "seed": null,
+            "status": "completed",
+            "seconds": 12.553508874960244
+          },
+          {
+            "stage": "predict",
+            "seed": 0,
+            "status": "completed",
+            "seconds": 353.31482037506066
+          },
+          {
+            "stage": "predict",
+            "seed": 1,
+            "status": "completed",
+            "seconds": 355.42050299979746
+          },
+          {
+            "stage": "predict",
+            "seed": 2,
+            "status": "completed",
+            "seconds": 353.83682416589
+          },
+          {
+            "stage": "predict",
+            "seed": 3,
+            "status": "completed",
+            "seconds": 354.8630394579377
+          },
+          {
+            "stage": "predict",
+            "seed": 4,
+            "status": "completed",
+            "seconds": 355.22303924988955
+          }
+        ],
+        "predict_total_seconds": 1772.6582262485754
+      }
     },
     "extrapolated_inference": {
-      "method": "linear in rows at 400 draws on the same mps host; rows for full/complement June are requested (upper bound), not eligible",
+      "profile_inference_only": "profile inference rate x rows x 5; excludes per-member interpreter/import/model-load/verification fixed overhead",
+      "full_worker_linear_proxy": "sum of 5 official predict worker walls / 311,721 x rows; scales fixed load/import overhead linearly with rows, so it is a proxy, not a guaranteed upper cost bound even when rows are an upper bound",
       "estimates": {
-        "full_june_requested_upper_bound": {
+        "full_june_tight_eligible_upper": {
+          "rows": 115425,
+          "profile_inference_only_seconds_5_members": 640.0927402161826,
+          "full_worker_linear_proxy_seconds_5_members": 658.2462250556631
+        },
+        "full_june_requested": {
           "rows": 115816,
-          "five_member_seconds_from_profile_rate": 642.2610422428193,
-          "five_member_seconds_from_measured_ledger_rate": 658.608772367614
+          "profile_inference_only_seconds_5_members": 642.2610422428193,
+          "full_worker_linear_proxy_seconds_5_members": 660.476021668154
         },
-        "complement_requested_upper_bound": {
+        "outside_cpanel_pitcher_requested": {
           "rows": 110604,
-          "five_member_seconds_from_profile_rate": 613.357742593638,
-          "five_member_seconds_from_measured_ledger_rate": 628.9697853400876
+          "profile_inference_only_seconds_5_members": 613.357742593638,
+          "full_worker_linear_proxy_seconds_5_members": 630.7530039077891
         },
-        "cpanel_eligible_known": {
+        "cpanel_eligible_known_keys": {
           "rows": 4821,
-          "five_member_seconds_from_profile_rate": 26.734997622544654,
-          "five_member_seconds_from_measured_ledger_rate": 27.415494332253466
+          "profile_inference_only_seconds_5_members": 26.734997622544654,
+          "full_worker_linear_proxy_seconds_5_members": 27.49322114787396
         }
       }
     },
@@ -865,6 +1348,12 @@
     },
     "guarantee": "none; extrapolations are not measurements and may not hold for different row mixes, device state or I/O"
   },
-  "prior_exposure_note": "EXP-P11-001 (full G0 evaluation) and EXP-P11-002 (bounded correction) are existing exposed evidence; this audit reads none of their scores or predictions. Independence of any future June data is not claimed here (exposure audit owned by Astra).",
-  "audit_wall_seconds": 0.2110471660271287
+  "audit_only_cost": {
+    "label": "audit-only; not a candidate experiment cost",
+    "in_process_source_verification_seconds": 0.04061824991367757,
+    "in_process_read_and_aggregate_seconds": 0.24919129093177617,
+    "in_process_total_seconds_before_write": 0.3116331659257412,
+    "excluded": "interpreter start, imports and result write; external command wall is measured outside and recorded in the report"
+  },
+  "prior_exposure_note": "EXP-P11-001 (full G0 evaluation) and EXP-P11-002 (bounded correction) are existing exposed evidence; this audit reads none of their scores or predictions. Independence of any future June data is not claimed here (exposure audit owned by Astra)."
 }
