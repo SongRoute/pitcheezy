@@ -1,5 +1,8 @@
 # Pitcheezy — CLAUDE.md
 
+## Codex 협업 (2026-09-27)
+- Codex가 배정한 CLI 작업은 `docs/AI_COLLABORATION.md`와 해당 작업 지시의 파일·실행 범위를 따른다. 총괄이 검토·통합·실험 큐를 관리한다. 아래 일반 self-merge 흐름보다 이 작업 분담이 우선한다.
+
 ## 프로젝트
 MLB Statcast 기반 야구팬 관전 서비스. 서비스·추천·사건 분석은 Song, CV 의도 모듈은 별도 팀원 담당(D46·D49).
 목표: 기존 연구 모델을 공정하게 재구현하고 예측 성능과 추천 정책 성능을 분리 검증한다. 현재 우선순위(D52)는 ML 예측 개선 → 지원 투수 확대·재검증 → CV/의도 → 팬 이해/UI·UX → 실경기 운영이다. 다음 실행은 docs/handoffs/ML-experiments-next-session.md를 따른다.
