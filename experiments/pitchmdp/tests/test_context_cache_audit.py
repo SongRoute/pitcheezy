@@ -68,6 +68,8 @@ def prior_ledger(tmp_path, preparation, *, seconds=1., mutate=None):
 
 def test_draft_config_accepted_only_as_draft_and_no_relaxation_or_reduction():
     config = draft()
+    # Exercise an explicit draft pin even after the on-disk config is registered.
+    config['contracts']['runner']['sha256'] = None
     assert runner.config_check(config, real=False)['device'] == 'mps'
     with pytest.raises(ValueError, match='Null identity pin'): runner.config_check(config, real=True)
     assert set(config['sources']) == set(runner.SOURCES)
