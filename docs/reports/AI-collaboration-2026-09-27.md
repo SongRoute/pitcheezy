@@ -15,7 +15,7 @@
 | 작업 | 실행/검토 모델 | 상태와 근거 |
 |---|---|---|
 | COOP-001 F4 캐시 감사 러너 | Fable 5.1 구현, Astra 과학적 검토, Sol 감독기 보완·실행·보고, Codex 통합 | **17명령 실측·검토 완료**. H0/32/128 수치 동등성 통과, fit3.07~3.57% 감소, 전체 비용 gate 실패로 미채택·fullfit0. [결과](F4-cache-audit-2026-09-27.md) |
-| COOP-002 G0/F1 5seed 연장 | Sol 초안·수정, Opus 5.5 독립 검토·재검토 | **설계 검토 완료**. [수정 초안](../contracts/ML-G0-F1-CONFIRMATION-DRAFT-v1.md), [원검토/재검토](../reviews/COOP-002-Opus-5.5-design-review.md). 새 G0 부모 해시, 비용 대장, 10개 예측 완료 후 채점, 두 번째 DEV 열람의 한계를 보완했다. 실행 등록·학습은 아직 없음 |
+| COOP-002 G0/F1 5seed 연장 | Sol 초안·수정, Opus 5.5 독립 검토·재검토 | **설계 검토 완료**. [수정 초안](../contracts/ML-G0-F1-CONFIRMATION-DRAFT-v1.md), [원검토/재검토](../reviews/COOP-002-Opus-5.5-design-review.md). 새 G0 부모 해시, 비용 대장, 10개 예측 완료 후 채점, 두 번째 DEV 열람의 한계를 보완했다. 당시 실행 등록·학습 없음; 후속 COOP-003~005에서 D73 완료 |
 
 작업대장 절대 경로: `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-claude/board.json`. `COOP-001/attempt-001`, `COOP-002/attempt-001`은 훅 중단, `COOP-002/attempt-002`는 CLI 버전 실패다. 재시도는 별도 디렉터리다.
 
@@ -44,7 +44,7 @@
 
 Astra가 모든 manifest와48배열 쌍을 독립 검토했고 material issue 없음으로 판정했다. Root도17manifest의70해시와17개 종료·비용 기록을 대조했다. 집중79검사에 이어 실측 종료 후 전체 프로젝트 검사는 **252 passed, 19.75초**다. 모든 감사 프로세스는 종료됐고 실행 worktree/config/큐 스크립트 해시는 변하지 않았다.
 
-다음 구현 대상은 검토 완료된 G0/F1 5seed 초안의 재사용·동일 seed 연결·공통 profile·비용 대장·10개 예측 완료 후 채점 gate다. 새5seed 학습과 G0 전체 MLB 단독 평가는 아직 실행하지 않았다. 기존 DEV를 다시 쓰는 안정성 결과를 독립 확인으로 바꾸어 표현하지 않는다.
+이 시점의 다음 구현 대상이었던 G0/F1 5seed 실행은 아래 D73에서 완료됐다. G0 전체 MLB 단독 평가는 아직 실행하지 않았다. 기존 DEV를 다시 쓰는 안정성 결과를 독립 확인으로 바꾸어 표현하지 않는다.
 
 
 ## G0/F1 five-seed 후속 등록 — D72
@@ -56,3 +56,19 @@ Astra가 기존 full/masked3seed 재현의 선행 순서, C1 ID 교차 검증, �
 실행 코드는`/Users/song/Projects/pitcheezy-worktrees/g0-f1-five-seed`의`d4090310aea70ea3d0e7c18b77a7768fd1ee85af`로 고정했다. Astra 최종 source review는 차단 사항 없음. Root의 새 실행기/기존 F1 집중55검사(6.82초), 기존 C1관련14검사(0.86초)가 통과했다. 이 합성 결과는 실제 학습 성공이 아니다.
 
 실행 등록은`configs/EXP-P10-001.yaml`(C1G0 baseline-only), `configs/EXP-P9-002.yaml`(F1five-seed), `configs/ML-G0-F1-FIVE-SEED-v1.json`이다. C1/F1 각각7,200초, 합계14,400초, 신규4fit·기존6fit·10member를 결과 열람 전에 고정했다. bundle fileSHA256=`d5e5487241502c0ff725a8f0c1c3a39dab083e4266952c9a0fb97414091e82ce`. 실행코드C와 등록D를 분리해 자기참조를 피한다. 공용 기록은 SSD `coordination/20260927-confirmation/registration.json`, `board.json`, 호출별 attempt와 실행 큐다. 이후 실제 결과는 별도 보고서와 비용 대장으로 판정한다.
+
+
+첫 실큐는18:29 KST C1 prepare에서 native identity 검증 실패로 멈췄다(학습0, 출력 디렉터리 생성 전). 원인은 launcher의 `PYTHONPATH`가 부모에 기록된 root 경로 대신 실행 worktree 경로였기 때문이다. 실패 job `20260927T092915173196Z-c1-c1-prepare-seedna-e35a3646`, authoritative wall2.0908054588362575초를 보존했다. Astra는 모델·자료·설정·코드·예산 변경 없는 환경 복원을 수동 검토 경로로 승인했으며, 같은 대장에 실패 비용을 남긴 한 번의 prepare 재시도를 허용했다. Root는 부모 native identity 일치와 네 핵심 모듈의 실제 import가 고정 worktree에서 이뤄짐을 확인했다(`environment-recovery-check.json`). 큐v1 파일/검사는 실패 attempt에 복사·해시 보존하고, 별도v2와 실패 검토 manifest를 사용한다. 자동 재시도나 실패 비용 초기화는 하지 않는다.
+
+
+두 번째 prepare 시도 역시 worker 시작 전 멈췄다. tmux의 bare `python3`가 macOS CommandLineTools3.9로 해석되면서 큐의 process-relative monotonic값0.090785와 감독기3.12의 다른 원점을 뺀 잘못된 경과1,658,319.822837166초가 기록됐다. 독립 큐 로그의 실제 full-process wall은0.929720초다. Astra와 root가 계측 오류 정정을 검토하고 원본 종료 JSON을 byte-for-byte 보존한 뒤, 활성 비용 대장의 elapsed/within_cap만 정정하고 근거 참조를 추가했다. timeout124·job·cap은 유지했다. 정정 manifest SHA256 `6ec7696c38bf2473d17311c5b20df79c89a188a6659d1766014472f003aa7eaa`는 원본/정정본·큐 로그·시계 증거를 연결한다. 두 실패의 실제 과금은3.0205254588362576초이며 예산을 초기화하지 않았다. 큐v3는 큐 자체와 감독기 모두 root `.venv/bin/python`을 절대 경로로 사용하고 같은 시계 원점인지 사전 확인한다. 아직 이 두 시도에서는 prepare 산출물·학습·예측이 없었다.
+
+## G0/F1 실제 완료 — D73
+
+등록 D `c8b28f0e838cac07c0f2c900b6f3b48290f6570f` 이후 V3 단일 큐 16/16단계가 성공했다. 신규 fit4·재사용6, 총10개 예측으로 C1 G0 기준선과 F1 full/masked 5seed 비교를 완료했다. F1 ΔNLL−0.005216, CI[−0.007177,−0.003311], 5/5seed 음수로 `development_stability_pass`다. R은22통과·2개 zero-TRAIN pitcher 슬롯 구조적 미측정으로 `unconfirmed`다. 실패2건을 포함한 공식 비용562.674063초, 전체 실행 전 검사252 passed(18.62초).
+
+Astra는574개 고유 SHA256 경로, 기존3seed 재현, 10개 예측 정렬·배열 동일성, 등록 bootstrap·R24와18개 비용 기록을 독립 감사해 차단 사항 없음을 확인했다. Opus 초기 호출은 한도 실패로 보존하고, 해제 후 COOP-004 attempt-002에서 실제 `claude-opus-5-5`로 결과 검토를 완료했다(세션 `4298d67d-0ea6-412e-abc6-e9819919fa45`). 당시 미갱신 보고서의 미측정 표기를 차단 사항으로 지적했으며 root가 봉인된 결과로 교체하고 시계 교정의 full-process 경계 예외와 pitcher/batter volume 구분을 명시했다.
+
+[최종 결과 보고](G0-F1-five-seed-2026-09-27.md), [독립 계산 감사](../reviews/G0-F1-five-seed-audit-2026-09-27.md). 동일 노출 DEV의 두 번째 관찰이며 독립 확인·전체 MLB·정책 우위나 서비스 승격은 주장하지 않는다.
+
+Opus 동일 세션 attempt-003 재검토에서 모든 지적 **RESOLVED**, 추가 차단 사항 없음. [원검토·재검토](../reviews/COOP-004-Opus-5.5-result-review.md)를 총괄이 수락했다.

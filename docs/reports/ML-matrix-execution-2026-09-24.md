@@ -16,7 +16,7 @@
 4. 첫 attempt의 MLPseed42 fit 뒤 float32 적분 합 오차로 CAL 예측 저장이 중단됐다. 검사 문턱을 유지하고 float64 계산으로 수정했다. 실패 기록과 약26.5초 fit 비용을 보존했으며 fresh attempt2에서 재시작했다.
 5. 실제 목표 위치 라벨과 미개봉 확인셋은 확보되지 않았다. 구종×목표 위치 최적 정책의 현실 효과는 아직 측정하지 않았다.
 6. 2026-09-26 밤~27 새벽 세션에서 T2 타자 축·채점(`EXP-P7-001`), T3(`EXP-P7-002`), T4(`EXP-P7-003`), P0~P3 정책(`EXP-P8-001`), P4/P5 offline RL(`EXP-P8-002`), F1 bridge(`EXP-P9-001-v2`)를 완료했다. 조건부 행 활성화 검토(D64)도 마쳤다. 각 결과는 아래 해당 절에 있으며 모두 이미 노출된 2025 DEV의 개발 결과다. 정책 결과는 모델 내부 평가이고 독립 확인·관측 OPE·정책 채택은 없다.
-7. D71에서 [F4 cache 실측 감사](F4-cache-audit-2026-09-27.md) 17명령과 독립 검토를 완료했다. 수치 동등성 통과, fit3.07~3.57% 감소지만 비용 예측60,852.29초>28,800초로 미채택·fullfit0. [G0/F1 5seed 초안](../contracts/ML-G0-F1-CONFIRMATION-DRAFT-v1.md)은 Opus 검토 완료, 신규 fit는 미실행이다.
+7. D71에서 [F4 cache 실측 감사](F4-cache-audit-2026-09-27.md) 17명령과 독립 검토를 완료했다. 수치 동등성 통과, fit3.07~3.57% 감소지만 비용 예측60,852.29초>28,800초로 미채택·fullfit0. [G0/F1 5seed 후속](G0-F1-five-seed-2026-09-27.md)은 D72 등록 뒤 D73에서16단계를 완료했다. 기존6fit+신규4fit, C1baseline 안정성·L6 완료, F1ΔNLL−.005216 [−.007177,−.003311]·5/5음수로 development_stability_pass. R은 구조적volume_zero 때문에 미확정이며 독립 확인은 아니다.
 
 ## 결과표
 
@@ -579,7 +579,7 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-G5 | 후속 | 검토 완료·미활성화 | Cpanel G3 미확정, T2 제외 타자 통과는 진단쌍, T4 전체MLB +.000736 악화; 새 선수 군집 이득 주장 전 선등록 필요([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-G6 | 후속 | 검토 완료·미활성화 | 경로별(hard routing/fallback) 오류 분해 없음; G3 전체 악화·TRAIN0 개선 방향은 경로별 근거 아님([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-G7 | 후속 | 검토 완료·미활성화 | T2 제외 타자 이득은 투수 군집 전문가 결과, T4 unseen 타자+.000260; F1 bridge가 표현 기여 부재를 보이면 재검토; D67: F1은 기여를 보여(N 통과) 재검토 조건 미충족([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
-| MX-F1 | 근거 재사용 | 완료(EXP-P9-001-v2)·N 통과(`predictive_improvement`, 3seed screen·확인 미실행) | full−masked ΔNLL−.005506 [−.007560,−.003486], p9.999e-05, ΔBrier−.001466 [−.002264,−.000683], seed3/3 음수; R24 통과22/실패0/미측정2(`unconfirmed(structural: volume_zero)`, D61); 타자 표본 분할은 기술 통계; 첫 attempt EXP-P9-001 AppleDouble 실패 보존·67077f6 수정 |
+| MX-F1 | 근거 재사용 | 완료: 3seed screen + 5seed 개발 안정성 통과(D73) | EXP-P9-002 full−masked ΔNLL−.005216 [−.007177,−.003311], p9.999e-05, ΔBrier−.001465, seed5/5음수. R24통과22/미측정2(structural volume_zero); 기존DEV second-look·독립 확인 없음. [5seed 보고서](G0-F1-five-seed-2026-09-27.md) |
 | MX-F2 | 후속 | 검토 완료·미활성화 | 제외 선수는 ID 미학습이라 fallback 전용; 새 선수 개선은 이력 허용에서 나옴([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F3 | 근거 재사용 | 과거 H0/H5 근거 감사 완료·새 backbone H0/H5 미활성화 | 과거 MLP 12비교 보정CI 모두0포함(등가성 증명 아님); ML2 N 통과0으로 후속 진입 backbone 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F4 | 우선 | v3 profile·D71 cache 실측 감사 완료·비용 gate 실패·fullfit 미시작 | 17명령 성공, H0/32/128 동등성 통과; fit3.07~3.57% 감소. 캐시 생성비 제외·과거/실제 감사비 포함60,852.29초>28,800초로 현재 캐시 제안 미채택. 전체 생성비·DEV 품질 비교는 미측정 |
@@ -593,11 +593,11 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-L3 | 후속 | 검토 완료·미활성화 | G 저표본 통과0, T4 저표본 inconclusive, 새 선수 개선은 온라인 이력 허용; I1은 근거로 안 씀([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-L4 | 후속 | 검토 완료·미활성화 | R 실패는 미채택 G1/G4와 진단쌍 상대 비교뿐, T4 R24 passed(two_strikes 포함); 기준선 그룹 실패 근거 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-L5 | 공통 진단 | ML2 완료·후속 family에도 적용 | 7구조 raw/temperature/혼합 저장; DEV temperature의 개선 보장은 없음 |
-| MX-L6 | 후속 | 검토 완료·보류(C1 대기) | C1 또는 closure 5seed 기준선 뒤 추가 fit 없이0/0~2/0~4 비교([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
+| MX-L6 | 후속 | 완료: 고정1/3/5seed 기술 비교(D73) | G0 primaryNLL1.485071/1.483479/1.483333; 추가fit없이 C1결과 재사용, 최고seed선정·우위검정 없음 |
 | MX-I1 | 필수 | 완료·상호작용 미확정 | 신규6fit/보존6fit; I+.002753 CI[+.000363,+.005053], p.02260,3/3동방향이나 실용문턱.003미달 |
 | MX-I2 | 필수 | 완료·G와 동시 진단 | 4개 G 대비 저표본−고표본 효과 차이/경기 CI; G1/G4는 고표본의 상대 악화가 더 큼 |
-| MX-C1 | 필수 | 검토 완료·보류: F1 N 통과로 5seed 확인 검토 조건 충족, 총괄/사용자 결정 대기(F4는 미측정 보류), 현재 유망 구성0 | N 통과는 D100(이미 Bdata)·D2(기준선이 이미 D100 보조)뿐, 구조·공유0, G3 T4 악화; F4 미통과/미실행이면 preferred closure(G0 5seed 안정성+L6), config 미등록; D67: F1은 기준선 G0 구성 요소 검증이라 새 유망 구성이 아니며, 검토할 5seed 확인은 bridge 효과 자체의 확인(full G0 seed3/4+masked seed3/4 추가, 비용 미측정)이고 G0 seed3/4는 closure와 공유 가능([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
-| MX-C2 | 필수 | 검토 완료·보류(C1 대기, F1 N 통과로 검토 조건 충족·결정 대기) | 결합할 유망 구성 없음; F1은 기준선 구성 요소 검증이라 새 결합 아님(D67); closure면 적용 불가와 근거·한계 기록, F4 통과 시 제거 대조 선등록([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
+| MX-C1 | 필수 | baseline_stability_only closure 완료(D73) | EXP-P10-001 G0-global5seed, primary_comparisons=[]; 기존3fit+새2fit. 유망 후보 없음·F4예산미채택(D71)에 따른 기준선 안정성, 새로운 구조 우위 아님. [보고서](G0-F1-five-seed-2026-09-27.md) |
+| MX-C2 | 필수 | 적용 불가(not_applicable, D73) | 결합할 유망 구성 없음. F1은 기존 G0구성 요소 제거 검증이고 새결합아님; C1baseline-only closure에 따라 억지결합/제거실험 없음 |
 | MX-T1 | 필수 | Cpanel 완료; 전체 MLB 월별은 T4 기술 통계로 보고(구간 추정·검정 없음) | G 월별 NLL/Brier/보정/짝지은 차이; T4 월별 G3−G2 +.000658/+.000719/+.000831; 추가 성공 선정에 사용 안 함 |
 | MX-T2 | 필수 | 완료(채점) | EXP-P7-001;자연 새 대진 G3−G2 미확정(Holm p.6386), 제외 타자 Z/W/O G3−G2 N 통과(ΔNLL−.004418/−.004361/−.003743), 제외 투수 W−Z/O−Z 이력 적응 개선(−.017682/−.017681); R 96슬롯 통과77/실패11/결측8(자연·W·O failed, Z unconfirmed(structural: volume_zero), D61); 진단용 쌍 승격 없음·독립 확인 아님 |
 | MX-T3 | 필수 | 완료(채점) | EXP-P7-002;60회 재추론(새 fit0), 270상한 통과228/실패24(상대5·안정성19)/미측정18; relative_R failed(9시나리오 전체 통과, two_strikes ΔBrier 상한5개 실패), 안정성 G3/G2 failed; volume_zero 구조적 결측(D61); 진단용 쌍 승격 없음·독립 확인 아님 |
@@ -635,3 +635,9 @@ Luna read-only 감사로 [타자 표현·이력 결과](../../experiments/pitchm
 - G7: 기존 타자 K3/5/10/20 군집은 연속 성향보다 명확한 이득을 보이지 않았다. 새로운 저표본/새 타자 가설이 없으면 단순 반복의 근거가 없다. 현재 투수 공유 실험의 결과로 바꾸어 기록하지 않는다.
 
 과거 문서는 `representation-history-20260921T054642Z/final_audit.json` 및 `history-batter-validation-v1/{RESULTS.md,results.json}`의 검증을 보고한다. 이번 read-only 문헌/기록 감사는 그 대형 산출물을 다시 해시 검증하거나 새로운 모델을 학습한 작업이 아니다.
+
+## G0/F1 5seed 후속 완료
+
+D73. `EXP-P10-001` C1은 G0baseline-only5seed·L6를 완료했고 C2는 적용 불가다. `EXP-P9-002`는 기존 full/masked 각3seed와 신규 각2seed를 연결해10member로 채점했다. 신규4fit·기존6fit, 최종16명령 모두exit0. F1 full−masked ΔNLL−.005216 [−.007177,−.003311], ΔBrier−.001465 [−.002232,−.000719], 5/5방향 일치로 등록된 개발 안정성 기준을 통과했다. R24중22통과·2구조적미측정이라 R전체는unconfirmed다.
+
+공식 wall562.674초(C1282.816/F1279.858)는 두 launcher실패의 실제3.020525초를 포함한다. 잘못된 cross-interpreter clock계측은 원본·로그·정정manifest를 보존하고 실제0.929720초로 감사 정정했다. 코드/설정/시드/표본/예산은 바꾸지 않았다. 같은DEV의 second-look이며 독립 확인·전체MLB G0평가·정책 채택과 구분한다. [상세 보고서](G0-F1-five-seed-2026-09-27.md).
