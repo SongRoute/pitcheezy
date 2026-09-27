@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import gc
+import hashlib
 import itertools
 import math
 import time
@@ -39,9 +40,12 @@ STAGE3_TOLERANCES = {'selected_state': {'atol': 1e-6, 'rtol': 1e-5},
                      'history_nll': {'atol': 2e-6, 'rtol': 0.},
                      'delivery_temperature': {'atol': 1e-3, 'rtol': 0.},
                      'probability': {'atol': 2e-5, 'rtol': 0.},
-                     'probability_sum': {'atol': 1e-6, 'rtol': 0.}}
+                     'probability_sum': {'atol': 1e-6, 'rtol': 0.},
+                     'calibration_objective': {'atol': 2e-6, 'rtol': 0.}}
 STAGE3_BUDGET = {'epochs': 4, 'patience': 4, 'batch_size': 256, 'learning_rate': .0005}
 ACCEPTED_SPLITS = ('train', 'earlystop', 'temperature')
+PRIOR_LEDGER_PROTOCOL = 'ml_long_owner_budget_ledger_v2'
+PRIOR_LEDGER_CATEGORIES = {'preparation', 'profiles', 'cold_failed_attempts', 'equivalence', 'cache_audit'}
 
 
 def _linspace(batch, count):
@@ -128,20 +132,24 @@ def stage1_context(selected, *, chunk_size=8192, repetitions=3, uneven_chunk_siz
     union = np.union1d(train.rows, evaluation.rows)
     cache, build = build_cache(base, frame, union, device=device, chunk_size=chunk_size)
 
-    def compare(rows, label):
-        query = frame.iloc[rows]
-        return _bitwise(np.asarray(base.transform(query), dtype=np.float32), cache.transform(query), label)
-    checks = {'original': compare(evaluation.rows, 'original order'),
-              'repeated': compare(np.tile(evaluation.rows, 2), 'repeated rows'),
-              'reverse': compare(evaluation.rows[::-1], 'reverse order'),
-              'original_train': compare(train.rows, 'original TRAIN order')}
-    chunks, begin, sizes = [], 0, itertools.cycle(int(s) for s in uneven_chunk_sizes)
-    while begin < len(train.rows):
-        size = next(sizes)
-        chunks.append(compare(train.rows[begin:begin+size], 'uneven chunks'))
-        begin += size
-    checks['uneven_chunks'] = {'rows': int(len(train.rows)), 'chunks': len(chunks),
-                               'chunk_sizes': [int(s) for s in uneven_chunk_sizes], 'differing_bits': 0}
+    def compare(rows, label, sizes):
+        """Bounded-memory bitwise comparison: rows are consumed in the given chunk-size cycle."""
+        digest, begin, count, cycle = hashlib.sha256(), 0, 0, itertools.cycle(int(s) for s in sizes)
+        while begin < len(rows):
+            size = next(cycle)
+            query = frame.iloc[rows[begin:begin+size]]
+            record = _bitwise(np.asarray(base.transform(query), dtype=np.float32), cache.transform(query), label)
+            digest.update(record['sha256'].encode()); begin += size; count += 1
+        return {'rows': int(len(rows)), 'chunks': count, 'chunk_sizes': [int(s) for s in sizes],
+                'differing_bits': 0, 'chunk_sha256_chain': digest.hexdigest()}
+    checks = {}
+    for sample, batch in (('train', train), ('train_evaluation', evaluation)):
+        rows = batch.rows
+        checks[sample] = {'rows_sha256': ordered_key_hash(batch.frame()),
+                          'original': compare(rows, f'{sample} original order', (chunk_size,)),
+                          'repeated': compare(np.tile(rows, 2), f'{sample} repeated rows', (chunk_size,)),
+                          'reverse': compare(rows[::-1], f'{sample} reverse order', (chunk_size,)),
+                          'uneven_chunks': compare(rows, f'{sample} uneven chunks', uneven_chunk_sizes)}
     vocabulary = list(store.base.type_vocabulary)
     if len(vocabulary) < 2:
         raise ValueError('Two TRAIN pitch types are required for candidate overrides')
@@ -180,7 +188,8 @@ def stage1_context(selected, *, chunk_size=8192, repetitions=3, uneven_chunk_siz
                 timing[kind][label].append(time.perf_counter()-started)
                 schedule.append([kind, repetition, label])
     return {'protocol': 'f4_cache_audit_stage1_v1', 'device': device, 'long_length': store.long_length,
-            'construction': build, 'orders': list(STAGE1_ORDERS), 'checks': checks, 'tolerance': 'bitwise',
+            'construction': build, 'orders': list(STAGE1_ORDERS), 'samples_checked': ['train', 'train_evaluation'],
+            'checks': checks, 'tolerance': 'bitwise', 'check_chunk_size': chunk_size,
             'overrides': overrides, 'override_candidate_types': sorted(set(candidates.tolist())),
             'must_fail': must_fail, 'all_bitwise_identical': True, 'all_guards_rejected': True,
             'timing': {'protocol': 'each path warmed once; alternating original/cached order per repetition',
@@ -351,12 +360,16 @@ def compare_stage3(original, original_artifacts, cached, cached_artifacts, toler
     sums = _difference(np.concatenate([original_artifacts['probability'].sum(1), cached_artifacts['probability'].sum(1)]),
                        np.ones(2*len(original_artifacts['probability'])), tolerances['probability_sum'])
     tiers = bool(np.array_equal(original_artifacts['tiers'], cached_artifacts['tiers']))
+    objective = _difference([original['calibration_integrated_log_loss']], [cached['calibration_integrated_log_loss']],
+                            tolerances['calibration_objective'])
     equivalent = (all(counts.values()) and history['pass'] and state['pass'] and temperature['pass']
-                  and probability['pass'] and raw['pass'] and sums['pass'] and tiers)
+                  and probability['pass'] and raw['pass'] and sums['pass'] and tiers and objective['pass'])
     return {'protocol': 'f4_cache_audit_stage3_comparison_v1', 'long_length': original['long_length'],
             'device': original['device'], 'tolerances': deepcopy(tolerances), 'counts_equal': counts,
             'history': history, 'selected_state': state, 'delivery_temperature': temperature,
             'calibrated_probability': probability, 'raw_probability': raw, 'probability_sum': sums,
+            'calibration_objective': {'original': original['calibration_integrated_log_loss'],
+                                      'cached': cached['calibration_integrated_log_loss'], **objective},
             'fallback_tiers_equal': tiers, 'equivalent': bool(equivalent),
             'timing': {path: {key: result[key] for key in ('warmup_seconds', 'fit_seconds', 'temperature_seconds', 'inference_seconds')}
                        for path, result in (('original', original), ('cached', cached))},
@@ -389,13 +402,51 @@ def cost_summary(parent_profiles, stage3, constructions, populations, *, prior_s
                       'cached_member_total_seconds': None,
                       'cached_member_within_limit': None,
                       'note': 'Two processes per member each build their own cache; the full-population build cost is not measured by this audit and is not extrapolated'}
-    lower_total = prior_seconds+audit_seconds+lower
-    return {'protocol': 'f4_cache_audit_cost_summary_v1', 'members': members, 'full_epochs': PROFILE_SPEC['full_epochs'],
+    projection = prior_seconds+audit_seconds+lower
+    return {'protocol': 'f4_cache_audit_cost_summary_v2', 'members': members, 'full_epochs': PROFILE_SPEC['full_epochs'],
             'prior_seconds': prior_seconds, 'audit_seconds': audit_seconds, 'arms': arms,
-            'family_lower_bound_seconds_excluding_cache_construction': lower_total,
-            'family_lower_bound_within_budget': lower_total <= family_seconds,
+            'family_projection_excluding_cache_construction_seconds': projection,
+            'family_projection_gate_excluding_cache_construction': projection <= family_seconds,
+            'projection_meaning': 'Frozen-formula model projection plus ledgers, excluding unmeasured cache costs; not a guaranteed or minimum physical runtime',
             'family_projection_seconds': None, 'family_within_budget': None,
             'member_limit_seconds': member_seconds, 'family_seconds': family_seconds,
             'decision': 'not_adopted',
-            'reason': ('Family lower bound already exceeds the frozen budget' if lower_total > family_seconds else
+            'reason': ('Registered projection gate excluding cache construction fails' if projection > family_seconds else
                        'Full-population cache construction for fit and prediction processes is unmeasured; root must time it before any adoption')}
+
+
+def validate_prior_ledger(ledger, expected_preparation_sha256, hash_file):
+    """Owner ledger v2: five categories, unique evidence-backed finite entries, exact total."""
+    required = {'protocol', 'preparation_sha256', 'entries', 'elapsed_seconds_total'}
+    optional = {'preparation_path', 'category_seconds', 'entry_count'}
+    if not isinstance(ledger, dict) or not required <= set(ledger) or set(ledger)-required-optional:
+        raise ValueError('Owner ledger must carry protocol/preparation_sha256/entries/elapsed_seconds_total')
+    if ledger['protocol'] != PRIOR_LEDGER_PROTOCOL: raise ValueError('Owner ledger protocol differs')
+    if ledger['preparation_sha256'] != expected_preparation_sha256: raise ValueError('Owner ledger belongs to another parent preparation')
+    entries = ledger['entries']
+    if not isinstance(entries, list) or not entries: raise ValueError('Owner ledger needs entries')
+    if {row.get('category') for row in entries} != PRIOR_LEDGER_CATEGORIES:
+        raise ValueError('Owner ledger must cover exactly preparation/profiles/cold_failed_attempts/equivalence/cache_audit')
+    attempts, by_category = set(), {name: 0. for name in PRIOR_LEDGER_CATEGORIES}
+    for row in entries:
+        fields = set(row)
+        if not {'category', 'attempt', 'seconds', 'evidence'} <= fields or fields-{'category', 'attempt', 'seconds', 'evidence', 'step', 'exit_code'}:
+            raise ValueError('Owner ledger entry fields differ')
+        seconds = row['seconds']
+        if (not isinstance(row['attempt'], str) or not row['attempt'] or row['attempt'] in attempts
+                or not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or not math.isfinite(seconds) or seconds < 0):
+            raise ValueError('Distinct nonempty attempts with finite nonnegative seconds required')
+        attempts.add(row['attempt'])
+        if not isinstance(row['evidence'], list) or not row['evidence']: raise ValueError('Owner ledger entry needs evidence')
+        for evidence in row['evidence']:
+            if set(evidence) != {'path', 'sha256'} or hash_file(evidence['path']) != evidence['sha256']:
+                raise ValueError('Owner ledger evidence changed: ' + str(evidence.get('path')))
+        by_category[row['category']] += seconds
+    total = math.fsum(row['seconds'] for row in entries)
+    if not math.isclose(total, ledger['elapsed_seconds_total'], rel_tol=0, abs_tol=1e-6):
+        raise ValueError('Owner ledger total differs from its entries')
+    if 'entry_count' in ledger and ledger['entry_count'] != len(entries): raise ValueError('Owner ledger entry count differs')
+    if 'category_seconds' in ledger and (set(ledger['category_seconds']) != PRIOR_LEDGER_CATEGORIES or any(
+            not math.isclose(ledger['category_seconds'][name], by_category[name], rel_tol=0, abs_tol=1e-6) for name in PRIOR_LEDGER_CATEGORIES)):
+        raise ValueError('Owner ledger category totals differ')
+    return total

@@ -1,7 +1,16 @@
 {
   "protocol": "f4_observed_context_cache_audit_v2",
   "experiment_id": "EXP-P4-002",
-  "contract": "docs/contracts/ML-F4-CONTEXT-CACHE-RUNNER-v1.md",
+  "contracts": {
+    "optional_cache": {
+      "path": "docs/contracts/ML-F4-CONTEXT-CACHE-OPTIONAL-v1.md",
+      "sha256": "538373bd943d57ac963b5d0fd5017bfd919c731a9037ef2c9daf68095ed0f6fb"
+    },
+    "runner": {
+      "path": "docs/contracts/ML-F4-CONTEXT-CACHE-RUNNER-v1.md",
+      "sha256": null
+    }
+  },
   "historical_registration": {
     "config": "configs/EXP-P4-002-v3-cache-audit.yaml",
     "sha256": "55901a029bb0229ce4ebda97c6be9831b9fcb68671d7de250f18a8d61b6d75cf"
@@ -94,6 +103,10 @@
       "reverse",
       "uneven_chunks"
     ],
+    "samples": [
+      "train",
+      "train_evaluation"
+    ],
     "must_fail": [
       "count_change",
       "style_change",
@@ -171,6 +184,10 @@
       "probability_sum": {
         "atol": 1e-06,
         "rtol": 0.0
+      },
+      "calibration_objective": {
+        "atol": 2e-06,
+        "rtol": 0.0
       }
     },
     "profile_models_reused_in_full_experiment": false,
@@ -181,15 +198,21 @@
       "prepare": 600,
       "stage1": 1200,
       "stage2": 1200,
-      "stage3": 1800,
+      "stage3": 600,
       "compare": 600,
       "summary": 600
     },
+    "termination_grace_seconds": 15,
+    "profile_command_cap_seconds": 600,
+    "wall_ledger_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/audit/f4-cache-audit-v2-wall-ledger",
     "single_member_wall_limit_seconds": 7200,
     "family_wall_budget_seconds": 28800,
     "no_seed_data_epoch_batch_draw_reduction": true,
     "full_fit_started": false
   },
-  "prior_cost_ledger": null,
+  "prior_cost_ledger": {
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-claude/f4-prior-cost-ledger-v2.json",
+    "sha256": "a60acad02f52611e2426cd66aee091d9b9f1b35f52b4282acf2e249dc62ce6aa"
+  },
   "adoption": null
 }
