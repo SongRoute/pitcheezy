@@ -8,6 +8,7 @@
 - 각 호출은 고유 attempt 디렉터리에 `request.md`, `events.jsonl`, `stderr.log`, `state.json`, 반환 시 `result.json`을 남긴다. 요청 해시·기준/최종 커밋·세션 ID·시간·종료 상태를 보관하며 기존 attempt는 덮어쓰지 않는다.
 - `scripts/run_claude_task.py`가 CLI를 감독한다. `returned_for_review`는 모델이 결과를 반환했다는 뜻이다. 완료 판정은 실제 diff·필요한 검사·산출물을 검토한 총괄이 작업대장에 별도로 기록한다. CLI 오류·시간 초과·권한 거절·결과 부재는 완료로 세지 않는다.
 - 세션 ID로 후속 호출을 이어가되 새 attempt를 만든다. 중단 시 기존 프로세스와 산출물을 먼저 확인하고 중복 실행하지 않는다. 무인 실행은 tmux에서 감독기를 실행해 대화 연결과 분리한다.
+- 이 Mac의 사용자 훅은 iTerm `cc-status`, 프로젝트 훅은 편집 후 pytest다. iTerm 훅이 headless 시작을 막는 것이 실측되어 감독기의 `--disable-hooks`로 해당 호출에만 `disableAllHooks`를 적용한다. 영구 설정은 바꾸지 않는다. 필수 검사는 명시적 명령으로 실행·기록한다. 관리자 정책 훅을 우회하지 않는다.
 
 ## 역할과 실행 범위
 

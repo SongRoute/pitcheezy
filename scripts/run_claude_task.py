@@ -34,6 +34,8 @@ def run(args):
                '--output-format', 'stream-json', '--verbose', '--max-turns', str(args.max_turns)]
     if args.skip_permissions:
         command.append('--dangerously-skip-permissions')
+    if args.disable_hooks:
+        command.extend(['--settings', json.dumps({'disableAllHooks': True})])
     if args.resume:
         command.extend(['--resume', args.resume])
     state = {'status': 'starting', 'started_utc': utc(), 'worktree': str(worktree),
@@ -121,6 +123,7 @@ if __name__ == '__main__':
     parser.add_argument('--resume')
     parser.add_argument('--claude-bin', default='claude')
     parser.add_argument('--skip-permissions', action='store_true', help='User-authorized Claude permission bypass, recorded in state.json.')
+    parser.add_argument('--disable-hooks', action='store_true', help='Disable hooks for this CLI call only; run required checks explicitly.')
     arguments = parser.parse_args()
     if arguments.max_turns <= 0 or arguments.timeout_seconds <= 0:
         parser.error('turn and time limits must be positive')
