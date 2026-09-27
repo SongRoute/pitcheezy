@@ -1,6 +1,6 @@
 # F4 observed-context cache audit runner (COOP-001)
 
-2026-09-27. Implementation contract for the real-data audit required by `docs/contracts/ML-F4-CONTEXT-CACHE-OPTIONAL-v1.md`. Implemented by Claude Code; reviewed by Astra (`docs/reviews/COOP-001-Fable-code-review.md`), frozen and executed by the Codex coordinator. **No audit has been executed under this contract.** The cache stays unadopted. Draft config: `configs/EXP-P4-002-v3-cache-audit-v2.yaml`. The historical v1 registration `configs/EXP-P4-002-v3-cache-audit.yaml` is preserved and pinned by hash.
+2026-09-27. Implementation contract for the real-data audit required by `docs/contracts/ML-F4-CONTEXT-CACHE-OPTIONAL-v1.md`. Implemented by Claude Code; reviewed by Astra (`docs/reviews/COOP-001-Fable-code-review.md`), frozen and executed by the Codex coordinator. **At registration time, no audit has yet been executed; subsequent results are recorded in `docs/reports/AI-collaboration-2026-09-27.md`.** The cache stays unadopted. Draft config: `configs/EXP-P4-002-v3-cache-audit-v2.yaml`. The historical v1 registration `configs/EXP-P4-002-v3-cache-audit.yaml` is preserved and pinned by hash.
 
 ## Owned files
 
@@ -20,7 +20,7 @@ audit_ml_context_cache.py --config C --local-config L --output O compare --arm A
 audit_ml_context_cache.py --config C --local-config L --output O summary --attempt N
 ```
 
-Real run order (root-owned, single heavy job at a time): `prepare`; per arm `stage1`, `stage2`, `stage3 --path original`, `stage3 --path cached`, `compare`; then `summary`. Twenty commands.
+Real run order (root-owned, single heavy job at a time): `prepare`; per arm `stage1`, `stage2`, `stage3 --path original`, `stage3 --path cached`, `compare`; then `summary`. Seventeen commands.
 
 ### Supervisor and wall ledger
 
@@ -30,7 +30,7 @@ Every invocation without `--worker` is a supervisor. It re-launches itself as a 
 2. refuses to launch if any prior job has no terminal record (an unresolved job reserves its full cap until root writes its end record), if the same command/arm/path/attempt was already launched (new attempt number only; no metadata overwrite), or if `prior + charged audit wall + this command's cap > 28800`;
 3. writes a durable start record `jobs/<job_id>.json` (command, arm, path, attempt, cap, grace, argv, budget snapshot, launch time).
 
-It then launches the worker, waits `cap − grace`, sends SIGTERM, waits `grace`, then SIGKILL. One terminal record `ends/<job_id>.json` is written exactly once with the outcome (`completed`, `not_equivalent`, `failed`, `timeout`), exit code and the full caller wall from before launch through termination, including startup/validation failures that never create a stage directory. Exit code 124 for timeouts, 3 for a sealed but non-equivalent verdict, the worker's code otherwise. The ledger lives outside sealed stage artifacts; `results.json`/`failure.json` inside attempts are evidence, never cost sources.
+It then launches the worker, waiting only for the cap remaining after preflight and reserved termination grace. SIGTERM and SIGINT to the supervisor become catchable interruptions. On timeout or supervision interruption it sends SIGTERM, waits up to half of one remaining grace interval, then SIGKILL and uses the rest of that same interval for a final bounded reap attempt. One terminal record `ends/<job_id>.json` is written exactly once only when a launched child has been reaped (or launch never produced a child), with the outcome (`completed`, `not_equivalent`, `failed`, `timeout`), exit code and the full caller wall from entry to the supervisor, including prior-ledger validation and startup. If child death cannot be established, the start remains unresolved and reserves its full cap. Exit code 124 for timeouts, 3 for a sealed but non-equivalent verdict, the worker's code otherwise. The ledger lives outside sealed stage artifacts; `results.json`/`failure.json` inside attempts are evidence, never cost sources. Ledger enumeration excludes only AppleDouble files verified by prefix and binary magic; a malformed ordinary JSON record remains an error.
 
 The summary charges every job at its ended wall, and every unresolved job (including the summary itself while it runs) at its full cap. This is conservative by construction; the summary's own final wall is written by its supervisor after the summary artifacts are sealed.
 

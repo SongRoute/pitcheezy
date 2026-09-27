@@ -19,8 +19,10 @@ import math
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 
@@ -331,7 +333,7 @@ def ledger_lock(ledger):
 def ledger_state(ledger):
     """Every started job is charged: its final wall if ended, otherwise its full cap (reserved until resolved)."""
     jobs = []
-    starts = sorted((ledger/'jobs').glob('*.json')) if (ledger/'jobs').exists() else []
+    starts = sorted(p for p in (ledger/'jobs').glob('*.json') if not is_appledouble(p)) if (ledger/'jobs').exists() else []
     for record in starts:
         start = read_json(record)
         end_path = ledger/'ends'/record.name
@@ -380,34 +382,99 @@ def end_job(ledger, job_id, outcome, exit_code, elapsed, cap, note):
                       'cap_seconds': cap, 'within_cap': elapsed <= cap, 'ended_utc': datetime.now(timezone.utc).isoformat(), 'note': note})
 
 
+def terminate_and_reap(child, grace):
+    """Share one bounded grace across TERM and KILL; only wait proves exit."""
+    deadline = time.monotonic() + grace
+    notes = []
+    for signal_name, action in (('SIGTERM', child.terminate), ('SIGKILL', child.kill)):
+        try:
+            action()
+        except BaseException as error:
+            notes.append(f'{signal_name} failed: {error!r}')
+        try:
+            remaining = max(deadline - time.monotonic(), 0.)
+            code = child.wait(timeout=remaining / 2 if signal_name == 'SIGTERM' else remaining)
+            notes.append(f'{signal_name} reaped within grace')
+            return code, True, '; '.join(notes)
+        except subprocess.TimeoutExpired:
+            notes.append(f'{signal_name} grace expired')
+        except BaseException as error:
+            notes.append(f'{signal_name} reap failed: {error!r}')
+    return None, False, '; '.join(notes)
+
+
+@contextmanager
+def supervision_signals():
+    """Turn terminal interrupts into catchable cleanup while supervising a child."""
+    state = {'launching': False, 'pending': []}
+    if threading.current_thread() is not threading.main_thread():
+        yield state
+        return
+    previous = {number: signal.getsignal(number) for number in (signal.SIGTERM, signal.SIGINT)}
+    def interrupted(number, frame):
+        if state['launching']:
+            state['pending'].append(number)  # let Popen return so its child can be reaped
+            return
+        raise KeyboardInterrupt(f'Supervisor received signal {number}')
+    for number in previous:
+        signal.signal(number, interrupted)
+    try:
+        yield state
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+
+
 def supervise(command, arm, path, attempt, config, local, output, argv, *, popen=subprocess.Popen):
-    """One job, one terminal outcome, full caller wall from before launch through termination."""
+    """One job, one terminal outcome only after the launched worker is reaped."""
+    started = time.monotonic()  # includes ledger location, prior-hash validation and durable start
     ledger = ledger_location(local, output, config['limits']['wall_ledger_dir'])
     prior = prior_seconds(config)
     job_id, cap = start_job(ledger, config, prior, command, arm, path, attempt, argv)
     grace = config['limits']['termination_grace_seconds']
-    started = time.monotonic()
     outcome, code, note = 'failed', None, ''
-    try:
-        child = popen(argv)
+    child, reaped, cleanup_attempted = None, False, False
+    with supervision_signals() as signals:
         try:
-            code = child.wait(timeout=max(cap-grace, 0.))
-            outcome = 'completed' if code == 0 else ('not_equivalent' if code == EXIT_NOT_EQUIVALENT else 'failed')
-        except subprocess.TimeoutExpired:
-            child.terminate()
-            try:
-                code = child.wait(timeout=grace); note = 'SIGTERM honoured within grace'
-            except subprocess.TimeoutExpired:
-                child.kill(); code = child.wait(); note = 'SIGKILL after grace'
-            outcome = 'timeout'
-    except BaseException as error:
-        note = 'launch/supervision failure: ' + repr(error)
-        code = code if code is not None else -1
-        raise
-    finally:
-        elapsed = time.monotonic()-started
-        end_job(ledger, job_id, outcome, code, elapsed, cap, note)
-        print('CACHE_AUDIT_JOB', job_id, outcome, code, f'{elapsed:.3f}s', flush=True)
+            remaining = cap - (time.monotonic()-started)
+            if remaining <= 0:
+                outcome = 'timeout'
+                code = 124
+                note = 'Caller cap exhausted before worker launch'
+            else:
+                signals['launching'] = True
+                try:
+                    child = popen(argv)
+                finally:
+                    signals['launching'] = False
+                if signals['pending']:
+                    raise KeyboardInterrupt(f'Supervisor received signal {signals["pending"][0]} during launch')
+                try:
+                    code = child.wait(timeout=max(cap-(time.monotonic()-started)-grace, 0.))
+                    reaped = True
+                    outcome = 'completed' if code == 0 else ('not_equivalent' if code == EXIT_NOT_EQUIVALENT else 'failed')
+                except subprocess.TimeoutExpired:
+                    cleanup_attempted = True
+                    code, reaped, note = terminate_and_reap(child, min(grace, max(cap-(time.monotonic()-started), 0.)))
+                    if not reaped:
+                        raise RuntimeError('Timed-out worker could not be reaped; start remains unresolved')
+                    outcome = 'timeout'
+        except BaseException as error:
+            if child is not None and not reaped and not cleanup_attempted:
+                cleanup_attempted = True
+                code, reaped, cleanup_note = terminate_and_reap(child, min(grace, max(cap-(time.monotonic()-started), 0.)))
+                note = cleanup_note
+            note = 'launch/supervision failure: ' + repr(error) + ('; ' + note if note else '')
+            if reaped or child is None:
+                code = code if code is not None else -1
+            raise
+        finally:
+            elapsed = time.monotonic()-started
+            if child is None or reaped:
+                end_job(ledger, job_id, outcome, code, elapsed, cap, note)
+                print('CACHE_AUDIT_JOB', job_id, outcome, code, f'{elapsed:.3f}s', flush=True)
+            else:
+                print('CACHE_AUDIT_JOB_UNRESOLVED', job_id, note, flush=True)
     return outcome, code
 
 

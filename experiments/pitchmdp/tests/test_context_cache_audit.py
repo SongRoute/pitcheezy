@@ -2,8 +2,10 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+import signal
 import subprocess
 import sys
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -178,6 +180,143 @@ def test_supervisor_hard_deadline_terms_then_kills_and_records_actual_wall(tmp_p
     assert job['ended'] and job['charged_seconds'] == end['elapsed_seconds']
 
 
+def test_supervisor_interrupt_after_launch_reaps_child_before_ending_job(tmp_path):
+    config, local, output, ledger = supervisor_fixture(tmp_path)
+    launched = []
+
+    class InterruptingChild:
+        def __init__(self):
+            self.process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+            self.first_wait = True
+
+        def wait(self, timeout=None):
+            if self.first_wait:
+                self.first_wait = False
+                raise KeyboardInterrupt()
+            return self.process.wait(timeout=timeout)
+
+        def terminate(self): self.process.terminate()
+        def kill(self): self.process.kill()
+
+    def launch(argv):
+        child = InterruptingChild(); launched.append(child)
+        return child
+
+    with pytest.raises(KeyboardInterrupt):
+        runner.supervise('stage1', 'F4-H0', None, 1, config, local, output, ['x'], popen=launch)
+    assert len(launched) == 1 and launched[0].process.poll() is not None
+    state = runner.ledger_state(ledger)
+    assert len(state['jobs']) == 1 and state['jobs'][0]['ended']
+    assert state['jobs'][0]['outcome'] == 'failed' and state['unresolved_jobs'] == []
+
+
+def test_supervisor_sigterm_after_launch_reaps_child_and_restores_handler(tmp_path):
+    config, local, output, ledger = supervisor_fixture(tmp_path)
+    previous = signal.getsignal(signal.SIGTERM)
+    launched = []
+
+    class SignalledChild:
+        def __init__(self):
+            self.process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+            self.first_wait = True
+        def wait(self, timeout=None):
+            if self.first_wait:
+                self.first_wait = False
+                signal.raise_signal(signal.SIGTERM)
+            return self.process.wait(timeout=timeout)
+        def terminate(self): self.process.terminate()
+        def kill(self): self.process.kill()
+
+    def launch(argv):
+        child = SignalledChild(); launched.append(child)
+        return child
+
+    with pytest.raises(KeyboardInterrupt, match='Supervisor received signal'):
+        runner.supervise('stage1', 'F4-H0', None, 1, config, local, output, ['x'], popen=launch)
+    assert signal.getsignal(signal.SIGTERM) is previous
+    assert launched[0].process.poll() is not None
+    assert runner.ledger_state(ledger)['jobs'][0]['ended']
+
+
+def test_supervisor_sigterm_during_launch_defers_until_child_is_known(tmp_path):
+    config, local, output, ledger = supervisor_fixture(tmp_path)
+    launched = []
+    def launch(argv):
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+        launched.append(child)
+        signal.raise_signal(signal.SIGTERM)
+        return child
+    with pytest.raises(KeyboardInterrupt, match='during launch'):
+        runner.supervise('stage1', 'F4-H0', None, 1, config, local, output, ['x'], popen=launch)
+    assert launched[0].poll() is not None
+    assert runner.ledger_state(ledger)['jobs'][0]['ended']
+
+
+def test_termination_and_kill_share_one_grace_interval():
+    class SlowChild:
+        def __init__(self): self.waits = []; self.killed = False
+        def terminate(self): pass
+        def kill(self): self.killed = True
+        def wait(self, timeout=None):
+            self.waits.append(timeout)
+            if not self.killed:
+                time.sleep(timeout)
+                raise subprocess.TimeoutExpired('worker', timeout)
+            return -9
+    child = SlowChild()
+    code, reaped, note = runner.terminate_and_reap(child, .08)
+    assert reaped and code == -9 and 'SIGKILL' in note
+    assert len(child.waits) == 2 and sum(child.waits) <= .081
+
+
+def test_supervisor_keeps_start_unresolved_if_child_cannot_be_reaped(tmp_path):
+    config, local, output, ledger = supervisor_fixture(tmp_path)
+
+    class UnreapableChild:
+        def __init__(self): self.signals = []
+        def wait(self, timeout=None):
+            if not self.signals: raise KeyboardInterrupt()
+            raise subprocess.TimeoutExpired('worker', timeout)
+        def terminate(self): self.signals.append('TERM')
+        def kill(self): self.signals.append('KILL')
+
+    child = UnreapableChild()
+    with pytest.raises(KeyboardInterrupt):
+        runner.supervise('stage1', 'F4-H0', None, 1, config, local, output, ['x'], popen=lambda argv: child)
+    assert child.signals == ['TERM', 'KILL']
+    state = runner.ledger_state(ledger)
+    assert len(state['jobs']) == 1 and not state['jobs'][0]['ended']
+    assert state['reserved_seconds'] == config['limits']['command_seconds']['stage1']
+    assert not list((ledger/'ends').glob('*.json'))
+
+
+def test_supervisor_cap_includes_prior_validation_and_start_overhead(tmp_path, monkeypatch):
+    config, local, output, ledger = supervisor_fixture(tmp_path, caps={'stage3': 1.2})
+    config['limits']['termination_grace_seconds'] = .4
+    original = runner.prior_seconds
+    def slow_prior(config):
+        time.sleep(.05)
+        return original(config)
+    monkeypatch.setattr(runner, 'prior_seconds', slow_prior)
+    waits = []
+    def launch(argv):
+        return SimpleNamespace(wait=lambda timeout=None: waits.append(timeout) or 0,
+                               terminate=lambda: None, kill=lambda: None)
+    assert runner.supervise('stage3', 'F4-H0', 'cached', 1, config, local, output, ['x'], popen=launch)[0] == 'completed'
+    assert len(waits) == 1 and 0 < waits[0] < .75  # 1.2 cap - .4 grace - >=.05 preflight
+    assert runner.ledger_state(ledger)['jobs'][0]['charged_seconds'] >= .05
+
+
+def test_ledger_state_ignores_only_verified_appledouble_json(tmp_path):
+    config, local, output, ledger = supervisor_fixture(tmp_path)
+    runner.start_job(ledger, config, 1., 'stage1', 'F4-H0', None, 1, ['x'])
+    sidecar = ledger/'jobs'/'._metadata.json'
+    sidecar.write_bytes(bytes.fromhex('00051607') + b'meta')
+    assert len(runner.ledger_state(ledger)['jobs']) == 1
+    sidecar.write_text('not a JSON job')
+    with pytest.raises(json.JSONDecodeError): runner.ledger_state(ledger)
+
+
 def test_unresolved_job_reserves_cap_and_blocks_launch_until_resolved(tmp_path):
     config, local, output, ledger = supervisor_fixture(tmp_path)
     job_id, cap = runner.start_job(ledger, config, 5., 'stage1', 'F4-H0', None, 1, ['x'])
@@ -276,6 +415,25 @@ def test_predecessor_chain_requires_passed_sealed_and_untampered_evidence(tmp_pa
     (output/'stage1'/'F4-H0'/'attempt2'/'results.json').write_text('{"all_bitwise_identical": true, "all_guards_rejected": true, "x": 1}')
     with pytest.raises(ValueError, match='Artifact identity changed'): runner.predecessors(output, 'reg', 'stage2', 'F4-H0')
     assert runner.stage_passed('compare', {'equivalent': False}) is False and runner.stage_passed('prepare', {}) is True
+
+
+def test_all_three_arms_complete_successful_predecessor_chains(tmp_path):
+    output = tmp_path
+    for arm in runner.CELLS:
+        one = seal_result(output, 'stage1', arm, None, 1,
+                          {'all_bitwise_identical': True, 'all_guards_rejected': True})
+        two = seal_result(output, 'stage2', arm, None, 1, {'equivalent': True}, {f'stage1/{arm}': one})
+        fit_chain = {f'stage1/{arm}': one, f'stage2/{arm}': two}
+        for path in runner.PATHS:
+            seal_result(output, 'stage3', arm, path, 1, {'path': path}, fit_chain)
+        compare_chain = runner.predecessors(output, 'reg', 'compare', arm)
+        seal_result(output, 'compare', arm, None, 1, {'equivalent': True}, compare_chain)
+    for arm in runner.CELLS:
+        chain = runner.predecessors(output, 'reg', 'compare', arm)
+        found, _ = runner.completed_attempt(output, 'reg', 'compare', arm, None, chain)
+        assert runner.read_json(found/'results.json')['equivalent'] is True
+        assert set(chain) == {f'stage1/{arm}', f'stage2/{arm}',
+                              f'stage3/{arm}/original', f'stage3/{arm}/cached'}
 
 
 def test_fresh_output_allows_only_appledouble_and_sealing_detects_changes(tmp_path):
