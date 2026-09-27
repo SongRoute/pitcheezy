@@ -19,3 +19,9 @@
 The helper follows production's current unweighted loss, AdamW(.01 decay), gradient clipping5, best epoch/selected-state comparison and independent May calibration. The CLI checks actual MPS availability/native runtime, parent/source/sample identities and restricts audit queries to TRAIN/early-stop/May. Separate original/cached resource processes and null adoption are appropriate.
 
 Pre-clip gradient/optimizer-state checks, both-order backend checks and Python `random` snapshots are additional prospective improvements, not retroactive claims about historical registration. The draft's gradient/weight atol1e-6/rtol1e-5 is also prospective. Freeze whichever justified tolerances are adopted before any actual measurement, and never relax them in response to a failed result. See [preregistration review](COOP-001-F4-cache-prereg-review.md).
+
+## Final review before execution
+
+Fable addressed the nine findings in `7ca6062`; Sol completed supervisor cleanup and regression coverage in `814373b`. Root integrated these as `dcfbc73`, `f2a6e13`, `d022711`. A second review found and resolved the stage-3 predecessor-chain mutation and interruption cleanup issues: both stage-3 paths now verify against the same stage1/stage2 snapshot, and a worker must be reaped before its ledger receives a terminal record. TERM/KILL share one grace interval, unresolved workers retain a budget reservation, and only verified AppleDouble sidecars are omitted.
+
+The final Astra source review found **no material blocker for the bounded 17-command audit**. Root independently ran the focused and neighboring tests at immutable execution commit `d022711368057a75badaba46c50f728e718c3e52`: **79 passed in 6.56 seconds**. This is clearance for the registered numerical/resource audit; it is not evidence of MPS equivalence, full-training feasibility or cache adoption.

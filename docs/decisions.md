@@ -82,3 +82,5 @@
 - 2026-09-27 **D68** 사용자가 Codex가 Claude CLI를 호출하는 협업과 `--dangerously-skip-permissions`를 명시 승인했다. Codex 총괄·별도 worktree 구현·다른 에이전트 검토·공용 작업대장·단일 heavy 큐로 운영한다. 첫 작업은 F4 context cache 실데이터 감사 러너 구현/검토/제한된 실측과 G0/F1 5seed 설계 검토다. 기존 데이터/예산 제한은 유지하며 missing runner를 외부 자료 장애로 취급하지 않는다. [협업 규칙](AI_COLLABORATION.md).
 
 - 2026-09-27 **D69** 사용자가 난도별 모델 배정 순서를 GPT-6 Astra → Claude Fable 5.1 → Claude Opus 5.5 → GPT-6 Sol로 지정했다. 협업 작업에 이 선호를 적용하며 정확한 모델 ID와 실제 응답 모델을 기록한다. API/계정 접근 실패를 다른 모델의 성공으로 바꾸지 않는다.
+
+- 2026-09-27 **D70** Fable 구현·Astra 독립 검토·Sol 감독기 보완을 거친 F4 context cache 감사 러너를 제한된 실측에 등록한다. `EXP-P4-002-v3-cache-audit-v2.yaml`은 코드 `d022711`의 30소스·두 계약·기존 표본과 과거 비용 244.084859초를 핀한다. 17명령, stage3 각600초, 기존 member7,200초/family28,800초 유지. 수치 실패 시 후속 측정 중지, 전체 캐시 비용 미측정 상태에서 채택/full fit 없음. D67의 missing runner는 해결했으며 예산 확대는 없다. G0/F1 5seed는 Opus 검토 완료 초안으로 남고 신규 fit는 별도 등록 전 미실행. [협업 실행 기록](reports/AI-collaboration-2026-09-27.md).
