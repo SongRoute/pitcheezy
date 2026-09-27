@@ -7,6 +7,8 @@ import fcntl
 import hashlib
 import importlib.util
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -177,7 +179,8 @@ def _stub_provenance(monkeypatch):
     monkeypatch.delenv("PITCHEEZY_HEAVY_LOCK", raising=False)
     monkeypatch.setattr(prep, "implementation_provenance", lambda cfg, path: {
         "registered_code_commit": "synthetic", "execution_head": "synthetic",
-        "executed_script_sha256": prep.sha256_file(prep.ROOT / prep.SCRIPT_REL), "config_path": str(path)})
+        "executed_script_sha256": prep.sha256_file(prep.ROOT / prep.SCRIPT_REL), "config_path": str(path),
+        "config_repository_head": "synthetic"})
 
 
 # ------------------------------------------------------------------ eligibility semantics
@@ -364,3 +367,82 @@ def test_busy_heavy_lock_fails_without_waiting(tmp_path):
         with pytest.raises(prep.PreparationError, match="holds the shared lock"):
             prep.run(cfg_path, tmp_path / "attempts" / "busy")
     assert json.loads((tmp_path / "attempts" / "busy" / "failure.json").read_text())["stage"] == "lock"
+
+
+# ------------------------------------------------------------------ git layout: frozen C + external registration D
+
+def _g(repo: Path, *args: str) -> str:
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@t", "HOME": str(repo), "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"}
+    return subprocess.run(["git", *args], cwd=repo, env=env, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _layout(tmp: Path):
+    """Execution checkout at source commit C (script only) and a separate registration checkout with config."""
+    exe, reg = tmp / "exec", tmp / "registration"
+    (exe / "scripts").mkdir(parents=True)
+    (reg / "configs").mkdir(parents=True)
+    shutil.copy(ROOT / "scripts/prepare_june_eligibility.py", exe / "scripts/prepare_june_eligibility.py")
+    for repo in (exe, reg):
+        _g(repo, "init", "-q")
+    _g(exe, "add", ".")
+    _g(exe, "commit", "-qm", "C")
+    commit_c = _g(exe, "rev-parse", "HEAD")
+    cfg = json.loads(DRAFT.read_text())
+    cfg["registration"].update(code_commit=commit_c, script_sha256=sha(exe / "scripts/prepare_june_eligibility.py"))
+    cfg_path = reg / "configs" / "ML-JUNE-ELIGIBILITY-v1.json"
+    cfg_path.write_text(json.dumps(cfg))
+    _g(reg, "add", ".")
+    _g(reg, "commit", "-qm", "D")
+    s = importlib.util.spec_from_file_location("prep_layout", exe / "scripts/prepare_june_eligibility.py")
+    mod = importlib.util.module_from_spec(s)
+    s.loader.exec_module(mod)
+    return mod, exe, reg, cfg_path, cfg
+
+
+def test_external_tracked_clean_config_accepted(tmp_path):
+    mod, exe, reg, cfg_path, cfg = _layout(tmp_path)
+    got = mod.implementation_provenance(cfg, cfg_path)
+    assert got["execution_head"] == cfg["registration"]["code_commit"] == _g(exe, "rev-parse", "HEAD")
+    assert got["config_path"] == str(cfg_path.resolve())
+    assert got["config_repository_root"] == str(reg.resolve())
+    assert got["config_repository_head"] == _g(reg, "rev-parse", "HEAD")
+
+
+def test_external_config_dirty_staged_or_untracked_rejected(tmp_path):
+    mod, _, reg, cfg_path, cfg = _layout(tmp_path)
+    cfg_path.write_text(cfg_path.read_text() + " ")
+    with pytest.raises(mod.PreparationError, match="config has staged or unstaged"):
+        mod.implementation_provenance(cfg, cfg_path)
+    _g(reg, "add", ".")
+    with pytest.raises(mod.PreparationError, match="config has staged or unstaged"):
+        mod.implementation_provenance(cfg, cfg_path)
+    other = reg / "configs" / "untracked.json"
+    other.write_text(json.dumps(cfg))
+    with pytest.raises(mod.PreparationError, match="config is not tracked"):
+        mod.implementation_provenance(cfg, other)
+    loose = tmp_path / "loose.json"
+    loose.write_text(json.dumps(cfg))
+    with pytest.raises(mod.PreparationError, match="not inside a git checkout|not tracked"):
+        mod.implementation_provenance(cfg, loose)
+
+
+def test_wrong_execution_head_or_script_rejected(tmp_path):
+    mod, exe, _, cfg_path, cfg = _layout(tmp_path)
+    (exe / "later.txt").write_text("x")
+    _g(exe, "add", ".")
+    _g(exe, "commit", "-qm", "later than C")
+    with pytest.raises(mod.PreparationError, match="execution HEAD differs"):
+        mod.implementation_provenance(cfg, cfg_path)
+    _g(exe, "reset", "-q", "--hard", cfg["registration"]["code_commit"])
+    bad = copy.deepcopy(cfg)
+    bad["registration"]["code_commit"] = cfg["registration"]["code_commit"][:12]
+    with pytest.raises(mod.PreparationError, match="full 40-hex"):
+        mod.implementation_provenance(bad, cfg_path)
+    bad["registration"].update(code_commit=cfg["registration"]["code_commit"], script_sha256="0" * 64)
+    with pytest.raises(mod.PreparationError, match="registered SHA256"):
+        mod.implementation_provenance(bad, cfg_path)
+    with open(exe / "scripts/prepare_june_eligibility.py", "a") as handle:
+        handle.write("\n")
+    with pytest.raises(mod.PreparationError, match="tracked changes"):
+        mod.implementation_provenance(cfg, cfg_path)

@@ -150,29 +150,50 @@ def heavy_lock(cfg: dict):
 
 # ---------------------------------------------------------------- provenance
 
-def _git(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+def _git(*args: str, cwd: Path = ROOT) -> subprocess.CompletedProcess:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # no GIT_DIR/INDEX redirection
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, env=env)
+
+
+def _tracked_clean(repo: Path, rel: str, label: str) -> None:
+    """Tracked, no staged or unstaged change, and worktree bytes equal the HEAD blob."""
+    require(_git("ls-files", "--error-unmatch", "--", rel, cwd=repo).returncode == 0, f"{label} is not tracked")
+    require(not _git("status", "--porcelain", "--untracked-files=all", "--", rel, cwd=repo).stdout.strip(),
+            f"{label} has staged or unstaged changes")
+    head_blob = _git("rev-parse", "--verify", f"HEAD:{rel}", cwd=repo).stdout.strip()
+    require(head_blob == git_blob_sha1((repo / rel).read_bytes()), f"{label} bytes differ from its HEAD blob")
 
 
 def implementation_provenance(cfg: dict, config_path: Path) -> dict:
-    """Registered code commit C must be an ancestor of HEAD with identical script bytes; files clean."""
+    """Execution checkout must be the clean frozen source commit C; the registered config may live in
+    another (registration) checkout, where it must be tracked and clean."""
     reg = cfg["registration"]
     require(reg.get("code_commit") and reg.get("script_sha256"), "config is an unregistered draft")
+    code_commit = str(reg["code_commit"])
+    require(len(code_commit) == 40 and all(c in "0123456789abcdef" for c in code_commit),
+            "registration.code_commit must be a full 40-hex commit")
+    require(Path(__file__).resolve() == (ROOT / SCRIPT_REL).resolve(), "running script is not the checkout script")
+    exec_root = Path(_git("rev-parse", "--show-toplevel").stdout.strip() or "/nonexistent").resolve()
+    require(exec_root == ROOT.resolve(), "execution checkout root differs from script root")
+    exec_head = _git("rev-parse", "--verify", "HEAD^{commit}").stdout.strip()
+    require(exec_head == code_commit, "execution HEAD differs from registered code commit")
+    require(not _git("status", "--porcelain", "--untracked-files=no").stdout.strip(),
+            "execution checkout has tracked changes")
+    _tracked_clean(ROOT, SCRIPT_REL, "script")
     script_sha = sha256_file(ROOT / SCRIPT_REL)
     require(script_sha == reg["script_sha256"], "executed script differs from registered SHA256")
-    require(_git("merge-base", "--is-ancestor", reg["code_commit"], "HEAD").returncode == 0,
-            "registered code commit is not an ancestor of HEAD")
-    require(_git("diff", "--quiet", reg["code_commit"], "HEAD", "--", SCRIPT_REL).returncode == 0,
-            "script changed since registered code commit")
-    cfg_resolved = config_path.resolve()
-    require(cfg_resolved.is_relative_to(ROOT.resolve()), "config must live in the execution checkout")
-    cfg_rel = str(cfg_resolved.relative_to(ROOT.resolve()))
-    require(_git("ls-files", "--error-unmatch", cfg_rel).returncode == 0, "config is not tracked")
-    dirty = _git("status", "--porcelain", "--", SCRIPT_REL, cfg_rel).stdout.strip()
-    require(not dirty, "script/config have uncommitted changes")
-    return {"registered_code_commit": reg["code_commit"],
-            "execution_head": _git("rev-parse", "HEAD").stdout.strip(),
-            "executed_script_sha256": script_sha, "config_path": cfg_rel}
+
+    cfg_abs = config_path.resolve()
+    top = _git("rev-parse", "--show-toplevel", cwd=cfg_abs.parent)
+    require(top.returncode == 0 and top.stdout.strip(), "config is not inside a git checkout")
+    cfg_root = Path(top.stdout.strip()).resolve()
+    cfg_rel = cfg_abs.relative_to(cfg_root).as_posix()
+    _tracked_clean(cfg_root, cfg_rel, "config")
+    return {"registered_code_commit": code_commit, "execution_head": exec_head,
+            "execution_root": str(ROOT.resolve()), "executed_script_sha256": script_sha,
+            "config_path": str(cfg_abs), "config_repository_root": str(cfg_root),
+            "config_repository_relpath": cfg_rel,
+            "config_repository_head": _git("rev-parse", "--verify", "HEAD^{commit}", cwd=cfg_root).stdout.strip()}
 
 
 def verify_pins(cfg: dict) -> dict:
@@ -592,6 +613,8 @@ def prepare(cfg: dict, config_path: Path, output: Path, timings: dict, stage: li
             "config_sha256": config_sha, "executed_script_sha256": provenance["executed_script_sha256"],
             "registered_code_commit": provenance["registered_code_commit"],
             "execution_head": provenance["execution_head"],
+            "config_path": provenance["config_path"],
+            "config_repository_head": provenance["config_repository_head"],
             "parent_hashes": pins, "artifacts": {**artifacts, files["result"]: {"sha256": result_sha}},
         }
         write_json(manifest, output / files["manifest"])
