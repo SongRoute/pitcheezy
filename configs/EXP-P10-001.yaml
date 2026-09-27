@@ -29,7 +29,7 @@
   "individual_tau": 1000,
   "cluster_tau": 10000,
   "registration": {
-    "status": "DRAFT: root freezes before C1 prepare; budgets fixed here cannot change after preparation",
+    "status": "frozen before C1 prepare under D72; execution code d409031",
     "contract": "docs/contracts/ML-C1-G-RUNNER-v1.md",
     "design": "docs/contracts/ML-CONFIRMATION-DESIGN-v1.md",
     "draft": "docs/contracts/ML-G0-F1-CONFIRMATION-DRAFT-v1.md",

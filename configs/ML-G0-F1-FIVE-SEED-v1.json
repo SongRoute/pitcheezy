@@ -1,11 +1,11 @@
 {
   "protocol": "ml_g0_f1_five_seed_bundle_v1",
   "bundle_id": "ML-G0-F1-FIVE-SEED-v1",
-  "repo_commit": null,
+  "repo_commit": "d4090310aea70ea3d0e7c18b77a7768fd1ee85af",
   "contracts": {
     "runner": {
       "path": "docs/contracts/ML-G0-F1-FIVE-SEED-RUNNER-v1.md",
-      "sha256": null
+      "sha256": "f46a110350b33e7dbff261ee00470f05302e8057d81369e10af72f6ba765a13c"
     },
     "draft": {
       "path": "docs/contracts/ML-G0-F1-CONFIRMATION-DRAFT-v1.md",
@@ -26,12 +26,12 @@
   },
   "configs": {
     "c1": {
-      "path": "configs/EXP-P10-001.yaml",
-      "sha256": null
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P10-001.yaml",
+      "sha256": "b863cf2d53e21622d6ed2d160ce824d5246e7b9eea29584334083dd640f950ce"
     },
     "f1ext": {
-      "path": "configs/EXP-P9-002.yaml",
-      "sha256": null
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P9-002.yaml",
+      "sha256": "e9eced15350a13bda75acd8f5d7537571ba41655a2c21e047895855a067b4ea5"
     },
     "g_parent": {
       "path": "configs/EXP-P4-001.yaml",
@@ -43,41 +43,41 @@
     }
   },
   "sources": {
-    "pitchmdp/archetypes.py": null,
-    "pitchmdp/data.py": null,
-    "pitchmdp/matrix_data.py": null,
-    "pitchmdp/model.py": null,
-    "pitchmdp/sequence_data.py": null,
-    "pitchmdp/sequence_delivery.py": null,
-    "pitchmdp/sequence_model.py": null,
-    "scripts/run_ml_matrix.py": null,
-    "scripts/run_sequence_pilot.py": null,
-    "scripts/run_temporal_blend.py": null,
-    "scripts/run_sequence_frequency_baselines.py": null,
-    "scripts/run_sequence_context_frequency.py": null,
-    "pitchmdp/matrix_features.py": null,
-    "pitchmdp/matrix_models.py": null,
-    "pitchmdp/matrix_benchmark.py": null,
-    "scripts/run_ml_benchmark.py": null,
-    "pitchmdp/matrix_panel.py": null,
-    "pitchmdp/matrix_sharing.py": null,
-    "scripts/run_ml_sharing.py": null,
-    "pitchmdp/matrix_confirmation.py": null,
-    "pitchmdp/matrix_confirmation_metrics.py": null,
-    "pitchmdp/matrix_group_metrics.py": null,
-    "pitchmdp/matrix_metrics.py": null,
-    "scripts/score_ml_matrix.py": null,
-    "scripts/run_ml_confirmation.py": null,
-    "scripts/score_ml_confirmation.py": null,
-    "scripts/run_sequence_calibration.py": null,
-    "pitchmdp/matrix_bridge.py": null,
-    "scripts/run_ml_bridge.py": null,
-    "scripts/score_ml_bridge.py": null,
-    "pitchmdp/matrix_policy_artifacts.py": null,
-    "pitchmdp/matrix_five_seed_extension.py": null,
-    "scripts/run_ml_five_seed_extension.py": null,
-    "scripts/score_ml_five_seed_extension.py": null,
-    "scripts/supervise_ml_five_seed_extension.py": null
+    "pitchmdp/archetypes.py": "9c248dae916bd7c301883815176a307ff2043b0a7f52b5f39e6b0408caeaae49",
+    "pitchmdp/data.py": "5fb3a385985aecc9db1a1145b2a2ab0d6d9dd34e7faa8c44ca50f7eb79810608",
+    "pitchmdp/matrix_data.py": "439912ef3adb52bfdbe6916b9fde464dd9fc9ef019e1066b2c32e4571b52d29b",
+    "pitchmdp/model.py": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+    "pitchmdp/sequence_data.py": "7a1d00a822a5c58f349e1608129c93c17031f77bc0afd964a3b6f025e9fe4a65",
+    "pitchmdp/sequence_delivery.py": "30d9fd1d849cab42023a022d404ad0c9fd86cd632ab15eab310f3129276977a5",
+    "pitchmdp/sequence_model.py": "af26aa645d7b6f0df7e8bf7a0d48035883ea8d4bf354106da10afdb58615145b",
+    "scripts/run_ml_matrix.py": "fe509ba85bd12e8ae798f1eb54e533a44faa6f88032ac6dafa5199242b46526a",
+    "scripts/run_sequence_pilot.py": "06f6f41db49a86b4eeaf2c9e558908ea1917478883f0d5cceb2b21878ef415dc",
+    "scripts/run_temporal_blend.py": "e5f66eada969d28531ed0fc4483fe71210a0e60aaf6f8b6d8017c6e8e3e567c4",
+    "scripts/run_sequence_frequency_baselines.py": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9",
+    "scripts/run_sequence_context_frequency.py": "ad2706c3906109a2a2d74c236b0057a1462af1ff6ab3df94bfbcb47a355b5bb1",
+    "pitchmdp/matrix_features.py": "b860352e2a3e0098dc749a5e8ebd51a71ccdfaeb8a685336510c6582c4e19533",
+    "pitchmdp/matrix_models.py": "b6cc77fe3e337cf96f8c7cb31f02e8fd8a4bf71bb20713d01c462cdbd33d2fcd",
+    "pitchmdp/matrix_benchmark.py": "e468f843f1eb5eae4f5ae22baed5783bcc5a181ea9483da57c1d31c14d6af9ad",
+    "scripts/run_ml_benchmark.py": "bd6901a78062f32ecf39d7478554e05a3d15e5c67e8642a64f757bf39795ba3d",
+    "pitchmdp/matrix_panel.py": "4292647a83af4798c3b2c520209bbbdb6a571ee9d0558e316c00a42cef1516b8",
+    "pitchmdp/matrix_sharing.py": "30d9b0344bed8f0d8afd9aeb736e5f81e5fb0e98229813423bd2c17669f406b7",
+    "scripts/run_ml_sharing.py": "7dc75531c6096954ca735ada660ffffe745375b7e0cd6d7878d8595d39ea3c75",
+    "pitchmdp/matrix_confirmation.py": "8fe2a23317e66d0a6af30b95a7afb3d58108918f99f66a19692ac29787cfe0cb",
+    "pitchmdp/matrix_confirmation_metrics.py": "180d08b57507e50522c2f3cc394206ff570d1dfc0e5c123bcb182c63f548404d",
+    "pitchmdp/matrix_group_metrics.py": "1e718cacbde7c13bf77e7f4ebd53f8cf72696ac9ec0a7e5a60cae9774d06d851",
+    "pitchmdp/matrix_metrics.py": "dc54b9105b9c6d94f690550847b858fc732404c0f41739441874c861e29b29e3",
+    "scripts/score_ml_matrix.py": "379ab50b82a7fb7bdaba4032f3b49ddf28a067724b4c0394870ea09251dcf112",
+    "scripts/run_ml_confirmation.py": "0c98c745d2a6d54d66b39a2324b2b375deef4458e11bac73a554bc7f25c11969",
+    "scripts/score_ml_confirmation.py": "36aa57fe4172b5e584354c731ddc54fe51cacd4aefdc885c79d962ac045d68c7",
+    "scripts/run_sequence_calibration.py": "951bada57ea33f34cc5440d9420943df7dc9cb782b27e9359c582e55b5cfa6bc",
+    "pitchmdp/matrix_bridge.py": "237b4360c458eb4330682d86544c1237f27cdccfa55f07144ea2f1e883fea3c4",
+    "scripts/run_ml_bridge.py": "c82776a936eb56f613bc02767efcdbd4485298f24366dd826660cec4e4ff1b3b",
+    "scripts/score_ml_bridge.py": "629a0bdf3f430010d81e136a664e60a7053eb1f71ffe505bde8d8026326dc8e1",
+    "pitchmdp/matrix_policy_artifacts.py": "a8a0992858372e58e17ca8aa067386a398c457da20e5cb1a93142e55668d2b7c",
+    "pitchmdp/matrix_five_seed_extension.py": "4d9594cafad174164070fbb54a9ddd2e65b2907a97e5815324aaba3e8190b03c",
+    "scripts/run_ml_five_seed_extension.py": "de60c4e1f8b631082b162d0f43f1cbdc1f71239c9af43221d6a22b77768b9f0e",
+    "scripts/score_ml_five_seed_extension.py": "dc9f500039f4f9655410be882286da4c91c87428df1e9b486d217e493e9c4a3c",
+    "scripts/supervise_ml_five_seed_extension.py": "55d11760972d71a5451a145c81630c78bb323d5352b218bb4337b3529dd4c7e6"
   },
   "arms": {
     "c1": {

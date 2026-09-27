@@ -45,3 +45,14 @@
 Astra가 모든 manifest와48배열 쌍을 독립 검토했고 material issue 없음으로 판정했다. Root도17manifest의70해시와17개 종료·비용 기록을 대조했다. 집중79검사에 이어 실측 종료 후 전체 프로젝트 검사는 **252 passed, 19.75초**다. 모든 감사 프로세스는 종료됐고 실행 worktree/config/큐 스크립트 해시는 변하지 않았다.
 
 다음 구현 대상은 검토 완료된 G0/F1 5seed 초안의 재사용·동일 seed 연결·공통 profile·비용 대장·10개 예측 완료 후 채점 gate다. 새5seed 학습과 G0 전체 MLB 단독 평가는 아직 실행하지 않았다. 기존 DEV를 다시 쓰는 안정성 결과를 독립 확인으로 바꾸어 표현하지 않는다.
+
+
+## G0/F1 five-seed 후속 등록 — D72
+
+사용자 후속1~4 승인 후 COOP-003 Fable5.1 실제 응답을 확인했고 additive 실행기·scorer·supervisor·config·합성 검사 초안을 받았다. 호출은2026-09-27 17:48~18:11 KST에 실행됐다. 세션 ID `d026fa51-9f05-46be-b06a-dad442d55aa3`, exit1: 세션 사용 한도(18:50 KST 해제 안내)로 미완료다. 초안은`0b3c142`에 보존했다. COOP-004 Opus5.5 호출도 같은 한도로 exit1이며 독립 검토를 완료한 것으로 기록하지 않는다.
+
+Astra가 기존 full/masked3seed 재현의 선행 순서, C1 ID 교차 검증, 신규4/재사용6의 묶음 집계를 보완했다. Sol은 성공 종료와 산출물 해시 연결, 등록 bundle과 비용 대장의 일치, 누적 fit+predict 비용, 사전 검증의 durable 예약·시간 제한을 보완했다. Root는 합성 fixture를 수정하고 실행 계약·통합·등록을 맡았다. Claude 접근 실패를 숨기거나 다른 모델의 결과를 Claude 검토로 표시하지 않았다.
+
+실행 코드는`/Users/song/Projects/pitcheezy-worktrees/g0-f1-five-seed`의`d4090310aea70ea3d0e7c18b77a7768fd1ee85af`로 고정했다. Astra 최종 source review는 차단 사항 없음. Root의 새 실행기/기존 F1 집중55검사(6.82초), 기존 C1관련14검사(0.86초)가 통과했다. 이 합성 결과는 실제 학습 성공이 아니다.
+
+실행 등록은`configs/EXP-P10-001.yaml`(C1G0 baseline-only), `configs/EXP-P9-002.yaml`(F1five-seed), `configs/ML-G0-F1-FIVE-SEED-v1.json`이다. C1/F1 각각7,200초, 합계14,400초, 신규4fit·기존6fit·10member를 결과 열람 전에 고정했다. bundle fileSHA256=`d5e5487241502c0ff725a8f0c1c3a39dab083e4266952c9a0fb97414091e82ce`. 실행코드C와 등록D를 분리해 자기참조를 피한다. 공용 기록은 SSD `coordination/20260927-confirmation/registration.json`, `board.json`, 호출별 attempt와 실행 큐다. 이후 실제 결과는 별도 보고서와 비용 대장으로 판정한다.
