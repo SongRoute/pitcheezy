@@ -97,32 +97,75 @@ def test_groups_use_frozen_volume_and_game_starter():
     assert grouped["role_x_volume"].tolist() == ["starter|high", "relief|low", "relief|zero"]
 
 
+def _panel(train_volume_for_171):
+    return {"volume_thresholds": {"q25": 170.0, "q75": 1514.0, "method": "m"},
+            "train_players": [{"pitcher": 1, "train_pitches": 170, "train_volume": "low"},
+                              {"pitcher": 2, "train_pitches": 171, "train_volume": train_volume_for_171},
+                              {"pitcher": 3, "train_pitches": 2000, "train_volume": "high"}]}
+
+
 def test_frozen_cutoffs_are_checked_not_recomputed():
-    panel = {"volume_thresholds": {"q25": 170.0, "q75": 1514.0, "method": "m"},
-             "train_players": [{"pitcher": 1, "train_pitches": 170, "train_volume": "low"},
-                               {"pitcher": 2, "train_pitches": 171, "train_volume": "low"},
-                               {"pitcher": 3, "train_pitches": 2000, "train_volume": "high"}]}
-    out = audit.check_frozen_volume(panel, ["zero", "low", "middle", "high"])
-    assert out["q25"] == 170.0 and out["q75"] == 1514.0
-    assert out["stored_label_vs_frozen_cutoff_mismatches"] == 1
-    assert out["volume_of"] == {1: "low", 2: "low", 3: "high"}
+    out = audit.check_frozen_volume(_panel("middle"), ["zero", "low", "middle", "high"])
+    assert (out["q25"], out["q75"]) == (170.0, 1514.0)
+    assert out["volume_of"] == {1: "low", 2: "middle", 3: "high"}
 
 
-def test_cost_requires_five_completed_members_and_matching_draws():
+def test_volume_label_mismatch_fails_closed():
+    with pytest.raises(audit.AuditBoundaryError, match="frozen cutoffs"):
+        audit.check_frozen_volume(_panel("low"), ["zero", "low", "middle", "high"])
+
+
+def test_expected_count_mismatch_fails_closed_and_missing_stays_unknown():
+    with pytest.raises(audit.AuditBoundaryError, match="mismatch"):
+        audit.check_expected([("a", 4821, 4820)])
+    out = audit.check_expected([("a", 4821, 4821), ("b", None, "unknown")])
+    assert out["a"]["status"] == "match"
+    assert out["b"]["status"] == "unknown"
+    assert out["overall"] == "unknown_items_present" and out["unknown_items"] == ["b"]
+    assert audit.check_expected([("a", 1, 1)])["overall"] == "passed"
+
+
+def test_require_stops_on_false():
+    with pytest.raises(audit.AuditBoundaryError, match="key order"):
+        audit.require(False, "blend_keys and blend_metadata key order differ")
+
+
+def _status(walls, status="completed", bad_step=False):
+    steps = [{"stage": f"g0-predict-{i}", "phase": "evaluation", "status": "completed", "exit_code": 0,
+              "worker_wall_seconds": w} for i, w in enumerate(walls)]
+    steps.append({"stage": "g0-score", "phase": "evaluation", "status": "completed",
+                  "exit_code": 1 if bad_step else 0, "worker_wall_seconds": 27.0})
+    return {"status": status, "steps": steps, "authoritative_worker_charged_seconds": {"evaluation": 1.0},
+            "full_outer_queue_wall_seconds": 2.0}
+
+
+def test_cost_uses_official_worker_walls_and_separates_ledger():
     profile = {"draws": 400, "measured": {}, "projection": {"seconds_per_row": 0.001}}
-    ledger = []
-    for seed in range(5):
-        ledger += [{"event": "start", "id": str(seed), "stage": "predict", "seed": seed},
-                   {"event": "end", "id": str(seed), "status": "completed", "seconds": 311.721}]
-    out = audit.cost_projection(CONFIG, profile, ledger, {"x": 1000})
+    ledger = [{"event": "start", "id": "a", "stage": "predict", "seed": 0},
+              {"event": "end", "id": "a", "status": "completed", "seconds": 9999.0}]
+    walls = [311.721, 311.721, 311.721, 311.721, 311.721]
+    out = audit.cost_projection(CONFIG, profile, _status(walls), ledger, {"x": 1000})
     est = out["extrapolated_inference"]["estimates"]["x"]
-    assert est["five_member_seconds_from_profile_rate"] == pytest.approx(5.0)
-    assert est["five_member_seconds_from_measured_ledger_rate"] == pytest.approx(5.0)
+    assert est["profile_inference_only_seconds_5_members"] == pytest.approx(5.0)
+    assert est["full_worker_linear_proxy_seconds_5_members"] == pytest.approx(5.0)
+    assert out["measured_components"]["observed_predict_bound"]["sum_5_member_worker_wall_seconds"] == pytest.approx(1558.605)
+    assert "NOT authoritative" in out["measured_components"]["internal_ledger_crosscheck"]["label"]
     assert out["unknown_costs"]["scoring_and_bootstrap"] == "미측정"
+    for bad in (_status(walls[:4]), _status(walls, status="failed"), _status(walls, bad_step=True)):
+        with pytest.raises(audit.AuditBoundaryError):
+            audit.cost_projection(CONFIG, profile, bad, ledger, {"x": 1})
     with pytest.raises(audit.AuditBoundaryError):
-        audit.cost_projection(CONFIG, profile, ledger[:-2], {"x": 1})
-    with pytest.raises(audit.AuditBoundaryError):
-        audit.cost_projection(CONFIG, {**profile, "draws": 100}, ledger, {"x": 1})
+        audit.cost_projection(CONFIG, {**profile, "draws": 100}, _status(walls), ledger, {"x": 1})
+
+
+def test_all_declared_sources_are_hash_verified(tmp_path):
+    good = tmp_path / "good.json"
+    good.write_text("{}")
+    sources = {"good": {"path": str(good), "sha256": audit.sha256_file(good)},
+               "p11_preparation": {"path": str(good), "sha256": "0" * 64}}
+    with pytest.raises(audit.AuditBoundaryError, match="hash mismatch"):
+        audit.verify_sources(sources)
+    assert set(CONFIG["sources"]) >= {"p11_preparation", "official_queue_status", "processed_pitches"}
 
 
 def test_run_refuses_overwrite_before_reading_data(tmp_path):
@@ -131,6 +174,18 @@ def test_run_refuses_overwrite_before_reading_data(tmp_path):
     with pytest.raises(audit.AuditBoundaryError, match="overwrite"):
         audit.run(ROOT / "configs/ML-JUNE-SUPPORT-AUDIT-v1.json", out)
     assert out.read_text() == "{}"
+
+
+def test_output_outside_registered_roots_rejected(tmp_path):
+    with pytest.raises(audit.AuditBoundaryError, match="outside registered roots"):
+        audit.check_output(tmp_path / "new.json", CONFIG)
+    run_dir = Path("/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/new.json")
+    with pytest.raises(audit.AuditBoundaryError):
+        audit.check_output(run_dir, CONFIG)
+
+
+def test_registered_script_hash_matches_committed_script():
+    assert CONFIG["implementation"]["script_sha256"] == audit.sha256_file(ROOT / "scripts/audit_june_calibration_support.py")
 
 
 def test_hash_mismatch_rejected(tmp_path):

@@ -4,16 +4,27 @@
   "base_commit": "cf20fb4",
   "purpose": "Compare June 2025 Cpanel calibration population (4,821 eligible pitches / 110 games) with the full June 2025 regular-season requested population and its exact non-Cpanel complement by frozen TRAIN-volume, game role, throwing hand and role x volume / hand x volume; project cost of scoring a full-June population from existing measurements only.",
   "prohibited": [
-    "training", "inference", "optimizer", "calibration fit", "scoring", "new data fetch",
-    "2026 data", "DEV quality read", "aux.pkl or checkpoint deserialization",
-    "pipeline loaders reading all columns", "recomputing volume quantiles on June",
-    "recreating eligibility from outcomes or coordinates", "new runtime profile"
+    "training",
+    "inference",
+    "optimizer",
+    "calibration fit",
+    "scoring",
+    "new data fetch",
+    "2026 data",
+    "DEV quality read",
+    "aux.pkl or checkpoint deserialization",
+    "pipeline loaders reading all columns",
+    "recomputing volume quantiles on June",
+    "recreating eligibility from outcomes or coordinates",
+    "new runtime profile"
   ],
   "window": {
     "season": 2025,
     "date_min": "2025-06-01",
     "date_max": "2025-06-30",
-    "game_types": ["R"],
+    "game_types": [
+      "R"
+    ],
     "reject_year_min": 2026
   },
   "sources": {
@@ -21,71 +32,219 @@
       "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet",
       "sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
       "provenance": "equals EXP-P3-001 preparation.json dataset_identity.processed_sha256 (parent chain of EXP-P4-001)",
-      "columns": ["game_pk", "at_bat_number", "pitch_number", "game_date", "game_type", "split", "pitcher", "batter", "starter_pitcher", "p_throws"]
+      "columns": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number",
+        "game_date",
+        "game_type",
+        "split",
+        "pitcher",
+        "batter",
+        "starter_pitcher",
+        "p_throws"
+      ]
     },
     "blend_keys": {
       "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/blend_keys.parquet",
       "sha256": "5bc1cf7830f39f31ca69093b8f855ac2c3530fc0b9f08de82770055dac22094f",
       "provenance": "EXP-P4-001 preparation.json artifact_hashes",
-      "columns": ["game_pk", "at_bat_number", "pitch_number"]
+      "columns": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number"
+      ]
     },
     "blend_metadata": {
       "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/blend_metadata.parquet",
       "sha256": "de4b784c5c2488993c3bfbb6f44515255ed03d085a76a6e4a1c957b06dee2773",
       "provenance": "EXP-P4-001 preparation.json artifact_hashes; EXP-P11-002 config g.files",
-      "columns": ["game_pk", "at_bat_number", "pitch_number", "pitcher", "batter", "in_cpanel", "train_volume", "game_role", "throwing_hand", "month"]
+      "columns": [
+        "game_pk",
+        "at_bat_number",
+        "pitch_number",
+        "pitcher",
+        "batter",
+        "in_cpanel",
+        "train_volume",
+        "game_role",
+        "throwing_hand",
+        "month"
+      ]
     },
     "panel": {
       "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/panel.json",
       "sha256": "bf779e1d616c7921158816f9de9cafdf86e4015154810fc065265e2f28410f5a",
       "provenance": "EXP-P4-001 preparation.json artifact_hashes; EXP-P11-002 config g.files",
-      "fields": ["pitcher_ids", "train_players[].pitcher", "train_players[].train_pitches", "train_players[].train_volume", "volume_thresholds"]
+      "fields": [
+        "pitcher_ids",
+        "train_players[].pitcher",
+        "train_players[].train_pitches",
+        "train_players[].train_volume",
+        "volume_thresholds"
+      ]
     },
     "p4_preparation": {
       "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/preparation.json",
       "sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
       "provenance": "EXP-P11-002 config g.files",
-      "fields": ["samples.blend", "samples.mlb_dev", "coverage.blend", "coverage.mlb_dev"]
+      "fields": [
+        "samples.blend",
+        "samples.mlb_dev",
+        "coverage.blend",
+        "coverage.mlb_dev"
+      ]
     },
     "p11_preparation": {
       "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/preparation.json",
       "sha256": "aa831981ed84963e7dc27f7037fed166c2e6f83b0ed29cfba32d2a8b31a0d52a",
       "provenance": "EXP-P11-001/profile/state.json preparation_sha256",
-      "fields": ["samples", "coverage", "budget"]
+      "fields": [
+        "samples",
+        "coverage",
+        "budget"
+      ]
     },
     "p11_profile": {
       "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/profile/profile.json",
       "sha256": "d833b38cd4ece4f35a5cac3028d1a2ade292ca58ed8fcc0f08bb547f2b6207a6",
       "provenance": "EXP-P11-001/profile/state.json artifact_hashes",
-      "fields": ["draws", "measured", "projection"]
+      "fields": [
+        "draws",
+        "measured",
+        "projection"
+      ]
     },
     "p11_ledger": {
       "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/ledger.jsonl",
       "sha256": "e3e9cfab5a89307c12a97ec7d3358df86648b38cf55f4c2413234aaab6efd29a",
-      "provenance": "hash pinned by this audit at registration (sealed completed run)",
-      "fields": ["event", "stage", "seed", "status", "seconds"]
+      "provenance": "internal run ledger, hash pinned by this audit; cross-check only, not authoritative cost",
+      "fields": [
+        "event",
+        "stage",
+        "seed",
+        "status",
+        "seconds"
+      ]
+    },
+    "official_queue_status": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-whole-mlb/execution/attempt-20260927T111115Z/status.json",
+      "sha256": "c784953daebb8445de26ce87fe00b6550c2f9dc90acf6ed25061df1d05aaed70",
+      "provenance": "queue status SHA256 cited in docs/reports/G0-whole-MLB-and-calibration-2026-09-27.md",
+      "fields": [
+        "status",
+        "steps[].stage",
+        "steps[].phase",
+        "steps[].status",
+        "steps[].exit_code",
+        "steps[].worker_wall_seconds",
+        "authoritative_worker_charged_seconds",
+        "full_outer_queue_wall_seconds"
+      ]
     }
   },
-  "allowed_parquet_columns": ["game_pk", "at_bat_number", "pitch_number", "game_date", "game_type", "split", "pitcher", "batter", "starter_pitcher", "p_throws", "in_cpanel", "train_volume", "game_role", "throwing_hand", "month"],
-  "key": ["game_pk", "at_bat_number", "pitch_number"],
+  "allowed_parquet_columns": [
+    "game_pk",
+    "at_bat_number",
+    "pitch_number",
+    "game_date",
+    "game_type",
+    "split",
+    "pitcher",
+    "batter",
+    "starter_pitcher",
+    "p_throws",
+    "in_cpanel",
+    "train_volume",
+    "game_role",
+    "throwing_hand",
+    "month"
+  ],
+  "key": [
+    "game_pk",
+    "at_bat_number",
+    "pitch_number"
+  ],
   "groups": {
-    "volume": {"source": "panel.json train_players[].train_volume (frozen EXP-P4-001 TRAIN cutoffs; pitchers absent from TRAIN = zero)", "levels": ["zero", "low", "middle", "high"]},
-    "game_role": {"rule": "starter if pitcher == starter_pitcher else relief", "levels": ["starter", "relief"]},
-    "hand": {"rule": "p_throws", "levels": ["L", "R"]},
-    "role_x_volume": {"levels_from": ["game_role", "volume"]},
-    "hand_x_volume": {"levels_from": ["hand", "volume"]}
+    "volume": {
+      "source": "panel.json train_players[].train_volume (frozen EXP-P4-001 TRAIN cutoffs; pitchers absent from TRAIN = zero)",
+      "levels": [
+        "zero",
+        "low",
+        "middle",
+        "high"
+      ]
+    },
+    "game_role": {
+      "rule": "starter if pitcher == starter_pitcher else relief",
+      "levels": [
+        "starter",
+        "relief"
+      ]
+    },
+    "hand": {
+      "rule": "p_throws",
+      "levels": [
+        "L",
+        "R"
+      ]
+    },
+    "role_x_volume": {
+      "levels_from": [
+        "game_role",
+        "volume"
+      ]
+    },
+    "hand_x_volume": {
+      "levels_from": [
+        "hand",
+        "volume"
+      ]
+    }
   },
-  "support_rule": {"min_games": 30, "min_pitches": 500, "combine": "AND"},
-  "expected_counts": {"cpanel_eligible_pitches": 4821, "cpanel_eligible_games": 110, "cpanel_requested_pitches": 5212},
+  "support_rule": {
+    "min_games": 30,
+    "min_pitches": 500,
+    "combine": "AND"
+  },
+  "expected_counts": {
+    "cpanel_eligible_pitches": 4821,
+    "cpanel_eligible_games": 110,
+    "cpanel_requested_pitches": 5212
+  },
   "cost": {
     "reference_run": "EXP-P11-001",
     "members": 5,
     "draws": 400,
     "reference_eligible_rows": 311721,
-    "note": "Projection uses only existing profile.json and ledger.jsonl seconds; eligible June row count is unknown so requested rows are an upper bound on inference rows."
+    "note": "Authoritative member cost = official queue status worker walls; profile.json gives the inference-only rate; internal ledger is a cross-check only. Eligible June row count is unknown."
   },
   "outputs": {
     "result": "results/ML-JUNE-SUPPORT-AUDIT-v1.json",
-    "report": "docs/reports/ML-June-support-cost-audit-2026-09-27.md"
+    "report": "docs/reports/ML-June-support-cost-audit-2026-09-27.md",
+    "allowed_attempt_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-g0-freeze-audits/COOP-009",
+    "attempt_result": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-g0-freeze-audits/COOP-009/corrected-audit-attempt-002/result.json"
+  },
+  "attempt": {
+    "number": 2,
+    "supersedes": "attempt 1 (config cf77ed77…, result 4ec64b40…, code 7f27fea) retained at coordination/20260927-g0-freeze-audits/COOP-009/first-audit-evidence",
+    "reason": "Astra review fixes: explicit complements, official cost source, verify all sources, fail-closed gates"
+  },
+  "population_definitions": {
+    "full_june_requested": "all 2025-06 regular-season rows in processed pitches (requested, eligibility unknown)",
+    "cpanel_pitcher_requested": "requested rows whose pitcher is one of the 48 EXP-P4-001 panel pitchers",
+    "cpanel_eligible_known_keys": "exact EXP-P4-001 blend_keys (known eligible)",
+    "cpanel_pitcher_known_ineligible": "cpanel_pitcher_requested minus cpanel_eligible_known_keys (known ineligible)",
+    "outside_cpanel_pitcher_requested": "requested rows whose pitcher is not a panel pitcher",
+    "complement_of_eligible_cpanel_keys": "full_june_requested minus exact cpanel_eligible_known_keys; includes the known-ineligible Cpanel rows",
+    "full_june_tight_eligible_upper": "full_june_requested minus cpanel_pitcher_known_ineligible"
+  },
+  "first_attempt_counts": {
+    "full_june_requested": 115816,
+    "outside_cpanel_pitcher_requested": 110604
+  },
+  "implementation": {
+    "script": "scripts/audit_june_calibration_support.py",
+    "script_sha256": "5f5da015a1470db0911354091533a7fd453c359211e1f6ddc869362c131e2fae"
   }
 }

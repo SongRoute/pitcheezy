@@ -21,6 +21,8 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_REL = "scripts/audit_june_calibration_support.py"
+CONFIG_REL = "configs/ML-JUNE-SUPPORT-AUDIT-v1.json"
 KEY = ["game_pk", "at_bat_number", "pitch_number"]
 FORBIDDEN_COLUMN_HINTS = (
     "event", "description", "label", "outcome", "prob", "loss", "plate_", "pfx_", "release_",
@@ -87,9 +89,23 @@ def verified_path(spec: dict) -> Path:
     return path
 
 
-def read_projected(spec: dict, allowed: list[str], filters=None) -> pd.DataFrame:
-    columns = check_columns(spec["columns"], allowed)
-    table = pq.read_table(verified_path(spec), columns=columns, filters=filters)
+def verify_sources(sources: dict) -> dict:
+    """Hash every declared source before any read; any mismatch stops the audit."""
+    return {name: str(verified_path(spec)) for name, spec in sources.items()}
+
+
+def check_output(output: Path, cfg: dict) -> None:
+    if output.exists():
+        raise AuditBoundaryError(f"refusing to overwrite {output}")
+    resolved = output.resolve()
+    roots = [(ROOT / "results").resolve(), Path(cfg["outputs"]["allowed_attempt_root"]).resolve()]
+    if not any(resolved.is_relative_to(root) for root in roots):
+        raise AuditBoundaryError(f"output outside registered roots: {resolved}")
+
+
+def read_projected(path: Path, columns: list[str], allowed: list[str], filters=None) -> pd.DataFrame:
+    columns = check_columns(columns, allowed)
+    table = pq.read_table(path, columns=columns, filters=filters)
     if table.column_names != columns:
         raise AuditBoundaryError(f"projection mismatch: {table.column_names}")
     return table.to_pandas()
@@ -101,13 +117,35 @@ def assert_unique_keys(frame: pd.DataFrame, name: str) -> None:
         raise AuditBoundaryError(f"{name}: {dup} duplicate pitch keys")
 
 
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AuditBoundaryError(message)
+
+
 def filter_window(frame: pd.DataFrame, window: dict) -> pd.DataFrame:
     lo, hi = validate_window(window)
-    dates = pd.to_datetime(frame["game_date"]).dt.date
-    if (pd.to_datetime(frame["game_date"]).dt.year >= int(window["reject_year_min"])).any():
+    stamps = pd.to_datetime(frame["game_date"])
+    if (stamps.dt.year >= int(window["reject_year_min"])).any():
         raise AuditBoundaryError("rows at or after the rejected year reached the audit")
+    dates = stamps.dt.date
     keep = (dates >= lo) & (dates <= hi) & frame["game_type"].isin(window["game_types"])
     return frame.loc[keep].reset_index(drop=True)
+
+
+def check_expected(items: list[tuple[str, object, object]]) -> dict:
+    """Fail closed on any mismatch; an absent expected value stays 'unknown', never a pass."""
+    out = {}
+    for name, expected, actual in items:
+        if expected is None:
+            out[name] = {"expected": None, "actual": actual, "status": "unknown"}
+            continue
+        if expected != actual:
+            raise AuditBoundaryError(f"expected count mismatch for {name}: {expected} != {actual}")
+        out[name] = {"expected": expected, "actual": actual, "status": "match"}
+    unknown = [k for k, v in out.items() if v["status"] == "unknown"]
+    out["overall"] = "passed" if not unknown else "unknown_items_present"
+    out["unknown_items"] = unknown
+    return out
 
 
 def support_table(frame: pd.DataFrame, column: str, levels: list, rule: dict) -> dict:
@@ -124,7 +162,7 @@ def support_table(frame: pd.DataFrame, column: str, levels: list, rule: dict) ->
 
 
 def bounded_status(lower: dict | None, upper: dict) -> str:
-    """Eligible support status from a lower (known-eligible) and upper (requested) bound."""
+    """Eligible support status from a lower (known-eligible) and upper bound."""
     if lower is not None and lower["supported"]:
         return "supported"
     if not upper["supported"]:
@@ -155,59 +193,86 @@ def group_levels(cfg: dict) -> dict:
 
 
 def check_frozen_volume(panel: dict, expected_levels: list[str]) -> dict:
+    """Check stored TRAIN-volume labels against the frozen cutoffs; any disagreement stops the audit."""
     thresholds = panel["volume_thresholds"]
     q25, q75 = float(thresholds["q25"]), float(thresholds["q75"])
-    mismatches = 0
+    mismatches = []
     volume_of = {}
     for player in panel["train_players"]:
         n = player["train_pitches"]
         rederived = "low" if n <= q25 else ("middle" if n <= q75 else "high")
-        mismatches += int(rederived != player["train_volume"])
         if player["train_volume"] not in expected_levels:
             raise AuditBoundaryError(f"unknown volume level {player['train_volume']}")
+        if rederived != player["train_volume"]:
+            mismatches.append(int(player["pitcher"]))
         volume_of[int(player["pitcher"])] = player["train_volume"]
+    require(not mismatches, f"stored TRAIN-volume labels disagree with frozen cutoffs for {mismatches[:10]}")
     return {"q25": q25, "q75": q75, "method": thresholds["method"], "players": len(volume_of),
-            "stored_label_vs_frozen_cutoff_mismatches": mismatches, "volume_of": volume_of}
+            "stored_label_vs_frozen_cutoff_mismatches": 0, "volume_of": volume_of}
 
 
-def cost_projection(cfg: dict, profile: dict, ledger: list[dict], row_counts: dict) -> dict:
-    cost = cfg["cost"]
-    if int(profile["draws"]) != int(cost["draws"]):
-        raise AuditBoundaryError("profile draws differ from registered draws")
-    ends = [e for e in ledger if e.get("event") == "end"]
+def official_predict_walls(status: dict, members: int) -> dict:
+    require(status.get("status") == "completed", "official queue status is not completed")
+    steps = status["steps"]
+    for step in steps:
+        require(step["status"] == "completed" and step["exit_code"] == 0, f"official step not clean: {step['stage']}")
+    predict = [s for s in steps if s["stage"].startswith("g0-predict-")]
+    require(len(predict) == members, f"expected {members} official predict steps, found {len(predict)}")
+    return {
+        "per_member_worker_wall_seconds": {s["stage"]: s["worker_wall_seconds"] for s in predict},
+        "other_evaluation_steps_worker_wall_seconds": {
+            s["stage"]: s["worker_wall_seconds"] for s in steps if s["phase"] == "evaluation" and s not in predict},
+        "authoritative_worker_charged_seconds": status["authoritative_worker_charged_seconds"],
+        "full_outer_queue_wall_seconds": status["full_outer_queue_wall_seconds"],
+    }
+
+
+def internal_ledger_crosscheck(ledger: list[dict]) -> dict:
     starts = {e["id"]: e for e in ledger if e.get("event") == "start"}
     stages = []
-    for end in ends:
+    for end in (e for e in ledger if e.get("event") == "end"):
         start = starts.get(end["id"], {})
         stages.append({"stage": start.get("stage"), "seed": start.get("seed"), "status": end.get("status"),
                        "seconds": end.get("seconds")})
-    predict = [s for s in stages if s["stage"] == "predict" and s["status"] == "completed"]
-    if len(predict) != cost["members"]:
-        raise AuditBoundaryError(f"expected {cost['members']} completed predict stages, found {len(predict)}")
-    predict_total = sum(float(s["seconds"]) for s in predict)
-    ledger_rate = predict_total / cost["reference_eligible_rows"]
+    predict = sum(float(s["seconds"]) for s in stages if s["stage"] == "predict" and s["status"] == "completed")
+    return {"label": "internal run ledger; cross-check only, NOT authoritative", "stages": stages,
+            "predict_total_seconds": predict}
+
+
+def cost_projection(cfg: dict, profile: dict, status: dict, ledger: list[dict], row_counts: dict) -> dict:
+    cost = cfg["cost"]
+    require(int(profile["draws"]) == int(cost["draws"]), "profile draws differ from registered draws")
+    official = official_predict_walls(status, cost["members"])
+    walls = list(official["per_member_worker_wall_seconds"].values())
+    predict_total = float(sum(walls))
+    ref_rows = cost["reference_eligible_rows"]
+    worker_rate = predict_total / ref_rows
     profile_rate = float(profile["projection"]["seconds_per_row"])
-    extrapolated = {}
+    estimates = {}
     for name, rows in row_counts.items():
-        extrapolated[name] = {
+        estimates[name] = {
             "rows": rows,
-            "five_member_seconds_from_profile_rate": profile_rate * rows * cost["members"],
-            "five_member_seconds_from_measured_ledger_rate": ledger_rate * rows,
+            "profile_inference_only_seconds_5_members": profile_rate * rows * cost["members"],
+            "full_worker_linear_proxy_seconds_5_members": worker_rate * rows,
         }
     return {
         "measured_components": {
-            "source": "EXP-P11-001 profile.json and ledger.jsonl (existing; no new profile)",
-            "profile_draws": profile["draws"],
-            "profile_measured": profile["measured"],
-            "profile_seconds_per_row_per_member": profile_rate,
-            "ledger_stages": stages,
-            "ledger_predict_total_seconds_5_members": predict_total,
-            "ledger_predict_rows_per_member": cost["reference_eligible_rows"],
-            "ledger_seconds_per_row_5_members": ledger_rate,
+            "authoritative_source": "official supervisor queue status.json (SHA-pinned)",
+            "official": official,
+            "observed_predict_bound": {
+                "rows_per_member": ref_rows,
+                "min_member_worker_wall_seconds": min(walls),
+                "max_member_worker_wall_seconds": max(walls),
+                "sum_5_member_worker_wall_seconds": predict_total,
+            },
+            "profile": {"draws": profile["draws"], "measured": profile["measured"],
+                        "inference_seconds_per_row_per_member": profile_rate},
+            "internal_ledger_crosscheck": internal_ledger_crosscheck(ledger),
         },
         "extrapolated_inference": {
-            "method": "linear in rows at 400 draws on the same mps host; rows for full/complement June are requested (upper bound), not eligible",
-            "estimates": extrapolated,
+            "profile_inference_only": "profile inference rate x rows x 5; excludes per-member interpreter/import/model-load/verification fixed overhead",
+            "full_worker_linear_proxy": "sum of 5 official predict worker walls / 311,721 x rows; scales fixed load/import overhead linearly with rows, so it is a proxy, not a guaranteed upper cost bound even when rows are an upper bound",
+            "estimates": estimates,
         },
         "unknown_costs": {
             "june_eligible_inventory_and_feature_preparation": "미측정",
@@ -219,46 +284,61 @@ def cost_projection(cfg: dict, profile: dict, ledger: list[dict], row_counts: di
     }
 
 
-def run(config_path: Path, output: Path, force: bool = False) -> dict:
-    wall_start = time.perf_counter()
+def implementation_provenance(cfg: dict) -> dict:
+    script_sha = sha256_file(ROOT / SCRIPT_REL)
+    require(script_sha == cfg["implementation"]["script_sha256"],
+            f"executed script {script_sha} differs from registered {cfg['implementation']['script_sha256']}")
+    dirty = subprocess.run(["git", "status", "--porcelain", "--", SCRIPT_REL, CONFIG_REL], cwd=ROOT,
+                           capture_output=True, text=True, check=True).stdout.strip()
+    require(not dirty, f"script/config not committed: {dirty}")
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True,
+                            check=True).stdout.strip()
+    return {"executed_source_commit": commit, "executed_script_sha256": script_sha,
+            "executed_config_sha256": sha256_file(ROOT / CONFIG_REL)}
+
+
+def run(config_path: Path, output: Path) -> dict:
+    t_start = time.perf_counter()
     cfg = json.loads(config_path.read_text())
     validate_config(cfg)
-    if output.exists() and not force:
-        raise AuditBoundaryError(f"refusing to overwrite {output}")
-    runs_root = "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs"
-    if str(output.resolve()).startswith(runs_root):
-        raise AuditBoundaryError("output must not be written into existing run directories")
+    check_output(output, cfg)
+    provenance = implementation_provenance(cfg)
     allowed, rule, src = cfg["allowed_parquet_columns"], cfg["support_rule"], cfg["sources"]
     levels = group_levels(cfg)
 
-    panel = json.loads(verified_path(src["panel"]).read_text())
+    t_verify = time.perf_counter()
+    paths = {name: Path(p) for name, p in verify_sources(src).items()}
+    verify_seconds = time.perf_counter() - t_verify
+
+    t_work = time.perf_counter()
+    panel = json.loads(paths["panel"].read_text())
     frozen = check_frozen_volume(panel, levels["volume"])
     volume_of = frozen.pop("volume_of")
     panel_ids = {int(p) for p in panel["pitcher_ids"]}
 
     lo, hi = validate_window(cfg["window"])
     filters = [("game_date", ">=", pd.Timestamp(lo)), ("game_date", "<=", pd.Timestamp(hi))]
-    raw = read_projected(src["processed_pitches"], allowed, filters=filters)
+    raw = read_projected(paths["processed_pitches"], src["processed_pitches"]["columns"], allowed, filters=filters)
     rows_read = int(len(raw))
+    game_type_counts = {str(k): int(v) for k, v in raw["game_type"].value_counts().items()}
     june = filter_window(raw, cfg["window"])
-    excluded_game_type = {str(k): int(v) for k, v in raw["game_type"].value_counts().items()}
     assert_unique_keys(june, "june_requested")
     june["pitcher"] = june["pitcher"].astype("int64")
     june = add_groups(june, volume_of)
     june["in_cpanel"] = june["pitcher"].isin(panel_ids)
 
-    blend_keys = read_projected(src["blend_keys"], allowed)
-    blend_meta = read_projected(src["blend_metadata"], allowed)
+    blend_keys = read_projected(paths["blend_keys"], src["blend_keys"]["columns"], allowed)
+    blend_meta = read_projected(paths["blend_metadata"], src["blend_metadata"]["columns"], allowed)
     assert_unique_keys(blend_keys, "blend_keys")
     assert_unique_keys(blend_meta, "blend_metadata")
-    key_order_equal = bool(blend_keys[KEY].reset_index(drop=True).equals(blend_meta[KEY].reset_index(drop=True)))
+    require(blend_keys[KEY].reset_index(drop=True).equals(blend_meta[KEY].reset_index(drop=True)),
+            "blend_keys and blend_metadata key order differ")
 
     joined = blend_meta.merge(june, on=KEY, how="left", suffixes=("_blend", ""), indicator=True)
     missing = int((joined["_merge"] != "both").sum())
-    if missing:
-        raise AuditBoundaryError(f"{missing} blend keys absent from June requested population")
+    require(missing == 0, f"{missing} blend keys absent from June requested population")
     alignment = {
-        "blend_keys_equal_blend_metadata_order": key_order_equal,
+        "blend_keys_equal_blend_metadata_order": True,
         "blend_rows": int(len(blend_meta)),
         "blend_keys_missing_from_june_requested": missing,
         "pitcher_mismatch": int((joined["pitcher_blend"].astype("int64") != joined["pitcher"]).sum()),
@@ -270,42 +350,70 @@ def run(config_path: Path, output: Path, force: bool = False) -> dict:
         "throwing_hand_mismatch": int((joined["throwing_hand"] != joined["hand"]).sum()),
         "month_values": sorted(joined["month"].astype(str).unique().tolist()),
     }
-    if any(alignment[k] for k in ("pitcher_mismatch", "batter_mismatch", "in_cpanel_flag_false", "not_panel_pitcher",
-                                   "train_volume_mismatch", "game_role_mismatch", "throwing_hand_mismatch")):
-        raise AuditBoundaryError(f"Cpanel alignment failed: {alignment}")
+    failed = [k for k, v in alignment.items() if k.endswith(("mismatch", "_false", "_pitcher")) and v]
+    require(not failed, f"Cpanel alignment failed: {failed}")
 
     blend_set = pd.MultiIndex.from_frame(blend_meta[KEY])
-    june_idx = pd.MultiIndex.from_frame(june[KEY])
-    june["cpanel_eligible"] = june_idx.isin(blend_set)
+    june["cpanel_eligible"] = pd.MultiIndex.from_frame(june[KEY]).isin(blend_set)
+    known_ineligible = june["in_cpanel"] & ~june["cpanel_eligible"]
     populations = {
         "full_june_requested": june,
-        "cpanel_requested": june.loc[june["in_cpanel"]],
-        "cpanel_eligible": june.loc[june["cpanel_eligible"]],
-        "complement_requested": june.loc[~june["in_cpanel"]],
+        "cpanel_pitcher_requested": june.loc[june["in_cpanel"]],
+        "cpanel_eligible_known_keys": june.loc[june["cpanel_eligible"]],
+        "cpanel_pitcher_known_ineligible": june.loc[known_ineligible],
+        "outside_cpanel_pitcher_requested": june.loc[~june["in_cpanel"]],
+        "complement_of_eligible_cpanel_keys": june.loc[~june["cpanel_eligible"]],
+        "full_june_tight_eligible_upper": june.loc[~known_ineligible],
     }
-    p4 = json.loads(verified_path(src["p4_preparation"]).read_text())
-    counts = {}
-    for name, frame in populations.items():
-        counts[name] = {"pitches": int(len(frame)), "games": int(frame["game_pk"].nunique()),
-                        "pitchers": int(frame["pitcher"].nunique())}
-    cp_games = set(populations["cpanel_eligible"]["game_pk"])
-    cp_req_games = set(populations["cpanel_requested"]["game_pk"])
-    comp_games = set(populations["complement_requested"]["game_pk"])
+    counts = {name: {"pitches": int(len(f)), "games": int(f["game_pk"].nunique()),
+                     "pitchers": int(f["pitcher"].nunique())} for name, f in populations.items()}
+    games = {name: set(f["game_pk"]) for name, f in populations.items()}
+    n = {name: c["pitches"] for name, c in counts.items()}
+    partitions = {
+        "cpanel_pitcher_requested + outside_cpanel_pitcher_requested == full":
+            n["cpanel_pitcher_requested"] + n["outside_cpanel_pitcher_requested"] == n["full_june_requested"],
+        "cpanel_eligible_known_keys + complement_of_eligible_cpanel_keys == full":
+            n["cpanel_eligible_known_keys"] + n["complement_of_eligible_cpanel_keys"] == n["full_june_requested"],
+        "outside_cpanel_pitcher_requested + cpanel_pitcher_known_ineligible == complement_of_eligible_cpanel_keys":
+            n["outside_cpanel_pitcher_requested"] + n["cpanel_pitcher_known_ineligible"]
+            == n["complement_of_eligible_cpanel_keys"],
+    }
+    require(all(partitions.values()), f"key partition failed: {partitions}")
     overlap = {
-        "cpanel_eligible_games_shared_with_complement": len(cp_games & comp_games),
-        "cpanel_requested_games_shared_with_complement": len(cp_req_games & comp_games),
-        "complement_only_games": len(comp_games - cp_req_games),
-        "cpanel_requested_not_eligible_pitches": int(len(populations["cpanel_requested"]) - len(populations["cpanel_eligible"])),
-        "key_partition_exact": bool(len(populations["cpanel_requested"]) + len(populations["complement_requested"]) == len(june)),
+        "exact_key_partitions": partitions,
+        "games_shared": {
+            "cpanel_eligible_known_keys & complement_of_eligible_cpanel_keys":
+                len(games["cpanel_eligible_known_keys"] & games["complement_of_eligible_cpanel_keys"]),
+            "cpanel_eligible_known_keys & outside_cpanel_pitcher_requested":
+                len(games["cpanel_eligible_known_keys"] & games["outside_cpanel_pitcher_requested"]),
+            "cpanel_pitcher_requested & outside_cpanel_pitcher_requested":
+                len(games["cpanel_pitcher_requested"] & games["outside_cpanel_pitcher_requested"]),
+        },
+        "outside_only_games": len(games["outside_cpanel_pitcher_requested"] - games["cpanel_pitcher_requested"]),
+        "known_ineligible_cpanel_pitches": n["cpanel_pitcher_known_ineligible"],
     }
-    expected = cfg["expected_counts"]
-    expected_check = {
-        "cpanel_eligible_pitches": [expected["cpanel_eligible_pitches"], counts["cpanel_eligible"]["pitches"]],
-        "cpanel_eligible_games": [expected["cpanel_eligible_games"], counts["cpanel_eligible"]["games"]],
-        "cpanel_requested_pitches": [expected["cpanel_requested_pitches"], counts["cpanel_requested"]["pitches"]],
-        "p4_coverage_blend": p4["coverage"]["blend"],
-    }
-    expected_check["all_match"] = all(a == b for a, b in list(expected_check.values())[:3])
+
+    p4 = json.loads(paths["p4_preparation"].read_text())
+    p11 = json.loads(paths["p11_preparation"].read_text())
+    blend_cov = p4.get("coverage", {}).get("blend", {})
+    first = cfg["first_attempt_counts"]
+    expected = check_expected([
+        ("cpanel_eligible_pitches (config)", cfg["expected_counts"]["cpanel_eligible_pitches"],
+         n["cpanel_eligible_known_keys"]),
+        ("cpanel_eligible_games (config)", cfg["expected_counts"]["cpanel_eligible_games"],
+         counts["cpanel_eligible_known_keys"]["games"]),
+        ("cpanel_requested_pitches (config)", cfg["expected_counts"]["cpanel_requested_pitches"],
+         n["cpanel_pitcher_requested"]),
+        ("p4 coverage.blend.requested_pitches", blend_cov.get("requested_pitches"), n["cpanel_pitcher_requested"]),
+        ("p4 coverage.blend.eligible_pitches", blend_cov.get("eligible_pitches"), n["cpanel_eligible_known_keys"]),
+        ("p4 samples.blend.games", p4.get("samples", {}).get("blend", {}).get("games"),
+         counts["cpanel_eligible_known_keys"]["games"]),
+        ("first attempt full_june_requested", first["full_june_requested"], n["full_june_requested"]),
+        ("first attempt outside_cpanel_pitcher_requested", first["outside_cpanel_pitcher_requested"],
+         n["outside_cpanel_pitcher_requested"]),
+        ("full_june_eligible_pitches (no frozen June eligible inventory)", None, "unknown"),
+    ])
+    require(p11["coverage"] == p4["coverage"]["mlb_dev"], "p11 coverage disagrees with p4 mlb_dev coverage")
 
     support = {}
     for group, lvls in levels.items():
@@ -313,50 +421,62 @@ def run(config_path: Path, output: Path, force: bool = False) -> dict:
         rows = {}
         for level in map(str, lvls):
             rows[level] = {name: tables[name][level] for name in tables}
-            rows[level]["full_june_eligible_status"] = bounded_status(tables["cpanel_eligible"][level],
-                                                                      tables["full_june_requested"][level])
-            rows[level]["complement_eligible_status"] = bounded_status(None, tables["complement_requested"][level])
+            rows[level]["full_june_eligible_status"] = bounded_status(
+                tables["cpanel_eligible_known_keys"][level], tables["full_june_tight_eligible_upper"][level])
+            rows[level]["non_cpanel_eligible_status"] = bounded_status(
+                None, tables["outside_cpanel_pitcher_requested"][level])
         support[group] = rows
 
-    profile = json.loads(verified_path(src["p11_profile"]).read_text())
-    ledger = [json.loads(line) for line in verified_path(src["p11_ledger"]).read_text().splitlines() if line.strip()]
-    cost = cost_projection(cfg, profile, ledger, {
-        "full_june_requested_upper_bound": counts["full_june_requested"]["pitches"],
-        "complement_requested_upper_bound": counts["complement_requested"]["pitches"],
-        "cpanel_eligible_known": counts["cpanel_eligible"]["pitches"],
+    profile = json.loads(paths["p11_profile"].read_text())
+    status = json.loads(paths["official_queue_status"].read_text())
+    ledger = [json.loads(line) for line in paths["p11_ledger"].read_text().splitlines() if line.strip()]
+    cost = cost_projection(cfg, profile, status, ledger, {
+        "full_june_tight_eligible_upper": n["full_june_tight_eligible_upper"],
+        "full_june_requested": n["full_june_requested"],
+        "outside_cpanel_pitcher_requested": n["outside_cpanel_pitcher_requested"],
+        "cpanel_eligible_known_keys": n["cpanel_eligible_known_keys"],
     })
+    work_seconds = time.perf_counter() - t_work
 
-    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     result = {
         "audit_id": cfg["audit_id"],
-        "config_sha256": sha256_file(config_path),
-        "code_commit_at_run": commit,
+        "attempt": cfg["attempt"],
+        "implementation": provenance,
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "run_utc": datetime.now(timezone.utc).isoformat(),
         "seed": "not applicable (deterministic metadata counts; no sampling)",
         "data_version": {k: v["sha256"] for k, v in src.items()},
+        "sources_verified_before_read": sorted(paths),
         "columns_read": {k: v.get("columns", v.get("fields")) for k, v in src.items()},
         "window": cfg["window"],
         "rows_read_after_date_pushdown": rows_read,
-        "game_type_counts_in_date_window": excluded_game_type,
+        "game_type_counts_in_date_window": game_type_counts,
         "frozen_volume": frozen,
+        "population_definitions": cfg["population_definitions"],
         "eligibility": {
-            "cpanel": "known: EXP-P4-001 blend_keys (4,821 eligible of 5,212 requested)",
-            "full_june_and_complement": "unknown",
-            "reason": "No frozen eligible whole-MLB June key inventory exists: EXP-P4-001/EXP-P11-001 mlb_dev covers 2025-07..2025-09 only; eligibility needs outcome/coordinate fields that this audit must not read. Full/complement eligible support is bounded: lower = Cpanel eligible subset (full) or 0 (complement), upper = requested counts.",
+            "cpanel": "known: EXP-P4-001 blend_keys (4,821 eligible of 5,212 requested; 391 known ineligible)",
+            "full_june_and_non_cpanel": "unknown",
+            "reason": "No frozen eligible whole-MLB June key inventory exists: EXP-P4-001/EXP-P11-001 mlb_dev covers 2025-07..2025-09 only; eligibility needs outcome/coordinate fields that this audit must not read.",
+            "bounds": "full-June eligible: lower = cpanel_eligible_known_keys, tight upper = full_june_tight_eligible_upper (requested minus 391 known-ineligible Cpanel rows). Non-Cpanel eligible (the eligible part of both complements, identical): lower 0, upper = outside_cpanel_pitcher_requested.",
             "mlb_dev_reference": {"samples": p4["samples"]["mlb_dev"], "coverage": p4["coverage"]["mlb_dev"]},
         },
         "counts": counts,
         "overlap_and_exclusions": overlap,
         "cpanel_alignment": alignment,
-        "expected_count_check": expected_check,
+        "expected_count_check": expected,
         "support_rule": rule,
         "support": support,
         "cost": cost,
+        "audit_only_cost": {
+            "label": "audit-only; not a candidate experiment cost",
+            "in_process_source_verification_seconds": verify_seconds,
+            "in_process_read_and_aggregate_seconds": work_seconds,
+            "in_process_total_seconds_before_write": time.perf_counter() - t_start,
+            "excluded": "interpreter start, imports and result write; external command wall is measured outside and recorded in the report",
+        },
         "prior_exposure_note": "EXP-P11-001 (full G0 evaluation) and EXP-P11-002 (bounded correction) are existing exposed evidence; this audit reads none of their scores or predictions. Independence of any future June data is not claimed here (exposure audit owned by Astra).",
     }
-    result["audit_wall_seconds"] = time.perf_counter() - wall_start
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, ensure_ascii=False, default=str) + "\n")
     return result
@@ -364,13 +484,11 @@ def run(config_path: Path, output: Path, force: bool = False) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=ROOT / "configs/ML-JUNE-SUPPORT-AUDIT-v1.json")
-    parser.add_argument("--output", type=Path, default=ROOT / "results/ML-JUNE-SUPPORT-AUDIT-v1.json")
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--config", type=Path, default=ROOT / CONFIG_REL)
+    parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    result = run(args.config, args.output, force=args.force)
-    print(json.dumps({"counts": result["counts"], "overlap": result["overlap_and_exclusions"],
-                      "audit_wall_seconds": result["audit_wall_seconds"]}, indent=2))
+    result = run(args.config, args.output)
+    print(json.dumps({"counts": result["counts"], "audit_only_cost": result["audit_only_cost"]}, indent=2))
 
 
 if __name__ == "__main__":
