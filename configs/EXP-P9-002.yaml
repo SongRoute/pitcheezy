@@ -1,0 +1,146 @@
+{
+  "protocol": "ml_bridge_five_seed_v1",
+  "scope": "Cpanel",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "reused_seeds": [
+    0,
+    1,
+    2
+  ],
+  "new_seeds": [
+    3,
+    4
+  ],
+  "draws": 400,
+  "kind": "flatten_mlp",
+  "width": 128,
+  "device": "auto",
+  "budget": {
+    "epochs": 30,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005
+  },
+  "mask": {
+    "start": 11,
+    "stop": 28
+  },
+  "context_width": 52,
+  "routing_width": 7,
+  "expected_samples": {
+    "train": 1252824,
+    "earlystop": 16000,
+    "temperature": 2603,
+    "blend": 4821,
+    "dev": 12334,
+    "dev_games": 328
+  },
+  "profile": {
+    "train_rows": 65536,
+    "epochs": 2,
+    "earlystop_rows": 2048,
+    "temperature_rows": 64
+  },
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 20260924,
+    "unit": "whole game",
+    "estimand": "pitch-weighted paired mean loss"
+  },
+  "decision": {
+    "delta_nll_max": -0.003,
+    "nll_ci95_upper_max": 0,
+    "one_sided_p_max": 0.05,
+    "brier_ci95_upper_max": 0.001,
+    "required_negative_seeds": 4,
+    "seeds": 5
+  },
+  "robustness": {
+    "groups": 12,
+    "metrics": 2,
+    "comparisons": 1,
+    "family_size": 24,
+    "family_alpha": 0.05,
+    "draws": 100000,
+    "seed": 20260924,
+    "minimum_games": 30,
+    "minimum_pitches": 500,
+    "nll_margin": 0.01,
+    "brier_margin": 0.002
+  },
+  "batter_volume": {
+    "quantile": 0.25,
+    "method": "linear",
+    "boundary": "low_inclusive",
+    "scope": "D100 TRAIN positive batter pitch counts"
+  },
+  "status_enum": [
+    "development_stability_pass",
+    "worse_or_guardrail_failure",
+    "inconclusive"
+  ],
+  "stage": "five-seed development stability, exposed Cpanel",
+  "held_out_confirmation": false,
+  "independent_confirmation": null,
+  "family_wall_budget_seconds": 7200,
+  "member_wall_limit_seconds": 7200,
+  "experiment_id": "EXP-P9-002",
+  "parent_g": {
+    "experiment_id": "EXP-P4-001",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+    "preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+    "registered_config_sha256": "44e11d162c00c7479e6252b8a78309910c86f046e1dde2f4f7bb3e7fa3aa042b",
+    "analysis_manifest_sha256": "d2a66f335a608c1622145992cfa06b681f5bb894e0a97a29f67aef2cd2254042",
+    "analysis_results_sha256": "06b53a9f0cf67bf55e16f5ae76b7ef3aeba6cf2153e060180b800bf6a886031c",
+    "baseline_predictions_sha256": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b",
+    "dev_metadata_sha256": "4508608f876659b98fd617ffdeb2b66156f7fc481b099d682cae4fe502a171b4"
+  },
+  "parent_f1": {
+    "experiment_id": "EXP-P9-001-v2",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P9-001-v2",
+    "preparation_sha256": "542e9bdbe999947c8f4b612e69d62f950d8e98c9fe04d0a44a5c84bff2c9002f",
+    "registered_config_sha256": "f061b1b94c38a77ce6aa72e7778de81449547abc9ce3b66404b3e0eca945ff93",
+    "analysis_manifest_sha256": "87b96cdf1d0c6d2f85c5e74c370b6443f62fcb0296fba08ff95d59256bad0bc5",
+    "analysis_results_sha256": "870fdabb747ccda74e1cbaedbef547c2f3973d3b05f576171a39a482b052a0da",
+    "batter_train_volume_sha256": "64c12a910e76184739e75c6cddf48c44e829103aa84b3d030021e4f661bcc2d7",
+    "config_file": "configs/EXP-P9-001-v2.yaml",
+    "config_file_sha256": "bdd0c9f4612ae045dddd14fb2181c2e9f02b80c72064b1dd5bc6709c5411ca14"
+  },
+  "parent_c1": {
+    "experiment_id": "EXP-P10-001",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001",
+    "config_file": "configs/EXP-P10-001.yaml",
+    "config_sha256": "06c3f0bd309c504a689985f9883ac688af10957322dc5d7c261a85ec3a69fb28",
+    "source_hashes": null,
+    "third_parent_manifest": "third_parent/manifest.json"
+  },
+  "registration": {
+    "status": "DRAFT: root fills parent_c1.source_hashes (print-pins) at code checkout C and freezes before profile-masked",
+    "contract": "docs/contracts/ML-BATTER-BRIDGE-v1.md",
+    "runner_contract": "docs/contracts/ML-G0-F1-FIVE-SEED-RUNNER-v1.md",
+    "draft": "docs/contracts/ML-G0-F1-CONFIRMATION-DRAFT-v1.md",
+    "bundle": "configs/ML-G0-F1-FIVE-SEED-v1.json",
+    "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P9-002",
+    "arms": {
+      "full": "G0-global seeds 0-2 preserved from EXP-P4-001; seeds 3/4 from the C1 third parent EXP-P10-001; exact temperatures, June weights refit for five seeds",
+      "masked": "seeds 0-2 preserved from EXP-P9-001-v2; new seeds 3/4 identical-shape G0-global with context[11:28]=0 in training, early stopping, calibration and inference"
+    },
+    "primary_comparison": [
+      "full",
+      "masked"
+    ],
+    "primary_hypotheses": 1,
+    "fit_count": "2 new masked fits; 6 reused fits (3 full G, 3 masked F1); 2 full fits from C1 referenced, not duplicated; 10 member predictions",
+    "multiplicity": "second-look stability diagnostic on the same hypothesis and games; no fresh alpha; original three-seed result reported alongside",
+    "hpo_trials": 0,
+    "max_heavy_jobs": 1,
+    "family_wall_budget_note": "F1-extension share of the frozen 7200+7200 ceiling; pre-prepare masked profile charged to this share; authoritative wall is the supervisor ledger",
+    "scope_limits": "Previously exposed Cpanel DEV; development stability, not confirmation; no policy, direct target, whole-MLB robustness, F4 transfer or independent confirmation claim"
+  }
+}

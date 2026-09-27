@@ -1,0 +1,203 @@
+{
+  "protocol": "ml_g0_f1_five_seed_bundle_v1",
+  "bundle_id": "ML-G0-F1-FIVE-SEED-v1",
+  "repo_commit": null,
+  "contracts": {
+    "runner": {
+      "path": "docs/contracts/ML-G0-F1-FIVE-SEED-RUNNER-v1.md",
+      "sha256": null
+    },
+    "draft": {
+      "path": "docs/contracts/ML-G0-F1-CONFIRMATION-DRAFT-v1.md",
+      "sha256": "8177115a5f2fc9aa2f3f916863e06082a433d237e21b5070b3913412360c2351"
+    },
+    "c1_runner": {
+      "path": "docs/contracts/ML-C1-G-RUNNER-v1.md",
+      "sha256": "d54988446d9f60895775db7aac874730ba8bb5203db061ec59772d9e155111b6"
+    },
+    "bridge": {
+      "path": "docs/contracts/ML-BATTER-BRIDGE-v1.md",
+      "sha256": "767301b5e4bd80cd400b66cdd974c2f6e96f7c7f0c5e690081cf60cd525b884e"
+    },
+    "bridge_runner": {
+      "path": "docs/contracts/ML-BRIDGE-RUNNER-v1.md",
+      "sha256": "92f8f367fe2a539b97c78f01c47bb39114989971592174f2897e02293f36ad86"
+    }
+  },
+  "configs": {
+    "c1": {
+      "path": "configs/EXP-P10-001.yaml",
+      "sha256": null
+    },
+    "f1ext": {
+      "path": "configs/EXP-P9-002.yaml",
+      "sha256": null
+    },
+    "g_parent": {
+      "path": "configs/EXP-P4-001.yaml",
+      "sha256": "12591099f282638afd0cb13e93591a964ca118d04e3471f790bd499a48d19e3c"
+    },
+    "f1_parent": {
+      "path": "configs/EXP-P9-001-v2.yaml",
+      "sha256": "bdd0c9f4612ae045dddd14fb2181c2e9f02b80c72064b1dd5bc6709c5411ca14"
+    }
+  },
+  "sources": {
+    "pitchmdp/archetypes.py": null,
+    "pitchmdp/data.py": null,
+    "pitchmdp/matrix_data.py": null,
+    "pitchmdp/model.py": null,
+    "pitchmdp/sequence_data.py": null,
+    "pitchmdp/sequence_delivery.py": null,
+    "pitchmdp/sequence_model.py": null,
+    "scripts/run_ml_matrix.py": null,
+    "scripts/run_sequence_pilot.py": null,
+    "scripts/run_temporal_blend.py": null,
+    "scripts/run_sequence_frequency_baselines.py": null,
+    "scripts/run_sequence_context_frequency.py": null,
+    "pitchmdp/matrix_features.py": null,
+    "pitchmdp/matrix_models.py": null,
+    "pitchmdp/matrix_benchmark.py": null,
+    "scripts/run_ml_benchmark.py": null,
+    "pitchmdp/matrix_panel.py": null,
+    "pitchmdp/matrix_sharing.py": null,
+    "scripts/run_ml_sharing.py": null,
+    "pitchmdp/matrix_confirmation.py": null,
+    "pitchmdp/matrix_confirmation_metrics.py": null,
+    "pitchmdp/matrix_group_metrics.py": null,
+    "pitchmdp/matrix_metrics.py": null,
+    "scripts/score_ml_matrix.py": null,
+    "scripts/run_ml_confirmation.py": null,
+    "scripts/score_ml_confirmation.py": null,
+    "scripts/run_sequence_calibration.py": null,
+    "pitchmdp/matrix_bridge.py": null,
+    "scripts/run_ml_bridge.py": null,
+    "scripts/score_ml_bridge.py": null,
+    "pitchmdp/matrix_policy_artifacts.py": null,
+    "pitchmdp/matrix_five_seed_extension.py": null,
+    "scripts/run_ml_five_seed_extension.py": null,
+    "scripts/score_ml_five_seed_extension.py": null,
+    "scripts/supervise_ml_five_seed_extension.py": null
+  },
+  "arms": {
+    "c1": {
+      "experiment_id": "EXP-P10-001",
+      "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001",
+      "share_seconds": 7200
+    },
+    "f1ext": {
+      "experiment_id": "EXP-P9-002",
+      "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P9-002",
+      "share_seconds": 7200
+    }
+  },
+  "combined_seconds": 14400,
+  "ledger_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-confirmation/five-seed-ledger",
+  "caps": {
+    "prepare": 7200,
+    "profile": 600,
+    "fit": 7200,
+    "predict": 7200,
+    "freeze": 7200,
+    "score": 7200
+  },
+  "termination_grace_seconds": 30,
+  "sequence": [
+    [
+      "c1-prepare",
+      "c1",
+      "prepare",
+      null
+    ],
+    [
+      "c1-profile",
+      "c1",
+      "profile",
+      null
+    ],
+    [
+      "profile-full",
+      "c1",
+      "profile",
+      null
+    ],
+    [
+      "profile-masked",
+      "f1ext",
+      "profile",
+      null
+    ],
+    [
+      "c1-fit",
+      "c1",
+      "fit",
+      3
+    ],
+    [
+      "c1-fit",
+      "c1",
+      "fit",
+      4
+    ],
+    [
+      "c1-predict",
+      "c1",
+      "predict",
+      3
+    ],
+    [
+      "c1-predict",
+      "c1",
+      "predict",
+      4
+    ],
+    [
+      "freeze-third-parent",
+      "f1ext",
+      "freeze",
+      null
+    ],
+    [
+      "f1-prepare",
+      "f1ext",
+      "prepare",
+      null
+    ],
+    [
+      "f1-fit",
+      "f1ext",
+      "fit",
+      3
+    ],
+    [
+      "f1-fit",
+      "f1ext",
+      "fit",
+      4
+    ],
+    [
+      "f1-predict",
+      "f1ext",
+      "predict",
+      3
+    ],
+    [
+      "f1-predict",
+      "f1ext",
+      "predict",
+      4
+    ],
+    [
+      "c1-score",
+      "c1",
+      "score",
+      null
+    ],
+    [
+      "f1-score",
+      "f1ext",
+      "score",
+      null
+    ]
+  ]
+}
