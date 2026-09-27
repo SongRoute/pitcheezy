@@ -1,0 +1,195 @@
+{
+  "protocol": "f4_observed_context_cache_audit_v2",
+  "experiment_id": "EXP-P4-002",
+  "contract": "docs/contracts/ML-F4-CONTEXT-CACHE-RUNNER-v1.md",
+  "historical_registration": {
+    "config": "configs/EXP-P4-002-v3-cache-audit.yaml",
+    "sha256": "55901a029bb0229ce4ebda97c6be9831b9fcb68671d7de250f18a8d61b6d75cf"
+  },
+  "repo_commit": null,
+  "parent": {
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-002-v3",
+    "config": "configs/EXP-P4-002-v3.yaml",
+    "config_sha256": "ea4c81c884d4d840a64eea8e5e959024a8f6b40be1ee23fb28fa3d848afc5696",
+    "preparation_sha256": "b3b5143f8f52dd813f5a6c12ab57ee6b5f1ec7076d1d1fe692b32ca55deeddc8",
+    "profiles": {
+      "F4-H0": {
+        "profile_sha256": "59f39c09034cd03359ae4cf72cf10eb084432f1891ff955bb615f1680af87c2f",
+        "manifest_sha256": "bb1929ab6aa034b69d04f84c93b200400862ecba6854549fe141352cf16a2850"
+      },
+      "F4-32": {
+        "profile_sha256": "07ca8030aa327649862001bb787e9af6415a4446f7e449a0230b5d7944d281a4",
+        "manifest_sha256": "9ac8ca5a17d410d8c1353c2a92cc8095a79178cac52221d80bf1356e665f0505"
+      },
+      "F4-128": {
+        "profile_sha256": "c9092bf22a6cd96d28c2a2f836605b24537ae9db3b127cf4a38821f95afd6268",
+        "manifest_sha256": "46c95c1cc8f958aaa43a51c834a5931b0e1f32ccca0e87b7457d31752eb3e7bf"
+      }
+    }
+  },
+  "sources": {
+    "pitchmdp/archetypes.py": null,
+    "pitchmdp/data.py": null,
+    "pitchmdp/matrix_data.py": null,
+    "pitchmdp/model.py": null,
+    "pitchmdp/sequence_data.py": null,
+    "pitchmdp/sequence_delivery.py": null,
+    "pitchmdp/sequence_model.py": null,
+    "scripts/run_ml_matrix.py": null,
+    "scripts/run_sequence_pilot.py": null,
+    "scripts/run_temporal_blend.py": null,
+    "scripts/run_sequence_frequency_baselines.py": null,
+    "scripts/run_sequence_context_frequency.py": null,
+    "pitchmdp/matrix_features.py": null,
+    "pitchmdp/matrix_models.py": null,
+    "pitchmdp/matrix_benchmark.py": null,
+    "scripts/run_ml_benchmark.py": null,
+    "pitchmdp/matrix_panel.py": null,
+    "pitchmdp/matrix_sharing.py": null,
+    "scripts/run_ml_sharing.py": null,
+    "pitchmdp/matrix_long_history.py": null,
+    "pitchmdp/matrix_lazy_model.py": null,
+    "pitchmdp/matrix_long_experiment.py": null,
+    "pitchmdp/matrix_long_profile.py": null,
+    "scripts/run_ml_long_history.py": null,
+    "pitchmdp/matrix_long_equivalence.py": null,
+    "scripts/audit_ml_long_equivalence.py": null,
+    "pitchmdp/matrix_observed_context_cache.py": null,
+    "pitchmdp/matrix_policy_artifacts.py": null,
+    "pitchmdp/matrix_context_cache_audit.py": null,
+    "scripts/audit_ml_context_cache.py": null
+  },
+  "device": "mps",
+  "arms": [
+    "F4-H0",
+    "F4-32",
+    "F4-128"
+  ],
+  "samples": {
+    "rule": "chronological_linspace_no_shrink",
+    "warmup_train": 8192,
+    "train": {
+      "n": 65536,
+      "rows_sha256": "e109cb5f9816583eaf5dd223b8d037007c39f631f72922b0c8a05b3acc933a4e"
+    },
+    "train_evaluation": {
+      "n": 2048,
+      "rows_sha256": "83f1959ec23cfa68bc1958f407d898b00dde49161683f23c3cf86e5350e47f4a"
+    },
+    "earlystop": {
+      "n": 2048,
+      "rows_sha256": "2e73bb09492e1b10f6fe0e1249d663df659d7109920abf7849bec72180068a27"
+    },
+    "temperature": {
+      "n": 16,
+      "draws": 400,
+      "rows_sha256": "d8ace249500f8ba289ca64ec90e38badf5489fea5cbafdcce863bdd3e3e36194"
+    },
+    "dev_or_june_cache": "forbidden"
+  },
+  "stage1": {
+    "orders": [
+      "original",
+      "repeated",
+      "reverse",
+      "uneven_chunks"
+    ],
+    "must_fail": [
+      "count_change",
+      "style_change",
+      "undeclared_row"
+    ],
+    "tolerance": "bitwise",
+    "chunk_size": 8192,
+    "timing_repetitions": 3,
+    "uneven_chunk_sizes": [
+      1,
+      7,
+      256,
+      1000
+    ],
+    "timing_minibatch_size": 256
+  },
+  "stage2": {
+    "seed": 0,
+    "width": 128,
+    "minibatches": 8,
+    "batch_size": 256,
+    "learning_rate": 0.0005,
+    "identical_initialization_and_minibatch_order": true,
+    "tolerances": {
+      "input_context": "bitwise",
+      "forward_logits": {
+        "atol": 2e-05,
+        "rtol": 0.0
+      },
+      "loss": {
+        "atol": 2e-06,
+        "rtol": 0.0
+      },
+      "gradients": {
+        "atol": 1e-06,
+        "rtol": 1e-05
+      },
+      "updated_weights": {
+        "atol": 1e-06,
+        "rtol": 1e-05
+      }
+    },
+    "rng_state": "numpy/torch-cpu/torch-mps state identical before and after cache construction and each explicit training step on both paths; checked by the runner"
+  },
+  "stage3": {
+    "budget": {
+      "epochs": 4,
+      "patience": 4,
+      "batch_size": 256,
+      "learning_rate": 0.0005
+    },
+    "warmup": {
+      "train": 8192,
+      "epochs": 1,
+      "evaluation": "train_evaluation"
+    },
+    "draws": 400,
+    "tolerances": {
+      "selected_state": {
+        "atol": 1e-06,
+        "rtol": 1e-05
+      },
+      "history_nll": {
+        "atol": 2e-06,
+        "rtol": 0.0
+      },
+      "delivery_temperature": {
+        "atol": 0.001,
+        "rtol": 0.0
+      },
+      "probability": {
+        "atol": 2e-05,
+        "rtol": 0.0
+      },
+      "probability_sum": {
+        "atol": 1e-06,
+        "rtol": 0.0
+      }
+    },
+    "profile_models_reused_in_full_experiment": false,
+    "scientific_budget_unchanged": "30/5/256/.0005"
+  },
+  "limits": {
+    "command_seconds": {
+      "prepare": 600,
+      "stage1": 1200,
+      "stage2": 1200,
+      "stage3": 1800,
+      "compare": 600,
+      "summary": 600
+    },
+    "single_member_wall_limit_seconds": 7200,
+    "family_wall_budget_seconds": 28800,
+    "no_seed_data_epoch_batch_draw_reduction": true,
+    "full_fit_started": false
+  },
+  "prior_cost_ledger": null,
+  "adoption": null
+}
