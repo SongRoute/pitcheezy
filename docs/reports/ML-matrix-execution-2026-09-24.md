@@ -6,7 +6,7 @@
 - 첫 등록: [EXP-P2-001](../../configs/EXP-P2-001.yaml), 구조 비교: [EXP-P3-001](../../configs/EXP-P3-001.yaml). [실행 계약](../contracts/ML-MATRIX-EXECUTION-v1.md)을 따른다.
 - 논문 원래 과제·보고값·핵심 아이디어는 [문헌 검토](ML-literature-review-2026-09-24.md), 정책·RL 추가 방법론과 대응 대조군은 [전체 설계](../ML_EXPERIMENT_DESIGN.md)에 연결했다. 아래는 우리 공통 과제에 적응한 실행 결과다.
 - 2026/최종셋 개발 금지. 원자료·가공 자료·캐시·동결 서비스 모델·사용자 서버/DB를 변경하지 않는다.
-- 모든 새 fit/추론은 단일 heavy lock으로 실행한다. 요청 에이전트 모델은 단순 감사 Luna medium, 구현·실행 Sol medium, 복잡한 모델/누수·통계 검토 Astra high. backend 확정 모델·토큰·금액은 미측정이다.
+- 모든 새 fit/추론은 단일 heavy lock으로 실행한다. 초기에는 단순 감사 Luna, 구현·실행 Sol, 복잡한 검토 Astra를 요청했다. D69부터 사용자 지정 **Astra → Fable 5.1 → Opus 5.5 → Sol** 난도 순서와 [Claude CLI 협업](../AI_COLLABORATION.md)을 적용한다. 실제 응답 모델과 각 호출 로그는 협업 기록에서 구분한다.
 
 ## 현재 확인한 사실
 
@@ -15,7 +15,8 @@
 3. 결과 모형 TRAIN은 D25 313,513구/1,168경기, D50 626,312구/2,336경기, D100 1,252,824구/4,671경기. 표본은 중첩되며 모든 seed에 동일하다.
 4. 첫 attempt의 MLPseed42 fit 뒤 float32 적분 합 오차로 CAL 예측 저장이 중단됐다. 검사 문턱을 유지하고 float64 계산으로 수정했다. 실패 기록과 약26.5초 fit 비용을 보존했으며 fresh attempt2에서 재시작했다.
 5. 실제 목표 위치 라벨과 미개봉 확인셋은 확보되지 않았다. 구종×목표 위치 최적 정책의 현실 효과는 아직 측정하지 않았다.
-6. 2026-09-26 밤~27 새벽 세션에서 T2 타자 축·채점(`EXP-P7-001`), T3(`EXP-P7-002`), T4(`EXP-P7-003`), P0~P3 정책(`EXP-P8-001`), P4/P5 offline RL(`EXP-P8-002`), F1 bridge(`EXP-P9-001-v2`)를 완료했고 F4 cache 감사는 부분 완료(fullfit 미시작)다. 조건부 행 활성화 검토(D64)도 마쳤다. 각 결과는 아래 해당 절에 있으며 모두 이미 노출된 2025 DEV의 개발 결과다. 정책 결과는 모델 내부 평가이고 독립 확인·관측 OPE·정책 채택은 없다.
+6. 2026-09-26 밤~27 새벽 세션에서 T2 타자 축·채점(`EXP-P7-001`), T3(`EXP-P7-002`), T4(`EXP-P7-003`), P0~P3 정책(`EXP-P8-001`), P4/P5 offline RL(`EXP-P8-002`), F1 bridge(`EXP-P9-001-v2`)를 완료했다. 조건부 행 활성화 검토(D64)도 마쳤다. 각 결과는 아래 해당 절에 있으며 모두 이미 노출된 2025 DEV의 개발 결과다. 정책 결과는 모델 내부 평가이고 독립 확인·관측 OPE·정책 채택은 없다.
+7. D71에서 [F4 cache 실측 감사](F4-cache-audit-2026-09-27.md) 17명령과 독립 검토를 완료했다. 수치 동등성 통과, fit3.07~3.57% 감소지만 비용 예측60,852.29초>28,800초로 미채택·fullfit0. [G0/F1 5seed 초안](../contracts/ML-G0-F1-CONFIRMATION-DRAFT-v1.md)은 Opus 검토 완료, 신규 fit는 미실행이다.
 
 ## 결과표
 
@@ -518,11 +519,17 @@ low 점추정이 가장 크지만 사전 등록된 가설이 아니고 표본이
 
 ### F4 context cache 감사(부분)
 
+**이 절은 D67의 과거 기록이다. D71에서 missing runner를 구현하고 실제 감사를 완료했으며, 현재 판정은 아래 ‘F4 cache 실측 감사 완료’와 별도 결과 보고서를 따른다.**
+
 [선택적 observed-context cache 규약](../contracts/ML-F4-CONTEXT-CACHE-OPTIONAL-v1.md)의 채택 전 실제 감사를 `configs/EXP-P4-002-v3-cache-audit.yaml`(SHA256 `55901a02…d75cf`, 커밋 09f0471)로 등록했다. 그러나 트리에 실제 F4 자료로 `FrozenObservedContext`를 만드는 감사 명령이 없어 규약 1단계(context 동등성·시간), 2단계(MPS forward/loss/gradient/optimizer 비교, 등록할 허용치도 선례 없음), 3단계(원래/cache 경로 자원 fit)를 **실행하지 않았다**. 실행한 것은 synthetic CPU 테스트뿐이다(34 passed, wall 2.10초, 2026-09-27 03:15 KST, heavy lock 불필요). 이는 MPS 속도나 실행 가능성의 증거가 아니다(`audit/f4-cache-audit/results.json`, `adoption=null`, `full_fit_started=false`).
 
 4단계 입력은 원래 경로 기준으로만 계산했다. member별 외삽은 H0/H32/H128 6,858.1/6,934.2/7,137.0초, 9member 62,787.8초에 이전 비용(f4 profile들·동등성 검증·감사 등) 244.08초를 더하면 **63,031.9초로 family 예산 28,800초를 넘는다**. 필요한 감소는 34,231.9초(9member 외삽의 54.5%)이고, 이전 비용을 뺀 허용 평균 member는 3,172.9초다. fit 외 비용(로드2회·temperature·blend/DEV 추론, member 평균 862.5초)을 그대로 두면 fit 30epoch 평균이 6,113.9초에서 2,310.4초로 **62.2% 줄어야** 하며, 이는 cache 구성·lookup·guard 비용을 0으로 둔 하한이다(마지막 두 값은 `results.json`의 member별 항목에서 기록 담당이 계산). cache 값 배열은 규약 공식(208 B/행)으로 TRAIN 260,587,392 B이고 exact input guard 바이트는 미측정이다. 규약 자체가 H0/H128 시간이 비슷하다는 것만으로 pandas context 변환이 주 원인이라고 할 수 없다고 명시하므로(고정 용량 네트워크가 H0에서도 128 slot을 모두 계산), 이 감소가 가능하다는 근거는 없다.
 
 상태: **미측정 자원 제안, fullfit 미시작.** cache 채택·폐기의 최종 결정은 사용자에게 넘긴다. 총괄 권고는 새 감사 스크립트를 구현하지 않고 현 상태로 닫으며, 예산 확대가 결정될 때만 재개하는 것이다. 규약대로 seed·자료·epoch·batch·draw를 줄이거나 예산을 암묵적으로 늘리지 않는다. 근거: `audit/f4-cache-audit/{results.json,queue-state.json,synthetic-test.log,SHA256SUMS.txt}`.
+
+### F4 cache 실측 감사 완료 — D71
+
+Fable 5.1 구현 → Astra 검토 → Sol 감독기 보완·실행 → Astra 결과 독립 검토로 `EXP-P4-002-v3-cache-audit-v2`를 실행했다. [등록](../../configs/EXP-P4-002-v3-cache-audit-v2.yaml) 뒤17명령 모두 exit0, 실제 외부 wall385.47초·이전 비용 포함629.55초다. H0/32/128 모든 수치 검사 통과, 독립48배열 쌍의 차이0. fit는41.442/41.953/43.552초에서39.961/40.635/42.214초로3.57/3.14/3.07% 감소했다. 전체 캐시 생성비 제외 외삽60,222.74초에 이전·실제 감사비를 합한60,852.29초가28,800초를 넘으므로 현재 예산에서 캐시 제안은 미채택이고 fullfit0을 유지한다. 봉인 summary61,431.69초는 자기600초 예약을 포함한 다른 회계 시점이다. 전체 캐시 생성비·품질 효과는 미측정이며 수치 동등성을 품질 개선으로 해석하지 않는다. [전체 결과·해시·비용 설명](F4-cache-audit-2026-09-27.md).
 
 ### 후속 실행 준비와 비용 확인
 
@@ -575,7 +582,7 @@ P0~P3 구종 정책 실행기는 구현·synthetic 감사를 마쳤고 `EXP-P8-0
 | MX-F1 | 근거 재사용 | 완료(EXP-P9-001-v2)·N 통과(`predictive_improvement`, 3seed screen·확인 미실행) | full−masked ΔNLL−.005506 [−.007560,−.003486], p9.999e-05, ΔBrier−.001466 [−.002264,−.000683], seed3/3 음수; R24 통과22/실패0/미측정2(`unconfirmed(structural: volume_zero)`, D61); 타자 표본 분할은 기술 통계; 첫 attempt EXP-P9-001 AppleDouble 실패 보존·67077f6 수정 |
 | MX-F2 | 후속 | 검토 완료·미활성화 | 제외 선수는 ID 미학습이라 fallback 전용; 새 선수 개선은 이력 허용에서 나옴([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F3 | 근거 재사용 | 과거 H0/H5 근거 감사 완료·새 backbone H0/H5 미활성화 | 과거 MLP 12비교 보정CI 모두0포함(등가성 증명 아님); ML2 N 통과0으로 후속 진입 backbone 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
-| MX-F4 | 우선 | v3 3profile 완료·cache 감사 부분 완료·fullfit 미시작·사용자 결정 대기 | member외삽6,858.1/6,934.2/7,137.0초로 개별7200초 안;9member합62,787.8초+이전244.08초=63,031.9초>28,800초, fullfit0; cache 감사는 실제 명령 부재로 1~3단계 미실행(synthetic34 통과만), fit 평균62.2% 감소가 필요(cache 비용0 하한) — 채택/폐기는 사용자 결정 |
+| MX-F4 | 우선 | v3 profile·D71 cache 실측 감사 완료·비용 gate 실패·fullfit 미시작 | 17명령 성공, H0/32/128 동등성 통과; fit3.07~3.57% 감소. 캐시 생성비 제외·과거/실제 감사비 포함60,852.29초>28,800초로 현재 캐시 제안 미채택. 전체 생성비·DEV 품질 비교는 미측정 |
 | MX-F5 | 후속 | 검토 완료·보류(F4 대기) | F4와 동시 추가 금지, 같은 긴 이력 경로의 F4 예산 초과 보류; 기준선 불펜/후반 잔여 오차 분석 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F6 | 후속 | 검토 완료·미활성화 | workload 블록 가용성 감사·불펜/후반 잔여 오차 근거 없음; 피로 인과 해석 안 함([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
 | MX-F7 | 후속 | 검토 완료·포수/구장 미활성화, 심판/날씨 외부 자료 필요 | 수집 열에 fielder_2는 있고 심판·날씨 없음; 당시 가용성 감사·새 환경 오류 분석 없음([활성화 검토](ML-followup-activation-review-2026-09-27.md)) |
