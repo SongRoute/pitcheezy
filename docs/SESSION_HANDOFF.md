@@ -1,6 +1,6 @@
 # A~D 작업 인수인계
 
-**G0 전체 MLB 후속 착수 — D74:** 사용자 승인으로 사전 등록→G0 동결5seed 전체 적격/비패널 평가→최대2개 보정 개선 비교를 진행 중이다. Astra 설계·과학적 검토, Fable 새 추론 adapter 구현, Opus 구현/교차 검토, Sol 감독기·단일 큐를 분담한다. 아직 신규 전체MLB G0 점수는 열람하지 않았으며 등록 전 실제 추론은 금지한다. SSD `coordination/20260927-whole-mlb/board.json`과 Claude COOP-006 상태를 먼저 확인해 중복 실행하지 않는다.
+**G0 전체 MLB 후속 착수 — D74:** 사용자 승인으로 사전 등록→G0 동결5seed 전체 적격/비패널 평가→최대2개 보정 개선 비교를 진행 중이다. Astra 설계·과학적 검토, Fable 새 추론 adapter 구현, Opus 구현/교차 검토, Sol 감독기·단일 큐를 분담한다. D75에서 코드 `5e82beb`와 두 config·12단계 실행계획을 등록했다. 통합863검사+17subtests, 최종관련8검사, Astra/Opus 재검토 통과. 실제 진행은 아래 작업대장과 execution 상태를 확인한다; 완료 전 새 품질 점수 열람 없음. SSD `coordination/20260927-whole-mlb/board.json`과 Claude COOP-006 상태를 먼저 확인해 중복 실행하지 않는다.
 
 **G0/F1 5seed 완료 — 2026-09-27, D73:** 사용자 후속1~4를 실제 완료했다. C1 `EXP-P10-001` G0baseline-only5seed·L6 완료, C2 적용 불가; F1 `EXP-P9-002` full−masked ΔNLL−.005216 [−.007177,−.003311], ΔBrier−.001465, 5/5seed음수로 개발 안정성 통과. R24는22통과/2구조적미측정(volume_zero)로 unconfirmed. 기존6fit·신규4fit·10member, 최종16명령 성공, 공식wall562.674초(초기실패3.020525초 포함). 환경 경로·시계 오류의 두 실패와 원본/정정 증거를 보존했다. 코드`d409031`, 등록`c8b28f0`; [상세 보고서](reports/G0-F1-five-seed-2026-09-27.md), [협업 기록](reports/AI-collaboration-2026-09-27.md). 큐 종료·ML프로세스 없음. 기존DEV second-look이지 독립 확인이나 서비스 정책 채택이 아니다. **다음 범위:** 별도 사전 등록을 통한 G0 전체MLB 단독평가·비패널 보완집합 평가. 2026자료 추가사용·전체매트릭스완료·자동모델교체 없음.
 
