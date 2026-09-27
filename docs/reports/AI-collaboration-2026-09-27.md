@@ -95,3 +95,13 @@ G0 전체·정확한비패널집합 모두빈도대비개발우위(N), R24전부
 Astra는 사후 독립 감사에서5개Cpanel확률과delivery tier,전체해시연결,June보정의독립적용,공식비용및판정을확인했다. 별도 구현으로 whole/nonpanel G0−frequency와 I1−G0의10,000회경기bootstrap을재계산해NLL/Brier차이·CI·p가모두정확히일치했다. R동시상한과절대손실CI의수치재실행은하지않았으며이부분은해시·지원조건·판정로직을확인했다. 감사비용은실험시간과분리한다.
 
 COOP-008 attempt-003에서 같은 Opus5.5 세션으로 최종 결과·보고서 교차 검토를 완료했다. 수치·해시·표본·판정·비용에 **차단 사항 없음**을 확인했고, bootstrap 해상도와 전체 큐 비용 범위 등 네 가지 표현 개선을 반영했다. [검토 원문](../reviews/COOP-008-Opus-5.5-result-review.md). 과학적 독립 확인과 문서·코드 검토를 구분한다.
+
+## Astra–Opus–Sol 체제와 G0 동결·자료 감사 — D77~D78
+
+사용자가 Fable을 제외하도록 지정해 현재 체제를 **Astra → Opus5.5 → Sol**로 갱신했다. 위 Fable 참여 기록은 과거 실행의 증거다. 이번 작업은 Sol의G0참조번들/검증기, Opus의June메타데이터지원·비용감사(COOP-009), Astra의노출감사와독립검토로나눴다. COOP-010의별도Opus호출은Sol동결과Astra노출감사를검토해작성자/검토자를분리했다. 두Claude호출의실제응답모델은 `claude-opus-5-5`다.
+
+COOP-009 첫감사에서Astra가투수차집합/적격키차집합혼동,내부/공식비용경계,누락된출처검증,불일치시중단누락을지적했다. 같은Opus세션 `6bddd406-5aca-4558-9fd9-9cf055511b65`의attempt-002에서수정하고원본바이트를보존했다. 전체June적격목록은감사한등록입력에서미확인으로남겼다. G0검증에는independent_confirmation변조거부와raw/runtime검증범위의명시적false플래그를추가했다.
+
+실행학습/추론은0회다. 수정June감사는공식1777.684초의과거추론을근거로최대115425행약658초의선형proxy를기록했고,감사자체외부wall.54초와구분했다. 첫감사외부wall미측정/부분계측.211초도보존했다. 통합관련32검사,실제G0참조96파일검증PASS. [통합 보고서](G0-freeze-and-data-audits-2026-09-27.md). 공용작업대장은SSD `coordination/20260927-g0-freeze-audits/board.json`이다.
+
+Astra 최종 재검토는 PASS·차단 사항0건, JSON SHA256 `1ded0c0b78a4407dd2ac14c6184168b91a49fa8ee2b37be9c31485d1734e058f`다. [Astra 원문](../reviews/G0-freeze-data-audits-Astra-2026-09-27.md), [Opus 원문](../reviews/COOP-010-Opus-freeze-exposure-2026-09-27.md).
