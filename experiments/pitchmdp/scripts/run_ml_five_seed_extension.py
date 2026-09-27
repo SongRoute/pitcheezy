@@ -70,7 +70,7 @@ CONTRACTS = {'runner': 'docs/contracts/ML-G0-F1-FIVE-SEED-RUNNER-v1.md',
              'c1_runner': 'docs/contracts/ML-C1-G-RUNNER-v1.md',
              'bridge': 'docs/contracts/ML-BATTER-BRIDGE-v1.md',
              'bridge_runner': 'docs/contracts/ML-BRIDGE-RUNNER-v1.md'}
-COMMANDS = ('print-pins', 'c1-profile-restricted', 'profile', 'freeze-third-parent', 'prepare', 'fit', 'predict',
+COMMANDS = ('print-pins', 'c1-profile-restricted', 'c1-fit', 'profile', 'freeze-third-parent', 'prepare', 'fit', 'predict',
             'c1-score', 'status')
 
 
@@ -125,7 +125,7 @@ def load_configs(bundle):
     ext = validate_extension_config(read_json(resolve_path(bundle['configs']['f1ext']['path'])), real=True)
     arms = bundle['arms']
     declared = ext['parent_c1']
-    if (declared['experiment_id'] != c1_config['experiment_id'] != arms['c1']['experiment_id']
+    if (declared['experiment_id'] != c1_config['experiment_id']
             or c1_config['experiment_id'] != arms['c1']['experiment_id']):
         raise ValueError('Declared C1 experiment identity differs between bundle, C1 config and F1 extension')
     if Path(declared['run']).resolve() != Path(arms['c1']['output']).resolve():
@@ -322,6 +322,30 @@ def verify_f1_parent(ext, local_path, local, baseline, g):
             'report': report, 'pairing': pairing, 'three_seed_result': frozen['primary']}
 
 
+def verify_reused_references(ext, local_path, local):
+    """Reconstruct both immutable three-seed arms before any new production fit.
+
+    These are the already published parent predictions; no new member or
+    five-seed quality result is opened by this audit.
+    """
+    g = verify_g_parent(ext, local_path, local)
+    baseline = archive(g['run'] / 'baseline_predictions.npz')
+    assert_aligned(baseline, baseline)
+    stored = archive(g['analysis'] / 'predictions.npz')
+    frozen = read_json(g['analysis'] / 'results.json')
+    members = [archive(Path(item['member_dir']) / 'predictions.npz') for item in g['reuse']]
+    full_report, full = bridge.verify_full_reconstruction(members, baseline, stored, frozen['reports'][PARENT_CELL])
+    old = verify_f1_parent(ext, local_path, local, baseline, g)
+    old_arrays = archive(old['analysis'] / 'predictions.npz')
+    old_result = read_json(old['analysis'] / 'results.json')
+    for kind in ('primary', 'calibrated', 'raw', 'seed_primary'):
+        if not np.array_equal(old_arrays['full_' + kind], full[kind]):
+            raise ValueError('Preserved F1 full-arm three-seed reconstruction differs: ' + kind)
+    if _normalized(old_result['reports']['full']) != _normalized(full_report):
+        raise ValueError('Preserved F1 full-arm three-seed summary differs from G0')
+    return g, old
+
+
 def verify_c1_parent(ext, c1_config, local_path, local):
     """Live verification of the C1 output as the F1 extension's third parent (seeds 3/4)."""
     declared = ext['parent_c1']
@@ -435,14 +459,11 @@ def profile(bundle, ext, c1_config, local_path, local, arm, expected):
         return
     _fresh(dest)
     started = time.perf_counter()
-    g = verify_g_parent(ext, local_path, local)
-    parents = {'g_preparation_sha256': ext['parent_g']['preparation_sha256']}
-    if arm == 'masked':
-        baseline = archive(g['run'] / 'baseline_predictions.npz')
-        assert_aligned(baseline, baseline)
-        old = verify_f1_parent(ext, local_path, local, baseline, g)
-        parents['f1_preparation_sha256'] = ext['parent_f1']['preparation_sha256']
-        del old, baseline
+    g, old = verify_reused_references(ext, local_path, local)
+    parents = {'g_preparation_sha256': ext['parent_g']['preparation_sha256'],
+               'f1_preparation_sha256': ext['parent_f1']['preparation_sha256'],
+               'both_three_seed_references_reconstructed': True}
+    del old
     verify_seconds = time.perf_counter() - started
     shared = g['prep']
     view = {'features': shared['features'], 'clusters': shared['clusters'],
@@ -544,6 +565,19 @@ def c1_profile_restricted(bundle, c1_config, local_path, local):
                     'c1_profile_state_sha256': hash_file(c1_out / 'profile' / 'state.json'),
                     'c1_preparation_sha256': hash_file(c1_out / 'preparation.json'),
                     'source_hashes': source_hashes(), 'recorded_utc': datetime.now(timezone.utc).isoformat()})
+
+
+def c1_fit(bundle, ext, c1_config, local_path, local, seed):
+    """Charge the pre-fit reuse audit with the full fit under the supervisor wall cap."""
+    if seed not in NEW_SEEDS:
+        raise ValueError('Only seeds 3/4 are new full members')
+    expected = identity(ext, local_path, bundle)
+    for arm in ('full', 'masked'):
+        load_profile(bundle, local, arm, expected)
+    verify_reused_references(ext, local_path, local)
+    output = arm_output(bundle, local, 'c1')
+    prep = c1.verify(output, c1.identity(c1_config, local_path))
+    c1.fit(c1_config, local, output, prep, seed)
 
 
 # ---------------------------------------------------------------- third parent
@@ -929,7 +963,7 @@ def build_parser():
         command = sub.add_parser(name)
         if name == 'profile':
             command.add_argument('--arm', choices=('full', 'masked'), required=True)
-        if name in ('fit', 'predict'):
+        if name in ('fit', 'predict', 'c1-fit'):
             command.add_argument('--seed', type=int, choices=NEW_SEEDS, required=True)
     return parser
 
@@ -952,6 +986,8 @@ def main():
     with heavy_lock(root):
         if args.command == 'c1-profile-restricted':
             c1_profile_restricted(bundle, c1_config, args.local_config, local)
+        elif args.command == 'c1-fit':
+            c1_fit(bundle, ext, c1_config, args.local_config, local, args.seed)
         elif args.command == 'profile':
             profile(bundle, ext, c1_config, args.local_config, local, args.arm, expected)
         elif args.command == 'c1-score':
