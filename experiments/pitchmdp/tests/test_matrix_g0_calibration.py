@@ -212,6 +212,36 @@ def test_i1_apply_rejects_parameters_from_another_config(weak_bias):
         cal.apply_class_bias(probabilities=pred, parameters=tampered, config=config)
 
 
+def test_i1_scipy_failure_at_feasible_zero_is_not_a_completed_fit(weak_bias, monkeypatch):
+    _, keys, y, _, pred, config = weak_bias
+    stalled = SimpleNamespace(x=np.zeros(C), success=False, status=9,
+                              message='Iteration limit reached', nit=500, nfev=501, njev=500)
+    monkeypatch.setattr(cal, 'minimize', lambda *a, **k: stalled)
+    fit = fit_i1(keys, y, pred, config)
+    report = fit['optimizer_report']
+    # Every non-scipy criterion holds, so only the optimizer failure blocks completion.
+    assert report['finite'] and report['feasible'] and report['not_worse_than_initial']
+    assert report['sum_residual'] == 0 and report['objective_final'] == report['objective_initial']
+    assert not report['scipy_success'] and report['status'] == 9
+    assert not fit['fit_success'] and fit['parameters']['bias'] == [0.] * C
+    json.dumps(fit, allow_nan=False)
+    with pytest.raises(ValueError, match='Failed fits'):
+        cal.apply_class_bias(probabilities=pred, parameters=fit, config=config)
+
+
+def test_i1_apply_rejects_bias_violating_zero_sum(weak_bias):
+    _, keys, y, _, pred, config = weak_bias
+    fit = fit_i1(keys, y, pred, config)
+    within = json.loads(json.dumps(fit))
+    within['parameters']['bias'] = [5e-10] + [0.] * (C - 1)
+    cal.apply_class_bias(probabilities=pred, parameters=within, config=config)
+    for bias in ([2e-9] + [0.] * (C - 1), [.1] + [0.] * (C - 1), [.5] * C):
+        broken = json.loads(json.dumps(fit))
+        broken['parameters']['bias'] = bias
+        with pytest.raises(ValueError, match='Invalid frozen'):
+            cal.apply_class_bias(probabilities=pred, parameters=broken, config=config)
+
+
 def test_i1_family_fits_each_of_five_seeds_and_ensemble_separately(weak_bias):
     _, keys, y, truth, _, config = weak_bias
     predictions = {name: softmax(np.log(truth) + np.roll([.2, -.2] + [0] * 8, i), axis=1)

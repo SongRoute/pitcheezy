@@ -244,16 +244,18 @@ def fit_class_bias_june(*, probabilities, prediction_keys, labels, keys, predict
     feasible = bool(finite and residual <= tol and violation <= tol)
     final, grad = class_bias_objective(b, log_p, y, penalty) if finite else (None, None)
     not_worse = bool(finite and math.isfinite(final) and final <= initial + spec['objective_tolerance'])
+    # An optimizer-reported failure (e.g. iteration limit) is never a completed fit, even at a feasible point.
+    scipy_success = bool(result.success)
     return {
         'algorithm': 'I1_class_bias', 'spec_version': SPEC_VERSION, 'config_sha256': config_sha256(config),
         'predictor': predictor, 'fit_population': population,
         'prediction_sha256': array_sha256(p, np.float64),
-        'fit_success': bool(finite and feasible and not_worse),
+        'fit_success': bool(scipy_success and finite and feasible and not_worse),
         'parameters': {'bias': [float(v) for v in b] if finite else None},
         'optimizer_report': {
             'method': spec['optimizer'], 'ftol': spec['ftol'], 'maxiter': spec['maxiter'],
             'scipy_version': scipy.__version__, 'numpy_version': np.__version__,
-            'scipy_success': bool(result.success), 'status': int(result.status),
+            'scipy_success': scipy_success, 'status': int(result.status),
             'message': str(result.message), 'nit': int(getattr(result, 'nit', -1)),
             'nfev': int(getattr(result, 'nfev', -1)), 'njev': int(getattr(result, 'njev', -1)),
             'objective_initial': float(initial), 'objective_final': float(final) if finite else None,
@@ -290,7 +292,8 @@ def apply_class_bias(*, probabilities, parameters, config) -> np.ndarray:
     spec = config['i1_class_bias']
     if b.shape != (config['n_classes'],) or not np.isfinite(b).all() or \
             np.any(b < spec['bias_lower'] - spec['feasibility_tolerance']) or \
-            np.any(b > spec['bias_upper'] + spec['feasibility_tolerance']):
+            np.any(b > spec['bias_upper'] + spec['feasibility_tolerance']) or \
+            abs(float(np.sum(b))) > spec['feasibility_tolerance']:
         raise ValueError('Invalid frozen class bias')
     p = np.asarray(probabilities)
     p = _simplex(p, p.shape[0] if p.ndim else -1, config)
