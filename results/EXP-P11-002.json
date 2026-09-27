@@ -1,0 +1,547 @@
+{
+  "experiment_id": "EXP-P11-002",
+  "status": "completed",
+  "scope": "Adaptive diagnostic-driven development comparison",
+  "source": {
+    "full_results": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-002/analysis/results.json",
+    "full_results_sha256": "c5b9f29374a9ee841f1fcff64f6442a0a943615d9e2b9e6ce4180f9fc1ced5f7",
+    "analysis_manifest": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-002/analysis/manifest.json",
+    "analysis_manifest_sha256": "8fe8f970d51dd009a518ce03bae671c1dbb98a35e1926daef4bbc8c0d4fc3e21",
+    "config_sha256": "75d51ecfacfcf41d8d0519d47f3bc1c60f5e8d4949cf3fac25f568668c3acaad",
+    "execution_code_commit": "5e82bebc239ced378911919de48c106034ee24b0",
+    "registration_commit": "3f10f61bea591871f69aad6a869d89d0bbe598ed",
+    "registered_plan_sha256": "f83e0e95b41d1caec3e8172bf517de38871901be8775cb70b137610b5a4642a0",
+    "queue_status": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-whole-mlb/execution/attempt-20260927T111115Z/status.json",
+    "queue_status_sha256": "c784953daebb8445de26ce87fe00b6550c2f9dc90acf6ed25061df1d05aaed70",
+    "queue_status_value": "completed",
+    "independent_audit": {
+      "status": "PASS",
+      "review": "/Users/song/Projects/pitcheezy/docs/reviews/G0-whole-MLB-result-audit-2026-09-27.md",
+      "machine_summary": "/Users/song/Projects/pitcheezy/results/G0-whole-MLB-audit-2026-09-27.json",
+      "ssd_audit": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-whole-mlb/audit/POSTRUN_ASTRA_AUDIT.json",
+      "ssd_audit_sha256": "60e88ecc2f2e71dd5ca1bcb8686aef53ea5a5e8c616700fa647f7ac8f15c91b0",
+      "independent_primary_bootstrap_max_ci_error": 0.0,
+      "independent_primary_p_values_exact": true,
+      "not_numerically_recomputed": [
+        "R simultaneous bounds",
+        "absolute-loss confidence intervals"
+      ],
+      "audit_wall_seconds_separate": 5.257020499790087
+    },
+    "independent_confirmation": null,
+    "held_out_confirmation": false,
+    "policy_effect": null,
+    "service_adoption": null,
+    "stage2_binding_sha256": "c2fe82bbbd4fc38b06bf60b516e9e9795b74d8620c163ed66154d276a310652e",
+    "activation_sha256": "2b84e8991af415c114d23e8afef1491b353d607d46ca9afabee0bc6629a6587a",
+    "fit_manifest_sha256": "96c0739e9bef9c578a497abee218b469c97c0b163ea1f2c0ec98dec1dc87653d",
+    "I1_fit_sha256": "dbeaa2de0f996ea46246f95e6c7c3b08c4353aba977bf79b79598415e7c5ba9f",
+    "opus_result_review": {
+      "status": "no_remaining_blockers",
+      "model": "claude-opus-5-5",
+      "review": "/Users/song/Projects/pitcheezy/docs/reviews/COOP-008-Opus-5.5-result-review.md",
+      "result_sha256": "4b8c0abfe1200c7f753a9662a19b9e0f701f93a1b88cdc93aa51904e3fcd43eb",
+      "presentation_fixes_applied": true
+    }
+  },
+  "activation": {
+    "slots": {
+      "I1": true,
+      "I2": false
+    },
+    "indicators": {
+      "spec_version": "g0-calibration-stage3-v1",
+      "config_sha256": "80d434d5c059f3e8e817a568aa2a52cff08022cf59d8e1d7712b84d8374a2bba",
+      "source": "precomputed_frozen_stage2_diagnostics",
+      "I1": {
+        "status": "met",
+        "classes": [
+          {
+            "class": 0,
+            "events": 110262,
+            "abs_prevalence_gap": 0.0037510407697524673,
+            "supported": true,
+            "qualifies": true
+          },
+          {
+            "class": 1,
+            "events": 88914,
+            "abs_prevalence_gap": 0.005767336996925276,
+            "supported": true,
+            "qualifies": true
+          },
+          {
+            "class": 2,
+            "events": 56165,
+            "abs_prevalence_gap": 0.0006705162589442648,
+            "supported": true,
+            "qualifies": false
+          },
+          {
+            "class": 3,
+            "events": 35565,
+            "abs_prevalence_gap": 0.0006597247938046197,
+            "supported": true,
+            "qualifies": false
+          },
+          {
+            "class": 4,
+            "events": 11777,
+            "abs_prevalence_gap": 0.00048294053304483164,
+            "supported": true,
+            "qualifies": false
+          },
+          {
+            "class": 5,
+            "events": 3623,
+            "abs_prevalence_gap": 0.0013100553764838953,
+            "supported": true,
+            "qualifies": true
+          },
+          {
+            "class": 6,
+            "events": 272,
+            "abs_prevalence_gap": 0.0003551302442150444,
+            "supported": true,
+            "qualifies": false
+          },
+          {
+            "class": 7,
+            "events": 2717,
+            "abs_prevalence_gap": 0.0002680811749487255,
+            "supported": true,
+            "qualifies": false
+          },
+          {
+            "class": 8,
+            "events": 884,
+            "abs_prevalence_gap": 0.0005428711827509245,
+            "supported": true,
+            "qualifies": false
+          },
+          {
+            "class": 9,
+            "events": 1542,
+            "abs_prevalence_gap": 0.00038745876847834197,
+            "supported": true,
+            "qualifies": false
+          }
+        ]
+      },
+      "I2": {
+        "status": "unmeasured",
+        "nll_range": null,
+        "groups": [
+          {
+            "group": "zero",
+            "june_games": 0,
+            "june_pitches": 0,
+            "dev_games": 646,
+            "dev_pitches": 28746,
+            "dev_g0_minus_frequency_nll": -0.010873125064768008,
+            "eligible": false
+          },
+          {
+            "group": "low",
+            "june_games": 12,
+            "june_pitches": 635,
+            "dev_games": 588,
+            "dev_pitches": 19462,
+            "dev_g0_minus_frequency_nll": -0.012488822697711566,
+            "eligible": false
+          },
+          {
+            "group": "middle",
+            "june_games": 19,
+            "june_pitches": 1014,
+            "dev_games": 1151,
+            "dev_pitches": 108351,
+            "dev_g0_minus_frequency_nll": -0.012389122455350066,
+            "eligible": false
+          },
+          {
+            "group": "high",
+            "june_games": 86,
+            "june_pitches": 3172,
+            "dev_games": 1128,
+            "dev_pitches": 155162,
+            "dev_g0_minus_frequency_nll": -0.01523642935849523,
+            "eligible": true
+          }
+        ]
+      }
+    },
+    "application_slots": {
+      "I1": {
+        "status": "applied",
+        "candidate_manifest_sha256": "788c130e5846e35ab5832c55ab4114a385000dd3ba48279bb28a0b058ee23d8f"
+      },
+      "I2": {
+        "status": "not_activated",
+        "candidate_manifest_sha256": null
+      }
+    }
+  },
+  "fit": {
+    "I1": {
+      "status": "six_successful_June_class_bias_fits",
+      "fit_count": 6,
+      "predictors": [
+        "ensemble",
+        "seed0",
+        "seed1",
+        "seed2",
+        "seed3",
+        "seed4"
+      ],
+      "parameters": {
+        "ensemble": {
+          "bias": [
+            0.08026740853800382,
+            0.1675650972370599,
+            0.045888001026954776,
+            0.024825607361778888,
+            0.052429244428828556,
+            -0.16484274162192072,
+            -0.010726347950961451,
+            -0.11548019373640812,
+            -0.12456899878088662,
+            0.044642923497550994
+          ],
+          "fit_success": true,
+          "scipy_success": true
+        },
+        "seed0": {
+          "bias": [
+            0.08289765890975334,
+            0.13194048467932576,
+            0.02387086041569713,
+            0.046882260837003045,
+            -0.015387405782189164,
+            -0.1579921258684368,
+            0.028806756819538062,
+            -0.16262439619485394,
+            -0.013503337373886959,
+            0.0351092435580495
+          ],
+          "fit_success": true,
+          "scipy_success": true
+        },
+        "seed1": {
+          "bias": [
+            0.10380891054968303,
+            0.1691080223223665,
+            0.09038395092481342,
+            -0.006498433396782601,
+            0.07105011573681057,
+            -0.1337293556487287,
+            0.0013177736203919808,
+            -0.09326593815074767,
+            -0.20903376655674624,
+            0.006858720598939766
+          ],
+          "fit_success": true,
+          "scipy_success": true
+        },
+        "seed2": {
+          "bias": [
+            0.08225063003826384,
+            0.1609597327287053,
+            0.04068313154926617,
+            -0.0008245657580888131,
+            0.06790063873258291,
+            -0.1821744385371927,
+            -0.02200806848864115,
+            -0.10193940437254398,
+            -0.10100167135067052,
+            0.05615401545831891
+          ],
+          "fit_success": true,
+          "scipy_success": true
+        },
+        "seed3": {
+          "bias": [
+            0.06290008186412527,
+            0.1814738859586011,
+            0.058490106741967654,
+            0.051872012441072805,
+            0.07133123846803367,
+            -0.21580709274108384,
+            -0.037125904105611895,
+            -0.11809330208053069,
+            -0.160437949395057,
+            0.10539692284848298
+          ],
+          "fit_success": true,
+          "scipy_success": true
+        },
+        "seed4": {
+          "bias": [
+            0.06963860473845837,
+            0.17227346124611445,
+            0.0067690478567045366,
+            0.027185042830926508,
+            0.05266570450545888,
+            -0.12566092591610456,
+            -0.016424119405186968,
+            -0.11567379599413369,
+            -0.1203404063997201,
+            0.04956738653748262
+          ],
+          "fit_success": true,
+          "scipy_success": true
+        }
+      }
+    },
+    "I2": {
+      "status": "not_activated",
+      "fit_count": 0,
+      "applied_fallback": false,
+      "reason": "only high positive TRAIN-volume June group met 30 games and 500 pitches"
+    }
+  },
+  "candidates": {
+    "I1": {
+      "status": "evaluated",
+      "whole_metrics": {
+        "log_loss": 1.4912844244845287,
+        "brier_multiclass": 0.7268985206176249
+      },
+      "paired": {
+        "n": 311721,
+        "games": 1161,
+        "draws": 10000,
+        "seed": 20260924,
+        "estimand": "pitch-weighted mean paired loss difference",
+        "uncertainty": "conditional on fixed predictions; whole-game bootstrap",
+        "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+        "status": "measured",
+        "nll": {
+          "delta": 0.000876227759676369,
+          "ci95": [
+            0.0006331190236556168,
+            0.0011141410257686668
+          ],
+          "p_less": 1.0
+        },
+        "brier": {
+          "delta": 0.00030615322456291506,
+          "ci95": [
+            0.00020626893395723619,
+            0.0004034011215694581
+          ],
+          "p_less": 1.0
+        }
+      },
+      "seed_nll_deltas": [
+        0.0007433473177500258,
+        0.0006196536765250696,
+        0.0008739545150362371,
+        0.00036707185521119256,
+        0.0009937298628376879
+      ],
+      "N": {
+        "status": "worse_or_guardrail_failure",
+        "negative_seeds": 0,
+        "required_negative_seeds": 4,
+        "adjusted_p": 1.0
+      },
+      "slices": {
+        "cpanel": {
+          "n": 12334,
+          "games": 328,
+          "candidate": {
+            "log_loss": 1.4846335935650183,
+            "brier_multiclass": 0.7244093234008004
+          },
+          "baseline": {
+            "log_loss": 1.4833332600862763,
+            "brier_multiclass": 0.7238415200547448
+          },
+          "paired": {
+            "n": 12334,
+            "games": 328,
+            "draws": 10000,
+            "seed": 20260924,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "status": "measured",
+            "nll": {
+              "delta": 0.0013003334787417243,
+              "ci95": [
+                0.00024484685071169077,
+                0.0023650436178283994
+              ],
+              "p_less": 0.9921007899210079
+            },
+            "brier": {
+              "delta": 0.0005678033460557131,
+              "ci95": [
+                0.00013251857364420487,
+                0.0010048643170972667
+              ],
+              "p_less": 0.9944005599440056
+            }
+          }
+        },
+        "non_cpanel": {
+          "n": 299387,
+          "games": 1161,
+          "candidate": {
+            "log_loss": 1.4915584221816942,
+            "brier_multiclass": 0.7270010693537835
+          },
+          "baseline": {
+            "log_loss": 1.490699666523141,
+            "brier_multiclass": 0.7267056954636556
+          },
+          "paired": {
+            "n": 299387,
+            "games": 1161,
+            "draws": 10000,
+            "seed": 20260924,
+            "estimand": "pitch-weighted mean paired loss difference",
+            "uncertainty": "conditional on fixed predictions; whole-game bootstrap",
+            "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+            "status": "measured",
+            "nll": {
+              "delta": 0.0008587556585532339,
+              "ci95": [
+                0.0006128603121017743,
+                0.0011011281190044043
+              ],
+              "p_less": 1.0
+            },
+            "brier": {
+              "delta": 0.0002953738901279124,
+              "ci95": [
+                0.0001942944201134685,
+                0.00039462510991440387
+              ],
+              "p_less": 1.0
+            }
+          }
+        }
+      },
+      "R": {
+        "status": "passed",
+        "family_size": 52,
+        "active_passed_bounds": 26,
+        "positive_two_sided_nll_lower_groups": [
+          "role_starter",
+          "hand_L",
+          "hand_R",
+          "volume_low",
+          "volume_middle",
+          "volume_high",
+          "two_strikes",
+          "less_two_strikes",
+          "runners_on",
+          "bases_empty",
+          "non_cpanel"
+        ],
+        "positive_two_sided_brier_lower_groups": [
+          "role_starter",
+          "hand_R",
+          "volume_low",
+          "volume_middle",
+          "volume_high",
+          "two_strikes",
+          "less_two_strikes",
+          "runners_on",
+          "bases_empty",
+          "non_cpanel"
+        ]
+      }
+    },
+    "I2": {
+      "status": "not_activated",
+      "N": null,
+      "adjusted_p": 1.0,
+      "R": {
+        "status": "not_activated",
+        "family_size": 52,
+        "groups": {
+          "role_starter": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "role_relief": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "hand_L": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "hand_R": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "volume_low": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "volume_middle": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "volume_high": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "volume_zero": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "two_strikes": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "less_two_strikes": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "runners_on": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "bases_empty": {
+            "passed": null,
+            "status": "not_activated"
+          },
+          "non_cpanel": {
+            "passed": null,
+            "status": "not_activated"
+          }
+        }
+      }
+    }
+  },
+  "family": {
+    "primary_slots": [
+      "I1",
+      "I2"
+    ],
+    "holm_adjusted_p": [
+      1.0,
+      1.0
+    ],
+    "R_family_size": 52,
+    "inactive_R_bounds": 26,
+    "automatic_promotion": false
+  },
+  "cost": {
+    "authoritative_worker_seconds": 34.42338987579569,
+    "budget_seconds": 3600,
+    "outer_queue_full_seconds_separate": 1857.4866603328846,
+    "outer_queue_crosscheck_scope": "Shared full 12-stage queue; not this phase alone; not additive",
+    "phase_outer_supervisor_wall_seconds_separate": 34.974874791223556
+  },
+  "limits": [
+    "Fixed two slots do not restore fresh alpha after DEV-driven activation.",
+    "Cpanel June correction fitting may fail to transfer to other pitchers.",
+    "Inactive and insufficient-support bounds retain the original 52-slot denominator."
+  ]
+}
