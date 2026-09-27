@@ -84,6 +84,10 @@ def _seconds(value, upper=None):
             and value > 0 and (upper is None or value <= upper))
 
 
+def _finite_nonnegative_or_signed(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
 # ---------------------------------------------------------------- decision rule
 
 def seed_deltas(labels_losses, full_seed_primary, masked_seed_primary, pitch_losses):
@@ -98,9 +102,19 @@ def five_seed_decision(comparison, deltas, rule=DECISION):
     """Frozen five-seed rule: development stability, never promotion or confirmation."""
     if len(deltas) != rule['seeds'] or not np.isfinite(np.asarray(deltas, float)).all():
         raise ValueError('Five finite paired seed differences required')
-    if comparison.get('status') != 'measured' or comparison['nll']['p_less'] is None:
-        return {'status': 'unmeasured', 'reason': 'paired inference unavailable', 'stage': STAGE_TEXT}
+    if comparison.get('status') != 'measured':
+        return {'status': 'inconclusive', 'reason': 'paired inference unavailable', 'stage': STAGE_TEXT,
+                'held_out_confirmation': False, 'independent_confirmation': None}
     nll, brier = comparison['nll'], comparison['brier']
+    for name, metric in (('nll', nll), ('brier', brier)):
+        ci = metric.get('ci95')
+        if (not _finite_nonnegative_or_signed(metric.get('delta')) or not isinstance(ci, (list, tuple))
+                or len(ci) != 2 or not all(_finite_nonnegative_or_signed(x) for x in ci)
+                or ci[0] > ci[1]):
+            raise ValueError(f'Finite ordered {name} delta and confidence interval required')
+    p = nll.get('p_less')
+    if not _finite_nonnegative_or_signed(p) or not 0 <= p <= 1:
+        raise ValueError('Finite one-sided NLL p in [0,1] required')
     criteria = {'practical_improvement': nll['delta'] <= rule['delta_nll_max'],
                 'paired_ci_below_zero': nll['ci95'][1] < rule['nll_ci95_upper_max'],
                 'one_sided_p': nll['p_less'] <= rule['one_sided_p_max'],
@@ -196,6 +210,9 @@ def validate_bundle(bundle, *, real=True):
         raise ValueError('Bundle must pin both new configs and both parent configs')
     if not isinstance(bundle['sources'], dict) or not bundle['sources']:
         raise ValueError('Bundle source pins required')
+    if not {'scripts/score_ml_confirmation.py', 'scripts/score_ml_bridge.py',
+            'scripts/score_ml_five_seed_extension.py'} <= set(bundle['sources']):
+        raise ValueError('Bundle must pin the frozen C1/F1 scorers and additive five-seed scorer')
     for name, digest in bundle['sources'].items():
         pin(digest, real=real, name='sources.' + name)
     arms = bundle['arms']
@@ -255,6 +272,10 @@ def sequence_step(command, seed=None):
 def ledger_totals(jobs, arm):
     """Ended jobs charge their wall; unresolved starts reserve their full cap."""
     mine = [j for j in jobs if j['arm'] == arm]
+    for job in mine:
+        amount = job['elapsed_seconds'] if job['ended'] else job['cap_seconds']
+        if not _finite_nonnegative_or_signed(amount) or amount < 0:
+            raise ValueError('Ledger wall and reservation must be finite nonnegative seconds')
     ended = math.fsum(j['elapsed_seconds'] for j in mine if j['ended'])
     reserved = math.fsum(j['cap_seconds'] for j in mine if not j['ended'])
     return {'ended_seconds': ended, 'reserved_seconds': reserved, 'charged_seconds': ended + reserved,
@@ -266,6 +287,16 @@ def member_fit_seconds(jobs, arm, seed):
     """Every fit attempt of a member counts toward its 7200-second fit+predict limit."""
     return math.fsum(j['elapsed_seconds'] if j['ended'] else j['cap_seconds']
                      for j in jobs if j['arm'] == arm and j['stage'] == 'fit' and j['seed'] == seed)
+
+
+def member_wall_seconds(jobs, arm, seed):
+    """Charge every fit and predict attempt, including unresolved cap reservations."""
+    member = [j for j in jobs if j['arm'] == arm and j['seed'] == seed and j['stage'] in ('fit', 'predict')]
+    for job in member:
+        amount = job['elapsed_seconds'] if job['ended'] else job['cap_seconds']
+        if not _finite_nonnegative_or_signed(amount) or amount < 0:
+            raise ValueError('Member wall must be finite nonnegative seconds')
+    return math.fsum(j['elapsed_seconds'] if j['ended'] else j['cap_seconds'] for j in member)
 
 
 def effective_cap(stage, arm_remaining, *, member_remaining=None, grace):
@@ -288,8 +319,12 @@ def launch_gate(totals, share, stage, *, projected_command, remaining_obligation
     """
     if totals['unresolved_jobs']:
         raise RuntimeError('Unresolved job reserves its cap; resolve it before launching: ' + ', '.join(totals['unresolved_jobs']))
-    if not isinstance(projected_command, (int, float)) or not math.isfinite(projected_command) or projected_command < 0:
+    if not _finite_nonnegative_or_signed(projected_command) or projected_command < 0:
         raise RuntimeError('Finite nonnegative command projection required')
+    if not _finite_nonnegative_or_signed(remaining_obligation) or remaining_obligation < 0:
+        raise RuntimeError('Finite nonnegative remaining obligation required')
+    if not _finite_nonnegative_or_signed(totals['charged_seconds']) or totals['charged_seconds'] < 0:
+        raise RuntimeError('Finite nonnegative charged wall required')
     if remaining_obligation < projected_command:
         raise RuntimeError('Remaining obligation must include this command')
     remaining = share - totals['charged_seconds']
@@ -308,6 +343,9 @@ def arm_obligation(projection, completed_stages, arm):
     predict_command_seconds, score_seconds. ``completed_stages`` is a set of
     (stage, seed) already completed (ended successfully) for the arm.
     """
+    for name in ('prepare_seconds', 'fit_command_seconds', 'predict_command_seconds', 'score_seconds'):
+        if not _finite_nonnegative_or_signed(projection.get(name)) or projection[name] < 0:
+            raise ValueError('Finite nonnegative projection required: ' + name)
     owed = []
     if arm == 'f1ext' and ('prepare', None) not in completed_stages:
         owed.append(projection['prepare_seconds'])

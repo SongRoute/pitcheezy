@@ -64,7 +64,7 @@ def test_five_seed_decision_requires_every_criterion_and_four_of_five_seeds():
     assert worse['status'] == 'worse_or_guardrail_failure' and worse['reverse_point_estimate'] is True and worse['reverse_note']
     guard = five_seed_decision(comparison(-.005, [-.007, -.003], .001, [.002, .004]), [-.004] * 5)
     assert guard['status'] == 'worse_or_guardrail_failure' and guard['reverse_point_estimate'] is False
-    assert five_seed_decision({'status': 'insufficient_games', 'nll': {'p_less': None}}, [-.1] * 5)['status'] == 'unmeasured'
+    assert five_seed_decision({'status': 'insufficient_games', 'nll': {'p_less': None}}, [-.1] * 5)['status'] == 'inconclusive'
     for bad in ([-.1] * 3, [-.1] * 4, [-.1] * 6, [-.1, -.1, -.1, -.1, float('nan')]):
         with pytest.raises(ValueError):
             five_seed_decision(good, bad)
@@ -201,8 +201,8 @@ def test_projection_covers_fit_predict_scoring_and_gates_member_and_arm():
 
 # ---------------------------------------------------------------- pairing and identity helpers
 
-def fit_record(seed, **over):
-    record = {'report': {'seed': seed, 'device': 'mps', 'network': {'kind': 'flatten_mlp', 'n_context': 52, 'n_token': 38,
+def fit_record(base_seed, **over):
+    record = {'report': {'seed': base_seed, 'device': 'mps', 'network': {'kind': 'flatten_mlp', 'n_context': 52, 'n_token': 38,
                                                                     'length': 6, 'width': 128, 'n_classes': 10}, 'parameter_count': 141834},
               'train_rows_sha256': 'a' * 64, 'earlystop_rows_sha256': 'b' * 64}
     for key, value in over.items():
@@ -266,6 +266,7 @@ def test_third_parent_manifest_binds_declaration_and_complete_hash_family():
 def toy_arrays(n, seed):
     rng = np.random.default_rng(seed)
     tokens = rng.normal(size=(n, 6, 21)).astype(np.float32)
+    tokens[:, -1, -11:] = 0
     valid = np.ones((n, 6), dtype=bool)
     context = rng.normal(size=(n, 59)).astype(np.float32)
     return tokens, valid, context
@@ -292,13 +293,20 @@ def test_toy_masked_fit_matches_full_signature_and_report_binding():
 
 def five_seed_family(seed=0, **kw):
     full, masked, baseline = synthetic_family(seed=seed, **kw)
-    more_full, more_masked, _ = synthetic_family(seed=seed + 100, **kw)
-    # Extra members must share the exact baseline metadata; only probabilities differ.
-    for member in (*more_full, *more_masked):
-        for name in ('blend', 'dev'):
-            for suffix in ('keys', 'y', 'game_pk', 'pitcher'):
-                member[f'{name}_{suffix}'] = baseline[f'{name}_{suffix}']
-    return full + more_full[:2], masked + more_masked[:2], baseline
+    rng = np.random.default_rng(seed + 100)
+    def extra(sharpness):
+        members = []
+        for _ in range(2):
+            member = {k: v.copy() for k, v in full[0].items()}
+            for name in ('blend', 'dev'):
+                y = baseline[name + '_y']
+                for suffix in ('', '_raw'):
+                    p = rng.dirichlet(np.ones(10), len(y))
+                    p[np.arange(len(y)), y] += sharpness
+                    member[name + suffix] = p / p.sum(1, keepdims=True)
+            members.append(member)
+        return members
+    return full + extra(.6), masked + extra(.2), baseline
 
 
 def test_scorer_core_binds_full_arm_to_c1_reconstructs_three_seed_references_and_keeps_24_R_slots():
@@ -317,7 +325,8 @@ def test_scorer_core_binds_full_arm_to_c1_reconstructs_three_seed_references_and
     assert decision['status'] == 'development_stability_pass' and len(decision['seed_deltas']) == 5 and decision['negative_seeds'] == 5
     assert core['robustness']['family_size'] == 24 and core['robustness']['groups']['volume_zero']['structural_missing'] is True
     assert core['robustness']['status'] == 'unconfirmed' and out_full['seed_primary'].shape[0] == 5
-    assert core['reports']['full']['selection'] != g_report['selection'] or True  # five-seed June weight is refit, never reused
+    five_report, _ = summarize_cell(full, baseline)
+    assert core['reports']['full']['selection'] == five_report['selection']
     tampered = dict(c1_arrays); tampered['G0-global_primary'] = c1_arrays['G0-global_primary'] * .999 + .0001
     with pytest.raises(ValueError, match='Full-arm five-seed array'):
         scorer.analyze(full, masked, baseline, metadata, volume, c1_arrays=tampered, g_stored=g_stored, g_report=g_report,
@@ -371,31 +380,52 @@ def bundle_fixture(tmp_path, *, grace=.4):
 def complete(fx, *steps):
     paths = supervisor.completion_paths(fx.config, read_json(fx.local))
     for step in steps:
-        path = paths[step]; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('{}')
+        path = paths[step]; path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text('{}')
+        command, seed = step
+        _, arm, stage, _ = next(item for item in SEQUENCE if item[0] == command and item[3] == seed)
+        job_id = f'synthetic-{command}-seed{seed}'
+        (fx.ledger / 'jobs').mkdir(parents=True, exist_ok=True)
+        (fx.ledger / 'ends').mkdir(parents=True, exist_ok=True)
+        dump(fx.ledger / 'jobs' / (job_id + '.json'),
+             {'protocol': supervisor.LEDGER_PROTOCOL, 'job_id': job_id, 'command': command,
+              'arm': arm, 'stage': stage, 'seed': seed, 'cap_seconds': STAGE_CAPS[stage], 'argv': [],
+              'bundle_sha256': canonical_hash(fx.config), 'refused': False})
+        dump(fx.ledger / 'ends' / (job_id + '.json'),
+             {'job_id': job_id, 'outcome': 'completed', 'exit_code': 0, 'elapsed_seconds': .001,
+              'cap_seconds': STAGE_CAPS[stage], 'within_cap': True,
+              'artifact_path': str(path), 'artifact_sha256': hash_file(path)})
 
 
-def fake_popen(code, seen):
+def fake_popen(code, seen, artifact=None):
     def popen(argv):
         seen.append(argv)
-        return SimpleNamespace(pid=os.getpid(), wait=lambda timeout=None: code)
+        def wait(timeout=None):
+            if code == 0 and artifact is not None:
+                artifact.parent.mkdir(parents=True, exist_ok=True)
+                artifact.write_text('{}')
+            return code
+        return SimpleNamespace(pid=2**30, wait=wait)
     return popen
 
 
 def test_supervisor_verifies_pins_records_durable_start_and_end_and_builds_parseable_worker_argv(tmp_path):
     fx = bundle_fixture(tmp_path)
     seen = []
-    outcome, code = supervisor.supervise(fx.bundle, fx.local, 'c1-prepare', None, popen=fake_popen(0, seen))
+    outcome, code = supervisor.supervise(fx.bundle, fx.local, 'c1-prepare', None, popen=fake_popen(0, seen, fx.c1 / 'preparation.json'))
     assert (outcome, code) == ('completed', 0)
     assert seen[0][1].endswith('run_ml_confirmation.py') and seen[0][-1] == 'prepare' and str(fx.c1) in seen[0]
     state = supervisor.ledger_state(fx.ledger, {'c1': 7200, 'f1ext': 7200})
     assert len(state['jobs']) == 1 and state['jobs'][0]['ended'] and state['jobs'][0]['cap_seconds'] == 7200
     assert state['arms']['c1']['charged_seconds'] > 0 and state['arms']['f1ext']['charged_seconds'] == 0.
     start = read_json(next((fx.ledger / 'jobs').glob('*.json')))
-    assert start['arm'] == 'c1' and start['stage'] == 'prepare' and start['plan']['remaining_obligation_seconds'] == 0.
+    end = read_json(fx.ledger / 'ends' / (start['job_id'] + '.json'))
+    assert start['arm'] == 'c1' and start['stage'] == 'prepare' and end['plan']['remaining_obligation_seconds'] == 0.
     with pytest.raises(RuntimeError, match='never overwrite'):
         supervisor.write_end(fx.ledger, start['job_id'], 'completed', 0, 1., 7200, '')
     tampered = read_json(fx.bundle); tampered['sources']['scripts/score_ml_confirmation.py'] = '0' * 64; dump(fx.bundle, tampered)
-    with pytest.raises(ValueError, match='Pinned source changed'):
+    with pytest.raises(ValueError, match='bundle identity'):
         supervisor.supervise(fx.bundle, fx.local, 'c1-prepare', None, popen=fake_popen(0, seen))
     for command, seed in (('c1-fit', 3), ('f1-predict', 4), ('profile-masked', None), ('c1-score', None), ('f1-score', None), ('freeze-third-parent', None)):
         argv = supervisor.worker_argv(fx.bundle, fx.local, fx.config, read_json(fx.local), command, seed)
@@ -414,28 +444,30 @@ def test_supervisor_enforces_frozen_sequence_and_records_refusals(tmp_path):
     assert (outcome, code) == ('refused', supervisor.EXIT_REFUSED)
     jobs = supervisor.ledger_jobs(fx.ledger)
     assert jobs[0]['outcome'] == 'refused' and jobs[0]['exit_code'] == 2 and jobs[0]['ended']
-    reason = read_json(fx.ledger / 'jobs' / (jobs[0]['job_id'] + '.json'))['reason']
+    reason = read_json(fx.ledger / 'ends' / (jobs[0]['job_id'] + '.json'))['note']
     assert 'c1-prepare:None' in reason and 'profile-masked:None' in reason
     complete(fx, ('c1-prepare', None))
     assert supervisor.supervise(fx.bundle, fx.local, 'c1-prepare', None, popen=fake_popen(0, []))[0] == 'refused'
-    assert 'already complete' in read_json(fx.ledger / 'jobs' / (supervisor.ledger_jobs(fx.ledger)[1]['job_id'] + '.json'))['reason']
+    assert 'already complete' in read_json(fx.ledger / 'ends' / (supervisor.ledger_jobs(fx.ledger)[1]['job_id'] + '.json'))['note']
     # All ten predictions are required before C1 score: masked seed 4 missing is a refusal, never a partial score.
     complete(fx, *[(c, s) for c, _, _, s in SEQUENCE if c not in ('c1-score', 'f1-score') and (c, s) != ('f1-predict', 4)])
     outcome, _ = supervisor.supervise(fx.bundle, fx.local, 'c1-score', None, popen=fake_popen(0, []))
-    assert outcome == 'refused' and 'f1-predict:4' in read_json(fx.ledger / 'jobs' / (supervisor.ledger_jobs(fx.ledger)[2]['job_id'] + '.json'))['reason']
+    assert outcome == 'refused' and 'f1-predict:4' in read_json(fx.ledger / 'ends' / (supervisor.ledger_jobs(fx.ledger)[2]['job_id'] + '.json'))['note']
 
 
 def test_unresolved_start_reserves_cap_and_blocks_every_launch(tmp_path):
     fx = bundle_fixture(tmp_path)
     (fx.ledger / 'jobs').mkdir(parents=True)
     dump(fx.ledger / 'jobs' / 'x.json', {'protocol': supervisor.LEDGER_PROTOCOL, 'job_id': 'x', 'command': 'c1-prepare', 'arm': 'c1',
-                                        'stage': 'prepare', 'seed': None, 'cap_seconds': 7200., 'argv': []})
+                                        'stage': 'prepare', 'seed': None, 'cap_seconds': 7200., 'argv': [],
+                                        'bundle_sha256': canonical_hash(fx.config)})
     state = supervisor.ledger_state(fx.ledger, {'c1': 7200, 'f1ext': 7200})
     assert state['arms']['c1']['reserved_seconds'] == 7200. and state['arms']['c1']['remaining_seconds'] == 0.
     outcome, _ = supervisor.supervise(fx.bundle, fx.local, 'c1-prepare', None, popen=fake_popen(0, []))
     assert outcome == 'refused'
     jobs = supervisor.ledger_jobs(fx.ledger)
-    reason = read_json(fx.ledger / 'jobs' / (jobs[-1]['job_id'] + '.json'))['reason']
+    refused = next(j for j in jobs if j['outcome'] == 'refused')
+    reason = read_json(fx.ledger / 'jobs' / (refused['job_id'] + '.json'))['reason']
     assert 'fail closed' in reason or 'Unresolved' in reason
     with pytest.raises(ValueError, match='Foreign ledger'):
         dump(fx.ledger / 'jobs' / 'y.json', {'protocol': 'other'}); supervisor.ledger_jobs(fx.ledger)
@@ -466,8 +498,10 @@ def test_supervisor_reserves_effective_cap_from_remaining_share_and_kills_proces
     (fx.ledger / 'jobs').mkdir(parents=True); (fx.ledger / 'ends').mkdir()
     # Earlier spending leaves 2.0 s in the C1 share; the prepare cap must shrink to that remainder.
     dump(fx.ledger / 'jobs' / 'spent.json', {'protocol': supervisor.LEDGER_PROTOCOL, 'job_id': 'spent', 'command': 'c1-prepare', 'arm': 'c1',
-                                            'stage': 'prepare', 'seed': None, 'cap_seconds': 7200., 'argv': []})
-    dump(fx.ledger / 'ends' / 'spent.json', {'job_id': 'spent', 'outcome': 'failed', 'exit_code': 1, 'elapsed_seconds': 7198., 'cap_seconds': 7200.})
+                                            'stage': 'prepare', 'seed': None, 'cap_seconds': 7200., 'argv': [],
+                                            'bundle_sha256': canonical_hash(fx.config)})
+    dump(fx.ledger / 'ends' / 'spent.json', {'job_id': 'spent', 'outcome': 'failed', 'exit_code': 1,
+                                            'elapsed_seconds': 7198., 'cap_seconds': 7200., 'within_cap': True})
     pid_file = tmp_path / 'grandchild.pid'
     program = (f"import subprocess, time, pathlib; child = subprocess.Popen(['sleep', '60']); "
                f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid)); time.sleep(60)")
@@ -545,23 +579,35 @@ def test_fit_launch_requires_all_profiles_and_gates_the_remaining_obligation(tmp
     outcome, _ = supervisor.supervise(fx.bundle, fx.local, 'c1-fit', 3, popen=fake_popen(0, []))
     assert outcome == 'refused'  # matched profiles missing (sequence)
     profiles_fixture(fx)
+    complete(fx, ('c1-prepare', None), ('c1-profile', None), ('profile-full', None), ('profile-masked', None))
     seen = []
-    outcome, code = supervisor.supervise(fx.bundle, fx.local, 'c1-fit', 3, popen=fake_popen(0, seen))
-    assert (outcome, code) == ('completed', 0) and seen[0][-3:] == ['fit', '--seed', '3']
-    start = [read_json(p) for p in sorted((fx.ledger / 'jobs').glob('*.json'))][-1]
-    plan = start['plan']
-    assert plan['stage'] == 'fit' and plan['cap_seconds'] == 7200. and plan['projected_command_seconds'] > 0
+    fit_artifact = fx.c1 / 'fits' / 'seed3' / 'global' / 'state.json'
+    outcome, code = supervisor.supervise(fx.bundle, fx.local, 'c1-fit', 3, popen=fake_popen(0, seen, fit_artifact))
+    assert (outcome, code) == ('completed', 0) and seen[0][-3:] == ['c1-fit', '--seed', '3']
+    successful = next(j for j in supervisor.ledger_jobs(fx.ledger) if j['command'] == 'c1-fit' and j['outcome'] == 'completed')
+    plan = read_json(fx.ledger / 'ends' / (successful['job_id'] + '.json'))['plan']
+    assert plan['stage'] == 'fit' and 7199. < plan['cap_seconds'] <= 7200. and plan['projected_command_seconds'] > 0
     assert plan['remaining_obligation_seconds'] == pytest.approx(arm_obligation(read_json(runner.profile_dir(fx.config, local, 'full') / 'profile.json')['projection'], set(), 'c1'))
-    # Without the restricted-loader evidence, the C1 mandatory profile is not accepted.
-    (fx.ledger / 'profiles' / 'c1_mandatory_loader.json').unlink()
+    # A completed fit cannot run again under the same output identity.
     outcome, _ = supervisor.supervise(fx.bundle, fx.local, 'c1-fit', 3, popen=fake_popen(0, []))
-    assert outcome == 'refused' and 'restricted-loader' in read_json(fx.ledger / 'jobs' / (supervisor.ledger_jobs(fx.ledger)[-1]['job_id'] + '.json'))['reason']
+    refused = [j for j in supervisor.ledger_jobs(fx.ledger) if j['command'] == 'c1-fit' and j['outcome'] == 'refused'][-1]
+    assert outcome == 'refused' and 'already complete' in read_json(fx.ledger / 'ends' / (refused['job_id'] + '.json'))['note']
+    # Without restricted-loader evidence, the first fit is refused.
+    fx_gate = bundle_fixture(tmp_path / 'gate')
+    profiles_fixture(fx_gate)
+    complete(fx_gate, ('c1-prepare', None), ('c1-profile', None), ('profile-full', None), ('profile-masked', None))
+    (fx_gate.ledger / 'profiles' / 'c1_mandatory_loader.json').unlink()
+    outcome, _ = supervisor.supervise(fx_gate.bundle, fx_gate.local, 'c1-fit', 3, popen=fake_popen(0, []))
+    refused = [j for j in supervisor.ledger_jobs(fx_gate.ledger) if j['outcome'] == 'refused'][-1]
+    assert outcome == 'refused' and 'restricted-loader' in read_json(fx_gate.ledger / 'ends' / (refused['job_id'] + '.json'))['note']
     # A projection whose four-fit obligation exceeds the share is refused before any fit.
     fx2 = bundle_fixture(tmp_path / 'two')
     complete(fx2, ('c1-prepare', None), ('c1-profile', None))
     profiles_fixture(fx2, fit_seconds=15.)
+    complete(fx2, ('c1-prepare', None), ('c1-profile', None), ('profile-full', None), ('profile-masked', None))
     outcome, _ = supervisor.supervise(fx2.bundle, fx2.local, 'c1-fit', 3, popen=fake_popen(0, []))
-    reason = read_json(fx2.ledger / 'jobs' / (supervisor.ledger_jobs(fx2.ledger)[-1]['job_id'] + '.json'))['reason']
+    refused = [j for j in supervisor.ledger_jobs(fx2.ledger) if j['outcome'] == 'refused'][-1]
+    reason = read_json(fx2.ledger / 'ends' / (refused['job_id'] + '.json'))['note']
     assert outcome == 'refused' and ('exceeds' in reason or 'obligation' in reason)
 
 
@@ -569,32 +615,29 @@ def test_predict_cap_is_limited_by_member_fit_wall_and_profile_only_needs_its_fu
     fx = bundle_fixture(tmp_path)
     complete(fx, ('c1-prepare', None), ('c1-profile', None), ('c1-fit', 3), ('c1-fit', 4))
     profiles_fixture(fx)
-    (fx.ledger / 'jobs').mkdir(parents=True, exist_ok=True); (fx.ledger / 'ends').mkdir(exist_ok=True)
-    dump(fx.ledger / 'jobs' / 'fit3.json', {'protocol': supervisor.LEDGER_PROTOCOL, 'job_id': 'fit3', 'command': 'c1-fit', 'arm': 'c1',
-                                           'stage': 'fit', 'seed': 3, 'cap_seconds': 7200., 'argv': []})
-    dump(fx.ledger / 'ends' / 'fit3.json', {'job_id': 'fit3', 'outcome': 'completed', 'exit_code': 0, 'elapsed_seconds': 6800., 'cap_seconds': 7200.})
+    complete(fx, ('c1-prepare', None), ('c1-profile', None), ('profile-full', None), ('profile-masked', None))
+    fit3_end = fx.ledger / 'ends' / 'synthetic-c1-fit-seed3.json'
+    dump(fit3_end, {**read_json(fit3_end), 'elapsed_seconds': 6000.})
     seen = []
-    outcome, _ = supervisor.supervise(fx.bundle, fx.local, 'c1-predict', 3, popen=fake_popen(0, seen))
+    prediction = fx.c1 / 'members' / 'G0-global' / 'seed3' / 'prediction_state.json'
+    outcome, _ = supervisor.supervise(fx.bundle, fx.local, 'c1-predict', 3, popen=fake_popen(0, seen, prediction))
     assert outcome == 'completed' and seen[0][-5:] == ['predict', '--cell', 'G0-global', '--seed', '3']
-    plan = [read_json(p) for p in sorted((fx.ledger / 'jobs').glob('*.json')) if 'plan' in read_json(p)][-1]['plan']
-    assert plan['cap_seconds'] == pytest.approx(400.)  # 7200 member limit minus the 6800 s fit wall
-    dump(fx.ledger / 'ends' / 'fit3.json', {'job_id': 'fit3', 'outcome': 'completed', 'exit_code': 0, 'elapsed_seconds': 7199., 'cap_seconds': 7200.})
-    complete(fx, ('c1-predict', 3))
-    dump(fx.ledger / 'jobs' / 'fit4.json', {'protocol': supervisor.LEDGER_PROTOCOL, 'job_id': 'fit4', 'command': 'c1-fit', 'arm': 'c1',
-                                           'stage': 'fit', 'seed': 4, 'cap_seconds': 7200., 'argv': []})
-    dump(fx.ledger / 'ends' / 'fit4.json', {'job_id': 'fit4', 'outcome': 'completed', 'exit_code': 0, 'elapsed_seconds': 7190., 'cap_seconds': 7200.})
+    predicted = next(j for j in supervisor.ledger_jobs(fx.ledger) if j['command'] == 'c1-predict' and j['outcome'] == 'completed')
+    plan = read_json(fx.ledger / 'ends' / (predicted['job_id'] + '.json'))['plan']
+    assert 1199. < plan['cap_seconds'] < 1200.  # 7200 member limit minus fit wall and charged predecessors
+    fit4_end = fx.ledger / 'ends' / 'synthetic-c1-fit-seed4.json'
+    dump(fit4_end, {**read_json(fit4_end), 'elapsed_seconds': 7190.})
     outcome, _ = supervisor.supervise(fx.bundle, fx.local, 'c1-predict', 4, popen=fake_popen(0, []))
     assert outcome == 'refused'
     fx3 = bundle_fixture(tmp_path / 'three')
     complete(fx3, ('c1-prepare', None), ('c1-profile', None))
-    (fx3.ledger / 'jobs').mkdir(parents=True); (fx3.ledger / 'ends').mkdir()
-    dump(fx3.ledger / 'jobs' / 'a.json', {'protocol': supervisor.LEDGER_PROTOCOL, 'job_id': 'a', 'command': 'c1-prepare', 'arm': 'c1',
-                                         'stage': 'prepare', 'seed': None, 'cap_seconds': 7200., 'argv': []})
-    dump(fx3.ledger / 'ends' / 'a.json', {'job_id': 'a', 'outcome': 'completed', 'exit_code': 0, 'elapsed_seconds': 6700., 'cap_seconds': 7200.})
+    prep_end = fx3.ledger / 'ends' / 'synthetic-c1-prepare-seedNone.json'
+    dump(prep_end, {**read_json(prep_end), 'elapsed_seconds': 6700.})
     assert supervisor.supervise(fx3.bundle, fx3.local, 'profile-full', None, popen=fake_popen(0, []))[0] == 'refused'
-    dump(fx3.ledger / 'ends' / 'a.json', {'job_id': 'a', 'outcome': 'completed', 'exit_code': 0, 'elapsed_seconds': 6600., 'cap_seconds': 7200.})
+    dump(prep_end, {**read_json(prep_end), 'elapsed_seconds': 6500.})
     seen = []
-    assert supervisor.supervise(fx3.bundle, fx3.local, 'profile-full', None, popen=fake_popen(0, seen))[0] == 'completed'
+    artifact = fx3.ledger / 'profiles' / 'full' / 'state.json'
+    assert supervisor.supervise(fx3.bundle, fx3.local, 'profile-full', None, popen=fake_popen(0, seen, artifact))[0] == 'completed'
     assert seen[0][-3:] == ['profile', '--arm', 'full']
     assert [read_json(p) for p in sorted((fx3.ledger / 'jobs').glob('*.json'))][-1]['cap_seconds'] == 600.
 

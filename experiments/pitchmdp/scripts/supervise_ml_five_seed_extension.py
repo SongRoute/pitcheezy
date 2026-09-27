@@ -10,7 +10,10 @@ durable start record, then kills the whole process group at the cap
 the full caller wall. Unresolved starts keep reserving their cap. Workers,
 not the supervisor, hold the shared ``.heavy.lock``; runner-internal timings
 are never added to this ledger. C1 score is refused until all ten member
-predictions verify. Refusals are recorded in the ledger as ``refused`` jobs.
+    predictions verify. Refusals are recorded in the ledger as ``refused`` jobs.
+    The outer queue may pass its monotonic timestamp immediately before Popen
+    so interpreter startup is charged. The tiny terminal-write/CLI-exit tail is
+    observed by the queue's separate whole-process wall cross-check.
 """
 from __future__ import annotations
 
@@ -33,14 +36,15 @@ sys.path.insert(0, str(PROJECT / 'scripts'))
 
 from pitchmdp.data import hash_file
 from pitchmdp.matrix_policy_artifacts import is_appledouble
-from pitchmdp.matrix_five_seed_extension import (COMMANDS, NEW_SEEDS, PARENT_CELL, SEQUENCE, SHARE_SECONDS, STAGE_CAPS,
-    MEMBER_LIMIT_SECONDS, arm_obligation, effective_cap, launch_gate, ledger_totals, member_fit_seconds, sequence_step)
+from pitchmdp.matrix_five_seed_extension import (ARMS, COMMANDS, NEW_SEEDS, PARENT_CELL, SEQUENCE, SHARE_SECONDS, STAGE_CAPS,
+    MEMBER_LIMIT_SECONDS, arm_obligation, effective_cap, launch_gate, ledger_totals, member_wall_seconds, sequence_step)
 import run_ml_five_seed_extension as runner
 from run_ml_benchmark import read_json, dump
 
 LEDGER_PROTOCOL = 'ml_g0_f1_five_seed_wall_ledger_v1'
 EXIT_REFUSED, EXIT_TIMEOUT = 2, 124
 PRE_PROFILE = ('c1-prepare', 'c1-profile', 'profile-full', 'profile-masked')
+INHERITED_START_ENV = 'PITCHEEZY_FIVE_SEED_STARTED_MONOTONIC'
 
 
 # ---------------------------------------------------------------- ledger
@@ -56,25 +60,69 @@ def ledger_lock(ledger):
             fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
-def ledger_jobs(ledger):
+def ledger_jobs(ledger, expected_bundle_sha256=None):
     """Every durable start; an end record resolves it. Only verified AppleDouble sidecars are skipped."""
     jobs = []
     folder = ledger / 'jobs'
-    for record in (sorted(p for p in folder.glob('*.json') if not is_appledouble(p)) if folder.exists() else []):
+    end_folder = ledger / 'ends'
+    starts = sorted(p for p in folder.glob('*.json') if not is_appledouble(p)) if folder.exists() else []
+    known = {p.name for p in starts}
+    observed_bundle_sha256 = expected_bundle_sha256
+    if end_folder.exists():
+        orphan_ends = [p.name for p in end_folder.glob('*.json') if not is_appledouble(p) and p.name not in known]
+        if orphan_ends:
+            raise ValueError('Orphan ledger end records: ' + ', '.join(sorted(orphan_ends)))
+    for record in starts:
         start = read_json(record)
-        if start.get('protocol') != LEDGER_PROTOCOL:
+        if start.get('protocol') != LEDGER_PROTOCOL or start.get('job_id') != record.stem:
             raise ValueError('Foreign ledger record: ' + record.name)
+        bundle_sha256 = start.get('bundle_sha256')
+        if (not isinstance(bundle_sha256, str) or len(bundle_sha256) != 64
+                or any(c not in '0123456789abcdef' for c in bundle_sha256)):
+            raise ValueError('Ledger start lacks a valid bundle identity: ' + record.name)
+        if observed_bundle_sha256 is None:
+            observed_bundle_sha256 = bundle_sha256
+        if bundle_sha256 != observed_bundle_sha256:
+            raise ValueError('Ledger bundle identity differs from current registration: ' + record.name)
+        try:
+            _, arm, stage, _ = sequence_step(start['command'], start['seed'])
+        except (KeyError, ValueError) as error:
+            raise ValueError('Invalid ledger command/seed: ' + record.name) from error
+        cap = start.get('cap_seconds')
+        if (start.get('arm') != arm or start.get('stage') != stage or arm not in ARMS
+                or not isinstance(cap, (int, float)) or isinstance(cap, bool) or not math.isfinite(cap)
+                or cap < 0 or cap > STAGE_CAPS[stage] or (cap == 0) != bool(start.get('refused'))):
+            raise ValueError('Invalid ledger start identity or cap: ' + record.name)
         end_path = ledger / 'ends' / record.name
         end = read_json(end_path) if end_path.exists() else None
+        if end is not None:
+            elapsed = end.get('elapsed_seconds')
+            outcome = end.get('outcome')
+            if (end.get('job_id') != start['job_id'] or end.get('cap_seconds') != cap
+                    or outcome not in ('completed', 'failed', 'timeout', 'refused')
+                    or (bool(start.get('refused')) and outcome != 'refused')
+                    or not isinstance(elapsed, (int, float)) or isinstance(elapsed, bool)
+                    or not math.isfinite(elapsed) or elapsed < 0
+                    or type(end.get('within_cap')) is not bool or end['within_cap'] != (elapsed <= cap)
+                    or not isinstance(end.get('exit_code'), int) or isinstance(end['exit_code'], bool)
+                    or (outcome == 'completed' and end['exit_code'] != 0)):
+                raise ValueError('Invalid ledger end record: ' + record.name)
+            if outcome == 'completed' and (not isinstance(end.get('artifact_path'), str)
+                                           or not isinstance(end.get('artifact_sha256'), str)
+                                           or len(end['artifact_sha256']) != 64
+                                           or any(c not in '0123456789abcdef' for c in end['artifact_sha256'])):
+                raise ValueError('Successful ledger end lacks an artifact pin: ' + record.name)
         jobs.append({**{k: start[k] for k in ('job_id', 'command', 'arm', 'stage', 'seed', 'cap_seconds', 'argv')},
                      'ended': end is not None, 'outcome': end['outcome'] if end else 'unresolved_reserved_at_cap',
                      'exit_code': end['exit_code'] if end else None,
-                     'elapsed_seconds': end['elapsed_seconds'] if end else None})
+                     'elapsed_seconds': end['elapsed_seconds'] if end else None,
+                     'artifact_path': end.get('artifact_path') if end else None,
+                     'artifact_sha256': end.get('artifact_sha256') if end else None})
     return jobs
 
 
-def ledger_state(ledger, shares):
-    jobs = ledger_jobs(ledger)
+def ledger_state(ledger, shares, expected_bundle_sha256=None):
+    jobs = ledger_jobs(ledger, expected_bundle_sha256)
     arms = {arm: ledger_totals(jobs, arm) for arm in shares}
     for arm, totals in arms.items():
         totals['share_seconds'] = shares[arm]
@@ -89,14 +137,15 @@ def write_start(ledger, record):
     dump(ledger / 'jobs' / (record['job_id'] + '.json'), record)
 
 
-def write_end(ledger, job_id, outcome, exit_code, elapsed, cap, note):
+def write_end(ledger, job_id, outcome, exit_code, elapsed, cap, note, *, artifact_path=None, artifact_sha256=None, plan=None):
     with ledger_lock(ledger):
         target = ledger / 'ends' / (job_id + '.json')
         if target.exists():
             raise RuntimeError('Job already has a terminal outcome; never overwrite it')
         dump(target, {'job_id': job_id, 'outcome': outcome, 'exit_code': exit_code, 'elapsed_seconds': elapsed,
                       'cap_seconds': cap, 'within_cap': elapsed <= cap, 'ended_utc': datetime.now(timezone.utc).isoformat(),
-                      'note': note})
+                      'note': note, 'artifact_path': artifact_path, 'artifact_sha256': artifact_sha256,
+                      'plan': plan})
 
 
 def new_job_id(command, arm, seed):
@@ -122,9 +171,23 @@ def completion_paths(bundle, local):
     return paths
 
 
-def completed_steps(bundle, local):
+def completed_steps(bundle, local, jobs=None):
     paths = completion_paths(bundle, local)
-    return {key for key, path in paths.items() if path.is_file()}
+    jobs = ledger_jobs(runner.ledger_location(bundle, local), runner.canonical_hash(bundle)) if jobs is None else jobs
+    done = set()
+    for key, path in paths.items():
+        matching = [j for j in jobs if (j['command'], j['seed']) == key and j['outcome'] == 'completed']
+        if len(matching) > 1:
+            raise RuntimeError(f'Multiple successful ledger jobs for {key}')
+        if matching:
+            job = matching[0]
+            if (job['exit_code'] != 0 or job['artifact_path'] != str(path)
+                    or not path.is_file() or hash_file(path) != job['artifact_sha256']):
+                raise RuntimeError(f'Successful ledger job has missing or changed artifact for {key}')
+            done.add(key)
+        elif path.exists():
+            raise RuntimeError(f'Artifact exists without a successful ledger job for {key}; preserve and inspect attempt')
+    return done
 
 
 def require_sequence(command, seed, done):
@@ -180,15 +243,15 @@ def plan_launch(bundle, c1_config, ext, local, local_path, command, seed, state)
     grace = bundle['termination_grace_seconds']
     totals = state['arms'][arm]
     expected = runner.identity(ext, local_path, bundle)
-    done = completed_steps(bundle, local)
+    done = completed_steps(bundle, local, state['jobs'])
     projected = projections(bundle, local, expected)
     if command not in PRE_PROFILE and projected is None:
         raise RuntimeError('Both matched profiles must complete before any fit, prediction, freeze, prepare or score')
     member_remaining = None
-    if stage == 'predict':
-        member_remaining = MEMBER_LIMIT_SECONDS - member_fit_seconds(state['jobs'], arm, seed)
+    if stage in ('fit', 'predict'):
+        member_remaining = MEMBER_LIMIT_SECONDS - member_wall_seconds(state['jobs'], arm, seed)
         if member_remaining <= 0:
-            raise RuntimeError(f'Member seed {seed} fit walls already exhaust the 7200-second fit+predict limit')
+            raise RuntimeError(f'Member seed {seed} fit+predict walls already exhaust the 7200-second limit')
     cap = effective_cap(stage, totals['remaining_seconds'], member_remaining=member_remaining, grace=grace)
     if projected is None:
         projected_command, obligation = 0., 0.
@@ -200,8 +263,8 @@ def plan_launch(bundle, c1_config, ext, local, local_path, command, seed, state)
         obligation = arm_obligation(projection, arm_completed_stages(done, arm), arm)
         if stage == 'fit':
             c1_gates(bundle, c1_config, local, local_path)
-        if stage == 'predict' and projected_command > member_remaining:
-            raise RuntimeError(f'Projected predict {projected_command:.1f}s exceeds the member remaining {member_remaining:.1f}s')
+        if stage in ('fit', 'predict') and projected_command > member_remaining:
+            raise RuntimeError(f'Projected {stage} {projected_command:.1f}s exceeds the member remaining {member_remaining:.1f}s')
     gate = launch_gate(totals, totals['share_seconds'], stage, projected_command=projected_command, remaining_obligation=obligation)
     if projected_command > cap - grace:
         raise RuntimeError(f'{stage}: projected {projected_command:.1f}s does not fit the effective cap {cap:.1f}s minus grace')
@@ -218,7 +281,7 @@ def worker_argv(bundle_path, local_path, bundle, local, command, seed):
     if command == 'c1-prepare':
         return [*old, 'prepare']
     if command == 'c1-fit':
-        return [*old, 'fit', '--seed', str(seed)]
+        return [*new, 'c1-fit', '--seed', str(seed)]
     if command == 'c1-predict':
         return [*old, 'predict', '--cell', PARENT_CELL, '--seed', str(seed)]
     if command == 'c1-profile':
@@ -278,45 +341,104 @@ def terminate_group(child, pgid, grace):
     return code, reaped, '; '.join(notes)
 
 
+class PreflightDeadlineExpired(TimeoutError):
+    pass
+
+
+@contextmanager
+def preflight_deadline(deadline):
+    """Bound synchronous hashing/verification before any worker is launched."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise PreflightDeadlineExpired('Caller wall cap expired during supervisor startup')
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+    if previous_timer[0] > 0:
+        raise RuntimeError('An existing process alarm prevents an isolated preflight deadline')
+    def alarm(_number, _frame):
+        raise PreflightDeadlineExpired('Caller wall cap expired during preflight')
+    signal.signal(signal.SIGALRM, alarm)
+    signal.setitimer(signal.ITIMER_REAL, remaining)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
 def supervise(bundle_path, local_path, command, seed, *, popen=None):
     started = time.monotonic()
+    inherited_start = os.environ.get(INHERITED_START_ENV)
+    if inherited_start is not None:
+        try:
+            parsed_start = float(inherited_start)
+        except ValueError as error:
+            raise ValueError('Inherited queue monotonic start must be finite and nonfuture') from error
+        if not math.isfinite(parsed_start) or parsed_start < 0 or parsed_start > started:
+            raise ValueError('Inherited queue monotonic start must be finite and nonfuture')
+        started = parsed_start
     bundle = runner.load_bundle(bundle_path, real=True)
-    runner.verify_bundle_pins(bundle)
-    c1_config, ext = runner.load_configs(bundle)
     local = read_json(local_path)
     ledger = runner.ledger_location(bundle, local)
+    bundle_sha256 = runner.canonical_hash(bundle)
     shares = {arm: record['share_seconds'] for arm, record in bundle['arms'].items()}
-    argv = worker_argv(bundle_path, local_path, bundle, local, command, seed)
+    argv = []
     grace = bundle['termination_grace_seconds']
     with ledger_lock(ledger):
-        state = ledger_state(ledger, shares)
+        state = ledger_state(ledger, shares, bundle_sha256)
         _, arm, stage, _ = sequence_step(command, seed)
         try:
-            done = completed_steps(bundle, local)
-            require_sequence(command, seed, done)
-            if command == 'c1-score':
-                runner.verify_ten_predictions(bundle, ext, c1_config, local_path, local)
-            plan = plan_launch(bundle, c1_config, ext, local, local_path, command, seed, state)
-        except (RuntimeError, ValueError) as error:
+            if state['arms'][arm]['unresolved_jobs']:
+                raise RuntimeError('Unresolved job reserves its cap; resolve it before launching')
+            member_remaining = (MEMBER_LIMIT_SECONDS - member_wall_seconds(state['jobs'], arm, seed)
+                                if stage in ('fit', 'predict') else None)
+            cap = effective_cap(stage, state['arms'][arm]['remaining_seconds'],
+                                member_remaining=member_remaining, grace=grace)
+            argv = worker_argv(bundle_path, local_path, bundle, local, command, seed)
+        except (RuntimeError, ValueError, OSError) as error:
             job_id = new_job_id(command, arm, seed)
             record = {'protocol': LEDGER_PROTOCOL, 'job_id': job_id, 'command': command, 'arm': arm, 'stage': stage, 'seed': seed,
                       'cap_seconds': 0., 'argv': argv, 'launched_utc': datetime.now(timezone.utc).isoformat(), 'supervisor_pid': os.getpid(),
+                      'bundle_sha256': bundle_sha256,
+                      'accounting_started_monotonic': started, 'accounting_start_source': 'outer_queue' if inherited_start is not None else 'supervisor',
                       'refused': True, 'reason': f'{type(error).__name__}: {error}', 'arm_state_before': state['arms'][arm]}
             write_start(ledger, record)
+            refusal_elapsed = time.monotonic() - started
             dump(ledger / 'ends' / (job_id + '.json'), {'job_id': job_id, 'outcome': 'refused', 'exit_code': EXIT_REFUSED,
-                 'elapsed_seconds': time.monotonic() - started, 'cap_seconds': 0., 'within_cap': True,
+                 'elapsed_seconds': refusal_elapsed, 'cap_seconds': 0., 'within_cap': refusal_elapsed <= 0.,
                  'ended_utc': datetime.now(timezone.utc).isoformat(), 'note': record['reason']})
             print('FIVE_SEED_JOB_REFUSED', job_id, record['reason'], flush=True)
             return 'refused', EXIT_REFUSED
         job_id = new_job_id(command, arm, seed)
-        cap = plan['cap_seconds']
         write_start(ledger, {'protocol': LEDGER_PROTOCOL, 'job_id': job_id, 'command': command, 'arm': arm, 'stage': stage, 'seed': seed,
-                             'cap_seconds': cap, 'grace_seconds': grace, 'argv': argv, 'plan': plan, 'bundle_sha256': runner.canonical_hash(bundle),
+                             'cap_seconds': cap, 'grace_seconds': grace, 'argv': argv, 'bundle_sha256': bundle_sha256,
                              'arm_state_before': state['arms'][arm], 'launched_utc': datetime.now(timezone.utc).isoformat(),
-                             'supervisor_pid': os.getpid(), 'refused': False})
+                             'supervisor_pid': os.getpid(), 'refused': False,
+                             'accounting_started_monotonic': started,
+                             'accounting_start_source': 'outer_queue' if inherited_start is not None else 'supervisor'})
     outcome, code, note, child, reaped, pgid = 'failed', None, '', None, False, None
+    artifact_path, artifact_sha256 = None, None
+    plan = None
     launch = popen or (lambda argv_: subprocess.Popen(argv_, start_new_session=True))
     try:
+        try:
+            with preflight_deadline(started + cap - grace):
+                runner.verify_bundle_pins(bundle)
+                c1_config, ext = runner.load_configs(bundle)
+                argv = worker_argv(bundle_path, local_path, bundle, local, command, seed)
+                done = completed_steps(bundle, local, state['jobs'])
+                require_sequence(command, seed, done)
+                if command == 'c1-score':
+                    runner.verify_ten_predictions(bundle, ext, c1_config, local_path, local)
+                plan = plan_launch(bundle, c1_config, ext, local, local_path, command, seed, state)
+                if plan['cap_seconds'] != cap:
+                    raise RuntimeError('Reserved wall cap changed during preflight')
+        except PreflightDeadlineExpired as error:
+            outcome, code, note = 'timeout', EXIT_TIMEOUT, str(error)
+            return outcome, code
+        except (RuntimeError, ValueError, OSError) as error:
+            outcome, code, note = 'refused', EXIT_REFUSED, f'{type(error).__name__}: {error}'
+            return outcome, code
         remaining = cap - (time.monotonic() - started)
         if remaining <= grace:
             outcome, code, note = 'timeout', EXIT_TIMEOUT, 'Effective cap exhausted before worker launch'
@@ -330,6 +452,13 @@ def supervise(bundle_path, local_path, command, seed, *, popen=None):
                 if _group_alive(pgid):
                     os.killpg(pgid, signal.SIGKILL)
                     note = 'orphaned group members killed after worker exit'
+                if outcome == 'completed':
+                    output = completion_paths(bundle, local)[(command, seed)]
+                    if not output.is_file():
+                        outcome, code = 'failed', -1
+                        note = (note + '; ' if note else '') + 'Worker exited zero without its registered completion artifact'
+                    else:
+                        artifact_path, artifact_sha256 = str(output), hash_file(output)
             except subprocess.TimeoutExpired:
                 code, reaped, note = terminate_group(child, pgid, min(grace, max(cap - (time.monotonic() - started), 0.)))
                 if not reaped:
@@ -346,7 +475,8 @@ def supervise(bundle_path, local_path, command, seed, *, popen=None):
     finally:
         elapsed = time.monotonic() - started
         if child is None or reaped:
-            write_end(ledger, job_id, outcome, code, elapsed, cap, note)
+            write_end(ledger, job_id, outcome, code, elapsed, cap, note,
+                      artifact_path=artifact_path, artifact_sha256=artifact_sha256, plan=plan)
             print('FIVE_SEED_JOB', job_id, outcome, code, f'{elapsed:.3f}s', flush=True)
         else:
             print('FIVE_SEED_JOB_UNRESOLVED', job_id, note, flush=True)
@@ -358,7 +488,8 @@ def status(bundle_path, local_path):
     runner.verify_bundle_pins(bundle)
     local = read_json(local_path)
     ledger = runner.ledger_location(bundle, local)
-    state = ledger_state(ledger, {arm: record['share_seconds'] for arm, record in bundle['arms'].items()})
+    state = ledger_state(ledger, {arm: record['share_seconds'] for arm, record in bundle['arms'].items()},
+                         runner.canonical_hash(bundle))
     done = completed_steps(bundle, local)
     for command, arm, stage, seed in SEQUENCE:
         print(f'{command:22s} seed={seed} arm={arm:6s} {"complete" if (command, seed) in done else "pending"}')
