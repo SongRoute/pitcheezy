@@ -207,8 +207,7 @@ def bind_stage2(config):
             raise ValueError('Stage2 frozen worker snapshot changed: ' + name)
     result = read_json(root / 'analysis/results.json')
     manifest = read_json(root / 'analysis/manifest.json')
-    if prep.get('identity', {}).get('experiment_id') != 'EXP-P11-001' and \
-            prep.get('experiment_id') != 'EXP-P11-001':
+    if prep.get('experiment_id') != 'EXP-P11-001':
         raise ValueError('Stage2 preparation identity differs')
     if manifest['results_sha256'] != records[str((root / 'analysis/results.json').resolve())] or \
             manifest['predictions_sha256'] != records[str((root / 'analysis/predictions.npz').resolve())]:
