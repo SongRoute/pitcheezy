@@ -71,7 +71,12 @@ def test_all_stages_complete_with_sealed_manifests_and_additive_contrasts(patche
     assert all(r['passed'] for r in report['cpanel_reports'])
     profile = json.loads((output / 'profile' / 'profile.json').read_text())
     assert profile['rows'] == syn.PROFILE_ROWS and profile['probe_rows'] == syn.PROBE_ROWS
-    assert profile['labels_read'] is False and profile['profile_probabilities_discarded'] is True
+    assert profile['label_access']['june_label_archive_opened'] is False
+    assert profile['label_access']['labels_used_for_quality_selection_or_scoring'] is False
+    assert profile['quality_computed'] is False and profile['profile_probabilities_discarded'] is True
+    exposure = report['exposure'][0]
+    assert exposure['decoded_scope']['rows'] == len(syn.make_pitches()) and 'effective_speed' in exposure['decoded_scope']['columns']
+    assert exposure['feature_use_scope'].startswith('regular season through 2025-06-30')
     assert profile['same_store_as_full_member'] == prepared['store_digest']
     for seed in mj.SEEDS:
         member = manifest(output, f'members/seed{seed}')
@@ -82,6 +87,7 @@ def test_all_stages_complete_with_sealed_manifests_and_additive_contrasts(patche
             assert set(saved.files) == set(runner.MEMBER_FIELDS) and int(saved['seed']) == seed
     fit = manifest(output, 'fit')
     assert fit['call_counts'] == {'replay': 6, 'candidate': 30, 'total': 36} and fit['dev_scores'] is None
+    assert fit['optimizer_calls'] == 36 and fit['replay_complete'] is True
     parameters = json.loads((output / 'fit' / 'parameters.json').read_text())
     assert [c['kind'] for c in parameters['call_ledger']['calls']] == ['replay'] * 6 + ['candidate'] * 30
     assert parameters['dev_separation']['dev_keys_in_fit'] == 0
@@ -130,18 +136,27 @@ def test_fit_failure_preserves_call_ledger_and_blocks_apply(patched, monkeypatch
     def injected(*args, **kwargs):
         seen.append(kwargs['label'])
         if len(seen) == 9:
-            def refuse(fun, **options):
+            def nonfinite(fun, **options):
                 fun(0.5)
                 from scipy.optimize import OptimizeResult
-                return OptimizeResult(x=0.5, fun=fun(0.5), success=False, status=1, nfev=2, nit=1, message='injected')
-            kwargs['minimizer'] = refuse
+                return OptimizeResult(x=float('nan'), fun=float('-inf'), success=True, status=0, nfev=1, nit=1,
+                                      message='injected nonfinite')
+            kwargs['minimizer'] = nonfinite
         return original(*args, **kwargs)
     monkeypatch.setattr(mj, 'fit_scalar_blend', injected)
-    with pytest.raises(mj.FamilyStop, match='scipy_success_false'):
+    with pytest.raises(mj.FamilyStop, match='optimum_not_finite_feasible'):
         run(config, output, 'fit')
-    failure = json.loads((output / 'fit' / 'failure.json').read_text())
-    assert failure['optimizer_call_ledger']['total_calls'] == 9
-    assert (failure['optimizer_call_ledger']['replay_calls'], failure['optimizer_call_ledger']['candidate_calls']) == (6, 3)
+
+    def refuse_constant(token):
+        raise AssertionError('nonstrict JSON constant ' + token)
+    failure = json.loads((output / 'fit' / 'failure.json').read_text(), parse_constant=refuse_constant)
+    ledger = failure['optimizer_call_ledger']
+    assert (ledger['total_calls'], ledger['replay_calls'], ledger['candidate_calls']) == (9, 6, 3)
+    failed = ledger['calls'][-1]
+    assert failed['status'] == 'failed' and failed['failures'] == ['optimum_not_finite_feasible']
+    assert failed['optimum_x'] == {'value': None, 'nonfinite': 'nan'}
+    assert failed['optimum_fun'] == {'value': None, 'nonfinite': '-inf'}
+    assert all(call['status'] == 'passed' for call in ledger['calls'][:-1])
     assert failure['retry'] is False and not (output / 'fit' / 'manifest.json').exists()
     monkeypatch.setattr(mj, 'fit_scalar_blend', original)
     with pytest.raises(ValueError, match='Completed fit'):
@@ -255,3 +270,77 @@ def test_fresh_outputs_exclusive_writes_and_appledouble(tmp_path):
         runner.claim_stage_dir(tmp_path, 'fit')
     with pytest.raises(ValueError, match='--seed'):
         runner.claim_stage_dir(tmp_path, 'predict')
+
+
+def test_rejected_output_is_never_written_and_evidence_goes_to_stderr(patched, capsys):
+    parent_run = patched['runs'] / 'EXP-P4-001'
+    before = {p: p.stat().st_mtime_ns for p in parent_run.rglob('*')}
+    config, _ = syn.write_configs(patched, runner, 'attempt-parent-output',
+                                  exec_changes=lambda c: c.update(output_dir=str(parent_run)))
+    with pytest.raises(ValueError, match='family root'):
+        runner.run(config, parent_run, 'prepare', git=False)
+    assert {p: p.stat().st_mtime_ns for p in parent_run.rglob('*')} == before
+    assert 'JUNE_CALIBRATION_FAILURE' in capsys.readouterr().err
+
+
+def test_mid_stage_change_of_the_scientific_config_blocks_the_manifest(patched, monkeypatch):
+    config, output = syn.write_configs(patched, runner, 'attempt-sci-mutation')
+    scientific = Path(json.loads(config.read_text())['scientific_config']['path'])
+    original = runner.compact_store
+
+    def mutate_then_compact(*args, **kwargs):
+        scientific.write_bytes(scientific.read_bytes() + b' ')
+        return original(*args, **kwargs)
+    monkeypatch.setattr(runner, 'compact_store', mutate_then_compact)
+    with pytest.raises(ValueError, match='Pinned input changed'):
+        run(config, output, 'prepare')
+    assert (output / 'prepared' / 'failure.json').is_file()
+    assert not (output / 'prepared' / 'manifest.json').exists()
+
+
+def test_inference_drift_fails_the_full_cpanel_replay_and_keeps_the_archive(patched, monkeypatch):
+    config, output = syn.write_configs(patched, runner, 'attempt-drift')
+    run(config, output, 'prepare')
+    run(config, output, 'profile')
+    original = runner.predict_streamed
+    with np.load(output / 'prepared' / 'june_population.npz') as saved:
+        row = int(saved['cpanel_june_index'][3])
+
+    def drifting(*args, **kwargs):
+        calibrated, raw, levels = original(*args, **kwargs)
+        calibrated = calibrated.copy()
+        high, low = calibrated[row].argmax(), calibrated[row].argmin()
+        calibrated[row, high] -= 2e-6  # still a valid simplex; beyond the 1e-6 replay tolerance
+        calibrated[row, low] += 2e-6
+        return calibrated, raw, levels
+    monkeypatch.setattr(runner, 'predict_streamed', drifting)
+    with pytest.raises(mj.FamilyStop, match='full Cpanel replay'):
+        run(config, output, 'predict', 1)
+    member = output / 'members' / 'seed1'
+    assert (member / 'predictions.npz').is_file() and (member / 'failure.json').is_file()
+    assert not (member / 'manifest.json').exists()
+    runtime = json.loads((member / 'prediction_runtime.json').read_text())
+    failed = [r for r in runtime['cpanel_replay'] if not r['passed']]
+    assert [r['name'] for r in failed] == ['cpanel_calibrated'] and failed[0]['maximum_absolute_difference'] > 1e-6
+
+
+def test_hash_consistent_but_shuffled_member_rows_are_refused(patched):
+    config, output = syn.write_configs(patched, runner, 'attempt-shuffle')
+    run(config, output, 'prepare')
+    run(config, output, 'profile')
+    for seed in mj.SEEDS:
+        run(config, output, 'predict', seed)
+    folder = output / 'members' / 'seed2'
+    with np.load(folder / 'predictions.npz') as saved:
+        arrays = {name: saved[name] for name in saved.files}
+    order = np.random.default_rng(0).permutation(len(arrays['june_keys']))
+    for name in ('june_keys', 'june_y', 'june_game_pk', 'june_pitcher', 'june_calibrated', 'june_raw', 'june_delivery_level'):
+        arrays[name] = arrays[name][order]
+    (folder / 'predictions.npz').unlink()
+    np.savez(folder / 'predictions.npz', **arrays)
+    forged = json.loads((folder / 'manifest.json').read_text())
+    forged['outputs']['predictions.npz'] = syn.sha(folder / 'predictions.npz')
+    (folder / 'manifest.json').write_text(json.dumps(forged))
+    with pytest.raises(ValueError, match='Seed 2 member rows differ'):
+        run(config, output, 'fit')
+    assert not (output / 'fit' / 'manifest.json').exists()

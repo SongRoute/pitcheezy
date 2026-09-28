@@ -19,6 +19,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 import pickle
 import platform
@@ -304,6 +305,10 @@ def verify_output_path(output, config, sci):
     root = Path(sci['future_output_root']).resolve()
     if not (output.resolve() == root or output.resolve().is_relative_to(root)):
         raise ValueError('Output must be the registered family root or inside it')
+    # Output lies inside the fresh family root, so it is disjoint from every parent unless a parent lives there.
+    for name, pin in sci['parents'].items():
+        if Path(pin['path']).resolve().is_relative_to(root):
+            raise ValueError(f'Parent {name} lies inside the family output root')
     return output.resolve()
 
 
@@ -420,6 +425,8 @@ def verify_everything(config, config_path, output, *, git=True):
     members, member_inputs = member_records(sci, parents, p11_prep)
     inputs.update(member_inputs)
     inputs[str(config_path)] = config_sha
+    inputs.update([check_hash(sci_path, config['scientific_config']['sha256'], 'scientific config'),
+                   check_hash(contract_path, config['contract']['sha256'], 'contract')])
     ctx = Context(config=config, config_path=config_path, config_sha256=config_sha, sci=sci, output=output,
                   parents=parents, derived=derived, data=data, members=members, inputs=inputs, provenance=provenance)
     ctx.timings['verify_seconds_internal'] = time.perf_counter() - started
@@ -428,7 +435,8 @@ def verify_everything(config, config_path, output, *, git=True):
 
 def stage_inputs(ctx, seed):
     """Profile/predict decode only these parents; their end-of-stage recheck stays small (cost is projected x12.8)."""
-    return [*ctx.config['source_hashes'], ctx.parents['p4_auxiliary'], ctx.parents['p4_preparation'],
+    return [*ctx.config['source_hashes'], ctx.config_path, ctx.config['scientific_config']['path'],
+            ctx.config['contract']['path'], ctx.parents['p4_auxiliary'], ctx.parents['p4_preparation'],
             ctx.parents['p11_preparation'], ctx.parents[f'cpanel_member_seed{seed}'], ctx.members[seed]['model_path']]
 
 
@@ -772,12 +780,18 @@ def stage_prepare(ctx, dest, seed=None):
     if raw.attrs['sequence_data_identity'] != parent['dataset_identity'] or \
             raw.attrs['matrix_source_provenance'] != parent['source_provenance']:
         raise ValueError('Verified processed cache differs from the frozen P4 dataset identity')
-    ctx.exposure.append({'event': 'processed_cache_decoded', 'utc': decoded_utc,
-                         'files': {k: str(v) for k, v in ctx.data.items() if k != 'local_config'},
-                         'decoded_scope': 'whole verified 2023-25 processed/physics cache via load_verified_processed_cache',
-                         'retained_scope': f'regular season through {mj.JUNE["date_max"]}; later rows dropped before any feature',
-                         'purpose': 'June labels, frozen frequency and complete point-in-time feature/history store'})
-    date_max = pd.to_datetime(raw.game_date).max()
+    raw_dates = pd.to_datetime(raw.game_date)
+    date_max = raw_dates.max()
+    ctx.exposure.append({
+        'event': 'processed_cache_decoded', 'utc': decoded_utc,
+        'files': {k: str(v) for k, v in ctx.data.items() if k != 'local_config'},
+        'decoded_scope': {'loader': 'pitchmdp.matrix_data.load_verified_processed_cache (unchanged, read-only)',
+                          'rows': int(len(raw)), 'columns': [str(c) for c in raw.columns],
+                          'date_range': [str(raw_dates.min().date()), str(date_max.date())],
+                          'game_types': sorted(map(str, raw.game_type.unique())),
+                          'note': 'every stored processed/physics column of all approved 2023-25 rows is decoded in memory'},
+        'feature_use_scope': f'regular season through {mj.JUNE["date_max"]}; all later rows dropped before any feature',
+        'purpose': 'June labels, frozen frequency and complete point-in-time feature/history store'})
     frame = build_store_frame(raw, mj.JUNE['date_max'])
     del raw
     if pd.to_datetime(frame.game_date).max() > pd.Timestamp(mj.JUNE['date_max']):
@@ -881,6 +895,8 @@ def stage_prepare(ctx, dest, seed=None):
               'label_function': 'P4 pitchmdp.model.outcome_labels (hash-pinned)', 'support': support,
               'volume_thresholds': list(mj.VOLUME_THRESHOLDS), 'cpanel_reports': reports, 'hashes': hashes,
               'exposure': ctx.exposure, 'new_fits': 0, 'labels_sealed_before_fit': True,
+              'sealed_store_label_content': ('june_store.pkl retains all columns of its rows, including outcome '
+                                             'description/events of June and earlier same-PA pitches used for history'),
               'timings_internal_nonadditive': ctx.timings,
               'peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
     outputs['prepared.json'] = write_json_exclusive(dest / 'prepared.json', report)
@@ -936,7 +952,11 @@ def stage_profile(ctx, dest, seed=None):
               'probe_reports': reports, 'delivery_tier_counts': _tier_counts(tiers),
               'maximum_mass_error': float(np.abs(p.sum(1) - 1).max()),
               'same_store_as_full_member': loaded['manifest']['store_digest'],
-              'profile_probabilities_discarded': True, 'labels_read': False, 'quality_computed': False,
+              'profile_probabilities_discarded': True, 'quality_computed': False,
+              'label_access': {'june_label_archive_opened': False,
+                               'sealed_store_unpickled_with_outcome_columns': True,
+                               'history_outcome_channels': 'prior-pitch outcome channels of the sealed store are inputs',
+                               'labels_used_for_quality_selection_or_scoring': False},
               'profiled_utc': utc(),
               'internal_seconds_diagnostic_only': {'load': load_seconds, 'probe': probe_seconds,
                                                    'inference': inference_seconds, **ctx.timings},
@@ -987,7 +1007,10 @@ def stage_predict(ctx, dest, seed):
                'model_sha256': ctx.members[seed]['model_sha256'], 'cpanel_replay': reports,
                'delivery_tier_counts': _tier_counts(levels), 'same_store_as_profile': loaded['manifest']['store_digest'],
                'profile_manifest_sha256': profile_sha, 'quality_computed': False,
-               'labels_embedded_from_sealed_prepare': True, 'probabilities_generated_utc': generated_utc,
+               'label_access': {'june_label_archive_opened': True, 'purpose': 'copy sealed june_y into the member schema',
+                                'sealed_store_unpickled_with_outcome_columns': True,
+                                'labels_used_for_quality_selection_or_scoring': False},
+               'probabilities_generated_utc': generated_utc,
                'purpose': 'full frozen June member for B1/B2 calibration fits; no quality computed',
                'internal_seconds_diagnostic_only': {'inference': inference_seconds,
                                                     'total': time.perf_counter() - clock, **ctx.timings},
@@ -1096,6 +1119,8 @@ def stage_fit(ctx, dest, seed=None, minimizer=None):
         calls = mj.require_expected_calls(record)
         if calls != mj.EXPECTED_CALLS:
             raise mj.FamilyStop(f'Optimizer calls {calls} differ from the registered 6 + 30', ledger.snapshot())
+        if not mj.replay_complete(record):
+            raise mj.FamilyStop('Identity replay is incomplete', ledger.snapshot())
     finally:
         ctx.timings['fit_internal'] = time.perf_counter() - clock
     parameters = {**record, 'family_id': mj.FAMILY_ID, 'stage': 'fit', 'call_counts': calls,
@@ -1113,7 +1138,8 @@ def stage_fit(ctx, dest, seed=None, minimizer=None):
     write_json_exclusive(dest / 'parameters.json', parameters)
     reverify_inputs(ctx)
     write_manifest(ctx, dest, 'fit', None, {'prepared_manifest_sha256': prepared_sha, 'member_manifests': member_manifests,
-                                            'call_counts': calls, 'B0_weights': record['B0_weights'],
+                                            'call_counts': calls, 'optimizer_calls': calls['total'],
+                                            'replay_complete': mj.replay_complete(record), 'B0_weights': record['B0_weights'],
                                             'B1_weights': record['B1_weights'], 'B2_weights': record['B2_weights'],
                                             'dev_scores': None, 'sealed_before_dev_labels': True})
     return {'calls': calls}
@@ -1260,6 +1286,30 @@ STAGE_FUNCTIONS = {'prepare': stage_prepare, 'profile': stage_profile, 'predict'
 
 # ---------------------------------------------------------------- failure records and entry point
 
+def strict_json_value(value):
+    """Failure evidence under allow_nan=False: nonfinite floats become null plus their explicit meaning."""
+    if isinstance(value, dict):
+        return {str(k): strict_json_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [strict_json_value(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return strict_json_value(value.tolist())
+    if isinstance(value, mj.CallLedger):
+        return strict_json_value(value.snapshot())
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        number = float(value)
+        if math.isfinite(number):
+            return number
+        return {'value': None, 'nonfinite': 'nan' if math.isnan(number) else '+inf' if number > 0 else '-inf'}
+    if value is None or isinstance(value, (str, int)):
+        return value
+    return str(value)
+
+
 def failure_record(stage, seed, error, ctx, dest):
     record = {'family_id': mj.FAMILY_ID, 'stage': stage, 'seed': seed, 'status': 'failed', 'failed_utc': utc(),
               'error_type': type(error).__name__, 'message': str(error)[:4000],
@@ -1277,12 +1327,16 @@ def failure_record(stage, seed, error, ctx, dest):
 
 
 def write_failure(output, stage, seed, error, ctx, dest):
-    record = failure_record(stage, seed, error, ctx, dest)
+    """Failure evidence goes to stderr always and to disk only below an output verified by ``verify_everything``."""
+    record = strict_json_value(failure_record(stage, seed, error, ctx, dest))
+    print('JUNE_CALIBRATION_FAILURE ' + json.dumps(record, allow_nan=False)[:20000], file=sys.stderr, flush=True)
+    if ctx is None:
+        return None  # preflight refusal: the output was never authorized, so nothing is created there
     try:
         if dest is not None and Path(dest).is_dir():
             target = Path(dest) / 'failure.json'
         else:
-            folder = Path(output) / 'failures'
+            folder = ctx.output / 'failures'
             folder.mkdir(parents=True, exist_ok=True)
             target = folder / f'{stage}{"" if seed is None else f"-seed{seed}"}-{datetime.now(timezone.utc):%Y%m%dT%H%M%S%fZ}-{os.getpid()}.json'
         write_json_exclusive(target, record)
@@ -1317,7 +1371,7 @@ def run(config_path, output, stage, seed=None, *, git=True):
             dest = claim_stage_dir(output, stage, seed)
             summary = STAGE_FUNCTIONS[stage](ctx, dest, seed)
         except BaseException as error:
-            write_failure(output, stage, seed, error, ctx, dest)  # output is the validated registered path
+            write_failure(output, stage, seed, error, ctx, dest)
             raise
     print(json.dumps({'family_id': mj.FAMILY_ID, 'stage': stage, 'seed': seed, 'status': 'complete', **summary}), flush=True)
     return summary

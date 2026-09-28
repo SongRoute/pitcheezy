@@ -317,11 +317,17 @@ def fit_scalar_blend(y, model_p, frequency_p, *, label, kind, anchor=None, ledge
         record.update(status='failed', failures=[f'optimizer_exception:{type(error).__name__}:{error}'],
                       optimizer_objective_evaluations=evaluations[0])
         raise FamilyStop(f'{label}: optimizer raised', record) from error
-    x = float(np.asarray(optimum.x, dtype=np.float64))
-    record.update(scipy_success=bool(optimum.success), scipy_status=int(optimum.status),
-                  scipy_nfev=int(optimum.nfev), scipy_nit=int(getattr(optimum, 'nit', -1)),
-                  scipy_message=str(optimum.message), optimum_x=x, optimum_fun=float(optimum.fun),
-                  optimizer_objective_evaluations=evaluations[0])
+    record['optimizer_objective_evaluations'] = evaluations[0]
+    try:
+        if not isinstance(optimum.success, (bool, np.bool_)):
+            raise TypeError(f'success is {type(optimum.success).__name__}, not boolean')
+        x = float(np.asarray(optimum.x, dtype=np.float64))
+        record.update(scipy_success=bool(optimum.success), scipy_status=int(optimum.status),
+                      scipy_nfev=int(optimum.nfev), scipy_nit=int(getattr(optimum, 'nit', -1)),
+                      scipy_message=str(optimum.message), optimum_x=x, optimum_fun=float(optimum.fun))
+    except Exception as error:  # malformed result metadata is a failed call, never a success
+        record.update(status='failed', failures=[f'optimizer_result_malformed:{type(error).__name__}:{error}'])
+        raise FamilyStop(f'{label}: optimizer result malformed', record) from error
     failures = []
     if record['scipy_success'] is not True:
         failures.append('scipy_success_false')
@@ -453,7 +459,8 @@ def fit_family(*, june, replay, b0_weights, minimizer=minimize_scalar, ledger=No
                 if not support[g]['supported']:
                     b2[g][name] = b1[name]
                     b2_records[g][name] = {'fallback': True, 'optimizer_call': False, 'weight': b1[name],
-                                           'support': support[g], 'reason': 'valid group below 500 pitches AND 30 games'}
+                                           'support': support[g],
+                                           'reason': 'valid group failing the 500-pitch AND 30-game support rule'}
                     continue
                 record = fit_scalar_blend(y[mask], components[name][mask], frequency[mask], label=f'B2:{g}:{name}',
                                           kind='candidate', anchor=b1[name], ledger=ledger, minimizer=minimizer)
@@ -477,6 +484,15 @@ def fit_family(*, june, replay, b0_weights, minimizer=minimize_scalar, ledger=No
             'shrinkage_pitches': SHRINKAGE_PITCHES, 'replay': replay_records, 'replay_prediction_reports': replay_reports,
             'B1_fits': b1_records, 'B2_fits': b2_records, 'call_ledger': counts,
             'fit_losses_are_quality_estimates': False, 'in_sample_objectives': 'optimizer audit only'}
+
+
+def replay_complete(fit_record):
+    """All six archived-weight replays within 1e-8 and every archived B0 Cpanel prediction within 1e-6."""
+    records = fit_record['replay']
+    return bool(list(records) == list(PREDICTORS) and fit_record['call_ledger']['replay_calls'] == EXPECTED_CALLS['replay']
+                and all(r['status'] == 'passed' and r['weight_replay_passed'] is True for r in records.values())
+                and fit_record['replay_prediction_reports']
+                and all(r['passed'] is True for r in fit_record['replay_prediction_reports']))
 
 
 def require_expected_calls(fit_record):

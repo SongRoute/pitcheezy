@@ -122,6 +122,18 @@ def test_failed_or_infeasible_optimizer_result_is_refused_not_clipped(result, fa
     assert ledger.calls[0]['optimizer_objective_evaluations'] == 1
 
 
+@pytest.mark.parametrize('result', [
+    {'x': 0.4, 'fun': 1.0, 'success': 'yes', 'status': 0, 'nfev': 3, 'nit': 3, 'message': 'ok'},
+    {'x': 0.4, 'fun': 1.0, 'success': True, 'message': 'no status or nfev'}])
+def test_malformed_optimizer_metadata_is_a_failed_call(result):
+    rng = np.random.default_rng(9)
+    ledger = mj.CallLedger()
+    with pytest.raises(mj.FamilyStop, match='malformed'):
+        mj.fit_scalar_blend(rng.integers(0, 10, 60), simplex(rng, 60), simplex(rng, 60), label='m', kind='candidate',
+                            ledger=ledger, minimizer=_stub(result))
+    assert ledger.calls[0]['status'] == 'failed' and 'weight' not in ledger.calls[0]
+
+
 def test_optimizer_exception_is_a_recorded_failed_call():
     def broken(fun, **kwargs):
         raise FloatingPointError('boom')
