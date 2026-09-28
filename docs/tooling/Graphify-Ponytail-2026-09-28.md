@@ -20,7 +20,7 @@
 
 .graphifyignore로 데이터·Statcast/물리캐시·미디어·라벨·가중치·추적/실험산출물과 문서/PDF를 제외했다. code-only AST 추출 뒤 LLM 라벨링을 비활성화한 클러스터링을 수행했다. 이후 감독기 코드 변경을 반영해 `graphify update .`로 AST만 갱신했다. 모델/영상/정답 자료를 읽거나 의미 분석하지 않았으며 API token cost는 input0/output0이다. 코드·지원되는 JSON/패키지 설정464파일을 처리했다. 전체탐지517파일 중 YAML52개와 HTML1개는 Graphify가 document로 분류해 code-only에서 제외했다. YAML 설정 관계는 아직 분석하지 않았으며 이를 위해 의미 분석을 임의로 활성화하지 않았다.
 
-출력 graphify-out/graph.json은 5,890노드·16,753연결·228커뮤니티다. 보고서97% EXTRACTED,3% INFERRED(557연결)이며 import cycle은 탐지되지 않았다. 5,000노드를 넘어 HTML은228커뮤니티·1,336커뮤니티간연결로 축약했다. 총생성물은 약27MB이며 사용자 승인 후 graphify-out/을 .gitignore에 추가했다. 로컬 생성물은 보존했다. 작업중 소스와 검사도 포함된 스냅샷으로, 보고서의 commit1cf88804만으로 clean committed source 그래프라고 해석하지 않는다.
+설치 검증 시점의 출력 graphify-out/graph.json은 5,890노드·16,753연결·228커뮤니티다. 보고서97% EXTRACTED,3% INFERRED(557연결)이며 import cycle은 탐지되지 않았다. 5,000노드를 넘어 HTML은228커뮤니티·1,336커뮤니티간연결로 축약했다. 총생성물은 약27MB이며 사용자 승인 후 graphify-out/을 .gitignore에 추가했다. 로컬 생성물은 보존했다. 작업중 소스와 검사도 포함된 스냅샷으로, 보고서의 commit1cf88804만으로 clean committed source 그래프라고 해석하지 않는다.
 
 ## 요청한 모듈 지도
 
@@ -52,3 +52,7 @@
 Graphify의 query-first와 Ponytail의 기존 구현 재사용은 양립한다. 다만 Graphify는 코드 변경 뒤 AST갱신을 권장하고 Ponytail은 최소작업을 선호하므로, 변경을 묶어 갱신하는 비용을 관리한다. Ponytail의 deletion/minimal-test 문구와 연구 재현성은 충돌할 수 있어 비교변형/ablation·설정/seed/logging·평가/누수/재현검사·봉인source를 보호하는 예외를 명시했다. 현재의 연구 검증·실험 변형을 줄이는 작업은 요청받지 않았으며 수행하지 않았다.
 
 실제 graph source423개를 검사해 제외 경로/확장자 위반0개를 확인했다. Graphify read-only 진단은 missing/dangling endpoint0, exact duplicate0, self-loop17을 보고했다. 자기 연결은 재귀/해석 결과일 수 있어 삭제하지 않았고, 이 진단은 이미 생성된 그래프 이전의 edge 축약이나 추론 오류를 배제하지 못한다.
+
+## 보정 구현 통합 후 갱신
+
+사용자 승인된 Ponytail 병합과 June 보정 코드 통합 후 AST만 갱신했다. 이 시점 그래프는 6,226노드·17,560연결·252커뮤니티이며 432개 source 파일을 포함한다. 의미 분석 토큰은 계속 0이고 제외 경로 위반은 0개다. 자동 백업을 포함한 로컬 생성물은 약 38MB다. 위 설치 시점 통계·진단과 이 후속 스냅샷을 구분하며, 후속 해시·크기는 JSON의 post_june_implementation_update에 기록했다.

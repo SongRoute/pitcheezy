@@ -50,5 +50,18 @@
   "ponytail_mode": "full",
   "ponytail_application": "repository AGENTS.md instructions only",
   "ponytail_merged_utc": "2026-09-28T03:53:02.373774+00:00",
-  "agents_sha256": "2aa587e0883725f5f1446e3a8de1ef6e79c24fa9cb10a533b5fd495fdf56260f"
+  "agents_sha256": "2aa587e0883725f5f1446e3a8de1ef6e79c24fa9cb10a533b5fd495fdf56260f",
+  "post_june_implementation_update": {
+    "utc": "2026-09-28T04:06:12.196662+00:00",
+    "command": "graphify update .",
+    "nodes": 6226,
+    "edges": 17560,
+    "communities": 252,
+    "source_files": 432,
+    "excluded_source_violations": 0,
+    "bytes": 39346409,
+    "graph_sha256": "c1328e80bc925154db6ea0ba0ce33b99b61170d9ad6797a9013476f9b10bb95d",
+    "report_sha256": "6e8f321f337b4778efff95be5a8c7b8e080d36d138d59441b224732bb26a22af",
+    "semantic_tokens": 0
+  }
 }
