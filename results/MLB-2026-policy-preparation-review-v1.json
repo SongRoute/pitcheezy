@@ -1,0 +1,638 @@
+{
+  "schema_version": 1,
+  "task": "COOP-015",
+  "status": "PASS_M1_PREPARATION_ONLY",
+  "created_utc": "2026-09-28T07:45:05.438393+00:00",
+  "roles": {
+    "main": "claude-opus-5-5",
+    "support": "gpt-6-sol",
+    "focused_scientific_reviewer": "gpt-6-astra"
+  },
+  "astra_delegated_review_calls": 1,
+  "policy_frozen": false,
+  "real_data_execution_enabled": false,
+  "new_2026_data_access": 0,
+  "real_data_fit_inference_ope_runs": 0,
+  "coordination_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-policy-preparation",
+  "author_final_commit": "287c884b46ff6c2736027c898237e90cf9a9061a",
+  "sol_correction_commit": "db988cc9271eacbbb2061c0582edf0b138c4c15c",
+  "integration_commits": [
+    "855ea1f",
+    "69523f2",
+    "3d0b495",
+    "041486f"
+  ],
+  "claude_attempts": [
+    {
+      "attempt": "attempt-001",
+      "base_commit": "e5bfa7f58814ec66ce09334c60487a22d501c05e",
+      "final_commit": "8e0e1191a9727249e6726f662e23e1ba8d363317",
+      "request_sha256": "140d1cae088e8dfaf2ee42bb3cf8a0cd16598c531870c2bbd2029525bc4b597f",
+      "observed_models": [
+        "claude-opus-5-5"
+      ],
+      "session_ids": [
+        "311ec999-0c36-4041-94ef-0c1320033c88"
+      ],
+      "status": "returned_for_review",
+      "result_subtype": "success",
+      "permission_denials": [],
+      "wall_seconds": 586.938
+    },
+    {
+      "attempt": "attempt-002",
+      "base_commit": "8e0e1191a9727249e6726f662e23e1ba8d363317",
+      "final_commit": "287c884b46ff6c2736027c898237e90cf9a9061a",
+      "request_sha256": "2e577830246487ed69df0ff281565a2ea129da14ba202a6dcff177b573c87c29",
+      "observed_models": [
+        "claude-opus-5-5"
+      ],
+      "session_ids": [
+        "311ec999-0c36-4041-94ef-0c1320033c88"
+      ],
+      "status": "returned_for_review",
+      "result_subtype": "success",
+      "permission_denials": [],
+      "wall_seconds": 343.379
+    }
+  ],
+  "evidence": {
+    "sol-existing-synthetic-checks.json": {
+      "scope": "Existing pure synthetic semantic reuse checks; no policy performance or identification certification",
+      "per_command_timeout_seconds": 120,
+      "total_budget_seconds": 300,
+      "commands": [
+        {
+          "command_argv": [
+            "/Users/song/Projects/pitcheezy/.venv/bin/python",
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "experiments/pitchmdp/tests/test_rollout_policy.py",
+            "experiments/pitchmdp/tests/test_matrix_policy.py",
+            "experiments/pitchmdp/tests/test_game_planner.py",
+            "tests/test_ope_dr.py"
+          ],
+          "cwd": "/Users/song/Projects/pitcheezy",
+          "environment_overrides": {
+            "PYTHONPATH": "/Users/song/Projects/pitcheezy/src:/Users/song/Projects/pitcheezy/experiments/pitchmdp",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"
+          },
+          "started_utc": "2026-09-28T07:23:26.352549+00:00",
+          "wall_seconds": 2.538141499971971,
+          "exit_code": 0,
+          "stdout": ".................................                                [100%]\n33 passed, 8 subtests passed in 2.19s\n",
+          "stderr": "",
+          "timed_out": false
+        }
+      ],
+      "fixture_inspection": {
+        "files": [
+          "experiments/pitchmdp/tests/test_rollout_policy.py",
+          "experiments/pitchmdp/tests/test_matrix_policy.py",
+          "experiments/pitchmdp/tests/test_game_planner.py",
+          "tests/test_ope_dr.py"
+        ],
+        "root_conftest": null,
+        "experiment_conftest": null,
+        "excluded": "tests/test_b_recommendation.py loads serialized model fixtures; not run",
+        "observations": "Selected fixtures generate arrays/dataframes/toy BC and synthetic MDP only. Imported run_ml_policy CLI execution is __main__ guarded. No selected test reads data/model payload."
+      },
+      "no_new_2026_values": true,
+      "no_real_data_or_model_payload_access": true,
+      "no_tracked_edits": true,
+      "passed_tests": 33,
+      "passed_subtests": 8,
+      "failed_tests": 0,
+      "commands_executed": 1,
+      "total_wall_seconds": 2.538141499971971,
+      "status": "PASS",
+      "test_counts_by_file": {
+        "experiments/pitchmdp/tests/test_rollout_policy.py": 9,
+        "experiments/pitchmdp/tests/test_matrix_policy.py": 8,
+        "experiments/pitchmdp/tests/test_game_planner.py": 11,
+        "tests/test_ope_dr.py": 5
+      }
+    },
+    "opus-validation.json": {
+      "task": "COOP-015",
+      "author_model": "claude-opus-5-5",
+      "base_commit": "e5bfa7f58814ec66ce09334c60487a22d501c05e",
+      "commits": [
+        "2c64ba03c9c8c4baf5f24c957d481e24cc272a92 (initial)",
+        "8e0e1191a9727249e6726f662e23e1ba8d363317 (Sol R1/N1 fix, final)"
+      ],
+      "final_commit": "8e0e1191a9727249e6726f662e23e1ba8d363317",
+      "recorded_utc": "2026-09-28T07:30:57.740195+00:00",
+      "interpreter": "/Users/song/Projects/pitcheezy/.venv/bin/python (Python 3.12.14)",
+      "cwd": "/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation",
+      "env": {
+        "PYTHONPATH": "src:experiments/pitchmdp"
+      },
+      "synthetic_only": true,
+      "data_or_artifact_reads": 0,
+      "new_2026_access": 0,
+      "file_sha256_at_final_commit": {
+        "scripts/check_2026_policy_contract.py": "497e5473035fd55367284d34c96662ffd551b414edd2556bc3abc266fda2e2db",
+        "tests/test_2026_policy_contract.py": "551b802199410de94ec131aa447f4c37b29cb752b545fb3f86f0555a4b0637e1"
+      },
+      "checks": [
+        {
+          "command": "python scripts/check_2026_policy_contract.py",
+          "exit_code": 0,
+          "output": {
+            "synthetic_only": true,
+            "gates": {
+              "path_mass_is_one": true,
+              "dr_exact_correct_propensity": true,
+              "dr_exact_correct_q": true,
+              "dr_biased_when_both_wrong": true,
+              "clip_biased_with_wrong_q": true,
+              "same_policy_paired_delta_zero": true
+            },
+            "all_pass": true,
+            "values": {
+              "n_toy_paths": 276,
+              "path_mass": 0.9999999999999999,
+              "candidate": {
+                "true_value": 0.549958241,
+                "err_correct_propensity_wrong_q": 0.0,
+                "err_wrong_propensity_correct_q": 2.220446049250313e-16,
+                "err_both_wrong": 0.16791893190416662,
+                "err_clip_1p5_wrong_q": -0.00880149000000019,
+                "err_clip_1p5_correct_q": -1.1102230246251565e-16
+              },
+              "reference": {
+                "true_value": 0.5482305295999998,
+                "err_correct_propensity_wrong_q": 4.440892098500626e-16,
+                "err_wrong_propensity_correct_q": 0.0,
+                "err_both_wrong": 0.06259233343750004,
+                "err_clip_1p5_wrong_q": 4.440892098500626e-16,
+                "err_clip_1p5_correct_q": 1.1102230246251565e-16
+              },
+              "max_abs_same_policy_paired_delta": 0.0,
+              "contrast": {
+                "delta": 0.0017277114000001648,
+                "delta_pp": 0.17277114000001648,
+                "offense_delta": -0.0017277114000001648
+              },
+              "q_ref_root": [
+                0.5484083479999999,
+                0.5466849439999999,
+                0.5504007259999999
+              ]
+            }
+          }
+        },
+        {
+          "command": "python -m pytest -q tests/test_2026_policy_contract.py",
+          "summary": "20 passed in 0.68s"
+        },
+        {
+          "command": "python -m pytest -q experiments/pitchmdp/tests/test_rollout_policy.py experiments/pitchmdp/tests/test_game_planner.py experiments/pitchmdp/tests/test_matrix_policy.py tests/test_ope_dr.py tests/test_2026_policy_contract.py",
+          "summary": "53 passed, 8 subtests passed in 1.59s"
+        },
+        {
+          "command": "python -m pytest -q tests/test_2026_policy_contract.py (PYTHONPATH unset)",
+          "summary": "20 passed in 0.68s"
+        },
+        {
+          "command": "python3 -m json.tool configs/MLB-2026-POLICY-PREPARATION-v1.json",
+          "result": "valid"
+        },
+        {
+          "command": "relative link check on new contract/report + config document paths",
+          "result": "all exist (checked at 2c64ba0; links unchanged since)"
+        },
+        {
+          "command": "git diff --check",
+          "result": "clean at 2c64ba0"
+        }
+      ],
+      "sol_review_addressed": {
+        "R1": "fixed: full-row/terminal-WE/empty-PA/clip/q_hat validation + 6 rejection tests",
+        "N1": "fixed: independent same-law callable + mispairing probe"
+      },
+      "pre_run_guard": "grep for PITCHEEZY_DATA_DIR|T7 Shield|read_parquet|np.load|pickle in the four reused test files: no matches",
+      "not_run": [
+        "tests/test_b_recommendation.py (loads real serialized fixtures)",
+        "full pytest tests -q",
+        "graphify update (no graph in worktree; Root update needed)"
+      ],
+      "identification_evidence": false
+    },
+    "opus-validation-002.json": {
+      "task": "COOP-015 followup (request-002)",
+      "author_model": "claude-opus-5-5",
+      "supersedes": "opus-validation.json (preserved unchanged; recorded 20 focused / 53+8 combined at 8e0e119)",
+      "base_commit": "8e0e1191a9727249e6726f662e23e1ba8d363317",
+      "final_commit": "287c884b46ff6c2736027c898237e90cf9a9061a",
+      "recorded_utc": "2026-09-28T07:37:58.064791+00:00",
+      "interpreter": "/Users/song/Projects/pitcheezy/.venv/bin/python (Python 3.12.14)",
+      "cwd": "/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation",
+      "env": {
+        "PYTHONPATH": "src:experiments/pitchmdp"
+      },
+      "synthetic_only": true,
+      "data_or_artifact_reads": 0,
+      "new_2026_access": 0,
+      "file_sha256_at_final_commit": {
+        "configs/MLB-2026-POLICY-PREPARATION-v1.json": "336a10dcfb7f48e35e33f50d26ed72e6bbeb40b164c6f295868b9ede1995d0dc",
+        "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": "558e8ae6e4b4cd5cba4eb7f7393673a8ca92dfe49f4d3006d49c20f56ebfd60f",
+        "docs/reports/MLB-2026-policy-preparation-2026-09-28.md": "5fda61755049e7b43d66e6f912b11d29b69938c8dc6f3ad34d0d895a583daec2",
+        "scripts/check_2026_policy_contract.py": "a546b70acc69c7705f5f4ca9e83fee5616bca41f515ec83fa9e81ad5807548c2",
+        "tests/test_2026_policy_contract.py": "ccee55d4c861da0d807ba425084c6a8adb68d9558bbd71c633e3413ecf7a24d0"
+      },
+      "note": "Checks ran on the committed script/test bytes; only docs/config changed after the runs.",
+      "checks": [
+        {
+          "command": "python scripts/check_2026_policy_contract.py",
+          "exit_code": 0,
+          "stdout_json": {
+            "synthetic_only": true,
+            "gates": {
+              "path_mass_is_one": true,
+              "dr_exact_correct_propensity": true,
+              "dr_exact_correct_q": true,
+              "dr_biased_when_both_wrong": true,
+              "clip_biased_with_wrong_q": true,
+              "same_policy_paired_delta_zero": true,
+              "restricted_ref_rho_not_identically_one": true,
+              "full_logging_law_exact_for_restricted_ref": true,
+              "renormalised_logging_law_biased": true
+            },
+            "all_pass": true,
+            "values": {
+              "n_toy_paths": 276,
+              "path_mass": 0.9999999999999999,
+              "candidate": {
+                "true_value": 0.549958241,
+                "err_correct_propensity_wrong_q": 0.0,
+                "err_wrong_propensity_correct_q": 2.220446049250313e-16,
+                "err_both_wrong": 0.16791893190416662,
+                "err_clip_1p5_wrong_q": -0.00880149000000019,
+                "err_clip_1p5_correct_q": -1.1102230246251565e-16
+              },
+              "reference": {
+                "true_value": 0.5482305295999998,
+                "err_correct_propensity_wrong_q": 4.440892098500626e-16,
+                "err_wrong_propensity_correct_q": 0.0,
+                "err_both_wrong": 0.06259233343750004,
+                "err_clip_1p5_wrong_q": 4.440892098500626e-16,
+                "err_clip_1p5_correct_q": 1.1102230246251565e-16
+              },
+              "max_abs_same_policy_paired_delta": 0.0,
+              "contrast": {
+                "delta": 0.0017277114000001648,
+                "delta_pp": 0.17277114000001648,
+                "offense_delta": -0.0017277114000001648
+              },
+              "q_ref_root": [
+                0.5484083479999999,
+                0.5466849439999999,
+                0.5504007259999999
+              ],
+              "renormalisation": {
+                "true_value_restricted_reference": 0.5484506940982141,
+                "rho_ref_min": 0.0,
+                "rho_ref_max": 1.4285714285714288,
+                "err_full_logging_law_wrong_q": 2.220446049250313e-16,
+                "err_full_logging_law_zero_q": 1.1102230246251565e-16,
+                "retained_path_mass": 0.6121099999999999,
+                "err_renorm_drop_conditional_wrong_q": -0.0028564256271718103,
+                "err_renorm_drop_as_zero_wrong_q": -0.21448698642440445,
+                "err_renorm_drop_conditional_zero_q": -0.002878126422469318,
+                "err_renorm_drop_as_zero_zero_q": -0.214500269698214
+              }
+            }
+          }
+        },
+        {
+          "command": "python -m pytest -q tests/test_2026_policy_contract.py",
+          "stdout": "......................                                                   [100%]\n22 passed in 0.85s\nexit=0\n"
+        },
+        {
+          "command": "python -m pytest -q experiments/pitchmdp/tests/test_rollout_policy.py experiments/pitchmdp/tests/test_game_planner.py experiments/pitchmdp/tests/test_matrix_policy.py tests/test_ope_dr.py tests/test_2026_policy_contract.py",
+          "stdout": ".......................................................          [100%]\n55 passed, 8 subtests passed in 1.75s\nexit=0\n"
+        },
+        {
+          "command": "python3 -m json.tool configs/MLB-2026-POLICY-PREPARATION-v1.json",
+          "result": "valid"
+        },
+        {
+          "command": "relative markdown link check (contract, report)",
+          "result": "no missing"
+        },
+        {
+          "command": "git diff --check",
+          "result": "clean"
+        }
+      ],
+      "addressed": {
+        "R2": "report section 4 / brief narrowed to listed windows; others unknown",
+        "scope": "implemented subset vs proposed contract; fallback flag only; toy agreement not general proof",
+        "N2": "latest counts/time only, prior runs identified",
+        "N3": "COORD defined once in report; coordination_dir in config",
+        "design": "logging nuisance = unmasked full-vocabulary TRAIN BC, independent of policy mask; renormalisation check added",
+        "assumptions": "consistency, sequential exchangeability, positivity, pi_b_hat OR policy-specific q_hat; P3 rationale marked proposal"
+      },
+      "not_run": [
+        "full pytest tests -q",
+        "tests/test_b_recommendation.py (real fixtures)",
+        "graphify update (Root)"
+      ],
+      "identification_evidence": false
+    },
+    "sol-code-review-initial.json": {
+      "status": "CHANGES_REQUESTED_BOUNDARY_CHECKS",
+      "snapshot": "inprogress_untracked",
+      "base_commit": "e5bfa7f58814ec66ce09334c60487a22d501c05e",
+      "sha256": {
+        "scripts/check_2026_policy_contract.py": "45b5ad41d3aca9389b6ee15ce267694f96b556572beddbd97f9616a6459145fa",
+        "tests/test_2026_policy_contract.py": "4b30f8f11418d2dd06cea90301bbf216d5bc0ea30d1268a29bb3ece82770b813"
+      },
+      "focused_test": {
+        "command": "PYTHONPATH=/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation/src:/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation/experiments/pitchmdp PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_2026_policy_contract.py",
+        "cwd": "/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation",
+        "exit_code": 0,
+        "stdout": "14 passed in 0.56s",
+        "failed": 0
+      },
+      "findings": [
+        {
+          "id": "R1",
+          "priority": 2,
+          "file": "scripts/check_2026_policy_contract.py",
+          "function": "sequential_dr",
+          "line": 71,
+          "problem": "Missing full-row, terminal WE, nonempty trajectory and positive finite clip validation. Logged component checks alone permit invalid other action masses.",
+          "reproduction": {
+            "invalid_pi_negative_and_gt1": 0.6,
+            "terminal_we_1p2": 1.13,
+            "empty_steps": 0.0,
+            "clip_minus1": 0.4
+          },
+          "recommendation": "Validate full policy/logging distributions, finite terminal WE in [0,1], nonempty complete toy trajectory, finite positive optional clip; add direct rejection checks, keep DR estimates allowed outside [0,1].",
+          "documentation_impact": "report lines7,37 and contract section8 claim failure/denominator/refusal semantics broadly; qualify exactly tested boundary or extend toy checks, and update counts after fixes."
+        },
+        {
+          "id": "R2",
+          "priority": 2,
+          "file": "docs/reports/MLB-2026-policy-preparation-2026-09-28.md",
+          "line": 41,
+          "problem": "All <=2025 windows exposed is wider than audit evidence; the following text itself says pre-2023-05-15 availability unknown.",
+          "recommendation": "Say all listed proposed TRAIN/June2025/DEV windows are exposed; other <=2025 populations unknown, certified unexposed count0."
+        }
+      ],
+      "optional_observations": [
+        {
+          "id": "N1",
+          "file": "tests/test_2026_policy_contract.py",
+          "line": 41,
+          "problem": "Same-policy zero subtracts two identical function calls and cannot detect a pairing bug. Independent paired path or boundary checks would be more meaningful."
+        },
+        {
+          "id": "N2",
+          "file": "docs/reports/MLB-2026-policy-preparation-2026-09-28.md",
+          "line": 35,
+          "problem": "Report combined-suite1.53s disagrees with preserved opus-validation1.47s; align or identify distinct invocation."
+        },
+        {
+          "id": "N3",
+          "file": "docs/reports/MLB-2026-policy-preparation-2026-09-28.md",
+          "line": 24,
+          "problem": "COORD is not defined in report/config, so coordination evidence references are not resolvable standalone. Define absolute coordination directory once."
+        }
+      ],
+      "positive_evidence": [
+        "Enumerates all paths and compares expected recursive DR to direct Bellman value",
+        "Checks correct propensity/wrong Q and wrong propensity/correct Q separately",
+        "Both-wrong and clipping-with-wrong-Q cases demonstrate nonzero error",
+        "Legacy plain DR equivalence tested only on valid inputs; legacy fail-closed gap explicitly preserved"
+      ],
+      "scope": {
+        "data_payload_access": false,
+        "model_payload_access": false,
+        "new_2026_values": false,
+        "author_files_edited": false,
+        "causal_certification": false
+      },
+      "imports": "stdlib/numpy/pandas/pytest and existing pure pitchmdp/pitcheezy primitives; test loader executes only local toy script, __main__ guarded; no applicable conftest",
+      "reproduction_command": "PYTHONDONTWRITEBYTECODE=1 /Users/song/Projects/pitcheezy/.venv/bin/python - <<'PYPROBE'\nimport importlib.util\ns=importlib.util.spec_from_file_location('c','scripts/check_2026_policy_contract.py')\nc=importlib.util.module_from_spec(s); s.loader.exec_module(c)\nsteps=[((), 'FF')]; q=lambda h,a:.5\nfor name, call in [\n    ('invalid row', lambda: c.sequential_dr(steps,.6,lambda h:[-1.,.5,1.5],c.PI_B,q)),\n    ('invalid terminal', lambda: c.sequential_dr(steps,1.2,c.PI_REF,c.PI_B,q)),\n    ('empty PA', lambda: c.sequential_dr([],.6,c.PI_REF,c.PI_B,q)),\n    ('invalid clip', lambda: c.sequential_dr(steps,.6,c.PI_REF,c.PI_B,q,clip=-1)),\n]:\n    try: print(name, 'ACCEPTED', call())\n    except (c.IntegrityError,c.Unsupported) as e: print(name, 'REJECTED', type(e).__name__, str(e))\nPYPROBE",
+      "expected_rejections": {
+        "invalid row": "IntegrityError",
+        "invalid terminal": "IntegrityError",
+        "empty PA": "Unsupported or IntegrityError with explicit incomplete/empty reason",
+        "invalid clip": "IntegrityError"
+      },
+      "doc_config_addendum": {
+        "commit": "2c64ba03c9c8c4baf5f24c957d481e24cc272a92",
+        "sha256": {
+          "configs/MLB-2026-POLICY-PREPARATION-v1.json": "73d447fa292626432e8a9db46c393e5b6cabfc8ae1b37f7fea05bd923748abe5",
+          "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": "8c090a50cc0e76cc549c4eeb3462a08cec7bf13276c83dd17e180c9f15a702f7",
+          "docs/reports/MLB-2026-policy-preparation-2026-09-28.md": "204ca1e50c2e04c808d2cbcb45d8be82d8f31833af425221617704f11aa44d9b"
+        },
+        "code_hashes_unchanged_from_initial_review": true,
+        "disabled_flags_and_null_identity_claims": "consistent; no false freeze claims",
+        "relative_markdown_links_and_config_document_paths": "all exist",
+        "formula": "matches toy terminal-only backward recursion; two-ball/two-strike toy explicitly labeled; no intended-target ratio implemented",
+        "test_claims": "14 and 47+8 counts match opus-validation; report time 1.53 differs from metadata 1.47",
+        "checks_not_rerun": true
+      }
+    },
+    "sol-code-rereview.json": {
+      "commit": "8e0e1191a9727249e6726f662e23e1ba8d363317",
+      "git_status": "clean",
+      "scope": "Exact-commit routine code/consistency recheck, not science approval",
+      "sha256": {
+        "scripts/check_2026_policy_contract.py": "497e5473035fd55367284d34c96662ffd551b414edd2556bc3abc266fda2e2db",
+        "tests/test_2026_policy_contract.py": "551b802199410de94ec131aa447f4c37b29cb752b545fb3f86f0555a4b0637e1",
+        "configs/MLB-2026-POLICY-PREPARATION-v1.json": "73d447fa292626432e8a9db46c393e5b6cabfc8ae1b37f7fea05bd923748abe5",
+        "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": "8c090a50cc0e76cc549c4eeb3462a08cec7bf13276c83dd17e180c9f15a702f7",
+        "docs/reports/MLB-2026-policy-preparation-2026-09-28.md": "9c071f40d6d141aa4573ec8922864cf78e11e8e26870cefb5cb5f2871b0f2b91"
+      },
+      "code_review_status": "PASS_FOR_TOY_BOUNDARY_FIXES",
+      "R1": "resolved: full candidate/logging row validation; terminal [0,1]; empty PA refusal; finite positive clip; finite q; 6 meaningful rejection parameter cases",
+      "N1": "resolved: independent same-law callable plus mispairing perturbation",
+      "remaining_routine_issues": [
+        {
+          "id": "R2",
+          "file": "docs/reports/MLB-2026-policy-preparation-2026-09-28.md",
+          "line": 41,
+          "status": "OPEN",
+          "required": "Narrow all <=2025 exposed to listed proposed windows; unknown remains unknown"
+        },
+        {
+          "id": "N3",
+          "status": "OPEN",
+          "required": "Define COORD absolute path for standalone report/config evidence refs"
+        },
+        {
+          "id": "N2",
+          "status": "minor",
+          "required": "Align report53+8 duration1.60s with preserved opus-validation1.59s or identify distinct invocation"
+        }
+      ],
+      "focused_test": {
+        "command": "PYTHONPATH=/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation/src:/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation/experiments/pitchmdp PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_2026_policy_contract.py",
+        "cwd": "/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation",
+        "exit_code": 0,
+        "stdout": "....................                                                     [100%]\n20 passed in 0.68s\n",
+        "stderr": "",
+        "passed": 20,
+        "failed": 0,
+        "existing33_rerun": false
+      },
+      "imports_and_access": "Only local toy script, pure pitchmdp/pitcheezy primitives, stdlib/numpy/pandas/pytest. Worktree src and experiment root explicit PYTHONPATH with root venv. No payload fixtures or applicable conftest. No data/model loading introduced.",
+      "consistency": "Execution/real_data flags false, null identities, ARM-A blocked/ARM-B disabled unchanged; no false freeze. BC nuisance conceptual clarification reserved to parent/Opus/final science reviewer.",
+      "limits": "Toy derives row mask from positive entries; registered external support validation is tested separately by policy_row. No production adapter, unsupported-denominator ledger, full incomplete-trajectory validator or real policy identity is certified.",
+      "author_files_edited": false,
+      "snapshot_pin_method": "Hashes recomputed from git show 8e0e119:<path>, independent of later working-tree edits",
+      "historical_review_only": true
+    },
+    "astra-focused-review.json": {
+      "reviewer": "gpt-6-astra",
+      "reviewed_commit": "287c884b46ff6c2736027c898237e90cf9a9061a",
+      "scope": "One bounded scientific review of opus-review-brief.md, policy-preparation contract, relevant config fields and report V2–V5 plan. No source audit, tests, data/header/model/payload access or execution approval.",
+      "verdict": "BLOCKING_FIXES",
+      "acceptance_verdict_after_mechanical_corrections": "PASS FOR M1 PREPARATION ONLY",
+      "points": [
+        {
+          "id": "R1",
+          "severity": "blocking_documentation",
+          "location": "contract section 5 derivation; config arms.ARM_B.logging_nuisance_pi_b_hat.derivation",
+          "finding": "Renormalising b onto M increases the denominator and attenuates in-M ratios: rho_wrong=b(M|H)*rho_true, with 0<b(M|H)<=1. The current 'inflates/부풀고' wording reverses this.",
+          "acceptance": "Replace inflation wording by scaling down/attenuation by b(M|H), preserving the existing equations and tests."
+        },
+        {
+          "id": "R2",
+          "severity": "blocking_interpretation",
+          "location": "report section 4 V4",
+          "finding": "V(ref) minus the observed logging-policy mean is generally nonzero even with exact nuisances because masked ref is a different policy. It cannot isolate TRAIN-to-DEV transport or miscalibration.",
+          "acceptance": "Explicitly label this gap descriptive and confounded by the policy contrast; prohibit interpreting it as isolated transport/model error unless equality of reference and logging policies is independently established. Keep cand=ref paired-zero as an algebra/integrity check, not evidence of validity."
+        },
+        {
+          "id": "P1",
+          "severity": "pass_preparation",
+          "finding": "Separating full-vocabulary logging nuisance from masked reference is correct. Outside-M logged actions with positive logging probability have rho=0 and remain in the original per-PA estimand; the DR baseline term is not zeroed. Unknown labels and zero estimated propensity appropriately fail/refuse. Sequential DR claims are conditional on consistency, exchangeability, target-history positivity and the stated true-law or policy-specific-Q route. Q_ref does not establish the candidate outcome-model route."
+        },
+        {
+          "id": "P2",
+          "severity": "future_registration_precondition",
+          "finding": "V2 is useful method validation, not identification or independent confirmation. Its eventual simulator must define transitions/delivery for every positive-probability logging action, including actions outside M; do not silently restrict the logging law to solve missing pools. Toy agreement and simulated ESS cannot establish real-2026 overlap, transport, confounding control or BLK-08 thresholds."
+        },
+        {
+          "id": "P3",
+          "severity": "scope_boundary",
+          "finding": "M1 remains partial preparation. ARM-A remains unidentified; ARM-B disabled; identities null; no 2026 fitting/runs; frozen-WE value is not observed wins. Listed exposure claims are appropriately limited. No scientific blocker beyond R1/R2 for this preparation scope."
+        }
+      ],
+      "resolution_rule": "Sol may verify the exact R1/R2 textual corrections, record the resulting commit and mark PASS FOR M1 PREPARATION ONLY without another Astra invocation. Reopen only if scientific definitions change. This review is not policy freeze, registration, ARM activation, execution authorization or M1 completion."
+    },
+    "sol-final-review.json": {
+      "status": "PASS_FOR_M1_PREPARATION_ONLY",
+      "ordinary_reviewer": "Sol support",
+      "reviewed_author_commit": "287c884b46ff6c2736027c898237e90cf9a9061a",
+      "mechanical_correction_commit": "db988cc9271eacbbb2061c0582edf0b138c4c15c",
+      "git_status": "clean",
+      "file_sha256": {
+        "configs/MLB-2026-POLICY-PREPARATION-v1.json": "021d6ace2749959b6d5cd1e832498da1f61cfcde13049d6d3317b2bb11c5dd06",
+        "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": "86bed8c9dbbcb6b76075b6ae9caafdad81c6ab5ea48d556e16bc25051f6393b1",
+        "docs/reports/MLB-2026-policy-preparation-2026-09-28.md": "fb6288439f783cf43f0e5d1b88492622690ef7c824f617fb6a860f58a8662a2b",
+        "scripts/check_2026_policy_contract.py": "a546b70acc69c7705f5f4ca9e83fee5616bca41f515ec83fa9e81ad5807548c2",
+        "tests/test_2026_policy_contract.py": "ccee55d4c861da0d807ba425084c6a8adb68d9558bbd71c633e3413ecf7a24d0"
+      },
+      "diff_stat": " configs/MLB-2026-POLICY-PREPARATION-v1.json            |  6 ++++--\n docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md       |  2 +-\n docs/reports/MLB-2026-policy-preparation-2026-09-28.md | 12 ++++++++----\n 3 files changed, 13 insertions(+), 7 deletions(-)\n",
+      "astra_reviewed_commit": "287c884b46ff6c2736027c898237e90cf9a9061a",
+      "astra_review_calls": 1,
+      "astra_new_bytes_reviewed": false,
+      "astra_resolution_rule": "Sol may verify the exact R1/R2 textual corrections, record the resulting commit and mark PASS FOR M1 PREPARATION ONLY without another Astra invocation. Reopen only if scientific definitions change. This review is not policy freeze, registration, ARM activation, execution authorization or M1 completion.",
+      "criteria_checks": {
+        "astra_R1_ratio_direction": "PASS: wrong ratio equals retained logging mass times full ratio; scales down, unchanged if mass1",
+        "astra_R2_V4": "PASS: descriptive gap mixes actual policy contrast and nuisance/transport/model error; cannot isolate transport without independently established equality; paired zero algebra/integrity only",
+        "astra_P2_V2": "PASS: transitions/delivery required for every positive-prob logging action incl outsideM; otherwise cannot run as defined; no silent behavior renormalization",
+        "R2_exposure_scope": "PASS: named proposed windows only, others unknown",
+        "implemented_vs_proposed": "PASS: toy subset separated, fallback flag only, denominator/refusal adapter unimplemented",
+        "wording_fit_inference_OPE": "PASS: no real-data fitting/inference/OPE, acknowledges toy use",
+        "JSON_links_flags": "PASS: JSON parsed, local links/document paths exist; execution/real_data false, no policy freeze/registration/arm activation",
+        "code_hashes": "PASS: script/tests unchanged from tested287c884",
+        "allowlist": "PASS: exactly3 doc/config files, 13insertions7deletions"
+      },
+      "focused_checks_at_287c884": [
+        {
+          "chunk_id": "2c5c96",
+          "wall_time_seconds": 0.832083958,
+          "exit_code": 0,
+          "original_token_count": 25,
+          "output": "......................                                                   [100%]\n22 passed in 0.85s\n"
+        },
+        {
+          "chunk_id": "ac75e7",
+          "wall_time_seconds": 0.401776333,
+          "exit_code": 0,
+          "original_token_count": 480,
+          "output": "{\n \"synthetic_only\": true,\n \"gates\": {\n  \"path_mass_is_one\": true,\n  \"dr_exact_correct_propensity\": true,\n  \"dr_exact_correct_q\": true,\n  \"dr_biased_when_both_wrong\": true,\n  \"clip_biased_with_wrong_q\": true,\n  \"same_policy_paired_delta_zero\": true,\n  \"restricted_ref_rho_not_identically_one\": true,\n  \"full_logging_law_exact_for_restricted_ref\": true,\n  \"renormalised_logging_law_biased\": true\n },\n \"all_pass\": true,\n \"values\": {\n  \"n_toy_paths\": 276,\n  \"path_mass\": 0.9999999999999999,\n  \"candidate\": {\n   \"true_value\": 0.549958241,\n   \"err_correct_propensity_wrong_q\": 0.0,\n   \"err_wrong_propensity_correct_q\": 2.220446049250313e-16,\n   \"err_both_wrong\": 0.16791893190416662,\n   \"err_clip_1p5_wrong_q\": -0.00880149000000019,\n   \"err_clip_1p5_correct_q\": -1.1102230246251565e-16\n  },\n  \"reference\": {\n   \"true_value\": 0.5482305295999998,\n   \"err_correct_propensity_wrong_q\": 4.440892098500626e-16,\n   \"err_wrong_propensity_correct_q\": 0.0,\n   \"err_both_wrong\": 0.06259233343750004,\n   \"err_clip_1p5_wrong_q\": 4.440892098500626e-16,\n   \"err_clip_1p5_correct_q\": 1.1102230246251565e-16\n  },\n  \"max_abs_same_policy_paired_delta\": 0.0,\n  \"contrast\": {\n   \"delta\": 0.0017277114000001648,\n   \"delta_pp\": 0.17277114000001648,\n   \"offense_delta\": -0.0017277114000001648\n  },\n  \"q_ref_root\": [\n   0.5484083479999999,\n   0.5466849439999999,\n   0.5504007259999999\n  ],\n  \"renormalisation\": {\n   \"true_value_restricted_reference\": 0.5484506940982141,\n   \"rho_ref_min\": 0.0,\n   \"rho_ref_max\": 1.4285714285714288,\n   \"err_full_logging_law_wrong_q\": 2.220446049250313e-16,\n   \"err_full_logging_law_zero_q\": 1.1102230246251565e-16,\n   \"retained_path_mass\": 0.6121099999999999,\n   \"err_renorm_drop_conditional_wrong_q\": -0.0028564256271718103,\n   \"err_renorm_drop_as_zero_wrong_q\": -0.21448698642440445,\n   \"err_renorm_drop_conditional_zero_q\": -0.002878126422469318,\n   \"err_renorm_drop_as_zero_zero_q\": -0.214500269698214\n  }\n }\n}\n"
+        }
+      ],
+      "commands": {
+        "focused": "PYTHONPATH=/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation/src:/Users/song/Projects/pitcheezy-worktrees/2026-policy-preparation/experiments/pitchmdp PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_2026_policy_contract.py",
+        "script": "PYTHONDONTWRITEBYTECODE=1 /Users/song/Projects/pitcheezy/.venv/bin/python scripts/check_2026_policy_contract.py"
+      },
+      "focused_result": "22 passed in0.85s;9/9 script gates; exact script output equals author record",
+      "combined_author_record": "55 passed,8 subtests in1.75s; Sol did not repeat existing33",
+      "new_tests_after_docs_only": false,
+      "required_issues_remaining": [],
+      "no_data_or_model_payload_access": true,
+      "no_new_2026_values": true,
+      "no_real_fitting_inference_OPE": true,
+      "limitations": "Not policy freeze, registration, ARM activation, execution authorization, M1 completion, independent confirmation or causal certification. Root owns final mechanical diff verification/integration."
+    }
+  },
+  "integrated_file_pins": [
+    {
+      "path": "configs/MLB-2026-POLICY-PREPARATION-v1.json",
+      "sha256": "021d6ace2749959b6d5cd1e832498da1f61cfcde13049d6d3317b2bb11c5dd06",
+      "bytes": 13081
+    },
+    {
+      "path": "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md",
+      "sha256": "86bed8c9dbbcb6b76075b6ae9caafdad81c6ab5ea48d556e16bc25051f6393b1",
+      "bytes": 15351
+    },
+    {
+      "path": "docs/reports/MLB-2026-policy-preparation-2026-09-28.md",
+      "sha256": "900c3fa022af11e261b927561f989e90073c8cd4998ea0b0c09e67e4c0d89b9f",
+      "bytes": 12378
+    },
+    {
+      "path": "scripts/check_2026_policy_contract.py",
+      "sha256": "a546b70acc69c7705f5f4ca9e83fee5616bca41f515ec83fa9e81ad5807548c2",
+      "bytes": 11655
+    },
+    {
+      "path": "tests/test_2026_policy_contract.py",
+      "sha256": "ccee55d4c861da0d807ba425084c6a8adb68d9558bbd71c633e3413ecf7a24d0",
+      "bytes": 8528
+    }
+  ],
+  "root_verification": {
+    "mechanical_diff_review": "PASS; checked all3changedfiles at db988cc against Astra R1/R2/P2 criteria; no code changes",
+    "focused_test_command": "PYTHONPATH=src:experiments/pitchmdp PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_2026_policy_contract.py",
+    "focused_test_result": "22 passed in 0.85s",
+    "astra_review_limit": "Astra reviewed287c884once; Sol corrected specified documentation, Root verified diff. No assertion Astra reviewed db988cc bytes.",
+    "json_guards": "PASS",
+    "relative_links_checked": 18,
+    "graphify": {
+      "status": "PASS",
+      "method": "AST only",
+      "nodes": 6279,
+      "edges": 17673,
+      "communities": 253,
+      "semantic_extraction": false
+    },
+    "root_report_note": "Integration verification/link and completed Graphify status only; scientific content unchanged"
+  }
+}

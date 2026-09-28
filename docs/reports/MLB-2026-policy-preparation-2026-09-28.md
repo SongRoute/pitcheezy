@@ -2,6 +2,8 @@
 
 COOP-015(D88). 작성 Opus5.5, 지원 Sol, 독립 과학 검토 Astra 1회 지적 반영; 최종 통합 확인 Root. 기준 `e5bfa7f`. 계약 [MLB-2026-POLICY-PREPARATION-v1](../contracts/MLB-2026-POLICY-PREPARATION-v1.md), 설정 [config](../../configs/MLB-2026-POLICY-PREPARATION-v1.json).
 
+**통합 확인(D89):** Root가 검토 기준 충족과 통합 후 신규22검사 통과를 확인했다. Graphify 로컬 AST 갱신도 완료했으며 문서/PDF 의미 분석은 수행하지 않았다. 작성·수정·검토 이력은 [검토 기록](../reviews/COOP-015-policy-preparation-2026-09-28.md)을 따른다. 아래 작업 범위의 미수행 목록은 작성자 단계 기록이며 인수인계·PR 반영은 Root가 맡는다.
+
 이 문서의 `COORD`는 `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-policy-preparation`이다.
 
 ## 1. 요약
@@ -72,4 +74,4 @@ BLK-05(정확한 과거 사용 경기 ID)와 이후 2026 수집 범위는 이 �
 
 ## 6. 하지 않은 것·제약
 
-2026 또는 ≤2025 원자료·parquet 헤더·npz/npy/pickle·모델 가중치 열람, payload 해시, 실데이터 기반 fit·추론·OPE·수집, 기존 코드·설정·계약 변경, decisions/handoff 수정, push/merge 없음. 새 파일 5개(계약·설정·보고서·합성 스크립트·테스트)만 추가했다. 새 스크립트는 인자·파일 입력이 없고 2026 평가를 호출하지 않는다. 코드 변경이 있으므로 Root에서 `graphify update .`가 필요하다(worktree에는 graph 없음).
+2026 또는 ≤2025 원자료·parquet 헤더·npz/npy/pickle·모델 가중치 열람, payload 해시, 실데이터 기반 fit·추론·OPE·수집, 기존 코드·설정·계약 변경, decisions/handoff 수정, push/merge 없음. 새 파일 5개(계약·설정·보고서·합성 스크립트·테스트)만 추가했다. 새 스크립트는 인자·파일 입력이 없고 2026 평가를 호출하지 않는다. 작성 worktree에는 graph가 없어, 통합 후 Root가 `graphify update .`를 완료했다.
