@@ -1,5 +1,7 @@
 # A~D 작업 인수인계
 
+**정책 런타임 구현 완료 — D91:** G0 5member 어댑터·TRAIN BC/지원 표 저장·해시 식별·미지원 요청 원장을 연결된 코드로 구현했다. Opus 주도 CLI 1회, Sol 독립 검토/재현, Astra 핵심 검토 1회. 신규15검사·기존 관련 포함54검사·D89 합성검사·오류변이8종 검출, Root 통합15검사 통과(중복 합산 없음). 작성 `1ecdbb4`, 통합 `d7e5bae`. 구현 완료이며 **실제 TRAIN BC 생성·G0 실가중치 연결·정책 동결·실데이터 평가는 미수행**이다. runtime SHA는 완전한 정책 식별자가 아니고 원장 분모는 제출된 요청/PA에 한정된다. 다음은 실제 구성요소/자료핀·비용 등록과 시간 출처 검증이다. [보고서](reports/ML-policy-runtime-implementation-2026-09-28.md) · [검토](reviews/COOP-016-policy-runtime-implementation-2026-09-28.md). 아래 D90 착수 기록은 당시 이력이다.
+
 **런타임 구현 착수 — D90:** 사용자 요청으로 G0 5개 모델 어댑터·TRAIN BC 저장/식별·미지원 요청 기록을 실제 코드와 연결된 합성 검사로 구현 중이다. Opus 메인·Sol 서브·Astra 최종 핵심 검토 1회 체제다. 작성 기준 `f83caea`; SSD `coordination/20260928-policy-runtime/board.json`을 확인해 중복 호출하지 않는다. 실데이터 실행/2026 접근과 실제 정책 동결은 이번 구현 범위 밖이다.
 
 **정책 정의·합성 검증 준비 완료 — D89:** Opus 메인·Sol 서브로 계약·설정·합성 검사·보고서를 작성했다. Astra는 핵심 과학 검토 **1회**, 명시한 문구 수정은 Sol과 Root가 확인했다. 추천 정책의 지원 제한과 전체 구종 로깅 법칙을 분리했고, toy 9gate·신규22검사·기존 포함55검사+8subtests를 통과했다(중복 합산 없음). **M1 부분 준비**이며 실제 정책 동결·최종 사전등록·인과 식별 완료가 아니다. BC/Q/WE·τ·지원 표의 실제 identity는 미등록, ARM-A 보류·ARM-B 비활성·G0 유지다. 실데이터 접근/fit/추론/OPE·수집0. 다음은 **G0 5member 어댑터·TRAIN BC 직렬화·로깅 법칙과 지원 표의 분리·미지원 요청 분모 원장**, 이어서 ≤2025 검증의 자료핀·비용 등록이다. [보고서](reports/MLB-2026-policy-preparation-2026-09-28.md) · [계약](contracts/MLB-2026-POLICY-PREPARATION-v1.md) · [검토](reviews/COOP-015-policy-preparation-2026-09-28.md). 아래 착수/후속 표현은 각 시점 이력이다.

@@ -56,3 +56,7 @@ COOP-014는 메타데이터 감사와 실행 비활성 사전등록 초안이다
 ## Opus 주도 정책 정의·합성 검증 준비 — D88~D89
 
 COOP-015부터 Opus5.5가 설계·구현·보고서의 주 담당이고 Sol이 재사용 조사·검사·일반 검토를 지원한다. 실제 Opus CLI 2회, 별도 Astra 호출은 최종 핵심 과학 검토 1회다. Astra가 남긴 정확한 문구 수정 기준을 Sol이 반영하고 Root가 diff를 확인했으며, 새 Astra 호출로 일반 문서 검사를 반복하지 않았다. 작성 모델/기준·수정 커밋과 검토 주체를 구분했다. [보고서](reports/MLB-2026-policy-preparation-2026-09-28.md), [검토 기록](reviews/COOP-015-policy-preparation-2026-09-28.md). 작업대장은 SSD `coordination/20260928-2026-policy-preparation/board.json`이다. 이 역할 분담을 이후 작업에도 적용한다.
+
+## G0/BC/미지원 원장 구현 — D90~D91
+
+COOP-016은 Opus5.5 실제 CLI 1회가 설계·구현·합성 검사·보고서를 주도했고 Sol의 조기 두 검토를 같은 호출 안에서 반영했다. Sol이 정확한 최종 커밋의 15검사와 독립 재현을 확인했다. Astra는 핵심 과학 검토 1회만 수행했으며, Root가 요구된 보고 범위를 명확히 하고 소스 동등성·통합15검사를 확인했다. 기존 Opus 메인·Sol 서브·Astra 필수 최소 체제를 유지한다. 실데이터 실행과 실제 정책 동결은 없다. 작업대장 SSD `coordination/20260928-policy-runtime/board.json`. [보고서](reports/ML-policy-runtime-implementation-2026-09-28.md), [검토](reviews/COOP-016-policy-runtime-implementation-2026-09-28.md).
