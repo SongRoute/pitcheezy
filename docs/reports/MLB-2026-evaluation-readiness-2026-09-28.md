@@ -11,7 +11,7 @@ COOP-014. 사용자가 승인한 범위는 **메타데이터만 쓰는 2026 사�
 
 ## 2. 사용 이력 감사 (메타데이터·코드만)
 
-2026 자료 값은 새로 읽지 않았다. 근거는 레포 문서·설정·코드와 Sol의 [사용 이력 근거](#6-근거와-하지-않은-것) 산출물이다.
+**제한된 메타데이터 감사는 완료됐고 Astra가 독립 검토(PASS)했다.** Root의 [감사 보고서](MLB-2026-use-history-audit-2026-09-28.md)와 [감사 JSON](../../results/MLB-2026-use-history-audit-v1.json)이 정본이다(통합 대기, 근거 bytes SHA256 `4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40`). 아래는 초안에 쓰인 요약이다. 2026 자료 값은 새로 읽지 않았다. 근거는 레포 문서·설정·코드와 Sol의 [사용 이력 근거](#6-근거와-하지-않은-것) 산출물이다. 감사 범위를 넘는 정확한 경기 ID·전체 시즌 가용성·미사용 인증은 모름이다.
 
 | 항목 | 근거 | 노출 범주·의미 |
 |---|---|---|
@@ -45,16 +45,19 @@ COOP-014. 사용자가 승인한 범위는 **메타데이터만 쓰는 2026 사�
 | BLK-02 | 합법 지원 마스크·action↔(구종, zone) 대응 없음 | B 어댑터 담당(Song) | C0 B 어댑터로 후보 확률/마스크/대응 표와 해시 산출 | M1 |
 | BLK-03 | 2026 이전 동결 nuisance identity 없음 | Astra 설계, Sol 구축 | π_b·결과 모형을 ≤2025로 별도 등록·구축, 계보 보존 | M2 |
 | BLK-04 | 목표 위치·구종 배정 식별 불가 | CV 팀원, Song, Astra | 의도 라벨/로그 또는 배정 근거와 식별 검토. 전까지 ARM-A 보류, ARM-B 인과 값 null | ARM-A, ARM-B 인과 |
-| BLK-05 | 사용 이력 감사 미완 | Sol, Root 검토 | 어떤 구간이든 (d) 인증을 증거로 확정하거나 모름 유지. 정확한 경기 ID, 전체 시즌 수집 여부 | M1 |
-| BLK-06 | ABS 챌린지 기록 방식·시즌 날짜가 등록에 없음 | Root, Sol | Root가 확인한 공식 날짜와 Statcast 번복 판정 기록 방식을 등록에 기록 | M2 |
-| BLK-07 | 2026 고정 수집 미승인 | Song | 별도 승인 후 Sol이 M3 스냅샷·QA로 수행 | M3 |
+| BLK-05 | 코호트 출처·가용성과 넓은 접근 이력 인증 미해결(제한된 감사는 완료) | Sol, Root 검토 | 정확한 사용 경기 ID, 전체 시즌 가용성, 필요 시 (d) 인증을 증거로 확정하거나 모름 유지. 노출 구간을 명시한 탐색 분석은 (d) 인증을 요구하지 않는다 | M1 |
+| BLK-06 | ABS 챌린지 기록 방식·이벤트별 적용 미확인 | Root, Sol | Statcast 번복 판정 기록 방식, 챌린지 상태 변수, 특수 이벤트 예외 처리를 M2 스키마 계획에 기록 | M2 |
+| BLK-07 | 2026 격리 스냅샷 미승인 | Song | M2 등록 뒤 별도 승인하면 Sol이 M3 격리 스냅샷·품질 비노출 QA로 수행 | M3 |
 | BLK-08 | 추정기·ESS·seed·최소 효과가 제안값 | Astra, Song | ESS 게이트를 ≤2025/합성 작업으로 정당화, 추정기·bootstrap seed·무효 replicate 규칙·최소 효과를 2026 적재 전 확정 | M2 |
+
+단계 순서: M2는 **새 자료 접근 전** 과학·수집/QA 계획을 등록하고, M3이 별도 승인된 격리 스냅샷과 품질 비노출 QA로 실제 자료 identity를 처음 만든다. 그 뒤 M3b 최종 실행 등록 게이트에서 실제 스냅샷/manifest 해시·source C·plan D·환경·예산을 pin하고 독립 검토를 받아야 M4 실행 승인을 요청할 수 있다. 자동 승인·release는 없다.
 
 `nuisance_2026_crossfit_exception`은 blocker가 아니라 **보류된 선택지**다. 켜려면 사용자 결정과 decisions.md 기록이 먼저다.
 
 ## 5. 미해결 사실
 
-- 정규시즌 종료일: Root가 공식 발표에서 2026-09-27(미국 날짜), 포스트시즌 시작 2026-09-29로 확인했다고 전달했다. 작성자는 원문을 독립적으로 읽지 않았다. 개막일은 레포 상수 2026-03-25만 있다.
+- 달력은 미해결 사실이 아니다: 제안 경계 2026-03-25~2026-09-27은 Root가 [MLB 공식 일정 발표](https://www.mlb.com/press-release/press-release-mlb-announces-2026-regular-season-schedule)를 웹으로 공개 확인했다(`public-context-supplement.json`, 작성자 독립 열람 아님). 여전히 초안 값이며 실제 보유 수집(09-09까지)·미검증 스냅샷과 다르다.
+- ABS: 잠재적 경계 판정 체제 변화이며 크기는 측정되지 않았다. 특수 이벤트 예외가 있어 모든 경기 적용을 가정하지 않는다.
 - ABS 챌린지 번복 판정이 Statcast에 어떻게 남는지, 챌린지 상태 변수 유무: 미확인.
 - 2026-09-10 이후 경기의 미사용 여부, 과거 사용 경기 ID, 전체 시즌 수집 완료 여부: 모름.
 - 후보·기준 정책, 지원 마스크, nuisance, 수집 스냅샷, source/plan 커밋, 환경, 예산: 모두 `null`.
@@ -62,6 +65,6 @@ COOP-014. 사용자가 승인한 범위는 **메타데이터만 쓰는 2026 사�
 
 ## 6. 근거와 하지 않은 것
 
-근거(읽기 전용): 조정 디렉터리 `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/`의 `usage-evidence.json`·`usage-evidence.md`(Sol), `astra-design-guidance.md`(Astra), `public-context.json`(Root). 초안 작성 중 처음 확인 때는 없었고 최종화 전 확인에서 반영했다. Astra의 진행 중 초안 초기 검토 `astra-draft-review-initial.md`(REVISE, 8항목)도 커밋 전 반영했으며 최종 독립 검토는 아직이다.
+근거(읽기 전용): 조정 디렉터리 `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/`의 `usage-evidence.json`·`usage-evidence.md`(Sol), `astra-design-guidance.md`(Astra), `public-context.json`·`public-context-supplement.json`(Root). 커밋 `528f82b`에 대한 Astra 최종 검토 `astra-final-review.md/.json`(REVISE: R1–R3, N1–N3)과 Sol 일관성 검사 `sol-draft-consistency-check.md/.json`을 이번 수정에 반영했다. 초안 작성 중 처음 확인 때는 없었고 최종화 전 확인에서 반영했다. Astra의 진행 중 초안 초기 검토 `astra-draft-review-initial.md`(REVISE, 8항목)도 커밋 전 반영했으며 이후 최종 검토에서 나온 지적은 위 수정으로 반영했으며 수정본의 재검토는 아직이다.
 
 하지 않은 것: 원자료 수집, 2026 parquet/npz/pickle/행 단위 결과 적재, 캐시 헤더·payload 해시, 모델 가중치 열기, 적합·추론·OPE·채점, 기존 소스·설정·계약 수정, push·merge. 모든 제안값은 등록 전 Astra 독립 검토와 사용자 승인이 필요하다.

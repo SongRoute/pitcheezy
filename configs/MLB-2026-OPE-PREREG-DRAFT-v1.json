@@ -22,7 +22,12 @@
     "g0_status": "frozen_predictive_10class_model_not_a_policy",
     "g0_retained_per": "D86",
     "promote_b1_b2": false,
-    "predictor_seeds_are_policy_confirmations": false
+    "predictor_seeds_are_policy_confirmations": false,
+    "june_calibration_D86": {
+      "N3_all_three_contrasts": "inconclusive",
+      "B1_B2": "not_selected",
+      "B0": "frozen_G0_baseline_retained_not_candidate"
+    }
   },
   "use_history": {
     "evidence_basis": "repo_metadata_and_code_only",
@@ -103,10 +108,26 @@
       "astra_design_guidance": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/astra-design-guidance.md",
       "root_public_context": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/public-context.json",
       "available_at_finalization": true,
-      "astra_draft_review_initial": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/astra-draft-review-initial.md"
+      "astra_draft_review_initial": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/astra-draft-review-initial.md",
+      "root_public_context_supplement": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/public-context-supplement.json",
+      "astra_final_review": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/astra-final-review.md"
     },
     "every_2026_row_exposed_claim": false,
-    "historical_procedure_wording": "conducted_at_the_time_with_limitations_preserved"
+    "historical_procedure_wording": "conducted_at_the_time_with_limitations_preserved",
+    "bounded_metadata_audit": {
+      "status": "complete",
+      "independent_review": "Astra PASS within bounded scope",
+      "report": "docs/reports/MLB-2026-use-history-audit-2026-09-28.md",
+      "results": "results/MLB-2026-use-history-audit-v1.json",
+      "root_owned_pending_integration": true,
+      "evidence_bytes_sha256": "4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40",
+      "beyond_scope_unknown": [
+        "exact_used_game_ids",
+        "full_season_availability",
+        "untouched_certification"
+      ]
+    },
+    "certified_untouched_required_for_exposed_exploratory_analysis": false
   },
   "evaluation_universe": {
     "league": "MLB",
@@ -121,16 +142,20 @@
     ],
     "season": 2026,
     "regular_season_start": {
-      "value": null,
-      "repo_code_constant": "2026-03-25",
-      "status": "pending_primary_source"
+      "value": "2026-03-25",
+      "citation": "https://www.mlb.com/press-release/press-release-mlb-announces-2026-regular-season-schedule",
+      "verified_by": "Root web read 2026-09-28T06:12:21Z (public-context-supplement.json)",
+      "author_independent_read": false,
+      "status": "proposed_bound_publicly_verified_by_root_draft",
+      "distinct_from": "resident acquisition ending 2026-09-09 and unverified snapshot"
     },
     "regular_season_end": {
-      "value": null,
-      "root_reported_official": "2026-09-27",
-      "independently_read_by_author": false,
-      "repo_code_constant": "2026-09-27",
-      "status": "root_reference_pending_registration"
+      "value": "2026-09-27",
+      "citation": "https://www.mlb.com/press-release/press-release-mlb-announces-2026-regular-season-schedule",
+      "verified_by": "Root web read 2026-09-28T06:12:21Z (public-context-supplement.json)",
+      "author_independent_read": false,
+      "status": "proposed_bound_publicly_verified_by_root_draft",
+      "distinct_from": "resident acquisition ending 2026-09-09 and unverified snapshot"
     },
     "pitchers": "all_starters_and_relievers",
     "role_rule": {
@@ -251,12 +276,6 @@
       "Q_value",
       "WE_continuation"
     ],
-    "known_identity": {
-      "WE_continuation": {
-        "source": "docs/contracts/model-v1.json",
-        "artifact": "game_values.pkl"
-      }
-    },
     "unknown_identity": [
       "behavior_policy",
       "ARM_B_outcome_model",
@@ -291,17 +310,27 @@
     "support_source": "TRAIN_and_legal_constraints_only",
     "uses_of_2026_for_support": "overlap_diagnosis_only",
     "zero_target_mass": "valid_zero_ratio",
-    "zero_or_unknown_logging_probability": "recorded_separately_fail_or_null"
+    "zero_or_unknown_logging_probability": "recorded_separately_fail_or_null",
+    "legacy_reference": {
+      "WE_continuation": {
+        "source": "docs/contracts/model-v1.json",
+        "artifact": "game_values.pkl",
+        "status": "legacy_reference_only",
+        "selected_for_this_eval": false,
+        "payload_validated": null
+      }
+    }
   },
   "inference": {
     "primary_estimator": {
       "ARM_A": null,
       "ARM_B": "unclipped_per_decision_sequential_DR_fixed_nuisances_paired_same_PA",
-      "recursion": "V_T=0; V_t = vhat(s_t) + rho_t*(r_t + V_{t+1} - qhat(s_t,a_t)); rho_t = pi(a_t|s_t)/pi_b(a_t|s_t) over pitch types; r_t nonzero only at PA end = W(S_PA_end)",
-      "estimate": "mean over PAs of V_0",
+      "recursion": "For each pi in {candidate, reference} separately, decisions t=0..T-1: V^pi_T=0; V^pi_t = vhat^pi(H_t) + rho^pi_t*(r_t + V^pi_{t+1} - qhat^pi(H_t,a_t)); vhat^pi(H_t)=sum_a pi(a|H_t)*qhat^pi(H_t,a); rho^pi_t = pi(a_t|H_t)/pi_b(a_t|H_t) over pitch types; r_t nonzero only at PA end = W(S_PA_end)",
+      "estimate": "mean over PAs of paired V^cand_0 - V^ref_0",
       "self_normalized": false,
       "auto_switch_to_pitch_type_only": false,
-      "status": "proposal"
+      "status": "proposal",
+      "history": "H_t = full registered predecision history or justified sufficient state; if sufficiency not defensible, identification blocker"
     },
     "ratio_clip": {
       "primary": null,
@@ -433,7 +462,11 @@
     "root_reference": "https://www.mlb.com/news/abs-challenge-system-mlb-2026",
     "edge_band_exclusion_as_ope_sensitivity": false,
     "edge_band_exclusion_reason": "post_treatment_selection_on_realized_location",
-    "edge_band_width": null
+    "edge_band_width": null,
+    "regime_shift": "potential_boundary_call_distribution_shift_unmeasured",
+    "measured_magnitude": null,
+    "all_2026_games_used_ABS_assumed": false,
+    "special_event_exceptions": "noted by official source; event-specific treatment deferred to M2 schema plan"
   },
   "identities": {
     "candidate_policy_sha256": null,
@@ -450,13 +483,14 @@
     "environment": null,
     "source_commit_C": null,
     "plan_commit_D": null,
-    "budget_seconds": null
+    "budget_seconds": null,
+    "pinned_at": "M3b_final_execution_registration_gate"
   },
   "milestones": [
     {
       "id": "M0",
       "name": "metadata_use_history_audit_and_draft",
-      "status": "this_deliverable"
+      "status": "bounded_audit_complete_draft_this_deliverable"
     },
     {
       "id": "M1",
@@ -469,17 +503,37 @@
     },
     {
       "id": "M2",
-      "name": "registration",
+      "name": "pre_access_science_and_acquisition_QA_plan_registration",
+      "before_new_data": true,
       "status": "not_started"
     },
     {
       "id": "M3",
-      "name": "separated_collection_snapshot_and_QA",
+      "name": "separately_authorized_isolated_snapshot_and_quality_blind_QA",
+      "produces": "actual_dataset_identity",
       "status": "not_authorized"
+    },
+    {
+      "id": "M3b",
+      "name": "final_execution_registration_gate",
+      "pins": [
+        "snapshot_and_manifest_sha256",
+        "source_commit_C",
+        "plan_commit_D",
+        "environment",
+        "budget"
+      ],
+      "requires": "independent_review",
+      "status": "not_started"
     },
     {
       "id": "M4",
       "name": "bounded_profile_and_execution",
+      "requires": [
+        "M3b_pass",
+        "separate_user_execution_authorization",
+        "root_release"
+      ],
       "status": "not_authorized"
     },
     {
@@ -527,35 +581,38 @@
         "Astra"
       ],
       "action": "Provide intent labels/logging or assignment evidence plus identification review; until then ARM_A blocked and causal ARM_B estimates null",
-      "gates": "ARM_A"
+      "gates": [
+        "ARM_A",
+        "ARM_B_causal_interpretation"
+      ]
     },
     {
       "id": "BLK-05",
-      "what": "use_history_audit_incomplete",
+      "what": "cohort_provenance_availability_and_wider_access_certification_unresolved",
       "owner": [
         "Sol",
         "Root"
       ],
-      "action": "Extend usage-evidence to certify (category d) any window, or keep unknown; exact game IDs and complete-season acquisition status",
+      "action": "Bounded metadata audit is complete; establish exact used game IDs, full-season availability and, if needed, untouched certification, or keep unknown. Not required for explicitly exposed exploratory analysis",
       "gates": "M1"
     },
     {
       "id": "BLK-06",
-      "what": "ABS_record_semantics_and_season_dates_not_in_registration",
+      "what": "ABS_record_semantics_and_event_treatment_unknown",
       "owner": [
         "Root",
         "Sol"
       ],
-      "action": "Record primary-source season dates (root-checked) and Statcast ABS challenge call semantics in registration",
+      "action": "Record Statcast challenge-call semantics, challenge state variables and special-event exception handling in M2 schema plan",
       "gates": "M2"
     },
     {
       "id": "BLK-07",
-      "what": "frozen_2026_collection_not_authorized",
+      "what": "isolated_2026_snapshot_not_authorized",
       "owner": [
         "Song"
       ],
-      "action": "Separately authorize freeze collection; Sol executes as M3 snapshot/QA",
+      "action": "After M2 registration, separately authorize; Sol executes M3 isolated snapshot and quality-blind QA",
       "gates": "M3"
     },
     {
@@ -568,5 +625,6 @@
       "action": "Justify ESS gates with pre-2026/synthetic work; fix estimator, bootstrap seed, invalid-replicate rule, minimum effect before any 2026 load",
       "gates": "M2"
     }
-  ]
+  ],
+  "milestone_auto_release": false
 }
