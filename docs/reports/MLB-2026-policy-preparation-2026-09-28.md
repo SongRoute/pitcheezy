@@ -1,6 +1,6 @@
 # MLB 2026 정책 정의 준비 — 2026-09-28
 
-COOP-015(D88). 작성 Opus5.5, 지원 Sol, 최종 검토 Astra(예정). 기준 `e5bfa7f`. 계약 [MLB-2026-POLICY-PREPARATION-v1](../contracts/MLB-2026-POLICY-PREPARATION-v1.md), 설정 [config](../../configs/MLB-2026-POLICY-PREPARATION-v1.json).
+COOP-015(D88). 작성 Opus5.5, 지원 Sol, 독립 과학 검토 Astra 1회 지적 반영; 최종 통합 확인 Root. 기준 `e5bfa7f`. 계약 [MLB-2026-POLICY-PREPARATION-v1](../contracts/MLB-2026-POLICY-PREPARATION-v1.md), 설정 [config](../../configs/MLB-2026-POLICY-PREPARATION-v1.json).
 
 이 문서의 `COORD`는 `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-policy-preparation`이다.
 
@@ -50,14 +50,18 @@ Sol 재사용 목록(`COORD/sol-inventory.md`, 스냅샷 `301ac07`)과 교차 �
 | V1 | toy 정확 oracle(완료) | 없음 | 실측 <1초 |
 | V2 | **모델 세계 준합성**: 동결 시뮬레이터 안에서 알려진 전체 어휘 π_b(=M으로 제한하지 않은 BC)로 로그를 생성하고 ARM-B DR Δ를 같은 세계의 rollout Δ와 비교. ESS 분포를 측정해 BLK-08 게이트 근거 마련 | DEV PA 시작 맥락만(결과 라벨 불필요) | `null`, profile 먼저 |
 | V3 | V2에서 로그 법칙을 π̂_b와 다르게(빈도 법칙·섭동) 두고 편향 크기 측정 → 이동 가정 민감도 척도 | 같음 | `null` |
-| V4 | 실제 2025 DEV placebo: cand=ref면 Δ̂가 정확히 0인지(무결성), V̂(ref) 대 관측 평균 PA WE 차이(TRAIN→DEV 이동 진단, 식별 아님) | DEV 결과 라벨, 이미 노출 | `null` |
+| V4 | 실제 2025 DEV 검사: cand=ref 짝 Δ̂=0은 대수·무결성만 확인. V̂(ref) 대 관측 로그 정책 평균 PA WE의 차이는 실제 기준–로그 정책 차이와 nuisance·이동·모형 오차가 섞인 기술적 차이이며, 이동·보정 오차를 단독 식별하지 못함 | DEV 결과 라벨, 이미 노출 | `null` |
 | V5 | DEV 지원·거절 분모(모르는 투수, 빈 지원, 미지 코드, 마스크 밖 로그 행동 비율, π̂_b(M\|H) 분포) 기술 통계 | DEV 투구 전 필드·로그 구종 | `null` |
+
+**V2 등록·실행 전제:** 시뮬레이터는 정책 마스크 M 밖을 포함하여 전체 어휘 로그 법칙이 양의 확률을 주는 **모든 행동**의 delivery·전이를 정의해야 한다. 하나라도 없으면 V2는 위 정의대로 실행할 수 없으며, 로그 법칙을 M으로 조용히 재정규화해 해결하지 않는다. 모의 ESS는 실제 2026 overlap·이동·교란 통제나 BLK-08 문턱을 입증하지 않는다.
+
+**V4 해석 제한:** 기준 정책과 실제 로그 정책이 같다는 사실을 독립적으로 확정하지 않는 한 위 차이를 순수 TRAIN→DEV 이동·보정 오차로 해석하지 않는다. cand=ref 짝 0은 추정량의 대수·무결성 확인일 뿐 타당성 증거가 아니다.
 
 비용 참고값: EXP-P8-001 P0–P3 큐 293.31초(128+128 시작, D65). 후보 π_cand를 매 결정에서 MC로 계산하므로 결정 수 N에 대해 약 `N·A·S·Cs` 조건부 행이 든다. N·A·S·Cs 실제 값은 미측정. 새 작업의 예산 근거로 쓰지 않는다.
 
 ## 5. 다음 단계 (의존 순서)
 
-1. Root 통합 검토, Astra 최종 과학 검토(`COORD/opus-review-brief.md`).
+1. Astra 독립 과학 검토 1회(`COORD/astra-focused-review.json`, 검토 커밋 `287c884b`)의 문구 수정 기준을 Sol이 기계적으로 확인한 뒤 Root가 최종 통합 확인. Astra가 수정 후 bytes를 다시 검토했다고 주장하지 않는다.
 2. Song 결정: π̂_b를 M과 독립인 전체 어휘 법칙으로 두는 이번 제안의 채택, Q̂ 예측기(G0 5 member vs P8의 G2/G3), π̂_b 주·민감도, τ 튜닝 구간(노출된 June 2025 재사용 여부), PA 중 투수 교체 규칙. ARM-B 활성화는 별개 결정.
 3. additive 구현 + 합성 검사: G0 5 member 어댑터, BC 직렬화·어휘/지원 해시, 2026 어댑터(모르는 투수 거절과 분모 원장, strict ratio, 로그 행동 세 상태). 레거시 함수는 수정하지 않는다.
 4. V2–V5 설정 등록(예산·seed·출력 경로), profile 먼저, 단일 heavy lock.
@@ -68,4 +72,4 @@ BLK-05(정확한 과거 사용 경기 ID)와 이후 2026 수집 범위는 이 �
 
 ## 6. 하지 않은 것·제약
 
-2026 또는 ≤2025 원자료·parquet 헤더·npz/npy/pickle·모델 가중치 열람, payload 해시, fit·추론·OPE·수집, 기존 코드·설정·계약 변경, decisions/handoff 수정, push/merge 없음. 새 파일 5개(계약·설정·보고서·합성 스크립트·테스트)만 추가했다. 새 스크립트는 인자·파일 입력이 없고 2026 평가를 호출하지 않는다. 코드 변경이 있으므로 Root에서 `graphify update .`가 필요하다(worktree에는 graph 없음).
+2026 또는 ≤2025 원자료·parquet 헤더·npz/npy/pickle·모델 가중치 열람, payload 해시, 실데이터 기반 fit·추론·OPE·수집, 기존 코드·설정·계약 변경, decisions/handoff 수정, push/merge 없음. 새 파일 5개(계약·설정·보고서·합성 스크립트·테스트)만 추가했다. 새 스크립트는 인자·파일 입력이 없고 2026 평가를 호출하지 않는다. 코드 변경이 있으므로 Root에서 `graphify update .`가 필요하다(worktree에는 graph 없음).

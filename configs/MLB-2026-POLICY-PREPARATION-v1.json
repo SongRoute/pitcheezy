@@ -104,7 +104,7 @@
         "numeric_floor": null,
         "rho_ref_identically_one": false,
         "equality_condition": "pi_b_hat(M(H)|H) = 1 for every registered H; only then pi_ref == pi_b_hat and rho_ref == 1; to be checked on TRAIN tables, not assumed",
-        "derivation": "IS identity requires the actual logging law; renormalising onto M inflates in-M ratios by pi_b(M|H) and makes out-of-M logged actions undefined (dropping = post-treatment selection; counting as 0 = pi_b(M|H) scaling). Synthetic: conditional -0.00286, as-zero -0.21449."
+        "derivation": "IS identity requires the actual logging law; renormalising onto M scales down in-M ratios by pi_b(M|H): rho_wrong = pi_b(M|H)*rho_full (unchanged only when mass=1) and makes out-of-M logged actions undefined (dropping = post-treatment selection; counting as 0 = pi_b(M|H) scaling). Synthetic: conditional -0.00286, as-zero -0.21449."
       },
       "policy_mask": {
         "value": "M(H) = positive TRAIN BC support AND TRAIN token vocabulary AND action-specific TRAIN delivery pool for all 12 counts (matrix_policy.PolicyInputs.support); restricts intervention actions only, never the logging law",
@@ -229,7 +229,9 @@
     "budget_seconds": null,
     "existing_cost_reference": "EXP-P8-001 queue 293.31 s for P0-P3 at 128+128 starts (D65); not a budget for new work",
     "exposure_scope": "Only the listed proposed windows/existing sets are known exposed. Availability and usage of all other <=2025 populations are unknown; no broad exposed or untouched claim.",
-    "certified_unexposed_population_count": 0
+    "certified_unexposed_population_count": 0,
+    "V2_precondition": "Before registration/execution, the simulator must define transitions and delivery for every positive-probability action of the full-vocabulary logging law, including actions outside M. If unavailable, V2 cannot run as defined; never silently renormalise the logging law onto M.",
+    "V4_interpretation": "cand=ref paired-zero is algebra/integrity only. Estimated V(ref) minus observed logging-policy mean is a descriptive gap mixing the actual reference-vs-logging policy contrast with nuisance/transport/model error; it cannot isolate transport or miscalibration unless reference/logging policy equality is independently established."
   },
   "claims": {
     "policy_frozen": false,
