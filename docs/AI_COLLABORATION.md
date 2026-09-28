@@ -60,3 +60,7 @@ COOP-015부터 Opus5.5가 설계·구현·보고서의 주 담당이고 Sol이 �
 ## G0/BC/미지원 원장 구현 — D90~D91
 
 COOP-016은 Opus5.5 실제 CLI 1회가 설계·구현·합성 검사·보고서를 주도했고 Sol의 조기 두 검토를 같은 호출 안에서 반영했다. Sol이 정확한 최종 커밋의 15검사와 독립 재현을 확인했다. Astra는 핵심 과학 검토 1회만 수행했으며, Root가 요구된 보고 범위를 명확히 하고 소스 동등성·통합15검사를 확인했다. 기존 Opus 메인·Sol 서브·Astra 필수 최소 체제를 유지한다. 실데이터 실행과 실제 정책 동결은 없다. 작업대장 SSD `coordination/20260928-policy-runtime/board.json`. [보고서](reports/ML-policy-runtime-implementation-2026-09-28.md), [검토](reviews/COOP-016-policy-runtime-implementation-2026-09-28.md).
+
+## 구성요소 연결·완전한 식별자·≤2025 등록 준비 — D92
+
+COOP-017은 사용자 재개 지시로 Claude(`claude-opus-5-5`)가 **Codex 감독기 없이 직접** 수행했다. Sol·Astra는 이 Claude 환경에서 호출할 수 없었고, Claude가 Codex를 다시 부르는 순환 위임은 금지이므로 시도하지 않았다. 구현·합성 검사·등록안만 남기고 독립 검토 패킷을 준비했다(검토 미수행). 같은 모델의 하위 에이전트 점검은 자기 점검으로만 기록하며 Sol/Astra 검토로 부르지 않는다. 실데이터·payload·2026 접근은 0이고 Fable 호출은 없다. 작업대장 SSD `coordination/20260929-policy-materialization/board.json`. [보고서](reports/ML-policy-materialization-prep-2026-09-29.md), [검토 패킷](reviews/COOP-017-policy-materialization-review-packet-2026-09-29.md). 다음 협업 환경에서 Sol 재현과 Astra 핵심 검토 1회를 먼저 수행한다.

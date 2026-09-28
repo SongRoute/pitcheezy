@@ -1,24 +1,22 @@
 # Claude Code에 붙여 넣을 재개 프롬프트
 
-아래 코드 블록 전체를 복사한다. 상세 상태와 실행 경계는 연결된 인수인계에 있으므로 이전 대화 전체를 붙일 필요는 없다.
+아래 코드 블록 전체를 복사한다. 상세 상태와 실행 경계는 연결된 인수인계에 있으므로 이전 대화 전체를 붙일 필요는 없다. 이전(D91) 프롬프트는 git 이력에 보존된다.
 
 ```text
-/Users/song/Projects/pitcheezy에서 이전 Codex–Claude 공동 작업을 이어서 진행해줘. 새로 시작하거나 완료한 실험을 반복하지 말고 현재 구현을 이어받아줘.
+/Users/song/Projects/pitcheezy에서 이전 Codex–Claude 공동 작업을 이어서 진행해줘. 새로 시작하거나 완료한 실험·구현을 반복하지 말고 현재 상태를 이어받아줘.
 
-먼저 AGENTS.md, CLAUDE.md, docs/AI_COLLABORATION.md와 docs/handoffs/CLAUDE-resume-2026-09-28.md를 읽어줘. 인수인계의 읽기 순서대로 D91 보고서·독립 검토·정책 계약을 확인해줘. git status/branch/log와 SSD 작업대장을 확인해 이후 변경·실행 중 작업이 있는지 파악하고, 기존 변경/봉인 산출물을 보존해줘.
+먼저 AGENTS.md, CLAUDE.md, docs/AI_COLLABORATION.md와 docs/handoffs/CLAUDE-resume-2026-09-29.md를 읽어줘. 인수인계의 읽기 순서대로 D92 보고서·계약·config·검토 패킷을 확인해줘. git status/branch/log, ListAgents, decisions 꼬리와 SSD 작업대장(coordination/20260929-policy-materialization/board.json)을 확인해 이후 변경·실행 중 작업이 있는지 파악하고, 기존 변경/봉인 산출물을 보존해줘.
 
 현재 상태:
-- 브랜치 codex/ml-matrix-execution, 직전 검증 완료 ec514f5(재개 문서 커밋은 그 후손), 기존 PR #34. reset하거나 merge하지 마.
-- D91 G0 5모델 어댑터, TRAIN BC/지원 표 저장·식별, 미지원 요청 원장 구현 완료. 신규15/관련 포함54검사 통과, 오류 변이8종 검출, Opus 작성·Sol 독립 검증·Astra 핵심 검토1회 완료.
-- 실제 TRAIN BC 생성·G0 실가중치 연결·정책 동결·실데이터 평가는 미수행. G0 연구 기준선 유지, ARM-A 보류, ARM-B 비활성, 2026 평가 실행 비활성.
+- 브랜치 codex/ml-matrix-execution, 기존 PR #34. reset하거나 merge하지 마.
+- D92(COOP-017): 완전한 정책 식별자(ML-POLICY-IDENTITY-v1)와 실제 연결 검증(bind_components/BoundComponents, 요청별 지원 표=pool 확인, verify_components, 정책 경로=평가 경로 합성 probe) 구현·합성 검사 완료. TRAIN BC(BC-P 주 제안·BC-E 비교)·PA/시간 규칙 R1–R8·≤2025 검증 S0–S6 계획은 제안·미등록 계약/config로 준비. Sol/Astra 독립 검토는 미수행(패킷만).
+- 실제 BC 생성·payload 로드·bind·추론·OPE·2026 접근은 0. G0 연구 기준선 유지, ARM-A 보류, ARM-B 비활성, policy_frozen=false.
 
-이번에 이어 할 일은 인수인계 §4의 '실제 구성요소 연결 명세·식별자 보완·≤2025 검증 등록 준비'야. 먼저 코드와 기존 메타데이터에서 frequency 객체, G0 전처리/PolicyInputs/member loader, delivery pool, terminal/cutoff/WE 출처와 누락된 pin을 조사해줘. 그 결과로 완전한 정책 식별자 및 실제 연결 검증을 설계·구현하고 필요한 합성 검사를 진행해줘. 이어 TRAIN BC/지원 표 생성 계획, MID_PA·불완전 PA·시간 출처 규칙, ≤2025 검증 자료·비용·실행 계획을 구체적인 문서와 설정으로 준비해줘. 정보가 없으면 unknown/미측정으로 남겨줘.
+이번에 이어 할 일은 인수인계 §3 순서다: (1) 가능한 협업 환경이면 Sol 재현과 Astra 핵심 검토 1회, 불가능하면 사용한 척하지 말고 미완료로 둔다. (2) Song 결정 D-1~D-11이 없으면 결정이 필요한 항목을 짧게 묻는다. (3) 결정에 영향받지 않는 범위에서 실행기 run_policy_validation.py와 요청 생성기(R2·R3(c)·R4b·R4c·R8)를 실데이터 없이 구현·합성 검사한다.
 
-현재 runtime_sha는 완전한 동결 정책 ID가 아니고, 원장 분모는 제출된 요청/PA이며, history 검사는 국소 일관성에 한정된다는 점을 유지해줘. 로깅 BC 확률을 추천 지원 마스크로 재정규화하지 마. G0는 member별 보정→5확률 평균→공통 앙상블 혼합 순서를 보존해줘.
+원장 분모는 제출된 요청/PA이고 history 검사는 국소 일관성이며 식별자는 같은 부품의 연결만 보장한다는 점을 유지해줘. 로깅 BC 확률을 지원 마스크로 재정규화하지 말고, G0는 member별 보정→5확률 평균→공통 앙상블 혼합 순서를 보존해줘.
 
-Opus 메인·Sol 서브·Astra 필수 최소 체제를 유지하고 Fable은 사용하지 마. Astra는 과학 검토가 필요한 최종 패킷으로 모아 1회 사용해줘. 현재 Claude 환경에서 Sol/Astra 호출이 불가능하면 사용한 척하지 말고 가능한 구현·합성 검사는 진행하면서 독립 검토 패킷과 미완료 상태를 남겨줘. Claude가 Codex를 재호출하는 순환 위임은 하지 마.
+Opus 메인·Sol 서브·Astra 필수 최소 체제를 유지하고 Fable은 사용하지 마. Claude가 Codex를 재호출하는 순환 위임은 하지 마. 이 프롬프트로 실제 payload 로드·BC 생성·실험 실행을 승인했다고 해석하지 마. 2026 자료 추가 열람·수집·fit·추론·OPE, 정책/서비스 승격, 봉인 파일 덮어쓰기·PR merge는 하지 마. 이미 허용된 구현 작업은 반복 확인 질문 없이 진행해줘.
 
-코드/문서/메타데이터 조사·합성 검사는 계속 진행하되, 이 프롬프트로 실제 payload 로드·BC 생성·실험 실행을 자동 승인했다고 해석하지 마. 2026 자료 추가 열람·수집·fit·추론·OPE, 정책/서비스 승격, 기존 봉인 파일 덮어쓰기·PR merge는 하지 마. 실제 실행은 자료핀·비용·독립 검토와 사용자 승인 범위를 확인한 뒤에 진행해줘. 이미 허용된 구현 작업은 반복 확인 질문 없이 진행해줘.
-
-시작할 때 현재 상태와 첫 작업을 짧게 알리고 실제 작업을 진행해줘. 완료 시 바뀐 파일·검사 근거·남은 조건·바로 다음 작업을 보고하고 docs/SESSION_HANDOFF.md와 docs/handoffs/ML-experiments-next-session.md를 갱신해줘. 필요한 명세·실행 준비를 구체적으로 만들기 전에 막연한 다음 단계 제안만 하고 멈추지 마.
+시작할 때 현재 상태와 첫 작업을 짧게 알리고 실제 작업을 진행해줘. 완료 시 바뀐 파일·검사 근거·남은 조건·바로 다음 작업을 보고하고 docs/SESSION_HANDOFF.md와 docs/handoffs/ML-experiments-next-session.md를 갱신해줘.
 ```
