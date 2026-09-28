@@ -110,11 +110,17 @@ class PolicyRuntime:
 
     candidate: ``callable(state) -> probs[|V|]`` (e.g. P3 ``RolloutImprovement.policy``
     over ``FrozenG0Ensemble``) plus ``candidate_identity`` dict; no default candidate or tau.
+    support_check: ``callable(state, mask)`` raising ``IntegrityError`` when the pinned support
+    table disagrees with the bound delivery pools (``BoundComponents.check_support``).
+    context_digest: ``callable(state) -> sha256 | None`` of the bound context row; it joins the
+    request fingerprint so a rebinding with other row values cannot replay stored rows.
     """
     def __init__(self, bc_artifact, support, support_sha256, ledger_path, *, candidate=None,
-                 candidate_identity=None, predictor_identity=None):
+                 candidate_identity=None, predictor_identity=None, support_check=None, context_digest=None):
         if (candidate is None) != (candidate_identity is None):
             raise IntegrityError('a candidate needs a pinned identity (and vice versa)')
+        self.support_check, self.context_digest = support_check, context_digest
+        self.components = self.improvement = None
         # Own private copies whose content re-hashes to the pins; later caller mutation
         # of the artifact/support objects cannot change the law behind this runtime sha.
         payload = bc_payload(bc_artifact.bc, bc_artifact.provenance)
@@ -178,6 +184,8 @@ class PolicyRuntime:
             raise Unsupported(EMPTY_SUPPORT, 'no TRAIN BC support for this pitcher')
         logging = self._row(self.bc.probabilities(state), logging_mask, 'logging law')
         mask = self.reference.support(state)
+        if self.support_check is not None:  # before the empty-support refusal: an empty mask can hide a pool mismatch
+            self.support_check(state, mask)
         if not mask.any():
             raise Unsupported(EMPTY_SUPPORT, 'no intervention-supported action')
         reference = self._row(self.reference.probabilities(state), mask, 'reference')
@@ -205,6 +213,9 @@ class PolicyRuntime:
                     or not request.pa_id or type(request.decision_index) is not int):
                 raise IntegrityError('request/PA IDs must be nonempty strings and decision_index an int')
             fingerprint = request.fingerprint()
+            context = self.context_digest(request.state) if self.context_digest is not None else None
+            if context is not None:
+                fingerprint = canonical_hash({'request': fingerprint, 'context_sha256': context})
         except Exception as failure:  # no usable ID: audit row outside the denominators, then halt
             self.ledger._append({'kind': 'malformed', 'detail': f'{type(failure).__name__}: {failure}'})
             self.halted = True
@@ -239,7 +250,7 @@ class PolicyRuntime:
             'runtime_sha256': self.sha256, 'context_key': s.context_key, 'pitcher': s.pitcher,
             'batter_side': s.batter_side, 'balls': int(s.balls), 'strikes': int(s.strikes),
             'history_actions': [h.action for h in s.history], 'logged_action': request.logged_action,
-            'result': result})
+            'context_sha256': context, 'result': result})
         self._index(row)
         if status in FATAL:
             self.halted = True
@@ -266,6 +277,15 @@ class PolicyRuntime:
                 'ledger_rows': len(self.ledger.rows), 'ledger_head_sha256': self.ledger.rows[-1]['sha256'],
                 'runtime_sha256': self.sha256, 'population_value': None}
 
+    def verify_components(self):
+        """Stage-end check before sealing results: for a candidate runtime, the pinned code,
+        the bound component content and the simulator wiring are unchanged since binding."""
+        if self.components is None:
+            if self.candidate is not None:
+                raise IntegrityError('a candidate without bound components cannot be verified')
+            return True
+        return self.components.verify(self.improvement)
+
 
 class MaskedReference:
     """pi_ref = full TRAIN BC restricted to the frozen intervention support and renormalized.
@@ -287,26 +307,40 @@ class MaskedReference:
         return p / p.sum()
 
 
-def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path, *, g0=None, pool=None,
-                  terminal=None, cutoff=None, budget=None, we_identity=None, tau=None, samples=None,
-                  pitch_cap=None, seed=None):
-    """Entry path: pinned BC + pinned support table (+ optional P3 candidate over frozen G0).
+def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path, *, components=None,
+                  budget=None, tau=None, samples=None, pitch_cap=None, seed=None, expected_identity_sha256=None):
+    """Entry path: pinned BC + pinned support table (+ optional P3 candidate over bound components).
 
-    Without ``g0`` the runtime evaluates logging law and reference only. With ``g0`` every
-    candidate setting is required explicitly; tau/MC/WE have no defaults (unregistered).
+    Without ``components`` the runtime evaluates logging law and reference only. A candidate
+    needs ``BoundComponents`` from ``policy_identity.bind_components``: pool, G0, WE terminal and
+    cutoff come only from them, never as loose callables. tau/MC/budget have no defaults
+    (unregistered). The candidate identity is the complete ML-POLICY-IDENTITY-v1 identity; a
+    registered ``expected_identity_sha256`` must match it exactly.
     """
     from .policy_artifacts import load_support_table, load_train_bc
+    from .policy_identity import BoundComponents
     from .rollout_policy import JointSimulator, RolloutImprovement
     artifact = load_train_bc(bc_path, bc_sha256)
     support, support_identity = load_support_table(support_path, support_sha256, artifact)
-    if g0 is None:
+    if components is None:
+        if expected_identity_sha256 is not None:
+            raise IntegrityError('a policy identity pin needs bound candidate components')
         return PolicyRuntime(artifact, support, support_identity, ledger_path)
-    settings = {'tau': tau, 'samples': samples, 'pitch_cap': pitch_cap, 'seed': seed, 'we_identity': we_identity}
-    if any(v is None for v in (*settings.values(), pool, terminal, cutoff, budget)):
-        raise IntegrityError('candidate requires explicit pool/terminal/cutoff/budget/tau/MC/WE settings')
-    reference = MaskedReference(artifact.bc, support)
-    improvement = RolloutImprovement(reference, JointSimulator(pool, g0, terminal, budget), cutoff,
-                                     samples=samples, pitch_cap=pitch_cap, seed=seed)
+    settings = {'tau': tau, 'samples': samples, 'pitch_cap': pitch_cap, 'seed': seed}
+    if not isinstance(components, BoundComponents) or any(v is None for v in (*settings.values(), budget)):
+        raise IntegrityError('candidate requires BoundComponents and explicit tau/MC/budget settings')
+    components.verify()
+    if components.identity['bc']['bc_sha256'] != artifact.sha256:
+        raise IntegrityError('bound components were built for another TRAIN BC')
+    identity = {**components.identity, 'support_table_sha256': support_identity,
+                'search': {'policy': 'P3', 'reference': 'MaskedReference(TRAIN BC, pinned support table)',
+                           'q': 'RolloutImprovement MC of the reference continuation', **settings}}
+    identity['sha256'] = canonical_hash(identity)
+    if expected_identity_sha256 is not None and identity['sha256'] != expected_identity_sha256:
+        raise IntegrityError('complete policy identity differs from its registered pin')
+    reference, we = MaskedReference(artifact.bc, support), components.we
+    improvement = RolloutImprovement(reference, JointSimulator(components.inputs.pool, components.g0, we.terminal, budget),
+                                     we.cutoff, samples=samples, pitch_cap=pitch_cap, seed=seed)
     choose = improvement.policy('P3', tau=tau)
 
     def candidate(state):
@@ -314,9 +348,8 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
         if tuple(actions) != artifact.vocabulary:
             raise IntegrityError('candidate action order differs from the BC vocabulary')
         return p
-    identity = {'name': 'P3_kl_over_masked_reference_Q', 'predictor_sha256': g0.identity['sha256'],
-                'support_table_sha256': support_identity, 'bc_sha256': artifact.sha256, **settings}
     runtime = PolicyRuntime(artifact, support, support_identity, ledger_path, candidate=candidate,
-                            candidate_identity=identity, predictor_identity=g0.identity)
-    runtime.reference, runtime.improvement = reference, improvement
+                            candidate_identity=identity, predictor_identity=components.g0.identity,
+                            support_check=components.check_support, context_digest=components.context_sha256)
+    runtime.reference, runtime.improvement, runtime.components = reference, improvement, components
     return runtime

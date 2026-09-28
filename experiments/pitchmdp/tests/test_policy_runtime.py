@@ -470,22 +470,20 @@ class LedgerTests(unittest.TestCase):
 
 class EndToEndTests(unittest.TestCase):
     def test_serialized_bc_support_g0_candidate_and_ledger(self):
+        from test_policy_identity import SyntheticPolicy  # pinned synthetic G0 + WE files (COOP-017)
         root = Path(tempfile.mkdtemp())
         bc = CategoricalBC().fit([BCRecord(PAState(0, 0, '9', 'L'), a, 'train') for a in ('FF', 'FF', 'SL', 'CH')])
         art = pa.save_train_bc(bc, root / 'bc.json', {**PROV, 'train_rows': 4})
-        data, inputs = g0_inputs(pa.load_train_bc(root / 'bc.json', art.file_sha256).bc)
+        loaded, data = pa.load_train_bc(root / 'bc.json', art.file_sha256), frame()
+        components = SyntheticPolicy(root / 'g0').bind(loaded, data)
+        inputs, g0 = components.inputs, components.g0
         key = context_key(data.iloc[0])
         s0 = PAState(0, 0, '9', 'L', (), key)
-        # Support table from the existing PolicyInputs support (BC ∩ tokens ∩ 12-count pools).
+        # Support table from the bound PolicyInputs support (BC ∩ tokens ∩ 12-count pools).
         mask = inputs.support(s0)
         self.assertEqual(mask.tolist(), [False, True, True])
         _, support_sha = pa.save_support_table(art, [('9', 'L', mask)], root / 'support.json')
-        bundle, paths = g0_files(root / 'g0')
-        g0 = load_g0(bundle, inputs, paths)
-        terminal = {'walk': .40, 'strikeout': .70, 'out': .65, 'single': .45, 'double': .40, 'triple': .38,
-                    'home_run': .30, 'hbp': .40, 'double_play': .72}
-        settings = dict(g0=g0, pool=inputs.pool, terminal=lambda s, e: terminal[e], cutoff=lambda s: .55,
-                        budget=RowBudget(10 ** 6, seed_count=5), we_identity='synthetic-we', tau=.01,
+        settings = dict(components=components, budget=RowBudget(10 ** 6, seed_count=5), tau=.01,
                         samples=4, pitch_cap=6, seed=701)
         rt = pr.build_runtime(root / 'bc.json', art.file_sha256, root / 'support.json', support_sha,
                               root / 'ledger.jsonl', **settings)
@@ -510,9 +508,9 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(rt2.summary()['request_status'], {pr.SUPPORTED: 1, pr.OUTSIDE_POLICY_SUPPORT: 1,
                                                            pr.UNKNOWN_PITCHER: 1})
         # Perturbed predictor (one May temperature) = new identity: old-pinned requests refused.
-        perturbed, ppaths = g0_files(root / 'g0b', temps=(1.0, 1.1, .9, 1.2, .81))
+        perturbed = SyntheticPolicy(root / 'g0b', temps=(1.0, 1.1, .9, 1.2, .81)).bind(loaded, data)
         rt3 = pr.build_runtime(root / 'bc.json', art.file_sha256, root / 'support.json', support_sha,
-                               root / 'ledger3.jsonl', **{**settings, 'g0': load_g0(perturbed, inputs, ppaths)})
+                               root / 'ledger3.jsonl', **{**settings, 'components': perturbed})
         self.assertNotEqual(rt3.sha256, rt.sha256)
         with self.assertRaisesRegex(pa.IntegrityError, 'another runtime'):
             rt3.submit(pr.DecisionRequest('z', 'pz', 0, s0, 'FF', rt.sha256))
