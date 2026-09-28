@@ -119,7 +119,7 @@
       "independent_review": "Astra PASS within bounded scope",
       "report": "docs/reports/MLB-2026-use-history-audit-2026-09-28.md",
       "results": "results/MLB-2026-use-history-audit-v1.json",
-      "root_owned_pending_integration": true,
+      "root_owned_pending_integration": false,
       "evidence_bytes_sha256": "4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40",
       "beyond_scope_unknown": [
         "exact_used_game_ids",

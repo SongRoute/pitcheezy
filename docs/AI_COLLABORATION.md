@@ -46,3 +46,9 @@ Astra가 B0/B1/B2·N3/R78·비용 계약을 작성하고, Sol이 재사용 입�
 COOP-013 Claude Opus5.5가 별도 worktree에서 보정·N3/R78 scorer·단계별 worker와 합성 검사를 구현했다. 실제 응답 모델은 두 attempt 모두 `claude-opus-5-5`다. 첫 호출 안에서 이미 반영한 수정 요청을 새 호출 성공으로 중복 집계하지 않았다. 두 번째 호출은 Git 출처 명령 실패 시 거부하는 수정과 12개 회귀 검사다. Astra가 구현과 실제 C/D·환경·자료핀·명령계획을 독립 검토했고, Sol이 감독기·25개 검사·단일 실제 큐를 맡았다. Root가 검토본 통합·필수340검사·등록·release·보고를 맡았다.
 
 작업대장은 SSD `coordination/20260928-june-calibration-execution/board.json`, CLI 원문은 그 아래 `COOP-013/attempt-001`, `attempt-002`다. source C `1002f57`, 등록 D `61b056c`와 실제 Python/수치환경을 고정한 뒤 10/10 worker 성공, 공식473.521126초, 실패·재시도0으로 종료했다. 작성자와 사후 독립 검토자는 분리했고 통계 재계산을 추가 실행하지 않았다. 실행 성공과 N3 미확정·G0 유지 판정을 구분한다. Fable 호출·새 신경망/temperaturefit·2026접근은 없다. 승인된 Ponytail 규칙과 연구 예외도 Opus 후속 호출의 명시적 읽기 경로로 전달했다. [실행 보고서](reports/ML-June-calibration-execution-2026-09-28.md), [구현 검토](reviews/COOP-013-June-calibration-implementation-2026-09-28.md).
+
+## 2026 사용 이력 감사·평가 초안 — D87
+
+COOP-014는 메타데이터 감사와 실행 비활성 사전등록 초안이다. Astra가 설계와 독립 검토, Opus5.5가 별도 worktree에서 문서/설정 3개 작성·보완, Sol이 근거 수집·최종 일관성 13검사, Root가 통합·보고를 맡았다. 두 CLI 호출 모두 실제 `claude-opus-5-5`, 각각 472.438초·112.570초의 문서 작성이며 실험 비용이 아니다. 최종 작성 커밋 `a230c5d`의 Astra 재검토는 **초안 통합 PASS**다. 최종 사전등록·실행 승인으로 해석하지 않는다.
+
+작업대장은 SSD `coordination/20260928-2026-ope-planning/board.json`, 원본 CLI 기록은 그 아래 `COOP-014/attempt-001`, `attempt-002`다. 과거 메타데이터 63경로와 인용 545행을 검증했으며 새 원자료/헤더/배열/모델 payload 접근·fit·추론·OPE는 0이다. 코드 변경·무거운 큐 실행·새 Fable 호출은 없다. 기존 2026 사용과 현재 unknown 범위를 구분한다. [사용 이력 감사](reports/MLB-2026-use-history-audit-2026-09-28.md), [평가 초안](contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md), [독립 검토](reviews/COOP-014-2026-OPE-draft-review-2026-09-28.md).

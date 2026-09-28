@@ -11,7 +11,7 @@ COOP-014. 사용자가 승인한 범위는 **메타데이터만 쓰는 2026 사�
 
 ## 2. 사용 이력 감사 (메타데이터·코드만)
 
-**제한된 메타데이터 감사는 완료됐고 Astra가 독립 검토(PASS)했다.** Root의 [감사 보고서](MLB-2026-use-history-audit-2026-09-28.md)와 [감사 JSON](../../results/MLB-2026-use-history-audit-v1.json)이 정본이다(통합 대기, 근거 bytes SHA256 `4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40`). 아래는 초안에 쓰인 요약이다. 2026 자료 값은 새로 읽지 않았다. 근거는 레포 문서·설정·코드와 Sol의 [사용 이력 근거](#6-근거와-하지-않은-것) 산출물이다. 감사 범위를 넘는 정확한 경기 ID·전체 시즌 가용성·미사용 인증은 모름이다.
+**제한된 메타데이터 감사는 완료됐고 Astra가 독립 검토(PASS)했다.** Root의 [감사 보고서](MLB-2026-use-history-audit-2026-09-28.md)와 [감사 JSON](../../results/MLB-2026-use-history-audit-v1.json)이 정본이다(근거 bytes SHA256 `4db014942c5a14ace5cb5da483ac1126b6139faa9987f8bdb50a6cb103176c40`). 아래는 초안에 쓰인 요약이다. 2026 자료 값은 새로 읽지 않았다. 근거는 레포 문서·설정·코드와 Sol의 [사용 이력 근거](#6-근거와-하지-않은-것) 산출물이다. 감사 범위를 넘는 정확한 경기 ID·전체 시즌 가용성·미사용 인증은 모름이다.
 
 | 항목 | 근거 | 노출 범주·의미 |
 |---|---|---|
@@ -65,6 +65,6 @@ COOP-014. 사용자가 승인한 범위는 **메타데이터만 쓰는 2026 사�
 
 ## 6. 근거와 하지 않은 것
 
-근거(읽기 전용): 조정 디렉터리 `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-ope-planning/`의 `usage-evidence.json`·`usage-evidence.md`(Sol), `astra-design-guidance.md`(Astra), `public-context.json`·`public-context-supplement.json`(Root). 커밋 `528f82b`에 대한 Astra 최종 검토 `astra-final-review.md/.json`(REVISE: R1–R3, N1–N3)과 Sol 일관성 검사 `sol-draft-consistency-check.md/.json`을 이번 수정에 반영했다. 초안 작성 중 처음 확인 때는 없었고 최종화 전 확인에서 반영했다. Astra의 진행 중 초안 초기 검토 `astra-draft-review-initial.md`(REVISE, 8항목)도 커밋 전 반영했으며 이후 최종 검토에서 나온 지적은 위 수정으로 반영했으며 수정본의 재검토는 아직이다.
+근거와 검토: [사용 이력 감사](MLB-2026-use-history-audit-2026-09-28.md)와 [독립 검토 기록](../reviews/COOP-014-2026-OPE-draft-review-2026-09-28.md)을 따른다. Astra의 진행 중 초안 8항목과 `528f82b` 검토의 R1–R3/N1–N3를 수정했다. 최종 작성 커밋 `a230c5d`는 Astra 과학 재검토 PASS와 Sol 문서/설정 일관성 13검사를 통과했다. Root가 검토본을 통합하고 통합 대기 표시·출처/검토 링크만 갱신했다. **PASS는 초안 통합에 한정되며 최종 사전등록이나 실행 승인이 아니다.** 원본 요청·두 호출·모델/커밋·모든 이전 검토는 SSD `coordination/20260928-2026-ope-planning/`에 보존한다.
 
-하지 않은 것: 원자료 수집, 2026 parquet/npz/pickle/행 단위 결과 적재, 캐시 헤더·payload 해시, 모델 가중치 열기, 적합·추론·OPE·채점, 기존 소스·설정·계약 수정, push·merge. 모든 제안값은 등록 전 Astra 독립 검토와 사용자 승인이 필요하다.
+하지 않은 것: 원자료 수집, 2026 parquet/npz/pickle/행 단위 결과 적재, 캐시 헤더·payload 해시, 모델 가중치 열기, 적합·추론·OPE·채점, 기존 실행 소스·실험 설정 변경, merge. 새 초안 설정·계약과 보고서는 검토 후 기존 PR에 반영한다. 모든 제안값은 등록 전 Astra 독립 검토와 사용자 승인이 필요하다.
