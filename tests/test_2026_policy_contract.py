@@ -38,8 +38,25 @@ def test_paired_contrast_expectation_and_same_policy_zero():
                  for s, r, w in paths)
     contrast = C.we_contrast(C.value(C.PI_CAND), C.value(C.PI_REF))
     assert abs(paired - contrast["delta"]) < TOL
-    assert all(C.sequential_dr(s, r, C.PI_REF, C.PI_B, C.wrong_q) - C.sequential_dr(s, r, C.PI_REF, C.PI_B, C.wrong_q) == 0
-               for s, r, _ in paths)
+    ref = np.array([C.sequential_dr(s, r, C.PI_REF, C.PI_B, C.wrong_q) for s, r, _ in paths])
+    copy = np.array([C.sequential_dr(s, r, C.PI_REF_COPY, C.PI_B, C.wrong_q) for s, r, _ in paths])
+    assert (copy - ref == 0).all()                 # same law, independent callable: zero on every PA
+    assert np.abs(copy - np.roll(ref, 1)).max() > 1e-3  # a mispaired contrast would be visible
+
+
+@pytest.mark.parametrize("kwargs,err", [
+    (dict(pi=lambda h: [-1., .5, 1.5]), C.IntegrityError),   # invalid full row, logged component looks fine
+    (dict(terminal_we=1.2), C.IntegrityError),
+    (dict(steps=[]), C.Unsupported),
+    (dict(clip=-1.), C.IntegrityError),
+    (dict(clip=np.nan), C.IntegrityError),
+    (dict(q_hat=lambda h, a: np.nan), C.IntegrityError),
+])
+def test_sequential_dr_rejects_invalid_inputs(kwargs, err):
+    args = dict(steps=[((), "FF")], terminal_we=.6, pi=C.PI_REF, pi_b=C.PI_B, q_hat=lambda h, a: .5, clip=None)
+    args.update(kwargs)
+    with pytest.raises(err):
+        C.sequential_dr(**args)
 
 
 def test_recursion_matches_legacy_plain_trajectory_dr_on_valid_inputs():

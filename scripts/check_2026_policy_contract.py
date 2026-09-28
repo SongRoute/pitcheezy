@@ -58,25 +58,40 @@ def logging_ratio(pi_e, pi_b):
     return pi_e / pi_b
 
 
+def we_value(v):
+    if not (np.isfinite(v) and 0 <= v <= 1):
+        raise IntegrityError("WE value outside [0,1]")
+    return float(v)
+
+
 def we_contrast(v_candidate, v_reference):
     """defense-we-pa-v1: dimensionless initial-defender WE; positive favours the defender."""
-    for v in (v_candidate, v_reference):
-        if not (np.isfinite(v) and 0 <= v <= 1):
-            raise IntegrityError("WE value outside [0,1]")
+    v_candidate, v_reference = we_value(v_candidate), we_value(v_reference)
     delta = v_candidate - v_reference
     return {"delta": delta, "delta_pp": 100 * delta, "offense_delta": -delta}
 
 
 def sequential_dr(steps, terminal_we, pi, pi_b, q_hat, clip=None):
-    """Per-decision DR, reward only at PA end: V_T=0, V_t = v(H_t) + rho_t (r_t + V_{t+1} - q(H_t,a_t))."""
+    """Per-decision DR, reward only at PA end: V_T=0, V_t = v(H_t) + rho_t (r_t + V_{t+1} - q(H_t,a_t)).
+
+    Inputs are validated (full rows, terminal WE, clip); the estimate itself may leave [0,1].
+    """
+    if not steps:
+        raise Unsupported("empty_or_incomplete_pa")
+    terminal_we = we_value(terminal_we)
+    if clip is not None and not (np.isfinite(clip) and clip > 0):
+        raise IntegrityError("clip must be finite and positive")
     value = 0.0
     for t in reversed(range(len(steps))):
         history, action = steps[t]
-        p, pb = pi(history), pi_b(history)
+        p, pb = (np.asarray(f(history), dtype=np.float64) for f in (pi, pi_b))
+        p, pb = (policy_row(x, x > 0, VOCAB, SHA) for x in (p, pb))
         a = action_index(VOCAB, action)
         rho = logging_ratio(p[a], pb[a])
         rho = rho if clip is None else min(rho, clip)
-        q = np.array([q_hat(history, b) for b in VOCAB])
+        q = np.array([q_hat(history, b) for b in VOCAB], dtype=np.float64)
+        if not np.isfinite(q).all():
+            raise IntegrityError("non-finite q_hat")
         reward = terminal_we if t == len(steps) - 1 else 0.0
         value = float(p @ q) + rho * (reward + value - q[a])
     return value
@@ -119,6 +134,7 @@ def _law(table):
 PI_B = _law({0: (.2, .5, .3), 1: (.25, .35, .4), (0, "FF"): (.3, .3, .4)})       # true logging law
 PI_B_WRONG = _law({0: (.4, .3, .3), 1: (.2, .6, .2)})                             # misspecified, positive
 PI_REF = _law({0: (.25, .45, .3), 1: (.2, .4, .4)})                               # stands in for TRAIN BC
+PI_REF_COPY = _law({0: (.25, .45, .3), 1: (.2, .4, .4)})                          # independent object, same law
 PI_CAND = _law({0: (0., .6, .4), 1: (.1, .2, .7), (1, "SL"): (.3, .3, .4)})       # zero CH mass at 0 strikes
 
 
@@ -182,7 +198,7 @@ def run_checks():
         }
     q_ref = true_q(PI_REF)
     results["max_abs_same_policy_paired_delta"] = max(
-        abs(sequential_dr(s, r, PI_REF, PI_B, wrong_q) - sequential_dr(s, r, PI_REF, PI_B, wrong_q)) for s, r, _ in paths)
+        abs(sequential_dr(s, r, PI_REF_COPY, PI_B, wrong_q) - sequential_dr(s, r, PI_REF, PI_B, wrong_q)) for s, r, _ in paths)
     results["contrast"] = we_contrast(value(PI_CAND), value(PI_REF))
     results["q_ref_root"] = [q_ref((), b) for b in VOCAB]
     return results

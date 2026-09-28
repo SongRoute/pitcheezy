@@ -31,8 +31,8 @@ Sol 재사용 목록(`COORD/sol-inventory.md`, 스냅샷 `301ac07`)과 교차 �
    - 참값 V(cand)=0.549958241, V(ref)=0.5482305296, Δ=+0.0017277114(+0.17277114%p, 공격 관점 −). toy 수치이며 야구 결과가 아니다.
    - 참 π_b + 틀린 q̂: 오차 cand 0.0, ref 4.4e-16. 틀린 π̂_b + 참 q̂: cand 2.2e-16, ref 0.0. 둘 다 틀림: cand +0.16792, ref +0.06259(편향 검출).
    - clip 1.5: 참 q̂면 오차 ≤1.1e-16, 틀린 q̂면 cand −0.0088015(ref는 ratio가 1.5를 넘지 않아 clip 비활성, 4.4e-16).
-2. `pytest -q tests/test_2026_policy_contract.py` → 14 passed. 짝 기댓값 = 참 대비, 레거시 plain DR 경로별 일치(atol 1e-12), 레거시 비율 도우미의 비 fail-closed 동작 고정, 정책 행 실패 7종, WE 부호·단위·범위, `CategoricalBC`/`kl_policy` 행 통과·모르는 투수 fallback 표시·비 TRAIN 거부.
-3. 기존 재사용 검사 포함 묶음: `pytest -q experiments/pitchmdp/tests/test_rollout_policy.py experiments/pitchmdp/tests/test_game_planner.py experiments/pitchmdp/tests/test_matrix_policy.py tests/test_ope_dr.py tests/test_2026_policy_contract.py` → 47 passed, 8 subtests passed, 1.53초. 실행 전 네 기존 파일에서 자료 경로·parquet/np.load/pickle 패턴을 grep해 없음을 확인했다.
+2. `pytest -q tests/test_2026_policy_contract.py` → 20 passed. 짝 기댓값 = 참 대비, 같은 법칙의 독립 callable 짝 Δ=0(어긋난 짝은 검출), 레거시 plain DR 경로별 일치(atol 1e-12), 레거시 비율 도우미의 비 fail-closed 동작 고정, 정책 행 실패 7종, DR 입력 거부 6종(전체 행·terminal WE·빈 PA·clip·q̂), WE 부호·단위·범위, `CategoricalBC`/`kl_policy` 행 통과·모르는 투수 fallback 표시·비 TRAIN 거부.
+3. 기존 재사용 검사 포함 묶음: `pytest -q experiments/pitchmdp/tests/test_rollout_policy.py experiments/pitchmdp/tests/test_game_planner.py experiments/pitchmdp/tests/test_matrix_policy.py tests/test_ope_dr.py tests/test_2026_policy_contract.py` → 53 passed, 8 subtests passed, 1.60초. Sol 초기 검토 R1(DR이 로그 성분만 검사)·N1(같은 호출끼리 뺀 무의미한 짝 검사)을 반영한 뒤 재실행한 값이며 oracle 수치는 반영 전과 같다. 실행 전 네 기존 파일에서 자료 경로·parquet/np.load/pickle 패턴을 grep해 없음을 확인했다.
 
 **증명된 것:** 식 구현이 정확 기댓값에서 이중 강건성을 만족한다. 실패/거절이 조용히 고쳐지지 않는다. 기존 plain DR이 같은 식이다. **증명되지 않은 것:** 2026 구종 배정의 교환 가능성, 연도 간 이동, 실제 overlap·ESS, 실제 정책 identity.
 
