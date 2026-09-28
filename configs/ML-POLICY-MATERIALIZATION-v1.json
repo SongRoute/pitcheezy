@@ -1,0 +1,407 @@
+{
+  "protocol": "ml_policy_materialization_v1",
+  "status": "PROPOSAL_UNREGISTERED",
+  "registered": false,
+  "policy_frozen": false,
+  "created": "2026-09-29",
+  "base_commit": "713c7ea",
+  "task": "COOP-017",
+  "decision_context": "D92",
+  "parents": {
+    "policy_preparation": "configs/MLB-2026-POLICY-PREPARATION-v1.json",
+    "runtime_report": "docs/reports/ML-policy-runtime-implementation-2026-09-28.md",
+    "parent_state_unchanged": true
+  },
+  "execution": {
+    "enabled": false,
+    "real_data_enabled": false,
+    "reason": "Identity/connection code and synthetic checks only. No TRAIN BC export, payload load, model load, inference, OPE or 2026 access is authorized by this file. Runner experiments/pitchmdp/scripts/run_policy_validation.py is not implemented."
+  },
+  "documents": {
+    "contract": "docs/contracts/ML-POLICY-MATERIALIZATION-v1.md",
+    "report": "docs/reports/ML-policy-materialization-prep-2026-09-29.md",
+    "review_packet": "docs/reviews/COOP-017-policy-materialization-review-packet-2026-09-29.md",
+    "validation_record": "results/ML-policy-materialization-prep-v1.json",
+    "code": [
+      "experiments/pitchmdp/pitchmdp/policy_identity.py",
+      "experiments/pitchmdp/pitchmdp/policy_runtime.py"
+    ],
+    "tests": [
+      "experiments/pitchmdp/tests/test_policy_identity.py",
+      "experiments/pitchmdp/tests/test_policy_runtime.py"
+    ]
+  },
+  "convention": "null = not selected, not built, not measured or not verified. Values quoted under 'metadata' were read this session from JSON whose SHA256 equals the G0 bundle pin; no pickle/npz/parquet/model payload was opened or hashed.",
+  "identity_registration": {
+    "contract": "ML-POLICY-IDENTITY-v1",
+    "g0_bundle": {
+      "path": "configs/G0-RESEARCH-FROZEN-v1.json",
+      "file_sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062"
+    },
+    "bundle_roles_required": [
+      "p4_auxiliary",
+      "p4_preparation",
+      "p11_preparation",
+      "p11_registered_config",
+      "p11_frozen_calibration",
+      "seed0_checkpoint",
+      "seed1_checkpoint",
+      "seed2_checkpoint",
+      "seed3_checkpoint",
+      "seed4_checkpoint"
+    ],
+    "we_paths": {
+      "we_contract": "docs/contracts/model-v1.json",
+      "we_bundle_manifest": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/minimal-pitch-service-v1/bundle_manifest.json",
+      "we_source_hashes": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/minimal-pitch-service-v1/source_hashes.json",
+      "we_game_values": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/minimal-pitch-service-v1/game_values.pkl"
+    },
+    "we_contract_sha256": "d0f1d452331d3f7ad32ca310442bad3ef61bab1b16747829f4190c0f0653ac13",
+    "classes": {
+      "status": "proposal_from_code_reading_confirm_at_bind",
+      "aux": {
+        "baseline": "run_sequence_context_frequency.ContextFrequencyBaseline",
+        "context": "pitchmdp.sequence_model.SequenceContext",
+        "delivery": "pitchmdp.sequence_delivery.JointDelivery",
+        "normalizer": "pitchmdp.sequence_data.PhysicalNormalizer"
+      },
+      "we": {
+        "we": "pitchmdp.game.WinExpectancy",
+        "advancement": "pitchmdp.game.EmpiricalAdvancement"
+      }
+    },
+    "member_loader": {
+      "qualname": "run_ml_g0_whole.load_member",
+      "file": "experiments/pitchmdp/scripts/run_ml_g0_whole.py",
+      "sha256": "5430bfbd3849b7f5389ae51194d029e4c48821fdf07252bf999b7cb9db9b0e9a",
+      "equals_g0_execution_source": true
+    },
+    "frequency": {
+      "role": "p4_auxiliary",
+      "key": "baseline",
+      "temperature_source": "p4_preparation.baseline_temperature.temperature",
+      "status": "resolved_from_code_and_metadata_bytes_unverified"
+    },
+    "expected_identity_sha256": null,
+    "search": {
+      "policy": "P3",
+      "tau": null,
+      "samples": null,
+      "pitch_cap": null,
+      "planning_seed": null,
+      "budget": null,
+      "p8_reference_not_transferable": {
+        "tau_grid": [
+          0.001,
+          0.003,
+          0.01,
+          0.03
+        ],
+        "selected_tau": 0.003,
+        "search_rollouts": 2,
+        "search_cap": 8,
+        "evaluation_rollouts": 4,
+        "evaluation_cap": 8,
+        "planning_seed": 701,
+        "evaluation_seed": 1701,
+        "row_budget_per_stage": 460000,
+        "seconds_budget_per_stage": 1500,
+        "source": "configs/EXP-P8-001-execution.json; G2-control world, June 2025 selection"
+      }
+    },
+    "entry": "policy_identity.bind_components(bundle_path, bundle_sha256, paths, bc_artifact, context_rows, member_loader, classes, we_contract_sha256) -> BoundComponents -> policy_runtime.build_runtime(components=..., expected_identity_sha256=...)",
+    "request_fingerprint": "candidate mode: request fingerprint combined with the bound context row sha256; ledger rows record context_sha256",
+    "stage_end_check": "runtime.verify_components() before sealing any stage result",
+    "state_changes_d92": {
+      "candidate_mode_support_table_missing_or_empty_but_pool_supports": "FAILED_INTEGRITY (was UNSUPPORTED_EMPTY_SUPPORT)",
+      "context_row_pitcher_or_side_differs_from_request": "FAILED_INTEGRITY",
+      "logging_only_runtime": "unchanged"
+    }
+  },
+  "metadata": {
+    "p4_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+    "aux_sha256_in_preparation": "87ad95e61918147c678227875e26d7d45ca9014a5566aa40e4e61e1f112579a5",
+    "baseline_predictions_sha256": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b",
+    "frequency_temperature": 1.030298001849738,
+    "june_ensemble_model_weight": 0.7467754577062221,
+    "delivery_report": {
+      "draws": 400,
+      "seed": 42,
+      "training_rows": 1252824,
+      "pool_count": 23728
+    },
+    "frequency_report": {
+      "training_rows": 1252824,
+      "context_groups": 11563,
+      "include_pitcher": false,
+      "fit_date_max": "2025-04-30"
+    },
+    "normalizer_n_train_all_train_rows": 1386362,
+    "token_vocabulary": [
+      "CH",
+      "CS",
+      "CU",
+      "EP",
+      "FA",
+      "FC",
+      "FF",
+      "FO",
+      "FS",
+      "KC",
+      "KN",
+      "PO",
+      "SC",
+      "SI",
+      "SL",
+      "ST",
+      "SV",
+      "UN"
+    ],
+    "member_record": {
+      "kind": "flatten_mlp",
+      "n_context": 52,
+      "n_token": 38,
+      "width": 128,
+      "parameter_count": 141834,
+      "device": "mps"
+    },
+    "p8_bc": {
+      "train_pitches": 1252824,
+      "actions": 18,
+      "source": "EXP-P8-001/preparation.json"
+    },
+    "we_lineage_current_sources_match": true,
+    "current_sources_equal_g0_execution_sources": 30
+  },
+  "train_bc_plan": {
+    "status": "plan_only_not_executed",
+    "data": {
+      "processed_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+      "processed_rows": 2145111,
+      "loader": "run_ml_benchmark.regular_frame: game_type R, add_batter_style_history, assign_fold(2025)"
+    },
+    "artifacts": {
+      "BC_P": {
+        "role": "proposed primary logging law and reference base",
+        "rows": "split==train (2023-05-15..2025-04-30), pitch_type non-null, description not in {automatic_ball, automatic_strike}, balls 0-3 and strikes 0-2; no outcome, supported_pa or plate-location condition",
+        "upper_bound_rows": 1386362,
+        "rows_measured": null
+      },
+      "BC_E": {
+        "role": "P8-compatible comparison",
+        "rows": "pinned eligible D100 TRAIN keys p4_train_keys",
+        "keys_file_sha256": "372d0aaf32c1748a8f86f597399b88fb097567f93ea17fbc4611cfdcca53d347",
+        "ordered_rows_sha256": "0a2e81aecbf9dbb0453544440561b090017f3903ea7456ea7be47fcdf6b3ba6a",
+        "expected_rows": 1252824,
+        "expected_actions": 18
+      }
+    },
+    "bc_parameters": {
+      "prior_strength": 20.0,
+      "minimum_action_count": 1
+    },
+    "history": "state_from_row(bc_only=True): strictly previous same-PA row, <UNKNOWN> if missing type, <START> if none",
+    "support_table": "bound PolicyInputs.support for every BC pitcher x batter side {L,R} with the pitcher's TRAIN throwing hand; empty masks kept; conflicting hands refused",
+    "reports": [
+      "pi_b_hat mass on mask by cell and TRAIN-decision weighted quantiles",
+      "BC_P vs BC_E cell differences"
+    ],
+    "output_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize",
+    "provenance_dates": "observed_by_export_train_bc",
+    "bc_sha256": null,
+    "support_table_sha256": null
+  },
+  "pa_time_rules": {
+    "R1_denominator": {
+      "rule": "all regular-season PAs in the window; supported_pa/eligibility never select requests",
+      "implemented": "partial",
+      "changes_denominator": true
+    },
+    "R2_decisions": {
+      "rule": "every PA row in pitch_number order; request_id=game:ab:pitch, pa_id=game:ab",
+      "implemented": false
+    },
+    "R3_codes": {
+      "in_vocabulary": "identity mapping",
+      "non_null_not_in_vocabulary": "FAILED_INTEGRITY; pre-run census mandatory",
+      "missing_or_automatic": "proposed UNSUPPORTED_NO_LOGGED_ACTION, sticky",
+      "implemented": "a_b_yes_c_no"
+    },
+    "R4_pre_decision": {
+      "rule": "SAFE_COLUMNS of current row plus strictly previous same-PA type/normalized physics/10-class outcome",
+      "implemented": true
+    },
+    "R4b_profiles": {
+      "rule": "pitcher TRAIN-fixed; batter style C0 strictly prior date; <=2025 rehearsal snapshot at window start (DEV: through 2025-06-30); S2 probe uses rolling values",
+      "implemented": false
+    },
+    "R4c_provenance_checks": {
+      "rule": "history keys/order, whitelist, count path, invariance to post-decision fields",
+      "implemented": false
+    },
+    "R5_reward": {
+      "rule": "terminal = last PA row with events not truncated_pa; r = frozen C0 defense WE at observed next-row pre-pitch state; game-final PA = final result; score mismatch flagged",
+      "implemented": false
+    },
+    "R6_incomplete": {
+      "statuses": [
+        "COMPLETE",
+        "INCOMPLETE_NO_TERMINAL",
+        "INCOMPLETE_START",
+        "UNSUPPORTED"
+      ],
+      "estimate": "evaluable-PA conditional point estimate plus per-policy [0,1] worst-case bounds",
+      "implemented": "request_sticky_only"
+    },
+    "R7_mid_pa_change": {
+      "unknown_new_pitcher": "UNSUPPORTED_UNKNOWN_PITCHER then UNSUPPORTED_MID_PA (implemented)",
+      "known_new_pitcher": "proposed continue",
+      "decision": "D-4"
+    },
+    "R8_inconsistent_history": {
+      "rule": "count path broken before decision -> proposed UNSUPPORTED_INCONSISTENT_HISTORY; ledger index/length/last-type mismatch stays FAILED_INTEGRITY",
+      "implemented": "ledger_local_only"
+    }
+  },
+  "le2025_validation_plan": {
+    "status": "plan_only_not_authorized",
+    "registration_id": "ML-POLICY-VAL-v1",
+    "certified_unexposed_population_count": 0,
+    "exposure": {
+      "TRAIN": "exposed_fit",
+      "earlystop_2025_05_01_15": "exposed_model_selection",
+      "may_2025_05_16_31": "exposed_calibration",
+      "june_2025": "exposed_policy_tuning",
+      "dev_2025_07_09": "exposed_development",
+      "unused_2023_03_30_05_14": "unknown",
+      "le2022_and_postseason": "availability_unknown"
+    },
+    "claims": {
+      "independent_confirmation": false,
+      "development_validation_only": true
+    },
+    "stages": {
+      "S0_census": {
+        "cap_seconds": 900,
+        "cost_measured": null,
+        "reads": "pre-decision fields, pitch_type, automatic description flag, events presence"
+      },
+      "S1_materialize": {
+        "cap_seconds": 1800,
+        "cost_measured": null,
+        "reads": "TRAIN rows"
+      },
+      "S2_bind_probe": {
+        "cap_seconds": 1200,
+        "cost_measured": null,
+        "probe_rows": "first 64 mlb_dev rows in pinned order with dev_delivery_level >= 0 in all five member archives",
+        "atol_primary": 1e-06,
+        "atol_frequency_raw": 1e-12,
+        "label_arrays_read": false
+      },
+      "S3_profile": {
+        "cap_seconds": 1800,
+        "cost_measured": null,
+        "starts": 4,
+        "quality_values_read": false
+      },
+      "S4_V5_denominators": {
+        "cap_seconds": 3600,
+        "cost_measured": null,
+        "risk": "per-row ledger fsync; profile one game subset first"
+      },
+      "S5_V2_V3": {
+        "cap_seconds": null,
+        "blocked_by": [
+          "D-10 delivery/transition for logging actions outside M",
+          "log generator and DR estimator not implemented"
+        ]
+      },
+      "S6_V4": {
+        "cap_seconds": null,
+        "blocked_by": [
+          "R5/R6 estimator not implemented"
+        ]
+      }
+    },
+    "family_cap_seconds_proposed": 9300,
+    "measured_references_not_budgets": {
+      "p8_prepare_seconds": 186.615885166917,
+      "p8_blend_control": {
+        "seconds": 112.03928291704506,
+        "conditional_rows": 106284
+      },
+      "p8_dev_control": {
+        "seconds": 85.34234516695142,
+        "conditional_rows": 71408
+      },
+      "p8_dev_candidate": {
+        "seconds": 83.20802512508817,
+        "conditional_rows": 71995
+      },
+      "g0_whole_mlb_official_seconds": 1821.246,
+      "d86_official_seconds": 473.521126
+    },
+    "queue": {
+      "single": true,
+      "heavy_lock": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/.heavy.lock"
+    },
+    "output_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1",
+    "environment": {
+      "python": "/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+      "pythonpath": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:/Users/song/Projects/pitcheezy/experiments/pitchmdp",
+      "versions": {
+        "python": "3.12.14",
+        "torch": "2.14.0",
+        "numpy": "2.5.3",
+        "pandas": "3.0.5",
+        "scipy": "1.18.1",
+        "lightgbm": "4.6.0"
+      }
+    },
+    "source_commit": null,
+    "registered_config_sha256": null,
+    "command_template": "PYTHONPATH=<pythonpath> <python> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json --local-config <local.json> --output <stage dir> {census|materialize-bc|bind-probe|profile|v5-denominators}",
+    "failure": "BudgetExceeded -> FAILED_RUNTIME and preserved stage failure; FAILED_INTEGRITY stops; no threshold/sample/candidate change after outcomes; retries only as new registered attempts"
+  },
+  "open_decisions": {
+    "D-1": "TRAIN BC primary: BC_P (proposed) vs BC_E",
+    "D-2": "denominator: all regular-season PAs (proposed)",
+    "D-3": "no-action rows: new refusal status + sticky (proposed)",
+    "D-4": "known-pitcher mid-PA change: continue (proposed)",
+    "D-5": "incomplete PA: conditional point estimate + [0,1] bounds (proposed)",
+    "D-6": "PA end state: observed next-row state + mismatch flag (proposed)",
+    "D-7": "<=2025 batter profile: window-start snapshot (proposed)",
+    "D-8": "two-handed pitchers in the support table: census first",
+    "D-9": "G0 tau/search settings: separate registration, June 2025 reuse decision",
+    "D-10": "V2 world for logging actions outside M: declared JointDelivery tier+fallback (proposed)",
+    "D-11": "stage caps as proposed"
+  },
+  "claims": {
+    "policy_frozen": false,
+    "registration": false,
+    "identification": null,
+    "causal_effect": null,
+    "policy_adoption": null,
+    "service_promotion": false,
+    "real_components_bound": false,
+    "independent_review": "pending_sol_astra_unavailable_in_this_environment"
+  },
+  "synthetic_checks": {
+    "focused": "23 passed, 23 subtests (test_policy_identity 8 new + test_policy_runtime 15)",
+    "related": "62 passed, 23 subtests; scripts/check_2026_policy_contract.py all_pass true",
+    "mutations_caught": 28,
+    "probe": {
+      "rows_compared": 12,
+      "max_abs_difference": 4.440892098500626e-16,
+      "fallback_rows_refused": 3,
+      "swap_differences": {
+        "pool_seed_43": 0.006234234303125835,
+        "clusters": 0.0070054129535121745,
+        "frequency_temperature": 0.008810772362258384,
+        "member_temperatures_reordered": 0.02403371281681041
+      }
+    },
+    "identification_evidence": false
+  }
+}
