@@ -36,3 +36,7 @@
 ## 전체 June 적격 준비 — D79~D81
 
 Astra가 과학 계약·코드/등록/산출물을 독립 검토하고, COOP-011 Claude Opus5.5가 별도 worktree에서 worker와 합성 검사를 구현했다. 두 CLI attempt는 실제 응답 모델 `claude-opus-5-5`, 성공 반환 후 검토·통합됐으며, 두 번째는 외부 등록 config와 동결 C checkout을 연결하는 수정이다. Sol은 감독기·중단/비용 기록과 단일 실제 실행을 맡았다. Root는 통합315검사·등록·보고를 맡았다. 작업대장은 SSD `coordination/20260927-june-eligibility/board.json`, Claude 원본 로그는 그 아래 `COOP-011/attempt-001`, `attempt-002`다. 신규 Fable 호출은 없다. 실제 준비는104,970구·worker1.219838초이며 새fit/추론은0이다. [보고서](reports/ML-June-eligibility-2026-09-27.md).
+
+## 전체 June 보정 설계·과학 등록 — D82~D83
+
+Astra가 B0/B1/B2·N3/R78·비용 계약을 작성하고, Sol이 재사용 입력/배열 헤더·비용·누락 구현을 조사했다. COOP-012 Opus5.5는 두 번 독립 검토해 출처/해시 연결 보완 후 PASS를 반환했다. Root가 설정·기록을 통합했고, Sol이 최종 등록 해시/구조를 별도 확인했다. 작업대장은 SSD `coordination/20260928-june-calibration/board.json`이다. 실제 응답 모델은 두 호출 모두 `claude-opus-5-5`이며 Fable 호출은 없다. 최초 검토의 ‘이전5추론이한프로세스’ 표현은 별도5worker 비용대장으로 정정했고 원문/정정 이력을 보존했다. 과학 등록 완료와 실행 코드를 구분하며 이번 단계는 새fit/추론0이다. [설계 보고서](reports/ML-June-calibration-design-2026-09-28.md).
