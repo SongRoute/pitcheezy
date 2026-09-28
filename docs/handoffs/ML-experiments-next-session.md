@@ -1,4 +1,5 @@
 # 다음 세션 — 논문 기준 ML 예측 성능 실험
+**Claude로 이어서 작업할 때:** [재개 인수인계](CLAUDE-resume-2026-09-28.md)에서 현재 상태·읽기 순서·다음 작업·실행 경계를 먼저 확인한다. [복사용 재개 프롬프트](CLAUDE-resume-prompt.md).
 
 **정책 런타임 구현 완료 — D91:** G0 5member 어댑터·TRAIN BC/지원 표 저장·해시 식별·미지원 요청 원장을 연결된 코드로 구현했다. Opus 주도 CLI 1회, Sol 독립 검토/재현, Astra 핵심 검토 1회. 신규15검사·기존 관련 포함54검사·D89 합성검사·오류변이8종 검출, Root 통합15검사 통과(중복 합산 없음). 작성 `1ecdbb4`, 통합 `d7e5bae`. 구현 완료이며 **실제 TRAIN BC 생성·G0 실가중치 연결·정책 동결·실데이터 평가는 미수행**이다. runtime SHA는 완전한 정책 식별자가 아니고 원장 분모는 제출된 요청/PA에 한정된다. 다음은 실제 구성요소/자료핀·비용 등록과 시간 출처 검증이다. [보고서](../reports/ML-policy-runtime-implementation-2026-09-28.md) · [검토](../reviews/COOP-016-policy-runtime-implementation-2026-09-28.md). 아래 D90 착수 기록은 당시 이력이다.
 
