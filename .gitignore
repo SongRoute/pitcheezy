@@ -30,3 +30,6 @@ node_modules/
 
 # 에이전트 워크트리 (내장 저장소)
 .claude/worktrees/
+
+# Graphify local graph, AST cache and rendered reports (about 27 MB at first build)
+graphify-out/

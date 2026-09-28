@@ -1,0 +1,54 @@
+{
+  "created_utc": "2026-09-28T00:45:33.941565+00:00",
+  "graphify_version": "0.9.70",
+  "readme_sources": {
+    "graphify": {
+      "owner": "Graphify-Labs",
+      "repo": "graphify",
+      "commit": "4c21b15e9beeba5faa6871ad7dd188571a6fbb84",
+      "url": "https://raw.githubusercontent.com/Graphify-Labs/graphify/4c21b15e9beeba5faa6871ad7dd188571a6fbb84/README.md"
+    },
+    "ponytail": {
+      "owner": "DietrichGebert",
+      "repo": "ponytail",
+      "commit": "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
+      "url": "https://raw.githubusercontent.com/DietrichGebert/ponytail/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/README.md"
+    }
+  },
+  "commands": [
+    "uv tool install graphifyy",
+    "graphify install --project --platform codex",
+    "graphify extract . --code-only --no-cluster --max-workers 2",
+    "graphify cluster-only . --no-label --no-viz",
+    "graphify export html",
+    "graphify update ."
+  ],
+  "nodes": 5890,
+  "edges": 16753,
+  "community_count": 228,
+  "semantic_input_tokens": 0,
+  "semantic_output_tokens": 0,
+  "yaml_semantic_deferred_count": 52,
+  "gitignore_change": "user_approved_added",
+  "ponytail_merge": "user_approved_applied",
+  "graph_sha256": "044215d7040b39758bedce1ec6265cfdf3ccf0c8e850ce9de9388720d4aeefa1",
+  "report_sha256": "d2d0798a0cf091aa2ca6e5263a3430463146aa489b376713c82eb4f70e6cfac0",
+  "bytes": 27572624,
+  "health_check": {
+    "node_count": 5890,
+    "raw_edge_count": 16753,
+    "missing_endpoint_edges": 0,
+    "dangling_endpoint_edges": 0,
+    "exact_duplicate_edges": 0,
+    "self_loop_edges": 17
+  },
+  "excluded_source_violations": 0,
+  "unique_graph_source_files": 423,
+  "initial_nodes": 5886,
+  "initial_edges": 16740,
+  "initial_community_count": 234,
+  "ponytail_mode": "full",
+  "ponytail_application": "repository AGENTS.md instructions only",
+  "ponytail_merged_utc": "2026-09-28T03:53:02.373774+00:00",
+  "agents_sha256": "2aa587e0883725f5f1446e3a8de1ef6e79c24fa9cb10a533b5fd495fdf56260f"
+}
