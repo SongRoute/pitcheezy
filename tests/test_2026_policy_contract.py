@@ -135,3 +135,25 @@ def test_categorical_bc_as_reference_and_kl_candidate_rows():
     assert bc.fallback(s(pitcher="new2026"))  # adapter must refuse; league fallback is not a pre-2026 profile
     with pytest.raises(ValueError):
         CategoricalBC().fit([BCRecord(s(), "FF", "dev")])
+
+
+def test_restricted_reference_needs_full_logging_law():
+    """Policy mask and logging law are independent: renormalising pi_b onto the policy mask is biased."""
+    r = C.renormalisation_check()
+    assert r["rho_ref_min"] == 0 and r["rho_ref_max"] - 1 > .1  # rho_ref is not identically 1
+    assert abs(r["err_full_logging_law_wrong_q"]) < TOL and abs(r["err_full_logging_law_zero_q"]) < TOL
+    for k in ("conditional_wrong_q", "conditional_zero_q", "as_zero_wrong_q", "as_zero_zero_q"):
+        assert abs(r[f"err_renorm_drop_{k}"]) > 1e-3
+    # Only when the policy mask carries all logging mass does restriction leave the law unchanged (rho_ref == 1).
+    full = C._restrict(C.PI_B, np.array([True, True, True]))
+    assert all(C.logging_ratio(full(h)[C.VOCAB.index(a)], C.PI_B(h)[C.VOCAB.index(a)]) == 1
+               for s, _, _ in C.trajectories(C.PI_B) for h, a in s)
+
+
+def test_logged_action_statuses_are_distinct():
+    ref, pb = C.PI_REF_RESTRICTED(()), C.PI_B(())
+    assert C.logging_ratio(ref[C.action_index(C.VOCAB, "CH")], pb[C.VOCAB.index("CH")]) == 0  # outside policy mask: rho=0
+    with pytest.raises(C.IntegrityError):
+        C.action_index(C.VOCAB, "KN")                                                        # unknown label
+    with pytest.raises(C.Unsupported):
+        C.logging_ratio(ref[C.VOCAB.index("FF")], 0.)                                        # zero estimated logging mass

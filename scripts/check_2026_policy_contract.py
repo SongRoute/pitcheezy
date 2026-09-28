@@ -137,6 +137,20 @@ PI_REF = _law({0: (.25, .45, .3), 1: (.2, .4, .4)})                             
 PI_REF_COPY = _law({0: (.25, .45, .3), 1: (.2, .4, .4)})                          # independent object, same law
 PI_CAND = _law({0: (0., .6, .4), 1: (.1, .2, .7), (1, "SL"): (.3, .3, .4)})       # zero CH mass at 0 strikes
 
+POLICY_MASK = np.array([False, True, True])  # toy intervention/delivery support of the POLICY only (CH unsupported)
+
+
+def _restrict(pi, mask):
+    """Zero and renormalise a law onto a mask. Legitimate for a policy; wrong for a logging law."""
+    def restricted(history):
+        p = pi(history) * mask
+        return policy_row(p / p.sum(), mask, VOCAB, SHA)
+    return restricted
+
+
+PI_REF_RESTRICTED = _restrict(PI_B, POLICY_MASK)  # reference = logging law restricted to the policy mask
+PI_B_RENORM = _restrict(PI_B, POLICY_MASK)        # WRONG logging nuisance: same law silently renormalised
+
 
 def true_q(pi):
     def q(history, action):
@@ -201,7 +215,30 @@ def run_checks():
         abs(sequential_dr(s, r, PI_REF_COPY, PI_B, wrong_q) - sequential_dr(s, r, PI_REF, PI_B, wrong_q)) for s, r, _ in paths)
     results["contrast"] = we_contrast(value(PI_CAND), value(PI_REF))
     results["q_ref_root"] = [q_ref((), b) for b in VOCAB]
+    results["renormalisation"] = renormalisation_check()
     return results
+
+
+def renormalisation_check():
+    """Full-support logging law vs the same law renormalised onto the reference's policy mask."""
+    paths, truth = trajectories(PI_B), value(PI_REF_RESTRICTED)
+    rhos = [PI_REF_RESTRICTED(h)[VOCAB.index(a)] / PI_B(h)[VOCAB.index(a)] for s, _, _ in paths for h, a in s]
+    out = {"true_value_restricted_reference": truth,
+           "rho_ref_min": min(rhos), "rho_ref_max": max(rhos),
+           "err_full_logging_law_wrong_q": expected_dr(PI_REF_RESTRICTED, PI_B, wrong_q) - truth,
+           "err_full_logging_law_zero_q": expected_dr(PI_REF_RESTRICTED, PI_B, lambda h, a: 0.0) - truth}
+    for label, q in (("wrong_q", wrong_q), ("zero_q", lambda h, a: 0.0)):
+        kept = []
+        for s, r, w in paths:
+            try:
+                kept.append((w, sequential_dr(s, r, PI_REF_RESTRICTED, PI_B_RENORM, q)))
+            except Unsupported:  # a logged CH has zero renormalised logging mass
+                pass
+        mass = sum(w for w, _ in kept)
+        out["retained_path_mass"] = mass
+        out[f"err_renorm_drop_conditional_{label}"] = sum(w * v for w, v in kept) / mass - truth
+        out[f"err_renorm_drop_as_zero_{label}"] = sum(w * v for w, v in kept) - truth
+    return out
 
 
 if __name__ == "__main__":
@@ -214,6 +251,12 @@ if __name__ == "__main__":
         "dr_biased_when_both_wrong": all(abs(r[k]["err_both_wrong"]) > 1e-6 for k in ("candidate", "reference")),
         "clip_biased_with_wrong_q": abs(r["candidate"]["err_clip_1p5_wrong_q"]) > 1e-6,
         "same_policy_paired_delta_zero": r["max_abs_same_policy_paired_delta"] == 0,
+        "restricted_ref_rho_not_identically_one": r["renormalisation"]["rho_ref_max"] - 1 > 1e-6,
+        "full_logging_law_exact_for_restricted_ref": abs(r["renormalisation"]["err_full_logging_law_wrong_q"]) < tol
+        and abs(r["renormalisation"]["err_full_logging_law_zero_q"]) < tol,
+        "renormalised_logging_law_biased": all(abs(r["renormalisation"][k]) > 1e-6 for k in (
+            "err_renorm_drop_conditional_wrong_q", "err_renorm_drop_conditional_zero_q",
+            "err_renorm_drop_as_zero_wrong_q", "err_renorm_drop_as_zero_zero_q")),
     }.items()
     }
     print(json.dumps({"synthetic_only": True, "gates": gates, "all_pass": all(gates.values()), "values": r}, indent=1))

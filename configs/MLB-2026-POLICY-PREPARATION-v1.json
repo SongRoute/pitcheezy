@@ -41,8 +41,14 @@
       "action": "observer CandidateAction(index, pitch_type, zone_id, target)",
       "mapping_table_sha256": null,
       "support_rule": "observer supported_actions: every-count kernel ESS>=20 and mass>=.01 (existing, observational smoothing)",
-      "candidate_formula": {"value": "pi_A(g,z|H) proportional to pi_ref_A(g,z|H)*exp(Q_A(H,(g,z))/tau_A) on support", "status": "proposal"},
-      "reference_formula": {"value": "BC(g|H)*kappa(z|g,H), kappa = TRAIN intended-target law", "status": "proposal"},
+      "candidate_formula": {
+        "value": "pi_A(g,z|H) proportional to pi_ref_A(g,z|H)*exp(Q_A(H,(g,z))/tau_A) on support",
+        "status": "proposal"
+      },
+      "reference_formula": {
+        "value": "BC(g|H)*kappa(z|g,H), kappa = TRAIN intended-target law",
+        "status": "proposal"
+      },
       "kappa_identity": null,
       "logging_law_identity": null,
       "existing_observer_baseline": "observer-repertoire-kernel-v1 (realized-delivery kernel; not TRAIN categorical BC, not intent)",
@@ -55,18 +61,20 @@
       "causal_estimate_if_assumptions_unjustified": null,
       "action_vocabulary": "sorted unique pitch-type codes of frozen TRAIN BC",
       "vocabulary_sha256": null,
-      "support": {"value": "positive TRAIN BC support AND TRAIN token vocabulary AND action-specific TRAIN delivery pool for all 12 counts (matrix_policy.PolicyInputs.support)", "status": "proposal"},
       "support_table_sha256": null,
       "reference": {
         "formula": "SupportedBC.probabilities: CategoricalBC(prior_strength=20, minimum_action_count=1) restricted/renormalised on frozen support once, before freezing",
-        "train_window": ["2023-05-15", "2025-04-30"],
+        "train_window": [
+          "2023-05-15",
+          "2025-04-30"
+        ],
         "train_window_source": "experiments/pitchmdp/pitchmdp/matrix_policy.py::fit_bc guard",
         "bc_artifact_sha256": null,
         "status": "proposal"
       },
       "candidate": {
-        "formula": "kl_policy(Q_BC(H,.), pi_ref_B(.|H), M(H), tau): pi proportional to BC*exp(Q_BC/tau) on the same support (existing P3)",
-        "q_source": "frozen simulator MC of BC continuation, recomputed at every decision",
+        "formula": "kl_policy(Q_ref(H,.), pi_ref_B(.|H), M(H), tau): pi proportional to pi_ref*exp(Q_ref/tau) on M (existing P3)",
+        "q_source": "frozen simulator MC of pi_ref (SupportedBC) continuation, recomputed at every decision",
         "tau": null,
         "tau_existing_reference": "EXP-P8-001 tau=.003 selected in June 2025 blend, G2 control world (D65); not transferable if the predictor changes",
         "predictor_identity": null,
@@ -75,20 +83,60 @@
         "search_samples": null,
         "search_cap": null,
         "planning_seed_rule": "rollout_policy.planning_seed(state, actions, base_seed)",
-        "status": "proposal"
+        "status": "proposal",
+        "rationale": {
+          "value": "finite nonzero ratios on M; argmax variants have rho=0 off the chosen action. Not a guarantee of higher ESS; ESS to be measured in V2",
+          "status": "proposal_rationale_not_empirical"
+        }
       },
       "logging_nuisance_pi_b_hat": {
-        "primary": {"value": "same frozen TRAIN BC registered as a separate nuisance identity", "status": "proposal", "sha256": null},
-        "sensitivity": {"value": "TRAIN pitcher-frequency law on the same support", "status": "proposal", "sha256": null},
+        "primary": {
+          "value": "frozen TRAIN CategoricalBC.probabilities over the full registered TRAIN vocabulary, NOT restricted to M; distinct identity from pi_ref",
+          "status": "proposal",
+          "sha256": null
+        },
+        "sensitivity": {
+          "value": "TRAIN pitcher-frequency law over the same full vocabulary",
+          "status": "proposal",
+          "sha256": null
+        },
+        "renormalise_onto_policy_or_delivery_support": false,
         "numeric_floor": null,
-        "note": "With pi_b_hat == pi_ref, rho_ref == 1; the contrast then depends entirely on cross-year transport of pi_b_hat to the 2026 logging law."
+        "rho_ref_identically_one": false,
+        "equality_condition": "pi_b_hat(M(H)|H) = 1 for every registered H; only then pi_ref == pi_b_hat and rho_ref == 1; to be checked on TRAIN tables, not assumed",
+        "derivation": "IS identity requires the actual logging law; renormalising onto M inflates in-M ratios by pi_b(M|H) and makes out-of-M logged actions undefined (dropping = post-treatment selection; counting as 0 = pi_b(M|H) scaling). Synthetic: conditional -0.00286, as-zero -0.21449."
       },
-      "q_hat_for_candidate": {"value": "Q_candidate MC if budget allows, else declared control variate Q_BC", "status": "proposal"}
+      "policy_mask": {
+        "value": "M(H) = positive TRAIN BC support AND TRAIN token vocabulary AND action-specific TRAIN delivery pool for all 12 counts (matrix_policy.PolicyInputs.support); restricts intervention actions only, never the logging law",
+        "status": "proposal"
+      },
+      "q_hat": {
+        "reference": "Q_ref (policy-specific MC)",
+        "candidate": {
+          "value": "Q_cand MC if budget allows, else declared control variate Q_ref",
+          "status": "proposal"
+        },
+        "note": "With Q_ref as candidate control variate, the candidate outcome-model route is closed; candidate unbiasedness rests on pi_b_hat alone."
+      },
+      "identification_assumptions": {
+        "all_required": [
+          "consistency: logged label equals registered intervention action",
+          "sequential exchangeability given registered H_t",
+          "positivity: pi(a|H)>0 implies true 2026 pi_b(a|H)>0",
+          "at least one of: pi_b_hat equals the true 2026 logging law (cross-year transport) OR q_hat^pi equals the policy-specific true Q under 2026 dynamics",
+          "value defined relative to frozen WE continuation (model value, not observed wins)"
+        ],
+        "status": "none_established",
+        "causal_identification_claim": false
+      }
     }
   },
   "common": {
     "decision_history": "pre-pitch game state + strictly previous same-PA pitches (type, physics, outcome, pre-pitch count) + frozen profiles; no current/future pitch fields",
-    "profile_as_of": {"value": "frozen pre-2026 snapshot; no 2026 rolling profile/repertoire update", "status": "proposal"},
+    "profile_as_of": {
+      "value": "frozen pre-2026 snapshot; no 2026 rolling profile/repertoire update",
+      "status": "proposal"
+    },
     "evaluation_start": "first pitch 0-0 of each PA, weight 1 (D87 proposal)",
     "horizon": "PA end, then frozen WE continuation",
     "value_spec": "defense-we-pa-v1",
@@ -96,11 +144,31 @@
     "effect": "delta = V(cand) - V(ref); delta_pp = 100*delta; positive favours initial defender; offense view = -delta",
     "cap_tail": "frozen WE at initial state plus worst-case [0,1] bounds (P8 convention)",
     "tie_rule": "deterministic argmax ties -> first index in sorted vocabulary",
-    "integrity_failures": ["vocabulary order/hash mismatch", "shape/dtype mismatch", "non-finite or negative probability", "sum != 1 (atol 1e-9)", "positive mass off mask", "unmapped logged code", "WE outside [0,1]", "logging probability missing or outside [0,1]"],
-    "legitimate_refusals": ["empty support", "pitcher without pre-2026 TRAIN history (CategoricalBC.fallback)", "logging probability exactly 0 at logged action", "unsupported new pitcher mid-PA"],
+    "integrity_failures": [
+      "vocabulary order/hash mismatch",
+      "shape/dtype mismatch",
+      "non-finite or negative probability",
+      "sum != 1 (atol 1e-9)",
+      "positive mass off mask",
+      "unmapped logged code",
+      "WE outside [0,1]",
+      "logging probability missing or outside [0,1]"
+    ],
+    "legitimate_refusals": [
+      "empty support",
+      "pitcher without pre-2026 TRAIN history (CategoricalBC.fallback)",
+      "estimated logging probability exactly 0 at logged action (LOGGING_POSITIVITY)",
+      "unsupported new pitcher mid-PA"
+    ],
     "refusals_stay_in_denominator": true,
     "repair_or_renormalise_at_evaluation": false,
-    "mid_pa_pitcher_change_rule": null
+    "mid_pa_pitcher_change_rule": null,
+    "logged_action_statuses": {
+      "in_vocabulary_outside_policy_mask": "rho=0, valid (OUTSIDE_POLICY_SUPPORT)",
+      "not_in_vocabulary": "FAILED_INTEGRITY",
+      "estimated_logging_probability_zero": "UNSUPPORTED refusal, stays in denominator"
+    },
+    "policy_mask_and_logging_law_independent": true
   },
   "estimator": {
     "arm": "ARM_B only",
@@ -110,7 +178,7 @@
     "legacy_reuse": {
       "src/pitcheezy/ope/dr.py::traj_dr_terms_rows(dr_plain)": "numerically equal on valid inputs (synthetic); no input validation",
       "src/pitcheezy/ope/ips.py::pitch_ratios": "do_not_reuse: NaN pi_b -> rho=1, pi_b=0 floored to 1e-12",
-      "src/pitcheezy/ope/ips.py::restrict_support": "do_not_reuse at evaluation: silent renormalisation",
+      "src/pitcheezy/ope/ips.py::restrict_support": "do_not_reuse at evaluation, and never on the logging law: silent renormalisation",
       "src/pitcheezy/ope/behavior.py::crossfit_logged": "do_not_reuse: 2026 cross-fit and evaluation-policy adaptation"
     }
   },
@@ -120,7 +188,8 @@
     "EXP-P8-001 fitted BC inside the run; standalone BC artifact identity unverified",
     "observer baseline is realized-delivery kernel, not TRAIN BC; probabilities are outcome probabilities",
     "game_values.pkl is legacy reference; not selected, bytes not re-verified",
-    "no 2026 pitch-code -> vocabulary mapping table"
+    "no 2026 pitch-code -> vocabulary mapping table",
+    "unknown-pitcher refusal and denominator ledger are proposed only; current code/tests show only the CategoricalBC.fallback flag"
   ],
   "synthetic_checks": {
     "commands": [
@@ -128,19 +197,47 @@
       "PYTHONPATH=src:experiments/pitchmdp /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest -q tests/test_2026_policy_contract.py",
       "PYTHONPATH=src:experiments/pitchmdp /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest -q experiments/pitchmdp/tests/test_rollout_policy.py experiments/pitchmdp/tests/test_game_planner.py experiments/pitchmdp/tests/test_matrix_policy.py tests/test_ope_dr.py tests/test_2026_policy_contract.py"
     ],
-    "results_record": "coordination/20260928-2026-policy-preparation/opus-validation.json",
-    "identification_evidence": false
+    "results_record": "<coordination_dir>/opus-validation-002.json (supersedes; opus-validation.json preserved)",
+    "identification_evidence": false,
+    "scope": "agreement on one enumerated toy PA, not a general proof; implemented subset listed in contract section 8",
+    "latest_counts": {
+      "focused": "22 passed",
+      "with_reused_suites": "see results_record (exact stdout)",
+      "script_gates": 9
+    }
   },
   "le2025_followup": {
     "status": "plan_only_not_authorized",
-    "unexposed_le2025_population_certified": 0,
     "windows": {
-      "TRAIN": {"range": ["2023-05-15", "2025-04-30"], "use": "fit BC/support/pool/WE only", "exposure": "fit"},
-      "JUNE_2025": {"use": "tau selection if reused", "exposure": "used by EXP-P8-001 tau tuning and D86 calibration; label exposed_policy_tuning"},
-      "DEV_JUL_SEP_2025": {"use": "semi-synthetic and placebo checks", "exposure": "used by G0 evaluation and P8 DEV; label exposed_development"}
+      "TRAIN": {
+        "range": [
+          "2023-05-15",
+          "2025-04-30"
+        ],
+        "use": "fit BC/support/pool/WE only",
+        "exposure": "fit"
+      },
+      "JUNE_2025": {
+        "use": "tau selection if reused",
+        "exposure": "used by EXP-P8-001 tau tuning and D86 calibration; label exposed_policy_tuning"
+      },
+      "DEV_JUL_SEP_2025": {
+        "use": "semi-synthetic and placebo checks",
+        "exposure": "used by G0 evaluation and P8 DEV; label exposed_development"
+      }
     },
     "budget_seconds": null,
-    "existing_cost_reference": "EXP-P8-001 queue 293.31 s for P0-P3 at 128+128 starts (D65); not a budget for new work"
+    "existing_cost_reference": "EXP-P8-001 queue 293.31 s for P0-P3 at 128+128 starts (D65); not a budget for new work",
+    "exposure_scope": "Only the listed proposed windows/existing sets are known exposed. Availability and usage of all other <=2025 populations are unknown; no broad exposed or untouched claim.",
+    "certified_unexposed_population_count": 0
   },
-  "claims": {"policy_frozen": false, "registration": false, "identification": null, "causal_effect": null, "policy_adoption": null, "service_promotion": false}
+  "claims": {
+    "policy_frozen": false,
+    "registration": false,
+    "identification": null,
+    "causal_effect": null,
+    "policy_adoption": null,
+    "service_promotion": false
+  },
+  "coordination_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-2026-policy-preparation"
 }
