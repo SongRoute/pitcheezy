@@ -206,9 +206,21 @@ def source_closure():
 
 # ---------------------------------------------------------------- provenance (git)
 
-def _git(*args, cwd=REPO):
+def _git(*args, cwd=None, check=True):
+    """Git metadata command; any failure refuses (fail closed) unless the caller interprets the exit code."""
+    cwd = REPO if cwd is None else cwd
     env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
-    return subprocess.run(['git', *args], cwd=cwd, capture_output=True, text=True, env=env)
+    result = subprocess.run(['git', *args], cwd=cwd, capture_output=True, text=True, env=env)
+    if check and result.returncode != 0:
+        raise ValueError(f'git {" ".join(args)} failed in {cwd} (exit {result.returncode}): {result.stderr.strip()[:500]}')
+    return result
+
+
+def _commit(cwd, label):
+    head = _git('rev-parse', '--verify', 'HEAD^{commit}', cwd=cwd).stdout.strip()
+    if not mj.is_commit(head):
+        raise ValueError(f'{label} HEAD is not a full commit id: {head!r}')
+    return head
 
 
 def _blob_sha1(data):
@@ -217,26 +229,26 @@ def _blob_sha1(data):
 
 def tracked_clean(path, label):
     path = Path(path).resolve()
-    top = _git('rev-parse', '--show-toplevel', cwd=path.parent)
+    top = _git('rev-parse', '--show-toplevel', cwd=path.parent, check=False)
     if top.returncode != 0 or not top.stdout.strip():
-        raise ValueError(f'{label} is not inside a git checkout')
+        raise ValueError(f'{label} is not inside a git checkout: {top.stderr.strip()[:500]}')
     root = Path(top.stdout.strip()).resolve()
     rel = path.relative_to(root).as_posix()
-    if _git('ls-files', '--error-unmatch', '--', rel, cwd=root).returncode != 0:
+    if _git('ls-files', '--error-unmatch', '--', rel, cwd=root, check=False).returncode != 0:
         raise ValueError(f'{label} is not tracked')
     if _git('status', '--porcelain', '--untracked-files=all', '--', rel, cwd=root).stdout.strip():
         raise ValueError(f'{label} has staged or unstaged changes')
     if _git('rev-parse', '--verify', f'HEAD:{rel}', cwd=root).stdout.strip() != _blob_sha1(path.read_bytes()):
         raise ValueError(f'{label} bytes differ from its HEAD blob')
     return {'path': str(path), 'repository_root': str(root), 'relpath': rel,
-            'repository_head': _git('rev-parse', '--verify', 'HEAD^{commit}', cwd=root).stdout.strip()}
+            'repository_head': _commit(root, label)}
 
 
 def execution_provenance(config, config_path):
     top = Path(_git('rev-parse', '--show-toplevel').stdout.strip() or '/nonexistent').resolve()
     if top != REPO.resolve() or Path(__file__).resolve() != (REPO / SCRIPT_REL).resolve():
         raise ValueError('Running script is not the execution checkout script')
-    head = _git('rev-parse', '--verify', 'HEAD^{commit}').stdout.strip()
+    head = _commit(REPO, 'execution checkout')
     if head != config['code_commit_c']:
         raise ValueError('Execution HEAD differs from registered code_commit_c')
     if _git('status', '--porcelain', '--untracked-files=no').stdout.strip():
