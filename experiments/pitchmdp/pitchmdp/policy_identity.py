@@ -237,11 +237,22 @@ class BoundComponents:
         row = self.inputs.rows.get(state.context_key)
         return None if row is None else row_sha256(row)
 
+    def check_context(self, state, pitcher_hand):
+        """Candidate mode, before any data refusal: the request is exactly its bound context row
+        (pitcher, batter side and throwing hand); a mismatch is an input defect, never a refusal."""
+        row = self.inputs.rows.get(state.context_key)
+        _require(row is not None, 'request context is not bound to the policy inputs')
+        # PolicyInputs.support would swallow this mismatch as an empty (and cached) support.
+        _require(str(int(row['pitcher'])) == state.pitcher and row['stand'] == state.batter_side,
+                 'request pitcher/batter side differ from the bound context row')
+        row_hand = row.get('p_throws')
+        row_hand = None if row_hand is None or (isinstance(row_hand, float) and np.isnan(row_hand)) else str(row_hand)
+        _require(row_hand == pitcher_hand, 'request pitcher hand differs from the bound context row')
+
     def check_support(self, state, mask):
         """Per-request link of the pinned support table to the bound delivery pools."""
         row = self.inputs.rows.get(state.context_key)
         _require(row is not None, 'request context is not bound to the policy inputs')
-        # PolicyInputs.support would swallow this mismatch as an empty (and cached) support.
         _require(str(int(row['pitcher'])) == state.pitcher and row['stand'] == state.batter_side,
                  'request pitcher/batter side differ from the bound context row')
         _require(np.array_equal(self.inputs.support(state), mask),
@@ -466,39 +477,51 @@ def compare_probe(actual, expected, atol):
 
 # ---------------------------------------------------------------- TRAIN intervention support table
 
-def support_templates(train_rows):
-    """One safe-context template per TRAIN (pitcher, throwing hand) x batter side {L, R} at 0-0.
+def hand_registry(train_rows, pitchers):
+    """D-8 (HAND_RULE): per BC pitcher, the single TRAIN throwing hand when every TRAIN row of the
+    pitcher has the same L/R and none is missing; otherwise 'AMBIGUOUS'. No share threshold."""
+    hands = {}
+    groups = {str(int(p)): part for p, part in train_rows.groupby('pitcher', sort=True)}
+    for pitcher in pitchers:
+        part = groups.get(str(pitcher))
+        _require(part is not None, f'BC pitcher without TRAIN rows: {pitcher}')
+        values = part.p_throws
+        observed = set(values.dropna().astype(str))
+        single = not values.isna().any() and len(observed) == 1 and observed <= {'L', 'R'}
+        hands[str(pitcher)] = next(iter(observed)) if single else 'AMBIGUOUS'
+    return hands
+
+
+def support_templates(train_rows, hands):
+    """One safe-context template per single-hand registry pitcher x batter side {L, R} at 0-0.
 
     Support depends only on the pitcher, hand, side and the pools, so any real TRAIN row of the
-    pitcher/hand serves as the rest of the context. Template keys are synthetic and negative so
-    they never collide with a real pitch key.
+    pitcher serves as the rest of the context. AMBIGUOUS pitchers get no template (they are
+    refused before the support lookup). Template keys are synthetic and negative so they never
+    collide with a real pitch key.
     """
-    base = train_rows.drop_duplicates(['pitcher', 'p_throws']).sort_values(['pitcher', 'p_throws'])
+    import pandas as pd
+    single = {p: h for p, h in hands.items() if h != 'AMBIGUOUS'}
+    base = train_rows.assign(_pitcher=train_rows.pitcher.map(lambda v: str(int(v))))
+    base = base.loc[base._pitcher.isin(single)].drop_duplicates('_pitcher').sort_values('_pitcher')
     rows = []
     for index, row in enumerate(base.to_dict('records')):
+        _require(row['p_throws'] == single[row['_pitcher']], 'template hand differs from the registry')
+        row.pop('_pitcher')
         for side_index, side in enumerate(('L', 'R')):
             rows.append({**row, 'game_pk': -1, 'at_bat_number': -(index + 1), 'pitch_number': side_index + 1,
                          'stand': side, 'balls': 0, 'strikes': 0})
-    import pandas as pd
     return pd.DataFrame(rows, columns=train_rows.columns)
 
 
-def support_rows(inputs, templates, *, two_hand_rule):
-    """(pitcher, side, mask) rows for ``save_support_table`` plus the pitchers whose hands disagree.
-
-    ``two_hand_rule``: 'refuse' keeps the table key (pitcher, side) and refuses generation when a
-    pitcher's TRAIN hands give different masks; 'intersect' registers the actions supported under
-    every observed hand (conservative, never adds an action).
-    """
+def support_rows(inputs, templates):
+    """(pitcher, side, mask) rows for ``save_support_table``. Templates carry one hand per pitcher,
+    so one (pitcher, side) key can never see two masks; that is asserted, not repaired."""
     from .matrix_policy import context_key
     from .rollout_policy import PAState
-    _require(two_hand_rule in ('refuse', 'intersect'), 'registered two-hand rule required')
     masks = {}
     for row in templates.to_dict('records'):
         pitcher, side = str(int(row['pitcher'])), str(row['stand'])
-        mask = inputs.support(PAState(0, 0, pitcher, side, (), context_key(row)))
-        masks.setdefault((pitcher, side), []).append(mask)
-    conflicts = sorted({p for (p, _), found in masks.items() if any(not np.array_equal(found[0], m) for m in found[1:])})
-    _require(not conflicts or two_hand_rule == 'intersect', f'pitchers with hand-dependent support: {conflicts[:10]}')
-    rows = [(p, s, np.logical_and.reduce(found)) for (p, s), found in sorted(masks.items())]
-    return rows, conflicts
+        _require((pitcher, side) not in masks, f'two templates for one support key: {(pitcher, side)}')
+        masks[(pitcher, side)] = inputs.support(PAState(0, 0, pitcher, side, (), context_key(row)))
+    return [(p, s, mask) for (p, s), mask in sorted(masks.items())]

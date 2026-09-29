@@ -400,9 +400,11 @@ class RolloutImprovement:
         q = np.full(len(self.bc.actions), -np.inf)
         se = np.full(len(q), np.nan)
         lower, upper = q.copy(), q.copy()
+        samples = np.full((len(q), self.samples), np.nan)  # common-random-number draws per action
         for a, values, lo, hi in zip(names, result.values.reshape(-1, self.samples),
                                      result.lower.reshape(-1, self.samples), result.upper.reshape(-1, self.samples)):
             i = self.bc.actions.index(a)
+            samples[i] = values
             q[i] = values.mean()
             se[i] = values.std(ddof=1)/np.sqrt(self.samples) if self.samples > 1 else np.nan
             lower[i], upper[i] = lo.mean(), hi.mean()
@@ -411,7 +413,7 @@ class RolloutImprovement:
         self.diagnostics["search_truncated"] += int(result.truncated.sum())
         self.diagnostics["search_conditional_rows"] += self.simulator.budget.conditional_rows - before
         diagnostics = {"mc_se": se, "truncation_lower": lower, "truncation_upper": upper,
-                       "truncated": int(result.truncated.sum()), "rollouts": len(u)}
+                       "truncated": int(result.truncated.sum()), "rollouts": len(u), "sample_values": samples}
         if len(self._cache) < self.cache_size:
             self._cache[cache_key] = (q.copy(), {k: v.copy() if isinstance(v, np.ndarray) else v
                                                for k, v in diagnostics.items()})

@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import unittest
 
 import numpy as np
+import pandas as pd
 from scipy.special import softmax
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -320,8 +321,8 @@ def runtime_fixture(root, minimum=1):
     return art, support_sha
 
 
-def request(rt, rid, pa_id, i, state, logged):
-    return pr.DecisionRequest(rid, pa_id, i, state, logged, rt.sha256)
+def request(rt, rid, pa_id, i, state, logged, hand='R'):
+    return pr.DecisionRequest(rid, pa_id, i, state, logged, rt.sha256, hand)
 
 
 class LedgerTests(unittest.TestCase):
@@ -475,6 +476,7 @@ class EndToEndTests(unittest.TestCase):
         bc = CategoricalBC().fit([BCRecord(PAState(0, 0, '9', 'L'), a, 'train') for a in ('FF', 'FF', 'SL', 'CH')])
         art = pa.save_train_bc(bc, root / 'bc.json', {**PROV, 'train_rows': 4})
         loaded, data = pa.load_train_bc(root / 'bc.json', art.file_sha256), frame()
+        data = pd.concat([data, data.iloc[[0]].assign(game_pk=2, pitcher=77)], ignore_index=True)  # an unknown pitcher row
         components = SyntheticPolicy(root / 'g0').bind(loaded, data)
         inputs, g0 = components.inputs, components.g0
         key = context_key(data.iloc[0])
@@ -498,7 +500,7 @@ class EndToEndTests(unittest.TestCase):
         h = PastPitch('FF', (.5,) * 8, 'ball', 0, 0)
         second = rt.submit(request(rt, 'e2', 'pa1', 1, PAState(1, 0, '9', 'L', (h,), key), 'CH'))
         self.assertEqual((second['status'], second['result']['rho_candidate']), (pr.OUTSIDE_POLICY_SUPPORT, 0.0))
-        rt.submit(request(rt, 'e3', 'pa2', 0, PAState(0, 0, '77', 'L', (), key), 'FF'))
+        rt.submit(request(rt, 'e3', 'pa2', 0, PAState(0, 0, '77', 'L', (), context_key(data.iloc[3])), 'FF'))
         self.assertGreater(g0.actual_neural_network_rows, 0)
         # Determinism + replay: a rebuilt runtime has the same identity and the same candidate row.
         rt2 = pr.build_runtime(root / 'bc.json', art.file_sha256, root / 'support.json', support_sha,

@@ -5,17 +5,18 @@
   "policy_frozen": false,
   "created": "2026-09-29",
   "base_commit": "713c7ea",
-  "task": "COOP-017",
-  "decision_context": "D92",
+  "task": "COOP-017 (identity), COOP-018 (validation code, D93 decisions)",
+  "decision_context": "D92, D93",
   "parents": {
     "policy_preparation": "configs/MLB-2026-POLICY-PREPARATION-v1.json",
     "runtime_report": "docs/reports/ML-policy-runtime-implementation-2026-09-28.md",
-    "parent_state_unchanged": true
+    "parent_state_unchanged": false,
+    "parent_changes_d93": "configs/MLB-2026-POLICY-PREPARATION-v1.json common.mid_pa_pitcher_change_rule and common.profile_as_of rewritten as proposals (D-4, D-7); status stays proposal, next Astra review item"
   },
   "execution": {
     "enabled": false,
     "real_data_enabled": false,
-    "reason": "Identity/connection code and synthetic checks only. No TRAIN BC export, payload load, model load, inference, OPE or 2026 access is authorized by this file. Runner experiments/pitchmdp/scripts/run_policy_validation.py is not implemented."
+    "reason": "Decisions D-1..D-11 and M-1..M-13 are made (D93) and the runner exists, but nothing may run: registration, the code-review gate (S0-S2), the independent-review gate (S3+), the source commit and every null stage field below are still open. No payload load, BC export, inference, OPE or 2026 access is authorized by this file."
   },
   "documents": {
     "contract": "docs/contracts/ML-POLICY-MATERIALIZATION-v1.md",
@@ -24,14 +25,89 @@
     "validation_record": "results/ML-policy-materialization-prep-v1.json",
     "code": [
       "experiments/pitchmdp/pitchmdp/policy_identity.py",
-      "experiments/pitchmdp/pitchmdp/policy_runtime.py"
+      "experiments/pitchmdp/pitchmdp/policy_runtime.py",
+      "experiments/pitchmdp/pitchmdp/policy_requests.py",
+      "experiments/pitchmdp/pitchmdp/policy_estimator.py",
+      "experiments/pitchmdp/pitchmdp/policy_tau.py",
+      "experiments/pitchmdp/pitchmdp/policy_semisynthetic.py",
+      "experiments/pitchmdp/pitchmdp/policy_artifacts.py",
+      "experiments/pitchmdp/scripts/run_policy_validation.py"
     ],
     "tests": [
       "experiments/pitchmdp/tests/test_policy_identity.py",
-      "experiments/pitchmdp/tests/test_policy_runtime.py"
-    ]
+      "experiments/pitchmdp/tests/test_policy_runtime.py",
+      "experiments/pitchmdp/tests/test_policy_validation.py"
+    ],
+    "decision_options": "docs/reviews/COOP-018-decision-options-2026-09-29.md",
+    "code_review": "docs/reviews/COOP-018-code-review-2026-09-29.md"
   },
   "convention": "null = not selected, not built, not measured or not verified. Values quoted under 'metadata' were read this session from JSON whose SHA256 equals the G0 bundle pin; no pickle/npz/parquet/model payload was opened or hashed.",
+  "decisions": {
+    "D-1": "BC_P",
+    "D-2": "all_pa_bounds_plus_predecision_start_population",
+    "D-3": "split_cause_refusal_sticky",
+    "D-4": "continue_primary_natural_course_secondary",
+    "D-5": "e0_censored_affine_bounds",
+    "D-6": "structural-end-v1",
+    "D-7": "window_start_snapshot_pinned",
+    "D-8": "train_single_hand_registry",
+    "D-9": "two_stage_profile_then_overlap_noise",
+    "D-10": "absorb_off_mask",
+    "D-11": "measure_first_hang_guard"
+  },
+  "decisions_record": {
+    "decided_by": "Song (user), 2026-09-29",
+    "record": "docs/decisions.md D93",
+    "options_and_rationale": "docs/reviews/COOP-018-decision-options-2026-09-29.md",
+    "source": "Opus 5.5 three-lens analysis + synthesis + adversarial critic per decision (same model, not an independent review)",
+    "user_overrides": {
+      "D-11": "option D (measure first) instead of the recommended C"
+    },
+    "missing_decisions_M1_M13": "recommended options adopted (see decisions_extra)"
+  },
+  "decisions_extra": {
+    "M-1": "S5/S6 samples = complete games by salted hash, month-proportional (largest remainder); every PA of a chosen game",
+    "M-2": "one base registration + append-only addenda (SHA pins only, parent-sha chain; no thresholds/samples/values)",
+    "M-3": "S0-S2 open after the code-review gate; S3 and later only after an independent review",
+    "M-4": "game bootstrap B=10000, bootstrap role seed, all PAs of resampled games, L1 endpoints and L2 paired; invalid replicates counted, CI null above the registered share; P8 minimum 30 games / 50 PA starts",
+    "M-5": "ESS gate on min(candidate, reference), PA and game; <=2025 labels only (UNCONFIRMED_WEAK_OVERLAP)",
+    "M-6": "V2 accept = pooled delta-gap 95% interval contains 0 and |gap| <= registered tolerance; per-start gaps diagnostic; V3 = frequency + tempered BC (report only); absorbed and cap-truncated logs counted",
+    "M-7": "DR q-hat from an independent evaluation seed; fall back to the planning Q only by the registered cost rule (S6_V4.dr_q_source) before S6",
+    "M-8": "structurally unsubmittable PAs stay in L0 with [0,1] per policy; a defect at k>0 censors the PA at k",
+    "M-9": "count-path break and uncheckable real-pitch outcome = UNSUPPORTED_INCONSISTENT_HISTORY (sticky); S0 counts both",
+    "M-10": "go/no-go: S1 gates, S2 pass, S4/S6 count seals, V2 accept before S6; S6 carries the cand=ref paired identity check and V(ref) next to the observed mean end value",
+    "M-11": "role seeds via SeedSequence(base, role index); planning main 0; V2 planning seeds {0,1,2}",
+    "M-12": "primary = BC_P, window-start snapshot, plain DR, planning seed 0; fixed same-ledger sensitivities; no Holm family at <=2025 (no confirmatory claim)",
+    "M-13": "D87 role (first pitcher of the fielding side), month by game_date, TRAIN volume tertiles, extra innings; descriptive only"
+  },
+  "review_gates": {
+    "code_review": {
+      "status": null,
+      "history": "a704983 reviewed by a six-lens same-model adversarial workflow (127 agents; 36 confirmed findings), fixes in the D93 commit; the fixed code needs its own review before PASS"
+    },
+    "independent_review": {
+      "status": null,
+      "note": "Sol/Astra unavailable in this environment; S3 and later stay closed"
+    }
+  },
+  "seeds": {
+    "base": 20260929,
+    "derivation": "int(SeedSequence([base, role_index]).generate_state(1)[0])",
+    "roles": [
+      "evaluation",
+      "bootstrap",
+      "v2",
+      "selection_salt",
+      "profile_salt"
+    ],
+    "planning_main": 0,
+    "planning_v2": [
+      0,
+      1,
+      2
+    ],
+    "note": "planning seeds are policy-identity fields (CLAUDE.md exploration set {0,1,2}); role seeds never overlap"
+  },
   "identity_registration": {
     "contract": "ML-POLICY-IDENTITY-v1",
     "g0_bundle": {
@@ -58,7 +134,6 @@
     },
     "we_contract_sha256": "d0f1d452331d3f7ad32ca310442bad3ef61bab1b16747829f4190c0f0653ac13",
     "classes": {
-      "status": "proposal_from_code_reading_confirm_at_bind",
       "aux": {
         "baseline": "run_sequence_context_frequency.ContextFrequencyBaseline",
         "context": "pitchmdp.sequence_model.SequenceContext",
@@ -85,11 +160,12 @@
     "expected_identity_sha256": null,
     "search": {
       "policy": "P3",
-      "tau": null,
-      "samples": null,
-      "pitch_cap": null,
-      "planning_seed": null,
-      "budget": null,
+      "derived_from": {
+        "samples_pitch_cap": "pinned S3 profile.json selection (D-9a)",
+        "tau": "pinned S3b tau_freeze.json (D-9b)",
+        "seed": "seeds.planning_main",
+        "budget": "stages.*.row_budget"
+      },
       "p8_reference_not_transferable": {
         "tau_grid": [
           0.001,
@@ -116,6 +192,18 @@
       "candidate_mode_support_table_missing_or_empty_but_pool_supports": "FAILED_INTEGRITY (was UNSUPPORTED_EMPTY_SUPPORT)",
       "context_row_pitcher_or_side_differs_from_request": "FAILED_INTEGRITY",
       "logging_only_runtime": "unchanged"
+    },
+    "classes_status": "proposal_from_code_reading_confirm_at_bind",
+    "state_changes_d93": {
+      "contract": "ML-POLICY-RUNTIME-v2 (status list and hand-registry pin in the runtime pins)",
+      "new_refusals": [
+        "UNSUPPORTED_MISSING_ACTION_LABEL",
+        "UNSUPPORTED_PITCHER_HAND"
+      ],
+      "candidate_context_check": "request row not bound / pitcher, side or hand differs -> FAILED_INTEGRITY before any data refusal",
+      "positivity_before_candidate": "LOGGING_POSITIVITY is decided before the candidate search",
+      "uncheckable_previous_outcome": "UNSUPPORTED_INCONSISTENT_HISTORY (was: accepted)",
+      "abort_row": "wall/hang guard aborts append an aborted row; the ledger reads HALTED"
     }
   },
   "metadata": {
@@ -174,7 +262,7 @@
     "current_sources_equal_g0_execution_sources": 30
   },
   "train_bc_plan": {
-    "status": "plan_only_not_executed",
+    "status": "decided_D93_not_executed",
     "data": {
       "processed_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
       "processed_rows": 2145111,
@@ -182,13 +270,14 @@
     },
     "artifacts": {
       "BC_P": {
-        "role": "proposed primary logging law and reference base",
-        "rows": "split==train (2023-05-15..2025-04-30), pitch_type non-null, description not in {automatic_ball, automatic_strike}, balls 0-3 and strikes 0-2; no outcome, supported_pa or plate-location condition",
+        "role": "registered pi_b_hat (full vocabulary) and reference base (D-1)",
+        "rows": "split==train, logged_label not a sentinel (registered no-pitch descriptions win over a present type; missing or empty type excluded), balls 0-3 and strikes 0-2; no outcome, supported_pa or plate-location condition (policy_requests.bc_population_mask)",
         "upper_bound_rows": 1386362,
-        "rows_measured": null
+        "rows_measured": null,
+        "identification_assumption": "MAR: given H, a missing type label is unrelated to the pitch type (S0 counts missing labels by pitcher/count)"
       },
       "BC_E": {
-        "role": "P8-compatible comparison",
+        "role": "S1 reproduction gate and descriptive TRAIN comparison only; never used for estimation, selection or sensitivity",
         "rows": "pinned eligible D100 TRAIN keys p4_train_keys",
         "keys_file_sha256": "372d0aaf32c1748a8f86f597399b88fb097567f93ea17fbc4611cfdcca53d347",
         "ordered_rows_sha256": "0a2e81aecbf9dbb0453544440561b090017f3903ea7456ea7be47fcdf6b3ba6a",
@@ -200,71 +289,118 @@
       "prior_strength": 20.0,
       "minimum_action_count": 1
     },
-    "history": "state_from_row(bc_only=True): strictly previous same-PA row, <UNKNOWN> if missing type, <START> if none",
-    "support_table": "bound PolicyInputs.support for every BC pitcher x batter side {L,R} with the pitcher's TRAIN throwing hand; empty masks kept; conflicting hands refused",
+    "history": "BC fit keeps state_from_row(bc_only=True) (<UNKNOWN>/<START>); requests use <NO_PITCH>/<MISSING_LABEL>, harmless only because both are sticky refusals (no BC query after them)",
+    "support_table": "bound PolicyInputs.support for every single-hand registry pitcher x batter side {L,R} with the registered hand; AMBIGUOUS pitchers get no row and are refused before the lookup (D-8)",
     "reports": [
       "pi_b_hat mass on mask by cell and TRAIN-decision weighted quantiles",
-      "BC_P vs BC_E cell differences"
+      "BC_P vs BC_E cell differences (counts)",
+      "S1 gates",
+      "hand registry counts",
+      "rare codes (UN/PO/FA/EP) inside the support",
+      "TRAIN volume tertile edges"
     ],
     "output_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize",
     "provenance_dates": "observed_by_export_train_bc",
     "bc_sha256": null,
-    "support_table_sha256": null
+    "support_table_sha256": null,
+    "hand_registry": {
+      "rule": "train_single_hand_v1: every TRAIN row of the pitcher has the same L/R and none missing, else AMBIGUOUS; no share threshold",
+      "rows": "all TRAIN regular-season rows",
+      "artifact": "hands.json (pitcheezy.pitcher_hands.v1), pinned in the runtime pins"
+    },
+    "rule_change_after_s1_tables": "forbidden: the primary choice is not revisited after the BC_P/BC_E tables"
   },
   "pa_time_rules": {
     "R1_denominator": {
-      "rule": "all regular-season PAs in the window; supported_pa/eligibility never select requests",
-      "implemented": "partial",
-      "changes_denominator": true
+      "rule": "L0 = every regular-season PA of the window (structurally unsubmittable PAs included); L1 = pre-decision start population E0; supported_pa/eligibility only as descriptive post-hoc layers",
+      "implemented": true,
+      "decision": "D-2"
     },
     "R2_decisions": {
-      "rule": "every PA row in pitch_number order; request_id=game:ab:pitch, pa_id=game:ab",
-      "implemented": false
+      "rule": "every PA row in pitch_number order; request_id=game:ab:pitch, pa_id=game:ab; a structural defect at row k submits rows 0..k-1 and censors at k",
+      "implemented": true
     },
     "R3_codes": {
       "in_vocabulary": "identity mapping",
-      "non_null_not_in_vocabulary": "FAILED_INTEGRITY; pre-run census mandatory",
-      "missing_or_automatic": "proposed UNSUPPORTED_NO_LOGGED_ACTION, sticky",
-      "implemented": "a_b_yes_c_no"
+      "non_null_not_in_vocabulary": "FAILED_INTEGRITY; S0 census gate",
+      "no_pitch_descriptions": [
+        "automatic_ball",
+        "automatic_strike"
+      ],
+      "priority": "a registered no-pitch description wins over a present type (NO_PITCH); a missing/empty type otherwise -> MISSING_LABEL",
+      "statuses": {
+        "no_pitch": "UNSUPPORTED_NO_LOGGED_ACTION, sticky",
+        "missing_label": "UNSUPPORTED_MISSING_ACTION_LABEL, sticky"
+      },
+      "adjustment_rule": "the no-pitch list may change only from S0 structural counts, never after S4/S6 values",
+      "implemented": true,
+      "decision": "D-3"
     },
     "R4_pre_decision": {
       "rule": "SAFE_COLUMNS of current row plus strictly previous same-PA type/normalized physics/10-class outcome",
       "implemented": true
     },
     "R4b_profiles": {
-      "rule": "pitcher TRAIN-fixed; batter style C0 strictly prior date; <=2025 rehearsal snapshot at window start (DEV: through 2025-06-30); S2 probe uses rolling values",
-      "implemented": false
+      "rule": "pitcher TRAIN-fixed; batter style C0 frozen at the window start (game_date < as_of_exclusive; DEV 2025-07-01) from all earlier rows, league row (reliability 0) for batters first seen later; S2 probe keeps rolling values",
+      "implemented": true,
+      "decision": "D-7"
     },
     "R4c_provenance_checks": {
       "rule": "history keys/order, whitelist, count path, invariance to post-decision fields",
-      "implemented": false
+      "implemented": "requests: full history, prefix on defects; runtime: count path incl. uncheckable outcomes; snapshot: roster-blind, bit-equal to rolling on the as-of date"
     },
     "R5_reward": {
-      "rule": "terminal = last PA row with events not truncated_pa; r = frozen C0 defense WE at observed next-row pre-pitch state; game-final PA = final result; score mismatch flagged",
-      "implemented": false
+      "rule": "structural-end-v1: the PA ended iff its last row has an events code (any, truncated_pa included) AND the adjacent next PA first row is observed (at_bat+1, pitch 1, 0-0, legal transition) or it is the last PA of an officially complete game; r = frozen C0 WE of that pre-pitch state for the initial defender, or the final result; complete_game/post scores missing -> FAILED_INTEGRITY",
+      "end_kinds": [
+        "batter_event",
+        "non_batter_end",
+        "game_final"
+      ],
+      "sensitivity": [
+        "r5-events-v1",
+        "flags_to_bounds",
+        "post_pitch_scores"
+      ],
+      "implemented": true,
+      "decision": "D-6"
     },
     "R6_incomplete": {
       "statuses": [
         "COMPLETE",
-        "INCOMPLETE_NO_TERMINAL",
-        "INCOMPLETE_START",
-        "UNSUPPORTED"
+        "CENSORED(REFUSED | NO_TERMINAL | TERMINAL_VALUE_MISSING)",
+        "EXCLUDED_PRE_START",
+        "UNSUBMITTABLE",
+        "FAILED (estimate refused)"
       ],
-      "estimate": "evaluable-PA conditional point estimate plus per-policy [0,1] worst-case bounds",
-      "implemented": "request_sticky_only"
+      "bounds": "censored node value c in [0,1] inside the D89 recursion: V_0 = base + prod(rho) c; TERMINAL_VALUE_MISSING shares c between policies",
+      "validity": "in expectation when censoring is fixed by H_k or is the shared end value; candidate path needs pi_b_hat correct; LOGGING_POSITIVITY nodes reported as violations",
+      "layers": {
+        "L0": "all PAs, bounds",
+        "L1": "E0, bounds (primary)",
+        "L2": "E0 and complete: post-treatment-selected conditional mean, no judgement"
+      },
+      "implemented": true,
+      "decision": "D-5"
     },
     "R7_mid_pa_change": {
-      "unknown_new_pitcher": "UNSUPPORTED_UNKNOWN_PITCHER then UNSUPPORTED_MID_PA (implemented)",
-      "known_new_pitcher": "proposed continue",
+      "known_new_pitcher": "continue (primary)",
+      "batter_change": "continue",
+      "unknown_new_pitcher": "UNSUPPORTED_UNKNOWN_PITCHER then MID_PA",
+      "secondary_estimand": "natural course after the first pitcher change (ledger pitcher field; manifest cross-check), descriptive, not in the primary family",
+      "thresholds_before_S0": {
+        "switch_to_secondary_primary_if_unknown_change_share_above": null,
+        "light_version_if_below": null
+      },
+      "implemented": true,
       "decision": "D-4"
     },
     "R8_inconsistent_history": {
-      "rule": "count path broken before decision -> proposed UNSUPPORTED_INCONSISTENT_HISTORY; ledger index/length/last-type mismatch stays FAILED_INTEGRITY",
-      "implemented": "ledger_local_only"
+      "rule": "count path broken or previous real-pitch outcome uncheckable -> UNSUPPORTED_INCONSISTENT_HISTORY (sticky); ledger index/length/last-type mismatch stays FAILED_INTEGRITY",
+      "implemented": true
     }
   },
   "le2025_validation_plan": {
-    "status": "plan_only_not_authorized",
+    "status": "decided_not_registered",
     "registration_id": "ML-POLICY-VAL-v1",
     "certified_unexposed_population_count": 0,
     "exposure": {
@@ -282,49 +418,155 @@
     },
     "stages": {
       "S0_census": {
-        "cap_seconds": 900,
-        "cost_measured": null,
-        "reads": "pre-decision fields, pitch_type, automatic description flag, events presence"
+        "hang_guard_seconds": 7200,
+        "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
+        "reads": "pitch_type, no-pitch flag, pre-pitch fields, identity, at_bat/pitch numbers, 10-class encoding for count paths; events/scores/completion only for TRAIN",
+        "outcome_adjacent_splits": [
+          "train"
+        ],
+        "cost_measured": null
       },
       "S1_materialize": {
-        "cap_seconds": 1800,
-        "cost_measured": null,
-        "reads": "TRAIN rows"
+        "hang_guard_seconds": 7200,
+        "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
+        "reads": "TRAIN rows",
+        "gates": {
+          "bc_e_rows": 1252824,
+          "bc_e_actions": [
+            "CH",
+            "CS",
+            "CU",
+            "EP",
+            "FA",
+            "FC",
+            "FF",
+            "FO",
+            "FS",
+            "KC",
+            "KN",
+            "PO",
+            "SC",
+            "SI",
+            "SL",
+            "ST",
+            "SV",
+            "UN"
+          ],
+          "token_vocabulary": [
+            "CH",
+            "CS",
+            "CU",
+            "EP",
+            "FA",
+            "FC",
+            "FF",
+            "FO",
+            "FS",
+            "KC",
+            "KN",
+            "PO",
+            "SC",
+            "SI",
+            "SL",
+            "ST",
+            "SV",
+            "UN"
+          ],
+          "note": "P8 BC has 18 actions; list equality with the token vocabulary is checked, not assumed"
+        },
+        "cost_measured": null
+      },
+      "S1b_style_snapshot": {
+        "hang_guard_seconds": 7200,
+        "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
+        "as_of_exclusive": {
+          "dev": "2025-07-01",
+          "temperature": "2025-05-16",
+          "blend": "2025-06-01"
+        },
+        "reads": "style-history fields of rows dated before each as-of date",
+        "cost_measured": null
       },
       "S2_bind_probe": {
-        "cap_seconds": 1200,
-        "cost_measured": null,
-        "probe_rows": "first 64 mlb_dev rows in pinned order with dev_delivery_level >= 0 in all five member archives",
+        "hang_guard_seconds": 7200,
+        "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
+        "rows": 64,
+        "row_rule": "first 64 mlb_dev rows in pinned order with dev_delivery_level >= 0 in all five member archives",
         "atol_primary": 1e-06,
         "atol_frequency_raw": 1e-12,
-        "label_arrays_read": false
+        "label_arrays_read": false,
+        "cost_measured": null
       },
       "S3_profile": {
-        "cap_seconds": 1800,
-        "cost_measured": null,
+        "hang_guard_seconds": 7200,
+        "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
+        "split": "temperature",
         "starts": 4,
-        "quality_values_read": false
+        "probe_setting": {
+          "samples": null,
+          "pitch_cap": null
+        },
+        "row_budget": null,
+        "candidates": null,
+        "selection_row_budget": {
+          "rows": null,
+          "decisions": null
+        },
+        "tau": "placeholder = tau_grid[0], labelled not selected",
+        "quality_values_read": false,
+        "cost_measured": null
+      },
+      "S3b_tau_select": {
+        "hang_guard_seconds": 7200,
+        "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
+        "split": "blend",
+        "n_games": null,
+        "tau_grid": [
+          0.001,
+          0.003,
+          0.01,
+          0.03
+        ],
+        "row_budget": null,
+        "thresholds": {
+          "pa_ess_ratio_min": null,
+          "game_ess_min": null,
+          "ess_ratio_candidate_reference_min": null,
+          "noise_ratio_q90_max": null,
+          "safety_multiplier": null
+        },
+        "rule": "smallest tau passing both-policy overlap, the candidate/reference ESS ratio and the paired-difference noise ratio; reference failing -> ARM_B_NOT_EVALUABLE; none -> P3_NOT_EVALUABLE; grid never widened",
+        "reads": "pre-decision fields, logged types, previous-row outcomes (history), terminal-marker presence only; no WE, reward, events kind or next-row state",
+        "exposure_note": "June 2025 exposed_policy_tuning reused for G0 P3 tau design without outcomes",
+        "cost_measured": null
       },
       "S4_V5_denominators": {
-        "cap_seconds": 3600,
-        "cost_measured": null,
-        "risk": "per-row ledger fsync; profile one game subset first"
+        "hang_guard_seconds": 7200,
+        "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
+        "seal": "handled PAs == pinned S0 census dev pas; ledger decision rows == submitted requests",
+        "cost_measured": null
       },
       "S5_V2_V3": {
-        "cap_seconds": null,
-        "blocked_by": [
-          "D-10 delivery/transition for logging actions outside M",
-          "log generator and DR estimator not implemented"
-        ]
+        "world_rule": "absorb_off_mask",
+        "starts": null,
+        "logs_per_start": null,
+        "truth_rollouts": null,
+        "cap": null,
+        "row_budget": null,
+        "tempered_alpha_grid": null,
+        "tolerance": null,
+        "hang_guard_seconds": null,
+        "cost_measured": null
       },
       "S6_V4": {
-        "cap_seconds": null,
-        "blocked_by": [
-          "R5/R6 estimator not implemented"
-        ]
+        "n_games": null,
+        "row_budget": null,
+        "dr_q_source": "evaluation_seed",
+        "dr_q_fallback_rule": "planning_reuse only if the registered cost formula from S3 exceeds the row budget, decided before S6",
+        "hang_guard_seconds": null,
+        "cost_measured": null
       }
     },
-    "family_cap_seconds_proposed": 9300,
     "measured_references_not_budgets": {
       "p8_prepare_seconds": 186.615885166917,
       "p8_blend_control": {
@@ -361,21 +603,24 @@
     },
     "source_commit": null,
     "registered_config_sha256": null,
-    "command_template": "PYTHONPATH=<pythonpath> <python> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json --local-config <local.json> --output <stage dir> {census|materialize-bc|bind-probe|profile|v5-denominators}",
-    "failure": "BudgetExceeded -> FAILED_RUNTIME and preserved stage failure; FAILED_INTEGRITY stops; no threshold/sample/candidate change after outcomes; retries only as new registered attempts"
-  },
-  "open_decisions": {
-    "D-1": "TRAIN BC primary: BC_P (proposed) vs BC_E",
-    "D-2": "denominator: all regular-season PAs (proposed)",
-    "D-3": "no-action rows: new refusal status + sticky (proposed)",
-    "D-4": "known-pitcher mid-PA change: continue (proposed)",
-    "D-5": "incomplete PA: conditional point estimate + [0,1] bounds (proposed)",
-    "D-6": "PA end state: observed next-row state + mismatch flag (proposed)",
-    "D-7": "<=2025 batter profile: window-start snapshot (proposed)",
-    "D-8": "two-handed pitchers in the support table: census first",
-    "D-9": "G0 tau/search settings: separate registration, June 2025 reuse decision",
-    "D-10": "V2 world for logging actions outside M: declared JointDelivery tier+fallback (proposed)",
-    "D-11": "stage caps as proposed"
+    "command_template": "PYTHONPATH=<pythonpath> <python> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
+    "failure": "hang guard / RowBudget / integrity failures preserve the stage (failure-*.json, partial ledger prefix not citable); retries only as new attempts with the same scope",
+    "caps_policy": "D-11 D: no wall caps before measurement; label-blind stages carry the hang guard only; candidate rollouts (S3, S3b, S5, S6) carry registered RowBudgets; wall caps are registered after S0-S4 costs are measured; scope never shrinks after a failure",
+    "bootstrap": {
+      "draws": 10000,
+      "seed_role": "bootstrap",
+      "unit": "game (all PAs of a resampled game)",
+      "invalid_share_max": null,
+      "minimum": {
+        "games": 30,
+        "pa_starts": 50
+      },
+      "minimum_source": "matrix_policy.POLICY_INFERENCE (P8)"
+    },
+    "local_config": {
+      "path": "experiments/pitchmdp/configs/local.json",
+      "sha256": "eb364ca79d553e7b8e16350f783572714f293033240468a2592083ce602ee967"
+    }
   },
   "claims": {
     "policy_frozen": false,
@@ -385,7 +630,7 @@
     "policy_adoption": null,
     "service_promotion": false,
     "real_components_bound": false,
-    "independent_review": "pending_sol_astra_unavailable_in_this_environment"
+    "independent_review": "not performed (Sol/Astra unavailable); same-model adversarial review only"
   },
   "synthetic_checks": {
     "focused": "23 passed, 23 subtests (test_policy_identity 8 new + test_policy_runtime 15)",
@@ -402,6 +647,41 @@
         "member_temperatures_reordered": 0.02403371281681041
       }
     },
-    "identification_evidence": false
+    "identification_evidence": false,
+    "d93": {
+      "status": "see docs/reviews/COOP-018-code-review-2026-09-29.md and results/ML-policy-validation-code-v1.json"
+    }
+  },
+  "subgroups": {
+    "role": "D87: SP = first pitcher of the fielding side in the game",
+    "month": "game_date",
+    "volume_quantiles": [
+      0.3333333333333333,
+      0.6666666666666666
+    ],
+    "volume_quantiles_basis": "design convention (tertiles), not measured",
+    "extra_innings": "inning >= 10",
+    "use": "descriptive only"
+  },
+  "ess_gate": {
+    "thresholds": {
+      "pa": 100,
+      "game": 30
+    },
+    "source": "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json overlap_gates (heuristic proposal)",
+    "use": "min(candidate, reference); <=2025 label only"
+  },
+  "sensitivity": {
+    "same_ledger": [
+      "r5-events-v1",
+      "flags_to_bounds",
+      "post_pitch_scores"
+    ],
+    "not_run_in_this_family": [
+      "BC_E as pi_b_hat",
+      "rolling prior",
+      "other planning seeds for V4"
+    ],
+    "multiplicity": "descriptive; no confirmatory claim at <=2025"
   }
 }

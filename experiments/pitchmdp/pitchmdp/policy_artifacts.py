@@ -26,6 +26,9 @@ from .rollout_policy import CategoricalBC
 
 BC_SCHEMA = 'pitcheezy.train_bc.v1'
 SUPPORT_SCHEMA = 'pitcheezy.intervention_support.v1'
+HANDS_SCHEMA = 'pitcheezy.pitcher_hands.v1'
+STYLE_SCHEMA = 'pitcheezy.batter_style_snapshot.v1'
+HAND_RULE = 'train_single_hand_v1'  # matrix_panel hand rule: one observed L/R and no missing hand, else AMBIGUOUS
 TRAIN_WINDOW = ('2023-05-15', '2025-04-30')  # matrix_policy.fit_bc guard
 G0_PROTOCOL = 'g0_research_frozen_v1'
 G0_SEEDS = (0, 1, 2, 3, 4)
@@ -317,6 +320,66 @@ def load_support_table(path, expected_sha256, bc_artifact):
     _require(_sha(expected_sha256), 'a sha256 pin is required to load a support table')
     payload, file_sha = _read_envelope(path, SUPPORT_SCHEMA, expected_sha256)
     return validate_support_payload(payload, bc_artifact), canonical_hash(payload)
+
+
+# ---------------------------------------------------------------- TRAIN pitcher hand registry (D-8)
+
+def hand_registry_payload(bc_artifact, hands, train_rows):
+    """``hands``: {pitcher: 'L'|'R'|'AMBIGUOUS'} over exactly the BC pitchers (HAND_RULE)."""
+    _require(isinstance(hands, dict) and set(hands) == set(bc_artifact.bc.pitchers), 'hand registry covers the BC pitchers')
+    _require(_count(train_rows), 'hand registry needs its positive TRAIN row count')
+    payload = {'bc_sha256': bc_artifact.sha256, 'rule': HAND_RULE, 'train_rows': train_rows,
+               'rows': [{'pitcher': str(p), 'hand': hands[p]} for p in sorted(hands)]}
+    validate_hand_registry(payload, bc_artifact)
+    return payload
+
+
+def validate_hand_registry(payload, bc_artifact):
+    _require(isinstance(payload, dict) and set(payload) == {'bc_sha256', 'rule', 'train_rows', 'rows'}
+             and _count(payload['train_rows']), 'hand fields')
+    _require(payload['bc_sha256'] == bc_artifact.sha256 and payload['rule'] == HAND_RULE,
+             'hand registry was built for another BC or rule')
+    hands = {}
+    for row in payload['rows']:
+        _require(isinstance(row, dict) and set(row) == {'pitcher', 'hand'} and row['pitcher'] not in hands
+                 and row['hand'] in ('L', 'R', 'AMBIGUOUS'), 'hand registry row')
+        hands[row['pitcher']] = row['hand']
+    _require(list(hands) == sorted(hands) and set(hands) == set(bc_artifact.bc.pitchers),
+             'hand registry must list exactly the BC pitchers in order')
+    return hands
+
+
+def save_hand_registry(bc_artifact, hands, train_rows, path):
+    payload = hand_registry_payload(bc_artifact, hands, train_rows)
+    return payload, write_exclusive(path, _canonical_bytes(_envelope(HANDS_SCHEMA, payload)))
+
+
+def load_hand_registry(path, expected_sha256, bc_artifact):
+    _require(_sha(expected_sha256), 'a sha256 pin is required to load a hand registry')
+    payload, _ = _read_envelope(path, HANDS_SCHEMA, expected_sha256)
+    return validate_hand_registry(payload, bc_artifact), canonical_hash(payload)
+
+
+# ---------------------------------------------------------------- batter style snapshot (D-7)
+
+def save_style_snapshot(snapshot, as_of, source, path):
+    """Frozen batter style priors: {batter: HISTORY_COLUMNS values} plus the league row (key 'league',
+    reliability 0) for batters unseen before ``as_of`` (exclusive)."""
+    columns = list(snapshot.columns)
+    rows = [{'batter': str(index), 'values': [float(v) for v in row]} for index, row in zip(snapshot.index, snapshot.to_numpy())]
+    _require(all(np.isfinite(r['values']).all() for r in rows) and rows[-1]['batter'] == 'league', 'style snapshot rows')
+    payload = {'as_of_exclusive': str(as_of), 'columns': columns, 'source': dict(source), 'rows': rows}
+    return payload, write_exclusive(path, _canonical_bytes(_envelope(STYLE_SCHEMA, payload)))
+
+
+def load_style_snapshot(path, expected_sha256):
+    """(DataFrame indexed by batter id string with float32 columns, as_of, content sha256)."""
+    import pandas as pd
+    _require(_sha(expected_sha256), 'a sha256 pin is required to load a style snapshot')
+    payload, _ = _read_envelope(path, STYLE_SCHEMA, expected_sha256)
+    frame = pd.DataFrame([r['values'] for r in payload['rows']], index=[r['batter'] for r in payload['rows']],
+                         columns=payload['columns']).astype(np.float32)
+    return frame, payload['as_of_exclusive'], canonical_hash(payload)
 
 
 # ---------------------------------------------------------------- five-member frozen G0

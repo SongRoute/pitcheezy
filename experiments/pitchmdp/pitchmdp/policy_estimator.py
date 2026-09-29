@@ -1,13 +1,21 @@
-"""ARM-B per-decision sequential DR over ledger rows (ML-POLICY-ESTIMATOR-v1, COOP-018).
+"""ARM-B per-decision sequential DR over ledger rows (ML-POLICY-ESTIMATOR-v2, COOP-018, D93).
 
 Implements the D89 §5 formula on the rows ``PolicyRuntime`` records: for pi in {candidate,
-reference}, ``V_T = 0`` and ``V_t = v(H_t) + rho_t (r_t + V_{t+1} - q(H_t, a_t))`` with the
-reward only at the PA's last decision, ``rho_t = pi(a_t|H_t) / pi_b_hat(a_t|H_t)`` (full-vocabulary
+reference}, ``V_T = 0`` and ``V_t = v(H_t) + rho_t (r_t + V_{t+1} - q(H_t, a_t))`` with the reward
+only at the PA's last decision, ``rho_t = pi(a_t|H_t) / pi_b_hat(a_t|H_t)`` (full-vocabulary
 logging law, never renormalised), no clipping and no self-normalisation. ``q`` is the recorded
-reference-continuation Q; for the candidate it is the declared control variate (D89 §5), so
-candidate unbiasedness rests on the logging-law path alone. Every input is re-validated against
-the ledger values (fail closed). PAs that are not evaluable keep their place in the denominator
-and enter only the per-policy [0, 1] worst-case bound. Nothing here identifies a causal effect.
+reference-continuation Q (evaluation seed when registered, M-7); for the candidate it is the
+declared control variate (D89 §5). Every input is re-validated against the ledger values.
+
+Populations and layers (D-2, D-5): L0 = every regular-season PA of the window (bounds only; a PA
+outside the pre-decision start population E0 or unsubmittable at its first row takes [0, 1] per
+policy); L1 = E0 (primary: bounds); L2 = E0 PAs that are complete (named post-treatment-selected
+conditional mean, no judgement). A PA censored at node k (a refusal or structural defect at k,
+an unobserved PA end, or an unobservable end value) is bounded inside the recursion: V_0 is
+affine in the unknown node value c in [0, 1] with slope prod_{t<k} rho_t (D-5 C). The bound is
+valid in expectation when censoring is fixed by H_k or is the shared end value, and the
+candidate path needs pi_b_hat correct; LOGGING_POSITIVITY nodes violate that and are reported
+separately. Nothing here identifies a causal effect.
 """
 from __future__ import annotations
 
@@ -19,13 +27,20 @@ from .policy_artifacts import IntegrityError, _require
 
 EVALUATED = ('SUPPORTED', 'OUTSIDE_POLICY_SUPPORT')
 FATAL = ('FAILED_INTEGRITY', 'FAILED_RUNTIME')
+START_REFUSALS = ('UNSUPPORTED_INCOMPLETE_START', 'UNSUPPORTED_UNKNOWN_PITCHER', 'UNSUPPORTED_EMPTY_SUPPORT',
+                  'UNSUPPORTED_PITCHER_HAND')
+POSITIVITY = 'UNSUPPORTED_LOGGING_POSITIVITY'
 POLICIES = ('candidate', 'reference')
-COMPLETE = 'COMPLETE'
-INCOMPLETE_NO_TERMINAL = 'INCOMPLETE_NO_TERMINAL'
-UNSUPPORTED = 'UNSUPPORTED'
-FAILED = 'FAILED'
-ESTIMAND = ('evaluable-PA conditional mean of V(candidate) - V(reference) in frozen C0 initial-defender WE; '
-            'population value only as worst-case bounds')
+COMPLETE, CENSORED = 'COMPLETE', 'CENSORED'
+EXCLUDED_PRE_START, UNSUBMITTABLE = 'EXCLUDED_PRE_START', 'UNSUBMITTABLE'
+REFUSED, NO_TERMINAL, TERMINAL_VALUE_MISSING = 'REFUSED', 'NO_TERMINAL', 'TERMINAL_VALUE_MISSING'
+ESTIMAND = {
+    'L0_all_pas': 'bounds on the mean paired value difference over every regular-season PA of the window',
+    'L1_start_population': 'primary: bounds over the pre-decision start population E0 (first-row pre-pitch '
+                           'fields and frozen TRAIN artifacts only)',
+    'L2_complete_conditional': 'E0 PAs complete and supported to the end: post-treatment-selected conditional '
+                               'mean, descriptive, no judgement',
+    'units': 'frozen C0 initial-defender WE; V(candidate) - V(reference)'}
 
 
 def _probabilities(values, n, name):
@@ -62,53 +77,125 @@ def _step(row, n):
     return policies, q, mask, a, rho
 
 
-def pa_dr(decisions, reward):
-    """Sequential DR values of one evaluable PA from its ordered decision rows and terminal WE."""
-    _require(isinstance(reward, float) and np.isfinite(reward) and 0 <= reward <= 1, 'terminal WE outside [0, 1]')
-    _require(decisions and [d['decision_index'] for d in decisions] == list(range(len(decisions))),
-             'decision rows must be the complete ordered PA')
-    _require(len({d['pa_id'] for d in decisions}) == 1, 'decision rows from more than one PA')
+def _steps(decisions):
+    _require([d['decision_index'] for d in decisions] == list(range(len(decisions))),
+             'decision rows must be the ordered PA prefix')
+    _require(len({d['pa_id'] for d in decisions}) <= 1, 'decision rows from more than one PA')
+    if not decisions:
+        return []
     n = len(decisions[0]['result']['logging'])
-    steps = [_step(d, n) for d in decisions]
+    return [_step(d, n) for d in decisions]
+
+
+def affine(steps, name):
+    """(base, slope): V_0 = base + slope * c for the unknown node value c entering after the last
+    step (the terminal reward plus V_T = 0 for a complete PA). slope = prod rho >= 0."""
+    base, slope = 0., 1.
+    for policies, q, mask, a, rho in reversed(steps):
+        v = float(policies[name][mask] @ q[mask])
+        r = rho[name]
+        base, slope = (v, 0.) if r == 0 else (v + r * (base - q[a]), r * slope)
+    return base, slope
+
+
+def pa_dr(decisions, reward):
+    """Sequential DR values of one complete PA from its ordered decision rows and terminal WE."""
+    _require(isinstance(reward, float) and np.isfinite(reward) and 0 <= reward <= 1, 'terminal WE outside [0, 1]')
+    _require(decisions, 'decision rows must be the complete ordered PA')
+    steps = _steps(decisions)
     out = {}
     for name in POLICIES:
-        value, weight = 0., 1.
-        for t in reversed(range(len(steps))):
-            policies, q, mask, a, rho = steps[t]
-            p = policies[name]
-            r = reward if t == len(steps) - 1 else 0.
-            value = float(p[mask] @ q[mask]) + (0. if rho[name] == 0 else rho[name] * (r + value - q[a]))
-            weight *= rho[name]
-        out[name], out[f'weight_{name}'] = value, weight
+        base, slope = affine(steps, name)
+        out[name], out[f'weight_{name}'] = base + slope * reward, slope
     out['delta'] = out['candidate'] - out['reference']
     return out
 
 
-def pa_status(decisions, outcome):
-    """Ledger decision rows + PA outcome -> one PA status (the refusal reason is kept separately)."""
+def _interval(steps, shared):
+    """Per-policy [lo, hi] and the paired delta interval for an unknown node value in [0, 1]."""
+    lines = {name: affine(steps, name) for name in POLICIES}
+    out = {f'{name}_bounds': [b, b + s] for name, (b, s) in lines.items()}
+    (bc, sc), (br, sr) = lines['candidate'], lines['reference']
+    if shared:  # one end value shared by both policies (TERMINAL_VALUE_MISSING)
+        ends = [bc - br, bc + sc - br - sr]
+        out['delta_bounds'] = [min(ends), max(ends)]
+    else:
+        out['delta_bounds'] = [bc - br - sr, bc + sc - br]
+    out.update({f'weight_{name}': s for name, (_, s) in lines.items()})
+    return out
+
+
+def classify(decisions, info):
+    """One PA -> (status, node k, kind, reason). ``info``: runner facts for the PA (start
+    population, structural problem and index, reward/reason/kind of the PA end)."""
     statuses = [d['status'] for d in decisions]
     if any(s in FATAL for s in statuses):
-        return FAILED, next(s for s in statuses if s in FATAL)
-    refused = [s for s in statuses if s not in EVALUATED]
+        return 'FAILED', None, None, next(s for s in statuses if s in FATAL)
+    problem, index = info.get('problem'), info.get('problem_index')
+    if problem is not None and index == 0:
+        _require(not decisions, 'a PA unsubmittable at its first row cannot have ledger rows')
+        return UNSUBMITTABLE, None, None, problem
+    _require(decisions, 'a submitted PA needs its ledger rows')
+    if not info['in_population']:
+        return EXCLUDED_PRE_START, None, None, info.get('start_reason')
+    _require(statuses[0] not in START_REFUSALS, 'E0 start population disagrees with the runtime decision 0')
+    refused = [k for k, s in enumerate(statuses) if s not in EVALUATED]
+    if problem is not None:
+        _require(len(decisions) == index, 'a structural defect ends the submitted prefix exactly')
     if refused:
-        return UNSUPPORTED, refused[0]
-    if outcome.get('reward') is None:
-        return INCOMPLETE_NO_TERMINAL, outcome.get('reason')
-    return COMPLETE, None
+        k = refused[0]
+        _require(all(s == 'UNSUPPORTED_MID_PA' for s in statuses[k + 1:]), 'refusals after the first must be sticky')
+        return CENSORED, k, REFUSED, statuses[k]
+    if problem is not None:
+        return CENSORED, index, REFUSED, f'structural:{problem}'
+    if info.get('reward') is None:
+        kind = info.get('kind')
+        _require(kind in (NO_TERMINAL, TERMINAL_VALUE_MISSING), 'unknown PA-end kind')
+        return CENSORED, len(decisions), kind, info.get('reason')
+    return COMPLETE, None, None, None
 
 
-def game_bootstrap(deltas, games, *, draws, seed):
-    """PA-weighted whole-game percentile bootstrap of the mean paired delta (fixed nuisances)."""
-    deltas, games = np.asarray(deltas, dtype=np.float64), np.asarray(games)
-    _require(deltas.ndim == 1 and deltas.shape == games.shape and np.isfinite(deltas).all(), 'bootstrap inputs')
-    _require(type(draws) is int and draws >= 1 and type(seed) is int, 'registered draws/seed required')
-    unique, inverse = np.unique(games, return_inverse=True)
-    if len(unique) < 2:
-        return {'games': int(len(unique)), 'ci95': None, 'draws': draws, 'seed': seed}
-    sums, counts = np.bincount(inverse, weights=deltas), np.bincount(inverse)
-    sample = np.random.default_rng(seed).integers(len(unique), size=(draws, len(unique)))
-    boot = sums[sample].sum(axis=1) / counts[sample].sum(axis=1)
-    return {'games': int(len(unique)), 'ci95': np.quantile(boot, [.025, .975]).tolist(), 'draws': draws, 'seed': seed}
+def pa_value(decisions, info):
+    """Per-PA row: status, node, bounds or point values (and weights) for both policies."""
+    status, k, kind, reason = classify(decisions, info)
+    row = {'status': status, 'node': k, 'kind': kind, 'reason': reason, 'game': info['game'],
+           'in_population': status in (COMPLETE, CENSORED), 'validity_violation': reason == POSITIVITY}
+    if status in (EXCLUDED_PRE_START, UNSUBMITTABLE):
+        row.update({f'{name}_bounds': [0., 1.] for name in POLICIES}, delta_bounds=[-1., 1.])
+    elif status == COMPLETE:
+        values = pa_dr(decisions, float(info['reward']))
+        row.update(values)
+        row.update({f'{name}_bounds': [values[name]] * 2 for name in POLICIES}, delta_bounds=[values['delta']] * 2)
+    elif status == CENSORED:
+        row.update(_interval(_steps(decisions[:k]), shared=kind == TERMINAL_VALUE_MISSING))
+    return row
+
+
+def secondary_value(decisions, info, primary):
+    """D-4 secondary estimand (descriptive): after the first pitcher change t* (from the ledger's
+    pitcher field) both policies follow the logged behaviour, so V_{t*} is the observed end value
+    (a shared unknown when unobserved) and refusals at or after t* do not censor."""
+    pitchers = [d['pitcher'] for d in decisions]
+    change = next((t for t, p in enumerate(pitchers) if p != pitchers[0]), None) if pitchers else None
+    if 'first_pitcher_change_index' in info and decisions:
+        manifest = info['first_pitcher_change_index']
+        expected = manifest if manifest is not None and manifest < len(decisions) else None
+        _require(change == expected, 'ledger pitcher change differs from the request manifest')
+    if change is None or not primary['in_population'] or (primary['node'] is not None and primary['node'] < change):
+        return {**primary, 'secondary_change': change}
+    steps = _steps(decisions[:change])
+    if info.get('reward') is None:
+        row = {**_interval(steps, shared=True), 'status': CENSORED, 'kind': TERMINAL_VALUE_MISSING}
+    else:
+        reward = float(info['reward'])
+        row = {'status': COMPLETE}
+        for name in POLICIES:
+            base, slope = affine(steps, name)
+            row[name], row[f'weight_{name}'] = base + slope * reward, slope
+            row[f'{name}_bounds'] = [row[name]] * 2
+        row['delta'] = row['candidate'] - row['reference']
+        row['delta_bounds'] = [row['delta']] * 2
+    return {**row, 'game': info['game'], 'in_population': True, 'secondary_change': change}
 
 
 def effective_sample_size(weights, games=None):
@@ -121,45 +208,141 @@ def effective_sample_size(weights, games=None):
     return None if not (w ** 2).sum() else float(w.sum() ** 2 / (w ** 2).sum())
 
 
-def estimate(ledger_decisions, outcomes, *, draws, seed):
-    """Aggregate the ledger into per-PA DR values, status denominators, bounds and diagnostics.
+def _layer(rows):
+    n = len(rows)
+    if not n:
+        return None
+    out = {'pas': n}
+    for name in (*POLICIES, 'delta'):
+        lo = sum(r[f'{name}_bounds'][0] for r in rows) / n
+        hi = sum(r[f'{name}_bounds'][1] for r in rows) / n
+        out[f'{name}_bounds'] = [lo, hi]
+    return out
+
+
+def game_bootstrap(rows, *, draws, seed, invalid_share_max, minimum):
+    """Whole-game bootstrap (all PAs of a resampled game, paired across quantities): the L1 bound
+    endpoints and the L2 conditional mean. A replicate without a complete PA is invalid for L2;
+    their share above ``invalid_share_max`` nulls the L2 interval. Below the registered minimum
+    games / PA starts, no interval is reported (P8 POLICY_INFERENCE rule)."""
+    _require(type(draws) is int and draws >= 1 and type(seed) is int, 'registered draws/seed required')
+    _require(isinstance(invalid_share_max, float) and 0 <= invalid_share_max <= 1, 'registered invalid share required')
+    games = sorted({r['game'] for r in rows}, key=str)
+    out = {'draws': draws, 'seed': seed, 'games': len(games), 'pa_starts': len(rows), 'unit': 'game'}
+    if len(games) < minimum['games'] or len(rows) < minimum['pa_starts']:
+        return {**out, 'inference': None, 'reason': 'below registered minimum games / PA starts'}
+    index = {g: i for i, g in enumerate(games)}
+    g = np.array([index[r['game']] for r in rows])
+    complete = np.array([r['status'] == COMPLETE for r in rows])
+    per = lambda values: np.bincount(g, weights=np.asarray(values, dtype=np.float64), minlength=len(games))
+    n_all, n_c = per(np.ones(len(rows))), per(complete)
+    lo, hi = per([r['delta_bounds'][0] for r in rows]), per([r['delta_bounds'][1] for r in rows])
+    d = per([r['delta'] if r['status'] == COMPLETE else 0. for r in rows])
+    sample = np.random.default_rng(seed).integers(len(games), size=(draws, len(games)))
+    counts = n_all[sample].sum(axis=1)
+    boot_lo, boot_hi = lo[sample].sum(axis=1) / counts, hi[sample].sum(axis=1) / counts
+    nc = n_c[sample].sum(axis=1)
+    valid = nc > 0
+    invalid = int((~valid).sum())
+    conditional = d[sample].sum(axis=1)[valid] / nc[valid]
+    q = lambda v: np.quantile(v, [.025, .975]).tolist()
+    return {**out, 'L1_lower_endpoint_ci95': q(boot_lo), 'L1_upper_endpoint_ci95': q(boot_hi),
+            'L2_invalid_replicates': invalid,
+            'L2_conditional_ci95': None if not valid.any() or invalid / draws > invalid_share_max else q(conditional)}
+
+
+def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, ess_gate=None):
+    """Aggregate the ledger into per-PA values, layered bounds, bootstrap, ESS and diagnostics.
 
     ``ledger_decisions``: decision rows in ledger order (``Ledger.decisions()``).
-    ``outcomes``: {pa_id: {'game': ..., 'reward': float | None, 'reason': ...}} for every PA
-    submitted (an outcome missing for a submitted PA is an integrity failure).
+    ``pas``: {pa_id: facts} for EVERY PA of the window: ``game``, ``in_population`` and
+    ``start_reason`` (E0), ``problem``/``problem_index`` (structural defect), ``reward``/
+    ``reason``/``kind`` (PA end), optional ``first_pitcher_change_index``, ``end_kind``,
+    ``flags`` and ``strata``. A ledger PA missing from ``pas`` is an integrity failure; so is any
+    FAILED_* decision (a halted ledger is never aggregated).
     """
     by_pa = {}
     for row in ledger_decisions:
         by_pa.setdefault(row['pa_id'], []).append(row)
-    _require(set(by_pa) == set(outcomes), 'every submitted PA needs exactly one outcome record')
-    rows, reasons = [], Counter()
-    for pa_id, decisions in by_pa.items():
-        decisions = sorted(decisions, key=lambda d: d['decision_index'])
-        status, reason = pa_status(decisions, outcomes[pa_id])
-        row = {'pa_id': pa_id, 'game': outcomes[pa_id]['game'], 'status': status}
-        if status == COMPLETE:
-            row.update(pa_dr(decisions, outcomes[pa_id]['reward']))
-        else:
-            reasons[f'{status}:{reason}'] += 1
+    _require(set(by_pa) <= set(pas), 'every submitted PA needs its facts')
+    rows, secondary = [], []
+    for pa_id, info in pas.items():
+        decisions = sorted(by_pa.get(pa_id, []), key=lambda d: d['decision_index'])
+        row = pa_value(decisions, info)
+        if row['status'] == 'FAILED':
+            raise IntegrityError(f'FAILED decision in PA {pa_id}: {row["reason"]}; a halted ledger is not estimated')
+        row.update(pa_id=pa_id, end_kind=info.get('end_kind'), flags=list(info.get('flags') or ()),
+                   strata=dict(info.get('strata') or {}))
         rows.append(row)
-    complete = [r for r in rows if r['status'] == COMPLETE]
-    n, others = len(rows), len(rows) - len(complete)
-    delta_sum = sum(r['delta'] for r in complete)
-    result = {'estimand': ESTIMAND, 'pas': n, 'status': dict(Counter(r['status'] for r in rows)),
-              'non_evaluable_reasons': dict(reasons), 'evaluable_pas': len(complete),
-              'population_delta_bounds': [(delta_sum - others) / n, (delta_sum + others) / n] if n else None,
+        secondary.append({**secondary_value(decisions, info, row), 'pa_id': pa_id})
+    e0 = [r for r in rows if r['in_population']]
+    complete = [r for r in e0 if r['status'] == COMPLETE]
+    result = {'estimand': ESTIMAND, 'pas': len(rows), 'status': dict(Counter(r['status'] for r in rows)),
+              'reasons': dict(Counter(f'{r["status"]}:{r["reason"]}' for r in rows if r['status'] != COMPLETE)),
+              'censor_kinds': dict(Counter(r['kind'] for r in e0 if r['status'] == CENSORED)),
+              'censor_nodes': dict(Counter(str(r['node']) for r in e0 if r['status'] == CENSORED)),
+              'validity_violation_pas': sum(r['validity_violation'] for r in rows),
+              'layers': {'L0_all_pas': _layer(rows), 'L1_start_population': _layer(e0)},
               'population_value': None, 'causal_effect': None}
     if complete:
         deltas = [r['delta'] for r in complete]
+        weights = {name: [r[f'weight_{name}'] for r in complete] for name in POLICIES}
         games = [r['game'] for r in complete]
-        result['conditional'] = {
-            'delta_mean': float(np.mean(deltas)), 'delta_pp': 100 * float(np.mean(deltas)),
+        ess = {name: {'pa': effective_sample_size(w), 'game': effective_sample_size(w, games)}
+               for name, w in weights.items()}
+        gate = {level: min((ess[name][level] for name in POLICIES if ess[name][level] is not None), default=None)
+                for level in ('pa', 'game')}
+        result['layers']['L2_complete_conditional'] = {
+            'pas': len(complete), 'delta_mean': float(np.mean(deltas)),
             'candidate_mean': float(np.mean([r['candidate'] for r in complete])),
             'reference_mean': float(np.mean([r['reference'] for r in complete])),
-            'bootstrap': game_bootstrap(deltas, games, draws=draws, seed=seed),
-            'ess': {name: {'pa': effective_sample_size([r[f'weight_{name}'] for r in complete]),
-                           'game': effective_sample_size([r[f'weight_{name}'] for r in complete], games)}
-                    for name in POLICIES}}
+            'observed_mean_end_value': float(np.mean([pas[r['pa_id']]['reward'] for r in complete])),
+            'selection': 'post-treatment selected (complete and supported to the end); no judgement'}
+        result['ess'] = {**ess, 'gate_min_candidate_reference': gate}
+        if ess_gate is not None:
+            weak = any(v is None or v < ess_gate[level] for level, v in gate.items())
+            result['ess']['label'] = 'UNCONFIRMED_WEAK_OVERLAP' if weak else None
     else:
-        result['conditional'] = None
+        result['layers']['L2_complete_conditional'] = None
+    if e0:
+        censored = [r for r in e0 if r['status'] == CENSORED]
+        result['censoring'] = {'observed_share': len(censored) / len(e0), **{
+            f'estimated_mass_{name}': sum(r[f'weight_{name}'] for r in censored) / len(e0) for name in POLICIES}}
+        result['bootstrap'] = game_bootstrap(e0, draws=draws, seed=seed, invalid_share_max=invalid_share_max,
+                                             minimum=minimum)
+    changed = [s for s in secondary if s['in_population'] and s.get('secondary_change') is not None]
+    same = {r['pa_id'] for r in complete}
+    result['secondary_natural_course_after_pitcher_change'] = {
+        'label': 'descriptive; not in the primary family',
+        'changed_pas': len(changed),
+        'all_secondary_evaluable': _layer([s for s in secondary if s['in_population']]),
+        'primary_complete_set': _layer([s for s in secondary if s['pa_id'] in same])}
+    result['strata'] = strata_table(rows)
+    result['paired_identity_check'] = paired_identity_check(by_pa, pas, [r['pa_id'] for r in complete])
     return result, rows
+
+
+def strata_table(rows):
+    """Descriptive L3: counts, completes and mean delta bounds per registered stratum value."""
+    out = {}
+    keys = sorted({k for r in rows for k in r['strata']} | {'end_kind'})
+    for key in keys:
+        groups = {}
+        for r in rows:
+            value = r['end_kind'] if key == 'end_kind' else r['strata'].get(key)
+            groups.setdefault(str(value), []).append(r)
+        out[key] = {value: {'pas': len(part), 'complete': sum(r['status'] == COMPLETE for r in part),
+                            'delta_bounds': _layer(part)['delta_bounds']} for value, part in sorted(groups.items())}
+    return out
+
+
+def paired_identity_check(by_pa, pas, complete_ids):
+    """M-10: with the reference law in both slots every complete PA's paired delta is exactly 0."""
+    zero = True
+    for pa_id in complete_ids:
+        mirrored = []
+        for d in sorted(by_pa[pa_id], key=lambda d: d['decision_index']):
+            result = {**d['result'], 'candidate': d['result']['reference'], 'rho_candidate': d['result']['rho_reference']}
+            mirrored.append({**d, 'result': result})
+        zero &= pa_dr(mirrored, float(pas[pa_id]['reward']))['delta'] == 0.
+    return {'pas': len(complete_ids), 'all_zero': bool(zero)}

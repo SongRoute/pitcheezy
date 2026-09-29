@@ -134,8 +134,10 @@
   "common": {
     "decision_history": "pre-pitch game state + strictly previous same-PA pitches (type, physics, outcome, pre-pitch count) + frozen profiles; no current/future pitch fields",
     "profile_as_of": {
-      "value": "frozen pre-2026 snapshot; no 2026 rolling profile/repertoire update",
-      "status": "proposal"
+      "value": "frozen batter style snapshot with as_of_exclusive = first 2026 evaluation date: every regular-season row dated before it (<= 2025), league row (reliability 0) for batters first seen in 2026; no 2026 rolling profile/repertoire update",
+      "status": "proposal",
+      "changed_by": "D93 D-7 (rehearsed at <=2025 with the window-start snapshot)",
+      "review": "next Astra review item"
     },
     "evaluation_start": "first pitch 0-0 of each PA, weight 1 (D87 proposal)",
     "horizon": "PA end, then frozen WE continuation",
@@ -162,7 +164,12 @@
     ],
     "refusals_stay_in_denominator": true,
     "repair_or_renormalise_at_evaluation": false,
-    "mid_pa_pitcher_change_rule": null,
+    "mid_pa_pitcher_change_rule": {
+      "value": "known new pitcher (TRAIN history, registered single hand): continue evaluating (primary); unknown new pitcher: UNSUPPORTED_UNKNOWN_PITCHER then UNSUPPORTED_MID_PA; batter change: continue; natural course after the first pitcher change reported as a descriptive secondary estimand",
+      "status": "proposal",
+      "changed_by": "D93 D-4",
+      "review": "next Astra review item"
+    },
     "logged_action_statuses": {
       "in_vocabulary_outside_policy_mask": "rho=0, valid (OUTSIDE_POLICY_SUPPORT)",
       "not_in_vocabulary": "FAILED_INTEGRITY",

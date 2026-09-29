@@ -96,8 +96,8 @@ class Network:
 class WE:
     def __init__(self, base=.5): self.base = base
 
-    def predict_defense(self, state, defender_is_home):
-        return self.base + .05 * state.outs - .02 * bin(state.bases).count('1')
+    def predict_defense(self, state, defender_is_home):  # depends on the defender, so a flipped side is visible
+        return self.base + .05 * state.outs - .02 * bin(state.bases).count('1') + (.03 if defender_is_home else -.03)
 
 
 class Advancement:
@@ -370,8 +370,8 @@ class RuntimeWiringTests(unittest.TestCase):
         return pr.build_runtime(self.root / 'bc.json', self.art.file_sha256, path, sha, self.root / name,
                                 **{**settings, **changes})
 
-    def request(self, rt, rid, state, logged):
-        return pr.DecisionRequest(rid, 'pa-' + rid, 0, state, logged, rt.sha256)
+    def request(self, rt, rid, state, logged, hand='R'):
+        return pr.DecisionRequest(rid, 'pa-' + rid, 0, state, logged, rt.sha256, hand)
 
     def test_candidate_identity_is_complete_and_pinned(self):
         rt = self.runtime()
@@ -388,7 +388,7 @@ class RuntimeWiringTests(unittest.TestCase):
             self.runtime('l5.jsonl', components=None, pool=self.components.inputs.pool)
         with self.assertRaisesRegex(pa.IntegrityError, 'BoundComponents'):
             self.runtime('l6.jsonl', components=SimpleNamespace(**vars(self.components)))
-        with self.assertRaisesRegex(pa.IntegrityError, 'identity pin needs'):
+        with self.assertRaisesRegex(pa.IntegrityError, 'identity pin or evaluation seed needs'):
             pr.build_runtime(self.root / 'bc.json', self.art.file_sha256, self.root / 'support.json',
                              self.support_sha, self.root / 'l7.jsonl', expected_identity_sha256='a' * 64)
 
