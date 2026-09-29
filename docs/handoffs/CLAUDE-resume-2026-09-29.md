@@ -50,7 +50,9 @@
 | 7 | S0–S4 실측 뒤 `null` 값 등록(D-11 D): S3 후보·예산, S3b 경기 수·문턱 5개, S5 설계값·허용치(선택: declared hazard), S6 경기 수·행 예산·계획 결정 수·D-7 진단 표본 수, 부트스트랩 무효 비율 | 재등록 기록 |
 | 8 | 2026 proposal 두 항목(`profile_as_of`, `mid_pa_pitcher_change_rule`)을 2026 계약 검토 안건에 올림(검토 방법은 6번 결정을 따름) | 검토 기록 |
 
-S0 명령(승인·스위치 커밋 뒤). 인터프리터는 `.venv/bin/python`이다(config `environment.invoke_with`; Homebrew 파이썬을 직접 부르면 numpy import에서 멈춘다):
+**D96 상태:** 1번(스위치 커밋 `0b42117`)·2번(S0 실행, exit 0, 495.4초) 완료. 3번의 D-3 판단과 4번 S1·S1b 승인이 다음이다. 결과는 SESSION_HANDOFF D96 항목.
+
+S0 명령(승인·스위치 커밋 뒤, 이미 실행함 — 같은 출력 경로로 재실행 금지). 인터프리터는 `.venv/bin/python`이다(config `environment.invoke_with`; Homebrew 파이썬을 직접 부르면 numpy import에서 멈춘다):
 
 ```bash
 cd /Users/song/Projects/pitcheezy && PYTHONPATH="/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:experiments/pitchmdp" .venv/bin/python experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json --local-config experiments/pitchmdp/configs/local.json --output "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S0-census-a1" census
