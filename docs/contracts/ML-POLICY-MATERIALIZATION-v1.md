@@ -72,7 +72,7 @@
 | R4c 출처 검사 | 요청 불변성(결정 뒤 필드·이후 행 변경), 카운트 경로, 스냅샷 명단 불변성 테스트 | — |
 | R5 PA 종료·보상 | `structural-end-v1`: 마지막 행 `events`가 있고(코드 무관, `truncated_pa` 포함) 인접한 다음 PA 첫 행(같은 경기, at_bat+1, pitch 1, 0-0, 합법 전환: 같은 반이닝이면 아웃·점수 비감소, 바뀌면 아웃 0·주자 없음 또는 연장 2루 주자)이 관측되거나, 경기의 마지막 PA이고 **game_final_v1**(경기 마지막 행에 events가 있고, 사후 점수가 있고 동률이 아니며, 5회 이상 — MLB 정식 경기)일 때 종료. data.py `complete_game` 휴리스틱은 쓰지 않고 S0에서 불일치 수만 센다. r = 그 투구 전 상태의 초기 수비 팀 동결 C0 WE, 또는 최종 승패. 사후 점수 열이 없거나 선택 경기의 마지막 행 사후 점수가 결측이면 FAILED_INTEGRITY(조용한 검열 없음). 사후 점수 민감도에서 경기 중간 행 값이 없으면 공유 미지값 검열. `end_kind` 층(batter_event/non_batter_end/game_final), 점수 불일치 flag. 민감도: `r5-events-v1`(truncated→검열), flag→경계, 사후 점수 사용 | D-6 |
 | R6 불완전 PA | 상태: COMPLETE, CENSORED(REFUSED / NO_TERMINAL / TERMINAL_VALUE_MISSING, 노드 k), EXCLUDED_PRE_START, UNSUBMITTABLE, NO_DECISION, FAILED(추정 거부). 검열 노드 값 c ∈ [0,1]을 D89 재귀 안에 두어 V_0 = base + (Π_{t<k} ρ_t)·c. NO_TERMINAL은 정책별 독립 미지값, TERMINAL_VALUE_MISSING은 두 정책이 공유. 유효 조건: 검열이 H_k로 정해지거나 공유 종료값이고, 후보 경로는 π̂_b가 정확. LOGGING_POSITIVITY 노드는 위반으로 따로 셈. 층: L0(전 PA 경계), **L1(E0 경계, 주)**, L2(E0∩완결, 처치 후 선택 조건부 평균, 판정 없음) | D-5 |
-| R7 PA 중 교체 | 알려진 새 투수·타자 교체: 계속 평가(주). 미지 새 투수: `UNKNOWN_PITCHER` → `MID_PA`. 2차(기술): 첫 투수 교체 t* 뒤를 실제 진행으로 두는 추정량(t*는 원장 pitcher, manifest와 대조), 전체와 주 완결 집합 두 번 보고. S0 전에 정할 두 문턱(2차를 주로 올릴 미지 교체 비율, 경량판 문턱)은 `null` | D-4 |
+| R7 PA 중 교체 | 알려진 새 투수·타자 교체: 계속 평가(주). 미지 새 투수: `UNKNOWN_PITCHER` → `MID_PA`. 2차(기술): 첫 투수 교체 t* 뒤를 실제 진행으로 두는 추정량(t*는 원장 pitcher, manifest와 대조), 전체와 주 완결 집합 두 번 보고. S0 전에 정할 두 문턱(2차를 주로 올릴 미지 교체 비율, 경량판 문턱)은 1.0·0.0(D95: 전환·경량판 없음) | D-4 |
 | R8 이력 불일치 | 카운트 경로 단절 또는 직전 실제 투구 결과 매핑 불가 → `INCONSISTENT_HISTORY`(sticky). 원장 순번·길이·직전 구종 불일치는 FAILED_INTEGRITY | M-9 |
 
 ## 5. ≤2025 검증 자료·비용·실행 계획 (결정됨, 미등록·미실행)
@@ -127,4 +127,4 @@
 | D-11 | **D안(사용자 선택): 측정 먼저**, hang guard + RowBudget, 실측 뒤 상한 등록 |
 | M-1~M-13 | 추천안 채택(config `decisions_extra`) |
 
-남은 등록 조건: 독립 검토 PASS(S3 이후), source commit, 위 `null` 필드, 사용자 실행 승인. 코드 검토 PASS(S0–S2)는 D94에서 사용자가 판정했다(검토 코드 `5186810`에만 유효, 같은 모델 검토 근거). 2026 자료는 열람하지 않는다.
+남은 등록 조건: 독립 검토 PASS(S3 이후), 위 `null` 필드, 사용자 실행 승인(등록·실행 스위치). source commit은 `5186810`, D-4 두 문턱은 1.0·0.0으로 등록값을 정했다(D95). 코드 검토 PASS(S0–S2)는 D94에서 사용자가 판정했다(검토 코드 `5186810`에만 유효, 같은 모델 검토 근거). 2026 자료는 열람하지 않는다.

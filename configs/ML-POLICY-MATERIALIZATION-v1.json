@@ -397,9 +397,10 @@
       "unknown_new_pitcher": "UNSUPPORTED_UNKNOWN_PITCHER then MID_PA",
       "secondary_estimand": "natural course after the first pitcher change (ledger pitcher field; manifest cross-check), descriptive, not in the primary family",
       "thresholds_before_S0": {
-        "switch_to_secondary_primary_if_unknown_change_share_above": null,
-        "light_version_if_below": null
+        "switch_to_secondary_primary_if_unknown_change_share_above": 1.0,
+        "light_version_if_below": 0.0
       },
+      "thresholds_rule": "D95: read from the S0 census DEV split when S0 is reviewed and recorded in docs/decisions.md. share_unknown = pa_change_to_pitcher_unseen_in_train / pas (the secondary becomes primary only if share_unknown > switch...above); share_change = pa_with_pitcher_change / pas (the light version only if share_change < light_version_if_below). 1.0 and 0.0 mean: never switch, never light. A large share_unknown goes to a joint <=2025 and 2026 contract change, not an automatic switch",
       "implemented": true,
       "decision": "D-4"
     },
@@ -626,7 +627,7 @@
         "lightgbm": "4.6.0"
       }
     },
-    "source_commit": null,
+    "source_commit": "5186810c5b6bf461f2549a9b7f445dedb70ca9f0",
     "registered_config_sha256": null,
     "command_template": "PYTHONPATH=<pythonpath> <invoke_with> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
     "failure": "hang guard / RowBudget / integrity failures preserve the stage (failure-*.json, partial ledger prefix not citable); retries only as new attempts with the same scope",

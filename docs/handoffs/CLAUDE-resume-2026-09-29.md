@@ -1,12 +1,12 @@
-# Claude 재개 인수인계 — D94 이후
+# Claude 재개 인수인계 — D95 이후
 
-2026-09-29 작성(D92판을 D93·D94로 갱신; 이전 판은 git 이력에 보존). 새 세션의 시작점이다. [이전 재개 문서(D91)](CLAUDE-resume-2026-09-28.md)와 이 문서의 D92판 작업 묶음은 끝났으므로 다시 하지 않는다. 과학 규약을 바꾸거나 실행을 승인하지 않는다.
+2026-09-29 작성(D92판을 D93~D95로 갱신; 이전 판은 git 이력에 보존). 새 세션의 시작점이다. [이전 재개 문서(D91)](CLAUDE-resume-2026-09-28.md)와 이 문서의 D92판 작업 묶음은 끝났으므로 다시 하지 않는다. 과학 규약을 바꾸거나 실행을 승인하지 않는다.
 
 ## 1. 현재 위치
 
 - 저장소 `/Users/song/Projects/pitcheezy`, 브랜치 `codex/ml-matrix-execution`, PR [#34](https://github.com/SongRoute/pitcheezy/pull/34)(merge 금지·새 PR 중복 금지). reset하지 말고 현재 HEAD에서 이어간다. 로컬에서 대상이 바뀐 `runs` symlink(` M runs`)는 건드리지 않는다.
 - **협업 체제(D93): Opus 5.5 단독.** Sol·Astra·Codex를 호출하지 않는다. 같은 모델의 워크플로 검토는 자기 검토이며 독립 검토로 부르지 않는다.
-- D93 커밋은 [기계 기록](../../results/ML-policy-validation-code-v1.json)의 `commits`에 있다(검토한 코드 `5186810`). **D94: 코드 검토 게이트(S0–S2) PASS**(사용자 판정, 같은 모델 검토 근거, 독립 검토 아님). 재개 시 `git status --short`, `git log -5 --oneline`, ListAgents, `docs/decisions.md` 꼬리를 확인한다.
+- D93 커밋은 [기계 기록](../../results/ML-policy-validation-code-v1.json)의 `commits`에 있다(검토한 코드 `5186810`). **D94: 코드 검토 게이트(S0–S2) PASS**(사용자 판정, 같은 모델 검토 근거, 독립 검토 아님). **D95: S0 등록값 추천안대로 반영**(D-4 문턱 1.0·0.0, source commit `5186810`); 등록·실행 스위치만 S0 실행 승인 때 켠다. 재개 시 `git status --short`, `git log -5 --oneline`, ListAgents, `docs/decisions.md` 꼬리를 확인한다.
 
 읽기 순서: [AGENTS](../../AGENTS.md)·[CLAUDE](../../CLAUDE.md)·[협업 규칙](../AI_COLLABORATION.md) → 이 문서 → [D93 보고서](../reports/ML-policy-validation-code-2026-09-29.md) → [계약](../contracts/ML-POLICY-MATERIALIZATION-v1.md)·[config](../../configs/ML-POLICY-MATERIALIZATION-v1.json)(권위) → [결정 선택지](../reviews/COOP-018-decision-options-2026-09-29.md) → [코드 검토](../reviews/COOP-018-code-review-2026-09-29.md).
 
@@ -26,9 +26,9 @@
 
 ## 3. 다음 작업 — 순서
 
-### 3.1 S0 등록값 — 사용자 결정 대기 (추천안)
+### 3.1 S0 등록값 — 결정됨 (D95, 추천안대로)
 
-S0를 돌리려면 아래 값이 모두 있어야 한다. 이미 들어 있고 이번에 해시를 다시 확인한 값: local config pin(`eb364ca7…`), G0 번들 pin, member loader pin, 출력 루트 `…/ML-MATRIX-20260924/ML-POLICY-VAL-v1`, S0 hang guard 7,200초, 결과 인접 분할 `['train']`, 무투구 목록 `automatic_ball/automatic_strike`, seed base 20260929. 추천값을 메모리에서 적용해 보면 S0–S2 등록 검사는 통과하고 S3 이후는 독립 검토 게이트로 거부된다(확인함).
+사용자가 아래 추천안대로 정했다. D-4 두 문턱과 source commit은 config에 반영·커밋됐고, 등록·실행 스위치 네 개만 S0 실행 승인 때 켠다. S0를 돌리려면 아래 값이 모두 있어야 한다. 이미 들어 있고 이번에 해시를 다시 확인한 값: local config pin(`eb364ca7…`), G0 번들 pin, member loader pin, 출력 루트 `…/ML-MATRIX-20260924/ML-POLICY-VAL-v1`, S0 hang guard 7,200초, 결과 인접 분할 `['train']`, 무투구 목록 `automatic_ball/automatic_strike`, seed base 20260929. 추천값을 메모리에서 적용해 보면 S0–S2 등록 검사는 통과하고 S3 이후는 독립 검토 게이트로 거부된다(확인함).
 
 | 항목 | 추천 | 대안 | 이유 |
 |---|---|---|---|
@@ -41,7 +41,7 @@ S0를 돌리려면 아래 값이 모두 있어야 한다. 이미 들어 있고 �
 
 | 순서 | 작업 | 완료 기준 |
 |---|---|---|
-| 1 | 결정값을 config에 반영하고 **커밋·푸시**(실행기는 `--config`가 HEAD에 바이트 그대로 커밋돼 있어야 실행) | `git status`에 config 변경 없음 |
+| 1 | **S0 실행 승인**을 받으면 등록·실행 스위치 네 개를 켜고 **커밋·푸시**(D-4 문턱·source commit은 D95에서 반영됨; 실행기는 `--config`가 HEAD에 바이트 그대로 커밋돼 있어야 실행) | `git status`에 config 변경 없음 |
 | 2 | **S0 실행**(사용자 승인 뒤, tmux `runs` 창에서; 단일 heavy lock이 비어 있는지 확인). 명령은 아래 | `S0-census-a1/manifest.json`, 실측 비용 |
 | 3 | S0 결과 검토: 무행동 원인 교차표, 카운트 경로 단절, 교체, 손 애매, 경계 경기, TRAIN 결과 인접 항목. 무투구 목록 조정은 **S0 구조 수로만**(D-3) | 조정 여부를 decisions에 한 줄 |
 | 4 | addendum 1 등록(`census`) → 커밋 → S1 `materialize-bc`, S1b `style-snapshot` → S1 게이트 확인 | 봉인 manifest |
@@ -50,7 +50,7 @@ S0를 돌리려면 아래 값이 모두 있어야 한다. 이미 들어 있고 �
 | 7 | S0–S4 실측 뒤 `null` 값 등록(D-11 D): S3 후보·예산, S3b 경기 수·문턱 5개, S5 설계값·허용치(선택: declared hazard), S6 경기 수·행 예산·계획 결정 수·D-7 진단 표본 수, 부트스트랩 무효 비율 | 재등록 기록 |
 | 8 | 2026 proposal 두 항목(`profile_as_of`, `mid_pa_pitcher_change_rule`)을 2026 계약 검토 안건에 올림(검토 방법은 6번 결정을 따름) | 검토 기록 |
 
-S0 명령(결정·커밋·승인 뒤). 인터프리터는 `.venv/bin/python`이다(config `environment.invoke_with`; Homebrew 파이썬을 직접 부르면 numpy import에서 멈춘다):
+S0 명령(승인·스위치 커밋 뒤). 인터프리터는 `.venv/bin/python`이다(config `environment.invoke_with`; Homebrew 파이썬을 직접 부르면 numpy import에서 멈춘다):
 
 ```bash
 cd /Users/song/Projects/pitcheezy && PYTHONPATH="/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:experiments/pitchmdp" .venv/bin/python experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json --local-config experiments/pitchmdp/configs/local.json --output "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S0-census-a1" census
