@@ -20,7 +20,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import signal
 
 import numpy as np
 
@@ -96,18 +95,32 @@ class DecisionRequest:
             'history': [[h.action, h.outcome, h.balls, h.strikes, list(h.physics)] for h in s.history]})
 
 
+_CRITICAL = {'depth': 0, 'deferred': None}
+
+
 @contextmanager
-def _alarm_blocked():
-    """Defer SIGALRM (the runner's hang guard) across one ledger append, so an abort can never
-    split a row between disk and memory."""
-    if not hasattr(signal, 'pthread_sigmask'):
-        yield
-        return
-    previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+def critical_section():
+    """A ledger append runs inside. An interrupt requested meanwhile through ``defer_or_raise`` (the
+    runner's hang guard) is raised only after the row is complete on disk AND in memory. CPython
+    runs signal handlers in the main thread, which is the appending thread, so this holds whichever
+    OS thread (e.g. a torch worker) received the signal; a per-thread signal mask would not."""
+    _CRITICAL['depth'] += 1
     try:
         yield
     finally:
-        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+        _CRITICAL['depth'] -= 1
+        error = _CRITICAL['deferred'] if _CRITICAL['depth'] == 0 else None
+        if error is not None:
+            _CRITICAL['deferred'] = None
+            raise error
+
+
+def defer_or_raise(error):
+    """For signal handlers: raise ``error`` now, or right after the ledger append in progress."""
+    if _CRITICAL['depth']:
+        _CRITICAL['deferred'] = error
+        return
+    raise error
 
 
 class Ledger:
@@ -147,7 +160,7 @@ class Ledger:
     def _append(self, record):
         body = {**record, 'seq': len(self.rows), 'prev': self.rows[-1]['sha256'] if self.rows else None}
         row = {**body, 'sha256': canonical_hash(body)}
-        with _alarm_blocked():  # a hang-guard alarm lands after the row is on disk AND in memory
+        with critical_section():  # a hang-guard interrupt lands after the row is on disk AND in memory
             with self.path.open('ab') as stream:
                 stream.write(_canonical_bytes(row))
                 stream.flush()
@@ -533,6 +546,11 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
     evaluator = None if evaluation_seed is None else RolloutImprovement(
         reference, simulator, we.cutoff, samples=samples, pitch_cap=pitch_cap, seed=evaluation_seed)
 
+    def planning_policy(state):
+        """The P3 law alone (planning Q only): what the candidate plays; no DR q-hat search."""
+        q, _ = improvement.q_values(state)
+        return kl_policy(q, reference.probabilities(state), reference.support(state), tau)
+
     def candidate(state):
         """P3 = kl_policy(Q_ref, pi_ref, M, tau) (RolloutImprovement.policy('P3')) from the planning Q,
         which is computed once; the DR q-hat of both policies (D89 §5) is the evaluation-seed Q when
@@ -552,7 +570,7 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
                             support_check=components.check_support, context_digest=components.context_sha256,
                             context_check=components.check_context, **common)
     runtime.reference, runtime.improvement, runtime.components = reference, improvement, components
-    runtime.evaluator, runtime.tau = evaluator, tau
+    runtime.evaluator, runtime.tau, runtime.planning_policy = evaluator, tau, planning_policy
     return runtime
 
 

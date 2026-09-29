@@ -172,6 +172,8 @@ def pa_value(decisions, info):
     elif status == COMPLETE:
         values = pa_dr(decisions, float(info['reward']))
         row.update(values)
+        _, q, mask, a, _ = _steps(decisions)[-1]
+        row['terminal_residual'] = float(info['reward'] - q[a]) if mask[a] else None  # D-6 note 5 diagnostic
         row.update({f'{name}_bounds': [values[name]] * 2 for name in POLICIES}, delta_bounds=[values['delta']] * 2)
     elif status == CENSORED:
         row.update(_interval(_steps(decisions[:k]), shared=kind == TERMINAL_VALUE_MISSING))
@@ -317,16 +319,28 @@ def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, 
     if e0:
         censored = [r for r in e0 if r['status'] == CENSORED]
         result['censoring'] = {'observed_share': len(censored) / len(e0), **{
-            f'estimated_mass_{name}': sum(r[f'weight_{name}'] for r in censored) / len(e0) for name in POLICIES}}
+            f'estimated_mass_{name}': sum(r[f'weight_{name}'] for r in censored) / len(e0) for name in POLICIES},
+            'ess_of_censored_weights': {name: {
+                'pa': effective_sample_size([r[f'weight_{name}'] for r in censored]) if censored else None,
+                'game': effective_sample_size([r[f'weight_{name}'] for r in censored],
+                                              [r['game'] for r in censored]) if censored else None} for name in POLICIES}}
         result['bootstrap'] = game_bootstrap(e0, draws=draws, seed=seed, invalid_share_max=invalid_share_max,
                                              minimum=minimum)
     changed = [s for s in secondary if s['in_population'] and s.get('secondary_change') is not None]
     same = {r['pa_id'] for r in complete}
+
+    def with_ess(part):
+        layer = _layer(part)
+        points = [r for r in part if r['status'] == COMPLETE]
+        if layer is not None:
+            values = [effective_sample_size([r[f'weight_{n}'] for r in points]) for n in POLICIES] if points else [None]
+            layer['ess_min_candidate_reference'] = None if None in values else min(values)
+        return layer
     result['secondary_natural_course_after_pitcher_change'] = {
         'label': 'descriptive; not in the primary family',
         'changed_pas': len(changed),
-        'all_secondary_evaluable': _layer([s for s in secondary if s['in_population']]),
-        'primary_complete_set': _layer([s for s in secondary if s['pa_id'] in same])}
+        'all_secondary_evaluable': with_ess([s for s in secondary if s['in_population']]),
+        'primary_complete_set': with_ess([s for s in secondary if s['pa_id'] in same])}
     result['strata'] = strata_table(rows)
     return result, rows
 
@@ -345,8 +359,12 @@ def strata_table(rows):
         for value, part in sorted(groups.items()):
             complete = [r for r in part if r['status'] == COMPLETE]
             ess = [effective_sample_size([r[f'weight_{n}'] for r in complete]) for n in POLICIES] if complete else [None]
+            inside = _layer([r for r in part if r['in_population']])
+            residuals = [r['terminal_residual'] for r in complete if r.get('terminal_residual') is not None]
             table[value] = {'pas': len(part), 'share_in_population': sum(r['in_population'] for r in part) / len(part),
-                            'complete': len(complete), 'delta_bounds': _layer(part)['delta_bounds'],
-                            'ess_min_candidate_reference': None if None in ess else min(ess)}
+                            'complete': len(complete), 'l0_delta_bounds': _layer(part)['delta_bounds'],
+                            'l1_delta_bounds': None if inside is None else inside['delta_bounds'],
+                            'ess_min_candidate_reference': None if None in ess else min(ess),
+                            'mean_terminal_residual': float(np.mean(residuals)) if residuals else None}
         out[key] = table
     return out

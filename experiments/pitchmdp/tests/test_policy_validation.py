@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from types import SimpleNamespace
@@ -27,7 +28,7 @@ from pitchmdp.archetypes import HISTORY_COLUMNS, add_batter_style_history
 from pitchmdp.matrix_data import ordered_key_hash
 from pitchmdp.matrix_features import MatrixHistoryStore
 from pitchmdp.matrix_policy import safe_rows
-from pitchmdp.rollout_policy import BCRecord, CategoricalBC, PAState, PastPitch, RowBudget
+from pitchmdp.rollout_policy import BCRecord, CategoricalBC, PAState, PastPitch, RowBudget, kl_policy
 from pitchmdp.sequence_data import PHYSICAL_COLUMNS, PhysicalNormalizer
 from pitchmdp import policy_artifacts as pa
 from pitchmdp import policy_estimator as est
@@ -200,6 +201,10 @@ class RuntimeRefusalTests(unittest.TestCase):
         with self.assertRaisesRegex(pa.IntegrityError, 'single-hand registry'):  # an ambiguous pitcher in the table
             pr.build_runtime(self.root / 'bc.json', self.art.file_sha256, self.root / 's.json', self.support,
                              self.root / 'x.jsonl', hand_registry=(self.root / 'h2.json', bad))
+        _, partial = pa.save_support_table(self.art, [('9', 'L', np.array([False, True, True]))], self.root / 's3.json')
+        with self.assertRaisesRegex(pa.IntegrityError, 'must equal the single-hand'):  # pitcher 8 has no rows (D-8 c4)
+            pr.build_runtime(self.root / 'bc.json', self.art.file_sha256, self.root / 's3.json', partial,
+                             self.root / 'y.jsonl', hand_registry=(self.root / 'h.json', self.hands))
 
     def test_positivity_refusal_precedes_the_candidate_and_abort_halts(self):
         calls = []
@@ -348,6 +353,10 @@ class RequestTests(unittest.TestCase):
         self.assertAlmostEqual(post['reward'], expected, places=12)  # the fake WE ignores the score
         with self.assertRaisesRegex(pa.IntegrityError, 'post-pitch score columns'):
             preq.game_table(self.frame.drop(columns='post_home_score'))
+        unscored = self.frame.copy(); unscored.loc[blocks['200:8'][-1], 'post_home_score'] = np.nan
+        with self.assertRaisesRegex(pa.IntegrityError, 'post-pitch score missing on the last row of game 200'):
+            preq.game_table(unscored, {200})  # R5: FAILED_INTEGRITY, never a silent censoring
+        self.assertEqual(set(preq.game_table(unscored, {201})), {201})  # only the selected games are read
         missing_post = flagged.copy(); missing_post.loc[blocks['200:1'][-1], 'post_home_score'] = np.nan
         self.assertEqual(preq.pa_outcome(missing_post, blocks['200:1'], we, self.games, score_source='post_pitch')['reason'],
                          'post_pitch_score_missing')
@@ -368,6 +377,14 @@ class RequestTests(unittest.TestCase):
         self.assertEqual(preq.pa_requests(build_store(real), blocks['200:1'], 'sha')[0][-1].logged_action, pr.MISSING)
         lone = self.frame.copy(); lone.loc[blocks['200:1'][0], ['pitch_type', 'description', 'events']] = [None, None, 'truncated_pa']
         self.assertEqual(preq.pa_requests(build_store(lone), blocks['200:1'][:1], 'sha'), ([], 'no_decision', 0))
+        # A real pitch lost just before the closing row is a defect, not a clean end (D-6 critic 1).
+        gap = walk.drop(index=blocks['200:1'][-2]).reset_index(drop=True)
+        requests, problem, index = preq.pa_requests(build_store(gap), dict(blocks_of(gap, 'dev'))['200:1'], 'sha')
+        self.assertEqual((len(requests), problem, index), (2, 'missing_row', 2))
+        late = lone.drop(index=blocks['200:1'][1:]).reset_index(drop=True)  # the PA is only its closing row ...
+        first = dict(blocks_of(late, 'dev'))['200:1']
+        late.loc[first[0], 'pitch_number'] = 2  # ... numbered after pitches that are missing
+        self.assertEqual(preq.pa_requests(build_store(late), first, 'sha'), ([], 'missing_row', 0))
         row = est.pa_value([], {'game': 1, 'in_population': False, 'problem': 'no_decision', 'problem_index': 0,
                                 'reward': .6})
         self.assertEqual((row['status'], row['delta_bounds'], row['candidate_bounds']), (est.NO_DECISION, [0., 0.], [.6, .6]))
@@ -651,6 +668,9 @@ class TauTests(unittest.TestCase):
         self.assertEqual(ptau.select_search_settings(profiles, {'rows': 60000, 'decisions': 1000}),
                          {'samples': 4, 'pitch_cap': 8})  # (16, 4) needs 200 rows per decision
         self.assertIsNone(ptau.select_search_settings(profiles, {'rows': 10, 'decisions': 1000}))
+        self.assertEqual(ptau.select_search_settings(profiles, {'rows': 10 ** 6, 'decisions': 1000}, min_samples=3),
+                         {'samples': 16, 'pitch_cap': 4})  # below the noise-rule minimum is never selected
+        self.assertIsNone(ptau.select_search_settings(profiles[:2], {'rows': 10 ** 6, 'decisions': 1000}, min_samples=5))
 
 
 # ---------------------------------------------------------------- runner stages
@@ -679,7 +699,8 @@ class RunnerFixture(unittest.TestCase):
                                                                 context_rows=rows, aux_classes=self.syn.classes['aux']),
             train_keys=self.keys, keys_record={'n': len(self.keys), 'rows_sha256': ordered_key_hash(self.keys)},
             gates=gates or self.gates, bc_parameters={'prior_strength': 20., 'minimum_action_count': 1},
-            no_pitch=NO_PITCH, volume_quantiles=[1 / 3, 2 / 3], prep_vocabulary=TYPES)
+            no_pitch=NO_PITCH, volume_quantiles=[1 / 3, 2 / 3], prep_vocabulary=TYPES,
+            bc_p_only_rule='evaluate; report as a stratum')
         return out, report
 
     def pins(self, out, report):
@@ -705,8 +726,11 @@ class RunnerStageTests(RunnerFixture):
         self.assertEqual(report['bc']['BC_E']['train_rows'], len(self.keys))
         self.assertTrue(all(report['s1_gates']['checks'].values()))
         self.assertEqual(report['change_decisions']['decisions_after_change'], 0)
-        self.assertEqual((report['bc_p_only_pitchers']['count'],
-                          report['bc_p_only_pitchers']['support_actions_from_league_tiers_only']), (0, 0))
+        self.assertEqual((report['bc_p_only_pitchers']['ids'],
+                          report['bc_p_only_pitchers']['support_actions_from_league_tiers_only']), ([], 0))
+        game107 = train.loc[train.game_pk.eq(107)]  # the rows BC_E leaves out
+        self.assertEqual(report['bc_p_minus_bc_e_codes'],
+                         {k: int(v) for k, v in game107.pitch_type.value_counts().sort_index().items()})
         self.assertEqual((report['hands']['single'], report['hands']['ambiguous']), (1, 0))
         table, _ = pa.load_support_table(out / 'support_primary.json', report['support_table']['file_sha256'],
                                          pa.load_train_bc(out / 'bc_BC_P.json', report['bc']['BC_P']['file_sha256']))
@@ -754,10 +778,17 @@ class RunnerStageTests(RunnerFixture):
         self.assertEqual(result['sensitivity']['r5-events-v1']['status'][est.COMPLETE], 6)  # truncated PAs censored
         self.assertEqual({k: result['paired_identity_run'][k] for k in ('pas', 'max_abs_delta', 'pass')}, {
             'pas': 8, 'max_abs_delta': 0., 'pass': True})  # an independent cand=ref callable through the runtime
-        self.assertEqual(set(result['strata']), {'end_kind', 'role', 'month', 'volume_bin', 'extra_innings'})
-        for row in runtime.ledger.decisions():  # D-9: the tau table recomputes exactly the runtime's candidate
-            if row['status'] == pr.SUPPORTED:
-                self.assertAlmostEqual(ptau._decision(row, .01)[0], row['result']['rho_candidate'], places=12)
+        self.assertEqual(set(result['strata']), {'end_kind', 'role', 'month', 'volume_bin', 'extra_innings',
+                                                 'bc_p_only_pitcher'})
+        rows_supported = [r for r in runtime.ledger.decisions() if r['status'] == pr.SUPPORTED]
+        for row in rows_supported:  # D-9: the tau table recomputes exactly the runtime's candidate law
+            self.assertAlmostEqual(ptau._decision(row, .01)[0], row['result']['rho_candidate'], places=12)
+            r, a = row['result'], row['result']['logged_index']
+            q = np.array([np.nan if v is None else v for v in r['q_planning']])
+            for tau in (.003, .1, 1.):  # ... and at other taus the law kl_policy gives from the recorded values
+                expected = kl_policy(np.where(r['mask'], q, -np.inf), np.array(r['reference']), np.array(r['mask']), tau)
+                self.assertAlmostEqual(ptau._decision(row, tau)[0], expected[a] / r['logging'][a], places=12)
+        self.assertGreater(len({round(ptau._decision(row, t)[0], 9) for row in rows_supported[:1] for t in (.003, 1.)}), 1)
         q = next(r for r in runtime.ledger.decisions() if r['status'] == pr.SUPPORTED)['result']
         self.assertEqual(q['q_source'], 'evaluation_seed')  # M-7: the DR q-hat is an independent search
         self.assertNotEqual(q['q_reference'], q['q_planning'])
@@ -789,6 +820,31 @@ class RunnerStageTests(RunnerFixture):
         with self.assertRaisesRegex(pa.IntegrityError, 'after 2025'):
             rpv.guard_dates(self.frame.assign(game_date='2026-04-01'))
 
+    def test_registered_sensitivities_change_what_they_should(self):
+        out, report = self.materialize()
+        pins = self.pins(out, report)
+        frame = self.frame.copy()
+        dev = dict(blocks_of(frame, 'dev'))
+        frame.loc[dev['200:2'][-1], 'post_home_score'] = 1  # the post-pitch score disagrees with the next row
+        # (200:2 never throws the off-mask CH, so its ratio products stay positive and the end value matters)
+        self.frame, self.store = frame, build_store(frame)
+        blocks = [(k, dev[k]) for k in ('200:1', '200:2')]
+        runtime, components = self.candidate(pins, blocks, 'sens.jsonl')
+        boot = {'draws': 20, 'seed': 5, 'invalid_share_max': 1., 'minimum': MIN}
+        result, rows = rpv.run_dr(runtime, self.store, components, blocks, rpv.Deadline(), no_pitch=NO_PITCH,
+                                  bootstrap=boot, ess_gate=None, sensitivities=['flags_to_bounds', 'post_pitch_scores'])
+        self.assertEqual(result['reward_flags'], 1)
+        flagged = result['sensitivity']['flags_to_bounds']
+        self.assertEqual((result['status'][est.COMPLETE], flagged['status'][est.COMPLETE]), (2, 1))
+        self.assertNotEqual(flagged['layers']['L1_start_population']['delta_bounds'],
+                            result['layers']['L1_start_population']['delta_bounds'])
+        games = preq.game_table(self.store.frame, {200})
+        facts = {'200:2': {'positions': dev['200:2'], 'game': 200}}
+        scored = SimpleNamespace(defense_we=lambda state, home: .5 + .1 * (state.home_score - state.away_score) * (1 if home else -1))
+        primary = rpv.variant_facts(facts, 'r5-events-v1', self.store, scored, games)['200:2']['reward']
+        post = rpv.variant_facts(facts, 'post_pitch_scores', self.store, scored, games)['200:2']['reward']
+        self.assertNotEqual(post, primary)  # the post-pitch 1-0 score enters the end state only in this sensitivity
+
     def test_bind_probe_and_straddling_games(self):
         out, report = self.materialize()
         pins = self.pins(out, report)
@@ -819,22 +875,41 @@ class RunnerStageTests(RunnerFixture):
                          {'dev'})
 
     def test_ledger_append_survives_the_hang_guard(self):
+        """C10: the alarm may reach any thread (torch workers); the append must still land whole."""
         out, report = self.materialize()
         pins = self.pins(out, report)
         runtime = pr.build_runtime(*pins['bc'], *pins['support'], self.root / 'hang.jsonl', hand_registry=pins['hands'])
         request = preq.pa_requests(self.store, dict(blocks_of(self.frame, 'dev'))['200:1'], runtime.sha256)[0][0]
-        real_fsync, previous = pr.os.fsync, rpv.signal.signal(rpv.signal.SIGALRM, rpv._raise_hang)
+        stop = threading.Event()
+        worker = threading.Thread(target=stop.wait, daemon=True)  # a thread that does not block SIGALRM
+        worker.start()
+        real_fsync = pr.os.fsync
+        previous = rpv.signal.signal(rpv.signal.SIGALRM, rpv._raise_hang)
         try:
-            def fsync_then_alarm(fd):
+            def slow_fsync(fd):
                 real_fsync(fd)
-                rpv.signal.raise_signal(rpv.signal.SIGALRM)  # the alarm lands inside the append
-            with mock.patch.object(pr.os, 'fsync', fsync_then_alarm), self.assertRaises(rpv.HangGuardExceeded):
+                time.sleep(.3)  # the alarm expires here, inside the append
+            rpv.signal.setitimer(rpv.signal.ITIMER_REAL, .05)
+            with mock.patch.object(pr.os, 'fsync', slow_fsync), self.assertRaises(rpv.HangGuardExceeded):
                 runtime.submit(request)
         finally:
+            rpv.signal.setitimer(rpv.signal.ITIMER_REAL, 0)
             rpv.signal.signal(rpv.signal.SIGALRM, previous)
+            stop.set()
         runtime.abort('HangGuardExceeded')
         replay = pr.build_runtime(*pins['bc'], *pins['support'], self.root / 'hang.jsonl', hand_registry=pins['hands'])
         self.assertEqual((replay.summary()['requests'], replay.summary()['run_status']), (1, 'HALTED'))
+
+    def test_hang_guard_inside_the_search_is_not_a_decision_row(self):
+        out, report = self.materialize()
+        pins = self.pins(out, report)
+        dev = [b for b in blocks_of(self.frame, 'dev') if b[0] == '200:1']
+        runtime, _ = self.candidate(pins, dev, 'search.jsonl')
+        request = preq.pa_requests(self.store, dev[0][1], runtime.sha256)[0][0]
+        with mock.patch.object(runtime.improvement, 'q_values', side_effect=rpv.HangGuardExceeded('guard')):
+            with self.assertRaises(rpv.HangGuardExceeded):
+                rpv.submit_pas(runtime, self.store, dev, rpv.Deadline(), no_pitch=NO_PITCH)
+        self.assertEqual([r['kind'] for r in runtime.ledger.rows], ['header', 'aborted'])  # no FAILED_* or malformed row
 
     def test_candidate_context_hand_mismatch_halts(self):
         out, report = self.materialize()
@@ -871,12 +946,14 @@ class DispatchTests(RunnerFixture):
             'S3_profile': {'starts': 2, 'candidates': [{'samples': 3, 'pitch_cap': 4}, {'samples': 2, 'pitch_cap': 4}],
                            'row_budget': 10 ** 8, 'selection_row_budget': {'rows': 10 ** 8, 'decisions': 1000}},
             'S3b_tau_select': {'n_games': 2, 'tau_grid': [.01, .1], 'row_budget': 10 ** 8, 'determinism_check_pas': 1,
+                               'samples_minimum_for_noise_rule': 3,
                                'thresholds': {'pa_ess_ratio_min': 1e-6, 'game_ess_min': 1., 'safety_multiplier': 1.,
                                               'ess_ratio_candidate_reference_min': 1e-6, 'noise_ratio_q90_max': 1e9}},
             'S4_V5_denominators': guard,
             'S5_V2_V3': {'n_games': 1, 'logs_per_start': 12, 'truth_rollouts': 12, 'cap': 4, 'row_budget_per_run': 10 ** 8,
                          'tempered_alpha_grid': [.5], 'tolerance': 1.},
-            'S6_V4': {'n_games': 2, 'row_budget': 10 ** 8, 'dr_q_source': 'evaluation_seed'}}
+            'S6_V4': {'n_games': 2, 'row_budget': 10 ** 8, 'dr_q_source': rpv.DR_Q_RULE, 'planned_decisions': 1000,
+                      'd7_diagnostic_starts': 2}}
         return runs, {
             'protocol': rpv.PROTOCOL, 'registered': True, 'status': 'REGISTERED',
             'execution': {'enabled': True, 'real_data_enabled': True}, 'decisions': dict(rpv.DECISION_VALUES),
@@ -886,7 +963,8 @@ class DispatchTests(RunnerFixture):
                               'R7_mid_pa_change': {'thresholds_before_S0': {
                                   'switch_to_secondary_primary_if_unknown_change_share_above': .5,
                                   'light_version_if_below': .01}}},
-            'train_bc_plan': {'bc_parameters': {'prior_strength': 20., 'minimum_action_count': 1}},
+            'train_bc_plan': {'bc_parameters': {'prior_strength': 20., 'minimum_action_count': 1},
+                              'bc_p_only_pitcher_rule': 'evaluate; report as a stratum'},
             'subgroups': {'volume_quantiles': [1 / 3, 2 / 3]}, 'ess_gate': {'thresholds': {'pa': 100., 'game': 1.}},
             'sensitivity': {'same_ledger': ['r5-events-v1']},
             'identity_registration': {'classes': self.syn.classes, 'we_contract_sha256': self.syn.we_sha,
@@ -938,24 +1016,29 @@ class DispatchTests(RunnerFixture):
             register('S0', {'census': census / 'census.json'})
             s1 = run('materialize-bc', 'S1')
             s1b = run('style-snapshot', 'S1b')
-            stub = runs / 'S2-stub'
+            stub = runs / 'S2-stub'  # bind-probe needs sealed G0 archives; its sealed record is a labelled stub
             stub.mkdir()
+            bound = self.syn.bind(pa.load_train_bc(s1 / 'bc_BC_P.json', sha(s1 / 'bc_BC_P.json')),
+                                  rpv.pa_contexts(self.store, blocks_of(self.frame, 'dev')[:1])[0])
             (stub / 'probe.json').write_text(json.dumps({'pass': True, 'synthetic_stub': True}))
-            (stub / 'manifest.json').write_text(json.dumps({'artifact_sha256': {'probe.json': sha(stub / 'probe.json')}}))
+            (stub / 'identity.json').write_text(json.dumps({'sha256': bound.sha256}))
+            (stub / 'manifest.json').write_text(json.dumps({'command': 'bind-probe', 'artifact_sha256': {
+                'probe.json': sha(stub / 'probe.json'), 'identity.json': sha(stub / 'identity.json')}}))
             register('S1-S2', {'bc': s1 / 'bc_BC_P.json', 'hands': s1 / 'hands.json', 'support': s1 / 'support_primary.json',
                                'materialize': s1 / 'materialize.json',
                                **{f'style_{s}': s1b / f'style_{s}.json' for s in ('dev', 'temperature', 'blend')},
-                               'bind_probe': stub / 'probe.json'})
+                               'bind_probe': stub / 'probe.json', 'bind_identity': stub / 'identity.json'})
             v5 = run('v5-denominators', 'S4')
             self.assertEqual(json.loads((v5 / 'v5.json').read_text())['sealed_counts']['pas'], 16)
             profile = run('profile', 'S3')
             measured = json.loads((profile / 'profile.json').read_text())
             self.assertEqual((len(measured['profiles']), measured['selection']), (2, {'samples': 3, 'pitch_cap': 4}))
+            self.assertTrue(all(p['evaluation_rows'] > 0 for p in measured['profiles']))  # M-7 cost is measured
             register('S3-S4', {'profile': profile / 'profile.json', 'v5': v5 / 'v5.json'})
             freeze = run('tau-select', 'S3b')
             frozen = json.loads((freeze / 'tau_freeze.json').read_text())
-            self.assertEqual((frozen['status'], frozen['outcomes_read'], frozen['determinism_check']['max_abs_q_difference']),
-                             ('SELECTED', False, 0.))
+            self.assertEqual((frozen['status'], frozen['outcomes_read'], frozen['determinism_check']['max_abs_q_difference'],
+                              frozen['dr_q']['source']), ('SELECTED', False, 0., 'evaluation_seed'))
             register('S3b', {'tau_freeze': freeze / 'tau_freeze.json'})
             v2 = run('v2-world', 'S5')
             report = json.loads((v2 / 'v2.json').read_text())
@@ -968,6 +1051,8 @@ class DispatchTests(RunnerFixture):
             self.assertEqual((result['identity_sha256'], result['paired_identity_run']['pass']),
                              (frozen['final_identity_sha256'], True))
             self.assertEqual(result['provenance']['as_of_exclusive'], '2025-07-01')
+            self.assertEqual((result['d7_label_blind_diagnostic']['starts'], result['dr_q']['source']), (2, 'evaluation_seed'))
+            self.assertIn('bc_p_only_pitcher', result['strata'])
             started = json.loads((dr / 'started.json').read_text())
             self.assertEqual(len(started['registration_chain']), len(chain))
             self.assertIn('experiments/pitchmdp/pitchmdp/policy_tau.py', started['runner_sources'])
@@ -982,6 +1067,10 @@ class DispatchTests(RunnerFixture):
             register('bad', {'bad_bc': failed / 'bc.json'})
             with self.assertRaisesRegex(pa.IntegrityError, 'not inside a sealed stage'):
                 rpv.registered_path(rpv.load_registration(chain[0], chain[1:]), 'bad_bc')
+            wrong = {**rpv.load_registration(chain[0], chain[1:]), 'inputs': {'v5': {'path': str(census / 'census.json'),
+                                                                                    'file_sha256': sha(census / 'census.json')}}}
+            with self.assertRaisesRegex(pa.IntegrityError, 'does not come from a sealed v5-denominators stage'):
+                rpv.registered_path(wrong, 'v5')
 
     def test_registration_refusals(self):
         repo_config = json.loads((REPO / 'configs/ML-POLICY-MATERIALIZATION-v1.json').read_text())
@@ -1036,7 +1125,8 @@ class DispatchTests(RunnerFixture):
         loader = 'experiments/pitchmdp/scripts/run_ml_g0_whole.py'
         config['le2025_validation_plan']['source_commit'] = 'abc'
         config['identity_registration']['member_loader'] = {'file': loader, 'sha256': sha(REPO / loader)}
-        clean = {'commit': 'def', 'code_dirty': False, 'source_is_ancestor': True, 'code_changed_since_source': []}
+        clean = {'commit': 'def', 'code_dirty': False, 'source_is_ancestor': True, 'code_changed_since_source': [],
+                 'registration_uncommitted': []}
         rpv.enforce_source(config, clean)  # registration commits on top of the source commit are fine
         with self.assertRaisesRegex(pa.IntegrityError, 'uncommitted'):
             rpv.enforce_source(config, {**clean, 'code_dirty': True})
@@ -1044,6 +1134,10 @@ class DispatchTests(RunnerFixture):
             rpv.enforce_source(config, {**clean, 'code_changed_since_source': ['experiments/pitchmdp/x.py']})
         with self.assertRaisesRegex(pa.IntegrityError, 'code at HEAD differs'):
             rpv.enforce_source(config, {**clean, 'source_is_ancestor': False})
+        with self.assertRaisesRegex(pa.IntegrityError, 'not committed at HEAD'):
+            rpv.enforce_source(config, {**clean, 'registration_uncommitted': ['configs/x.json']})
+        self.assertTrue(rpv.committed(REPO / 'configs/G0-RESEARCH-FROZEN-v1.json'))
+        self.assertFalse(rpv.committed(path))  # a config outside the repository is never a registration
 
 
 # ---------------------------------------------------------------- V2/V3 world (D-10)
@@ -1131,10 +1225,18 @@ class SemiSyntheticTests(RunnerFixture):
         hazard = lambda state, action: .6 if action == 'SL' else 0.  # depends on the logged action (D-5 C)
         report = pss.run_world(runtime, components, starts, law=law, law_identity='pi_b_hat', logs_per_start=150, cap=4,
                                truth_rollouts=300, seed=21, draws=50, censor_hazard=hazard)
-        self.assertGreater(report['ends']['censored'], 0)
+        self.assertGreater(len(report['censored_pas']), 0)
         lo, hi = report['l1_delta_bounds']
-        width = hi - lo
-        self.assertTrue(lo - .1 * width <= report['truth_delta_mean'] <= hi + .1 * width, (lo, hi, report['truth_delta_mean']))
+        self.assertTrue(lo <= report['truth_delta_mean'] <= hi and report['truth_inside_l1_bounds'])
+        by_pa = {}
+        for row in runtime.ledger.decisions():
+            by_pa.setdefault(row['pa_id'], []).append(row)
+        for pa_id in report['censored_pas']:  # the exact NO_TERMINAL width on real runtime rows, last decision included
+            rows = sorted(by_pa[pa_id], key=lambda r: r['decision_index'])
+            value = est.pa_value(rows, {'game': 1, 'in_population': True, 'reward': None, 'kind': est.NO_TERMINAL})
+            width = value['delta_bounds'][1] - value['delta_bounds'][0]
+            expected = sum(float(np.prod([r['result'][f'rho_{n}'] for r in rows])) for n in est.POLICIES)
+            self.assertAlmostEqual(width, expected, places=9)  # not 0 (c = .5 imputation) nor the flat slot's 2
 
     def test_start_outside_e0_is_reported_not_generated(self):
         runtime, components, starts = self.world('e0', blocks=('200:1', '200:4'))  # 200:4 is an unknown pitcher

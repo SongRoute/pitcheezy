@@ -90,15 +90,16 @@ def tau_table(ledger_decisions, pa_facts, taus, thresholds):
             'counted_not_weighted_pas': len(by_pa) - len(usable)}
 
 
-def select_search_settings(profiles, row_budget):
+def select_search_settings(profiles, row_budget, *, min_samples=1):
     """D-9a: the largest registered (samples, pitch_cap) whose MEASURED conditional rows per evaluated
     decision (S3, one run per candidate on the same starts), scaled to the registered decision
     count, fit the registered row budget. Rollouts stop at the PA end, so rows are not assumed to
     scale with pitch_cap. ``profiles``: [{'samples', 'pitch_cap', 'decisions', 'conditional_rows'}].
-    Returns None when nothing fits (P3 not evaluable at that budget)."""
+    Settings below the registered noise-rule minimum of samples are never selected (S3b would refuse
+    them). Returns None when nothing fits (P3 not evaluable at that budget)."""
     _require(profiles and all(p['decisions'] > 0 and p['conditional_rows'] > 0 for p in profiles),
              'S3 profile measured nothing')
-    fitting = [p for p in profiles
-               if p['conditional_rows'] / p['decisions'] * row_budget['decisions'] <= row_budget['rows']]
+    fitting = [p for p in profiles if p['samples'] >= min_samples
+               and p['conditional_rows'] / p['decisions'] * row_budget['decisions'] <= row_budget['rows']]
     best = max(fitting, key=lambda p: (p['samples'] * p['pitch_cap'], p['samples'])) if fitting else None
     return None if best is None else {'samples': best['samples'], 'pitch_cap': best['pitch_cap']}

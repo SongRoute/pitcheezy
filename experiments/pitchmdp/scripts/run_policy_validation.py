@@ -70,7 +70,8 @@ REQUIRED = {  # config fields a stage reads; null = unregistered = refuse before
     'census': (f'{S}.S0_census.hang_guard_seconds', f'{S}.S0_census.outcome_adjacent_splits',
                'pa_time_rules.R7_mid_pa_change.thresholds_before_S0.switch_to_secondary_primary_if_unknown_change_share_above',
                'pa_time_rules.R7_mid_pa_change.thresholds_before_S0.light_version_if_below'),
-    'materialize-bc': (f'{S}.S1_materialize.hang_guard_seconds', f'{S}.S1_materialize.gates.bc_e_rows',
+    'materialize-bc': (f'{S}.S1_materialize.hang_guard_seconds', 'train_bc_plan.bc_p_only_pitcher_rule',
+                       f'{S}.S1_materialize.gates.bc_e_rows',
                        f'{S}.S1_materialize.gates.bc_e_actions', f'{S}.S1_materialize.gates.token_vocabulary',
                        f'{S}.S1_materialize.gates.train_rows', 'train_bc_plan.bc_parameters.prior_strength',
                        'train_bc_plan.bc_parameters.minimum_action_count', 'subgroups.volume_quantiles'),
@@ -80,18 +81,21 @@ REQUIRED = {  # config fields a stage reads; null = unregistered = refuse before
                    f'{S}.S2_bind_probe.atol_frequency_raw'),
     'profile': (f'{S}.S3_profile.starts', f'{S}.S3_profile.candidates', f'{S}.S3_profile.row_budget',
                 f'{S}.S3_profile.selection_row_budget.rows', f'{S}.S3_profile.selection_row_budget.decisions',
-                f'{S}.S3b_tau_select.tau_grid', f'{S}.S6_V4.dr_q_source', 'seeds.planning_main'),
+                f'{S}.S3b_tau_select.tau_grid', f'{S}.S3b_tau_select.samples_minimum_for_noise_rule',
+                f'{S}.S6_V4.dr_q_source', 'seeds.planning_main'),
     'tau-select': (f'{S}.S3b_tau_select.n_games', f'{S}.S3b_tau_select.tau_grid', f'{S}.S3b_tau_select.row_budget',
                    f'{S}.S3b_tau_select.thresholds.pa_ess_ratio_min', f'{S}.S3b_tau_select.thresholds.game_ess_min',
                    f'{S}.S3b_tau_select.thresholds.ess_ratio_candidate_reference_min',
                    f'{S}.S3b_tau_select.thresholds.noise_ratio_q90_max', f'{S}.S3b_tau_select.thresholds.safety_multiplier',
-                   f'{S}.S3b_tau_select.determinism_check_pas', f'{S}.S2_bind_probe.atol_primary',
-                   f'{S}.S6_V4.dr_q_source', 'ess_gate.thresholds.game', 'seeds.planning_main'),
+                   f'{S}.S3b_tau_select.determinism_check_pas', f'{S}.S3b_tau_select.samples_minimum_for_noise_rule',
+                   f'{S}.S2_bind_probe.atol_primary', f'{S}.S6_V4.dr_q_source', f'{S}.S6_V4.row_budget',
+                   f'{S}.S6_V4.planned_decisions', 'ess_gate.thresholds.game', 'seeds.planning_main'),
     'v5-denominators': (f'{S}.S4_V5_denominators.hang_guard_seconds',),
     'v2-world': (f'{S}.S5_V2_V3.n_games', f'{S}.S5_V2_V3.logs_per_start', f'{S}.S5_V2_V3.truth_rollouts',
                  f'{S}.S5_V2_V3.cap', f'{S}.S5_V2_V3.row_budget_per_run', f'{S}.S5_V2_V3.tempered_alpha_grid',
                  f'{S}.S5_V2_V3.tolerance', f'{S}.S6_V4.dr_q_source', f'{P}.bootstrap.draws', 'seeds.planning_v2'),
-    'dr-evaluate': (f'{S}.S6_V4.n_games', f'{S}.S6_V4.row_budget', f'{S}.S6_V4.dr_q_source', f'{P}.bootstrap.draws',
+    'dr-evaluate': (f'{S}.S6_V4.n_games', f'{S}.S6_V4.row_budget', f'{S}.S6_V4.dr_q_source',
+                    f'{S}.S6_V4.d7_diagnostic_starts', f'{P}.bootstrap.draws',
                     f'{P}.bootstrap.invalid_share_max', f'{P}.bootstrap.minimum.games', f'{P}.bootstrap.minimum.pa_starts',
                     'ess_gate.thresholds.pa', 'ess_gate.thresholds.game', 'sensitivity.same_ledger', 'seeds.planning_main'),
 }
@@ -99,13 +103,21 @@ PREREQUISITES = {  # registered inputs (sealed stage outputs) a stage needs, che
     'census': (), 'materialize-bc': ('census',), 'style-snapshot': ('census',),
     'bind-probe': ('census', 'bc', 'materialize'),
     'v5-denominators': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe'),
-    'profile': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'style_temperature'),
-    'tau-select': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'style_blend', 'profile'),
-    'v2-world': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'style_dev', 'profile', 'tau_freeze',
-                 'v5'),
-    'dr-evaluate': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'style_dev', 'profile',
-                    'tau_freeze', 'v5', 'v2'),
+    'profile': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'bind_identity', 'style_temperature'),
+    'tau-select': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'bind_identity', 'style_blend',
+                   'profile'),
+    'v2-world': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'bind_identity', 'style_dev',
+                 'profile', 'tau_freeze', 'v5'),
+    'dr-evaluate': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'bind_identity', 'style_dev',
+                    'profile', 'tau_freeze', 'v5', 'v2'),
 }
+INPUT_COMMAND = {  # the stage whose sealed manifest must list each registered input
+    'census': 'census', 'bc': 'materialize-bc', 'support': 'materialize-bc', 'hands': 'materialize-bc',
+    'materialize': 'materialize-bc', 'style_dev': 'style-snapshot', 'style_temperature': 'style-snapshot',
+    'style_blend': 'style-snapshot', 'bind_probe': 'bind-probe', 'bind_identity': 'bind-probe', 'profile': 'profile',
+    'tau_freeze': 'tau-select', 'v5': 'v5-denominators', 'v2': 'v2-world'}
+DR_Q_RULE = 'evaluation_seed_with_cost_fallback'  # M-7: fixed rule, applied mechanically from the S3 cost record
+SENSITIVITIES = ('flags_to_bounds', 'r5-events-v1', 'post_pitch_scores')
 CODE_PATHS = ('experiments', 'src', 'scripts')  # a registered run needs these unchanged since the source commit
 SOURCES = ('experiments/pitchmdp/scripts/run_policy_validation.py', 'experiments/pitchmdp/pitchmdp/policy_requests.py',
            'experiments/pitchmdp/pitchmdp/policy_estimator.py', 'experiments/pitchmdp/pitchmdp/policy_runtime.py',
@@ -113,8 +125,11 @@ SOURCES = ('experiments/pitchmdp/scripts/run_policy_validation.py', 'experiments
            'experiments/pitchmdp/pitchmdp/policy_identity.py', 'experiments/pitchmdp/pitchmdp/policy_artifacts.py')
 
 
-class HangGuardExceeded(RuntimeError):
-    """D-11 safety timeout: the stage is failed and preserved; never a budget or a truncation."""
+class HangGuardExceeded(BaseException):
+    """D-11 safety timeout: the stage is failed and preserved; never a budget or a truncation. A
+    BaseException, so no ``except Exception`` in the runtime turns it into a FAILED_RUNTIME decision
+    or a malformed-request row: the request in flight is simply not recorded and the ledger gets
+    the abort row."""
 
 
 # ---------------------------------------------------------------- registration
@@ -147,8 +162,22 @@ def registration(config, command=None):
     for dotted in REQUIRED['*'] + REQUIRED[command]:
         _require(_field(config, dotted) is not None, f'registered field required: {dotted}')
     stages = config['le2025_validation_plan']['stages']
+    plan = config['le2025_validation_plan']
+    positive = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
     if command in ('profile', 'tau-select', 'v2-world', 'dr-evaluate'):
-        _require(stages['S6_V4']['dr_q_source'] in ('evaluation_seed', 'planning_reuse'), 'unknown S6 dr_q_source (M-7)')
+        _require(stages['S6_V4']['dr_q_source'] == DR_Q_RULE, f'S6 dr_q_source must be the registered M-7 rule {DR_Q_RULE}')
+    if command in ('v2-world', 'dr-evaluate'):
+        _require(type(plan['bootstrap']['draws']) is int and plan['bootstrap']['draws'] >= 1, 'bootstrap.draws: positive int')
+    if command == 'dr-evaluate':
+        _require(all(type(plan['bootstrap']['minimum'][k]) is int and plan['bootstrap']['minimum'][k] >= 1
+                     for k in ('games', 'pa_starts')), 'bootstrap.minimum: positive ints')
+        _require(all(positive(config['ess_gate']['thresholds'][k]) for k in ('pa', 'game')), 'ESS gate thresholds > 0')
+        _require(set(config['sensitivity']['same_ledger']) <= set(SENSITIVITIES), 'unregistered same-ledger sensitivity')
+        _require(type(stages['S6_V4']['d7_diagnostic_starts']) is int and stages['S6_V4']['d7_diagnostic_starts'] >= 1,
+                 'S6 d7_diagnostic_starts: positive int')
+    if command == 'tau-select':
+        _require(positive(stages['S6_V4']['planned_decisions']) and positive(stages['S6_V4']['row_budget']),
+                 'M-7 cost rule needs S6 planned_decisions and row_budget')
     if command == 'profile':  # the D-9a selection must fit the budget S3b actually runs under
         _require(stages['S3_profile']['selection_row_budget']['rows'] == stages['S3b_tau_select'].get('row_budget'),
                  'S3 selection row budget must equal the S3b row budget')
@@ -156,8 +185,12 @@ def registration(config, command=None):
         _require(stages['S3b_tau_select']['thresholds']['game_ess_min'] == config['ess_gate']['thresholds']['game'],
                  'S3b game ESS threshold must equal the registered ESS gate')
     if command == 'v2-world':
-        _require(stages['S5_V2_V3']['logs_per_start'] >= 2 and stages['S5_V2_V3']['truth_rollouts'] >= 2,
-                 'V2 needs at least two logs and two truth rollouts per start')
+        s5 = stages['S5_V2_V3']
+        _require(s5['logs_per_start'] >= 2 and s5['truth_rollouts'] >= 2, 'V2 needs at least two logs and two truth rollouts per start')
+        hazard = s5.get('declared_hazard')
+        _require(hazard is None or (isinstance(hazard, dict) and all(0 <= float(v) <= 1 for v in hazard.values())
+                                    and type(s5.get('hazard_replicates')) is int and s5['hazard_replicates'] >= 1),
+                 'a declared hazard needs {action: probability} and a positive replicate count')
     if command == 'dr-evaluate':
         share = config['le2025_validation_plan']['bootstrap']['invalid_share_max']
         _require(isinstance(share, (int, float)) and not isinstance(share, bool) and 0 <= share <= 1,
@@ -194,11 +227,26 @@ def hash_file_bytes(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def git_state(source=None):
-    """HEAD, uncommitted changes under the code paths, and code paths changed since ``source``."""
+def committed(path):
+    """True when ``path`` is inside the repository and its bytes equal the blob at HEAD."""
+    path = Path(path).resolve()
+    if not path.is_relative_to(REPO):
+        return False
+    try:
+        blob = subprocess.check_output(['git', 'show', f'HEAD:{path.relative_to(REPO).as_posix()}'], cwd=REPO,
+                                       stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        return False
+    return blob == path.read_bytes()
+
+
+def git_state(source=None, registration_files=()):
+    """HEAD, uncommitted changes under the code paths, code paths changed since ``source``, and the
+    registration files (config, addenda) that are not committed at HEAD byte for byte."""
     run = lambda *args: subprocess.check_output(['git', *args], cwd=REPO, text=True).strip()
     state = {'commit': run('rev-parse', 'HEAD'), 'code_dirty': bool(run('status', '--porcelain', '--', *CODE_PATHS)),
-             'source_is_ancestor': None, 'code_changed_since_source': None}
+             'source_is_ancestor': None, 'code_changed_since_source': None,
+             'registration_uncommitted': [str(f) for f in registration_files if not committed(f)]}
     if source:
         state['source_is_ancestor'] = subprocess.call(['git', 'merge-base', '--is-ancestor', source, 'HEAD'], cwd=REPO,
                                                       stderr=subprocess.DEVNULL) == 0
@@ -207,16 +255,19 @@ def git_state(source=None):
     return state
 
 
-def enforce_source(config, state=None):
+def enforce_source(config, state=None, registration_files=()):
     """C15/C29: the code at HEAD is the registered source commit's code (HEAD may add registration
-    commits: configs, addenda, docs), with no uncommitted change under the code paths; the member
-    loader matches its pin. The locally retargeted ``runs`` symlink is outside the code paths."""
+    commits on top), with no uncommitted change under the code paths; the registration config and
+    every addendum are committed at HEAD byte for byte; the member loader matches its pin. The
+    locally retargeted ``runs`` symlink is outside the code paths."""
     source = config['le2025_validation_plan'].get('source_commit')
     _require(isinstance(source, str) and source, 'registered source commit required')
-    state = git_state(source) if state is None else state
+    state = git_state(source, registration_files) if state is None else state
     _require(state['source_is_ancestor'] is True and not state['code_changed_since_source'],
              'code at HEAD differs from the registered source commit')
     _require(not state['code_dirty'], 'uncommitted changes under the code paths; refusing to run')
+    _require(not state['registration_uncommitted'],
+             f'registration files not committed at HEAD: {state["registration_uncommitted"]}')
     loader = config['identity_registration']['member_loader']
     _require(hash_file(REPO / loader['file']) == loader['sha256'], 'member loader source differs from its pin')
     return state
@@ -238,7 +289,7 @@ def dump(path, value):
 
 
 def _raise_hang(signum, frame):
-    raise HangGuardExceeded('stage hang guard exceeded; preserve partial stage (not citable)')
+    prt.defer_or_raise(HangGuardExceeded('stage hang guard exceeded; preserve partial stage (not citable)'))
 
 
 @contextmanager
@@ -355,6 +406,10 @@ def s1_gates(frame, rows_p, rows_e, art_p, art_e, gates, prep_vocabulary):
             'rows_bc_p_minus_bc_e': len(rows_p) - len(rows_e)}
 
 
+def _code_counts(rows):
+    return {str(k): int(v) for k, v in rows.pitch_type.astype(str).value_counts().sort_index().items()}
+
+
 def change_decision_report(train_rows, bc, table, no_pitch):
     """D-4 critic 5 (TRAIN, label-blind): decisions right after a pitcher change inside a PA, the
     share whose BC cell is empty (pi_b_hat falls back to the pitcher frequency) and their pi_b_hat(M|H)."""
@@ -380,7 +435,7 @@ def change_decision_report(train_rows, bc, table, no_pitch):
 
 
 def run_materialize(frame, store, output, *, provenance, bind_inputs, train_keys, keys_record, gates, bc_parameters,
-                    no_pitch, volume_quantiles, prep_vocabulary):
+                    no_pitch, volume_quantiles, prep_vocabulary, bc_p_only_rule):
     """Export BC_P (primary) and BC_E (reproduction gate/descriptive only), the TRAIN hand
     registry, the intervention support table over single-hand pitchers and the TRAIN reports.
 
@@ -426,9 +481,10 @@ def run_materialize(frame, store, output, *, provenance, bind_inputs, train_keys
               'bc_roles': {'BC_P': 'registered pi_b_hat and reference base', 'BC_E': 'S1 reproduction gate and '
                            'descriptive comparison only; never used for estimation, selection or sensitivity'},
               's1_gates': gate,
-              'bc_p_only_pitchers': {'count': len(only_p), 'without_g0_cluster': sum(p not in clustered for p in only_p),
-                                     'support_actions_from_league_tiers_only': int(league_only),
-                                     'rule': 'evaluated and reported as a post-hoc stratum (D-1 critic 5)'},
+              'bc_p_only_pitchers': {'count': len(only_p), 'ids': only_p,
+                                     'without_g0_cluster': sum(p not in clustered for p in only_p),
+                                     'support_actions_from_league_tiers_only': int(league_only), 'rule': bc_p_only_rule},
+              'bc_p_minus_bc_e_codes': _code_counts(rows['BC_P'].loc[~rows['BC_P'].index.isin(rows['BC_E'].index)]),
               'hands': {'file_sha256': hands_file_sha, 'ambiguous': sum(h == 'AMBIGUOUS' for h in hands.values()),
                         'single': sum(h != 'AMBIGUOUS' for h in hands.values())},
               'support_table': {'file_sha256': support_file_sha, 'content_sha256': support_sha, 'rows': len(support),
@@ -616,7 +672,7 @@ def run_dr(runtime, store, components, blocks, deadline, *, no_pitch, bootstrap,
            expected_pas=None, pair=None):
     """Candidate runtime over the selected PAs, PA-end facts from the verified WE, the DR estimator
     (primary), the registered same-ledger sensitivities and (``pair``) the M-10 paired run."""
-    games = preq.game_table(store.frame)
+    games = preq.game_table(store.frame, {int(store.frame.game_pk.iloc[p[0]]) for _, p in blocks})
     facts = submit_pas(runtime, store, blocks, deadline, no_pitch=no_pitch,
                        outcome=outcome_function(store, components, games, 'structural-end-v1'))
     if strata is not None:
@@ -683,8 +739,10 @@ def census_pas(census_split, games):
     return sum(counts[str(g)] for g in games)
 
 
-def strata_function(frame, volume_edges):
-    """M-13 descriptive strata per PA: D87 role, month, TRAIN volume bin, extra innings."""
+def strata_function(frame, volume_edges, bc_p_only=()):
+    """M-13 descriptive strata per PA: D87 role, month, TRAIN volume bin, extra innings, and the
+    D-1 critic 5 stratum of pitchers known only through BC-P (no eligible TRAIN pitch)."""
+    bc_p_only = {str(p) for p in bc_p_only}
     roles = preq.pitcher_roles(frame)
     train_counts = frame.loc[frame.split.eq('train')].groupby('pitcher').size()
     first = {}
@@ -695,7 +753,8 @@ def strata_function(frame, volume_edges):
         row = frame.iloc[first[pa_id]]
         volume = int(np.searchsorted(volume_edges, train_counts.get(row.pitcher, 0), side='right'))
         return {'role': roles.iloc[first[pa_id]], 'month': str(pd.Timestamp(row.game_date))[:7],
-                'volume_bin': volume, 'extra_innings': bool(int(row.inning) >= 10)}
+                'volume_bin': volume, 'extra_innings': bool(int(row.inning) >= 10),
+                'bc_p_only_pitcher': str(int(row.pitcher)) in bc_p_only}
     return strata
 
 
@@ -725,8 +784,11 @@ def registered_path(reg, name):
     path, sha = Path(entry['path']), entry['file_sha256']
     manifest = path.parent / 'manifest.json'
     _require(manifest.exists(), f'registered input {name} is not inside a sealed stage directory')
-    listed = json.loads(manifest.read_bytes()).get('artifact_sha256', {})
-    _require(listed.get(path.name) == sha, f'registered input {name} differs from its sealed stage manifest')
+    sealed = json.loads(manifest.read_bytes())
+    _require(sealed.get('artifact_sha256', {}).get(path.name) == sha,
+             f'registered input {name} differs from its sealed stage manifest')
+    _require(name in INPUT_COMMAND and sealed.get('command') == INPUT_COMMAND[name],
+             f'registered input {name} does not come from a sealed {INPUT_COMMAND.get(name)} stage')
     return path, sha
 
 
@@ -799,10 +861,27 @@ SPLIT_OF = {'materialize-bc': 'train', 'profile': 'temperature', 'tau-select': '
             'v2-world': 'dev', 'dr-evaluate': 'dev'}
 
 
+def dr_q_decision(config, profile, setting):
+    """M-7, applied mechanically at S3b from the sealed S3 cost record: the DR q-hat is re-estimated
+    with the evaluation seed unless the measured evaluator-inclusive rows per decision of the chosen
+    setting, times the registered S6 decisions, exceed the S6 row budget (then planning-Q reuse)."""
+    s6 = config['le2025_validation_plan']['stages']['S6_V4']
+    entry = next(p for p in profile['profiles'] if (p['samples'], p['pitch_cap']) == (setting['samples'],
+                                                                                        setting['pitch_cap']))
+    per_decision = (entry['planning_rows'] + entry['evaluation_rows']) / entry['decisions']
+    projected = per_decision * s6['planned_decisions']
+    source = 'planning_reuse' if projected > s6['row_budget'] else 'evaluation_seed'
+    return {'source': source, 'evaluator_inclusive_rows_per_decision': per_decision, 'projected_s6_rows': projected,
+            's6_row_budget': s6['row_budget'], 'rule': DR_Q_RULE}
+
+
 def prerequisites(command, reg):
-    """Everything a stage needs from earlier stages, checked before any data load: sealed pins,
-    the R3(b) census code gate for the stage's split, the S2 pass, the D-9a selection (samples >= 3
-    for the noise rule), a selected tau, a sealed S4 record and the V2 acceptance."""
+    """Everything a stage needs from earlier stages, checked before any data load: sealed pins from
+    the right stage, the R3(b) census code gate for the stage's split, the S2 pass, the D-9a
+    selection (registered noise-rule minimum), a selected tau frozen under the current gate, a
+    sealed S4 record and the V2 acceptance of the S6 identity."""
+    config = reg['config']
+    stages = config['le2025_validation_plan']['stages']
     for name in PREREQUISITES[command]:
         registered_path(reg, name)
     out = {}
@@ -815,19 +894,30 @@ def prerequisites(command, reg):
         _require(not census[split]['codes_outside_vocabulary'], f'{split} codes outside the vocabulary (R3b): re-register')
     if 'bind_probe' in PREREQUISITES[command]:
         _require(registered_json(reg, 'bind_probe').get('pass') is True, 'S2 probe record must pass')
+    if 'bind_identity' in PREREQUISITES[command]:
+        out['components_sha256'] = registered_json(reg, 'bind_identity')['sha256']
     if 'profile' in PREREQUISITES[command]:
-        out['setting'] = registered_json(reg, 'profile').get('selection')
+        out['profile'] = registered_json(reg, 'profile')
+        out['setting'] = out['profile'].get('selection')
         _require(out['setting'] is not None, 'registered S3 profile selection (D-9a) required')
-        _require(command != 'tau-select' or out['setting']['samples'] >= 3,
-                 'the D-9 noise rule needs samples >= 3 (paired-difference s.e.)')
+        minimum = stages['S3b_tau_select']['samples_minimum_for_noise_rule']
+        _require(command != 'tau-select' or out['setting']['samples'] >= minimum,
+                 f'the D-9 noise rule needs samples >= {minimum} (paired-difference s.e.)')
     if 'tau_freeze' in PREREQUISITES[command]:
-        out['freeze'] = registered_json(reg, 'tau_freeze')
-        _require(out['freeze']['status'] == 'SELECTED' and out['freeze']['final_identity_sha256'],
-                 f'no registered tau: {out["freeze"]["status"]}')
+        freeze = out['freeze'] = registered_json(reg, 'tau_freeze')
+        _require(freeze['status'] == 'SELECTED' and freeze['final_identity_sha256'],
+                 f'no registered tau: {freeze["status"]}')
+        gate = {'thresholds': stages['S3b_tau_select']['thresholds'], 'tau_grid': stages['S3b_tau_select']['tau_grid'],
+                'ess_gate_game': config['ess_gate']['thresholds']['game']}
+        _require(freeze['gate'] == json.loads(json.dumps(gate)), 'tau was frozen under another registered gate (D-9 critic 5)')
     if 'v5' in PREREQUISITES[command]:
         _require(registered_json(reg, 'v5').get('sealed_counts'), 'a sealed S4 record is required')
     if 'v2' in PREREQUISITES[command]:
-        _require(registered_json(reg, 'v2').get('accept') is True, 'V2 acceptance is an S6 prerequisite')
+        v2 = registered_json(reg, 'v2')
+        _require(v2.get('accept') is True, 'V2 acceptance is an S6 prerequisite')
+        main = [r for r in v2['runs'] if r['check'] == 'V2' and r['planning_seed'] == config['seeds']['planning_main']]
+        _require(main and all(r['world']['candidate_identity_sha256'] == out['freeze']['final_identity_sha256']
+                              for r in main), 'V2 acceptance does not certify the S6 policy identity')
     return out
 
 
@@ -846,7 +936,6 @@ def dispatch(command, reg, local, output, load):
     identity = {'config_sha256': reg['config_sha256'], 'registration_chain': reg['chain'], 'git': git_state(),
                 'environment': environment(), 'decisions': decisions, 'g0_bundle_file_sha256': ident['g0_bundle']['file_sha256'],
                 'runner_sources': {rel: hash_file(REPO / rel) for rel in SOURCES}}
-    evaluation = role_seed(config, 'evaluation') if stages['S6_V4'].get('dr_q_source') == 'evaluation_seed' else None
     with heavy_lock(root), stage(output, command, identity, spec.get('hang_guard_seconds')) as out:
         pre = prerequisites(command, reg)
         inputs = load(command != 'census')
@@ -879,6 +968,8 @@ def dispatch(command, reg, local, output, load):
             support_path, support_sha = registered_path(reg, 'support')
             snapshot, as_of, provenance = snapshot_for(split, blocks)
             components, style = bind(blocks, load_train_bc(bc_path, bc_sha), snapshot, as_of)
+            _require(components.sha256 == pre['components_sha256'],
+                     'bound components differ from the S2-certified identity (M-10)')
             provenance = {**provenance, 'style_report': style}
             runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, out / f'ledger-{split}-{seed}{tag}.jsonl',
                                         components=components, budget=RowBudget(int(budget), seed_count=5), tau=tau,
@@ -903,7 +994,8 @@ def dispatch(command, reg, local, output, load):
                             train_keys=pinned_parquet(paths['p4_train_keys'], files['p4_train_keys']['sha256']),
                             keys_record=inputs['prep']['samples']['train'], gates=spec['gates'],
                             bc_parameters=config['train_bc_plan']['bc_parameters'], no_pitch=no_pitch,
-                            volume_quantiles=config['subgroups']['volume_quantiles'], prep_vocabulary=vocabulary)
+                            volume_quantiles=config['subgroups']['volume_quantiles'], prep_vocabulary=vocabulary,
+                            bc_p_only_rule=config['train_bc_plan']['bc_p_only_pitcher_rule'])
         elif command == 'style-snapshot':
             dataset = inputs['parent']['dataset_identity']
             run_style_snapshots(frame, out, spec['as_of_exclusive'], {'processed_sha256': dataset['processed_sha256'],
@@ -936,17 +1028,21 @@ def dispatch(command, reg, local, output, load):
                 runtime, _, provenance = candidate(
                     blocks, 'temperature', tau=stages['S3b_tau_select']['tau_grid'][0], samples=setting['samples'],
                     pitch_cap=setting['pitch_cap'], seed=config['seeds']['planning_main'], budget=spec['row_budget'],
-                    evaluation_seed=evaluation, tag=f"-s{setting['samples']}c{setting['pitch_cap']}")
+                    evaluation_seed=role_seed(config, 'evaluation'), tag=f"-s{setting['samples']}c{setting['pitch_cap']}")
                 deadline = Deadline()
                 submit_pas(runtime, store, blocks, deadline, no_pitch=no_pitch)
                 runtime.verify_components()
-                budget = runtime.improvement.simulator.budget
+                planning = runtime.improvement.diagnostics['search_conditional_rows']
                 profiles.append({'samples': setting['samples'], 'pitch_cap': setting['pitch_cap'],
                                  'decisions': sum(r['status'] in prt.EVALUATED for r in runtime.ledger.decisions()),
-                                 'requests': len(runtime.ledger.decisions()), 'conditional_rows': budget.conditional_rows,
-                                 'seconds': deadline.elapsed(), 'evaluation_seed_included': evaluation is not None})
+                                 'requests': len(runtime.ledger.decisions()), 'planning_rows': planning,
+                                 'evaluation_rows': runtime.evaluator.diagnostics['search_conditional_rows'],
+                                 'conditional_rows': planning, 'seconds': deadline.elapsed()})
+            minimum = stages['S3b_tau_select']['samples_minimum_for_noise_rule']
             dump(out / 'profile.json', {'pas': len(blocks), 'profiles': profiles,
-                                        'selection': ptau.select_search_settings(profiles, spec['selection_row_budget']),
+                                        'selection': ptau.select_search_settings(profiles, spec['selection_row_budget'],
+                                                                                 min_samples=minimum),
+                                        'selection_rows': 'planning search rows (S3b runs no evaluator)',
                                         'tau_placeholder_not_selected': stages['S3b_tau_select']['tau_grid'][0],
                                         'quality_values_read': False, 'provenance': provenance})
         elif command == 'tau-select':
@@ -962,6 +1058,8 @@ def dispatch(command, reg, local, output, load):
             table = ptau.tau_table(runtime.ledger.decisions(), facts, spec['tau_grid'], spec['thresholds'])
             runtime.verify_components()
             final, determinism = None, None
+            dr_q = dr_q_decision(config, pre['profile'], setting)
+            evaluation = role_seed(config, 'evaluation') if dr_q['source'] == 'evaluation_seed' else None
             if table['selected_tau'] is not None:
                 bc_art = load_train_bc(*registered_path(reg, 'bc'))
                 _, support_identity = load_support_table(*registered_path(reg, 'support'), bc_art)
@@ -975,17 +1073,21 @@ def dispatch(command, reg, local, output, load):
                                                 atol=stages['S2_bind_probe']['atol_primary'])
             dump(out / 'tau_freeze.json', {**table, 'games': games, 'straddling_games_excluded': straddle,
                  'sealed_counts': sealed, 'ledger_head_sha256': runtime.summary()['ledger_head_sha256'],
-                 'config_sha256': reg['config_sha256'],
+                 'config_sha256': reg['config_sha256'], 'dr_q': dr_q, 'setting': setting,
+                 'gate': {'thresholds': spec['thresholds'], 'tau_grid': spec['tau_grid'],
+                          'ess_gate_game': config['ess_gate']['thresholds']['game']},
                  'tau_code_sha256': hash_file(REPO / 'experiments/pitchmdp/pitchmdp/policy_tau.py'),
                  'final_identity_sha256': final, 'determinism_check': determinism, 'outcomes_read': False,
                  'provenance': provenance})
         elif command == 'v2-world':
             freeze = pre['freeze']
+            evaluation = role_seed(config, 'evaluation') if freeze['dr_q']['source'] == 'evaluation_seed' else None
             dump(out / 'v2.json', run_v2_stage(reg, spec, frame, store, candidate, freeze['selected_tau'], pre['setting'],
                                                no_pitch, evaluation))
         else:  # dr-evaluate (S6/V4)
             freeze, setting = pre['freeze'], pre['setting']
             expected = freeze['final_identity_sha256']
+            evaluation = role_seed(config, 'evaluation') if freeze['dr_q']['source'] == 'evaluation_seed' else None
             _require(reg['expected_identity_sha256'] in (None, expected), 'registered identity differs from the tau record')
             games = select_games(frame, 'dev', spec['n_games'], role_seed(config, 'selection_salt'))
             blocks = game_blocks(frame, games, 'dev')
@@ -993,21 +1095,61 @@ def dispatch(command, reg, local, output, load):
                 blocks, 'dev', tau=freeze['selected_tau'], samples=setting['samples'], pitch_cap=setting['pitch_cap'],
                 seed=config['seeds']['planning_main'], budget=spec['row_budget'], evaluation_seed=evaluation,
                 expected=expected)
+            diagnostic = style_shift_diagnostic(runtime, components, lambda sub: bind(sub, load_train_bc(
+                *registered_path(reg, 'bc')))[0], store, blocks, spec['d7_diagnostic_starts'], no_pitch)
             pair = lambda: prt.build_reference_pair_runtime(
                 *registered_path(reg, 'bc'), *registered_path(reg, 'support'), out / 'ledger-dev-paired-identity.jsonl',
                 hand_registry=registered_path(reg, 'hands'), provenance=runtime.pins['provenance'])
             boot = plan['bootstrap']
+            materialized = registered_json(reg, 'materialize')
             result, rows = run_dr(runtime, store, components, blocks, Deadline(), no_pitch=no_pitch,
                                   bootstrap={**boot, 'seed': role_seed(config, 'bootstrap')},
                                   ess_gate=config['ess_gate']['thresholds'],
                                   sensitivities=config['sensitivity']['same_ledger'],
-                                  strata=strata_function(frame, registered_json(reg, 'materialize')['volume_edges']),
+                                  strata=strata_function(frame, materialized['volume_edges'],
+                                                         materialized['bc_p_only_pitchers']['ids']),
                                   expected_pas=census_pas(pre['census']['dev'], games), pair=pair)
             dump(out / 'dr.json', {**result, 'games': games, 'straddling_games_excluded': straddle,
-                                   'identity_sha256': expected, 'provenance': provenance})
+                                   'identity_sha256': expected, 'dr_q': freeze['dr_q'], 'provenance': provenance,
+                                   'd7_label_blind_diagnostic': diagnostic})
             table = pd.DataFrame([{**{k: v for k, v in r.items() if k != 'strata'},
                                    **{f'stratum_{k}': v for k, v in r['strata'].items()}} for r in rows])
             table.to_parquet(out / 'pa_values.parquet', index=False)
+
+
+def style_shift_diagnostic(runtime, components, bind_rolling, store, blocks, count, no_pitch):
+    """D-7 label-blind diagnostics before any reward is read, on the first ``count`` E0 PA starts in
+    selection order: G0 10-class TV and KL(snapshot || rolling) over each start's supported actions,
+    and the batter soft-membership TV, frozen vs rolling style priors. No outcome, WE or next row."""
+    starts = []
+    for pa_id, positions in blocks:
+        requests, _, _ = preq.pa_requests(store, positions, runtime.sha256, no_pitch)
+        if requests and runtime.start_population(requests[0].state, requests[0].pitcher_hand)[0]:
+            starts.append(((pa_id, positions), requests[0]))
+        if len(starts) == count:
+            break
+    if not starts:
+        return {'starts': 0, 'labels_read': False}
+    rolling = bind_rolling([block for block, _ in starts])
+    tv, kl = [], []
+    for _, request in starts:
+        actions = [a for a, ok in zip(runtime.bc.actions, runtime.reference.support(request.state)) if ok]
+        states = [request.state] * len(actions)
+        snap = np.asarray(pid.integrated_predictions(components.g0, states, actions), dtype=np.float64)
+        roll = np.asarray(pid.integrated_predictions(rolling.g0, states, actions), dtype=np.float64)
+        tv += list(.5 * np.abs(snap - roll).sum(axis=1))
+        kl += list((snap * np.log(np.clip(snap, 1e-300, None) / np.clip(roll, 1e-300, None))).sum(axis=1))
+    quantiles = lambda v: {str(q): float(np.quantile(v, q)) for q in (.5, .9, .99)}
+    archetypes = getattr(getattr(components.inputs.context_encoder, 'base', None), 'archetypes', None)
+    membership = None
+    if archetypes is not None:
+        keys = [request.state.context_key for _, request in starts]
+        frozen = pd.DataFrame([components.inputs.rows[k] for k in keys])
+        moving = pd.DataFrame([rolling.inputs.rows[k] for k in keys])
+        membership = quantiles(.5 * np.abs(archetypes.transform(frozen) - archetypes.transform(moving)).sum(axis=1))
+    return {'starts': len(starts), 'g0_tv': quantiles(tv), 'g0_kl_snapshot_rolling': quantiles(kl),
+            'membership_tv': membership, 'labels_read': False,
+            'note': 'membership_tv None when the bound context encoder has no archetypes (synthetic encoders)'}
 
 
 def determinism_check(runtime, candidate, blocks, facts, store, no_pitch, *, tau, setting, seed, budget, pas, atol):
@@ -1062,6 +1204,31 @@ def run_v2_stage(reg, spec, frame, store, candidate, tau, setting, no_pitch, eva
             if check == 'V2':
                 accepts.append(result['accept'])
     report['accept'] = None if any(a is None for a in accepts) else all(accepts)
+    hazard = spec.get('declared_hazard')
+    if hazard:  # D-5 critic 5: coverage of the L1 bounds and endpoint CIs under a declared hazard (not acceptance)
+        checks = []
+        for r in range(spec['hazard_replicates']):
+            runtime, components, _ = candidate(blocks, 'dev', tau=tau, samples=setting['samples'],
+                                               pitch_cap=setting['pitch_cap'], seed=config['seeds']['planning_main'],
+                                               budget=spec['row_budget_per_run'], evaluation_seed=evaluation,
+                                               tag=f'-hazard{r}')
+            starts = []
+            for _, positions in blocks:
+                requests, _, _ = preq.pa_requests(store, positions, runtime.sha256, no_pitch)
+                if requests and runtime.start_population(requests[0].state, requests[0].pitcher_hand)[0]:
+                    starts.append((requests[0].state, requests[0].pitcher_hand))
+            seed_r = int(np.random.SeedSequence([role_seed(config, 'v2'), 2, r]).generate_state(1)[0])
+            result = pss.run_world(runtime, components, starts, law=laws[0][2](runtime.bc), law_identity='pi_b_hat',
+                                   logs_per_start=spec['logs_per_start'], cap=spec['cap'],
+                                   truth_rollouts=spec['truth_rollouts'], seed=seed_r,
+                                   draws=config['le2025_validation_plan']['bootstrap']['draws'],
+                                   censor_hazard=lambda state, action: float(hazard.get(action, 0.)))
+            checks.append({k: result[k] for k in ('truth_delta_mean', 'l1_delta_bounds', 'truth_inside_l1_bounds',
+                                                  'truth_inside_endpoint_ci', 'ends')})
+        report['hazard_check'] = {'declared_hazard': hazard, 'replicates': len(checks), 'runs': checks,
+                                  'share_inside_l1_bounds': float(np.mean([c['truth_inside_l1_bounds'] for c in checks])),
+                                  'share_inside_endpoint_ci': float(np.mean([c['truth_inside_endpoint_ci'] for c in checks])),
+                                  'label': 'D-5 diagnostic; not part of acceptance'}
     return report
 
 
@@ -1075,7 +1242,7 @@ def main():
     args = parser.parse_args()
     reg = load_registration(args.config, args.addendum)
     registration(reg['config'], args.command)  # refuse before any data is touched
-    enforce_source(reg['config'])
+    enforce_source(reg['config'], registration_files=[args.config, *args.addendum])
     raw = args.local_config.read_bytes()
     _require(hash_file_bytes(raw) == reg['config']['le2025_validation_plan']['local_config']['sha256'],
              'local config differs from its registered pin')

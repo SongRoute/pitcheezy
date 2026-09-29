@@ -308,7 +308,8 @@
       "rows": "all TRAIN regular-season rows",
       "artifact": "hands.json (pitcheezy.pitcher_hands.v1), pinned in the runtime pins"
     },
-    "rule_change_after_s1_tables": "forbidden: the primary choice is not revisited after the BC_P/BC_E tables"
+    "rule_change_after_s1_tables": "forbidden: the primary choice is not revisited after the BC_P/BC_E tables",
+    "bc_p_only_pitcher_rule": "evaluate; report as the bc_p_only_pitcher stratum in S6 (D-1 critic 5), fixed before S1"
   },
   "pa_time_rules": {
     "R1_denominator": {
@@ -498,7 +499,8 @@
         "atol_primary": 1e-06,
         "atol_frequency_raw": 1e-12,
         "label_arrays_read": false,
-        "cost_measured": null
+        "cost_measured": null,
+        "identity_binding": "identity.json (components sha256) is registered as bind_identity; S3 and later refuse components with another sha"
       },
       "S3_profile": {
         "hang_guard_seconds": 7200,
@@ -516,7 +518,7 @@
         "quality_values_read": false,
         "cost_measured": null,
         "candidates_note": "list of {samples, pitch_cap}; every candidate is measured on the same starts (rows are not assumed to scale with pitch_cap)",
-        "evaluation_seed_in_cost": "included when S6 dr_q_source = evaluation_seed"
+        "evaluation_seed_in_cost": "every candidate runs with the evaluation-seed search; planning rows select the setting (S3b runs no evaluator), evaluator-inclusive rows feed the M-7 rule"
       },
       "S3b_tau_select": {
         "hang_guard_seconds": 7200,
@@ -564,17 +566,22 @@
         "starts_rule": "every E0 PA start of M-1 selected DEV games (salted hash, month-proportional, straddling games excluded)",
         "row_budget_per_run": null,
         "q_hat": "same as S6 (evaluation seed when registered)",
-        "censor_hazard_check": "optional declared hazard run (D-5 verification); not part of acceptance"
+        "censor_hazard_check": "optional: {action: probability} hazard with replicates; records the share of replicates whose L1 bounds and endpoint CIs contain the truth (D-5 critic 5); not part of acceptance",
+        "declared_hazard": null,
+        "hazard_replicates": null
       },
       "S6_V4": {
         "n_games": null,
         "row_budget": null,
-        "dr_q_source": "evaluation_seed",
-        "dr_q_fallback_rule": "planning_reuse only if the registered cost formula from S3 exceeds the row budget, decided before S6",
+        "dr_q_source": "evaluation_seed_with_cost_fallback",
         "hang_guard_seconds": null,
         "cost_measured": null,
         "paired_identity_run": "independent cand=ref runtime on the same requests; every complete PA delta exactly 0 and equal complete sets (M-10, D89 V4 e); failure fails S6",
-        "identity_pin": "expected identity = tau_freeze.final_identity_sha256"
+        "identity_pin": "expected identity = tau_freeze.final_identity_sha256",
+        "dr_q_rule": "M-7, applied mechanically at S3b: the DR q-hat uses the evaluation seed unless the S3-measured evaluator-inclusive rows per decision of the chosen setting x planned_decisions exceed row_budget (then planning-Q reuse); the result enters the frozen identity and S5/S6 follow it",
+        "planned_decisions": null,
+        "d7_diagnostic_starts": null,
+        "d7_diagnostic": "before any reward: G0 10-class TV/KL and batter soft-membership TV, frozen vs rolling priors, on the first d7_diagnostic_starts E0 starts"
       }
     },
     "measured_references_not_budgets": {
@@ -631,8 +638,8 @@
       "path": "experiments/pitchmdp/configs/local.json",
       "sha256": "eb364ca79d553e7b8e16350f783572714f293033240468a2592083ce602ee967"
     },
-    "source_rule": "HEAD may add registration commits on top of source_commit, but experiments/, src/ and scripts/ must be unchanged since source_commit and have no uncommitted change; the locally retargeted runs symlink is outside these paths",
-    "registered_inputs_rule": "every registered input must be listed with the same sha256 in the manifest.json of a sealed stage directory"
+    "source_rule": "HEAD may add registration commits on top of source_commit, but experiments/, src/ and scripts/ must be unchanged since source_commit with no uncommitted change, and the --config file and every --addendum must be committed at HEAD byte for byte; the locally retargeted runs symlink is outside these paths",
+    "registered_inputs_rule": "every registered input must be listed with the same sha256 in the manifest.json of a sealed stage directory produced by the command that owns that input"
   },
   "claims": {
     "policy_frozen": false,

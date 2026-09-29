@@ -130,8 +130,9 @@ def run_world(runtime, components, starts, *, law, law_identity, logs_per_start,
     result, rows = estimate(runtime.ledger.decisions(), pas, draws=draws, seed=seed, invalid_share_max=1.,
                             minimum={'games': 1, 'pa_starts': 1})
     improvement = runtime.improvement
+    play = getattr(runtime, 'planning_policy', None) or (lambda state: runtime.candidate(state)[0])
     policies = {'reference': lambda state, depth: (improvement.bc.actions, improvement.bc.probabilities(state)),
-                'candidate': lambda state, depth: (improvement.bc.actions, runtime.candidate(state)[0])}
+                'candidate': lambda state, depth: (improvement.bc.actions, play(state))}  # no DR q-hat search
     by_start = {}
     for row in rows:
         by_start.setdefault(int(row['pa_id'][1:].split(':')[0]), []).append(row)
@@ -143,13 +144,18 @@ def run_world(runtime, components, starts, *, law, law_identity, logs_per_start,
                     'logs_per_start': logs_per_start, 'truth_rollouts': truth_rollouts,
                     'censor_hazard': None if censor_hazard is None else 'declared',
                     'estimator': 'D89 plain sequential DR; no clipping or self-normalisation',
-                    'runtime_sha256': runtime.sha256}
+                    'runtime_sha256': runtime.sha256, 'candidate_identity_sha256': runtime.pins['candidate']['sha256']}
     if censor_hazard is not None:  # D-5 check: the L1 bound (mean over starts) against the truth
         weights = {i: len(found) for i, found in by_start.items()}  # the L1 mean weights starts by their logs
         truth_delta = float(sum(truths[i]['delta'] * n for i, n in weights.items()) / sum(weights.values()))
+        bounds = result['layers']['L1_start_population']['delta_bounds']
+        boot = result.get('bootstrap') or {}
+        lower, upper = boot.get('L1_lower_endpoint_ci95'), boot.get('L1_upper_endpoint_ci95')
         return {'world': world_record, 'starts': len(starts), 'excluded_starts': excluded, 'ends': ends,
-                'estimate': result, 'truth_delta_mean': truth_delta,
-                'l1_delta_bounds': result['layers']['L1_start_population']['delta_bounds'],
+                'estimate': result, 'truth_delta_mean': truth_delta, 'l1_delta_bounds': bounds,
+                'truth_inside_l1_bounds': bool(bounds[0] <= truth_delta <= bounds[1]),
+                'truth_inside_endpoint_ci': None if lower is None else bool(lower[0] <= truth_delta <= upper[1]),
+                'censored_pas': sorted(pa for pa, info in pas.items() if info['reward'] is None),
                 'accept': None, 'interpretation': 'declared-hazard censoring check of the D-5 bounds; model-internal'}
     comparison = []
     for i, found in sorted(by_start.items()):
