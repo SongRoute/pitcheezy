@@ -29,6 +29,25 @@ SUPPORT_SCHEMA = 'pitcheezy.intervention_support.v1'
 HANDS_SCHEMA = 'pitcheezy.pitcher_hands.v1'
 STYLE_SCHEMA = 'pitcheezy.batter_style_snapshot.v1'
 HAND_RULE = 'train_single_hand_v1'  # matrix_panel hand rule: one observed L/R and no missing hand, else AMBIGUOUS
+
+
+def normalize_hand(value):
+    """A throwing/batting hand code or None (None, NaN, pd.NA and '' are all missing)."""
+    if value is None:
+        return None
+    try:
+        if value != value:  # NaN
+            return None
+    except (TypeError, ValueError):  # pd.NA comparisons
+        return None
+    text = str(value)
+    return None if not text or text in ('nan', '<NA>', 'None') else text
+
+
+def single_hand(values):
+    """HAND_RULE over one pitcher's TRAIN rows: 'L'/'R' when every row has that hand, else 'AMBIGUOUS'."""
+    hands = [normalize_hand(v) for v in values]
+    return hands[0] if hands and hands[0] in ('L', 'R') and all(h == hands[0] for h in hands) else 'AMBIGUOUS'
 TRAIN_WINDOW = ('2023-05-15', '2025-04-30')  # matrix_policy.fit_bc guard
 G0_PROTOCOL = 'g0_research_frozen_v1'
 G0_SEEDS = (0, 1, 2, 3, 4)

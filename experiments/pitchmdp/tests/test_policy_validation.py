@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import numpy as np
@@ -62,7 +63,7 @@ def pa_rows(game, ab, date, split, kind, *, pitcher=9, event='single', drop_firs
         last = index == len(SEQUENCES[kind]) - 1
         rows.append(dict(game_pk=game, at_bat_number=ab, pitch_number=index + 1, game_date=date, pitcher=pitcher,
                          batter=2 + ab % 3, stand='L', p_throws='R', balls=balls, strikes=strikes,
-                         inning=1 + ab // 6, inning_topbot='Top' if (ab // 3) % 2 == 0 else 'Bot', outs_when_up=ab % 3,
+                         inning=5 + ab // 6, inning_topbot='Top' if (ab // 3) % 2 == 0 else 'Bot', outs_when_up=ab % 3,
                          bases=0, home_score=0, away_score=0, post_home_score=0, post_away_score=0,
                          pitch_type=pitch_type, description=description,
                          events=('truncated_pa' if truncated else event) if last else None,
@@ -217,6 +218,27 @@ class RuntimeRefusalTests(unittest.TestCase):
         with self.assertRaisesRegex(pa.IntegrityError, 'halted'):
             rt.submit(pr.DecisionRequest('p1', 'q', 0, PAState(0, 0, '9', 'L'), 'FF', rt.sha256, 'R'))
 
+    def test_no_bc_or_candidate_query_after_a_sentinel(self):
+        """D-3 guard: the BC fit keys use '<UNKNOWN>' where requests use sentinels; harmless only because
+        nothing queries the BC or the candidate after a sentinel (sticky refusal)."""
+        calls = []
+
+        def candidate(state):
+            calls.append(state)
+            return self.rt.reference.probabilities(state)
+        artifact = pa.load_train_bc(self.root / 'bc.json', self.art.file_sha256)
+        table, support_sha = pa.load_support_table(self.root / 's.json', self.support, artifact)
+        rt = pr.PolicyRuntime(artifact, table, support_sha, self.root / 'spy.jsonl', candidate=candidate,
+                              candidate_identity={'name': 'spy'})
+        with mock.patch.object(rt.bc, 'probabilities', wraps=rt.bc.probabilities) as spy:
+            rt.submit(pr.DecisionRequest('s0', 's', 0, PAState(0, 0, '9', 'L'), 'FF', rt.sha256, 'R'))
+            before = (spy.call_count, len(calls))
+            for index, sentinel in enumerate((pr.NO_PITCH, pr.MISSING)):
+                history = (self.past('FF', 'ball'),) + tuple(self.past(pr.NO_PITCH, 'unknown', 1, 0) for _ in range(index))
+                rt.submit(pr.DecisionRequest(f's{index + 1}', 's', index + 1, PAState(1, 0, '9', 'L', history), sentinel,
+                                             rt.sha256, 'R'))
+            self.assertEqual((spy.call_count, len(calls)), before)
+
     def test_next_count(self):
         self.assertEqual([pr.next_count(3, 1, 'ball'), pr.next_count(0, 2, 'strike'), pr.next_count(1, 2, 'foul'),
                           pr.next_count(1, 1, 'foul'), pr.next_count(0, 0, 'out'), pr.next_count(2, 1, 'unknown')],
@@ -307,8 +329,13 @@ class RequestTests(unittest.TestCase):
         final = preq.pa_outcome(self.frame, blocks['200:8'], we, self.games)
         top = self.frame.iloc[blocks['200:8'][0]].inning_topbot == 'Top'
         self.assertEqual((final['end'], final['reward'], final['end_kind']), ('final_result', 1. if top else 0., 'game_final'))
-        unfinished = self.frame.copy(); unfinished.loc[unfinished.game_pk.eq(200), 'complete_game'] = False
-        self.assertEqual(preq.pa_outcome(unfinished, blocks['200:8'], we, preq.game_table(unfinished))['kind'],
+        heuristic = self.frame.copy(); heuristic.loc[heuristic.game_pk.eq(200), 'complete_game'] = False
+        self.assertEqual(preq.pa_outcome(heuristic, blocks['200:8'], we, preq.game_table(heuristic))['end'],
+                         'final_result')  # data.py complete_game is not the OPE rule (D-6 critic 3)
+        tied = self.frame.copy(); tied.loc[blocks['200:8'][-1], ['post_home_score', 'post_away_score']] = (1, 1)
+        self.assertEqual(preq.pa_outcome(tied, blocks['200:8'], we, preq.game_table(tied))['reason'], 'game_not_final_v1')
+        short = self.frame.copy(); short.loc[blocks['200:8'], 'inning'] = 4  # shorter than a regulation game
+        self.assertEqual(preq.pa_outcome(short, blocks['200:8'], we, preq.game_table(short))['kind'],
                          preq.TERMINAL_VALUE_MISSING)
         no_event = self.frame.copy(); no_event.loc[blocks['200:1'][-1], 'events'] = None
         self.assertEqual(preq.pa_outcome(no_event, blocks['200:1'], we, self.games)['kind'], preq.NO_TERMINAL)
@@ -319,14 +346,31 @@ class RequestTests(unittest.TestCase):
                          ['post_pitch_score_disagrees_next_row'])
         post = preq.pa_outcome(flagged, blocks['200:1'], we, self.games, score_source='post_pitch')
         self.assertAlmostEqual(post['reward'], expected, places=12)  # the fake WE ignores the score
-        with self.assertRaisesRegex(pa.IntegrityError, 'complete_game missing'):
-            preq.game_table(self.frame.assign(complete_game=np.where(self.frame.game_pk.eq(201), np.nan, True)))
-        with self.assertRaisesRegex(pa.IntegrityError, 'complete_game and post-pitch'):
-            preq.game_table(self.frame.drop(columns='complete_game'))
+        with self.assertRaisesRegex(pa.IntegrityError, 'post-pitch score columns'):
+            preq.game_table(self.frame.drop(columns='post_home_score'))
+        missing_post = flagged.copy(); missing_post.loc[blocks['200:1'][-1], 'post_home_score'] = np.nan
+        self.assertEqual(preq.pa_outcome(missing_post, blocks['200:1'], we, self.games, score_source='post_pitch')['reason'],
+                         'post_pitch_score_missing')
         split = pd.concat([self.frame.iloc[blocks['200:1']], self.frame.iloc[blocks['201:1']],
                            self.frame.iloc[blocks['200:2']]])
         with self.assertRaisesRegex(pa.IntegrityError, 'contiguous'):
             preq.game_table(split.reset_index(drop=True))
+
+    def test_terminal_placeholder_rows_are_not_decisions(self):
+        blocks = dict(blocks_of(self.frame, 'dev'))
+        last = blocks['200:1'][-1]
+        walk = self.frame.copy(); walk.loc[last, ['pitch_type', 'description', 'events']] = [None, 'automatic_ball', 'walk']
+        requests, problem, _ = preq.pa_requests(build_store(walk), blocks['200:1'], 'sha')
+        self.assertEqual((len(requests), problem), (3, None))  # ball four by the clock ends the PA: not a decision
+        runner = self.frame.copy(); runner.loc[last, ['pitch_type', 'description', 'events']] = [None, None, 'caught_stealing_2b']
+        self.assertEqual(len(preq.pa_requests(build_store(runner), blocks['200:1'], 'sha')[0]), 3)
+        real = self.frame.copy(); real.loc[last, 'pitch_type'] = None  # a real pitch without a type stays a decision
+        self.assertEqual(preq.pa_requests(build_store(real), blocks['200:1'], 'sha')[0][-1].logged_action, pr.MISSING)
+        lone = self.frame.copy(); lone.loc[blocks['200:1'][0], ['pitch_type', 'description', 'events']] = [None, None, 'truncated_pa']
+        self.assertEqual(preq.pa_requests(build_store(lone), blocks['200:1'][:1], 'sha'), ([], 'no_decision', 0))
+        row = est.pa_value([], {'game': 1, 'in_population': False, 'problem': 'no_decision', 'problem_index': 0,
+                                'reward': .6})
+        self.assertEqual((row['status'], row['delta_bounds'], row['candidate_bounds']), (est.NO_DECISION, [0., 0.], [.6, .6]))
 
     def test_style_snapshot_is_frozen_and_roster_blind(self):
         as_of = '2025-07-01'
@@ -364,6 +408,9 @@ class RequestTests(unittest.TestCase):
                          (1, 0, []))
         self.assertEqual(dev['missing_type_by_description'], {'automatic_ball': 2, 'ball': 2})
         self.assertNotIn('outcome_adjacent', dev)  # DEV stays outcome-blind at S0
+        self.assertEqual((dev['pas_by_game'], dev['games_with_several_dates'], census['games_spanning_splits']),
+                         ({'200': 8, '201': 8}, 0, []))
+        self.assertEqual(census['train']['outcome_adjacent']['games_final_v1'], 8)
         self.assertEqual(census['train']['outcome_adjacent']['truncated_pa'], 0)
         self.assertEqual(census['train_pitchers_ambiguous_hand'], 0)
         self.assertEqual(census['bc_p_train']['rows'], int(self.frame.split.eq('train').sum()))
@@ -526,7 +573,6 @@ class EstimatorTests(unittest.TestCase):
         self.assertEqual(secondary['changed_pas'], 1)
         point = secondary['all_secondary_evaluable']  # the changed PA is point-valued there
         self.assertLess(point['delta_bounds'][1] - point['delta_bounds'][0], l1[1] - l1[0])
-        self.assertTrue(result['paired_identity_check']['all_zero'])
         failed = decisions + [{'pa_id': 'g0:f', 'decision_index': 0, 'pitcher': '9', 'status': 'FAILED_INTEGRITY',
                                'result': None}]
         with self.assertRaisesRegex(pa.IntegrityError, 'halted ledger'):
@@ -535,6 +581,29 @@ class EstimatorTests(unittest.TestCase):
             est.estimate(decisions, {**pas, 'g1:c': {**pas['g1:c'], 'first_pitcher_change_index': 2}}, **kwargs)
         self.assertIsNone(est.effective_sample_size([0., 0.]))
         self.assertEqual(est.effective_sample_size([1., 1., 2.], games=[1, 1, 2]), 2.)
+
+    def test_invalid_replicates_and_missing_overlap_fail_closed(self):
+        steps, reward, _ = next(p for p in TOY.trajectories(TOY.PI_B) if len(p[0]) >= 2)
+        rows = toy_rows(steps, TOY.PI_CAND, TOY.PI_REF, TOY.PI_B, TOY.wrong_q, FULL, pa_id='a')
+        censored = refuse_from(toy_rows(steps, TOY.PI_CAND, TOY.PI_REF, TOY.PI_B, TOY.wrong_q, FULL, pa_id='b'), 1)
+        pas = {'a': {'game': 'A', 'in_population': True, 'reward': float(reward)},
+               'b': {'game': 'B', 'in_population': True, 'reward': float(reward)}}
+        strict, _ = est.estimate(rows + censored, pas, draws=400, seed=3, invalid_share_max=0, minimum=MIN)
+        self.assertGreater(strict['bootstrap']['L2_invalid_replicates'], 0)  # resamples of game B alone
+        self.assertIsNone(strict['bootstrap']['L2_conditional_ci95'])
+        loose, _ = est.estimate(rows + censored, pas, draws=400, seed=3, invalid_share_max=1., minimum=MIN)
+        self.assertIsNotNone(loose['bootstrap']['L2_conditional_ci95'])
+        none, _ = est.estimate(censored, {'b': pas['b']}, draws=10, seed=3, invalid_share_max=1., minimum=MIN,
+                               ess_gate={'pa': 1., 'game': 1.})
+        self.assertEqual(none['ess']['label'], 'UNCONFIRMED_WEAK_OVERLAP')  # no complete PA: overlap unestablished
+        zero = copy.deepcopy(rows)
+        for r in zero:  # a candidate with zero weight on every logged action: ESS undefined -> gate fails
+            r['result']['candidate'] = [1., 0., 0.] if r['result']['logged_index'] else [0., 1., 0.]
+            r['result']['rho_candidate'] = 0.
+        gated, _ = est.estimate(zero, {'a': pas['a']}, draws=10, seed=3, invalid_share_max=1., minimum=MIN,
+                                ess_gate={'pa': 1., 'game': 1.})
+        self.assertEqual((gated['ess']['gate_min_candidate_reference']['pa'], gated['ess']['label']),
+                         (None, 'UNCONFIRMED_WEAK_OVERLAP'))
 
 
 # ---------------------------------------------------------------- tau selection (D-9 S3b)
@@ -567,13 +636,21 @@ class TauTests(unittest.TestCase):
         self.assertEqual(ptau.tau_table(rows, facts, taus, {**loose, 'game_ess_min': 1e6})['status'], 'ARM_B_NOT_EVALUABLE')
         with self.assertRaisesRegex(pa.IntegrityError, 'thresholds'):
             ptau.tau_table(rows, facts, taus, {**loose, 'noise_ratio_q90_max': None})
+        defect = {**facts, next(iter(facts)): {**next(iter(facts.values())), 'problem': 'missing_row'}}
+        self.assertEqual(ptau.tau_table(rows, defect, taus, loose)['counted_not_weighted_pas'], 1)  # prefix not weighted
+        noisy = copy.deepcopy(rows)
+        for r in noisy:
+            r['result']['q_planning_diff_se'] = [None, None, None]  # samples = 1: no paired s.e.
+        with self.assertRaisesRegex(pa.IntegrityError, 'samples >= 3'):
+            ptau.tau_table(noisy, facts, taus, loose)
 
-    def test_search_settings_fit_the_row_budget(self):
-        profile = {'decisions': 10, 'conditional_rows': 4000, 'samples': 4, 'pitch_cap': 10}  # 10 rows/decision/unit
-        candidates = [{'samples': 2, 'pitch_cap': 8}, {'samples': 4, 'pitch_cap': 8}, {'samples': 8, 'pitch_cap': 16}]
-        self.assertEqual(ptau.select_search_settings(profile, candidates, {'rows': 400000, 'decisions': 1000}),
-                         {'samples': 4, 'pitch_cap': 8})
-        self.assertIsNone(ptau.select_search_settings(profile, candidates, {'rows': 10, 'decisions': 1000}))
+    def test_search_settings_use_measured_rows(self):
+        profiles = [{'samples': 2, 'pitch_cap': 8, 'decisions': 10, 'conditional_rows': 300},
+                    {'samples': 4, 'pitch_cap': 8, 'decisions': 10, 'conditional_rows': 600},
+                    {'samples': 16, 'pitch_cap': 4, 'decisions': 10, 'conditional_rows': 2000}]
+        self.assertEqual(ptau.select_search_settings(profiles, {'rows': 60000, 'decisions': 1000}),
+                         {'samples': 4, 'pitch_cap': 8})  # (16, 4) needs 200 rows per decision
+        self.assertIsNone(ptau.select_search_settings(profiles, {'rows': 10, 'decisions': 1000}))
 
 
 # ---------------------------------------------------------------- runner stages
@@ -587,7 +664,8 @@ class RunnerFixture(unittest.TestCase):
         self.syn = SyntheticPolicy(self.root / 'g0')
         train = self.frame.loc[self.frame.split.eq('train')]
         self.keys = train.loc[~train.game_pk.eq(107), ['game_pk', 'at_bat_number', 'pitch_number']].reset_index(drop=True)
-        self.gates = {'bc_e_rows': len(self.keys), 'bc_e_actions': ['CH', 'FF', 'SL'], 'token_vocabulary': list(TYPES)}
+        self.gates = {'bc_e_rows': len(self.keys), 'bc_e_actions': ['CH', 'FF', 'SL'], 'token_vocabulary': list(TYPES),
+                      'train_rows': int(self.frame.split.eq('train').sum())}
 
     def materialize(self, gates=None):
         out = self.root / f'S1-{len(list(self.root.glob("S1-*")))}'
@@ -601,7 +679,7 @@ class RunnerFixture(unittest.TestCase):
                                                                 context_rows=rows, aux_classes=self.syn.classes['aux']),
             train_keys=self.keys, keys_record={'n': len(self.keys), 'rows_sha256': ordered_key_hash(self.keys)},
             gates=gates or self.gates, bc_parameters={'prior_strength': 20., 'minimum_action_count': 1},
-            no_pitch=NO_PITCH, volume_quantiles=[1 / 3, 2 / 3])
+            no_pitch=NO_PITCH, volume_quantiles=[1 / 3, 2 / 3], prep_vocabulary=TYPES)
         return out, report
 
     def pins(self, out, report):
@@ -626,6 +704,9 @@ class RunnerStageTests(RunnerFixture):
         self.assertEqual(report['bc']['BC_P']['train_rows'], len(train))  # no outcome/support filter
         self.assertEqual(report['bc']['BC_E']['train_rows'], len(self.keys))
         self.assertTrue(all(report['s1_gates']['checks'].values()))
+        self.assertEqual(report['change_decisions']['decisions_after_change'], 0)
+        self.assertEqual((report['bc_p_only_pitchers']['count'],
+                          report['bc_p_only_pitchers']['support_actions_from_league_tiers_only']), (0, 0))
         self.assertEqual((report['hands']['single'], report['hands']['ambiguous']), (1, 0))
         table, _ = pa.load_support_table(out / 'support_primary.json', report['support_table']['file_sha256'],
                                          pa.load_train_bc(out / 'bc_BC_P.json', report['bc']['BC_P']['file_sha256']))
@@ -633,6 +714,8 @@ class RunnerStageTests(RunnerFixture):
         self.assertEqual(report['logging_mass_on_mask']['decision_share_mass_equal_one'], 0.)  # CH off the mask
         with self.assertRaisesRegex(pa.IntegrityError, 'S1 gate failed'):
             self.materialize(gates={**self.gates, 'bc_e_rows': len(self.keys) + 1})
+        with self.assertRaisesRegex(pa.IntegrityError, 'train_rows_equal_registered'):
+            self.materialize(gates={**self.gates, 'train_rows': 1})
         ambiguous = train.copy()
         ambiguous.loc[ambiguous.index[0], 'p_throws'] = 'L'
         self.assertEqual(pi.hand_registry(ambiguous, ('9',)), {'9': 'AMBIGUOUS'})
@@ -657,9 +740,11 @@ class RunnerStageTests(RunnerFixture):
                                              evaluation_seed=1701)
         boot = {'draws': 200, 'seed': 5, 'invalid_share_max': .5, 'minimum': MIN}
         sensitivities = ['r5-events-v1', 'flags_to_bounds', 'post_pitch_scores']
+        pair = lambda: pr.build_reference_pair_runtime(*pins['bc'], *pins['support'], self.root / 'pair.jsonl',
+                                                        hand_registry=pins['hands'])
         result, rows = rpv.run_dr(runtime, self.store, components, dev, rpv.Deadline(), no_pitch=NO_PITCH, bootstrap=boot,
                                   ess_gate={'pa': 100., 'game': 30.}, sensitivities=sensitivities,
-                                  strata=rpv.strata_function(self.frame, [1., 2.]))
+                                  strata=rpv.strata_function(self.frame, [1., 2.]), expected_pas=16, pair=pair)
         self.assertEqual(result['status'], {est.COMPLETE: 8, est.CENSORED: 4, est.EXCLUDED_PRE_START: 2,
                                             est.UNSUBMITTABLE: 2})
         self.assertEqual((result['censor_kinds'], result['censor_nodes']), ({est.REFUSED: 4}, {'1': 4}))
@@ -667,8 +752,12 @@ class RunnerStageTests(RunnerFixture):
         self.assertEqual(result['ess']['label'], 'UNCONFIRMED_WEAK_OVERLAP')
         self.assertIsNone(result['causal_effect'])
         self.assertEqual(result['sensitivity']['r5-events-v1']['status'][est.COMPLETE], 6)  # truncated PAs censored
-        self.assertTrue(result['paired_identity_check']['all_zero'])
+        self.assertEqual({k: result['paired_identity_run'][k] for k in ('pas', 'max_abs_delta', 'pass')}, {
+            'pas': 8, 'max_abs_delta': 0., 'pass': True})  # an independent cand=ref callable through the runtime
         self.assertEqual(set(result['strata']), {'end_kind', 'role', 'month', 'volume_bin', 'extra_innings'})
+        for row in runtime.ledger.decisions():  # D-9: the tau table recomputes exactly the runtime's candidate
+            if row['status'] == pr.SUPPORTED:
+                self.assertAlmostEqual(ptau._decision(row, .01)[0], row['result']['rho_candidate'], places=12)
         q = next(r for r in runtime.ledger.decisions() if r['status'] == pr.SUPPORTED)['result']
         self.assertEqual(q['q_source'], 'evaluation_seed')  # M-7: the DR q-hat is an independent search
         self.assertNotEqual(q['q_reference'], q['q_planning'])
@@ -700,6 +789,64 @@ class RunnerStageTests(RunnerFixture):
         with self.assertRaisesRegex(pa.IntegrityError, 'after 2025'):
             rpv.guard_dates(self.frame.assign(game_date='2026-04-01'))
 
+    def test_bind_probe_and_straddling_games(self):
+        out, report = self.materialize()
+        pins = self.pins(out, report)
+        dev = blocks_of(self.frame, 'dev')
+        clean = np.r_[dict(dev)['200:1'], dict(dev)['200:2']]
+        rows = clean[self.frame.pitch_type.iloc[clean].isin(['FF', 'SL']).to_numpy()][:6]  # rows with action pools
+        components = self.syn.bind(pa.load_train_bc(*pins['bc']), rpv.pa_contexts(self.store, rpv.blocks_containing(
+            self.frame, rows))[0])
+        requests = {}
+        for _, block in rpv.blocks_containing(self.frame, rows):
+            requests.update(zip(block.tolist(), preq.pa_requests(self.store, block, 'probe')[0]))
+        states = [requests[int(r)].state for r in rows]
+        actions = [requests[int(r)].logged_action for r in rows]
+        primary = pi.integrated_predictions(components.g0, states, actions)
+        raw = components.g0.baseline.baseline.predict(pd.DataFrame([components.inputs.query(s, a)
+                                                                     for s, a in zip(states, actions)]))
+        sealed = {'keys': self.frame.iloc[rows][['game_pk', 'at_bat_number', 'pitch_number']].to_numpy(),
+                  'levels': [np.zeros(len(rows), int)] * 5, 'primary': primary, 'frequency_raw': raw}
+        probe = rpv.run_bind_probe(self.store, components, sealed, count=len(rows), atol_primary=1e-6,
+                                   atol_frequency=1e-12, no_pitch=NO_PITCH)
+        self.assertEqual((probe['pass'], probe['probe_dates']), (True, {'2025-07-01': len(rows)}))
+        self.assertFalse(rpv.run_bind_probe(self.store, components, {**sealed, 'primary': primary + .01}, count=len(rows),
+                                            atol_primary=1e-6, atol_frequency=1e-12, no_pitch=NO_PITCH)['pass'])
+        moved = self.frame.copy(); moved.loc[dict(dev)['200:1'], 'split'] = 'blend'  # game 200 starts in June
+        self.assertEqual(rpv.straddling_games(moved), [200])
+        self.assertEqual(rpv.select_games(moved, 'dev', 1, 3), [201])
+        self.assertEqual(set(moved.iloc[np.concatenate([p for _, p in rpv.game_blocks(moved, [200, 201], 'dev')])].split),
+                         {'dev'})
+
+    def test_ledger_append_survives_the_hang_guard(self):
+        out, report = self.materialize()
+        pins = self.pins(out, report)
+        runtime = pr.build_runtime(*pins['bc'], *pins['support'], self.root / 'hang.jsonl', hand_registry=pins['hands'])
+        request = preq.pa_requests(self.store, dict(blocks_of(self.frame, 'dev'))['200:1'], runtime.sha256)[0][0]
+        real_fsync, previous = pr.os.fsync, rpv.signal.signal(rpv.signal.SIGALRM, rpv._raise_hang)
+        try:
+            def fsync_then_alarm(fd):
+                real_fsync(fd)
+                rpv.signal.raise_signal(rpv.signal.SIGALRM)  # the alarm lands inside the append
+            with mock.patch.object(pr.os, 'fsync', fsync_then_alarm), self.assertRaises(rpv.HangGuardExceeded):
+                runtime.submit(request)
+        finally:
+            rpv.signal.signal(rpv.signal.SIGALRM, previous)
+        runtime.abort('HangGuardExceeded')
+        replay = pr.build_runtime(*pins['bc'], *pins['support'], self.root / 'hang.jsonl', hand_registry=pins['hands'])
+        self.assertEqual((replay.summary()['requests'], replay.summary()['run_status']), (1, 'HALTED'))
+
+    def test_candidate_context_hand_mismatch_halts(self):
+        out, report = self.materialize()
+        pins = self.pins(out, report)
+        dev = [b for b in blocks_of(self.frame, 'dev') if b[0] == '200:1']
+        runtime, _ = self.candidate(pins, dev, 'hand.jsonl')
+        request = preq.pa_requests(self.store, dev[0][1], runtime.sha256)[0][0]
+        with self.assertRaisesRegex(pa.IntegrityError, 'hand differs from the bound context row'):
+            runtime.submit(pr.DecisionRequest(request.request_id, request.pa_id, 0, request.state, request.logged_action,
+                                              runtime.sha256, 'L'))
+        self.assertEqual(runtime.summary()['run_status'], 'HALTED')
+
     def test_game_selection_is_month_stratified_and_salted(self):
         many = pd.DataFrame({'game_pk': range(30), 'game_date': ['2025-07-05'] * 10 + ['2025-08-05'] * 20,
                              'split': 'dev'})
@@ -710,32 +857,37 @@ class RunnerStageTests(RunnerFixture):
 
 
 class DispatchTests(RunnerFixture):
-    """The registered chain through ``dispatch``: gates, addenda, pins and every stage the synthetic
-    fixture can exercise (bind-probe reads sealed G0 archives; its record is a labelled stub)."""
+    """The registered chain through ``dispatch``: gates, addenda, sealed pins and every stage the
+    synthetic fixture can exercise (bind-probe reads sealed G0 archives; its record is a labelled
+    stub sealed in its own directory)."""
     def config(self):
         runs = self.root / 'artifact' / 'runs' / 'ML-MATRIX-20260924' / 'VAL'
+        guard = {'hang_guard_seconds': 600}
         stages = {
-            'S0_census': {'hang_guard_seconds': 600}, 'S1_materialize': {'hang_guard_seconds': 600, 'gates': self.gates},
-            'S1b_style_snapshot': {'as_of_exclusive': {'dev': '2025-07-01', 'temperature': '2025-05-16',
-                                                       'blend': '2025-06-01'}},
-            'S2_bind_probe': {'rows': 4, 'atol_primary': 1e-6, 'atol_frequency_raw': 1e-12},
-            'S3_profile': {'starts': 2, 'probe_setting': {'samples': 2, 'pitch_cap': 4}, 'row_budget': 10 ** 8,
-                           'candidates': [{'samples': 2, 'pitch_cap': 4}],
-                           'selection_row_budget': {'rows': 10 ** 9, 'decisions': 1000}},
-            'S3b_tau_select': {'n_games': 2, 'tau_grid': [.01, .1], 'row_budget': 10 ** 8, 'thresholds': {
-                'pa_ess_ratio_min': 1e-6, 'game_ess_min': 1., 'ess_ratio_candidate_reference_min': 1e-6,
-                'noise_ratio_q90_max': 1e9, 'safety_multiplier': 1.}},
-            'S4_V5_denominators': {}, 'S5_V2_V3': {'starts': 2, 'logs_per_start': 30, 'truth_rollouts': 30, 'cap': 4,
-                                                   'row_budget': 10 ** 8, 'tempered_alpha_grid': [.5], 'tolerance': 1.},
+            'S0_census': {**guard, 'outcome_adjacent_splits': ['train']}, 'S1_materialize': {**guard, 'gates': self.gates},
+            'S1b_style_snapshot': {**guard, 'as_of_exclusive': {'dev': '2025-07-01', 'temperature': '2025-05-16',
+                                                                'blend': '2025-06-01'}},
+            'S2_bind_probe': {**guard, 'rows': 4, 'atol_primary': 1e-6, 'atol_frequency_raw': 1e-12},
+            'S3_profile': {'starts': 2, 'candidates': [{'samples': 3, 'pitch_cap': 4}, {'samples': 2, 'pitch_cap': 4}],
+                           'row_budget': 10 ** 8, 'selection_row_budget': {'rows': 10 ** 8, 'decisions': 1000}},
+            'S3b_tau_select': {'n_games': 2, 'tau_grid': [.01, .1], 'row_budget': 10 ** 8, 'determinism_check_pas': 1,
+                               'thresholds': {'pa_ess_ratio_min': 1e-6, 'game_ess_min': 1., 'safety_multiplier': 1.,
+                                              'ess_ratio_candidate_reference_min': 1e-6, 'noise_ratio_q90_max': 1e9}},
+            'S4_V5_denominators': guard,
+            'S5_V2_V3': {'n_games': 1, 'logs_per_start': 12, 'truth_rollouts': 12, 'cap': 4, 'row_budget_per_run': 10 ** 8,
+                         'tempered_alpha_grid': [.5], 'tolerance': 1.},
             'S6_V4': {'n_games': 2, 'row_budget': 10 ** 8, 'dr_q_source': 'evaluation_seed'}}
         return runs, {
             'protocol': rpv.PROTOCOL, 'registered': True, 'status': 'REGISTERED',
             'execution': {'enabled': True, 'real_data_enabled': True}, 'decisions': dict(rpv.DECISION_VALUES),
             'review_gates': {'code_review': {'status': 'PASS'}, 'independent_review': {'status': 'PASS'}},
             'seeds': {'base': 20260929, 'planning_main': 0, 'planning_v2': [0, 1]},
-            'pa_time_rules': {'R3_codes': {'no_pitch_descriptions': sorted(NO_PITCH)}},
+            'pa_time_rules': {'R3_codes': {'no_pitch_descriptions': sorted(NO_PITCH)},
+                              'R7_mid_pa_change': {'thresholds_before_S0': {
+                                  'switch_to_secondary_primary_if_unknown_change_share_above': .5,
+                                  'light_version_if_below': .01}}},
             'train_bc_plan': {'bc_parameters': {'prior_strength': 20., 'minimum_action_count': 1}},
-            'subgroups': {'volume_quantiles': [1 / 3, 2 / 3]}, 'ess_gate': {'thresholds': {'pa': 100., 'game': 30.}},
+            'subgroups': {'volume_quantiles': [1 / 3, 2 / 3]}, 'ess_gate': {'thresholds': {'pa': 100., 'game': 1.}},
             'sensitivity': {'same_ledger': ['r5-events-v1']},
             'identity_registration': {'classes': self.syn.classes, 'we_contract_sha256': self.syn.we_sha,
                                       'expected_identity_sha256': None,
@@ -780,41 +932,56 @@ class DispatchTests(RunnerFixture):
         with mock.patch('run_ml_matrix.check_location', lambda local, output: self.root / 'artifact'):
             census = run('census', 'S0')
             self.assertEqual(loads, [False])  # census never builds the history store
+            with self.assertRaisesRegex(pa.IntegrityError, 'registered input required: census'):
+                run('materialize-bc', 'S1-too-early')
+            self.assertEqual(loads, [False])  # a missing prerequisite refuses before any data load
+            register('S0', {'census': census / 'census.json'})
             s1 = run('materialize-bc', 'S1')
             s1b = run('style-snapshot', 'S1b')
-            probe = self.root / 'probe.json'
-            probe.write_text(json.dumps({'pass': True, 'synthetic_stub': True}))
-            register('S0-S2', {'census': census / 'census.json', 'bc': s1 / 'bc_BC_P.json', 'hands': s1 / 'hands.json',
-                               'support': s1 / 'support_primary.json', 'materialize': s1 / 'materialize.json',
+            stub = runs / 'S2-stub'
+            stub.mkdir()
+            (stub / 'probe.json').write_text(json.dumps({'pass': True, 'synthetic_stub': True}))
+            (stub / 'manifest.json').write_text(json.dumps({'artifact_sha256': {'probe.json': sha(stub / 'probe.json')}}))
+            register('S1-S2', {'bc': s1 / 'bc_BC_P.json', 'hands': s1 / 'hands.json', 'support': s1 / 'support_primary.json',
+                               'materialize': s1 / 'materialize.json',
                                **{f'style_{s}': s1b / f'style_{s}.json' for s in ('dev', 'temperature', 'blend')},
-                               'bind_probe': probe})
+                               'bind_probe': stub / 'probe.json'})
             v5 = run('v5-denominators', 'S4')
             self.assertEqual(json.loads((v5 / 'v5.json').read_text())['sealed_counts']['pas'], 16)
             profile = run('profile', 'S3')
-            self.assertEqual(json.loads((profile / 'profile.json').read_text())['selection'], {'samples': 2, 'pitch_cap': 4})
-            register('S3', {'profile': profile / 'profile.json'})
+            measured = json.loads((profile / 'profile.json').read_text())
+            self.assertEqual((len(measured['profiles']), measured['selection']), (2, {'samples': 3, 'pitch_cap': 4}))
+            register('S3-S4', {'profile': profile / 'profile.json', 'v5': v5 / 'v5.json'})
             freeze = run('tau-select', 'S3b')
             frozen = json.loads((freeze / 'tau_freeze.json').read_text())
-            self.assertEqual((frozen['status'], frozen['outcomes_read']), ('SELECTED', False))
+            self.assertEqual((frozen['status'], frozen['outcomes_read'], frozen['determinism_check']['max_abs_q_difference']),
+                             ('SELECTED', False, 0.))
             register('S3b', {'tau_freeze': freeze / 'tau_freeze.json'})
             v2 = run('v2-world', 'S5')
             report = json.loads((v2 / 'v2.json').read_text())
             self.assertEqual(len(report['runs']), 2 * 3)  # 2 planning seeds x (V2, frequency, tempered)
-            register('S5', {'v2': v2 / 'v2.json'})
             self.assertTrue(report['accept'])  # synthetic tolerance 1.0: the chain continues to S6
+            register('S5', {'v2': v2 / 'v2.json'})
             dr = run('dr-evaluate', 'S6')
             result = json.loads((dr / 'dr.json').read_text())
             self.assertEqual((result['layers']['L0_all_pas']['pas'], result['sealed_counts']['pas']), (16, 16))
-            self.assertEqual(set(result['sensitivity']), {'r5-events-v1'})
+            self.assertEqual((result['identity_sha256'], result['paired_identity_run']['pass']),
+                             (frozen['final_identity_sha256'], True))
+            self.assertEqual(result['provenance']['as_of_exclusive'], '2025-07-01')
             started = json.loads((dr / 'started.json').read_text())
             self.assertEqual(len(started['registration_chain']), len(chain))
             self.assertIn('experiments/pitchmdp/pitchmdp/policy_tau.py', started['runner_sources'])
-            ledger = next(dr.glob('ledger-dev-*.jsonl')).read_text().splitlines()
-            self.assertEqual(json.loads(ledger[0])['pins']['provenance']['as_of_exclusive'], '2025-07-01')
+            self.assertIn('stratum_role', pd.read_parquet(dr / 'pa_values.parquet').columns)
             with self.assertRaisesRegex(pa.IntegrityError, 'stage output exists'):  # attempts are never overwritten
                 run('census', 'S0')
             with self.assertRaisesRegex(pa.IntegrityError, 'directly under'):
                 rpv.dispatch('census', rpv.load_registration(chain[0], chain[1:]), {}, runs / 'S0' / 'nested', load)
+            failed = runs / 'S1-failed'
+            failed.mkdir()
+            (failed / 'bc.json').write_text('{}')  # written before a failure: no sealed manifest
+            register('bad', {'bad_bc': failed / 'bc.json'})
+            with self.assertRaisesRegex(pa.IntegrityError, 'not inside a sealed stage'):
+                rpv.registered_path(rpv.load_registration(chain[0], chain[1:]), 'bad_bc')
 
     def test_registration_refusals(self):
         repo_config = json.loads((REPO / 'configs/ML-POLICY-MATERIALIZATION-v1.json').read_text())
@@ -828,18 +995,34 @@ class DispatchTests(RunnerFixture):
         rpv.registration(closed, 'bind-probe')
         with self.assertRaisesRegex(pa.IntegrityError, 'independent review'):
             rpv.registration(closed, 'v5-denominators')
-        unset = copy.deepcopy(config)
-        unset['le2025_validation_plan']['stages']['S6_V4']['n_games'] = None
-        with self.assertRaisesRegex(pa.IntegrityError, 'S6_V4.n_games'):
-            rpv.registration(unset, 'dr-evaluate')
+        for dotted, command in (('le2025_validation_plan.stages.S6_V4.n_games', 'dr-evaluate'),
+                                ('le2025_validation_plan.bootstrap.invalid_share_max', 'dr-evaluate'),
+                                ('le2025_validation_plan.stages.S5_V2_V3.tolerance', 'v2-world'),
+                                ('le2025_validation_plan.stages.S0_census.hang_guard_seconds', 'census'),
+                                ('pa_time_rules.R7_mid_pa_change.thresholds_before_S0.light_version_if_below', 'census'),
+                                ('le2025_validation_plan.stages.S3_profile.candidates', 'profile')):
+            unset = copy.deepcopy(config)
+            *path, last = dotted.split('.')
+            rpv._field(unset, '.'.join(path))[last] = None
+            with self.subTest(dotted), self.assertRaisesRegex(pa.IntegrityError, dotted.replace('.', r'\.')):
+                rpv.registration(unset, command)
+        bad = copy.deepcopy(config); bad['le2025_validation_plan']['stages']['S6_V4']['dr_q_source'] = 'other'
+        with self.assertRaisesRegex(pa.IntegrityError, 'dr_q_source'):
+            rpv.registration(bad, 'dr-evaluate')
+        bad = copy.deepcopy(config); bad['ess_gate']['thresholds']['game'] = 30.
+        with self.assertRaisesRegex(pa.IntegrityError, 'same game gate|ESS gate'):
+            rpv.registration(bad, 'tau-select')
+        bad = copy.deepcopy(config); bad['le2025_validation_plan']['stages']['S3_profile']['selection_row_budget']['rows'] = 1
+        with self.assertRaisesRegex(pa.IntegrityError, 'S3b row budget'):
+            rpv.registration(bad, 'profile')
         with self.assertRaisesRegex(pa.IntegrityError, 'unknown command'):
             rpv.registration(config, 'fit-everything')
         path = self.root / 'c.json'
         path.write_text(json.dumps(config))
-        bad = self.root / 'a.json'
-        bad.write_text(json.dumps({'parent_sha256': '0' * 64, 'registered_inputs': {}}))
+        broken = self.root / 'a.json'
+        broken.write_text(json.dumps({'parent_sha256': '0' * 64, 'registered_inputs': {}}))
         with self.assertRaisesRegex(pa.IntegrityError, 'next link'):
-            rpv.load_registration(path, [bad])
+            rpv.load_registration(path, [broken])
         first = self.root / 'a1.json'
         first.write_text(json.dumps({'parent_sha256': sha(path), 'registered_inputs': {'bc': {'path': 'x', 'file_sha256': 'y'}}}))
         second = self.root / 'a2.json'
@@ -853,11 +1036,14 @@ class DispatchTests(RunnerFixture):
         loader = 'experiments/pitchmdp/scripts/run_ml_g0_whole.py'
         config['le2025_validation_plan']['source_commit'] = 'abc'
         config['identity_registration']['member_loader'] = {'file': loader, 'sha256': sha(REPO / loader)}
-        rpv.enforce_source(config, {'commit': 'abc', 'dirty': False})
-        with self.assertRaisesRegex(pa.IntegrityError, 'dirty'):
-            rpv.enforce_source(config, {'commit': 'abc', 'dirty': True})
-        with self.assertRaisesRegex(pa.IntegrityError, 'source commit'):
-            rpv.enforce_source(config, {'commit': 'def', 'dirty': False})
+        clean = {'commit': 'def', 'code_dirty': False, 'source_is_ancestor': True, 'code_changed_since_source': []}
+        rpv.enforce_source(config, clean)  # registration commits on top of the source commit are fine
+        with self.assertRaisesRegex(pa.IntegrityError, 'uncommitted'):
+            rpv.enforce_source(config, {**clean, 'code_dirty': True})
+        with self.assertRaisesRegex(pa.IntegrityError, 'code at HEAD differs'):
+            rpv.enforce_source(config, {**clean, 'code_changed_since_source': ['experiments/pitchmdp/x.py']})
+        with self.assertRaisesRegex(pa.IntegrityError, 'code at HEAD differs'):
+            rpv.enforce_source(config, {**clean, 'source_is_ancestor': False})
 
 
 # ---------------------------------------------------------------- V2/V3 world (D-10)
@@ -916,8 +1102,39 @@ class SemiSyntheticTests(RunnerFixture):
         runtime, components, starts = self.world('v3bad')
         broken = lambda s: (runtime.bc.actions, np.array([.5, .5, .5]))  # not a probability vector
         with self.assertRaisesRegex(pa.IntegrityError, 'probability vector'):
-            pss.run_world(runtime, components, starts, law=broken, law_identity='broken', logs_per_start=1, cap=4,
+            pss.run_world(runtime, components, starts, law=broken, law_identity='broken', logs_per_start=2, cap=4,
                           truth_rollouts=2, seed=1, draws=5, budget=RowBudget(10 ** 8, seed_count=5))
+
+    def test_acceptance_guards_and_off_mask_continuation(self):
+        strict = self.run_v2('tight', logs_per_start=40, truth_rollouts=40, tolerance=1e-9)
+        self.assertFalse(strict['accept'])  # |gap| above a registered tolerance is a rejection, not a warning
+        runtime, components, starts = self.world('guard')
+        stub = SimpleNamespace(bc=SimpleNamespace(actions=runtime.bc.actions, probabilities=lambda s: np.array([0., .5, .5])))
+        with self.assertRaisesRegex(pa.IntegrityError, 'pi_b_hat > 0'):
+            pss._law(lambda s: (runtime.bc.actions, np.array([.2, .4, .4])), stub, starts[0][0])
+        # D-10: rows logged after an off-mask action (rho = 0) change nothing, so absorbing there is exact.
+        start, hand = starts[0]
+        ch = runtime.submit(pr.DecisionRequest('c:0', 'c', 0, start, 'CH', runtime.sha256, hand))
+        self.assertEqual((ch['status'], ch['result']['rho_candidate'], ch['result']['rho_reference']),
+                         (pr.OUTSIDE_POLICY_SUPPORT, 0., 0.))
+        after = PAState(start.balls + 1, start.strikes, start.pitcher, start.batter_side,
+                        (PastPitch('CH', (0.,) * 8, 'ball', start.balls, start.strikes),), start.context_key)
+        later = runtime.submit(pr.DecisionRequest('c:1', 'c', 1, after, 'FF', runtime.sha256, hand))
+        self.assertIn(later['status'], pr.EVALUATED)
+        for reward in (0., .37, 1.):
+            full, absorbed = est.pa_dr([ch, later], reward), est.pa_dr([ch], .5)
+            self.assertEqual((full['candidate'], full['reference']), (absorbed['candidate'], absorbed['reference']))
+
+    def test_declared_censoring_hazard_bounds_contain_the_truth(self):
+        runtime, components, starts = self.world('hazard')
+        law = lambda state: (runtime.bc.actions, runtime.bc.probabilities(state))
+        hazard = lambda state, action: .6 if action == 'SL' else 0.  # depends on the logged action (D-5 C)
+        report = pss.run_world(runtime, components, starts, law=law, law_identity='pi_b_hat', logs_per_start=150, cap=4,
+                               truth_rollouts=300, seed=21, draws=50, censor_hazard=hazard)
+        self.assertGreater(report['ends']['censored'], 0)
+        lo, hi = report['l1_delta_bounds']
+        width = hi - lo
+        self.assertTrue(lo - .1 * width <= report['truth_delta_mean'] <= hi + .1 * width, (lo, hi, report['truth_delta_mean']))
 
     def test_start_outside_e0_is_reported_not_generated(self):
         runtime, components, starts = self.world('e0', blocks=('200:1', '200:4'))  # 200:4 is an unknown pitcher

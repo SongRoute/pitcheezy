@@ -33,6 +33,7 @@ POSITIVITY = 'UNSUPPORTED_LOGGING_POSITIVITY'
 POLICIES = ('candidate', 'reference')
 COMPLETE, CENSORED = 'COMPLETE', 'CENSORED'
 EXCLUDED_PRE_START, UNSUBMITTABLE = 'EXCLUDED_PRE_START', 'UNSUBMITTABLE'
+NO_DECISION = 'NO_DECISION'  # a PA without any pitcher decision: both policies act identically, delta = 0
 REFUSED, NO_TERMINAL, TERMINAL_VALUE_MISSING = 'REFUSED', 'NO_TERMINAL', 'TERMINAL_VALUE_MISSING'
 ESTIMAND = {
     'L0_all_pas': 'bounds on the mean paired value difference over every regular-season PA of the window',
@@ -132,6 +133,9 @@ def classify(decisions, info):
     if any(s in FATAL for s in statuses):
         return 'FAILED', None, None, next(s for s in statuses if s in FATAL)
     problem, index = info.get('problem'), info.get('problem_index')
+    if problem == 'no_decision':
+        _require(not decisions, 'a PA without a decision row cannot have ledger rows')
+        return NO_DECISION, None, None, problem
     if problem is not None and index == 0:
         _require(not decisions, 'a PA unsubmittable at its first row cannot have ledger rows')
         return UNSUBMITTABLE, None, None, problem
@@ -162,6 +166,9 @@ def pa_value(decisions, info):
            'in_population': status in (COMPLETE, CENSORED), 'validity_violation': reason == POSITIVITY}
     if status in (EXCLUDED_PRE_START, UNSUBMITTABLE):
         row.update({f'{name}_bounds': [0., 1.] for name in POLICIES}, delta_bounds=[-1., 1.])
+    elif status == NO_DECISION:  # no action to change: the same (possibly unknown) end value for both
+        end = [0., 1.] if info.get('reward') is None else [float(info['reward'])] * 2
+        row.update({f'{name}_bounds': list(end) for name in POLICIES}, delta_bounds=[0., 0.])
     elif status == COMPLETE:
         values = pa_dr(decisions, float(info['reward']))
         row.update(values)
@@ -226,7 +233,8 @@ def game_bootstrap(rows, *, draws, seed, invalid_share_max, minimum):
     their share above ``invalid_share_max`` nulls the L2 interval. Below the registered minimum
     games / PA starts, no interval is reported (P8 POLICY_INFERENCE rule)."""
     _require(type(draws) is int and draws >= 1 and type(seed) is int, 'registered draws/seed required')
-    _require(isinstance(invalid_share_max, float) and 0 <= invalid_share_max <= 1, 'registered invalid share required')
+    _require(isinstance(invalid_share_max, (int, float)) and not isinstance(invalid_share_max, bool)
+             and 0 <= invalid_share_max <= 1, 'registered invalid share required')
     games = sorted({r['game'] for r in rows}, key=str)
     out = {'draws': draws, 'seed': seed, 'games': len(games), 'pa_starts': len(rows), 'unit': 'game'}
     if len(games) < minimum['games'] or len(rows) < minimum['pa_starts']:
@@ -290,8 +298,8 @@ def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, 
         games = [r['game'] for r in complete]
         ess = {name: {'pa': effective_sample_size(w), 'game': effective_sample_size(w, games)}
                for name, w in weights.items()}
-        gate = {level: min((ess[name][level] for name in POLICIES if ess[name][level] is not None), default=None)
-                for level in ('pa', 'game')}
+        gate = {level: (None if any(ess[name][level] is None for name in POLICIES)
+                        else min(ess[name][level] for name in POLICIES)) for level in ('pa', 'game')}
         result['layers']['L2_complete_conditional'] = {
             'pas': len(complete), 'delta_mean': float(np.mean(deltas)),
             'candidate_mean': float(np.mean([r['candidate'] for r in complete])),
@@ -304,6 +312,8 @@ def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, 
             result['ess']['label'] = 'UNCONFIRMED_WEAK_OVERLAP' if weak else None
     else:
         result['layers']['L2_complete_conditional'] = None
+        result['ess'] = {'gate_min_candidate_reference': {'pa': None, 'game': None},
+                         'label': None if ess_gate is None else 'UNCONFIRMED_WEAK_OVERLAP'}
     if e0:
         censored = [r for r in e0 if r['status'] == CENSORED]
         result['censoring'] = {'observed_share': len(censored) / len(e0), **{
@@ -318,12 +328,12 @@ def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, 
         'all_secondary_evaluable': _layer([s for s in secondary if s['in_population']]),
         'primary_complete_set': _layer([s for s in secondary if s['pa_id'] in same])}
     result['strata'] = strata_table(rows)
-    result['paired_identity_check'] = paired_identity_check(by_pa, pas, [r['pa_id'] for r in complete])
     return result, rows
 
 
 def strata_table(rows):
-    """Descriptive L3: counts, completes and mean delta bounds per registered stratum value."""
+    """Descriptive L3 per registered stratum value: PAs, share inside E0, completes, mean delta
+    bounds and min(candidate, reference) ESS over the complete PAs."""
     out = {}
     keys = sorted({k for r in rows for k in r['strata']} | {'end_kind'})
     for key in keys:
@@ -331,18 +341,12 @@ def strata_table(rows):
         for r in rows:
             value = r['end_kind'] if key == 'end_kind' else r['strata'].get(key)
             groups.setdefault(str(value), []).append(r)
-        out[key] = {value: {'pas': len(part), 'complete': sum(r['status'] == COMPLETE for r in part),
-                            'delta_bounds': _layer(part)['delta_bounds']} for value, part in sorted(groups.items())}
+        table = {}
+        for value, part in sorted(groups.items()):
+            complete = [r for r in part if r['status'] == COMPLETE]
+            ess = [effective_sample_size([r[f'weight_{n}'] for r in complete]) for n in POLICIES] if complete else [None]
+            table[value] = {'pas': len(part), 'share_in_population': sum(r['in_population'] for r in part) / len(part),
+                            'complete': len(complete), 'delta_bounds': _layer(part)['delta_bounds'],
+                            'ess_min_candidate_reference': None if None in ess else min(ess)}
+        out[key] = table
     return out
-
-
-def paired_identity_check(by_pa, pas, complete_ids):
-    """M-10: with the reference law in both slots every complete PA's paired delta is exactly 0."""
-    zero = True
-    for pa_id in complete_ids:
-        mirrored = []
-        for d in sorted(by_pa[pa_id], key=lambda d: d['decision_index']):
-            result = {**d['result'], 'candidate': d['result']['reference'], 'rho_candidate': d['result']['rho_reference']}
-            mirrored.append({**d, 'result': result})
-        zero &= pa_dr(mirrored, float(pas[pa_id]['reward']))['delta'] == 0.
-    return {'pas': len(complete_ids), 'all_zero': bool(zero)}

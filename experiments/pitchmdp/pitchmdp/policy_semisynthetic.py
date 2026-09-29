@@ -49,9 +49,11 @@ def _law(law, runtime, state):
     return p
 
 
-def generate_pa(runtime, simulator, start, law, rng, cap):
+def generate_pa(runtime, simulator, start, law, rng, cap, censor_hazard=None):
     """One logged PA in W: (states, actions, end, last_state). ``end`` is ('terminal', WE),
-    ('absorbed', None) after an off-mask action, or ('cap', None) when the cap was reached."""
+    ('absorbed', None) after an off-mask action, ('cap', None) when the cap was reached, or
+    ('censored', None) when a declared hazard(state, action) stops the observation after the
+    logged action (D-5 verification: the rest of the PA is not observed)."""
     state, states, actions = start, [], []
     for _ in range(cap):
         p = _law(law, runtime, state)
@@ -60,6 +62,8 @@ def generate_pa(runtime, simulator, start, law, rng, cap):
         actions.append(action)
         if not runtime.reference.support(state)[runtime.bc.actions.index(action)]:
             return states, actions, ('absorbed', None), state
+        if censor_hazard is not None and rng.random() < censor_hazard(state, action):
+            return states, actions, ('censored', None), state
         step, = simulator.step([state], [action], rng.random((1, 2)))
         if step.state is None:
             return states, actions, ('terminal', step.value), None
@@ -81,16 +85,20 @@ def policy_truth(simulator, start, policies, cutoff, *, rollouts_per_start, cap,
 
 
 def run_world(runtime, components, starts, *, law, law_identity, logs_per_start, cap, truth_rollouts, seed, draws,
-              budget, tolerance=None, absorbing_value='cutoff'):
+              budget=None, tolerance=None, absorbing_value='cutoff', censor_hazard=None):
     """Generate logs in W, estimate by DR through the runtime ledger and compare with the truth.
 
     ``starts``: [(state, pitcher_hand)] registered PA starts; a start outside E0 is reported and
     not generated. Acceptance (M-6): the pooled delta gap's 95% interval contains 0 and |gap| is
     within the registered ``tolerance`` (None: report only). Per-start gaps are diagnostics.
+    ``budget`` defaults to the runtime's own RowBudget, so one cap covers search and world.
+    With a declared ``censor_hazard`` the run checks D-5 instead: the L1 bounds against the truth.
     """
     _require(runtime.components is components and runtime.improvement is not None, 'candidate runtime required')
+    _require(logs_per_start >= 2 and truth_rollouts >= 2, 'at least two logs and two truth rollouts per start')
+    budget = runtime.improvement.simulator.budget if budget is None else budget
     world = JointSimulator(components.inputs.pool, components.g0, components.we.terminal, budget)
-    pas, excluded, ends = {}, [], {'terminal': 0, 'absorbed': 0, 'cap': 0}
+    pas, excluded, ends = {}, [], {'terminal': 0, 'absorbed': 0, 'cap': 0, 'censored': 0}
     for i, (start, hand) in enumerate(starts):
         inside, reason = runtime.start_population(start, hand)
         if not inside:
@@ -99,7 +107,7 @@ def run_world(runtime, components, starts, *, law, law_identity, logs_per_start,
         for j in range(logs_per_start):
             pa_id = f'w{i}:{j}'
             rng = np.random.default_rng(np.random.SeedSequence([seed, 0, i, j]))
-            states, actions, (end, value), last = generate_pa(runtime, world, start, law, rng, cap)
+            states, actions, (end, value), last = generate_pa(runtime, world, start, law, rng, cap, censor_hazard)
             rows = [runtime.submit(DecisionRequest(f'{pa_id}:{t}', pa_id, t, state, action, runtime.sha256, hand))
                     for t, (state, action) in enumerate(zip(states, actions))]
             _require(all(r['status'] in ('SUPPORTED', OUTSIDE_POLICY_SUPPORT) for r in rows),
@@ -115,6 +123,8 @@ def run_world(runtime, components, starts, *, law, law_identity, logs_per_start,
                     value = float(components.we.cutoff(last))
             ends[end] += 1
             pas[pa_id] = {'game': f'start{i}', 'in_population': True, 'reward': value, 'end_kind': end}
+            if end == 'censored':
+                pas[pa_id].update(reward=None, kind='NO_TERMINAL', reason='declared_hazard')
     if not pas:
         raise IntegrityError('no registered start is inside E0')
     result, rows = estimate(runtime.ledger.decisions(), pas, draws=draws, seed=seed, invalid_share_max=1.,
@@ -125,27 +135,37 @@ def run_world(runtime, components, starts, *, law, law_identity, logs_per_start,
     by_start = {}
     for row in rows:
         by_start.setdefault(int(row['pa_id'][1:].split(':')[0]), []).append(row)
+    truths = {i: policy_truth(world, starts[i][0], policies, components.we.cutoff, rollouts_per_start=truth_rollouts,
+                              cap=cap, seed=int(np.random.SeedSequence([seed, 1, i]).generate_state(1)[0]))
+              for i in sorted(by_start)}
+    runtime.verify_components()
+    world_record = {'rule': WORLD_RULE, 'absorbing_value': absorbing_value, 'law': law_identity, 'seed': seed, 'cap': cap,
+                    'logs_per_start': logs_per_start, 'truth_rollouts': truth_rollouts,
+                    'censor_hazard': None if censor_hazard is None else 'declared',
+                    'estimator': 'D89 plain sequential DR; no clipping or self-normalisation',
+                    'runtime_sha256': runtime.sha256}
+    if censor_hazard is not None:  # D-5 check: the L1 bound (mean over starts) against the truth
+        weights = {i: len(found) for i, found in by_start.items()}  # the L1 mean weights starts by their logs
+        truth_delta = float(sum(truths[i]['delta'] * n for i, n in weights.items()) / sum(weights.values()))
+        return {'world': world_record, 'starts': len(starts), 'excluded_starts': excluded, 'ends': ends,
+                'estimate': result, 'truth_delta_mean': truth_delta,
+                'l1_delta_bounds': result['layers']['L1_start_population']['delta_bounds'],
+                'accept': None, 'interpretation': 'declared-hazard censoring check of the D-5 bounds; model-internal'}
     comparison = []
     for i, found in sorted(by_start.items()):
-        truth = policy_truth(world, starts[i][0], policies, components.we.cutoff, rollouts_per_start=truth_rollouts,
-                             cap=cap, seed=int(np.random.SeedSequence([seed, 1, i]).generate_state(1)[0]))
+        truth = truths[i]
         deltas = np.array([r['delta'] for r in found])
         dr = {name: float(np.mean([r[name] for r in found])) for name in ('candidate', 'reference')}
         dr_se = {name: float(np.std([r[name] for r in found], ddof=1) / np.sqrt(len(found))) for name in dr}
         comparison.append({'start': i, 'logs': len(found), 'truth': truth, 'dr_mean': dr, 'dr_se': dr_se,
                            'delta_dr': float(deltas.mean()), 'delta_dr_se': float(deltas.std(ddof=1) / np.sqrt(len(found))),
                            'delta_gap': float(deltas.mean()) - truth['delta']})
-    runtime.verify_components()
     gap = float(np.mean([c['delta_gap'] for c in comparison]))
     gap_se = float(np.sqrt(sum(c['delta_dr_se'] ** 2 + c['truth']['delta_mc_se'] ** 2 for c in comparison))
                    / len(comparison))
     interval = [gap - 1.96 * gap_se, gap + 1.96 * gap_se]
     contains = interval[0] <= 0 <= interval[1]
-    return {'world': {'rule': WORLD_RULE, 'absorbing_value': absorbing_value, 'law': law_identity, 'seed': seed,
-                      'cap': cap, 'logs_per_start': logs_per_start, 'truth_rollouts': truth_rollouts,
-                      'estimator': 'D89 plain sequential DR; no clipping or self-normalisation',
-                      'runtime_sha256': runtime.sha256},
-            'starts': len(starts), 'excluded_starts': excluded, 'ends': ends, 'estimate': result, 'per_start': comparison,
+    return {'world': world_record, 'starts': len(starts), 'excluded_starts': excluded, 'ends': ends, 'estimate': result, 'per_start': comparison,
             'delta_gap': gap, 'delta_gap_se': gap_se, 'delta_gap_ci95': interval,
             'accept': None if tolerance is None else bool(contains and abs(gap) <= tolerance),
             'interval_contains_zero': contains,

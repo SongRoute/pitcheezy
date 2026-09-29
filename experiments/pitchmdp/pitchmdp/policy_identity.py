@@ -27,8 +27,8 @@ from .data import hash_file
 from .matrix_data import canonical_hash
 from .matrix_policy import SAFE_COLUMNS, FrozenWE, PolicyInputs
 from .matrix_sharing import SharingContext
-from .policy_artifacts import (G0_SEEDS, IntegrityError, _require, _sha, bc_payload, load_g0_ensemble,
-                               validate_g0_manifest, vocabulary_sha256)
+from .policy_artifacts import (G0_SEEDS, IntegrityError, _require, _sha, bc_payload, load_g0_ensemble, normalize_hand,
+                               single_hand, validate_g0_manifest, vocabulary_sha256)
 
 CONTRACT = 'ML-POLICY-IDENTITY-v1'
 REPO = Path(__file__).resolve().parents[3]
@@ -245,9 +245,8 @@ class BoundComponents:
         # PolicyInputs.support would swallow this mismatch as an empty (and cached) support.
         _require(str(int(row['pitcher'])) == state.pitcher and row['stand'] == state.batter_side,
                  'request pitcher/batter side differ from the bound context row')
-        row_hand = row.get('p_throws')
-        row_hand = None if row_hand is None or (isinstance(row_hand, float) and np.isnan(row_hand)) else str(row_hand)
-        _require(row_hand == pitcher_hand, 'request pitcher hand differs from the bound context row')
+        _require(normalize_hand(row.get('p_throws')) == normalize_hand(pitcher_hand),
+                 'request pitcher hand differs from the bound context row')
 
     def check_support(self, state, mask):
         """Per-request link of the pinned support table to the bound delivery pools."""
@@ -485,10 +484,7 @@ def hand_registry(train_rows, pitchers):
     for pitcher in pitchers:
         part = groups.get(str(pitcher))
         _require(part is not None, f'BC pitcher without TRAIN rows: {pitcher}')
-        values = part.p_throws
-        observed = set(values.dropna().astype(str))
-        single = not values.isna().any() and len(observed) == 1 and observed <= {'L', 'R'}
-        hands[str(pitcher)] = next(iter(observed)) if single else 'AMBIGUOUS'
+        hands[str(pitcher)] = single_hand(part.p_throws.tolist())
     return hands
 
 

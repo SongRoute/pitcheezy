@@ -38,10 +38,10 @@ import pandas as pd
 
 from pitchmdp.data import KEY, hash_file
 from pitchmdp.matrix_data import canonical_hash, ordered_key_hash
-from pitchmdp.matrix_policy import safe_rows
+from pitchmdp.matrix_policy import context_key, safe_rows
 from pitchmdp.policy_artifacts import (IntegrityError, _require, export_train_bc, load_hand_registry,
-                                       load_style_snapshot, load_support_table, load_train_bc, save_hand_registry,
-                                       save_style_snapshot, save_support_table)
+                                       load_style_snapshot, load_support_table, load_train_bc, normalize_hand,
+                                       save_hand_registry, save_style_snapshot, save_support_table)
 from pitchmdp import policy_estimator as est
 from pitchmdp import policy_identity as pid
 from pitchmdp import policy_requests as preq
@@ -64,17 +64,49 @@ DECISION_VALUES = {  # D93: the user's decisions (2026-09-29); nothing else can 
     'D-9': 'two_stage_profile_then_overlap_noise', 'D-10': 'absorb_off_mask', 'D-11': 'measure_first_hang_guard'}
 ADDENDUM_KEYS = {'parent_sha256', 'stage', 'registered_inputs', 'expected_identity_sha256', 'note'}
 SEED_ROLES = ('evaluation', 'bootstrap', 'v2', 'selection_salt', 'profile_salt')
-REQUIRED = {  # fields a stage reads; null = unregistered = refuse before any data is touched
-    'profile': ('S3_profile.starts', 'S3_profile.probe_setting.samples', 'S3_profile.probe_setting.pitch_cap',
-                'S3_profile.row_budget', 'S3b_tau_select.tau_grid'),
-    'tau-select': ('S3b_tau_select.n_games', 'S3b_tau_select.tau_grid', 'S3b_tau_select.thresholds.pa_ess_ratio_min',
-                   'S3b_tau_select.thresholds.game_ess_min', 'S3b_tau_select.thresholds.ess_ratio_candidate_reference_min',
-                   'S3b_tau_select.thresholds.noise_ratio_q90_max', 'S3b_tau_select.thresholds.safety_multiplier',
-                   'S3b_tau_select.row_budget'),
-    'v2-world': ('S5_V2_V3.starts', 'S5_V2_V3.logs_per_start', 'S5_V2_V3.truth_rollouts', 'S5_V2_V3.cap',
-                 'S5_V2_V3.row_budget', 'S5_V2_V3.tempered_alpha_grid'),
-    'dr-evaluate': ('S6_V4.n_games', 'S6_V4.row_budget', 'S6_V4.dr_q_source'),
+P, S = 'le2025_validation_plan', 'le2025_validation_plan.stages'
+REQUIRED = {  # config fields a stage reads; null = unregistered = refuse before any data is touched
+    '*': (f'{P}.local_config.sha256', f'{P}.output_root', 'pa_time_rules.R3_codes.no_pitch_descriptions', 'seeds.base'),
+    'census': (f'{S}.S0_census.hang_guard_seconds', f'{S}.S0_census.outcome_adjacent_splits',
+               'pa_time_rules.R7_mid_pa_change.thresholds_before_S0.switch_to_secondary_primary_if_unknown_change_share_above',
+               'pa_time_rules.R7_mid_pa_change.thresholds_before_S0.light_version_if_below'),
+    'materialize-bc': (f'{S}.S1_materialize.hang_guard_seconds', f'{S}.S1_materialize.gates.bc_e_rows',
+                       f'{S}.S1_materialize.gates.bc_e_actions', f'{S}.S1_materialize.gates.token_vocabulary',
+                       f'{S}.S1_materialize.gates.train_rows', 'train_bc_plan.bc_parameters.prior_strength',
+                       'train_bc_plan.bc_parameters.minimum_action_count', 'subgroups.volume_quantiles'),
+    'style-snapshot': (f'{S}.S1b_style_snapshot.hang_guard_seconds', f'{S}.S1b_style_snapshot.as_of_exclusive.dev',
+                       f'{S}.S1b_style_snapshot.as_of_exclusive.temperature', f'{S}.S1b_style_snapshot.as_of_exclusive.blend'),
+    'bind-probe': (f'{S}.S2_bind_probe.hang_guard_seconds', f'{S}.S2_bind_probe.rows', f'{S}.S2_bind_probe.atol_primary',
+                   f'{S}.S2_bind_probe.atol_frequency_raw'),
+    'profile': (f'{S}.S3_profile.starts', f'{S}.S3_profile.candidates', f'{S}.S3_profile.row_budget',
+                f'{S}.S3_profile.selection_row_budget.rows', f'{S}.S3_profile.selection_row_budget.decisions',
+                f'{S}.S3b_tau_select.tau_grid', f'{S}.S6_V4.dr_q_source', 'seeds.planning_main'),
+    'tau-select': (f'{S}.S3b_tau_select.n_games', f'{S}.S3b_tau_select.tau_grid', f'{S}.S3b_tau_select.row_budget',
+                   f'{S}.S3b_tau_select.thresholds.pa_ess_ratio_min', f'{S}.S3b_tau_select.thresholds.game_ess_min',
+                   f'{S}.S3b_tau_select.thresholds.ess_ratio_candidate_reference_min',
+                   f'{S}.S3b_tau_select.thresholds.noise_ratio_q90_max', f'{S}.S3b_tau_select.thresholds.safety_multiplier',
+                   f'{S}.S3b_tau_select.determinism_check_pas', f'{S}.S2_bind_probe.atol_primary',
+                   f'{S}.S6_V4.dr_q_source', 'ess_gate.thresholds.game', 'seeds.planning_main'),
+    'v5-denominators': (f'{S}.S4_V5_denominators.hang_guard_seconds',),
+    'v2-world': (f'{S}.S5_V2_V3.n_games', f'{S}.S5_V2_V3.logs_per_start', f'{S}.S5_V2_V3.truth_rollouts',
+                 f'{S}.S5_V2_V3.cap', f'{S}.S5_V2_V3.row_budget_per_run', f'{S}.S5_V2_V3.tempered_alpha_grid',
+                 f'{S}.S5_V2_V3.tolerance', f'{S}.S6_V4.dr_q_source', f'{P}.bootstrap.draws', 'seeds.planning_v2'),
+    'dr-evaluate': (f'{S}.S6_V4.n_games', f'{S}.S6_V4.row_budget', f'{S}.S6_V4.dr_q_source', f'{P}.bootstrap.draws',
+                    f'{P}.bootstrap.invalid_share_max', f'{P}.bootstrap.minimum.games', f'{P}.bootstrap.minimum.pa_starts',
+                    'ess_gate.thresholds.pa', 'ess_gate.thresholds.game', 'sensitivity.same_ledger', 'seeds.planning_main'),
 }
+PREREQUISITES = {  # registered inputs (sealed stage outputs) a stage needs, checked before any data load
+    'census': (), 'materialize-bc': ('census',), 'style-snapshot': ('census',),
+    'bind-probe': ('census', 'bc', 'materialize'),
+    'v5-denominators': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe'),
+    'profile': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'style_temperature'),
+    'tau-select': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'style_blend', 'profile'),
+    'v2-world': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'style_dev', 'profile', 'tau_freeze',
+                 'v5'),
+    'dr-evaluate': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'style_dev', 'profile',
+                    'tau_freeze', 'v5', 'v2'),
+}
+CODE_PATHS = ('experiments', 'src', 'scripts')  # a registered run needs these unchanged since the source commit
 SOURCES = ('experiments/pitchmdp/scripts/run_policy_validation.py', 'experiments/pitchmdp/pitchmdp/policy_requests.py',
            'experiments/pitchmdp/pitchmdp/policy_estimator.py', 'experiments/pitchmdp/pitchmdp/policy_runtime.py',
            'experiments/pitchmdp/pitchmdp/policy_semisynthetic.py', 'experiments/pitchmdp/pitchmdp/policy_tau.py',
@@ -112,10 +144,24 @@ def registration(config, command=None):
     if command not in EARLY:
         _require((gates.get('independent_review') or {}).get('status') == 'PASS',
                  'independent review gate not passed: S3 and later stay closed (M-3)')
-    plan = config['le2025_validation_plan']
-    _require(isinstance((plan.get('local_config') or {}).get('sha256'), str), 'local config pin required')
-    for dotted in REQUIRED.get(command, ()):
-        _require(_field(plan['stages'], dotted) is not None, f'registered field required: stages.{dotted}')
+    for dotted in REQUIRED['*'] + REQUIRED[command]:
+        _require(_field(config, dotted) is not None, f'registered field required: {dotted}')
+    stages = config['le2025_validation_plan']['stages']
+    if command in ('profile', 'tau-select', 'v2-world', 'dr-evaluate'):
+        _require(stages['S6_V4']['dr_q_source'] in ('evaluation_seed', 'planning_reuse'), 'unknown S6 dr_q_source (M-7)')
+    if command == 'profile':  # the D-9a selection must fit the budget S3b actually runs under
+        _require(stages['S3_profile']['selection_row_budget']['rows'] == stages['S3b_tau_select'].get('row_budget'),
+                 'S3 selection row budget must equal the S3b row budget')
+    if command == 'tau-select':  # D-9 critic 5: tau is chosen against the same game gate S6/2026 use
+        _require(stages['S3b_tau_select']['thresholds']['game_ess_min'] == config['ess_gate']['thresholds']['game'],
+                 'S3b game ESS threshold must equal the registered ESS gate')
+    if command == 'v2-world':
+        _require(stages['S5_V2_V3']['logs_per_start'] >= 2 and stages['S5_V2_V3']['truth_rollouts'] >= 2,
+                 'V2 needs at least two logs and two truth rollouts per start')
+    if command == 'dr-evaluate':
+        share = config['le2025_validation_plan']['bootstrap']['invalid_share_max']
+        _require(isinstance(share, (int, float)) and not isinstance(share, bool) and 0 <= share <= 1,
+                 'bootstrap.invalid_share_max must be a registered share in [0, 1]')
     return decisions
 
 
@@ -148,18 +194,29 @@ def hash_file_bytes(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def git_state():
-    head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip()
-    dirty = subprocess.check_output(['git', 'status', '--porcelain'], cwd=REPO, text=True).strip()
-    return {'commit': head, 'dirty': bool(dirty)}
+def git_state(source=None):
+    """HEAD, uncommitted changes under the code paths, and code paths changed since ``source``."""
+    run = lambda *args: subprocess.check_output(['git', *args], cwd=REPO, text=True).strip()
+    state = {'commit': run('rev-parse', 'HEAD'), 'code_dirty': bool(run('status', '--porcelain', '--', *CODE_PATHS)),
+             'source_is_ancestor': None, 'code_changed_since_source': None}
+    if source:
+        state['source_is_ancestor'] = subprocess.call(['git', 'merge-base', '--is-ancestor', source, 'HEAD'], cwd=REPO,
+                                                      stderr=subprocess.DEVNULL) == 0
+        state['code_changed_since_source'] = [line for line in run('diff', '--name-only', source, 'HEAD', '--',
+                                                                   *CODE_PATHS).splitlines() if line]
+    return state
 
 
 def enforce_source(config, state=None):
-    """C15: the registered source commit is HEAD on a clean tree; the member loader matches its pin."""
-    state = git_state() if state is None else state
+    """C15/C29: the code at HEAD is the registered source commit's code (HEAD may add registration
+    commits: configs, addenda, docs), with no uncommitted change under the code paths; the member
+    loader matches its pin. The locally retargeted ``runs`` symlink is outside the code paths."""
     source = config['le2025_validation_plan'].get('source_commit')
-    _require(isinstance(source, str) and state['commit'] == source, 'HEAD differs from the registered source commit')
-    _require(not state['dirty'], 'working tree is dirty; refusing to run')
+    _require(isinstance(source, str) and source, 'registered source commit required')
+    state = git_state(source) if state is None else state
+    _require(state['source_is_ancestor'] is True and not state['code_changed_since_source'],
+             'code at HEAD differs from the registered source commit')
+    _require(not state['code_dirty'], 'uncommitted changes under the code paths; refusing to run')
     loader = config['identity_registration']['member_loader']
     _require(hash_file(REPO / loader['file']) == loader['sha256'], 'member loader source differs from its pin')
     return state
@@ -237,8 +294,9 @@ def guard_dates(frame):
 
 # ---------------------------------------------------------------- S0 census
 
-def run_census(frame, vocabulary, no_pitch):
-    return {'census': preq.census(guard_dates(frame), vocabulary, no_pitch=frozenset(no_pitch)), 'label_blind': True}
+def run_census(frame, vocabulary, no_pitch, outcome_adjacent_splits=('train',)):
+    return {'census': preq.census(guard_dates(frame), vocabulary, no_pitch=frozenset(no_pitch),
+                                  outcome_adjacent_splits=tuple(outcome_adjacent_splits)), 'label_blind': True}
 
 
 # ---------------------------------------------------------------- S1 TRAIN BC, hands and support table
@@ -275,16 +333,19 @@ def logging_mass_report(bc, table):
             'decision_share_mass_zero': float(weights[masses == 0].sum() / weights.sum())}
 
 
-def s1_gates(frame, rows_p, rows_e, art_p, art_e, gates):
+def s1_gates(frame, rows_p, rows_e, art_p, art_e, gates, prep_vocabulary):
     """D-1 fail-closed S1 gates registered before the BC exists (FAILED_INTEGRITY on any miss)."""
     keys_p = set(map(tuple, rows_p[KEY].to_numpy().tolist()))
     keys_e = set(map(tuple, rows_e[KEY].to_numpy().tolist()))
     train_rows = int(frame.split.eq('train').sum())
-    checks = {'bc_e_rows': len(rows_e) == gates['bc_e_rows'],
+    checks = {'train_rows_equal_registered': train_rows == gates['train_rows'],
+              'token_vocabulary_equals_pinned_preparation': list(gates['token_vocabulary']) == list(prep_vocabulary),
+              'bc_e_rows': len(rows_e) == gates['bc_e_rows'],
               'bc_e_actions': list(art_e.vocabulary) == list(gates['bc_e_actions']),
               'bc_e_keys_inside_bc_p': keys_e <= keys_p,
               'bc_p_rows_between_bc_e_and_train': gates['bc_e_rows'] <= len(rows_p) <= train_rows,
-              'bc_p_vocabulary_equals_token_vocabulary': list(art_p.vocabulary) == list(gates['token_vocabulary'])}
+              'bc_p_vocabulary_equals_token_vocabulary': list(art_p.vocabulary) == list(gates['token_vocabulary']),
+              'bc_p_batter_side_known': bool(rows_p.stand.map(normalize_hand).isin(['L', 'R']).all())}
     cells_e, cells_p = art_e.bc.cells, art_p.bc.cells
     checks['bc_p_cell_counts_dominate_bc_e'] = all(cells_p.get(key, {}).get(a, 0) >= n
                                                    for key, counter in cells_e.items() for a, n in counter.items())
@@ -294,8 +355,32 @@ def s1_gates(frame, rows_p, rows_e, art_p, art_e, gates):
             'rows_bc_p_minus_bc_e': len(rows_p) - len(rows_e)}
 
 
+def change_decision_report(train_rows, bc, table, no_pitch):
+    """D-4 critic 5 (TRAIN, label-blind): decisions right after a pitcher change inside a PA, the
+    share whose BC cell is empty (pi_b_hat falls back to the pitcher frequency) and their pi_b_hat(M|H)."""
+    rows = train_rows.reset_index(drop=True)
+    same_pa = rows.game_pk.eq(rows.game_pk.shift()) & rows.at_bat_number.eq(rows.at_bat_number.shift())
+    changed = np.flatnonzero((same_pa & rows.pitcher.ne(rows.pitcher.shift())).to_numpy())
+    empty, masses = 0, []
+    for i in changed:
+        row, previous = rows.iloc[i], rows.iloc[i - 1]
+        label = preq.logged_label(previous.pitch_type, previous.description, no_pitch)
+        action = '<UNKNOWN>' if label in prt.SENTINELS else label
+        pitcher = str(int(row.pitcher))
+        if pitcher not in bc.pitchers or not (0 <= row.balls <= 3 and 0 <= row.strikes <= 2):
+            continue
+        state = PAState(int(row.balls), int(row.strikes), pitcher, str(row.stand), (PastPitch(action, (0.,) * 8, 'unknown', 0, 0),))
+        empty += bc._key(state) not in bc.cells
+        mask = table.get((pitcher, str(row.stand)))
+        if mask is not None and bc.support(state).any():
+            masses.append(float(bc.probabilities(state)[mask & bc.support(state)].sum()))
+    return {'decisions_after_change': int(len(changed)), 'empty_bc_cells': int(empty),
+            'pi_b_hat_mass_on_mask_quantiles': ({str(q): float(np.quantile(masses, q)) for q in (.05, .25, .5)}
+                                                if masses else None)}
+
+
 def run_materialize(frame, store, output, *, provenance, bind_inputs, train_keys, keys_record, gates, bc_parameters,
-                    no_pitch, volume_quantiles):
+                    no_pitch, volume_quantiles, prep_vocabulary):
     """Export BC_P (primary) and BC_E (reproduction gate/descriptive only), the TRAIN hand
     registry, the intervention support table over single-hand pitchers and the TRAIN reports.
 
@@ -313,7 +398,7 @@ def run_materialize(frame, store, output, *, provenance, bind_inputs, train_keys
         artifacts[name] = export_train_bc(store, part, output / f'bc_{name}.json', **{**provenance, 'source_ids': ids},
                                           **bc_parameters)
     primary = artifacts['BC_P']
-    gate = s1_gates(frame, rows['BC_P'], rows['BC_E'], primary, artifacts['BC_E'], gates)
+    gate = s1_gates(frame, rows['BC_P'], rows['BC_E'], primary, artifacts['BC_E'], gates, prep_vocabulary)
     train = frame.loc[frame.split.eq('train')]
     hands = pid.hand_registry(train, primary.bc.pitchers)
     _, hands_file_sha = save_hand_registry(primary, hands, int(len(train)), output / 'hands.json')
@@ -323,16 +408,33 @@ def run_materialize(frame, store, output, *, provenance, bind_inputs, train_keys
     _, support_file_sha = save_support_table(primary, support, output / 'support_primary.json')
     table, support_sha = load_support_table(output / 'support_primary.json', support_file_sha, primary)
     rare = [a for a in ('UN', 'PO', 'FA', 'EP') if a in primary.vocabulary]
+    only_p = sorted(set(primary.bc.pitchers) - set(artifacts['BC_E'].bc.pitchers))
+    clustered = set((inputs.context_encoder.clusters or {}).get('pitcher_cluster', {}))
+    keys = {(str(int(r['pitcher'])), str(r['stand'])): context_key(r) for r in templates.to_dict('records')}
+    pitcher_levels = {level for level, columns in enumerate(inputs.delivery.TIERS) if 'pitcher' in columns}
+    league_only = 0
+    for pitcher, side, mask in support:  # D-1 critic 5(b): M of BC-P-only pitchers from league/type pools only
+        if pitcher in only_p:
+            state = PAState(0, 0, pitcher, side, (), keys[(pitcher, side)])
+            for action in (a for a, ok in zip(primary.vocabulary, mask) if ok):
+                inputs.pool(state, action, count_access=False)
+                row = inputs.query(state, action)
+                signature = tuple(row[k] for k in ('pitcher', 'pitch_type', 'p_throws', 'stand', 'balls', 'strikes'))
+                league_only += inputs.pool_cache[signature][1] not in pitcher_levels
     report = {'bc': {name: {**art.identity(), 'train_rows': art.provenance['train_rows'], 'rule': rule[name],
                             'vocabulary': list(art.vocabulary)} for name, art in artifacts.items()},
               'bc_roles': {'BC_P': 'registered pi_b_hat and reference base', 'BC_E': 'S1 reproduction gate and '
                            'descriptive comparison only; never used for estimation, selection or sensitivity'},
               's1_gates': gate,
+              'bc_p_only_pitchers': {'count': len(only_p), 'without_g0_cluster': sum(p not in clustered for p in only_p),
+                                     'support_actions_from_league_tiers_only': int(league_only),
+                                     'rule': 'evaluated and reported as a post-hoc stratum (D-1 critic 5)'},
               'hands': {'file_sha256': hands_file_sha, 'ambiguous': sum(h == 'AMBIGUOUS' for h in hands.values()),
                         'single': sum(h != 'AMBIGUOUS' for h in hands.values())},
               'support_table': {'file_sha256': support_file_sha, 'content_sha256': support_sha, 'rows': len(support),
                                 'rare_codes_in_support': {a: sum(bool(m[primary.vocabulary.index(a)]) for *_, m in support)
                                                           for a in rare}},
+              'change_decisions': change_decision_report(train, primary.bc, table, no_pitch),
               'inputs_identity': inputs_identity,
               'logging_mass_on_mask': logging_mass_report(primary.bc, table),
               'volume_edges': preq.volume_edges(train, volume_quantiles), 'volume_quantiles': list(volume_quantiles)}
@@ -343,13 +445,26 @@ def run_materialize(frame, store, output, *, provenance, bind_inputs, train_keys
 # ---------------------------------------------------------------- S1b style snapshots (D-7)
 
 def run_style_snapshots(frame, output, as_of, provenance):
+    """Pinned window-start snapshots plus the label-blind D-7 diagnostics for each window: share of
+    rows whose frozen prior differs from the rolling one, |delta| quantiles per column, rows mapped
+    to the league row. (The G0 prediction shift needs a bind and is not computed here.)"""
     out = {}
     for split, day in sorted(as_of.items()):
         snapshot = preq.style_snapshot(frame, day)
         source = {**provenance, 'rows_before_as_of': int((pd.to_datetime(frame.game_date) < day).sum())}
         payload, file_sha = save_style_snapshot(snapshot, day, source, output / f'style_{split}.json')
+        window = frame.loc[frame.split.eq(split) & (pd.to_datetime(frame.game_date) >= day)]
+        diagnostics = None
+        if len(window):
+            applied, unknown = preq.apply_style_snapshot(window, snapshot, day)
+            columns = list(preq.HISTORY_COLUMNS)
+            delta = np.abs(applied[columns].to_numpy(np.float64) - window[columns].to_numpy(np.float64))
+            diagnostics = {'rows': int(len(window)), 'rows_differing_from_rolling': float((delta > 0).any(axis=1).mean()),
+                           'abs_delta_quantiles': {c: {str(q): float(np.quantile(delta[:, j], q)) for q in (.5, .9, .99)}
+                                                   for j, c in enumerate(columns)}, **unknown,
+                           'rolling_check_on_as_of': preq.snapshot_rolling_mismatches(window, snapshot, day)}
         out[split] = {'file_sha256': file_sha, 'as_of_exclusive': day, 'batters': len(snapshot) - 1,
-                      'content_sha256': canonical_hash(payload)}
+                      'content_sha256': canonical_hash(payload), 'diagnostics': diagnostics}
     dump(output / 'style_snapshots.json', out)
     return out
 
@@ -373,15 +488,15 @@ def blocks_containing(frame, positions):
     return preq.pa_blocks(frame, positions)
 
 
-def run_bind_probe(store, components, sealed, *, count, atol_primary, atol_frequency):
+def run_bind_probe(store, components, sealed, *, count, atol_primary, atol_frequency, no_pitch):
     """Policy path vs sealed evaluation path on registered probe rows (no labels read); a failed
     comparison fails the stage (the report is kept)."""
     chosen, positions = probe_positions(sealed['keys'], sealed['levels'], store.frame, count)
     requests = {}
     for _, block in blocks_containing(store.frame, positions):
-        built, problem, index = preq.pa_requests(store, block, 'probe')
-        _require(problem is None or index > int(np.max(np.searchsorted(block, positions))),
-                 f'probe PA unsubmittable before a probe row: {problem}')
+        built, problem, index = preq.pa_requests(store, block, 'probe', no_pitch)
+        offsets = [int(p - block[0]) for p in positions if block[0] <= p <= block[-1]]
+        _require(len(built) > max(offsets), f'probe PA unsubmittable at or before a probe row: {problem}')
         requests.update(zip(block.tolist(), built))
     states = [requests[int(p)].state for p in positions]
     actions = [requests[int(p)].logged_action for p in positions]
@@ -389,7 +504,8 @@ def run_bind_probe(store, components, sealed, *, count, atol_primary, atol_frequ
     frequency_rows = pd.DataFrame([components.inputs.query(s, a) for s, a in zip(states, actions)])
     raw = components.g0.baseline.baseline.predict(frequency_rows)
     dates = pd.to_datetime(store.frame.game_date.iloc[positions]).dt.strftime('%Y-%m-%d')
-    report = {'rows': count, 'sealed_indices': chosen.tolist(), 'probe_dates': dict(dates.value_counts().sort_index()),
+    report = {'rows': count, 'sealed_indices': chosen.tolist(),
+              'probe_dates': {str(k): int(v) for k, v in dates.value_counts().sort_index().items()},
               'primary': pid.compare_probe(primary, sealed['primary'][chosen], atol_primary),
               'frequency_raw': pid.compare_probe(raw, sealed['frequency_raw'][chosen], atol_frequency),
               'verify': components.verify()}
@@ -398,6 +514,10 @@ def run_bind_probe(store, components, sealed, *, count, atol_primary, atol_frequ
 
 
 # ---------------------------------------------------------------- runtime passes
+
+def _counts(values):
+    return {str(k): int(v) for k, v in pd.Series(list(values), dtype=object).value_counts().items()}
+
 
 def submit_pas(runtime, store, blocks, deadline, *, no_pitch, facts=None, outcome=None):
     """Submit every request of every PA (refusals stay in the ledger). Returns {pa_id: facts} with
@@ -427,9 +547,9 @@ def submit_pas(runtime, store, blocks, deadline, *, no_pitch, facts=None, outcom
 
 
 def seal_counts(facts, runtime, expected_pas):
-    """Seal condition (D-11): every PA of the selection was handled once and every submitted request
-    has exactly one ledger decision row (a fresh stage ledger)."""
-    _require(len(facts) == expected_pas, 'handled PAs differ from the expected count')
+    """Seal condition (D-11/M-10): every PA the pinned census lists for the selection was handled
+    once, and every submitted request has exactly one ledger decision row (a fresh stage ledger)."""
+    _require(len(facts) == expected_pas, 'handled PAs differ from the pinned census count')
     submitted = sum(info['submitted'] for info in facts.values())
     _require(submitted == len(runtime.ledger.decisions()), 'ledger decision rows differ from the submitted requests')
     return {'pas': len(facts), 'requests': submitted}
@@ -442,13 +562,11 @@ def run_v5(runtime, store, blocks, deadline, *, no_pitch, census_split=None):
     sealed = seal_counts(facts, runtime, len(blocks) if census_split is None else census_split['pas'])
     masses = np.array([r['result']['logging_mass_on_mask'] for r in rows if r['status'] in prt.EVALUATED])
     outside = sum(r['status'] == prt.OUTSIDE_POLICY_SUPPORT for r in rows)
-    problems = pd.Series([f['problem'] for f in facts.values() if f['problem'] is not None], dtype=object)
     return {'pas_in_split': len(blocks), 'pas_handled': len(facts), 'sealed_counts': sealed,
-            'structural_problems': {str(k): int(v) for k, v in problems.value_counts().items()},
+            'structural_problems': _counts(f['problem'] for f in facts.values() if f['problem'] is not None),
             'start_population': {'inside': sum(f['in_population'] for f in facts.values()),
-                                 'outside_reasons': dict(pd.Series([f['start_reason'] for f in facts.values()
-                                                                    if not f['in_population']], dtype=object)
-                                                         .value_counts().astype(int))},
+                                 'outside_reasons': _counts(f['start_reason'] for f in facts.values()
+                                                            if not f['in_population'])},
             'summary': runtime.summary(),
             'logged_outside_mask_share_of_evaluated': float(outside / len(masses)) if len(masses) else None,
             'logging_mass_on_mask_quantiles': ({str(q): float(np.quantile(masses, q)) for q in (.01, .05, .25, .5)}
@@ -477,9 +595,27 @@ def variant_facts(facts, variant, store, components, games):
     return out
 
 
-def run_dr(runtime, store, components, blocks, deadline, *, no_pitch, bootstrap, ess_gate, sensitivities, strata=None):
-    """Candidate runtime over the selected PAs, PA-end facts from the verified WE, then the DR estimator
-    (primary) and the registered same-ledger sensitivities."""
+def paired_identity_run(runtime, store, blocks, facts, rows, *, no_pitch, kwargs):
+    """M-10 / D89 V4(e): the same requests through an independent cand=ref runtime; every complete
+    PA's paired delta must be exactly 0 and the complete set must equal the primary run's."""
+    pair_facts = submit_pas(runtime, store, blocks, Deadline(), no_pitch=no_pitch)
+    for pa_id, info in pair_facts.items():  # the PA end is the same observed fact
+        info.update({k: facts[pa_id].get(k) for k in ('reward', 'reason', 'kind', 'end', 'end_kind', 'flags')})
+    _, pair_rows = est.estimate(runtime.ledger.decisions(), pair_facts, **{**kwargs, 'ess_gate': None})
+    complete = {r['pa_id'] for r in pair_rows if r['status'] == est.COMPLETE}
+    deltas = [abs(r['delta']) for r in pair_rows if r['status'] == est.COMPLETE]
+    record = {'pas': len(complete), 'max_abs_delta': float(max(deltas, default=0.)),
+              'complete_sets_equal': bool(complete == {r['pa_id'] for r in rows if r['status'] == est.COMPLETE}),
+              'runtime_sha256': runtime.sha256}
+    record['pass'] = bool(record['complete_sets_equal'] and record['max_abs_delta'] == 0.)
+    _require(record['pass'], f'M-10 cand=ref paired identity run failed: {record}')
+    return record
+
+
+def run_dr(runtime, store, components, blocks, deadline, *, no_pitch, bootstrap, ess_gate, sensitivities, strata=None,
+           expected_pas=None, pair=None):
+    """Candidate runtime over the selected PAs, PA-end facts from the verified WE, the DR estimator
+    (primary), the registered same-ledger sensitivities and (``pair``) the M-10 paired run."""
     games = preq.game_table(store.frame)
     facts = submit_pas(runtime, store, blocks, deadline, no_pitch=no_pitch,
                        outcome=outcome_function(store, components, games, 'structural-end-v1'))
@@ -488,7 +624,7 @@ def run_dr(runtime, store, components, blocks, deadline, *, no_pitch, bootstrap,
             info['strata'] = strata(pa_id, info)
     kwargs = dict(draws=bootstrap['draws'], seed=bootstrap['seed'], invalid_share_max=bootstrap['invalid_share_max'],
                   minimum=bootstrap['minimum'], ess_gate=ess_gate)
-    sealed = seal_counts(facts, runtime, len(blocks))
+    sealed = seal_counts(facts, runtime, len(blocks) if expected_pas is None else expected_pas)
     result, rows = est.estimate(runtime.ledger.decisions(), facts, **kwargs)
     result['sealed_counts'] = sealed
     result['sensitivity'] = {}
@@ -498,6 +634,8 @@ def run_dr(runtime, store, components, blocks, deadline, *, no_pitch, bootstrap,
         result['sensitivity'][variant] = {'layers': other['layers'], 'status': other['status'],
                                           'label': 'registered sensitivity; descriptive'}
     runtime.verify_components()
+    result['paired_identity_run'] = (None if pair is None else
+                                     paired_identity_run(pair(), store, blocks, facts, rows, no_pitch=no_pitch, kwargs=kwargs))
     result.update(pas_in_selection=len(blocks), reward_flags=int(sum(bool(r['flags']) for r in rows
                                                                      if r['status'] == est.COMPLETE)),
                   ledger=runtime.summary(), seconds=deadline.elapsed(),
@@ -507,10 +645,19 @@ def run_dr(runtime, store, components, blocks, deadline, *, no_pitch, bootstrap,
 
 # ---------------------------------------------------------------- selection helpers
 
+def straddling_games(frame):
+    """Games with rows in more than one split (e.g. suspended in June, resumed in July)."""
+    splits = frame.groupby('game_pk').split.nunique()
+    return sorted(int(g) for g in splits.index[splits > 1])
+
+
 def select_games(frame, split, n_games, salt):
     """M-1: complete games of ``split`` by salted hash order, allocated to months in proportion to
-    their game counts (largest remainder); every PA of a chosen game is kept."""
-    part = frame.loc[frame.split.eq(split), ['game_pk', 'game_date']].drop_duplicates('game_pk')
+    their game counts (largest remainder); every PA of a chosen game is kept. Games that straddle a
+    split boundary are never chosen (date rule only; reported by the stage)."""
+    straddle = set(straddling_games(frame))
+    part = frame.loc[frame.split.eq(split) & ~frame.game_pk.isin(straddle), ['game_pk', 'game_date']]
+    part = part.drop_duplicates('game_pk')
     part = part.assign(month=pd.to_datetime(part.game_date).dt.strftime('%Y-%m'))
     _require(0 < n_games <= len(part), 'registered game count outside the split')
     counts = part.month.value_counts().sort_index()
@@ -525,9 +672,15 @@ def select_games(frame, split, n_games, salt):
     return sorted(chosen)
 
 
-def game_blocks(frame, games):
-    positions = np.flatnonzero(frame.game_pk.isin(games).to_numpy())
+def game_blocks(frame, games, split):
+    positions = np.flatnonzero((frame.game_pk.isin(games) & frame.split.eq(split)).to_numpy())
     return preq.pa_blocks(frame, positions)
+
+
+def census_pas(census_split, games):
+    counts = census_split['pas_by_game']
+    _require(all(str(g) in counts for g in games), 'selected game missing from the pinned census')
+    return sum(counts[str(g)] for g in games)
 
 
 def strata_function(frame, volume_edges):
@@ -564,16 +717,21 @@ def pinned_parquet(path, sha256):
     return pd.read_parquet(io.BytesIO(pinned_bytes(path, sha256)))
 
 
-def registered_json(reg, name):
-    entry = reg['inputs'].get(name)
-    _require(isinstance(entry, dict) and entry.get('file_sha256'), f'registered input required: {name}')
-    return json.loads(pinned_bytes(entry['path'], entry['file_sha256']))
-
-
 def registered_path(reg, name):
+    """A registered input must be a file listed with the same sha256 in the manifest.json of a
+    sealed stage directory (the manifest exists only for a successful stage; M-2/M-10)."""
     entry = reg['inputs'].get(name)
     _require(isinstance(entry, dict) and entry.get('file_sha256'), f'registered input required: {name}')
-    return Path(entry['path']), entry['file_sha256']
+    path, sha = Path(entry['path']), entry['file_sha256']
+    manifest = path.parent / 'manifest.json'
+    _require(manifest.exists(), f'registered input {name} is not inside a sealed stage directory')
+    listed = json.loads(manifest.read_bytes()).get('artifact_sha256', {})
+    _require(listed.get(path.name) == sha, f'registered input {name} differs from its sealed stage manifest')
+    return path, sha
+
+
+def registered_json(reg, name):
+    return json.loads(pinned_bytes(*registered_path(reg, name)))
 
 
 def load_inputs(config, local, *, store=True):
@@ -637,9 +795,46 @@ def check_output(output, plan):
     return root
 
 
+SPLIT_OF = {'materialize-bc': 'train', 'profile': 'temperature', 'tau-select': 'blend', 'v5-denominators': 'dev',
+            'v2-world': 'dev', 'dr-evaluate': 'dev'}
+
+
+def prerequisites(command, reg):
+    """Everything a stage needs from earlier stages, checked before any data load: sealed pins,
+    the R3(b) census code gate for the stage's split, the S2 pass, the D-9a selection (samples >= 3
+    for the noise rule), a selected tau, a sealed S4 record and the V2 acceptance."""
+    for name in PREREQUISITES[command]:
+        registered_path(reg, name)
+    out = {}
+    if command == 'census':
+        return out
+    census = registered_json(reg, 'census')['census']
+    out['census'] = census
+    split = SPLIT_OF.get(command)
+    if split is not None:
+        _require(not census[split]['codes_outside_vocabulary'], f'{split} codes outside the vocabulary (R3b): re-register')
+    if 'bind_probe' in PREREQUISITES[command]:
+        _require(registered_json(reg, 'bind_probe').get('pass') is True, 'S2 probe record must pass')
+    if 'profile' in PREREQUISITES[command]:
+        out['setting'] = registered_json(reg, 'profile').get('selection')
+        _require(out['setting'] is not None, 'registered S3 profile selection (D-9a) required')
+        _require(command != 'tau-select' or out['setting']['samples'] >= 3,
+                 'the D-9 noise rule needs samples >= 3 (paired-difference s.e.)')
+    if 'tau_freeze' in PREREQUISITES[command]:
+        out['freeze'] = registered_json(reg, 'tau_freeze')
+        _require(out['freeze']['status'] == 'SELECTED' and out['freeze']['final_identity_sha256'],
+                 f'no registered tau: {out["freeze"]["status"]}')
+    if 'v5' in PREREQUISITES[command]:
+        _require(registered_json(reg, 'v5').get('sealed_counts'), 'a sealed S4 record is required')
+    if 'v2' in PREREQUISITES[command]:
+        _require(registered_json(reg, 'v2').get('accept') is True, 'V2 acceptance is an S6 prerequisite')
+    return out
+
+
 def dispatch(command, reg, local, output, load):
-    """Run one registered stage. ``load(store: bool)`` returns the pinned inputs; it is called only
-    inside the heavy lock and the fresh stage directory (C11)."""
+    """Run one registered stage. Registration, gates and every prerequisite are checked before the
+    data is touched; ``load(store: bool)`` is called only inside the heavy lock and the fresh stage
+    directory (C11)."""
     config = reg['config']
     decisions = registration(config, command)
     plan, ident = config['le2025_validation_plan'], config['identity_registration']
@@ -651,10 +846,13 @@ def dispatch(command, reg, local, output, load):
     identity = {'config_sha256': reg['config_sha256'], 'registration_chain': reg['chain'], 'git': git_state(),
                 'environment': environment(), 'decisions': decisions, 'g0_bundle_file_sha256': ident['g0_bundle']['file_sha256'],
                 'runner_sources': {rel: hash_file(REPO / rel) for rel in SOURCES}}
+    evaluation = role_seed(config, 'evaluation') if stages['S6_V4'].get('dr_q_source') == 'evaluation_seed' else None
     with heavy_lock(root), stage(output, command, identity, spec.get('hang_guard_seconds')) as out:
+        pre = prerequisites(command, reg)
         inputs = load(command != 'census')
         frame, store = inputs['frame'], inputs['store']
         vocabulary = inputs['prep']['features']['tokens']['type_vocabulary']
+        straddle = straddling_games(frame)
 
         def bind(blocks, bc_artifact, snapshot=None, as_of=None):
             contexts, style = pa_contexts(store, blocks, snapshot, as_of)
@@ -681,15 +879,16 @@ def dispatch(command, reg, local, output, load):
             support_path, support_sha = registered_path(reg, 'support')
             snapshot, as_of, provenance = snapshot_for(split, blocks)
             components, style = bind(blocks, load_train_bc(bc_path, bc_sha), snapshot, as_of)
+            provenance = {**provenance, 'style_report': style}
             runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, out / f'ledger-{split}-{seed}{tag}.jsonl',
                                         components=components, budget=RowBudget(int(budget), seed_count=5), tau=tau,
                                         samples=samples, pitch_cap=pitch_cap, seed=seed, evaluation_seed=evaluation_seed,
                                         expected_identity_sha256=expected, hand_registry=registered_path(reg, 'hands'),
-                                        provenance={**provenance, 'style_report': style})
+                                        provenance=provenance)
             return runtime, components, provenance
 
         if command == 'census':
-            dump(out / 'census.json', run_census(frame, vocabulary, no_pitch))
+            dump(out / 'census.json', run_census(frame, vocabulary, no_pitch, spec['outcome_adjacent_splits']))
         elif command == 'materialize-bc':
             dataset = inputs['parent']['dataset_identity']
             provenance = {'source_ids': {**{s['file']: s['sha256'] for s in dataset['sources']},
@@ -697,15 +896,14 @@ def dispatch(command, reg, local, output, load):
                           'config_sha256': reg['config_sha256'], 'code_commit': identity['git']['commit'],
                           'data_version': f"processed {dataset['processed_sha256'][:12]}; regular R; assign_fold(2025)"}
             files, paths = inputs['files'], inputs['paths']
-            plan_bc = config['train_bc_plan']
             run_materialize(frame, store, out, provenance=provenance,
                             bind_inputs=lambda art, rows: pid.bind_policy_inputs(
                                 inputs['bundle_path'], inputs['bundle_sha'], paths, bc_artifact=art, context_rows=rows,
                                 aux_classes=ident['classes']['aux']),
                             train_keys=pinned_parquet(paths['p4_train_keys'], files['p4_train_keys']['sha256']),
                             keys_record=inputs['prep']['samples']['train'], gates=spec['gates'],
-                            bc_parameters=plan_bc['bc_parameters'], no_pitch=no_pitch,
-                            volume_quantiles=config['subgroups']['volume_quantiles'])
+                            bc_parameters=config['train_bc_plan']['bc_parameters'], no_pitch=no_pitch,
+                            volume_quantiles=config['subgroups']['volume_quantiles'], prep_vocabulary=vocabulary)
         elif command == 'style-snapshot':
             dataset = inputs['parent']['dataset_identity']
             run_style_snapshots(frame, out, spec['as_of_exclusive'], {'processed_sha256': dataset['processed_sha256'],
@@ -718,129 +916,148 @@ def dispatch(command, reg, local, output, load):
             components, _ = bind(blocks, load_train_bc(bc_path, bc_sha))  # S2 keeps rolling priors (D-7)
             dump(out / 'identity.json', {'sha256': components.sha256, 'identity': components.identity})
             report = run_bind_probe(store, components, sealed, count=spec['rows'], atol_primary=spec['atol_primary'],
-                                    atol_frequency=spec['atol_frequency_raw'])
+                                    atol_frequency=spec['atol_frequency_raw'], no_pitch=no_pitch)
             dump(out / 'probe.json', report)
             _require(report['pass'], 'S2 connection probe failed; the stage is not sealed')
-        else:
-            _require(registered_json(reg, 'bind_probe')['pass'] is True, 'S2 probe record must pass')
-            census = registered_json(reg, 'census')['census']
-            if command == 'v5-denominators':
-                bc_path, bc_sha = registered_path(reg, 'bc')
-                support_path, support_sha = registered_path(reg, 'support')
-                runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, out / 'ledger.jsonl',
-                                            hand_registry=registered_path(reg, 'hands'))
-                blocks = preq.pa_blocks(frame, np.flatnonzero(frame.split.eq('dev').to_numpy()))
-                dump(out / 'v5.json', run_v5(runtime, store, blocks, Deadline(), no_pitch=no_pitch,
-                                             census_split=census['dev']))
-            elif command == 'profile':
-                blocks = preq.pa_blocks(frame, np.flatnonzero(frame.split.eq('temperature').to_numpy()))
-                salt = role_seed(config, 'profile_salt')
-                blocks = sorted(blocks, key=lambda b: canonical_hash([salt, b[0]]))[:spec['starts']]
-                setting = spec['probe_setting']
-                runtime, _, provenance = candidate(blocks, 'temperature', tau=stages['S3b_tau_select']['tau_grid'][0],
-                                                   samples=setting['samples'], pitch_cap=setting['pitch_cap'],
-                                                   seed=config['seeds']['planning_main'], budget=spec['row_budget'])
+        elif command == 'v5-denominators':
+            bc_path, bc_sha = registered_path(reg, 'bc')
+            support_path, support_sha = registered_path(reg, 'support')
+            runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, out / 'ledger.jsonl',
+                                        hand_registry=registered_path(reg, 'hands'))
+            blocks = preq.pa_blocks(frame, np.flatnonzero(frame.split.eq('dev').to_numpy()))
+            dump(out / 'v5.json', run_v5(runtime, store, blocks, Deadline(), no_pitch=no_pitch,
+                                         census_split=pre['census']['dev']))
+        elif command == 'profile':
+            blocks = preq.pa_blocks(frame, np.flatnonzero(frame.split.eq('temperature').to_numpy()))
+            salt = role_seed(config, 'profile_salt')
+            blocks = sorted(blocks, key=lambda b: canonical_hash([salt, b[0]]))[:spec['starts']]
+            profiles = []
+            for setting in spec['candidates']:  # D-9a: measure every registered setting on the same starts
+                runtime, _, provenance = candidate(
+                    blocks, 'temperature', tau=stages['S3b_tau_select']['tau_grid'][0], samples=setting['samples'],
+                    pitch_cap=setting['pitch_cap'], seed=config['seeds']['planning_main'], budget=spec['row_budget'],
+                    evaluation_seed=evaluation, tag=f"-s{setting['samples']}c{setting['pitch_cap']}")
                 deadline = Deadline()
                 submit_pas(runtime, store, blocks, deadline, no_pitch=no_pitch)
                 runtime.verify_components()
-                profile = {'pas': len(blocks), 'decisions': runtime.summary()['requests'], 'seconds': deadline.elapsed(),
-                           'conditional_rows': runtime.improvement.simulator.budget.conditional_rows,
-                           'samples': setting['samples'], 'pitch_cap': setting['pitch_cap'],
-                           'tau_placeholder_not_selected': stages['S3b_tau_select']['tau_grid'][0],
-                           'quality_values_read': False, 'provenance': provenance}
-                if spec.get('candidates') and spec.get('selection_row_budget', {}).get('rows'):
-                    profile['selection'] = ptau.select_search_settings(profile, spec['candidates'],
-                                                                       spec['selection_row_budget'])
-                dump(out / 'profile.json', profile)
-            else:
-                profile = registered_json(reg, 'profile')
-                setting = profile.get('selection')
-                _require(setting is not None, 'registered S3 profile selection (D-9a) required')
-                if command == 'tau-select':
-                    _require(not census['blend']['codes_outside_vocabulary'], 'June codes outside the vocabulary (R3b)')
-                    games = select_games(frame, 'blend', spec['n_games'], role_seed(config, 'selection_salt'))
-                    blocks = game_blocks(frame, games)
-                    runtime, components, provenance = candidate(
-                        blocks, 'blend', tau=spec['tau_grid'][0], samples=setting['samples'],
-                        pitch_cap=setting['pitch_cap'], seed=config['seeds']['planning_main'], budget=spec['row_budget'])
-                    facts = submit_pas(runtime, store, blocks, Deadline(), no_pitch=no_pitch)
-                    for pa_id, positions in blocks:
-                        facts[pa_id]['terminal_marker'] = bool(pd.notna(frame.events.iloc[positions[-1]]))
-                    table = ptau.tau_table(runtime.ledger.decisions(), facts, spec['tau_grid'], spec['thresholds'])
-                    runtime.verify_components()
-                    final = None
-                    if table['selected_tau'] is not None:
-                        _, support_identity = load_support_table(*registered_path(reg, 'support'),
-                                                                 load_train_bc(*registered_path(reg, 'bc')))
-                        _, hands_identity = load_hand_registry(*registered_path(reg, 'hands'),
-                                                               load_train_bc(*registered_path(reg, 'bc')))
-                        s6 = stages['S6_V4']
-                        evaluation = role_seed(config, 'evaluation') if s6['dr_q_source'] == 'evaluation_seed' else None
-                        final = prt.candidate_identity(components, support_identity, hands_identity,
-                                                       {'tau': table['selected_tau'], 'samples': setting['samples'],
-                                                        'pitch_cap': setting['pitch_cap'],
-                                                        'seed': config['seeds']['planning_main']}, evaluation)['sha256']
-                    dump(out / 'tau_freeze.json', {**table, 'games': games, 'ledger_head_sha256':
-                         runtime.summary()['ledger_head_sha256'], 'config_sha256': reg['config_sha256'],
-                         'tau_code_sha256': hash_file(REPO / 'experiments/pitchmdp/pitchmdp/policy_tau.py'),
-                         'final_identity_sha256': final, 'outcomes_read': False, 'provenance': provenance})
-                else:
-                    freeze = registered_json(reg, 'tau_freeze')
-                    _require(freeze['status'] == 'SELECTED', f'no registered tau: {freeze["status"]}')
-                    tau = freeze['selected_tau']
-                    if command == 'v2-world':
-                        dump(out / 'v2.json', run_v2_stage(reg, spec, frame, store, candidate, tau, setting, no_pitch))
-                    else:  # dr-evaluate (S6/V4)
-                        _require(registered_json(reg, 'v2').get('accept') is True, 'V2 acceptance is an S6 prerequisite')
-                        games = select_games(frame, 'dev', spec['n_games'], role_seed(config, 'selection_salt'))
-                        blocks = game_blocks(frame, games)
-                        evaluation = role_seed(config, 'evaluation') if spec['dr_q_source'] == 'evaluation_seed' else None
-                        runtime, components, _ = candidate(
-                            blocks, 'dev', tau=tau, samples=setting['samples'], pitch_cap=setting['pitch_cap'],
-                            seed=config['seeds']['planning_main'], budget=spec['row_budget'], evaluation_seed=evaluation,
-                            expected=reg['expected_identity_sha256'])
-                        materialized = registered_json(reg, 'materialize')
-                        boot = plan['bootstrap']
-                        result, rows = run_dr(runtime, store, components, blocks, Deadline(), no_pitch=no_pitch,
-                                              bootstrap={**boot, 'seed': role_seed(config, 'bootstrap')},
-                                              ess_gate=config['ess_gate']['thresholds'],
-                                              sensitivities=config['sensitivity']['same_ledger'],
-                                              strata=strata_function(frame, materialized['volume_edges']))
-                        dump(out / 'dr.json', {**result, 'games': games})
-                        pd.DataFrame([{k: v for k, v in r.items() if k != 'strata'} for r in rows]).to_parquet(
-                            out / 'pa_values.parquet', index=False)
+                budget = runtime.improvement.simulator.budget
+                profiles.append({'samples': setting['samples'], 'pitch_cap': setting['pitch_cap'],
+                                 'decisions': sum(r['status'] in prt.EVALUATED for r in runtime.ledger.decisions()),
+                                 'requests': len(runtime.ledger.decisions()), 'conditional_rows': budget.conditional_rows,
+                                 'seconds': deadline.elapsed(), 'evaluation_seed_included': evaluation is not None})
+            dump(out / 'profile.json', {'pas': len(blocks), 'profiles': profiles,
+                                        'selection': ptau.select_search_settings(profiles, spec['selection_row_budget']),
+                                        'tau_placeholder_not_selected': stages['S3b_tau_select']['tau_grid'][0],
+                                        'quality_values_read': False, 'provenance': provenance})
+        elif command == 'tau-select':
+            setting, seed = pre['setting'], config['seeds']['planning_main']
+            games = select_games(frame, 'blend', spec['n_games'], role_seed(config, 'selection_salt'))
+            blocks = game_blocks(frame, games, 'blend')
+            runtime, components, provenance = candidate(blocks, 'blend', tau=spec['tau_grid'][0], samples=setting['samples'],
+                                                        pitch_cap=setting['pitch_cap'], seed=seed, budget=spec['row_budget'])
+            facts = submit_pas(runtime, store, blocks, Deadline(), no_pitch=no_pitch)
+            sealed = seal_counts(facts, runtime, census_pas(pre['census']['blend'], games))
+            for pa_id, positions in blocks:  # only the presence of a terminal marker is read
+                facts[pa_id]['terminal_marker'] = bool(pd.notna(frame.events.iloc[positions[-1]]))
+            table = ptau.tau_table(runtime.ledger.decisions(), facts, spec['tau_grid'], spec['thresholds'])
+            runtime.verify_components()
+            final, determinism = None, None
+            if table['selected_tau'] is not None:
+                bc_art = load_train_bc(*registered_path(reg, 'bc'))
+                _, support_identity = load_support_table(*registered_path(reg, 'support'), bc_art)
+                _, hands_identity = load_hand_registry(*registered_path(reg, 'hands'), bc_art)
+                final = prt.candidate_identity(components, support_identity, hands_identity,
+                                               {'tau': table['selected_tau'], 'samples': setting['samples'],
+                                                'pitch_cap': setting['pitch_cap'], 'seed': seed}, evaluation)['sha256']
+                determinism = determinism_check(runtime, candidate, blocks, facts, store, no_pitch,
+                                                tau=table['selected_tau'], setting=setting, seed=seed,
+                                                budget=spec['row_budget'], pas=spec['determinism_check_pas'],
+                                                atol=stages['S2_bind_probe']['atol_primary'])
+            dump(out / 'tau_freeze.json', {**table, 'games': games, 'straddling_games_excluded': straddle,
+                 'sealed_counts': sealed, 'ledger_head_sha256': runtime.summary()['ledger_head_sha256'],
+                 'config_sha256': reg['config_sha256'],
+                 'tau_code_sha256': hash_file(REPO / 'experiments/pitchmdp/pitchmdp/policy_tau.py'),
+                 'final_identity_sha256': final, 'determinism_check': determinism, 'outcomes_read': False,
+                 'provenance': provenance})
+        elif command == 'v2-world':
+            freeze = pre['freeze']
+            dump(out / 'v2.json', run_v2_stage(reg, spec, frame, store, candidate, freeze['selected_tau'], pre['setting'],
+                                               no_pitch, evaluation))
+        else:  # dr-evaluate (S6/V4)
+            freeze, setting = pre['freeze'], pre['setting']
+            expected = freeze['final_identity_sha256']
+            _require(reg['expected_identity_sha256'] in (None, expected), 'registered identity differs from the tau record')
+            games = select_games(frame, 'dev', spec['n_games'], role_seed(config, 'selection_salt'))
+            blocks = game_blocks(frame, games, 'dev')
+            runtime, components, provenance = candidate(
+                blocks, 'dev', tau=freeze['selected_tau'], samples=setting['samples'], pitch_cap=setting['pitch_cap'],
+                seed=config['seeds']['planning_main'], budget=spec['row_budget'], evaluation_seed=evaluation,
+                expected=expected)
+            pair = lambda: prt.build_reference_pair_runtime(
+                *registered_path(reg, 'bc'), *registered_path(reg, 'support'), out / 'ledger-dev-paired-identity.jsonl',
+                hand_registry=registered_path(reg, 'hands'), provenance=runtime.pins['provenance'])
+            boot = plan['bootstrap']
+            result, rows = run_dr(runtime, store, components, blocks, Deadline(), no_pitch=no_pitch,
+                                  bootstrap={**boot, 'seed': role_seed(config, 'bootstrap')},
+                                  ess_gate=config['ess_gate']['thresholds'],
+                                  sensitivities=config['sensitivity']['same_ledger'],
+                                  strata=strata_function(frame, registered_json(reg, 'materialize')['volume_edges']),
+                                  expected_pas=census_pas(pre['census']['dev'], games), pair=pair)
+            dump(out / 'dr.json', {**result, 'games': games, 'straddling_games_excluded': straddle,
+                                   'identity_sha256': expected, 'provenance': provenance})
+            table = pd.DataFrame([{**{k: v for k, v in r.items() if k != 'strata'},
+                                   **{f'stratum_{k}': v for k, v in r['strata'].items()}} for r in rows])
+            table.to_parquet(out / 'pa_values.parquet', index=False)
 
 
-def run_v2_stage(reg, spec, frame, store, candidate, tau, setting, no_pitch):
-    """S5: V2 (generating law = pi_b_hat) and V3 (frequency, tempered BC) over registered DEV starts,
-    repeated for the registered planning seeds (M-11); one fresh ledger per (seed, law). Acceptance
-    needs every V2 seed to accept."""
+def determinism_check(runtime, candidate, blocks, facts, store, no_pitch, *, tau, setting, seed, budget, pas, atol):
+    """D-9 note 5: a runtime rebuilt with the selected tau reproduces the recorded planning Q of the
+    first registered number of E0 PAs (fresh ledger; no outcome read)."""
+    chosen = [(pa_id, positions) for pa_id, positions in blocks if facts[pa_id]['in_population']][:pas]
+    rebuilt, _, _ = candidate(chosen, 'blend', tau=tau, samples=setting['samples'], pitch_cap=setting['pitch_cap'],
+                              seed=seed, budget=budget, tag='-determinism')
+    submit_pas(rebuilt, store, chosen, Deadline(), no_pitch=no_pitch)
+    first = {r['request_id']: r for r in runtime.ledger.decisions()}
+    worst = 0.
+    for row in rebuilt.ledger.decisions():
+        a, b = row['result'], first[row['request_id']]['result']
+        if a is None or b is None:
+            _require(a is None and b is None, 'determinism check: statuses differ')
+            continue
+        diffs = [abs(x - y) for x, y in zip(a['q_planning'], b['q_planning']) if x is not None and y is not None]
+        worst = max([worst, *diffs])
+    _require(worst <= atol, f'determinism check failed: max |dQ| {worst}')
+    return {'pas': len(chosen), 'max_abs_q_difference': worst, 'atol': atol}
+
+
+def run_v2_stage(reg, spec, frame, store, candidate, tau, setting, no_pitch, evaluation):
+    """S5: V2 (generating law = pi_b_hat) and V3 (frequency, tempered BC) from the E0 PA starts of
+    M-1 selected DEV games, repeated for the registered planning seeds (M-11), with the S6 q-hat
+    configuration (evaluation seed when registered); one fresh ledger and one RowBudget per
+    (seed, law) run. Acceptance needs every V2 seed to accept."""
     config = reg['config']
-    blocks = preq.pa_blocks(frame, np.flatnonzero(frame.split.eq('dev').to_numpy()))
-    salt = role_seed(config, 'selection_salt')
-    blocks = sorted(blocks, key=lambda b: canonical_hash([salt, 'v2', b[0]]))
+    games = select_games(frame, 'dev', spec['n_games'], role_seed(config, 'selection_salt'))
+    blocks = game_blocks(frame, games, 'dev')
     laws = [('V2', 'pi_b_hat', lambda bc: (lambda s: (bc.actions, bc.probabilities(s)))),
             ('V3', 'frequency', pss.frequency_law)]
     laws += [('V3', f'tempered_alpha_{a}', lambda bc, a=a: pss.tempered_law(bc, a)) for a in spec['tempered_alpha_grid']]
-    report, accepts = {'runs': []}, []
+    report, accepts = {'games': games, 'runs': []}, []
     for seed in config['seeds']['planning_v2']:
         for check, law_name, make in laws:
             runtime, components, _ = candidate(blocks, 'dev', tau=tau, samples=setting['samples'],
-                                               pitch_cap=setting['pitch_cap'], seed=seed, budget=spec['row_budget'],
+                                               pitch_cap=setting['pitch_cap'], seed=seed,
+                                               budget=spec['row_budget_per_run'], evaluation_seed=evaluation,
                                                tag=f'-{law_name}')
             starts = []
             for _, positions in blocks:
                 requests, _, _ = preq.pa_requests(store, positions, runtime.sha256, no_pitch)
                 if requests and runtime.start_population(requests[0].state, requests[0].pitcher_hand)[0]:
                     starts.append((requests[0].state, requests[0].pitcher_hand))
-                if len(starts) == spec['starts']:
-                    break
             result = pss.run_world(runtime, components, starts, law=make(runtime.bc), law_identity=law_name,
                                    logs_per_start=spec['logs_per_start'], cap=spec['cap'],
                                    truth_rollouts=spec['truth_rollouts'], seed=role_seed(config, 'v2'),
                                    draws=config['le2025_validation_plan']['bootstrap']['draws'],
-                                   budget=RowBudget(int(spec['row_budget']), seed_count=5),
-                                   tolerance=spec.get('tolerance') if check == 'V2' else None)
+                                   tolerance=spec['tolerance'] if check == 'V2' else None)
             report['runs'].append({'check': check, 'law': law_name, 'planning_seed': seed, **result})
             if check == 'V2':
                 accepts.append(result['accept'])

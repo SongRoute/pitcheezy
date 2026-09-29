@@ -362,7 +362,9 @@
         "post_pitch_scores"
       ],
       "implemented": true,
-      "decision": "D-6"
+      "decision": "D-6",
+      "game_final_rule": "game_final_v1: the game's last recorded row has an events code (truncated_pa included), post-pitch scores present and not tied, inning >= 5 (MLB regulation game); replaces data.py complete_game (D-6 critic 3); disagreements with complete_game counted on TRAIN at S0",
+      "terminal_placeholder_rule": "a last row with an events code and no pitch (registered no-pitch description, or missing type and description) is a state transition: no request; a PA made only of one is NO_DECISION (delta exactly 0, L0 only)"
     },
     "R6_incomplete": {
       "statuses": [
@@ -431,6 +433,7 @@
         "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
         "reads": "TRAIN rows",
         "gates": {
+          "train_rows": 1386362,
           "bc_e_rows": 1252824,
           "bc_e_actions": [
             "CH",
@@ -472,7 +475,7 @@
             "SV",
             "UN"
           ],
-          "note": "P8 BC has 18 actions; list equality with the token vocabulary is checked, not assumed"
+          "note": "train_rows = registered TRAIN regular-season rows (normalizer report); token vocabulary must equal the pinned preparation; BC-P batter side must be L/R; P8 BC has 18 actions (list equality checked)"
         },
         "cost_measured": null
       },
@@ -502,19 +505,18 @@
         "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
         "split": "temperature",
         "starts": 4,
-        "probe_setting": {
-          "samples": null,
-          "pitch_cap": null
-        },
         "row_budget": null,
         "candidates": null,
         "selection_row_budget": {
           "rows": null,
-          "decisions": null
+          "decisions": null,
+          "note": "rows must equal S3b row_budget"
         },
         "tau": "placeholder = tau_grid[0], labelled not selected",
         "quality_values_read": false,
-        "cost_measured": null
+        "cost_measured": null,
+        "candidates_note": "list of {samples, pitch_cap}; every candidate is measured on the same starts (rows are not assumed to scale with pitch_cap)",
+        "evaluation_seed_in_cost": "included when S6 dr_q_source = evaluation_seed"
       },
       "S3b_tau_select": {
         "hang_guard_seconds": 7200,
@@ -538,7 +540,10 @@
         "rule": "smallest tau passing both-policy overlap, the candidate/reference ESS ratio and the paired-difference noise ratio; reference failing -> ARM_B_NOT_EVALUABLE; none -> P3_NOT_EVALUABLE; grid never widened",
         "reads": "pre-decision fields, logged types, previous-row outcomes (history), terminal-marker presence only; no WE, reward, events kind or next-row state",
         "exposure_note": "June 2025 exposed_policy_tuning reused for G0 P3 tau design without outcomes",
-        "cost_measured": null
+        "cost_measured": null,
+        "determinism_check_pas": 2,
+        "determinism_check_basis": "D-9 note 5: rebuild with the selected tau and reproduce the planning Q of the first 2 E0 PAs within S2 atol_primary (design constant, cost-only)",
+        "samples_minimum_for_noise_rule": 3
       },
       "S4_V5_denominators": {
         "hang_guard_seconds": 7200,
@@ -548,15 +553,18 @@
       },
       "S5_V2_V3": {
         "world_rule": "absorb_off_mask",
-        "starts": null,
         "logs_per_start": null,
         "truth_rollouts": null,
         "cap": null,
-        "row_budget": null,
         "tempered_alpha_grid": null,
         "tolerance": null,
         "hang_guard_seconds": null,
-        "cost_measured": null
+        "cost_measured": null,
+        "n_games": null,
+        "starts_rule": "every E0 PA start of M-1 selected DEV games (salted hash, month-proportional, straddling games excluded)",
+        "row_budget_per_run": null,
+        "q_hat": "same as S6 (evaluation seed when registered)",
+        "censor_hazard_check": "optional declared hazard run (D-5 verification); not part of acceptance"
       },
       "S6_V4": {
         "n_games": null,
@@ -564,7 +572,9 @@
         "dr_q_source": "evaluation_seed",
         "dr_q_fallback_rule": "planning_reuse only if the registered cost formula from S3 exceeds the row budget, decided before S6",
         "hang_guard_seconds": null,
-        "cost_measured": null
+        "cost_measured": null,
+        "paired_identity_run": "independent cand=ref runtime on the same requests; every complete PA delta exactly 0 and equal complete sets (M-10, D89 V4 e); failure fails S6",
+        "identity_pin": "expected identity = tau_freeze.final_identity_sha256"
       }
     },
     "measured_references_not_budgets": {
@@ -620,7 +630,9 @@
     "local_config": {
       "path": "experiments/pitchmdp/configs/local.json",
       "sha256": "eb364ca79d553e7b8e16350f783572714f293033240468a2592083ce602ee967"
-    }
+    },
+    "source_rule": "HEAD may add registration commits on top of source_commit, but experiments/, src/ and scripts/ must be unchanged since source_commit and have no uncommitted change; the locally retargeted runs symlink is outside these paths",
+    "registered_inputs_rule": "every registered input must be listed with the same sha256 in the manifest.json of a sealed stage directory"
   },
   "claims": {
     "policy_frozen": false,

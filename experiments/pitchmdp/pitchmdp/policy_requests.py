@@ -10,8 +10,11 @@ and its later history action (D-3): ``NO_PITCH`` for a registered no-pitch call 
 ball/strike; the description wins over a present type), ``MISSING`` for a real pitch without a
 type label. A structural defect at row k (gap, illegal count, missing identity) ends the request
 list at k and is reported with its index, so earlier decisions are still submitted (R1/R4c) and
-the PA stays in the denominator. Outcomes (terminal event, next state, final result) are read
-only by ``pa_outcome`` for the estimator's reward (R5) and never enter a request.
+the PA stays in the denominator. A PA's last row that carries the terminal event but no pitch
+(a registered no-pitch call such as ball four by the clock, or a type- and description-less
+runner-event row) is a state transition, not a decision: no request is made for it (D-6 critic 2).
+Outcomes (terminal event, next state, final result) are read only by ``pa_outcome`` for the
+estimator's reward (R5) and never enter a request.
 """
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ from .game import GameState
 from .matrix_policy import context_key
 from .model import outcome_labels
 from .planner import OUTCOMES
-from .policy_artifacts import IntegrityError, _require
+from .policy_artifacts import IntegrityError, _require, normalize_hand, single_hand
 from .policy_runtime import MISSING, NO_PITCH, SENTINELS, DecisionRequest, next_count
 from .rollout_policy import PAState, PastPitch
 
@@ -91,22 +94,36 @@ def pa_blocks(frame, rows=None, *, strict=True):
     return out
 
 
+def terminal_placeholder(row, no_pitch=AUTOMATIC):
+    """A last row with a terminal event and no pitcher choice: a registered no-pitch call, or a row
+    without both type and description (runner-event / truncation record)."""
+    if _missing(row.get('events')):
+        return False
+    return row['description'] in no_pitch or (_missing(row.get('description')) and _missing(row.get('pitch_type')))
+
+
 def pa_requests(store, positions, runtime_sha256, no_pitch=AUTOMATIC):
-    """(requests, problem, index): one request per row with the full strictly-previous history.
+    """(requests, problem, index): one request per decision row with the full strictly-previous history.
 
     A structural defect at row ``index`` ('ordering' at 0 for the whole PA; 'missing_row' for a
     pitch_number gap or a first row after pitch 1; 'illegal_count'; 'missing_identity';
     'invalid_history') truncates the list at ``index``: rows before it are submitted, the PA is
-    censored there (or excluded from the start population when ``index == 0``).
+    censored there (or excluded from the start population when ``index == 0``). A terminal
+    placeholder last row gets no request; a PA made only of one is 'no_decision'.
     """
     frame = store.frame
     rows = frame.iloc[positions]
     if (len(positions) == 0 or (np.diff(positions) != 1).any() or rows.game_pk.nunique() != 1
             or rows.at_bat_number.nunique() != 1 or (np.diff(rows.pitch_number.to_numpy()) <= 0).any()):
         return [], 'ordering', 0
+    records = rows.to_dict('records')
+    if terminal_placeholder(records[-1], no_pitch):
+        if len(records) == 1:
+            return [], 'no_decision', 0
+        records, positions = records[:-1], positions[:-1]
     game, ab = int(rows.game_pk.iloc[0]), int(rows.at_bat_number.iloc[0])
     history, requests, previous_number = [], [], 0
-    for index, (position, row) in enumerate(zip(positions, rows.to_dict('records'))):
+    for index, (position, row) in enumerate(zip(positions, records)):
         if int(row['pitch_number']) != previous_number + 1:
             return requests, 'missing_row', index
         previous_number = int(row['pitch_number'])
@@ -115,7 +132,7 @@ def pa_requests(store, positions, runtime_sha256, no_pitch=AUTOMATIC):
         if _missing(row['pitcher']) or _missing(row['stand']):
             return requests, 'missing_identity', index
         label = logged_label(row['pitch_type'], row['description'], no_pitch)
-        hand = None if _missing(row.get('p_throws')) else str(row['p_throws'])
+        hand = normalize_hand(row.get('p_throws'))
         state = PAState(int(row['balls']), int(row['strikes']), str(int(row['pitcher'])), str(row['stand']),
                         tuple(history), context_key(row))
         requests.append(DecisionRequest(f'{game}:{ab}:{int(row["pitch_number"])}', f'{game}:{ab}', index, state,
@@ -149,13 +166,16 @@ def pa_manifest(frame, positions):
 # ---------------------------------------------------------------- PA end and reward (D-6)
 
 def game_table(frame):
-    """Per game: frame position range, last at-bat number and the official-completion flag.
+    """Per game: frame position range, last at-bat number and the game_final_v1 verdict.
 
-    Games must be contiguous and ordered by (at_bat_number, pitch_number); ``complete_game`` must
-    be present and non-missing (FAILED_INTEGRITY otherwise, never a silent pass).
+    Games must be contiguous and ordered by (at_bat_number, pitch_number); post-pitch scores are
+    required. game_final_v1 (D-6 critic 3; replaces data.py's complete_game heuristic): the game's
+    last recorded row carries a terminal event (any code, truncated_pa included), its post-pitch
+    scores are present and not tied, and the inning is at least 5 (MLB regulation game). Since
+    2020 an unfinished game is suspended and resumed under the same game_pk, so its rows stay in
+    one block; a tie or a shorter record is not final.
     """
-    _require({'complete_game', 'post_home_score', 'post_away_score'} <= set(frame.columns),
-             'complete_game and post-pitch score columns are required for PA-end rewards')
+    _require({'post_home_score', 'post_away_score'} <= set(frame.columns), 'post-pitch score columns are required')
     game = frame.game_pk.to_numpy()
     starts = np.flatnonzero(np.r_[True, game[1:] != game[:-1]])
     _require(len(starts) == len(pd.unique(game)), 'games must be contiguous in frame order')
@@ -164,10 +184,14 @@ def game_table(frame):
         part = frame.iloc[lo:hi]
         order = part.at_bat_number.to_numpy() * 10 ** 4 + part.pitch_number.to_numpy()
         _require((np.diff(order) > 0).all(), f'game rows out of (at_bat, pitch) order: {int(game[lo])}')
-        complete = part.complete_game.iloc[-1]
-        _require(not pd.isna(complete), f'complete_game missing for game {int(game[lo])}')
-        table[int(game[lo])] = {'lo': int(lo), 'hi': int(hi), 'max_ab': int(part.at_bat_number.iloc[-1]),
-                                'complete': bool(complete)}
+        last = part.iloc[-1]
+        home, away = last.post_home_score, last.post_away_score
+        scored = not (pd.isna(home) or pd.isna(away))
+        final = (not _missing(last.events)) and scored and home != away and int(last.inning) >= 5
+        table[int(game[lo])] = {'lo': int(lo), 'hi': int(hi), 'max_ab': int(last.at_bat_number), 'final': bool(final),
+                                'home_won': bool(final and home > away),
+                                'complete_game_flag': (None if 'complete_game' not in part or pd.isna(last.complete_game)
+                                                       else bool(last.complete_game))}
     return table
 
 
@@ -210,13 +234,10 @@ def pa_outcome(frame, positions, defense_we, games, *, rule='structural-end-v1',
     info = games[game]
     if int(last.at_bat_number) == info['max_ab']:
         _require(positions[-1] == info['hi'] - 1, 'the last PA of a game must end its frame block')
-        if not info['complete']:
-            return {**out, 'reason': 'incomplete_game', 'kind': TERMINAL_VALUE_MISSING, 'end_kind': 'game_final'}
-        home, away = last.post_home_score, last.post_away_score
-        _require(not (pd.isna(home) or pd.isna(away)), f'final score missing for game {game}')
-        if home == away:
-            return {**out, 'reason': 'final_result_undetermined', 'kind': TERMINAL_VALUE_MISSING, 'end_kind': 'game_final'}
-        return {**out, 'reward': float((home > away) == defender_is_home), 'end': 'final_result', 'end_kind': 'game_final'}
+        if not info['final']:
+            return {**out, 'reason': 'game_not_final_v1', 'kind': TERMINAL_VALUE_MISSING, 'end_kind': 'game_final'}
+        return {**out, 'reward': float(info['home_won'] == defender_is_home), 'end': 'final_result',
+                'end_kind': 'game_final'}
     following = positions[-1] + 1
     _require(following < info['hi'], 'a non-final PA must be followed by a row of the same game')
     nxt = frame.iloc[following]
@@ -233,6 +254,8 @@ def pa_outcome(frame, positions, defense_we, games, *, rule='structural-end-v1',
     if last.post_home_score != nxt.home_score or last.post_away_score != nxt.away_score:
         out['flags'].append('post_pitch_score_disagrees_next_row')
     if score_source == 'post_pitch':
+        if pd.isna(last.post_home_score) or pd.isna(last.post_away_score):
+            return {**out, 'reason': 'post_pitch_score_missing', 'kind': TERMINAL_VALUE_MISSING, 'end_kind': end_kind}
         state = GameState(state.inning, state.half, state.outs, state.bases, int(last.post_home_score),
                           int(last.post_away_score))
     value = float(defense_we(state, defender_is_home))
@@ -393,24 +416,48 @@ def census(frame, vocabulary, *, no_pitch=AUTOMATIC, outcome_adjacent_splits=('t
             'pa_with_pitcher_change': pitcher_change, 'pitcher_changes_per_pa': _crosstab(changes.elements()),
             'pa_first_last_pitcher_differ': first_last_pitcher, 'pa_change_to_pitcher_unseen_in_train': change_unseen,
             'pa_with_batter_change': batter_change, 'pa_with_stand_change': stand_change,
-            'hand_values': _crosstab(hands), 'hand_missing_or_invalid_rows': int((~hands.isin(['L', 'R'])).sum())}
+            'hand_values': _crosstab(hands), 'hand_missing_or_invalid_rows': int((~hands.isin(['L', 'R'])).sum()),
+            'stand_missing_or_invalid_rows': int((~part.stand.astype(object).map(normalize_hand).isin(['L', 'R'])).sum()),
+            'games_with_several_dates': int((values.groupby('game_pk').game_date.nunique() > 1).sum()),
+            'pas_by_game': {str(int(g)): int(n) for g, n in
+                            values.drop_duplicates(list(PA_KEY)).groupby('game_pk').size().items()}}
         if split in outcome_adjacent_splits:
             last = values.iloc[[pos[-1] for _, pos in blocks]]
             nonlast = values.drop(index=[pos[-1] for _, pos in blocks])
             ends = values.groupby('game_pk', sort=False).tail(1)
+            placeholder = [terminal_placeholder(r, no_pitch) for r in last.to_dict('records')]
+            following = values.shift(-1)
+            same_game = following.game_pk.eq(values.game_pk)
+            last_mask = values.index.isin(last.index) & same_game
+            mismatch = last_mask & ((values.post_home_score != following.home_score)
+                                    | (values.post_away_score != following.away_score))
+            try:
+                games = game_table(values)
+            except IntegrityError as error:  # counted here; the reward stages fail closed on it
+                games, item['game_table_error'] = {}, str(error)
             item['outcome_adjacent'] = {
                 'last_row_event_codes': _crosstab(last.events.fillna('<NA>')),
+                'last_row_events_by_type_missing_and_description': _crosstab(
+                    f"{e}|{'type_missing' if _missing(t) else 'typed'}|{d}" for e, t, d in
+                    zip(last.events.fillna('<NA>'), last.pitch_type, last.description.fillna('<NA>'))),
+                'terminal_placeholder_last_rows': int(sum(placeholder)),
                 'nonlast_rows_with_events': int(nonlast.events.notna().sum()),
                 'truncated_pa': int(last.events.eq('truncated_pa').sum()),
-                'games_with_several_dates': int((values.groupby('game_pk').game_date.nunique() > 1).sum()),
+                'post_score_disagrees_next_row': int(mismatch.sum()),
                 'games_last_row_without_events': int(ends.events.isna().sum()),
                 'games_ending_before_inning_9': int((ends.inning < 9).sum()),
-                'games_complete_false_or_missing': int((~ends.complete_game.fillna(False).astype(bool)).sum())
-                if 'complete_game' in ends else None}
+                'games_final_v1': int(sum(g['final'] for g in games.values())),
+                'games_final_v1_disagrees_complete_game': int(sum(
+                    g['complete_game_flag'] is not None and g['final'] != g['complete_game_flag'] for g in games.values())),
+                'missing_label_by_count': _crosstab(f'{b}-{k}' for b, k, lb in zip(part.balls, part.strikes, lab)
+                                                    if lb == MISSING),
+                'pitchers_with_missing_labels': int(part.pitcher[lab == MISSING].nunique())}
         out[str(split)] = item
-    hands = train.groupby('pitcher').p_throws.agg(lambda v: v.isna().any() or v.nunique() != 1)
+    hands = train.groupby('pitcher').p_throws.agg(lambda v: single_hand(v.tolist()) == 'AMBIGUOUS')
     out['train_pitchers_ambiguous_hand'] = int(hands.sum())
     ambiguous = set(hands.index[hands])
+    splits_per_game = frame.groupby('game_pk').split.nunique()
+    out['games_spanning_splits'] = sorted(int(g) for g in splits_per_game.index[splits_per_game > 1])
     out['train_rows_of_ambiguous_hand_pitchers'] = int(train.pitcher.isin(ambiguous).sum())
     known = set(zip(train.pitcher, train.p_throws))
     for split in sorted(set(frame.split) - {'train'}):

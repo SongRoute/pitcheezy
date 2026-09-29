@@ -14,17 +14,19 @@ for the DR estimator from a separate evaluation seed when registered (M-7).
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import json
 import os
 from pathlib import Path
+import signal
 
 import numpy as np
 
 from .matrix_data import canonical_hash
 from .policy_artifacts import (IntegrityError, Unsupported, TrainBCArtifact, _canonical_bytes, bc_payload,
-                               support_table_payload)
+                               normalize_hand, support_table_payload)
 from .planner import OUTCOMES
 from .rollout_policy import PAState
 
@@ -94,6 +96,20 @@ class DecisionRequest:
             'history': [[h.action, h.outcome, h.balls, h.strikes, list(h.physics)] for h in s.history]})
 
 
+@contextmanager
+def _alarm_blocked():
+    """Defer SIGALRM (the runner's hang guard) across one ledger append, so an abort can never
+    split a row between disk and memory."""
+    if not hasattr(signal, 'pthread_sigmask'):
+        yield
+        return
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
 class Ledger:
     """Append-only JSONL; each row carries the previous row hash (tamper/truncation evident).
 
@@ -131,11 +147,12 @@ class Ledger:
     def _append(self, record):
         body = {**record, 'seq': len(self.rows), 'prev': self.rows[-1]['sha256'] if self.rows else None}
         row = {**body, 'sha256': canonical_hash(body)}
-        with self.path.open('ab') as stream:
-            stream.write(_canonical_bytes(row))
-            stream.flush()
-            os.fsync(stream.fileno())
-        self.rows.append(row)
+        with _alarm_blocked():  # a hang-guard alarm lands after the row is on disk AND in memory
+            with self.path.open('ab') as stream:
+                stream.write(_canonical_bytes(row))
+                stream.flush()
+                os.fsync(stream.fileno())
+            self.rows.append(row)
         return row
 
     def decisions(self):
@@ -183,8 +200,8 @@ class PolicyRuntime:
             if set(hand_registry) != set(bc_artifact.bc.pitchers) or not set(hand_registry.values()) <= {*HANDS, AMBIGUOUS}:
                 raise IntegrityError('hand registry must cover exactly the BC pitchers with L/R/AMBIGUOUS')
             single = {p for p, hand in hand_registry.items() if hand != AMBIGUOUS}
-            if not {p for p, _ in support} <= single:
-                raise IntegrityError('support table keys must be single-hand registry pitchers')
+            if {p for p, _ in support} != single:
+                raise IntegrityError('support table pitchers must equal the single-hand registry pitchers')
         self.hand_registry = hand_registry
         self.bc, self.vocabulary = bc_artifact.bc, bc_artifact.vocabulary
         self.support, self.candidate = support, candidate
@@ -240,6 +257,7 @@ class PolicyRuntime:
         registered = self.hand_registry[state.pitcher]
         if registered == AMBIGUOUS:
             raise Unsupported(PITCHER_HAND, 'ambiguous_train')
+        hand = normalize_hand(hand)
         if hand not in HANDS:
             raise Unsupported(PITCHER_HAND, 'missing_or_invalid')
         if hand != registered:
@@ -536,3 +554,28 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
     runtime.reference, runtime.improvement, runtime.components = reference, improvement, components
     runtime.evaluator, runtime.tau = evaluator, tau
     return runtime
+
+
+def build_reference_pair_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path, *, hand_registry=None,
+                                 provenance=None):
+    """M-10 / D89 V4(e): a candidate runtime whose candidate is an INDEPENDENT callable of the
+    reference law (its own reloaded BC and support table, a separate MaskedReference). Submitted the
+    same requests as the primary run, every complete PA must give a paired delta of exactly 0; the
+    candidate path (request state, mask alignment, recorded rho_candidate, Q record) is exercised.
+    The Q record is zero on the mask (any fixed q keeps DR unbiased; it only has to be common)."""
+    from .policy_artifacts import load_hand_registry, load_support_table, load_train_bc
+    artifact = load_train_bc(bc_path, bc_sha256)
+    support, support_identity = load_support_table(support_path, support_sha256, artifact)
+    independent = MaskedReference(load_train_bc(bc_path, bc_sha256).bc,
+                                  load_support_table(support_path, support_sha256, artifact)[0])
+    hands, hands_identity = (None, None) if hand_registry is None else load_hand_registry(*hand_registry, artifact)
+
+    def candidate(state):
+        mask = independent.support(state)
+        zero, missing = np.where(mask, 0., np.nan), np.full(len(mask), np.nan)
+        return independent.probabilities(state), {'q': zero, 'mc_se': missing, 'q_planning': zero,
+                                                  'planning_diff_se': missing, 'source': 'paired_identity_zero_q'}
+    return PolicyRuntime(artifact, support, support_identity, ledger_path, candidate=candidate,
+                         candidate_identity={'name': 'cand=ref paired identity run (M-10, D89 V4 e)',
+                                             'candidate': 'independent MaskedReference(TRAIN BC, pinned support table)'},
+                         hand_registry=hands, hand_registry_sha256=hands_identity, provenance=provenance)

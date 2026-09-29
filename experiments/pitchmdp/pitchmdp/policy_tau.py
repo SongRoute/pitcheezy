@@ -31,7 +31,7 @@ def _decision(row, tau):
     a = r['logged_index']
     noise = np.array([np.nan if v is None else v for v in r['q_planning_diff_se']], dtype=np.float64)
     kl = float(np.sum(candidate[mask] * np.log(candidate[mask] / reference[mask]), where=candidate[mask] > 0))
-    return candidate[a] / logging[a], reference[a] / logging[a], kl, float(np.nanmax(noise[mask])) / tau
+    return candidate[a] / logging[a], reference[a] / logging[a], kl, float(noise[mask].max()) / tau
 
 
 def tau_table(ledger_decisions, pa_facts, taus, thresholds):
@@ -44,8 +44,9 @@ def tau_table(ledger_decisions, pa_facts, taus, thresholds):
     by_pa = {}
     for row in ledger_decisions:
         by_pa.setdefault(row['pa_id'], []).append(row)
+    _require(set(by_pa) <= set(pa_facts), 'every ledger PA needs its facts')
     usable = [pa for pa, rows in by_pa.items() if pa_facts[pa]['in_population'] and pa_facts[pa]['terminal_marker']
-              and all(r['status'] in EVALUATED for r in rows)]
+              and pa_facts[pa].get('problem') is None and all(r['status'] in EVALUATED for r in rows)]
     _require(usable, 'no weighted PA: the tau table is undefined')
     games = [pa_facts[pa]['game'] for pa in usable]
     table = []
@@ -66,7 +67,9 @@ def tau_table(ledger_decisions, pa_facts, taus, thresholds):
             entry[name] = {'pa_ess': pa_ess, 'pa_ess_ratio': None if pa_ess is None else pa_ess / len(usable),
                            'game_ess': effective_sample_size(w, games)}
         entry['mean_kl_candidate_reference'] = float(np.mean(kls))
-        entry['noise_ratio_quantiles'] = {str(q): float(np.nanquantile(noise, q)) for q in (.5, .9)}
+        _require(np.isfinite(noise).all(), 'paired-difference noise undefined (search samples <= 1): the D-9 rule '
+                 'needs samples >= 3')
+        entry['noise_ratio_quantiles'] = {str(q): float(np.quantile(noise, q)) for q in (.5, .9)}
         table.append(entry)
 
     def passes(entry, name):
@@ -87,12 +90,15 @@ def tau_table(ledger_decisions, pa_facts, taus, thresholds):
             'counted_not_weighted_pas': len(by_pa) - len(usable)}
 
 
-def select_search_settings(profile, candidates, row_budget):
-    """D-9a: the largest registered (samples, pitch_cap) whose measured conditional rows per
-    decision, scaled to the registered decision count, fit the registered row budget. ``profile``:
-    {'decisions', 'conditional_rows', 'samples', 'pitch_cap'} from S3 (cost only; rows scale with
-    samples x pitch_cap). Returns None when no candidate fits (P3 not evaluable at that budget)."""
-    _require(profile['decisions'] > 0 and profile['conditional_rows'] > 0, 'S3 profile measured nothing')
-    per = profile['conditional_rows'] / profile['decisions'] / (profile['samples'] * profile['pitch_cap'])
-    fitting = [c for c in candidates if per * c['samples'] * c['pitch_cap'] * row_budget['decisions'] <= row_budget['rows']]
-    return max(fitting, key=lambda c: (c['samples'] * c['pitch_cap'], c['samples'])) if fitting else None
+def select_search_settings(profiles, row_budget):
+    """D-9a: the largest registered (samples, pitch_cap) whose MEASURED conditional rows per evaluated
+    decision (S3, one run per candidate on the same starts), scaled to the registered decision
+    count, fit the registered row budget. Rollouts stop at the PA end, so rows are not assumed to
+    scale with pitch_cap. ``profiles``: [{'samples', 'pitch_cap', 'decisions', 'conditional_rows'}].
+    Returns None when nothing fits (P3 not evaluable at that budget)."""
+    _require(profiles and all(p['decisions'] > 0 and p['conditional_rows'] > 0 for p in profiles),
+             'S3 profile measured nothing')
+    fitting = [p for p in profiles
+               if p['conditional_rows'] / p['decisions'] * row_budget['decisions'] <= row_budget['rows']]
+    best = max(fitting, key=lambda p: (p['samples'] * p['pitch_cap'], p['samples'])) if fitting else None
+    return None if best is None else {'samples': best['samples'], 'pitch_cap': best['pitch_cap']}
