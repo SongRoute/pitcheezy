@@ -931,6 +931,33 @@ class RunnerStageTests(RunnerFixture):
         self.assertNotEqual(chosen, rpv.select_games(many, 'dev', 6, 12))
 
 
+class LoadInputsTests(unittest.TestCase):
+    def test_frame_follows_the_g0_date_order(self):
+        """D98: game_pk order can disagree with game dates (a postponed game); the loaded frame keeps
+        the G0 order (game date, then pitch key) the history store requires."""
+        frame = game_frame()
+        frame.loc[frame.game_pk.eq(100), 'game_pk'] = 999  # the earliest TRAIN game gets the largest game_pk
+        normalizer = PhysicalNormalizer().fit(frame.loc[frame.split.eq('train')])
+        docs = {'bundle': {'files': {role: {'path': f'/{role}', 'sha256': role}
+                                     for role in ('p4_parent_preparation', 'p4_preparation', 'p4_auxiliary')}},
+                'p4_parent_preparation': {}, 'p4_preparation': {'features': {'tokens': {'type_vocabulary': TYPES}}}}
+        config = {'identity_registration': {'g0_bundle': {'path': 'bundle.json', 'file_sha256': 'bundle'}, 'we_paths': {}}}
+        with mock.patch('run_ml_benchmark.regular_frame', return_value=frame.sample(frac=1, random_state=0)), \
+                mock.patch.object(rpv.pid, 'pinned_json', lambda path, sha: docs[sha]), \
+                mock.patch.object(rpv.pid, 'pinned_pickle', return_value={'normalizer': normalizer}):
+            out = rpv.load_inputs(config, {})
+        self.assertTrue(pd.to_datetime(out['frame'].game_date).is_monotonic_increasing)
+        self.assertEqual(len(out['store'].frame), len(frame))
+
+
+    def test_manifest_skips_appledouble_files(self):
+        out = Path(tempfile.mkdtemp()) / 'stage'
+        with rpv.stage(out, 'census', {}) as directory:
+            (directory / 'census.json').write_text('{}')
+            (directory / '._census.json').write_bytes(b'exfat metadata')
+        self.assertEqual(sorted(json.loads((out / 'manifest.json').read_text())['artifact_sha256']),
+                         ['census.json', 'started.json'])
+
 class DispatchTests(RunnerFixture):
     """The registered chain through ``dispatch``: gates, addenda, sealed pins and every stage the
     synthetic fixture can exercise (bind-probe reads sealed G0 archives; its record is a labelled
@@ -1075,7 +1102,10 @@ class DispatchTests(RunnerFixture):
     def test_registration_refusals(self):
         repo_config = json.loads((REPO / 'configs/ML-POLICY-MATERIALIZATION-v1.json').read_text())
         with self.assertRaisesRegex(pa.IntegrityError, 'not registered'):
-            rpv.registration(repo_config)  # the committed config cannot run
+            rpv.registration({**repo_config, 'registered': False})
+        rpv.registration(repo_config, 'census')  # D96: the committed config opens S0-S2 only
+        with self.assertRaisesRegex(pa.IntegrityError, 'independent review'):
+            rpv.registration(repo_config, 'profile')
         _, config = self.config()
         rpv.registration(config, 'census')
         with self.assertRaisesRegex(pa.IntegrityError, 'registered decision required: D-11'):

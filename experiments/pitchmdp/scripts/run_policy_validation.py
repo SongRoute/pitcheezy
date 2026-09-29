@@ -316,7 +316,8 @@ def stage(output, command, identity, hang_guard_seconds=None):
         if hang_guard_seconds is not None:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
-    names = sorted(str(p.relative_to(output)) for p in output.rglob('*') if p.is_file())
+    names = sorted(str(p.relative_to(output)) for p in output.rglob('*')  # exFAT AppleDouble '._*' is not an artifact
+                   if p.is_file() and not p.name.startswith('._'))
     dump(output / 'manifest.json', {'command': command, 'cost': {
         'wall_seconds': time.perf_counter() - started, 'cpu_seconds': time.process_time() - cpu,
         'peak_rss_raw': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, 'peak_rss_unit': 'platform ru_maxrss'},
@@ -797,8 +798,8 @@ def registered_json(reg, name):
 
 
 def load_inputs(config, local, *, store=True):
-    """Pinned G0 bundle, the verified processed regular-season frame (same loader as G0, sorted by
-    the pitch key) and, unless ``store`` is False (census), the normalizer and history store."""
+    """Pinned G0 bundle, the verified processed regular-season frame (same loader and order as G0:
+    game date, then the pitch key; the history store refuses any other order) and, unless ``store`` is False (census), the normalizer and history store."""
     from run_ml_benchmark import regular_frame
     reg = config['identity_registration']
     bundle_path = REPO / reg['g0_bundle']['path']
@@ -809,7 +810,7 @@ def load_inputs(config, local, *, store=True):
     paths.update({role: (REPO / value if not Path(value).is_absolute() else Path(value))
                   for role, value in reg['we_paths'].items()})
     parent = pid.pinned_json(paths['p4_parent_preparation'], files['p4_parent_preparation']['sha256'])
-    frame = regular_frame(local, parent).sort_values(KEY, kind='stable').reset_index(drop=True)
+    frame = regular_frame(local, parent).sort_values(['game_date', *KEY], kind='stable').reset_index(drop=True)
     frame = guard_dates(frame)
     prep = pid.pinned_json(paths['p4_preparation'], files['p4_preparation']['sha256'])
     out = {'bundle_path': bundle_path, 'bundle_sha': bundle_sha, 'files': files, 'paths': paths, 'parent': parent,
@@ -933,7 +934,7 @@ def dispatch(command, reg, local, output, load):
     root = check_location(local, output)
     check_output(output, plan)
     no_pitch = frozenset(config['pa_time_rules']['R3_codes']['no_pitch_descriptions'])
-    identity = {'config_sha256': reg['config_sha256'], 'registration_chain': reg['chain'], 'git': git_state(),
+    identity = {'config_sha256': reg['config_sha256'], 'registration_chain': reg['chain'], 'git': git_state(plan.get('source_commit')),
                 'environment': environment(), 'decisions': decisions, 'g0_bundle_file_sha256': ident['g0_bundle']['file_sha256'],
                 'runner_sources': {rel: hash_file(REPO / rel) for rel in SOURCES}}
     with heavy_lock(root), stage(output, command, identity, spec.get('hang_guard_seconds')) as out:
