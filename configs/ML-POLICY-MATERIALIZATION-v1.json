@@ -82,8 +82,14 @@
   },
   "review_gates": {
     "code_review": {
-      "status": null,
-      "history": "a704983 reviewed by a six-lens same-model adversarial workflow (127 agents; 36 confirmed findings), fixes in the D93 commit; the fixed code needs its own review before PASS"
+      "status": "PASS",
+      "decided_by": "Song (user)",
+      "date": "2026-09-29",
+      "record": "docs/decisions.md D94",
+      "reviewed_code_commit": "5186810c5b6bf461f2549a9b7f445dedb70ca9f0",
+      "basis": "three same-model adversarial review rounds (a704983: 36 confirmed/4 rejected, 0135379: 61/8, b416701: 36/2), every confirmed finding addressed at 5186810; not an independent review",
+      "scope": "opens S0-S2 only (M-3); S3 and later still need independent_review",
+      "validity": "for the code of reviewed_code_commit: register source_commit = reviewed_code_commit (the runner then refuses any later change under experiments/, src/, scripts/); a code change needs a new gate decision"
     },
     "independent_review": {
       "status": null,
@@ -608,6 +614,8 @@
     "output_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1",
     "environment": {
       "python": "/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+      "invoke_with": "/Users/song/Projects/pitcheezy/.venv/bin/python",
+      "invoke_note": "python is the realpath of invoke_with; call the venv interpreter (numpy, pandas, scipy, torch come from .venv site-packages, lightgbm from deps). Calling python directly fails at import (checked 2026-09-29)",
       "pythonpath": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:/Users/song/Projects/pitcheezy/experiments/pitchmdp",
       "versions": {
         "python": "3.12.14",
@@ -620,7 +628,7 @@
     },
     "source_commit": null,
     "registered_config_sha256": null,
-    "command_template": "PYTHONPATH=<pythonpath> <python> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
+    "command_template": "PYTHONPATH=<pythonpath> <invoke_with> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
     "failure": "hang guard / RowBudget / integrity failures preserve the stage (failure-*.json, partial ledger prefix not citable); retries only as new attempts with the same scope",
     "caps_policy": "D-11 D: no wall caps before measurement; label-blind stages carry the hang guard only; candidate rollouts (S3, S3b, S5, S6) carry registered RowBudgets; wall caps are registered after S0-S4 costs are measured; scope never shrinks after a failure",
     "bootstrap": {

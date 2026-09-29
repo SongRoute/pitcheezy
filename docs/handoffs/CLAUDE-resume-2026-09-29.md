@@ -1,12 +1,12 @@
-# Claude 재개 인수인계 — D93 이후
+# Claude 재개 인수인계 — D94 이후
 
-2026-09-29 작성(D92판을 D93으로 갱신; D92판은 git 이력에 보존). 새 세션의 시작점이다. [이전 재개 문서(D91)](CLAUDE-resume-2026-09-28.md)와 이 문서의 D92판 작업 묶음은 끝났으므로 다시 하지 않는다. 과학 규약을 바꾸거나 실행을 승인하지 않는다.
+2026-09-29 작성(D92판을 D93·D94로 갱신; 이전 판은 git 이력에 보존). 새 세션의 시작점이다. [이전 재개 문서(D91)](CLAUDE-resume-2026-09-28.md)와 이 문서의 D92판 작업 묶음은 끝났으므로 다시 하지 않는다. 과학 규약을 바꾸거나 실행을 승인하지 않는다.
 
 ## 1. 현재 위치
 
 - 저장소 `/Users/song/Projects/pitcheezy`, 브랜치 `codex/ml-matrix-execution`, PR [#34](https://github.com/SongRoute/pitcheezy/pull/34)(merge 금지·새 PR 중복 금지). reset하지 말고 현재 HEAD에서 이어간다. 로컬에서 대상이 바뀐 `runs` symlink(` M runs`)는 건드리지 않는다.
 - **협업 체제(D93): Opus 5.5 단독.** Sol·Astra·Codex를 호출하지 않는다. 같은 모델의 워크플로 검토는 자기 검토이며 독립 검토로 부르지 않는다.
-- D93 커밋은 [기계 기록](../../results/ML-policy-validation-code-v1.json)의 `commits`에 있다. 재개 시 `git status --short`, `git log -5 --oneline`, ListAgents, `docs/decisions.md` 꼬리를 확인한다.
+- D93 커밋은 [기계 기록](../../results/ML-policy-validation-code-v1.json)의 `commits`에 있다(검토한 코드 `5186810`). **D94: 코드 검토 게이트(S0–S2) PASS**(사용자 판정, 같은 모델 검토 근거, 독립 검토 아님). 재개 시 `git status --short`, `git log -5 --oneline`, ListAgents, `docs/decisions.md` 꼬리를 확인한다.
 
 읽기 순서: [AGENTS](../../AGENTS.md)·[CLAUDE](../../CLAUDE.md)·[협업 규칙](../AI_COLLABORATION.md) → 이 문서 → [D93 보고서](../reports/ML-policy-validation-code-2026-09-29.md) → [계약](../contracts/ML-POLICY-MATERIALIZATION-v1.md)·[config](../../configs/ML-POLICY-MATERIALIZATION-v1.json)(권위) → [결정 선택지](../reviews/COOP-018-decision-options-2026-09-29.md) → [코드 검토](../reviews/COOP-018-code-review-2026-09-29.md).
 
@@ -26,16 +26,40 @@
 
 ## 3. 다음 작업 — 순서
 
+### 3.1 S0 등록값 — 사용자 결정 대기 (추천안)
+
+S0를 돌리려면 아래 값이 모두 있어야 한다. 이미 들어 있고 이번에 해시를 다시 확인한 값: local config pin(`eb364ca7…`), G0 번들 pin, member loader pin, 출력 루트 `…/ML-MATRIX-20260924/ML-POLICY-VAL-v1`, S0 hang guard 7,200초, 결과 인접 분할 `['train']`, 무투구 목록 `automatic_ball/automatic_strike`, seed base 20260929. 추천값을 메모리에서 적용해 보면 S0–S2 등록 검사는 통과하고 S3 이후는 독립 검토 게이트로 거부된다(확인함).
+
+| 항목 | 추천 | 대안 | 이유 |
+|---|---|---|---|
+| D-4 문턱 T1 `switch_to_secondary_primary_if_unknown_change_share_above` (DEV PA 중 TRAIN에 없는 새 투수로 바뀐 PA 비율 = census `dev.pa_change_to_pitcher_unseen_in_train / dev.pas`) | **1.0 (올리지 않음)** | 0.01 | ≤2025는 2026 추정 대상의 리허설이고 2026 proposal은 "계속 평가가 주"다. 이 비율로 주 추정량을 바꾸면 리허설이 2026과 달라진다. 그런 PA는 D-5 경계로 이미 유효하게 다루고 2차 추정이 자연 경과를 보여 준다. [결정 선택지](../reviews/COOP-018-decision-options-2026-09-29.md) D-4는 '비율이 무시하기 어려우면 자연 경과를 주로'를 조건으로 적었다. 추천은 그 전환을 ≤2025에서 자동으로 하지 않고, 비율이 크면 2026 계약 변경 안건(사용자 결정)으로 올려 두 시기를 함께 바꾸는 쪽이다. 대안 0.01: 이 원인만으로 L1 폭이 약 0.01×(Πρ_c+Πρ_r)만큼 커져 주 경계가 쓸모없어지는 지점(ρ곱≈1이면 약 2%p, 산술 예시이며 측정 아님) |
+| D-4 문턱 T2 `light_version_if_below` (투수 교체 PA 비율 = `dev.pa_with_pitcher_change / dev.pas`) | **0.0 (생략하지 않음)** | 0.001 | 2차 추정은 같은 원장에서 계산해 추가 추론 비용이 0이다. 생략할 이유가 없다 |
+| `le2025_validation_plan.source_commit` | **`5186810c5b6bf461f2549a9b7f445dedb70ca9f0`** | — | 코드 검토 게이트가 PASS한 코드. 이후 커밋은 문서·등록만 허용되고 코드 경로가 바뀌면 실행기가 거부한다 |
+| `registered`, `status`, `execution.enabled`, `execution.real_data_enabled` | **S0 실행 승인과 함께 `true`, `"REGISTERED"`, `true`, `true`** | 승인 전까지 그대로 | 이 네 값이 실제 실행 허가다. 켜도 코드 게이트상 S0–S2만 열리고 S3 이후는 독립 검토 게이트가 막는다. stage마다 따로 승인받아 실행한다 |
+
+### 3.2 결정 뒤 순서
+
 | 순서 | 작업 | 완료 기준 |
 |---|---|---|
-| 1 | **코드 검토 게이트(S0–S2) 판정.** 3차 검증에서 남은 결함을 고친 뒤 사용자가 `review_gates.code_review`를 PASS로 올릴지 결정 | 코드 검토 기록 §3차, 사용자 결정 |
-| 2 | **S0 전 등록값 결정**: D-4 두 문턱(`thresholds_before_S0`), source commit, 등록 상태 전환 | decisions 한 줄, config 등록본 |
-| 3 | **S0→S2 실행**(사용자 승인 뒤): census → 등록 addendum → materialize-bc·style-snapshot → bind-probe | stage manifest, S1 게이트·S2 합격 |
-| 4 | **S3 전 독립 검토**(M-3). Opus 단독 체제에서는 불가 → 사용자가 독립 검토 방법을 정할 때까지 S3 이후는 닫힘 | 독립 검토 기록 |
-| 5 | S3 후보·예산, S3b 문턱·경기 수, S5 설계값·허용치, S6 경기 수·예산·무효 비율 등록(모두 S0–S4 실측 뒤, D-11 D) | addendum과 등록본 |
+| 1 | 결정값을 config에 반영하고 **커밋·푸시**(실행기는 `--config`가 HEAD에 바이트 그대로 커밋돼 있어야 실행) | `git status`에 config 변경 없음 |
+| 2 | **S0 실행**(사용자 승인 뒤, tmux `runs` 창에서; 단일 heavy lock이 비어 있는지 확인). 명령은 아래 | `S0-census-a1/manifest.json`, 실측 비용 |
+| 3 | S0 결과 검토: 무행동 원인 교차표, 카운트 경로 단절, 교체, 손 애매, 경계 경기, TRAIN 결과 인접 항목. 무투구 목록 조정은 **S0 구조 수로만**(D-3) | 조정 여부를 decisions에 한 줄 |
+| 4 | addendum 1 등록(`census`) → 커밋 → S1 `materialize-bc`, S1b `style-snapshot` → S1 게이트 확인 | 봉인 manifest |
+| 5 | S2 `bind-probe`(실제 G0 5 member, 64행, atol 1e-6) → addendum 2(`bc`, `support`, `hands`, `materialize`, `style_*`, `bind_probe`, `bind_identity`) | probe `pass: true` |
+| 6 | **S3 이후를 열 독립 검토 방법**을 사용자가 정함(M-3). Opus 단독 체제에서는 불가 | 결정 기록 |
+| 7 | S0–S4 실측 뒤 `null` 값 등록(D-11 D): S3 후보·예산, S3b 경기 수·문턱 5개, S5 설계값·허용치(선택: declared hazard), S6 경기 수·행 예산·계획 결정 수·D-7 진단 표본 수, 부트스트랩 무효 비율 | 재등록 기록 |
+| 8 | 2026 proposal 두 항목(`profile_as_of`, `mid_pa_pitcher_change_rule`)을 2026 계약 검토 안건에 올림(검토 방법은 6번 결정을 따름) | 검토 기록 |
+
+S0 명령(결정·커밋·승인 뒤). 인터프리터는 `.venv/bin/python`이다(config `environment.invoke_with`; Homebrew 파이썬을 직접 부르면 numpy import에서 멈춘다):
+
+```bash
+cd /Users/song/Projects/pitcheezy && PYTHONPATH="/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:experiments/pitchmdp" .venv/bin/python experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json --local-config experiments/pitchmdp/configs/local.json --output "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S0-census-a1" census
+```
+
+미구현으로 남긴 것(코드 검토 기록 §3차): D-10 테스트 중 BC 전용 코드 경우, D-3 description 허용 목록 게이트, 합성 인코더의 membership 진단.
 
 ## 4. 실행 경계와 협업
 
-- `policy_frozen=false`, `execution.enabled=false`, config `PROPOSAL_UNREGISTERED`. 2026 추가 열람·수집·fit·추론·OPE, 정책/서비스 승격, 봉인 파일 덮어쓰기, PR merge 금지. 실제 실행은 등록·게이트·사용자 승인 뒤에만.
+- `policy_frozen=false`, `execution.enabled=false`, config `PROPOSAL_UNREGISTERED`, 코드 검토 게이트 PASS(D94), 독립 검토 게이트 `null`. 2026 추가 열람·수집·fit·추론·OPE, 정책/서비스 승격, 봉인 파일 덮어쓰기, PR merge 금지. 실제 실행은 등록·게이트·사용자 승인 뒤에만.
 - Opus 5.5 단독(D93). Fable 제외, Claude→Codex 재호출 금지.
 - 코드 변경 후 `graphify update .`(AST만). Ponytail 기본 모드와 연구 예외를 따른다.
