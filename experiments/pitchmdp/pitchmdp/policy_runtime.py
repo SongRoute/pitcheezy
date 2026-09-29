@@ -20,6 +20,7 @@ import numpy as np
 from .matrix_data import canonical_hash
 from .policy_artifacts import (IntegrityError, Unsupported, TrainBCArtifact, _canonical_bytes, bc_payload,
                                support_table_payload)
+from .planner import OUTCOMES
 from .rollout_policy import PAState
 
 SUPPORTED = 'SUPPORTED'
@@ -28,19 +29,39 @@ UNKNOWN_PITCHER = 'UNSUPPORTED_UNKNOWN_PITCHER'
 EMPTY_SUPPORT = 'UNSUPPORTED_EMPTY_SUPPORT'
 LOGGING_POSITIVITY = 'UNSUPPORTED_LOGGING_POSITIVITY'
 MID_PA = 'UNSUPPORTED_MID_PA'
+NO_LOGGED_ACTION = 'UNSUPPORTED_NO_LOGGED_ACTION'  # automatic ball/strike or missing type: no pitcher choice
+INCOMPLETE_START = 'UNSUPPORTED_INCOMPLETE_START'  # first recorded decision is not the 0-0 PA start
+INCONSISTENT_HISTORY = 'UNSUPPORTED_INCONSISTENT_HISTORY'  # count does not follow the recorded previous outcome
 FAILED_INTEGRITY = 'FAILED_INTEGRITY'
 FAILED_RUNTIME = 'FAILED_RUNTIME'  # e.g. BudgetExceeded: fatal, recorded, not a refusal
 EVALUATED = (SUPPORTED, OUTSIDE_POLICY_SUPPORT)
 FATAL = (FAILED_INTEGRITY, FAILED_RUNTIME)
 STATUSES = (SUPPORTED, OUTSIDE_POLICY_SUPPORT, UNKNOWN_PITCHER, EMPTY_SUPPORT, LOGGING_POSITIVITY,
-            MID_PA, FAILED_INTEGRITY, FAILED_RUNTIME)
+            MID_PA, NO_LOGGED_ACTION, INCOMPLETE_START, INCONSISTENT_HISTORY, FAILED_INTEGRITY, FAILED_RUNTIME)
 ATOL = 1e-9
+NO_PITCH = '<NO_PITCH>'  # logged label AND history action of a row without a pitcher choice
+
+
+def next_count(balls, strikes, outcome):
+    """Count after a non-terminal recorded outcome; None if the outcome ends the PA; 'unknown' is uncheckable."""
+    if outcome == 'unknown':
+        return 'unknown'
+    if outcome == 'ball':
+        return None if balls == 3 else (balls + 1, strikes)
+    if outcome == 'strike':
+        return None if strikes == 2 else (balls, strikes + 1)
+    if outcome == 'foul':
+        return balls, min(strikes + 1, 2)
+    if outcome in OUTCOMES:
+        return None  # ball in play or hit by pitch ends the PA
+    raise IntegrityError(f'unknown outcome label {outcome!r}')
 
 
 @dataclass(frozen=True)
 class DecisionRequest:
     """Caller-supplied pre-decision context. ``logged_action`` is the observed label (or None
-    for a pre-pitch service call); it is only mapped for ratios, never substituted."""
+    for a pre-pitch service call, or ``NO_PITCH`` for a row without a pitcher choice); it is only
+    mapped for ratios, never substituted."""
     request_id: str
     pa_id: str
     decision_index: int
@@ -164,11 +185,19 @@ class PolicyRuntime:
             raise IntegrityError(f'{name}: invalid probabilities or mass outside its support')
         return p
 
+    def _q_record(self, q, se, mask):
+        """Reference-continuation Q on the mask (None off the mask) for the DR estimator."""
+        q, se = np.asarray(q, dtype=np.float64), np.asarray(se, dtype=np.float64)
+        if q.shape != mask.shape or se.shape != mask.shape or not np.isfinite(q[mask]).all() or np.isfinite(q[~mask]).any():
+            raise IntegrityError('reference Q must be finite exactly on the policy mask')
+        return {'q_reference': [float(v) if m else None for v, m in zip(q, mask)],
+                'q_mc_se': [float(v) if m and np.isfinite(v) else None for v, m in zip(se, mask)]}
+
     def _evaluate(self, request, pa):
         state = request.state
         if request.runtime_sha256 != self.sha256:
             raise IntegrityError('request pinned to another runtime/policy identity')
-        if request.logged_action is not None and request.logged_action not in self.vocabulary:
+        if request.logged_action not in (None, NO_PITCH) and request.logged_action not in self.vocabulary:
             raise IntegrityError(f'unknown logged action label {request.logged_action!r}')
         # Strict pre-decision history: exactly the earlier decisions of this PA, in order.
         if request.decision_index != pa['next'] or len(state.history) != request.decision_index:
@@ -177,6 +206,17 @@ class PolicyRuntime:
             raise IntegrityError('history does not end with the previously logged action of this PA')
         if pa['refused'] is not None:
             raise Unsupported(MID_PA, f'PA refused at decision {pa["refused"][0]}: {pa["refused"][1]}')
+        # Pre-decision data refusals (legitimate, in the denominator, sticky for the rest of the PA).
+        if request.logged_action == NO_PITCH:
+            raise Unsupported(NO_LOGGED_ACTION, 'no pitcher choice at this row')
+        if request.decision_index == 0 and (state.balls, state.strikes) != (0, 0):
+            raise Unsupported(INCOMPLETE_START, f'first decision at {state.balls}-{state.strikes}')
+        if state.history:
+            past = state.history[-1]
+            follows = next_count(past.balls, past.strikes, past.outcome)
+            if follows != 'unknown' and follows != (state.balls, state.strikes):
+                raise Unsupported(INCONSISTENT_HISTORY, f'{past.balls}-{past.strikes} {past.outcome} -> '
+                                  f'{state.balls}-{state.strikes}')
         if self.bc.fallback(state):
             raise Unsupported(UNKNOWN_PITCHER, 'no TRAIN history for this pitcher; league fallback refused')
         logging_mask = self.bc.support(state)
@@ -189,11 +229,16 @@ class PolicyRuntime:
         if not mask.any():
             raise Unsupported(EMPTY_SUPPORT, 'no intervention-supported action')
         reference = self._row(self.reference.probabilities(state), mask, 'reference')
-        candidate = None if self.candidate is None else self._row(self.candidate(state), mask, 'candidate')
+        candidate, q_record = None, {}
+        if self.candidate is not None:
+            out = self.candidate(state)  # probabilities, or (probabilities, reference Q, MC s.e.)
+            candidate = self._row(out[0] if isinstance(out, tuple) else out, mask, 'candidate')
+            if isinstance(out, tuple):
+                q_record = self._q_record(out[1], out[2], mask)
         result = {'mask': mask.tolist(), 'logging': logging.tolist(), 'reference': reference.tolist(),
                   'candidate': None if candidate is None else candidate.tolist(),
                   'logging_mass_on_mask': float(logging[mask].sum()),
-                  'logged_index': None, 'rho_reference': None, 'rho_candidate': None}
+                  'logged_index': None, 'rho_reference': None, 'rho_candidate': None, **q_record}
         if request.logged_action is None:
             return SUPPORTED, result
         a = self.vocabulary.index(request.logged_action)
@@ -319,7 +364,7 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
     """
     from .policy_artifacts import load_support_table, load_train_bc
     from .policy_identity import BoundComponents
-    from .rollout_policy import JointSimulator, RolloutImprovement
+    from .rollout_policy import JointSimulator, RolloutImprovement, kl_policy
     artifact = load_train_bc(bc_path, bc_sha256)
     support, support_identity = load_support_table(support_path, support_sha256, artifact)
     if components is None:
@@ -341,13 +386,16 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
     reference, we = MaskedReference(artifact.bc, support), components.we
     improvement = RolloutImprovement(reference, JointSimulator(components.inputs.pool, components.g0, we.terminal, budget),
                                      we.cutoff, samples=samples, pitch_cap=pitch_cap, seed=seed)
-    choose = improvement.policy('P3', tau=tau)
+    improvement.policy('P3', tau=tau)  # validates tau exactly as the P3 policy does
 
     def candidate(state):
-        actions, p = choose(state, 0)
-        if tuple(actions) != artifact.vocabulary:
+        """P3 = kl_policy(Q_ref, pi_ref, M, tau) (RolloutImprovement.policy('P3')), with Q_ref computed
+        once and returned for the DR estimator (q-hat of both policies, D89 §5)."""
+        if reference.actions != artifact.vocabulary:
             raise IntegrityError('candidate action order differs from the BC vocabulary')
-        return p
+        q, diagnostics = improvement.q_values(state)
+        p = kl_policy(q, reference.probabilities(state), reference.support(state), tau)
+        return p, q, diagnostics['mc_se']
     runtime = PolicyRuntime(artifact, support, support_identity, ledger_path, candidate=candidate,
                             candidate_identity=identity, predictor_identity=components.g0.identity,
                             support_check=components.check_support, context_digest=components.context_sha256)

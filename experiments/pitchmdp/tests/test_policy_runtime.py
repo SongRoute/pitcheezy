@@ -386,7 +386,7 @@ class LedgerTests(unittest.TestCase):
         root = self.root / 'm1'; root.mkdir()
         art, sha = runtime_fixture(root, minimum=1)
         rt = pr.build_runtime(root / 'bc.json', art.file_sha256, root / 'support.json', sha, root / 'l.jsonl')
-        row = rt.submit(request(rt, 'a', 'p', 0, PAState(0, 1, '9', 'L', ()), 'CH'))
+        row = rt.submit(request(rt, 'a', 'p', 0, PAState(0, 0, '9', 'L', ()), 'CH'))  # PA start is 0-0 (COOP-018)
         self.assertEqual(row['status'], pr.OUTSIDE_POLICY_SUPPORT)
         self.assertEqual(row['result']['rho_reference'], 0.0)
         self.assertGreater(row['result']['logging'][0], 0)
@@ -504,7 +504,13 @@ class EndToEndTests(unittest.TestCase):
         rt2 = pr.build_runtime(root / 'bc.json', art.file_sha256, root / 'support.json', support_sha,
                                root / 'ledger.jsonl', **{**settings, 'budget': RowBudget(10 ** 6, seed_count=5)})
         self.assertEqual(rt2.sha256, rt.sha256)
-        np.testing.assert_array_equal(rt2.candidate(s0), c)
+        np.testing.assert_array_equal(rt2.candidate(s0)[0], c)
+        # The candidate is exactly RolloutImprovement's P3 law; its Q is recorded on the mask only (COOP-018).
+        np.testing.assert_array_equal(rt2.improvement.policy('P3', tau=.01)(s0, 0)[1], c)
+        q, se = first['result']['q_reference'], first['result']['q_mc_se']
+        self.assertEqual([v is None for v in q], [True, False, False])
+        np.testing.assert_array_equal(np.array(q[1:]), rt2.improvement.q_values(s0)[0][1:])
+        self.assertEqual(len(se), 3)
         self.assertEqual(rt2.summary()['request_status'], {pr.SUPPORTED: 1, pr.OUTSIDE_POLICY_SUPPORT: 1,
                                                            pr.UNKNOWN_PITCHER: 1})
         # Perturbed predictor (one May temperature) = new identity: old-pinned requests refused.

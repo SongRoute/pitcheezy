@@ -188,12 +188,15 @@ class SyntheticPolicy:
         self.paths['we_contract'].write_bytes(contract)
         self.we_sha = hashlib.sha256(contract).hexdigest()
 
-    def bind(self, bc_artifact, rows, *, loader=load_member, classes=None, bundle_sha=None):
+    def bundle_file(self):
         data = _json(self.bundle)  # the bundle itself is read only through its file pin
         (self.root / 'bundle.json').write_bytes(data)
-        return pi.bind_components(self.root / 'bundle.json', bundle_sha or hashlib.sha256(data).hexdigest(), self.paths,
-                                  bc_artifact=bc_artifact, context_rows=rows, member_loader=loader,
-                                  classes=classes or self.classes, we_contract_sha256=self.we_sha)
+        return self.root / 'bundle.json', hashlib.sha256(data).hexdigest()
+
+    def bind(self, bc_artifact, rows, *, loader=load_member, classes=None, bundle_sha=None):
+        path, sha = self.bundle_file()
+        return pi.bind_components(path, bundle_sha or sha, self.paths, bc_artifact=bc_artifact, context_rows=rows,
+                                  member_loader=loader, classes=classes or self.classes, we_contract_sha256=self.we_sha)
 
 
 def saved_bc(root):

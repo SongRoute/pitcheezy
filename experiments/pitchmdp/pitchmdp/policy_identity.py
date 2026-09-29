@@ -222,11 +222,15 @@ class BoundComponents:
     ponytail: derived caches (pool/support/frequency caches) are rebuilt from the covered
     objects and are not digested; in-process tampering with a cache is out of scope.
     """
-    def __init__(self, inputs, g0, we, identity, state, links):
+    def __init__(self, inputs, g0, we, identity, state, links, we_model):
         self.inputs, self.g0, self.we, self.identity = inputs, g0, we, identity
         self.sha256 = canonical_hash(identity)
-        self._state, self._links = state, links
+        self._state, self._links, self._we_model = state, links, we_model
         self._digest = content_digest(state())
+
+    def defense_we(self, state, defender_is_home):
+        """Frozen C0 WE of the verified bundle for the initial defender (the estimator's PA-end reward)."""
+        return float(self._we_model.predict_defense(state, defender_is_home))
 
     def context_sha256(self, state):
         """Hash of the bound context row behind ``state`` (None if unbound): part of the request fingerprint."""
@@ -271,9 +275,24 @@ def bind_components(bundle_path, bundle_sha256, paths, *, bc_artifact, context_r
     evaluation contexts (request inputs, not identity; their values enter each request fingerprint).
     Any failure while binding, including the loader's own checks, is FAILED_INTEGRITY.
     """
+    return _integrity(lambda: _bind(pinned_json(bundle_path, bundle_sha256), bundle_sha256, paths, bc_artifact,
+                                    context_rows, member_loader, classes, we_contract_sha256))
+
+
+def bind_policy_inputs(bundle_path, bundle_sha256, paths, *, bc_artifact, context_rows, aux_classes):
+    """Only the pinned auxiliary side (encoder, delivery pools, vocabulary): what the TRAIN support
+    table needs. Same checks as ``bind_components``; members and WE are not loaded."""
+    def bind():
+        bundle = pinned_json(bundle_path, bundle_sha256)
+        validate_g0_manifest(bundle)
+        side = _bind_inputs(bundle, paths, bc_artifact, context_rows, aux_classes)
+        return side['inputs'], {'g0_bundle_file_sha256': bundle_sha256, **side['identity']}
+    return _integrity(bind)
+
+
+def _integrity(bind):
     try:
-        return _bind(pinned_json(bundle_path, bundle_sha256), bundle_sha256, paths, bc_artifact, context_rows,
-                     member_loader, classes, we_contract_sha256)
+        return bind()
     except IntegrityError:
         raise
     except (KeyError, TypeError, AttributeError, ValueError, IndexError, ImportError, EOFError,
@@ -281,14 +300,12 @@ def bind_components(bundle_path, bundle_sha256, paths, *, bc_artifact, context_r
         raise IntegrityError(f'policy component binding failed: {type(error).__name__}: {error}') from error
 
 
-def _bind(bundle, bundle_sha256, paths, bc_artifact, context_rows, member_loader, classes, we_contract_sha256):
-    members = validate_g0_manifest(bundle)
+def _bind_inputs(bundle, paths, bc_artifact, context_rows, aux_classes):
     files = bundle['files']
-    for role in ('p4_auxiliary', 'p4_preparation', 'p11_preparation', 'p11_registered_config', 'p11_frozen_calibration'):
+    for role in ('p4_auxiliary', 'p4_preparation'):
         _require(isinstance(files.get(role), dict) and _sha(files[role].get('sha256')), f'G0 pin missing: {role}')
         _require(role in paths, f'explicit path required for pinned role {role}')
-    _require(isinstance(classes, dict) and set(classes) == {'aux', 'we'} and set(classes['aux']) == set(AUX_KEYS)
-             and set(classes['we']) == set(WE_KEYS), 'registered component classes are incomplete')
+    _require(isinstance(aux_classes, dict) and set(aux_classes) == set(AUX_KEYS), 'registered component classes are incomplete')
     aux_sha = files['p4_auxiliary']['sha256']
 
     # Preprocessing, delivery pools and frequency: one pinned auxiliary pickle checked against
@@ -299,7 +316,7 @@ def _bind(bundle, bundle_sha256, paths, bc_artifact, context_rows, member_loader
     features = prep['features']
     scope = features['auxiliary_scope']
     for key in AUX_KEYS:
-        _require(class_name(aux[key]) == classes['aux'][key], f'auxiliary {key} class differs from its registered class')
+        _require(class_name(aux[key]) == aux_classes[key], f'auxiliary {key} class differs from its registered class')
         _require(_repository_class(aux[key]), f'auxiliary {key} class is not repository code')
         _require(_report(aux[key]) == scope[key], f'auxiliary {key} differs from the report pinned at preparation')
     delivery = aux['delivery']
@@ -318,6 +335,33 @@ def _bind(bundle, bundle_sha256, paths, bc_artifact, context_rows, member_loader
     _require(canonical_hash(bc_payload(bc_artifact.bc, bc_artifact.provenance)) == bc_artifact.sha256,
              'BC state differs from its pinned identity')
     inputs = PolicyInputs(context_rows, encoder, delivery, tokens['type_vocabulary'], aux_sha, bc_artifact.bc)
+    identity = {
+        'bc': {'bc_sha256': bc_artifact.sha256, 'vocabulary_sha256': bc_artifact.vocabulary_sha256},
+        'preprocessing': {'inputs': class_name(inputs), 'safe_columns': list(SAFE_COLUMNS), 'encoder': class_name(encoder),
+                          'encoder_base': aux_classes['context'], 'context_report_sha256': canonical_hash(scope['context']),
+                          'clusters_sha256': canonical_hash(clusters), 'tokens_report_sha256': canonical_hash(tokens),
+                          'type_vocabulary_sha256': vocabulary_sha256(tokens['type_vocabulary']),
+                          'normalizer_report_sha256': canonical_hash(scope['normalizer']),
+                          'auxiliary_sha256': aux_sha, 'preparation_sha256': files['p4_preparation']['sha256']},
+        'delivery_pool': {'class': aux_classes['delivery'], 'draws': DRAWS, 'tiers': scope['delivery']['tiers'],
+                          'pool_count': scope['delivery']['pool_count'], 'report_sha256': canonical_hash(scope['delivery']),
+                          'source_hash': aux_sha,
+                          'policy_rule': 'an action without an action-specific pool is unsupported; the league fallback pool is never used'}}
+    return {'inputs': inputs, 'aux': aux, 'prep': prep, 'scope': scope, 'encoder': encoder, 'clusters': clusters,
+            'delivery': delivery, 'identity': identity}
+
+
+def _bind(bundle, bundle_sha256, paths, bc_artifact, context_rows, member_loader, classes, we_contract_sha256):
+    members = validate_g0_manifest(bundle)
+    files = bundle['files']
+    for role in ('p11_preparation', 'p11_registered_config', 'p11_frozen_calibration'):
+        _require(isinstance(files.get(role), dict) and _sha(files[role].get('sha256')), f'G0 pin missing: {role}')
+        _require(role in paths, f'explicit path required for pinned role {role}')
+    _require(isinstance(classes, dict) and set(classes) == {'aux', 'we'} and set(classes['we']) == set(WE_KEYS),
+             'registered component classes are incomplete')
+    side = _bind_inputs(bundle, paths, bc_artifact, context_rows, classes['aux'])
+    inputs, aux, prep, scope, encoder, clusters, delivery = (side[k] for k in (
+        'inputs', 'aux', 'prep', 'scope', 'encoder', 'clusters', 'delivery'))
 
     # Members: pinned records/config, the pinned loader, and the loaded network checked again.
     p11 = pinned_json(paths['p11_preparation'], files['p11_preparation']['sha256'])
@@ -365,7 +409,7 @@ def _bind(bundle, bundle_sha256, paths, bc_artifact, context_rows, member_loader
     identity = {
         'contract': CONTRACT,
         'g0_bundle_file_sha256': bundle_sha256,
-        'bc': {'bc_sha256': bc_artifact.sha256, 'vocabulary_sha256': bc_artifact.vocabulary_sha256},
+        'bc': side['identity']['bc'],
         'predictor': g0.identity,
         'members': {'loader': loader, 'records_sha256': files['p11_preparation']['sha256'],
                     'config_sha256': files['p11_registered_config']['sha256'],
@@ -376,16 +420,8 @@ def _bind(bundle, bundle_sha256, paths, bc_artifact, context_rows, member_loader
         'frequency': {'role': 'p4_auxiliary', 'key': 'baseline', 'class': classes['aux']['baseline'],
                       'report_sha256': canonical_hash(scope['baseline']), 'temperature': g0.baseline_temperature,
                       'transform': 'softmax(log(clip(raw, 1e-12, 1)) / T)'},
-        'preprocessing': {'inputs': class_name(inputs), 'safe_columns': list(SAFE_COLUMNS), 'encoder': class_name(encoder),
-                          'encoder_base': classes['aux']['context'], 'context_report_sha256': canonical_hash(scope['context']),
-                          'clusters_sha256': canonical_hash(clusters), 'tokens_report_sha256': canonical_hash(tokens),
-                          'type_vocabulary_sha256': vocabulary_sha256(tokens['type_vocabulary']),
-                          'normalizer_report_sha256': canonical_hash(scope['normalizer']),
-                          'auxiliary_sha256': aux_sha, 'preparation_sha256': files['p4_preparation']['sha256']},
-        'delivery_pool': {'class': classes['aux']['delivery'], 'draws': DRAWS, 'tiers': scope['delivery']['tiers'],
-                          'pool_count': scope['delivery']['pool_count'], 'report_sha256': canonical_hash(scope['delivery']),
-                          'source_hash': aux_sha,
-                          'policy_rule': 'an action without an action-specific pool is unsupported; the league fallback pool is never used'},
+        'preprocessing': side['identity']['preprocessing'],
+        'delivery_pool': side['identity']['delivery_pool'],
         'we': we_identity,
         'sources': project_sources([aux, we_values, g0, we, encoder, inputs, member_loader]),
         'environment': environment(),
@@ -400,7 +436,7 @@ def _bind(bundle, bundle_sha256, paths, bc_artifact, context_rows, member_loader
     def links():  # the objects inference goes through are the verified ones
         return (g0.inputs is inputs and g0.baseline.baseline is aux['baseline'] and inputs.delivery is delivery
                 and aux['delivery'] is delivery and inputs.context_encoder is encoder and encoder.base is aux['context'])
-    return BoundComponents(inputs, g0, we, identity, state, links)
+    return BoundComponents(inputs, g0, we, identity, state, links, we_values['we'])
 
 
 # ---------------------------------------------------------------- connection probe
@@ -426,3 +462,43 @@ def compare_probe(actual, expected, atol):
     difference = float(np.abs(actual - expected).max()) if actual.size else None
     return {'rows': len(actual), 'max_abs_difference': difference, 'atol': atol,
             'pass': difference is not None and difference <= atol}
+
+
+# ---------------------------------------------------------------- TRAIN intervention support table
+
+def support_templates(train_rows):
+    """One safe-context template per TRAIN (pitcher, throwing hand) x batter side {L, R} at 0-0.
+
+    Support depends only on the pitcher, hand, side and the pools, so any real TRAIN row of the
+    pitcher/hand serves as the rest of the context. Template keys are synthetic and negative so
+    they never collide with a real pitch key.
+    """
+    base = train_rows.drop_duplicates(['pitcher', 'p_throws']).sort_values(['pitcher', 'p_throws'])
+    rows = []
+    for index, row in enumerate(base.to_dict('records')):
+        for side_index, side in enumerate(('L', 'R')):
+            rows.append({**row, 'game_pk': -1, 'at_bat_number': -(index + 1), 'pitch_number': side_index + 1,
+                         'stand': side, 'balls': 0, 'strikes': 0})
+    import pandas as pd
+    return pd.DataFrame(rows, columns=train_rows.columns)
+
+
+def support_rows(inputs, templates, *, two_hand_rule):
+    """(pitcher, side, mask) rows for ``save_support_table`` plus the pitchers whose hands disagree.
+
+    ``two_hand_rule``: 'refuse' keeps the table key (pitcher, side) and refuses generation when a
+    pitcher's TRAIN hands give different masks; 'intersect' registers the actions supported under
+    every observed hand (conservative, never adds an action).
+    """
+    from .matrix_policy import context_key
+    from .rollout_policy import PAState
+    _require(two_hand_rule in ('refuse', 'intersect'), 'registered two-hand rule required')
+    masks = {}
+    for row in templates.to_dict('records'):
+        pitcher, side = str(int(row['pitcher'])), str(row['stand'])
+        mask = inputs.support(PAState(0, 0, pitcher, side, (), context_key(row)))
+        masks.setdefault((pitcher, side), []).append(mask)
+    conflicts = sorted({p for (p, _), found in masks.items() if any(not np.array_equal(found[0], m) for m in found[1:])})
+    _require(not conflicts or two_hand_rule == 'intersect', f'pitchers with hand-dependent support: {conflicts[:10]}')
+    rows = [(p, s, np.logical_and.reduce(found)) for (p, s), found in sorted(masks.items())]
+    return rows, conflicts
