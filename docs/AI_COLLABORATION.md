@@ -64,3 +64,8 @@ COOP-016은 Opus5.5 실제 CLI 1회가 설계·구현·합성 검사·보고서�
 ## 구성요소 연결·완전한 식별자·≤2025 등록 준비 — D92
 
 COOP-017은 사용자 재개 지시로 Claude(`claude-opus-5-5`)가 **Codex 감독기 없이 직접** 수행했다. Sol·Astra는 이 Claude 환경에서 호출할 수 없었고, Claude가 Codex를 다시 부르는 순환 위임은 금지이므로 시도하지 않았다. 구현·합성 검사·등록안만 남기고 독립 검토 패킷을 준비했다(검토 미수행). 같은 모델의 하위 에이전트 점검은 자기 점검으로만 기록하며 Sol/Astra 검토로 부르지 않는다. 실데이터·payload·2026 접근은 0이고 Fable 호출은 없다. 작업대장 SSD `coordination/20260929-policy-materialization/board.json`. [보고서](reports/ML-policy-materialization-prep-2026-09-29.md), [검토 패킷](reviews/COOP-017-policy-materialization-review-packet-2026-09-29.md). 다음 협업 환경에서 Sol 재현과 Astra 핵심 검토 1회를 먼저 수행한다.
+
+## Opus 단독 전환·검증 코드·결정 반영 — D93
+
+2026-09-29 사용자가 "지금부터 Opus 5.5 단독으로 진행, 결정 항목은 추천안을 몇 개씩, 아직 없는 코드도 Opus가 직접 작성"을 지시했다. 이후 COOP-018은 Claude(`claude-opus-5-5`)가 **단독**으로 수행한다. Sol·Astra·Codex를 호출하지 않고, 같은 모델의 다중 에이전트 워크플로(렌즈별 분석, 결함마다 검증자 3명, 누락 점검)를 쓴다. 이것은 **자기 검토**이며 독립 검토로 부르지 않는다. 독립 검토가 필요한 게이트(≤2025 검증의 S3 이후, 2026 계약 변경)는 닫힌 채로 둔다. 실데이터·payload·2026 접근은 0이고 Fable 호출은 없다. 결정 기록 [D93](decisions.md), [결정 선택지](reviews/COOP-018-decision-options-2026-09-29.md), [코드 검토](reviews/COOP-018-code-review-2026-09-29.md), [보고서](reports/ML-policy-validation-code-2026-09-29.md).
+
