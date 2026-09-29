@@ -1,7 +1,7 @@
 {
   "protocol": "ml_policy_materialization_v1",
-  "status": "PROPOSAL_UNREGISTERED",
-  "registered": false,
+  "status": "REGISTERED",
+  "registered": true,
   "policy_frozen": false,
   "created": "2026-09-29",
   "base_commit": "713c7ea",
@@ -14,9 +14,9 @@
     "parent_changes_d93": "configs/MLB-2026-POLICY-PREPARATION-v1.json common.mid_pa_pitcher_change_rule and common.profile_as_of rewritten as proposals (D-4, D-7); status stays proposal, next Astra review item"
   },
   "execution": {
-    "enabled": false,
-    "real_data_enabled": false,
-    "reason": "Decisions D-1..D-11 and M-1..M-13 are made (D93) and the runner exists, but nothing may run: registration, the code-review gate (S0-S2), the independent-review gate (S3+), the source commit and every null stage field below are still open. No payload load, BC export, inference, OPE or 2026 access is authorized by this file."
+    "enabled": true,
+    "real_data_enabled": true,
+    "reason": "D96 (2026-09-29): the user approved S0 census execution only. Registration and execution switches are on; the code-review gate (D94, source commit 5186810) opens S0-S2 in the runner, but S1, S1b and S2 each still need their own user approval, and S3+ stay closed by the independent-review gate. No BC export, inference, OPE or 2026 access is authorized by this approval."
   },
   "documents": {
     "contract": "docs/contracts/ML-POLICY-MATERIALIZATION-v1.md",
