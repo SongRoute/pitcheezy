@@ -947,6 +947,9 @@ class LoadInputsTests(unittest.TestCase):
                 mock.patch.object(rpv.pid, 'pinned_pickle', return_value={'normalizer': normalizer}):
             out = rpv.load_inputs(config, {})
         self.assertTrue(pd.to_datetime(out['frame'].game_date).is_monotonic_increasing)
+        expected = frame.sort_values(['game_date', 'game_pk', 'at_bat_number', 'pitch_number'])
+        pd.testing.assert_frame_equal(out['frame'][['game_pk', 'at_bat_number', 'pitch_number']],
+                                      expected[['game_pk', 'at_bat_number', 'pitch_number']].reset_index(drop=True))
         self.assertEqual(len(out['store'].frame), len(frame))
 
 
