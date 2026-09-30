@@ -84,10 +84,10 @@
     "code_review": {
       "status": "PASS",
       "decided_by": "Song (user)",
-      "date": "2026-09-30",
-      "record": "docs/decisions.md D121 (runtime v3 / L1-R / ope-2026 batch b3bd334+c38cc61 under the D116 autonomy; earlier PASS D94/D100/D102/D103)",
-      "reviewed_code_commit": "c38cc612e13e7355119c5c875821b6c2e7b0f1ca",
-      "basis": "same-model adversarial review of a454520..b3bd334 (0 blocker, 2 major, 7 minor) and Fable 5.1 COOP-023 findings, all addressed in c38cc61; suites pitchmdp 749, root 363, contract all_pass",
+      "date": "2026-10-01",
+      "record": "docs/decisions.md D124 (low-memory ledger 97affbb + S-B O(n) on top of the D121 PASS for c38cc61)",
+      "reviewed_code_commit": "9024bd986191ce28d3c647b8740d98f9d17ab5c4",
+      "basis": "same-model review of 97affbb (no correctness bug; perf notes), Fable 5.1 COOP-024 PASS-with-conditions; synthetic golden digests equal to 25bcdb7; suites pass",
       "scope": "opens S0-S2 only (M-3); S3 and later still need independent_review",
       "validity": "for the code of reviewed_code_commit: register source_commit = reviewed_code_commit (the runner then refuses any later change under experiments/, src/, scripts/); a code change needs a new gate decision"
     },
@@ -95,9 +95,9 @@
       "status": "PASS",
       "verdict": "PASS_WITH_CONDITIONS for S6-dr-a3 and for ope-2026 after S6-dr-a3 is sealed",
       "decided_by": "Song (user), on the Fable 5.1 verdict",
-      "date": "2026-09-30",
-      "record": "docs/reviews/COOP-023-fable-runtime-v3-code-review-2026-09-30.md; earlier COOP-019 (9c25d8e), COOP-022 (design)",
-      "reviewed_code_commit": "b3bd334 (+ fix batch c38cc61 for its conditions)",
+      "date": "2026-10-01",
+      "record": "docs/decisions.md D124 (Fable 5.1 COOP-024 low-memory ledger review); earlier COOP-019/022/023",
+      "reviewed_code_commit": "97affbb (+ S-B O(n) equivalence change)",
       "conditions": [
         "S3b thresholds and tau grid committed before the June ledger is opened",
         "before S5: register tolerance together with a delta_gap_se ceiling (F1)",
@@ -105,7 +105,8 @@
         "S6 report: min ESS over all E0 weights beside the gate (F3) and the candidate single-robustness statement (F5)",
         "2026: pinned profile_as_of and source-date guard (F2, implemented in fa82afb)",
         "COOP-023: register S6_V4.estimator and disclose the post-S6-dr-a2 change; S-v1 layers of S6-dr-a3 must equal S6-dr-a2",
-        "COOP-023: 2026 vocabulary mapping, exact b_V 0.002734729542731599, hang-guard/power fields before ope-2026"
+        "COOP-023: 2026 vocabulary mapping, exact b_V 0.002734729542731599, hang-guard/power fields before ope-2026",
+        "COOP-024: re-certify S2->S6 on this code; 2026 hang guard and memory projection from that S6 manifest; confirm peak_rss x games/150 fits 24 GB with margin"
       ],
       "reviewer": "claude-fable-5-1 (D100: the user designated Fable 5.1 as the core reviewer; the author is Opus 5.5)",
       "note": "opens S3 and later subject to the conditions; the D101 batch after 9c25d8e (exFAT write, is_appledouble reuse, additive F2) was same-model reviewed only"
@@ -694,7 +695,7 @@
         "lightgbm": "4.6.0"
       }
     },
-    "source_commit": "c38cc612e13e7355119c5c875821b6c2e7b0f1ca",
+    "source_commit": "9024bd986191ce28d3c647b8740d98f9d17ab5c4",
     "registered_config_sha256": null,
     "command_template": "PYTHONPATH=<pythonpath> <invoke_with> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
     "failure": "hang guard / RowBudget / integrity failures preserve the stage (failure-*.json, partial ledger prefix not citable); retries only as new attempts with the same scope",
