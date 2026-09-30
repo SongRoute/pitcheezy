@@ -224,6 +224,38 @@ class RuntimeRefusalTests(unittest.TestCase):
         with self.assertRaisesRegex(pa.IntegrityError, 'halted'):
             rt.submit(pr.DecisionRequest('p1', 'q', 0, PAState(0, 0, '9', 'L'), 'FF', rt.sha256, 'R'))
 
+    def test_runtime_v3_records_the_positivity_row_with_rho_zero(self):
+        """COOP-021/022: opt-in v3 evaluates the candidate first and records pi, Q and rho = 0 on the
+        refused row; status and stickiness stay; the default runtime keeps the v2 pins."""
+        calls = []
+
+        def candidate(state):
+            calls.append(state)
+            mask = self.rt.reference.support(state)
+            q = np.where(mask, .5, np.nan)
+            return self.rt.reference.probabilities(state), {'q': q, 'mc_se': q * 0, 'q_planning': q,
+                                                            'planning_diff_se': q * 0, 'source': 'test'}
+        artifact = pa.load_train_bc(self.root / 'bc.json', self.art.file_sha256)
+        table, support_sha = pa.load_support_table(self.root / 's.json', self.support, artifact)
+        v2 = pr.PolicyRuntime(artifact, table, support_sha, self.root / 'v2.jsonl', candidate=candidate,
+                              candidate_identity={'name': 'test'})
+        rt = pr.PolicyRuntime(artifact, table, support_sha, self.root / 'v3.jsonl', candidate=candidate,
+                              candidate_identity={'name': 'test'}, positivity_record=True)
+        self.assertEqual((v2.pins['contract'], 'positivity_record' in v2.pins), (pr.CONTRACT, False))
+        self.assertEqual((rt.pins['contract'], rt.pins['positivity_record']), (pr.CONTRACT_V3, True))
+        self.assertNotEqual(rt.sha256, v2.sha256)
+        row = rt.submit(pr.DecisionRequest('p0', 'p', 0, PAState(0, 0, '9', 'L'), 'CH', rt.sha256, 'R'))
+        self.assertEqual((row['status'], len(calls)), (pr.LOGGING_POSITIVITY, 1))
+        result = row['result']
+        self.assertEqual((result['rho_candidate'], result['rho_reference'], result['logged_index']), (0., 0., 0))
+        self.assertEqual((result['logging'][0], result['mask'][0], result['candidate'][0]), (0., False, 0.))
+        after = rt.submit(pr.DecisionRequest('p1', 'p', 1, PAState(0, 1, '9', 'L', (self.past('CH', 'strike'),)),
+                                             'FF', rt.sha256, 'R'))
+        self.assertEqual((after['status'], after['result']), (pr.MID_PA, None))  # still sticky
+        value = est.pa_value(rt.ledger.decisions(), {'game': 1, 'in_population': True, 'reward': .4}, 'l1r')
+        self.assertEqual((value['resolution'], value['delta']), ('rho_zero', 0.))  # cand = ref here
+        self.assertAlmostEqual(value['candidate'], .5, places=12)  # V_0 = v_pi(H_0) = sum pi q
+
     def test_no_bc_or_candidate_query_after_a_sentinel(self):
         """D-3 guard: the BC fit keys use '<UNKNOWN>' where requests use sentinels; harmless only because
         nothing queries the BC or the candidate after a sentinel (sticky refusal)."""
@@ -573,13 +605,14 @@ class EstimatorTests(unittest.TestCase):
             est.pa_value(refuse_from(rows, 0, pr.UNKNOWN_PITCHER), {'game': 1, 'in_population': True, 'reward': .5})
 
     def test_natural_course_continuation_is_exact_for_the_regime(self):
-        """COOP-021: an H_k-fixed refusal (after a first-pitch ball) hands both policies to the logged
-        behaviour; the expected estimate equals the exact regime values, and the default is unchanged."""
+        """COOP-021: under L1-R an H_k-fixed refusal (after a first-pitch ball) hands both policies to
+        the logged behaviour; the expected estimate equals the exact regime values, and the default
+        is unchanged."""
         refused = lambda steps: len(steps) > 1 and steps[1][0][0][1] == 'ball'
 
         def regime(pi):
             return lambda h: TOY.PI_B(h) if len(h) >= 1 and h[0][1] == 'ball' else pi(h)
-        got = {'candidate': 0., 'reference': 0., 'lo': 0., 'hi': 0.}
+        got = {'candidate': 0., 'reference': 0.}
         for steps, reward, weight in TOY.trajectories(TOY.PI_B):
             rows = toy_rows(steps, TOY.PI_CAND, TOY.PI_REF, TOY.PI_B, TOY.wrong_q, FULL)
             info = {'game': 1, 'in_population': True, 'reward': float(reward)}
@@ -587,8 +620,8 @@ class EstimatorTests(unittest.TestCase):
                 rows = refuse_from(rows, 1)
                 worst = est.pa_value(rows, info)
                 self.assertEqual(worst, est.pa_value(rows, info, 'worst_case'))  # default = registered D-5
-                self.assertNotIn('continuation', worst)
-            row = est.pa_value(rows, info, 'natural_course')
+                self.assertNotIn('resolution', worst)
+            row = est.pa_value(rows, info, 'l1r')
             self.assertEqual(row['candidate_bounds'][0], row['candidate_bounds'][1])  # point, not a bound
             for name in ('candidate', 'reference'):
                 got[name] += weight * row[f'{name}_bounds'][0]
@@ -598,25 +631,114 @@ class EstimatorTests(unittest.TestCase):
         steps, _, _ = next(p for p in TOY.trajectories(TOY.PI_B) if refused(p[0]))
         rows = refuse_from(toy_rows(steps, TOY.PI_CAND, TOY.PI_REF, TOY.PI_B, TOY.wrong_q, FULL), 1)
         info = {'game': 1, 'in_population': True, 'reward': None, 'kind': est.NO_TERMINAL}
-        shared = est.pa_value(rows, info, 'natural_course')
+        shared = est.pa_value(rows, info, 'l1r')
         rho = {n: rows[0]['result'][f'rho_{n}'] for n in est.POLICIES}
         self.assertAlmostEqual(shared['delta_bounds'][1] - shared['delta_bounds'][0],
                                abs(rho['candidate'] - rho['reference']), places=12)
-        # Post-decision refusals keep the worst-case bound; unknown option names are refused.
+        # S-NP: the same refusal outside the natural-course list keeps independent unknowns (G-R residual).
+        worst = est.pa_value(rows, {**info, 'reward': .5}, 'l1r', natural=())
+        self.assertEqual(worst['resolution'], 'worst_case_residual')
+        self.assertAlmostEqual(worst['delta_bounds'][1] - worst['delta_bounds'][0], sum(rho.values()), places=12)
+        gap = est.pa_value(rows, {**info, 'reward': .5}, 'l1r', natural=(), gap_delta=.01)  # S-C
+        self.assertAlmostEqual(gap['delta_bounds'][1] - gap['delta_bounds'][0],
+                               abs(rho['candidate'] - rho['reference']) + 2 * .01 * rho['candidate'], places=12)
+        # A v2 positivity row (no recorded result) cannot enter L1-R; unknown rule names are refused.
         positivity = refuse_from(rows, 1, pr.LOGGING_POSITIVITY)
-        self.assertEqual(est.pa_value(positivity, {**info, 'reward': .5}, 'natural_course'),
-                         est.pa_value(positivity, {**info, 'reward': .5}))
-        with self.assertRaisesRegex(pa.IntegrityError, 'unknown refusal continuation'):
+        with self.assertRaisesRegex(pa.IntegrityError, 'runtime v3 required'):
+            est.pa_value(positivity, {**info, 'reward': .5}, 'l1r')
+        with self.assertRaisesRegex(pa.IntegrityError, 'unknown censoring rule'):
             est.pa_value(rows, info, 'shared')
-        pas = {'pa': {**info, 'reward': .5}, 'p': {'game': 2, 'in_population': True, 'reward': .5}}
-        decisions = rows + [{**r, 'pa_id': 'p'} for r in positivity]
+        no_end = {'game': 2, 'in_population': True, 'reward': None, 'kind': est.NO_TERMINAL, 'date': '2026-04-01'}
+        pas = {'1:1': {**info, 'reward': .5, 'date': '2026-04-01'}, '2:1': no_end}
+        full = toy_rows(steps, TOY.PI_CAND, TOY.PI_REF, TOY.PI_B, TOY.wrong_q, FULL)
+        decisions = [{**r, 'pa_id': '1:1'} for r in rows] + [{**r, 'pa_id': '2:1'} for r in full]
         default, _ = est.estimate(decisions, pas, draws=20, seed=1, invalid_share_max=1., minimum=MIN)
-        chosen, _ = est.estimate(decisions, pas, draws=20, seed=1, invalid_share_max=1., minimum=MIN,
-                                 refusal_continuation='natural_course')
-        self.assertNotIn('refusal_continuation', default)
-        self.assertEqual(chosen['refusal_continuation']['pas'], 1)
+        chosen, _ = est.estimate(decisions, pas, draws=20, seed=1, invalid_share_max=1., minimum=MIN, censoring='l1r')
+        self.assertNotIn('censoring_rule', default)
+        rule = chosen['censoring_rule']
+        self.assertEqual((rule['resolutions'], rule['worst_case_residual_share']),
+                         ({'natural_course': 1, 'worst_case_residual': 1}, .5))
+        self.assertIn('ess_all_e0', chosen)
         width = lambda r: np.subtract(*r['layers']['L1_start_population']['delta_bounds'][::-1])
         self.assertLess(width(chosen), width(default))
+
+    def one_decision(self, f):
+        """One pitch: true logging law b = (f, (1-f) .6, (1-f) .4) over (CH, FF, SL); pi_b_hat misses CH
+        (TRAIN never saw it) and both policies live on {FF, SL}; the logged CH is a runtime-v3
+        positivity row with rho = 0 recorded."""
+        b_hat, b = np.array([0., .6, .4]), np.array([f, (1 - f) * .6, (1 - f) * .4])
+        pi = {'candidate': np.array([0., .7, .3]), 'reference': b_hat.copy()}
+        reward, q = np.array([.3, .5, .8]), [None, .45, .7]
+
+        def row(a, logging):
+            rho = {n: (float(pi[n][a] / logging[a]) if a else 0.) for n in est.POLICIES}
+            return {'pa_id': 'x', 'decision_index': 0, 'pitcher': '9',
+                    'status': 'SUPPORTED' if a else pr.LOGGING_POSITIVITY, 'result': {
+                        'mask': [False, True, True], 'logging': logging.tolist(), 'reference': pi['reference'].tolist(),
+                        'candidate': pi['candidate'].tolist(), 'logged_index': a, 'q_reference': list(q),
+                        **{f'rho_{n}': v for n, v in rho.items()}}}
+        truth = {n: float(pi[n] @ reward) for n in est.POLICIES}
+        v_hat = {n: float(pi[n][1:] @ np.array(q[1:])) for n in est.POLICIES}
+        return row, b, b_hat, reward, truth, v_hat
+
+    def test_positivity_rho_zero_is_exact_and_its_bias_is_minus_f(self):
+        """COOP-022: with the true logging law on the supported actions, the rho = 0 positivity node
+        makes the expected estimate exact; with pi_b_hat (which misses the new pitch of mass f) the
+        error is exactly -f (V - v_hat) per policy: the (1 - f) shrinkage of every other ratio."""
+        for f in (0., .1, .3):
+            row, b, b_hat, reward, truth, v_hat = self.one_decision(f)
+            for logging, exact in ((b, True), (b_hat, False)):
+                expected = {n: 0. for n in est.POLICIES}
+                for a in range(3):
+                    if b[a] == 0:
+                        continue
+                    value = est.pa_value([row(a, b_hat if a == 0 else logging)],
+                                         {'game': 1, 'in_population': True, 'reward': float(reward[a])}, 'l1r')
+                    self.assertEqual(value['status'], est.CENSORED if a == 0 else est.COMPLETE)
+                    self.assertTrue(value['l2'])  # COOP-019 F4: the rho = 0 point value is in L2
+                    for n in est.POLICIES:
+                        expected[n] += b[a] * value[f'{n}_bounds'][0]
+                for n in est.POLICIES:
+                    bias = 0. if exact else -f * (truth[n] - v_hat[n])
+                    with self.subTest(f=f, exact=exact, policy=n):
+                        self.assertAlmostEqual(expected[n] - truth[n], bias, places=12)
+        row, *_ = self.one_decision(.2)
+        info = {'game': 1, 'in_population': True, 'reward': .3}
+        bad = row(0, np.array([0., .6, .4]))
+        bad['result']['rho_candidate'] = float('nan')
+        with self.assertRaisesRegex(pa.IntegrityError, 'recorded rho must be 0'):
+            est.pa_value([bad], info, 'l1r')
+        bad = row(0, np.array([0., .6, .4]))
+        bad['result'].update(candidate=[.1, .6, .3], reference=[.1, .5, .4], mask=[True, True, True],
+                             q_reference=[.1, .45, .7])
+        with self.assertRaisesRegex(pa.IntegrityError, 'off every support'):
+            est.pa_value([bad], info, 'l1r')
+
+    def test_revealed_new_pitch_and_decision_labels(self):
+        rows = [{'pa_id': pa_id, 'decision_index': 0, 'pitcher': p, 'status': s} for pa_id, p, s in (
+            ('10:1', '9', pr.LOGGING_POSITIVITY), ('10:2', '9', 'SUPPORTED'), ('11:1', '9', 'SUPPORTED'),
+            ('12:1', '9', 'SUPPORTED'), ('10:3', '8', 'SUPPORTED'))]
+        pas = {'10:1': {'date': '2026-04-02'}, '10:2': {'date': '2026-04-02'}, '11:1': {'date': '2026-04-02'},
+               '12:1': {'date': '2026-04-03'}, '10:3': {'date': '2026-04-02'}}
+        # a later PA of the same game and a later date are excluded; another game that day and another pitcher are kept
+        self.assertEqual(est.revealed_new_pitch(rows, pas), {'10:2', '12:1'})
+        result = {'bootstrap': {'draws': 100, 'L1_lower_endpoint_ci95': [.005, .01],
+                                'L1_upper_endpoint_ci95': [.006, .012], 'L2_invalid_replicates': 0},
+                  'censoring_rule': {'worst_case_residual_share': .001}, 'ess': {'label': None}}
+        kw = dict(mei=.001, b_v=.0027, gr_cap=.005, invalid_share_max=.05, pair_pass=True)
+        label = lambda r=result, **k: est.decide(r, **{**kw, **k})['label']
+        self.assertEqual(label(), 'IMPROVEMENT_SUPPORTED')
+        self.assertIn('2 s = 0.002000', est.decide(result, **kw)['passable_effect_approx'])
+        self.assertEqual(label(b_v=.0045), 'IMPROVEMENT_SUPPORTED_STATISTICAL')
+        self.assertEqual(label(pair_pass=False), 'FAILED_INTEGRITY')
+        self.assertEqual(label(gr_cap=.0005), 'NOT_DECIDABLE_CENSORING')
+        self.assertEqual(label({**result, 'ess': {'label': 'UNCONFIRMED_WEAK_OVERLAP'}}), 'UNCONFIRMED_WEAK_OVERLAP')
+        harm = {**result, 'bootstrap': {**result['bootstrap'], 'L1_lower_endpoint_ci95': [-.01, -.005],
+                                        'L1_upper_endpoint_ci95': [-.004, -.001]}}
+        self.assertEqual(label(harm), 'HARM_SUPPORTED')
+        null = {**result, 'bootstrap': {**result['bootstrap'], 'L1_lower_endpoint_ci95': [-.002, 0.],
+                                        'L1_upper_endpoint_ci95': [0., .002]}}
+        self.assertEqual(label(null), 'NO_EVIDENCE_OF_IMPROVEMENT')
 
     def test_ledger_values_are_revalidated(self):
         steps, reward, _ = next(path for path in TOY.trajectories(TOY.PI_B)
@@ -1032,6 +1154,23 @@ class LoadInputsTests(unittest.TestCase):
         self.assertEqual(len(out['store'].frame), len(frame))
 
 
+    def test_holdout_frame_season_order_and_suspended_games(self):
+        """ope-2026 frame (SYNTHETIC rows only): regular season, G0 order, games on several dates
+        dropped by schedule, style placeholders, and the season guard."""
+        frame = game_frame()
+        raw = frame.loc[frame.split.eq('dev')].assign(game_type='R', on_1b=1., on_2b=np.nan, on_3b=np.nan)
+        raw['game_date'] = raw.game_date.str.replace('2025-07', '2026-05')
+        raw.loc[raw.game_pk.eq(201) & raw.at_bat_number.ge(5), 'game_date'] = '2026-05-09'  # suspended, resumed
+        raw = raw[list(rpv.HOLDOUT_COLUMNS)].sample(frac=1, random_state=1)
+        out, dropped = rpv.holdout_frame(raw)
+        self.assertEqual((dropped, sorted(out.game_pk.unique())), ([201], [200]))
+        self.assertTrue(out[['at_bat_number', 'pitch_number']].apply(tuple, axis=1).is_monotonic_increasing)
+        self.assertEqual((set(out.bases), set(out.split)), ({1}, {'eval2026'}))
+        self.assertTrue(out[list(HISTORY_COLUMNS)].isna().all().all())
+        with self.assertRaisesRegex(pa.IntegrityError, 'outside the registered 2026 season'):
+            rpv.holdout_frame(raw.assign(game_date='2026-10-02'))
+        self.assertEqual(len(rpv.holdout_frame(pd.concat([raw, raw.assign(game_type='S', game_pk=5)]))[0]), len(out))
+
     def test_manifest_skips_appledouble_files(self):
         out = Path(tempfile.mkdtemp()) / 'stage'
         with rpv.stage(out, 'census', {}) as directory:
@@ -1180,6 +1319,75 @@ class DispatchTests(RunnerFixture):
                                                                                     'file_sha256': sha(census / 'census.json')}}}
             with self.assertRaisesRegex(pa.IntegrityError, 'does not come from a sealed v5-denominators stage'):
                 rpv.registered_path(wrong, 'v5')
+            # COOP-021/022: a new config (runtime v3 + L1-R estimator block, the 2026 OPE block) re-pins the
+            # same addenda; the <=2025 S6 rehearsal runs as a new attempt, then the single 2026 OPE on a
+            # SYNTHETIC holdout snapshot (dates moved to 2026; no real 2026 row is ever read in tests).
+            estimator = {'runtime': pr.CONTRACT_V3, 'censoring': 'l1r', 'natural_course_refusals': list(est.H_K_REFUSALS),
+                         'gr_cap': .5, 'c_deltas': [.008, .0278], 'mei': .001, 'v3_law': 'tempered_alpha_0.5'}
+            raw = self.frame.loc[self.frame.split.eq('dev')].copy()
+            raw['game_date'] = raw.game_date.str.replace('2025-07', '2026-04')
+            raw = raw.assign(game_type='R', on_1b=np.nan, on_2b=np.nan, on_3b=np.nan)[list(rpv.HOLDOUT_COLUMNS)]
+            extra = raw.loc[raw.game_pk.eq(201)].assign(game_type='S')  # spring training rows never enter
+            holdout_path = self.root / 'statcast_2026.parquet'
+            pd.concat([raw, extra.assign(game_pk=299)]).to_parquet(holdout_path, index=False)
+            b_v = est.v2_bias_record(report, .001)['b_v']
+            ope_root = self.root / 'artifact' / 'runs' / 'OPE-2026'
+            config2 = copy.deepcopy(config)
+            config2['le2025_validation_plan']['stages']['S6_V4']['estimator'] = estimator
+            config2['mlb2026_ope'] = {
+                'registered': True, 'status': 'REGISTERED', 'review_gate': {'status': 'PASS'}, 'output_root': str(ope_root),
+                'snapshot': {'version': rpv.HOLDOUT_VERSION, 'sha256': sha(holdout_path), 'path': str(holdout_path)},
+                'season': list(rpv.HOLDOUT_SEASON), 'row_budget': 10 ** 8, 'b_v': b_v, 'max_attempts': 2,
+                'hang_guard_multiplier': 1000, 'candidate_identity_sha256': frozen['final_identity_sha256'],
+                'estimator': estimator}
+            config2_path = self.root / 'config2.json'
+            config2_path.write_text(json.dumps(config2))
+            old, chain[:] = list(chain), [config2_path]
+            for path in old[1:]:  # same pins, new parent hashes
+                addendum = json.loads(path.read_text())
+                addendum['parent_sha256'] = rpv.hash_file_bytes(chain[-1].read_bytes())
+                new = path.with_name('re-' + path.name)
+                new.write_text(json.dumps(addendum))
+                chain.append(new)
+            ope_root.mkdir()
+
+            def ope(name):
+                with mock.patch.object(rpv, 'HOLDOUT_SHA256', sha(holdout_path)):
+                    rpv.dispatch(rpv.OPE, rpv.load_registration(chain[0], chain[1:]), {}, ope_root / name, load)
+                return ope_root / name
+            with self.assertRaisesRegex(pa.IntegrityError, 'registered input required: s6_dr'):
+                ope('OPE-early')
+            self.assertFalse((ope_root / 'OPE-early').exists())  # a missing prerequisite never costs an attempt
+            s6v3 = run('dr-evaluate', 'S6-v3')
+            rehearsal = json.loads((s6v3 / 'dr.json').read_text())
+            self.assertEqual(rehearsal['censoring_rule']['rule'], 'L1-R')
+            self.assertEqual(set(rehearsal['censoring_sensitivity']), {'S-v1', 'S-NP', 'S-B', 'S-C:0.008', 'S-C:0.0278'})
+            self.assertEqual(rehearsal['censoring_sensitivity']['S-v1']['layers'], result['layers'])  # D-5 reproduced
+            self.assertIn(rehearsal['rehearsal_labels']['primary']['label'], est.LABELS)
+            self.assertEqual(rehearsal['ledger']['runtime_sha256'], json.loads(
+                (s6v3 / 'ledger-dev-0.jsonl').read_text().splitlines()[0])['runtime_sha256'])
+            register('S6-v3', {'s6_dr': s6v3 / 'dr.json'})
+            with mock.patch.object(rpv, 'HOLDOUT_SHA256', 'f' * 64), \
+                    self.assertRaisesRegex(pa.IntegrityError, 'only the frozen holdout snapshot'):
+                rpv.dispatch(rpv.OPE, rpv.load_registration(chain[0], chain[1:]), {}, ope_root / 'x', load)
+            done = ope('OPE-a1')
+            record = json.loads((done / 'ope2026.json').read_text())
+            self.assertEqual((record['identity_sha256'], record['games'], record['paired_identity_run']['pass']),
+                             (frozen['final_identity_sha256'], 2, True))
+            self.assertEqual(record['provenance']['as_of_exclusive'], '2026-03-25')
+            self.assertEqual(record['provenance']['end_of_history_check']['mismatches'], 0)
+            self.assertIn(record['label'], est.LABELS)
+            self.assertIn('passable_effect_approx', record['labels']['primary'])
+            self.assertIsNone(record['labels']['v3']['v3_flag'] if record['labels']['v3']['v3_max_abs_gap'] <= .001 else None)
+            self.assertEqual(record['layers']['L0_all_pas']['pas'], 16)  # spring-training game 299 never entered
+            with self.assertRaisesRegex(pa.IntegrityError, 'already sealed'):
+                ope('OPE-a2')
+            for name in ('f1', 'f2'):  # two failed attempts elsewhere: FAILED_INFRA, no third
+                (self.root / name).mkdir()
+                (self.root / name / 'started.json').write_text(json.dumps({'command': rpv.OPE}))
+            self.assertEqual(len(rpv.one_shot_guard(self.root, 3)), 2)
+            with self.assertRaisesRegex(pa.IntegrityError, 'FAILED_INFRA'):
+                rpv.one_shot_guard(self.root, 2)
 
     def test_registration_refusals(self):
         repo_config = json.loads((REPO / 'configs/ML-POLICY-MATERIALIZATION-v1.json').read_text())
@@ -1220,6 +1428,29 @@ class DispatchTests(RunnerFixture):
             rpv.registration(bad, 'profile')
         with self.assertRaisesRegex(pa.IntegrityError, 'unknown command'):
             rpv.registration(config, 'fit-everything')
+        with self.assertRaisesRegex(pa.IntegrityError, 'mlb2026_ope'):  # the 2026 OPE stays closed until registered
+            rpv.registration(config, rpv.OPE)
+        with self.assertRaisesRegex(pa.IntegrityError, 'mlb2026_ope'):
+            rpv.registration(repo_config, rpv.OPE)
+        estimator = {'runtime': pr.CONTRACT_V3, 'censoring': 'l1r', 'natural_course_refusals': list(est.H_K_REFUSALS),
+                     'gr_cap': .005, 'c_deltas': [.008], 'mei': .001, 'v3_law': 'tempered_alpha_0.5'}
+        ope = {'registered': True, 'status': 'REGISTERED', 'review_gate': {'status': 'PASS'}, 'output_root': '/elsewhere',
+               'snapshot': {'version': rpv.HOLDOUT_VERSION, 'sha256': rpv.HOLDOUT_SHA256, 'path': '/x.parquet'},
+               'season': list(rpv.HOLDOUT_SEASON), 'row_budget': 1, 'b_v': .0027, 'max_attempts': 2,
+               'hang_guard_multiplier': 2, 'candidate_identity_sha256': 'a' * 64, 'estimator': estimator}
+        rpv.registration({**config, 'mlb2026_ope': ope}, rpv.OPE)
+        for change, message in (({'snapshot': {**ope['snapshot'], 'sha256': 'b' * 64}}, 'only the frozen holdout'),
+                                ({'snapshot': {**ope['snapshot'], 'version': 'd20260911-s2325'}}, 'only the frozen holdout'),
+                                ({'registered': False}, 'not registered'), ({'review_gate': {'status': None}}, 'review gate'),
+                                ({'max_attempts': 3}, 'max_attempts'), ({'season': ['2026-03-25', '2026-10-31']}, 'season'),
+                                ({'output_root': config['le2025_validation_plan']['output_root']}, 'must differ'),
+                                ({'estimator': {**estimator, 'runtime': pr.CONTRACT}}, 'runtime v3'),
+                                ({'estimator': {**estimator, 'natural_course_refusals': []}}, 'H_K_REFUSALS')):
+            with self.subTest(change), self.assertRaisesRegex(pa.IntegrityError, message):
+                rpv.registration({**config, 'mlb2026_ope': {**ope, **change}}, rpv.OPE)
+        with self.assertRaisesRegex(pa.IntegrityError, 'estimator block'):
+            bad = copy.deepcopy(config); bad['le2025_validation_plan']['stages']['S6_V4']['estimator'] = {'runtime': 'v3'}
+            rpv.registration(bad, 'dr-evaluate')
         path = self.root / 'c.json'
         path.write_text(json.dumps(config))
         broken = self.root / 'a.json'

@@ -10,6 +10,12 @@ v2 (COOP-018, D93): cause-split no-action refusals (D-3), the TRAIN single-hand 
 (D-8), a candidate-mode context check before any data refusal, the logging-positivity refusal
 before the candidate search, an explicit abort row, and the reference-continuation Q recorded
 for the DR estimator from a separate evaluation seed when registered (M-7).
+
+v3 (COOP-021/022, opt-in ``positivity_record=True``; the default keeps v2 byte for byte): the
+logging-positivity check runs AFTER the candidate computation, and the refused row records the
+policies, Q and ``rho_candidate = rho_reference = 0.0`` (both policies give the logged action no
+mass, so the true ratio is 0 under any logging law that played it; no 0/0 is formed). Status,
+stickiness and the refusal denominators are unchanged.
 """
 from __future__ import annotations
 
@@ -48,6 +54,7 @@ STATUSES = (SUPPORTED, OUTSIDE_POLICY_SUPPORT, UNKNOWN_PITCHER, EMPTY_SUPPORT, L
             MID_PA, NO_LOGGED_ACTION, MISSING_LABEL, INCOMPLETE_START, INCONSISTENT_HISTORY, PITCHER_HAND,
             FAILED_INTEGRITY, FAILED_RUNTIME)
 CONTRACT = 'ML-POLICY-RUNTIME-v2'
+CONTRACT_V3 = 'ML-POLICY-RUNTIME-v3'  # positivity rows record pi, Q and rho = 0 (COOP-021/022)
 ATOL = 1e-9
 NO_PITCH = '<NO_PITCH>'  # logged label AND history action of a registered no-pitch row
 MISSING = '<MISSING_LABEL>'  # logged label AND history action of a real pitch without a type label
@@ -190,7 +197,8 @@ class PolicyRuntime:
     """
     def __init__(self, bc_artifact, support, support_sha256, ledger_path, *, candidate=None,
                  candidate_identity=None, predictor_identity=None, support_check=None, context_digest=None,
-                 context_check=None, hand_registry=None, hand_registry_sha256=None, provenance=None):
+                 context_check=None, hand_registry=None, hand_registry_sha256=None, provenance=None,
+                 positivity_record=False):
         if (candidate is None) != (candidate_identity is None):
             raise IntegrityError('a candidate needs a pinned identity (and vice versa)')
         if (hand_registry is None) != (hand_registry_sha256 is None):
@@ -216,6 +224,7 @@ class PolicyRuntime:
             if {p for p, _ in support} != single:
                 raise IntegrityError('support table pitchers must equal the single-hand registry pitchers')
         self.hand_registry = hand_registry
+        self.positivity_record = bool(positivity_record)
         self.bc, self.vocabulary = bc_artifact.bc, bc_artifact.vocabulary
         self.support, self.candidate = support, candidate
         self.reference = MaskedReference(self.bc, support)
@@ -225,7 +234,8 @@ class PolicyRuntime:
                                    'support_table_sha256': support_sha256},
                      'hand_registry_sha256': hand_registry_sha256, 'statuses': list(STATUSES),
                      'candidate': candidate_identity, 'predictor': predictor_identity, 'provenance': provenance,
-                     'population_value': None, 'contract': CONTRACT}))
+                     'population_value': None, 'contract': CONTRACT,
+                     **({'contract': CONTRACT_V3, 'positivity_record': True} if self.positivity_record else {})}))
         self.sha256 = canonical_hash(self.pins)
         self.ledger = Ledger(ledger_path, {'runtime_sha256': self.sha256, 'pins': self.pins})
         self.by_request, self.pa = {}, {}
@@ -343,9 +353,11 @@ class PolicyRuntime:
             raise IntegrityError('intervention mask outside the TRAIN BC support')
         reference = self._row(self.reference.probabilities(state), mask, 'reference')
         a = None
+        positivity = False
         if request.logged_action is not None:
             a = self.vocabulary.index(request.logged_action)
-            if logging[a] == 0:  # estimated logging law gives the observed action no mass (always off the mask)
+            positivity = logging[a] == 0  # estimated logging law gives the observed action no mass (always off the mask)
+            if positivity and not self.positivity_record:
                 raise Unsupported(LOGGING_POSITIVITY, request.logged_action)
         candidate, q_record = None, {}
         if self.candidate is not None:
@@ -359,6 +371,13 @@ class PolicyRuntime:
                   'logged_index': None, 'rho_reference': None, 'rho_candidate': None, **q_record}
         if a is None:
             return SUPPORTED, result
+        if positivity:  # v3: pi(a) = 0 for both policies, so rho = 0 exactly; recorded, never divided
+            if mask[a] or reference[a] != 0 or (candidate is not None and candidate[a] != 0):
+                raise IntegrityError('logging-positivity action with policy mass or on the mask')
+            result.update(logged_index=a, rho_reference=0.0, rho_candidate=None if candidate is None else 0.0)
+            refusal = Unsupported(LOGGING_POSITIVITY, request.logged_action)
+            refusal.result = result
+            raise refusal
         result.update(logged_index=a, rho_reference=float(reference[a] / logging[a]),
                       rho_candidate=None if candidate is None else float(candidate[a] / logging[a]))
         return (SUPPORTED if mask[a] else OUTSIDE_POLICY_SUPPORT), result
@@ -400,7 +419,7 @@ class PolicyRuntime:
             try:
                 status, result = self._evaluate(request, pa)
             except Unsupported as refusal:
-                status, detail = refusal.status, str(refusal)
+                status, detail, result = refusal.status, str(refusal), getattr(refusal, 'result', None)
             except (IntegrityError, ValueError) as failure:
                 status, detail, error = FAILED_INTEGRITY, str(failure), failure
             except Exception as failure:  # record before propagating; never lose the audit row
@@ -505,7 +524,7 @@ def candidate_identity(components, support_identity, hands_identity, settings, e
 
 def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path, *, components=None,
                   budget=None, tau=None, samples=None, pitch_cap=None, seed=None, evaluation_seed=None,
-                  expected_identity_sha256=None, hand_registry=None, provenance=None):
+                  expected_identity_sha256=None, hand_registry=None, provenance=None, positivity_record=False):
     """Entry path: pinned BC + pinned support table (+ optional P3 candidate over bound components).
 
     Without ``components`` the runtime evaluates logging law and reference only. A candidate
@@ -523,7 +542,8 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
     artifact = load_train_bc(bc_path, bc_sha256)
     support, support_identity = load_support_table(support_path, support_sha256, artifact)
     hands, hands_identity = (None, None) if hand_registry is None else load_hand_registry(*hand_registry, artifact)
-    common = dict(hand_registry=hands, hand_registry_sha256=hands_identity, provenance=provenance)
+    common = dict(hand_registry=hands, hand_registry_sha256=hands_identity, provenance=provenance,
+                  positivity_record=positivity_record)
     if components is None:
         if expected_identity_sha256 is not None or evaluation_seed is not None:
             raise IntegrityError('a policy identity pin or evaluation seed needs bound candidate components')
@@ -575,7 +595,7 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
 
 
 def build_reference_pair_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path, *, hand_registry=None,
-                                 provenance=None):
+                                 provenance=None, positivity_record=False):
     """M-10 / D89 V4(e): a candidate runtime whose candidate is an INDEPENDENT callable of the
     reference law (its own reloaded BC and support table, a separate MaskedReference). Submitted the
     same requests as the primary run, every complete PA must give a paired delta of exactly 0; the
@@ -596,4 +616,5 @@ def build_reference_pair_runtime(bc_path, bc_sha256, support_path, support_sha25
     return PolicyRuntime(artifact, support, support_identity, ledger_path, candidate=candidate,
                          candidate_identity={'name': 'cand=ref paired identity run (M-10, D89 V4 e)',
                                              'candidate': 'independent MaskedReference(TRAIN BC, pinned support table)'},
-                         hand_registry=hands, hand_registry_sha256=hands_identity, provenance=provenance)
+                         hand_registry=hands, hand_registry_sha256=hands_identity, provenance=provenance,
+                         positivity_record=positivity_record)

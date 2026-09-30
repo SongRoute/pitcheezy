@@ -93,6 +93,8 @@ v1 L1은 검열 PA의 노드 값을 정책마다 [0,1] 미지값으로 D89 재�
 
 ## 6. 구현 상태와 남은 일
 
+> **갱신(D119, COOP-022 반영):** 아래 1–3은 구현했다. 런타임 v3 opt-in(`positivity_record`), 추정기 `censoring='l1r'`(옵션 이름은 `refusal_continuation`에서 바뀜), 실행기 `S6_V4.estimator` 블록과 `ope-2026`이다. G-R 상한은 0.005로 정했다(5.3의 제안 0.01 대체). 남은 것은 4(S6 v3 재실행)와 Fable 후속 확인이다.
+
 - **이번 커밋(추정기, 기본값 불변):** `policy_estimator.estimate(..., refusal_continuation='worst_case' | 'natural_course')`, `pa_value(..., refusal_continuation)`, `H_K_REFUSALS`. 기본값은 v1과 같다(키도 추가하지 않음). 옵션을 켜면 5.1-2를 적용하고 `result['refusal_continuation']`에 PA 수를 남긴다. `secondary_value`는 같은 계산을 쓰는 helper `_shared_end`로 바꿨다(동작 동일). 합성 검사 `test_natural_course_continuation_is_exact_for_the_regime`는 열거 toy에서 regime 참값과 기대 추정이 12자리까지 같음을 확인한다(첫 공 볼 뒤 거절, q̂ 오지정). 기본값 불변, 공유 미지값 폭, 양성 불변, 잘못된 옵션 거부도 확인한다.
 - **남은 일(이번 범위 밖, 결정 필요):**
   1. 런타임 v3: 양성 판정을 후보 계산 **뒤**로 옮기고, 그 행에 π·q̂·`rho=0`을 기록한다(상태 `LOGGING_POSITIVITY` 유지, 예산 약 +1%: 401/44,230행).
