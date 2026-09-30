@@ -16,7 +16,7 @@
   "execution": {
     "enabled": true,
     "real_data_enabled": true,
-    "reason": "D96/D100: registration and execution switches are on; the code-review gate (D102, source commit fa82afb) opens S0-S2, which the user approved to run consecutively while every registered gate passes (stop on failure, gate miss or a needed value); S3+ are open under the Fable 5.1 independent review PASS_WITH_CONDITIONS (D102). No BC export, inference, OPE or 2026 access is authorized by this approval."
+    "reason": "D96/D100: registration and execution switches are on; the code-review gate (D103, source commit a454520) opens S0-S2, which the user approved to run consecutively while every registered gate passes (stop on failure, gate miss or a needed value); S3+ are open under the Fable 5.1 independent review PASS_WITH_CONDITIONS (D102). No BC export, inference, OPE or 2026 access is authorized by this approval."
   },
   "documents": {
     "contract": "docs/contracts/ML-POLICY-MATERIALIZATION-v1.md",
@@ -85,8 +85,8 @@
       "status": "PASS",
       "decided_by": "Song (user)",
       "date": "2026-09-30",
-      "record": "docs/decisions.md D102 (re-judged after the D101 exFAT fix and COOP-019 F2; earlier PASS D94 for 5186810, D100 for 9c25d8e)",
-      "reviewed_code_commit": "fa82afb6695a8600870e563d134abd3abd3934cf",
+      "record": "docs/decisions.md D103 (test-only change a454520 on top of the D102 PASS for fa82afb; earlier PASS D94 for 5186810, D100 for 9c25d8e)",
+      "reviewed_code_commit": "a4545205681564c107b4098de55e79008fbc8a86",
       "basis": "D94 basis for 5186810; same-model adversarial reviews of the D98/D99 diff (4fcb5fa, 9c25d8e) and the D101 batch (70968eb, 07da7c8, fa82afb): 0 blocker, 0 major each; not an independent review",
       "scope": "opens S0-S2 only (M-3); S3 and later still need independent_review",
       "validity": "for the code of reviewed_code_commit: register source_commit = reviewed_code_commit (the runner then refuses any later change under experiments/, src/, scripts/); a code change needs a new gate decision"
@@ -633,7 +633,7 @@
         "lightgbm": "4.6.0"
       }
     },
-    "source_commit": "fa82afb6695a8600870e563d134abd3abd3934cf",
+    "source_commit": "a4545205681564c107b4098de55e79008fbc8a86",
     "registered_config_sha256": null,
     "command_template": "PYTHONPATH=<pythonpath> <invoke_with> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
     "failure": "hang guard / RowBudget / integrity failures preserve the stage (failure-*.json, partial ledger prefix not citable); retries only as new attempts with the same scope",
