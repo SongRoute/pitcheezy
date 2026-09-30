@@ -12,6 +12,7 @@ feature, pin or model. Outputs go only to a NEW directory under DEMO-WS-2026.
     .venv/bin/python scripts/demo_precompute.py check-mapping --games 12
     .venv/bin/python scripts/demo_precompute.py precompute --game-pk 849843
     .venv/bin/python scripts/demo_precompute.py sync --since 2026-09-29   # every newly completed postseason game
+    .venv/bin/python scripts/demo_precompute.py live-replay --game-pk 849843 --start 40 --count 30
 
 ``LivePolicy`` is the delayed-live service view the observer calls for an in-progress game.
 """
@@ -874,6 +875,67 @@ class LivePolicy:
                 'seconds': {'bind': round(bound, 2), 'total': round(time.perf_counter() - started, 2)}}
 
 
+def replay_snapshots(final, *, start=0, count=None):
+    """Rehearsal feeds of a COMPLETED game as if live: one snapshot right before each pitch, from the
+    ``start``-th pitch on. The current play is cut before that pitch; the linescore (score, outs,
+    runners, due-up) is rebuilt from ``live_rows`` so the observer's situation equals the policy state."""
+    import copy
+    plays = final['liveData']['plays']['allPlays']
+    cuts = [(p, event['index']) for p, play in enumerate(plays) for event in play['playEvents'] if event.get('isPitch')]
+    # The final matchup names the LAST pitcher of a PA; before a mid-PA change the feed showed the earlier one.
+    pitchers = {(int(r.at_bat_number), int(r.pitch_number)): (int(r.pitcher), r.p_throws)
+                for r in statcast_rows(final).itertuples()}
+    numbered = lambda events: [e for e in events if e.get('isPitch') or (e.get('type') == 'no_pitch' and (e['details'].get('call') or {}).get('code'))]
+    for n, (p, cut) in enumerate(cuts[start:start + count if count else None], start):
+        feed = copy.deepcopy(final)
+        kept = feed['liveData']['plays']['allPlays'][:p + 1]
+        play = kept[-1]
+        play['playEvents'] = [e for e in play['playEvents'] if e.get('index', 0) < cut]
+        play['runners'] = [r for r in play.get('runners', []) if r['details'].get('playIndex', 10 ** 6) < cut]
+        number = [e['index'] for e in numbered(plays[p]['playEvents'])].index(cut) + 1
+        pitcher, hand = pitchers[(int(play['about']['atBatIndex']) + 1, number)]
+        play['matchup'] = {**play['matchup'], 'pitcher': {**play['matchup']['pitcher'], 'id': pitcher}, 'pitchHand': {'code': hand}}
+        play['about']['isComplete'], play['result'] = False, {}
+        balls, strikes = ((play['playEvents'][-1].get('count') or {}).get(k, 0) for k in ('balls', 'strikes')) \
+            if play['playEvents'] else (0, 0)
+        feed['liveData']['plays'].update(allPlays=kept, currentPlay=play)
+        feed['gameData']['status'].update(abstractGameState='Live', detailedState='In Progress', codedGameState='I')
+        row = live_rows(feed).iloc[-1]
+        play['count'] = {'balls': balls, 'strikes': strikes, 'outs': int(row['outs_when_up'])}
+        offense = {'batter': {'id': int(row['batter'])}}
+        offense.update({base: {'id': runner} for base, runner in
+                        zip(('first', 'second', 'third'), (row['on_1b'], row['on_2b'], row['on_3b']))
+                        if runner is not None and not pd.isna(runner)})
+        feed['liveData']['linescore'] = {**feed['liveData'].get('linescore', {}), 'currentInning': int(row['inning']),
+                                         'isTopInning': row['inning_topbot'] == 'Top',
+                                         'inningState': 'Top' if row['inning_topbot'] == 'Top' else 'Bottom',
+                                         'outs': int(row['outs_when_up']), 'offense': offense,
+                                         'defense': {'pitcher': {'id': int(row['pitcher'])}},
+                                         'teams': {'home': {'runs': int(row['home_score'])}, 'away': {'runs': int(row['away_score'])}}}
+        feed.setdefault('metaData', {})['timeStamp'] = f'rehearsal_{n:04d}'
+        yield n, feed
+
+
+def write_replay(game_pk, output, *, start=0, count=None, root=DEMO_ROOT):
+    """Rehearsal directory for ``PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR`` (ReplayTransport serves one file per poll)."""
+    output = _check_output_root(output)
+    final = read_feed(Path(root) / 'feeds' / f'{int(game_pk)}_final.json.gz')
+    output.mkdir(parents=True, exist_ok=True)
+    written = 0
+    for n, feed in replay_snapshots(final, start=start, count=count):
+        with gzip.open(output / f'{int(game_pk)}_{n:05d}.json.gz', 'wt') as handle:
+            json.dump(feed, handle)
+        written += 1
+    date = final['gameData']['datetime']['officialDate']
+    teams = final['gameData']['teams']
+    schedule = {'dates': [{'games': [{'gamePk': int(game_pk), 'gameType': final['gameData']['game']['type'],
+                                      'gameDate': final['gameData']['datetime'].get('dateTime'),
+                                      'status': {'abstractGameState': 'Live', 'detailedState': 'In Progress (rehearsal)'},
+                                      'teams': {side: {'team': {'name': teams[side]['name']}} for side in ('away', 'home')}}]}]}
+    _write_json(output / f'schedule_{date}.json', schedule)
+    return {'dir': str(output), 'snapshots': written, 'schedule_date': date}
+
+
 def completed_postseason_games(since, until, fetch=None):
     """gamePks of FINAL postseason games (F/D/L/W) between two dates (inclusive), in schedule order."""
     fetch = fetch or (lambda url: json.load(urllib.request.urlopen(
@@ -927,12 +989,20 @@ def main(argv=None):
     synced.add_argument('--since', default='2026-09-29')
     synced.add_argument('--until', default=datetime.now(timezone.utc).strftime('%Y-%m-%d'))
     synced.add_argument('--output-root', type=Path, default=DEMO_ROOT)
+    rehearsal = commands.add_parser('live-replay', help='rehearsal snapshots of a completed game for the live screen')
+    rehearsal.add_argument('--game-pk', type=int, required=True)
+    rehearsal.add_argument('--start', type=int, default=0, help='first pitch (0-based) of the rehearsal')
+    rehearsal.add_argument('--count', type=int, default=None)
+    rehearsal.add_argument('--output', type=Path, default=None)
     args = parser.parse_args(argv)
     if args.command == 'check-mapping':
         result = check_mapping(args.games, args.output, args.raw)
         print(json.dumps({k: result[k] for k in ('rows', 'effective_speed')}, indent=1))
         print(json.dumps({k: (v['agree'], v['examples'][:3]) for k, v in result['exact'].items()}, indent=0))
         print(json.dumps({k: v['abs_diff_quantiles'] for k, v in result['numeric'].items()}, indent=0))
+    elif args.command == 'live-replay':
+        output = args.output or DEMO_ROOT / 'live_replay' / str(args.game_pk)
+        print(json.dumps(write_replay(args.game_pk, output, start=args.start, count=args.count), indent=1))
     elif args.command == 'sync':
         report = sync(args.since, args.until, args.output_root, local)
         print(json.dumps(report, indent=1))

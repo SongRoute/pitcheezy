@@ -153,3 +153,18 @@ def test_sync_precomputes_only_new_completed_postseason_games(tmp_path):
     assert 'startDate=2026-09-29&endDate=2026-10-01&gameType=F,D,L,W' in urls[0]
     assert [d['game_pk'] for d in report['done']] == [1, 6] and report['present'] == [2]
     assert list(report['failed']) == ['7']
+
+
+def test_rehearsal_snapshots_replay_every_pitch_with_its_pre_pitch_state():
+    import copy
+    final = copy.deepcopy(FEED)
+    final['gameData']['status'] = {'abstractGameState': 'Final'}
+    rows = demo.statcast_rows(final)
+    pitched = rows.loc[rows.release_speed.notna()].reset_index(drop=True)  # the automatic ball is not a pitch event
+    snaps = list(demo.replay_snapshots(final))
+    assert len(snaps) == len(pitched)
+    for (n, feed), (_, want) in zip(snaps, pitched.iterrows()):
+        got = demo.live_rows(feed).iloc[-1]
+        assert got[STATE].astype(str).tolist() == want[STATE].astype(str).tolist()
+        line = feed['liveData']['linescore']
+        assert (line['outs'], line['teams']['away']['runs']) == (want.outs_when_up, want.away_score)
