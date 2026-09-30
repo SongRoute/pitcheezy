@@ -34,6 +34,7 @@ if (shots) await page.screenshot({ path: `${shots}/1-picker.png`, fullPage: true
 // watch-along: recommendation first, reveal, sequence strip, WE card
 await games.first().click();
 await page.locator('.wa-board').waitFor();
+await page.getByRole('button', { name: '알겠어요' }).click();  // first-visit guide
 await page.getByText('투구 전 추천').waitFor();
 if (await page.locator('.wa-reveal').count()) fail('actual pitch visible before reveal');
 await page.getByRole('button', { name: '실제 투구 공개' }).click();
