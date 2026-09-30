@@ -43,7 +43,7 @@
 - 목표 위치 효과나 서비스 추천의 인과 WE가 아니다. 구종 배정의 교환 가능성(H_t 조건부)과 ≤2025→2026 이동은 **가정으로 명시하고 입증하지 않는다**(`BLK-04` 미해소). 결과는 항상 "구종-only, 명시 가정 조건부, 노출 구간 포함 탐색적 평가"로 표시한다.
 - 사용자 결정(D100 ⑨)으로 **주 추정량 = ARM-B**다. 새 2026 열람 전에 정했고 결과를 본 뒤 바꾸지 않는다. ARM-A의 자동 대체가 아니며 ARM-A는 `BLOCKED_NOT_IDENTIFIED`로 남는다. 위치는 observer `experimental_location_proxy` 표시용 근사일 뿐 OPE 대상이 아니다.
 - **동결 구성요소(≤2025 리허설 [ML-POLICY-MATERIALIZATION-v1](ML-POLICY-MATERIALIZATION-v1.md), D104–D107):**
-  - 후보 π_cand: TRAIN 레퍼토리(지원 표 M) 위 P3 `kl_policy`, π ∝ π_ref·exp(Q_ref/τ), **τ = 0.1**(S3b-tau-a2), samples 6·pitch_cap 12(S3-profile-a2). 최종 정책 식별자 `6eb85ba7c3bf3e7c9fc05678153583bc11d9488926b1b7c80f22029c57d79d27`(addendum 5 `tau_freeze.json` sha `1aedb2f5…`).
+  - 후보 π_cand: TRAIN 레퍼토리(지원 표 M) 위 P3 `kl_policy`, π ∝ π_ref·exp(Q_ref/τ), **τ = 0.1**(S3b-tau-a2), samples 6·pitch_cap 12(S3-profile-a2). 최종 정책 식별자 `c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c`(addendum 5 `tau_freeze.json` sha `1aedb2f5…`).
   - 기준 π_ref: SupportedBC(BC-P를 M으로 제한·재정규화, 동결 전 1회). BC-P sha `b4f274eb…`, 지원 표 sha `152cdab4…`(addendum 2).
   - 로깅 법칙 π̂_b: **전체 어휘 BC-P, 재정규화하지 않는다**(D-1). 2026 적합 없음.
   - DR q̂: 평가 seed의 동결 simulator MC(M-7, S3b에서 기계적으로 정해 식별자에 포함). 후보는 q̂ = Q^ref라 **단일 강건**, 기준은 이중 강건(COOP-019 F5).
@@ -161,4 +161,4 @@
 5. M3b 최종 실행 등록: 스냅샷·manifest sha, source commit, config/addendum sha, 부트스트랩 seed(`seeds.base` 파생 규칙), 2026 비용 예산(미측정)·hang guard, `registered=true`로 전환.
 6. **사용자 서명**(최종 등록과 1회 실행 승인). 어느 게이트도 앞 게이트 통과만으로 자동으로 열리지 않는다.
 
-> **개정(2026-10-01, D122/D123):** 후보 식별자 pin을 `6eb85ba7c3bf3e7c9fc05678153583bc11d9488926b1b7c80f22029c57d79d27`로 바꿨다. 런타임 v3 소스 변경으로 식별자(소스 closure 포함)를 S2→S6에서 다시 인증했고, τ 표·V2 gap은 이전과 같다. ≤2025 L1-R 리허설: Δ [−0.00065, +0.00054], NO_EVIDENCE_OF_IMPROVEMENT. 2026 실행은 저메모리 원장(D123 차단 요인) 해결 뒤다.
+> **개정(2026-10-01, D122/D123):** 후보 식별자 pin을 `c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c`로 바꿨다. 런타임 v3 소스 변경으로 식별자(소스 closure 포함)를 S2→S6에서 다시 인증했고, τ 표·V2 gap은 이전과 같다. ≤2025 L1-R 리허설: Δ [−0.00065, +0.00054], NO_EVIDENCE_OF_IMPROVEMENT. 2026 실행은 저메모리 원장(D123 차단 요인) 해결 뒤다.
