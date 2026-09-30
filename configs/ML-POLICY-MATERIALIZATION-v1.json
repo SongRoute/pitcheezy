@@ -543,8 +543,11 @@
           0.001,
           0.003,
           0.01,
-          0.03
+          0.03,
+          0.1,
+          0.3
         ],
+        "tau_grid_registration": "D106: widened from [0.001, 0.003, 0.01, 0.03] as a new registration after S3b-tau-a1 returned P3_NOT_EVALUABLE; the June overlap/noise table (no reward, WE or events kind) was seen before this widening; thresholds unchanged; tau_grid[0] (the S3 placeholder) unchanged",
         "row_budget": 4500000,
         "thresholds": {
           "pa_ess_ratio_min": 0.01,
