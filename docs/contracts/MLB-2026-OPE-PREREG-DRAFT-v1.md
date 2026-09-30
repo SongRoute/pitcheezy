@@ -127,7 +127,7 @@
 ## 9. 노출 공개 (보고서에 그대로 싣는다)
 
 - 평가 스냅샷 `d20260930-h2026f`: 2026-03-25~09-27, 716,792행, sha256 `c0c1eda4b515fc14dab79defe577b449e2695d40dd036f5c35ae52e37093ed9b`, 동결(`frozen=true`, [data/versions.md](../../data/versions.md)). 2026 적합·튜닝·선택에 쓰지 않는다.
-  - **수집 출처:** 수집 커밋이 `6bd76fd-dirty`로 기록돼 있다. 당시 작업 트리의 미커밋 수정은 `experiments/pitchmdp/pitchmdp/policy_artifacts.py`뿐이었고, 수집 코드 `src/pitcheezy/data/statcast_fetch.py`·`scripts/fetch_data.py`는 바뀌지 않았다: `git diff 6bd76fd 70968eb -- src/pitcheezy/data scripts/fetch_data.py`가 비어 있다(2026-09-30 확인).
+  - **수집 출처:** 수집 커밋이 `6bd76fd-dirty`로 기록돼 있다. `-dirty`는 `git status --porcelain`에 변경이 있으면 붙는다(`statcast_fetch.git_commit`, `data/versions.md`만 제외). 이 저장소는 로컬에서 대상이 바뀐 `runs` symlink가 늘 변경으로 잡히고, 수집 중에는 `experiments/pitchmdp/pitchmdp/policy_artifacts.py` 편집도 진행 중이었을 수 있다(수집 시작 시점의 정확한 목록은 기록되지 않음). 수집 코드 `src/pitcheezy/data/statcast_fetch.py`·`scripts/fetch_data.py`는 바뀌지 않았다: `git diff 6bd76fd 70968eb -- src/pitcheezy/data scripts/fetch_data.py`가 비어 있다(2026-09-30 확인).
   - **경로:** 상대 경로는 이전 수집본과 같은 `holdout_2026/statcast_2026.parquet`지만 버전 디렉터리가 다르다(`d20260911-s2325/holdout_2026/` 대 `d20260930-h2026f/holdout_2026/`). 이전 파일(sha `374e8b95…`, 647,896행, `frozen=false`)은 덮어쓰지 않았고 versions.md의 기존 행도 수정하지 않았다.
   - **격리:** ≤2025 단계 실행기의 `guard_dates`가 2025-12-31 이후 날짜 행을 거부하므로 이 스냅샷은 ≤2025 리허설(S0–S6)에 들어갈 수 없다.
 - 이전 수집본 `d20260911-s2325`(03-25~09-09)는 과거 **P0 12건·P1 8건 OPE**에 쓰였다. 선택 표본 68,425PA(ip100, 1,993경기), 2026 π_b 교차 적합(D18)·지원 집합(D19)·평가 정책 적응(D20)·모델 비교·채택(D22·D27·D30·D31·D39) 포함. 정확한 사용 경기 ID는 모름.
