@@ -61,7 +61,9 @@ def test_api_reveal_one_pitch_and_errors(tmp_path):
     write(tmp_path, dataset())
     with TestClient(create_app(object(), start_worker=False, watch_dir=tmp_path)) as client:
         assert client.get('/api/watch/games').json() == {'games': [{'game_pk': GAME, 'date': '2026-09-29', 'game_type': 'F',
-                                                                    'away_team': 'Away Club', 'home_team': 'Home Club'}]}
+                                                                    'away_team': 'Away Club', 'home_team': 'Home Club',
+                                                                    'pitches': 3, 'ready': 2, 'ready_share': .667}]}
+        assert 'final' not in client.get('/api/watch/games').text  # the picker must not spoil the score
         assert len(client.get(f'/api/watch/{GAME}').json()['decisions']) == 3
         reveal = client.get(f'/api/watch/{GAME}/reveal/1').json()
         assert set(reveal) == {'index', 'actual', 'we'} and reveal['actual']['pitch_type'] == 'FF'

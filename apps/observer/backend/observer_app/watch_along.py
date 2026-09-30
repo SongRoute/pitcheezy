@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 SCHEMA = 'pitcheezy-watch-along-v1'
+BADGE = '검증 전 실험 버전 · 위치는 실제 투구 분포 근사'
 DEFAULT_DIR = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/watch')
 PRE_FIELDS = ('index', 'pa_id', 'at_bat_number', 'pitch_number', 'situation', 'pitcher', 'batter', 'status', 'pre')
 POST_FIELDS = ('index', 'actual', 'we')
@@ -50,8 +51,14 @@ class WatchAlong:
                 game = self.load(int(path.stem))['game']
             except (KeyError, ValueError, json.JSONDecodeError):
                 continue
-            out.append({k: game[k] for k in ('game_pk', 'date', 'game_type', 'away_team', 'home_team')})
-        return out
+            coverage = self.load(int(path.stem))['coverage']
+            out.append({k: game[k] for k in ('game_pk', 'date', 'game_type', 'away_team', 'home_team')}
+                       | {'pitches': coverage['pitch_decisions'], 'ready': coverage['ready'],
+                          'ready_share': coverage['ready_share_of_pitches']})
+        return sorted(out, key=lambda g: (g['date'], g['game_pk']), reverse=True)
+
+    def available(self):
+        return self.directory.is_dir()
 
     def timeline(self, game_pk):
         """Everything a viewer may see before any pitch is revealed (no final score)."""

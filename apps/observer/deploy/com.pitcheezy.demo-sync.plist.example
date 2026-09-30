@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Example only (not installed). Every 30 minutes, precompute newly completed postseason games for the
+     watch-along list (writes only under /Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026; a
+     concurrent run exits at once). Install like com.pitcheezy.observer.plist.example. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.pitcheezy.demo-sync</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/song/Projects/pitcheezy/.venv/bin/python</string>
+    <string>/Users/song/Projects/pitcheezy/scripts/demo_precompute.py</string>
+    <string>sync</string><string>--since</string><string>2026-09-29</string>
+  </array>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/Users/song/Library/Logs/pitcheezy-demo-sync.log</string>
+  <key>StandardErrorPath</key><string>/Users/song/Library/Logs/pitcheezy-demo-sync.log</string>
+</dict>
+</plist>

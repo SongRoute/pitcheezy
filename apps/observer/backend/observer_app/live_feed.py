@@ -126,13 +126,20 @@ class LiveFeed:
             del buffer[:ready[-1]]  # keep the served snapshot and everything newer
             return buffer[0][1], 0.0
 
+    def latest(self, game_pk):
+        """The newest fetched (not yet delayed) snapshot, or None."""
+        with self._lock:
+            buffer = self.buffers.get(int(game_pk))
+            return buffer[-1][1] if buffer else None
+
 
 def _player(feed, player_id):
     return feed['gameData'].get('players', {}).get(f'ID{player_id}', {})
 
 
 def parse_state(feed, pins, *, config=LIVE_CONFIG):
-    """Current pre-pitch game state from a GUMBO feed, plus a ``PrePitchInput`` when supported."""
+    """Current pre-pitch game state from a GUMBO feed, plus a ``PrePitchInput`` when supported by the
+    legacy bundle ``pins`` (``pins=None``: state only)."""
     data, live = feed['gameData'], feed['liveData']
     line, play = live['linescore'], live['plays'].get('currentPlay') or {}
     game = {'game_pk': data['game']['pk'], 'game_type': data['game']['type'], 'date': data['datetime']['officialDate'],
@@ -175,6 +182,11 @@ def parse_state(feed, pins, *, config=LIVE_CONFIG):
                  'bases': runners['first'] + 2*runners['second'] + 4*runners['third'], 'runners': runners,
                  'home_score': line['teams']['home']['runs'], 'away_score': line['teams']['away']['runs'],
                  'balls': balls, 'strikes': strikes}
+    result |= {'situation': situation,
+               'pitcher': {'id': pitcher_id, 'name': _player(feed, pitcher_id).get('fullName'), 'hand': hand},
+               'batter': {'id': batter_id, 'name': _player(feed, batter_id).get('fullName'), 'side': stand}}
+    if pins is None:  # ARM-B service view: support is decided by the frozen policy runtime, not bundle pins
+        return result
     pin = pins['pitchers'].get(str(pitcher_id))
     profile = pins['profiles'].get(str(batter_id))
     result |= {'situation': situation,

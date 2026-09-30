@@ -3,12 +3,14 @@ import copy
 import json
 from pathlib import Path
 import sys
+import time
 import urllib.error
 
 import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from observer_app.live_armb import LiveArmB, state_key
 from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, parse_state
 from observer_app.main import create_app
 
@@ -107,33 +109,76 @@ def test_delay_buffer_serves_only_snapshots_older_than_delay():
     assert live.snapshot(849845)[0]['metaData']['timeStamp'] == '20260929_203124'
 
 
-class FakeService:
+class FakePolicy:
+    """Stands in for demo_precompute.LivePolicy: one result per feed, counting calls."""
     def __init__(self):
         self.calls = []
 
-    def _recommend(self, pitch, pa):
-        self.calls.append((pitch, pa))
-        return {'id': 'rec', 'status': 'ready', 'mode': 'experimental_location_proxy', 'candidates': []}
+    def __call__(self, snapshot):
+        self.calls.append(snapshot['metaData']['timeStamp'])
+        pre = {'status': 'ready', 'reason': None, 'recommendation': {'candidates': [{'rank': 1, 'pitch_type': 'SL'}]}}
+        return {'key': '849845:61:3', 'pitch': {'key': '849845:61:3', 'pre': pre}, 'pa_pitches': [],
+                'previous': None, 'home_we_now': .6, 'policy_identity': 'a6dffaea' + '0' * 56, 'seconds': {'bind': 5.0}}
 
 
-def test_live_routes_replay_offline_with_demo_badge():
-    service = FakeService()
-    app = create_app(service, live_feed=LiveFeed(ReplayTransport(FIXTURES), delay_s=0), live_pins=PINS)
+def wait_computed(armb, count):
+    deadline = time.time() + 10
+    while armb.status()['computed'] < count and time.time() < deadline:
+        time.sleep(.01)
+
+
+def test_live_route_serves_the_frozen_armb_view_computed_in_the_background():
+    policy = FakePolicy()
+    armb = LiveArmB(lambda: policy)
+    app = create_app(object(), live_feed=LiveFeed(ReplayTransport(FIXTURES), delay_s=0), live_policy=armb)
     with TestClient(app) as client:
         games = client.get('/api/live/games', params={'date': '2026-09-29'}).json()
-        assert games['demo_status'] == '검증 전 실험 버전'
+        assert games['demo_status'] == '검증 전 실험 버전' and games['badge'].endswith('실제 투구 분포 근사')
         assert {g['game_pk'] for g in games['games']} >= {849845} and all(g['game_type'] == 'F' for g in games['games'])
+        first = client.get('/api/live/849845/state').json()
+        # Chris Sale is outside the legacy 6-pitcher bundle; the ARM-B view does not use those pins.
+        assert first['status'] == 'ready' and first['pitcher']['name'] == 'Chris Sale'
+        assert first['recommendation']['status'] in ('computing', 'ready')
+        wait_computed(armb, 1)
         state = client.get('/api/live/849845/state').json()
-        assert state['demo_status'] == '검증 전 실험 버전'
-        assert state['status'] == 'unsupported_pitcher' and state['recommendation'] is None and not service.calls
+        assert state['recommendation']['status'] == 'ready' and state['recommendation']['policy_identity'] == 'a6dffaea'
+        assert state['recommendation']['recommendation']['candidates'][0]['pitch_type'] == 'SL'
         assert client.get('/api/live/games', params={'date': 'bad'}).status_code == 400
-    pinned = copy.deepcopy(PINS)
-    pinned['pitchers']['519242'] = {'p_throws': 'L', 'pitch_types': ['FF'], 'name': 'test pin'}
-    pinned['repertoire_counts']['519242'] = {'FF': 100}
-    app = create_app(service, live_feed=LiveFeed(ReplayTransport(FIXTURES), delay_s=0), live_pins=pinned)
+        assert client.get('/api/health').json()['demo']['live_policy']['state'] == 'ready'
+
+
+def test_live_policy_failures_are_explicit_not_fatal():
+    def broken():
+        raise FileNotFoundError('/Volumes/T7 Shield not mounted')
+    armb = LiveArmB(broken)
+    snapshot = feed('849845_20260929_195940.json')
+    assert armb.lookup(snapshot) is None
+    deadline = time.time() + 5
+    while armb.status()['state'] == 'loading' and time.time() < deadline:
+        time.sleep(.01)
+    assert armb.status()['state'] == 'unavailable' and 'not mounted' in armb.status()['reason']
+    app = create_app(object(), live_feed=LiveFeed(ReplayTransport(FIXTURES), delay_s=0), live_policy=armb)
     with TestClient(app) as client:
         state = client.get('/api/live/849845/state').json()
-    assert state['status'] == 'ready' and state['recommendation']['id'] == 'rec'
-    pitch, pa = service.calls[-1]
-    assert pitch['id'] == 'live:849845:20260929_195940:1-1' and pitch['request']['balls'] == 1
-    assert pa == {'zone_bounds': LIVE_CONFIG['zone_bounds'], 'repertoire_counts': {'FF': 100}}
+    assert state['status'] == 'ready' and state['recommendation']['status'] == 'unavailable'
+
+
+def test_state_key_changes_with_each_pre_pitch_input_and_cache_is_reused():
+    snapshot = feed('849845_20260929_195940.json')
+    moved = copy.deepcopy(snapshot)
+    moved['liveData']['linescore']['offense']['second'] = moved['liveData']['linescore']['offense'].pop('first')
+    assert state_key(snapshot) != state_key(moved)
+    assert state_key(snapshot) == state_key(copy.deepcopy(snapshot))
+    policy = FakePolicy()
+    armb = LiveArmB(lambda: policy)
+    armb.lookup(snapshot)
+    wait_computed(armb, 1)
+    assert armb.lookup(snapshot)['result']['key'] == '849845:61:3' and len(policy.calls) == 1
+
+
+def test_feed_outage_is_a_503_with_a_korean_message():
+    down = LiveFeed(FakeTransport(99, None), sleep=lambda _: None)
+    app = create_app(object(), live_feed=down, live_policy=LiveArmB(lambda: FakePolicy()))
+    with TestClient(app) as client:
+        response = client.get('/api/live/849845/state')
+    assert response.status_code == 503 and 'MLB 경기 정보를' in response.json()['detail']

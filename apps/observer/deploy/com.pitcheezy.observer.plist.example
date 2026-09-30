@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Example only (not installed). Auto-starts the watch-along/live service on the Tailscale address at login.
+     Install: cp this file to ~/Library/LaunchAgents/com.pitcheezy.observer.plist, fix the paths, then
+     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pitcheezy.observer.plist
+     Remove:  launchctl bootout gui/$(id -u)/com.pitcheezy.observer -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.pitcheezy.observer</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/sh</string><string>/Users/song/Projects/pitcheezy/apps/observer/serve.sh</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PITCHEEZY_OBSERVER_HOST</key><string>tailscale</string>
+    <key>PITCHEEZY_OBSERVER_PORT</key><string>8766</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <!-- restart after a crash or when Tailscale was not up yet; ThrottleInterval spaces the retries -->
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/Users/song/Library/Logs/pitcheezy-observer.log</string>
+  <key>StandardErrorPath</key><string>/Users/song/Library/Logs/pitcheezy-observer.log</string>
+</dict>
+</plist>
