@@ -559,20 +559,27 @@ def store_feed(game_pk, feed_path, feeds_dir):
     return feed, target, _sha_file(target)
 
 
+def bundle_paths(settings):
+    """(identity registration, pinned G0 bundle file entries, explicit local path per role)."""
+    from pitchmdp import policy_identity as pid
+    ident = settings['config']['identity_registration']
+    files = pid.pinned_json(REPO / ident['g0_bundle']['path'], ident['g0_bundle']['file_sha256'])['files']
+    paths = {role: Path(entry['path']) for role, entry in files.items()}
+    paths.update({role: (REPO / value if not Path(value).is_absolute() else Path(value)) for role, value in ident['we_paths'].items()})
+    return ident, files, paths
+
+
 def bind(settings, frame, ledger_path, provenance):
     """The frozen components bound over ``frame``'s context rows and the ARM-B runtime over them;
     refuses unless the components are the S2-certified ones and the runtime is ``EXPECTED_IDENTITY``."""
-    rpv, reg, config = settings['rpv'], settings['reg'], settings['config']
+    rpv, reg = settings['rpv'], settings['reg']
     from pitchmdp import policy_identity as pid, policy_runtime as prt
     from pitchmdp.matrix_policy import safe_rows
     from pitchmdp.policy_artifacts import load_train_bc
     from pitchmdp.rollout_policy import RowBudget
     from run_ml_g0_whole import load_member
-    ident = config['identity_registration']
+    ident, files, paths = bundle_paths(settings)
     bundle_path, bundle_sha = REPO / ident['g0_bundle']['path'], ident['g0_bundle']['file_sha256']
-    files = pid.pinned_json(bundle_path, bundle_sha)['files']
-    paths = {role: Path(entry['path']) for role, entry in files.items()}
-    paths.update({role: (REPO / value if not Path(value).is_absolute() else Path(value)) for role, value in ident['we_paths'].items()})
     aux = pid.pinned_pickle(paths['p4_auxiliary'], files['p4_auxiliary']['sha256'])
     bc_path, bc_sha = rpv.registered_path(reg, 'bc')
     support_path, support_sha = rpv.registered_path(reg, 'support')
@@ -824,9 +831,14 @@ def _key(row):
 class LivePolicy:
     """Delayed-live service view (DEMO-WS-2026, display only; not an evaluation).
 
-    Each call binds the frozen components over the in-progress game's rows (the same ``bind``, context
-    keys and identity refusal as ``precompute``) and evaluates the current PA's pitches and the pending
-    one with ``pre_pitch``. The ledger header goes to a temporary directory; nothing is submitted.
+    The frozen components are bound (the same ``bind``, context keys and identity refusal as
+    ``precompute``, about 5-8 s) once per game and reused: each call only adds the context rows that are
+    new since the last call, computed exactly as ``PolicyInputs``/``FrozenWE`` compute them at binding.
+    Every context-keyed value (row, encoding, WE tables and the G0/rollout caches keyed by context key)
+    is therefore what a fresh bind over this call's rows would hold. When a previously bound row
+    changed (a runner moved or the pitcher changed before the pending pitch), or the game changes, it
+    rebinds from scratch. The current PA's pitches and the pending one go through ``pre_pitch``. The
+    ledger header goes to a temporary directory; nothing is submitted.
     """
 
     def __init__(self, output_root=DEMO_ROOT, local=None, addenda=ADDENDA):
@@ -835,9 +847,55 @@ class LivePolicy:
         self.snapshot, self.as_of, self.style = style_snapshot(
             self.settings, lambda: load_frame(self.settings, local), _check_output_root(output_root) / 'style')
         self.observer, self.bounds = _location_settings()
+        self.bound, self.binds = None, 0
+
+    def _bind(self, frame):
+        """Bind over ``frame`` (a game's first call, or after a bound row changed); drops the previous binding."""
+        import gc
+        import tempfile
+        from pitchmdp import policy_identity as pid
+        if self.bound is not None:
+            self.bound['scratch'].cleanup()
+        self.bound = None
+        gc.collect()  # release the previous components before loading new ones
+        scratch = tempfile.TemporaryDirectory(prefix='pitcheezy-live-')
+        game_pk = int(frame.game_pk.iloc[0])
+        provenance = {'demo': 'DEMO-WS-2026 delayed-live service view (display only; nothing submitted)',
+                      'game_pk': game_pk, 'style_snapshot_sha256': self.style['content_sha256'], 'as_of_exclusive': self.as_of}
+        components, runtime, aux = bind(self.settings, frame, Path(scratch.name) / 'ledger.jsonl', provenance)
+        ident, _, paths = bundle_paths(self.settings)
+        we_values, _ = pid.load_pinned_we(paths, ident['we_contract_sha256'], ident['classes']['we'])
+        self.bound = {'game_pk': game_pk, 'components': components, 'runtime': runtime, 'aux': aux, 'scratch': scratch,
+                      'we_values': we_values, 'locator': make_locator(components, aux, self.bounds, self.observer)}
+        self.binds += 1
+        return self.bound
+
+    def _extend(self, frame):
+        """Add ``frame``'s new context rows to the game's binding; False if a bound row differs."""
+        from types import SimpleNamespace
+        from pitchmdp.matrix_policy import FrozenWE, context_key, safe_rows
+        from pitchmdp.policy_identity import row_sha256
+        inputs, we = self.bound['components'].inputs, self.bound['components'].we
+        safe = safe_rows(frame)
+        rows = {context_key(row): row.to_dict() for _, row in safe.iterrows()}
+        if len(rows) != len(safe):
+            return False  # duplicate context keys: the rebind refuses exactly as a fresh bind does
+        encoded = dict(zip(rows, inputs.context_encoder.transform(safe)))
+        new = {}
+        for key, row in rows.items():
+            if key not in inputs.rows:
+                new[key] = row
+            elif (row_sha256(inputs.rows[key]) != row_sha256(row)
+                  or not np.array_equal(inputs.contexts[key], encoded[key], equal_nan=True)):
+                return False
+        tables = FrozenWE(SimpleNamespace(rows=new), self.bound['we_values'])
+        for key, row in new.items():
+            inputs.rows[key], inputs.contexts[key] = row, np.array(encoded[key], copy=True)
+        we.terminal_tables.update(tables.terminal_tables)
+        we.initial.update(tables.initial)
+        return True
 
     def __call__(self, feed):
-        import tempfile
         from pitchmdp import policy_requests as preq
         from pitchmdp.game import GameState
         rows = live_rows(feed)
@@ -845,26 +903,23 @@ class LivePolicy:
             return None
         frame, _ = demo_frame(rows, self.snapshot, self.as_of)
         started = time.perf_counter()
-        with tempfile.TemporaryDirectory(prefix='pitcheezy-live-') as scratch:
-            provenance = {'demo': 'DEMO-WS-2026 delayed-live service view (display only; nothing submitted)',
-                          'game_pk': int(frame.game_pk.iloc[0]), 'style_snapshot_sha256': self.style['content_sha256'],
-                          'as_of_exclusive': self.as_of}
-            components, runtime, aux = bind(self.settings, frame, Path(scratch) / 'ledger.jsonl', provenance)
-            bound = time.perf_counter() - started
-            store = history_store(frame, aux, self.settings)
-            locator = make_locator(components, aux, self.bounds, self.observer)
-            positions = list(preq.pa_blocks(frame))[-1][1]
-            requests, problem, _ = preq.pa_requests(store, positions, runtime.sha256, self.settings['no_pitch'])
-            records = frame.to_dict('records')
-            pitches = []
-            for k, position in enumerate(positions):
-                row = records[position]
-                status, result = pre_pitch(runtime, requests[k]) if k < len(requests) else (
-                    'NOT_SUBMITTED' if problem not in (None, 'no_decision') else 'NO_DECISION', None)
-                pitches.append({'key': _key(row), 'pitch_number': int(row['pitch_number']), 'status': status,
-                                'pre': pre_view(status, result, runtime.vocabulary, locator(row)),
-                                'actual': None if row['placeholder'] else actual_view(row, self.bounds)})
-            home_we = [components.defense_we(GameState.from_row(r), True) for r in records[-2:]]
+        if self.bound is None or self.bound['game_pk'] != int(frame.game_pk.iloc[0]) or not self._extend(frame):
+            self._bind(frame)
+        components, runtime, aux, locator = (self.bound[k] for k in ('components', 'runtime', 'aux', 'locator'))
+        bound = time.perf_counter() - started
+        store = history_store(frame, aux, self.settings)
+        positions = list(preq.pa_blocks(frame))[-1][1]
+        requests, problem, _ = preq.pa_requests(store, positions, runtime.sha256, self.settings['no_pitch'])
+        records = frame.to_dict('records')
+        pitches = []
+        for k, position in enumerate(positions):
+            row = records[position]
+            status, result = pre_pitch(runtime, requests[k]) if k < len(requests) else (
+                'NOT_SUBMITTED' if problem not in (None, 'no_decision') else 'NO_DECISION', None)
+            pitches.append({'key': _key(row), 'pitch_number': int(row['pitch_number']), 'status': status,
+                            'pre': pre_view(status, result, runtime.vocabulary, locator(row)),
+                            'actual': None if row['placeholder'] else actual_view(row, self.bounds)})
+        home_we = [components.defense_we(GameState.from_row(r), True) for r in records[-2:]]
         previous = records[-2] if len(records) > 1 else None
         return {'key': pitches[-1]['key'], 'pitch': pitches[-1], 'pa_pitches': pitches[:-1],
                 'previous': None if previous is None else {

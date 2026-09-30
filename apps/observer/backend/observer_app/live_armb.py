@@ -1,15 +1,15 @@
 """Delayed-live ARM-B recommendations for the observer (DEMO-WS-2026; display only, not an evaluation).
 
-``scripts/demo_precompute.LivePolicy`` binds the frozen <=2025 ARM-B components over the game so far
-(about 5-8 s) and evaluates the pending pitch exactly like the watch-along precompute. That is too slow
-for a request, so one background thread computes each new game state once and the route serves the
+``scripts/demo_precompute.LivePolicy`` binds the frozen <=2025 ARM-B components once per game (about
+5-8 s; again only when an already-bound row changes) and then evaluates each pending pitch exactly like
+the watch-along precompute in about 0.15 s. The first state of a game is too slow for a request, so one
+background thread computes each new game state once and the route serves the
 cached result: the delay buffer (``delay_s``) gives the thread a head start, because the newest raw
 snapshot is queued as soon as it is fetched, before it is served.
 """
 from __future__ import annotations
 
 from collections import OrderedDict
-import gc
 import json
 import logging
 import sys
@@ -113,7 +113,6 @@ class LiveArmB:
                     self.running = None
                     self.failed[key] = f'{type(exc).__name__}'
                 continue
-            gc.collect()  # each bind loads fresh frozen components; release the previous ones promptly
             seconds = round(time.perf_counter() - started, 2)
             with self._cond:
                 self.running = None

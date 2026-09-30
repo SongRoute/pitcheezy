@@ -168,3 +168,40 @@ def test_rehearsal_snapshots_replay_every_pitch_with_its_pre_pitch_state():
         assert got[STATE].astype(str).tolist() == want[STATE].astype(str).tolist()
         line = feed['liveData']['linescore']
         assert (line['outs'], line['teams']['away']['runs']) == (want.outs_when_up, want.away_score)
+
+
+WATCH = demo.DEMO_ROOT / 'watch/849843.json'
+
+
+def _rss_mb():
+    import os
+    import subprocess
+    return int(subprocess.run(['ps', '-o', 'rss=', '-p', str(os.getpid())], capture_output=True, text=True).stdout) / 1024
+
+
+@pytest.mark.skipif(not WATCH.exists(), reason='needs T7 (frozen policy and the 849843 watch-along dataset)')
+def test_live_policy_reuses_one_binding_and_equals_the_precomputed_game():
+    """Delayed-live recommendations over 50 rehearsal states of 849843 are bit-identical to the watch-along
+    precompute (pending pitch, the PA's earlier pitches, WE), bind once, and do not grow the process."""
+    import gc
+    import json
+    decisions = {f"849843:{d['at_bat_number']}:{d['pitch_number']}": d for d in json.loads(WATCH.read_text())['decisions']}
+    final = demo.read_feed(demo.DEMO_ROOT / 'feeds/849843_final.json.gz')
+    policy = demo.LivePolicy()
+    rss, compared = [], 0
+    for n, feed in demo.replay_snapshots(final, start=30, count=50):
+        result = policy(feed)
+        for pitch in [*result['pa_pitches'], result['pitch']]:
+            assert pitch['pre'] == decisions[pitch['key']]['pre'], (n, pitch['key'])
+            compared += 1
+        assert result['home_we_now'] == decisions[result['key']]['we']['home_before']
+        assert result['previous']['actual'] == decisions[result['previous']['key']]['actual']
+        gc.collect()
+        rss.append(_rss_mb())
+    assert compared >= 50 and policy.binds == 1
+    assert (rss[-1] - rss[4]) / (len(rss) - 5) < 0.5, rss
+    # A bound row that changed before the pending pitch (e.g. a runner moved) is never reused: rebind.
+    frame, _ = demo.demo_frame(demo.live_rows(feed), policy.snapshot, policy.as_of)
+    changed = frame.copy()
+    changed.loc[changed.index[-1], 'outs_when_up'] = (int(frame.outs_when_up.iloc[-1]) + 1) % 3
+    assert policy._extend(frame) and not policy._extend(changed)
