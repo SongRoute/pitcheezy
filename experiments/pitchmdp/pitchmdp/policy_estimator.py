@@ -504,8 +504,9 @@ def revealed_new_pitch(ledger_decisions, pas):
     def key(pa_id):
         game, ab = (int(x) for x in str(pa_id).split(':'))
         return str(pas[pa_id]['date']), game, ab
+    earliest = {pitcher: min(map(key, pa_ids)) for pitcher, pa_ids in events.items()}  # O(n), not O(n x events)
     return frozenset(pa_id for pa_id, pitcher in first.items()
-                     if any(key(e) < key(pa_id) for e in events.get(pitcher, ())))
+                     if pitcher in earliest and earliest[pitcher] < key(pa_id))
 
 
 LABELS = ('FAILED_INTEGRITY', 'NOT_DECIDABLE_CENSORING', 'UNCONFIRMED_WEAK_OVERLAP', 'IMPROVEMENT_SUPPORTED',
