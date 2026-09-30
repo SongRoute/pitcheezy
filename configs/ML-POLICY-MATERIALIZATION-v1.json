@@ -85,25 +85,27 @@
       "status": "PASS",
       "decided_by": "Song (user)",
       "date": "2026-09-30",
-      "record": "docs/decisions.md D103 (test-only change a454520 on top of the D102 PASS for fa82afb; earlier PASS D94 for 5186810, D100 for 9c25d8e)",
-      "reviewed_code_commit": "a4545205681564c107b4098de55e79008fbc8a86",
-      "basis": "D94 basis for 5186810; same-model adversarial reviews of the D98/D99 diff (4fcb5fa, 9c25d8e) and the D101 batch (70968eb, 07da7c8, fa82afb): 0 blocker, 0 major each; not an independent review",
+      "record": "docs/decisions.md D121 (runtime v3 / L1-R / ope-2026 batch b3bd334+c38cc61 under the D116 autonomy; earlier PASS D94/D100/D102/D103)",
+      "reviewed_code_commit": "c38cc612e13e7355119c5c875821b6c2e7b0f1ca",
+      "basis": "same-model adversarial review of a454520..b3bd334 (0 blocker, 2 major, 7 minor) and Fable 5.1 COOP-023 findings, all addressed in c38cc61; suites pitchmdp 749, root 363, contract all_pass",
       "scope": "opens S0-S2 only (M-3); S3 and later still need independent_review",
       "validity": "for the code of reviewed_code_commit: register source_commit = reviewed_code_commit (the runner then refuses any later change under experiments/, src/, scripts/); a code change needs a new gate decision"
     },
     "independent_review": {
       "status": "PASS",
-      "verdict": "PASS_WITH_CONDITIONS (conditions below are procedural and are checked at the stage they name)",
+      "verdict": "PASS_WITH_CONDITIONS for S6-dr-a3 and for ope-2026 after S6-dr-a3 is sealed",
       "decided_by": "Song (user), on the Fable 5.1 verdict",
       "date": "2026-09-30",
-      "record": "docs/reviews/COOP-019-fable-core-review-2026-09-30.md; docs/decisions.md D102",
-      "reviewed_code_commit": "9c25d8eaa60a9199f7d1e9117d1489d007de062d",
+      "record": "docs/reviews/COOP-023-fable-runtime-v3-code-review-2026-09-30.md; earlier COOP-019 (9c25d8e), COOP-022 (design)",
+      "reviewed_code_commit": "b3bd334 (+ fix batch c38cc61 for its conditions)",
       "conditions": [
         "S3b thresholds and tau grid committed before the June ledger is opened",
         "before S5: register tolerance together with a delta_gap_se ceiling (F1)",
         "before S6 is read: reviewer-side IS-only check on the sealed V2 ledger (F1)",
         "S6 report: min ESS over all E0 weights beside the gate (F3) and the candidate single-robustness statement (F5)",
-        "2026: pinned profile_as_of and source-date guard (F2, implemented in fa82afb)"
+        "2026: pinned profile_as_of and source-date guard (F2, implemented in fa82afb)",
+        "COOP-023: register S6_V4.estimator and disclose the post-S6-dr-a2 change; S-v1 layers of S6-dr-a3 must equal S6-dr-a2",
+        "COOP-023: 2026 vocabulary mapping, exact b_V 0.002734729542731599, hang-guard/power fields before ope-2026"
       ],
       "reviewer": "claude-fable-5-1 (D100: the user designated Fable 5.1 as the core reviewer; the author is Opus 5.5)",
       "note": "opens S3 and later subject to the conditions; the D101 batch after 9c25d8e (exFAT write, is_appledouble reuse, additive F2) was same-model reviewed only"
@@ -634,7 +636,26 @@
         "dr_q_rule": "M-7, applied mechanically at S3b: the DR q-hat uses the evaluation seed unless the S3-measured evaluator-inclusive rows per decision of the chosen setting x planned_decisions exceed row_budget (then planning-Q reuse); the result enters the frozen identity and S5/S6 follow it",
         "planned_decisions": 44000,
         "d7_diagnostic_starts": 200,
-        "d7_diagnostic": "before any reward: G0 10-class TV/KL and batter soft-membership TV, frozen vs rolling priors, on the first d7_diagnostic_starts E0 starts"
+        "d7_diagnostic": "before any reward: G0 10-class TV/KL and batter soft-membership TV, frozen vs rolling priors, on the first d7_diagnostic_starts E0 starts",
+        "estimator": {
+          "runtime": "ML-POLICY-RUNTIME-v3",
+          "censoring": "l1r",
+          "natural_course_refusals": [
+            "UNSUPPORTED_NO_LOGGED_ACTION",
+            "UNSUPPORTED_UNKNOWN_PITCHER",
+            "UNSUPPORTED_PITCHER_HAND",
+            "UNSUPPORTED_EMPTY_SUPPORT",
+            "UNSUPPORTED_INCONSISTENT_HISTORY"
+          ],
+          "gr_cap": 0.005,
+          "c_deltas": [
+            0.00801506103702984,
+            0.02784569868295147
+          ],
+          "mei": 0.001,
+          "v3_law": "tempered_alpha_0.5",
+          "registration_note": "D121: added after S6-dr-a2 was read (COOP-021/022/023 redesign, disclosed); S6-dr-a3 is a new attempt; S-v1 must reproduce S6-dr-a2"
+        }
       }
     },
     "measured_references_not_budgets": {
@@ -673,7 +694,7 @@
         "lightgbm": "4.6.0"
       }
     },
-    "source_commit": "a4545205681564c107b4098de55e79008fbc8a86",
+    "source_commit": "c38cc612e13e7355119c5c875821b6c2e7b0f1ca",
     "registered_config_sha256": null,
     "command_template": "PYTHONPATH=<pythonpath> <invoke_with> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
     "failure": "hang guard / RowBudget / integrity failures preserve the stage (failure-*.json, partial ledger prefix not citable); retries only as new attempts with the same scope",
