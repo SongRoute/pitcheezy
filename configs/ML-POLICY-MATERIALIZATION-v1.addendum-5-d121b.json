@@ -1,5 +1,5 @@
 {
-  "parent_sha256": "201f0f098f39054c5c4ff542e53aaa0e96ece944eb6b42aff285d43b0266f20b",
+  "parent_sha256": "d05bb0feeedc20690667bb271e5bc8c279af9676fafcd786e9149e394c9fcebc",
   "stage": "tau-select",
   "registered_inputs": {
     "tau_freeze": {
@@ -7,5 +7,5 @@
       "file_sha256": "1aedb2f58a996a1e88534d077083cca7136bf6c36851fda90533d6ada7ed6096"
     }
   },
-  "note": "D107: addendum 5 pins the sealed S3b-tau-a2 tau freeze (tau 0.1 SELECTED under the D106 grid; final identity a6dffaea...). Re-chained as d112. Re-chained as d121."
+  "note": "D107: addendum 5 pins the sealed S3b-tau-a2 tau freeze (tau 0.1 SELECTED under the D106 grid; final identity a6dffaea...). Re-chained as d112. Re-chained as d121b."
 }

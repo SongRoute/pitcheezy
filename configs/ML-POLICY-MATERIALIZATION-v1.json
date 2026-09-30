@@ -653,9 +653,9 @@
             0.02784569868295147
           ],
           "mei": 0.001,
-          "v3_law": "tempered_alpha_0.5",
-          "registration_note": "D121: added after S6-dr-a2 was read (COOP-021/022/023 redesign, disclosed); S6-dr-a3 is a new attempt; S-v1 must reproduce S6-dr-a2"
-        }
+          "v3_law": "tempered_alpha_0.5"
+        },
+        "estimator_registration_note": "D121: added after S6-dr-a2 was read (COOP-021/022/023 redesign, disclosed); S6-dr-a3 is a new attempt; S-v1 must reproduce S6-dr-a2"
       }
     },
     "measured_references_not_budgets": {

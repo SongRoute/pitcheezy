@@ -1,5 +1,5 @@
 {
-  "parent_sha256": "7d43bb76a6dc2d1515c086e51efadb097ca9e0ada1d72e487f79e86401fe987b",
+  "parent_sha256": "270b575d619becda49698530e540a5d1b5432d92764def2174a84462eb32bc50",
   "stage": "materialize-bc+style-snapshot",
   "registered_inputs": {
     "bc": {
@@ -31,5 +31,5 @@
       "file_sha256": "37cd0baa186913a9beab588cb61557bf287a03a37e2723d0df9282f7b80e7c84"
     }
   },
-  "note": "D103: addendum 2 pins the sealed S1-materialize-a3 (BC-P, support table, hand registry, report; all S1 gates true) and S1b-style-a3 outputs. Re-pinned on the D104 config (was addendum-2-s1). Re-pinned on the D105 config. Re-pinned on the D106 config. Re-pinned on the D107 config. Re-chained as d112. Re-chained as d121."
+  "note": "D103: addendum 2 pins the sealed S1-materialize-a3 (BC-P, support table, hand registry, report; all S1 gates true) and S1b-style-a3 outputs. Re-pinned on the D104 config (was addendum-2-s1). Re-pinned on the D105 config. Re-pinned on the D106 config. Re-pinned on the D107 config. Re-chained as d112. Re-chained as d121b."
 }
