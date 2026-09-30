@@ -11,6 +11,9 @@ feature, pin or model. Outputs go only to a NEW directory under DEMO-WS-2026.
 
     .venv/bin/python scripts/demo_precompute.py check-mapping --games 12
     .venv/bin/python scripts/demo_precompute.py precompute --game-pk 849843
+    .venv/bin/python scripts/demo_precompute.py sync --since 2026-09-29   # every newly completed postseason game
+
+``LivePolicy`` is the delayed-live service view the observer calls for an in-progress game.
 """
 from __future__ import annotations
 
@@ -555,43 +558,21 @@ def store_feed(game_pk, feed_path, feeds_dir):
     return feed, target, _sha_file(target)
 
 
-def precompute(game_pk, feed_path, output_root, local, *, effective_speed='release_speed', tag='', addenda=ADDENDA):
-    """Every row of one completed game through the frozen ARM-B runtime; returns the demo dataset."""
-    timing, started = {}, time.perf_counter()
-    mark = lambda name, since: timing.__setitem__(name, round(time.perf_counter() - since, 2))
-    output_root = _check_output_root(output_root)
-    settings = registration(addenda)
-    rpv = settings['rpv']
-    from pitchmdp import policy_identity as pid, policy_requests as preq, policy_runtime as prt
-    from pitchmdp.game import GameState
-    from pitchmdp.matrix_features import MatrixHistoryStore
+def bind(settings, frame, ledger_path, provenance):
+    """The frozen components bound over ``frame``'s context rows and the ARM-B runtime over them;
+    refuses unless the components are the S2-certified ones and the runtime is ``EXPECTED_IDENTITY``."""
+    rpv, reg, config = settings['rpv'], settings['reg'], settings['config']
+    from pitchmdp import policy_identity as pid, policy_runtime as prt
     from pitchmdp.matrix_policy import safe_rows
     from pitchmdp.policy_artifacts import load_train_bc
-    from pitchmdp.rollout_policy import PAState, RowBudget
+    from pitchmdp.rollout_policy import RowBudget
     from run_ml_g0_whole import load_member
-    reg, config = settings['reg'], settings['config']
-
-    feed, feed_file, feed_sha = store_feed(game_pk, feed_path, output_root / 'feeds')
-    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    run_dir = output_root / 'games' / str(int(game_pk)) / f'run-{stamp}{tag}'
-    run_dir.mkdir(parents=True, exist_ok=False)
-    rows = statcast_rows(feed, effective_speed=effective_speed)
-    rows.to_parquet(run_dir / 'input_statcast_like.parquet', index=False)
-    t = time.perf_counter()
-    snapshot, as_of, style = style_snapshot(settings, lambda: load_frame(settings, local), output_root / 'style')
-    mark('style_snapshot_seconds', t)
-    frame, style_report = demo_frame(rows, snapshot, as_of)
-
-    t = time.perf_counter()
     ident = config['identity_registration']
     bundle_path, bundle_sha = REPO / ident['g0_bundle']['path'], ident['g0_bundle']['file_sha256']
     files = pid.pinned_json(bundle_path, bundle_sha)['files']
     paths = {role: Path(entry['path']) for role, entry in files.items()}
     paths.update({role: (REPO / value if not Path(value).is_absolute() else Path(value)) for role, value in ident['we_paths'].items()})
-    prep = pid.pinned_json(paths['p4_preparation'], files['p4_preparation']['sha256'])
     aux = pid.pinned_pickle(paths['p4_auxiliary'], files['p4_auxiliary']['sha256'])
-    store = MatrixHistoryStore.from_frame(frame, normalizer=aux['normalizer'], history_length=5,
-                                          type_vocabulary=prep['features']['tokens']['type_vocabulary'])
     bc_path, bc_sha = rpv.registered_path(reg, 'bc')
     support_path, support_sha = rpv.registered_path(reg, 'support')
     components = pid.bind_components(bundle_path, bundle_sha, paths, bc_artifact=load_train_bc(bc_path, bc_sha),
@@ -599,19 +580,35 @@ def precompute(game_pk, feed_path, output_root, local, *, effective_speed='relea
                                      we_contract_sha256=ident['we_contract_sha256'])
     if components.sha256 != settings['components_sha256']:
         raise RuntimeError('bound components differ from the S2-certified identity; refusing to run')
-    provenance = {'demo': 'DEMO-WS-2026 watch-along (display only; not an evaluation)', 'game_pk': int(game_pk),
-                  'input_feed_sha256': feed_sha, 'style_snapshot_sha256': style['content_sha256'],
-                  'as_of_exclusive': as_of, 'effective_speed_rule': effective_speed}
-    runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, run_dir / 'ledger.jsonl',
+    runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, ledger_path,
                                 components=components, budget=RowBudget(int(settings['budget']), seed_count=5),
                                 tau=settings['tau'], samples=settings['samples'], pitch_cap=settings['pitch_cap'],
                                 seed=settings['seed'], evaluation_seed=settings['evaluation_seed'],
                                 expected_identity_sha256=EXPECTED_IDENTITY,
                                 hand_registry=rpv.registered_path(reg, 'hands'), provenance=provenance)
-    mark('bind_seconds', t)
+    return components, runtime, aux
 
-    observer = json.loads((OBSERVER / 'config.json').read_text())
-    bounds = json.loads((OBSERVER / 'live_config.json').read_text())['zone_bounds']
+
+def history_store(frame, aux, settings):
+    """Strictly-previous pitch history of ``frame`` with the frozen G0 normalizer and type vocabulary."""
+    from pitchmdp import policy_identity as pid
+    from pitchmdp.matrix_features import MatrixHistoryStore
+    ident = settings['config']['identity_registration']
+    files = pid.pinned_json(REPO / ident['g0_bundle']['path'], ident['g0_bundle']['file_sha256'])['files']
+    prep = pid.pinned_json(Path(files['p4_preparation']['path']), files['p4_preparation']['sha256'])
+    return MatrixHistoryStore.from_frame(frame, normalizer=aux['normalizer'], history_length=5,
+                                         type_vocabulary=prep['features']['tokens']['type_vocabulary'])
+
+
+def _location_settings():
+    return (json.loads((OBSERVER / 'config.json').read_text()),
+            json.loads((OBSERVER / 'live_config.json').read_text())['zone_bounds'])
+
+
+def make_locator(components, aux, bounds, observer):
+    """``locator(row)(pitch_type)``: the approximate zone from the pitcher's frozen TRAIN delivery pool."""
+    from pitchmdp import policy_requests as preq
+    from pitchmdp.rollout_policy import PAState
     mean, scale = np.asarray(aux['normalizer'].mean), np.asarray(aux['normalizer'].scale)
     pools = {}
 
@@ -628,6 +625,39 @@ def precompute(game_pk, feed_path, output_root, local, *, effective_speed='relea
                                   sigma=observer['target_sigma_ft'], minimum_draws=observer['minimum_effective_draws'],
                                   minimum_mass=observer['minimum_kernel_mass'])
         return locate
+    return locator
+
+
+def precompute(game_pk, feed_path, output_root, local, *, effective_speed='release_speed', tag='', addenda=ADDENDA):
+    """Every row of one completed game through the frozen ARM-B runtime; returns the demo dataset."""
+    timing, started = {}, time.perf_counter()
+    mark = lambda name, since: timing.__setitem__(name, round(time.perf_counter() - since, 2))
+    output_root = _check_output_root(output_root)
+    settings = registration(addenda)
+    from pitchmdp import policy_requests as preq, policy_runtime as prt
+    from pitchmdp.game import GameState
+    reg = settings['reg']
+
+    feed, feed_file, feed_sha = store_feed(game_pk, feed_path, output_root / 'feeds')
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    run_dir = output_root / 'games' / str(int(game_pk)) / f'run-{stamp}{tag}'
+    run_dir.mkdir(parents=True, exist_ok=False)
+    rows = statcast_rows(feed, effective_speed=effective_speed)
+    rows.to_parquet(run_dir / 'input_statcast_like.parquet', index=False)
+    t = time.perf_counter()
+    snapshot, as_of, style = style_snapshot(settings, lambda: load_frame(settings, local), output_root / 'style')
+    mark('style_snapshot_seconds', t)
+    frame, style_report = demo_frame(rows, snapshot, as_of)
+
+    t = time.perf_counter()
+    provenance = {'demo': 'DEMO-WS-2026 watch-along (display only; not an evaluation)', 'game_pk': int(game_pk),
+                  'input_feed_sha256': feed_sha, 'style_snapshot_sha256': style['content_sha256'],
+                  'as_of_exclusive': as_of, 'effective_speed_rule': effective_speed}
+    components, runtime, aux = bind(settings, frame, run_dir / 'ledger.jsonl', provenance)
+    store = history_store(frame, aux, settings)
+    mark('bind_seconds', t)
+    observer, bounds = _location_settings()
+    locator = make_locator(components, aux, bounds, observer)
 
     home_we = lambda row: components.defense_we(GameState.from_row(row), True)
     we = win_expectancy(frame, home_we)
@@ -718,6 +748,167 @@ def precompute(game_pk, feed_path, output_root, local, *, effective_speed='relea
     return dataset
 
 
+# ---------------------------------------------------------------- delayed-live service view
+
+POSTSEASON = ('F', 'D', 'L', 'W')
+SCHEDULE_URL = ('https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate={since}&endDate={until}'
+                '&gameType=' + ','.join(POSTSEASON))
+
+
+def live_rows(feed):
+    """Statcast-like rows of an in-progress game plus one placeholder row for the NEXT pitch, or None
+    when no pitch is pending (not live, between innings).
+
+    The placeholder is a pitch event appended after every event already in the feed (at the due-up
+    batter's new PA when the current one is complete), so ``statcast_rows`` gives it exactly the
+    pre-pitch state (count, outs, runners, score, pitcher) a completed game's row would have. Its type,
+    physics and outcome are unknown and never read: callers evaluate it with no logged action.
+    """
+    data, live = feed['gameData'], feed['liveData']
+    if data['status'].get('abstractGameState') != 'Live':
+        return None
+    plays, line = list(live['plays'].get('allPlays') or []), live.get('linescore') or {}
+    if plays and not plays[-1]['about'].get('isComplete', True):
+        play = plays.pop()
+    else:
+        if line.get('outs') == 3 or line.get('inningState') in ('Middle', 'End') or 'offense' not in line:
+            return None
+        batter, pitcher = line['offense']['batter']['id'], line['defense']['pitcher']['id']
+        hand = _hand(data, pitcher, 'pitchHand')
+        side = _hand(data, batter, 'batSide')
+        side = {'L': 'R', 'R': 'L'}.get(hand) if side == 'S' else side  # a switch hitter bats opposite the pitcher
+        play = {'about': {'atBatIndex': plays[-1]['about']['atBatIndex'] + 1 if plays else 0,
+                          'inning': line['currentInning'], 'isTopInning': line['isTopInning'], 'isComplete': False},
+                'matchup': {'pitcher': {'id': pitcher}, 'pitchHand': {'code': hand}, 'batter': {'id': batter},
+                            'batSide': {'code': side}},
+                'playEvents': [], 'runners': [], 'result': {}}
+    events = play.get('playEvents') or []
+    placeholder = {'index': max((e.get('index', 0) for e in events), default=-1) + 1, 'isPitch': True,
+                   'type': 'pitch', 'details': {'call': {'code': None}, 'type': {'code': None}},
+                   'count': {'balls': 0, 'strikes': 0}, 'pitchData': {}}
+    plays.append({**play, 'about': {**play['about'], 'isComplete': False}, 'playEvents': [*events, placeholder]})
+    rows = statcast_rows({**feed, 'liveData': {**live, 'plays': {**live['plays'], 'allPlays': plays}}})
+    rows['placeholder'] = False
+    rows.loc[rows.index[-1], 'placeholder'] = True
+    rows.loc[rows.index[-1], 'description'] = None
+    return rows
+
+
+def pre_pitch(runtime, request):
+    """The runtime's own pre-decision evaluation of one request with no logged action (the pre-pitch
+    service call ``DecisionRequest`` documents): the same refusals and candidate law, nothing written to
+    the ledger, no sticky refusal from a logged pitch. Returns (status, result or None)."""
+    from dataclasses import replace
+    from pitchmdp.policy_artifacts import Unsupported
+    request = replace(request, logged_action=None)
+    history = request.state.history
+    pa = {'next': request.decision_index, 'last_logged': history[-1].action if history else None, 'refused': None}
+    try:
+        return runtime._evaluate(request, pa)
+    except Unsupported as refusal:
+        return refusal.status, None
+
+
+def pre_view(status, result, vocabulary, locate):
+    from pitchmdp import policy_runtime as prt
+    ready = status in prt.EVALUATED and result is not None
+    return {'status': 'ready' if ready else 'unsupported', 'reason': None if ready else STATUS_TEXT.get(status, status),
+            'recommendation': recommendation(result, vocabulary, locate) if ready else None}
+
+
+def _key(row):
+    return f"{int(row['game_pk'])}:{int(row['at_bat_number'])}:{int(row['pitch_number'])}"
+
+
+class LivePolicy:
+    """Delayed-live service view (DEMO-WS-2026, display only; not an evaluation).
+
+    Each call binds the frozen components over the in-progress game's rows (the same ``bind``, context
+    keys and identity refusal as ``precompute``) and evaluates the current PA's pitches and the pending
+    one with ``pre_pitch``. The ledger header goes to a temporary directory; nothing is submitted.
+    """
+
+    def __init__(self, output_root=DEMO_ROOT, local=None, addenda=ADDENDA):
+        self.settings = registration(addenda)
+        local = local or json.loads((PROJECT / 'configs/local.json').read_text())
+        self.snapshot, self.as_of, self.style = style_snapshot(
+            self.settings, lambda: load_frame(self.settings, local), _check_output_root(output_root) / 'style')
+        self.observer, self.bounds = _location_settings()
+
+    def __call__(self, feed):
+        import tempfile
+        from pitchmdp import policy_requests as preq
+        from pitchmdp.game import GameState
+        rows = live_rows(feed)
+        if rows is None:
+            return None
+        frame, _ = demo_frame(rows, self.snapshot, self.as_of)
+        started = time.perf_counter()
+        with tempfile.TemporaryDirectory(prefix='pitcheezy-live-') as scratch:
+            provenance = {'demo': 'DEMO-WS-2026 delayed-live service view (display only; nothing submitted)',
+                          'game_pk': int(frame.game_pk.iloc[0]), 'style_snapshot_sha256': self.style['content_sha256'],
+                          'as_of_exclusive': self.as_of}
+            components, runtime, aux = bind(self.settings, frame, Path(scratch) / 'ledger.jsonl', provenance)
+            bound = time.perf_counter() - started
+            store = history_store(frame, aux, self.settings)
+            locator = make_locator(components, aux, self.bounds, self.observer)
+            positions = list(preq.pa_blocks(frame))[-1][1]
+            requests, problem, _ = preq.pa_requests(store, positions, runtime.sha256, self.settings['no_pitch'])
+            records = frame.to_dict('records')
+            pitches = []
+            for k, position in enumerate(positions):
+                row = records[position]
+                status, result = pre_pitch(runtime, requests[k]) if k < len(requests) else (
+                    'NOT_SUBMITTED' if problem not in (None, 'no_decision') else 'NO_DECISION', None)
+                pitches.append({'key': _key(row), 'pitch_number': int(row['pitch_number']), 'status': status,
+                                'pre': pre_view(status, result, runtime.vocabulary, locator(row)),
+                                'actual': None if row['placeholder'] else actual_view(row, self.bounds)})
+            home_we = [components.defense_we(GameState.from_row(r), True) for r in records[-2:]]
+        previous = records[-2] if len(records) > 1 else None
+        return {'key': pitches[-1]['key'], 'pitch': pitches[-1], 'pa_pitches': pitches[:-1],
+                'previous': None if previous is None else {
+                    'key': _key(previous), 'actual': actual_view(previous, self.bounds),
+                    'inning': int(previous['inning']), 'half': previous['inning_topbot'],
+                    'home_we_before': home_we[0]},
+                'home_we_now': home_we[-1], 'policy_identity': EXPECTED_IDENTITY,
+                'seconds': {'bind': round(bound, 2), 'total': round(time.perf_counter() - started, 2)}}
+
+
+def completed_postseason_games(since, until, fetch=None):
+    """gamePks of FINAL postseason games (F/D/L/W) between two dates (inclusive), in schedule order."""
+    fetch = fetch or (lambda url: json.load(urllib.request.urlopen(
+        urllib.request.Request(url, headers={'User-Agent': 'pitcheezy-demo'}), timeout=30)))
+    schedule = fetch(SCHEDULE_URL.format(since=since, until=until))
+    return [int(g['gamePk']) for day in schedule.get('dates', []) for g in day['games']
+            if g['gameType'] in POSTSEASON and g['status'].get('abstractGameState') == 'Final'
+            and g['status'].get('detailedState') in ('Final', 'Game Over', 'Completed Early')]
+
+
+def sync(since, until, output_root, local, *, fetch=None, run=None):
+    """Precompute every completed postseason game that has no watch dataset yet. One game's failure is
+    reported and does not stop the others; a second concurrent sync exits at once (file lock)."""
+    import fcntl
+    root = _check_output_root(output_root)
+    root.mkdir(parents=True, exist_ok=True)
+    run = run or (lambda pk: precompute(pk, None, root, local))
+    with open(root / '.sync.lock', 'w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return {'skipped': 'another sync is running'}
+        report = {'since': since, 'until': until, 'done': [], 'present': [], 'failed': {}}
+        for game_pk in completed_postseason_games(since, until, fetch):
+            if (root / 'watch' / f'{game_pk}.json').exists():
+                report['present'].append(game_pk)
+                continue
+            try:
+                dataset = run(game_pk)
+                report['done'].append({'game_pk': game_pk, 'ready_share': dataset['coverage']['ready_share_of_pitches']})
+            except Exception as error:  # noqa: BLE001 - one game's failure must not stop the others
+                report['failed'][str(game_pk)] = f'{type(error).__name__}: {error}'
+        return report
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     commands = parser.add_subparsers(dest='command', required=True)
@@ -732,12 +923,20 @@ def main(argv=None):
     run.add_argument('--effective-speed', choices=('release_speed', 'missing'), default='release_speed')
     run.add_argument('--output-root', type=Path, default=DEMO_ROOT)
     run.add_argument('--tag', default='')
+    synced = commands.add_parser('sync', help='precompute every newly completed postseason game')
+    synced.add_argument('--since', default='2026-09-29')
+    synced.add_argument('--until', default=datetime.now(timezone.utc).strftime('%Y-%m-%d'))
+    synced.add_argument('--output-root', type=Path, default=DEMO_ROOT)
     args = parser.parse_args(argv)
     if args.command == 'check-mapping':
         result = check_mapping(args.games, args.output, args.raw)
         print(json.dumps({k: result[k] for k in ('rows', 'effective_speed')}, indent=1))
         print(json.dumps({k: (v['agree'], v['examples'][:3]) for k, v in result['exact'].items()}, indent=0))
         print(json.dumps({k: v['abs_diff_quantiles'] for k, v in result['numeric'].items()}, indent=0))
+    elif args.command == 'sync':
+        report = sync(args.since, args.until, args.output_root, local)
+        print(json.dumps(report, indent=1))
+        sys.exit(1 if report.get('failed') else 0)
     else:
         dataset = precompute(args.game_pk, args.feed, args.output_root, local, effective_speed=args.effective_speed,
                              tag=args.tag)

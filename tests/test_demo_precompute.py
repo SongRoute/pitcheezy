@@ -92,3 +92,64 @@ def test_writes_only_inside_the_demo_directory(tmp_path):
     assert demo._check_output_root(tmp_path) == tmp_path.resolve()
     with pytest.raises(RuntimeError):
         demo._check_output_root('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/x')
+
+
+STATE = ['pitcher', 'p_throws', 'batter', 'stand', 'inning', 'inning_topbot', 'balls', 'strikes', 'outs_when_up',
+         'bases', 'on_1b', 'on_2b', 'on_3b', 'home_score', 'away_score', 'at_bat_number', 'pitch_number']
+
+
+def live(plays, **linescore):
+    import copy
+    feed = copy.deepcopy(FEED)
+    feed['gameData']['status'] = {'abstractGameState': 'Live'}
+    feed['gameData']['players'].update({'ID23': {'batSide': {'code': 'S'}}})
+    feed['liveData']['plays']['allPlays'] = copy.deepcopy(plays)
+    feed['liveData']['linescore'] = linescore
+    return feed
+
+
+def test_live_placeholder_row_has_the_completed_games_pre_pitch_state():
+    import copy
+    final = demo.statcast_rows(FEED).set_index(['at_bat_number', 'pitch_number'], drop=False)
+    # mid-PA: right before the home run pitch (after the steal and the pitching change)
+    second = copy.deepcopy(FEED['liveData']['plays']['allPlays'][1])
+    second['playEvents'] = second['playEvents'][:4]
+    second['runners'] = [r for r in second['runners'] if r['details']['playIndex'] < 4]
+    second['about']['isComplete'] = False
+    rows = demo.live_rows(live([FEED['liveData']['plays']['allPlays'][0], second]))
+    got = rows.iloc[-1]
+    assert got.placeholder and not rows.placeholder.iloc[:-1].any() and demo.pd.isna(got.pitch_type)
+    assert got[STATE].astype(str).tolist() == final.loc[(2, 2), STATE].astype(str).tolist()
+    # between batters: the due-up batter/pitcher come from the linescore; a switch hitter bats opposite
+    rows = demo.live_rows(live(FEED['liveData']['plays']['allPlays'][:2], outs=0, inningState='Top', currentInning=1,
+                               isTopInning=True, offense={'batter': {'id': 23}}, defense={'pitcher': {'id': 11}}))
+    got = rows.iloc[-1]
+    same = [c for c in STATE if c not in ('stand', 'p_throws')]  # the synthetic FEED's matchup hand is always R
+    assert got[same].astype(str).tolist() == final.loc[(3, 1), same].astype(str).tolist()
+    assert (got.p_throws, got.stand) == ('L', 'R')  # pitcher 11 throws L in gameData.players
+    assert demo.live_rows(live(FEED['liveData']['plays']['allPlays'][:2], outs=3, offense={}, defense={})) is None
+    not_live = live(FEED['liveData']['plays']['allPlays'][:2])
+    not_live['gameData']['status'] = {'abstractGameState': 'Final'}
+    assert demo.live_rows(not_live) is None
+
+
+def test_sync_precomputes_only_new_completed_postseason_games(tmp_path):
+    (tmp_path / 'watch').mkdir()
+    (tmp_path / 'watch' / '2.json').write_text('{}')
+    game = lambda pk, kind, state, detail: {'gamePk': pk, 'gameType': kind,
+                                            'status': {'abstractGameState': state, 'detailedState': detail}}
+    schedule = {'dates': [{'games': [game(1, 'F', 'Final', 'Final'), game(2, 'F', 'Final', 'Final'),
+                                     game(3, 'F', 'Live', 'In Progress'), game(4, 'R', 'Final', 'Final'),
+                                     game(5, 'D', 'Final', 'Postponed'), game(6, 'D', 'Final', 'Game Over'),
+                                     game(7, 'L', 'Final', 'Final')]}]}
+    urls = []
+    fetch = lambda url: urls.append(url) or schedule
+
+    def run(pk):
+        if pk == 7:
+            raise RuntimeError('feed unavailable')
+        return {'coverage': {'ready_share_of_pitches': .5}}
+    report = demo.sync('2026-09-29', '2026-10-01', tmp_path, {}, fetch=fetch, run=run)
+    assert 'startDate=2026-09-29&endDate=2026-10-01&gameType=F,D,L,W' in urls[0]
+    assert [d['game_pk'] for d in report['done']] == [1, 6] and report['present'] == [2]
+    assert list(report['failed']) == ['7']
