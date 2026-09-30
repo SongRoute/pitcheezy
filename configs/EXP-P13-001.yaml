@@ -1,0 +1,45 @@
+{
+  "protocol": "ml_arsenal_v1",
+  "experiment_id": "EXP-P13-001",
+  "status": "PROPOSAL",
+  "execution": {"enabled": false, "reason": "Proposal only; needs approval, an additive runner and a registered parent before any fit or prediction."},
+  "baseline": {"cell": "G0-global", "experiment_id": "EXP-P4-001", "config_file": "configs/EXP-P4-001.yaml",
+               "frozen_reference": "configs/G0-RESEARCH-FROZEN-v1.json", "seeds": [0, 1, 2]},
+  "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+  "parent_preparation_sha256": null,
+  "seeds": [0, 1, 2],
+  "one_change": "Add TRAIN-only per-pitch-type pitcher arsenal features (context block before routing columns) plus the candidate pitch type's arsenal row; everything else identical to G0-global.",
+  "arsenal": {
+    "enabled": true,
+    "module": "experiments/pitchmdp/pitchmdp/matrix_arsenal.py",
+    "fit": "fit_pitcher_arsenal(TRAIN rows of EXP-P4-001 train_keys, frozen token type_vocabulary)",
+    "tau": 50,
+    "channels": ["share", "effective_speed", "release_spin_rate", "pfx_x", "pfx_z",
+                 "d_speed_vs_fastball", "d_pfx_x_vs_fastball", "d_pfx_z_vs_fastball", "reliability"],
+    "fastballs": ["FF", "SI", "FC"],
+    "per_type_block": "T vocabulary types x 9 channels, pitcher-static, inserted before the seven SharingContext routing columns",
+    "candidate_row": "9 channels of the current-token (candidate) type, appended by CandidateArsenalModel after routing is stripped; unknown type -> zeros",
+    "added_context_width": "9*(T+1)",
+    "shrinkage": "share and per-type physical means shrunk to league per-type values with pseudo-count tau; reliability = n/(n+tau)",
+    "standardization": "channels 0-7 by TRAIN pitcher x type cell mean/std; reliability raw",
+    "unknown_pitcher": "league per-type row (n=0 shrinkage limit), same league-fallback rule as G0",
+    "flag_off": "ArsenalContext(sharing, None) is byte-identical to SharingContext (tests/test_matrix_arsenal.py)"
+  },
+  "unchanged_from_g0": {
+    "tokens": "enriched H5 (8 physical + type one-hot + 11 outcome channels)",
+    "base_context": "as-of batter/game context and the 23 static pitcher profile columns plus log1p(TRAIN count)/10",
+    "splits": "EXP-P4-001 train/earlystop/temperature(May Cpanel)/blend(June Cpanel)/dev(Cpanel) keys; optional mlb_dev frozen",
+    "training": {"kind": "flatten_mlp", "width": 128, "epochs": 30, "patience": 5, "batch_size": 1024, "learning_rate": 0.0005},
+    "delivery": "same aux delivery model, 400 draws, May temperature calibration",
+    "hpo_trials": 0
+  },
+  "metrics": {
+    "primary": "paired NLL vs G0-global on Cpanel DEV (whole-game bootstrap, pitch-weighted)",
+    "secondary": ["paired Brier", "calibration ECE10 and per-class reliability"],
+    "comparison": [["G13-arsenal", "G0-global"]],
+    "N": {"delta_nll_max": -0.003, "nll_ci95_upper_max": 0, "brier_ci95_upper_max": 0.001, "required_negative_seeds": 2},
+    "bootstrap": {"draws": 10000, "seed": 20260924, "unit": "whole game"}
+  },
+  "data_rules": "No 2026 rows. TRAIN rows only for arsenal statistics; DEV never used for fitting, selection or tau.",
+  "cost_reference": "G0-global EXP-P4-001 fit.json seconds_total seed0/1/2 = 90.1/83.3/101.1 on mps; seed0 Cpanel prediction_runtime 25.7 s. Arsenal cost 미측정."
+}
