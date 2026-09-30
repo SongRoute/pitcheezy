@@ -124,10 +124,15 @@ def write_exclusive(path, data: bytes):
             # ponytail: exFAT (the T7 artifact disk) has no hard links; O_EXCL keeps the file
             # exclusive but a crash mid-write can leave a partial file under the final name. That
             # file sits in a stage directory with no manifest.json, so it is never citable/registrable.
-            with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644), 'wb') as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            try:
+                with os.fdopen(descriptor, 'wb') as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except BaseException:
+                path.unlink()  # this call created it exclusively; never leave a partial file
+                raise
     finally:
         os.unlink(temporary)
     return hash_file(path)
