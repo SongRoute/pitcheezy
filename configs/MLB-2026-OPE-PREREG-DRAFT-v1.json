@@ -300,7 +300,7 @@
         "samples": 6,
         "pitch_cap": 12,
         "profile_source": "S3-profile-a2 (D105)",
-        "final_identity_sha256": "a6dffaea70976368a9cdc9f1a8bff4267b1c138162ee48aafda00e81e989109c",
+        "final_identity_sha256": "6eb85ba7c3bf3e7c9fc05678153583bc11d9488926b1b7c80f22029c57d79d27",
         "tau_freeze_file_sha256": "1aedb2f58a996a1e88534d077083cca7136bf6c36851fda90533d6ada7ed6096",
         "tau_freeze_addendum": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-5-d107.json"
       },
@@ -593,7 +593,7 @@
     "special_event_exceptions": "noted by official source; event-specific treatment deferred to M2 schema plan"
   },
   "identities": {
-    "candidate_policy_sha256": "a6dffaea70976368a9cdc9f1a8bff4267b1c138162ee48aafda00e81e989109c",
+    "candidate_policy_sha256": "6eb85ba7c3bf3e7c9fc05678153583bc11d9488926b1b7c80f22029c57d79d27",
     "action_mapping_sha256": null,
     "legal_support_mask_sha256": "152cdab41e87faba57f0f46a402ec7796c4e131d41d6ff4a758a53616c6342d4",
     "behavior_policy_sha256": "b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11",
@@ -776,6 +776,10 @@
       "base_commit": "e10ead8",
       "review": "COOP-020",
       "what": "Fable 5.1 narrow review (COOP-020) conditions applied: B1 label split (IMPROVEMENT_SUPPORTED_STATISTICAL = D108 rule; IMPROVEMENT_SUPPORTED needs CI lower > MEI + b_V from sealed S5 V2, V3 alpha 0.5 misspecification report/flag); M1 reward FrozenWE full-SHA pins, legacy game_values note superseded, 2025 DEV Brier exposure disclosed; M2 hang guard, sealed-unopened partial ledger, max 2 attempts then FAILED_INFRA, no resume; M3 power disclosure placeholder; m1 one primary contrast, zero confirmatory secondaries; m2 concrete H_t field list, sufficiency = identification assumption; m3 snapshot provenance; m4 ESS gate non-binding at tau 0.1. D108 thresholds unchanged; still DRAFT, registered=false, execution disabled."
+    },
+    {
+      "date": "2026-10-01",
+      "change": "candidate identity pin a6dffaea... -> 6eb85ba7c3bf3e7c9fc05678153583bc11d9488926b1b7c80f22029c57d79d27 (D122/D123: runtime v3 source change re-certified S2->S6; tau table and V2 gaps identical; policy computation unchanged)"
     }
   ],
   "success_criteria": {
