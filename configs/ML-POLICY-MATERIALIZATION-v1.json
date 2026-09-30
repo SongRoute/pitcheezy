@@ -522,10 +522,10 @@
         "starts": 4,
         "row_budget": 10000000000,
         "candidates": [{"samples": 3, "pitch_cap": 8}, {"samples": 3, "pitch_cap": 12}, {"samples": 4, "pitch_cap": 8}, {"samples": 4, "pitch_cap": 12}, {"samples": 6, "pitch_cap": 8}, {"samples": 6, "pitch_cap": 12}],
-        "measurement_attempt_note": "D104: row_budget, candidates and both selection budgets are provisional for the cost-only measurement attempt S3-profile-a1 (selection effectively unbounded, not citable as the D-9a selection). The selection budget and S3b row_budget are re-registered from the measured rows/decision and seconds before S3-profile-a2; candidates stay unless the user changes them. samples >= 3 (noise-rule minimum); pitch_cap 8 = the P8 setting, 12 = one longer option.",
+        "measurement_attempt_note": "D104/D105: S3-profile-a1 was a cost-only measurement with provisional unbounded selection budgets (not citable as the D-9a selection). D105 (user-approved from its measurement): selection budget 44,000 decisions / 4,500,000 planning rows = S3b row_budget; S3b 150 June games; S6 planned 44,000 decisions / 9,000,000 rows. S3-profile-a2 seals the selection.",
         "selection_row_budget": {
-          "rows": 1000000000000,
-          "decisions": 1000,
+          "rows": 4500000,
+          "decisions": 44000,
           "note": "rows must equal S3b row_budget"
         },
         "tau": "placeholder = tau_grid[0], labelled not selected",
@@ -538,20 +538,20 @@
         "hang_guard_seconds": 7200,
         "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
         "split": "blend",
-        "n_games": null,
+        "n_games": 150,
         "tau_grid": [
           0.001,
           0.003,
           0.01,
           0.03
         ],
-        "row_budget": 1000000000000,
+        "row_budget": 4500000,
         "thresholds": {
-          "pa_ess_ratio_min": null,
-          "game_ess_min": null,
-          "ess_ratio_candidate_reference_min": null,
-          "noise_ratio_q90_max": null,
-          "safety_multiplier": null
+          "pa_ess_ratio_min": 0.01,
+          "game_ess_min": 30,
+          "ess_ratio_candidate_reference_min": 0.5,
+          "noise_ratio_q90_max": 0.5,
+          "safety_multiplier": 2
         },
         "rule": "smallest tau passing both-policy overlap, the candidate/reference ESS ratio and the paired-difference noise ratio; reference failing -> ARM_B_NOT_EVALUABLE; none -> P3_NOT_EVALUABLE; grid never widened",
         "reads": "pre-decision fields, logged types, previous-row outcomes (history), terminal-marker presence only; no WE, reward, events kind or next-row state",
@@ -586,14 +586,14 @@
       },
       "S6_V4": {
         "n_games": null,
-        "row_budget": null,
+        "row_budget": 9000000,
         "dr_q_source": "evaluation_seed_with_cost_fallback",
         "hang_guard_seconds": null,
         "cost_measured": null,
         "paired_identity_run": "independent cand=ref runtime on the same requests; every complete PA delta exactly 0 and equal complete sets (M-10, D89 V4 e); failure fails S6",
         "identity_pin": "expected identity = tau_freeze.final_identity_sha256",
         "dr_q_rule": "M-7, applied mechanically at S3b: the DR q-hat uses the evaluation seed unless the S3-measured evaluator-inclusive rows per decision of the chosen setting x planned_decisions exceed row_budget (then planning-Q reuse); the result enters the frozen identity and S5/S6 follow it",
-        "planned_decisions": null,
+        "planned_decisions": 44000,
         "d7_diagnostic_starts": null,
         "d7_diagnostic": "before any reward: G0 10-class TV/KL and batter soft-membership TV, frozen vs rolling priors, on the first d7_diagnostic_starts E0 starts"
       }
