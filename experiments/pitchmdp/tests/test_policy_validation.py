@@ -957,7 +957,7 @@ class LoadInputsTests(unittest.TestCase):
         out = Path(tempfile.mkdtemp()) / 'stage'
         with rpv.stage(out, 'census', {}) as directory:
             (directory / 'census.json').write_text('{}')
-            (directory / '._census.json').write_bytes(b'exfat metadata')
+            (directory / '._census.json').write_bytes(b'\x00\x05\x16\x07' + b'\x00' * 28)  # AppleDouble magic
         self.assertEqual(sorted(json.loads((out / 'manifest.json').read_text())['artifact_sha256']),
                          ['census.json', 'started.json'])
 

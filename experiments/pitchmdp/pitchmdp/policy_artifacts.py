@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import date
+import errno
 import hashlib
 import json
 import math
@@ -115,7 +116,18 @@ def write_exclusive(path, data: bytes):
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        os.link(temporary, path)
+        try:
+            os.link(temporary, path)
+        except OSError as error:
+            if error.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EPERM):
+                raise
+            # ponytail: exFAT (the T7 artifact disk) has no hard links; O_EXCL keeps the file
+            # exclusive but a crash mid-write can leave a partial file under the final name. That
+            # file sits in a stage directory with no manifest.json, so it is never citable/registrable.
+            with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644), 'wb') as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
     finally:
         os.unlink(temporary)
     return hash_file(path)

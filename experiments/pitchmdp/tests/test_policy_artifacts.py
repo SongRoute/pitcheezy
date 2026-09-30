@@ -84,3 +84,19 @@ def test_rollout_npz_enumeration_ignores_only_real_metadata(tmp_path):
     assert not flags['P0'].any()
     (tmp_path/'._unexpected.npz').write_bytes(b'ordinary npz-like payload')
     with pytest.raises(ValueError, match='PA file family'): groups.load_rollouts(groups.Reader(), tmp_path, {'pa_keys': ['1:1:1']}, ['P0'])
+
+
+def test_write_exclusive_without_hard_links(tmp_path, monkeypatch):
+    """exFAT (the T7 artifact disk) has no hard links: fall back to O_EXCL, still never overwrite."""
+    import errno, os
+    from pitchmdp.policy_artifacts import write_exclusive
+    def no_link(src, dst):
+        raise OSError(errno.ENOTSUP, 'Operation not supported')
+    monkeypatch.setattr(os, 'link', no_link)
+    target = tmp_path/'bc.json'
+    assert write_exclusive(target, b'first') == hash_file(target)
+    assert target.read_bytes() == b'first'
+    with pytest.raises(FileExistsError):
+        write_exclusive(target, b'second')
+    assert target.read_bytes() == b'first'
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['bc.json']  # no temporary left behind

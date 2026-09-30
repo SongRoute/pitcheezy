@@ -39,6 +39,7 @@ import pandas as pd
 from pitchmdp.data import KEY, hash_file
 from pitchmdp.matrix_data import canonical_hash, ordered_key_hash
 from pitchmdp.matrix_policy import context_key, safe_rows
+from pitchmdp.matrix_policy_artifacts import is_appledouble
 from pitchmdp.policy_artifacts import (IntegrityError, _require, export_train_bc, load_hand_registry,
                                        load_style_snapshot, load_support_table, load_train_bc, normalize_hand,
                                        save_hand_registry, save_style_snapshot, save_support_table)
@@ -316,8 +317,8 @@ def stage(output, command, identity, hang_guard_seconds=None):
         if hang_guard_seconds is not None:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
-    names = sorted(str(p.relative_to(output)) for p in output.rglob('*')  # exFAT AppleDouble '._*' is not an artifact
-                   if p.is_file() and not p.name.startswith('._'))
+    names = sorted(str(p.relative_to(output)) for p in output.rglob('*')  # exFAT AppleDouble sidecars are not artifacts
+                   if p.is_file() and not is_appledouble(p))
     dump(output / 'manifest.json', {'command': command, 'cost': {
         'wall_seconds': time.perf_counter() - started, 'cpu_seconds': time.process_time() - cpu,
         'peak_rss_raw': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, 'peak_rss_unit': 'platform ru_maxrss'},
