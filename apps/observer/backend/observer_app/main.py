@@ -20,6 +20,7 @@ from .service import ObserverService, ServiceError
 from .settings import BUNDLE, CONFIG, REPO, RUN, WEB, database_path
 from .store import Store
 from .video_annotations import VideoAnnotations
+from .watch_along import WatchAlong
 
 LOGGER = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class UnavailableRecommender:
     ready = False
 
 
-def create_app(service=None, *, start_worker=None, live_feed=None, live_pins=None):
+def create_app(service=None, *, start_worker=None, live_feed=None, live_pins=None, watch_dir=None):
     injected = service is not None
     if start_worker is None:
         start_worker = not injected
@@ -268,6 +269,30 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_pins=Non
                                                              'repertoire_counts': inputs.repertoire_counts})
             return parsed | {'delay_s': feed.delay_s, 'recommendation': recommendation}
         return live_call(state)
+
+    watch = WatchAlong(watch_dir)
+
+    def watch_call(operation):
+        try:
+            return operation()
+        except KeyError:
+            raise ServiceError(404, '이 경기의 관전 자료가 없습니다. 먼저 사전 계산을 실행해 주세요.') from None
+        except IndexError:
+            raise ServiceError(404, '해당 투구를 찾을 수 없습니다.') from None
+        except ValueError:
+            raise ServiceError(503, '관전 자료 형식을 확인할 수 없습니다.') from None
+
+    @app.get('/api/watch/games')
+    def watch_games():
+        return {'games': watch.games()}
+
+    @app.get('/api/watch/{game_pk}')
+    def watch_timeline(game_pk: int):
+        return watch_call(lambda: watch.timeline(game_pk))
+
+    @app.get('/api/watch/{game_pk}/reveal/{index}')
+    def watch_reveal(game_pk: int, index: int):
+        return watch_call(lambda: watch.reveal(game_pk, index))
 
     @app.get('/api/runtime')
     def runtime():
