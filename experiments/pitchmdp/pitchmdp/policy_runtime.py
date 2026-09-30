@@ -361,7 +361,13 @@ class PolicyRuntime:
                 raise Unsupported(LOGGING_POSITIVITY, request.logged_action)
         candidate, q_record = None, {}
         if self.candidate is not None:
-            out = self.candidate(state)  # probabilities, or (probabilities, reference-Q record)
+            try:
+                out = self.candidate(state)  # probabilities, or (probabilities, reference-Q record)
+            except Exception as failure:  # v3 (S-M1): a search failure on a refused row still fails closed, named
+                if positivity:
+                    failure.add_note(f'during the runtime-v3 candidate search on a {LOGGING_POSITIVITY} row '
+                                     f'(logged {request.logged_action!r})')
+                raise
             candidate = self._row(out[0] if isinstance(out, tuple) else out, mask, 'candidate')
             if isinstance(out, tuple):
                 q_record = self._q_record(out[1], mask)
@@ -421,9 +427,9 @@ class PolicyRuntime:
             except Unsupported as refusal:
                 status, detail, result = refusal.status, str(refusal), getattr(refusal, 'result', None)
             except (IntegrityError, ValueError) as failure:
-                status, detail, error = FAILED_INTEGRITY, str(failure), failure
+                status, detail, error = FAILED_INTEGRITY, _described(failure), failure
             except Exception as failure:  # record before propagating; never lose the audit row
-                status, detail, error = FAILED_RUNTIME, f'{type(failure).__name__}: {failure}', failure
+                status, detail, error = FAILED_RUNTIME, f'{type(failure).__name__}: {_described(failure)}', failure
         s = request.state
         row = self.ledger._append({'kind': 'decision', 'request_id': request.request_id, 'pa_id': request.pa_id,
             'decision_index': request.decision_index, 'fingerprint': fingerprint, 'status': status, 'detail': detail,
@@ -464,7 +470,10 @@ class PolicyRuntime:
                 'aborted': sum(r['kind'] == 'aborted' for r in self.ledger.rows),
                 'run_status': 'HALTED' if self.halted else 'OK',
                 'ledger_rows': len(self.ledger.rows), 'ledger_head_sha256': self.ledger.rows[-1]['sha256'],
-                'runtime_sha256': self.sha256, 'population_value': None}
+                'runtime_sha256': self.sha256, 'population_value': None,
+                **({'positivity_candidate_searches': sum(  # v3 cost (S-M1): searches run for refused rows
+                    r['status'] == LOGGING_POSITIVITY and (r['result'] or {}).get('candidate') is not None
+                    for r in rows)} if self.positivity_record else {})}
 
     def verify_components(self):
         """Stage-end check before sealing results: for a candidate runtime, the pinned code,
@@ -474,6 +483,11 @@ class PolicyRuntime:
                 raise IntegrityError('a candidate without bound components cannot be verified')
             return True
         return self.components.verify(self.improvement)
+
+
+def _described(failure):
+    """str(failure) plus its notes (none on the v2 path, so v2 details are unchanged)."""
+    return ' '.join([str(failure), *getattr(failure, '__notes__', ())])
 
 
 class MaskedReference:

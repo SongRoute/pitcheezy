@@ -129,6 +129,8 @@ def _steps(decisions, positivity=False):
     _require(len({d['pa_id'] for d in decisions}) <= 1, 'decision rows from more than one PA')
     if not decisions:
         return []
+    _require(isinstance(decisions[0].get('result'), dict),  # e.g. a v2 LOGGING_POSITIVITY row under L1-R (S-m7)
+             f'decision row {decisions[0].get("status")} without a recorded result: runtime v3 required for L1-R')
     n = len(decisions[0]['result']['logging'])
     return [_step(d, n, positivity) for d in decisions]
 
@@ -404,8 +406,8 @@ def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, 
             'pas': len(complete), 'delta_mean': float(np.mean(deltas)),
             'candidate_mean': float(np.mean([r['candidate'] for r in complete])),
             'reference_mean': float(np.mean([r['reference'] for r in complete])),
-            'observed_mean_end_value': float(np.mean([pas[r['pa_id']]['reward'] for r in complete
-                                                      if pas[r['pa_id']].get('reward') is not None] or [np.nan])),
+            'observed_mean_end_value': (lambda ends: float(np.mean(ends)) if ends else None)(  # None when undefined
+                [pas[r['pa_id']]['reward'] for r in complete if pas[r['pa_id']].get('reward') is not None]),
             'selection': 'post-treatment selected (complete and supported to the end); no judgement'}
         result['ess'] = {**ess, 'gate_min_candidate_reference': gate}
         if ess_gate is not None:
@@ -471,9 +473,9 @@ def strata_table(rows):
 
 def revealed_new_pitch(ledger_decisions, pas):
     """S-B (sensitivity only): PAs whose first-row pitcher already threw an action outside his TRAIN
-    BC support (a LOGGING_POSITIVITY row) in a strictly earlier PA -- an earlier game date, or the
-    same game with a smaller at-bat number. Pre-decision information only; the order (game_date,
-    game_pk, at_bat_number) comes from ``pas[pa]['date']`` and the ``game:at_bat`` PA id."""
+    BC support (a LOGGING_POSITIVITY row) in a strictly earlier PA: strict lexicographic order on
+    (game_date, game_pk, at_bat_number) (F-m1). Pre-decision information only; the date comes from
+    ``pas[pa]['date']`` and the game and at-bat from the ``game:at_bat`` PA id."""
     first, events = {}, {}
     for row in ledger_decisions:
         if row['decision_index'] == 0:
@@ -484,12 +486,8 @@ def revealed_new_pitch(ledger_decisions, pas):
     def key(pa_id):
         game, ab = (int(x) for x in str(pa_id).split(':'))
         return str(pas[pa_id]['date']), game, ab
-    out = set()
-    for pa_id, pitcher in first.items():
-        date, game, ab = key(pa_id)
-        if any(d < date or (g == game and b < ab) for d, g, b in map(key, events.get(pitcher, ()))):
-            out.add(pa_id)
-    return frozenset(out)
+    return frozenset(pa_id for pa_id, pitcher in first.items()
+                     if any(key(e) < key(pa_id) for e in events.get(pitcher, ())))
 
 
 LABELS = ('FAILED_INTEGRITY', 'NOT_DECIDABLE_CENSORING', 'UNCONFIRMED_WEAK_OVERLAP', 'IMPROVEMENT_SUPPORTED',

@@ -246,6 +246,8 @@ class RuntimeRefusalTests(unittest.TestCase):
         self.assertNotEqual(rt.sha256, v2.sha256)
         row = rt.submit(pr.DecisionRequest('p0', 'p', 0, PAState(0, 0, '9', 'L'), 'CH', rt.sha256, 'R'))
         self.assertEqual((row['status'], len(calls)), (pr.LOGGING_POSITIVITY, 1))
+        self.assertEqual(rt.summary()['positivity_candidate_searches'], 1)  # S-M1: the v3 search cost is visible
+        self.assertNotIn('positivity_candidate_searches', v2.summary())  # v2 summary keys unchanged
         result = row['result']
         self.assertEqual((result['rho_candidate'], result['rho_reference'], result['logged_index']), (0., 0., 0))
         self.assertEqual((result['logging'][0], result['mask'][0], result['candidate'][0]), (0., False, 0.))
@@ -255,6 +257,32 @@ class RuntimeRefusalTests(unittest.TestCase):
         value = est.pa_value(rt.ledger.decisions(), {'game': 1, 'in_population': True, 'reward': .4}, 'l1r')
         self.assertEqual((value['resolution'], value['delta']), ('rho_zero', 0.))  # cand = ref here
         self.assertAlmostEqual(value['candidate'], .5, places=12)  # V_0 = v_pi(H_0) = sum pi q
+
+    def test_runtime_v3_search_failure_on_a_positivity_row_fails_closed(self):
+        """S-M1: a BudgetExceeded (or any candidate exception) during the v3 search on a positivity row
+        is a recorded FAILED_RUNTIME that names the positivity row, halts the run and propagates."""
+        from pitchmdp.rollout_policy import BudgetExceeded
+
+        def candidate(state):
+            raise BudgetExceeded('row budget exhausted')
+        artifact = pa.load_train_bc(self.root / 'bc.json', self.art.file_sha256)
+        table, support_sha = pa.load_support_table(self.root / 's.json', self.support, artifact)
+        rt = pr.PolicyRuntime(artifact, table, support_sha, self.root / 'v3b.jsonl', candidate=candidate,
+                              candidate_identity={'name': 'test'}, positivity_record=True)
+        with self.assertRaisesRegex(BudgetExceeded, 'row budget') as caught:
+            rt.submit(pr.DecisionRequest('p0', 'p', 0, PAState(0, 0, '9', 'L'), 'CH', rt.sha256, 'R'))
+        row = rt.ledger.decisions()[-1]
+        self.assertEqual(row['status'], pr.FAILED_RUNTIME)
+        self.assertIn(f'{pr.LOGGING_POSITIVITY} row', row['detail'])
+        self.assertIn(pr.LOGGING_POSITIVITY, ' '.join(caught.exception.__notes__))
+        self.assertEqual(rt.summary()['run_status'], 'HALTED')
+        v2 = pr.PolicyRuntime(artifact, table, support_sha, self.root / 'v2b.jsonl', candidate=candidate,
+                              candidate_identity={'name': 'test'})  # v2 refuses before the search: no failure
+        self.assertEqual(v2.submit(pr.DecisionRequest('p0', 'p', 0, PAState(0, 0, '9', 'L'), 'CH', v2.sha256,
+                                                      'R'))['status'], pr.LOGGING_POSITIVITY)
+        with self.assertRaisesRegex(BudgetExceeded, 'row budget'):  # a supported row: detail has no positivity note
+            v2.submit(pr.DecisionRequest('q0', 'q', 0, PAState(0, 0, '9', 'L'), 'FF', v2.sha256, 'R'))
+        self.assertEqual(v2.ledger.decisions()[-1]['detail'], 'BudgetExceeded: row budget exhausted')
 
     def test_no_bc_or_candidate_query_after_a_sentinel(self):
         """D-3 guard: the BC fit keys use '<UNKNOWN>' where requests use sentinels; harmless only because
@@ -714,14 +742,29 @@ class EstimatorTests(unittest.TestCase):
         with self.assertRaisesRegex(pa.IntegrityError, 'off every support'):
             est.pa_value([bad], info, 'l1r')
 
+    def test_l1r_v2_positivity_first_row_and_undefined_end_mean(self):
+        """S-m7: a v2 positivity row (no recorded result) at k = 0 is an IntegrityError, not a TypeError.
+        S-m5: an L2 made only of rho = 0 point values without an observed end has no end mean (None)."""
+        row, *_ = self.one_decision(.2)
+        v2 = {**row(0, np.array([0., .6, .4])), 'result': None}
+        with self.assertRaisesRegex(pa.IntegrityError, 'runtime v3 required'):
+            est.pa_value([v2], {'game': 1, 'in_population': True, 'reward': .3}, 'l1r')
+        pas = {'x': {'game': 1, 'in_population': True, 'reward': None, 'kind': est.NO_TERMINAL}}
+        result, rows = est.estimate([row(0, np.array([0., .6, .4]))], pas, draws=20, seed=1, invalid_share_max=1.,
+                                    minimum=MIN, censoring='l1r')
+        self.assertTrue(rows[0]['l2'])
+        self.assertIsNone(result['layers']['L2_complete_conditional']['observed_mean_end_value'])
+        json.dumps(result, allow_nan=False)  # the stage dump never meets a NaN
+
     def test_revealed_new_pitch_and_decision_labels(self):
         rows = [{'pa_id': pa_id, 'decision_index': 0, 'pitcher': p, 'status': s} for pa_id, p, s in (
             ('10:1', '9', pr.LOGGING_POSITIVITY), ('10:2', '9', 'SUPPORTED'), ('11:1', '9', 'SUPPORTED'),
-            ('12:1', '9', 'SUPPORTED'), ('10:3', '8', 'SUPPORTED'))]
+            ('12:1', '9', 'SUPPORTED'), ('10:3', '8', 'SUPPORTED'), ('9:7', '9', 'SUPPORTED'))]
         pas = {'10:1': {'date': '2026-04-02'}, '10:2': {'date': '2026-04-02'}, '11:1': {'date': '2026-04-02'},
-               '12:1': {'date': '2026-04-03'}, '10:3': {'date': '2026-04-02'}}
-        # a later PA of the same game and a later date are excluded; another game that day and another pitcher are kept
-        self.assertEqual(est.revealed_new_pitch(rows, pas), {'10:2', '12:1'})
+               '12:1': {'date': '2026-04-03'}, '10:3': {'date': '2026-04-02'}, '9:7': {'date': '2026-04-02'}}
+        # F-m1 strict (date, game_pk, at_bat): a later PA of the same game, a larger game_pk that day and a later
+        # date are excluded; a smaller game_pk that day (even a larger at-bat) and another pitcher are kept
+        self.assertEqual(est.revealed_new_pitch(rows, pas), {'10:2', '11:1', '12:1'})
         result = {'bootstrap': {'draws': 100, 'L1_lower_endpoint_ci95': [.005, .01],
                                 'L1_upper_endpoint_ci95': [.006, .012], 'L2_invalid_replicates': 0},
                   'censoring_rule': {'worst_case_residual_share': .001}, 'ess': {'label': None}}
@@ -1171,6 +1214,53 @@ class LoadInputsTests(unittest.TestCase):
             rpv.holdout_frame(raw.assign(game_date='2026-10-02'))
         self.assertEqual(len(rpv.holdout_frame(pd.concat([raw, raw.assign(game_type='S', game_pk=5)]))[0]), len(out))
 
+    def test_failure_record_hashes_partial_ledgers_unread(self):
+        """F-m2: a failed stage records the sha256 of every partial ledger file (bytes only, never parsed)."""
+        out = Path(tempfile.mkdtemp()) / 'stage'
+        with self.assertRaisesRegex(RuntimeError, 'boom'):
+            with rpv.stage(out, rpv.OPE, {}) as directory:
+                (directory / 'ledger-eval2026-0.jsonl').write_bytes(b'{"partial": ')  # not even valid JSON
+                raise RuntimeError('boom')
+        record = json.loads(next(out.glob('failure-*.json')).read_text())
+        self.assertEqual(record['partial_ledger_sha256'],
+                         {'ledger-eval2026-0.jsonl': hashlib.sha256(b'{"partial": ').hexdigest()})
+        self.assertFalse((out / 'manifest.json').exists())
+
+    def test_one_shot_guard_counts_every_attempt_directory(self):
+        """S-m4: a directory without started.json is an attempt; a corrupt started.json is a clear
+        integrity failure; a sealed attempt ends the registration."""
+        root = Path(tempfile.mkdtemp())
+        self.assertEqual(rpv.one_shot_guard(root / 'absent', 2), [])
+        (root / 'a1').mkdir()
+        (root / 'a1' / 'started.json').write_text(json.dumps({'command': rpv.OPE}))
+        (root / 'a2').mkdir()  # crashed before started.json was written
+        (root / 'note.txt').write_text('not an attempt')
+        self.assertEqual(len(rpv.one_shot_guard(root, 3)), 2)
+        with self.assertRaisesRegex(pa.IntegrityError, 'FAILED_INFRA: 2 failed'):
+            rpv.one_shot_guard(root, 2)
+        (root / 'a3').mkdir()
+        (root / 'a3' / 'started.json').write_text('{"command": "ope-')
+        with self.assertRaisesRegex(pa.IntegrityError, 'corrupt or partial started.json'):
+            rpv.one_shot_guard(root, 5)
+        (root / 'a3' / 'started.json').write_text(json.dumps({'command': rpv.OPE}))
+        (root / 'a3' / 'manifest.json').write_text('{}')
+        with self.assertRaisesRegex(pa.IntegrityError, 'already sealed'):
+            rpv.one_shot_guard(root, 5)
+
+    def test_vocabulary_mapping_to_missing_and_cap(self):
+        """F-M1: codes outside the TRAIN vocabulary become missing labels (-> MISSING_ACTION_LABEL
+        requests), counted and listed; above the registered cap the run is REFUSED_VOCABULARY."""
+        frame = pd.DataFrame({'pitch_type': ['FF', 'ZZ', None, '', 'SL', 'ZZ', 'KN'],
+                              'description': ['ball', 'ball', 'ball', 'ball', 'ball', 'automatic_ball', 'ball']})
+        mapped, record = rpv.map_vocabulary(frame, TYPES, .6)
+        self.assertEqual((record['codes'], record['rows'], record['labelled_rows']), ({'KN': 1, 'ZZ': 2}, 3, 5))
+        self.assertAlmostEqual(record['share'], .6)
+        labels = [preq.logged_label(t, d, NO_PITCH) for t, d in zip(mapped.pitch_type, mapped.description)]
+        self.assertEqual(labels, ['FF', pr.MISSING, pr.MISSING, pr.MISSING, 'SL', pr.NO_PITCH, pr.MISSING])
+        self.assertEqual(frame.pitch_type.tolist()[1], 'ZZ')  # the input frame is not modified
+        with self.assertRaisesRegex(pa.IntegrityError, 'REFUSED_VOCABULARY'):
+            rpv.map_vocabulary(frame, TYPES, .5)
+
     def test_manifest_skips_appledouble_files(self):
         out = Path(tempfile.mkdtemp()) / 'stage'
         with rpv.stage(out, 'census', {}) as directory:
@@ -1328,6 +1418,8 @@ class DispatchTests(RunnerFixture):
             raw['game_date'] = raw.game_date.str.replace('2025-07', '2026-04')
             raw = raw.assign(game_type='R', on_1b=np.nan, on_2b=np.nan, on_3b=np.nan)[list(rpv.HOLDOUT_COLUMNS)]
             extra = raw.loc[raw.game_pk.eq(201)].assign(game_type='S')  # spring training rows never enter
+            new_code = raw.index[raw.game_pk.eq(200) & raw.at_bat_number.eq(1) & raw.pitch_number.eq(2)]
+            raw.loc[new_code, 'pitch_type'] = 'ZZ'  # F-M1: a 2026 code outside the TRAIN vocabulary
             holdout_path = self.root / 'statcast_2026.parquet'
             pd.concat([raw, extra.assign(game_pk=299)]).to_parquet(holdout_path, index=False)
             b_v = est.v2_bias_record(report, .001)['b_v']
@@ -1339,7 +1431,7 @@ class DispatchTests(RunnerFixture):
                 'snapshot': {'version': rpv.HOLDOUT_VERSION, 'sha256': sha(holdout_path), 'path': str(holdout_path)},
                 'season': list(rpv.HOLDOUT_SEASON), 'row_budget': 10 ** 8, 'b_v': b_v, 'max_attempts': 2,
                 'hang_guard_multiplier': 1000, 'candidate_identity_sha256': frozen['final_identity_sha256'],
-                'estimator': estimator}
+                'estimator': estimator, 'vocab_unmapped_share_max': .2}
             config2_path = self.root / 'config2.json'
             config2_path.write_text(json.dumps(config2))
             old, chain[:] = list(chain), [config2_path]
@@ -1367,11 +1459,50 @@ class DispatchTests(RunnerFixture):
             self.assertEqual(rehearsal['ledger']['runtime_sha256'], json.loads(
                 (s6v3 / 'ledger-dev-0.jsonl').read_text().splitlines()[0])['runtime_sha256'])
             register('S6-v3', {'s6_dr': s6v3 / 'dr.json'})
+            registered = rpv.load_registration(chain[0], chain[1:])
+            self.assertEqual(rpv.s6_estimator_block(rehearsal), estimator)  # S-m8: read back from the sealed S6
+            for key, value in (('gr_cap', .4), ('c_deltas', [.008]), ('mei', .002), ('v3_law', 'frequency')):
+                other = copy.deepcopy(registered)
+                other['config']['mlb2026_ope']['estimator'][key] = value
+                with self.subTest(key), self.assertRaisesRegex(pa.IntegrityError, 'S6 rehearsal estimator block differs'):
+                    rpv.prerequisites(rpv.OPE, other)
             with mock.patch.object(rpv, 'HOLDOUT_SHA256', 'f' * 64), \
                     self.assertRaisesRegex(pa.IntegrityError, 'only the frozen holdout snapshot'):
-                rpv.dispatch(rpv.OPE, rpv.load_registration(chain[0], chain[1:]), {}, ope_root / 'x', load)
+                rpv.dispatch(rpv.OPE, registered, {}, ope_root / 'x', load)
+            # S-M2: every outcome-free fatal check of the snapshot runs before the attempt directory exists.
+            flooded = lambda snapshot: raw.assign(pitch_type='ZZ')
+            duplicated = lambda snapshot: pd.concat([raw, raw.iloc[:1]])
+            late = lambda snapshot: raw.assign(game_date='2026-10-02')
+            for name, reader, message in (('v', flooded, 'REFUSED_VOCABULARY'), ('d', duplicated, 'duplicate pitch keys'),
+                                          ('s', late, 'outside the registered 2026 season')):
+                with self.subTest(name), mock.patch.object(rpv, 'HOLDOUT_SHA256', sha(holdout_path)), \
+                        self.assertRaisesRegex(pa.IntegrityError, message):
+                    rpv.dispatch(rpv.OPE, registered, {}, ope_root / f'refused-{name}', load, load_holdout=reader)
+                self.assertFalse((ope_root / f'refused-{name}').exists())
+            # S-m3: the one-shot guard is checked again under the heavy lock, right before the attempt directory.
+            with mock.patch.object(rpv, 'one_shot_guard', side_effect=[[], pa.IntegrityError('FAILED_INFRA: raced')]), \
+                    mock.patch.object(rpv, 'HOLDOUT_SHA256', sha(holdout_path)), \
+                    self.assertRaisesRegex(pa.IntegrityError, 'raced'):
+                rpv.dispatch(rpv.OPE, registered, {}, ope_root / 'raced', load)
+            self.assertFalse((ope_root / 'raced').exists())
+            # S-m4: a real failed dispatch (data load fails inside the attempt) costs one attempt.
+            def broken(store):
+                raise OSError('volume went away')
+            with mock.patch.object(rpv, 'HOLDOUT_SHA256', sha(holdout_path)), self.assertRaisesRegex(OSError, 'volume'):
+                rpv.dispatch(rpv.OPE, registered, {}, ope_root / 'OPE-a0', broken)
+            self.assertTrue(list((ope_root / 'OPE-a0').glob('failure-*.json')))
+            self.assertEqual(rpv.one_shot_guard(ope_root, 2), [str(ope_root / 'OPE-a0')])
             done = ope('OPE-a1')
             record = json.loads((done / 'ope2026.json').read_text())
+            self.assertEqual(record['prior_attempts'], [str(ope_root / 'OPE-a0')])
+            self.assertEqual((record['vocabulary_mapping']['codes'], record['vocabulary_mapping']['rows']), ({'ZZ': 1}, 1))
+            # the mapped pitch is a MISSING_ACTION_LABEL refusal (worst-case residual, in G-R) beside the two
+            # synthetic 'missing' PAs of the fixture
+            self.assertEqual(record['ledger']['request_status'].get(pr.MISSING_LABEL), 3)
+            self.assertIn(f'REFUSED:{pr.MISSING_LABEL}', record['censoring_rule']['worst_case_residual_reasons'])
+            self.assertIn('positivity_candidate_searches', record['ledger'])  # S-M1 cost is reported
+            s6_seconds = json.loads((s6v3 / 'manifest.json').read_text())['cost']['wall_seconds']
+            self.assertAlmostEqual(record['hang_guard_seconds'], s6_seconds * 2 / len(rehearsal['games']) * 1000)
             self.assertEqual((record['identity_sha256'], record['games'], record['paired_identity_run']['pass']),
                              (frozen['final_identity_sha256'], 2, True))
             self.assertEqual(record['provenance']['as_of_exclusive'], '2026-03-25')
@@ -1382,12 +1513,6 @@ class DispatchTests(RunnerFixture):
             self.assertEqual(record['layers']['L0_all_pas']['pas'], 16)  # spring-training game 299 never entered
             with self.assertRaisesRegex(pa.IntegrityError, 'already sealed'):
                 ope('OPE-a2')
-            for name in ('f1', 'f2'):  # two failed attempts elsewhere: FAILED_INFRA, no third
-                (self.root / name).mkdir()
-                (self.root / name / 'started.json').write_text(json.dumps({'command': rpv.OPE}))
-            self.assertEqual(len(rpv.one_shot_guard(self.root, 3)), 2)
-            with self.assertRaisesRegex(pa.IntegrityError, 'FAILED_INFRA'):
-                rpv.one_shot_guard(self.root, 2)
 
     def test_registration_refusals(self):
         repo_config = json.loads((REPO / 'configs/ML-POLICY-MATERIALIZATION-v1.json').read_text())
@@ -1437,7 +1562,8 @@ class DispatchTests(RunnerFixture):
         ope = {'registered': True, 'status': 'REGISTERED', 'review_gate': {'status': 'PASS'}, 'output_root': '/elsewhere',
                'snapshot': {'version': rpv.HOLDOUT_VERSION, 'sha256': rpv.HOLDOUT_SHA256, 'path': '/x.parquet'},
                'season': list(rpv.HOLDOUT_SEASON), 'row_budget': 1, 'b_v': .0027, 'max_attempts': 2,
-               'hang_guard_multiplier': 2, 'candidate_identity_sha256': 'a' * 64, 'estimator': estimator}
+               'hang_guard_multiplier': 2, 'candidate_identity_sha256': 'a' * 64, 'estimator': estimator,
+               'vocab_unmapped_share_max': .001}
         rpv.registration({**config, 'mlb2026_ope': ope}, rpv.OPE)
         for change, message in (({'snapshot': {**ope['snapshot'], 'sha256': 'b' * 64}}, 'only the frozen holdout'),
                                 ({'snapshot': {**ope['snapshot'], 'version': 'd20260911-s2325'}}, 'only the frozen holdout'),
@@ -1445,7 +1571,10 @@ class DispatchTests(RunnerFixture):
                                 ({'max_attempts': 3}, 'max_attempts'), ({'season': ['2026-03-25', '2026-10-31']}, 'season'),
                                 ({'output_root': config['le2025_validation_plan']['output_root']}, 'must differ'),
                                 ({'estimator': {**estimator, 'runtime': pr.CONTRACT}}, 'runtime v3'),
-                                ({'estimator': {**estimator, 'natural_course_refusals': []}}, 'H_K_REFUSALS')):
+                                ({'estimator': {**estimator, 'natural_course_refusals': []}}, 'H_K_REFUSALS'),
+                                ({'vocab_unmapped_share_max': None}, 'vocab_unmapped_share_max'),
+                                ({'vocab_unmapped_share_max': 1.5}, 'vocab_unmapped_share_max'),
+                                ({'hang_guard_seconds': 600}, 'must not register hang_guard_seconds')):
             with self.subTest(change), self.assertRaisesRegex(pa.IntegrityError, message):
                 rpv.registration({**config, 'mlb2026_ope': {**ope, **change}}, rpv.OPE)
         with self.assertRaisesRegex(pa.IntegrityError, 'estimator block'):

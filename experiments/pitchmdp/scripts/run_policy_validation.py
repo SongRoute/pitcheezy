@@ -18,7 +18,7 @@ inputs so it can be checked without real data.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 import io
 import json
@@ -115,7 +115,7 @@ REQUIRED = {  # config fields a stage reads; null = unregistered = refuse before
           f'{P}.bootstrap.minimum.pa_starts', f'{S}.S6_V4.n_games', 'ess_gate.thresholds.pa', 'ess_gate.thresholds.game',
           'sensitivity.same_ledger', 'seeds.planning_main', 'mlb2026_ope.output_root', 'mlb2026_ope.row_budget',
           'mlb2026_ope.b_v', 'mlb2026_ope.max_attempts', 'mlb2026_ope.hang_guard_multiplier',
-          'mlb2026_ope.candidate_identity_sha256', 'mlb2026_ope.estimator'),
+          'mlb2026_ope.candidate_identity_sha256', 'mlb2026_ope.estimator', 'mlb2026_ope.vocab_unmapped_share_max'),
 }
 PREREQUISITES = {  # registered inputs (sealed stage outputs) a stage needs, checked before any data load
     'census': (), 'materialize-bc': ('census',), 'style-snapshot': ('census',),
@@ -228,6 +228,11 @@ def registration(config, command=None):
                  '2026 hang-guard multiplier, row budget and b_V must be registered positive numbers')
         _require(Path(ope['output_root']).resolve() != Path(plan['output_root']).resolve(),
                  'the 2026 output root must differ from the <=2025 root')
+        cap = ope['vocab_unmapped_share_max']
+        _require(isinstance(cap, (int, float)) and not isinstance(cap, bool) and 0 <= cap <= 1,
+                 'vocab_unmapped_share_max must be a registered share in [0, 1]')
+        _require('hang_guard_seconds' not in ope,  # F-m4: a stage timer would be cancelled by the S6-scaled guard
+                 'mlb2026_ope must not register hang_guard_seconds (the guard is S6 seconds x games x multiplier)')
         estimator_block(ope['estimator'])
     if command in ('dr-evaluate', OPE):
         share = config['le2025_validation_plan']['bootstrap']['invalid_share_max']
@@ -363,7 +368,9 @@ def stage(output, command, identity, hang_guard_seconds=None):
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
         dump(output / f'failure-{stamp}.json', {'command': command, 'error_type': type(error).__name__,
              'error': str(error), 'seconds': time.perf_counter() - started, 'preserve_partial_artifacts': True,
-             'partial_ledger_prefix': True, 'citable': False})
+             'partial_ledger_prefix': True, 'citable': False,
+             'partial_ledger_sha256': {str(p.relative_to(output)): hash_file(p)  # F-m2: bytes hashed, never parsed
+                                       for p in sorted(output.rglob('ledger*.jsonl')) if not is_appledouble(p)}})
         raise
     finally:
         if hang_guard_seconds is not None:
@@ -967,18 +974,69 @@ def holdout_frame(raw, season=HOLDOUT_SEASON):
 
 
 def one_shot_guard(root, max_attempts):
-    """M2: a sealed ope-2026 stage ends the registration; failed attempts count toward the limit."""
+    """M2: a sealed ope-2026 stage ends the registration; failed attempts count toward the limit. Every
+    directory under the 2026 root is an attempt, with or without started.json (S-m4); a started.json
+    that does not parse as an ope-2026 record is an integrity failure, not a silent skip."""
     root = Path(root)
     attempts = []
     for directory in sorted(root.iterdir()) if root.exists() else ():
+        if not directory.is_dir():
+            continue
         started = directory / 'started.json'
-        if directory.is_dir() and started.exists() and json.loads(started.read_bytes()).get('command') == OPE:
-            attempts.append(directory)
+        if started.exists():
+            try:
+                command = json.loads(started.read_bytes()).get('command')
+            except (ValueError, AttributeError) as error:
+                raise IntegrityError(f'corrupt or partial started.json in 2026 attempt {directory}: {error}') from error
+            _require(command == OPE, f'2026 root holds a non-ope-2026 stage {directory} ({command!r})')
+        attempts.append(directory)
     _require(not any((d / 'manifest.json').exists() for d in attempts),
              '2026 OPE already sealed: one shot; a new run needs a new registration id')
     _require(len(attempts) < max_attempts,
              f'FAILED_INFRA: {len(attempts)} failed 2026 attempts; no further attempt under this registration')
     return [str(d) for d in attempts]
+
+
+REFUSED_VOCABULARY = 'REFUSED_VOCABULARY'
+
+
+def map_vocabulary(frame, vocabulary, share_max):
+    """F-M1: 2026 pitch codes outside the TRAIN vocabulary become missing labels (MISSING_ACTION_LABEL
+    rows, worst-case residual in G-R; the history token was already the unknown type). Reports the
+    codes and counts; refuses (REFUSED_VOCABULARY, before any attempt) when the mapped share of labelled
+    rows exceeds the registered cap."""
+    codes = frame.pitch_type.astype('string')
+    labelled = (codes.notna() & codes.ne('')).fillna(False).astype(bool)
+    outside = labelled & ~codes.isin(list(vocabulary)).fillna(False).astype(bool)
+    share = float(outside.sum() / labelled.sum()) if labelled.any() else 0.
+    record = {'codes': {str(k): int(v) for k, v in sorted(codes[outside].value_counts().items())},
+              'rows': int(outside.sum()), 'labelled_rows': int(labelled.sum()), 'share': share, 'share_max': share_max,
+              'rule': 'code outside the TRAIN vocabulary -> missing label (UNSUPPORTED_MISSING_ACTION_LABEL)'}
+    _require(share <= share_max, f'{REFUSED_VOCABULARY}: mapped share {share} above the registered cap: {record}')
+    frame = frame.copy()
+    frame.loc[outside.to_numpy(), 'pitch_type'] = None
+    return frame, record
+
+
+def ope_pre_stage(reg, spec, load_holdout):
+    """S-M2/S-m3: inside the heavy lock and before the attempt directory: the one-shot guard again,
+    the snapshot pin, the season guard, duplicate keys and the vocabulary cap (all outcome-free)."""
+    prior = one_shot_guard(spec['output_root'], spec['max_attempts'])
+    vocabulary = load_train_bc(*registered_path(reg, 'bc')).vocabulary
+    holdout, dropped = holdout_frame(load_holdout(spec['snapshot']))
+    holdout, mapping = map_vocabulary(holdout, vocabulary, spec['vocab_unmapped_share_max'])
+    return {'prior_attempts': prior, 'holdout': holdout, 'dropped': dropped, 'vocabulary': list(vocabulary),
+            'vocabulary_mapping': mapping}
+
+
+def s6_estimator_block(s6):
+    """S-m8: the estimator block the sealed S6 rehearsal ran with, read back from its dr.json."""
+    rule, labels = s6.get('censoring_rule') or {}, s6.get('rehearsal_labels') or {}
+    primary = labels.get('primary') or {}
+    return {'runtime': prt.CONTRACT_V3 if rule else prt.CONTRACT, 'censoring': 'l1r' if rule.get('rule') == 'L1-R' else None,
+            'natural_course_refusals': rule.get('natural_course_refusals'), 'gr_cap': primary.get('gr_cap'),
+            'mei': primary.get('mei'), 'v3_law': (labels.get('v3') or {}).get('v3_law'),
+            'c_deltas': [float(k.split(':', 1)[1]) for k in s6.get('censoring_sensitivity') or {} if k.startswith('S-C:')]}
 
 
 @contextmanager
@@ -1052,19 +1110,33 @@ def prerequisites(command, reg):
         _require(s6.get('censoring_rule') is not None, 'the registered S6 rehearsal must be the runtime-v3 L1-R run')
         manifest = json.loads(registered_path(reg, 's6_dr')[0].with_name('manifest.json').read_bytes())
         out['s6_wall_seconds'] = float(manifest['cost']['wall_seconds'])
+        _require(isinstance(s6.get('games'), list) and s6['games'], 'the sealed S6 record must list its games')
+        out['s6_games'] = len(s6['games'])  # S-m6: the games S6 actually ran (after the straddle exclusion)
+        registered = config['mlb2026_ope']['estimator']
+        ran = s6_estimator_block(s6)
+        _require(ran == {**registered, 'c_deltas': [float(d) for d in registered['c_deltas']]},
+                 f'S6 rehearsal estimator block differs from the 2026 registration: {ran} vs {registered}')
     if 'v2' in PREREQUISITES[command]:
         v2 = registered_json(reg, 'v2')
         _require(v2.get('accept') is True, 'V2 acceptance is an S6 prerequisite')
         main = [r for r in v2['runs'] if r['check'] == 'V2' and r['planning_seed'] == config['seeds']['planning_main']]
         _require(main and all(r['world']['candidate_identity_sha256'] == out['freeze']['final_identity_sha256']
                               for r in main), 'V2 acceptance does not certify the S6 policy identity')
+    if command == OPE:  # data-free, outcome-free: refused before any attempt directory (S-M2)
+        spec, expected = config['mlb2026_ope'], out['freeze']['final_identity_sha256']
+        _require(spec['candidate_identity_sha256'] == expected and reg['expected_identity_sha256'] in (None, expected),
+                 'registered 2026 candidate identity differs from the tau record')
+        out['bias'] = est.v2_bias_record(v2, spec['estimator']['mei'], spec['estimator']['v3_law'])
+        _require(abs(out['bias']['b_v'] - spec['b_v']) <= 1e-12, 'registered b_V differs from the sealed S5 record')
     return out
 
 
 def dispatch(command, reg, local, output, load, load_holdout=load_holdout):
     """Run one registered stage. Registration, gates and every prerequisite are checked before the
     data is touched; ``load(store: bool)`` is called only inside the heavy lock and the fresh stage
-    directory (C11)."""
+    directory (C11). ope-2026 exception (S-M2): the pinned holdout is read and checked (one-shot guard
+    again, snapshot pin, season, duplicate keys, vocabulary cap) inside the heavy lock but BEFORE the
+    attempt directory, so an outcome-free refusal never consumes an attempt."""
     config = reg['config']
     decisions = registration(config, command)
     plan, ident = config['le2025_validation_plan'], config['identity_registration']
@@ -1073,15 +1145,15 @@ def dispatch(command, reg, local, output, load, load_holdout=load_holdout):
     from run_ml_matrix import check_location, heavy_lock
     root = check_location(local, output)
     check_output(output, spec if command == OPE else plan)
-    prior_attempts = None
     if command == OPE:  # every refusal that needs no data happens before an attempt directory exists
-        prior_attempts = one_shot_guard(spec['output_root'], spec['max_attempts'])
+        one_shot_guard(spec['output_root'], spec['max_attempts'])
         prerequisites(command, reg)
     no_pitch = frozenset(config['pa_time_rules']['R3_codes']['no_pitch_descriptions'])
     identity = {'config_sha256': reg['config_sha256'], 'registration_chain': reg['chain'], 'git': git_state(plan.get('source_commit')),
                 'environment': environment(), 'decisions': decisions, 'g0_bundle_file_sha256': ident['g0_bundle']['file_sha256'],
                 'runner_sources': {rel: hash_file(REPO / rel) for rel in SOURCES}}
-    with heavy_lock(root), stage(output, command, identity, spec.get('hang_guard_seconds')) as out:
+    with heavy_lock(root), nullcontext(ope_pre_stage(reg, spec, load_holdout) if command == OPE else None) as early, \
+            stage(output, command, identity, None if command == OPE else spec.get('hang_guard_seconds')) as out:
         pre = prerequisites(command, reg)
         inputs = load(command != 'census')
         frame, store = inputs['frame'], inputs['store']
@@ -1230,8 +1302,7 @@ def dispatch(command, reg, local, output, load, load_holdout=load_holdout):
             dump(out / 'v2.json', run_v2_stage(reg, spec, frame, store, candidate, freeze['selected_tau'], pre['setting'],
                                                no_pitch, evaluation))
         elif command == OPE:
-            dump(out / 'ope2026.json', run_ope_2026(reg, spec, pre, inputs, candidate, no_pitch, load_holdout,
-                                                    prior_attempts, out))
+            dump(out / 'ope2026.json', run_ope_2026(reg, spec, pre, inputs, candidate, no_pitch, early, out))
         else:  # dr-evaluate (S6/V4)
             freeze, setting = pre['freeze'], pre['setting']
             estimator = spec.get('estimator')
@@ -1285,30 +1356,26 @@ def rehearsal_labels(result, estimator, bias, bootstrap):
             'sign_rule': 'S-B label differing from the primary label is reported first; the primary alone decides'}
 
 
-def run_ope_2026(reg, spec, pre, inputs, candidate, no_pitch, load_holdout, prior_attempts, out):
+def run_ope_2026(reg, spec, pre, inputs, candidate, no_pitch, early, out):
     """The single registered 2026 OPE (COOP-021/022, prereg D108/D109): frozen <=2025 components and
     candidate identity, the 2026 style snapshot pinned at opening day with its source-date guard and
     end-of-history check, runtime v3, L1-R with S-v1/S-NP/S-B/S-C, the M-10 paired run and the
-    labels. The hang guard (S6 wall seconds x games / S6 games x multiplier) is armed once the
-    games are counted from the loaded snapshot (outcome-blind)."""
+    labels. ``early`` is the holdout already checked before the attempt directory (``ope_pre_stage``).
+    The hang guard (S6 wall seconds x games / games S6 ran x multiplier) is armed first."""
     config = reg['config']
     plan = config['le2025_validation_plan']
     freeze, setting = pre['freeze'], pre['setting']
-    expected = freeze['final_identity_sha256']
-    _require(spec['candidate_identity_sha256'] == expected and reg['expected_identity_sha256'] in (None, expected),
-             'registered 2026 candidate identity differs from the tau record')
-    bias = est.v2_bias_record(registered_json(reg, 'v2'), spec['estimator']['mei'], spec['estimator']['v3_law'])
-    _require(abs(bias['b_v'] - spec['b_v']) <= 1e-12, 'registered b_V differs from the sealed S5 record')
+    expected, bias = freeze['final_identity_sha256'], pre['bias']
     frame, store = inputs['frame'], inputs['store']
     vocabulary = inputs['prep']['features']['tokens']['type_vocabulary']
-    holdout, dropped = holdout_frame(load_holdout(spec['snapshot']))
+    holdout, dropped = early['holdout'], early['dropped']
     games = int(holdout.game_pk.nunique())
-    seconds = pre['s6_wall_seconds'] * games / plan['stages']['S6_V4']['n_games'] * spec['hang_guard_multiplier']
+    seconds = pre['s6_wall_seconds'] * games / pre['s6_games'] * spec['hang_guard_multiplier']
     with hang_guard(seconds):
-        codes = sorted(set(holdout.pitch_type.dropna().astype(str)) - set(vocabulary))
-        _require(not codes, f'2026 pitch-type codes outside the TRAIN vocabulary: {codes}')
+        _require(list(vocabulary) == early['vocabulary'], 'token vocabulary differs from the TRAIN BC vocabulary')
         from pitchmdp.matrix_features import MatrixHistoryStore
-        store26 = MatrixHistoryStore.from_frame(holdout, normalizer=store.normalizer, history_length=5,
+        store26 = MatrixHistoryStore.from_frame(holdout, normalizer=store.normalizer,
+                                                history_length=int(store.indices.shape[1]),  # F-m3: the <=2025 store's
                                                 type_vocabulary=vocabulary)
         snapshot = preq.style_snapshot_2026(frame)
         check = preq.snapshot_end_of_history_mismatches(frame, snapshot)
@@ -1340,7 +1407,8 @@ def run_ope_2026(reg, spec, pre, inputs, candidate, no_pitch, load_holdout, prio
     table.to_parquet(out / 'pa_values.parquet', index=False)
     return {**result, 'labels': labels, 'label': labels['primary']['label'], 'identity_sha256': expected,
             'games': games, 'games_dropped_several_dates': dropped, 'hang_guard_seconds': seconds,
-            'prior_attempts': prior_attempts, 'dr_q': freeze['dr_q'], 'provenance': provenance,
+            'vocabulary_mapping': early['vocabulary_mapping'], 'prior_attempts': early['prior_attempts'],
+            'dr_q': freeze['dr_q'], 'provenance': provenance,
             'interpretation': 'single registered 2026 OPE (exposed-window labels in the prereg); assumption-conditional, '
                               'regime estimand; not a causal effect unless the identification assumptions hold'}
 
