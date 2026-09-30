@@ -16,7 +16,7 @@
   "execution": {
     "enabled": true,
     "real_data_enabled": true,
-    "reason": "D96 (2026-09-29): the user approved S0 census execution only. Registration and execution switches are on; the code-review gate (D94, source commit 5186810) opens S0-S2 in the runner, but S1, S1b and S2 each still need their own user approval, and S3+ stay closed by the independent-review gate. No BC export, inference, OPE or 2026 access is authorized by this approval."
+    "reason": "D96/D100: registration and execution switches are on; the code-review gate (D100, source commit 9c25d8e) opens S0-S2, which the user approved to run consecutively while every registered gate passes (stop on failure, gate miss or a needed value); S3+ stay closed by the independent-review gate (Fable 5.1). No BC export, inference, OPE or 2026 access is authorized by this approval."
   },
   "documents": {
     "contract": "docs/contracts/ML-POLICY-MATERIALIZATION-v1.md",
@@ -84,16 +84,16 @@
     "code_review": {
       "status": "PASS",
       "decided_by": "Song (user)",
-      "date": "2026-09-29",
-      "record": "docs/decisions.md D94",
-      "reviewed_code_commit": "5186810c5b6bf461f2549a9b7f445dedb70ca9f0",
-      "basis": "three same-model adversarial review rounds (a704983: 36 confirmed/4 rejected, 0135379: 61/8, b416701: 36/2), every confirmed finding addressed at 5186810; not an independent review",
+      "date": "2026-09-30",
+      "record": "docs/decisions.md D100 (re-judged after the D98 fix; first PASS D94 for 5186810)",
+      "reviewed_code_commit": "9c25d8eaa60a9199f7d1e9117d1489d007de062d",
+      "basis": "D94 basis for 5186810 plus one same-model adversarial review of the D98/D99 diff (4fcb5fa, 9c25d8e): 0 blocker, 0 major, 3 minor addressed or recorded; not an independent review",
       "scope": "opens S0-S2 only (M-3); S3 and later still need independent_review",
       "validity": "for the code of reviewed_code_commit: register source_commit = reviewed_code_commit (the runner then refuses any later change under experiments/, src/, scripts/); a code change needs a new gate decision"
     },
     "independent_review": {
       "status": null,
-      "note": "Sol/Astra unavailable in this environment; S3 and later stay closed"
+      "reviewer": "claude-fable-5-1 (D100: the user designated Fable 5.1 as the core reviewer; the author is Opus 5.5)", "note": "in progress; S3 and later stay closed until this is PASS"
     }
   },
   "seeds": {
@@ -627,7 +627,7 @@
         "lightgbm": "4.6.0"
       }
     },
-    "source_commit": "5186810c5b6bf461f2549a9b7f445dedb70ca9f0",
+    "source_commit": "9c25d8eaa60a9199f7d1e9117d1489d007de062d",
     "registered_config_sha256": null,
     "command_template": "PYTHONPATH=<pythonpath> <invoke_with> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
     "failure": "hang guard / RowBudget / integrity failures preserve the stage (failure-*.json, partial ledger prefix not citable); retries only as new attempts with the same scope",
