@@ -29,11 +29,12 @@ from pitchmdp.rollout_policy import BCRecord, CategoricalBC, PAState, PastPitch,
 from test_policy_identity import PROV
 import run_policy_validation as rpv
 
-GOLDEN = {  # from commit 25bcdb7 (in-memory Ledger.rows and by_pa grouping): `python tests/test_policy_lowmem.py`
-    'result': '81c0298462352f4486f05d13dcb51073ae9b623a159995924431fc4b0027a758',
+GOLDEN = {  # from commit 25bcdb7 (in-memory Ledger.rows and by_pa grouping): `python tests/test_policy_lowmem.py`,
+    # regenerated 2026-10-01 on 25bcdb7 code with the current test files (D126: test harness files are labelled)
+    'result': '6af7db5830dcfb3e8c49af2f85553f6376934ec86d24de06887b0ba0ee27eb59',
     'rows': '63dd9ea101c5eb940e9a6350a9082b8f471084b1ec0c81a5b1a16b20ddac1f29',
     'table': '49f60df746df37572f4e254f8551d0af3acad488850905d2318828b1f0329ce0',
-    'ledger': '8b9a7e79c7088dc3c9f6297d07bb215400fbb2352e1dc369360d13ec72aa5c02',
+    'ledger': 'c6c500034c9025d4e937fa5731df57cbfc4735b89d1ca7d872b23e793b4f584c',
     'pair': 'a7281abed5a8154f4a974e8fb575ab5b4bd5f7da6414e59bd6a39125a3ec8bbc'}
 
 
@@ -45,7 +46,7 @@ def _sha(value):
 # Files edited by D123. The registered runner's closure (S6-a4 ledger header) holds policy_runtime.py
 # only; this synthetic fixture's closure also reaches the estimator and the runner script.
 CHANGED = ('policy_runtime.py', 'policy_estimator.py', 'run_policy_validation.py',
-           'test_policy_lowmem.py')  # this harness (its patched hash_file joins the closure)
+           'test_policy_lowmem.py', 'test_policy_validation.py')  # test harness files (they join the fixture closure)
 
 
 def stage_digests(fixture, root):
