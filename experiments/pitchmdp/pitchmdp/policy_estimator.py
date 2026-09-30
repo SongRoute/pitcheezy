@@ -16,6 +16,14 @@ affine in the unknown node value c in [0, 1] with slope prod_{t<k} rho_t (D-5 C)
 valid in expectation when censoring is fixed by H_k or is the shared end value, and the
 candidate path needs pi_b_hat correct; LOGGING_POSITIVITY nodes violate that and are reported
 separately. Nothing here identifies a causal effect.
+
+``refusal_continuation='natural_course'`` (COOP-021, proposal; default ``'worst_case'`` keeps the
+behaviour above): a refusal fixed by the pre-decision history H_k (``H_K_REFUSALS``) hands both
+policies to the logged behaviour for the rest of the PA, so the node value is the observed PA end
+value shared by both (point; a shared unknown when unobserved), as in the D-4 secondary. The
+estimand becomes the regime "pi until the first H_k-fixed refusal, then the logged behaviour".
+Post-decision refusals (LOGGING_POSITIVITY, MISSING_ACTION_LABEL), structural defects and
+unobserved PA ends keep the worst-case bound.
 """
 from __future__ import annotations
 
@@ -30,6 +38,9 @@ FATAL = ('FAILED_INTEGRITY', 'FAILED_RUNTIME')
 START_REFUSALS = ('UNSUPPORTED_INCOMPLETE_START', 'UNSUPPORTED_UNKNOWN_PITCHER', 'UNSUPPORTED_EMPTY_SUPPORT',
                   'UNSUPPORTED_PITCHER_HAND')
 POSITIVITY = 'UNSUPPORTED_LOGGING_POSITIVITY'
+H_K_REFUSALS = ('UNSUPPORTED_NO_LOGGED_ACTION', 'UNSUPPORTED_UNKNOWN_PITCHER', 'UNSUPPORTED_PITCHER_HAND',
+                'UNSUPPORTED_EMPTY_SUPPORT', 'UNSUPPORTED_INCONSISTENT_HISTORY')  # fixed before the choice at k
+CONTINUATIONS = ('worst_case', 'natural_course')
 POLICIES = ('candidate', 'reference')
 COMPLETE, CENSORED = 'COMPLETE', 'CENSORED'
 EXCLUDED_PRE_START, UNSUBMITTABLE = 'EXCLUDED_PRE_START', 'UNSUBMITTABLE'
@@ -126,6 +137,18 @@ def _interval(steps, shared):
     return out
 
 
+def _shared_end(steps, reward):
+    """Per-policy point values when both policies end on the same observed value after ``steps``."""
+    row = {}
+    for name in POLICIES:
+        base, slope = affine(steps, name)
+        row[name], row[f'weight_{name}'] = base + slope * reward, slope
+        row[f'{name}_bounds'] = [row[name]] * 2
+    row['delta'] = row['candidate'] - row['reference']
+    row['delta_bounds'] = [row['delta']] * 2
+    return row
+
+
 def classify(decisions, info):
     """One PA -> (status, node k, kind, reason). ``info``: runner facts for the PA (start
     population, structural problem and index, reward/reason/kind of the PA end)."""
@@ -159,8 +182,9 @@ def classify(decisions, info):
     return COMPLETE, None, None, None
 
 
-def pa_value(decisions, info):
+def pa_value(decisions, info, refusal_continuation='worst_case'):
     """Per-PA row: status, node, bounds or point values (and weights) for both policies."""
+    _require(refusal_continuation in CONTINUATIONS, 'unknown refusal continuation')
     status, k, kind, reason = classify(decisions, info)
     row = {'status': status, 'node': k, 'kind': kind, 'reason': reason, 'game': info['game'],
            'in_population': status in (COMPLETE, CENSORED), 'validity_violation': reason == POSITIVITY}
@@ -175,6 +199,11 @@ def pa_value(decisions, info):
         _, q, mask, a, _ = _steps(decisions)[-1]
         row['terminal_residual'] = float(info['reward'] - q[a]) if mask[a] else None  # D-6 note 5 diagnostic
         row.update({f'{name}_bounds': [values[name]] * 2 for name in POLICIES}, delta_bounds=[values['delta']] * 2)
+    elif status == CENSORED and refusal_continuation == 'natural_course' and kind == REFUSED and reason in H_K_REFUSALS:
+        steps = _steps(decisions[:k])
+        reward = info.get('reward')
+        row.update(_interval(steps, shared=True) if reward is None else _shared_end(steps, float(reward)),
+                   continuation='natural_course')
     elif status == CENSORED:
         row.update(_interval(_steps(decisions[:k]), shared=kind == TERMINAL_VALUE_MISSING))
     return row
@@ -196,14 +225,7 @@ def secondary_value(decisions, info, primary):
     if info.get('reward') is None:
         row = {**_interval(steps, shared=True), 'status': CENSORED, 'kind': TERMINAL_VALUE_MISSING}
     else:
-        reward = float(info['reward'])
-        row = {'status': COMPLETE}
-        for name in POLICIES:
-            base, slope = affine(steps, name)
-            row[name], row[f'weight_{name}'] = base + slope * reward, slope
-            row[f'{name}_bounds'] = [row[name]] * 2
-        row['delta'] = row['candidate'] - row['reference']
-        row['delta_bounds'] = [row['delta']] * 2
+        row = {'status': COMPLETE, **_shared_end(steps, float(info['reward']))}
     return {**row, 'game': info['game'], 'in_population': True, 'secondary_change': change}
 
 
@@ -261,7 +283,8 @@ def game_bootstrap(rows, *, draws, seed, invalid_share_max, minimum):
             'L2_conditional_ci95': None if not valid.any() or invalid / draws > invalid_share_max else q(conditional)}
 
 
-def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, ess_gate=None):
+def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, ess_gate=None,
+             refusal_continuation='worst_case'):
     """Aggregate the ledger into per-PA values, layered bounds, bootstrap, ESS and diagnostics.
 
     ``ledger_decisions``: decision rows in ledger order (``Ledger.decisions()``).
@@ -269,7 +292,8 @@ def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, 
     ``start_reason`` (E0), ``problem``/``problem_index`` (structural defect), ``reward``/
     ``reason``/``kind`` (PA end), optional ``first_pitcher_change_index``, ``end_kind``,
     ``flags`` and ``strata``. A ledger PA missing from ``pas`` is an integrity failure; so is any
-    FAILED_* decision (a halted ledger is never aggregated).
+    FAILED_* decision (a halted ledger is never aggregated). ``refusal_continuation``: see the module
+    docstring; the default reproduces the registered D-5 bounds.
     """
     by_pa = {}
     for row in ledger_decisions:
@@ -278,7 +302,7 @@ def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, 
     rows, secondary = [], []
     for pa_id, info in pas.items():
         decisions = sorted(by_pa.get(pa_id, []), key=lambda d: d['decision_index'])
-        row = pa_value(decisions, info)
+        row = pa_value(decisions, info, refusal_continuation)
         if row['status'] == 'FAILED':
             raise IntegrityError(f'FAILED decision in PA {pa_id}: {row["reason"]}; a halted ledger is not estimated')
         row.update(pa_id=pa_id, end_kind=info.get('end_kind'), flags=list(info.get('flags') or ()),
@@ -294,6 +318,9 @@ def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, 
               'validity_violation_pas': sum(r['validity_violation'] for r in rows),
               'layers': {'L0_all_pas': _layer(rows), 'L1_start_population': _layer(e0)},
               'population_value': None, 'causal_effect': None}
+    if refusal_continuation != 'worst_case':  # the registered default output keeps its keys
+        result['refusal_continuation'] = {'rule': refusal_continuation, 'refusals': list(H_K_REFUSALS),
+                                          'pas': sum(r.get('continuation') == refusal_continuation for r in e0)}
     if complete:
         deltas = [r['delta'] for r in complete]
         weights = {name: [r[f'weight_{name}'] for r in complete] for name in POLICIES}

@@ -572,6 +572,52 @@ class EstimatorTests(unittest.TestCase):
         with self.assertRaisesRegex(pa.IntegrityError, 'E0 start population disagrees'):
             est.pa_value(refuse_from(rows, 0, pr.UNKNOWN_PITCHER), {'game': 1, 'in_population': True, 'reward': .5})
 
+    def test_natural_course_continuation_is_exact_for_the_regime(self):
+        """COOP-021: an H_k-fixed refusal (after a first-pitch ball) hands both policies to the logged
+        behaviour; the expected estimate equals the exact regime values, and the default is unchanged."""
+        refused = lambda steps: len(steps) > 1 and steps[1][0][0][1] == 'ball'
+
+        def regime(pi):
+            return lambda h: TOY.PI_B(h) if len(h) >= 1 and h[0][1] == 'ball' else pi(h)
+        got = {'candidate': 0., 'reference': 0., 'lo': 0., 'hi': 0.}
+        for steps, reward, weight in TOY.trajectories(TOY.PI_B):
+            rows = toy_rows(steps, TOY.PI_CAND, TOY.PI_REF, TOY.PI_B, TOY.wrong_q, FULL)
+            info = {'game': 1, 'in_population': True, 'reward': float(reward)}
+            if refused(steps):
+                rows = refuse_from(rows, 1)
+                worst = est.pa_value(rows, info)
+                self.assertEqual(worst, est.pa_value(rows, info, 'worst_case'))  # default = registered D-5
+                self.assertNotIn('continuation', worst)
+            row = est.pa_value(rows, info, 'natural_course')
+            self.assertEqual(row['candidate_bounds'][0], row['candidate_bounds'][1])  # point, not a bound
+            for name in ('candidate', 'reference'):
+                got[name] += weight * row[f'{name}_bounds'][0]
+        self.assertAlmostEqual(got['candidate'], TOY.value(regime(TOY.PI_CAND)), places=12)
+        self.assertAlmostEqual(got['reference'], TOY.value(regime(TOY.PI_REF)), places=12)
+        # Unobserved end after an H_k-fixed refusal: one shared unknown (width |prod rho_c - prod rho_r|).
+        steps, _, _ = next(p for p in TOY.trajectories(TOY.PI_B) if refused(p[0]))
+        rows = refuse_from(toy_rows(steps, TOY.PI_CAND, TOY.PI_REF, TOY.PI_B, TOY.wrong_q, FULL), 1)
+        info = {'game': 1, 'in_population': True, 'reward': None, 'kind': est.NO_TERMINAL}
+        shared = est.pa_value(rows, info, 'natural_course')
+        rho = {n: rows[0]['result'][f'rho_{n}'] for n in est.POLICIES}
+        self.assertAlmostEqual(shared['delta_bounds'][1] - shared['delta_bounds'][0],
+                               abs(rho['candidate'] - rho['reference']), places=12)
+        # Post-decision refusals keep the worst-case bound; unknown option names are refused.
+        positivity = refuse_from(rows, 1, pr.LOGGING_POSITIVITY)
+        self.assertEqual(est.pa_value(positivity, {**info, 'reward': .5}, 'natural_course'),
+                         est.pa_value(positivity, {**info, 'reward': .5}))
+        with self.assertRaisesRegex(pa.IntegrityError, 'unknown refusal continuation'):
+            est.pa_value(rows, info, 'shared')
+        pas = {'pa': {**info, 'reward': .5}, 'p': {'game': 2, 'in_population': True, 'reward': .5}}
+        decisions = rows + [{**r, 'pa_id': 'p'} for r in positivity]
+        default, _ = est.estimate(decisions, pas, draws=20, seed=1, invalid_share_max=1., minimum=MIN)
+        chosen, _ = est.estimate(decisions, pas, draws=20, seed=1, invalid_share_max=1., minimum=MIN,
+                                 refusal_continuation='natural_course')
+        self.assertNotIn('refusal_continuation', default)
+        self.assertEqual(chosen['refusal_continuation']['pas'], 1)
+        width = lambda r: np.subtract(*r['layers']['L1_start_population']['delta_bounds'][::-1])
+        self.assertLess(width(chosen), width(default))
+
     def test_ledger_values_are_revalidated(self):
         steps, reward, _ = next(path for path in TOY.trajectories(TOY.PI_B)
                                 if all(TOY.PI_CAND(h)[TOY.VOCAB.index(a)] > 0 for h, a in path[0]))
