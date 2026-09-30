@@ -1139,9 +1139,11 @@ class DispatchTests(RunnerFixture):
         repo_config = json.loads((REPO / 'configs/ML-POLICY-MATERIALIZATION-v1.json').read_text())
         with self.assertRaisesRegex(pa.IntegrityError, 'not registered'):
             rpv.registration({**repo_config, 'registered': False})
-        rpv.registration(repo_config, 'census')  # D96: the committed config opens S0-S2 only
+        rpv.registration(repo_config, 'census')  # the committed config is registered (D96)
+        closed = copy.deepcopy(repo_config)  # independent of the committed gate state (D102)
+        closed['review_gates']['independent_review']['status'] = None
         with self.assertRaisesRegex(pa.IntegrityError, 'independent review'):
-            rpv.registration(repo_config, 'profile')
+            rpv.registration(closed, 'profile')
         _, config = self.config()
         rpv.registration(config, 'census')
         with self.assertRaisesRegex(pa.IntegrityError, 'registered decision required: D-11'):
