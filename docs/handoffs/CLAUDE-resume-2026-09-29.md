@@ -2,7 +2,11 @@
 
 2026-09-29 작성(D92판을 D93~D95로 갱신; 이전 판은 git 이력에 보존). 새 세션의 시작점이다. [이전 재개 문서(D91)](CLAUDE-resume-2026-09-28.md)와 이 문서의 D92판 작업 묶음은 끝났으므로 다시 하지 않는다. 과학 규약을 바꾸거나 실행을 승인하지 않는다.
 
-## 0. 최신 (D115, 2026-09-30)
+## 0. 최신 (D123, 2026-10-01)
+
+등록 사슬 = config + `addendum-1..7-d122`(source `c38cc61`), 최종 식별자 `6eb85ba7…`. S6 v3 결과 `results/ML-POLICY-VAL-v1-S6-v3.json`(L1-R, 개선 근거 없음). 2026 OPE: `mlb2026_ope` 등록·addendum 8(s6_dr) 미작성, 저메모리 원장(`claude/lowmem-ledger`) → 재인증 → Fable 확인 → 실행. 데모: `../pitcheezy-demo`(demo/ws-2026) tmux `pz:demo-serve`/`pz:demo-sync`.
+
+## 0-이전. D115 시점
 
 ≤2025 검증 S0–S6 완료(결과 `results/ML-POLICY-VAL-v1-S6.json`, 개선 근거 없음). 등록 사슬 = config + `addendum-1..7-d112`. 다음: 2026 주 추정량의 검열 처리 재설계(현재 L1 폭 ≈ 2×검열 질량) → Fable 5.1 검토 → 사용자 서명 뒤 2026 OPE 1회. 데모 `demo/ws-2026`(10/6). 협업: Opus 작업·Fable 핵심 검토, 추천안 자율 진행(D106). 아래 §1–4는 D95 시점 기록이다.
 
