@@ -107,5 +107,6 @@
   "peak_rss_raw": 8349351936,
   "peak_rss_unit": "platform ru_maxrss"
  },
- "interpretation": "exposed_development only; not independent confirmation, not a causal effect"
+ "interpretation": "exposed_development only; not independent confirmation, not a causal effect",
+ "sealed_reproduction": "S6-dr-a5 (source 9024bd9, identity c13cc989..., addendum-8-d126 pin) reproduces these layers, bootstrap, censoring, labels and ESS exactly (D125); wall 3,808 s, peak RSS 6.77 GiB"
 }

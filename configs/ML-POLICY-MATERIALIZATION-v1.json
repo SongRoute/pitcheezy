@@ -784,9 +784,11 @@
     "registered": true,
     "status": "REGISTERED",
     "review_gate": {
-      "status": "PENDING",
+      "status": "PASS",
       "reviewer": "claude-fable-5-1",
-      "record": "COOP-025 final pre-2026 review (pending)"
+      "verdict": "PASS_WITH_CONDITIONS (blocker 0, major 0)",
+      "record": "docs/reviews/COOP-025-fable-final-pre-2026-review-2026-10-01.md; docs/decisions.md D127",
+      "date": "2026-10-01"
     },
     "snapshot": {
       "version": "d20260930-h2026f",
