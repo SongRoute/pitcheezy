@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
+import gc
 import io
 import json
 from pathlib import Path
@@ -234,6 +235,8 @@ def registration(config, command=None):
         _require('hang_guard_seconds' not in ope,  # F-m4: a stage timer would be cancelled by the S6-scaled guard
                  'mlb2026_ope must not register hang_guard_seconds (the guard is S6 seconds x games x multiplier)')
         estimator_block(ope['estimator'])
+        batch = ope.get('bind_batch_games')  # D125: optional; absent = bind every PA at once
+        _require(batch is None or (type(batch) is int and batch >= 1), 'bind_batch_games must be a positive integer')
     if command in ('dr-evaluate', OPE):
         share = config['le2025_validation_plan']['bootstrap']['invalid_share_max']
         _require(isinstance(share, (int, float)) and not isinstance(share, bool) and 0 <= share <= 1,
@@ -747,15 +750,52 @@ def paired_identity_run(runtime, store, blocks, facts, rows, *, no_pitch, kwargs
     return record
 
 
+def game_batches(frame, blocks, batch_games):
+    """Consecutive runs of the PA blocks, each covering at most ``batch_games`` games (block order kept)."""
+    batches, seen = [], set()
+    for block in blocks:
+        game = int(frame.game_pk.iloc[block[1][0]])
+        if not batches or (game not in seen and len(seen) == batch_games):
+            batches.append([])
+            seen = set()
+        seen.add(game)
+        batches[-1].append(block)
+    return batches
+
+
+def submit_batches(rebind, store, blocks, deadline, batch_games, *, no_pitch, games):
+    """D125: the candidate bound to one game batch's context rows at a time. Each batch gets a fresh
+    ``rebind(batch) -> (runtime, components)`` (same pins, so the same runtime sha, reopening the same
+    ledger file and sharing one RowBudget); the previous batch's bound rows and caches are released
+    first. Every rebinding re-checks the certified identity (in ``rebind``) and every batch is
+    verified before it is released. Same requests in the same order as one unbatched pass."""
+    facts, runtime, components = {}, None, None
+    for part in game_batches(store.frame, blocks, batch_games):
+        runtime = components = None
+        gc.collect()  # the bound components hold reference cycles (closures); free them before rebinding
+        runtime, components = rebind(part)
+        submit_pas(runtime, store, part, deadline, no_pitch=no_pitch, facts=facts,
+                   outcome=outcome_function(store, components, games, 'structural-end-v1'))
+        runtime.verify_components()
+    return runtime, components, facts
+
+
 def run_dr(runtime, store, components, blocks, deadline, *, no_pitch, bootstrap, ess_gate, sensitivities, strata=None,
-           expected_pas=None, pair=None, estimator=None):
+           expected_pas=None, pair=None, estimator=None, rebind=None, batch_games=None):
     """Candidate runtime over the selected PAs, PA-end facts from the verified WE, the DR estimator
     (primary), the registered same-ledger sensitivities and (``pair``) the M-10 paired run. With a
     registered ``estimator`` block the primary is L1-R and the censoring sensitivities S-v1, S-NP,
-    S-B and S-C are computed from the same ledger (COOP-021/022)."""
+    S-B and S-C are computed from the same ledger (COOP-021/022). With ``rebind`` (and no runtime)
+    the PAs are submitted in game batches (``submit_batches``); the outputs are the same bytes."""
     games = preq.game_table(store.frame, {int(store.frame.game_pk.iloc[p[0]]) for _, p in blocks})
-    facts = submit_pas(runtime, store, blocks, deadline, no_pitch=no_pitch,
-                       outcome=outcome_function(store, components, games, 'structural-end-v1'))
+    if rebind is None:
+        facts = submit_pas(runtime, store, blocks, deadline, no_pitch=no_pitch,
+                           outcome=outcome_function(store, components, games, 'structural-end-v1'))
+    else:
+        _require(runtime is None and components is None and type(batch_games) is int and batch_games >= 1,
+                 'batched binding takes no pre-bound runtime and a positive game count')
+        runtime, components, facts = submit_batches(rebind, store, blocks, deadline, batch_games, no_pitch=no_pitch,
+                                                    games=games)
     if strata is not None:
         for pa_id, info in facts.items():
             info['strata'] = strata(pa_id, info)
@@ -909,6 +949,14 @@ def load_inputs(config, local, *, store=True):
         from run_ml_g0_whole import load_member  # the pinned G0 loader (policy identity records its source)
         out['member_loader'] = load_member
     return out
+
+
+def style_report(store, blocks, snapshot, as_of):
+    """The style report ``pa_contexts`` returns for these blocks, from the few columns it reads."""
+    safe = safe_rows(store.frame.iloc[:0]).columns
+    rows = store.frame.iloc[np.concatenate([positions for _, positions in blocks])]
+    return preq.apply_style_snapshot(rows[[c for c in ('game_date', 'batter', *preq.PA_KEY) if c in safe]],
+                                     snapshot, as_of)[1]
 
 
 def pa_contexts(store, blocks, snapshot=None, as_of=None):
@@ -1180,16 +1228,19 @@ def dispatch(command, reg, local, output, load, load_holdout=load_holdout):
             return snapshot, as_of, {'style_snapshot_sha256': content, 'as_of_exclusive': as_of, 'rolling_check': check}
 
         def candidate(blocks, split, *, tau, samples, pitch_cap, seed, budget, evaluation_seed=None, expected=None,
-                      tag='', frozen=None, rows=None, positivity_record=False):
+                      tag='', frozen=None, rows=None, positivity_record=False, style=None):
+            """``style`` (batched binding): the style report of the whole selection, so every batch's
+            runtime carries the pins of the unbatched run; ``budget`` may be a shared RowBudget."""
             bc_path, bc_sha = registered_path(reg, 'bc')
             support_path, support_sha = registered_path(reg, 'support')
             snapshot, as_of, provenance = snapshot_for(split, blocks) if frozen is None else frozen
-            components, style = bind(blocks, load_train_bc(bc_path, bc_sha), snapshot, as_of, rows)
+            components, own = bind(blocks, load_train_bc(bc_path, bc_sha), snapshot, as_of, rows)
             _require(components.sha256 == pre['components_sha256'],
                      'bound components differ from the S2-certified identity (M-10)')
-            provenance = {**provenance, 'style_report': style}
+            provenance = {**provenance, 'style_report': own if style is None else style}
+            budget = budget if isinstance(budget, RowBudget) else RowBudget(int(budget), seed_count=5)
             runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, out / f'ledger-{split}-{seed}{tag}.jsonl',
-                                        components=components, budget=RowBudget(int(budget), seed_count=5), tau=tau,
+                                        components=components, budget=budget, tau=tau,
                                         samples=samples, pitch_cap=pitch_cap, seed=seed, evaluation_seed=evaluation_seed,
                                         expected_identity_sha256=expected, hand_registry=registered_path(reg, 'hands'),
                                         provenance=provenance, positivity_record=positivity_record)
@@ -1385,14 +1436,24 @@ def run_ope_2026(reg, spec, pre, inputs, candidate, no_pitch, early, out):
                       'holdout': {'version': HOLDOUT_VERSION, 'sha256': HOLDOUT_SHA256}}
         blocks = preq.pa_blocks(holdout)
         evaluation = role_seed(config, 'evaluation') if freeze['dr_q']['source'] == 'evaluation_seed' else None
-        runtime, components, provenance = candidate(
-            blocks, 'eval2026', tau=freeze['selected_tau'], samples=setting['samples'], pitch_cap=setting['pitch_cap'],
-            seed=config['seeds']['planning_main'], budget=spec['row_budget'], evaluation_seed=evaluation,
-            expected=expected, frozen=(snapshot, preq.PROFILE_AS_OF_2026, provenance), rows=store26,
-            positivity_record=True)
+        frozen = (snapshot, preq.PROFILE_AS_OF_2026, provenance)
+        bound = lambda part, **extra: candidate(
+            part, 'eval2026', tau=freeze['selected_tau'], samples=setting['samples'], pitch_cap=setting['pitch_cap'],
+            seed=config['seeds']['planning_main'], evaluation_seed=evaluation, expected=expected, frozen=frozen,
+            rows=store26, positivity_record=True, **extra)
+        batch_games, rebind = spec.get('bind_batch_games'), None
+        if batch_games is None:  # registered default: bind every PA at once
+            runtime, components, provenance = bound(blocks, budget=spec['row_budget'])
+            pins = runtime.pins['provenance']
+        else:  # D125: bind one game batch at a time; memory no longer grows with the season
+            style = style_report(store26, blocks, snapshot, preq.PROFILE_AS_OF_2026)
+            runtime = components = None
+            provenance = pins = {**provenance, 'style_report': style}
+            budget = RowBudget(int(spec['row_budget']), seed_count=5)  # one budget for the whole run
+            rebind = lambda part: bound(part, budget=budget, style=style)[:2]
         pair = lambda: prt.build_reference_pair_runtime(
             *registered_path(reg, 'bc'), *registered_path(reg, 'support'), out / 'ledger-2026-paired-identity.jsonl',
-            hand_registry=registered_path(reg, 'hands'), provenance=runtime.pins['provenance'], positivity_record=True)
+            hand_registry=registered_path(reg, 'hands'), provenance=pins, positivity_record=True)
         materialized = registered_json(reg, 'materialize')
         train_counts = frame.loc[frame.split.eq('train')].groupby('pitcher').size()
         result, rows = run_dr(runtime, store26, components, blocks, Deadline(), no_pitch=no_pitch,
@@ -1400,13 +1461,14 @@ def run_ope_2026(reg, spec, pre, inputs, candidate, no_pitch, early, out):
                               ess_gate=config['ess_gate']['thresholds'], sensitivities=config['sensitivity']['same_ledger'],
                               strata=strata_function(holdout, materialized['volume_edges'],
                                                      materialized['bc_p_only_pitchers']['ids'], train_counts),
-                              pair=pair, estimator=spec['estimator'])
+                              pair=pair, estimator=spec['estimator'], rebind=rebind, batch_games=batch_games)
     labels = rehearsal_labels(result, spec['estimator'], bias, plan['bootstrap'])
     table = pd.DataFrame([{**{k: v for k, v in r.items() if k != 'strata'},
                            **{f'stratum_{k}': v for k, v in r['strata'].items()}} for r in rows])
     table.to_parquet(out / 'pa_values.parquet', index=False)
     return {**result, 'labels': labels, 'label': labels['primary']['label'], 'identity_sha256': expected,
             'games': games, 'games_dropped_several_dates': dropped, 'hang_guard_seconds': seconds,
+            **({} if batch_games is None else {'bind_batch_games': batch_games}),
             'vocabulary_mapping': early['vocabulary_mapping'], 'prior_attempts': early['prior_attempts'],
             'dr_q': freeze['dr_q'], 'provenance': provenance,
             'interpretation': 'single registered 2026 OPE (exposed-window labels in the prereg); assumption-conditional, '
