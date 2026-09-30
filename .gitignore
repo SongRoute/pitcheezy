@@ -33,3 +33,6 @@ node_modules/
 
 # Graphify local graph, AST cache and rendered reports (about 27 MB at first build)
 graphify-out/
+
+# Observer live-feed raw snapshots (local replay only)
+apps/observer/live_snapshots/

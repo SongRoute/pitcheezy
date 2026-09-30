@@ -1,0 +1,105 @@
+{
+ "dates": [
+  {
+   "date": "2026-09-29",
+   "games": [
+    {
+     "gamePk": 849845,
+     "gameType": "F",
+     "gameDate": "2026-09-29T18:00:00Z",
+     "officialDate": "2026-09-29",
+     "status": {
+      "abstractGameState": "Final",
+      "detailedState": "Final"
+     },
+     "teams": {
+      "away": {
+       "team": {
+        "id": 143,
+        "name": "Philadelphia Phillies"
+       }
+      },
+      "home": {
+       "team": {
+        "id": 144,
+        "name": "Atlanta Braves"
+       }
+      }
+     }
+    },
+    {
+     "gamePk": 849849,
+     "gameType": "F",
+     "gameDate": "2026-09-29T21:00:00Z",
+     "officialDate": "2026-09-29",
+     "status": {
+      "abstractGameState": "Final",
+      "detailedState": "Final"
+     },
+     "teams": {
+      "away": {
+       "team": {
+        "id": 145,
+        "name": "Chicago White Sox"
+       }
+      },
+      "home": {
+       "team": {
+        "id": 117,
+        "name": "Houston Astros"
+       }
+      }
+     }
+    },
+    {
+     "gamePk": 849851,
+     "gameType": "F",
+     "gameDate": "2026-09-30T00:00:00Z",
+     "officialDate": "2026-09-29",
+     "status": {
+      "abstractGameState": "Final",
+      "detailedState": "Final"
+     },
+     "teams": {
+      "away": {
+       "team": {
+        "id": 111,
+        "name": "Boston Red Sox"
+       }
+      },
+      "home": {
+       "team": {
+        "id": 147,
+        "name": "New York Yankees"
+       }
+      }
+     }
+    },
+    {
+     "gamePk": 849843,
+     "gameType": "F",
+     "gameDate": "2026-09-30T02:00:00Z",
+     "officialDate": "2026-09-29",
+     "status": {
+      "abstractGameState": "Final",
+      "detailedState": "Final"
+     },
+     "teams": {
+      "away": {
+       "team": {
+        "id": 112,
+        "name": "Chicago Cubs"
+       }
+      },
+      "home": {
+       "team": {
+        "id": 135,
+        "name": "San Diego Padres"
+       }
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

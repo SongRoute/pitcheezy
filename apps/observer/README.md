@@ -26,6 +26,10 @@ sh apps/observer/run.sh
 
 포트를 바꾸려면 `PITCHEEZY_OBSERVER_PORT=8767 sh apps/observer/run.sh`. 기본 바인딩은 로컬 주소이며 외부 공개 설정을 포함하지 않는다.
 
+## 지연 라이브(데모, 검증 전 실험 버전)
+
+`GET /api/live/games?date=YYYY-MM-DD`, `GET /api/live/{gamePk}/state`가 MLB Stats API 공개 피드의 현재 경기 상태를 `delay_s`(기본30초) 지연해 투구 전 입력으로 바꾼다. 설정은 `live_config.json`. 선수 특성은 동결 번들 핀만 쓴다: 번들에 없는 투수는 `unsupported_pitcher`, 프로필 없는 타자는 리그 기본값, 존 높이는 ≤2025 리그 중앙값. 원본 피드는 `apps/observer/live_snapshots/`(gitignore)에 gzip으로 기록되고, `PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR` 또는 `python -m observer_app.live_feed --replay-dir DIR --game PK`로 오프라인 재생한다.
+
 ## 현재 구성
 
 | 모듈 | 구현 |

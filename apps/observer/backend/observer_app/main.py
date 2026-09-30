@@ -1,5 +1,6 @@
 """Local Observer HTTP application and supervised no-media worker lifecycle."""
 from contextlib import asynccontextmanager
+import json
 import logging
 import os
 from pathlib import Path
@@ -16,7 +17,7 @@ from .dataset import DemoDataset
 from .domain import ZONES
 from .media_registry import MediaRegistry
 from .service import ObserverService, ServiceError
-from .settings import CONFIG, RUN, WEB, database_path
+from .settings import BUNDLE, CONFIG, REPO, RUN, WEB, database_path
 from .store import Store
 from .video_annotations import VideoAnnotations
 
@@ -48,7 +49,7 @@ class UnavailableRecommender:
     ready = False
 
 
-def create_app(service=None, *, start_worker=None):
+def create_app(service=None, *, start_worker=None, live_feed=None, live_pins=None):
     injected = service is not None
     if start_worker is None:
         start_worker = not injected
@@ -214,6 +215,59 @@ def create_app(service=None, *, start_worker=None):
     @app.post('/api/video-lab/annotations/{annotation_id}/track')
     def track_video_annotation(annotation_id: str):
         return lab_call(video_annotations.track, annotation_id)
+
+    live = {'feed': live_feed, 'pins': live_pins}
+
+    def live_parts():
+        from .live_feed import LIVE_CONFIG, LiveFeed, ReplayTransport, http_json
+        if live['feed'] is None:
+            replay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR')
+            live['feed'] = (LiveFeed(ReplayTransport(replay), delay_s=0) if replay else
+                            LiveFeed(http_json, record_dir=REPO/LIVE_CONFIG['record_dir']))
+        if live['pins'] is None:
+            path = BUNDLE/'metadata.json'
+            if not path.is_file():
+                raise ServiceError(503, '동결된 모델 번들을 찾을 수 없습니다.')
+            live['pins'] = json.loads(path.read_text())
+        return live['feed'], live['pins']
+
+    def live_call(operation):
+        from .live_feed import LIVE_CONFIG, LiveFeedError
+        try:
+            return {'demo_status': LIVE_CONFIG['demo_status']} | operation()
+        except LiveFeedError:
+            raise ServiceError(503, 'MLB 경기 정보를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.') from None
+
+    @app.get('/api/live/games')
+    def live_games(date: str = Query(...)):
+        if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
+            raise ServiceError(400, 'date는 YYYY-MM-DD 형식이어야 합니다.')
+        feed, _ = live_parts()
+        return live_call(lambda: {'date': date, 'games': feed.schedule(date)})
+
+    @app.get('/api/live/{game_pk}/state')
+    def live_state(game_pk: int):
+        from .live_feed import parse_state
+        if game_pk < 1:
+            raise ServiceError(400, 'gamePk는 양의 정수여야 합니다.')
+        feed, pins = live_parts()
+
+        def state():
+            snapshot, wait = feed.snapshot(game_pk)
+            if snapshot is None:
+                return {'status': 'buffering', 'reason': f'지연 중계 버퍼를 채우는 중입니다({wait}초).',
+                        'delay_s': feed.delay_s, 'recommendation': None}
+            parsed = parse_state(snapshot, pins)
+            inputs, recommendation = parsed.pop('pre_pitch'), None
+            if inputs is not None:
+                now = parsed['situation']
+                pitch = {'id': f"live:{game_pk}:{parsed['game']['feed_timestamp']}:{now['balls']}-{now['strikes']}",
+                         'request': inputs.request}
+                # Existing Recommender: ARM-B mode when it carries a type_policy, else the legacy mode.
+                recommendation = active()._recommend(pitch, {'zone_bounds': inputs.zone_bounds,
+                                                             'repertoire_counts': inputs.repertoire_counts})
+            return parsed | {'delay_s': feed.delay_s, 'recommendation': recommendation}
+        return live_call(state)
 
     @app.get('/api/runtime')
     def runtime():
