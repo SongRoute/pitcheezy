@@ -1,37 +1,52 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import './watch-along.css';
 
-type Bounds = { bottom: number; top: number };
+export const BADGE = '검증 전 실험 버전 · 위치는 실제 투구 분포 근사';
+export type Bounds = { bottom: number; top: number };
 type Target = { x: number; z: number };
-type Candidate = { rank: number; pitch_type: string; pitch_label: string; zone_id: string | null; zone_label: string; target: Target | null;
+export type Candidate = { rank: number; pitch_type: string; pitch_label: string; zone_id: string | null; zone_label: string; target: Target | null;
   detail: { probability: number; reference_probability: number; kernel_mass: number | null; kernel_ess: number | null } };
-type Situation = { inning: number; half: 'Top' | 'Bot'; outs: number; balls: number; strikes: number; bases: number; home_score: number; away_score: number };
+export type Situation = { inning: number; half: 'Top' | 'Bot'; outs: number; balls: number; strikes: number; bases: number; home_score: number; away_score: number };
 type Person = { id: number; name: string | null };
 type Decision = { index: number; pa_id: string; at_bat_number: number; pitch_number: number; situation: Situation;
   pitcher: Person & { hand: string }; batter: Person & { side: string }; status: string;
   pre: { status: 'ready' | 'unsupported'; reason: string | null; recommendation: { candidates: Candidate[] } | null } };
-type Reveal = { index: number;
-  actual: { pitch_type: string | null; pitch_label: string; result_label: string; event_label: string | null; play_text: string | null;
-    speed_mph: number | null; x: number | null; z: number | null; zone_label: string };
-  we: { home_before: number | null; home_after: number | null; home_delta: number | null } };
+export type Actual = { pitch_type: string | null; pitch_label: string; result_label: string; event_label: string | null; play_text: string | null;
+  speed_mph: number | null; x: number | null; z: number | null; zone_label: string };
+type Reveal = { index: number; actual: Actual; we: { home_before: number | null; home_after: number | null; home_delta: number | null } };
 type Timeline = { badge: string; game: { game_pk: number; date: string; game_type: string; away_team: string; home_team: string };
   policy: { name: string; identity_sha256: string; tau: number; note: string }; location: { note: string; zone_bounds: Bounds };
   we_note: string; coverage: { pitch_decisions: number; ready: number; ready_share_of_pitches: number | null }; decisions: Decision[] };
-type GameItem = Timeline['game'];
+type GameItem = Timeline['game'] & { pitches?: number; ready?: number; ready_share?: number | null };
+type LiveGame = { game_pk: number; game_type: string; start: string | null; status: string; live: boolean; away_team: string; home_team: string };
 
-async function get<T>(path: string): Promise<T> {
+export const ZONE_BOUNDS: Bounds = { bottom: 1.6, top: 3.3899 };
+const TEAMS: Record<string, string> = {
+  'Arizona Diamondbacks': '애리조나', 'Athletics': '애슬레틱스', 'Atlanta Braves': '애틀랜타', 'Baltimore Orioles': '볼티모어',
+  'Boston Red Sox': '보스턴', 'Chicago Cubs': '컵스', 'Chicago White Sox': '화이트삭스', 'Cincinnati Reds': '신시내티',
+  'Cleveland Guardians': '클리블랜드', 'Colorado Rockies': '콜로라도', 'Detroit Tigers': '디트로이트', 'Houston Astros': '휴스턴',
+  'Kansas City Royals': '캔자스시티', 'Los Angeles Angels': '에인절스', 'Los Angeles Dodgers': '다저스', 'Miami Marlins': '마이애미',
+  'Milwaukee Brewers': '밀워키', 'Minnesota Twins': '미네소타', 'New York Mets': '메츠', 'New York Yankees': '양키스',
+  'Philadelphia Phillies': '필라델피아', 'Pittsburgh Pirates': '피츠버그', 'San Diego Padres': '샌디에이고',
+  'San Francisco Giants': '샌프란시스코', 'Seattle Mariners': '시애틀', 'St. Louis Cardinals': '세인트루이스',
+  'Tampa Bay Rays': '탬파베이', 'Texas Rangers': '텍사스', 'Toronto Blue Jays': '토론토', 'Washington Nationals': '워싱턴' };
+const SERIES: Record<string, string> = { F: '와일드카드', D: '디비전시리즈', L: '챔피언십시리즈', W: '월드시리즈', R: '정규시즌' };
+
+export async function get<T>(path: string): Promise<T> {
   let response: Response;
-  try { response = await fetch(`/api${path}`); } catch { throw new Error('관전 서버에 연결하지 못했어요.'); }
+  try { response = await fetch(`/api${path}`, { cache: 'no-store' }); } catch { throw new Error('관전 서버에 연결하지 못했어요. 네트워크(Tailscale) 연결을 확인해 주세요.'); }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.');
   return body as T;
 }
-const halfLabel = (s: Situation) => `${s.inning}회 ${s.half === 'Top' ? '초' : '말'}`;
-const percent = (v: number | null) => v === null ? '—' : `${Math.round(v * 100)}%`;
-const short = (team: string) => team.split(' ').slice(-1)[0];
+export const halfLabel = (s: { inning: number; half: 'Top' | 'Bot' }) => `${s.inning}회 ${s.half === 'Top' ? '초' : '말'}`;
+export const percent = (v: number | null | undefined) => v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`;
+export const short = (team: string) => TEAMS[team] ?? team.split(' ').slice(-1)[0];
 const readHash = () => { const m = /i=(\d+)/.exec(window.location.hash); return m ? Number(m[1]) : null; };
+const nyDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+const kstTime = (iso: string | null) => iso ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)) : '';
 
-function Bases({ mask }: { mask: number }) {
+export function Bases({ mask }: { mask: number }) {
   const on = (base: number) => (mask & (1 << (base - 1))) !== 0;
   const runners = [1, 2, 3].filter(on);
   return <svg className="wa-bases" viewBox="0 0 60 44" role="img" aria-label={`주자 ${runners.length ? runners.join(', ') + '루' : '없음'}`}>
@@ -39,7 +54,11 @@ function Bases({ mask }: { mask: number }) {
   </svg>;
 }
 
-function Zone({ bounds, candidates, actual }: { bounds: Bounds; candidates: Candidate[]; actual: Reveal['actual'] | null }) {
+function Outs({ outs }: { outs: number }) {
+  return <span className="wa-outs" aria-label={`${outs}아웃`}>{[0, 1, 2].map(i => <i key={i} className={i < outs ? 'on' : ''} />)}<em>{outs}아웃</em></span>;
+}
+
+export function Zone({ bounds, candidates, actual }: { bounds: Bounds; candidates: Candidate[]; actual: { x: number | null; z: number | null } | null }) {
   const x = (v: number) => 90 + v / 1.6 * 80, y = (v: number) => 200 - (v - .6) / 3.8 * 190;
   const left = x(-.83), right = x(.83), top = y(bounds.top), bottom = y(bounds.bottom);
   const cells = [0, 1, 2];
@@ -53,24 +72,100 @@ function Zone({ bounds, candidates, actual }: { bounds: Bounds; candidates: Cand
       return <g key={c.rank} className={`wa-target rank-${c.rank}`}><circle cx={x(c.target!.x) + offset} cy={y(c.target!.z)} r={c.rank === 1 ? 11 : 8} /><text x={x(c.target!.x) + offset} y={y(c.target!.z) + 4} textAnchor="middle">{c.rank}</text></g>;
     })}
     {actual && actual.x !== null && actual.z !== null && <circle className="wa-actual" cx={x(Math.max(-1.1, Math.min(1.1, actual.x)))} cy={y(Math.max(.7, Math.min(4.3, actual.z)))} r="7" />}
-    <text x="90" y="207" textAnchor="middle" className="wa-zone-caption">포수 시점</text>
+    <text x="90" y="207" textAnchor="middle" className="wa-zone-caption">포수 시점 · 번호=추천 · 주황=실제</text>
   </svg>;
+}
+
+export function Header({ badge, back }: { badge: string; back?: boolean }) {
+  return <header className="wa-header">{back ? <a className="wa-back" href="/watch" aria-label="경기 목록으로">←</a> : null}<a className="wa-brand" href="/watch">Pitcheezy<span>.</span></a><span className="wa-badge">{badge}</span></header>;
+}
+
+export function Board({ s, away, home, pitcher, batter, extra }: { s: Situation; away: string; home: string; pitcher: string; batter: string; extra?: string }) {
+  return <section className="wa-board" aria-live="polite">
+    <div className="wa-score"><span>{short(away)}</span><strong>{s.away_score}</strong><i>:</i><strong>{s.home_score}</strong><span>{short(home)}</span></div>
+    <div className="wa-inning"><strong>{halfLabel(s)}</strong><Outs outs={s.outs} /><Bases mask={s.bases} /><span className="wa-count">{s.balls}-{s.strikes}</span></div>
+    <div className="wa-matchup"><span>투수 <b>{pitcher}</b></span><span>타자 <b>{batter}</b></span>{extra && <span className="wa-pitchno">{extra}</span>}</div>
+  </section>;
+}
+
+/** Type first, then the approximate zone; numbers folded (D49). */
+export function Recommendation({ candidates, bounds, actual, note }: { candidates: Candidate[]; bounds: Bounds; actual: { x: number | null; z: number | null } | null; note: string }) {
+  const top = candidates[0];
+  return <>
+    <div className="wa-rec">
+      <div><h2 className="wa-type">{top.pitch_label}</h2><p className="wa-zone-label">대략 위치 · {top.zone_label}</p>
+        <ol className="wa-others">{candidates.slice(1).map(c => <li key={c.rank}><b>{c.rank}</b> {c.pitch_label} <span>· {c.zone_label}</span></li>)}</ol></div>
+      <Zone bounds={bounds} candidates={candidates} actual={actual} />
+    </div>
+    <details className="wa-numbers"><summary>숫자 보기</summary>
+      <table><thead><tr><th>구종</th><th>추천 확률</th><th>평소(기준) 확률</th></tr></thead>
+        <tbody>{candidates.map(c => <tr key={c.rank}><td>{c.pitch_label}</td><td>{percent(c.detail.probability)}</td><td>{percent(c.detail.reference_probability)}</td></tr>)}</tbody></table>
+      <p>{note}</p></details>
+  </>;
+}
+
+/** Win-expectancy change for the team at bat; event contribution beyond WE is not computed yet (D43). */
+export function WeCard({ team, before, after }: { team: string; before: number | null; after: number | null }) {
+  const delta = before !== null && after !== null ? after - before : null;
+  return <div className="wa-we-card">
+    <p className="wa-eyebrow">승리확률 변화 · {short(team)} 공격</p>
+    <p className="wa-we-line"><span>{percent(before)}</span><i>→</i><strong>{percent(after)}</strong>
+      {delta !== null && <b className={delta > 0.0005 ? 'up' : delta < -0.0005 ? 'down' : ''}>{delta >= 0 ? '+' : ''}{(delta * 100).toFixed(1)}%p</b>}</p>
+    <p className="wa-we-note">{delta !== null && Math.abs(delta) < 0.0005 ? '볼카운트는 승리확률에 넣지 않아서 타석 결과·주자·아웃이 바뀔 때만 움직여요. ' : ''}이 공 하나가 승부에 준 영향 중 승리확률 변화만 보여 줘요. 수비·주루 기여 분해는 아직 일부만 계산돼요.</p>
+  </div>;
+}
+
+export type StripItem = { key: string; label: string; result: string; match: boolean | null; current?: boolean };
+export function PitchStrip({ items }: { items: StripItem[] }) {
+  if (!items.length) return null;
+  return <ol className="wa-strip" aria-label="이 타석 투구 순서">{items.map((p, i) =>
+    <li key={p.key} className={p.current ? 'current' : ''}><span className="n">{i + 1}</span><b>{p.label}</b><em>{p.result}</em>{p.match !== null && <i className={p.match ? 'hit' : ''} title={p.match ? '추천 1순위와 같은 구종' : '추천 1순위와 다른 구종'}>{p.match ? '✓' : '·'}</i>}</li>)}
+  </ol>;
+}
+
+function Picker() {
+  const [games, setGames] = useState<GameItem[] | null>(null);
+  const [live, setLive] = useState<LiveGame[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  useEffect(() => {
+    get<{ games: GameItem[] }>('/watch/games').then(r => setGames(r.games)).catch(e => setError(e.message));
+    get<{ games: LiveGame[] }>(`/live/games?date=${nyDate()}`).then(r => setLive(r.games.filter(g => g.game_type !== 'R' || g.live))).catch(e => setLiveError(e.message));
+  }, []);
+  return <div className="wa-page"><Header badge={BADGE} />
+    <main className="wa-main">
+      <h1 className="wa-title">오늘의 포스트시즌</h1>
+      <section className="wa-section">
+        <h2>지금 경기 · 지연 중계</h2>
+        <p className="wa-muted">실제 중계보다 약 30초 늦게, 다음 공의 추천 구종과 대략 위치를 먼저 보여 줘요.</p>
+        {liveError ? <p className="wa-error">{liveError}</p> : live === null ? <p className="wa-muted">오늘 경기를 불러오는 중…</p> : live.length === 0 ? <p className="wa-empty">오늘(미국 동부 기준) 예정된 포스트시즌 경기가 없어요.</p> :
+          <ul className="wa-games">{live.map(g => <li key={g.game_pk}><a className={`wa-game ${g.live ? 'is-live' : ''}`} href={`/live?game=${g.game_pk}`}>
+            <span className="wa-game-teams"><strong>{short(g.away_team)} @ {short(g.home_team)}</strong><span>{SERIES[g.game_type] ?? g.game_type}</span></span>
+            <span className="wa-game-meta">{g.live ? <em className="wa-live-dot">경기 중</em> : <em>{g.status === 'Final' || g.status === 'Game Over' ? '종료' : `${kstTime(g.start)} 시작(한국)`}</em>}</span></a></li>)}</ul>}
+      </section>
+      <section className="wa-section">
+        <h2>끝난 경기 · 중계 영상과 함께 보기</h2>
+        <p className="wa-muted">한 공씩 넘기며 추천 → 실제 투구를 비교해요. 목록에 최종 점수는 없어요.</p>
+        {error && <p className="wa-error">{error}</p>}
+        {games === null ? (!error && <p className="wa-muted">경기 목록을 불러오는 중…</p>) : games.length === 0 ? <p className="wa-empty">아직 준비된 경기가 없어요. 맥미니에서 <code>scripts/demo_precompute.py sync</code>를 실행하면 끝난 경기가 추가돼요. (저장장치 T7이 연결돼 있어야 해요)</p> :
+          <ul className="wa-games">{games.map(g => <li key={g.game_pk}><a className="wa-game" href={`/watch?game=${g.game_pk}`}>
+            <span className="wa-game-teams"><strong>{short(g.away_team)} @ {short(g.home_team)}</strong><span>{g.date} · {SERIES[g.game_type] ?? g.game_type}</span></span>
+            {g.ready_share !== undefined && g.ready_share !== null && <span className="wa-coverage" title="추천을 낼 수 있었던 공의 비율">
+              <span className="bar"><i style={{ width: `${Math.round(g.ready_share * 100)}%` }} /></span>추천 {Math.round(g.ready_share * 100)}%</span>}</a></li>)}</ul>}
+        <p className="wa-footnote">추천 비율이 낮은 경기는 2025년 4월 이후 데뷔했거나 기록이 적은 투수가 많이 던진 경기예요. 그런 투수의 공은 추천 없이 이유만 보여 줘요.</p>
+      </section>
+    </main></div>;
 }
 
 export default function WatchAlong() {
   const params = new URLSearchParams(window.location.search);
-  const [gamePk, setGamePk] = useState<number | null>(params.get('game') ? Number(params.get('game')) : null);
-  const [games, setGames] = useState<GameItem[] | null>(null);
+  const gamePk = params.get('game') ? Number(params.get('game')) : null;
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [index, setIndex] = useState(0);
-  const [reveal, setReveal] = useState<Reveal | null>(null);
+  const [reveals, setReveals] = useState<Record<number, Reveal>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (gamePk !== null) return;
-    get<{ games: GameItem[] }>('/watch/games').then(r => setGames(r.games)).catch(e => setError(e.message));
-  }, [gamePk]);
   useEffect(() => {
     if (gamePk === null) return;
     setTimeline(null); setError(null);
@@ -88,19 +183,33 @@ export default function WatchAlong() {
   }, [index, timeline]);
 
   const decision = timeline?.decisions[index] ?? null;
+  const reveal = reveals[index] ?? null;
   const plateAppearances = useMemo(() => {
     const out: { first: number; label: string }[] = [];
     timeline?.decisions.forEach(d => { if (!out.length || timeline.decisions[out[out.length - 1].first].pa_id !== d.pa_id) out.push({ first: d.index, label: `${halfLabel(d.situation)} · ${d.batter.name ?? d.batter.id}` }); });
     return out;
   }, [timeline]);
   const currentPa = plateAppearances.reduce((found, pa, i) => pa.first <= index ? i : found, 0);
+  const paStart = plateAppearances[currentPa]?.first ?? 0;
+
+  const fetchReveal = useCallback(async (i: number) => {
+    if (!timeline) return null;
+    const r = await get<Reveal>(`/watch/${timeline.game.game_pk}/reveal/${i}`);
+    setReveals(prev => ({ ...prev, [i]: r }));
+    return r;
+  }, [timeline]);
+  // Earlier pitches of this plate appearance are already in the past: fill the sequence strip.
+  useEffect(() => {
+    if (!timeline) return;
+    for (let i = paStart; i < index; i++) if (!reveals[i]) void fetchReveal(i).catch(() => undefined);
+  }, [timeline, paStart, index, reveals, fetchReveal]);
 
   const doReveal = useCallback(async () => {
     if (!timeline || busy) return;
     setBusy(true);
-    try { setReveal(await get<Reveal>(`/watch/${timeline.game.game_pk}/reveal/${index}`)); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-  }, [timeline, index, busy]);
-  const go = useCallback((next: number) => { setReveal(null); setIndex(next); }, []);
+    try { await fetchReveal(index); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }, [timeline, index, busy, fetchReveal]);
+  const go = useCallback((next: number) => { setError(null); setIndex(next); }, []);
   const step = useCallback((delta: number) => { if (timeline) go(Math.min(Math.max(0, index + delta), timeline.decisions.length - 1)); }, [timeline, index, go]);
   useEffect(() => {  // a typed or shared #i=N link jumps to that pitch
     const onHash = () => { const target = readHash(); if (timeline && target !== null && target < timeline.decisions.length) go(target); };
@@ -117,22 +226,19 @@ export default function WatchAlong() {
     return () => window.removeEventListener('keydown', onKey);
   }, [reveal, step, doReveal]);
 
-  if (gamePk === null) return <div className="wa-page"><Header badge="검증 전 실험 버전 · 위치는 실제 투구 분포 근사" />
-    <main className="wa-main"><h1 className="wa-title">중계 영상과 함께 보기</h1>
-      {error && <p className="wa-error">{error}</p>}
-      {games === null ? <p className="wa-muted">경기 목록을 불러오는 중…</p> : games.length === 0 ? <p className="wa-muted">사전 계산된 경기가 없습니다. <code>scripts/demo_precompute.py precompute --game-pk N</code>을 먼저 실행해 주세요.</p> :
-        <ul className="wa-games">{games.map(g => <li key={g.game_pk}><button onClick={() => setGamePk(g.game_pk)}><strong>{g.away_team} @ {g.home_team}</strong><span>{g.date} · gamePk {g.game_pk}</span></button></li>)}</ul>}
-    </main></div>;
-  if (!timeline || !decision) return <div className="wa-page"><Header badge="검증 전 실험 버전 · 위치는 실제 투구 분포 근사" /><main className="wa-main">{error ? <p className="wa-error">{error}</p> : <p className="wa-muted">경기 자료를 불러오는 중…</p>}</main></div>;
+  if (gamePk === null) return <Picker />;
+  if (!timeline || !decision) return <div className="wa-page"><Header badge={BADGE} back /><main className="wa-main">{error ? <><p className="wa-error">{error}</p><p><a href="/watch">경기 목록으로</a></p></> : <p className="wa-muted">경기 자료를 불러오는 중…</p>}</main></div>;
 
   const s = decision.situation, rec = decision.pre.recommendation, top = rec?.candidates[0];
   const game = timeline.game;
-  return <div className="wa-page"><Header badge={timeline.badge} />
-    <section className="wa-board" aria-live="polite">
-      <div className="wa-score"><span>{short(game.away_team)}</span><strong>{s.away_score}</strong><i>:</i><strong>{s.home_score}</strong><span>{short(game.home_team)}</span></div>
-      <div className="wa-inning"><strong>{halfLabel(s)}</strong><span>{s.outs}아웃</span><Bases mask={s.bases} /><span className="wa-count">B{s.balls} S{s.strikes}</span></div>
-      <div className="wa-matchup"><span>투수 <b>{decision.pitcher.name ?? decision.pitcher.id}</b></span><span>타자 <b>{decision.batter.name ?? decision.batter.id}</b> ({decision.batter.side === 'L' ? '좌' : '우'}타)</span><span className="wa-pitchno">{decision.pitch_number}구째</span></div>
-    </section>
+  const strip: StripItem[] = timeline.decisions.slice(paStart, index + 1).map(d => {
+    const r = reveals[d.index]; const t = d.pre.recommendation?.candidates[0];
+    return { key: String(d.index), label: r ? r.actual.pitch_label : d.index === index ? '?' : '…', result: r ? (r.actual.event_label ?? r.actual.result_label) : d.index === index ? '다음 공' : '',
+      match: r && t && r.actual.pitch_type ? t.pitch_type === r.actual.pitch_type : null, current: d.index === index };
+  });
+  return <div className="wa-page"><Header badge={timeline.badge} back />
+    <Board s={s} away={game.away_team} home={game.home_team} pitcher={decision.pitcher.name ?? String(decision.pitcher.id)}
+      batter={`${decision.batter.name ?? decision.batter.id} (${decision.batter.side === 'L' ? '좌' : '우'}타)`} extra={`${decision.pitch_number}구째`} />
     <main className="wa-main">
       <nav className="wa-nav" aria-label="투구 이동">
         <button onClick={() => step(-1)} disabled={index === 0} aria-label="이전 공">←</button>
@@ -142,20 +248,12 @@ export default function WatchAlong() {
         <span className="wa-progress">{index + 1}/{timeline.decisions.length}</span>
         <button onClick={() => step(1)} disabled={index === timeline.decisions.length - 1} aria-label="다음 공">→</button>
       </nav>
+      <PitchStrip items={strip} />
       {error && <p className="wa-error">{error}</p>}
       <article className="wa-card">
-        {decision.pre.status === 'ready' && top ? <>
-          <p className="wa-eyebrow">투구 전 추천</p>
-          <div className="wa-rec">
-            <div><h2 className="wa-type">{top.pitch_label}</h2><p className="wa-zone-label">대략 위치 · {top.zone_label}</p>
-              <ol className="wa-others">{rec!.candidates.slice(1).map(c => <li key={c.rank}><b>{c.rank}</b> {c.pitch_label} <span>· {c.zone_label}</span></li>)}</ol></div>
-            <Zone bounds={timeline.location.zone_bounds} candidates={rec!.candidates} actual={reveal?.actual ?? null} />
-          </div>
-          <details className="wa-numbers"><summary>숫자 보기</summary>
-            <table><thead><tr><th>구종</th><th>추천 확률</th><th>기준(평소) 확률</th></tr></thead>
-              <tbody>{rec!.candidates.map(c => <tr key={c.rank}><td>{c.pitch_label}</td><td>{percent(c.detail.probability)}</td><td>{percent(c.detail.reference_probability)}</td></tr>)}</tbody></table>
-            <p>{timeline.location.note}</p></details>
-        </> : <><p className="wa-eyebrow">투구 전 추천</p><h2 className="wa-none">추천 없음</h2><p className="wa-reason">{decision.pre.reason}</p></>}
+        <p className="wa-eyebrow">투구 전 추천</p>
+        {decision.pre.status === 'ready' && top ? <Recommendation candidates={rec!.candidates} bounds={timeline.location.zone_bounds} actual={reveal?.actual ?? null} note={timeline.location.note} />
+          : <><h2 className="wa-none">추천 없음</h2><p className="wa-reason">{decision.pre.reason}</p></>}
         {!reveal ? <button className="wa-primary" onClick={() => void doReveal()} disabled={busy}>실제 투구 공개</button> : <Revealed reveal={reveal} top={top ?? null} decision={decision} game={game} onNext={() => step(1)} last={index === timeline.decisions.length - 1} />}
       </article>
       <footer className="wa-foot"><p>{timeline.policy.note}</p><p>추천: {timeline.policy.name} · τ {timeline.policy.tau} · 식별자 {timeline.policy.identity_sha256.slice(0, 8)}</p>
@@ -163,24 +261,18 @@ export default function WatchAlong() {
     </main></div>;
 }
 
-function Header({ badge }: { badge: string }) {
-  return <header className="wa-header"><a className="wa-brand" href="/">Pitcheezy<span>.</span></a><span className="wa-badge">{badge}</span></header>;
-}
-
 function Revealed({ reveal, top, decision, game, onNext, last }: { reveal: Reveal; top: Candidate | null; decision: Decision; game: GameItem; onNext: () => void; last: boolean }) {
   const a = reveal.actual, we = reveal.we;
   const battingHome = decision.situation.half === 'Bot';
-  const team = battingHome ? game.home_team : game.away_team;
   const before = we.home_before === null ? null : battingHome ? we.home_before : 1 - we.home_before;
   const after = we.home_after === null ? null : battingHome ? we.home_after : 1 - we.home_after;
-  const delta = before !== null && after !== null ? after - before : null;
   return <section className="wa-reveal">
     <p className="wa-eyebrow">실제 투구</p>
     <h3>{a.pitch_label}{a.speed_mph !== null && <span> · {a.speed_mph.toFixed(1)} mph</span>}</h3>
     <p className="wa-result">{a.event_label ?? a.result_label} · {a.zone_label}</p>
     {top && a.pitch_type && <p className={`wa-match ${top.pitch_type === a.pitch_type ? 'same' : ''}`}>{top.pitch_type === a.pitch_type ? '추천 1순위 구종과 같았어요' : `추천 1순위(${top.pitch_label})와 다른 구종`}</p>}
     {a.play_text && <p className="wa-play">{a.play_text}</p>}
-    <p className="wa-we">{short(team)} 공격 승리확률 {percent(before)} → {percent(after)}{delta !== null && <b className={delta > 0 ? 'up' : delta < 0 ? 'down' : ''}> ({delta >= 0 ? '+' : ''}{(delta * 100).toFixed(1)}%p)</b>}</p>
+    <WeCard team={battingHome ? game.home_team : game.away_team} before={before} after={after} />
     {!last && <button className="wa-primary" onClick={onNext}>다음 공 →</button>}
   </section>;
 }
