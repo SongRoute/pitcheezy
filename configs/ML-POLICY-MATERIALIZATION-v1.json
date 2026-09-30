@@ -520,11 +520,12 @@
         "hang_guard_basis": "CLAUDE.md D10 local-run ceiling (2 h); a safety timeout, not a cost cap (D-11 D)",
         "split": "temperature",
         "starts": 4,
-        "row_budget": null,
-        "candidates": null,
+        "row_budget": 10000000000,
+        "candidates": [{"samples": 3, "pitch_cap": 8}, {"samples": 3, "pitch_cap": 12}, {"samples": 4, "pitch_cap": 8}, {"samples": 4, "pitch_cap": 12}, {"samples": 6, "pitch_cap": 8}, {"samples": 6, "pitch_cap": 12}],
+        "measurement_attempt_note": "D104: row_budget, candidates and both selection budgets are provisional for the cost-only measurement attempt S3-profile-a1 (selection effectively unbounded, not citable as the D-9a selection). The selection budget and S3b row_budget are re-registered from the measured rows/decision and seconds before S3-profile-a2; candidates stay unless the user changes them. samples >= 3 (noise-rule minimum); pitch_cap 8 = the P8 setting, 12 = one longer option.",
         "selection_row_budget": {
-          "rows": null,
-          "decisions": null,
+          "rows": 1000000000000,
+          "decisions": 1000,
           "note": "rows must equal S3b row_budget"
         },
         "tau": "placeholder = tau_grid[0], labelled not selected",
@@ -544,7 +545,7 @@
           0.01,
           0.03
         ],
-        "row_budget": null,
+        "row_budget": 1000000000000,
         "thresholds": {
           "pa_ess_ratio_min": null,
           "game_ess_min": null,
