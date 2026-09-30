@@ -4,6 +4,8 @@
 
 > **상태: 초안(DRAFT_UNREGISTERED), `preregistration_complete=false`, `execution.enabled=false`.** 등록 계약이 아니며 2026 자료의 수집·열람·학습·추론·OPE·채점을 허가하지 않는다. 기존 계약에 없는 수치 문턱은 모두 **제안값**이고 측정된 사실이 아니다. 아직 없는 정책·모델·자료·자원 identity는 `null`이며 해시를 만들어 넣지 않았다. 오늘 문서를 해시해도 과거 노출이 지워지거나 원래 의미의 사전 등록이 되지 않는다.
 
+> **2026-09-30 개정(D100·D107 반영, 여전히 DRAFT).** 평가 arm을 **ARM-B(구종만)**로 정했고(D100 ⑨, CV 의도 없음) ARM-A는 보류로 남는다. ≤2025 리허설이 동결한 후보·기준·로깅 법칙·추정기를 §3에 pin하고, **≤2025 S6 결과를 읽기 전에** 성공 기준(§5a), 노출 공개(§9), 2026 실행 전 게이트(§10)를 적는다. 최종 등록과 실행은 §10 게이트 뒤 별도로 한다.
+
 ## 1. 전제
 
 - 2026 정규시즌은 **OPE 전용**이다(CLAUDE.md). 학습·튜닝·모델 선택에 쓰지 않는다. 2026을 G0 예측 NLL 홀드아웃으로 쓰지 않는다.
@@ -33,11 +35,19 @@
 - 효과: `Δ = V_WE(π_cand) − V_WE(π_ref)`, 무차원 확률 차, 표시 `delta_pp = 100·Δ`(%p). **양수 = 후보가 초기 수비 팀에 유리.**
 - 상태 `BLOCKED_NOT_IDENTIFIED`: 관측 plate 위치는 실제 도달이지 의도 목표가 아니다. 관측 위치로 목표 propensity를 만들어 인과 WE라 주장하지 않는다. CV 의도 추정이나 도달 밀도 모형만으로도 교환 가능성·실제 logging propensity가 성립하지 않는다(`BLK-04`).
 
-### ARM-B — 구종-only 제한 추정량 (준비만, **opt-in 아님**)
+### ARM-B — 구종-only 제한 추정량 (**평가 arm, D100**)
 
 - 같은 WE 단위·방향·PA horizon. 후보와 동결 TRAIN BC 기준이 **구종 확률만** 다르다. 모델 항의 delivery는 2026 이전 동결 입력으로 주변화하고, 가중 항에서 실제 도달 위치는 구종 선택 뒤의 결과로 둔다. [ML_EXPERIMENT_MATRIX](../ML_EXPERIMENT_MATRIX.md) §8 P1~P3의 축소 가정과 같다.
-- 목표 위치 효과나 서비스 추천의 인과 WE가 아니다. Statcast만으로 구종 배정의 교환 가능성·이동 가정이 정당화되지 않으면 소프트웨어가 돌아도 **인과 추정은 null**이다(`BLK-04`가 ARM-A와 ARM-B 인과 해석을 함께 막는다).
-- `enabled=false`, `auto_opt_in=false`, ARM-A의 자동 대체 아님. 주 추정량을 ARM-B로 바꾸려면 새 열람 전에 이름을 정해 등록하고, 결과를 본 뒤 바꾸지 않는다.
+- 목표 위치 효과나 서비스 추천의 인과 WE가 아니다. 구종 배정의 교환 가능성(H_t 조건부)과 ≤2025→2026 이동은 **가정으로 명시하고 입증하지 않는다**(`BLK-04` 미해소). 결과는 항상 "구종-only, 명시 가정 조건부, 노출 구간 포함 탐색적 평가"로 표시한다.
+- 사용자 결정(D100 ⑨)으로 **주 추정량 = ARM-B**다. 새 2026 열람 전에 정했고 결과를 본 뒤 바꾸지 않는다. ARM-A의 자동 대체가 아니며 ARM-A는 `BLOCKED_NOT_IDENTIFIED`로 남는다. 위치는 observer `experimental_location_proxy` 표시용 근사일 뿐 OPE 대상이 아니다.
+- **동결 구성요소(≤2025 리허설 [ML-POLICY-MATERIALIZATION-v1](ML-POLICY-MATERIALIZATION-v1.md), D104–D107):**
+  - 후보 π_cand: TRAIN 레퍼토리(지원 표 M) 위 P3 `kl_policy`, π ∝ π_ref·exp(Q_ref/τ), **τ = 0.1**(S3b-tau-a2), samples 6·pitch_cap 12(S3-profile-a2). 최종 정책 식별자 `a6dffaea70976368a9cdc9f1a8bff4267b1c138162ee48aafda00e81e989109c`(addendum 5 `tau_freeze.json` sha `1aedb2f5…`).
+  - 기준 π_ref: SupportedBC(BC-P를 M으로 제한·재정규화, 동결 전 1회). BC-P sha `b4f274eb…`, 지원 표 sha `152cdab4…`(addendum 2).
+  - 로깅 법칙 π̂_b: **전체 어휘 BC-P, 재정규화하지 않는다**(D-1). 2026 적합 없음.
+  - DR q̂: 평가 seed의 동결 simulator MC(M-7, S3b에서 기계적으로 정해 식별자에 포함). 후보는 q̂ = Q^ref라 **단일 강건**, 기준은 이중 강건(COOP-019 F5).
+  - 추정기: DR v2, 검열 노드 [0,1] 경계(D-5, L0/L1/L2·E0), 경기 부트스트랩 10,000회, ESS 게이트 PA 100·경기 30(두 정책 중 최소).
+  - 타자 프로필: `profile_as_of` = 2026-03-25(배타), 원천 날짜 가드 `max(game_date) ≤ 2025-12-31`와 2025-12-31 rolling 동일성 검사(COOP-019 F2, `fa82afb`).
+  - R7 타석 중 투수 교체: **보류**(D100 ⑦). 현 제안 규칙(알려진 새 투수 계속, 미지 새 투수 `UNSUPPORTED_UNKNOWN_PITCHER`→`UNSUPPORTED_MID_PA`)을 임시로 쓰고 비율·민감도를 보고한다.
 
 ### LEGACY-RE24 — 감사 부록 (분리 보존만)
 
@@ -61,10 +71,29 @@
 | 불확실성 | 경기 단위 paired 재표집(PA 유지), B=10,000, 양측 percentile 95% CI, 재표집 안에서 자기정규화 분모 재계산 | 제안. seed·무효 replicate 처리는 등록 시 고정(현재 `null`). CI는 동결 정책·nuisance·WE 조건부 |
 | 다중성 | ARM별 family, family당 주 대비 1개. `W_post`·SP/RP 부분 분석은 Holm 보조 family | 제안 |
 | overlap 게이트 | PA ESS = (Σ_i w_i)²/Σ_i w_i², w_i는 PA 종료 누적 비. game ESS는 경기별 w 합으로 같은 식. PA ESS ≥ 100, game ESS ≥ 30 | 휴리스틱 제안. ≤2025/합성 작업으로 근거를 만든 뒤 고정 |
-| 최소 효과 | `null` | 과학적 근거 전 미정. RE24 해상도(D31)·ML ΔNLL −.003·R78·kernel ESS20·clip20을 OPE 정리로 상속하지 않는다 |
+| 최소 효과 | **0.001 WE/PA**(제안, §5a) | 판단값. RE24 해상도(D31)·ML ΔNLL −.003·R78·kernel ESS20·clip20을 OPE 정리로 상속하지 않는다 |
 | 진단 | 투구별 비 분위·모멘트, 누적 PA/경기 집중도, 0/무효 분모, 지원 밖 질량, clip 비율, 결측·중도 절단, 역할·월·투수 볼륨별 ESS | — |
 
-판정 상태: `IMPROVEMENT_SUPPORTED`(식별 가정의 근거 ∧ CI 하한 > 0 ∧ 등록 최소 효과 ∧ overlap·무결성 통과), `HARM_SUPPORTED`(CI 상한 < 0, 같은 게이트), `NO_EFFECT_DETECTED`, `UNCONFIRMED_WEAK_OVERLAP`, `NOT_IDENTIFIED_CAUSAL_NULL`, `BLOCKED_NOT_IDENTIFIED`, `FAILED_INTEGRITY`. 계산 불가 값은 `null`과 사유. 최소 효과가 `null`인 동안은 우위 판정이 없는 기술적 연구이며 모델 선택·서비스 승격은 따라오지 않는다.
+판정 상태: `IMPROVEMENT_SUPPORTED`(식별 가정의 근거 ∧ CI 하한 > 0 ∧ 등록 최소 효과 ∧ overlap·무결성 통과), `HARM_SUPPORTED`(CI 상한 < 0, 같은 게이트), `NO_EFFECT_DETECTED`, `UNCONFIRMED_WEAK_OVERLAP`, `NOT_IDENTIFIED_CAUSAL_NULL`, `BLOCKED_NOT_IDENTIFIED`, `FAILED_INTEGRITY`. 계산 불가 값은 `null`과 사유. 최소 효과가 `null`인 동안은 우위 판정이 없는 기술적 연구이며 모델 선택·서비스 승격은 따라오지 않는다. ARM-B의 구체 판정 규칙은 §5a가 이 표보다 우선한다.
+
+## 5a. ARM-B 성공 기준 (≤2025 S6 결과 열람 전 고정)
+
+2026-09-30, ≤2025 S6(`S6_V4`) 결과를 읽기 전에 적는다. S6·V2 결과를 본 뒤 아래 값을 바꾸면 그 사실과 이유를 공개하고 새 등록 ID로 한다.
+
+- **주 추정치:** L1(투구 전 시작 모집단 E0) `Δ = V(π_cand) − V(π_ref)`, 초기 수비 팀 WE, PA당, 같은 PA 짝. 검열 노드 경계 때문에 Δ는 구간 `[Δ_lo, Δ_hi]`다.
+- **최소 효과(MEI) = 0.001 WE/PA(0.1%p) — 판단값, 측정 근거 없음.** 근거: (1) 한 팀은 경기마다 수십 PA를 수비하므로 PA당 0.1%p가 더해진다면 시즌 단위로 무시할 수 없는 규모다(PA 간 가산성은 가정, 승수 환산은 미측정). (2) 이보다 작은 값은 동결 π_b·q̂의 모형 오차와 구분하기 어렵다고 본다. **주의:** ≤2025 V2 편향 허용(tolerance 0.01, `delta_gap_se ≤ 0.005`)은 MEI보다 10배 크므로 V2 통과가 MEI 해상도의 비편향을 보증하지 않는다. τ = 0.1 후보는 평균 KL 0.0074로 BC에 매우 가까워 MEI 미만 결과가 나올 가능성이 크다.
+- **판정 규칙(한 번만 적용):**
+  - `IMPROVEMENT_SUPPORTED` ⇔ ① `Δ_lo`의 95% 경기 부트스트랩 CI 하한 > 0.001 ② 두 정책 모두 ESS 게이트(PA ≥ 100, 경기 ≥ 30) 통과 ③ 부트스트랩 무효 비율 ≤ 0.05 ④ 무결성 실패 0(`FAILED_INTEGRITY` 없음, 짝 identity 실행 cand=ref 차 정확히 0).
+  - `HARM_SUPPORTED` ⇔ `Δ_hi`의 95% CI 상한 < 0 이고 ②–④ 통과.
+  - ②·③ 실패 → `UNCONFIRMED_WEAK_OVERLAP`, ④ 실패 → `FAILED_INTEGRITY`. 그 밖 → **"개선 근거 없음"**(`NO_EVIDENCE_OF_IMPROVEMENT`; 0 < CI 하한 ≤ MEI도 여기다).
+  - 어느 경우에도 인과 식별은 가정이며(`identification = assumed_not_evidenced`), 결과는 서비스 승격을 자동으로 허가하지 않는다.
+- **1회 규칙:** 동결 스냅샷 `d20260930-h2026f`에서 **정확히 한 번** 실행한다. 재실행은 인프라 실패(hang guard·OOM·디스크 등, 보상/WE/결과 열람 전, 실패 로그·부분 원장 보존)일 때만 같은 등록·같은 범위로 한다. 결과 열람 뒤 재실행·문턱·τ·추정기·표본 변경은 없다.
+- **함께 보고(판정에 쓰지 않음):**
+  - L0(전 PA 경계), L2(E0 ∩ 완료, 처치 후 선택 조건부 평균 — 판정 없음), 검열 비율(사유별).
+  - R7: 타석 중 투수 교체 비율·미지 새 투수 비율과 2차 추정량(첫 교체 뒤 자연 경과) 민감도, 표시 "보류".
+  - 부분군(기술, 다중성 보정 없음): 선발/불펜(D87 역할 규칙), `bc_p_only_pitcher` 층, 월, TRAIN 볼륨 3분위, 연장, `W_exposed`/`W_post`.
+  - COOP-019 F3: 게이트 옆에 E0 전체(완료 ∪ 검열) 가중치의 최소 ESS. F5: 후보는 q̂ = Q^ref라 단일 강건(π̂_b가 틀리면 후보 쪽 편향 가능), 기준은 이중 강건이라는 문장.
+  - 보조 추정기 IS/SNIS/DM-only, clip 민감도 — 진단 전용.
 
 ## 6. 커버리지·ABS
 
@@ -80,3 +109,21 @@
 ## 8. 단계
 
 `M0` 메타데이터 사용 이력 감사·이 초안(현재) → `M1` 정책·추정량·출처·자료 가용성 해소(≤2025/합성으로 정책 어댑터·정규화·WE 부호/단위·fail-closed·알려진 정책 OPE 복원 검증, 식별 검토 포함) → `M2` **새 자료 접근 전** 과학·수집/QA 계획 등록(추정량·정책·nuisance pin, 달력·필드 허용 목록·ABS 이벤트 처리·접근 기록·품질 비노출 QA·중단 규칙·문턱, Astra 독립 검토) → `M3` 별도 승인된 **격리 스냅샷과 품질 비노출 QA**. 실제 자료 identity(스냅샷 버전·manifest 해시)는 이 단계에서 처음 생긴다 → `M3b` **최종 실행 등록 게이트**: 실제 스냅샷/manifest 해시, source C, plan D, 환경, 예산을 pin하고 독립 검토를 받는다 → `M4` 제한 profile·실행(M3b 통과 뒤 별도 사용자 실행 승인·Root release, 단일 heavy lock) → `M5` 감사·보고. 어느 단계도 이전 단계 통과만으로 자동 승인·release되지 않으며, 이 초안은 새 권한을 만들지 않는다. **이번 산출물은 M0까지다.** blocker와 담당은 [준비도 보고서](../reports/MLB-2026-evaluation-readiness-2026-09-28.md) §4.
+
+2026-09-30 개정: M1(정책·추정량 정의, ≤2025 리허설)은 S5·S6만 남았다. 이 개정은 M2의 과학 계획 부분 초안이며 등록이 아니다.
+
+## 9. 노출 공개 (보고서에 그대로 싣는다)
+
+- 평가 스냅샷 `d20260930-h2026f`: 2026-03-25~09-27, 716,792행, sha256 `c0c1eda4b515fc14dab79defe577b449e2695d40dd036f5c35ae52e37093ed9b`, 동결(`frozen=true`, [data/versions.md](../../data/versions.md)). 2026 적합·튜닝·선택에 쓰지 않는다.
+- 이전 수집본 `d20260911-s2325`(03-25~09-09)는 과거 **P0 12건·P1 8건 OPE**에 쓰였다. 선택 표본 68,425PA(ip100, 1,993경기), 2026 π_b 교차 적합(D18)·지원 집합(D19)·평가 정책 적응(D20)·모델 비교·채택(D22·D27·D30·D31·D39) 포함. 정확한 사용 경기 ID는 모름.
+- 따라서 `W_exposed`(03-25~09-09)는 노출 구간이고, `W_post`(09-10~09-27)는 이전 수집본 밖이지만 미사용 인증이 없어 **(c) 모름**이다. 주 결과는 전체 시즌이며 `contains_previously_exposed_window` 라벨을 붙이고 독립 확인이라 부르지 않는다.
+- 이번 후보·기준·π̂_b·q̂·τ·프로필은 모두 ≤2025 자료로만 정했다(τ는 June 2025 겹침·잡음 규칙, 결과값 비열람; D106의 격자 확장은 June 겹침 표를 본 뒤였다). 과거 2026 노출이 이번 후보 설계에 들어간 경로는 알려진 것이 없지만, 설계자가 과거 2026 OPE 결과를 알고 있었다는 사실은 남는다.
+
+## 10. 2026 실행 전에 모두 성립해야 하는 게이트
+
+1. ≤2025 S5 V2 채택: 실행기 accept **그리고** `delta_gap_se ≤ 0.005`(COOP-019 F1). 아니면 V2 미확정으로 S6·2026 모두 진행하지 않는다.
+2. S6 열람 전 봉인 V2 원장의 IS-only(q̂ := 0) 확인(COOP-019 조건 2).
+3. ≤2025 S6 완료·봉인(짝 identity 실행 통과, F3·F5 보고 포함).
+4. 이 초안(특히 §3 ARM-B pin, §5a, §9)에 대한 **Fable 5.1 좁은 검토**(D100 ③).
+5. M3b 최종 실행 등록: 스냅샷·manifest sha, source commit, config/addendum sha, 부트스트랩 seed(`seeds.base` 파생 규칙), 2026 비용 예산(미측정)·hang guard, `registered=true`로 전환.
+6. **사용자 서명**(최종 등록과 1회 실행 승인). 어느 게이트도 앞 게이트 통과만으로 자동으로 열리지 않는다.
