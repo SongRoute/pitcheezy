@@ -94,6 +94,20 @@ def test_future_hidden_and_saved_pre_pitch_recommendation(service):
             db.execute("UPDATE recommendations SET payload='{}'")
 
 
+def test_service_keeps_armb_policy_labels_and_legacy_defaults(service):
+    legacy = service.create(10, 1)['recommendation']
+    assert legacy['mode'] == 'experimental_location_proxy'
+    assert legacy['baseline_policy_id'] == 'observer-repertoire-kernel-v1'
+    assert legacy['value_spec_version'] == 'defense-we-pa-v1'
+    original = service.recommender.recommend
+    service.recommender.recommend = lambda pitch, pa: original(pitch, pa) | {
+        'mode': 'armb_type_location_proxy', 'baseline_policy_id': 'SupportedBC', 'value_spec_version': None,
+        'location_basis': 'realized_delivery_proxy', 'location_evaluated': False}
+    armb = service.create(10, 1)['recommendation']
+    assert armb['baseline_policy_id'] == 'SupportedBC' and armb['value_spec_version'] is None
+    assert armb['location_basis'] == 'realized_delivery_proxy' and armb['location_evaluated'] is False
+
+
 def test_slow_inference_does_not_block_other_session_reads_or_writes(service):
     first = service.create(10, 1)
     other = service.create(10, 1)

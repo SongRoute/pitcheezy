@@ -68,9 +68,10 @@ class ObserverService:
             model_sha = getattr(self.recommender, 'model_sha256', None)
             if model_sha is None and engine is not None and (BUNDLE/'bundle_manifest.json').is_file():
                 model_sha = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest()
-            result.update(model_identity=getattr(self.recommender, 'identity', None),
-                          model_sha256=model_sha, value_spec_version='defense-we-pa-v1',
-                          baseline_policy_id='observer-repertoire-kernel-v1')
+            result.update(model_identity=getattr(self.recommender, 'identity', None), model_sha256=model_sha)
+            # ARM-B results name their own reference policy; keep the legacy labels otherwise.
+            result.setdefault('value_spec_version', 'defense-we-pa-v1')
+            result.setdefault('baseline_policy_id', 'observer-repertoire-kernel-v1')
             return result
         except Exception:
             LOGGER.exception('Recommendation unavailable for pitch %s', pitch['id'])
