@@ -85,8 +85,8 @@
       "status": "PASS",
       "decided_by": "Song (user)",
       "date": "2026-10-01",
-      "record": "docs/decisions.md D124 (low-memory ledger 97affbb + S-B O(n) on top of the D121 PASS for c38cc61)",
-      "reviewed_code_commit": "9024bd986191ce28d3c647b8740d98f9d17ab5c4",
+      "record": "docs/decisions.md D126 (batch binding 10b323e runner-only, identity closure unchanged; + test-only commits under the D103 rule)",
+      "reviewed_code_commit": "a09ed7d39329368badebc8b7d17b95192de5b73b",
       "basis": "same-model review of 97affbb (no correctness bug; perf notes), Fable 5.1 COOP-024 PASS-with-conditions; synthetic golden digests equal to 25bcdb7; suites pass",
       "scope": "opens S0-S2 only (M-3); S3 and later still need independent_review",
       "validity": "for the code of reviewed_code_commit: register source_commit = reviewed_code_commit (the runner then refuses any later change under experiments/, src/, scripts/); a code change needs a new gate decision"
@@ -695,7 +695,7 @@
         "lightgbm": "4.6.0"
       }
     },
-    "source_commit": "9024bd986191ce28d3c647b8740d98f9d17ab5c4",
+    "source_commit": "a09ed7d39329368badebc8b7d17b95192de5b73b",
     "registered_config_sha256": null,
     "command_template": "PYTHONPATH=<pythonpath> <invoke_with> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
     "failure": "hang guard / RowBudget / integrity failures preserve the stage (failure-*.json, partial ledger prefix not citable); retries only as new attempts with the same scope",
@@ -779,5 +779,50 @@
       "other planning seeds for V4"
     ],
     "multiplicity": "descriptive; no confirmatory claim at <=2025"
+  },
+  "mlb2026_ope": {
+    "registered": true,
+    "status": "REGISTERED",
+    "review_gate": {
+      "status": "PENDING",
+      "reviewer": "claude-fable-5-1",
+      "record": "COOP-025 final pre-2026 review (pending)"
+    },
+    "snapshot": {
+      "version": "d20260930-h2026f",
+      "sha256": "c0c1eda4b515fc14dab79defe577b449e2695d40dd036f5c35ae52e37093ed9b",
+      "path": "/Users/song/Library/CloudStorage/GoogleDrive-sdstbbd@gmail.com/내 드라이브/pitcheezy/data/raw/d20260930-h2026f/holdout_2026/statcast_2026.parquet"
+    },
+    "season": [
+      "2026-03-25",
+      "2026-09-27"
+    ],
+    "output_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/MLB-2026-OPE-v1",
+    "row_budget": 150000000,
+    "b_v": 0.002734729542731599,
+    "max_attempts": 2,
+    "hang_guard_multiplier": 2,
+    "candidate_identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+    "estimator": {
+      "runtime": "ML-POLICY-RUNTIME-v3",
+      "censoring": "l1r",
+      "natural_course_refusals": [
+        "UNSUPPORTED_NO_LOGGED_ACTION",
+        "UNSUPPORTED_UNKNOWN_PITCHER",
+        "UNSUPPORTED_PITCHER_HAND",
+        "UNSUPPORTED_EMPTY_SUPPORT",
+        "UNSUPPORTED_INCONSISTENT_HISTORY"
+      ],
+      "gr_cap": 0.005,
+      "c_deltas": [
+        0.00801506103702984,
+        0.02784569868295147
+      ],
+      "mei": 0.001,
+      "v3_law": "tempered_alpha_0.5"
+    },
+    "vocab_unmapped_share_max": 0.01,
+    "bind_batch_games": 150,
+    "note": "D126: prereg configs/MLB-2026-OPE-PREREG-DRAFT-v1.json (D108/D109/D119/D120); one-shot on the frozen snapshot; row_budget = S6 9e6 x ~2,430/150 rounded up (projected ~1.23e8); vocab cap 1% of rows; batches of 150 games (D125 memory)"
   }
 }
