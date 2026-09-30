@@ -1555,8 +1555,8 @@ class DispatchTests(RunnerFixture):
             rpv.registration(config, 'fit-everything')
         with self.assertRaisesRegex(pa.IntegrityError, 'mlb2026_ope'):  # the 2026 OPE stays closed until registered
             rpv.registration(config, rpv.OPE)
-        with self.assertRaisesRegex(pa.IntegrityError, 'mlb2026_ope'):
-            rpv.registration(repo_config, rpv.OPE)
+        with self.assertRaisesRegex(pa.IntegrityError, 'mlb2026_ope'):  # independent of the committed 2026 block (D126)
+            rpv.registration({k: v for k, v in repo_config.items() if k != 'mlb2026_ope'}, rpv.OPE)
         estimator = {'runtime': pr.CONTRACT_V3, 'censoring': 'l1r', 'natural_course_refusals': list(est.H_K_REFUSALS),
                      'gr_cap': .005, 'c_deltas': [.008], 'mei': .001, 'v3_law': 'tempered_alpha_0.5'}
         ope = {'registered': True, 'status': 'REGISTERED', 'review_gate': {'status': 'PASS'}, 'output_root': '/elsewhere',
