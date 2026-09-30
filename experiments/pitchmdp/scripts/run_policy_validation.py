@@ -668,7 +668,7 @@ def seal_counts(facts, runtime, expected_pas):
     once, and every submitted request has exactly one ledger decision row (a fresh stage ledger)."""
     _require(len(facts) == expected_pas, 'handled PAs differ from the pinned census count')
     submitted = sum(info['submitted'] for info in facts.values())
-    _require(submitted == len(runtime.ledger.decisions()), 'ledger decision rows differ from the submitted requests')
+    _require(submitted == runtime.ledger.kinds['decision'], 'ledger decision rows differ from the submitted requests')
     return {'pas': len(facts), 'requests': submitted}
 
 
@@ -704,11 +704,11 @@ def censoring_sensitivities(ledger, facts, kwargs, estimator):
     base = {k: v for k, v in kwargs.items() if k != 'censoring'}
     natural = tuple(r for r in est.H_K_REFUSALS if r != prt.NO_LOGGED_ACTION)
     runs = {'S-v1': dict(censoring='worst_case'), 'S-NP': dict(censoring='l1r', natural=natural),
-            'S-B': dict(censoring='l1r', exclude=est.revealed_new_pitch(ledger, facts)),
+            'S-B': dict(censoring='l1r', exclude=est.revealed_new_pitch(ledger.iter_decisions(), facts)),
             **{f'S-C:{d}': dict(censoring='l1r', gap_delta=float(d)) for d in estimator['c_deltas']}}
     out = {}
     for name, extra in runs.items():
-        other, _ = est.estimate(ledger, facts, **base, **extra)
+        other, _ = est.estimate(ledger.iter_decisions(), facts, **base, **extra)
         out[name] = {k: other.get(k) for k in ('layers', 'bootstrap', 'censoring_rule', 'censoring', 'ess', 'status')}
         out[name]['label'] = 'registered censoring sensitivity; descriptive'
     return out
@@ -736,7 +736,7 @@ def paired_identity_run(runtime, store, blocks, facts, rows, *, no_pitch, kwargs
     pair_facts = submit_pas(runtime, store, blocks, Deadline(), no_pitch=no_pitch)
     for pa_id, info in pair_facts.items():  # the PA end is the same observed fact
         info.update({k: facts[pa_id].get(k) for k in ('reward', 'reason', 'kind', 'end', 'end_kind', 'flags')})
-    _, pair_rows = est.estimate(runtime.ledger.decisions(), pair_facts, **{**kwargs, 'ess_gate': None})
+    _, pair_rows = est.estimate(runtime.ledger.iter_decisions(), pair_facts, **{**kwargs, 'ess_gate': None})
     complete = {r['pa_id'] for r in pair_rows if r['status'] == est.COMPLETE}
     deltas = [abs(r['delta']) for r in pair_rows if r['status'] == est.COMPLETE]
     record = {'pas': len(complete), 'max_abs_delta': float(max(deltas, default=0.)),
@@ -764,13 +764,13 @@ def run_dr(runtime, store, components, blocks, deadline, *, no_pitch, bootstrap,
     if estimator is not None:
         kwargs['censoring'] = 'l1r'
     sealed = seal_counts(facts, runtime, len(blocks) if expected_pas is None else expected_pas)
-    result, rows = est.estimate(runtime.ledger.decisions(), facts, **kwargs)
+    result, rows = est.estimate(runtime.ledger.iter_decisions(), facts, **kwargs)
     if estimator is not None:
-        result['censoring_sensitivity'] = censoring_sensitivities(runtime.ledger.decisions(), facts, kwargs, estimator)
+        result['censoring_sensitivity'] = censoring_sensitivities(runtime.ledger, facts, kwargs, estimator)
     result['sealed_counts'] = sealed
     result['sensitivity'] = {}
     for variant in sensitivities:
-        other, _ = est.estimate(runtime.ledger.decisions(), variant_facts(facts, variant, store, components, games),
+        other, _ = est.estimate(runtime.ledger.iter_decisions(), variant_facts(facts, variant, store, components, games),
                                 **kwargs)
         result['sensitivity'][variant] = {'layers': other['layers'], 'status': other['status'],
                                           'label': 'registered sensitivity; descriptive'}

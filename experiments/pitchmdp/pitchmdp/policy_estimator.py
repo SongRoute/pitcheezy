@@ -344,11 +344,33 @@ def game_bootstrap(rows, *, draws, seed, invalid_share_max, minimum):
             'L2_conditional_ci95': None if not valid.any() or invalid / draws > invalid_share_max else q(conditional)}
 
 
+def by_pa(ledger_decisions, pas):
+    """(pa_id, facts, decision rows) in ``pas`` order, consuming the ledger rows once, so only one
+    PA's rows are held (D123). The runner submits PA by PA in ``pas`` order, so each PA's rows are
+    one contiguous run; rows left over (a PA without facts, or out of order) fail closed."""
+    stream = iter(ledger_decisions)
+
+    def take():
+        row = next(stream, None)
+        _require(row is None or row['pa_id'] in pas, 'every submitted PA needs its facts')
+        return row
+    pending = take()
+    for pa_id, info in pas.items():
+        decisions = []
+        while pending is not None and pending['pa_id'] == pa_id:
+            decisions.append(pending)
+            pending = take()
+        yield pa_id, info, decisions
+    if pending is not None:
+        raise IntegrityError(f'ledger rows of PA {pending["pa_id"]} are not one contiguous run in facts order')
+
+
 def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, ess_gate=None,
              censoring='worst_case', natural=H_K_REFUSALS, gap_delta=None, exclude=frozenset()):
     """Aggregate the ledger into per-PA values, layered bounds, bootstrap, ESS and diagnostics.
 
-    ``ledger_decisions``: decision rows in ledger order (``Ledger.decisions()``).
+    ``ledger_decisions``: decision rows in ledger order (``Ledger.iter_decisions()`` streams them;
+    a list works too), each PA's rows one contiguous run in ``pas`` order (``by_pa``).
     ``pas``: {pa_id: facts} for EVERY PA of the window: ``game``, ``in_population`` and
     ``start_reason`` (E0), ``problem``/``problem_index`` (structural defect), ``reward``/
     ``reason``/``kind`` (PA end), optional ``first_pitcher_change_index``, ``end_kind``,
@@ -356,13 +378,9 @@ def estimate(ledger_decisions, pas, *, draws, seed, invalid_share_max, minimum, 
     FAILED_* decision (a halted ledger is never aggregated). ``censoring``, ``natural``,
     ``gap_delta``, ``exclude``: see the module docstring; the defaults reproduce the registered D-5.
     """
-    by_pa = {}
-    for row in ledger_decisions:
-        by_pa.setdefault(row['pa_id'], []).append(row)
-    _require(set(by_pa) <= set(pas), 'every submitted PA needs its facts')
     rows, secondary = [], []
-    for pa_id, info in pas.items():
-        decisions = sorted(by_pa.get(pa_id, []), key=lambda d: d['decision_index'])
+    for pa_id, info, decisions in by_pa(ledger_decisions, pas):
+        decisions = sorted(decisions, key=lambda d: d['decision_index'])
         if pa_id in exclude:  # S-B: pre-decision exclusion from E0 (sensitivity only)
             _require(censoring == 'l1r', 'E0 exclusions are an L1-R sensitivity')
             info = {**info, 'in_population': False, 'start_reason': 'revealed_new_pitch_before_pa'}

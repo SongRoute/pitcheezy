@@ -133,50 +133,101 @@ def defer_or_raise(error):
 class Ledger:
     """Append-only JSONL; each row carries the previous row hash (tamper/truncation evident).
 
+    Low memory (D123): only the chain head (row count, last sha256, file size) and the row-kind
+    counts stay in memory. Rows are streamed back from the file, every row and the chain re-verified
+    up to the in-memory head, so a stream yields exactly the rows written or replayed (same bytes,
+    same hash chain as the former in-memory ``rows`` list).
+
     ponytail: single-writer file; concurrent writers need an OS lock (fcntl) upgrade.
     """
     def __init__(self, path, header):
-        self.path, self.rows = Path(path), []
+        self.path = Path(path)
+        self.count, self.head, self.size, self.offset, self.kinds = 0, None, 0, None, Counter()
         self.header = json.loads(_canonical_bytes({'kind': 'header', **header}))
         if self.path.exists():
             self._replay()
-            if {k: v for k, v in self.rows[0].items() if k not in ('seq', 'prev', 'sha256')} != self.header:
-                raise IntegrityError('ledger header pins differ from this runtime')
         else:
             self._append(self.header)
 
-    def _replay(self):
-        raw = self.path.read_bytes()
-        if not raw.endswith(b'\n'):
-            raise IntegrityError('ledger truncated mid-row; refuse to repair')
-        prev = None
-        for seq, line in enumerate(raw.splitlines(keepends=True)):
-            try:
-                row = json.loads(line)
-            except ValueError as error:
-                raise IntegrityError(f'ledger row {seq} malformed') from error
-            body = {k: v for k, v in row.items() if k != 'sha256'}
-            if (row.get('seq') != seq or row.get('prev') != prev or _canonical_bytes(row) != line
-                    or row.get('sha256') != canonical_hash(body)):
-                raise IntegrityError(f'ledger row {seq} tampered, reordered or not canonical')
-            prev = row['sha256']
-            self.rows.append(row)
-        if not self.rows or self.rows[0].get('kind') != 'header':
-            raise IntegrityError('ledger header missing')
-
-    def _append(self, record):
-        body = {**record, 'seq': len(self.rows), 'prev': self.rows[-1]['sha256'] if self.rows else None}
-        row = {**body, 'sha256': canonical_hash(body)}
-        with critical_section():  # a hang-guard interrupt lands after the row is on disk AND in memory
-            with self.path.open('ab') as stream:
-                stream.write(_canonical_bytes(row))
-                stream.flush()
-                os.fsync(stream.fileno())
-            self.rows.append(row)
+    @staticmethod
+    def _parse(line, seq):
+        try:
+            row = json.loads(line)
+        except ValueError as error:
+            raise IntegrityError(f'ledger row {seq} malformed') from error
+        if (not isinstance(row, dict) or _canonical_bytes(row) != line
+                or row.get('sha256') != canonical_hash({k: v for k, v in row.items() if k != 'sha256'})):
+            raise IntegrityError(f'ledger row {seq} tampered, reordered or not canonical')
         return row
 
+    def _stream(self, head=None):
+        """Yield (byte offset, row), each row verified (canonical bytes, own hash, seq, prev link).
+        With ``head`` = (rows, last sha256) the file must end exactly at that chain head."""
+        seq, prev, offset = 0, None, 0
+        with self.path.open('rb') as stream:
+            size = stream.seek(0, os.SEEK_END)
+            stream.seek(max(size - 1, 0))
+            if stream.read(1) != b'\n':
+                raise IntegrityError('ledger truncated mid-row; refuse to repair')
+            stream.seek(0)
+            for line in stream:
+                if head is not None and seq >= head[0]:
+                    raise IntegrityError('ledger file has rows beyond the in-memory chain head')
+                row = self._parse(line, seq)
+                if row.get('seq') != seq or row.get('prev') != prev:
+                    raise IntegrityError(f'ledger row {seq} tampered, reordered or not canonical')
+                yield offset, row
+                seq, prev, offset = seq + 1, row['sha256'], offset + len(line)
+        if head is not None and (seq, prev) != tuple(head):
+            raise IntegrityError('ledger file differs from the in-memory chain head')
+
+    def _replay(self):
+        first = None
+        for _, row in self._stream():
+            first = row if first is None else first
+            self.count, self.head = self.count + 1, row['sha256']
+            self.kinds[row['kind']] += 1
+        self.size = self.path.stat().st_size  # every byte was in a verified row (the file ends with a newline)
+        if first is None or first.get('kind') != 'header':
+            raise IntegrityError('ledger header missing')
+        if {k: v for k, v in first.items() if k not in ('seq', 'prev', 'sha256')} != self.header:
+            raise IntegrityError('ledger header pins differ from this runtime')
+
+    def _append(self, record):
+        body = {**record, 'seq': self.count, 'prev': self.head}
+        row = {**body, 'sha256': canonical_hash(body)}
+        data = _canonical_bytes(row)
+        with critical_section():  # a hang-guard interrupt lands after the row is on disk AND in memory
+            with self.path.open('ab') as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            self.offset, self.size, self.count, self.head = self.size, self.size + len(data), self.count + 1, row['sha256']
+            self.kinds[row['kind']] += 1
+        return row
+
+    def stream(self):
+        """(byte offset, row) of every row up to the in-memory head, re-verified while streaming."""
+        return self._stream((self.count, self.head))
+
+    def iter_rows(self):
+        return (row for _, row in self.stream())
+
+    def iter_decisions(self):
+        return (row for row in self.iter_rows() if row['kind'] == 'decision')
+
+    @property
+    def rows(self):
+        return list(self.iter_rows())
+
     def decisions(self):
-        return [r for r in self.rows if r['kind'] == 'decision']
+        return list(self.iter_decisions())
+
+    def read(self, offset):
+        """The row stored at ``offset`` (a runtime index entry), re-verified (canonical bytes, own hash)."""
+        with self.path.open('rb') as stream:
+            stream.seek(offset)
+            return self._parse(stream.readline(), f'at byte {offset}')
 
 
 class PolicyRuntime:
@@ -238,14 +289,14 @@ class PolicyRuntime:
                      **({'contract': CONTRACT_V3, 'positivity_record': True} if self.positivity_record else {})}))
         self.sha256 = canonical_hash(self.pins)
         self.ledger = Ledger(ledger_path, {'runtime_sha256': self.sha256, 'pins': self.pins})
-        self.by_request, self.pa = {}, {}
-        for row in self.ledger.decisions():
-            self._index(row)
-        self.halted = any(r['kind'] in ('conflict', 'malformed', 'aborted') or r.get('status') in FATAL
-                          for r in self.ledger.rows)
+        self.by_request, self.pa, self.halted = {}, {}, False  # by_request: request ID -> ledger byte offset
+        for offset, row in self.ledger.stream():
+            if row['kind'] == 'decision':
+                self._index(row, offset)
+            self.halted = self.halted or row['kind'] in ('conflict', 'malformed', 'aborted') or row.get('status') in FATAL
 
-    def _index(self, row):
-        self.by_request[row['request_id']] = row
+    def _index(self, row, offset):
+        self.by_request[row['request_id']] = offset
         pa = self.pa.setdefault(row['pa_id'], {'next': 0, 'refused': None, 'last_logged': None})
         pa['next'] = row['decision_index'] + 1
         pa['last_logged'] = row['logged_action']
@@ -407,7 +458,9 @@ class PolicyRuntime:
             self.halted = True
             raise IntegrityError('malformed request') from failure
         if request.request_id in self.by_request:
-            stored = self.by_request[request.request_id]
+            stored = self.ledger.read(self.by_request[request.request_id])
+            if stored.get('kind') != 'decision' or stored.get('request_id') != request.request_id:
+                raise IntegrityError('ledger row at the indexed offset is not this request')
             if stored['fingerprint'] == fingerprint:
                 if stored['status'] in FATAL:
                     raise IntegrityError('replayed request had failed integrity: ' + stored['detail'])
@@ -437,7 +490,7 @@ class PolicyRuntime:
             'pitcher_hand': request.pitcher_hand, 'batter_side': s.batter_side, 'balls': int(s.balls),
             'strikes': int(s.strikes), 'history_actions': [h.action for h in s.history],
             'logged_action': request.logged_action, 'context_sha256': context, 'result': result})
-        self._index(row)
+        self._index(row, self.ledger.offset)
         if status in FATAL:
             self.halted = True
             if status == FAILED_RUNTIME:
@@ -451,10 +504,11 @@ class PolicyRuntime:
         self.halted = True
 
     def summary(self):
-        """Denominators from the ledger alone: every request ID once, every PA once."""
-        rows = self.ledger.decisions()
-        pas, first = {}, {}
-        for row in rows:  # ledger order = decision order within each PA
+        """Denominators from the ledger alone: every request ID once, every PA once (one streamed pass)."""
+        pas, first, statuses, requests, searches = {}, {}, Counter(), 0, 0
+        for row in self.ledger.iter_decisions():  # ledger order = decision order within each PA
+            requests += 1
+            statuses[row['status']] += 1
             status = pas.setdefault(row['pa_id'], SUPPORTED)
             if row['status'] in FATAL:
                 pas[row['pa_id']] = row['status']
@@ -462,18 +516,18 @@ class PolicyRuntime:
                 pas[row['pa_id']] = MID_PA if row['decision_index'] > 0 else row['status']
             if row['status'] not in EVALUATED and row['status'] != MID_PA:
                 first.setdefault(row['pa_id'], row['status'])
-        return {'requests': len(rows), 'request_status': dict(Counter(r['status'] for r in rows)),
+            searches += row['status'] == LOGGING_POSITIVITY and (row['result'] or {}).get('candidate') is not None
+        return {'requests': requests, 'request_status': dict(statuses),
                 'pas': len(pas), 'pa_status': dict(Counter(pas.values())),
                 'pa_first_refusal': dict(Counter(first.values())),
-                'conflicts': sum(r['kind'] == 'conflict' for r in self.ledger.rows),
-                'malformed': sum(r['kind'] == 'malformed' for r in self.ledger.rows),
-                'aborted': sum(r['kind'] == 'aborted' for r in self.ledger.rows),
+                'conflicts': self.ledger.kinds['conflict'],
+                'malformed': self.ledger.kinds['malformed'],
+                'aborted': self.ledger.kinds['aborted'],
                 'run_status': 'HALTED' if self.halted else 'OK',
-                'ledger_rows': len(self.ledger.rows), 'ledger_head_sha256': self.ledger.rows[-1]['sha256'],
+                'ledger_rows': self.ledger.count, 'ledger_head_sha256': self.ledger.head,
                 'runtime_sha256': self.sha256, 'population_value': None,
-                **({'positivity_candidate_searches': sum(  # v3 cost (S-M1): searches run for refused rows
-                    r['status'] == LOGGING_POSITIVITY and (r['result'] or {}).get('candidate') is not None
-                    for r in rows)} if self.positivity_record else {})}
+                **({'positivity_candidate_searches': searches}  # v3 cost (S-M1): searches run for refused rows
+                   if self.positivity_record else {})}
 
     def verify_components(self):
         """Stage-end check before sealing results: for a candidate runtime, the pinned code,
