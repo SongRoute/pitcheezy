@@ -298,6 +298,48 @@ def style_snapshot(frame, as_of):
     return values
 
 
+# 2026 snapshot (COOP-019 F2). Additive: the <=2025 runner never calls these. The as-of is pinned to the
+# 2026 regular-season opening day recorded in src/pitcheezy/data/statcast_fetch.py SEASON_DATES[2026][0]
+# (3/25 NYY@SFG) and in configs/MLB-2026-POLICY-PREPARATION-v1.json common.profile_as_of.as_of_exclusive.
+PROFILE_AS_OF_2026 = '2026-03-25'
+SOURCE_MAX_DATE_2026 = pd.Timestamp('2025-12-31')
+
+
+def style_snapshot_2026(frame, as_of=PROFILE_AS_OF_2026):
+    """``style_snapshot`` at the pinned 2026 as-of, refusing if any source row (dated before as-of)
+    is after 2025-12-31, so a later evaluation-window start can never pull 2026 rows into profiles."""
+    _require(pd.Timestamp(as_of).normalize() == pd.Timestamp(PROFILE_AS_OF_2026),
+             f'2026 style as-of must be the pinned opening day {PROFILE_AS_OF_2026}')
+    dates = pd.to_datetime(frame.game_date).dt.normalize()
+    source_max = dates[dates < pd.Timestamp(PROFILE_AS_OF_2026)].max()
+    _require(pd.notna(source_max) and source_max <= SOURCE_MAX_DATE_2026,
+             f'2026 style snapshot source rows must satisfy max(game_date) <= 2025-12-31 (got {source_max})')
+    return style_snapshot(frame, PROFILE_AS_OF_2026)
+
+
+def snapshot_end_of_history_mismatches(history, snapshot):
+    """Replacement for ``snapshot_rolling_mismatches`` in 2026, where no rolling prior can be built
+    (add_batter_style_history rejects 2026 dates). History is cumulative without decay
+    (archetypes.py daily cumsum minus same day), so the 2026 snapshot must equal the rolling profile
+    probed at 2025-12-31 over the complete <=2025 history, built here from ``history`` directly,
+    not through ``style_snapshot``'s as-of filter or probe date. Compares batter sets and values."""
+    dates = pd.to_datetime(history.game_date).dt.normalize()
+    _require(len(history) and dates.max() <= SOURCE_MAX_DATE_2026, 'end-of-history check needs <=2025 rows only')
+    columns = [c for c in ('batter', 'events', 'description', 'is_pa_terminal', 'launch_angle') if c in history.columns]
+    batters = np.sort(pd.unique(history.batter))
+    probe = pd.DataFrame({'batter': np.r_[batters, -1], 'game_date': SOURCE_MAX_DATE_2026, 'events': None,
+                          'description': '', 'is_pa_terminal': False})
+    if 'launch_angle' in columns:
+        probe['launch_angle'] = np.nan
+    built = add_batter_style_history(pd.concat([history[columns].assign(game_date=dates), probe], ignore_index=True))
+    expected = built.iloc[len(history):][list(HISTORY_COLUMNS)].astype(np.float32)
+    expected.index = [str(int(b)) for b in batters] + [LEAGUE]
+    same_index = list(expected.index) == list(snapshot.index)
+    mismatches = (int((expected.to_numpy(np.float32) != snapshot[list(HISTORY_COLUMNS)].to_numpy(np.float32))
+                      .any(axis=1).sum()) if same_index else len(expected))
+    return {'batters': len(batters), 'same_batters': same_index, 'mismatches': mismatches}
+
+
 def apply_style_snapshot(rows, snapshot, as_of):
     """Replace the style columns of evaluation rows by the frozen snapshot; batters absent from it
     take the ``league`` row. Every row must be dated on/after ``as_of`` (no mixing). Returns

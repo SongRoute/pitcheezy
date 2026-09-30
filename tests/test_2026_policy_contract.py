@@ -157,3 +157,15 @@ def test_logged_action_statuses_are_distinct():
         C.action_index(C.VOCAB, "KN")                                                        # unknown label
     with pytest.raises(C.Unsupported):
         C.logging_ratio(ref[C.VOCAB.index("FF")], 0.)                                        # zero estimated logging mass
+
+
+def test_profile_as_of_2026_is_pinned_to_opening_day():
+    """COOP-019 F2: config, code constant and the recorded 2026 opening day agree."""
+    import json
+
+    from pitchmdp import policy_requests as preq
+    from pitcheezy.data.statcast_fetch import SEASON_DATES
+
+    cfg = json.loads((ROOT / "configs/MLB-2026-POLICY-PREPARATION-v1.json").read_text())["common"]["profile_as_of"]
+    assert cfg["status"] == "proposal"
+    assert cfg["as_of_exclusive"] == preq.PROFILE_AS_OF_2026 == SEASON_DATES[2026][0].isoformat()

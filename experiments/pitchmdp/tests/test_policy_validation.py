@@ -4,6 +4,7 @@ G0/WE files from test_policy_identity; the D89 enumerated toy PA as the exact DR
 data, model weights or 2026 access.
 """
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -415,6 +416,38 @@ class RequestTests(unittest.TestCase):
         loaded, loaded_as_of, _ = pa.load_style_snapshot(path, file_sha)
         pd.testing.assert_frame_equal(loaded, snapshot)
         self.assertEqual(loaded_as_of, as_of)
+
+    def test_style_snapshot_le2025_output_unchanged(self):
+        # Golden digest from the pre-F2 base (6bd76fd): the <=2025 path must stay bit-identical.
+        s = preq.style_snapshot(self.frame, '2025-07-01')
+        digest = hashlib.sha256(s.to_numpy('float32').tobytes() + '|'.join(s.index).encode()).hexdigest()
+        self.assertEqual(digest, 'b1478c46e72b50aa4d8f5b74b7ee057b383dfbc9473e6db0d53923f2cd0513b8')
+
+    def test_style_snapshot_2026_pinned_source_guard_and_end_of_history(self):
+        # <=2025 history plus synthetic 2026 regular-season rows (on/after the pinned opening day).
+        history = self.frame.drop(columns=list(HISTORY_COLUMNS))
+        season = history.copy()
+        season['game_date'] = '2026-04-02'
+        season['events'] = 'home_run'
+        frame = pd.concat([history, season], ignore_index=True)
+        snapshot = preq.style_snapshot_2026(frame)
+        pd.testing.assert_frame_equal(snapshot, preq.style_snapshot(history, preq.PROFILE_AS_OF_2026))
+        self.assertEqual(preq.snapshot_end_of_history_mismatches(history, snapshot),
+                         {'batters': len(snapshot) - 1, 'same_batters': True, 'mismatches': 0})
+        # A later evaluation-window start would pull 2026 rows into the source: refused.
+        with self.assertRaisesRegex(pa.IntegrityError, 'pinned opening day'):
+            preq.style_snapshot_2026(frame, '2026-04-10')
+        early = frame.copy()
+        early.loc[len(history), 'game_date'] = '2026-03-20'  # a 2026 row dated before as-of
+        with self.assertRaisesRegex(pa.IntegrityError, r'max\(game_date\) <= 2025-12-31'):
+            preq.style_snapshot_2026(early)
+        # The replacement check catches a snapshot that absorbed evidence outside the <=2025 history
+        # (proxy: extra rows dated late 2025, since a 2026-dated source is refused upstream).
+        extra = season.assign(game_date='2025-11-01')
+        leaked = preq.style_snapshot(pd.concat([history, extra], ignore_index=True), preq.PROFILE_AS_OF_2026)
+        self.assertGreater(preq.snapshot_end_of_history_mismatches(history, leaked)['mismatches'], 0)
+        with self.assertRaisesRegex(pa.IntegrityError, '<=2025 rows only'):
+            preq.snapshot_end_of_history_mismatches(early, snapshot)
 
     def test_census_manifest_and_roles(self):
         census = preq.census(self.frame, TYPES)

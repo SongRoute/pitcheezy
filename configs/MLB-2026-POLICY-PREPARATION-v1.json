@@ -134,9 +134,13 @@
   "common": {
     "decision_history": "pre-pitch game state + strictly previous same-PA pitches (type, physics, outcome, pre-pitch count) + frozen profiles; no current/future pitch fields",
     "profile_as_of": {
-      "value": "frozen batter style snapshot with as_of_exclusive = first 2026 evaluation date: every regular-season row dated before it (<= 2025), league row (reliability 0) for batters first seen in 2026; no 2026 rolling profile/repertoire update",
+      "value": "frozen batter style snapshot with as_of_exclusive = 2026-03-25 (pinned 2026 regular-season opening day, not the evaluation-window start): every regular-season row dated before it (<= 2025), league row (reliability 0) for batters first seen in 2026; no 2026 rolling profile/repertoire update",
+      "as_of_exclusive": "2026-03-25",
+      "as_of_source": "src/pitcheezy/data/statcast_fetch.py SEASON_DATES[2026][0] (3/25 NYY@SFG, MLB Stats API schedule gameType=R, queried 2026-09-11)",
+      "source_guard": "refuse unless max(game_date) of snapshot source rows (dated before as-of) <= 2025-12-31; code: experiments/pitchmdp/pitchmdp/policy_requests.py style_snapshot_2026",
+      "consistency_check": "replaces the <=2025 bit-equal rolling check (not runnable on 2026 dates): the snapshot must equal, bit for bit and with the same batter set, the rolling profile probed at 2025-12-31 over the complete <=2025 history (history is cumulative without decay, archetypes.py add_batter_style_history daily cumsum); code: policy_requests.snapshot_end_of_history_mismatches, pass = mismatches 0 and same_batters true",
       "status": "proposal",
-      "changed_by": "D93 D-7 (rehearsed at <=2025 with the window-start snapshot)",
+      "changed_by": "D93 D-7 (rehearsed at <=2025 with the window-start snapshot); COOP-019 F2 condition 4 (pinned date, source guard, replacement check)",
       "review": "next Astra review item"
     },
     "evaluation_start": "first pitch 0-0 of each PA, weight 1 (D87 proposal)",
