@@ -16,7 +16,7 @@
   "execution": {
     "enabled": true,
     "real_data_enabled": true,
-    "reason": "D96/D100: registration and execution switches are on; the code-review gate (D100, source commit 9c25d8e) opens S0-S2, which the user approved to run consecutively while every registered gate passes (stop on failure, gate miss or a needed value); S3+ stay closed by the independent-review gate (Fable 5.1). No BC export, inference, OPE or 2026 access is authorized by this approval."
+    "reason": "D96/D100: registration and execution switches are on; the code-review gate (D102, source commit fa82afb) opens S0-S2, which the user approved to run consecutively while every registered gate passes (stop on failure, gate miss or a needed value); S3+ are open under the Fable 5.1 independent review PASS_WITH_CONDITIONS (D102). No BC export, inference, OPE or 2026 access is authorized by this approval."
   },
   "documents": {
     "contract": "docs/contracts/ML-POLICY-MATERIALIZATION-v1.md",
@@ -85,15 +85,21 @@
       "status": "PASS",
       "decided_by": "Song (user)",
       "date": "2026-09-30",
-      "record": "docs/decisions.md D100 (re-judged after the D98 fix; first PASS D94 for 5186810)",
-      "reviewed_code_commit": "9c25d8eaa60a9199f7d1e9117d1489d007de062d",
-      "basis": "D94 basis for 5186810 plus one same-model adversarial review of the D98/D99 diff (4fcb5fa, 9c25d8e): 0 blocker, 0 major, 3 minor addressed or recorded; not an independent review",
+      "record": "docs/decisions.md D102 (re-judged after the D101 exFAT fix and COOP-019 F2; earlier PASS D94 for 5186810, D100 for 9c25d8e)",
+      "reviewed_code_commit": "fa82afb6695a8600870e563d134abd3abd3934cf",
+      "basis": "D94 basis for 5186810; same-model adversarial reviews of the D98/D99 diff (4fcb5fa, 9c25d8e) and the D101 batch (70968eb, 07da7c8, fa82afb): 0 blocker, 0 major each; not an independent review",
       "scope": "opens S0-S2 only (M-3); S3 and later still need independent_review",
       "validity": "for the code of reviewed_code_commit: register source_commit = reviewed_code_commit (the runner then refuses any later change under experiments/, src/, scripts/); a code change needs a new gate decision"
     },
     "independent_review": {
-      "status": null,
-      "reviewer": "claude-fable-5-1 (D100: the user designated Fable 5.1 as the core reviewer; the author is Opus 5.5)", "note": "in progress; S3 and later stay closed until this is PASS"
+      "status": "PASS",
+      "verdict": "PASS_WITH_CONDITIONS (conditions below are procedural and are checked at the stage they name)",
+      "decided_by": "Song (user), on the Fable 5.1 verdict",
+      "date": "2026-09-30",
+      "record": "docs/reviews/COOP-019-fable-core-review-2026-09-30.md; docs/decisions.md D102",
+      "reviewed_code_commit": "9c25d8eaa60a9199f7d1e9117d1489d007de062d",
+      "conditions": ["S3b thresholds and tau grid committed before the June ledger is opened", "before S5: register tolerance together with a delta_gap_se ceiling (F1)", "before S6 is read: reviewer-side IS-only check on the sealed V2 ledger (F1)", "S6 report: min ESS over all E0 weights beside the gate (F3) and the candidate single-robustness statement (F5)", "2026: pinned profile_as_of and source-date guard (F2, implemented in fa82afb)"],
+      "reviewer": "claude-fable-5-1 (D100: the user designated Fable 5.1 as the core reviewer; the author is Opus 5.5)", "note": "opens S3 and later subject to the conditions; the D101 batch after 9c25d8e (exFAT write, is_appledouble reuse, additive F2) was same-model reviewed only"
     }
   },
   "seeds": {
@@ -627,7 +633,7 @@
         "lightgbm": "4.6.0"
       }
     },
-    "source_commit": "9c25d8eaa60a9199f7d1e9117d1489d007de062d",
+    "source_commit": "fa82afb6695a8600870e563d134abd3abd3934cf",
     "registered_config_sha256": null,
     "command_template": "PYTHONPATH=<pythonpath> <invoke_with> experiments/pitchmdp/scripts/run_policy_validation.py --config configs/ML-POLICY-MATERIALIZATION-v1.json [--addendum <addendum.json> ...] --local-config experiments/pitchmdp/configs/local.json --output <root>/<new attempt dir> {census|materialize-bc|style-snapshot|bind-probe|profile|tau-select|v5-denominators|v2-world|dr-evaluate}",
     "failure": "hang guard / RowBudget / integrity failures preserve the stage (failure-*.json, partial ledger prefix not citable); retries only as new attempts with the same scope",
