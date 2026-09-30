@@ -81,3 +81,47 @@ class ObservedDeliveryKernel:
         weights /= weights.sum(axis=1, keepdims=True)
         support = 1/np.square(weights).sum(axis=1)
         return weights, support, mass
+
+
+ARMB_MODE = 'armb_type_location_proxy'
+LOCATION_BASIS = 'realized_delivery_proxy'
+LOCATION_NOTE = '위치는 이 투수의 실제 투구 분포 기반 근사이며 평가되지 않았습니다.'
+
+
+def armb_recommendation(type_probabilities: Mapping[str, float], evaluation: PrePitchEvaluation,
+                        balls: int, strikes: int, zone_bounds: dict, *, policy_identity=None,
+                        top_k: int = 3) -> dict:
+    """ARM-B pitch-type ranking first; each type gets an unevaluated location proxy.
+
+    ``type_probabilities`` is the ARM-B law over pitch types only (KL-regularized
+    candidate over the pitcher's TRAIN repertoire). The zone is the supported
+    (ESS/mass rule) realized-delivery kernel cell with the most local mass for
+    that type at this count. No value or policy claim is made about the zone.
+    """
+    from .domain import PITCH_LABELS, ZONE_BY_ID
+    probs = {str(k): float(v) for k, v in type_probabilities.items()}
+    values = np.array(list(probs.values()))
+    if not probs or not np.isfinite(values).all() or (values < 0).any() or abs(values.sum()-1) > 1e-6:
+        raise ValueError('ARM-B type probabilities must be a finite distribution')
+    ranked = sorted((name for name, p in probs.items() if p > 0), key=lambda name: (-probs[name], name))[:top_k]
+    mass, ess = evaluation.kernel_mass, evaluation.support_ess
+    candidates = []
+    for rank, name in enumerate(ranked, 1):
+        options = [a for a in evaluation.actions if a.pitch_type == name]
+        best = max(options, key=lambda a: (mass[balls, strikes, a.index], a.zone_id)) if options else None
+        candidates.append({
+            'rank': rank, 'pitch_type': name, 'pitch_label': PITCH_LABELS.get(name, name),
+            'zone_id': best.zone_id if best else None,
+            'zone_label': ZONE_BY_ID[best.zone_id]['label'] if best else '위치 근사 불가(표본 부족)',
+            'target': best.target if best else None,
+            'location_basis': LOCATION_BASIS, 'location_evaluated': False,
+            # Secondary (D49): numbers are shown only after type and target.
+            'detail': {'probability': probs[name],
+                       'kernel_mass': float(mass[balls, strikes, best.index]) if best else None,
+                       'kernel_ess': round(float(ess[balls, strikes, best.index]), 1) if best else None}})
+    return {'status': 'ready', 'mode': ARMB_MODE, 'model_version': evaluation.model_version,
+            'policy_identity': policy_identity, 'baseline_policy_id': 'SupportedBC', 'value_spec_version': None,
+            'candidates': candidates, 'baseline_value': None, 'zone_bounds': zone_bounds, 'reason': None,
+            'location_basis': LOCATION_BASIS, 'location_evaluated': False, 'location_note': LOCATION_NOTE,
+            'location_proxy_identity': ObservedDeliveryKernel.identity,
+            'basis': ['구종 순위는 ARM-B(구종 전용) 정책 확률', LOCATION_NOTE]}

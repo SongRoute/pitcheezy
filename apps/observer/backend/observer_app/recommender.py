@@ -19,7 +19,7 @@ from .settings import BUNDLE, CONFIG, RUN, REPO, require_storage
 from .domain import ZONES, PITCH_LABELS, target_point
 from .explanations import explain_choices
 from .recommendation_adapter import (CandidateAction, ObservedDeliveryKernel,
-    OUTCOMES, PrePitchEvaluation, PrePitchInput, VALUE_SPEC_VERSION)
+    OUTCOMES, PrePitchEvaluation, PrePitchInput, VALUE_SPEC_VERSION, armb_recommendation)
 
 
 def digest(value):
@@ -39,7 +39,10 @@ def supported_actions(support, mass):
 
 
 class Recommender:
-    def __init__(self, execution_distribution=None):
+    def __init__(self, execution_distribution=None, type_policy=None):
+        # type_policy: callable(PrePitchInput) -> {pitch_type: probability}, the
+        # ARM-B law. None keeps the experimental_location_proxy mode unchanged.
+        self.type_policy = type_policy
         self.execution_distribution = (ObservedDeliveryKernel() if execution_distribution is None
                                        else execution_distribution)
         if type(self.execution_distribution) is not ObservedDeliveryKernel:
@@ -94,6 +97,8 @@ class Recommender:
     def recommend(self, pitch, pa):
         # Deliberately extract the pre-pitch request only. Actual and future rows
         # cannot affect cache identity or predictions.
+        if self.type_policy is not None:
+            return self.recommend_armb(pitch, pa)
         inputs = PrePitchInput.from_replay(pitch, pa)
         request = inputs.request
         balls, strikes = request.pop('balls'), request.pop('strikes')
@@ -119,6 +124,21 @@ class Recommender:
                 self.computations += 1
             self.last_latency_ms = round((time.perf_counter()-started)*1000, 2)
             return copy.deepcopy(recommendations[f'{balls}-{strikes}'])
+
+    def recommend_armb(self, pitch, pa):
+        """ARM-B pitch-type ranking with a per-type realized-delivery location proxy.
+
+        ponytail: recomputes the location kernel per call (no cache); add the
+        recommendation cache once a bound ARM-B runtime identity exists.
+        """
+        inputs = PrePitchInput.from_replay(pitch, pa)
+        balls, strikes = inputs.request['balls'], inputs.request['strikes']
+        evaluation = self.evaluate_pre_pitch(pitch, pa)
+        result = armb_recommendation(self.type_policy(inputs), evaluation, balls, strikes,
+                                     inputs.zone_bounds, policy_identity=getattr(self.type_policy, 'identity', None))
+        result['id'] = digest([self.identity, result['policy_identity'], inputs.request,
+                               inputs.zone_bounds, inputs.repertoire_counts])
+        return result
 
     def evaluate_pre_pitch(self, pitch, pa):
         """Expose every supported candidate at the current pre-pitch count.
