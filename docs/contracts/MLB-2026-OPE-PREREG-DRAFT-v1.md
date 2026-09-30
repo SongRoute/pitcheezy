@@ -6,6 +6,8 @@
 
 > **2026-09-30 개정(D100·D107 반영, 여전히 DRAFT).** 평가 arm을 **ARM-B(구종만)**로 정했고(D100 ⑨, CV 의도 없음) ARM-A는 보류로 남는다. ≤2025 리허설이 동결한 후보·기준·로깅 법칙·추정기를 §3에 pin하고, **≤2025 S6 결과를 읽기 전에** 성공 기준(§5a), 노출 공개(§9), 2026 실행 전 게이트(§10)를 적는다. 최종 등록과 실행은 §10 게이트 뒤 별도로 한다.
 
+> **2026-09-30 개정 2(Fable 5.1 좁은 검토 COOP-020 조건 반영, 여전히 DRAFT).** 판정 라벨을 통계적 개선(`IMPROVEMENT_SUPPORTED_STATISTICAL`, D108 규칙 그대로)과 편향 한계를 넘는 개선(`IMPROVEMENT_SUPPORTED`)으로 나눴고(§5a), 보상 WE identity를 pin했고(§3), 1회 실행의 hang guard·중단 규칙(§5a), 검정력 공개 자리(§5a), 부분군 다중성 정리(§5), H_t 필드 목록(§5), 스냅샷 출처(§9), ESS 게이트가 τ 0.1에서 구속력이 없다는 사실(§5a)을 적었다. D108 문턱(MEI 0.001, ESS PA 100·경기 30, 무효 0.05)은 바꾸지 않았다.
+
 ## 1. 전제
 
 - 2026 정규시즌은 **OPE 전용**이다(CLAUDE.md). 학습·튜닝·모델 선택에 쓰지 않는다. 2026을 G0 예측 NLL 홀드아웃으로 쓰지 않는다.
@@ -45,6 +47,7 @@
   - 기준 π_ref: SupportedBC(BC-P를 M으로 제한·재정규화, 동결 전 1회). BC-P sha `b4f274eb…`, 지원 표 sha `152cdab4…`(addendum 2).
   - 로깅 법칙 π̂_b: **전체 어휘 BC-P, 재정규화하지 않는다**(D-1). 2026 적합 없음.
   - DR q̂: 평가 seed의 동결 simulator MC(M-7, S3b에서 기계적으로 정해 식별자에 포함). 후보는 q̂ = Q^ref라 **단일 강건**, 기준은 이중 강건(COOP-019 F5).
+  - 보상 WE(`FrozenWE(inputs, game_values)`, `game.terminal_values`·`WinExpectancy.predict_defense`): C0 계약 [model-v1.json](model-v1.json) sha256 `d0f1d452331d3f7ad32ca310442bad3ef61bab1b16747829f4190c0f0653ac13`, bundle manifest `43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f`, source lineage(`source_hashes.json`) `6d6f777bacde98d5c60b2d61cd594fda172fd63f99c315a002b5e7291afb099a`, `game_values.pkl` `aa6c4e486cc6b027758d966ab680566a4a4ce2afa4a918dd26f8fb65c8957677`(ML-POLICY-MATERIALIZATION-v1 `identity_registration`·`model-v1.json`; 계약→manifest→lineage→bytes 순 확인, ≤2025 리허설과 같은 WE). 이 WE는 원래 빌드에서 **2025 DEV Brier gate를 통과**했다(DEV 노출, P8 기록). 2026에는 적합하지 않는다.
   - 추정기: DR v2, 검열 노드 [0,1] 경계(D-5, L0/L1/L2·E0), 경기 부트스트랩 10,000회, ESS 게이트 PA 100·경기 30(두 정책 중 최소).
   - 타자 프로필: `profile_as_of` = 2026-03-25(배타), 원천 날짜 가드 `max(game_date) ≤ 2025-12-31`와 2025-12-31 rolling 동일성 검사(COOP-019 F2, `fa82afb`).
   - R7 타석 중 투수 교체: **보류**(D100 ⑦). 현 제안 규칙(알려진 새 투수 계속, 미지 새 투수 `UNSUPPORTED_UNKNOWN_PITCHER`→`UNSUPPORTED_MID_PA`)을 임시로 쓰고 비율·민감도를 보고한다.
@@ -56,7 +59,7 @@
 ## 4. Nuisance·상태 입력
 
 - **기본: 어떤 구성요소도 2026으로 적합하지 않는다.** propensity, 결과 회귀, 보정·temperature, 의도/delivery, 지지 집합에서 파생한 평가 정책 모두. 2026 폴드 교차 적합도 2026 학습이다. `nuisance_2026_crossfit_exception`은 `deferred_not_enabled`이며 켜려면 허용 필드·모델·폴드·평가 정책 독립성·불확실성 처리·노출 장부 수정이 담긴 사용자 결정과 decisions.md 기록이 필요하다.
-- WE continuation: [model-v1.json](model-v1.json)의 `game_values.pkl`은 **레거시 참조**일 뿐 이번 평가용으로 선택되거나 bytes를 새로 검증한 identity가 아니다. 선택·payload 검증은 수행하지 않았다(`null`).
+- ~~WE continuation: [model-v1.json](model-v1.json)의 `game_values.pkl`은 **레거시 참조**일 뿐 이번 평가용으로 선택되거나 bytes를 새로 검증한 identity가 아니다. 선택·payload 검증은 수행하지 않았다(`null`).~~ **대체됨(2026-09-30, COOP-020 M1):** ARM-B 보상 WE는 §3 ARM-B에 전체 SHA로 pin한 `FrozenWE` identity(≤2025 리허설과 동일)다. 최종 bytes 재확인은 M3b에서 한다.
 - 실제 기록된 투구 전 배정 확률이 있으면 우선한다. 없으면 ≤2025 동결 π_b는 해시가 있을 뿐 2026 참 법칙이 아니다. 연도 간 이동 가정과 비측정 교란 민감도 분석이 필요하고, 수치 floor가 positivity를 만들지 않는다. 평가 정책을 2026과 독립으로 정해도 nuisance가 비편향이 되지 않으며 DR은 숨은 교란·잘못된 개입 라벨·clip 편향을 고치지 않는다.
 - **수치 overlap은 인과 식별이 아니다.** 인과 해석에는 일관성, 순차적 교환 가능성, 양성(support), 로깅 배정·연도 간 이동 근거가 모두 필요하다. 이 가정이 근거로 뒷받침되지 않으면 overlap이 좋아도 `BLOCKED_NOT_IDENTIFIED`다. 동결 π_b의 2026 로그 행동 NLL·보정 진단은 교환 가능성을 입증하지 않으며, 미래에 쓰려면 별도 등록·승인이 필요하고 예측기 선택에 쓰지 않는다. 식별 가정은 근거가 있지만 overlap 게이트에 실패하면 `UNCONFIRMED_WEAK_OVERLAP`. 효과를 0이나 성공으로 채우지 않는다.
 - **동결 모델 ≠ 동결 상태.** 별도 승인된 미래 평가에서 고정 정책은 등록된 입력 스키마로 2026의 투구 전 경기·카운트 필드와 같은 PA의 엄격히 이전 투구 이력을 소비할 수 있다. 이것은 추론 맥락이다. 반면 2026 선수 프로필·레퍼토리를 굴려 갱신하는 것은 통계 구성요소 추정이므로 기본적으로 2026 이전 스냅샷에 동결한다. 현재 공의 물리·결과 값은 추천에 들어가지 않는다.
@@ -66,15 +69,15 @@
 
 | 필드 | 제안 | 근거·상태 |
 |---|---|---|
-| 주 추정기 | ARM-A: `null`(보류). ARM-B: clip 없는 per-decision sequential DR, 고정 nuisance, 같은 PA에서 후보–기준 짝. π ∈ {후보, 기준}마다 따로: PA i의 결정 t=0..T−1, `V^π_T=0`, `V^π_t = v̂^π(H_t) + ρ^π_t·(r_t + V^π_{t+1} − q̂^π(H_t,a_t))`, `v̂^π(H_t)=Σ_a π(a|H_t)·q̂^π(H_t,a)`, `ρ^π_t = π(a_t|H_t)/π_b(a_t|H_t)`(구종 행동). `H_t`는 등록된 투구 전 이력 전체 또는 충분성이 정당화된 상태이며, 충분성을 방어할 수 없으면 식별 blocker로 남는다. 보상은 PA 종료 단계의 `W(S_PA_end)`만. 두 정책을 각각 재귀한 뒤 같은 PA에서 `V^cand_0 − V^ref_0`를 짝지어 평균, 자기정규화 없음 | 225행동 궤적 IS는 ESS≈0(D19). ARM-B는 구종 행동으로 축소. 식별·overlap 조건부. 구종-only로 자동 전환하지 않는다 |
+| 주 추정기 | ARM-A: `null`(보류). ARM-B: clip 없는 per-decision sequential DR, 고정 nuisance, 같은 PA에서 후보–기준 짝. π ∈ {후보, 기준}마다 따로: PA i의 결정 t=0..T−1, `V^π_T=0`, `V^π_t = v̂^π(H_t) + ρ^π_t·(r_t + V^π_{t+1} − q̂^π(H_t,a_t))`, `v̂^π(H_t)=Σ_a π(a|H_t)·q̂^π(H_t,a)`, `ρ^π_t = π(a_t|H_t)/π_b(a_t|H_t)`(구종 행동). `H_t`는 등록된 요청 필드 목록이다(`matrix_policy.SAFE_COLUMNS` + `policy_requests` 요청 상태): 현재 카운트(`balls`, `strikes`), 같은 PA의 엄격히 이전 투구 전부(구종 라벨, 정규화 물리, 10-class 결과, 투구 전 카운트), 이닝·초말(`inning`, `inning_topbot`)·아웃(`outs_when_up`)·주자(`bases`)·점수(`home_score`, `away_score`), 타자 `stand`와 as-of 타자 프로필(`batter_style_*_prior`·`_reliability`, 6개 스타일 × 2), 투수 식별자·손(`pitcher`, `p_throws`, TRAIN 단일 손 등록부)과 TRAIN 레퍼토리(지원 표 M). 이 필드가 구종 배정에 충분하다는 것(순차적 교환 가능성)은 **식별 가정**이며 입증하지 않는다. 보상은 PA 종료 단계의 `W(S_PA_end)`만. 두 정책을 각각 재귀한 뒤 같은 PA에서 `V^cand_0 − V^ref_0`를 짝지어 평균, 자기정규화 없음 | 225행동 궤적 IS는 ESS≈0(D19). ARM-B는 구종 행동으로 축소. 식별·overlap 조건부. 구종-only로 자동 전환하지 않는다 |
 | 보조 | IS/SNIS(분모는 재표집마다 재계산), DM-only, 투구 단계 비에 clip {10, 20, 50}을 곱하기 전 적용하는 민감도 | 진단 전용. 유리한 추정기 선택 금지. DM-only는 OPE 근거 아님(D31 순환) |
 | 불확실성 | 경기 단위 paired 재표집(PA 유지), B=10,000, 양측 percentile 95% CI, 재표집 안에서 자기정규화 분모 재계산 | 제안. seed·무효 replicate 처리는 등록 시 고정(현재 `null`). CI는 동결 정책·nuisance·WE 조건부 |
-| 다중성 | ARM별 family, family당 주 대비 1개. `W_post`·SP/RP 부분 분석은 Holm 보조 family | 제안 |
+| 다중성 | ARM-B 한 family, **주 대비 1개, 확증적 2차 대비 0개**. 부분군(`W_post`·SP/RP 포함)은 모두 기술 전용이며 다중성 주장·판정이 없다(§5a) | 제안 |
 | overlap 게이트 | PA ESS = (Σ_i w_i)²/Σ_i w_i², w_i는 PA 종료 누적 비. game ESS는 경기별 w 합으로 같은 식. PA ESS ≥ 100, game ESS ≥ 30 | 휴리스틱 제안. ≤2025/합성 작업으로 근거를 만든 뒤 고정 |
 | 최소 효과 | **0.001 WE/PA**(제안, §5a) | 판단값. RE24 해상도(D31)·ML ΔNLL −.003·R78·kernel ESS20·clip20을 OPE 정리로 상속하지 않는다 |
 | 진단 | 투구별 비 분위·모멘트, 누적 PA/경기 집중도, 0/무효 분모, 지원 밖 질량, clip 비율, 결측·중도 절단, 역할·월·투수 볼륨별 ESS | — |
 
-판정 상태: `IMPROVEMENT_SUPPORTED`(식별 가정의 근거 ∧ CI 하한 > 0 ∧ 등록 최소 효과 ∧ overlap·무결성 통과), `HARM_SUPPORTED`(CI 상한 < 0, 같은 게이트), `NO_EFFECT_DETECTED`, `UNCONFIRMED_WEAK_OVERLAP`, `NOT_IDENTIFIED_CAUSAL_NULL`, `BLOCKED_NOT_IDENTIFIED`, `FAILED_INTEGRITY`. 계산 불가 값은 `null`과 사유. 최소 효과가 `null`인 동안은 우위 판정이 없는 기술적 연구이며 모델 선택·서비스 승격은 따라오지 않는다. ARM-B의 구체 판정 규칙은 §5a가 이 표보다 우선한다.
+판정 상태: `IMPROVEMENT_SUPPORTED`·`IMPROVEMENT_SUPPORTED_STATISTICAL`(§5a; 식별 가정의 근거 ∧ CI 하한 > 0 ∧ 등록 최소 효과 ∧ overlap·무결성 통과), `HARM_SUPPORTED`(CI 상한 < 0, 같은 게이트), `NO_EFFECT_DETECTED`, `UNCONFIRMED_WEAK_OVERLAP`, `NOT_IDENTIFIED_CAUSAL_NULL`, `BLOCKED_NOT_IDENTIFIED`, `FAILED_INTEGRITY`. 계산 불가 값은 `null`과 사유. 최소 효과가 `null`인 동안은 우위 판정이 없는 기술적 연구이며 모델 선택·서비스 승격은 따라오지 않는다. ARM-B의 구체 판정 규칙은 §5a가 이 표보다 우선한다.
 
 ## 5a. ARM-B 성공 기준 (≤2025 S6 결과 열람 전 고정)
 
@@ -83,17 +86,26 @@
 - **주 추정치:** L1(투구 전 시작 모집단 E0) `Δ = V(π_cand) − V(π_ref)`, 초기 수비 팀 WE, PA당, 같은 PA 짝. 검열 노드 경계 때문에 Δ는 구간 `[Δ_lo, Δ_hi]`다.
 - **최소 효과(MEI) = 0.001 WE/PA(0.1%p) — 판단값, 측정 근거 없음.** 근거: (1) 한 팀은 경기마다 수십 PA를 수비하므로 PA당 0.1%p가 더해진다면 시즌 단위로 무시할 수 없는 규모다(PA 간 가산성은 가정, 승수 환산은 미측정). (2) 이보다 작은 값은 동결 π_b·q̂의 모형 오차와 구분하기 어렵다고 본다. **주의:** ≤2025 V2 편향 허용(tolerance 0.01, `delta_gap_se ≤ 0.005`)은 MEI보다 10배 크므로 V2 통과가 MEI 해상도의 비편향을 보증하지 않는다. τ = 0.1 후보는 평균 KL 0.0074로 BC에 매우 가까워 MEI 미만 결과가 나올 가능성이 크다.
 - **판정 규칙(한 번만 적용):**
-  - `IMPROVEMENT_SUPPORTED` ⇔ ① `Δ_lo`의 95% 경기 부트스트랩 CI 하한 > 0.001 ② 두 정책 모두 ESS 게이트(PA ≥ 100, 경기 ≥ 30) 통과 ③ 부트스트랩 무효 비율 ≤ 0.05 ④ 무결성 실패 0(`FAILED_INTEGRITY` 없음, 짝 identity 실행 cand=ref 차 정확히 0).
+  - `IMPROVEMENT_SUPPORTED_STATISTICAL` ⇔ ① `Δ_lo`의 95% 경기 부트스트랩 CI 하한 > 0.001 ② 두 정책 모두 ESS 게이트(PA ≥ 100, 경기 ≥ 30) 통과 ③ 부트스트랩 무효 비율 ≤ 0.05 ④ 무결성 실패 0(`FAILED_INTEGRITY` 없음, 짝 identity 실행 cand=ref 차 정확히 0). (D108 규칙 그대로, 이름만 바뀜.)
+  - `IMPROVEMENT_SUPPORTED` ⇔ ②–④ 통과 **그리고** `Δ_lo`의 95% CI 하한 > MEI + b_V. 편향 한계 `b_V := |delta_gap_V2| + 1.96·delta_gap_se_V2`는 봉인된 ≤2025 S5 `v2.json`의 V2(`pi_b_hat`) 실행에서 읽는다. S5는 V2를 planning seed {0,1,2}(`seeds.planning_v2`, 주 seed `planning_main` = 0 포함)마다 돌리므로 **seed별 b_V의 최댓값**을 쓴다. `IMPROVEMENT_SUPPORTED`는 `IMPROVEMENT_SUPPORTED_STATISTICAL`을 함축한다.
+  - **V3 오지정 보고(판정 조건 아님, 등록된 필수 보고):** 같은 `v2.json`의 V3 tempered α = 0.5(`tempered_alpha_0.5`) 실행의 `|delta_gap_V3|`(seed별 최댓값)를 2026 결과 옆에 싣는다. `|gap_V3| > MEI`이면 결과에 `pi_b_misspecification_sensitivity_exceeds_MEI` 표시를 붙인다.
+  - 이유: V2 로그는 π̂_b 자신이 생성하므로 V2는 π̂_b가 틀린 경우(실제 로깅 법칙 ≠ π̂_b)를 전혀 시험하지 못한다. 그런데 후보 쪽 DR은 q̂ = Q^ref라 **단일 강건**이어서(COOP-019 F5) 편향이 π̂_b 정확도에 그대로 달려 있다. 그래서 V2가 측정한 추정기 편향 한계(b_V)만큼 문턱을 올려야 "MEI를 넘는 개선"이라 말할 수 있고, 로깅 법칙을 π̂_b와 다르게 둔 V3의 차이를 오지정 민감도로 함께 공개한다. 대안(MEI 자체를 0.01 이상으로 올려 V2 허용치와 맞추기)은 채택하지 않았다: D108 MEI를 바꾸지 않고 통계적 결과(`_STATISTICAL`)와 편향 한계를 넘는 결과를 분리해 둘 다 보고하는 쪽을 택했다.
   - `HARM_SUPPORTED` ⇔ `Δ_hi`의 95% CI 상한 < 0 이고 ②–④ 통과.
   - ②·③ 실패 → `UNCONFIRMED_WEAK_OVERLAP`, ④ 실패 → `FAILED_INTEGRITY`. 그 밖 → **"개선 근거 없음"**(`NO_EVIDENCE_OF_IMPROVEMENT`; 0 < CI 하한 ≤ MEI도 여기다).
+  - ESS 게이트는 τ 0.1에서 **사실상 구속력이 없다**: ≤2025 June S3b에서 후보 PA ESS 9,779(기준의 93.4%), 경기 ESS 147로 문턱(100·30)을 크게 넘었다(D107). 따라서 `UNCONFIRMED_WEAK_OVERLAP`은 이번 등록에서 살아 있는 안전장치로 기대하지 않는다(2026에서 실패하면 규칙대로 적용한다).
   - 어느 경우에도 인과 식별은 가정이며(`identification = assumed_not_evidenced`), 결과는 서비스 승격을 자동으로 허가하지 않는다.
 - **1회 규칙:** 동결 스냅샷 `d20260930-h2026f`에서 **정확히 한 번** 실행한다. 재실행은 인프라 실패(hang guard·OOM·디스크 등, 보상/WE/결과 열람 전, 실패 로그·부분 원장 보존)일 때만 같은 등록·같은 범위로 한다. 결과 열람 뒤 재실행·문턱·τ·추정기·표본 변경은 없다.
+  - **hang guard(M3b에서 고정):** ≤2025 S6 실측 비용(초) × (n_2026_games / 150) × 2. n_2026_games는 스냅샷의 적격 R 경기 수(M3에서 결과 비열람으로 셈).
+  - **중단 시:** 부분 원장은 해시로 봉인하고 **열지 않는다**(보상·WE·Δ 요약 포함 어떤 값도 읽지 않음).
+  - **시도 수:** 최대 2회. 두 번째도 인프라 실패면 `FAILED_INFRA`로 끝내며 세 번째 시도는 없다(새 등록 ID로만 가능, §7).
+  - **체크포인트 재개 없음:** 비트 단위 결정론이 입증되고 그 재개 절차가 M3b에 등록된 경우가 아니면 처음부터 다시 실행한다.
 - **함께 보고(판정에 쓰지 않음):**
   - L0(전 PA 경계), L2(E0 ∩ 완료, 처치 후 선택 조건부 평균 — 판정 없음), 검열 비율(사유별).
   - R7: 타석 중 투수 교체 비율·미지 새 투수 비율과 2차 추정량(첫 교체 뒤 자연 경과) 민감도, 표시 "보류".
   - 부분군(기술, 다중성 보정 없음): 선발/불펜(D87 역할 규칙), `bc_p_only_pitcher` 층, 월, TRAIN 볼륨 3분위, 연장, `W_exposed`/`W_post`.
   - COOP-019 F3: 게이트 옆에 E0 전체(완료 ∪ 검열) 가중치의 최소 ESS. F5: 후보는 q̂ = Q^ref라 단일 강건(π̂_b가 틀리면 후보 쪽 편향 가능), 기준은 이중 강건이라는 문장.
   - 보조 추정기 IS/SNIS/DM-only, clip 민감도 — 진단 전용.
+- **검정력 공개(자리만, 문턱 불변):** ≤2025 S6 봉인 뒤 S6 Δ 점추정·SE(`SE_S6`)와 예상 2026 SE = `SE_S6·√(150 / n_2026_games)`를 여기에 기록한다. 공개용이며 MEI·게이트·판정 규칙을 바꾸지 않는다. 현재 값: `null`(S6 미봉인).
 
 ## 6. 커버리지·ABS
 
@@ -115,6 +127,9 @@
 ## 9. 노출 공개 (보고서에 그대로 싣는다)
 
 - 평가 스냅샷 `d20260930-h2026f`: 2026-03-25~09-27, 716,792행, sha256 `c0c1eda4b515fc14dab79defe577b449e2695d40dd036f5c35ae52e37093ed9b`, 동결(`frozen=true`, [data/versions.md](../../data/versions.md)). 2026 적합·튜닝·선택에 쓰지 않는다.
+  - **수집 출처:** 수집 커밋이 `6bd76fd-dirty`로 기록돼 있다. 당시 작업 트리의 미커밋 수정은 `experiments/pitchmdp/pitchmdp/policy_artifacts.py`뿐이었고, 수집 코드 `src/pitcheezy/data/statcast_fetch.py`·`scripts/fetch_data.py`는 바뀌지 않았다: `git diff 6bd76fd 70968eb -- src/pitcheezy/data scripts/fetch_data.py`가 비어 있다(2026-09-30 확인).
+  - **경로:** 상대 경로는 이전 수집본과 같은 `holdout_2026/statcast_2026.parquet`지만 버전 디렉터리가 다르다(`d20260911-s2325/holdout_2026/` 대 `d20260930-h2026f/holdout_2026/`). 이전 파일(sha `374e8b95…`, 647,896행, `frozen=false`)은 덮어쓰지 않았고 versions.md의 기존 행도 수정하지 않았다.
+  - **격리:** ≤2025 단계 실행기의 `guard_dates`가 2025-12-31 이후 날짜 행을 거부하므로 이 스냅샷은 ≤2025 리허설(S0–S6)에 들어갈 수 없다.
 - 이전 수집본 `d20260911-s2325`(03-25~09-09)는 과거 **P0 12건·P1 8건 OPE**에 쓰였다. 선택 표본 68,425PA(ip100, 1,993경기), 2026 π_b 교차 적합(D18)·지원 집합(D19)·평가 정책 적응(D20)·모델 비교·채택(D22·D27·D30·D31·D39) 포함. 정확한 사용 경기 ID는 모름.
 - 따라서 `W_exposed`(03-25~09-09)는 노출 구간이고, `W_post`(09-10~09-27)는 이전 수집본 밖이지만 미사용 인증이 없어 **(c) 모름**이다. 주 결과는 전체 시즌이며 `contains_previously_exposed_window` 라벨을 붙이고 독립 확인이라 부르지 않는다.
 - 이번 후보·기준·π̂_b·q̂·τ·프로필은 모두 ≤2025 자료로만 정했다(τ는 June 2025 겹침·잡음 규칙, 결과값 비열람; D106의 격자 확장은 June 겹침 표를 본 뒤였다). 과거 2026 노출이 이번 후보 설계에 들어간 경로는 알려진 것이 없지만, 설계자가 과거 2026 OPE 결과를 알고 있었다는 사실은 남는다.
