@@ -1,6 +1,8 @@
 # A~D 작업 인수인계
 **Claude로 이어서 작업할 때:** [재개 인수인계](handoffs/CLAUDE-resume-2026-09-29.md)에서 현재 상태·읽기 순서·다음 작업·실행 경계를 먼저 확인한다. [복사용 재개 프롬프트](handoffs/CLAUDE-resume-prompt.md).
 
+**2026 OPE 결과 — D131 (2026-10-01):** 1회 실행 완료. L1-R Δ [−0.00120, +0.00092], **개선 근거 없음**(해로움도 아님), 게이트 모두 통과. 서비스 정책 채택 없음. 다음 방향은 CV 의도 모듈 v0(팀원 `transition-models` `feature/intent-v0`, D129) 뒤 ARM-A 설계(D128). 결과 `results/MLB-2026-OPE-v1.json`.
+
 **2026 OPE 실행 중 — D126~D127 (2026-10-01):** 묶음 바인딩(`10b323e`, 식별자 `c13cc989…` 유지)으로 메모리 차단 요인 해소, Fable 5.1 최종 검토 COOP-025 PASS-with-conditions → **1회 실행 시작**(`MLB-2026-OPE-v1/OPE-2026-a1`, tmux `pz:runs`, 예상 약 17시간, hang guard 약 34시간, 최대 2회). 구속력 있는 등록 = config `mlb2026_ope` + `addendum-1..8-d127`(코드 `a09ed7d`); 판정 규칙 D108/D109/D119/D120 불변. 끝나면 `ope2026.json`의 라벨(STATISTICAL/SUPPORTED/HARM/NO_EVIDENCE/NOT_DECIDABLE)을 보고서로 정리하고 등록·사전등록은 수정하지 않는다. 실패하면 부분 원장은 해시로만 봉인하고 같은 범위로 1회 재시도 뒤 `FAILED_INFRA`.
 
 **재인증·2026 대기 — D124~D125 (2026-10-01 새벽):** 저메모리 원장(`97affbb`, Fable COOP-024 PASS-with-conditions)으로 S2→S6 재인증 완료. S6-dr-a5 결과가 S6-a4와 완전히 같음. 최종 식별자 `c13cc989…`, 사슬 = config + `addendum-1..7-d124`, source `9024bd9`. 2026 전체 시즌 메모리 투영이 21–23GiB라 실행 보류(D125). 경기 묶음 바인딩 작업 중(`claude/batch-bind`) → 리뷰 → 재인증(`coordination/recertify_chain.py <tag> <s2,s3b,s5,s6 접미사> [resume]`, 이미 있는 이름이면 거부) → `mlb2026_ope` 등록 + addendum 8(`s6_dr`) → Fable 최종 확인 → 1회 실행(약 17시간).
