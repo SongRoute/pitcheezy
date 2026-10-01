@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from observer_app.live_armb import LiveArmB, state_key
-from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, event_wall, parse_state, pitcher_today
+from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, event_wall, parse_state, pitcher_today, tap_delay
 from observer_app.main import create_app
 
 FIXTURES = Path(__file__).parent/'fixtures/live'
@@ -291,3 +291,21 @@ def test_pitcher_today_counts_only_this_pitchers_pitches_in_the_feed():
     assert pitcher_today(snapshot, 10)['pitches'] == 2 and pitcher_today(snapshot, 99) == {'pitches': 0, 'mix': []}
     state = parse_state(feed('849845_20260929_195940.json'), None)
     assert state['pitcher_today']['pitches'] == len(state['pitch_sequence']) == 2  # the trimmed fixture holds only currentPlay
+
+
+def test_tap_measures_the_viewers_delay_from_the_pitch_they_just_saw():
+    text = lambda wall: datetime.fromtimestamp(wall, timezone.utc).isoformat().replace('+00:00', 'Z')
+    pitch = lambda end: {'isPitch': True, 'startTime': text(end-4), 'endTime': text(end)}
+    snapshot = {'liveData': {'plays': {'allPlays': [{'playEvents': [pitch(1000.0), pitch(1023.0)]}],
+                                       'currentPlay': {'playEvents': [pitch(1046.5), {'isPitch': False}]}}}}
+    assert tap_delay(snapshot, 1056.0, 30.0) == 33.0   # set to 30 s: the pitch that ended at 1023, not the newer or older one
+    assert tap_delay(snapshot, 1056.0, 12.0) == 9.5    # set to 12 s: the newest pitch
+    assert tap_delay(snapshot, 1056.0, 20.0) is None   # between two pitches by more than the tolerance: not guessed
+    assert tap_delay({'liveData': {'plays': {}}}, 1056.0, 30.0) is None
+    live = LiveFeed(lambda url, timeout: snapshot | {'metaData': {'eventWall': 0.0}}, delay_s=0)
+    app = create_app(object(), live_feed=live, live_policy=LiveArmB(lambda: FakePolicy()))
+    with TestClient(app) as client:
+        assert client.get('/api/live/7/tap', params={'delay': 30}).json()['status'] == 'unclear'  # nothing fetched yet
+        live.snapshot(7)
+        assert client.get('/api/live/7/tap', params={'delay': 30}).json()['status'] == 'unclear'  # those pitches are decades old
+        assert client.get('/api/live/7/tap').status_code == 400

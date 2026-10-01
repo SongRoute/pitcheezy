@@ -28,11 +28,12 @@ const clock = (seconds: number) => { const s = Math.max(0, Math.round(seconds));
 const savedDelay = () => { try { const v = localStorage.getItem(DELAY_KEY); return v === null ? null : Number(v); } catch { return null; } };
 
 /** Lines the screen up with the viewer's broadcast: + shows pitches later, − sooner. */
-function SyncBar({ label, value, hint, onShift }: { label: string; value: string; hint: string; onShift: (seconds: number) => void }) {
+function SyncBar({ label, value, hint, onShift, onTap, tapNote }: { label: string; value: string; hint: string; onShift: (seconds: number) => void; onTap?: () => void; tapNote?: string | null }) {
   return <section className="wa-sync" aria-label={label}>
     <div className="wa-sync-row"><span className="wa-sync-label">{label}</span><strong aria-live="polite">{value}</strong>
       <span className="wa-sync-buttons">{[-5, -1, 1, 5].map(d => <button key={d} onClick={() => onShift(d)} aria-label={`${Math.abs(d)}초 ${d < 0 ? '빠르게' : '늦게'}`}>{d > 0 ? `+${d}` : d}</button>)}</span></div>
-    <p>{hint}</p></section>;
+    <p>{hint}</p>
+    {onTap && <><button className="wa-sync-tap" onClick={onTap}>내 화면에서 공이 미트에 들어오는 순간 누르기</button>{tapNote && <p aria-live="polite">{tapNote}</p>}</>}</section>;
 }
 
 export default function Live() {
@@ -46,6 +47,7 @@ export default function Live() {
   const [outline, setOutline] = useState<Outline | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updated, setUpdated] = useState<Date | null>(null);
+  const [tapNote, setTapNote] = useState<string | null>(null);
   const shown = useRef(new Map<string, Candidate | null>());  // recommendation shown before each pitch (this session)
 
   useEffect(() => {
@@ -89,6 +91,16 @@ export default function Live() {
     }
   }, [replayStart, t0, speed, delay, state]);
 
+  const tap = useCallback(async () => {  // fine sync: the server measures this viewer's delay from the pitch they just saw
+    const current = delay ?? state?.delay_s ?? 30;
+    try {
+      const r = await get<{ status: string; delay_s: number; reason?: string }>(`/live/${gamePk}/tap?delay=${current}`);
+      if (r.status !== 'ok') { setTapNote(r.reason ?? '다시 눌러 주세요.'); return; }
+      try { localStorage.setItem(DELAY_KEY, String(r.delay_s)); } catch { /* storage may be unavailable */ }
+      setDelay(r.delay_s); setTapNote(`맞췄어요: 내 화면이 ${r.delay_s.toFixed(1)}초 늦어요.`);
+    } catch (e) { setTapNote((e as Error).message); }
+  }, [gamePk, delay, state]);
+
   if (!gamePk) return <div className="wa-page"><Header badge={BADGE} back /><main className="wa-main"><p className="wa-error">경기 번호가 없어요.</p><a className="wa-button" href="/watch">경기 목록으로</a></main></div>;
   const rec = state?.recommendation ?? null;
   const s = state?.situation ?? null, game = state?.game;
@@ -112,7 +124,7 @@ export default function Live() {
         <a key={h.first} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} href={`/live?game=${gamePk}&replay=${h.first}${speed !== 1 ? `&speed=${speed}` : ''}`}>{h.label}</a>)}</nav>}
       {isReplay ? <SyncBar label="영상 맞추기" value={replay ? `경기 ${clock(replay.elapsed_s)}` : '—'} onShift={shift}
           hint="영상보다 이 화면이 먼저 가면 +, 늦으면 − 를 눌러 맞춰요. 회 버튼을 누르면 그 회 첫 공 15초 전부터 시작해요." />
-        : <SyncBar label="중계 맞추기" value={`내 화면이 ${usedDelay}초 늦음`} onShift={shift}
+        : <SyncBar label="중계 맞추기" value={`내 화면이 ${usedDelay}초 늦음`} onShift={shift} onTap={state?.status === 'ready' ? () => void tap() : undefined} tapNote={tapNote}
           hint="공 결과가 내 중계 화면보다 먼저 뜨면 +, 늦게 뜨면 − 를 눌러요. 이 기기에 기억해 둬요." />}
       {late && <p className="wa-sync-late">기록이 내 중계보다 늦게 도착하고 있어요(약 {Math.round(state!.sync!.feed_lag_s!)}초). + 를 눌러 여유를 두면 추천을 공보다 먼저 볼 수 있어요.</p>}
       {error && <p className="wa-error">{error} {state ? '마지막으로 받은 상황을 보여 주고 있어요. 계속 다시 시도해요.' : ''}</p>}

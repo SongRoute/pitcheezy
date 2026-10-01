@@ -94,6 +94,18 @@ def event_wall(feed):
     return max(times) if times else None
 
 
+def tap_delay(feed, now, current, *, tolerance_s=8.0):
+    """The viewer tapped at wall time ``now`` as a pitch reached the mitt on their broadcast: their delay is
+    ``now`` minus that pitch's real end time. Which pitch they saw is not known, so only the recent pitch
+    that puts the delay within ``tolerance_s`` of their ``current`` setting counts (a fine adjustment after
+    the +/- buttons); otherwise None."""
+    plays = (feed.get('liveData') or {}).get('plays') or {}
+    ends = [_wall(event['endTime']) for play in [*(plays.get('allPlays') or [])[-4:], plays.get('currentPlay') or {}]
+            for event in play.get('playEvents') or [] if event.get('isPitch') and event.get('endTime')]
+    delays = [now-end for end in ends if abs(now-end-current) <= tolerance_s and now >= end]
+    return round(min(delays, key=lambda delay: abs(delay-current)), 1) if delays else None
+
+
 class LiveFeed:
     """Polls with timeout + exponential backoff and serves each viewer the game as it stood ``delay_s`` ago.
 

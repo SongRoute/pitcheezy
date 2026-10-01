@@ -373,6 +373,18 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             return parsed | timing | {'sync': sync, 'recommendation': armb_view(snapshot, parsed)}
         return live_call(state)
 
+    @app.get('/api/live/{game_pk}/tap')
+    def live_tap(game_pk: int, delay: float = Query(..., ge=0, le=600)):
+        """Fine sync: the viewer taps as a pitch lands on their broadcast; answers their measured delay."""
+        from .live_feed import tap_delay
+        feed = live_parts()
+        newest = feed.latest(game_pk)
+        measured = None if newest is None else tap_delay(newest, time.time(), delay)
+        if measured is None:
+            return {'status': 'unclear', 'delay_s': delay,
+                    'reason': '어느 공인지 가리지 못했어요. ± 버튼으로 대략 맞춘 뒤, 공이 미트에 들어오는 순간 다시 눌러 주세요.'}
+        return {'status': 'ok', 'delay_s': min(measured, feed.max_delay_s)}
+
     watch = WatchAlong(watch_dir)
 
     def watch_call(operation):

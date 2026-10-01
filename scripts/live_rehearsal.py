@@ -210,6 +210,7 @@ def main(argv=None):
     rec.add_argument('--interval', type=float, default=5.0)
     rec.add_argument('--max-hours', type=float, default=7.0)
     rec.add_argument('--query', default='', help='extra query of the state route, e.g. delay=0')
+    rec.add_argument('--not-before', help='UTC ISO time to start polling at (e.g. ten minutes before first pitch)')
     rep = commands.add_parser('report')
     rep.add_argument('--game-pk', type=int, required=True)
     rep.add_argument('--output', type=Path, required=True)
@@ -227,6 +228,8 @@ def main(argv=None):
         return
     if args.command == 'record':
         poll = lambda server, game_pk: poll_line(server, game_pk, query=args.query)
+        if args.not_before:  # no polling (and so no upstream fetches) while the game is hours away
+            time.sleep(max(0.0, _time(args.not_before) - time.time()))
         print(json.dumps(record(args.server.rstrip('/'), args.game_pk, args.output, interval=args.interval,
                                 max_hours=args.max_hours, poll=poll), ensure_ascii=False), flush=True)
     else:
