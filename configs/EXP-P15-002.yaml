@@ -1,0 +1,7 @@
+{
+  "experiment_id": "EXP-P15-002",
+  "status": "REGISTERED",
+  "family_config": "configs/EXP-P15-001.yaml",
+  "arm": "G15-direct-g0-mix",
+  "note": "Second comparison of the EXP-P15 family (equal-weight mix of the direct head and G0-global). It has no run of its own: scoring happens in the EXP-P15-001 score step and both rows are Holm-adjusted together."
+}
