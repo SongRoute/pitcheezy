@@ -16,6 +16,7 @@ type LiveState = { status: string; reason: string | null; badge?: string; delay_
   situation?: (Situation & { runners: Record<string, boolean> }) | null; pitcher?: { id: number; name: string | null; hand: string } | null;
   batter?: { id: number; name: string | null; side: string } | null;
   pitcher_today?: { pitches: number; mix: { pitch_type: string; pitch_label: string; count: number; share: number; avg_mph: number | null }[] } | null;
+  last_pitch?: { key: string; pitch_type: string | null; pitch_label: string; speed_mph: number | null; result_label: string | null; play_text: string | null } | null;
   pitch_sequence?: { pitch_number: number; pitch_label: string | null; description: string | null }[];
   recommendation: LiveRec | null };
 type Outline = { pitches: number; halves: { label: string; first: number }[] };
@@ -131,6 +132,12 @@ export default function Live() {
       {!state && !error && <p className="wa-loading">경기 상황을 불러오는 중…</p>}
       {state && state.status !== 'ready' && <article className="wa-card"><h2 className={`wa-none ${state.status === 'buffering' ? 'wa-pulse' : ''}`}>{isReplay && state.status === 'not_live' ? '경기가 끝났어요.' : WAIT_TEXT[state.status] ?? '잠시 기다려 주세요.'}</h2>
         <p className="wa-reason">{state.reason}</p>{state.status === 'not_live' && !isReplay && <p className="wa-reason">끝난 경기는 정리되면 <a href="/watch">경기 목록</a>의 “중계 영상과 함께 보기”에 올라와요.</p>}</article>}
+      {state && state.status !== 'ready' && state.last_pitch && (() => { const p = state.last_pitch, top = shown.current.get(p.key) ?? null;
+        return <article className="wa-card wa-prev"><p className="wa-eyebrow">방금 던진 공</p>
+          <h3>{p.pitch_label}{p.speed_mph !== null && <span> · {p.speed_mph.toFixed(1)} mph</span>}</h3>
+          {p.result_label && <p className="wa-result">{p.result_label}</p>}
+          {top && p.pitch_type && <p className={`wa-match ${top.pitch_type === p.pitch_type ? 'same' : ''}`}>{top.pitch_type === p.pitch_type ? '직전 추천 1순위 구종과 같았어요' : `직전 추천 1순위는 ${top.pitch_label}(${plainZone(top.zone_label)})`}</p>}
+          {p.play_text && <p className="wa-play">{p.play_text}</p>}</article>; })()}
       {state?.status === 'ready' && <>
         <PitchStrip items={strip} />
         <article className="wa-card">

@@ -226,6 +226,30 @@ def pitcher_today(feed, pitcher_id):
         for item in sorted(mix.values(), key=lambda item: (-item['count'], item['pitch_type']))]}
 
 
+def last_pitch(feed):
+    """The newest pitch in the feed, for the break after it (inning change, game over) when no next pitch
+    is pending and the policy view has nothing to attach it to. ``key`` matches the policy's pitch key."""
+    from .domain import PITCH_LABELS, RESULT_LABELS
+    for play in reversed(feed['liveData']['plays'].get('allPlays') or []):
+        numbered = [e for e in play.get('playEvents') or []
+                    if e.get('isPitch') or (e.get('type') == 'no_pitch' and ((e.get('details') or {}).get('call') or {}).get('code'))]
+        pitches = [e for e in numbered if e.get('isPitch')]
+        if not pitches:
+            continue
+        event, details = pitches[-1], pitches[-1].get('details') or {}
+        code = (details.get('type') or {}).get('code')
+        result = play.get('result') or {}
+        done = (play.get('about') or {}).get('isComplete') and event is numbered[-1]
+        outcome = result.get('eventType') if done else None
+        return {'key': f"{feed['gameData']['game']['pk']}:{play['about']['atBatIndex']+1}:{numbered.index(event)+1}",
+                'pitch_type': code, 'pitch_label': PITCH_LABELS.get(code, (details.get('type') or {}).get('description') or '투구'),
+                'speed_mph': (event.get('pitchData') or {}).get('startSpeed'),
+                'result_label': RESULT_LABELS.get(outcome, details.get('description')) if outcome else details.get('description'),
+                'play_text': result.get('description') if done else None,
+                'inning': play['about'].get('inning'), 'half': 'Top' if play['about'].get('isTopInning') else 'Bot'}
+    return None
+
+
 def parse_state(feed, pins, *, config=LIVE_CONFIG):
     """Current pre-pitch game state from a GUMBO feed, plus a ``PrePitchInput`` when supported by the
     legacy bundle ``pins`` (``pins=None``: state only)."""
@@ -239,11 +263,12 @@ def parse_state(feed, pins, *, config=LIVE_CONFIG):
     if game['game_type'] not in config['allowed_game_types']:
         return result | {'status': 'unsupported_game_type', 'reason': f"game type {game['game_type']} is not in the demo scope"}
     if data['status'].get('abstractGameState') != 'Live':
-        return result | {'status': 'not_live', 'reason': game['status']}
+        return result | {'status': 'not_live', 'reason': game['status'],
+                         'last_pitch': last_pitch(feed) if data['status'].get('abstractGameState') == 'Final' else None}
     about = play.get('about', {})
     in_pa = bool(play) and not about.get('isComplete', True)
     if not in_pa and (line.get('outs') == 3 or line.get('inningState') in ('Middle', 'End')):
-        return result | {'status': 'between_innings', 'reason': '이닝 교대 중입니다.'}
+        return result | {'status': 'between_innings', 'reason': '이닝 교대 중입니다.', 'last_pitch': last_pitch(feed)}
     if in_pa:
         matchup, count = play['matchup'], play['count']
         batter_id, pitcher_id = matchup['batter']['id'], matchup['pitcher']['id']

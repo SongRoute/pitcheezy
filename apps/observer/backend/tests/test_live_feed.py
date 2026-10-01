@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from observer_app.live_armb import LiveArmB, state_key
-from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, event_wall, parse_state, pitcher_today, tap_delay
+from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, event_wall, last_pitch, parse_state, pitcher_today, tap_delay
 from observer_app.main import create_app
 
 FIXTURES = Path(__file__).parent/'fixtures/live'
@@ -309,3 +309,22 @@ def test_tap_measures_the_viewers_delay_from_the_pitch_they_just_saw():
         live.snapshot(7)
         assert client.get('/api/live/7/tap', params={'delay': 30}).json()['status'] == 'unclear'  # those pitches are decades old
         assert client.get('/api/live/7/tap').status_code == 400
+
+
+def test_the_pitch_that_ended_an_inning_is_still_shown_during_the_break():
+    pitch = lambda index, code, call: {'index': index, 'isPitch': True, 'pitchData': {'startSpeed': 88.5},
+                                       'details': {'type': {'code': code, 'description': code}, 'description': call}}
+    auto = {'index': 1, 'isPitch': False, 'type': 'no_pitch', 'details': {'call': {'code': 'VP'}}}
+    plays = [{'about': {'atBatIndex': 40, 'inning': 5, 'isTopInning': False, 'isComplete': True},
+              'result': {'eventType': 'strikeout', 'description': 'A strikes out swinging.'},
+              'playEvents': [pitch(0, 'FF', 'Called Strike'), auto, pitch(2, 'SL', 'Swinging Strike'), {'index': 3, 'isPitch': False, 'details': {}}]}]
+    snapshot = {'gameData': {'game': {'pk': 7}}, 'liveData': {'plays': {'allPlays': plays}}}
+    assert last_pitch(snapshot) == {'key': '7:41:3', 'pitch_type': 'SL', 'pitch_label': '슬라이더', 'speed_mph': 88.5,
+                                    'result_label': '삼진', 'play_text': 'A strikes out swinging.', 'inning': 5, 'half': 'Bot'}
+    plays[0]['about']['isComplete'] = False  # mid-PA: the call of the pitch, no plate-appearance result yet
+    assert last_pitch(snapshot)['result_label'] == 'Swinging Strike' and last_pitch(snapshot)['play_text'] is None
+    assert last_pitch({'gameData': {'game': {'pk': 7}}, 'liveData': {'plays': {'allPlays': []}}}) is None
+    done = feed('849845_20260929_195940.json')
+    done['liveData']['plays']['currentPlay']['about']['isComplete'] = True
+    done['liveData']['linescore']['outs'] = 3
+    assert parse_state(done, None)['status'] == 'between_innings' and 'last_pitch' in parse_state(done, None)
