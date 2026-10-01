@@ -15,6 +15,7 @@ type LiveState = { status: string; reason: string | null; badge?: string; delay_
   game?: { game_pk: number; date: string; status: string; away_team: string; home_team: string };
   situation?: (Situation & { runners: Record<string, boolean> }) | null; pitcher?: { id: number; name: string | null; hand: string } | null;
   batter?: { id: number; name: string | null; side: string } | null;
+  pitcher_today?: { pitches: number; mix: { pitch_type: string; pitch_label: string; count: number; share: number; avg_mph: number | null }[] } | null;
   pitch_sequence?: { pitch_number: number; pitch_label: string | null; description: string | null }[];
   recommendation: LiveRec | null };
 type Outline = { pitches: number; halves: { label: string; first: number }[] };
@@ -126,6 +127,11 @@ export default function Live() {
             : rec?.status === 'computing' ? <><h2 className="wa-none wa-pulse">추천 계산 중…</h2><p className="wa-reason">{rec.reason}</p></>
             : <><h2 className="wa-none">추천 없음</h2><p className="wa-reason">{rec?.reason ?? '이 상황은 추천하지 않아요.'}</p></>}
         </article>
+        {state.pitcher_today && state.pitcher_today.pitches > 0 && <article className="wa-card wa-today">
+          <p className="wa-eyebrow">이 투수 오늘 · {state.pitcher_today.pitches}구 (경기 기록)</p>
+          <ul>{state.pitcher_today.mix.map(m => <li key={m.pitch_type}><b>{m.pitch_label}</b><span className="bar"><i style={{ width: `${Math.round(m.share * 100)}%` }} /></span>
+            <em>{Math.round(m.share * 100)}%</em><small>{m.avg_mph !== null ? `${m.avg_mph.toFixed(1)} mph` : ''}</small></li>)}</ul>
+        </article>}
         {previous && <article className="wa-card wa-prev">
           <p className="wa-eyebrow">방금 던진 공</p>
           <h3>{previous.actual.pitch_label}{previous.actual.speed_mph !== null && <span> · {previous.actual.speed_mph.toFixed(1)} mph</span>}</h3>

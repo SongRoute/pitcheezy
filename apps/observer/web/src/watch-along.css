@@ -97,6 +97,10 @@
 .wa-live-title{font-size:13px;color:var(--muted);margin-bottom:10px}
 .wa-prev{margin-top:12px}.wa-prev h3{font-size:24px;font-weight:900;letter-spacing:-.6px;margin-top:4px}.wa-prev h3 span{font-size:16px;font-weight:600;color:var(--muted)}
 .wa-pulse{animation:wa-blink 1.6s infinite}
+.wa-today{margin-top:12px}.wa-today ul{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:6px}
+.wa-today li{display:grid;grid-template-columns:5.5em 1fr 3em 5.2em;align-items:center;gap:8px;font-size:14px;font-variant-numeric:tabular-nums}
+.wa-today li b{font-weight:800}.wa-today li em{font-style:normal;font-weight:800;text-align:right}.wa-today li small{color:var(--muted);font-size:12.5px;text-align:right}
+.wa-today .bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}.wa-today .bar i{display:block;height:100%;background:var(--target-2)}
 .wa-sync{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:10px}
 .wa-sync-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.wa-sync-label{font-size:12px;font-weight:800;color:var(--teal);letter-spacing:.4px}
 .wa-sync-row strong{font-size:15px;font-variant-numeric:tabular-nums}

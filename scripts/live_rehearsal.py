@@ -12,6 +12,9 @@ Nothing here reads or writes model inputs; stdlib only.
 
     python scripts/live_rehearsal.py record --game-pk 849844 --server http://100.108.252.111:8766 --output DIR
     python scripts/live_rehearsal.py report --game-pk 849844 --output DIR --snapshots apps/observer/live_snapshots
+    python scripts/live_rehearsal.py simulate --feeds DEMO-WS-2026/feeds --output OUT.json --lags 5 10 15
+
+``simulate`` answers "which poll interval is fast enough" from completed games' recorded pitch times.
 """
 from __future__ import annotations
 
@@ -134,7 +137,7 @@ def report(game_pk, output, snapshots, *, poll_interval_s=10.0):
                 by_key[p['rec_key']] = p['rec_status']
                 if p.get('rec_seconds'):
                     compute.append(p['rec_seconds'].get('total'))
-    count = lambda rows, field: {str(k): sum(r.get(field) == k for r in rows) for k in sorted({str(r.get(field)) for r in rows})}
+    count = lambda rows, field: {k: sum(str(r.get(field)) == k for r in rows) for k in sorted({str(r.get(field)) for r in rows})}
     result = {
         'schema': 'pitcheezy.live-rehearsal.v1', 'game_pk': game_pk,
         'note': 'Service timing/coverage measurement on DEMO-WS-2026 data; not a model or policy evaluation.',
@@ -157,6 +160,46 @@ def report(game_pk, output, snapshots, *, poll_interval_s=10.0):
     return result
 
 
+def lead_shares(feeds, *, lag_s, poll_s, client_s=2.0, compute_s=0.15, delays=BROADCAST_DELAYS, phases=20):
+    """From completed games' recorded pitch times: the share of pitches whose recommendation is on screen at
+    least ``READ_S`` before the pitch, for a viewer whose broadcast runs ``delay`` behind the ballpark.
+
+    The state after pitch k-1 reaches the screen at ``end(k-1) + lag_s + U(0, poll_s) + compute_s + U(0, client_s)``
+    (feed publication, our poll phase, the model, the page's refresh), but never before the viewer's own
+    broadcast shows pitch k-1 (``end(k-1) + delay``). Pitch k appears on that broadcast at ``start(k) + delay``.
+    Poll phases are averaged over an even grid. Only consecutive pitches under 120 s apart count.
+    """
+    pairs = []
+    for feed in feeds:
+        spans = sorted(pitches_of(feed).values())
+        pairs += [(start, before_end) for (_, before_end), (start, _) in zip(spans, spans[1:]) if 0 < start-before_end < 120]
+    grid = [(i+.5)/phases for i in range(phases)]
+    shares = {}
+    for delay in delays:
+        hits = 0
+        for start, before_end in pairs:
+            for a in grid:
+                for b in grid:
+                    shown = max(before_end+delay, before_end+lag_s+a*poll_s+compute_s+b*client_s)
+                    hits += start+delay-shown >= READ_S
+        shares[str(delay)] = round(hits/(len(pairs)*phases*phases), 4) if pairs else None
+    return {'pairs': len(pairs), 'lag_s': lag_s, 'poll_s': poll_s, 'client_s': client_s, 'compute_s': compute_s,
+            'read_time_s': READ_S, 'share_by_broadcast_delay': shares}
+
+
+def simulate(feeds_dir, output, *, lags, polls):
+    feeds = []
+    for path in sorted(Path(feeds_dir).glob('[0-9]*_final.json.gz')):  # skips exFAT '._*' sidecar files
+        with gzip.open(path, 'rt') as handle:
+            feeds.append(json.load(handle))
+    result = {'schema': 'pitcheezy.live-lead-simulation.v1', 'games': len(feeds),
+              'note': 'Timing arithmetic on recorded pitch times of completed DEMO-WS-2026 games; not a model evaluation.',
+              'grid': [lead_shares(feeds, lag_s=lag, poll_s=poll) for lag in lags for poll in polls]}
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    Path(output).write_text(json.dumps(result, ensure_ascii=False, indent=1)+'\n')
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     commands = parser.add_subparsers(dest='command', required=True)
@@ -171,7 +214,17 @@ def main(argv=None):
     rep.add_argument('--game-pk', type=int, required=True)
     rep.add_argument('--output', type=Path, required=True)
     rep.add_argument('--snapshots', type=Path, required=True)
+    sim = commands.add_parser('simulate')
+    sim.add_argument('--feeds', type=Path, required=True, help='directory of {gamePk}_final.json.gz feeds')
+    sim.add_argument('--output', type=Path, required=True)
+    sim.add_argument('--lags', type=float, nargs='+', required=True, help='feed publication lags to try (s)')
+    sim.add_argument('--polls', type=float, nargs='+', default=[10, 5, 3, 2])
     args = parser.parse_args(argv)
+    if args.command == 'simulate':
+        result = simulate(args.feeds, args.output, lags=args.lags, polls=args.polls)
+        for row in result['grid']:
+            print(row['lag_s'], row['poll_s'], row['share_by_broadcast_delay'], flush=True)
+        return
     if args.command == 'record':
         poll = lambda server, game_pk: poll_line(server, game_pk, query=args.query)
         print(json.dumps(record(args.server.rstrip('/'), args.game_pk, args.output, interval=args.interval,

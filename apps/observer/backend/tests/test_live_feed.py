@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from observer_app.live_armb import LiveArmB, state_key
-from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, event_wall, parse_state
+from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, event_wall, parse_state, pitcher_today
 from observer_app.main import create_app
 
 FIXTURES = Path(__file__).parent/'fixtures/live'
@@ -274,3 +274,20 @@ def test_a_request_waits_briefly_for_a_just_queued_state():
     moved = copy.deepcopy(snapshot)
     moved['liveData']['linescore']['outs'] = 2
     assert armb.lookup(moved, queue=False, wait_s=5) is None and time.monotonic()-started < 1  # nothing to wait for
+
+
+def test_pitcher_today_counts_only_this_pitchers_pitches_in_the_feed():
+    pitch = lambda index, code, speed: {'index': index, 'isPitch': True, 'details': {'type': {'code': code, 'description': code}},
+                                        'pitchData': {'startSpeed': speed}}
+    change = {'index': 1, 'isPitch': False, 'details': {'eventType': 'pitching_substitution'}, 'player': {'id': 11}}
+    plays = [{'matchup': {'pitcher': {'id': 10}}, 'playEvents': [pitch(0, 'FF', 95.0), pitch(1, 'SL', 86.0)]},
+             # 10 threw the first pitch of this PA, then 11 came in: only the pitches after the change are 11's
+             {'matchup': {'pitcher': {'id': 11}}, 'playEvents': [pitch(0, 'FF', 96.0), change, pitch(2, 'FF', 97.0), pitch(3, 'XX', None)]},
+             {'matchup': {'pitcher': {'id': 11}}, 'playEvents': [pitch(0, 'FF', 98.0), {'index': 1, 'isPitch': False, 'details': {}}]}]
+    snapshot = {'liveData': {'plays': {'allPlays': plays}}}
+    assert pitcher_today(snapshot, 11) == {'pitches': 3, 'mix': [
+        {'pitch_type': 'FF', 'pitch_label': '포심', 'count': 2, 'share': 0.6667, 'avg_mph': 97.5},
+        {'pitch_type': 'XX', 'pitch_label': 'XX', 'count': 1, 'share': 0.3333, 'avg_mph': None}]}
+    assert pitcher_today(snapshot, 10)['pitches'] == 2 and pitcher_today(snapshot, 99) == {'pitches': 0, 'mix': []}
+    state = parse_state(feed('849845_20260929_195940.json'), None)
+    assert state['pitcher_today']['pitches'] == len(state['pitch_sequence']) == 2  # the trimmed fixture holds only currentPlay

@@ -182,6 +182,38 @@ def _player(feed, player_id):
     return feed['gameData'].get('players', {}).get(f'ID{player_id}', {})
 
 
+def pitcher_today(feed, pitcher_id):
+    """What this pitcher has thrown so far in this game, from the feed alone: counts and average speed per
+    pitch type, most used first. A fact of the game in progress, not a model output; shown for every
+    pitcher, including those the frozen policy does not support."""
+    from .domain import PITCH_LABELS
+    mix, plays = {}, list(feed['liveData']['plays'].get('allPlays') or [])
+    current = feed['liveData']['plays'].get('currentPlay')
+    if current and all((play.get('about') or {}).get('atBatIndex') != (current.get('about') or {}).get('atBatIndex') for play in plays):
+        plays.append(current)
+    for play in plays:
+        if (play.get('matchup') or {}).get('pitcher', {}).get('id') != pitcher_id:
+            continue
+        events = play.get('playEvents') or []
+        # the matchup names the PA's last pitcher: pitches before a mid-PA change were someone else's
+        entered = max((e.get('index', 0) for e in events if (e.get('details') or {}).get('eventType') == 'pitching_substitution'), default=-1)
+        for event in events:
+            code = ((event.get('details') or {}).get('type') or {}).get('code')
+            if event.get('isPitch') and code and event.get('index', 0) > entered:
+                speed = (event.get('pitchData') or {}).get('startSpeed')
+                item = mix.setdefault(code, {'pitch_type': code, 'count': 0, 'speeds': [],
+                                             'pitch_label': PITCH_LABELS.get(code, event['details']['type'].get('description') or code)})
+                item['count'] += 1
+                if speed is not None:
+                    item['speeds'].append(float(speed))
+    total = sum(item['count'] for item in mix.values())
+    return {'pitches': total, 'mix': [
+        {'pitch_type': item['pitch_type'], 'pitch_label': item['pitch_label'], 'count': item['count'],
+         'share': round(item['count']/total, 4),
+         'avg_mph': round(sum(item['speeds'])/len(item['speeds']), 1) if item['speeds'] else None}
+        for item in sorted(mix.values(), key=lambda item: (-item['count'], item['pitch_type']))]}
+
+
 def parse_state(feed, pins, *, config=LIVE_CONFIG):
     """Current pre-pitch game state from a GUMBO feed, plus a ``PrePitchInput`` when supported by the
     legacy bundle ``pins`` (``pins=None``: state only)."""
@@ -227,7 +259,7 @@ def parse_state(feed, pins, *, config=LIVE_CONFIG):
                  'bases': runners['first'] + 2*runners['second'] + 4*runners['third'], 'runners': runners,
                  'home_score': line['teams']['home']['runs'], 'away_score': line['teams']['away']['runs'],
                  'balls': balls, 'strikes': strikes}
-    result |= {'situation': situation,
+    result |= {'situation': situation, 'pitcher_today': pitcher_today(feed, pitcher_id),
                'pitcher': {'id': pitcher_id, 'name': _player(feed, pitcher_id).get('fullName'), 'hand': hand},
                'batter': {'id': batter_id, 'name': _player(feed, batter_id).get('fullName'), 'side': stand}}
     if pins is None:  # ARM-B service view: support is decided by the frozen policy runtime, not bundle pins
