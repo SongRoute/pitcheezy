@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BADGE, Board, Header, PitchStrip, Recommendation, WeCard, ZONE_BOUNDS, get, plainZone, short } from './WatchAlong';
 import type { Actual, Candidate, Situation, StripItem } from './WatchAlong';
 import './watch-along.css';
@@ -9,20 +9,40 @@ type LiveRec = { status: 'ready' | 'unsupported' | 'computing' | 'unavailable'; 
   recommendation?: { candidates: Candidate[] } | null; pa_pitches?: PaPitch[];
   previous?: { key: string; actual: Actual; inning: number; half: 'Top' | 'Bot'; home_we_before: number | null } | null;
   home_we_now?: number | null; policy_identity?: string };
-type LiveState = { status: string; reason: string | null; badge?: string; delay_s: number;
+type Replay = { start: number; t0: number; speed: number; elapsed_s: number; pitches: number; index: number };
+type LiveState = { status: string; reason: string | null; badge?: string; delay_s: number; replay?: Replay | null;
+  sync?: { max_delay_s: number; event_age_s?: number; feed_lag_s?: number };
   game?: { game_pk: number; date: string; status: string; away_team: string; home_team: string };
   situation?: (Situation & { runners: Record<string, boolean> }) | null; pitcher?: { id: number; name: string | null; hand: string } | null;
   batter?: { id: number; name: string | null; side: string } | null;
   pitch_sequence?: { pitch_number: number; pitch_label: string | null; description: string | null }[];
   recommendation: LiveRec | null };
+type Outline = { pitches: number; halves: { label: string; first: number }[] };
 
-const POLL_MS = 5000;
-const WAIT_TEXT: Record<string, string> = { buffering: '지연 중계를 준비하는 중이에요.', between_innings: '이닝 교대 중이에요. 다음 이닝 첫 공을 기다려요.',
+const POLL_MS = 2000;
+const DELAY_KEY = 'pitcheezy.live.delay';
+const WAIT_TEXT: Record<string, string> = { buffering: '내 중계 시점에 맞추는 중이에요.', between_innings: '이닝 교대 중이에요. 다음 이닝 첫 공을 기다려요.',
   not_live: '지금은 경기 중이 아니에요.', unsupported_game_type: '이 경기 종류는 지원하지 않아요.' };
+const clock = (seconds: number) => { const s = Math.max(0, Math.round(seconds)); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+const savedDelay = () => { try { const v = localStorage.getItem(DELAY_KEY); return v === null ? null : Number(v); } catch { return null; } };
+
+/** Lines the screen up with the viewer's broadcast: + shows pitches later, − sooner. */
+function SyncBar({ label, value, hint, onShift }: { label: string; value: string; hint: string; onShift: (seconds: number) => void }) {
+  return <section className="wa-sync" aria-label={label}>
+    <div className="wa-sync-row"><span className="wa-sync-label">{label}</span><strong aria-live="polite">{value}</strong>
+      <span className="wa-sync-buttons">{[-5, -1, 1, 5].map(d => <button key={d} onClick={() => onShift(d)} aria-label={`${Math.abs(d)}초 ${d < 0 ? '빠르게' : '늦게'}`}>{d > 0 ? `+${d}` : d}</button>)}</span></div>
+    <p>{hint}</p></section>;
+}
 
 export default function Live() {
-  const gamePk = Number(new URLSearchParams(window.location.search).get('game'));
+  const params = new URLSearchParams(window.location.search);
+  const gamePk = Number(params.get('game'));
+  const replayStart = params.get('replay') === null ? null : Number(params.get('replay'));
+  const speed = Number(params.get('speed')) || 1;
+  const [t0, setT0] = useState<number | null>(params.get('t0') ? Number(params.get('t0')) : null);
+  const [delay, setDelay] = useState<number | null>(replayStart === null ? savedDelay() : 0);
   const [state, setState] = useState<LiveState | null>(null);
+  const [outline, setOutline] = useState<Outline | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updated, setUpdated] = useState<Date | null>(null);
   const shown = useRef(new Map<string, Candidate | null>());  // recommendation shown before each pitch (this session)
@@ -30,24 +50,49 @@ export default function Live() {
   useEffect(() => {
     if (!gamePk) return;
     let stop = false, timer = 0;
+    const query = new URLSearchParams();
+    if (delay !== null) query.set('delay', String(delay));
+    if (replayStart !== null) { query.set('replay', String(replayStart)); query.set('speed', String(speed)); if (t0 !== null) query.set('t0', String(t0)); }
     const tick = async () => {
       try {
-        const next = await get<LiveState>(`/live/${gamePk}/state`);
+        const next = await get<LiveState>(`/live/${gamePk}/state?${query}`);
         if (stop) return;
+        if (next.replay && t0 === null) {  // pin the replay clock into the link: reloads and a second device stay on it
+          const url = new URLSearchParams(window.location.search); url.set('t0', String(next.replay.t0));
+          window.history.replaceState(null, '', `?${url}`); setT0(next.replay.t0); return;
+        }
         const rec = next.recommendation;
         if (rec?.key && (rec.status === 'ready' || rec.status === 'unsupported')) shown.current.set(rec.key, rec.recommendation?.candidates[0] ?? null);
         rec?.pa_pitches?.forEach(p => { if (!shown.current.has(p.key)) shown.current.set(p.key, p.pre.recommendation?.candidates[0] ?? null); });
         setState(next); setError(null); setUpdated(new Date());
       } catch (e) { if (!stop) setError((e as Error).message); }
-      if (!stop) timer = window.setTimeout(tick, document.hidden ? POLL_MS * 3 : POLL_MS);
+      if (!stop) timer = window.setTimeout(tick, document.hidden ? POLL_MS * 5 : POLL_MS);
     };
     void tick();
     return () => { stop = true; window.clearTimeout(timer); };
-  }, [gamePk]);
+  }, [gamePk, delay, replayStart, speed, t0]);
+  useEffect(() => {
+    if (gamePk && replayStart !== null) get<Outline>(`/replay/${gamePk}/outline`).then(setOutline).catch(() => undefined);
+  }, [gamePk, replayStart]);
+
+  const shift = useCallback((seconds: number) => {
+    if (replayStart !== null) {  // a replay moves its own clock, so the video may be ahead of or behind this screen
+      if (t0 === null) return;
+      const next = Math.min(Date.now() / 1000, t0 + seconds / speed);
+      const url = new URLSearchParams(window.location.search); url.set('t0', String(next));
+      window.history.replaceState(null, '', `?${url}`); setT0(next);
+    } else {
+      const next = Math.max(0, Math.min(state?.sync?.max_delay_s ?? 120, (delay ?? state?.delay_s ?? 30) + seconds));
+      try { localStorage.setItem(DELAY_KEY, String(next)); } catch { /* storage may be unavailable */ }
+      setDelay(next);
+    }
+  }, [replayStart, t0, speed, delay, state]);
 
   if (!gamePk) return <div className="wa-page"><Header badge={BADGE} back /><main className="wa-main"><p className="wa-error">경기 번호가 없어요.</p><a className="wa-button" href="/watch">경기 목록으로</a></main></div>;
   const rec = state?.recommendation ?? null;
   const s = state?.situation ?? null, game = state?.game;
+  const replay = state?.replay ?? null, isReplay = replayStart !== null;
+  const usedDelay = Math.round(delay ?? state?.delay_s ?? 30);
   const previous = rec?.previous ?? null;
   const prevTop = previous ? shown.current.get(previous.key) ?? null : null;
   const strip: StripItem[] = [...(rec?.pa_pitches ?? []).map(p => ({ key: p.key, label: p.actual?.pitch_label ?? '—', result: p.actual?.result_label ?? '',
@@ -55,15 +100,24 @@ export default function Live() {
     ...(rec?.key ? [{ key: rec.key, label: '?', result: '다음 공', match: null, current: true }] : [])];
   const prevBattingHome = previous?.half === 'Bot';
   const weBefore = previous?.home_we_before ?? null, weNow = rec?.home_we_now ?? null;
+  const currentHalf = outline && replay ? outline.halves.reduce((found, h, i) => h.first <= replay.index ? i : found, 0) : -1;
+  const late = !isReplay && state?.sync?.feed_lag_s !== undefined && state.sync.event_age_s !== undefined && state.sync.event_age_s < 90 && state.sync.feed_lag_s > usedDelay + 2;
   return <div className="wa-page"><Header badge={state?.badge ?? BADGE} back />
     {s && game && state?.pitcher && state.batter ? <Board s={s} away={game.away_team} home={game.home_team} pitcher={state.pitcher.name ?? String(state.pitcher.id)}
-      batter={`${state.batter.name ?? state.batter.id} (${state.batter.side === 'L' ? '좌' : '우'}타)`} extra={`약 ${Math.round(state.delay_s)}초 지연`} /> : null}
+      batter={`${state.batter.name ?? state.batter.id} (${state.batter.side === 'L' ? '좌' : '우'}타)`} extra={replay ? `경기 ${clock(replay.elapsed_s)}` : `${usedDelay}초 늦게`} /> : null}
     <main className="wa-main">
-      {game && <p className="wa-live-title"><span className="wa-live-dot">지연 중계</span> {short(game.away_team)} @ {short(game.home_team)}</p>}
-      {error && <p className="wa-error">{error} {state ? '마지막으로 받은 상황을 보여 주고 있어요. 5초마다 다시 시도해요.' : ''}</p>}
+      {game && <p className="wa-live-title"><span className="wa-live-dot">{isReplay ? '다시 보기 · 실제 속도' : '지연 중계'}</span> {short(game.away_team)} @ {short(game.home_team)}{isReplay && speed !== 1 ? ` · ${speed}배속` : ''}</p>}
+      {isReplay && outline && <nav className="wa-innings" aria-label="회로 이동">{outline.halves.map((h, i) =>
+        <a key={h.first} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} href={`/live?game=${gamePk}&replay=${h.first}${speed !== 1 ? `&speed=${speed}` : ''}`}>{h.label}</a>)}</nav>}
+      {isReplay ? <SyncBar label="영상 맞추기" value={replay ? `경기 ${clock(replay.elapsed_s)}` : '—'} onShift={shift}
+          hint="영상보다 이 화면이 먼저 가면 +, 늦으면 − 를 눌러 맞춰요. 회 버튼을 누르면 그 회 첫 공 15초 전부터 시작해요." />
+        : <SyncBar label="중계 맞추기" value={`내 화면이 ${usedDelay}초 늦음`} onShift={shift}
+          hint="공 결과가 내 중계 화면보다 먼저 뜨면 +, 늦게 뜨면 − 를 눌러요. 이 기기에 기억해 둬요." />}
+      {late && <p className="wa-sync-late">기록이 내 중계보다 늦게 도착하고 있어요(약 {Math.round(state!.sync!.feed_lag_s!)}초). + 를 눌러 여유를 두면 추천을 공보다 먼저 볼 수 있어요.</p>}
+      {error && <p className="wa-error">{error} {state ? '마지막으로 받은 상황을 보여 주고 있어요. 계속 다시 시도해요.' : ''}</p>}
       {!state && !error && <p className="wa-loading">경기 상황을 불러오는 중…</p>}
-      {state && state.status !== 'ready' && <article className="wa-card"><h2 className={`wa-none ${state.status === 'buffering' ? 'wa-pulse' : ''}`}>{WAIT_TEXT[state.status] ?? '잠시 기다려 주세요.'}</h2>
-        <p className="wa-reason">{state.reason}</p>{state.status === 'not_live' && <p className="wa-reason">끝난 경기는 정리되면 <a href="/watch">경기 목록</a>의 “중계 영상과 함께 보기”에 올라와요.</p>}</article>}
+      {state && state.status !== 'ready' && <article className="wa-card"><h2 className={`wa-none ${state.status === 'buffering' ? 'wa-pulse' : ''}`}>{isReplay && state.status === 'not_live' ? '경기가 끝났어요.' : WAIT_TEXT[state.status] ?? '잠시 기다려 주세요.'}</h2>
+        <p className="wa-reason">{state.reason}</p>{state.status === 'not_live' && !isReplay && <p className="wa-reason">끝난 경기는 정리되면 <a href="/watch">경기 목록</a>의 “중계 영상과 함께 보기”에 올라와요.</p>}</article>}
       {state?.status === 'ready' && <>
         <PitchStrip items={strip} />
         <article className="wa-card">
@@ -83,6 +137,6 @@ export default function Live() {
         </article>}
       </>}
       <footer className="wa-foot"><p>검증 전 실험 버전: 추천은 2025년까지 기록으로 학습해 고정한 모델(연구 이름 ARM-B)이에요. 2026 성능 평가는 아직 없어요.{rec?.policy_identity ? ` 식별자 ${rec.policy_identity.slice(0, 8)}` : ''}</p>
-        <p>실제 중계보다 늦게 보여 줘요. 5초마다 자동으로 새로 고쳐요.{updated && ` 마지막 갱신 ${updated.toLocaleTimeString('ko-KR', { hour12: false })}`}</p></footer>
+        <p>{isReplay ? '끝난 경기의 기록을 실제 경기와 같은 간격으로 다시 흘려보내요.' : '공식 기록이 도착하는 대로, 내 중계 시점에 맞춰 보여 줘요.'} 2초마다 자동으로 새로 고쳐요.{updated && ` 마지막 갱신 ${updated.toLocaleTimeString('ko-KR', { hour12: false })}`}</p></footer>
     </main></div>;
 }

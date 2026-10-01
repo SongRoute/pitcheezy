@@ -170,6 +170,59 @@ def test_rehearsal_snapshots_replay_every_pitch_with_its_pre_pitch_state():
         assert (line['outs'], line['teams']['away']['runs']) == (want.outs_when_up, want.away_score)
 
 
+def timed_final():
+    """FEED as a completed game whose six pitches were thrown 20 s apart (each takes 4 s), from 12:00:00Z."""
+    import copy
+    from datetime import datetime, timedelta, timezone
+    final = copy.deepcopy(FEED)
+    final['gameData'] |= {'status': {'abstractGameState': 'Final'}, 'teams': {'away': {'name': 'A'}, 'home': {'name': 'H'}}}
+    base, n = datetime(2026, 9, 29, 12, 0, 0, tzinfo=timezone.utc), 0
+    text = lambda moment: moment.isoformat().replace('+00:00', 'Z')
+    for item in final['liveData']['plays']['allPlays']:
+        for event in item['playEvents']:
+            if event['isPitch']:
+                event['startTime'], event['endTime'] = text(base + timedelta(seconds=20 * n)), text(base + timedelta(seconds=20 * n + 4))
+                n += 1
+    return final, base.timestamp()
+
+
+def test_timed_replay_serves_each_pitch_at_its_recorded_time():
+    final, base = timed_final()
+    now = [5000.0]
+    pending = lambda feed: demo.live_rows(feed).iloc[-1][['at_bat_number', 'pitch_number']].tolist()
+    replay = demo.TimedReplay(final, t0=5000.0, wall=lambda: now[0])
+    first = replay('.../feed/live', 10)
+    assert pending(first) == [1, 1] and first['metaData']['eventWall'] == 5000.0  # 15 s before the first pitch
+    assert replay.position() == {'elapsed_s': -15.0, 'pitches': 6, 'index': 0}
+    now[0] = 5018.9  # the first pitch ends 19 s in
+    assert replay('.../feed/live', 10) is first
+    now[0] = 5019.0
+    second = replay('.../feed/live', 10)
+    assert pending(second) == [1, 3] and second['metaData']['eventWall'] == 5019.0  # pitch 2 of the PA is the automatic ball
+    assert second['liveData']['plays']['currentPlay']['playEvents'][-1]['index'] == 1
+    now[0] = 5000.0 + 15 + 5 * 20 + 4  # the last pitch has ended: the final feed
+    done = replay('.../feed/live', 10)
+    assert done['gameData']['status']['abstractGameState'] == 'Final' and done['metaData']['eventWall'] == now[0]
+    assert replay('.../schedule?date=2026-09-29', 10) == {'dates': []}
+    # A simulated publication lag delays the fetch, not the event time; double speed halves the wall gaps.
+    now[0] = 5019.0
+    lagged = demo.TimedReplay(final, t0=5000.0, lag_s=10, wall=lambda: now[0])
+    assert pending(lagged('.../feed/live', 10)) == [1, 1]
+    now[0] = 5029.0
+    assert lagged('.../feed/live', 10)['metaData']['eventWall'] == 5019.0
+    now[0] = 5009.5
+    fast = demo.TimedReplay(final, t0=5000.0, speed=2, wall=lambda: now[0])
+    assert pending(fast('.../feed/live', 10)) == [1, 3] and fast('.../feed/live', 10)['metaData']['eventWall'] == 5009.5
+    # Starting mid-game: 15 s before that pitch, without walking through the earlier ones.
+    now[0] = 7000.0
+    middle = demo.TimedReplay(final, start=4, t0=7000.0, wall=lambda: now[0])
+    assert pending(middle('.../feed/live', 10)) == [3, 1] and middle.position()['elapsed_s'] == 65.0
+    with pytest.raises(IndexError):
+        demo.TimedReplay(final, start=6)
+    assert demo.replay_outline(final) == {'game': {'game_pk': 1, 'game_type': 'F', 'date': '2026-09-29', 'away_team': 'A', 'home_team': 'H'},
+                                          'pitches': 6, 'halves': [{'label': '1초', 'first': 0}]}
+
+
 WATCH = demo.DEMO_ROOT / 'watch/849843.json'
 
 

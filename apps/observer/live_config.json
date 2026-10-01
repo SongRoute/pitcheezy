@@ -9,6 +9,7 @@
   "max_backoff_s": 30,
   "poll_interval_s": 10,
   "delay_s": 30,
+  "max_delay_s": 120,
   "record_dir": "apps/observer/live_snapshots",
   "zone_bounds": {"bottom": 1.6, "top": 3.3899},
   "zone_bounds_source": "League median sz_bot/sz_top of data/raw/d20260911-s2325 statcast_2023-2025 rows with game_date <= 2025-04-30 (bundle training_cutoff), n=1567136. Not batter-specific; the live feed's 2026 strikeZoneTop/Bottom are deliberately ignored.",

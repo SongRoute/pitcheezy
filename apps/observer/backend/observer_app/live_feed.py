@@ -14,6 +14,7 @@ Postseason game types are accepted here only; research fetchers are unchanged.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import gzip
 import json
 import re
@@ -65,13 +66,48 @@ class ReplayTransport:
         return _load(files[index])
 
 
+def _wall(text):
+    return datetime.fromisoformat(text.replace('Z', '+00:00')).timestamp()
+
+
+def event_wall(feed):
+    """Wall-clock time (epoch s) of the newest game event a snapshot contains, or None.
+
+    A replay transport states it as ``metaData.eventWall``. A real feed gives each play event a
+    ``startTime``/``endTime``; a pitch counts from its ``endTime`` so the result is never shown before
+    the ball has arrived. ``metaData.timeStamp`` (UTC, the newest event's start) is the floor.
+    """
+    meta = feed.get('metaData') or {}
+    if meta.get('eventWall') is not None:
+        return float(meta['eventWall'])
+    times = []
+    try:
+        times.append(datetime.strptime(meta.get('timeStamp') or '', '%Y%m%d_%H%M%S').replace(tzinfo=timezone.utc).timestamp())
+    except ValueError:
+        pass
+    plays = (feed.get('liveData') or {}).get('plays') or {}
+    for play in [plays.get('currentPlay') or {}, *(plays.get('allPlays') or [])[-2:]]:
+        for event in play.get('playEvents') or []:
+            stamp = event.get('endTime') or event.get('startTime')
+            if stamp:
+                times.append(_wall(stamp))
+    return max(times) if times else None
+
+
 class LiveFeed:
-    """Polls with timeout + exponential backoff and serves the newest snapshot older than ``delay_s``."""
+    """Polls with timeout + exponential backoff and serves each viewer the game as it stood ``delay_s`` ago.
+
+    ``delay_s`` is the viewer's broadcast delay: the served snapshot is the newest one whose newest game
+    event (``event_wall``) happened at least that long ago, so a pitch appears here when it appears on a
+    broadcast running that far behind the ballpark. A snapshot that reached us later than that is served as
+    soon as it is fetched. Snapshots are kept for ``max_delay_s`` so viewers can use different delays.
+    """
 
     def __init__(self, transport=http_json, *, config=LIVE_CONFIG, delay_s=None, record_dir=None,
-                 clock=time.monotonic, sleep=time.sleep):
-        self.transport, self.config, self.clock, self.sleep = transport, config, clock, sleep
+                 clock=time.monotonic, sleep=time.sleep, wall=time.time):
+        self.transport, self.config, self.clock, self.sleep, self.wall = transport, config, clock, sleep, wall
         self.delay_s = config['delay_s'] if delay_s is None else delay_s
+        self.max_delay_s = max(config.get('max_delay_s', 120), self.delay_s)
         self.record_dir = Path(record_dir) if record_dir else None
         self.buffers, self.fetched_at, self._lock = {}, {}, threading.Lock()
 
@@ -108,29 +144,38 @@ class LiveFeed:
             with gzip.open(path, 'wt') as handle:
                 json.dump(feed, handle)
 
-    def snapshot(self, game_pk):
-        """Returns (feed or None, seconds until the delayed view is available)."""
+    def snapshot(self, game_pk, delay_s=None):
+        """Returns (entry or None, seconds until this delay has something to show). An entry is
+        ``{'feed', 'event', 'fetched'}``: the snapshot, its newest event's wall time and when it was fetched."""
         game_pk = int(game_pk)
+        delay = self.delay_s if delay_s is None else min(max(0.0, float(delay_s)), self.max_delay_s)
         with self._lock:
-            now = self.clock()
+            now, wall = self.clock(), self.wall()
             buffer = self.buffers.setdefault(game_pk, [])
             if now-self.fetched_at.get(game_pk, -1e18) >= self.config['poll_interval_s']:
                 feed = self._get(f"{self.config['base_url']}/api/v1.1/game/{game_pk}/feed/live")
                 self.fetched_at[game_pk] = now
-                buffer.append((now, feed))
+                event = event_wall(feed)
+                entry = {'feed': feed, 'event': wall if event is None else min(event, wall), 'fetched': wall}
+                if buffer and entry['event'] <= buffer[-1]['event']:
+                    buffer[-1]['feed'] = feed  # no newer game event: keep its first-seen times, refresh the content
+                else:
+                    buffer.append(entry)
                 if self.record_dir:
                     self._record(game_pk, feed)
-            ready = [i for i, (received, _) in enumerate(buffer) if received <= now-self.delay_s]
+            old = [i for i, entry in enumerate(buffer) if entry['event'] <= wall-self.max_delay_s]
+            if old:
+                del buffer[:old[-1]]  # the newest snapshot older than every allowed delay, and everything newer
+            ready = [entry for entry in buffer if entry['event'] <= wall-delay]
             if not ready:
-                return None, round(buffer[0][0]+self.delay_s-now, 1)
-            del buffer[:ready[-1]]  # keep the served snapshot and everything newer
-            return buffer[0][1], 0.0
+                return None, round(max(0.0, buffer[0]['event']+delay-wall), 1)
+            return ready[-1], 0.0
 
     def latest(self, game_pk):
         """The newest fetched (not yet delayed) snapshot, or None."""
         with self._lock:
             buffer = self.buffers.get(int(game_pk))
-            return buffer[-1][1] if buffer else None
+            return buffer[-1]['feed'] if buffer else None
 
 
 def _player(feed, player_id):
@@ -234,8 +279,8 @@ def main(argv=None):
         for poll in range(args.polls):
             if poll:
                 time.sleep(feed.config['poll_interval_s'])
-            snapshot, wait = feed.snapshot(args.game)
-            state = parse_state(snapshot, pins) if snapshot else {'status': 'buffering', 'wait_s': wait}
+            entry, wait = feed.snapshot(args.game)
+            state = parse_state(entry['feed'], pins) if entry else {'status': 'buffering', 'wait_s': wait}
             if state.get('pre_pitch'):
                 state['pre_pitch'] = state['pre_pitch'].request
             print(json.dumps(state, ensure_ascii=False), flush=True)

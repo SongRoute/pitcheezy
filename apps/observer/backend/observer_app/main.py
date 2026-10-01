@@ -1,4 +1,5 @@
 """Local Observer HTTP application and supervised no-media worker lifecycle."""
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 import logging
 import os
@@ -48,6 +49,7 @@ class ResolveInningDecision(BaseModel):
 
 
 STORAGE = Path('/Volumes/T7 Shield')
+LIVE_WAIT_S = 1.0  # a request waits this long for a just-arrived state's recommendation (about 0.15 s to compute)
 ERROR_PAGE = ('<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
               '<title>Pitcheezy</title><body style="font-family:system-ui;margin:0;padding:32px 16px;background:#f5f3eb;color:#1d2a26">'
               '<h1 style="font-size:22px">{title}</h1><p style="line-height:1.6">{body}</p><p><a href="/">처음으로</a></p></body></html>')
@@ -57,7 +59,21 @@ class UnavailableRecommender:
     ready = False
 
 
-def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=None, watch_dir=None):
+def _timed_replay(game_pk, **options):
+    """(transport, outline) of a completed game's real-pace replay, from the stored final feed."""
+    scripts = str(REPO/'scripts')
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import demo_precompute as demo
+    path = demo.DEMO_ROOT/'feeds'/f'{int(game_pk)}_final.json.gz'
+    if not path.is_file():
+        raise KeyError(game_pk)
+    final = demo.read_feed(path)
+    return (demo.TimedReplay(final, **options) if options else None), demo.replay_outline(final)
+
+
+def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=None, watch_dir=None,
+               timed_replay=_timed_replay):
     injected = service is not None
     if start_worker is None:
         start_worker = not injected
@@ -282,7 +298,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             return None
         if not armb_enabled():
             return {'status': 'unavailable', 'reason': '이 실행에서는 지연 중계 추천을 껐습니다.'}
-        cached = armb.lookup(snapshot, first=True)
+        cached = armb.lookup(snapshot, first=True, wait_s=LIVE_WAIT_S)
         policy = armb.status()
         if cached is None:
             if policy['state'] == 'unavailable':
@@ -299,24 +315,62 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 'previous': result['previous'], 'home_we_now': result['home_we_now'],
                 'policy_identity': result['policy_identity'][:8], 'seconds': result['seconds']}
 
+    replays = OrderedDict()  # (gamePk, start, t0, speed) -> (LiveFeed, transport): one shared clock per link
+
+    def replay_parts(game_pk, start, t0, speed):
+        from .live_feed import LIVE_CONFIG, LiveFeed
+        now = time.time()
+        t0 = now if t0 is None else t0
+        if not now-12*3600 <= t0 <= now+5:
+            raise ServiceError(400, '다시 보기 시작 시각이 올바르지 않습니다. 처음부터 다시 시작해 주세요.')
+        key = (game_pk, start, round(t0, 3), speed)
+        if key not in replays:
+            try:
+                transport, _ = timed_replay(game_pk, start=start, t0=key[2], speed=speed,
+                                            lag_s=LIVE_CONFIG.get('replay_lag_s', 0.0))
+            except KeyError:
+                raise ServiceError(404, '이 경기는 다시 보기 자료가 없습니다.') from None
+            except IndexError:
+                raise ServiceError(404, '해당 투구를 찾을 수 없습니다.') from None
+            config = LIVE_CONFIG | {'poll_interval_s': max(1.0, LIVE_CONFIG['poll_interval_s']/speed)}
+            replays[key] = (LiveFeed(transport, config=config, delay_s=0), transport)
+            while len(replays) > 6:
+                replays.popitem(last=False)
+        replays.move_to_end(key)
+        return replays[key]
+
+    @app.get('/api/replay/{game_pk}/outline')
+    def replay_outline(game_pk: int):
+        try:
+            return {'badge': WATCH_BADGE} | timed_replay(game_pk)[1]
+        except KeyError:
+            raise ServiceError(404, '이 경기는 다시 보기 자료가 없습니다.') from None
+
     @app.get('/api/live/{game_pk}/state')
-    def live_state(game_pk: int):
+    def live_state(game_pk: int, delay: float | None = Query(None, ge=0, le=600), replay: int | None = Query(None, ge=0),
+                   t0: float | None = Query(None), speed: float = Query(1.0, ge=0.25, le=30)):
         from .live_feed import parse_state
         if game_pk < 1:
             raise ServiceError(400, 'gamePk는 양의 정수여야 합니다.')
-        feed = live_parts()
+        feed, transport = (live_parts(), None) if replay is None else replay_parts(game_pk, replay, t0, speed)
 
         def state():
-            snapshot, wait = feed.snapshot(game_pk)
+            entry, wait = feed.snapshot(game_pk, delay)
             newest = feed.latest(game_pk)
             if armb_enabled() and newest is not None and parse_state(newest, None)['status'] == 'ready':
                 armb.lookup(newest)  # head start: compute the raw state before the delay serves it
-            if snapshot is None:
-                return {'status': 'buffering', 'reason': f'지연 중계 버퍼를 채우는 중입니다({wait}초).',
-                        'delay_s': feed.delay_s, 'recommendation': None}
+            used = feed.delay_s if delay is None else min(delay, feed.max_delay_s)
+            timing = {'delay_s': used, 'replay': None if transport is None else
+                      {'start': replay, 't0': transport.t0, 'speed': speed} | transport.position()}
+            if entry is None:
+                return timing | {'status': 'buffering', 'reason': f'내 중계 시점까지 기다리는 중입니다({wait}초).',
+                                 'recommendation': None, 'sync': {'max_delay_s': feed.max_delay_s}}
+            snapshot = entry['feed']
             parsed = parse_state(snapshot, None)
             parsed.pop('pre_pitch')
-            return parsed | {'delay_s': feed.delay_s, 'recommendation': armb_view(snapshot, parsed)}
+            sync = {'max_delay_s': feed.max_delay_s, 'event_age_s': round(time.time()-entry['event'], 1),
+                    'feed_lag_s': round(entry['fetched']-entry['event'], 1)}
+            return parsed | timing | {'sync': sync, 'recommendation': armb_view(snapshot, parsed)}
         return live_call(state)
 
     watch = WatchAlong(watch_dir)

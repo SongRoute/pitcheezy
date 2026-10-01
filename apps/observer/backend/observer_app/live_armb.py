@@ -55,11 +55,11 @@ class LiveArmB:
         self.failed, self.running = {}, None
         self.policy, self.error, self.loading = None, None, False
         self.computed, self.last_seconds = 0, None
-        self._cond = threading.Condition()
+        self._cond = threading.Condition()  # its default lock is an RLock
         self._thread = None
 
     def start(self):
-        with self._cond:
+        with self._cond:  # reentrant: ``lookup`` starts the worker while holding it
             if self._thread is None:
                 self.loading = True
                 self._thread = threading.Thread(target=self._run, name='live-armb', daemon=True)
@@ -71,23 +71,30 @@ class LiveArmB:
         return {'state': state, 'reason': self.error, 'computed': self.computed, 'pending': len(self.pending),
                 'last_seconds': self.last_seconds}
 
-    def lookup(self, feed, *, queue=True, first=False):
-        """Cached result for this feed's state; else queue it (``first``: ahead of other states) and return None."""
+    def lookup(self, feed, *, queue=True, first=False, wait_s=0.0):
+        """Cached result for this feed's state; else queue it (``first``: ahead of other states) and return
+        None. ``wait_s`` waits that long for the worker first: an ordinary state takes about 0.15 s, so the
+        viewer gets the recommendation with the pitch instead of one poll later."""
         key = state_key(feed)
+        deadline = time.monotonic() + wait_s
         with self._cond:
-            if key in self.cache:
-                self.cache.move_to_end(key)
-                return self.cache[key]
-            if key in self.failed:
-                return {'error': self.failed[key]}
-            if queue and self.error is None and key != self.running:
+            if key not in self.cache and key not in self.failed and queue and self.error is None and key != self.running:
                 self.pending[key] = feed
                 self.pending.move_to_end(key, last=not first)
                 while len(self.pending) > self.max_pending:  # stale intermediate states are dropped
                     self.pending.popitem(last=True)
-                self._cond.notify()
-        self.start()
-        return None
+                self._cond.notify_all()
+                self.start()
+            while True:
+                if key in self.cache:
+                    self.cache.move_to_end(key)
+                    return self.cache[key]
+                if key in self.failed:
+                    return {'error': self.failed[key]}
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or self.policy is None or (key != self.running and key not in self.pending):
+                    return None
+                self._cond.wait(remaining)
 
     def _run(self):
         try:
@@ -112,6 +119,7 @@ class LiveArmB:
                 with self._cond:
                     self.running = None
                     self.failed[key] = f'{type(exc).__name__}'
+                    self._cond.notify_all()
                 continue
             seconds = round(time.perf_counter() - started, 2)
             with self._cond:
@@ -120,4 +128,5 @@ class LiveArmB:
                 while len(self.cache) > self.cache_size:
                     self.cache.popitem(last=False)
                 self.computed, self.last_seconds = self.computed + 1, seconds
+                self._cond.notify_all()
             LOGGER.info('live state computed', extra={'fields': {'key': key, 'seconds': seconds}})

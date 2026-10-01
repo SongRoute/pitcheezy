@@ -1,5 +1,6 @@
 """Live GUMBO parser/poller on trimmed real snapshots (PHI @ ATL, gamePk 849845, 2026-09-29 Wild Card)."""
 import copy
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
@@ -11,7 +12,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from observer_app.live_armb import LiveArmB, state_key
-from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, parse_state
+from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, event_wall, parse_state
 from observer_app.main import create_app
 
 FIXTURES = Path(__file__).parent/'fixtures/live'
@@ -96,17 +97,43 @@ def test_poller_backoff_retries_then_gives_up():
     assert sleeps == [1.0, 2.0, 4.0]
 
 
-def test_delay_buffer_serves_only_snapshots_older_than_delay():
-    now = [0.0]
-    live = LiveFeed(ReplayTransport(FIXTURES), delay_s=30, clock=lambda: now[0], sleep=lambda _: None)
-    assert live.snapshot(849845) == (None, 30.0)
-    now[0] = 15.0
-    live.snapshot(849845)  # within poll interval: no second fetch yet
-    now[0] = 31.0
-    first, _ = live.snapshot(849845)  # fetches the second recording, serves the first
-    assert first['metaData']['timeStamp'] == '20260929_195940'
-    now[0] = 62.0
-    assert live.snapshot(849845)[0]['metaData']['timeStamp'] == '20260929_203124'
+def at(snapshot, wall):
+    """The snapshot, with its newest game event stated at wall time ``wall`` (as a replay transport does)."""
+    snapshot = copy.deepcopy(snapshot)
+    snapshot['metaData']['eventWall'] = wall
+    return snapshot
+
+
+def test_event_time_is_the_newest_pitch_end_with_the_feed_stamp_as_floor():
+    snapshot = feed('849845_20260929_195940.json')  # trimmed fixture: no event times, so the feed stamp (UTC) stands
+    stamp = datetime(2026, 9, 29, 19, 59, 40, tzinfo=timezone.utc).timestamp()
+    assert event_wall(snapshot) == stamp
+    timed = copy.deepcopy(snapshot)
+    events = timed['liveData']['plays']['currentPlay']['playEvents']
+    events[-1] |= {'startTime': '2026-09-29T19:59:40.100Z', 'endTime': '2026-09-29T19:59:44.600Z'}
+    assert event_wall(timed) == stamp + 4.6  # the pitch counts from its end: never revealed before the ball arrives
+    assert event_wall(at(timed, 12.5)) == 12.5 and event_wall({'metaData': {}}) is None
+
+
+def test_each_viewer_sees_the_game_as_it_stood_their_own_delay_ago():
+    now = [1000.0]
+    before, pitch = at(feed('849845_20260929_195940.json'), 990.0), at(feed('849845_20260929_203124.json'), 1012.0)
+    live = LiveFeed(lambda url, timeout: before if now[0] < 1020 else pitch, delay_s=30,
+                    clock=lambda: now[0], wall=lambda: now[0], sleep=lambda _: None)
+    assert live.snapshot(849845) == (None, 20.0)  # the only snapshot is 10 s old: a 30 s broadcast has not shown it yet
+    entry, wait = live.snapshot(849845, 5)
+    assert entry['feed'] is before and wait == 0.0 and (entry['event'], entry['fetched']) == (990.0, 1000.0)
+    now[0] = 1020.0  # the pitch thrown at 1012 reaches us 8 s later
+    assert live.snapshot(849845, 5)[0]['feed'] is pitch       # a 5 s broadcast already showed it: served as soon as fetched
+    assert live.snapshot(849845, 5)[0]['fetched'] - live.snapshot(849845, 5)[0]['event'] == 8.0
+    assert live.snapshot(849845)[0]['feed'] is before         # a 30 s broadcast is still before the pitch
+    assert live.snapshot(849845, 0)[0]['feed'] is pitch and live.latest(849845) is pitch
+    now[0] = 1042.0
+    assert live.snapshot(849845)[0]['feed'] is pitch          # 1012 + 30
+    assert live.snapshot(849845, 9999) == (None, 68.0)        # clamped to max_delay_s (120): nothing that old was seen
+    now[0] = 1200.0
+    live.snapshot(849845)
+    assert [entry['feed'] is pitch for entry in live.buffers[849845]] == [True]  # older than every allowed delay: dropped
 
 
 class FakePolicy:
@@ -182,3 +209,68 @@ def test_feed_outage_is_a_503_with_a_korean_message():
     with TestClient(app) as client:
         response = client.get('/api/live/849845/state')
     assert response.status_code == 503 and 'MLB 경기 정보를' in response.json()['detail']
+
+
+class FakeTimedReplay:
+    """Stands in for demo_precompute.TimedReplay: one snapshot, a clock position, counted constructions."""
+    built = []
+
+    def __init__(self, game_pk, start, t0, speed, lag_s):
+        self.t0, self.options = t0, (game_pk, start, speed, lag_s)
+        FakeTimedReplay.built.append(self)
+
+    def position(self):
+        return {'elapsed_s': 12.0, 'pitches': 250, 'index': self.options[1]}
+
+    def __call__(self, url, timeout):
+        return at(feed('849845_20260929_195940.json'), self.t0)
+
+
+def fake_timed_replay(game_pk, **options):
+    if game_pk != 849845:
+        raise KeyError(game_pk)
+    if options.get('start', 0) >= 250:
+        raise IndexError(options['start'])
+    outline = {'game': {'game_pk': game_pk}, 'pitches': 250, 'halves': [{'label': '1초', 'first': 0}]}
+    return (FakeTimedReplay(game_pk, **options) if options else None), outline
+
+
+def test_replay_route_pins_one_clock_per_link_and_takes_a_viewer_delay():
+    FakeTimedReplay.built.clear()
+    armb = LiveArmB(lambda: FakePolicy())
+    app = create_app(object(), live_feed=LiveFeed(ReplayTransport(FIXTURES), delay_s=0), live_policy=armb,
+                     timed_replay=fake_timed_replay)
+    with TestClient(app) as client:
+        assert client.get('/api/replay/849845/outline').json()['halves'] == [{'label': '1초', 'first': 0}]
+        assert client.get('/api/replay/1/outline').status_code == 404
+        first = client.get('/api/live/849845/state', params={'replay': 40}).json()
+        clock = first['replay']
+        assert first['status'] == 'ready' and (clock['start'], clock['speed'], clock['index']) == (40, 1.0, 40)
+        assert abs(clock['t0'] - time.time()) < 5 and first['delay_s'] == 0
+        again = client.get('/api/live/849845/state', params={'replay': 40, 't0': clock['t0']}).json()
+        assert again['replay']['t0'] == clock['t0'] and len(FakeTimedReplay.built) == 1  # same link, same clock
+        assert again['sync']['event_age_s'] >= 0 and again['sync']['max_delay_s'] == 120
+        late = client.get('/api/live/849845/state', params={'replay': 40, 't0': clock['t0'], 'delay': 45}).json()
+        assert late['status'] == 'buffering' and late['delay_s'] == 45  # a viewer 45 s behind has not reached it yet
+        assert client.get('/api/live/849845/state', params={'replay': 40, 't0': time.time()+3600}).status_code == 400
+        assert client.get('/api/live/849845/state', params={'replay': 999}).status_code == 404
+        assert client.get('/api/live/1/state', params={'replay': 0}).status_code == 404
+        live = client.get('/api/live/849845/state', params={'delay': 20}).json()  # the real-feed path is untouched
+        assert live['replay'] is None and live['delay_s'] == 20 and live['status'] == 'ready'
+
+
+def test_a_request_waits_briefly_for_a_just_queued_state():
+    class SlowPolicy(FakePolicy):
+        def __call__(self, snapshot):
+            time.sleep(.15)
+            return super().__call__(snapshot)
+    armb = LiveArmB(lambda: SlowPolicy())
+    snapshot = feed('849845_20260929_195940.json')
+    armb.lookup(feed('849845_20260929_203124.json'))  # loads the policy and computes another state first
+    wait_computed(armb, 1)
+    assert armb.lookup(snapshot) is None                        # no wait: queued, answered on a later poll
+    assert armb.lookup(snapshot, wait_s=5)['result']['key'] == '849845:61:3'  # waits for the worker instead
+    started = time.monotonic()
+    moved = copy.deepcopy(snapshot)
+    moved['liveData']['linescore']['outs'] = 2
+    assert armb.lookup(moved, queue=False, wait_s=5) is None and time.monotonic()-started < 1  # nothing to wait for

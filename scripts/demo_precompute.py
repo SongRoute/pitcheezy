@@ -836,37 +836,45 @@ class LivePolicy:
     new since the last call, computed exactly as ``PolicyInputs``/``FrozenWE`` compute them at binding.
     Every context-keyed value (row, encoding, WE tables and the G0/rollout caches keyed by context key)
     is therefore what a fresh bind over this call's rows would hold. When a previously bound row
-    changed (a runner moved or the pitcher changed before the pending pitch), or the game changes, it
-    rebinds from scratch. The current PA's pitches and the pending one go through ``pre_pitch``. The
-    ledger header goes to a temporary directory; nothing is submitted.
+    changed (a runner moved or the pitcher changed before the pending pitch), that game rebinds from
+    scratch. The ``max_games`` most recently used games stay bound, so viewers of two games (a live one
+    and a replay) do not rebind each other. The current PA's pitches and the pending one go through
+    ``pre_pitch``. The ledger header goes to a temporary directory; nothing is submitted.
     """
 
-    def __init__(self, output_root=DEMO_ROOT, local=None, addenda=ADDENDA):
+    def __init__(self, output_root=DEMO_ROOT, local=None, addenda=ADDENDA, max_games=2):
+        from collections import OrderedDict
         self.settings = registration(addenda)
         local = local or json.loads((PROJECT / 'configs/local.json').read_text())
         self.snapshot, self.as_of, self.style = style_snapshot(
             self.settings, lambda: load_frame(self.settings, local), _check_output_root(output_root) / 'style')
         self.observer, self.bounds = _location_settings()
-        self.bound, self.binds = None, 0
+        self.bindings, self.max_games, self.bound, self.binds = OrderedDict(), max_games, None, 0
 
     def _bind(self, frame):
-        """Bind over ``frame`` (a game's first call, or after a bound row changed); drops the previous binding."""
+        """Bind over ``frame`` (a game's first call, or after a bound row changed); drops that game's previous
+        binding and, beyond ``max_games``, the least recently used game's."""
         import gc
         import tempfile
         from pitchmdp import policy_identity as pid
-        if self.bound is not None:
-            self.bound['scratch'].cleanup()
-        self.bound = None
+        game_pk = int(frame.game_pk.iloc[0])
+        dropped = [self.bindings.pop(game_pk, None)]
+        while len(self.bindings) >= self.max_games:
+            dropped.append(self.bindings.popitem(last=False)[1])
+        for binding in dropped:
+            if binding is not None:
+                binding['scratch'].cleanup()
+        self.bound = dropped = binding = None
         gc.collect()  # release the previous components before loading new ones
         scratch = tempfile.TemporaryDirectory(prefix='pitcheezy-live-')
-        game_pk = int(frame.game_pk.iloc[0])
         provenance = {'demo': 'DEMO-WS-2026 delayed-live service view (display only; nothing submitted)',
                       'game_pk': game_pk, 'style_snapshot_sha256': self.style['content_sha256'], 'as_of_exclusive': self.as_of}
         components, runtime, aux = bind(self.settings, frame, Path(scratch.name) / 'ledger.jsonl', provenance)
         ident, _, paths = bundle_paths(self.settings)
         we_values, _ = pid.load_pinned_we(paths, ident['we_contract_sha256'], ident['classes']['we'])
-        self.bound = {'game_pk': game_pk, 'components': components, 'runtime': runtime, 'aux': aux, 'scratch': scratch,
-                      'we_values': we_values, 'locator': make_locator(components, aux, self.bounds, self.observer)}
+        self.bound = self.bindings[game_pk] = {
+            'game_pk': game_pk, 'components': components, 'runtime': runtime, 'aux': aux, 'scratch': scratch,
+            'we_values': we_values, 'locator': make_locator(components, aux, self.bounds, self.observer)}
         self.binds += 1
         return self.bound
 
@@ -903,8 +911,10 @@ class LivePolicy:
             return None
         frame, _ = demo_frame(rows, self.snapshot, self.as_of)
         started = time.perf_counter()
-        if self.bound is None or self.bound['game_pk'] != int(frame.game_pk.iloc[0]) or not self._extend(frame):
+        self.bound = self.bindings.get(int(frame.game_pk.iloc[0]))
+        if self.bound is None or not self._extend(frame):
             self._bind(frame)
+        self.bindings.move_to_end(self.bound['game_pk'])
         components, runtime, aux, locator = (self.bound[k] for k in ('components', 'runtime', 'aux', 'locator'))
         bound = time.perf_counter() - started
         store = history_store(frame, aux, self.settings)
@@ -989,6 +999,76 @@ def write_replay(game_pk, output, *, start=0, count=None, root=DEMO_ROOT):
                                       'teams': {side: {'team': {'name': teams[side]['name']}} for side in ('away', 'home')}}]}]}
     _write_json(output / f'schedule_{date}.json', schedule)
     return {'dir': str(output), 'snapshots': written, 'schedule_date': date}
+
+
+def _epoch(text):
+    return datetime.fromisoformat(text.replace('Z', '+00:00')).timestamp()
+
+
+class TimedReplay:
+    """``LiveFeed`` transport that replays a COMPLETED game at its real pace (display rehearsal only).
+
+    Snapshot n is the state right before pitch n (``replay_snapshots``). It becomes fetchable once pitch
+    n-1's recorded ``endTime`` (+ ``lag_s``, a simulated feed publication lag) has passed on the replay
+    clock, which stands ``lead_s`` before pitch ``start`` at wall time ``t0`` and runs ``speed`` times real
+    time. After the last pitch the final feed is served. ``metaData.eventWall`` is each snapshot's event
+    time moved onto today's wall clock, so the observer's delay buffer treats it like a real feed.
+    """
+
+    def __init__(self, final, *, start=0, t0=None, speed=1.0, lag_s=0.0, lead_s=15.0, wall=time.time):
+        events = [e for play in final['liveData']['plays']['allPlays'] for e in play['playEvents'] if e.get('isPitch')]
+        if not 0 <= start < len(events):
+            raise IndexError(start)
+        self.starts = [_epoch(e['startTime']) for e in events]
+        self.ends = [_epoch(e.get('endTime') or e['startTime']) for e in events]
+        self.final, self.start, self.speed, self.lag_s, self.wall = final, start, float(speed), float(lag_s), wall
+        self.t0 = wall() if t0 is None else float(t0)
+        self.origin = self.starts[start] - lead_s
+        self._snapshots, self._current = None, None
+
+    def _virtual(self):
+        return self.origin + (self.wall() - self.t0) * self.speed
+
+    def _to_wall(self, virtual):
+        return self.t0 + (virtual - self.origin) / self.speed
+
+    def position(self):
+        """Where the replay clock stands: seconds since the game's first pitch and the pending pitch index."""
+        import bisect
+        virtual = self._virtual()
+        return {'elapsed_s': round(virtual - self.starts[0], 1), 'pitches': len(self.ends),
+                'index': max(self.start, bisect.bisect_right(self.ends, virtual - self.lag_s))}
+
+    def __call__(self, url, timeout):
+        import bisect
+        if '/feed/live' not in url:
+            return {'dates': []}
+        index = max(self.start, bisect.bisect_right(self.ends, self._virtual() - self.lag_s))
+        if index >= len(self.ends):
+            return {**self.final, 'metaData': {**self.final.get('metaData', {}), 'timeStamp': 'rehearsal_final',
+                                                'eventWall': self._to_wall(self.ends[-1])}}
+        if self._current is None or self._current[0] != index:
+            if self._current is None or self._current[0] + 1 != index:  # a clock that started mid-game jumps straight there
+                self._snapshots = replay_snapshots(self.final, start=index)
+            self._current = next(self._snapshots)
+        feed = self._current[1]
+        feed['metaData']['eventWall'] = self.t0 if index == self.start else self._to_wall(self.ends[index - 1])
+        return feed
+
+
+def replay_outline(final):
+    """Jump targets of a completed game for the timed replay: the first pitch of each half-inning."""
+    halves, index = [], 0
+    for play in final['liveData']['plays']['allPlays']:
+        label = f"{play['about']['inning']}{'초' if play['about']['isTopInning'] else '말'}"
+        pitches = sum(bool(e.get('isPitch')) for e in play['playEvents'])
+        if pitches and (not halves or halves[-1]['label'] != label):
+            halves.append({'label': label, 'first': index})
+        index += pitches
+    data = final['gameData']
+    return {'game': {'game_pk': data['game']['pk'], 'game_type': data['game']['type'], 'date': data['datetime']['officialDate'],
+                     'away_team': data['teams']['away']['name'], 'home_team': data['teams']['home']['name']},
+            'pitches': index, 'halves': halves}
 
 
 def completed_postseason_games(since, until, fetch=None):
