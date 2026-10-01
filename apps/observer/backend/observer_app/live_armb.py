@@ -43,7 +43,8 @@ def _default_factory():
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
     import demo_precompute
-    return demo_precompute.LivePolicy()
+    from .live_feed import LIVE_CONFIG
+    return demo_precompute.LivePolicy(max_games=LIVE_CONFIG.get('max_bound_games', 2))
 
 
 class LiveArmB:
