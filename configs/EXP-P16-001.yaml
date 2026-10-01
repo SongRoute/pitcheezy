@@ -1,0 +1,121 @@
+{
+  "protocol": "ml_direct_head_confirm_v1",
+  "experiment_id": "EXP-P16-001",
+  "status": "REGISTERED",
+  "decision": "D141 (2026-10-02): user approved the five-seed and whole-MLB confirmation of the EXP-P15-002 fixed mix, registered before any five-seed result is read",
+  "matrix_row": "MX-F8 (confirmation of the EXP-P15-002 candidate; no new model, feature or data)",
+  "confirms": {
+    "experiment_id": "EXP-P15-002",
+    "arm": "G15-direct-g0-mix",
+    "three_seed_result": "Cpanel DEV after June blend dNLL -0.003363 [-0.004979, -0.001789], 3/3 seeds (D139, results/EXP-P15-001.json)"
+  },
+  "hypothesis": "The three-seed pass of the equal-weight mix of the direct pre-pitch head and G0-global is stable: it still passes N with five seeds on the Cpanel DEV and on the whole-MLB DEV.",
+  "confirmed_arm": "G15-direct-g0-mix",
+  "execution": {
+    "enabled": true,
+    "runner": "experiments/pitchmdp/scripts/run_ml_direct_head_confirm.py",
+    "worktree": "/Users/song/Projects/pitcheezy-worktrees/exp-p16-direct-mix-confirm (branch claude/exp-p16-direct-mix-confirm, on top of claude/exp-p15-direct-head); kept off the policy-validation branch (D118 precedent)",
+    "prefix": "cd experiments/pitchmdp && DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib /Users/song/Projects/pitcheezy/.venv/bin/python scripts/run_ml_direct_head_confirm.py --config ../../configs/EXP-P16-001.yaml --local-config configs/local.json",
+    "order": [
+      "smoke : --output <runs>/EXP-P16-001-smoke run --smoke   (seed 3 only, row/epoch-limited)",
+      "run   : --output <runs>/EXP-P16-001 run                 (fits and predicts seeds 3 and 4, Cpanel and whole MLB)",
+      "score : --output <runs>/EXP-P16-001 score               (after both new seeds; writes analysis/results.json and results/EXP-P16-001.json)"
+    ],
+    "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
+    "queue": "single heavy queue: runs/ML-MATRIX-20260924/.heavy.lock (non-blocking, fails fast if held); Mac mini only, A5000 not used; started only after the 2026-10-02 live rehearsal recording of game 849844 has finished",
+    "expected_cost": "Two fits 59-70 s each and two whole-MLB one-draw predictions about 124 s each (EXP-P15-001 measured), plus load and smoke. Rough total under 10 min."
+  },
+  "baseline": {
+    "cell": "G0-global",
+    "experiment_id": "EXP-P4-001 (seeds 0-2) + EXP-P10-001 (seeds 3-4)",
+    "config_file": "configs/EXP-P4-001.yaml, configs/EXP-P10-001.yaml",
+    "frozen_reference": "configs/G0-RESEARCH-FROZEN-v1.json",
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+  "parent_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+  "frozen_direct_run": {
+    "experiment_id": "EXP-P15-001",
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001",
+    "preparation_sha256": "2e3f553f3ce86941187d6be21adeda05ebaf948a40d01110ef2326cb8327b0b4",
+    "use": "direct-head seeds 0-2 (Cpanel and whole-MLB archives) are reused as sealed; never refitted"
+  },
+  "g0_extra_seeds_run": {
+    "experiment_id": "EXP-P10-001",
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001",
+    "preparation_sha256": "44f6579d1e1df845d5e92d8886e1935ff18d8dc184aee878d31570e98d40d5b4",
+    "use": "frozen G0-global members seeds 3 and 4 on the Cpanel blend/dev rows"
+  },
+  "whole_mlb_reference": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001",
+  "whole_mlb_preparation_sha256": "aa831981ed84963e7dc27f7037fed166c2e6f83b0ed29cfba32d2a8b31a0d52a",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "new_fit_seeds": [
+    3,
+    4
+  ],
+  "one_change": "The eight current-pitch physical channels of the current token are zero in training, early stopping, calibration and inference (direct_arrays / NoPhysicsDelivery), so there is no delivery integration. Candidate pitch type, same-PA past pitches (with their observed physics and outcomes) and context are unchanged.",
+  "change_from_EXP-P15": "Seeds only: direct-head seeds 3 and 4 are fitted with the unchanged EXP-P15-001 fit/predict functions (the runner refuses to start if any EXP-P15-001 source file hash differs). The N rule moves from the three-seed screen stage (2/3 seeds) to the five-seed final stage (4/5 seeds).",
+  "mix": {
+    "direct_weight": 0.5,
+    "rule": "EXP-P15-002: member-wise probability average of the direct head and the frozen G0-global member of the same seed (blend and dev splits), then the same June frequency blend. Fixed weight, no extra fit, no DEV selection."
+  },
+  "unchanged_from_g0": {
+    "tokens_context": "enriched H5 and SharingContext exactly as the parent (G0-global uses the context without cluster/routing columns)",
+    "splits": "EXP-P4-001 train / earlystop / temperature (May Cpanel) / blend (June Cpanel) / dev (Cpanel) keys; frozen mlb_dev",
+    "training": {
+      "kind": "flatten_mlp",
+      "width": 128,
+      "epochs": 30,
+      "patience": 5,
+      "batch_size": 1024,
+      "learning_rate": 0.0005
+    },
+    "calibration": "per-seed temperature on the May Cpanel rows (same optimizer and bounds), three-seed probability mean, June frequency blend by the same scorer",
+    "hpo_trials": 0
+  },
+  "leak_guard": "direct_arrays raises if any current-token physical channel is nonzero; prediction raises unless every row carries the no-pool marker; synthetic test checks predictions do not change when the logged current physics change",
+  "metrics": {
+    "co_primary": [
+      "Cpanel DEV after the June frequency blend: five-seed mix vs five-seed G0-global, paired NLL (whole-game bootstrap, pitch-weighted); p Holm-adjusted across the two arms exactly as in EXP-P15-001",
+      "whole-MLB DEV blended with the frozen frequency baseline using each arm's own Cpanel June five-seed weight: five-seed mix vs five-seed G0-global, paired NLL; unadjusted p"
+    ],
+    "multiplicity": "Both co-primary comparisons must pass (intersection-union), so no further adjustment across them.",
+    "descriptive": [
+      "direct head alone (all rows)",
+      "Cpanel DEV before the frequency blend",
+      "whole-MLB DEV calibrated five-seed mean without the June blend",
+      "paired difference split by the delivery tier the G0 control used",
+      "paired Brier, ECE10"
+    ],
+    "N": {
+      "delta_nll_max": -0.003,
+      "nll_ci95_upper_max": 0,
+      "brier_ci95_upper_max": 0.001,
+      "required_negative_seeds": 4
+    },
+    "bootstrap": {
+      "draws": 10000,
+      "seed": 20260924,
+      "unit": "whole game"
+    },
+    "reading_fixed_before_results": {
+      "both_pass": "The mix is a confirmed prediction candidate. Whether it replaces G0-global as the research baseline, and any policy re-validation, is a separate user decision recorded in docs/decisions.md. No service or policy-identifier change follows from this result alone.",
+      "either_fails": "Not confirmed. G0 stays. Statcast-only accuracy work is closed until CV intent data arrive (user decision D133). The EXP-P15-001 efficiency finding is unaffected."
+    }
+  },
+  "data_rules": "No 2026 rows. TRAIN rows only for fitting; May/June Cpanel rows only for temperature and blend; DEV never used for fitting, calibration or selection.",
+  "exposure_note": "The Cpanel and whole-MLB DEV rows were already read for this same candidate with three seeds (D139). This experiment checks seed stability and the registered whole-MLB population; it is not an independent-data confirmation.",
+  "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P16-001"
+}
