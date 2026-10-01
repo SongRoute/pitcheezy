@@ -1,0 +1,41 @@
+{
+ "schema": "pitcheezy.live-replay-check.v1",
+ "note": "Service check: one completed DEMO-WS-2026 game replayed through the live pipeline at 8x its recorded pace (feed poll every 1.25 s = 10 s of game time). Not a model or policy evaluation.",
+ "game_pk": 849843,
+ "speed": 8,
+ "code_commit": "de7cd83",
+ "run": "t0=1790892969.048",
+ "date": "2026-10-02",
+ "polls": 2248,
+ "poll_errors": 0,
+ "poll_status": {
+  "ready": 2245,
+  "not_live": 3
+ },
+ "decisions": 262,
+ "decisions_ready": 246,
+ "decisions_unsupported": 16,
+ "polls_showing_computing": 0,
+ "compute_total_s": {
+  "median": 0.14,
+  "p95": 0.18,
+  "max": 6.0
+ },
+ "rebinds_over_1s": [
+  {
+   "key": "849843:44:1",
+   "bind": 5.82,
+   "total": 6.0
+  }
+ ],
+ "response_ms": {
+  "median": 9.2,
+  "p95": 203.8,
+  "max": 428.6
+ },
+ "watch_precompute_coverage": {
+  "ready": 246,
+  "pitches": 262,
+  "source": "GET /api/watch/games 849843"
+ }
+}
