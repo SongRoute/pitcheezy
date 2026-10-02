@@ -166,7 +166,7 @@ export default function Live() {
             before={weBefore === null ? null : prevBattingHome ? weBefore : 1 - weBefore} after={weNow === null ? null : prevBattingHome ? weNow : 1 - weNow} />}
         </article>}
       </>}
-      <footer className="wa-foot"><p>검증 전 실험 버전: 추천은 2025년까지 기록으로 학습해 고정한 모델(연구 이름 ARM-B)이에요. 2026 성능 평가는 아직 없어요.{rec?.policy_identity ? ` 식별자 ${rec.policy_identity.slice(0, 8)}` : ''}</p>
+      <footer className="wa-foot"><p>검증 전 실험 버전: 추천은 2025년까지 기록으로 학습해 고정한 모델(연구 이름 ARM-B)이에요. 2026 정규시즌 1회 평가: 개선 근거를 확인하지 못했습니다.{rec?.policy_identity ? ` 식별자 ${rec.policy_identity.slice(0, 8)}` : ''}</p>
         <p>{isReplay ? '끝난 경기의 기록을 실제 경기와 같은 간격으로 다시 흘려보내요.' : '공식 기록이 도착하는 대로, 내 중계 시점에 맞춰 보여 줘요.'} 2초마다 자동으로 새로 고쳐요.{updated && ` 마지막 갱신 ${updated.toLocaleTimeString('ko-KR', { hour12: false })}`}</p></footer>
     </main></div>;
 }

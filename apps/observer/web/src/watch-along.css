@@ -112,7 +112,8 @@
 .wa-sync-tap{width:100%;min-height:44px;margin-top:8px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:14px;font-weight:800}
 .wa-tally{font-size:13px;line-height:1.5;margin:0 2px 10px}.wa-tally b{font-variant-numeric:tabular-nums}.wa-tally span{color:var(--muted);font-size:12px}
 .wa-sync-late{font-size:13px;line-height:1.5;color:var(--badge);background:var(--badge-bg);border-radius:8px;padding:8px 10px;margin-bottom:10px}
-.wa-game-row{display:grid;gap:2px}.wa-page a.wa-replay-link{justify-self:end;font-size:13px;font-weight:800;color:var(--teal);min-height:36px;display:inline-flex;align-items:center;padding:0 4px;text-decoration:none}
+.wa-game-row{display:grid;gap:2px}.wa-replay-links{justify-self:end;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:0 14px;max-width:100%}
+.wa-page a.wa-replay-link{justify-self:end;font-size:13px;font-weight:800;color:var(--teal);min-height:44px;display:inline-flex;align-items:center;padding:0 4px;text-decoration:none}
 .wa-guide{position:fixed;inset:0;z-index:20;background:rgba(8,16,14,.55);display:grid;place-items:end center;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
 .wa-guide-box{width:100%;max-width:440px;background:var(--paper);color:var(--ink);border-radius:18px;padding:22px 20px 18px;box-shadow:0 10px 40px rgba(0,0,0,.3)}
 .wa-guide h2{font-size:24px;font-weight:900;letter-spacing:-.6px}
