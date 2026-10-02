@@ -93,8 +93,30 @@ def test_poller_backoff_retries_then_gives_up():
     sleeps.clear()
     down = LiveFeed(FakeTransport(99, None), sleep=sleeps.append)
     with pytest.raises(LiveFeedError):
-        down.snapshot(849845)
+        down.schedule('2026-09-29')
     assert sleeps == [1.0, 2.0, 4.0]
+    sleeps.clear()
+    for _ in range(2):  # a viewer's poll tries once: the next poll is the retry
+        with pytest.raises(LiveFeedError):
+            down.snapshot(849845)
+    assert sleeps == [] and down.transport.calls == 4 + 2
+
+
+def test_an_outage_keeps_serving_the_last_state_and_says_so():
+    now, snapshot = [1000.0], at(feed('849845_20260929_195940.json'), 990.0)
+    transport = FakeTransport(0, snapshot)
+    live = LiveFeed(transport, delay_s=0, clock=lambda: now[0], wall=lambda: now[0], sleep=lambda _: None)
+    app = create_app(object(), live_feed=live, live_policy=LiveArmB(lambda: FakePolicy()))
+    with TestClient(app) as client:
+        assert client.get('/api/live/849845/state').json()['sync']['feed_ok'] is True
+        transport.failures, now[0] = 99, 1010.0  # the feed goes down
+        body = client.get('/api/live/849845/state').json()
+        assert body['status'] == 'ready' and body['sync']['feed_ok'] is False and transport.calls == 2
+        now[0] = 1012.0
+        client.get('/api/live/849845/state')
+        assert transport.calls == 2  # no retry storm: the next attempt waits for the poll interval
+        transport.failures, now[0] = 0, 1020.0  # back
+        assert client.get('/api/live/849845/state').json()['sync']['feed_ok'] is True
 
 
 def at(snapshot, wall):

@@ -371,7 +371,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             parsed = parse_state(snapshot, None)
             parsed.pop('pre_pitch')
             sync = {'max_delay_s': feed.max_delay_s, 'event_age_s': round(time.time()-entry['event'], 1),
-                    'feed_lag_s': round(entry['fetched']-entry['event'], 1)}
+                    'feed_lag_s': round(entry['fetched']-entry['event'], 1), 'feed_ok': game_pk not in feed.failing}
             return parsed | timing | {'sync': sync, 'recommendation': armb_view(snapshot, parsed)}
         return live_call(state)
 

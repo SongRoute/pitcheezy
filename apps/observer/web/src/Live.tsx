@@ -11,7 +11,7 @@ type LiveRec = { status: 'ready' | 'unsupported' | 'computing' | 'unavailable'; 
   home_we_now?: number | null; policy_identity?: string; tally?: { pitches: number; recommended: number; same_type: number } };
 type Replay = { start: number; t0: number; speed: number; elapsed_s: number; pitches: number; index: number };
 type LiveState = { status: string; reason: string | null; badge?: string; delay_s: number; replay?: Replay | null;
-  sync?: { max_delay_s: number; event_age_s?: number; feed_lag_s?: number };
+  sync?: { max_delay_s: number; event_age_s?: number; feed_lag_s?: number; feed_ok?: boolean };
   game?: { game_pk: number; date: string; status: string; away_team: string; home_team: string };
   situation?: (Situation & { runners: Record<string, boolean> }) | null; pitcher?: { id: number; name: string | null; hand: string } | null;
   batter?: { id: number; name: string | null; side: string } | null;
@@ -130,6 +130,7 @@ export default function Live() {
         : <SyncBar open={syncOpen} label="중계 맞추기" value={`내 화면이 ${usedDelay}초 늦음`} onShift={shift} onTap={state?.status === 'ready' ? () => void tap() : undefined} tapNote={tapNote}
           hint="공 결과가 내 중계 화면보다 먼저 뜨면 +, 늦게 뜨면 − 를 눌러요. 이 기기에 기억해 둬요." />}
       {late && <p className="wa-sync-late">기록이 내 중계보다 늦게 도착하고 있어요(약 {Math.round(state!.sync!.feed_lag_s!)}초). + 를 눌러 여유를 두면 추천을 공보다 먼저 볼 수 있어요.</p>}
+      {state?.sync?.feed_ok === false && <p className="wa-sync-late">경기 기록 수신이 잠시 끊겼어요. 마지막으로 받은 상황을 보여 주고 있고, 계속 다시 시도해요.</p>}
       {error && <p className="wa-error">{error} {state ? '마지막으로 받은 상황을 보여 주고 있어요. 계속 다시 시도해요.' : ''}</p>}
       {!state && !error && <p className="wa-loading">경기 상황을 불러오는 중…</p>}
       {state && state.status !== 'ready' && <article className="wa-card"><h2 className={`wa-none ${state.status === 'buffering' ? 'wa-pulse' : ''}`}>{isReplay && state.status === 'not_live' ? '경기가 끝났어요.' : WAIT_TEXT[state.status] ?? '잠시 기다려 주세요.'}</h2>

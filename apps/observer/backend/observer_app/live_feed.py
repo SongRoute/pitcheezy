@@ -128,7 +128,7 @@ class LiveFeed:
         self.delay_s = config['delay_s'] if delay_s is None else delay_s
         self.max_delay_s = max(config.get('max_delay_s', 120), self.delay_s)
         self.record_dir = Path(record_dir) if record_dir else None
-        self.buffers, self.fetched_at, self.watching, self._lock = {}, {}, {}, threading.Lock()
+        self.buffers, self.fetched_at, self.watching, self.failing, self._lock = {}, {}, {}, {}, threading.Lock()
 
     def _interval(self, game_pk, delay, now):
         """Seconds between upstream fetches. The feed asks for ``poll_interval_s``; while a viewer whose
@@ -144,8 +144,8 @@ class LiveFeed:
             return min(fast, self.config['poll_interval_s'])
         return self.config['poll_interval_s']
 
-    def _get(self, url):
-        attempts = self.config['retries']+1
+    def _get(self, url, attempts=None):
+        attempts = attempts or self.config['retries']+1
         for attempt in range(attempts):
             try:
                 return self.transport(url, self.config['timeout_s'])
@@ -186,16 +186,24 @@ class LiveFeed:
             now, wall = self.clock(), self.wall()
             buffer = self.buffers.setdefault(game_pk, [])
             if now-self.fetched_at.get(game_pk, -1e18) >= self._interval(game_pk, delay, now):
-                feed = self._get(f"{self.config['base_url']}/api/v1.1/game/{game_pk}/feed/live")
                 self.fetched_at[game_pk] = now
-                event = event_wall(feed)
-                entry = {'feed': feed, 'event': wall if event is None else min(event, wall), 'fetched': wall}
-                if buffer and entry['event'] <= buffer[-1]['event']:
-                    buffer[-1]['feed'] = feed  # no newer game event: keep its first-seen times, refresh the content
+                try:  # one attempt: every viewer waits on this lock, and the next poll retries anyway
+                    feed = self._get(f"{self.config['base_url']}/api/v1.1/game/{game_pk}/feed/live", attempts=1)
+                except LiveFeedError:
+                    if not buffer:
+                        del self.fetched_at[game_pk]  # nothing to show yet: the very next poll tries again
+                        raise
+                    self.failing[game_pk] = wall  # keep serving what we have; the route tells the viewer
                 else:
-                    buffer.append(entry)
-                if self.record_dir:
-                    self._record(game_pk, feed)
+                    self.failing.pop(game_pk, None)
+                    event = event_wall(feed)
+                    entry = {'feed': feed, 'event': wall if event is None else min(event, wall), 'fetched': wall}
+                    if buffer and entry['event'] <= buffer[-1]['event']:
+                        buffer[-1]['feed'] = feed  # no newer game event: keep its first-seen times, refresh the content
+                    else:
+                        buffer.append(entry)
+                    if self.record_dir:
+                        self._record(game_pk, feed)
             old = [i for i, entry in enumerate(buffer) if entry['event'] <= wall-self.max_delay_s]
             if old:
                 del buffer[:old[-1]]  # the newest snapshot older than every allowed delay, and everything newer
