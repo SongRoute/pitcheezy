@@ -244,6 +244,39 @@ def measured_leads(polls, feed, *, since=None, until=None, delays=BROADCAST_DELA
             'read_time_s': READ_S, 'share_with_read_time_by_broadcast_delay': shares}
 
 
+def summarize(directory, games, checks=None):
+    """One phone-readable Markdown page over several recorded games: their ``report`` files and, when
+    present, the live-versus-final checks (``demo_precompute.py live-check``)."""
+    directory = Path(directory)
+    lines = ['# 실경기 기록 요약', '', '서비스 시간·지원 범위 측정이다(모델·정책 평가 아님). 수치는 각 경기의 `_report.json`·`live_check` 파일에서 옮겼다.', '']
+    for game_pk in games:
+        path = directory/f'{int(game_pk)}_report.json'
+        lines.append(f'## {int(game_pk)}')
+        if not path.is_file():
+            lines += ['- 보고서 없음(기록이 끝나지 않았거나 실패). `_record.log`를 확인한다.', '']
+            continue
+        report = json.loads(path.read_text())
+        polls, rec, lag = report['polls'], report['recommendation'], report['publication_lag_s'] or {}
+        shares = report['share_with_read_time_by_broadcast_delay']
+        lines += [f"- 조회 {polls['total']}회, 오류 {polls['errors']}회, 상태 {polls['status']}",
+                  f"- 투구 {report['pitches_first_seen_live']}개를 실시간으로 받음. 공을 놓은 뒤 처음 받기까지: 중앙값 {lag.get('median')}초 (10% {lag.get('p10')}, 90% {lag.get('p90')})",
+                  '- 공 5초 전에 추천을 낼 수 있던 비율(받은 시각 기준, 계산 시간 제외): ' + ', '.join(
+                      f"지연 {delay}초 {'미측정' if share is None else format(share, '.1%')}" for delay, share in shares.items()),
+                  f"- 추천 {rec['decisions_seen']}개: 가능 {rec['decisions_ready']}, 불가 {rec['decisions_unsupported']}. 계산 시간 {rec['compute_total_s']}"]
+        check = Path(checks)/f'{int(game_pk)}.json' if checks else None
+        if check is not None and check.is_file():
+            c = json.loads(check.read_text())
+            compared = c['pitches_seen_pending_live']-len(c['seen_live_not_in_final'])
+            lines.append(f"- 실시간 화면 대 최종 기록: 비교 {compared}구, 1순위 구종 같음 처음 {c['first_view_same_top_type']}·마지막 {c['last_view_same_top_type']}, "
+                         f"완전히 같음 처음 {c['first_view_equals_final']}·마지막 {c['last_view_equals_final']}, 계산 오류 {len(c['errors'])}, 모델 준비 {c['binds']}회")
+        else:
+            lines.append('- 실시간 화면 대 최종 기록 대조: 아직 없음')
+        lines.append('')
+    text = '\n'.join(lines)
+    (directory/'summary.md').write_text(text)
+    return text
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     commands = parser.add_subparsers(dest='command', required=True)
@@ -264,12 +297,19 @@ def main(argv=None):
     lead.add_argument('--feed', type=Path, required=True, help='a late or final snapshot of the game (.json.gz)')
     lead.add_argument('--since', help='UTC ISO: only recommendations first seen from this time')
     lead.add_argument('--until', help='UTC ISO: only recommendations first seen before this time')
+    summary = commands.add_parser('summary', help='one Markdown page over several recorded games')
+    summary.add_argument('--dir', type=Path, required=True)
+    summary.add_argument('--games', type=int, nargs='+', required=True)
+    summary.add_argument('--checks', type=Path, help='directory of live-check {gamePk}.json files')
     sim = commands.add_parser('simulate')
     sim.add_argument('--feeds', type=Path, required=True, help='directory of {gamePk}_final.json.gz feeds')
     sim.add_argument('--output', type=Path, required=True)
     sim.add_argument('--lags', type=float, nargs='+', required=True, help='feed publication lags to try (s)')
     sim.add_argument('--polls', type=float, nargs='+', default=[10, 5, 3, 2])
     args = parser.parse_args(argv)
+    if args.command == 'summary':
+        print(summarize(args.dir, args.games, args.checks))
+        return
     if args.command == 'leads':
         polls = [json.loads(line) for line in args.polls.read_text().splitlines() if line.strip()]
         with gzip.open(args.feed, 'rt') as handle:

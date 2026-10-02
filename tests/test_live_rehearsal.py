@@ -72,3 +72,19 @@ def test_measured_leads_join_the_poll_log_with_the_real_pitch_times():
     assert result['arrival_after_previous_pitch_s']['max'] == 17.0  # 58 s against the pitch released at 40 s, seen at 41 s
     assert result['share_with_read_time_by_broadcast_delay'] == {'0': 0.3333, '10': 1.0, '20': 1.0, '30': 1.0, '45': 1.0, '60': 1.0}
     assert lr.measured_leads(polls, game, since=base + 30)['pitches'] == 2
+
+
+def test_summary_page_lists_each_game_and_says_what_is_missing(tmp_path):
+    report = {'polls': {'total': 10, 'errors': 0, 'status': {'ready': 10}}, 'pitches_first_seen_live': 3,
+              'publication_lag_s': {'median': 19.2, 'p10': 13.5, 'p90': 26.3},
+              'share_with_read_time_by_broadcast_delay': {'0': 0.4, '30': 1.0},
+              'recommendation': {'decisions_seen': 3, 'decisions_ready': 2, 'decisions_unsupported': 1, 'compute_total_s': None}}
+    (tmp_path / '7_report.json').write_text(json.dumps(report))
+    checks = tmp_path / 'checks'
+    checks.mkdir()
+    (checks / '7.json').write_text(json.dumps({'pitches_seen_pending_live': 3, 'seen_live_not_in_final': ['7:1:9'], 'errors': [], 'binds': 2,
+                                               'first_view_same_top_type': 2, 'last_view_same_top_type': 2,
+                                               'first_view_equals_final': 1, 'last_view_equals_final': 2}))
+    text = lr.summarize(tmp_path, [7, 8], checks)
+    assert '## 7' in text and '지연 0초 40.0%, 지연 30초 100.0%' in text and '비교 2구' in text
+    assert '## 8' in text and '보고서 없음' in text and (tmp_path / 'summary.md').read_text() == text
