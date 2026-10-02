@@ -1,0 +1,102 @@
+{
+  "protocol": "policy_predictor_swap_diagnostic_v1",
+  "experiment_id": "EXP-P17-001",
+  "status": "REGISTERED",
+  "decision": "D147 (2026-10-02): user chose option 1 of docs/reviews/G15-mix-policy-revalidation-options-2026-10-02.md (connect the mix predictor and measure how much the recommendations change, before any re-validation); registered before the comparison is computed",
+  "purpose": "Stage A: connect the confirmed G15 mix to the planner as its predictor and check the connection against sealed evaluation archives. Stage B: measure how far the P3 law moves when the planner's predictor is swapped from G0 to the mix, on the sealed June tau-design sample. No outcome, reward, WE result or events kind is read.",
+  "one_change": "The simulator's conditional predictor: G0-global five-member ensemble with its June frequency blend -> one half the direct pre-pitch head (five members, current-pitch physics zero) plus one half the G0 members given the sampled delivery, no frequency blend (the mix's June model weight is 1.0). Reference law, support table, delivery pools, WE terminal/cutoff, tau, search setting, planning seed and decision states are unchanged.",
+  "execution": {
+    "enabled": true,
+    "runner": "experiments/pitchmdp/scripts/diagnose_policy_predictor_swap.py",
+    "worktree": "/Users/song/Projects/pitcheezy-worktrees/exp-p17-policy-predictor-diagnostic (branch claude/exp-p17-policy-predictor-diagnostic, on top of claude/exp-p16-direct-mix-confirm); kept off the policy-validation and demo branches (D118 precedent)",
+    "prefix": "DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib PYTHONPATH='/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:experiments/pitchmdp' /Users/song/Projects/pitcheezy/.venv/bin/python experiments/pitchmdp/scripts/diagnose_policy_predictor_swap.py --config configs/EXP-P17-001.yaml --local-config experiments/pitchmdp/configs/local.json",
+    "order": [
+      "smoke : --output <runs>/EXP-P17-001-smoke --smoke   (probe, three games, short replay; the comparison is not computed)",
+      "run   : --output <runs>/EXP-P17-001                 (probe, replay, all sealed decisions; writes results.json and results/EXP-P17-001.json)"
+    ],
+    "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
+    "queue": "single heavy queue: runs/ML-MATRIX-20260924/.heavy.lock (non-blocking); Mac mini only, A5000 not used",
+    "expected_cost": "Smoke measured 888 decisions in about 50 s after loading, so roughly 35-45 min for 40,702 decisions (estimate). Peak memory 6.4 GB in the smoke."
+  },
+  "policy_registration": {
+    "config": "configs/ML-POLICY-MATERIALIZATION-v1.json",
+    "config_sha256": "869b2611c027e36573cd4d9a3e766f02bfda9c76a3485cb5e1870f68c7954469",
+    "addenda": [
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-1-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-3-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-4-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-5-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-6-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-7-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json"
+    ],
+    "use": "read-only: sealed BC, support table, style snapshot, S2-certified component identity and the tau freeze are resolved through the registered chain; no stage of that chain is run and nothing is added to it"
+  },
+  "sealed_g0_run": {
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S3b-tau-a4",
+    "manifest_sha256": "25effce1729df55ab1d997358de2f101ca54eb0eb86e34588d94159f775f1c31",
+    "ledger": "ledger-blend-0.jsonl",
+    "requests": 43487,
+    "evaluated_decisions": 40702,
+    "final_identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+    "use": "the G0 side of the comparison: recorded planning Q, mask and reference law of every evaluated decision (June 2025, 150 games)"
+  },
+  "mix_bundle": {
+    "path": "configs/G15-MIX-RESEARCH-FROZEN-v1.json",
+    "sha256": "b4c19988722c25d994b6f14c9b87b3ff3a177fb95702fe4c61a518fbbb201e6d"
+  },
+  "mix": {
+    "direct_weight": 0.5,
+    "june_frequency_blend_model_weight": 1.0
+  },
+  "settings": {
+    "tau": 0.1,
+    "samples": 6,
+    "pitch_cap": 12,
+    "seed": 0
+  },
+  "row_budget": 6000000,
+  "probe": {
+    "rows": 64,
+    "atol": 1e-06,
+    "rule": "the registered S2 probe rows; policy-path G0 primary, policy-path direct head (five-member mean) and policy-path integrated mix must equal the sealed evaluation archives within atol, otherwise nothing else is computed"
+  },
+  "replay": {
+    "decisions": 200,
+    "atol": 1e-06,
+    "rule": "the first 200 evaluated decisions are recomputed with the bound G0 planner and must reproduce the sealed planning Q; every regenerated request must carry the sealed fingerprint, mask, reference law and context hash"
+  },
+  "comparison": {
+    "unit": "every decision the sealed G0 ledger evaluated (SUPPORTED or OUTSIDE_POLICY_SUPPORT)",
+    "quantities": [
+      "TV distance between the P3 law under the mix planning Q and under the sealed G0 planning Q (same reference law, mask, tau)",
+      "share of decisions whose most probable pitch type is the same under both laws"
+    ],
+    "descriptive": [
+      "TV quantiles",
+      "share of decisions with TV above 0.05",
+      "mean KL to the reference law for each predictor",
+      "two-strike split",
+      "whole-game bootstrap intervals"
+    ]
+  },
+  "stop_rule": {
+    "mean_tv_below": 0.01,
+    "top1_agreement_at_least": 0.98,
+    "reading_fixed_before_results": {
+      "SAME_RECOMMENDATIONS": "mean TV < 0.01 and top-1 agreement >= 0.98: the predictor swap does not change the recommendations in practice; policy re-validation (stage C) is not run and the line is closed",
+      "DIFFERENT_RECOMMENDATIONS": "otherwise: report to the user, who decides on stage C (tau re-selection, S5, S6) and on the review gates; nothing runs automatically"
+    },
+    "threshold_basis": "judgement values without a measured basis, proposed in the options document and accepted with option 1"
+  },
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 20260924,
+    "unit": "whole game"
+  },
+  "data_rules": "No 2026 rows. June 2025 blend-split rows of the sealed tau-design sample only; pre-decision fields, logged pitch types and previous-row outcomes as history. No reward, WE result, events kind or next-row state.",
+  "review": "Same-model review only. The independent review gate of the validation chain is not passed and is required before any stage C.",
+  "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P17-001",
+  "row_budget_basis": "safety cap on simulated rows only (a budget changes failures, never probabilities); the smoke measured 95 mix rows per decision, about 3.9M for 40,702 decisions; the sealed G0 stage used 4.5M"
+}
