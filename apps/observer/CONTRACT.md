@@ -73,6 +73,12 @@ D consumes validated JSON through `web/src/inningResult.ts`; the examples live i
 
 The `/inning-decisions` page now provides the independent selector and conditional inning card. The home header links to it. Registered-game discovery is separate from the PA catalog. Selecting a decision reveals its prechange scoreboard; clicking `이닝 전망 보기` resolves the exact selected context. The client checks returned ID/revision/context against that selection and checks result linkage again before rendering. Selection changes and retries clear the prior result and cancel stale requests. Errors and empty records never show numeric defaults. The page does not read/change the PA session cursor or its localStorage bookmark. Team/player display names are not invented when the source supplies only IDs.
 
+## Catcher setup estimates (display only)
+
+`GET /api/watch/{game_pk}/setup` returns `pitcheezy-setup-estimates-v1`: the video module's IntentEstimate v1 lines of one game, read from `PITCHEEZY_INTENT_DIR/<game_pk>.jsonl` and pinned by `<game_pk>.source.json` (repository, commit, sha256). Every line passes `validate_intent_estimate` or the whole game is refused (503); a game without a file is 404.
+
+Each pitch carries `at_bat_number`, `pitch_number`, `status`, `unavailable_reason`, `plate_x_feet` and `x_band` (`left`/`middle`/`right` in the catcher's view like `/api/zones` column 0-2, or `off_left`/`off_right`). Only the horizontal position is served: `display.vertical` is false and no height is returned. Pitches the source video does not show have no entry. The values are unreviewed estimates of the catcher's setup, a proxy and not the pitcher's intent (`is_intent_proxy` true, `accuracy.measured` false); the screen shows the badge and never calls the setup-to-pitch distance a command error.
+
 ## UI direction
 
 Warm ivory + dark ink, deep teal accent, orange actual-pitch marker; polished sports editorial, Korean text. Clear scoreboard, large zone, rank3 recommendations, count/base diamonds, pitch timeline, terminal analysis card with optional manual target selector. Responsive layout with useful empty/loading/error states and visible data date. No login/billing/public hosting. Avoid technical jargon in main flow. Show model details only when expanded.

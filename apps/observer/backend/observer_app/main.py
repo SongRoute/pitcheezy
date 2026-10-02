@@ -22,6 +22,7 @@ from .settings import CONFIG, REPO, RUN, WEB, database_path
 from .store import Store
 from .video_annotations import VideoAnnotations
 from .live_armb import LiveArmB
+from .setup_estimates import SetupEstimates
 from .watch_along import BADGE as WATCH_BADGE, WatchAlong
 
 LOGGER = logging.getLogger(__name__)
@@ -410,6 +411,17 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     @app.get('/api/watch/{game_pk}/reveal/{index}')
     def watch_reveal(game_pk: int, index: int):
         return watch_call(lambda: watch.reveal(game_pk, index))
+
+    setups = SetupEstimates()
+
+    @app.get('/api/watch/{game_pk}/setup')
+    def watch_setup(game_pk: int):
+        try:
+            return setups.view(game_pk)
+        except KeyError:
+            raise ServiceError(404, '이 경기의 포수 셋업 자료가 없습니다.') from None
+        except ValueError:
+            raise ServiceError(503, '포수 셋업 자료를 확인할 수 없습니다.') from None
 
     @app.get('/api/runtime')
     def runtime():
