@@ -18,6 +18,8 @@ import time
 from .settings import BUNDLE, CONFIG, RUN, REPO, require_storage
 from .domain import ZONES, PITCH_LABELS, target_point
 from .explanations import explain_choices
+from .recommendation_adapter import (CandidateAction, ObservedDeliveryKernel,
+    OUTCOMES, PrePitchEvaluation, PrePitchInput, VALUE_SPEC_VERSION)
 
 
 def digest(value):
@@ -26,15 +28,7 @@ def digest(value):
 
 def location_weights(xz, targets, sigma):
     """Return normalized local weights and effective sample sizes per action."""
-    import numpy as np
-    log_weights = -np.square(xz[:, :, None, :] - targets[None, None, :, :]).sum(-1)/(2*sigma*sigma)
-    # Preserve unnormalized mass for the explicitly proxy baseline policy.
-    mass = np.exp(log_weights).mean(axis=1)
-    log_weights -= log_weights.max(axis=1, keepdims=True)
-    weights = np.exp(log_weights)
-    weights /= weights.sum(axis=1, keepdims=True)
-    support = 1/np.square(weights).sum(axis=1)
-    return weights, support, mass
+    return ObservedDeliveryKernel().weights(xz, targets, sigma)
 
 
 def supported_actions(support, mass):
@@ -45,7 +39,11 @@ def supported_actions(support, mass):
 
 
 class Recommender:
-    def __init__(self):
+    def __init__(self, execution_distribution=None):
+        self.execution_distribution = (ObservedDeliveryKernel() if execution_distribution is None
+                                       else execution_distribution)
+        if type(self.execution_distribution) is not ObservedDeliveryKernel:
+            raise ValueError('Only the frozen observational execution distribution is validated for current recommendations')
         require_storage()
         source = BUNDLE/'source'
         hashes = json.loads((BUNDLE/'source_hashes.json').read_text())
@@ -75,8 +73,11 @@ class Recommender:
         self.identity = digest({'bundle': json.loads((BUNDLE/'bundle_manifest.json').read_text()),
                                 'source': hashes, 'utilities': utilities, 'config': CONFIG,
                                 'adapter': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                                'recommendation_adapter': hashlib.sha256(Path(__file__).with_name('recommendation_adapter.py').read_bytes()).hexdigest(),
+                                'execution_distribution': self.execution_distribution.identity,
                                 'explanations': hashlib.sha256(Path(__file__).with_name('explanations.py').read_bytes()).hexdigest(),
                                 'domain': hashlib.sha256(Path(__file__).with_name('domain.py').read_bytes()).hexdigest()})
+        self.model_sha256 = hashlib.sha256((BUNDLE/'bundle_manifest.json').read_bytes()).hexdigest()
         self.cache = RUN/'recommendation_cache'
         self.cache.mkdir(exist_ok=True)
         self._lock = threading.RLock()
@@ -93,12 +94,13 @@ class Recommender:
     def recommend(self, pitch, pa):
         # Deliberately extract the pre-pitch request only. Actual and future rows
         # cannot affect cache identity or predictions.
-        request = copy.deepcopy(pitch['request'])
+        inputs = PrePitchInput.from_replay(pitch, pa)
+        request = inputs.request
         balls, strikes = request.pop('balls'), request.pop('strikes')
         if type(balls) is not int or type(strikes) is not int or not 0 <= balls <= 3 or not 0 <= strikes <= 2:
             raise ValueError('Invalid pre-pitch count')
-        bounds, repertoire = pa['zone_bounds'], pa['repertoire_counts']
-        key = digest([self.identity, request, bounds, repertoire])
+        bounds, repertoire = inputs.zone_bounds, inputs.repertoire_counts
+        key = digest([self.identity, self.execution_distribution.identity, request, bounds, repertoire])
         path = self.cache/f'{key}.json'
         with self._lock:
             started = time.perf_counter()
@@ -118,7 +120,33 @@ class Recommender:
             self.last_latency_ms = round((time.perf_counter()-started)*1000, 2)
             return copy.deepcopy(recommendations[f'{balls}-{strikes}'])
 
-    def _compute(self, request, bounds, repertoire, key):
+    def evaluate_pre_pitch(self, pitch, pa):
+        """Expose every supported candidate at the current pre-pitch count.
+
+        This read-only calculation is not saved in the public recommendation
+        cache; it uses the same frozen model and computation as ``recommend``.
+        """
+        inputs = PrePitchInput.from_replay(pitch, pa)
+        request = inputs.request
+        balls, strikes = request.pop('balls'), request.pop('strikes')
+        if type(balls) is not int or type(strikes) is not int or not 0 <= balls <= 3 or not 0 <= strikes <= 2:
+            raise ValueError('Invalid pre-pitch count')
+        key = digest([self.identity, self.execution_distribution.identity, request,
+                      inputs.zone_bounds, inputs.repertoire_counts])
+        with self._lock:
+            recommendations, detail = self._compute(request | {'balls': 0, 'strikes': 0},
+                inputs.zone_bounds, inputs.repertoire_counts, key, include_detail=True)
+        result = recommendations[f'{balls}-{strikes}']
+        if detail is None:
+            return PrePitchEvaluation(result['status'], result['reason'], self.identity,
+                self.model_sha256, CONFIG['model_version'], VALUE_SPEC_VERSION, 'observer-repertoire-kernel-v1',
+                OUTCOMES, (), None, None, None, None, None, None, None, result)
+        return PrePitchEvaluation(result['status'], result['reason'], self.identity,
+            self.model_sha256, CONFIG['model_version'], VALUE_SPEC_VERSION, 'observer-repertoire-kernel-v1',
+            OUTCOMES, detail['actions'], detail['probabilities'], detail['support'],
+            detail['mass'], detail['baseline'], detail['q_values'], detail['values'], detail['baseline_values'], result)
+
+    def _compute(self, request, bounds, repertoire, key, include_detail=False):
         import numpy as np
         import pandas as pd
         from scipy.special import softmax
@@ -131,7 +159,8 @@ class Recommender:
         row = validate_request(request, self.engine.metadata)
         types = [name for name in row['pitch_types'] if repertoire.get(name, 0) >= CONFIG['repertoire_minimum_pitches']]
         def unavailable(reason):
-            return {f'{b}-{s}': self.unavailable(bounds, reason) for b in range(4) for s in range(3)}
+            result = {f'{b}-{s}': self.unavailable(bounds, reason) for b in range(4) for s in range(3)}
+            return (result, None) if include_detail else result
         if not types:
             return unavailable('최근 기록에서 지원되는 구종이 부족합니다.')
         records = [{'balls': b, 'strikes': s, 'pitch_type': name, 'inning': row['inning'],
@@ -153,7 +182,7 @@ class Recommender:
             neural += softmax(logits/model.delivery_temperature, axis=-1)/len(self.engine.models)
         physical_draws = draws*self.engine.delivery.normalizer.scale + self.engine.delivery.normalizer.mean
         targets = np.array([[target_point(z['id'], bounds)[axis] for axis in ('x', 'z')] for z in ZONES])
-        weights, support, mass = location_weights(physical_draws[:, :, 6:8], targets, CONFIG['target_sigma_ft'])
+        weights, support, mass = self.execution_distribution.weights(physical_draws[:, :, 6:8], targets, CONFIG['target_sigma_ft'])
         local = np.einsum('ndz,ndk->nzk', weights, neural)
         frequency = temperature_predictions(self.engine.baseline.predict(frame), self.engine.baseline_temperature)
         probabilities = self.engine.weight*local + (1-self.engine.weight)*frequency[:, None, :]
@@ -167,6 +196,7 @@ class Recommender:
         if not supported.any():
             return unavailable('목표 구역을 비교할 충분한 투구 표본이 없습니다.')
         indices = np.flatnonzero(supported)
+        all_mass = mass.reshape(4, 3, actions)
         probabilities = probabilities[:, :, :, supported, :]
         baseline = mass.reshape(4, 3, len(types), len(ZONES)).mean(axis=(0, 1))
         baseline *= np.array([repertoire[name] for name in types])[:, None]
@@ -174,6 +204,15 @@ class Recommender:
         baseline /= baseline.sum()
         terminal = terminal_values(row['state'], self.engine.we, self.engine.advancement)
         plan = solve_pa(probabilities, terminal, [0]*len(indices), baseline_policy=baseline)
+        detail = None
+        if include_detail:
+            detail = {'actions': tuple(CandidateAction(i, types[action//len(ZONES)],
+                       ZONES[action % len(ZONES)]['id'], target_point(ZONES[action % len(ZONES)]['id'], bounds))
+                       for i, action in enumerate(indices)),
+                      'probabilities': probabilities.copy(), 'support': support[:, :, supported].copy(),
+                      'mass': all_mass[:, :, supported].copy(), 'baseline': baseline.copy(),
+                      'q_values': plan.q_values.copy(), 'values': plan.values.copy(),
+                      'baseline_values': plan.baseline_values.copy()}
         results = {}
         for balls in range(4):
             for strikes in range(3):
@@ -197,4 +236,4 @@ class Recommender:
                     'basis': ['주자·아웃·카운트·점수·홈/원정 반영', '경기 전날까지의 타자 성향 반영',
                               '목표 구역은 실제 도달 위치 분포를 활용한 근사 제안',
                               '승률 차이는 모델 내부 추정이며 실제 개선 효과는 미검증']}
-        return results
+        return (results, detail) if include_detail else results

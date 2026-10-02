@@ -1,0 +1,111 @@
+{
+  "schema_version": "inning-decision-v1",
+  "mode": "historical_decision_review",
+  "decision_id": "inning-decision-2b1ead36958b4ee23cd8e4231a58c36a61a9ebbcd0072960891fe572abab6d4e",
+  "revision": 1,
+  "context": {
+    "phase": "before_pitching_change",
+    "linkage": {
+      "anchor_action_index": 0,
+      "anchor_kind": "immediately_before_logged_pitching_substitution_action",
+      "anchor_time_utc": "2025-07-22T00:20:56.827000Z",
+      "first_observed_pitch_id": "777063:49:1",
+      "game_pk": 777063,
+      "keep_pitcher_id": 554430,
+      "official_game_date": "2025-07-21"
+    },
+    "initial_state": {
+      "away_score": 2,
+      "balls": 0,
+      "bases": 0,
+      "date": "2025-07-21",
+      "home_score": 2,
+      "inning": 7,
+      "outs": 0,
+      "strikes": 0,
+      "topbot": "Top"
+    }
+  },
+  "result": {
+    "assumptions": [
+      "keep_pitcher_fixed",
+      "prechange_lineup_fixed",
+      "frozen_train_repertoire_policy",
+      "no_future_substitutions"
+    ],
+    "coverage": {
+      "model_calls": 85,
+      "resolved_mass": 0.9863684901888511,
+      "unresolved_mass": 0.013631509811148742,
+      "unresolved_reasons": {
+        "maximum_pas": 0.00028624129797359676,
+        "minimum_state_mass": 0.013345268513175145
+      }
+    },
+    "estimate": {
+      "interval_kind": "unresolved_mass_bound",
+      "lower": 0.5210473531762911,
+      "point": null,
+      "upper": 0.5346788629874398
+    },
+    "kind": "conditional_keep",
+    "linkage": {
+      "anchor_action_index": 0,
+      "anchor_kind": "immediately_before_logged_pitching_substitution_action",
+      "anchor_time_utc": "2025-07-22T00:20:56.827Z",
+      "first_observed_pitch_id": "777063:49:1",
+      "game_pk": 777063,
+      "keep_pitcher_id": 554430,
+      "official_game_date": "2025-07-21"
+    },
+    "profiles": {
+      "default_batter_ids": [
+        691785,
+        701350
+      ]
+    },
+    "provenance": {
+      "evaluation_identity": {
+        "evaluation_config_sha256": "2fb6aa0bcfa3b428afaf8b6860beefa79383b8f757f776e0302ee324621abb4e",
+        "horizon": "inning_end",
+        "initial_defender": "home",
+        "initial_state_and_count": {
+          "away_score": 2,
+          "balls": 0,
+          "bases": 0,
+          "date": "2025-07-21",
+          "home_score": 2,
+          "inning": 7,
+          "outs": 0,
+          "strikes": 0,
+          "topbot": "Top"
+        },
+        "lineup_sha256": "6746024bf2b3c5fd8f0fe2b788ea26ed071e7946e421c5e10d70936473d412fe",
+        "policy_id": "frozen_train_repertoire_frequency_v1",
+        "provider_identity": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f"
+      },
+      "model_bundle_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+      "source_anchor_sha256": "e2a64575286160c6a30591a2a59b213b467393323a8884b0a802fb184611ac3c",
+      "source_result_sha256": "8c2d700508fd98c41bba04d94f09114f5f60e627259ab63f976a7147c4af56b2",
+      "usage": "historical_research"
+    },
+    "reason": "unresolved_horizon_mass",
+    "replacement": {
+      "interval_pp": null,
+      "reason": "actual_eligible_substitutes_unverified",
+      "status": "unavailable",
+      "value_pp": null
+    },
+    "schema_version": "inning-result-v1",
+    "scope": {
+      "additive_to_pa": false,
+      "horizon": "inning_end",
+      "initial_defender": "home",
+      "perspective": "initial_defense",
+      "stopping_boundary": "current_half_inning_or_game_end",
+      "unit": "probability",
+      "value_target": "final_game_win_probability"
+    },
+    "status": "bounded"
+  }
+}

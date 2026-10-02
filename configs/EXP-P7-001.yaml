@@ -1,0 +1,77 @@
+{
+  "protocol": "ml_generalization_v1",
+  "experiment_id": "EXP-P7-001",
+  "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+  "parent_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+  "parent_analysis_sha256": "06b53a9f0cf67bf55e16f5ae76b7ef3aeba6cf2153e060180b800bf6a886031c",
+  "candidate": "G3-cluster",
+  "control": "G2-feature",
+  "selection_status": "diagnostic_only_not_promoted",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "scope": "Cpanel",
+  "selection_basis": "Frozen G has zero N/G-passing candidates; among G1-G4, G3 has the smallest Cpanel primary NLL. Diagnostic only; no promotion or retrospective selection using later results.",
+  "axes": [
+    "pitcher",
+    "batter"
+  ],
+  "regimes": [
+    "Z",
+    "W",
+    "O"
+  ],
+  "prefix_games": 2,
+  "selector_seed": 20260924,
+  "draws": 400,
+  "width": 128,
+  "budget": {
+    "epochs": 30,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005
+  },
+  "device": "auto",
+  "adaptation": "fixed_prefix_context_only_v1",
+  "registration": {
+    "contract": "docs/contracts/ML-T2-RUNNER-v1.md",
+    "scoring_contract": "docs/contracts/ML-T2-SCORING-v1.md",
+    "matrix_rows": [
+      "MX-T2"
+    ],
+    "t2_scoring": {
+      "primary_tests": [
+        "natural_candidate_control",
+        "batter_Z_candidate_control",
+        "batter_W_candidate_control",
+        "batter_O_candidate_control",
+        "pitcher_W_minus_Z",
+        "pitcher_O_minus_Z"
+      ],
+      "holm_alpha": 0.05,
+      "bootstrap_draws": 10000,
+      "bootstrap_seed": 20260924,
+      "minimum_games": 30,
+      "minimum_pitches": 500,
+      "robustness_family_size": 96,
+      "robustness_draws": 100000
+    },
+    "N": {
+      "nll_delta_max": -0.003,
+      "nll_ci95_upper_max": 0,
+      "brier_ci95_upper_max": 0.001,
+      "required_negative_seeds": 2,
+      "minimum_group_games": 30,
+      "minimum_group_pitches": 500
+    },
+    "max_heavy_jobs": 1,
+    "single_member_wall_limit_seconds": 7200,
+    "batch_wall_budget_seconds": 28800,
+    "profile_wall_limit_seconds": 600,
+    "resource_gate": "Prepare and both TRAIN/early-stop/May-only resource profiles first; review actual dependency unions and sum all fit/predict costs before full fits; preserve inactive folds/slots and all requested denominators.",
+    "scope_note": "Strict entity-exclusion retrains and fixed-prefix context adaptation; no architecture contrast for common unknown-pitcher fallback. Same scored keys across Z/W/O; natural new matchup is a separate frozen-parent diagnostic.",
+    "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P7-001"
+  }
+}

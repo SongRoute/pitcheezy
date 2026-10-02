@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "f9fc46d166268fb7ada5b81289ad378f8f9b549dafb9a218fdb26f87f8d4b93e",
+  "stage": "v5-denominators",
+  "registered_inputs": {
+    "v5": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S4-v5-a1/v5.json",
+      "file_sha256": "dead62ec2ce5faeaab98d09b331cff6606501f8e586edefa79994e4eb30fc7b2"
+    }
+  },
+  "note": "d124: S4 re-pinned (identity-independent)."
+}

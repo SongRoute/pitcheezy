@@ -1,0 +1,568 @@
+{
+  "protocol": "ml_june_calibration_scientific_registration_v1",
+  "family_id": "ML-JUNE-CALIBRATION-v1",
+  "status": "scientifically_registered_execution_disabled",
+  "base_commit": "d5466e01bf3ad73262d6c4f4aacc1b43de6c7811",
+  "contract": {
+    "path": "docs/contracts/ML-JUNE-CALIBRATION-v1.md",
+    "sha256": "e155315dcf732c55009755443f4db8117f260851273d7c54c760e2f29c701d4c"
+  },
+  "execution": {
+    "enabled": false,
+    "code_commit_c": null,
+    "execution_plan_path": null,
+    "registration_commit_d": null,
+    "reason": "Scientific preregistration only. Additive runner, full source closure, environment and execution plan must be reviewed and registered before any new data-value read, profile, inference or fit."
+  },
+  "parents": {
+    "g0_bundle": {
+      "path": "/Users/song/Projects/pitcheezy/configs/G0-RESEARCH-FROZEN-v1.json",
+      "sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062"
+    },
+    "june_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-ELIGIBILITY-v1.json",
+      "sha256": "afe19b81c0ce58bd5a433f2dda88e0155ce4c605d14c3b4335fa72ffe62e6b30"
+    },
+    "june_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/manifest.json",
+      "sha256": "f564145deb6b6b58a079766d582573b95154c3515af39fb39b0dba56088bdc88"
+    },
+    "june_result": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/result.json",
+      "sha256": "d00606b8f59d0244cbd8346a09f4b6bf9a2ac45f54be59e6e892891b1095671c"
+    },
+    "june_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/eligible_keys.parquet",
+      "sha256": "ff9db8e9a6b2f32a9f4279b30ac6a303b0dbb9d9267746f4cb0dc45741d5f037"
+    },
+    "june_metadata": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/eligible_metadata.parquet",
+      "sha256": "38507b7df491c210ccff46352c47ace4feb385e277c0b88dd3a96b62b5557c76"
+    },
+    "june_complement_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/complement_eligible_keys.parquet",
+      "sha256": "962be8b7e37a6dc89ebb969a8adeab5861c96368d1384d74a567107f57043b43"
+    },
+    "p11_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P11-001.yaml",
+      "sha256": "b6565f167993bdb31481ce18aee6d49276f3db00b61f518b5eee45e8f00a319b"
+    },
+    "p11_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/preparation.json",
+      "sha256": "aa831981ed84963e7dc27f7037fed166c2e6f83b0ed29cfba32d2a8b31a0d52a"
+    },
+    "p11_analysis_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/manifest.json",
+      "sha256": "aaf5db0d0a3d134b4d92393efa640dc67dba8efb4a4af330d21f2ab66d9ebda9"
+    },
+    "p11_calibration_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P11-002.yaml",
+      "sha256": "75d51ecfacfcf41d8d0519d47f3bc1c60f5e8d4949cf3fac25f568668c3acaad"
+    },
+    "p4_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/preparation.json",
+      "sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423"
+    },
+    "p4_panel": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/panel.json",
+      "sha256": "bf779e1d616c7921158816f9de9cafdf86e4015154810fc065265e2f28410f5a"
+    },
+    "p10_frequency": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/parent_baseline_predictions.npz",
+      "sha256": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b"
+    },
+    "p10_results": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/analysis/results.json",
+      "sha256": "82768e20bc8375e38ffb15242a6e45639b85f5a04dbb16b8c42e29c1035f293c"
+    },
+    "p10_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/analysis/manifest.json",
+      "sha256": "5105dc03a270d8f93f5e2230270b51847e03ed24d3e0a6799875a159658016a9"
+    },
+    "p10_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/preparation.json",
+      "sha256": "44f6579d1e1df845d5e92d8886e1935ff18d8dc184aee878d31570e98d40d5b4"
+    },
+    "p11_cpanel_june_inputs": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-002/june_inputs.npz",
+      "sha256": "0ea15b692f56940688716d32ad534a372455e6ba9e9670377e379021a06f77e1"
+    },
+    "p11_predictions": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/predictions.npz",
+      "sha256": "6890f321e68d0ce83cba203c351a516377c77db6e0491f25802107f237b362d0"
+    },
+    "p4_auxiliary": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/aux.pkl",
+      "sha256": "87ad95e61918147c678227875e26d7d45ca9014a5566aa40e4e61e1f112579a5"
+    },
+    "p4_model_source": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/source/pitchmdp/model.py",
+      "sha256": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150"
+    },
+    "p10_scalar_summarizer_source": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/source/scripts/score_ml_matrix.py",
+      "sha256": "379ab50b82a7fb7bdaba4032f3b49ddf28a067724b4c0394870ea09251dcf112"
+    },
+    "p4_frequency_temperature_source": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/source/scripts/run_sequence_frequency_baselines.py",
+      "sha256": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9"
+    },
+    "cpanel_member_seed0": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed0/predictions.npz",
+      "sha256": "6935d5469177e5ac8883fb47f703890f60779de8b56ade7c1c01c1657270cd10"
+    },
+    "dev_member_seed0": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed0/predictions.npz",
+      "sha256": "9bc36e1f6271734a1d56e3f8aace13ac0cd3273c9863aef26146805a276d213c"
+    },
+    "cpanel_member_seed1": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed1/predictions.npz",
+      "sha256": "40ea22c7796acb19ffb736f0fe61f6a4f4d3afada374a4606190fced85088fa6"
+    },
+    "dev_member_seed1": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed1/predictions.npz",
+      "sha256": "2a7a1c70a1c071aa8be659db13b181d01db1d32320c4d10d8e4fd2923bdd5017"
+    },
+    "cpanel_member_seed2": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed2/predictions.npz",
+      "sha256": "32d0464554c29c79f7479a1d5ec37b08235d9bdf4496bf00aa8c3e6ff3c68fd9"
+    },
+    "dev_member_seed2": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed2/predictions.npz",
+      "sha256": "c3986ee970cca5647c3aab5a6955afcc50b306a9ec60ca61aa91cccf498c6e61"
+    },
+    "cpanel_member_seed3": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed3/predictions.npz",
+      "sha256": "749bab2984330aee7cdf4044bd186ad396d6b528f1bdfa83b7999c6103078fd7"
+    },
+    "dev_member_seed3": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed3/predictions.npz",
+      "sha256": "ea045bdc2e95db73bc8a4e8c7062fd061927469b49b221237edd7f52740b07e5"
+    },
+    "cpanel_member_seed4": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed4/predictions.npz",
+      "sha256": "c804aadf4e26d0963b90f77337d5d39d54a3072f7e5862eda82233bf367c26b6"
+    },
+    "dev_member_seed4": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed4/predictions.npz",
+      "sha256": "877a6c670dcb0e73a4951012699994fad26fc8f64b4688f2ecfba414d4e14149"
+    }
+  },
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "predictors": [
+    "ensemble",
+    "seed0",
+    "seed1",
+    "seed2",
+    "seed3",
+    "seed4"
+  ],
+  "n_classes": 10,
+  "components": {
+    "network": "frozen G0 members with unchanged May delivery temperatures; ensemble mean of five calibrated members",
+    "frequency": "unchanged frozen TRAIN frequency model and its existing calibration",
+    "draws": 400,
+    "neural_fit_count": 0,
+    "refit_temperatures": false,
+    "refit_group_boundaries": false,
+    "input_simplex_atol": 1e-06,
+    "cpanel_probability_replay_atol": 1e-06,
+    "cpanel_weight_replay_atol": 1e-08,
+    "replay_rtol": 0,
+    "probability_replay_rtol": 0
+  },
+  "populations": {
+    "fit": {
+      "date_min": "2025-06-01",
+      "date_max": "2025-06-30",
+      "game_types": [
+        "R"
+      ],
+      "rows": 104970,
+      "games": 394,
+      "pitchers": 549,
+      "source_split": "calibration",
+      "research_fold": "blend",
+      "keys_pin": "june_keys",
+      "metadata_pin": "june_metadata",
+      "ordered_key_sha256": "ddb3a0859240821056ea687713b68ab4d2e2d0d8debb8dbd2d64871796e37f82"
+    },
+    "cpanel_replay": {
+      "rows": 4821,
+      "games": 110,
+      "role": "identity replay only; not another candidate"
+    },
+    "dev": {
+      "date_min": "2025-07-01",
+      "date_max": "2025-09-30",
+      "whole_rows": 311721,
+      "whole_games": 1161,
+      "cpanel_rows": 12334,
+      "complement_rows": 299387,
+      "complement_definition": "exact frozen DEV key difference",
+      "source": "EXP-P11-001 sealed probability and metadata archives",
+      "fresh_holdout": false,
+      "cpanel_key_reference": {
+        "parent": "p10_frequency",
+        "array": "dev_keys"
+      }
+    }
+  },
+  "optimizer": {
+    "objective": "pitch_mean_negative_log_likelihood",
+    "probability_floor": 1e-12,
+    "dtype": "float64",
+    "method": "scipy.optimize.minimize_scalar bounded",
+    "bounds": [
+      0.0,
+      1.0
+    ],
+    "xatol": 1e-05,
+    "maxiter": 500,
+    "choices_in_tie_order": [
+      "0",
+      "optimum.x",
+      "1"
+    ],
+    "require_success": true,
+    "require_finite_feasible": true,
+    "objective_tolerance": 1e-09,
+    "legacy_source": {
+      "path": "experiments/pitchmdp/scripts/run_sequence_calibration.py",
+      "function": "fit_blend",
+      "sha256": "951bada57ea33f34cc5440d9420943df7dc9cb782b27e9359c582e55b5cfa6bc"
+    },
+    "disp": 0,
+    "anchor_checks": {
+      "B1": "archived B0 weight for same predictor",
+      "B2_local_MLE": "new B1 weight for same predictor"
+    },
+    "anchor_is_additional_optimizer_choice": false,
+    "objective_argument": "log_loss",
+    "anchor_gate_interpretation": "Convergence does not guarantee the absolute 1e-9 anchor check; failure is a conservative family stop, not grounds to change tolerances."
+  },
+  "variants": {
+    "B0": {
+      "role": "unchanged archived G0 global blend",
+      "formula": "w_archived * network + (1-w_archived) * frequency",
+      "new_candidate": false
+    },
+    "B1": {
+      "experiment_id": "EXP-P12-001",
+      "change": "refit global scalar blend weight using all registered June rows",
+      "formula": "w_full * network + (1-w_full) * frequency",
+      "fit_count": 6
+    },
+    "B2": {
+      "experiment_id": "EXP-P12-002",
+      "change": "group-specific scalar blend with shrinkage toward B1 on the same full June rows",
+      "formula": "w_group = n/(n+1000)*w_MLE_group + 1000/(n+1000)*w_full",
+      "groups": [
+        "zero",
+        "low",
+        "middle",
+        "high"
+      ],
+      "shrinkage_pitches": 1000,
+      "min_games": 30,
+      "min_pitches": 500,
+      "combine": "AND",
+      "unsupported_fallback": "exact B1 weight of the same predictor",
+      "unknown_metadata": "fail; do not silently assign zero or a supported group",
+      "fit_count": 24,
+      "absent_from_train_mapping": "valid zero group, not unknown metadata",
+      "expected_support": {
+        "zero": {
+          "pitches": 4788,
+          "games": 127
+        },
+        "low": {
+          "pitches": 5338,
+          "games": 184
+        },
+        "middle": {
+          "pitches": 38546,
+          "games": 393
+        },
+        "high": {
+          "pitches": 56298,
+          "games": 386
+        }
+      }
+    }
+  },
+  "optimization_calls": {
+    "candidate_scalar_fits": 30,
+    "cpanel_identity_replay_scalar_fits": 6,
+    "total_expected": 36,
+    "hyperparameter_search": false,
+    "cross_validation": false,
+    "fit_losses_are_quality_estimates": false
+  },
+  "contrasts": [
+    {
+      "id": "B1-B0",
+      "candidate": "B1",
+      "control": "B0",
+      "interpretation": "calibration-population expansion: row count and population composition jointly change"
+    },
+    {
+      "id": "B2-B0",
+      "candidate": "B2",
+      "control": "B0",
+      "interpretation": "net change relative to frozen research baseline"
+    },
+    {
+      "id": "B2-B1",
+      "candidate": "B2",
+      "control": "B1",
+      "interpretation": "volume-specific method at identical calibration population"
+    }
+  ],
+  "primary": {
+    "population": "whole_dev",
+    "metric": "pitch_mean_NLL",
+    "family_size": 3,
+    "multiple_comparison": "Holm",
+    "alpha": 0.05,
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 20260924,
+    "bootstrap_unit": "complete game; pitch-weighted ratio recomputed",
+    "delta_nll_max": -0.003,
+    "nll_ci95_upper_strictly_below": 0,
+    "adjusted_p_max": 0.05,
+    "brier_ci95_upper_max": 0.001,
+    "min_negative_matched_seed_deltas": 4,
+    "missing_slot_p": 1.0,
+    "holm_order": [
+      "B1-B0",
+      "B2-B0",
+      "B2-B1"
+    ],
+    "p_value_formula": "(1 + count(delta_star - observed_delta <= observed_delta))/(draws+1)",
+    "quantile_method": "linear",
+    "ci_quantiles": [
+      0.025,
+      0.975
+    ],
+    "worse_rule": {
+      "nll_ci95_lower_strictly_above": 0,
+      "brier_ci95_lower_strictly_above": 0.001
+    }
+  },
+  "robustness": {
+    "contrast_count": 3,
+    "groups": [
+      "role_starter",
+      "role_relief",
+      "hand_L",
+      "hand_R",
+      "volume_low",
+      "volume_middle",
+      "volume_high",
+      "volume_zero",
+      "two_strikes",
+      "less_two_strikes",
+      "runners_on",
+      "bases_empty",
+      "non_cpanel"
+    ],
+    "metrics": [
+      "NLL",
+      "summed_multiclass_Brier"
+    ],
+    "family_size": 78,
+    "multiple_comparison": "Bonferroni one-sided simultaneous upper bounds",
+    "alpha": 0.05,
+    "bootstrap_draws": 100000,
+    "bootstrap_seed": 20260924,
+    "min_games": 30,
+    "min_pitches": 500,
+    "nll_margin": 0.01,
+    "brier_margin": 0.002,
+    "retain_missing_slots": true,
+    "cross_volume_role_hand": "descriptive only, preserve June support shortfalls",
+    "quantile_method": "linear",
+    "ordinary_two_sided_lower_bound_deterioration": "report separately if above zero; not equivalent to failing margin proof"
+  },
+  "budget": {
+    "family_seconds": 3600,
+    "includes": [
+      "prepare",
+      "profile",
+      "five June inference jobs",
+      "identity replay",
+      "candidate calibration fits",
+      "apply",
+      "score",
+      "verification within workers",
+      "failures and interruptions",
+      "frozen frequency prediction for all June rows",
+      "June label derivation"
+    ],
+    "authoritative_boundary": "external monotonic worker Popen-before through wait/termination",
+    "stage_caps": {
+      "prepare": 300,
+      "profile": 600,
+      "predict_each_seed": 600,
+      "fit_and_replay": 300,
+      "apply": 300,
+      "score": 300
+    },
+    "profile_gate": {
+      "rows": 8192,
+      "selection": "first frozen eligible June keys in sealed order",
+      "seed": 0,
+      "draws": 400,
+      "cpanel_probe_rows": 64,
+      "probe_selection": "first archived Cpanel keys",
+      "quality_computation": false,
+      "profile_probabilities_reused_as_full_member": false,
+      "tail_reserve_seconds": 900,
+      "safety_multiplier": 2,
+      "T": "P_profile * (104970 / 8192)",
+      "before_first_member": [
+        "2*T <= 600",
+        "2*5*T + 900 <= remaining_family_after_prepare_and_profile"
+      ],
+      "before_each_later_member": [
+        "2*M <= 600",
+        "2*k*M + 900 <= remaining_family"
+      ],
+      "M": "maximum official full-process wall among completed full members",
+      "k": "number of remaining full members",
+      "prediction_timeout": "min(600, remaining_family - 900)",
+      "after_predictions": "each next fit/apply/score stage requires remaining >= its registered cap",
+      "P_profile": "official full-worker Popen-to-wait profile wall, including all load/build, probes, writes and exit",
+      "input_store": "same complete frozen feature/history store and production path as full member; only prediction query count differs",
+      "internal_timings": "diagnostic only; not used for projected cost gate"
+    },
+    "automatic_retries": false,
+    "reduce_rows_seeds_draws_to_pass": false,
+    "heavy_lock": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/.heavy.lock",
+    "prior_preparation_cost": {
+      "seconds": 1.219837540993467,
+      "charged_to_new_family": false,
+      "reason": "completed and disclosed D81 preparation precedes this new family; all new preparation is charged"
+    }
+  },
+  "research_status": {
+    "adaptive_exposed_dev": true,
+    "fresh_alpha_claim": false,
+    "independent_confirmation": null,
+    "held_out_confirmation": false,
+    "policy_effect": null,
+    "service_adoption": null,
+    "changes_old_I1_I2_decisions": false
+  },
+  "prohibited": [
+    "2026 access",
+    "raw data fetch",
+    "neural training",
+    "May temperature refit",
+    "DEV-based hyperparameter or subgroup selection",
+    "class-bias or extra candidate additions",
+    "automatic service promotion"
+  ],
+  "future_output_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1",
+  "candidate_eligibility": {
+    "B1": {
+      "require_N_and_R": [
+        "B1-B0"
+      ]
+    },
+    "B2": {
+      "require_N_and_R": [
+        "B2-B0",
+        "B2-B1"
+      ],
+      "does_not_require_B1_to_pass": true
+    },
+    "service_promotion": false
+  },
+  "failure_policy": {
+    "any_optimizer_or_replay_failure": "stop entire family before apply or scoring; preserve all diagnostics and incurred cost",
+    "unmeasured_comparisons": "retain three slots; no measured p-values, conservative placeholders p=1 only when a complete vector is required",
+    "automatic_fallback_after_optimizer_failure": false
+  },
+  "B0_provenance": {
+    "weights_parent": "p10_results",
+    "ensemble_weight_json_path": "reports['G0-global'].selection.model_weight",
+    "seed_weights_json_path": "reports['G0-global'].seeds[0..4].blend_selection.model_weight",
+    "frequency_parent": "p10_frequency",
+    "cpanel_frequency_array": "blend",
+    "dev_frequency_array": "mlb_dev",
+    "dev_key_array": "mlb_dev_keys",
+    "cpanel_fit_inputs_parent": "p11_cpanel_june_inputs",
+    "summarizer_parent": "p10_scalar_summarizer_source",
+    "function": "summarize_cell",
+    "ensemble": "np.mean(np.stack(seed_calibrated[0..4]), axis=0), float64",
+    "fit_blend_objective": "log_loss",
+    "recorded_c1_versions": {
+      "numpy": "2.5.3",
+      "scipy": "1.18.1",
+      "python_executable": "/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/bin/python3.12"
+    },
+    "numerical_mismatch_policy": "stop; never widen replay tolerances"
+  },
+  "frequency_and_labels": {
+    "assigned_stage": "prepare",
+    "stage_cap_seconds": 300,
+    "frequency_state_parent": "p4_auxiliary",
+    "frequency_state_key": "baseline",
+    "temperature_parent": "p4_preparation",
+    "temperature_json_path": "baseline_temperature.temperature",
+    "temperature_apply_source_parent": "p4_frequency_temperature_source",
+    "label_source_parent": "p4_model_source",
+    "label_function": "outcome_labels",
+    "fit_rows": 104970,
+    "fit_key_order": "june_keys",
+    "label_hash": "derived and sealed in registered future prepare before fit; not known in this design",
+    "cpanel_probability_replay_atol": 1e-06,
+    "dev_frequency_keys_must_equal": "P11 ordered DEV keys"
+  },
+  "diagnostics": {
+    "minimum_class_events": 30,
+    "descriptive_only": [
+      "class prevalence",
+      "ECE10",
+      "per-class ECE",
+      "month",
+      "seen/unseen",
+      "role_x_volume",
+      "hand_x_volume",
+      "per_pitcher"
+    ],
+    "do_not_create_additional_primary_tests": true
+  },
+  "contrast_identity_check": {
+    "equation": "(B2-B0) == (B1-B0) + (B2-B1)",
+    "applies_to": [
+      "point estimates",
+      "every aligned bootstrap replicate"
+    ],
+    "metrics": [
+      "NLL",
+      "Brier"
+    ],
+    "absolute_tolerance": 1e-12,
+    "relative_tolerance": 0,
+    "completion_field": "contrast_additivity_passed"
+  },
+  "required_execution_tests": [
+    "synthetic optimizer stress: high curvature, near boundaries, tiny class probabilities; record conservative anchor failures, never assert universal absence",
+    "same-day-or-later historical feature row perturbation cannot change prior-date aggregate; future pitches cannot change query history",
+    "no DEV keys or dates in any fit input",
+    "unknown group fails while absent-from-TRAIN pitcher maps to zero",
+    "contrast additivity at point and every bootstrap draw",
+    "failed optimizer success or anchor check aborts family before apply/score",
+    "profile/full member complete input-store identity",
+    "full Cpanel key/probability/tier/weight replay"
+  ]
+}

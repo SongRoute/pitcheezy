@@ -2,6 +2,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import VideoLab from './VideoLab';
+import InningDecisions from './InningDecisions';
 import './styles.css';
 
-createRoot(document.getElementById('root')!).render(<React.StrictMode>{window.location.pathname.replace(/\/$/, '') === '/video-lab' ? <VideoLab /> : <App />}</React.StrictMode>);
+const route = window.location.pathname.replace(/\/$/, '');
+createRoot(document.getElementById('root')!).render(<React.StrictMode>{route === '/video-lab' ? <VideoLab /> : route === '/inning-decisions' ? <InningDecisions /> : <App />}</React.StrictMode>);

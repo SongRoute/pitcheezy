@@ -1,0 +1,51 @@
+{
+  "scope": "new June eligibility access after metadata-only audit",
+  "prep_id": "ML-JUNE-ELIGIBILITY-v1",
+  "registration_commit_d": "5025bd79577180bf90850642234bb1ddd8e5fc42",
+  "config_sha256": "afe19b81c0ce58bd5a433f2dda88e0155ce4c605d14c3b4335fa72ffe62e6b30",
+  "exposure": {
+    "record": "June 2025 regular-season eligibility fields newly decoded for preparation",
+    "fields_newly_read": [
+      "description",
+      "events",
+      "balls",
+      "strikes",
+      "supported_pa",
+      "pitch_type",
+      "plate_x",
+      "plate_z"
+    ],
+    "metadata_fields_read": [
+      "game_pk",
+      "at_bat_number",
+      "pitch_number",
+      "game_date",
+      "game_type",
+      "split",
+      "pitcher",
+      "batter",
+      "starter_pitcher",
+      "p_throws"
+    ],
+    "file": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet",
+    "file_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+    "rows_window": [
+      "2025-06-01",
+      "2025-06-30"
+    ],
+    "game_types": [
+      "R"
+    ],
+    "decoded_utc": "2026-09-27T14:45:07.391167+00:00",
+    "purpose": "eligibility mask and exclusion reason flags only",
+    "persisted_outcome_values": false,
+    "class_counts_reported": false,
+    "freshness_claim": null
+  },
+  "manifest_sha256": "f564145deb6b6b58a079766d582573b95154c3515af39fb39b0dba56088bdc88",
+  "inventory_sha256": "edb9f57a3f32f473ff6e8527225ab7cde1549c61fed51698a483709da56ffd24",
+  "new_independent_holdout": false,
+  "new_fits": 0,
+  "new_inference": 0,
+  "read_2026": false
+}

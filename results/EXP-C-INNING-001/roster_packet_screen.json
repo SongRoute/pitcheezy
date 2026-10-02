@@ -1,0 +1,157 @@
+{
+  "experiment_id": "EXP-C-INNING-001",
+  "algorithm_version": "C-INNING-001",
+  "case_kind": "roster_packet_support_screen_only",
+  "roster_packet_sha256": "a327f1fecd7c9b97e4e2575328497520e373f9bcc325b28b341ae17303360371",
+  "roster_packet_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/replacement_packets.json",
+  "model_bundle_manifest_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+  "decisions": [
+    {
+      "game_pk": 777063,
+      "decision_first_observed_pitch_id": "777063:49:1",
+      "keep_pitcher_id": 554430,
+      "current_batter_stand_source": "observed_under_incoming_pitcher",
+      "stand_transfer_to_keep_verified": false,
+      "actual_eligible_replacement_candidates": null,
+      "replacement": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "value_pp": null,
+        "reason": "candidate_eligibility_and_predecision_lineup_unverified"
+      },
+      "keep_evaluation_status": "bounded",
+      "keep_evaluation": {
+        "status": "bounded",
+        "reason": "unresolved_horizon_mass",
+        "horizon": "inning_end",
+        "initial_defender": "home",
+        "evaluation_identity": {
+          "provider_identity": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+          "initial_state_and_count": {
+            "date": "2025-07-21",
+            "inning": 7,
+            "topbot": "Top",
+            "outs": 0,
+            "bases": 0,
+            "home_score": 2,
+            "away_score": 2,
+            "balls": 0,
+            "strikes": 0
+          },
+          "lineup_sha256": "ae45ab749565426b778ff488eb71e00ad1cbbd169edb55e34ec029cc9561cf09",
+          "evaluation_config_sha256": "bcc1c2c0215208a0a7543749968c6384aa2b89a0c9fcb888b62644f1c27e8e3a",
+          "policy_id": "frozen_train_repertoire_frequency_v1",
+          "horizon": "inning_end",
+          "initial_defender": "home"
+        },
+        "pitcher_id": 554430,
+        "value": null,
+        "value_interval": [
+          0.0,
+          1.0
+        ],
+        "absorbed_mass": 0.0,
+        "unresolved_mass": 1.0000000000000002,
+        "unresolved_reasons": {
+          "predecision_lineup_exhausted": 1.0000000000000002
+        },
+        "mass_error": 2.220446049250313e-16,
+        "processed_pas": 1,
+        "model_calls": 1,
+        "lineup_slots_provided": 1
+      },
+      "first_pa_terminal_distribution": {
+        "walk": 0.05827234686318484,
+        "strikeout": 0.3178955920639667,
+        "out": 0.41615697069828744,
+        "single": 0.1400587170746307,
+        "double": 0.03489816479108133,
+        "triple": 0.0030264922519675423,
+        "home_run": 0.023647222607323642,
+        "hbp": 0.006044493649557806,
+        "double_play": 0.0
+      },
+      "batter_profile_as_of": "2025-04-30"
+    },
+    {
+      "game_pk": 777094,
+      "decision_first_observed_pitch_id": "777094:50:1",
+      "keep_pitcher_id": 641778,
+      "current_batter_stand_source": "observed_under_incoming_pitcher",
+      "stand_transfer_to_keep_verified": false,
+      "actual_eligible_replacement_candidates": null,
+      "replacement": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "value_pp": null,
+        "reason": "candidate_eligibility_and_predecision_lineup_unverified"
+      },
+      "keep_evaluation_status": "unavailable",
+      "reason": "unsupported_keep_pitcher"
+    },
+    {
+      "game_pk": 777126,
+      "decision_first_observed_pitch_id": "777126:53:1",
+      "keep_pitcher_id": 663773,
+      "current_batter_stand_source": "observed_under_incoming_pitcher",
+      "stand_transfer_to_keep_verified": false,
+      "actual_eligible_replacement_candidates": null,
+      "replacement": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "value_pp": null,
+        "reason": "candidate_eligibility_and_predecision_lineup_unverified"
+      },
+      "keep_evaluation_status": "unavailable",
+      "reason": "unsupported_keep_pitcher"
+    },
+    {
+      "game_pk": 777143,
+      "decision_first_observed_pitch_id": "777143:54:1",
+      "keep_pitcher_id": 607455,
+      "current_batter_stand_source": "observed_under_incoming_pitcher",
+      "stand_transfer_to_keep_verified": false,
+      "actual_eligible_replacement_candidates": null,
+      "replacement": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "value_pp": null,
+        "reason": "candidate_eligibility_and_predecision_lineup_unverified"
+      },
+      "keep_evaluation_status": "unavailable",
+      "reason": "unsupported_keep_pitcher"
+    },
+    {
+      "game_pk": 777217,
+      "decision_first_observed_pitch_id": "777217:42:1",
+      "keep_pitcher_id": 594580,
+      "current_batter_stand_source": "observed_under_incoming_pitcher",
+      "stand_transfer_to_keep_verified": false,
+      "actual_eligible_replacement_candidates": null,
+      "replacement": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "value_pp": null,
+        "reason": "candidate_eligibility_and_predecision_lineup_unverified"
+      },
+      "keep_evaluation_status": "unavailable",
+      "reason": "unsupported_keep_pitcher"
+    },
+    {
+      "game_pk": 777227,
+      "decision_first_observed_pitch_id": "777227:65:1",
+      "keep_pitcher_id": 686993,
+      "current_batter_stand_source": "observed_under_incoming_pitcher",
+      "stand_transfer_to_keep_verified": false,
+      "actual_eligible_replacement_candidates": null,
+      "replacement": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "value_pp": null,
+        "reason": "candidate_eligibility_and_predecision_lineup_unverified"
+      },
+      "keep_evaluation_status": "unavailable",
+      "reason": "unsupported_keep_pitcher"
+    }
+  ]
+}

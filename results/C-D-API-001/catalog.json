@@ -1,0 +1,33 @@
+{
+  "schema_version": "inning-decision-v1",
+  "mode": "historical_decision_review",
+  "decisions": [
+    {
+      "decision_id": "inning-decision-2b1ead36958b4ee23cd8e4231a58c36a61a9ebbcd0072960891fe572abab6d4e",
+      "revision": 1,
+      "context": {
+        "phase": "before_pitching_change",
+        "linkage": {
+          "anchor_action_index": 0,
+          "anchor_kind": "immediately_before_logged_pitching_substitution_action",
+          "anchor_time_utc": "2025-07-22T00:20:56.827000Z",
+          "first_observed_pitch_id": "777063:49:1",
+          "game_pk": 777063,
+          "keep_pitcher_id": 554430,
+          "official_game_date": "2025-07-21"
+        },
+        "initial_state": {
+          "away_score": 2,
+          "balls": 0,
+          "bases": 0,
+          "date": "2025-07-21",
+          "home_score": 2,
+          "inning": 7,
+          "outs": 0,
+          "strikes": 0,
+          "topbot": "Top"
+        }
+      }
+    }
+  ]
+}

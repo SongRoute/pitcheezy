@@ -1,0 +1,13 @@
+{
+  "experiment_id": "EXP-C-ROSTER-001",
+  "output_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/decision_anchor_777063.json",
+  "output_sha256": "e2a64575286160c6a30591a2a59b213b467393323a8884b0a802fb184611ac3c",
+  "script_sha256": "c70276b39deaaee8bfc1eecfab47426ff6689749c2b9ec44d874b8b68950040e",
+  "source_sha256": "5bf9d5d4d0c409b0ac30b93c24f328b058acd8d05bb35d38f0592700bf53f099",
+  "original_packet_sha256": "a327f1fecd7c9b97e4e2575328497520e373f9bcc325b28b341ae17303360371",
+  "protocol_commit": "db8a6a0",
+  "lineup_ready": true,
+  "new_raw_fetch_count": 0,
+  "eligible_replacements": null,
+  "policy_value": null
+}

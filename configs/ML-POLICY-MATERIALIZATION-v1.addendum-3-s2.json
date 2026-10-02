@@ -1,0 +1,16 @@
+{
+  "parent_sha256": "dcf3f3e02f3431bfbc231109aa1ba81288901ee627d380906ff6eab800ea4f12",
+  "stage": "bind-probe",
+  "registered_inputs": {
+    "bind_probe": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S2-bind-probe-a1/probe.json",
+      "file_sha256": "50f954c8caa745cfd325bd2c1950fe306792ef098027536980adb2c93e68eebe"
+    },
+    "bind_identity": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S2-bind-probe-a1/identity.json",
+      "file_sha256": "e5794f203fb5e7c8e138705e9597bb9c0fa3f9486ece7a25e377d5fd2e7cac8e"
+    }
+  },
+  "expected_identity_sha256": "43df7511aa477ce218655ba99f7c043ce46549c05d56b20f8a6084f0dea45fed",
+  "note": "D103: addendum 3 pins the sealed S2-bind-probe-a1 (64 rows, primary max |diff| 1.9e-8 <= 1e-6, frequency 0 <= 1e-12, pass) and the bound component identity."
+}

@@ -1,0 +1,12 @@
+{
+  "amendment_id": "EXP-C-INNING-001-2OUT",
+  "parent_experiment": "EXP-C-INNING-001",
+  "selection_manifest": "results/EXP-A-S0S1-001/selection_manifest.json",
+  "cohort": "already_fixed_six_2025_DEV_games",
+  "selection_order": ["game_date", "game_pk", "at_bat_number", "pitch_number"],
+  "selection_rule": "earliest PA-start row in fixed DEV with outs_when_up=2, pitcher supported by frozen bundle, date-valid frozen batter profile, legal count and state",
+  "horizon_input": "one predecision current hitter only",
+  "expected_interpretation": "conditional keep-pitcher WE interval; future hitter mass unresolved; no actual substitution comparison",
+  "evaluator_config": "experiments/pitchmdp/configs/EXP-C-INNING-001.json",
+  "output": "results/EXP-C-INNING-001/two_out_state.json"
+}

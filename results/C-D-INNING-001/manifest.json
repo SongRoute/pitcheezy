@@ -1,0 +1,15 @@
+{
+  "schema_version": "inning-result-fixtures-v1",
+  "fixtures": {
+    "bounded.json": {
+      "sha256": "9a9b869b8935c70bfb61b423b242b351b605dcd173815e9bbef45d022fc01ab6",
+      "synthetic": false,
+      "description": "Conversion of frozen C evaluation and decision anchor"
+    },
+    "development_unavailable.json": {
+      "sha256": "647e45db977b4bbb279b85265395e8967efe5358c3b40b9f449b5de86d9ad6fc",
+      "synthetic": true,
+      "description": "Synthetic missing_evaluation_result example; not a new evaluation"
+    }
+  }
+}

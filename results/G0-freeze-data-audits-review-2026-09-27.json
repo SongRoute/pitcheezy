@@ -1,0 +1,73 @@
+{
+  "review_id": "g0-freeze-and-june-support-astra-final",
+  "reviewed_at_utc": "2026-09-27T12:36:41.837000+00:00",
+  "status": "PASS",
+  "remaining_blockers": [],
+  "resolved_findings": [
+    "F1",
+    "J1",
+    "J2",
+    "J3",
+    "J4"
+  ],
+  "freeze": {
+    "files_checked": 96,
+    "hash_mismatches": [],
+    "script_sha256": "703f9f929d786b18f6fa2704ed32892a4b3a85918d0b50ea1417d01f0b2b1ac0",
+    "bundle_sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+    "result_sha256": "7843f7f473743ad42cb788857b86a72a782a4a348e2d3515ee5696162772349e",
+    "boundary_flags": {
+      "research_only": true,
+      "independent_confirmation": false,
+      "service_promotion": false,
+      "archived_raw_identity_verified": false,
+      "runtime_binaries_verified": false,
+      "self_contained": false
+    }
+  },
+  "june": {
+    "executed_code_commit": "c4b31073b8bc7785bada72d2d8ffc86ca6546c76",
+    "script_sha256": "5f5da015a1470db0911354091533a7fd453c359211e1f6ddc869362c131e2fae",
+    "config_sha256": "b1c21f3f1ada028ea48c6514347b2c96964c5107a0c5865d1aa20820884c0050",
+    "result_sha256": "6c98069e78ca2f3bdbbfb07eb88c7e9d6049f366ffaf15ae6b12c5fccde8259f",
+    "corrected_attempt_result_equal_to_root": true,
+    "first_attempt_evidence_preserved": true,
+    "all_9_sources_rehashed_match": true,
+    "independent_checks": {
+      "all_9_source_bytes_match": true,
+      "all_9_listed_verified": true,
+      "script_pin": true,
+      "config_pin": true,
+      "repo_ssd_result_bytes": true,
+      "execution_commit_source_config_match": true,
+      "tracked_source_config_clean": true,
+      "exact_partitions": true,
+      "group_partition_sums": true,
+      "all_support_flags_recomputed": true,
+      "all_bound_status_recomputed": true,
+      "official_five_seed_names": true,
+      "official_total": true,
+      "projection_arithmetic": true
+    },
+    "requested_rows": 115816,
+    "cpanel_eligible_rows": 4821,
+    "pitcher_complement_rows": 110604,
+    "exact_key_complement_rows": 110995,
+    "known_ineligible_rows": 391,
+    "tight_eligible_upper_rows": 115425,
+    "official_5_predict_seconds": 1777.6839637910016,
+    "full_command_time_log": "real 0.54\nuser 0.50\nsys 0.07\n",
+    "inventory_absence_statement": "Qualified in root report to audited registered inputs; sealed JSON bytes preserved.",
+    "metadata_only": true
+  },
+  "tests": "Root reports focused 32 passed (June 28 + freeze 4); reviewer inspected the boundary changes and independently rechecked hashes, source/config commit byte identity, partitions, all support flags/statuses, and projection arithmetic. No reviewer test rerun.",
+  "limitations": [
+    "No metadata table aggregation rerun; count evidence comes from sealed metadata result and reviewed projection code.",
+    "No labels, outcomes, probabilities, optimizer/model execution or 2026 dataset access.",
+    "Opaque hashes cover declared references only; raw archives and native runtime binaries are not newly verified.",
+    "Expanded June eligible support remains unknown for zero/low/middle; high is already supported by the known C panel.",
+    "Cost projections are conditional linear proxies, not guaranteed budgets or measured expanded-June runtime.",
+    "No independent confirmation, service promotion, or I2 activation is inferred.",
+    "Future use of an alternate --config path should additionally bind its actual bytes/path to implementation provenance; the audited run used the registered default config and its command/commit/hash chain matches."
+  ]
+}

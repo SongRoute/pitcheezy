@@ -1,0 +1,173 @@
+{
+  "artifact_version": "ABCD-integration-v1",
+  "code_commit": "62b423fb1ccb681300054741709c42bc5b9d7b63",
+  "common_base_commit": "16b30cf",
+  "contract_versions": [
+    "C0-v1",
+    "defense-we-pa-v1",
+    "observer-zone-v1",
+    "event-analysis-v1"
+  ],
+  "model": {
+    "model_version": "observer-zone-v1",
+    "model_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+    "model_identity": "32e8310ac0a0f3da910c1ffb377485ba1b59d77efb8bc8069eeba4a1e6018171",
+    "baseline_policy_id": "observer-repertoire-kernel-v1",
+    "value_spec_version": "defense-we-pa-v1"
+  },
+  "backend_tests": {
+    "passed": 150,
+    "failed": 0,
+    "warnings": 2,
+    "warnings_kind": "existing Starlette/httpx and AnyIO deprecations",
+    "pytest_seconds": 1.93
+  },
+  "frontend_build": "passed",
+  "browser": {
+    "browser": "isolated headless Chromium (in-app browser tool unavailable)",
+    "base": "http://127.0.0.1:8769/",
+    "cases": [
+      {
+        "game": 776703,
+        "pa": 3,
+        "event": "strikeout",
+        "width": 1440,
+        "count": 3,
+        "session_id": "a245dac4-3db6-495a-916f-500f10b77247",
+        "total_pp": 1.2021670371186288,
+        "status": "partial",
+        "first_pitch_hidden": true,
+        "saved_same_pitch_recommendations_unchanged": true,
+        "manual_note_not_used_as_intent": true,
+        "reload_restored": true,
+        "no_horizontal_overflow": true,
+        "dimensions": {
+          "viewport": 1440,
+          "scrollWidth": 1440
+        }
+      },
+      {
+        "game": 776710,
+        "pa": 10,
+        "event": "home_run",
+        "width": 390,
+        "count": 2,
+        "session_id": "05fbc6da-ab83-4b5e-ad65-ab24e060cdb6",
+        "total_pp": -22.586869618302945,
+        "status": "partial",
+        "first_pitch_hidden": true,
+        "saved_same_pitch_recommendations_unchanged": true,
+        "manual_note_not_used_as_intent": true,
+        "reload_restored": true,
+        "no_horizontal_overflow": true,
+        "dimensions": {
+          "viewport": 390,
+          "scrollWidth": 390
+        }
+      }
+    ],
+    "issues": [],
+    "passed": true
+  },
+  "visual_review": "Desktop recommendation and mobile terminal screenshots inspected; no horizontal overflow, primary choice and partial/null contribution states visible.",
+  "selection_scope": "Existing 2025-08-17 Observer K/HR fixtures selected for integration coverage; not S1 performance evaluation or an unseen holdout.",
+  "b_candidate_decision": "do_not_adopt_candidate_keep_frozen_service",
+  "initial_test_failures": [
+    {
+      "kind": "test isolation",
+      "reason": "Persistent simulated-revision cache from prior run invalidated cold-cache assertion; isolated test caches and restored env."
+    },
+    {
+      "kind": "browser harness selector",
+      "reason": "Two probability disclosures matched singleton locator; assert all disclosures closed."
+    }
+  ],
+  "processes": {
+    "server_pid": 82776,
+    "worker_pid": 82780,
+    "status": "terminated_after_verification",
+    "shutdown": "Application shutdown complete recorded in server.log"
+  },
+  "usage": {
+    "parent_model_id": "not_exposed",
+    "parent_role": "Astra research/review/integration",
+    "delegates": [
+      {
+        "name": "b_recommendation",
+        "model": "gpt-6-sol",
+        "effort": "medium"
+      },
+      {
+        "name": "c_events",
+        "model": "gpt-6-sol",
+        "effort": "high"
+      },
+      {
+        "name": "d_observer",
+        "model": "gpt-6-sol",
+        "effort": "medium"
+      }
+    ],
+    "tokens": null,
+    "cost": null,
+    "basis": "actual spawn tool parameters; per-agent token/cost counters unavailable"
+  },
+  "artifacts": {
+    "dataset.json": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/dataset.json",
+      "sha256": "8ad2b369884265bb5197137499e002a32354930cce036253f92b91671dde479b"
+    },
+    "dataset_manifest.json": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/dataset_manifest.json",
+      "sha256": "82c0cefe2855f1f4fa3c220c325da54a34a77c7a0ea49c261475c972a9b24255"
+    },
+    "pytest.log": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/pytest.log",
+      "sha256": "64907f7251b2bf7e3c6e500f37c982883aaa92e610e2c39e106a9192cca26dea"
+    },
+    "pytest-final.log": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/pytest-final.log",
+      "sha256": "3ebf9deeb300b715323a35726c8265fd5e6f4137e994aa23b5242584200584ff"
+    },
+    "frontend-build.log": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/frontend-build.log",
+      "sha256": "c32479e57a6f5bd6d7a33ddd904c990a3dd54fba56e2cacaa88ea31bfc55ea31"
+    },
+    "browser-smoke.json": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/browser-smoke.json",
+      "sha256": "e1c3949e65e546c98a5713a022ed65a719c5932bb50d0614eafa41b05c2eb136"
+    },
+    "browser-smoke.log": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/browser-smoke.log",
+      "sha256": "60cffa757bd40197916af90af219225ada3aa593eb42d361b002ebbd65d36711"
+    },
+    "browser-smoke-final.log": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/browser-smoke-final.log",
+      "sha256": "32ba8ebb4377006612db7af08821bd324ea88b31d541981c2331816d9a6ab434"
+    },
+    "server.log": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/server.log",
+      "sha256": "64206d2b17caae164a46e82419c39e907232927ac652471738574ede6efd7ade"
+    },
+    "worker.log": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/worker.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "browser-home_run-390-after.png": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/browser-home_run-390-after.png",
+      "sha256": "70a558414886eb22e695fc7babda959ea56a3cd5c86dce70917a654c377279aa"
+    },
+    "browser-home_run-390-before.png": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/browser-home_run-390-before.png",
+      "sha256": "8b14398166fb9acb0074b902102cb5a0f5b05a014a5cc710da47081136184aa6"
+    },
+    "browser-strikeout-1440-after.png": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/browser-strikeout-1440-after.png",
+      "sha256": "035e2d7a287c6eea5bd46a1587ffd23965865f027f2a804b3713f4147683a402"
+    },
+    "browser-strikeout-1440-before.png": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-integration-v1/browser-strikeout-1440-before.png",
+      "sha256": "5b1b424d82e21be1ce831a2f642fb5457972cdaa383397058ab1c7ee46048885"
+    }
+  }
+}

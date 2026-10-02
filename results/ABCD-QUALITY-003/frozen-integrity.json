@@ -1,0 +1,27 @@
+{
+  "all_checks_pass": true,
+  "checks": {
+    "result_copy": true,
+    "config": true,
+    "evaluation_code": true,
+    "selection": true,
+    "selection_copy": true,
+    "april_count_baseline.pkl": true,
+    "predictions.npz": true,
+    "internal_we_diagnostics.json": true,
+    "observer_zone_diagnostics.json": true,
+    "event_cases.json": true,
+    "selected_pitch_keys.json": true,
+    "dev": true,
+    "train": true,
+    "bundle_manifest": true,
+    "bundle/metadata.json": true,
+    "bundle/preprocessor.pkl": true,
+    "bundle/game_values.pkl": true,
+    "bundle/models/seed42.pt": true,
+    "bundle/models/seed43.pt": true,
+    "bundle/models/seed44.pt": true,
+    "bundle/models/seed45.pt": true,
+    "bundle/models/seed46.pt": true
+  }
+}

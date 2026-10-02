@@ -1,0 +1,356 @@
+{
+  "schema_version": 1,
+  "task": "COOP-016",
+  "status": "PASS_IMPLEMENTATION_ONLY",
+  "created_utc": "2026-09-28T09:42:50.334351+00:00",
+  "roles": {
+    "main": "claude-opus-5-5",
+    "support": "gpt-6-sol",
+    "focused_science_review": "gpt-6-astra"
+  },
+  "astra_delegated_calls": 1,
+  "base_commit": "f83caea2d8540992a446b168b498f910111478b0",
+  "author_commit": "1ecdbb42031874ba69da2911a8baf25431d02bc0",
+  "integration_commit": "d7e5bae",
+  "real_data_access": 0,
+  "new_2026_access": 0,
+  "real_data_fit_inference_ope_runs": 0,
+  "policy_frozen": false,
+  "execution_authorized_by_this_packet": false,
+  "coordination_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-policy-runtime",
+  "evidence": {
+    "opus-validation.json": {
+      "task": "COOP-016",
+      "author_model": "claude-opus-5-5",
+      "commit": "1ecdbb42031874ba69da2911a8baf25431d02bc0",
+      "base_commit": "f83caea2d8540992a446b168b498f910111478b0",
+      "branch": "codex/policy-runtime",
+      "changed_files_allowlist": [
+        "experiments/pitchmdp/pitchmdp/policy_artifacts.py",
+        "experiments/pitchmdp/pitchmdp/policy_runtime.py",
+        "experiments/pitchmdp/tests/test_policy_runtime.py",
+        "docs/reports/ML-policy-runtime-implementation-2026-09-28.md"
+      ],
+      "existing_files_modified": 0,
+      "file_sha256": {
+        "experiments/pitchmdp/pitchmdp/policy_artifacts.py": "34e8a332989f7e4202cf3ec8aa9deb9202991ced0b21b34316d6c3a7df7476ab",
+        "experiments/pitchmdp/pitchmdp/policy_runtime.py": "056ae9fc858b7a4e01ad7c01f61231a8e295e489d3258438293aa9f43c75c168",
+        "experiments/pitchmdp/tests/test_policy_runtime.py": "1d514e9d204a79c574ab7662181afe474e315a46d69da02a24ae1f16f363d456",
+        "docs/reports/ML-policy-runtime-implementation-2026-09-28.md": "4ee3f5f10c51027c936f943471e4205bc80728b6cd0c570c12227eaa2b36986a"
+      },
+      "python": "/Users/song/Projects/pitcheezy/.venv/bin/python",
+      "cwd": "/Users/song/Projects/pitcheezy-worktrees/policy-runtime",
+      "commands": [
+        {
+          "cmd": "PYTHONPATH=src:experiments/pitchmdp /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest experiments/pitchmdp/tests/test_policy_runtime.py -q",
+          "attempts": [
+            {
+              "n": 1,
+              "result": "2 failed, 10 passed",
+              "cause": "test fixture: in-place checkpoint overwrite leaked; E2E fake member too weak to move Q under common random numbers",
+              "fix": "test-only"
+            },
+            {
+              "n": 2,
+              "result": "12 passed"
+            },
+            {
+              "n": 3,
+              "result": "13 passed",
+              "note": "after FAILED_RUNTIME/head pin/conflict halt/empty BC support hardening"
+            },
+            {
+              "n": 4,
+              "result": "3 failed, 12 passed",
+              "cause": "new Sol-review checks (train_rows, support subset) correctly rejected stale fixtures",
+              "fix": "fixtures only"
+            },
+            {
+              "n": 5,
+              "result": "2 failed, 13 passed",
+              "cause": "same, remaining fixtures"
+            },
+            {
+              "n": 6,
+              "result": "15 passed"
+            },
+            {
+              "n": 7,
+              "result": "15 passed",
+              "note": "final, after live-instance conflict-halt assertion"
+            }
+          ]
+        },
+        {
+          "cmd": "PYTHONPATH=src:experiments/pitchmdp /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest experiments/pitchmdp/tests/test_policy_runtime.py tests/test_2026_policy_contract.py experiments/pitchmdp/tests/test_matrix_policy.py experiments/pitchmdp/tests/test_rollout_policy.py -q",
+          "attempts": [
+            {
+              "n": 1,
+              "result": "52 passed",
+              "code": "pre-Sol-review"
+            },
+            {
+              "n": 2,
+              "result": "54 passed"
+            },
+            {
+              "n": 3,
+              "result": "54 passed",
+              "note": "final code"
+            }
+          ],
+          "overlap_note": "includes the 15 new tests; do not add to the new-test count"
+        },
+        {
+          "cmd": "PYTHONPATH=src:experiments/pitchmdp /Users/song/Projects/pitcheezy/.venv/bin/python scripts/check_2026_policy_contract.py",
+          "attempts": [
+            {
+              "n": 1,
+              "result": "exit 0, all_pass true"
+            },
+            {
+              "n": 2,
+              "result": "exit 0, all_pass true"
+            }
+          ]
+        }
+      ],
+      "mutation_checks": {
+        "method": "temporary sed/python edits of the new modules, test run, file restored and diffed",
+        "caught": [
+          "logging law renormalized onto policy mask (3 failed)",
+          "mid-PA stickiness removed (1)",
+          "logging positivity check removed (1)",
+          "ensemble weight replaced (2)",
+          "ensemble truncated to three members (2)",
+          "cell/pitcher consistency removed (1)",
+          "member seed-slot check removed (1)",
+          "conflict no longer halts live instance (1; first survived before the test was strengthened)"
+        ],
+        "restored": true
+      },
+      "sol_feedback_integrated": [
+        "sol-review-artifacts.md S1 S2 S3",
+        "sol-review-runtime.md R1 R2 R3",
+        "sol-runtime-inventory.md"
+      ],
+      "not_run": [
+        "experiments/pitchmdp/tests/test_b_recommendation.py",
+        "scripts/freeze_g0_research.py",
+        "full test suite",
+        "any real-data/model test"
+      ],
+      "real_artifact_verification": null,
+      "access": {
+        "real_data_rows": 0,
+        "parquet_or_array_headers": 0,
+        "model_payloads": 0,
+        "pickle": 0,
+        "fits": 0,
+        "inference": 0,
+        "ope": 0,
+        "2026_access": 0,
+        "read": "repo source/docs/configs (G0-RESEARCH-FROZEN-v1.json text), COORD markdown/json"
+      },
+      "synthetic_fixtures": "temp dirs only: tiny CategoricalBC fits, fake checkpoint bytes, synthetic JSON calibration/preparation, fake global network inside real SharingPredictor, synthetic ledger",
+      "status": {
+        "policy_frozen": false,
+        "policy_identity": null,
+        "arm_b_enabled": false,
+        "arm_a": "BLOCKED_NOT_IDENTIFIED",
+        "population_value": null
+      },
+      "original_attempt_logs": "COOP-016/attempt-001 (preserved, not modified)"
+    },
+    "sol-review-artifacts.json": {
+      "status": "EARLY_IMPLEMENTATION_REVIEW_FINDINGS",
+      "source_sha256": "b84f464d3e90ae694c282db3f302a830eb066729d5b86facd44e6245c0ca09c9",
+      "synthetic_reproductions": 3,
+      "findings": [
+        {
+          "id": "S1",
+          "line": 197,
+          "priority": 2,
+          "finding": "BC provenance train_rows is not reconciled with stored count tables. Two fitted toy records plus train_rows=999 pass validate_bc_payload.",
+          "correction": "After _validate_provenance require train_rows == sum(league.values()); add synthetic mismatch rejection."
+        },
+        {
+          "id": "S2",
+          "line": 274,
+          "priority": 1,
+          "finding": "support_table_payload coerces malformed mask to bool before validation: [NaN,1.0] becomes [True,True]. With pitcher9 TRAIN FF only and league FF/SL, it exports intervention SL support for pitcher9.",
+          "correction": "Require original ndarray shape == vocabulary width and dtype bool before conversion, and validate stored support is a subset of corresponding BC support. Reject malformed masks and unsupported actions."
+        },
+        {
+          "id": "S3",
+          "line": 352,
+          "priority": 2,
+          "finding": "_CheckedMember assigns ordinal seed without checking returned predictor seed: nominal seed0 with global_model.seed=4 is accepted. Factory hashes requested checkpoint but callback may return wrong loaded model.",
+          "correction": "Verify returned G0 predictor global_model.seed equals supplied seed and relevant model kind/width/n_classes or enforce a typed validated loader binding. Retain SharingPredictor/training_arrays preprocessing; test swapped returned seeds."
+        }
+      ]
+    },
+    "sol-review-runtime.json": {
+      "status": "EARLY_IMPLEMENTATION_REVIEW_FINDINGS",
+      "source_sha256": "cc5c710711fe5fd6f6bec34a9a05d524fc6b3c37059114ffd3d7e7fa993ebbbd",
+      "findings": [
+        {
+          "id": "R1",
+          "priority": 1,
+          "finding": "Changed-content retry appends conflict and raises IntegrityError, but does not set halted; summary remains OK and next new request is SUPPORTED. Replay also derives halted only from decision rows, so conflict never halts after restart.",
+          "correction": "Make integrity conflict set sticky halted state and recover halt from conflict events; keep conflict outside unique-request denominator."
+        },
+        {
+          "id": "R2",
+          "priority": 1,
+          "finding": "Candidate callback raising TypeError escapes submit without a decision row: synthetic candidate failure leaves requests=0. Unhashable request_id=[] likewise fails membership before validation/ledger record. Current all-request audit excludes these failure paths.",
+          "correction": "Move trust-boundary request validation/fingerprint inside audited handling; record malformed request metadata safely, then abort. Audit callback exceptions before rethrowing, including TypeError/RuntimeError/model failures, without swallowing KeyboardInterrupt/SystemExit."
+        },
+        {
+          "id": "R3",
+          "priority": 1,
+          "finding": "Runtime retains caller-owned support dictionary/masks and BC object. Mutating original support mask from [True,True] to [True,False] changes reference [0.5,0.5] to [1,0] under identical runtime sha. Frozen identity no longer determines the policy law.",
+          "correction": "Own validated copies/immutable support and BC state or validate live content against pinned artifact identities before each request; test mutation of original masks and count tables."
+        }
+      ],
+      "synthetic_reproductions": 4
+    },
+    "sol-review-final.json": {
+      "status": "PASS_ORDINARY_IMPLEMENTATION_REVIEW",
+      "commit": "1ecdbb42031874ba69da2911a8baf25431d02bc0",
+      "worktree": "/Users/song/Projects/pitcheezy-worktrees/policy-runtime",
+      "clean": true,
+      "source_sha256": {
+        "experiments/pitchmdp/pitchmdp/policy_artifacts.py": "34e8a332989f7e4202cf3ec8aa9deb9202991ced0b21b34316d6c3a7df7476ab",
+        "experiments/pitchmdp/pitchmdp/policy_runtime.py": "056ae9fc858b7a4e01ad7c01f61231a8e295e489d3258438293aa9f43c75c168",
+        "experiments/pitchmdp/tests/test_policy_runtime.py": "1d514e9d204a79c574ab7662181afe474e315a46d69da02a24ae1f16f363d456",
+        "docs/reports/ML-policy-runtime-implementation-2026-09-28.md": "4ee3f5f10c51027c936f943471e4205bc80728b6cd0c570c12227eaa2b36986a"
+      },
+      "focused_test_command": "PYTHONPATH=src:experiments/pitchmdp /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest experiments/pitchmdp/tests/test_policy_runtime.py -q",
+      "focused_test_result": "15 passed in 0.83s; exit0",
+      "independent_reproduction": {
+        "commit": "1ecdbb42031874ba69da2911a8baf25431d02bc0",
+        "checks": {
+          "row_count_mismatch": "rejected: train_rows differs from the fitted count tables",
+          "nonbool_nonfinite_support": "rejected: support mask must be a bool vector over the BC vocabulary",
+          "out_of_bc_support": "rejected: intervention support must be inside the TRAIN BC support of a known pitcher",
+          "returned_seed_swap": "rejected: G0 member 0: loaded network seed/classes differ from the manifest slot",
+          "caller_bc_and_support_mutation": "unchanged",
+          "changed_retry": "rejected: request ID reused with different content",
+          "conflict_replay_halt": "HALTED",
+          "typeerror_audited_and_replay_halt": "FAILED_RUNTIME one request; HALTED",
+          "malformed_request": "rejected: malformed request",
+          "malformed_audit": "malformed1; unique valid requests0; HALTED"
+        },
+        "policy_artifacts.py_sha256": "34e8a332989f7e4202cf3ec8aa9deb9202991ced0b21b34316d6c3a7df7476ab",
+        "policy_runtime.py_sha256": "056ae9fc858b7a4e01ad7c01f61231a8e295e489d3258438293aa9f43c75c168"
+      },
+      "blocking_findings": [],
+      "limitations": [
+        "Synthetic only; actual payloads unverified",
+        "Single writer only",
+        "Whole-row ledger rollback requires saved external head pin",
+        "Malformed/unkeyed calls audited separately outside valid request denominator",
+        "Pool/terminal/cutoff and real bindings remain unregistered",
+        "No independent rerun of author 54 combined/8 mutation tests/D89 toy checks"
+      ]
+    },
+    "sol-independent-repro-final.json": {
+      "commit": "1ecdbb42031874ba69da2911a8baf25431d02bc0",
+      "checks": {
+        "row_count_mismatch": "rejected: train_rows differs from the fitted count tables",
+        "nonbool_nonfinite_support": "rejected: support mask must be a bool vector over the BC vocabulary",
+        "out_of_bc_support": "rejected: intervention support must be inside the TRAIN BC support of a known pitcher",
+        "returned_seed_swap": "rejected: G0 member 0: loaded network seed/classes differ from the manifest slot",
+        "caller_bc_and_support_mutation": "unchanged",
+        "changed_retry": "rejected: request ID reused with different content",
+        "conflict_replay_halt": "HALTED",
+        "typeerror_audited_and_replay_halt": "FAILED_RUNTIME one request; HALTED",
+        "malformed_request": "rejected: malformed request",
+        "malformed_audit": "malformed1; unique valid requests0; HALTED"
+      },
+      "policy_artifacts.py_sha256": "34e8a332989f7e4202cf3ec8aa9deb9202991ced0b21b34316d6c3a7df7476ab",
+      "policy_runtime.py_sha256": "056ae9fc858b7a4e01ad7c01f61231a8e295e489d3258438293aa9f43c75c168"
+    },
+    "astra-focused-review.json": {
+      "verdict": "PASS_FOR_IMPLEMENTATION_ONLY",
+      "reviewed_commit": "1ecdbb42031874ba69da2911a8baf25431d02bc0",
+      "base": "f83caea",
+      "blocking_findings": [],
+      "acceptance_criteria": [
+        "Reviewed source preserved or source-equivalent integration verified by Root/Sol",
+        "Keep policy unregistered/unfrozen, ARM_A blocked/nonidentified, ARM_B inactive, population_value null",
+        "Describe denominator as submitted requests/PAs, not certified population",
+        "Describe temporal checks as local consistency, not authenticated predecision provenance",
+        "Explicitly state runtime SHA is incomplete as a frozen-policy identity: pool/terminal/cutoff and preprocessing/loader bindings need registration and actual-binding verification before frozen-policy use"
+      ],
+      "verification_scope": "Focused source review; no repeated tests or real artifact access",
+      "second_astra_call_required_for_mechanical_checks": false,
+      "scientific_rereview_triggers": [
+        "probability arithmetic",
+        "support/refusal semantics",
+        "causal estimand",
+        "temporal input construction"
+      ]
+    }
+  },
+  "integrated_file_pins": [
+    {
+      "path": "experiments/pitchmdp/pitchmdp/policy_artifacts.py",
+      "sha256": "34e8a332989f7e4202cf3ec8aa9deb9202991ced0b21b34316d6c3a7df7476ab",
+      "bytes": 24711
+    },
+    {
+      "path": "experiments/pitchmdp/pitchmdp/policy_runtime.py",
+      "sha256": "056ae9fc858b7a4e01ad7c01f61231a8e295e489d3258438293aa9f43c75c168",
+      "bytes": 18333
+    },
+    {
+      "path": "experiments/pitchmdp/tests/test_policy_runtime.py",
+      "sha256": "1d514e9d204a79c574ab7662181afe474e315a46d69da02a24ae1f16f363d456",
+      "bytes": 32566
+    },
+    {
+      "path": "docs/reports/ML-policy-runtime-implementation-2026-09-28.md",
+      "sha256": "7f08c4fcc096ce31065e6a40f8cd7575721be442862fafab4b20c5dd2b42e1a4",
+      "bytes": 15203
+    }
+  ],
+  "claude_attempt": {
+    "base_commit": "f83caea2d8540992a446b168b498f910111478b0",
+    "final_commit": "1ecdbb42031874ba69da2911a8baf25431d02bc0",
+    "request_sha256": "74d2cd1868aba54fb8cd906dcc48b2429e7604bdc01aa9fe0c77d7747014b941",
+    "observed_models": [
+      "claude-opus-5-5"
+    ],
+    "session_ids": [
+      "0a10121c-e121-4c7b-b848-60ef27edfcb6"
+    ],
+    "status": "returned_for_review",
+    "result_subtype": "success",
+    "permission_denials": [],
+    "wall_seconds": 831.075
+  },
+  "root_verification": {
+    "focused_tests": "15 passed in 0.84s",
+    "command": "PYTHONPATH=src:experiments/pitchmdp PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q -p no:cacheprovider experiments/pitchmdp/tests/test_policy_runtime.py",
+    "science_clarifications": "runtime SHA not complete policy identity; denominators submitted requests/PAs only; temporal checks local consistency not authenticated provenance",
+    "post_review_code_changes": false,
+    "root_report_changes": "Integration note, real-data vs synthetic wording and Astra-specified scope clarification only",
+    "final_artifact_checks": {
+      "file_pins_pass": 4,
+      "code_and_tests_equal_author_commit": true,
+      "report_review_relative_links_pass": 4,
+      "configs_unchanged_from_base": true
+    },
+    "graphify": {
+      "status": "PASS",
+      "mode": "AST_ONLY",
+      "nodes": 6417,
+      "edges": 18087,
+      "communities": 262,
+      "semantic_pass": false,
+      "llm_label_refresh": false
+    }
+  }
+}

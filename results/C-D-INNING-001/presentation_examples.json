@@ -1,0 +1,32 @@
+{
+  "bounded": {
+    "title": "조건부 이닝 전망",
+    "scope": "현재 반이닝 종료까지 · 초기 수비팀 관점 (홈 수비팀)",
+    "valueLabel": "조건을 고정한 경기 승리 확률 범위",
+    "rangeLabel": "52.10%–53.47%",
+    "unresolvedLabel": "미해결 확률 1.36%",
+    "profileNote": "기본 프로필 2명",
+    "assumptions": [
+      "현 투수 유지 + 당시 타순 유지",
+      "기존 구종 사용 비율 유지",
+      "이후 선수 교체 없음"
+    ],
+    "replacementLabel": "실제 교체 효과 미측정",
+    "reasonLabel": null
+  },
+  "development_unavailable": {
+    "title": "조건부 이닝 전망",
+    "scope": "현재 반이닝 종료까지 · 초기 수비팀 관점 (홈 수비팀)",
+    "valueLabel": "조건을 고정한 경기 승리 확률 범위",
+    "rangeLabel": null,
+    "unresolvedLabel": null,
+    "profileNote": "기본 프로필 2명",
+    "assumptions": [
+      "현 투수 유지 + 당시 타순 유지",
+      "기존 구종 사용 비율 유지",
+      "이후 선수 교체 없음"
+    ],
+    "replacementLabel": "실제 교체 효과 미측정",
+    "reasonLabel": "계산 결과 없음 · 평가 결과가 없습니다"
+  }
+}

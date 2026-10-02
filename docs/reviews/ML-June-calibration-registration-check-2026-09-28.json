@@ -1,0 +1,256 @@
+{
+  "protocol": "ml_june_calibration_mechanical_registration_check_v1",
+  "status": "PASS",
+  "checked_utc": "2026-09-28T00:17:41.570788+00:00",
+  "scope": "Scientific registration mechanics only; no execution registration or scientific recalculation",
+  "files": {
+    "config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-CALIBRATION-v1.json",
+      "sha256": "a0bff3b34079ac736b2dff7c69a29faa5a5268316b53ad06e113945684ba6ab8"
+    },
+    "contract": {
+      "path": "/Users/song/Projects/pitcheezy/docs/contracts/ML-JUNE-CALIBRATION-v1.md",
+      "sha256": "e155315dcf732c55009755443f4db8117f260851273d7c54c760e2f29c701d4c"
+    },
+    "reviewed_config": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration/review-input-002/ML-JUNE-CALIBRATION-v1.json",
+      "sha256": "49400f0ea8113bb0d5006d8abd09b0f048fb08881f21c2094fd88bac0458cc24"
+    },
+    "opus_review": {
+      "path": "/Users/song/Projects/pitcheezy/docs/reviews/COOP-012-Opus-June-calibration-2026-09-28.md",
+      "sha256": "5faca4f197d4c43a7e59b58afaddc1560a822fef226e51692c3f318a8002a384"
+    },
+    "status_transition": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration/registration-status-transition.json",
+      "sha256": "0b9687900bcb72937efcf6a3025ab834cb2a440b57052e185c9326a64854bf5e"
+    }
+  },
+  "changed_top_level_keys": [
+    "status"
+  ],
+  "checks": {
+    "registered_config_exact_hash": "PASS",
+    "contract_binding": "PASS",
+    "reviewed_snapshot_contract_unchanged": "PASS",
+    "reviewed_snapshot_config_exact_hash": "PASS",
+    "only_status_changed_after_review": "PASS",
+    "status_transition": "PASS",
+    "opus_review_hash": "PASS",
+    "parent_count_33": "PASS",
+    "all_parent_opaque_hashes_match": "PASS",
+    "N3_joint_Holm": "PASS",
+    "R78_fixed_denominator": "PASS",
+    "optimizer_36_calls": "PASS",
+    "family_3600_tail_reserve_900": "PASS",
+    "official_whole_profile_P_scaling": "PASS",
+    "fixed_profile_and_later_member_gates": "PASS",
+    "no_profile_probability_reuse_or_quality": "PASS",
+    "execution_disabled_future_pins_null": "PASS",
+    "future_output_not_created": "PASS"
+  },
+  "parent_files": {
+    "g0_bundle": {
+      "path": "/Users/song/Projects/pitcheezy/configs/G0-RESEARCH-FROZEN-v1.json",
+      "expected_sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+      "actual_sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+      "status": "PASS"
+    },
+    "june_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-ELIGIBILITY-v1.json",
+      "expected_sha256": "afe19b81c0ce58bd5a433f2dda88e0155ce4c605d14c3b4335fa72ffe62e6b30",
+      "actual_sha256": "afe19b81c0ce58bd5a433f2dda88e0155ce4c605d14c3b4335fa72ffe62e6b30",
+      "status": "PASS"
+    },
+    "june_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/manifest.json",
+      "expected_sha256": "f564145deb6b6b58a079766d582573b95154c3515af39fb39b0dba56088bdc88",
+      "actual_sha256": "f564145deb6b6b58a079766d582573b95154c3515af39fb39b0dba56088bdc88",
+      "status": "PASS"
+    },
+    "june_result": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/result.json",
+      "expected_sha256": "d00606b8f59d0244cbd8346a09f4b6bf9a2ac45f54be59e6e892891b1095671c",
+      "actual_sha256": "d00606b8f59d0244cbd8346a09f4b6bf9a2ac45f54be59e6e892891b1095671c",
+      "status": "PASS"
+    },
+    "june_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/eligible_keys.parquet",
+      "expected_sha256": "ff9db8e9a6b2f32a9f4279b30ac6a303b0dbb9d9267746f4cb0dc45741d5f037",
+      "actual_sha256": "ff9db8e9a6b2f32a9f4279b30ac6a303b0dbb9d9267746f4cb0dc45741d5f037",
+      "status": "PASS"
+    },
+    "june_metadata": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/eligible_metadata.parquet",
+      "expected_sha256": "38507b7df491c210ccff46352c47ace4feb385e277c0b88dd3a96b62b5557c76",
+      "actual_sha256": "38507b7df491c210ccff46352c47ace4feb385e277c0b88dd3a96b62b5557c76",
+      "status": "PASS"
+    },
+    "june_complement_keys": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-ELIGIBILITY-v1/complement_eligible_keys.parquet",
+      "expected_sha256": "962be8b7e37a6dc89ebb969a8adeab5861c96368d1384d74a567107f57043b43",
+      "actual_sha256": "962be8b7e37a6dc89ebb969a8adeab5861c96368d1384d74a567107f57043b43",
+      "status": "PASS"
+    },
+    "p11_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P11-001.yaml",
+      "expected_sha256": "b6565f167993bdb31481ce18aee6d49276f3db00b61f518b5eee45e8f00a319b",
+      "actual_sha256": "b6565f167993bdb31481ce18aee6d49276f3db00b61f518b5eee45e8f00a319b",
+      "status": "PASS"
+    },
+    "p11_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/preparation.json",
+      "expected_sha256": "aa831981ed84963e7dc27f7037fed166c2e6f83b0ed29cfba32d2a8b31a0d52a",
+      "actual_sha256": "aa831981ed84963e7dc27f7037fed166c2e6f83b0ed29cfba32d2a8b31a0d52a",
+      "status": "PASS"
+    },
+    "p11_analysis_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/manifest.json",
+      "expected_sha256": "aaf5db0d0a3d134b4d92393efa640dc67dba8efb4a4af330d21f2ab66d9ebda9",
+      "actual_sha256": "aaf5db0d0a3d134b4d92393efa640dc67dba8efb4a4af330d21f2ab66d9ebda9",
+      "status": "PASS"
+    },
+    "p11_calibration_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/EXP-P11-002.yaml",
+      "expected_sha256": "75d51ecfacfcf41d8d0519d47f3bc1c60f5e8d4949cf3fac25f568668c3acaad",
+      "actual_sha256": "75d51ecfacfcf41d8d0519d47f3bc1c60f5e8d4949cf3fac25f568668c3acaad",
+      "status": "PASS"
+    },
+    "p4_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/preparation.json",
+      "expected_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+      "actual_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+      "status": "PASS"
+    },
+    "p4_panel": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/panel.json",
+      "expected_sha256": "bf779e1d616c7921158816f9de9cafdf86e4015154810fc065265e2f28410f5a",
+      "actual_sha256": "bf779e1d616c7921158816f9de9cafdf86e4015154810fc065265e2f28410f5a",
+      "status": "PASS"
+    },
+    "p10_frequency": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/parent_baseline_predictions.npz",
+      "expected_sha256": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b",
+      "actual_sha256": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b",
+      "status": "PASS"
+    },
+    "p10_results": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/analysis/results.json",
+      "expected_sha256": "82768e20bc8375e38ffb15242a6e45639b85f5a04dbb16b8c42e29c1035f293c",
+      "actual_sha256": "82768e20bc8375e38ffb15242a6e45639b85f5a04dbb16b8c42e29c1035f293c",
+      "status": "PASS"
+    },
+    "p10_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/analysis/manifest.json",
+      "expected_sha256": "5105dc03a270d8f93f5e2230270b51847e03ed24d3e0a6799875a159658016a9",
+      "actual_sha256": "5105dc03a270d8f93f5e2230270b51847e03ed24d3e0a6799875a159658016a9",
+      "status": "PASS"
+    },
+    "p10_preparation": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/preparation.json",
+      "expected_sha256": "44f6579d1e1df845d5e92d8886e1935ff18d8dc184aee878d31570e98d40d5b4",
+      "actual_sha256": "44f6579d1e1df845d5e92d8886e1935ff18d8dc184aee878d31570e98d40d5b4",
+      "status": "PASS"
+    },
+    "p11_cpanel_june_inputs": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-002/june_inputs.npz",
+      "expected_sha256": "0ea15b692f56940688716d32ad534a372455e6ba9e9670377e379021a06f77e1",
+      "actual_sha256": "0ea15b692f56940688716d32ad534a372455e6ba9e9670377e379021a06f77e1",
+      "status": "PASS"
+    },
+    "p11_predictions": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/predictions.npz",
+      "expected_sha256": "6890f321e68d0ce83cba203c351a516377c77db6e0491f25802107f237b362d0",
+      "actual_sha256": "6890f321e68d0ce83cba203c351a516377c77db6e0491f25802107f237b362d0",
+      "status": "PASS"
+    },
+    "p4_auxiliary": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/aux.pkl",
+      "expected_sha256": "87ad95e61918147c678227875e26d7d45ca9014a5566aa40e4e61e1f112579a5",
+      "actual_sha256": "87ad95e61918147c678227875e26d7d45ca9014a5566aa40e4e61e1f112579a5",
+      "status": "PASS"
+    },
+    "p4_model_source": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/source/pitchmdp/model.py",
+      "expected_sha256": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+      "actual_sha256": "0e963b96900adb09705a56afb79e8dedcf31973d253df393ffe205df39b8a150",
+      "status": "PASS"
+    },
+    "p10_scalar_summarizer_source": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/source/scripts/score_ml_matrix.py",
+      "expected_sha256": "379ab50b82a7fb7bdaba4032f3b49ddf28a067724b4c0394870ea09251dcf112",
+      "actual_sha256": "379ab50b82a7fb7bdaba4032f3b49ddf28a067724b4c0394870ea09251dcf112",
+      "status": "PASS"
+    },
+    "p4_frequency_temperature_source": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/source/scripts/run_sequence_frequency_baselines.py",
+      "expected_sha256": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9",
+      "actual_sha256": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9",
+      "status": "PASS"
+    },
+    "cpanel_member_seed0": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed0/predictions.npz",
+      "expected_sha256": "6935d5469177e5ac8883fb47f703890f60779de8b56ade7c1c01c1657270cd10",
+      "actual_sha256": "6935d5469177e5ac8883fb47f703890f60779de8b56ade7c1c01c1657270cd10",
+      "status": "PASS"
+    },
+    "dev_member_seed0": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed0/predictions.npz",
+      "expected_sha256": "9bc36e1f6271734a1d56e3f8aace13ac0cd3273c9863aef26146805a276d213c",
+      "actual_sha256": "9bc36e1f6271734a1d56e3f8aace13ac0cd3273c9863aef26146805a276d213c",
+      "status": "PASS"
+    },
+    "cpanel_member_seed1": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed1/predictions.npz",
+      "expected_sha256": "40ea22c7796acb19ffb736f0fe61f6a4f4d3afada374a4606190fced85088fa6",
+      "actual_sha256": "40ea22c7796acb19ffb736f0fe61f6a4f4d3afada374a4606190fced85088fa6",
+      "status": "PASS"
+    },
+    "dev_member_seed1": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed1/predictions.npz",
+      "expected_sha256": "2a7a1c70a1c071aa8be659db13b181d01db1d32320c4d10d8e4fd2923bdd5017",
+      "actual_sha256": "2a7a1c70a1c071aa8be659db13b181d01db1d32320c4d10d8e4fd2923bdd5017",
+      "status": "PASS"
+    },
+    "cpanel_member_seed2": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed2/predictions.npz",
+      "expected_sha256": "32d0464554c29c79f7479a1d5ec37b08235d9bdf4496bf00aa8c3e6ff3c68fd9",
+      "actual_sha256": "32d0464554c29c79f7479a1d5ec37b08235d9bdf4496bf00aa8c3e6ff3c68fd9",
+      "status": "PASS"
+    },
+    "dev_member_seed2": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed2/predictions.npz",
+      "expected_sha256": "c3986ee970cca5647c3aab5a6955afcc50b306a9ec60ca61aa91cccf498c6e61",
+      "actual_sha256": "c3986ee970cca5647c3aab5a6955afcc50b306a9ec60ca61aa91cccf498c6e61",
+      "status": "PASS"
+    },
+    "cpanel_member_seed3": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed3/predictions.npz",
+      "expected_sha256": "749bab2984330aee7cdf4044bd186ad396d6b528f1bdfa83b7999c6103078fd7",
+      "actual_sha256": "749bab2984330aee7cdf4044bd186ad396d6b528f1bdfa83b7999c6103078fd7",
+      "status": "PASS"
+    },
+    "dev_member_seed3": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed3/predictions.npz",
+      "expected_sha256": "ea045bdc2e95db73bc8a4e8c7062fd061927469b49b221237edd7f52740b07e5",
+      "actual_sha256": "ea045bdc2e95db73bc8a4e8c7062fd061927469b49b221237edd7f52740b07e5",
+      "status": "PASS"
+    },
+    "cpanel_member_seed4": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed4/predictions.npz",
+      "expected_sha256": "c804aadf4e26d0963b90f77337d5d39d54a3072f7e5862eda82233bf367c26b6",
+      "actual_sha256": "c804aadf4e26d0963b90f77337d5d39d54a3072f7e5862eda82233bf367c26b6",
+      "status": "PASS"
+    },
+    "dev_member_seed4": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed4/predictions.npz",
+      "expected_sha256": "877a6c670dcb0e73a4951012699994fad26fc8f64b4688f2ecfba414d4e14149",
+      "actual_sha256": "877a6c670dcb0e73a4951012699994fad26fc8f64b4688f2ecfba414d4e14149",
+      "status": "PASS"
+    }
+  },
+  "execution_enabled": false,
+  "new_model_inference": 0,
+  "new_calibration_fits": 0,
+  "array_payloads_decoded": false,
+  "tests_run": false
+}

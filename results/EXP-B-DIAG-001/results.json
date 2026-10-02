@@ -1,0 +1,538 @@
+{
+  "dev_baseline_nll": 1.5896414946673698,
+  "dev_candidate_nll": 1.6022474026534503,
+  "dev_decomposition": {
+    "count": [
+      {
+        "baseline_nll": 1.3940990017188846,
+        "candidate_nll": 1.402620198575842,
+        "delta_sum": 1.2867007254005534,
+        "global_contribution": 0.0022854364571945887,
+        "group": {
+          "balls": "0",
+          "strikes": "0"
+        },
+        "mean_delta": 0.008521196856957307,
+        "pitches": 151
+      },
+      {
+        "baseline_nll": 1.6583572517666336,
+        "candidate_nll": 1.6628911789962673,
+        "delta_sum": 0.33551061499288826,
+        "global_contribution": 0.00059593359679021,
+        "group": {
+          "balls": "0",
+          "strikes": "1"
+        },
+        "mean_delta": 0.004533927229633625,
+        "pitches": 74
+      },
+      {
+        "baseline_nll": 1.7403529229244514,
+        "candidate_nll": 1.757554138615126,
+        "delta_sum": 0.5848413334829475,
+        "global_contribution": 0.0010387945532556796,
+        "group": {
+          "balls": "0",
+          "strikes": "2"
+        },
+        "mean_delta": 0.017201215690674926,
+        "pitches": 34
+      },
+      {
+        "baseline_nll": 1.641867028280456,
+        "candidate_nll": 1.6609060118090104,
+        "delta_sum": 1.1994559622989152,
+        "global_contribution": 0.002130472401951892,
+        "group": {
+          "balls": "1",
+          "strikes": "0"
+        },
+        "mean_delta": 0.01903898352855421,
+        "pitches": 63
+      },
+      {
+        "baseline_nll": 1.7248563888347,
+        "candidate_nll": 1.738765408886293,
+        "delta_sum": 0.7928141429407944,
+        "global_contribution": 0.0014081956357740576,
+        "group": {
+          "balls": "1",
+          "strikes": "1"
+        },
+        "mean_delta": 0.013909020051592886,
+        "pitches": 57
+      },
+      {
+        "baseline_nll": 1.3796032774098614,
+        "candidate_nll": 1.4013067933062582,
+        "delta_sum": 1.1068793107162564,
+        "global_contribution": 0.0019660378520715035,
+        "group": {
+          "balls": "1",
+          "strikes": "2"
+        },
+        "mean_delta": 0.021703515896397185,
+        "pitches": 51
+      },
+      {
+        "baseline_nll": 1.6100395350635948,
+        "candidate_nll": 1.628919437422754,
+        "delta_sum": 0.3587181448240284,
+        "global_contribution": 0.0006371547865435674,
+        "group": {
+          "balls": "2",
+          "strikes": "0"
+        },
+        "mean_delta": 0.01887990235915939,
+        "pitches": 19
+      },
+      {
+        "baseline_nll": 1.5729076824189394,
+        "candidate_nll": 1.5851574505104344,
+        "delta_sum": 0.3184939703788765,
+        "global_contribution": 0.0005657086507617699,
+        "group": {
+          "balls": "2",
+          "strikes": "1"
+        },
+        "mean_delta": 0.01224976809149525,
+        "pitches": 26
+      },
+      {
+        "baseline_nll": 1.8353144013044522,
+        "candidate_nll": 1.8527294219110828,
+        "delta_sum": 0.8707510303315521,
+        "global_contribution": 0.0015466270520986716,
+        "group": {
+          "balls": "2",
+          "strikes": "2"
+        },
+        "mean_delta": 0.01741502060663104,
+        "pitches": 50
+      },
+      {
+        "baseline_nll": 1.1294809714769574,
+        "candidate_nll": 1.106021018023124,
+        "delta_sum": -0.1407597207229987,
+        "global_contribution": -0.00025001726593783073,
+        "group": {
+          "balls": "3",
+          "strikes": "0"
+        },
+        "mean_delta": -0.023459953453833116,
+        "pitches": 6
+      },
+      {
+        "baseline_nll": 1.848280584366742,
+        "candidate_nll": 1.8568763750382433,
+        "delta_sum": 0.06876632537201122,
+        "global_contribution": 0.00012214267384016202,
+        "group": {
+          "balls": "3",
+          "strikes": "1"
+        },
+        "mean_delta": 0.008595790671501402,
+        "pitches": 8
+      },
+      {
+        "baseline_nll": 1.9016404440311192,
+        "candidate_nll": 1.9147635422039284,
+        "delta_sum": 0.3149543561474196,
+        "global_contribution": 0.0005594215917360917,
+        "group": {
+          "balls": "3",
+          "strikes": "2"
+        },
+        "mean_delta": 0.01312309817280915,
+        "pitches": 24
+      }
+    ],
+    "family": [
+      {
+        "baseline_nll": 1.3940990017188846,
+        "candidate_nll": 1.402620198575842,
+        "delta_sum": 1.2867007254005534,
+        "global_contribution": 0.0022854364571945887,
+        "group": {
+          "previous_family": "NONE"
+        },
+        "mean_delta": 0.008521196856957307,
+        "pitches": 151
+      },
+      {
+        "baseline_nll": 1.6455637550649005,
+        "candidate_nll": 1.6558780854354989,
+        "delta_sum": 1.0211187066892493,
+        "global_contribution": 0.0018137099585954694,
+        "group": {
+          "previous_family": "breaking"
+        },
+        "mean_delta": 0.010314330370598477,
+        "pitches": 99
+      },
+      {
+        "baseline_nll": 1.6814722469228185,
+        "candidate_nll": 1.6982357492077014,
+        "delta_sum": 4.475855110063675,
+        "global_contribution": 0.007950009076489652,
+        "group": {
+          "previous_family": "fastball"
+        },
+        "mean_delta": 0.016763502284882676,
+        "pitches": 267
+      },
+      {
+        "baseline_nll": 1.578158925181738,
+        "candidate_nll": 1.5849730915732552,
+        "delta_sum": 0.31345165400976716,
+        "global_contribution": 0.0005567524938006522,
+        "group": {
+          "previous_family": "offspeed"
+        },
+        "mean_delta": 0.0068141663915166776,
+        "pitches": 46
+      }
+    ],
+    "first_vs_later": [
+      {
+        "baseline_nll": 1.3940990017188846,
+        "candidate_nll": 1.402620198575842,
+        "delta_sum": 1.2867007254005534,
+        "global_contribution": 0.0022854364571945887,
+        "group": {
+          "position": "first"
+        },
+        "mean_delta": 0.008521196856957307,
+        "pitches": 151
+      },
+      {
+        "baseline_nll": 1.6613087675683922,
+        "candidate_nll": 1.675411742011991,
+        "delta_sum": 5.8104254707626914,
+        "global_contribution": 0.010320471528885775,
+        "group": {
+          "position": "later"
+        },
+        "mean_delta": 0.014102974443598766,
+        "pitches": 412
+      }
+    ],
+    "game": [
+      {
+        "baseline_nll": 1.5771896887084793,
+        "candidate_nll": 1.5803177774230464,
+        "delta_sum": 0.28778416174013643,
+        "global_contribution": 0.0005111619213856775,
+        "group": {
+          "game_pk": "777063"
+        },
+        "mean_delta": 0.0031280887145667003,
+        "pitches": 92
+      },
+      {
+        "baseline_nll": 1.9124322901317121,
+        "candidate_nll": 1.9581564766966448,
+        "delta_sum": 3.5207623654997864,
+        "global_contribution": 0.006253574361456103,
+        "group": {
+          "game_pk": "777094"
+        },
+        "mean_delta": 0.04572418656493229,
+        "pitches": 77
+      },
+      {
+        "baseline_nll": 1.5799856552687592,
+        "candidate_nll": 1.5962506770814895,
+        "delta_sum": 1.6102371594602682,
+        "global_contribution": 0.0028601015265724127,
+        "group": {
+          "game_pk": "777126"
+        },
+        "mean_delta": 0.01626502181272998,
+        "pitches": 99
+      },
+      {
+        "baseline_nll": 1.6040644543920863,
+        "candidate_nll": 1.6148811154122327,
+        "delta_sum": 0.9085995256922998,
+        "global_contribution": 0.0016138535092225575,
+        "group": {
+          "game_pk": "777143"
+        },
+        "mean_delta": 0.010816661020146426,
+        "pitches": 84
+      },
+      {
+        "baseline_nll": 1.3696454264820261,
+        "candidate_nll": 1.3649846437265452,
+        "delta_sum": -0.48006062381461156,
+        "global_contribution": -0.000852683168409612,
+        "group": {
+          "game_pk": "777217"
+        },
+        "mean_delta": -0.0046607827554816655,
+        "pitches": 103
+      },
+      {
+        "baseline_nll": 1.5775551002612598,
+        "candidate_nll": 1.58912735588705,
+        "delta_sum": 1.249803607585365,
+        "global_contribution": 0.0022198998358532234,
+        "group": {
+          "game_pk": "777227"
+        },
+        "mean_delta": 0.011572255625790416,
+        "pitches": 108
+      }
+    ],
+    "outcome": [
+      {
+        "baseline_nll": 1.0554726437889688,
+        "candidate_nll": 1.0491585641253742,
+        "delta_sum": -1.2438736937281285,
+        "global_contribution": -0.0022093671291796243,
+        "group": {
+          "outcome": "ball"
+        },
+        "mean_delta": -0.006314079663594561,
+        "pitches": 197
+      },
+      {
+        "baseline_nll": 4.281039462507656,
+        "candidate_nll": 4.323183407154838,
+        "delta_sum": 0.5478712804133554,
+        "global_contribution": 0.0009731283843931712,
+        "group": {
+          "outcome": "double"
+        },
+        "mean_delta": 0.042143944647181186,
+        "pitches": 13
+      },
+      {
+        "baseline_nll": 5.355601085590969,
+        "candidate_nll": 5.868815435220048,
+        "delta_sum": 2.566071748145391,
+        "global_contribution": 0.004557853904343501,
+        "group": {
+          "outcome": "double_play"
+        },
+        "mean_delta": 0.5132143496290782,
+        "pitches": 5
+      },
+      {
+        "baseline_nll": 1.7596122355071038,
+        "candidate_nll": 1.792458383952079,
+        "delta_sum": 3.054691805382708,
+        "global_contribution": 0.005425740329276569,
+        "group": {
+          "outcome": "foul"
+        },
+        "mean_delta": 0.032846148444975354,
+        "pitches": 93
+      },
+      {
+        "baseline_nll": 6.146345213331143,
+        "candidate_nll": 6.383657034522022,
+        "delta_sum": 0.9492472847635156,
+        "global_contribution": 0.001686052015565747,
+        "group": {
+          "outcome": "hbp"
+        },
+        "mean_delta": 0.2373118211908789,
+        "pitches": 4
+      },
+      {
+        "baseline_nll": 4.9437471066449135,
+        "candidate_nll": 5.219065922473915,
+        "delta_sum": 1.651912894974012,
+        "global_contribution": 0.002934125923577286,
+        "group": {
+          "outcome": "home_run"
+        },
+        "mean_delta": 0.27531881582900203,
+        "pitches": 6
+      },
+      {
+        "baseline_nll": 2.302738252337554,
+        "candidate_nll": 2.3307092102727336,
+        "delta_sum": 1.7062284340459923,
+        "global_contribution": 0.003030601126191816,
+        "group": {
+          "outcome": "out"
+        },
+        "mean_delta": 0.027970957935180202,
+        "pitches": 61
+      },
+      {
+        "baseline_nll": 3.3648988464300995,
+        "candidate_nll": 3.424760857842827,
+        "delta_sum": 1.0775162054290925,
+        "global_contribution": 0.0019138831357532727,
+        "group": {
+          "outcome": "single"
+        },
+        "mean_delta": 0.059862011412727366,
+        "pitches": 18
+      },
+      {
+        "baseline_nll": 1.1185633626931373,
+        "candidate_nll": 1.099210713516856,
+        "delta_sum": -3.212539763262695,
+        "global_contribution": -0.005706109703841377,
+        "group": {
+          "outcome": "strike"
+        },
+        "mean_delta": -0.019352649176281295,
+        "pitches": 166
+      }
+    ]
+  },
+  "dev_mean_delta": 0.012605907986080364,
+  "dev_pitches": 563,
+  "elapsed_seconds": 0.7493091251235455,
+  "experiment_id": "EXP-B-DIAG-001",
+  "first_pitch_identity": {
+    "dev_first_count_zero_zero": 151,
+    "dev_first_pitches": 151,
+    "dev_none_iff_first": true,
+    "dev_zero_zero_nonfirst": 0,
+    "train_first_count_zero_zero": 145,
+    "train_first_pitches": 145,
+    "train_none_iff_first": true,
+    "train_zero_zero_nonfirst": 0
+  },
+  "interpretation_limit": "Descriptive posthoc decomposition and April held-game evidence only; no causal attribution or DEV model selection.",
+  "known_dev_delta_before_plan": 0.012605907986080364,
+  "phase": "posthoc_diagnostic",
+  "sha256": {
+    "a_predictions": "e506ff94d2124e17a3d09db47a66f53ef738b1f078ffef261b02f96302c96f78",
+    "a_selection": "c11dd909db352e15aaa60545598d6376e45cfd4a71efed8885b44391c529b0c8",
+    "b_config": "9ed4af0267189093b5c950e2970b5c85eb5a5f7cea984918a9864c248a2ed939",
+    "b_predictions": "6b15d27f468ec20434df56a03e1672253c62feabc126ac2f10af2c281be62d3d",
+    "b_report": "5b10e2bd50337aee2e114a12d8ee18b77c86f329ffc8aef7026a767a50c457d9",
+    "config": "df472ced2b84ab2f3d29873a2bc8db3cbf3b187ad0b30ee5e093cb4f5906c90b",
+    "dev_parquet": "89130facf5a8854780a33755241129240be6d43ea2a8584afcd65fe6111c1199",
+    "script": "d03ce161e8a0ce9e618e4820d6aa5b95392d570211f9ce78a5efe239938460dd",
+    "train_parquet": "a75488855c59963c16826fb55e3e50b8e38fe80659e11847d52b5ad14c167852"
+  },
+  "support": {
+    "dev": {
+      "base_cells": 24,
+      "base_support_quantiles": [
+        1.0,
+        27.0,
+        31.0,
+        67.0,
+        78.0
+      ],
+      "base_unseen_pitches": 0,
+      "extended_cells": 61,
+      "extended_support_pitches_le_10": 188,
+      "extended_support_pitches_le_2": 51,
+      "extended_support_pitches_le_5": 124,
+      "extended_support_quantiles": [
+        0.0,
+        8.0,
+        17.0,
+        67.0,
+        78.0
+      ],
+      "extended_unseen_pitches": 8,
+      "extended_unseen_with_seen_base": 8,
+      "pitches": 563
+    },
+    "train": {
+      "base_cells": 24,
+      "base_support_quantiles": [
+        1.0,
+        27.0,
+        32.0,
+        61.75,
+        78.0
+      ],
+      "base_unseen_pitches": 0,
+      "extended_cells": 61,
+      "extended_support_pitches_le_10": 162,
+      "extended_support_pitches_le_2": 28,
+      "extended_support_pitches_le_5": 87,
+      "extended_support_quantiles": [
+        1.0,
+        9.0,
+        20.0,
+        58.75,
+        78.0
+      ],
+      "extended_unseen_pitches": 0,
+      "extended_unseen_with_seen_base": 0,
+      "pitches": 578
+    },
+    "train_cell_sizes": {
+      "one": {
+        "cells": 12,
+        "pitches": 12
+      },
+      "two": {
+        "cells": 8,
+        "pitches": 16
+      }
+    },
+    "train_extended_cell_size_quantiles": [
+      1.0,
+      2.0,
+      4.0,
+      11.0,
+      78.0
+    ]
+  },
+  "train_leave_one_game_out": {
+    "baseline_nll": 1.5244613161292233,
+    "candidate_nll": 1.5346695706303775,
+    "games": [
+      {
+        "base_loss_sum": 139.35750177564998,
+        "candidate_loss_sum": 140.5286350242358,
+        "game_pk": 778336,
+        "mean_delta": 0.013778038218656474,
+        "pitches": 85
+      },
+      {
+        "base_loss_sum": 144.01394653714593,
+        "candidate_loss_sum": 146.81033242759568,
+        "game_pk": 778339,
+        "mean_delta": 0.02882872052010064,
+        "pitches": 97
+      },
+      {
+        "base_loss_sum": 163.25302048261204,
+        "candidate_loss_sum": 165.6657467853576,
+        "game_pk": 778406,
+        "mean_delta": 0.023199291372553464,
+        "pitches": 104
+      },
+      {
+        "base_loss_sum": 131.2120405210386,
+        "candidate_loss_sum": 131.53053205144727,
+        "game_pk": 778410,
+        "mean_delta": 0.0034618644609637978,
+        "pitches": 92
+      },
+      {
+        "base_loss_sum": 153.17143061652277,
+        "candidate_loss_sum": 153.7672253587828,
+        "game_pk": 778482,
+        "mean_delta": 0.0056742356405719676,
+        "pitches": 105
+      },
+      {
+        "base_loss_sum": 150.13070078972174,
+        "candidate_loss_sum": 148.73654017693906,
+        "game_pk": 778489,
+        "mean_delta": -0.014675374871396347,
+        "pitches": 95
+      }
+    ],
+    "mean_delta": 0.010208254501154259,
+    "pitches": 578
+  }
+}

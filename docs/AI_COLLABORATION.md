@@ -1,0 +1,74 @@
+# Codex–Claude Code 협업
+
+2026-09-27. 사용자는 Codex가 Claude CLI를 호출하는 협업과 `claude --dangerously-skip-permissions` 사용을 명시적으로 허용했다. D68. Codex가 작업 배정·검토·통합·진행 보고를 맡고, Claude Code는 지정된 작업을 구현하거나 독립 검토한다.
+
+## 작업과 상태
+
+- 공용 작업대장: `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-claude/board.json`. 총괄만 갱신한다. worktree의 파일은 자동 동기화되지 않으므로 변경 전달은 고정 커밋 또는 명시된 읽기 전용 경로로 한다.
+- 각 호출은 고유 attempt 디렉터리에 `request.md`, `events.jsonl`, `stderr.log`, `state.json`, 반환 시 `result.json`을 남긴다. 요청 해시·기준/최종 커밋·세션 ID·시간·종료 상태를 보관하며 기존 attempt는 덮어쓰지 않는다.
+- `scripts/run_claude_task.py`가 CLI를 감독한다. `returned_for_review`는 모델이 결과를 반환했다는 뜻이다. 완료 판정은 실제 diff·필요한 검사·산출물을 검토한 총괄이 작업대장에 별도로 기록한다. CLI 오류·시간 초과·권한 거절·결과 부재는 완료로 세지 않는다.
+- 세션 ID로 후속 호출을 이어가되 새 attempt를 만든다. 중단 시 기존 프로세스와 산출물을 먼저 확인하고 중복 실행하지 않는다. 무인 실행은 tmux에서 감독기를 실행해 대화 연결과 분리한다.
+- 이 Mac의 사용자 훅은 iTerm `cc-status`, 프로젝트 훅은 편집 후 pytest다. iTerm 훅이 headless 시작을 막는 것이 실측되어 감독기의 `--disable-hooks`로 해당 호출에만 `disableAllHooks`를 적용한다. 영구 설정은 바꾸지 않는다. 필수 검사는 명시적 명령으로 실행·기록한다. 관리자 정책 훅을 우회하지 않는다.
+
+## 역할과 실행 범위
+
+1. 작업 지시에 기준 커밋, 수정 가능 파일, 완료 조건, 검사, 실험 실행 허용 범위, 시간/turn 상한을 명시한다.
+2. 구현자는 독립 worktree에서 작업한다. 검토자는 다른 에이전트이며 검토한 커밋만 통합한다. 중요한 의견 차이는 코드·규약·측정으로 판정한다.
+3. Claude 권한 옵션은 해당 작업의 실행 허용을 뜻하며, 과제 범위·실험 예산·자료 사용 규칙을 바꾸지 않는다. 이 협업에서 공유 main/PR의 merge와 실행 큐 관리는 총괄만 맡는다.
+4. 무거운 학습·추론·MPS 자원 측정은 한 실행 큐에서만 수행한다. 모든 worktree가 같은 artifact_root의 기존 `.heavy.lock`을 쓴다. 학습 중 실행 소스를 바꾸지 않는다.
+5. 원본 데이터·봉인된 산출물은 보존한다. 새 시도는 새 출력 경로와 config에 등록한다. 원래 F4 7,200초/member·28,800초/family 예산을 늘리지 않는다. 2026 자료는 추가 열람하지 않는다.
+6. 현재 사용자 지정 체제는 **Opus5.5 메인 → Sol 서브, Astra 필수 최소 검토**다(D88). Opus가 과학 설계·구현·수정·보고서 초안을 주도하고 Sol이 조사·반복 검사·실행·증거 정리를 지원한다. Astra는 핵심 인과 식별·추정량·누수·승격 판단의 독립 최종 검토에만 짧은 요약과 정확한 diff로 참여한다. 기본적으로 작업 묶음당 최종 검토 1회로 모으고, 차단사항이 남을 때만 해당 수정의 좁은 재검토를 요청한다. Astra에 탐색·일반 구현·로그 순회·중복 검사를 맡기거나 사용량 비율/잔여량을 추정하지 않는다. 실제 호출은 `claude-opus-5-5`, `gpt-6-sol`, `gpt-6-astra`이며 실제 응답 모델을 기록한다. 접근 실패를 다른 모델의 성공으로 숨기지 않는다. Fable은 제외하고 Claude가 Codex를 재호출하는 순환 위임은 하지 않는다. 작성자와 최종 검토자는 분리한다. 아래 이전 역할 분담은 과거 이력으로 보존한다.
+
+
+## 첫 작업
+
+| ID | 담당 | 산출물 | 완료 기준 |
+|---|---|---|---|
+| COOP-001 | Claude 구현 → Codex 검토·실행 | F4 실데이터 context cache 감사 러너·회귀 검사·새 실행 등록 | 코드 검토, 실제 동등성/비용 측정 또는 보존된 실패 근거, 채택 여부와 기존 예산 적용 |
+| COOP-002 | Codex 설계 → Claude 독립 검토 | G0/F1 5seed 안정성·bridge 연장 및 G0 전체 MLB 평가 설계 | 재사용·보정·다중 비교·비용·기존 DEV 노출 한계를 명시하고 실행 공백 식별 |
+
+## G0/F1 5seed 후속 — D72
+
+사용자가 후속 목록1~4의 실제 수행을 승인했다. 새 작업대장은 SSD의 `ML-MATRIX-20260924/coordination/20260927-confirmation/board.json`이며, 첫 작업대장에서 이 경로를 연결한다. COOP-003은 Fable의 additive 실행기 구현, COOP-004는 Opus·Astra의 독립 검토, COOP-005는 Sol의 단일 실행 큐·보고다. C1과 F1연장 각각7,200초의 비용 대장을 분리하고 총14,400초를 넘기지 않는다. 전체 MLB 단독 평가는 이 묶음의 범위에 포함하지 않는다.
+
+이 문서는 협업 규칙이다. 실험의 실제 상태와 과학적 결론은 각 config·manifest·실행 보고서가 결정한다.
+
+## 전체 June 적격 준비 — D79~D81
+
+Astra가 과학 계약·코드/등록/산출물을 독립 검토하고, COOP-011 Claude Opus5.5가 별도 worktree에서 worker와 합성 검사를 구현했다. 두 CLI attempt는 실제 응답 모델 `claude-opus-5-5`, 성공 반환 후 검토·통합됐으며, 두 번째는 외부 등록 config와 동결 C checkout을 연결하는 수정이다. Sol은 감독기·중단/비용 기록과 단일 실제 실행을 맡았다. Root는 통합315검사·등록·보고를 맡았다. 작업대장은 SSD `coordination/20260927-june-eligibility/board.json`, Claude 원본 로그는 그 아래 `COOP-011/attempt-001`, `attempt-002`다. 신규 Fable 호출은 없다. 실제 준비는104,970구·worker1.219838초이며 새fit/추론은0이다. [보고서](reports/ML-June-eligibility-2026-09-27.md).
+
+## 전체 June 보정 설계·과학 등록 — D82~D83
+
+Astra가 B0/B1/B2·N3/R78·비용 계약을 작성하고, Sol이 재사용 입력/배열 헤더·비용·누락 구현을 조사했다. COOP-012 Opus5.5는 두 번 독립 검토해 출처/해시 연결 보완 후 PASS를 반환했다. Root가 설정·기록을 통합했고, Sol이 최종 등록 해시/구조를 별도 확인했다. 작업대장은 SSD `coordination/20260928-june-calibration/board.json`이다. 실제 응답 모델은 두 호출 모두 `claude-opus-5-5`이며 Fable 호출은 없다. 최초 검토의 ‘이전5추론이한프로세스’ 표현은 별도5worker 비용대장으로 정정했고 원문/정정 이력을 보존했다. 과학 등록 완료와 실행 코드를 구분하며 이번 단계는 새fit/추론0이다. [설계 보고서](reports/ML-June-calibration-design-2026-09-28.md).
+
+## 전체 June 보정 구현·실행·보고 — D84~D86
+
+COOP-013 Claude Opus5.5가 별도 worktree에서 보정·N3/R78 scorer·단계별 worker와 합성 검사를 구현했다. 실제 응답 모델은 두 attempt 모두 `claude-opus-5-5`다. 첫 호출 안에서 이미 반영한 수정 요청을 새 호출 성공으로 중복 집계하지 않았다. 두 번째 호출은 Git 출처 명령 실패 시 거부하는 수정과 12개 회귀 검사다. Astra가 구현과 실제 C/D·환경·자료핀·명령계획을 독립 검토했고, Sol이 감독기·25개 검사·단일 실제 큐를 맡았다. Root가 검토본 통합·필수340검사·등록·release·보고를 맡았다.
+
+작업대장은 SSD `coordination/20260928-june-calibration-execution/board.json`, CLI 원문은 그 아래 `COOP-013/attempt-001`, `attempt-002`다. source C `1002f57`, 등록 D `61b056c`와 실제 Python/수치환경을 고정한 뒤 10/10 worker 성공, 공식473.521126초, 실패·재시도0으로 종료했다. 작성자와 사후 독립 검토자는 분리했고 통계 재계산을 추가 실행하지 않았다. 실행 성공과 N3 미확정·G0 유지 판정을 구분한다. Fable 호출·새 신경망/temperaturefit·2026접근은 없다. 승인된 Ponytail 규칙과 연구 예외도 Opus 후속 호출의 명시적 읽기 경로로 전달했다. [실행 보고서](reports/ML-June-calibration-execution-2026-09-28.md), [구현 검토](reviews/COOP-013-June-calibration-implementation-2026-09-28.md).
+
+## 2026 사용 이력 감사·평가 초안 — D87
+
+COOP-014는 메타데이터 감사와 실행 비활성 사전등록 초안이다. Astra가 설계와 독립 검토, Opus5.5가 별도 worktree에서 문서/설정 3개 작성·보완, Sol이 근거 수집·최종 일관성 13검사, Root가 통합·보고를 맡았다. 두 CLI 호출 모두 실제 `claude-opus-5-5`, 각각 472.438초·112.570초의 문서 작성이며 실험 비용이 아니다. 최종 작성 커밋 `a230c5d`의 Astra 재검토는 **초안 통합 PASS**다. 최종 사전등록·실행 승인으로 해석하지 않는다.
+
+작업대장은 SSD `coordination/20260928-2026-ope-planning/board.json`, 원본 CLI 기록은 그 아래 `COOP-014/attempt-001`, `attempt-002`다. 과거 메타데이터 63경로와 인용 545행을 검증했으며 새 원자료/헤더/배열/모델 payload 접근·fit·추론·OPE는 0이다. 코드 변경·무거운 큐 실행·새 Fable 호출은 없다. 기존 2026 사용과 현재 unknown 범위를 구분한다. [사용 이력 감사](reports/MLB-2026-use-history-audit-2026-09-28.md), [평가 초안](contracts/MLB-2026-OPE-PREREG-DRAFT-v1.md), [독립 검토](reviews/COOP-014-2026-OPE-draft-review-2026-09-28.md).
+
+## Opus 주도 정책 정의·합성 검증 준비 — D88~D89
+
+COOP-015부터 Opus5.5가 설계·구현·보고서의 주 담당이고 Sol이 재사용 조사·검사·일반 검토를 지원한다. 실제 Opus CLI 2회, 별도 Astra 호출은 최종 핵심 과학 검토 1회다. Astra가 남긴 정확한 문구 수정 기준을 Sol이 반영하고 Root가 diff를 확인했으며, 새 Astra 호출로 일반 문서 검사를 반복하지 않았다. 작성 모델/기준·수정 커밋과 검토 주체를 구분했다. [보고서](reports/MLB-2026-policy-preparation-2026-09-28.md), [검토 기록](reviews/COOP-015-policy-preparation-2026-09-28.md). 작업대장은 SSD `coordination/20260928-2026-policy-preparation/board.json`이다. 이 역할 분담을 이후 작업에도 적용한다.
+
+## G0/BC/미지원 원장 구현 — D90~D91
+
+COOP-016은 Opus5.5 실제 CLI 1회가 설계·구현·합성 검사·보고서를 주도했고 Sol의 조기 두 검토를 같은 호출 안에서 반영했다. Sol이 정확한 최종 커밋의 15검사와 독립 재현을 확인했다. Astra는 핵심 과학 검토 1회만 수행했으며, Root가 요구된 보고 범위를 명확히 하고 소스 동등성·통합15검사를 확인했다. 기존 Opus 메인·Sol 서브·Astra 필수 최소 체제를 유지한다. 실데이터 실행과 실제 정책 동결은 없다. 작업대장 SSD `coordination/20260928-policy-runtime/board.json`. [보고서](reports/ML-policy-runtime-implementation-2026-09-28.md), [검토](reviews/COOP-016-policy-runtime-implementation-2026-09-28.md).
+
+## 구성요소 연결·완전한 식별자·≤2025 등록 준비 — D92
+
+COOP-017은 사용자 재개 지시로 Claude(`claude-opus-5-5`)가 **Codex 감독기 없이 직접** 수행했다. Sol·Astra는 이 Claude 환경에서 호출할 수 없었고, Claude가 Codex를 다시 부르는 순환 위임은 금지이므로 시도하지 않았다. 구현·합성 검사·등록안만 남기고 독립 검토 패킷을 준비했다(검토 미수행). 같은 모델의 하위 에이전트 점검은 자기 점검으로만 기록하며 Sol/Astra 검토로 부르지 않는다. 실데이터·payload·2026 접근은 0이고 Fable 호출은 없다. 작업대장 SSD `coordination/20260929-policy-materialization/board.json`. [보고서](reports/ML-policy-materialization-prep-2026-09-29.md), [검토 패킷](reviews/COOP-017-policy-materialization-review-packet-2026-09-29.md). 다음 협업 환경에서 Sol 재현과 Astra 핵심 검토 1회를 먼저 수행한다.
+
+## Opus 단독 전환·검증 코드·결정 반영 — D93
+
+2026-09-29 사용자가 "지금부터 Opus 5.5 단독으로 진행, 결정 항목은 추천안을 몇 개씩, 아직 없는 코드도 Opus가 직접 작성"을 지시했다. 이후 COOP-018은 Claude(`claude-opus-5-5`)가 **단독**으로 수행한다. Sol·Astra·Codex를 호출하지 않고, 같은 모델의 다중 에이전트 워크플로(렌즈별 분석, 결함마다 검증자 3명, 누락 점검)를 쓴다. 이것은 **자기 검토**이며 독립 검토로 부르지 않는다. 독립 검토가 필요한 게이트(≤2025 검증의 S3 이후, 2026 계약 변경)는 닫힌 채로 둔다. 실데이터·payload·2026 접근은 0이고 Fable 호출은 없다. 결정 기록 [D93](decisions.md), [결정 선택지](reviews/COOP-018-decision-options-2026-09-29.md), [코드 검토](reviews/COOP-018-code-review-2026-09-29.md), [보고서](reports/ML-policy-validation-code-2026-09-29.md).
+
+## 핵심 검토자 Fable 5.1 — D100
+
+2026-09-30 사용자가 ≤2025 검증 S3 이후 게이트와 2026 사전등록의 핵심 검토자를 **Fable 5.1**(`claude-fable-5-1`)로 지정했다. 작성·수정·실행·보고는 계속 Opus 5.5 단독이며, Fable은 핵심 과학 검토에만 짧은 패킷과 정확한 diff로 참여한다. 작성 모델(Opus)과 검토 모델(Fable)이 다르므로 이 검토를 독립 검토로 기록한다. 같은 Opus의 검토는 여전히 자기 검토다. Claude→Codex 재호출은 하지 않는다.

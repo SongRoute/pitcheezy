@@ -1,0 +1,13 @@
+{
+  "experiment_id": "EXP-C-ROSTER-001",
+  "selection_sha256": "d1c01b5876e2e9d76c881d7b6c2474bff22927874761bb92df049f5c2d8e4da8",
+  "config_sha256": "94bbf0bfa2dc441edfe8c063a82176769e60047cc2c6c691e7bd54eff69c6fbc",
+  "script_sha256": "4289e78049ed3458f900b6a4eb6c4e8b741c7b4d413520afab51f7dddbf5a4f9",
+  "packet_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/C-ROSTER-001/replacement_packets.json",
+  "packet_sha256": "a327f1fecd7c9b97e4e2575328497520e373f9bcc325b28b341ae17303360371",
+  "selected_count": 6,
+  "raw_response_count": 44,
+  "actual_manager_availability": null,
+  "policy_value": null,
+  "source_exposure": "retrospective_2026_retrieval_of_historical_MLB_StatsAPI"
+}

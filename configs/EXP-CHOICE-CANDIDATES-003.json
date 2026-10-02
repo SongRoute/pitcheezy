@@ -1,0 +1,37 @@
+{
+  "experiment_id": "EXP-CHOICE-CANDIDATES-003",
+  "parent_diagnosis": "EXP-CHOICE-DIAG-002",
+  "artifact_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/CHOICE-CANDIDATES-003",
+  "checkpoint_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/CHOICE-DIAG-002/checkpoint",
+  "cohort": "Same fixed 151 PAs/563 eligible July 2025 DEV pitches, all six games; no new row selection",
+  "training": "No refit, frozen checkpoint Q arrays and April TRAIN repertoire only; no CV",
+  "candidate_limit": 2,
+  "candidates": [
+    {
+      "id": "near_value_repertoire",
+      "hypothesis": "Small Q gaps and pitcher-specific concentration make a fixed near-value repertoire rule worth screening",
+      "epsilon_pp": 0.05,
+      "rule": "Among supported actions with 100*(max ensemble Q - action Q)<=epsilon_pp, choose largest April repertoire count of its pitch type, then larger ensemble Q, then original action index",
+      "axis": "Current action selection only; Q and future continuation unchanged"
+    },
+    {
+      "id": "minimax_member_regret",
+      "hypothesis": "Low five-member top-action unanimity motivates reducing worst member's within-state action regret",
+      "rule": "For each action compute max_m(100*(max_a Q_m(a)-Q_m(action))) across seeds42-46; minimize it, ties by higher ensemble Q then original action index",
+      "axis": "Current action selection only; frozen member Q and future continuation unchanged"
+    }
+  ],
+  "support_rule": "Require identical action identities/order across ensemble and five members for every PA, otherwise fail the comparison rather than intersect/reselect silently",
+  "evaluation": "One observed pre-pitch action contrast only, each frozen judge retains its own optimized PA continuation. Not the value of rolling out the candidate at every future pitch or an inning policy",
+  "judges": ["frozen_ensemble", "seed42", "seed43", "seed44", "seed45", "seed46"],
+  "metrics": ["changed_action_count", "changed_type_count", "type_concentration_by_pitcher_count", "actual_type_match_descriptive_only", "delta_vs_frozen_ensemble_action_under_each_judge_pp", "worst_member_regret_pp", "support_unchanged"],
+  "sensitivity": "For five leave-one-member-out folds, reference=max arithmetic mean Q of remaining four members; near-value rule uses that same mean Q; minimax uses remaining four regrets and that mean Q for ties. Evaluate each on held-out member's Q; report held-out candidate-minus-reference differences and five-fold action/type unanimity. Arithmetic mean Q control is not a reconstructed ensemble and is not a third improvement candidate",
+  "bootstrap_seed": 20260924,
+  "bootstrap_replicates": 1000,
+  "bootstrap_cluster": "game_pk, paired contrasts, all six fixed games; exploratory 95 percent percentile CI",
+  "selection_rule": "No hyperparameter selection or second DEV pass with changed thresholds. Report all outcomes. Negative mean full-ensemble current-action contrast is model-internal worsening, even if concentration or stability improves. Such candidates are rejected for service adoption. Any remaining candidate still requires identified policy evaluation; absent OPE means defer, never adopt",
+  "policy_ope": null,
+  "causal_policy_value": null,
+  "final_or_2026_access": false,
+  "observed_before_preregistration": "DIAG-002 first aggregate: 151/563 eligible, mean actual-type best-action gap0.0803695244pp median0.0392187274pp, five-member unanimous action0.3357015986/type0.5488454707; no candidate outputs computed"
+}

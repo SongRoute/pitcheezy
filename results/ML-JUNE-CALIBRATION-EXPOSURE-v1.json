@@ -1,0 +1,567 @@
+{
+  "family_id": "ML-JUNE-CALIBRATION-v1",
+  "status": "completed",
+  "source": {
+    "full_results": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/analysis/results.json",
+      "sha256": "31f72b0202a2cc7c06a595094ab36be95d3edd6de2a9455f173da8bc15c034e9"
+    },
+    "analysis_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/analysis/manifest.json",
+      "sha256": "a296c8ec4c3a379904706b4a88fc2f62e1bacb5c93c24d510345e333efa37fcc"
+    },
+    "fit_manifest": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/fit/manifest.json",
+      "sha256": "eb0dec3ccac973643ede9263ef4103665fae2f46f340db7e34aed9eb1eeae6ea"
+    },
+    "parameters": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/fit/parameters.json",
+      "sha256": "fab0aff37e3b381d7f9dcb53677a436a36357e7e8a50ad3ed3bd4292e1121e9f"
+    },
+    "queue_status": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/status.json",
+      "sha256": "de0c5fe28ee9c53ec273eb1c4f6536e137c123bc47102ab5c4be7ed4b6959609"
+    },
+    "execution_plan": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/execution-plan.json",
+      "sha256": "74fbfa5e6395f6bbf5b92d62605aad7fce65d4329b08b9e846f30fef115dbbfb"
+    },
+    "execution_registration": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/execution-registration.json",
+      "sha256": "5ba9f82f4378363eb1ed7f521564e79575d3b69a5403f52f97e2d1c387c6b307"
+    },
+    "runtime_release": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/runtime-release.json",
+      "sha256": "8057ed19cceb827adb550e4d83c528423f0d1a8b0ab65588366bfa225c861392"
+    },
+    "terminal_evidence": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260928-june-calibration-execution/terminal-execution-evidence-001.json",
+      "sha256": "df8de2f023775f0ce625b54e54a886ea96051cddac2b37f9caf8473d4c2e2f0b"
+    },
+    "scientific_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-CALIBRATION-v1.json",
+      "sha256": "a0bff3b34079ac736b2dff7c69a29faa5a5268316b53ad06e113945684ba6ab8"
+    },
+    "execution_config": {
+      "path": "/Users/song/Projects/pitcheezy/configs/ML-JUNE-CALIBRATION-EXECUTION-v1.json",
+      "sha256": "792f89c6e752e2955ae6ca48d8db2fab94d109da2bf7bfda01342bab54f8e917"
+    },
+    "contract": {
+      "path": "/Users/song/Projects/pitcheezy/docs/contracts/ML-JUNE-CALIBRATION-v1.md",
+      "sha256": "e155315dcf732c55009755443f4db8117f260851273d7c54c760e2f29c701d4c"
+    },
+    "code_commit_c": "1002f57ea09d14df279212c68100da755bc573dc",
+    "registration_commit_d": "61b056caa5d752787d84c7ae74b2a627818c34b3"
+  },
+  "cache_schema_registered_before_execution": {
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/cache/sequence_physics.parquet": {
+      "columns": [
+        {
+          "name": "game_pk",
+          "type": "int64"
+        },
+        {
+          "name": "at_bat_number",
+          "type": "int64"
+        },
+        {
+          "name": "pitch_number",
+          "type": "int64"
+        },
+        {
+          "name": "effective_speed",
+          "type": "double"
+        },
+        {
+          "name": "spin_axis",
+          "type": "double"
+        }
+      ],
+      "row_groups": 3,
+      "rows": 2145111
+    },
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet": {
+      "columns": [
+        {
+          "name": "game_date",
+          "type": "timestamp[ns]"
+        },
+        {
+          "name": "game_pk",
+          "type": "int64"
+        },
+        {
+          "name": "at_bat_number",
+          "type": "int64"
+        },
+        {
+          "name": "pitch_number",
+          "type": "int64"
+        },
+        {
+          "name": "game_type",
+          "type": "large_string"
+        },
+        {
+          "name": "pitch_type",
+          "type": "large_string"
+        },
+        {
+          "name": "player_name",
+          "type": "large_string"
+        },
+        {
+          "name": "pitcher",
+          "type": "int64"
+        },
+        {
+          "name": "batter",
+          "type": "int64"
+        },
+        {
+          "name": "stand",
+          "type": "large_string"
+        },
+        {
+          "name": "p_throws",
+          "type": "large_string"
+        },
+        {
+          "name": "balls",
+          "type": "int64"
+        },
+        {
+          "name": "strikes",
+          "type": "int64"
+        },
+        {
+          "name": "outs_when_up",
+          "type": "int64"
+        },
+        {
+          "name": "inning",
+          "type": "int64"
+        },
+        {
+          "name": "inning_topbot",
+          "type": "large_string"
+        },
+        {
+          "name": "home_team",
+          "type": "large_string"
+        },
+        {
+          "name": "away_team",
+          "type": "large_string"
+        },
+        {
+          "name": "home_score",
+          "type": "int64"
+        },
+        {
+          "name": "away_score",
+          "type": "int64"
+        },
+        {
+          "name": "bat_score",
+          "type": "int64"
+        },
+        {
+          "name": "fld_score",
+          "type": "int64"
+        },
+        {
+          "name": "post_home_score",
+          "type": "int64"
+        },
+        {
+          "name": "post_away_score",
+          "type": "int64"
+        },
+        {
+          "name": "post_bat_score",
+          "type": "int64"
+        },
+        {
+          "name": "post_fld_score",
+          "type": "int64"
+        },
+        {
+          "name": "on_1b",
+          "type": "double"
+        },
+        {
+          "name": "on_2b",
+          "type": "double"
+        },
+        {
+          "name": "on_3b",
+          "type": "double"
+        },
+        {
+          "name": "plate_x",
+          "type": "double"
+        },
+        {
+          "name": "plate_z",
+          "type": "double"
+        },
+        {
+          "name": "sz_top",
+          "type": "double"
+        },
+        {
+          "name": "sz_bot",
+          "type": "double"
+        },
+        {
+          "name": "release_speed",
+          "type": "double"
+        },
+        {
+          "name": "release_spin_rate",
+          "type": "double"
+        },
+        {
+          "name": "pfx_x",
+          "type": "double"
+        },
+        {
+          "name": "pfx_z",
+          "type": "double"
+        },
+        {
+          "name": "events",
+          "type": "large_string"
+        },
+        {
+          "name": "description",
+          "type": "large_string"
+        },
+        {
+          "name": "type",
+          "type": "large_string"
+        },
+        {
+          "name": "launch_speed",
+          "type": "double"
+        },
+        {
+          "name": "launch_angle",
+          "type": "double"
+        },
+        {
+          "name": "outs_recorded",
+          "type": "int64"
+        },
+        {
+          "name": "outs_ambiguous_extra",
+          "type": "int64"
+        },
+        {
+          "name": "outs_interval_pitcher_change",
+          "type": "bool"
+        },
+        {
+          "name": "outs_event_implied",
+          "type": "int64"
+        },
+        {
+          "name": "split",
+          "type": "large_string"
+        },
+        {
+          "name": "fielding_team",
+          "type": "large_string"
+        },
+        {
+          "name": "starter_pitcher",
+          "type": "int64"
+        },
+        {
+          "name": "is_lad_start",
+          "type": "bool"
+        },
+        {
+          "name": "cohort_pitcher",
+          "type": "bool"
+        },
+        {
+          "name": "bases",
+          "type": "int64"
+        },
+        {
+          "name": "is_pa_terminal",
+          "type": "bool"
+        },
+        {
+          "name": "terminal_event",
+          "type": "large_string"
+        },
+        {
+          "name": "next_outs",
+          "type": "double"
+        },
+        {
+          "name": "next_bases",
+          "type": "double"
+        },
+        {
+          "name": "next_home_score",
+          "type": "double"
+        },
+        {
+          "name": "next_away_score",
+          "type": "double"
+        },
+        {
+          "name": "next_inning",
+          "type": "double"
+        },
+        {
+          "name": "next_half",
+          "type": "large_string"
+        },
+        {
+          "name": "complete_game",
+          "type": "bool"
+        },
+        {
+          "name": "final_home_win",
+          "type": "double"
+        },
+        {
+          "name": "pitch_outcome",
+          "type": "large_string"
+        },
+        {
+          "name": "supported_pa",
+          "type": "bool"
+        },
+        {
+          "name": "prev_pitch_type",
+          "type": "large_string"
+        },
+        {
+          "name": "prev_description",
+          "type": "large_string"
+        },
+        {
+          "name": "prev_plate_x",
+          "type": "double"
+        },
+        {
+          "name": "prev_plate_z",
+          "type": "double"
+        },
+        {
+          "name": "batter_pa_prior",
+          "type": "int64"
+        },
+        {
+          "name": "batter_obp_prior",
+          "type": "double"
+        },
+        {
+          "name": "batter_k_prior",
+          "type": "double"
+        }
+      ],
+      "row_groups": 3,
+      "rows": 2145111
+    }
+  },
+  "prepare_exposure": [
+    {
+      "event": "processed_cache_decoded",
+      "utc": "2026-09-28T04:14:50.738797+00:00",
+      "files": {
+        "processed_pitches": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet",
+        "physics_cache": "/Volumes/T7 Shield/pitcheezy/pitchmdp/cache/sequence_physics.parquet",
+        "quality_manifest": "/Volumes/T7 Shield/pitcheezy/pitchmdp/reports/data_quality.json",
+        "cache_manifest": "/Volumes/T7 Shield/pitcheezy/pitchmdp/cache/sequence_physics.json"
+      },
+      "decoded_scope": {
+        "loader": "pitchmdp.matrix_data.load_verified_processed_cache (unchanged, read-only)",
+        "rows": 2145111,
+        "columns": [
+          "game_date",
+          "game_pk",
+          "at_bat_number",
+          "pitch_number",
+          "game_type",
+          "pitch_type",
+          "player_name",
+          "pitcher",
+          "batter",
+          "stand",
+          "p_throws",
+          "balls",
+          "strikes",
+          "outs_when_up",
+          "inning",
+          "inning_topbot",
+          "home_team",
+          "away_team",
+          "home_score",
+          "away_score",
+          "bat_score",
+          "fld_score",
+          "post_home_score",
+          "post_away_score",
+          "post_bat_score",
+          "post_fld_score",
+          "on_1b",
+          "on_2b",
+          "on_3b",
+          "plate_x",
+          "plate_z",
+          "sz_top",
+          "sz_bot",
+          "release_speed",
+          "release_spin_rate",
+          "pfx_x",
+          "pfx_z",
+          "events",
+          "description",
+          "type",
+          "launch_speed",
+          "launch_angle",
+          "outs_recorded",
+          "outs_ambiguous_extra",
+          "outs_interval_pitcher_change",
+          "outs_event_implied",
+          "split",
+          "fielding_team",
+          "starter_pitcher",
+          "is_lad_start",
+          "cohort_pitcher",
+          "bases",
+          "is_pa_terminal",
+          "terminal_event",
+          "next_outs",
+          "next_bases",
+          "next_home_score",
+          "next_away_score",
+          "next_inning",
+          "next_half",
+          "complete_game",
+          "final_home_win",
+          "pitch_outcome",
+          "supported_pa",
+          "prev_pitch_type",
+          "prev_description",
+          "prev_plate_x",
+          "prev_plate_z",
+          "batter_pa_prior",
+          "batter_obp_prior",
+          "batter_k_prior",
+          "effective_speed",
+          "spin_axis"
+        ],
+        "date_range": [
+          "2023-03-30",
+          "2025-09-28"
+        ],
+        "game_types": [
+          "R"
+        ],
+        "note": "every stored processed/physics column of all approved 2023-25 rows is decoded in memory"
+      },
+      "feature_use_scope": "regular season through 2025-06-30; all later rows dropped before any feature",
+      "purpose": "June labels, frozen frequency and complete point-in-time feature/history store"
+    }
+  ],
+  "feature_history_cutoff": "2025-06-30",
+  "sealed_store_label_content": "june_store.pkl retains all columns of its rows, including outcome description/events of June and earlier same-PA pitches used for history",
+  "profile_label_access": {
+    "june_label_archive_opened": false,
+    "sealed_store_unpickled_with_outcome_columns": true,
+    "history_outcome_channels": "prior-pitch outcome channels of the sealed store are inputs",
+    "labels_used_for_quality_selection_or_scoring": false
+  },
+  "fit_exposure": [
+    {
+      "event": "june_labels_loaded_for_fit",
+      "utc": "2026-09-28T04:21:46.216657+00:00",
+      "rows": 104970,
+      "purpose": "scalar blend fits (in-sample optimizer audit only)"
+    }
+  ],
+  "score_exposure": [
+    {
+      "event": "dev_labels_decoded_for_scoring",
+      "utc": "2026-09-28T04:21:54.796989+00:00",
+      "source": [
+        "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/predictions.npz",
+        "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/parent_baseline_predictions.npz"
+      ],
+      "purpose": "fixed N3/R78 and descriptive scoring after both candidates and five seeds sealed"
+    }
+  ],
+  "no_2026_access": true,
+  "independent_confirmation": null,
+  "note": "Raw cache decode, feature/history use, optimizer-label use and score-label archive access are distinct. Later-2025 rows were already decoded during prepare then dropped before feature construction; score is not the first DEV value exposure.",
+  "member_label_access": {
+    "seed0": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/members/seed0/prediction_runtime.json",
+      "sha256": "23dd6664c969532f71c3edb9e01e10b4a9ff8c437f9bc234b02cc903f823a02e",
+      "label_access": {
+        "june_label_archive_opened": true,
+        "purpose": "copy sealed june_y into the member schema",
+        "sealed_store_unpickled_with_outcome_columns": true,
+        "labels_used_for_quality_selection_or_scoring": false
+      }
+    },
+    "seed1": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/members/seed1/prediction_runtime.json",
+      "sha256": "56f26e68fd9ab938de6439483281b98d0d3aac42f5975c005b0123dff1e5eb6e",
+      "label_access": {
+        "june_label_archive_opened": true,
+        "purpose": "copy sealed june_y into the member schema",
+        "sealed_store_unpickled_with_outcome_columns": true,
+        "labels_used_for_quality_selection_or_scoring": false
+      }
+    },
+    "seed2": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/members/seed2/prediction_runtime.json",
+      "sha256": "8978b5a3f635d334a06bfcb5e92e11ebb5d67cf5d76736db135c706eb07d474d",
+      "label_access": {
+        "june_label_archive_opened": true,
+        "purpose": "copy sealed june_y into the member schema",
+        "sealed_store_unpickled_with_outcome_columns": true,
+        "labels_used_for_quality_selection_or_scoring": false
+      }
+    },
+    "seed3": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/members/seed3/prediction_runtime.json",
+      "sha256": "10b852e2896bd2a49bad463e964ae407a856f5e663f6235cdc180947434c6504",
+      "label_access": {
+        "june_label_archive_opened": true,
+        "purpose": "copy sealed june_y into the member schema",
+        "sealed_store_unpickled_with_outcome_columns": true,
+        "labels_used_for_quality_selection_or_scoring": false
+      }
+    },
+    "seed4": {
+      "source": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-JUNE-CALIBRATION-v1/members/seed4/prediction_runtime.json",
+      "sha256": "55ff0e6962e37dd552866b16c96a8897a838ae2a884d2034c53f73e33266db87",
+      "label_access": {
+        "june_label_archive_opened": true,
+        "purpose": "copy sealed june_y into the member schema",
+        "sealed_store_unpickled_with_outcome_columns": true,
+        "labels_used_for_quality_selection_or_scoring": false
+      }
+    }
+  },
+  "optimizer_label_populations": {
+    "new_candidate_calls": {
+      "count": 30,
+      "rows": "104970 for B1; registered group subsets for B2"
+    },
+    "replay_calls": {
+      "count": 6,
+      "rows": 4821
+    }
+  }
+}

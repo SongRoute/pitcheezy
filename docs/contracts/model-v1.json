@@ -1,0 +1,40 @@
+{
+  "contract_version": "C0-v1",
+  "value_spec_version": "defense-we-pa-v1",
+  "model_version": "observer-zone-v1",
+  "bundle_version": "minimal-pitch-service-v1",
+  "bundle_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/minimal-pitch-service-v1",
+  "runtime_path": "apps/observer/runtime_src",
+  "runtime_kind": "standalone",
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46
+  ],
+  "training_cutoff": "2025-04-30",
+  "calibration_end": "2025-06-30",
+  "sha256": {
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/minimal-pitch-service-v1/bundle_manifest.json": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+    "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/minimal-pitch-service-v1/source_hashes.json": "6d6f777bacde98d5c60b2d61cd594fda172fd63f99c315a002b5e7291afb099a",
+    "apps/observer/runtime_src/runtime_manifest.json": "31ed85e36c399e891df2b725cb69e6706656242054641e9470ed9183d14cb37d",
+    "apps/observer/config.json": "9937c7c4834ff898d6e72ff9d5dd6a5eae8c7685dc9b0b31380b396360e3c516"
+  },
+  "bundle_files": {
+    "metadata.json": "46467ff5ed25b09b69ddb3d9b80aea3f60bfd906944489fd901a84f382d64731",
+    "preprocessor.pkl": "c74797e14e6a931aa348eca03cf698c45f97b913b9537610aa8175dc4b33912d",
+    "game_values.pkl": "aa6c4e486cc6b027758d966ab680566a4a4ce2afa4a918dd26f8fb65c8957677",
+    "models/seed42.pt": "3be779729216827eabc1eacec15767364b450016105173a9d1b6ae455453ac07",
+    "models/seed43.pt": "ff430940f8c0e1eddd9ca730b871dc2fea94bb0d587f6d1fde7a5a3caabbfe43",
+    "models/seed44.pt": "039acefe711549717ce8975fb00ede43f719511d5329bd5653a63a75560fcf9f",
+    "models/seed45.pt": "8013ba53421d1c900e29f2947cf41554e4bd589fc51dabf1d7f0e8e3f438ac75",
+    "models/seed46.pt": "b5a630c360bd7714e6951dbafec632b0121bb60e631f424ac5437b8f3ae50276"
+  },
+  "run_command": ".venv-observer-standalone/bin/python scripts/a_model_smoke.py --run '/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-C0-v1' --output docs/contracts/examples/model-v1.json",
+  "service_command": "sh apps/observer/run_standalone.sh",
+  "notes": [
+    "A-C0-v1 cache is isolated from existing service data and frozen bundle.",
+    "Runtime loads serialized preprocessing, game values, and five checkpoints; no retraining."
+  ]
+}

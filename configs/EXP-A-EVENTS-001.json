@@ -1,0 +1,8 @@
+{
+  "experiment_id": "EXP-A-EVENTS-001",
+  "selection_manifest": "results/EXP-A-S0S1-001/selection_manifest.json",
+  "output_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-events-v1",
+  "events": ["home_run", "strikeout", "strikeout_double_play"],
+  "selection_rule": "All matching terminal events in all preselected S1 full games, chronological, without model-score filtering",
+  "availability_rule": "Observed substitutions only; no inferred available bullpen roster or counterfactual candidate list"
+}

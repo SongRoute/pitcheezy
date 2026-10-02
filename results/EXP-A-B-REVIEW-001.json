@@ -1,0 +1,62 @@
+{
+  "experiment_id": "EXP-A-B-REVIEW-001",
+  "checks": {
+    "same_rows_labels_games": true,
+    "exact_A_baseline": true,
+    "strictly_prior_same_PA_history": true,
+    "finite_normalized_probabilities": true
+  },
+  "reports": {
+    "all": {
+      "n": 563,
+      "games": 6,
+      "baseline": {
+        "nll": 1.5896414946673698,
+        "brier": 0.7466016890853308,
+        "ece10": 0.0183725676048605
+      },
+      "candidate": {
+        "nll": 1.6022474026534503,
+        "brier": 0.7480813311870017,
+        "ece10": 0.013659994250742708
+      },
+      "nll_delta": 0.012605907986080364,
+      "game_bootstrap95": [
+        0.0030478525930046642,
+        0.025800651568261248
+      ],
+      "note": "descriptive development slice; no candidate selection or tuning"
+    },
+    "two_strikes": {
+      "n": 159,
+      "games": 6,
+      "baseline": {
+        "nll": 1.6788481588006527,
+        "brier": 0.7640369082095954,
+        "ece10": 0.022800493238274544
+      },
+      "candidate": {
+        "nll": 1.696945177861521,
+        "brier": 0.7658925228297241,
+        "ece10": 0.022085619417288104
+      },
+      "nll_delta": 0.01809701906086903,
+      "game_bootstrap95": [
+        0.008941140248702236,
+        0.026119172079435992
+      ],
+      "note": "descriptive development slice; no candidate selection or tuning"
+    }
+  },
+  "policy_value": null,
+  "decision": "do_not_adopt_candidate_keep_frozen_service",
+  "reason": "Prior-family candidate worsens full DEV NLL; calibration screening alone cannot establish policy gain.",
+  "config_sha256": "57599eb149c6f26d4c2c39d70ae5d235a7f9f70e9bac1fa2245c31143e315316",
+  "b_predictions_sha256": "6b15d27f468ec20434df56a03e1672253c62feabc126ac2f10af2c281be62d3d",
+  "b_config_sha256": "9ed4af0267189093b5c950e2970b5c85eb5a5f7cea984918a9864c248a2ed939",
+  "script_sha256": "3b0a209742a46e1858903275bca05afd3d1c656395bf27f78a468adc0a18bbe1",
+  "git_commit": "adf49f5ba6567ff74ffffda0ee5d6501b5507135",
+  "timing_note": "A review specification recorded before opening prediction arrays, after B computed the single frozen-config run; no new tuning",
+  "bootstrap_seed": 20260923,
+  "bootstrap_replicates": 1000
+}

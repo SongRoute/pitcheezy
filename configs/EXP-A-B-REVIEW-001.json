@@ -1,0 +1,14 @@
+{
+  "experiment_id": "EXP-A-B-REVIEW-001",
+  "a_reference_predictions": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-S0S1-001/predictions.npz",
+  "required_split": "unchanged A July 2025 exploratory DEV",
+  "comparison": "B previous-pitch-family added versus exact A count/hand baseline on common rows",
+  "metrics": ["NLL", "multiclass_Brier", "top_label_ECE10"],
+  "bootstrap_unit": "game",
+  "bootstrap_replicates": 1000,
+  "bootstrap_seed": 20260923,
+  "interval_quantiles": [0.025, 0.975],
+  "slices": ["all", "two_strikes"],
+  "policy_value": null,
+  "adoption_rule": "No deployment from predictive difference alone. Keep current frozen model; assess errors, uncertainty, and model-based versus causal scope separately."
+}

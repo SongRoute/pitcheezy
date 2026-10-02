@@ -1,0 +1,21 @@
+{
+  "experiment_id": "EXP-B-PAHISTORY-001",
+  "parent_experiment_id": "EXP-A-S0S1-001",
+  "parent_manifest": "results/EXP-A-S0S1-001/selection_manifest.json",
+  "artifact_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/B-PAHISTORY-001",
+  "train_cohort_pitchers": [657277, 554430],
+  "axis": "previous pitch family in the same complete plate appearance; NONE at pitch one",
+  "families": {
+    "fastball": ["FF", "FT", "SI", "FC"],
+    "breaking": ["SL", "ST", "CU", "KC", "SV"],
+    "offspeed": ["CH", "FS", "FO", "SC", "KN"]
+  },
+  "unknown_family": "other",
+  "baseline_global_additive_count": 1,
+  "baseline_cell_global_pseudocount": 50,
+  "context_cell_count_baseline_pseudocount": 50,
+  "bootstrap_seed": 20260923,
+  "bootstrap_replicates": 1000,
+  "evaluation_use": "July 2025 exploratory development only; same A support masks; no 2026 or final CV",
+  "decision": "No tuning, sample replacement, policy improvement claim, or service adoption from this run"
+}

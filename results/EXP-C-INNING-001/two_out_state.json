@@ -1,0 +1,62 @@
+{
+  "status": "bounded",
+  "reason": "unresolved_horizon_mass",
+  "horizon": "inning_end",
+  "initial_defender": "away",
+  "evaluation_identity": {
+    "provider_identity": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+    "initial_state_and_count": {
+      "date": "2025-07-05",
+      "inning": 1,
+      "topbot": "Bot",
+      "outs": 2,
+      "bases": 0,
+      "home_score": 0,
+      "away_score": 2,
+      "balls": 0,
+      "strikes": 0
+    },
+    "lineup_sha256": "74a78b8ba9b11c3b8f68a9a648e558fb86080ebd8494e8e7a308c80d2e45c2f7",
+    "evaluation_config_sha256": "bcc1c2c0215208a0a7543749968c6384aa2b89a0c9fcb888b62644f1c27e8e3a",
+    "policy_id": "frozen_train_repertoire_frequency_v1",
+    "horizon": "inning_end",
+    "initial_defender": "away"
+  },
+  "pitcher_id": 657277,
+  "value": null,
+  "value_interval": [
+    0.5266852521738686,
+    0.8099860069555413
+  ],
+  "absorbed_mass": 0.7166992452183274,
+  "unresolved_mass": 0.2833007547816727,
+  "unresolved_reasons": {
+    "predecision_lineup_exhausted": 0.2833007547816727
+  },
+  "mass_error": 0.0,
+  "processed_pas": 1,
+  "model_calls": 1,
+  "lineup_slots_provided": 1,
+  "experiment_id": "EXP-C-INNING-001",
+  "amendment_id": "EXP-C-INNING-001-2OUT",
+  "case_kind": "prespecified_real_two_out_state_one_known_hitter_only",
+  "selected_pitch_id": "777227:10:1",
+  "source_dev_sha256": "89130facf5a8854780a33755241129240be6d43ea2a8584afcd65fe6111c1199",
+  "first_pa_terminal_distribution": {
+    "walk": 0.07845870062989074,
+    "strikeout": 0.30801348298446257,
+    "out": 0.40712061285654627,
+    "single": 0.13132943240045225,
+    "double": 0.03529118668858325,
+    "triple": 0.0020813069174585768,
+    "home_run": 0.03006913068019802,
+    "hbp": 0.0076361468424083105,
+    "double_play": 0.0
+  },
+  "actual_replacement": {
+    "status": "unavailable",
+    "horizon": "inning_end",
+    "value_pp": null,
+    "reason": "no_verified_eligible_substitute_or_predecision_lineup"
+  }
+}

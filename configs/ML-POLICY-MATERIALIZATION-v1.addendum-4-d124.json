@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "7a11052a1f8505886438937f12c215b866c1170b68338c5b13c877d4695d5d55",
+  "stage": "profile",
+  "registered_inputs": {
+    "profile": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S3-profile-a2/profile.json",
+      "file_sha256": "63db3a9575b0d4285d8b3a3a2b4dd3ce07c7ff397d2846e2694f8b50765ef933"
+    }
+  },
+  "note": "d124: profile re-pinned (identity-independent)."
+}

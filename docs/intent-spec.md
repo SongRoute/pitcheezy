@@ -33,9 +33,17 @@ image_pixels  ──①──▶  annotated_image_zone  ──②──▶  plat
 
 | 홉 | 버전 | 필요한 입력 | 오차 | 현재 상태 |
 |---|---|---|---|---|
-| ① image_pixels → annotated_image_zone | `annotated_quad_homography_v1` | `calibration_corners` 네 점 (TL,TR,BR,BL) | **미측정** | 구현 있음. 저장된 라벨에는 네 점이 없다 |
-| ② annotated_image_zone → plate_feet | 담당자가 정함 | `plate_calibration` (3×3 행렬, method, x_convention, rms_error_feet, fit_evidence) | 담당자가 실측하거나 명시적으로 미측정 | **구현·측정 모두 없음.** 담당자가 채울 홉 |
+| ① image_pixels → annotated_image_zone | 서비스 쪽 `annotated_quad_homography_v1`, 영상 모듈 `plate_front_edge_similarity` v1 (아래 설명) | 서비스: `calibration_corners` 네 점 (TL,TR,BR,BL). 영상 모듈: 플레이트 앞선 두 끝점 | 영상 모듈이 실측해 `transform_chain`에 기록(747139·849843), 서비스 쪽은 **미측정** | 둘 다 구현 있음. 검사는 방법을 가리지 않고 `version`과 `error_status`만 요구한다 |
+| ② annotated_image_zone → plate_feet | 담당자가 정함. 현재 `plate_front_edge_affine_with_depth_parallax` v0 (카메라 틸트·팬 보정) | `plate_calibration` (3×3 행렬, method, x_convention, rms_error_feet, fit_evidence) | 담당자가 실측하거나 명시적으로 미측정. 팀원 보고: 747139 0.277 ft(사람 확인 19구), 849843 0.49 ft(사람 확인 0구), 모두 그 경기 안에서 잰 값 | 영상 모듈 구현 있음(D150). 다른 경기 정확도(M3)는 미측정 |
 | ③ plate_feet → zone9 | `domain_zone9_v1` | 타자별 `zone_bounds{top,bottom}` | 오차 대신 `boundary_margin_feet` (양자화라 오차가 아니라 경계까지의 여유) | 구현 있음 |
+
+**영상 모듈의 홉 ① (D151에서 받아들임).** 미트는 플레이트 바닥 평면 위에 있지 않아서, 네 모서리 호모그래피로는 높이 방향 값이 뜻을 잃는다.
+그래서 영상 모듈은 플레이트 **앞선(17 in)** 에 고정한 유사변환을 쓴다: `x` = 앞선을 따라간 위치(0 = 왼쪽 끝, 1 = 오른쪽 끝),
+`y` = 그 지면선에서 위로 올라간 거리(앞선 폭 단위, 대략 0~3). 따라서 이 경로의 `annotated_image_zone`은 **단위 정사각형이 아니다.**
+`inside_annotated_quad`는 0 ≤ x ≤ 1 이고 0 ≤ y ≤ 3 이라는 뜻이며 스트라이크존 판정이 아니다. 방법과 버전은 `transform_chain`의 해당 홉에 적힌 것이 기준이다.
+
+**높이에 대한 주의 (D150).** 포수가 릴리스 직전까지 글러브를 낮게 두는 경기에서는 셋업 높이가 목표 높이의 대리값이 되지 못한다
+(팀원 보고: 849843에서 셋업이 실제 공보다 중앙값 1.35 ft 낮음). 관전 화면은 가로 위치만 쓴다(`GET /api/watch/{game_pk}/setup`).
 
 **홉이 없으면 거기서 멈추고 이유에 이름을 붙인다.** `deepest_frame` 과 `blocked_by`
 (`no_image_plane_calibration` / `no_plate_plane_calibration` / `no_batter_zone_bounds`) 가 같이 나간다.
@@ -166,3 +174,4 @@ image_pixels  ──①──▶  annotated_image_zone  ──②──▶  plat
 ## 변경 이력
 
 - v1 (2026-09-22, D46·D47·D48) 신설. 좌표계 사슬 4프레임, `IntentEstimate`, 검토 라벨, 미트-공 차이 규칙.
+- v1.1 (2026-10-02, D151) 영상 모듈의 홉 ① 정의(플레이트 앞선 기준 유사변환, `annotated_image_zone`이 단위 정사각형이 아님)와 홉 ② 구현을 반영. 검사 코드(`validate_intent_estimate`)와 필드는 바뀌지 않았다. 셋업 높이는 화면에 쓰지 않는다는 주의를 추가. 계약 테스트: `apps/observer/backend/tests/test_setup_estimates.py`(브랜치 `demo/intent-setup`)가 이 형식의 줄이 검사를 통과하고 높이가 응답에 없음을 확인한다.

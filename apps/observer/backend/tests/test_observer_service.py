@@ -246,3 +246,91 @@ def test_no_media_adapter_never_claims_cv_even_with_media_reference():
     supplied = adapter.analyze(CVRequest('p1', media_ref='local-video', setup_before_pitch=100.))
     assert supplied.status == 'unavailable' and supplied.cv_status == 'unavailable:adapter_not_configured'
     assert supplied.source == 'none'
+
+
+def test_event_result_revealed_only_after_pa_and_versioned_separately(service, monkeypatch):
+    initial = service.create(10, 1)
+    assert initial['event_analysis'] is None
+    assert service.advance(initial['id'], initial['revision'])['event_analysis'] is None
+    saved = deepcopy(service.get(initial['id'])['recommendation'])
+    calls = []
+    def event_result(session_id, pitch, _pa, recommendation, _created_at):
+        calls.append(pitch['id'])
+        assert recommendation == saved
+        digest = hashlib.sha256(json.dumps(recommendation, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+        return {'revision': 1, 'status': 'partial',
+                'linkage': {'session_id': session_id, 'pitch_id': pitch['id'],
+                            'recommendation_id': recommendation['id'], 'recommendation_sha256': digest,
+                            'event_input_revision': 1},
+                'values': {'total_pp': 1.25}, 'evidence': {'development_only': False}}
+    monkeypatch.setattr(service, '_calculate_event', event_result)
+    done = service.advance(initial['id'], 1)
+    assert done['event_analysis']['status'] == 'partial'
+    assert calls == ['p2']
+    assert service.get(initial['id'])['event_analysis'] == done['event_analysis']
+    assert calls == ['p2']
+    manual = service.manual_intent(done['id'], done['revision'], 'low_left')
+    assert manual['event_analysis'] == done['event_analysis']
+    with service.store.transaction() as db:
+        corrected = deepcopy(done['event_analysis'])
+        corrected.update(revision=2, status='unavailable')
+        corrected['linkage']['event_input_revision'] = 2
+        Store.save_event_result(db, done['id'], 'p2', corrected)
+        Store.save_event_result(db, done['id'], 'p2', corrected)
+        with pytest.raises(ValueError, match='conflicting'):
+            Store.save_event_result(db, done['id'], 'p2', corrected | {'status': 'failed'})
+        with pytest.raises(ValueError, match='same-pitch'):
+            Store.save_event_result(db, done['id'], 'p2', corrected | {'revision': 3,
+                'linkage': corrected['linkage'] | {'pitch_id': 'wrong', 'event_input_revision': 3}})
+        with pytest.raises(sqlite3.IntegrityError, match='immutable'):
+            db.execute("UPDATE event_results SET payload='{}'")
+    revised = service.get(done['id'])
+    assert revised['event_analysis']['revision'] == 2
+    assert revised['last_pitch']['recommendation'] == saved
+
+
+def test_concurrent_event_calculation_reads_first_committed_result(service, monkeypatch):
+    view = service.create(10, 1)
+    view = service.advance(view['id'], view['revision'])
+    def racing_result(session_id, pitch, _pa, recommendation, _created_at):
+        digest = hashlib.sha256(json.dumps(recommendation, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+        winner = {'revision': 1, 'status': 'partial', 'linkage': {
+            'session_id': session_id, 'pitch_id': pitch['id'],
+            'recommendation_id': recommendation['id'], 'recommendation_sha256': digest,
+            'event_input_revision': 1}, 'values': {'total_pp': 1.25}}
+        with service.store.transaction() as db:
+            Store.save_event_result(db, session_id, pitch['id'], winner)
+        return winner | {'status': 'failed'}
+    monkeypatch.setattr(service, '_calculate_event', racing_result)
+    done = service.advance(view['id'], view['revision'])
+    assert done['event_analysis']['status'] == 'partial'
+    assert done['event_analysis']['values']['total_pp'] == 1.25
+
+
+def test_event_calculation_failure_has_no_invented_values(service, monkeypatch):
+    pytest.importorskip('observer_app.event_analysis')
+    def broken(*_args):
+        raise RuntimeError('synthetic event calculation error')
+    monkeypatch.setattr(service, '_calculate_event', broken)
+    done = finish(service, service.create(10, 1))
+    event = done['event_analysis']
+    assert event['status'] == 'failed'
+    assert event['values']['total_pp'] is None
+    assert event['components']['unallocated_residual_pp'] is None
+    assert service.get(done['id'])['event_analysis'] == event
+
+
+def test_saved_baseline_is_not_retagged_after_adapter_change(service):
+    pytest.importorskip('observer_app.event_analysis')
+    service.recommender.identity = 'adapter-before'
+    service.recommender.model_sha256 = 'frozen-model-test'
+    view = service.create(10, 1)
+    view = service.advance(view['id'], view['revision'])
+    stored = deepcopy(view['recommendation'])
+    service.recommender.identity = 'adapter-after'
+    done = service.advance(view['id'], view['revision'])
+    assert done['event_analysis']['status'] == 'unavailable'
+    assert done['event_analysis']['values']['reference'] is None
+    assert done['event_analysis']['values']['total_pp'] is None
+    assert done['event_analysis']['evidence']['reference_status'] == 'saved_evaluator_identity_missing_or_changed'
+    assert done['last_pitch']['recommendation'] == stored

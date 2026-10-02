@@ -1,0 +1,10 @@
+{
+  "run_id": "REPLAY-OPS-003",
+  "base_url": "http://127.0.0.1:8767",
+  "session_id": "a245dac4-3db6-495a-916f-500f10b77247",
+  "requests": 40,
+  "concurrency": 4,
+  "timeout_seconds": 10,
+  "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ABCD-QUALITY-003/replay-ops.json",
+  "scope": "Read-only local saved-session API, four concurrent clients. Excludes model cache miss, browser rendering, remote tunnel, game feed and next-pitch latency. No writes to either live or preview DB"
+}

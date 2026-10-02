@@ -1,0 +1,117 @@
+{
+  "passed": true,
+  "base": "http://127.0.0.1:8767/",
+  "checks": {
+    "health": {
+      "status": "ok",
+      "model_ready": true,
+      "dataset_ready": true,
+      "mode": "historical_replay",
+      "cv_mode": "unavailable:no_media"
+    },
+    "inning_decisions": {
+      "game_id": 777063,
+      "count": 1,
+      "decision_ids": [
+        "inning-decision-2b1ead36958b4ee23cd8e4231a58c36a61a9ebbcd0072960891fe572abab6d4e"
+      ]
+    },
+    "navigation": {
+      "game_id": 776703,
+      "first_pa": 1,
+      "next_pa": 2,
+      "preserved_recommendation_id": "c334b6064da3f099fa21824b23fcc15b3b729f6a0272b33aed7175931f075c31",
+      "returned_session_id": "6b7b8cee-5282-46af-8b9f-7b5f6a8943b0",
+      "inning_route_and_back": true,
+      "no_horizontal_overflow": true,
+      "dimensions": {
+        "viewport": 1440,
+        "scrollWidth": 1440
+      }
+    }
+  },
+  "suites": {
+    "observer-replay": {
+      "passed": true,
+      "exit_code": 0,
+      "signal": null,
+      "report": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/regression/full/observer-replay/browser-smoke.json",
+      "checks": [
+        {
+          "game": 776703,
+          "pa": 3,
+          "event": "strikeout",
+          "width": 1440,
+          "count": 3,
+          "session_id": "17976155-cf82-4879-af13-57d0ff36cafe",
+          "total_pp": 1.2021670371186288,
+          "status": "partial",
+          "first_pitch_hidden": true,
+          "saved_same_pitch_recommendations_unchanged": true,
+          "manual_note_not_used_as_intent": true,
+          "reload_restored": true,
+          "no_horizontal_overflow": true,
+          "dimensions": {
+            "viewport": 1440,
+            "scrollWidth": 1440
+          }
+        },
+        {
+          "game": 776710,
+          "pa": 10,
+          "event": "home_run",
+          "width": 390,
+          "count": 2,
+          "session_id": "6d88e758-db5a-4be8-a898-d685595c8edb",
+          "total_pp": -22.586869618302945,
+          "status": "partial",
+          "first_pitch_hidden": true,
+          "saved_same_pitch_recommendations_unchanged": true,
+          "manual_note_not_used_as_intent": true,
+          "reload_restored": true,
+          "no_horizontal_overflow": true,
+          "dimensions": {
+            "viewport": 390,
+            "scrollWidth": 390
+          }
+        }
+      ],
+      "issues": []
+    },
+    "inning-decisions": {
+      "passed": true,
+      "exit_code": 0,
+      "signal": null,
+      "report": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/D-UI-003/regression/full/inning-decisions/browser-report.json",
+      "checks": {
+        "desktop": {
+          "real_api": true,
+          "explicit_selection": true,
+          "session_untouched": true,
+          "width": 1440,
+          "scroll": 1440
+        },
+        "desktop_conflict_retry": true,
+        "mobile": {
+          "real_api": true,
+          "explicit_selection": true,
+          "session_untouched": true,
+          "width": 390,
+          "scroll": 390
+        },
+        "mobile_conflict_retry": true,
+        "empty": true,
+        "invalid_200_hidden": true,
+        "synthetic_unavailable_no_numbers": true,
+        "late_result_after_selection_hidden": true,
+        "offline_retry": true,
+        "home_navigation": {
+          "width": 390,
+          "scroll": 390
+        }
+      },
+      "issues": []
+    }
+  },
+  "error": null
+}

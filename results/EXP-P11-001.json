@@ -1,0 +1,433 @@
+{
+  "experiment_id": "EXP-P11-001",
+  "status": "completed",
+  "scope": "Previously exposed eligible 2025 whole-MLB DEV",
+  "source": {
+    "full_results": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/results.json",
+    "full_results_sha256": "9fefaaa644adb108e044c0e85a8f3d2dcae54dbfc80cb4051c22f0d097b60f3c",
+    "analysis_manifest": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/analysis/manifest.json",
+    "analysis_manifest_sha256": "aaf5db0d0a3d134b4d92393efa640dc67dba8efb4a4af330d21f2ab66d9ebda9",
+    "config_sha256": "b6565f167993bdb31481ce18aee6d49276f3db00b61f518b5eee45e8f00a319b",
+    "execution_code_commit": "5e82bebc239ced378911919de48c106034ee24b0",
+    "registration_commit": "3f10f61bea591871f69aad6a869d89d0bbe598ed",
+    "registered_plan_sha256": "f83e0e95b41d1caec3e8172bf517de38871901be8775cb70b137610b5a4642a0",
+    "queue_status": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-whole-mlb/execution/attempt-20260927T111115Z/status.json",
+    "queue_status_sha256": "c784953daebb8445de26ce87fe00b6550c2f9dc90acf6ed25061df1d05aaed70",
+    "queue_status_value": "completed",
+    "independent_audit": {
+      "status": "PASS",
+      "review": "/Users/song/Projects/pitcheezy/docs/reviews/G0-whole-MLB-result-audit-2026-09-27.md",
+      "machine_summary": "/Users/song/Projects/pitcheezy/results/G0-whole-MLB-audit-2026-09-27.json",
+      "ssd_audit": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/coordination/20260927-whole-mlb/audit/POSTRUN_ASTRA_AUDIT.json",
+      "ssd_audit_sha256": "60e88ecc2f2e71dd5ca1bcb8686aef53ea5a5e8c616700fa647f7ac8f15c91b0",
+      "independent_primary_bootstrap_max_ci_error": 0.0,
+      "independent_primary_p_values_exact": true,
+      "not_numerically_recomputed": [
+        "R simultaneous bounds",
+        "absolute-loss confidence intervals"
+      ],
+      "audit_wall_seconds_separate": 5.257020499790087
+    },
+    "independent_confirmation": null,
+    "held_out_confirmation": false,
+    "policy_effect": null,
+    "service_adoption": null,
+    "opus_result_review": {
+      "status": "no_remaining_blockers",
+      "model": "claude-opus-5-5",
+      "review": "/Users/song/Projects/pitcheezy/docs/reviews/COOP-008-Opus-5.5-result-review.md",
+      "result_sha256": "4b8c0abfe1200c7f753a9662a19b9e0f701f93a1b88cdc93aa51904e3fcd43eb",
+      "presentation_fixes_applied": true
+    }
+  },
+  "population": {
+    "requested_pitches": 341941,
+    "eligible_pitches": 311721,
+    "whole_games": 1161,
+    "overlap_pitches": 12334,
+    "overlap_games": 328,
+    "complement_pitches": 299387,
+    "complement_games": 1161,
+    "shared_games_panel_complement": 328
+  },
+  "predictor": {
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "new_neural_fits": 0,
+    "reused_fits": 5,
+    "panel_replay": {
+      "passed": true,
+      "absolute_tolerance": 1e-06,
+      "max_abs_errors": {
+        "raw": 0.0,
+        "calibrated": 0.0,
+        "primary": 0.0,
+        "seed_primary": 0.0
+      }
+    }
+  },
+  "estimands": {
+    "whole": {
+      "n": 311721,
+      "games": 1161,
+      "g0": {
+        "log_loss": 1.4904081967248524,
+        "brier_multiclass": 0.726592367393062,
+        "top_label_ece10": 0.008710236256349225
+      },
+      "frequency": {
+        "log_loss": 1.50408101626456,
+        "brier_multiclass": 0.7294806170360207,
+        "top_label_ece10": 0.0016600869646492627
+      },
+      "paired": {
+        "n": 311721,
+        "games": 1161,
+        "draws": 10000,
+        "seed": 20260924,
+        "estimand": "pitch-weighted mean paired loss difference",
+        "uncertainty": "conditional on fixed predictions; whole-game bootstrap",
+        "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+        "status": "measured",
+        "nll": {
+          "delta": -0.013672819539707377,
+          "ci95": [
+            -0.014415351081429984,
+            -0.012924306115981212
+          ],
+          "p_less": 9.999000099990002e-05
+        },
+        "brier": {
+          "delta": -0.00288824964295874,
+          "ci95": [
+            -0.0032083957789295413,
+            -0.0025632781719419026
+          ],
+          "p_less": 9.999000099990002e-05
+        }
+      },
+      "seed_nll_deltas": [
+        -0.012657589511388904,
+        -0.012540358917330846,
+        -0.012823851973618707,
+        -0.012240007885898312,
+        -0.01289653020856111
+      ],
+      "N": {
+        "status": "development_advantage_over_frequency",
+        "negative_seeds": 5,
+        "required_negative_seeds": 4,
+        "adjusted_p": 0.00019998000199980003
+      }
+    },
+    "non_cpanel": {
+      "n": 299387,
+      "games": 1161,
+      "g0": {
+        "log_loss": 1.490699666523141,
+        "brier_multiclass": 0.7267056954636556,
+        "top_label_ece10": 0.008904281796008202
+      },
+      "frequency": {
+        "log_loss": 1.5043656199101052,
+        "brier_multiclass": 0.7295866697437398,
+        "top_label_ece10": 0.001487556226305607
+      },
+      "paired": {
+        "n": 299387,
+        "games": 1161,
+        "draws": 10000,
+        "seed": 20260924,
+        "estimand": "pitch-weighted mean paired loss difference",
+        "uncertainty": "conditional on fixed predictions; whole-game bootstrap",
+        "test": "one-sided improvement; null-centered whole-game bootstrap with plus-one correction",
+        "status": "measured",
+        "nll": {
+          "delta": -0.013665953386964273,
+          "ci95": [
+            -0.014421095506370435,
+            -0.01290305180901602
+          ],
+          "p_less": 9.999000099990002e-05
+        },
+        "brier": {
+          "delta": -0.0028809742800841747,
+          "ci95": [
+            -0.00320576830835764,
+            -0.0025526291657838166
+          ],
+          "p_less": 9.999000099990002e-05
+        }
+      },
+      "seed_nll_deltas": [
+        -0.012680493518972673,
+        -0.012521260838155487,
+        -0.012804384444077901,
+        -0.012217132919316106,
+        -0.012903406776369688
+      ],
+      "N": {
+        "status": "development_advantage_over_frequency",
+        "negative_seeds": 5,
+        "required_negative_seeds": 4,
+        "adjusted_p": 0.00019998000199980003
+      }
+    }
+  },
+  "R": {
+    "status": "passed",
+    "family_size": 24,
+    "passed_bounds": 24,
+    "failed_bounds": 0,
+    "unmeasured_bounds": 0,
+    "groups": {
+      "role_starter": {
+        "reporting": {
+          "n": 184397,
+          "games": 1161,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.012415773895429616,
+          -0.0023195804315399547
+        ]
+      },
+      "role_relief": {
+        "reporting": {
+          "n": 127324,
+          "games": 1161,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.011722898065320154,
+          -0.0020885769742873756
+        ]
+      },
+      "hand_L": {
+        "reporting": {
+          "n": 88337,
+          "games": 1108,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.014352755639676768,
+          -0.0027280058596206823
+        ]
+      },
+      "hand_R": {
+        "reporting": {
+          "n": 223384,
+          "games": 1161,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.011271263243054847,
+          -0.00203355633408932
+        ]
+      },
+      "volume_low": {
+        "reporting": {
+          "n": 19462,
+          "games": 588,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.00917340999541304,
+          -0.0016899237843367703
+        ]
+      },
+      "volume_middle": {
+        "reporting": {
+          "n": 108351,
+          "games": 1151,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.01042835114095156,
+          -0.0014344866194949506
+        ]
+      },
+      "volume_high": {
+        "reporting": {
+          "n": 155162,
+          "games": 1128,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.013662093794999917,
+          -0.0027234119775015426
+        ]
+      },
+      "volume_zero": {
+        "reporting": {
+          "n": 28746,
+          "games": 646,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.007029684587504637,
+          -0.0009052308295802398
+        ]
+      },
+      "two_strikes": {
+        "reporting": {
+          "n": 92977,
+          "games": 1161,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.016087926744791894,
+          -0.0037075628332200045
+        ]
+      },
+      "less_two_strikes": {
+        "reporting": {
+          "n": 218744,
+          "games": 1161,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.010450608206526863,
+          -0.0016159156157123753
+        ]
+      },
+      "runners_on": {
+        "reporting": {
+          "n": 121391,
+          "games": 1161,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.015177192692796349,
+          -0.0025943101096346215
+        ]
+      },
+      "bases_empty": {
+        "reporting": {
+          "n": 190330,
+          "games": 1161,
+          "events": null,
+          "status": "reporting_eligible",
+          "reasons": [],
+          "power_guarantee": false
+        },
+        "passed": true,
+        "simultaneous_upper": [
+          -0.010179978746285437,
+          -0.001999317797238296
+        ]
+      }
+    }
+  },
+  "descriptive": {
+    "pitcher_macro": {
+      "g0": {
+        "log_loss": 1.5028370867117997,
+        "brier_multiclass": 0.7286734638820992
+      },
+      "frequency": {
+        "log_loss": 1.5166341460096526,
+        "brier_multiclass": 0.7317046800020466
+      }
+    },
+    "metadata_missing": {
+      "game_pk": 0,
+      "at_bat_number": 0,
+      "pitch_number": 0,
+      "pitcher": 0,
+      "batter": 0,
+      "in_cpanel": 0,
+      "seen_pitcher": 0,
+      "seen_batter": 0,
+      "train_pitches": 0,
+      "train_role": 0,
+      "train_volume": 0,
+      "game_role": 0,
+      "throwing_hand": 0,
+      "two_strikes": 0,
+      "runners_on": 0,
+      "month": 0
+    },
+    "metadata_unknown": {
+      "game_role": 0,
+      "throwing_hand": 0
+    },
+    "class_reporting": {
+      "minimum_events": 30,
+      "eligible": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    }
+  },
+  "cost": {
+    "authoritative_worker_seconds": 1821.2459352919832,
+    "budget_seconds": 7200,
+    "outer_queue_full_seconds_separate": 1857.4866603328846,
+    "outer_queue_crosscheck_scope": "Shared full 12-stage queue; not this phase alone; not additive",
+    "phase_outer_supervisor_wall_seconds_separate": 1822.3517109998502
+  },
+  "limits": [
+    "Cpanel exact-row complement is not independent; games overlap and T4 DEV was exposed.",
+    "Retrospective eligibility is not live pre-pitch availability.",
+    "TRAIN0 may have earlier legal DEV context; not strict zero-shot.",
+    "Bootstrap conditions on fitted models/calibration/selection; local tests do not restore global alpha."
+  ]
+}

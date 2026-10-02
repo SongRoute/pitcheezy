@@ -1,0 +1,15 @@
+{
+  "parent_sha256": "0ed0351029537d6cceb4e198811628079c24dc82fdf1ba73dec1523e417a72ef",
+  "stage": "bind-probe",
+  "registered_inputs": {
+    "bind_probe": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S2-bind-probe-a1/probe.json",
+      "file_sha256": "50f954c8caa745cfd325bd2c1950fe306792ef098027536980adb2c93e68eebe"
+    },
+    "bind_identity": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S2-bind-probe-a1/identity.json",
+      "file_sha256": "e5794f203fb5e7c8e138705e9597bb9c0fa3f9486ece7a25e377d5fd2e7cac8e"
+    }
+  },
+  "note": "D103: addendum 3 pins the sealed S2-bind-probe-a1 (64 rows, primary max |diff| 1.9e-8 <= 1e-6, frequency 0 <= 1e-12, pass) and the bound component identity. Re-pinned on the D104 config (was addendum-3-s2). Re-pinned on the D105 config. Re-pinned on the D106 config. Re-pinned on the D107 config. D112: the expected identity pin is removed here (it wrongly held the S2 component identity 43df7511...; the component identity is enforced through the registered bind_identity input). Re-chained as d112."
+}

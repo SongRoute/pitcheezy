@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "7033915eb0a590c5bfa8d6abb0a2e2e08287422f7b8fa5f5df836934ee5a265d",
+  "stage": "profile",
+  "registered_inputs": {
+    "profile": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S3-profile-a2/profile.json",
+      "file_sha256": "63db3a9575b0d4285d8b3a3a2b4dd3ce07c7ff397d2846e2694f8b50765ef933"
+    }
+  },
+  "note": "D105: addendum 4 pins the sealed S3-profile-a2 (D-9a selection samples 6, pitch_cap 12 under the D105 budget). Re-pinned on the D106 config. Re-pinned on the D107 config."
+}

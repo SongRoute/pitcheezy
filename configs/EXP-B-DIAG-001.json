@@ -1,0 +1,15 @@
+{
+  "experiment_id": "EXP-B-DIAG-001",
+  "parent_experiment_id": "EXP-B-PAHISTORY-001",
+  "artifact_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/B-DIAG-001",
+  "seed": 20260923,
+  "purpose": "Posthoc diagnosis of the already known +0.012605907986080364 July DEV NLL delta; no selection or tuning",
+  "analysis_plan": [
+    "verify hashes, exact A/B keys, labels, baseline, previous-family sequence and saved loss arithmetic",
+    "measure April TRAIN count and extended-cell support and July DEV exact-cell/base fallback counts",
+    "measure NONE versus pitch-one identity, count distributions and additive loss contributions",
+    "decompose fixed saved DEV loss delta by prior family, count, outcome and game with sum checks",
+    "fit only the two original fixed count tables in six April TRAIN leave-one-game-out folds; report pooled and per-game descriptive losses"
+  ],
+  "decision_rule": "Diagnostic only. No new DEV candidate ranking, smoothing choice, model adoption, policy value, 2026, final CV, UI or deployment."
+}

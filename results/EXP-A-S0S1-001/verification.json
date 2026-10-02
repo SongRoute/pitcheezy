@@ -1,0 +1,34 @@
+{
+  "all_checks_pass": true,
+  "bundle_checks": {
+    "game_values.pkl": true,
+    "metadata.json": true,
+    "models/seed42.pt": true,
+    "models/seed43.pt": true,
+    "models/seed44.pt": true,
+    "models/seed45.pt": true,
+    "models/seed46.pt": true,
+    "preprocessor.pkl": true
+  },
+  "bundle_manifest_sha256": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+  "evaluate_log_sha256": "095da3b3cac12c1f4ed7fbaaaf677f71f8da2293ed1be588ffa94d1ea219b5b8",
+  "experiment_id": "EXP-A-S0S1-001",
+  "identity_checks": {
+    "evaluation_code": true,
+    "evaluation_config": true,
+    "log_nonempty": true,
+    "results_copy": true,
+    "selection_manifest": true
+  },
+  "output_checks": {
+    "april_count_baseline.pkl": true,
+    "dev_full_games.parquet": true,
+    "event_cases.json": true,
+    "internal_we_diagnostics.json": true,
+    "observer_zone_diagnostics.json": true,
+    "predictions.npz": true,
+    "selected_pitch_keys.json": true,
+    "train_full_games.parquet": true
+  },
+  "run_results_sha256": "653353487e68d60c2d0b6c3e498ad35a10e706924bafd08e5eb2cf80f646c9d3"
+}

@@ -1,0 +1,38 @@
+# Optional observed-context cache for F4
+
+2026-09-24. **Source-only, unadopted optimization.** Existing F4 preparations, profiles, checkpoints, scripts and scientific sources remain unchanged. New module: `pitchmdp/matrix_observed_context_cache.py`. Neither importing it nor the current runners enables it.
+
+## Motivation and limits
+
+The v3 H0 warm profile measured 41.8351 seconds for 1,024 updates; its conservative full30-epoch fit forecast is about 6,000 seconds. The three members individually fit the 7,200-second gate, but the nine-member forecast does not fit the registered 28,800-second family cap. Similar H0/H128 times do not establish that pandas context work is the principal cause: the fixed-capacity network evaluates and differentiates all 128 long-token slots even for H0. Context memoization may help; its gain is unmeasured and must not be advertised as enough to pass the family gate.
+
+The existing `LazyPitchBatch.gather` invokes the same context transformation every minibatch/epoch, and the delivery path invokes it again for repeated current-physics draws. The fixed encoder's 52 float32 output channels are: 11 game/count/hand fields, six batter rates, six reliabilities, five batter memberships, 23 static pitcher profile values, and pitcher sample count. Candidate pitch type, current physical realization, current outcome and retrospective PA support do not enter this context encoder.
+
+## Optional adapter contract
+
+`FrozenObservedContext(base, frame, rows, chunk_size=8192)` accepts only the exact frozen `ContinuousPitcherContext` / `SharingContext` / `SequenceContext` / `Archetypes` classes. It normalizes the declared observed query positions to a unique sorted union, computes their contexts in bounded chunks, and stores exactly the original float32 values without arithmetic changes. Its `report()` preserves the scientific feature report; `cache_report()` separately records row and context hashes, construction time, value/lookup/exact-input-snapshot bytes, scope and null adoption. The real audit/new preparation must pin the adapter source in addition to original F4 sources; unchanged `report()` alone is not sufficient provenance.
+
+The adapter deep-copies the actual game/count/hand/style and identity inputs and compares them exactly at every lookup, including dtype and observed index. It performs no RNG calls, fitting, mutation of the source frame, casting of calculated output to lower precision, history caching, network changes or optimizer changes. Nonmonotonic, repeated and subset requests preserve query order. Every lookup returns an independent value array. The frozen encoder's empty-frame behavior is preserved. An undeclared query row or changed guarded value fails, rather than falling back to stale context. Raw candidate type and current physical overrides remain legal because the source-audited encoder does not depend on them.
+
+This cache is **only for the immutable observed-row F4 path**. It is not appropriate for policy rollouts with changed count, inning, bases, score or player context. Such changes are rejected, even if the original row index is reused. No proposed policy/RL runner uses this adapter.
+
+Selecting the original context object leaves the old path unchanged. To opt into a fresh audited run, construct the cache on that command's declared query-row union, then construct new `LazyPitchBatch` objects with the same store, rows, current overrides and candidate types but the cached context. Existing training and `LazyJointDelivery` methods operate unchanged; they receive identical inputs. The optional module never patches or rewrites those methods.
+
+## Memory and cost accounting
+
+The float32 value array costs 208 bytes per cached query row: about 261 MB for D100 TRAIN alone (decimal MB). The int32 lookup costs four bytes per source-frame row (about 8.6 MB for the current source). Exact input guards require additional memory: record `DataFrame.memory_usage(deep=True)`; do not describe total cache overhead as only 261 MB. Temporary chunk memory and process/MPS high-water measurements also belong in the resource report.
+
+Construction is performed once per separately launched process, not amortized across seeds. Only cache the splits a command actually needs. In a real full fit the cache can cover TRAIN, early-stop and May; in full prediction only June and DEV. Every cache build and exact lookup guard contributes to actual command time. No persisted float cache or new derived data cache is proposed here.
+
+**Resource-only audits/profiles must not build DEV or June context caches.** Build only their declared TRAIN/early-stop/May query rows; use frozen row counts for later extrapolation. Full-run projections must additionally account for full population cache construction for both fit and prediction processes. If construction scales nonlinearly or memory exceeds the planned limit, fail and replan; do not omit it or assume free caching.
+
+## Required real audit before any adoption
+
+The sole heavy owner should register a fresh sibling audit directory with a frozen configuration, local environment/source hashes, parent v3 preparation/profile hashes, exact sample selectors, command limits and tolerances. Preserve the original v3 profiles and their costs. No real backend timing has been observed by this implementation.
+
+1. On the same fixed TRAIN sample (65,536 rows selected chronologically) and 2,048 TRAIN evaluation rows, compare cached and original context values in original, repeated, reverse and uneven chunk orders. Exercise candidate type overrides and current-physics replacements; compare every output bit. Guarded synthetic count/style changes must fail. Record construction, context-only transform/lookup and whole lazy-gather times separately, warm each path once, and alternate original/cached timing order to expose cache/thermal effects. Do not compute DEV metrics.
+2. For every H0/32/128 arm, use an identical seed-0 width128 initialization and identical TRAIN minibatch/order to compare forward outputs, loss, parameter gradients and optimizer-updated weights on the actual MPS backend. Input context equality is exact. Register backend comparison tolerances before execution; do not relax them after a failure. Original and optimized execution order must not alter RNG state or weights outside the explicit training step.
+3. Measure complete original/cached fixed TRAIN resource fits with identical sample, initialization, 30/5/256/.0005 scientific settings (a registered short resource measurement may fix four epochs/patience4 as in v3), plus fixed May16×400 delivery calibration/inference. Do not reuse either profile model in the full experiment. Record all process costs and peak memory; compare numerical outputs and selected state rather than publishing profile quality as a model result.
+4. If both numerical and resource evidence support adoption, record a separate adoption decision and fresh F4 preparation/profile version. Recompute all three projections with cache-construction/lookup costs, two processes/member, full30-epoch work and every previous failed/preparation/profile/audit cost. All three sealed profiles, ≤7,200/member and ≤28,800 complete-family gate remain mandatory. No seed/data/epoch/batch/draw reduction and no implicit budget expansion is authorized by this proposal.
+
+The synthetic CPU proof checks exact inputs, gradients, two-epoch fitted state/history and 400-draw delivery for all three arms. It cannot establish MPS speedup or runtime feasibility. If memoization is insufficient, retain its measured result as a failed resource proposal rather than starting an unaffordable family.

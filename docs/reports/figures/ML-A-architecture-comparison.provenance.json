@@ -1,0 +1,7 @@
+{
+  "results_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P3-001/analysis/results.json",
+  "results_sha256": "476ad81d2cd01ccad919677ba89e317156cb391ed0b0b59348cf280effc0bafc",
+  "source_sha256": "a31d505ee5840d61d2f28da1489a67e3d04bac1584fdf205ab2cd68b056635f9",
+  "matplotlib": "3.11.1",
+  "limits": "C6 exposed DEV; conditional bootstrap; no wholeMLB/policy/final confirmation. Green requires all registered N gates. Cost excludes preparation/profiles/interpreter startup."
+}

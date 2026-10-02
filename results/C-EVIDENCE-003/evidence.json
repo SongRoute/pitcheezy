@@ -1,0 +1,2577 @@
+{
+  "schema_version": 1,
+  "audit_id": "C-EVIDENCE-003",
+  "scope": "six fixed 2025 DEV observed pitching changes; retrospective descriptive evidence",
+  "source_sha256": {
+    "roster_packet": "a327f1fecd7c9b97e4e2575328497520e373f9bcc325b28b341ae17303360371",
+    "lineup_supplement_v2": "70ec1a13869b7a73f6a2dc6eb97fc5b813c2a03e0300f3b67205018ad6cd4605",
+    "decision_anchor_777063": "e2a64575286160c6a30591a2a59b213b467393323a8884b0a802fb184611ac3c",
+    "model_metadata": "46467ff5ed25b09b69ddb3d9b80aea3f60bfd906944489fd901a84f382d64731",
+    "bundle_manifest": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f"
+  },
+  "comparison_spec": {
+    "horizon": "inning_end",
+    "unit": "initial_defender_win_probability_pp",
+    "required_common_inputs": [
+      "same_game",
+      "same_pre_substitution_state",
+      "same_initial_defender",
+      "same_announced_lineup_and_matchup_stances",
+      "same_frozen_model",
+      "same_fixed_policy",
+      "same_inning_horizon",
+      "same_evaluator_caps"
+    ],
+    "pa_values_may_be_combined": false,
+    "actual_replacement_value_pp": null
+  },
+  "counts": {
+    "games": 6,
+    "screened_replacement_entries": 65,
+    "evidenced_current_pitchers": 6,
+    "verified_decision_available_replacements": 0,
+    "conditional_roster_screen_entries": 65,
+    "supported_keep_games": 1,
+    "supported_replacement_entries": 1,
+    "jointly_supported_keep_and_replacement_games": 0,
+    "valid_inning_comparisons": 0
+  },
+  "cases": [
+    {
+      "game_pk": 777063,
+      "official_game_date": "2025-07-21",
+      "decision_first_observed_pitch_id": "777063:49:1",
+      "decision_time_kind": "logged_pitcher_change_action_pre_event",
+      "decision_time_utc": "2025-07-22T00:20:56.827Z",
+      "roster_source_url": "https://statsapi.mlb.com/api/v1/teams/143/roster?rosterType=active&date=2025-07-21",
+      "lineup_source_url": "https://statsapi.mlb.com/api/v1/game/777063/playByPlay",
+      "source_time_provenance": {
+        "roster": "historical_date_query_retrieved_after_game_not_publication_at_decision",
+        "workload": "prior_official_dates_only_prior_game_completion_times_not_archived",
+        "lineup": "retrospective_play_by_play_predecision_actions_only"
+      },
+      "fielding_team": "PHI",
+      "initial_defender": "home",
+      "keep": {
+        "pitcher_id": 554430,
+        "availability_class": "evidenced_current_pitcher",
+        "on_mound_before_change_evidenced": true,
+        "continued_use_feasible": null,
+        "model_supported": true,
+        "same_game_prior_pitches": 105,
+        "prior_7d_appearances": []
+      },
+      "lineup_order_verified_before_proxy": false,
+      "pre_change_anchor_lineup_verified": true,
+      "stance_vs_keep_verified": true,
+      "stance_vs_substitutes_verified": false,
+      "initial_state": {
+        "inning": 7,
+        "half": "Top",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 2,
+        "away_score": 2,
+        "balls": 0,
+        "strikes": 0
+      },
+      "candidates": [
+        {
+          "pitcher_id": 592836,
+          "name": "Taijuan Walker",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777089,
+              "official_date": "2025-07-19",
+              "pitches": 70,
+              "outs": 12,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777089/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 70,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 605447,
+          "name": "Jordan Romano",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777106,
+              "official_date": "2025-07-18",
+              "pitches": 16,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777106/boxscore"
+            },
+            {
+              "game_pk": 777078,
+              "official_date": "2025-07-20",
+              "pitches": 6,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777078/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 22,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 621381,
+          "name": "Matt Strahm",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777089,
+              "official_date": "2025-07-19",
+              "pitches": 12,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777089/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 12,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 621383,
+          "name": "Tanner Banks",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": true,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777106,
+              "official_date": "2025-07-18",
+              "pitches": 19,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777106/boxscore"
+            },
+            {
+              "game_pk": 777089,
+              "official_date": "2025-07-19",
+              "pitches": 9,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777089/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 28,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 624133,
+          "name": "Ranger Suarez",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777078,
+              "official_date": "2025-07-20",
+              "pitches": 100,
+              "outs": 13,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777078/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 100,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 642016,
+          "name": "Daniel Robert",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777106,
+              "official_date": "2025-07-18",
+              "pitches": 18,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777106/boxscore"
+            },
+            {
+              "game_pk": 777089,
+              "official_date": "2025-07-19",
+              "pitches": 16,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777089/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 34,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 650911,
+          "name": "Cristopher Sánchez",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [],
+          "prior_7d_pitches": 0,
+          "full_rest_calendar_days_since_last_appearance": null,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 666200,
+          "name": "Jesús Luzardo",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777106,
+              "official_date": "2025-07-18",
+              "pitches": 92,
+              "outs": 14,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777106/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 92,
+          "full_rest_calendar_days_since_last_appearance": 2,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 676661,
+          "name": "Max Lazar",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777106,
+              "official_date": "2025-07-18",
+              "pitches": 4,
+              "outs": 1,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777106/boxscore"
+            },
+            {
+              "game_pk": 777078,
+              "official_date": "2025-07-20",
+              "pitches": 19,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777078/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 23,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 686751,
+          "name": "Seth Johnson",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777089,
+              "official_date": "2025-07-19",
+              "pitches": 17,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777089/boxscore"
+            },
+            {
+              "game_pk": 777078,
+              "official_date": "2025-07-20",
+              "pitches": 20,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777078/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 37,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 2,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 689147,
+          "name": "Orion Kerkering",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777089,
+              "official_date": "2025-07-19",
+              "pitches": 21,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777089/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 21,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        }
+      ],
+      "unknown_availability_outside_screen": true,
+      "actual_eligible_replacements": null,
+      "model_comparison": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "initial_defender": "home",
+        "value_pp": null,
+        "reason": "no_jointly_supported_keep_and_substitute_with_verified_decision_availability_and_matchup_lineup"
+      }
+    },
+    {
+      "game_pk": 777094,
+      "official_game_date": "2025-07-19",
+      "decision_first_observed_pitch_id": "777094:50:1",
+      "decision_time_kind": "first_observed_pitch_proxy",
+      "decision_time_utc": null,
+      "roster_source_url": "https://statsapi.mlb.com/api/v1/teams/141/roster?rosterType=active&date=2025-07-19",
+      "lineup_source_url": "https://statsapi.mlb.com/api/v1/game/777094/playByPlay",
+      "source_time_provenance": {
+        "roster": "historical_date_query_retrieved_after_game_not_publication_at_decision",
+        "workload": "prior_official_dates_only_prior_game_completion_times_not_archived",
+        "lineup": "retrospective_play_by_play_predecision_actions_only"
+      },
+      "fielding_team": "TOR",
+      "initial_defender": "home",
+      "keep": {
+        "pitcher_id": 641778,
+        "availability_class": "evidenced_current_pitcher",
+        "on_mound_before_change_evidenced": true,
+        "continued_use_feasible": null,
+        "model_supported": false,
+        "same_game_prior_pitches": 81,
+        "prior_7d_appearances": []
+      },
+      "lineup_order_verified_before_proxy": true,
+      "pre_change_anchor_lineup_verified": false,
+      "stance_vs_keep_verified": false,
+      "stance_vs_substitutes_verified": false,
+      "initial_state": {
+        "inning": 7,
+        "half": "Top",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 4,
+        "away_score": 2,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 527038,
+        "current_batter_stand": "R"
+      },
+      "candidates": [
+        {
+          "pitcher_id": 453286,
+          "name": "Max Scherzer",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [],
+          "prior_7d_pitches": 0,
+          "full_rest_calendar_days_since_last_appearance": null,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 592332,
+          "name": "Kevin Gausman",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777132,
+              "official_date": "2025-07-12",
+              "pitches": 96,
+              "outs": 15,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777132/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 96,
+          "full_rest_calendar_days_since_last_appearance": 6,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 605135,
+          "name": "Chris Bassitt",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777116,
+              "official_date": "2025-07-13",
+              "pitches": 10,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777116/boxscore"
+            },
+            {
+              "game_pk": 777108,
+              "official_date": "2025-07-18",
+              "pitches": 97,
+              "outs": 19,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777108/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 107,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 621244,
+          "name": "José Berríos",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": true,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777116,
+              "official_date": "2025-07-13",
+              "pitches": 61,
+              "outs": 9,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777116/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 61,
+          "full_rest_calendar_days_since_last_appearance": 5,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown"
+          ]
+        },
+        {
+          "pitcher_id": 643338,
+          "name": "Chad Green",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": true,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777132,
+              "official_date": "2025-07-12",
+              "pitches": 21,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777132/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 21,
+          "full_rest_calendar_days_since_last_appearance": 6,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 656546,
+          "name": "Jeff Hoffman",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777108,
+              "official_date": "2025-07-18",
+              "pitches": 13,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777108/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 13,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 663893,
+          "name": "Brendon Little",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777116,
+              "official_date": "2025-07-13",
+              "pitches": 20,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777116/boxscore"
+            },
+            {
+              "game_pk": 777108,
+              "official_date": "2025-07-18",
+              "pitches": 12,
+              "outs": 2,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777108/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 32,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 667297,
+          "name": "Tommy Nance",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777132,
+              "official_date": "2025-07-12",
+              "pitches": 12,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777132/boxscore"
+            },
+            {
+              "game_pk": 777116,
+              "official_date": "2025-07-13",
+              "pitches": 17,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777116/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 29,
+          "full_rest_calendar_days_since_last_appearance": 5,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 673820,
+          "name": "Robinson Piña",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [],
+          "prior_7d_pitches": 0,
+          "full_rest_calendar_days_since_last_appearance": null,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 677865,
+          "name": "Justin Bruihl",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777132,
+              "official_date": "2025-07-12",
+              "pitches": 12,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777132/boxscore"
+            },
+            {
+              "game_pk": 777116,
+              "official_date": "2025-07-13",
+              "pitches": 8,
+              "outs": 1,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777116/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 20,
+          "full_rest_calendar_days_since_last_appearance": 5,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 680755,
+          "name": "Braydon Fisher",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777116,
+              "official_date": "2025-07-13",
+              "pitches": 9,
+              "outs": 2,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777116/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 9,
+          "full_rest_calendar_days_since_last_appearance": 5,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 684320,
+          "name": "Yariel Rodríguez",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777116,
+              "official_date": "2025-07-13",
+              "pitches": 21,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777116/boxscore"
+            },
+            {
+              "game_pk": 777108,
+              "official_date": "2025-07-18",
+              "pitches": 16,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777108/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 37,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        }
+      ],
+      "unknown_availability_outside_screen": true,
+      "actual_eligible_replacements": null,
+      "model_comparison": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "initial_defender": "home",
+        "value_pp": null,
+        "reason": "no_jointly_supported_keep_and_substitute_with_verified_decision_availability_and_matchup_lineup"
+      }
+    },
+    {
+      "game_pk": 777126,
+      "official_game_date": "2025-07-12",
+      "decision_first_observed_pitch_id": "777126:53:1",
+      "decision_time_kind": "first_observed_pitch_proxy",
+      "decision_time_utc": null,
+      "roster_source_url": "https://statsapi.mlb.com/api/v1/teams/135/roster?rosterType=active&date=2025-07-12",
+      "lineup_source_url": "https://statsapi.mlb.com/api/v1/game/777126/playByPlay",
+      "source_time_provenance": {
+        "roster": "historical_date_query_retrieved_after_game_not_publication_at_decision",
+        "workload": "prior_official_dates_only_prior_game_completion_times_not_archived",
+        "lineup": "retrospective_play_by_play_predecision_actions_only"
+      },
+      "fielding_team": "SD",
+      "initial_defender": "home",
+      "keep": {
+        "pitcher_id": 663773,
+        "availability_class": "evidenced_current_pitcher",
+        "on_mound_before_change_evidenced": true,
+        "continued_use_feasible": null,
+        "model_supported": false,
+        "same_game_prior_pitches": 15,
+        "prior_7d_appearances": [
+          {
+            "game_pk": 777223,
+            "official_date": "2025-07-05",
+            "pitches": 18,
+            "outs": 2,
+            "source_url": "https://statsapi.mlb.com/api/v1/game/777223/boxscore"
+          },
+          {
+            "game_pk": 777203,
+            "official_date": "2025-07-07",
+            "pitches": 20,
+            "outs": 4,
+            "source_url": "https://statsapi.mlb.com/api/v1/game/777203/boxscore"
+          }
+        ]
+      },
+      "lineup_order_verified_before_proxy": true,
+      "pre_change_anchor_lineup_verified": false,
+      "stance_vs_keep_verified": false,
+      "stance_vs_substitutes_verified": false,
+      "initial_state": {
+        "inning": 7,
+        "half": "Top",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 4,
+        "away_score": 4,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 669016,
+        "current_batter_stand": "L"
+      },
+      "candidates": [
+        {
+          "pitcher_id": 592094,
+          "name": "Jason Adam",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777207,
+              "official_date": "2025-07-06",
+              "pitches": 19,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777207/boxscore"
+            },
+            {
+              "game_pk": 777185,
+              "official_date": "2025-07-08",
+              "pitches": 15,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777185/boxscore"
+            },
+            {
+              "game_pk": 777158,
+              "official_date": "2025-07-10",
+              "pitches": 24,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777158/boxscore"
+            },
+            {
+              "game_pk": 777139,
+              "official_date": "2025-07-11",
+              "pitches": 31,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777139/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 89,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 2,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 593974,
+          "name": "Wandy Peralta",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": true,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777223,
+              "official_date": "2025-07-05",
+              "pitches": 15,
+              "outs": 4,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777223/boxscore"
+            },
+            {
+              "game_pk": 777203,
+              "official_date": "2025-07-07",
+              "pitches": 26,
+              "outs": 4,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777203/boxscore"
+            },
+            {
+              "game_pk": 777162,
+              "official_date": "2025-07-09",
+              "pitches": 28,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777162/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 69,
+          "full_rest_calendar_days_since_last_appearance": 2,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 656302,
+          "name": "Dylan Cease",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777162,
+              "official_date": "2025-07-09",
+              "pitches": 95,
+              "outs": 18,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777162/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 95,
+          "full_rest_calendar_days_since_last_appearance": 2,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 663158,
+          "name": "Robert Suarez",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777207,
+              "official_date": "2025-07-06",
+              "pitches": 12,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777207/boxscore"
+            },
+            {
+              "game_pk": 777185,
+              "official_date": "2025-07-08",
+              "pitches": 20,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777185/boxscore"
+            },
+            {
+              "game_pk": 777158,
+              "official_date": "2025-07-10",
+              "pitches": 13,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777158/boxscore"
+            },
+            {
+              "game_pk": 777139,
+              "official_date": "2025-07-11",
+              "pitches": 13,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777139/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 58,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 2,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 669093,
+          "name": "Jeremiah Estrada",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777207,
+              "official_date": "2025-07-06",
+              "pitches": 9,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777207/boxscore"
+            },
+            {
+              "game_pk": 777185,
+              "official_date": "2025-07-08",
+              "pitches": 25,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777185/boxscore"
+            },
+            {
+              "game_pk": 777158,
+              "official_date": "2025-07-10",
+              "pitches": 18,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777158/boxscore"
+            },
+            {
+              "game_pk": 777139,
+              "official_date": "2025-07-11",
+              "pitches": 12,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777139/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 64,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 2,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 670970,
+          "name": "Adrian Morejon",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777207,
+              "official_date": "2025-07-06",
+              "pitches": 13,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777207/boxscore"
+            },
+            {
+              "game_pk": 777185,
+              "official_date": "2025-07-08",
+              "pitches": 8,
+              "outs": 1,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777185/boxscore"
+            },
+            {
+              "game_pk": 777158,
+              "official_date": "2025-07-10",
+              "pitches": 19,
+              "outs": 5,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777158/boxscore"
+            },
+            {
+              "game_pk": 777139,
+              "official_date": "2025-07-11",
+              "pitches": 13,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777139/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 53,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 2,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 673513,
+          "name": "Yuki Matsui",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777223,
+              "official_date": "2025-07-05",
+              "pitches": 16,
+              "outs": 2,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777223/boxscore"
+            },
+            {
+              "game_pk": 777203,
+              "official_date": "2025-07-07",
+              "pitches": 22,
+              "outs": 4,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777203/boxscore"
+            },
+            {
+              "game_pk": 777139,
+              "official_date": "2025-07-11",
+              "pitches": 7,
+              "outs": 1,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777139/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 45,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 681190,
+          "name": "Randy Vásquez",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777158,
+              "official_date": "2025-07-10",
+              "pitches": 86,
+              "outs": 13,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777158/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 86,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 688158,
+          "name": "David Morgan",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777207,
+              "official_date": "2025-07-06",
+              "pitches": 37,
+              "outs": 4,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777207/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 37,
+          "full_rest_calendar_days_since_last_appearance": 5,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 689690,
+          "name": "Alek Jacob",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [],
+          "prior_7d_pitches": 0,
+          "full_rest_calendar_days_since_last_appearance": null,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        }
+      ],
+      "unknown_availability_outside_screen": true,
+      "actual_eligible_replacements": null,
+      "model_comparison": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "initial_defender": "home",
+        "value_pp": null,
+        "reason": "no_jointly_supported_keep_and_substitute_with_verified_decision_availability_and_matchup_lineup"
+      }
+    },
+    {
+      "game_pk": 777143,
+      "official_game_date": "2025-07-11",
+      "decision_first_observed_pitch_id": "777143:54:1",
+      "decision_time_kind": "first_observed_pitch_proxy",
+      "decision_time_utc": null,
+      "roster_source_url": "https://statsapi.mlb.com/api/v1/teams/119/roster?rosterType=active&date=2025-07-11",
+      "lineup_source_url": "https://statsapi.mlb.com/api/v1/game/777143/playByPlay",
+      "source_time_provenance": {
+        "roster": "historical_date_query_retrieved_after_game_not_publication_at_decision",
+        "workload": "prior_official_dates_only_prior_game_completion_times_not_archived",
+        "lineup": "retrospective_play_by_play_predecision_actions_only"
+      },
+      "fielding_team": "LAD",
+      "initial_defender": "away",
+      "keep": {
+        "pitcher_id": 607455,
+        "availability_class": "evidenced_current_pitcher",
+        "on_mound_before_change_evidenced": true,
+        "continued_use_feasible": null,
+        "model_supported": false,
+        "same_game_prior_pitches": 21,
+        "prior_7d_appearances": [
+          {
+            "game_pk": 777235,
+            "official_date": "2025-07-04",
+            "pitches": 26,
+            "outs": 6,
+            "source_url": "https://statsapi.mlb.com/api/v1/game/777235/boxscore"
+          },
+          {
+            "game_pk": 777206,
+            "official_date": "2025-07-06",
+            "pitches": 9,
+            "outs": 3,
+            "source_url": "https://statsapi.mlb.com/api/v1/game/777206/boxscore"
+          },
+          {
+            "game_pk": 777201,
+            "official_date": "2025-07-07",
+            "pitches": 15,
+            "outs": 3,
+            "source_url": "https://statsapi.mlb.com/api/v1/game/777201/boxscore"
+          }
+        ]
+      },
+      "lineup_order_verified_before_proxy": true,
+      "pre_change_anchor_lineup_verified": false,
+      "stance_vs_keep_verified": false,
+      "stance_vs_substitutes_verified": false,
+      "initial_state": {
+        "inning": 6,
+        "half": "Bot",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 8,
+        "away_score": 6,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 672275,
+        "current_batter_stand": "R"
+      },
+      "candidates": [
+        {
+          "pitcher_id": 477132,
+          "name": "Clayton Kershaw",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777193,
+              "official_date": "2025-07-08",
+              "pitches": 85,
+              "outs": 18,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777193/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 85,
+          "full_rest_calendar_days_since_last_appearance": 2,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 489446,
+          "name": "Kirby Yates",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777193,
+              "official_date": "2025-07-08",
+              "pitches": 20,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777193/boxscore"
+            },
+            {
+              "game_pk": 777175,
+              "official_date": "2025-07-09",
+              "pitches": 5,
+              "outs": 1,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777175/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 25,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 607192,
+          "name": "Tyler Glasnow",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777175,
+              "official_date": "2025-07-09",
+              "pitches": 85,
+              "outs": 15,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777175/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 85,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 642152,
+          "name": "Lou Trivino III",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777221,
+              "official_date": "2025-07-05",
+              "pitches": 24,
+              "outs": 4,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777221/boxscore"
+            },
+            {
+              "game_pk": 777206,
+              "official_date": "2025-07-06",
+              "pitches": 4,
+              "outs": 1,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777206/boxscore"
+            },
+            {
+              "game_pk": 777201,
+              "official_date": "2025-07-07",
+              "pitches": 10,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777201/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 38,
+          "full_rest_calendar_days_since_last_appearance": 3,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 656945,
+          "name": "Tanner Scott",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777206,
+              "official_date": "2025-07-06",
+              "pitches": 24,
+              "outs": 2,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777206/boxscore"
+            },
+            {
+              "game_pk": 777175,
+              "official_date": "2025-07-09",
+              "pitches": 21,
+              "outs": 4,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777175/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 45,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 676263,
+          "name": "Jack Dreyer",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": true,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777235,
+              "official_date": "2025-07-04",
+              "pitches": 30,
+              "outs": 5,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777235/boxscore"
+            },
+            {
+              "game_pk": 777201,
+              "official_date": "2025-07-07",
+              "pitches": 32,
+              "outs": 7,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777201/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 62,
+          "full_rest_calendar_days_since_last_appearance": 3,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 676508,
+          "name": "Ben Casparius",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777235,
+              "official_date": "2025-07-04",
+              "pitches": 59,
+              "outs": 9,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777235/boxscore"
+            },
+            {
+              "game_pk": 777175,
+              "official_date": "2025-07-09",
+              "pitches": 25,
+              "outs": 5,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777175/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 84,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 681911,
+          "name": "Alex Vesia",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777206,
+              "official_date": "2025-07-06",
+              "pitches": 16,
+              "outs": 4,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777206/boxscore"
+            },
+            {
+              "game_pk": 777193,
+              "official_date": "2025-07-08",
+              "pitches": 14,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777193/boxscore"
+            },
+            {
+              "game_pk": 777175,
+              "official_date": "2025-07-09",
+              "pitches": 18,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777175/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 48,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 686218,
+          "name": "Emmet Sheehan",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777206,
+              "official_date": "2025-07-06",
+              "pitches": 80,
+              "outs": 15,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777206/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 80,
+          "full_rest_calendar_days_since_last_appearance": 4,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 694361,
+          "name": "Will Klein",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777206,
+              "official_date": "2025-07-06",
+              "pitches": 23,
+              "outs": 2,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777206/boxscore"
+            },
+            {
+              "game_pk": 777201,
+              "official_date": "2025-07-07",
+              "pitches": 26,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777201/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 49,
+          "full_rest_calendar_days_since_last_appearance": 3,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 808967,
+          "name": "Yoshinobu Yamamoto",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777201,
+              "official_date": "2025-07-07",
+              "pitches": 41,
+              "outs": 2,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777201/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 41,
+          "full_rest_calendar_days_since_last_appearance": 3,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        }
+      ],
+      "unknown_availability_outside_screen": true,
+      "actual_eligible_replacements": null,
+      "model_comparison": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "initial_defender": "away",
+        "value_pp": null,
+        "reason": "no_jointly_supported_keep_and_substitute_with_verified_decision_availability_and_matchup_lineup"
+      }
+    },
+    {
+      "game_pk": 777217,
+      "official_game_date": "2025-07-06",
+      "decision_first_observed_pitch_id": "777217:42:1",
+      "decision_time_kind": "first_observed_pitch_proxy",
+      "decision_time_utc": null,
+      "roster_source_url": "https://statsapi.mlb.com/api/v1/teams/113/roster?rosterType=active&date=2025-07-06",
+      "lineup_source_url": "https://statsapi.mlb.com/api/v1/game/777217/playByPlay",
+      "source_time_provenance": {
+        "roster": "historical_date_query_retrieved_after_game_not_publication_at_decision",
+        "workload": "prior_official_dates_only_prior_game_completion_times_not_archived",
+        "lineup": "retrospective_play_by_play_predecision_actions_only"
+      },
+      "fielding_team": "CIN",
+      "initial_defender": "away",
+      "keep": {
+        "pitcher_id": 594580,
+        "availability_class": "evidenced_current_pitcher",
+        "on_mound_before_change_evidenced": true,
+        "continued_use_feasible": null,
+        "model_supported": false,
+        "same_game_prior_pitches": 9,
+        "prior_7d_appearances": [
+          {
+            "game_pk": 777294,
+            "official_date": "2025-07-01",
+            "pitches": 26,
+            "outs": 6,
+            "source_url": "https://statsapi.mlb.com/api/v1/game/777294/boxscore"
+          },
+          {
+            "game_pk": 777255,
+            "official_date": "2025-07-04",
+            "pitches": 6,
+            "outs": 4,
+            "source_url": "https://statsapi.mlb.com/api/v1/game/777255/boxscore"
+          }
+        ]
+      },
+      "lineup_order_verified_before_proxy": true,
+      "pre_change_anchor_lineup_verified": false,
+      "stance_vs_keep_verified": false,
+      "stance_vs_substitutes_verified": false,
+      "initial_state": {
+        "inning": 6,
+        "half": "Bot",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 1,
+        "away_score": 1,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 664761,
+        "current_batter_stand": "R"
+      },
+      "candidates": [
+        {
+          "pitcher_id": 573124,
+          "name": "Taylor Rogers",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777312,
+              "official_date": "2025-06-29",
+              "pitches": 18,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777312/boxscore"
+            },
+            {
+              "game_pk": 777277,
+              "official_date": "2025-07-02",
+              "pitches": 7,
+              "outs": 1,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777277/boxscore"
+            },
+            {
+              "game_pk": 777255,
+              "official_date": "2025-07-04",
+              "pitches": 12,
+              "outs": 1,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777255/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 37,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 605130,
+          "name": "Scott Barlow",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": true,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777312,
+              "official_date": "2025-06-29",
+              "pitches": 16,
+              "outs": 2,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777312/boxscore"
+            },
+            {
+              "game_pk": 777294,
+              "official_date": "2025-07-01",
+              "pitches": 19,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777294/boxscore"
+            },
+            {
+              "game_pk": 777255,
+              "official_date": "2025-07-04",
+              "pitches": 16,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777255/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 51,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 607259,
+          "name": "Nick Martinez",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777277,
+              "official_date": "2025-07-02",
+              "pitches": 89,
+              "outs": 20,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777277/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 89,
+          "full_rest_calendar_days_since_last_appearance": 3,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 608718,
+          "name": "Brent Suter",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777300,
+              "official_date": "2025-06-30",
+              "pitches": 48,
+              "outs": 8,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777300/boxscore"
+            },
+            {
+              "game_pk": 777233,
+              "official_date": "2025-07-05",
+              "pitches": 20,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777233/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 68,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 641941,
+          "name": "Emilio Pagán",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777312,
+              "official_date": "2025-06-29",
+              "pitches": 16,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777312/boxscore"
+            },
+            {
+              "game_pk": 777277,
+              "official_date": "2025-07-02",
+              "pitches": 16,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777277/boxscore"
+            },
+            {
+              "game_pk": 777255,
+              "official_date": "2025-07-04",
+              "pitches": 16,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777255/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 48,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 663574,
+          "name": "Tony Santillan",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777312,
+              "official_date": "2025-06-29",
+              "pitches": 10,
+              "outs": 2,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777312/boxscore"
+            },
+            {
+              "game_pk": 777277,
+              "official_date": "2025-07-02",
+              "pitches": 13,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777277/boxscore"
+            },
+            {
+              "game_pk": 777255,
+              "official_date": "2025-07-04",
+              "pitches": 28,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777255/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 51,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 663903,
+          "name": "Brady Singer",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777294,
+              "official_date": "2025-07-01",
+              "pitches": 56,
+              "outs": 9,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777294/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 56,
+          "full_rest_calendar_days_since_last_appearance": 4,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 666157,
+          "name": "Nick Lodolo",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777312,
+              "official_date": "2025-06-29",
+              "pitches": 95,
+              "outs": 16,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777312/boxscore"
+            },
+            {
+              "game_pk": 777233,
+              "official_date": "2025-07-05",
+              "pitches": 85,
+              "outs": 18,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777233/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 180,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 668933,
+          "name": "Graham Ashcraft",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777233,
+              "official_date": "2025-07-05",
+              "pitches": 10,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777233/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 10,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 671096,
+          "name": "Andrew Abbott",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777255,
+              "official_date": "2025-07-04",
+              "pitches": 66,
+              "outs": 10,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777255/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 66,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 680689,
+          "name": "Lyon Richardson",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777312,
+              "official_date": "2025-06-29",
+              "pitches": 12,
+              "outs": 1,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777312/boxscore"
+            },
+            {
+              "game_pk": 777294,
+              "official_date": "2025-07-01",
+              "pitches": 34,
+              "outs": 6,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777294/boxscore"
+            },
+            {
+              "game_pk": 777255,
+              "official_date": "2025-07-04",
+              "pitches": 19,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777255/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 65,
+          "full_rest_calendar_days_since_last_appearance": 1,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        }
+      ],
+      "unknown_availability_outside_screen": true,
+      "actual_eligible_replacements": null,
+      "model_comparison": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "initial_defender": "away",
+        "value_pp": null,
+        "reason": "no_jointly_supported_keep_and_substitute_with_verified_decision_availability_and_matchup_lineup"
+      }
+    },
+    {
+      "game_pk": 777227,
+      "official_game_date": "2025-07-05",
+      "decision_first_observed_pitch_id": "777227:65:1",
+      "decision_time_kind": "first_observed_pitch_proxy",
+      "decision_time_utc": null,
+      "roster_source_url": "https://statsapi.mlb.com/api/v1/teams/133/roster?rosterType=active&date=2025-07-05",
+      "lineup_source_url": "https://statsapi.mlb.com/api/v1/game/777227/playByPlay",
+      "source_time_provenance": {
+        "roster": "historical_date_query_retrieved_after_game_not_publication_at_decision",
+        "workload": "prior_official_dates_only_prior_game_completion_times_not_archived",
+        "lineup": "retrospective_play_by_play_predecision_actions_only"
+      },
+      "fielding_team": "ATH",
+      "initial_defender": "home",
+      "keep": {
+        "pitcher_id": 686993,
+        "availability_class": "evidenced_current_pitcher",
+        "on_mound_before_change_evidenced": true,
+        "continued_use_feasible": null,
+        "model_supported": false,
+        "same_game_prior_pitches": 29,
+        "prior_7d_appearances": [
+          {
+            "game_pk": 777286,
+            "official_date": "2025-07-01",
+            "pitches": 16,
+            "outs": 3,
+            "source_url": "https://statsapi.mlb.com/api/v1/game/777286/boxscore"
+          }
+        ]
+      },
+      "lineup_order_verified_before_proxy": true,
+      "pre_change_anchor_lineup_verified": false,
+      "stance_vs_keep_verified": false,
+      "stance_vs_substitutes_verified": false,
+      "initial_state": {
+        "inning": 8,
+        "half": "Top",
+        "outs": 0,
+        "bases": 0,
+        "home_score": 2,
+        "away_score": 7,
+        "balls": 0,
+        "strikes": 0,
+        "current_batter_id": 689172,
+        "current_batter_stand": "L"
+      },
+      "candidates": [
+        {
+          "pitcher_id": 547184,
+          "name": "Michael Kelly",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777307,
+              "official_date": "2025-06-29",
+              "pitches": 8,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777307/boxscore"
+            },
+            {
+              "game_pk": 777296,
+              "official_date": "2025-06-30",
+              "pitches": 7,
+              "outs": 2,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777296/boxscore"
+            },
+            {
+              "game_pk": 777286,
+              "official_date": "2025-07-01",
+              "pitches": 17,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777286/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 32,
+          "full_rest_calendar_days_since_last_appearance": 3,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 605488,
+          "name": "Jeffrey Springs",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777286,
+              "official_date": "2025-07-01",
+              "pitches": 96,
+              "outs": 16,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777286/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 96,
+          "full_rest_calendar_days_since_last_appearance": 3,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 663687,
+          "name": "Hogan Harris",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": true,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777307,
+              "official_date": "2025-06-29",
+              "pitches": 28,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777307/boxscore"
+            },
+            {
+              "game_pk": 777271,
+              "official_date": "2025-07-02",
+              "pitches": 29,
+              "outs": 5,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777271/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 57,
+          "full_rest_calendar_days_since_last_appearance": 2,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 665660,
+          "name": "Elvis Alvarado",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777307,
+              "official_date": "2025-06-29",
+              "pitches": 26,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777307/boxscore"
+            },
+            {
+              "game_pk": 777271,
+              "official_date": "2025-07-02",
+              "pitches": 12,
+              "outs": 4,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777271/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 38,
+          "full_rest_calendar_days_since_last_appearance": 2,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 669372,
+          "name": "J.T. Ginn",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777296,
+              "official_date": "2025-06-30",
+              "pitches": 43,
+              "outs": 11,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777296/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 43,
+          "full_rest_calendar_days_since_last_appearance": 4,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 676664,
+          "name": "JP Sears",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777326,
+              "official_date": "2025-06-28",
+              "pitches": 90,
+              "outs": 17,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777326/boxscore"
+            },
+            {
+              "game_pk": 777244,
+              "official_date": "2025-07-04",
+              "pitches": 92,
+              "outs": 18,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777244/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 182,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 678022,
+          "name": "Jack Perkins",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777326,
+              "official_date": "2025-06-28",
+              "pitches": 48,
+              "outs": 10,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777326/boxscore"
+            },
+            {
+              "game_pk": 777244,
+              "official_date": "2025-07-04",
+              "pitches": 54,
+              "outs": 9,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777244/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 102,
+          "full_rest_calendar_days_since_last_appearance": 0,
+          "consecutive_days_through_previous_date": 1,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 682052,
+          "name": "Jacob Lopez",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777296,
+              "official_date": "2025-06-30",
+              "pitches": 50,
+              "outs": 10,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777296/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 50,
+          "full_rest_calendar_days_since_last_appearance": 4,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 687765,
+          "name": "Mitch Spence",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777271,
+              "official_date": "2025-07-02",
+              "pitches": 77,
+              "outs": 15,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777271/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 77,
+          "full_rest_calendar_days_since_last_appearance": 2,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        },
+        {
+          "pitcher_id": 695243,
+          "name": "Mason Miller",
+          "availability_class": "conditional_roster_screen",
+          "manager_available_at_decision": null,
+          "observed_deployment_after_decision": false,
+          "model_supported": false,
+          "prior_7d_appearances": [
+            {
+              "game_pk": 777296,
+              "official_date": "2025-06-30",
+              "pitches": 8,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777296/boxscore"
+            },
+            {
+              "game_pk": 777286,
+              "official_date": "2025-07-01",
+              "pitches": 11,
+              "outs": 3,
+              "source_url": "https://statsapi.mlb.com/api/v1/game/777286/boxscore"
+            }
+          ],
+          "prior_7d_pitches": 19,
+          "full_rest_calendar_days_since_last_appearance": 3,
+          "consecutive_days_through_previous_date": 0,
+          "same_game_prior_appearance": false,
+          "substitute_stance_verified": false,
+          "inning_evaluation_ready": false,
+          "unready_reasons": [
+            "decision_time_availability_unknown",
+            "stances_against_substitute_unknown",
+            "frozen_pitcher_unsupported"
+          ]
+        }
+      ],
+      "unknown_availability_outside_screen": true,
+      "actual_eligible_replacements": null,
+      "model_comparison": {
+        "status": "unavailable",
+        "horizon": "inning_end",
+        "initial_defender": "home",
+        "value_pp": null,
+        "reason": "no_jointly_supported_keep_and_substitute_with_verified_decision_availability_and_matchup_lineup"
+      }
+    }
+  ],
+  "interpretation": "Observed deployment is known only retrospectively. Roster listings and prior workload make conditional screens, not a verified decision-time eligible set. Model support is a separate property; no fixed game supports both keep and a substitute."
+}

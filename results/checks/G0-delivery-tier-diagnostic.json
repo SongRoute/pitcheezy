@@ -1,0 +1,515 @@
+{
+ "id": "G0-delivery-tier-diagnostic",
+ "status": "descriptive_diagnostic_only",
+ "scope": "Previously exposed eligible 2025 whole-MLB DEV; sealed EXP-P11-001 outputs; no fit, no inference",
+ "source_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001",
+ "input_sha256": {
+  "analysis": "6890f321e68d0ce83cba203c351a516377c77db6e0491f25802107f237b362d0",
+  "baseline": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b",
+  "metadata": "521efba3e319157107120b41ad766236a84ca0d863d445015b34be54733a95d0",
+  "seed0": "9bc36e1f6271734a1d56e3f8aace13ac0cd3273c9863aef26146805a276d213c",
+  "seed1": "2a7a1c70a1c071aa8be659db13b181d01db1d32320c4d10d8e4fd2923bdd5017",
+  "seed2": "c3986ee970cca5647c3aab5a6955afcc50b306a9ec60ca61aa91cccf498c6e61",
+  "seed3": "ea045bdc2e95db73bc8a4e8c7062fd061927469b49b221237edd7f52740b07e5",
+  "seed4": "877a6c670dcb0e73a4951012699994fad26fc8f64b4688f2ecfba414d4e14149"
+ },
+ "script_commit_head": "e3b37a5b10f85925b275e040d7d82a759277afc1",
+ "bootstrap": {
+  "unit": "game",
+  "draws": 10000,
+  "seed": 20260924,
+  "statistic": "pitch-weighted mean"
+ },
+ "tier_meaning": {
+  "-1": "global fallback",
+  "0": "league type/hand",
+  "1": "league type/hand/count",
+  "2": "pitcher type/hand",
+  "3": "pitcher type/hand/count"
+ },
+ "whole_nll_reproduced": {
+  "g0": 1.4904081967248524,
+  "neural": 1.495854762708509,
+  "frequency": 1.50408101626456
+ },
+ "tiers_identical_across_seeds": true,
+ "groups": {
+  "tier_-1": {
+   "n": 34,
+   "share": 0.0001090718944184062,
+   "games": 24,
+   "pitchers": 19,
+   "nll_g0": 1.670274096525878,
+   "nll_neural_before_blend": 1.6965211532951072,
+   "nll_frequency": 1.7349172992050677,
+   "delta_nll_g0_minus_frequency": -0.06464320267918945,
+   "delta_nll_ci95": [
+    -0.2284563458744996,
+    0.1031677460828136
+   ],
+   "delta_nll_neural_minus_frequency": -0.03839614590996031,
+   "delta_neural_ci95": [
+    -0.2515374932535302,
+    0.18306079589112148
+   ],
+   "delta_brier_g0_minus_frequency": -0.0171321400636242,
+   "ball_rate": 0.6176470588235294,
+   "strike_rate": 0.058823529411764705,
+   "two_strikes_share": 0.14705882352941177,
+   "relief_share": 0.4117647058823529
+  },
+  "tier_0": {
+   "n": 276,
+   "share": 0.0008854071429258857,
+   "games": 85,
+   "pitchers": 51,
+   "nll_g0": 1.51229271619961,
+   "nll_neural_before_blend": 1.5286202101199093,
+   "nll_frequency": 1.5476676769821067,
+   "delta_nll_g0_minus_frequency": -0.035374960782496426,
+   "delta_nll_ci95": [
+    -0.06752065198968359,
+    -0.001985116073804369
+   ],
+   "delta_nll_neural_minus_frequency": -0.01904746686219746,
+   "delta_neural_ci95": [
+    -0.06712870583651158,
+    0.03161201029720953
+   ],
+   "delta_brier_g0_minus_frequency": -0.018233828434646944,
+   "ball_rate": 0.4057971014492754,
+   "strike_rate": 0.22826086956521738,
+   "two_strikes_share": 0.37318840579710144,
+   "relief_share": 0.5181159420289855
+  },
+  "tier_1": {
+   "n": 83480,
+   "share": 0.2678035807661338,
+   "games": 1158,
+   "pitchers": 650,
+   "nll_g0": 1.4859140848819419,
+   "nll_neural_before_blend": 1.4883667563829033,
+   "nll_frequency": 1.499615631005211,
+   "delta_nll_g0_minus_frequency": -0.013701546123268982,
+   "delta_nll_ci95": [
+    -0.014978903400377577,
+    -0.012431524719371612
+   ],
+   "delta_nll_neural_minus_frequency": -0.01124887462230777,
+   "delta_neural_ci95": [
+    -0.012957053673626456,
+    -0.00952556573705421
+   ],
+   "delta_brier_g0_minus_frequency": -0.003369390763064821,
+   "ball_rate": 0.36850742692860566,
+   "strike_rate": 0.2796717776712985,
+   "two_strikes_share": 0.3013655965500719,
+   "relief_share": 0.5356252994729277
+  },
+  "tier_2": {
+   "n": 70244,
+   "share": 0.2253425338684272,
+   "games": 1161,
+   "pitchers": 518,
+   "nll_g0": 1.5236660304852505,
+   "nll_neural_before_blend": 1.5311606271202294,
+   "nll_frequency": 1.5372411627453892,
+   "delta_nll_g0_minus_frequency": -0.013575132260138408,
+   "delta_nll_ci95": [
+    -0.015424263690511298,
+    -0.011754092107791452
+   ],
+   "delta_nll_neural_minus_frequency": -0.006080535625159822,
+   "delta_neural_ci95": [
+    -0.008542071253503009,
+    -0.0036578649444461613
+   ],
+   "delta_brier_g0_minus_frequency": -0.0014778185995130832,
+   "ball_rate": 0.33738112863732134,
+   "strike_rate": 0.2708416377199476,
+   "two_strikes_share": 0.38399009168042825,
+   "relief_share": 0.49412049427709126
+  },
+  "tier_3": {
+   "n": 157687,
+   "share": 0.5058594063280947,
+   "games": 1161,
+   "pitchers": 500,
+   "nll_g0": 1.4778951145685078,
+   "nll_neural_before_blend": 1.4839908025060775,
+   "nll_frequency": 1.4915472670022432,
+   "delta_nll_g0_minus_frequency": -0.01365215243373523,
+   "delta_nll_ci95": [
+    -0.014698378781041464,
+    -0.012582215090725045
+   ],
+   "delta_nll_neural_minus_frequency": -0.007556464496165512,
+   "delta_neural_ci95": [
+    -0.009006451433091409,
+    -0.006062137621963252
+   ],
+   "delta_brier_g0_minus_frequency": -0.003231898678634046,
+   "ball_rate": 0.35302212611058614,
+   "strike_rate": 0.2947421157102361,
+   "two_strikes_share": 0.2583472321751317,
+   "relief_share": 0.30277702029970766
+  },
+  "league_pool_tiers_le1": {
+   "n": 83790,
+   "share": 0.2687980598034781,
+   "games": 1158,
+   "pitchers": 653,
+   "nll_g0": 1.4860757836841807,
+   "nll_neural_before_blend": 1.4885838133434766,
+   "nll_frequency": 1.499869391852668,
+   "delta_nll_g0_minus_frequency": -0.013793608168487362,
+   "delta_nll_ci95": [
+    -0.015067725846508308,
+    -0.012529133372048305
+   ],
+   "delta_nll_neural_minus_frequency": -0.011285578509191525,
+   "delta_neural_ci95": [
+    -0.013003272017755607,
+    -0.009570668976959707
+   ],
+   "delta_brier_g0_minus_frequency": -0.003423938063143299,
+   "ball_rate": 0.3687313521899988,
+   "strike_rate": 0.27941281775868243,
+   "two_strikes_share": 0.3015395631936985,
+   "relief_share": 0.5355173648406731
+  },
+  "pitcher_pool_tiers_ge2": {
+   "n": 227931,
+   "share": 0.7312019401965218,
+   "games": 1161,
+   "pitchers": 518,
+   "nll_g0": 1.4920008405016003,
+   "nll_neural_before_blend": 1.4985276454988976,
+   "nll_frequency": 1.5056292567824028,
+   "delta_nll_g0_minus_frequency": -0.013628416280802389,
+   "delta_nll_ci95": [
+    -0.014573636588851942,
+    -0.012669252767911468
+   ],
+   "delta_nll_neural_minus_frequency": -0.007101611283504998,
+   "delta_neural_ci95": [
+    -0.008413045494361959,
+    -0.005789559825607086
+   ],
+   "delta_brier_g0_minus_frequency": -0.0026913245527899407,
+   "ball_rate": 0.3482018681092085,
+   "strike_rate": 0.28737644287086883,
+   "two_strikes_share": 0.297067972324958,
+   "relief_share": 0.36174544050611807
+  },
+  "whole": {
+   "n": 311721,
+   "share": 1.0,
+   "games": 1161,
+   "pitchers": 722,
+   "nll_g0": 1.4904081967248524,
+   "nll_neural_before_blend": 1.495854762708509,
+   "nll_frequency": 1.50408101626456,
+   "delta_nll_g0_minus_frequency": -0.013672819539707384,
+   "delta_nll_ci95": [
+    -0.014426697041287897,
+    -0.012901340274648912
+   ],
+   "delta_nll_neural_minus_frequency": -0.008226253556050878,
+   "delta_neural_ci95": [
+    -0.009254276677974366,
+    -0.007173711019583328
+   ],
+   "delta_brier_g0_minus_frequency": -0.0028882496429587378,
+   "ball_rate": 0.3537201535988913,
+   "strike_rate": 0.28523583589171086,
+   "two_strikes_share": 0.2982699272747104,
+   "relief_share": 0.4084549966155633
+  },
+  "seen_pitcher_league_pool": {
+   "n": 55044,
+   "share": 0.17658098106961032,
+   "games": 1156,
+   "pitchers": 536,
+   "nll_g0": 1.4824543720099777,
+   "nll_neural_before_blend": 1.4835337029108864,
+   "nll_frequency": 1.4977731638006488,
+   "delta_nll_g0_minus_frequency": -0.015318791790671618,
+   "delta_nll_ci95": [
+    -0.016761378616735784,
+    -0.013897541819627292
+   ],
+   "delta_nll_neural_minus_frequency": -0.014239460889762749,
+   "delta_neural_ci95": [
+    -0.016134052553027984,
+    -0.012350675465354111
+   ],
+   "delta_brier_g0_minus_frequency": -0.003990102373681559,
+   "ball_rate": 0.372938013225783,
+   "strike_rate": 0.27561587093961193,
+   "two_strikes_share": 0.3081898117869341,
+   "relief_share": 0.535280866216118
+  },
+  "seen_pitcher_pitcher_pool": {
+   "n": 227931,
+   "share": 0.7312019401965218,
+   "games": 1161,
+   "pitchers": 518,
+   "nll_g0": 1.4920008405016003,
+   "nll_neural_before_blend": 1.4985276454988976,
+   "nll_frequency": 1.5056292567824028,
+   "delta_nll_g0_minus_frequency": -0.013628416280802389,
+   "delta_nll_ci95": [
+    -0.014573636588851942,
+    -0.012669252767911468
+   ],
+   "delta_nll_neural_minus_frequency": -0.007101611283504998,
+   "delta_neural_ci95": [
+    -0.008413045494361959,
+    -0.005789559825607086
+   ],
+   "delta_brier_g0_minus_frequency": -0.0026913245527899407,
+   "ball_rate": 0.3482018681092085,
+   "strike_rate": 0.28737644287086883,
+   "two_strikes_share": 0.297067972324958,
+   "relief_share": 0.36174544050611807
+  },
+  "unseen_pitcher_league_pool": {
+   "n": 28746,
+   "share": 0.09221707873386778,
+   "games": 646,
+   "pitchers": 117,
+   "nll_g0": 1.493010208793582,
+   "nll_neural_before_blend": 1.4982539684485865,
+   "nll_frequency": 1.50388333385835,
+   "delta_nll_g0_minus_frequency": -0.010873125064768226,
+   "delta_nll_ci95": [
+    -0.013461578830274644,
+    -0.00823187750825791
+   ],
+   "delta_nll_neural_minus_frequency": -0.005629365409763347,
+   "delta_neural_ci95": [
+    -0.00917741073522579,
+    -0.0019318299054299818
+   ],
+   "delta_brier_g0_minus_frequency": -0.0023398238104031595,
+   "ball_rate": 0.3606762680025047,
+   "strike_rate": 0.28668336464203714,
+   "two_strikes_share": 0.28880539901203645,
+   "relief_share": 0.5359702219439226
+  },
+  "unseen_pitcher_pitcher_pool": {
+   "n": 0,
+   "share": 0.0,
+   "games": 0,
+   "pitchers": 0
+  },
+  "volume_zero_league_pool": {
+   "n": 28746,
+   "share": 0.09221707873386778,
+   "games": 646,
+   "pitchers": 117,
+   "nll_g0": 1.493010208793582,
+   "nll_neural_before_blend": 1.4982539684485865,
+   "nll_frequency": 1.50388333385835,
+   "delta_nll_g0_minus_frequency": -0.010873125064768226,
+   "delta_nll_ci95": [
+    -0.013461578830274644,
+    -0.00823187750825791
+   ],
+   "delta_nll_neural_minus_frequency": -0.005629365409763347,
+   "delta_neural_ci95": [
+    -0.00917741073522579,
+    -0.0019318299054299818
+   ],
+   "delta_brier_g0_minus_frequency": -0.0023398238104031595,
+   "ball_rate": 0.3606762680025047,
+   "strike_rate": 0.28668336464203714,
+   "two_strikes_share": 0.28880539901203645,
+   "relief_share": 0.5359702219439226
+  },
+  "volume_zero_pitcher_pool": {
+   "n": 0,
+   "share": 0.0,
+   "games": 0,
+   "pitchers": 0
+  },
+  "volume_low_league_pool": {
+   "n": 19003,
+   "share": 0.06096156498920509,
+   "games": 587,
+   "pitchers": 81,
+   "nll_g0": 1.4812619050648947,
+   "nll_neural_before_blend": 1.4836001802932364,
+   "nll_frequency": 1.493400320209145,
+   "delta_nll_g0_minus_frequency": -0.012138415144250231,
+   "delta_nll_ci95": [
+    -0.014452831089015735,
+    -0.009811134778270607
+   ],
+   "delta_nll_neural_minus_frequency": -0.009800139915908595,
+   "delta_neural_ci95": [
+    -0.012855461809012316,
+    -0.006662161999905337
+   ],
+   "delta_brier_g0_minus_frequency": -0.002862325130847249,
+   "ball_rate": 0.36283744671893914,
+   "strike_rate": 0.28285007630374154,
+   "two_strikes_share": 0.29821607114666104,
+   "relief_share": 0.6353733621007209
+  },
+  "volume_low_pitcher_pool": {
+   "n": 459,
+   "share": 0.0014724705746484838,
+   "games": 74,
+   "pitchers": 4,
+   "nll_g0": 1.5564193456789954,
+   "nll_neural_before_blend": 1.5576918079266806,
+   "nll_frequency": 1.5834153464560614,
+   "delta_nll_g0_minus_frequency": -0.026996000777065727,
+   "delta_nll_ci95": [
+    -0.045877498805416306,
+    -0.008028277552303982
+   ],
+   "delta_nll_neural_minus_frequency": -0.025723538529380426,
+   "delta_neural_ci95": [
+    -0.051040748951046266,
+    7.351872095281703e-05
+   ],
+   "delta_brier_g0_minus_frequency": -0.005257189438218464,
+   "ball_rate": 0.3311546840958606,
+   "strike_rate": 0.28540305010893247,
+   "two_strikes_share": 0.24183006535947713,
+   "relief_share": 1.0
+  },
+  "volume_middle_league_pool": {
+   "n": 26687,
+   "share": 0.08561181312776489,
+   "games": 1084,
+   "pitchers": 280,
+   "nll_g0": 1.4791250225604746,
+   "nll_neural_before_blend": 1.4796149369625533,
+   "nll_frequency": 1.4961390400010306,
+   "delta_nll_g0_minus_frequency": -0.017014017440556275,
+   "delta_nll_ci95": [
+    -0.019161514494220516,
+    -0.014911020290959713
+   ],
+   "delta_nll_neural_minus_frequency": -0.01652410303847754,
+   "delta_neural_ci95": [
+    -0.019375305664108455,
+    -0.01369009972069336
+   ],
+   "delta_brier_g0_minus_frequency": -0.004786577163032044,
+   "ball_rate": 0.38142166597969046,
+   "strike_rate": 0.27125566755349045,
+   "two_strikes_share": 0.3157342526323678,
+   "relief_share": 0.5826807059617042
+  },
+  "volume_middle_pitcher_pool": {
+   "n": 81664,
+   "share": 0.2619778584054331,
+   "games": 1151,
+   "pitchers": 299,
+   "nll_g0": 1.4910634968706693,
+   "nll_neural_before_blend": 1.4992729011850705,
+   "nll_frequency": 1.501941248679587,
+   "delta_nll_g0_minus_frequency": -0.010877751808917861,
+   "delta_nll_ci95": [
+    -0.012554812998838176,
+    -0.009231083822859327
+   ],
+   "delta_nll_neural_minus_frequency": -0.0026683474945165767,
+   "delta_neural_ci95": [
+    -0.0049987679395905385,
+    -0.0003779347893489243
+   ],
+   "delta_brier_g0_minus_frequency": -0.0014576698824359882,
+   "ball_rate": 0.34577047413793105,
+   "strike_rate": 0.2930177311912226,
+   "two_strikes_share": 0.29460961990595613,
+   "relief_share": 0.6777160070532915
+  },
+  "volume_high_league_pool": {
+   "n": 9354,
+   "share": 0.030007602952640343,
+   "games": 915,
+   "pitchers": 175,
+   "nll_g0": 1.494375560604834,
+   "nll_neural_before_blend": 1.494578906798674,
+   "nll_frequency": 1.51131892054747,
+   "delta_nll_g0_minus_frequency": -0.01694335994263589,
+   "delta_nll_ci95": [
+    -0.020388601173645226,
+    -0.013590551197779115
+   ],
+   "delta_nll_neural_minus_frequency": -0.016740013748796197,
+   "delta_neural_ci95": [
+    -0.02124073065713298,
+    -0.012346494382030157
+   ],
+   "delta_brier_g0_minus_frequency": -0.004008878110498326,
+   "ball_rate": 0.3692537951678426,
+   "strike_rate": 0.2733589908060723,
+   "two_strikes_share": 0.3069275176395125,
+   "relief_share": 0.19670729099850331
+  },
+  "volume_high_pitcher_pool": {
+   "n": 145808,
+   "share": 0.4677516112164403,
+   "games": 1128,
+   "pitchers": 215,
+   "nll_g0": 1.492323039121703,
+   "nll_neural_before_blend": 1.4979239961044202,
+   "nll_frequency": 1.5074499640038728,
+   "delta_nll_g0_minus_frequency": -0.015126924882169894,
+   "delta_nll_ci95": [
+    -0.01626096317155745,
+    -0.014022493492901147
+   ],
+   "delta_nll_neural_minus_frequency": -0.009525967899452639,
+   "delta_neural_ci95": [
+    -0.011111780110407083,
+    -0.008011932814020845
+   ],
+   "delta_brier_g0_minus_frequency": -0.0033741913571996673,
+   "ball_rate": 0.349617304948974,
+   "strike_rate": 0.2842230878964117,
+   "two_strikes_share": 0.2986187314824975,
+   "relief_share": 0.18276774936903326
+  }
+ },
+ "contrasts": {
+  "league_vs_pitcher_pool": {
+   "contrast": "league_pool_tiers_le1 minus pitcher_pool_tiers_ge2 of (G0 - frequency) NLL",
+   "point": -0.0001651918876849727,
+   "ci95": [
+    -0.0017808962017757013,
+    0.0014272215959651132
+   ]
+  },
+  "seen_pitchers_league_vs_pitcher_pool": {
+   "contrast": "seen_pitcher_league_pool minus seen_pitcher_pitcher_pool of (G0 - frequency) NLL",
+   "point": -0.0016903755098692293,
+   "ci95": [
+    -0.0034567969904356417,
+    3.530287609320093e-05
+   ]
+  },
+  "pitcher_pool_without_count_vs_with_count": {
+   "contrast": "tier_2 minus tier_3 of (G0 - frequency) NLL",
+   "point": 7.702017359682324e-05,
+   "ci95": [
+    -0.002008013240136442,
+    0.002154055917853472
+   ]
+  }
+ },
+ "limits": [
+  "Tiers are not randomly assigned: league-pool pitches come from low-sample pitcher/type/hand cells, so gap differences mix the pool effect with pitcher, pitch-type and situation composition.",
+  "Bootstrap intervals condition on the fixed predictions; no training or calibration uncertainty.",
+  "Unregistered post-hoc look at an exposed DEV; not a selection result, not independent confirmation."
+ ],
+ "independent_confirmation": null,
+ "policy_effect": null
+}

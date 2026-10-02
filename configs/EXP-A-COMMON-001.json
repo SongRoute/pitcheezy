@@ -1,0 +1,20 @@
+{
+  "experiment_id": "EXP-A-COMMON-001",
+  "parent_manifest": "results/EXP-A-S0S1-001/selection_manifest.json",
+  "artifact_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/A-COMMON-001",
+  "bundle_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/minimal-pitch-service-v1",
+  "pitchers": [657277, 554430],
+  "models": ["count_hand", "known_type", "pitcher_type", "frozen_frequency", "frozen_blend"],
+  "small_train_hierarchy": {"global_additive_count": 1, "count_strength": 50, "type_strength": 50, "pitcher_strength": 100},
+  "calibration": "none; no added CAL/DEV fitting; existing frozen models retain their frozen calibration",
+  "slices": ["all", "two_strikes"],
+  "bootstrap_seed": 20260923,
+  "bootstrap_replicates": 1000,
+  "policy_scope": "pitch-type-only, same fixed PA state and action set; PA start (0,0); terminal initial-defense WE",
+  "count_hand_policy": "TRAIN repertoire policy because action-independent probabilities cannot distinguish types",
+  "policy_judges": ["frozen_frequency", "frozen_blend"],
+  "policy_judge_status": "shared frozen model-internal evaluators; not independent or causal; diagonal optimized policy mechanically advantaged",
+  "evaluation_use": "same already-exposed July2025 exploratory DEV, 151 PAs/563 pitches; no2026 or finalset",
+  "literature_status": "controlled count-MDP WE adaptation plus strong frequency controls, NOT faithful SmartPitch/Takamido replication",
+  "decision": "execute all fixed comparisons, no DEV selection, no service adoption, no hyperparameter search"
+}

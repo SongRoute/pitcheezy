@@ -1,0 +1,3115 @@
+{
+  "action_rank": {
+    "mean_gap_pp": 0.08036952444829684,
+    "median_gap_pp": 0.03921872744706567,
+    "rank_counts": {
+      "1": 147,
+      "10": 19,
+      "11": 24,
+      "12": 25,
+      "13": 16,
+      "14": 13,
+      "15": 19,
+      "16": 8,
+      "17": 8,
+      "18": 7,
+      "19": 5,
+      "2": 39,
+      "20": 4,
+      "21": 6,
+      "22": 4,
+      "23": 3,
+      "24": 3,
+      "25": 6,
+      "26": 1,
+      "27": 1,
+      "28": 1,
+      "29": 1,
+      "3": 23,
+      "30": 1,
+      "33": 3,
+      "34": 1,
+      "36": 1,
+      "37": 2,
+      "38": 1,
+      "4": 33,
+      "44": 2,
+      "5": 28,
+      "6": 30,
+      "7": 20,
+      "8": 31,
+      "9": 27
+    },
+    "small_gap_count_pp": {
+      "0.01": 178,
+      "0.05": 324,
+      "0.1": 427
+    },
+    "supported_actual_count": 563,
+    "unique_type_rank_counts": {
+      "1": 147,
+      "2": 120,
+      "3": 111,
+      "4": 93,
+      "5": 68,
+      "6": 24
+    },
+    "unsupported_actual_count": 0
+  },
+  "actual_mix": {
+    "eligible": {
+      "CH": 64,
+      "CU": 28,
+      "FC": 32,
+      "FF": 141,
+      "FS": 13,
+      "SI": 180,
+      "ST": 105
+    },
+    "excluded": {
+      "CH": 5,
+      "CU": 2,
+      "FC": 6,
+      "FF": 8,
+      "FS": 2,
+      "SI": 5,
+      "ST": 6
+    },
+    "target": {
+      "CH": 69,
+      "CU": 30,
+      "FC": 38,
+      "FF": 149,
+      "FS": 15,
+      "SI": 185,
+      "ST": 111
+    }
+  },
+  "checkpoint_count": 151,
+  "checkpoint_provenance_limit": "Checkpoints created by prior committed B runner ebdabaa; per-file producer code hash was not recorded at computation time. Inputs, keys, Q arithmetic, adapter/bundle identity and member-set are revalidated here.",
+  "concentration": {
+    "all": [
+      {
+        "actual_counts": {
+          "CH": 64,
+          "CU": 28,
+          "FC": 32,
+          "FF": 141,
+          "FS": 13,
+          "SI": 180,
+          "ST": 105
+        },
+        "actual_entropy_nats": 1.6709504121066254,
+        "actual_hhi": 0.21888260366155682,
+        "actual_max_share": 0.3197158081705151,
+        "actual_share": {
+          "CH": 0.11367673179396093,
+          "CU": 0.0497335701598579,
+          "FC": 0.056838365896980464,
+          "FF": 0.25044404973357015,
+          "FS": 0.023090586145648313,
+          "SI": 0.3197158081705151,
+          "ST": 0.18650088809946713
+        },
+        "games": 6,
+        "group": {},
+        "pas": 151,
+        "pitches": 563,
+        "top_type_counts": {
+          "CH": 44,
+          "CU": 23,
+          "FC": 5,
+          "FF": 172,
+          "FS": 6,
+          "SI": 109,
+          "ST": 204
+        },
+        "top_type_entropy_nats": 1.4681980914515493,
+        "top_type_hhi": 0.2700800393729355,
+        "top_type_match_count": 147,
+        "top_type_max_share": 0.3623445825932504,
+        "top_type_share": {
+          "CH": 0.07815275310834814,
+          "CU": 0.04085257548845471,
+          "FC": 0.008880994671403197,
+          "FF": 0.30550621669627,
+          "FS": 0.010657193605683837,
+          "SI": 0.1936056838365897,
+          "ST": 0.3623445825932504
+        },
+        "total_variation": 0.23090586145648312
+      }
+    ],
+    "count": [
+      {
+        "actual_counts": {
+          "CH": 16,
+          "CU": 6,
+          "FC": 10,
+          "FF": 40,
+          "SI": 50,
+          "ST": 29
+        },
+        "actual_entropy_nats": 1.5805531162406343,
+        "actual_hhi": 0.2338932502960397,
+        "actual_max_share": 0.33112582781456956,
+        "actual_share": {
+          "CH": 0.10596026490066225,
+          "CU": 0.039735099337748346,
+          "FC": 0.06622516556291391,
+          "FF": 0.26490066225165565,
+          "SI": 0.33112582781456956,
+          "ST": 0.19205298013245034
+        },
+        "games": 6,
+        "group": {
+          "balls": 0,
+          "strikes": 0
+        },
+        "pas": 151,
+        "pitches": 151,
+        "top_type_counts": {
+          "CH": 7,
+          "CU": 1,
+          "FF": 11,
+          "SI": 26,
+          "ST": 106
+        },
+        "top_type_entropy_nats": 0.9177217374201765,
+        "top_type_hhi": 0.5299328976799264,
+        "top_type_match_count": 41,
+        "top_type_max_share": 0.7019867549668874,
+        "top_type_share": {
+          "CH": 0.046357615894039736,
+          "CU": 0.006622516556291391,
+          "FC": 0.0,
+          "FF": 0.0728476821192053,
+          "SI": 0.17218543046357615,
+          "ST": 0.7019867549668874
+        },
+        "total_variation": 0.5099337748344371
+      },
+      {
+        "actual_counts": {
+          "CH": 3,
+          "CU": 3,
+          "FC": 6,
+          "FF": 9,
+          "FS": 4,
+          "SI": 31,
+          "ST": 18
+        },
+        "actual_entropy_nats": 1.5859201720007505,
+        "actual_hhi": 0.26223520818115414,
+        "actual_max_share": 0.4189189189189189,
+        "actual_share": {
+          "CH": 0.04054054054054054,
+          "CU": 0.04054054054054054,
+          "FC": 0.08108108108108109,
+          "FF": 0.12162162162162163,
+          "FS": 0.05405405405405406,
+          "SI": 0.4189189189189189,
+          "ST": 0.24324324324324326
+        },
+        "games": 6,
+        "group": {
+          "balls": 0,
+          "strikes": 1
+        },
+        "pas": 74,
+        "pitches": 74,
+        "top_type_counts": {
+          "CH": 3,
+          "CU": 2,
+          "FF": 46,
+          "FS": 1,
+          "SI": 10,
+          "ST": 12
+        },
+        "top_type_entropy_nats": 1.146708793298507,
+        "top_type_hhi": 0.4335281227173119,
+        "top_type_match_count": 11,
+        "top_type_max_share": 0.6216216216216216,
+        "top_type_share": {
+          "CH": 0.04054054054054054,
+          "CU": 0.02702702702702703,
+          "FC": 0.0,
+          "FF": 0.6216216216216216,
+          "FS": 0.013513513513513514,
+          "SI": 0.13513513513513514,
+          "ST": 0.16216216216216217
+        },
+        "total_variation": 0.5
+      },
+      {
+        "actual_counts": {
+          "CH": 4,
+          "CU": 2,
+          "FF": 11,
+          "FS": 1,
+          "SI": 8,
+          "ST": 8
+        },
+        "actual_entropy_nats": 1.5681433342261937,
+        "actual_hhi": 0.23356401384083045,
+        "actual_max_share": 0.3235294117647059,
+        "actual_share": {
+          "CH": 0.11764705882352941,
+          "CU": 0.058823529411764705,
+          "FF": 0.3235294117647059,
+          "FS": 0.029411764705882353,
+          "SI": 0.23529411764705882,
+          "ST": 0.23529411764705882
+        },
+        "games": 6,
+        "group": {
+          "balls": 0,
+          "strikes": 2
+        },
+        "pas": 30,
+        "pitches": 34,
+        "top_type_counts": {
+          "CH": 2,
+          "FF": 23,
+          "SI": 9
+        },
+        "top_type_entropy_nats": 0.7828992739245053,
+        "top_type_hhi": 0.5311418685121108,
+        "top_type_match_count": 13,
+        "top_type_max_share": 0.6764705882352942,
+        "top_type_share": {
+          "CH": 0.058823529411764705,
+          "CU": 0.0,
+          "FF": 0.6764705882352942,
+          "FS": 0.0,
+          "SI": 0.2647058823529412,
+          "ST": 0.0
+        },
+        "total_variation": 0.3823529411764706
+      },
+      {
+        "actual_counts": {
+          "CH": 8,
+          "CU": 1,
+          "FC": 6,
+          "FF": 19,
+          "SI": 23,
+          "ST": 6
+        },
+        "actual_entropy_nats": 1.5050814956818794,
+        "actual_hhi": 0.25875535399344923,
+        "actual_max_share": 0.36507936507936506,
+        "actual_share": {
+          "CH": 0.12698412698412698,
+          "CU": 0.015873015873015872,
+          "FC": 0.09523809523809523,
+          "FF": 0.30158730158730157,
+          "FS": 0.0,
+          "SI": 0.36507936507936506,
+          "ST": 0.09523809523809523
+        },
+        "games": 6,
+        "group": {
+          "balls": 1,
+          "strikes": 0
+        },
+        "pas": 63,
+        "pitches": 63,
+        "top_type_counts": {
+          "CH": 3,
+          "CU": 13,
+          "FC": 4,
+          "FF": 5,
+          "FS": 5,
+          "SI": 1,
+          "ST": 32
+        },
+        "top_type_entropy_nats": 1.4576857744642926,
+        "top_type_hhi": 0.31972789115646255,
+        "top_type_match_count": 5,
+        "top_type_max_share": 0.5079365079365079,
+        "top_type_share": {
+          "CH": 0.047619047619047616,
+          "CU": 0.20634920634920634,
+          "FC": 0.06349206349206349,
+          "FF": 0.07936507936507936,
+          "FS": 0.07936507936507936,
+          "SI": 0.015873015873015872,
+          "ST": 0.5079365079365079
+        },
+        "total_variation": 0.6825396825396826
+      },
+      {
+        "actual_counts": {
+          "CH": 7,
+          "CU": 6,
+          "FC": 4,
+          "FF": 14,
+          "FS": 2,
+          "SI": 17,
+          "ST": 7
+        },
+        "actual_entropy_nats": 1.7617144227238226,
+        "actual_hhi": 0.1966759002770083,
+        "actual_max_share": 0.2982456140350877,
+        "actual_share": {
+          "CH": 0.12280701754385964,
+          "CU": 0.10526315789473684,
+          "FC": 0.07017543859649122,
+          "FF": 0.24561403508771928,
+          "FS": 0.03508771929824561,
+          "SI": 0.2982456140350877,
+          "ST": 0.12280701754385964
+        },
+        "games": 6,
+        "group": {
+          "balls": 1,
+          "strikes": 1
+        },
+        "pas": 57,
+        "pitches": 57,
+        "top_type_counts": {
+          "CH": 12,
+          "CU": 5,
+          "FF": 26,
+          "SI": 6,
+          "ST": 8
+        },
+        "top_type_entropy_nats": 1.4121272591153913,
+        "top_type_hhi": 0.29085872576177285,
+        "top_type_match_count": 21,
+        "top_type_max_share": 0.45614035087719296,
+        "top_type_share": {
+          "CH": 0.21052631578947367,
+          "CU": 0.08771929824561403,
+          "FC": 0.0,
+          "FF": 0.45614035087719296,
+          "FS": 0.0,
+          "SI": 0.10526315789473684,
+          "ST": 0.14035087719298245
+        },
+        "total_variation": 0.3157894736842105
+      },
+      {
+        "actual_counts": {
+          "CH": 6,
+          "CU": 5,
+          "FC": 1,
+          "FF": 15,
+          "FS": 1,
+          "SI": 8,
+          "ST": 15
+        },
+        "actual_entropy_nats": 1.6440847553901332,
+        "actual_hhi": 0.22183775470972705,
+        "actual_max_share": 0.29411764705882354,
+        "actual_share": {
+          "CH": 0.11764705882352941,
+          "CU": 0.09803921568627451,
+          "FC": 0.0196078431372549,
+          "FF": 0.29411764705882354,
+          "FS": 0.0196078431372549,
+          "SI": 0.1568627450980392,
+          "ST": 0.29411764705882354
+        },
+        "games": 6,
+        "group": {
+          "balls": 1,
+          "strikes": 2
+        },
+        "pas": 39,
+        "pitches": 51,
+        "top_type_counts": {
+          "CH": 5,
+          "FF": 19,
+          "SI": 12,
+          "ST": 15
+        },
+        "top_type_entropy_nats": 1.2959204762474232,
+        "top_type_hhi": 0.2902729719338716,
+        "top_type_match_count": 15,
+        "top_type_max_share": 0.37254901960784315,
+        "top_type_share": {
+          "CH": 0.09803921568627451,
+          "CU": 0.0,
+          "FC": 0.0,
+          "FF": 0.37254901960784315,
+          "FS": 0.0,
+          "SI": 0.23529411764705882,
+          "ST": 0.29411764705882354
+        },
+        "total_variation": 0.1568627450980392
+      },
+      {
+        "actual_counts": {
+          "CH": 3,
+          "FC": 1,
+          "FF": 4,
+          "SI": 11
+        },
+        "actual_entropy_nats": 1.0908672785734947,
+        "actual_hhi": 0.407202216066482,
+        "actual_max_share": 0.5789473684210527,
+        "actual_share": {
+          "CH": 0.15789473684210525,
+          "CU": 0.0,
+          "FC": 0.05263157894736842,
+          "FF": 0.21052631578947367,
+          "SI": 0.5789473684210527,
+          "ST": 0.0
+        },
+        "games": 5,
+        "group": {
+          "balls": 2,
+          "strikes": 0
+        },
+        "pas": 19,
+        "pitches": 19,
+        "top_type_counts": {
+          "CH": 5,
+          "CU": 1,
+          "FF": 2,
+          "SI": 5,
+          "ST": 6
+        },
+        "top_type_entropy_nats": 1.4585847528070075,
+        "top_type_hhi": 0.2520775623268698,
+        "top_type_match_count": 6,
+        "top_type_max_share": 0.3157894736842105,
+        "top_type_share": {
+          "CH": 0.2631578947368421,
+          "CU": 0.05263157894736842,
+          "FC": 0.0,
+          "FF": 0.10526315789473684,
+          "SI": 0.2631578947368421,
+          "ST": 0.3157894736842105
+        },
+        "total_variation": 0.4736842105263158
+      },
+      {
+        "actual_counts": {
+          "CH": 3,
+          "CU": 1,
+          "FC": 1,
+          "FF": 9,
+          "SI": 6,
+          "ST": 6
+        },
+        "actual_entropy_nats": 1.543789934453522,
+        "actual_hhi": 0.242603550295858,
+        "actual_max_share": 0.34615384615384615,
+        "actual_share": {
+          "CH": 0.11538461538461539,
+          "CU": 0.038461538461538464,
+          "FC": 0.038461538461538464,
+          "FF": 0.34615384615384615,
+          "SI": 0.23076923076923078,
+          "ST": 0.23076923076923078
+        },
+        "games": 6,
+        "group": {
+          "balls": 2,
+          "strikes": 1
+        },
+        "pas": 26,
+        "pitches": 26,
+        "top_type_counts": {
+          "CH": 2,
+          "FF": 11,
+          "SI": 2,
+          "ST": 11
+        },
+        "top_type_entropy_nats": 1.1224702024905615,
+        "top_type_hhi": 0.3698224852071006,
+        "top_type_match_count": 12,
+        "top_type_max_share": 0.4230769230769231,
+        "top_type_share": {
+          "CH": 0.07692307692307693,
+          "CU": 0.0,
+          "FC": 0.0,
+          "FF": 0.4230769230769231,
+          "SI": 0.07692307692307693,
+          "ST": 0.4230769230769231
+        },
+        "total_variation": 0.2692307692307692
+      },
+      {
+        "actual_counts": {
+          "CH": 9,
+          "CU": 2,
+          "FC": 3,
+          "FF": 11,
+          "FS": 2,
+          "SI": 12,
+          "ST": 11
+        },
+        "actual_entropy_nats": 1.7437025537623412,
+        "actual_hhi": 0.1936,
+        "actual_max_share": 0.24,
+        "actual_share": {
+          "CH": 0.18,
+          "CU": 0.04,
+          "FC": 0.06,
+          "FF": 0.22,
+          "FS": 0.04,
+          "SI": 0.24,
+          "ST": 0.22
+        },
+        "games": 6,
+        "group": {
+          "balls": 2,
+          "strikes": 2
+        },
+        "pas": 42,
+        "pitches": 50,
+        "top_type_counts": {
+          "CH": 1,
+          "CU": 1,
+          "FF": 24,
+          "SI": 16,
+          "ST": 8
+        },
+        "top_type_entropy_nats": 1.1666181290756283,
+        "top_type_hhi": 0.3592,
+        "top_type_match_count": 11,
+        "top_type_max_share": 0.48,
+        "top_type_share": {
+          "CH": 0.02,
+          "CU": 0.02,
+          "FC": 0.0,
+          "FF": 0.48,
+          "FS": 0.0,
+          "SI": 0.32,
+          "ST": 0.16
+        },
+        "total_variation": 0.34
+      },
+      {
+        "actual_counts": {
+          "FF": 3,
+          "SI": 3
+        },
+        "actual_entropy_nats": 0.6931471805599453,
+        "actual_hhi": 0.5,
+        "actual_max_share": 0.5,
+        "actual_share": {
+          "CH": 0.0,
+          "FF": 0.5,
+          "SI": 0.5
+        },
+        "games": 3,
+        "group": {
+          "balls": 3,
+          "strikes": 0
+        },
+        "pas": 6,
+        "pitches": 6,
+        "top_type_counts": {
+          "CH": 2,
+          "SI": 4
+        },
+        "top_type_entropy_nats": 0.6365141682948128,
+        "top_type_hhi": 0.5555555555555556,
+        "top_type_match_count": 1,
+        "top_type_max_share": 0.6666666666666666,
+        "top_type_share": {
+          "CH": 0.3333333333333333,
+          "FF": 0.0,
+          "SI": 0.6666666666666666
+        },
+        "total_variation": 0.5
+      },
+      {
+        "actual_counts": {
+          "CH": 1,
+          "FF": 2,
+          "SI": 5
+        },
+        "actual_entropy_nats": 0.9002560512685369,
+        "actual_hhi": 0.46875,
+        "actual_max_share": 0.625,
+        "actual_share": {
+          "CH": 0.125,
+          "FC": 0.0,
+          "FF": 0.25,
+          "SI": 0.625,
+          "ST": 0.0
+        },
+        "games": 6,
+        "group": {
+          "balls": 3,
+          "strikes": 1
+        },
+        "pas": 8,
+        "pitches": 8,
+        "top_type_counts": {
+          "FC": 1,
+          "FF": 2,
+          "SI": 4,
+          "ST": 1
+        },
+        "top_type_entropy_nats": 1.2130075659799042,
+        "top_type_hhi": 0.34375,
+        "top_type_match_count": 5,
+        "top_type_max_share": 0.5,
+        "top_type_share": {
+          "CH": 0.0,
+          "FC": 0.125,
+          "FF": 0.25,
+          "SI": 0.5,
+          "ST": 0.125
+        },
+        "total_variation": 0.25
+      },
+      {
+        "actual_counts": {
+          "CH": 4,
+          "CU": 2,
+          "FF": 4,
+          "FS": 3,
+          "SI": 6,
+          "ST": 5
+        },
+        "actual_entropy_nats": 1.7376274764470216,
+        "actual_hhi": 0.1840277777777778,
+        "actual_max_share": 0.25,
+        "actual_share": {
+          "CH": 0.16666666666666666,
+          "CU": 0.08333333333333333,
+          "FF": 0.16666666666666666,
+          "FS": 0.125,
+          "SI": 0.25,
+          "ST": 0.20833333333333334
+        },
+        "games": 6,
+        "group": {
+          "balls": 3,
+          "strikes": 2
+        },
+        "pas": 20,
+        "pitches": 24,
+        "top_type_counts": {
+          "CH": 2,
+          "FF": 3,
+          "SI": 14,
+          "ST": 5
+        },
+        "top_type_entropy_nats": 1.108215355185098,
+        "top_type_hhi": 0.40625000000000006,
+        "top_type_match_count": 6,
+        "top_type_max_share": 0.5833333333333334,
+        "top_type_share": {
+          "CH": 0.08333333333333333,
+          "CU": 0.0,
+          "FF": 0.125,
+          "FS": 0.0,
+          "SI": 0.5833333333333334,
+          "ST": 0.20833333333333334
+        },
+        "total_variation": 0.33333333333333337
+      }
+    ],
+    "pitcher": [
+      {
+        "actual_counts": {
+          "CU": 28,
+          "FC": 16,
+          "FF": 120,
+          "FS": 13,
+          "SI": 71,
+          "ST": 46
+        },
+        "actual_entropy_nats": 1.5193815628148057,
+        "actual_hhi": 0.2633856263593873,
+        "actual_max_share": 0.40816326530612246,
+        "actual_share": {
+          "CU": 0.09523809523809523,
+          "FC": 0.05442176870748299,
+          "FF": 0.40816326530612246,
+          "FS": 0.04421768707482993,
+          "SI": 0.24149659863945577,
+          "ST": 0.1564625850340136
+        },
+        "games": 3,
+        "group": {
+          "pitcher": 554430
+        },
+        "pas": 73,
+        "pitches": 294,
+        "top_type_counts": {
+          "CU": 23,
+          "FC": 2,
+          "FF": 136,
+          "FS": 6,
+          "SI": 45,
+          "ST": 82
+        },
+        "top_type_entropy_nats": 1.312746185983937,
+        "top_type_hhi": 0.321787218288676,
+        "top_type_match_count": 78,
+        "top_type_max_share": 0.46258503401360546,
+        "top_type_share": {
+          "CU": 0.0782312925170068,
+          "FC": 0.006802721088435374,
+          "FF": 0.46258503401360546,
+          "FS": 0.02040816326530612,
+          "SI": 0.15306122448979592,
+          "ST": 0.2789115646258503
+        },
+        "total_variation": 0.1768707482993197
+      },
+      {
+        "actual_counts": {
+          "CH": 64,
+          "FC": 16,
+          "FF": 21,
+          "SI": 109,
+          "ST": 59
+        },
+        "actual_entropy_nats": 1.4073636605071866,
+        "actual_hhi": 0.2785340169428283,
+        "actual_max_share": 0.4052044609665427,
+        "actual_share": {
+          "CH": 0.2379182156133829,
+          "FC": 0.05947955390334572,
+          "FF": 0.07806691449814127,
+          "SI": 0.4052044609665427,
+          "ST": 0.21933085501858737
+        },
+        "games": 3,
+        "group": {
+          "pitcher": 657277
+        },
+        "pas": 78,
+        "pitches": 269,
+        "top_type_counts": {
+          "CH": 44,
+          "FC": 3,
+          "FF": 36,
+          "SI": 64,
+          "ST": 122
+        },
+        "top_type_entropy_nats": 1.3156558132995935,
+        "top_type_hhi": 0.30708530838435066,
+        "top_type_match_count": 69,
+        "top_type_max_share": 0.45353159851301117,
+        "top_type_share": {
+          "CH": 0.16356877323420074,
+          "FC": 0.011152416356877323,
+          "FF": 0.13382899628252787,
+          "SI": 0.2379182156133829,
+          "ST": 0.45353159851301117
+        },
+        "total_variation": 0.2899628252788104
+      }
+    ],
+    "pitcher_count": [
+      {
+        "actual_counts": {
+          "CU": 6,
+          "FC": 2,
+          "FF": 38,
+          "SI": 17,
+          "ST": 10
+        },
+        "actual_entropy_nats": 1.2554511805321307,
+        "actual_hhi": 0.3514730718708951,
+        "actual_max_share": 0.5205479452054794,
+        "actual_share": {
+          "CU": 0.0821917808219178,
+          "FC": 0.0273972602739726,
+          "FF": 0.5205479452054794,
+          "SI": 0.2328767123287671,
+          "ST": 0.136986301369863
+        },
+        "games": 3,
+        "group": {
+          "balls": 0,
+          "pitcher": 554430,
+          "strikes": 0
+        },
+        "pas": 73,
+        "pitches": 73,
+        "top_type_counts": {
+          "CU": 1,
+          "FF": 8,
+          "SI": 4,
+          "ST": 60
+        },
+        "top_type_entropy_nats": 0.6213993930491543,
+        "top_type_hhi": 0.6907487333458434,
+        "top_type_match_count": 12,
+        "top_type_max_share": 0.821917808219178,
+        "top_type_share": {
+          "CU": 0.0136986301369863,
+          "FC": 0.0,
+          "FF": 0.1095890410958904,
+          "SI": 0.0547945205479452,
+          "ST": 0.821917808219178
+        },
+        "total_variation": 0.684931506849315
+      },
+      {
+        "actual_counts": {
+          "CU": 3,
+          "FC": 1,
+          "FF": 7,
+          "FS": 4,
+          "SI": 13,
+          "ST": 9
+        },
+        "actual_entropy_nats": 1.568167961376737,
+        "actual_hhi": 0.23739956172388607,
+        "actual_max_share": 0.35135135135135137,
+        "actual_share": {
+          "CU": 0.08108108108108109,
+          "FC": 0.02702702702702703,
+          "FF": 0.1891891891891892,
+          "FS": 0.10810810810810811,
+          "SI": 0.35135135135135137,
+          "ST": 0.24324324324324326
+        },
+        "games": 3,
+        "group": {
+          "balls": 0,
+          "pitcher": 554430,
+          "strikes": 1
+        },
+        "pas": 37,
+        "pitches": 37,
+        "top_type_counts": {
+          "CU": 2,
+          "FF": 32,
+          "FS": 1,
+          "SI": 2
+        },
+        "top_type_entropy_nats": 0.5385898690812235,
+        "top_type_hhi": 0.7545653761869979,
+        "top_type_match_count": 6,
+        "top_type_max_share": 0.8648648648648649,
+        "top_type_share": {
+          "CU": 0.05405405405405406,
+          "FC": 0.0,
+          "FF": 0.8648648648648649,
+          "FS": 0.02702702702702703,
+          "SI": 0.05405405405405406,
+          "ST": 0.0
+        },
+        "total_variation": 0.6756756756756757
+      },
+      {
+        "actual_counts": {
+          "CU": 2,
+          "FF": 6,
+          "FS": 1,
+          "SI": 2,
+          "ST": 5
+        },
+        "actual_entropy_nats": 1.424442778503618,
+        "actual_hhi": 0.2734375,
+        "actual_max_share": 0.375,
+        "actual_share": {
+          "CU": 0.125,
+          "FF": 0.375,
+          "FS": 0.0625,
+          "SI": 0.125,
+          "ST": 0.3125
+        },
+        "games": 3,
+        "group": {
+          "balls": 0,
+          "pitcher": 554430,
+          "strikes": 2
+        },
+        "pas": 16,
+        "pitches": 16,
+        "top_type_counts": {
+          "FF": 16
+        },
+        "top_type_entropy_nats": -0.0,
+        "top_type_hhi": 1.0,
+        "top_type_match_count": 6,
+        "top_type_max_share": 1.0,
+        "top_type_share": {
+          "CU": 0.0,
+          "FF": 1.0,
+          "FS": 0.0,
+          "SI": 0.0,
+          "ST": 0.0
+        },
+        "total_variation": 0.625
+      },
+      {
+        "actual_counts": {
+          "CU": 1,
+          "FC": 4,
+          "FF": 19,
+          "SI": 9,
+          "ST": 1
+        },
+        "actual_entropy_nats": 1.1362270174200464,
+        "actual_hhi": 0.39792387543252594,
+        "actual_max_share": 0.5588235294117647,
+        "actual_share": {
+          "CU": 0.029411764705882353,
+          "FC": 0.11764705882352941,
+          "FF": 0.5588235294117647,
+          "FS": 0.0,
+          "SI": 0.2647058823529412,
+          "ST": 0.029411764705882353
+        },
+        "games": 3,
+        "group": {
+          "balls": 1,
+          "pitcher": 554430,
+          "strikes": 0
+        },
+        "pas": 34,
+        "pitches": 34,
+        "top_type_counts": {
+          "CU": 13,
+          "FC": 2,
+          "FF": 3,
+          "FS": 5,
+          "ST": 11
+        },
+        "top_type_entropy_nats": 1.3954631588197857,
+        "top_type_hhi": 0.2837370242214533,
+        "top_type_match_count": 1,
+        "top_type_max_share": 0.38235294117647056,
+        "top_type_share": {
+          "CU": 0.38235294117647056,
+          "FC": 0.058823529411764705,
+          "FF": 0.08823529411764706,
+          "FS": 0.14705882352941177,
+          "SI": 0.0,
+          "ST": 0.3235294117647059
+        },
+        "total_variation": 0.7941176470588235
+      },
+      {
+        "actual_counts": {
+          "CU": 6,
+          "FC": 4,
+          "FF": 11,
+          "FS": 2,
+          "SI": 7,
+          "ST": 2
+        },
+        "actual_entropy_nats": 1.6199064644791972,
+        "actual_hhi": 0.224609375,
+        "actual_max_share": 0.34375,
+        "actual_share": {
+          "CU": 0.1875,
+          "FC": 0.125,
+          "FF": 0.34375,
+          "FS": 0.0625,
+          "SI": 0.21875,
+          "ST": 0.0625
+        },
+        "games": 3,
+        "group": {
+          "balls": 1,
+          "pitcher": 554430,
+          "strikes": 1
+        },
+        "pas": 32,
+        "pitches": 32,
+        "top_type_counts": {
+          "CU": 5,
+          "FF": 21,
+          "SI": 5,
+          "ST": 1
+        },
+        "top_type_entropy_nats": 0.9648187054080738,
+        "top_type_hhi": 0.48046875,
+        "top_type_match_count": 12,
+        "top_type_max_share": 0.65625,
+        "top_type_share": {
+          "CU": 0.15625,
+          "FC": 0.0,
+          "FF": 0.65625,
+          "FS": 0.0,
+          "SI": 0.15625,
+          "ST": 0.03125
+        },
+        "total_variation": 0.3125
+      },
+      {
+        "actual_counts": {
+          "CU": 5,
+          "FF": 10,
+          "FS": 1,
+          "SI": 3,
+          "ST": 10
+        },
+        "actual_entropy_nats": 1.3881672683293793,
+        "actual_hhi": 0.2794292508917955,
+        "actual_max_share": 0.3448275862068966,
+        "actual_share": {
+          "CU": 0.1724137931034483,
+          "FF": 0.3448275862068966,
+          "FS": 0.034482758620689655,
+          "SI": 0.10344827586206896,
+          "ST": 0.3448275862068966
+        },
+        "games": 3,
+        "group": {
+          "balls": 1,
+          "pitcher": 554430,
+          "strikes": 2
+        },
+        "pas": 22,
+        "pitches": 29,
+        "top_type_counts": {
+          "FF": 19,
+          "SI": 10
+        },
+        "top_type_entropy_nats": 0.6441857770863766,
+        "top_type_hhi": 0.5481569560047562,
+        "top_type_match_count": 11,
+        "top_type_max_share": 0.6551724137931034,
+        "top_type_share": {
+          "CU": 0.0,
+          "FF": 0.6551724137931034,
+          "FS": 0.0,
+          "SI": 0.3448275862068966,
+          "ST": 0.0
+        },
+        "total_variation": 0.5517241379310345
+      },
+      {
+        "actual_counts": {
+          "FC": 1,
+          "FF": 4,
+          "SI": 5
+        },
+        "actual_entropy_nats": 0.9433483923290393,
+        "actual_hhi": 0.42000000000000004,
+        "actual_max_share": 0.5,
+        "actual_share": {
+          "CU": 0.0,
+          "FC": 0.1,
+          "FF": 0.4,
+          "SI": 0.5,
+          "ST": 0.0
+        },
+        "games": 2,
+        "group": {
+          "balls": 2,
+          "pitcher": 554430,
+          "strikes": 0
+        },
+        "pas": 10,
+        "pitches": 10,
+        "top_type_counts": {
+          "CU": 1,
+          "FF": 2,
+          "SI": 4,
+          "ST": 3
+        },
+        "top_type_entropy_nats": 1.2798542258336676,
+        "top_type_hhi": 0.30000000000000004,
+        "top_type_match_count": 4,
+        "top_type_max_share": 0.4,
+        "top_type_share": {
+          "CU": 0.1,
+          "FC": 0.0,
+          "FF": 0.2,
+          "SI": 0.4,
+          "ST": 0.3
+        },
+        "total_variation": 0.4
+      },
+      {
+        "actual_counts": {
+          "CU": 1,
+          "FC": 1,
+          "FF": 9,
+          "SI": 3,
+          "ST": 3
+        },
+        "actual_entropy_nats": 1.2822312894659436,
+        "actual_hhi": 0.3494809688581315,
+        "actual_max_share": 0.5294117647058824,
+        "actual_share": {
+          "CU": 0.058823529411764705,
+          "FC": 0.058823529411764705,
+          "FF": 0.5294117647058824,
+          "SI": 0.17647058823529413,
+          "ST": 0.17647058823529413
+        },
+        "games": 3,
+        "group": {
+          "balls": 2,
+          "pitcher": 554430,
+          "strikes": 1
+        },
+        "pas": 17,
+        "pitches": 17,
+        "top_type_counts": {
+          "FF": 10,
+          "SI": 2,
+          "ST": 5
+        },
+        "top_type_entropy_nats": 0.923840705630872,
+        "top_type_hhi": 0.4463667820069204,
+        "top_type_match_count": 10,
+        "top_type_max_share": 0.5882352941176471,
+        "top_type_share": {
+          "CU": 0.0,
+          "FC": 0.0,
+          "FF": 0.5882352941176471,
+          "SI": 0.11764705882352941,
+          "ST": 0.29411764705882354
+        },
+        "total_variation": 0.17647058823529413
+      },
+      {
+        "actual_counts": {
+          "CU": 2,
+          "FC": 3,
+          "FF": 7,
+          "FS": 2,
+          "SI": 7,
+          "ST": 4
+        },
+        "actual_entropy_nats": 1.6646220200882784,
+        "actual_hhi": 0.20960000000000004,
+        "actual_max_share": 0.28,
+        "actual_share": {
+          "CU": 0.08,
+          "FC": 0.12,
+          "FF": 0.28,
+          "FS": 0.08,
+          "SI": 0.28,
+          "ST": 0.16
+        },
+        "games": 3,
+        "group": {
+          "balls": 2,
+          "pitcher": 554430,
+          "strikes": 2
+        },
+        "pas": 21,
+        "pitches": 25,
+        "top_type_counts": {
+          "CU": 1,
+          "FF": 22,
+          "SI": 2
+        },
+        "top_type_entropy_nats": 0.4433066914680872,
+        "top_type_hhi": 0.7824,
+        "top_type_match_count": 7,
+        "top_type_max_share": 0.88,
+        "top_type_share": {
+          "CU": 0.04,
+          "FC": 0.0,
+          "FF": 0.88,
+          "FS": 0.0,
+          "SI": 0.08,
+          "ST": 0.0
+        },
+        "total_variation": 0.6
+      },
+      {
+        "actual_counts": {
+          "FF": 3
+        },
+        "actual_entropy_nats": -0.0,
+        "actual_hhi": 1.0,
+        "actual_max_share": 1.0,
+        "actual_share": {
+          "FF": 1.0,
+          "SI": 0.0
+        },
+        "games": 1,
+        "group": {
+          "balls": 3,
+          "pitcher": 554430,
+          "strikes": 0
+        },
+        "pas": 3,
+        "pitches": 3,
+        "top_type_counts": {
+          "SI": 3
+        },
+        "top_type_entropy_nats": -0.0,
+        "top_type_hhi": 1.0,
+        "top_type_match_count": 0,
+        "top_type_max_share": 1.0,
+        "top_type_share": {
+          "FF": 0.0,
+          "SI": 1.0
+        },
+        "total_variation": 1.0
+      },
+      {
+        "actual_counts": {
+          "FF": 2,
+          "SI": 2
+        },
+        "actual_entropy_nats": 0.6931471805599453,
+        "actual_hhi": 0.5,
+        "actual_max_share": 0.5,
+        "actual_share": {
+          "FF": 0.5,
+          "SI": 0.5
+        },
+        "games": 3,
+        "group": {
+          "balls": 3,
+          "pitcher": 554430,
+          "strikes": 1
+        },
+        "pas": 4,
+        "pitches": 4,
+        "top_type_counts": {
+          "FF": 2,
+          "SI": 2
+        },
+        "top_type_entropy_nats": 0.6931471805599453,
+        "top_type_hhi": 0.5,
+        "top_type_match_count": 4,
+        "top_type_max_share": 0.5,
+        "top_type_share": {
+          "FF": 0.5,
+          "SI": 0.5
+        },
+        "total_variation": 0.0
+      },
+      {
+        "actual_counts": {
+          "CU": 2,
+          "FF": 4,
+          "FS": 3,
+          "SI": 3,
+          "ST": 2
+        },
+        "actual_entropy_nats": 1.5740973368489726,
+        "actual_hhi": 0.21428571428571427,
+        "actual_max_share": 0.2857142857142857,
+        "actual_share": {
+          "CU": 0.14285714285714285,
+          "FF": 0.2857142857142857,
+          "FS": 0.21428571428571427,
+          "SI": 0.21428571428571427,
+          "ST": 0.14285714285714285
+        },
+        "games": 3,
+        "group": {
+          "balls": 3,
+          "pitcher": 554430,
+          "strikes": 2
+        },
+        "pas": 11,
+        "pitches": 14,
+        "top_type_counts": {
+          "FF": 1,
+          "SI": 11,
+          "ST": 2
+        },
+        "top_type_entropy_nats": 0.6559757323365467,
+        "top_type_hhi": 0.6428571428571428,
+        "top_type_match_count": 5,
+        "top_type_max_share": 0.7857142857142857,
+        "top_type_share": {
+          "CU": 0.0,
+          "FF": 0.07142857142857142,
+          "FS": 0.0,
+          "SI": 0.7857142857142857,
+          "ST": 0.14285714285714285
+        },
+        "total_variation": 0.5714285714285714
+      },
+      {
+        "actual_counts": {
+          "CH": 16,
+          "FC": 8,
+          "FF": 2,
+          "SI": 33,
+          "ST": 19
+        },
+        "actual_entropy_nats": 1.3603968217799598,
+        "actual_hhi": 0.29158448389217617,
+        "actual_max_share": 0.4230769230769231,
+        "actual_share": {
+          "CH": 0.20512820512820512,
+          "FC": 0.10256410256410256,
+          "FF": 0.02564102564102564,
+          "SI": 0.4230769230769231,
+          "ST": 0.24358974358974358
+        },
+        "games": 3,
+        "group": {
+          "balls": 0,
+          "pitcher": 657277,
+          "strikes": 0
+        },
+        "pas": 78,
+        "pitches": 78,
+        "top_type_counts": {
+          "CH": 7,
+          "FF": 3,
+          "SI": 22,
+          "ST": 46
+        },
+        "top_type_entropy_nats": 1.0100723379489143,
+        "top_type_hhi": 0.4368836291913215,
+        "top_type_match_count": 29,
+        "top_type_max_share": 0.5897435897435898,
+        "top_type_share": {
+          "CH": 0.08974358974358974,
+          "FC": 0.0,
+          "FF": 0.038461538461538464,
+          "SI": 0.28205128205128205,
+          "ST": 0.5897435897435898
+        },
+        "total_variation": 0.358974358974359
+      },
+      {
+        "actual_counts": {
+          "CH": 3,
+          "FC": 5,
+          "FF": 2,
+          "SI": 18,
+          "ST": 9
+        },
+        "actual_entropy_nats": 1.3262953821725578,
+        "actual_hhi": 0.3235938641344047,
+        "actual_max_share": 0.4864864864864865,
+        "actual_share": {
+          "CH": 0.08108108108108109,
+          "FC": 0.13513513513513514,
+          "FF": 0.05405405405405406,
+          "SI": 0.4864864864864865,
+          "ST": 0.24324324324324326
+        },
+        "games": 3,
+        "group": {
+          "balls": 0,
+          "pitcher": 657277,
+          "strikes": 1
+        },
+        "pas": 37,
+        "pitches": 37,
+        "top_type_counts": {
+          "CH": 3,
+          "FF": 14,
+          "SI": 8,
+          "ST": 12
+        },
+        "top_type_entropy_nats": 1.267754355576315,
+        "top_type_hhi": 0.3016800584368152,
+        "top_type_match_count": 5,
+        "top_type_max_share": 0.3783783783783784,
+        "top_type_share": {
+          "CH": 0.08108108108108109,
+          "FC": 0.0,
+          "FF": 0.3783783783783784,
+          "SI": 0.21621621621621623,
+          "ST": 0.32432432432432434
+        },
+        "total_variation": 0.40540540540540543
+      },
+      {
+        "actual_counts": {
+          "CH": 4,
+          "FF": 5,
+          "SI": 6,
+          "ST": 3
+        },
+        "actual_entropy_nats": 1.3548850530060133,
+        "actual_hhi": 0.2654320987654321,
+        "actual_max_share": 0.3333333333333333,
+        "actual_share": {
+          "CH": 0.2222222222222222,
+          "FF": 0.2777777777777778,
+          "SI": 0.3333333333333333,
+          "ST": 0.16666666666666666
+        },
+        "games": 3,
+        "group": {
+          "balls": 0,
+          "pitcher": 657277,
+          "strikes": 2
+        },
+        "pas": 14,
+        "pitches": 18,
+        "top_type_counts": {
+          "CH": 2,
+          "FF": 7,
+          "SI": 9
+        },
+        "top_type_entropy_nats": 0.9580002800887726,
+        "top_type_hhi": 0.41358024691358025,
+        "top_type_match_count": 7,
+        "top_type_max_share": 0.5,
+        "top_type_share": {
+          "CH": 0.1111111111111111,
+          "FF": 0.3888888888888889,
+          "SI": 0.5,
+          "ST": 0.0
+        },
+        "total_variation": 0.2777777777777778
+      },
+      {
+        "actual_counts": {
+          "CH": 8,
+          "FC": 2,
+          "SI": 14,
+          "ST": 5
+        },
+        "actual_entropy_nats": 1.1943365585608638,
+        "actual_hhi": 0.34363852556480384,
+        "actual_max_share": 0.4827586206896552,
+        "actual_share": {
+          "CH": 0.27586206896551724,
+          "FC": 0.06896551724137931,
+          "FF": 0.0,
+          "SI": 0.4827586206896552,
+          "ST": 0.1724137931034483
+        },
+        "games": 3,
+        "group": {
+          "balls": 1,
+          "pitcher": 657277,
+          "strikes": 0
+        },
+        "pas": 29,
+        "pitches": 29,
+        "top_type_counts": {
+          "CH": 3,
+          "FC": 2,
+          "FF": 2,
+          "SI": 1,
+          "ST": 21
+        },
+        "top_type_entropy_nats": 0.9533855961783363,
+        "top_type_hhi": 0.5457788347205708,
+        "top_type_match_count": 4,
+        "top_type_max_share": 0.7241379310344828,
+        "top_type_share": {
+          "CH": 0.10344827586206896,
+          "FC": 0.06896551724137931,
+          "FF": 0.06896551724137931,
+          "SI": 0.034482758620689655,
+          "ST": 0.7241379310344828
+        },
+        "total_variation": 0.6206896551724138
+      },
+      {
+        "actual_counts": {
+          "CH": 7,
+          "FF": 3,
+          "SI": 10,
+          "ST": 5
+        },
+        "actual_entropy_nats": 1.2992658888081015,
+        "actual_hhi": 0.29280000000000006,
+        "actual_max_share": 0.4,
+        "actual_share": {
+          "CH": 0.28,
+          "FF": 0.12,
+          "SI": 0.4,
+          "ST": 0.2
+        },
+        "games": 3,
+        "group": {
+          "balls": 1,
+          "pitcher": 657277,
+          "strikes": 1
+        },
+        "pas": 25,
+        "pitches": 25,
+        "top_type_counts": {
+          "CH": 12,
+          "FF": 5,
+          "SI": 1,
+          "ST": 7
+        },
+        "top_type_entropy_nats": 1.1593782087476527,
+        "top_type_hhi": 0.3504,
+        "top_type_match_count": 9,
+        "top_type_max_share": 0.48,
+        "top_type_share": {
+          "CH": 0.48,
+          "FF": 0.2,
+          "SI": 0.04,
+          "ST": 0.28
+        },
+        "total_variation": 0.36
+      },
+      {
+        "actual_counts": {
+          "CH": 6,
+          "FC": 1,
+          "FF": 5,
+          "SI": 5,
+          "ST": 5
+        },
+        "actual_entropy_nats": 1.5050367487274143,
+        "actual_hhi": 0.23140495867768593,
+        "actual_max_share": 0.2727272727272727,
+        "actual_share": {
+          "CH": 0.2727272727272727,
+          "FC": 0.045454545454545456,
+          "FF": 0.22727272727272727,
+          "SI": 0.22727272727272727,
+          "ST": 0.22727272727272727
+        },
+        "games": 3,
+        "group": {
+          "balls": 1,
+          "pitcher": 657277,
+          "strikes": 2
+        },
+        "pas": 17,
+        "pitches": 22,
+        "top_type_counts": {
+          "CH": 5,
+          "SI": 2,
+          "ST": 15
+        },
+        "top_type_entropy_nats": 0.8158498651845185,
+        "top_type_hhi": 0.524793388429752,
+        "top_type_match_count": 4,
+        "top_type_max_share": 0.6818181818181818,
+        "top_type_share": {
+          "CH": 0.22727272727272727,
+          "FC": 0.0,
+          "FF": 0.0,
+          "SI": 0.09090909090909091,
+          "ST": 0.6818181818181818
+        },
+        "total_variation": 0.4545454545454545
+      },
+      {
+        "actual_counts": {
+          "CH": 3,
+          "SI": 6
+        },
+        "actual_entropy_nats": 0.6365141682948128,
+        "actual_hhi": 0.5555555555555556,
+        "actual_max_share": 0.6666666666666666,
+        "actual_share": {
+          "CH": 0.3333333333333333,
+          "SI": 0.6666666666666666,
+          "ST": 0.0
+        },
+        "games": 3,
+        "group": {
+          "balls": 2,
+          "pitcher": 657277,
+          "strikes": 0
+        },
+        "pas": 9,
+        "pitches": 9,
+        "top_type_counts": {
+          "CH": 5,
+          "SI": 1,
+          "ST": 3
+        },
+        "top_type_entropy_nats": 0.9368883075390159,
+        "top_type_hhi": 0.4320987654320988,
+        "top_type_match_count": 2,
+        "top_type_max_share": 0.5555555555555556,
+        "top_type_share": {
+          "CH": 0.5555555555555556,
+          "SI": 0.1111111111111111,
+          "ST": 0.3333333333333333
+        },
+        "total_variation": 0.5555555555555556
+      },
+      {
+        "actual_counts": {
+          "CH": 3,
+          "SI": 3,
+          "ST": 3
+        },
+        "actual_entropy_nats": 1.0986122886681096,
+        "actual_hhi": 0.3333333333333333,
+        "actual_max_share": 0.3333333333333333,
+        "actual_share": {
+          "CH": 0.3333333333333333,
+          "FF": 0.0,
+          "SI": 0.3333333333333333,
+          "ST": 0.3333333333333333
+        },
+        "games": 3,
+        "group": {
+          "balls": 2,
+          "pitcher": 657277,
+          "strikes": 1
+        },
+        "pas": 9,
+        "pitches": 9,
+        "top_type_counts": {
+          "CH": 2,
+          "FF": 1,
+          "ST": 6
+        },
+        "top_type_entropy_nats": 0.8486855577264172,
+        "top_type_hhi": 0.5061728395061729,
+        "top_type_match_count": 2,
+        "top_type_max_share": 0.6666666666666666,
+        "top_type_share": {
+          "CH": 0.2222222222222222,
+          "FF": 0.1111111111111111,
+          "SI": 0.0,
+          "ST": 0.6666666666666666
+        },
+        "total_variation": 0.4444444444444444
+      },
+      {
+        "actual_counts": {
+          "CH": 9,
+          "FF": 4,
+          "SI": 5,
+          "ST": 7
+        },
+        "actual_entropy_nats": 1.3393254550256715,
+        "actual_hhi": 0.2736,
+        "actual_max_share": 0.36,
+        "actual_share": {
+          "CH": 0.36,
+          "FF": 0.16,
+          "SI": 0.2,
+          "ST": 0.28
+        },
+        "games": 3,
+        "group": {
+          "balls": 2,
+          "pitcher": 657277,
+          "strikes": 2
+        },
+        "pas": 21,
+        "pitches": 25,
+        "top_type_counts": {
+          "CH": 1,
+          "FF": 2,
+          "SI": 14,
+          "ST": 8
+        },
+        "top_type_entropy_nats": 1.0201306525013127,
+        "top_type_hhi": 0.42400000000000004,
+        "top_type_match_count": 4,
+        "top_type_max_share": 0.56,
+        "top_type_share": {
+          "CH": 0.04,
+          "FF": 0.08,
+          "SI": 0.56,
+          "ST": 0.32
+        },
+        "total_variation": 0.4
+      },
+      {
+        "actual_counts": {
+          "SI": 3
+        },
+        "actual_entropy_nats": -0.0,
+        "actual_hhi": 1.0,
+        "actual_max_share": 1.0,
+        "actual_share": {
+          "CH": 0.0,
+          "SI": 1.0
+        },
+        "games": 2,
+        "group": {
+          "balls": 3,
+          "pitcher": 657277,
+          "strikes": 0
+        },
+        "pas": 3,
+        "pitches": 3,
+        "top_type_counts": {
+          "CH": 2,
+          "SI": 1
+        },
+        "top_type_entropy_nats": 0.6365141682948128,
+        "top_type_hhi": 0.5555555555555556,
+        "top_type_match_count": 1,
+        "top_type_max_share": 0.6666666666666666,
+        "top_type_share": {
+          "CH": 0.6666666666666666,
+          "SI": 0.3333333333333333
+        },
+        "total_variation": 0.6666666666666667
+      },
+      {
+        "actual_counts": {
+          "CH": 1,
+          "SI": 3
+        },
+        "actual_entropy_nats": 0.5623351446188083,
+        "actual_hhi": 0.625,
+        "actual_max_share": 0.75,
+        "actual_share": {
+          "CH": 0.25,
+          "FC": 0.0,
+          "SI": 0.75,
+          "ST": 0.0
+        },
+        "games": 3,
+        "group": {
+          "balls": 3,
+          "pitcher": 657277,
+          "strikes": 1
+        },
+        "pas": 4,
+        "pitches": 4,
+        "top_type_counts": {
+          "FC": 1,
+          "SI": 2,
+          "ST": 1
+        },
+        "top_type_entropy_nats": 1.0397207708399179,
+        "top_type_hhi": 0.375,
+        "top_type_match_count": 1,
+        "top_type_max_share": 0.5,
+        "top_type_share": {
+          "CH": 0.0,
+          "FC": 0.25,
+          "SI": 0.5,
+          "ST": 0.25
+        },
+        "total_variation": 0.5
+      },
+      {
+        "actual_counts": {
+          "CH": 4,
+          "SI": 3,
+          "ST": 3
+        },
+        "actual_entropy_nats": 1.0888999753452238,
+        "actual_hhi": 0.34,
+        "actual_max_share": 0.4,
+        "actual_share": {
+          "CH": 0.4,
+          "FF": 0.0,
+          "SI": 0.3,
+          "ST": 0.3
+        },
+        "games": 3,
+        "group": {
+          "balls": 3,
+          "pitcher": 657277,
+          "strikes": 2
+        },
+        "pas": 9,
+        "pitches": 10,
+        "top_type_counts": {
+          "CH": 2,
+          "FF": 2,
+          "SI": 3,
+          "ST": 3
+        },
+        "top_type_entropy_nats": 1.3661588475692017,
+        "top_type_hhi": 0.26,
+        "top_type_match_count": 1,
+        "top_type_max_share": 0.3,
+        "top_type_share": {
+          "CH": 0.2,
+          "FF": 0.2,
+          "SI": 0.3,
+          "ST": 0.3
+        },
+        "total_variation": 0.2
+      }
+    ]
+  },
+  "coverage": {
+    "actual_type_supported_pitches": 563,
+    "cohort_pa_count_check": 160,
+    "conditional_actual_type_support_rate": 1.0,
+    "eligible_pas": 151,
+    "eligible_pitches": 563,
+    "excluded_pa_reasons": {
+      "missing_terminal": 1,
+      "state_changed_inside_pa": 3,
+      "unsupported_pa": 5
+    },
+    "excluded_pas": 9,
+    "excluded_pitches": 34,
+    "ready_pas": 151,
+    "ready_pitches": 563,
+    "selected_full_game_pitches": 1690,
+    "selected_games": 6,
+    "target_associated_other_pitcher_pitches": 0,
+    "target_pitcher_pas": 160,
+    "target_pitcher_pitches": 597,
+    "whole_target_actual_type_support_rate": 0.9430485762144054
+  },
+  "experiment_id": "EXP-CHOICE-DIAG-002",
+  "game_cluster_bootstrap": {
+    "games": 6,
+    "interpretation": "exploratory only; six games and previously exposed DEV",
+    "mean_internal_gap_pp_percentile_95": [
+      0.06067302424875061,
+      0.10673397400527544
+    ],
+    "repeats": 1000,
+    "seed": 20260924,
+    "top_type_match_rate_percentile_95": [
+      0.24295264339661157,
+      0.28413413500181245
+    ],
+    "unit": "game"
+  },
+  "interpretation": {
+    "causal_policy_value": null,
+    "internal_we": "frozen model Q values only, observational zone proxy",
+    "policy_ope": null,
+    "prediction_quality": "separate existing A S1 NLL/Brier; no refit"
+  },
+  "member_artifacts": {
+    "member_seed_42": {
+      "checkpoint": "models/seed42.pt",
+      "checkpoint_sha256": "3be779729216827eabc1eacec15767364b450016105173a9d1b6ae455453ac07",
+      "delivery_temperature": 0.9569590730974096,
+      "model_seed": 42
+    },
+    "member_seed_43": {
+      "checkpoint": "models/seed43.pt",
+      "checkpoint_sha256": "ff430940f8c0e1eddd9ca730b871dc2fea94bb0d587f6d1fde7a5a3caabbfe43",
+      "delivery_temperature": 0.9616424171478467,
+      "model_seed": 43
+    },
+    "member_seed_44": {
+      "checkpoint": "models/seed44.pt",
+      "checkpoint_sha256": "039acefe711549717ce8975fb00ede43f719511d5329bd5653a63a75560fcf9f",
+      "delivery_temperature": 0.9679805413221465,
+      "model_seed": 44
+    },
+    "member_seed_45": {
+      "checkpoint": "models/seed45.pt",
+      "checkpoint_sha256": "8013ba53421d1c900e29f2947cf41554e4bd589fc51dabf1d7f0e8e3f438ac75",
+      "delivery_temperature": 0.9613566623242267,
+      "model_seed": 45
+    },
+    "member_seed_46": {
+      "checkpoint": "models/seed46.pt",
+      "checkpoint_sha256": "b5a630c360bd7714e6951dbafec632b0121bb60e631f424ac5437b8f3ae50276",
+      "delivery_temperature": 0.9846576052672771,
+      "model_seed": 46
+    }
+  },
+  "member_sensitivity": {
+    "mean_pairwise_action_rank_spearman": 0.8845789161597752,
+    "mean_pairwise_top_action_agreement": 0.5882770870337478,
+    "mean_pairwise_top_type_agreement": 0.755595026642984,
+    "mean_top_action_agreement_with_ensemble": 0.7182948490230906,
+    "mean_top_type_agreement_with_ensemble": 0.838721136767318,
+    "pitches": 563,
+    "scope": "existing frozen trained-member sensitivity; not independent sampling seeds or full-pipeline retraining",
+    "seeds": [
+      "member_seed_42",
+      "member_seed_43",
+      "member_seed_44",
+      "member_seed_45",
+      "member_seed_46"
+    ],
+    "top_action_agreement_rate": 0.33570159857904086,
+    "top_type_agreement_rate": 0.5488454706927176
+  },
+  "raw_result_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/CHOICE-DIAG-002/results.json",
+  "raw_result_sha256": "e89e12f6b779e3efc41353649ebcb2bd6abfc60cebbb6940c4f4a525b13f9c63",
+  "sha256": {
+    "bundle_manifest": "43ece920cb60c6c24ea9f1e720a7000b3b83038a3e24ac27d77ef17a2e8f0f1f",
+    "config": "2331e7af7076daf98a351819c7d925ee43c9ae94f684b5fb76411e88e0df0e41",
+    "dev_parquet": "89130facf5a8854780a33755241129240be6d43ea2a8584afcd65fe6111c1199",
+    "parent_manifest": "c11dd909db352e15aaa60545598d6376e45cfd4a71efed8885b44391c529b0c8",
+    "script": "eb1232dc3742d2ecbb0526c261ea0a03a7123e6a6c87f591efba7dd40b160649",
+    "train_parquet": "a75488855c59963c16826fb55e3e50b8e38fe80659e11847d52b5ad14c167852"
+  },
+  "type_zone_support": [
+    {
+      "eligible_pas": 73,
+      "pitch_type": "CU",
+      "pitcher": 554430,
+      "rate": 0.0,
+      "supported_minimum_ess_median": null,
+      "supported_minimum_ess_min": null,
+      "supported_minimum_mass_median": null,
+      "supported_minimum_mass_min": null,
+      "supported_pas": 0,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "CU",
+      "pitcher": 554430,
+      "rate": 0.0,
+      "supported_minimum_ess_median": null,
+      "supported_minimum_ess_min": null,
+      "supported_minimum_mass_median": null,
+      "supported_minimum_mass_min": null,
+      "supported_pas": 0,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "CU",
+      "pitcher": 554430,
+      "rate": 0.0,
+      "supported_minimum_ess_median": null,
+      "supported_minimum_ess_min": null,
+      "supported_minimum_mass_median": null,
+      "supported_minimum_mass_min": null,
+      "supported_pas": 0,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "CU",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 83.12120617451505,
+      "supported_minimum_ess_min": 58.167419143419785,
+      "supported_minimum_mass_median": 0.06650180212335555,
+      "supported_minimum_mass_min": 0.06650180212335555,
+      "supported_pas": 73,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "CU",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 67.31553684287627,
+      "supported_minimum_ess_min": 67.31553684287627,
+      "supported_minimum_mass_median": 0.10169488872241214,
+      "supported_minimum_mass_min": 0.10169488872241214,
+      "supported_pas": 73,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "CU",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 82.37991236257233,
+      "supported_minimum_ess_min": 63.25933887995273,
+      "supported_minimum_mass_median": 0.08950023740278625,
+      "supported_minimum_mass_min": 0.07223621275458586,
+      "supported_pas": 73,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "CU",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 28.634676942206188,
+      "supported_minimum_ess_min": 25.581415728415635,
+      "supported_minimum_mass_median": 0.018094943033593734,
+      "supported_minimum_mass_min": 0.018094943033593734,
+      "supported_pas": 73,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "CU",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 34.00087993194309,
+      "supported_minimum_ess_min": 32.116526033854534,
+      "supported_minimum_mass_median": 0.025487884341687694,
+      "supported_minimum_mass_min": 0.015530844751514096,
+      "supported_pas": 73,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "CU",
+      "pitcher": 554430,
+      "rate": 0.5205479452054794,
+      "supported_minimum_ess_median": 27.184822821518882,
+      "supported_minimum_ess_min": 27.184822821518882,
+      "supported_minimum_mass_median": 0.019811337698987835,
+      "supported_minimum_mass_min": 0.019811337698987835,
+      "supported_pas": 38,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FC",
+      "pitcher": 554430,
+      "rate": 0.4794520547945205,
+      "supported_minimum_ess_median": 38.948294892888754,
+      "supported_minimum_ess_min": 38.948294892888754,
+      "supported_minimum_mass_median": 0.04776484325508307,
+      "supported_minimum_mass_min": 0.04776484325508307,
+      "supported_pas": 35,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FC",
+      "pitcher": 554430,
+      "rate": 0.4794520547945205,
+      "supported_minimum_ess_median": 77.92463422684439,
+      "supported_minimum_ess_min": 77.92463422684439,
+      "supported_minimum_mass_median": 0.09755793502853768,
+      "supported_minimum_mass_min": 0.09755793502853768,
+      "supported_pas": 35,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FC",
+      "pitcher": 554430,
+      "rate": 0.4794520547945205,
+      "supported_minimum_ess_median": 103.00888458997184,
+      "supported_minimum_ess_min": 103.00888458997184,
+      "supported_minimum_mass_median": 0.14331669701880964,
+      "supported_minimum_mass_min": 0.14331669701880964,
+      "supported_pas": 35,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FC",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 35.76165576936974,
+      "supported_minimum_ess_min": 32.95336595105209,
+      "supported_minimum_mass_median": 0.0510190196849579,
+      "supported_minimum_mass_min": 0.03236809817918535,
+      "supported_pas": 73,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FC",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 80.14989150287377,
+      "supported_minimum_ess_min": 80.14989150287377,
+      "supported_minimum_mass_median": 0.07689363885377345,
+      "supported_minimum_mass_min": 0.07689363885377345,
+      "supported_pas": 73,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FC",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 96.9153180526041,
+      "supported_minimum_ess_min": 96.9153180526041,
+      "supported_minimum_mass_median": 0.12276106590710364,
+      "supported_minimum_mass_min": 0.12276106590710364,
+      "supported_pas": 73,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FC",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 43.426540271800036,
+      "supported_minimum_ess_min": 40.41690171074909,
+      "supported_minimum_mass_median": 0.049812454837398136,
+      "supported_minimum_mass_min": 0.03911393360391749,
+      "supported_pas": 73,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FC",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 90.9212501011373,
+      "supported_minimum_ess_min": 90.9212501011373,
+      "supported_minimum_mass_median": 0.08172489051866705,
+      "supported_minimum_mass_min": 0.08172489051866705,
+      "supported_pas": 73,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FC",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 53.50968042806906,
+      "supported_minimum_ess_min": 53.50968042806906,
+      "supported_minimum_mass_median": 0.06608016585375752,
+      "supported_minimum_mass_min": 0.06608016585375752,
+      "supported_pas": 73,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FF",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 146.7008825310975,
+      "supported_minimum_ess_min": 103.51829142700251,
+      "supported_minimum_mass_median": 0.17879951303349734,
+      "supported_minimum_mass_min": 0.1183671897130877,
+      "supported_pas": 73,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FF",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 167.86434343416528,
+      "supported_minimum_ess_min": 167.86434343416528,
+      "supported_minimum_mass_median": 0.2206719907833613,
+      "supported_minimum_mass_min": 0.2206719907833613,
+      "supported_pas": 73,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FF",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 123.50508227501017,
+      "supported_minimum_ess_min": 123.50508227501017,
+      "supported_minimum_mass_median": 0.08083394177963583,
+      "supported_minimum_mass_min": 0.08083394177963583,
+      "supported_pas": 73,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FF",
+      "pitcher": 554430,
+      "rate": 0.5205479452054794,
+      "supported_minimum_ess_median": 28.964144460000778,
+      "supported_minimum_ess_min": 28.964144460000778,
+      "supported_minimum_mass_median": 0.026955284359657442,
+      "supported_minimum_mass_min": 0.026955284359657442,
+      "supported_pas": 38,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FF",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 37.472465164824236,
+      "supported_minimum_ess_min": 37.472465164824236,
+      "supported_minimum_mass_median": 0.03917850102958825,
+      "supported_minimum_mass_min": 0.025957773143732214,
+      "supported_pas": 73,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FF",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 49.698031125207855,
+      "supported_minimum_ess_min": 49.698031125207855,
+      "supported_minimum_mass_median": 0.026629562404549622,
+      "supported_minimum_mass_min": 0.026629562404549622,
+      "supported_pas": 73,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FF",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 86.05990607003123,
+      "supported_minimum_ess_min": 69.11906206914632,
+      "supported_minimum_mass_median": 0.0858074183613034,
+      "supported_minimum_mass_min": 0.04937993689813932,
+      "supported_pas": 73,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FF",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 101.6645418607198,
+      "supported_minimum_ess_min": 101.6645418607198,
+      "supported_minimum_mass_median": 0.1363676734586278,
+      "supported_minimum_mass_min": 0.1363676734586278,
+      "supported_pas": 73,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FF",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 100.22949553594022,
+      "supported_minimum_ess_min": 100.22949553594022,
+      "supported_minimum_mass_median": 0.11852034414238276,
+      "supported_minimum_mass_min": 0.11852034414238276,
+      "supported_pas": 73,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FS",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 28.791889786918976,
+      "supported_minimum_ess_min": 28.791889786918976,
+      "supported_minimum_mass_median": 0.012431566435851377,
+      "supported_minimum_mass_min": 0.012431566435851377,
+      "supported_pas": 73,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FS",
+      "pitcher": 554430,
+      "rate": 0.4794520547945205,
+      "supported_minimum_ess_median": 37.05764315425348,
+      "supported_minimum_ess_min": 37.05764315425348,
+      "supported_minimum_mass_median": 0.026370609334929587,
+      "supported_minimum_mass_min": 0.026370609334929587,
+      "supported_pas": 35,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FS",
+      "pitcher": 554430,
+      "rate": 0.0,
+      "supported_minimum_ess_median": null,
+      "supported_minimum_ess_min": null,
+      "supported_minimum_mass_median": null,
+      "supported_minimum_mass_min": null,
+      "supported_pas": 0,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FS",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 125.44119694190269,
+      "supported_minimum_ess_min": 125.44119694190269,
+      "supported_minimum_mass_median": 0.15831050008970604,
+      "supported_minimum_mass_min": 0.15831050008970604,
+      "supported_pas": 73,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FS",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 94.81599193901876,
+      "supported_minimum_ess_min": 94.81599193901876,
+      "supported_minimum_mass_median": 0.12931065959981608,
+      "supported_minimum_mass_min": 0.12931065959981608,
+      "supported_pas": 73,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FS",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 62.556552477834636,
+      "supported_minimum_ess_min": 62.556552477834636,
+      "supported_minimum_mass_median": 0.06883741417414084,
+      "supported_minimum_mass_min": 0.06883741417414084,
+      "supported_pas": 73,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FS",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 48.834251255345855,
+      "supported_minimum_ess_min": 48.834251255345855,
+      "supported_minimum_mass_median": 0.06668035946339015,
+      "supported_minimum_mass_min": 0.06668035946339015,
+      "supported_pas": 73,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FS",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 48.690079626649094,
+      "supported_minimum_ess_min": 48.690079626649094,
+      "supported_minimum_mass_median": 0.047820930459443696,
+      "supported_minimum_mass_min": 0.047820930459443696,
+      "supported_pas": 73,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "FS",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 27.883975015297533,
+      "supported_minimum_ess_min": 27.883975015297533,
+      "supported_minimum_mass_median": 0.022461822923411253,
+      "supported_minimum_mass_min": 0.022461822923411253,
+      "supported_pas": 73,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "SI",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 54.62492714577213,
+      "supported_minimum_ess_min": 54.62492714577213,
+      "supported_minimum_mass_median": 0.043030843869188054,
+      "supported_minimum_mass_min": 0.023889799249043994,
+      "supported_pas": 73,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "SI",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 100.42561168875056,
+      "supported_minimum_ess_min": 92.00636325331564,
+      "supported_minimum_mass_median": 0.07146484649511459,
+      "supported_minimum_mass_min": 0.053581738346977395,
+      "supported_pas": 73,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "SI",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 84.2923624875943,
+      "supported_minimum_ess_min": 27.76951131139714,
+      "supported_minimum_mass_median": 0.03234210684616337,
+      "supported_minimum_mass_min": 0.02995467456909549,
+      "supported_pas": 73,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "SI",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 76.39996051745939,
+      "supported_minimum_ess_min": 76.39996051745939,
+      "supported_minimum_mass_median": 0.04864704659665973,
+      "supported_minimum_mass_min": 0.04864704659665973,
+      "supported_pas": 73,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "SI",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 137.28747639370854,
+      "supported_minimum_ess_min": 110.18418024179073,
+      "supported_minimum_mass_median": 0.1809477950919659,
+      "supported_minimum_mass_min": 0.13923318543332106,
+      "supported_pas": 73,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "SI",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 156.38113495380878,
+      "supported_minimum_ess_min": 56.9791881875537,
+      "supported_minimum_mass_median": 0.21691014288835542,
+      "supported_minimum_mass_min": 0.05122583779331195,
+      "supported_pas": 73,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "SI",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 77.73250245989894,
+      "supported_minimum_ess_min": 77.73250245989894,
+      "supported_minimum_mass_median": 0.05080493778474251,
+      "supported_minimum_mass_min": 0.05080493778474251,
+      "supported_pas": 73,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "SI",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 159.65911026802806,
+      "supported_minimum_ess_min": 107.11616575106012,
+      "supported_minimum_mass_median": 0.22300085553917495,
+      "supported_minimum_mass_min": 0.16402497620212558,
+      "supported_pas": 73,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "SI",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 126.74998563969795,
+      "supported_minimum_ess_min": 56.15311643489185,
+      "supported_minimum_mass_median": 0.16146796838861324,
+      "supported_minimum_mass_min": 0.05399368543246928,
+      "supported_pas": 73,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "ST",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 69.21049788232874,
+      "supported_minimum_ess_min": 27.04916125852887,
+      "supported_minimum_mass_median": 0.10153839966416718,
+      "supported_minimum_mass_min": 0.03875963308228852,
+      "supported_pas": 73,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "ST",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 91.79692554112503,
+      "supported_minimum_ess_min": 53.483978522303715,
+      "supported_minimum_mass_median": 0.051132342962000685,
+      "supported_minimum_mass_min": 0.051132342962000685,
+      "supported_pas": 73,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "ST",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 60.9396540169308,
+      "supported_minimum_ess_min": 60.9396540169308,
+      "supported_minimum_mass_median": 0.03556445255663902,
+      "supported_minimum_mass_min": 0.03556445255663902,
+      "supported_pas": 73,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "ST",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 166.8206645547095,
+      "supported_minimum_ess_min": 26.988774609234074,
+      "supported_minimum_mass_median": 0.24462693884151474,
+      "supported_minimum_mass_min": 0.03344804622398866,
+      "supported_pas": 73,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "ST",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 187.28940629940556,
+      "supported_minimum_ess_min": 80.76330527343006,
+      "supported_minimum_mass_median": 0.2671670854091319,
+      "supported_minimum_mass_min": 0.10285267486860045,
+      "supported_pas": 73,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "ST",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 131.86976705474729,
+      "supported_minimum_ess_min": 129.21999037876276,
+      "supported_minimum_mass_median": 0.16827453687907734,
+      "supported_minimum_mass_min": 0.16827453687907734,
+      "supported_pas": 73,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "ST",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 145.94823032085037,
+      "supported_minimum_ess_min": 44.626242768804154,
+      "supported_minimum_mass_median": 0.20212002810548924,
+      "supported_minimum_mass_min": 0.03546980112790838,
+      "supported_pas": 73,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "ST",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 139.86848209818072,
+      "supported_minimum_ess_min": 94.69636760595857,
+      "supported_minimum_mass_median": 0.17499197991403484,
+      "supported_minimum_mass_min": 0.108422245612622,
+      "supported_pas": 73,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 73,
+      "pitch_type": "ST",
+      "pitcher": 554430,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 90.69480870522435,
+      "supported_minimum_ess_min": 90.69480870522435,
+      "supported_minimum_mass_median": 0.13253119429820537,
+      "supported_minimum_mass_min": 0.13253119429820537,
+      "supported_pas": 73,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "CH",
+      "pitcher": 657277,
+      "rate": 0.0,
+      "supported_minimum_ess_median": null,
+      "supported_minimum_ess_min": null,
+      "supported_minimum_mass_median": null,
+      "supported_minimum_mass_min": null,
+      "supported_pas": 0,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "CH",
+      "pitcher": 657277,
+      "rate": 0.0,
+      "supported_minimum_ess_median": null,
+      "supported_minimum_ess_min": null,
+      "supported_minimum_mass_median": null,
+      "supported_minimum_mass_min": null,
+      "supported_pas": 0,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "CH",
+      "pitcher": 657277,
+      "rate": 0.0,
+      "supported_minimum_ess_median": null,
+      "supported_minimum_ess_min": null,
+      "supported_minimum_mass_median": null,
+      "supported_minimum_mass_min": null,
+      "supported_pas": 0,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "CH",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 88.15422370596096,
+      "supported_minimum_ess_min": 88.15422370596096,
+      "supported_minimum_mass_median": 0.12896957846747859,
+      "supported_minimum_mass_min": 0.12896957846747859,
+      "supported_pas": 78,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "CH",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 134.17593929944738,
+      "supported_minimum_ess_min": 134.17593929944738,
+      "supported_minimum_mass_median": 0.1799274215438916,
+      "supported_minimum_mass_min": 0.1799274215438916,
+      "supported_pas": 78,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "CH",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 134.055047980349,
+      "supported_minimum_ess_min": 116.81260218797901,
+      "supported_minimum_mass_median": 0.18538796225037368,
+      "supported_minimum_mass_min": 0.11279499437954156,
+      "supported_pas": 78,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "CH",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 65.21197229475098,
+      "supported_minimum_ess_min": 65.21197229475098,
+      "supported_minimum_mass_median": 0.04710711279472544,
+      "supported_minimum_mass_min": 0.04710711279472544,
+      "supported_pas": 78,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "CH",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 64.23383610729788,
+      "supported_minimum_ess_min": 64.23383610729788,
+      "supported_minimum_mass_median": 0.06392322632494112,
+      "supported_minimum_mass_min": 0.046863278340598856,
+      "supported_pas": 78,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "CH",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 51.877227550601724,
+      "supported_minimum_ess_min": 37.50049362900508,
+      "supported_minimum_mass_median": 0.05782777254080917,
+      "supported_minimum_mass_min": 0.02331502164810585,
+      "supported_pas": 78,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FC",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 38.948294892888754,
+      "supported_minimum_ess_min": 38.948294892888754,
+      "supported_minimum_mass_median": 0.04776484325508307,
+      "supported_minimum_mass_min": 0.04776484325508307,
+      "supported_pas": 78,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FC",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 77.92463422684439,
+      "supported_minimum_ess_min": 77.92463422684439,
+      "supported_minimum_mass_median": 0.09755793502853768,
+      "supported_minimum_mass_min": 0.09755793502853768,
+      "supported_pas": 78,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FC",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 103.00888458997184,
+      "supported_minimum_ess_min": 103.00888458997184,
+      "supported_minimum_mass_median": 0.14331669701880964,
+      "supported_minimum_mass_min": 0.14331669701880964,
+      "supported_pas": 78,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FC",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 32.95336595105209,
+      "supported_minimum_ess_min": 32.24783963629227,
+      "supported_minimum_mass_median": 0.03236809817918535,
+      "supported_minimum_mass_min": 0.02828570652251696,
+      "supported_pas": 78,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FC",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 88.91563529220109,
+      "supported_minimum_ess_min": 57.74880421863701,
+      "supported_minimum_mass_median": 0.0990916889749656,
+      "supported_minimum_mass_min": 0.051122914493804766,
+      "supported_pas": 78,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FC",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 138.31708011134876,
+      "supported_minimum_ess_min": 56.92249812841968,
+      "supported_minimum_mass_median": 0.19952241839270776,
+      "supported_minimum_mass_min": 0.06484959196929854,
+      "supported_pas": 78,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FC",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 40.41690171074909,
+      "supported_minimum_ess_min": 40.41690171074909,
+      "supported_minimum_mass_median": 0.03911393360391749,
+      "supported_minimum_mass_min": 0.03911393360391749,
+      "supported_pas": 78,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FC",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 94.26348607552421,
+      "supported_minimum_ess_min": 94.26348607552421,
+      "supported_minimum_mass_median": 0.1080369093236291,
+      "supported_minimum_mass_min": 0.1080369093236291,
+      "supported_pas": 78,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FC",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 133.65724733090113,
+      "supported_minimum_ess_min": 129.41495212150187,
+      "supported_minimum_mass_median": 0.1975519283477049,
+      "supported_minimum_mass_min": 0.1794517473365708,
+      "supported_pas": 78,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FF",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 131.51922290198888,
+      "supported_minimum_ess_min": 131.51922290198888,
+      "supported_minimum_mass_median": 0.05846656385699859,
+      "supported_minimum_mass_min": 0.05846656385699859,
+      "supported_pas": 78,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FF",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 190.29410117087667,
+      "supported_minimum_ess_min": 163.67769366009793,
+      "supported_minimum_mass_median": 0.2781506389460832,
+      "supported_minimum_mass_min": 0.2297559192327367,
+      "supported_pas": 78,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FF",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 203.47974063964068,
+      "supported_minimum_ess_min": 105.15402806143281,
+      "supported_minimum_mass_median": 0.3284550319968463,
+      "supported_minimum_mass_min": 0.1297244653284401,
+      "supported_pas": 78,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FF",
+      "pitcher": 657277,
+      "rate": 0.47435897435897434,
+      "supported_minimum_ess_median": 37.073665436639416,
+      "supported_minimum_ess_min": 37.073665436639416,
+      "supported_minimum_mass_median": 0.011386733211867632,
+      "supported_minimum_mass_min": 0.011386733211867632,
+      "supported_pas": 37,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FF",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 70.51624774046167,
+      "supported_minimum_ess_min": 26.561979866590907,
+      "supported_minimum_mass_median": 0.0281588498876966,
+      "supported_minimum_mass_min": 0.02364319698901074,
+      "supported_pas": 78,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FF",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 55.46752430582915,
+      "supported_minimum_ess_min": 26.3607398160369,
+      "supported_minimum_mass_median": 0.0359890193633624,
+      "supported_minimum_mass_min": 0.016843055588307267,
+      "supported_pas": 78,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FF",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 63.244698267387676,
+      "supported_minimum_ess_min": 63.244698267387676,
+      "supported_minimum_mass_median": 0.028607434150866338,
+      "supported_minimum_mass_min": 0.028607434150866338,
+      "supported_pas": 78,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FF",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 125.13990084926664,
+      "supported_minimum_ess_min": 70.9856588032426,
+      "supported_minimum_mass_median": 0.1519223953265643,
+      "supported_minimum_mass_min": 0.09383000491728385,
+      "supported_pas": 78,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "FF",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 115.81095873023467,
+      "supported_minimum_ess_min": 63.937667710260996,
+      "supported_minimum_mass_median": 0.165410130446452,
+      "supported_minimum_mass_min": 0.08624294815035669,
+      "supported_pas": 78,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "SI",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 85.13692133111944,
+      "supported_minimum_ess_min": 85.13692133111944,
+      "supported_minimum_mass_median": 0.07897342247750651,
+      "supported_minimum_mass_min": 0.07897342247750651,
+      "supported_pas": 78,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "SI",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 105.73901497811143,
+      "supported_minimum_ess_min": 105.73901497811143,
+      "supported_minimum_mass_median": 0.12885352623259838,
+      "supported_minimum_mass_min": 0.11792358243916032,
+      "supported_pas": 78,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "SI",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 104.90306055057371,
+      "supported_minimum_ess_min": 98.55238550517116,
+      "supported_minimum_mass_median": 0.1119215629170062,
+      "supported_minimum_mass_min": 0.07394451241502566,
+      "supported_pas": 78,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "SI",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 82.71797724275065,
+      "supported_minimum_ess_min": 70.04873406272652,
+      "supported_minimum_mass_median": 0.07814095675612676,
+      "supported_minimum_mass_min": 0.04506073636791585,
+      "supported_pas": 78,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "SI",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 83.90785739391639,
+      "supported_minimum_ess_min": 73.83561042804213,
+      "supported_minimum_mass_median": 0.10053440812674337,
+      "supported_minimum_mass_min": 0.10053440812674337,
+      "supported_pas": 78,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "SI",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 96.62799738135489,
+      "supported_minimum_ess_min": 76.73999764366026,
+      "supported_minimum_mass_median": 0.10117153988222155,
+      "supported_minimum_mass_min": 0.10117153988222155,
+      "supported_pas": 78,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "SI",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 120.36427538929486,
+      "supported_minimum_ess_min": 109.6514833542704,
+      "supported_minimum_mass_median": 0.13106332511948143,
+      "supported_minimum_mass_min": 0.12940412286859343,
+      "supported_pas": 78,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "SI",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 133.37955495099197,
+      "supported_minimum_ess_min": 126.28601715109093,
+      "supported_minimum_mass_median": 0.19304739614650004,
+      "supported_minimum_mass_min": 0.19304739614650004,
+      "supported_pas": 78,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "SI",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 129.22331318894572,
+      "supported_minimum_ess_min": 129.22331318894572,
+      "supported_minimum_mass_median": 0.18671831130066419,
+      "supported_minimum_mass_min": 0.17728825604949935,
+      "supported_pas": 78,
+      "zone_id": "middle_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "ST",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 22.680512258491326,
+      "supported_minimum_ess_min": 22.19638163741435,
+      "supported_minimum_mass_median": 0.012920266495907393,
+      "supported_minimum_mass_min": 0.012920266495907393,
+      "supported_pas": 78,
+      "zone_id": "high_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "ST",
+      "pitcher": 657277,
+      "rate": 0.5256410256410257,
+      "supported_minimum_ess_median": 32.407243466895146,
+      "supported_minimum_ess_min": 32.407243466895146,
+      "supported_minimum_mass_median": 0.03667513693643227,
+      "supported_minimum_mass_min": 0.03667513693643227,
+      "supported_pas": 41,
+      "zone_id": "high_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "ST",
+      "pitcher": 657277,
+      "rate": 0.5256410256410257,
+      "supported_minimum_ess_median": 47.94929955292592,
+      "supported_minimum_ess_min": 47.94929955292592,
+      "supported_minimum_mass_median": 0.0454329055489626,
+      "supported_minimum_mass_min": 0.0454329055489626,
+      "supported_pas": 41,
+      "zone_id": "high_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "ST",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 27.55197799012936,
+      "supported_minimum_ess_min": 27.55197799012936,
+      "supported_minimum_mass_median": 0.029915716963516022,
+      "supported_minimum_mass_min": 0.029915716963516022,
+      "supported_pas": 78,
+      "zone_id": "low_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "ST",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 78.03957941528077,
+      "supported_minimum_ess_min": 78.03957941528077,
+      "supported_minimum_mass_median": 0.08812515208063054,
+      "supported_minimum_mass_min": 0.08812515208063054,
+      "supported_pas": 78,
+      "zone_id": "low_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "ST",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 122.45296235773127,
+      "supported_minimum_ess_min": 107.26500615235305,
+      "supported_minimum_mass_median": 0.18099531203554534,
+      "supported_minimum_mass_min": 0.1303306845671028,
+      "supported_pas": 78,
+      "zone_id": "low_right"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "ST",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 30.47904708790633,
+      "supported_minimum_ess_min": 30.47904708790633,
+      "supported_minimum_mass_median": 0.030506527937358894,
+      "supported_minimum_mass_min": 0.030506527937358894,
+      "supported_pas": 78,
+      "zone_id": "middle_left"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "ST",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 61.15134635060883,
+      "supported_minimum_ess_min": 61.15134635060883,
+      "supported_minimum_mass_median": 0.09558805836251867,
+      "supported_minimum_mass_min": 0.0576051010226433,
+      "supported_pas": 78,
+      "zone_id": "middle_middle"
+    },
+    {
+      "eligible_pas": 78,
+      "pitch_type": "ST",
+      "pitcher": 657277,
+      "rate": 1.0,
+      "supported_minimum_ess_median": 94.08386335099277,
+      "supported_minimum_ess_min": 41.389169216460566,
+      "supported_minimum_mass_median": 0.13423433718860533,
+      "supported_minimum_mass_min": 0.036850019377310285,
+      "supported_pas": 78,
+      "zone_id": "middle_right"
+    }
+  ]
+}
