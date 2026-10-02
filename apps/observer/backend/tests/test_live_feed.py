@@ -295,7 +295,7 @@ def test_pitcher_today_counts_only_this_pitchers_pitches_in_the_feed():
 
 def test_tap_measures_the_viewers_delay_from_the_pitch_they_just_saw():
     text = lambda wall: datetime.fromtimestamp(wall, timezone.utc).isoformat().replace('+00:00', 'Z')
-    pitch = lambda end: {'isPitch': True, 'startTime': text(end-4), 'endTime': text(end)}
+    pitch = lambda arrival: {'isPitch': True, 'startTime': text(arrival-.5), 'endTime': text(arrival+20)}  # endTime: rewritten
     snapshot = {'liveData': {'plays': {'allPlays': [{'playEvents': [pitch(1000.0), pitch(1023.0)]}],
                                        'currentPlay': {'playEvents': [pitch(1046.5), {'isPitch': False}]}}}}
     assert tap_delay(snapshot, 1056.0, 30.0) == 33.0   # set to 30 s: the pitch that ended at 1023, not the newer or older one

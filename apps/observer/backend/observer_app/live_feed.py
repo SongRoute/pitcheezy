@@ -76,6 +76,9 @@ def event_wall(feed):
     A replay transport states it as ``metaData.eventWall``. A real feed gives each play event a
     ``startTime``/``endTime``; a pitch counts from its ``endTime`` so the result is never shown before
     the ball has arrived. ``metaData.timeStamp`` (UTC, the newest event's start) is the floor.
+    Seen live (849844): a new pitch arrives with ``endTime`` about a second after its release; later the
+    feed rewrites an older event's ``endTime`` to the next event's start, which never exceeds the newest
+    event's own times, and a ball in play gets its ``endTime`` moved to the end of the play.
     """
     meta = feed.get('metaData') or {}
     if meta.get('eventWall') is not None:
@@ -94,15 +97,19 @@ def event_wall(feed):
     return max(times) if times else None
 
 
+FLIGHT_S = 0.5  # release (a pitch's startTime) to the mitt
+
+
 def tap_delay(feed, now, current, *, tolerance_s=8.0):
     """The viewer tapped at wall time ``now`` as a pitch reached the mitt on their broadcast: their delay is
-    ``now`` minus that pitch's real end time. Which pitch they saw is not known, so only the recent pitch
-    that puts the delay within ``tolerance_s`` of their ``current`` setting counts (a fine adjustment after
-    the +/- buttons); otherwise None."""
+    ``now`` minus the moment that pitch really arrived. Which pitch they saw is not known, so only the
+    recent pitch that puts the delay within ``tolerance_s`` of their ``current`` setting counts (a fine
+    adjustment after the +/- buttons); otherwise None. A pitch's ``startTime`` is its release and stays
+    fixed; ``endTime`` is not used because the live feed rewrites it to the next event's start."""
     plays = (feed.get('liveData') or {}).get('plays') or {}
-    ends = [_wall(event['endTime']) for play in [*(plays.get('allPlays') or [])[-4:], plays.get('currentPlay') or {}]
-            for event in play.get('playEvents') or [] if event.get('isPitch') and event.get('endTime')]
-    delays = [now-end for end in ends if abs(now-end-current) <= tolerance_s and now >= end]
+    arrivals = {_wall(event['startTime'])+FLIGHT_S for play in [*(plays.get('allPlays') or [])[-4:], plays.get('currentPlay') or {}]
+                for event in play.get('playEvents') or [] if event.get('isPitch') and event.get('startTime')}
+    delays = [now-arrival for arrival in arrivals if abs(now-arrival-current) <= tolerance_s and now >= arrival]
     return round(min(delays, key=lambda delay: abs(delay-current)), 1) if delays else None
 
 

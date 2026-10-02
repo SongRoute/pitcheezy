@@ -31,6 +31,7 @@ import urllib.request
 OVER = ('Final', 'Game Over', 'Completed Early')
 BROADCAST_DELAYS = (0, 10, 20, 30, 45, 60)
 READ_S = 5  # seconds a viewer needs to read a recommendation before the pitch
+SEEN_S = 1.0  # release to the pitch having arrived (the live feed's first endTime is about start + 0.7..1.2 s)
 
 
 def _get(url, timeout):
@@ -123,11 +124,13 @@ def report(game_pk, output, snapshots, *, poll_interval_s=10.0):
     order = sorted(times, key=lambda key: times[key][0])
     # A pitch already in the first snapshot was thrown before recording started: its first-seen time is not a lag.
     opened = files[0].stat().st_mtime if files else None
-    fresh = [key for key in order if first_seen[key] > opened and times[key][1] > opened-poll_interval_s]
-    lag = [first_seen[key]-times[key][1] for key in fresh]
+    fresh = [key for key in order if first_seen[key] > opened and times[key][0] > opened-poll_interval_s]
+    # Times count from a pitch's startTime (release): the live feed first gives endTime = start + about 1 s,
+    # then rewrites it to the next event's start, and the final feed re-stamps both (849844, 2026-10-02).
+    lag = [first_seen[key]-times[key][0] for key in fresh]
     # Recommendation for pitch k can be computed once the snapshot showing pitch k-1 arrived.
     margin = [times[key][0]-first_seen[before] for before, key in zip(order, order[1:])
-              if before in fresh and times[key][0]-times[before][1] < 120]
+              if before in fresh and times[key][0]-times[before][0] < 120]
     polls = [json.loads(line) for line in (output/f'{game_pk}_polls.jsonl').read_text().splitlines() if line.strip()]
     live = [p for p in polls if p.get('status') == 'ready']
     by_key, compute = {}, []
@@ -143,7 +146,7 @@ def report(game_pk, output, snapshots, *, poll_interval_s=10.0):
         'note': 'Service timing/coverage measurement on DEMO-WS-2026 data; not a model or policy evaluation.',
         'snapshots': len(files), 'pitches_in_snapshots': len(order), 'pitches_first_seen_live': len(fresh),
         'publication_lag_s': _quantiles(lag),
-        'publication_lag_note': f'first fetch of a snapshot containing the pitch minus the pitch endTime; includes our poll phase (0..{poll_interval_s:g} s)',
+        'publication_lag_note': f'first fetch of a snapshot containing the pitch minus the pitch startTime (release); includes our poll phase (0..{poll_interval_s:g} s)',
         'next_pitch_margin_s': _quantiles(margin),
         'next_pitch_margin_note': 'next pitch startTime minus first fetch of the snapshot containing the previous pitch (gaps under 120 s); compute time not subtracted',
         'share_with_read_time_by_broadcast_delay': {
@@ -200,6 +203,45 @@ def simulate(feeds_dir, output, *, lags, polls):
     return result
 
 
+def pitch_keys(feed):
+    """{policy pitch key 'gamePk:at_bat_number:pitch_number': (start, end)} for every pitch in a feed."""
+    out, game_pk = {}, feed['gameData']['game']['pk']
+    for play in feed['liveData']['plays'].get('allPlays') or []:
+        number = 0
+        for event in play.get('playEvents') or []:
+            if event.get('isPitch') or (event.get('type') == 'no_pitch' and ((event.get('details') or {}).get('call') or {}).get('code')):
+                number += 1
+                if event.get('isPitch') and event.get('startTime') and event.get('endTime'):
+                    out[f"{game_pk}:{play['about']['atBatIndex']+1}:{number}"] = (_time(event['startTime']), _time(event['endTime']))
+    return out
+
+
+def measured_leads(polls, feed, *, since=None, until=None, delays=BROADCAST_DELAYS):
+    """Measured on a real game: for each pitch, when a zero-delay viewer first had its recommendation
+    (first poll answering that pitch key with a ready/unsupported recommendation) against when the pitch
+    was really thrown. A viewer ``delay`` behind sees the pitch at ``start + delay`` and the recommendation
+    no earlier than the previous pitch on their own broadcast (``previous end + delay``)."""
+    times = pitch_keys(feed)
+    order = sorted(times, key=lambda key: times[key][0])
+    before = dict(zip(order[1:], order))
+    first = {}
+    for poll in polls:
+        key = poll.get('rec_key')
+        if key and poll.get('rec_status') in ('ready', 'unsupported') and key not in first:
+            first[key] = poll['wall']
+    # (pitch start, first shown, previous pitch at the plate): startTime is the release and stays fixed in
+    # the live feed; endTime is rewritten, so the previous pitch counts as seen SEEN_S after its release.
+    rows = [(times[key][0], first[key], times[before[key]][0]+SEEN_S) for key in order
+            if key in first and key in before and (since is None or first[key] >= since) and (until is None or first[key] < until)
+            and times[key][0]-times[before[key]][0] < 120]
+    lead0 = [start-shown for start, shown, _ in rows]
+    shares = {str(delay): round(sum(start+delay-max(shown, previous_seen+delay) >= READ_S for start, shown, previous_seen in rows)/len(rows), 4)
+              if rows else None for delay in delays}
+    return {'pitches': len(rows), 'lead_at_zero_delay_s': _quantiles(lead0),
+            'arrival_after_previous_pitch_s': _quantiles([shown-previous_seen for _, shown, previous_seen in rows]),
+            'read_time_s': READ_S, 'share_with_read_time_by_broadcast_delay': shares}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     commands = parser.add_subparsers(dest='command', required=True)
@@ -215,12 +257,24 @@ def main(argv=None):
     rep.add_argument('--game-pk', type=int, required=True)
     rep.add_argument('--output', type=Path, required=True)
     rep.add_argument('--snapshots', type=Path, required=True)
+    lead = commands.add_parser('leads', help='measured lead times of a recorded real game')
+    lead.add_argument('--polls', type=Path, required=True)
+    lead.add_argument('--feed', type=Path, required=True, help='a late or final snapshot of the game (.json.gz)')
+    lead.add_argument('--since', help='UTC ISO: only recommendations first seen from this time')
+    lead.add_argument('--until', help='UTC ISO: only recommendations first seen before this time')
     sim = commands.add_parser('simulate')
     sim.add_argument('--feeds', type=Path, required=True, help='directory of {gamePk}_final.json.gz feeds')
     sim.add_argument('--output', type=Path, required=True)
     sim.add_argument('--lags', type=float, nargs='+', required=True, help='feed publication lags to try (s)')
     sim.add_argument('--polls', type=float, nargs='+', default=[10, 5, 3, 2])
     args = parser.parse_args(argv)
+    if args.command == 'leads':
+        polls = [json.loads(line) for line in args.polls.read_text().splitlines() if line.strip()]
+        with gzip.open(args.feed, 'rt') as handle:
+            feed = json.load(handle)
+        print(json.dumps(measured_leads(polls, feed, since=args.since and _time(args.since), until=args.until and _time(args.until)),
+                         ensure_ascii=False, indent=1))
+        return
     if args.command == 'simulate':
         result = simulate(args.feeds, args.output, lags=args.lags, polls=args.polls)
         for row in result['grid']:
