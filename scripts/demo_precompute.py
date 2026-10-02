@@ -781,7 +781,8 @@ def live_rows(feed):
     else:
         if line.get('outs') == 3 or line.get('inningState') in ('Middle', 'End') or 'offense' not in line:
             return None
-        batter, pitcher = line['offense']['batter']['id'], line['defense']['pitcher']['id']
+        from observer_app.live_feed import due_up
+        batter, pitcher = due_up(line, plays[-1] if plays else None), line['defense']['pitcher']['id']
         hand = _hand(data, pitcher, 'pitchHand')
         side = _hand(data, batter, 'batSide')
         side = {'L': 'R', 'R': 'L'}.get(hand) if side == 'S' else side  # a switch hitter bats opposite the pitcher
@@ -1009,18 +1010,29 @@ class TimedReplay:
     """``LiveFeed`` transport that replays a COMPLETED game at its real pace (display rehearsal only).
 
     Snapshot n is the state right before pitch n (``replay_snapshots``). It becomes fetchable once pitch
-    n-1's recorded ``endTime`` (+ ``lag_s``, a simulated feed publication lag) has passed on the replay
-    clock, which stands ``lead_s`` before pitch ``start`` at wall time ``t0`` and runs ``speed`` times real
-    time. After the last pitch the final feed is served. ``metaData.eventWall`` is each snapshot's event
-    time moved onto today's wall clock, so the observer's delay buffer treats it like a real feed.
+    n-1 has been seen on the replay clock, which stands ``lead_s`` before pitch ``start`` at wall time
+    ``t0`` and runs ``speed`` times real time. After the last pitch the final feed is served.
+    ``metaData.eventWall`` is each snapshot's event time moved onto today's wall clock, so the observer's
+    delay buffer treats it like a real feed.
+
+    Times (checked on 849844, live snapshots against the feed after Game Over): a pitch's ``startTime``
+    is its release, in the live and the final feed alike. Live, the pitch is first published with
+    ``endTime`` about a second later, which is when the observer shows it; the final feed re-stamps
+    ``endTime`` to about 3.9 s after release, or to the end of the play for a ball in play. So a pitch
+    counts as seen ``SEEN_S`` after its release, a ball in play at its final ``endTime``. ``lag_s`` > 0
+    rehearses the real feed, which publishes a pitch that long after its release.
     """
+    SEEN_S = 1.0
 
     def __init__(self, final, *, start=0, t0=None, speed=1.0, lag_s=0.0, lead_s=15.0, wall=time.time):
         events = [e for play in final['liveData']['plays']['allPlays'] for e in play['playEvents'] if e.get('isPitch')]
         if not 0 <= start < len(events):
             raise IndexError(start)
         self.starts = [_epoch(e['startTime']) for e in events]
-        self.ends = [_epoch(e.get('endTime') or e['startTime']) for e in events]
+        self.ends = [max(_epoch(e['endTime']), release + self.SEEN_S) if (e.get('details') or {}).get('isInPlay') and e.get('endTime')
+                     else release + self.SEEN_S for e, release in zip(events, self.starts)]
+        # when the snapshot after each pitch can be fetched: never before it was seen
+        self.ready = [max(seen, release + float(lag_s)) for seen, release in zip(self.ends, self.starts)]
         self.final, self.start, self.speed, self.lag_s, self.wall = final, start, float(speed), float(lag_s), wall
         self.t0 = wall() if t0 is None else float(t0)
         self.origin = self.starts[start] - lead_s
@@ -1037,13 +1049,13 @@ class TimedReplay:
         import bisect
         virtual = self._virtual()
         return {'elapsed_s': round(virtual - self.starts[0], 1), 'pitches': len(self.ends),
-                'index': max(self.start, bisect.bisect_right(self.ends, virtual - self.lag_s))}
+                'index': max(self.start, bisect.bisect_right(self.ready, virtual))}
 
     def __call__(self, url, timeout):
         import bisect
         if '/feed/live' not in url:
             return {'dates': []}
-        index = max(self.start, bisect.bisect_right(self.ends, self._virtual() - self.lag_s))
+        index = max(self.start, bisect.bisect_right(self.ready, self._virtual()))
         if index >= len(self.ends):
             return {**self.final, 'metaData': {**self.final.get('metaData', {}), 'timeStamp': 'rehearsal_final',
                                                 'eventWall': self._to_wall(self.ends[-1])}}

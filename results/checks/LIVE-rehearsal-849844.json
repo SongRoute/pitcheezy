@@ -1,0 +1,260 @@
+{
+ "schema": "pitcheezy.live-rehearsal-summary.v1",
+ "game_pk": 849844,
+ "date": "2026-10-02",
+ "note": "First real in-progress game through the delayed-live observer (PHI@ATL, NL Wild Card game 3). Service timing/coverage measurement on DEMO-WS-2026 data; not a model or policy evaluation.",
+ "instances": {
+  "8766": "demo/ws-2026 9c30189 (fixed 30 s delay by fetch time, feed poll 10 s), recorder poll 5 s",
+  "8769": "demo/live-sync, recorder poll 2 s at delay 0; code d1579f9 from 00:24:50Z (due-up batter and result-pending fixes), c178a11 from 01:16Z (feed poll 5 s for the delay-0 viewer)"
+ },
+ "feed": {
+  "wait_s": 10,
+  "pitches": 277,
+  "publication_lag_from_release_s": {
+   "n": 277,
+   "min": 9.1,
+   "p10": 13.5,
+   "median": 19.2,
+   "p90": 26.3,
+   "max": 35.5
+  },
+  "publication_lag_note": "earliest first fetch over the two instances minus the pitch startTime; still includes that fetch's poll phase",
+  "release_to_release_gap_s": {
+   "n": 256,
+   "p10": 15.0,
+   "median": 20.5,
+   "p90": 38.9
+  },
+  "time_fields": "live: startTime = release, endTime first about start + 0.7..1.2 s, later rewritten to the next event start; after Game Over: startTime unchanged (277/277), endTime = start + 3.9 s median",
+  "host_clock_offset_s": 0.097
+ },
+ "report_8766_whole_game": {
+  "schema": "pitcheezy.live-rehearsal.v1",
+  "game_pk": 849844,
+  "note": "Service timing/coverage measurement on DEMO-WS-2026 data; not a model or policy evaluation.",
+  "snapshots": 366,
+  "pitches_in_snapshots": 277,
+  "pitches_first_seen_live": 277,
+  "publication_lag_s": {
+   "n": 277,
+   "p10": 15.88,
+   "median": 22.07,
+   "p90": 30.22,
+   "min": 9.1,
+   "max": 39.17
+  },
+  "publication_lag_note": "first fetch of a snapshot containing the pitch minus the pitch startTime (release); includes our poll phase (0..10 s)",
+  "next_pitch_margin_s": {
+   "n": 256,
+   "p10": -10.96,
+   "median": 0.1,
+   "p90": 16.93,
+   "min": -20.3,
+   "max": 72.39
+  },
+  "next_pitch_margin_note": "next pitch startTime minus first fetch of the snapshot containing the previous pitch (gaps under 120 s); compute time not subtracted",
+  "share_with_read_time_by_broadcast_delay": {
+   "0": 0.3125,
+   "10": 0.6953,
+   "20": 0.9414,
+   "30": 1.0,
+   "45": 1.0,
+   "60": 1.0
+  },
+  "read_time_s": 5,
+  "polls": {
+   "total": 2310,
+   "errors": 0,
+   "status": {
+    "between_innings": 344,
+    "buffering": 4,
+    "not_live": 216,
+    "ready": 1746
+   },
+   "response_ms": {
+    "n": 2310,
+    "p10": 7.2,
+    "median": 929.4,
+    "p90": 1203.7,
+    "min": 2.3,
+    "max": 4322.8
+   }
+  },
+  "recommendation": {
+   "poll_status_when_ready_state": {
+    "ready": 1630,
+    "unsupported": 116
+   },
+   "decisions_seen": 289,
+   "decisions_ready": 258,
+   "decisions_unsupported": 31,
+   "compute_total_s": {
+    "n": 289,
+    "p10": 0.04,
+    "median": 0.13,
+    "p90": 0.17,
+    "min": 0.02,
+    "max": 5.79
+   }
+  }
+ },
+ "report_8769_whole_game": {
+  "schema": "pitcheezy.live-rehearsal.v1",
+  "game_pk": 849844,
+  "note": "Service timing/coverage measurement on DEMO-WS-2026 data; not a model or policy evaluation.",
+  "snapshots": 372,
+  "pitches_in_snapshots": 277,
+  "pitches_first_seen_live": 277,
+  "publication_lag_s": {
+   "n": 277,
+   "p10": 14.52,
+   "median": 20.65,
+   "p90": 26.87,
+   "min": 9.51,
+   "max": 36.65
+  },
+  "publication_lag_note": "first fetch of a snapshot containing the pitch minus the pitch startTime (release); includes our poll phase (0..10 s)",
+  "next_pitch_margin_s": {
+   "n": 256,
+   "p10": -8.34,
+   "median": 1.76,
+   "p90": 18.7,
+   "min": -19.45,
+   "max": 76.03
+  },
+  "next_pitch_margin_note": "next pitch startTime minus first fetch of the snapshot containing the previous pitch (gaps under 120 s); compute time not subtracted",
+  "share_with_read_time_by_broadcast_delay": {
+   "0": 0.3945,
+   "10": 0.7695,
+   "20": 0.9805,
+   "30": 1.0,
+   "45": 1.0,
+   "60": 1.0
+  },
+  "read_time_s": 5,
+  "polls": {
+   "total": 4986,
+   "errors": 4,
+   "status": {
+    "None": 4,
+    "between_innings": 786,
+    "not_live": 193,
+    "ready": 3906,
+    "resolving": 97
+   },
+   "response_ms": {
+    "n": 4982,
+    "p10": 7.4,
+    "median": 10.4,
+    "p90": 1201.7,
+    "min": 2.0,
+    "max": 4562.8
+   }
+  },
+  "recommendation": {
+   "poll_status_when_ready_state": {
+    "computing": 29,
+    "ready": 3717,
+    "unsupported": 160
+   },
+   "decisions_seen": 275,
+   "decisions_ready": 261,
+   "decisions_unsupported": 14,
+   "compute_total_s": {
+    "n": 275,
+    "p10": 0.1,
+    "median": 0.13,
+    "p90": 0.17,
+    "min": 0.02,
+    "max": 6.44
+   }
+  }
+ },
+ "fixed_code_8769": {
+  "since": "2026-10-02T00:24:50Z",
+  "polls": 3789,
+  "poll_errors_outside_restart": 0,
+  "restart_errors": [
+   "2026-10-02T01:15:49+00:00",
+   "2026-10-02T01:15:51+00:00"
+  ],
+  "decisions": 259,
+  "decisions_ready": 247,
+  "decisions_unsupported": 12,
+  "unsupported_reason": "pitcher without <=2025 training records (12)",
+  "rebinds_over_1s": [
+   {
+    "key": "849844:6:4",
+    "bind": 6.09,
+    "total": 6.44,
+    "cause": "ABS challenge overturned an earlier call of the PA"
+   }
+  ],
+  "polls_showing_computing": 19
+ },
+ "measured_leads_8769": {
+  "feed_poll_10s": {
+   "window": "00:24:50Z-01:15:30Z",
+   "pitches": 77,
+   "lead_at_zero_delay_s": {
+    "n": 77,
+    "p10": -6.5,
+    "median": 1.5,
+    "p90": 19.19,
+    "min": -18.39,
+    "max": 67.21
+   },
+   "arrival_after_previous_pitch_s": {
+    "n": 77,
+    "p10": 10.45,
+    "median": 19.59,
+    "p90": 24.88,
+    "min": 8.7,
+    "max": 34.96
+   },
+   "read_time_s": 5,
+   "share_with_read_time_by_broadcast_delay": {
+    "0": 0.4156,
+    "10": 0.8701,
+    "20": 0.987,
+    "30": 1.0,
+    "45": 1.0,
+    "60": 1.0
+   }
+  },
+  "feed_poll_5s": {
+   "window": "01:16:30Z-end",
+   "pitches": 159,
+   "lead_at_zero_delay_s": {
+    "n": 159,
+    "p10": -6.64,
+    "median": 3.62,
+    "p90": 17.17,
+    "min": -15.16,
+    "max": 77.19
+   },
+   "arrival_after_previous_pitch_s": {
+    "n": 159,
+    "p10": 12.61,
+    "median": 18.4,
+    "p90": 25.31,
+    "min": 7.33,
+    "max": 36.32
+   },
+   "read_time_s": 5,
+   "share_with_read_time_by_broadcast_delay": {
+    "0": 0.4151,
+    "10": 0.8428,
+    "20": 0.9937,
+    "30": 1.0,
+    "45": 1.0,
+    "60": 1.0
+   }
+  }
+ },
+ "found_and_fixed": [
+  "after a PA completes the feed names the finished batter as offense.batter for about 10 s (next is onDeck): wrong-batter recommendation and a ~6 s rebind at every PA (old code: 8766)",
+  "a ball in play (and strike three / ball four / HBP) leaves the play open for about 10 s: a non-existent pending pitch was shown",
+  "endTime is rewritten by the feed: timing now counts from startTime"
+ ]
+}

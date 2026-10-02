@@ -80,7 +80,7 @@ if (replayGame) {  // a finished game replayed at its real pace through the live
   report.replay_clock = [before, await clock()];
   // live sync control: the viewer's own delay is remembered on the device
   await page.goto(`${base}/live?game=${replayGame}`);
-  await page.getByText('중계 맞추기').waitFor();
+  await page.getByText('중계 맞추기').waitFor();  // open on a device that has not set its delay yet
   await page.getByRole('button', { name: '5초 늦게' }).click();
   await page.getByText('내 화면이 35초 늦음').waitFor();
   if (await page.evaluate(() => localStorage.getItem('pitcheezy.live.delay')) !== '35') fail('viewer delay not remembered');

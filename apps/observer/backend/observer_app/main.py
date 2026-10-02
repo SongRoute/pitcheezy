@@ -313,21 +313,22 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         return {'status': pitch['pre']['status'], 'reason': pitch['pre']['reason'], 'key': result['key'],
                 'recommendation': pitch['pre']['recommendation'], 'pa_pitches': result['pa_pitches'],
                 'previous': result['previous'], 'home_we_now': result['home_we_now'],
-                'policy_identity': result['policy_identity'][:8], 'seconds': result['seconds']}
+                'policy_identity': result['policy_identity'][:8], 'seconds': result['seconds'],
+                'tally': armb.tally(result['key'])}
 
     replays = OrderedDict()  # (gamePk, start, t0, speed) -> (LiveFeed, transport): one shared clock per link
 
-    def replay_parts(game_pk, start, t0, speed):
+    def replay_parts(game_pk, start, t0, speed, lag):
         from .live_feed import LIVE_CONFIG, LiveFeed
         now = time.time()
         t0 = now if t0 is None else t0
         if not now-12*3600 <= t0 <= now+5:
             raise ServiceError(400, '다시 보기 시작 시각이 올바르지 않습니다. 처음부터 다시 시작해 주세요.')
-        key = (game_pk, start, round(t0, 3), speed)
+        lag = LIVE_CONFIG.get('replay_lag_s', 0.0) if lag is None else lag
+        key = (game_pk, start, round(t0, 3), speed, lag)
         if key not in replays:
             try:
-                transport, _ = timed_replay(game_pk, start=start, t0=key[2], speed=speed,
-                                            lag_s=LIVE_CONFIG.get('replay_lag_s', 0.0))
+                transport, _ = timed_replay(game_pk, start=start, t0=key[2], speed=speed, lag_s=lag)
             except KeyError:
                 raise ServiceError(404, '이 경기는 다시 보기 자료가 없습니다.') from None
             except IndexError:
@@ -348,11 +349,12 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
 
     @app.get('/api/live/{game_pk}/state')
     def live_state(game_pk: int, delay: float | None = Query(None, ge=0, le=600), replay: int | None = Query(None, ge=0),
-                   t0: float | None = Query(None), speed: float = Query(1.0, ge=0.25, le=30)):
+                   t0: float | None = Query(None), speed: float = Query(1.0, ge=0.25, le=30),
+                   lag: float | None = Query(None, ge=0, le=60)):
         from .live_feed import parse_state
         if game_pk < 1:
             raise ServiceError(400, 'gamePk는 양의 정수여야 합니다.')
-        feed, transport = (live_parts(), None) if replay is None else replay_parts(game_pk, replay, t0, speed)
+        feed, transport = (live_parts(), None) if replay is None else replay_parts(game_pk, replay, t0, speed, lag)
 
         def state():
             entry, wait = feed.snapshot(game_pk, delay)
@@ -361,7 +363,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 armb.lookup(newest)  # head start: compute the raw state before the delay serves it
             used = feed.delay_s if delay is None else min(delay, feed.max_delay_s)
             timing = {'delay_s': used, 'replay': None if transport is None else
-                      {'start': replay, 't0': transport.t0, 'speed': speed} | transport.position()}
+                      {'start': replay, 't0': transport.t0, 'speed': speed, 'lag_s': transport.lag_s} | transport.position()}
             if entry is None:
                 return timing | {'status': 'buffering', 'reason': f'내 중계 시점까지 기다리는 중입니다({wait}초).',
                                  'recommendation': None, 'sync': {'max_delay_s': feed.max_delay_s}}

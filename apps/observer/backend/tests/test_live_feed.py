@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from observer_app.live_armb import LiveArmB, state_key
-from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, event_wall, last_pitch, parse_state, pitcher_today, tap_delay
+from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, due_up, event_wall, last_pitch, parse_state, pitcher_today, tap_delay
 from observer_app.main import create_app
 
 FIXTURES = Path(__file__).parent/'fixtures/live'
@@ -216,7 +216,7 @@ class FakeTimedReplay:
     built = []
 
     def __init__(self, game_pk, start, t0, speed, lag_s):
-        self.t0, self.options = t0, (game_pk, start, speed, lag_s)
+        self.t0, self.lag_s, self.options = t0, lag_s, (game_pk, start, speed, lag_s)
         FakeTimedReplay.built.append(self)
 
     def position(self):
@@ -249,6 +249,8 @@ def test_replay_route_pins_one_clock_per_link_and_takes_a_viewer_delay():
         assert abs(clock['t0'] - time.time()) < 5 and first['delay_s'] == 0
         again = client.get('/api/live/849845/state', params={'replay': 40, 't0': clock['t0']}).json()
         assert again['replay']['t0'] == clock['t0'] and len(FakeTimedReplay.built) == 1  # same link, same clock
+        rehearsal = client.get('/api/live/849845/state', params={'replay': 40, 't0': clock['t0'], 'lag': 16}).json()
+        assert rehearsal['replay']['lag_s'] == 16 and again['replay']['lag_s'] == 0 and len(FakeTimedReplay.built) == 2
         assert again['sync']['event_age_s'] >= 0 and again['sync']['max_delay_s'] == 120
         late = client.get('/api/live/849845/state', params={'replay': 40, 't0': clock['t0'], 'delay': 45}).json()
         assert late['status'] == 'buffering' and late['delay_s'] == 45  # a viewer 45 s behind has not reached it yet
@@ -295,7 +297,7 @@ def test_pitcher_today_counts_only_this_pitchers_pitches_in_the_feed():
 
 def test_tap_measures_the_viewers_delay_from_the_pitch_they_just_saw():
     text = lambda wall: datetime.fromtimestamp(wall, timezone.utc).isoformat().replace('+00:00', 'Z')
-    pitch = lambda end: {'isPitch': True, 'startTime': text(end-4), 'endTime': text(end)}
+    pitch = lambda arrival: {'isPitch': True, 'startTime': text(arrival-.5), 'endTime': text(arrival+20)}  # endTime: rewritten
     snapshot = {'liveData': {'plays': {'allPlays': [{'playEvents': [pitch(1000.0), pitch(1023.0)]}],
                                        'currentPlay': {'playEvents': [pitch(1046.5), {'isPitch': False}]}}}}
     assert tap_delay(snapshot, 1056.0, 30.0) == 33.0   # set to 30 s: the pitch that ended at 1023, not the newer or older one
@@ -328,3 +330,81 @@ def test_the_pitch_that_ended_an_inning_is_still_shown_during_the_break():
     done['liveData']['plays']['currentPlay']['about']['isComplete'] = True
     done['liveData']['linescore']['outs'] = 3
     assert parse_state(done, None)['status'] == 'between_innings' and 'last_pitch' in parse_state(done, None)
+
+
+def test_between_batters_the_real_feed_still_names_the_finished_batter():
+    """849844 (2026-10-02): for about ten seconds after a PA completes ``offense.batter`` is the batter who
+    just finished and ``onDeck`` the next one; the new play then moves ``batter`` on."""
+    finished = {'matchup': {'batter': {'id': 607208}}}
+    stale = {'offense': {'batter': {'id': 607208}, 'onDeck': {'id': 656941}}}
+    assert due_up(stale, finished) == 656941
+    assert due_up({'offense': {'batter': {'id': 656941}, 'onDeck': {'id': 547180}}}, finished) == 656941  # already moved on
+    assert due_up(stale, None) == 607208  # before the first pitch nobody has finished
+    done = feed('849845_20260929_195940.json')
+    done['liveData']['plays']['currentPlay']['about']['isComplete'] = True
+    offense = done['liveData']['linescore']['offense']
+    offense['onDeck'] = {'id': 592518}
+    done['gameData']['players']['ID592518'] = {'fullName': 'Next Batter', 'batSide': {'code': 'S'}}
+    state = parse_state(done, None)
+    assert state['batter'] == {'id': 592518, 'name': 'Next Batter', 'side': 'R'} and state['situation']['balls'] == 0  # vs LHP Sale
+
+
+def test_a_pitch_that_decided_the_pa_is_not_followed_by_a_pending_pitch():
+    snapshot = feed('849845_20260929_195940.json')
+    play = snapshot['liveData']['plays']['currentPlay']
+    assert parse_state(snapshot, None)['status'] == 'ready'
+    in_play = copy.deepcopy(snapshot)
+    in_play['liveData']['plays']['currentPlay']['playEvents'][-1]['details']['isInPlay'] = True
+    state = parse_state(in_play, None)
+    assert state['status'] == 'resolving' and state['situation'] is not None and state['pitcher']['name'] == 'Chris Sale'
+    for count in ({'strikes': 3}, {'balls': 4}):
+        ended = copy.deepcopy(snapshot)
+        ended['liveData']['plays']['currentPlay']['count'] = play['count'] | count
+        assert parse_state(ended, None)['status'] == 'resolving'
+    hit = copy.deepcopy(snapshot)
+    hit['liveData']['plays']['currentPlay']['playEvents'][-1]['details']['call'] = {'code': 'H'}
+    assert parse_state(hit, None)['status'] == 'resolving'
+    armb = LiveArmB(lambda: FakePolicy())
+    app = create_app(object(), live_feed=LiveFeed(lambda url, timeout: in_play, delay_s=0), live_policy=armb)
+    with TestClient(app) as client:
+        body = client.get('/api/live/849845/state').json()
+    assert body['status'] == 'resolving' and body['recommendation'] is None and armb.status()['pending'] == 0
+
+
+def test_feed_is_polled_faster_only_while_a_low_delay_viewer_is_watching():
+    now, calls = [0.0], []
+    snapshot = at(feed('849845_20260929_195940.json'), -100.0)
+    config = LIVE_CONFIG | {'poll_interval_s': 10, 'fast_poll_s': 5, 'fast_poll_below_delay_s': 25}
+    live = LiveFeed(lambda url, timeout: calls.append(now[0]) or snapshot, config=config, delay_s=30,
+                    clock=lambda: now[0], wall=lambda: now[0], sleep=lambda _: None)
+    for second in range(0, 31, 2):  # a 30 s viewer: the feed's own 10 s pace
+        now[0] = float(second)
+        live.snapshot(849845)
+    assert calls == [0.0, 10.0, 20.0, 30.0]
+    calls.clear()
+    for second in range(32, 51, 2):  # a 10 s viewer joins: 5 s pace (first fetch at the next poll)
+        now[0] = float(second)
+        live.snapshot(849845, 10)
+        live.snapshot(849845)
+    assert calls == [36.0, 42.0, 48.0]
+    calls.clear()
+    for second in range(52, 111, 2):  # they leave: back to 10 s once their last visit is 30 s old
+        now[0] = float(second)
+        live.snapshot(849845)
+    assert calls == [54.0, 60.0, 66.0, 72.0, 78.0, 88.0, 98.0, 108.0]  # the last low-delay visit was at 50
+
+
+def test_game_tally_counts_only_pitches_before_the_served_one():
+    pre = lambda code: {'status': 'ready' if code else 'unsupported', 'reason': None,
+                        'recommendation': {'candidates': [{'rank': 1, 'pitch_type': code}]} if code else None}
+    pitch = lambda key, code, thrown=None: {'key': key, 'pre': pre(code), 'actual': thrown and {'pitch_type': thrown}}
+    armb = LiveArmB(lambda: None)
+    armb._note({'key': '7:1:2', 'pitch': pitch('7:1:2', 'SL'), 'pa_pitches': [pitch('7:1:1', 'FF', 'FF')], 'previous': None})
+    armb._note({'key': '7:2:1', 'pitch': pitch('7:2:1', None), 'pa_pitches': [],
+                'previous': {'key': '7:1:2', 'actual': {'pitch_type': 'CH'}}})
+    armb._note({'key': '7:10:1', 'pitch': pitch('7:10:1', 'FF'), 'pa_pitches': [],
+                'previous': {'key': '7:2:1', 'actual': {'pitch_type': 'FF'}}})
+    assert armb.tally('7:1:2') == {'pitches': 1, 'recommended': 1, 'same_type': 1}
+    assert armb.tally('7:2:1') == {'pitches': 2, 'recommended': 2, 'same_type': 1}   # a later viewer state sees more
+    assert armb.tally('7:10:1') == {'pitches': 3, 'recommended': 2, 'same_type': 1}  # 7:2:1 had no recommendation
+    assert armb.tally('8:1:1') == {'pitches': 0, 'recommended': 0, 'same_type': 0}

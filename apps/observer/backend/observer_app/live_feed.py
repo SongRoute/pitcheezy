@@ -76,6 +76,9 @@ def event_wall(feed):
     A replay transport states it as ``metaData.eventWall``. A real feed gives each play event a
     ``startTime``/``endTime``; a pitch counts from its ``endTime`` so the result is never shown before
     the ball has arrived. ``metaData.timeStamp`` (UTC, the newest event's start) is the floor.
+    Seen live (849844): a new pitch arrives with ``endTime`` about a second after its release; later the
+    feed rewrites an older event's ``endTime`` to the next event's start, which never exceeds the newest
+    event's own times, and a ball in play gets its ``endTime`` moved to the end of the play.
     """
     meta = feed.get('metaData') or {}
     if meta.get('eventWall') is not None:
@@ -94,15 +97,19 @@ def event_wall(feed):
     return max(times) if times else None
 
 
+FLIGHT_S = 0.5  # release (a pitch's startTime) to the mitt
+
+
 def tap_delay(feed, now, current, *, tolerance_s=8.0):
     """The viewer tapped at wall time ``now`` as a pitch reached the mitt on their broadcast: their delay is
-    ``now`` minus that pitch's real end time. Which pitch they saw is not known, so only the recent pitch
-    that puts the delay within ``tolerance_s`` of their ``current`` setting counts (a fine adjustment after
-    the +/- buttons); otherwise None."""
+    ``now`` minus the moment that pitch really arrived. Which pitch they saw is not known, so only the
+    recent pitch that puts the delay within ``tolerance_s`` of their ``current`` setting counts (a fine
+    adjustment after the +/- buttons); otherwise None. A pitch's ``startTime`` is its release and stays
+    fixed; ``endTime`` is not used because the live feed rewrites it to the next event's start."""
     plays = (feed.get('liveData') or {}).get('plays') or {}
-    ends = [_wall(event['endTime']) for play in [*(plays.get('allPlays') or [])[-4:], plays.get('currentPlay') or {}]
-            for event in play.get('playEvents') or [] if event.get('isPitch') and event.get('endTime')]
-    delays = [now-end for end in ends if abs(now-end-current) <= tolerance_s and now >= end]
+    arrivals = {_wall(event['startTime'])+FLIGHT_S for play in [*(plays.get('allPlays') or [])[-4:], plays.get('currentPlay') or {}]
+                for event in play.get('playEvents') or [] if event.get('isPitch') and event.get('startTime')}
+    delays = [now-arrival for arrival in arrivals if abs(now-arrival-current) <= tolerance_s and now >= arrival]
     return round(min(delays, key=lambda delay: abs(delay-current)), 1) if delays else None
 
 
@@ -121,7 +128,21 @@ class LiveFeed:
         self.delay_s = config['delay_s'] if delay_s is None else delay_s
         self.max_delay_s = max(config.get('max_delay_s', 120), self.delay_s)
         self.record_dir = Path(record_dir) if record_dir else None
-        self.buffers, self.fetched_at, self._lock = {}, {}, threading.Lock()
+        self.buffers, self.fetched_at, self.watching, self._lock = {}, {}, {}, threading.Lock()
+
+    def _interval(self, game_pk, delay, now):
+        """Seconds between upstream fetches. The feed asks for ``poll_interval_s``; while a viewer whose
+        broadcast runs less than ``fast_poll_below_delay_s`` behind was here in the last 30 s, the poll phase
+        would eat their lead time, so the shorter ``fast_poll_s`` applies. Later viewers lose nothing at
+        the slow pace: their snapshot waits in the buffer anyway."""
+        watching = self.watching.setdefault(game_pk, {})
+        watching[delay] = now
+        for seen in [d for d, at in watching.items() if now-at > 30]:
+            del watching[seen]
+        fast = self.config.get('fast_poll_s')
+        if fast and min(watching) < self.config.get('fast_poll_below_delay_s', 0):
+            return min(fast, self.config['poll_interval_s'])
+        return self.config['poll_interval_s']
 
     def _get(self, url):
         attempts = self.config['retries']+1
@@ -164,7 +185,7 @@ class LiveFeed:
         with self._lock:
             now, wall = self.clock(), self.wall()
             buffer = self.buffers.setdefault(game_pk, [])
-            if now-self.fetched_at.get(game_pk, -1e18) >= self.config['poll_interval_s']:
+            if now-self.fetched_at.get(game_pk, -1e18) >= self._interval(game_pk, delay, now):
                 feed = self._get(f"{self.config['base_url']}/api/v1.1/game/{game_pk}/feed/live")
                 self.fetched_at[game_pk] = now
                 event = event_wall(feed)
@@ -250,6 +271,32 @@ def last_pitch(feed):
     return None
 
 
+def due_up(line, last_play):
+    """The batter of the next plate appearance while the feed has not created its play yet.
+
+    Right after a PA completes, the real feed keeps naming the batter who just finished as
+    ``offense.batter`` for about ten seconds (the next one is ``onDeck``); only when the new play appears
+    does ``batter`` move on. Before a game's first pitch and after a half-inning change ``batter`` is
+    already the due-up one.
+    """
+    offense = line['offense']
+    finished = ((last_play or {}).get('matchup') or {}).get('batter', {}).get('id')
+    if finished is not None and offense['batter']['id'] == finished and 'onDeck' in offense:
+        return offense['onDeck']['id']
+    return offense['batter']['id']
+
+
+def _resolving(play):
+    """True while an open play's last pitch already decided the PA (ball in play, hit by pitch, strike
+    three, ball four) and the feed has not posted the result yet: there is no next pitch to recommend."""
+    pitches = [e for e in play.get('playEvents') or [] if e.get('isPitch')]
+    if not pitches:
+        return False
+    details, count = pitches[-1].get('details') or {}, play.get('count') or {}
+    return bool(details.get('isInPlay') or (details.get('call') or {}).get('code') == 'H'
+                or count.get('strikes', 0) >= 3 or count.get('balls', 0) >= 4)
+
+
 def parse_state(feed, pins, *, config=LIVE_CONFIG):
     """Current pre-pitch game state from a GUMBO feed, plus a ``PrePitchInput`` when supported by the
     legacy bundle ``pins`` (``pins=None``: state only)."""
@@ -283,8 +330,8 @@ def parse_state(feed, pins, *, config=LIVE_CONFIG):
              'x': ((e.get('pitchData') or {}).get('coordinates') or {}).get('pX'),
              'z': ((e.get('pitchData') or {}).get('coordinates') or {}).get('pZ')}
             for e in play.get('playEvents', []) if e.get('isPitch')]
-    else:  # between batters: the next PA starts 0-0 with the linescore's due-up batter
-        batter_id, pitcher_id = line['offense']['batter']['id'], line['defense']['pitcher']['id']
+    else:  # between batters: the next PA starts 0-0 with the due-up batter
+        batter_id, pitcher_id = due_up(line, play), line['defense']['pitcher']['id']
         hand = _player(feed, pitcher_id).get('pitchHand', {}).get('code')
         stand = _player(feed, batter_id).get('batSide', {}).get('code')
         if stand == 'S':  # switch hitter bats opposite the pitcher's hand
@@ -299,6 +346,8 @@ def parse_state(feed, pins, *, config=LIVE_CONFIG):
     result |= {'situation': situation, 'pitcher_today': pitcher_today(feed, pitcher_id),
                'pitcher': {'id': pitcher_id, 'name': _player(feed, pitcher_id).get('fullName'), 'hand': hand},
                'batter': {'id': batter_id, 'name': _player(feed, batter_id).get('fullName'), 'side': stand}}
+    if in_pa and _resolving(play):
+        return result | {'status': 'resolving', 'reason': '방금 공의 결과를 기다리는 중입니다.', 'last_pitch': last_pitch(feed)}
     if pins is None:  # ARM-B service view: support is decided by the frozen policy runtime, not bundle pins
         return result
     pin = pins['pitchers'].get(str(pitcher_id))
