@@ -1,0 +1,52 @@
+/* Watch-along game summary panel. Uses the .wa-page tokens when mounted there (incl. dark scheme); light fallbacks elsewhere. */
+.ws-panel{background:var(--paper,#fffef9);color:var(--ink,#192d2c);border:1px solid var(--line,#dedfd5);border-radius:14px;padding:14px 14px 16px;min-width:0;max-width:100%;word-break:keep-all;overflow-wrap:anywhere}
+.ws-panel h2{font-size:18px;font-weight:900;letter-spacing:-.4px;margin:0}
+.ws-panel h3{font-size:14px;font-weight:800;letter-spacing:-.3px;margin:18px 0 6px}
+.ws-panel p{margin:0}
+.ws-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px}
+.ws-muted{color:var(--muted,#5f6b65);font-size:12.5px;line-height:1.5}
+.ws-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.ws-loading,.ws-empty{color:var(--muted,#5f6b65);font-size:13.5px;line-height:1.6;padding:10px 0}
+.ws-error{background:var(--err-bg,#fbe7de);color:var(--err,#a3361a);border-radius:10px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13.5px;line-height:1.5}
+.ws-error button{min-height:44px;min-width:44px;padding:0 14px;border-radius:10px;border:1px solid currentColor;background:transparent;color:inherit;font-weight:800}
+.ws-warn{margin-top:6px !important;font-size:12.5px;color:var(--badge,#8a3b12);background:var(--badge-bg,#fbe3d3);border-radius:8px;padding:4px 8px;line-height:1.5}
+.ws-note{margin-top:14px !important;font-size:12px;line-height:1.6;color:var(--muted,#5f6b65);border-left:2px solid var(--line,#dedfd5);padding-left:8px}
+
+/* Line score: the table scrolls inside its own box, never the page. */
+.ws-table{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;border:1px solid var(--line,#dedfd5);border-radius:10px;margin-bottom:6px}
+.ws-table:focus-visible{outline:3px solid #dc8957;outline-offset:2px}
+.ws-table table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:14px}
+.ws-table th,.ws-table td{text-align:center;padding:7px 2px;min-width:21px;border-bottom:1px solid var(--line,#dedfd5)}
+.ws-table tbody tr:last-child th,.ws-table tbody tr:last-child td{border-bottom:0}
+.ws-table thead th{font-size:11.5px;font-weight:700;color:var(--muted,#5f6b65);background:var(--soft,#f3f1e7)}
+.ws-table tbody th{text-align:left;padding-left:8px;font-weight:800;white-space:nowrap;position:sticky;left:0;background:var(--paper,#fffef9);max-width:5.5em;overflow:hidden;text-overflow:ellipsis}
+.ws-table thead th:first-child{position:sticky;left:0;z-index:1}
+.ws-table td.now{background:var(--current,#eef4f0);font-weight:900}
+.ws-table td.x,.ws-table td.unknown,.ws-table td.later{color:var(--muted,#5f6b65)}
+.ws-table .total{font-weight:900;border-left:1px solid var(--line,#dedfd5);min-width:30px;position:sticky;right:0;background:var(--paper,#fffef9)}
+.ws-table thead .total{background:var(--soft,#f3f1e7)}
+
+/* Home WE sparkline: segments break at missing values. */
+.ws-spark{margin:0}
+.ws-spark svg{width:100%;height:auto;max-height:180px;overflow:visible}
+.ws-spark text{font-size:9px;fill:var(--muted,#5f6b65)}
+.ws-spark line.edge{stroke:var(--line,#dedfd5);stroke-width:1}
+.ws-spark line.mid{stroke:var(--grid,#c9cfc4);stroke-width:1;stroke-dasharray:3 3}
+.ws-spark line.inning{stroke:var(--line,#dedfd5);stroke-width:.75}
+.ws-spark .we{fill:none;stroke:var(--teal,#17695b);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.ws-spark .we-dot{fill:var(--teal,#17695b)}
+.ws-spark .we-now{fill:var(--actual,#e57743);stroke:var(--paper,#fffef9);stroke-width:1.5}
+.ws-spark figcaption{margin-top:2px}
+.ws-spark b{color:var(--ink,#192d2c)}
+
+/* Notable plays ranked by |home WE change| (server order). */
+.ws-moments{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.ws-moments li{border:1px solid var(--line,#dedfd5);border-radius:10px;padding:9px 10px;background:var(--zone-bg,#fbfaf4);min-width:0}
+.ws-moment-head{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap}
+.ws-moment-head strong{font-size:15px;font-weight:900}
+.ws-chip{font-size:12px;font-weight:800;background:var(--chip,#dfeae3);color:var(--deep,#123f39);border-radius:999px;padding:2px 8px}
+.ws-runs{font-size:12px;font-weight:800;color:var(--badge,#8a3b12)}
+.ws-delta{margin-left:auto;font-size:13.5px;font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ws-delta.up{color:var(--up,#17695b)}.ws-delta.down{color:var(--down,#b4481d)}
+.ws-moment-who{font-size:12.5px;color:var(--muted,#5f6b65);margin-top:3px !important;line-height:1.5}
+.ws-moment-text{font-size:12.5px;line-height:1.5;margin-top:3px !important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
