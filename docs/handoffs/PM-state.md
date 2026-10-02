@@ -1,10 +1,10 @@
 # PM 상태판
 
-기준 시각: **2026-10-03 00:45 KST**. 준비 세션이 읽기 전용으로 확인했다. PM은 고칠 때마다 이 시각을 바꾼다.
+기준 시각: **2026-10-03 06:50 KST**. 준비 세션이 읽기 전용으로 확인했다. PM은 고칠 때마다 이 시각을 바꾼다.
 규칙은 [PM 헌장(초안)](../PM-charter.md), 결정의 출처는 [decisions.md](../decisions.md). 10/2 저녁 브리핑: https://claude.ai/artifact/KKpWE5TwMTKWLMPK9Y1jRt (18:27 기준이라 Q1·Q2·Q5는 낡았다)
 
 ## 번호
-- 마지막 결정: **D155**(`e46d2e8`, 10/3 00:32). 다음은 D156. 쓰기 직전 꼬리를 다시 본다. D134는 두 번 쓰였다.
+- 마지막 결정: **D157**(`78a0a03`, 10/3 06:40). 다음은 D158. D156은 모델 세션 마무리(재개 문서 갱신), D157은 P17·P18이 동결과 겹쳤다는 공개다. 쓰기 직전 꼬리를 다시 본다. D134는 두 번 쓰였다.
 - 검토·작업 ID: `docs/reviews/`에서 가장 큰 번호가 COOP-025다. 다음은 COOP-026(다른 브랜치에 더 큰 번호가 있는지는 확인 못함).
 
 ## 동결 — 10/4 디비전시리즈
@@ -17,12 +17,13 @@
 
 ## 실행 중 (10/3 00:38 확인)
 - 운영 서버 `100.108.252.111:8766`: tmux `pz:4`, 폴더 `pitcheezy-demo` = `demo/ws-2026` `09e12e9`. 서버가 실제로 돌리는 코드는 17:54에 올린 `8abb7f6`이고 그 뒤 커밋은 도구만 더했다(D153).
-- 사전 계산 `pz:5`, 미리보기 `:8770` `pz:6`, 대조 `pz:7`, 기록기 `pz:10~13`, 요약 `pz:14`. `pz:8·9·15`는 끝난 실험 창(p17·p16·p18)이다.
+- 사전 계산 `pz:5`, 미리보기 `:8770` `pz:6`, 대조 `pz:7`, 기록기 `pz:10~13`, 요약 `pz:14`. 실험 창(p16·p17·p18)은 06:40 전에 닫혔다.
 - 옛 서버 `127.0.0.1:8766`과 `:8767`(9월에 띄운 것): 동결 뒤 Song 결정으로 정리한다.
+- 옛 세션: "프로젝트 진행상황 브리핑"(10/2 04:55부터 멈춰 있던 세션)은 10/3 06:50에 Song 지시로 끝냈다. 모델 세션은 D156으로 스스로 마무리했다. 준비 세션(이 문서 작성)도 마무리한다.
 - 무거운 실험: 없음.
 
 ## 브랜치와 작업트리 (잠금)
-- `/Users/song/Projects/pitcheezy` · `codex/ml-matrix-execution` `e46d2e8` — PM. 원격에 없는 커밋 2개(D154, D155)와 이 준비 묶음.
+- `/Users/song/Projects/pitcheezy` · `codex/ml-matrix-execution` `78a0a03` — PM. 원격에 없는 커밋 7개(D154~D157, 준비 묶음 3개).
 - `…/pitcheezy-worktrees/exp-p17-policy-predictor-diagnostic` · `a971a1d` — ml-worker. P14~P18 실험 코드. 원격에 없는 커밋 2개.
 - `…/pitcheezy-worktrees/live-sync` · `demo/live-sync` `09e12e9` — live-worker. 원격 없음(18커밋).
 - `…/pitcheezy-worktrees/ui-frame` · `demo/ui-frame` `7bbc9ed` — ui-worker. 원격 없음(17커밋). `node_modules`가 live-sync 쪽으로 연결돼 있다.
@@ -112,7 +113,7 @@
 - `CLAUDE.md` 3~4·8·39행(Codex 배정, D52 순서와 낡은 인수인계 안내, self-merge). 개정안 승인 대기.
 - `AGENTS.md` 3행, `docs/AI_COLLABORATION.md`(이력)
 - `docs/SESSION_HANDOFF.md`(D131에서 멈춤)
-- `docs/handoffs/CLAUDE-resume-prompt.md`, `CLAUDE-resume-2026-09-29.md`("Fable 금지", "S0 승인 묻기"가 들어 있다)
+- `docs/handoffs/CLAUDE-resume-prompt.md`·`CLAUDE-resume-2026-10-03.md`: 모델 세션이 10/3 06:39에 갱신했다(D156). 옛 세션용 재개 문서이므로 새 PM은 PM-state를 우선한다.
 - `docs/handoffs/ML-experiments-next-session.md` 2행(위의 낡은 재개 문서로 안내한다)
 - `docs/roadmap.md`·`docs/plan.md`의 우선순위(D134가 두 축 병행으로 바꿈)
 - `docs/decisions.md` D142 본문의 "실제 서버에 붙여 본 적 없다"(그 뒤 17:11에 확인함)
