@@ -115,7 +115,7 @@ export default function Showcase() {
         <section className="sc-compare" aria-label="추천과 실제 투구 비교">
           <h2>{label(decision, scene.pitchNumber)}</h2>
           {error ? <p role="alert">{error}</p> : watchPath
-            ? <iframe key={`${selected}:${take}`} src={watchPath} title="선택한 공의 추천과 실제 투구" />
+            ? <iframe key={`${selected}:${take}`} src={watchPath.replace('#', '&embed=1#')} title="선택한 공의 추천과 실제 투구" />
             : <p>{timeline ? '이 장면에 대응하는 투구 자료가 없습니다. 다른 장면을 선택해 주세요.' : '추천 화면을 준비하는 중…'}</p>}
         </section>
       </div>

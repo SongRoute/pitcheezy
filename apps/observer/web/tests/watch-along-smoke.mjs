@@ -24,12 +24,14 @@ if (!/투구 전 추천/.test(before)) fail('no pre-pitch card');
 if (shots) await page.screenshot({ path: `${shots}/watch-pre.png`, fullPage: true });
 await page.getByRole('button', { name: '실제 투구 공개' }).click();
 await page.locator('.wa-reveal').waitFor();
+await page.locator('.ws-panel').waitFor();
 const after = await page.locator('.wa-reveal').innerText();
 if (!/승리확률/.test(after)) fail('no WE change after reveal');
 if (shots) await page.screenshot({ path: `${shots}/watch-revealed.png`, fullPage: true });
 await page.getByRole('button', { name: '다음 공 →' }).click();
 await page.waitForFunction(() => window.location.hash === '#i=1');
 if (await page.locator('.wa-reveal').count()) fail('reveal leaked into the next pitch');
+if (await page.locator('.ws-panel').count()) fail('summary leaked into next unrevealed pitch');
 // jump to the first unsupported pitch through the plate-appearance selector
 const options = await page.locator('select option').allInnerTexts();
 const small = await page.evaluate(() => [...document.querySelectorAll('.wa-page button, .wa-page select, .wa-back, .wa-page summary')]

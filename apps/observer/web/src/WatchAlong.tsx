@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import WatchSummaryPanel from './WatchSummaryPanel';
+import showcaseSource from './showcase-scenes.json';
 import './watch-along.css';
 
 export const BADGE = '검증 전 실험 버전 · 위치는 실제 투구 분포 근사';
@@ -102,7 +104,7 @@ export function Guide({ onClose }: { onClose: () => void }) {
       <li><b>던지기 전에 보기</b> 투수가 공을 던지기 전에 추천 구종과 대략 위치를 봐요.</li>
       <li><b>넘겨서 비교하기</b> 공이 들어오면 아래 버튼을 눌러 실제 투구를 공개하고, 한 번 더 누르면 다음 공으로 가요.</li>
     </ol>
-    <p className="wa-guide-note">추천은 2025년까지 기록으로 만든 실험 버전이라 아직 성능 검증 전이에요.</p>
+    <p className="wa-guide-note">추천은 검증 전 실험 버전이에요. 2026 정규시즌 1회 평가에서는 개선 근거를 확인하지 못했어요.</p>
     <button className="wa-primary" onClick={close} autoFocus>알겠어요</button>
   </div></div>;
 }
@@ -183,6 +185,7 @@ function Picker() {
             {g.ready_share !== undefined && g.ready_share !== null && <span className="wa-coverage" title="추천을 낼 수 있었던 공의 비율">
               <span className="bar"><i style={{ width: `${Math.round(g.ready_share * 100)}%` }} /></span>추천 {Math.round(g.ready_share * 100)}%</span>}</a>
             <span className="wa-replay-links"><a className="wa-replay-link" href={`/game?game=${g.game_pk}&replay=0`}>한 화면으로 다시 보기 ▸</a>
+              {g.game_pk === showcaseSource.gamePk && <a className="wa-replay-link" href="/showcase">영상과 나란히 비교 ▸</a>}
               <a className="wa-replay-link" href={`/live?game=${g.game_pk}&replay=0`}>실제 속도로 다시 보기 ▸</a></span></li>)}</ul>}
         <p className="wa-footnote">추천 비율이 낮은 경기는 2025년 4월 이후 데뷔했거나 기록이 적은 투수가 많이 던진 경기예요. 그런 투수의 공은 추천 없이 이유만 보여 줘요.</p>
       </section>
@@ -192,12 +195,13 @@ function Picker() {
 export default function WatchAlong() {
   const params = new URLSearchParams(window.location.search);
   const gamePk = params.get('game') ? Number(params.get('game')) : null;
+  const embedded = params.get('embed') === '1';
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [index, setIndex] = useState(0);
   const [reveals, setReveals] = useState<Record<number, Reveal>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [guide, setGuide] = useState(() => !guideSeen());
+  const [guide, setGuide] = useState(() => !embedded && !guideSeen());
 
   useEffect(() => {
     if (gamePk === null) return;
@@ -211,9 +215,9 @@ export default function WatchAlong() {
   }, [gamePk]);
   useEffect(() => {
     if (!timeline) return;
-    window.history.replaceState(null, '', `?game=${timeline.game.game_pk}#i=${index}`);
+    window.history.replaceState(null, '', `?game=${timeline.game.game_pk}${embedded ? '&embed=1' : ''}#i=${index}`);
     try { localStorage.setItem(`pitcheezy.watch.${timeline.game.game_pk}`, String(index)); } catch { /* storage may be unavailable */ }
-  }, [index, timeline]);
+  }, [index, timeline, embedded]);
 
   const decision = timeline?.decisions[index] ?? null;
   const reveal = reveals[index] ?? null;
@@ -248,7 +252,7 @@ export default function WatchAlong() {
     setBusy(true);
     try { await fetchReveal(index); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }, [timeline, index, busy, fetchReveal]);
-  const go = useCallback((next: number) => { setError(null); setIndex(next); window.scrollTo({ top: 0 }); }, []);
+  const go = useCallback((next: number) => { if (embedded) return; setError(null); setIndex(next); window.scrollTo({ top: 0 }); }, [embedded]);
   const step = useCallback((delta: number) => { if (timeline) go(Math.min(Math.max(0, index + delta), timeline.decisions.length - 1)); }, [timeline, index, go]);
   useEffect(() => {  // a typed or shared #i=N link jumps to that pitch
     const onHash = () => { const target = readHash(); if (timeline && target !== null && target < timeline.decisions.length) go(target); };
@@ -278,11 +282,11 @@ export default function WatchAlong() {
       match: r && t && r.actual.pitch_type ? t.pitch_type === r.actual.pitch_type : null, current: d.index === index };
   });
   const last = index === timeline.decisions.length - 1;
-  return <div className="wa-page wa-has-bar"><Header badge={timeline.badge} back onHelp={() => setGuide(true)} />
+  return <div className="wa-page wa-has-bar"><Header badge={timeline.badge} back={!embedded} onHelp={embedded ? undefined : () => setGuide(true)} />
     <Board s={s} away={game.away_team} home={game.home_team} pitcher={decision.pitcher.name ?? String(decision.pitcher.id)}
       batter={`${decision.batter.name ?? decision.batter.id} (${decision.batter.side === 'L' ? '좌' : '우'}타)`} extra={`${decision.pitch_number}구째`} />
     <main className="wa-main">
-      <nav className="wa-innings" aria-label="회로 이동">{halves.map((h, i) =>
+      {!embedded && <><nav className="wa-innings" aria-label="회로 이동">{halves.map((h, i) =>
         <button key={h.first} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} onClick={() => go(h.first)}>{h.label}</button>)}</nav>
       <div className="wa-nav">
         <select value={currentPa} onChange={e => go(plateAppearances[Number(e.target.value)].first)} aria-label="타석으로 이동">
@@ -290,6 +294,7 @@ export default function WatchAlong() {
         </select>
         <span className="wa-progress">{index + 1}/{timeline.decisions.length}구</span>
       </div>
+      </>}
       <PitchStrip items={strip} />
       {error && <p className="wa-error">{error}</p>}
       <article className="wa-card">
@@ -298,20 +303,22 @@ export default function WatchAlong() {
           : <><h2 className="wa-none">추천 없음</h2><p className="wa-reason">{decision.pre.reason}</p><p className="wa-muted wa-small">실제 투구는 아래 버튼으로 그대로 볼 수 있어요.</p></>}
         {reveal && <Revealed reveal={reveal} top={top ?? null} decision={decision} game={game} />}
       </article>
+      {reveal && <WatchSummaryPanel gamePk={timeline.game.game_pk} through={index} />}
       <footer className="wa-foot">
-        <p className="wa-keys">키보드: → 또는 스페이스 = 공개/다음 · ← = 이전</p>
+        <p className="wa-keys">{embedded ? '스페이스 = 실제 투구 공개 · 장면은 바깥 화면에서 바꿔 주세요.' : '키보드: → 또는 스페이스 = 공개/다음 · ← = 이전'}</p>
         <details><summary>이 추천은 어떻게 만들었나요?</summary>
-          <p>{timeline.policy.note}</p>
+          <p>2026 정규시즌 1회 평가에서 추천 정책의 개선 근거를 확인하지 못했습니다. 서비스 추천은 검증 전 실험 버전입니다.</p>
           <p>2025년까지 기록으로 학습해 고정한 추천 모델(연구 이름 ARM-B)이 구종을 고르고, 위치는 그 투수가 실제로 던진 공의 분포로 어림해요.</p>
           <p>이 경기에서 추천을 낸 공 {timeline.coverage.ready}/{timeline.coverage.pitch_decisions} · {timeline.we_note}</p>
           <p className="wa-tech">{timeline.policy.name} · τ {timeline.policy.tau} · 식별자 {timeline.policy.identity_sha256.slice(0, 8)}</p></details></footer>
     </main>
     <div className="wa-actionbar" role="toolbar" aria-label="투구 넘기기">
-      <button className="wa-step" onClick={() => step(-1)} disabled={index === 0} aria-label="이전 공">←</button>
+      {!embedded && <button className="wa-step" onClick={() => step(-1)} disabled={index === 0} aria-label="이전 공">←</button>}
       {!reveal ? <button className="wa-primary" onClick={() => void doReveal()} disabled={busy}>{busy ? '불러오는 중…' : '실제 투구 공개'}</button>
+        : embedded ? <button className="wa-primary" disabled>공개 완료 · 다음 장면은 영상 옆에서 선택</button>
         : last ? <a className="wa-primary" href="/watch">마지막 공이에요 · 목록으로</a>
         : <button className="wa-primary" onClick={() => step(1)}>다음 공 →</button>}
-      <button className="wa-step" onClick={() => step(1)} disabled={last} aria-label="공개하지 않고 다음 공">→</button>
+      {!embedded && <button className="wa-step" onClick={() => step(1)} disabled={last} aria-label="공개하지 않고 다음 공">→</button>}
     </div>
     {guide && <Guide onClose={() => setGuide(false)} />}
   </div>;
