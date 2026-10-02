@@ -8,7 +8,7 @@ type PaPitch = { key: string; pitch_number: number; status: string; pre: Pre; ac
 type LiveRec = { status: 'ready' | 'unsupported' | 'computing' | 'unavailable'; reason: string | null; key?: string;
   recommendation?: { candidates: Candidate[] } | null; pa_pitches?: PaPitch[];
   previous?: { key: string; actual: Actual; inning: number; half: 'Top' | 'Bot'; home_we_before: number | null } | null;
-  home_we_now?: number | null; policy_identity?: string };
+  home_we_now?: number | null; policy_identity?: string; tally?: { pitches: number; recommended: number; same_type: number } };
 type Replay = { start: number; t0: number; speed: number; elapsed_s: number; pitches: number; index: number };
 type LiveState = { status: string; reason: string | null; badge?: string; delay_s: number; replay?: Replay | null;
   sync?: { max_delay_s: number; event_age_s?: number; feed_lag_s?: number };
@@ -141,6 +141,8 @@ export default function Live() {
           {p.play_text && <p className="wa-play">{p.play_text}</p>}</article>; })()}
       {state?.status === 'ready' && <>
         <PitchStrip items={strip} />
+        {rec?.tally && rec.tally.recommended > 0 && <p className="wa-tally">지금까지 추천한 공 <b>{rec.tally.recommended}구</b> 중 실제로 같은 구종 <b>{rec.tally.same_type}구</b>
+          <span> · 투수의 선택과 얼마나 겹쳤는지일 뿐, 추천의 성적은 아니에요</span></p>}
         <article className="wa-card">
           <p className="wa-eyebrow">다음 공 · 투구 전 추천</p>
           {rec?.status === 'ready' && rec.recommendation ? <Recommendation candidates={rec.recommendation.candidates} bounds={ZONE_BOUNDS} actual={null} note="위치는 이 투수의 2025년까지 실제 투구 분포 기반 근사이며 평가되지 않았습니다." />

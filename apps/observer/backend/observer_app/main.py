@@ -313,7 +313,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         return {'status': pitch['pre']['status'], 'reason': pitch['pre']['reason'], 'key': result['key'],
                 'recommendation': pitch['pre']['recommendation'], 'pa_pitches': result['pa_pitches'],
                 'previous': result['previous'], 'home_we_now': result['home_we_now'],
-                'policy_identity': result['policy_identity'][:8], 'seconds': result['seconds']}
+                'policy_identity': result['policy_identity'][:8], 'seconds': result['seconds'],
+                'tally': armb.tally(result['key'])}
 
     replays = OrderedDict()  # (gamePk, start, t0, speed) -> (LiveFeed, transport): one shared clock per link
 

@@ -56,6 +56,7 @@ class LiveArmB:
         self.failed, self.running = {}, None
         self.policy, self.error, self.loading = None, None, False
         self.computed, self.last_seconds = 0, None
+        self.games = OrderedDict()  # gamePk -> {'pre': {pitch key: top type or None}, 'actual': {pitch key: type}}
         self._cond = threading.Condition()  # its default lock is an RLock
         self._thread = None
 
@@ -97,6 +98,32 @@ class LiveArmB:
                     return None
                 self._cond.wait(remaining)
 
+    def _note(self, result):
+        """Remembers, per pitch of a game, the top recommended type before it and the type actually thrown."""
+        game = self.games.setdefault(result['key'].split(':')[0], {'pre': {}, 'actual': {}})
+        self.games.move_to_end(result['key'].split(':')[0])
+        while len(self.games) > 4:
+            self.games.popitem(last=False)
+        for pitch in [*result['pa_pitches'], result['pitch']]:
+            candidates = (pitch['pre'].get('recommendation') or {}).get('candidates') or []
+            game['pre'][pitch['key']] = candidates[0]['pitch_type'] if pitch['pre']['status'] == 'ready' and candidates else None
+            if (pitch.get('actual') or {}).get('pitch_type'):
+                game['actual'][pitch['key']] = pitch['actual']['pitch_type']
+        previous = result.get('previous')
+        if previous and (previous.get('actual') or {}).get('pitch_type'):
+            game['actual'][previous['key']] = previous['actual']['pitch_type']
+
+    def tally(self, key):
+        """Of the pitches before pending pitch ``key`` that this server recommended on and then saw thrown:
+        how many had a recommendation and how many were the top recommended type. A description of what
+        the pitcher chose, not a measure of the recommendation's quality."""
+        order = lambda k: tuple(int(part) for part in k.split(':')[1:])
+        with self._cond:
+            game = self.games.get(key.split(':')[0], {'pre': {}, 'actual': {}})
+            seen = [(game['pre'][k], thrown) for k, thrown in game['actual'].items() if k in game['pre'] and order(k) < order(key)]
+        return {'pitches': len(seen), 'recommended': sum(top is not None for top, _ in seen),
+                'same_type': sum(top == thrown for top, thrown in seen)}
+
     def _run(self):
         try:
             self.policy = self.factory()
@@ -126,6 +153,8 @@ class LiveArmB:
             with self._cond:
                 self.running = None
                 self.cache[key] = {'result': result}
+                if result is not None:
+                    self._note(result)
                 while len(self.cache) > self.cache_size:
                     self.cache.popitem(last=False)
                 self.computed, self.last_seconds = self.computed + 1, seconds

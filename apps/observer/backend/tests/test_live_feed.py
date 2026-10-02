@@ -390,3 +390,19 @@ def test_feed_is_polled_faster_only_while_a_low_delay_viewer_is_watching():
         now[0] = float(second)
         live.snapshot(849845)
     assert calls == [54.0, 60.0, 66.0, 72.0, 78.0, 88.0, 98.0, 108.0]  # the last low-delay visit was at 50
+
+
+def test_game_tally_counts_only_pitches_before_the_served_one():
+    pre = lambda code: {'status': 'ready' if code else 'unsupported', 'reason': None,
+                        'recommendation': {'candidates': [{'rank': 1, 'pitch_type': code}]} if code else None}
+    pitch = lambda key, code, thrown=None: {'key': key, 'pre': pre(code), 'actual': thrown and {'pitch_type': thrown}}
+    armb = LiveArmB(lambda: None)
+    armb._note({'key': '7:1:2', 'pitch': pitch('7:1:2', 'SL'), 'pa_pitches': [pitch('7:1:1', 'FF', 'FF')], 'previous': None})
+    armb._note({'key': '7:2:1', 'pitch': pitch('7:2:1', None), 'pa_pitches': [],
+                'previous': {'key': '7:1:2', 'actual': {'pitch_type': 'CH'}}})
+    armb._note({'key': '7:10:1', 'pitch': pitch('7:10:1', 'FF'), 'pa_pitches': [],
+                'previous': {'key': '7:2:1', 'actual': {'pitch_type': 'FF'}}})
+    assert armb.tally('7:1:2') == {'pitches': 1, 'recommended': 1, 'same_type': 1}
+    assert armb.tally('7:2:1') == {'pitches': 2, 'recommended': 2, 'same_type': 1}   # a later viewer state sees more
+    assert armb.tally('7:10:1') == {'pitches': 3, 'recommended': 2, 'same_type': 1}  # 7:2:1 had no recommendation
+    assert armb.tally('8:1:1') == {'pitches': 0, 'recommended': 0, 'same_type': 0}
