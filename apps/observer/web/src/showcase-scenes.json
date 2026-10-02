@@ -1,0 +1,283 @@
+{
+  "gamePk": 849843,
+  "mediaUrl": "https://mlb-cuts-diamond.mlb.com/FORGE/2026/2026-09/29/31069d2d-26f8082b-6d08863b-csvm-diamondgcp-asset_1280x720_59_4000K.mp4",
+  "sourceCommit": "66224ad0a0414237793d21592a245e1e04e1932d",
+  "sourcePath": "docs/results/mlb_p0/game_849843_timing.json",
+  "sourceSha256": "3c51640926c892524a07053aace4d4222349e937d3f72ec3b1074ad9623df8f2",
+  "reviewStatus": "assistant_annotations_unreviewed",
+  "scenes": [
+    {
+      "pitchId": "849843:1:3",
+      "atBat": 1,
+      "pitchNumber": 3,
+      "releaseSeconds": 51.50145,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:2:5",
+      "atBat": 2,
+      "pitchNumber": 5,
+      "releaseSeconds": 60.243516666666665,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:3:3",
+      "atBat": 3,
+      "pitchNumber": 3,
+      "releaseSeconds": 69.95321666666666,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:4:1",
+      "atBat": 4,
+      "pitchNumber": 1,
+      "releaseSeconds": 99.4994,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:6:2",
+      "atBat": 6,
+      "pitchNumber": 2,
+      "releaseSeconds": 143.9438,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:9:5",
+      "atBat": 9,
+      "pitchNumber": 5,
+      "releaseSeconds": 179.44593333333333,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:10:3",
+      "atBat": 10,
+      "pitchNumber": 3,
+      "releaseSeconds": 199.24905,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:11:3",
+      "atBat": 11,
+      "pitchNumber": 3,
+      "releaseSeconds": 209.209,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:12:2",
+      "atBat": 12,
+      "pitchNumber": 2,
+      "releaseSeconds": 223.40651666666668,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:19:1",
+      "atBat": 19,
+      "pitchNumber": 1,
+      "releaseSeconds": 247.8476,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:19:4",
+      "atBat": 19,
+      "pitchNumber": 4,
+      "releaseSeconds": 264.79786666666666,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:22:3",
+      "atBat": 22,
+      "pitchNumber": 3,
+      "releaseSeconds": 285.90228333333334,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:23:3",
+      "atBat": 23,
+      "pitchNumber": 3,
+      "releaseSeconds": 297.4972,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:27:2",
+      "atBat": 27,
+      "pitchNumber": 2,
+      "releaseSeconds": 334.55088333333333,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:28:2",
+      "atBat": 28,
+      "pitchNumber": 2,
+      "releaseSeconds": 348.5482,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:31:8",
+      "atBat": 31,
+      "pitchNumber": 8,
+      "releaseSeconds": 364.7977666666667,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:33:4",
+      "atBat": 33,
+      "pitchNumber": 4,
+      "releaseSeconds": 405.405,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:34:2",
+      "atBat": 34,
+      "pitchNumber": 2,
+      "releaseSeconds": 411.0439666666667,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:35:4",
+      "atBat": 35,
+      "pitchNumber": 4,
+      "releaseSeconds": 421.00391666666667,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:36:3",
+      "atBat": 36,
+      "pitchNumber": 3,
+      "releaseSeconds": 437.20343333333335,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:37:5",
+      "atBat": 37,
+      "pitchNumber": 5,
+      "releaseSeconds": 448.79835,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:39:4",
+      "atBat": 39,
+      "pitchNumber": 4,
+      "releaseSeconds": 455.50505,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:40:2",
+      "atBat": 40,
+      "pitchNumber": 2,
+      "releaseSeconds": 465.49836666666664,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:41:3",
+      "atBat": 41,
+      "pitchNumber": 3,
+      "releaseSeconds": 492.10828333333336,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:42:1",
+      "atBat": 42,
+      "pitchNumber": 1,
+      "releaseSeconds": 523.0558666666667,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:43:4",
+      "atBat": 43,
+      "pitchNumber": 4,
+      "releaseSeconds": 545.59505,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:44:5",
+      "atBat": 44,
+      "pitchNumber": 5,
+      "releaseSeconds": 565.9487166666667,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:46:6",
+      "atBat": 46,
+      "pitchNumber": 6,
+      "releaseSeconds": 587.0030833333333,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:51:3",
+      "atBat": 51,
+      "pitchNumber": 3,
+      "releaseSeconds": 605.75515,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:52:5",
+      "atBat": 52,
+      "pitchNumber": 5,
+      "releaseSeconds": 636.4524833333334,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:53:5",
+      "atBat": 53,
+      "pitchNumber": 5,
+      "releaseSeconds": 644.1601833333333,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:54:5",
+      "atBat": 54,
+      "pitchNumber": 5,
+      "releaseSeconds": 663.9966666666667,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:55:4",
+      "atBat": 55,
+      "pitchNumber": 4,
+      "releaseSeconds": 673.3560166666666,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:60:5",
+      "atBat": 60,
+      "pitchNumber": 5,
+      "releaseSeconds": 715.8484666666667,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:66:3",
+      "atBat": 66,
+      "pitchNumber": 3,
+      "releaseSeconds": 755.70495,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:67:2",
+      "atBat": 67,
+      "pitchNumber": 2,
+      "releaseSeconds": 771.7543166666667,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:68:5",
+      "atBat": 68,
+      "pitchNumber": 5,
+      "releaseSeconds": 782.2981833333333,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:69:2",
+      "atBat": 69,
+      "pitchNumber": 2,
+      "releaseSeconds": 791.8076833333333,
+      "uncertaintySeconds": 0.05
+    },
+    {
+      "pitchId": "849843:71:6",
+      "atBat": 71,
+      "pitchNumber": 6,
+      "releaseSeconds": 812.2948166666666,
+      "uncertaintySeconds": 0.05
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+.sc-page{min-height:100dvh;background:#f5f3eb;color:#1d2a26;font-family:system-ui,sans-serif}
+.sc-head{display:flex;justify-content:space-between;gap:16px;padding:16px 24px;border-bottom:1px solid #d9ded6;align-items:center;flex-wrap:wrap}
+.sc-head a{padding:12px 0;color:inherit;text-decoration:none;font-weight:700}.sc-head span{font-size:12px;color:#526153}
+.sc-page main{max-width:1440px;margin:auto;padding:24px}.sc-page h1{font-size:28px;margin:0 0 8px}.sc-sub{color:#526153;line-height:1.6;margin:0 0 24px}
+.sc-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr);gap:24px;align-items:start}
+.sc-player,.sc-compare{min-width:0}.sc-video{position:relative;background:#15221a;border-radius:16px;overflow:hidden;aspect-ratio:16/9;display:grid;place-items:center}
+.sc-video video{width:100%;height:100%;display:block}.sc-load{position:absolute;z-index:1}.sc-label{display:grid;gap:8px;margin-top:18px;font-weight:650}
+.sc-page select{width:100%;min-width:0;min-height:48px;border:1px solid #b5c2b6;border-radius:10px;background:white;padding:10px;color:inherit;font:inherit}
+.sc-page button{min-height:44px;border:1px solid #b5c2b6;border-radius:10px;padding:10px 16px;background:white;color:inherit;font:inherit;font-weight:650;cursor:pointer}
+.sc-page button:disabled{opacity:.45;cursor:default}.sc-page button:focus-visible,.sc-page a:focus-visible,.sc-page select:focus-visible{outline:3px solid #547964;outline-offset:3px}
+.sc-page .sc-primary{background:#23523a;color:white;border-color:#23523a}.sc-controls{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.sc-hint,.sc-phone p{font-size:13px;line-height:1.6;color:#526153}.sc-page details{border-top:1px solid #d9ded6;margin-top:20px;padding:16px 0;line-height:1.7;font-size:14px}
+.sc-page summary{cursor:pointer;font-weight:700;padding:8px 0}.sc-phone{border-top:1px solid #d9ded6;padding-top:16px}.sc-phone a{display:inline-block;padding:12px;color:#23523a}
+.sc-compare{border:1px solid #d9ded6;background:white;border-radius:16px;overflow:hidden}.sc-compare h2{font-size:15px;margin:0;padding:14px 18px;border-bottom:1px solid #d9ded6}
+.sc-compare iframe{display:block;border:0;width:100%;height:760px;background:#f5f3eb}.sc-compare>p{padding:18px;line-height:1.6}
+@media(max-width:800px){.sc-layout{grid-template-columns:minmax(0,1fr)}.sc-page main{padding:16px}.sc-page h1{font-size:24px}.sc-head{padding:10px 16px}.sc-compare iframe{height:700px}.sc-controls button{flex:1;padding:10px 8px}.sc-head span{font-size:11px}}
