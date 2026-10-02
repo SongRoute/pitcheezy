@@ -1,0 +1,1442 @@
+{
+ "_source": "Real demo data: game 849845 (2026-09-29 PHI @ ATL) watch-along timeline and reveals, reshaped into /api/live/{game}/state responses. Not model output of this branch.",
+ "states": {
+  "pre_last_of_pa": {
+   "status": "ready",
+   "reason": null,
+   "delay_s": 0,
+   "replay": null,
+   "sync": {
+    "max_delay_s": 120
+   },
+   "game": {
+    "game_pk": 849845,
+    "game_type": "F",
+    "date": "2026-09-29",
+    "status": "In Progress",
+    "away_team": "Philadelphia Phillies",
+    "home_team": "Atlanta Braves"
+   },
+   "situation": {
+    "inning": 2,
+    "half": "Top",
+    "outs": 1,
+    "balls": 0,
+    "strikes": 2,
+    "bases": 0,
+    "home_score": 0,
+    "away_score": 1,
+    "runners": {}
+   },
+   "pitcher": {
+    "id": 519242,
+    "name": "Chris Sale",
+    "hand": "L"
+   },
+   "batter": {
+    "id": 681082,
+    "name": "Bryson Stott",
+    "side": "L"
+   },
+   "pitcher_today": {
+    "pitches": 27,
+    "mix": [
+     {
+      "pitch_type": "SL",
+      "pitch_label": "슬라이더",
+      "count": 12,
+      "share": 0.4444,
+      "avg_mph": 79.3
+     },
+     {
+      "pitch_type": "FF",
+      "pitch_label": "포심",
+      "count": 11,
+      "share": 0.4074,
+      "avg_mph": 97.1
+     },
+     {
+      "pitch_type": "SI",
+      "pitch_label": "싱커",
+      "count": 4,
+      "share": 0.1481,
+      "avg_mph": 96.5
+     }
+    ]
+   },
+   "recommendation": {
+    "status": "ready",
+    "reason": null,
+    "key": "849845:10:4",
+    "recommendation": {
+     "candidates": [
+      {
+       "rank": 1,
+       "pitch_type": "SL",
+       "pitch_label": "슬라이더",
+       "zone_id": "low_left",
+       "zone_label": "낮은 왼쪽",
+       "target": {
+        "x": -0.5533333333333333,
+        "z": 1.8983166666666667
+       },
+       "detail": {
+        "probability": 0.7199162016918178,
+        "reference_probability": 0.674191121143717,
+        "kernel_mass": 0.22895025416565623,
+        "kernel_ess": 135.2
+       }
+      },
+      {
+       "rank": 2,
+       "pitch_type": "FF",
+       "pitch_label": "포심",
+       "zone_id": "high_middle",
+       "zone_label": "높은 중앙",
+       "target": {
+        "x": 0.0,
+        "z": 3.0915833333333333
+       },
+       "detail": {
+        "probability": 0.20555763095751817,
+        "reference_probability": 0.24063205417607222,
+        "kernel_mass": 0.3343422102780809,
+        "kernel_ess": 216.1
+       }
+      },
+      {
+       "rank": 3,
+       "pitch_type": "CH",
+       "pitch_label": "체인지업",
+       "zone_id": "low_middle",
+       "zone_label": "낮은 중앙",
+       "target": {
+        "x": 0.0,
+        "z": 1.8983166666666667
+       },
+       "detail": {
+        "probability": 0.05172548555701917,
+        "reference_probability": 0.06059694005517934,
+        "kernel_mass": 0.236966091298114,
+        "kernel_ess": 168.1
+       }
+      }
+     ],
+     "candidate_law": {
+      "CH": 0.05172548555701917,
+      "FF": 0.20555763095751817,
+      "SI": 0.022800681793644816,
+      "SL": 0.7199162016918178
+     },
+     "reference_law": {
+      "CH": 0.06059694005517934,
+      "FF": 0.24063205417607222,
+      "SI": 0.024579884625031353,
+      "SL": 0.674191121143717
+     }
+    },
+    "pa_pitches": [
+     {
+      "key": "849845:10:1",
+      "pitch_number": 1,
+      "status": "SUPPORTED",
+      "pre": {
+       "status": "ready",
+       "reason": null,
+       "recommendation": {
+        "candidates": [
+         {
+          "rank": 1,
+          "pitch_type": "FF",
+          "pitch_label": "포심",
+          "zone_id": "middle_middle",
+          "zone_label": "가운데 높이 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 2.4949500000000002
+          },
+          "detail": {
+           "probability": 0.41405495835631156,
+           "reference_probability": 0.42689006651295863,
+           "kernel_mass": 0.3324044874006446,
+           "kernel_ess": 231.6
+          }
+         },
+         {
+          "rank": 2,
+          "pitch_type": "SL",
+          "pitch_label": "슬라이더",
+          "zone_id": "low_middle",
+          "zone_label": "낮은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.39083146202754815,
+           "reference_probability": 0.37079465482068064,
+           "kernel_mass": 0.34601713062259953,
+           "kernel_ess": 206.6
+          }
+         },
+         {
+          "rank": 3,
+          "pitch_type": "SI",
+          "pitch_label": "싱커",
+          "zone_id": "low_middle",
+          "zone_label": "낮은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.18208864134027136,
+           "reference_probability": 0.18773312731618405,
+           "kernel_mass": 0.3605105818915687,
+           "kernel_ess": 217.1
+          }
+         }
+        ],
+        "candidate_law": {
+         "CH": 0.013024938275869041,
+         "FF": 0.41405495835631156,
+         "SI": 0.18208864134027136,
+         "SL": 0.39083146202754815
+        },
+        "reference_law": {
+         "CH": 0.014582151350176847,
+         "FF": 0.42689006651295863,
+         "SI": 0.18773312731618405,
+         "SL": 0.37079465482068064
+        }
+       }
+      },
+      "actual": {
+       "pitch_type": "FF",
+       "pitch_label": "포심",
+       "description": "called_strike",
+       "result_label": "루킹 스트라이크",
+       "event": null,
+       "event_label": null,
+       "play_text": null,
+       "speed_mph": 94.3,
+       "x": -0.08092137093896613,
+       "z": 2.8322822590356966,
+       "zone_label": "높은 중앙"
+      }
+     },
+     {
+      "key": "849845:10:2",
+      "pitch_number": 2,
+      "status": "SUPPORTED",
+      "pre": {
+       "status": "ready",
+       "reason": null,
+       "recommendation": {
+        "candidates": [
+         {
+          "rank": 1,
+          "pitch_type": "SL",
+          "pitch_label": "슬라이더",
+          "zone_id": "low_left",
+          "zone_label": "낮은 왼쪽",
+          "target": {
+           "x": -0.5533333333333333,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.43950302652226675,
+           "reference_probability": 0.4334085778781039,
+           "kernel_mass": 0.1712118627566483,
+           "kernel_ess": 132.1
+          }
+         },
+         {
+          "rank": 2,
+          "pitch_type": "FF",
+          "pitch_label": "포심",
+          "zone_id": "high_middle",
+          "zone_label": "높은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 3.0915833333333333
+          },
+          "detail": {
+           "probability": 0.4176259785502879,
+           "reference_probability": 0.4118348919703322,
+           "kernel_mass": 0.28859570797498574,
+           "kernel_ess": 173.1
+          }
+         },
+         {
+          "rank": 3,
+          "pitch_type": "CH",
+          "pitch_label": "체인지업",
+          "zone_id": "low_middle",
+          "zone_label": "낮은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.07550226522622529,
+           "reference_probability": 0.08181231860690102,
+           "kernel_mass": 0.27835621251418663,
+           "kernel_ess": 195.2
+          }
+         }
+        ],
+        "candidate_law": {
+         "CH": 0.07550226522622529,
+         "FF": 0.4176259785502879,
+         "SI": 0.06736872970122017,
+         "SL": 0.43950302652226675
+        },
+        "reference_law": {
+         "CH": 0.08181231860690102,
+         "FF": 0.4118348919703322,
+         "SI": 0.07294421154466303,
+         "SL": 0.4334085778781039
+        }
+       }
+      },
+      "actual": {
+       "pitch_type": "FF",
+       "pitch_label": "포심",
+       "description": "foul",
+       "result_label": "파울",
+       "event": null,
+       "event_label": null,
+       "play_text": null,
+       "speed_mph": 96.2,
+       "x": -0.34065370684128604,
+       "z": 2.773717740503187,
+       "zone_label": "가운데 높이 왼쪽"
+      }
+     },
+     {
+      "key": "849845:10:3",
+      "pitch_number": 3,
+      "status": "SUPPORTED",
+      "pre": {
+       "status": "ready",
+       "reason": null,
+       "recommendation": {
+        "candidates": [
+         {
+          "rank": 1,
+          "pitch_type": "SL",
+          "pitch_label": "슬라이더",
+          "zone_id": "low_left",
+          "zone_label": "낮은 왼쪽",
+          "target": {
+           "x": -0.5533333333333333,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.6116456997275992,
+           "reference_probability": 0.576718931120737,
+           "kernel_mass": 0.22895025416565623,
+           "kernel_ess": 135.2
+          }
+         },
+         {
+          "rank": 2,
+          "pitch_type": "FF",
+          "pitch_label": "포심",
+          "zone_id": "high_middle",
+          "zone_label": "높은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 3.0915833333333333
+          },
+          "detail": {
+           "probability": 0.23891474681682692,
+           "reference_probability": 0.2656335794033311,
+           "kernel_mass": 0.3343422102780809,
+           "kernel_ess": 216.1
+          }
+         },
+         {
+          "rank": 3,
+          "pitch_type": "CH",
+          "pitch_label": "체인지업",
+          "zone_id": "low_middle",
+          "zone_label": "낮은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.12467886338463251,
+           "reference_probability": 0.12775303520224515,
+           "kernel_mass": 0.236966091298114,
+           "kernel_ess": 168.1
+          }
+         }
+        ],
+        "candidate_law": {
+         "CH": 0.12467886338463251,
+         "FF": 0.23891474681682692,
+         "SI": 0.02476069007094139,
+         "SL": 0.6116456997275992
+        },
+        "reference_law": {
+         "CH": 0.12775303520224515,
+         "FF": 0.2656335794033311,
+         "SI": 0.02989445427368678,
+         "SL": 0.576718931120737
+        }
+       }
+      },
+      "actual": {
+       "pitch_type": "SL",
+       "pitch_label": "슬라이더",
+       "description": "foul",
+       "result_label": "파울",
+       "event": null,
+       "event_label": null,
+       "play_text": null,
+       "speed_mph": 79.5,
+       "x": 0.7787894313272594,
+       "z": 2.365142176955865,
+       "zone_label": "가운데 높이 오른쪽"
+      }
+     }
+    ],
+    "previous": {
+     "key": "849845:10:3",
+     "actual": {
+      "pitch_type": "SL",
+      "pitch_label": "슬라이더",
+      "description": "foul",
+      "result_label": "파울",
+      "event": null,
+      "event_label": null,
+      "play_text": null,
+      "speed_mph": 79.5,
+      "x": 0.7787894313272594,
+      "z": 2.365142176955865,
+      "zone_label": "가운데 높이 오른쪽"
+     },
+     "inning": 2,
+     "half": "Top",
+     "home_we_before": 0.4005095669519743
+    },
+    "home_we_now": 0.4005095669519743,
+    "policy_identity": "a6dffaea"
+   }
+  },
+  "new_batter_after_strikeout": {
+   "status": "ready",
+   "reason": null,
+   "delay_s": 0,
+   "replay": null,
+   "sync": {
+    "max_delay_s": 120
+   },
+   "game": {
+    "game_pk": 849845,
+    "game_type": "F",
+    "date": "2026-09-29",
+    "status": "In Progress",
+    "away_team": "Philadelphia Phillies",
+    "home_team": "Atlanta Braves"
+   },
+   "situation": {
+    "inning": 2,
+    "half": "Top",
+    "outs": 2,
+    "balls": 0,
+    "strikes": 0,
+    "bases": 0,
+    "home_score": 0,
+    "away_score": 1,
+    "runners": {}
+   },
+   "pitcher": {
+    "id": 519242,
+    "name": "Chris Sale",
+    "hand": "L"
+   },
+   "batter": {
+    "id": 624641,
+    "name": "Edmundo Sosa",
+    "side": "R"
+   },
+   "pitcher_today": {
+    "pitches": 28,
+    "mix": [
+     {
+      "pitch_type": "SL",
+      "pitch_label": "슬라이더",
+      "count": 13,
+      "share": 0.4643,
+      "avg_mph": 79.1
+     },
+     {
+      "pitch_type": "FF",
+      "pitch_label": "포심",
+      "count": 11,
+      "share": 0.3929,
+      "avg_mph": 97.1
+     },
+     {
+      "pitch_type": "SI",
+      "pitch_label": "싱커",
+      "count": 4,
+      "share": 0.1429,
+      "avg_mph": 96.5
+     }
+    ]
+   },
+   "recommendation": {
+    "status": "ready",
+    "reason": null,
+    "key": "849845:11:1",
+    "recommendation": {
+     "candidates": [
+      {
+       "rank": 1,
+       "pitch_type": "FF",
+       "pitch_label": "포심",
+       "zone_id": "high_middle",
+       "zone_label": "높은 중앙",
+       "target": {
+        "x": 0.0,
+        "z": 3.0915833333333333
+       },
+       "detail": {
+        "probability": 0.45986516620666995,
+        "reference_probability": 0.4234230162675693,
+        "kernel_mass": 0.27539308414849784,
+        "kernel_ess": 193.4
+       }
+      },
+      {
+       "rank": 2,
+       "pitch_type": "SL",
+       "pitch_label": "슬라이더",
+       "zone_id": "low_left",
+       "zone_label": "낮은 왼쪽",
+       "target": {
+        "x": -0.5533333333333333,
+        "z": 1.8983166666666667
+       },
+       "detail": {
+        "probability": 0.3964657392646848,
+        "reference_probability": 0.4271218129098707,
+        "kernel_mass": 0.23351045796918918,
+        "kernel_ess": 152.9
+       }
+      },
+      {
+       "rank": 3,
+       "pitch_type": "CH",
+       "pitch_label": "체인지업",
+       "zone_id": "low_middle",
+       "zone_label": "낮은 중앙",
+       "target": {
+        "x": 0.0,
+        "z": 1.8983166666666667
+       },
+       "detail": {
+        "probability": 0.07901838441031225,
+        "reference_probability": 0.08506518683085677,
+        "kernel_mass": 0.3213584952120964,
+        "kernel_ess": 202.5
+       }
+      }
+     ],
+     "candidate_law": {
+      "CH": 0.07901838441031225,
+      "FF": 0.45986516620666995,
+      "SI": 0.06465071011833297,
+      "SL": 0.3964657392646848
+     },
+     "reference_law": {
+      "CH": 0.08506518683085677,
+      "FF": 0.4234230162675693,
+      "SI": 0.06438998399170329,
+      "SL": 0.4271218129098707
+     }
+    },
+    "pa_pitches": [],
+    "previous": {
+     "key": "849845:10:4",
+     "actual": {
+      "pitch_type": "SL",
+      "pitch_label": "슬라이더",
+      "description": "swinging_strike",
+      "result_label": "삼진",
+      "event": "strikeout",
+      "event_label": "삼진",
+      "play_text": "Bryson Stott strikes out swinging.",
+      "speed_mph": 77.0,
+      "x": 0.12822127669070332,
+      "z": 0.801074647879152,
+      "zone_label": "존 바깥"
+     },
+     "inning": 2,
+     "half": "Top",
+     "home_we_before": 0.4005095669519743
+    },
+    "home_we_now": 0.42424869051228975,
+    "policy_identity": "a6dffaea"
+   }
+  },
+  "second_pitch": {
+   "status": "ready",
+   "reason": null,
+   "delay_s": 0,
+   "replay": null,
+   "sync": {
+    "max_delay_s": 120
+   },
+   "game": {
+    "game_pk": 849845,
+    "game_type": "F",
+    "date": "2026-09-29",
+    "status": "In Progress",
+    "away_team": "Philadelphia Phillies",
+    "home_team": "Atlanta Braves"
+   },
+   "situation": {
+    "inning": 2,
+    "half": "Top",
+    "outs": 2,
+    "balls": 0,
+    "strikes": 1,
+    "bases": 0,
+    "home_score": 0,
+    "away_score": 1,
+    "runners": {}
+   },
+   "pitcher": {
+    "id": 519242,
+    "name": "Chris Sale",
+    "hand": "L"
+   },
+   "batter": {
+    "id": 624641,
+    "name": "Edmundo Sosa",
+    "side": "R"
+   },
+   "pitcher_today": {
+    "pitches": 29,
+    "mix": [
+     {
+      "pitch_type": "SL",
+      "pitch_label": "슬라이더",
+      "count": 14,
+      "share": 0.4828,
+      "avg_mph": 79.1
+     },
+     {
+      "pitch_type": "FF",
+      "pitch_label": "포심",
+      "count": 11,
+      "share": 0.3793,
+      "avg_mph": 97.1
+     },
+     {
+      "pitch_type": "SI",
+      "pitch_label": "싱커",
+      "count": 4,
+      "share": 0.1379,
+      "avg_mph": 96.5
+     }
+    ]
+   },
+   "recommendation": {
+    "status": "ready",
+    "reason": null,
+    "key": "849845:11:2",
+    "recommendation": {
+     "candidates": [
+      {
+       "rank": 1,
+       "pitch_type": "SL",
+       "pitch_label": "슬라이더",
+       "zone_id": "low_middle",
+       "zone_label": "낮은 중앙",
+       "target": {
+        "x": 0.0,
+        "z": 1.8983166666666667
+       },
+       "detail": {
+        "probability": 0.5079650084643992,
+        "reference_probability": 0.5273828375054749,
+        "kernel_mass": 0.2579632295167658,
+        "kernel_ess": 176.1
+       }
+      },
+      {
+       "rank": 2,
+       "pitch_type": "FF",
+       "pitch_label": "포심",
+       "zone_id": "high_left",
+       "zone_label": "높은 왼쪽",
+       "target": {
+        "x": -0.5533333333333333,
+        "z": 3.0915833333333333
+       },
+       "detail": {
+        "probability": 0.27514358912535064,
+        "reference_probability": 0.2642852329773256,
+        "kernel_mass": 0.22196451937096204,
+        "kernel_ess": 144.4
+       }
+      },
+      {
+       "rank": 3,
+       "pitch_type": "CH",
+       "pitch_label": "체인지업",
+       "zone_id": "low_right",
+       "zone_label": "낮은 오른쪽",
+       "target": {
+        "x": 0.5533333333333333,
+        "z": 1.8983166666666667
+       },
+       "detail": {
+        "probability": 0.2048253164671556,
+        "reference_probability": 0.19674202351672787,
+        "kernel_mass": 0.37337533501538156,
+        "kernel_ess": 234.5
+       }
+      }
+     ],
+     "candidate_law": {
+      "CH": 0.2048253164671556,
+      "FF": 0.27514358912535064,
+      "SI": 0.012066085943094705,
+      "SL": 0.5079650084643992
+     },
+     "reference_law": {
+      "CH": 0.19674202351672787,
+      "FF": 0.2642852329773256,
+      "SI": 0.011589906000471682,
+      "SL": 0.5273828375054749
+     }
+    },
+    "pa_pitches": [
+     {
+      "key": "849845:11:1",
+      "pitch_number": 1,
+      "status": "SUPPORTED",
+      "pre": {
+       "status": "ready",
+       "reason": null,
+       "recommendation": {
+        "candidates": [
+         {
+          "rank": 1,
+          "pitch_type": "FF",
+          "pitch_label": "포심",
+          "zone_id": "high_middle",
+          "zone_label": "높은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 3.0915833333333333
+          },
+          "detail": {
+           "probability": 0.45986516620666995,
+           "reference_probability": 0.4234230162675693,
+           "kernel_mass": 0.27539308414849784,
+           "kernel_ess": 193.4
+          }
+         },
+         {
+          "rank": 2,
+          "pitch_type": "SL",
+          "pitch_label": "슬라이더",
+          "zone_id": "low_left",
+          "zone_label": "낮은 왼쪽",
+          "target": {
+           "x": -0.5533333333333333,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.3964657392646848,
+           "reference_probability": 0.4271218129098707,
+           "kernel_mass": 0.23351045796918918,
+           "kernel_ess": 152.9
+          }
+         },
+         {
+          "rank": 3,
+          "pitch_type": "CH",
+          "pitch_label": "체인지업",
+          "zone_id": "low_middle",
+          "zone_label": "낮은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.07901838441031225,
+           "reference_probability": 0.08506518683085677,
+           "kernel_mass": 0.3213584952120964,
+           "kernel_ess": 202.5
+          }
+         }
+        ],
+        "candidate_law": {
+         "CH": 0.07901838441031225,
+         "FF": 0.45986516620666995,
+         "SI": 0.06465071011833297,
+         "SL": 0.3964657392646848
+        },
+        "reference_law": {
+         "CH": 0.08506518683085677,
+         "FF": 0.4234230162675693,
+         "SI": 0.06438998399170329,
+         "SL": 0.4271218129098707
+        }
+       }
+      },
+      "actual": {
+       "pitch_type": "SL",
+       "pitch_label": "슬라이더",
+       "description": "called_strike",
+       "result_label": "루킹 스트라이크",
+       "event": null,
+       "event_label": null,
+       "play_text": null,
+       "speed_mph": 78.8,
+       "x": 0.4011504778041994,
+       "z": 2.151033229965478,
+       "zone_label": "낮은 오른쪽"
+      }
+     }
+    ],
+    "previous": {
+     "key": "849845:11:1",
+     "actual": {
+      "pitch_type": "SL",
+      "pitch_label": "슬라이더",
+      "description": "called_strike",
+      "result_label": "루킹 스트라이크",
+      "event": null,
+      "event_label": null,
+      "play_text": null,
+      "speed_mph": 78.8,
+      "x": 0.4011504778041994,
+      "z": 2.151033229965478,
+      "zone_label": "낮은 오른쪽"
+     },
+     "inning": 2,
+     "half": "Top",
+     "home_we_before": 0.42424869051228975
+    },
+    "home_we_now": 0.42424869051228975,
+    "policy_identity": "a6dffaea"
+   }
+  },
+  "third_pitch": {
+   "status": "ready",
+   "reason": null,
+   "delay_s": 0,
+   "replay": null,
+   "sync": {
+    "max_delay_s": 120
+   },
+   "game": {
+    "game_pk": 849845,
+    "game_type": "F",
+    "date": "2026-09-29",
+    "status": "In Progress",
+    "away_team": "Philadelphia Phillies",
+    "home_team": "Atlanta Braves"
+   },
+   "situation": {
+    "inning": 2,
+    "half": "Top",
+    "outs": 2,
+    "balls": 0,
+    "strikes": 2,
+    "bases": 0,
+    "home_score": 0,
+    "away_score": 1,
+    "runners": {}
+   },
+   "pitcher": {
+    "id": 519242,
+    "name": "Chris Sale",
+    "hand": "L"
+   },
+   "batter": {
+    "id": 624641,
+    "name": "Edmundo Sosa",
+    "side": "R"
+   },
+   "pitcher_today": {
+    "pitches": 30,
+    "mix": [
+     {
+      "pitch_type": "SL",
+      "pitch_label": "슬라이더",
+      "count": 15,
+      "share": 0.5,
+      "avg_mph": 79.0
+     },
+     {
+      "pitch_type": "FF",
+      "pitch_label": "포심",
+      "count": 11,
+      "share": 0.3667,
+      "avg_mph": 97.1
+     },
+     {
+      "pitch_type": "SI",
+      "pitch_label": "싱커",
+      "count": 4,
+      "share": 0.1333,
+      "avg_mph": 96.5
+     }
+    ]
+   },
+   "recommendation": {
+    "status": "ready",
+    "reason": null,
+    "key": "849845:11:3",
+    "recommendation": {
+     "candidates": [
+      {
+       "rank": 1,
+       "pitch_type": "SL",
+       "pitch_label": "슬라이더",
+       "zone_id": "low_right",
+       "zone_label": "낮은 오른쪽",
+       "target": {
+        "x": 0.5533333333333333,
+        "z": 1.8983166666666667
+       },
+       "detail": {
+        "probability": 0.5432779431142181,
+        "reference_probability": 0.5626851095848743,
+        "kernel_mass": 0.14710150474018366,
+        "kernel_ess": 103.8
+       }
+      },
+      {
+       "rank": 2,
+       "pitch_type": "FF",
+       "pitch_label": "포심",
+       "zone_id": "high_right",
+       "zone_label": "높은 오른쪽",
+       "target": {
+        "x": 0.5533333333333333,
+        "z": 3.0915833333333333
+       },
+       "detail": {
+        "probability": 0.33944835257340555,
+        "reference_probability": 0.3250244144533564,
+        "kernel_mass": 0.1845789373270612,
+        "kernel_ess": 145.6
+       }
+      },
+      {
+       "rank": 3,
+       "pitch_type": "CH",
+       "pitch_label": "체인지업",
+       "zone_id": "low_right",
+       "zone_label": "낮은 오른쪽",
+       "target": {
+        "x": 0.5533333333333333,
+        "z": 1.8983166666666667
+       },
+       "detail": {
+        "probability": 0.101673994286222,
+        "reference_probability": 0.09735363335094376,
+        "kernel_mass": 0.18377382209665918,
+        "kernel_ess": 121.3
+       }
+      }
+     ],
+     "candidate_law": {
+      "CH": 0.101673994286222,
+      "FF": 0.33944835257340555,
+      "SI": 0.015599710026154432,
+      "SL": 0.5432779431142181
+     },
+     "reference_law": {
+      "CH": 0.09735363335094376,
+      "FF": 0.3250244144533564,
+      "SI": 0.01493684261082561,
+      "SL": 0.5626851095848743
+     }
+    },
+    "pa_pitches": [
+     {
+      "key": "849845:11:1",
+      "pitch_number": 1,
+      "status": "SUPPORTED",
+      "pre": {
+       "status": "ready",
+       "reason": null,
+       "recommendation": {
+        "candidates": [
+         {
+          "rank": 1,
+          "pitch_type": "FF",
+          "pitch_label": "포심",
+          "zone_id": "high_middle",
+          "zone_label": "높은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 3.0915833333333333
+          },
+          "detail": {
+           "probability": 0.45986516620666995,
+           "reference_probability": 0.4234230162675693,
+           "kernel_mass": 0.27539308414849784,
+           "kernel_ess": 193.4
+          }
+         },
+         {
+          "rank": 2,
+          "pitch_type": "SL",
+          "pitch_label": "슬라이더",
+          "zone_id": "low_left",
+          "zone_label": "낮은 왼쪽",
+          "target": {
+           "x": -0.5533333333333333,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.3964657392646848,
+           "reference_probability": 0.4271218129098707,
+           "kernel_mass": 0.23351045796918918,
+           "kernel_ess": 152.9
+          }
+         },
+         {
+          "rank": 3,
+          "pitch_type": "CH",
+          "pitch_label": "체인지업",
+          "zone_id": "low_middle",
+          "zone_label": "낮은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.07901838441031225,
+           "reference_probability": 0.08506518683085677,
+           "kernel_mass": 0.3213584952120964,
+           "kernel_ess": 202.5
+          }
+         }
+        ],
+        "candidate_law": {
+         "CH": 0.07901838441031225,
+         "FF": 0.45986516620666995,
+         "SI": 0.06465071011833297,
+         "SL": 0.3964657392646848
+        },
+        "reference_law": {
+         "CH": 0.08506518683085677,
+         "FF": 0.4234230162675693,
+         "SI": 0.06438998399170329,
+         "SL": 0.4271218129098707
+        }
+       }
+      },
+      "actual": {
+       "pitch_type": "SL",
+       "pitch_label": "슬라이더",
+       "description": "called_strike",
+       "result_label": "루킹 스트라이크",
+       "event": null,
+       "event_label": null,
+       "play_text": null,
+       "speed_mph": 78.8,
+       "x": 0.4011504778041994,
+       "z": 2.151033229965478,
+       "zone_label": "낮은 오른쪽"
+      }
+     },
+     {
+      "key": "849845:11:2",
+      "pitch_number": 2,
+      "status": "SUPPORTED",
+      "pre": {
+       "status": "ready",
+       "reason": null,
+       "recommendation": {
+        "candidates": [
+         {
+          "rank": 1,
+          "pitch_type": "SL",
+          "pitch_label": "슬라이더",
+          "zone_id": "low_middle",
+          "zone_label": "낮은 중앙",
+          "target": {
+           "x": 0.0,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.5079650084643992,
+           "reference_probability": 0.5273828375054749,
+           "kernel_mass": 0.2579632295167658,
+           "kernel_ess": 176.1
+          }
+         },
+         {
+          "rank": 2,
+          "pitch_type": "FF",
+          "pitch_label": "포심",
+          "zone_id": "high_left",
+          "zone_label": "높은 왼쪽",
+          "target": {
+           "x": -0.5533333333333333,
+           "z": 3.0915833333333333
+          },
+          "detail": {
+           "probability": 0.27514358912535064,
+           "reference_probability": 0.2642852329773256,
+           "kernel_mass": 0.22196451937096204,
+           "kernel_ess": 144.4
+          }
+         },
+         {
+          "rank": 3,
+          "pitch_type": "CH",
+          "pitch_label": "체인지업",
+          "zone_id": "low_right",
+          "zone_label": "낮은 오른쪽",
+          "target": {
+           "x": 0.5533333333333333,
+           "z": 1.8983166666666667
+          },
+          "detail": {
+           "probability": 0.2048253164671556,
+           "reference_probability": 0.19674202351672787,
+           "kernel_mass": 0.37337533501538156,
+           "kernel_ess": 234.5
+          }
+         }
+        ],
+        "candidate_law": {
+         "CH": 0.2048253164671556,
+         "FF": 0.27514358912535064,
+         "SI": 0.012066085943094705,
+         "SL": 0.5079650084643992
+        },
+        "reference_law": {
+         "CH": 0.19674202351672787,
+         "FF": 0.2642852329773256,
+         "SI": 0.011589906000471682,
+         "SL": 0.5273828375054749
+        }
+       }
+      },
+      "actual": {
+       "pitch_type": "SL",
+       "pitch_label": "슬라이더",
+       "description": "foul",
+       "result_label": "파울",
+       "event": null,
+       "event_label": null,
+       "play_text": null,
+       "speed_mph": 77.3,
+       "x": -0.05570354761922698,
+       "z": 1.5941389471167418,
+       "zone_label": "존 바깥"
+      }
+     }
+    ],
+    "previous": {
+     "key": "849845:11:2",
+     "actual": {
+      "pitch_type": "SL",
+      "pitch_label": "슬라이더",
+      "description": "foul",
+      "result_label": "파울",
+      "event": null,
+      "event_label": null,
+      "play_text": null,
+      "speed_mph": 77.3,
+      "x": -0.05570354761922698,
+      "z": 1.5941389471167418,
+      "zone_label": "존 바깥"
+     },
+     "inning": 2,
+     "half": "Top",
+     "home_we_before": 0.42424869051228975
+    },
+    "home_we_now": 0.42424869051228975,
+    "policy_identity": "a6dffaea"
+   }
+  },
+  "between_innings": {
+   "status": "between_innings",
+   "reason": "이닝 교대 중입니다.",
+   "delay_s": 0,
+   "replay": null,
+   "sync": {
+    "max_delay_s": 120
+   },
+   "game": {
+    "game_pk": 849845,
+    "game_type": "F",
+    "date": "2026-09-29",
+    "status": "In Progress",
+    "away_team": "Philadelphia Phillies",
+    "home_team": "Atlanta Braves"
+   },
+   "situation": null,
+   "pitcher": null,
+   "batter": null,
+   "last_pitch": {
+    "key": "849845:11:3",
+    "pitch_type": "SL",
+    "pitch_label": "슬라이더",
+    "speed_mph": 80.5,
+    "result_label": "삼진",
+    "play_text": "Edmundo Sosa strikes out swinging."
+   },
+   "recommendation": null
+  },
+  "left_handed_batter": {
+   "status": "ready",
+   "reason": null,
+   "delay_s": 0,
+   "replay": null,
+   "sync": {
+    "max_delay_s": 120
+   },
+   "game": {
+    "game_pk": 849845,
+    "game_type": "F",
+    "date": "2026-09-29",
+    "status": "In Progress",
+    "away_team": "Philadelphia Phillies",
+    "home_team": "Atlanta Braves"
+   },
+   "situation": {
+    "inning": 2,
+    "half": "Bot",
+    "outs": 0,
+    "balls": 0,
+    "strikes": 0,
+    "bases": 2,
+    "home_score": 0,
+    "away_score": 1,
+    "runners": {}
+   },
+   "pitcher": {
+    "id": 666200,
+    "name": "Jesús Luzardo",
+    "hand": "L"
+   },
+   "batter": {
+    "id": 671739,
+    "name": "Michael Harris II",
+    "side": "L"
+   },
+   "pitcher_today": {
+    "pitches": 12,
+    "mix": [
+     {
+      "pitch_type": "ST",
+      "pitch_label": "스위퍼",
+      "count": 5,
+      "share": 0.4167,
+      "avg_mph": 87.4
+     },
+     {
+      "pitch_type": "SI",
+      "pitch_label": "싱커",
+      "count": 4,
+      "share": 0.3333,
+      "avg_mph": 97.4
+     },
+     {
+      "pitch_type": "FF",
+      "pitch_label": "포심",
+      "count": 2,
+      "share": 0.1667,
+      "avg_mph": 97.1
+     },
+     {
+      "pitch_type": "CH",
+      "pitch_label": "체인지업",
+      "count": 1,
+      "share": 0.0833,
+      "avg_mph": 86.6
+     }
+    ]
+   },
+   "recommendation": {
+    "status": "ready",
+    "reason": null,
+    "key": "849845:13:1",
+    "recommendation": {
+     "candidates": [
+      {
+       "rank": 1,
+       "pitch_type": "FF",
+       "pitch_label": "포심",
+       "zone_id": "middle_left",
+       "zone_label": "가운데 높이 왼쪽",
+       "target": {
+        "x": -0.5533333333333333,
+        "z": 2.4949500000000002
+       },
+       "detail": {
+        "probability": 0.45711602230912185,
+        "reference_probability": 0.45667105020698784,
+        "kernel_mass": 0.3064887110462592,
+        "kernel_ess": 226.4
+       }
+      },
+      {
+       "rank": 2,
+       "pitch_type": "SL",
+       "pitch_label": "슬라이더",
+       "zone_id": "low_left",
+       "zone_label": "낮은 왼쪽",
+       "target": {
+        "x": -0.5533333333333333,
+        "z": 1.8983166666666667
+       },
+       "detail": {
+        "probability": 0.28961796850953747,
+        "reference_probability": 0.283237364702543,
+        "kernel_mass": 0.21641115976274897,
+        "kernel_ess": 151.4
+       }
+      },
+      {
+       "rank": 3,
+       "pitch_type": "SI",
+       "pitch_label": "싱커",
+       "zone_id": "middle_right",
+       "zone_label": "가운데 높이 오른쪽",
+       "target": {
+        "x": 0.5533333333333333,
+        "z": 2.4949500000000002
+       },
+       "detail": {
+        "probability": 0.13926814806827253,
+        "reference_probability": 0.13619991690730357,
+        "kernel_mass": 0.41247850824428994,
+        "kernel_ess": 239.9
+       }
+      }
+     ],
+     "candidate_law": {
+      "CH": 0.05558039754336852,
+      "FC": 0.000252041395344425,
+      "FF": 0.45711602230912185,
+      "SI": 0.13926814806827253,
+      "SL": 0.28961796850953747,
+      "ST": 0.058165422174355094
+     },
+     "reference_law": {
+      "CH": 0.054355899982030914,
+      "FC": 0.00025179604977779,
+      "FF": 0.45667105020698784,
+      "SI": 0.13619991690730357,
+      "SL": 0.283237364702543,
+      "ST": 0.0692839721513569
+     }
+    },
+    "pa_pitches": [],
+    "previous": {
+     "key": "849845:12:2",
+     "actual": {
+      "pitch_type": "CH",
+      "pitch_label": "체인지업",
+      "description": "hit_into_play",
+      "result_label": "2루타",
+      "event": "double",
+      "event_label": "2루타",
+      "play_text": "Mauricio Dubón doubles (1) on a line drive to left fielder Bryan De La Cruz.",
+      "speed_mph": 86.6,
+      "x": -0.21683062027342437,
+      "z": 1.5066066848458772,
+      "zone_label": "존 바깥"
+     },
+     "inning": 2,
+     "half": "Bot",
+     "home_we_before": 0.4545019269438503
+    },
+    "home_we_now": 0.5014337963274409,
+    "policy_identity": "a6dffaea"
+   }
+  },
+  "unsupported_pitcher": {
+   "status": "ready",
+   "reason": null,
+   "delay_s": 0,
+   "replay": null,
+   "sync": {
+    "max_delay_s": 120
+   },
+   "game": {
+    "game_pk": 849845,
+    "game_type": "F",
+    "date": "2026-09-29",
+    "status": "In Progress",
+    "away_team": "Philadelphia Phillies",
+    "home_team": "Atlanta Braves"
+   },
+   "situation": {
+    "inning": 6,
+    "half": "Bot",
+    "outs": 0,
+    "balls": 0,
+    "strikes": 0,
+    "bases": 0,
+    "home_score": 1,
+    "away_score": 1,
+    "runners": {}
+   },
+   "pitcher": {
+    "id": 686934,
+    "name": "Alex McFarlane",
+    "hand": "R"
+   },
+   "batter": {
+    "id": 643289,
+    "name": "Mauricio Dubón",
+    "side": "R"
+   },
+   "pitcher_today": {
+    "pitches": 0,
+    "mix": []
+   },
+   "recommendation": {
+    "status": "unsupported",
+    "reason": "2025년까지 학습 기록이 없는 투수라 추천하지 않습니다.",
+    "key": "849845:45:1",
+    "recommendation": null,
+    "pa_pitches": [],
+    "previous": {
+     "key": "849845:44:2",
+     "actual": {
+      "pitch_type": "CH",
+      "pitch_label": "체인지업",
+      "description": "hit_into_play",
+      "result_label": "포스 아웃",
+      "event": "force_out",
+      "event_label": "포스 아웃",
+      "play_text": "Alec Bohm grounds into a force out, third baseman Austin Riley to second baseman Ozzie Albies. Kyle Schwarber out at 2nd.",
+      "speed_mph": 91.4,
+      "x": 0.4980076240897888,
+      "z": 1.837764627470678,
+      "zone_label": "낮은 오른쪽"
+     },
+     "inning": 6,
+     "half": "Top",
+     "home_we_before": 0.5529066652445498
+    },
+    "home_we_now": 0.5864706711584786,
+    "policy_identity": "a6dffaea"
+   }
+  }
+ }
+}
