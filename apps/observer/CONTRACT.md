@@ -79,6 +79,55 @@ The `/inning-decisions` page now provides the independent selector and condition
 
 Each pitch carries `at_bat_number`, `pitch_number`, `status`, `unavailable_reason`, `plate_x_feet` and `x_band` (`left`/`middle`/`right` in the catcher's view like `/api/zones` column 0-2, or `off_left`/`off_right`). Only the horizontal position is served: `display.vertical` is false and no height is returned. Pitches the source video does not show have no entry. The values are unreviewed estimates of the catcher's setup, a proxy and not the pitcher's intent (`is_intent_proxy` true, `accuracy.measured` false); the screen shows the badge and never calls the setup-to-pitch distance a command error.
 
+## Watch-along revealed-prefix summary (display only)
+
+`GET /api/watch/{game_pk}/summary?through=<k>[&top=<n>]` returns `pitcheezy-watch-summary-v1`: line score, chronological home WE curve and notable plays of watch-along pitches `0..k`. It is built only from the precomputed watch dataset (no model is loaded, nothing estimated) and is additive: `GET /api/watch/games` and `GET /api/watch/{game_pk}` are unchanged and still never carry the final score.
+
+- `through` is **required** (no default, so a client cannot spoil the game by omission): `-1` = nothing revealed yet, `0..n-1` = index of the last revealed pitch (`n` = `decisions.length` of the timeline). Postgame = `through=n-1`; there is no separate postgame mode. `top` = 0..20 (default 5) entries in `largest_we_changes`.
+- Inputs read for `through=k`: `actual`/`we` of pitches `0..k`, the pre-pitch `situation` of pitch `k+1` (already public in the timeline; it is the score after pitch `k`, the same moment as reveal `k`'s `we.home_after`), and `game.final` **only** when `k=n-1`. Nothing else of pitch `k+1` or later is read (tested by mutating all of it).
+- Errors: missing/invalid `through`, `through<-1`, `top` outside 0..20 → 400; `through>=n` or unknown game → 404; malformed dataset or a read pitch without a valid inning/`Top`/`Bot` half, or half-innings out of game order → 503.
+
+```json
+{
+  "schema": "pitcheezy-watch-summary-v1", "game_pk": 900002, "through": 4, "revealed_pitches": 5, "complete": false,
+  "teams": {"away": "Away Club", "home": "Home Club"},
+  "score": {"away": 1, "home": 2, "source": "next_pre_pitch_situation", "after_index": 4},
+  "innings": [{"inning": 1, "away": {"runs": 1, "status": "complete"}, "home": {"runs": 2, "status": "complete"}}],
+  "we_curve": [{"index": 4, "inning": 1, "half": "Bot", "at_bat_number": 4, "pitch_number": 1, "home_before": 0.45, "home_after": 0.7}],
+  "events": [{"index": 1, "pa_id": "900002:1", "at_bat_number": 1, "pitch_number": 2, "inning": 1, "half": "Top",
+              "pitcher": {"id": 11, "name": "P1"}, "batter": {"id": 21, "name": "B1"},
+              "event_label": "홈런", "result_label": "홈런", "play_text": "play 1",
+              "runs_scored": {"away": 1, "home": 0}, "score_after": {"away": 1, "home": 0},
+              "we": {"kind": "observed_model_change", "home_before": 0.5, "home_after": 0.4, "home_delta": -0.1, "batting_delta": 0.1}}],
+  "largest_we_changes": ["<same shape as events, sorted by |home_delta| desc then index>"],
+  "notes": {"we": "승리확률 변화는 고정된 모델 추정치의 관측 차이이며, 선수 책임이나 인과 기여도가 아닙니다.", "we_model": "<dataset we.note>", "attribution": null},
+  "issues": []
+}
+```
+
+(Synthetic test game; `we_curve`/`events` truncated to one entry each. Deltas are raw floats in the payload.)
+
+Field meanings and nulls:
+- `complete`: true only when `through=n-1` (every pitch of the completed game revealed).
+- `score`: total after pitch `through`. `source` = `next_pre_pitch_situation` (pitch `k+1`'s situation), `final_record` (dataset final, only when complete), `pre_pitch_situation` (`through=-1`: pitch 0's situation) or `unavailable` (no pitches, or complete without a final record → `away`/`home` null). A null team score = unknown, never 0. `after_index` is null for `through=-1`.
+- `innings`: one row per inning from 1 to the latest inning in the revealed prefix (later innings are not listed, so extra innings are not spoiled; the UI pads to 9 columns with "not reached"). Each half cell `{runs, status}`:
+  - `complete`/`in_progress`: half was played (has revealed pitches). `runs` is an integer when every score change in it is known; `null` = played but runs unknown (missing score, decreasing score, or the last pitch's runs without a final record). `0` is a real zero.
+  - `not_reached`: not yet reached in the revealed prefix; `runs` null.
+  - `not_played`: game complete and the half never happened (e.g. home leading after the top of the last inning); `runs` null. UI shows "X"/"-".
+  - `unknown`: a half that must have been played (before the latest revealed half) has no pitches in the dataset; `runs` null.
+  A half is `complete` once a later half was reached or the next pre-pitch view is already in a later half (e.g. after the 3rd out).
+- Run attribution: runs for pitch `i` = score after `i` − score before `i` (pre-pitch situations; final record for the last pitch). Away runs go to the top half, home runs to the bottom half — this pitch's half, or (rare, a run before a half's first pitch) the next pitch's half. Any other case is reported in `issues`, never folded into an inning.
+- `we_curve`: one point per revealed pitch in game order; `home_before`/`home_after` are the dataset's frozen home WE in [0,1] or `null` (missing, NaN/inf, non-number or outside [0,1]). The last pitch's `home_after` is the dataset value (1/0 by final result, null for a tie). Plot `home_before` at each index and the final point's `home_after`; break the line at nulls, never interpolate or draw 50%.
+- `events`: revealed pitches that ended a PA (`event_label` non-null) or changed the score (`runs_scored` non-zero), in game order. `runs_scored`/`score_after` team values may be null (unknown). `we.home_delta`=`home_after−home_before`, `batting_delta` is the same change for the batting team; null if either end is null.
+- `largest_we_changes`: top `top` revealed pitches by |`home_delta`| (null deltas excluded; ties by earlier index). Pitch-level, not PA-level.
+- `we.kind:"observed_model_change"` and `notes.attribution:null`: these are observed differences of a count-independent display WE, not player responsibility, causal contribution or recommendation value. The UI must not label them "기여도".
+- `issues`: data-consistency codes (`{team}_score_decreased_after_index_{i}`, `{team}_runs_outside_batting_half_after_index_{i}`, `{team}_line_score_differs_from_score`). Empty in normal data; show a small "기록 불일치" note when non-empty.
+- Not provided: hits/errors (H/E), PA-level WE, causal attribution.
+
+UI integration: after each reveal of index `i`, call `summary?through=i` (on load with `#i=N`, `through=N-1` if pitch N is not yet revealed, else `N`); before any reveal use `through=-1`. Drop responses whose `through` differs from the current cursor (stale request). Line score: columns from `innings` padded to 9, R column from `score` (`—` when null). Curve x-axis = `index`, half-inning boundaries from `inning`/`half` changes; tap a point → jump to that pitch. Notable-play list from `events` or `largest_we_changes`, with `inning`+`half` (`초`/`말`), `event_label`, `play_text` and signed `batting_delta` formatted as %p of the displayed model.
+
+Tests: `tests/test_watch_summary.py` (empty game, bounds, prefix advance, final record/not played, unknown last-pitch runs, final-run checks, no future leakage for every prefix, unknown/NaN WE and valid JSON, ordering/limit, missing scores, unknown half and order, run before a half's first pitch, API status codes and unchanged privacy of the timeline/games list).
+
 ## UI direction
 
 Warm ivory + dark ink, deep teal accent, orange actual-pitch marker; polished sports editorial, Korean text. Clear scoreboard, large zone, rank3 recommendations, count/base diamonds, pitch timeline, terminal analysis card with optional manual target selector. Responsive layout with useful empty/loading/error states and visible data date. No login/billing/public hosting. Avoid technical jargon in main flow. Show model details only when expanded.

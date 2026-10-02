@@ -412,6 +412,10 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     def watch_reveal(game_pk: int, index: int):
         return watch_call(lambda: watch.reveal(game_pk, index))
 
+    @app.get('/api/watch/{game_pk}/summary')
+    def watch_summary(game_pk: int, through: int = Query(..., ge=-1), top: int = Query(5, ge=0, le=20)):
+        return watch_call(lambda: watch.summary(game_pk, through, top))
+
     setups = SetupEstimates()
 
     @app.get('/api/watch/{game_pk}/setup')

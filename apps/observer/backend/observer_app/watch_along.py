@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 
+from .watch_summary import summarize
+
 SCHEMA = 'pitcheezy-watch-along-v1'
 BADGE = '검증 전 실험 버전 · 위치는 실제 투구 분포 근사'
 DEFAULT_DIR = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/watch')
@@ -76,3 +78,7 @@ class WatchAlong:
         if type(index) is not int or not 0 <= index < len(decisions):
             raise IndexError(index)
         return {k: decisions[index][k] for k in POST_FIELDS}
+
+    def summary(self, game_pk, through, top=5):
+        """Line score, home WE curve and notable plays of pitches 0..through (see watch_summary)."""
+        return summarize(self.load(game_pk), through, top)
