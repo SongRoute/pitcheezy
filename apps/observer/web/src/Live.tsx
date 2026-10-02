@@ -28,13 +28,13 @@ const WAIT_TEXT: Record<string, string> = { resolving: '방금 공의 결과를 
 const clock = (seconds: number) => { const s = Math.max(0, Math.round(seconds)); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 const savedDelay = () => { try { const v = localStorage.getItem(DELAY_KEY); return v === null ? null : Number(v); } catch { return null; } };
 
-/** Lines the screen up with the viewer's broadcast: + shows pitches later, − sooner. */
-function SyncBar({ label, value, hint, onShift, onTap, tapNote }: { label: string; value: string; hint: string; onShift: (seconds: number) => void; onTap?: () => void; tapNote?: string | null }) {
-  return <section className="wa-sync" aria-label={label}>
-    <div className="wa-sync-row"><span className="wa-sync-label">{label}</span><strong aria-live="polite">{value}</strong>
-      <span className="wa-sync-buttons">{[-5, -1, 1, 5].map(d => <button key={d} onClick={() => onShift(d)} aria-label={`${Math.abs(d)}초 ${d < 0 ? '빠르게' : '늦게'}`}>{d > 0 ? `+${d}` : d}</button>)}</span></div>
+/** Lines the screen up with the viewer's broadcast: + shows pitches later, − sooner. One line once it is set. */
+function SyncBar({ label, value, hint, onShift, onTap, tapNote, open }: { label: string; value: string; hint: string; onShift: (seconds: number) => void; onTap?: () => void; tapNote?: string | null; open: boolean }) {
+  return <details className="wa-sync" open={open || undefined}>
+    <summary><span className="wa-sync-label">{label}</span><strong aria-live="polite">{value}</strong><em>조절</em></summary>
+    <div className="wa-sync-buttons">{[-5, -1, 1, 5].map(d => <button key={d} onClick={() => onShift(d)} aria-label={`${Math.abs(d)}초 ${d < 0 ? '빠르게' : '늦게'}`}>{d > 0 ? `+${d}` : d}</button>)}</div>
     <p>{hint}</p>
-    {onTap && <><button className="wa-sync-tap" onClick={onTap}>내 화면에서 공이 미트에 들어오는 순간 누르기</button>{tapNote && <p aria-live="polite">{tapNote}</p>}</>}</section>;
+    {onTap && <><button className="wa-sync-tap" onClick={onTap}>내 화면에서 공이 미트에 들어오는 순간 누르기</button>{tapNote && <p aria-live="polite">{tapNote}</p>}</>}</details>;
 }
 
 export default function Live() {
@@ -49,6 +49,7 @@ export default function Live() {
   const [error, setError] = useState<string | null>(null);
   const [updated, setUpdated] = useState<Date | null>(null);
   const [tapNote, setTapNote] = useState<string | null>(null);
+  const [syncOpen] = useState(() => replayStart === null ? savedDelay() === null : params.get('t0') === null);  // open until first set
   const shown = useRef(new Map<string, Candidate | null>());  // recommendation shown before each pitch (this session)
 
   useEffect(() => {
@@ -123,9 +124,9 @@ export default function Live() {
       {game && <p className="wa-live-title"><span className="wa-live-dot">{isReplay ? '다시 보기 · 실제 속도' : '지연 중계'}</span> {short(game.away_team)} @ {short(game.home_team)}{isReplay && speed !== 1 ? ` · ${speed}배속` : ''}</p>}
       {isReplay && outline && <nav className="wa-innings" aria-label="회로 이동">{outline.halves.map((h, i) =>
         <a key={h.first} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} href={`/live?game=${gamePk}&replay=${h.first}${speed !== 1 ? `&speed=${speed}` : ''}`}>{h.label}</a>)}</nav>}
-      {isReplay ? <SyncBar label="영상 맞추기" value={replay ? `경기 ${clock(replay.elapsed_s)}` : '—'} onShift={shift}
+      {isReplay ? <SyncBar open={syncOpen} label="영상 맞추기" value={replay ? `경기 ${clock(replay.elapsed_s)}` : '—'} onShift={shift}
           hint="영상보다 이 화면이 먼저 가면 +, 늦으면 − 를 눌러 맞춰요. 회 버튼을 누르면 그 회 첫 공 15초 전부터 시작해요." />
-        : <SyncBar label="중계 맞추기" value={`내 화면이 ${usedDelay}초 늦음`} onShift={shift} onTap={state?.status === 'ready' ? () => void tap() : undefined} tapNote={tapNote}
+        : <SyncBar open={syncOpen} label="중계 맞추기" value={`내 화면이 ${usedDelay}초 늦음`} onShift={shift} onTap={state?.status === 'ready' ? () => void tap() : undefined} tapNote={tapNote}
           hint="공 결과가 내 중계 화면보다 먼저 뜨면 +, 늦게 뜨면 − 를 눌러요. 이 기기에 기억해 둬요." />}
       {late && <p className="wa-sync-late">기록이 내 중계보다 늦게 도착하고 있어요(약 {Math.round(state!.sync!.feed_lag_s!)}초). + 를 눌러 여유를 두면 추천을 공보다 먼저 볼 수 있어요.</p>}
       {error && <p className="wa-error">{error} {state ? '마지막으로 받은 상황을 보여 주고 있어요. 계속 다시 시도해요.' : ''}</p>}

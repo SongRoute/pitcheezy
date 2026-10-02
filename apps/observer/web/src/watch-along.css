@@ -101,12 +101,14 @@
 .wa-today li{display:grid;grid-template-columns:5.5em 1fr 3em 5.2em;align-items:center;gap:8px;font-size:14px;font-variant-numeric:tabular-nums}
 .wa-today li b{font-weight:800}.wa-today li em{font-style:normal;font-weight:800;text-align:right}.wa-today li small{color:var(--muted);font-size:12.5px;text-align:right}
 .wa-today .bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}.wa-today .bar i{display:block;height:100%;background:var(--target-2)}
-.wa-sync{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:10px}
-.wa-sync-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.wa-sync-label{font-size:12px;font-weight:800;color:var(--teal);letter-spacing:.4px}
-.wa-sync-row strong{font-size:15px;font-variant-numeric:tabular-nums}
-.wa-sync-buttons{margin-left:auto;display:flex;gap:6px}
-.wa-sync-buttons button{min-width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
-.wa-sync p{font-size:12px;color:var(--muted);line-height:1.5;margin-top:4px}
+.wa-sync{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:0 12px;margin-bottom:10px}
+.wa-sync summary{display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;list-style:none}.wa-sync summary::-webkit-details-marker{display:none}
+.wa-sync-label{font-size:12px;font-weight:800;color:var(--teal);letter-spacing:.4px}
+.wa-sync summary strong{font-size:15px;font-variant-numeric:tabular-nums}
+.wa-sync summary em{margin-left:auto;font-style:normal;font-size:13px;font-weight:800;color:var(--muted)}.wa-sync summary em::after{content:' ▾'}.wa-sync[open] summary em::after{content:' ▴'}
+.wa-sync-buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.wa-sync-buttons button{height:44px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+.wa-sync p{font-size:12px;color:var(--muted);line-height:1.5;margin-top:6px}.wa-sync[open]{padding-bottom:10px}
 .wa-sync-tap{width:100%;min-height:44px;margin-top:8px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:14px;font-weight:800}
 .wa-sync-late{font-size:13px;line-height:1.5;color:var(--badge);background:var(--badge-bg);border-radius:8px;padding:8px 10px;margin-bottom:10px}
 .wa-game-row{display:grid;gap:2px}.wa-page a.wa-replay-link{justify-self:end;font-size:13px;font-weight:800;color:var(--teal);min-height:36px;display:inline-flex;align-items:center;padding:0 4px;text-decoration:none}
