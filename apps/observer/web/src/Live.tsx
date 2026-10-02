@@ -23,7 +23,7 @@ type Outline = { pitches: number; halves: { label: string; first: number }[] };
 
 const POLL_MS = 2000;
 const DELAY_KEY = 'pitcheezy.live.delay';
-const WAIT_TEXT: Record<string, string> = { buffering: '내 중계 시점에 맞추는 중이에요.', between_innings: '이닝 교대 중이에요. 다음 이닝 첫 공을 기다려요.',
+const WAIT_TEXT: Record<string, string> = { resolving: '방금 공의 결과를 기다려요.', buffering: '내 중계 시점에 맞추는 중이에요.', between_innings: '이닝 교대 중이에요. 다음 이닝 첫 공을 기다려요.',
   not_live: '지금은 경기 중이 아니에요.', unsupported_game_type: '이 경기 종류는 지원하지 않아요.' };
 const clock = (seconds: number) => { const s = Math.max(0, Math.round(seconds)); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 const savedDelay = () => { try { const v = localStorage.getItem(DELAY_KEY); return v === null ? null : Number(v); } catch { return null; } };

@@ -781,7 +781,8 @@ def live_rows(feed):
     else:
         if line.get('outs') == 3 or line.get('inningState') in ('Middle', 'End') or 'offense' not in line:
             return None
-        batter, pitcher = line['offense']['batter']['id'], line['defense']['pitcher']['id']
+        from observer_app.live_feed import due_up
+        batter, pitcher = due_up(line, plays[-1] if plays else None), line['defense']['pitcher']['id']
         hand = _hand(data, pitcher, 'pitchHand')
         side = _hand(data, batter, 'batSide')
         side = {'L': 'R', 'R': 'L'}.get(hand) if side == 'S' else side  # a switch hitter bats opposite the pitcher

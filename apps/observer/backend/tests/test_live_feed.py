@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from observer_app.live_armb import LiveArmB, state_key
-from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, event_wall, last_pitch, parse_state, pitcher_today, tap_delay
+from observer_app.live_feed import LIVE_CONFIG, LiveFeed, LiveFeedError, ReplayTransport, due_up, event_wall, last_pitch, parse_state, pitcher_today, tap_delay
 from observer_app.main import create_app
 
 FIXTURES = Path(__file__).parent/'fixtures/live'
@@ -328,3 +328,42 @@ def test_the_pitch_that_ended_an_inning_is_still_shown_during_the_break():
     done['liveData']['plays']['currentPlay']['about']['isComplete'] = True
     done['liveData']['linescore']['outs'] = 3
     assert parse_state(done, None)['status'] == 'between_innings' and 'last_pitch' in parse_state(done, None)
+
+
+def test_between_batters_the_real_feed_still_names_the_finished_batter():
+    """849844 (2026-10-02): for about ten seconds after a PA completes ``offense.batter`` is the batter who
+    just finished and ``onDeck`` the next one; the new play then moves ``batter`` on."""
+    finished = {'matchup': {'batter': {'id': 607208}}}
+    stale = {'offense': {'batter': {'id': 607208}, 'onDeck': {'id': 656941}}}
+    assert due_up(stale, finished) == 656941
+    assert due_up({'offense': {'batter': {'id': 656941}, 'onDeck': {'id': 547180}}}, finished) == 656941  # already moved on
+    assert due_up(stale, None) == 607208  # before the first pitch nobody has finished
+    done = feed('849845_20260929_195940.json')
+    done['liveData']['plays']['currentPlay']['about']['isComplete'] = True
+    offense = done['liveData']['linescore']['offense']
+    offense['onDeck'] = {'id': 592518}
+    done['gameData']['players']['ID592518'] = {'fullName': 'Next Batter', 'batSide': {'code': 'S'}}
+    state = parse_state(done, None)
+    assert state['batter'] == {'id': 592518, 'name': 'Next Batter', 'side': 'R'} and state['situation']['balls'] == 0  # vs LHP Sale
+
+
+def test_a_pitch_that_decided_the_pa_is_not_followed_by_a_pending_pitch():
+    snapshot = feed('849845_20260929_195940.json')
+    play = snapshot['liveData']['plays']['currentPlay']
+    assert parse_state(snapshot, None)['status'] == 'ready'
+    in_play = copy.deepcopy(snapshot)
+    in_play['liveData']['plays']['currentPlay']['playEvents'][-1]['details']['isInPlay'] = True
+    state = parse_state(in_play, None)
+    assert state['status'] == 'resolving' and state['situation'] is not None and state['pitcher']['name'] == 'Chris Sale'
+    for count in ({'strikes': 3}, {'balls': 4}):
+        ended = copy.deepcopy(snapshot)
+        ended['liveData']['plays']['currentPlay']['count'] = play['count'] | count
+        assert parse_state(ended, None)['status'] == 'resolving'
+    hit = copy.deepcopy(snapshot)
+    hit['liveData']['plays']['currentPlay']['playEvents'][-1]['details']['call'] = {'code': 'H'}
+    assert parse_state(hit, None)['status'] == 'resolving'
+    armb = LiveArmB(lambda: FakePolicy())
+    app = create_app(object(), live_feed=LiveFeed(lambda url, timeout: in_play, delay_s=0), live_policy=armb)
+    with TestClient(app) as client:
+        body = client.get('/api/live/849845/state').json()
+    assert body['status'] == 'resolving' and body['recommendation'] is None and armb.status()['pending'] == 0

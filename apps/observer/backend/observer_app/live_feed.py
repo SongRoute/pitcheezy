@@ -250,6 +250,32 @@ def last_pitch(feed):
     return None
 
 
+def due_up(line, last_play):
+    """The batter of the next plate appearance while the feed has not created its play yet.
+
+    Right after a PA completes, the real feed keeps naming the batter who just finished as
+    ``offense.batter`` for about ten seconds (the next one is ``onDeck``); only when the new play appears
+    does ``batter`` move on. Before a game's first pitch and after a half-inning change ``batter`` is
+    already the due-up one.
+    """
+    offense = line['offense']
+    finished = ((last_play or {}).get('matchup') or {}).get('batter', {}).get('id')
+    if finished is not None and offense['batter']['id'] == finished and 'onDeck' in offense:
+        return offense['onDeck']['id']
+    return offense['batter']['id']
+
+
+def _resolving(play):
+    """True while an open play's last pitch already decided the PA (ball in play, hit by pitch, strike
+    three, ball four) and the feed has not posted the result yet: there is no next pitch to recommend."""
+    pitches = [e for e in play.get('playEvents') or [] if e.get('isPitch')]
+    if not pitches:
+        return False
+    details, count = pitches[-1].get('details') or {}, play.get('count') or {}
+    return bool(details.get('isInPlay') or (details.get('call') or {}).get('code') == 'H'
+                or count.get('strikes', 0) >= 3 or count.get('balls', 0) >= 4)
+
+
 def parse_state(feed, pins, *, config=LIVE_CONFIG):
     """Current pre-pitch game state from a GUMBO feed, plus a ``PrePitchInput`` when supported by the
     legacy bundle ``pins`` (``pins=None``: state only)."""
@@ -283,8 +309,8 @@ def parse_state(feed, pins, *, config=LIVE_CONFIG):
              'x': ((e.get('pitchData') or {}).get('coordinates') or {}).get('pX'),
              'z': ((e.get('pitchData') or {}).get('coordinates') or {}).get('pZ')}
             for e in play.get('playEvents', []) if e.get('isPitch')]
-    else:  # between batters: the next PA starts 0-0 with the linescore's due-up batter
-        batter_id, pitcher_id = line['offense']['batter']['id'], line['defense']['pitcher']['id']
+    else:  # between batters: the next PA starts 0-0 with the due-up batter
+        batter_id, pitcher_id = due_up(line, play), line['defense']['pitcher']['id']
         hand = _player(feed, pitcher_id).get('pitchHand', {}).get('code')
         stand = _player(feed, batter_id).get('batSide', {}).get('code')
         if stand == 'S':  # switch hitter bats opposite the pitcher's hand
@@ -299,6 +325,8 @@ def parse_state(feed, pins, *, config=LIVE_CONFIG):
     result |= {'situation': situation, 'pitcher_today': pitcher_today(feed, pitcher_id),
                'pitcher': {'id': pitcher_id, 'name': _player(feed, pitcher_id).get('fullName'), 'hand': hand},
                'batter': {'id': batter_id, 'name': _player(feed, batter_id).get('fullName'), 'side': stand}}
+    if in_pa and _resolving(play):
+        return result | {'status': 'resolving', 'reason': '방금 공의 결과를 기다리는 중입니다.', 'last_pitch': last_pitch(feed)}
     if pins is None:  # ARM-B service view: support is decided by the frozen policy runtime, not bundle pins
         return result
     pin = pins['pitchers'].get(str(pitcher_id))
