@@ -100,6 +100,9 @@
 4. ui-worker — 동결이 끝나고 Q7이 정해진 뒤. live-sync → intent-setup 합치기, 미트 가로 위치 표시([작업 지시](UI-setup-display-work-order.md)), Q4 문구.
 5. PM — Q15 뒤. 낡은 문서 맨 위에 "낡음 → PM-state" 한 줄.
 
+## 세션 운영 순서
+- 논의 → 18시간 위임 → 복귀 순서와 프롬프트: [PM-session-plan.md](PM-session-plan.md)
+
 ## Song이 직접 넣을 것
 - 설정·권한 규칙: [settings-for-song.md](pm-drafts/settings-for-song.md)
 - 적용 전 초안: [작업자 정의 4개](pm-drafts/agents/), [CLAUDE.md 개정안](pm-drafts/CLAUDE.proposed.md), [메모리 교체안](pm-drafts/memory-feedback-opus-alone.proposed.md)
