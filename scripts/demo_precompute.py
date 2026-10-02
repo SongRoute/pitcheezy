@@ -1083,6 +1083,60 @@ def replay_outline(final):
             'pitches': index, 'halves': halves}
 
 
+def live_check(game_pk, snapshots, output_root=DEMO_ROOT):
+    """Did viewers of a real in-progress game see what the frozen policy says with the final feed?
+
+    Feeds the raw snapshots recorded during the game (``apps/observer/live_snapshots``, in fetch order)
+    through the observer's state parser and ``LivePolicy`` exactly as the live route does, and compares
+    each pitch's pre-pitch view (the first and the last one a viewer could have seen) with the watch-along
+    precompute of the same game from its final feed. Differences are expected where the feed revised
+    something after the pitch (a challenged call, a reclassified earlier pitch). Display check only."""
+    from collections import Counter
+    from observer_app.live_feed import parse_state
+    game_pk, output_root = int(game_pk), _check_output_root(output_root)
+    watch = json.loads((output_root / 'watch' / f'{game_pk}.json').read_text())
+    final = {f"{game_pk}:{d['at_bat_number']}:{d['pitch_number']}": d['pre'] for d in watch['decisions']}
+    files = sorted((path for path in Path(snapshots).glob(f'{game_pk}_*.json.gz') if not path.name.startswith('.')),
+                   key=lambda path: path.stat().st_mtime)
+    policy, first, last, states, errors, seconds, rebinds = LivePolicy(output_root), {}, {}, Counter(), [], [], []
+    for path in files:
+        feed = read_feed(path)
+        status = parse_state(feed, None)['status']
+        states[status] += 1
+        if status != 'ready':
+            continue
+        try:
+            result = policy(feed)
+        except Exception as exc:  # noqa: BLE001 - the check reports it, as the live worker would log it
+            errors.append({'snapshot': path.name, 'error': f'{type(exc).__name__}: {exc}'})
+            continue
+        if result is None:
+            continue
+        seconds.append(result['seconds']['total'])
+        if result['seconds']['bind'] > 1:
+            rebinds.append({'key': result['key'], 'snapshot': path.name, 'bind_s': result['seconds']['bind']})
+        first.setdefault(result['key'], result['pitch']['pre'])
+        last[result['key']] = result['pitch']['pre']
+    top = lambda pre: (pre['recommendation'] or {}).get('candidates', [{}])[0].get('pitch_type') if pre['status'] == 'ready' else None
+    differing = [{'key': key, 'live_first': [first[key]['status'], top(first[key])], 'live_last': [last[key]['status'], top(last[key])],
+                  'final': [final[key]['status'], top(final[key])]}
+                 for key in first if key in final and first[key] != final[key]]
+    report = {'schema': 'pitcheezy.live-check.v1', 'game_pk': game_pk,
+              'note': 'Display check on DEMO-WS-2026 data: live pre-pitch views against the final-feed precompute; not an evaluation.',
+              'snapshots': len(files), 'states': dict(states), 'errors': errors, 'binds': policy.binds, 'bind_events': rebinds,
+              'compute_total_s': {'median': float(np.median(seconds)), 'max': max(seconds)} if seconds else None,
+              'pitches_in_final': len(final), 'pitches_seen_pending_live': len(first),
+              'seen_live_not_in_final': sorted(key for key in first if key not in final),
+              'never_pending_live': len([key for key in final if key not in first]),
+              'first_view_equals_final': sum(first[key] == final[key] for key in first if key in final),
+              'last_view_equals_final': sum(last[key] == final[key] for key in first if key in final),
+              'first_view_same_top_type': sum(top(first[key]) == top(final[key]) for key in first if key in final),
+              'last_view_same_top_type': sum(top(last[key]) == top(final[key]) for key in first if key in final),
+              'differing_first_views': differing}
+    _write_json(output_root / 'live_check' / f'{game_pk}.json', report)
+    return report
+
+
 def completed_postseason_games(since, until, fetch=None):
     """gamePks of FINAL postseason games (F/D/L/W) between two dates (inclusive), in schedule order."""
     fetch = fetch or (lambda url: json.load(urllib.request.urlopen(
@@ -1141,7 +1195,15 @@ def main(argv=None):
     rehearsal.add_argument('--start', type=int, default=0, help='first pitch (0-based) of the rehearsal')
     rehearsal.add_argument('--count', type=int, default=None)
     rehearsal.add_argument('--output', type=Path, default=None)
+    checked = commands.add_parser('live-check', help='recorded live snapshots of a game against its final-feed precompute')
+    checked.add_argument('--game-pk', type=int, required=True)
+    checked.add_argument('--snapshots', type=Path, default=PROJECT / 'apps/observer/live_snapshots')
     args = parser.parse_args(argv)
+    if args.command == 'live-check':
+        report = live_check(args.game_pk, args.snapshots)
+        print(json.dumps({k: v for k, v in report.items() if k != 'differing_first_views'}, ensure_ascii=False, indent=1))
+        print(json.dumps(report['differing_first_views'][:40], ensure_ascii=False))
+        return
     if args.command == 'check-mapping':
         result = check_mapping(args.games, args.output, args.raw)
         print(json.dumps({k: result[k] for k in ('rows', 'effective_speed')}, indent=1))

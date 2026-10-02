@@ -1,0 +1,180 @@
+{
+ "schema": "pitcheezy.live-check.v1",
+ "game_pk": 849844,
+ "note": "Display check on DEMO-WS-2026 data: live pre-pitch views against the final-feed precompute; not an evaluation.",
+ "snapshots": 372,
+ "states": {
+  "not_live": 1,
+  "ready": 332,
+  "resolving": 22,
+  "between_innings": 17
+ },
+ "errors": [],
+ "binds": 9,
+ "bind_events": [
+  {
+   "key": "849844:1:1",
+   "snapshot": "849844_20261001_234702.json.gz",
+   "bind_s": 5.01
+  },
+  {
+   "key": "849844:6:4",
+   "snapshot": "849844_20261002_002559.json.gz",
+   "bind_s": 5.14
+  },
+  {
+   "key": "849844:17:1",
+   "snapshot": "849844_20261002_005344.json.gz",
+   "bind_s": 5.37
+  },
+  {
+   "key": "849844:27:1",
+   "snapshot": "849844_20261002_011749.json.gz",
+   "bind_s": 5.56
+  },
+  {
+   "key": "849844:35:1",
+   "snapshot": "849844_20261002_013700.json.gz",
+   "bind_s": 5.68
+  },
+  {
+   "key": "849844:35:3",
+   "snapshot": "849844_20261002_013744.json.gz",
+   "bind_s": 5.71
+  },
+  {
+   "key": "849844:43:1",
+   "snapshot": "849844_20261002_015614.json.gz",
+   "bind_s": 5.9
+  },
+  {
+   "key": "849844:62:1",
+   "snapshot": "849844_20261002_023932.json.gz",
+   "bind_s": 6.23
+  },
+  {
+   "key": "849844:69:1",
+   "snapshot": "849844_20261002_025903.json.gz",
+   "bind_s": 6.39
+  }
+ ],
+ "compute_total_s": {
+  "median": 0.1,
+  "max": 6.5
+ },
+ "pitches_in_final": 277,
+ "pitches_seen_pending_live": 273,
+ "seen_live_not_in_final": [
+  "849844:50:4"
+ ],
+ "never_pending_live": 5,
+ "first_view_equals_final": 237,
+ "last_view_equals_final": 247,
+ "first_view_same_top_type": 266,
+ "last_view_same_top_type": 269,
+ "differing_first_views": 35,
+ "differing_first_views_top_type_changed": [
+  {
+   "key": "849844:6:3",
+   "live_first": [
+    "ready",
+    "KC"
+   ],
+   "live_last": [
+    "ready",
+    "KC"
+   ],
+   "final": [
+    "ready",
+    "SI"
+   ]
+  },
+  {
+   "key": "849844:8:2",
+   "live_first": [
+    "ready",
+    "FF"
+   ],
+   "live_last": [
+    "ready",
+    "FF"
+   ],
+   "final": [
+    "ready",
+    "KC"
+   ]
+  },
+  {
+   "key": "849844:8:3",
+   "live_first": [
+    "ready",
+    "KC"
+   ],
+   "live_last": [
+    "ready",
+    "KC"
+   ],
+   "final": [
+    "ready",
+    "FF"
+   ]
+  },
+  {
+   "key": "849844:17:1",
+   "live_first": [
+    "ready",
+    "FF"
+   ],
+   "live_last": [
+    "ready",
+    "SI"
+   ],
+   "final": [
+    "ready",
+    "SI"
+   ]
+  },
+  {
+   "key": "849844:35:3",
+   "live_first": [
+    "ready",
+    "SL"
+   ],
+   "live_last": [
+    "ready",
+    "FF"
+   ],
+   "final": [
+    "ready",
+    "FF"
+   ]
+  },
+  {
+   "key": "849844:69:1",
+   "live_first": [
+    "ready",
+    "FF"
+   ],
+   "live_last": [
+    "ready",
+    "SL"
+   ],
+   "final": [
+    "ready",
+    "SL"
+   ]
+  }
+ ],
+ "difference_causes_seen": "previous pitch first published without spin/extension; ABS-challenged call (849844:6); pitch type reclassified later (e.g. 849844:8:1 SI -> CH)",
+ "bind_causes": {
+  "849844:6:4": "ABS challenge changed the count",
+  "849844:17:1": "pitching change",
+  "849844:27:1": "pitching change",
+  "849844:35:1": "pinch hitter",
+  "849844:35:3": "runner advanced to second during the PA",
+  "849844:43:1": "pitching change",
+  "849844:62:1": "pitching change",
+  "849844:69:1": "pinch hitter"
+ },
+ "code_commit_note": "run offline on the 372 snapshots recorded by the 8769 instance, with the state parser and LivePolicy of this commit"
+}

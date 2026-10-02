@@ -196,6 +196,16 @@ def test_state_key_changes_with_each_pre_pitch_input_and_cache_is_reused():
     moved['liveData']['linescore']['offense']['second'] = moved['liveData']['linescore']['offense'].pop('first')
     assert state_key(snapshot) != state_key(moved)
     assert state_key(snapshot) == state_key(copy.deepcopy(snapshot))
+    # The feed revises thrown pitches without adding an event: each revision is a new state.
+    events = lambda s: s['liveData']['plays']['currentPlay']['playEvents']
+    overturned = copy.deepcopy(snapshot)  # a challenged call: ball -> strike, and the count with it
+    events(overturned)[-1]['details']['call'] = {'code': 'C'}
+    overturned['liveData']['plays']['currentPlay']['count'] = {'balls': 0, 'strikes': 2, 'outs': 1}
+    completed = copy.deepcopy(snapshot)   # spin arrives a few seconds after the pitch itself
+    events(completed)[-1].setdefault('pitchData', {}).setdefault('breaks', {})['spinRate'] = 2511
+    retyped = copy.deepcopy(snapshot)
+    events(retyped)[-1]['details']['type'] = {'code': 'ST', 'description': 'Sweeper'}
+    assert len({state_key(s) for s in (snapshot, overturned, completed, retyped)}) == 4
     policy = FakePolicy()
     armb = LiveArmB(lambda: policy)
     armb.lookup(snapshot)

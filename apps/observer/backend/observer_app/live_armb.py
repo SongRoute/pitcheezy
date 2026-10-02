@@ -21,21 +21,42 @@ from .settings import REPO
 LOGGER = logging.getLogger(__name__)
 
 
+def _pitch_data(play):
+    """What the feed currently says about a play's pitches: the model's inputs for the next pitch."""
+    out = []
+    for event in play.get('playEvents') or []:
+        if event.get('isPitch'):
+            details, data = event.get('details') or {}, event.get('pitchData') or {}
+            breaks, where = data.get('breaks') or {}, data.get('coordinates') or {}
+            out.append([event.get('index'), (details.get('type') or {}).get('code'), (details.get('call') or {}).get('code'),
+                        data.get('startSpeed'), data.get('extension'), breaks.get('spinRate'), breaks.get('spinDirection'),
+                        breaks.get('breakHorizontal'), breaks.get('breakVerticalInduced'), where.get('pX'), where.get('pZ')])
+    return out
+
+
 def state_key(feed):
-    """Identity of the pending decision in a feed: every pre-pitch input that can change between polls."""
+    """Identity of the pending decision in a feed: every pre-pitch input that can change between polls.
+
+    That includes what the feed says about the pitches already thrown, because it revises them without
+    adding an event (seen on 849844): a pitch is first published without spin and extension, a challenged
+    call flips ball/strike and the count, and a pitch type can be reclassified. A changed revision is a
+    new state, so the recommendation is computed again from the data as it now stands."""
     data, live = feed['gameData'], feed['liveData']
     plays = live['plays'].get('allPlays') or []
     line = live.get('linescore') or {}
     last = live['plays'].get('currentPlay') or (plays[-1] if plays else {})
     offense = line.get('offense') or {}
+    count = last.get('count') or {}
     return json.dumps([data['game']['pk'], len(plays), (last.get('about') or {}).get('atBatIndex'),
                        bool(last.get('about', {}).get('isComplete', True)),
                        [base for base in ('first', 'second', 'third') if base in offense],
                        len(last.get('playEvents') or []), len(last.get('runners') or []),
                        (last.get('matchup') or {}).get('pitcher', {}).get('id'),
                        line.get('outs'), line.get('inningState'), line.get('currentInning'),
-                       offense.get('batter', {}).get('id'),
-                       (line.get('defense') or {}).get('pitcher', {}).get('id')])
+                       offense.get('batter', {}).get('id'), offense.get('onDeck', {}).get('id'),
+                       (line.get('defense') or {}).get('pitcher', {}).get('id'),
+                       count.get('balls'), count.get('strikes'),
+                       [_pitch_data(play) for play in [*plays[-3:], last][-3:]]])
 
 
 def _default_factory():
