@@ -1,0 +1,88 @@
+{
+  "experiment_id": "EXP-P18-001",
+  "smoke": false,
+  "settings": {
+    "tau": 0.1,
+    "samples": 6,
+    "pitch_cap": 12,
+    "seed": 0
+  },
+  "noise_seed": 1,
+  "swap_run": {
+    "experiment_id": "EXP-P17-001",
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P17-001",
+    "decisions_sha256": "d794827307bff772f1d54d58923455d360048bc98152052a5baad52103929bd1",
+    "results_sha256": "bbdecc1573854b9948bd2b7b7fccd047af8c25ec808fc06eb4ffd69d44cb8dc0",
+    "use": "per-decision swap distances (TV, top-1 agreement) of the same 40,702 decisions, in the same order"
+  },
+  "sealed_g0_run": {
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S3b-tau-a4",
+    "manifest_sha256": "25effce1729df55ab1d997358de2f101ca54eb0eb86e34588d94159f775f1c31",
+    "ledger": "ledger-blend-0.jsonl",
+    "requests": 43487,
+    "evaluated_decisions": 40702,
+    "final_identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+    "use": "the G0 side of the comparison: recorded planning Q, mask and reference law of every evaluated decision (June 2025, 150 games)"
+  },
+  "decisions_compared": 40702,
+  "comparison": {
+    "decisions": 40702,
+    "games": 150,
+    "swap": {
+      "mean_tv": 0.03229061058581878,
+      "top1_agreement": 0.9278168148985307
+    },
+    "seed_noise": {
+      "mean_tv": 0.04966830494814267,
+      "mean_tv_ci95": [
+        0.046584545784024274,
+        0.05272782730941132
+      ],
+      "top1_agreement": 0.8869834406171687,
+      "tv_quantiles": {
+        "0.5": 0.03501737875691146,
+        "0.9": 0.11089018884673822,
+        "0.99": 0.25746796121709814,
+        "1.0": 0.8083554368474474
+      },
+      "share_tv_above_0.05": 0.3559284556041472
+    },
+    "excess_mean_tv": -0.0173776943623239,
+    "excess_mean_tv_ci95": [
+      -0.018465970482814426,
+      -0.01626675891531928
+    ],
+    "excess_top1_disagreement": -0.04083337428136209,
+    "excess_top1_disagreement_ci95": [
+      -0.04517255675204974,
+      -0.03646527794596798
+    ],
+    "swap_to_seed_tv_ratio": 0.6501250771398889,
+    "verdict": {
+      "excess_mean_tv_at_least": 0.01,
+      "reading_fixed_before_results": {
+        "PREDICTOR_EFFECT_BEYOND_NOISE": "mean excess TV >= 0.01 and its 95% whole-game bootstrap lower bound > 0: the predictor swap moves the recommendations by more than a seed change does; report to the user, who decides on stage C and the review gates; nothing runs automatically",
+        "WITHIN_SEARCH_NOISE": "otherwise: the EXP-P17-001 distance is not distinguishable from search noise at the registered margin; stage C is not run and the policy re-validation line is closed until new inputs arrive (CV intent data / ARM-A)"
+      },
+      "threshold_basis": "the 0.01 TV judgement value registered in EXP-P17-001, applied to the excess over the seed distance; no measured basis",
+      "conservative_direction": "An independent-seed distance is at least as large as the noise inside the common-random-number swap comparison, so BEYOND is hard to reach and WITHIN does not prove a zero predictor effect.",
+      "status": "WITHIN_SEARCH_NOISE"
+    }
+  },
+  "mean_max_abs_q_difference": 0.033828595581552615,
+  "cost": {
+    "seconds": 1965.081596666947,
+    "peak_rss_bytes": 7187841024,
+    "conditional_rows": 3805035
+  },
+  "git_commit": "8754bef9c4cc2c4f6b02ba908241bf793af4a589",
+  "outcomes_read": false,
+  "policy_identity_registered": false,
+  "limits": [
+    "Registered after the EXP-P17-001 result was read (post-hoc analysis)",
+    "An independent-seed distance overstates the noise inside the common-random-number swap comparison: BEYOND is conservative, WITHIN does not prove a zero predictor effect",
+    "One alternative seed; model-internal diagnostic, not a policy value estimate",
+    "Same-model review only; the independent review gate is not passed"
+  ],
+  "finished_utc": "2026-10-02T15:31:00.758487+00:00"
+}
