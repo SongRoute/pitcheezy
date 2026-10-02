@@ -10,6 +10,8 @@ html:has(.gm-page),body:has(.gm-page){height:100%;overflow:hidden;overscroll-beh
 .gm-icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}.gm-icon svg.fill{fill:currentColor;stroke:none}
 .gm-live{height:44px;display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:0 4px;font-size:13px;font-weight:900;color:var(--ink);font-variant-numeric:tabular-nums}
 .gm-live::before{content:'';width:8px;height:8px;border-radius:50%;background:#c2410c}.gm-live.off::before{background:var(--muted)}
+.gm-live.stale{color:var(--err)}.gm-live.stale::before{background:none;border:2px solid currentColor;box-sizing:border-box}
+.gm-icon:disabled{opacity:.4}
 .gm-badge{font-size:11px;font-weight:800;color:var(--badge);background:var(--badge-bg);border-radius:999px;padding:3px 9px}
 
 .gm-board{background:var(--board);color:#fff;padding:8px 12px;display:grid;gap:4px;justify-items:center;min-height:104px;box-sizing:border-box}
@@ -96,6 +98,18 @@ html:has(.gm-page),body:has(.gm-page){height:100%;overflow:hidden;overscroll-beh
 .gm-list b{width:64px;flex:none;font-size:15px}.gm-list span{color:var(--muted)}
 .gm-shift{display:flex;gap:8px}.gm-shift button{flex:1;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:15px;font-weight:800}
 .gm-wide{display:grid;place-items:center;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--deep);font-size:15px;font-weight:800;text-decoration:none;padding:0 12px}
+
+/* Stale feed (last good state kept, never shown as current) and a paused replay: one line above the stage. */
+.gm-stale,.gm-paused{flex:none;display:flex;align-items:baseline;gap:8px;min-width:0;padding:5px 10px;border-radius:10px;font-size:13px;line-height:1.35;white-space:nowrap;overflow:hidden}
+.gm-stale span,.gm-paused span{font-weight:700;overflow:hidden;text-overflow:ellipsis}
+.gm-stale{color:var(--err);background:var(--err-bg);border:1.5px dashed currentColor}.gm-paused{color:var(--ink);background:var(--chip)}
+.gm-stage.stale>*:not(.gm-stale){opacity:.4;filter:grayscale(1)}.gm-page.stale .gm-board{opacity:.55}
+/* Catcher mitt across the plate (D151): a dashed vertical line with edge ticks, so it never reads as a height. */
+.gm-setup line{stroke:var(--deep);stroke-width:2.5;stroke-dasharray:7 4}.gm-setup path{fill:var(--deep)}.gm-setup text{font-size:12px;font-weight:800;fill:var(--deep)}
+.gm-subhead{font-size:15px;font-weight:900;margin-top:4px}
+.gm-scenes{display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:6px}
+.gm-scenes button{height:44px;min-width:44px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:14px;font-weight:800}
+.gm-scenes button.wide{grid-column:span 2}.gm-scenes button.current{background:var(--primary);color:var(--primary-ink);border:0;text-decoration:underline;text-underline-offset:4px}
 
 /* Short screens (F10): shrink the type first, then drop what the zone can live without. */
 @media (max-height:640px){.gm-hero{font-size:44px}.gm-hero.big{font-size:48px}.gm-where{font-size:20px}.gm-why{display:none}}

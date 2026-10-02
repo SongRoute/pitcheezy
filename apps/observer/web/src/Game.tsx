@@ -18,7 +18,7 @@ type LiveRec = { status: 'ready' | 'unsupported' | 'computing' | 'unavailable'; 
 type Replay = { start: number; t0: number; speed: number; elapsed_s: number; pitches: number; index: number };
 type Mix = { pitch_type: string; pitch_label: string; count: number; share: number; avg_mph: number | null };
 type LiveState = { status: string; reason: string | null; delay_s: number; replay?: Replay | null;
-  sync?: { max_delay_s: number; event_age_s?: number; feed_lag_s?: number };
+  sync?: { max_delay_s: number; event_age_s?: number; feed_lag_s?: number; feed_ok?: boolean };
   game?: { game_pk: number; date: string; status: string; away_team: string; home_team: string };
   situation?: Situation | null; pitcher?: { id: number; name: string | null; hand: string } | null;
   batter?: { id: number; name: string | null; side: string } | null;
@@ -30,6 +30,10 @@ type Kind = 'strike' | 'ball' | 'play';
 type Seen = { key: string; pa: string; n: number; side: string; top: Candidate | null; actual: Pitched };
 type Unit = 'kmh' | 'mph';
 type SheetName = 'detail' | 'box' | 'sync' | 'more' | { glossary: string };
+type Outline = { pitches: number; halves: { label: string; first: number }[] };
+// Catcher setup read from the broadcast video after the game (D151, UI-setup-display-work-order): horizontal only.
+type SetupView = { badge?: string; pitches: { at_bat_number: number; pitch_number: number; status: string; plate_x_feet: number | null }[] };
+type Setups = { badge: string | null; x: Map<string, number> };
 
 const POLL_MS = 2000;
 const HOLD_MS = { pitch: 6000, event: 10000 };  // how long a result stays before the next recommendation takes the stage (F13: proposal)
@@ -46,6 +50,8 @@ const store = (key: string, value: string) => { try { localStorage.setItem(key, 
 const clock = (seconds: number) => { const s = Math.max(0, Math.round(seconds)); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 const pct = (v: number | null | undefined) => v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`;
 const paOf = (key: string) => key.split(':').slice(0, 2).join(':');
+const timeText = (ms: number) => new Date(ms).toLocaleTimeString('ko-KR', { hour12: false });
+const SETUP_NOTE = '포수 미트 위치는 영상에서 읽은 추정이며 검토 전입니다.';
 const speedText = (mph: number | null, unit: Unit) => mph === null ? '' : unit === 'kmh' ? `${Math.round(mph * 1.609344)} km/h` : `${mph.toFixed(1)} mph`;
 
 const cellOf = (zoneId: string | null): Cell | null => {
@@ -96,7 +102,7 @@ function Board({ s, away, home, pitcher, pitcherNote, batter, batterNote, idle }
 type Dot = { key: string; n: number; x: number; z: number; kind: Kind };
 const VW = 370, VH = 285, BW = 124, TOP = 68;
 /** Catcher's view. The batter stands where he really does, so inside and outside read off the picture (D138). */
-function Zone({ side, target, dots, big, empty, mini }: { side: string; target: Cell | null; dots: Dot[]; big?: string | null; empty?: boolean; mini?: boolean }) {
+function Zone({ side, target, dots, big, empty, mini, setupX }: { side: string; target: Cell | null; dots: Dot[]; big?: string | null; empty?: boolean; mini?: boolean; setupX?: number | null }) {
   const b = ZONE_BOUNDS, bh = BW * (b.top - b.bottom) / 1.66, left = (VW - BW) / 2, cw = BW / 3, ch = bh / 3;
   const x = (v: number) => VW / 2 + Math.max(-1.3, Math.min(1.3, v)) / .83 * (BW / 2);
   const y = (v: number) => TOP + (b.top - Math.max(.7, Math.min(4.2, v))) / (b.top - b.bottom) * bh;
@@ -111,6 +117,11 @@ function Zone({ side, target, dots, big, empty, mini }: { side: string; target: 
     {[1, 2].map(i => <g key={i} className="gm-zone-grid"><line x1={left + cw * i} x2={left + cw * i} y1={TOP} y2={TOP + bh} /><line y1={TOP + ch * i} y2={TOP + ch * i} x1={left} x2={left + BW} /></g>)}
     {target && centre && <g className={`gm-target ${thrown ? 'faint' : ''}`}><rect x={left + cw * target.col} y={TOP + ch * target.row} width={cw} height={ch} />
       {!thrown && <><circle cx={centre.x} cy={centre.y} r={cw * .26} className="ring" /><circle cx={centre.x} cy={centre.y} r={cw * .08} /></>}</g>}
+    {setupX !== undefined && setupX !== null && <g className="gm-setup" role="img" aria-label="포수 미트 가로 위치">
+      {/* a vertical line and two edge ticks: where across the plate the mitt was, with no claim about height */}
+      <line x1={x(setupX)} x2={x(setupX)} y1={TOP - 4} y2={TOP + bh + 4} />
+      <path d={`M${x(setupX) - 7} ${TOP - 13}h14l-7 9z`} /><path d={`M${x(setupX) - 7} ${TOP + bh + 13}h14l-7 -9z`} />
+      {!mini && <text x={x(setupX)} y={TOP - 17} textAnchor="middle">미트</text>}</g>}
     {thrown && centre && <line className="gm-miss" x1={centre.x} y1={centre.y} x2={x(thrown.x)} y2={y(thrown.z)} />}
     {dots.map(d => { const r = (d.key === big ? 11.5 : 8.5) * (mini ? 1.3 : 1);
       return <g key={d.key} className={`gm-dot ${d.kind} ${big && d.key !== big ? 'old' : ''}`}><circle cx={x(d.x)} cy={y(d.z)} r={r} /><text x={x(d.x)} y={y(d.z) + r * .38} textAnchor="middle" fontSize={r * 1.1}>{d.n}</text></g>; })}
@@ -137,7 +148,7 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
 export default function Game() {
   const params = new URLSearchParams(window.location.search);
   const gamePk = Number(params.get('game'));
-  const replayStart = params.get('replay') === null ? null : Number(params.get('replay'));
+  const [replayStart, setReplayStart] = useState<number | null>(() => params.get('replay') === null ? null : Number(params.get('replay')));
   const speed = Number(params.get('speed')) || 1, lag = params.get('lag');
   const [t0, setT0] = useState<number | null>(params.get('t0') ? Number(params.get('t0')) : null);
   const [delay, setDelay] = useState<number | null>(() => { const v = stored(DELAY_KEY); return replayStart !== null ? 0 : v === null ? null : Number(v); });
@@ -149,6 +160,10 @@ export default function Game() {
   const [tapNote, setTapNote] = useState<string | null>(null);
   const [hold, setHold] = useState<string | null>(null);        // key of the result holding the stage
   const [past, setPast] = useState<number | null>(null);        // index into the seen pitches while looking back
+  const [paused, setPaused] = useState<number | null>(null);    // replay: wall seconds when the viewer paused it
+  const [lastGood, setLastGood] = useState<number | null>(null); // when the feed was last known to be current
+  const [outline, setOutline] = useState<Outline | null>(null);
+  const [setups, setSetups] = useState<Setups | null>(null);
   const seen = useRef(new Map<string, Seen>());                 // every pitch this screen has watched, in order
   const shown = useRef(new Map<string, Candidate | null>());    // recommendation shown before each pitch
   const sides = useRef(new Map<string, string>());              // batter side per plate appearance
@@ -156,7 +171,7 @@ export default function Game() {
   const board = useRef<{ s: Situation; away: string; home: string } | null>(null);
 
   useEffect(() => {
-    if (!gamePk) return;
+    if (!gamePk || paused !== null) return;  // a paused replay asks nothing; resuming moves t0 by the pause
     let stop = false, timer = 0;
     const query = new URLSearchParams();
     if (delay !== null) query.set('delay', String(delay));
@@ -180,29 +195,57 @@ export default function Game() {
         if (next.status === 'ready') lastPrev.current = prev;
         if (next.situation && next.game) board.current = { s: next.situation, away: next.game.away_team, home: next.game.home_team };
         setState(next); setError(null);
+        if (next.sync?.feed_ok !== false) setLastGood(Date.now());
       } catch (e) { if (!stop) setError((e as Error).message); }
       if (!stop) timer = window.setTimeout(tick, document.hidden ? POLL_MS * 5 : POLL_MS);
     };
     void tick();
     return () => { stop = true; window.clearTimeout(timer); };
-  }, [gamePk, delay, replayStart, speed, lag, t0]);
+  }, [gamePk, delay, replayStart, speed, lag, t0, paused]);
+  const isReplay = replayStart !== null;
+  useEffect(() => {  // once per game: scene list of the replay, and the catcher setup (after-the-game data, never live)
+    if (!gamePk || !isReplay) return;
+    let stop = false;
+    get<Outline>(`/replay/${gamePk}/outline`).then(o => { if (!stop) setOutline(o); }).catch(() => { if (!stop) setOutline({ pitches: 0, halves: [] }); });
+    get<SetupView>(`/watch/${gamePk}/setup`).then(v => {
+      if (stop) return;
+      const x = new Map<string, number>();
+      v.pitches.forEach(p => { if (p.status !== 'unavailable' && typeof p.plate_x_feet === 'number' && Number.isFinite(p.plate_x_feet)) x.set(`${gamePk}:${p.at_bat_number}:${p.pitch_number}`, p.plate_x_feet); });
+      setSetups({ badge: v.badge ?? null, x });
+    }).catch(() => undefined);  // most games have none (404): nothing is drawn and nothing is said
+    return () => { stop = true; };
+  }, [gamePk, isReplay]);
   useEffect(() => {
     if (!hold) return;
     const timer = window.setTimeout(() => setHold(null), seen.current.get(hold)?.actual.event_label ? HOLD_MS.event : HOLD_MS.pitch);
     return () => window.clearTimeout(timer);
   }, [hold]);
 
+  const pinT0 = useCallback((next: number) => {
+    const url = new URLSearchParams(window.location.search); url.set('t0', String(next));
+    window.history.replaceState(null, '', `?${url}`); setT0(next);
+  }, []);
   const shift = useCallback((seconds: number) => {
     if (replayStart !== null) {
-      if (t0 === null) return;
-      const next = Math.min(Date.now() / 1000, t0 + seconds / speed);
-      const url = new URLSearchParams(window.location.search); url.set('t0', String(next));
-      window.history.replaceState(null, '', `?${url}`); setT0(next);
+      if (t0 !== null) pinT0(Math.min(Date.now() / 1000, t0 + seconds / speed));
     } else {
       const next = Math.max(0, Math.min(state?.sync?.max_delay_s ?? 120, (delay ?? state?.delay_s ?? 30) + seconds));
       store(DELAY_KEY, String(next)); setDelay(next);
     }
-  }, [replayStart, t0, speed, delay, state]);
+  }, [replayStart, t0, speed, delay, state, pinT0]);
+  /** The replay clock is wall time since t0, so a pause is honest only by moving t0 forward by its length on resume. */
+  const togglePause = useCallback(() => {
+    if (paused === null) { if (t0 !== null) setPaused(Date.now() / 1000); return; }
+    if (t0 !== null) pinT0(Math.min(Date.now() / 1000, t0 + (Date.now() / 1000 - paused)));
+    setPaused(null);
+  }, [paused, t0, pinT0]);
+  /** Scene jump: a new replay link from the first pitch of a half-inning (the server starts 15 s before it). */
+  const jump = useCallback((first: number) => {
+    const url = new URLSearchParams(window.location.search); url.set('replay', String(first)); url.delete('t0');
+    window.history.replaceState(null, '', `?${url}`);
+    seen.current.clear(); shown.current.clear(); sides.current.clear(); lastPrev.current = null; wasReady.current = false; board.current = null;
+    setState(null); setError(null); setHold(null); setPast(null); setPaused(null); setLastGood(null); setSheet(null); setT0(null); setReplayStart(first);
+  }, []);
   const tap = useCallback(async () => {
     const current = delay ?? state?.delay_s ?? 30;
     try {
@@ -214,7 +257,11 @@ export default function Game() {
   const flipUnit = useCallback(() => setUnit(u => { const next = u === 'kmh' ? 'mph' : 'kmh'; store(UNIT_KEY, next); return next; }), []);
   const close = useCallback(() => setSheet(null), []);
 
-  const isReplay = replayStart !== null, rec = state?.recommendation ?? null, b = ZONE_BOUNDS;
+  const rec = state?.recommendation ?? null, b = ZONE_BOUNDS;
+  // Last good state stays on screen but is never shown as current (polling failed, or the server lost the MLB feed).
+  const stale = state !== null && paused === null && (error !== null || state.sync?.feed_ok === false);
+  const replay = state?.replay ?? null;
+  const currentHalf = outline && replay ? outline.halves.reduce((found, h, i) => h.first <= replay.index ? i : found, 0) : -1;
   const list = [...seen.current.values()];
   const dotsOf = (pa: string): Dot[] => list.filter(p => p.pa === pa && p.actual.x !== null && p.actual.z !== null).map(p => ({ key: p.key, n: p.n, x: p.actual.x!, z: p.actual.z!, kind: kind(p.actual) }));
   const speedButton = (mph: number | null) => mph === null ? null : <button className="gm-speed" onClick={flipUnit} aria-label="속도 단위 바꾸기">{speedText(mph, unit)}</button>;
@@ -230,6 +277,7 @@ export default function Game() {
   /** A pitch that has been thrown: the result first, then how it compared with what was recommended before it. */
   const thrown = (p: Seen, label: ReactNode, event: boolean) => {
     const match = matches(p.top, p.actual, b), want = p.top ? cellOf(p.top.zone_id) : null;
+    const setupX = setups?.x.get(p.key) ?? null;  // exact game:at_bat:pitch, only once the pitch has been thrown
     const k = kind(p.actual), we = event && rec?.previous?.key === p.key && rec.previous.home_we_before !== null && rec.home_we_now !== null && rec.home_we_now !== undefined && state?.game
       ? { home: rec.previous.half === 'Top', before: rec.previous.home_we_before!, now: rec.home_we_now } : null;
     const share = (v: number) => Math.round((we!.home ? v : 1 - v) * 100);  // the fielding team's side (D51)
@@ -238,10 +286,10 @@ export default function Game() {
       <div className="gm-toprow"><span className={`gm-chip ${past !== null ? 'plain' : 'actual'}`}>{label}</span>
         {past !== null && p.top && want && <span className="gm-tag">추천은 {p.top.pitch_label} · {words(want, p.side)}</span>}</div>
       {event ? <div className="gm-event"><div><h1 className="gm-hero big">{p.actual.event_label}</h1><p className="gm-sub">{p.actual.pitch_label} {speedButton(p.actual.speed_mph)}</p><div className="gm-row"><Marks match={match} /></div></div>
-          <Zone side={p.side} target={want} dots={dotsOf(p.pa)} big={p.key} mini /></div>
+          <Zone side={p.side} target={want} dots={dotsOf(p.pa)} big={p.key} setupX={setupX} mini /></div>
         : <><h1 className="gm-hero">{p.actual.pitch_label} {speedButton(p.actual.speed_mph)}</h1>
           <div className="gm-row"><span className={`gm-result ${k}`}>{p.actual.event_label ?? p.actual.result_label}</span><Marks match={match} /></div>
-          <Zone side={p.side} target={want} dots={dotsOf(p.pa)} big={p.key} /></>}
+          <Zone side={p.side} target={want} dots={dotsOf(p.pa)} big={p.key} setupX={setupX} /></>}
       {event && we && <div className="gm-we"><div><span>{short(we.home ? state!.game!.home_team : state!.game!.away_team)} 승리확률 {share(we.now)}%</span>
           <strong>{delta >= 0 ? '+' : '−'}{Math.abs(delta).toFixed(1)}%p</strong></div>
         <div className="gm-we-bar"><i style={{ width: `${share(we.now)}%` }} /><b style={{ left: `${share(we.before)}%` }} /></div></div>}
@@ -258,17 +306,17 @@ export default function Game() {
     stage = <><div className="gm-toprow"><span className="gm-chip plain">{chip}</span></div><h1 className="gm-hero mid">{isReplay && state.status === 'not_live' ? '경기 끝' : text}</h1>
       {state.status !== 'between_innings' && state.status !== 'resolving' && state.reason && <p className="gm-sub">{state.reason}</p>}
       {p && <div className="gm-last"><span>방금 던진 공</span><b>{p.pitch_label} {speedButton(p.speed_mph)}</b>{p.result_label && <em>{p.result_label}</em>}</div>}</>;
-  } else if (held) stage = thrown(held, held.actual.event_label ? '타석 끝' : '방금 던진 공', Boolean(held.actual.event_label));
+  } else if (held) stage = thrown(held, stale ? '마지막 상황' : held.actual.event_label ? '타석 끝' : '방금 던진 공', Boolean(held.actual.event_label));
   else if (top) {
     const cell = cellOf(top.zone_id), all = rec!.recommendation!.candidates;
     const usual = top.detail.reference_probability >= Math.max(...all.map(c => c.detail.reference_probability));
-    stage = <><div className="gm-toprow"><span className="gm-chip">다음 공</span><span className="gm-tag">{usual ? `평소에도 1순위 · ${pct(top.detail.reference_probability)}` : `평소 ${pct(top.detail.reference_probability)} · 모델 ${pct(top.detail.probability)}`}</span></div>
+    stage = <><div className="gm-toprow"><span className={`gm-chip ${stale ? 'plain' : ''}`}>{stale ? '마지막 상황' : '다음 공'}</span><span className="gm-tag">{usual ? `평소에도 1순위 · ${pct(top.detail.reference_probability)}` : `평소 ${pct(top.detail.reference_probability)} · 모델 ${pct(top.detail.probability)}`}</span></div>
       <h1 className="gm-hero"><button className="gm-name" onClick={() => setSheet({ glossary: top.pitch_type })} aria-label={`${top.pitch_label} 쉬운 풀이`}>{top.pitch_label}</button></h1>
       {cell && <Where cell={cell} side={side} />}
       <Zone side={side} target={cell} dots={currentPa ? dotsOf(currentPa) : []} /></>;
   } else {
     const computing = rec?.status === 'computing';
-    stage = <><div className="gm-toprow"><span className="gm-chip plain">다음 공</span></div><h1 className="gm-hero mid">{computing ? '추천 계산 중' : '추천 없음'}</h1>
+    stage = <><div className="gm-toprow"><span className="gm-chip plain">{stale ? '마지막 상황' : '다음 공'}</span></div><h1 className="gm-hero mid">{computing ? '추천 계산 중' : '추천 없음'}</h1>
       <p className="gm-sub">{computing ? rec?.reason : rec?.status === 'unsupported' ? '기록이 부족한 투수' : rec?.reason ?? '이 상황은 추천하지 않아요'}</p>
       <Zone side={side} target={null} dots={currentPa ? dotsOf(currentPa) : []} empty /></>;
   }
@@ -278,16 +326,24 @@ export default function Game() {
   const mix = state?.pitcher_today?.mix ?? [], glossary = sheet && typeof sheet === 'object' ? sheet.glossary : null;
   const usedDelay = Math.round(delay ?? state?.delay_s ?? 30);
   const candidates = rec?.status === 'ready' ? rec.recommendation?.candidates ?? [] : [];
-  return <div className="wa-page gm-page">
+  const replayClock = replay ? ` ${clock(replay.elapsed_s)}` : '';
+  const liveLabel = stale ? (error !== null ? '연결 끊김' : '기록 멈춤') : paused !== null ? `일시정지${replayClock}` : isReplay ? `다시 보기${replayClock}` : 'LIVE';
+  return <div className={`wa-page gm-page ${stale ? 'stale' : ''}`}>
     <header className="gm-top"><a className="gm-icon" href="/watch" aria-label="경기 목록으로"><svg viewBox="0 0 24 24"><path d="M19 12H5" /><path d="M11 6l-6 6 6 6" /></svg></a>
       {past !== null ? <span className="gm-live off">지난 공</span>
-        : <button className={`gm-live ${isReplay ? 'off' : ''}`} onClick={() => setSheet('sync')} aria-label="중계와 맞추기">{isReplay ? `다시 보기${state?.replay ? ` ${clock(state.replay.elapsed_s)}` : ''}` : 'LIVE'}</button>}
+        : <button className={`gm-live ${stale ? 'stale' : isReplay ? 'off' : ''}`} onClick={() => setSheet('sync')} aria-label={isReplay ? '다시 보기 조작' : '중계와 맞추기'}>{liveLabel}</button>}
+      {isReplay && past === null && <button className="gm-icon" onClick={togglePause} disabled={t0 === null} aria-label={paused === null ? '일시정지' : '이어서 보기'}>
+        <svg viewBox="0 0 24 24" className="fill">{paused === null ? <><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></> : <path d="M7 5l12 7-12 7z" />}</svg></button>}
       <span className="gm-grow" /><span className="gm-badge">실험판</span>
       <button className="gm-icon" onClick={() => setSheet('more')} aria-label="더 보기"><svg viewBox="0 0 24 24" className="fill"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg></button></header>
     {shownBoard ? <Board s={shownBoard.s} away={shownBoard.away} home={shownBoard.home} idle={idle}
       pitcher={state?.pitcher?.name ?? null} pitcherNote={state?.pitcher_today ? `${state.pitcher_today.pitches}구` : ''}
       batter={state?.batter?.name ?? null} batterNote={state?.batter ? (state.batter.side === 'L' ? '좌타' : '우타') : ''} /> : <section className="gm-board" />}
-    <main className="gm-stage">{stage}{error && state && <p className="gm-error">{error}</p>}</main>
+    <main className={`gm-stage ${stale ? 'stale' : ''}`}>
+      {stale && <p className="gm-stale" role="status" title={error ?? undefined}><b>{error !== null ? '연결 끊김' : '경기 기록 수신 끊김'}</b>
+        <span>{lastGood !== null ? `${timeText(lastGood)}에 받은 상황 · ` : ''}다시 연결 중</span></p>}
+      {paused !== null && <p className="gm-paused" role="status"><b>일시정지</b><span>▶을 누르면 멈춘 곳부터 이어져요</span></p>}
+      {stage}</main>
     <nav className={`gm-dots ${strip.length > 4 ? 'tight' : ''}`} aria-label="이 타석 투구 순서">
       {strip.map(p => <button key={p.key} className={looking?.key === p.key || held?.key === p.key ? 'current' : ''} onClick={() => setPast(list.findIndex(q => q.key === p.key))} aria-label={`${p.n}구 보기`}>
         <i className={kind(p.actual)}>{p.n}</i><span>{p.actual.pitch_label}</span></button>)}
@@ -307,9 +363,10 @@ export default function Game() {
       {tab === 1 && (mix.length ? <table className="gm-table"><thead><tr><th colSpan={2}>{state?.pitcher?.name} · {state?.pitcher_today?.pitches}구</th><th>비율</th><th>평균</th></tr></thead>
           <tbody>{mix.map(m => <tr key={m.pitch_type}><td /><td><b>{m.pitch_label}</b><span> · {m.count}구</span></td><td><b>{pct(m.share)}</b></td><td>{speedText(m.avg_mph, unit)}</td></tr>)}</tbody></table>
         : <p className="gm-note">이 투수는 아직 던진 공이 없어요.</p>)}
-      {tab === 2 && <><p className="gm-note">검증 전 실험 버전이에요. 추천은 2025년까지 기록으로 학습해 고정한 모델이고, 2026 성능 평가는 아직 없어요.{rec?.policy_identity ? ` 식별자 ${rec.policy_identity.slice(0, 8)}` : ''}</p>
+      {tab === 2 && <><p className="gm-note">검증 전 실험 버전이에요. 추천은 2025년까지 기록으로 학습해 고정한 모델이에요. 2026 정규시즌 1회 평가: 개선 근거를 확인하지 못했습니다.{rec?.policy_identity ? ` 식별자 ${rec.policy_identity.slice(0, 8)}` : ''}</p>
         <p className="gm-note">위치는 이 투수의 2025년까지 실제 투구 분포로 어림한 값이며 평가되지 않았어요. 존 그림은 포수 쪽에서 본 모습이에요.</p>
-        <p className="gm-note">“구종 ✓ / 위치 ✕”는 실제 공이 추천과 같았는지만 보여 줘요. 추천이 좋았는지와는 다른 이야기예요.</p></>}</Sheet>}
+        <p className="gm-note">“구종 ✓ / 위치 ✕”는 실제 공이 추천과 같았는지만 보여 줘요. 추천이 좋았는지와는 다른 이야기예요.</p>
+        {setups && setups.x.size > 0 && <p className="gm-note">{SETUP_NOTE} 공이 들어온 뒤 존 그림의 세로선과 위·아래 삼각형(미트)이 포수가 미트를 댄 가로 위치예요. 높이는 표시하지 않아요.{setups.badge ? ` (${setups.badge})` : ''}</p>}</>}</Sheet>}
     {glossary && <Sheet title={mix.find(m => m.pitch_type === glossary)?.pitch_label ?? top?.pitch_label ?? glossary} onClose={close}>
       <p className="gm-plain">{GLOSSARY[glossary] ?? '이 구종의 풀이는 준비 중이에요.'}</p>
       {mix.filter(m => m.pitch_type === glossary).map(m => <div key={m.pitch_type} className="gm-card"><span>{state?.pitcher?.name} 오늘</span><b>{m.count}구 · 평균 {speedText(m.avg_mph, unit)}</b></div>)}
@@ -319,11 +376,19 @@ export default function Game() {
       {state?.pitcher_today && <div className="gm-card"><span>지금 투수</span><b>{state.pitcher?.name} · {state.pitcher_today.pitches}구</b></div>}
       <p className="gm-note">이닝별 점수와 타자 기록은 다음 단계에서 연결돼요.</p></Sheet>}
     {sheet === 'sync' && <Sheet title={isReplay ? '영상과 맞추기' : '중계와 맞추기'} onClose={close}>
-      <div className="gm-card"><span>{isReplay ? '경기 시각' : '내 화면이'}</span><b aria-live="polite">{isReplay ? (state?.replay ? clock(state.replay.elapsed_s) : '—') : `${usedDelay}초 늦음`}</b></div>
+      {stale && <p className="gm-note gm-error" role="status">{error ?? '서버가 경기 기록을 받지 못하고 있어요.'} 마지막으로 받은 상황을 보여 주고 있어요.</p>}
+      <div className="gm-card"><span>{isReplay ? (paused !== null ? '경기 시각 · 일시정지' : '경기 시각') : '내 화면이'}</span><b aria-live="polite">{isReplay ? (replay ? clock(replay.elapsed_s) : '—') : `${usedDelay}초 늦음`}</b></div>
+      {isReplay && <button className="gm-wide" onClick={togglePause} disabled={t0 === null}>{paused === null ? '일시정지' : '이어서 보기'}</button>}
       <div className="gm-shift">{[-5, -1, 1, 5].map(d => <button key={d} onClick={() => shift(d)} aria-label={`${Math.abs(d)}초 ${d < 0 ? '빠르게' : '늦게'}`}>{d > 0 ? `+${d}` : d}</button>)}</div>
       <p className="gm-note">공 결과가 내 화면보다 먼저 뜨면 +, 늦게 뜨면 − 를 눌러요.{!isReplay && ' 이 기기에 기억해 둬요.'}</p>
       {!isReplay && state?.status === 'ready' && <button className="gm-wide" onClick={() => void tap()}>공이 미트에 들어오는 순간 누르기</button>}
-      {tapNote && <p className="gm-note" aria-live="polite">{tapNote}</p>}</Sheet>}
+      {tapNote && <p className="gm-note" aria-live="polite">{tapNote}</p>}
+      {isReplay && <><h3 className="gm-subhead">장면으로 이동</h3>
+        <p className="gm-note">회를 누르면 그 회 첫 공 15초 전부터 다시 시작해요.</p>
+        <div className="gm-scenes" role="group" aria-label="장면으로 이동">
+          <button onClick={() => jump(0)} className="wide">처음부터</button>
+          {outline?.halves.map((h, i) => <button key={h.first} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} onClick={() => jump(h.first)}>{h.label}</button>)}</div>
+        {outline && !outline.halves.length && <p className="gm-note">회 목록을 불러오지 못했어요. “처음부터”는 쓸 수 있어요.</p>}</>}</Sheet>}
     {sheet === 'more' && <Sheet title="더 보기" onClose={close}>
       <button className="gm-wide" onClick={flipUnit}>속도 단위: {unit === 'kmh' ? 'km/h' : 'mph'} (눌러서 바꾸기)</button>
       <a className="gm-wide" href="/watch">경기 목록</a>

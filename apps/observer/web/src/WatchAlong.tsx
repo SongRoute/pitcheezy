@@ -182,7 +182,8 @@ function Picker() {
             <span className="wa-game-teams"><strong>{short(g.away_team)} @ {short(g.home_team)}</strong><span>{g.date} · {SERIES[g.game_type] ?? g.game_type}</span></span>
             {g.ready_share !== undefined && g.ready_share !== null && <span className="wa-coverage" title="추천을 낼 수 있었던 공의 비율">
               <span className="bar"><i style={{ width: `${Math.round(g.ready_share * 100)}%` }} /></span>추천 {Math.round(g.ready_share * 100)}%</span>}</a>
-            <a className="wa-replay-link" href={`/live?game=${g.game_pk}&replay=0`}>실제 속도로 다시 보기 ▸</a></li>)}</ul>}
+            <span className="wa-replay-links"><a className="wa-replay-link" href={`/game?game=${g.game_pk}&replay=0`}>한 화면으로 다시 보기 ▸</a>
+              <a className="wa-replay-link" href={`/live?game=${g.game_pk}&replay=0`}>실제 속도로 다시 보기 ▸</a></span></li>)}</ul>}
         <p className="wa-footnote">추천 비율이 낮은 경기는 2025년 4월 이후 데뷔했거나 기록이 적은 투수가 많이 던진 경기예요. 그런 투수의 공은 추천 없이 이유만 보여 줘요.</p>
       </section>
     </main></div>;
