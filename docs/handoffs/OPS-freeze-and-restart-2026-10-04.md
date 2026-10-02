@@ -89,12 +89,12 @@ cd /Users/song/Projects/pitcheezy-demo && while [ ! -f '/Volumes/T7 Shield/pitch
 cd /Users/song/Projects/pitcheezy-worktrees/ui-frame/apps/observer/web && node viewer.mjs 100.108.252.111 8770 http://100.108.252.111:8766
 ```
 
-## 4. 통과 기준 (D149, 결과 열람 전에 고정)
+## 4. 통과 기준 (D149·D153, 결과 열람 전에 고정)
 
 - 재시작과 무관한 조회 오류 0건
 - 계산 오류 0건
 - 중계가 30초 늦는 시청자 기준, 공 5초 전에 추천이 떠 있는 비율 95% 이상
-- 실시간 화면과 최종 기록의 1순위 구종 일치 95% 이상
+- 실시간 화면과 최종 기록의 1순위 구종 일치 95% 이상 (처음 본 화면 기준, D153)
 
 재부팅으로 다시 띄운 경기는 "재시작과 무관한 오류"를 따로 세어야 하므로, 다시 띄운 시각을 이 문서 아래에 한 줄 적는다.
 
