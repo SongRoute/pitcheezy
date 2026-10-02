@@ -1,0 +1,92 @@
+{
+  "protocol": "policy_seed_stability_diagnostic_v1",
+  "experiment_id": "UNASSIGNED",
+  "candidate_experiment_id": "EXP-P18-002 was suggested in docs/reviews/PM-intake-research-2026-10-03.md; collisions across branches are NOT verified. The PM assigns the id, moves this file to configs/<id>.yaml, sets status REGISTERED and execution.enabled true. The runner refuses UNASSIGNED and DRAFT for a full run (a --smoke is allowed from the draft).",
+  "status": "DRAFT",
+  "origin": "Drafted 2026-10-03 after the EXP-P17-001 (D152) and EXP-P18-001 (D155) results were read. The variant list and the descriptive reading below are P18-informed: they are registered, if at all, after those observations and are not prospectively registered relative to them. Candidate seeds 3 and 4 were proposed in the PM research intake; seed 2 is a registered planning seed (seeds.planning_v2).",
+  "purpose": "Measure how stable the frozen G0 P3 law (tau 0.1) is to the planner's search seed and sample count on the sealed June tau-design decisions, with the predictor, reference law, support, pools, WE and states unchanged. Extends EXP-P18-001 (one alternative seed) to several seeds and to a doubled sample count, so the D155 side observation (seed-only top-1 change 11.3%) becomes a measured range. Descriptive only: no verdict, no gate, no policy value.",
+  "one_change": "Planner search seed and sample count per variant (see variants). Everything else equals EXP-P18-001: predictor G0 bound through the registered chain, reference law, support table, delivery pools, WE terminal/cutoff, tau, pitch cap, decision states.",
+  "execution": {
+    "enabled": false,
+    "runner": "experiments/pitchmdp/scripts/diagnose_policy_seed_stability.py",
+    "aggregation": "experiments/pitchmdp/scripts/diagnose_policy_stability_aggregate.py --run <runs>/<id> [--run <runs>/EXP-P18-001 --run <runs>/EXP-P17-001] --output results/<id>-aggregate.json",
+    "prefix": "DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib PYTHONPATH='/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:experiments/pitchmdp' /Users/song/Projects/pitcheezy/.venv/bin/python experiments/pitchmdp/scripts/diagnose_policy_seed_stability.py --config configs/<id>.yaml --local-config experiments/pitchmdp/configs/local.json",
+    "order": [
+      "smoke : --output <runs>/<id>-smoke --smoke   (three games, 20-decision replay; no repository result)",
+      "run   : --output <runs>/<id>                 (all sealed decisions; writes sealed.npz, decisions-<label>.npz, results.json)",
+      "aggregate offline with the command above; the aggregate report is the candidate repository result (PM decides)"
+    ],
+    "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
+    "queue": "single heavy queue: runs/ML-MATRIX-20260924/.heavy.lock (non-blocking); Mac mini only, A5000 not used; obey D159 (no overlap with game recording windows) and the OPS freeze",
+    "expected_cost": "ESTIMATE, not measured for this runner: EXP-P18-001 measured 1,965 s and peak RSS 7.2 GB for one seed at 6 samples over 40,702 decisions. Three 6-sample variants plus two 12-sample variants, computed per decision in one process, scale to roughly 3 x 1,965 s + 2 x ~3,930 s = about 3.8 h plus the 200-decision replay. Laws saved per variant add about 3.3 MB each. A smaller first registration (for example seed2-s6 and seed0-s12 only, about 1.6 h) is possible; the PM chooses the subset before registration.",
+    "smoke_status": "NOT run in the drafting session (no real-data execution was authorised). Required before registration. A smoke may be run from this DRAFT file as is (the runner accepts DRAFT/UNASSIGNED only with --smoke and only into an output ending -smoke); a full run needs the assigned id, REGISTERED status, execution.enabled true and the file at configs/<id>.yaml."
+  },
+  "policy_registration": {
+    "config": "configs/ML-POLICY-MATERIALIZATION-v1.json",
+    "config_sha256": "869b2611c027e36573cd4d9a3e766f02bfda9c76a3485cb5e1870f68c7954469",
+    "addenda": [
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-1-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-3-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-4-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-5-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-6-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-7-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json"
+    ],
+    "use": "read-only: sealed BC, support table, style snapshot, S2-certified component identity and the tau freeze are resolved through the registered chain; no stage of that chain is run and nothing is added to it"
+  },
+  "sealed_g0_run": {
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S3b-tau-a4",
+    "manifest_sha256": "25effce1729df55ab1d997358de2f101ca54eb0eb86e34588d94159f775f1c31",
+    "ledger": "ledger-blend-0.jsonl",
+    "requests": 43487,
+    "evaluated_decisions": 40702,
+    "final_identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+    "use": "the G0 side of the comparison: recorded planning Q, mask and reference law of every evaluated decision (June 2025, 150 games)"
+  },
+  "settings": {
+    "tau": 0.1,
+    "samples": 6,
+    "pitch_cap": 12,
+    "seed": 0
+  },
+  "variants": [
+    {"label": "seed2-s6", "seed": 2, "samples": 6, "seed_basis": "planning_v2"},
+    {"label": "seed3-s6", "seed": 3, "samples": 6, "seed_basis": "extension"},
+    {"label": "seed4-s6", "seed": 4, "samples": 6, "seed_basis": "extension"},
+    {"label": "seed0-s12", "seed": 0, "samples": 12, "seed_basis": "planning_main"},
+    {"label": "seed1-s12", "seed": 1, "samples": 12, "seed_basis": "planning_v2"}
+  ],
+  "variant_notes": {
+    "seed_basis": "planning_main = the sealed seed; planning_v2 = a seed named in the policy registration (seeds.planning_v2 = [0, 1, 2]); extension = not a registered planning seed, used only for this descriptive diagnostic and never as a policy identity field",
+    "seed0-s12": "keeps the sealed seed: numpy draws sequentially, so its 12 samples contain the sealed 6 as a prefix (shares_prefix_draws). Its distance to the sealed law measures the effect of adding six draws, not an independent-seed distance.",
+    "seed1-s12": "seed 1 was the EXP-P18-001 noise seed at 6 samples; at 12 samples it answers whether a doubled search narrows the seed distance (compare with the EXP-P18-001 row in the aggregate)."
+  },
+  "replay": {
+    "decisions": 200,
+    "atol": 1e-06,
+    "rule": "the first 200 evaluated decisions are recomputed with the sealed setting (seed 0, 6 samples) and must reproduce the sealed planning Q; every regenerated request must carry the sealed fingerprint, mask, reference law and context hash"
+  },
+  "row_budget": 9200000,
+  "row_budget_basis": "safety cap on simulated rows per variant planner (a budget changes failures, never probabilities); EXP-P18-001 measured 3,805,035 rows for one 6-sample variant, so a 12-sample variant is expected near 7.6M. The runner refuses a cap below 1.2 x 3,805,035 x (largest samples / 6) = 9,132,084 for this variant list; a budget overflow hours into a full run would lose the run (nothing is saved before the end).",
+  "reading": {
+    "descriptive_only": true,
+    "quantities": [
+      "per variant: mean TV to the sealed law with a whole-game bootstrap interval, top-1 agreement, TV quantiles, share above 0.05",
+      "across fixed-predictor variants: pairwise mean TV, share of decisions whose top-1 pitch type is unanimous (sealed included), mean modal agreement",
+      "by sample count: mean TV to the sealed law at 6 and 12 samples (nesting flagged per row)",
+      "support coverage: decisions compared / sealed evaluated decisions, mean supported actions, share with a single supported action"
+    ],
+    "no_verdict": "No threshold, verdict or stop rule is attached. The EXP-P17-001 (DIFFERENT_RECOMMENDATIONS) and EXP-P18-001 (WITHIN_SEARCH_NOISE) verdicts stay as registered. A report of these numbers is not a policy utility estimate, not a re-validation and not a service adoption basis.",
+    "report_contract": "The aggregate report separates fixed-predictor seed variability, sample-count variants and predictor replacement (EXP-P17-001 rows, carried through), states the paired-uncertainty limits (one sealed side shared by all rows; CRN inside the swap comparison but not inside seed comparisons; prefix nesting), reports supported-action coverage, and records outcomes_read = false."
+  },
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 20260924,
+    "unit": "whole game"
+  },
+  "data_rules": "No 2026 rows. June 2025 blend-split rows of the sealed tau-design sample only; pre-decision fields, logged pitch types and previous-row outcomes as history. No reward, WE result, events kind or next-row state.",
+  "review": "Drafted by Claude Fable 5.1 (worker) on 2026-10-03; synthetic tests only. PM review required for: id assignment and collision check, variant subset and cost against the D159 window, smoke on real inputs, row budget, and whether the aggregate report becomes a repository result. Independent review gate not passed.",
+  "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/<id>"
+}
