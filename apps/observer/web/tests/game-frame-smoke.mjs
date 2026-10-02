@@ -53,6 +53,10 @@ for (const [device, width, height] of SIZES) {
   await chip('다음 공');
   await check('1-pre');
 
+  current = 'resolving_after_last_pitch';           // strike three is thrown, the feed has not posted the strikeout yet
+  await chip('결과 확인 중');
+  await check('1b-resolving');
+
   current = 'new_batter_after_strikeout';           // the strikeout takes the stage before the new batter's recommendation
   await chip('타석 끝');
   if (!/삼진/.test(await page.locator('.gm-hero').innerText())) fail(`${device}: strikeout not shown as the result`);

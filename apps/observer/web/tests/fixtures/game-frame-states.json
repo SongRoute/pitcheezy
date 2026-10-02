@@ -427,6 +427,79 @@
     "policy_identity": "a6dffaea"
    }
   },
+  "resolving_after_last_pitch": {
+   "delay_s": 0,
+   "replay": null,
+   "sync": {
+    "max_delay_s": 120
+   },
+   "game": {
+    "game_pk": 849845,
+    "game_type": "F",
+    "date": "2026-09-29",
+    "status": "In Progress",
+    "away_team": "Philadelphia Phillies",
+    "home_team": "Atlanta Braves"
+   },
+   "situation": {
+    "inning": 2,
+    "half": "Top",
+    "outs": 1,
+    "balls": 0,
+    "strikes": 2,
+    "bases": 0,
+    "home_score": 0,
+    "away_score": 1,
+    "runners": {}
+   },
+   "pitcher": {
+    "id": 519242,
+    "name": "Chris Sale",
+    "hand": "L"
+   },
+   "batter": {
+    "id": 681082,
+    "name": "Bryson Stott",
+    "side": "L"
+   },
+   "pitcher_today": {
+    "pitches": 27,
+    "mix": [
+     {
+      "pitch_type": "SL",
+      "pitch_label": "슬라이더",
+      "count": 12,
+      "share": 0.4444,
+      "avg_mph": 79.3
+     },
+     {
+      "pitch_type": "FF",
+      "pitch_label": "포심",
+      "count": 11,
+      "share": 0.4074,
+      "avg_mph": 97.1
+     },
+     {
+      "pitch_type": "SI",
+      "pitch_label": "싱커",
+      "count": 4,
+      "share": 0.1481,
+      "avg_mph": 96.5
+     }
+    ]
+   },
+   "status": "resolving",
+   "reason": "방금 공의 결과를 기다리는 중입니다.",
+   "recommendation": null,
+   "last_pitch": {
+    "key": "849845:10:4",
+    "pitch_type": "SL",
+    "pitch_label": "슬라이더",
+    "speed_mph": 77.0,
+    "result_label": "헛스윙",
+    "play_text": null
+   }
+  },
   "new_batter_after_strikeout": {
    "status": "ready",
    "reason": null,

@@ -34,7 +34,7 @@ type SheetName = 'detail' | 'box' | 'sync' | 'more' | { glossary: string };
 const POLL_MS = 2000;
 const HOLD_MS = { pitch: 6000, event: 10000 };  // how long a result stays before the next recommendation takes the stage (F13: proposal)
 const DELAY_KEY = 'pitcheezy.live.delay', UNIT_KEY = 'pitcheezy.unit';
-const WAIT: Record<string, [string, string]> = { buffering: ['준비 중', '내 중계에 맞추는 중'], between_innings: ['공수 교대', '공수 교대'],
+const WAIT: Record<string, [string, string]> = { resolving: ['결과 확인 중', '결과를 기다려요'], buffering: ['준비 중', '내 중계에 맞추는 중'], between_innings: ['공수 교대', '공수 교대'],
   not_live: ['경기 없음', '지금은 경기 중이 아니에요'], unsupported_game_type: ['지원 안 함', '지원하지 않는 경기' ] };
 // Plain words for each pitch type (F23): fixed sentences, not model output.
 const GLOSSARY: Record<string, string> = { FF: '가장 빠른 직구', SI: '빠르게 가라앉는 직구', FC: '끝에서 살짝 꺾이는 빠른 공', SL: '옆으로 휘면서 떨어지는 공',
@@ -138,7 +138,7 @@ export default function Game() {
   const params = new URLSearchParams(window.location.search);
   const gamePk = Number(params.get('game'));
   const replayStart = params.get('replay') === null ? null : Number(params.get('replay'));
-  const speed = Number(params.get('speed')) || 1;
+  const speed = Number(params.get('speed')) || 1, lag = params.get('lag');
   const [t0, setT0] = useState<number | null>(params.get('t0') ? Number(params.get('t0')) : null);
   const [delay, setDelay] = useState<number | null>(() => { const v = stored(DELAY_KEY); return replayStart !== null ? 0 : v === null ? null : Number(v); });
   const [state, setState] = useState<LiveState | null>(null);
@@ -160,7 +160,7 @@ export default function Game() {
     let stop = false, timer = 0;
     const query = new URLSearchParams();
     if (delay !== null) query.set('delay', String(delay));
-    if (replayStart !== null) { query.set('replay', String(replayStart)); query.set('speed', String(speed)); if (t0 !== null) query.set('t0', String(t0)); }
+    if (replayStart !== null) { query.set('replay', String(replayStart)); query.set('speed', String(speed)); if (lag !== null) query.set('lag', lag); if (t0 !== null) query.set('t0', String(t0)); }
     const tick = async () => {
       try {
         const next = await get<LiveState>(`/live/${gamePk}/state?${query}`);
@@ -176,8 +176,8 @@ export default function Game() {
         if (rec?.previous) remember(rec.previous.key, Number(rec.previous.key.split(':')[2]) || 1, shown.current.get(rec.previous.key) ?? null, rec.previous.actual);
         const prev = rec?.previous?.key ?? null;
         if (wasReady.current && prev && prev !== lastPrev.current) setHold(prev);  // a pitch just landed: it takes the stage first
-        wasReady.current = next.status === 'ready';
-        if (wasReady.current) lastPrev.current = prev;
+        wasReady.current = next.status === 'ready' || next.status === 'resolving';  // a result still being posted is the same at-bat, not a break
+        if (next.status === 'ready') lastPrev.current = prev;
         if (next.situation && next.game) board.current = { s: next.situation, away: next.game.away_team, home: next.game.home_team };
         setState(next); setError(null);
       } catch (e) { if (!stop) setError((e as Error).message); }
@@ -185,7 +185,7 @@ export default function Game() {
     };
     void tick();
     return () => { stop = true; window.clearTimeout(timer); };
-  }, [gamePk, delay, replayStart, speed, t0]);
+  }, [gamePk, delay, replayStart, speed, lag, t0]);
   useEffect(() => {
     if (!hold) return;
     const timer = window.setTimeout(() => setHold(null), seen.current.get(hold)?.actual.event_label ? HOLD_MS.event : HOLD_MS.pitch);
@@ -256,7 +256,7 @@ export default function Game() {
   else if (state.status !== 'ready') {
     const [chip, text] = WAIT[state.status] ?? ['잠시만요', '잠시 기다려 주세요'], p = state.last_pitch;
     stage = <><div className="gm-toprow"><span className="gm-chip plain">{chip}</span></div><h1 className="gm-hero mid">{isReplay && state.status === 'not_live' ? '경기 끝' : text}</h1>
-      {state.status !== 'between_innings' && state.reason && <p className="gm-sub">{state.reason}</p>}
+      {state.status !== 'between_innings' && state.status !== 'resolving' && state.reason && <p className="gm-sub">{state.reason}</p>}
       {p && <div className="gm-last"><span>방금 던진 공</span><b>{p.pitch_label} {speedButton(p.speed_mph)}</b>{p.result_label && <em>{p.result_label}</em>}</div>}</>;
   } else if (held) stage = thrown(held, held.actual.event_label ? '타석 끝' : '방금 던진 공', Boolean(held.actual.event_label));
   else if (top) {
@@ -274,7 +274,7 @@ export default function Game() {
   }
 
   if (!gamePk) return <div className="wa-page gm-page"><header className="gm-top"><a className="gm-icon" href="/watch" aria-label="경기 목록으로">←</a></header><p className="gm-sub gm-pad">경기 번호가 없어요.</p></div>;
-  const shownBoard = board.current, idle = state?.status !== 'ready';
+  const shownBoard = board.current, idle = state?.status !== 'ready' && state?.status !== 'resolving';
   const mix = state?.pitcher_today?.mix ?? [], glossary = sheet && typeof sheet === 'object' ? sheet.glossary : null;
   const usedDelay = Math.round(delay ?? state?.delay_s ?? 30);
   const candidates = rec?.status === 'ready' ? rec.recommendation?.candidates ?? [] : [];
