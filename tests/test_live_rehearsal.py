@@ -53,12 +53,12 @@ def test_report_measures_publication_lag_margin_and_coverage(tmp_path):
 
 
 def test_lead_share_needs_the_broadcast_delay_to_cover_lag_and_poll():
-    feeds = [feed(11)]  # ten gaps: each next pitch starts 16 s after the previous one ended
+    feeds = [feed(11)]  # ten gaps: each pitch is released 20 s after the previous one
     kwargs = dict(client_s=0.0, compute_s=0.0, delays=(0, 10))
     assert lr.lead_shares(feeds, lag_s=0, poll_s=0, **kwargs)['share_by_broadcast_delay'] == {'0': 1.0, '10': 1.0}
-    late = lr.lead_shares(feeds, lag_s=12, poll_s=0, **kwargs)  # 16 - 12 = 4 s of lead: under the 5 s reading time
+    late = lr.lead_shares(feeds, lag_s=16, poll_s=0, **kwargs)  # 20 - 16 = 4 s of lead: under the 5 s reading time
     assert late['pairs'] == 10 and late['share_by_broadcast_delay'] == {'0': 0.0, '10': 1.0}
-    half = lr.lead_shares(feeds, lag_s=6, poll_s=10, **kwargs)  # on time only when the poll phase is under 5 s
+    half = lr.lead_shares(feeds, lag_s=10, poll_s=10, **kwargs)  # on time only when the poll phase is under 5 s
     assert half['share_by_broadcast_delay']['0'] == 0.5
 
 

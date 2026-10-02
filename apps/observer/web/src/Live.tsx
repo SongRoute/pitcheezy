@@ -42,6 +42,7 @@ export default function Live() {
   const gamePk = Number(params.get('game'));
   const replayStart = params.get('replay') === null ? null : Number(params.get('replay'));
   const speed = Number(params.get('speed')) || 1;
+  const lag = params.get('lag');  // rehearsal only: publish each pitch this long after its release, like the real feed
   const [t0, setT0] = useState<number | null>(params.get('t0') ? Number(params.get('t0')) : null);
   const [delay, setDelay] = useState<number | null>(replayStart === null ? savedDelay() : 0);
   const [state, setState] = useState<LiveState | null>(null);
@@ -57,7 +58,7 @@ export default function Live() {
     let stop = false, timer = 0;
     const query = new URLSearchParams();
     if (delay !== null) query.set('delay', String(delay));
-    if (replayStart !== null) { query.set('replay', String(replayStart)); query.set('speed', String(speed)); if (t0 !== null) query.set('t0', String(t0)); }
+    if (replayStart !== null) { query.set('replay', String(replayStart)); query.set('speed', String(speed)); if (lag !== null) query.set('lag', lag); if (t0 !== null) query.set('t0', String(t0)); }
     const tick = async () => {
       try {
         const next = await get<LiveState>(`/live/${gamePk}/state?${query}`);
@@ -75,7 +76,7 @@ export default function Live() {
     };
     void tick();
     return () => { stop = true; window.clearTimeout(timer); };
-  }, [gamePk, delay, replayStart, speed, t0]);
+  }, [gamePk, delay, replayStart, speed, lag, t0]);
   useEffect(() => {
     if (gamePk && replayStart !== null) get<Outline>(`/replay/${gamePk}/outline`).then(setOutline).catch(() => undefined);
   }, [gamePk, replayStart]);
@@ -121,9 +122,9 @@ export default function Live() {
     {s && game && state?.pitcher && state.batter ? <Board s={s} away={game.away_team} home={game.home_team} pitcher={state.pitcher.name ?? String(state.pitcher.id)}
       batter={`${state.batter.name ?? state.batter.id} (${state.batter.side === 'L' ? '좌' : '우'}타)`} extra={replay ? `경기 ${clock(replay.elapsed_s)}` : `${usedDelay}초 늦게`} /> : null}
     <main className="wa-main">
-      {game && <p className="wa-live-title"><span className="wa-live-dot">{isReplay ? '다시 보기 · 실제 속도' : '지연 중계'}</span> {short(game.away_team)} @ {short(game.home_team)}{isReplay && speed !== 1 ? ` · ${speed}배속` : ''}</p>}
+      {game && <p className="wa-live-title"><span className="wa-live-dot">{isReplay ? '다시 보기 · 실제 속도' : '지연 중계'}</span> {short(game.away_team)} @ {short(game.home_team)}{isReplay && speed !== 1 ? ` · ${speed}배속` : ''}{isReplay && lag !== null ? ` · 기록 ${lag}초 늦게(실시간 흉내)` : ''}</p>}
       {isReplay && outline && <nav className="wa-innings" aria-label="회로 이동">{outline.halves.map((h, i) =>
-        <a key={h.first} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} href={`/live?game=${gamePk}&replay=${h.first}${speed !== 1 ? `&speed=${speed}` : ''}`}>{h.label}</a>)}</nav>}
+        <a key={h.first} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} href={`/live?game=${gamePk}&replay=${h.first}${speed !== 1 ? `&speed=${speed}` : ''}${lag !== null ? `&lag=${lag}` : ''}`}>{h.label}</a>)}</nav>}
       {isReplay ? <SyncBar open={syncOpen} label="영상 맞추기" value={replay ? `경기 ${clock(replay.elapsed_s)}` : '—'} onShift={shift}
           hint="영상보다 이 화면이 먼저 가면 +, 늦으면 − 를 눌러 맞춰요. 회 버튼을 누르면 그 회 첫 공 15초 전부터 시작해요." />
         : <SyncBar open={syncOpen} label="중계 맞추기" value={`내 화면이 ${usedDelay}초 늦음`} onShift={shift} onTap={state?.status === 'ready' ? () => void tap() : undefined} tapNote={tapNote}

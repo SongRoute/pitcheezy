@@ -167,23 +167,25 @@ def lead_shares(feeds, *, lag_s, poll_s, client_s=2.0, compute_s=0.15, delays=BR
     """From completed games' recorded pitch times: the share of pitches whose recommendation is on screen at
     least ``READ_S`` before the pitch, for a viewer whose broadcast runs ``delay`` behind the ballpark.
 
-    The state after pitch k-1 reaches the screen at ``end(k-1) + lag_s + U(0, poll_s) + compute_s + U(0, client_s)``
-    (feed publication, our poll phase, the model, the page's refresh), but never before the viewer's own
-    broadcast shows pitch k-1 (``end(k-1) + delay``). Pitch k appears on that broadcast at ``start(k) + delay``.
-    Poll phases are averaged over an even grid. Only consecutive pitches under 120 s apart count.
+    Times count from each pitch's release (``startTime``, the same in the live and the final feed). The
+    state after pitch k-1 reaches the screen ``lag_s + U(0, poll_s) + compute_s + U(0, client_s)`` after its
+    release (feed publication, our poll phase, the model, the page's refresh), but never before the viewer's
+    own broadcast has shown pitch k-1 (``SEEN_S`` after its release, plus ``delay``). Pitch k appears on that
+    broadcast at its release plus ``delay``. Poll phases are averaged over an even grid. Only consecutive
+    pitches under 120 s apart count.
     """
     pairs = []
     for feed in feeds:
-        spans = sorted(pitches_of(feed).values())
-        pairs += [(start, before_end) for (_, before_end), (start, _) in zip(spans, spans[1:]) if 0 < start-before_end < 120]
+        starts = sorted(start for start, _ in pitches_of(feed).values())
+        pairs += [(start, before) for before, start in zip(starts, starts[1:]) if start-before < 120]
     grid = [(i+.5)/phases for i in range(phases)]
     shares = {}
     for delay in delays:
         hits = 0
-        for start, before_end in pairs:
+        for start, before in pairs:
             for a in grid:
                 for b in grid:
-                    shown = max(before_end+delay, before_end+lag_s+a*poll_s+compute_s+b*client_s)
+                    shown = max(before+SEEN_S+delay, before+lag_s+a*poll_s+compute_s+b*client_s)
                     hits += start+delay-shown >= READ_S
         shares[str(delay)] = round(hits/(len(pairs)*phases*phases), 4) if pairs else None
     return {'pairs': len(pairs), 'lag_s': lag_s, 'poll_s': poll_s, 'client_s': client_s, 'compute_s': compute_s,

@@ -216,7 +216,7 @@ class FakeTimedReplay:
     built = []
 
     def __init__(self, game_pk, start, t0, speed, lag_s):
-        self.t0, self.options = t0, (game_pk, start, speed, lag_s)
+        self.t0, self.lag_s, self.options = t0, lag_s, (game_pk, start, speed, lag_s)
         FakeTimedReplay.built.append(self)
 
     def position(self):
@@ -249,6 +249,8 @@ def test_replay_route_pins_one_clock_per_link_and_takes_a_viewer_delay():
         assert abs(clock['t0'] - time.time()) < 5 and first['delay_s'] == 0
         again = client.get('/api/live/849845/state', params={'replay': 40, 't0': clock['t0']}).json()
         assert again['replay']['t0'] == clock['t0'] and len(FakeTimedReplay.built) == 1  # same link, same clock
+        rehearsal = client.get('/api/live/849845/state', params={'replay': 40, 't0': clock['t0'], 'lag': 16}).json()
+        assert rehearsal['replay']['lag_s'] == 16 and again['replay']['lag_s'] == 0 and len(FakeTimedReplay.built) == 2
         assert again['sync']['event_age_s'] >= 0 and again['sync']['max_delay_s'] == 120
         late = client.get('/api/live/849845/state', params={'replay': 40, 't0': clock['t0'], 'delay': 45}).json()
         assert late['status'] == 'buffering' and late['delay_s'] == 45  # a viewer 45 s behind has not reached it yet

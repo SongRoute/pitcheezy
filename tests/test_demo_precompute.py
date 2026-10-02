@@ -182,6 +182,7 @@ def timed_final():
         for event in item['playEvents']:
             if event['isPitch']:
                 event['startTime'], event['endTime'] = text(base + timedelta(seconds=20 * n)), text(base + timedelta(seconds=20 * n + 4))
+                event['details']['isInPlay'] = event['details']['call']['code'] in ('D', 'E', 'X')  # as the real feed flags it
                 n += 1
     return final, base.timestamp()
 
@@ -194,25 +195,31 @@ def test_timed_replay_serves_each_pitch_at_its_recorded_time():
     first = replay('.../feed/live', 10)
     assert pending(first) == [1, 1] and first['metaData']['eventWall'] == 5000.0  # 15 s before the first pitch
     assert replay.position() == {'elapsed_s': -15.0, 'pitches': 6, 'index': 0}
-    now[0] = 5018.9  # the first pitch ends 19 s in
+    now[0] = 5015.9  # the first pitch is released 15 s in and seen 1 s later (not at the final feed's endTime)
     assert replay('.../feed/live', 10) is first
-    now[0] = 5019.0
+    now[0] = 5016.0
     second = replay('.../feed/live', 10)
-    assert pending(second) == [1, 3] and second['metaData']['eventWall'] == 5019.0  # pitch 2 of the PA is the automatic ball
+    assert pending(second) == [1, 3] and second['metaData']['eventWall'] == 5016.0  # pitch 2 of the PA is the automatic ball
     assert second['liveData']['plays']['currentPlay']['playEvents'][-1]['index'] == 1
-    now[0] = 5000.0 + 15 + 5 * 20 + 4  # the last pitch has ended: the final feed
+    # a ball in play (the PA's last pitch, released 20 s after the first) is seen when its play ends
+    now[0] = 5015.0 + 20 + 3.9
+    assert pending(replay('.../feed/live', 10)) == [1, 3]
+    now[0] = 5015.0 + 20 + 4
+    assert pending(replay('.../feed/live', 10)) == [2, 1]
+    now[0] = 5015.0 + 5 * 20 + 4  # the last pitch (in play) has ended: the final feed
     done = replay('.../feed/live', 10)
     assert done['gameData']['status']['abstractGameState'] == 'Final' and done['metaData']['eventWall'] == now[0]
     assert replay('.../schedule?date=2026-09-29', 10) == {'dates': []}
-    # A simulated publication lag delays the fetch, not the event time; double speed halves the wall gaps.
-    now[0] = 5019.0
+    # A rehearsed publication lag (counted from the release) delays the fetch, not the event time.
+    now[0] = 5024.9
     lagged = demo.TimedReplay(final, t0=5000.0, lag_s=10, wall=lambda: now[0])
     assert pending(lagged('.../feed/live', 10)) == [1, 1]
-    now[0] = 5029.0
-    assert lagged('.../feed/live', 10)['metaData']['eventWall'] == 5019.0
-    now[0] = 5009.5
+    now[0] = 5025.0
+    assert lagged('.../feed/live', 10)['metaData']['eventWall'] == 5016.0
+    # Double speed halves the wall gaps.
+    now[0] = 5008.0
     fast = demo.TimedReplay(final, t0=5000.0, speed=2, wall=lambda: now[0])
-    assert pending(fast('.../feed/live', 10)) == [1, 3] and fast('.../feed/live', 10)['metaData']['eventWall'] == 5009.5
+    assert pending(fast('.../feed/live', 10)) == [1, 3] and fast('.../feed/live', 10)['metaData']['eventWall'] == 5008.0
     # Starting mid-game: 15 s before that pitch, without walking through the earlier ones.
     now[0] = 7000.0
     middle = demo.TimedReplay(final, start=4, t0=7000.0, wall=lambda: now[0])
