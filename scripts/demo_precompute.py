@@ -1137,6 +1137,45 @@ def live_check(game_pk, snapshots, output_root=DEMO_ROOT):
     return report
 
 
+def timecode_check(game_pk, every=6, output_root=DEMO_ROOT, pause_s=0.5):
+    """Robustness sweep over a completed game's own past states: every ``every``-th entry of the feed's
+    ``timestamps`` list is fetched with ``?timecode=`` (the feed as it stood then, with later corrections
+    applied but with the in-between structure a live viewer meets: a finished PA whose next play does not
+    exist yet, an open play after a ball in play, mid-inning changes) and run through the observer's state
+    parser and ``LivePolicy``. Reports what broke; display robustness only, nothing is compared or scored."""
+    from collections import Counter
+    from observer_app.live_armb import state_key
+    from observer_app.live_feed import parse_state
+    game_pk, output_root = int(game_pk), _check_output_root(output_root)
+    base = f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live'
+    def fetch(url):
+        request = urllib.request.Request(url, headers={'User-Agent': 'pitcheezy-watch-along-demo'})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    stamps = fetch(base + '/timestamps')[::every]
+    policy, states, errors, pending = LivePolicy(output_root), Counter(), [], Counter()
+    for stamp in stamps:
+        feed = fetch(f'{base}?timecode={stamp}')
+        time.sleep(pause_s)
+        try:
+            state = parse_state(feed, None)
+            state_key(feed)
+            states[state['status']] += 1
+            result = policy(feed) if state['status'] == 'ready' else None
+            if result is not None:
+                pending[result['pitch']['pre']['status']] += 1
+                if (state['batter']['id'], state['pitcher']['id']) != tuple(
+                        int(live_rows(feed).iloc[-1][column]) for column in ('batter', 'pitcher')):
+                    errors.append({'timecode': stamp, 'error': 'screen and policy disagree on the batter or pitcher'})
+        except Exception as exc:  # noqa: BLE001 - the sweep's whole purpose is to list these
+            errors.append({'timecode': stamp, 'error': f'{type(exc).__name__}: {exc}'})
+    report = {'schema': 'pitcheezy.timecode-check.v1', 'game_pk': game_pk, 'timecodes': len(stamps), 'every': every,
+              'states': dict(states), 'pending_pitch_views': dict(pending), 'binds': policy.binds, 'errors': errors,
+              'note': 'Display robustness sweep on DEMO-WS-2026 data; not an evaluation.'}
+    _write_json(output_root / 'timecode_check' / f'{game_pk}.json', report)
+    return report
+
+
 def completed_postseason_games(since, until, fetch=None):
     """gamePks of FINAL postseason games (F/D/L/W) between two dates (inclusive), in schedule order."""
     fetch = fetch or (lambda url: json.load(urllib.request.urlopen(
@@ -1198,7 +1237,13 @@ def main(argv=None):
     checked = commands.add_parser('live-check', help='recorded live snapshots of a game against its final-feed precompute')
     checked.add_argument('--game-pk', type=int, required=True)
     checked.add_argument('--snapshots', type=Path, default=PROJECT / 'apps/observer/live_snapshots')
+    swept = commands.add_parser('timecode-check', help="state parser and live policy over a completed game's past states")
+    swept.add_argument('--game-pk', type=int, required=True)
+    swept.add_argument('--every', type=int, default=6)
     args = parser.parse_args(argv)
+    if args.command == 'timecode-check':
+        print(json.dumps(timecode_check(args.game_pk, args.every), ensure_ascii=False, indent=1))
+        return
     if args.command == 'live-check':
         report = live_check(args.game_pk, args.snapshots)
         print(json.dumps({k: v for k, v in report.items() if k != 'differing_first_views'}, ensure_ascii=False, indent=1))

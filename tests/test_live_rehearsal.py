@@ -88,3 +88,8 @@ def test_summary_page_lists_each_game_and_says_what_is_missing(tmp_path):
     text = lr.summarize(tmp_path, [7, 8], checks)
     assert '## 7' in text and '지연 0초 40.0%, 지연 30초 100.0%' in text and '비교 2구' in text
     assert '## 8' in text and '보고서 없음' in text and (tmp_path / 'summary.md').read_text() == text
+    assert '조회 오류 0 → 통과(0)' in text and '지연 30초 "5초 전 추천" 95% 이상 → 통과(1.0)' in text
+    assert '1순위 구종 일치(처음 본 화면) 95% 이상 → 통과(1.0)' in text and '계산 오류 0 → 통과(0)' in text
+    check = json.loads((checks / '7.json').read_text()) | {'first_view_same_top_type': 1, 'errors': [{'error': 'x'}]}
+    assert [passed for _, passed, _ in lr.verdict(report | {'polls': report['polls'] | {'errors': 2}}, check)] == [False, False, True, False]
+    assert [passed for _, passed, _ in lr.verdict(report, None)] == [True, None, True, None]

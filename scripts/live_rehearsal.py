@@ -244,11 +244,30 @@ def measured_leads(polls, feed, *, since=None, until=None, delays=BROADCAST_DELA
             'read_time_s': READ_S, 'share_with_read_time_by_broadcast_delay': shares}
 
 
+# Fixed before the division series recordings were read (plan D149): what a recorded game must show.
+CRITERIA = {'poll_errors_max': 0, 'compute_errors_max': 0, 'share_at_30s_min': 0.95, 'same_top_type_first_view_min': 0.95}
+
+
+def verdict(report, check):
+    """[(criterion, passed or None when its file is missing, measured value)] for one recorded game."""
+    share = (report or {}).get('share_with_read_time_by_broadcast_delay', {}).get('30')
+    compared = None if check is None else check['pitches_seen_pending_live']-len(check['seen_live_not_in_final'])
+    same = None if not compared else check['first_view_same_top_type']/compared
+    errors = None if report is None else report['polls']['errors']
+    broken = None if check is None else len(check['errors'])
+    return [('조회 오류 0', None if errors is None else errors <= CRITERIA['poll_errors_max'], errors),
+            ('계산 오류 0', None if broken is None else broken <= CRITERIA['compute_errors_max'], broken),
+            ('지연 30초 "5초 전 추천" 95% 이상', None if share is None else share >= CRITERIA['share_at_30s_min'], share),
+            ('1순위 구종 일치(처음 본 화면) 95% 이상', None if same is None else same >= CRITERIA['same_top_type_first_view_min'],
+             None if same is None else round(same, 4))]
+
+
 def summarize(directory, games, checks=None):
     """One phone-readable Markdown page over several recorded games: their ``report`` files and, when
     present, the live-versus-final checks (``demo_precompute.py live-check``)."""
     directory = Path(directory)
-    lines = ['# 실경기 기록 요약', '', '서비스 시간·지원 범위 측정이다(모델·정책 평가 아님). 수치는 각 경기의 `_report.json`·`live_check` 파일에서 옮겼다.', '']
+    lines = ['# 실경기 기록 요약', '', '서비스 시간·지원 범위 측정이다(모델·정책 평가 아님). 수치는 각 경기의 `_report.json`·`live_check` 파일에서 옮겼다.',
+             '조회 오류가 있으면 서버 재시작 때문인지 `_polls.jsonl`의 오류 시각으로 확인한다(기준은 재시작과 무관한 오류 0).', '']
     for game_pk in games:
         path = directory/f'{int(game_pk)}_report.json'
         lines.append(f'## {int(game_pk)}')
@@ -270,7 +289,10 @@ def summarize(directory, games, checks=None):
             lines.append(f"- 실시간 화면 대 최종 기록: 비교 {compared}구, 1순위 구종 같음 처음 {c['first_view_same_top_type']}·마지막 {c['last_view_same_top_type']}, "
                          f"완전히 같음 처음 {c['first_view_equals_final']}·마지막 {c['last_view_equals_final']}, 계산 오류 {len(c['errors'])}, 모델 준비 {c['binds']}회")
         else:
+            c = None
             lines.append('- 실시간 화면 대 최종 기록 대조: 아직 없음')
+        lines.append('- 기준 대조: ' + '; '.join(
+            f"{name} → {'미정' if passed is None else '통과' if passed else '미달'}({value})" for name, passed, value in verdict(report, c)))
         lines.append('')
     text = '\n'.join(lines)
     (directory/'summary.md').write_text(text)
