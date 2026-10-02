@@ -33,6 +33,10 @@ SSD(`/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/`):
 
 팀원 레포 `Pitcheezy/transition-models` `feature/intent-v0`: 최신 `66224ad`(M3 진행 중). 우리가 올린 것은 `docs/INTENT_V0_WORK_ORDER.md`(`4d47fc9`)와 `docs/INTENT_V0_CONTRACT_FIXES.md`(`8301804`)뿐. 읽기 전용 사본은 임시 디렉터리에 있었고 다음 세션에서는 다시 받으면 된다.
 
+## 2b. 운영 동결 (먼저 확인)
+
+다른 세션이 기록한 [운영 동결](OPS-freeze-and-restart-2026-10-04.md)이 유효하다: 10/4 디비전시리즈 4경기 대조(`DEMO-WS-2026/live_rehearsal/ds/all.done`)가 끝날 때까지 재부팅·SSD 분리·tmux `pz` 창 닫기·`:8766` 재시작·무거운 실험(학습·정책 검증·OPE)을 하지 않는다. 이 세션의 EXP-P17·P18 실행은 그 문서를 보기 전에 승인·실행된 것이며 D157에 공개했다. 동결 중 할 수 있는 일: 문서, 테스트, 화면 코드(배포 제외), 팀원 자료 재검사.
+
 ## 3. 다음 세션이 할 일 (추천 순)
 
 1. **화면에 포수 미트 위치 붙이기** — [작업 지시](UI-setup-display-work-order.md). `demo/intent-setup`을 화면 브랜치(`demo/ui-frame`)에 합치고 "방금 던진 공" 화면 존 그림에 가로 위치만 표시. 화면 담당 세션(PM 체계, D146 이후 PM 부트스트랩 문서 참조)이 맡는 것이 기본이고, 없으면 이 줄기를 이어받는다.
