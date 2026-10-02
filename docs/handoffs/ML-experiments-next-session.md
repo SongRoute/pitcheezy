@@ -1,6 +1,8 @@
 # 다음 세션 — 논문 기준 ML 예측 성능 실험
 **Claude로 이어서 작업할 때:** [재개 인수인계](CLAUDE-resume-2026-09-29.md)에서 현재 상태·읽기 순서·다음 작업·실행 경계를 먼저 확인한다. [복사용 재개 프롬프트](CLAUDE-resume-prompt.md).
 
+**예측 연구 기준 교체 — D139·D143·D145 (2026-10-02):** 직접 예측 head와 G0-global을 확률 1/2로 섞은 후보(EXP-P15-002)가 3 seed N 통과(D139) 뒤 5 seed·전체 MLB 확인까지 통과했다(EXP-P16-001, D143: Cpanel ΔNLL −0.003442 [−0.005032, −0.001894], 전체 MLB −0.004062 [−0.004383, −0.003752], 둘 다 5/5 seed). **앞으로 예측 실험의 대조군은 이 혼합(`configs/G15-MIX-RESEARCH-FROZEN-v1.json`, 검증 `python scripts/freeze_g15_mix_research.py verify`)이다.** G0 번들은 그 구성요소로 그대로 두며, 서비스·데모·정책 식별자 `c13cc989…`는 G0 단독 그대로다. 코드·설정은 브랜치 `claude/exp-p16-direct-mix-confirm`. 추천 정책을 혼합 예측기로 다시 검증할지는 [설계안](../reviews/G15-mix-policy-revalidation-options-2026-10-02.md)의 선택지로 사용자 결정 대기(2026 재평가는 하지 않음).
+
 **2026 OPE 결과 — D131 (2026-10-01):** 1회 실행 완료. L1-R Δ [−0.00120, +0.00092], **개선 근거 없음**(해로움도 아님), 게이트 모두 통과. 서비스 정책 채택 없음. 다음 방향은 CV 의도 모듈 v0(팀원 `transition-models` `feature/intent-v0`, D129) 뒤 ARM-A 설계(D128). 결과 `results/MLB-2026-OPE-v1.json`.
 
 **2026 OPE 실행 중 — D126~D127 (2026-10-01):** 묶음 바인딩(`10b323e`, 식별자 `c13cc989…` 유지)으로 메모리 차단 요인 해소, Fable 5.1 최종 검토 COOP-025 PASS-with-conditions → **1회 실행 시작**(`MLB-2026-OPE-v1/OPE-2026-a1`, tmux `pz:runs`, 예상 약 17시간, hang guard 약 34시간, 최대 2회). 구속력 있는 등록 = config `mlb2026_ope` + `addendum-1..8-d127`(코드 `a09ed7d`); 판정 규칙 D108/D109/D119/D120 불변. 끝나면 `ope2026.json`의 라벨(STATISTICAL/SUPPORTED/HARM/NO_EVIDENCE/NOT_DECIDABLE)을 보고서로 정리하고 등록·사전등록은 수정하지 않는다. 실패하면 부분 원장은 해시로만 봉인하고 같은 범위로 1회 재시도 뒤 `FAILED_INFRA`.
