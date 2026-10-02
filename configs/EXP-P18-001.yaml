@@ -1,0 +1,91 @@
+{
+  "protocol": "policy_seed_noise_diagnostic_v1",
+  "experiment_id": "EXP-P18-001",
+  "status": "REGISTERED",
+  "decision": "D154 (2026-10-02): user chose to measure the search-noise floor before any stage C; registered before the noise comparison is computed",
+  "post_hoc_disclosure": "Registered AFTER the EXP-P17-001 result was read (mean TV 0.0323, top-1 agreement 92.8%, DIFFERENT_RECOMMENDATIONS). The verdict rule below was fixed before this run and reuses the 0.01 TV judgement value of EXP-P17-001.",
+  "purpose": "Tell how much of the EXP-P17-001 predictor-swap distance is search noise. The predictor stays G0; only the planning seed changes (0 -> 1). On the same sealed June decisions the P3 law from the seed-1 planning Q is compared with the sealed seed-0 law, and the swap distance of each decision is compared with this seed distance.",
+  "one_change": "Planning seed 1 instead of 0 for the bound G0 planner (seed 1 is a registered planning seed of the validation plan: seeds.planning_v2). Predictor, reference law, support table, delivery pools, WE terminal/cutoff, tau, search setting and decision states are unchanged.",
+  "execution": {
+    "enabled": true,
+    "runner": "experiments/pitchmdp/scripts/diagnose_policy_seed_noise.py",
+    "worktree": "/Users/song/Projects/pitcheezy-worktrees/exp-p17-policy-predictor-diagnostic (branch claude/exp-p17-policy-predictor-diagnostic, on top of claude/exp-p16-direct-mix-confirm); kept off the policy-validation and demo branches (D118 precedent)",
+    "prefix": "DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib PYTHONPATH='/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:experiments/pitchmdp' /Users/song/Projects/pitcheezy/.venv/bin/python experiments/pitchmdp/scripts/diagnose_policy_seed_noise.py --config configs/EXP-P18-001.yaml --local-config experiments/pitchmdp/configs/local.json",
+    "order": [
+      "smoke : --output <runs>/EXP-P18-001-smoke --smoke   (three games; the comparison is not computed)",
+      "run   : --output <runs>/EXP-P18-001                 (all sealed decisions; writes results.json and results/EXP-P18-001.json)"
+    ],
+    "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
+    "queue": "single heavy queue: runs/ML-MATRIX-20260924/.heavy.lock (non-blocking); Mac mini only, A5000 not used",
+    "expected_cost": "The mix run of the same sample took 2,459 s with ten networks per row; G0 alone uses five, so roughly 25-40 min (estimate, not measured)."
+  },
+  "policy_registration": {
+    "config": "configs/ML-POLICY-MATERIALIZATION-v1.json",
+    "config_sha256": "869b2611c027e36573cd4d9a3e766f02bfda9c76a3485cb5e1870f68c7954469",
+    "addenda": [
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-1-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-3-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-4-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-5-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-6-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-7-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json"
+    ],
+    "use": "read-only: sealed BC, support table, style snapshot, S2-certified component identity and the tau freeze are resolved through the registered chain; no stage of that chain is run and nothing is added to it"
+  },
+  "sealed_g0_run": {
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S3b-tau-a4",
+    "manifest_sha256": "25effce1729df55ab1d997358de2f101ca54eb0eb86e34588d94159f775f1c31",
+    "ledger": "ledger-blend-0.jsonl",
+    "requests": 43487,
+    "evaluated_decisions": 40702,
+    "final_identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+    "use": "the G0 side of the comparison: recorded planning Q, mask and reference law of every evaluated decision (June 2025, 150 games)"
+  },
+  "swap_run": {
+    "experiment_id": "EXP-P17-001",
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P17-001",
+    "decisions_sha256": "d794827307bff772f1d54d58923455d360048bc98152052a5baad52103929bd1",
+    "results_sha256": "bbdecc1573854b9948bd2b7b7fccd047af8c25ec808fc06eb4ffd69d44cb8dc0",
+    "use": "per-decision swap distances (TV, top-1 agreement) of the same 40,702 decisions, in the same order"
+  },
+  "settings": {
+    "tau": 0.1,
+    "samples": 6,
+    "pitch_cap": 12,
+    "seed": 0
+  },
+  "noise_seed": 1,
+  "row_budget": 6000000,
+  "row_budget_basis": "safety cap on simulated rows only; the mix run used 3.82M rows",
+  "comparison": {
+    "unit": "every decision the sealed G0 ledger evaluated (SUPPORTED or OUTSIDE_POLICY_SUPPORT)",
+    "quantities": [
+      "seed distance: TV between the P3 law under the seed-1 G0 planning Q and under the sealed seed-0 G0 planning Q",
+      "paired excess: swap TV (EXP-P17-001) minus seed TV, per decision, mean with a whole-game bootstrap interval"
+    ],
+    "descriptive": [
+      "seed-distance quantiles and top-1 agreement",
+      "excess top-1 disagreement",
+      "ratio of mean swap TV to mean seed TV"
+    ]
+  },
+  "verdict_rule": {
+    "excess_mean_tv_at_least": 0.01,
+    "reading_fixed_before_results": {
+      "PREDICTOR_EFFECT_BEYOND_NOISE": "mean excess TV >= 0.01 and its 95% whole-game bootstrap lower bound > 0: the predictor swap moves the recommendations by more than a seed change does; report to the user, who decides on stage C and the review gates; nothing runs automatically",
+      "WITHIN_SEARCH_NOISE": "otherwise: the EXP-P17-001 distance is not distinguishable from search noise at the registered margin; stage C is not run and the policy re-validation line is closed until new inputs arrive (CV intent data / ARM-A)"
+    },
+    "threshold_basis": "the 0.01 TV judgement value registered in EXP-P17-001, applied to the excess over the seed distance; no measured basis",
+    "conservative_direction": "An independent-seed distance is at least as large as the noise inside the common-random-number swap comparison, so BEYOND is hard to reach and WITHIN does not prove a zero predictor effect."
+  },
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 20260924,
+    "unit": "whole game"
+  },
+  "data_rules": "No 2026 rows. June 2025 blend-split rows of the sealed tau-design sample only; pre-decision fields, logged pitch types and previous-row outcomes as history. No reward, WE result, events kind or next-row state.",
+  "review": "Same-model review only. The independent review gate of the validation chain is not passed and is required before any stage C.",
+  "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P18-001"
+}
