@@ -121,7 +121,21 @@ class LiveFeed:
         self.delay_s = config['delay_s'] if delay_s is None else delay_s
         self.max_delay_s = max(config.get('max_delay_s', 120), self.delay_s)
         self.record_dir = Path(record_dir) if record_dir else None
-        self.buffers, self.fetched_at, self._lock = {}, {}, threading.Lock()
+        self.buffers, self.fetched_at, self.watching, self._lock = {}, {}, {}, threading.Lock()
+
+    def _interval(self, game_pk, delay, now):
+        """Seconds between upstream fetches. The feed asks for ``poll_interval_s``; while a viewer whose
+        broadcast runs less than ``fast_poll_below_delay_s`` behind was here in the last 30 s, the poll phase
+        would eat their lead time, so the shorter ``fast_poll_s`` applies. Later viewers lose nothing at
+        the slow pace: their snapshot waits in the buffer anyway."""
+        watching = self.watching.setdefault(game_pk, {})
+        watching[delay] = now
+        for seen in [d for d, at in watching.items() if now-at > 30]:
+            del watching[seen]
+        fast = self.config.get('fast_poll_s')
+        if fast and min(watching) < self.config.get('fast_poll_below_delay_s', 0):
+            return min(fast, self.config['poll_interval_s'])
+        return self.config['poll_interval_s']
 
     def _get(self, url):
         attempts = self.config['retries']+1
@@ -164,7 +178,7 @@ class LiveFeed:
         with self._lock:
             now, wall = self.clock(), self.wall()
             buffer = self.buffers.setdefault(game_pk, [])
-            if now-self.fetched_at.get(game_pk, -1e18) >= self.config['poll_interval_s']:
+            if now-self.fetched_at.get(game_pk, -1e18) >= self._interval(game_pk, delay, now):
                 feed = self._get(f"{self.config['base_url']}/api/v1.1/game/{game_pk}/feed/live")
                 self.fetched_at[game_pk] = now
                 event = event_wall(feed)

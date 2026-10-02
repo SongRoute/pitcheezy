@@ -367,3 +367,26 @@ def test_a_pitch_that_decided_the_pa_is_not_followed_by_a_pending_pitch():
     with TestClient(app) as client:
         body = client.get('/api/live/849845/state').json()
     assert body['status'] == 'resolving' and body['recommendation'] is None and armb.status()['pending'] == 0
+
+
+def test_feed_is_polled_faster_only_while_a_low_delay_viewer_is_watching():
+    now, calls = [0.0], []
+    snapshot = at(feed('849845_20260929_195940.json'), -100.0)
+    config = LIVE_CONFIG | {'poll_interval_s': 10, 'fast_poll_s': 5, 'fast_poll_below_delay_s': 25}
+    live = LiveFeed(lambda url, timeout: calls.append(now[0]) or snapshot, config=config, delay_s=30,
+                    clock=lambda: now[0], wall=lambda: now[0], sleep=lambda _: None)
+    for second in range(0, 31, 2):  # a 30 s viewer: the feed's own 10 s pace
+        now[0] = float(second)
+        live.snapshot(849845)
+    assert calls == [0.0, 10.0, 20.0, 30.0]
+    calls.clear()
+    for second in range(32, 51, 2):  # a 10 s viewer joins: 5 s pace (first fetch at the next poll)
+        now[0] = float(second)
+        live.snapshot(849845, 10)
+        live.snapshot(849845)
+    assert calls == [36.0, 42.0, 48.0]
+    calls.clear()
+    for second in range(52, 111, 2):  # they leave: back to 10 s once their last visit is 30 s old
+        now[0] = float(second)
+        live.snapshot(849845)
+    assert calls == [54.0, 60.0, 66.0, 72.0, 78.0, 88.0, 98.0, 108.0]  # the last low-delay visit was at 50
