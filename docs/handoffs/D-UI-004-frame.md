@@ -1,5 +1,7 @@
 # D-UI-004 — 모바일 한 화면 틀: 시안과 판단 기록
 
+> 현재 상태만 빠르게 보려면 [새 PM용 인수인계](UI-frame-PM-handoff.md)를 먼저 읽는다. 이 문서는 결정이 나온 순서대로 쌓은 기록이다.
+
 2026-10-02 (D135). 코드 변경 없음(시안·문서만). 시안: <https://claude.ai/artifact/NdXoDTZzazFgcXscKpbnUx> (비공개 캔버스, 21장).
 레퍼런스는 [frontend-references.md](../frontend-references.md), 실시간 서비스의 시간·속도 쪽은 [LIVE-service-plan.md](LIVE-service-plan.md)(다른 세션 작업)를 따른다.
 
