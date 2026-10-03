@@ -154,6 +154,7 @@ export default function Game() {
   const [delay, setDelay] = useState<number | null>(() => { const v = stored(DELAY_KEY); return replayStart !== null ? 0 : v === null ? null : Number(v); });
   const [state, setState] = useState<LiveState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [failures, setFailures] = useState(0);                  // polls failed in a row; any answer resets it
   const [unit, setUnit] = useState<Unit>(() => stored(UNIT_KEY) === 'mph' ? 'mph' : 'kmh');
   const [sheet, setSheet] = useState<SheetName | null>(null);
   const [tab, setTab] = useState(0);
@@ -169,14 +170,17 @@ export default function Game() {
   const sides = useRef(new Map<string, string>());              // batter side per plate appearance
   const lastPrev = useRef<string | null>(null), wasReady = useRef(false);
   const board = useRef<{ s: Situation; away: string; home: string } | null>(null);
+  const pollNow = useRef<() => void>(() => undefined);           // ask at once instead of waiting for the next poll
 
   useEffect(() => {
     if (!gamePk || paused !== null) return;  // a paused replay asks nothing; resuming moves t0 by the pause
-    let stop = false, timer = 0;
+    let stop = false, timer = 0, busy = false;
     const query = new URLSearchParams();
     if (delay !== null) query.set('delay', String(delay));
     if (replayStart !== null) { query.set('replay', String(replayStart)); query.set('speed', String(speed)); if (lag !== null) query.set('lag', lag); if (t0 !== null) query.set('t0', String(t0)); }
     const tick = async () => {
+      if (stop || busy) return;  // one request at a time: an early ask while one is out just waits for its answer
+      busy = true; window.clearTimeout(timer);
       try {
         const next = await get<LiveState>(`/live/${gamePk}/state?${query}`);
         if (stop) return;
@@ -194,13 +198,19 @@ export default function Game() {
         wasReady.current = next.status === 'ready' || next.status === 'resolving';  // a result still being posted is the same at-bat, not a break
         if (next.status === 'ready') lastPrev.current = prev;
         if (next.situation && next.game) board.current = { s: next.situation, away: next.game.away_team, home: next.game.home_team };
-        setState(next); setError(null);
+        setState(next); setError(null); setFailures(0);
         if (next.sync?.feed_ok !== false) setLastGood(Date.now());
-      } catch (e) { if (!stop) setError((e as Error).message); }
+      } catch (e) { if (!stop) { setError((e as Error).message); setFailures(n => n + 1); } }
+      finally { busy = false; }
       if (!stop) timer = window.setTimeout(tick, document.hidden ? POLL_MS * 5 : POLL_MS);
     };
+    // Back from the broadcast app, or the network is back: ask now rather than wait out the slower hidden-page poll.
+    const wake = () => { if (!document.hidden) void tick(); };
+    document.addEventListener('visibilitychange', wake); window.addEventListener('online', wake);
+    pollNow.current = () => void tick();
     void tick();
-    return () => { stop = true; window.clearTimeout(timer); };
+    return () => { stop = true; window.clearTimeout(timer); pollNow.current = () => undefined;
+      document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake); };
   }, [gamePk, delay, replayStart, speed, lag, t0, paused]);
   const isReplay = replayStart !== null;
   useEffect(() => {  // once per game: scene list of the replay, and the catcher setup (after-the-game data, never live)
@@ -244,7 +254,7 @@ export default function Game() {
     const url = new URLSearchParams(window.location.search); url.set('replay', String(first)); url.delete('t0');
     window.history.replaceState(null, '', `?${url}`);
     seen.current.clear(); shown.current.clear(); sides.current.clear(); lastPrev.current = null; wasReady.current = false; board.current = null;
-    setState(null); setError(null); setHold(null); setPast(null); setPaused(null); setLastGood(null); setSheet(null); setT0(null); setReplayStart(first);
+    setState(null); setError(null); setFailures(0); setHold(null); setPast(null); setPaused(null); setLastGood(null); setSheet(null); setT0(null); setReplayStart(first);
   }, []);
   const tap = useCallback(async () => {
     const current = delay ?? state?.delay_s ?? 30;
@@ -300,7 +310,9 @@ export default function Game() {
   let stage: ReactNode;
   if (looking) stage = thrown(looking, `${looking.n}구`, false);
   else if (past !== null) stage = <><div className="gm-toprow"><span className="gm-chip plain">지난 공</span></div><h1 className="gm-hero mid">아직 지난 공이 없어요</h1></>;
-  else if (!state) stage = <><div className="gm-toprow"><span className="gm-chip plain">{error ? '연결 안 됨' : '불러오는 중'}</span></div>{error && <p className="gm-sub">{error}</p>}</>;
+  else if (!state) stage = <><div className="gm-toprow"><span className="gm-chip plain">{error ? '연결 안 됨' : '불러오는 중'}</span></div>
+    {error && <><p className="gm-sub">{error}</p><p className="gm-note" role="status">2초마다 자동으로 다시 연결하고 있어요{failures > 1 ? ` · 실패 ${failures}번` : ''}</p>
+      <button className="gm-wide" onClick={() => pollNow.current()}>지금 다시 시도</button></>}</>;
   else if (state.status !== 'ready') {
     const [chip, text] = WAIT[state.status] ?? ['잠시만요', '잠시 기다려 주세요'], p = state.last_pitch;
     stage = <><div className="gm-toprow"><span className="gm-chip plain">{chip}</span></div><h1 className="gm-hero mid">{isReplay && state.status === 'not_live' ? '경기 끝' : text}</h1>
@@ -330,11 +342,12 @@ export default function Game() {
   const usedDelay = Math.round(delay ?? state?.delay_s ?? 30);
   const candidates = rec?.status === 'ready' ? rec.recommendation?.candidates ?? [] : [];
   const replayClock = replay ? ` ${clock(replay.elapsed_s)}` : '';
-  const liveLabel = stale ? (error !== null ? '연결 끊김' : '기록 멈춤') : paused !== null ? `일시정지${replayClock}` : isReplay ? `다시 보기${replayClock}` : 'LIVE';
+  const offline = stale || (state === null && error !== null);  // never say LIVE before the first answer has arrived
+  const liveLabel = stale ? (error !== null ? '연결 끊김' : '기록 멈춤') : offline ? '연결 안 됨' : paused !== null ? `일시정지${replayClock}` : isReplay ? `다시 보기${replayClock}` : 'LIVE';
   return <div className={`wa-page gm-page ${stale ? 'stale' : ''}`}>
     <header className="gm-top"><a className="gm-icon" href="/watch" aria-label="경기 목록으로"><svg viewBox="0 0 24 24"><path d="M19 12H5" /><path d="M11 6l-6 6 6 6" /></svg></a>
       {past !== null ? <span className="gm-live off">지난 공</span>
-        : <button className={`gm-live ${stale ? 'stale' : isReplay ? 'off' : ''}`} onClick={() => setSheet('sync')} aria-label={isReplay ? '다시 보기 조작' : '중계와 맞추기'}>{liveLabel}</button>}
+        : <button className={`gm-live ${offline ? 'stale' : isReplay ? 'off' : ''}`} onClick={() => setSheet('sync')} aria-label={isReplay ? '다시 보기 조작' : '중계와 맞추기'}>{liveLabel}</button>}
       {isReplay && past === null && <button className="gm-icon" onClick={togglePause} disabled={t0 === null} aria-label={paused === null ? '일시정지' : '이어서 보기'}>
         <svg viewBox="0 0 24 24" className="fill">{paused === null ? <><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></> : <path d="M7 5l12 7-12 7z" />}</svg></button>}
       <span className="gm-grow" /><span className="gm-badge">실험판</span>
