@@ -21,8 +21,8 @@ three-seed G0, uniform direct and uniform 1/2 mix must reproduce results/EXP-P15
 before any candidate is scored.  ({P15-uniform}, .5) is the frozen control row.
 
 Repeated-DEV exploration: all candidates kept, descriptive ranks only, no bootstrap,
-no p-values, no winner.  ``pins`` reads only metadata/state JSON of finished families
-and prints the hashes the root pins before registration; ``run`` needs a REGISTERED
+no p-values, no winner.  ``pins`` verifies finished families, including hashing artifact bytes without
+scoring predictions, and prints metadata/state hashes for root registration; ``run`` needs a REGISTERED
 config with every pin filled; ``smoke`` uses synthetic arrays only.
 """
 from __future__ import annotations
@@ -332,7 +332,7 @@ def verify_all(config):
 
 
 def pins(config):
-    """Hashes of the finished families' preparation and state files (JSON metadata only, no predictions)."""
+    """Verify artifact bytes, then return preparation/state hashes; no scoring or model inference."""
     verify_all(config)
     out = {}
     for s in config['families']:

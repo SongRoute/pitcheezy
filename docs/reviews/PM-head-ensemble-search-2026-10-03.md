@@ -37,3 +37,7 @@ Load 18 direct archives + 3 G0 + frequency from T7: P19 loaded a comparable set 
 - Two assumptions come from code and config reading, not from real records: that the P15 control `fit.json` report carries `device` (P20 config cites "mps (fit.json report, seed 0)"), and that the P15 states carry `smoke`. If either is wrong, the run fails closed rather than passing silently.
 - The P20 identity has no device field. Its device check relies on per-seed `fit.json`.
 - Pins assume P20–P22 run from the pinned sibling commits. If a sibling runner changes, the run fails closed and the config must be re-pinned.
+
+## Codex PM review
+
+PM reviewed ensemble pairing, baseline reproduction, family/source/artifact and device guards. 33 combined tests passed on the PM run. EXP-P23-001 fixes the66 candidates before upstream results; execution remains disabled until immutable completion pins can be populated. The pins command hashes artifact bytes, so it is not a JSON-only read; it performs no outcome scoring or model inference.
