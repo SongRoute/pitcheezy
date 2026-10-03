@@ -517,7 +517,8 @@
     "task_timeout_seconds": 3600,
     "family_budget_seconds": 36000,
     "max_attempts": 2,
-    "order": "priority then seed then arm (all 5 arms priority 1; config order)"
+    "order": "priority then seed then arm (all 5 arms priority 1; config order)",
+    "start_after": "EXP-P30-001 queue terminal (all 50 tasks done or failed_final) and EXP-P30-002 not running; never concurrent with another family's queue. Launch with --lock-dir /home/sds733/pitcheezy-autonomy/gpu-locks (the common per-GPU flock); co-scheduled fit seconds would be recorded as co-scheduled, not as compute cost."
   },
   "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks manifest). DEV/mlb_dev only predicted, never used for fit, early stop, temperature or selection.",
   "execution": {

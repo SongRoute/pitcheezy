@@ -1,7 +1,7 @@
 # DRAFT — TabM-mini shared-weight ensemble head (eight-axes A4)
 
-Status: **DRAFT design + model module only.** Not registered, not in the CUDA runner,
-no GPU run, no score read. Same-model (Opus 5.5) review returned 07:50 KST
+Status: **DRAFT; runner/scorer integration 805aadc, integration review disposition
+(cycle-008) applied (smoke only, execution disabled).** Not registered, no GPU run, no score read. Same-model (Opus 5.5) review returned 07:50 KST
 (`docs/reviews/OPUS-review-tabm-mini-f03bd04-2026-10-04.md`), dispositions in
 `docs/reviews/DISPOSITION-tabm-mini-f03bd04-2026-10-04.md`: `same_model_reviewed;
 Codex_review_pending`. Revised 2026-10-04 (cycle-004) before any TabM fit or P30 score was read.
@@ -82,7 +82,7 @@ fields; G0/D131/D155 unchanged; no 2026 data.
 ## Next steps
 
 1. Distinct Opus review of this module (same-model) — done, dispositions applied.
-2. Registry/runner/scorer integration (cycle-005, 2026-10-04 08:0x KST): new
+2. Registry/runner/scorer integration (cycle-005, committed 2026-10-04 08:01:47 KST): new
    `pitchmdp/direct_tabm_registry.py` (torch-free; 5 arms, seeds exactly [13, 14, 15],
    15 fits, 3 fixed contrasts), `pitchmdp/direct_tabm_factory.py` (build/load with
    strict archive guards), DRAFT `configs/DRAFT-CUDA-TABM-MINI-20261004.json`
@@ -93,5 +93,10 @@ fields; G0/D131/D155 unchanged; no 2026 data.
    this snapshot's source map differs from P24–P30 by design) and
    `scripts/score_cuda_direct.py` (`tabm_contrasts`, seed_block note on post-selection
    and non-matched compute). Tests `tests/test_cuda_tabm_mini.py` (44, CPU synthetic).
-   Distinct same-model review pending.
-3. CUDA smoke on every arm (GPU 3/4), measured seconds/memory, then registration.
+   Distinct same-model review returned (`docs/reviews/OPUS-review-tabm-integration-805aadc-2026-10-04.md`);
+   disposition `docs/reviews/DISPOSITION-tabm-integration-805aadc-2026-10-04.md`
+   (`same_model_reviewed; Codex_review_pending`).
+3. CUDA smoke on every arm (GPU 3/4), only after the EXP-P30-001 queue is terminal and with the
+   common `--lock-dir`; record measured seconds/memory in place of the review's ESTIMATE figures.
+4. Registration (root): only after the smoke identities are verified; `queue.start_after` is a
+   registration precondition (not enforced by `cuda_direct_queue.py`, which is shared and unchanged).

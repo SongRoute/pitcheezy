@@ -344,7 +344,7 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     workload_dropout = workload_dropout_registry.check_contrasts(config)
     tabm = tabm_registry.check_contrasts(config)
     if rc.uses_tabm(config):
-        if tabm is None or workload_dropout is not None:
+        if tabm is None or workload_dropout is not None or contrasts is not None or regularization is not None:
             raise ValueError('The TabM-mini family is scored only with its fixed contrasts')
     elif rc.uses_workload_dropout(config) and workload_dropout is None:
         raise ValueError('The workload-dropout family is scored only with its fixed contrasts')
