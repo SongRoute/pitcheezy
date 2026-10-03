@@ -100,4 +100,14 @@ e2e OPE 칸이 비면 "완료"가 아니다. 숫자는 results/에서 옮겨 적
 | EXP-P19-001 | 기존직접head/G0 혼합비11 × 온도7, 5seed | 완료·노출DEV 탐색, 두범위NLL 개선6/77조합, 채택없음 | [결과](reviews/PM-P19-search-result-2026-10-03.md), code a4ae817/result4c7b805 |
 | EXP-P20-001 | TRAIN 최근성 가중 180/365/730일 × 3 seed | 9 fit 완료, 세 후보 주지표 NLL 개선 없음, 공식 판정 불변 | [결과](reviews/PM-P20-recency-result-2026-10-03.md), code f19c69e |
 | EXP-P21-001 | 직접 head ResNet형 구조 × 3 seed | 3 fit 완료. MLB 개선 방향3/3, Cpanel 개선 미확정. 공식 판정 불변 | [결과](reviews/PM-P21-residual-result-2026-10-03.md), code2c6d9e7 |
-| EXP-P22-001 | 연속값 주기 임베딩 + MLP × 3 seed | smoke 성공·등록·P21 이후 실행 대기 | `codex/direct-embeddings-1006` 69d3a37, [smoke](reviews/PM-new-head-smoke-2026-10-03.md) |
+| EXP-P22-001 | 연속값 주기 임베딩 + MLP × 3 seed | 완료·반복 DEV 개발비교, 공식판정불변 | [결과](reviews/PM-P22-periodic-result-2026-10-04.md) |
+
+## D167–D168 CUDA 및 경기 후 자원 재사용
+
+| ID | 변경 | 상태 | 근거 |
+|---|---|---|---|
+| EXP-P23-001 | 6계열 head 단일/쌍/전체평균22종×G0혼합3비중=66조합 | 완료·반복 DEV 탐색, 채택없음 | [결과](reviews/PM-P23-ensemble-result-2026-10-04.md) |
+| EXP-P24-001 | CUDA기준/구수/부담블록/ResNet/수치임베딩×3seed | 15fit+채점완료, 수치임베딩개발신호·판정불변 | [결과](reviews/PM-P24-CUDA-result-2026-10-04.md), 등록0da52e4 |
+| EXP-P25-001 | CUDA용량대조·타자정보/이력절제·정규화9방식×3seed | 27CUDA smoke통과뒤등록·본학습진행 | 등록34d56f4, source7949f5f |
+| EXP-P26-001 | 봉인18경기seed/sample안정성5변형,6shards | 등록·경기기록/대조/요약종료대기, 아직실행전 | f81434e; 경기후감독큐 |
+| EXP-P28-001 | 같은안정성진단을봉인150경기전체로확장,50shards | 등록·P26집계성공뒤실행대기, 아직실행전 | 6584b1c; 18경기중복은독립근거로합산하지않음 |
