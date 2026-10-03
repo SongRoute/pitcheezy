@@ -24,7 +24,7 @@ Status: **implemented and synthetic-tested; not registered and not run on real d
   - Cpanel after the June blend: log_loss, Brier and June weight for each of the three arms; seed deltas vs G0 for direct and mix.
   - Whole MLB blended: candidate and control log_loss and Brier, plus seed deltas.
   - If any check fails, only the gate is written and the 77 candidates are never scored.
-- Populations: Cpanel DEV (12,334 rows, 328 games) and whole-MLB DEV (311,721 rows, 1,161 games). These counts come from the EXP-P16-001 results header. Both populations share the same key/label arrays, so no labels are mixed across populations.
+- Populations: Cpanel DEV (12,334 rows, 328 games) and whole-MLB DEV (311,721 rows, 1,161 games). These counts come from the EXP-P16-001 results header. Within each population all model arms share the same key/label arrays; the two populations have different row counts and are never interchanged.
 - Summaries (descriptive):
   - per candidate and population: NLL, Brier, ECE10
   - deltas vs G0 and vs G15, plus per-seed deltas vs the same-seed G0 and G15 and the number of seeds better than each
@@ -70,3 +70,7 @@ Status: **implemented and synthetic-tested; not registered and not run on real d
 - **The Cpanel gate is partly self-referential:** Cpanel log_loss, Brier and June weight come from the same `summarize_cell` that EXP-P16-001 used. The seed-delta and whole-MLB checks do recompute independently: the losses are summed per chunk and compared with P16's stored values.
 - **Frozen G15 mix vs. mix-plus-temperature:** T applies after the mix. The frozen G15 at T = 1 is reproduced exactly, but a T ≠ 1 row at w = .5 is a new candidate, not G15.
 - **References:** Guo et al. 2017 (scalar temperature; here a fixed grid, not fitted) — https://proceedings.mlr.press/v70/guo17a.html. Lakshminarayanan et al. 2017 is inspiration only: the arithmetic blend of two heterogeneous heads is not a deep-ensemble reproduction — https://proceedings.neurips.cc/paper/2017/hash/9ef2ed4b7fd2c810847ffa5fa85bce38-Abstract.html.
+
+## PM registration / review
+
+2026-10-03: registered EXP-P19-001 under D165, all77 candidates unchanged before scoring, 180-second external time limit. Codex reviewed source, reran 8 tests, added imported source hashes/local-config hash to provenance and nonzero exit on failed reproduction gate. Rank is descriptive only, no selection/promotion decision. Original P16/G15 files remain untouched.

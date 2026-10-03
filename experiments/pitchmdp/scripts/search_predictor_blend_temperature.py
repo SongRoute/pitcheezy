@@ -39,7 +39,7 @@ from pitchmdp.matrix_metrics import pitch_losses, prediction_metrics
 from run_ml_benchmark import read_json, dump, validate_native_runtime
 from run_ml_matrix import check_location, heavy_lock
 from run_ml_delivery_pool import git_commit, peak
-from run_ml_direct_head import mixed
+from run_ml_direct_head import mixed, SOURCES as DIRECT_SOURCES
 from run_ml_direct_head_confirm import member
 from score_ml_matrix import assert_aligned, summarize_cell
 
@@ -417,6 +417,8 @@ def jsonable(value):
 def provenance(config_path):
     return {'runner': NAME, 'runner_sha256': hash_file(PROJECT / NAME), 'config_sha256': hash_file(config_path),
             'git_commit': git_commit(), 'python': platform.python_version(), 'numpy': np.__version__,
+            'source_hashes': {name: hash_file(PROJECT / name) for name in sorted(set([*DIRECT_SOURCES, NAME,
+                'scripts/run_ml_direct_head_confirm.py', 'scripts/score_ml_matrix.py']))},
             'started_utc': datetime.now(timezone.utc).isoformat()}
 
 
@@ -435,6 +437,7 @@ def main():
     started = time.monotonic()
     deadline = started + config['execution']['max_wall_seconds']
     meta = provenance(args.config)
+    meta['local_config_sha256'] = hash_file(args.local_config)
     if not full:
         if not output.name.endswith('-smoke'):
             raise ValueError('Smoke output must end -smoke')
@@ -470,6 +473,8 @@ def main():
         repo_result = REPO / 'results' / (config['experiment_id'] + '.json')
         if not repo_result.exists():
             shutil.copyfile(output / 'results.json', repo_result)
+    if not result['reproduction_gate']['passed']:
+        raise ValueError('Reproduction gate failed; saved diagnostic result, no candidate search')
     print('SEARCH_DONE', {'gate': result['reproduction_gate']['passed'], 'candidates': result.get('candidate_count')},
           flush=True)
 
