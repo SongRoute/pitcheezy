@@ -13,6 +13,14 @@ raw Statcast is read here.  Per task (arm, seed):
   predict  calibrated/raw probabilities for blend (June), dev (Cpanel), mlb_dev in
            the Mac member npz layout; June blend and scoring stay on the Mac
 
+Frontier arms (next batch, DRAFT-CUDA-FRONTIER-RUN-20261004): an arm marked
+"frontier": true must equal the fixed direct_frontier_registry.ARMS entry of its
+name (capacity / information / regularization; no workload, one change vs the
+flatten 128 control).  Information arms zero NAMED context columns, so the 52
+names are derived from the config's expected layout and must match the export
+manifest's recorded context_layout before the model is built.  Base arms keep the
+cuda_direct_v1 checks unchanged.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -44,7 +52,8 @@ import numpy as np
 
 PROTOCOL = 'cuda_direct_v1'
 SELF = 'scripts/run_cuda_direct.py'
-MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py', 'pitchmdp/direct_periodic_model.py']
+MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py', 'pitchmdp/direct_periodic_model.py',
+                 'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
 TRAINING = {'epochs': 30, 'patience': 5, 'batch_size': 1024, 'learning_rate': 0.0005,
@@ -55,6 +64,8 @@ N_PHYSICAL = 8
 N_OUTCOME = 11  # current-token outcome channels (last 11; MatrixHistoryStore.gather keeps them zero)
 SMOKE = {'train': 8192, 'earlystop': 2048, 'temperature': 256, 'predict': 256, 'epochs': 2}
 MODELS = ('flatten_mlp', 'residual_mlp', 'periodic_flatten_mlp')
+BASE_GROUPED_FEATURES = ['six_batter_style_rates', 'six_style_reliabilities', 'five_soft_memberships']
+SHARING_TAIL = 7
 
 
 def sha256_file(path, chunk=1 << 22):
@@ -122,6 +133,12 @@ def config_check(config):
     columns = config['export']['workload_columns']
     names = set()
     for arm in config['arms']:
+        if 'frontier' in arm:
+            frontier_arm_check(arm)
+            if arm['name'] in names:
+                raise ValueError('Duplicated arm: ' + arm['name'])
+            names.add(arm['name'])
+            continue
         if arm['model'] not in MODELS or arm['width'] != 128 or arm['name'] in names:
             raise ValueError('Unknown or duplicated arm: ' + arm['name'])
         if any(c not in columns for c in arm['workload']) or len(set(arm['workload'])) != len(arm['workload']):
@@ -133,7 +150,74 @@ def config_check(config):
         raise ValueError('A no-workload flatten control is required')
     if int(config['export']['last_year']) != 2025:
         raise ValueError('No 2026 rows: last year is 2025')
+    if any(arm.get('frontier') for arm in config['arms']):
+        if expected_context_names(config['export']['context_layout'], config['export']['shapes']['n_context']) \
+                != config['export']['context_names']:
+            raise ValueError('Config context names differ from the names its expected layout derives')
     return config
+
+
+def frontier_arm_check(arm):
+    """A frontier arm is exactly its fixed registry entry (+ name, priority, empty workload)."""
+    from pitchmdp.direct_frontier_registry import ARMS  # torch-free
+    rest = {k: v for k, v in arm.items() if k not in ('name', 'priority', 'frontier', 'workload')}
+    if arm['frontier'] is not True or arm['name'] not in ARMS or rest != ARMS[arm['name']]:
+        raise ValueError('Frontier arm differs from the fixed registry: ' + str(arm.get('name')))
+    if arm.get('workload') != [] or arm.get('priority') not in (1, 2):
+        raise ValueError('Frontier arms keep the control inputs (no workload) and a priority')
+
+
+def needs_context_names(arm):
+    return arm.get('frontier') is True and arm['model'] == 'masked_flatten_mlp'
+
+
+def expected_context_names(layout, n_context):
+    """52 ordered names from the GROUPED export layout, only through source equivalences.
+
+    SequenceContext.report() lists 11 named game-state features then three grouped
+    blocks; Archetypes.report() names the 6 style and 6 reliability columns and
+    n_clusters (memberships, LAST in numeric_features); SharingContext appends the
+    pitcher profile (clusters['columns']) and log1p(TRAIN count)/10.
+    """
+    from pitchmdp.direct_frontier_registry import (BASE_CONTEXT_NAMES, BATTER_RELIABILITY, BATTER_STYLE,
+                                                   GAME_STATE, direct_context_names)
+    profile = list(layout['pitcher_profile_columns'])
+    base = len(BASE_CONTEXT_NAMES)
+    groups = {'base': [0, base], 'pitcher_profile': [base, base + len(profile)],
+              'pitcher_support': [base + len(profile), base + len(profile) + 1]}
+    if layout['groups'] != groups or groups['pitcher_support'][1] != n_context:
+        raise ValueError('Context group boundaries differ from 0:28 / 28:51 / 51:52')
+    if layout['base_features'] != [*GAME_STATE, *BASE_GROUPED_FEATURES]:
+        raise ValueError('Base context features differ from SequenceContext.report')
+    if layout['style_columns'] != list(BATTER_STYLE) or layout['reliability_columns'] != list(BATTER_RELIABILITY) \
+            or layout['n_clusters'] != 5 or layout['stripped_tail'] != SHARING_TAIL:
+        raise ValueError('Batter archetype columns differ from Archetypes(n_clusters=5)')
+    return direct_context_names(profile)
+
+
+def manifest_context_layout(manifest):
+    """The same comparable fields, read from the export manifest's recorded lineage (metadata only)."""
+    try:
+        layout = manifest['lineage']['context_layout']
+        report = layout['base_report']
+        return {'groups': layout['groups'], 'base_features': report['features'],
+                'style_columns': report['archetypes']['style_columns'],
+                'reliability_columns': report['archetypes']['reliability_columns'],
+                'n_clusters': report['archetypes']['n_clusters'],
+                'pitcher_profile_columns': layout['pitcher_profile_columns'], 'stripped_tail': layout['stripped_tail']}
+    except (KeyError, TypeError) as error:
+        raise ValueError('Export manifest has no recorded context layout') from error
+
+
+def verified_context_names(config, manifest):
+    """Config-expected names, only if the export manifest records exactly the expected layout."""
+    expected = config['export']['context_layout']
+    if manifest_context_layout(manifest) != expected:
+        raise ValueError('Export context layout differs from the config expected layout')
+    names = expected_context_names(expected, manifest['shapes']['n_context'])
+    if names != config['export']['context_names']:
+        raise ValueError('Export context names differ from the config')
+    return names
 
 
 def arm_spec(config, name):
@@ -148,6 +232,8 @@ def verify_export(export, config, manifest_sha256, hash_arrays=True):
     export = Path(export)
     if not manifest_sha256 or sha256_file(export / 'manifest.json') != manifest_sha256:
         raise ValueError('Export manifest differs from the pinned SHA256')
+    if config['export'].get('manifest_sha256', manifest_sha256) != manifest_sha256:
+        raise ValueError('Export manifest differs from the config pin')
     manifest = read_json(export / 'manifest.json')
     expected = config['export']
     if manifest.get('format') != 'cuda_direct_export_v1' or set(manifest['splits']) != set(expected['splits']):
@@ -201,7 +287,12 @@ def arm_inputs(arrays, arm, columns):
 
 # ------------------------------------------------------------------ model / calibration
 
-def build_model(arm, seed, device):
+def build_model(arm, seed, device, context_names=None):
+    if arm.get('frontier') is True:
+        from pitchmdp.direct_frontier_model import build_frontier
+        if needs_context_names(arm) != bool(context_names):
+            raise ValueError('Information arms (only) need the verified export context names')
+        return build_frontier(arm['name'], seed, device, context_names)
     if arm['model'] == 'flatten_mlp':
         from pitchmdp.matrix_models import MatrixModel
         return MatrixModel('flatten_mlp', seed=seed, width=arm['width'], device=device)
@@ -212,7 +303,13 @@ def build_model(arm, seed, device):
     return DirectPeriodicModel(seed, arm['context_continuous'], device=device)
 
 
-def load_model(arm, path, device):
+def load_model(arm, path, device, context_names=None):
+    if arm.get('frontier') is True:
+        from pitchmdp.direct_frontier_model import load_frontier
+        model = load_frontier(arm['name'], path, device)
+        if needs_context_names(arm) and model.context_names != list(context_names or []):
+            raise ValueError('Archived context names differ from the verified export names')
+        return model
     if arm['model'] == 'flatten_mlp':
         from pitchmdp.matrix_models import MatrixModel
         return MatrixModel.load(path, device)
@@ -326,7 +423,8 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         train = load_split(export, manifest, 'train', lim('train'))
         early = load_split(export, manifest, 'earlystop', lim('earlystop'))
         spec = config['training']
-        model = build_model(arm, seed, device)
+        names = verified_context_names(config, manifest) if needs_context_names(arm) else None
+        model = build_model(arm, seed, device, names)
         train_inputs = arm_inputs(train, arm, columns)
         context_width = int(train_inputs[2].shape[1])
         model.fit(train_inputs, np.array(train['y']), arm_inputs(early, arm, columns),
@@ -366,7 +464,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
                       'seconds_total': time.perf_counter() - started, 'context_width': context_width,
                       'parameter_count': int(sum(p.numel() for p in model.net.parameters())),
                       'train_rows_sha256': train_rows, 'earlystop_rows_sha256': early_rows,
-                      'predicted_rows': rows, 'runtime': runtime, 'peak_device_bytes': peak_device_bytes(device),
+                      'predicted_rows': rows, 'runtime': runtime, 'context_names_verified': names is not None, 'peak_device_bytes': peak_device_bytes(device),
                       'finished_utc': datetime.now(timezone.utc).isoformat(), 'dev_used_for_fit_or_selection': False}
         write_json_atomic(work / 'fit.json', fit_report)
         names = ['identity.json', 'model.pt', 'calibration.json', 'predictions.npz', 'mlb_predictions.npz', 'fit.json']

@@ -107,3 +107,50 @@ runner's `arm_inputs` check (run_cuda_direct), which the adapted runner must kee
 - Cost: 24 fits; per-fit time 미측정 (no GPU smoke).
 
 Deferred to a separate task: periodic+residual combination, TabM.
+
+## Integration follow-up (NEW code version, DRAFT, not run)
+
+Frontier arms now run through the existing CUDA runner; a portable scorer runs on
+newsrv. First-batch code (edfd4cc) and the immutable export are unchanged.
+No SSH, GPU, real data or 2GB re-export was used. Only the small export
+`manifest.json` (SHA 49097109…) metadata was read.
+
+- `pitchmdp/direct_frontier_registry.py` (new, no torch): `ARMS`, names, `check_config`
+  moved out of `direct_frontier_model.py` and re-exported unchanged. `config_check` runs
+  before the GPU is bound, so it must not import torch.
+- `scripts/run_cuda_direct.py`: an arm with `"frontier": true` must equal its registry entry
+  (+ name, priority, empty workload). Base arms keep the old checks. `build_model` /
+  `load_model` dispatch to `build_frontier` / `load_frontier`. `MODEL_SOURCES` now also
+  lists both frontier modules, so new-code task source hashes differ from the first batch.
+  Information arms get the 52 names only after the export manifest's
+  `lineage.context_layout` exactly matches the config's expected layout:
+  - groups 0:28 / 28:51 / 51:52
+  - base features = 11 names + grouped style6 / reliability6 / membership5
+  - Archetypes style/reliability columns and n_clusters 5
+  - 23 pitcher-profile columns, 7-column stripped tail
+
+  Names come from source equivalences only. An optional `export.manifest_sha256` pin is enforced.
+- `configs/DRAFT-CUDA-FRONTIER-RUN-20261004.json` (sha256 `2b057e8ede5ddb9dd2f880d352fc272fc51fa9e1344c4d7993e55d02bac42fc7`): base CUDA config + fresh
+  uniform control + 8 frontier arms = 27 fits (seeds 0-2), DRAFT, execution disabled. Root sets
+  the queue date and cutoffs and registers it.
+- `scripts/score_cuda_direct.py`: numpy + `matrix_metrics` only. Before any probability is
+  read, it requires all of these:
+  - the config is pinned and REGISTERED
+  - the export manifest is pinned, with hash-checked dev/mlb_dev keys/y/game_pk
+  - every arm×seed has a finished non-smoke CUDA identity with the EXPECTED source map
+  - one shared CUDA runtime signature
+
+  Each member's keys, labels and game order must equal the export rows. It reports the
+  3-seed-mean calibrated direct probabilities vs the same-family control on dev and mlb_dev
+  (`prediction_metrics`, `paired_game_comparison` with 10,000 draws, seed 20260924), for the
+  ensemble and for each seed. This is before the June blend / G0 mix: not G15, not policy,
+  and no decision, ranking or winner. Output is a new read-only directory: `score.json`,
+  `table_ko.md`, `SHA256SUMS`. Scorer source hashes are recorded separately from task sources.
+- To score the first batch, pass `--source-manifest` with a `cuda_direct_task_sources_v1` file
+  that holds the edfd4cc `own_hashes()`: runner + 3 model sources, no frontier modules. Root
+  writes it from the local first-batch tree. The default is the current runner's map. An
+  artifact's self-declared sources are never trusted.
+
+Tests (synthetic, CPU): `tests/test_cuda_frontier_run.py` 29 new. Focused
+(frontier_run + cuda_direct + frontier_model) 82 passed. The direct/cuda/metrics set
+173 passed. The full `experiments/pitchmdp/tests` suite: 960 passed, 1 skipped.

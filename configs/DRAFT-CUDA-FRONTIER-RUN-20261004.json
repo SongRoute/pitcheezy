@@ -1,0 +1,358 @@
+{
+  "protocol": "cuda_direct_v1",
+  "experiment_id": "DRAFT-CUDA-FRONTIER-RUN-20261004",
+  "status": "DRAFT",
+  "decision": "Not registered (DRAFT: smoke only; real task/queue refuse until status REGISTERED and execution.enabled true). Root assigns the family ID, cutoffs and GPUs and registers; no N/G decision, ranking or winner from this family.",
+  "purpose": "NEXT batch on the NEW code version: fresh same-device CUDA uniform control plus the 8 fixed frontier arms (capacity / information / regularization), one disclosed change each, from the same immutable export.",
+  "source_configs": {
+    "base_cuda": {
+      "path": "configs/DRAFT-CUDA-DIRECT-20261004.json",
+      "sha256": "8dc8d22b781e25fe0cd972801d6edb5c34a2b927a94e00eeb27ea438d34dc096"
+    },
+    "frontier": {
+      "path": "configs/DRAFT-CUDA-FRONTIER-20261004.json",
+      "sha256": "7fe23df686fb9500c0b95dc30430d7f721721b3a5a941c07779a19f54ec7a645"
+    }
+  },
+  "export": {
+    "splits": [
+      "train",
+      "earlystop",
+      "temperature",
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "fit_splits": [
+      "train"
+    ],
+    "earlystop_split": "earlystop",
+    "temperature_split": "temperature",
+    "predict_splits": [
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "workload_columns": [
+      "prior_records_per100",
+      "thruorder_minus1_over3",
+      "log_rest_days",
+      "rest_missing"
+    ],
+    "shapes": {
+      "length": 6,
+      "n_token": 38,
+      "n_context": 52,
+      "n_workload": 4
+    },
+    "last_year": 2025,
+    "normalization": "none learned here; arrays are the frozen EXP-P4-001 TRAIN-fitted transforms (parent preparation pinned)",
+    "manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+    "context_layout": {
+      "groups": {
+        "base": [
+          0,
+          28
+        ],
+        "pitcher_profile": [
+          28,
+          51
+        ],
+        "pitcher_support": [
+          51,
+          52
+        ]
+      },
+      "base_features": [
+        "balls",
+        "strikes",
+        "outs",
+        "inning",
+        "defensive_score_lead",
+        "defender_is_home",
+        "first_base",
+        "second_base",
+        "third_base",
+        "batter_left",
+        "pitcher_left",
+        "six_batter_style_rates",
+        "six_style_reliabilities",
+        "five_soft_memberships"
+      ],
+      "style_columns": [
+        "batter_style_contact_prior",
+        "batter_style_swing_prior",
+        "batter_style_walk_prior",
+        "batter_style_strikeout_prior",
+        "batter_style_isolated_power_prior",
+        "batter_style_groundball_prior"
+      ],
+      "reliability_columns": [
+        "batter_style_contact_reliability",
+        "batter_style_swing_reliability",
+        "batter_style_walk_reliability",
+        "batter_style_strikeout_reliability",
+        "batter_style_isolated_power_reliability",
+        "batter_style_groundball_reliability"
+      ],
+      "n_clusters": 5,
+      "pitcher_profile_columns": [
+        "effective_speed",
+        "release_spin_rate",
+        "pfx_x",
+        "pfx_z",
+        "left_share",
+        "type_CH",
+        "type_CS",
+        "type_CU",
+        "type_EP",
+        "type_FA",
+        "type_FC",
+        "type_FF",
+        "type_FO",
+        "type_FS",
+        "type_KC",
+        "type_KN",
+        "type_PO",
+        "type_SC",
+        "type_SI",
+        "type_SL",
+        "type_ST",
+        "type_SV",
+        "type_UN"
+      ],
+      "stripped_tail": 7
+    },
+    "context_layout_source": "export manifest lineage.context_layout (SequenceContext.report features, Archetypes.report style/reliability columns and n_clusters, SharingContext clusters columns); names via direct_frontier_registry.direct_context_names; grouped labels map to names only through these source equivalences",
+    "context_names": [
+      "balls",
+      "strikes",
+      "outs",
+      "inning",
+      "defensive_score_lead",
+      "defender_is_home",
+      "first_base",
+      "second_base",
+      "third_base",
+      "batter_left",
+      "pitcher_left",
+      "batter_style_contact_prior",
+      "batter_style_swing_prior",
+      "batter_style_walk_prior",
+      "batter_style_strikeout_prior",
+      "batter_style_isolated_power_prior",
+      "batter_style_groundball_prior",
+      "batter_style_contact_reliability",
+      "batter_style_swing_reliability",
+      "batter_style_walk_reliability",
+      "batter_style_strikeout_reliability",
+      "batter_style_isolated_power_reliability",
+      "batter_style_groundball_reliability",
+      "batter_archetype_membership_0",
+      "batter_archetype_membership_1",
+      "batter_archetype_membership_2",
+      "batter_archetype_membership_3",
+      "batter_archetype_membership_4",
+      "pitcher_effective_speed",
+      "pitcher_release_spin_rate",
+      "pitcher_pfx_x",
+      "pitcher_pfx_z",
+      "pitcher_left_share",
+      "pitcher_type_CH",
+      "pitcher_type_CS",
+      "pitcher_type_CU",
+      "pitcher_type_EP",
+      "pitcher_type_FA",
+      "pitcher_type_FC",
+      "pitcher_type_FF",
+      "pitcher_type_FO",
+      "pitcher_type_FS",
+      "pitcher_type_KC",
+      "pitcher_type_KN",
+      "pitcher_type_PO",
+      "pitcher_type_SC",
+      "pitcher_type_SI",
+      "pitcher_type_SL",
+      "pitcher_type_ST",
+      "pitcher_type_SV",
+      "pitcher_type_UN",
+      "pitcher_log1p_train_count_over10"
+    ]
+  },
+  "training": {
+    "epochs": 30,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005,
+    "loss_weighting": "uniform",
+    "hpo_trials": 0
+  },
+  "calibration": {
+    "method": "minimize_scalar bounded",
+    "bounds": [
+      0.5,
+      2.5
+    ],
+    "chain": "G0 SharingPredictor: log(clip(softmax(logits),1e-30,1)) / T",
+    "split": "temperature"
+  },
+  "arms": [
+    {
+      "name": "control",
+      "priority": 1,
+      "model": "flatten_mlp",
+      "width": 128,
+      "workload": []
+    },
+    {
+      "name": "width145",
+      "priority": 1,
+      "frontier": true,
+      "workload": [],
+      "family": "capacity",
+      "model": "flatten_mlp",
+      "width": 145,
+      "matches": "residual_mlp",
+      "target_parameter_count": 170634
+    },
+    {
+      "name": "width203",
+      "priority": 1,
+      "frontier": true,
+      "workload": [],
+      "family": "capacity",
+      "model": "flatten_mlp",
+      "width": 203,
+      "matches": "periodic_flatten_mlp",
+      "target_parameter_count": 286738
+    },
+    {
+      "name": "no_batter",
+      "priority": 1,
+      "frontier": true,
+      "workload": [],
+      "family": "information",
+      "model": "masked_flatten_mlp",
+      "width": 128,
+      "drop_context": [
+        "batter_style_contact_prior",
+        "batter_style_swing_prior",
+        "batter_style_walk_prior",
+        "batter_style_strikeout_prior",
+        "batter_style_isolated_power_prior",
+        "batter_style_groundball_prior",
+        "batter_style_contact_reliability",
+        "batter_style_swing_reliability",
+        "batter_style_walk_reliability",
+        "batter_style_strikeout_reliability",
+        "batter_style_isolated_power_reliability",
+        "batter_style_groundball_reliability",
+        "batter_archetype_membership_0",
+        "batter_archetype_membership_1",
+        "batter_archetype_membership_2",
+        "batter_archetype_membership_3",
+        "batter_archetype_membership_4"
+      ],
+      "drop_history": false
+    },
+    {
+      "name": "no_batter_cluster",
+      "priority": 1,
+      "frontier": true,
+      "workload": [],
+      "family": "information",
+      "model": "masked_flatten_mlp",
+      "width": 128,
+      "drop_context": [
+        "batter_archetype_membership_0",
+        "batter_archetype_membership_1",
+        "batter_archetype_membership_2",
+        "batter_archetype_membership_3",
+        "batter_archetype_membership_4"
+      ],
+      "drop_history": false
+    },
+    {
+      "name": "no_history",
+      "priority": 1,
+      "frontier": true,
+      "workload": [],
+      "family": "information",
+      "model": "masked_flatten_mlp",
+      "width": 128,
+      "drop_context": [],
+      "drop_history": true
+    },
+    {
+      "name": "dropout",
+      "priority": 1,
+      "frontier": true,
+      "workload": [],
+      "family": "regularization",
+      "model": "regularized_flatten_mlp",
+      "width": 128,
+      "dropout": 0.1,
+      "weight_decay": 0.01
+    },
+    {
+      "name": "weight_decay",
+      "priority": 1,
+      "frontier": true,
+      "workload": [],
+      "family": "regularization",
+      "model": "regularized_flatten_mlp",
+      "width": 128,
+      "dropout": 0.0,
+      "weight_decay": 0.0001
+    },
+    {
+      "name": "dropout_weight_decay",
+      "priority": 1,
+      "frontier": true,
+      "workload": [],
+      "family": "regularization",
+      "model": "regularized_flatten_mlp",
+      "width": 128,
+      "dropout": 0.1,
+      "weight_decay": 0.0001
+    }
+  ],
+  "control_reuse": "none: the control is refit in this family (fresh, same seeds) because MODEL_SOURCES/runner source hashes differ from the first batch",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "fits": 27,
+  "comparison": {
+    "control_arm": "control",
+    "scorer": "experiments/pitchmdp/scripts/score_cuda_direct.py (portable, numpy only; runs on newsrv)",
+    "scope": "unblended calibrated direct-head probabilities vs the same-family CUDA control on dev and mlb_dev, BEFORE June blend / G0 mix; not G15 mix, not policy; descriptive repeated-DEV only; no decision, ranking or winner",
+    "not_compared": "first-batch arms or frozen MPS numbers (different family/control)"
+  },
+  "device": {
+    "kind": "cuda",
+    "allowed_gpu_uuids": [
+      "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9",
+      "GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99"
+    ],
+    "max_parallel": 2,
+    "cpu_fallback": false
+  },
+  "queue": {
+    "timezone": "Asia/Seoul",
+    "date": "2026-10-04",
+    "batch": "NEXT batch; root sets the date and cutoffs before registration (attempts and spent seconds persist)",
+    "no_new_fit_after": "19:00",
+    "kill_own_after": "19:30",
+    "aggregate_by": "20:00",
+    "task_timeout_seconds": 3600,
+    "family_budget_seconds": 36000,
+    "max_attempts": 2,
+    "order": "priority then seed then arm (control, counts, block first)"
+  },
+  "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks manifest). DEV/mlb_dev only predicted, never used for fit, early stop, temperature or selection.",
+  "execution": {
+    "enabled": false
+  }
+}
