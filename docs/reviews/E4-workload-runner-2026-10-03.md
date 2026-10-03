@@ -51,3 +51,33 @@ cd experiments/pitchmdp && DYLD_LIBRARY_PATH=... python scripts/run_ml_direct_wo
   --output "<runs>/DRAFT-DIRECT-WORKLOAD-20261003-smoke" run --variant block --seeds 0 --mlb --smoke
 ```
 실행 시간은 미측정이다. 프로세스마다 원본 키 열 읽기와 rebuild가 추가된다.
+
+## 검토·수정 (2026-10-04, smoke 전, Opus 5.5 — 작성자와 같은 모델이라 독립 모델 검토 아님)
+
+범위: 러너·테스트·DRAFT config·이 문서만. 공유 동결 모델·헬퍼는 건드리지 않았다. 실제 데이터·GB 원본 재열람·실행·등록 없음.
+
+**주요 결함 (수정함): 원본 바이트가 동결 원본에 고정되지 않았다.**
+- 부모 경로(`run_ml_sharing.load_data` → `run_ml_benchmark.regular_frame` → `matrix_data.load_verified_processed_cache`)는 processed·cache 바이트만 매니페스트와 대조하고, 원본은 `"raw_hash_verification": "historical_only"`로 표시만 한다(원본 파일이 있는지만 본다). 그런데 이 러너는 원본 파일 자체를 다시 읽는다.
+- 수정 전에는 `raw_file_sha256`을 identity에 그때 계산해 기록만 했다. 첫 실행에서는 비교할 기준이 없어서, 같은 이름의 다른 원본(재수집본 등)이어도 통과하고 그 해시가 기준이 됐다.
+- 수정: `FROZEN_RAW_SHA256`(러너 상수)와 config `feature_rules.raw_sha256`을 두고 `config_check`가 둘이 같은지 본다. `read_raw`는 파일 바이트를 한 번 읽어 그 바이트를 해시·대조한 뒤 같은 바이트를 파싱한다(해시와 읽기 사이 교체 불가). `main`은 무거운 부모 로드 전에 identity의 원본 해시를 고정값과 대조한다.
+- 고정값 출처 대조(파일 재열람 없이 레포 메타데이터만): `configs/G0-RESEARCH-FROZEN-v1.json`, `configs/EXP-P19-001.yaml`, `results/EXP-P15-001.json` 세 곳 모두 2023 `46c354be…2984730`, 2024 `3cf05edd…a7e9a274`, 2025 `4c785756…dc0249`로 같다. 테스트가 G0 동결 파일과 P15 결과 파일의 statcast 출처 전부를 상수와 대조한다.
+
+**같은 장치 대조군 (보강함)**
+- `comparable_device_to_control`은 준비 단계에서 `resolved_device == 'mps'` 문자열 비교였다. 채점에서는 이제 대조군 EXP-P15-001 시드별 `fit.json.report.device`(그 `fit_state.json` 해시 확인 뒤)와 후보 시드별 실제 fit 장치를 짝으로 기록(`fit_device_control_vs_candidate`)하고, 하나라도 다르면 비교 불가로 표시·경고한다. 같은 장치 대조군 arm은 이 러너에 없다. 채점을 거부하지는 않는다(서술 전용, GPU 이전은 Root가 따로 조정).
+
+**확인만 하고 바꾸지 않은 것**
+- 접두 인과성: `workload_features.rebuild`는 (날짜, game_pk, 타석, 투구) 정렬 뒤 같은 경기·투수 `cumcount`(현재 제외), 타석 시작 누적 −1(현재 타석 제외), 서로 다른 날짜끼리 `diff`(같은 날 앞 경기 제외)라서 앞선 키만 쓴다. 기존 접두·추가 행 불변 테스트가 있다.
+- 현재 결과·물리 없음: 원본에서 5열만 읽고, 입력은 `direct.direct_arrays`가 현재 물리 0으로 만든다(fit 입력 테스트로 확인).
+- 부분 예측 거부: 상태 파일 없이 예측 산출물이 하나라도 있으면 덮어쓰지 않고 거부, calibration.json은 예측 성공 뒤 기록, mlb 예측은 패널 상태가 맞아야만 실행.
+- 채점은 2변형×3시드 `prediction_state.json`이 모두 있어야 시작하고 `members`가 해시를 확인한다. mlb는 6개 모두 있을 때만 서술한다(일부만 있으면 빠짐).
+
+**테스트 (맥미니 CPU, 합성 데이터)**
+```
+cd experiments/pitchmdp && DYLD_LIBRARY_PATH=.../torch/lib .../.venv/bin/python -m pytest tests/test_run_ml_direct_workload.py -q
+# 14 passed in 1.56s  (새 테스트 2개: 동결 원본 바이트 고정, 실제 fit 장치 대조)
+... tests/test_run_ml_direct_workload.py tests/test_workload_features.py tests/test_run_ml_direct_head.py \
+  tests/test_run_ml_direct_recency.py tests/test_run_ml_direct_periodic.py tests/test_run_ml_direct_residual.py \
+  tests/test_run_ml_direct_head_confirm.py -q
+# 65 passed in 3.05s
+```
+smoke에서 실제 원본 해시가 고정값과 다르면 `Raw Statcast files differ from the frozen 2023-2025 bytes`로 부모 로드 전에 멈춘다. 그 경우 원본 교체 여부를 먼저 확인해야 한다.
