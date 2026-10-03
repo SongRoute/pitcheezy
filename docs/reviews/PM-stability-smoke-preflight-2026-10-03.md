@@ -67,3 +67,7 @@ PYTHONPATH='/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:e
 1. 커밋 메시지 "18 synthetic tests"는 실제 13개. 문서 정정 대상.
 2. 출력 이름에 ID가 없으므로(UNASSIGNED) smoke 디렉터리명은 PM이 정한다. 위 제안 이름은 아직 쓰이지 않았다.
 3. 사용자 권한: PM-charter §2·§5에 따라 기존 자료·규칙 안의 실험 실행은 PM 판단이며 재승인 불필요. smoke는 저장소 결과를 쓰지 않으므로 중대사안 아님.
+
+## PM 확인 메모
+
+이전 보고의 18 passed는 새 테스트 2개 파일(13 tests)과 기존 P17/P18 회귀 2개 파일(5 tests)을 함께 실행한 값이다. 이번 사전점검의 13 passed와 검사 범위가 다르며 기존 18개 결과를 오류로 정정하지 않는다.
