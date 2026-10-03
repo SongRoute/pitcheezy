@@ -139,3 +139,14 @@ def test_period_mapping_refuses_2026_and_unknown_games(tmp_path):
     config['periods']['source_files'][0]['file'] = 'statcast_2026.parquet'
     with pytest.raises(ValueError, match='<=2025'):
         search.game_periods(local, config, np.array([1]))
+
+
+def test_archive_loader_accepts_json_string_paths_and_verifies_hash(tmp_path):
+    p = tmp_path / 'frequency.npz'
+    expected = np.arange(5)
+    np.savez(p, dev_y=expected)
+    spec = {'path': str(p), 'sha256': search.hash_file(p)}
+    assert np.array_equal(search.load_npz(spec, ['dev_y'])['dev_y'], expected)
+    spec['sha256'] = '0' * 64
+    with pytest.raises(ValueError, match='archive changed'):
+        search.load_npz(spec, ['dev_y'])

@@ -291,7 +291,7 @@ def load_member(spec):
 
 
 def load_npz(spec, keys):
-    if hash_file(spec['path']) != spec['sha256']:
+    if hash_file(Path(spec['path'])) != spec['sha256']:
         raise ValueError('Pinned frequency archive changed: ' + spec['path'])
     with np.load(spec['path'], allow_pickle=False) as data:
         return {k: data[k].copy() for k in keys}
