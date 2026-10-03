@@ -97,3 +97,5 @@ e2e OPE 칸이 비면 "완료"가 아니다. 숫자는 results/에서 옮겨 적
 |---|---|---|---|
 | EXP-P19-001 | 기존직접head/G0 혼합비11 × 온도7, 5seed | 완료·노출DEV 탐색, 두범위NLL 개선6/77조합, 채택없음 | [결과](reviews/PM-P19-search-result-2026-10-03.md), code a4ae817/result4c7b805 |
 | EXP-P20-001 | TRAIN 최근성가중 반감기180/365/730일 × 3seed | 등록·실행큐 진행, 공식판정없음 | `codex/research-roadmap-1006` f19c69e, 결과 전 고정 |
+| EXP-P21-001 | 직접 head ResNet형 구조 × 3 seed | smoke 성공·등록·P20 이후 실행 대기 | `codex/direct-residual-1006` 2c6d9e7, [smoke](reviews/PM-new-head-smoke-2026-10-03.md) |
+| EXP-P22-001 | 연속값 주기 임베딩 + MLP × 3 seed | smoke 성공·등록·P21 이후 실행 대기 | `codex/direct-embeddings-1006` 69d3a37, [smoke](reviews/PM-new-head-smoke-2026-10-03.md) |
