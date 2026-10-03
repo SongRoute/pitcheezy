@@ -80,7 +80,8 @@ def identity(config, local_path, device='auto'):
     if device not in DEVICES:
         raise ValueError('Unknown device option')
     return {**direct.identity(config, local_path), 'residual_source_hashes': own_hashes(),
-            'architecture': dict(ARCHITECTURE), 'device_option': device}
+            'architecture': dict(ARCHITECTURE), 'device_option': device,
+            'resolved_device': DirectResidualModel(device=None if device == 'auto' else device).device}
 
 
 def sources_unchanged(prep):
@@ -116,7 +117,7 @@ def prepare(config, data, output, expected):
     prep = {'identity': expected, 'parent_preparation_sha256': config['parent_preparation_sha256'],
             'control_preparation_sha256': config['control']['preparation_sha256'],
             'physical_channels_zeroed': int(store.physical.shape[1]),
-            'comparable_device_to_control': expected['device_option'] in ('auto', 'mps'),
+            'comparable_device_to_control': expected['resolved_device'] == 'mps',
             'samples': dict(pprep['samples']), 'artifact_hashes': artifact_hashes(output, files),
             'seconds': time.perf_counter() - started, 'peak_rss_bytes': peak(), 'git_commit': git_commit(),
             'prepared_utc': datetime.now(timezone.utc).isoformat(), 'dev_scores_read': False}

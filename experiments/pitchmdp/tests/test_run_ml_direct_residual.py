@@ -247,3 +247,15 @@ def test_descriptive_comparison_against_fixed_controls():
     same = runner.recency.describe(uniform, uniform, g0, baseline, CONFIG['mix']['direct_weight'])
     assert all(same[a]['after_june_blend']['paired']['nll']['delta'] == 0 for a in ('direct', 'mix'))
     assert 'N' not in same['direct']['after_june_blend']
+
+
+def test_auto_cpu_preparation_is_not_comparable_to_mps_control(tmp_path, monkeypatch):
+    monkeypatch.setattr(torch.backends.mps, 'is_available', lambda: False)
+    config, data, prep = synthetic(tmp_path, device='auto')
+    assert prep['identity']['resolved_device'] == 'cpu'
+    made = runner.prepare(config, data, tmp_path / 'auto_cpu', prep['identity'])
+    assert made['comparable_device_to_control'] is False
+    explicit = runner.identity(config, local_file(tmp_path), 'mps')
+    assert explicit['resolved_device'] == 'mps'
+    made_mps = runner.prepare(config, data, tmp_path / 'explicit_mps', explicit)
+    assert made_mps['comparable_device_to_control'] is True
