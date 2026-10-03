@@ -317,7 +317,10 @@ export default function Game() {
   } else {
     const computing = rec?.status === 'computing';
     stage = <><div className="gm-toprow"><span className="gm-chip plain">{stale ? '마지막 상황' : '다음 공'}</span></div><h1 className="gm-hero mid">{computing ? '추천 계산 중' : '추천 없음'}</h1>
-      <p className="gm-sub">{computing ? rec?.reason : rec?.status === 'unsupported' ? '기록이 부족한 투수' : rec?.reason ?? '이 상황은 추천하지 않아요'}</p>
+      <p className="gm-sub">{computing ? rec?.reason : rec?.status === 'unsupported' ? rec.reason ?? '기록이 부족한 투수' : rec?.reason ?? '이 상황은 추천하지 않아요'}</p>
+      {/* no recommendation is about this pitcher, not the feed: keep the last received pitch on stage so the game stays followable */}
+      {rec?.status === 'unsupported' && rec.previous && <div className="gm-last"><span>{stale ? '마지막으로 받은 공' : '방금 던진 공 · 경기 기록은 계속 받는 중'}</span>
+        <b>{rec.previous.actual.pitch_label} {speedButton(rec.previous.actual.speed_mph)}</b><em>{rec.previous.actual.event_label ?? rec.previous.actual.result_label}</em></div>}
       <Zone side={side} target={null} dots={currentPa ? dotsOf(currentPa) : []} empty /></>;
   }
 

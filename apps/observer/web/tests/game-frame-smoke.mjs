@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dist = path.join(here, '..', 'dist');
+const dist = process.env.PZ_WEB_DIST ?? path.join(here, '..', 'dist');  // a scratch build keeps a running preview's dist/ untouched
 const { states } = JSON.parse(readFileSync(path.join(here, 'fixtures', 'game-frame-states.json'), 'utf8'));
 const shots = process.argv[2];
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
@@ -110,6 +110,8 @@ for (const [device, width, height] of SIZES) {
 
   current = 'unsupported_pitcher';
   await page.locator('.gm-hero', { hasText: '추천 없음' }).waitFor({ timeout: 15000 });
+  if (!(await page.getByText(states.unsupported_pitcher.recommendation.reason).count())) fail(`${device}: unsupported pitcher reason not shown in full`);
+  if (!/경기 기록은 계속 받는 중/.test(await page.locator('.gm-last').innerText())) fail(`${device}: last received pitch not kept on the no-recommendation stage`);
   await check('10-abstain');
 
   if (errors.length) fail(`${device}: page errors: ${errors.join(' | ')}`);
