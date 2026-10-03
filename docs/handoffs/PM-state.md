@@ -2,6 +2,14 @@
 
 갱신: **2026-10-03 11:51 KST**. 목표: **10/6 16:00**, 교수님 연구실에서 맥북·아이폰으로 약 5분 시연.
 
+## 자율 연구 확장 — D165 진행 중 (12:00 KST)
+
+- Claude는 앞으로 **Opus 5.5만** 호출한다. Codex PM이 후속 단계/실험 큐/검토를 맡는다.
+- Opus A: `codex/predictor-search-1006`에서 기존 봉인 예측 재사용으로 혼합비11 × 온도7 = **77조합**의 개발용 탐색 실행기·고정 설정·합성 테스트 구현. 2026 사용/새 모델 배포 없음. 실제 점수 실행은 PM 검토 뒤 단일 큐에서.
+- Opus B: `codex/research-roadmap-1006`에서 미열람 자료 여부·기존 실패 실험 중복·다음 학습 축·newsrv 읽기 사전점검. 실행·설치·전송 없음.
+- 문헌: temperature scaling(Guo2017), deep ensembles(Lakshminarayanan2017), tabular ResNet/Transformer(Gorishniy2021) 원 논문 확인. 적용 효과는 가설이며 우리 데이터에서 별도 검증한다.
+- 증거: `/Users/song/Projects/pitcheezy-pm-jobs/20261003-search/`. 17시 전 GPU 사용 시작하지 않음. 이후에도 실제 가용성을 확인한다.
+
 ## 이번 후속 작업 — 검증 완료 (11:51 KST)
 
 - **연구 실제 smoke 성공:** 3경기·888개 결정·5개 설정, 178.14초·최대 RSS 약 5.18GB. 봉인 재현 20결정 최대 Q 차이 0.0. PM이 출력 배열·키 정렬·확률·수치를 검사했다. [상세 결과](../reviews/PM-stability-smoke-result-2026-10-03.md). 성능 우위·정식 실험 완료가 아니다.
@@ -65,7 +73,7 @@ Current plan updated: 2026-10-03 07:45 KST (D163). Earlier observations retain t
 규칙은 [PM 운영규칙](../PM-charter.md), 결정의 출처는 [decisions.md](../decisions.md). 10/2 저녁 브리핑: https://claude.ai/artifact/KKpWE5TwMTKWLMPK9Y1jRt (18:27 기준이라 Q1·Q2·Q5는 낡았다)
 
 ## 번호
-- 마지막 결정: **D164**(10/3, Claude 병렬 개발 착수). 다음은 D165. D156은 모델 세션 마무리(재개 문서 갱신), D157은 P17·P18이 동결과 겹쳤다는 공개다. 쓰기 직전 꼬리를 다시 본다. D134는 두 번 쓰였다.
+- 마지막 결정: **D165**(10/3, Opus만으로 자율 연구 확장). 다음은 D166. D156은 모델 세션 마무리(재개 문서 갱신), D157은 P17·P18이 동결과 겹쳤다는 공개다. 쓰기 직전 꼬리를 다시 본다. D134는 두 번 쓰였다.
 - 검토·작업 ID: `docs/reviews/`에서 가장 큰 번호가 COOP-025다. 다음은 COOP-026(다른 브랜치에 더 큰 번호가 있는지는 확인 못함).
 
 ## 동결 — 10/4 디비전시리즈
