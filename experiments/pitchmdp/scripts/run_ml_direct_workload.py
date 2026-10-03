@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import io
 from pathlib import Path
 import shutil
 import sys
@@ -62,6 +63,13 @@ VARIANTS = {'counts': COLUMNS[:1], 'block': COLUMNS}
 RAW_COLUMNS = ['game_date', *KEY, 'pitcher']
 YEARS = (2023, 2024, 2025)
 ALLOWLIST = [f'statcast_{y}.parquet' for y in YEARS]
+# Frozen raw bytes behind the parent's processed cache (configs/G0-RESEARCH-FROZEN-v1.json, EXP-P19-001,
+# results/EXP-P15-001.json).  The parent verifies only the processed cache ("raw_hash_verification":
+# "historical_only"), so the raw files this runner opens are pinned here.
+FROZEN_RAW_SHA256 = {
+    'statcast_2023.parquet': '46c354beae196ce2d501fe989c491725f2ecc47601f58d4b8b0234b982984730',
+    'statcast_2024.parquet': '3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274',
+    'statcast_2025.parquet': '4c785756d8901f8c46c70891954a4c54b8ad1c6909db67f4a000221691dc0249'}
 REST_CAP = 180
 SHARING_TAIL = 7  # 5 cluster flags, cluster id, routing id (stripped by training_arrays)
 TRAINING = {'kind': 'flatten_mlp', 'width': 128, 'epochs': 30, 'patience': 5, 'batch_size': 1024, 'learning_rate': 0.0005}
@@ -70,13 +78,24 @@ DEVICES = ('auto', 'mps', 'cpu', 'cuda')
 
 # ------------------------------------------------------------------ features
 
-def read_raw(local):
-    """Keys/date/pitcher of every allowlisted 2023-2025 raw record; nothing else is opened."""
-    if list(local['raw_allowlist']) != ALLOWLIST:
+def check_raw_pins(hashes, pins=FROZEN_RAW_SHA256):
+    if hashes != pins:
+        raise ValueError('Raw Statcast files differ from the frozen 2023-2025 bytes')
+    return hashes
+
+
+def read_raw(local, pins=FROZEN_RAW_SHA256):
+    """Keys/date/pitcher of every allowlisted 2023-2025 raw record; nothing else is opened.
+
+    The bytes that are parsed are the bytes that are hashed against the frozen pins.
+    """
+    if list(local['raw_allowlist']) != ALLOWLIST or list(pins) != ALLOWLIST:
         raise ValueError('Raw allowlist must be exactly the 2023-2025 Statcast files')
     root, frames = Path(local['raw_root']), []
     for name, year in zip(ALLOWLIST, YEARS):
-        part = pd.read_parquet(root / name, columns=RAW_COLUMNS)
+        payload = (root / name).read_bytes()
+        check_raw_pins({name: hashlib.sha256(payload).hexdigest()}, {name: pins[name]})
+        part = pd.read_parquet(io.BytesIO(payload), columns=RAW_COLUMNS)
         if not pd.to_datetime(part.game_date).dt.year.eq(year).all():
             raise ValueError(f'{name}: rows outside season {year}')
         frames.append(part)
@@ -166,7 +185,8 @@ def config_check(config, smoke=False):
     if any(v['added_parameters'] != added_parameters(len(v['columns'])) for v in config['variants']):
         raise ValueError('Registered added parameter counts differ from the network')
     if config['feature_rules']['raw_columns'] != RAW_COLUMNS or config['feature_rules']['rest_cap_days'] != REST_CAP \
-            or config['feature_rules']['raw_allowlist'] != ALLOWLIST or config['feature_rules']['hpo_trials'] != 0:
+            or config['feature_rules']['raw_allowlist'] != ALLOWLIST or config['feature_rules']['hpo_trials'] != 0 \
+            or config['feature_rules'].get('raw_sha256') != FROZEN_RAW_SHA256:
         raise ValueError('Feature source or definitions differ from the runner')
     if config['control']['experiment_id'] != 'EXP-P15-001' or config['mix']['direct_weight'] != .5:
         raise ValueError('Controls are the frozen EXP-P15-001 direct head and its fixed 1/2 G0 mix')
@@ -201,13 +221,13 @@ def model_device(prep):
     return None if option == 'auto' else option
 
 
-def workload_data(local, data, variant):
+def workload_data(local, data, variant, pins=FROZEN_RAW_SHA256):
     """Swap the sharing context for the workload wrapper; also return all four values for reports."""
     parent, pprep, store, context, parts, aux = data
     years = pd.to_datetime(store.frame.game_date).dt.year
     if years.isna().any() or not years.isin(YEARS).all():
         raise ValueError('Frozen rows outside 2023-2025')
-    values = workload_columns(read_raw(local), store.frame)
+    values = workload_columns(read_raw(local, pins), store.frame)
     keep = [COLUMNS.index(c) for c in VARIANTS[variant]]
     return (parent, pprep, store, WorkloadContext(context, store.frame, values[:, keep]), parts, aux), values
 
@@ -349,6 +369,16 @@ def run(config, local, output, expected, smoke, mlb, seeds):
 
 # ------------------------------------------------------------------ descriptive scoring
 
+def device_pairs(control, fits):
+    """Per seed (frozen control fit device, candidate fit device); control fit.json verified by its state."""
+    pairs = {}
+    for seed, fitted in fits.items():
+        dest = control / seed
+        assert_hashes(dest, read_json(dest / 'fit_state.json')['artifact_hashes'])
+        pairs[seed] = (read_json(dest / 'fit.json')['report']['device'], fitted['device'])
+    return pairs
+
+
 def score(config, local_path, output, device='auto'):
     check_location(read_json(local_path), output)
     validate_native_runtime()
@@ -378,23 +408,30 @@ def score(config, local_path, output, device='auto'):
         candidate = members(output / variant, '{seed}', 'prediction_state.json')
         prep = read_json(output / variant / 'preparation.json')
         fits = {str(s): read_json(output / variant / str(s) / 'fit.json') for s in SEEDS}
+        devices = device_pairs(control, fits)
         variants[variant] = {'cpanel_dev': recency.describe(candidate, uniform, g0, baseline, weight),
                              'added_context_width': prep['added_context_width'], 'added_parameters': prep['added_parameters'],
                              'parameter_count': {s: f['parameter_count'] for s, f in fits.items()},
                              'train_feature_report': prep['train_feature_report'],
-                             'comparable_device_to_control': prep['comparable_device_to_control'],
+                             'comparable_device_to_control': all(c == d for c, d in devices.values()),
+                             'fit_device_control_vs_candidate': devices,
                              'costs_seconds': {s: {'fit': f['seconds_total'], 'best_epoch': f['report']['best_epoch'],
                                                    'device': f['device']} for s, f in fits.items()}}
         if have_mlb:
             variants[variant]['mlb_dev'] = recency.describe_mlb(members(output / variant, '{seed}', 'mlb_prediction_state.json'),
                                                                 uniform_mlb, g0_mlb, weight)
+    if not all(r['comparable_device_to_control'] for r in variants.values()):
+        print('WORKLOAD_DEVICE_DIFFERS_FROM_CONTROL', {v: r['fit_device_control_vs_candidate'] for v, r in variants.items()},
+              flush=True)
     result = {'family': config['experiment_id'], 'status': config['status'], 'variants': variants,
               'controls': {'direct': 'frozen EXP-P15-001 (no workload inputs)', 'mix': 'frozen EXP-P15-001 + G0-global, fixed 1/2'},
               'decision': None, 'git_commit': git_commit(), 'seconds': time.perf_counter() - started,
               'limits': ['Descriptive repeated-DEV comparison; Cpanel and whole-MLB DEV already exposed',
                          'Observed Statcast record counts and rest, not physiological fatigue',
                          'No N/G decision and no winner selection until the root registers rules',
-                         'Prediction only; no policy claim; no 2026 rows'],
+                         'Prediction only; no policy claim; no 2026 rows',
+                         'Seeds whose fit device differs from the control fit device are not comparable '
+                         '(fit_device_control_vs_candidate); no same-device control arm here'],
               'scored_utc': datetime.now(timezone.utc).isoformat()}
     destination.mkdir()
     dump(destination / 'descriptive.json', result)
@@ -428,8 +465,9 @@ def main():
     with heavy_lock(root):
         if args.command == 'run':
             recency.verify_control(config)
-            run(config, local, output / args.variant, identity(config, args.local_config, args.variant, args.device),
-                smoke, args.mlb, args.seeds)
+            expected = identity(config, args.local_config, args.variant, args.device)
+            check_raw_pins(expected['raw_file_sha256'])  # fail before the heavy parent load
+            run(config, local, output / args.variant, expected, smoke, args.mlb, args.seeds)
         else:
             score(config, args.local_config, output, args.device)
 

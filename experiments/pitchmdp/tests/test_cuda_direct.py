@@ -150,7 +150,7 @@ def test_task_train_predict_save_load_cpu(export, tmp_path, arm):
     path, digest, splits = export
     cfg = config()
     dest = rc.run_task(cfg, path, digest, tmp_path / 'out-smoke', arm, 0, 'cpu', {'test': True}, smoke=True)
-    state = rc.verify_task(dest)
+    state = rc.verify_task(dest, rc.expected_identity(cfg, digest, arm, 0, True, 'cpu', rc.own_hashes()))
     assert state['identity']['arm']['name'] == arm and state['identity']['export_manifest_sha256'] == digest
     fit = json.loads((dest / 'fit.json').read_text())
     assert fit['context_width'] == 52 + len(rc.arm_spec(cfg, arm)['workload'])
@@ -275,19 +275,19 @@ def test_success_marks_done_and_allows_comparison(tmp_path):
     assert len(list((tmp_path / 'q' / 'logs').iterdir())) == 9
 
 
-def test_no_new_fit_after_1500(tmp_path):
+def test_no_new_fit_after_1900(tmp_path):
     calls = []
     queue = make_queue(tmp_path, lambda t, g: calls.append(t) or [sys.executable, '-c', 'pass'],
-                       lambda t: False, Clock((15, 0, 0), 1))
+                       lambda t: False, Clock((19, 0, 0), 1))
     summary = queue.run()
     assert calls == [] and summary['counts'] == {'not_run': 9}
     assert queue.status(queue.tasks[0])['stages'][-1]['stage'] == 'deadline_no_new_fit'
 
 
-def test_kill_own_group_at_1530(tmp_path):
+def test_kill_own_group_at_1930(tmp_path):
     marker = tmp_path / 'child.pid'
     code = f'import os, time; open({str(marker)!r}, "w").write(str(os.getpid())); time.sleep(60)'
-    queue = make_queue(tmp_path, lambda t, g: [sys.executable, '-c', code], lambda t: False, Clock((14, 59, 50), 60))
+    queue = make_queue(tmp_path, lambda t, g: [sys.executable, '-c', code], lambda t: False, Clock((18, 59, 50), 60))
     queue.tasks = queue.tasks[:1]
     summary = queue.run()
     assert queue.status(queue.tasks[0])['state'] == 'killed_deadline'
@@ -321,3 +321,242 @@ def test_gpu_lock_is_exclusive(tmp_path):
 def test_deadlines_must_be_ordered():
     with pytest.raises(ValueError):
         cq.Deadlines({'date': '2026-10-04', 'no_new_fit_after': '15:30', 'kill_own_after': '15:00', 'aggregate_by': '16:00'})
+
+
+# ------------------------------------------------------------------ hardening (registration, identity, cleanup, restart)
+
+def registered():
+    cfg = json.loads(CONFIG.read_text())
+    cfg['status'], cfg['execution'] = 'REGISTERED', {'enabled': True}
+    return rc.config_check(cfg)
+
+
+def test_config_is_draft_first_batch_and_pins_current_workload():
+    cfg = config()
+    assert cfg['status'] == 'DRAFT' and cfg['execution']['enabled'] is False
+    q = cfg['queue']
+    assert (q['no_new_fit_after'], q['kill_own_after'], q['aggregate_by']) == ('19:00', '19:30', '20:00')
+    assert q['family_budget_seconds'] == 36000 and q['max_attempts'] == 2
+    for source in cfg['source_configs'].values():
+        assert rc.sha256_file(REPO / source['path']) == source['sha256']
+
+
+def test_real_task_refused_unless_registered_and_enabled(export, tmp_path):
+    path, digest, _ = export
+    with pytest.raises(ValueError, match='REGISTERED'):
+        rc.run_task(config(), path, digest, tmp_path / 'real', 'control', 0, 'cpu', {}, smoke=False)
+    half = registered()
+    half['execution']['enabled'] = False
+    with pytest.raises(ValueError, match='REGISTERED'):
+        rc.run_task(half, path, digest, tmp_path / 'real', 'control', 0, 'cpu', {}, smoke=False)
+    assert not (tmp_path / 'real').exists()
+    rc.require_executable(config(), smoke=True)  # DRAFT smoke stays allowed
+    rc.require_executable(registered(), smoke=False)
+    with pytest.raises(ValueError, match='REGISTERED'):
+        rc.main(['--config', str(CONFIG), '--export', str(path), '--export-manifest-sha256', digest, '--output',
+                 str(tmp_path / 'real'), '--gpu-uuid', GPU3, 'task', '--arm', 'control', '--seed', '0'])
+
+
+def test_queue_preflight_refuses_draft_real_run(export, tmp_path):
+    path, digest, _ = export
+
+    class Args:
+        pass
+    args = Args()
+    args.config, args.config_sha256, args.export, args.export_manifest_sha256 = CONFIG, rc.sha256_file(CONFIG), path, digest
+    args.output, args.smoke = tmp_path / 'family', False
+    with pytest.raises(ValueError, match='REGISTERED'):
+        cq.preflight(args, config())
+    args.output, args.smoke = tmp_path / 'family-smoke', True
+    assert cq.preflight(args, config())['source_sha256'] == cq.pinned_sources(rc)
+
+
+def test_outcome_leak_refused(tmp_path):
+    leak = {'train': split_arrays(10, 0, 1)}
+    leak['train']['tokens'][:, -1, -1] = 1.
+    with pytest.raises(ValueError, match='outcome'):
+        ex.write_export(tmp_path / 'o', leak, {}, SHAPES, COLUMNS)
+    with pytest.raises(ValueError, match='outcome'):
+        rc.arm_inputs(leak['train'], rc.arm_spec(config(), 'control'), COLUMNS)
+
+
+def test_verify_task_checks_expected_identity(export, tmp_path):
+    path, digest, _ = export
+    cfg = config()
+    dest = rc.run_task(cfg, path, digest, tmp_path / 'id-smoke', 'counts', 1, 'cpu', {}, smoke=True)
+    good = rc.expected_identity(cfg, digest, 'counts', 1, True, 'cpu', rc.own_hashes())
+    rc.verify_task(dest, good)
+    for change in ({'seed': 2}, {'smoke': False}, {'device': 'cuda'}, {'export_manifest_sha256': '0' * 64},
+                   {'config_sha256': rc.config_digest(registered())}, {'arm': rc.arm_spec(cfg, 'block')},
+                   {'source_sha256': {**rc.own_hashes(), rc.SELF: '0' * 64}}):
+        with pytest.raises(ValueError, match='identity'):
+            rc.verify_task(dest, {**good, **change})
+    # self-consistent but swapped identity: rewrite identity.json and its state hash
+    state = json.loads((dest / 'state.json').read_text())
+    state['identity']['seed'] = 2
+    (dest / 'identity.json').write_text(json.dumps(state['identity']))
+    state['artifact_hashes']['identity.json'] = rc.sha256_file(dest / 'identity.json')
+    (dest / 'state.json').write_text(json.dumps(state))
+    with pytest.raises(ValueError, match='identity seed'):
+        rc.verify_task(dest, good)
+
+
+def test_scorer_members_require_expected_identity(export, tmp_path):
+    path, digest, _ = export
+    cfg = config()
+    rc.run_task(cfg, path, digest, tmp_path / 'p-smoke', 'control', 0, 'cpu', {}, smoke=True)
+    (tmp_path / 'pulled' / 'control').mkdir(parents=True)
+    os.rename(tmp_path / 'p-smoke' / 'control-smoke' / '0', tmp_path / 'pulled' / 'control' / '0')
+    with pytest.raises(ValueError, match='identity'):  # smoke/cpu artifact is never a scored member
+        ex.load_members(tmp_path / 'pulled', 'control', [0], cfg, digest)
+
+
+def test_signal_stops_own_group_before_locks_release(tmp_path):
+    import signal as sg
+    marker = tmp_path / 'child.pid'
+    code = f'import os, time; open({str(marker)!r}, "w").write(str(os.getpid())); time.sleep(60)'
+
+    class Interrupting(Clock):
+        n = 0
+
+        def __call__(self):
+            Interrupting.n += 1
+            if Interrupting.n == 4:
+                os.kill(os.getpid(), sg.SIGTERM)
+            return self.now
+    clock = Interrupting((10, 0, 0), 1)
+    queue = make_queue(tmp_path, lambda t, g: [sys.executable, '-c', code], lambda t: False, clock)
+    queue.tasks = queue.tasks[:1]
+    with pytest.raises(cq.QueueInterrupted):
+        queue.run()
+    pid = int(marker.read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+    record = queue.status(queue.tasks[0])
+    assert record['state'] == 'pending' and record['stages'][-1]['stage'] == 'queue_interrupted'
+    assert record['attempts'] == 1 and queue.spent() > 0
+    assert cq.GpuLock(tmp_path / 'q' / 'locks', GPU3).acquire() and cq.GpuLock(tmp_path / 'q', 'queue').acquire()
+    assert sg.getsignal(sg.SIGTERM) is sg.SIG_DFL or callable(sg.getsignal(sg.SIGTERM))
+
+
+def test_exception_stops_own_group(tmp_path):
+    marker = tmp_path / 'child.pid'
+    code = f'import os, time; open({str(marker)!r}, "w").write(str(os.getpid())); time.sleep(60)'
+
+    class Failing(Clock):
+        n = 0
+
+        def __call__(self):
+            Failing.n += 1
+            if Failing.n == 4:
+                raise OSError('disk')
+            return self.now
+    queue = make_queue(tmp_path, lambda t, g: [sys.executable, '-c', code], lambda t: False, Failing((10, 0, 0), 1))
+    queue.tasks = queue.tasks[:1]
+    with pytest.raises(OSError):
+        queue.run()
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(marker.read_text()), 0)
+    assert queue.status(queue.tasks[0])['state'] == 'pending'
+
+
+def test_restart_refuses_live_recorded_pid_then_recovers_dead(tmp_path):
+    import subprocess
+    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)
+    calls = []
+    try:
+        queue = make_queue(tmp_path, lambda t, g: calls.append(t['id']) or [sys.executable, '-c', 'pass'],
+                           lambda t: False, Clock((10, 0, 0), 1))
+        queue.tasks = queue.tasks[:1]
+        queue.update(queue.tasks[0], 'running', stage='launched', attempts=1, gpu=GPU3, pid=child.pid, pgid=child.pid)
+        with pytest.raises(RuntimeError, match='manual review'):
+            queue.run()
+        assert calls == [] and child.poll() is None  # nothing launched, foreign-looking process untouched
+    finally:
+        child.kill()
+        child.wait()
+    queue.run()
+    record = queue.status(queue.tasks[0])
+    stages = [s['stage'] for s in record['stages']]
+    assert 'orphan_dead_on_restart' in stages and calls == ['control-0'] and record['attempts'] == 2
+    assert record['state'] == 'failed_final'
+
+
+def test_family_seconds_persist_across_restart(tmp_path):
+    command = lambda t, g: [sys.executable, '-c', 'import time; time.sleep(.2)']  # noqa: E731
+    queue = make_queue(tmp_path, command, lambda t: False, Clock((10, 0, 0), 1))
+    queue.tasks = queue.tasks[:1]
+    queue.run()
+    spent = queue.spent()
+    assert spent >= .4
+    again = make_queue(tmp_path, command, lambda t: False, Clock((10, 0, 0), 1))
+    again.tasks = again.tasks[:1]  # failed_final already: no launch, cost read back from status
+    assert again.spent() == spent and again.run()['family_seconds'] == spent
+    fresh = make_queue(tmp_path, command, lambda t: False, Clock((10, 0, 0), 1))
+    fresh.budget, fresh.tasks = spent, fresh.tasks[1:2]
+    fresh.run()
+    assert fresh.status(fresh.tasks[0])['stages'][-1]['stage'] == 'family_budget'
+
+
+def test_source_change_before_launch_fails_closed(tmp_path):
+    calls = []
+
+    def changed(task):
+        raise RuntimeError('sources changed since queue start')
+    queue = make_queue(tmp_path, lambda t, g: calls.append(t) or [sys.executable, '-c', 'pass'], lambda t: False,
+                       Clock((10, 0, 0), 1), before_launch=changed)
+    with pytest.raises(RuntimeError, match='sources changed'):
+        queue.run()
+    assert calls == [] and queue.status(queue.tasks[0])['attempts'] == 0
+    assert cq.GpuLock(tmp_path / 'q' / 'locks', GPU3).acquire()
+
+
+# ------------------------------------------------------------------ real Mac export interface contracts (source only)
+
+def test_collect_interfaces_exist_by_source():
+    import inspect
+    import run_ml_delivery_pool as pool
+    import run_ml_direct_head as direct
+    import run_ml_direct_workload as workload
+    import run_ml_sharing as sharing
+    src = inspect.getsource(ex.collect)
+    # parts come from every frozen preparation sample, so mlb_dev is available exactly as P15 predicts it
+    assert "for name, record in prep['samples'].items()" in inspect.getsource(sharing.load_data)
+    assert "parts[split]" in inspect.getsource(direct) and "'mlb_dev'" in inspect.getsource(direct)
+    assert len(inspect.getsource(pool.load).split('return')[-1].split(',')) == 6
+    p15 = json.loads((REPO / 'results' / 'EXP-P15-001.json').read_text())
+    assert 'mlb_dev' in json.dumps(p15) and '311721' in json.dumps(p15)
+    # verified raw read + frozen pins, no rehash path
+    assert 'workload.read_raw(local, workload.FROZEN_RAW_SHA256)' in src and 'raw_hashes' not in src
+    assert 'pins' in inspect.signature(workload.read_raw).parameters
+    for name in ('workload_columns', 'feature_report', 'config_check', 'COLUMNS'):
+        assert hasattr(workload, name)
+    assert list(workload.COLUMNS) == config()['export']['workload_columns']
+    assert hasattr(direct, 'source_hashes') and hasattr(direct, 'direct_arrays')
+
+
+def test_context_is_52_and_current_outcome_zero_by_contract():
+    import inspect
+    from pitchmdp import matrix_features
+    from pitchmdp.matrix_sharing import SharingContext, training_arrays
+    gather = inspect.getsource(matrix_features)
+    assert 'outcomes[:, :-1] = self.outcome_channels' in gather and "'outcome_channels': 11" in gather
+    assert rc.N_OUTCOME == 11 and rc.N_PHYSICAL == 8
+
+    class Base:  # synthetic boundary: SharingContext appends profile | support | 7 stripped columns
+        def transform(self, frame):
+            return np.zeros((len(frame), 28), np.float32)
+
+        def report(self):
+            return {'features': ['g'] * 3}
+    clusters = {'columns': [f'p{i}' for i in range(23)], 'pitcher_profiles': {}, 'pitcher_counts': {},
+                'pitcher_cluster': {}}
+    context = SharingContext(Base(), clusters)
+    frame = pd.DataFrame({'pitcher': [1, 2, 3]})
+    full = context.transform(frame)
+    assert full.shape[1] == 52 + 7 and training_arrays((None, None, full))[2].shape[1] == 52
+    layout = ex.context_layout(context, frame, 52)
+    assert layout['groups'] == {'base': [0, 28], 'pitcher_profile': [28, 51], 'pitcher_support': [51, 52]}
+    assert layout['base_column_names'] == 'unknown' and layout['pitcher_profile_columns'][0] == 'p0'
+    with pytest.raises(ValueError, match='52'):
+        ex.context_layout(context, frame, 53)

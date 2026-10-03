@@ -2,10 +2,10 @@
   "protocol": "cuda_direct_v1",
   "experiment_id": "DRAFT-CUDA-DIRECT-20261004",
   "status": "DRAFT",
-  "decision": "Not registered. Root reviews code, export manifest and GPU smoke before any real fit; no N/G decision from this family.",
+  "decision": "Not registered (DRAFT: smoke only; real task/queue refuse until status REGISTERED and execution.enabled true). Root reviews code, export manifest and GPU smoke before any real fit; no N/G decision from this family.",
   "purpose": "Run the E4 workload direct-head comparison (and two already implemented frozen architecture arms) on newsrv CUDA with a same-device uniform control, from an immutable Mac export.",
   "source_configs": {
-    "workload": {"path": "configs/DRAFT-DIRECT-WORKLOAD-20261003.json", "sha256": "2517915289c1aba9e59a9a1551ccd4e42bbae801750d5747b0d1fcc3c28bac2a"},
+    "workload": {"path": "configs/DRAFT-DIRECT-WORKLOAD-20261003.json", "sha256": "2a53825330210fa230b9528beca93a3320055e397505f7e50ddc682bf0e1aea4"},
     "residual": {"path": "configs/DRAFT-DIRECT-RESIDUAL-20261003.json", "sha256": "0a9ddc4fe081d13fdd0ba0b65a77d9cfd77165de8860cfab099b41cd4d159c3c"},
     "periodic": {"path": "configs/DRAFT-DIRECT-PERIODIC-20261003.json", "sha256": "ee528b4457de4f96f9dfa1a1b7678378a233c77c6413a316f6ff1e251a13b943"}
   },
@@ -48,9 +48,10 @@
   "queue": {
     "timezone": "Asia/Seoul",
     "date": "2026-10-04",
-    "no_new_fit_after": "15:00",
-    "kill_own_after": "15:30",
-    "aggregate_by": "16:00",
+    "batch": "first bounded batch only, not the project end; later batches get new cutoffs (attempts and spent seconds persist)",
+    "no_new_fit_after": "19:00",
+    "kill_own_after": "19:30",
+    "aggregate_by": "20:00",
     "task_timeout_seconds": 3600,
     "family_budget_seconds": 36000,
     "max_attempts": 2,

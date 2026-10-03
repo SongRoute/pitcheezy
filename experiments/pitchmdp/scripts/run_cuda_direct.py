@@ -52,6 +52,7 @@ TRAINING = {'epochs': 30, 'patience': 5, 'batch_size': 1024, 'learning_rate': 0.
 BOUNDS = (.5, 2.5)
 NO_PHYSICS_LEVEL = -2
 N_PHYSICAL = 8
+N_OUTCOME = 11  # current-token outcome channels (last 11; MatrixHistoryStore.gather keeps them zero)
 SMOKE = {'train': 8192, 'earlystop': 2048, 'temperature': 256, 'predict': 256, 'epochs': 2}
 MODELS = ('flatten_mlp', 'residual_mlp', 'periodic_flatten_mlp')
 
@@ -81,6 +82,28 @@ def write_json_atomic(path, value):
 
 def own_hashes():
     return {rel: sha256_file(PROJECT / rel) for rel in (SELF, *MODEL_SOURCES)}
+
+
+def config_digest(config):
+    return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+
+
+def require_executable(config, smoke):
+    """Real (non-smoke) fits need a registered, enabled config; DRAFT allows smoke only."""
+    if smoke:
+        return
+    if config.get('status') != 'REGISTERED' or config.get('execution', {}).get('enabled') is not True:
+        raise ValueError('Real CUDA fits require status REGISTERED and execution.enabled true; DRAFT allows smoke only')
+
+
+def expected_identity(config, manifest_sha256, arm_name, seed, smoke, device, sources=None):
+    """What a finished task's identity must equal (sources optional only for callers that pin them separately)."""
+    expected = {'protocol': PROTOCOL, 'experiment_id': config['experiment_id'], 'arm': arm_spec(config, arm_name),
+                'seed': seed, 'smoke': smoke, 'config_sha256': config_digest(config),
+                'export_manifest_sha256': manifest_sha256, 'device': device}
+    if sources is not None:
+        expected['source_sha256'] = sources
+    return expected
 
 
 # ------------------------------------------------------------------ config / export
@@ -167,6 +190,8 @@ def arm_inputs(arrays, arm, columns):
     tokens = np.array(arrays['tokens'], dtype=np.float32)  # writable copies of the read-only mmaps
     if np.any(tokens[:, -1, :N_PHYSICAL] != 0):
         raise ValueError('Current-pitch physics leaked into the direct head input')
+    if np.any(tokens[:, -1, -N_OUTCOME:] != 0):
+        raise ValueError('Current-pitch outcome leaked into the direct head input')
     context = np.array(arrays['context'], dtype=np.float32)
     if arm['workload']:
         keep = [columns.index(c) for c in arm['workload']]
@@ -281,6 +306,7 @@ def task_dir(output, arm, seed, smoke):
 
 def run_task(config, export, manifest_sha256, output, arm_name, seed, device, runtime, smoke=False):
     """Fit, calibrate and predict one (arm, seed); atomic final directory, failures preserved."""
+    require_executable(config, smoke)
     arm = arm_spec(config, arm_name)
     if seed not in config['seeds']:
         raise ValueError('Unregistered seed')
@@ -292,9 +318,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
     work.mkdir()
     started = time.perf_counter()
     try:
-        identity = {'protocol': PROTOCOL, 'experiment_id': config['experiment_id'], 'arm': arm, 'seed': seed,
-                    'smoke': smoke, 'config_sha256': hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
-                    'export_manifest_sha256': manifest_sha256, 'source_sha256': own_hashes(), 'device': device}
+        identity = expected_identity(config, manifest_sha256, arm_name, seed, smoke, device, own_hashes())
         write_json_atomic(work / 'identity.json', identity)
         manifest = verify_export(export, config, manifest_sha256)
         columns = config['export']['workload_columns']
@@ -371,12 +395,23 @@ def peak_device_bytes(device):
     return int(torch.cuda.max_memory_allocated())
 
 
-def verify_task(dest):
-    """Re-check a finished task's artifact hashes (used by the queue and the Mac scorer)."""
+def verify_task(dest, expected):
+    """A finished task is the expected one (config/export/arm/seed/smoke/device[/sources]) with intact artifacts.
+
+    Used by the queue (is_complete) and the Mac scorer; self-consistent hashes alone are not enough.
+    """
     state = read_json(Path(dest) / 'state.json')
+    names = ['identity.json', 'model.pt', 'calibration.json', 'predictions.npz', 'mlb_predictions.npz', 'fit.json']
+    if sorted(state['artifact_hashes']) != sorted(names):
+        raise ValueError(f'{dest}: artifact list differs')
     for name, digest in state['artifact_hashes'].items():
         if sha256_file(Path(dest) / name) != digest:
             raise ValueError(f'{dest}/{name}: artifact hash differs')
+    if read_json(Path(dest) / 'identity.json') != state['identity']:
+        raise ValueError(f'{dest}: state identity differs from identity.json')
+    for key, value in expected.items():
+        if state['identity'].get(key) != value:
+            raise ValueError(f'{dest}: identity {key} differs from the expected task')
     return state
 
 
@@ -395,6 +430,8 @@ def main(argv=None):
     sub.add_parser('check', help='bind GPU, verify export and print the runtime report; no fit')
     args = p.parse_args(argv)
     config = config_check(read_json(args.config))
+    if args.command == 'task':
+        require_executable(config, args.smoke)
     runtime = bind_gpu(args.gpu_uuid, config['device']['allowed_gpu_uuids'])
     output = args.output.resolve()
     if getattr(args, 'smoke', False) != output.name.endswith('-smoke'):

@@ -98,6 +98,10 @@ def write_raw(root, extra_columns=True, year_2024=None):
         part.to_parquet(root / f'statcast_{year}.parquet', index=False)
 
 
+def pins(tmp_path):
+    return {name: hash_file(tmp_path / 'raw' / name) for name in runner.ALLOWLIST}
+
+
 def local_file(tmp_path, raw=None):
     write_raw(tmp_path / 'raw', year_2024=raw)
     local = tmp_path / 'local.json'
@@ -107,15 +111,45 @@ def local_file(tmp_path, raw=None):
 
 def test_raw_reader_opens_only_keys_and_the_2023_2025_allowlist(tmp_path):
     local = json.loads(local_file(tmp_path).read_text())
-    raw = runner.read_raw(local)
+    raw = runner.read_raw(local, pins(tmp_path))
     assert list(raw.columns) == RAW and len(raw) == len(small_raw())
     with pytest.raises(ValueError, match='allowlist'):
-        runner.read_raw({**local, 'raw_allowlist': [*runner.ALLOWLIST, 'statcast_2026.parquet']})
+        runner.read_raw({**local, 'raw_allowlist': [*runner.ALLOWLIST, 'statcast_2026.parquet']}, pins(tmp_path))
     bad = small_raw()
     bad.loc[len(bad)] = [pd.Timestamp('2026-04-01'), 50, 1, 1, 10]
     pd.concat([bad[bad.game_date.dt.year.eq(2025)], bad.tail(1)]).to_parquet(tmp_path / 'raw' / 'statcast_2025.parquet')
     with pytest.raises(ValueError, match='outside season 2025'):
-        runner.read_raw(local)
+        runner.read_raw(local, pins(tmp_path))
+
+
+def test_raw_files_must_equal_the_frozen_bytes(tmp_path):
+    frozen = json.loads((PROJECT.parents[1] / 'configs' / 'G0-RESEARCH-FROZEN-v1.json').read_text())
+    control = json.loads((PROJECT.parents[1] / 'results' / 'EXP-P15-001.json').read_text())
+
+    def sources(node):   # every {'file': statcast_*, 'sha256': ...} record anywhere in the frozen JSON
+        if isinstance(node, dict):
+            if str(node.get('file', '')).startswith('statcast_') and 'sha256' in node:
+                yield node['file'], node['sha256']
+            for value in node.values():
+                yield from sources(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from sources(value)
+    for document in (frozen, control):
+        found = set(sources(document))
+        assert found and found == set(runner.FROZEN_RAW_SHA256.items())
+    assert CONFIG['feature_rules']['raw_sha256'] == runner.FROZEN_RAW_SHA256
+    local = json.loads(local_file(tmp_path).read_text())
+    good = pins(tmp_path)
+    with pytest.raises(ValueError, match='frozen 2023-2025 bytes'):
+        runner.read_raw(local)                                   # synthetic files are not the frozen bytes
+    with pytest.raises(ValueError, match='frozen 2023-2025 bytes'):
+        runner.check_raw_pins(good)
+    small_raw().head(2).to_parquet(tmp_path / 'raw' / 'statcast_2023.parquet', index=False)   # same name, other bytes
+    with pytest.raises(ValueError, match='frozen 2023-2025 bytes'):
+        runner.read_raw(local, good)
+    with pytest.raises(ValueError, match='allowlist'):
+        runner.read_raw(local, {k: good[k] for k in runner.ALLOWLIST[:2]})
 
 
 class Context:
@@ -136,7 +170,7 @@ def synthetic(tmp_path, variant='block', device='cpu'):
     parts = {'train': f.iloc[:20], 'earlystop': f.iloc[20:26], 'temperature': f.iloc[20:26],
              'blend': f.iloc[26:29], 'dev': f.iloc[29:]}
     base = (None, {'samples': {}, 'clusters': {'cluster_counts': {}}}, store, Context(), parts, None)
-    data, values = runner.workload_data(json.loads(local.read_text()), base, variant)
+    data, values = runner.workload_data(json.loads(local.read_text()), base, variant, pins(tmp_path))
     prep = {'identity': runner.identity(CONFIG, local, variant, device), 'added_parameters': runner.added_parameters(
         len(runner.VARIANTS[variant]))}
     return base, data, values, prep, local
@@ -161,7 +195,7 @@ def test_context_wrapper_inserts_before_routing_and_zero_extra_is_the_control_pa
     shuffled.index = shuffled.index[::-1]
     with pytest.raises(ValueError, match='misaligned'):
         wrapped.transform(shuffled)
-    counts = runner.workload_data(json.loads(synthetic(tmp_path / 'c')[4].read_text()), base, 'counts')[0][3]
+    counts = runner.workload_data(json.loads(synthetic(tmp_path / 'c')[4].read_text()), base, 'counts', pins(tmp_path / 'c'))[0][3]
     assert np.array_equal(counts.transform(store.frame.iloc[rows])[:, 2], values[rows, 0].astype(np.float32))
 
 
@@ -182,6 +216,7 @@ def test_config_matches_runner_and_refuses_changes():
                                  (('variants', 0, 'added_parameters'), 128, 'parameter counts'),
                                  (('feature_rules', 'rest_cap_days'), 365, 'Feature'),
                                  (('feature_rules', 'raw_columns'), [*RAW, 'n_thruorder_pitcher'], 'Feature'),
+                                 (('feature_rules', 'raw_sha256', 'statcast_2024.parquet'), '0' * 64, 'Feature'),
                                  (('unchanged_from_p15', 'loss_weighting'), 'recency', 'uniform'),
                                  (('unchanged_from_p15', 'training', 'width'), 256, 'Architecture')):
         changed = copy.deepcopy(CONFIG)
@@ -280,3 +315,17 @@ def test_auto_cpu_preparation_is_not_comparable_to_mps_control(tmp_path, monkeyp
     assert runner.prepare(CONFIG, data, values, tmp_path / 'cpu', prep['identity'])['comparable_device_to_control'] is False
     explicit = runner.identity(CONFIG, local, 'block', 'mps')
     assert runner.prepare(CONFIG, data, values, tmp_path / 'mps', explicit)['comparable_device_to_control'] is True
+
+
+def test_score_compares_actual_fit_devices_with_the_control(tmp_path):
+    control = tmp_path / 'control'
+    for seed, device in ((0, 'mps'), (1, 'mps')):
+        dest = control / str(seed)
+        dest.mkdir(parents=True)
+        (dest / 'fit.json').write_text(json.dumps({'report': {'device': device}}))
+        runner.dump(dest / 'fit_state.json', {'artifact_hashes': runner.artifact_hashes(dest, ['fit.json'])})
+    pairs = runner.device_pairs(control, {'0': {'device': 'mps'}, '1': {'device': 'cuda'}})
+    assert pairs == {'0': ('mps', 'mps'), '1': ('mps', 'cuda')}
+    (control / '0' / 'fit.json').write_text(json.dumps({'report': {'device': 'cpu'}}))
+    with pytest.raises(ValueError):
+        runner.device_pairs(control, {'0': {'device': 'mps'}})
