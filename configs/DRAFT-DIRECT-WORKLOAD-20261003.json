@@ -1,0 +1,142 @@
+{
+  "protocol": "ml_direct_workload_v1",
+  "experiment_id": "DRAFT-DIRECT-WORKLOAD-20261003",
+  "status": "DRAFT",
+  "decision": "Not registered. Root PM assigns the EXP-P24 ID only after review and smoke; no real-data fit or scoring before that.",
+  "matrix_row": "E4 / MX-F6 (direct head context without workload -> with observed workload scalars; never run before)",
+  "hypothesis": "Adding fixed observed-workload scalars (Statcast records earlier in the game; times through order and rest) to the direct pre-pitch head changes its 2025 DEV outcome distribution relative to the frozen EXP-P15-001 head, alone and in the fixed 1/2 mix with G0-global.",
+  "one_change": "Extra context scalars inserted before the 7 sharing columns. Everything else is EXP-P15-001: current-pitch physics zero, uniform loss, flatten MLP 128, budget, May 1-15 early stop, May 16-31 Cpanel temperature, June Cpanel frequency blend, Cpanel DEV and frozen whole-MLB DEV.",
+  "variants": [
+    {
+      "name": "counts",
+      "columns": [
+        "prior_records_per100"
+      ],
+      "added_context_width": 1,
+      "added_parameters": 256
+    },
+    {
+      "name": "block",
+      "columns": [
+        "prior_records_per100",
+        "thruorder_minus1_over3",
+        "log_rest_days",
+        "rest_missing"
+      ],
+      "added_context_width": 4,
+      "added_parameters": 1024
+    }
+  ],
+  "variant_rule": "Two pre-fixed variants, defined by the root before any outcome evaluation; no feature HPO and no definition change from results. All 2 variants x 3 seeds fit and predict before any comparison.",
+  "feature_rules": {
+    "raw_columns": [
+      "game_date",
+      "game_pk",
+      "at_bat_number",
+      "pitch_number",
+      "pitcher"
+    ],
+    "raw_allowlist": [
+      "statcast_2023.parquet",
+      "statcast_2024.parquet",
+      "statcast_2025.parquet"
+    ],
+    "raw_root": "local config raw_root (configs/local.json); no 2026 file",
+    "rebuild": "pitchmdp/workload_features.rebuild (d2e2484) over ALL raw records of the allowlist, before eligibility/cohort filters; aligned to frozen parent rows by exact (game_pk, at_bat_number, pitch_number) with date and pitcher equality",
+    "prior_records_per100": "Statcast records of the same pitcher earlier in the same game_pk (current excluded) / 100, unclipped. Observed record count, may include automatic non-pitch events; not physiological fatigue",
+    "thruorder_minus1_over3": "(rebuilt_thruorder - 1) / 3; rebuilt_thruorder = PAs faced earlier in this game by this pitcher // 9 + 1",
+    "log_rest_days": "log1p(clip(days since this pitcher's previous earlier date in the loaded raw, 0, rest_cap_days)) / log(rest_cap_days + 1); missing -> 0; same-day previous game omitted by definition",
+    "rest_missing": "1 if no earlier date for the pitcher in the loaded 2023-2025 raw records, else 0",
+    "rest_cap_days": 180,
+    "savant_workload_columns": "never read by the model path (audit only, PM-WORKLOAD-TRAIN-AUDIT-20261003.json)",
+    "forbidden": [
+      "pitcher_days_until_next_game",
+      "batter_days_until_next_game",
+      "n_thruorder_pitcher",
+      "pitcher_days_since_prev_game"
+    ],
+    "hpo_trials": 0
+  },
+  "train_audit_reference": {
+    "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/PM-WORKLOAD-TRAIN-AUDIT-20261003.json",
+    "train_raw_records": 1386362,
+    "rebuilt_thruorder_missing": 0.0,
+    "thruorder_agreement_with_savant": 0.9983027520950517,
+    "rebuilt_rest_missing": 0.01611916656688513,
+    "rest_agreement_with_savant": 0.9997671591213328,
+    "prior_records_max": 130
+  },
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "future_confirmation": "Seeds 3 and 4 only in a separate registered confirmation after root review.",
+  "control": {
+    "experiment_id": "EXP-P15-001",
+    "arm": "G15-direct (uniform weights)",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001",
+    "preparation_sha256": "2e3f553f3ce86941187d6be21adeda05ebaf948a40d01110ef2326cb8327b0b4",
+    "device": "mps (fit.json report, seed 0)"
+  },
+  "mix": {
+    "direct_weight": 0.5,
+    "rule": "candidate direct head and the frozen G0-global member of the same seed, member-wise 1/2, then the same June frequency blend; compared with the frozen G15 mix (EXP-P15-002 construction) of the same seeds"
+  },
+  "baseline_g0": {
+    "cell": "G0-global",
+    "experiment_id": "EXP-P4-001",
+    "config_file": "configs/EXP-P4-001.yaml",
+    "frozen_reference": "configs/G0-RESEARCH-FROZEN-v1.json",
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+  "parent_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+  "whole_mlb_reference": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001",
+  "unchanged_from_p15": {
+    "training": {
+      "kind": "flatten_mlp",
+      "width": 128,
+      "epochs": 30,
+      "patience": 5,
+      "batch_size": 1024,
+      "learning_rate": 0.0005
+    },
+    "splits": "EXP-P4-001 train / earlystop / temperature (May Cpanel) / blend (June Cpanel) / dev (Cpanel) keys; frozen mlb_dev",
+    "calibration": "per-seed temperature on the May Cpanel rows (same optimizer and bounds), three-seed probability mean, June frequency blend by the same scorer",
+    "hpo_trials": 0,
+    "device": "auto (mps on the Mac mini, same as the control)",
+    "loss_weighting": "uniform",
+    "not_changed_here": "no recency loss weight (P20 found no NLL gain), no PLR/periodic embedding"
+  },
+  "data_rules": "No 2026 rows or files (allowlist + runner date guards). Feature path reads keys/date/pitcher only; no outcome, description, physics or Savant workload column. Frozen row sets and train/May/June/DEV split unchanged. DEV never used for fitting, calibration or selection.",
+  "metrics": {
+    "scope": "descriptive only until registered",
+    "primary_descriptive": "Cpanel DEV after the June frequency blend: candidate direct vs frozen EXP-P15-001 direct, candidate mix vs frozen G15 mix, paired NLL/Brier with whole-game bootstrap, per-seed deltas",
+    "secondary_descriptive": [
+      "Cpanel DEV before the frequency blend",
+      "whole-MLB DEV calibrated three-seed mean (no June blend) when --mlb was run",
+      "TRAIN feature distribution and parameter counts (from preparation/fit)"
+    ],
+    "decision": null
+  },
+  "exposure_note": "Cpanel and whole-MLB DEV were read repeatedly (P7-003, P11, P13-P16). Results are development comparisons, not confirmation. Two variants form a search; any later selection must be labelled after-search.",
+  "execution": {
+    "enabled": false,
+    "runner": "experiments/pitchmdp/scripts/run_ml_direct_workload.py",
+    "prefix": "cd experiments/pitchmdp && DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib /Users/song/Projects/pitcheezy/.venv/bin/python scripts/run_ml_direct_workload.py --config ../../configs/DRAFT-DIRECT-WORKLOAD-20261003.json --local-config configs/local.json",
+    "order": [
+      "smoke: --output <runs>/DRAFT-DIRECT-WORKLOAD-20261003-smoke run --variant block --seeds 0 --mlb --smoke",
+      "run  : --output <runs>/<registered id> run --variant <v> --seeds 0 1 2 --mlb   (each of counts, block)",
+      "score: --output <runs>/<registered id> score   (only after all 6 fits; writes analysis/descriptive.json only)"
+    ],
+    "device": "--device auto (mps on the Mac mini, same as the control); cpu/cuda runs are not comparable to the MPS control without a same-device control arm",
+    "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
+    "queue": "single heavy queue runs/ML-MATRIX-20260924/.heavy.lock; Mac mini MPS first",
+    "expected_cost": "Not measured for this runner. EXP-P15-001 seed 0: fit 70.3 s, Cpanel predict 7.2 s, whole-MLB 1-draw predict 123.4 s; plus raw key read (3 files, 5 columns) and rebuild per process."
+  }
+}
