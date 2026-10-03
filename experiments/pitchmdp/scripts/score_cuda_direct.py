@@ -6,7 +6,10 @@ family (DRAFT-CUDA-FRONTIER-RUN-20261004) or the data/combination 15-arm family
 not wait for the Mac.  A config with comparison.factorial_contrasts also gets those
 fixed candidate-minus-reference pairs (same paired whole-game bootstrap helper,
 same-seed and ensemble), validated before any prediction is read; no ranking or
-verdict.  Families without the key are scored exactly as before.  Data arms must record the config's subset rule over the
+verdict.  Families without the key are scored exactly as before.  Likewise
+comparison.regularization_contrasts (architecture x dropout family) must equal
+direct_dropout_registry.CONTRASTS (dropout arm minus its same-architecture no-dropout
+arm) and is checked before any read.  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
 
 Scope: UNBLENDED calibrated direct-head probabilities (predictions.npz 'dev',
@@ -50,6 +53,7 @@ sys.path.insert(0, str(PROJECT / 'scripts'))
 import numpy as np
 
 import run_cuda_direct as rc  # noqa: E402  numpy only at import
+from pitchmdp import direct_dropout_registry as dropout_registry  # noqa: E402  torch-free
 from pitchmdp.matrix_metrics import paired_game_comparison, pitch_losses, prediction_metrics  # noqa: E402
 
 FORMAT = 'cuda_direct_score_v1'
@@ -57,7 +61,9 @@ SOURCE_FORMAT = 'cuda_direct_task_sources_v1'
 SPLITS = {'dev': 'predictions.npz', 'mlb_dev': 'mlb_predictions.npz'}
 EXPORT_ARRAYS = ('keys', 'y', 'game_pk')
 DRAWS, BOOTSTRAP_SEED = 10000, 20260924
-SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 'pitchmdp/matrix_metrics.py')
+SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 'pitchmdp/matrix_metrics.py',
+                  'pitchmdp/direct_dropout_registry.py', 'pitchmdp/direct_combo_registry.py',
+                  'pitchmdp/direct_frontier_registry.py')
 RUNTIME_SIGNATURE = ('torch', 'torch_cuda', 'cudnn', 'numpy', 'scipy', 'device_name', 'device_capability',
                      'device_total_memory')
 SCOPE = ('unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; '
@@ -213,13 +219,14 @@ def paired_block(y, games, candidate, reference, seeds):
             'seeds': {str(s): compare(y, games, p, q) for s, p, q in zip(seeds, candidate, reference)}}
 
 
-def score_family(config, family, rows, seeds, contrasts=None):
+def score_family(config, family, rows, seeds, contrasts=None, regularization=None):
     arms = [a['name'] for a in config['arms']]
     control_arm = config.get('comparison', {}).get('control_arm', 'control')
     if control_arm != 'control' or 'control' not in arms:
         raise ValueError('The same-family CUDA control is the only comparator')
     out = {split: {} for split in SPLITS}
     factorial = {split: {} for split in SPLITS} if contrasts else None
+    paired = {split: {} for split in SPLITS} if regularization else None
     for split, r in rows.items():
         y, games = r['y'], r['game_pk']
         load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731  (bounded memory: reload)
@@ -238,7 +245,11 @@ def score_family(config, family, rows, seeds, contrasts=None):
             factorial[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
                                            'isolates': c['isolates'],
                                            **paired_block(y, games, load(c['candidate']), load(c['reference']), seeds)}
-    return out, factorial
+        for c in regularization or ():
+            paired[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
+                                        'architecture': c['architecture'], 'isolates': c['isolates'],
+                                        **paired_block(y, games, load(c['candidate']), load(c['reference']), seeds)}
+    return out, factorial, paired
 
 
 def korean_table(result):
@@ -263,6 +274,12 @@ def korean_table(result):
             seeds = ' / '.join(f"{v['nll']['delta']:+.4f}" for v in paired['seeds'].values())
             lines.append(f"| {arm} | {ci(paired['ensemble'], 'nll')} | {ci(paired['ensemble'], 'brier')} | {seeds} |")
         lines.append('')
+    for split, contrasts in (result.get('regularization_contrasts') or {}).items():
+        lines += [f'## {split} 드롭아웃 대비 (같은 구조 드롭아웃 − 무드롭아웃, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
+                  '| 대비 | 구조 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|']
+        for name, block in contrasts.items():
+            lines.append(f"| {name} | {block['architecture']} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} |")
+        lines.append('')
     for split, contrasts in (result.get('factorial_contrasts') or {}).items():
         lines += [f'## {split} 요인 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
                   '| 대비 | 분리 요인 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|']
@@ -282,14 +299,16 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     if config.get('status') != 'REGISTERED' or config.get('execution', {}).get('enabled') is not True:
         raise ValueError('Only a REGISTERED, enabled family has real tasks to score')
     contrasts = check_contrasts(config)
+    regularization = dropout_registry.check_contrasts(config)
     sources, source_record = task_sources(source_manifest)
     rows, export_hashes = export_rows(export, config, manifest_sha256)
     tasks, signature = verify_family(family, config, manifest_sha256, sources,
                                      export_hashes['train/rows_sha256'] if config.get('train_subset') else None)
-    splits, factorial = score_family(config, family, rows, config['seeds'], contrasts)
+    splits, factorial, paired = score_family(config, family, rows, config['seeds'], contrasts, regularization)
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits,
               **({'factorial_contrasts': factorial} if contrasts else {}),
+              **({'regularization_contrasts': paired} if regularization else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],

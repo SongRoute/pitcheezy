@@ -27,6 +27,11 @@ of the TRAIN rows only (config train_subset salt/fractions; provenance in fit.js
 pitcher-information arms zero verified named context columns; residual/periodic
 combination arms append workload like the base counts/block arms.
 
+Dropout arms (DRAFT-CUDA-DROPOUT-RUN-20261004): an arm marked "dropout_head": true
+must equal direct_dropout_registry.ARMS (frozen residual / periodic network plus
+head Dropout(.1), no workload); a config with such arms must be exactly the fixed
+six-arm architecture x dropout family.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -60,6 +65,7 @@ PROTOCOL = 'cuda_direct_v1'
 SELF = 'scripts/run_cuda_direct.py'
 MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py', 'pitchmdp/direct_periodic_model.py',
                  'pitchmdp/direct_combo_model.py', 'pitchmdp/direct_combo_registry.py',
+                 'pitchmdp/direct_dropout_model.py', 'pitchmdp/direct_dropout_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -146,6 +152,13 @@ def config_check(config):
                 raise ValueError('Duplicated combination arm or unexported workload: ' + arm['name'])
             names.add(arm['name'])
             continue
+        if 'dropout_head' in arm:
+            from pitchmdp.direct_dropout_registry import check_arm  # torch-free
+            check_arm(arm)
+            if arm['name'] in names:
+                raise ValueError('Duplicated arm: ' + arm['name'])
+            names.add(arm['name'])
+            continue
         if 'frontier' in arm:
             frontier_arm_check(arm)
             if arm['name'] in names:
@@ -161,6 +174,9 @@ def config_check(config):
         names.add(arm['name'])
     if 'control' not in names or [a for a in config['arms'] if a['name'] == 'control'][0]['workload']:
         raise ValueError('A no-workload flatten control is required')
+    if any('dropout_head' in arm for arm in config['arms']):
+        from pitchmdp.direct_dropout_registry import check_family  # torch-free
+        check_family(config)
     if int(config['export']['last_year']) != 2025:
         raise ValueError('No 2026 rows: last year is 2025')
     if any(arm.get('frontier') or arm.get('combo') for arm in config['arms']):
@@ -322,6 +338,11 @@ def arm_inputs(arrays, arm, columns):
 # ------------------------------------------------------------------ model / calibration
 
 def build_model(arm, seed, device, context_names=None):
+    if arm.get('dropout_head') is True:
+        from pitchmdp.direct_dropout_model import build_dropout
+        if context_names:
+            raise ValueError('Dropout arms take no context names')
+        return build_dropout(arm, seed, device)
     if arm.get('combo') is True:
         from pitchmdp.direct_combo_model import build_combo
         if needs_context_names(arm) != bool(context_names):
@@ -343,6 +364,9 @@ def build_model(arm, seed, device, context_names=None):
 
 
 def load_model(arm, path, device, context_names=None):
+    if arm.get('dropout_head') is True:
+        from pitchmdp.direct_dropout_model import load_dropout
+        return load_dropout(arm, path, device)
     if arm.get('combo') is True:
         from pitchmdp.direct_combo_model import load_combo
         model = load_combo(arm, path, device)
