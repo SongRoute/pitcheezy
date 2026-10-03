@@ -48,3 +48,7 @@ E4 자료 감사는 위 큐의 안전한 빈 시간에 실행한다. 연구 코�
 - 연구 통합: `/Users/song/Projects/pitcheezy-worktrees/codex-research-integration-1006`, branch `codex/research-integration-1006`.
 - 실행 원문·모델명·단계별 종료 코드: `/Users/song/Projects/pitcheezy-pm-jobs/20261003-search/`.
 - 문헌: [확률 보정, Guo2017](https://proceedings.mlr.press/v70/guo17a.html), [Deep ensembles, Lakshminarayanan2017](https://proceedings.neurips.cc/paper/2017/hash/9ef2ed4b7fd2c810847ffa5fa85bce38-Abstract.html), [표 데이터 구조, Gorishniy2021](https://arxiv.org/abs/2106.11959), [수치 임베딩, Gorishniy2022](https://arxiv.org/abs/2203.05556). 우리 구현은 응용이며 논문의 성능을 그대로 보장하거나 충실히 재현했다고 주장하지 않는다.
+
+## 13:10 후속 갱신
+
+E4 실제 TRAIN 감사 완료(약139만행,5.08초). [결과와 새 후보 정의](../reviews/PM-workload-audit-result-2026-10-03.md). 기록 수만 추가/휴식 정보를 포함한4개값 추가의 두 방식을 Opus가 구현 중이다. 본 학습6개 추가 가능성이 있으나 **등록·smoke·본 실행 전**이므로 위 등록 규모15개에는 아직 더하지 않았다. P21은3개 학습·예측을 모두 완료했고 정기 운영 계산을 피해 채점 시작을 기다리는 상태다.
