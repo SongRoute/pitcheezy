@@ -122,7 +122,7 @@ export function Recommendation({ candidates, bounds, actual, note }: { candidate
   const top = candidates[0];
   return <>
     <div className="wa-rec">
-      <div className="wa-rec-text"><h2 className="wa-type">{top.pitch_label}</h2><p className="wa-zone-label">{plainZone(top.zone_label)} <span>쪽으로</span></p>
+      <div className="wa-rec-text"><h2 className="wa-type">{top.pitch_label}</h2><p className="wa-zone-label">{plainZone(top.zone_label)}</p>
         {candidates.length > 1 && <><p className="wa-kicker wa-others-title">다른 후보</p>
           <ol className="wa-others">{candidates.slice(1).map(c => <li key={c.rank}><b>{c.rank}</b><span>{c.pitch_label} <em>· {plainZone(c.zone_label)}</em></span></li>)}</ol></>}</div>
       <Zone bounds={bounds} candidates={candidates} actual={actual} />
