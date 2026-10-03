@@ -53,7 +53,8 @@ export default function Showcase() {
     player.currentTime = Math.max(0, scene.releaseSeconds - 3);
     stopAt.current = scene.releaseSeconds + 4;
     setTake(value => value + 1); // Reset the recommendation panel; previously revealed results must not carry over.
-    void player.play().catch(() => { stopAt.current = null; setVideoError(true); });
+    // AbortError = a scene change paused this clip before play() resolved; that is not a media failure.
+    void player.play().catch((e: DOMException) => { if (e.name !== 'AbortError') { stopAt.current = null; setVideoError(true); } });
   }
 
   async function copyLink() {
