@@ -312,7 +312,10 @@ def korean_table(result):
         lines.append('')
     for split, contrasts in (result.get('tabm_contrasts') or {}).items():
         lines += [f'## {split} TabM-mini 헤드·헤드 드롭아웃 대비 (한 요인만 바꾼 짝, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
-                  'TabM-mini 1회 학습(구성원 8)과 단일 신경망 1회 학습의 비교입니다. 연산량은 같지 않습니다.', '',
+                  'ensemble_head 행은 TabM-mini 1회 학습(구성원 8)과 단일 신경망 1회 학습의 비교입니다. 연산량은 같지 않습니다. '
+                  'head_dropout 행은 단일 신경망끼리의 비교입니다.', '',
+                  f"시드 {', '.join(map(str, result['seed_block']['seeds']))}는 새 모델 난수일 뿐 새 데이터가 아닙니다"
+                  '(같은 DEV·MLB DEV 반복 노출). counts 작업량은 P27 결과를 읽은 뒤 고른 사후 선택입니다.', '',
                   '| 대비 | 분리 요인 | 고정 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|---|']
         for name, block in contrasts.items():
             held = ', '.join(f'{k}={v}' for k, v in block['held'].items())

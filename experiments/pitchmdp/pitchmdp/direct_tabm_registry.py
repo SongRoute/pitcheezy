@@ -27,6 +27,8 @@ Fixed contrasts (candidate - reference, each changes exactly one factor):
 """
 from __future__ import annotations
 
+import json
+
 from pitchmdp import direct_workload_dropout_registry as wr
 
 FLAG = 'tabm'
@@ -55,6 +57,12 @@ ARMS = {TABM[d]: {'family': 'tabm_mini', 'model': 'periodic_tabm_mini_mlp', 'bas
 ARM_ORDER = ('control', SINGLE[0.], SINGLE[.1], TABM[0.], TABM[.1])
 FITS = len(ARM_ORDER) * len(SEEDS)
 
+
+def same(value, expected):
+    """JSON-exact equality (True != 1, 8.0 != 8), so 'exact earlier entry' means the same config text."""
+    return json.dumps(value, sort_keys=True) == json.dumps(expected, sort_keys=True)
+
+
 CONTRASTS = [
     *({'name': f'{TABM[d]}_vs_{SINGLE[d]}', 'candidate': TABM[d], 'reference': SINGLE[d],
        'isolates': 'ensemble_head', 'held': {'head_dropout': d}} for d in DROPOUTS),
@@ -67,18 +75,18 @@ def check_arm(arm):
     """A TabM arm is exactly its registry entry (+ name, priority 1, flag, the counts workload)."""
     name = arm.get('name')
     rest = {k: v for k, v in arm.items() if k not in ('name', 'priority', FLAG, 'workload')}
-    if arm.get(FLAG) is not True or name not in ARMS or rest != ARMS[name]:
+    if arm.get(FLAG) is not True or name not in ARMS or not same(rest, ARMS[name]):
         raise ValueError('TabM-mini arm differs from the fixed registry: ' + str(name))
-    if arm.get('workload') != WORKLOAD or arm.get('priority') != 1:
+    if not same(arm.get('workload'), WORKLOAD) or not same(arm.get('priority'), 1):
         raise ValueError(name + ': workload is not counts or priority is not 1')
     return arm
 
 
 def check_seeds(config):
     """Exactly seeds [13, 14, 15], no repeat_tag, 15 fits."""
-    if 'repeat_tag' in config or config.get('seeds') != SEEDS:
+    if 'repeat_tag' in config or not same(config.get('seeds'), SEEDS):
         raise ValueError('TabM-mini seeds must be exactly [13, 14, 15] with no repeat_tag')
-    if config.get('fits') != FITS:
+    if not same(config.get('fits'), FITS):
         raise ValueError(f'TabM-mini family is exactly {FITS} fits')
     return config['seeds']
 
@@ -89,7 +97,7 @@ def check_family(config):
         raise ValueError('TabM-mini family must be exactly ' + ', '.join(ARM_ORDER))
     for arm in config['arms']:
         if arm['name'] in BASELINES:
-            if arm != BASELINES[arm['name']]:
+            if not same(arm, BASELINES[arm['name']]):
                 raise ValueError(arm['name'] + ': single-network arm differs from its exact earlier spec')
         else:
             check_arm(arm)
@@ -112,7 +120,7 @@ def check_contrasts(config):
     contrasts = config.get('comparison', {}).get(CONTRAST_KEY)
     if contrasts is None:
         return None
-    if contrasts != CONTRASTS:
+    if not same(contrasts, CONTRASTS):
         raise ValueError(CONTRAST_KEY + ' differ from the fixed ensemble-head / head-dropout pairs')
     check_family(config)
     arms = {a['name']: a for a in config['arms']}
