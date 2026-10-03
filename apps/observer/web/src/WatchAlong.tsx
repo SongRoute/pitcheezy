@@ -170,7 +170,7 @@ function Picker() {
       <section className="wa-section">
         <h2>지금 경기 · 지연 중계</h2>
         <p className="wa-muted">내 중계 화면에 시점을 맞춰, 다음 공의 추천 구종과 대략 위치를 먼저 보여 줘요.</p>
-        {liveError ? <p className="wa-error">{liveError}</p> : live === null ? <p className="wa-loading">오늘 경기를 불러오는 중…</p> : live.length === 0 ? <p className="wa-empty">오늘(미국 동부 기준) 예정된 포스트시즌 경기가 없어요.</p> :
+        {liveError ? <p className="wa-error" role="alert">{liveError}</p> : live === null ? <p className="wa-loading">오늘 경기를 불러오는 중…</p> : live.length === 0 ? <p className="wa-empty">오늘(미국 동부 기준) 예정된 포스트시즌 경기가 없어요.</p> :
           <ul className="wa-games">{live.map(g => <li key={g.game_pk}><a className={`wa-game ${g.live ? 'is-live' : ''}`} href={`/live?game=${g.game_pk}`}>
             <span className="wa-game-teams"><strong>{short(g.away_team)} @ {short(g.home_team)}</strong><span>{SERIES[g.game_type] ?? g.game_type}</span></span>
             <span className="wa-game-meta">{g.live ? <em className="wa-live-dot">경기 중</em> : <em>{g.status === 'Final' || g.status === 'Game Over' ? '종료' : `${kstTime(g.start)} 시작(한국)`}</em>}</span></a></li>)}</ul>}
@@ -178,7 +178,7 @@ function Picker() {
       <section className="wa-section">
         <h2>끝난 경기 · 중계 영상과 함께 보기</h2>
         <p className="wa-muted">한 공씩 넘기며 추천 → 실제 투구를 비교해요. “실제 속도로 다시 보기”는 경기 때와 같은 간격으로 저절로 넘어가요. 목록에 최종 점수는 없어요.</p>
-        {error && <p className="wa-error">{error}</p>}
+        {error && <p className="wa-error" role="alert">{error}</p>}
         {games === null ? (!error && <p className="wa-loading">경기 목록을 불러오는 중…</p>) : games.length === 0 ? <p className="wa-empty">아직 준비된 경기가 없어요. 맥미니에서 <code>scripts/demo_precompute.py sync</code>를 실행하면 끝난 경기가 추가돼요. (저장장치 T7이 연결돼 있어야 해요)</p> :
           <ul className="wa-games">{games.map(g => <li key={g.game_pk} className="wa-game-row"><a className="wa-game" href={`/watch?game=${g.game_pk}`}>
             <span className="wa-game-teams"><strong>{short(g.away_team)} @ {short(g.home_team)}</strong><span>{g.date} · {SERIES[g.game_type] ?? g.game_type}</span></span>
@@ -249,7 +249,7 @@ export default function WatchAlong() {
 
   const doReveal = useCallback(async () => {
     if (!timeline || busy) return;
-    setBusy(true);
+    setBusy(true); setError(null);  // a successful retry must not leave the previous failure on screen
     try { await fetchReveal(index); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }, [timeline, index, busy, fetchReveal]);
   const go = useCallback((next: number) => { if (embedded) return; setError(null); setIndex(next); window.scrollTo({ top: 0 }); }, [embedded]);
@@ -272,7 +272,7 @@ export default function WatchAlong() {
   useEffect(() => { if (reveal) document.querySelector('.wa-reveal')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [reveal]);
 
   if (gamePk === null) return <Picker />;
-  if (!timeline || !decision) return <div className="wa-page"><Header badge={BADGE} back /><main className="wa-main">{error ? <><p className="wa-error">{error}</p><a className="wa-button" href="/watch">경기 목록으로</a></> : <p className="wa-loading">경기 자료를 불러오는 중…</p>}</main></div>;
+  if (!timeline || !decision) return <div className="wa-page"><Header badge={BADGE} back /><main className="wa-main">{error ? <><p className="wa-error" role="alert">{error}</p><a className="wa-button" href="/watch">경기 목록으로</a></> : <p className="wa-loading">경기 자료를 불러오는 중…</p>}</main></div>;
 
   const s = decision.situation, rec = decision.pre.recommendation, top = rec?.candidates[0];
   const game = timeline.game;
@@ -296,7 +296,7 @@ export default function WatchAlong() {
       </div>
       </>}
       <PitchStrip items={strip} />
-      {error && <p className="wa-error">{error}</p>}
+      {error && <p className="wa-error" role="alert">{error}</p>}
       <article className="wa-card">
         <p className="wa-eyebrow">투구 전 추천</p>
         {decision.pre.status === 'ready' && top ? <Recommendation candidates={rec!.candidates} bounds={timeline.location.zone_bounds} actual={reveal?.actual ?? null} note={timeline.location.note} />

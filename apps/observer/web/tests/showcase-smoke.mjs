@@ -1,5 +1,6 @@
 // Synthetic local regression: video/scene identity, embedded reveal and scene lock, copy-link identity,
-// media loaded/play/clip-stop/ended/abort/error transitions, missing mapping, network failure.
+// media loaded/play/clip-stop/ended/abort/error transitions, missing mapping, network failure,
+// and in-place recovery from media, reveal and timeline failures without losing the scene or pre-reveal state.
 // The real MLB video is never downloaded: the media URL is answered with a locally generated silent WAV.
 // That exercises <video> element state handling only, not real H.264/HLS decoding, Safari or iPhone playback.
 import assert from 'node:assert/strict';
@@ -46,7 +47,7 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     const errors = [], reveals = [];
     page.on('pageerror', e => errors.push(String(e)));
-    let failApi = false, failMedia = false, mediaRequests = 0, otherRequests = 0;
+    let failApi = false, failMedia = false, failReveal = false, mediaRequests = 0, otherRequests = 0;
     await page.addInitScript(() => {  // http://showcase.test is not a secure context; record what would be copied
       Object.defineProperty(navigator, 'clipboard', { value: { writeText: async text => { window.__copied = text; } } });
     });
@@ -65,6 +66,7 @@ try {
       if (url.hostname !== 'showcase.test') { otherRequests++; return route.abort(); }
       if (url.pathname === '/api/watch/849843') return route.fulfill({ status: failApi ? 503 : 200, json: failApi ? { detail: '자료 없음' } : timeline });
       const r = url.pathname.match(/^\/api\/watch\/849843\/reveal\/(\d+)$/);
+      if (r && failReveal) return route.fulfill({ status: 503, json: { detail: '합성 공개 실패' } });
       if (r) { reveals.push(Number(r[1])); return route.fulfill({ json: reveal(Number(r[1])) }); }
       if (url.pathname.startsWith('/api/')) return route.fulfill({ status: 404, json: { detail: 'synthetic fixture' } });
       const file = path.join(dist, url.pathname);
@@ -181,10 +183,38 @@ try {
     await page.getByRole('button', { name: '공식 경기 영상 불러오기' }).click();
     await alert.waitFor();
     assert.equal(await clip.isDisabled(), true);
+    // A transient media failure is retried in place: same scene, re-seeked, comparison still unrevealed.
+    failMedia = false;
+    await alert.getByRole('button', { name: '영상 다시 불러오기' }).click();
+    await page.waitForFunction(() => !document.querySelector('.sc-primary')?.disabled);
+    assert.equal(await alert.count(), 0, 'retry clears the media error');
+    m = await media(); near(m.t, scene0.releaseSeconds - 3, 'retry seeks to scene start'); assert(m.paused);
+    assert.equal(await page.locator('iframe').getAttribute('src'), '/watch?game=849843&embed=1#i=2');
+    assert.equal(await frame.locator('.wa-reveal').count(), 0, 'media retry does not reveal');
+
+    // A failed reveal is announced inside the frame, shows no actual pitch, and a retry clears the stale error.
+    failReveal = true;
+    if (width < 800) await page.locator('.sc-compare').evaluate(e => e.scrollIntoView({ block: 'end' }));
+    await frame.getByRole('button', { name: '실제 투구 공개' }).click();
+    await frame.getByRole('alert').getByText('합성 공개 실패').waitFor();
+    assert.equal(await frame.locator('.wa-reveal').count(), 0, 'failed reveal shows no actual pitch');
+    failReveal = false;
+    await frame.getByRole('button', { name: '실제 투구 공개' }).click();
+    await frame.locator('.wa-reveal').getByText('합성 실제 투구 2').waitFor();
+    assert.equal(await frame.getByRole('alert').filter({ hasText: '합성 공개 실패' }).count(), 0, 'successful retry clears the reveal error');
+
     failApi = true;
     await page.goto('http://showcase.test/showcase?scene=invalid');
     await page.locator('.sc-compare [role=alert]').waitFor();
     assert.equal(await page.locator('iframe').count(), 0);
+    // Timeline failure is retried in place; the comparison then mounts for the selected pitch, unrevealed.
+    failApi = false;
+    await page.locator('.sc-compare').getByRole('button', { name: '다시 시도' }).click();
+    await page.locator('.sc-compare iframe').waitFor();
+    assert.equal(await page.locator('iframe').getAttribute('src'), '/watch?game=849843&embed=1#i=2');
+    await frame.getByText('합성 검사: 추천 없음').waitFor();
+    assert.equal(await frame.locator('.wa-reveal').count(), 0, 'timeline retry does not reveal');
+    assert.equal(await page.locator('.sc-compare [role=alert]').count(), 0);
     assert.deepEqual(errors, []);
     await page.close();
   }

@@ -19,6 +19,7 @@ export default function Showcase() {
   const [videoError, setVideoError] = useState(false);
   const [copyNote, setCopyNote] = useState('');
   const [take, setTake] = useState(0);
+  const [attempt, setAttempt] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
   const stopAt = useRef<number | null>(null);
   const scene = source.scenes[selected];
@@ -27,13 +28,14 @@ export default function Showcase() {
 
   useEffect(() => {
     const controller = new AbortController();
+    setError(null);
     void get<Timeline>(`/watch/${source.gamePk}`).then(data => {
       if (controller.signal.aborted) return;
       if (data.game.game_pk !== source.gamePk) throw new Error('영상과 경기 자료가 일치하지 않습니다.');
       setTimeline(data);
     }).catch(e => { if (!controller.signal.aborted) setError((e as Error).message); });
     return () => controller.abort();
-  }, []);
+  }, [attempt]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -55,6 +57,12 @@ export default function Showcase() {
     setTake(value => value + 1); // Reset the recommendation panel; previously revealed results must not carry over.
     // AbortError = a scene change paused this clip before play() resolved; that is not a media failure.
     void player.play().catch((e: DOMException) => { if (e.name !== 'AbortError') { stopAt.current = null; setVideoError(true); } });
+  }
+
+  // Same src, so load() is needed to refetch; onLoadedMetadata then re-seeks to the selected scene.
+  function retryVideo() {
+    setVideoError(false); setVideoReady(false); stopAt.current = null;
+    video.current?.load();
   }
 
   async function copyLink() {
@@ -88,7 +96,7 @@ export default function Showcase() {
             {!loaded && <button className="sc-load" onClick={() => { setLoaded(true); setVideoError(false); }}>공식 경기 영상 불러오기</button>}
           </div>
           {loaded && !videoReady && !videoError && <p role="status">영상 정보를 불러오는 중…</p>}
-          {videoError && <p role="alert">영상 재생을 확인하지 못했어요. <a href={source.mediaUrl} target="_blank" rel="noreferrer">공식 영상 따로 열기</a></p>}
+          {videoError && <p role="alert">영상 재생을 확인하지 못했어요. <button onClick={retryVideo}>영상 다시 불러오기</button> <a href={source.mediaUrl} target="_blank" rel="noreferrer">공식 영상 따로 열기</a></p>}
           <label className="sc-label">비교할 장면
             <select value={selected} onChange={e => setSelected(Number(e.target.value))}>
               {source.scenes.map((item, i) => {
@@ -115,7 +123,7 @@ export default function Showcase() {
         </section>
         <section className="sc-compare" aria-label="추천과 실제 투구 비교">
           <h2>{label(decision, scene.pitchNumber)}</h2>
-          {error ? <p role="alert">{error}</p> : watchPath
+          {error ? <p role="alert">{error} <button onClick={() => setAttempt(n => n + 1)}>다시 시도</button></p> : watchPath
             ? <iframe key={`${selected}:${take}`} src={watchPath.replace('#', '&embed=1#')} title="선택한 공의 추천과 실제 투구" />
             : <p>{timeline ? '이 장면에 대응하는 투구 자료가 없습니다. 다른 장면을 선택해 주세요.' : '추천 화면을 준비하는 중…'}</p>}
         </section>
