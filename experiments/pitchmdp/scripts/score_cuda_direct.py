@@ -275,7 +275,8 @@ def korean_table(result):
             lines.append(f"| {arm} | {ci(paired['ensemble'], 'nll')} | {ci(paired['ensemble'], 'brier')} | {seeds} |")
         lines.append('')
     for split, contrasts in (result.get('regularization_contrasts') or {}).items():
-        lines += [f'## {split} 드롭아웃 대비 (같은 구조 드롭아웃 − 무드롭아웃, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
+        lines += [f'## {split} 헤드 드롭아웃 추가 대비 (추가한 모델 − 기존 구조, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
+                  'ResNet 기준 구조에는 블록 드롭아웃 0.1이 이미 있습니다. 이 대비는 출력 헤드에 0.1을 더한 효과입니다.', '',
                   '| 대비 | 구조 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|']
         for name, block in contrasts.items():
             lines.append(f"| {name} | {block['architecture']} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} |")

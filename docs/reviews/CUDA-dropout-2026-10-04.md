@@ -37,3 +37,7 @@ cd experiments/pitchmdp
 /Users/song/Projects/pitcheezy/.venv/bin/python -m pytest tests/test_cuda_direct.py tests/test_cuda_frontier_run.py tests/test_cuda_data_combo.py tests/test_cuda_dropout.py -q   # 134 passed
 ```
 전체 스위트는 돌리지 않음. 확인 내용: dropout 0 경로가 동결 기본과 학습·logits 비트 단위 일치(CPU 소규모 fit), 파라미터 수 동일, train 모드 드롭아웃 활성/eval 모드 꺼짐, 저장·불러오기 후 head_dropout·logits 보존과 다른 팔/기본 로더 거부, 설정 이탈 거부, 대비 부호(후보−기준) 검증, 현재 물리 0 가드, 미완료 가족·잘못된 대비는 예측 읽기 전 거부.
+
+## Root 판단
+
+기존 ResNet 블록 드롭아웃0.1을 유지하고 출력 헤드에0.1을 추가하는 대비를 채택한다. 사용자가 위임한 일반 연구 설계 판단으로 별도 승인을 요구하지 않는다. 기존 구조를 새 무드롭아웃 기준으로 바꾸지 않는다. 자동 집계표의 “무드롭아웃” 표현도 “기존 구조”로 고쳐 오해를 막았다. P24/P25를 본 뒤 고른 후속 탐색이며 실제 CUDA smoke18건 전체 성공 전 본 학습을 시작하지 않는다.
