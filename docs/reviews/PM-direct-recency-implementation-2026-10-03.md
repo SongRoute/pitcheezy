@@ -73,3 +73,7 @@ cd experiments/pitchmdp && DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.ven
 - config의 경로가 맥미니 절대경로라 newsrv에서는 별도 local config와 경로가 필요하다. CUDA 실행은 대조(MPS)와 장치가 섞이므로 이 family는 맥미니 실행을 권한다.
 - 등록 판정 규칙(N 문턱·Holm k=3·탐색 후 선택 표시)은 아직 없다. 지금 `score`는 서술만 한다.
 - 관련 4파일(`test_run_ml_direct_recency`·`direct_head`·`direct_head_confirm`·`delivery_pool`) 28 passed. 전체 `pytest tests -q`는 돌리지 않았다.
+
+## Codex PM review and registration
+
+Reviewed source and reproduced 28 focused tests. Actual DRAFT smoke hl365/seed0 completed in about10s (including supervisor), 2 epochs on 8192 TRAIN rows, Cpanel and MLB predictions256rows each; maxRSS5.63GB. Frozen original source hashes verified; no scores read. Registered EXP-P20-001 before full fits: all3half-lives × seeds0,1,2; 600s per stage,7200s family wall budget and existing demo-sync quiet windows. Full comparison is descriptive only, official scientific verdicts unchanged.
