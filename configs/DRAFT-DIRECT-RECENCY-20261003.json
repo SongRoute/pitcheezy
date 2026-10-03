@@ -1,0 +1,97 @@
+{
+  "protocol": "ml_direct_recency_v1",
+  "experiment_id": "DRAFT-DIRECT-RECENCY-20261003",
+  "status": "DRAFT",
+  "decision": "Not registered. Root PM assigns experiment IDs and registers rules before any real-data fit or scoring.",
+  "matrix_row": "MX-D4 (uniform TRAIN loss -> recency-weighted TRAIN loss; never run before)",
+  "hypothesis": "The direct pre-pitch head fitted with recency-weighted TRAIN loss (more weight on rows nearer the 2025-04-30 TRAIN end) predicts the later 2025 DEV outcome distribution differently from the uniform EXP-P15-001 head, alone and in the fixed 1/2 mix with G0-global.",
+  "one_change": "TRAIN loss weight exp2(-age_days/half_life_days), age = days before 2025-04-30, normalised to mean one. Everything else is EXP-P15-001: inputs with current-pitch physics zero, model, budget, unweighted May 1-15 early stop, May 16-31 Cpanel temperature, June Cpanel frequency blend, Cpanel DEV and frozen whole-MLB DEV.",
+  "anchor": "2025-04-30",
+  "weight_rule": "exp2(-age_days/half_life_days), mean 1, TRAIN only",
+  "weight_inputs": "game_date only; never outcomes, predictions or DEV",
+  "variants": [
+    {
+      "name": "hl180",
+      "half_life_days": 180
+    },
+    {
+      "name": "hl365",
+      "half_life_days": 365
+    },
+    {
+      "name": "hl730",
+      "half_life_days": 730
+    }
+  ],
+  "variant_rule": "Pre-fixed grid; each variant is one factor vs the same fixed controls. All variants x seeds fit and predict before any comparison; no variant is chosen from seed 0 or from a partial family.",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "future_confirmation": "Seeds 3 and 4 only in a separate registered confirmation after root review.",
+  "control": {
+    "experiment_id": "EXP-P15-001",
+    "arm": "G15-direct (uniform weights)",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001",
+    "preparation_sha256": "2e3f553f3ce86941187d6be21adeda05ebaf948a40d01110ef2326cb8327b0b4",
+    "device": "mps (fit.json report, seed 0)"
+  },
+  "mix": {
+    "direct_weight": 0.5,
+    "rule": "candidate direct head and the frozen G0-global member of the same seed, member-wise 1/2, then the same June frequency blend; compared with the frozen G15 mix (EXP-P15-002 construction) of the same seeds"
+  },
+  "baseline_g0": {
+    "cell": "G0-global",
+    "experiment_id": "EXP-P4-001",
+    "config_file": "configs/EXP-P4-001.yaml",
+    "frozen_reference": "configs/G0-RESEARCH-FROZEN-v1.json",
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+  "parent_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+  "whole_mlb_reference": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001",
+  "unchanged_from_p15": {
+    "training": {
+      "kind": "flatten_mlp",
+      "width": 128,
+      "epochs": 30,
+      "patience": 5,
+      "batch_size": 1024,
+      "learning_rate": 0.0005
+    },
+    "splits": "EXP-P4-001 train / earlystop / temperature (May Cpanel) / blend (June Cpanel) / dev (Cpanel) keys; frozen mlb_dev",
+    "calibration": "per-seed temperature on the May Cpanel rows (same optimizer and bounds), three-seed probability mean, June frequency blend by the same scorer",
+    "hpo_trials": 0,
+    "device": "auto (mps on the Mac mini, same as the control)"
+  },
+  "data_rules": "No 2026 rows (runner date guard). TRAIN rows only for fitting and weights; May/June Cpanel rows only for early stop, temperature and blend; DEV never used for fitting, weighting, calibration or selection.",
+  "metrics": {
+    "scope": "descriptive only until registered",
+    "primary_descriptive": "Cpanel DEV after the June frequency blend: candidate direct vs frozen uniform direct, and candidate mix vs frozen G15 mix, paired NLL/Brier with whole-game bootstrap, per-seed deltas",
+    "secondary_descriptive": [
+      "Cpanel DEV before the frequency blend",
+      "whole-MLB DEV calibrated three-seed mean (no June blend) when --mlb was run",
+      "TRAIN weight ESS, ESS ratio and weight share by year (from preparation)"
+    ],
+    "decision": null
+  },
+  "exposure_note": "Cpanel and whole-MLB DEV were read repeatedly (P7-003, P11, P13-P16). Results are development comparisons, not confirmation. Three variants form a search; any later selection must be labelled after-search.",
+  "execution": {
+    "enabled": false,
+    "runner": "experiments/pitchmdp/scripts/run_ml_direct_recency.py",
+    "prefix": "cd experiments/pitchmdp && DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib /Users/song/Projects/pitcheezy/.venv/bin/python scripts/run_ml_direct_recency.py --config ../../configs/DRAFT-DIRECT-RECENCY-20261003.json --local-config configs/local.json",
+    "order": [
+      "smoke: --output <runs>/DRAFT-DIRECT-RECENCY-20261003-smoke run --variant hl365 --seeds 0 --mlb --smoke",
+      "run  : --output <runs>/<registered id> run --variant <v> --seeds 0 1 2 --mlb   (each of hl180, hl365, hl730)",
+      "score: --output <runs>/<registered id> score   (only after all 9 fits; writes analysis/descriptive.json only)"
+    ],
+    "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
+    "queue": "single heavy queue runs/ML-MATRIX-20260924/.heavy.lock; Mac mini MPS first",
+    "expected_cost": "Estimate from EXP-P15-001 seed 0 (fit 70.3 s, Cpanel predict 7.2 s, whole-MLB 1-draw predict 123.4 s) plus data load: about 4-6 min per variant-seed, about 40-55 min for 9 fits with --mlb. Not measured for this runner."
+  }
+}
