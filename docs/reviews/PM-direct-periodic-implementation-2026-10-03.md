@@ -78,3 +78,7 @@ The tests cover:
 - If a prediction is interrupted after the archive is written, the rerun rewrites `calibration.json` and only then refuses. This is inherited from the direct and residual predict mirror.
 - Cost on MPS (80×16 cos/sin per row) is 미측정. Not tested on MPS or CUDA.
 - DEV has been read many times, so any score is descriptive only. No decision, no holdout claim, no 2026 rows.
+
+## Codex PM review follow-up (2026-10-03 12:34 KST)
+
+The PM read the implementation and runner, copied the exact frozen parent profile column names from preparation metadata into the DRAFT config, and fixed partial-prediction refusal to happen before calibration or prediction writes. A regression assertion verifies that every existing file's bytes and modification time remains unchanged when the completion state is absent. Focused periodic tests: 11 passed in 2.72 s. These changes supersede the placeholder-column and partial-calibration-write limitations above. Real-data smoke and full fits are still pending.

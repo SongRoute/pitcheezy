@@ -238,8 +238,10 @@ def test_fit_predict_wiring_verified_reuse_and_no_partial_resume(tmp_path):
     ta = runner.training_arrays(direct.direct_arrays(data[2], Context(), data[4]['dev'].index.to_numpy()))
     assert np.array_equal(model.logits(ta), DirectPeriodicModel.load(out / '0' / 'model.pt', 'cpu').logits(ta))
     (out / '0' / 'prediction_state.json').unlink()                       # interrupted after the archive was written
+    before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in (out / '0').iterdir()}
     with pytest.raises(ValueError, match='Incomplete prediction'):
         runner.predict(data, out, prep, 0, smoke=False)
+    assert before == {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in (out / '0').iterdir()}
     (tmp_path / 'partial' / '1').mkdir(parents=True)
     (tmp_path / 'partial' / '1' / 'model.pt').write_bytes(b'half')
     with pytest.raises(ValueError, match='Incomplete fit'):

@@ -37,24 +37,24 @@
         "pfx_x",
         "pfx_z",
         "left_share",
-        "type_<TRAIN pitch type 1 of 18>",
-        "type_<TRAIN pitch type 2 of 18>",
-        "type_<TRAIN pitch type 3 of 18>",
-        "type_<TRAIN pitch type 4 of 18>",
-        "type_<TRAIN pitch type 5 of 18>",
-        "type_<TRAIN pitch type 6 of 18>",
-        "type_<TRAIN pitch type 7 of 18>",
-        "type_<TRAIN pitch type 8 of 18>",
-        "type_<TRAIN pitch type 9 of 18>",
-        "type_<TRAIN pitch type 10 of 18>",
-        "type_<TRAIN pitch type 11 of 18>",
-        "type_<TRAIN pitch type 12 of 18>",
-        "type_<TRAIN pitch type 13 of 18>",
-        "type_<TRAIN pitch type 14 of 18>",
-        "type_<TRAIN pitch type 15 of 18>",
-        "type_<TRAIN pitch type 16 of 18>",
-        "type_<TRAIN pitch type 17 of 18>",
-        "type_<TRAIN pitch type 18 of 18>"
+        "type_CH",
+        "type_CS",
+        "type_CU",
+        "type_EP",
+        "type_FA",
+        "type_FC",
+        "type_FF",
+        "type_FO",
+        "type_FS",
+        "type_KC",
+        "type_KN",
+        "type_PO",
+        "type_SC",
+        "type_SI",
+        "type_SL",
+        "type_ST",
+        "type_SV",
+        "type_UN"
       ],
       "context_continuous": [
         11,
@@ -115,7 +115,8 @@
       "context_reasons": {
         "embedded": "11-16 standardized batter style priors, 17-22 style reliabilities in [0,1], 23-27 soft archetype memberships, 28-31 standardized pitcher physical means, 33-50 standardized pitcher type proportions, 51 log1p(TRAIN count)/10",
         "raw": "0-4 balls/strikes/outs/inning/score lead (integer ordinals), 5-10 binary flags (top, bases, batter/pitcher hand), 32 pitcher left-hand share (near binary)"
-      }
+      },
+      "column_source": "Pinned frozen EXP-P4-001 preparation.json clusters.columns, PM copied metadata 2026-10-03 before smoke; no outcome payload read."
     },
     "n_raw": 206,
     "n_embedded": 80,
@@ -201,6 +202,6 @@
     ],
     "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
     "queue": "single heavy queue runs/ML-MATRIX-20260924/.heavy.lock; Mac mini MPS only; never concurrently with EXP-P20-001",
-    "expected_cost": "미측정 (unknown until smoke). Periodic network has 2.02x the control parameters and an 80x16 cos/sin expansion per row; control EXP-P15-001 seed 0 reference: fit 70.3 s, Cpanel predict 7.2 s, whole-MLB 1-draw predict 123.4 s."
+    "expected_cost": "\ubbf8\uce21\uc815 (unknown until smoke). Periodic network has 2.02x the control parameters and an 80x16 cos/sin expansion per row; control EXP-P15-001 seed 0 reference: fit 70.3 s, Cpanel predict 7.2 s, whole-MLB 1-draw predict 123.4 s."
   }
 }
