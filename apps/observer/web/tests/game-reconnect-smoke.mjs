@@ -19,10 +19,11 @@ const context = await browser.newContext({ viewport: { width: 360, height: 560 }
 const page = await context.newPage();
 let down = true;                 // the server cannot be reached until this turns false
 const asks = [];                 // when each state request arrived (ms)
-await page.route('http://pz.test/**', (route) => {
+await page.route('http://pz.test/**', async (route) => {
   const url = new URL(route.request().url());
   if (/^\/api\/live\/\d+\/state$/.test(url.pathname)) {
     asks.push(Date.now());
+    if (asks.length === 1) await new Promise((resolve) => setTimeout(resolve, 1500));  // a slow first answer: still loading
     return down ? route.abort('internetdisconnected') : route.fulfill({ json: states.pre_last_of_pa });
   }
   if (url.pathname.startsWith('/api/')) return route.fulfill({ status: 404, json: { detail: 'not in this smoke' } });
@@ -42,9 +43,12 @@ const setHidden = (hidden) => page.evaluate((h) => {
 
 // 1. First load cannot reach the server: plain words, automatic retries counted, a real tap target to retry now.
 await page.goto('http://pz.test/game?game=849845');
+await chip('불러오는 중', 1200);
+if (await page.locator('.gm-live').innerText() !== '연결 중') fail('header does not say 연결 중 while the first answer is pending');
 await chip('연결 안 됨');
 await page.getByText('관전 서버에 연결하지 못했어요', { exact: false }).waitFor();
 if (await page.locator('.gm-live').innerText() === 'LIVE') fail('header says LIVE before any answer arrived');
+if (!(await page.getByRole('status').filter({ hasText: '자동으로 계속 다시 연결' }).innerText()).match(/^자동으로 계속 다시 연결하고 있어요$/)) fail('live region carries more than the steady sentence');
 await page.getByText('실패 2번', { exact: false }).waitFor({ timeout: 6000 });   // the 2 s poll keeps trying by itself
 const retry = page.getByRole('button', { name: '지금 다시 시도' });
 const box = await retry.boundingBox();
@@ -56,9 +60,12 @@ if (shots) await page.screenshot({ path: `${shots}/reconnect-1-down.png` });
 down = false;
 await page.waitForTimeout(150);
 let t = Date.now();
+const lastAuto = asks.at(-1);                    // the automatic poll that produced "실패 2번"; the next one is ~2 s later
+if (t - lastAuto > 1000) fail(`retry check inconclusive: clicked ${t - lastAuto} ms after the last automatic ask`);
 await retry.click();
 await chip('다음 공', 1500);
-if (since(t) < 1 || asks.find((a) => a >= t) - t > 700) fail(`retry button did not ask at once (${since(t)} asks)`);
+const firstAsk = asks.find((a) => a >= t);
+if (firstAsk === undefined || firstAsk - t > 700 || firstAsk - lastAuto >= 1500) fail(`retry button did not ask at once (${since(t)} asks, ${firstAsk - lastAuto} ms after the last automatic ask)`);
 if (await page.getByRole('button', { name: '지금 다시 시도' }).count()) fail('retry button still shown after the game loaded');
 if (await page.locator('.gm-live').innerText() !== 'LIVE') fail('header does not return to LIVE once the game loaded');
 

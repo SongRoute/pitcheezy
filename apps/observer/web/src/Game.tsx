@@ -311,7 +311,7 @@ export default function Game() {
   if (looking) stage = thrown(looking, `${looking.n}구`, false);
   else if (past !== null) stage = <><div className="gm-toprow"><span className="gm-chip plain">지난 공</span></div><h1 className="gm-hero mid">아직 지난 공이 없어요</h1></>;
   else if (!state) stage = <><div className="gm-toprow"><span className="gm-chip plain">{error ? '연결 안 됨' : '불러오는 중'}</span></div>
-    {error && <><p className="gm-sub">{error}</p><p className="gm-note" role="status">2초마다 자동으로 다시 연결하고 있어요{failures > 1 ? ` · 실패 ${failures}번` : ''}</p>
+    {error && <><p className="gm-sub">{error}</p><p className="gm-note"><span role="status">자동으로 계속 다시 연결하고 있어요</span>{failures > 1 ? ` · 실패 ${failures}번` : ''}</p>
       <button className="gm-wide" onClick={() => pollNow.current()}>지금 다시 시도</button></>}</>;
   else if (state.status !== 'ready') {
     const [chip, text] = WAIT[state.status] ?? ['잠시만요', '잠시 기다려 주세요'], p = state.last_pitch;
@@ -342,12 +342,13 @@ export default function Game() {
   const usedDelay = Math.round(delay ?? state?.delay_s ?? 30);
   const candidates = rec?.status === 'ready' ? rec.recommendation?.candidates ?? [] : [];
   const replayClock = replay ? ` ${clock(replay.elapsed_s)}` : '';
-  const offline = stale || (state === null && error !== null);  // never say LIVE before the first answer has arrived
-  const liveLabel = stale ? (error !== null ? '연결 끊김' : '기록 멈춤') : offline ? '연결 안 됨' : paused !== null ? `일시정지${replayClock}` : isReplay ? `다시 보기${replayClock}` : 'LIVE';
+  const offline = stale || (state === null && error !== null);
+  const waiting = state === null && !offline;  // never say LIVE before the first answer has arrived
+  const liveLabel = stale ? (error !== null ? '연결 끊김' : '기록 멈춤') : offline ? '연결 안 됨' : waiting ? '연결 중' : paused !== null ? `일시정지${replayClock}` : isReplay ? `다시 보기${replayClock}` : 'LIVE';
   return <div className={`wa-page gm-page ${stale ? 'stale' : ''}`}>
     <header className="gm-top"><a className="gm-icon" href="/watch" aria-label="경기 목록으로"><svg viewBox="0 0 24 24"><path d="M19 12H5" /><path d="M11 6l-6 6 6 6" /></svg></a>
       {past !== null ? <span className="gm-live off">지난 공</span>
-        : <button className={`gm-live ${offline ? 'stale' : isReplay ? 'off' : ''}`} onClick={() => setSheet('sync')} aria-label={isReplay ? '다시 보기 조작' : '중계와 맞추기'}>{liveLabel}</button>}
+        : <button className={`gm-live ${offline ? 'stale' : isReplay || waiting ? 'off' : ''}`} onClick={() => setSheet('sync')} aria-label={isReplay ? '다시 보기 조작' : '중계와 맞추기'}>{liveLabel}</button>}
       {isReplay && past === null && <button className="gm-icon" onClick={togglePause} disabled={t0 === null} aria-label={paused === null ? '일시정지' : '이어서 보기'}>
         <svg viewBox="0 0 24 24" className="fill">{paused === null ? <><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></> : <path d="M7 5l12 7-12 7z" />}</svg></button>}
       <span className="gm-grow" /><span className="gm-badge">실험판</span>
