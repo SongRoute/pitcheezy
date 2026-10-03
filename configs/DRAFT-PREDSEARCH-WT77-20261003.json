@@ -1,0 +1,266 @@
+{
+  "protocol": "predictor_blend_temperature_search_v1",
+  "draft_name": "DRAFT-PREDSEARCH-WT77-20261003",
+  "experiment_id": null,
+  "status": "DRAFT_UNREGISTERED",
+  "registration_note": "PM assigns the experiment ID, sets status REGISTERED and execution.enabled true before any real-data run. The grid, stage, populations, seeds, inputs and summaries below were pinned before any candidate score was read.",
+  "nature": "EXPLORATORY repeated-DEV search on sealed <=2025 probabilities. Not a fresh confirmation; no candidate promotion, no p-values, no confidence claims after 77-way search. G0 service/policy, G15 research baseline, D131/D155 verdicts unchanged.",
+  "authorization": "2026-10-03 user via Codex PM: autonomous new predictor experiments allowed; 2026 forbidden for fitting/tuning/selection; D155 policy revalidation stays closed",
+  "execution": {
+    "enabled": false,
+    "runner": "experiments/pitchmdp/scripts/search_predictor_blend_temperature.py",
+    "prefix": "cd experiments/pitchmdp && DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib /Users/song/Projects/pitcheezy/.venv/bin/python scripts/search_predictor_blend_temperature.py --config ../../configs/DRAFT-PREDSEARCH-WT77-20261003.json --local-config configs/local.json",
+    "order": [
+      "smoke : smoke --output /tmp/<dir>-smoke   (synthetic arrays only, no real data)",
+      "run   : run --output <runs>/<assigned ID>   (registered config only; refuses existing output)"
+    ],
+    "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
+    "queue": "shared heavy lock runs/ML-MATRIX-20260924/.heavy.lock (non-blocking, fails fast if held)",
+    "max_wall_seconds": 1800,
+    "chunk_rows": 65536
+  },
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "grid": {
+    "direct_weight": [
+      0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1
+    ],
+    "temperature": [
+      0.8,
+      0.9,
+      0.95,
+      1,
+      1.05,
+      1.1,
+      1.2
+    ],
+    "count": 77
+  },
+  "stage": {
+    "order": [
+      "member-wise probability mix w*direct_s + (1-w)*G0_s on the May-calibrated blend and dev splits of each seed s (run_ml_direct_head.mixed, exactly the EXP-P15-002 stage)",
+      "scalar temperature on the mixed member: p_T proportional to p^(1/T) (= log-probabilities / T, then softmax); T = 1 is the identity",
+      "five-seed mean and the June frequency blend weight re-selected on June Cpanel blend rows only (score_ml_matrix.summarize_cell / fit_blend, log_loss); per-seed weights for per-seed rows",
+      "whole MLB: the same tempered members on mlb_dev blended with the frozen frequency baseline using the candidate's own Cpanel June weight (EXP-P16-001 co-primary construction)"
+    ],
+    "note": "The temperature is a second scalar applied after the per-seed May temperature that each member already carries. It is not re-fitted; the grid is fixed. DEV is never used for fitting, calibration or selection inside a candidate."
+  },
+  "baselines": {
+    "G0-global": {
+      "direct_weight": 0,
+      "temperature": 1
+    },
+    "G15-direct": {
+      "direct_weight": 1,
+      "temperature": 1
+    },
+    "G15-direct-g0-mix": {
+      "direct_weight": 0.5,
+      "temperature": 1,
+      "frozen": "configs/G15-MIX-RESEARCH-FROZEN-v1.json"
+    }
+  },
+  "reproduction_gate": {
+    "reference": "results/EXP-P16-001.json",
+    "reference_sha256": "9d372da26b39fca07d6963a6861044721b31cf42209c92d5edb66f7b8a778597",
+    "abs_tolerance": 1e-09,
+    "checks": "Cpanel DEV after June blend: log_loss and brier of G0, G15-direct, mix; seed_deltas of G15-direct and mix vs G0; whole-MLB blended: candidate/control log_loss, brier and seed_deltas. Candidate scores are not computed until the three baselines pass."
+  },
+  "inputs": {
+    "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+    "parent_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+    "cpanel_frequency": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/baseline_predictions.npz",
+      "sha256": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b"
+    },
+    "mlb_frequency": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/baseline_predictions.npz",
+      "sha256": "bbf4f02a1b6287abff213657a254e4ceaec274d93d59d95041ea5ff6efc9784b"
+    },
+    "whole_mlb_preparation_sha256": "aa831981ed84963e7dc27f7037fed166c2e6f83b0ed29cfba32d2a8b31a0d52a",
+    "members": {
+      "0": {
+        "direct": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001/0",
+          "state": "prediction_state.json",
+          "state_sha256": "a710b0623593b63c6f8f11d6a79e588d8898e1926a9f3879e7ea29857805277c"
+        },
+        "direct_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001/0",
+          "state": "mlb_prediction_state.json",
+          "state_sha256": "83b865b5921e9081e0fc1d2bd8d22efb8ba66c90c2f5ba95925b9b032ee1ee12"
+        },
+        "g0": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed0",
+          "state": "prediction_state.json",
+          "state_sha256": "c56d8d7f6ceb66cba8a4f4ac40c9cfab6a31ce1d4e718830ccbd44191845f85e"
+        },
+        "g0_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed0",
+          "state": "prediction_state.json",
+          "state_sha256": "abdd91c331e3cd0f2b159a64b0ae7fb8ac3c4a72784db4b6f350c42cdd04b1be"
+        }
+      },
+      "1": {
+        "direct": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001/1",
+          "state": "prediction_state.json",
+          "state_sha256": "884893a33a73efad05d4ffb2dd05093e8ecf3a7c5a5afce916fdf6ec7079aaf0"
+        },
+        "direct_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001/1",
+          "state": "mlb_prediction_state.json",
+          "state_sha256": "193438b28f83d8c0b658d01faf6c84df35c37ce932e612c5966f6c977b99d07a"
+        },
+        "g0": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed1",
+          "state": "prediction_state.json",
+          "state_sha256": "927f6d831f122b83f1c07bf5b96fb662c8185df36b50e3eb98f65ae94708927c"
+        },
+        "g0_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed1",
+          "state": "prediction_state.json",
+          "state_sha256": "90df302d019f988d614854a46fef70989aeb27c58701c047e387699d7ece78db"
+        }
+      },
+      "2": {
+        "direct": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001/2",
+          "state": "prediction_state.json",
+          "state_sha256": "93c52646084cef85d46dcd3ba7a25c6bbd6605919c586a4a1eb90d929ed87293"
+        },
+        "direct_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001/2",
+          "state": "mlb_prediction_state.json",
+          "state_sha256": "f3d136a1ce1e5951bedc2ac708e1dd947adfaff7fd2bd99e881922fcde713848"
+        },
+        "g0": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001/members/G0-global/seed2",
+          "state": "prediction_state.json",
+          "state_sha256": "ff3c3a8d37c4156166bdcf4f91d6f08202315ba98ef5a9acd5b8447fa2a1dea8"
+        },
+        "g0_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed2",
+          "state": "prediction_state.json",
+          "state_sha256": "58ea48443e2511895ed584671d08016ef7786e2ee001598f51615baa5e0fef11"
+        }
+      },
+      "3": {
+        "direct": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P16-001/3",
+          "state": "prediction_state.json",
+          "state_sha256": "978244d8f0605cef72a6e57b54e1d982388e3498d41031028393bb569ebf57da"
+        },
+        "direct_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P16-001/3",
+          "state": "mlb_prediction_state.json",
+          "state_sha256": "5650c89a5a8c62e79ad62a47a32c28a8342d11f3e1cc8706ab4e0cea49587533"
+        },
+        "g0": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed3",
+          "state": "prediction_state.json",
+          "state_sha256": "6190458d9306f16fd2505eab34bada4b47f83e944dbe728692ce132a20a37f19"
+        },
+        "g0_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed3",
+          "state": "prediction_state.json",
+          "state_sha256": "90cd7dda015b1bb538b3061f1c67bfed40a60b79702ffd8ec41b7e81eb8aaef6"
+        }
+      },
+      "4": {
+        "direct": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P16-001/4",
+          "state": "prediction_state.json",
+          "state_sha256": "dbc7e369f6e231c5e0ca4342067d920685500c54a9c297b0779050034b776a97"
+        },
+        "direct_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P16-001/4",
+          "state": "mlb_prediction_state.json",
+          "state_sha256": "b96f5614b2496c95f7790582b08be7813e9b9e7875edb61f8271a1b56bf411ad"
+        },
+        "g0": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P10-001/members/G0-global/seed4",
+          "state": "prediction_state.json",
+          "state_sha256": "3014d9fbe91bb61dffe6355424282afa2328c6887200494d2abaf841f232b76d"
+        },
+        "g0_mlb": {
+          "dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001/members/G0-global/seed4",
+          "state": "prediction_state.json",
+          "state_sha256": "ab44992d31df4fcf2e0749077bdd920f83ac4e6e8620cf6603ef8a9e8a2e016f"
+        }
+      }
+    }
+  },
+  "periods": {
+    "unit": "calendar month of game_date (YYYY-MM)",
+    "columns": [
+      "game_pk",
+      "game_date"
+    ],
+    "source_files": [
+      {
+        "file": "statcast_2023.parquet",
+        "sha256": "46c354beae196ce2d501fe989c491725f2ecc47601f58d4b8b0234b982984730"
+      },
+      {
+        "file": "statcast_2024.parquet",
+        "sha256": "3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274"
+      },
+      {
+        "file": "statcast_2025.parquet",
+        "sha256": "4c785756d8901f8c46c70891954a4c54b8ad1c6909db67f4a000221691dc0249"
+      }
+    ],
+    "rule": "Every DEV game_pk must map to exactly one game_date in the pinned <=2025 raw files; otherwise the run stops. Only the two columns are read. 2026 files are refused."
+  },
+  "summaries": {
+    "populations": [
+      "cpanel_dev_after_blend",
+      "whole_mlb_dev_blended"
+    ],
+    "controls": [
+      "G0-global",
+      "G15-direct-g0-mix"
+    ],
+    "per_candidate": [
+      "log_loss",
+      "brier_multiclass",
+      "top_label_ece10 (Cpanel exact; whole MLB from streamed ten-bin reliability)",
+      "delta vs G0 and vs G15 (pitch-weighted)",
+      "per-seed deltas vs the same-seed G0 and G15",
+      "June weights",
+      "per-period deltas"
+    ],
+    "ranking": "descriptive: rank of delta NLL vs G15 in each population, mean of the two ranks, Brier ranks, four-objective Pareto set (both NLL and both Brier); no winner is declared",
+    "bootstrap": "none for the 77 candidates; no p-values"
+  },
+  "references": [
+    {
+      "key": "Guo2017",
+      "url": "https://proceedings.mlr.press/v70/guo17a.html",
+      "use": "scalar temperature scaling (here a fixed grid, not fitted)"
+    },
+    {
+      "key": "Lakshminarayanan2017",
+      "url": "https://proceedings.neurips.cc/paper/2017/hash/9ef2ed4b7fd2c810847ffa5fa85bce38-Abstract.html",
+      "use": "inspiration only: arithmetic blend of heterogeneous heads is not a faithful deep-ensemble reproduction"
+    }
+  ],
+  "data_rules": "No 2026 rows. No fitting on DEV. No row realignment: every array must match the parent keys exactly or the run stops.",
+  "output": "fresh child of runs/ML-MATRIX-20260924 named after the assigned ID; existing output refused"
+}
