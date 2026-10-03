@@ -269,7 +269,7 @@ def korean_table(result):
         lo, hi = b['ci95'] or (float('nan'), float('nan'))
         return f"{b['delta']:+.5f} [{lo:+.5f}, {hi:+.5f}]"
     lines = [f"# {result['family']} 직접 헤드 기술 비교 (보정 확률, 혼합 전)", '',
-             '- 범위: 시드 3개 평균 보정 확률 vs 같은 가족 CUDA 대조군. 6월 블렌드·G0 혼합·G15·정책 아님.',
+             f'- 범위: 시드 {len(result.get("seed_block", {}).get("seeds", [0, 1, 2]))}개 평균 보정 확률 vs 같은 가족 CUDA 대조군. 6월 블렌드·G0 혼합·G15·정책 아님.',
              '- 음수 = 대조군보다 손실이 낮음. 경기 단위 부트스트랩 10,000회 95% 구간. 결정·순위·승자 없음(설정 순서).',
              f"- config {result['provenance']['config']['file_sha256'][:12]} · export "
              f"{result['provenance']['export']['manifest_sha256'][:12]} · 과제 소스 {result['provenance']['task_sources']['kind']}",
