@@ -1,3 +1,5 @@
+> 10/4 갱신: P22본실험과P23고정66조합완료. [P22](reviews/PM-P22-periodic-result-2026-10-04.md), [P23](reviews/PM-P23-ensemble-result-2026-10-04.md). P23최상위의G15대비ΔNLL은Cpanel−0.00172/MLB−0.00202(각3/3seed개선), 반복DEV의탐색이며최종채택아님. CUDA추가실험준비중.
+
 # 실험 로그
 
 **D86 실행 완료:** 전체 June 보정 B1/B2를 10단계·공식 473.521126초로 완료했다. B1/B2의 작은 NLL 개선은 등록 최소 폭 −0.003에 미달했고 유형별 B2의 B1 대비 이득도 미확정이다. R78 통과, N3 미확정으로 G0를 유지한다. [실행 보고서](reports/ML-June-calibration-execution-2026-09-28.md). 아래 D83는 실행 전 이력이다.
