@@ -1,12 +1,14 @@
 # PM 상태판
 
-갱신: **2026-10-03 12:38 KST**. 목표: **10/6 16:00**, 교수님 연구실에서 맥북·아이폰으로 약 5분 시연.
+갱신: **2026-10-03 12:46 KST**. 목표: **10/6 16:00**, 교수님 연구실에서 맥북·아이폰으로 약 5분 시연.
 
-## 자율 연구 확장 — D165 진행 중 (12:38 KST)
+## 자율 연구 확장 — D165 진행 중 (12:46 KST)
 
 - **EXP-P19-001 완료:** 혼합비11×온도7=77조합, 5seed. 기존기준21재현검사 통과. 두범위NLL 개선6개, 상위0.7/T1.0 ΔNLL 약−0.00065/−0.00072. 작은 개발결과이며 채택 없음. [결과](../reviews/PM-P19-search-result-2026-10-03.md).
-- **EXP-P20-001 실제학습 큐 시작:** 최근성반감기180/365/730일×seed0,1,2 총9fit+채점. 실제smoke 성공,28tests 통과, PM등록 f19c69e. 기존사전계산 주기와 겹치지 않는 단계별창에서 실행; 단계600초/전체7200초 상한, 운영이상시 새실험만 중단. 위치 `codex/research-roadmap-1006`. 현재실행상태는 아래로그 state.json이 기준.
+- **EXP-P20-001 실제학습 큐 시작:** 최근성반감기180/365/730일×seed0,1,2 총9fit+채점. 실제smoke 성공,28tests 통과, PM등록 f19c69e. 기존사전계산 주기와 겹치지 않는 단계별창에서 실행; 단계600초/전체7200초 상한, 운영이상시 새실험만 중단. 위치 `codex/research-roadmap-1006`. 12:46 현재 6/9개 완료, 정기 계산 뒤 마지막 3개 학습 재개. 현재 실행 상태는 아래 로그 state.json이 기준.
 - **EXP-P21/22 등록·실제 smoke 성공:** ResNet형 구조와 수치 임베딩 모델, 각각 3 seed의 본 학습을 P20 → P21 → P22 순서로 연결했다. 선행 계열 성공 후 자동으로 실행하고 실패하면 대기 계열도 멈춘다. [검토·실행 기록](../reviews/PM-new-head-smoke-2026-10-03.md).
+- **후속 혼합 66조합 준비:** 기본 직접 head·최근성 3개·ResNet·수치 임베딩의 단일/쌍/전체 평균 22종 × G0 혼합 비중 3개. 결과를 보기 전에 조합을 정했고 Opus가 저장 예측 재사용 실행기를 구현 중이다. 아직 등록·실행 전.
+- **새 입력 조사:** 투수의 이전 투구 수·타순 회차·이전 등판 간격을 투구 전 정보로 재구성하는 감사 코드와 합성 검사 6개 통과. TRAIN 품질 감사·모델 입력 추가는 아직 실행 전. 미래의 다음 등판 간격은 사용 금지.
 - **실제 영상 데스크톱 확인 완료:** 8771에서 실제 MLB 영상 첫 3장면 재생·정지·추천/실제 투구 공개·장면 이동 통과. [기록](DEMO-1006-rehearsal.md). 아이폰·사람의 장면 대응 검토는 남음.
 - 자료감사: 확인된미노출≤2025 모집단 없음. 새결과는 노출DEV 개발비교. GPU는12:00읽기점검(0–3점유,4유휴한번관찰),17시가용예상 유지·그전사용0.
 - **Opus5.5만 사용.** Codex PM검토. 원문/로그: `/Users/song/Projects/pitcheezy-pm-jobs/20261003-search/`. 실제학습큐: `recency-queue-001/state.json`. 임의성능승격/2026튜닝/운영교체 없음.
@@ -41,8 +43,8 @@
 
 ## 검증·브랜치
 
-- 통합: `/Users/song/Projects/pitcheezy-worktrees/codex-showcase-1006`, `codex/showcase-1006`, **e0cb5ba**. 기존 live-sync/ui-frame/intent-setup을 별도 작업트리에서 통합했다.
-- 변경 커밋: API 7ea9ef8, 요약 화면 d6b298a, UI d0a4499, 영상 비교 41d278f, 통합·독립 검토 수정 320245d. 원격 push·운영 반영 없음.
+- 통합: `/Users/song/Projects/pitcheezy-worktrees/codex-showcase-1006`, `codex/showcase-1006`, **f054f73**. 기존 live-sync/ui-frame/intent-setup을 별도 작업트리에서 통합했다.
+- 문구 정리 f054f73(위치 표현 중복 제거), build·showcase 합성 검사·실제 표시 확인. 변경 커밋: API 7ea9ef8, 요약 화면 d6b298a, UI d0a4499, 영상 비교 41d278f, 통합·독립 검토 수정 320245d. 원격 push·운영 반영 없음.
 - PM 직접 재검증: 백엔드 **257 passed**(2.68초), 프런트 build, game-frame-smoke, game-demo-regression, watch-summary-panel(9 requests), showcase-smoke(1440/390px), 실제 849843 watch-along-smoke 통과. 저장 경기 9개 요약 확인에서 issues 없음.
 - 연구 focused tests **18 passed**. 연구 브랜치는 ML 계보가 달라 UI 통합 브랜치에 병합하지 않았다. 실험 실행 성공으로 기록하지 않는다.
 - 독립 검토: 통합 작업트리 `docs/reviews/PM-showcase-independent-review-2026-10-03.md`. 실제 영상·Safari·과학 판정 검토와 구분한다.
