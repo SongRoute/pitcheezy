@@ -9,8 +9,14 @@ process groups still running at `kill_own_after` are terminated (SIGTERM, then
 SIGKILL); the summary is written immediately, before `aggregate_by`.  A task that
 fails twice (failure, timeout, missing state) is final and never retried; attempts
 persist across queue restarts.  Per-task timeout and a family wall budget bound the
-run.  The queue never promotes, pushes or deploys anything and never touches a
-process it did not start.
+run; spent seconds are derived from the persisted status stages, so a restart does
+not reset the budget.  Any exception or SIGTERM/SIGHUP/SIGINT stops this queue's own
+process groups BEFORE GPU and queue locks are released.  On restart a task still
+recorded `running` whose pid or process group is alive (or cannot be checked) stops
+the queue for manual review; nothing is relaunched beside it.  Model/runner source
+hashes are pinned at queue start and re-checked before every launch.  Real (non-smoke)
+runs require status REGISTERED and execution.enabled true.  The queue never
+promotes, pushes or deploys anything and never touches a process it did not start.
 
   python scripts/cuda_direct_queue.py --config ../../configs/DRAFT-CUDA-DIRECT-20261004.json \
       --config-sha256 <sha> --export <dir> --export-manifest-sha256 <sha> --output <family dir> \
@@ -34,6 +40,26 @@ PROJECT = Path(__file__).resolve().parents[1]
 RUNNER = PROJECT / 'scripts' / 'run_cuda_direct.py'
 KST = timezone(timedelta(hours=9))  # no DST
 FINAL = ('done', 'failed_final', 'killed_deadline')
+SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
+
+
+class QueueInterrupted(Exception):
+    pass
+
+
+def group_alive(pid, pgid):
+    """True if the recorded leader or its group may still exist; uncertainty counts as alive."""
+    for probe, target in ((os.kill, pid), (os.killpg, pgid)):
+        if target is None:
+            continue
+        try:
+            probe(int(target), 0)
+            return True
+        except ProcessLookupError:
+            continue
+        except Exception:  # PermissionError or anything else: cannot rule out
+            return True
+    return pid is None and pgid is None
 
 
 def sha256_file(path):
@@ -105,14 +131,14 @@ class GpuLock:
 
 class Queue:
     def __init__(self, config, queue_dir, gpus, command_for, is_complete, *, lock_dir=None, priorities=(1, 2),
-                 clock=lambda: datetime.now(KST), sleep=time.sleep, poll=5., grace=20.):
+                 clock=lambda: datetime.now(KST), sleep=time.sleep, poll=5., grace=20., before_launch=None):
         q = config['queue']
         allowed = config['device']['allowed_gpu_uuids']
         if not gpus or len(gpus) > min(2, config['device']['max_parallel']) or len(set(gpus)) != len(gpus) \
                 or any(g not in allowed for g in gpus):
             raise ValueError('One or two distinct GPUs from the allow-list only')
         self.config, self.dir, self.gpus = config, Path(queue_dir), list(gpus)
-        self.command_for, self.is_complete = command_for, is_complete
+        self.command_for, self.is_complete, self.before_launch = command_for, is_complete, before_launch
         self.deadlines, self.clock, self.sleep, self.poll, self.grace = Deadlines(q), clock, sleep, poll, grace
         self.timeout, self.budget, self.max_attempts = q['task_timeout_seconds'], q['family_budget_seconds'], q['max_attempts']
         if self.max_attempts != 2:
@@ -122,7 +148,17 @@ class Queue:
         self.locks = {g: GpuLock(lock_dir or self.dir / 'locks', g) for g in self.gpus}
         self.tasks = plan(config, priorities)
         self.running = {}  # gpu -> (task, Popen, started monotonic, log handle)
-        self.family_seconds = 0.
+
+    def spent(self):
+        """Family seconds from every persisted status stage (survives restarts; any priority)."""
+        total = 0.
+        for path in sorted((self.dir / 'status').glob('*.json')):
+            total += sum(float(stage.get('seconds') or 0.) for stage in json.loads(path.read_text())['stages'])
+        return total
+
+    @property
+    def family_seconds(self):
+        return self.spent()
 
     # ---- status
     def status_path(self, task):
@@ -161,6 +197,8 @@ class Queue:
         return None
 
     def launch(self, gpu, task):
+        if self.before_launch is not None:
+            self.before_launch(task)  # raises when pinned identity changed: fail closed
         record = self.status(task)
         attempt = record['attempts'] + 1
         log_path = self.dir / 'logs' / f'{task["id"]}-attempt{attempt}.log'
@@ -194,7 +232,6 @@ class Queue:
     def finish(self, gpu, state=None, stage=None):
         task, process, started, log = self.running.pop(gpu)
         elapsed = time.monotonic() - started
-        self.family_seconds += elapsed
         log.close()
         self.locks[gpu].release()
         code = process.returncode
@@ -216,52 +253,95 @@ class Queue:
                 self.stop_group(process)
                 self.finish(gpu, 'pending', 'timeout_killed')
 
-    def kill_all(self):
+    def kill_all(self, state='killed_deadline', stage='deadline_killed'):
+        """Stop own groups, then record (finish releases the GPU lock only after the group is gone)."""
         for gpu in list(self.running):
             self.stop_group(self.running[gpu][1])
-            self.finish(gpu, 'killed_deadline', 'deadline_killed')
+            self.finish(gpu, state, stage)
+
+    def recover(self, now):
+        """Tasks left `running` by a dead queue: alive -> manual review; dead -> attempt spent, wall charged."""
+        for task in self.tasks:
+            record = self.status(task)
+            if record['state'] != 'running':
+                continue
+            if group_alive(record.get('pid'), record.get('pgid')):
+                raise RuntimeError(f'{task["id"]}: recorded running pid {record.get("pid")} may still be alive; '
+                                   'manual review required, nothing launched')
+            launched = [s for s in record['stages'] if s['stage'] == 'launched']
+            try:
+                charged = max(0., (datetime.now(timezone.utc) - datetime.fromisoformat(launched[-1]['utc'])).total_seconds())
+            except Exception as error:
+                raise RuntimeError(f'{task["id"]}: cannot charge the orphaned attempt; manual review') from error
+            state = 'failed_final' if record['attempts'] >= self.max_attempts else 'pending'
+            self.update(task, state, stage='orphan_dead_on_restart', seconds=charged, seconds_estimated='wall since launch')
+
+    def _interrupt(self, signum, frame):
+        for sig in SIGNALS:
+            signal.signal(sig, signal.SIG_IGN)  # cleanup must not be interrupted again
+        raise QueueInterrupted(f'signal {signum}')
 
     def run(self):
         queue_lock = GpuLock(self.dir, 'queue')
         if not queue_lock.acquire():
             raise RuntimeError('Another queue instance owns this queue directory')
+        previous = {}
         try:
-            write_json(self.dir / 'plan.json', {'tasks': self.tasks, 'gpus': self.gpus, 'created_utc': utc(),
-                                                'deadlines_kst': [str(self.deadlines.no_new), str(self.deadlines.kill),
-                                                                  str(self.deadlines.aggregate)]})
-            while True:
-                now = self.clock()
-                self.reap(now)
-                if self.deadlines.must_kill(now):
-                    self.kill_all()
-                    break
-                launching = self.deadlines.may_launch(now) and self.family_seconds < self.budget
-                if launching:
-                    for gpu in self.gpus:
-                        if gpu in self.running:
-                            continue
-                        task = self.next_task()
-                        if task is None:
-                            break
-                        if not self.locks[gpu].acquire():
-                            self.update(task, None, stage='gpu_lock_busy', gpu=gpu)
-                            continue
-                        try:
-                            self.launch(gpu, task)
-                        except Exception as error:
-                            self.locks[gpu].release()
-                            self.update(task, None, stage='launch_error', error=repr(error))
-                            raise
-                if not self.running and (not launching or self.next_task() is None):
-                    break
-                self.sleep(self.poll)
-            for task in self.tasks:
-                if self.status(task)['state'] not in FINAL:
-                    reason = 'deadline_no_new_fit' if not self.deadlines.may_launch(self.clock()) else 'family_budget'
-                    self.update(task, 'not_run', stage=reason)
-            return self.summary()
+            for sig in SIGNALS:
+                previous[sig] = signal.signal(sig, self._interrupt)
+        except ValueError:  # not the main thread: exceptions are still cleaned up below
+            previous = {}
+        try:
+            return self._run()
+        except BaseException as error:
+            self.kill_all('pending', 'queue_interrupted')  # stop own groups BEFORE any lock is released
+            write_json(self.dir / f'interrupted-{os.getpid()}.json', {'error': repr(error), 'utc': utc()})
+            raise
         finally:
+            for gpu in list(self.running):  # defensive: never release a lock with a live own group
+                self.stop_group(self.running[gpu][1])
+                self.finish(gpu, 'pending', 'queue_interrupted')
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
             queue_lock.release()
+
+    def _run(self):
+        self.recover(self.clock())
+        write_json(self.dir / 'plan.json', {'tasks': self.tasks, 'gpus': self.gpus, 'created_utc': utc(),
+                                            'deadlines_kst': [str(self.deadlines.no_new), str(self.deadlines.kill),
+                                                              str(self.deadlines.aggregate)]})
+        while True:
+            now = self.clock()
+            self.reap(now)
+            if self.deadlines.must_kill(now):
+                self.kill_all()
+                break
+            launching = self.deadlines.may_launch(now) and self.spent() < self.budget
+            if launching:
+                for gpu in self.gpus:
+                    if gpu in self.running:
+                        continue
+                    task = self.next_task()
+                    if task is None:
+                        break
+                    if not self.locks[gpu].acquire():
+                        self.update(task, None, stage='gpu_lock_busy', gpu=gpu)
+                        continue
+                    try:
+                        self.launch(gpu, task)
+                    except Exception as error:
+                        if gpu not in self.running:  # a launched group keeps its lock until stopped
+                            self.locks[gpu].release()
+                        self.update(task, None, stage='launch_error', error=repr(error))
+                        raise
+            if not self.running and (not launching or self.next_task() is None):
+                break
+            self.sleep(self.poll)
+        for task in self.tasks:
+            if self.status(task)['state'] not in FINAL:
+                reason = 'deadline_no_new_fit' if not self.deadlines.may_launch(self.clock()) else 'family_budget'
+                self.update(task, 'not_run', stage=reason)
+        return self.summary()
 
     def summary(self):
         records = [self.status(t) for t in self.tasks]
@@ -271,7 +351,7 @@ class Queue:
                   'counts': {s: sum(r['state'] == s for r in records) for s in sorted({r['state'] for r in records})},
                   'priority1_complete': all(r['state'] == 'done' for r in first),
                   'comparison_allowed': all(r['state'] == 'done' for r in first),
-                  'family_seconds': self.family_seconds,
+                  'family_seconds': self.spent(), 'family_budget_seconds': self.budget,
                   'tasks': [{k: r.get(k) for k in ('id', 'arm', 'seed', 'priority', 'state', 'attempts', 'gpu',
                                                      'returncode', 'seconds', 'log')} for r in records],
                   'note': 'No promotion, push or deployment. Descriptive scoring happens on the Mac after pull.'}
@@ -281,6 +361,10 @@ class Queue:
 
 # ------------------------------------------------------------------ CLI
 
+def pinned_sources(runner):
+    return {**runner.own_hashes(), 'scripts/cuda_direct_queue.py': sha256_file(Path(__file__).resolve())}
+
+
 def preflight(args, config):
     """Fail closed before any launch."""
     if sha256_file(args.config) != args.config_sha256:
@@ -288,10 +372,12 @@ def preflight(args, config):
     sys.path.insert(0, str(PROJECT / 'scripts'))
     import run_cuda_direct as runner  # numpy only at import; torch is never imported here
     runner.config_check(config)
+    runner.require_executable(config, args.smoke)
     runner.verify_export(args.export, config, args.export_manifest_sha256)
     if args.smoke != args.output.name.endswith('-smoke'):
         raise ValueError('Smoke runs write only to an output ending -smoke, and only smoke runs may')
-    return {'runner_sha256': sha256_file(RUNNER), 'config_sha256': args.config_sha256,
+    return {'runner_sha256': sha256_file(RUNNER), 'source_sha256': pinned_sources(runner),
+            'config_sha256': args.config_sha256,
             'export_manifest_sha256': args.export_manifest_sha256, 'python': sys.executable, 'checked_utc': utc()}
 
 
@@ -323,16 +409,24 @@ def main(argv=None):
                    '--gpu-uuid', gpu, 'task', '--arm', task['arm'], '--seed', str(task['seed'])]
         return command + (['--smoke'] if args.smoke else [])
 
+    pinned = {}
+
     def is_complete(task):
         dest = runner.task_dir(args.output, task['arm'], task['seed'], args.smoke)
         if not (dest / 'state.json').is_file():
             return False
-        runner.verify_task(dest)
+        sources = {k: v for k, v in pinned['source_sha256'].items() if k != 'scripts/cuda_direct_queue.py'}
+        runner.verify_task(dest, runner.expected_identity(config, args.export_manifest_sha256, task['arm'], task['seed'],
+                                                          args.smoke, 'cuda', sources))
         return True
 
-    queue = Queue(config, args.queue_dir, args.gpu, command_for, is_complete, lock_dir=args.lock_dir,
-                  priorities=tuple(getattr(args, 'priority', None) or (1, 2)))
+    def before_launch(task):
+        if pinned_sources(runner) != pinned['source_sha256'] or sha256_file(args.config) != args.config_sha256:
+            raise RuntimeError('Runner/model/queue sources or config changed since queue start; nothing launched')
+        runner.verify_export(args.export, config, args.export_manifest_sha256, hash_arrays=False)
+
     if args.command == 'summary':
+        queue = Queue(config, args.queue_dir, args.gpu, command_for, is_complete, lock_dir=args.lock_dir)
         print(json.dumps(queue.summary(), indent=2))
         return
     args.queue_dir.mkdir(parents=True, exist_ok=True)
@@ -341,7 +435,10 @@ def main(argv=None):
     except Exception as error:
         write_json(args.queue_dir / f'preflight-failed-{os.getpid()}.json', {'error': repr(error), 'utc': utc()})
         raise
+    pinned.update(identity)
     write_json(args.queue_dir / f'preflight-{os.getpid()}.json', identity)
+    queue = Queue(config, args.queue_dir, args.gpu, command_for, is_complete, lock_dir=args.lock_dir,
+                  priorities=tuple(getattr(args, 'priority', None) or (1, 2)), before_launch=before_launch)
     result = queue.run()
     print('CUDA_QUEUE_DONE', json.dumps(result['counts']), 'comparison_allowed', result['comparison_allowed'], flush=True)
 

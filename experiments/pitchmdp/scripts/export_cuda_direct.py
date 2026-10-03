@@ -64,6 +64,8 @@ def check_arrays(split, arrays, shapes, columns_n):
         raise ValueError(f'{split}: nonfinite input')
     if np.any(arrays['tokens'][:, -1, :cuda.N_PHYSICAL] != 0):
         raise ValueError(f'{split}: current physics not zero')
+    if np.any(arrays['tokens'][:, -1, -cuda.N_OUTCOME:] != 0):
+        raise ValueError(f'{split}: current outcome not zero')
     if not np.isin(arrays['y'], range(10)).all():
         raise ValueError(f'{split}: labels outside the ten-class contract')
     if not np.array_equal(arrays['keys'][:, 0], arrays['game_pk']):
@@ -117,6 +119,28 @@ def write_export(output, splits, lineage, shapes, columns, expect_bytes=None):
 
 # ------------------------------------------------------------------ real export (root runs; heavy)
 
+SHARING_TAIL = 7  # matrix_sharing.training_arrays strips 5 cluster flags, cluster id, routing id
+
+
+def context_layout(context, frame, n_context):
+    """Column groups of the stripped 52-wide context, read from the frozen objects (never guessed).
+
+    SharingContext.transform = base | pitcher profile (clusters['columns']) | log1p(count)/10 | 7 stripped.
+    Base per-column names are recorded only when the base report lists exactly one name per column.
+    """
+    base_width = int(np.asarray(context.base.transform(frame)).shape[1])
+    profile = [str(c) for c in context.clusters['columns']]
+    if base_width + len(profile) + 1 != n_context:
+        raise ValueError('Context layout differs from the exported 52 columns')
+    report = context.base.report()
+    names = report.get('features') if isinstance(report, dict) else None
+    base_names = list(names) if isinstance(names, list) and len(names) == base_width else 'unknown'
+    stop = base_width + len(profile)
+    return {'groups': {'base': [0, base_width], 'pitcher_profile': [base_width, stop], 'pitcher_support': [stop, stop + 1]},
+            'base_column_names': base_names, 'base_report': report,
+            'pitcher_profile_columns': profile, 'pitcher_support_column': 'log1p(TRAIN pitcher count)/10',
+            'stripped_tail': SHARING_TAIL, 'source': 'matrix_sharing.SharingContext.transform + training_arrays'}
+
 def collect(cuda_config, local_path):
     """Frozen-loader arrays for every split; the only path that reads real data."""
     import pandas as pd
@@ -138,7 +162,12 @@ def collect(cuda_config, local_path):
     local = read_json(local_path)
     recency.verify_control(wconfig)
     parent, pprep, store, context, parts, _ = load(local, wconfig)
-    values = workload.workload_columns(workload.read_raw(local), store.frame).astype(np.float32)
+    if wconfig['feature_rules']['raw_sha256'] != workload.FROZEN_RAW_SHA256:
+        raise ValueError('Workload raw pins differ')
+    # read_raw hashes the exact bytes it parses against the frozen 2023-2025 pins
+    raw = workload.read_raw(local, workload.FROZEN_RAW_SHA256)
+    values = workload.workload_columns(raw, store.frame).astype(np.float32)
+    layout = context_layout(context, store.frame.iloc[:64], cuda_config['export']['shapes']['n_context'])
     splits = {}
     for split in cuda_config['export']['splits']:
         part = parts[split]
@@ -156,7 +185,8 @@ def collect(cuda_config, local_path):
     lineage = {'parent_run': str(parent), 'parent_preparation_sha256': wconfig['parent_preparation_sha256'],
                'control_run': wconfig['control']['run'], 'control_preparation_sha256': wconfig['control']['preparation_sha256'],
                'workload_config_sha256': source['sha256'],
-               'raw_file_sha256': workload.raw_hashes(local), 'direct_source_sha256': direct.source_hashes(),
+               'raw_file_sha256': dict(workload.FROZEN_RAW_SHA256), 'raw_verification': 'read_raw parsed-bytes pin check',
+               'context_layout': layout, 'workload_columns': list(workload.COLUMNS), 'direct_source_sha256': direct.source_hashes(),
                'export_source_sha256': {rel: hash_file(PROJECT / rel) for rel in SOURCES},
                'git_commit': _git_commit(), 'normalization': cuda_config['export']['normalization'],
                'train_workload_report': workload.feature_report(values, train_rows),
@@ -176,17 +206,19 @@ def _git_commit():
 
 # ------------------------------------------------------------------ Mac scoring (after pull)
 
-def load_members(root, arm, seeds):
+def load_members(root, arm, seeds, config, manifest_sha256):
+    """Pulled members whose identity is this config/export/arm/seed, real (non-smoke) CUDA, current sources."""
     members = []
     for seed in seeds:
         dest = Path(root) / arm / str(seed)
-        cuda.verify_task(dest)
+        cuda.verify_task(dest, cuda.expected_identity(config, manifest_sha256, arm, seed, False, 'cuda',
+                                                      cuda.own_hashes()))
         with np.load(dest / 'predictions.npz', allow_pickle=False) as data:
             members.append({k: data[k].copy() for k in data.files})
     return members
 
 
-def score(cuda_config, pulled, destination):
+def score(cuda_config, pulled, destination, manifest_sha256):
     """Descriptive repeated-DEV comparison of every complete arm vs the CUDA control."""
     from run_ml_benchmark import read_json
     from run_ml_delivery_pool import members
@@ -206,7 +238,7 @@ def score(cuda_config, pulled, destination):
     with np.load(parent / 'baseline_predictions.npz', allow_pickle=False) as data:
         baseline = {k: data[k].copy() for k in data.files}
     g0 = members(parent, 'members/' + direct.CELL + '/seed{seed}', 'prediction_state.json')
-    control = load_members(pulled, 'control', seeds)
+    control = load_members(pulled, 'control', seeds, cuda_config, manifest_sha256)
     result = {'family': cuda_config['experiment_id'], 'status': cuda_config['status'], 'arms': {}, 'decision': None,
               'control': 'CUDA control (same device, no workload); frozen MPS EXP-P15-001 not compared',
               'limits': ['Descriptive repeated-DEV comparison; Cpanel DEV already exposed',
@@ -216,7 +248,7 @@ def score(cuda_config, pulled, destination):
         if not all((Path(pulled) / arm / str(s) / 'state.json').is_file() for s in seeds):
             result['arms'][arm] = 'incomplete: not compared'
             continue
-        result['arms'][arm] = recency.describe(load_members(pulled, arm, seeds), control, g0, baseline,
+        result['arms'][arm] = recency.describe(load_members(pulled, arm, seeds, cuda_config, manifest_sha256), control, g0, baseline,
                                                wconfig['mix']['direct_weight'])
     destination.mkdir(parents=True)
     cuda.write_json_atomic(destination / 'descriptive.json', result)
@@ -236,6 +268,7 @@ def main():
     c = sub.add_parser('score')
     c.add_argument('--pulled', type=Path, required=True, help='pulled CUDA family directory (arm/seed/...)')
     c.add_argument('--destination', type=Path, required=True)
+    c.add_argument('--export-manifest-sha256', required=True, help='the export the CUDA tasks must have used')
     args = p.parse_args()
     config = cuda.config_check(cuda.read_json(args.config))
     shapes, columns = config['export']['shapes'], config['export']['workload_columns']
@@ -254,7 +287,7 @@ def main():
             digest = write_export(output, splits, lineage, shapes, columns, args.expect_bytes)
         print('CUDA_EXPORT_COMPLETE', output, 'manifest_sha256', digest, flush=True)
     else:
-        result = score(config, args.pulled, args.destination)
+        result = score(config, args.pulled, args.destination, args.export_manifest_sha256)
         print('CUDA_DESCRIBED', {a: (r if isinstance(r, str) else
                                      {k: r[k]['after_june_blend']['paired']['nll'] for k in ('direct', 'mix')})
                                  for a, r in result['arms'].items()}, flush=True)
