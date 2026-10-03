@@ -1,0 +1,214 @@
+{
+  "protocol": "ml_direct_periodic_v1",
+  "experiment_id": "EXP-P22-001",
+  "status": "REGISTERED",
+  "decision": "D165: Codex PM registers fixed periodic numerical embedding adaptation before full fits or DEV scoring. All three seeds complete before descriptive comparison. No official verdict or promotion.",
+  "frontier_row": "Numerical-feature embeddings for the direct head (exploratory, D165); not an existing registered frontier ID",
+  "hypothesis": "Periodic (PLR-lite) embeddings of the continuous direct-head inputs change the 2025 Cpanel DEV outcome distribution prediction of the frozen flatten-MLP EXP-P15-001 head, alone and in the fixed 1/2 mix with G0-global.",
+  "one_change": "Input representation of 80 continuous scalars only (40 past-token physics, 40 continuous context): raw scalar -> 8-dim periodic embedding. Head kind flatten_mlp width 128 (Linear(n,256) GELU Linear(256,256) GELU Linear(256,10)), optimizer AdamW wd .01, budget, unweighted May 1-15 early stop, May 16-31 Cpanel temperature, June Cpanel frequency blend, Cpanel DEV and frozen whole-MLB DEV are EXP-P15-001. The first Linear widens with the input (286 -> 846).",
+  "literature": {
+    "source": "Gorishniy, Rubachev, Babenko 2022, On Embeddings for Numerical Features in Tabular Deep Learning",
+    "paper": "https://arxiv.org/abs/2203.05556",
+    "official_code": "https://github.com/yandex-research/rtdl-num-embeddings (package/rtdl_num_embeddings.py and package/README.md read at commit a8fc250; MIT license)",
+    "fidelity": "Adaptation, not reproduction: PLR with the README lite option (shared outer Linear), sigma .01 = package default called safe in the README, 16 frequencies and d_embedding 8 instead of package defaults 48/24 to bound head growth, truncated-normal(+-3 sigma) frequency init as in the package, trainable frequencies, no tuning, ten-class head, flattened token/mask/context contract, padded past physics embeddings masked to zero, current-pitch physics never embedded. Formula reimplemented; no third-party code copied."
+  },
+  "candidate_architecture": {
+    "kind": "periodic_flatten_mlp",
+    "backbone": "flatten_mlp",
+    "width": 128,
+    "type": "PLR-lite",
+    "n_frequencies": 16,
+    "d_embedding": 8,
+    "sigma": 0.01,
+    "activation": "relu",
+    "frequencies_trainable": true,
+    "exact_network": "e=ReLU(Linear(32,8)(cat(cos,sin)(2*pi*c*x_num)))*mask, c ~ TruncNormal(0,.01,+-.03) per scalar [80,16]; logits=flatten_mlp(cat(raw 206, e.flatten 640))",
+    "input_contract": {
+      "n_context": 52,
+      "n_token": 38,
+      "length": 6
+    },
+    "input_map": {
+      "token_embedded": "physical channels 0-7 of past positions 0-4 (standardized effective_speed, release_spin_rate, spin_axis_sin, spin_axis_cos, pfx_x, pfx_z, plate_x, plate_z); embedding zeroed where the position is padded",
+      "token_raw": "past type one-hot 8-26 and outcome one-hot 27-37; the whole current token (physics 0-7 zero by contract, candidate type, zero outcome); padding mask",
+      "pitcher_profile_columns": [
+        "effective_speed",
+        "release_spin_rate",
+        "pfx_x",
+        "pfx_z",
+        "left_share",
+        "type_CH",
+        "type_CS",
+        "type_CU",
+        "type_EP",
+        "type_FA",
+        "type_FC",
+        "type_FF",
+        "type_FO",
+        "type_FS",
+        "type_KC",
+        "type_KN",
+        "type_PO",
+        "type_SC",
+        "type_SI",
+        "type_SL",
+        "type_ST",
+        "type_SV",
+        "type_UN"
+      ],
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "context_raw": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        32
+      ],
+      "context_reasons": {
+        "embedded": "11-16 standardized batter style priors, 17-22 style reliabilities in [0,1], 23-27 soft archetype memberships, 28-31 standardized pitcher physical means, 33-50 standardized pitcher type proportions, 51 log1p(TRAIN count)/10",
+        "raw": "0-4 balls/strikes/outs/inning/score lead (integer ordinals), 5-10 binary flags (top, bases, batter/pitcher hand), 32 pitcher left-hand share (near binary)"
+      },
+      "column_source": "Pinned frozen EXP-P4-001 preparation.json clusters.columns, PM copied metadata 2026-10-03 before smoke; no outcome payload read."
+    },
+    "n_raw": 206,
+    "n_embedded": 80,
+    "n_head_input": 846,
+    "parameter_count": 286738,
+    "parameter_breakdown": {
+      "frequencies": 1280,
+      "shared_embedding_linear": 264,
+      "head": 285194
+    },
+    "training": {
+      "epochs": 30,
+      "patience": 5,
+      "batch_size": 1024,
+      "learning_rate": 0.0005
+    },
+    "hpo_trials": 0,
+    "fit_procedure": "DirectPeriodicModel inherits DirectResidualModel.fit (tested mirror of MatrixModel.fit); only network factory, zero-current-physics guard and archive differ"
+  },
+  "control_training": {
+    "kind": "flatten_mlp",
+    "width": 128,
+    "epochs": 30,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005
+  },
+  "control_parameter_count": 141834,
+  "control_parameter_count_source": "EXP-P15-001/0/fit.json report.parameter_count (network n_context 52, n_token 38, length 6)",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "future_confirmation": "Seeds 3 and 4 only in a separate registered confirmation after root review. Equal-parameter raw-input control only as a follow-up (capacity vs representation).",
+  "control": {
+    "experiment_id": "EXP-P15-001",
+    "arm": "G15-direct (uniform weights)",
+    "run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P15-001",
+    "preparation_sha256": "2e3f553f3ce86941187d6be21adeda05ebaf948a40d01110ef2326cb8327b0b4",
+    "device": "mps (fit.json report, seed 0)"
+  },
+  "mix": {
+    "direct_weight": 0.5,
+    "rule": "candidate direct head and the frozen G0-global member of the same seed, member-wise 1/2, then the same June frequency blend; compared with the frozen G15 mix (EXP-P15-002 construction) of the same seeds"
+  },
+  "baseline_g0": {
+    "cell": "G0-global",
+    "experiment_id": "EXP-P4-001",
+    "config_file": "configs/EXP-P4-001.yaml",
+    "frozen_reference": "configs/G0-RESEARCH-FROZEN-v1.json",
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "parent_run": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P4-001",
+  "parent_preparation_sha256": "d544bf38f20686404ed88de241007ddfdad3da2c27bf744d58ad64c6bf0b0423",
+  "whole_mlb_reference": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-P11-001",
+  "device": "--device auto (default) = mps if available else cpu, the control rule. Explicit cpu/cuda is recorded in identity and preparation (comparable_device_to_control false for cpu/cuda); such scores are not comparable to the MPS control without a same-device control arm. No newsrv/GPU use for this family.",
+  "data_rules": "No 2026 rows (runner date guard). TRAIN rows only for fitting; May/June Cpanel rows only for early stop, temperature and blend; DEV never used for fitting, calibration or selection.",
+  "metrics": {
+    "scope": "registered descriptive repeated-DEV comparison only; no new official pass/fail, no winner selection, no automatic confirmation or promotion",
+    "primary_descriptive": "Cpanel DEV after the June frequency blend: candidate direct vs frozen uniform direct, and candidate mix vs frozen G15 mix, paired NLL/Brier with whole-game bootstrap, per-seed deltas",
+    "secondary_descriptive": [
+      "Cpanel DEV before the frequency blend",
+      "whole-MLB DEV calibrated three-seed mean (no June blend) when --mlb was run",
+      "parameter counts, best epoch and fit/predict seconds per seed"
+    ],
+    "decision": null
+  },
+  "exposure_note": "Cpanel and whole-MLB DEV were read repeatedly (P7-003, P11, P13-P16, P20 pending). Results are development comparisons, not confirmation.",
+  "pre_registration_todo": "Root replaces the 18 placeholder type_* names with the frozen EXP-P4-001 preparation clusters.columns (metadata read only); runner refuses any other layout.",
+  "execution": {
+    "enabled": true,
+    "runner": "experiments/pitchmdp/scripts/run_ml_direct_periodic.py",
+    "prefix": "cd experiments/pitchmdp && DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib /Users/song/Projects/pitcheezy/.venv/bin/python scripts/run_ml_direct_periodic.py --config ../../configs/EXP-P22-001.yaml --local-config configs/local.json",
+    "order": [
+      "smoke: --output <runs>/DRAFT-DIRECT-PERIODIC-20261003-smoke run --seeds 0 --mlb --smoke",
+      "run  : --output <runs>/<registered id> run --seeds 0 1 2 --mlb",
+      "score: --output <runs>/<registered id> score   (only after all 3 fits; writes analysis/descriptive.json only)"
+    ],
+    "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
+    "queue": "single heavy queue runs/ML-MATRIX-20260924/.heavy.lock; Mac mini MPS only; never concurrently with EXP-P20-001",
+    "expected_cost": "\ubbf8\uce21\uc815 (unknown until smoke). Periodic network has 2.02x the control parameters and an 80x16 cos/sin expansion per row; control EXP-P15-001 seed 0 reference: fit 70.3 s, Cpanel predict 7.2 s, whole-MLB 1-draw predict 123.4 s.",
+    "supervision": "One heavy queue, after P20 and P21 complete; 600s per stage and 7200s total, health and operational-tick protection, stop by 2026-10-04 01:40 KST."
+  },
+  "smoke_evidence": {
+    "run": "PM-PERIODIC-20261003-01-smoke",
+    "code_commit": "7d69ed4",
+    "supervisor_seconds": 10.12,
+    "result": "success, not a performance comparison; same MPS as control, exact archived hashes verified"
+  }
+}
