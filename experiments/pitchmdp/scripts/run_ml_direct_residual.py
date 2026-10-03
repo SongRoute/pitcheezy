@@ -171,6 +171,10 @@ def predict(data, output, prep, seed, smoke, mlb=False):
                 'model_sha256': hash_file(dest / 'model.pt')}
     if state_ok(dest, name, expected):
         return
+    prefix = 'mlb_' if mlb else ''
+    artifacts = [prefix + 'predictions.npz', prefix + 'prediction_runtime.json'] + ([] if mlb else ['calibration.json'])
+    if any((dest / rel).exists() for rel in artifacts):
+        raise ValueError('Incomplete prediction artifacts require failure review before recalibration')
     _, pprep, store, context, parts, _ = data
     start = time.perf_counter()
     model = SharingPredictor(direct.CELL, DirectResidualModel.load(dest / 'model.pt', model_device(prep)), pprep['clusters'])
