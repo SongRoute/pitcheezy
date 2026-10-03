@@ -1,0 +1,141 @@
+{
+  "protocol": "cuda_frontier_v1",
+  "experiment_id": "DRAFT-CUDA-FRONTIER-20261004",
+  "status": "DRAFT",
+  "decision": "Not registered. Root assigns family IDs, pins source/export/control hashes and adapts the GPU runner on this NEW code version; first-batch sources stay immutable. No N/G decision from this family.",
+  "purpose": "Explain direct-head performance by capacity, input information and regularization (one disclosed change per arm vs the CUDA flatten_mlp 128 control), not hyperparameter search.",
+  "control": {
+    "arm": "control of DRAFT-CUDA-DIRECT-20261004 (MatrixModel flatten_mlp width 128, 141834 parameters, AdamW wd .01, no dropout, all inputs)",
+    "reuse_rule": "Reuse the base-batch CUDA control fits ONLY if model code (matrix_models.py hash), training loop/budget, export manifest SHA256, device class and torch/CUDA runtime are identical; otherwise refit the control in this family with the same seeds.",
+    "parameter_formula": "flatten_mlp params = h^2 + 298 h + 10, h = 2*width, n_flat = 6*(38+1)+52 = 286"
+  },
+  "model_source": "experiments/pitchmdp/pitchmdp/direct_frontier_model.py (build_frontier / load_frontier / check_config)",
+  "context_schema": {
+    "source": "SequenceContext.transform (0-10 game state/flags; 11-27 Archetypes.numeric_features = 6 standardized style rates, 6 reliabilities, 5 soft memberships LAST), SharingContext pitcher profile (CLUSTER_FEATURES, left_share, type_*), log1p(TRAIN count)/10; routing 7 columns stripped by training_arrays",
+    "names_function": "direct_frontier_model.direct_context_names(clusters['columns']); exporter must write the 52 ordered names and the runner must pass them to build_frontier for information arms",
+    "batter_indices": "11-27 (17)",
+    "batter_cluster_indices": "23-27 (5)"
+  },
+  "training": {
+    "epochs": 30,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005,
+    "loss_weighting": "uniform",
+    "hpo_trials": 0
+  },
+  "arms": [
+    {
+      "name": "width145",
+      "family": "capacity",
+      "model": "flatten_mlp",
+      "width": 145,
+      "matches": "residual_mlp",
+      "target_parameter_count": 170634
+    },
+    {
+      "name": "width203",
+      "family": "capacity",
+      "model": "flatten_mlp",
+      "width": 203,
+      "matches": "periodic_flatten_mlp",
+      "target_parameter_count": 286738
+    },
+    {
+      "name": "no_batter",
+      "family": "information",
+      "model": "masked_flatten_mlp",
+      "width": 128,
+      "drop_context": [
+        "batter_style_contact_prior",
+        "batter_style_swing_prior",
+        "batter_style_walk_prior",
+        "batter_style_strikeout_prior",
+        "batter_style_isolated_power_prior",
+        "batter_style_groundball_prior",
+        "batter_style_contact_reliability",
+        "batter_style_swing_reliability",
+        "batter_style_walk_reliability",
+        "batter_style_strikeout_reliability",
+        "batter_style_isolated_power_reliability",
+        "batter_style_groundball_reliability",
+        "batter_archetype_membership_0",
+        "batter_archetype_membership_1",
+        "batter_archetype_membership_2",
+        "batter_archetype_membership_3",
+        "batter_archetype_membership_4"
+      ],
+      "drop_history": false
+    },
+    {
+      "name": "no_batter_cluster",
+      "family": "information",
+      "model": "masked_flatten_mlp",
+      "width": 128,
+      "drop_context": [
+        "batter_archetype_membership_0",
+        "batter_archetype_membership_1",
+        "batter_archetype_membership_2",
+        "batter_archetype_membership_3",
+        "batter_archetype_membership_4"
+      ],
+      "drop_history": false
+    },
+    {
+      "name": "no_history",
+      "family": "information",
+      "model": "masked_flatten_mlp",
+      "width": 128,
+      "drop_context": [],
+      "drop_history": true
+    },
+    {
+      "name": "dropout",
+      "family": "regularization",
+      "model": "regularized_flatten_mlp",
+      "width": 128,
+      "dropout": 0.1,
+      "weight_decay": 0.01
+    },
+    {
+      "name": "weight_decay",
+      "family": "regularization",
+      "model": "regularized_flatten_mlp",
+      "width": 128,
+      "dropout": 0.0,
+      "weight_decay": 0.0001
+    },
+    {
+      "name": "dropout_weight_decay",
+      "family": "regularization",
+      "model": "regularized_flatten_mlp",
+      "width": 128,
+      "dropout": 0.1,
+      "weight_decay": 0.0001
+    }
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "fits": 24,
+  "families": {
+    "capacity": "plain flatten_mlp at the residual / periodic parameter counts (within 1%): separates 'more parameters' from 'different architecture' for the frozen residual and periodic arms",
+    "information": "same network and parameter count; named inputs zeroed in fit AND predict (mask archived with the model); history drop marks past tokens invalid and keeps the current token and all context",
+    "regularization": "dropout only, weight decay only, both (separate arms isolate each component; the 'both' arm is a two-component bundle)"
+  },
+  "deferred": [
+    "periodic+residual combination",
+    "TabM"
+  ],
+  "comparison": {
+    "control_arm": "same-device CUDA flatten_mlp 128 control",
+    "scope": "descriptive repeated-DEV only; per family vs the control; no winner before all 24 fits complete",
+    "metrics": "same Mac scoring path as DRAFT-CUDA-DIRECT-20261004 (temperature, June blend, paired whole-game bootstrap)"
+  },
+  "data_rules": "No 2026 rows. Inputs are the DRAFT-CUDA-DIRECT-20261004 export (plus context names). DEV/mlb_dev only predicted, never used for fit, early stop, temperature or selection.",
+  "execution": {
+    "enabled": false
+  }
+}
