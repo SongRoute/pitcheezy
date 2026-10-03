@@ -19,7 +19,7 @@
 ## 2. 실행 전에 막아야 할 문제
 
 1. **`gpu` 이름 충돌.** 맥미니 zsh에서 `gpu`는 `alias gpu='git push upstream'`로 가려져 있다(`command -v gpu` 결과). 그대로 치면 **원격 push가 실행된다.** 반드시 `~/.local/bin/gpu ...` 전체 경로로 부른다.
-2. **코드에 CUDA 경로가 없다.** `matrix_models.py:108`, `matrix_lazy_model.py:78`, `model.py:142` 등이 `'mps' if mps else 'cpu'`만 고른다. newsrv에서는 그대로 **CPU 실행**이 된다(64코어라 느리지 않을 수는 있으나 GPU를 쓰지 않음). GPU를 쓰려면 새 runner 옵션(`--device cuda`)이 필요하고, 봉인 runner·소스 해시 계약은 바꾸지 않는다.
+2. **기본 장치 선택에 CUDA가 없다.** `matrix_models.py:108`, `matrix_lazy_model.py:78`, `model.py:142` 등이 `'mps' if mps else 'cpu'`만 고른다. newsrv에서는 그대로 **CPU 실행**이 된다(64코어라 느리지 않을 수는 있으나 GPU를 쓰지 않음). MatrixModel은 명시적 `device="cuda"`를 받을 수 있으나 기존 실행기가 전달하지 않는다. GPU를 쓰려면 새 runner 옵션(`--device cuda`)이 필요하고, 봉인 runner·소스 해시 계약은 바꾸지 않는다.
 3. **장치 혼입.** 봉인 G15 mix 직접 head는 맥미니에서 학습됐다. 후보만 CUDA로 학습하면 장치 차이가 변경점에 섞인다 → 같은 장치에서 기준 직접 head를 다시 학습한 대조 arm을 함께 두거나 탐색은 맥미니에서 한다.
 4. **2026 자료 혼입.** 원천 폴더 `data/raw/d20260911-s2325/`에 `holdout_2026/`이 함께 있다. 전송은 허용 목록(`statcast_2023/2024/2025.parquet` + `manifest.json`)만, 폴더 통째 복사 금지. 스냅샷에도 `data/`·`runs/`가 들어가지 않게 `.gpurc` `link`만 쓴다.
 5. **절대경로.** `experiments/pitchmdp/configs/local.json`과 실험 config `execution.prefix`/`runs_root`가 `/Users/song/...`, `/Volumes/T7 Shield/...`를 박아 둔다. 서버용 local config를 별도 파일로 만들고(코드 하드코딩 금지) 기존 파일은 고치지 않는다.
@@ -32,8 +32,8 @@
 
 ## 4. 권장 배치
 
-- 환경: 기존 `~/venv` 재사용. 부족한 패키지(sklearn 등)는 이번 후보에 필요 없다. 설치가 필요해지면 먼저 묻는다.
-- 위치: 서버 홈 아래 프로젝트 전용 폴더 하나(예: `~/pitcheezy/{data,runs}`) — 생성은 실행 승인 뒤. `.gpurc` 예시(커밋 전 PM 확인):
+- 환경: 기존 `~/venv` 재사용. 부족한 패키지(sklearn 등)는 이번 후보에 필요 없다. 필요한 패키지는 새 프로젝트 전용 환경에 준비할 수 있다. 기존 공유 venv는 변경하지 않는다.
+- 위치: 서버 홈 아래 프로젝트 전용 폴더 하나(예: `~/pitcheezy/{data,runs}`) — 생성은 PM 실행 배정 뒤. `.gpurc` 예시(커밋 전 PM 확인):
   ```
   venv ~/venv
   min_free_mb 10000

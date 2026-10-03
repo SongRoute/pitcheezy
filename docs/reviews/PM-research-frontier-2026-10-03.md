@@ -9,7 +9,7 @@
 - ≤2025에는 **검증된 미노출 확인 모집단이 0개**다(기존 감사 `results/ML-unopened-data-audit-2026-09-27.json`; 이후 June 전체도 P12에서 사용). 그래서 아래 실험은 전부 **노출된 2025 DEV 위의 개발 비교**이고 독립 확인이 아니다.
 - 지금까지 시험한 축(구조 7종, 공유 단위, 자료량, 타자 표현, 레퍼토리, delivery pool, 직접 head, 보정, seed 수)과 겹치지 않는 축으로 **5개 후보**를 고른다. 모두 G15 mix의 *직접 head 구성요소 하나*만 바꾸고 G0 구성요소·혼합 비중 1/2·보정 절차는 그대로 둔다.
 - 다른 Opus의 혼합 비중·temperature 격자와 겹치지 않게 **혼합 비중·temperature·보정 단계는 바꾸지 않는다**.
-- 1단계는 맥미니 CPU/MPS로 가능하다(직접 head fit 실측 규모 기반 추정 약 10–20분/실험). **현재 코드에 CUDA 경로가 없다**(`device='auto'`가 mps 또는 cpu만 고름) — newsrv로 옮기면 그대로는 CPU로 돈다. 상세는 [GPU 사전점검](../handoffs/PM-newsrv-preflight-2026-10-03.md).
+- 1단계는 맥미니 CPU/MPS로 가능하다(직접 head fit 실측 규모 기반 추정 약 10–20분/실험). **현재 실행기의 기본 장치 선택에 CUDA가 없다**(`device='auto'`가 mps 또는 cpu만 고름) — newsrv로 옮기면 그대로는 CPU로 돈다. 상세는 [GPU 사전점검](../handoffs/PM-newsrv-preflight-2026-10-03.md).
 
 ## 1. ≤2025 시간 자료 노출 감사 (payload 미열람)
 
@@ -140,3 +140,7 @@ ID는 PM이 배정한다(가칭 E1–E5). 모두 seed {0,1,2}, 분할·게이트
 - 비용은 과거 직접 head 실행 기록에서 추정했고 새 backbone 비용은 측정하지 않았다.
 - 문헌의 효과 크기는 우리 자료에 옮겨 오지 않았다. 후보 선택은 미시험 축이라는 이유이지 개선 예측이 아니다.
 - 이 문서는 같은 모델 검토도 받지 않았다. 등록 전 다른 모델 검토를 권한다(PM-charter §4).
+
+## PM 후속 판단 (D165)
+
+첫 실제 학습 후보는 E3 최근성 가중을 구현한다. 기존 MatrixModel.fit(sample_weight)를 재사용할 수 있어 변경 범위가 가장 작다. 반감기180/365/730일을 결과 전 고정하고, 처음3seed는 모든 변형을 비교한다. Opus가 별도 실행기·설정·테스트를 구현 중이며 아직 학습 결과는 없다. Guo2017·Lakshminarayanan2017·Gorishniy2021은 PM이 공식 페이지를 직접 확인했다([별도 문헌 메모](PM-performance-search-references-2026-10-03.md)); 나머지 문헌은 여전히 확인 전이다. 새 모델 검토는 Codex PM이 수행하며 Fable을 호출하지 않는다.

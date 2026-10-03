@@ -90,3 +90,10 @@ e2e OPE 칸이 비면 "완료"가 아니다. 숫자는 results/에서 옮겨 적
 | 점검 | 기준 소스 | 범위 | 결과 | 근거 |
 |---|---|---|---|---|
 | PM-STABILITY-20261003-01-smoke | dd070d2 (구현 e72f04a), DRAFT/UNASSIGNED | 2025 June 3경기·888결정, seed/sample 5변형 | 실행 성공, 178.14초·5.18GB, 봉인 재현 20결정 Q차이0. 본 실험·성능 우위·채택 판정 아님 | [PM 검증 결과](reviews/PM-stability-smoke-result-2026-10-03.md) |
+
+## D165 신규 예측 탐색 (기존 판정 불변)
+
+| ID | 변경 | 상태 | 근거 |
+|---|---|---|---|
+| EXP-P19-001 | 기존직접head/G0 혼합비11 × 온도7, 5seed | 완료·노출DEV 탐색, 두범위NLL 개선6/77조합, 채택없음 | [결과](reviews/PM-P19-search-result-2026-10-03.md), code a4ae817/result4c7b805 |
+| EXP-P20-001 | TRAIN 최근성가중 반감기180/365/730일 × 3seed | 등록·실행큐 진행, 공식판정없음 | `codex/research-roadmap-1006` f19c69e, 결과 전 고정 |
