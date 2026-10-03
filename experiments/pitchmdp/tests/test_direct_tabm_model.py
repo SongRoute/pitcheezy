@@ -177,6 +177,16 @@ def test_fit_predict_report_and_zero_current_physics_guard():
         small_fit_bad.fit(train, y, *arrays(20, 2), epochs=1)
 
 
+def test_batched_ensemble_logits_equal_reducing_all_member_logits():
+    model = small_fit(tm.DirectTabMModel(2, CONT, .1, k=3, device='cpu'))
+    x, _ = arrays(23, 17)
+    for batch_size in (1, 7, 4096):  # same batch size: the network forward differs in the last bit across sizes
+        whole = tm.ensemble_logits(torch.as_tensor(model.member_logits(x, batch_size))).numpy()
+        assert np.array_equal(model.logits(x, batch_size), whole)
+    empty = tuple(a[:0] for a in x)
+    assert model.logits(empty).shape == (0, 10) and model.logits(empty).dtype == np.float32
+
+
 def test_same_seed_is_deterministic_and_seeds_differ():
     a = small_fit(tm.DirectTabMModel(3, CONT, .1, k=2, device='cpu'))
     b = small_fit(tm.DirectTabMModel(3, CONT, .1, k=2, device='cpu'))
@@ -210,7 +220,8 @@ def test_checkpoint_roundtrip_and_guards(tmp_path):
         tm.DirectTabMModel.load(tmp_path / 'other.pt', 'cpu')
 
 
-@pytest.mark.parametrize('kwargs', [{'head_dropout': 1.}, {'k': 0}, {'k': 2.5}, {'scaling_init': 'ones'}])
+@pytest.mark.parametrize('kwargs', [{'head_dropout': 1.}, {'k': 0}, {'k': 2.5}, {'k': True},
+                                    {'scaling_init': 'ones'}])
 def test_invalid_settings_refused(kwargs):
     with pytest.raises(ValueError):
         tm.DirectTabMModel(0, CONT, device='cpu', **kwargs)

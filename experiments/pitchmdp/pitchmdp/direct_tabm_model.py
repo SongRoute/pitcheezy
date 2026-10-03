@@ -18,8 +18,13 @@ the package's documented structure; no third-party code is copied:
 
 NOT a faithful reproduction: k=8 (package default 32), our frozen periodic PLR-lite
 embedding, flatten_mlp head width and GELU (package default ReLU, d_block 512),
-our AdamW/early-stop loop and ten-class head, no tuning, same mini-batch for all
-members (the package's default "conventional MLP-like" input mode).
+our AdamW/early-stop loop and ten-class head (lr .0005, weight decay .01 on every
+parameter including the scaling r; package default lr .002, wd .0003), no tuning, same
+mini-batch for all members (the package's default "conventional MLP-like" input mode).
+Raw (unembedded) columns, including one-hot groups, get one size-1 'normal' chunk per
+column (the package uses one chunk per categorical feature and never mixes raw numeric
+with embedded features); raw columns precede the embedded block (package: embeddings
+first; order is immaterial, alignment is tested).
 
 Exact network (fixed; the periodic embedding and shared head Linear layers are the
 frozen PeriodicHeadDropoutNetwork modules, built in the original order):
@@ -34,6 +39,11 @@ frozen PeriodicHeadDropoutNetwork modules, built in the original order):
 DirectTabMModel.logits returns log(mean_k softmax(member)), a valid logit vector, so
 early stopping (ensemble conditional NLL, as TabM monitors the ensemble) and the
 unchanged external temperature/delivery calibration see one ten-class prediction.
+A temperature T is therefore applied to log p-bar (power calibration of the
+member-averaged probability), not to each member before averaging.  The history key
+``train_weighted_nll`` keeps the shared report schema but holds the weighted MEAN
+MEMBER cross entropy (>= the ensemble NLL by Jensen), so its gap to
+``earlystop_conditional_nll`` is not comparable with single-network families.
 fit is a line-for-line mirror of DirectResidualModel.fit except that the per-row loss
 is the mean over members of the member cross entropy (tested: with a k=1 wrapper
 around the frozen periodic network it reproduces PeriodicHeadDropoutModel.fit
@@ -53,7 +63,6 @@ from torch import nn
 
 from pitchmdp import direct_periodic_model as periodic
 from pitchmdp.direct_dropout_model import PeriodicHeadDropoutNetwork
-from pitchmdp.matrix_models import _validate
 
 KIND = 'periodic_tabm_mini_mlp'
 FORMAT = 'direct_tabm_mini_periodic_v1'
@@ -139,7 +148,8 @@ class DirectTabMModel(periodic.DirectPeriodicModel):
     def __init__(self, seed=0, context_continuous=(), head_dropout=0., k=ENSEMBLE['k'],
                  scaling_init=ENSEMBLE['scaling_init'], device=None):
         periodic.DirectPeriodicModel.__init__(self, seed, context_continuous, None, device)
-        if not 0 <= head_dropout < 1 or int(k) != k or k < 1 or scaling_init not in SCALING_INITS:
+        if not 0 <= head_dropout < 1 or isinstance(k, bool) or int(k) != k or k < 1 \
+                or scaling_init not in SCALING_INITS:
             raise ValueError('Invalid TabM-mini settings')
         self.kind = KIND
         self.architecture = {**periodic.ARCHITECTURE, 'head_dropout': float(head_dropout), **ENSEMBLE,
@@ -162,10 +172,15 @@ class DirectTabMModel(periodic.DirectPeriodicModel):
         return np.concatenate(outputs) if outputs else np.empty((0, self.architecture['k'], 10), dtype=np.float32)
 
     def logits(self, arrays, batch_size=4096):
-        member = self.member_logits(arrays, batch_size)
-        if not len(member):
-            return np.empty((0, 10), dtype=np.float32)
-        return ensemble_logits(torch.as_tensor(member)).numpy()
+        # Reduce each batch on host (row-wise, so identical to reducing member_logits) to avoid a k-fold [N, k, 10] copy.
+        arrays = periodic._no_current_physics(arrays)
+        self.net.eval()
+        outputs = []
+        with torch.no_grad():
+            for start in range(0, len(arrays[0]), batch_size):
+                inputs = [torch.as_tensor(a[start:start + batch_size], device=self.device) for a in arrays]
+                outputs.append(ensemble_logits(self.net(*inputs).cpu()).numpy())
+        return np.concatenate(outputs) if outputs else np.empty((0, 10), dtype=np.float32)
 
     def fit(self, train, labels, calibration, calibration_labels, *, epochs=30, patience=5,
             batch_size=1024, learning_rate=.0005, checkpoint=None, sample_weight=None):
