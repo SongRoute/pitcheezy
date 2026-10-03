@@ -32,6 +32,13 @@ must equal direct_dropout_registry.ARMS (frozen residual / periodic network plus
 head Dropout(.1), no workload); a config with such arms must be exactly the fixed
 six-arm architecture x dropout family.
 
+Workload-dropout arms (DRAFT-CUDA-WORKLOAD-DROPOUT-20261004): an arm marked
+"workload_dropout": true must equal direct_workload_dropout_registry.ARMS (frozen
+periodic network + head Dropout(.1/.2), P27 workload and continuous map); a config
+with such arms must be exactly the fixed ten-arm family, and only that family may
+use its registered fresh seeds ([3..7], or [8..12] with the explicit repeat_tag).
+Every other config keeps seeds 0-2 unchanged.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -66,6 +73,7 @@ SELF = 'scripts/run_cuda_direct.py'
 MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py', 'pitchmdp/direct_periodic_model.py',
                  'pitchmdp/direct_combo_model.py', 'pitchmdp/direct_combo_registry.py',
                  'pitchmdp/direct_dropout_model.py', 'pitchmdp/direct_dropout_registry.py',
+                 'pitchmdp/direct_workload_dropout_model.py', 'pitchmdp/direct_workload_dropout_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -132,8 +140,17 @@ def expected_identity(config, manifest_sha256, arm_name, seed, smoke, device, so
 
 # ------------------------------------------------------------------ config / export
 
+def uses_workload_dropout(config):
+    return any('workload_dropout' in arm for arm in config['arms'])
+
+
 def config_check(config):
-    if config.get('protocol') != PROTOCOL or config.get('seeds') != [0, 1, 2]:
+    if config.get('protocol') != PROTOCOL:
+        raise ValueError('Config is not the cuda_direct_v1 protocol')
+    if uses_workload_dropout(config):
+        from pitchmdp.direct_workload_dropout_registry import check_family  # torch-free; exact arms + fresh seeds
+        check_family(config)
+    elif config.get('seeds') != [0, 1, 2] or 'repeat_tag' in config:
         raise ValueError('Config is not the cuda_direct_v1 protocol with seeds 0-2')
     if config['training'] != TRAINING:
         raise ValueError('Training budget differs from EXP-P15-001')
@@ -150,6 +167,13 @@ def config_check(config):
             combo_arm_check(config, arm)
             if arm['name'] in names or any(c not in columns for c in arm['workload']):
                 raise ValueError('Duplicated combination arm or unexported workload: ' + arm['name'])
+            names.add(arm['name'])
+            continue
+        if 'workload_dropout' in arm:
+            from pitchmdp.direct_workload_dropout_registry import check_arm  # torch-free
+            check_arm(arm)
+            if arm['name'] in names or any(c not in columns for c in arm['workload']):
+                raise ValueError('Duplicated workload-dropout arm or unexported workload: ' + arm['name'])
             names.add(arm['name'])
             continue
         if 'dropout_head' in arm:
@@ -338,6 +362,11 @@ def arm_inputs(arrays, arm, columns):
 # ------------------------------------------------------------------ model / calibration
 
 def build_model(arm, seed, device, context_names=None):
+    if arm.get('workload_dropout') is True:
+        from pitchmdp.direct_workload_dropout_model import build_workload_dropout
+        if context_names:
+            raise ValueError('Workload-dropout arms take no context names')
+        return build_workload_dropout(arm, seed, device)
     if arm.get('dropout_head') is True:
         from pitchmdp.direct_dropout_model import build_dropout
         if context_names:
@@ -364,6 +393,9 @@ def build_model(arm, seed, device, context_names=None):
 
 
 def load_model(arm, path, device, context_names=None):
+    if arm.get('workload_dropout') is True:
+        from pitchmdp.direct_workload_dropout_model import load_workload_dropout
+        return load_workload_dropout(arm, path, device)
     if arm.get('dropout_head') is True:
         from pitchmdp.direct_dropout_model import load_dropout
         return load_dropout(arm, path, device)

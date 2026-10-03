@@ -9,7 +9,10 @@ same-seed and ensemble), validated before any prediction is read; no ranking or
 verdict.  Families without the key are scored exactly as before.  Likewise
 comparison.regularization_contrasts (architecture x dropout family) must equal
 direct_dropout_registry.CONTRASTS (dropout arm minus its same-architecture no-dropout
-arm) and is checked before any read.  Data arms must record the config's subset rule over the
+arm) and is checked before any read.  comparison.workload_dropout_contrasts (periodic
+workload x head-dropout family) must equal direct_workload_dropout_registry.CONTRASTS
+(12 one-factor pairs; every one of the 50 fits must exist first) and is checked
+before any read; no ranking, winner or interaction verdict.  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
 
 Scope: UNBLENDED calibrated direct-head probabilities (predictions.npz 'dev',
@@ -54,6 +57,7 @@ import numpy as np
 
 import run_cuda_direct as rc  # noqa: E402  numpy only at import
 from pitchmdp import direct_dropout_registry as dropout_registry  # noqa: E402  torch-free
+from pitchmdp import direct_workload_dropout_registry as workload_dropout_registry  # noqa: E402  torch-free
 from pitchmdp.matrix_metrics import paired_game_comparison, pitch_losses, prediction_metrics  # noqa: E402
 
 FORMAT = 'cuda_direct_score_v1'
@@ -63,7 +67,7 @@ EXPORT_ARRAYS = ('keys', 'y', 'game_pk')
 DRAWS, BOOTSTRAP_SEED = 10000, 20260924
 SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 'pitchmdp/matrix_metrics.py',
                   'pitchmdp/direct_dropout_registry.py', 'pitchmdp/direct_combo_registry.py',
-                  'pitchmdp/direct_frontier_registry.py')
+                  'pitchmdp/direct_frontier_registry.py', 'pitchmdp/direct_workload_dropout_registry.py')
 RUNTIME_SIGNATURE = ('torch', 'torch_cuda', 'cudnn', 'numpy', 'scipy', 'device_name', 'device_capability',
                      'device_total_memory')
 SCOPE = ('unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; '
@@ -219,7 +223,7 @@ def paired_block(y, games, candidate, reference, seeds):
             'seeds': {str(s): compare(y, games, p, q) for s, p, q in zip(seeds, candidate, reference)}}
 
 
-def score_family(config, family, rows, seeds, contrasts=None, regularization=None):
+def score_family(config, family, rows, seeds, contrasts=None, regularization=None, workload_dropout=None):
     arms = [a['name'] for a in config['arms']]
     control_arm = config.get('comparison', {}).get('control_arm', 'control')
     if control_arm != 'control' or 'control' not in arms:
@@ -227,6 +231,7 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
     out = {split: {} for split in SPLITS}
     factorial = {split: {} for split in SPLITS} if contrasts else None
     paired = {split: {} for split in SPLITS} if regularization else None
+    joint = {split: {} for split in SPLITS} if workload_dropout else None
     for split, r in rows.items():
         y, games = r['y'], r['game_pk']
         load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731  (bounded memory: reload)
@@ -249,6 +254,12 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
             paired[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
                                         'architecture': c['architecture'], 'isolates': c['isolates'],
                                         **paired_block(y, games, load(c['candidate']), load(c['reference']), seeds)}
+        for c in workload_dropout or ():
+            joint[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
+                                       'isolates': c['isolates'], 'held': c['held'],
+                                       **paired_block(y, games, load(c['candidate']), load(c['reference']), seeds)}
+    if workload_dropout:
+        return out, factorial, paired, joint
     return out, factorial, paired
 
 
@@ -281,6 +292,13 @@ def korean_table(result):
         for name, block in contrasts.items():
             lines.append(f"| {name} | {block['architecture']} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} |")
         lines.append('')
+    for split, contrasts in (result.get('workload_dropout_contrasts') or {}).items():
+        lines += [f'## {split} 작업량×헤드 드롭아웃 대비 (한 요인만 바꾼 짝, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
+                  '| 대비 | 분리 요인 | 고정 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|---|']
+        for name, block in contrasts.items():
+            held = ', '.join(f'{k}={v}' for k, v in block['held'].items())
+            lines.append(f"| {name} | {block['isolates']} | {held} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} |")
+        lines.append('')
     for split, contrasts in (result.get('factorial_contrasts') or {}).items():
         lines += [f'## {split} 요인 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
                   '| 대비 | 분리 요인 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|']
@@ -301,15 +319,23 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
         raise ValueError('Only a REGISTERED, enabled family has real tasks to score')
     contrasts = check_contrasts(config)
     regularization = dropout_registry.check_contrasts(config)
+    workload_dropout = workload_dropout_registry.check_contrasts(config)
+    if rc.uses_workload_dropout(config) and workload_dropout is None:
+        raise ValueError('The workload-dropout family is scored only with its fixed contrasts')
     sources, source_record = task_sources(source_manifest)
     rows, export_hashes = export_rows(export, config, manifest_sha256)
     tasks, signature = verify_family(family, config, manifest_sha256, sources,
                                      export_hashes['train/rows_sha256'] if config.get('train_subset') else None)
-    splits, factorial, paired = score_family(config, family, rows, config['seeds'], contrasts, regularization)
+    splits, factorial, paired, *joint = score_family(config, family, rows, config['seeds'], contrasts, regularization,
+                                                     workload_dropout)
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits,
               **({'factorial_contrasts': factorial} if contrasts else {}),
               **({'regularization_contrasts': paired} if regularization else {}),
+              **({'workload_dropout_contrasts': joint[0], 'seed_block': {'seeds': config['seeds'],
+                  'repeat_tag': config.get('repeat_tag'),
+                  'note': 'fresh model RNG seeds on the same export and exposed DEV rows: not new data, '
+                          'not an independent confirmatory test'}} if workload_dropout else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],
