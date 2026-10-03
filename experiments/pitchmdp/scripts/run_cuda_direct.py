@@ -39,6 +39,13 @@ with such arms must be exactly the fixed ten-arm family, and only that family ma
 use its registered fresh seeds ([3..7], or [8..12] with the explicit repeat_tag).
 Every other config keeps seeds 0-2 unchanged.
 
+TabM-mini arms (DRAFT-CUDA-TABM-MINI-20261004): an arm marked "tabm": true must equal
+direct_tabm_registry.ARMS (frozen periodic network + TabM-mini k=8 head, counts
+workload); a config with such arms must be exactly the fixed five-arm family
+(control and the single-network arms are the exact earlier P27/P30 entries) on
+seeds exactly [13, 14, 15].  The family check runs before the workload-dropout one
+because periodic_counts_d10 keeps its P30 flag.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -74,6 +81,7 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_combo_model.py', 'pitchmdp/direct_combo_registry.py',
                  'pitchmdp/direct_dropout_model.py', 'pitchmdp/direct_dropout_registry.py',
                  'pitchmdp/direct_workload_dropout_model.py', 'pitchmdp/direct_workload_dropout_registry.py',
+                 'pitchmdp/direct_tabm_model.py', 'pitchmdp/direct_tabm_factory.py', 'pitchmdp/direct_tabm_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -144,10 +152,17 @@ def uses_workload_dropout(config):
     return any('workload_dropout' in arm for arm in config['arms'])
 
 
+def uses_tabm(config):
+    return any('tabm' in arm for arm in config['arms'])
+
+
 def config_check(config):
     if config.get('protocol') != PROTOCOL:
         raise ValueError('Config is not the cuda_direct_v1 protocol')
-    if uses_workload_dropout(config):
+    if uses_tabm(config):
+        from pitchmdp.direct_tabm_registry import check_family  # torch-free; exact arms + seeds 13-15
+        check_family(config)
+    elif uses_workload_dropout(config):
         from pitchmdp.direct_workload_dropout_registry import check_family  # torch-free; exact arms + fresh seeds
         check_family(config)
     elif config.get('seeds') != [0, 1, 2] or 'repeat_tag' in config:
@@ -167,6 +182,13 @@ def config_check(config):
             combo_arm_check(config, arm)
             if arm['name'] in names or any(c not in columns for c in arm['workload']):
                 raise ValueError('Duplicated combination arm or unexported workload: ' + arm['name'])
+            names.add(arm['name'])
+            continue
+        if 'tabm' in arm:
+            from pitchmdp.direct_tabm_registry import check_arm  # torch-free
+            check_arm(arm)
+            if arm['name'] in names or any(c not in columns for c in arm['workload']):
+                raise ValueError('Duplicated TabM-mini arm or unexported workload: ' + arm['name'])
             names.add(arm['name'])
             continue
         if 'workload_dropout' in arm:
@@ -362,6 +384,11 @@ def arm_inputs(arrays, arm, columns):
 # ------------------------------------------------------------------ model / calibration
 
 def build_model(arm, seed, device, context_names=None):
+    if arm.get('tabm') is True:
+        from pitchmdp.direct_tabm_factory import build_tabm
+        if context_names:
+            raise ValueError('TabM-mini arms take no context names')
+        return build_tabm(arm, seed, device)
     if arm.get('workload_dropout') is True:
         from pitchmdp.direct_workload_dropout_model import build_workload_dropout
         if context_names:
@@ -393,6 +420,9 @@ def build_model(arm, seed, device, context_names=None):
 
 
 def load_model(arm, path, device, context_names=None):
+    if arm.get('tabm') is True:
+        from pitchmdp.direct_tabm_factory import load_tabm
+        return load_tabm(arm, path, device)
     if arm.get('workload_dropout') is True:
         from pitchmdp.direct_workload_dropout_model import load_workload_dropout
         return load_workload_dropout(arm, path, device)

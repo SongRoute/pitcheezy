@@ -82,6 +82,16 @@ fields; G0/D131/D155 unchanged; no 2026 data.
 ## Next steps
 
 1. Distinct Opus review of this module (same-model) — done, dispositions applied.
-2. Registry/runner/scorer integration as new additive files (`direct_tabm_registry.py`,
-   DRAFT config), focused tests, second review.
+2. Registry/runner/scorer integration (cycle-005, 2026-10-04 08:0x KST): new
+   `pitchmdp/direct_tabm_registry.py` (torch-free; 5 arms, seeds exactly [13, 14, 15],
+   15 fits, 3 fixed contrasts), `pitchmdp/direct_tabm_factory.py` (build/load with
+   strict archive guards), DRAFT `configs/DRAFT-CUDA-TABM-MINI-20261004.json`
+   (status DRAFT, execution disabled; single-network arms equal the registered
+   EXP-P30-001 entries; family deadlines 2026-10-04 19:00/19:30/20:00 KST, task 3600 s,
+   family 36000 worker-s, ≤2 attempts). Additive branches in `scripts/run_cuda_direct.py`
+   (TabM family check runs before the P30 one; three sources added to MODEL_SOURCES, so
+   this snapshot's source map differs from P24–P30 by design) and
+   `scripts/score_cuda_direct.py` (`tabm_contrasts`, seed_block note on post-selection
+   and non-matched compute). Tests `tests/test_cuda_tabm_mini.py` (44, CPU synthetic).
+   Distinct same-model review pending.
 3. CUDA smoke on every arm (GPU 3/4), measured seconds/memory, then registration.
