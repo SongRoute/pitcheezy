@@ -206,6 +206,11 @@ def test_fit_and_predict_wiring_resume_and_guards(tmp_path):
         assert np.allclose(p['dev'].sum(1), 1.) and np.all(p['dev_delivery_level'] == direct.NO_PHYSICS_LEVEL)
         assert len(p['blend']) == 3 and len(p['dev']) == 3
     runner.predict(data, out, prep, 0, smoke=False)                     # verified reuse
+    (out / '0' / 'prediction_state.json').unlink()
+    before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in (out / '0').iterdir()}
+    with pytest.raises(ValueError, match='Incomplete prediction'):
+        runner.predict(data, out, prep, 0, smoke=False)
+    assert before == {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in (out / '0').iterdir()}
     wrong = copy.deepcopy(config)
     wrong['candidate_architecture']['input_contract'] = CONFIG['candidate_architecture']['input_contract']
     with pytest.raises(ValueError, match='Input contract'):
