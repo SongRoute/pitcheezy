@@ -1,8 +1,13 @@
 """DRAFT portable scorer for a COMPLETE CUDA direct-head family (newsrv side, numpy only).
 
-Scores the base 5-arm family (DRAFT-CUDA-DIRECT-20261004) or the frontier 9-arm
-family (DRAFT-CUDA-FRONTIER-RUN-20261004) where the tasks were written, so results
-do not wait for the Mac.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
+Scores the base 5-arm family (DRAFT-CUDA-DIRECT-20261004), the frontier 9-arm
+family (DRAFT-CUDA-FRONTIER-RUN-20261004) or the data/combination 15-arm family
+(DRAFT-CUDA-DATA-COMBO-RUN-20261004) where the tasks were written, so results do
+not wait for the Mac.  A config with comparison.factorial_contrasts also gets those
+fixed candidate-minus-reference pairs (same paired whole-game bootstrap helper,
+same-seed and ensemble), validated before any prediction is read; no ranking or
+verdict.  Families without the key are scored exactly as before.  Data arms must record the config's subset rule over the
+export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
 
 Scope: UNBLENDED calibrated direct-head probabilities (predictions.npz 'dev',
 mlb_predictions.npz 'mlb_dev') of every arm vs the same-family CUDA control, BEFORE
@@ -82,7 +87,7 @@ def task_sources(path=None):
 def export_rows(export, config, manifest_sha256):
     """dev/mlb_dev keys, labels and game ids from the pinned export (hash-checked files only)."""
     manifest = rc.verify_export(export, config, manifest_sha256, hash_arrays=False)
-    rows, hashes = {}, {}
+    rows, hashes = {}, {'train/rows_sha256': manifest['splits']['train']['rows_sha256']}
     for split in SPLITS:
         record = manifest['splits'][split]
         rows[split] = {}
@@ -99,7 +104,23 @@ def export_rows(export, config, manifest_sha256):
     return rows, hashes
 
 
-def verify_family(family, config, manifest_sha256, sources):
+def check_train_subset(config, arm, seed, fit, train_rows_sha256):
+    """Data arms: the recorded subset is the config rule over the export TRAIN rows; others: full TRAIN."""
+    spec, record = rc.arm_spec(config, arm), fit.get('train_subset')
+    if 'train_fraction' not in spec:
+        if record is not None or fit.get('train_rows_sha256') != train_rows_sha256:
+            raise ValueError(f'{arm}/{seed}: full-TRAIN arm did not fit on the export TRAIN rows')
+        return None
+    expected = {'method': 'nested_key_hash', 'salt': config['train_subset']['salt'], 'fraction': spec['train_fraction'],
+                'source_rows_sha256': train_rows_sha256}
+    if not isinstance(record, dict) or any(record.get(k) != v for k, v in expected.items()) \
+            or record.get('selected_rows_sha256') != fit.get('train_rows_sha256') \
+            or not 0 < int(record.get('n_selected', 0)) < int(record.get('n_source', 0)):
+        raise ValueError(f'{arm}/{seed}: TRAIN subset provenance differs from the config rule')
+    return {k: record[k] for k in ('fraction', 'n_source', 'n_selected', 'selected_rows_sha256', 'selected_mask_sha256')}
+
+
+def verify_family(family, config, manifest_sha256, sources, train_rows_sha256=None):
     """Every arm x seed finished with the expected identity; nothing is read from predictions here."""
     family = Path(family)
     if family.name.endswith('-smoke'):
@@ -124,7 +145,9 @@ def verify_family(family, config, manifest_sha256, sources):
                 signature = seen
             elif seen != signature:
                 raise ValueError(f'{arm}/{seed}: CUDA runtime differs within the family')
-            tasks[arm][seed] = {'state_sha256': rc.sha256_file(dest / 'state.json'),
+            subset = check_train_subset(config, arm, seed, fit, train_rows_sha256) \
+                if train_rows_sha256 is not None else None
+            tasks[arm][seed] = {'state_sha256': rc.sha256_file(dest / 'state.json'), 'train_subset': subset,
                                 'device_uuid': runtime.get('device_uuid'),
                                 'delivery_temperature': rc.read_json(dest / 'calibration.json')['delivery_temperature']}
     return tasks, signature
@@ -151,30 +174,71 @@ def compare(y, games, candidate, control):
     return paired_game_comparison(y, candidate, control, games, draws=DRAWS, seed=BOOTSTRAP_SEED)
 
 
-def score_family(config, family, rows, seeds):
+FACTOR_FREE = ('name', 'priority', 'combo', 'family', 'model', 'workload', 'context_continuous')
+
+
+def check_contrasts(config):
+    """Config-owned factorial contrasts (or None): distinct registered arms differing in exactly one factor.
+
+    Validated before any prediction is read.  A contrast pairs a joint arm with its
+    same-architecture no-workload arm (isolates workload) or its same-workload flatten
+    arm (isolates architecture); data / pitcher-information arms never enter."""
+    contrasts = config.get('comparison', {}).get('factorial_contrasts')
+    if contrasts is None:
+        return None
+    if not isinstance(contrasts, list) or not contrasts:
+        raise ValueError('factorial_contrasts must be a nonempty list')
+    names, pairs = set(), set()
+    for c in contrasts:
+        if not isinstance(c, dict) or set(c) != {'name', 'candidate', 'reference', 'isolates'}:
+            raise ValueError('Contrast needs exactly name / candidate / reference / isolates')
+        cand, ref = rc.arm_spec(config, c['candidate']), rc.arm_spec(config, c['reference'])
+        if c['candidate'] == c['reference'] or c['name'] in names or (c['candidate'], c['reference']) in pairs:
+            raise ValueError('Contrast arms must be distinct and contrasts unique: ' + str(c['name']))
+        rest = [{k: v for k, v in a.items() if k not in FACTOR_FREE} for a in (cand, ref)]
+        if rest[0] != rest[1] or any('train_fraction' in a or 'drop_context' in a for a in (cand, ref)):
+            raise ValueError(c['name'] + ': contrast arms differ beyond architecture / workload')
+        same_model, same_workload = cand['model'] == ref['model'], cand['workload'] == ref['workload']
+        isolates = 'workload' if same_model and not same_workload else \
+            'architecture' if same_workload and not same_model and ref['model'] == 'flatten_mlp' else None
+        if isolates is None or c['isolates'] != isolates:
+            raise ValueError(c['name'] + ': contrast must change exactly the declared factor')
+        names.add(c['name'])
+        pairs.add((c['candidate'], c['reference']))
+    return contrasts
+
+
+def paired_block(y, games, candidate, reference, seeds):
+    return {'ensemble': compare(y, games, np.mean(candidate, axis=0), np.mean(reference, axis=0)),
+            'seeds': {str(s): compare(y, games, p, q) for s, p, q in zip(seeds, candidate, reference)}}
+
+
+def score_family(config, family, rows, seeds, contrasts=None):
     arms = [a['name'] for a in config['arms']]
     control_arm = config.get('comparison', {}).get('control_arm', 'control')
     if control_arm != 'control' or 'control' not in arms:
         raise ValueError('The same-family CUDA control is the only comparator')
     out = {split: {} for split in SPLITS}
+    factorial = {split: {} for split in SPLITS} if contrasts else None
     for split, r in rows.items():
         y, games = r['y'], r['game_pk']
-        control = [member(family, control_arm, s, split, r) for s in seeds]
-        control_mean = np.mean(control, axis=0)
-        out[split][control_arm] = {'role': 'control', 'ensemble': prediction_metrics(y, control_mean),
+        load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731  (bounded memory: reload)
+        control = load(control_arm)
+        out[split][control_arm] = {'role': 'control', 'ensemble': prediction_metrics(y, np.mean(control, axis=0)),
                                    'seeds': {str(s): summary(prediction_metrics(y, p)) for s, p in zip(seeds, control)}}
         for arm in arms:
             if arm == control_arm:
                 continue
-            candidate = [member(family, arm, s, split, r) for s in seeds]
-            mean = np.mean(candidate, axis=0)
+            candidate = load(arm)
             out[split][arm] = {
-                'role': 'arm', 'ensemble': prediction_metrics(y, mean),
-                'paired_vs_control': {'ensemble': compare(y, games, mean, control_mean),
-                                      'seeds': {str(s): compare(y, games, p, q)
-                                                for s, p, q in zip(seeds, candidate, control)}},
+                'role': 'arm', 'ensemble': prediction_metrics(y, np.mean(candidate, axis=0)),
+                'paired_vs_control': paired_block(y, games, candidate, control, seeds),
                 'seeds': {str(s): summary(prediction_metrics(y, p)) for s, p in zip(seeds, candidate)}}
-    return out
+        for c in contrasts or ():
+            factorial[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
+                                           'isolates': c['isolates'],
+                                           **paired_block(y, games, load(c['candidate']), load(c['reference']), seeds)}
+    return out, factorial
 
 
 def korean_table(result):
@@ -199,6 +263,12 @@ def korean_table(result):
             seeds = ' / '.join(f"{v['nll']['delta']:+.4f}" for v in paired['seeds'].values())
             lines.append(f"| {arm} | {ci(paired['ensemble'], 'nll')} | {ci(paired['ensemble'], 'brier')} | {seeds} |")
         lines.append('')
+    for split, contrasts in (result.get('factorial_contrasts') or {}).items():
+        lines += [f'## {split} 요인 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
+                  '| 대비 | 분리 요인 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|']
+        for name, block in contrasts.items():
+            lines.append(f"| {name} | {block['isolates']} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} |")
+        lines.append('')
     return '\n'.join(lines)
 
 
@@ -211,12 +281,15 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     config = rc.config_check(rc.read_json(config_path))
     if config.get('status') != 'REGISTERED' or config.get('execution', {}).get('enabled') is not True:
         raise ValueError('Only a REGISTERED, enabled family has real tasks to score')
+    contrasts = check_contrasts(config)
     sources, source_record = task_sources(source_manifest)
     rows, export_hashes = export_rows(export, config, manifest_sha256)
-    tasks, signature = verify_family(family, config, manifest_sha256, sources)
-    splits = score_family(config, family, rows, config['seeds'])
+    tasks, signature = verify_family(family, config, manifest_sha256, sources,
+                                     export_hashes['train/rows_sha256'] if config.get('train_subset') else None)
+    splits, factorial = score_family(config, family, rows, config['seeds'], contrasts)
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits,
+              **({'factorial_contrasts': factorial} if contrasts else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],

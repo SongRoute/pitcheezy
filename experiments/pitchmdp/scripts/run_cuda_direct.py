@@ -21,6 +21,12 @@ names are derived from the config's expected layout and must match the export
 manifest's recorded context_layout before the model is built.  Base arms keep the
 cuda_direct_v1 checks unchanged.
 
+Combination arms (DRAFT-CUDA-DATA-COMBO-RUN-20261004): an arm marked "combo": true
+must equal direct_combo_registry's entry.  Data arms fit on a nested key-hash subset
+of the TRAIN rows only (config train_subset salt/fractions; provenance in fit.json);
+pitcher-information arms zero verified named context columns; residual/periodic
+combination arms append workload like the base counts/block arms.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -53,6 +59,7 @@ import numpy as np
 PROTOCOL = 'cuda_direct_v1'
 SELF = 'scripts/run_cuda_direct.py'
 MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py', 'pitchmdp/direct_periodic_model.py',
+                 'pitchmdp/direct_combo_model.py', 'pitchmdp/direct_combo_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -133,6 +140,12 @@ def config_check(config):
     columns = config['export']['workload_columns']
     names = set()
     for arm in config['arms']:
+        if 'combo' in arm:
+            combo_arm_check(config, arm)
+            if arm['name'] in names or any(c not in columns for c in arm['workload']):
+                raise ValueError('Duplicated combination arm or unexported workload: ' + arm['name'])
+            names.add(arm['name'])
+            continue
         if 'frontier' in arm:
             frontier_arm_check(arm)
             if arm['name'] in names:
@@ -150,7 +163,7 @@ def config_check(config):
         raise ValueError('A no-workload flatten control is required')
     if int(config['export']['last_year']) != 2025:
         raise ValueError('No 2026 rows: last year is 2025')
-    if any(arm.get('frontier') for arm in config['arms']):
+    if any(arm.get('frontier') or arm.get('combo') for arm in config['arms']):
         if expected_context_names(config['export']['context_layout'], config['export']['shapes']['n_context']) \
                 != config['export']['context_names']:
             raise ValueError('Config context names differ from the names its expected layout derives')
@@ -167,8 +180,29 @@ def frontier_arm_check(arm):
         raise ValueError('Frontier arms keep the control inputs (no workload) and a priority')
 
 
+def combo_arm_check(config, arm):
+    """A combination arm is exactly its registry entry; data arms need the config-owned subset rule."""
+    from pitchmdp.direct_combo_registry import check_arm, check_subset  # torch-free
+    subset = config.get('train_subset')
+    if any(a.get('train_fraction') for a in config['arms']) or subset is not None:
+        check_subset(subset or {})
+    if config['export']['shapes']['n_context'] != 52:
+        raise ValueError('Combination arms need the 52-column direct context')
+    check_arm(arm, config['export']['context_layout']['pitcher_profile_columns'], subset or {})
+
+
 def needs_context_names(arm):
-    return arm.get('frontier') is True and arm['model'] == 'masked_flatten_mlp'
+    return (arm.get('frontier') is True or arm.get('combo') is True) and arm['model'] == 'masked_flatten_mlp'
+
+
+def train_subset(config, arm, train):
+    """(TRAIN arrays, provenance): unchanged unless a data arm; never applied to another split."""
+    if 'train_fraction' not in arm:
+        return train, None
+    if arm.get('combo') is not True:
+        raise ValueError('Only registered combination data arms subsample TRAIN')
+    from pitchmdp.direct_combo_registry import subset_split
+    return subset_split(train, config['train_subset']['salt'], arm['train_fraction'])
 
 
 def expected_context_names(layout, n_context):
@@ -288,6 +322,11 @@ def arm_inputs(arrays, arm, columns):
 # ------------------------------------------------------------------ model / calibration
 
 def build_model(arm, seed, device, context_names=None):
+    if arm.get('combo') is True:
+        from pitchmdp.direct_combo_model import build_combo
+        if needs_context_names(arm) != bool(context_names):
+            raise ValueError('Pitcher-information arms (only) need the verified export context names')
+        return build_combo(arm, seed, device, context_names)
     if arm.get('frontier') is True:
         from pitchmdp.direct_frontier_model import build_frontier
         if needs_context_names(arm) != bool(context_names):
@@ -304,6 +343,12 @@ def build_model(arm, seed, device, context_names=None):
 
 
 def load_model(arm, path, device, context_names=None):
+    if arm.get('combo') is True:
+        from pitchmdp.direct_combo_model import load_combo
+        model = load_combo(arm, path, device)
+        if needs_context_names(arm) and model.context_names != list(context_names or []):
+            raise ValueError('Archived context names differ from the verified export names')
+        return model
     if arm.get('frontier') is True:
         from pitchmdp.direct_frontier_model import load_frontier
         model = load_frontier(arm['name'], path, device)
@@ -420,7 +465,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         manifest = verify_export(export, config, manifest_sha256)
         columns = config['export']['workload_columns']
         lim = (lambda key: SMOKE[key]) if smoke else (lambda key: None)
-        train = load_split(export, manifest, 'train', lim('train'))
+        train, subset = train_subset(config, arm, load_split(export, manifest, 'train', lim('train')))
         early = load_split(export, manifest, 'earlystop', lim('earlystop'))
         spec = config['training']
         names = verified_context_names(config, manifest) if needs_context_names(arm) else None
@@ -464,7 +509,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
                       'seconds_total': time.perf_counter() - started, 'context_width': context_width,
                       'parameter_count': int(sum(p.numel() for p in model.net.parameters())),
                       'train_rows_sha256': train_rows, 'earlystop_rows_sha256': early_rows,
-                      'predicted_rows': rows, 'runtime': runtime, 'context_names_verified': names is not None, 'peak_device_bytes': peak_device_bytes(device),
+                      'predicted_rows': rows, 'runtime': runtime, 'train_subset': subset, 'context_names_verified': names is not None, 'peak_device_bytes': peak_device_bytes(device),
                       'finished_utc': datetime.now(timezone.utc).isoformat(), 'dev_used_for_fit_or_selection': False}
         write_json_atomic(work / 'fit.json', fit_report)
         names = ['identity.json', 'model.pt', 'calibration.json', 'predictions.npz', 'mlb_predictions.npz', 'fit.json']
