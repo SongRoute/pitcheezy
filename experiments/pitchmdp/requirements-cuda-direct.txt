@@ -1,0 +1,11 @@
+# DRAFT-CUDA-DIRECT-20261004 newsrv private venv (~/venv). Nothing is installed by the worker.
+# Required for scripts/run_cuda_direct.py and scripts/cuda_direct_queue.py (queue is stdlib only):
+torch==2.5.1+cu121   # present in ~/venv
+numpy                # torch dependency; record the version in the runtime report
+scipy                # matrix_models imports scipy.special; temperature uses scipy.optimize.minimize_scalar (bounded)
+# Optional, ONLY for the priority-2 'periodic' arm (direct_periodic_model -> matrix_sharing imports pandas):
+# pandas
+# NOT needed: scikit-learn, lightgbm, h5py, pyarrow (export is plain .npy + JSON)
+# Check without installing:
+#   ~/venv/bin/python -c "import torch, numpy, scipy; print(torch.__version__, torch.version.cuda, numpy.__version__, scipy.__version__)"
+#   ~/venv/bin/python -c "import pandas; print(pandas.__version__)"   # periodic arm only
