@@ -145,6 +145,10 @@ at most 5 × 5,110 = 25,550 worker-s, so `family_within` can only fail together 
   infrastructure failure). A complete attempt is final whatever its gate values. A failed attempt keeps its output
   (never reused or deleted) and is reported; a second attempt uses a NEW output
   `runs/DRAFT-ROBUST-CLIP-probe-<commit7>-a2-timing`. Two failures end the probe; the family then does not register.
+- Review T109 m2 (disposition 2026-10-04 23:49 KST, before any run): `run()` creates the output directory before the
+  pin/name/GPU/export checks (inherited from P35; script blob kept as reviewed). A refusal before `preflight.json` is
+  written is NOT an attempt: the empty directory is kept (never deleted) and reported, and the next run still uses a
+  NEW output name (`...-r2-timing`). The operator types the output name from this document, never a family `runs/` path.
 
 ## Exposure
 
