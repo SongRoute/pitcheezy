@@ -84,6 +84,33 @@ if (process.env.MODEL_EVIDENCE_REPO) {  // exact identity with the committed res
   assert.equal(b.members, p11.predictor.seeds.length, 'members = P11 seeds');
   assert(matrix.includes('blend `06-01~06-30`, DEV `07-01~09-30`'), 'blend window before DEV in the matrix document');
   assert.deepEqual(b.blendWindow, ['2025-06-01', '2025-06-30']);
+  // the sentence sits under 'service model': the watch/live ARM-B predictor must load the same ensemble weight
+  const s = b.servicePath;
+  assert.deepEqual(Object.keys(s.files).sort(), ['configs/G0-RESEARCH-FROZEN-v1.json', 'experiments/pitchmdp/pitchmdp/matrix_g0_whole.py',
+    'experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py', 'experiments/pitchmdp/pitchmdp/policy_artifacts.py',
+    'experiments/pitchmdp/pitchmdp/policy_identity.py'], 'service path source files');
+  assert.deepEqual(Object.keys(s.anchors).sort(), Object.keys(s.files).sort(), 'one anchor list per service path file');
+  const serviceRaw = {};
+  for (const [rel, sha] of Object.entries(s.files)) {
+    assert(s.anchors[rel].length > 0, `${rel} has anchors`);
+    const raw = execFileSync('git', ['-C', process.env.MODEL_EVIDENCE_REPO, 'show', `${b.sourceCommit}:${rel}`], { maxBuffer: 1 << 24 });
+    assert.equal(createHash('sha256').update(raw).digest('hex'), sha, `${rel} sha256 at ${b.sourceCommit.slice(0, 7)}`);
+    for (const anchor of s.anchors[rel]) assert(raw.toString().includes(anchor), `${rel} anchor: ${anchor}`);
+    serviceRaw[rel] = raw;
+  }
+  const bundle = JSON.parse(serviceRaw['configs/G0-RESEARCH-FROZEN-v1.json'].toString());
+  assert.equal(bundle.files[s.frozenCalibration.bundleRole].sha256, s.frozenCalibration.sha256, 'service bundle pins the P11 frozen calibration');
+  assert.deepEqual(Object.keys(bundle.members).map(k => bundle.members[k].june_model_weight),
+    JSON.parse(blendRaw['results/EXP-P10-001.json'].toString()).reports['G0-global'].seeds.map(r => r.blend_selection.model_weight), 'service members = P10 seeds');
+  assert.equal(Object.keys(bundle.members).length, b.members, 'service members count');
+  assert.equal(s.frozenCalibration.juneEnsembleModelWeight, b.modelWeight, 'service ensemble weight = card weight');
+  assert.equal(s.fitSample.pitches, JSON.parse(blendRaw['results/EXP-P10-001.json'].toString()).coverage.blend.eligible_pitches, 'June fit rows');
+  if (process.env.G0_FROZEN_CALIBRATION) {  // optional: the external-SSD file itself (not in git)
+    const raw = readFileSync(process.env.G0_FROZEN_CALIBRATION);
+    assert.equal(createHash('sha256').update(raw).digest('hex'), s.frozenCalibration.sha256, 'frozen calibration sha256');
+    assert.equal(JSON.parse(raw).june_ensemble_model_weight, b.modelWeight, 'frozen calibration weight');
+    console.log('frozen calibration: ok');
+  }
   console.log('source identity: ok');
 } else console.log('source identity: skipped (MODEL_EVIDENCE_REPO not set)');
 

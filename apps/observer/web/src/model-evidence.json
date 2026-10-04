@@ -163,6 +163,47 @@
       "P11 g0 estimand = predictions['primary'] (matrix_g0_whole_metrics.evaluate_whole), primary = w*mean(5 calibrated members) + (1-w)*frequency (matrix_g0_whole_metrics.py anchor pinned in conditioning).",
       "w is the archived C1 G0-global June weight from EXP-P10-001.json, pinned in the P11 config by sha256 and read by score_ml_g0_whole.py.",
       "Blend window 2025-06-01~06-30 (ML_EXPERIMENT_MATRIX.md, pinned in source.files), before DEV 07-01~09-30."
-    ]
+    ],
+    "servicePath": {
+      "note": "The card labels the P11 g0 estimand 'service model'. These pins show the watch/live ARM-B predictor (policy_identity.bind_components -> load_g0_ensemble -> FrozenG0Ensemble) uses the same five members and the same June ensemble weight (not per-seed weights). Added in the Opus review of 3a3690d; no new computation.",
+      "files": {
+        "experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py": "b39b8236aeb904627d531d3201f85a79da33e8c69bbe320b22f1e92e35f2ff83",
+        "experiments/pitchmdp/pitchmdp/matrix_g0_whole.py": "da7b65ca5f3214dd49034680191d1310ff37d92dd160135268eca52d3048e04e",
+        "experiments/pitchmdp/pitchmdp/policy_artifacts.py": "76b8fd5ef0ea2b7cf8ae8c7e071821c73b206aad8f09b6ca4f5ea7335d199dd0",
+        "experiments/pitchmdp/pitchmdp/policy_identity.py": "c1dfec8294116089d8a545edb9c098c5cac35ff6845eeb666cfb9a4ea816a81a",
+        "configs/G0-RESEARCH-FROZEN-v1.json": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062"
+      },
+      "anchors": {
+        "experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py": [
+          "weights = [archived_report['selection']['model_weight'],"
+        ],
+        "experiments/pitchmdp/pitchmdp/matrix_g0_whole.py": [
+          "ensemble = selection.get('model_weight')",
+          "return {'june_ensemble_model_weight': float(ensemble),"
+        ],
+        "experiments/pitchmdp/pitchmdp/policy_artifacts.py": [
+          "Five-member G0: per-seed May temperature, mean of five, common June ensemble blend.",
+          "Per-seed June weights are NOT used for the ensemble.",
+          "weight = calibration.get('june_ensemble_model_weight')"
+        ],
+        "experiments/pitchmdp/pitchmdp/policy_identity.py": [
+          "g0 = load_g0_ensemble(bundle, inputs, paths, load_member=load_member, load_frequency=load_frequency,",
+          "_require(g0.neural_weight == calibration['june_ensemble_model_weight']"
+        ],
+        "configs/G0-RESEARCH-FROZEN-v1.json": [
+          "EXP-P11-001/frozen_calibration.json"
+        ]
+      },
+      "frozenCalibration": {
+        "bundleRole": "p11_frozen_calibration",
+        "sha256": "e3b96ef49196a658278c7c1c3c436104bd6314a81303ba8b997391e1918e1021",
+        "juneEnsembleModelWeight": 0.7467754577062221,
+        "readOn": "2026-10-04 from the external SSD path pinned in the bundle (not in git); optional smoke check via G0_FROZEN_CALIBRATION"
+      },
+      "fitSample": {
+        "pitches": 4821,
+        "note": "June blend rows are the Cpanel development panel only (P10 coverage.blend.eligible_pitches; P11 expected_samples.blend), not all MLB June; reviewer read 20 pitchers / 110 games / month 2025-06 from the T7 blend_metadata.parquet (sha de4b784c)."
+      }
+    }
   }
 }
