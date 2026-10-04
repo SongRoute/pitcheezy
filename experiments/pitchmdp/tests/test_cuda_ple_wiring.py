@@ -37,7 +37,8 @@ from pitchmdp.matrix_models import MatrixModel  # noqa: E402
 
 CONFIGS = REPO / 'configs'
 RUN = CONFIGS / 'DRAFT-CUDA-PLE-RESIDUAL-20261004.json'
-CONFIG_COMMIT = '5e8b1d0'  # the commit that added RUN together with the DRAFT text it pins
+DRAFT_AT_CONFIG = '82dd5b154997dec6c776ec8c350a2d35e494a7970efbc0b3495d4dd7a95c4786'  # DRAFT as pinned by RUN (5e8b1d0)
+DRAFT_AMENDED = '9bdf9054f4e0b834a296aab7b6ea6c3cc36033940dc74d6d2e0768f728e9af8c'  # + wiring-review fixes (b1a2852)
 P34, P34_DRAFT = CONFIGS / 'EXP-P34-001.json', CONFIGS / 'DRAFT-CUDA-TABM-RESIDUAL-20261004.json'
 REGISTERED = [CONFIGS / f'EXP-P3{i}-001.json' for i in range(5)]  # P30-001 .. P34-001
 DRAFTS = [CONFIGS / n for n in ('DRAFT-CUDA-DIRECT-20261004.json', 'DRAFT-CUDA-FRONTIER-RUN-20261004.json',
@@ -123,11 +124,11 @@ def test_config_is_draft_exact_5_arm_family_on_seeds_29_33_with_cap_60():
         assert source['sha256'] == rc.sha256_file(REPO / source['path']), source['path']
     note = cfg['source_configs']['design_note']
     assert note['path'] == 'experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P35-001-ple-embedding-2026-10-04.md'
-    # The DRAFT text was amended before registration (wiring review: §10.1, §5, §2 N-a, §10.7), so the frozen DRAFT
-    # config pins the DRAFT as committed with it (5e8b1d0); the registered config must pin the amended DRAFT.
-    pinned = subprocess.run(['git', 'show', CONFIG_COMMIT + ':' + note['path']], cwd=REPO, capture_output=True,
-                            check=True).stdout
-    assert hashlib.sha256(pinned).hexdigest() == note['sha256']
+    # The DRAFT was amended before registration (wiring review: §10.1, §5, §2 N-a, §10.7); the frozen DRAFT config pins
+    # the DRAFT as committed with it (5e8b1d0). Any further DRAFT edit must update DRAFT_AMENDED in its own reviewed
+    # commit, and the registered config must pin the amended DRAFT (probe review F5: no git-object dependency).
+    assert note['sha256'] == DRAFT_AT_CONFIG
+    assert rc.sha256_file(REPO / note['path']) == DRAFT_AMENDED
     assert reg.MODULE_SHA256 not in raw and 'MODULE_SHA256' in cfg['arm_notes']['module_pin']  # one pin only
 
 

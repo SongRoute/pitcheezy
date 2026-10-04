@@ -90,6 +90,11 @@ All of the following must hold; no single gate alone permits anything (P34 N9):
 Arms whose projection is within 10 % of 1,800 s are listed in `marginal_arms` and reported as marginal; the gate
 value is not changed.
 
+The per-row `ple_binning_seconds_inside_projection_not_credited` is reported next to any PLE projection but never
+subtracted and never rescues a false gate. If `ple_arms_within` is false, the record is reported as measured; a later
+redesign may move the binning cost out of the per-epoch measurement only through a new reviewed amendment, never by
+re-reading this probe. (Review F1, adopted before any run.)
+
 - All true → the probe gate of DRAFT §6 is met. Registration still needs the other before-registration items
   (wiring review "Before registration": pre-score extractor §8, re-dated deadlines from this probe, explicit go
   from Song as `결정 필요`). This amendment does not register anything.
@@ -99,7 +104,8 @@ value is not changed.
 
 ## Bounds, preconditions and the command
 
-- Expected cost: per worker ≈ startup (array hashing) + 5 × 3 TRAIN epochs + 2 binnings + 5 predict passes; at the
+- Expected cost: per worker ≈ startup (array hashing) + 5 × 3 TRAIN epochs + 6 TRAIN binnings (2 in prepare, 1 inside
+  each of the 4 PLE fits) + 5 predict passes (review F2); at the
   P34 per-epoch times (context; PLE arms 미측정) about 4–6 min per GPU. Worker hard timeout 1,500 s (+ own
   1,560 s alarm); the parent kills each worker's process group (SIGTERM, SIGKILL after 20 s) before releasing its
   GPU lock, on timeout, failure or SIGTERM/SIGHUP/SIGINT.
@@ -124,7 +130,10 @@ value is not changed.
 
   The script refuses any config other than `DRAFT-CUDA-PLE-RESIDUAL-*` hashing to exactly
   `f0ae4e91…b9b2`, any other GPU set, any other env, and an existing output.
-- At most 2 attempts. A failed attempt keeps its output (worker error JSON + logs + summary) and is reported; a second
+- At most 2 attempts, and a second attempt only if attempt 1 is incomplete (`complete` false or a non-zero exit, e.g.
+  an infrastructure failure). A complete attempt is final whatever its gate values (DRAFT §6: the probe runs once;
+  review F3). A failed attempt keeps its output (worker error JSON + logs + summary when the parent was not
+  interrupted; review F8) and is reported; a second
   attempt uses a NEW output name (`runs/DRAFT-PLE-RESIDUAL-probe-<R>-a2-timing`). Two failures end the probe; the
   family is then redesigned or dropped as above.
 

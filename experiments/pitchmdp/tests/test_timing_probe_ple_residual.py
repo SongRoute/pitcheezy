@@ -8,6 +8,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 
@@ -30,6 +31,7 @@ GPUS = ['GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9', 'GPU-ae803a24-0d38-791d-ed7c
 ARMS = ['control', 'periodic_residual_counts', 'ple_residual_counts', 'tabm_residual_counts',
         'ple_tabm_residual_counts']
 PLE = ('ple_residual_counts', 'ple_tabm_residual_counts')
+FAKE = Path(__file__).resolve().parent / 'fake_probe_worker.py'
 WINDOW_BASE = '0978558'  # the base of this probe's branch (P35 smoke record); frozen files must not move after it
 FROZEN = ['experiments/pitchmdp/pitchmdp', 'experiments/pitchmdp/scripts/run_cuda_direct.py',
           'experiments/pitchmdp/scripts/cuda_direct_queue.py', 'experiments/pitchmdp/scripts/score_cuda_direct.py',
@@ -552,3 +554,90 @@ def test_frozen_runner_queue_models_and_configs_unchanged_in_the_probe_window():
     assert changed == []
     assert rc.sha256_file(PROJECT / 'pitchmdp' / 'direct_ple_model.py') == \
         'd3575019f971b06ba26060a1fa31e3894a070fd3b4b88191393743cb16ea175e'
+
+
+# --- Probe review F4 (OPUS-review-p35-timing-probe-14072ac, Appendix A), adopted pre-run ---
+
+def fake_python(tmp_path):
+    path = tmp_path / 'fake-python'
+    path.write_text(f'#!/bin/sh\nexec {sys.executable} {FAKE} "$@"\n')
+    path.chmod(0o755)
+    return str(path)
+
+
+def test_complete_run_writes_gates_and_passes_the_forbidden_key_check(export, tmp_path, monkeypatch):
+    root, digest, _ = export
+    args, cfg = args_for(tmp_path, root, digest, monkeypatch)
+    args.python = fake_python(tmp_path)
+    summary = tp.run(args, cfg)
+    assert summary['complete'] is True and summary['exit_codes'] == {g: 0 for g in GPUS}
+    assert set(summary['gate']) == {'task_seconds_max', 'family_seconds_max', 'ple_arms_within', 'every_arm_within',
+                                    'family_within'}
+    assert summary['slowest_task_seconds_projected']['control'] == pytest.approx(10 + 2 + 300 + 3 + 30)
+    on_disk = json.loads((args.output / 'summary.json').read_text())
+    assert on_disk['gate'] == summary['gate'] and tp.no_forbidden_keys(on_disk)
+
+
+def test_partial_run_never_writes_gates(export, tmp_path, monkeypatch):
+    root, digest, _ = export
+    args, cfg = args_for(tmp_path, root, digest, monkeypatch)
+    args.python = fake_python(tmp_path)
+    monkeypatch.setenv('PZ_FAKE_EXIT_' + GPUS[1].replace('-', '_'), '4')  # JSON written, then a non-zero exit
+    summary = tp.run(args, cfg)
+    assert summary['complete'] is False and summary['exit_codes'] == {GPUS[0]: 0, GPUS[1]: 4}
+    assert 'gate' not in summary and 'per_arm' not in summary
+    assert 'gate' not in json.loads((args.output / 'summary.json').read_text())
+
+
+def test_both_workers_share_one_deadline(export, tmp_path, monkeypatch):
+    root, digest, _ = export
+    args, cfg = args_for(tmp_path, root, digest, monkeypatch)
+    fake = tmp_path / 'sleep-python'
+    fake.write_text('#!/bin/sh\nexec sleep 60\n')
+    fake.chmod(0o755)
+    args.python = str(fake)
+    monkeypatch.setattr(tp, 'WORKER_TIMEOUT_SECONDS', 2)
+    waits, real_popen = [], tp.subprocess.Popen
+
+    class Popen(real_popen):
+        def wait(self, timeout=None):
+            if timeout is not None and timeout < 10:  # the parent's worker waits (not the 20 s stop grace)
+                waits.append(timeout)
+            return super().wait(timeout)
+
+    monkeypatch.setattr(tp.subprocess, 'Popen', Popen)
+    summary = tp.run(args, cfg)
+    assert summary['exit_codes'] == {g: 'timeout' for g in GPUS}
+    assert len(waits) == 2 and sum(waits) <= 2 + 1 + .5  # one deadline: the second wait gets the 1 s floor
+
+
+def test_worker_sets_its_own_alarm(export, tmp_path, monkeypatch):
+    root, digest, _ = export
+    args, _ = args_for(tmp_path, root, digest, monkeypatch)
+    alarms = []
+    monkeypatch.setattr(signal, 'alarm', lambda s: alarms.append(s))
+    monkeypatch.setattr(tp, 'worker', lambda a, c: None)
+    tp.main(['--config', str(args.config), '--config-sha256', args.config_sha256, '--export', str(root),
+             '--export-manifest-sha256', digest, '--output', str(args.output), '--lock-dir', str(args.lock_dir),
+             '--gpu', GPUS[0], '--gpu', GPUS[1], 'worker', '--gpu-uuid', GPUS[0]])
+    assert alarms == [tp.WORKER_TIMEOUT_SECONDS + 60]
+
+
+def test_marginal_band_is_two_sided():
+    def workers(per_epoch):
+        return [{'gpu': g, 'startup_seconds': 10., 'arms': [fake_record(a, per_epoch.get(a, 5.)) for a in ARMS]}
+                for g in GPUS]
+    # 45 s fixed + 60 x per_epoch: 1650 (150 below), 1950 (150 above), 1995 (195 above), 1575 (225 below)
+    out = tp.summarize(workers({PLE[0]: 26.75, PLE[1]: 31.75, 'tabm_residual_counts': 32.5,
+                                'periodic_residual_counts': 25.5}), 5)
+    assert out['marginal_arms'] == [PLE[0], PLE[1]]
+
+
+def test_summary_is_checked_for_forbidden_keys(export, tmp_path, monkeypatch):
+    root, digest, _ = export
+    args, cfg = args_for(tmp_path, root, digest, monkeypatch)
+    args.python = fake_python(tmp_path)
+    monkeypatch.setattr(tp, 'host_snapshot', lambda: {'loss': 1.})
+    with pytest.raises(ValueError, match='loss'):
+        tp.run(args, cfg)
+    assert not (args.output / 'summary.json').exists()
