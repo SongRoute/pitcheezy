@@ -3,6 +3,7 @@
 // and in-place recovery from media, reveal and timeline failures without losing the scene or pre-reveal state.
 // The real MLB video is never downloaded: the media URL is answered with a locally generated silent WAV.
 // That exercises <video> element state handling only, not real H.264/HLS decoding, Safari or iPhone playback.
+// Usage: [PZ_WEB_DIST=<built dist>] node tests/showcase-smoke.mjs [screenshot dir]
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { readFileSync, existsSync, statSync } from 'node:fs';
@@ -10,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dist = path.join(here, '..', 'dist');
+const dist = process.env.PZ_WEB_DIST ?? path.join(here, '..', 'dist');
 const source = JSON.parse(readFileSync(path.join(here, '../src/showcase-scenes.json'), 'utf8'));
 assert.equal(new Set(source.scenes.map(s => s.pitchId)).size, 39);
 assert(source.scenes.every(s => Number.isFinite(s.releaseSeconds) && s.releaseSeconds > 3));
