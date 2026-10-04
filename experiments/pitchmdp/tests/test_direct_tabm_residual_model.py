@@ -265,3 +265,21 @@ def test_load_refuses_archives_with_missing_keys_with_value_error(tmp_path, part
     torch.save(payload, tmp_path / 'bad.pt')
     with pytest.raises(ValueError, match='differs'):
         trm.DirectTabMResidualModel.load(tmp_path / 'bad.pt', 'cpu')
+
+
+# --- review disposition (N1, N2) ---
+
+def test_inherited_backbone_is_disabled():
+    _, net = nets(k=2)
+    with pytest.raises(NotImplementedError):
+        net.backbone(torch.zeros(1, net.input.in_features))
+
+
+def test_load_refuses_tampered_n_classes_with_value_error(tmp_path):
+    model = small_fit(trm.DirectTabMResidualModel(1, CONT, k=2, device='cpu'))
+    model.save(tmp_path / 'm.pt')
+    payload = torch.load(tmp_path / 'm.pt', weights_only=True)
+    payload['network_config']['n_classes'] = 11
+    torch.save(payload, tmp_path / 'bad.pt')
+    with pytest.raises(ValueError, match='differs'):
+        trm.DirectTabMResidualModel.load(tmp_path / 'bad.pt', 'cpu')

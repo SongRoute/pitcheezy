@@ -80,6 +80,9 @@ class PeriodicResidualTabMNetwork(pr.PeriodicResidualNetwork):
             z = z + block(z)
         return torch.einsum('nkd,kdc->nkc', self.output(z), self.output_weight) + self.output_bias
 
+    def backbone(self, x):  # inherited one would return [N, width] features here, not logits (review N1)
+        raise NotImplementedError('TabM-residual: use forward (member logits [N, k, n_classes])')
+
 
 def network_kwargs(architecture):
     return {**pr.network_kwargs('periodic', architecture), 'k': architecture['k'],
@@ -125,7 +128,7 @@ class DirectTabMResidualModel(tm.DirectTabMModel):
                 or 'context_continuous' not in config:  # malformed archive: ValueError, not TypeError/KeyError
             raise ValueError('Archived network differs from the archived architecture')
         model = cls(payload['seed'], config['context_continuous'], a.get('k'), a.get('scaling_init'), device)
-        expected = network_kwargs(model.architecture)
+        expected = {**network_kwargs(model.architecture), 'n_classes': model.n_classes}  # review N2
         if model.architecture != a or config.pop('kind') != KIND or {k: config.get(k) for k in expected} != expected:
             raise ValueError('Archived network differs from the archived architecture')
         model.net = PeriodicResidualTabMNetwork(**config).to(model.device)

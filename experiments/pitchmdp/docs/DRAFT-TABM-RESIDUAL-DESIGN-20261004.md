@@ -5,6 +5,13 @@ this family** (2026-10-04, delegated Opus PM worker, v3 cycle-003, task T31). No
 registered; no GPU run; execution disabled. Same-model review pending. A full run needs
 Song's go (`결정 필요` raised in v3 cycle-002) after review + CUDA smoke.
 
+**Amendment 1 (2026-10-04 13:56 KST, v3 cycle-004, T32b)** — after the same-model review
+`OPUS-review-tabm-residual-45cb770-2026-10-04.md` (findings 1, 2, 3, 5) and BEFORE any
+wiring disposition, smoke, fit or score of this family: (a) arm 5 `tabm_counts_d10` added
+(25 fits) so the backbone contrast has dropout .1 on both sides; (b) the smoke-time stop
+rule is replaced by a fixed projection formula; (c) wiring requirements written down;
+(d) inherited P31 caveats listed. Original text kept where unchanged; diff in git.
+
 Evidence already read when this was written (so the design is post-selection): P30–P33
 scores, consolidated report `reports/research-p30-p33/REPORT-P30-P33-consolidated-ko.md`
 (PM worktree `codex-continuous-pm-1004`, `d39285f`), SAVED-ENSEMBLE-P31/P32/P33 results.
@@ -20,8 +27,10 @@ loop, epoch cap and calibration chain:
    mean member loss, mean member probability) to the periodic_residual backbone change
    calibrated direct NLL / Brier / calibration? (`tabm_residual_counts − periodic_residual_counts`)
 2. Under TabM-mini, does replacing the flatten-MLP head by the residual backbone change them?
-   (`tabm_residual_counts − tabm_counts`) — a bundle: the residual backbone carries its frozen
-   internal dropout .1 while `tabm_counts` has head dropout 0; disclosed, not separated.
+   Read mainly as `tabm_residual_counts − tabm_counts_d10` (dropout .1 on both sides; still a
+   bundle of backbone + member-head input width 256→128 + dropout placement: inside the
+   residual blocks vs after the head GELUs). `tabm_residual_counts − tabm_counts` is also
+   reported and additionally differs in dropout (.1 vs 0). Neither is one-factor.
 
 Secondary, descriptive only: one TabM fit vs equal-weight means of n separately trained
 single networks of the same family (saved probabilities; n fixed below).
@@ -69,8 +78,9 @@ Arms (export `49097109`, workload `counts`, continuous map = P30 `CONTINUOUS['co
 2. `periodic_residual_counts` — EXP-P32-001 arm unchanged
 3. `tabm_counts` — EXP-P31-001 arm unchanged (k=8, head dropout 0)
 4. `tabm_residual_counts` — new (above)
+5. `tabm_counts_d10` — EXP-P31-001 arm unchanged (k=8, head dropout .1) (Amendment 1)
 
-Seeds **[24, 25, 26, 27, 28]** → 20 fits. Disjoint from every earlier/reserved block
+Seeds **[24, 25, 26, 27, 28]** → 25 fits (Amendment 1; was 20). Disjoint from every earlier/reserved block
 (0–2 P24/P25/P27/P29, 3–7 P30, 8–12 reserved P30 repeat, 13–15 P31, 16–18 P32, 19–23 P33).
 New RNG seeds are not a new evaluation population.
 
@@ -84,8 +94,11 @@ Cap hits are reported per fit.
 Fixed contrasts (calibrated, same seeds, seed-mean ensemble and single-fit means, game-block
 bootstrap; exploratory, post-selection, repeated DEV):
 - `tabm_residual_counts − periodic_residual_counts` (TabM-mini on the residual backbone)
-- `tabm_residual_counts − tabm_counts` (backbone bundle under TabM-mini)
-- `tabm_counts − control`, `periodic_residual_counts − control`, `tabm_residual_counts − control`
+- `tabm_residual_counts − tabm_counts_d10` (backbone + width + dropout-placement bundle under
+  TabM-mini, dropout .1 both sides; not one-factor)
+- `tabm_residual_counts − tabm_counts` (same bundle + dropout .1 vs 0; not one-factor)
+- `tabm_counts − control`, `tabm_counts_d10 − control`, `periodic_residual_counts − control`,
+  `tabm_residual_counts − control`
 
 Saved-probability grid (to be committed as a file BEFORE any score of this family is read):
 for each TabM arm, its 1-fit and 5-fit means vs means of n ∈ {1, 2, 3, 5} fits of
@@ -93,24 +106,47 @@ for each TabM arm, its 1-fit and 5-fit means vs means of n ∈ {1, 2, 3, 5} fits
 worker-seconds printed next to every row; "compute-matched" only where measured time ratios
 support it.
 
-Budget: expected per fit ≈ control 85 s, periodic_residual 220 s (P32), tabm_counts ≤ 750 s
-at a 60 cap (P31 ≈ 12.5 s/epoch), tabm_residual unknown (estimate ≤ 1200 s; smoke measures
-it before registration). Upper estimate ≈ 11,300 worker-s, ≈ 95 min wall on GPU3/4. Family
+Budget: expected per fit ≈ control 85 s, periodic_residual 220 s (P32), tabm_counts and
+tabm_counts_d10 ≤ 750 s each at a 60 cap (P31 ≈ 12.5 s/epoch), tabm_residual unknown
+(estimate ≤ 1200 s; projected from smoke by the fixed formula below). Upper estimate
+5 × (85 + 220 + 750 + 750 + 1200) = 15,025 ≈ 15,000 worker-s, ≈ 125 min wall on GPU3/4
+(Amendment 1; was ≈ 11,300 / 95 min). Family
 cap 36000 worker-s, task cap 3600 s, ≤ 2 attempts per task, newsrv GPU3/4 only
 (UUID-pinned), max two fits at once. Explicit family deadline set in the registered config
 on the day of launch.
 
 Stop: any task failing twice aborts the family (no partial comparison, failures reported);
-smoke time per TabM-residual fit > 1800 s at the 60 cap → redesign before registration
-(not silently shorten). No extra arms or seeds after scores are read.
+TabM-residual projected full-fit time > 1800 s → redesign before registration (not silently
+shorten). Projection fixed now (Amendment 1; the runner smoke uses 8,192 TRAIN rows and 2
+epochs, so it never measures a full fit): projected seconds = (smoke train seconds / smoke
+optimizer updates) × 1,224 updates/epoch × 60 + measured non-train smoke seconds, per GPU,
+using the slowest of the 5 smoke seeds. No extra arms or seeds after scores are read.
 
 Exposure: DEV/MLB DEV are the same repeatedly exposed ≤2025 rows used for P24–P33; `counts`
 and both parents were chosen after reading earlier results. Descriptive only: no winner,
 promotion or verdict fields. G0, D131/D155 unchanged. No 2026 data.
+
+## Inherited caveats to state in the result (Amendment 1; from `direct_tabm_model.py`)
+
+- `history.train_weighted_nll` is the mean member CE, so its gap to
+  `earlystop_conditional_nll` is not comparable with single-network arms.
+- The scaling r and the per-member heads get weight decay .01 (package default .0003).
+- External temperature acts on log mean member probability.
+
+## Wiring requirements (Amendment 1; review finding 2)
+
+- Family-scoped training constant `{epochs: 60, ...}` checked by the new registry; the runner
+  keeps 30 for every earlier family (no global edit; earlier source hashes unaffected). The
+  two P31 `tabm_*` arms in this family run under the same family-scoped cap.
+- New arm key `tabm_residual` (not `tabm`): the existing TabM route reads
+  `a['head_dropout']`, which this archive does not have.
+- The new factory compares k, scaling init and the registered continuous map after load
+  (a same-length permuted map would otherwise load silently).
+- Module hash pinned AFTER the review disposition (R1 + N1/N2 change it).
 
 ## Next steps
 
 1. Additive module `pitchmdp/direct_tabm_residual_model.py` + focused CPU tests (frozen
    modules untouched) → distinct Opus review → disposition.
 2. Torch-free registry/factory/DRAFT config/runner dispatch (pattern of P31/P32) → review.
-3. CUDA smoke of all 20 tasks on GPU3/4 → identities pinned → Song's go → registration.
+3. CUDA smoke of all 25 tasks on GPU3/4 (runner SMOKE: 8,192 TRAIN rows, 2 epochs) → identities pinned → Song's go → registration.
