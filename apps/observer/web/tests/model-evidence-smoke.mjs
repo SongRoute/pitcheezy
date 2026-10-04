@@ -63,6 +63,27 @@ if (process.env.MODEL_EVIDENCE_REPO) {  // exact identity with the committed res
     assert.equal(createHash('sha256').update(raw).digest('hex'), sha, `${rel} sha256 at ${c.sourceCommit.slice(0, 7)}`);
     for (const anchor of c.anchors[rel]) assert(raw.toString().includes(anchor), `${rel} anchor: ${anchor}`);
   }
+  // blend sentence: the 'service model' probability is w*mean(members) + (1-w)*frequency with the archived June weight
+  const b = ev.blend;
+  assert.equal(b.sourceCommit, ev.source.repoCommit, 'blend sources at the commit the card cites');
+  assert.deepEqual(Object.keys(b.files).sort(), ['configs/EXP-P11-001.yaml', 'experiments/pitchmdp/scripts/score_ml_g0_whole.py', 'results/EXP-P10-001.json'], 'blend source files');
+  assert.deepEqual(Object.keys(b.anchors).sort(), Object.keys(b.files).sort(), 'one anchor list per blend file');
+  const blendRaw = {};
+  for (const [rel, sha] of Object.entries(b.files)) {
+    assert(b.anchors[rel].length > 0, `${rel} has anchors`);
+    const raw = execFileSync('git', ['-C', process.env.MODEL_EVIDENCE_REPO, 'show', `${b.sourceCommit}:${rel}`], { maxBuffer: 1 << 24 });
+    assert.equal(createHash('sha256').update(raw).digest('hex'), sha, `${rel} sha256 at ${b.sourceCommit.slice(0, 7)}`);
+    for (const anchor of b.anchors[rel]) assert(raw.toString().includes(anchor), `${rel} anchor: ${anchor}`);
+    blendRaw[rel] = raw;
+  }
+  const g0sel = JSON.parse(blendRaw['results/EXP-P10-001.json'].toString()).reports['G0-global'].selection;
+  assert.equal(g0sel.model_weight, b.modelWeight, 'archived June weight (exact)');
+  assert(Math.abs(g0sel.model_weight + g0sel.baseline_weight - 1) < 1e-12, 'model + baseline weight = 1');
+  assert(blendRaw['configs/EXP-P11-001.yaml'].toString().includes(`"analysis_results_sha256": "${b.files['results/EXP-P10-001.json']}"`), 'P11 config pins this P10 file');
+  assert(c.anchors['experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py'].some(a => a.includes("weights[0] * calibrated + (1 - weights[0]) * frequency['dev']")), 'blend formula anchor kept');
+  assert.equal(b.members, p11.predictor.seeds.length, 'members = P11 seeds');
+  assert(matrix.includes('blend `06-01~06-30`, DEV `07-01~09-30`'), 'blend window before DEV in the matrix document');
+  assert.deepEqual(b.blendWindow, ['2025-06-01', '2025-06-30']);
   console.log('source identity: ok');
 } else console.log('source identity: skipped (MODEL_EVIDENCE_REPO not set)');
 
@@ -109,6 +130,7 @@ try {
       '화면에서도 이런 투수에게는 추천을 만들지 않습니다', '모든 면에서 나은 것은 아닙니다', '그 가정이 맞을 때만 인과 효과로 읽을 수 있습니다', '여러 번 본 개발용 자료', '공개 뒤 승리확률 변화는 추천의 효과를 보여 주지 않습니다',
       '독립 검토 전이라 이 카드에 넣지 않았습니다',
       '던질 구종이 정해졌을 때 다음 공 한 개의 결과 10종', '공의 위치·구속·회전 등은 던지기 전에 알 수 없어', '학습 기간 기록에서 뽑은 투구 400개로 평균합니다', '평가 투구마다 실제로 던진 구종을 넣어 계산했습니다',
+      '서비스 모델의 확률은 신경망 5개의 평균에 상황 빈도 기준을 약 25% 섞은 값입니다', '섞는 비율은 평가 기간보다 앞선 2025년 6월 자료로 정했습니다',
       '추천은 던질 구종만 고릅니다', '타석이 끝날 때까지의 수비 승리확률을 모의 계산하고', '위치 표시는 그 투수의 2025년까지 실제 투구 분포에서 잡은 근사이며, 평가하지 않았습니다', '레포 b38bea6', 'EXP-P11-001 44dae07c', 'MLB-2026-OPE-v1 0bb8fcd0', '결정 D87·D131'])
       assert(text.includes(t), `detail: ${t}`);
     for (const t of ['학습·선택에는 쓰지', '예측은 좋아졌', '모두 개선)', '공이 들어갈 위치는'])  // overclaims removed in review (2026 exposure D87; 'better than frequency', not 'improved')

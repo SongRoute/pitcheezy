@@ -131,5 +131,38 @@
       "ARM-B recommends pitch type only: each candidate type is scored by simulated full-PA defensive WE and probability is shifted from the TRAIN pitch-mix baseline toward higher value (P3).",
       "The watch screen location is a realized-delivery proxy, not evaluated (served /api/watch location.basis realized_delivery_proxy, evaluated false)."
     ]
+  },
+  "blend": {
+    "note": "How the P11 'service model' probability is formed: archived June-2025 blend weight * mean(5 frozen members) + (1 - weight) * context-frequency baseline. Read from committed files at the pinned commit; no new computation.",
+    "sourceCommit": "b38bea6f732b21eba0dd00cbf66ac1c395998179",
+    "members": 5,
+    "modelWeight": 0.7467754577062221,
+    "weightPath": "results/EXP-P10-001.json reports.G0-global.selection.model_weight",
+    "blendWindow": [
+      "2025-06-01",
+      "2025-06-30"
+    ],
+    "files": {
+      "results/EXP-P10-001.json": "82768e20bc8375e38ffb15242a6e45639b85f5a04dbb16b8c42e29c1035f293c",
+      "configs/EXP-P11-001.yaml": "b6565f167993bdb31481ce18aee6d49276f3db00b61f518b5eee45e8f00a319b",
+      "experiments/pitchmdp/scripts/score_ml_g0_whole.py": "e9a0f627b39a9dde4c2f777b661a8370b7f259e4130762cde9df1eb01bc007d2"
+    },
+    "anchors": {
+      "configs/EXP-P11-001.yaml": [
+        "\"analysis_results_sha256\": \"82768e20bc8375e38ffb15242a6e45639b85f5a04dbb16b8c42e29c1035f293c\"",
+        "\"june_weights\": \"reuse C1 analysis G0-global ensemble and per-seed blend weights unchanged\""
+      ],
+      "experiments/pitchmdp/scripts/score_ml_g0_whole.py": [
+        "frozen_five_predictions(members, baseline, read_json(Path(c1_results_path))['reports']['G0-global'])"
+      ],
+      "results/EXP-P10-001.json": [
+        "\"model_weight\": 0.7467754577062221"
+      ]
+    },
+    "facts": [
+      "P11 g0 estimand = predictions['primary'] (matrix_g0_whole_metrics.evaluate_whole), primary = w*mean(5 calibrated members) + (1-w)*frequency (matrix_g0_whole_metrics.py anchor pinned in conditioning).",
+      "w is the archived C1 G0-global June weight from EXP-P10-001.json, pinned in the P11 config by sha256 and read by score_ml_g0_whole.py.",
+      "Blend window 2025-06-01~06-30 (ML_EXPERIMENT_MATRIX.md, pinned in source.files), before DEV 07-01~09-30."
+    ]
   }
 }
