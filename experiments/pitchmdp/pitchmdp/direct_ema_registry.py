@@ -80,7 +80,7 @@ def check_arm(arm):
     rest = {k: v for k, v in arm.items() if k not in ('name', 'priority', 'ema', 'workload')}
     if arm.get('ema') is not True or name not in ARMS or not same(rest, ARMS[name]):
         raise ValueError('EMA arm differs from the fixed registry: ' + str(name))
-    if arm.get('workload') != [] or arm.get('priority') != 1:
+    if not same(arm.get('workload'), []) or not same(arm.get('priority'), 1):
         raise ValueError('EMA arms keep the control inputs (no workload) and priority 1')
     return arm
 
@@ -95,7 +95,7 @@ def check_family(config):
         raise ValueError('control differs from the fresh flatten control spec')
     dropout = {k: v for k, v in arms['dropout'].items() if k not in ('name', 'priority', 'frontier', 'workload')}
     if arms['dropout'].get('frontier') is not True or not same(dropout, FRONTIER['dropout']) \
-            or arms['dropout'].get('workload') != [] or arms['dropout'].get('priority') != 1 \
+            or not same(arms['dropout'].get('workload'), []) or not same(arms['dropout'].get('priority'), 1) \
             or (FRONTIER['dropout']['dropout'], FRONTIER['dropout']['weight_decay']) != (DROPOUT, WEIGHT_DECAY):
         raise ValueError('dropout must be the exact frontier regularization arm (p .1, wd .01)')
     for name in ARMS:

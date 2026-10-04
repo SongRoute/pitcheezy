@@ -45,6 +45,23 @@ def update_ema(ema_params, params, step, decay):
     return d
 
 
+def replay_stop_rule(scores, patience):
+    """(best_epoch, stop_epoch or None) of the shared early-stop rule (min delta 1e-5) replayed on a score list.
+
+    Review F2: applied to the raw-weight scores of an EMA run, this is the epoch the control rule would pick,
+    truncated at the raw stop; stop_epoch is None when the EMA run ended before the raw rule stopped.
+    """
+    best, best_epoch, stale = np.inf, 0, 0
+    for epoch, score in enumerate(scores, 1):
+        if score < best - 1e-5:
+            best, best_epoch, stale = score, epoch, 0
+        else:
+            stale += 1
+        if stale >= patience:
+            return best_epoch, epoch
+    return best_epoch, None
+
+
 class FlattenEMAModel(FlattenRegularizedModel):
     """FlattenRegularizedModel with EMA weights for early stopping, the best state and the saved model."""
     KIND, FORMAT = 'ema_flatten_mlp', 'direct_ema_flatten_v1'
@@ -126,13 +143,15 @@ class FlattenEMAModel(FlattenRegularizedModel):
                 break
         self.net.load_state_dict(best_state)  # EMA: the model is the best-epoch shadow weights
         raw_best = min(history, key=lambda h: h['raw_earlystop_conditional_nll'])
+        rbest_epoch, rstop = replay_stop_rule([h['raw_earlystop_conditional_nll'] for h in history], patience)  # F2
         self.report = self._base_report(len(y), len(ey), weight)
         self.report.update(network=self.net.config, parameter_count=sum(p.numel() for p in self.net.parameters()),
                            best_epoch=best_epoch, epochs_run=len(history), optimizer_updates=updates,
                            history=history, seconds=time.perf_counter() - start, architecture=self.architecture,
                            weights='ema', ema_updates=updates,
                            raw_best_epoch_within_run=raw_best['epoch'],
-                           raw_best_earlystop_conditional_nll_within_run=raw_best['raw_earlystop_conditional_nll'])
+                           raw_best_earlystop_conditional_nll_within_run=raw_best['raw_earlystop_conditional_nll'],
+                           raw_rule_best_epoch=rbest_epoch, raw_rule_stop_epoch=rstop)  # None: raw rule not reached
         if checkpoint:
             self.save(checkpoint)
         return self

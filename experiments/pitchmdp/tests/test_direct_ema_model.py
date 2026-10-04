@@ -170,6 +170,9 @@ def test_vanishing_decay_is_the_base_arm_including_stopping():
         [h['earlystop_conditional_nll'] for h in ema.report['history']]
     assert (base.report['best_epoch'], base.report['epochs_run']) == (ema.report['best_epoch'], ema.report['epochs_run'])
     np.testing.assert_array_equal(base.logits(e), ema.logits(e))
+    # review F2 disposition: replaying the shared rule on the raw score gives the base arm's epochs
+    assert ema.report['raw_rule_best_epoch'] == base.report['best_epoch']
+    assert ema.report['raw_rule_stop_epoch'] == base.report['epochs_run']
 
 
 def test_stopping_and_best_epoch_follow_the_ema_score():
@@ -182,6 +185,8 @@ def test_stopping_and_best_epoch_follow_the_ema_score():
     raw_rule = stop_rule([h['raw_earlystop_conditional_nll'] for h in history], 2)
     assert ema_rule != raw_rule  # precondition: the two rules disagree on this data
     assert (model.report['best_epoch'], model.report['epochs_run']) == ema_rule
+    rbest, rstop = model.report['raw_rule_best_epoch'], model.report['raw_rule_stop_epoch']
+    assert rbest == raw_rule[0] and rstop in (None, raw_rule[1])  # None when the EMA run stopped first
 
 
 def test_archive_negatives(tmp_path):
@@ -246,3 +251,24 @@ def test_shadow_swap_is_restored_when_scoring_fails(monkeypatch):
     with pytest.raises(RuntimeError):
         fitted(model)
     assert all(p.requires_grad for p in model.net.parameters())  # raw net back in place, not the shadow
+
+
+def test_raw_rule_replay_stops_where_the_raw_rule_stops():
+    """Review F2 disposition: raw_rule_* equal the shared rule on the raw score, truncated at the raw stop."""
+    hit = 0
+    for seed in range(3):
+        (x, y), (e, ey) = signal(1024, seed), signal(256, seed + 10)
+        model = em.FlattenEMAModel(0, 0., .99, 'cpu').fit(x, y, e, ey, epochs=10, patience=2, batch_size=64,
+                                                          learning_rate=.001)
+        history = model.report['history']
+        raw_rule = stop_rule([h['raw_earlystop_conditional_nll'] for h in history], 2)
+        if raw_rule[1] < len(history):  # the raw rule stopped before the EMA run ended
+            hit += 1
+            assert (model.report['raw_rule_best_epoch'], model.report['raw_rule_stop_epoch']) == raw_rule
+    assert hit  # precondition: exercised at least once
+
+
+def test_replay_stop_rule_is_truncated_at_the_stop():
+    assert em.replay_stop_rule([3., 2., 2.5, 2.6, 1.], 2) == (2, 4)  # the later 1.0 must not count
+    assert em.replay_stop_rule([3., 2., 1.], 2) == (3, None)
+    assert em.replay_stop_rule([3., 3. - 5e-6, 3.], 2) == (1, 3)  # min delta 1e-5

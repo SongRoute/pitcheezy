@@ -16,7 +16,7 @@
 - 가중치 평균은 P0~P32 어디에도 없다. `matrix_offline_rl.py`의 polyak은 RL target network용이다.
 - 남은 목록의 다른 후보(투수 ID 임베딩, 좌우 대칭 증강, P13, F4)는 새 export가 필요하다. 녹화 중에는 맥에서 무거운 작업을 할 수 없다.
 - 1차 문헌(초록 확인, 2026-10-04):
-  - Izmailov et al., "Averaging Weights Leads to Wider Optima and Better Generalization", UAI 2018, arXiv:1803.05407
+  - Izmailov et al., "Averaging Weights Leads to Wider Optima and Better Generalization", UAI 2018, arXiv:1803.05407 (SWA, 균등 평균; 우리는 EMA라 같은 방법이 아니다)
   - Morales-Brotons, Vogels, Hendrikx, "Exponential Moving Average of Weights in Deep Learning: Dynamics and Benefits", TMLR 2024, arXiv:2411.18704. 일반화와 보정(calibration)이 좋아졌다고 보고한다.
 - 우리 구현은 응용이다. 논문 설정을 재현했다고 주장하지 않는다. 논문은 이미지 분류가 중심이고 우리는 10-class 표 자료다.
 
@@ -33,8 +33,8 @@
   - 매 optimizer step 뒤 `ema ← d·ema + (1−d)·w`, `d_t = min(.999, (1+t)/(10+t))`
   - early stop 점수, best 상태, 저장 모델은 모두 EMA 가중치다.
   - 원래 가중치의 early stop NLL도 epoch마다 기록한다(진단용).
-- decay를 .999로 정한 근거: P32 control seed 16 `fit.json`이 11 epoch에 13,464 update, epoch당 약 1,224 update다. .999는 약 0.8 epoch를 평균한다. decay 탐색은 하지 않는다.
-- EMA는 난수를 쓰지 않는다. 그래서 같은 seed에서 원래 가중치의 학습 경로는 기준 팔과 같다(테스트로 확인). 차이는 평가·멈춤·저장하는 가중치뿐이다.
+- decay를 .999로 정한 근거: P32 control seed 16 `fit.json`이 11 epoch에 13,464 update, epoch당 약 1,224 update다. .999는 warm-up이 끝난 뒤(step 8,990 ≈ 7.3 epoch) 약 0.8 epoch를 평균한다. 그 전에는 평균 지연이 epoch 1에서 0.1, epoch 6에서 0.6 epoch다. decay 탐색은 하지 않는다.
+- EMA는 난수를 쓰지 않는다. 그래서 같은 seed에서 원래 가중치의 학습 경로는 기준 팔과 같다(테스트로 확인). 차이는 평가·멈춤·저장하는 가중치뿐이다. 그래서 멈추는 epoch와 update 수가 기준 팔과 달라질 수 있다(EMA는 보통 늦게 멈춘다). seed별 Δbest_epoch·Δoptimizer_updates를 같이 적는다.
 - 파라미터 수는 기준과 같다(141,834).
 
 ## 고정 실행 조건
@@ -43,7 +43,7 @@
 - 예산: 30 epoch, patience 5, lr 5e-4, batch 1024, AdamW wd .01, uniform loss. 보정은 외부(JointDelivery)
 - 자료: 기존 immutable export `49097109…f578`. 새 export 없음
 - 장치: newsrv GPU3/GPU4(UUID 고정), 동시 2 fit, 공통 lock
-- 예상 비용(추정, 미측정): control 평균 82.5 s(P32). EMA는 epoch마다 평가를 한 번 더 하므로 조금 더 든다. 합계 약 2,000 worker-s, 2장으로 약 20분. family 예산 36,000 worker-s, task 3,600 s
+- 예상 비용(추정, 미측정): control 평균 82.5 s(P32). EMA는 epoch마다 평가를 한 번 더 하므로 조금 더 든다. 합계 약 2,000 worker-s, 2장으로 약 20분. EMA 팔이 더 오래 돌 수 있어 최악은 30 epoch × 약 7.5 s × 1.1 ≈ 250 s/fit, 20 fit 약 5,000 worker-s. family 예산 36,000 worker-s, task 3,600 s
 - 멈춤 조건:
   - task당 최대 2회 시도
   - 한 task라도 끝내 실패하면 family 미완성으로 기록하고 비교하지 않는다.
@@ -57,6 +57,8 @@
   - 경기 단위 부트스트랩 95% 구간
 - 팔별 실행 기록: best epoch, 실행 epoch, 학습 시간, 최대 GPU 메모리, delivery temperature
 - early stop 자료에서 원래 가중치와 EMA 가중치의 NLL 차이는 진단으로만 적는다. 평가 결과가 아니다.
+  - `raw_rule_best_epoch`: 같은 멈춤 규칙을 원래 가중치 점수에 다시 적용한 best epoch(EMA 실행이 먼저 멈추면 잘린다). 그 epoch의 EMA early stop NLL과 함께 진단으로만 적는다.
+  - EMA 팔의 `history[*].earlystop_conditional_nll`은 EMA 점수다. 팔끼리 비교할 때는 `raw_earlystop_conditional_nll`과 기준 팔의 `earlystop_conditional_nll`을 쓴다.
 - 예측 NLL이 좋아져도 추천 정책이 좋아졌다는 뜻이 아니다.
 
 ## 다음 단계 (이 문서 뒤)
