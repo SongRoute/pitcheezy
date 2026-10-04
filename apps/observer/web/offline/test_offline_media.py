@@ -2,6 +2,8 @@
 import hashlib
 import http.client
 import os
+import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -189,3 +191,31 @@ def test_cli_refuses_to_start_on_changed_media(tmp_path):
     r = subprocess.run([sys.executable, str(HERE / 'serve_offline.py'), '--dist', str(dist), '--snapshot', str(snap),
                         '--media-dir', str(d), '--port', '0'], capture_output=True, text=True, timeout=20)
     assert r.returncode != 0 and 'sha256 mismatch' in r.stderr and 'http://' not in r.stdout
+
+
+def test_ranges_span_chunks(media_server, monkeypatch):
+    import serve_offline
+    monkeypatch.setattr(serve_offline, 'CHUNK', 1000)  # BODY then needs 11 reads: exercises the chunk loop
+    assert request(media_server, URL)[2] == BODY
+    status, headers, body = request(media_server, URL, Range='bytes=995-3004')
+    assert (status, body, headers['Content-Range']) == (206, BODY[995:3005], f'bytes 995-3004/{len(BODY)}')
+
+
+def test_client_disconnect_mid_body_is_quiet(tmp_path, capfd):
+    big = bytes(range(256)) * (1 << 15)  # 8 MiB: more than the socket buffers, so the server's write really fails
+    dist, snap, _ = write_bundle(tmp_path)
+    manifest, loaded = load_snapshot(snap)
+    server = start(make_handler(dist, manifest, loaded, load_media(write_media(tmp_path / 'media', {NAME: big}))))
+    port = server.server_address[1]
+    try:
+        for _ in range(3):  # the player dropping a range mid-body (normal while seeking)
+            with socket.create_connection(('127.0.0.1', port)) as s:
+                s.sendall(f'GET {URL} HTTP/1.1\r\nHost: x\r\n\r\n'.encode())
+                s.recv(200)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))  # reset, not a clean close
+        status, _, body = request(port, URL, Range='bytes=0-1')
+        assert (status, body) == (206, big[:2])
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert 'Traceback' not in capfd.readouterr().err
