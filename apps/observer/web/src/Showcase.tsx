@@ -71,7 +71,11 @@ export default function Showcase() {
   }
   function clipFinished() {
     stopAt.current = null;
-    if (window.matchMedia('(max-width: 800px)').matches) scrollToSection(compare.current);
+    // Only when the comparison is not already in view: a viewer who scrolled on (e.g. to the evidence cards) stays put.
+    const box = compare.current?.getBoundingClientRect();
+    if (box && (box.top > 0 || box.bottom > window.innerHeight) && window.matchMedia('(max-width: 800px)').matches) {
+      scrollToSection(compare.current);
+    }
   }
 
   // Same src, so load() is needed to refetch; onLoadedMetadata then re-seeks to the selected scene.
@@ -126,7 +130,7 @@ export default function Showcase() {
             <button className="sc-primary" disabled={!videoReady || !decision || videoError} onClick={startClip}>이 공 다시 보기</button>
             <button disabled={selected === source.scenes.length - 1} onClick={() => setSelected(i => i + 1)}>다음 장면</button>
           </div>
-          <button className="sc-jump" onClick={() => scrollToSection(compare.current)}>추천과 공개 버튼으로 내려가기 ↓</button>
+          <button className="sc-jump" onClick={() => scrollToSection(compare.current)}>추천과 공개 버튼으로 내려가기 <span aria-hidden="true">↓</span></button>
           <p className="sc-hint">선택한 공 전후 약 7초를 재생합니다. 영상 탐색 막대를 직접 움직였다면 장면을 다시 선택해 맞춰 주세요.</p>
           <details><summary>영상과 비교 범위</summary>
             <p>MLB 공식 압축 영상에 나온 39구만 비교합니다. 전체 경기 262구 중 일부이며 대부분 타석의 마지막 공입니다.</p>
@@ -140,7 +144,7 @@ export default function Showcase() {
         </section>
         <section className="sc-compare" ref={compare} aria-label="추천과 실제 투구 비교">
           <div className="sc-compare-head"><h2>{label(decision, scene.pitchNumber)}</h2>
-            <button className="sc-jump" onClick={() => scrollToSection(player.current)}>↑ 영상</button></div>
+            <button className="sc-jump" aria-label="영상으로 올라가기" onClick={() => scrollToSection(player.current)}><span aria-hidden="true">↑</span> 영상</button></div>
           {error ? <p role="alert">{error} <button onClick={() => setAttempt(n => n + 1)}>다시 시도</button></p> : watchPath
             ? <iframe key={`${selected}:${take}`} src={watchPath.replace('#', '&embed=1#')} title="선택한 공의 추천과 실제 투구" />
             : <p>{timeline ? '이 장면에 대응하는 투구 자료가 없습니다. 다른 장면을 선택해 주세요.' : '추천 화면을 준비하는 중…'}</p>}

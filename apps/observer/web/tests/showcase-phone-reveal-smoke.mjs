@@ -64,8 +64,8 @@ try {
     });
     const frame = page.frameLocator('.sc-compare iframe');
     const revealButton = frame.getByRole('button', { name: '실제 투구 공개' });
-    const down = page.getByRole('button', { name: '추천과 공개 버튼으로 내려가기 ↓' });
-    const up = page.getByRole('button', { name: '↑ 영상' });
+    const down = page.getByRole('button', { name: '추천과 공개 버튼으로 내려가기', exact: true });
+    const up = page.getByRole('button', { name: '영상으로 올라가기', exact: true });
     const clip = page.getByRole('button', { name: '이 공 다시 보기' });
     // Fully inside the page viewport (frame element boxes are reported in main-page coordinates).
     const inView = async locator => {
@@ -131,6 +131,18 @@ try {
     await page.getByRole('button', { name: '이전 장면' }).click();
     await page.waitForTimeout(600);
     check(await settle() === mid, `${tag}: scene change mid-clip does not scroll`);
+
+    // A viewer who scrolled past the comparison during a clip (e.g. to the evidence cards) is not pulled back (review F3).
+    if (width < 800) {
+      await clip.click();
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)); const past = await settle();
+      const top = await page.locator('.sc-compare').evaluate(el => el.getBoundingClientRect().top);
+      check(top < 0, `${tag}: precondition — comparison top is above the viewport after scrolling down`);
+      await page.locator('video').evaluate((v, t) => { v.currentTime = t; }, scene0.releaseSeconds + 4.05);
+      await page.waitForFunction(() => document.querySelector('video').paused);
+      await page.waitForTimeout(600);
+      check(await settle() === past, `${tag}: clip end does not pull back a viewer who scrolled past the comparison`);
+    }
 
     // Manual playback (native controls, no clip running) reaching the media end does not scroll.
     await page.evaluate(() => window.scrollTo(0, 0)); const manual = await settle();
