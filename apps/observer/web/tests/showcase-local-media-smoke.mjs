@@ -69,8 +69,9 @@ const base = await new Promise((resolve, reject) => {
 });
 
 const report = { tmp, mp4Bytes: mp4.length, decoded: {} };
-const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+let browser;
 try {
+  browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });  // inside try: a failed launch still stops the server
   // Direct HTTP: one range, an unknown name.
   let r = await fetch(`${base}${local}`, { headers: { Range: 'bytes=0-1' } });
   assert.equal(r.status, 206); assert.equal(r.headers.get('content-range'), `bytes 0-1/${mp4.length}`);
@@ -172,6 +173,6 @@ try {
   }
   console.log(`showcase local-media smoke: ok ${JSON.stringify(report)}`);
 } finally {
-  await browser.close();
+  await browser?.close();
   server.kill();
 }
