@@ -30,6 +30,16 @@ def one_thread(monkeypatch):
     monkeypatch.setattr(torch, 'set_num_threads', lambda n: None)
 
 
+@pytest.mark.parametrize('report', [
+    {'epochs_run': 30, 'best_epoch': 10},   # run < cap, 20 stale epochs: the loop would have stopped at 15
+    {'epochs_run': 60, 'best_epoch': 50},   # at the cap, 10 stale epochs: the loop would have stopped at 55
+    {'epochs_run': 17, 'best_epoch': 11},   # run < cap, 6 stale > patience 5
+])
+def test_epoch_record_refuses_reports_the_frozen_loop_cannot_produce(report):
+    with pytest.raises(ValueError, match='inconsistent'):
+        rc.epoch_record(report, 60, 5)
+
+
 @pytest.mark.parametrize('arm', ['control', 'periodic_residual_counts', 'tabm_counts', NEW, 'tabm_counts_d10'])
 def test_epoch_record_agrees_with_the_real_loop_of_every_arm_class(arm):
     """lr 0 (AdamW decay is lr-scaled) keeps the early-stop loss flat: best epoch 1, then a patience stop."""

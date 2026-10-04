@@ -586,9 +586,12 @@ def probabilities(log_probs, temperature):
 
 
 def epoch_record(report, cap, patience):
-    """Epoch cap passed to fit and where the fit stopped, so cap hits are visible per fit."""
+    """Epoch cap passed to fit and where the fit stopped, so cap hits are visible per fit.
+
+    The frozen loops break as soon as run - best reaches patience, so a stop before the cap has
+    run - best == patience and a run to the cap has run - best <= patience."""
     run, best = int(report['epochs_run']), int(report['best_epoch'])
-    if not 1 <= best <= run <= cap or (run < cap and run - best < patience):
+    if not 1 <= best <= run <= cap or run - best > patience or (run < cap and run - best != patience):
         raise ValueError('Fit report epochs are inconsistent with the epoch cap and patience')
     return {'cap': int(cap), 'patience': int(patience), 'epochs_run': run, 'best_epoch': best,
             'stopped_by': 'patience' if run - best >= patience else 'cap'}
