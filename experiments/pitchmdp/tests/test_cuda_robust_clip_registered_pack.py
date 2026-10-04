@@ -440,6 +440,46 @@ def test_template_gates_and_pins_match_the_generator():
     assert "'scores/EXP-P36-001'" in text and 'scores/EXP-P35-001' not in text
 
 
+class _Clock(datetime):
+    fixed = None
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.fixed.astimezone(tz)
+
+
+def one_date_guard(now_kst, queue):
+    """Execute the template's two one-date guard lines (review T109 MINOR-4) with a fixed clock."""
+    import datetime as real
+    import types
+    lines = [line.strip() for line in TEMPLATE.read_text().splitlines() if line.endswith('# one-date guard (T109)')]
+    assert len(lines) == 2
+    _Clock.fixed = now_kst
+    clock = types.SimpleNamespace(datetime=_Clock, timezone=real.timezone, timedelta=real.timedelta)
+    exec(compile('\n'.join(lines), str(TEMPLATE), 'exec'), {'datetime': clock, 'new': {'queue': queue}})
+
+
+@pytest.mark.parametrize('now, ok', [
+    ('2026-10-05 08:55', True), ('2026-10-05 09:00', True), ('2026-10-05 09:01', False),
+    ('2026-10-04 23:50', False), ('2026-10-06 08:00', False),
+])
+def test_template_refuses_a_launch_later_than_no_new_minus_5h_or_off_date(now, ok):
+    queue = {'date': '2026-10-05', 'no_new_fit_after': '14:00'}
+    when = datetime.strptime(now, '%Y-%m-%d %H:%M').replace(tzinfo=KST)
+    if ok:
+        one_date_guard(when, queue)
+    else:
+        with pytest.raises(AssertionError, match='actual launch is not on queue.date'):
+            one_date_guard(when, queue)
+
+
+def test_template_checks_probe_identity():
+    text = TEMPLATE.read_text()
+    assert ("p['protocol']=='robust_clip_timing_probe_v1' and p['preflight']['module_sha256']==modulesha and "
+            "sorted(p['preflight']['gpus'])==sorted(old['device']['allowed_gpu_uuids'])") in text
+    assert text.index('# one-date guard (T109)') < text.index(" execute('p36-full-001'")
+
+
 def function_source(path, name):
     tree = ast.parse(path.read_text())
     node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)

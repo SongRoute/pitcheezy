@@ -83,6 +83,10 @@ Template (`run-p36-pipeline.TEMPLATE.py` vs `run-p35-pipeline.TEMPLATE.py`):
 9. Smoke identities 4 arms × 5 seeds with `own_hashes()` computed once; module pin `a3d6cbce…52fa` checked in the registry,
    `own_hashes()`, and every robust-clip smoke `fit.json` `rc_module_sha256`; ONE `rc_stats_sha256` across the 5
    robust-clip smoke fits; the 20 smoke `fit.json` `runtime.bound_uuid` values are exactly the two pinned UUIDs.
+11. Review T109: probe `protocol` = `robust_clip_timing_probe_v1`, `preflight.module_sha256` = the pin and
+    `preflight.gpus` = the allow-list; and a one-date guard right before the queue starts: the ACTUAL launch must be on
+    `queue.date` (KST) and at least 5 h before `no_new_fit_after` (the declared L is not machine-checked otherwise; a
+    late launch would silently shrink the pre-registered L+5 h window).
 10. Queue `p36-full-001` into `runs/EXP-P36-001` / `queue-p36-001`, `{done: 20}`; scorer `score-p36-001` into a NEW
     `scores/EXP-P36-001`. `save`, `interrupted`, `execute`, `queue` functions are byte-identical to P35 (tested).
 

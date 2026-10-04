@@ -53,6 +53,7 @@ try:
  assert hashlib.sha256((b/'EXP-P35-001.json').read_bytes()).hexdigest()==new['source_configs']['ple_registered']['sha256'],'EXP-P35-001.json differs from ple_registered'
  assert hashlib.sha256(probe.read_bytes()).hexdigest()==probesha
  p=json.loads(probe.read_text())
+ assert p['protocol']=='robust_clip_timing_probe_v1' and p['preflight']['module_sha256']==modulesha and sorted(p['preflight']['gpus'])==sorted(old['device']['allowed_gpu_uuids']),'probe identity differs'
  assert p['complete'] is True and set(p['exit_codes'].values())=={0} and len(p['exit_codes'])==2,'timing probe incomplete'
  assert p['preflight']['config_sha256']==draftsha and p['preflight']['export_manifest_sha256']==manifest
  g=p['gate'];assert all(g[k] is True for k in GATE_KEYS) and all(v is True for v in g.values() if isinstance(v,bool)),'timing gate not passed'
@@ -77,6 +78,8 @@ try:
     assert fit['rc_module_sha256']==modulesha,'smoke robust-clip module sha differs';stats.add(fit['rc_stats_sha256'])
  assert uuids==set(old['device']['allowed_gpu_uuids']),'smoke did not use exactly both pinned GPUs'
  assert len(stats)==1,'smoke robust-clip statistics hash differs across seeds/GPUs'
+ kst=datetime.timezone(datetime.timedelta(hours=9));q=new['queue'];nonew=datetime.datetime.strptime(q['date']+' '+q['no_new_fit_after'],'%Y-%m-%d %H:%M').replace(tzinfo=kst)  # one-date guard (T109)
+ now=datetime.datetime.now(kst);assert now.date().isoformat()==q['date'] and now+datetime.timedelta(hours=5)<=nonew,'actual launch is not on queue.date at least 5 h before no_new_fit_after'  # one-date guard (T109)
  execute('p36-full-001',queue(cfg,configsha,b/'runs/EXP-P36-001',b/'queue-p36-001'),40000)
  assert json.loads((b/'queue-p36-001/summary.json').read_text())['counts']=={'done':20},'full family incomplete'
  score=[python,str(code/'scripts/score_cuda_direct.py'),'--config',str(cfg),'--config-sha256',configsha,'--export',str(b/'export-49097109'),'--export-manifest-sha256',manifest,'--family',str(b/'runs/EXP-P36-001'),'--destination',str(b/'scores/EXP-P36-001')]
