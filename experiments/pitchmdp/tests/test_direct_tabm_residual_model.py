@@ -224,3 +224,44 @@ def test_invalid_settings_refused(kwargs):
         trm.DirectTabMResidualModel(0, CONT, device='cpu', **kwargs)
     with pytest.raises(ValueError):
         trm.PeriodicResidualTabMNetwork(52, 38, 6, CONT, **KW, **kwargs)
+
+
+# --- added by same-model review (OPUS-review-tabm-residual-45cb770-2026-10-04) ---
+
+def test_shared_dropout_draws_independent_masks_per_member_in_training_only():
+    """[N, k, width] Dropout is elementwise (official TabM semantics); eval mode is deterministic."""
+    _, net = nets(k=4, seed=2)
+    with torch.no_grad():  # identical members: any train-mode difference comes from dropout alone
+        net.scaling.fill_(1.)
+        net.output_weight.copy_(net.output_weight[:1].expand_as(net.output_weight))
+        net.output_bias.copy_(net.output_bias[:1].expand_as(net.output_bias))
+    x, _ = tensors(16, 8)
+    net.eval()
+    member = net(*x)
+    assert all(torch.equal(member[:, 0], member[:, m]) for m in range(1, 4))
+    net.train()
+    torch.manual_seed(0)
+    member = net(*x)
+    assert not torch.allclose(member[:, 0], member[:, 1])
+
+
+def test_empty_batch_shapes_and_report_width():
+    model = small_fit(trm.DirectTabMResidualModel(2, CONT, k=3, device='cpu'))
+    x, _ = arrays(5, 17)
+    empty = tuple(a[:0] for a in x)
+    assert model.logits(empty).shape == (0, 10) and model.member_logits(empty).shape == (0, 3, 10)
+    assert model.predict(empty).shape == (0, 10)
+    assert model.width == 128 == model.report['network']['width']
+
+
+@pytest.mark.parametrize('part, key', [('architecture', 'k'), ('architecture', 'scaling_init'),
+                                       ('architecture', 'backbone'), ('network_config', 'kind'),
+                                       ('network_config', 'context_continuous')])
+def test_load_refuses_archives_with_missing_keys_with_value_error(tmp_path, part, key):
+    model = small_fit(trm.DirectTabMResidualModel(1, CONT, k=2, device='cpu'))
+    model.save(tmp_path / 'm.pt')
+    payload = torch.load(tmp_path / 'm.pt', weights_only=True)
+    payload[part].pop(key)
+    torch.save(payload, tmp_path / 'bad.pt')
+    with pytest.raises(ValueError, match='differs'):
+        trm.DirectTabMResidualModel.load(tmp_path / 'bad.pt', 'cpu')

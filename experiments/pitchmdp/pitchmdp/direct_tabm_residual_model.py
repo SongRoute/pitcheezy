@@ -121,6 +121,9 @@ class DirectTabMResidualModel(tm.DirectTabMModel):
         if payload.get('format') != FORMAT or payload.get('kind') != KIND:
             raise ValueError('Unrecognized direct TabM-mini residual archive')
         config, a = dict(payload['network_config']), payload['architecture']
+        if not isinstance(a, dict) or set(a) != set(ARCHITECTURE) or 'kind' not in config \
+                or 'context_continuous' not in config:  # malformed archive: ValueError, not TypeError/KeyError
+            raise ValueError('Archived network differs from the archived architecture')
         model = cls(payload['seed'], config['context_continuous'], a.get('k'), a.get('scaling_init'), device)
         expected = network_kwargs(model.architecture)
         if model.architecture != a or config.pop('kind') != KIND or {k: config.get(k) for k in expected} != expected:
