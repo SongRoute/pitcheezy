@@ -19,6 +19,10 @@ from pathlib import Path
 DRAFT = Path(__file__).resolve().parents[4] / 'configs' / 'DRAFT-CUDA-ROBUST-CLIP-20261005.json'
 DRAFT_SHA = '644239f3b2aaa4410391211ab1e4d972f13e1a6b025a026b058f0dff319c470a'
 P35_DRAFT_SHA = 'f0ae4e9116d3efe90d119fcc84616172bde183a981206caacc4804d68a31b9b2'
+# The real EXP-P35-001 registration (make_p35_config.py literals): probe 3b317f2 summary + code-8864389. A dry-run
+# EXP-P35-001.json built from another summary is refused (review T109).
+P35_PROBE_SHA = '311f0d4f5dff318320a6da0d8944e6d7b50fdc1a1eb8ee4cd7a95d754fb67ff5'
+P35_SOURCE_COMMIT = '8864389'
 MANIFEST_SHA = '49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578'
 # Probe-summary keys read here, checked against the P36 probe scripts/timing_probe_robust_clip.py @ 3b305ad
 # (run() :446-449, summarize() :293-300, preflight() :366-375; review T109). A missing key fails closed.
@@ -84,6 +88,10 @@ p35 = json.loads(p35_raw)
 assert p35.get('experiment_id') == 'EXP-P35-001' and p35.get('status') == 'REGISTERED', \
     'not the registered EXP-P35-001 config'
 assert p35.get('registration', {}).get('draft_sha256') == P35_DRAFT_SHA, 'EXP-P35-001 is not built from DRAFT f0ae4e91'
+p35_reg = p35['registration']
+assert p35_reg.get('source_commit') == P35_SOURCE_COMMIT and \
+    p35_reg.get('timing_probe', {}).get('summary_sha256') == P35_PROBE_SHA, \
+    'EXP-P35-001 is not the code-8864389 / probe 311f0d4f registration (dry run?)'
 p35_arms, d_arms = {a['name']: a for a in p35['arms']}, {a['name']: a for a in d['arms']}
 for name in P35_SHARED_ARMS:
     assert name in p35_arms and same(p35_arms[name], d_arms[name]), f'{name}: EXP-P35-001 entry differs from the DRAFT'

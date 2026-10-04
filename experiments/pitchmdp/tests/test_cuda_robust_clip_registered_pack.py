@@ -34,10 +34,12 @@ TODAY = datetime.now(KST).date()
 # The launch day of the prepared pack; once it is past, a later date keeps the happy path runnable.
 DATE = '2026-10-05' if TODAY <= Date(2026, 10, 5) else (TODAY + timedelta(days=1)).isoformat()
 COMMIT = 'abc1234'
-EXEC = ('import sys\nsrc, old, new = open(sys.argv[1]).read(), sys.argv[2], sys.argv[3]\n'
-        'assert old == new or src.count(old) == 1, "patch target not unique"\n'
-        'path = sys.argv[1]; sys.argv = [path] + sys.argv[4:]\n'
-        'exec(compile(src.replace(old, new), path, "exec"), {"__file__": path, "__name__": "__main__"})\n')
+EXEC = ('import json, sys\npath, patches = sys.argv[1], json.loads(sys.argv[2])\nsrc = open(path).read()\n'
+        'for old, new in patches:\n'
+        '    assert src.count(old) == 1, "patch target not unique"\n'
+        '    src = src.replace(old, new)\n'
+        'sys.argv = [path] + sys.argv[3:]\n'
+        'exec(compile(src, path, "exec"), {"__file__": path, "__name__": "__main__"})\n')
 
 
 def constant(path, name):
@@ -51,9 +53,9 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def run(script, args, patch=('', '')):
-    """Plain python (no -O: every check is an assert), optional in-memory constant swap, never edits the script."""
-    return subprocess.run([sys.executable, '-c', EXEC, str(script), patch[0], patch[1], *map(str, args)],
+def run(script, args, patches=()):
+    """Plain python (no -O: every check is an assert), optional in-memory constant swaps, never edits the script."""
+    return subprocess.run([sys.executable, '-c', EXEC, str(script), json.dumps(list(patches)), *map(str, args)],
                           capture_output=True, text=True, timeout=120)
 
 
@@ -115,15 +117,17 @@ def pack(tmp_path_factory):
     p35 = tmp / 'configs' / 'EXP-P35-001.json'
     p35.parent.mkdir()
     done = run(MAKE35, [s35, p35, DATE, '09:00', '14:00', '15:00', '15:30', 'dry-p35', 'DRY RUN P35 (T107 test)'],
-               patch=(P35_PROBE_SHA, sha(s35)))
+               patches=[(P35_PROBE_SHA, sha(s35))])
     assert done.returncode == 0, done.stderr
     s36 = write(tmp / 'p36-summary.json', p36_summary())
     out = tmp / 'out' / 'EXP-P36-001.json'
     out.parent.mkdir()
     args = [s36, p35, out, DATE, '09:00', '14:00', '15:00', '15:30', COMMIT, 'dry-run-t107', 'DRY RUN ONLY (T107)']
-    done = run(MAKE36, args)
+    # The fixture P35 config pins the synthetic P35 summary; swap the generator's real-P35 pin in memory to match it.
+    patches = [(P35_PROBE_SHA, sha(s35))]
+    done = run(MAKE36, args, patches)
     assert done.returncode == 0, done.stderr
-    return {'tmp': tmp, 'p35': p35, 's36': s36, 'out': out, 'args': args, 'stdout': done.stdout}
+    return {'tmp': tmp, 'p35': p35, 's36': s36, 'out': out, 'args': args, 'stdout': done.stdout, 'patches': patches}
 
 
 def diff_paths(draft, registered):
@@ -204,7 +208,7 @@ def refused(pack, tmp_path, message, args=None, patch=('', '')):
     args = list(args if args is not None else pack['args'])
     if args and len(args) == 11 and args[2] == pack['out']:
         args[2] = tmp_path / 'never.json'
-    done = run(MAKE36, args, patch)
+    done = run(MAKE36, args, pack['patches'] + ([patch] if patch[0] else []))
     assert done.returncode != 0
     assert message in done.stderr, done.stderr[-800:]
     assert not (tmp_path / 'never.json').exists()
@@ -244,7 +248,7 @@ def test_wrong_argument_count_refused(pack, tmp_path):
 
 def test_existing_output_refused(pack, tmp_path):
     before = pack['out'].read_bytes()
-    done = run(MAKE36, pack['args'])
+    done = run(MAKE36, pack['args'], pack['patches'])
     assert done.returncode != 0 and 'output exists' in done.stderr
     assert pack['out'].read_bytes() == before
 
@@ -275,6 +279,24 @@ def arm(config, name):
 ])
 def test_p35_config_mismatch_refused(pack, tmp_path, mutate, message):
     refused(pack, tmp_path, message, with_args(pack, p35=p35_variant(pack, tmp_path, mutate)))
+
+
+def test_dry_run_p35_config_refused_by_the_unpatched_generator(pack, tmp_path):
+    """Review T109: the tmp make_p35_config.py dry run (synthetic summary) is not the real P35 registration."""
+    out = tmp_path / 'never.json'
+    done = run(MAKE36, with_args(pack, out=out))
+    assert done.returncode != 0 and 'not the code-8864389 / probe 311f0d4f registration' in done.stderr
+    assert not out.exists()
+    assert constant(MAKE36, 'P35_PROBE_SHA') == constant(MAKE35, 'PROBE_SHA') == P35_PROBE_SHA
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda c: c['registration'].update(source_commit='abc1234'),
+    lambda c: c['registration']['timing_probe'].pop('summary_sha256'),
+])
+def test_p35_registration_identity_mismatch_refused(pack, tmp_path, mutate):
+    refused(pack, tmp_path, 'not the code-8864389 / probe 311f0d4f registration',
+            with_args(pack, p35=p35_variant(pack, tmp_path, mutate)))
 
 
 def test_p35_config_wrong_file_name_refused(pack, tmp_path):
