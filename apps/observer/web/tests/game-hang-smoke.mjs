@@ -33,9 +33,13 @@ await context.route('http://pz.test/**', async (route) => {
   return route.fulfill({ body: readFileSync(target), contentType: TYPES[path.extname(target)] ?? 'application/octet-stream' });
 });
 const errors = [];
+let dropped = 0;                 // state requests the page itself cancelled (a hung one must be dropped, not left open)
 const open = async () => {
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(String(error)));
+  page.on('requestfailed', (request) => {
+    if (/\/api\/live\/\d+\/state/.test(request.url()) && /ERR_ABORTED/.test(request.failure()?.errorText ?? '')) dropped += 1;
+  });
   await page.goto('http://pz.test/game?game=849845');
   return page;
 };
@@ -44,6 +48,11 @@ const since = (t) => asks.filter((a) => a >= t).length;
 const waitHung = async (n, timeout = 5000) => {   // until n requests are being held
   const end = Date.now() + timeout;
   while (hung.length < n) { if (Date.now() > end) throw new Error(`no hung request after ${timeout} ms`); await new Promise((r) => setTimeout(r, 50)); }
+};
+const waitDropped = async (n, what, timeout = 1500) => {   // a request left open keeps a browser connection busy
+  const end = Date.now() + timeout;
+  while (dropped < n) { if (Date.now() > end) return fail(`${what} left the hung request open (${dropped} dropped)`); await new Promise((r) => setTimeout(r, 50)); }
+  if (dropped > n) fail(`${what} dropped ${dropped} requests, expected ${n}`);
 };
 const setHidden = (page, hidden) => page.evaluate((h) => {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => h });
@@ -63,6 +72,7 @@ let t = Date.now();
 await page.evaluate(() => window.dispatchEvent(new Event('online')));
 await chip(page, '다음 공', 1500).catch(() => fail('online did not replace the hung first request'));
 if (since(t) < 1) fail('online event did not ask again while a request was hung');
+await waitDropped(1, 'online');
 await page.close();
 
 // 2. Failing first load, then the next automatic poll hangs: the retry button still asks at once. The dropped request is
@@ -78,8 +88,10 @@ const retry = page.getByRole('button', { name: '지금 다시 시도' });
 t = Date.now();
 await retry.click();
 await page.getByText('실패 3번', { exact: false }).waitFor({ timeout: 1000 }).catch(() => fail('retry did nothing while a request was hung'));
+await page.waitForTimeout(400);                  // let a miscounted drop land too; the next timer poll is 2 s away
 if (await page.getByText('실패 4번', { exact: false }).count()) fail('the dropped hung request was counted as a failure');
 if (since(t) < 1) fail('retry did not send a new request');
+await waitDropped(2, 'retry');
 if (shots) await page.screenshot({ path: `${shots}/hang-1-retry.png` });
 mode = 'ok';
 await retry.click();
@@ -95,6 +107,7 @@ t = Date.now();
 await setHidden(page, false);
 await page.waitForTimeout(600);
 if (since(t) < 1) fail('coming back to the page did not replace the hung request');
+await waitDropped(3, 'coming back to the page');
 if (await page.locator('.gm-stage .gm-chip', { hasText: '연결 안 됨' }).count()) fail('dropping the hung request showed a connection failure');
 await page.waitForTimeout(1000);
 t = Date.now();
@@ -103,6 +116,22 @@ const steady = since(t);
 if (steady < 2 || steady > 4) fail(`after replacing a hung request expected about 3 asks in 6 s, got ${steady}`);
 if (await page.locator('.gm-live').innerText() !== 'LIVE') fail('header is not LIVE after recovering');
 if (shots) await page.screenshot({ path: `${shots}/hang-2-live.png` });
+
+// 4. Two asks in a row: the first one's replacement hangs too, and the second ask must still drop it (a dropped request
+//    must not clear the newer one's handle) and bring the page back.
+mode = 'hang';
+await waitHung(hung.length + 1, 3000);
+const before = hung.length;
+await page.evaluate(() => window.dispatchEvent(new Event('online')));
+await waitDropped(4, 'a first online');
+await waitHung(before + 1, 1000);
+mode = 'ok';
+t = Date.now();
+await page.evaluate(() => window.dispatchEvent(new Event('online')));
+await waitDropped(5, 'a second online');
+await page.waitForTimeout(600);
+if (since(t) < 1) fail('a second online did not ask again');
+if (await page.locator('.gm-live').innerText() !== 'LIVE') fail('header is not LIVE after two replaced requests');
 
 hung.splice(0).forEach((release) => release());
 if (errors.length) fail(`page errors: ${errors.join(' | ')}`);
