@@ -119,7 +119,11 @@ def test_config_check_refuses_any_family_or_seed_drift(edit):
         rc.config_check(cfg)
 
 
-@pytest.mark.parametrize('path', [BASE, COMBO, P30_DRAFT, P30, TABM, P31])
+DROPOUT_RUN = REPO / 'configs' / 'DRAFT-CUDA-DROPOUT-RUN-20261004.json'
+FRONTIER_RUN = REPO / 'configs' / 'DRAFT-CUDA-FRONTIER-RUN-20261004.json'
+
+
+@pytest.mark.parametrize('path', [BASE, COMBO, DROPOUT_RUN, FRONTIER_RUN, P30_DRAFT, P30, TABM, P31])
 def test_other_families_unchanged_and_refuse_embed_seeds_or_arms(path):
     cfg = json.loads(path.read_text())
     seeds = rc.config_check(copy.deepcopy(cfg))['seeds']
@@ -132,6 +136,20 @@ def test_other_families_unchanged_and_refuse_embed_seeds_or_arms(path):
            **er.ARMS['periodic_residual_counts']}
     with pytest.raises(ValueError):
         rc.config_check({**copy.deepcopy(cfg), 'arms': [*cfg['arms'], arm]})
+    foreign = copy.deepcopy(cfg)  # review 040c8b4: the embed contrast key never attaches to another family
+    foreign.setdefault('comparison', {})[er.CONTRAST_KEY] = copy.deepcopy(er.CONTRASTS)
+    with pytest.raises(ValueError):
+        er.check_contrasts(foreign)
+
+
+def test_scorer_refuses_embed_contrasts_on_a_registered_other_family_before_any_read(tmp_path):
+    """Review 040c8b4: P31 (REGISTERED) + embed_residual_contrasts fails before the export / family is opened."""
+    cfg = json.loads(P31.read_text())
+    cfg['comparison'][er.CONTRAST_KEY] = copy.deepcopy(er.CONTRASTS)
+    cpath, csha = tf.write_cfg(tmp_path, cfg)
+    with pytest.raises(ValueError, match='Embedded-residual family must be exactly'):
+        sc.score(cpath, csha, tmp_path / 'no-export', '0' * 64, tmp_path / 'no-family', tmp_path / 'score')
+    assert not (tmp_path / 'score').exists()
 
 
 def test_contrast_list_matches_registry_and_changes_declared_factors():
@@ -215,6 +233,19 @@ def test_checkpoint_roundtrip_and_strict_loader(tmp_path, name):
         rc.load_model(wide, tmp_path / 'm.pt', 'cpu')
 
 
+def test_embed_arms_refuse_baseline_and_tabm_archives(tmp_path):
+    """Review 040c8b4 (vice versa of the strict-loader test): no frozen-baseline or TabM archive loads as an embed arm."""
+    cfg, tabm = load(), tf.load(TABM)
+    sources = {name: rc.arm_spec(cfg, name) for name in ('control', 'residual_counts', 'periodic_counts',
+                                                          'periodic_counts_d10')}
+    sources['tabm_counts'] = rc.arm_spec(tabm, 'tabm_counts')
+    for name, spec in sources.items():
+        small_fit(rc.build_model(spec, 3, 'cpu'), spec).save(tmp_path / f'{name}.pt')
+        for embed in NEW:
+            with pytest.raises(ValueError):
+                rc.load_model(rc.arm_spec(cfg, embed), tmp_path / f'{name}.pt', 'cpu')
+
+
 @pytest.mark.parametrize('name', list(NEW))
 def test_loader_refuses_same_length_other_continuous_map(tmp_path, name):
     """Review F4 of 1b1ff30: an archive with a valid, same-length but different map is not this arm."""
@@ -275,8 +306,11 @@ def test_scorer_reports_all_contrasts_with_sign(export, tmp_path, few_draws):
             assert (one['isolates'], one['held']) == (c['isolates'], c['held'])
             assert set(one['seeds']) == {'16', '17', '18'}
             assert one['ensemble']['nll']['delta'] == pytest.approx(vs(c['candidate']) - vs(c['reference']), abs=1e-9)
-        d = {c['isolates']: block[c['name']]['ensemble']['nll']['delta'] for c in er.CONTRASTS}
-        assert d['input'] == pytest.approx(d['embedding_type'] + d['embedding'], abs=1e-9)
+        for metric in ('nll', 'brier'):
+            d = {c['isolates']: block[c['name']]['ensemble'][metric]['delta'] for c in er.CONTRASTS}
+            assert d['input'] == pytest.approx(d['embedding_type'] + d['embedding'], abs=1e-9)
+            # review 040c8b4: design note identity 1 = 2 + 3 (bundle = structure + head dropout, same seeds)
+            assert d['backbone_bundle'] == pytest.approx(d['backbone_structure'] + d['head_dropout'], abs=1e-9)
     table = (tmp_path / 'score' / 'table_ko.md').read_text()
     assert 'periodic_residual_counts_vs_linear_residual_counts' in table and '독립은 둘' in table
 

@@ -83,3 +83,18 @@ def test_factor_table_matches_the_networks():
     from pitchmdp.direct_residual_model import ARCHITECTURE
     assert ARCHITECTURE['dropout'] == er.FACTORS['residual_counts'][2] == pr.ARCHITECTURES['periodic']['backbone']['dropout']
     assert wr.ARMS['periodic_counts_d10']['head_dropout'] == er.FACTORS['periodic_counts_d10'][2]
+
+
+def test_review_factor_labels_follow_from_the_arm_specs():
+    """Review 040c8b4: input / backbone / dropout labels of FACTORS are derived from the fixed entries, not free text."""
+    from pitchmdp.direct_residual_model import ARCHITECTURE
+    specs = {**er.BASELINES, **er.ARMS}
+    backbone = {'residual_mlp': 'residual', 'periodic_flatten_mlp': 'flatten', 'periodic_head_dropout_mlp': 'flatten',
+                **{kind: 'residual' for kind in pr.KINDS.values()}}
+    for name, (inp, body, rate, position) in er.FACTORS.items():
+        spec = specs[name]
+        expected_input = spec.get('embedding') or ('periodic' if 'context_continuous' in spec else 'raw')
+        expected_rate = ARCHITECTURE['dropout'] if backbone[spec['model']] == 'residual' else spec.get('head_dropout', 0.)
+        expected_position = 'blocks' if body == 'residual' else ('head' if expected_rate else 'none')
+        assert (inp, body, rate, position) == (expected_input, backbone[spec['model']], expected_rate, expected_position)
+    assert set(er.FACTORS) == set(er.ARM_ORDER) - {'control'}
