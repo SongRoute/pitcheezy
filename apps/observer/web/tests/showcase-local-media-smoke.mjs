@@ -2,7 +2,8 @@
 // offline/serve_offline.py (--port 0) on a synthetic snapshot and a synthetic H.264/AAC mp4 made with ffmpeg, under the
 // official file's name. Checks the default page still asks only the MLB URL (intercepted, never sent), that media=local
 // asks /offline-media/<name> and gets 206, shows the local note, keeps the official link, keeps the scene param, and that
-// the reveal stays hidden until clicked, and that the opt-in survives same-tab in-app navigation only (D). Headless Chromium only: not Safari/iPhone, not the real MLB file.
+// the reveal stays hidden until clicked, that the opt-in survives same-tab in-app navigation only (D), and that blocked
+// storage falls back to the URL (E). Headless Chromium only: not Safari/iPhone, not the real MLB file.
 // Usage: PZ_WEB_DIST=<built dist> node tests/showcase-local-media-smoke.mjs   (FFMPEG=<path> to override ffmpeg)
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -41,7 +42,7 @@ const snapshotFile = p => `api/${p.replace(/^\/+|\/+$/g, '').replaceAll('/', '__
 const snap = path.join(tmp, 'snapshot');
 mkdirSync(path.join(snap, 'api'), { recursive: true });
 const files = Object.entries({ '/api/watch/849843': timeline, '/api/watch/849843/reveal/2': reveal(2),
-  '/api/watch/849843/reveal/3': reveal(3) }).map(([p, value]) => {
+  '/api/watch/849843/reveal/3': reveal(3), '/api/watch/games': { games: [{ ...timeline.game, game_type: 'F' }] } }).map(([p, value]) => {
   const body = Buffer.from(JSON.stringify(value));
   writeFileSync(path.join(snap, snapshotFile(p)), body);
   return { path: p, file: snapshotFile(p), bytes: body.length, sha256: sha(body) };
@@ -77,8 +78,10 @@ try {
   assert.equal(r.status, 206); assert.equal(r.headers.get('content-range'), `bytes 0-1/${mp4.length}`);
   assert.equal((await fetch(`${base}/offline-media/unknown.mp4`)).status, 404);
 
-  async function open(query, width, { failLocal = false } = {}) {
-    const page = await browser.newPage({ viewport: { width, height: 900 } });
+  async function open(query, width, { failLocal = false, blockStorage = false } = {}) {
+    const page = await (await browser.newContext({ viewport: { width, height: 900 } })).newPage();  // own context: D opens a second tab in it
+    if (blockStorage) await page.addInitScript(() => Object.defineProperty(window, 'sessionStorage',
+      { get() { throw new DOMException('blocked', 'SecurityError'); } }));
     const seen = { mlb: 0, offline: [], other: 0, reveals: [], errors: [] };
     page.on('pageerror', e => seen.errors.push(String(e)));
     page.on('response', res => { if (res.url().includes('/offline-media/')) seen.offline.push({ status: res.status(), range: res.headers()['content-range'] }); });
@@ -171,21 +174,31 @@ try {
     assert.equal(seen.mlb, 0); assert.equal(seen.other, 0); assert.deepEqual(seen.errors, []);
     await page.close();
   }
-  // D. The opt-in survives in-app navigation in the same tab (back link → /watch → plain /showcase), an explicit other
-  // media= value clears it, and a new tab starts from the MLB URL.
+  // D. The opt-in survives in-app navigation in the same tab (back link → /watch list → its real "영상과 나란히 비교" link,
+  // a plain /showcase), an explicit other media= value clears it, and a new tab in the same browser starts from the MLB URL.
   {
     const { page, seen } = await open('?media=local&scene=1', 1440);
     const back = page.getByRole('link', { name: '← 경기 목록' });
-    assert.equal(await back.getAttribute('href'), '/watch?media=local', 'back link keeps the opt-in');
+    const backHref = await back.getAttribute('href');
     await back.click();
     await page.waitForURL(u => new URL(u).pathname === '/watch');
-    assert.equal(new URL(page.url()).searchParams.get('media'), 'local');
-    await page.goto(`${base}/showcase`);  // the list's "영상과 나란히 비교" link is a plain /showcase
+    await page.getByRole('link', { name: '영상과 나란히 비교 ▸' }).click();
+    await page.waitForURL(u => new URL(u).pathname === '/showcase');
+    assert.equal(new URL(page.url()).searchParams.get('media'), null, 'the list link itself carries no media=');
     await page.locator('.sc-compare iframe').waitFor();
-    await page.getByText(note).waitFor();
-    assert.equal(await back.getAttribute('href'), '/watch?media=local');
     await page.getByRole('button', { name: '공식 경기 영상 불러오기' }).click();
     assert.equal(await page.locator('video').getAttribute('src'), local, 'plain /showcase in the same tab stays local');
+    assert.equal(await page.getByText(note).count(), 1, 'local note shown after in-app navigation');
+    assert.equal(backHref, '/watch?media=local', 'back link keeps the opt-in');
+    assert.equal(await back.getAttribute('href'), '/watch?media=local');
+    const tab = await page.context().newPage();  // new tab, same browser profile: sessionStorage is per tab
+    tab.on('pageerror', e => seen.errors.push(String(e)));
+    await tab.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : (seen.other++, route.abort()));
+    await tab.goto(`${base}/showcase`);
+    await tab.locator('.sc-compare iframe').waitFor();
+    assert.equal(await tab.getByText(note).count(), 0, 'a new tab starts from the MLB URL');
+    assert.equal(await tab.getByRole('link', { name: '← 경기 목록' }).getAttribute('href'), '/watch');
+    await tab.close();
     await page.goto(`${base}/showcase?media=online`);
     await page.locator('.sc-compare iframe').waitFor();
     assert.equal(await page.getByText(note).count(), 0, 'explicit other media= value clears the opt-in');
@@ -198,9 +211,19 @@ try {
     assert.equal(await page.locator('video').getAttribute('src'), source.mediaUrl);
     assert(seen.mlb >= 1); assert.equal(seen.other, 0); assert.deepEqual(seen.errors, []);
     await page.close();
-    const fresh = await open('', 1440);  // new tab: sessionStorage is per tab
-    assert.equal(await fresh.page.getByText(note).count(), 0, 'a new tab starts from the MLB URL');
-    await fresh.page.close();
+  }
+  // E. sessionStorage access throws (blocked storage): the URL alone decides, no page error.
+  {
+    const { page, seen } = await open('?media=local&scene=1', 1440, { blockStorage: true });
+    assert.equal(await page.evaluate(() => { try { void window.sessionStorage; return 'open'; } catch { return 'blocked'; } }), 'blocked');
+    await page.getByText(note).waitFor();
+    await page.getByRole('button', { name: '공식 경기 영상 불러오기' }).click();
+    assert.equal(await page.locator('video').getAttribute('src'), local, 'blocked storage: ?media=local still local');
+    await page.goto(`${base}/showcase`);
+    await page.locator('.sc-compare iframe').waitFor();
+    assert.equal(await page.getByText(note).count(), 0, 'blocked storage: nothing remembered');
+    assert.equal(seen.other, 0); assert.deepEqual(seen.errors, []);
+    await page.close();
   }
   console.log(`showcase local-media smoke: ok ${JSON.stringify(report)}`);
 } finally {
