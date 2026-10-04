@@ -65,6 +65,14 @@ Every arm is also reported vs the same-family same-device CUDA `control` (runner
   3. `periodic_residual_counts` — EXP-P32/P34/P35 arm unchanged (frozen PLR-lite + residual backbone).
   4. `robust_clip_residual_counts` — new additive module `direct_robust_clip_model.py` (`5f1864b` or its reviewed
      successor), `context_continuous` = the same 41-column list as `periodic_residual_counts`.
+     Transformed columns (fixed): only this periodic / PLE continuous set (81 scalars of the counts map). Raw, i.e. NOT
+     transformed: past type/outcome one-hots, game-state ordinals and flags (context 0–10: balls, strikes, outs,
+     inning, defensive_score_lead, five flags) and `left_share` (context 32). Deviation from the paper's RealMLP-TD,
+     which preprocesses "all numerical columns, including the one-hot encoded ones" (arXiv 2407.04491v3 LaTeX :213);
+     follows instead its preprocessing ablation convention (:579, one-hot columns untouched). Reason: hold the input
+     set equal to the periodic/PLE arms so the one factor vs `residual_counts` is the transform of the same scalars.
+     Added 2026-10-04 23:01 KST from same_model_review m1 (`36ce8d1`/`77cc453`, disposition `55938c7`), before any
+     P35/P36 score; the design is otherwise unchanged.
 - Seeds: exactly [34, 35, 36, 37, 38], fresh for every arm, disjoint from P24–P35 (0–33). New RNG seeds are not a new
   evaluation population. No control reuse from earlier families.
 - Fits: 20. Attempts ≤ 2 per task. Task cap 3,600 s; family budget 36,000 worker-s (unchanged defaults). Epoch cap 60,
@@ -105,7 +113,8 @@ Every arm is also reported vs the same-family same-device CUDA `control` (runner
 - DEV / mlb_dev are the same repeatedly exposed ≤ 2025 rows used for P24–P35 (258 fits incl. P35 once it runs). This
   family was designed after reading P24–P34 results (post-selection). Descriptive only.
 - No 2026 data for fit, statistics, early stop, temperature, selection or this design.
-- Not a reproduction of RealMLP (only the preprocessing step; no diagonal scaling layer, no NTP, our backbone/loop).
+- Not a reproduction of RealMLP (only the preprocessing step on a subset of columns — see §3 arm 4; no diagonal
+  scaling layer, no NTP, our backbone/loop).
 - A null or positive Δ says nothing about policy value; G0, G15 mix (D145), D131/D155 unchanged.
 
 ## 7. Selection rule (fixed now, before any P35 score)
