@@ -47,6 +47,18 @@ export const percent = (v: number | null | undefined) => v === null || v === und
 export const short = (team: string) => TEAMS[team] ?? team.split(' ').slice(-1)[0];
 /** Plainer zone words: '가운데 높이 중앙' → '한가운데'. Left/right stay catcher's view (the zone caption says so). */
 export const plainZone = (label: string) => label.replace('가운데 높이 중앙', '한가운데').replace('가운데 높이 ', '가운데 ');
+// Refusal texts decided from the actual row (pitch-clock call, PA over without a pitch, missing type, thrown type
+// outside TRAIN): before the reveal they tell what happened, so the viewer sees a neutral line until revealing.
+// Must equal STATUS_TEXT in scripts/demo_precompute.py (tests/pre-reason-neutral-smoke.mjs checks this).
+const OUTCOME_REASONS = new Set([
+  '자동 볼·스트라이크(투구 없음)라 추천 대상이 아닙니다.',
+  '투구 없이 타석이 끝난 기록이라 추천 대상이 아닙니다.',
+  '구종 정보가 없는 투구라 이 타석은 계산에서 빠졌습니다.',
+  '실제 던진 구종이 학습 기간 구종 목록에 없어 이 타석은 계산에서 빠졌습니다.',
+]);
+const PRE_NEUTRAL_REASON = '이 공은 투구 전 추천 대상이 아니에요. 이유는 실제 투구를 공개하면 보여 드려요.';
+const preReason = (reason: string | null, revealed: boolean) =>
+  !revealed && reason !== null && OUTCOME_REASONS.has(reason) ? PRE_NEUTRAL_REASON : reason;
 const GUIDE_KEY = 'pitcheezy.guide.v1';
 const guideSeen = () => { try { return localStorage.getItem(GUIDE_KEY) === '1'; } catch { return false; } };
 const readHash = () => { const m = /i=(\d+)/.exec(window.location.hash); return m ? Number(m[1]) : null; };
@@ -321,7 +333,7 @@ export default function WatchAlong() {
       <article className="wa-card">
         <p className="wa-eyebrow">투구 전 추천</p>
         {decision.pre.status === 'ready' && top ? <Recommendation candidates={rec!.candidates} bounds={timeline.location.zone_bounds} actual={reveal?.actual ?? null} note={timeline.location.note} />
-          : <><h2 className="wa-none">추천 없음</h2><p className="wa-reason">{decision.pre.reason}</p><p className="wa-muted wa-small">실제 투구는 아래 버튼으로 그대로 볼 수 있어요.</p></>}
+          : <><h2 className="wa-none">추천 없음</h2><p className="wa-reason">{preReason(decision.pre.reason, reveal !== null)}</p><p className="wa-muted wa-small">실제 투구는 아래 버튼으로 그대로 볼 수 있어요.</p></>}
         {reveal && <Revealed reveal={reveal} top={top ?? null} decision={decision} game={game} />}
       </article>
       {reveal && <WatchSummaryPanel gamePk={timeline.game.game_pk} through={index} />}
