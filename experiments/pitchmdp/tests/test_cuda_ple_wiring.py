@@ -230,6 +230,16 @@ def test_config_check_refuses_any_family_seed_flag_or_cap_drift(edit):
         rc.config_check(cfg)
 
 
+@pytest.mark.parametrize('change', [{'epochs': 30}, {'epochs': 60.0}, {'patience': 6}, {'batch_size': 512},
+                                    {'hpo_trials': 1}, {'loss_weighting': 'weighted'}])
+def test_registry_family_check_alone_refuses_budget_drift(change):
+    """The registry's own training check (not only the runner's training_budget comparison) refuses drift."""
+    cfg = copy.deepcopy(load())
+    cfg['training'].update(change)
+    with pytest.raises(ValueError, match='cuda_direct_v1 budget with epochs 60'):
+        reg.check_family(cfg)
+
+
 def test_contrast_list_matches_the_draft_order_and_changes_declared_factors():
     cfg = load()
     assert reg.check_contrasts(cfg) == reg.CONTRASTS
@@ -552,6 +562,16 @@ def test_earlier_arms_in_this_family_record_the_cap_and_no_bins(export, tmp_path
     fit = read(dest / 'fit.json')
     assert fit['epoch_cap'] == rc.epoch_record(fit['report'], rc.SMOKE['epochs'], 5)
     assert not {k for k in fit if k.startswith('ple_')}
+
+
+def test_ple_task_maps_degenerate_names_only_through_the_verified_export_layout(tmp_path):
+    """Names come from the export manifest's recorded layout (== config); another layout fails closed."""
+    cfg = load()
+    profile = list(reversed(cfg['export']['context_layout']['pitcher_profile_columns']))
+    path, digest, _ = tf.make_export(tmp_path / 'export', tf.lineage(cfg, pitcher_profile_columns=profile))
+    with pytest.raises(ValueError, match='context layout'):
+        rc.run_task(cfg, path, digest, tmp_path / 'smoke', SINGLE, 29, 'cpu', {}, smoke=True)
+    assert not (tmp_path / 'smoke' / f'{SINGLE}-smoke' / '29').exists() and list((tmp_path / 'smoke' / 'failed').iterdir())
 
 
 def test_runner_p35_task_never_uses_the_tabm_residual_predicate(export, tmp_path, monkeypatch):

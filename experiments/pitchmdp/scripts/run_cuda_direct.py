@@ -776,7 +776,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         if is_ple_arm(arm):
             from pitchmdp.direct_ple_registry import fit_record
             fit_report.update(fit_record(model.report['network'], config['export']['shapes']['length'],
-                                         config['export']['context_names'], arm['workload']))
+                                         verified_context_names(config, manifest), arm['workload']))
         write_json_atomic(work / 'fit.json', fit_report)
         names = ['identity.json', 'model.pt', 'calibration.json', 'predictions.npz', 'mlb_predictions.npz', 'fit.json']
         write_json_atomic(work / 'state.json', {'identity': identity,
