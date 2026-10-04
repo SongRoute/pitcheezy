@@ -36,7 +36,7 @@ const setup = (game, rows) => ({ schema: 'pitcheezy-setup-estimates-v1', badge: 
 // Game A: index → at_bat:pitch, ready?, what the setup file says about it
 const GAME = 900300, OTHER = 900301;
 const A = [[1, 1, true], [1, 2, true], [2, 1, false], [3, 1, true], [11, 1, true], [5, 1, true], [6, 1, false]];
-const SETUP_A = [row(1, 1, 0), row(1, 2, -1.0), row(2, 1, 0.4), row(3, 1, null), row(5, 1, 2.5), row(6, 1, null),
+const SETUP_A = [row(1, 1, 0), row(1, 2, -1.0), row(2, 1, 0.4), row(3, 1, null), row(5, 1, 1.3), row(6, 1, null),
   // decoys near index 4 (11:1, no line): a loose, swapped or separator-less key ("111" = 1:11 = 11:1) would pick one up
   row(11, 2, 0.6), row(1, 11, 0.6), row(111, 1, 0.6), row(11, 11, 0.6)];
 const [scene0, scene1] = source.scenes;
@@ -147,7 +147,8 @@ try {
     if (caption.includes('추천')) fail(tag(`D caption claims recommendations: ${caption}`));
     if (shots) await page.locator('.wa-card').screenshot({ path: path.join(shots, `setup-no-rec-${width}.png`) });
 
-    // E/F/G/H. abstained, no line (with decoys around it), beyond the picture, no-rec + abstained
+    // E/F/G/H. abstained, no line (with decoys around it), beyond the picture (1.3 ft: past the ball dot's 1.1 ft bound,
+    // so mitt and ball never use different picture limits), no-rec + abstained
     for (const [i, label, text] of [[3, 'E abstained', '읽지 못해'], [4, 'F no line', null], [5, 'G beyond picture', '존 그림 밖(포수 기준 오른쪽)'], [6, 'H no-rec abstained', '읽지 못해']]) {
       await open(GAME, i); await settle(); await noSetup(`${label} before reveal`);
       await doReveal();

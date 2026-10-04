@@ -81,14 +81,14 @@ function Outs({ outs }: { outs: number }) {
   return <span className="wa-outs" aria-label={`${outs}아웃`}>{[0, 1, 2].map(i => <i key={i} className={i < outs ? 'on' : ''} />)}<em>{outs}아웃</em></span>;
 }
 
-export const SETUP_X_DRAWN = 1.7;  // feet either side of centre the zone picture can show; beyond it the mitt is described, not drawn
+export const SETUP_X_DRAWN = 1.1;  // same bound as the ball dot below, so the two marks never disagree; beyond it the mitt is described
 
 export function Zone({ bounds, candidates, actual, setupX }: { bounds: Bounds; candidates: Candidate[]; actual: { x: number | null; z: number | null } | null; setupX?: number | null }) {
   const x = (v: number) => 90 + v / 1.6 * 80, y = (v: number) => 200 - (v - .6) / 3.8 * 190;
   const left = x(-.83), right = x(.83), top = y(bounds.top), bottom = y(bounds.bottom);
   const cells = [0, 1, 2];
   const seen = new Set<string>();
-  return <svg className="wa-zone" viewBox="0 0 180 210" role="img" aria-label="포수 시점 스트라이크존: 추천 대략 위치와 실제 투구">
+  return <svg className="wa-zone" viewBox="0 0 180 210" role="img" aria-label={candidates.length ? '포수 시점 스트라이크존: 추천 대략 위치와 실제 투구' : '포수 시점 스트라이크존: 실제 투구'}>
     <rect x={left} y={top} width={right - left} height={bottom - top} className="wa-zone-box" />
     {cells.map(i => <line key={`v${i}`} x1={left + (right - left) * i / 3} x2={left + (right - left) * i / 3} y1={top} y2={bottom} className="wa-zone-grid" />)}
     {cells.map(i => <line key={`h${i}`} y1={top + (bottom - top) * i / 3} y2={top + (bottom - top) * i / 3} x1={left} x2={right} className="wa-zone-grid" />)}
@@ -396,7 +396,7 @@ function SetupNote({ x, badge, zone }: { x: number | null; badge: string | null;
     {x === null ? <p className="wa-setup-line">포수 미트 위치 추정 · 이 공은 영상에서 미트를 읽지 못해 표시하지 않아요.</p> : <>
       {!off && zone}
       <p className="wa-setup-line">{off ? `포수 미트 위치 추정 · 존 그림 밖(포수 기준 ${x < 0 ? '왼쪽' : '오른쪽'})이라 그리지 않았어요.`
-        : <><i aria-hidden="true" />점선 = 포수 미트 위치 추정 (가로만)</>}</p></>}
+        : <><i aria-hidden="true" />점선 = 포수 미트 위치 추정 (AI·검토 전, 가로만)</>}</p></>}
     <details className="wa-setup-more"><summary>이 표시의 한계</summary>
       <p>경기 영상에서 AI가 포수가 준비 자세에서 둔 미트를 읽어 홈플레이트 가로 위치로 바꾼 값이에요. 사람 검토 전이고 높이는 표시하지 않아요.</p>
       <p>투수의 실제 의도나 목표가 아니며 추천 계산에는 쓰지 않아요. 영상에 나온 일부 공만 있고, 미트를 읽지 못한 공은 비워 둬요.</p>
