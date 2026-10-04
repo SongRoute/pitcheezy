@@ -5,7 +5,7 @@ import evidence from './cv-m3-evidence.json';
 const px = (v: number) => `${v.toFixed(1)}px`;
 const inch = (feet: number) => `${(feet * 12).toFixed(1)}인치`;
 const SAME = '같은 변환 기준의 판독 차이 · 물리 정확도 아님';
-const ROLE: Record<string, string> = { representative: '대표(중앙값에 가장 가까움)', smallest: '출력 좌표 차이가 가장 작음',
+const ROLE: Record<string, string> = { representative: '대표(출력 좌표 차이 중앙값)', smallest: '출력 좌표 차이가 가장 작음',
   largest: '출력 좌표 차이가 가장 큼', fox_representative: 'FOX 대표 · 카메라 미확인' };
 
 export default function CvEvidenceCard() {
@@ -26,7 +26,7 @@ export default function CvEvidenceCard() {
       <span>미트 점 차이 중앙값 {px(g.pixels.median)} · 90분위 {px(g.pixels.p90)} ({g.compared}구)</span>
       <span>출력 좌표 차이 중앙값 약 {inch(g.outputFeet.median)} · 90분위 {inch(g.outputFeet.p90)} <em>{SAME}</em></span>
       <span>{g.cameraCheck.status === 'measured' && g.cameraCheck.rmsFeet !== null
-        ? `카메라 보정: 포구 공 ${'caughtBalls' in g.cameraCheck ? `${g.cameraCheck.caughtBalls}구 ` : ''}대조 RMS ${g.cameraCheck.rmsFeet.toFixed(2)}ft (고정 보정 파일 값)`
+        ? `카메라 보정: 포구 공 ${'caughtBalls' in g.cameraCheck ? `${g.cameraCheck.caughtBalls}구 ` : ''}대조 RMS ${g.cameraCheck.rmsFeet.toFixed(2)}ft (AI 판독만 사용한 기존 측정 · 사람의 물리 정확도 검증 아님)`
         : '카메라 물리 확인: 미측정 (카메라 미확인)'}</span></li>)}
     </ul>
     <p>합산: 출력 좌표 차이 중앙값 약 {inch(p.outputFeet.median)} · 90분위 {inch(p.outputFeet.p90)} <em>{SAME}</em></p>
@@ -41,6 +41,7 @@ export default function CvEvidenceCard() {
     <ul className="cv-limits">
       <li>투수·포수의 실제 의도와 목표 높이는 검증하지 않았습니다. 높이는 미검증입니다.</li>
       <li>사람 판독자는 1명이고, 두 압축 영상은 경기 전체 {p.gamePitchesTotal}구 중 {p.frames}구로 타석 마지막 공에 치우쳐 있습니다.</li>
+      <li>땅에 놓인 글러브도 표시한다는 해석은 AI 출력을 확인한 뒤 정했습니다.</li>
       <li>이 측정만으로 전체 영상의 탐지율이나 제공 범위를 말할 수 없습니다.</li>
       <li>추천·9구역·예측 모델에는 사용하지 않습니다.</li>
     </ul>
