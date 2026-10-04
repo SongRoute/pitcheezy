@@ -13,6 +13,17 @@ type Timeline = { game: { game_pk: number; away_team: string; home_team: string 
 // Opt-in (?media=local) for the MacBook offline bundle: the same official file, saved locally and served by
 // serve_offline.py --media-dir. Same file, so the scene timestamps are unchanged. Default stays the MLB URL.
 const LOCAL_MEDIA = `/offline-media/${new URL(source.mediaUrl).pathname.split('/').pop()}`;
+// In-app links (/watch list → "영상과 나란히 비교") drop the query, so the explicit opt-in is remembered for this tab
+// only. Any other explicit media= value clears it; a new tab or another origin starts from the MLB URL again.
+const MEDIA_KEY = 'pitcheezy-showcase-media';
+function readLocalMedia() {
+  const asked = new URLSearchParams(window.location.search).get('media');
+  try {
+    if (asked === 'local') sessionStorage.setItem(MEDIA_KEY, 'local');
+    else if (asked !== null) sessionStorage.removeItem(MEDIA_KEY);
+    return sessionStorage.getItem(MEDIA_KEY) === 'local';
+  } catch { return asked === 'local'; }  // storage blocked: the URL alone decides
+}
 
 /** Display-only, pinned video annotations. No interpolation from feed UTC or scoring of model quality. */
 export default function Showcase() {
@@ -26,7 +37,7 @@ export default function Showcase() {
   const [copyNote, setCopyNote] = useState('');
   const [take, setTake] = useState(0);
   const [attempt, setAttempt] = useState(0);
-  const [localMedia] = useState(() => new URLSearchParams(window.location.search).get('media') === 'local');
+  const [localMedia] = useState(readLocalMedia);
   const video = useRef<HTMLVideoElement>(null);
   const stopAt = useRef<number | null>(null);
   const player = useRef<HTMLElement>(null);
@@ -101,7 +112,7 @@ export default function Showcase() {
     ? `${d.situation.inning}회 ${d.situation.half === 'Top' ? '초' : '말'} · ${d.batter.name ?? '타자'} · ${n}구째`
     : `영상 장면 · ${n}구째`;
   return <div className="sc-page">
-    <header className="sc-head"><a href="/watch">← 경기 목록</a><span>{BADGE}</span></header>
+    <header className="sc-head"><a href={localMedia ? '/watch?media=local' : '/watch'}>← 경기 목록</a><span>{BADGE}</span></header>
     <main>
       <h1>영상으로 보는 투구 선택</h1>
       <p className="sc-sub">{timeline ? `${short(timeline.game.away_team)} · ${short(timeline.game.home_team)}` : '경기 자료 확인 중'}

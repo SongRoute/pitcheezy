@@ -2,7 +2,7 @@
 // offline/serve_offline.py (--port 0) on a synthetic snapshot and a synthetic H.264/AAC mp4 made with ffmpeg, under the
 // official file's name. Checks the default page still asks only the MLB URL (intercepted, never sent), that media=local
 // asks /offline-media/<name> and gets 206, shows the local note, keeps the official link, keeps the scene param, and that
-// the reveal stays hidden until clicked. Headless Chromium only: not Safari/iPhone, not the real MLB file.
+// the reveal stays hidden until clicked, and that the opt-in survives same-tab in-app navigation only (D). Headless Chromium only: not Safari/iPhone, not the real MLB file.
 // Usage: PZ_WEB_DIST=<built dist> node tests/showcase-local-media-smoke.mjs   (FFMPEG=<path> to override ffmpeg)
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -170,6 +170,37 @@ try {
     assert.equal(await page.locator('video').getAttribute('src'), local);
     assert.equal(seen.mlb, 0); assert.equal(seen.other, 0); assert.deepEqual(seen.errors, []);
     await page.close();
+  }
+  // D. The opt-in survives in-app navigation in the same tab (back link → /watch → plain /showcase), an explicit other
+  // media= value clears it, and a new tab starts from the MLB URL.
+  {
+    const { page, seen } = await open('?media=local&scene=1', 1440);
+    const back = page.getByRole('link', { name: '← 경기 목록' });
+    assert.equal(await back.getAttribute('href'), '/watch?media=local', 'back link keeps the opt-in');
+    await back.click();
+    await page.waitForURL(u => new URL(u).pathname === '/watch');
+    assert.equal(new URL(page.url()).searchParams.get('media'), 'local');
+    await page.goto(`${base}/showcase`);  // the list's "영상과 나란히 비교" link is a plain /showcase
+    await page.locator('.sc-compare iframe').waitFor();
+    await page.getByText(note).waitFor();
+    assert.equal(await back.getAttribute('href'), '/watch?media=local');
+    await page.getByRole('button', { name: '공식 경기 영상 불러오기' }).click();
+    assert.equal(await page.locator('video').getAttribute('src'), local, 'plain /showcase in the same tab stays local');
+    await page.goto(`${base}/showcase?media=online`);
+    await page.locator('.sc-compare iframe').waitFor();
+    assert.equal(await page.getByText(note).count(), 0, 'explicit other media= value clears the opt-in');
+    await page.goto(`${base}/showcase`);
+    await page.locator('.sc-compare iframe').waitFor();
+    assert.equal(await page.getByText(note).count(), 0, 'cleared opt-in stays cleared');
+    assert.equal(await back.getAttribute('href'), '/watch');
+    await page.getByRole('button', { name: '공식 경기 영상 불러오기' }).click();
+    await alertOf(page).waitFor();
+    assert.equal(await page.locator('video').getAttribute('src'), source.mediaUrl);
+    assert(seen.mlb >= 1); assert.equal(seen.other, 0); assert.deepEqual(seen.errors, []);
+    await page.close();
+    const fresh = await open('', 1440);  // new tab: sessionStorage is per tab
+    assert.equal(await fresh.page.getByText(note).count(), 0, 'a new tab starts from the MLB URL');
+    await fresh.page.close();
   }
   console.log(`showcase local-media smoke: ok ${JSON.stringify(report)}`);
 } finally {
