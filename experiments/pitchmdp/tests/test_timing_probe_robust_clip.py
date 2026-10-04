@@ -225,6 +225,19 @@ def test_probe_arm_refuses_stats_that_differ_from_the_fit(export, monkeypatch):
         tp.probe_arm(cfg, RC, train, cfg['export']['workload_columns'], 50, 50, 'cpu')
 
 
+def test_probe_arm_refuses_rule_counts_that_differ_from_the_fit_at_the_same_stats_hash(export, monkeypatch):
+    # review T109 R7: same (center, scale) bytes, one rule label changed -> the rule-count comparison alone refuses
+    cfg, _, train = train_of(export)
+    real = tp.rc_stats
+
+    def relabelled(inputs):
+        center, scale, rules = real(inputs)
+        return center, scale, ['constant' if rules[0] != 'constant' else 'iqr', *rules[1:]]
+    monkeypatch.setattr(tp, 'rc_stats', relabelled)
+    with pytest.raises(RuntimeError, match='other robust-scale statistics'):
+        tp.probe_arm(cfg, RC, train, cfg['export']['workload_columns'], 50, 50, 'cpu')
+
+
 def test_validation_and_predict_standins_are_train_rows_of_manifest_counts(export, monkeypatch):
     cfg, manifest, train = train_of(export)
     n_train, n_early, n_predict = tp.row_counts(manifest)
