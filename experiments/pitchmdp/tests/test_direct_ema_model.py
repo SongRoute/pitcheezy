@@ -115,7 +115,8 @@ def test_registry_guards():
     arms[2] = dict(FRONTIER['dropout'], name='dropout', priority=1, frontier=True, workload=[])
     for a in (arms[1], arms[3]):
         a['ema'] = True
-    config = {'arms': arms, 'comparison': {'ema_contrasts': em.CONTRASTS}}
+    config = {'arms': arms, 'seeds': [19, 20, 21, 22, 23], 'fits': 20,
+              'comparison': {'ema_contrasts': copy.deepcopy(em.CONTRASTS)}}
     assert em.check_contrasts(config) == em.CONTRASTS
     assert em.check_contrasts({'arms': arms}) is None
     for mutate in (lambda c: c['arms'][1].update(ema_decay=.99),
@@ -123,7 +124,9 @@ def test_registry_guards():
                    lambda c: c['arms'][1].update(workload=['counts']),
                    lambda c: c['arms'][2].update(weight_decay=1e-4),
                    lambda c: c['arms'].reverse(),
-                   lambda c: c['comparison']['ema_contrasts'].pop()):
+                   lambda c: c['comparison']['ema_contrasts'].pop(),
+                   lambda c: c.update(seeds=[16, 17, 18]),
+                   lambda c: c.update(fits=12)):
         bad = copy.deepcopy(config)
         mutate(bad)
         with pytest.raises(ValueError):

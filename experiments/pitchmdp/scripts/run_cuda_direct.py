@@ -54,6 +54,12 @@ residual_counts, periodic_counts and periodic_counts_d10 are the exact earlier e
 on seeds exactly [16, 17, 18].  Its family check also runs before the workload-dropout
 one.  After load the archived continuous map must equal the registered one.
 
+EMA weight-averaging arms (DRAFT-CUDA-EMA-20261004): an arm marked "ema": true must
+equal direct_ema_registry.ARMS (frontier flatten network, dropout 0 or .1, EMA decay
+.999 for early stop, best state and saved model); a config with such arms must be
+exactly the fixed four-arm family (control and the frontier dropout arm exact) on
+seeds exactly [19, 20, 21, 22, 23], no workload.  Its family check runs first.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -92,6 +98,7 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_tabm_model.py', 'pitchmdp/direct_tabm_factory.py', 'pitchmdp/direct_tabm_registry.py',
                  'pitchmdp/direct_periodic_residual_model.py', 'pitchmdp/direct_embed_residual_factory.py',
                  'pitchmdp/direct_embed_residual_registry.py',
+                 'pitchmdp/direct_ema_model.py', 'pitchmdp/direct_ema_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -170,10 +177,17 @@ def uses_embed_residual(config):
     return any('embed_residual' in arm for arm in config['arms'])
 
 
+def uses_ema(config):
+    return any('ema' in arm for arm in config['arms'])
+
+
 def config_check(config):
     if config.get('protocol') != PROTOCOL:
         raise ValueError('Config is not the cuda_direct_v1 protocol')
-    if uses_tabm(config):
+    if uses_ema(config):
+        from pitchmdp.direct_ema_registry import check_family  # torch-free; exact arms + seeds 19-23
+        check_family(config)
+    elif uses_tabm(config):
         from pitchmdp.direct_tabm_registry import check_family  # torch-free; exact arms + seeds 13-15
         check_family(config)
     elif uses_embed_residual(config):
@@ -206,6 +220,13 @@ def config_check(config):
             check_arm(arm)
             if arm['name'] in names or any(c not in columns for c in arm['workload']):
                 raise ValueError('Duplicated TabM-mini arm or unexported workload: ' + arm['name'])
+            names.add(arm['name'])
+            continue
+        if 'ema' in arm:
+            from pitchmdp.direct_ema_registry import check_arm  # torch-free
+            check_arm(arm)
+            if arm['name'] in names:
+                raise ValueError('Duplicated EMA arm: ' + arm['name'])
             names.add(arm['name'])
             continue
         if 'embed_residual' in arm:
@@ -408,6 +429,11 @@ def arm_inputs(arrays, arm, columns):
 # ------------------------------------------------------------------ model / calibration
 
 def build_model(arm, seed, device, context_names=None):
+    if arm.get('ema') is True:
+        from pitchmdp.direct_ema_model import build_ema
+        if context_names:
+            raise ValueError('EMA arms take no context names')
+        return build_ema(arm['name'], seed, device)
     if arm.get('tabm') is True:
         from pitchmdp.direct_tabm_factory import build_tabm
         if context_names:
@@ -449,6 +475,9 @@ def build_model(arm, seed, device, context_names=None):
 
 
 def load_model(arm, path, device, context_names=None):
+    if arm.get('ema') is True:
+        from pitchmdp.direct_ema_model import load_ema
+        return load_ema(arm['name'], path, device)
     if arm.get('tabm') is True:
         from pitchmdp.direct_tabm_factory import load_tabm
         return load_tabm(arm, path, device)

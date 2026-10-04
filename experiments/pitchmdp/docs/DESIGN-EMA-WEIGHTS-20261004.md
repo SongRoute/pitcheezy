@@ -60,7 +60,7 @@
 - 예측 NLL이 좋아져도 추천 정책이 좋아졌다는 뜻이 아니다.
 
 ## 다음 단계 (이 문서 뒤)
-1. 다른 Opus 작업자의 검토(같은 모델 검토) → 처리 기록
-2. runner·scorer에 EMA 팔 연결과 DRAFT config, 연결 테스트
+1. 다른 Opus 작업자의 검토(같은 모델 검토, 대상 `f7282bb`) → 처리 기록
+2. runner·scorer에 EMA 팔 연결과 DRAFT config `configs/DRAFT-CUDA-EMA-20261004.json`(실행 꺼짐), 연결 테스트 `tests/test_cuda_ema.py` — 다음 커밋에서 추가함. 이 연결 부분은 1번 검토 범위 밖이므로 따로 검토가 필요하다.
 3. 20 task 전부 CUDA smoke
 4. 모두 통과하면 등록 config(새 ID)로 전체 실행

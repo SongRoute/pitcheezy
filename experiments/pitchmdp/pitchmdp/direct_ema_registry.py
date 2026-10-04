@@ -27,10 +27,14 @@ is the base arm's trajectory; only the evaluated / stopped / saved weights diffe
 """
 from __future__ import annotations
 
+import json
+
 EMA_DECAY = .999
 DROPOUT = .1
 WEIGHT_DECAY = .01
 WIDTH = 128
+SEEDS = [19, 20, 21, 22, 23]  # disjoint from 0-2 (P24/P25/P27/P29), 3-7 (P30), 8-12 (reserved P30 repeat),
+FITS = 20                     # 13-15 (P31) and 16-18 (P32); new model RNG seeds, not new evaluation data
 
 # name -> exact config entry without name / priority / ema / workload
 ARMS = {
@@ -39,13 +43,22 @@ ARMS = {
     'dropout_ema': {'family': 'weight_averaging', 'model': 'ema_flatten_mlp', 'base_model': 'regularized_flatten_mlp',
                     'width': WIDTH, 'dropout': DROPOUT, 'weight_decay': WEIGHT_DECAY, 'ema_decay': EMA_DECAY},
 }
+CONTRAST_KEY = 'ema_contrasts'
 CONTROL = {'name': 'control', 'priority': 1, 'model': 'flatten_mlp', 'width': WIDTH, 'workload': []}
 CONTRASTS = [
-    {'name': 'ema_vs_control', 'candidate': 'ema', 'reference': 'control', 'isolates': 'ema'},
-    {'name': 'dropout_ema_vs_dropout', 'candidate': 'dropout_ema', 'reference': 'dropout', 'isolates': 'ema'},
-    {'name': 'dropout_vs_control', 'candidate': 'dropout', 'reference': 'control', 'isolates': 'dropout'},
+    {'name': 'ema_vs_control', 'candidate': 'ema', 'reference': 'control', 'isolates': 'ema',
+     'held': {'dropout': 0.0}},
+    {'name': 'dropout_ema_vs_dropout', 'candidate': 'dropout_ema', 'reference': 'dropout', 'isolates': 'ema',
+     'held': {'dropout': DROPOUT}},
+    {'name': 'dropout_vs_control', 'candidate': 'dropout', 'reference': 'control', 'isolates': 'dropout',
+     'held': {'weights': 'raw'}},
 ]
 ARM_ORDER = ('control', 'ema', 'dropout', 'dropout_ema')
+
+
+def same(a, b):
+    """Exact equality including types (0 vs 0.0, True vs 1)."""
+    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
 def ema_decay_at(decay, step):
@@ -65,7 +78,7 @@ def check_arm(arm):
     """An EMA arm is exactly its registry entry (+ name, priority 1, flag, no workload)."""
     name = arm.get('name')
     rest = {k: v for k, v in arm.items() if k not in ('name', 'priority', 'ema', 'workload')}
-    if arm.get('ema') is not True or name not in ARMS or rest != ARMS[name]:
+    if arm.get('ema') is not True or name not in ARMS or not same(rest, ARMS[name]):
         raise ValueError('EMA arm differs from the fixed registry: ' + str(name))
     if arm.get('workload') != [] or arm.get('priority') != 1:
         raise ValueError('EMA arms keep the control inputs (no workload) and priority 1')
@@ -78,24 +91,34 @@ def check_family(config):
     if [a.get('name') for a in config['arms']] != list(ARM_ORDER):
         raise ValueError('EMA family must be exactly ' + ', '.join(ARM_ORDER))
     arms = {a['name']: a for a in config['arms']}
-    if arms['control'] != CONTROL:
+    if not same(arms['control'], CONTROL):
         raise ValueError('control differs from the fresh flatten control spec')
     dropout = {k: v for k, v in arms['dropout'].items() if k not in ('name', 'priority', 'frontier', 'workload')}
-    if arms['dropout'].get('frontier') is not True or dropout != FRONTIER['dropout'] \
+    if arms['dropout'].get('frontier') is not True or not same(dropout, FRONTIER['dropout']) \
             or arms['dropout'].get('workload') != [] or arms['dropout'].get('priority') != 1 \
             or (FRONTIER['dropout']['dropout'], FRONTIER['dropout']['weight_decay']) != (DROPOUT, WEIGHT_DECAY):
         raise ValueError('dropout must be the exact frontier regularization arm (p .1, wd .01)')
     for name in ARMS:
         check_arm(arms[name])
+    check_seeds(config)
     return config
+
+
+def check_seeds(config):
+    """Exactly seeds [19..23], no repeat_tag, 20 fits."""
+    if 'repeat_tag' in config or not same(config.get('seeds'), SEEDS):
+        raise ValueError('EMA seeds must be exactly [19, 20, 21, 22, 23] with no repeat_tag')
+    if not same(config.get('fits'), FITS):
+        raise ValueError(f'EMA family is exactly {FITS} fits')
+    return config['seeds']
 
 
 def check_contrasts(config):
     """comparison.ema_contrasts (or None): exactly the fixed list, checked before any read."""
-    contrasts = config.get('comparison', {}).get('ema_contrasts')
+    contrasts = config.get('comparison', {}).get(CONTRAST_KEY)
     if contrasts is None:
         return None
-    if contrasts != CONTRASTS:
+    if not same(contrasts, CONTRASTS):
         raise ValueError('ema_contrasts differ from the fixed factorial pairs')
     check_family(config)
     return contrasts

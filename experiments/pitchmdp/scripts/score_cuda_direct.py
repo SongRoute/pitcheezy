@@ -17,7 +17,10 @@ before any read; no ranking, winner or interaction verdict.  comparison.tabm_con
 seeds 13-15; all 15 fits must exist first), likewise checked before any read.
 comparison.embed_residual_contrasts (embedded-input residual family) must equal
 direct_embed_residual_registry.CONTRASTS (6 fixed pairs on seeds 16-18; all 18 fits
-must exist first), likewise checked before any read.  Data arms must record the config's subset rule over the
+must exist first), likewise checked before any read.
+comparison.ema_contrasts (EMA weight-averaging family) must equal
+direct_ema_registry.CONTRASTS (3 fixed pairs on seeds 19-23; all 20 fits must exist
+first), likewise checked before any read.  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
 
 Scope: UNBLENDED calibrated direct-head probabilities (predictions.npz 'dev',
@@ -65,6 +68,7 @@ from pitchmdp import direct_dropout_registry as dropout_registry  # noqa: E402  
 from pitchmdp import direct_workload_dropout_registry as workload_dropout_registry  # noqa: E402  torch-free
 from pitchmdp import direct_tabm_registry as tabm_registry  # noqa: E402  torch-free
 from pitchmdp import direct_embed_residual_registry as embed_residual_registry  # noqa: E402  torch-free
+from pitchmdp import direct_ema_registry as ema_registry  # noqa: E402  torch-free
 from pitchmdp.matrix_metrics import paired_game_comparison, pitch_losses, prediction_metrics  # noqa: E402
 
 FORMAT = 'cuda_direct_score_v1'
@@ -75,7 +79,8 @@ DRAWS, BOOTSTRAP_SEED = 10000, 20260924
 SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 'pitchmdp/matrix_metrics.py',
                   'pitchmdp/direct_dropout_registry.py', 'pitchmdp/direct_combo_registry.py',
                   'pitchmdp/direct_frontier_registry.py', 'pitchmdp/direct_workload_dropout_registry.py',
-                  'pitchmdp/direct_tabm_registry.py', 'pitchmdp/direct_embed_residual_registry.py')
+                  'pitchmdp/direct_tabm_registry.py', 'pitchmdp/direct_embed_residual_registry.py',
+                  'pitchmdp/direct_ema_registry.py')
 RUNTIME_SIGNATURE = ('torch', 'torch_cuda', 'cudnn', 'numpy', 'scipy', 'device_name', 'device_capability',
                      'device_total_memory')
 SCOPE = ('unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; '
@@ -232,7 +237,7 @@ def paired_block(y, games, candidate, reference, seeds):
 
 
 def score_family(config, family, rows, seeds, contrasts=None, regularization=None, workload_dropout=None, tabm=None,
-                 embed_residual=None):
+                 embed_residual=None, ema=None):
     arms = [a['name'] for a in config['arms']]
     control_arm = config.get('comparison', {}).get('control_arm', 'control')
     if control_arm != 'control' or 'control' not in arms:
@@ -243,6 +248,7 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
     joint = {split: {} for split in SPLITS} if workload_dropout else None
     head = {split: {} for split in SPLITS} if tabm else None
     embedded = {split: {} for split in SPLITS} if embed_residual else None
+    averaged = {split: {} for split in SPLITS} if ema else None
     for split, r in rows.items():
         y, games = r['y'], r['game_pk']
         load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731  (bounded memory: reload)
@@ -277,6 +283,12 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
             embedded[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
                                           'isolates': c['isolates'], 'held': c['held'],
                                           **paired_block(y, games, load(c['candidate']), load(c['reference']), seeds)}
+        for c in ema or ():
+            averaged[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
+                                          'isolates': c['isolates'], 'held': c['held'],
+                                          **paired_block(y, games, load(c['candidate']), load(c['reference']), seeds)}
+    if ema:
+        return out, factorial, paired, joint, head, embedded, averaged
     if embed_residual:
         return out, factorial, paired, joint, head, embedded
     if tabm:
@@ -345,6 +357,17 @@ def korean_table(result):
             held = ', '.join(f'{k}={v}' for k, v in block['held'].items())
             lines.append(f"| {name} | {block['isolates']} | {held} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} |")
         lines.append('')
+    for split, contrasts in (result.get('ema_contrasts') or {}).items():
+        lines += [f'## {split} 가중치 평균(EMA) 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
+                  'EMA 팔은 같은 시드에서 원래 가중치의 학습 경로가 기준 팔과 같고, 평가·멈춤·저장하는 가중치만 다릅니다. '
+                  'dropout_vs_control은 P25·P29 대비의 재현 확인용입니다.', '',
+                  f"시드 {', '.join(map(str, result['seed_block']['seeds']))}는 새 모델 난수일 뿐 새 데이터가 아닙니다"
+                  '(같은 DEV·MLB DEV 반복 노출). 이 가족은 P24~P32 결과를 읽은 뒤 설계한 탐색입니다.', '',
+                  '| 대비 | 분리 요인 | 고정 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|---|']
+        for name, block in contrasts.items():
+            held = ', '.join(f'{k}={v}' for k, v in block['held'].items())
+            lines.append(f"| {name} | {block['isolates']} | {held} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} |")
+        lines.append('')
     for split, contrasts in (result.get('factorial_contrasts') or {}).items():
         lines += [f'## {split} 요인 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
                   '| 대비 | 분리 요인 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|']
@@ -368,7 +391,14 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     workload_dropout = workload_dropout_registry.check_contrasts(config)
     tabm = tabm_registry.check_contrasts(config)
     embed_residual = embed_residual_registry.check_contrasts(config)
-    if rc.uses_tabm(config):
+    ema = ema_registry.check_contrasts(config)
+    if rc.uses_ema(config):
+        if ema is None or embed_residual is not None or tabm is not None or workload_dropout is not None \
+                or contrasts is not None or regularization is not None:
+            raise ValueError('The EMA family is scored only with its fixed contrasts')
+    elif ema is not None:
+        raise ValueError('ema_contrasts belong to the EMA family only')
+    elif rc.uses_tabm(config):
         if tabm is None or workload_dropout is not None or contrasts is not None or regularization is not None \
                 or embed_residual is not None:
             raise ValueError('The TabM-mini family is scored only with its fixed contrasts')
@@ -383,7 +413,7 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     tasks, signature = verify_family(family, config, manifest_sha256, sources,
                                      export_hashes['train/rows_sha256'] if config.get('train_subset') else None)
     splits, factorial, paired, *joint = score_family(config, family, rows, config['seeds'], contrasts, regularization,
-                                                     workload_dropout, tabm, embed_residual)
+                                                     workload_dropout, tabm, embed_residual, ema)
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits,
               **({'factorial_contrasts': factorial} if contrasts else {}),
@@ -403,6 +433,11 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
                           '(post-selection); backbone_bundle changes structure and dropout together, '
                           'backbone_structure still differs in dropout position; input = embedding_type + '
                           'embedding; backbone_bundle = backbone_structure + head_dropout'}} if embed_residual else {}),
+              **({'ema_contrasts': joint[3], 'seed_block': {'seeds': config['seeds'], 'repeat_tag': None,
+                  'note': 'fresh model RNG seeds on the same export and exposed DEV rows: not new data, '
+                          'not an independent confirmatory test; family designed after reading P24-P32; '
+                          'EMA arms share the raw trajectory of their base arm per seed, only the evaluated, '
+                          'stopped and saved weights differ'}} if ema else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],
