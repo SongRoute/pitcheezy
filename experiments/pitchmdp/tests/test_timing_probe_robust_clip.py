@@ -723,6 +723,16 @@ def test_frozen_runner_queue_models_configs_and_prereg_unchanged_in_the_probe_wi
     assert rc.sha256_file(PROJECT / tp.MODULE) == MODULE_SHA
 
 
+def test_runtime_code_on_this_lineage_equals_the_archived_probe_commit():
+    # Guard dropped by the m4 re-scope (review T114): probe, smoke and family all run the read-only archive
+    # code-07ab288, so the runtime dirs here (working tree) must stay byte-equal to PROBE_RUN_COMMIT.  Only new files
+    # under configs/ are allowed (configs/EXP-P35-001.json via the P35 registration merge, configs/EXP-P36-001.json).
+    changed = subprocess.run(['git', 'diff', '--name-status', '--no-renames', PROBE_RUN_COMMIT, '--',
+                              'experiments/pitchmdp/pitchmdp', 'experiments/pitchmdp/scripts', 'configs'], cwd=REPO,
+                             capture_output=True, text=True, check=True).stdout.splitlines()
+    assert [line for line in changed if not line.startswith('A\tconfigs/')] == []
+
+
 # ------------------------------------------------------------------ full parent run with a fake worker
 
 def fake_python(tmp_path):
