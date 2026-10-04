@@ -1,5 +1,7 @@
 # WIRING — TabM-mini × periodic_residual family (DRAFT, 2026-10-04)
 
+> Superseded in part by Amendment 1 / disposition `6238d6c`: 5 arms (+ `tabm_counts_d10`), 25 fits, 7 contrasts. See `docs/reviews/DISPOSITION-tabm-residual-wiring-289fd68-2026-10-04.md` and `docs/reviews/DISPOSITION-tabm-residual-wiring-review-6238d6c-2026-10-04.md`.
+
 Status: **unreviewed; same_model_review pending; Codex_review_pending.** Delegated Opus 5.5
 implementation worker, branch `codex/tabm-residual-wiring-1004`, base `45cb770`. No push, no
 merge, no smoke, no registration, no fit on real data, no GPU, no server, no 2026 data.
