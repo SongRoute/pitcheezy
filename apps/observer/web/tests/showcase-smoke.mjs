@@ -114,7 +114,9 @@ try {
 
     // Real embedded click after the video controls: the frame fits the viewport so its fixed reveal bar is reachable
     // (desktop: from the page top; phone: after scrolling to the comparison section).
+    // The CV evidence card below makes the desktop page scrollable; earlier clicks may have scrolled it, so return to the top.
     if (width < 800) await page.locator('.sc-compare').evaluate(e => e.scrollIntoView({ block: 'end' }));
+    else await page.evaluate(() => window.scrollTo(0, 0));
     const box = await page.locator('.sc-compare').boundingBox();
     assert(box.y >= 0 && box.y + box.height <= 900, `comparison fits the viewport: ${JSON.stringify(box)}`);
     await frame.getByRole('button', { name: '실제 투구 공개' }).click();
