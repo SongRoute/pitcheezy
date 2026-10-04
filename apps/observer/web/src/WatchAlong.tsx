@@ -34,9 +34,10 @@ const TEAMS: Record<string, string> = {
   'Tampa Bay Rays': '탬파베이', 'Texas Rangers': '텍사스', 'Toronto Blue Jays': '토론토', 'Washington Nationals': '워싱턴' };
 const SERIES: Record<string, string> = { F: '와일드카드', D: '디비전시리즈', L: '챔피언십시리즈', W: '월드시리즈', R: '정규시즌' };
 
-export async function get<T>(path: string): Promise<T> {
+export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   let response: Response;
-  try { response = await fetch(`/api${path}`, { cache: 'no-store' }); } catch { throw new Error('관전 서버에 연결하지 못했어요. 네트워크(Tailscale) 연결을 확인해 주세요.'); }
+  try { response = await fetch(`/api${path}`, { cache: 'no-store', signal }); }
+  catch (e) { if (signal?.aborted) throw e; throw new Error('관전 서버에 연결하지 못했어요. 네트워크(Tailscale) 연결을 확인해 주세요.'); }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.');
   return body as T;

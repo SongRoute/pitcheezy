@@ -170,20 +170,23 @@ export default function Game() {
   const sides = useRef(new Map<string, string>());              // batter side per plate appearance
   const lastPrev = useRef<string | null>(null), wasReady = useRef(false);
   const board = useRef<{ s: Situation; away: string; home: string } | null>(null);
-  const pollNow = useRef<() => void>(() => undefined);           // ask at once instead of waiting for the next poll
+  const pollNow = useRef<() => void>(() => undefined);           // ask afresh at once instead of waiting for the next poll
 
   useEffect(() => {
     if (!gamePk || paused !== null) return;  // a paused replay asks nothing; resuming moves t0 by the pause
-    let stop = false, timer = 0, busy = false;
+    let stop = false, timer = 0, ask = 0, out: AbortController | null = null;  // `ask` numbers requests; only the newest counts
     const query = new URLSearchParams();
     if (delay !== null) query.set('delay', String(delay));
     if (replayStart !== null) { query.set('replay', String(replayStart)); query.set('speed', String(speed)); if (lag !== null) query.set('lag', lag); if (t0 !== null) query.set('t0', String(t0)); }
-    const tick = async () => {
-      if (stop || busy) return;  // one request at a time: an early ask while one is out just waits for its answer
-      busy = true; window.clearTimeout(timer);
+    const tick = async (fresh = false) => {
+      if (stop) return;
+      // One request at a time. The timer's own poll waits for an answer already on its way; the viewer's retry, coming
+      // back to the page or the network returning (fresh) drop that request instead, since it may never answer.
+      if (out) { if (!fresh) return; out.abort(); }
+      const mine = ++ask, request = new AbortController(); out = request; window.clearTimeout(timer);
       try {
-        const next = await get<LiveState>(`/live/${gamePk}/state?${query}`);
-        if (stop) return;
+        const next = await get<LiveState>(`/live/${gamePk}/state?${query}`, request.signal);
+        if (stop || mine !== ask) return;
         if (next.replay && t0 === null) {  // pin the replay clock into the link, as Live.tsx does
           const url = new URLSearchParams(window.location.search); url.set('t0', String(next.replay.t0));
           window.history.replaceState(null, '', `?${url}`); setT0(next.replay.t0); return;
@@ -200,16 +203,16 @@ export default function Game() {
         if (next.situation && next.game) board.current = { s: next.situation, away: next.game.away_team, home: next.game.home_team };
         setState(next); setError(null); setFailures(0);
         if (next.sync?.feed_ok !== false) setLastGood(Date.now());
-      } catch (e) { if (!stop) { setError((e as Error).message); setFailures(n => n + 1); } }
-      finally { busy = false; }
-      if (!stop) timer = window.setTimeout(tick, document.hidden ? POLL_MS * 5 : POLL_MS);
+      } catch (e) { if (!stop && mine === ask) { setError((e as Error).message); setFailures(n => n + 1); } }
+      finally { if (mine === ask) out = null; }
+      if (!stop && mine === ask) timer = window.setTimeout(() => void tick(), document.hidden ? POLL_MS * 5 : POLL_MS);
     };
     // Back from the broadcast app, or the network is back: ask now rather than wait out the slower hidden-page poll.
-    const wake = () => { if (!document.hidden) void tick(); };
+    const wake = () => { if (!document.hidden) void tick(true); };
     document.addEventListener('visibilitychange', wake); window.addEventListener('online', wake);
-    pollNow.current = () => void tick();
+    pollNow.current = () => void tick(true);
     void tick();
-    return () => { stop = true; window.clearTimeout(timer); pollNow.current = () => undefined;
+    return () => { stop = true; window.clearTimeout(timer); out?.abort(); pollNow.current = () => undefined;
       document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake); };
   }, [gamePk, delay, replayStart, speed, lag, t0, paused]);
   const isReplay = replayStart !== null;
