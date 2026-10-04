@@ -64,7 +64,9 @@ Generator (`make_p36_config.py` vs `make_p35_config.py`):
 5. Existing output refused before any read (`assert not exists`) and again by `open(out, 'x')`.
 6. `source_configs.ple_registered = {path: configs/EXP-P35-001.json, sha256}` appended at the end of `source_configs`;
    the P35 config must be named `EXP-P35-001.json`, have `experiment_id` EXP-P35-001, status REGISTERED,
-   `registration.draft_sha256` = `f0ae4e91…`, and `control` / `periodic_residual_counts` JSON-exact to the DRAFT.
+   `registration.draft_sha256` = `f0ae4e91…`, `registration.source_commit` = `8864389` and
+   `registration.timing_probe.summary_sha256` = `311f0d4f…` (the real P35 registration, not a dry run; review T109), and
+   `control` / `periodic_residual_counts` JSON-exact to the DRAFT.
 7. `decision` text is P36-specific and does NOT claim "Song's explicit go"; it points at `registration.go` (the P35
    LAUNCH-PLAN wording note). `registration` adds `preregistration`, drops `smoke`/`timing_probe.commit`/`result`
    (unknown now; record them in the launch record).
@@ -83,12 +85,12 @@ Template (`run-p36-pipeline.TEMPLATE.py` vs `run-p35-pipeline.TEMPLATE.py`):
 9. Smoke identities 4 arms × 5 seeds with `own_hashes()` computed once; module pin `a3d6cbce…52fa` checked in the registry,
    `own_hashes()`, and every robust-clip smoke `fit.json` `rc_module_sha256`; ONE `rc_stats_sha256` across the 5
    robust-clip smoke fits; the 20 smoke `fit.json` `runtime.bound_uuid` values are exactly the two pinned UUIDs.
+10. Queue `p36-full-001` into `runs/EXP-P36-001` / `queue-p36-001`, `{done: 20}`; scorer `score-p36-001` into a NEW
+    `scores/EXP-P36-001`. `save`, `interrupted`, `execute`, `queue` functions are byte-identical to P35 (tested).
 11. Review T109: probe `protocol` = `robust_clip_timing_probe_v1`, `preflight.module_sha256` = the pin and
     `preflight.gpus` = the allow-list; and a one-date guard right before the queue starts: the ACTUAL launch must be on
     `queue.date` (KST) and at least 5 h before `no_new_fit_after` (the declared L is not machine-checked otherwise; a
     late launch would silently shrink the pre-registered L+5 h window).
-10. Queue `p36-full-001` into `runs/EXP-P36-001` / `queue-p36-001`, `{done: 20}`; scorer `score-p36-001` into a NEW
-    `scores/EXP-P36-001`. `save`, `interrupted`, `execute`, `queue` functions are byte-identical to P35 (tested).
 
 ## Launch-day steps (mirror `LAUNCH-PLAN-p35-20261005.md`; only after all preconditions)
 
