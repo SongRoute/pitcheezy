@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from capture_snapshot import all_decision_paths, needed_paths, snapshot_file
+from capture_snapshot import all_decision_paths, check_setup, needed_paths, setup_path, snapshot_file
 from serve_offline import load_snapshot, make_handler
 
 GAME = 1
@@ -230,3 +230,32 @@ def test_all_decisions_top_mismatch_does_not_start(tmp_path):
     _, snap, _ = write_all_bundle(tmp_path, top=4)
     with pytest.raises(SystemExit, match='incomplete: 5 of 10'):
         load_snapshot(snap)
+
+
+def test_setup_answer_file_is_distinct_and_checked():
+    names = {snapshot_file(p) for p in [f'/api/watch/{GAME}', *all_decision_paths(TIMELINE)]}
+    assert snapshot_file(setup_path(GAME)) not in names
+    assert check_setup(json.dumps({'game_pk': GAME, 'pitches': []}).encode(), GAME)['pitches'] == []
+    for bad in [{'game_pk': GAME + 1, 'pitches': []}, {'game_pk': GAME}, {'game_pk': GAME, 'pitches': {}}]:
+        with pytest.raises(SystemExit):
+            check_setup(json.dumps(bad).encode(), GAME)
+
+
+def test_all_decisions_bundle_serves_saved_setup_answer(tmp_path):
+    body = json.dumps({'game_pk': GAME, 'pitches': [{'at_bat_number': 1, 'pitch_number': 1, 'status': 'estimated',
+                                                      'plate_x_feet': -0.25}]}).encode()
+    dist, snap, answers = write_all_bundle(tmp_path)
+    (snap / snapshot_file(setup_path(GAME))).write_bytes(body)
+    manifest = json.loads((snap / 'manifest.json').read_text())
+    manifest['files'].append({'path': setup_path(GAME), 'file': snapshot_file(setup_path(GAME)), 'bytes': len(body),
+                              'sha256': hashlib.sha256(body).hexdigest()})
+    (snap / 'manifest.json').write_text(json.dumps(manifest))
+    manifest, loaded = load_snapshot(snap)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(dist, manifest, loaded))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f'http://127.0.0.1:{server.server_address[1]}'
+    try:
+        assert get(base + setup_path(GAME))[::2] == (200, body)
+        assert get(base + setup_path(GAME + 1))[0] == 404  # another game's setup is not made up
+    finally:
+        server.shutdown()

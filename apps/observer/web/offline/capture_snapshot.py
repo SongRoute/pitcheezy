@@ -55,6 +55,19 @@ def all_decision_paths(timeline, top=TOP):
             + [f'/api/watch/{game_pk}/summary?through={i}&top={top}' for i in indices])
 
 
+def setup_path(game_pk):
+    """Catcher setup answer (WatchAlong.tsx draws it after a reveal only); saved with --with-setup."""
+    return f'/api/watch/{game_pk}/setup'
+
+
+def check_setup(body, game_pk):
+    """A saved setup answer must be for this game and hold a pitch list; anything else stops the capture."""
+    view = json.loads(body)
+    if view.get('game_pk') != game_pk or not isinstance(view.get('pitches'), list):
+        raise SystemExit(f'setup answer is not a pitch list for game {game_pk}')
+    return view
+
+
 def snapshot_file(path):
     """Relative file for an API path; serve_offline.py uses the same mapping."""
     route, _, query = path.partition('?')
@@ -76,6 +89,8 @@ def main():
     parser.add_argument('--out', required=True)
     parser.add_argument('--all-decisions', action='store_true',
                         help='save every reveal and summary of the game, not only the scene paths')
+    parser.add_argument('--with-setup', action='store_true',
+                        help='also save the catcher setup answer; the capture stops unless it is HTTP 200 for this game')
     args = parser.parse_args()
     cap = MAX_REQUESTS_ALL if args.all_decisions else MAX_REQUESTS
     base = args.base.rstrip('/')
@@ -104,6 +119,9 @@ def main():
     timeline = json.loads(save(f'/api/watch/{source["gamePk"]}'))
     if timeline['game']['game_pk'] != source['gamePk']:
         raise SystemExit('timeline game does not match scenes')
+    setup_rows = None
+    if args.with_setup:
+        setup_rows = len(check_setup(save(setup_path(source['gamePk'])), source['gamePk'])['pitches'])
     games = json.loads(fetch(base + '/api/watch/games')[1])
     paths, missing = needed_paths(timeline, source['scenes'])
     if missing:
@@ -112,8 +130,8 @@ def main():
         scene_paths, paths = set(paths), all_decision_paths(timeline)
         if not scene_paths <= set(paths):
             raise SystemExit('scene paths not covered by all decisions')
-        if len(paths) + 1 > cap:
-            raise SystemExit(f'{len(paths) + 1} requests exceed cap {cap}')
+        if len(entries) + len(paths) > cap:
+            raise SystemExit(f'{len(entries) + len(paths)} requests exceed cap {cap}')
     for path in paths:
         save(path)
     # Picker list: only the snapshot game, so no link leads to a game that is not in the bundle.
@@ -129,6 +147,7 @@ def main():
                 'scenes': len(source['scenes']), 'top': TOP,
                 'coverage': 'all_decisions' if args.all_decisions else 'scenes',
                 'decisions': len(timeline['decisions']),
+                'setup_rows': setup_rows,  # None = setup answer not saved (the page then draws no mitt)
                 'captured_utc': started.isoformat(timespec='seconds'),
                 'captured_kst': started.astimezone(kst).strftime('%Y-%m-%d %H:%M KST'),
                 'finished_utc': finished.isoformat(timespec='seconds'),
