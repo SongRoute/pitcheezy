@@ -30,7 +30,8 @@ DirectPeriodicModel only after the embedding.  The residual part mirrors
 ResidualMLPNetwork module for module (tested by copying weights).  Training is
 DirectResidualModel.fit (tested mirror of MatrixModel.fit); calibration stays
 external.  Frozen modules are not edited.  Own archive formats; load refuses
-another kind, architecture or continuous map.
+another kind or architecture and an invalid or wrong-length continuous map; the
+registered map itself must be compared by the runner after load.
 """
 from __future__ import annotations
 

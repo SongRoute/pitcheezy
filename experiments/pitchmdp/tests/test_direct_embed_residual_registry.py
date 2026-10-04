@@ -31,6 +31,8 @@ def test_baselines_are_the_exact_earlier_config_entries():
     assert er.same(er.BASELINES['residual_counts'], earlier(combo, 'residual_counts'))
     for name in ('control', 'periodic_counts'):
         assert er.same(er.BASELINES[name], earlier(p30, name)) and er.same(er.BASELINES[name], earlier(combo, name))
+    for path in (p30, 'EXP-P31-001.json'):
+        assert er.same(er.BASELINES['periodic_counts_d10'], earlier(path, 'periodic_counts_d10'))
     assert er.CONTINUOUS == er.BASELINES['periodic_counts']['context_continuous']
     assert {a['embedding'] for a in er.ARMS.values()} == set(pr.KINDS)
     assert {a['model'] for a in er.ARMS.values()} == set(pr.KINDS.values())
@@ -39,16 +41,18 @@ def test_baselines_are_the_exact_earlier_config_entries():
 def test_seeds_disjoint_from_every_earlier_block_and_family_passes():
     assert not set(er.SEEDS) & {0, 1, 2, *wr.FIRST_SEEDS, *wr.SEED_BLOCKS['repeat2_seeds_8_12'], 13, 14, 15}
     cfg = family()
-    assert er.check_family(cfg) is cfg and er.check_contrasts(cfg) == er.CONTRASTS and er.FITS == 15
+    assert er.check_family(cfg) is cfg and er.check_contrasts(cfg) == er.CONTRASTS and er.FITS == 18 and len(er.CONTRASTS) == 6
 
 
 @pytest.mark.parametrize('edit', [
-    lambda c: c['arms'][3].update(width=256),
-    lambda c: c['arms'][4].update(embedding='periodic'),
-    lambda c: c['arms'][3].update(workload=wr.WORKLOADS['block']),
-    lambda c: c['arms'][3].update(context_continuous=wr.CONTINUOUS['none']),
-    lambda c: c['arms'][3].pop(er.FLAG),
-    lambda c: c['arms'][3].update(priority=True),
+    lambda c: c['arms'][4].update(width=256),
+    lambda c: c['arms'][5].update(embedding='periodic'),
+    lambda c: c['arms'][4].update(workload=wr.WORKLOADS['block']),
+    lambda c: c['arms'][4].update(context_continuous=wr.CONTINUOUS['none']),
+    lambda c: c['arms'][4].pop(er.FLAG),
+    lambda c: c['arms'][4].update(priority=True),
+    lambda c: c['arms'][3].update(head_dropout=.2),
+    lambda c: c['arms'].pop(3),
     lambda c: c['arms'][1].update(width=145),
     lambda c: c['arms'][2].update(combo=1),
     lambda c: c['arms'].reverse(),
@@ -57,6 +61,7 @@ def test_seeds_disjoint_from_every_earlier_block_and_family_passes():
     lambda c: c.update(fits=15.0),
     lambda c: c['comparison'][er.CONTRAST_KEY][0].update(reference='residual_counts'),
     lambda c: c['comparison'][er.CONTRAST_KEY].pop(),
+    lambda c: c['comparison'][er.CONTRAST_KEY][1]['held'].update(dropout_rate=0.),
 ])
 def test_any_edit_is_refused(edit):
     cfg = family()
@@ -65,9 +70,16 @@ def test_any_edit_is_refused(edit):
         er.check_contrasts(cfg)
 
 
-def test_each_fixed_contrast_changes_exactly_one_factor():
-    changes = {c['name']: {k for k, (a, b) in zip(('input', 'backbone'), zip(er.FACTORS[c['candidate']],
-                                                                            er.FACTORS[c['reference']])) if a != b}
-               for c in er.CONTRASTS}
-    assert all(len(v) == 1 for v in changes.values()) and len(changes) == 4
-    assert all('control' not in (c['candidate'], c['reference']) for c in er.CONTRASTS)
+def test_each_fixed_contrast_changes_exactly_its_declared_factors():
+    for c in er.CONTRASTS:
+        cand, ref = (dict(zip(er.FACTOR_NAMES, er.FACTORS[c[k]])) for k in ('candidate', 'reference'))
+        assert {k for k in er.FACTOR_NAMES if cand[k] != ref[k]} == er.ISOLATES[c['isolates']]
+        assert all(cand[k] == ref[k] == v for k, v in c['held'].items())
+        assert 'control' not in (c['candidate'], c['reference'])
+    assert [c['isolates'] for c in er.CONTRASTS].count('backbone_bundle') == 1
+
+
+def test_factor_table_matches_the_networks():
+    from pitchmdp.direct_residual_model import ARCHITECTURE
+    assert ARCHITECTURE['dropout'] == er.FACTORS['residual_counts'][2] == pr.ARCHITECTURES['periodic']['backbone']['dropout']
+    assert wr.ARMS['periodic_counts_d10']['head_dropout'] == er.FACTORS['periodic_counts_d10'][2]
