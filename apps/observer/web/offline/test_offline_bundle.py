@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from capture_snapshot import needed_paths, snapshot_file
+from capture_snapshot import all_decision_paths, needed_paths, snapshot_file
 from serve_offline import load_snapshot, make_handler
 
 GAME = 1
@@ -148,4 +148,64 @@ def test_manifest_cannot_point_outside_api_or_lose_a_file(tmp_path):
     entry['file'] = '../secret.txt'
     (snap / 'manifest.json').write_text(json.dumps(manifest))
     with pytest.raises(SystemExit, match='unexpected file name'):
+        load_snapshot(snap)
+
+
+def test_all_decision_paths_cover_every_reveal_and_summary():
+    paths = all_decision_paths(TIMELINE)
+    assert paths == [f'/api/watch/{GAME}/reveal/{i}' for i in range(5)] + \
+        [f'/api/watch/{GAME}/summary?through={i}&top=5' for i in range(5)]
+    scenes = [{'pitchId': 'x', 'atBat': 1, 'pitchNumber': 3}, {'pitchId': 'y', 'atBat': 2, 'pitchNumber': 2}]
+    assert set(needed_paths(TIMELINE, scenes)[0]) <= set(paths)
+
+
+def test_all_decision_paths_refuse_gapped_indices():
+    gapped = {'game': {'game_pk': GAME}, 'decisions': [decision(0, 1, 1, 'a'), decision(2, 1, 2, 'a')]}
+    with pytest.raises(SystemExit, match='0..N-1'):
+        all_decision_paths(gapped)
+
+
+def write_all_bundle(tmp_path, drop=None):
+    dist = tmp_path / 'dist'
+    dist.mkdir()
+    (dist / 'index.html').write_bytes(b'<html><body><div id="root"></div></body></html>')
+    snap = tmp_path / 'snap'
+    answers = {f'/api/watch/{GAME}': json.dumps(TIMELINE).encode()}
+    for i, path in enumerate(all_decision_paths(TIMELINE)):
+        answers[path] = json.dumps({'n': i}).encode()
+    answers.pop(drop, None)
+    files = []
+    for path, body in answers.items():
+        target = snap / snapshot_file(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
+        files.append({'path': path, 'file': snapshot_file(path), 'bytes': len(body),
+                      'sha256': hashlib.sha256(body).hexdigest()})
+    (snap / 'manifest.json').write_text(json.dumps(
+        {'game_pk': GAME, 'scenes': 2, 'top': 5, 'coverage': 'all_decisions', 'decisions': 5,
+         'captured_kst': '2026-10-04 15:00 KST', 'files': files}))
+    return dist, snap, answers
+
+
+def test_all_decisions_bundle_serves_every_pitch_and_says_so(tmp_path):
+    dist, snap, answers = write_all_bundle(tmp_path)
+    manifest, loaded = load_snapshot(snap)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(dist, manifest, loaded))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f'http://127.0.0.1:{server.server_address[1]}'
+    try:
+        for path, body in answers.items():
+            assert get(base + path)[::2] == (200, body), path
+        page = get(base + '/showcase')[2].decode()
+        assert '공 5개 전체' in page and '시연 장면만' not in page
+        status, _, body = get(base + f'/api/watch/{GAME}/reveal/5')
+        assert status == 404 and json.loads(body)['detail'].endswith(f'경기 {GAME}의 공 5개만 저장돼 있어요.')
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_all_decisions_bundle_missing_an_answer_does_not_start(tmp_path):
+    _, snap, _ = write_all_bundle(tmp_path, drop=f'/api/watch/{GAME}/summary?through=4&top=5')
+    with pytest.raises(SystemExit, match='incomplete: 1 of 10'):
         load_snapshot(snap)

@@ -22,6 +22,7 @@ from capture_snapshot import snapshot_file  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 MISSING = '오프라인 예비 묶음에는 이 자료가 없어요. 시연 장면 {scenes}개만 저장돼 있어요.'
+MISSING_ALL = '오프라인 예비 묶음에는 이 자료가 없어요. 경기 {game_pk}의 공 {decisions}개만 저장돼 있어요.'
 NO_LIVE = '오프라인 예비 묶음이라 실시간 경기 정보는 볼 수 없어요.'
 
 
@@ -39,6 +40,13 @@ def load_snapshot(directory):
         if hashlib.sha256(body).hexdigest() != entry['sha256'] or len(body) != entry['bytes']:
             raise SystemExit(f'snapshot file changed: {entry["file"]}')
         answers[entry['path']] = body
+    if all_decisions(manifest):  # a bundle that claims every pitch must really hold every reveal and summary
+        game, n, top = manifest['game_pk'], manifest['decisions'], manifest.get('top', 5)
+        need = [f'/api/watch/{game}/reveal/{i}' for i in range(n)]
+        need += [f'/api/watch/{game}/summary?through={i}&top={top}' for i in range(n)]
+        lacking = [p for p in need if p not in answers]
+        if not isinstance(n, int) or n <= 0 or lacking:
+            raise SystemExit(f'all-decisions snapshot incomplete: {len(lacking)} of {len(need)} missing')
     return manifest, answers
 
 
@@ -52,9 +60,21 @@ def api_key(path, query):
     return path if not query else None
 
 
+def all_decisions(manifest):
+    """v1/v2 manifests have no coverage field: they hold only the scene paths."""
+    return manifest.get('coverage') == 'all_decisions'
+
+
+def missing_text(manifest):
+    if all_decisions(manifest):
+        return MISSING_ALL.format(game_pk=manifest['game_pk'], decisions=manifest['decisions'])
+    return MISSING.format(scenes=manifest['scenes'])
+
+
 def banner(manifest):
+    scope = f'공 {manifest["decisions"]}개 전체' if all_decisions(manifest) else '시연 장면만'
     text = (f'오프라인 예비 묶음 · 맥미니 응답을 {manifest["captured_kst"]}에 저장한 사본 · '
-            f'경기 {manifest["game_pk"]} 시연 장면만 · 영상은 인터넷 필요')
+            f'경기 {manifest["game_pk"]} {scope} · 영상은 인터넷 필요')
     return ('<div id="pz-offline-note" role="note" style="background:#fff4d6;color:#4a3a00;font:13px/1.4 system-ui,'
             'sans-serif;padding:6px 10px;border-bottom:1px solid #e6cf8a">' + html.escape(text) + '</div>')
 
@@ -63,7 +83,7 @@ def make_handler(dist, manifest, answers):
     dist = Path(dist).resolve()
     index = (dist / 'index.html').read_bytes()
     note = banner(manifest).encode()
-    missing = MISSING.format(scenes=manifest['scenes'])
+    missing = missing_text(manifest)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = 'pitcheezy-offline'

@@ -5,6 +5,7 @@ bytes on the MacBook next to the same static build. Nothing is recomputed or inv
 snapshot gets a clear 404 there. Stdlib only.
 
     python3 capture_snapshot.py --base http://100.108.252.111:8771 --scenes ../src/showcase-scenes.json --out DIR
+    python3 capture_snapshot.py ... --all-decisions   # every pitch of the game, so watch-page ←/→ never runs out
 """
 import argparse
 import hashlib
@@ -16,6 +17,7 @@ from pathlib import Path
 
 TOP = 5  # WatchSummaryPanel.tsx `TOP`
 MAX_REQUESTS = 400
+MAX_REQUESTS_ALL = 800  # --all-decisions: 1 timeline + reveal and summary per decision (849843: 262 -> 525)
 
 
 def needed_paths(timeline, scenes, top=TOP):
@@ -43,6 +45,16 @@ def needed_paths(timeline, scenes, top=TOP):
     return paths, missing
 
 
+def all_decision_paths(timeline, top=TOP):
+    """Every reveal and every summary?through=i the watch page can request after an explicit reveal."""
+    game_pk = timeline['game']['game_pk']
+    indices = [d['index'] for d in timeline['decisions']]
+    if indices != list(range(len(indices))):
+        raise SystemExit('timeline decision indices are not 0..N-1')
+    return ([f'/api/watch/{game_pk}/reveal/{i}' for i in indices]
+            + [f'/api/watch/{game_pk}/summary?through={i}&top={top}' for i in indices])
+
+
 def snapshot_file(path):
     """Relative file for an API path; serve_offline.py uses the same mapping."""
     route, _, query = path.partition('?')
@@ -62,7 +74,10 @@ def main():
     parser.add_argument('--base', required=True)
     parser.add_argument('--scenes', required=True)
     parser.add_argument('--out', required=True)
+    parser.add_argument('--all-decisions', action='store_true',
+                        help='save every reveal and summary of the game, not only the scene paths')
     args = parser.parse_args()
+    cap = MAX_REQUESTS_ALL if args.all_decisions else MAX_REQUESTS
     base = args.base.rstrip('/')
     out = Path(args.out)
     if out.exists() and any(out.iterdir()):
@@ -72,8 +87,8 @@ def main():
     entries = []
 
     def save(path):
-        if len(entries) >= MAX_REQUESTS:
-            raise SystemExit(f'request cap {MAX_REQUESTS} reached')
+        if len(entries) >= cap:
+            raise SystemExit(f'request cap {cap} reached')
         status, body = fetch(base + path)
         if status != 200:
             raise SystemExit(f'{path}: HTTP {status}')
@@ -93,6 +108,12 @@ def main():
     paths, missing = needed_paths(timeline, source['scenes'])
     if missing:
         raise SystemExit(f'scenes without a decision: {missing}')
+    if args.all_decisions:
+        scene_paths, paths = set(paths), all_decision_paths(timeline)
+        if not scene_paths <= set(paths):
+            raise SystemExit('scene paths not covered by all decisions')
+        if len(paths) + 1 > cap:
+            raise SystemExit(f'{len(paths) + 1} requests exceed cap {cap}')
     for path in paths:
         save(path)
     # Picker list: only the snapshot game, so no link leads to a game that is not in the bundle.
@@ -106,6 +127,8 @@ def main():
     kst = timezone(timedelta(hours=9))
     manifest = {'schema': 'pitcheezy.offline-snapshot.v1', 'base': base, 'game_pk': source['gamePk'],
                 'scenes': len(source['scenes']), 'top': TOP,
+                'coverage': 'all_decisions' if args.all_decisions else 'scenes',
+                'decisions': len(timeline['decisions']),
                 'captured_utc': started.isoformat(timespec='seconds'),
                 'captured_kst': started.astimezone(kst).strftime('%Y-%m-%d %H:%M KST'),
                 'finished_utc': finished.isoformat(timespec='seconds'),
