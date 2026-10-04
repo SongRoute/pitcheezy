@@ -78,5 +78,39 @@
       "D145",
       "D155"
     ]
+  },
+  "conditioning": {
+    "note": "What the probabilities condition on and how the recommendation uses them. Code/contract facts at the pinned commit; no new computation.",
+    "deliveryDraws": 400,
+    "sourceCommit": "b38bea6f732b21eba0dd00cbf66ac1c395998179",
+    "files": {
+      "experiments/pitchmdp/pitchmdp/matrix_features.py": "b860352e2a3e0098dc749a5e8ebd51a71ccdfaeb8a685336510c6582c4e19533",
+      "experiments/pitchmdp/pitchmdp/sequence_delivery.py": "30d9fd1d849cab42023a022d404ad0c9fd86cd632ab15eab310f3129276977a5",
+      "experiments/pitchmdp/pitchmdp/matrix_policy.py": "421f3d13f187a27505485790cbe470cd98f38b4af61ccba36a738ee9e2e6793c",
+      "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": "86bed8c9dbbcb6b76075b6ae9caafdad81c6ab5ea48d556e16bc25051f6393b1"
+    },
+    "anchors": {
+      "experiments/pitchmdp/pitchmdp/matrix_features.py": [
+        "self._encode_types(self.frame.iloc[rows].pitch_type) if candidate_pitch_types is None"
+      ],
+      "experiments/pitchmdp/pitchmdp/sequence_delivery.py": [
+        "TIERS = [('pitch_type', 'p_throws', 'stand'),",
+        "Every retained vector was one actual TRAIN delivery"
+      ],
+      "experiments/pitchmdp/pitchmdp/matrix_policy.py": [
+        "pitch_type=action",
+        "Policy requires the exact frozen 400-draw delivery model"
+      ],
+      "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": [
+        "## 3. ARM-B 식 (구종-only",
+        "π_ref^B·exp(Q̂^ref/τ)"
+      ]
+    },
+    "facts": [
+      "Current pitch-type input is the scored row's actual pitch type unless candidate types are passed (DEV scoring: actual thrown type).",
+      "Current physical delivery (location etc.) is not an input before the pitch; it is averaged over 400 TRAIN deliveries keyed by pitcher/pitch type/hand/count tiers with league fallback.",
+      "ARM-B recommends pitch type only: each candidate type is scored by simulated full-PA defensive WE and probability is shifted from the TRAIN pitch-mix baseline toward higher value (P3).",
+      "The watch screen location is a realized-delivery proxy, not evaluated (served /api/watch location.basis realized_delivery_proxy, evaluated false)."
+    ]
   }
 }
