@@ -132,6 +132,13 @@ try {
     await page.waitForTimeout(600);
     check(await settle() === mid, `${tag}: scene change mid-clip does not scroll`);
 
+    // Manual playback (native controls, no clip running) reaching the media end does not scroll.
+    await page.evaluate(() => window.scrollTo(0, 0)); const manual = await settle();
+    await page.locator('video').evaluate(async (v, t) => { v.currentTime = t; await v.play(); }, duration - .2);
+    await page.waitForFunction(() => document.querySelector('video').ended);
+    await page.waitForTimeout(600);
+    check(await settle() === manual, `${tag}: manual playback to the media end (no clip) does not scroll`);
+
     // Natural media end inside a clip (scene 1 ends before its stop point).
     await page.getByLabel('비교할 장면').selectOption('1');
     await frame.locator('.wa-pitchno').getByText('5구째').waitFor();
