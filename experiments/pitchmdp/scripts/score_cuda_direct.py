@@ -499,8 +499,10 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
                           'not an independent confirmatory test; family designed after reading P30-P33 '
                           '(post-selection); epoch cap 60 for every arm, so numbers are not compared with '
                           'P31/P32; one TabM-mini fit (k=8) vs one single-network fit is not compute-matched; '
+                          'backbone_bundle_d10 holds dropout .1 but changes backbone, member-head input width '
+                          '(256 -> 128) and dropout placement (head -> blocks) together; '
                           'backbone_bundle changes backbone and dropout (head 0 -> blocks .1) together; '
-                          'per-fit cap hits in provenance.tasks.*.epoch_cap'}} if tabm_residual else {}),
+                          'neither is one-factor; per-fit cap hits in provenance.tasks.*.epoch_cap'}} if tabm_residual else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],

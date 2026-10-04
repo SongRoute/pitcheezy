@@ -73,3 +73,15 @@ def test_timing_projection_fields_present_for_every_arm_class(tmp_path):
 def test_registered_updates_per_epoch_constant():
     """1,224 = ceil(1,252,824 D100 TRAIN rows / batch 1024) (docs/contracts/ML-BRIDGE-RUNNER-v1.md)."""
     assert int(np.ceil(1_252_824 / base.reg.TRAINING['batch_size'])) == 1224
+
+
+def test_score_json_discloses_both_backbone_bundles(tmp_path, monkeypatch):
+    """The machine-readable seed_block note (not only the Korean table) says neither backbone pair is one-factor."""
+    monkeypatch.setattr(base.sc, 'DRAWS', 200)
+    export = tf.make_export(tmp_path / 'export', tf.lineage(base.load()))
+    _, digest, splits = export
+    cfg = base.load(registered=True)
+    fam = base.with_epoch_records(tf.family(tmp_path, cfg, digest, splits, same_as_control=()), cfg)
+    note = tf.run_score(tmp_path, cfg, export, fam)['seed_block']['note']
+    for phrase in ('backbone_bundle_d10', '256 -> 128', 'backbone_bundle changes', 'neither is one-factor'):
+        assert phrase in note, phrase
