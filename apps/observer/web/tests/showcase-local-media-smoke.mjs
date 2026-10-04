@@ -95,7 +95,7 @@ try {
     await page.locator('.sc-compare iframe').waitFor();
     return { page, seen };
   }
-  const note = '맥북에 저장한 같은 공식 영상 사본으로 재생 중';
+  const note = '맥북에 저장한 같은 공식 영상 사본을 씁니다';
   const alertOf = page => page.getByRole('alert').filter({ hasText: '영상 재생을 확인하지 못했어요' });
 
   // A. Default: MLB URL only (intercepted), no local request, no local note.

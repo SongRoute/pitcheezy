@@ -120,7 +120,7 @@ export default function Showcase() {
               onEnded={() => { if (stopAt.current !== null) clipFinished(); }} />
             {!loaded && <button className="sc-load" onClick={() => { setLoaded(true); setVideoError(false); }}>공식 경기 영상 불러오기</button>}
           </div>
-          {localMedia && <p className="sc-hint sc-local" role="note">맥북에 저장한 같은 공식 영상 사본으로 재생 중</p>}
+          {localMedia && <p className="sc-hint sc-local" role="note">맥북에 저장한 같은 공식 영상 사본을 씁니다</p>}
           {loaded && !videoReady && !videoError && <p role="status">영상 정보를 불러오는 중…</p>}
           {videoError && <p role="alert">영상 재생을 확인하지 못했어요. <button onClick={retryVideo}>영상 다시 불러오기</button> <a href={source.mediaUrl} target="_blank" rel="noreferrer">공식 영상 따로 열기</a></p>}
           <label className="sc-label">비교할 장면
