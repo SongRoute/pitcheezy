@@ -312,7 +312,7 @@ def test_scorer_reports_all_contrasts_with_sign(export, tmp_path, few_draws):
             # review 040c8b4: design note identity 1 = 2 + 3 (bundle = structure + head dropout, same seeds)
             assert d['backbone_bundle'] == pytest.approx(d['backbone_structure'] + d['head_dropout'], abs=1e-9)
     table = (tmp_path / 'score' / 'table_ko.md').read_text()
-    assert 'periodic_residual_counts_vs_linear_residual_counts' in table and '독립은 둘' in table
+    assert 'periodic_residual_counts_vs_linear_residual_counts' in table and '독립은 넷' in table and 'backbone_bundle = backbone_structure + head_dropout' in table
 
 
 def test_scorer_refuses_incomplete_or_missing_or_mixed_contrasts(export, tmp_path, few_draws):

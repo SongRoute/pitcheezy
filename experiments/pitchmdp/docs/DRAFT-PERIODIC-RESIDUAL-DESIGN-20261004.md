@@ -1,6 +1,6 @@
 # DRAFT — periodic 임베딩 + residual 본체 결합 (설계, 2026-10-04)
 
-상태: 설계 + 모듈 + 합성 테스트 + torch 없는 레지스트리(러너 미연결). 레지스트리·config·러너 연결·서버·GPU 실행 없음. 같은 모델(Opus) 검토 전, Codex 검토 전.
+상태: 설계 + 모듈 + 합성 테스트 + 레지스트리 + DRAFT config + 러너·채점 연결(040c8b4). 서버·GPU 실행 없음. 같은 모델 검토 5871e1d(모듈)·OPUS-review-embed-residual-040c8b4(연결) 완료, Codex 검토 전.
 작성: 위임 PM 작업자 cycle-015 (T15). 새 fit 전에 고정한다.
 
 ## 질문
@@ -56,7 +56,7 @@ context 53의 원입력 flatten 팔(flatten_counts)이 없어서, "임베딩 효
 ## 시드·노출
 
 - 시드 16, 17, 18. 앞선 블록(0–2, P30 3–7, P30-002 초안 8–12, P31 13–15)과 겹치지 않는다. 새 시드는 새 평가 집단이 아니다.
-- 반복 노출 DEV (dev, mlb_dev). P24/P27/P29/P31 결과를 읽은 뒤 설계했다 → 사후·서술용. 보지 않은 검증은 없다. 2026 자료 사용 없음.
+- 반복 노출 DEV (dev, mlb_dev). P24/P27/P29/P30/P31 결과가 이미 나온 뒤 설계했다(P27·P31 표는 이 작업자가 읽음) → 사후·서술용. 보지 않은 검증은 없다. 2026 자료 사용 없음.
 - 채점은 서술용: NLL, Brier, 보정, 시드별, 경기 단위 부트스트랩 구간. 승자·채택·판정 필드 없음.
 
 ## 예산·중지
@@ -69,7 +69,7 @@ context 53의 원입력 flatten 팔(flatten_counts)이 없어서, "임베딩 효
 
 1. 모듈 + 합성 테스트 + 이 노트 (1b1ff30) — 완료
 2. 다른 Opus 세션 검토(같은 모델 검토, 5871e1d) → 처분 문서 — 완료
-3. 레지스트리(`direct_embed_residual_registry.py`, torch 없음) — 작성됨, 러너 미연결. 남은 것: DRAFT config + 러너·채점 연결(추가 분기만, 기존 팔 동작 불변 테스트, load 뒤 `context_continuous`를 등록 팔과 비교 — 검토 F4) + 그 부분의 별도 검토
+3. 레지스트리(`direct_embed_residual_registry.py`, torch 없음) — 완료(a690350, 040c8b4; 연결 검토 OPUS-review-embed-residual-040c8b4, 처분 DISPOSITION-embed-residual-040c8b4). load 뒤 `context_continuous`를 등록 팔과 비교(검토 F4) 포함
 4. CUDA 스모크 18 task 전부 → 산출물 identity 확인
 5. 그 뒤에만 등록 config(불변) + 실행. Codex 검토 전까지 `same_model_reviewed; Codex_review_pending`
 

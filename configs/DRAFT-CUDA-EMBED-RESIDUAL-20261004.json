@@ -3,7 +3,7 @@
   "experiment_id": "DRAFT-CUDA-EMBED-RESIDUAL-20261004",
   "status": "DRAFT",
   "decision": "DRAFT; smoke only until a distinct review, CUDA smoke on every arm and an explicit registration. No scientific N/G decision, promotion or selection; D131/D155 unchanged.",
-  "purpose": "Post-selection exploratory family (design note experiments/pitchmdp/docs/DRAFT-PERIODIC-RESIDUAL-DESIGN-20261004.md, fixed before any fit of this family; designed after reading P24/P27/P29/P30/P31 on repeated DEV). Question: with workload counts, the same data, loop and calibration chain, does feeding the frozen PLR-lite periodic embedding into the frozen-architecture residual backbone change calibrated direct NLL / Brier relative to each parent, and is a difference due to the periodic map or to per-feature embedding as such (LR control)? Descriptive only.",
+  "purpose": "Post-selection exploratory family (design note experiments/pitchmdp/docs/DRAFT-PERIODIC-RESIDUAL-DESIGN-20261004.md, fixed before any fit of this family; designed after P24/P27/P29/P30/P31 results existed on repeated DEV). Question: with workload counts, the same data, loop and calibration chain, does feeding the frozen PLR-lite periodic embedding into the frozen-architecture residual backbone change calibrated direct NLL / Brier relative to each parent, and is a difference due to the periodic map or to per-feature embedding as such (LR control)? Descriptive only.",
   "source_configs": {
     "base_cuda": {
       "path": "configs/DRAFT-CUDA-DIRECT-20261004.json",
@@ -31,7 +31,7 @@
     },
     "design_note": {
       "path": "experiments/pitchmdp/docs/DRAFT-PERIODIC-RESIDUAL-DESIGN-20261004.md",
-      "sha256": "5ce7490a43b4b97ad8e5eb60147315b01dc2115add693f0677feee1a952f43f4"
+      "sha256": "7f9b00fb0a7f077b04dfbb9189638069693265b7c2bfce3e1bde7b4d86d62797"
     }
   },
   "export": {

@@ -1,7 +1,7 @@
 """Torch-free registry of the DRAFT embedded-input residual family (DRAFT-CUDA-EMBED-RESIDUAL-20261004).
 
 Design note: docs/DRAFT-PERIODIC-RESIDUAL-DESIGN-20261004.md (fixed before any fit of
-this family).  Designed after reading P24/P27/P29/P31 on repeated DEV: post-hoc,
+this family).  Designed after P24/P27/P29/P30/P31 results existed on repeated DEV: post-hoc,
 exploratory and descriptive only (no promotion, verdict, ranking, winner or 2026).
 Fresh MODEL RNG seeds are NOT new data (same export, same DEV rows).
 

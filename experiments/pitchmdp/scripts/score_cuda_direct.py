@@ -336,9 +336,10 @@ def korean_table(result):
     for split, contrasts in (result.get('embed_residual_contrasts') or {}).items():
         lines += [f'## {split} 임베딩·잔차 구조 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
                   'backbone_bundle 행은 구조와 드롭아웃(0 → 블록 0.1)을 함께 바꿉니다. backbone_structure 행은 드롭아웃 비율 0.1을 '
-                  '맞췄지만 위치(헤드 vs 블록)는 다릅니다. input = embedding_type + embedding(같은 시드)이라 세 잔차 대비 중 독립은 둘입니다.', '',
+                  '맞췄지만 위치(헤드 vs 블록)는 다릅니다. 같은 시드라 backbone_bundle = backbone_structure + head_dropout, '
+                  'input = embedding_type + embedding이 정확히 성립해 여섯 대비 중 독립은 넷입니다.', '',
                   f"시드 {', '.join(map(str, result['seed_block']['seeds']))}는 새 모델 난수일 뿐 새 데이터가 아닙니다"
-                  '(같은 DEV·MLB DEV 반복 노출). counts 작업량과 이 가족은 P24~P31 결과를 읽은 뒤 설계한 사후 탐색입니다.', '',
+                  '(같은 DEV·MLB DEV 반복 노출). counts 작업량과 이 가족은 P24~P31 결과가 나온 뒤 설계한 사후 탐색입니다.', '',
                   '| 대비 | 분리 요인 | 고정 | ΔNLL [95%] | ΔBrier [95%] |', '|---|---|---|---|---|']
         for name, block in contrasts.items():
             held = ', '.join(f'{k}={v}' for k, v in block['held'].items())
@@ -401,7 +402,7 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
                           'not an independent confirmatory test; family designed after reading P24-P31 '
                           '(post-selection); backbone_bundle changes structure and dropout together, '
                           'backbone_structure still differs in dropout position; input = embedding_type + '
-                          'embedding'}} if embed_residual else {}),
+                          'embedding; backbone_bundle = backbone_structure + head_dropout'}} if embed_residual else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],
