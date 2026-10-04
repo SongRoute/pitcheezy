@@ -17,22 +17,23 @@ export default function ModelEvidenceCard() {
       <span>추천: 2026 정규시즌 1회 평가 {n(o.games)}경기 · 개선 근거 없음</span>
       <i className="cv-more">예측과 추천을 나눠 보기</i>
     </summary>
-    <p>예측이 더 정확한 것과 추천이 경기 결과를 좋게 만드는 것은 서로 다른 질문입니다. 예측은 좋아졌지만, 추천의 효과는 확인하지 못했습니다.</p>
+    <p>예측이 더 정확한 것과 추천이 경기 결과를 좋게 만드는 것은 서로 다른 질문입니다. 예측은 상황 빈도 기준보다 로그손실이 낮았지만, 추천의 효과는 확인하지 못했습니다.</p>
     <h3>1. 예측 정확도 (서비스 모델)</h3>
     <ul className="model-list">
       <li><b>무엇을 예측하나</b><span>다음 공 한 개의 결과 {p.outcomeClasses}종(볼·스트라이크·파울·아웃·안타 종류 등)이 나올 확률</span></li>
-      <li><b>평가 자료</b><span>{p.devWindow[0]} ~ {p.devWindow[1]} 전체 MLB {n(p.pitches)}구 · {n(p.games)}경기. 학습·보정 기간(~6월) 뒤의 자료입니다.</span></li>
+      <li><b>평가 자료</b><span>{p.devWindow[0]} ~ {p.devWindow[1]} 전체 MLB 중 평가 조건을 만족한 {n(p.pitches)}구(전체 {n(p.requestedPitches)}구 중) · {n(p.games)}경기. 학습·보정 기간(~6월) 뒤의 자료입니다.</span></li>
       <li><b>로그손실 (낮을수록 좋음)</b><span>서비스 모델 {f4(p.g0.nll)} · 상황 빈도 기준 {f4(p.frequency.nll)}</span>
-        <span>차이 −{lower(p.deltaNll)} (95% 구간 −{lower(lo)} ~ −{lower(hi)}, 경기 단위 재표본 {n(p.bootstrapDraws)}회, 시드 {p.negativeSeeds}/{p.seeds}개 모두 개선)</span></li>
+        <span>차이 −{lower(p.deltaNll)} (95% 구간 −{lower(lo)} ~ −{lower(hi)}, 경기 단위 재표본 {n(p.bootstrapDraws)}회, 시드 {p.negativeSeeds}/{p.seeds}개 모두 빈도 기준보다 낮음)</span></li>
       <li><b>확률 눈금(보정)</b><span>보정 오차 ECE는 빈도 기준 {f4(p.frequency.ece10)}이 서비스 모델 {f4(p.g0.ece10)}보다 작습니다. 모든 면에서 나은 것은 아닙니다.</span></li>
     </ul>
     <p>연구용 혼합 모델은 같은 평가에서 서비스 모델보다 로그손실이 {lower(m.deltaNllVsG0)} 더 낮았습니다(95% 구간 −{lower(mlo)} ~ −{lower(mhi)}, 시드 {m.negativeSeeds}/{m.seeds}). 서비스와 추천에는 아직 쓰지 않습니다.</p>
     <h3>2. 추천 정책 효과</h3>
     <ul className="model-list">
-      <li><b>평가 자료</b><span>2026 정규시즌 {n(o.games)}경기 · {n(o.plateAppearances)}타석, 사전에 등록한 방법으로 1회만 평가 (학습·선택에는 쓰지 않음)</span></li>
+      <li><b>평가 자료</b><span>2026 정규시즌 {n(o.games)}경기 · {n(o.plateAppearances)}타석 중 시작 전 제외를 뺀 {n(o.evaluatedPlateAppearances)}타석. 사전에 등록한 방법으로 한 번 실행했습니다.</span>
+        <span>다만 이전 단계의 정책 평가·교차 적합·반복 선택에 2026 자료가 쓰인 노출 이력이 있어(D87), 처음 보는 자료에서의 평가는 아닙니다.</span></li>
       <li><b>결과</b><span>타석당 수비 승리확률 차이 범위 {signed(olo)} ~ {signed(ohi)}</span>
-        <span>개선 문턱 +{o.improvementThreshold.toFixed(3)}에 미치지 못해 <strong>개선 근거 없음</strong>. 해가 없다는 증명도 아닙니다.</span></li>
-      <li><b>추천하지 않는 경우</b><span>2025년까지 학습 기록이 없는 투수로 시작한 {n(o.excludedUnknownPitcher)}타석은 평가 전에 제외했습니다. 화면에서도 이런 투수에게는 추천을 만들지 않습니다.</span></li>
+        <span>범위의 위쪽 끝({signed(ohi)})도 개선 문턱 +{o.improvementThreshold.toFixed(3)}보다 작아 <strong>개선 근거 없음</strong>. 해가 없다는 증명도 아닙니다.</span></li>
+      <li><b>추천하지 않는 경우</b><span>위에서 뺀 {n(o.excludedUnknownPitcher)}타석은 2025년까지 학습 기록이 없는 투수로 시작한 타석입니다. 화면에서도 이런 투수에게는 추천을 만들지 않습니다.</span></li>
     </ul>
     <h3>한계</h3>
     <ul className="cv-limits">

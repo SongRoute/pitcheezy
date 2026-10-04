@@ -14,6 +14,11 @@ const ev = JSON.parse(readFileSync(path.join(here, '../src/model-evidence.json')
 assert.equal(ev.researchMix.usedInService, false, 'research mix is not the service model');
 assert.equal(ev.policy.label, 'NO_EVIDENCE_OF_IMPROVEMENT');
 assert(ev.policy.deltaBounds[1] < ev.policy.improvementThreshold, 'upper bound below the improvement threshold');
+// the card prints magnitudes with fixed words (낮음/작습니다), so pin the directions those words claim
+assert(ev.prediction.deltaNll < 0 && ev.prediction.deltaNllCi95[1] < 0, 'G0 below frequency, whole interval');
+assert(ev.researchMix.deltaNllVsG0 < 0 && ev.researchMix.deltaNllVsG0Ci95[1] < 0, 'mix below G0, whole interval');
+assert(ev.prediction.frequency.ece10 < ev.prediction.g0.ece10, 'frequency ECE smaller than G0');
+assert.equal(ev.policy.evaluatedPlateAppearances, ev.policy.plateAppearances - ev.policy.excludedUnknownPitcher, 'evaluated PA = all - excluded');
 
 if (process.env.MODEL_EVIDENCE_REPO) {  // exact identity with the committed results (no rounding in the pinned copy)
   const read = rel => {
@@ -23,6 +28,7 @@ if (process.env.MODEL_EVIDENCE_REPO) {  // exact identity with the committed res
   };
   const p11 = JSON.parse(read('results/EXP-P11-001.json')), w = p11.estimands.whole, p = ev.prediction;
   assert.equal(p11.experiment_id, p.experimentId); assert.equal(p11.scope, p.scope);
+  assert.deepEqual([p11.population.requested_pitches, p11.population.eligible_pitches], [p.requestedPitches, p.pitches], 'eligible of requested');
   assert.deepEqual([w.n, w.games, w.g0.log_loss, w.g0.brier_multiclass, w.g0.top_label_ece10, w.frequency.log_loss, w.frequency.brier_multiclass, w.frequency.top_label_ece10],
     [p.pitches, p.games, p.g0.nll, p.g0.brier, p.g0.ece10, p.frequency.nll, p.frequency.brier, p.frequency.ece10]);
   assert.deepEqual([w.paired.nll.delta, w.paired.nll.ci95, w.paired.brier.delta, w.paired.draws], [p.deltaNll, p.deltaNllCi95, p.deltaBrier, p.bootstrapDraws]);
@@ -34,6 +40,8 @@ if (process.env.MODEL_EVIDENCE_REPO) {  // exact identity with the committed res
   const ope = JSON.parse(read('results/MLB-2026-OPE-v1.json')), o = ev.policy;
   assert.deepEqual([ope.id, ope.attempt, ope.games, ope.pas, ope.reasons['EXCLUDED_PRE_START:UNSUPPORTED_UNKNOWN_PITCHER'], ope.L1R_delta_bounds, ope.label, ope.labels.primary.mei],
     [o.id, o.attempt, o.games, o.plateAppearances, o.excludedUnknownPitcher, o.deltaBounds, o.label, o.improvementThreshold]);
+  assert.equal(ope.status.COMPLETE + ope.status.CENSORED, o.evaluatedPlateAppearances, 'E0 = complete + censored');
+  assert(ope.interpretation.includes('exposed-window'), 'OPE records its exposed window (D87)');
   const matrix = read('docs/ML_EXPERIMENT_MATRIX.md').toString();
   assert(matrix.includes('DEV `07-01~09-30`') && matrix.includes('TRAIN `2023-05-15~2025-04-30`'), 'DEV window in the matrix document');
   assert.deepEqual(p.devWindow, ['2025-07-01', '2025-09-30']);
@@ -74,13 +82,17 @@ try {
     await card.locator('.model-list').first().waitFor();
     const text = await card.innerText();
     for (const t of ['예측이 더 정확한 것과 추천이 경기 결과를 좋게 만드는 것은 서로 다른 질문입니다', '결과 10종',
-      '2025-07-01 ~ 2025-09-30 전체 MLB 311,721구 · 1,161경기', '서비스 모델 1.4904 · 상황 빈도 기준 1.5041',
-      '차이 −0.0137 (95% 구간 −0.0144 ~ −0.0129, 경기 단위 재표본 10,000회, 시드 5/5개 모두 개선)',
+      '2025-07-01 ~ 2025-09-30 전체 MLB 중 평가 조건을 만족한 311,721구(전체 341,941구 중) · 1,161경기', '서비스 모델 1.4904 · 상황 빈도 기준 1.5041',
+      '차이 −0.0137 (95% 구간 −0.0144 ~ −0.0129, 경기 단위 재표본 10,000회, 시드 5/5개 모두 빈도 기준보다 낮음)',
       '빈도 기준 0.0017이 서비스 모델 0.0087보다 작습니다', '로그손실이 0.0041 더 낮았습니다(95% 구간 −0.0044 ~ −0.0038, 시드 5/5)',
-      '서비스와 추천에는 아직 쓰지 않습니다', '2026 정규시즌 2,429경기 · 184,288타석', '타석당 수비 승리확률 차이 범위 −0.0012 ~ +0.0009',
-      '개선 근거 없음', '해가 없다는 증명도 아닙니다', '34,763타석', '여러 번 본 개발용 자료', '공개 뒤 승리확률 변화는 추천의 효과를 보여 주지 않습니다',
-      '독립 검토 전이라 이 카드에 넣지 않았습니다', '레포 b38bea6', 'EXP-P11-001 44dae07c', 'MLB-2026-OPE-v1 0bb8fcd0'])
+      '서비스와 추천에는 아직 쓰지 않습니다', '2026 정규시즌 2,429경기 · 184,288타석 중 시작 전 제외를 뺀 149,525타석', '타석당 수비 승리확률 차이 범위 −0.0012 ~ +0.0009',
+      '노출 이력이 있어(D87), 처음 보는 자료에서의 평가는 아닙니다', '범위의 위쪽 끝(+0.0009)도 개선 문턱 +0.001보다 작아 개선 근거 없음',
+      '해가 없다는 증명도 아닙니다', '위에서 뺀 34,763타석은 2025년까지 학습 기록이 없는 투수로 시작한 타석입니다',
+      '화면에서도 이런 투수에게는 추천을 만들지 않습니다', '모든 면에서 나은 것은 아닙니다', '그 가정이 맞을 때만 인과 효과로 읽을 수 있습니다', '여러 번 본 개발용 자료', '공개 뒤 승리확률 변화는 추천의 효과를 보여 주지 않습니다',
+      '독립 검토 전이라 이 카드에 넣지 않았습니다', '레포 b38bea6', 'EXP-P11-001 44dae07c', 'MLB-2026-OPE-v1 0bb8fcd0', '결정 D87·D131'])
       assert(text.includes(t), `detail: ${t}`);
+    for (const t of ['학습·선택에는 쓰지', '예측은 좋아졌', '모두 개선)'])  // overclaims removed in review (2026 exposure D87; 'better than frequency', not 'improved')
+      assert(!text.includes(t), `overclaim: ${t}`);
     assert.equal(await card.locator('a, button, iframe, video').count(), 0, 'no navigation from the evidence card');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'no horizontal overflow');
     const box = await card.boundingBox(); assert(box.x >= 0 && box.x + box.width <= width, 'card within viewport');

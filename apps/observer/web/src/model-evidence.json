@@ -5,6 +5,7 @@
     "experimentId": "EXP-P11-001",
     "scope": "Previously exposed eligible 2025 whole-MLB DEV",
     "outcomeClasses": 10,
+    "requestedPitches": 341941,
     "pitches": 311721,
     "games": 1161,
     "g0": {
@@ -52,13 +53,15 @@
     "games": 2429,
     "plateAppearances": 184288,
     "excludedUnknownPitcher": 34763,
+    "evaluatedPlateAppearances": 149525,
     "deltaBounds": [
       -0.001204616445139576,
       0.0009206006143749304
     ],
     "label": "NO_EVIDENCE_OF_IMPROVEMENT",
     "improvementThreshold": 0.001,
-    "unit": "defensive win probability per plate appearance"
+    "unit": "defensive win probability per plate appearance",
+    "exposure": "Single registered run; the 2026 window was exposed by earlier P0/P1 OPEs, cross-fits and selection (D87); not an unseen-data evaluation"
   },
   "source": {
     "repoCommit": "b38bea6f732b21eba0dd00cbf66ac1c395998179",
@@ -69,6 +72,7 @@
       "docs/ML_EXPERIMENT_MATRIX.md": "38a725094a07dbeaa8540a977d7fce39a6a85bf930b1d09979f6e61d673a5155"
     },
     "decisions": [
+      "D87",
       "D131",
       "D143",
       "D145",
