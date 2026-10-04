@@ -31,7 +31,7 @@
     },
     "design_note": {
       "path": "experiments/pitchmdp/docs/DESIGN-EMA-WEIGHTS-20261004.md",
-      "sha256": "93aba1d307bd0c9dc05e88d502f802efabd6b67b72168dd1aaa4347a350280a7"
+      "sha256": "61d5bbb1956900de7395dc8079aae3a6f60031d7f0fcbef48017012d6c171623"
     },
     "embed_residual_run": {
       "path": "configs/DRAFT-CUDA-EMBED-RESIDUAL-20261004.json",
