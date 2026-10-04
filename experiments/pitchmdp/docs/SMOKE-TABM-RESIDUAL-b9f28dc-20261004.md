@@ -51,18 +51,18 @@ from completed tasks):
 
 | arm | formula on this smoke | measured full per-update s | full-fit s at cap 60 implied | overestimate |
 |---|---|---|---|---|
-| control | 4,779–6,206 | 0.0056–0.0059 (EXP-P31-001, 3 fits) | ≈ 420–440 | ≈ 11–14× |
-| periodic_residual_counts | 6,856–7,293 | 0.0134–0.0139 (EXP-P32-001, 3 fits) | ≈ 990–1,020 | ≈ 7× |
-| tabm_counts | 6,609–7,202 | 0.0099–0.0101 (EXP-P31-001, 3 fits) | ≈ 730–750 | ≈ 9–10× |
+| control | 4,779–6,206 | 0.0053–0.0059 (EXP-P31-001, 3 fits) | ≈ 390–440 | ≈ 11–16× |
+| periodic_residual_counts | 6,856–7,293 | 0.0134–0.0139 (EXP-P32-001, 3 fits) | ≈ 990–1,030 | ≈ 7× |
+| tabm_counts | 6,609–7,202 | 0.0099–0.0101 (EXP-P31-001, 3 fits) | ≈ 735–750 | ≈ 9–10× |
 
 Non-train seconds of those full tasks: 6.1–7.9 s (vs 1.9–2.7 s in smoke); this is review N2's
 cross-check, printed here and not part of the rule.
 
 Reading: the smoke's 16 updates are dominated by CUDA warm-up (review N2 predicted an
-overestimate), so the fixed formula overstates every arm by roughly 7–14×. The new arm's full
+overestimate), so the fixed formula overstates every arm by roughly 7–16×. The new arm's full
 per-update time is **미측정**. Bounds from its parents (assumption, not measurement): between
-TabM 0.0100 and an additive guess periodic_residual 0.0139 + TabM overhead 0.0043 = 0.0182
-s/update → about 730–1,340 s at cap 60, under 1800 s. This is why the gate is put to a
+TabM 0.0100 and an additive guess periodic_residual 0.0139 + TabM overhead 0.0044 = 0.0183
+s/update → about 735–1,350 s at cap 60, under 1800 s. This is why the gate is put to a
 decision rather than silently overridden.
 
 ## Decision needed before any registration (Song / root)
