@@ -40,7 +40,7 @@ FLAGS = {'ple_residual_counts': 'ple_residual', 'ple_tabm_residual_counts': 'ple
 FLAG_KEYS = tuple(FLAGS.values())
 CONTRAST_KEY = 'ple_contrasts'
 # direct_ple_model.py sha256: the ONE pin (author pin 1894a0d; re-pin here after the module review disposition).
-MODULE_SHA256 = '6a1541a33f36d02787ba33c9061ef55ab2c48030b00f3aa7992be0876c637425'
+MODULE_SHA256 = 'd3575019f971b06ba26060a1fa31e3894a070fd3b4b88191393743cb16ea175e'
 K, SCALING_INIT = trr.K, trr.SCALING_INIT  # == direct_tabm_residual_model.ENSEMBLE (tested; this module stays torch-free)
 N_BINS, D_EMBEDDING = 48, 8                 # == direct_ple_model.N_BINS / D_EMBEDDING (tested)
 KINDS = {'ple_residual_counts': 'ple_residual_mlp', 'ple_tabm_residual_counts': 'ple_residual_tabm_mini_mlp'}
