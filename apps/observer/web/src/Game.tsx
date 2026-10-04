@@ -36,6 +36,10 @@ type SetupView = { badge?: string; pitches: { at_bat_number: number; pitch_numbe
 type Setups = { badge: string | null; x: Map<string, number> };
 
 const POLL_MS = 2000;
+// A state request with no answer by then is dropped and counts as a failed poll. Measured /state answers (recorder polls
+// through the Tailscale address, 4 games 10/2–10/4, 13,106 answers, 0 timeouts): median about 0.9 s, max 4.6 s. 15 s is
+// about 3× that max; phone-network time on top of it is not measured (docs/reviews/PM-game-timeout-2026-10-04.md).
+const STATE_TIMEOUT_MS = 15000;
 const HOLD_MS = { pitch: 6000, event: 10000 };  // how long a result stays before the next recommendation takes the stage (F13: proposal)
 const DELAY_KEY = 'pitcheezy.live.delay', UNIT_KEY = 'pitcheezy.unit';
 const WAIT: Record<string, [string, string]> = { resolving: ['결과 확인 중', '결과를 기다려요'], buffering: ['준비 중', '내 중계에 맞추는 중'], between_innings: ['공수 교대', '공수 교대'],
@@ -184,6 +188,8 @@ export default function Game() {
       // back to the page or the network returning (fresh) drop that request instead, since it may never answer.
       if (out) { if (!fresh) return; out.abort(); }
       const mine = ++ask, request = new AbortController(); out = request; window.clearTimeout(timer);
+      let late = false;  // dropped by the watchdog below, not by a newer ask: a failed poll like any other
+      const watchdog = window.setTimeout(() => { late = true; request.abort(); }, STATE_TIMEOUT_MS);
       try {
         const next = await get<LiveState>(`/live/${gamePk}/state?${query}`, request.signal);
         if (stop || mine !== ask) return;
@@ -203,8 +209,9 @@ export default function Game() {
         if (next.situation && next.game) board.current = { s: next.situation, away: next.game.away_team, home: next.game.home_team };
         setState(next); setError(null); setFailures(0);
         if (next.sync?.feed_ok !== false) setLastGood(Date.now());
-      } catch (e) { if (!stop && mine === ask) { setError((e as Error).message); setFailures(n => n + 1); } }
-      finally { if (mine === ask) out = null; }
+      } catch (e) {
+        if (!stop && mine === ask) { setError(late ? `관전 서버가 ${STATE_TIMEOUT_MS / 1000}초 동안 답하지 않았어요.` : (e as Error).message); setFailures(n => n + 1); }
+      } finally { window.clearTimeout(watchdog); if (mine === ask) out = null; }
       if (!stop && mine === ask) timer = window.setTimeout(() => void tick(), document.hidden ? POLL_MS * 5 : POLL_MS);
     };
     // Back from the broadcast app, or the network is back: ask now rather than wait out the slower hidden-page poll.
@@ -361,7 +368,8 @@ export default function Game() {
       batter={state?.batter?.name ?? null} batterNote={state?.batter ? (state.batter.side === 'L' ? '좌타' : '우타') : ''} /> : <section className="gm-board" />}
     <main className={`gm-stage ${stale ? 'stale' : ''}`}>
       {stale && <p className="gm-stale" role="status" title={error ?? undefined}><b>{error !== null ? '연결 끊김' : '경기 기록 수신 끊김'}</b>
-        <span>{lastGood !== null ? `${timeText(lastGood)}에 받은 상황 · ` : ''}다시 연결 중</span></p>}
+        <span>{lastGood !== null ? `${timeText(lastGood)}에 받은 상황 · ` : ''}다시 연결 중</span>
+        {error !== null && <button onClick={() => pollNow.current()}>다시 시도</button>}</p>}
       {paused !== null && <p className="gm-paused" role="status"><b>일시정지</b><span>▶을 누르면 멈춘 곳부터 이어져요</span></p>}
       {stage}</main>
     <nav className={`gm-dots ${strip.length > 4 ? 'tight' : ''}`} aria-label="이 타석 투구 순서">

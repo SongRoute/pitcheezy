@@ -102,7 +102,8 @@ html:has(.gm-page),body:has(.gm-page){height:100%;overflow:hidden;overscroll-beh
 /* Stale feed (last good state kept, never shown as current) and a paused replay: one line above the stage. */
 .gm-stale,.gm-paused{flex:none;display:flex;align-items:baseline;gap:8px;min-width:0;padding:5px 10px;border-radius:10px;font-size:13px;line-height:1.35;white-space:nowrap;overflow:hidden}
 .gm-stale span,.gm-paused span{font-weight:700;overflow:hidden;text-overflow:ellipsis}
-.gm-stale{color:var(--err);background:var(--err-bg);border:1.5px dashed currentColor}.gm-paused{color:var(--ink);background:var(--chip)}
+.gm-stale{color:var(--err);background:var(--err-bg);border:1.5px dashed currentColor}
+.gm-stale button{flex:none;margin-left:auto;padding:2px 10px;border:1.5px solid currentColor;border-radius:8px;background:none;color:inherit;font:inherit;font-weight:700;cursor:pointer}.gm-paused{color:var(--ink);background:var(--chip)}
 .gm-stage.stale>*:not(.gm-stale){opacity:.4;filter:grayscale(1)}.gm-page.stale .gm-board{opacity:.55}
 /* Catcher mitt across the plate (D151): a dashed vertical line with edge ticks, so it never reads as a height. */
 .gm-setup line{stroke:var(--deep);stroke-width:2.5;stroke-dasharray:7 4}.gm-setup path{fill:var(--deep)}.gm-setup text{font-size:12px;font-weight:800;fill:var(--deep)}
