@@ -343,11 +343,29 @@ def setter(value, *path):
     (setter(1801.0, 'slowest_task_seconds_projected', 'residual_counts'), 'task gate'),
     (setter(36001.0, 'family_worker_seconds_projected'), 'family gate'),
     (drop('family_worker_seconds_projected'), "probe summary key missing: 'family_worker_seconds_projected'"),
+    (setter('ple_residual_timing_probe_v1', 'protocol'), 'not a P36 robust-clip timing-probe summary'),
+    (drop('protocol'), "probe summary key missing: 'protocol'"),
+    (setter('0' * 64, 'preflight', 'module_sha256'), 'probe ran another robust-clip module'),
+    (drop('slowest_task_seconds_projected', 'control'), 'probe projection arms differ from the DRAFT arms'),
+    (setter(1.0, 'slowest_task_seconds_projected', 'tabm_residual_counts'),
+     'probe projection arms differ from the DRAFT arms'),
+    (setter(400.0, 'slowest_task_seconds_projected', 'control'), 'not the P35 probe constants'),
+    (setter(True, 'slowest_task_seconds_projected', 'residual_counts'), 'task gate'),
+    (setter(10000.0, 'family_worker_seconds_projected'), 'family projection is not seeds x sum'),
 ])
 def test_probe_gate_refusals(pack, tmp_path, mutate, message):
     summary = p36_summary()
     mutate(summary)
     refused(pack, tmp_path, message, with_args(pack, summary=write(tmp_path / 'summary.json', summary)))
+
+
+def test_probe_constants_match_the_probe_branch_values():
+    """Pins in the generator equal the probe 3b305ad literals (:62, :66, :71) as copied into this test file."""
+    assert constant(MAKE36, 'PROBE_PROTOCOL') == PROBE_PROTOCOL
+    assert constant(MAKE36, 'MODULE_SHA') == PROBE_MODULE_SHA
+    assert constant(MAKE36, 'FIXED_TASK_SECONDS') == PROBE_FIXED
+    from pitchmdp import direct_robust_clip_registry as reg
+    assert reg.MODULE_SHA256 == PROBE_MODULE_SHA
 
 
 def test_gate_keys_are_the_probe_schema_booleans():

@@ -27,19 +27,24 @@ MANIFEST_SHA = '49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578
 # Probe-summary keys read here, checked against the P36 probe scripts/timing_probe_robust_clip.py @ 3b305ad
 # (run() :446-449, summarize() :293-300, preflight() :366-375; review T109). A missing key fails closed.
 PROBE_KEYS = {
+    'protocol': 'protocol',                                  # == PROBE_PROTOCOL (:62, :446)
     'complete': 'complete',                                  # bool, must be True
     'exit_codes': 'exit_codes',                              # {gpu uuid: int}, both GPUs, all 0
     'config_sha256': ('preflight', 'config_sha256'),         # == DRAFT_SHA
     'manifest_sha256': ('preflight', 'export_manifest_sha256'),  # == MANIFEST_SHA
     'gpus': ('preflight', 'gpus'),                           # == DRAFT device.allowed_gpu_uuids (as a set)
-    'slowest': 'slowest_task_seconds_projected',             # {arm: s}, must hold PROBED_ARMS, every value <= 1800
-    'family': 'family_worker_seconds_projected',             # number <= 36000
+    'module_sha256': ('preflight', 'module_sha256'),         # == MODULE_SHA (the reviewed robust-clip module)
+    'slowest': 'slowest_task_seconds_projected',             # {arm: s} over the 4 DRAFT arms, every value <= 1800
+    'family': 'family_worker_seconds_projected',             # == seeds x sum(slowest) <= 36000
     'gate': 'gate',                                          # dict; every GATE_KEYS entry present and True,
 }                                                            # and every other boolean in it True as well
 # The P36 probe gate (3b305ad :297-300): task_seconds_max / family_seconds_max (numbers) + these three booleans.
 # It has no per-family '<x>_arms_within' key (P35's ple_arms_within); every_arm_within covers all 4 arms.
 GATE_KEYS = ('every_arm_within', 'family_within', 'probe_exit_zero')
 PROBED_ARMS = ('residual_counts', 'robust_clip_residual_counts')  # pre-registration section 4 (ii)
+FIXED_TASK_SECONDS = {'control': 464., 'periodic_residual_counts': 1046.}  # section 4 (ii): the P35 probe values
+PROBE_PROTOCOL = 'robust_clip_timing_probe_v1'
+MODULE_SHA = 'a3d6cbcef8350586a23d1a6d35213e36ba8e0ccf21288288464f8ce7dcbf52fa'  # direct_robust_clip_registry pin
 TASK_GATE_SECONDS, FAMILY_GATE_SECONDS = 1800, 36000
 # Paths this generator may change (the P35 extractor set + source_configs.ple_registered). Nothing else differs.
 REGISTRATION_PATHS = ('experiment_id', 'status', 'decision', 'execution.enabled', 'registration', 'queue.date',
@@ -98,6 +103,7 @@ for name in P35_SHARED_ARMS:
 # P36 timing probe summary (pre-registration section 4 (ii)); every gate must be true, fail closed on a missing key.
 summary_raw = Path(summary_path).read_bytes()
 s = json.loads(summary_raw)
+assert probe_value(s, 'protocol') == PROBE_PROTOCOL, 'not a P36 robust-clip timing-probe summary'
 assert probe_value(s, 'complete') is True, 'timing probe incomplete'
 codes = probe_value(s, 'exit_codes')
 assert isinstance(codes, dict) and len(codes) == 2 and all(type(c) is int and c == 0 for c in codes.values()), \
@@ -105,6 +111,7 @@ assert isinstance(codes, dict) and len(codes) == 2 and all(type(c) is int and c 
 assert probe_value(s, 'config_sha256') == DRAFT_SHA, 'probe ran on another config'
 assert probe_value(s, 'manifest_sha256') == MANIFEST_SHA, 'probe ran on another export'
 assert sorted(probe_value(s, 'gpus')) == sorted(d['device']['allowed_gpu_uuids']) == sorted(codes), 'probe GPUs differ'
+assert probe_value(s, 'module_sha256') == MODULE_SHA, 'probe ran another robust-clip module'
 gate = probe_value(s, 'gate')
 assert isinstance(gate, dict), 'probe gate is not a dict'
 for key in GATE_KEYS:
@@ -113,8 +120,11 @@ for key in GATE_KEYS:
 assert all(v is True for v in gate.values() if isinstance(v, bool)), 'a probe gate boolean is false'
 slowest, family = probe_value(s, 'slowest'), probe_value(s, 'family')
 assert isinstance(slowest, dict) and all(a in slowest for a in PROBED_ARMS), 'probe did not project the probed arms'
-assert all(isinstance(v, (int, float)) and 0 < v <= TASK_GATE_SECONDS for v in slowest.values()), 'task gate'
-assert isinstance(family, (int, float)) and 0 < family <= FAMILY_GATE_SECONDS, 'family gate'
+assert sorted(slowest) == sorted(a['name'] for a in d['arms']), 'probe projection arms differ from the DRAFT arms'
+assert all(slowest[a] == v for a, v in FIXED_TASK_SECONDS.items()), 'control/periodic are not the P35 probe constants'
+assert all(type(v) in (int, float) and 0 < v <= TASK_GATE_SECONDS for v in slowest.values()), 'task gate'
+assert type(family) in (int, float) and 0 < family <= FAMILY_GATE_SECONDS, 'family gate'
+assert abs(family - len(d['seeds']) * sum(slowest.values())) <= 1e-6 * family, 'family projection is not seeds x sum'
 out = {}
 for k, v in d.items():
     out[k] = v
