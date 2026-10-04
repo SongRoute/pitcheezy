@@ -153,6 +153,11 @@ that PDF via macOS PDFKit; text via the arXiv HTML of v3); Gorishniy et al. 2022
   quantiles (`method='linear'`, the same interpolation as `torch.quantile`'s default) → cast float32 → unique (the
   package computes in X's float32 with a float32 linspace); B1 T_j = 0 rule instead of the package's ValueError for
   a one-valued column; physics columns are binned on rows whose past position is valid only.
+  (i) no row floor: the package requires ≥ 2 rows and n_bins < len(X); ours bins any non-empty column (rows per past
+  position are recorded in `fit.json ple_bin_rows`); (ii) version B: the package draws a uniform init for the PLE
+  linear then zeroes it; ours draws nothing for W, so the post-construction RNG stream differs from a package-built
+  model (outputs at a given state are identical); (iii) the package warns on single-bin features; ours is silent and
+  records T_j in `ple_n_bins`. [wiring review N-a]
 - (d) Padded layout, `R:543-564` docstring and `R:600-651`: output `(*, n_features, max_n_bins)`; "x_ple_actual =
   [*x_ple[:-1], *zeros(max_n_bins - n_bins), x_ple[-1]]" — "The last encoding component is **always** located in the end,
   even if n_bins == 1", "The leading n_bins - 1 components are located in the beginning", "Everything in-between is
@@ -292,15 +297,17 @@ validator still rejects non-0–2 seeds for a new registry.** New RNG seeds are 
 
 **Contrasts** (candidate − reference; same seeds; seed-mean ensemble and single-fit means; game-block bootstrap):
 
-| name | candidate | reference | isolates | held |
-|---|---|---|---|---|
-| `ple_residual_counts_vs_periodic_residual_counts` | ple_residual_counts | periodic_residual_counts | `embedding_type_single` | input columns, d 8, workload counts, backbone residual, head single, dropout .1 |
-| `ple_tabm_residual_counts_vs_tabm_residual_counts` | ple_tabm_residual_counts | tabm_residual_counts | `embedding_type_tabm` | as above + head tabm_mini k 8 |
-| `ple_tabm_residual_counts_vs_ple_residual_counts` | ple_tabm_residual_counts | ple_residual_counts | `ensemble_head_ple` | embedding ple, workload counts, backbone residual |
-| `periodic_residual_counts_vs_control` | periodic_residual_counts | control | bundle | — |
-| `ple_residual_counts_vs_control` | ple_residual_counts | control | bundle | — |
-| `tabm_residual_counts_vs_control` | tabm_residual_counts | control | bundle | — |
-| `ple_tabm_residual_counts_vs_control` | ple_tabm_residual_counts | control | bundle | — |
+| name | candidate | reference | isolates | held | changed (registry `CHANGED`) |
+|---|---|---|---|---|---|
+| `ple_residual_counts_vs_periodic_residual_counts` | ple_residual_counts | periodic_residual_counts | `embedding_type_single` | input columns, d 8, workload counts, backbone residual, head single, dropout .1 | input |
+| `ple_tabm_residual_counts_vs_tabm_residual_counts` | ple_tabm_residual_counts | tabm_residual_counts | `embedding_type_tabm` | as above + head tabm_mini k 8 | input |
+| `ple_tabm_residual_counts_vs_ple_residual_counts` | ple_tabm_residual_counts | ple_residual_counts | `ensemble_head_ple` | embedding ple, workload counts, backbone residual | head |
+| `periodic_residual_counts_vs_control` | periodic_residual_counts | control | bundle | — | input, workload, backbone, dropout_rate, dropout_position |
+| `ple_residual_counts_vs_control` | ple_residual_counts | control | bundle | — | input, workload, backbone, dropout_rate, dropout_position |
+| `tabm_residual_counts_vs_control` | tabm_residual_counts | control | bundle | — | input, workload, backbone, dropout_rate, dropout_position, head |
+| `ple_tabm_residual_counts_vs_control` | ple_tabm_residual_counts | control | bundle | — | input, workload, backbone, dropout_rate, dropout_position, head |
+
+bundle rows change more than one factor; non-bundle rows exactly one (registry check). held (registry factors): row 3 also holds dropout .1; input columns and d = 8 are held structurally (identical `context_continuous`, `ARMS` n_bins/d, factory architecture check). [wiring review §5]
 
 Full candidate list = the 4 non-control arms above; 7 contrasts. No extra arms, seeds or contrasts after any score
 is read. The `embedding_type × head` interaction (difference of the first two rows) may be printed descriptively;
@@ -388,8 +395,8 @@ periodic_residual_counts 217.2 (max 245.2), tabm_residual_counts 510.3 (max 605.
 Base for the module code: a branch containing `codex/p34-register-1004` (a5fe718). The DRAFT's own branch
 (b0593aa lineage) has no `pitchmdp/direct_*` module at all, and a5fe718 is not its ancestor [review N8].
 
-1. `pitchmdp/direct_ple_residual_model.py`: `PiecewiseLinearEmbedding` (formula above), `PLEResidualNetwork`,
-   `PLETabMResidualNetwork`, `DirectPLEResidualModel` / `DirectPLETabMResidualModel` (fit override computes bins,
+1. `pitchmdp/direct_ple_model.py` (sha256 `d3575019f971b06ba26060a1fa31e3894a070fd3b4b88191393743cb16ea175e`, reviewed
+   `840c771`, disposition `c2352f8`): `DirectPLEResidualModel` / `DirectPLETabMResidualModel` (fit override computes bins,
    own archive formats incl. bins; load refuses other kind, architecture, k, n_bins, d, bins hash or continuous map).
    Frozen modules (`direct_periodic_model`, `direct_periodic_residual_model`, `direct_tabm_model`,
    `direct_tabm_residual_model`, `direct_residual_model`) not edited; their sha256 checked unchanged in a test.
@@ -412,7 +419,9 @@ Base for the module code: a branch containing `codex/p34-register-1004` (a5fe718
    map); registry seed/arm/contrast checks with mutants; frozen-module hashes unchanged.
 6. CUDA smoke of **all 25 tasks** on GPU3/4 (runner SMOKE: 8,192 TRAIN rows, 2 epochs). Note: smoke bins come from
    the smoke TRAIN subset, so smoke verifies wiring and identities only, never bins or scores.
-7. Timing probe (§6 formula) on GPU3/4 after smoke.
+7. `scripts/timing_probe_ple_residual.py` (new; Amendment-2 method, one probe seed outside 29–33, refuses any config but
+   `DRAFT-CUDA-PLE-RESIDUAL-*`), with its own CPU tests and a distinct review before it runs; `timing_probe_tabm_residual.py`
+   is P34-only and is not reused.
 
 **Must be reviewed before registration:** (a) this pre-registration (same-model review, then Codex); (b) the module
 + tests (distinct Opus review → disposition → module sha pinned after disposition); (c) registry/factory/runner/
