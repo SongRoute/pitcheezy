@@ -113,4 +113,7 @@ e2e OPE 칸이 비면 "완료"가 아니다. 숫자는 results/에서 옮겨 적
 | EXP-P28-001 | 같은안정성진단을봉인150경기전체로확장,50shards | 등록·P26집계성공뒤실행대기, 아직실행전 | 6584b1c; 18경기중복은독립근거로합산하지않음 |
 | EXP-P27-001 | 구조3×정보3 전체 조합 + 학습량3 + 투수정보3, 15방식×3seed | 45/45 본 학습·집계 완료. 수치 임베딩+투수 정보 조합에 개발 개선 신호 | 등록7531dfc, source112d90c; 실제 상태는 자동 상태판 |
 | EXP-P29-001 | 기존 구조/ResNet/수치 임베딩 × 출력층 dropout 추가 유무, 6방식×3seed | 18/18 본 학습·집계 완료. 다른 구조의 dropout 추가 효과는 주 범위 불확실 | 등록c7bbc21, source6a7e392; P25를 본 뒤 정한 후속, 기존 ResNet 블록 dropout 유지 |
-| EXP-P30-001 | 수치 임베딩의 정보3종×dropout3종+기준, 10방식×새 seed3–7 | CUDA 사전 점검50개·식별자 검증 통과, 10/4 07:30:58 본 학습50회 시작 | 등록a78ba3a, source5227ee1, [기동 근거](reviews/PM-continuous-launch-2026-10-04.md). 반복 DEV이며 새 시드는 새 자료가 아님 |
+| EXP-P30-001 | 수치 임베딩의 정보3종×dropout3종+기준, 10방식×새 seed3–7 | 상태파일상50/50 본 학습·집계 완료, PM 결과 해석 대기 | 등록a78ba3a, source5227ee1, [기동 근거](reviews/PM-continuous-launch-2026-10-04.md). 반복 DEV이며 새 시드는 새 자료가 아님 |
+| EXP-P31-001 | TabM 계열 실험,15fit | 10/4 12:59 상태파일상15/15 본 학습·집계 완료, Codex 과학 검토 대기 | newsrv queue-p31-001, score-p31-state.json; Opus 작업대장T11–T13 |
+| EXP-P32-001 | 수치 임베딩+잔차 구조 계열,18fit | 10/4 12:59 상태파일상18/18 본 학습·집계 완료, Codex 과학 검토 대기 | newsrv queue-p32-001, score-p32-state.json; Opus 작업대장T17–T18 |
+| EXP-P33-001 | EMA 가중치·dropout 조합 계열,20fit | 10/4 12:59 상태파일상20/20 본 학습·집계 완료, Codex 과학 검토 대기 | newsrv queue-p33-001, score-p33-state.json; 원격 p33-launch.json 작성 명령은 승인 미부여로 보류 |
