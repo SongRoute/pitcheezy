@@ -236,7 +236,7 @@ def test_setup_answer_file_is_distinct_and_checked():
     names = {snapshot_file(p) for p in [f'/api/watch/{GAME}', *all_decision_paths(TIMELINE)]}
     assert snapshot_file(setup_path(GAME)) not in names
     assert check_setup(json.dumps({'game_pk': GAME, 'pitches': []}).encode(), GAME)['pitches'] == []
-    for bad in [{'game_pk': GAME + 1, 'pitches': []}, {'game_pk': GAME}, {'game_pk': GAME, 'pitches': {}}]:
+    for bad in [{'game_pk': GAME + 1, 'pitches': []}, {'game_pk': GAME}, {'game_pk': GAME, 'pitches': {}}, [], 'x', None]:
         with pytest.raises(SystemExit):
             check_setup(json.dumps(bad).encode(), GAME)
 

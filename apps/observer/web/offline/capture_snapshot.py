@@ -63,7 +63,7 @@ def setup_path(game_pk):
 def check_setup(body, game_pk):
     """A saved setup answer must be for this game and hold a pitch list; anything else stops the capture."""
     view = json.loads(body)
-    if view.get('game_pk') != game_pk or not isinstance(view.get('pitches'), list):
+    if not isinstance(view, dict) or view.get('game_pk') != game_pk or not isinstance(view.get('pitches'), list):
         raise SystemExit(f'setup answer is not a pitch list for game {game_pk}')
     return view
 

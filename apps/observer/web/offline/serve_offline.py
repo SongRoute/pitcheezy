@@ -149,7 +149,8 @@ def main():
         server = ThreadingHTTPServer((args.host, args.port), make_handler(args.dist, manifest, answers))
     except OSError as e:
         raise SystemExit(f'{args.host}:{args.port} 포트를 열지 못했어요({e.strerror}). 다른 번호로: --port {args.port + 1}')
-    print(f'http://{args.host}:{args.port}/showcase  ({len(answers)} saved answers, {manifest["captured_kst"]})',
+    mitt = 'no setup' if manifest.get('setup_rows') is None else f'setup rows {manifest["setup_rows"]}'
+    print(f'http://{args.host}:{args.port}/showcase  ({len(answers)} saved answers, {mitt}, {manifest["captured_kst"]})',
           flush=True)
     try:
         server.serve_forever()
