@@ -92,7 +92,7 @@ Additive: two new arms only; every frozen module, arm and earlier source hash st
 
 **Primary sources — B3 re-read from the original documents (2026-10-04, module author, plain `git clone` /
 `curl` reads into `/tmp/pz-p35-module-src/`, no install, no WebFetch/WebSearch).** The earlier WebFetch-summary
-block is kept below, struck through, with each old claim settled in the table after it.
+block is kept below, struck through, with each old claim settled in the list after it.
 
 <details><summary>Superseded WebFetch-summary text (struck through)</summary>
 

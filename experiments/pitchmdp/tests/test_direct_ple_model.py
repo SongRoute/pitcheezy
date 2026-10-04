@@ -386,3 +386,17 @@ def test_architecture_constants_are_not_aliased():
 def test_frozen_modules_are_byte_identical():
     for name, digest in FROZEN.items():
         assert hashlib.sha256((PROJECT / 'pitchmdp' / name).read_bytes()).hexdigest() == digest, name
+
+
+def test_padded_weight_entries_cannot_reach_the_output_even_if_nonzero():
+    """Holds by two mechanisms (zero padded encoding and the weight mask); removing only the mask keeps it green."""
+    bins = list(synthetic_bins())
+    bins[0], bins[1] = np.array([.5], np.float32), np.array([-1., 2.], np.float32)  # T = 0 and T = 1
+    net = ple.PLEResidualNetwork(*SHAPE, CONT, bins, **KW)
+    net.eval()
+    x = tensors(20, 9)
+    with torch.no_grad():
+        net.ple_weight.copy_(torch.randn_like(net.ple_weight))
+        before = net(*x)
+        net.ple_weight.add_(1e3 * (1 - net.ple_mask)[..., None])  # only padded entries change
+    assert torch.equal(net(*x), before)
