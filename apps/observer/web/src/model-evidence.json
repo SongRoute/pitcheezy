@@ -87,7 +87,11 @@
       "experiments/pitchmdp/pitchmdp/matrix_features.py": "b860352e2a3e0098dc749a5e8ebd51a71ccdfaeb8a685336510c6582c4e19533",
       "experiments/pitchmdp/pitchmdp/sequence_delivery.py": "30d9fd1d849cab42023a022d404ad0c9fd86cd632ab15eab310f3129276977a5",
       "experiments/pitchmdp/pitchmdp/matrix_policy.py": "421f3d13f187a27505485790cbe470cd98f38b4af61ccba36a738ee9e2e6793c",
-      "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": "86bed8c9dbbcb6b76075b6ae9caafdad81c6ab5ea48d556e16bc25051f6393b1"
+      "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": "86bed8c9dbbcb6b76075b6ae9caafdad81c6ab5ea48d556e16bc25051f6393b1",
+      "experiments/pitchmdp/pitchmdp/sequence_data.py": "7a1d00a822a5c58f349e1608129c93c17031f77bc0afd964a3b6f025e9fe4a65",
+      "experiments/pitchmdp/pitchmdp/matrix_g0_whole.py": "da7b65ca5f3214dd49034680191d1310ff37d92dd160135268eca52d3048e04e",
+      "experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py": "b39b8236aeb904627d531d3201f85a79da33e8c69bbe320b22f1e92e35f2ff83",
+      "experiments/pitchmdp/scripts/run_sequence_frequency_baselines.py": "ade8fbf29649df85bd6a69fb537b1e5e4fd1c603895ece6948e1cec7c78622e9"
     },
     "anchors": {
       "experiments/pitchmdp/pitchmdp/matrix_features.py": [
@@ -95,7 +99,8 @@
       ],
       "experiments/pitchmdp/pitchmdp/sequence_delivery.py": [
         "TIERS = [('pitch_type', 'p_throws', 'stand'),",
-        "Every retained vector was one actual TRAIN delivery"
+        "Every retained vector was one actual TRAIN delivery",
+        "tokens, valid = store.gather(repeated, current=samples.reshape(-1, samples.shape[-1]))"
       ],
       "experiments/pitchmdp/pitchmdp/matrix_policy.py": [
         "pitch_type=action",
@@ -104,11 +109,25 @@
       "docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md": [
         "## 3. ARM-B 식 (구종-only",
         "π_ref^B·exp(Q̂^ref/τ)"
+      ],
+      "experiments/pitchmdp/pitchmdp/sequence_data.py": [
+        "PHYSICAL_COLUMNS = (\"effective_speed\", \"release_spin_rate\", \"spin_axis\",",
+        "\"pfx_x\", \"pfx_z\", \"plate_x\", \"plate_z\")"
+      ],
+      "experiments/pitchmdp/pitchmdp/matrix_g0_whole.py": [
+        "'draws': 400, 'kind': 'flatten_mlp'"
+      ],
+      "experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py": [
+        "'primary': weights[0] * calibrated + (1 - weights[0]) * frequency['dev']"
+      ],
+      "experiments/pitchmdp/scripts/run_sequence_frequency_baselines.py": [
+        "TYPE_KEYS = [\"pitch_type\", *COUNT_KEYS]"
       ]
     },
     "facts": [
       "Current pitch-type input is the scored row's actual pitch type unless candidate types are passed (DEV scoring: actual thrown type).",
-      "Current physical delivery (location etc.) is not an input before the pitch; it is averaged over 400 TRAIN deliveries keyed by pitcher/pitch type/hand/count tiers with league fallback.",
+      "Current physical delivery (speed, spin rate/axis, movement, location; 8 channels) is not an input before the pitch; it is averaged over 400 TRAIN deliveries keyed by pitcher/pitch type/hand/count tiers with league fallback (P11 G0 path: 400 draws, no candidate types passed to gather).",
+      "Not on the card (Q&A only): the P11 'service model' score is the June blend weight*mean(5 neural members) + (1-weight)*frequency baseline (C1 ensemble weight 0.7468, results/EXP-P10-001.json), and the frequency baseline also conditions on the actual pitch type (type/count/hand, plus outs/bases in the context level).",
       "ARM-B recommends pitch type only: each candidate type is scored by simulated full-PA defensive WE and probability is shifted from the TRAIN pitch-mix baseline toward higher value (P3).",
       "The watch screen location is a realized-delivery proxy, not evaluated (served /api/watch location.basis realized_delivery_proxy, evaluated false)."
     ]

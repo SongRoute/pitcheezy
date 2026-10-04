@@ -21,7 +21,7 @@ export default function ModelEvidenceCard() {
     <h3>1. 예측 정확도 (서비스 모델)</h3>
     <ul className="model-list">
       <li><b>무엇을 예측하나</b><span>던질 구종이 정해졌을 때 다음 공 한 개의 결과 {p.outcomeClasses}종(볼·스트라이크·파울·아웃·안타 종류 등)이 나올 확률</span>
-        <span>공이 들어갈 위치는 던지기 전에 알 수 없어, 학습 기간 기록에서 뽑은 투구 {c.deliveryDraws}개로 평균합니다. 아래 점수는 평가 투구마다 실제로 던진 구종을 넣어 계산했습니다.</span></li>
+        <span>공의 위치·구속·회전 등은 던지기 전에 알 수 없어, 학습 기간 기록에서 뽑은 투구 {c.deliveryDraws}개로 평균합니다. 아래 점수는 평가 투구마다 실제로 던진 구종을 넣어 계산했습니다.</span></li>
       <li><b>평가 자료</b><span>{p.devWindow[0]} ~ {p.devWindow[1]} 전체 MLB 중 평가 조건을 만족한 {n(p.pitches)}구(전체 {n(p.requestedPitches)}구 중) · {n(p.games)}경기. 학습·보정 기간(~6월) 뒤의 자료입니다.</span></li>
       <li><b>로그손실 (낮을수록 좋음)</b><span>서비스 모델 {f4(p.g0.nll)} · 상황 빈도 기준 {f4(p.frequency.nll)}</span>
         <span>차이 −{lower(p.deltaNll)} (95% 구간 −{lower(lo)} ~ −{lower(hi)}, 경기 단위 재표본 {n(p.bootstrapDraws)}회, 시드 {p.negativeSeeds}/{p.seeds}개 모두 빈도 기준보다 낮음)</span></li>

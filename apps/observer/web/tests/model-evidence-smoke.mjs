@@ -49,7 +49,16 @@ if (process.env.MODEL_EVIDENCE_REPO) {  // exact identity with the committed res
   // conditioning sentences: code/contract facts read from the pinned commit (not the moving working tree)
   const c = ev.conditioning;
   assert.equal(c.deliveryDraws, 400);
+  assert.equal(c.sourceCommit, ev.source.repoCommit, 'conditioning sources at the commit the card cites');
+  // every sentence keeps its source: dropping a pin (or its anchors) must fail, not silently check less
+  assert.deepEqual(Object.keys(c.files).sort(), ['docs/contracts/MLB-2026-POLICY-PREPARATION-v1.md',
+    'experiments/pitchmdp/pitchmdp/matrix_features.py', 'experiments/pitchmdp/pitchmdp/matrix_g0_whole.py',
+    'experiments/pitchmdp/pitchmdp/matrix_g0_whole_metrics.py', 'experiments/pitchmdp/pitchmdp/matrix_policy.py',
+    'experiments/pitchmdp/pitchmdp/sequence_data.py', 'experiments/pitchmdp/pitchmdp/sequence_delivery.py',
+    'experiments/pitchmdp/scripts/run_sequence_frequency_baselines.py'], 'conditioning source files');
+  assert.deepEqual(Object.keys(c.anchors).sort(), Object.keys(c.files).sort(), 'one anchor list per pinned file');
   for (const [rel, sha] of Object.entries(c.files)) {
+    assert(c.anchors[rel].length > 0, `${rel} has anchors`);
     const raw = execFileSync('git', ['-C', process.env.MODEL_EVIDENCE_REPO, 'show', `${c.sourceCommit}:${rel}`], { maxBuffer: 1 << 24 });
     assert.equal(createHash('sha256').update(raw).digest('hex'), sha, `${rel} sha256 at ${c.sourceCommit.slice(0, 7)}`);
     for (const anchor of c.anchors[rel]) assert(raw.toString().includes(anchor), `${rel} anchor: ${anchor}`);
@@ -99,10 +108,10 @@ try {
       '해가 없다는 증명도 아닙니다', '위에서 뺀 34,763타석은 2025년까지 학습 기록이 없는 투수로 시작한 타석입니다',
       '화면에서도 이런 투수에게는 추천을 만들지 않습니다', '모든 면에서 나은 것은 아닙니다', '그 가정이 맞을 때만 인과 효과로 읽을 수 있습니다', '여러 번 본 개발용 자료', '공개 뒤 승리확률 변화는 추천의 효과를 보여 주지 않습니다',
       '독립 검토 전이라 이 카드에 넣지 않았습니다',
-      '던질 구종이 정해졌을 때 다음 공 한 개의 결과 10종', '학습 기간 기록에서 뽑은 투구 400개로 평균합니다', '평가 투구마다 실제로 던진 구종을 넣어 계산했습니다',
+      '던질 구종이 정해졌을 때 다음 공 한 개의 결과 10종', '공의 위치·구속·회전 등은 던지기 전에 알 수 없어', '학습 기간 기록에서 뽑은 투구 400개로 평균합니다', '평가 투구마다 실제로 던진 구종을 넣어 계산했습니다',
       '추천은 던질 구종만 고릅니다', '타석이 끝날 때까지의 수비 승리확률을 모의 계산하고', '위치 표시는 그 투수의 2025년까지 실제 투구 분포에서 잡은 근사이며, 평가하지 않았습니다', '레포 b38bea6', 'EXP-P11-001 44dae07c', 'MLB-2026-OPE-v1 0bb8fcd0', '결정 D87·D131'])
       assert(text.includes(t), `detail: ${t}`);
-    for (const t of ['학습·선택에는 쓰지', '예측은 좋아졌', '모두 개선)'])  // overclaims removed in review (2026 exposure D87; 'better than frequency', not 'improved')
+    for (const t of ['학습·선택에는 쓰지', '예측은 좋아졌', '모두 개선)', '공이 들어갈 위치는'])  // overclaims removed in review (2026 exposure D87; 'better than frequency', not 'improved')
       assert(!text.includes(t), `overclaim: ${t}`);
     assert.equal(await card.locator('a, button, iframe, video').count(), 0, 'no navigation from the evidence card');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'no horizontal overflow');
