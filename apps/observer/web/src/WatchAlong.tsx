@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import WatchSummaryPanel from './WatchSummaryPanel';
 import showcaseSource from './showcase-scenes.json';
 import './watch-along.css';
@@ -20,6 +21,9 @@ type Timeline = { badge: string; game: { game_pk: number; date: string; game_typ
   policy: { name: string; identity_sha256: string; tau: number; note: string }; location: { note: string; zone_bounds: Bounds };
   we_note: string; coverage: { pitch_decisions: number; ready: number; ready_share_of_pitches: number | null }; decisions: Decision[] };
 type GameItem = Timeline['game'] & { pitches?: number; ready?: number; ready_share?: number | null };
+// Catcher setup read from the broadcast video after the game (D151, same GET /api/watch/{game}/setup as Game.tsx): horizontal only.
+type SetupView = { game_pk: number; badge?: string; pitches: { at_bat_number: number; pitch_number: number; status: string; plate_x_feet: number | null }[] };
+type Setups = { game: number; badge: string | null; x: Map<string, number | null> };  // null = the video module abstained on that pitch
 type LiveGame = { game_pk: number; game_type: string; start: string | null; status: string; live: boolean; away_team: string; home_team: string };
 
 export const ZONE_BOUNDS: Bounds = { bottom: 1.6, top: 3.3899 };
@@ -77,7 +81,9 @@ function Outs({ outs }: { outs: number }) {
   return <span className="wa-outs" aria-label={`${outs}아웃`}>{[0, 1, 2].map(i => <i key={i} className={i < outs ? 'on' : ''} />)}<em>{outs}아웃</em></span>;
 }
 
-export function Zone({ bounds, candidates, actual }: { bounds: Bounds; candidates: Candidate[]; actual: { x: number | null; z: number | null } | null }) {
+export const SETUP_X_DRAWN = 1.7;  // feet either side of centre the zone picture can show; beyond it the mitt is described, not drawn
+
+export function Zone({ bounds, candidates, actual, setupX }: { bounds: Bounds; candidates: Candidate[]; actual: { x: number | null; z: number | null } | null; setupX?: number | null }) {
   const x = (v: number) => 90 + v / 1.6 * 80, y = (v: number) => 200 - (v - .6) / 3.8 * 190;
   const left = x(-.83), right = x(.83), top = y(bounds.top), bottom = y(bounds.bottom);
   const cells = [0, 1, 2];
@@ -86,12 +92,17 @@ export function Zone({ bounds, candidates, actual }: { bounds: Bounds; candidate
     <rect x={left} y={top} width={right - left} height={bottom - top} className="wa-zone-box" />
     {cells.map(i => <line key={`v${i}`} x1={left + (right - left) * i / 3} x2={left + (right - left) * i / 3} y1={top} y2={bottom} className="wa-zone-grid" />)}
     {cells.map(i => <line key={`h${i}`} y1={top + (bottom - top) * i / 3} y2={top + (bottom - top) * i / 3} x1={left} x2={right} className="wa-zone-grid" />)}
+    {typeof setupX === 'number' && Math.abs(setupX) <= SETUP_X_DRAWN && <g className="wa-setup-mark" data-x={setupX} role="img" aria-label="포수 미트 가로 위치 추정">
+      {/* as in Game.tsx: a dashed vertical line with edge ticks, across the plate only; no claim about height */}
+      <line x1={x(setupX)} x2={x(setupX)} y1={top - 3} y2={bottom + 3} />
+      <path d={`M${x(setupX) - 5} ${top - 10}h10l-5 6z`} /><path d={`M${x(setupX) - 5} ${bottom + 10}h10l-5 -6z`} />
+      <text x={x(setupX)} y={top - 13} textAnchor="middle">미트</text></g>}
     {candidates.filter(c => c.target).map(c => {
       const key = `${c.target!.x}:${c.target!.z}`, offset = seen.has(key) ? 9 : 0; seen.add(key);
       return <g key={c.rank} className={`wa-target rank-${c.rank}`}><circle cx={x(c.target!.x) + offset} cy={y(c.target!.z)} r={c.rank === 1 ? 11 : 8} /><text x={x(c.target!.x) + offset} y={y(c.target!.z) + 4} textAnchor="middle">{c.rank}</text></g>;
     })}
     {actual && actual.x !== null && actual.z !== null && <circle className="wa-actual" cx={x(Math.max(-1.1, Math.min(1.1, actual.x)))} cy={y(Math.max(.7, Math.min(4.3, actual.z)))} r="7" />}
-    <text x="90" y="207" textAnchor="middle" className="wa-zone-caption">포수 쪽에서 본 존 · 숫자=추천 · 주황=실제</text>
+    <text x="90" y="207" textAnchor="middle" className="wa-zone-caption">포수 쪽에서 본 존 · {candidates.length ? '숫자=추천 · ' : ''}주황=실제</text>
   </svg>;
 }
 
@@ -131,14 +142,14 @@ export function Board({ s, away, home, pitcher, batter, extra }: { s: Situation;
 }
 
 /** Type first, then the approximate zone; numbers folded (D49). */
-export function Recommendation({ candidates, bounds, actual, note }: { candidates: Candidate[]; bounds: Bounds; actual: { x: number | null; z: number | null } | null; note: string }) {
+export function Recommendation({ candidates, bounds, actual, note, setupX }: { candidates: Candidate[]; bounds: Bounds; actual: { x: number | null; z: number | null } | null; note: string; setupX?: number | null }) {
   const top = candidates[0];
   return <>
     <div className="wa-rec">
       <div className="wa-rec-text"><h2 className="wa-type">{top.pitch_label}</h2><p className="wa-zone-label">{plainZone(top.zone_label)}</p>
         {candidates.length > 1 && <><p className="wa-kicker wa-others-title">다른 후보</p>
           <ol className="wa-others">{candidates.slice(1).map(c => <li key={c.rank}><b>{c.rank}</b><span>{c.pitch_label} <em>· {plainZone(c.zone_label)}</em></span></li>)}</ol></>}</div>
-      <Zone bounds={bounds} candidates={candidates} actual={actual} />
+      <Zone bounds={bounds} candidates={candidates} actual={actual} setupX={setupX} />
     </div>
     <details className="wa-numbers"><summary>숫자로 보기</summary>
       <table><thead><tr><th>구종</th><th>모델이 고를 확률</th><th>이 투수 평소</th></tr></thead>
@@ -216,6 +227,7 @@ export default function WatchAlong() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [guide, setGuide] = useState(() => !embedded && !guideSeen());
+  const [setups, setSetups] = useState<Setups | null>(null);
 
   useEffect(() => {
     if (gamePk === null) return;
@@ -229,6 +241,19 @@ export default function WatchAlong() {
       try { reached = Number(localStorage.getItem(`pitcheezy.watch.${gamePk}.furthest`) ?? 0) || 0; } catch { reached = 0; }
       setIndex(first); setFurthest(Math.min(Math.max(first, reached), t.decisions.length - 1));
     }).catch(e => setError(e.message));
+  }, [gamePk]);
+  useEffect(() => {  // once per game; drawn only for a pitch already revealed, never before
+    setSetups(null);
+    if (gamePk === null) return;
+    const request = new AbortController();
+    get<SetupView>(`/watch/${gamePk}/setup`, request.signal).then(v => {
+      if (request.signal.aborted || v.game_pk !== gamePk || !Array.isArray(v.pitches)) return;
+      const x = new Map<string, number | null>();
+      v.pitches.forEach(p => x.set(`${gamePk}:${p.at_bat_number}:${p.pitch_number}`,
+        p.status !== 'unavailable' && typeof p.plate_x_feet === 'number' && Number.isFinite(p.plate_x_feet) ? p.plate_x_feet : null));
+      setSetups({ game: gamePk, badge: v.badge ?? null, x });
+    }).catch(() => undefined);  // most games have none (404); a failed request draws nothing and says nothing
+    return () => request.abort();
   }, [gamePk]);
   useEffect(() => {
     if (!timeline) return;
@@ -315,6 +340,10 @@ export default function WatchAlong() {
       match: r && t && r.actual.pitch_type ? t.pitch_type === r.actual.pitch_type : null, current: d.index === index };
   });
   const last = index === timeline.decisions.length - 1;
+  // exact game:at_bat:pitch, and only once this very pitch has been revealed. undefined = no line for it, null = abstained
+  const setupX = reveal && reveal.index === decision.index && setups?.game === game.game_pk
+    ? setups.x.get(`${game.game_pk}:${decision.at_bat_number}:${decision.pitch_number}`) : undefined;
+  const ready = decision.pre.status === 'ready' && top;
   return <div className="wa-page wa-has-bar"><Header badge={timeline.badge} back={!embedded} onHelp={embedded ? undefined : () => setGuide(true)} />
     <Board s={s} away={game.away_team} home={game.home_team} pitcher={decision.pitcher.name ?? String(decision.pitcher.id)}
       batter={`${decision.batter.name ?? decision.batter.id} (${decision.batter.side === 'L' ? '좌' : '우'}타)`} extra={`${decision.pitch_number}구째`} />
@@ -332,9 +361,11 @@ export default function WatchAlong() {
       {error && <p className="wa-error" role="alert">{error}</p>}
       <article className="wa-card">
         <p className="wa-eyebrow">투구 전 추천</p>
-        {decision.pre.status === 'ready' && top ? <Recommendation candidates={rec!.candidates} bounds={timeline.location.zone_bounds} actual={reveal?.actual ?? null} note={timeline.location.note} />
+        {ready ? <Recommendation candidates={rec!.candidates} bounds={timeline.location.zone_bounds} actual={reveal?.actual ?? null} note={timeline.location.note} setupX={setupX} />
           : <><h2 className="wa-none">추천 없음</h2><p className="wa-reason">{preReason(decision.pre.reason, reveal !== null)}</p><p className="wa-muted wa-small">실제 투구는 아래 버튼으로 그대로 볼 수 있어요.</p></>}
-        {reveal && <Revealed reveal={reveal} top={top ?? null} decision={decision} game={game} />}
+        {reveal && <Revealed reveal={reveal} top={top ?? null} decision={decision} game={game}
+          setup={setupX === undefined ? null : <SetupNote x={setupX} badge={setups?.badge ?? null}
+            zone={ready ? null : <Zone bounds={timeline.location.zone_bounds} candidates={[]} actual={reveal.actual} setupX={setupX} />} />} />}
       </article>
       {reveal && <WatchSummaryPanel gamePk={timeline.game.game_pk} through={index} />}
       <footer className="wa-foot">
@@ -357,7 +388,24 @@ export default function WatchAlong() {
   </div>;
 }
 
-function Revealed({ reveal, top, decision, game }: { reveal: Reveal; top: Candidate | null; decision: Decision; game: GameItem }) {
+/** After the reveal only: where the catcher set the mitt across the plate, read from the video. Zone = the picture to
+ *  draw it on when no recommendation zone is on screen. */
+function SetupNote({ x, badge, zone }: { x: number | null; badge: string | null; zone: ReactNode }) {
+  const off = x !== null && Math.abs(x) > SETUP_X_DRAWN;
+  return <div className="wa-setup">
+    {x === null ? <p className="wa-setup-line">포수 미트 위치 추정 · 이 공은 영상에서 미트를 읽지 못해 표시하지 않아요.</p> : <>
+      {!off && zone}
+      <p className="wa-setup-line">{off ? `포수 미트 위치 추정 · 존 그림 밖(포수 기준 ${x < 0 ? '왼쪽' : '오른쪽'})이라 그리지 않았어요.`
+        : <><i aria-hidden="true" />점선 = 포수 미트 위치 추정 (가로만)</>}</p></>}
+    <details className="wa-setup-more"><summary>이 표시의 한계</summary>
+      <p>경기 영상에서 AI가 포수가 준비 자세에서 둔 미트를 읽어 홈플레이트 가로 위치로 바꾼 값이에요. 사람 검토 전이고 높이는 표시하지 않아요.</p>
+      <p>투수의 실제 의도나 목표가 아니며 추천 계산에는 쓰지 않아요. 영상에 나온 일부 공만 있고, 미트를 읽지 못한 공은 비워 둬요.</p>
+      <p>이 경기의 정확도는 미측정이에요. 사람 판독과 비교한 평가(M3)는 다른 두 경기의 결과라 이 경기 값이 아니에요.</p>
+      {badge && <p className="wa-tech">{badge}</p>}</details>
+  </div>;
+}
+
+function Revealed({ reveal, top, decision, game, setup }: { reveal: Reveal; top: Candidate | null; decision: Decision; game: GameItem; setup: ReactNode }) {
   const a = reveal.actual, we = reveal.we;
   const battingHome = decision.situation.half === 'Bot';
   const before = we.home_before === null ? null : battingHome ? we.home_before : 1 - we.home_before;
@@ -368,6 +416,7 @@ function Revealed({ reveal, top, decision, game }: { reveal: Reveal; top: Candid
     <p className="wa-result">{a.event_label ?? a.result_label} · {plainZone(a.zone_label)}</p>
     {top && a.pitch_type && <p className={`wa-match ${top.pitch_type === a.pitch_type ? 'same' : ''}`}>{top.pitch_type === a.pitch_type ? '추천 1순위 구종과 같았어요' : `추천 1순위(${top.pitch_label})와 다른 구종`}</p>}
     {a.play_text && <p className="wa-play">{a.play_text}</p>}
+    {setup}
     <WeCard team={battingHome ? game.home_team : game.away_team} before={before} after={after} />
   </section>;
 }
