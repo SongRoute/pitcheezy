@@ -1,0 +1,527 @@
+{
+  "protocol": "cuda_direct_v1",
+  "experiment_id": "DRAFT-CUDA-TABM-RESIDUAL-20261004",
+  "status": "DRAFT",
+  "decision": "DRAFT; smoke only until a distinct review, CUDA smoke on every arm and an explicit registration. No scientific N/G decision, promotion or selection; D131/D155 unchanged.",
+  "purpose": "Exploratory family (pre-registration experiments/pitchmdp/docs/DRAFT-TABM-RESIDUAL-DESIGN-20261004.md, committed before any module code, wiring, smoke or fit of this family; designed after P30-P33 scores were read on repeated DEV: post-selection). Question: with the same periodic input + workload counts, data, loop, epoch cap 60 and calibration chain, does the TabM-mini k=8 shared-weight ensemble on the frozen periodic residual backbone change calibrated direct NLL / Brier / calibration relative to periodic_residual_counts (EXP-P32-001 arm) and tabm_counts (EXP-P31-001 arm)?",
+  "source_configs": {
+    "base_cuda": {
+      "path": "configs/DRAFT-CUDA-DIRECT-20261004.json",
+      "sha256": "8dc8d22b781e25fe0cd972801d6edb5c34a2b927a94e00eeb27ea438d34dc096"
+    },
+    "frontier_run": {
+      "path": "configs/DRAFT-CUDA-FRONTIER-RUN-20261004.json",
+      "sha256": "2b057e8ede5ddb9dd2f880d352fc272fc51fa9e1344c4d7993e55d02bac42fc7"
+    },
+    "data_combo_run": {
+      "path": "configs/DRAFT-CUDA-DATA-COMBO-RUN-20261004.json",
+      "sha256": "87530cc8ccb62b5723bbce8db999e332a582d601a3582659e35ff5a14756c0f9"
+    },
+    "dropout_run": {
+      "path": "configs/DRAFT-CUDA-DROPOUT-RUN-20261004.json",
+      "sha256": "d50f7ca9036e7c5868cadcab8fa9542f0ec70f219f1664104354320a29343d61"
+    },
+    "workload_dropout_run": {
+      "path": "configs/EXP-P30-001.json",
+      "sha256": "7152ebcaef6a764f8084f73a0fa51b2339e930873759b862a6ae08e985954962"
+    },
+    "tabm_run": {
+      "path": "configs/DRAFT-CUDA-TABM-MINI-20261004.json",
+      "sha256": "334528a5904bd78f9f4a70955114d3434f3085b99a079a699daff07d252eae70"
+    },
+    "design_note": {
+      "path": "experiments/pitchmdp/docs/DRAFT-TABM-RESIDUAL-DESIGN-20261004.md",
+      "sha256": "612a489287aef5aa25bb6371c45ab17768fbf3a05b257c7db1d196fb34c5e238"
+    },
+    "embed_residual_run": {
+      "path": "configs/DRAFT-CUDA-EMBED-RESIDUAL-20261004.json",
+      "sha256": "bb0ce6209db7b5b6bbc9243cb57e7ba4913dc1cf567756c67feacf2f508ac14e"
+    },
+    "ema_run": {
+      "path": "configs/DRAFT-CUDA-EMA-20261004.json",
+      "sha256": "a6cf64eb2698a47c3a9302bd07abdecbdcf33e6057b14654a1bd947058ce8de7"
+    },
+    "tabm_registered": {
+      "path": "configs/EXP-P31-001.json",
+      "sha256": "a26442bccde9d8d5d0f46e3863d42d9361132078184b06c0a4a44d2233010404"
+    },
+    "embed_residual_registered": {
+      "path": "configs/EXP-P32-001.json",
+      "sha256": "e8b60d820477b222cfe7d3a61f654735a3952aba97e521bd85846dcba6374fdd"
+    },
+    "ema_registered": {
+      "path": "configs/EXP-P33-001.json",
+      "sha256": "e803ce31b8451c8c70c58cc7513b739e2d4123a5a512751ca4ea446311976d88"
+    }
+  },
+  "export": {
+    "splits": [
+      "train",
+      "earlystop",
+      "temperature",
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "fit_splits": [
+      "train"
+    ],
+    "earlystop_split": "earlystop",
+    "temperature_split": "temperature",
+    "predict_splits": [
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "workload_columns": [
+      "prior_records_per100",
+      "thruorder_minus1_over3",
+      "log_rest_days",
+      "rest_missing"
+    ],
+    "shapes": {
+      "length": 6,
+      "n_token": 38,
+      "n_context": 52,
+      "n_workload": 4
+    },
+    "last_year": 2025,
+    "normalization": "none learned here; arrays are the frozen EXP-P4-001 TRAIN-fitted transforms (parent preparation pinned)",
+    "manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+    "context_layout": {
+      "groups": {
+        "base": [
+          0,
+          28
+        ],
+        "pitcher_profile": [
+          28,
+          51
+        ],
+        "pitcher_support": [
+          51,
+          52
+        ]
+      },
+      "base_features": [
+        "balls",
+        "strikes",
+        "outs",
+        "inning",
+        "defensive_score_lead",
+        "defender_is_home",
+        "first_base",
+        "second_base",
+        "third_base",
+        "batter_left",
+        "pitcher_left",
+        "six_batter_style_rates",
+        "six_style_reliabilities",
+        "five_soft_memberships"
+      ],
+      "style_columns": [
+        "batter_style_contact_prior",
+        "batter_style_swing_prior",
+        "batter_style_walk_prior",
+        "batter_style_strikeout_prior",
+        "batter_style_isolated_power_prior",
+        "batter_style_groundball_prior"
+      ],
+      "reliability_columns": [
+        "batter_style_contact_reliability",
+        "batter_style_swing_reliability",
+        "batter_style_walk_reliability",
+        "batter_style_strikeout_reliability",
+        "batter_style_isolated_power_reliability",
+        "batter_style_groundball_reliability"
+      ],
+      "n_clusters": 5,
+      "pitcher_profile_columns": [
+        "effective_speed",
+        "release_spin_rate",
+        "pfx_x",
+        "pfx_z",
+        "left_share",
+        "type_CH",
+        "type_CS",
+        "type_CU",
+        "type_EP",
+        "type_FA",
+        "type_FC",
+        "type_FF",
+        "type_FO",
+        "type_FS",
+        "type_KC",
+        "type_KN",
+        "type_PO",
+        "type_SC",
+        "type_SI",
+        "type_SL",
+        "type_ST",
+        "type_SV",
+        "type_UN"
+      ],
+      "stripped_tail": 7
+    },
+    "context_layout_source": "export manifest lineage.context_layout (SequenceContext.report features, Archetypes.report style/reliability columns and n_clusters, SharingContext clusters columns); names via direct_frontier_registry.direct_context_names; grouped labels map to names only through these source equivalences",
+    "context_names": [
+      "balls",
+      "strikes",
+      "outs",
+      "inning",
+      "defensive_score_lead",
+      "defender_is_home",
+      "first_base",
+      "second_base",
+      "third_base",
+      "batter_left",
+      "pitcher_left",
+      "batter_style_contact_prior",
+      "batter_style_swing_prior",
+      "batter_style_walk_prior",
+      "batter_style_strikeout_prior",
+      "batter_style_isolated_power_prior",
+      "batter_style_groundball_prior",
+      "batter_style_contact_reliability",
+      "batter_style_swing_reliability",
+      "batter_style_walk_reliability",
+      "batter_style_strikeout_reliability",
+      "batter_style_isolated_power_reliability",
+      "batter_style_groundball_reliability",
+      "batter_archetype_membership_0",
+      "batter_archetype_membership_1",
+      "batter_archetype_membership_2",
+      "batter_archetype_membership_3",
+      "batter_archetype_membership_4",
+      "pitcher_effective_speed",
+      "pitcher_release_spin_rate",
+      "pitcher_pfx_x",
+      "pitcher_pfx_z",
+      "pitcher_left_share",
+      "pitcher_type_CH",
+      "pitcher_type_CS",
+      "pitcher_type_CU",
+      "pitcher_type_EP",
+      "pitcher_type_FA",
+      "pitcher_type_FC",
+      "pitcher_type_FF",
+      "pitcher_type_FO",
+      "pitcher_type_FS",
+      "pitcher_type_KC",
+      "pitcher_type_KN",
+      "pitcher_type_PO",
+      "pitcher_type_SC",
+      "pitcher_type_SI",
+      "pitcher_type_SL",
+      "pitcher_type_ST",
+      "pitcher_type_SV",
+      "pitcher_type_UN",
+      "pitcher_log1p_train_count_over10"
+    ]
+  },
+  "training": {
+    "epochs": 60,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005,
+    "loss_weighting": "uniform",
+    "hpo_trials": 0
+  },
+  "calibration": {
+    "method": "minimize_scalar bounded",
+    "bounds": [
+      0.5,
+      2.5
+    ],
+    "chain": "G0 SharingPredictor: log(clip(softmax(logits),1e-30,1)) / T",
+    "split": "temperature"
+  },
+  "arm_notes": {
+    "control": "MatrixModel flatten_mlp 128, no workload: the same-family CUDA control (exact earlier entry, runner requirement)",
+    "periodic_residual_counts": "EXP-P32-001 arm unchanged (frozen PLR-lite embedding + residual backbone, blocks Dropout .1, counts workload), old code path",
+    "tabm_counts": "EXP-P31-001 arm unchanged (frozen periodic flatten network + TabM-mini k=8, head dropout 0, counts workload), old code path",
+    "new_arm": "tabm_residual_counts = direct_tabm_residual_model.DirectTabMResidualModel: PeriodicResidualNetwork with its final Linear discarded, TabM-mini scaling r [k, D] on the backbone input, shared residual backbone, per-member output W [k,128,10] + b [k,10]; mean member CE; ensemble logits log mean member softmax; external temperature on that",
+    "epoch_cap": "Epoch cap 60 for every arm, fixed in the pre-registration before any fit (P31: 3/6 TabM fits stopped at the 30 cap). No learning-rate schedule: a run stopping by patience 5 before epoch 30 is algorithmically unchanged. fit.json records cap, epochs_run, best_epoch and stopped_by per fit; numbers are NOT compared with P31/P32 (other cap, seeds, run batch)",
+    "bundle": "tabm_residual_counts - tabm_counts changes the backbone and dropout together (residual blocks .1 vs head dropout 0); disclosed, not separated",
+    "not_faithful": "adaptation of TabM-mini (Gorishniy, Kotelnikov, Babenko ICLR 2025 arXiv:2410.24210; yandex-research/tabm 28e47ae) onto our residual backbone; no claim that paper results transfer"
+  },
+  "control_reuse": "none: fresh control and fresh parent arms on seeds 24-28; earlier P24-P33 tasks are never mixed in",
+  "seeds": [
+    24,
+    25,
+    26,
+    27,
+    28
+  ],
+  "seed_rule": "only this registry family may use seeds 24-28: exactly [24, 25, 26, 27, 28], no repeat_tag; disjoint from P24/P25/P27/P29 (0-2), P30 (3-7), the reserved P30 repeat (8-12), P31 (13-15), P32 (16-18) and P33 (19-23). New RNG seeds are not a new evaluation population",
+  "fits": 20,
+  "arms": [
+    {
+      "name": "control",
+      "priority": 1,
+      "model": "flatten_mlp",
+      "width": 128,
+      "workload": []
+    },
+    {
+      "name": "periodic_residual_counts",
+      "priority": 1,
+      "embed_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "embed_residual",
+      "model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "name": "tabm_counts",
+      "priority": 1,
+      "tabm": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "tabm_mini",
+      "model": "periodic_tabm_mini_mlp",
+      "base_model": "periodic_flatten_mlp",
+      "width": 128,
+      "head_dropout": 0.0,
+      "k": 8,
+      "scaling_init": "normal",
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "name": "tabm_residual_counts",
+      "priority": 1,
+      "tabm_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "tabm_residual",
+      "model": "periodic_residual_tabm_mini_mlp",
+      "base_model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "k": 8,
+      "scaling_init": "normal",
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    }
+  ],
+  "comparison": {
+    "control_arm": "control",
+    "scorer": "experiments/pitchmdp/scripts/score_cuda_direct.py (portable, numpy only; runs on newsrv)",
+    "scope": "unblended calibrated direct-head probabilities of every arm vs the same-family, same-device CUDA control on dev and mlb_dev, BEFORE June blend / G0 mix; descriptive repeated-DEV only; no decision, ranking, automatic selection, interaction verdict or winner",
+    "not_compared": "P24-P33 tasks, frozen MPS numbers or other families (different control/code/seeds/epoch cap); saved-probability comparisons (TabM 1-fit / 5-fit means vs means of n separately trained single networks) only from a grid file committed BEFORE any score of this family is read, never a contrast here",
+    "tabm_residual_contrasts": [
+      {
+        "name": "tabm_residual_counts_vs_periodic_residual_counts",
+        "candidate": "tabm_residual_counts",
+        "reference": "periodic_residual_counts",
+        "isolates": "ensemble_head",
+        "held": {
+          "input": "periodic",
+          "workload": "counts",
+          "backbone": "residual"
+        }
+      },
+      {
+        "name": "tabm_residual_counts_vs_tabm_counts",
+        "candidate": "tabm_residual_counts",
+        "reference": "tabm_counts",
+        "isolates": "backbone_bundle",
+        "held": {
+          "input": "periodic",
+          "workload": "counts",
+          "head": "tabm_mini"
+        }
+      },
+      {
+        "name": "tabm_counts_vs_control",
+        "candidate": "tabm_counts",
+        "reference": "control",
+        "isolates": "tabm_bundle_vs_control",
+        "held": {
+          "backbone": "flatten",
+          "dropout_rate": 0.0
+        }
+      },
+      {
+        "name": "periodic_residual_counts_vs_control",
+        "candidate": "periodic_residual_counts",
+        "reference": "control",
+        "isolates": "residual_bundle_vs_control",
+        "held": {
+          "head": "single"
+        }
+      },
+      {
+        "name": "tabm_residual_counts_vs_control",
+        "candidate": "tabm_residual_counts",
+        "reference": "control",
+        "isolates": "tabm_residual_bundle_vs_control",
+        "held": {}
+      }
+    ],
+    "tabm_residual_scope": "5 pre-registered pairs (candidate minus reference, same seeds, seed-mean ensemble and single-fit, whole-game bootstrap): ensemble_head (TabM-mini on the residual backbone), backbone_bundle (residual vs flatten under TabM-mini; backbone and dropout change together), and each non-control arm vs control (multi-factor bundles). Exploratory, post-selection, repeated DEV. No ranking, winner, interaction verdict or promotion"
+  },
+  "device": {
+    "kind": "cuda",
+    "allowed_gpu_uuids": [
+      "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9",
+      "GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99"
+    ],
+    "max_parallel": 2,
+    "cpu_fallback": false
+  },
+  "queue": {
+    "timezone": "Asia/Seoul",
+    "date": "2026-10-04",
+    "date_note": "PLACEHOLDER family deadline: queue.date / no_new_fit_after / kill_own_after / aggregate_by must be re-dated to the launch day at registration (fails closed after 2026-10-04 19:00 KST until then)",
+    "batch": "DRAFT TabM-mini x periodic residual 4 arms x seeds 24-28, epoch cap 60; smoke only until registration",
+    "no_new_fit_after": "19:00",
+    "kill_own_after": "19:30",
+    "aggregate_by": "20:00",
+    "task_timeout_seconds": 3600,
+    "family_budget_seconds": 36000,
+    "max_attempts": 2,
+    "order": "priority then seed then arm (all 4 arms priority 1; config order)",
+    "start_after": "no other family's queue running on GPU3/4 (EXP-P30-001, EXP-P31-001, EXP-P32-001, EXP-P33-001 terminal; EXP-P30-002 or any root queue not running); never concurrent with another family's queue. Launch with --lock-dir /home/sds733/pitcheezy-autonomy/gpu-locks (the common per-GPU flock); co-scheduled fit seconds would be recorded as co-scheduled, not as compute cost.",
+    "stop_rule": "any task failing twice aborts the family (no partial comparison, failures reported); smoke time per tabm_residual_counts fit > 1800 s at the 60 cap -> redesign before registration (not silently shortened); no extra arms or seeds after scores are read"
+  },
+  "exposure": "DEV / MLB DEV are the same repeatedly exposed <=2025 rows used for P24-P33; counts and both parents were chosen after reading earlier results (post-selection). Descriptive only: no winner, promotion or verdict fields. G0, D131/D155 unchanged. No 2026 data.",
+  "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks manifest). DEV/mlb_dev only predicted, never used for fit, early stop, temperature or selection.",
+  "execution": {
+    "enabled": false
+  }
+}

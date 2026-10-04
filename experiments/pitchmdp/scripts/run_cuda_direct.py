@@ -60,6 +60,16 @@ equal direct_ema_registry.ARMS (frontier flatten network, dropout 0 or .1, EMA d
 exactly the fixed four-arm family (control and the frontier dropout arm exact) on
 seeds exactly [19, 20, 21, 22, 23], no workload.  Its family check runs first.
 
+TabM-residual arms (DRAFT-CUDA-TABM-RESIDUAL-20261004): an arm marked "tabm_residual":
+true must equal direct_tabm_residual_registry.ARMS (TabM-mini k=8 on the frozen PLR-lite
++ residual backbone, counts workload); a config with such arms must be exactly the fixed
+four-arm family (control, periodic_residual_counts = EXP-P32-001 and tabm_counts =
+EXP-P31-001 exact entries) on seeds exactly [24, 25, 26, 27, 28] with the pre-registered
+epoch cap 60 (every other training entry unchanged).  Its family check runs before the
+EMA / TabM / embedded-residual ones because two of its arms keep those flags.  fit.json
+of this family also records the epoch cap passed to fit, epochs run, best epoch and
+whether the cap or patience stopped the fit.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -99,6 +109,8 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_periodic_residual_model.py', 'pitchmdp/direct_embed_residual_factory.py',
                  'pitchmdp/direct_embed_residual_registry.py',
                  'pitchmdp/direct_ema_model.py', 'pitchmdp/direct_ema_registry.py',
+                 'pitchmdp/direct_tabm_residual_model.py', 'pitchmdp/direct_tabm_residual_factory.py',
+                 'pitchmdp/direct_tabm_residual_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -181,10 +193,25 @@ def uses_ema(config):
     return any('ema' in arm for arm in config['arms'])
 
 
+def uses_tabm_residual(config):
+    return any('tabm_residual' in arm for arm in config['arms'])
+
+
+def training_budget(config):
+    """EXP-P15-001 budget; only the TabM-residual family has its pre-registered epoch cap."""
+    if uses_tabm_residual(config):
+        from pitchmdp.direct_tabm_residual_registry import TRAINING as CAPPED  # torch-free
+        return CAPPED
+    return TRAINING
+
+
 def config_check(config):
     if config.get('protocol') != PROTOCOL:
         raise ValueError('Config is not the cuda_direct_v1 protocol')
-    if uses_ema(config):
+    if uses_tabm_residual(config):
+        from pitchmdp.direct_tabm_residual_registry import check_family  # torch-free; exact arms, seeds 24-28, cap 60
+        check_family(config)
+    elif uses_ema(config):
         from pitchmdp.direct_ema_registry import check_family  # torch-free; exact arms + seeds 19-23
         check_family(config)
     elif uses_tabm(config):
@@ -198,7 +225,7 @@ def config_check(config):
         check_family(config)
     elif config.get('seeds') != [0, 1, 2] or 'repeat_tag' in config:
         raise ValueError('Config is not the cuda_direct_v1 protocol with seeds 0-2')
-    if config['training'] != TRAINING:
+    if config['training'] != training_budget(config):
         raise ValueError('Training budget differs from EXP-P15-001')
     if list(config['calibration']['bounds']) != list(BOUNDS):
         raise ValueError('Temperature bounds differ from JointDelivery.calibrate')
@@ -209,6 +236,13 @@ def config_check(config):
     columns = config['export']['workload_columns']
     names = set()
     for arm in config['arms']:
+        if 'tabm_residual' in arm:
+            from pitchmdp.direct_tabm_residual_registry import check_arm  # torch-free
+            check_arm(arm)
+            if arm['name'] in names or any(c not in columns for c in arm['workload']):
+                raise ValueError('Duplicated TabM-residual arm or unexported workload: ' + arm['name'])
+            names.add(arm['name'])
+            continue
         if 'combo' in arm:
             combo_arm_check(config, arm)
             if arm['name'] in names or any(c not in columns for c in arm['workload']):
@@ -429,6 +463,11 @@ def arm_inputs(arrays, arm, columns):
 # ------------------------------------------------------------------ model / calibration
 
 def build_model(arm, seed, device, context_names=None):
+    if arm.get('tabm_residual') is True:
+        from pitchmdp.direct_tabm_residual_factory import build_tabm_residual
+        if context_names:
+            raise ValueError('TabM-residual arms take no context names')
+        return build_tabm_residual(arm, seed, device)
     if arm.get('ema') is True:
         from pitchmdp.direct_ema_model import build_ema
         if context_names:
@@ -475,6 +514,9 @@ def build_model(arm, seed, device, context_names=None):
 
 
 def load_model(arm, path, device, context_names=None):
+    if arm.get('tabm_residual') is True:
+        from pitchmdp.direct_tabm_residual_factory import load_tabm_residual
+        return load_tabm_residual(arm, path, device)
     if arm.get('ema') is True:
         from pitchmdp.direct_ema_model import load_ema
         return load_ema(arm['name'], path, device)
@@ -541,6 +583,15 @@ def probabilities(log_probs, temperature):
         if not np.isfinite(p).all() or not np.allclose(p.sum(1), 1., atol=1e-8):
             raise ValueError('Direct prediction lost probability mass')
     return result
+
+
+def epoch_record(report, cap, patience):
+    """Epoch cap passed to fit and where the fit stopped, so cap hits are visible per fit."""
+    run, best = int(report['epochs_run']), int(report['best_epoch'])
+    if not 1 <= best <= run <= cap or (run < cap and run - best < patience):
+        raise ValueError('Fit report epochs are inconsistent with the epoch cap and patience')
+    return {'cap': int(cap), 'patience': int(patience), 'epochs_run': run, 'best_epoch': best,
+            'stopped_by': 'patience' if run - best >= patience else 'cap'}
 
 
 def model_device_type(model):
@@ -619,8 +670,9 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         model = build_model(arm, seed, device, names)
         train_inputs = arm_inputs(train, arm, columns)
         context_width = int(train_inputs[2].shape[1])
+        epochs = SMOKE['epochs'] if smoke else spec['epochs']
         model.fit(train_inputs, np.array(train['y']), arm_inputs(early, arm, columns),
-                  np.array(early['y']), epochs=SMOKE['epochs'] if smoke else spec['epochs'], patience=spec['patience'],
+                  np.array(early['y']), epochs=epochs, patience=spec['patience'],
                   batch_size=spec['batch_size'], learning_rate=spec['learning_rate'])
         if model_device_type(model) != device.split(':')[0]:
             raise RuntimeError('Model is not on the requested device')
@@ -658,6 +710,8 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
                       'train_rows_sha256': train_rows, 'earlystop_rows_sha256': early_rows,
                       'predicted_rows': rows, 'runtime': runtime, 'train_subset': subset, 'context_names_verified': names is not None, 'peak_device_bytes': peak_device_bytes(device),
                       'finished_utc': datetime.now(timezone.utc).isoformat(), 'dev_used_for_fit_or_selection': False}
+        if uses_tabm_residual(config):
+            fit_report['epoch_cap'] = epoch_record(model.report, epochs, spec['patience'])
         write_json_atomic(work / 'fit.json', fit_report)
         names = ['identity.json', 'model.pt', 'calibration.json', 'predictions.npz', 'mlb_predictions.npz', 'fit.json']
         write_json_atomic(work / 'state.json', {'identity': identity,
