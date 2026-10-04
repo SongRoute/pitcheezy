@@ -248,3 +248,78 @@ def test_parent_preflight_and_lock_never_import_torch(export, tmp_path):
     out = subprocess.run([sys.executable, '-c', code, str(PROJECT / 'scripts'), json.dumps(payload)],
                          capture_output=True, text=True, timeout=120, check=True).stdout.split()
     assert out == ['False']
+
+
+def fake_worker_python(tmp_path):
+    fake = tmp_path / 'fake-python'
+    fake.write_text('#!/bin/sh\nexec sleep 60\n')  # a worker that never finishes on its own
+    fake.chmod(0o755)
+    return str(fake)
+
+
+def group_gone(pid):
+    import os
+    try:
+        os.killpg(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+def test_run_interrupt_stops_worker_groups_before_releasing_locks(export, tmp_path, monkeypatch):
+    import os
+    import signal
+    root, digest, _ = export
+    args, cfg = args_for(tmp_path, root, digest)
+    args.python = fake_worker_python(tmp_path)
+    pids, alive_at_release, handlers = [], [], []
+    before = [signal.getsignal(s) for s in tp.SIGNALS]
+    real_popen, real_release = tp.subprocess.Popen, GpuLock.release
+
+    class Popen(real_popen):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            pids.append(self.pid)
+
+        def wait(self, timeout=None):
+            if timeout is not None and timeout > 100:  # the parent's worker wait (not a stop grace): interrupted
+                handlers.extend(signal.getsignal(s) for s in tp.SIGNALS)
+                raise KeyboardInterrupt
+            return super().wait(timeout)
+
+    def release(lock):
+        alive_at_release.extend(p for p in pids if not group_gone(p))
+        real_release(lock)
+
+    monkeypatch.setattr(tp.subprocess, 'Popen', Popen)
+    monkeypatch.setattr(GpuLock, 'release', release)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            tp.run(args, cfg)
+        assert len(pids) == 2 and alive_at_release == []  # no lock released while an own worker group lived
+        assert all(group_gone(p) for p in pids)
+        assert all(GpuLock(args.lock_dir, g).acquire() for g in GPUS)
+        assert handlers == [tp._interrupt] * 3  # SIGTERM/SIGHUP/SIGINT reach the cleanup while workers run
+        assert [signal.getsignal(s) for s in tp.SIGNALS] == before  # and are restored afterwards
+    finally:
+        for pid in pids:
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def test_run_worker_timeout_kills_groups_and_writes_incomplete_summary(export, tmp_path, monkeypatch):
+    root, digest, _ = export
+    args, cfg = args_for(tmp_path, root, digest)
+    args.python = fake_worker_python(tmp_path)
+    monkeypatch.setattr(tp, 'WORKER_TIMEOUT_SECONDS', 1)
+    pids = []
+    real_popen = tp.subprocess.Popen
+    monkeypatch.setattr(tp.subprocess, 'Popen', lambda *a, **k: pids.append(real_popen(*a, **k)) or pids[-1])
+    summary = tp.run(args, cfg)
+    assert summary['complete'] is False and summary['exit_codes'] == {g: 'timeout' for g in GPUS}
+    assert 'gate' not in summary and json.loads((args.output / 'summary.json').read_text())['complete'] is False
+    assert all(group_gone(p.pid) for p in pids)
+    assert all(GpuLock(args.lock_dir, g).acquire() for g in GPUS)
+

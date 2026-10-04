@@ -61,6 +61,7 @@ FAMILY_BUDGET_SECONDS = 36000
 FIXED_ALLOWANCE_SECONDS = 30.  # assumption: process start/imports, temperature fit, save, hashing, rename
 WORKER_TIMEOUT_SECONDS = 1500
 FORBIDDEN_OUTPUT_KEYS = ('history', 'best_epoch', 'train_weighted_nll', 'earlystop_conditional_nll', 'loss')
+SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)  # as cuda_direct_queue: cleanup before any lock release
 
 
 def utc():
@@ -235,44 +236,66 @@ def preflight(args, config):
             'gpus': list(args.gpu), 'python': sys.executable, 'checked_utc': utc()}
 
 
+def stop_group(proc, grace=20):
+    """SIGTERM the worker's own session group, SIGKILL after the grace; returns once the leader is reaped."""
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+    except ProcessLookupError:
+        proc.wait()
+
+
+def _interrupt(signum, frame):
+    for sig in SIGNALS:
+        signal.signal(sig, signal.SIG_IGN)  # cleanup must not be interrupted again
+    raise KeyboardInterrupt(f'signal {signum}')
+
+
 def run(args, config):
     from cuda_direct_queue import GpuLock  # the common per-GPU flock of the family queue
     args.output.mkdir(parents=True, exist_ok=False)  # never reuse an output
     identity = preflight(args, config)
     rc.write_json_atomic(args.output / 'preflight.json', identity)
     locks = [GpuLock(args.lock_dir, g) for g in args.gpu]
-    held = []
+    held, procs, logs, codes, previous = [], {}, [], {}, {}
+    try:
+        for sig in SIGNALS:  # SIGTERM/SIGHUP (timeout, ssh drop) must reach the finally below
+            previous[sig] = signal.signal(sig, _interrupt)
+    except ValueError:  # not the main thread (tests); exceptions are still cleaned up below
+        previous = {}
     try:
         for lock in locks:
             if not lock.acquire():
                 raise RuntimeError(f'GPU lock busy: {lock.path}; nothing launched')
             held.append(lock)
-        procs = {}
         for gpu in args.gpu:
-            log = open(args.output / f'worker-{gpu}.log', 'w')
+            logs.append(open(args.output / f'worker-{gpu}.log', 'w'))
             command = [args.python, str(PROJECT / SELF), '--config', str(args.config), '--config-sha256', args.config_sha256,
                        '--export', str(args.export), '--export-manifest-sha256', args.export_manifest_sha256,
                        '--output', str(args.output), '--lock-dir', str(args.lock_dir), '--gpu', gpu,
                        'worker', '--gpu-uuid', gpu]
-            procs[gpu] = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            procs[gpu] = subprocess.Popen(command, stdout=logs[-1], stderr=subprocess.STDOUT, start_new_session=True)
         deadline = time.monotonic() + WORKER_TIMEOUT_SECONDS
-        codes = {}
         for gpu, proc in procs.items():
             try:
                 codes[gpu] = proc.wait(timeout=max(1., deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
                 codes[gpu] = 'timeout'
-        for gpu, proc in procs.items():
-            if proc.poll() is None:
-                os.killpg(proc.pid, signal.SIGTERM)
-                try:
-                    proc.wait(timeout=20)
-                except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                    proc.wait()
     finally:
+        for proc in procs.values():  # never release a GPU lock while an own worker group is alive
+            stop_group(proc)
+        for log in logs:
+            log.close()
         for lock in held:
             lock.release()
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
     workers = []
     for gpu in args.gpu:
         path = args.output / f'worker-{gpu}.json'
