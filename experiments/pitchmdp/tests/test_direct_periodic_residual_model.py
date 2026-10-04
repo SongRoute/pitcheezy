@@ -12,7 +12,7 @@ from pitchmdp import direct_periodic_residual_model as pr  # noqa: E402
 from pitchmdp.direct_combo_registry import BASE_PERIODIC  # noqa: E402
 from pitchmdp.direct_periodic_model import DirectPeriodicModel, PeriodicDirectNetwork  # noqa: E402
 from pitchmdp.direct_periodic_model import parameter_count as periodic_count  # noqa: E402
-from pitchmdp.direct_residual_model import ResidualMLPNetwork  # noqa: E402
+from pitchmdp.direct_residual_model import DirectResidualModel, ResidualMLPNetwork  # noqa: E402
 from pitchmdp.direct_residual_model import parameter_count as residual_count  # noqa: E402
 
 torch.set_num_threads(1)
@@ -141,3 +141,88 @@ def test_seeded_fits_repeat_exactly_and_current_physics_is_refused():
     bad[0][:, -1, 0] = 1.
     with pytest.raises(ValueError, match='Current-pitch physics'):
         a.logits(bad)
+
+
+# --- added by same-model review (docs/reviews/OPUS-review-periodic-residual-1b1ff30-2026-10-04.md) ---
+
+def test_review_architecture_is_a_deep_copy_not_an_alias_of_the_fixed_constant():
+    for embedding, model_cls in MODELS.items():
+        model = model_cls(0, SMALL_CONTINUOUS, device='cpu')
+        model.architecture['backbone']['blocks'] = 3
+        model.architecture['embedding']['d_embedding'] = 4
+        assert pr.ARCHITECTURES[embedding]['backbone']['blocks'] == 2
+        assert pr.ARCHITECTURES[embedding]['embedding']['d_embedding'] == 8
+        with pytest.raises(ValueError, match='differs'):
+            model_cls(0, SMALL_CONTINUOUS, model.architecture, device='cpu')
+
+
+@pytest.mark.parametrize('embedding', ['periodic', 'linear'])
+def test_review_exact_parameter_names_leave_no_discarded_module(embedding):
+    backbone = ['input.weight', 'input.bias'] + [f'blocks.{b}.{i}.{p}' for b in range(2) for i in (0, 1, 4)
+                                                for p in ('weight', 'bias')] + \
+               [f'output.{i}.{p}' for i in (0, 2) for p in ('weight', 'bias')]
+    first = ['frequencies', 'embedding.weight', 'embedding.bias'] if embedding == 'periodic' else ['weight', 'bias']
+    net = small_net(embedding)
+    assert sorted(net.state_dict()) == sorted(first + backbone)
+    assert sorted(n for n, _ in net.named_parameters()) == sorted(first + backbone)
+    assert not hasattr(net, 'head') and (embedding == 'periodic' or not hasattr(net, 'embedding'))
+
+
+def test_review_periodic_backbone_input_is_the_frozen_flatten_head_input():
+    torch.manual_seed(5)
+    frozen = PeriodicDirectNetwork(7, 24, 3, SMALL_CONTINUOUS)
+    frozen.head = torch.nn.Identity()
+    net = small_net('periodic', seed=5)
+    net.backbone = lambda x: x
+    (tokens, valid, context), _ = arrays(20, np.random.default_rng(3))
+    args = [torch.as_tensor(tokens), torch.as_tensor(valid), torch.as_tensor(context)]
+    assert torch.equal(net(*args), frozen(*args))
+
+
+def test_review_linear_and_periodic_share_backbone_initialisation_for_a_seed():
+    periodic_params = dict(small_net('periodic', seed=6).named_parameters())
+    linear_params = dict(small_net('linear', seed=6).named_parameters())
+    shared = [k for k in linear_params if k.startswith(('input.', 'blocks.', 'output.'))]
+    assert len(shared) == 18 and all(torch.equal(periodic_params[k], linear_params[k]) for k in shared)
+
+
+def test_review_frozen_and_new_archives_do_not_cross_load(tmp_path):
+    rng = np.random.default_rng(7)
+    (train, y), (early, ey) = arrays(120, rng), arrays(40, rng)
+    budget = dict(epochs=1, patience=1, batch_size=64)
+    DirectResidualModel(0, device='cpu').fit(train, y, early, ey, **budget).save(tmp_path / 'residual.pt')
+    DirectPeriodicModel(0, SMALL_CONTINUOUS, device='cpu').fit(train, y, early, ey, **budget).save(tmp_path / 'periodic.pt')
+    for model_cls in MODELS.values():
+        for name in ('residual.pt', 'periodic.pt'):
+            with pytest.raises(ValueError, match='Unrecognized'):
+                model_cls.load(tmp_path / name, device='cpu')
+    MODELS['periodic'](0, SMALL_CONTINUOUS, device='cpu').fit(train, y, early, ey, **budget).save(tmp_path / 'new.pt')
+    with pytest.raises(ValueError, match='Unrecognized'):
+        DirectResidualModel.load(tmp_path / 'new.pt', device='cpu')
+
+
+@pytest.mark.parametrize('embedding', ['periodic', 'linear'])
+def test_review_fit_refuses_current_physics_and_tampered_embedding_archives(embedding, tmp_path):
+    rng = np.random.default_rng(7)
+    (train, y), (early, ey) = arrays(120, rng), arrays(40, rng)
+    for which in (0, 1):
+        bad = [list(train), list(early)]
+        bad[which][0] = bad[which][0].copy()
+        bad[which][0][:, -1, 3] = .5
+        with pytest.raises(ValueError, match='Current-pitch physics'):
+            MODELS[embedding](0, SMALL_CONTINUOUS, device='cpu').fit(bad[0], y, bad[1], ey, epochs=1, patience=1)
+    MODELS[embedding](0, SMALL_CONTINUOUS, device='cpu').fit(train, y, early, ey, epochs=1, patience=1).save(tmp_path / 'm.pt')
+    keys = {'d_embedding': 4, 'width': 64, 'dropout': 0.}
+    if embedding == 'periodic':
+        keys.update(n_frequencies=8, sigma=.1)
+    for key, value in keys.items():
+        payload = torch.load(tmp_path / 'm.pt', weights_only=True)
+        payload['network_config'][key] = value
+        torch.save(payload, tmp_path / 't.pt')
+        with pytest.raises(ValueError, match='Archived network differs'):
+            MODELS[embedding].load(tmp_path / 't.pt', device='cpu')
+    payload = torch.load(tmp_path / 'm.pt', weights_only=True)
+    payload['architecture']['embedding']['d_embedding'] = 4
+    torch.save(payload, tmp_path / 't.pt')
+    with pytest.raises(ValueError, match='differs from the fixed'):
+        MODELS[embedding].load(tmp_path / 't.pt', device='cpu')

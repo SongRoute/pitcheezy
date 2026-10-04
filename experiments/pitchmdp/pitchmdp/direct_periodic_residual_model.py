@@ -34,6 +34,7 @@ another kind, architecture or continuous map.
 """
 from __future__ import annotations
 
+import copy
 import math
 from pathlib import Path
 
@@ -131,7 +132,7 @@ class DirectEmbeddingResidualModel(DirectResidualModel):
 
     def __init__(self, seed=0, context_continuous=(), architecture=None, device=None):
         fixed = ARCHITECTURES[self.embedding]
-        self.architecture = dict(fixed if architecture is None else architecture)
+        self.architecture = copy.deepcopy(fixed if architecture is None else architecture)  # nested: no aliasing
         if self.architecture != fixed:
             raise ValueError('Embedding-residual architecture differs from the fixed registered network')
         self.context_continuous = [int(i) for i in context_continuous]
