@@ -192,3 +192,59 @@ def test_frozen_runner_and_models_unchanged_by_probe():
                               'experiments/pitchmdp/scripts/cuda_direct_queue.py', 'configs'],
                              cwd=REPO, capture_output=True, text=True, check=True).stdout.split()
     assert changed == []
+
+
+# ------------------------------------------------------------------ review additions (same_model_review, 2026-10-04)
+
+def worker_args(tmp_path, root, digest):
+    args, cfg = args_for(tmp_path, root, digest)
+    args.output.mkdir()
+    args.gpu_uuid = GPUS[0]
+    rc.write_json_atomic(args.output / 'preflight.json', tp.preflight(args, cfg))
+    return args, cfg
+
+
+def test_worker_opens_train_only_and_passes_manifest_standins(export, tmp_path, monkeypatch):
+    root, digest, _ = export
+    args, cfg = worker_args(tmp_path, root, digest)
+    opened, probed = [], []
+    real = rc.load_split
+    monkeypatch.setattr(rc, 'bind_gpu', lambda uuid, allowed: {'bound_uuid': uuid})  # no CUDA on the Mac
+    monkeypatch.setattr(rc, 'load_split', lambda *a, **k: opened.append(a[2]) or real(*a, **k))
+    monkeypatch.setattr(tp, 'probe_arm', lambda config, name, train, columns, n_early, n_predict, device, **kw:
+                        probed.append((name, device, len(train['y']), n_early, n_predict)) or fake_record(name, 1.))
+    tp.worker(args, cfg)
+    assert opened == ['train']
+    assert [p[0] for p in probed] == ARMS and {p[1:] for p in probed} == {('cuda', 400, 120, 230)}
+    out = json.loads((args.output / f'worker-{GPUS[0]}.json').read_text())
+    assert [a['arm'] for a in out['arms']] == ARMS and out['gpu'] == GPUS[0]
+
+
+def test_worker_refuses_changed_sources_before_loading_data(export, tmp_path, monkeypatch):
+    root, digest, _ = export
+    args, cfg = worker_args(tmp_path, root, digest)
+    preflight = json.loads((args.output / 'preflight.json').read_text())
+    preflight['source_sha256'][tp.SELF] = '0' * 64
+    rc.write_json_atomic(args.output / 'preflight.json', preflight)
+    opened = []
+    monkeypatch.setattr(rc, 'bind_gpu', lambda uuid, allowed: {'bound_uuid': uuid})
+    monkeypatch.setattr(rc, 'load_split', lambda *a, **k: opened.append(a[2]))
+    with pytest.raises(RuntimeError, match='Sources differ'):
+        tp.worker(args, cfg)
+    assert opened == [] and not (args.output / f'worker-{GPUS[0]}.json').exists()
+
+
+def test_parent_preflight_and_lock_never_import_torch(export, tmp_path):
+    import subprocess
+    root, digest, _ = export
+    args, _ = args_for(tmp_path, root, digest)
+    code = ('import json, sys, types; from pathlib import Path; sys.path.insert(0, sys.argv[1]);'
+            'import timing_probe_tabm_residual as tp; from cuda_direct_queue import GpuLock;'
+            'a = json.loads(sys.argv[2]); ns = types.SimpleNamespace(**{k: Path(v) if k in ("config", "export", "output")'
+            ' else v for k, v in a.items()}); tp.preflight(ns, json.loads(ns.config.read_text()));'
+            'print("torch" in sys.modules)')
+    payload = {'config': str(args.config), 'config_sha256': args.config_sha256, 'export': str(root),
+               'export_manifest_sha256': digest, 'output': str(args.output), 'gpu': GPUS}
+    out = subprocess.run([sys.executable, '-c', code, str(PROJECT / 'scripts'), json.dumps(payload)],
+                         capture_output=True, text=True, timeout=120, check=True).stdout.split()
+    assert out == ['False']
