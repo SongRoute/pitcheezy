@@ -17,12 +17,19 @@ const fail = (message) => { console.error('FAIL', message); process.exitCode = 1
 // Part 1: the four actual-dependent STATUS_TEXT entries appear verbatim in the UI list, and nothing else does.
 const OUTCOME = ['UNSUPPORTED_NO_LOGGED_ACTION', 'NO_DECISION', 'UNSUPPORTED_MISSING_ACTION_LABEL', 'UNSUPPORTED_LOGGING_POSITIVITY'];
 const precompute = readFileSync(path.join(repo, 'scripts', 'demo_precompute.py'), 'utf8');
-const statusText = Object.fromEntries([...precompute.matchAll(/'([A-Z_]+)': '([^']+)'/g)].map((m) => [m[1], m[2]]));
+const statusBlock = /^STATUS_TEXT = \{([\s\S]*?)\}$/m.exec(precompute)?.[1] ?? '';  // only this dict, not the call-code map
+if (!statusBlock) fail('STATUS_TEXT block not found in scripts/demo_precompute.py');
+const statusText = Object.fromEntries([...statusBlock.matchAll(/'([A-Z_]+)': '([^']+)'/g)].map((m) => [m[1], m[2]]));
 const ui = readFileSync(path.join(here, '..', 'src', 'WatchAlong.tsx'), 'utf8');
 const block = /const OUTCOME_REASONS = new Set\(\[([\s\S]*?)\]\);/.exec(ui);
 const listed = block ? [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
 const expected = OUTCOME.map((k) => statusText[k]);
 if (expected.some((t) => !t)) fail(`STATUS_TEXT missing one of ${OUTCOME.join(', ')}`);
+// A new STATUS_TEXT entry must be classified here (pre-decision or decided from the actual row) before it can show.
+const PRE_DECISION = ['UNSUPPORTED_UNKNOWN_PITCHER', 'UNSUPPORTED_PITCHER_HAND', 'UNSUPPORTED_EMPTY_SUPPORT', 'UNSUPPORTED_MID_PA',
+  'UNSUPPORTED_INCOMPLETE_START', 'UNSUPPORTED_INCONSISTENT_HISTORY', 'NOT_SUBMITTED'];
+const unclassified = Object.keys(statusText).filter((k) => !OUTCOME.includes(k) && !PRE_DECISION.includes(k));
+if (unclassified.length) fail(`STATUS_TEXT entries not classified as pre-decision or actual-dependent: ${unclassified.join(', ')}`);
 if (JSON.stringify([...listed].sort()) !== JSON.stringify([...expected].sort())) fail(`UI list ${JSON.stringify(listed)} != STATUS_TEXT ${JSON.stringify(expected)}`);
 const NEUTRAL = /const PRE_NEUTRAL_REASON = '([^']+)'/.exec(ui)?.[1];
 if (!NEUTRAL) fail('no PRE_NEUTRAL_REASON');
@@ -48,10 +55,12 @@ try {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 900 } });
     await context.addInitScript(() => { try { localStorage.setItem('pitcheezy.guide.v1', '1'); } catch { /* ignore */ } });
+    let failNextReveal = false;  // one failed reveal, then the retry succeeds
     await context.route('http://pz.test/**', async (route) => {
       const url = new URL(route.request().url());
       if (url.pathname === '/api/watch/900100') return route.fulfill({ json: timeline });
       const hit = url.pathname.match(/^\/api\/watch\/900100\/reveal\/(\d+)$/);
+      if (hit && failNextReveal) { failNextReveal = false; return route.fulfill({ status: 503, json: { detail: '잠시 후 다시 시도해 주세요.' } }); }
       if (hit) return route.fulfill({ json: reveal(Number(hit[1])) });
       if (url.pathname.startsWith('/api/')) return route.fulfill({ status: 404, json: { detail: 'not in this smoke' } });
       const file = path.join(dist, url.pathname);
@@ -86,6 +95,31 @@ try {
     if ((await page.locator('.wa-reason').first().innerText()) !== NEUTRAL) fail(`${width}: next pitch did not reset to the neutral line`);
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     if (scrollWidth > width) fail(`${width}: horizontal overflow ${scrollWidth}`);
+    // ← back to the revealed pitch keeps the real reason (that pitch is in the past now)
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(() => window.location.hash === '#i=1', null, { timeout: 3000 }).catch(() => fail(`${width}: ← did not move`));
+    if ((await page.locator('.wa-reason').first().innerText()) !== expected[0]) fail(`${width}: revealed pitch lost its real reason after ←`);
+    // failed reveal: the neutral line stays next to the error; Space retries and only then the real reason shows
+    await page.goto('about:blank');
+    await page.goto(`http://pz.test/watch?game=900100#i=3`);
+    await page.getByText('추천 없음').waitFor({ timeout: 8000 });
+    failNextReveal = true;
+    await page.keyboard.press(' ');
+    await page.locator('.wa-error').waitFor({ timeout: 5000 }).catch(() => fail(`${width}: failed reveal shows no error`));
+    if ((await page.locator('.wa-reason').first().innerText()) !== NEUTRAL) fail(`${width}: failed reveal dropped the neutral line`);
+    if (await page.locator('.wa-reveal').count()) fail(`${width}: failed reveal shows a reveal`);
+    await page.keyboard.press(' ');
+    await page.locator('.wa-reveal').waitFor({ timeout: 5000 });
+    if ((await page.locator('.wa-reason').first().innerText()) !== expected[2]) fail(`${width}: Space retry did not show the real reason`);
+    if (await page.locator('.wa-error').count()) fail(`${width}: error left on screen after a successful retry`);
+    // embedded (Showcase iframe) uses the same rule
+    await page.goto('about:blank');
+    await page.goto(`http://pz.test/watch?game=900100&embed=1#i=2`);
+    await page.getByText('추천 없음').waitFor({ timeout: 8000 });
+    if ((await page.locator('.wa-reason').first().innerText()) !== NEUTRAL) fail(`${width}: embedded view shows the outcome reason before reveal`);
+    await page.keyboard.press(' ');
+    await page.locator('.wa-reveal').waitFor({ timeout: 5000 });
+    if ((await page.locator('.wa-reason').first().innerText()) !== expected[1]) fail(`${width}: embedded reveal did not show the real reason`);
     if (errors.length) fail(`${width}: page errors ${errors.join(' | ')}`);
     await context.close();
   }
