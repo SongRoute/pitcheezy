@@ -199,6 +199,7 @@ export default function WatchAlong() {
   const embedded = params.get('embed') === '1';
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [index, setIndex] = useState(0);
+  const [furthest, setFurthest] = useState(0);  // the latest pitch this viewer has reached: navigation lists stop there
   const [reveals, setReveals] = useState<Record<number, Reveal>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -211,7 +212,10 @@ export default function WatchAlong() {
       setTimeline(t);
       let start = readHash();
       if (start === null) { try { start = Number(localStorage.getItem(`pitcheezy.watch.${gamePk}`) ?? 0); } catch { start = 0; } }
-      setIndex(Math.min(Math.max(0, start || 0), t.decisions.length - 1));
+      const first = Math.min(Math.max(0, start || 0), t.decisions.length - 1);
+      let reached = 0;
+      try { reached = Number(localStorage.getItem(`pitcheezy.watch.${gamePk}.furthest`) ?? 0) || 0; } catch { reached = 0; }
+      setIndex(first); setFurthest(Math.min(Math.max(first, reached), t.decisions.length - 1));
     }).catch(e => setError(e.message));
   }, [gamePk]);
   useEffect(() => {
@@ -219,6 +223,11 @@ export default function WatchAlong() {
     window.history.replaceState(null, '', `?game=${timeline.game.game_pk}${embedded ? '&embed=1' : ''}#i=${index}`);
     try { localStorage.setItem(`pitcheezy.watch.${timeline.game.game_pk}`, String(index)); } catch { /* storage may be unavailable */ }
   }, [index, timeline, embedded]);
+  useEffect(() => { if (timeline && index > furthest) setFurthest(index); }, [index, furthest, timeline]);
+  useEffect(() => {  // also keeps a pitch reached by opening a shared #i=N link, not only by stepping past it
+    if (!timeline || embedded) return;
+    try { localStorage.setItem(`pitcheezy.watch.${timeline.game.game_pk}.furthest`, String(furthest)); } catch { /* storage may be unavailable */ }
+  }, [furthest, timeline, embedded]);
 
   const decision = timeline?.decisions[index] ?? null;
   const reveal = reveals[index] ?? null;
@@ -232,8 +241,19 @@ export default function WatchAlong() {
     timeline?.decisions.forEach(d => { const label = `${d.situation.inning}${d.situation.half === 'Top' ? '초' : '말'}`; if (!out.length || out[out.length - 1].label !== label) out.push({ first: d.index, label }); });
     return out;
   }, [timeline]);
-  const currentHalf = halves.reduce((found, h, i) => h.first <= index ? i : found, 0);
+  // The row must not tell how the game ends before the viewer gets there (spoiler audit T23): always 1초–9말, a half that
+  // was never played (9말 after a home lead) jumps to the last pitch, and extra innings appear only once reached.
+  const innings = useMemo(() => {
+    if (!timeline) return [];
+    const at = new Map(halves.map(h => [h.label, h.first])), last = timeline.decisions.length - 1;
+    const regular = Array.from({ length: 18 }, (_, i) => `${Math.floor(i / 2) + 1}${i % 2 ? '말' : '초'}`).map(label => ({ label, first: at.get(label) ?? last }));
+    const extra = halves.filter(h => Number.parseInt(h.label, 10) > 9 && h.first <= Math.max(furthest, index));
+    return [...regular, ...extra];
+  }, [timeline, halves, furthest, index]);
+  const halfNow = (d: Decision | null) => d ? `${d.situation.inning}${d.situation.half === 'Top' ? '초' : '말'}` : '';
+  const currentHalf = innings.findIndex(h => h.label === halfNow(timeline?.decisions[index] ?? null));
   const currentPa = plateAppearances.reduce((found, pa, i) => pa.first <= index ? i : found, 0);
+  const reachedPas = plateAppearances.filter(pa => pa.first <= Math.max(furthest, index));
   const paStart = plateAppearances[currentPa]?.first ?? 0;
 
   const fetchReveal = useCallback(async (i: number) => {
@@ -287,13 +307,13 @@ export default function WatchAlong() {
     <Board s={s} away={game.away_team} home={game.home_team} pitcher={decision.pitcher.name ?? String(decision.pitcher.id)}
       batter={`${decision.batter.name ?? decision.batter.id} (${decision.batter.side === 'L' ? '좌' : '우'}타)`} extra={`${decision.pitch_number}구째`} />
     <main className="wa-main">
-      {!embedded && <><nav className="wa-innings" aria-label="회로 이동">{halves.map((h, i) =>
-        <button key={h.first} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} onClick={() => go(h.first)}>{h.label}</button>)}</nav>
+      {!embedded && <><nav className="wa-innings" aria-label="회로 이동">{innings.map((h, i) =>
+        <button key={h.label} className={i === currentHalf ? 'current' : ''} aria-current={i === currentHalf ? 'true' : undefined} onClick={() => go(h.first)}>{h.label}</button>)}</nav>
       <div className="wa-nav">
         <select value={currentPa} onChange={e => go(plateAppearances[Number(e.target.value)].first)} aria-label="타석으로 이동">
-          {plateAppearances.map((pa, i) => <option key={pa.first} value={i}>{pa.label}</option>)}
+          {reachedPas.map((pa, i) => <option key={pa.first} value={i}>{pa.label}</option>)}
         </select>
-        <span className="wa-progress">{index + 1}/{timeline.decisions.length}구</span>
+        <span className="wa-progress">경기 {index + 1}번째 공</span>
       </div>
       </>}
       <PitchStrip items={strip} />
