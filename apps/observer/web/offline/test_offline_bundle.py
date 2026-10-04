@@ -259,3 +259,65 @@ def test_all_decisions_bundle_serves_saved_setup_answer(tmp_path):
         assert get(base + setup_path(GAME + 1))[0] == 404  # another game's setup is not made up
     finally:
         server.shutdown()
+
+
+# capture_snapshot.main() against a fake 8771 (no network). The setup path is written out literally: it must be the
+# exact request of WatchAlong.tsx (`get(`/watch/${gamePk}/setup`)`, get() prefixes /api), not whatever setup_path says.
+SETUP_BODY = json.dumps({'game_pk': GAME, 'badge': 'b', 'pitches': [
+    {'at_bat_number': 1, 'pitch_number': 1, 'status': 'estimated', 'plate_x_feet': -0.25}]}).encode()
+
+
+def run_capture(tmp_path, monkeypatch, *flags, setup=(200, SETUP_BODY)):
+    import capture_snapshot
+    site = {f'/api/watch/{GAME}': (200, json.dumps(TIMELINE).encode()),
+            '/api/watch/games': (200, json.dumps({'games': [{'game_pk': GAME}, {'game_pk': GAME + 1}]}).encode()),
+            f'/api/watch/{GAME}/setup': setup}
+    for i, path in enumerate(all_decision_paths(TIMELINE)):
+        site[path] = (200, json.dumps({'n': i}).encode())
+    asked = []
+
+    def fake_fetch(url, timeout=15):
+        path = url.removeprefix('http://fake')
+        asked.append(path)
+        return site.get(path, (404, b'{"detail": "none"}'))
+
+    monkeypatch.setattr(capture_snapshot, 'fetch', fake_fetch)
+    monkeypatch.setattr(capture_snapshot.time, 'sleep', lambda s: None)
+    tmp_path.mkdir(exist_ok=True)
+    scenes = tmp_path / 'scenes.json'
+    scenes.write_text(json.dumps({'gamePk': GAME, 'scenes': [{'pitchId': 'x', 'atBat': 1, 'pitchNumber': 3}]}))
+    out = tmp_path / 'snap'
+    monkeypatch.setattr('sys.argv', ['capture_snapshot.py', '--base', 'http://fake', '--scenes', str(scenes),
+                                     '--out', str(out), *flags])
+    capture_snapshot.main()
+    return out, asked
+
+
+def test_capture_with_setup_saves_the_page_request_byte_identically(tmp_path, monkeypatch):
+    out, asked = run_capture(tmp_path, monkeypatch, '--all-decisions', '--with-setup')
+    assert asked.count(f'/api/watch/{GAME}/setup') == 1
+    manifest, loaded = load_snapshot(out)
+    assert manifest['setup_rows'] == 1
+    assert loaded[f'/api/watch/{GAME}/setup'] == SETUP_BODY
+
+
+def test_capture_without_setup_flag_never_asks_for_it(tmp_path, monkeypatch):
+    out, asked = run_capture(tmp_path, monkeypatch, '--all-decisions')
+    manifest, loaded = load_snapshot(out)
+    assert manifest['setup_rows'] is None
+    assert f'/api/watch/{GAME}/setup' not in asked and f'/api/watch/{GAME}/setup' not in loaded
+
+
+@pytest.mark.parametrize('setup', [(404, b'{"detail": "none"}'), (200, json.dumps({'game_pk': GAME + 1, 'pitches': []}).encode())])
+def test_capture_with_setup_stops_without_a_manifest(tmp_path, monkeypatch, setup):
+    with pytest.raises(SystemExit):
+        run_capture(tmp_path, monkeypatch, '--all-decisions', '--with-setup', setup=setup)
+    assert not (tmp_path / 'snap' / 'manifest.json').exists()
+
+
+def test_capture_cap_counts_the_setup_answer_before_any_reveal(tmp_path, monkeypatch):
+    import capture_snapshot
+    monkeypatch.setattr(capture_snapshot, 'MAX_REQUESTS_ALL', 1 + len(all_decision_paths(TIMELINE)))
+    run_capture(tmp_path / 'a', monkeypatch, '--all-decisions')  # timeline + every pitch: exactly at the cap
+    with pytest.raises(SystemExit, match='exceed cap'):
+        run_capture(tmp_path / 'b', monkeypatch, '--all-decisions', '--with-setup')
