@@ -135,3 +135,114 @@ def test_registry_guards():
         em.build_ema('control', 0, 'cpu')
     with pytest.raises(ValueError):
         em.FlattenEMAModel(0, 0., 1.)
+
+
+# ------------------------------------------------------------------ reviewer additions (same_model_review 2026-10-04)
+
+def stop_rule(scores, patience):
+    """(best_epoch, epochs_run) of the shared early-stop rule (min delta 1e-5, patience) over a score list."""
+    best, best_epoch, stale = np.inf, 0, 0
+    for i, s in enumerate(scores):
+        if s < best - 1e-5:
+            best, best_epoch, stale = s, i + 1, 0
+        else:
+            stale += 1
+        if stale >= patience:
+            return best_epoch, i + 1
+    return best_epoch, len(scores)
+
+
+def signal(n, seed):
+    """Synthetic arrays whose labels depend on the context, so early stopping fires after a few epochs."""
+    (tokens, valid, context), _ = arrays(n, seed)
+    noise = np.random.default_rng(seed + 100).normal(size=(n, 10))
+    return (tokens, valid, context), np.argmax(context[:, :10] + 1.5 * noise, axis=1)
+
+
+def test_vanishing_decay_is_the_base_arm_including_stopping():
+    """decay -> 0 makes the shadow equal the raw weights: stop, best state and logits must equal the base arm."""
+    kw = dict(epochs=12, patience=2, batch_size=32, learning_rate=.003)
+    (x, y), (e, ey) = arrays(256, 0), arrays(96, 1)
+    base = fm.FlattenRegularizedModel(2, 0., .01, 'cpu').fit(x, y, e, ey, **kw)
+    ema = em.FlattenEMAModel(2, 0., 1e-9, 'cpu').fit(x, y, e, ey, **kw)
+    assert base.report['epochs_run'] < 12  # the patience branch was exercised
+    assert [h['earlystop_conditional_nll'] for h in base.report['history']] == \
+        [h['earlystop_conditional_nll'] for h in ema.report['history']]
+    assert (base.report['best_epoch'], base.report['epochs_run']) == (ema.report['best_epoch'], ema.report['epochs_run'])
+    np.testing.assert_array_equal(base.logits(e), ema.logits(e))
+
+
+def test_stopping_and_best_epoch_follow_the_ema_score():
+    """On data where the raw and EMA rules stop at different epochs, the fit must follow the EMA score."""
+    (x, y), (e, ey) = signal(1024, 0), signal(256, 1)
+    model = em.FlattenEMAModel(0, 0., .99, 'cpu').fit(x, y, e, ey, epochs=6, patience=2, batch_size=64,
+                                                      learning_rate=.001)
+    history = model.report['history']
+    ema_rule = stop_rule([h['earlystop_conditional_nll'] for h in history], 2)
+    raw_rule = stop_rule([h['raw_earlystop_conditional_nll'] for h in history], 2)
+    assert ema_rule != raw_rule  # precondition: the two rules disagree on this data
+    assert (model.report['best_epoch'], model.report['epochs_run']) == ema_rule
+
+
+def test_archive_negatives(tmp_path):
+    (x, y), (e, ey) = arrays(64, 0), arrays(32, 1)
+    small = dict(epochs=1, patience=1, batch_size=32)
+    fm.FlattenRegularizedModel(0, .1, .01, 'cpu').fit(x, y, e, ey, **small).save(tmp_path / 'reg.pt')
+    MatrixModel('flatten_mlp', seed=0, width=128, device='cpu').fit(x, y, e, ey, **small).save(tmp_path / 'mat.pt')
+    for path in ('reg.pt', 'mat.pt'):
+        with pytest.raises(ValueError):
+            em.load_ema('dropout_ema', tmp_path / path, 'cpu')
+    em.build_ema('ema', 0, 'cpu').fit(x, y, e, ey, **small).save(tmp_path / 'ema.pt')
+    with pytest.raises(ValueError):
+        MatrixModel.load(tmp_path / 'ema.pt', 'cpu')
+    for tamper in (lambda p: p['architecture'].update(ema_decay=.99),
+                   lambda p: p['network_config'].update(dropout=.1),
+                   lambda p: p.update(kind='regularized_flatten_mlp')):
+        payload = torch.load(tmp_path / 'ema.pt', map_location='cpu', weights_only=True)
+        tamper(payload)
+        torch.save(payload, tmp_path / 'bad.pt')
+        with pytest.raises(ValueError):
+            em.load_ema('ema', tmp_path / 'bad.pt', 'cpu')
+
+
+def test_registry_rejects_extra_keys_and_loose_flags():
+    from pitchmdp.direct_frontier_registry import ARMS as FRONTIER
+    arms = [dict(em.ARMS[n] if n in em.ARMS else {}, name=n, priority=1, workload=[]) for n in em.ARM_ORDER]
+    arms[0] = dict(em.check_family.__globals__['CONTROL'])
+    arms[2] = dict(FRONTIER['dropout'], name='dropout', priority=1, frontier=True, workload=[])
+    for a in (arms[1], arms[3]):
+        a['ema'] = True
+    config = {'arms': arms, 'comparison': {'ema_contrasts': copy.deepcopy(em.CONTRASTS)},
+              'seeds': [19, 20, 21, 22, 23], 'fits': 20}
+    assert em.check_family(copy.deepcopy(config))
+    for mutate in (lambda c: c['arms'][1].update(ema_start=0),
+                   lambda c: c['arms'][1].update(ema=1),
+                   lambda c: c['arms'][3].update(priority=2),
+                   lambda c: c['arms'][2].pop('frontier'),
+                   lambda c: c['arms'][0].update(ema=True),
+                   lambda c: c['arms'].append(dict(c['arms'][1], name='ema2')),
+                   lambda c: c['comparison']['ema_contrasts'].reverse(),
+                   lambda c: c['arms'][1].update(priority=True),
+                   lambda c: c.update(seeds=[16, 17, 18, 19, 20]),
+                   lambda c: c.update(seeds=[19., 20., 21., 22., 23.]),
+                   lambda c: c.update(fits=12),
+                   lambda c: c.update(repeat_tag='r1')):
+        bad = copy.deepcopy(config)
+        mutate(bad)
+        with pytest.raises(ValueError):
+            em.check_contrasts(bad)
+
+
+def test_shadow_swap_is_restored_when_scoring_fails(monkeypatch):
+    model = em.FlattenEMAModel(0, 0., .999, 'cpu')
+    calls, logits = [], em.FlattenEMAModel.logits
+
+    def failing(self, arrays, batch_size=4096):
+        calls.append(1)
+        if len(calls) == 2:  # the shadow-weight score of epoch 1
+            raise RuntimeError('scoring failed')
+        return logits(self, arrays, batch_size)
+    monkeypatch.setattr(em.FlattenEMAModel, 'logits', failing)
+    with pytest.raises(RuntimeError):
+        fitted(model)
+    assert all(p.requires_grad for p in model.net.parameters())  # raw net back in place, not the shadow
