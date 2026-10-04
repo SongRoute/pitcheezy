@@ -29,7 +29,7 @@ family queue runs two fits at once), each worker does all 5 arms in config order
    arm's own frozen `fit` for **1 epoch** (one pass over all TRAIN rows, batch 1024), discarded.
 4. per arm, measured: a NEW fresh model, the same frozen `fit` for **2 epochs**; recorded
    `report['seconds']`, `optimizer_updates`, peak device bytes. Per-epoch time =
-   `report['seconds'] / 2` (includes net build, TRAIN tensor upload and per-epoch validation, so it
+   `max(wall_seconds, report['seconds']) / 2` (includes net build, TRAIN tensor upload and per-epoch validation, so it
    over-states a steady epoch; conservative).
 5. per arm, predict (measured): `model.logits` over N_pred TRAIN rows, N_pred = manifest row
    count of temperature + blend + dev + mlb_dev (values discarded).
@@ -39,7 +39,7 @@ passes the first N_early TRAIN rows (N_early = manifest `earlystop.n`) as that a
 validation cost has the real row count without opening the early-stop split. Patience 5 cannot
 stop a 1- or 2-epoch fit.
 
-Data opened: TRAIN only. Not opened: earlystop, temperature, blend, dev, mlb_dev. No model saved,
+Data loaded: TRAIN only. Other splits are not loaded or parsed; their array bytes are hashed by verify_export for integrity, and manifest row counts are read. No model saved,
 no calibration, no probabilities, and no loss/history/best-epoch value written (the output is
 checked for such keys and refused). Probe seed 1000 is not a registered seed; the probe is not a
 fit of the family. Batch size, learning rate and patience come from the config `training` block.
@@ -73,7 +73,7 @@ patience; not credited). Per arm the slower GPU is used. Family =
 
 - Expected cost: per worker ≈ startup (array hashing) + 5 × 3 epochs + 5 predict passes. From
   parents' measured per-update times (context, not a measurement of the new arm) about 3–6 min
-  per GPU; worker hard timeout 1500 s; foreground command bounded by `timeout --kill-after=30 1700`.
+  per GPU; worker hard timeout 1500 s; foreground command bounded by `timeout --kill-after=30 1800`.
 - Preconditions: GPU3/4 free (nvidia-smi + no queue/probe process), the common lock directory
   `/home/sds733/pitcheezy-autonomy/gpu-locks` (busy lock → refuse, nothing waits).
 - Code shipped as `git archive` of the reviewed commit → a NEW read-only `code-<sha>` dir; output
@@ -85,3 +85,21 @@ patience; not credited). Per arm the slower GPU is used. Family =
 
 Timing only. No DEV/MLB DEV row or score is touched. The family's own exposure statement
 (post-selection, repeated DEV, descriptive only, no 2026) is unchanged.
+
+## Codex PM disposition before any probe run — 2026-10-04 16:16 KST
+
+Root read source/method and separate Opus review `ceb298f`; independently ran19 focused tests
+at the reviewed source (19passed in3.88s). Accepted B1 and N1–N3 fixes, preserving original
+failed smoke projection. N4 wording now distinguishes parsing from integrity byte hashing.
+N5 accepted: use max(wall, reportedfit seconds)/2 before any measurement, including input
+validation and final CUDA synchronization conservatively. No frozen model/fit/config changes.
+N8 fixed launch env: OMP_NUM_THREADS=2, MKL_NUM_THREADS=2, OPENBLAS_NUM_THREADS=2; the later
+family queue must use the same env. Record nproc, uptime/load and nvidia-smi before and after.
+Report any projection within10% of1800s as marginal; do not change the registered1800s gate.
+Wrapper1800s; worker1500s/own1560s alarm unchanged. N9: operator must explicitly check ALL
+three gate booleans plus complete/zero exit; no single gate alone permits registration.
+N10: keep any failed fresh output and wrapper logs as failed attempt, never reuse/delete it.
+Root authorizes the reviewed exploratory TRAIN timing and conditional newP34 registered
+full family under these unchanged contracts; another Song answer is not needed.
+
+Reviewer: Codex PM. Original author/reviewer evidence: Claude Opus 5.5.

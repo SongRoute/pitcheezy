@@ -69,7 +69,8 @@ def test_probe_arm_reads_train_only_and_records_timing_only(export, monkeypatch,
     assert record['measured']['optimizer_updates'] == 2 * per_epoch
     assert record['validation_standin_rows'] == n_early == len(splits['earlystop']['y'])
     assert record['predict_standin_rows'] == n_predict == sum(len(splits[s]['y']) for s in tp.PREDICT_SPLITS)
-    assert record['measured_seconds_per_epoch'] == record['measured']['fit_report_seconds'] / 2
+    assert record['measured_seconds_per_epoch'] * 2 >= record['measured']['wall_seconds']
+    assert record['measured_seconds_per_epoch'] * 2 >= record['measured']['fit_report_seconds']
     assert len(calls) == 6
     tp.no_forbidden_keys(record)
     text = json.dumps(record)

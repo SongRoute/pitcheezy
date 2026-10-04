@@ -18,7 +18,7 @@ history, best epoch, logit or probability is written.
 Per (GPU, arm), fixed before any run:
   warm-up   : frozen ``model.fit`` for WARMUP_EPOCHS epochs (fresh model, discarded)
   measured  : a NEW frozen ``model.fit`` for MEASURE_EPOCHS epochs (fresh model; patience 5 cannot
-              trigger within 2 epochs); seconds = ``report['seconds']`` (includes net build,
+              trigger within 2 epochs); seconds = max(wall time, ``report['seconds']``) (includes input checks, net build,
               TRAIN tensor upload and per-epoch validation, so it over-states a steady epoch)
   predict   : ``model.logits`` over PREDICT rows of TRAIN after the measured fit
 Same code path as the family: ``run_cuda_direct.build_model`` / ``arm_inputs`` and each arm's own
@@ -135,7 +135,7 @@ def probe_arm(config, arm_name, train, columns, n_early, n_predict, device, seed
     sync()
     record['predict_seconds'] = time.perf_counter() - start
     m = record['measured']
-    record['measured_seconds_per_epoch'] = m['fit_report_seconds'] / m['epochs']
+    record['measured_seconds_per_epoch'] = max(m['wall_seconds'], m['fit_report_seconds']) / m['epochs']
     record['measured_seconds_per_update'] = m['fit_report_seconds'] / m['optimizer_updates']
     del model
     return record
@@ -172,7 +172,7 @@ def summarize(workers, seeds_per_arm):
                      'every_arm_within': all(s <= TASK_GATE_SECONDS for s in slowest.values()),
                      'family_within': family <= FAMILY_BUDGET_SECONDS},
             'label': 'measurement (warm TRAIN epochs, TRAIN forward pass) + projection (60 x epoch, assumptions named); '
-                     'not a fit, not a score; no DEV/earlystop/temperature/blend/mlb_dev rows opened'}
+                     'not a family fit or score; only TRAIN loaded; other split files byte-hashed for integrity only'}
 
 
 def no_forbidden_keys(value):
