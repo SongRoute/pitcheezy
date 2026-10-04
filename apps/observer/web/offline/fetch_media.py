@@ -64,12 +64,19 @@ def fetch(url, target_dir, timeout=60):
     return final, size, digest.hexdigest()
 
 
-def add_sum(target_dir, name, sha):
-    """Append `<sha256>  <name>` (sha256sum format) to MEDIA-SHA256SUMS via a temporary file + rename."""
+def sum_lines(target_dir, name):
+    """Existing MEDIA-SHA256SUMS lines; stops if one already lists name (checked before and after the download)."""
     sums = Path(target_dir) / SUMS
     lines = sums.read_text().splitlines() if sums.exists() else []
     if any(line.split()[-1:] == [name] for line in lines):
-        raise SystemExit(f'{SUMS} already lists {name}')
+        raise SystemExit(f'{SUMS} already lists {name}: check that line and remove it by hand, then retry')
+    return lines
+
+
+def add_sum(target_dir, name, sha):
+    """Append `<sha256>  <name>` (sha256sum format) to MEDIA-SHA256SUMS via a temporary file + rename."""
+    sums = Path(target_dir) / SUMS
+    lines = sum_lines(target_dir, name)
     tmp = sums.with_name(SUMS + '.tmp')
     tmp.write_text(''.join(f'{line}\n' for line in lines + [f'{sha}  {name}']))
     os.replace(tmp, sums)
@@ -86,6 +93,7 @@ def main(argv=None):
     print(f'url    {url}\ntarget {target}', flush=True)
     if args.dry_run:
         return
+    sum_lines(args.target, target.name)  # a stale line would only be found after the 436 MB download
     path, size, sha = fetch(url, args.target)
     add_sum(args.target, path.name, sha)
     print(f'saved  {path}\nbytes  {size}\nsha256 {sha}\n'

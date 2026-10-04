@@ -106,6 +106,14 @@ def test_cli_downloads_and_prints_size_and_sha(origin, tmp_path, capsys):
     assert Origin.requests == [f'/media/{NAME}']
 
 
+def test_stale_sum_line_is_refused_before_download(origin, tmp_path):
+    (tmp_path / 'media').mkdir()
+    (tmp_path / 'media' / SUMS).write_text(f'{"0" * 64}  {NAME}\n')
+    with pytest.raises(SystemExit, match='already lists'):
+        main(['--scenes', str(scenes_file(tmp_path, origin)), '--target', str(tmp_path / 'media')])
+    assert Origin.requests == [] and sorted(p.name for p in (tmp_path / 'media').iterdir()) == [SUMS]
+
+
 def test_non_mp4_url_is_refused(tmp_path):
     with pytest.raises(SystemExit, match='plain .mp4'):
         fetch('http://127.0.0.1:9/media/clip.mov', tmp_path)  # refused before any connection
