@@ -18,7 +18,7 @@ export default function CvEvidenceCard() {
       <span>사람과 비교한 {p.compared}구의 미트 점 차이 중앙값 {px(p.pixels.median)}</span>
       <i className="cv-more">경기별 결과와 한계 보기</i>
     </summary>
-    <p>포수가 준비 자세에서 둔 미트를 추정했습니다. 두 경기 {p.frames}장 중 {p.aiOutput}장에서 좌표를 냈고, 그 {p.compared}장을 사람 판독과 비교한 점 차이 중앙값은 {px(p.pixels.median)}입니다. 아직 실제 의도나 목표 높이를 검증한 것은 아닙니다.</p>
+    <p>포수가 준비 자세에서 둔 미트를 추정했습니다. 두 경기 {p.frames}장 중 {p.aiOutput}장에서 좌표를 냈고, 그 {p.compared}장을 사람 판독과 비교한 점 차이 중앙값은 {p.pixels.median.toFixed(1)}픽셀입니다. 아직 실제 의도나 목표 높이를 검증한 것은 아닙니다.</p>
     <h3>경기별</h3>
     <ul className="cv-games">{evidence.games.map(g => <li key={g.gamePk}>
       <b>{g.broadcast} 중계 · 경기 {g.gamePk}</b>
@@ -34,7 +34,7 @@ export default function CvEvidenceCard() {
     <h3>예시 투구</h3>
     <ul className="cv-examples">{evidence.examples.map(e => <li key={e.pitchId}>
       <b>{e.pitchId}</b> <span>{ROLE[e.role] ?? e.role}</span>
-      <span>미트 점 차이 {px(e.pixels)} · 출력 좌표 차이 약 {inch(e.outputFeet)}</span></li>)}
+      <span>미트 점 차이 {px(e.pixels)} · 출력 좌표 차이 약 {inch(e.outputFeet)} <em>{SAME}</em></span></li>)}
     </ul>
     <p>예시는 시연 영상에 없는 경기라 영상 장면이나 추천 화면으로 이동하지 않습니다. 픽셀 차이와 출력 좌표 차이는 순서가 다를 수 있습니다.</p>
     <h3>한계</h3>

@@ -16,7 +16,7 @@
 .sc-compare iframe{display:block;border:0;width:100%;height:min(760px,max(480px,calc(100dvh - 280px)));background:#f5f3eb}.sc-compare>p{padding:18px;line-height:1.6}
 @media(max-width:800px){.sc-layout{grid-template-columns:minmax(0,1fr)}.sc-page main{padding:16px}.sc-page h1{font-size:24px}.sc-head{padding:10px 16px}.sc-compare iframe{height:min(700px,calc(100dvh - 64px))}.sc-controls button{flex:1;padding:10px 8px}.sc-head span{font-size:11px}}
 .sc-page .cv-card{max-width:880px;margin-top:24px;border:1px solid #d9ded6;background:white;border-radius:16px;padding:4px 18px 12px;line-height:1.6;font-size:14px}
-.sc-page .cv-card summary{display:grid;gap:2px;padding:12px 0;font-weight:400}.cv-card summary b{font-size:15px}.cv-card summary span{color:#526153}
+.sc-page .cv-card summary{display:grid;gap:2px;padding:12px 0;font-weight:400;list-style:none}.cv-card summary::-webkit-details-marker{display:none}.cv-card summary b{font-size:15px}.cv-card summary span{color:#526153}
 .cv-card h3{font-size:14px;margin:16px 0 6px}.cv-card ul{margin:0;padding-left:18px}.cv-card li{margin-bottom:8px}.cv-card li span{display:block;color:#3c4a40}
 .cv-card em{display:block;font-style:normal;font-size:12px;color:#8a4b14}.cv-card b{overflow-wrap:anywhere}.cv-src{font-size:12px;color:#526153;overflow-wrap:anywhere}
 .cv-more{font-style:normal;font-size:13px;font-weight:650;color:#23523a}.cv-more::after{content:' ▾'}.cv-card[open] .cv-more{display:none}
