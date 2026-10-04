@@ -38,7 +38,7 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try { response = await fetch(`/api${path}`, { cache: 'no-store', signal }); }
   catch (e) { if (signal?.aborted) throw e; throw new Error('관전 서버에 연결하지 못했어요. 네트워크(Tailscale) 연결을 확인해 주세요.'); }
-  const body = await response.json().catch(() => ({}));
+  const body = await response.json().catch(e => { if (signal?.aborted) throw e; return {}; });  // a dropped request never reads as empty data
   if (!response.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.');
   return body as T;
 }
