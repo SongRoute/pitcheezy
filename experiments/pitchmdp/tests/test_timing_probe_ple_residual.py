@@ -33,6 +33,7 @@ ARMS = ['control', 'periodic_residual_counts', 'ple_residual_counts', 'tabm_resi
 PLE = ('ple_residual_counts', 'ple_tabm_residual_counts')
 FAKE = Path(__file__).resolve().parent / 'fake_probe_worker.py'
 WINDOW_BASE = '0978558'  # the base of this probe's branch (P35 smoke record); frozen files must not move after it
+PROBE_RUN_COMMIT = '3b317f2'  # the commit archived and run as the P35 timing probe (T75, RESULT-P35-TIMING-PROBE-3b317f2)
 FROZEN = ['experiments/pitchmdp/pitchmdp', 'experiments/pitchmdp/scripts/run_cuda_direct.py',
           'experiments/pitchmdp/scripts/cuda_direct_queue.py', 'experiments/pitchmdp/scripts/score_cuda_direct.py',
           'experiments/pitchmdp/scripts/timing_probe_tabm_residual.py',
@@ -547,9 +548,10 @@ def test_worker_refuses_changed_config_or_env_before_loading_data(export, tmp_pa
 # ------------------------------------------------------------------ frozen files
 
 def test_frozen_runner_queue_models_and_configs_unchanged_in_the_probe_window():
-    # Window 0978558 (this branch's base, the P35 smoke record) .. working tree.  Once the probe has run, re-scope the
-    # end of the window to the archived probe commit (as T70c did for the P34 probe test).
-    changed = subprocess.run(['git', 'diff', '--name-only', WINDOW_BASE, '--', *FROZEN], cwd=REPO,
+    # Window 0978558 (this branch's base, the P35 smoke record) .. PROBE_RUN_COMMIT.  The probe ran (19:53-19:58 KST,
+    # RESULT-P35-TIMING-PROBE-3b317f2), so the end of the window is re-scoped to the archived probe commit as T70c did
+    # for the P34 probe test: later additive families (P36 robust-clip, 08da77f) legitimately add modules/configs.
+    changed = subprocess.run(['git', 'diff', '--name-only', WINDOW_BASE, PROBE_RUN_COMMIT, '--', *FROZEN], cwd=REPO,
                              capture_output=True, text=True, check=True).stdout.split()
     assert changed == []
     assert rc.sha256_file(PROJECT / 'pitchmdp' / 'direct_ple_model.py') == \
