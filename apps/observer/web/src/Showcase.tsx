@@ -10,6 +10,10 @@ type Decision = { index: number; at_bat_number: number; pitch_number: number; si
   batter: { name: string | null }; pre: { status: string } };
 type Timeline = { game: { game_pk: number; away_team: string; home_team: string }; decisions: Decision[] };
 
+// Opt-in (?media=local) for the MacBook offline bundle: the same official file, saved locally and served by
+// serve_offline.py --media-dir. Same file, so the scene timestamps are unchanged. Default stays the MLB URL.
+const LOCAL_MEDIA = `/offline-media/${new URL(source.mediaUrl).pathname.split('/').pop()}`;
+
 /** Display-only, pinned video annotations. No interpolation from feed UTC or scoring of model quality. */
 export default function Showcase() {
   const [timeline, setTimeline] = useState<Timeline | null>(null);
@@ -22,6 +26,7 @@ export default function Showcase() {
   const [copyNote, setCopyNote] = useState('');
   const [take, setTake] = useState(0);
   const [attempt, setAttempt] = useState(0);
+  const [localMedia] = useState(() => new URLSearchParams(window.location.search).get('media') === 'local');
   const video = useRef<HTMLVideoElement>(null);
   const stopAt = useRef<number | null>(null);
   const player = useRef<HTMLElement>(null);
@@ -104,7 +109,7 @@ export default function Showcase() {
       <div className="sc-layout">
         <section className="sc-player" ref={player} aria-label="경기 영상">
           <div className="sc-video">
-            <video ref={video} controls playsInline preload="metadata" src={loaded ? source.mediaUrl : undefined}
+            <video ref={video} controls playsInline preload="metadata" src={loaded ? (localMedia ? LOCAL_MEDIA : source.mediaUrl) : undefined}
               onLoadedMetadata={() => { setVideoReady(true); if (video.current) video.current.currentTime = Math.max(0, scene.releaseSeconds - 3); }}
               onError={() => setVideoError(true)}
               onTimeUpdate={() => {
@@ -115,6 +120,7 @@ export default function Showcase() {
               onEnded={() => { if (stopAt.current !== null) clipFinished(); }} />
             {!loaded && <button className="sc-load" onClick={() => { setLoaded(true); setVideoError(false); }}>공식 경기 영상 불러오기</button>}
           </div>
+          {localMedia && <p className="sc-hint sc-local" role="note">맥북에 저장한 같은 공식 영상 사본으로 재생 중</p>}
           {loaded && !videoReady && !videoError && <p role="status">영상 정보를 불러오는 중…</p>}
           {videoError && <p role="alert">영상 재생을 확인하지 못했어요. <button onClick={retryVideo}>영상 다시 불러오기</button> <a href={source.mediaUrl} target="_blank" rel="noreferrer">공식 영상 따로 열기</a></p>}
           <label className="sc-label">비교할 장면

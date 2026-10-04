@@ -36,3 +36,8 @@ graphify-out/
 
 # Observer live-feed raw snapshots (local replay only)
 apps/observer/live_snapshots/
+
+# Offline demo: saved official MLB video copy (private, never committed; fetch_media.py writes it)
+apps/observer/web/offline/media/
+apps/observer/web/**/*.mp4
+apps/observer/web/**/*.mp4.part
