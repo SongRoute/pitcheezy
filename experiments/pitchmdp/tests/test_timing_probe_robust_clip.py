@@ -36,6 +36,7 @@ ARMS = ['residual_counts', 'robust_clip_residual_counts']
 RC = 'robust_clip_residual_counts'
 FAKE = Path(__file__).resolve().parent / 'fake_robust_clip_probe_worker.py'
 WINDOW_BASE = '08da77f'  # the base of this probe's branch (robust-clip review disposition); frozen files fixed after it
+PROBE_RUN_COMMIT = '07ab288'  # the commit archived for the P36 probe (T110b: server code-07ab288 a-w, tar 58ee430a)
 FROZEN = ['experiments/pitchmdp/pitchmdp', 'experiments/pitchmdp/scripts/run_cuda_direct.py',
           'experiments/pitchmdp/scripts/cuda_direct_queue.py', 'experiments/pitchmdp/scripts/score_cuda_direct.py',
           'experiments/pitchmdp/scripts/timing_probe_ple_residual.py',
@@ -712,9 +713,11 @@ def test_worker_checks_draft_and_module_pins_first_then_env(export, tmp_path, mo
 # ------------------------------------------------------------------ frozen files
 
 def test_frozen_runner_queue_models_configs_and_prereg_unchanged_in_the_probe_window():
-    # Window 08da77f (this branch's base, the robust-clip review disposition) .. working tree.  Once the probe has
-    # run, re-scope the end of the window to the archived probe commit (as T70c did for the P34 probe test).
-    changed = subprocess.run(['git', 'diff', '--name-only', WINDOW_BASE, '--', *FROZEN], cwd=REPO,
+    # Window 08da77f (this branch's base, the robust-clip review disposition) .. PROBE_RUN_COMMIT (review m4, as T70c
+    # did for the P34 probe test).  The probe code is archived read-only on the server (T110b), so later additive
+    # files on this lineage (P36 pack e9c98da, P35 test fix 1085755, registration) no longer move the window.  The
+    # probe itself had NOT run when this re-scope was committed (T112, 2026-10-05 00:2x KST).
+    changed = subprocess.run(['git', 'diff', '--name-only', WINDOW_BASE, PROBE_RUN_COMMIT, '--', *FROZEN], cwd=REPO,
                              capture_output=True, text=True, check=True).stdout.split()
     assert changed == []
     assert rc.sha256_file(PROJECT / tp.MODULE) == MODULE_SHA
