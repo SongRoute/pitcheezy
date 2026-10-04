@@ -21,4 +21,4 @@
 
 ## 다시 만들기 (맥미니)
 
-`python3 capture_snapshot.py --base http://100.108.252.111:8771 --scenes ../src/showcase-scenes.json --out <빈 폴더>/offline/snapshot` 후 서빙 중인 빌드를 `<빈 폴더>/dist`로 복사. GET만 약 180번. 경기 전체(v3)는 끝에 `--all-decisions`를 붙임: GET 525번(공 262개 × 공개·흐름 + 시간표), 시작할 때 262개 공의 공개·흐름이 하나라도 빠지면 서버가 뜨지 않음.
+`python3 capture_snapshot.py --base http://100.108.252.111:8771 --scenes ../src/showcase-scenes.json --out <빈 폴더>/offline/snapshot` 후 서빙 중인 빌드를 `<빈 폴더>/dist`로 복사. GET만 약 180번. 경기 전체(v3)는 끝에 `--all-decisions`를 붙임: GET 526번(공 262개 × 공개·흐름 + 시간표 + 경기 목록), 시작할 때 262개 공의 공개·흐름이 하나라도 빠지거나 manifest의 공 수가 저장된 시간표와 다르면 서버가 뜨지 않음.

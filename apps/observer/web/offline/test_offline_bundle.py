@@ -111,6 +111,7 @@ def test_pages_carry_saved_copy_line_except_embedded_frame(served):
     base, _ = served
     status, _, page = get(base + '/showcase?scene=3')
     assert status == 200 and b'pz-offline-note' in page and '2026-10-04 14:40 KST'.encode() in page
+    assert '경기 1 시연 장면만'.encode() in page and '전체'.encode() not in page  # v1/v2 manifest: no coverage field
     _, _, frame = get(base + f'/watch?game={GAME}&embed=1')
     assert b'pz-offline-note' not in frame and b'id="root"' in frame
 
@@ -165,7 +166,7 @@ def test_all_decision_paths_refuse_gapped_indices():
         all_decision_paths(gapped)
 
 
-def write_all_bundle(tmp_path, drop=None):
+def write_all_bundle(tmp_path, drop=None, **manifest_overrides):
     dist = tmp_path / 'dist'
     dist.mkdir()
     (dist / 'index.html').write_bytes(b'<html><body><div id="root"></div></body></html>')
@@ -183,7 +184,7 @@ def write_all_bundle(tmp_path, drop=None):
                       'sha256': hashlib.sha256(body).hexdigest()})
     (snap / 'manifest.json').write_text(json.dumps(
         {'game_pk': GAME, 'scenes': 2, 'top': 5, 'coverage': 'all_decisions', 'decisions': 5,
-         'captured_kst': '2026-10-04 15:00 KST', 'files': files}))
+         'captured_kst': '2026-10-04 15:00 KST', 'files': files, **manifest_overrides}))
     return dist, snap, answers
 
 
@@ -208,4 +209,24 @@ def test_all_decisions_bundle_serves_every_pitch_and_says_so(tmp_path):
 def test_all_decisions_bundle_missing_an_answer_does_not_start(tmp_path):
     _, snap, _ = write_all_bundle(tmp_path, drop=f'/api/watch/{GAME}/summary?through=4&top=5')
     with pytest.raises(SystemExit, match='incomplete: 1 of 10'):
+        load_snapshot(snap)
+
+
+@pytest.mark.parametrize('decisions', ['5', 5.0, None, True, 0, -1])
+def test_all_decisions_bundle_with_bad_count_does_not_start(tmp_path, decisions):
+    _, snap, _ = write_all_bundle(tmp_path, decisions=decisions)
+    with pytest.raises(SystemExit, match='no valid decision count'):
+        load_snapshot(snap)
+
+
+@pytest.mark.parametrize('decisions', [4, 6])
+def test_all_decisions_count_must_match_saved_timeline(tmp_path, decisions):
+    _, snap, _ = write_all_bundle(tmp_path, decisions=decisions)  # 4 would pass the file check yet claim the wrong total
+    with pytest.raises(SystemExit, match='saved timeline does not'):
+        load_snapshot(snap)
+
+
+def test_all_decisions_top_mismatch_does_not_start(tmp_path):
+    _, snap, _ = write_all_bundle(tmp_path, top=4)
+    with pytest.raises(SystemExit, match='incomplete: 5 of 10'):
         load_snapshot(snap)

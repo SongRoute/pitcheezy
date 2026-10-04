@@ -41,11 +41,16 @@ def load_snapshot(directory):
             raise SystemExit(f'snapshot file changed: {entry["file"]}')
         answers[entry['path']] = body
     if all_decisions(manifest):  # a bundle that claims every pitch must really hold every reveal and summary
-        game, n, top = manifest['game_pk'], manifest['decisions'], manifest.get('top', 5)
+        game, n, top = manifest['game_pk'], manifest.get('decisions'), manifest.get('top', 5)
+        if type(n) is not int or n <= 0:  # checked before range(); bool is an int subclass
+            raise SystemExit(f'all-decisions snapshot has no valid decision count: {n!r}')
+        saved = json.loads(answers.get(f'/api/watch/{game}', b'{}')).get('decisions')
+        if not isinstance(saved, list) or len(saved) != n:  # the banner count must be the watch page's pitch count
+            raise SystemExit(f'all-decisions snapshot: manifest says {n} decisions, saved timeline does not')
         need = [f'/api/watch/{game}/reveal/{i}' for i in range(n)]
         need += [f'/api/watch/{game}/summary?through={i}&top={top}' for i in range(n)]
         lacking = [p for p in need if p not in answers]
-        if not isinstance(n, int) or n <= 0 or lacking:
+        if lacking:
             raise SystemExit(f'all-decisions snapshot incomplete: {len(lacking)} of {len(need)} missing')
     return manifest, answers
 
