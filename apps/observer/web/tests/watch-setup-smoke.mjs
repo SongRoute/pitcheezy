@@ -35,10 +35,10 @@ const setup = (game, rows) => ({ schema: 'pitcheezy-setup-estimates-v1', badge: 
 
 // Game A: index → at_bat:pitch, ready?, what the setup file says about it
 const GAME = 900300, OTHER = 900301;
-const A = [[1, 1, true], [1, 2, true], [2, 1, false], [3, 1, true], [4, 1, true], [5, 1, true], [6, 1, false]];
+const A = [[1, 1, true], [1, 2, true], [2, 1, false], [3, 1, true], [11, 1, true], [5, 1, true], [6, 1, false]];
 const SETUP_A = [row(1, 1, 0), row(1, 2, -1.0), row(2, 1, 0.4), row(3, 1, null), row(5, 1, 2.5), row(6, 1, null),
-  // decoys near index 4 (4:1, no line): a loose or concatenated key would pick one of these up
-  row(4, 2, 0.6), row(41, 1, 0.6), row(14, 1, 0.6), row(4, 11, 0.6)];
+  // decoys near index 4 (11:1, no line): a loose, swapped or separator-less key ("111" = 1:11 = 11:1) would pick one up
+  row(11, 2, 0.6), row(1, 11, 0.6), row(111, 1, 0.6), row(11, 11, 0.6)];
 const [scene0, scene1] = source.scenes;
 const SHOW = timeline(source.gamePk, [[scene0.atBat, scene0.pitchNumber, true], [scene1.atBat, scene1.pitchNumber, false]]);
 const SETUP_SHOW = setup(source.gamePk, [row(scene0.atBat, scene0.pitchNumber, 0.3), row(scene1.atBat, scene1.pitchNumber, null)]);
