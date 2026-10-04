@@ -312,7 +312,7 @@ export default function WatchAlong() {
         <select value={currentPa} onChange={e => go(plateAppearances[Number(e.target.value)].first)} aria-label="타석으로 이동">
           {reachedPas.map((pa, i) => <option key={pa.first} value={i}>{pa.label}</option>)}
         </select>
-        <span className="wa-progress">{index + 1}구째</span>
+        <span className="wa-progress">경기 {index + 1}번째 공</span>
       </div>
       </>}
       <PitchStrip items={strip} />

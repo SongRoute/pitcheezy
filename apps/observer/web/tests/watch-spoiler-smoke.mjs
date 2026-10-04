@@ -63,6 +63,7 @@ await open(900001, 0);
 if (!same(await row(), REGULAR)) fail(`game 1 row at the first pitch is not 1초–9말: ${(await row()).join(',')}`);
 const progress = await page.locator('.wa-progress').innerText();
 if (progress.includes('/') || progress.includes(String(g1.decisions.length))) fail(`progress shows the total: ${progress}`);
+if (progress !== '경기 1번째 공') fail(`progress wording differs from the at-bat '구째' label: ${progress}`);
 if ((await page.locator('select option').count()) !== 1) fail(`plate-appearance list shows ${await page.locator('select option').count()} options at the first pitch`);
 await page.locator('.wa-innings button', { hasText: '9말' }).click({ timeout: 3000 }).catch(() => fail('no 9말 button'));
 await page.waitForFunction((i) => window.location.hash === `#i=${i}`, last1, { timeout: 3000 }).catch(() => fail('9말 that was never played did not jump to the last pitch'));
