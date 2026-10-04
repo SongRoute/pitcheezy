@@ -222,11 +222,11 @@ export default function WatchAlong() {
     window.history.replaceState(null, '', `?game=${timeline.game.game_pk}${embedded ? '&embed=1' : ''}#i=${index}`);
     try { localStorage.setItem(`pitcheezy.watch.${timeline.game.game_pk}`, String(index)); } catch { /* storage may be unavailable */ }
   }, [index, timeline, embedded]);
-  useEffect(() => {
-    if (!timeline || index <= furthest) return;
-    setFurthest(index);
-    try { localStorage.setItem(`pitcheezy.watch.${timeline.game.game_pk}.furthest`, String(index)); } catch { /* storage may be unavailable */ }
-  }, [index, furthest, timeline]);
+  useEffect(() => { if (timeline && index > furthest) setFurthest(index); }, [index, furthest, timeline]);
+  useEffect(() => {  // also keeps a pitch reached by opening a shared #i=N link, not only by stepping past it
+    if (!timeline || embedded) return;
+    try { localStorage.setItem(`pitcheezy.watch.${timeline.game.game_pk}.furthest`, String(furthest)); } catch { /* storage may be unavailable */ }
+  }, [furthest, timeline, embedded]);
 
   const decision = timeline?.decisions[index] ?? null;
   const reveal = reveals[index] ?? null;

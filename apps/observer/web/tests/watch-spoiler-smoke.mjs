@@ -33,10 +33,11 @@ function timeline(gamePk, lastInning, endsAfterTop) {
     location: { basis: 'synthetic', evaluated: false, note: '', zone_bounds: { bottom: 1.6, top: 3.3899 } },
     we_note: '', coverage: { pitch_decisions: decisions.length, ready: 0, ready_share_of_pitches: 0 }, decisions };
 }
-const games = { 900001: timeline(900001, 9, true), 900002: timeline(900002, 10, false) };
+const games = { 900001: timeline(900001, 9, true), 900002: timeline(900002, 10, false), 900003: timeline(900003, 10, false) };
 const firstOf = (t, label) => t.decisions.find((d) => `${d.situation.inning}${d.situation.half === 'Top' ? '초' : '말'}` === label).index;
 
 const browser = await chromium.launch();
+try {
 const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 await context.addInitScript(() => { try { localStorage.setItem('pitcheezy.guide.v1', '1'); } catch { /* ignore */ } });
 await context.route('http://pz.test/**', async (route) => {
@@ -63,7 +64,7 @@ if (!same(await row(), REGULAR)) fail(`game 1 row at the first pitch is not 1초
 const progress = await page.locator('.wa-progress').innerText();
 if (progress.includes('/') || progress.includes(String(g1.decisions.length))) fail(`progress shows the total: ${progress}`);
 if ((await page.locator('select option').count()) !== 1) fail(`plate-appearance list shows ${await page.locator('select option').count()} options at the first pitch`);
-await page.locator('.wa-innings button', { hasText: '9말' }).click();
+await page.locator('.wa-innings button', { hasText: '9말' }).click({ timeout: 3000 }).catch(() => fail('no 9말 button'));
 await page.waitForFunction((i) => window.location.hash === `#i=${i}`, last1, { timeout: 3000 }).catch(() => fail('9말 that was never played did not jump to the last pitch'));
 if ((await current()) !== '9초') fail(`current half at the last pitch is ${await current()}`);
 if ((await page.locator('select option').count()) !== g1.decisions.length / 2) fail('reached plate appearances not all listed at the end');
@@ -74,6 +75,7 @@ if ((await page.locator('select option').count()) !== g1.decisions.length / 2) f
 const g2 = games[900002], last2 = g2.decisions.length - 1;
 await open(900002, 0);
 if (!same(await row(), REGULAR)) fail(`game 2 row at the first pitch shows extra innings: ${(await row()).join(',')}`);
+if ((await page.locator('select option').count()) !== 1) fail('game 2 lists plate appearances reached in game 1');  // furthest is per game
 await open(900002, firstOf(g2, '10초'));
 if (!same(await row(), [...REGULAR, '10초'])) fail(`at 10초 the row is ${(await row()).join(',')}`);
 await open(900002, last2);
@@ -83,11 +85,19 @@ await page.reload(); await page.locator('.wa-board').waitFor();
 if (!same(await row(), [...REGULAR, '10초', '10말'])) fail(`reached extra innings forgotten after reload: ${(await row()).join(',')}`);
 if ((await current()) !== '1초') fail(`current half after reload is ${await current()}`);
 
+// Game 3 opened straight at its last pitch by a shared link: going back and reloading keeps the extra innings reached.
+const last3 = games[900003].decisions.length - 1;
+await open(900003, last3);
+await page.locator('.wa-innings button', { hasText: /^1초$/ }).click();
+await page.waitForFunction(() => window.location.hash === '#i=0', null, { timeout: 3000 }).catch(() => fail('1초 did not jump to the first pitch'));
+await page.reload(); await page.locator('.wa-board').waitFor();
+if (!same(await row(), [...REGULAR, '10초', '10말'])) fail(`extra innings reached by a shared link forgotten after reload: ${(await row()).join(',')}`);
+
 const small = await page.evaluate(() => [...document.querySelectorAll('.wa-innings button, .wa-nav select')]
   .map((el) => el.getBoundingClientRect()).filter((r) => r.width && (r.height < 44 || r.width < 44)).length);
 if (small) fail(`${small} navigation tap targets under 44px`);
 const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
 if (scrollWidth > 390) fail(`horizontal scroll at phone width: ${scrollWidth}`);
 if (errors.length) fail(`page errors: ${errors.join(' | ')}`);
-await browser.close();
+} catch (error) { fail(String(error)); } finally { await browser.close(); }
 if (!process.exitCode) console.log('watch spoiler smoke: ok');
