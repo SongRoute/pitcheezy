@@ -3,6 +3,7 @@ import { BADGE, get, short } from './WatchAlong';
 import type { Situation } from './WatchAlong';
 import source from './showcase-scenes.json';
 import CvEvidenceCard from './CvEvidenceCard';
+import ModelEvidenceCard from './ModelEvidenceCard';
 import './showcase.css';
 
 type Decision = { index: number; at_bat_number: number; pitch_number: number; situation: Situation;
@@ -129,6 +130,7 @@ export default function Showcase() {
             : <p>{timeline ? '이 장면에 대응하는 투구 자료가 없습니다. 다른 장면을 선택해 주세요.' : '추천 화면을 준비하는 중…'}</p>}
         </section>
       </div>
+      <ModelEvidenceCard />
       <CvEvidenceCard />
     </main>
   </div>;

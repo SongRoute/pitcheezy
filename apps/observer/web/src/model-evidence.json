@@ -1,0 +1,78 @@
+{
+  "schema": "pitcheezy-model-evidence-card-v1",
+  "note": "Display copy of committed main-repo results (unrounded). Descriptive; no new computation. Service and recommendation use G0; the G15 mix is a research baseline only (D145).",
+  "prediction": {
+    "experimentId": "EXP-P11-001",
+    "scope": "Previously exposed eligible 2025 whole-MLB DEV",
+    "outcomeClasses": 10,
+    "pitches": 311721,
+    "games": 1161,
+    "g0": {
+      "nll": 1.4904081967248524,
+      "brier": 0.726592367393062,
+      "ece10": 0.008710236256349225
+    },
+    "frequency": {
+      "nll": 1.50408101626456,
+      "brier": 0.7294806170360207,
+      "ece10": 0.0016600869646492627
+    },
+    "deltaNll": -0.013672819539707377,
+    "deltaNllCi95": [
+      -0.014415351081429984,
+      -0.012924306115981212
+    ],
+    "deltaBrier": -0.00288824964295874,
+    "bootstrapDraws": 10000,
+    "bootstrapUnit": "game",
+    "seeds": 5,
+    "negativeSeeds": 5,
+    "devWindow": [
+      "2025-07-01",
+      "2025-09-30"
+    ],
+    "devWindowSource": "docs/ML_EXPERIMENT_MATRIX.md line 26 (TRAIN 2023-05-15~2025-04-30, early-stop/calibration 2025-05-01~06-30)"
+  },
+  "researchMix": {
+    "experimentId": "EXP-P16-001",
+    "pitches": 311721,
+    "games": 1161,
+    "deltaNllVsG0": -0.004061572859477275,
+    "deltaNllVsG0Ci95": [
+      -0.004382625428931896,
+      -0.003752427299028304
+    ],
+    "seeds": 5,
+    "negativeSeeds": 5,
+    "usedInService": false
+  },
+  "policy": {
+    "id": "MLB-2026-OPE-v1",
+    "attempt": "OPE-2026-a1",
+    "games": 2429,
+    "plateAppearances": 184288,
+    "excludedUnknownPitcher": 34763,
+    "deltaBounds": [
+      -0.001204616445139576,
+      0.0009206006143749304
+    ],
+    "label": "NO_EVIDENCE_OF_IMPROVEMENT",
+    "improvementThreshold": 0.001,
+    "unit": "defensive win probability per plate appearance"
+  },
+  "source": {
+    "repoCommit": "b38bea6f732b21eba0dd00cbf66ac1c395998179",
+    "files": {
+      "results/EXP-P11-001.json": "44dae07c73907c9c54344b1612fddc61db5698bb346288e4788d289c3a64230b",
+      "results/EXP-P16-001.json": "9d372da26b39fca07d6963a6861044721b31cf42209c92d5edb66f7b8a778597",
+      "results/MLB-2026-OPE-v1.json": "0bb8fcd028ff1c86528e7a49727cca90f85ecae266cede1db690998d045209e9",
+      "docs/ML_EXPERIMENT_MATRIX.md": "38a725094a07dbeaa8540a977d7fce39a6a85bf930b1d09979f6e61d673a5155"
+    },
+    "decisions": [
+      "D131",
+      "D143",
+      "D145",
+      "D155"
+    ]
+  }
+}
