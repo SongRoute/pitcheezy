@@ -1,5 +1,9 @@
 # 막힘 알림 메일 감시기 (2026-10-04)
 
+**현재 상태(10/4 16:21 KST): 작동 중 아님.** 16:11 첫 실제 알림에서 Gmail `send_message`가 **Insufficient scope**를 반환했다. 메시지ID·발송 성공 없음. 감시기53945는 `notify_needs_review`로 종료했고 재시도하지 않았다. 읽기 연결 성공은 보내기 권한 확인이 아니었다. Gmail 보내기 권한을 사용자 연결 화면에서 재승인하기 전에는 알림을 보장하지 않는다. 다른 메일 도구·계정·초안 경로로 우회하지 않는다. 독립 개발·연구는 새 감독56856에서 계속한다.
+
+증거: `/Users/song/Projects/pitcheezy-pm-jobs/20261004-end-to-end/email-watch/jobs/38219d9336d6-0-permission_denial/result.json`, 같은 디렉터리 `events.jsonl`, `email-watch/watch-state.json`. 아래 기동·정상 대기는15:59~16:09의 이력이다.
+
 연속 PM 코디네이터가 사람 손이 필요한 상태로 멈췄을 때만 Song에게 Gmail 한 통을 보내는 로컬 감시기.
 `blocker-mail-policy.json`의 `notification_instruction`이 가리키는 문서다. Codex PM이 검토·보완 후 10/4 15:59 KST에 실제 기동했다.
 
