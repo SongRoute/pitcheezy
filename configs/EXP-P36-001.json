@@ -1,0 +1,504 @@
+{
+  "protocol": "cuda_direct_v1",
+  "experiment_id": "EXP-P36-001",
+  "status": "REGISTERED",
+  "decision": "Explicit go recorded in registration.go (new-experiment rule) authorizes exploratory execution after the P36 CUDA smoke (20/20) and the P36 timing gate; chosen under pre-registration section 7 (P35 complete 25/25 with its descriptive report). same_model_reviewed; Codex_review_pending. No scientific N/G decision, promotion or selection; G0, G15 mix (D145), D131/D155 unchanged.",
+  "purpose": "Exploratory family (pre-registration experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P36-001-robust-clip-2026-10-04.md, written before any EXP-P35-001 fit or score and before this wiring; designed after P24-P34 scores were read on repeated DEV: post-selection). Question (pre-registration section 2): with identical data, residual backbone, counts workload, loop, epoch cap 60, early stop, calibration chain and seeds, does applying the fixed RealMLP robust scale + smooth clip (direct_robust_clip_model, transform in its docstring) to the 81 scalars that the periodic arm embeds change calibrated direct-head NLL / Brier / ECE on dev and mlb_dev? Primary contrast robust_clip_residual_counts - residual_counts (isolates input_preprocessing); secondary descriptive contrast robust_clip_residual_counts - periodic_residual_counts (isolates numeric_input_treatment, not compute-matched).",
+  "source_configs": {
+    "base_cuda": {
+      "path": "configs/DRAFT-CUDA-DIRECT-20261004.json",
+      "sha256": "8dc8d22b781e25fe0cd972801d6edb5c34a2b927a94e00eeb27ea438d34dc096"
+    },
+    "frontier_run": {
+      "path": "configs/DRAFT-CUDA-FRONTIER-RUN-20261004.json",
+      "sha256": "2b057e8ede5ddb9dd2f880d352fc272fc51fa9e1344c4d7993e55d02bac42fc7"
+    },
+    "data_combo_run": {
+      "path": "configs/DRAFT-CUDA-DATA-COMBO-RUN-20261004.json",
+      "sha256": "87530cc8ccb62b5723bbce8db999e332a582d601a3582659e35ff5a14756c0f9"
+    },
+    "dropout_run": {
+      "path": "configs/DRAFT-CUDA-DROPOUT-RUN-20261004.json",
+      "sha256": "d50f7ca9036e7c5868cadcab8fa9542f0ec70f219f1664104354320a29343d61"
+    },
+    "workload_dropout_run": {
+      "path": "configs/EXP-P30-001.json",
+      "sha256": "7152ebcaef6a764f8084f73a0fa51b2339e930873759b862a6ae08e985954962"
+    },
+    "tabm_run": {
+      "path": "configs/DRAFT-CUDA-TABM-MINI-20261004.json",
+      "sha256": "334528a5904bd78f9f4a70955114d3434f3085b99a079a699daff07d252eae70"
+    },
+    "embed_residual_run": {
+      "path": "configs/DRAFT-CUDA-EMBED-RESIDUAL-20261004.json",
+      "sha256": "bb0ce6209db7b5b6bbc9243cb57e7ba4913dc1cf567756c67feacf2f508ac14e"
+    },
+    "ema_run": {
+      "path": "configs/DRAFT-CUDA-EMA-20261004.json",
+      "sha256": "a6cf64eb2698a47c3a9302bd07abdecbdcf33e6057b14654a1bd947058ce8de7"
+    },
+    "tabm_registered": {
+      "path": "configs/EXP-P31-001.json",
+      "sha256": "a26442bccde9d8d5d0f46e3863d42d9361132078184b06c0a4a44d2233010404"
+    },
+    "embed_residual_registered": {
+      "path": "configs/EXP-P32-001.json",
+      "sha256": "e8b60d820477b222cfe7d3a61f654735a3952aba97e521bd85846dcba6374fdd"
+    },
+    "ema_registered": {
+      "path": "configs/EXP-P33-001.json",
+      "sha256": "e803ce31b8451c8c70c58cc7513b739e2d4123a5a512751ca4ea446311976d88"
+    },
+    "tabm_residual_run": {
+      "path": "configs/DRAFT-CUDA-TABM-RESIDUAL-20261004.json",
+      "sha256": "5e3ce3adc7ecc30f94425d9dc8a9234441cee2160644fe1ed4d9d54788b76d34"
+    },
+    "tabm_residual_registered": {
+      "path": "configs/EXP-P34-001.json",
+      "sha256": "2bfd0e03aa8cdba6923a237b748ec7f59ca23c44331e1ba1149da23ef2111909"
+    },
+    "ple_draft": {
+      "path": "configs/DRAFT-CUDA-PLE-RESIDUAL-20261004.json",
+      "sha256": "f0ae4e9116d3efe90d119fcc84616172bde183a981206caacc4804d68a31b9b2"
+    },
+    "design_note": {
+      "path": "experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P36-001-robust-clip-2026-10-04.md",
+      "sha256": "947e56c62444ed1cd4f8cf42ba2e6272cf31e30e9099b5ec03cd407fa52b4750"
+    },
+    "ple_registered": {
+      "path": "configs/EXP-P35-001.json",
+      "sha256": "0a7cefda17ed961a1563d7fa762888d1eea4f97bf267f7e40f31dd81e870833a"
+    }
+  },
+  "export": {
+    "splits": [
+      "train",
+      "earlystop",
+      "temperature",
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "fit_splits": [
+      "train"
+    ],
+    "earlystop_split": "earlystop",
+    "temperature_split": "temperature",
+    "predict_splits": [
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "workload_columns": [
+      "prior_records_per100",
+      "thruorder_minus1_over3",
+      "log_rest_days",
+      "rest_missing"
+    ],
+    "shapes": {
+      "length": 6,
+      "n_token": 38,
+      "n_context": 52,
+      "n_workload": 4
+    },
+    "last_year": 2025,
+    "normalization": "none learned here; arrays are the frozen EXP-P4-001 TRAIN-fitted transforms (parent preparation pinned)",
+    "manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+    "context_layout": {
+      "groups": {
+        "base": [
+          0,
+          28
+        ],
+        "pitcher_profile": [
+          28,
+          51
+        ],
+        "pitcher_support": [
+          51,
+          52
+        ]
+      },
+      "base_features": [
+        "balls",
+        "strikes",
+        "outs",
+        "inning",
+        "defensive_score_lead",
+        "defender_is_home",
+        "first_base",
+        "second_base",
+        "third_base",
+        "batter_left",
+        "pitcher_left",
+        "six_batter_style_rates",
+        "six_style_reliabilities",
+        "five_soft_memberships"
+      ],
+      "style_columns": [
+        "batter_style_contact_prior",
+        "batter_style_swing_prior",
+        "batter_style_walk_prior",
+        "batter_style_strikeout_prior",
+        "batter_style_isolated_power_prior",
+        "batter_style_groundball_prior"
+      ],
+      "reliability_columns": [
+        "batter_style_contact_reliability",
+        "batter_style_swing_reliability",
+        "batter_style_walk_reliability",
+        "batter_style_strikeout_reliability",
+        "batter_style_isolated_power_reliability",
+        "batter_style_groundball_reliability"
+      ],
+      "n_clusters": 5,
+      "pitcher_profile_columns": [
+        "effective_speed",
+        "release_spin_rate",
+        "pfx_x",
+        "pfx_z",
+        "left_share",
+        "type_CH",
+        "type_CS",
+        "type_CU",
+        "type_EP",
+        "type_FA",
+        "type_FC",
+        "type_FF",
+        "type_FO",
+        "type_FS",
+        "type_KC",
+        "type_KN",
+        "type_PO",
+        "type_SC",
+        "type_SI",
+        "type_SL",
+        "type_ST",
+        "type_SV",
+        "type_UN"
+      ],
+      "stripped_tail": 7
+    },
+    "context_layout_source": "export manifest lineage.context_layout (SequenceContext.report features, Archetypes.report style/reliability columns and n_clusters, SharingContext clusters columns); names via direct_frontier_registry.direct_context_names; grouped labels map to names only through these source equivalences",
+    "context_names": [
+      "balls",
+      "strikes",
+      "outs",
+      "inning",
+      "defensive_score_lead",
+      "defender_is_home",
+      "first_base",
+      "second_base",
+      "third_base",
+      "batter_left",
+      "pitcher_left",
+      "batter_style_contact_prior",
+      "batter_style_swing_prior",
+      "batter_style_walk_prior",
+      "batter_style_strikeout_prior",
+      "batter_style_isolated_power_prior",
+      "batter_style_groundball_prior",
+      "batter_style_contact_reliability",
+      "batter_style_swing_reliability",
+      "batter_style_walk_reliability",
+      "batter_style_strikeout_reliability",
+      "batter_style_isolated_power_reliability",
+      "batter_style_groundball_reliability",
+      "batter_archetype_membership_0",
+      "batter_archetype_membership_1",
+      "batter_archetype_membership_2",
+      "batter_archetype_membership_3",
+      "batter_archetype_membership_4",
+      "pitcher_effective_speed",
+      "pitcher_release_spin_rate",
+      "pitcher_pfx_x",
+      "pitcher_pfx_z",
+      "pitcher_left_share",
+      "pitcher_type_CH",
+      "pitcher_type_CS",
+      "pitcher_type_CU",
+      "pitcher_type_EP",
+      "pitcher_type_FA",
+      "pitcher_type_FC",
+      "pitcher_type_FF",
+      "pitcher_type_FO",
+      "pitcher_type_FS",
+      "pitcher_type_KC",
+      "pitcher_type_KN",
+      "pitcher_type_PO",
+      "pitcher_type_SC",
+      "pitcher_type_SI",
+      "pitcher_type_SL",
+      "pitcher_type_ST",
+      "pitcher_type_SV",
+      "pitcher_type_UN",
+      "pitcher_log1p_train_count_over10"
+    ]
+  },
+  "training": {
+    "epochs": 60,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005,
+    "loss_weighting": "uniform",
+    "hpo_trials": 0
+  },
+  "calibration": {
+    "method": "minimize_scalar bounded",
+    "bounds": [
+      0.5,
+      2.5
+    ],
+    "chain": "G0 SharingPredictor: log(clip(softmax(logits),1e-30,1)) / T",
+    "split": "temperature"
+  },
+  "arm_notes": {
+    "control": "MatrixModel flatten_mlp 128, no workload: the same-family CUDA control (exact EXP-P35-001 DRAFT / EXP-P34-001 entry, runner requirement)",
+    "residual_counts": "EXP-P32-001 arm unchanged (combo flag, model residual_mlp, frozen direct_residual_model.py, counts workload), old code path (direct_combo_model.build_combo / load_combo)",
+    "periodic_residual_counts": "EXP-P32/P34/P35 arm unchanged (frozen PLR-lite embedding + residual backbone, blocks Dropout .1, counts workload), old code path; keeps its embed_residual flag, so the robust-clip family predicate is tested first in the runner and scorer",
+    "robust_clip_residual_counts": "direct_robust_clip_model.DirectRobustClipResidualModel: frozen ResidualMLPNetwork constructor (same RNG draws, so for one seed every parameter equals the residual_counts initial value; only buffers are added), then per scalar x_j -> z/sqrt(1+(z/3)^2), z = s_j (x_j - median_j), s_j = 1/IQR_j else 2/range_j else 0, on 5 past positions x 8 physics channels (valid rows only) + the 41-column counts continuous map (the same list as periodic_residual_counts) = 81 scalars; frozen DirectResidualModel.fit",
+    "epoch_cap": "Epoch cap 60, patience 5 for every arm (as EXP-P34-001 / EXP-P35-001). fit.json records cap, epochs_run, best_epoch and stopped_by per fit",
+    "statistics": "Robust-scale statistics (median, scale) are computed in fit from the TRAIN argument only (never early-stop, temperature, blend, dev or mlb_dev rows), stored as buffers, hashed (rc_stats_sha256) and never recomputed at predict or load time. fit.json lifts rc_stats_sha256 and rc_rule_counts (re-derived from the fit report), rc_stats_rows (TRAIN-argument rows and per-past-position valid rows) and rc_module_sha256; the scorer requires ONE statistics hash, one TRAIN row hash and one record across all 5 robust-clip fits (same TRAIN => same statistics on every seed and GPU); load_model checks the archived statistics against the run-recorded hash",
+    "smoke_statistics": "Smoke fits use the FIRST 8,192 TRAIN rows (runner SMOKE), so smoke statistics and their hash differ from the full run by design: smoke verifies wiring and identities only, never statistics or scores",
+    "not_faithful": "Only the preprocessing step of RealMLP (Holzmueller, Grinsztajn, Steinwart NeurIPS 2024, arXiv:2407.04491v3 section 3); no learnable diagonal scaling layer, no NTP, not their MLP or hyperparameters; applied to our TRAIN mean/std standardized inputs (equivalent up to float32 rounding); our residual backbone, ten-class head, AdamW loop and calibration chain; no tuning; no claim that paper results transfer",
+    "module_pin": "direct_robust_clip_model.py sha256 is pinned in ONE place, pitchmdp/direct_robust_clip_registry.py MODULE_SHA256 (author pin 5f1864b; re-pinned there after the module review disposition, before smoke); config_check, the factory and the runner fail closed if the file differs; the runner also records the actual sha in every task identity via MODEL_SOURCES and in fit.json rc_module_sha256"
+  },
+  "control_reuse": "none: fresh control and fresh reference arms on seeds 34-38; earlier P24-P35 tasks are never mixed in",
+  "seeds": [
+    34,
+    35,
+    36,
+    37,
+    38
+  ],
+  "seed_rule": "only this registry family may use seeds 34-38: exactly [34, 35, 36, 37, 38], no repeat_tag; disjoint from P24/P25/P27/P29 (0-2), P30-001 (3-7), P30-002 (8-12, repeat_tag repeat2_seeds_8_12), P31 (13-15), P32 (16-18), P33 (19-23), P34 (24-28) and P35 (29-33). Seed 34 was drawn once as the P35 timing-probe seed (TRAIN only, no artifact kept, no DEV/MLB DEV row touched, never a prediction or score); any P36 timing probe uses seed 39. New RNG seeds are not a new evaluation population",
+  "fits": 20,
+  "arms": [
+    {
+      "name": "control",
+      "priority": 1,
+      "model": "flatten_mlp",
+      "width": 128,
+      "workload": []
+    },
+    {
+      "name": "residual_counts",
+      "priority": 1,
+      "combo": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "combination",
+      "model": "residual_mlp",
+      "width": 128
+    },
+    {
+      "name": "periodic_residual_counts",
+      "priority": 1,
+      "embed_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "embed_residual",
+      "model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "name": "robust_clip_residual_counts",
+      "priority": 1,
+      "robust_clip_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "robust_clip",
+      "model": "robust_clip_residual_mlp",
+      "base_model": "residual_mlp",
+      "preprocessing": "robust_scale_smooth_clip",
+      "clip": 3.0,
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    }
+  ],
+  "comparison": {
+    "control_arm": "control",
+    "scorer": "experiments/pitchmdp/scripts/score_cuda_direct.py (portable, numpy only; runs on newsrv)",
+    "scope": "unblended calibrated direct-head probabilities of every arm vs the same-family, same-device CUDA control on dev and mlb_dev, BEFORE June blend / G0 mix; descriptive repeated-DEV only; no decision, ranking, automatic selection, interaction verdict or winner",
+    "not_compared": "P24-P35 tasks, frozen MPS numbers or other families (different control/code/seeds); no saved-probability ensemble grid for this family (decided in the pre-registration; adding one needs a grid file committed with time and reason BEFORE any P36 score exists)",
+    "robust_clip_contrasts": [
+      {
+        "name": "robust_clip_residual_counts_vs_residual_counts",
+        "candidate": "robust_clip_residual_counts",
+        "reference": "residual_counts",
+        "isolates": "input_preprocessing",
+        "role": "primary",
+        "compute_matched": true,
+        "held": {
+          "workload": "counts",
+          "backbone": "residual",
+          "dropout_rate": 0.1,
+          "head": "single"
+        }
+      },
+      {
+        "name": "robust_clip_residual_counts_vs_periodic_residual_counts",
+        "candidate": "robust_clip_residual_counts",
+        "reference": "periodic_residual_counts",
+        "isolates": "numeric_input_treatment",
+        "role": "secondary",
+        "compute_matched": false,
+        "held": {
+          "workload": "counts",
+          "backbone": "residual",
+          "dropout_rate": 0.1,
+          "head": "single"
+        }
+      }
+    ],
+    "robust_clip_scope": "2 pre-registered pairs (candidate minus reference, same seeds, seed-mean ensemble and single-fit, whole-game bootstrap): input_preprocessing (primary, one factor, same initial parameters per seed) and numeric_input_treatment (secondary, descriptive, not compute-matched, never used to pick); every arm is also reported vs control. Exploratory, post-selection, repeated DEV. No ranking, winner or promotion"
+  },
+  "device": {
+    "kind": "cuda",
+    "allowed_gpu_uuids": [
+      "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9",
+      "GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99"
+    ],
+    "max_parallel": 2,
+    "cpu_fallback": false
+  },
+  "queue": {
+    "timezone": "Asia/Seoul",
+    "date": "2026-10-05",
+    "date_note": "Launch-day deadlines from the fixed rule (launch 01:45 KST; no_new >= L+5 h, kill >= no_new+1 h, aggregate >= kill+30 min, aggregate <= 23:00; pre-registration section 5, review a23e77b m1). P36 timing-probe projection: family 16852 worker-s over 2 GPUs; unchanged task timeout, family budget and attempts.",
+    "batch": "P36 robust-clip 4 arms x fresh seeds 34-38, epoch cap 60; registered by the delegated Opus PM worker after 20/20 CUDA smoke identities (07ab288) and the P36 timing probe passed all gates.",
+    "no_new_fit_after": "06:45",
+    "kill_own_after": "07:45",
+    "aggregate_by": "08:15",
+    "task_timeout_seconds": 3600,
+    "family_budget_seconds": 36000,
+    "max_attempts": 2,
+    "order": "priority then seed then arm (all 4 arms priority 1; config order)",
+    "start_after": "EXP-P35-001 terminal (complete or stopped) and no other family's queue running on GPU3/4 (EXP-P30-001, EXP-P30-002, EXP-P31-001, EXP-P32-001, EXP-P33-001, EXP-P34-001, EXP-P35-001 terminal; any root queue not running); never concurrent with another family's queue. Launch with --lock-dir /home/sds733/pitcheezy-autonomy/gpu-locks (the common per-GPU flock); co-scheduled fit seconds would be recorded as co-scheduled, not as compute cost.",
+    "stop_rule": "any task failing twice aborts the family (no partial comparison, failures reported); timing gate before registration (pre-registration section 4, replaced after review a23e77b M1): (i) CUDA smoke of all 20 tasks on GPU3/GPU4 (fresh archive/code dir) with exit 0, wiring and identities only, smoke times are not a projection; (ii) timing probe (P35 Amendment-2 method, seed 39, no artifact kept, no DEV/MLB DEV row) for residual_counts and robust_clip_residual_counts on each GPU: per arm projected task <= 1800 s on the slower GPU, family <= 36000 worker-s, probe exit 0, peak device bytes and peak host RSS printed; at most 2 smoke attempts (fix in a new commit + re-smoke); any gate false -> no registration, record kept (gates not raised, not silently shortened); no extra arms, seeds, contrasts, constants, epochs or grids after any P35 or P36 score is read"
+  },
+  "exposure": "DEV / MLB DEV are the same repeatedly exposed <=2025 rows used for P24-P35 (258 fits incl. P35 once it runs) and by EXP-P30-002; this family was designed after reading P24-P34 results (post-selection). Descriptive only: no winner, promotion or verdict fields. G0, D131/D155 unchanged. No 2026 data.",
+  "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks manifest). DEV/mlb_dev only predicted, never used for fit, robust-scale statistics, early stop, temperature or selection. Same export manifest as EXP-P35-001 (P24-P35 export).",
+  "execution": {
+    "enabled": true
+  },
+  "registration": {
+    "source_commit": "07ab288",
+    "draft_path": "configs/DRAFT-CUDA-ROBUST-CLIP-20261005.json",
+    "draft_sha256": "644239f3b2aaa4410391211ab1e4d972f13e1a6b025a026b058f0dff319c470a",
+    "preregistration": "experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P36-001-robust-clip-2026-10-04.md",
+    "timing_probe": {
+      "summary": "/Users/song/Projects/pitcheezy-pm-jobs/20261004-end-to-end/p36-probe-07ab288-pull/summary.json",
+      "summary_sha256": "0edb45bf299ef442f0b0679a6b0612ea55e771235a03af68eba57911f0fca837",
+      "slowest_task_seconds_projected": {
+        "control": 464.0,
+        "periodic_residual_counts": 1046.0,
+        "residual_counts": 872.4935733620077,
+        "robust_clip_residual_counts": 987.8916320987046
+      },
+      "family_worker_seconds_projected": 16851.92602730356,
+      "gates": {
+        "complete": true,
+        "exit_code": 0,
+        "every_arm_within": true,
+        "family_within": true,
+        "probe_exit_zero": true
+      }
+    },
+    "registered_by": "delegated Opus 5.5 PM worker, cycle-041-20261004T162217Z-ef81dc5d (not root, not Codex)",
+    "go": "v5 runbook e73f44022593792efa326df31440e7c6f88752bd455d62eb47f9b2e8a59f3b96 (2026-10-04 20:29 KST) first section + PREREG P36 line 10 + §7 rule met (P35 report 3218d78); cycle cycle-041-20261004T162217Z-ef81dc5d",
+    "review": "Module, wiring + pre-registration, registration pack and timing probe: distinct Opus reviews (same-model) with dispositions. Family code and results: same_model_reviewed; Codex_review_pending.",
+    "exposure": "Repeated DEV, post-selection, descriptive only; no 2026 data; no unseen validation."
+  }
+}
