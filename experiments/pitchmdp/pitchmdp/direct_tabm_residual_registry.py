@@ -12,11 +12,12 @@ NLL / Brier relative to each parent?
 
   backbone \\ head        single network                        TabM-mini k=8
   flatten (dropout 0)    -                                     tabm_counts (EXP-P31-001 entry)
+  flatten (head .1)      -                                     tabm_counts_d10 (EXP-P31-001 entry; Amendment 1)
   residual (blocks .1)   periodic_residual_counts (EXP-P32-001) tabm_residual_counts (new)
 
 plus control = MatrixModel flatten_mlp 128, no workload.  The three earlier arms are the
-EXACT registered config entries (same flags, same code path).  4 arms x seeds exactly
-[24, 25, 26, 27, 28] = 20 fits, one immutable export, the cuda_direct_v1 budget EXCEPT the
+EXACT registered config entries (same flags, same code path).  5 arms x seeds exactly
+[24, 25, 26, 27, 28] = 25 fits (Amendment 1 added tabm_counts_d10 before any smoke/fit), one immutable export, the cuda_direct_v1 budget EXCEPT the
 epoch cap: 60 for every arm (fixed in the pre-registration before any fit; no learning-rate
 schedule, so a run that stops by patience 5 before epoch 30 is algorithmically unchanged).
 Numbers are not compared with P31/P32 (other cap, seeds, run batch).  Seeds 24-28 are
@@ -25,6 +26,9 @@ P32 16-18, P33 19-23); no repeat tag.
 
 Fixed contrasts (candidate - reference; ISOLATES gives the exact changed factor set):
   ensemble_head          residual backbone, TabM-mini vs single network
+  backbone_bundle_d10    TabM-mini head, residual vs flatten backbone at dropout .1 on both
+                         sides (structure + member-head width + dropout placement together;
+                         not one-factor, disclosed)
   backbone_bundle        TabM-mini head, residual vs flatten backbone (structure + dropout
                          0 -> blocks .1 together; disclosed, not separated)
   *_bundle_vs_control    each non-control arm vs the fresh flatten control (several factors)
@@ -56,6 +60,8 @@ BASELINES = {
                                  'workload': WORKLOAD, **er.ARMS['periodic_residual_counts']},
     'tabm_counts': {'name': 'tabm_counts', 'priority': 1, tr.FLAG: True, 'workload': WORKLOAD,
                     **tr.ARMS['tabm_counts']},
+    'tabm_counts_d10': {'name': 'tabm_counts_d10', 'priority': 1, tr.FLAG: True, 'workload': WORKLOAD,
+                        **tr.ARMS['tabm_counts_d10']},
 }
 # New arm name -> exact config entry without name / priority / flag / workload.
 ARMS = {
@@ -64,16 +70,19 @@ ARMS = {
                              'k': K, 'scaling_init': SCALING_INIT, 'workload_level': LEVEL,
                              'context_continuous': CONTINUOUS},
 }
-ARM_ORDER = ('control', 'periodic_residual_counts', 'tabm_counts', 'tabm_residual_counts')
+ARM_ORDER = ('control', 'periodic_residual_counts', 'tabm_counts', 'tabm_residual_counts', 'tabm_counts_d10')
 FITS = len(ARM_ORDER) * len(SEEDS)
 FACTOR_NAMES = ('input', 'workload', 'backbone', 'dropout_rate', 'dropout_position', 'head')
 FACTORS = {'control': ('raw', 'none', 'flatten', 0., 'none', 'single'),
            'periodic_residual_counts': ('periodic', LEVEL, 'residual', .1, 'blocks', 'single'),
            'tabm_counts': ('periodic', LEVEL, 'flatten', 0., 'none', 'tabm_mini'),
-           'tabm_residual_counts': ('periodic', LEVEL, 'residual', .1, 'blocks', 'tabm_mini')}
+           'tabm_residual_counts': ('periodic', LEVEL, 'residual', .1, 'blocks', 'tabm_mini'),
+           'tabm_counts_d10': ('periodic', LEVEL, 'flatten', .1, 'head', 'tabm_mini')}
 ISOLATES = {'ensemble_head': {'head'},
+            'backbone_bundle_d10': {'backbone', 'dropout_position'},
             'backbone_bundle': {'backbone', 'dropout_rate', 'dropout_position'},
             'tabm_bundle_vs_control': {'input', 'workload', 'head'},
+            'tabm_d10_bundle_vs_control': {'input', 'workload', 'dropout_rate', 'dropout_position', 'head'},
             'residual_bundle_vs_control': {'input', 'workload', 'backbone', 'dropout_rate', 'dropout_position'},
             'tabm_residual_bundle_vs_control': set(FACTOR_NAMES)}
 
@@ -88,13 +97,16 @@ def pair(candidate, reference, isolates, held):
             'isolates': isolates, 'held': held}
 
 
-# Order and pairs exactly as in the pre-registration "Fixed contrasts".
+# Order and pairs exactly as in the pre-registration "Fixed contrasts" (Amendment 1: 7 pairs).
 CONTRASTS = [
     pair('tabm_residual_counts', 'periodic_residual_counts', 'ensemble_head',
          {'input': 'periodic', 'workload': LEVEL, 'backbone': 'residual'}),
+    pair('tabm_residual_counts', 'tabm_counts_d10', 'backbone_bundle_d10',
+         {'input': 'periodic', 'workload': LEVEL, 'head': 'tabm_mini', 'dropout_rate': .1}),
     pair('tabm_residual_counts', 'tabm_counts', 'backbone_bundle',
          {'input': 'periodic', 'workload': LEVEL, 'head': 'tabm_mini'}),
     pair('tabm_counts', 'control', 'tabm_bundle_vs_control', {'backbone': 'flatten', 'dropout_rate': 0.}),
+    pair('tabm_counts_d10', 'control', 'tabm_d10_bundle_vs_control', {'backbone': 'flatten'}),
     pair('periodic_residual_counts', 'control', 'residual_bundle_vs_control', {'head': 'single'}),
     pair('tabm_residual_counts', 'control', 'tabm_residual_bundle_vs_control', {}),
 ]
@@ -112,7 +124,7 @@ def check_arm(arm):
 
 
 def check_seeds(config):
-    """Exactly seeds [24, 25, 26, 27, 28], no repeat_tag, 20 fits."""
+    """Exactly seeds [24, 25, 26, 27, 28], no repeat_tag, 25 fits."""
     if 'repeat_tag' in config or not same(config.get('seeds'), SEEDS):
         raise ValueError('TabM-residual seeds must be exactly [24, 25, 26, 27, 28] with no repeat_tag')
     if not same(config.get('fits'), FITS):
@@ -128,7 +140,7 @@ def check_training(config):
 
 
 def check_family(config):
-    """The whole family is the four fixed arms in order; earlier arms are the exact registered entries."""
+    """The whole family is the five fixed arms in order; earlier arms are the exact registered entries."""
     if [a.get('name') for a in config['arms']] != list(ARM_ORDER):
         raise ValueError('TabM-residual family must be exactly ' + ', '.join(ARM_ORDER))
     for arm in config['arms']:

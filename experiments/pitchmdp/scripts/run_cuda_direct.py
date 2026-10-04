@@ -63,8 +63,8 @@ seeds exactly [19, 20, 21, 22, 23], no workload.  Its family check runs first.
 TabM-residual arms (DRAFT-CUDA-TABM-RESIDUAL-20261004): an arm marked "tabm_residual":
 true must equal direct_tabm_residual_registry.ARMS (TabM-mini k=8 on the frozen PLR-lite
 + residual backbone, counts workload); a config with such arms must be exactly the fixed
-four-arm family (control, periodic_residual_counts = EXP-P32-001 and tabm_counts =
-EXP-P31-001 exact entries) on seeds exactly [24, 25, 26, 27, 28] with the pre-registered
+five-arm family (control, periodic_residual_counts = EXP-P32-001, tabm_counts and
+tabm_counts_d10 = EXP-P31-001 exact entries) on seeds exactly [24, 25, 26, 27, 28] with the pre-registered
 epoch cap 60 (every other training entry unchanged).  Its family check runs before the
 EMA / TabM / embedded-residual ones because two of its arms keep those flags.  fit.json
 of this family also records the epoch cap passed to fit, epochs run, best epoch and

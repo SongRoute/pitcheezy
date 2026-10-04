@@ -70,13 +70,13 @@ def keys_deep(value):
 
 # ------------------------------------------------------------------ config / registry
 
-def test_config_is_draft_exact_4_arm_family_on_seeds_24_28_with_cap_60():
+def test_config_is_draft_exact_5_arm_family_on_seeds_24_28_with_cap_60():
     cfg, ema = read(RUN), read(DRAFTS[2])
     assert cfg['status'] == 'DRAFT' and cfg['execution'] == {'enabled': False} and 'repeat_tag' not in cfg
     assert 'registration' not in cfg and cfg['experiment_id'] == 'DRAFT-CUDA-TABM-RESIDUAL-20261004'
     assert [a['name'] for a in cfg['arms']] == list(reg.ARM_ORDER) == ['control', 'periodic_residual_counts',
-                                                                        'tabm_counts', NEW]
-    assert cfg['seeds'] == [24, 25, 26, 27, 28] and cfg['fits'] == 20 == 4 * len(cfg['seeds'])
+                                                                        'tabm_counts', NEW, 'tabm_counts_d10']
+    assert cfg['seeds'] == [24, 25, 26, 27, 28] and cfg['fits'] == 25 == 5 * len(cfg['seeds'])
     assert cfg['training'] == {**rc.TRAINING, 'epochs': 60} == reg.TRAINING and reg.EPOCH_CAP == 60
     assert cfg['export'] == ema['export'] and cfg['export']['manifest_sha256'].startswith('49097109')
     assert cfg['export']['workload_columns'] == COLUMNS and cfg['export']['last_year'] == 2025
@@ -87,7 +87,7 @@ def test_config_is_draft_exact_4_arm_family_on_seeds_24_28_with_cap_60():
     assert (q['task_timeout_seconds'], q['family_budget_seconds'], q['max_attempts']) == (3600, 36000, 2)
     assert 'PLACEHOLDER' in q['date_note'] and 're-dated' in q['date_note']
     assert '/home/sds733/pitcheezy-autonomy/gpu-locks' in q['start_after'] and 'EXP-P33-001' in q['start_after']
-    assert cfg['comparison'][reg.CONTRAST_KEY] == reg.CONTRASTS and len(reg.CONTRASTS) == 5
+    assert cfg['comparison'][reg.CONTRAST_KEY] == reg.CONTRASTS and len(reg.CONTRASTS) == 7
     assert {k for k in cfg['comparison'] if k.endswith('_contrasts')} == {reg.CONTRAST_KEY}
     for phrase in ('repeatedly exposed', '<=2025', 'post-selection', 'Descriptive only', 'No 2026'):
         assert phrase in cfg['exposure'], phrase
@@ -104,6 +104,7 @@ def test_earlier_arms_equal_the_committed_registered_entries():
     p31, p32 = ({a['name']: a for a in read(p)['arms']} for p in (P31, P32))
     assert reg.same(arms['periodic_residual_counts'], p32['periodic_residual_counts'])
     assert reg.same(arms['tabm_counts'], p31['tabm_counts'])
+    assert reg.same(arms['tabm_counts_d10'], p31['tabm_counts_d10'])  # Amendment 1 arm 5
     assert reg.same(arms['control'], p31['control']) and reg.same(arms['control'], p32['control'])
     for name, spec in reg.BASELINES.items():
         assert reg.same(spec, arms[name])
@@ -158,6 +159,10 @@ def test_own_check_seeds_accepts_only_24_28(seeds):
     lambda c: c['arms'][1].update(embedding='linear'),                                # earlier arm altered
     lambda c: c['arms'][2].update(head_dropout=.1),
     lambda c: c['arms'][2].update(workload=[]),
+    lambda c: c['arms'][4].update(head_dropout=0.),                                   # arm 5 altered
+    lambda c: c['arms'][4].update(tabm_residual=True),
+    lambda c: c['arms'].insert(2, c['arms'].pop(4)),                                  # arm order
+    lambda c: c.update(fits=20),
     lambda c: c['arms'][0].update(workload=['prior_records_per100']),
     lambda c: c['arms'].pop(),
     lambda c: c['arms'].pop(1),
@@ -225,17 +230,23 @@ def test_contrast_list_matches_preregistration_and_changes_declared_factors():
     cfg = load()
     assert reg.check_contrasts(cfg) == reg.CONTRASTS
     assert [(c['candidate'], c['reference']) for c in reg.CONTRASTS] == [
-        (NEW, 'periodic_residual_counts'), (NEW, 'tabm_counts'), ('tabm_counts', 'control'),
-        ('periodic_residual_counts', 'control'), (NEW, 'control')]
+        (NEW, 'periodic_residual_counts'), (NEW, 'tabm_counts_d10'), (NEW, 'tabm_counts'), ('tabm_counts', 'control'),
+        ('tabm_counts_d10', 'control'), ('periodic_residual_counts', 'control'), (NEW, 'control')]
     assert all(c['name'] == f"{c['candidate']}_vs_{c['reference']}" for c in reg.CONTRASTS)
     assert reg.CONTRASTS[0]['isolates'] == 'ensemble_head' and reg.ISOLATES['ensemble_head'] == {'head'}
-    assert reg.CONTRASTS[1]['isolates'] == 'backbone_bundle'  # backbone + dropout together (disclosed)
+    assert reg.CONTRASTS[1]['isolates'] == 'backbone_bundle_d10'  # dropout .1 both sides; backbone + placement (disclosed)
+    assert reg.ISOLATES['backbone_bundle_d10'] == {'backbone', 'dropout_position'}
+    assert reg.CONTRASTS[1]['held']['dropout_rate'] == .1
+    assert reg.CONTRASTS[2]['isolates'] == 'backbone_bundle'  # backbone + dropout together (disclosed)
 
 
 @pytest.mark.parametrize('edit', [
     lambda cs: cs.append(dict(cs[0], name='again')),
     lambda cs: cs[0].update(candidate='periodic_residual_counts', reference=NEW),   # reversed sign
     lambda cs: cs[1].update(isolates='ensemble_head'),
+    lambda cs: cs[1].update(isolates='backbone_bundle'),                            # d10 pair claims a dropout-rate change
+    lambda cs: cs[1].update(held={**cs[1]['held'], 'dropout_rate': 0.}),
+    lambda cs: cs.pop(1),                                                           # Amendment 1 pair dropped
     lambda cs: cs[0].update(held={'backbone': 'flatten'}),
     lambda cs: cs[0].update(winner=True),
     lambda cs: cs.pop(),
@@ -366,7 +377,7 @@ def test_runner_smoke_task_cpu_records_cap_and_refuses_other_seeds(export, tmp_p
         rc.run_task(cfg, path, digest, tmp_path / 'real', NEW, 24, 'cpu', {})
 
 
-@pytest.mark.parametrize('arm', ['control', 'periodic_residual_counts', 'tabm_counts'])
+@pytest.mark.parametrize('arm', ['control', 'periodic_residual_counts', 'tabm_counts', 'tabm_counts_d10'])
 def test_every_earlier_arm_in_this_family_records_the_cap_too(export, tmp_path, arm):
     path, digest, _ = export
     dest = rc.run_task(load(), path, digest, tmp_path / 'smoke', arm, 28, 'cpu', {}, smoke=True)
@@ -381,10 +392,10 @@ def test_queue_block_follows_the_ema_pattern_and_parses():
     assert set(q) == set(ema) | {'date_note', 'stop_rule'}
     assert {k: q[k] for k in ('timezone', 'no_new_fit_after', 'kill_own_after', 'aggregate_by', 'order')} == \
         {**{k: ema[k] for k in ('timezone', 'no_new_fit_after', 'kill_own_after', 'aggregate_by')},
-         'order': 'priority then seed then arm (all 4 arms priority 1; config order)'}
+         'order': 'priority then seed then arm (all 5 arms priority 1; config order)'}
     deadlines = cq.Deadlines(q)
     assert deadlines.no_new < deadlines.kill < deadlines.aggregate
-    assert '1800 s' in q['stop_rule'] and 'twice' in q['stop_rule']
+    assert '1800 s' in q['stop_rule'] and 'twice' in q['stop_rule'] and '1,224 updates/epoch x 60' in q['stop_rule']
 
 
 def test_other_family_fit_json_has_no_epoch_cap_record(export, tmp_path):
@@ -504,3 +515,17 @@ def test_scorer_refuses_incomplete_missing_or_mixed_contrasts(export, tmp_path, 
     with pytest.raises(ValueError, match='REGISTERED'):
         tf.run_score(tmp_path, load(), export, tmp_path / 'no-family-needed')
     assert not (tmp_path / 'score').exists()
+
+
+def test_module_hash_is_the_post_disposition_pin():
+    """Wiring requirement (Amendment 1): the module pinned AFTER review disposition 0d8a65b (R1 + N1/N2)."""
+    assert rc.sha256_file(PROJECT / 'pitchmdp/direct_tabm_residual_model.py') == \
+        '6a9daff6c3de13a753357d8615bd9f0d5a7bfe796b350f7f7bd0a5e60c9287cf'
+    assert '6a9daff6c3de13a753357d8615bd9f0d5a7bfe796b350f7f7bd0a5e60c9287cf' in read(RUN)['arm_notes']['module_pin']
+
+
+def test_arm_5_dispatches_to_the_old_tabm_code_path_with_head_dropout_10():
+    cfg = load()
+    model = rc.build_model(rc.arm_spec(cfg, 'tabm_counts_d10'), 24, 'cpu')
+    assert type(model) is DirectTabMModel and type(model) is not DirectTabMResidualModel
+    assert model.architecture['head_dropout'] == .1 and model.architecture['k'] == reg.K

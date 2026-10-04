@@ -22,7 +22,7 @@ comparison.ema_contrasts (EMA weight-averaging family) must equal
 direct_ema_registry.CONTRASTS (3 fixed pairs on seeds 19-23; all 20 fits must exist
 first), likewise checked before any read.
 comparison.tabm_residual_contrasts (TabM-mini x periodic-residual family) must equal
-direct_tabm_residual_registry.CONTRASTS (5 pre-registered pairs on seeds 24-28; all 20
+direct_tabm_residual_registry.CONTRASTS (7 pre-registered pairs on seeds 24-28; all 25
 fits must exist first), likewise checked before any read; every fit must also record the
 epoch cap 60 it was given and where it stopped (cap hits listed per fit).  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
@@ -396,7 +396,8 @@ def korean_table(result):
     for split, contrasts in (result.get('tabm_residual_contrasts') or {}).items():
         lines += [f'## {split} TabM-mini × 잔차 구조 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
                   'ensemble_head 행은 잔차 구조에서 TabM-mini 1회 학습(구성원 8)과 단일 신경망 1회 학습의 비교입니다. 연산량은 같지 않습니다. '
-                  'backbone_bundle 행은 TabM-mini에서 구조와 드롭아웃(헤드 0 → 블록 0.1)을 함께 바꿉니다. '
+                  'backbone_bundle_d10 행은 TabM-mini에서 드롭아웃 0.1을 양쪽에 두고 구조·구성원 헤드 입력 폭·드롭아웃 위치(헤드 → 블록)를 함께 바꿉니다. '
+                  'backbone_bundle 행은 TabM-mini에서 구조와 드롭아웃(헤드 0 → 블록 0.1)을 함께 바꿉니다. 두 행 모두 한 요인 비교가 아닙니다. '
                   '*_vs_control 행은 여러 요인이 함께 바뀐 묶음 비교입니다.', '',
                   f"시드 {', '.join(map(str, result['seed_block']['seeds']))}는 새 모델 난수일 뿐 새 데이터가 아닙니다"
                   '(같은 DEV·MLB DEV 반복 노출). 이 가족은 P30~P33 결과를 읽은 뒤 설계한 사후 탐색입니다. '
