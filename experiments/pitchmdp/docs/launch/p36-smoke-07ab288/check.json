@@ -1,0 +1,62 @@
+{
+ "all_pass": true,
+ "checks": {
+  "attempts_within_bound": true,
+  "every_task_has_fit": true,
+  "fit_gpus_allowed": true,
+  "identity_export_manifest": true,
+  "module_sha_is_commit_blob": true,
+  "one_config_digest": true,
+  "one_queue_dir": true,
+  "preflight_export_manifest": true,
+  "preflight_present": true,
+  "preflight_runner_is_commit": true,
+  "preflight_sources_match": true,
+  "status_commands_use_commit_code_dir": true,
+  "summary_all_done": true,
+  "summary_gpus_allowed": true,
+  "task_sources_match": true,
+  "tasks_exact": true,
+  "uniform_hash_present": true,
+  "uniform_hash_seen_on_both_gpus": true,
+  "uniform_hash_single": true,
+  "uniform_rows_single": true
+ },
+ "commit": "07ab288",
+ "config_digests": [
+  "fcfa4354f66b75f0b775269f7c3264ce6f05f55208a8a21322b8ad2e0b5b0e24"
+ ],
+ "evidence": "/Users/song/Projects/pitcheezy-pm-jobs/20261004-end-to-end/p36-smoke-07ab288-r2-evidence",
+ "expected_tasks": 20,
+ "family": "p36-robust-clip",
+ "gpus_used": [
+  "GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99",
+  "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9"
+ ],
+ "host_rss_fields_by_arm": {},
+ "module_blob_sha256": "a3d6cbcef8350586a23d1a6d35213e36ba8e0ccf21288288464f8ce7dcbf52fa",
+ "peak_device_bytes_by_arm": {
+  "control": 90475008,
+  "periodic_residual_counts": 140019200,
+  "residual_counts": 91296768,
+  "robust_clip_residual_counts": 92449280
+ },
+ "preflight_mismatch": [],
+ "preflight_sources": 30,
+ "summary_family_seconds": 175.18470269441605,
+ "task_source_checks": 580,
+ "task_source_mismatch": [],
+ "uniform_by_gpu": {
+  "GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99": [
+   "a4bd77324ee83311ebeee7e313e273e9aa9420c30d14596d2a6ce401fa4b1e80"
+  ],
+  "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9": [
+   "a4bd77324ee83311ebeee7e313e273e9aa9420c30d14596d2a6ce401fa4b1e80"
+  ]
+ },
+ "uniform_carriers": 5,
+ "uniform_key": "rc_stats_sha256",
+ "uniform_values": [
+  "a4bd77324ee83311ebeee7e313e273e9aa9420c30d14596d2a6ce401fa4b1e80"
+ ]
+}
