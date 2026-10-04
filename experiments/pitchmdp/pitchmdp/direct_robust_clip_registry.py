@@ -41,8 +41,8 @@ from pitchmdp import direct_workload_dropout_registry as wr
 FLAG = 'robust_clip_residual'
 CONTRAST_KEY = 'robust_clip_contrasts'
 MODULE = 'direct_robust_clip_model.py'
-# direct_robust_clip_model.py sha256: the ONE pin (author pin 5f1864b; re-pin here after the module review disposition).
-MODULE_SHA256 = '22841f2c82b75099cc58ac5e78cda6b1fc4a387366ccb0944b7b6f41cbbee3f2'
+# direct_robust_clip_model.py sha256: the ONE pin (re-pinned T104 to the reviewed + dispositioned module 55938c7 = 039641f; author pin 5f1864b was 22841f2c).
+MODULE_SHA256 = 'a3d6cbcef8350586a23d1a6d35213e36ba8e0ccf21288288464f8ce7dcbf52fa'
 KIND = 'robust_clip_residual_mlp'  # == direct_robust_clip_model.KIND (tested; this module stays torch-free)
 CLIP = 3.                          # == direct_robust_clip_model.CLIP (tested)
 SEEDS = [34, 35, 36, 37, 38]
