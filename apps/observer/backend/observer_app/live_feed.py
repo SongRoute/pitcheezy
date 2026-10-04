@@ -180,6 +180,17 @@ class LiveFeed:
             with gzip.open(path, 'wt') as handle:
                 json.dump(feed, handle)
 
+    def _buffer(self, game_pk):
+        return self.buffers.setdefault(game_pk, [])
+
+    def _accept(self, game_pk, feed, wall, buffer):
+        event = event_wall(feed)
+        entry = {'feed': feed, 'event': wall if event is None else min(event, wall), 'fetched': wall}
+        if buffer and entry['event'] <= buffer[-1]['event']:
+            buffer[-1]['feed'] = feed  # no newer game event: keep its first-seen times, refresh the content
+        else:
+            buffer.append(entry)
+
     def snapshot(self, game_pk, delay_s=None):
         """Returns (entry or None, seconds until this delay has something to show). An entry is
         ``{'feed', 'event', 'fetched'}``: the snapshot, its newest event's wall time and when it was fetched."""
@@ -187,7 +198,7 @@ class LiveFeed:
         delay = self.delay_s if delay_s is None else min(max(0.0, float(delay_s)), self.max_delay_s)
         with self._lock:
             now, wall = self.clock(), self.wall()
-            buffer = self.buffers.setdefault(game_pk, [])
+            buffer = self._buffer(game_pk)
             if now-self.fetched_at.get(game_pk, -1e18) >= self._interval(game_pk, delay, now):
                 self.fetched_at[game_pk] = now
                 try:  # one attempt: every viewer waits on this lock, and the next poll retries anyway
@@ -199,12 +210,7 @@ class LiveFeed:
                     self.failing[game_pk] = wall  # keep serving what we have; the route tells the viewer
                 else:
                     self.failing.pop(game_pk, None)
-                    event = event_wall(feed)
-                    entry = {'feed': feed, 'event': wall if event is None else min(event, wall), 'fetched': wall}
-                    if buffer and entry['event'] <= buffer[-1]['event']:
-                        buffer[-1]['feed'] = feed  # no newer game event: keep its first-seen times, refresh the content
-                    else:
-                        buffer.append(entry)
+                    self._accept(game_pk, feed, wall, buffer)
                     if self.record_dir:
                         self._record(game_pk, feed)
             old = [i for i, entry in enumerate(buffer) if entry['event'] <= wall-self.max_delay_s]

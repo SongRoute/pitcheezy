@@ -28,7 +28,7 @@ sh apps/observer/run.sh
 
 ## 지연 라이브(데모, 검증 전 실험 버전)
 
-`GET /api/live/games?date=YYYY-MM-DD`, `GET /api/live/{gamePk}/state`가 MLB Stats API 공개 피드의 현재 경기 상태를 `delay_s`(기본30초) 지연해 투구 전 입력으로 바꾼다. 설정은 `live_config.json`. 추천은 동결 ≤2025 ARM-B 정책(아래 “서비스로 실행”)이며, 예전 번들(투수 6명) 핀은 `python -m observer_app.live_feed` CLI에서만 쓴다. 원본 피드는 `apps/observer/live_snapshots/`(gitignore)에 gzip으로 기록되고, `PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR` 또는 `python -m observer_app.live_feed --replay-dir DIR --game PK`로 오프라인 재생한다.
+`GET /api/live/games?date=YYYY-MM-DD`, `GET /api/live/{gamePk}/state`가 MLB Stats API 공개 피드의 현재 경기 상태를 `delay_s`(기본30초) 지연해 투구 전 입력으로 바꾼다. 설정은 `live_config.json`. 추천은 동결 ≤2025 ARM-B 정책(아래 “서비스로 실행”)이며, 예전 번들(투수 6명) 핀은 `python -m observer_app.live_feed` CLI에서만 쓴다. 원본 피드는 `apps/observer/live_snapshots/`(gitignore)에 gzip으로 기록되고, `PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR` 또는 `python -m observer_app.live_feed --replay-dir DIR --game PK`로 오프라인 재생한다. 선택 기능 `PITCHEEZY_OBSERVER_LIVE_STORE=<db>`를 주면 지연 버퍼를 SQLite에도 써서 재시작 뒤 이어서 보여 준다(기본은 꺼짐, `deploy/staging/README.md`).
 
 ## 중계 영상과 함께 보기(watch-along, 검증 전 실험 버전)
 
