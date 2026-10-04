@@ -2,9 +2,10 @@
 
     python3 serve_offline.py            # then open http://127.0.0.1:8790/showcase
 
-Every API answer is a byte-identical file from capture_snapshot.py (sha256 checked at start). Anything else under
-/api gets an explicit error instead of made-up data; live games are never offered. The MLB video still comes from
-the internet. A top line on every non-embedded page says this is a saved copy.
+Every API answer is a file from capture_snapshot.py (sha256 checked at start): byte-identical to the preview, except
+/api/watch/games, which is the preview list filtered to the snapshot game (marked in manifest.json). Anything else
+under /api gets an explicit error instead of made-up data; live games are never offered. The MLB video still comes
+from the internet. A top line on every non-embedded page says this is a saved copy.
 """
 import argparse
 import hashlib
@@ -20,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from capture_snapshot import snapshot_file  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-MISSING = '오프라인 예비 묶음에는 이 자료가 없어요. 시연 장면 39개만 저장돼 있어요.'
+MISSING = '오프라인 예비 묶음에는 이 자료가 없어요. 시연 장면 {scenes}개만 저장돼 있어요.'
 NO_LIVE = '오프라인 예비 묶음이라 실시간 경기 정보는 볼 수 없어요.'
 
 
@@ -30,11 +31,13 @@ def load_snapshot(directory):
     manifest = json.loads((directory / 'manifest.json').read_text())
     answers = {}
     for entry in manifest['files']:
+        if snapshot_file(entry['path']) != entry['file']:  # before reading: a manifest cannot point outside api/
+            raise SystemExit(f'unexpected file name for {entry["path"]}')
+        if not (directory / entry['file']).is_file():
+            raise SystemExit(f'snapshot file missing: {entry["file"]}')
         body = (directory / entry['file']).read_bytes()
         if hashlib.sha256(body).hexdigest() != entry['sha256'] or len(body) != entry['bytes']:
             raise SystemExit(f'snapshot file changed: {entry["file"]}')
-        if snapshot_file(entry['path']) != entry['file']:
-            raise SystemExit(f'unexpected file name for {entry["path"]}')
         answers[entry['path']] = body
     return manifest, answers
 
@@ -43,8 +46,8 @@ def api_key(path, query):
     """Canonical snapshot key; summary query order/extra params must not matter."""
     if path.endswith('/summary'):
         q = parse_qs(query)
-        if set(q) - {'through', 'top'} or not q.get('through'):
-            return None
+        if set(q) - {'through', 'top'} or not q.get('through') or any(len(v) > 1 for v in q.values()):
+            return None  # a repeated param is ambiguous: no saved answer
         return f'{path}?through={q["through"][0]}&top={q.get("top", ["5"])[0]}'
     return path if not query else None
 
@@ -60,6 +63,7 @@ def make_handler(dist, manifest, answers):
     dist = Path(dist).resolve()
     index = (dist / 'index.html').read_bytes()
     note = banner(manifest).encode()
+    missing = MISSING.format(scenes=manifest['scenes'])
 
     class Handler(BaseHTTPRequestHandler):
         server_version = 'pitcheezy-offline'
@@ -87,7 +91,7 @@ def make_handler(dist, manifest, answers):
                     return self.error_json(503, NO_LIVE)
                 key = api_key(path, parts.query)
                 body = answers.get(key) if key else None
-                return self.send(200, body, 'application/json') if body is not None else self.error_json(404, MISSING)
+                return self.send(200, body, 'application/json') if body is not None else self.error_json(404, missing)
             if path != '/' and '.' in path.rsplit('/', 1)[-1]:
                 target = (dist / path.lstrip('/')).resolve()
                 if dist not in target.parents or not target.is_file():
@@ -116,7 +120,10 @@ def main():
     manifest, answers = load_snapshot(args.snapshot)
     if b'<body>' not in (Path(args.dist) / 'index.html').read_bytes():
         raise SystemExit('index.html has no <body> tag')
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(args.dist, manifest, answers))
+    try:
+        server = ThreadingHTTPServer((args.host, args.port), make_handler(args.dist, manifest, answers))
+    except OSError as e:
+        raise SystemExit(f'{args.host}:{args.port} 포트를 열지 못했어요({e.strerror}). 다른 번호로: --port {args.port + 1}')
     print(f'http://{args.host}:{args.port}/showcase  ({len(answers)} saved answers, {manifest["captured_kst"]})',
           flush=True)
     try:

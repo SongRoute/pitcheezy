@@ -60,7 +60,7 @@ def write_bundle(tmp_path):
         files.append({'path': path, 'file': snapshot_file(path), 'bytes': len(body),
                       'sha256': hashlib.sha256(body).hexdigest()})
     (snap / 'manifest.json').write_text(json.dumps(
-        {'game_pk': GAME, 'captured_kst': '2026-10-04 14:40 KST', 'files': files}))
+        {'game_pk': GAME, 'scenes': 2, 'captured_kst': '2026-10-04 14:40 KST', 'files': files}))
     return dist, snap, answers
 
 
@@ -128,4 +128,24 @@ def test_changed_snapshot_file_stops_the_server(tmp_path):
     _, snap, _ = write_bundle(tmp_path)
     (snap / snapshot_file(f'/api/watch/{GAME}/reveal/2')).write_bytes(b'{"actual": "SL"}')
     with pytest.raises(SystemExit, match='changed'):
+        load_snapshot(snap)
+
+
+def test_repeated_summary_params_have_no_saved_answer(served):
+    base, _ = served
+    for query in ('through=2&through=3&top=5', 'through=2&top=5&top=6'):
+        status, _, body = get(base + f'/api/watch/{GAME}/summary?{query}')
+        assert status == 404 and '시연 장면 2개' in json.loads(body)['detail'], query
+
+
+def test_manifest_cannot_point_outside_api_or_lose_a_file(tmp_path):
+    _, snap, _ = write_bundle(tmp_path)
+    manifest = json.loads((snap / 'manifest.json').read_text())
+    entry = manifest['files'][1]
+    (snap / entry['file']).unlink()
+    with pytest.raises(SystemExit, match='missing'):
+        load_snapshot(snap)
+    entry['file'] = '../secret.txt'
+    (snap / 'manifest.json').write_text(json.dumps(manifest))
+    with pytest.raises(SystemExit, match='unexpected file name'):
         load_snapshot(snap)
