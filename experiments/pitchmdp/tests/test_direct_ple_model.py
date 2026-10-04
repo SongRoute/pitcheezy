@@ -431,3 +431,25 @@ def test_fit_refuses_current_physics_in_the_early_stop_split_before_binning(tabm
     with pytest.raises(ValueError, match='physics'):
         model.fit(train, y, early, ey, epochs=1, patience=1, batch_size=64)
     assert model.ple_bins is None
+
+
+def test_tabm_fit_hands_the_callers_arrays_to_the_frozen_loop_and_class_kinds(monkeypatch):
+    """No retained guarded copy in the PLE TabM fit (the frozen loop validates and copies once, as for P34)."""
+    seen = {}
+    frozen_fit = ple.tm.DirectTabMModel.fit
+
+    def spy(self, train, labels, calibration, calibration_labels, **kwargs):
+        seen['train'], seen['calibration'] = train, calibration
+        return frozen_fit(self, train, labels, calibration, calibration_labels, **kwargs)
+
+    monkeypatch.setattr(ple.tm.DirectTabMModel, 'fit', spy)
+    train, y = arrays(120, 11)
+    early, ey = arrays(40, 12)
+    model = ple.DirectPLETabMResidualModel(0, CONT, k=2, device='cpu').fit(train, y, early, ey, epochs=1, patience=1,
+                                                                           batch_size=64)
+    assert seen['train'] is train and seen['calibration'] is early
+    assert model.net.config['ple_bins_sha256'] == ple.bins_sha256(ple.compute_bins(train, CONT))
+    assert ple.DirectPLETabMResidualModel.KIND == ple.KINDS['tabm'] == model.kind
+    assert ple.DirectPLEResidualModel.KIND == ple.KINDS['single'] == ple.DirectPLEResidualModel(0, CONT, device='cpu').kind
+    assert (ple.DirectPLETabMResidualModel.FORMAT, ple.DirectPLEResidualModel.FORMAT) == (ple.FORMATS['tabm'],
+                                                                                         ple.FORMATS['single'])
