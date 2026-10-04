@@ -96,3 +96,22 @@ def test_scorer_checks_and_reports_the_effective_count(export, tmp_path, few_dra
             tf.run_score(tmp_path, cfg, export, fam, dest=f'bad{i}')
         w.rc.write_json_atomic(dest / 'fit.json', good)
         tf.reseal(dest)
+
+
+# ------------------------------------------------------------------ W5: rows the bins were fitted on
+
+def test_runner_records_the_rows_the_smoke_bins_were_fitted_on(tmp_path, monkeypatch, capsys):
+    cfg = w.load()
+    n_slice = 128  # synthetic stand-in for SMOKE['train'] (same code path)
+    path, digest, splits = w.slice_constant_export(tmp_path / 'export', cfg, n_slice)
+    monkeypatch.setitem(w.rc.SMOKE, 'train', n_slice)
+    for name in w.NEW:
+        fit = w.read(w.rc.run_task(cfg, path, digest, tmp_path / 'fam-smoke', name, 32, 'cpu', {}, smoke=True)
+                     / 'fit.json')
+        tokens, valid, _ = w.train_inputs(splits, w.rc.arm_spec(cfg, name), n_slice)
+        expected = [int(len(tokens[valid[:, p], p, 0])) for p in range(5)]  # == compute_bins' physics rows
+        assert fit['ple_bin_rows'] == {'train_rows': n_slice, 'past_valid_rows': expected}
+        assert f'PLE_BIN_ROWS {name} 32' in capsys.readouterr().out
+    fit = w.read(w.rc.run_task(cfg, path, digest, tmp_path / 'fam-smoke', 'tabm_residual_counts', 32, 'cpu', {},
+                               smoke=True) / 'fit.json')
+    assert 'ple_bin_rows' not in fit

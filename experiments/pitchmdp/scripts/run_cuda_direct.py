@@ -80,7 +80,8 @@ with the epoch cap 60.  Its family predicate is tested FIRST (config_check, trai
 run_task, scorer), because tabm_residual_counts keeps its P34 flag.  fit.json records the
 epoch cap as P34 and, for PLE arms, the bins hash, per-feature bin counts and the degenerate
 (one-valued, T_j = 0) columns by export column name, and ple_effective_parameter_count next to
-the allocated parameter_count; load_model checks the bins against that recorded hash.
+the allocated parameter_count, and ple_bin_rows (TRAIN-argument rows and per-past-position
+valid rows the bins were fitted on, also printed); load_model checks the bins against that recorded hash.
 
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
@@ -741,6 +742,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         model.save(work / 'model.pt')
         train_rows = hashlib.sha256(np.ascontiguousarray(train['keys'], dtype=np.int64).tobytes()).hexdigest()
         early_rows = hashlib.sha256(np.ascontiguousarray(early['keys'], dtype=np.int64).tobytes()).hexdigest()
+        bin_rows = ple_bin_rows(train_inputs) if is_ple_arm(arm) else None
         del train, train_inputs
         # calibration on the May 16-31 Cpanel rows only
         temp = load_split(export, manifest, 'temperature', lim('temperature'))
@@ -777,7 +779,9 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
             from pitchmdp.direct_ple_registry import effective_record, fit_record
             fit_report.update(fit_record(model.report['network'], config['export']['shapes']['length'],
                                          verified_context_names(config, manifest), arm['workload']))
-            fit_report.update(effective_record(model.report['network'], fit_report['parameter_count']))
+            fit_report.update(effective_record(model.report['network'], fit_report['parameter_count']),
+                              ple_bin_rows=bin_rows)
+            print('PLE_BIN_ROWS', arm_name, seed, json.dumps(bin_rows), flush=True)
         write_json_atomic(work / 'fit.json', fit_report)
         names = ['identity.json', 'model.pt', 'calibration.json', 'predictions.npz', 'mlb_predictions.npz', 'fit.json']
         write_json_atomic(work / 'state.json', {'identity': identity,
@@ -796,6 +800,13 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         finally:
             os.rename(work, failed)
         raise
+
+
+def ple_bin_rows(inputs):
+    """Rows the PLE bins were fitted on (module review N-b / W5): all TRAIN-argument rows for context scalars and,
+    per past position (oldest first), the rows where that position is valid for physics scalars."""
+    valid = np.asarray(inputs[1], dtype=bool)
+    return {'train_rows': int(len(valid)), 'past_valid_rows': [int(n) for n in valid[:, :-1].sum(axis=0)]}
 
 
 def peak_device_bytes(device):
