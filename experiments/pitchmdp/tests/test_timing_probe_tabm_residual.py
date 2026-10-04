@@ -186,9 +186,14 @@ def test_run_refuses_busy_gpu_lock_and_existing_output(export, tmp_path):
         tp.run(args, cfg)  # output already exists (never reused)
 
 
+PROBE_RUN_COMMIT = '9de203a'  # the commit archived and run as the P34 timing probe (T50, Amendment 2)
+
+
 def test_frozen_runner_and_models_unchanged_by_probe():
+    # Scoped to the probe's own window (P35 wiring review, disposition T70c): later additive families legitimately
+    # add modules/configs after the probe ran, so diffing ee954a5 against the working tree is no longer the invariant.
     import subprocess
-    changed = subprocess.run(['git', 'diff', '--name-only', 'ee954a5', '--', 'experiments/pitchmdp/pitchmdp',
+    changed = subprocess.run(['git', 'diff', '--name-only', 'ee954a5', PROBE_RUN_COMMIT, '--', 'experiments/pitchmdp/pitchmdp',
                               'experiments/pitchmdp/scripts/run_cuda_direct.py',
                               'experiments/pitchmdp/scripts/cuda_direct_queue.py', 'configs'],
                              cwd=REPO, capture_output=True, text=True, check=True).stdout.split()
