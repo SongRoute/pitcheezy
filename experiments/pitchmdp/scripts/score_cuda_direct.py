@@ -31,7 +31,15 @@ first), likewise checked before any read and tested BEFORE the TabM-residual fam
 tabm_residual_counts keeps the P34 flag); every fit records the epoch cap as P34, every PLE
 fit its bins record and effective parameter count, and all PLE fits of the family must carry ONE bins hash (bins are
 TRAIN-only); the degenerate-column count and the observed same-GPU pairs per contrast are
-reported, the two embedding_type rows first.  Data arms must record the config's subset rule over the
+reported, the two embedding_type rows first.
+comparison.robust_clip_contrasts (robust-clip family, tentative EXP-P36-001 DRAFT) must equal
+direct_robust_clip_registry.CONTRASTS (2 pre-registered pairs on seeds 34-38, primary first; all 20
+fits must exist first), likewise checked before any read and tested FIRST (its arm
+periodic_residual_counts keeps the embed_residual flag); every fit records the epoch cap as P34/P35,
+every robust-clip fit its statistics record (rc_stats_sha256 re-derived from the fit report, rule
+counts, statistics rows, module sha == the registry pin), and all robust-clip fits must carry ONE
+statistics hash and one TRAIN row hash (statistics are TRAIN-only, so every seed and GPU sees the same
+statistics); the secondary row is labelled not compute-matched.  Descriptive only.  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
 
 Scope: UNBLENDED calibrated direct-head probabilities (predictions.npz 'dev',
@@ -82,6 +90,7 @@ from pitchmdp import direct_embed_residual_registry as embed_residual_registry  
 from pitchmdp import direct_ema_registry as ema_registry  # noqa: E402  torch-free
 from pitchmdp import direct_tabm_residual_registry as tabm_residual_registry  # noqa: E402  torch-free
 from pitchmdp import direct_ple_registry as ple_registry  # noqa: E402  torch-free
+from pitchmdp import direct_robust_clip_registry as robust_clip_registry  # noqa: E402  torch-free
 from pitchmdp.matrix_metrics import paired_game_comparison, pitch_losses, prediction_metrics  # noqa: E402
 
 FORMAT = 'cuda_direct_score_v1'
@@ -94,7 +103,7 @@ SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 
                   'pitchmdp/direct_frontier_registry.py', 'pitchmdp/direct_workload_dropout_registry.py',
                   'pitchmdp/direct_tabm_registry.py', 'pitchmdp/direct_embed_residual_registry.py',
                   'pitchmdp/direct_ema_registry.py', 'pitchmdp/direct_tabm_residual_registry.py',
-                  'pitchmdp/direct_ple_registry.py')
+                  'pitchmdp/direct_ple_registry.py', 'pitchmdp/direct_robust_clip_registry.py')
 RUNTIME_SIGNATURE = ('torch', 'torch_cuda', 'cudnn', 'numpy', 'scipy', 'device_name', 'device_capability',
                      'device_total_memory')
 SCOPE = ('unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; '
@@ -192,6 +201,31 @@ def check_one_bins_hash(tasks):
             'degenerate_columns': first['ple_degenerate_columns']}
 
 
+def check_rc_record(config, arm, seed, fit):
+    """Robust-clip fits: the top-level statistics record equals the one re-derived from the fit report; module pin."""
+    length = config['export']['shapes']['length']
+    try:
+        expected = robust_clip_registry.fit_record(fit.get('report') or {}, length)
+        rows = robust_clip_registry.check_stats_rows(fit.get('rc_stats_rows'), length)
+    except ValueError as error:
+        raise ValueError(f'{arm}/{seed}: robust-clip statistics record malformed ({error})') from error
+    if {k: fit.get(k) for k in expected} != expected:
+        raise ValueError(f'{arm}/{seed}: robust-clip statistics record differs from the fit report')
+    if fit.get('rc_module_sha256') != robust_clip_registry.MODULE_SHA256:
+        raise ValueError(f'{arm}/{seed}: robust-clip module sha differs from the registry pin')
+    return {**expected, 'rc_stats_rows': rows, 'train_rows_sha256': fit.get('train_rows_sha256'),
+            'rc_module_sha256': fit['rc_module_sha256']}
+
+
+def check_one_stats_hash(tasks):
+    """All robust-clip fits carry one statistics hash, one TRAIN row hash and one record (TRAIN-only statistics)."""
+    records = [t['robust_clip'] for seeds in tasks.values() for t in seeds.values() if 'robust_clip' in t]
+    if not records or len({r['rc_stats_sha256'] for r in records}) != 1 \
+            or len({json.dumps(r, sort_keys=True) for r in records}) != 1:
+        raise ValueError('Robust-clip fits of one family must carry one statistics hash and one statistics record')
+    return {**records[0], 'n_fits': len(records)}
+
+
 def same_gpu_pairs(tasks, contrasts, seeds):
     """Observed (candidate, reference, seed) pairs that ran on the same GPU, per contrast (P34 F2; descriptive)."""
     return {c['name']: sum(tasks[c['candidate']][s]['device_uuid'] == tasks[c['reference']][s]['device_uuid']
@@ -234,6 +268,8 @@ def verify_family(family, config, manifest_sha256, sources, train_rows_sha256=No
                 tasks[arm][seed]['ple'] = check_ple_record(config, arm, seed, fit)
                 tasks[arm][seed]['ple_parameters'] = {'allocated': fit['parameter_count'],
                                                       'effective': fit['ple_effective_parameter_count']}
+            if rc.uses_robust_clip(config) and rc.is_robust_clip_arm(rc.arm_spec(config, arm)):
+                tasks[arm][seed]['robust_clip'] = check_rc_record(config, arm, seed, fit)
     return tasks, signature
 
 
@@ -298,7 +334,7 @@ def paired_block(y, games, candidate, reference, seeds):
 
 
 def score_family(config, family, rows, seeds, contrasts=None, regularization=None, workload_dropout=None, tabm=None,
-                 embed_residual=None, ema=None, tabm_residual=None, ple=None):
+                 embed_residual=None, ema=None, tabm_residual=None, ple=None, robust_clip=None):
     arms = [a['name'] for a in config['arms']]
     control_arm = config.get('comparison', {}).get('control_arm', 'control')
     if control_arm != 'control' or 'control' not in arms:
@@ -312,6 +348,7 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
     averaged = {split: {} for split in SPLITS} if ema else None
     residual_head = {split: {} for split in SPLITS} if tabm_residual else None
     embedding_type = {split: {} for split in SPLITS} if ple else None
+    preprocessing = {split: {} for split in SPLITS} if robust_clip else None
     for split, r in rows.items():
         y, games = r['y'], r['game_pk']
         load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731  (bounded memory: reload)
@@ -360,6 +397,14 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
                                                 'isolates': c['isolates'], 'held': c['held'],
                                                 **paired_block(y, games, load(c['candidate']), load(c['reference']),
                                                                seeds)}
+        for c in robust_clip or ():
+            preprocessing[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
+                                               'isolates': c['isolates'], 'role': c['role'],
+                                               'compute_matched': c['compute_matched'], 'held': c['held'],
+                                               **paired_block(y, games, load(c['candidate']), load(c['reference']),
+                                                              seeds)}
+    if robust_clip:
+        return out, factorial, paired, joint, head, embedded, averaged, residual_head, embedding_type, preprocessing
     if ple:
         return out, factorial, paired, joint, head, embedded, averaged, residual_head, embedding_type
     if tabm_residual:
@@ -486,7 +531,24 @@ def korean_table(result):
             lines.append(f"| {name} | {block['isolates']} | {held} | {ci(block['ensemble'], 'nll')} | "
                          f"{ci(block['ensemble'], 'brier')} | {pairs[name]}/{len(result['seed_block']['seeds'])} |")
         lines.append('')
-    if result.get('tabm_residual_contrasts') or ple:
+    robust = result.get('robust_clip_contrasts')
+    for split, contrasts in (robust or {}).items():
+        pairs, stats = result['seed_block']['same_gpu_pairs'], result['robust_clip_stats']
+        lines += [f'## {split} 강건 스케일 + 부드러운 자르기 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
+                  'input_preprocessing 행(주요)은 같은 잔차 모델에서 입력 처리만 바꾼 비교로, 같은 시드면 초기 파라미터가 같습니다. '
+                  'numeric_input_treatment 행(보조)은 주기 임베딩 팔과의 비교로 파라미터 수가 달라 연산량이 같지 않으며 고르는 데 쓰지 않습니다.', '',
+                  f"시드 {', '.join(map(str, result['seed_block']['seeds']))}는 새 모델 난수일 뿐 새 데이터가 아닙니다"
+                  '(같은 DEV·MLB DEV 반복 노출). 이 가족은 P24~P34 결과를 읽은 뒤 설계한 사후 탐색입니다. '
+                  '모든 팔의 epoch 상한은 60입니다.', '',
+                  '| 대비 | 역할 | 분리 요인 | 연산량 같음 | ΔNLL [95%] | ΔBrier [95%] | 같은 GPU 짝 |',
+                  '|---|---|---|---|---|---|---|']
+        for name, block in contrasts.items():
+            lines.append(f"| {name} | {block['role']} | {block['isolates']} | {block['compute_matched']} | "
+                         f"{ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} | "
+                         f"{pairs[name]}/{len(result['seed_block']['seeds'])} |")
+        lines += ['', f"통계: 강건 자르기 fit {stats['n_fits']}개 모두 같은 통계 해시 {stats['rc_stats_sha256'][:12]} "
+                      f"(TRAIN {stats['rc_stats_rows']['train_rows']}행만 사용), 규칙 수 {stats['rc_rule_counts']}.", '']
+    if result.get('tabm_residual_contrasts') or ple or robust:
         caps = {arm: {seed: task['epoch_cap'] for seed, task in seeds.items()}
                 for arm, seeds in result['provenance']['tasks'].items()}
         lines += ['## epoch 상한(60) 도달 여부 (fit별)', '', '| 팔 | 시드별 epochs_run / best_epoch / 멈춘 이유 |', '|---|---|']
@@ -520,8 +582,14 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     ema = ema_registry.check_contrasts(config)
     tabm_residual = tabm_residual_registry.check_contrasts(config)
     ple = ple_registry.check_contrasts(config)
+    robust_clip = robust_clip_registry.check_contrasts(config)
     others = (tabm_residual, ema, embed_residual, tabm, workload_dropout, contrasts, regularization)
-    if rc.uses_ple(config):  # first: the PLE family's arm tabm_residual_counts keeps the P34 flag
+    if rc.uses_robust_clip(config):  # first: its periodic_residual_counts keeps the embed_residual flag
+        if robust_clip is None or ple is not None or any(o is not None for o in others):
+            raise ValueError('The robust-clip family is scored only with its fixed contrasts')
+    elif robust_clip is not None:
+        raise ValueError('robust_clip_contrasts belong to the robust-clip family only')
+    elif rc.uses_ple(config):  # first: the PLE family's arm tabm_residual_counts keeps the P34 flag
         if ple is None or any(o is not None for o in others):
             raise ValueError('The PLE family is scored only with its fixed contrasts')
     elif ple is not None:
@@ -553,8 +621,10 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     tasks, signature = verify_family(family, config, manifest_sha256, sources,
                                      export_hashes['train/rows_sha256'] if config.get('train_subset') else None)
     ple_bins = check_one_bins_hash(tasks) if ple else None
+    rc_stats = check_one_stats_hash(tasks) if robust_clip else None
     splits, factorial, paired, *joint = score_family(config, family, rows, config['seeds'], contrasts, regularization,
-                                                     workload_dropout, tabm, embed_residual, ema, tabm_residual, ple)
+                                                     workload_dropout, tabm, embed_residual, ema, tabm_residual, ple,
+                                                     robust_clip)
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits,
               **({'factorial_contrasts': factorial} if contrasts else {}),
@@ -601,6 +671,17 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
                           'one TabM-mini fit (k=8) vs one single-network fit is not compute-matched; bundle rows '
                           'change several factors; same_gpu_pairs is observed, not scheduled; per-fit cap hits in '
                           'provenance.tasks.*.epoch_cap'}} if ple else {}),
+              **({'robust_clip_contrasts': joint[6], 'robust_clip_stats': rc_stats, 'seed_block': {
+                  'seeds': config['seeds'], 'repeat_tag': None, 'epoch_cap': config['training']['epochs'],
+                  'primary': robust_clip_registry.PRIMARY, 'secondary': robust_clip_registry.SECONDARY,
+                  'same_gpu_pairs': same_gpu_pairs(tasks, robust_clip, config['seeds']),
+                  'note': 'fresh model RNG seeds on the same export and exposed DEV rows: not new data, '
+                          'not an independent confirmatory test; family designed after reading P24-P34 '
+                          '(post-selection); epoch cap 60 for every arm; the primary row changes only the input '
+                          'preprocessing (same seed, identical initial parameters); the secondary row compares two '
+                          'numeric-input treatments and is not compute-matched (the periodic arm adds embedding '
+                          'parameters); same_gpu_pairs is observed, not scheduled; per-fit cap hits in '
+                          'provenance.tasks.*.epoch_cap'}} if robust_clip else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],

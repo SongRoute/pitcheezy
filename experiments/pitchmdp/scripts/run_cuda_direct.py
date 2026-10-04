@@ -83,6 +83,19 @@ epoch cap as P34 and, for PLE arms, the bins hash, per-feature bin counts and th
 the allocated parameter_count, and ple_bin_rows (TRAIN-argument rows and per-past-position
 valid rows the bins were fitted on, also printed); load_model checks the bins against that recorded hash.
 
+Robust-clip arms (DRAFT-CUDA-ROBUST-CLIP-20261005, tentative EXP-P36-001 DRAFT): an arm marked
+"robust_clip_residual": true must equal direct_robust_clip_registry.ARMS (RealMLP robust scale +
+smooth clip, statistics from the TRAIN argument only, in front of the frozen residual backbone;
+counts workload); a config with such arms must be exactly the fixed four-arm family (control,
+residual_counts = EXP-P32-001 combo entry, periodic_residual_counts = EXP-P32/P34/P35 entry) on
+seeds exactly [34, 35, 36, 37, 38] with the epoch cap 60, and direct_robust_clip_model.py must be
+the registry-pinned file.  Its family predicate is tested FIRST (config_check, training_budget,
+run_task, scorer), because periodic_residual_counts keeps its embed_residual flag.  fit.json
+records the epoch cap as P34/P35 and, for the robust-clip arm, rc_stats_sha256 and rc_rule_counts
+(re-derived from the fit report), rc_stats_rows (TRAIN-argument rows and per-past-position valid
+rows the statistics were computed on, also printed) and rc_module_sha256; load_model checks the
+archived statistics against that recorded hash (statistics are never recomputed at predict time).
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -125,6 +138,8 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_tabm_residual_model.py', 'pitchmdp/direct_tabm_residual_factory.py',
                  'pitchmdp/direct_tabm_residual_registry.py',
                  'pitchmdp/direct_ple_model.py', 'pitchmdp/direct_ple_factory.py', 'pitchmdp/direct_ple_registry.py',
+                 'pitchmdp/direct_robust_clip_model.py', 'pitchmdp/direct_robust_clip_factory.py',
+                 'pitchmdp/direct_robust_clip_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -223,12 +238,27 @@ def uses_ple(config):
     return any(is_ple_arm(arm) for arm in config['arms'])
 
 
+ROBUST_CLIP_FLAG = 'robust_clip_residual'  # == direct_robust_clip_registry.FLAG (tested)
+
+
+def is_robust_clip_arm(arm):
+    return ROBUST_CLIP_FLAG in arm
+
+
+def uses_robust_clip(config):
+    """The P36 DRAFT family predicate; checked first everywhere (its periodic_residual_counts keeps embed_residual)."""
+    return any(is_robust_clip_arm(arm) for arm in config['arms'])
+
+
 def uses_epoch_cap(config):
-    return uses_ple(config) or uses_tabm_residual(config)
+    return uses_robust_clip(config) or uses_ple(config) or uses_tabm_residual(config)
 
 
 def training_budget(config):
-    """EXP-P15-001 budget; only the PLE and TabM-residual families have their pre-registered epoch cap."""
+    """EXP-P15-001 budget; only the robust-clip, PLE and TabM-residual families have their pre-registered epoch cap."""
+    if uses_robust_clip(config):
+        from pitchmdp.direct_robust_clip_registry import TRAINING as RC_CAPPED  # torch-free
+        return RC_CAPPED
     if uses_ple(config):
         from pitchmdp.direct_ple_registry import TRAINING as PLE_CAPPED  # torch-free
         return PLE_CAPPED
@@ -241,7 +271,10 @@ def training_budget(config):
 def config_check(config):
     if config.get('protocol') != PROTOCOL:
         raise ValueError('Config is not the cuda_direct_v1 protocol')
-    if uses_ple(config):
+    if uses_robust_clip(config):
+        from pitchmdp.direct_robust_clip_registry import check_family  # torch-free; exact arms, seeds 34-38, pin
+        check_family(config)
+    elif uses_ple(config):
         from pitchmdp.direct_ple_registry import check_family  # torch-free; exact arms, seeds 29-33, cap 60
         check_family(config)
     elif uses_tabm_residual(config):
@@ -272,6 +305,13 @@ def config_check(config):
     columns = config['export']['workload_columns']
     names = set()
     for arm in config['arms']:
+        if is_robust_clip_arm(arm):
+            from pitchmdp.direct_robust_clip_registry import check_arm  # torch-free
+            check_arm(arm)
+            if arm['name'] in names or any(c not in columns for c in arm['workload']):
+                raise ValueError('Duplicated robust-clip arm or unexported workload: ' + arm['name'])
+            names.add(arm['name'])
+            continue
         if is_ple_arm(arm):
             from pitchmdp.direct_ple_registry import check_arm  # torch-free
             check_arm(arm)
@@ -506,6 +546,11 @@ def arm_inputs(arrays, arm, columns):
 # ------------------------------------------------------------------ model / calibration
 
 def build_model(arm, seed, device, context_names=None):
+    if is_robust_clip_arm(arm):
+        from pitchmdp.direct_robust_clip_factory import build_robust_clip
+        if context_names:
+            raise ValueError('Robust-clip arms take no context names')
+        return build_robust_clip(arm, seed, device)
     if is_ple_arm(arm):
         from pitchmdp.direct_ple_factory import build_ple
         if context_names:
@@ -569,7 +614,18 @@ def recorded_ple_bins(path):
     return read_json(record).get('ple_bins_sha256')
 
 
-def load_model(arm, path, device, context_names=None, ple_bins_sha256=None):
+def recorded_rc_stats(path):
+    """The statistics hash the runner recorded for this task (fit.json next to model.pt); required for robust-clip loads."""
+    record = Path(path).parent / 'fit.json'
+    if not record.is_file():
+        raise ValueError('Robust-clip load needs the run-recorded statistics hash (fit.json next to the archive)')
+    return read_json(record).get('rc_stats_sha256')
+
+
+def load_model(arm, path, device, context_names=None, ple_bins_sha256=None, rc_stats_sha256=None):
+    if is_robust_clip_arm(arm):
+        from pitchmdp.direct_robust_clip_factory import load_robust_clip
+        return load_robust_clip(arm, path, device, rc_stats_sha256 or recorded_rc_stats(path))
     if is_ple_arm(arm):
         from pitchmdp.direct_ple_factory import load_ple
         return load_ple(arm, path, device, ple_bins_sha256 or recorded_ple_bins(path))
@@ -743,6 +799,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         train_rows = hashlib.sha256(np.ascontiguousarray(train['keys'], dtype=np.int64).tobytes()).hexdigest()
         early_rows = hashlib.sha256(np.ascontiguousarray(early['keys'], dtype=np.int64).tobytes()).hexdigest()
         bin_rows = ple_bin_rows(train_inputs) if is_ple_arm(arm) else None
+        stats_rows = ple_bin_rows(train_inputs) if is_robust_clip_arm(arm) else None  # same row rule as PLE bins
         del train, train_inputs
         # calibration on the May 16-31 Cpanel rows only
         temp = load_split(export, manifest, 'temperature', lim('temperature'))
@@ -782,6 +839,14 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
             fit_report.update(effective_record(model.report['network'], fit_report['parameter_count']),
                               ple_bin_rows=bin_rows)
             print('PLE_BIN_ROWS', arm_name, seed, json.dumps(bin_rows), flush=True)
+        if is_robust_clip_arm(arm):
+            from pitchmdp.direct_robust_clip_registry import check_module, check_stats_rows, fit_record as rc_record
+            fit_report.update(rc_record(model.report, config['export']['shapes']['length']),
+                              rc_stats_rows=check_stats_rows(stats_rows, config['export']['shapes']['length']),
+                              rc_module_sha256=check_module())
+            if fit_report['rc_module_sha256'] != identity['source_sha256'].get('pitchmdp/direct_robust_clip_model.py'):
+                raise RuntimeError('Robust-clip module differs from the task identity source map')
+            print('RC_STATS_ROWS', arm_name, seed, fit_report['rc_stats_sha256'], json.dumps(stats_rows), flush=True)
         write_json_atomic(work / 'fit.json', fit_report)
         names = ['identity.json', 'model.pt', 'calibration.json', 'predictions.npz', 'mlb_predictions.npz', 'fit.json']
         write_json_atomic(work / 'state.json', {'identity': identity,
