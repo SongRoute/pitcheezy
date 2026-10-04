@@ -31,7 +31,7 @@
     },
     "design_note": {
       "path": "experiments/pitchmdp/docs/DRAFT-TABM-RESIDUAL-DESIGN-20261004.md",
-      "sha256": "612a489287aef5aa25bb6371c45ab17768fbf3a05b257c7db1d196fb34c5e238"
+      "sha256": "f4dff969fe300ab1b73aa4ef4de5788adb75e22af9fd61c1aab0f5dad36e5c8d"
     },
     "embed_residual_run": {
       "path": "configs/DRAFT-CUDA-EMBED-RESIDUAL-20261004.json",

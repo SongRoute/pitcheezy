@@ -113,4 +113,16 @@ promotion or verdict fields. G0, D131/D155 unchanged. No 2026 data.
 1. Additive module `pitchmdp/direct_tabm_residual_model.py` + focused CPU tests (frozen
    modules untouched) → distinct Opus review → disposition.
 2. Torch-free registry/factory/DRAFT config/runner dispatch (pattern of P31/P32) → review.
+   *Implemented DRAFT (2026-10-04, delegated Opus worker, branch
+   `codex/tabm-residual-wiring-1004`, unreviewed; same_model_review pending;
+   Codex_review_pending):* `pitchmdp/direct_tabm_residual_registry.py` (4 arms above,
+   earlier arms = exact EXP-P31-001 / EXP-P32-001 entries, own seed check exactly
+   [24..28], 20 fits, training = cuda_direct_v1 budget with epochs 60, the 5 fixed
+   contrasts above in this order), `pitchmdp/direct_tabm_residual_factory.py` (strict
+   build/load incl. post-load continuous-map check), `configs/DRAFT-CUDA-TABM-RESIDUAL-20261004.json`
+   (DRAFT, execution disabled, placeholder family deadline), runner/scorer dispatch
+   (config epoch cap reaches `fit(epochs=...)`; fit.json `epoch_cap` = cap, epochs_run,
+   best_epoch, stopped_by; scorer checks it before any prediction read and lists cap
+   hits per fit). Arms, seeds, cap and contrasts unchanged. Record:
+   `docs/WIRING-TABM-RESIDUAL-20261004.md`.
 3. CUDA smoke of all 20 tasks on GPU3/4 → identities pinned → Song's go → registration.
