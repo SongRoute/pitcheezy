@@ -24,6 +24,8 @@ export default function Showcase() {
   const [attempt, setAttempt] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
   const stopAt = useRef<number | null>(null);
+  const player = useRef<HTMLElement>(null);
+  const compare = useRef<HTMLElement>(null);
   const scene = source.scenes[selected];
   const decision = timeline?.decisions.find(d => d.at_bat_number === scene.atBat && d.pitch_number === scene.pitchNumber);
   const watchPath = decision ? `/watch?game=${source.gamePk}#i=${decision.index}` : null;
@@ -61,6 +63,17 @@ export default function Showcase() {
     void player.play().catch((e: DOMException) => { if (e.name !== 'AbortError') { stopAt.current = null; setVideoError(true); } });
   }
 
+  // Phone width stacks the comparison below the video, so its fixed reveal bar starts below the fold.
+  // Bring it up when a clip finishes there (and on request); never reveals anything by itself.
+  function scrollToSection(target: HTMLElement | null) {
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    target?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
+  }
+  function clipFinished() {
+    stopAt.current = null;
+    if (window.matchMedia('(max-width: 800px)').matches) scrollToSection(compare.current);
+  }
+
   // Same src, so load() is needed to refetch; onLoadedMetadata then re-seeks to the selected scene.
   function retryVideo() {
     setVideoError(false); setVideoReady(false); stopAt.current = null;
@@ -85,16 +98,17 @@ export default function Showcase() {
       <p className="sc-sub">{timeline ? `${short(timeline.game.away_team)} · ${short(timeline.game.home_team)}` : '경기 자료 확인 중'}
         {' — '}공을 던지기 전 추천을 보고, 영상이 끝나면 실제 투구를 공개해 보세요.</p>
       <div className="sc-layout">
-        <section className="sc-player" aria-label="경기 영상">
+        <section className="sc-player" ref={player} aria-label="경기 영상">
           <div className="sc-video">
             <video ref={video} controls playsInline preload="metadata" src={loaded ? source.mediaUrl : undefined}
               onLoadedMetadata={() => { setVideoReady(true); if (video.current) video.current.currentTime = Math.max(0, scene.releaseSeconds - 3); }}
               onError={() => setVideoError(true)}
               onTimeUpdate={() => {
                 if (video.current && stopAt.current !== null && video.current.currentTime >= stopAt.current) {
-                  video.current.pause(); stopAt.current = null;
+                  video.current.pause(); clipFinished();
                 }
-              }} />
+              }}
+              onEnded={() => { if (stopAt.current !== null) clipFinished(); }} />
             {!loaded && <button className="sc-load" onClick={() => { setLoaded(true); setVideoError(false); }}>공식 경기 영상 불러오기</button>}
           </div>
           {loaded && !videoReady && !videoError && <p role="status">영상 정보를 불러오는 중…</p>}
@@ -112,6 +126,7 @@ export default function Showcase() {
             <button className="sc-primary" disabled={!videoReady || !decision || videoError} onClick={startClip}>이 공 다시 보기</button>
             <button disabled={selected === source.scenes.length - 1} onClick={() => setSelected(i => i + 1)}>다음 장면</button>
           </div>
+          <button className="sc-jump" onClick={() => scrollToSection(compare.current)}>추천과 공개 버튼으로 내려가기 ↓</button>
           <p className="sc-hint">선택한 공 전후 약 7초를 재생합니다. 영상 탐색 막대를 직접 움직였다면 장면을 다시 선택해 맞춰 주세요.</p>
           <details><summary>영상과 비교 범위</summary>
             <p>MLB 공식 압축 영상에 나온 39구만 비교합니다. 전체 경기 262구 중 일부이며 대부분 타석의 마지막 공입니다.</p>
@@ -123,8 +138,9 @@ export default function Showcase() {
             <p>두 기기의 재생은 자동으로 연결되지 않습니다. 장면을 바꿀 때 아이폰에서도 해당 링크를 열어 주세요.</p>
             <p role="status">{copyNote}</p></div>}
         </section>
-        <section className="sc-compare" aria-label="추천과 실제 투구 비교">
-          <h2>{label(decision, scene.pitchNumber)}</h2>
+        <section className="sc-compare" ref={compare} aria-label="추천과 실제 투구 비교">
+          <div className="sc-compare-head"><h2>{label(decision, scene.pitchNumber)}</h2>
+            <button className="sc-jump" onClick={() => scrollToSection(player.current)}>↑ 영상</button></div>
           {error ? <p role="alert">{error} <button onClick={() => setAttempt(n => n + 1)}>다시 시도</button></p> : watchPath
             ? <iframe key={`${selected}:${take}`} src={watchPath.replace('#', '&embed=1#')} title="선택한 공의 추천과 실제 투구" />
             : <p>{timeline ? '이 장면에 대응하는 투구 자료가 없습니다. 다른 장면을 선택해 주세요.' : '추천 화면을 준비하는 중…'}</p>}
