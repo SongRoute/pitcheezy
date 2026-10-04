@@ -29,7 +29,7 @@ comparison.ple_contrasts (PLE-embedding family, EXP-P35-001 DRAFT) must equal
 direct_ple_registry.CONTRASTS (7 pre-registered pairs on seeds 29-33; all 25 fits must exist
 first), likewise checked before any read and tested BEFORE the TabM-residual family (its arm
 tabm_residual_counts keeps the P34 flag); every fit records the epoch cap as P34, every PLE
-fit its bins record, and all PLE fits of the family must carry ONE bins hash (bins are
+fit its bins record and effective parameter count, and all PLE fits of the family must carry ONE bins hash (bins are
 TRAIN-only); the degenerate-column count and the observed same-GPU pairs per contrast are
 reported, the two embedding_type rows first.  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
@@ -168,14 +168,14 @@ def check_epoch_cap(config, arm, seed, fit):
 
 def check_ple_record(config, arm, seed, fit):
     """PLE fits: the top-level bins record equals the one re-derived from the fit's own network report."""
-    spec = rc.arm_spec(config, arm)
+    spec, network = rc.arm_spec(config, arm), (fit.get('report') or {}).get('network') or {}
     try:
-        expected = ple_registry.fit_record((fit.get('report') or {}).get('network') or {},
-                                           config['export']['shapes']['length'], config['export']['context_names'],
-                                           spec['workload'])
+        expected = ple_registry.fit_record(network, config['export']['shapes']['length'],
+                                           config['export']['context_names'], spec['workload'])
+        effective = ple_registry.effective_record(network, fit.get('parameter_count'))
     except ValueError as error:
         raise ValueError(f'{arm}/{seed}: PLE bins record malformed ({error})') from error
-    if {k: fit.get(k) for k in expected} != expected:
+    if {k: fit.get(k) for k in (*expected, *effective)} != {**expected, **effective}:
         raise ValueError(f'{arm}/{seed}: PLE bins record differs from the fit network report')
     return expected
 
@@ -232,6 +232,8 @@ def verify_family(family, config, manifest_sha256, sources, train_rows_sha256=No
                 tasks[arm][seed]['epoch_cap'] = check_epoch_cap(config, arm, seed, fit)
             if rc.uses_ple(config) and rc.is_ple_arm(rc.arm_spec(config, arm)):
                 tasks[arm][seed]['ple'] = check_ple_record(config, arm, seed, fit)
+                tasks[arm][seed]['ple_parameters'] = {'allocated': fit['parameter_count'],
+                                                      'effective': fit['ple_effective_parameter_count']}
     return tasks, signature
 
 

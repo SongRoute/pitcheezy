@@ -227,3 +227,15 @@ def fit_record(network, length, context_names, workload):
     names = [column_name(label, length, context_names, workload) for label in degenerate]
     return {'ple_bins_sha256': digest, 'ple_n_bins': list(counts), 'ple_degenerate_columns': names,
             'ple_degenerate_count': len(names)}
+
+
+def effective_record(network, allocated):
+    """fit.json ``ple_effective_parameter_count`` next to the allocated ``parameter_count`` (module review W2).
+
+    Padded PLE weight entries are allocated but fixed at 0: allocated - effective == d x (n features x n_bins -
+    sum T_j).  Arm-specific, so kept out of the shared bins record."""
+    effective, counts = network.get('ple_effective_parameter_count'), network.get('ple_n_bins')
+    if type(effective) is not int or type(allocated) is not int or not isinstance(counts, list) \
+            or allocated - effective != D_EMBEDDING * (len(counts) * N_BINS - sum(counts)):
+        raise ValueError('PLE effective parameter count is missing or inconsistent with the allocated count')
+    return {'ple_effective_parameter_count': effective}

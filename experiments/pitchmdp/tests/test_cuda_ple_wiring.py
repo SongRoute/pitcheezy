@@ -396,10 +396,14 @@ def test_column_name_maps_labels_to_export_columns():
             reg.column_name(bad, 6, names, reg.WORKLOAD)
 
 
-def network_record(counts, digest='ab' * 32):
+ALLOCATED = {SINGLE: 275_738, TABM: 291_600}  # module tests / review: allocated counts, independent of T_j
+
+
+def network_record(counts, digest='ab' * 32, allocated=ALLOCATED[SINGLE]):
     labels = reg.feature_labels(6, reg.CONTINUOUS)
     return {'context_continuous': reg.CONTINUOUS, 'n_bins': 48, 'ple_bins_sha256': digest, 'ple_n_bins': list(counts),
-            'ple_degenerate_columns': [label for label, t in zip(labels, counts) if t == 0]}
+            'ple_degenerate_columns': [label for label, t in zip(labels, counts) if t == 0],
+            'ple_effective_parameter_count': allocated - 8 * (len(counts) * 48 - sum(counts))}
 
 
 def test_fit_record_rederives_and_refuses_inconsistent_records():
@@ -667,9 +671,10 @@ def with_records(fam, cfg, cap_hit=((SINGLE, 30),), counts=None, digests=None, g
             if gpus:
                 fit['runtime']['device_uuid'] = gpus(arm, seed)
             if arm in NEW:
-                network = network_record(counts, (digests or {}).get((arm, seed), 'cd' * 32))
+                network = network_record(counts, (digests or {}).get((arm, seed), 'cd' * 32), ALLOCATED[arm])
                 fit['report']['network'] = network
-                fit.update(reg.fit_record(network, 6, names, reg.WORKLOAD))
+                fit.update(reg.fit_record(network, 6, names, reg.WORKLOAD), parameter_count=ALLOCATED[arm])
+                fit.update(reg.effective_record(network, ALLOCATED[arm]))
             rc.write_json_atomic(dest / 'fit.json', fit)
             tf.reseal(dest)
     return fam

@@ -79,8 +79,8 @@ and tabm_residual_counts = EXP-P34-001 exact entries) on seeds exactly [29, 30, 
 with the epoch cap 60.  Its family predicate is tested FIRST (config_check, training_budget,
 run_task, scorer), because tabm_residual_counts keeps its P34 flag.  fit.json records the
 epoch cap as P34 and, for PLE arms, the bins hash, per-feature bin counts and the degenerate
-(one-valued, T_j = 0) columns by export column name; load_model checks the bins against that
-recorded hash.
+(one-valued, T_j = 0) columns by export column name, and ple_effective_parameter_count next to
+the allocated parameter_count; load_model checks the bins against that recorded hash.
 
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
@@ -774,9 +774,10 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         if uses_epoch_cap(config):
             fit_report['epoch_cap'] = epoch_record(model.report, epochs, spec['patience'])
         if is_ple_arm(arm):
-            from pitchmdp.direct_ple_registry import fit_record
+            from pitchmdp.direct_ple_registry import effective_record, fit_record
             fit_report.update(fit_record(model.report['network'], config['export']['shapes']['length'],
                                          verified_context_names(config, manifest), arm['workload']))
+            fit_report.update(effective_record(model.report['network'], fit_report['parameter_count']))
         write_json_atomic(work / 'fit.json', fit_report)
         names = ['identity.json', 'model.pt', 'calibration.json', 'predictions.npz', 'mlb_predictions.npz', 'fit.json']
         write_json_atomic(work / 'state.json', {'identity': identity,
