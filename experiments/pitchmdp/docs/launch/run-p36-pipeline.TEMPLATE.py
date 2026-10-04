@@ -17,7 +17,7 @@ python='/home/sds733/venv/bin/python'
 manifest='49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578'
 draftsha='644239f3b2aaa4410391211ab1e4d972f13e1a6b025a026b058f0dff319c470a'
 modulesha='a3d6cbcef8350586a23d1a6d35213e36ba8e0ccf21288288464f8ce7dcbf52fa'
-GATE_KEYS=('robust_clip_arms_within','every_arm_within','family_within')
+GATE_KEYS=('every_arm_within','family_within','probe_exit_zero')  # timing_probe_robust_clip.py @ 3b305ad :297-300
 probe=b/'runs'/probedir/'summary.json'
 state=b/'score-p36-state.json'
 if state.exists():raise SystemExit('already started')

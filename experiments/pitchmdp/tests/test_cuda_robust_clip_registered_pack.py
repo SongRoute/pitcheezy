@@ -67,15 +67,39 @@ def p35_summary():
                                           'every_arm_within': True, 'family_within': True}}
 
 
-def p36_summary():
-    slowest = {'control': 464.0, 'residual_counts': 900.0, 'periodic_residual_counts': 1046.0,
-               'robust_clip_residual_counts': 950.0}
-    return {'protocol': 'synthetic', 'exit_codes': {g: 0 for g in GPUS}, 'complete': True,
-            'preflight': {'config_sha256': DRAFT_SHA, 'export_manifest_sha256': MANIFEST, 'gpus': GPUS},
-            'slowest_task_seconds_projected': slowest, 'family_worker_seconds_projected': 5 * sum(slowest.values()),
-            'marginal_arms': [], 'gate': {'task_seconds_max': 1800, 'family_seconds_max': 36000,
-                                          'robust_clip_arms_within': True, 'every_arm_within': True,
-                                          'family_within': True}}
+# The P36 probe summary exactly in the schema of scripts/timing_probe_robust_clip.py @ 3b305ad (another branch, not
+# imported): run() :446-449 (protocol, exit_codes, complete, written_utc, preflight, host_post, + summarize()),
+# summarize() :289-303, preflight() :366-375. Values synthetic; the dict construction is copied.
+PROBE_PROTOCOL = 'robust_clip_timing_probe_v1'
+PROBE_MODULE_SHA = 'a3d6cbcef8350586a23d1a6d35213e36ba8e0ccf21288288464f8ce7dcbf52fa'
+PROBE_CONFIG_ARMS = ['control', 'residual_counts', 'periodic_residual_counts', 'robust_clip_residual_counts']
+PROBE_ARMS = ['residual_counts', 'robust_clip_residual_counts']
+PROBE_FIXED = {'control': 464., 'periodic_residual_counts': 1046.}
+
+
+def p36_summary(measured=None, seeds_per_arm=5):
+    measured = measured or {'residual_counts': 900.0, 'robust_clip_residual_counts': 950.0}
+    exit_codes = {g: 0 for g in GPUS}
+    per_arm = {n: [{'gpu': g, 'task_seconds_projected': measured[n] - i, 'measured_seconds_per_epoch': 10.0}
+                   for i, g in enumerate(GPUS)] for n in PROBE_ARMS}
+    slowest = {n: PROBE_FIXED[n] if n in PROBE_FIXED else measured[n] for n in PROBE_CONFIG_ARMS}
+    family = sum(seeds_per_arm * v for v in slowest.values())
+    identity = {'protocol': PROBE_PROTOCOL, 'config_sha256': DRAFT_SHA, 'export_manifest_sha256': MANIFEST,
+                'module_sha256': PROBE_MODULE_SHA, 'source_sha256': {}, 'row_counts': {}, 'fixed': {},
+                'gpus': list(GPUS), 'lock_dir': '/locks', 'python': '/venv/bin/python', 'checked_utc': 'x',
+                'host_pre': {}}
+    summary = {'protocol': PROBE_PROTOCOL, 'exit_codes': exit_codes, 'complete': True, 'written_utc': 'x',
+               'preflight': identity, 'host_post': {}}
+    summary.update({'per_arm': per_arm, 'slowest_task_seconds_projected': slowest,
+                    'family_worker_seconds_projected': family, 'probed_task_seconds_projected': dict(measured),
+                    'fixed_task_seconds': {'arms': dict(PROBE_FIXED), 'source': 'x', 'measured_here': False},
+                    'marginal_arms': [],
+                    'gate': {'task_seconds_max': 1800, 'family_seconds_max': 36000,
+                             'every_arm_within': all(v <= 1800 for v in slowest.values()),
+                             'family_within': family <= 36000,
+                             'probe_exit_zero': bool(exit_codes) and all(c == 0 for c in exit_codes.values())},
+                    'label': 'synthetic'})
+    return summary
 
 
 def write(path, value):
@@ -151,8 +175,8 @@ def test_registration_record(pack):
     assert reg['go'].strip() == 'DRY RUN ONLY (T107)' and reg['source_commit'] == COMMIT
     assert reg['draft_sha256'] == DRAFT_SHA and reg['draft_path'] == 'configs/DRAFT-CUDA-ROBUST-CLIP-20261005.json'
     assert reg['timing_probe']['summary_sha256'] == sha(pack['s36'])
-    assert reg['timing_probe']['gates'] == {'complete': True, 'exit_code': 0, 'robust_clip_arms_within': True,
-                                            'every_arm_within': True, 'family_within': True}
+    assert reg['timing_probe']['gates'] == {'complete': True, 'exit_code': 0, 'every_arm_within': True,
+                                            'family_within': True, 'probe_exit_zero': True}
     assert 'Codex_review_pending' in reg['review'] and 'dry-run-t107' in reg['registered_by']
     assert out['decision'].count('No scientific N/G decision, promotion or selection') == 1
 
@@ -284,11 +308,14 @@ def setter(value, *path):
     (setter('0' * 64, 'preflight', 'export_manifest_sha256'), 'probe ran on another export'),
     (drop('preflight'), "probe summary key missing: ('preflight', 'config_sha256')"),
     (setter([GPUS[0], 'GPU-other'], 'preflight', 'gpus'), 'probe GPUs differ'),
-    (drop('gate', 'robust_clip_arms_within'), 'probe gate key missing: robust_clip_arms_within'),
+    (drop('gate', 'probe_exit_zero'), 'probe gate key missing: probe_exit_zero'),
     (drop('gate', 'every_arm_within'), 'probe gate key missing: every_arm_within'),
+    (drop('gate', 'family_within'), 'probe gate key missing: family_within'),
+    (setter(False, 'gate', 'every_arm_within'), 'probe gate false: every_arm_within'),
+    (setter(False, 'gate', 'probe_exit_zero'), 'probe gate false: probe_exit_zero'),
     (drop('gate'), "probe summary key missing: 'gate'"),
     (setter(False, 'gate', 'family_within'), 'probe gate false: family_within'),
-    (setter(1, 'gate', 'robust_clip_arms_within'), 'probe gate false: robust_clip_arms_within'),
+    (setter(1, 'gate', 'probe_exit_zero'), 'probe gate false: probe_exit_zero'),
     (setter(False, 'gate', 'some_new_gate'), 'a probe gate boolean is false'),
     (drop('slowest_task_seconds_projected', 'robust_clip_residual_counts'), 'probe did not project the probed arms'),
     (setter(1801.0, 'slowest_task_seconds_projected', 'residual_counts'), 'task gate'),
@@ -299,6 +326,37 @@ def test_probe_gate_refusals(pack, tmp_path, mutate, message):
     summary = p36_summary()
     mutate(summary)
     refused(pack, tmp_path, message, with_args(pack, summary=write(tmp_path / 'summary.json', summary)))
+
+
+def test_gate_keys_are_the_probe_schema_booleans():
+    """Review T109 BLOCKER: every GATE_KEYS entry is a boolean of the real probe gate (3b305ad :297-300)."""
+    gate = p36_summary()['gate']
+    assert set(gate) == {'task_seconds_max', 'family_seconds_max', 'every_arm_within', 'family_within',
+                         'probe_exit_zero'}
+    for path in (MAKE36, TEMPLATE):
+        keys = constant(path, 'GATE_KEYS')
+        assert keys == ('every_arm_within', 'family_within', 'probe_exit_zero')
+        assert all(gate[k] is True for k in keys)
+
+
+def test_probe_schema_failing_gate_refused(pack, tmp_path):
+    """A real-schema summary whose probed arm projects above 1,800 s carries every_arm_within False."""
+    summary = p36_summary({'residual_counts': 900.0, 'robust_clip_residual_counts': 1850.0})
+    assert summary['gate']['every_arm_within'] is False and summary['gate']['family_within'] is True
+    refused(pack, tmp_path, 'probe gate false: every_arm_within',
+            with_args(pack, summary=write(tmp_path / 'summary.json', summary)))
+
+
+def test_old_guessed_gate_name_is_refused(pack, tmp_path):
+    """Mutant: the pre-review GATE_KEYS (guessed robust_clip_arms_within) refuses a passing real-schema summary, and
+    the fixed generator refuses a summary carrying the guessed name instead of probe_exit_zero."""
+    old = "GATE_KEYS = ('robust_clip_arms_within', 'every_arm_within', 'family_within')"
+    fixed = "GATE_KEYS = ('every_arm_within', 'family_within', 'probe_exit_zero')"
+    refused(pack, tmp_path, 'probe gate key missing: robust_clip_arms_within', patch=(fixed, old))
+    summary = p36_summary()
+    summary['gate']['robust_clip_arms_within'] = summary['gate'].pop('probe_exit_zero')
+    refused(pack, tmp_path, 'probe gate key missing: probe_exit_zero',
+            with_args(pack, summary=write(tmp_path / 'summary.json', summary)))
 
 
 # ------------------------------------------------------------------ pipeline template

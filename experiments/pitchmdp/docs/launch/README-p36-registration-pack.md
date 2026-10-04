@@ -27,25 +27,27 @@ review ed02276 + disposition).
 - `../../tests/test_cuda_robust_clip_registered_pack.py` — CPU tests (dry runs into tmp only).
 - Author report: `../REPORT-p36-register-pack-author-2026-10-04.md`.
 
-## Probe-summary keys read by the generator (to be checked against the actual P36 probe summary at disposition)
+## Probe-summary keys read by the generator (checked against the P36 probe @ 3b305ad, review T109)
 
-The P36 probe was written on another branch and not seen by this author. The keys below are derived from the P35 probe
-summary schema (`scripts/timing_probe_ple_residual.py` `run()`/`summarize()`) and live in ONE table, `PROBE_KEYS` +
-`GATE_KEYS` + `PROBED_ARMS` at the top of `make_p36_config.py` (the template repeats `GATE_KEYS`; a test pins them equal).
-A missing key fails closed.
+The keys live in ONE table, `PROBE_KEYS` + `GATE_KEYS` + `PROBED_ARMS` at the top of `make_p36_config.py` (the template
+repeats `GATE_KEYS`; a test pins them equal). Each was checked against `scripts/timing_probe_robust_clip.py` @ 3b305ad
+(branch codex/robust-clip-probe-1004); a test feeds a summary built in exactly that schema. A missing key fails closed.
 
-- `complete` — must be `True`
-- `exit_codes` — `{gpu uuid: int}`, exactly 2 entries, all `0`
-- `preflight.config_sha256` — must equal the DRAFT `644239f3…`
-- `preflight.export_manifest_sha256` — must equal `49097109…f578`
-- `preflight.gpus` — must equal the DRAFT GPU allow-list (and the `exit_codes` keys)
-- `slowest_task_seconds_projected` — dict containing `residual_counts` and `robust_clip_residual_counts`; every value ≤ 1,800
-- `family_worker_seconds_projected` — ≤ 36,000
-- `gate` — `robust_clip_arms_within`, `every_arm_within`, `family_within` present and `True` (P35 used `ple_arms_within`;
-  the P36 name is a GUESS), and every other boolean in `gate` also `True`
+- `complete` — must be `True` (probe :444-446)
+- `exit_codes` — `{gpu uuid: int}`, exactly 2 entries, all `0` (:445-446)
+- `preflight.config_sha256` — must equal the DRAFT `644239f3…` (:366)
+- `preflight.export_manifest_sha256` — must equal `49097109…f578` (:366)
+- `preflight.gpus` — must equal the DRAFT GPU allow-list (and the `exit_codes` keys) (:375)
+- `slowest_task_seconds_projected` — all 4 arms (control/periodic = the P35 constants 464/1,046); must hold
+  `residual_counts` and `robust_clip_residual_counts`; every value ≤ 1,800 (:290, :293)
+- `family_worker_seconds_projected` — ≤ 36,000 (:291, :293)
+- `gate` — `every_arm_within`, `family_within`, `probe_exit_zero` present and `True`, and every other boolean in
+  `gate` also `True` (:297-300; `task_seconds_max`/`family_seconds_max` are numbers). The probe has NO
+  `<family>_arms_within` key (P35's `ple_arms_within`); the pre-review guess `robust_clip_arms_within` would have
+  refused a real passing summary (review T109 BLOCKER-1).
 
-If the real P36 summary names a key differently, change the table (and `GATE_KEYS` in the template) in a reviewed commit
-before registration; do not relax a gate.
+If the probe schema changes, change the table (and `GATE_KEYS` in the template) in a reviewed commit before
+registration; do not relax a gate.
 
 ## Differences from the P35 pack (every one)
 

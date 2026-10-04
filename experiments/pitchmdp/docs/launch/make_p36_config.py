@@ -20,9 +20,8 @@ DRAFT = Path(__file__).resolve().parents[4] / 'configs' / 'DRAFT-CUDA-ROBUST-CLI
 DRAFT_SHA = '644239f3b2aaa4410391211ab1e4d972f13e1a6b025a026b058f0dff319c470a'
 P35_DRAFT_SHA = 'f0ae4e9116d3efe90d119fcc84616172bde183a981206caacc4804d68a31b9b2'
 MANIFEST_SHA = '49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578'
-# Probe-summary keys read here, derived from the P35 probe summary schema (scripts/timing_probe_ple_residual.py
-# run()/summarize()). The P36 probe (scripts/timing_probe_robust_clip.py, another branch, not seen by this author)
-# copies that schema; CHECK THIS TABLE AGAINST THE ACTUAL P36 PROBE SUMMARY AT DISPOSITION. A missing key fails closed.
+# Probe-summary keys read here, checked against the P36 probe scripts/timing_probe_robust_clip.py @ 3b305ad
+# (run() :446-449, summarize() :293-300, preflight() :366-375; review T109). A missing key fails closed.
 PROBE_KEYS = {
     'complete': 'complete',                                  # bool, must be True
     'exit_codes': 'exit_codes',                              # {gpu uuid: int}, both GPUs, all 0
@@ -33,7 +32,9 @@ PROBE_KEYS = {
     'family': 'family_worker_seconds_projected',             # number <= 36000
     'gate': 'gate',                                          # dict; every GATE_KEYS entry present and True,
 }                                                            # and every other boolean in it True as well
-GATE_KEYS = ('robust_clip_arms_within', 'every_arm_within', 'family_within')  # P35: ple_arms_within -> P36 name
+# The P36 probe gate (3b305ad :297-300): task_seconds_max / family_seconds_max (numbers) + these three booleans.
+# It has no per-family '<x>_arms_within' key (P35's ple_arms_within); every_arm_within covers all 4 arms.
+GATE_KEYS = ('every_arm_within', 'family_within', 'probe_exit_zero')
 PROBED_ARMS = ('residual_counts', 'robust_clip_residual_counts')  # pre-registration section 4 (ii)
 TASK_GATE_SECONDS, FAMILY_GATE_SECONDS = 1800, 36000
 # Paths this generator may change (the P35 extractor set + source_configs.ple_registered). Nothing else differs.
