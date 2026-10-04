@@ -4,6 +4,8 @@
 
 우선순위 확정(D173): **단기10/6 시연 → 최종실제서비스화**, **보조연구논문화**. [목적지](PM-destination-2026-10-04.md), [논문화 근거 준비](RESEARCH-publication-readiness-2026-10-04.md).
 
+**운영 규칙(2026-10-05 Song 절대 규칙)**: Root PM은 관리자 전용(목표·위임·읽기 전용 검토·수용 판정·보고). 조사·구현·실험·테스트·문서·통합 실행은 전부 서브에이전트(Claude Opus5.5)가 한다. 상세 [AI_COLLABORATION 현재 역할](../AI_COLLABORATION.md).
+
 ## 현재 상태
 
 **[자동 실행 상태판](/Users/song/Projects/pitcheezy-pm-jobs/20261004-autonomy/progress.md)**은 5분마다 실제 큐와 운영 health를 읽는다. **[연속 Opus 상태](/Users/song/Projects/pitcheezy-pm-jobs/20261004-end-to-end/continuous-state-v5/continuation.md)**, **[작업·증거 기록](/Users/song/Projects/pitcheezy-worktrees/codex-continuous-pm-1004/CONTINUATION.md)**을 함께 본다. v4는20:19에27사이클 상한으로 정상 종료했다. 20:29 시작한 v5 JSON을 우선한다. 이메일 감시는 재가동하지 않았다.

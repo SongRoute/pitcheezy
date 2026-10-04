@@ -2,6 +2,12 @@
 
 Read `CLAUDE.md` for project and experiment rules, and `docs/SESSION_HANDOFF.md` for current research state. Codex–Claude collaboration follows `docs/AI_COLLABORATION.md`; task-specific user instructions take precedence. Do not duplicate another task's heavy run or overwrite sealed artifacts.
 
+## 절대 규칙 — Root PM은 관리자 전용 (2026-10-05 Song)
+
+- Root PM은 관리만 한다: 목표·범위·우선순위, 작업 분해·위임(작업 지시 작성, 서브에이전트 호출·관리), 자원·소유권 조정, 진행·산출물·diff·로그 읽기 전용 검토, 수용/재작업 판정, Song 보고.
+- 실질 실행은 전부 서브에이전트가 한다: 조사·자료 수집, 구현·버그 수정·UI 시안 수정, 실험, 테스트·빌드, 문서·기록, 승인된 git 통합·배포. 작거나 일상적인 수정, 에이전트 정체 때도 Root가 직접 하지 않고 재배정하거나 막힘을 보고한다.
+- 실행 모델은 Claude Opus5.5만. 일상 위임에 새 승인 대기를 만들지 않으며, 과학 판정·정책 채택·운영 권한은 Song과 기존 게이트에 남는다. 상세는 `docs/AI_COLLABORATION.md`의 "현재 역할".
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
