@@ -23,7 +23,9 @@ decay_t = min(decay, (1 + t) / (10 + t)) (the num_updates rule of TensorFlow's
 ExponentialMovingAverage) so the random initialization is forgotten quickly.
 No decay sweep.  EMA has no parameters: each arm has its base parameter count.
 The EMA arms consume no extra randomness, so for one seed their raw trajectory
-is the base arm's trajectory; only the evaluated / stopped / saved weights differ.
+is the base arm's trajectory over the epochs both run (CPU tests; CUDA checked by
+scripts/ema_trajectory_check.py); the evaluated / stopped / saved weights differ, so
+the EMA arm can stop at another epoch and run a different number of updates.
 """
 from __future__ import annotations
 

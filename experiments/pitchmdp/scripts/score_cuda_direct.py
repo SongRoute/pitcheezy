@@ -359,7 +359,8 @@ def korean_table(result):
         lines.append('')
     for split, contrasts in (result.get('ema_contrasts') or {}).items():
         lines += [f'## {split} 가중치 평균(EMA) 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
-                  'EMA 팔은 같은 시드에서 원래 가중치의 학습 경로가 기준 팔과 같고, 평가·멈춤·저장하는 가중치만 다릅니다. '
+                  'EMA 팔은 같은 시드에서 원래 가중치의 학습 경로가 기준 팔과 같고(CPU 테스트, CUDA는 ema_trajectory_check 기록), '
+                  '평가·멈춤·저장하는 가중치가 다릅니다. 그래서 멈추는 epoch와 update 수가 달라질 수 있습니다. '
                   'dropout_vs_control은 P25·P29 대비의 재현 확인용입니다.', '',
                   f"시드 {', '.join(map(str, result['seed_block']['seeds']))}는 새 모델 난수일 뿐 새 데이터가 아닙니다"
                   '(같은 DEV·MLB DEV 반복 노출). 이 가족은 P24~P32 결과를 읽은 뒤 설계한 탐색입니다.', '',
@@ -436,8 +437,9 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
               **({'ema_contrasts': joint[3], 'seed_block': {'seeds': config['seeds'], 'repeat_tag': None,
                   'note': 'fresh model RNG seeds on the same export and exposed DEV rows: not new data, '
                           'not an independent confirmatory test; family designed after reading P24-P32; '
-                          'EMA arms share the raw trajectory of their base arm per seed, only the evaluated, '
-                          'stopped and saved weights differ'}} if ema else {}),
+                          'EMA arms share the raw trajectory of their base arm per seed (CPU tests; CUDA: '
+                          'ema_trajectory_check), the evaluated, stopped and saved weights differ, so epochs '
+                          'run and optimizer updates can differ (EMA usually stops later)'}} if ema else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],
