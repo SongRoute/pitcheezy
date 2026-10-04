@@ -244,6 +244,8 @@ def _network_from_archive(cls, payload, kind, expected):
 class DirectPLEResidualModel(DirectResidualModel):
     """Frozen DirectResidualModel.fit with the PLE residual network; bins from the TRAIN argument only."""
 
+    KIND, FORMAT = KINDS['single'], FORMATS['single']
+
     def __init__(self, seed=0, context_continuous=(), architecture=None, device=None):
         self.architecture = copy.deepcopy(ARCHITECTURE if architecture is None else architecture)
         if self.architecture != ARCHITECTURE:
@@ -296,6 +298,8 @@ class DirectPLEResidualModel(DirectResidualModel):
 class DirectPLETabMResidualModel(tm.DirectTabMModel):
     """Frozen DirectTabMModel.fit (P34 path) with the PLE TabM-residual network; bins from the TRAIN argument only."""
 
+    KIND, FORMAT = KINDS['tabm'], FORMATS['tabm']  # the inherited class attributes name the P31 periodic TabM
+
     def __init__(self, seed=0, context_continuous=(), k=trm.ENSEMBLE['k'], scaling_init=trm.ENSEMBLE['scaling_init'],
                  device=None):
         tm.DirectTabMModel.__init__(self, seed, context_continuous, 0., k, scaling_init, device)
@@ -311,8 +315,11 @@ class DirectPLETabMResidualModel(tm.DirectTabMModel):
                                       **network_kwargs(self.architecture, tabm=True), n_classes=self.n_classes)
 
     def fit(self, train, labels, calibration, calibration_labels, **kwargs):
-        train, calibration = periodic._no_current_physics(train), periodic._no_current_physics(calibration)
-        self.ple_bins = compute_bins(train, self.context_continuous, self.architecture['embedding']['n_bins'])
+        # The frozen DirectTabMModel.fit guards and copies both splits itself; keeping guarded copies here would hold
+        # one extra host copy of TRAIN + early-stop for the whole fit (same-model review c953bfd).
+        periodic._no_current_physics(calibration)
+        self.ple_bins = compute_bins(periodic._no_current_physics(train), self.context_continuous,
+                                     self.architecture['embedding']['n_bins'])
         return super().fit(train, labels, calibration, calibration_labels, **kwargs)
 
     def save(self, path):

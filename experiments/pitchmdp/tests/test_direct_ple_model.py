@@ -400,3 +400,56 @@ def test_padded_weight_entries_cannot_reach_the_output_even_if_nonzero():
         before = net(*x)
         net.ple_weight.add_(1e3 * (1 - net.ple_mask)[..., None])  # only padded entries change
     assert torch.equal(net(*x), before)
+
+
+# ------------------------------------------------------------------ added by the same-model review (c953bfd)
+
+def test_degenerate_labels_follow_the_embedding_order_for_a_nonzero_past_position_and_channel():
+    """Label j must name the scalar that feature j embeds: past p, channel c at j = 8 p + c (p-major), then context."""
+    (tokens, valid, context), _ = arrays(300, 17)
+    tokens[:, 3, 5] = .75  # past position 3, physics channel 5 -> j = 29
+    context[:, 52] = 2.  # the counts workload column, last in CONT
+    bins = ple.compute_bins((tokens, valid, context), CONT)
+    net = ple.PLEResidualNetwork(*SHAPE, CONT, bins, **KW)
+    assert ple.feature_labels(SHAPE[2], CONT)[29] == 'past3.phys5' and net.ple_counts[29] == 0
+    assert net.config['ple_degenerate_columns'] == ['past3.phys5', 'context52'] and net.ple_counts[-1] == 0
+    t, v, c = (torch.as_tensor(a) for a in (tokens, valid, context))
+    moved = t.clone()
+    moved[:, 3, 5] += 1.
+    with torch.no_grad():
+        diff = (net.embed(moved, v, c) - net.embed(t, v, c)).abs().sum((0, 2))
+    assert diff[29] > 0 and diff.nonzero().flatten().tolist() == [29]
+
+
+@pytest.mark.parametrize('tabm', [False, True])
+def test_fit_refuses_current_physics_in_the_early_stop_split_before_binning(tabm):
+    model = ple.DirectPLETabMResidualModel(0, CONT, k=2, device='cpu') if tabm else \
+        ple.DirectPLEResidualModel(0, CONT, device='cpu')
+    train, y = arrays(120, 11)
+    early, ey = arrays(40, 12)
+    early[0][:, -1, 2] = 1.
+    with pytest.raises(ValueError, match='physics'):
+        model.fit(train, y, early, ey, epochs=1, patience=1, batch_size=64)
+    assert model.ple_bins is None
+
+
+def test_tabm_fit_hands_the_callers_arrays_to_the_frozen_loop_and_class_kinds(monkeypatch):
+    """No retained guarded copy in the PLE TabM fit (the frozen loop validates and copies once, as for P34)."""
+    seen = {}
+    frozen_fit = ple.tm.DirectTabMModel.fit
+
+    def spy(self, train, labels, calibration, calibration_labels, **kwargs):
+        seen['train'], seen['calibration'] = train, calibration
+        return frozen_fit(self, train, labels, calibration, calibration_labels, **kwargs)
+
+    monkeypatch.setattr(ple.tm.DirectTabMModel, 'fit', spy)
+    train, y = arrays(120, 11)
+    early, ey = arrays(40, 12)
+    model = ple.DirectPLETabMResidualModel(0, CONT, k=2, device='cpu').fit(train, y, early, ey, epochs=1, patience=1,
+                                                                           batch_size=64)
+    assert seen['train'] is train and seen['calibration'] is early
+    assert model.net.config['ple_bins_sha256'] == ple.bins_sha256(ple.compute_bins(train, CONT))
+    assert ple.DirectPLETabMResidualModel.KIND == ple.KINDS['tabm'] == model.kind
+    assert ple.DirectPLEResidualModel.KIND == ple.KINDS['single'] == ple.DirectPLEResidualModel(0, CONT, device='cpu').kind
+    assert (ple.DirectPLETabMResidualModel.FORMAT, ple.DirectPLEResidualModel.FORMAT) == (ple.FORMATS['tabm'],
+                                                                                         ple.FORMATS['single'])
