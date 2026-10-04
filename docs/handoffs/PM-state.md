@@ -1,20 +1,21 @@
 # PM 상태판
 
-갱신: **2026-10-04 18:20 KST**. 목표: **10/6 16:00**, 교수님 연구실에서 맥북·아이폰으로 약 5분 시연.
+갱신: **2026-10-04 20:30 KST**. 각 항목의 확인 시각은 별도 표기. 목표: **10/6 16:00**, 교수님 연구실에서 맥북·아이폰으로 약 5분 시연.
 
 우선순위 확정(D173): **단기10/6 시연 → 최종실제서비스화**, **보조연구논문화**. [목적지](PM-destination-2026-10-04.md), [논문화 근거 준비](RESEARCH-publication-readiness-2026-10-04.md).
 
 ## 현재 상태
 
-**[자동 실행 상태판](/Users/song/Projects/pitcheezy-pm-jobs/20261004-autonomy/progress.md)**은 5분마다 실제 큐와 운영 health를 읽는다. **[연속 Opus 상태](/Users/song/Projects/pitcheezy-pm-jobs/20261004-end-to-end/continuous-state-v4/continuation.md)**, **[작업·증거 기록](/Users/song/Projects/pitcheezy-worktrees/codex-continuous-pm-1004/CONTINUATION.md)**을 함께 본다. 이전 v3 감독은 종료했으므로 연속 작업은 v4 JSON을 우선한다.
+**[자동 실행 상태판](/Users/song/Projects/pitcheezy-pm-jobs/20261004-autonomy/progress.md)**은 5분마다 실제 큐와 운영 health를 읽는다. **[연속 Opus 상태](/Users/song/Projects/pitcheezy-pm-jobs/20261004-end-to-end/continuous-state-v5/continuation.md)**, **[작업·증거 기록](/Users/song/Projects/pitcheezy-worktrees/codex-continuous-pm-1004/CONTINUATION.md)**을 함께 본다. v4는20:19에27사이클 상한으로 정상 종료했다. 20:29 시작한 v5 JSON을 우선한다. 이메일 감시는 재가동하지 않았다.
 
 | 작업 | 확인된 현재 상태 | 다음 단계 |
 |---|---|---|
 | CV M3·시연 연결 | **미트 가로 위치를 WatchAlong/Showcase에16:45 반영**(ed52840). 별도 Opus 검토, 실제8771 자동검사22건 통과. 849843 JSONL 최종1687c1e와 서비스의 해시 일치 | 사람의 영상·좌우 방향 대조, 실제 아이폰. 모델 채택·높이·9구역 판정과 구분 |
-| GPU 연구 | **P34 25/25 학습·채점 완료(실패0)**. P30-002는 GPU3·4에서 **19/50완료·2실행·29대기**, 실패0(18:19). 새 시드에서 기존10설정 반복 | P30 전체 종료 후 채점·비교. 다음P35 수치 임베딩25fit 설계 별도 검토 중 |
-| 지속 개발 | **v4 감독56856 실행 중**,13사이클 반환 후14번째 진행. Opus5.5만 사용 | P35 설계 검토, 오프라인 영상 지원 검토, 주장·근거표 준비. v4 총27사이클·10/5 23:00한도 |
+| GPU 연구 | v4 최종 보고: **P34 25/25, P30-002 50/50 채점 완료**, P35 CUDA smoke25/25·시간 측정3조건 통과. 20:17 GPU3·4 idle. 공식 판정 불변 | v5 첫 작업은 검토된 P35 pack859f315의 출처·예산·시각·lock 재확인 후25fit 등록/실행. 기존 사용자 위임으로 일반 실행 승인 대기는 해소했으며, **현재 본 학습 시작은 미확인** |
+| 지속 개발 | **v5 감독1191·helper1193·Claude1196 실행 확인(20:30)**. v4는27사이클 상한으로 정상 종료 | Opus5.5만,48사이클/기존10/5 23:00한도. 원래 helper·거절 중지·자원/자료/판정 제한 유지 |
 | 경기·맥 자원 | **P26/P28 경기 후 큐58/58 성공**,감독83958 종료. 현재 새 무거운 맥 연구는 실행 확인되지 않음 | 결과 해석과 다음 실행 후보 연결. 가벼운 개발·검토 지속, heavy lock·동기화 보호 유지 |
 | 서비스 | 운영8766/미리보기8771 health=ok. **e9e9d4d** 휴대폰 공개 버튼 개선까지17:41 배포, 실제 서빙 index 해시c66db122…를PM 확인.39장면 휴대폰 폭 자동검사 통과 | 오프라인 영상 지원은 코드 검토 중, 실제 영상 확보·검증 전. 실제 아이폰·Safari·사람 영상대조·5분 리허설 |
+| 모바일 UX | **존 중심 확정**. 타석 선택·후보3개 정책 선택 비중·공격 팀 색·풍부한 스크롤 상세를 논의 시안에 반영. 로컬 Chromium30검사 통과, 문서45075e8 | [UX 명세](UI-mobile-atbat-direction-2026-10-04.md). 실제 서비스 배포/물리 아이폰 검증과 구분 |
 | 막힘 이메일 | **첫 실제 알림16:11 Gmail Insufficient scope로 실패. 발송 성공 없음. 감시 종료** | Gmail 보내기 권한 재연결 필요. 자동 재시도·다른 경로 사용 없음. [실패 기록](PM-blocked-email-watch-2026-10-04.md) |
 
 M3 최종 수령 근거는 [독립 검증 보고서](../reviews/PM-M3-receipt-2026-10-04.md), 구현 범위는 [시연 화면 작업 지시](CV-M3-demo-work-order-2026-10-04.md)를 따른다. 기존 연구의 과학 판정·서비스 정책은 유지한다.
