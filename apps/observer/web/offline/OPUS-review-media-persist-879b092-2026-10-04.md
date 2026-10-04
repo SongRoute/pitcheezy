@@ -98,6 +98,6 @@ All four are fixed in `136d8b0`:
 | N2 | NOTE | Duplicate Tab carries the flag (sessionStorage copy). Not tested in any browser | README caveat added; accept |
 | N3 | NOTE | Opting in once on an online deployment leaves that tab trying `/offline-media/` (404 → existing alert + official link) until `?media=online` or a new tab | Accept; the note at `:134` makes the mode visible |
 | N4 | NOTE | When bundle v5 is cut, README:14 should be updated to say "in a fresh tab" | Do it with the v5 bundle |
-| N5 | NOTE | Safari, iPhone, the MacBook and the real 436 MB file were not checked by this unit or this review | Keep the Safari rehearsal on the 10-06 checklist (README:34) |
+| N5 | NOTE | Safari, iPhone, the MacBook and the real 436 MB file were not checked by this unit or this review | Keep the Safari rehearsal on the 10-06 checklist (README:35) |
 
 Not done: no deploy, push or merge; no edits to WatchAlong.tsx or Game.tsx; no full suites (the `offline/` pytest and the other 7 regressions were not rerun, since 879b092 does not touch Python and those pages' sources are unchanged).
