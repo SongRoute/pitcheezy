@@ -323,3 +323,14 @@ def test_run_worker_timeout_kills_groups_and_writes_incomplete_summary(export, t
     assert all(group_gone(p.pid) for p in pids)
     assert all(GpuLock(args.lock_dir, g).acquire() for g in GPUS)
 
+
+def test_worker_refuses_changed_config_before_loading_data(export, tmp_path, monkeypatch):
+    root, digest, _ = export
+    args, cfg = worker_args(tmp_path, root, digest)
+    args.config.write_text(args.config.read_text() + '\n')
+    opened = []
+    monkeypatch.setattr(rc, 'bind_gpu', lambda uuid, allowed: {'bound_uuid': uuid})
+    monkeypatch.setattr(rc, 'load_split', lambda *a, **k: opened.append(a[2]))
+    with pytest.raises(RuntimeError, match='Config differs'):
+        tp.worker(args, cfg)
+    assert opened == []

@@ -200,6 +200,8 @@ def worker(args, config):
     sources = source_hashes()
     if sources != json.loads(Path(args.output, 'preflight.json').read_text())['source_sha256']:
         raise RuntimeError('Sources differ from the preflight')
+    if rc.sha256_file(args.config) != args.config_sha256:
+        raise RuntimeError('Config differs from the pinned SHA256')
     manifest = rc.verify_export(args.export, config, args.export_manifest_sha256)  # same full hash as a real task
     _, n_early, n_predict = row_counts(manifest)
     train = rc.load_split(args.export, manifest, 'train')
@@ -329,10 +331,12 @@ def main(argv=None):
     args.output, args.config, args.export = args.output.resolve(), args.config.resolve(), args.export.resolve()
     config = json.loads(args.config.read_text())
     if args.command == 'run':
-        run(args, config)
+        if not run(args, config)['complete']:
+            raise SystemExit(1)
         return
     if args.gpu_uuid not in args.gpu:
         raise ValueError('Worker GPU is not one of the probe GPUs')
+    signal.alarm(WORKER_TIMEOUT_SECONDS + 60)  # own bound: a worker orphaned by a SIGKILLed parent still ends
     try:
         worker(args, config)
     except BaseException as error:
