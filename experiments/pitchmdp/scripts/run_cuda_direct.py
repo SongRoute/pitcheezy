@@ -46,6 +46,14 @@ workload); a config with such arms must be exactly the fixed five-arm family
 seeds exactly [13, 14, 15].  The family check runs before the workload-dropout one
 because periodic_counts_d10 keeps its P30 flag.
 
+Embedded-residual arms (DRAFT-CUDA-EMBED-RESIDUAL-20261004): an arm marked
+"embed_residual": true must equal direct_embed_residual_registry.ARMS (frozen PLR-lite
+or LR embedding in front of the frozen-architecture residual backbone, counts
+workload); a config with such arms must be exactly the fixed six-arm family (control,
+residual_counts, periodic_counts and periodic_counts_d10 are the exact earlier entries)
+on seeds exactly [16, 17, 18].  Its family check also runs before the workload-dropout
+one.  After load the archived continuous map must equal the registered one.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -82,6 +90,8 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_dropout_model.py', 'pitchmdp/direct_dropout_registry.py',
                  'pitchmdp/direct_workload_dropout_model.py', 'pitchmdp/direct_workload_dropout_registry.py',
                  'pitchmdp/direct_tabm_model.py', 'pitchmdp/direct_tabm_factory.py', 'pitchmdp/direct_tabm_registry.py',
+                 'pitchmdp/direct_periodic_residual_model.py', 'pitchmdp/direct_embed_residual_factory.py',
+                 'pitchmdp/direct_embed_residual_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -156,11 +166,18 @@ def uses_tabm(config):
     return any('tabm' in arm for arm in config['arms'])
 
 
+def uses_embed_residual(config):
+    return any('embed_residual' in arm for arm in config['arms'])
+
+
 def config_check(config):
     if config.get('protocol') != PROTOCOL:
         raise ValueError('Config is not the cuda_direct_v1 protocol')
     if uses_tabm(config):
         from pitchmdp.direct_tabm_registry import check_family  # torch-free; exact arms + seeds 13-15
+        check_family(config)
+    elif uses_embed_residual(config):
+        from pitchmdp.direct_embed_residual_registry import check_family  # torch-free; exact arms + seeds 16-18
         check_family(config)
     elif uses_workload_dropout(config):
         from pitchmdp.direct_workload_dropout_registry import check_family  # torch-free; exact arms + fresh seeds
@@ -189,6 +206,13 @@ def config_check(config):
             check_arm(arm)
             if arm['name'] in names or any(c not in columns for c in arm['workload']):
                 raise ValueError('Duplicated TabM-mini arm or unexported workload: ' + arm['name'])
+            names.add(arm['name'])
+            continue
+        if 'embed_residual' in arm:
+            from pitchmdp.direct_embed_residual_registry import check_arm  # torch-free
+            check_arm(arm)
+            if arm['name'] in names or any(c not in columns for c in arm['workload']):
+                raise ValueError('Duplicated embedded-residual arm or unexported workload: ' + arm['name'])
             names.add(arm['name'])
             continue
         if 'workload_dropout' in arm:
@@ -389,6 +413,11 @@ def build_model(arm, seed, device, context_names=None):
         if context_names:
             raise ValueError('TabM-mini arms take no context names')
         return build_tabm(arm, seed, device)
+    if arm.get('embed_residual') is True:
+        from pitchmdp.direct_embed_residual_factory import build_embed_residual
+        if context_names:
+            raise ValueError('Embedded-residual arms take no context names')
+        return build_embed_residual(arm, seed, device)
     if arm.get('workload_dropout') is True:
         from pitchmdp.direct_workload_dropout_model import build_workload_dropout
         if context_names:
@@ -423,6 +452,9 @@ def load_model(arm, path, device, context_names=None):
     if arm.get('tabm') is True:
         from pitchmdp.direct_tabm_factory import load_tabm
         return load_tabm(arm, path, device)
+    if arm.get('embed_residual') is True:
+        from pitchmdp.direct_embed_residual_factory import load_embed_residual
+        return load_embed_residual(arm, path, device)
     if arm.get('workload_dropout') is True:
         from pitchmdp.direct_workload_dropout_model import load_workload_dropout
         return load_workload_dropout(arm, path, device)
