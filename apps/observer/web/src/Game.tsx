@@ -37,7 +37,7 @@ type Setups = { badge: string | null; x: Map<string, number> };
 
 const POLL_MS = 2000;
 // A state request with no answer by then is dropped and counts as a failed poll. Measured /state answers (recorder polls
-// through the Tailscale address, 4 games 10/2–10/4, 13,106 answers, 0 timeouts): median about 0.9 s, max 4.6 s. 15 s is
+// through the Tailscale address, 4 games 10/2–10/4, 13,106 answers, 0 timeouts): median about 0.9 s on the delayed instances (10 ms at delay 0), max 4.6 s. 15 s is
 // about 3× that max; phone-network time on top of it is not measured (docs/reviews/PM-game-timeout-2026-10-04.md).
 const STATE_TIMEOUT_MS = 15000;
 const HOLD_MS = { pitch: 6000, event: 10000 };  // how long a result stays before the next recommendation takes the stage (F13: proposal)

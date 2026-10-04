@@ -7,7 +7,7 @@
 기록기 `scripts/live_rehearsal.py record`가 휴대폰처럼 `/api/live/{game}/state`를 묻고 매 조회의 `ms`를 남긴다 (Tailscale 주소 `100.108.252.111:8766`, 같은 맥, 기록기 자체 제한 20초).
 - 849829·849828·849835 (디비전시리즈, `/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/live_rehearsal/ds/*_polls.jsonl`, 10/4 10:4x KST에 계산): 조회 5,814회, 오류 0. 중앙값 906.5 ms, p99 1,424 ms, p99.9 2,176 ms, 최대 2,413 ms. 2초 넘은 조회 17회, 5초 넘은 조회 0회.
   - 경기별 최대: 849829 2,312 ms (2,024회), 849828 2,339 ms (1,971회), 849835 2,413 ms (1,819회).
-- 849844 (10/2, `pitcheezy-demo/results/checks/LIVE-rehearsal-849844.json`): 8766 2,310회 오류 0, 중앙값 929 ms, 최대 4,323 ms. 8769 4,986회 중 오류 4 (모두 서버 재시작 시각), 최대 4,563 ms.
+- 849844 (10/2, `pitcheezy-demo/results/checks/LIVE-rehearsal-849844.json`): 8766 2,310회 오류 0, 중앙값 929 ms, 최대 4,323 ms. 8769 4,986회 중 오류 4 (요약 JSON에 시각이 남은 2건은 서버 재시작 01:15:49Z·01:15:51Z, 나머지 2건은 이 파일로 확인 불가), 중앙값 10.4 ms(지연 0), 최대 4,563 ms.
 - 합계: 응답 13,106회 중 시간 초과 0회, 최대 4.56초.
 - 849830은 기록 중이라 넣지 않았다.
 - 미측정: 휴대폰 망(LTE·와이파이·Tailscale 중계)에서 더해지는 시간. 실제 iPhone 측정은 아직 없다.
@@ -26,7 +26,7 @@
   2. 경기 중 요청 멈춤 → 15초 전에는 띠 없음, 뒤에는 낡은 상황 띠·헤더 "연결 끊김"·받은 시각 표시, 띠의 다시 시도 버튼이 화면 안(360px)에 있고 누르면 바로 다시 물어 LIVE로 돌아옴.
   3. 다시 멈춤, 아무것도 누르지 않음 → 시간 초과 뒤 다음 폴링이 스스로 복구.
   4. 5초 걸리는 느린 답(측정 최대보다 김) → 취소 없음, 띠 없음, 12초에 요청 1–3번.
-- 음성 대조: `9d21dcc` 빌드에서 새 시험이 14건 실패 (`the hung first request was not cancelled`, `no retry button in the stale band` 등). 시험의 모든 대기에 시간 상한이 있다 (처음 버전은 상한 없는 대기 때문에 대조 빌드에서 멈춰 중단했고, 상한을 넣어 다시 돌렸다).
+- 음성 대조: `9d21dcc` 빌드에서 새 시험이 14건 실패 (검토자 재실행 15건, 연쇄 실패라 실행마다 다름) (`the hung first request was not cancelled`, `no retry button in the stale band` 등). 시험의 모든 대기에 시간 상한이 있다 (처음 버전은 상한 없는 대기 때문에 대조 빌드에서 멈춰 중단했고, 상한을 넣어 다시 돌렸다).
 - 회귀 (새 빌드): `game-hang-smoke` ok (19초), `game-reconnect-smoke` ok (21초), `game-frame-smoke` ok (117초).
 - `node_modules`는 메인 체크아웃을 가리키는 임시 symlink를 썼고 삭제했다.
 - 스크린샷: `/tmp/pz-timeout-shots/timeout-1-first.png`, `timeout-2-stale.png` (커밋 안 함).
