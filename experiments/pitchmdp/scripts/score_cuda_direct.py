@@ -24,7 +24,14 @@ first), likewise checked before any read.
 comparison.tabm_residual_contrasts (TabM-mini x periodic-residual family) must equal
 direct_tabm_residual_registry.CONTRASTS (7 pre-registered pairs on seeds 24-28; all 25
 fits must exist first), likewise checked before any read; every fit must also record the
-epoch cap 60 it was given and where it stopped (cap hits listed per fit).  Data arms must record the config's subset rule over the
+epoch cap 60 it was given and where it stopped (cap hits listed per fit).
+comparison.ple_contrasts (PLE-embedding family, EXP-P35-001 DRAFT) must equal
+direct_ple_registry.CONTRASTS (7 pre-registered pairs on seeds 29-33; all 25 fits must exist
+first), likewise checked before any read and tested BEFORE the TabM-residual family (its arm
+tabm_residual_counts keeps the P34 flag); every fit records the epoch cap as P34, every PLE
+fit its bins record, and all PLE fits of the family must carry ONE bins hash (bins are
+TRAIN-only); the degenerate-column count and the observed same-GPU pairs per contrast are
+reported, the two embedding_type rows first.  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
 
 Scope: UNBLENDED calibrated direct-head probabilities (predictions.npz 'dev',
@@ -74,6 +81,7 @@ from pitchmdp import direct_tabm_registry as tabm_registry  # noqa: E402  torch-
 from pitchmdp import direct_embed_residual_registry as embed_residual_registry  # noqa: E402  torch-free
 from pitchmdp import direct_ema_registry as ema_registry  # noqa: E402  torch-free
 from pitchmdp import direct_tabm_residual_registry as tabm_residual_registry  # noqa: E402  torch-free
+from pitchmdp import direct_ple_registry as ple_registry  # noqa: E402  torch-free
 from pitchmdp.matrix_metrics import paired_game_comparison, pitch_losses, prediction_metrics  # noqa: E402
 
 FORMAT = 'cuda_direct_score_v1'
@@ -85,7 +93,8 @@ SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 
                   'pitchmdp/direct_dropout_registry.py', 'pitchmdp/direct_combo_registry.py',
                   'pitchmdp/direct_frontier_registry.py', 'pitchmdp/direct_workload_dropout_registry.py',
                   'pitchmdp/direct_tabm_registry.py', 'pitchmdp/direct_embed_residual_registry.py',
-                  'pitchmdp/direct_ema_registry.py', 'pitchmdp/direct_tabm_residual_registry.py')
+                  'pitchmdp/direct_ema_registry.py', 'pitchmdp/direct_tabm_residual_registry.py',
+                  'pitchmdp/direct_ple_registry.py')
 RUNTIME_SIGNATURE = ('torch', 'torch_cuda', 'cudnn', 'numpy', 'scipy', 'device_name', 'device_capability',
                      'device_total_memory')
 SCOPE = ('unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; '
@@ -157,6 +166,38 @@ def check_epoch_cap(config, arm, seed, fit):
     return record
 
 
+def check_ple_record(config, arm, seed, fit):
+    """PLE fits: the top-level bins record equals the one re-derived from the fit's own network report."""
+    spec = rc.arm_spec(config, arm)
+    try:
+        expected = ple_registry.fit_record((fit.get('report') or {}).get('network') or {},
+                                           config['export']['shapes']['length'], config['export']['context_names'],
+                                           spec['workload'])
+    except ValueError as error:
+        raise ValueError(f'{arm}/{seed}: PLE bins record malformed ({error})') from error
+    if {k: fit.get(k) for k in expected} != expected:
+        raise ValueError(f'{arm}/{seed}: PLE bins record differs from the fit network report')
+    return expected
+
+
+def check_one_bins_hash(tasks):
+    """All PLE fits of one family carry one bins hash (TRAIN-only bins; review N12); the shared record."""
+    records = [t['ple'] for seeds in tasks.values() for t in seeds.values() if 'ple' in t]
+    if not records or len({r['ple_bins_sha256'] for r in records}) != 1 \
+            or len({json.dumps(r, sort_keys=True) for r in records}) != 1:
+        raise ValueError('PLE fits of one family must carry one bins hash and one bins record')
+    first = records[0]
+    return {'ple_bins_sha256': first['ple_bins_sha256'], 'n_fits': len(records),
+            'n_bins_total': sum(first['ple_n_bins']), 'degenerate_count': first['ple_degenerate_count'],
+            'degenerate_columns': first['ple_degenerate_columns']}
+
+
+def same_gpu_pairs(tasks, contrasts, seeds):
+    """Observed (candidate, reference, seed) pairs that ran on the same GPU, per contrast (P34 F2; descriptive)."""
+    return {c['name']: sum(tasks[c['candidate']][s]['device_uuid'] == tasks[c['reference']][s]['device_uuid']
+                           for s in seeds) for c in contrasts}
+
+
 def verify_family(family, config, manifest_sha256, sources, train_rows_sha256=None):
     """Every arm x seed finished with the expected identity; nothing is read from predictions here."""
     family = Path(family)
@@ -187,8 +228,10 @@ def verify_family(family, config, manifest_sha256, sources, train_rows_sha256=No
             tasks[arm][seed] = {'state_sha256': rc.sha256_file(dest / 'state.json'), 'train_subset': subset,
                                 'device_uuid': runtime.get('device_uuid'),
                                 'delivery_temperature': rc.read_json(dest / 'calibration.json')['delivery_temperature']}
-            if rc.uses_tabm_residual(config):
+            if rc.uses_epoch_cap(config):
                 tasks[arm][seed]['epoch_cap'] = check_epoch_cap(config, arm, seed, fit)
+            if rc.uses_ple(config) and rc.is_ple_arm(rc.arm_spec(config, arm)):
+                tasks[arm][seed]['ple'] = check_ple_record(config, arm, seed, fit)
     return tasks, signature
 
 
@@ -253,7 +296,7 @@ def paired_block(y, games, candidate, reference, seeds):
 
 
 def score_family(config, family, rows, seeds, contrasts=None, regularization=None, workload_dropout=None, tabm=None,
-                 embed_residual=None, ema=None, tabm_residual=None):
+                 embed_residual=None, ema=None, tabm_residual=None, ple=None):
     arms = [a['name'] for a in config['arms']]
     control_arm = config.get('comparison', {}).get('control_arm', 'control')
     if control_arm != 'control' or 'control' not in arms:
@@ -266,6 +309,7 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
     embedded = {split: {} for split in SPLITS} if embed_residual else None
     averaged = {split: {} for split in SPLITS} if ema else None
     residual_head = {split: {} for split in SPLITS} if tabm_residual else None
+    embedding_type = {split: {} for split in SPLITS} if ple else None
     for split, r in rows.items():
         y, games = r['y'], r['game_pk']
         load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731  (bounded memory: reload)
@@ -309,6 +353,13 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
                                                'isolates': c['isolates'], 'held': c['held'],
                                                **paired_block(y, games, load(c['candidate']), load(c['reference']),
                                                               seeds)}
+        for c in ple or ():
+            embedding_type[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
+                                                'isolates': c['isolates'], 'held': c['held'],
+                                                **paired_block(y, games, load(c['candidate']), load(c['reference']),
+                                                               seeds)}
+    if ple:
+        return out, factorial, paired, joint, head, embedded, averaged, residual_head, embedding_type
     if tabm_residual:
         return out, factorial, paired, joint, head, embedded, averaged, residual_head
     if ema:
@@ -407,7 +458,33 @@ def korean_table(result):
             held = ', '.join(f'{k}={v}' for k, v in block['held'].items())
             lines.append(f"| {name} | {block['isolates']} | {held} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} |")
         lines.append('')
-    if result.get('tabm_residual_contrasts'):
+    ple = result.get('ple_contrasts')
+    if ple:
+        lines += ['## PLE 임베딩 대비 — 주요 행 (ΔNLL [95%], dev / mlb_dev 나란히, 판정 없음)', '',
+                  '| 대비 | dev ΔNLL [95%] | mlb_dev ΔNLL [95%] |', '|---|---|---|']
+        for name in result['seed_block']['headline']:
+            lines.append(f"| {name} | {ci(ple['dev'][name]['ensemble'], 'nll')} | "
+                         f"{ci(ple['mlb_dev'][name]['ensemble'], 'nll')} |")
+        bins = result['ple_bins']
+        lines += ['', f"PLE 구간: 모든 PLE fit {bins['n_fits']}개가 같은 구간 해시 {bins['ple_bins_sha256'][:12]} "
+                      f"(TRAIN만 사용). 값이 하나뿐인 열(T_j = 0) {bins['degenerate_count']}개"
+                      + (f": {', '.join(bins['degenerate_columns'])}" if bins['degenerate_columns'] else '') + '.', '']
+    for split, contrasts in (ple or {}).items():
+        pairs = result['seed_block']['same_gpu_pairs']
+        lines += [f'## {split} PLE 임베딩 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
+                  'embedding_type 행은 주기 임베딩(PLR-lite)을 PLE로 바꾼 묶음(함수·파라미터 수·TRAIN 구간·활성화)입니다. '
+                  'ensemble_head_ple 행은 PLE에서 TabM-mini 1회 학습(구성원 8)과 단일 신경망 1회 학습의 비교로 연산량이 같지 않습니다. '
+                  'bundle 행은 여러 요인이 함께 바뀐 대조군 비교입니다.', '',
+                  f"시드 {', '.join(map(str, result['seed_block']['seeds']))}는 새 모델 난수일 뿐 새 데이터가 아닙니다"
+                  '(같은 DEV·MLB DEV 반복 노출). 이 가족은 P24~P34 결과를 읽은 뒤 설계한 사후 탐색입니다. '
+                  '모든 팔의 epoch 상한은 60입니다.', '',
+                  '| 대비 | 분리 요인 | 고정 | ΔNLL [95%] | ΔBrier [95%] | 같은 GPU 짝 |', '|---|---|---|---|---|---|']
+        for name, block in contrasts.items():
+            held = ', '.join(f'{k}={v}' for k, v in block['held'].items())
+            lines.append(f"| {name} | {block['isolates']} | {held} | {ci(block['ensemble'], 'nll')} | "
+                         f"{ci(block['ensemble'], 'brier')} | {pairs[name]}/{len(result['seed_block']['seeds'])} |")
+        lines.append('')
+    if result.get('tabm_residual_contrasts') or ple:
         caps = {arm: {seed: task['epoch_cap'] for seed, task in seeds.items()}
                 for arm, seeds in result['provenance']['tasks'].items()}
         lines += ['## epoch 상한(60) 도달 여부 (fit별)', '', '| 팔 | 시드별 epochs_run / best_epoch / 멈춘 이유 |', '|---|---|']
@@ -440,7 +517,14 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     embed_residual = embed_residual_registry.check_contrasts(config)
     ema = ema_registry.check_contrasts(config)
     tabm_residual = tabm_residual_registry.check_contrasts(config)
-    if rc.uses_tabm_residual(config):
+    ple = ple_registry.check_contrasts(config)
+    others = (tabm_residual, ema, embed_residual, tabm, workload_dropout, contrasts, regularization)
+    if rc.uses_ple(config):  # first: the PLE family's arm tabm_residual_counts keeps the P34 flag
+        if ple is None or any(o is not None for o in others):
+            raise ValueError('The PLE family is scored only with its fixed contrasts')
+    elif ple is not None:
+        raise ValueError('ple_contrasts belong to the PLE family only')
+    elif rc.uses_tabm_residual(config):
         if tabm_residual is None or ema is not None or embed_residual is not None or tabm is not None \
                 or workload_dropout is not None or contrasts is not None or regularization is not None:
             raise ValueError('The TabM-residual family is scored only with its fixed contrasts')
@@ -466,8 +550,9 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     rows, export_hashes = export_rows(export, config, manifest_sha256)
     tasks, signature = verify_family(family, config, manifest_sha256, sources,
                                      export_hashes['train/rows_sha256'] if config.get('train_subset') else None)
+    ple_bins = check_one_bins_hash(tasks) if ple else None
     splits, factorial, paired, *joint = score_family(config, family, rows, config['seeds'], contrasts, regularization,
-                                                     workload_dropout, tabm, embed_residual, ema, tabm_residual)
+                                                     workload_dropout, tabm, embed_residual, ema, tabm_residual, ple)
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits,
               **({'factorial_contrasts': factorial} if contrasts else {}),
@@ -503,6 +588,17 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
                           '(256 -> 128) and dropout placement (head -> blocks) together; '
                           'backbone_bundle changes backbone and dropout (head 0 -> blocks .1) together; '
                           'neither is one-factor; per-fit cap hits in provenance.tasks.*.epoch_cap'}} if tabm_residual else {}),
+              **({'ple_contrasts': joint[5], 'ple_bins': ple_bins, 'seed_block': {
+                  'seeds': config['seeds'], 'repeat_tag': None, 'epoch_cap': config['training']['epochs'],
+                  'headline': list(ple_registry.HEADLINE),
+                  'same_gpu_pairs': same_gpu_pairs(tasks, ple, config['seeds']),
+                  'note': 'fresh model RNG seeds on the same export and exposed DEV rows: not new data, '
+                          'not an independent confirmatory test; family designed after reading P24-P34 '
+                          '(post-selection); epoch cap 60 for every arm; embedding_type rows change the whole '
+                          'embedding bundle (map, parameter count, TRAIN-fitted bins, no activation) together; '
+                          'one TabM-mini fit (k=8) vs one single-network fit is not compute-matched; bundle rows '
+                          'change several factors; same_gpu_pairs is observed, not scheduled; per-fit cap hits in '
+                          'provenance.tasks.*.epoch_cap'}} if ple else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],

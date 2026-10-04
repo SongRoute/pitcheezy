@@ -1,0 +1,619 @@
+{
+  "protocol": "cuda_direct_v1",
+  "experiment_id": "DRAFT-CUDA-PLE-RESIDUAL-20261004",
+  "status": "DRAFT",
+  "decision": "DRAFT; smoke only until the module and wiring reviews are disposed, CUDA smoke on all 25 tasks, the Amendment-2-method timing probe with every gate true, the pre-score extractor and an explicit registration with an explicit go from Song (new-experiment rule). No scientific N/G decision, promotion or selection; G0, G15 mix (D145), D131/D155 unchanged.",
+  "purpose": "Exploratory family (pre-registration experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P35-001-ple-embedding-2026-10-04.md, written before any module code, wiring, smoke or fit of this family; designed after P24-P34 scores were read on repeated DEV: post-selection). Question: with identical data, embedded scalars (5 past positions x 8 physics channels + the counts continuous map, 81 scalars), d = 8, residual backbone, loop, epoch cap 60 and calibration chain, does replacing the periodic PLR-lite embedding by a piecewise-linear embedding (PLE version B, quantile bins on TRAIN only) change calibrated direct NLL / Brier / ECE on the single-head residual backbone (ple_residual_counts - periodic_residual_counts) and under TabM-mini k=8 on the same backbone (ple_tabm_residual_counts - tabm_residual_counts)?",
+  "source_configs": {
+    "base_cuda": {
+      "path": "configs/DRAFT-CUDA-DIRECT-20261004.json",
+      "sha256": "8dc8d22b781e25fe0cd972801d6edb5c34a2b927a94e00eeb27ea438d34dc096"
+    },
+    "frontier_run": {
+      "path": "configs/DRAFT-CUDA-FRONTIER-RUN-20261004.json",
+      "sha256": "2b057e8ede5ddb9dd2f880d352fc272fc51fa9e1344c4d7993e55d02bac42fc7"
+    },
+    "data_combo_run": {
+      "path": "configs/DRAFT-CUDA-DATA-COMBO-RUN-20261004.json",
+      "sha256": "87530cc8ccb62b5723bbce8db999e332a582d601a3582659e35ff5a14756c0f9"
+    },
+    "dropout_run": {
+      "path": "configs/DRAFT-CUDA-DROPOUT-RUN-20261004.json",
+      "sha256": "d50f7ca9036e7c5868cadcab8fa9542f0ec70f219f1664104354320a29343d61"
+    },
+    "workload_dropout_run": {
+      "path": "configs/EXP-P30-001.json",
+      "sha256": "7152ebcaef6a764f8084f73a0fa51b2339e930873759b862a6ae08e985954962"
+    },
+    "tabm_run": {
+      "path": "configs/DRAFT-CUDA-TABM-MINI-20261004.json",
+      "sha256": "334528a5904bd78f9f4a70955114d3434f3085b99a079a699daff07d252eae70"
+    },
+    "embed_residual_run": {
+      "path": "configs/DRAFT-CUDA-EMBED-RESIDUAL-20261004.json",
+      "sha256": "bb0ce6209db7b5b6bbc9243cb57e7ba4913dc1cf567756c67feacf2f508ac14e"
+    },
+    "ema_run": {
+      "path": "configs/DRAFT-CUDA-EMA-20261004.json",
+      "sha256": "a6cf64eb2698a47c3a9302bd07abdecbdcf33e6057b14654a1bd947058ce8de7"
+    },
+    "tabm_registered": {
+      "path": "configs/EXP-P31-001.json",
+      "sha256": "a26442bccde9d8d5d0f46e3863d42d9361132078184b06c0a4a44d2233010404"
+    },
+    "embed_residual_registered": {
+      "path": "configs/EXP-P32-001.json",
+      "sha256": "e8b60d820477b222cfe7d3a61f654735a3952aba97e521bd85846dcba6374fdd"
+    },
+    "ema_registered": {
+      "path": "configs/EXP-P33-001.json",
+      "sha256": "e803ce31b8451c8c70c58cc7513b739e2d4123a5a512751ca4ea446311976d88"
+    },
+    "tabm_residual_run": {
+      "path": "configs/DRAFT-CUDA-TABM-RESIDUAL-20261004.json",
+      "sha256": "5e3ce3adc7ecc30f94425d9dc8a9234441cee2160644fe1ed4d9d54788b76d34"
+    },
+    "tabm_residual_registered": {
+      "path": "configs/EXP-P34-001.json",
+      "sha256": "2bfd0e03aa8cdba6923a237b748ec7f59ca23c44331e1ba1149da23ef2111909"
+    },
+    "design_note": {
+      "path": "experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P35-001-ple-embedding-2026-10-04.md",
+      "sha256": "82dd5b154997dec6c776ec8c350a2d35e494a7970efbc0b3495d4dd7a95c4786"
+    }
+  },
+  "export": {
+    "splits": [
+      "train",
+      "earlystop",
+      "temperature",
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "fit_splits": [
+      "train"
+    ],
+    "earlystop_split": "earlystop",
+    "temperature_split": "temperature",
+    "predict_splits": [
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "workload_columns": [
+      "prior_records_per100",
+      "thruorder_minus1_over3",
+      "log_rest_days",
+      "rest_missing"
+    ],
+    "shapes": {
+      "length": 6,
+      "n_token": 38,
+      "n_context": 52,
+      "n_workload": 4
+    },
+    "last_year": 2025,
+    "normalization": "none learned here; arrays are the frozen EXP-P4-001 TRAIN-fitted transforms (parent preparation pinned)",
+    "manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+    "context_layout": {
+      "groups": {
+        "base": [
+          0,
+          28
+        ],
+        "pitcher_profile": [
+          28,
+          51
+        ],
+        "pitcher_support": [
+          51,
+          52
+        ]
+      },
+      "base_features": [
+        "balls",
+        "strikes",
+        "outs",
+        "inning",
+        "defensive_score_lead",
+        "defender_is_home",
+        "first_base",
+        "second_base",
+        "third_base",
+        "batter_left",
+        "pitcher_left",
+        "six_batter_style_rates",
+        "six_style_reliabilities",
+        "five_soft_memberships"
+      ],
+      "style_columns": [
+        "batter_style_contact_prior",
+        "batter_style_swing_prior",
+        "batter_style_walk_prior",
+        "batter_style_strikeout_prior",
+        "batter_style_isolated_power_prior",
+        "batter_style_groundball_prior"
+      ],
+      "reliability_columns": [
+        "batter_style_contact_reliability",
+        "batter_style_swing_reliability",
+        "batter_style_walk_reliability",
+        "batter_style_strikeout_reliability",
+        "batter_style_isolated_power_reliability",
+        "batter_style_groundball_reliability"
+      ],
+      "n_clusters": 5,
+      "pitcher_profile_columns": [
+        "effective_speed",
+        "release_spin_rate",
+        "pfx_x",
+        "pfx_z",
+        "left_share",
+        "type_CH",
+        "type_CS",
+        "type_CU",
+        "type_EP",
+        "type_FA",
+        "type_FC",
+        "type_FF",
+        "type_FO",
+        "type_FS",
+        "type_KC",
+        "type_KN",
+        "type_PO",
+        "type_SC",
+        "type_SI",
+        "type_SL",
+        "type_ST",
+        "type_SV",
+        "type_UN"
+      ],
+      "stripped_tail": 7
+    },
+    "context_layout_source": "export manifest lineage.context_layout (SequenceContext.report features, Archetypes.report style/reliability columns and n_clusters, SharingContext clusters columns); names via direct_frontier_registry.direct_context_names; grouped labels map to names only through these source equivalences",
+    "context_names": [
+      "balls",
+      "strikes",
+      "outs",
+      "inning",
+      "defensive_score_lead",
+      "defender_is_home",
+      "first_base",
+      "second_base",
+      "third_base",
+      "batter_left",
+      "pitcher_left",
+      "batter_style_contact_prior",
+      "batter_style_swing_prior",
+      "batter_style_walk_prior",
+      "batter_style_strikeout_prior",
+      "batter_style_isolated_power_prior",
+      "batter_style_groundball_prior",
+      "batter_style_contact_reliability",
+      "batter_style_swing_reliability",
+      "batter_style_walk_reliability",
+      "batter_style_strikeout_reliability",
+      "batter_style_isolated_power_reliability",
+      "batter_style_groundball_reliability",
+      "batter_archetype_membership_0",
+      "batter_archetype_membership_1",
+      "batter_archetype_membership_2",
+      "batter_archetype_membership_3",
+      "batter_archetype_membership_4",
+      "pitcher_effective_speed",
+      "pitcher_release_spin_rate",
+      "pitcher_pfx_x",
+      "pitcher_pfx_z",
+      "pitcher_left_share",
+      "pitcher_type_CH",
+      "pitcher_type_CS",
+      "pitcher_type_CU",
+      "pitcher_type_EP",
+      "pitcher_type_FA",
+      "pitcher_type_FC",
+      "pitcher_type_FF",
+      "pitcher_type_FO",
+      "pitcher_type_FS",
+      "pitcher_type_KC",
+      "pitcher_type_KN",
+      "pitcher_type_PO",
+      "pitcher_type_SC",
+      "pitcher_type_SI",
+      "pitcher_type_SL",
+      "pitcher_type_ST",
+      "pitcher_type_SV",
+      "pitcher_type_UN",
+      "pitcher_log1p_train_count_over10"
+    ]
+  },
+  "training": {
+    "epochs": 60,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005,
+    "loss_weighting": "uniform",
+    "hpo_trials": 0
+  },
+  "calibration": {
+    "method": "minimize_scalar bounded",
+    "bounds": [
+      0.5,
+      2.5
+    ],
+    "chain": "G0 SharingPredictor: log(clip(softmax(logits),1e-30,1)) / T",
+    "split": "temperature"
+  },
+  "arm_notes": {
+    "control": "MatrixModel flatten_mlp 128, no workload: the same-family CUDA control (exact EXP-P34-001 entry, runner requirement)",
+    "periodic_residual_counts": "EXP-P32-001 / EXP-P34-001 arm unchanged (frozen PLR-lite embedding + residual backbone, blocks Dropout .1, counts workload), old code path",
+    "tabm_residual_counts": "EXP-P34-001 arm unchanged (TabM-mini k=8 on the frozen PLR-lite + residual backbone, counts workload; module direct_tabm_residual_model.py 6a9daff6...87cf), old code path; keeps its tabm_residual flag, so the PLE family predicate is tested first in the runner and scorer",
+    "ple_residual_counts": "direct_ple_model.DirectPLEResidualModel: PeriodicResidualNetwork constructor (same RNG order), periodic frequencies/embedding deleted, then e_j = w0_j*x_j + c0_j + PLE_j(x_j) @ W_j (version B: W zero-init, no bias, no activation; 48 quantile bins from the TRAIN argument only, padded package layout), padded past positions -> 0; frozen DirectResidualModel.fit",
+    "ple_tabm_residual_counts": "direct_ple_model.DirectPLETabMResidualModel: the same PLE embedding on the P34 PeriodicResidualTabMNetwork (r [k, D] scaling normal init, shared residual backbone, W [k,128,10], b [k,10]); mean member CE; ensemble logits log mean member softmax; frozen DirectTabMModel.fit (P34 path)",
+    "epoch_cap": "Epoch cap 60, patience 5 for every arm (as EXP-P34-001; 0/25 cap hits there). fit.json records cap, epochs_run, best_epoch and stopped_by per fit; numbers are not compared with P31/P32",
+    "bins": "Bins are computed in fit from the TRAIN argument only (never early-stop, temperature, blend, dev or mlb_dev rows), saved in the archive, hashed (ple_bins_sha256) and never recomputed at predict or load time. fit.json lifts ple_bins_sha256, ple_n_bins and ple_degenerate_columns (export column names) to the top level; the scorer requires ONE bins hash across all 10 PLE fits (review N12) and reports the degenerate count; load_model checks the archive bins against the run-recorded hash",
+    "degenerate_columns": "A column with exactly one distinct value in its binning rows gets T_j = 0 (no PLE term; e_j = w0_j*x_j + c0_j), the same rule in smoke and in the full run (review B1 decided option 1); fail closed only for non-finite values, T_j > 48 or float32 edges that are not strictly increasing",
+    "smoke_bins": "Smoke fits use the FIRST 8,192 TRAIN rows (runner SMOKE), so smoke bins and their hash differ from the full run by design: smoke verifies wiring and identities only, never bins or scores",
+    "bundle": "embedding_type rows change the whole embedding bundle together: map (cos/sin + shared Linear(32,8) + ReLU -> per-feature linear term + zero-init per-feature PLE linear, no activation), embedding parameter count (allocated 275,738 vs 244,898 single; 291,600 vs 260,760 TabM), TRAIN-fitted bins, weight decay and grad-norm clip coverage; disclosed, not separated. ensemble_head_ple is not compute-matched; the four *_vs_control rows are multi-factor bundles",
+    "dropout_stream": "On CPU the extra w0/c0 draws shift the CPU dropout stream; on CUDA the dropout stream is the CUDA generator, so ple_residual and periodic_residual may draw identical masks (review N2): unmeasured, not claimed either way",
+    "not_faithful": "adaptation of PLE version B (Gorishniy, Rubachev, Babenko NeurIPS 2022 arXiv:2203.05556v4; yandex-research/rtdl-num-embeddings a8fc250) with d_embedding 8 (package start 12), n_bins 48, quantile bins only, numpy float64 quantiles cast to float32 before unique, physics columns binned on valid past positions only, our residual backbone and ten-class head, no tuning; no claim that paper results transfer",
+    "module_pin": "direct_ple_model.py sha256 is pinned in ONE place, pitchmdp/direct_ple_registry.py MODULE_SHA256 (author pin; re-pinned there after the module review disposition, before smoke); the runner records the actual sha in every task identity via MODEL_SOURCES"
+  },
+  "control_reuse": "none: fresh control and fresh reference arms on seeds 29-33; earlier P24-P34 tasks are never mixed in",
+  "seeds": [
+    29,
+    30,
+    31,
+    32,
+    33
+  ],
+  "seed_rule": "only this registry family may use seeds 29-33: exactly [29, 30, 31, 32, 33], no repeat_tag; disjoint from P24/P25/P27/P29 (0-2), P30-001 (3-7), P30-002 (8-12, repeat_tag repeat2_seeds_8_12), P31 (13-15), P32 (16-18), P33 (19-23) and P34 (24-28). New RNG seeds are not a new evaluation population",
+  "fits": 25,
+  "arms": [
+    {
+      "name": "control",
+      "priority": 1,
+      "model": "flatten_mlp",
+      "width": 128,
+      "workload": []
+    },
+    {
+      "name": "periodic_residual_counts",
+      "priority": 1,
+      "embed_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "embed_residual",
+      "model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "name": "ple_residual_counts",
+      "priority": 1,
+      "ple_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "ple_embedding",
+      "model": "ple_residual_mlp",
+      "base_model": "periodic_residual_mlp",
+      "embedding": "ple",
+      "n_bins": 48,
+      "d_embedding": 8,
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "name": "tabm_residual_counts",
+      "priority": 1,
+      "tabm_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "tabm_residual",
+      "model": "periodic_residual_tabm_mini_mlp",
+      "base_model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "k": 8,
+      "scaling_init": "normal",
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "name": "ple_tabm_residual_counts",
+      "priority": 1,
+      "ple_tabm_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "ple_embedding",
+      "model": "ple_residual_tabm_mini_mlp",
+      "base_model": "periodic_residual_tabm_mini_mlp",
+      "embedding": "ple",
+      "n_bins": 48,
+      "d_embedding": 8,
+      "width": 128,
+      "k": 8,
+      "scaling_init": "normal",
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    }
+  ],
+  "comparison": {
+    "control_arm": "control",
+    "scorer": "experiments/pitchmdp/scripts/score_cuda_direct.py (portable, numpy only; runs on newsrv)",
+    "scope": "unblended calibrated direct-head probabilities of every arm vs the same-family, same-device CUDA control on dev and mlb_dev, BEFORE June blend / G0 mix; descriptive repeated-DEV only; no decision, ranking, automatic selection, interaction verdict or winner",
+    "not_compared": "P24-P34 tasks, frozen MPS numbers or other families (different control/code/seeds); no saved-probability ensemble grid for this family (decided in the pre-registration; adding one needs a grid file committed with time and reason BEFORE any P35 score exists)",
+    "ple_contrasts": [
+      {
+        "name": "ple_residual_counts_vs_periodic_residual_counts",
+        "candidate": "ple_residual_counts",
+        "reference": "periodic_residual_counts",
+        "isolates": "embedding_type_single",
+        "held": {
+          "workload": "counts",
+          "backbone": "residual",
+          "dropout_rate": 0.1,
+          "head": "single"
+        }
+      },
+      {
+        "name": "ple_tabm_residual_counts_vs_tabm_residual_counts",
+        "candidate": "ple_tabm_residual_counts",
+        "reference": "tabm_residual_counts",
+        "isolates": "embedding_type_tabm",
+        "held": {
+          "workload": "counts",
+          "backbone": "residual",
+          "dropout_rate": 0.1,
+          "head": "tabm_mini"
+        }
+      },
+      {
+        "name": "ple_tabm_residual_counts_vs_ple_residual_counts",
+        "candidate": "ple_tabm_residual_counts",
+        "reference": "ple_residual_counts",
+        "isolates": "ensemble_head_ple",
+        "held": {
+          "workload": "counts",
+          "backbone": "residual",
+          "dropout_rate": 0.1,
+          "input": "ple"
+        }
+      },
+      {
+        "name": "periodic_residual_counts_vs_control",
+        "candidate": "periodic_residual_counts",
+        "reference": "control",
+        "isolates": "bundle",
+        "held": {}
+      },
+      {
+        "name": "ple_residual_counts_vs_control",
+        "candidate": "ple_residual_counts",
+        "reference": "control",
+        "isolates": "bundle",
+        "held": {}
+      },
+      {
+        "name": "tabm_residual_counts_vs_control",
+        "candidate": "tabm_residual_counts",
+        "reference": "control",
+        "isolates": "bundle",
+        "held": {}
+      },
+      {
+        "name": "ple_tabm_residual_counts_vs_control",
+        "candidate": "ple_tabm_residual_counts",
+        "reference": "control",
+        "isolates": "bundle",
+        "held": {}
+      }
+    ],
+    "ple_scope": "7 pre-registered pairs (candidate minus reference, same seeds, seed-mean ensemble and single-fit, whole-game bootstrap): embedding_type_single and embedding_type_tabm (PLE vs periodic on the residual backbone, single head and TabM-mini), ensemble_head_ple (TabM-mini vs single head under PLE), and each non-control arm vs control (bundle). The embedding_type x head interaction may be printed descriptively; no interaction verdict. Exploratory, post-selection, repeated DEV. No ranking, winner or promotion",
+    "ple_headline": "headline rows fixed before any score (review N13): the two embedding_type contrasts, NLL on dev and mlb_dev side by side, reported first; all other rows follow in config order; the observed same-GPU (candidate, reference, seed) pair count is reported per contrast (review N7, no scheduler change)"
+  },
+  "device": {
+    "kind": "cuda",
+    "allowed_gpu_uuids": [
+      "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9",
+      "GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99"
+    ],
+    "max_parallel": 2,
+    "cpu_fallback": false
+  },
+  "queue": {
+    "timezone": "Asia/Seoul",
+    "date": "2026-10-05",
+    "date_note": "PLACEHOLDER family deadline: queue.date / no_new_fit_after / kill_own_after / aggregate_by must be re-dated to the launch day at registration from the measured timing probe (fails closed after 2026-10-05 19:00 KST until then; a smoke after that time needs a re-dated DRAFT first)",
+    "batch": "DRAFT PLE embedding 5 arms x seeds 29-33, epoch cap 60; smoke only until registration",
+    "no_new_fit_after": "19:00",
+    "kill_own_after": "19:30",
+    "aggregate_by": "20:00",
+    "task_timeout_seconds": 3600,
+    "family_budget_seconds": 36000,
+    "max_attempts": 2,
+    "order": "priority then seed then arm (all 5 arms priority 1; config order)",
+    "start_after": "no other family's queue running on GPU3/4 (EXP-P30-001, EXP-P30-002, EXP-P31-001, EXP-P32-001, EXP-P33-001, EXP-P34-001 terminal; any root queue not running); never concurrent with another family's queue. Launch with --lock-dir /home/sds733/pitcheezy-autonomy/gpu-locks (the common per-GPU flock); co-scheduled fit seconds would be recorded as co-scheduled, not as compute cost.",
+    "stop_rule": "any task failing twice aborts the family (no partial comparison, failures reported); timing gate before registration by the Amendment-2 method only (pre-registration \u00a76, review B2 decided option 1): task_projected = startup + prepare + 60 x per_epoch (warm full-TRAIN 2-epoch fit after a 1-epoch warm-up, max(wall, report)/2, incl. the per-epoch early-stop pass) + predict + 30 s, slower of GPU3/GPU4 per arm, one probe seed outside the family; family = sum over arms of 5 x slowest; gates: every arm <= 1800 s, family <= 36000 worker-s, probe complete with exit 0; any gate false -> no registration, probe record kept, redesign or drop (gates not raised, not silently shortened); no extra arms, seeds, contrasts, epochs or grids after any score is read"
+  },
+  "exposure": "DEV / MLB DEV are the same repeatedly exposed <=2025 rows used for P24-P34 (233 fits) and by EXP-P30-002; PLE and both references were chosen after reading earlier results (post-selection). Descriptive only: no winner, promotion or verdict fields. G0, D131/D155 unchanged. No 2026 data.",
+  "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks manifest). DEV/mlb_dev only predicted, never used for fit, PLE binning, early stop, temperature or selection.",
+  "execution": {
+    "enabled": false
+  }
+}

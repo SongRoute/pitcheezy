@@ -70,6 +70,18 @@ EMA / TabM / embedded-residual ones because two of its arms keep those flags.  f
 of this family also records the epoch cap passed to fit, epochs run, best epoch and
 whether the cap or patience stopped the fit.
 
+PLE-embedding arms (DRAFT-CUDA-PLE-RESIDUAL-20261004, EXP-P35-001 DRAFT): an arm marked
+"ple_residual": true or "ple_tabm_residual": true must equal direct_ple_registry.ARMS
+(version-B piecewise-linear embedding, quantile bins from the TRAIN argument only, in front
+of the frozen residual backbone, single head or TabM-mini k=8; counts workload); a config
+with such arms must be exactly the fixed five-arm family (control, periodic_residual_counts
+and tabm_residual_counts = EXP-P34-001 exact entries) on seeds exactly [29, 30, 31, 32, 33]
+with the epoch cap 60.  Its family predicate is tested FIRST (config_check, training_budget,
+run_task, scorer), because tabm_residual_counts keeps its P34 flag.  fit.json records the
+epoch cap as P34 and, for PLE arms, the bins hash, per-feature bin counts and the degenerate
+(one-valued, T_j = 0) columns by export column name; load_model checks the bins against that
+recorded hash.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -111,6 +123,7 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_ema_model.py', 'pitchmdp/direct_ema_registry.py',
                  'pitchmdp/direct_tabm_residual_model.py', 'pitchmdp/direct_tabm_residual_factory.py',
                  'pitchmdp/direct_tabm_residual_registry.py',
+                 'pitchmdp/direct_ple_model.py', 'pitchmdp/direct_ple_factory.py', 'pitchmdp/direct_ple_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -197,8 +210,27 @@ def uses_tabm_residual(config):
     return any('tabm_residual' in arm for arm in config['arms'])
 
 
+PLE_FLAGS = ('ple_residual', 'ple_tabm_residual')  # == direct_ple_registry.FLAG_KEYS (tested)
+
+
+def is_ple_arm(arm):
+    return any(flag in arm for flag in PLE_FLAGS)
+
+
+def uses_ple(config):
+    """The P35 family predicate; checked before uses_tabm_residual everywhere (its arm 4 keeps the P34 flag)."""
+    return any(is_ple_arm(arm) for arm in config['arms'])
+
+
+def uses_epoch_cap(config):
+    return uses_ple(config) or uses_tabm_residual(config)
+
+
 def training_budget(config):
-    """EXP-P15-001 budget; only the TabM-residual family has its pre-registered epoch cap."""
+    """EXP-P15-001 budget; only the PLE and TabM-residual families have their pre-registered epoch cap."""
+    if uses_ple(config):
+        from pitchmdp.direct_ple_registry import TRAINING as PLE_CAPPED  # torch-free
+        return PLE_CAPPED
     if uses_tabm_residual(config):
         from pitchmdp.direct_tabm_residual_registry import TRAINING as CAPPED  # torch-free
         return CAPPED
@@ -208,7 +240,10 @@ def training_budget(config):
 def config_check(config):
     if config.get('protocol') != PROTOCOL:
         raise ValueError('Config is not the cuda_direct_v1 protocol')
-    if uses_tabm_residual(config):
+    if uses_ple(config):
+        from pitchmdp.direct_ple_registry import check_family  # torch-free; exact arms, seeds 29-33, cap 60
+        check_family(config)
+    elif uses_tabm_residual(config):
         from pitchmdp.direct_tabm_residual_registry import check_family  # torch-free; exact arms, seeds 24-28, cap 60
         check_family(config)
     elif uses_ema(config):
@@ -236,6 +271,13 @@ def config_check(config):
     columns = config['export']['workload_columns']
     names = set()
     for arm in config['arms']:
+        if is_ple_arm(arm):
+            from pitchmdp.direct_ple_registry import check_arm  # torch-free
+            check_arm(arm)
+            if arm['name'] in names or any(c not in columns for c in arm['workload']):
+                raise ValueError('Duplicated PLE arm or unexported workload: ' + arm['name'])
+            names.add(arm['name'])
+            continue
         if 'tabm_residual' in arm:
             from pitchmdp.direct_tabm_residual_registry import check_arm  # torch-free
             check_arm(arm)
@@ -463,6 +505,11 @@ def arm_inputs(arrays, arm, columns):
 # ------------------------------------------------------------------ model / calibration
 
 def build_model(arm, seed, device, context_names=None):
+    if is_ple_arm(arm):
+        from pitchmdp.direct_ple_factory import build_ple
+        if context_names:
+            raise ValueError('PLE arms take no context names')
+        return build_ple(arm, seed, device)
     if arm.get('tabm_residual') is True:
         from pitchmdp.direct_tabm_residual_factory import build_tabm_residual
         if context_names:
@@ -513,7 +560,18 @@ def build_model(arm, seed, device, context_names=None):
     return DirectPeriodicModel(seed, arm['context_continuous'], device=device)
 
 
-def load_model(arm, path, device, context_names=None):
+def recorded_ple_bins(path):
+    """The bins hash the runner recorded for this task (fit.json next to model.pt); required for PLE loads."""
+    record = Path(path).parent / 'fit.json'
+    if not record.is_file():
+        raise ValueError('PLE load needs the run-recorded bins hash (fit.json next to the archive)')
+    return read_json(record).get('ple_bins_sha256')
+
+
+def load_model(arm, path, device, context_names=None, ple_bins_sha256=None):
+    if is_ple_arm(arm):
+        from pitchmdp.direct_ple_factory import load_ple
+        return load_ple(arm, path, device, ple_bins_sha256 or recorded_ple_bins(path))
     if arm.get('tabm_residual') is True:
         from pitchmdp.direct_tabm_residual_factory import load_tabm_residual
         return load_tabm_residual(arm, path, device)
@@ -713,8 +771,12 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
                       'train_rows_sha256': train_rows, 'earlystop_rows_sha256': early_rows,
                       'predicted_rows': rows, 'runtime': runtime, 'train_subset': subset, 'context_names_verified': names is not None, 'peak_device_bytes': peak_device_bytes(device),
                       'finished_utc': datetime.now(timezone.utc).isoformat(), 'dev_used_for_fit_or_selection': False}
-        if uses_tabm_residual(config):
+        if uses_epoch_cap(config):
             fit_report['epoch_cap'] = epoch_record(model.report, epochs, spec['patience'])
+        if is_ple_arm(arm):
+            from pitchmdp.direct_ple_registry import fit_record
+            fit_report.update(fit_record(model.report['network'], config['export']['shapes']['length'],
+                                         config['export']['context_names'], arm['workload']))
         write_json_atomic(work / 'fit.json', fit_report)
         names = ['identity.json', 'model.pt', 'calibration.json', 'predictions.npz', 'mlb_predictions.npz', 'fit.json']
         write_json_atomic(work / 'state.json', {'identity': identity,
