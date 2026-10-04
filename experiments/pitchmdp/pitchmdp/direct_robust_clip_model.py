@@ -10,7 +10,10 @@ Data" (NeurIPS 2024, arXiv:2407.04491v3) §3 "Data preprocessing": per numerical
 is 0, else 0, and ``f(x) = x / sqrt(1 + (x / 3)^2)``.  Written here from the paper text (quotes checked against the
 arXiv LaTeX in coordinator T89a); no third-party code is copied and no package is installed.  NOT a faithful
 reproduction: only this preprocessing step (the learnable diagonal scaling layer, NTP, the paper's MLP and its
-hyperparameters are absent); applied to our TRAIN mean/std standardized inputs, which is equivalent up to float32
+hyperparameters are absent); only the periodic / PLE continuous set is transformed (the paper's RealMLP-TD also
+transforms one-hot and other numerical columns; its preprocessing ablation leaves one-hot columns alone): past
+type/outcome one-hots, the game-state ordinals and flags (context 0-10) and the near-binary left share stay raw;
+applied to our TRAIN mean/std standardized inputs, which is equivalent up to float32
 rounding because the rule is invariant to a positive affine map of a column; numpy float64 linear quantiles cast to
 float32; our residual backbone, ten-class head, AdamW loop and calibration chain, no tuning.
 
@@ -27,8 +30,9 @@ Physics columns use the rows whose past position is valid (padded values never e
 zeroed by the frozen forward after the transform).  c, s are computed in ``fit`` from the ``train`` argument only
 (never early-stop, temperature, DEV or mlb_dev rows), stored as persistent buffers (``rc_center``, ``rc_scale``),
 hashed (``rc_stats_sha256``: sha256 over the float32 little-endian bytes of c then s) and never recomputed at predict
-or load time.  The network is built by the frozen ResidualMLPNetwork constructor and only registers buffers, so for
-one seed every parameter equals the ``residual_counts`` arm's initial value.  Training is the frozen
+or load time; the fit report carries the hash and the per-rule column labels (written before the frozen fit's own
+checkpoint save, so one save).  The network is built by the frozen ResidualMLPNetwork constructor and only registers
+buffers, so for one seed every parameter equals the ``residual_counts`` arm's initial value.  Training is the frozen
 DirectResidualModel.fit, unchanged.  The zero-current-physics guard of the embedding arms is applied (fail closed).
 """
 from __future__ import annotations
@@ -51,6 +55,12 @@ PREPROCESSING = {'type': 'robust_scale_smooth_clip', 'center': 'median_train',
                  'scale': 'inverse_iqr_else_2_over_range_else_0', 'clip': 'x/sqrt(1+(x/3)^2)', 'clip_constant': CLIP,
                  'columns': 'past_physics_valid_rows+context_continuous', 'learnable_scaling_layer': False}
 ARCHITECTURE = {'backbone': {'kind': residual.KIND, **residual.ARCHITECTURE}, 'preprocessing': PREPROCESSING}
+
+
+def feature_labels(length, context_continuous):
+    """Transformed-scalar labels in statistics order (as direct_ple_model.feature_labels)."""
+    return [f'past{p}.phys{c}' for p in range(length - 1) for c in range(periodic.N_PHYSICAL)] + \
+        [f'context{int(i)}' for i in context_continuous]
 
 
 def _columns(arrays, context_continuous):
@@ -166,14 +176,16 @@ class DirectRobustClipResidualModel(DirectResidualModel):
         train, calibration = periodic._no_current_physics(train), periodic._no_current_physics(calibration)
         center, scale, rules = compute_stats(train, self.context_continuous)
         self.rc_stats = (center, scale)
-        self.rc_rules = rules
-        super().fit(train, labels, calibration, calibration_labels, **kwargs)
-        self.report.update(preprocessing=self.architecture['preprocessing'],
-                           rc_stats_sha256=self.net.config['rc_stats_sha256'],
-                           rc_rule_counts={r: rules.count(r) for r in ('iqr', 'range', 'constant')})
-        if kwargs.get('checkpoint'):
-            self.save(kwargs['checkpoint'])  # re-save so the archive carries the report fields above
-        return self
+        self.rc_rules = dict(zip(feature_labels(train[0].shape[1], self.context_continuous), rules, strict=True))
+        return super().fit(train, labels, calibration, calibration_labels, **kwargs)
+
+    def _base_report(self, n, early_n, weight):
+        # Called by the frozen fit before its own checkpoint save, so the archive carries these fields (one save).
+        rules = list(self.rc_rules.values())
+        return {**super()._base_report(n, early_n, weight), 'preprocessing': self.architecture['preprocessing'],
+                'rc_stats_sha256': stats_sha256(*self.rc_stats),
+                'rc_rule_counts': {r: rules.count(r) for r in ('iqr', 'range', 'constant')},
+                'rc_rule_columns': {r: [c for c, x in self.rc_rules.items() if x == r] for r in ('range', 'constant')}}
 
     def logits(self, arrays, batch_size=4096):
         return super().logits(periodic._no_current_physics(arrays), batch_size)

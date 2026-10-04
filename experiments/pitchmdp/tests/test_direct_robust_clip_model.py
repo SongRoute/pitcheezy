@@ -10,7 +10,7 @@ import torch
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
 from pitchmdp import direct_robust_clip_model as rc  # noqa: E402
-from pitchmdp.direct_residual_model import DirectResidualModel  # noqa: E402
+from pitchmdp.direct_residual_model import DirectResidualModel, ResidualMLPNetwork  # noqa: E402
 from pitchmdp.direct_workload_dropout_registry import CONTINUOUS  # noqa: E402
 
 CONT = CONTINUOUS['counts']  # the registered 41-column `counts` map (P32/P34/P35 arms)
@@ -72,6 +72,9 @@ def test_statistics_come_from_the_train_argument_only():
     pooled = [np.concatenate(p) for p in zip(arrays(300, 11)[0], arrays(90, 12)[0])]
     assert rc.stats_sha256(*rc.compute_stats(pooled, CONT)[:2]) != sha
     assert a.report['rc_stats_sha256'] == sha and sum(a.report['rc_rule_counts'].values()) == N_SCALARS
+    assert a.report['preprocessing'] == rc.PREPROCESSING and a.report['network']['rc_stats_sha256'] == sha
+    assert a.report['rc_rule_counts']['iqr'] == N_SCALARS
+    assert a.report['rc_rule_columns'] == {'range': [], 'constant': []}
 
 
 def test_rule_matches_the_paper_formula_per_column():
@@ -94,6 +97,8 @@ def test_degenerate_columns_use_range_then_zero():
     center, scale, rules = rc.compute_stats((tokens, valid, context), CONT)
     assert rules[41] == 'range' and scale[41] == np.float32(.5) and center[41] == 0.
     assert rules[42] == 'constant' and scale[42] == 0.
+    labels = rc.feature_labels(SHAPE[2], CONT)
+    assert len(labels) == N_SCALARS and labels[41] == f'context{CONT[1]}' and labels[8 * 2 + 3] == 'past2.phys3'
     net = rc.RobustClipResidualNetwork(*SHAPE, CONT, center, scale)
     _, ctx = net.transform(torch.as_tensor(tokens), torch.as_tensor(context))
     assert torch.all(ctx[:, CONT[2]] == 0.)
@@ -164,6 +169,30 @@ def test_padded_positions_do_not_change_logits():
     assert torch.equal(a, b)
 
 
+def test_forward_is_the_frozen_forward_of_the_transformed_inputs():
+    """Review T100b: dropping the transform from forward survived every author test."""
+    (tokens, valid, context), _ = arrays(64, 12)
+    net = rc.RobustClipResidualNetwork(*SHAPE, CONT, *stats(4)[:2]).eval()
+    args = [torch.as_tensor(a) for a in (tokens, valid, context)]
+    with torch.no_grad():
+        t, c = net.transform(args[0], args[2])
+        assert torch.equal(net(*args), ResidualMLPNetwork.forward(net, t, args[1], c))
+        assert not torch.allclose(net(*args), ResidualMLPNetwork.forward(net, *args), atol=1e-3)
+
+
+def test_fit_with_identity_transform_reproduces_the_residual_fit(monkeypatch):
+    """Review T100b one-factor check: with c = 0, s = 1 and f = identity the inputs are bitwise those of the
+    residual_counts arm, so the frozen loop must give bitwise the same fit (seeding, RNG order, dropout draws)."""
+    monkeypatch.setattr(rc, 'smooth_clip', lambda z: z)
+    monkeypatch.setattr(rc, 'compute_stats', lambda arrays, cont: (np.zeros(N_SCALARS, np.float32),
+                                                                   np.ones(N_SCALARS, np.float32), ['iqr'] * N_SCALARS))
+    ours = small_fit(rc.DirectRobustClipResidualModel(4, CONT, device='cpu'), epochs=3)
+    base = small_fit(DirectResidualModel(4, device='cpu'), epochs=3)
+    assert ours.report['history'] == base.report['history'] and ours.report['best_epoch'] == base.report['best_epoch']
+    x, _ = arrays(40, 31)
+    assert np.array_equal(ours.logits(x), base.logits(x))
+
+
 def test_initial_parameters_equal_the_residual_counts_network():
     torch.manual_seed(5)
     ours = rc.RobustClipResidualNetwork(*SHAPE, CONT, *stats(3)[:2])
@@ -198,6 +227,9 @@ def test_current_physics_guard():
     model = rc.DirectRobustClipResidualModel(0, CONT, device='cpu')
     with pytest.raises(ValueError, match='Current-pitch physics'):
         model.fit((tokens, valid, context), y, *arrays(20, 11))
+    small_fit(model)
+    with pytest.raises(ValueError, match='Current-pitch physics'):
+        model.logits((tokens, valid, context))
 
 
 def test_archive_round_trip_and_tamper_refusal(tmp_path):
@@ -213,6 +245,17 @@ def test_archive_round_trip_and_tamper_refusal(tmp_path):
     with pytest.raises(ValueError, match='recorded hash'):
         rc.DirectRobustClipResidualModel.load(tmp_path / 'bad.pt', device='cpu')
     payload = torch.load(path, weights_only=True)
+    payload['rc_stats_sha256'] = '0' * 64
+    torch.save(payload, tmp_path / 'top.pt')
+    with pytest.raises(ValueError, match='recorded hash'):
+        rc.DirectRobustClipResidualModel.load(tmp_path / 'top.pt', device='cpu')
+    payload = torch.load(path, weights_only=True)
+    payload['network_config']['dropout'] = .2
+    torch.save(payload, tmp_path / 'arch.pt')
+    with pytest.raises(ValueError, match='differs from the archived architecture'):
+        rc.DirectRobustClipResidualModel.load(tmp_path / 'arch.pt', device='cpu')
+    payload = torch.load(path, weights_only=True)
+    assert payload['report']['rc_stats_sha256'] == payload['rc_stats_sha256']  # one save carries the report fields
     payload['format'] = 'direct_residual_model_v1'
     torch.save(payload, tmp_path / 'other.pt')
     with pytest.raises(ValueError, match='Unrecognized'):
