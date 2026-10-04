@@ -90,24 +90,93 @@ bins fitted on TRAIN only) change calibrated direct NLL / Brier / ECE
 
 Additive: two new arms only; every frozen module, arm and earlier source hash stays untouched.
 
-**Primary sources (read 2026-10-04 through WebFetch page summaries, open access only; every quote and package
-fact below is 미확인 until re-read from the PDF / raw source at a pinned commit — review B3).**
-- Y. Gorishniy, I. Rubachev, A. Babenko, "On Embeddings for Numerical Features in Tabular Deep Learning",
-  NeurIPS 2022, arXiv:2203.05556 (abstract: "two conceptually different approaches … the first one is based on
-  a piecewise linear encoding of scalar values, and the second one utilizes periodic activations"). We already
-  use the second; this family tests the first.
-- Y. Gorishniy, A. Kotelnikov, A. Babenko, "TabM: Advancing Tabular Deep Learning with Parameter-Efficient
-  Ensembling", ICLR 2025, arXiv:2410.24210 (v3). §3.4: "TabM_mini† denotes TabM_mini with non-linear feature
-  embeddings from (Gorishniy et al., 2022) … we use a slightly modified version of the piecewise-linear
-  embeddings"; §A.2: "we use † to mark TabM variants with the piecewise-linear embeddings". Our P31/P34 TabM arms
-  use periodic embeddings instead, so the paper's own embedding choice for TabM has not been tried here.
-- Official package `rtdl_num_embeddings` (yandex-research/rtdl-num-embeddings, `package/README.md` and
-  `rtdl_num_embeddings.py`, read 2026-10-04, commit not pinned yet → pin at module time): `compute_bins(X, n_bins=48)`
-  = per-feature quantiles then `unique()`; `PiecewiseLinearEmbeddings(bins, d_embedding, activation, version)`;
-  README: recommended `version="B"`, `activation=False`, starting point `d_embedding=12`; version B adds a
-  per-feature linear term (`linear0`) and zero-initialises the PLE linear layer, so the module starts as a
-  linear embedding. The formula will be written from the documentation; no third-party code copied; the package
-  is **not** installed (no installs on newsrv without asking).
+**Primary sources — B3 re-read from the original documents (2026-10-04, module author, plain `git clone` /
+`curl` reads into `/tmp/pz-p35-module-src/`, no install, no WebFetch/WebSearch).** The earlier WebFetch-summary
+block is kept below, struck through, with each old claim settled in the table after it.
+
+<details><summary>Superseded WebFetch-summary text (struck through)</summary>
+
+> ~~**Primary sources (read 2026-10-04 through WebFetch page summaries, open access only; every quote and package~~
+> ~~fact below is 미확인 until re-read from the PDF / raw source at a pinned commit — review B3).**~~
+> ~~- Y. Gorishniy, I. Rubachev, A. Babenko, "On Embeddings for Numerical Features in Tabular Deep Learning",~~
+> ~~NeurIPS 2022, arXiv:2203.05556 (abstract: "two conceptually different approaches … the first one is based on~~
+> ~~a piecewise linear encoding of scalar values, and the second one utilizes periodic activations"). We already~~
+> ~~use the second; this family tests the first.~~
+> ~~- Y. Gorishniy, A. Kotelnikov, A. Babenko, "TabM: Advancing Tabular Deep Learning with Parameter-Efficient~~
+> ~~Ensembling", ICLR 2025, arXiv:2410.24210 (v3). §3.4: "TabM_mini† denotes TabM_mini with non-linear feature~~
+> ~~embeddings from (Gorishniy et al., 2022) … we use a slightly modified version of the piecewise-linear~~
+> ~~embeddings"; §A.2: "we use † to mark TabM variants with the piecewise-linear embeddings". Our P31/P34 TabM arms~~
+> ~~use periodic embeddings instead, so the paper's own embedding choice for TabM has not been tried here.~~
+> ~~- Official package `rtdl_num_embeddings` (yandex-research/rtdl-num-embeddings, `package/README.md` and~~
+> ~~`rtdl_num_embeddings.py`, read 2026-10-04, commit not pinned yet → pin at module time): `compute_bins(X, n_bins=48)`~~
+> ~~= per-feature quantiles then `unique()`; `PiecewiseLinearEmbeddings(bins, d_embedding, activation, version)`;~~
+> ~~README: recommended `version="B"`, `activation=False`, starting point `d_embedding=12`; version B adds a~~
+> ~~per-feature linear term (`linear0`) and zero-initialises the PLE linear layer, so the module starts as a~~
+> ~~linear embedding. The formula will be written from the documentation; no third-party code copied; the package~~
+> ~~is **not** installed (no installs on newsrv without asking).~~
+
+</details>
+
+Pinned sources: package `yandex-research/rtdl-num-embeddings` commit `a8fc25025c83f2321c63ff127a3bcef83bb1bfb5`
+(`a8fc250`, 2025-04-16, package `__version__ = '0.0.12'`, the same commit the periodic module cites; version B was
+added earlier in `f2092094`); TabM paper arXiv:2410.24210**v3** (PDF sha256 `a6988aa1…a83ea34f`, page numbers from
+that PDF via macOS PDFKit; text via the arXiv HTML of v3); Gorishniy et al. 2022 arXiv:2203.05556**v4** (PDF sha256
+`22b97677…3163a0d8`, page from that PDF; text via the arXiv HTML of v4). `R` = `package/rtdl_num_embeddings.py` at `a8fc250`.
+
+- 2022 abstract (v4 HTML; PDF p. 1): "two conceptually different approaches to building embedding modules: the first one is
+  based on a piecewise linear encoding of scalar values, and the second one utilizes periodic activations" — **confirmed**.
+- (e) PLE formula, 2022 §3.2 Eq. 1 (PDF p. 4): "e_t = 0, x < b_{t−1} AND t > 1; 1, x ≥ b_t AND t < T; (x−b_{t−1})/(b_t−b_{t−1})
+  otherwise"; "For T = 1, the PLE-representation is effectively equivalent to the scalar representation"; "The cases
+  (x < b_0) and (x ≥ b_T) are also covered by Equation 1 (which leads to (e_1 ≤ 0) and (e_T ≥ 1) respectively)".
+  So the first piece is unbounded below and the last unbounded above (linear extrapolation outside the TRAIN range,
+  review N14 disclosure), and a single bin (T = 1) is **not clamped on either side**. Code agrees: `R:656-681`
+  `x[..., :1].clamp_max(1.0)`, `x[..., 1:-1].clamp(0.0, 1.0)`, last `clamp_min(0.0)` except `torch.where(self.single_bin_mask…,
+  x[..., -1:], …)` ("For features with only one bin, the whole \"piecewise-linear\" encoding effectively behaves like
+  mix-max scaling"). Bins from quantiles, 2022 §3.2.1 (p. 4): "b_t = Q_{t/T}({x_i^{j}}_{j∈J_train})" … "Trivial bins
+  of zero size are removed." — **confirmed; the DRAFT §4 formula needed one fix: T_j = 1 is unclamped (applied below).**
+- (a) Linear_j bias in version B: `R:772-778` `self.linear = _NLinear(len(bins), self.impl.get_max_n_bins(), d_embedding,
+  # For the version "B", the bias is already presented in self.linear0. bias=not is_version_B)` and `R:779-783`
+  `if is_version_B: … nn.init.zeros_(self.linear.weight)` ("at initialization, the whole embedding behaves like a
+  linear embedding"). **Settled: no Linear_j bias; weight zero-init.** The DRAFT's "+8 per feature" / "bias zero" was
+  wrong; the review's "648 fewer" bounds apply (below). Forward `R:792-805`: `x_linear = self.linear0(x)`, `x_ple =
+  self.linear(self.impl(x))`, optional ReLU only if `activation=True`, `return x_linear + x_ple`.
+- (b) `LinearEmbeddings` init, `R:79-86`: `self.weight = Parameter(torch.empty(n_features, d_embedding))`, `self.bias = …`,
+  `d_rqsrt = self.weight.shape[1] ** -0.5; nn.init.uniform_(self.weight, -d_rqsrt, d_rqsrt); nn.init.uniform_(self.bias,
+  -d_rqsrt, d_rqsrt)`; forward `R:95` `torch.addcmul(self.bias, self.weight, x[..., None])`. **Settled: w0, c0 ~
+  U(−1/√8, 1/√8), weight drawn before bias** (the same bound the P32 LR network chose without checking).
+- (c) `compute_bins`, `R:348-350` `n_bins: int = 48`; quantile branch `R:456-461` `q.unique() for q in torch.quantile(X,
+  torch.linspace(0.0, 1.0, n_bins + 1).to(X), dim=0).T` (unique AFTER quantiles, in X's dtype; comment `R:449-455`:
+  "limiting the number of quantiles by the number of distinct values is NOT the same as removing identical quantiles
+  after computing them"); `R:406-410` raises `ValueError` if any column has one distinct value; `R:404-405` rejects
+  non-finite X; `_check_bins` `R:313-339` requires ≥ 2 finite, strictly increasing edges and only *warns* for one bin.
+  **Settled: default 48; per-feature quantiles at 49 levels then unique.** Our deviations (disclosed): numpy float64
+  quantiles (`method='linear'`, the same interpolation as `torch.quantile`'s default) → cast float32 → unique (the
+  package computes in X's float32 with a float32 linspace); B1 T_j = 0 rule instead of the package's ValueError for
+  a one-valued column; physics columns are binned on rows whose past position is valid only.
+- (d) Padded layout, `R:543-564` docstring and `R:600-651`: output `(*, n_features, max_n_bins)`; "x_ple_actual =
+  [*x_ple[:-1], *zeros(max_n_bins - n_bins), x_ple[-1]]" — "The last encoding component is **always** located in the end,
+  even if n_bins == 1", "The leading n_bins - 1 components are located in the beginning", "Everything in-between is
+  always set to zeros"; per-bin `w = 1.0 / bin_width`, `b = -bin_edges[:-1] / bin_width` in zero-initialised
+  `[n_features, max_n_bins]` buffers. **Settled: we use this layout with a fixed padded width 48** (so the last
+  piece sits at index 47 for every feature, leading pieces at 0..T_j−2; T_j = 0 → all 48 positions are padding).
+- TabM v3 §3.4 (PDF p. 6): "TabM_mini^† denotes TabM_mini with non-linear feature embeddings from (Gorishniy et al.,
+  2022) … Specifically, we use a slightly modified version of the piecewise-linear embeddings (see subsection D.8
+  for details)" — **confirmed** (the DRAFT's "§3.4" is correct). §A.2 (PDF p. 14): "In this paper, we use † to mark
+  TabM variants with the piecewise-linear embeddings"; "For TabM_mini^† and TabM^†, we initialize the first
+  multiplicative adapter R of the first linear layer from the standard normal distribution N(0, 1)" — **confirmed**
+  (matches the P34 `scaling_init='normal'`). §D.8 (PDF p. 20): "Updated piecewise-linear embeddings. … our
+  implementation corresponds to the “Q-L” and “T-L” variations from Table 2 in Gorishniy et al. (2022) (we use the
+  quantile-based bins for simplicity). In practice, our implementation is significantly faster and uses a different
+  parametrization and initialization. See the source code for details." The paper itself does not spell out
+  version B; the package README `package/README.md:251-256` does: "For `PiecewiseLinearEmbeddings`, by default, use
+  `version=\"B\"` and `activation=False`", "\"B\" is the version used in the different paper about the TabM model",
+  "The possible starting points are `d_embedding=12` with `activation=False`". The link "version B = the TabM
+  paper's PLE" therefore rests on the package README (same authors), not on the paper text — stated, not hidden.
+- Parameter counts after (a): padded storage allocates 81 × 48 × 8 = 31,104 PLE weights for every arm, so
+  `parameter_count` (allocated) is exactly ple_residual_counts 275,738 and ple_tabm_residual_counts 291,600 (= the
+  review N3 bounds minus 648); the effective trainable count is 244,634 + 8·ΣT_j (single) / 260,496 + 8·ΣT_j (TabM),
+  printed by the module; ΣT_j on real TRAIN is 미측정.
+
 
 **Not faithful (disclosed now).** d_embedding 8 (package start 12) to hold the backbone input width equal to the
 periodic arms; n_bins 48 (package default), quantile bins only (no target-aware tree bins: they would read labels
@@ -156,8 +225,10 @@ not separated.
 bins_j  = unique(quantile(TRAIN values of scalar j, linspace(0, 1, 49)))     # j = 1..81, edges b_0 < … < b_{T_j}
         # physics scalars: TRAIN rows whose past position is valid only; context scalars: all TRAIN rows
 enc_j(x)= [ clamp_max((x−b_0)/(b_1−b_0), 1), clamp((x−b_{t−1})/(b_t−b_{t−1}), 0, 1) for t = 2..T_j−1,
-            clamp_min((x−b_{T_j−1})/(b_{T_j}−b_{T_j−1}), 0) ]                 # T_j values; T_j = 1 → single linear piece
-e_j(x)  = w0_j * x + c0_j + Linear_j(T_j → 8)(enc_j(x))                       # w0, c0 [81, 8]; Linear_j weight zero-init, bias zero
+            clamp_min((x−b_{T_j−1})/(b_{T_j}−b_{T_j−1}), 0) ]                 # T_j values; ~~T_j = 1 → single linear piece~~
+        # T_j = 1 → one UNCLAMPED piece (x−b_0)/(b_1−b_0) (2022 Eq. 1; R:666-676); T_j = 0 → no PLE term (B1)
+        # stored padded to 48 in the package layout: leading T_j−1 pieces at 0..T_j−2, last piece at index 47 (R:556-564)
+e_j(x)  = w0_j * x + c0_j + Linear_j(T_j → 8)(enc_j(x))                       # w0, c0 [81, 8]; Linear_j weight zero-init, ~~bias zero~~ NO bias (R:776-777)
 e       = e * keep                                                             # padded past positions → exactly 0 (as periodic)
 
 ple_residual_mlp:        raw, e → PeriodicResidualNetwork backbone (input Linear → 2 pre-LN residual blocks with Dropout .1 inside → LN → GELU → Linear(128,10))
@@ -174,8 +245,9 @@ ple_tabm_residual_mlp:   raw, e → PeriodicResidualTabMNetwork backbone (r [k,D
   built on CPU, so the extra PLE draws advance only the CPU generator; on CPU (tests) the masks differ, on CUDA the
   dropout stream is the CUDA generator, which those draws do not advance, so ple_residual and periodic_residual may
   draw identical masks (same shapes) — 미측정, not claimed either way [review N2].
-- Init of w0, c0: package `LinearEmbeddings` init (to be read and written into the module docstring at module
-  time; 미측정 now). Linear_j: zeros (version B).
+- Init of w0, c0: ~~package `LinearEmbeddings` init (to be read and written into the module docstring at module
+  time; 미측정 now)~~ U(−1/√8, 1/√8), weight then bias (`LinearEmbeddings`, R:83-86, settled in §2). Linear_j: zeros,
+  no bias (version B, R:776-783).
 - Bins are computed inside a `fit` override from the TRAIN arrays only, **before** `super().fit` builds the
   network (the frozen `network(n_context, n_token, length)` hook sees shapes only, so the model stores bins on
   `self` first). Computed with numpy per column (torch.quantile has an input-size limit; ~100 M values here);
