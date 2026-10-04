@@ -80,6 +80,8 @@ const hasRetry = (await again.count()) > 0;
 if (!hasRetry) fail('no retry button in the stale band');
 const box = hasRetry ? await again.boundingBox() : null;
 if (hasRetry && (!box || box.x + box.width > 360)) fail(`stale-band retry button off screen: ${JSON.stringify(box)}`);
+const edge = await band.boundingBox();  // the band clips its own overflow: a button past its right edge is cut, not just off screen
+if (hasRetry && box && (!edge || box.x + box.width > edge.x + edge.width)) fail(`stale-band retry button cut by the band: ${JSON.stringify({ box, edge })}`);
 if (shots) await page.screenshot({ path: `${shots}/timeout-2-stale.png` });
 mode = 'ok';
 t = Date.now();
