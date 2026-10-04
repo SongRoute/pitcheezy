@@ -63,7 +63,7 @@
     },
     "design_note": {
       "path": "experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P36-001-robust-clip-2026-10-04.md",
-      "sha256": "ac0d6cc7e2b612e0a873b687143720dacef9e941bbdaac6a23815e1167f86c46"
+      "sha256": "947e56c62444ed1cd4f8cf42ba2e6272cf31e30e9099b5ec03cd407fa52b4750"
     }
   },
   "export": {
@@ -267,7 +267,7 @@
     37,
     38
   ],
-  "seed_rule": "only this registry family may use seeds 34-38: exactly [34, 35, 36, 37, 38], no repeat_tag; disjoint from P24/P25/P27/P29 (0-2), P30-001 (3-7), P30-002 (8-12, repeat_tag repeat2_seeds_8_12), P31 (13-15), P32 (16-18), P33 (19-23), P34 (24-28) and P35 (29-33). New RNG seeds are not a new evaluation population",
+  "seed_rule": "only this registry family may use seeds 34-38: exactly [34, 35, 36, 37, 38], no repeat_tag; disjoint from P24/P25/P27/P29 (0-2), P30-001 (3-7), P30-002 (8-12, repeat_tag repeat2_seeds_8_12), P31 (13-15), P32 (16-18), P33 (19-23), P34 (24-28) and P35 (29-33). Seed 34 was drawn once as the P35 timing-probe seed (TRAIN only, no artifact kept, no DEV/MLB DEV row touched, never a prediction or score); any P36 timing probe uses seed 39. New RNG seeds are not a new evaluation population",
   "fits": 20,
   "arms": [
     {
@@ -452,9 +452,9 @@
   "queue": {
     "timezone": "Asia/Seoul",
     "date": "2026-10-05",
-    "date_note": "PLACEHOLDER family deadline: queue.date / no_new_fit_after / kill_own_after / aggregate_by must be re-dated to the launch day at registration on ONE KST date under the fixed L-relative rule of the P35 pack, from the measured smoke projection (coordinator deadline 2026-10-05 23:00 KST: aggregate_by <= 23:00); a smoke after no_new_fit_after needs a re-dated DRAFT first",
+    "date_note": "PLACEHOLDER family deadline: queue.date / no_new_fit_after / kill_own_after / aggregate_by must be re-dated to the launch day at registration on ONE KST date under the fixed L-relative rule of the P35 pack (no_new = L + 5 h, kill = no_new + 1 h, aggregate = kill + 30 min; coordinator deadline 2026-10-05 23:00 KST => latest L 16:30); placeholders below are that rule at L = 16:30; a smoke after no_new_fit_after needs a re-dated DRAFT first",
     "batch": "DRAFT robust-clip 4 arms x seeds 34-38, epoch cap 60; smoke only until registration",
-    "no_new_fit_after": "22:00",
+    "no_new_fit_after": "21:30",
     "kill_own_after": "22:30",
     "aggregate_by": "23:00",
     "task_timeout_seconds": 3600,
@@ -462,7 +462,7 @@
     "max_attempts": 2,
     "order": "priority then seed then arm (all 4 arms priority 1; config order)",
     "start_after": "EXP-P35-001 terminal (complete or stopped) and no other family's queue running on GPU3/4 (EXP-P30-001, EXP-P30-002, EXP-P31-001, EXP-P32-001, EXP-P33-001, EXP-P34-001, EXP-P35-001 terminal; any root queue not running); never concurrent with another family's queue. Launch with --lock-dir /home/sds733/pitcheezy-autonomy/gpu-locks (the common per-GPU flock); co-scheduled fit seconds would be recorded as co-scheduled, not as compute cost.",
-    "stop_rule": "any task failing twice aborts the family (no partial comparison, failures reported); timing gate before registration (pre-registration section 4): CUDA smoke of all 20 tasks on GPU3/GPU4 (fresh archive/code dir) with exit 0, and per arm (smoke s/epoch x 60 + measured setup) <= 1800 s on the slower GPU, family <= 36000 worker-s; no separate timing probe unless the smoke projection is within 10% of 1800 s; at most 2 smoke attempts (fix in a new commit + re-smoke); any gate false -> no registration, record kept (gates not raised, not silently shortened); no extra arms, seeds, contrasts, constants, epochs or grids after any P35 or P36 score is read"
+    "stop_rule": "any task failing twice aborts the family (no partial comparison, failures reported); timing gate before registration (pre-registration section 4, replaced after review a23e77b M1): (i) CUDA smoke of all 20 tasks on GPU3/GPU4 (fresh archive/code dir) with exit 0, wiring and identities only, smoke times are not a projection; (ii) timing probe (P35 Amendment-2 method, seed 39, no artifact kept, no DEV/MLB DEV row) for residual_counts and robust_clip_residual_counts on each GPU: per arm projected task <= 1800 s on the slower GPU, family <= 36000 worker-s, probe exit 0, peak device bytes and peak host RSS printed; at most 2 smoke attempts (fix in a new commit + re-smoke); any gate false -> no registration, record kept (gates not raised, not silently shortened); no extra arms, seeds, contrasts, constants, epochs or grids after any P35 or P36 score is read"
   },
   "exposure": "DEV / MLB DEV are the same repeatedly exposed <=2025 rows used for P24-P35 (258 fits incl. P35 once it runs) and by EXP-P30-002; this family was designed after reading P24-P34 results (post-selection). Descriptive only: no winner, promotion or verdict fields. G0, D131/D155 unchanged. No 2026 data.",
   "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks manifest). DEV/mlb_dev only predicted, never used for fit, robust-scale statistics, early stop, temperature or selection. Same export manifest as EXP-P35-001 (P24-P35 export).",

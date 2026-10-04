@@ -44,7 +44,8 @@ This draft does not choose; see §7.
 ## 2. Question
 
 With identical data, residual backbone, counts workload, loop, epoch cap 60, early stop, calibration chain and seeds,
-does applying the fixed RealMLP robust scale + smooth clip (module `5f1864b`, transform in its docstring) to the 81
+does applying the fixed RealMLP robust scale + smooth clip (module `direct_robust_clip_model.py` sha256 `a3d6cbce…52fa`, reviewed
+`77cc453`, disposition `55938c7`; transform in its docstring) to the 81
 scalars that the periodic arm embeds change calibrated direct-head NLL / Brier / ECE on dev and mlb_dev?
 
 Primary contrast (one factor):
@@ -63,18 +64,22 @@ Every arm is also reported vs the same-family same-device CUDA `control` (runner
   1. `control` — MatrixModel flatten_mlp 128, no workload (exact EXP-P35-001 entry).
   2. `residual_counts` — EXP-P32-001 arm unchanged (model `residual_mlp`, frozen `direct_residual_model.py`).
   3. `periodic_residual_counts` — EXP-P32/P34/P35 arm unchanged (frozen PLR-lite + residual backbone).
-  4. `robust_clip_residual_counts` — new additive module `direct_robust_clip_model.py` (`5f1864b` or its reviewed
-     successor), `context_continuous` = the same 41-column list as `periodic_residual_counts`.
+  4. `robust_clip_residual_counts` — new additive module `direct_robust_clip_model.py` (pinned sha256 `a3d6cbce…52fa`,
+     reviewed successor of `5f1864b`), `context_continuous` = the same 41-column list as `periodic_residual_counts`.
      Transformed columns (fixed): only this periodic / PLE continuous set (81 scalars of the counts map). Raw, i.e. NOT
      transformed: past type/outcome one-hots, game-state ordinals and flags (context 0–10: balls, strikes, outs,
-     inning, defensive_score_lead, five flags) and `left_share` (context 32). Deviation from the paper's RealMLP-TD,
+     inning, defensive_score_lead, six flags: defender_is_home, first/second/third_base, batter_left,
+     pitcher_left) and `left_share` (context 32). Deviation from the paper's RealMLP-TD,
      which preprocesses "all numerical columns, including the one-hot encoded ones" (arXiv 2407.04491v3 LaTeX :213);
      follows instead its preprocessing ablation convention (:579, one-hot columns untouched). Reason: hold the input
      set equal to the periodic/PLE arms so the one factor vs `residual_counts` is the transform of the same scalars.
      Added 2026-10-04 23:01 KST from same_model_review m1 (`36ce8d1`/`77cc453`, disposition `55938c7`), before any
-     P35/P36 score; the design is otherwise unchanged.
-- Seeds: exactly [34, 35, 36, 37, 38], fresh for every arm, disjoint from P24–P35 (0–33). New RNG seeds are not a new
-  evaluation population. No control reuse from earlier families.
+     P35/P36 score; the design is otherwise unchanged. Note (review a23e77b m4): the transformed set also holds bounded
+     proportions (batter archetype memberships, context 23–27, and pitcher pitch-type shares), not only unbounded physics.
+- Seeds: exactly [34, 35, 36, 37, 38], fresh for every arm, disjoint from the P24–P35 family seeds (0–33). Seed 34 was
+  drawn once as the P35 timing-probe seed (3 TRAIN epochs per probed arm, no artifact kept, no DEV/MLB DEV row touched);
+  it never produced a prediction or a score. Any P36 timing probe uses seed 39 (outside 0–38). New RNG seeds are not a
+  new evaluation population. No control reuse from earlier families.
 - Fits: 20. Attempts ≤ 2 per task. Task cap 3,600 s; family budget 36,000 worker-s (unchanged defaults). Epoch cap 60,
   patience 5, batch 1,024, lr 5e-4, AdamW, uniform loss weighting, hpo_trials 0 — identical to EXP-P35-001 `training`.
 - Robust-clip constants fixed: clip 3, median center, IQR scale with range fallback 2/(max−min), else 0; statistics
@@ -96,9 +101,17 @@ Every arm is also reported vs the same-family same-device CUDA `control` (runner
 - Worst case: 5 × 464 + 15 × 1,046 = 18,010 worker-s ≤ 36,000. Realistic (early stop as in P32: periodic_residual
   ≈ 225 s, control 63–98 s per fit including setup) ≈ 4,000 worker-s, ≈ 35 min wall on 2 GPUs — not measured for
   this family.
-- Gate before registration: CUDA smoke of all 20 tasks on GPU3/4 (fresh archive/code dir), and per arm
-  (smoke s/epoch × 60 + measured setup) ≤ 1,800 s on the slower GPU. If any arm exceeds it: stop, no registration, record.
-  No separate timing probe unless the smoke projection is within 10 % of 1,800 s.
+- Gate before registration (replaced 2026-10-04 from same_model_review a23e77b M1, before any P35/P36 score; the
+  earlier "smoke s/epoch × 60" gate could not measure anything because a smoke runs 8,192 TRAIN rows × 2 epochs):
+  (i) CUDA smoke of all 20 tasks on GPU3/4 (fresh archive/code dir), exit 0 — wiring and identities only, smoke times
+  are not a projection; (ii) timing probe by the P35 Amendment-2 method for `residual_counts` and
+  `robust_clip_residual_counts` on each of GPU3/GPU4, probe seed 39 (no artifact kept, no DEV/MLB DEV row touched):
+  task_projected = startup + prepare (incl. `compute_stats` on the full TRAIN argument, reported separately)
+  + 60 × per_epoch (warm full-TRAIN 2-epoch fit after a 1-epoch warm-up, max(wall, report)/2) + predict + 30 s, slower
+  GPU per arm; `control` and `periodic_residual_counts` take the P35 probe values 464 s / 1,046 s
+  (`RESULT-P35-TIMING-PROBE-3b317f2-20261004.md:30-31`). Gates: every arm ≤ 1,800 s, family = Σ_arms 5 × slowest
+  ≤ 36,000 worker-s, probe exit 0; peak device bytes and peak host RSS (`ru_maxrss`) printed per arm. Any gate false →
+  no registration, record kept (gates not raised, not silently shortened).
 
 ## 5. Stop conditions
 
@@ -106,7 +119,10 @@ Every arm is also reported vs the same-family same-device CUDA `control` (runner
 - Smoke failure on any path → fix in a new commit + re-smoke (≤ 2 smoke attempts), else stop.
 - During the run: queue hard stops (task 3,600 s, family 36,000 worker-s, no_new_fit / kill / aggregate deadlines set
   at registration on one KST date as in the P35 pack). Incomplete family ⇒ no comparison, only a failure record.
-- Coordinator deadline 2026-10-05 23:00 KST: latest launch = aggregate_by ≤ 23:00 under the fixed L-relative rule.
+- Deadlines on ONE KST date, fixed now (review a23e77b m1): no_new_fit_after = L + 5 h, kill_own_after = no_new + 1 h,
+  aggregate_by = kill + 30 min (the P35 pack rule). Coordinator deadline 2026-10-05 23:00 KST ⇒ latest launch
+  L = 16:30 KST on 2026-10-05. If P35 is not terminal, or the smoke, probe, reviews and registration are not done by
+  then, P36 does not launch on 10-05 and waits for a new dated go.
 
 ## 6. Exposure and limits
 
@@ -123,15 +139,19 @@ Every arm is also reported vs the same-family same-device CUDA `control` (runner
   report is written, and (b) P35 reveals no pipeline/data-contract problem on the shared residual backbone or export.
 - The P35 score magnitudes do **not** change this design (no arm, seed, constant or contrast added/removed after P35
   scores). If P35 is incomplete, the P35 retry inside its own attempts takes priority and this family waits.
+- The choice itself is recorded at registration by the PM, citing the complete P35 descriptive report; this section
+  fixes only the conditions and forbids design changes from P35 magnitudes (review a23e77b n1).
 - Contrast B of the feasibility note (learned diagonal scaling) is NOT part of this family (its learning-rate choice is
   unresolved); it would be a separate pre-registration.
 
 ## 8. Next steps (in order)
 
-1. Same-model review of the module `5f1864b` (T100b, running) → disposition.
+1. Same-model review of the module `5f1864b` (T100b) → disposition `55938c7` (all accepted). DONE.
 2. Additive wiring (registry + factory + runner/scorer dispatch + DRAFT config `configs/DRAFT-CUDA-ROBUST-CLIP-20261005.json`
-   + CPU tests), new branch from this commit; frozen modules and earlier registries untouched.
-3. Distinct same-model review of this pre-registration + wiring → disposition.
-4. CUDA smoke of all 20 tasks on GPU3/4 → timing gate (§4).
-5. Registration with immutable config, fresh outputs, one-date deadlines; launch only after P35 is terminal and
-   GPU3/4 locks are free.
+   + CPU tests), branch `codex/robust-clip-wiring-1004` (T101b `de539d5`, merged/re-pinned `a23e77b`). DONE.
+3. Distinct same-model review of this pre-registration + wiring (T104b `77bd575`/`204929e`) → disposition (T106b). DONE.
+4. After P35 is terminal: CUDA smoke of all 20 tasks on GPU3/4 (gate §4 (i)); timing probe seed 39 (gate §4 (ii)) —
+   the probe script is additive new code and needs its own tests + same-model review before it runs.
+5. Registration with immutable config, fresh outputs, one-date deadlines (§5); add `source_configs.ple_registered` =
+   `configs/EXP-P35-001.json` (+ sha) and a test that `control` / `periodic_residual_counts` equal its entries (review
+   a23e77b m5). Launch only after P35 is terminal and GPU3/4 locks are free, L ≤ 16:30 on 2026-10-05.

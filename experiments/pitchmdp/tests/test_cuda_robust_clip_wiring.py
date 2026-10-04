@@ -117,9 +117,12 @@ def test_config_is_draft_exact_4_arm_family_on_seeds_34_38_with_cap_60():
     assert q['date'] == '2026-10-05' and 'PLACEHOLDER' in q['date_note'] and 're-dated' in q['date_note']
     assert q['no_new_fit_after'] < q['kill_own_after'] < q['aggregate_by'] <= '23:00'
     assert 'EXP-P35-001 terminal' in q['start_after'] and 'gpu-locks' in q['start_after']
-    for phrase in ('all 20 tasks', '<= 1800 s', '<= 36000', 'exit 0', 'within 10%', 'at most 2 smoke attempts',
-                   'failing twice', 'gates not raised'):
+    for phrase in ('all 20 tasks', '<= 1800 s', '<= 36000', 'exit 0', 'timing probe', 'seed 39', 'peak host RSS',
+                   'smoke times are not a projection', 'at most 2 smoke attempts', 'failing twice', 'gates not raised'):
         assert phrase in q['stop_rule'], phrase
+    assert 'smoke s/epoch' not in q['stop_rule'] and 'within 10%' not in q['stop_rule']  # review a23e77b M1
+    assert 'L + 5 h' in q['date_note'] and 'latest L 16:30' in q['date_note']  # review a23e77b m1
+    assert (q['no_new_fit_after'], q['kill_own_after'], q['aggregate_by']) == ('21:30', '22:30', '23:00')
     assert cfg['comparison'][reg.CONTRAST_KEY] == reg.CONTRASTS and len(reg.CONTRASTS) == 2
     assert {k for k in cfg['comparison'] if k.endswith('_contrasts')} == {reg.CONTRAST_KEY}
     for phrase in ('repeatedly exposed', '<=2025', 'post-selection', 'Descriptive only', 'No 2026', 'P24-P35'):
