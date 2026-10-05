@@ -200,7 +200,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <a className="sv-back" href={backHref()} aria-label="경기 목록으로">‹</a>
       <h1 className="sv-head-main" aria-label={`${short(game.away_team)} ${awayScore ?? '–'} 대 ${homeScore ?? '–'} ${short(game.home_team)}. ${venue}${dateHeading(game.kst_date)} ${kstTime(game.start)} 시작`}>
         <span className="sv-head-score" aria-hidden="true"><span className="sv-tn">{short(game.away_team)}</span><strong>{awayScore ?? '–'}</strong><i>vs</i><strong>{homeScore ?? '–'}</strong><span className="sv-tn">{short(game.home_team)}</span></span>
-        <small aria-hidden="true">{venue}{when}</small>
+        <small aria-hidden="true">{game.venue && <span>{game.venue}</span>}<span>{when} KST</span></small>
       </h1>
       <button className={`sv-live ${live ? 'on' : ''}`} onClick={goLatest}
         aria-label={`${live ? '경기 진행 중' : game.status === 'final' ? '경기 종료' : '진행 중 아님'}. ${live ? '최신 공으로 가고 자동 갱신 켜기' : '마지막 공 보기'}${live ? (auto && latest ? ' (지금 최신·자동 갱신 중)' : ' (지금 자동 갱신 꺼짐)') : ''}`}>

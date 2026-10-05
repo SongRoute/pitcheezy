@@ -212,17 +212,17 @@ body.sv-locked{overflow:hidden}
 .sv-actual-cap{margin:0;font-size:14px;text-align:center;line-height:1.2}
 .sv-strip{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;padding:2px 0 4px;scroll-snap-type:x proximity;flex:none}
 .sv-strip>:first-child{margin-left:auto}.sv-strip>:last-child{margin-right:auto}
-.sv-card{flex:none;box-sizing:border-box;width:84px;height:84px;scroll-snap-align:end;display:flex;flex-direction:column;align-items:center;padding:2px;border-radius:10px;border:1.5px solid var(--sv-line);background:var(--sv-paper);color:inherit}
-.sv-card .sv-zone.mini{position:static;flex:1 1 0;min-height:0;height:0;width:100%}
-.sv-card.on{border:2.5px solid var(--sv-ink);background:#fff8e6}
-.sv-card.pending{border-style:dashed}.sv-card-q{flex:1;display:grid;place-items:center;font-size:22px;font-weight:900;color:var(--sv-muted)}
+.sv-strip .sv-card{flex:none;box-sizing:border-box;width:84px;height:84px;scroll-snap-align:end;display:flex;flex-direction:column;align-items:center;padding:2px;border-radius:10px;border:1.5px solid var(--sv-line);background:var(--sv-paper);color:inherit}
+.sv-strip .sv-card .sv-zone.mini{position:static;flex:1 1 0;min-height:0;height:0;width:100%}
+.sv-strip .sv-card.on{border:2.5px solid var(--sv-ink);background:#fff8e6}
+.sv-strip .sv-card.pending{border-style:dashed}.sv-card-q{flex:1;display:grid;place-items:center;font-size:22px;font-weight:900;color:var(--sv-muted)}
 .sv-card-cap{font-size:12px;letter-spacing:-.2px;font-weight:800;white-space:nowrap;line-height:1.1;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .sv-zone.mini .sv-actual circle{stroke-width:3}
 .sv-rec text{paint-order:stroke;stroke:#fff;stroke-width:3px}
 .sv-box-scroll{overflow-x:auto}.sv-box{border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:15px;width:100%}
 .sv-box th,.sv-box td{padding:6px 5px;text-align:center;border-bottom:1px solid var(--sv-line);white-space:nowrap}
 .sv-box .curcol{background:#fff8e6}.sv-box .cur{background:#ffe7b0;font-weight:900;color:#8a4b00}
-@media (max-height:620px){.sv-head-score strong{font-size:20px}.sv-card{width:76px;height:76px}.sv-zrow .sv-zone-wrap{min-height:120px}.sv-players{gap:4px}}
+@media (max-height:620px){.sv-head-score strong{font-size:20px}.sv-strip .sv-card{width:76px;height:76px}.sv-zrow .sv-zone-wrap{min-height:120px}.sv-players{gap:4px}}
 @media (max-width:359px){.sv-rec-row{font-size:13px}.sv-player{font-size:12.5px;padding:2px 5px}.sv-bso{gap:6px}}
 
 /* integration rev3 (Root visual gates): the main zone sits in a centre column between two equal fixed side columns, so its centre is the
@@ -237,7 +237,7 @@ body.sv-locked{overflow:hidden}
 .sv-player-2{white-space:normal;overflow:visible;text-overflow:clip}
 .sv-card-cap{white-space:normal;overflow:visible;text-overflow:clip;display:flex;flex-wrap:wrap;justify-content:center;column-gap:3px;text-align:center}
 .sv-card-cap>span{white-space:nowrap}
-.sv-card{padding:1px 2px}
+.sv-strip .sv-card{padding:1px 2px}
 @media (max-width:359px){.sv-reclist{padding:3px 2px}.sv-rec-row{column-gap:2px}.sv-rk{width:18px;height:18px}}
 .sv-card-cap{line-height:1.05}
 .sv-zrow .sv-zone-wrap{background:transparent;border:none}
@@ -248,3 +248,68 @@ body.sv-locked{overflow:hidden}
 .sv-rec.out rect{fill:none}.sv-rec.out .sv-out-arrow{stroke:var(--sv-rec)}
 .sv-mitt.out line{stroke-dasharray:2 5}
 .sv-zone.mini{overflow:visible}
+
+/* ---- calm polish (ui-calm-polish-1006): the reference 'zone-centred' look applied as display only ----
+   Warm light background, off-white surface, dark green ink, ONE restrained emerald for recommendations, a warm orange for the
+   actual pitch, red only for LIVE/errors, green/amber/red B·S·O dots, team colours only as thin team marks. Fewer boxes inside
+   boxes, lighter weights (scores, names and results stay the heaviest), tabular numbers. Geometry, sizes of marks, layout
+   columns and every state are unchanged; no font is made smaller than before. */
+:root{--sv-bg:#f7f8f4;--sv-paper:#fffefa;--sv-ink:#1b3028;--sv-muted:#637267;--sv-line:#dce3d9;--sv-teal:#176d58;--sv-rec:#176d58;--sv-recfill:#e5f2e9;
+  --sv-actual:#b4521f;--sv-live:#bf3140;--sv-ball:#298b52;--sv-strike:#a87c00;--sv-out:#bc4149;--sv-past:#eef1e8;--sv-dot-off:#879189;--sv-mitt:#4f5f93}
+.sv-page{font-variant-numeric:tabular-nums}
+.sv-btn,.sv-icon-btn{border-width:1px;font-weight:600}
+.sv-back{font-weight:500;font-size:28px}
+/* header: team names regular, scores the heaviest; venue and KST start wrap instead of being cut */
+.sv-head-score{font-weight:600;letter-spacing:-.3px}.sv-head-score strong{font-weight:700}.sv-head-score i{font-weight:400}
+.sv-head-main small{white-space:normal;overflow:visible;text-overflow:clip;display:flex;flex-wrap:wrap;justify-content:center;column-gap:.5em;font-weight:400;margin-top:1px}
+.sv-head-main small>span{white-space:nowrap}
+.sv-live{border:1px solid var(--sv-line);background:transparent;color:var(--sv-muted);font-weight:700;border-radius:11px}
+.sv-live.on{border-color:var(--sv-live);background:transparent;color:var(--sv-live)}
+.sv-live:focus-visible,.sv-page button:focus-visible,.sv-page a:focus-visible{outline:3px solid var(--sv-rec);outline-offset:2px}
+/* status line: past = quiet note, connection problem = red-tinted alert (never just a grey LIVE) */
+.sv-notice{font-weight:500;border-radius:7px;padding:3px 9px}
+.sv-notice.past{background:var(--sv-past);color:var(--sv-ink)}
+.sv-notice.warn{background:#fbeceb;color:#8f2530;border:1px solid var(--sv-live)}
+.sv-link-btn{font-weight:600}
+/* board: one flat band, no card around the players */
+.sv-board{background:transparent;border:0;padding:2px 0;margin:4px 12px 0;gap:6px;border-radius:0}
+.sv-inning{background:transparent;border:0;border-bottom:1px solid var(--sv-line);border-radius:0;font-weight:600;padding:0 4px}
+.sv-bso b{font-weight:600}
+.sv-bso i{width:11px;height:11px;border:1.5px solid var(--sv-dot-off)}
+.sv-bso i.b.on{background:var(--sv-ball);border-color:var(--sv-ball)}.sv-bso i.s.on{background:var(--sv-strike);border-color:var(--sv-strike)}.sv-bso i.o.on{background:var(--sv-out);border-color:var(--sv-out)}
+.sv-bases rect{stroke:var(--sv-muted);stroke-width:1.2}.sv-bases rect.on{fill:var(--sv-ink);stroke:var(--sv-ink)}
+.sv-players{gap:10px}
+.sv-player{background:transparent;border:0;border-top:3px solid var(--team);border-radius:0;padding:4px 0 2px;gap:2px}
+.sv-player-1{white-space:normal;overflow:visible;text-overflow:clip;word-break:keep-all;font-weight:400}
+.sv-player-1 b{font-weight:650}
+/* recommendations: plain list (the rank square repeats the zone's dashed square) */
+.sv-reclist{border:0;background:transparent;padding:4px 2px;gap:10px}
+.sv-rk{border-width:1.5px;border-color:var(--sv-rec);color:var(--sv-rec);font-weight:700}
+.sv-rec-type{font-weight:600}
+/* zone */
+.sv-zone-box{fill:var(--sv-paper);stroke:var(--sv-ink);stroke-width:1.5}.sv-zone-grid{stroke:#c5cfc3}
+.sv-rec rect{fill:rgba(23,109,88,.08);stroke:var(--sv-rec);stroke-width:2}.sv-rec text{font-weight:700;stroke:var(--sv-paper)}
+.sv-actual circle{fill:var(--sv-actual);stroke:var(--sv-paper);stroke-width:2.5}.sv-actual text{font-weight:700}
+.sv-batter{fill:#d3d9d1;stroke:#a3ada5}
+.sv-mitt line{stroke:var(--sv-mitt)}.sv-mitt text{fill:var(--sv-mitt);font-weight:600}
+.sv-actual-cap b{font-weight:650}
+.sv-key-actual{display:inline-block;width:10px;height:10px;margin-right:4px;vertical-align:baseline}
+/* pitch cards */
+.sv-strip .sv-card{border-width:1px;border-radius:12px;background:var(--sv-paper)}
+.sv-strip .sv-card.on{border:2px solid var(--sv-ink);background:var(--sv-past)}
+.sv-strip .sv-card.pending{border:1.5px dashed var(--sv-rec);color:var(--sv-rec)}
+.sv-card-cap{font-weight:600}.sv-card-q{font-weight:400}
+/* sheets */
+.sv-backdrop{background:rgba(27,48,40,.36)}
+.sv-sheet{border-radius:20px 20px 0 0}
+.sv-sheet-head h2{font-weight:650}
+.sv-pa-half,.sv-detail h3{font-weight:650}
+.sv-pa-item{border:0;border-bottom:1px solid var(--sv-line);border-radius:0;background:transparent}
+.sv-pa-item[aria-current="true"]{border:0;border-left:3px solid var(--sv-ink);background:var(--sv-past);padding-left:8px}
+.sv-pa-result{font-weight:600}
+.sv-box .curcol{background:var(--sv-past)}.sv-box .cur{background:#f3e6c4;color:var(--sv-ink);font-weight:700}
+.sv-alert{border-width:1px;background:#fbeceb}
+/* game list (shares the page): flat rows */
+.sv-card{border-width:1px}.sv-card-time,.sv-card-team{font-weight:600}.sv-card-team b{font-weight:700}
+.sv-datebar h1{font-weight:700}.sv-brand{font-weight:800}
+.sv-status{border-width:1px;font-weight:600}
