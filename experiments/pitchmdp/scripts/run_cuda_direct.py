@@ -96,6 +96,13 @@ records the epoch cap as P34/P35 and, for the robust-clip arm, rc_stats_sha256 a
 rows the statistics were computed on, also printed) and rc_module_sha256; load_model checks the
 archived statistics against that recorded hash (statistics are never recomputed at predict time).
 
+Embedding-map control (DRAFT-CUDA-EMBED-TYPE-20261005, tentative EXP-P37-001 DRAFT): a config with the
+top-level marker "embed_type_family": true must be exactly the fixed three-arm family (control,
+periodic_residual_counts and linear_residual_counts = the EXP-P32-001 entries, no new arm or model code) on
+seeds exactly [39, 40, 41, 42, 43] with the epoch cap 60 (direct_embed_type_registry).  Its predicate is
+tested FIRST (config_check, training_budget, scorer) because both embedded arms keep the embed_residual flag;
+run_task, build and load are the unchanged embedded-residual paths.  fit.json records the epoch cap as P34-P36.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -139,7 +146,7 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_tabm_residual_registry.py',
                  'pitchmdp/direct_ple_model.py', 'pitchmdp/direct_ple_factory.py', 'pitchmdp/direct_ple_registry.py',
                  'pitchmdp/direct_robust_clip_model.py', 'pitchmdp/direct_robust_clip_factory.py',
-                 'pitchmdp/direct_robust_clip_registry.py',
+                 'pitchmdp/direct_robust_clip_registry.py', 'pitchmdp/direct_embed_type_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -250,12 +257,23 @@ def uses_robust_clip(config):
     return any(is_robust_clip_arm(arm) for arm in config['arms'])
 
 
+EMBED_TYPE_MARKER = 'embed_type_family'  # == direct_embed_type_registry.MARKER (tested)
+
+
+def uses_embed_type(config):
+    """The P37 DRAFT family predicate (top-level marker); checked first everywhere (its arms keep embed_residual)."""
+    return EMBED_TYPE_MARKER in config
+
+
 def uses_epoch_cap(config):
-    return uses_robust_clip(config) or uses_ple(config) or uses_tabm_residual(config)
+    return uses_embed_type(config) or uses_robust_clip(config) or uses_ple(config) or uses_tabm_residual(config)
 
 
 def training_budget(config):
-    """EXP-P15-001 budget; only the robust-clip, PLE and TabM-residual families have their pre-registered epoch cap."""
+    """EXP-P15-001 budget; only the embed-type, robust-clip, PLE and TabM-residual families have their epoch cap."""
+    if uses_embed_type(config):
+        from pitchmdp.direct_embed_type_registry import TRAINING as ET_CAPPED  # torch-free
+        return ET_CAPPED
     if uses_robust_clip(config):
         from pitchmdp.direct_robust_clip_registry import TRAINING as RC_CAPPED  # torch-free
         return RC_CAPPED
@@ -271,7 +289,10 @@ def training_budget(config):
 def config_check(config):
     if config.get('protocol') != PROTOCOL:
         raise ValueError('Config is not the cuda_direct_v1 protocol')
-    if uses_robust_clip(config):
+    if uses_embed_type(config):
+        from pitchmdp.direct_embed_type_registry import check_family  # torch-free; exact P32 arms, seeds 39-43, cap 60
+        check_family(config)
+    elif uses_robust_clip(config):
         from pitchmdp.direct_robust_clip_registry import check_family  # torch-free; exact arms, seeds 34-38, pin
         check_family(config)
     elif uses_ple(config):

@@ -39,7 +39,13 @@ periodic_residual_counts keeps the embed_residual flag); every fit records the e
 every robust-clip fit its statistics record (rc_stats_sha256 re-derived from the fit report, rule
 counts, statistics rows, module sha == the registry pin), and all robust-clip fits must carry ONE
 statistics hash and one TRAIN row hash (statistics are TRAIN-only, so every seed and GPU sees the same
-statistics); the secondary row is labelled not compute-matched.  Descriptive only.  Data arms must record the config's subset rule over the
+statistics); the secondary row is labelled not compute-matched.  Descriptive only.
+comparison.embed_type_contrasts (embedding-map control, tentative EXP-P37-001 DRAFT) must equal
+direct_embed_type_registry.CONTRASTS (1 pre-registered pair on seeds 39-43; all 15 fits must exist first),
+likewise checked before any read and tested FIRST (both embedded arms keep the embed_residual flag); every fit
+records the epoch cap as P34-P36 and a cost record (parameters == the registered count, fit seconds, optimizer
+updates, seconds per update, epochs, peak device bytes) from fit.json; the pair is labelled parameter-near-matched,
+not compute-matched, and cost never adjusts the NLL contrast.  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
 
 Scope: UNBLENDED calibrated direct-head probabilities (predictions.npz 'dev',
@@ -91,6 +97,7 @@ from pitchmdp import direct_ema_registry as ema_registry  # noqa: E402  torch-fr
 from pitchmdp import direct_tabm_residual_registry as tabm_residual_registry  # noqa: E402  torch-free
 from pitchmdp import direct_ple_registry as ple_registry  # noqa: E402  torch-free
 from pitchmdp import direct_robust_clip_registry as robust_clip_registry  # noqa: E402  torch-free
+from pitchmdp import direct_embed_type_registry as embed_type_registry  # noqa: E402  torch-free
 from pitchmdp.matrix_metrics import paired_game_comparison, pitch_losses, prediction_metrics  # noqa: E402
 
 FORMAT = 'cuda_direct_score_v1'
@@ -103,7 +110,8 @@ SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 
                   'pitchmdp/direct_frontier_registry.py', 'pitchmdp/direct_workload_dropout_registry.py',
                   'pitchmdp/direct_tabm_registry.py', 'pitchmdp/direct_embed_residual_registry.py',
                   'pitchmdp/direct_ema_registry.py', 'pitchmdp/direct_tabm_residual_registry.py',
-                  'pitchmdp/direct_ple_registry.py', 'pitchmdp/direct_robust_clip_registry.py')
+                  'pitchmdp/direct_ple_registry.py', 'pitchmdp/direct_robust_clip_registry.py',
+                  'pitchmdp/direct_embed_type_registry.py')
 RUNTIME_SIGNATURE = ('torch', 'torch_cuda', 'cudnn', 'numpy', 'scipy', 'device_name', 'device_capability',
                      'device_total_memory')
 SCOPE = ('unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; '
@@ -270,7 +278,30 @@ def verify_family(family, config, manifest_sha256, sources, train_rows_sha256=No
                                                       'effective': fit['ple_effective_parameter_count']}
             if rc.uses_robust_clip(config) and rc.is_robust_clip_arm(rc.arm_spec(config, arm)):
                 tasks[arm][seed]['robust_clip'] = check_rc_record(config, arm, seed, fit)
+            if rc.uses_embed_type(config):
+                tasks[arm][seed]['cost'] = embed_type_registry.check_parameters(
+                    arm, embed_type_registry.cost_record(fit))
     return tasks, signature
+
+
+def cost_summary(tasks):
+    """Per-arm cost across seeds (descriptive; from fit.json only) and per-seed candidate/reference ratios."""
+    arms = {}
+    for arm, seeds in tasks.items():
+        values = {k: [seeds[s]['cost'][k] for s in seeds] for k in ('fit_seconds', 'optimizer_updates',
+                                                                    'seconds_per_update', 'epochs_run')}
+        arms[arm] = {'parameter_count': embed_type_registry.PARAMETERS[arm],
+                     **{f'{k}_median': float(np.median(v)) for k, v in values.items()},
+                     **{f'{k}_min': float(np.min(v)) for k, v in values.items()},
+                     **{f'{k}_max': float(np.max(v)) for k, v in values.items()}}
+    ratios = {}
+    for c in embed_type_registry.CONTRASTS:
+        cand, ref = tasks[c['candidate']], tasks[c['reference']]
+        ratios[c['name']] = {str(s): {k: cand[s]['cost'][k] / ref[s]['cost'][k]
+                                      for k in ('fit_seconds', 'optimizer_updates', 'seconds_per_update')}
+                             for s in cand}
+    return {'arms': arms, 'candidate_over_reference': ratios,
+            'note': 'wall-clock depends on the GPU, co-running fit and early stopping; descriptive only'}
 
 
 def member(family, arm, seed, split, rows):
@@ -334,7 +365,7 @@ def paired_block(y, games, candidate, reference, seeds):
 
 
 def score_family(config, family, rows, seeds, contrasts=None, regularization=None, workload_dropout=None, tabm=None,
-                 embed_residual=None, ema=None, tabm_residual=None, ple=None, robust_clip=None):
+                 embed_residual=None, ema=None, tabm_residual=None, ple=None, robust_clip=None, embed_type=None):
     arms = [a['name'] for a in config['arms']]
     control_arm = config.get('comparison', {}).get('control_arm', 'control')
     if control_arm != 'control' or 'control' not in arms:
@@ -349,6 +380,7 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
     residual_head = {split: {} for split in SPLITS} if tabm_residual else None
     embedding_type = {split: {} for split in SPLITS} if ple else None
     preprocessing = {split: {} for split in SPLITS} if robust_clip else None
+    embedding_map = {split: {} for split in SPLITS} if embed_type else None
     for split, r in rows.items():
         y, games = r['y'], r['game_pk']
         load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731  (bounded memory: reload)
@@ -403,6 +435,15 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
                                                'compute_matched': c['compute_matched'], 'held': c['held'],
                                                **paired_block(y, games, load(c['candidate']), load(c['reference']),
                                                               seeds)}
+        for c in embed_type or ():
+            embedding_map[split][c['name']] = {k: c[k] for k in ('candidate', 'reference', 'isolates', 'role',
+                                                                  'parameter_matched', 'parameter_near_matched',
+                                                                  'compute_matched', 'held')}
+            embedding_map[split][c['name']].update(paired_block(y, games, load(c['candidate']),
+                                                                load(c['reference']), seeds))
+    if embed_type:
+        return (out, factorial, paired, joint, head, embedded, averaged, residual_head, embedding_type, preprocessing,
+                embedding_map)
     if robust_clip:
         return out, factorial, paired, joint, head, embedded, averaged, residual_head, embedding_type, preprocessing
     if ple:
@@ -548,7 +589,30 @@ def korean_table(result):
                          f"{pairs[name]}/{len(result['seed_block']['seeds'])} |")
         lines += ['', f"통계: 강건 자르기 fit {stats['n_fits']}개 모두 같은 통계 해시 {stats['rc_stats_sha256'][:12]} "
                       f"(TRAIN {stats['rc_stats_rows']['train_rows']}행만 사용), 규칙 수 {stats['rc_rule_counts']}.", '']
-    if result.get('tabm_residual_contrasts') or ple or robust:
+    mapped = result.get('embed_type_contrasts')
+    for split, contrasts in (mapped or {}).items():
+        pairs = result['seed_block']['same_gpu_pairs']
+        lines += [f'## {split} 임베딩 함수 대비 (periodic − linear, 같은 시드·앙상블 짝 비교, 판정 없음)', '',
+                  '같은 잔차 모델·같은 임베딩 열·같은 임베딩 폭 8에서 사인/코사인(periodic) 대신 열별 1차식(linear)만 바꾼 비교입니다. '
+                  '파라미터 수는 거의 같지만(+264) 연산량·시간은 같지 않습니다. 시간은 아래 표로만 보고하고 NLL 비교를 보정하지 않습니다.', '',
+                  f"시드 {', '.join(map(str, result['seed_block']['seeds']))}는 새 모델 난수일 뿐 새 데이터가 아닙니다"
+                  '(같은 DEV·MLB DEV 반복 노출, P32에서 같은 대비를 3시드로 한 번 봄). 모든 팔의 epoch 상한은 60입니다.', '',
+                  '| 대비 | 분리 요인 | 파라미터 거의 같음 | 연산량 같음 | ΔNLL [95%] | ΔBrier [95%] | 같은 GPU 짝 |',
+                  '|---|---|---|---|---|---|---|']
+        for name, block in contrasts.items():
+            lines.append(f"| {name} | {block['isolates']} | {block['parameter_near_matched']} | "
+                         f"{block['compute_matched']} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} | "
+                         f"{pairs[name]}/{len(result['seed_block']['seeds'])} |")
+        lines.append('')
+    if mapped:
+        lines += ['## 비용 (fit.json, 시드 중앙값 [최소, 최대])', '',
+                  '| 팔 | 파라미터 | fit 초 | 갱신 수 | 갱신당 초 | epoch |', '|---|---|---|---|---|---|']
+        for arm, c in result['cost']['arms'].items():
+            cell = lambda k, f='{:.1f}': f"{f.format(c[k + '_median'])} [{f.format(c[k + '_min'])}, {f.format(c[k + '_max'])}]"  # noqa: E731
+            lines.append(f"| {arm} | {c['parameter_count']} | {cell('fit_seconds')} | {cell('optimizer_updates', '{:.0f}')} | "
+                         f"{cell('seconds_per_update', '{:.4f}')} | {cell('epochs_run', '{:.0f}')} |")
+        lines.append('')
+    if result.get('tabm_residual_contrasts') or ple or robust or mapped:
         caps = {arm: {seed: task['epoch_cap'] for seed, task in seeds.items()}
                 for arm, seeds in result['provenance']['tasks'].items()}
         lines += ['## epoch 상한(60) 도달 여부 (fit별)', '', '| 팔 | 시드별 epochs_run / best_epoch / 멈춘 이유 |', '|---|---|']
@@ -583,8 +647,14 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     tabm_residual = tabm_residual_registry.check_contrasts(config)
     ple = ple_registry.check_contrasts(config)
     robust_clip = robust_clip_registry.check_contrasts(config)
+    embed_type = embed_type_registry.check_contrasts(config)
     others = (tabm_residual, ema, embed_residual, tabm, workload_dropout, contrasts, regularization)
-    if rc.uses_robust_clip(config):  # first: its periodic_residual_counts keeps the embed_residual flag
+    if rc.uses_embed_type(config):  # first: both embedded arms keep the embed_residual flag
+        if embed_type is None or robust_clip is not None or ple is not None or any(o is not None for o in others):
+            raise ValueError('The embed-type family is scored only with its fixed contrast')
+    elif embed_type is not None:
+        raise ValueError('embed_type_contrasts belong to the embed-type family only')
+    elif rc.uses_robust_clip(config):  # first: its periodic_residual_counts keeps the embed_residual flag
         if robust_clip is None or ple is not None or any(o is not None for o in others):
             raise ValueError('The robust-clip family is scored only with its fixed contrasts')
     elif robust_clip is not None:
@@ -624,7 +694,7 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     rc_stats = check_one_stats_hash(tasks) if robust_clip else None
     splits, factorial, paired, *joint = score_family(config, family, rows, config['seeds'], contrasts, regularization,
                                                      workload_dropout, tabm, embed_residual, ema, tabm_residual, ple,
-                                                     robust_clip)
+                                                     robust_clip, embed_type)
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits,
               **({'factorial_contrasts': factorial} if contrasts else {}),
@@ -682,6 +752,19 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
                           'numeric-input treatments and is not compute-matched (the periodic arm adds embedding '
                           'parameters); same_gpu_pairs is observed, not scheduled; per-fit cap hits in '
                           'provenance.tasks.*.epoch_cap'}} if robust_clip else {}),
+              **({'embed_type_contrasts': joint[7], 'cost': cost_summary(tasks), 'seed_block': {
+                  'seeds': config['seeds'], 'repeat_tag': None, 'epoch_cap': config['training']['epochs'],
+                  'primary': embed_type_registry.PRIMARY, 'parameters': dict(embed_type_registry.PARAMETERS),
+                  'same_gpu_pairs': same_gpu_pairs(tasks, embed_type, config['seeds']),
+                  'note': 'fresh model RNG seeds on the same export and exposed DEV rows: not new data, '
+                          'not an independent confirmatory test; family designed after reading P24-P36 '
+                          '(post-selection); the same pair ran once in EXP-P32-001 (seeds 16-18, cap 30), so this '
+                          'is a repeat on the same rows, not independent evidence; epoch cap 60 for every arm; the '
+                          'pair changes only the embedding map (same embedded columns, width 8, backbone input '
+                          'width, backbone, dropout, head) but is parameter-near-matched (+264 parameters) and NOT '
+                          'compute-matched (periodic map does more work per row; early stopping can change epochs '
+                          'and updates); cost is reported per fit and never adjusts the NLL contrast; '
+                          'same_gpu_pairs is observed, not scheduled'}} if embed_type else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],
