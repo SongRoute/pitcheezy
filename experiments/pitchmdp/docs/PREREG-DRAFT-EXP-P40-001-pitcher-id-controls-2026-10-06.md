@@ -65,3 +65,11 @@ reported `incomplete`.
    never read.
 3. Registration (`p40_launch.py register`, real clock) → `configs/EXP-P40-001.json`. Only status, decision, execution
    and registration differ from the DRAFT. Then the pipeline is launched from the template.
+
+## 8. Addendum at registration (2026-10-06 00:52 KST, before any DEV read): reviewer wording notes
+These come from the distinct review (MPS lead, GPU-REVIEW.md 00:48:37, ACCEPT efa14c8) and are adopted as reading rules:
+- N1: the shuffle arm learns id offsets on fixed random TRAIN row groups and applies them to differently permuted rows at
+  eval, so it can inject small learned noise. If shuffle − reference > 0, candidate − shuffle is read as an UPPER bound on
+  identity value, and candidate − reference is the conservative number. Both are always reported side by side.
+- N2: same export and exposed DEV as P38. Fresh seeds = RNG replication only, not new data.
+- N3: runner, scorer and model are edited in place. Any P38 re-score must use the P38 tree (ba0a8f1 / 5b3335e).
