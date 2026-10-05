@@ -723,14 +723,24 @@ def test_frozen_runner_queue_models_configs_and_prereg_unchanged_in_the_probe_wi
     assert rc.sha256_file(PROJECT / tp.MODULE) == MODULE_SHA
 
 
+# The P37 DRAFT (ebf70e1, embedding-map control) is the only declared runtime delta on top of code-07ab288 on this
+# lineage: one new torch-free registry plus dispatch in the runner and scorer.  P36 itself is complete and ran from the
+# read-only archive code-07ab288 (immutable here as PROBE_RUN_COMMIT); P37 will run from its own archived commit.
+P37_RUNTIME_DELTA = ['A\texperiments/pitchmdp/pitchmdp/direct_embed_type_registry.py',
+                     'M\texperiments/pitchmdp/scripts/run_cuda_direct.py',
+                     'M\texperiments/pitchmdp/scripts/score_cuda_direct.py']
+
+
 def test_runtime_code_on_this_lineage_equals_the_archived_probe_commit():
     # Guard dropped by the m4 re-scope (review T114): probe, smoke and family all run the read-only archive
     # code-07ab288, so the runtime dirs here (working tree) must stay byte-equal to PROBE_RUN_COMMIT.  Only new files
-    # under configs/ are allowed (configs/EXP-P35-001.json via the P35 registration merge, configs/EXP-P36-001.json).
+    # under configs/ are allowed (configs/EXP-P35-001.json via the P35 registration merge, configs/EXP-P36-001.json),
+    # plus exactly the declared P37 delta (P37 review 2026-10-05): every frozen model module, factory, the queue and
+    # every other registry stay byte-equal to code-07ab288; anything else that moves still fails here.
     changed = subprocess.run(['git', 'diff', '--name-status', '--no-renames', PROBE_RUN_COMMIT, '--',
                               'experiments/pitchmdp/pitchmdp', 'experiments/pitchmdp/scripts', 'configs'], cwd=REPO,
                              capture_output=True, text=True, check=True).stdout.splitlines()
-    assert [line for line in changed if not line.startswith('A\tconfigs/')] == []
+    assert [line for line in changed if not line.startswith('A\tconfigs/')] == P37_RUNTIME_DELTA
 
 
 # ------------------------------------------------------------------ full parent run with a fake worker
