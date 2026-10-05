@@ -8,7 +8,7 @@ Read `CLAUDE.md` for project and experiment rules, and `docs/SESSION_HANDOFF.md`
 - 실질 실행은 전부 서브에이전트가 한다: 조사·자료 수집, 구현·버그 수정·UI 시안 수정, 실험, 테스트·빌드, 문서·기록, 승인된 git 통합·배포. 작거나 일상적인 수정, 에이전트 정체 때도 Root가 직접 하지 않고 재배정하거나 막힘을 보고한다.
 - 실행 모델은 Claude Opus5.5 우선. **실제 Opus 토큰·사용량 소진으로 계속할 수 없을 때만** GPT Sol(`gpt-6-sol`) 대체를 허용한다(2026-10-05 Song, 이전 "Opus만" 규칙을 대체). 권한·인증·보안 거절, 일반 시간 초과, 미지원 모델, max-turns는 소진이 아니다. 대체 시 원인 원문·실제 모델·작업 식별/체크포인트를 기록하고 겹치는 작성자·중복 장기 실험을 만들지 않는다.
 - 우선순위(2026-10-05 Song 최신): ① 실험을 통한 예측 성능 개선 ② 실시간 처리 ③ 사용자 친화 UI/UX. 맥미니 배포·데이터베이스 등 유용한 보조 작업은 자율 진행한다.
-- 일상 구현·실험·테스트·배포 준비는 새 승인 대기 없이 자율 진행한다. 과학 승격·판정, 정책 채택, 운영 교체(8766 등)는 증거와 기존 게이트(Song)를 따른다. GPU는 2026-10-05 Song 최신 지시로 **1장·동시 1fit**만 쓴다: 물리 GPU3 UUID `GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9`만(공통 배타 lock 필수), GPU4 UUID `GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99`는 다른 프로젝트에 반납되어 할당·probe·대체 사용 금지. 이전 2fit·GPU3/4 허용은 대체되었고, Song 승인 없이 다시 늘리지 않는다. 상세 `docs/handoffs/GPU-allocation-2026-10-05.md`. 상세는 `docs/AI_COLLABORATION.md`의 "현재 역할".
+- 일상 구현·실험·테스트·배포 준비는 새 승인 대기 없이 자율 진행한다. 과학 승격·판정, 정책 채택, 운영 교체(8766 등)는 증거와 기존 게이트(Song)를 따른다. GPU는 2026-10-05 Song 최신 지시로 **1장·동시 1fit**만 쓴다: 물리 GPU3 UUID `GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9`만(공통 배타 lock 필수), GPU4 UUID `GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99`는 다른 프로젝트에 반납되어 할당·probe·대체 사용 금지. 이전 2fit·GPU3/4 허용은 대체되었고, Song 승인 없이 다시 늘리지 않는다. 2026-10-05 Song 승인(Root 19:07 KST 전달): 맥미니 MPS fit 1개를 GPU3 fit 1개와 동시에 허용(기록기 우선·공통 `.heavy.lock`·CPU 대체 금지); 같은 GPU3 2fit은 검토된 스케줄러+bench 뒤에만. 상세 `docs/handoffs/GPU-allocation-2026-10-05.md`. 상세는 `docs/AI_COLLABORATION.md`의 "현재 역할".
 
 ## graphify
 
