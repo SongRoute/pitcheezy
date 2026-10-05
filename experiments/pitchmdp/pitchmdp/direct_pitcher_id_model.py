@@ -35,43 +35,11 @@ from torch import nn
 from pitchmdp import direct_periodic_model as periodic
 from pitchmdp import direct_periodic_residual_model as base
 
-MIN_TRAIN_PITCHES = 100
-D_ID = 8
-UNK = 0
+from pitchmdp.direct_pitcher_id_registry import D_ID, MIN_TRAIN_PITCHES, UNK, build_vocab, map_ids  # noqa: F401  torch-free
+
 KIND = 'pitcher_id_periodic_residual_mlp'
 FORMAT = 'direct_pitcher_id_periodic_residual_model_v1'
 ID_SEED_OFFSET = 7_919  # private generator for P only; keeps the global torch RNG stream equal to the baseline
-
-
-def build_vocab(train_pitcher, train_date=None, last_train_date=None, min_count=MIN_TRAIN_PITCHES):
-    """TRAIN-only vocabulary: sorted pitcher ids with >= min_count TRAIN rows (labels never read)."""
-    pitcher = np.asarray(train_pitcher, dtype=np.int64)
-    if pitcher.ndim != 1 or not len(pitcher):
-        raise ValueError('Nonempty one-dimensional TRAIN pitcher ids required')
-    if last_train_date is not None:
-        date = np.asarray(train_date, dtype=np.int64)
-        if date.shape != pitcher.shape:
-            raise ValueError('TRAIN dates must align with TRAIN pitcher ids')
-        if date.max() > int(last_train_date):
-            raise ValueError('A row after the TRAIN cutoff reached the vocabulary')
-    ids, counts = np.unique(pitcher, return_counts=True)
-    keep = counts >= int(min_count)
-    ids = ids[keep]
-    return {'ids': ids, 'min_count': int(min_count), 'n_vocab': int(len(ids)),
-            'ids_sha256': hashlib.sha256(np.ascontiguousarray(ids).tobytes()).hexdigest(),
-            'train_rows': int(len(pitcher)), 'train_pitchers': int(len(counts)),
-            'train_unk_rows': int(counts[~keep].sum())}
-
-
-def map_ids(pitcher, ids):
-    """1-based vocabulary index, UNK (0) for ids outside the TRAIN vocabulary."""
-    pitcher = np.asarray(pitcher, dtype=np.int64)
-    ids = np.asarray(ids, dtype=np.int64)
-    if len(ids) and np.any(np.diff(ids) <= 0):
-        raise ValueError('Vocabulary ids must be strictly increasing')
-    pos = np.searchsorted(ids, pitcher)
-    hit = (pos < len(ids)) & (ids[np.minimum(pos, max(len(ids) - 1, 0))] == pitcher) if len(ids) else np.zeros(len(pitcher), bool)
-    return np.where(hit, pos + 1, UNK).astype(np.int64)
 
 
 def id_inputs(inputs, pitcher, ids):
@@ -168,3 +136,31 @@ class DirectPitcherIdModel(base.DirectPeriodicResidualModel):
         model.temperature, model.delivery_temperature = payload['temperature'], payload['delivery_temperature']
         model.report = payload['report']
         return model
+
+
+def vocab_sha256(ids):
+    return hashlib.sha256(np.ascontiguousarray(np.asarray(ids, dtype=np.int64)).tobytes()).hexdigest()
+
+
+def build_pitcher_id(arm, seed, device, vocab_ids):
+    """Unfitted candidate for the checked registry arm with its TRAIN vocabulary (the runner builds it from TRAIN)."""
+    from pitchmdp.direct_embed_residual_registry import ARMS
+    from pitchmdp.direct_pitcher_id_registry import REFERENCE, check_arm
+    check_arm(arm)  # exactly the registered candidate entry
+    spec = ARMS[REFERENCE]
+    return DirectPitcherIdModel(seed, spec['context_continuous'], device=device, vocab_ids=vocab_ids)
+
+
+def load_pitcher_id(arm, path, device, ids_sha256):
+    """Load the candidate; its archived vocabulary must hash to the run-recorded TRAIN vocabulary (fit.json)."""
+    from pitchmdp.direct_embed_residual_registry import ARMS
+    from pitchmdp.direct_pitcher_id_registry import REFERENCE, check_arm
+    check_arm(arm)
+    if not ids_sha256:
+        raise ValueError('Pitcher-ID load needs the run-recorded vocabulary hash (fit.json next to the archive)')
+    model = DirectPitcherIdModel.load(path, device)
+    if vocab_sha256(model.vocab_ids) != ids_sha256:
+        raise ValueError('Archived vocabulary differs from the run-recorded TRAIN vocabulary')
+    if model.context_continuous != list(ARMS[REFERENCE]['context_continuous']):
+        raise ValueError('Archived continuous map differs from the registered arm')
+    return model

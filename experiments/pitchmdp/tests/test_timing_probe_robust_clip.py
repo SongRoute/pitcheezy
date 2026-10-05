@@ -740,7 +740,15 @@ def test_runtime_code_on_this_lineage_equals_the_archived_probe_commit():
     changed = subprocess.run(['git', 'diff', '--name-status', '--no-renames', PROBE_RUN_COMMIT, '--',
                               'experiments/pitchmdp/pitchmdp', 'experiments/pitchmdp/scripts', 'configs'], cwd=REPO,
                              capture_output=True, text=True, check=True).stdout.splitlines()
-    assert [line for line in changed if not line.startswith('A\tconfigs/')] == P37_RUNTIME_DELTA
+    assert [line for line in changed if not line.startswith('A\tconfigs/')] == RUNTIME_DELTA
+
+
+# The P38 DRAFT (integration-002 on P37 delivery 2265f44, pitcher-ID family) adds exactly two new files (one torch
+# model module, one torch-free registry); its runner/scorer dispatch edits are inside the two M lines above.  P38 will
+# run from its own archived commit; nothing else may move.
+P38_RUNTIME_DELTA = ['A\texperiments/pitchmdp/pitchmdp/direct_pitcher_id_model.py',
+                     'A\texperiments/pitchmdp/pitchmdp/direct_pitcher_id_registry.py']
+RUNTIME_DELTA = sorted(P37_RUNTIME_DELTA + P38_RUNTIME_DELTA, key=lambda line: line.split('\t')[1])
 
 
 # ------------------------------------------------------------------ full parent run with a fake worker

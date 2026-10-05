@@ -14,7 +14,7 @@ from pitchmdp import direct_pitcher_id_model as pid  # noqa: E402
 
 torch.set_num_threads(1)
 CONTINUOUS = [2, 3, 5]
-CONFIG = PROJECT.parents[1] / 'configs' / 'EXP-P38-001.json'
+CONFIG = PROJECT.parents[1] / 'configs' / 'DRAFT-CUDA-PITCHER-ID-20261005.json'
 
 
 def arrays(n, rng, n_context=7):

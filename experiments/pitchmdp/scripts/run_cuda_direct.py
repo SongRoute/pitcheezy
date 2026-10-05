@@ -103,6 +103,16 @@ seeds exactly [39, 40, 41, 42, 43] with the epoch cap 60 (direct_embed_type_regi
 tested FIRST (config_check, training_budget, scorer) because both embedded arms keep the embed_residual flag;
 run_task, build and load are the unchanged embedded-residual paths.  fit.json records the epoch cap as P34-P36.
 
+Pitcher-ID family (DRAFT-CUDA-PITCHER-ID-20261005, tentative EXP-P38-001 DRAFT): top-level marker "pitcher_id_family"
+true = exactly periodic_residual_counts (EXP-P36-001 entry) + pitcher_id_periodic_residual_counts on seeds 44-48, cap
+60, GPU3 only (direct_pitcher_id_registry); tested before every other family (both arms keep embed_residual); no
+flatten control (the reference arm is the comparator; the control requirement is waived for this marker only).  The
+candidate's vocabulary is built in run_task from the loaded TRAIN rows' `pitcher` (labels never read; TRAIN dates <=
+20250430 and later splits starting after it, checked on the manifest and the rows), ids with >= 100 TRAIN rows, UNK 0
+otherwise; every split the model sees (TRAIN, earlystop, temperature, blend, dev, mlb_dev) gets the same index column
+via id_inputs; fit.json records the vocabulary (n_vocab, ids sha, counts, cutoff, per-split UNK share); load checks
+the archived vocabulary against that hash.  The reference arm runs the unchanged embedded-residual path.
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -147,6 +157,7 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_ple_model.py', 'pitchmdp/direct_ple_factory.py', 'pitchmdp/direct_ple_registry.py',
                  'pitchmdp/direct_robust_clip_model.py', 'pitchmdp/direct_robust_clip_factory.py',
                  'pitchmdp/direct_robust_clip_registry.py', 'pitchmdp/direct_embed_type_registry.py',
+                 'pitchmdp/direct_pitcher_id_model.py', 'pitchmdp/direct_pitcher_id_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -265,12 +276,28 @@ def uses_embed_type(config):
     return EMBED_TYPE_MARKER in config
 
 
+PITCHER_ID_MARKER = 'pitcher_id_family'  # == direct_pitcher_id_registry.MARKER (tested)
+PITCHER_ID_FLAG = 'pitcher_id'  # == direct_pitcher_id_registry.FLAG (tested)
+
+
+def uses_pitcher_id(config):
+    """The P38 DRAFT family predicate (top-level marker); checked before every other family."""
+    return PITCHER_ID_MARKER in config
+
+
+def is_pitcher_id_arm(arm):
+    return PITCHER_ID_FLAG in arm
+
+
 def uses_epoch_cap(config):
-    return uses_embed_type(config) or uses_robust_clip(config) or uses_ple(config) or uses_tabm_residual(config)
+    return uses_pitcher_id(config) or uses_embed_type(config) or uses_robust_clip(config) or uses_ple(config) or uses_tabm_residual(config)
 
 
 def training_budget(config):
     """EXP-P15-001 budget; only the embed-type, robust-clip, PLE and TabM-residual families have their epoch cap."""
+    if uses_pitcher_id(config):
+        from pitchmdp.direct_pitcher_id_registry import TRAINING as PID_CAPPED  # torch-free
+        return PID_CAPPED
     if uses_embed_type(config):
         from pitchmdp.direct_embed_type_registry import TRAINING as ET_CAPPED  # torch-free
         return ET_CAPPED
@@ -289,7 +316,12 @@ def training_budget(config):
 def config_check(config):
     if config.get('protocol') != PROTOCOL:
         raise ValueError('Config is not the cuda_direct_v1 protocol')
-    if uses_embed_type(config):
+    if any(is_pitcher_id_arm(arm) for arm in config['arms']) and not uses_pitcher_id(config):
+        raise ValueError('Pitcher-ID arms belong to the pitcher-ID marker family only')
+    if uses_pitcher_id(config):
+        from pitchmdp.direct_pitcher_id_registry import check_family  # torch-free; 2 arms, seeds 44-48, cap 60, GPU3
+        check_family(config)
+    elif uses_embed_type(config):
         from pitchmdp.direct_embed_type_registry import check_family  # torch-free; exact P32 arms, seeds 39-43, cap 60
         check_family(config)
     elif uses_robust_clip(config):
@@ -326,6 +358,13 @@ def config_check(config):
     columns = config['export']['workload_columns']
     names = set()
     for arm in config['arms']:
+        if is_pitcher_id_arm(arm):
+            from pitchmdp.direct_pitcher_id_registry import check_arm  # torch-free
+            check_arm(arm)
+            if arm['name'] in names or any(c not in columns for c in arm['workload']):
+                raise ValueError('Duplicated pitcher-ID arm or unexported workload: ' + arm['name'])
+            names.add(arm['name'])
+            continue
         if is_robust_clip_arm(arm):
             from pitchmdp.direct_robust_clip_registry import check_arm  # torch-free
             check_arm(arm)
@@ -401,7 +440,9 @@ def config_check(config):
         if arm['model'] != 'flatten_mlp' and arm['workload']:
             raise ValueError('Architecture arms keep the control inputs (one change per arm)')
         names.add(arm['name'])
-    if 'control' not in names or [a for a in config['arms'] if a['name'] == 'control'][0]['workload']:
+    if uses_pitcher_id(config):
+        pass  # the two-arm P38 family compares against its reference arm (registry), not a flatten control
+    elif 'control' not in names or [a for a in config['arms'] if a['name'] == 'control'][0]['workload']:
         raise ValueError('A no-workload flatten control is required')
     if any('dropout_head' in arm for arm in config['arms']):
         from pitchmdp.direct_dropout_registry import check_family  # torch-free
@@ -566,7 +607,14 @@ def arm_inputs(arrays, arm, columns):
 
 # ------------------------------------------------------------------ model / calibration
 
-def build_model(arm, seed, device, context_names=None):
+def build_model(arm, seed, device, context_names=None, vocab_ids=None):
+    if is_pitcher_id_arm(arm):
+        from pitchmdp.direct_pitcher_id_model import build_pitcher_id
+        if context_names or vocab_ids is None:
+            raise ValueError('Pitcher-ID arms take no context names and need the TRAIN vocabulary')
+        return build_pitcher_id(arm, seed, device, vocab_ids)
+    if vocab_ids is not None:
+        raise ValueError('Only pitcher-ID arms take a vocabulary')
     if is_robust_clip_arm(arm):
         from pitchmdp.direct_robust_clip_factory import build_robust_clip
         if context_names:
@@ -643,7 +691,18 @@ def recorded_rc_stats(path):
     return read_json(record).get('rc_stats_sha256')
 
 
-def load_model(arm, path, device, context_names=None, ple_bins_sha256=None, rc_stats_sha256=None):
+def recorded_vocab(path):
+    """The vocabulary hash the runner recorded for this task (fit.json next to model.pt); required for pitcher-ID loads."""
+    record = Path(path).parent / 'fit.json'
+    if not record.is_file():
+        raise ValueError('Pitcher-ID load needs the run-recorded vocabulary hash (fit.json next to the archive)')
+    return (read_json(record).get(PITCHER_ID_FLAG) or {}).get('ids_sha256')
+
+
+def load_model(arm, path, device, context_names=None, ple_bins_sha256=None, rc_stats_sha256=None, ids_sha256=None):
+    if is_pitcher_id_arm(arm):
+        from pitchmdp.direct_pitcher_id_model import load_pitcher_id
+        return load_pitcher_id(arm, path, device, ids_sha256 or recorded_vocab(path))
     if is_robust_clip_arm(arm):
         from pitchmdp.direct_robust_clip_factory import load_robust_clip
         return load_robust_clip(arm, path, device, rc_stats_sha256 or recorded_rc_stats(path))
@@ -806,11 +865,20 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         early = load_split(export, manifest, 'earlystop', lim('earlystop'))
         spec = config['training']
         names = verified_context_names(config, manifest) if needs_context_names(arm) else None
-        model = build_model(arm, seed, device, names)
-        train_inputs = arm_inputs(train, arm, columns)
+        vocab = pitcher_vocab(arm, manifest, train)
+        unk_share = {}
+
+        def inputs(split, arrays):  # the arm's inputs; pitcher-ID arms append the TRAIN-vocabulary index column
+            if vocab is None:
+                return arm_inputs(arrays, arm, columns)
+            from pitchmdp.direct_pitcher_id_model import id_inputs
+            arm_arrays, unk_share[split] = id_inputs(arm_inputs(arrays, arm, columns), arrays['pitcher'], vocab['ids'])
+            return arm_arrays
+        model = build_model(arm, seed, device, names, None if vocab is None else vocab['ids'])
+        train_inputs = inputs('train', train)
         context_width = int(train_inputs[2].shape[1])
         epochs = SMOKE['epochs'] if smoke else spec['epochs']
-        model.fit(train_inputs, np.array(train['y']), arm_inputs(early, arm, columns),
+        model.fit(train_inputs, np.array(train['y']), inputs('earlystop', early),
                   np.array(early['y']), epochs=epochs, patience=spec['patience'],
                   batch_size=spec['batch_size'], learning_rate=spec['learning_rate'])
         if model_device_type(model) != device.split(':')[0]:
@@ -824,7 +892,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         del train, train_inputs
         # calibration on the May 16-31 Cpanel rows only
         temp = load_split(export, manifest, 'temperature', lim('temperature'))
-        temperature, temp_loss = fit_temperature(g0_log_probs(model.logits(arm_inputs(temp, arm, columns))), temp['y'])
+        temperature, temp_loss = fit_temperature(g0_log_probs(model.logits(inputs('temperature', temp))), temp['y'])
         calibration = {**model.report, 'delivery_temperature': temperature,
                        'calibration_integrated_log_loss': temp_loss, 'delivery_calibration_rows': int(len(temp['y']))}
         write_json_atomic(work / 'calibration.json', calibration)
@@ -834,7 +902,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
             values = {}
             for split in splits:
                 part = load_split(export, manifest, split, lim('predict'))
-                calibrated, raw = probabilities(g0_log_probs(model.logits(arm_inputs(part, arm, columns))), temperature)
+                calibrated, raw = probabilities(g0_log_probs(model.logits(inputs(split, part))), temperature)
                 values.update({split: calibrated, split + '_raw': raw,
                                split + '_delivery_level': np.full(len(calibrated), NO_PHYSICS_LEVEL, dtype=np.int64),
                                split + '_keys': np.asarray(part['keys'], dtype=np.int64),
@@ -853,6 +921,15 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
                       'finished_utc': datetime.now(timezone.utc).isoformat(), 'dev_used_for_fit_or_selection': False}
         if uses_epoch_cap(config):
             fit_report['epoch_cap'] = epoch_record(model.report, epochs, spec['patience'])
+        if vocab is not None:
+            from pitchmdp.direct_pitcher_id_model import vocab_sha256
+            from pitchmdp.direct_pitcher_id_registry import vocab_record
+            if vocab_sha256(model.vocab_ids) != vocab['ids_sha256']:
+                raise RuntimeError('Model vocabulary differs from the TRAIN vocabulary record')
+            fit_report[PITCHER_ID_FLAG] = {**vocab_record(vocab), 'unk_share': unk_share,
+                                           'split_dates': vocab['split_dates']}
+            print('PITCHER_ID_VOCAB', arm_name, seed, json.dumps({k: v for k, v in fit_report[PITCHER_ID_FLAG].items()
+                                                                  if k != 'split_dates'}), flush=True)
         if is_ple_arm(arm):
             from pitchmdp.direct_ple_registry import effective_record, fit_record
             fit_report.update(fit_record(model.report['network'], config['export']['shapes']['length'],
@@ -886,6 +963,19 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         finally:
             os.rename(work, failed)
         raise
+
+
+def pitcher_vocab(arm, manifest, train):
+    """TRAIN-only vocabulary of a pitcher-ID arm (None for every other arm): manifest split dates pinned, TRAIN rows
+    dated on/before the cutoff, labels never read."""
+    if not is_pitcher_id_arm(arm):
+        return None
+    from pitchmdp.direct_pitcher_id_registry import build_vocab, check_split_dates
+    spec = arm[PITCHER_ID_FLAG]
+    split_dates = check_split_dates(manifest, spec['last_train_date'])
+    vocab = build_vocab(np.asarray(train['pitcher']), np.asarray(train['date']), spec['last_train_date'],
+                        spec['min_train_pitches'])
+    return {**vocab, 'split_dates': split_dates}
 
 
 def ple_bin_rows(inputs):

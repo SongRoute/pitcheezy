@@ -45,7 +45,13 @@ direct_embed_type_registry.CONTRASTS (1 pre-registered pair on seeds 39-43; all 
 likewise checked before any read and tested FIRST (both embedded arms keep the embed_residual flag); every fit
 records the epoch cap as P34-P36 and a cost record (parameters == the registered count, fit seconds, optimizer
 updates, seconds per update, epochs, peak device bytes) from fit.json; the pair is labelled parameter-near-matched,
-not compute-matched, and cost never adjusts the NLL contrast.  Data arms must record the config's subset rule over the
+not compute-matched, and cost never adjusts the NLL contrast.
+comparison.pitcher_id_contrasts (pitcher-ID family, tentative EXP-P38-001 DRAFT, two arms, no flatten control) must
+equal direct_pitcher_id_registry.CONTRASTS and is tested FIRST (both arms keep embed_residual); all 10 fits must exist;
+every candidate fit carries one TRAIN vocabulary record whose ids hash the scorer RE-DERIVES from the export TRAIN
+`pitcher`/`date` arrays (hash-checked); parameters == reference + (n_vocab + 1) x 8 + 128 x 8; the contrast is reported
+on all rows and on the in-vocabulary / UNK subsets (rows mapped with that vocabulary), every seed and the ensemble,
+labelled not parameter- or compute-matched; no verdict.  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
 
 Scope: UNBLENDED calibrated direct-head probabilities (predictions.npz 'dev',
@@ -98,6 +104,7 @@ from pitchmdp import direct_tabm_residual_registry as tabm_residual_registry  # 
 from pitchmdp import direct_ple_registry as ple_registry  # noqa: E402  torch-free
 from pitchmdp import direct_robust_clip_registry as robust_clip_registry  # noqa: E402  torch-free
 from pitchmdp import direct_embed_type_registry as embed_type_registry  # noqa: E402  torch-free
+from pitchmdp import direct_pitcher_id_registry as pid_registry  # noqa: E402  torch-free
 from pitchmdp.matrix_metrics import paired_game_comparison, pitch_losses, prediction_metrics  # noqa: E402
 
 FORMAT = 'cuda_direct_score_v1'
@@ -111,7 +118,7 @@ SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 
                   'pitchmdp/direct_tabm_registry.py', 'pitchmdp/direct_embed_residual_registry.py',
                   'pitchmdp/direct_ema_registry.py', 'pitchmdp/direct_tabm_residual_registry.py',
                   'pitchmdp/direct_ple_registry.py', 'pitchmdp/direct_robust_clip_registry.py',
-                  'pitchmdp/direct_embed_type_registry.py')
+                  'pitchmdp/direct_embed_type_registry.py', 'pitchmdp/direct_pitcher_id_registry.py')
 RUNTIME_SIGNATURE = ('torch', 'torch_cuda', 'cudnn', 'numpy', 'scipy', 'device_name', 'device_capability',
                      'device_total_memory')
 SCOPE = ('unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; '
@@ -278,6 +285,8 @@ def verify_family(family, config, manifest_sha256, sources, train_rows_sha256=No
                                                       'effective': fit['ple_effective_parameter_count']}
             if rc.uses_robust_clip(config) and rc.is_robust_clip_arm(rc.arm_spec(config, arm)):
                 tasks[arm][seed]['robust_clip'] = check_rc_record(config, arm, seed, fit)
+            if rc.uses_pitcher_id(config):
+                tasks[arm][seed]['pitcher_id'] = pid_registry.check_fit(config, arm, fit)
             if rc.uses_embed_type(config):
                 tasks[arm][seed]['cost'] = embed_type_registry.check_parameters(
                     arm, embed_type_registry.cost_record(fit))
@@ -653,8 +662,14 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     ple = ple_registry.check_contrasts(config)
     robust_clip = robust_clip_registry.check_contrasts(config)
     embed_type = embed_type_registry.check_contrasts(config)
+    pitcher_id = pid_registry.check_contrasts(config)
     others = (tabm_residual, ema, embed_residual, tabm, workload_dropout, contrasts, regularization)
-    if rc.uses_embed_type(config):  # first: both embedded arms keep the embed_residual flag
+    if rc.uses_pitcher_id(config):  # before every family: both arms keep the embed_residual flag
+        if pitcher_id is None or any(o is not None for o in (embed_type, robust_clip, ple, *others)):
+            raise ValueError('The pitcher-ID family is scored only with its fixed contrast')
+    elif pitcher_id is not None:
+        raise ValueError('pitcher_id_contrasts belong to the pitcher-ID family only')
+    elif rc.uses_embed_type(config):  # first: both embedded arms keep the embed_residual flag
         if embed_type is None or robust_clip is not None or ple is not None or any(o is not None for o in others):
             raise ValueError('The embed-type family is scored only with its fixed contrast')
     elif embed_type is not None:
@@ -695,6 +710,9 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     rows, export_hashes = export_rows(export, config, manifest_sha256)
     tasks, signature = verify_family(family, config, manifest_sha256, sources,
                                      export_hashes['train/rows_sha256'] if config.get('train_subset') else None)
+    if pitcher_id:
+        return score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256, family, destination,
+                                rows, export_hashes, tasks, signature, sources, source_record)
     ple_bins = check_one_bins_hash(tasks) if ple else None
     rc_stats = check_one_stats_hash(tasks) if robust_clip else None
     splits, factorial, paired, *joint = score_family(config, family, rows, config['seeds'], contrasts, regularization,
@@ -800,6 +818,132 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
         raise FileExistsError(f'{destination} appeared during scoring')
     os.rename(work, destination)
     return result
+
+
+def export_pitchers(export, config, manifest_sha256):
+    """Hash-checked `pitcher` (all splits) and TRAIN `date` arrays from the pinned export (no labels read here)."""
+    manifest = rc.verify_export(export, config, manifest_sha256, hash_arrays=False)
+    out, hashes = {}, {}
+    for split, names in (('train', ('pitcher', 'date')), *((s, ('pitcher',)) for s in SPLITS)):
+        for name in names:
+            meta = manifest['splits'][split]['files'][name]
+            if rc.sha256_file(Path(export) / meta['path']) != meta['sha256']:
+                raise ValueError(f'{split}/{name}: export array hash differs from the manifest')
+            out[f'{split}/{name}'] = np.load(Path(export) / meta['path'], allow_pickle=False)
+            hashes[f'{split}/{name}'] = meta['sha256']
+    return manifest, out, hashes
+
+
+def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256, family, destination, rows,
+                     export_hashes, tasks, signature, sources, source_record):
+    """Two-arm pitcher-ID family: candidate - reference on all / in-vocabulary / UNK rows, every seed + ensemble."""
+    vocab = pid_registry.check_one_vocab({a: {s: t['pitcher_id'] for s, t in v.items()} for a, v in tasks.items()})
+    manifest, arrays, pitcher_hashes = export_pitchers(export, config, manifest_sha256)
+    pid_registry.check_split_dates(manifest)
+    rederived = pid_registry.build_vocab(arrays['train/pitcher'], arrays['train/date'], pid_registry.LAST_TRAIN_DATE)
+    if {k: rederived[k] for k in pid_registry.VOCAB_KEYS} != {k: vocab[k] for k in pid_registry.VOCAB_KEYS}:
+        raise ValueError('Recorded vocabulary differs from the one re-derived from the export TRAIN rows')
+    seeds, (c,) = config['seeds'], pid_registry.CONTRASTS
+    splits, contrasts, subsets = {}, {}, {}
+    for split, r in rows.items():
+        index = pid_registry.map_ids(arrays[split + '/pitcher'], rederived['ids'])
+        if len(index) != len(r['y']):
+            raise ValueError(f'{split}: export pitcher ids misaligned with the scored rows')
+        load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731
+        ref, cand = load(c['reference']), load(c['candidate'])
+        splits[split] = {arm: {'role': role, 'ensemble': prediction_metrics(r['y'], np.mean(p, axis=0)),
+                               'seeds': {str(s): summary(prediction_metrics(r['y'], q)) for s, q in zip(seeds, p)}}
+                         for arm, role, p in ((c['reference'], 'reference', ref), (c['candidate'], 'candidate', cand))}
+        contrasts[split] = {c['name']: {}}
+        subsets[split] = {}
+        for subset, mask in (('all', np.ones(len(index), bool)), ('in_vocab', index != pid_registry.UNK),
+                             ('unk', index == pid_registry.UNK)):
+            subsets[split][subset] = {'rows': int(mask.sum()), 'games': int(len(np.unique(r['game_pk'][mask])))}
+            if not mask.any():
+                contrasts[split][c['name']][subset] = None
+                continue
+            contrasts[split][c['name']][subset] = {
+                **{k: c[k] for k in ('candidate', 'reference', 'isolates', 'role', 'parameter_matched',
+                                     'compute_matched', 'information_free_capacity_control')},
+                **paired_block(r['y'][mask], r['game_pk'][mask], [p[mask] for p in cand], [p[mask] for p in ref], seeds)}
+    result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
+              'arm_order': 'config order', 'splits': splits, 'pitcher_id_contrasts': contrasts,
+              'pitcher_id_rows': subsets, 'vocabulary': {k: v for k, v in vocab.items()},
+              'cost': {arm: {str(s): t['pitcher_id']['cost'] for s, t in v.items()} for arm, v in tasks.items()},
+              'seed_block': {'seeds': seeds, 'repeat_tag': None, 'epoch_cap': config['training']['epochs'],
+                             'primary': pid_registry.PRIMARY,
+                             'parameters': {pid_registry.REFERENCE: pid_registry.BASE_PARAMETERS,
+                                            pid_registry.CANDIDATE: pid_registry.BASE_PARAMETERS + vocab['id_parameters']},
+                             'same_gpu_pairs': same_gpu_pairs(tasks, pid_registry.CONTRASTS, seeds),
+                             'note': 'fresh model RNG seeds on the same export and exposed DEV rows: not new data, not '
+                                     'an independent confirmatory test; family designed after reading P24-P36 '
+                                     '(post-selection); two arms only (no flatten control); the candidate adds pitcher '
+                                     'identity AND id parameters together; NOT parameter-matched, NOT compute-matched; '
+                                     'a capacity-matched information-free control is not included in this bounded '
+                                     'study, which limits causal attribution; vocabulary is TRAIN-only and re-derived '
+                                     'here from the export; all seeds and subsets reported, no verdict'},
+              'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
+                         'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
+                         'In-vocabulary / UNK subsets are defined by the TRAIN vocabulary, not chosen on DEV',
+                         'Prediction only; no 2026 rows; no policy or service claim'],
+              'provenance': {
+                  'config': {'path': str(Path(config_path).resolve()), 'file_sha256': config_sha256,
+                             'digest': rc.config_digest(config), 'experiment_id': config['experiment_id']},
+                  'export': {'path': str(Path(export).resolve()), 'manifest_sha256': manifest_sha256,
+                             'scored_arrays_sha256': {**export_hashes, **pitcher_hashes}},
+                  'task_sources': {**source_record, 'source_sha256': sources},
+                  'task_runtime_signature': signature,
+                  'tasks': {a: {str(s): {k: v for k, v in t.items() if k != 'pitcher_id'} for s, t in seeds_.items()}
+                            for a, seeds_ in tasks.items()},
+                  'scorer_sources_sha256': scorer_sources(),
+                  'scorer_runtime': {'python': sys.version, 'numpy': np.__version__, 'platform': platform.platform(),
+                                     'hostname': platform.node()},
+                  'bootstrap': {'draws': DRAWS, 'seed': BOOTSTRAP_SEED, 'function': 'matrix_metrics.paired_game_comparison'},
+                  'created_utc': datetime.now(timezone.utc).isoformat()}}
+    result['vocabulary'].pop('n_fits', None)
+    if scorer_sources() != result['provenance']['scorer_sources_sha256']:
+        raise RuntimeError('Scorer sources changed during scoring')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    work = destination.with_name(f'.{destination.name}.tmp-{os.getpid()}')
+    work.mkdir()
+    rc.write_json_atomic(work / 'score.json', result)
+    (work / 'table_ko.md').write_text(pitcher_id_table(result) + '\n')
+    (work / 'SHA256SUMS').write_text(''.join(f'{rc.sha256_file(work / n)}  {n}\n' for n in ('score.json', 'table_ko.md')))
+    for name in ('score.json', 'table_ko.md', 'SHA256SUMS'):
+        os.chmod(work / name, 0o444)
+    if destination.exists():
+        raise FileExistsError(f'{destination} appeared during scoring')
+    os.rename(work, destination)
+    return result
+
+
+def pitcher_id_table(result):
+    """Korean descriptive table: every split, subset and seed; no winner column."""
+    def ci(block, key):
+        b = block[key]
+        lo, hi = b['ci95'] or (float('nan'), float('nan'))
+        return f"{b['delta']:+.5f} [{lo:+.5f}, {hi:+.5f}]"
+    v, block = result['vocabulary'], result['seed_block']
+    lines = [f"# {result['family']} 투수 ID 임베딩 (후보 − 기준, 반복 DEV 서술, 판정 없음)", '',
+             f"TRAIN 어휘 {v['n_vocab']}명(TRAIN {v['min_count']}구 이상, 전체 TRAIN 투수 {v['train_pitchers']}명, "
+             f"UNK TRAIN 행 {v['train_unk_rows']}/{v['train_rows']}), TRAIN 마지막 날짜 {v['train_max_date']} ≤ "
+             f"{v['last_train_date']}. 추가 파라미터 {v['id_parameters']}(파라미터·연산량 같지 않음). "
+             '정보 없이 크기만 맞춘 대조군은 이번 2팔 연구에 포함하지 않았으므로 차이를 ID 정보 때문이라고 단정할 수 없습니다.', '']
+    for split, contrasts in result['pitcher_id_contrasts'].items():
+        lines += [f'## {split}', '', '| 행 묶음 | 행 수 | ΔNLL 앙상블 [95%] | ΔBrier 앙상블 [95%] | 시드별 ΔNLL |', '|---|---|---|---|---|']
+        for subset, one in contrasts[block['primary']].items():
+            rows = result['pitcher_id_rows'][split][subset]['rows']
+            if one is None:
+                lines.append(f'| {subset} | {rows} | 행 없음 | 행 없음 | - |')
+                continue
+            per_seed = ', '.join(f"{s}:{one['seeds'][s]['nll']['delta']:+.5f}" for s in one['seeds'])
+            lines.append(f"| {subset} | {rows} | {ci(one['ensemble'], 'nll')} | {ci(one['ensemble'], 'brier')} | {per_seed} |")
+        lines.append('')
+    lines += ['## 비용 (fit.json, 시드별 학습 루프 초 / epoch)', '', '| 팔 | 시드: 초/epoch, 파라미터 |', '|---|---|']
+    for arm, seeds in result['cost'].items():
+        lines.append(f"| {arm} | " + ', '.join(f"{s}: {c['train_seconds_per_epoch']:.2f}, {c['parameter_count']}"
+                                               for s, c in seeds.items()) + ' |')
+    return '\n'.join(lines)
 
 
 def main(argv=None):
