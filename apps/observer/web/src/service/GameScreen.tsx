@@ -46,14 +46,14 @@ function Count({ s }: { s: Situation }) {
 }
 
 /** Away always on the LEFT, home on the RIGHT; only the pitcher/batter roles swap with the half-inning. */
-function PlayerCell({ team, role, person, hand, info, onOpen, side }: { team: string; role: 'p' | 'b'; person: Person | null; hand: string | null | undefined;
+function PlayerCell({ team, abbr, role, person, hand, info, onOpen, side }: { team: string; abbr?: string | null; role: 'p' | 'b'; person: Person | null; hand: string | null | undefined;
   info: PlayerInfo | undefined; onOpen: () => void; side: 'away' | 'home' }) {
   const name = person?.name ?? '—';
   const stats = role === 'p' ? `ERA ${era(info?.era)}` : `AVG ${stat3(info?.avg)} OPS ${stat3(info?.ops)}`;
   const extra = [handText(hand, role), info?.jersey ? `#${info.jersey}` : ''].filter(Boolean).join(' · ');
   const spoken = `${short(team)} ${role === 'p' ? '투수' : '타자'} ${name}${extra ? `, ${extra}` : ''}, ${role === 'p' ? `평균자책 ${era(info?.era)}` : `타율 ${stat3(info?.avg)}, OPS ${stat3(info?.ops)}`}${info?.stats_as_of ? ` (${info.stats_as_of} 경기 전 기준)` : ', 경기 전 기록 미확인'}. 타석 목록 열기`;
   return <button className={`sv-player ${side}`} style={{ '--team': teamColor(team) } as CSSProperties} onClick={onOpen} aria-haspopup="dialog" aria-label={spoken} title={name}>
-    <span className="sv-player-1">{short(team)} · {role === 'p' ? '투수' : '타자'} · <b>{name}</b></span>
+    <span className="sv-player-1">{abbr || short(team)} · {role === 'p' ? '투수' : '타자'} · <b>{name}</b></span>
     <span className="sv-player-2">{stats}{extra ? ` · ${extra}` : ''}</span>
   </button>;
 }
@@ -219,8 +219,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         {situation && <Bases mask={situation.bases} />}
       </div>
       <div className="sv-players">
-        <PlayerCell side="away" team={game.away_team} role={top ? 'b' : 'p'} person={top ? batterP : pitcherP} hand={top ? batterP?.side : pitcherP?.hand} info={info(top ? batterP : pitcherP)} onOpen={openPa} />
-        <PlayerCell side="home" team={game.home_team} role={top ? 'p' : 'b'} person={top ? pitcherP : batterP} hand={top ? pitcherP?.hand : batterP?.side} info={info(top ? pitcherP : batterP)} onOpen={openPa} />
+        <PlayerCell side="away" team={game.away_team} abbr={game.away_abbr} role={top ? 'b' : 'p'} person={top ? batterP : pitcherP} hand={top ? batterP?.side : pitcherP?.hand} info={info(top ? batterP : pitcherP)} onOpen={openPa} />
+        <PlayerCell side="home" team={game.home_team} abbr={game.home_abbr} role={top ? 'p' : 'b'} person={top ? pitcherP : batterP} hand={top ? pitcherP?.hand : batterP?.side} info={info(top ? pitcherP : batterP)} onOpen={openPa} />
       </div>
     </section>
 
@@ -244,7 +244,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
           return <button key={p.index} className={`sv-card ${on ? 'on' : ''}`} aria-pressed={on} onClick={() => pick(p.index)}
             aria-label={`${p.pitch_number}구 ${a?.pitch_label ?? '구종 미상'}${a?.speed_mph != null ? ` ${speedText(a.speed_mph, unit)}` : ''} ${a?.result_label ?? ''}`}>
             <Zone mini bounds={detail.zone_bounds} candidates={[]} actualLabel="" setupX={null} actual={a && a.x !== null && a.z !== null ? { x: a.x, z: a.z } : null} />
-            <span className="sv-card-cap" aria-hidden="true">{p.pitch_number}. {a?.pitch_label ?? '–'} {sp}</span></button>; })}
+            <span className="sv-card-cap" aria-hidden="true"><span>{p.pitch_number}. {a?.pitch_label ?? '–'}</span>{sp !== '' && <span>{sp}</span>}</span></button>; })}
         {nextPhase && nextNumber && paKey === detail.current?.pa_key && <button className="sv-card pending on" aria-pressed="true" onClick={goLatest} aria-label={`다음 공 ${nextNumber}구, 아직 안 던짐`}>
           <span className="sv-card-q" aria-hidden="true">?</span><span className="sv-card-cap" aria-hidden="true">{nextNumber}. 다음</span></button>}
       </div>

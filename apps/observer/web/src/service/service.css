@@ -224,3 +224,27 @@ body.sv-locked{overflow:hidden}
 .sv-box .curcol{background:#fff8e6}.sv-box .cur{background:#ffe7b0;font-weight:900;color:#8a4b00}
 @media (max-height:620px){.sv-head-score strong{font-size:20px}.sv-card{width:76px;height:76px}.sv-zrow .sv-zone-wrap{min-height:120px}.sv-players{gap:4px}}
 @media (max-width:359px){.sv-rec-row{font-size:13px}.sv-player{font-size:12.5px;padding:2px 5px}.sv-bso{gap:6px}}
+
+/* integration rev3 (Root visual gates): the main zone sits in a centre column between two equal fixed side columns, so its centre is the
+   phone's centre for R and L batters; the actual grid is drawn from a cropped viewBox (same coordinates) so it is wide, not a small grid in a tall
+   frame. Candidate rows put rank+share first and the pitch type below to fit the narrower side. Player line 2 and card captions wrap instead
+   of cutting values off. */
+.sv-zrow{grid-template-columns:72px minmax(0,1fr) 72px}
+@media (max-width:359px){.sv-zrow{grid-template-columns:64px minmax(0,1fr) 64px}}
+.sv-rec-row{grid-template-areas:"k p" "t t";row-gap:1px}
+.sv-rec-type{font-size:13px;overflow-wrap:normal;word-break:keep-all}
+.sv-batter{max-height:96px}
+.sv-player-2{white-space:normal;overflow:visible;text-overflow:clip}
+.sv-card-cap{white-space:normal;overflow:visible;text-overflow:clip;display:flex;flex-wrap:wrap;justify-content:center;column-gap:3px;text-align:center}
+.sv-card-cap>span{white-space:nowrap}
+.sv-card{padding:1px 2px}
+@media (max-width:359px){.sv-reclist{padding:3px 2px}.sv-rec-row{column-gap:2px}.sv-rk{width:18px;height:18px}}
+.sv-card-cap{line-height:1.05}
+.sv-zrow .sv-zone-wrap{background:transparent;border:none}
+.sv-player-2{word-break:keep-all}
+/* geometry (rev3 integration): a mark beyond the visible window is a hollow edge marker with an outward arrow (never a normal dot) */
+.sv-actual.out circle{fill:var(--sv-paper,#fff);stroke:var(--sv-actual);stroke-width:2.5;stroke-dasharray:3 2}
+.sv-out-arrow{stroke:var(--sv-actual);stroke-width:2.5;stroke-linecap:round}
+.sv-rec.out rect{fill:none}.sv-rec.out .sv-out-arrow{stroke:var(--sv-rec)}
+.sv-mitt.out line{stroke-dasharray:2 5}
+.sv-zone.mini{overflow:visible}

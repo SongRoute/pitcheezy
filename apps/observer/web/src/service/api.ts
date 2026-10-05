@@ -48,7 +48,7 @@ function status(raw: Raw): { status: GameStatus; text: string } {
 }
 export function normalizeCard(raw: Raw): GameCard {
   const st = status(raw);
-  return { venue: raw.venue ?? null, game_pk: raw.game_pk, start: raw.start ?? null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
+  return { venue: raw.venue ?? null, away_abbr: raw.away_abbr ?? null, home_abbr: raw.home_abbr ?? null, game_pk: raw.game_pk, start: raw.start ?? null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
     status: st.status, status_text: st.text, away_team: raw.away_team, home_team: raw.home_team,
     away_score: num(raw.away_score), home_score: num(raw.home_score), inning: num(raw.inning), half: raw.half ?? null,
     game_number: num(raw.game_number) ?? 1, double_header: raw.double_header === true, embargoed: raw.embargoed === true };

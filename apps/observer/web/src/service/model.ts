@@ -22,7 +22,7 @@ export type GameCard = { game_pk: number; start: string | null; kst_date: string
   away_team: string; home_team: string; away_score: number | null; home_score: number | null; inning: number | null; half: Half | null;
   game_number: number; double_header: boolean; embargoed: boolean;
   /** rev3 optional (api-rev3-031): venue name from the feed; absent → not shown. */
-  venue?: string | null };
+  venue?: string | null; away_abbr?: string | null; home_abbr?: string | null };
 export type Phase = 'pregame' | 'pre_pitch' | 'resolving' | 'between_innings' | 'final';
 export type Current = { phase: Phase; situation: Situation; batter: (Person & { side: string }) | null; pitcher: (Person & { hand: string }) | null; pa_key: string | null };
 export type Pa = { pa_key: string; at_bat_number: number; inning: number; half: Half; batter: string; pitcher: string;
