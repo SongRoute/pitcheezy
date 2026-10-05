@@ -133,3 +133,13 @@ Tests: `tests/test_watch_summary.py` (empty game, bounds, prefix advance, final 
 Warm ivory + dark ink, deep teal accent, orange actual-pitch marker; polished sports editorial, Korean text. Clear scoreboard, large zone, rank3 recommendations, count/base diamonds, pitch timeline, terminal analysis card with optional manual target selector. Responsive layout with useful empty/loading/error states and visible data date. No login/billing/public hosting. Avoid technical jargon in main flow. Show model details only when expanded.
 
 Default backend port8766. Vite proxy `/api` -> localhost8766. Production build served by backend, single launch command. Prefer accessible buttons/labels, keyboard/manual control, honest unavailable states. No framework-specific experimental APIs.
+
+## Selected-time linescore (ui-calm-polish, 2026-10-06, commit 2b32e30)
+- `GET /api/service/games/{pk}`: every item of `pitches[]` carries `linescore_before` — the same object shape as the top-level
+  `linescore` (`basis`, `innings[]`, `teams.{away,home}.{runs,hits,errors,bb_hbp}`, `current`, `provenance`), as of just BEFORE
+  that pitch (the moment of `situation_before`, i.e. the header score and B/S/O shown for a selected pitch). Built server-side
+  from events before the pitch only (`game_history.build` `line_before`); `situation_after`, `gap_after`, `line_before`,
+  `line_after` stay internal. Additive: older clients ignore it.
+- Client: a selected past pitch's 이닝별 기록 uses `linescore_before`; the latest view keeps the top-level `linescore`. A pitch
+  without the field shows the 'not ready' text, never the latest line.
+- Checks: `backend/tests/test_pitch_linescore_before.py`, `web/tests/boxscore-asof-check.mjs`.

@@ -1,13 +1,14 @@
 # 10/6 16:00 시연 운영 문서 (현재본)
 
-갱신 2026-10-06 00:42 KST (호스트 시계), 통합 담당 Claude Opus 5.5(같은 세션). 이전 내용은 [보관본](UI-live-demo-1006-runbook-archive-20261006.md)에 그대로 있다(사고 기록 포함).
+갱신 2026-10-06 05:35 KST (호스트 시계): 차분한 화면(ui-calm-polish, 독립 검토 ACCEPT·Root 수용 `2b32e30`) 반영 — 1·5·7·8절. 이전 갱신 00:42 KST(통합 담당 Claude Opus 5.5). 이전 내용은 [보관본](UI-live-demo-1006-runbook-archive-20261006.md)에 그대로 있다(사고 기록 포함).
 진행 로그: `pm-jobs/20261006-four-hour/demo-delivery/LIVE.md`.
 
 ## 1. 지금 상태
-- 미리보기 `http://100.108.252.111:8771/watch` (Tailscale 기기 전용). PID **39361** (00:37:49 시작), cwd `pitcheezy-worktrees/codex-ui-live-preview-1005`, 브랜치 `codex/demo-pa-anchors-1006`, 서빙 소스 **`a08cbeb`** (push 안 함).
-- 서빙 자산 sha256: `index-BP8kCSE6.js` 249daf8c…, `index-0OqeeY6u.js`(운영자 화면) ec4d9183…, `index-CJLA7S2E.css` db53763d…, `index.html` 9b883845….
+- 미리보기 `http://100.108.252.111:8771/watch` (Tailscale 기기 전용). PID **74837** (2026-10-06 05:33:44 시작), cwd `pitcheezy-worktrees/codex-ui-live-preview-1005`, 브랜치 `codex/demo-pa-anchors-1006`, 서빙 소스 **`2b32e30`** (00d460c에서 fast-forward, push 안 함). 이전 PID 39361(소스 00d460c, 화면은 a08cbeb와 같음).
+- 서빙 자산 sha256: `index-Dqklzlty.js` 40aac20b…, `index-Bb-VAAQr.js`(운영자 화면) b08a73f6…, `index-BRy8UNf-.css` ea17c39a…, `index.html` a4308027… (작성자·검토자 빌드와 바이트 동일). 이전(00d460c): `index-BP8kCSE6.js` 249daf8c…, `index-0OqeeY6u.js` ec4d9183…, `index-CJLA7S2E.css` db53763d…, `index.html` 9b883845….
 - env: `PITCHEEZY_OBSERVER_PORT=8771 HOST=tailscale LEGACY=0 LIVE_ARMB=0`, `PITCHEEZY_DEMO_DIR=/Users/song/Projects/pitcheezy-demo-sessions/preview8771`, `PITCHEEZY_WATCH_DIR`/`PITCHEEZY_FEED_DIR` = `pm-jobs/20261005-ui-live-redesign/preview-data-overlay-014/overlay/{watch,feeds}`(16경기 읽기 전용 사본), `PITCHEEZY_PLAYER_SNAPSHOT_DIR` = `…/pregame-data-032/cache`(경기 전 기록 2경기).
-- 화면: rev3(가운데 존, 추천 3개, 투구 카드, 선수 칸, 이닝표). 존 좌표는 실제 좌표 그대로, 창 밖 공은 존 밖 가장자리 표시(독립 검토 039 수용).
+- 화면: rev3 구조 그대로(가운데 존, 추천 3개, 투구 카드, 선수 칸, 이닝표) + 차분한 색·굵기(2b32e30). 존 좌표·창 밖 표시 규칙 그대로. 격자 390px 144px(이전 128), 이름·날짜 줄바꿈(잘림 없음), 날짜에 연도, 경기 목록 카드 깨짐 수정.
+- 응답 추가 필드 `pitches[].linescore_before`(그 공 직전 시점 이닝표). 지난 공을 고르면 이닝별 기록이 그 시점까지만 나온다(이전에는 마지막 시점 기록이 보였음). 설명: `apps/observer/CONTRACT.md` '선택 시점 이닝표'.
 
 ## 2. 주소
 - 목록 `/watch` · 849843 `/watch/849843`(2026-09-30(수) 11:00 KST, CHC 0–8 SD, CV 미트 x) · 813031 `/watch/813031`(2025-10-18(토) 09:38 KST, MIL 1–5 LAD) · 운영자 `/demo-operator`.
@@ -46,7 +47,8 @@
 - 추천 출처: 경기 뒤 그 공을 던지기 전 정보만으로 계산한 기록(asof_replay). 정책·과학적 판정은 바뀌지 않았다.
 
 ## 5. 시연 전 점검 (15:30)
-- 한 번에(권장, 해시 비교판): `sh /Users/song/Projects/pitcheezy-pm-jobs/20261006-four-hour/next-research/preflight-verified.sh` — 아래 원본 점검을 그대로 돌린 뒤 서빙 번들·운영자 JS·CSS·index, 예비 화면, CV 오프라인 index·manifest의 sha256을 고정값과 **비교**한다(01:17 KST 실행: 원본 0 failure, 비교 8/8 OK). 마지막 줄 `hash comparisons 0 failure(s)`와 종료 코드 0이면 통과.
+- 한 번에(권장, 현재 화면 해시판 v3): `sh /Users/song/Projects/pitcheezy-pm-jobs/20261006-ui-polish/integrate-001/preflight-calm-2b32e30.sh` — 원본 점검 + 2b32e30 번들·CSS·index 고정 해시 + 예비·CV 해시 + 두 경기 `linescore_before` 확인. 마지막 줄 `v3 checks 0 failure(s)`와 종료 코드 0이면 통과(2026-10-06 05:35 실행 0/0).
+- (보관) v2 `next-research/preflight-verified.sh`는 이전 00d460c 번들 해시를 고정하므로 지금은 자산 줄에서 **실패하는 것이 정상**이다. 증거로 남겨 둔다. 원래 설명: — 아래 원본 점검을 그대로 돌린 뒤 서빙 번들·운영자 JS·CSS·index, 예비 화면, CV 오프라인 index·manifest의 sha256을 고정값과 **비교**한다(01:17 KST 실행: 원본 0 failure, 비교 8/8 OK). 마지막 줄 `hash comparisons 0 failure(s)`와 종료 코드 0이면 통과.
 - 원본(출력만): `sh /Users/song/Projects/pitcheezy-pm-jobs/20261006-four-hour/demo-delivery/preflight.sh` (읽기만 함; 8771·자산·세션·대응표 4개·overlay 해시·경기 전 기록·예비 파일 확인, 실패 0이면 통과). 00:52 실행 결과 0 failure.
 1. `curl -s http://100.108.252.111:8771/api/health` → status ok.
 2. 운영자 화면에서 활성 세션 없음 확인(있으면 '시연 종료').
@@ -59,13 +61,15 @@
 3. 나머지 13구 결과 시각(선택): 채우면 투구별 대응표(`build_demo_mapping.py --from-csv … --video-url …`, 보관본 §3)로 바꿀 수 있다. 없어도 A로 시연 가능.
 
 ## 7. 재시작·되돌리기 (8771만)
-- 맥미니 재부팅·프로세스 종료 시: `sh /Users/song/Projects/pitcheezy-pm-jobs/20261006-four-hour/demo-delivery/start-preview-8771.sh`(현재와 같은 env, 8771이 이미 쓰이면 거부). 시연 세션·대응표는 디스크에 있어 그대로 이어진다(스테이징 재시작 실측 0.75초, 같은 컷오프).
-- 직전 서빙본 3ca9efc(타석 끝 대응표 기능 전): `git -C /Users/song/Projects/pitcheezy worktree add <새 디렉터리> 3ca9efc` → 그 트리 `apps/observer/web/dist`에 `pm-jobs/20261006-four-hour/demo-delivery/rollback-dist-3ca9efc/` 복사 → 현재 8771 리스너 종료 → 그 트리에서 1절의 env 그대로 `sh apps/observer/serve.sh`. (그 백엔드는 `pa_end_observed` 대응표를 목록에서 건너뛴다.)
+- 맥미니 재부팅·프로세스 종료 시: `sh /Users/song/Projects/pitcheezy-pm-jobs/20261006-four-hour/demo-delivery/start-preview-8771.sh`(현재와 같은 env, 8771이 이미 쓰이면 거부). 시연 세션·대응표는 디스크에 있어 그대로 이어진다(스테이징 재시작 실측 0.75초, 같은 컷오프). 05:33 재시작 때 활성 세션 0(16개 모두 ended).
+- **현재 되돌리기 지점 = 00d460c**(타석 끝 관찰 시연 포함, 3ca9efc 아님): 활성 세션 확인 → `git -C <preview 트리> checkout --detach 00d460c`(또는 `git reset --hard 00d460c`는 브랜치를 되돌림) → `rsync -a --delete pm-jobs/20261006-ui-polish/integrate-001/rollback/dist-00d460c/ <preview 트리>/apps/observer/web/dist/` → 8771 PID가 preview 트리 cwd인지 확인 후 그 PID만 `kill` → `start-preview-8771.sh`. 자산 해시는 `pm-jobs/20261006-ui-polish/integrate-001/rollback/dist-00d460c.sha256`, env 11개는 `pm-jobs/20261006-ui-polish/integrate-001/rollback/env-39361.txt`. 00d460c 백엔드는 `linescore_before`를 안 보내고, 화면도 이전 것이라 서로 맞다.
+- 더 이전 3ca9efc(타석 끝 대응표 기능 전, 지금의 되돌리기 지점 아님): `git -C /Users/song/Projects/pitcheezy worktree add <새 디렉터리> 3ca9efc` → 그 트리 `apps/observer/web/dist`에 `pm-jobs/20261006-four-hour/demo-delivery/rollback-dist-3ca9efc/` 복사 → 현재 8771 리스너 종료 → 그 트리에서 1절의 env 그대로 `sh apps/observer/serve.sh`. (그 백엔드는 `pa_end_observed` 대응표를 목록에서 건너뛴다.)
   - **되돌리기 전에 반드시 A 방식(`pa_end_observed`) 세션을 운영자 화면에서 '시연 종료'한다.** 3ca9efc 백엔드는 디스크에 남은 그 세션을 그대로 읽지만 `pre_index`를 모르므로 시작 전 컷오프를 `start_index−1`=4로 계산해, AB1 투랑 타석 6구 중 5구를 7:28 전에 보여 준다(독립 검토 재현: 새 코드 −1, 옛 코드 4). 되돌린 뒤에는 B(시계만) 대응표로 새 세션을 만든다.
 - 더 이전: c84905a(`rev3-label-polish-040/rollback-dist-c84905a/`), 15a4357, 최후 282dc6f(보관본 §4).
 
 ## 8. 남은 것
-- 실기기(아이폰 Safari·두 기기) 미확인. 헤드리스 두 컨텍스트는 대신하지 않는다.
+- 실기기(아이폰 Safari·두 기기) 미확인. 헤드리스 두 컨텍스트는 대신하지 않는다. 새 화면도 아이폰 미확인.
+- 375×553 + 글자 125%처럼 아주 짧은 화면에서는 이름·날짜를 자르지 않는 대신 존 격자가 91~118px로 이전(119px)보다 작다(Root 수용). 키 큰 화면은 존 위아래 여백이 남는다(격자 크기가 폭에 묶임).
 - 투구별 영상 동기화 없음(13/16 모름). 849843 전체 영상 막힘.
 - 실제 진행 중 MLB 경기 미검증, 실라이브 다음 공 추천 꺼짐(LIVE_ARMB=0), 경기 전 기록은 2경기만.
 - SQLite 라이브 저장소(c6010ef+e5b943b, 검토 ACCEPT WITH FIX)는 실시간 지연 버퍼용이라 이 시연(보관 경기 재현)에 쓰이지 않는다. 시연 시계 상태는 이미 세션 파일로 재시작을 견딘다(0.75초). 16:00 전에는 넣지 않는다.
