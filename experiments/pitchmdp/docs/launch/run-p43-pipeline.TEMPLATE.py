@@ -1,30 +1,34 @@
 import os,json,subprocess,pathlib,datetime,signal,hashlib,sys
-# PREPARED TEMPLATE (P43 batter-ID, author_only next-research worker), NOT LAUNCHED. EXP-P43-001 (4 arms x seeds 70-74 =
-# 20 fits, GPU3 only, 1 fit). Derived from run-p40-pipeline.TEMPLATE.py (save/interrupted/execute/queue unchanged). Checks
+# PREPARED TEMPLATE (P43 batter-ID, author_only next-research worker), NOT LAUNCHED. EXP-P43-001 (5 arms x seeds 70-72 =
+# 15 fits) or the clock-only extension EXP-P43-002 (5 arms x seeds 73-74 = 10 fits, only after EXP-P43-001 is complete);
+# GPU3 only, 1 fit. Derived from run-p40-pipeline.TEMPLATE.py (save/interrupted/execute/queue unchanged). Checks
 # the registered config against the DATED DRAFT (p43_launch dated-check), the batter sidecar on the server (sha pinned),
-# the VALID 20-task TRAIN-only smoke check and its source map, no other Pitcheezy queue / probe / scorer (P40 / P42
+# the VALID TRAIN-only smoke check of every task and its source map, no other Pitcheezy queue / probe / scorer (P40 / P42
 # finished), GPU3 without any compute process; queue with exactly ONE --gpu GPU3 and the COMMON lock dir; score only
-# after 20/20 and only if it can end before aggregate_by - 5 min; else status 'incomplete'. Placeholders fail closed.
+# after all tasks and only if it can end before aggregate_by - 5 min; else status 'incomplete'. Placeholders fail closed.
 b=pathlib.Path('/home/sds733/pitcheezy-autonomy/20261004')
 configsha='FILL_AT_REGISTRATION'
 assert len(configsha)==64,'template: configsha not filled'
 codecommit='FILL_AT_REGISTRATION'  # smoke-verified P43 archive commit (= registration.source_commit)
 smokesha='FILL_AT_REGISTRATION'  # = registration.smoke.check_sha256
-smokeq='FILL_AT_REGISTRATION'  # P43 smoke queue dir (20/20 done)
+familyid='FILL_AT_REGISTRATION'  # 'EXP-P43-001' (main) or 'EXP-P43-002' (extension)
+smokeq='FILL_AT_REGISTRATION'  # P43 smoke queue dir (all tasks done)
 smokeruns='FILL_AT_REGISTRATION'  # P43 smoke runs dir (ends -smoke)
 draftsha='FILL_AT_REGISTRATION'  # sha of the DATED DRAFT that was smoked (= registration.draft_sha256)
 draftname='FILL_AT_REGISTRATION'  # its file name under code-<commit>/configs/
-assert 'FILL_AT_REGISTRATION' not in (codecommit,smokesha,smokeq,smokeruns,draftsha,draftname),'template: placeholder not filled'
+assert 'FILL_AT_REGISTRATION' not in (familyid,codecommit,smokesha,smokeq,smokeruns,draftsha,draftname),'template: placeholder not filled'
+TASKS={'EXP-P43-001':15,'EXP-P43-002':10}[familyid];tag=familyid[-3:]  # 001 / 002
 code=b/('code-'+codecommit)/'experiments/pitchmdp'
 python='/home/sds733/venv/bin/python'
 manifest='49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578'
-undatedsha='00202862d08725c6898e0d213b8c46c1288d9b7e694343792b1c1a8bcf2cd3c4'
+UNDATED={'EXP-P43-001':('DRAFT-CUDA-BATTER-ID-20261006.json','bc94ae86a2482c920ebd3cb8a898774bcbbb4c5862d58639556621f4b7a442e2'),'EXP-P43-002':('DRAFT-CUDA-BATTER-ID-EXT-20261006.json','389c81b369a206460202aeda8b683a66da5df3e565dda0c380417e61f998782a')}
+undatedname,undatedsha=UNDATED[familyid]
 sidecarsha='ad2eacc64d46985a57527167486d7762a435f02d51fc5ed86a9e2e2644c160a4'
 GPU3='GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9'
 LOCKS='/home/sds733/pitcheezy-autonomy/gpu-locks'  # COMMON exclusive per-GPU lock dir (never the per-queue default)
-SCORE_SECONDS=1200  # 4 arms x 5 seeds; scorer must end by aggregate_by - 5 min (clock()); else 'incomplete'
-check=b/'p43-smoke-check.json'
-state=b/'score-p43-state.json'
+SCORE_SECONDS=1200  # 5 arms x 3 (or 2) seeds; scorer must end by aggregate_by - 5 min (clock()); else 'incomplete'
+check=b/('p43-'+tag+'-smoke-check.json')
+state=b/('score-p43-'+tag+'-state.json')
 if state.exists():raise SystemExit('already started')
 child=None
 
@@ -60,9 +64,9 @@ def clock(q,now,projection):
 
 try:
  save('verifying_registration_and_smoke')
- draft=b/('code-'+codecommit)/'configs'/draftname;cfg=b/'EXP-P43-001.json'
+ draft=b/('code-'+codecommit)/'configs'/draftname;cfg=b/(familyid+'.json')
  assert hashlib.sha256(draft.read_bytes()).hexdigest()==draftsha
- assert hashlib.sha256((b/('code-'+codecommit)/'configs/DRAFT-CUDA-BATTER-ID-20261006.json').read_bytes()).hexdigest()==undatedsha
+ assert hashlib.sha256((b/('code-'+codecommit)/'configs'/undatedname).read_bytes()).hexdigest()==undatedsha
  assert hashlib.sha256((b/'batter-sidecar-49097109/sidecar.json').read_bytes()).hexdigest()==sidecarsha,'server batter sidecar missing or differs (rebuild with batter_sidecar.py; never edit)'
  assert hashlib.sha256(cfg.read_bytes()).hexdigest()==configsha
  old,new=json.loads(draft.read_text()),json.loads(cfg.read_text())
@@ -73,10 +77,11 @@ try:
  assert new['batter_sidecar']['sidecar_sha256']==sidecarsha
  assert hashlib.sha256(check.read_bytes()).hexdigest()==smokesha
  g=json.loads(check.read_text())
- assert g['protocol']=='p43_train_smoke_validity_v1' and g['valid'] is True and g['errors']==[] and g['tasks']==20 and g['bound_uuids']==[GPU3],'smoke check not valid'
+ assert g['protocol']=='p43_train_smoke_validity_v1' and g['valid'] is True and g['errors']==[] and g['tasks']==TASKS and g['bound_uuids']==[GPU3],'smoke check not valid'
  assert g['config_sha256']==draftsha and g['export_manifest_sha256']==manifest and g['batter_sidecar_sha256']==sidecarsha
- assert json.loads((b/smokeq/'summary.json').read_text())['counts']=={'done':20},'all 20 smoke tasks must finish'
- assert not (b/'queue-p43-001').exists() and not (b/'runs/EXP-P43-001').exists() and not (b/'scores/EXP-P43-001').exists(),'P43 output already present'
+ assert json.loads((b/smokeq/'summary.json').read_text())['counts']=={'done':TASKS},'all smoke tasks must finish'
+ assert not (b/('queue-p43-'+tag)).exists() and not (b/'runs'/familyid).exists() and not (b/'scores'/familyid).exists(),'P43 output already present'
+ if familyid=='EXP-P43-002':assert json.loads((b/'score-p43-001-state.json').read_text())['status']=='complete','extension only after EXP-P43-001 is complete'
  for other in ('score-p40-state.json','score-p42-state.json'):  # P40 / P42 must be finished (or stopped by their owner) first
   if (b/other).exists():assert json.loads((b/other).read_text())['status'] in ('complete','incomplete','blocked'),other+' still running'
  assert not subprocess.run(['pgrep','-f','cuda_direct_queue.py|timing_probe_|score_cuda_direct|run-p3|run-p40-pipeline|run-p42-pipeline|p38_resource_child|gpu3_bench_child'],capture_output=True).stdout.strip(),'another queue/probe/scorer/pipeline is running: start_after not satisfied'
@@ -96,17 +101,17 @@ try:
  assert uuids=={GPU3}==set(old['device']['allowed_gpu_uuids']),'smoke did not use exactly {GPU3}'
  kst=datetime.timezone(datetime.timedelta(hours=9))
  qtimeout,score_by=clock(new['queue'],datetime.datetime.now(kst),g['family_projection_seconds'])
- execute('p43-full-001',queue(cfg,configsha,b/'runs/EXP-P43-001',b/'queue-p43-001'),qtimeout)
- counts=json.loads((b/'queue-p43-001/summary.json').read_text())['counts']
- if counts!={'done':20}:
-  save('incomplete',counts=counts,note='not scored (scoring only after 20/20); report incomplete by aggregate_by')
+ execute('p43-full-'+tag,queue(cfg,configsha,b/'runs'/familyid,b/('queue-p43-'+tag)),qtimeout)
+ counts=json.loads((b/('queue-p43-'+tag)/'summary.json').read_text())['counts']
+ if counts!={'done':TASKS}:
+  save('incomplete',counts=counts,note='not scored (scoring only after all tasks); report incomplete by aggregate_by')
  elif datetime.datetime.now(kst)>score_by:
-  save('incomplete',counts=counts,note='20/20 but scorer cannot end before aggregate_by - 5 min; not scored')
+  save('incomplete',counts=counts,note='all tasks done but scorer cannot end before aggregate_by - 5 min; not scored')
  else:
-  score=[python,str(code/'scripts/score_cuda_direct.py'),'--config',str(cfg),'--config-sha256',configsha,'--export',str(b/'export-49097109'),'--export-manifest-sha256',manifest,'--family',str(b/'runs/EXP-P43-001'),'--destination',str(b/'scores/EXP-P43-001')]
-  execute('score-p43-001',score,SCORE_SECONDS)
-  result=json.loads((b/'scores/EXP-P43-001/score.json').read_text());assert result['family']=='EXP-P43-001' and result['decision'] is None
-  save('complete',score=str(b/'scores/EXP-P43-001/score.json'))
+  score=[python,str(code/'scripts/score_cuda_direct.py'),'--config',str(cfg),'--config-sha256',configsha,'--export',str(b/'export-49097109'),'--export-manifest-sha256',manifest,'--family',str(b/'runs'/familyid),'--destination',str(b/'scores'/familyid)]
+  execute('score-p43-'+tag,score,SCORE_SECONDS)
+  result=json.loads((b/'scores'/familyid/'score.json').read_text());assert result['family']==familyid and result['decision'] is None
+  save('complete',score=str(b/'scores'/familyid/'score.json'))
 except BaseException as exc:
  if child is not None and child.poll() is None:
   os.killpg(child.pid,signal.SIGTERM)

@@ -14,10 +14,11 @@ clock fields change; `dated-check` proves it), smokes THAT file, then registers 
 
 smoke-check reads only the queue summary.json and identity.json / fit.json of the 20 smoke tasks (runner verify_task);
 never a prediction archive, a DEV / mlb_dev metric or 2026 data.  Validity: 20/20 done, identities, bound UUID set ==
-{GPU3}, no released GPU, dev_used_for_fit_or_selection False, every id arm names exactly its registry columns with ONE
-TRAIN-only vocabulary record per column across arms and seeds, the row-shuffle arm records its fixed seed, the
-reference none.  Per-arm median train seconds / epoch is DESCRIPTIVE (no ratio gate).
-register writes configs/EXP-P43-001.json: only status / decision / execution / registration differ from the dated
+{GPU3}, no released GPU, dev_used_for_fit_or_selection False, every new id arm names exactly its registry columns and
+the pitcher-only arm carries the unmoded P38 record, with ONE TRAIN-only vocabulary record per column across arms and
+seeds; the row-shuffle arm records its fixed seed, the reference none.  Works for EXP-P43-001 (seeds 70-72, 15 tasks)
+and the clock-only extension EXP-P43-002 (seeds 73-74, 10 tasks); the design key picks the family.  Per-arm median train seconds / epoch is DESCRIPTIVE (no ratio gate).
+register writes configs/EXP-P43-001.json (or EXP-P43-002.json): only status / decision / execution / registration differ from the dated
 DRAFT; registered HH:MM on queue.date, <= launch_by, real clock (not future, within 15 min), + projection <=
 no_new_fit_after.
 """
@@ -37,42 +38,59 @@ from pitchmdp import direct_pitcher_id_registry as pid  # noqa: E402
 from p40_launch import KST, at, train_epoch_seconds  # noqa: E402  same clock / epoch-seconds rules as P40
 
 SMOKE_PROTOCOL = 'p43_train_smoke_validity_v1'
-UNDATED = REPO / 'configs' / 'DRAFT-CUDA-BATTER-ID-20261006.json'
-UNDATED_SHA = '00202862d08725c6898e0d213b8c46c1288d9b7e694343792b1c1a8bcf2cd3c4'
+# design key -> (undated DRAFT, its sha, experiment id, seeds, fits, projection, registered config path)
+FAMILIES = {
+    pid.P43_DESIGN: (REPO / 'configs' / 'DRAFT-CUDA-BATTER-ID-20261006.json',
+                     'bc94ae86a2482c920ebd3cb8a898774bcbbb4c5862d58639556621f4b7a442e2', 'EXP-P43-001',
+                     pid.P43_SEEDS, pid.P43_FITS, pid.P43_FAMILY_PROJECTION_SECONDS, REPO / 'configs' / 'EXP-P43-001.json'),
+    pid.P43_EXT_DESIGN: (REPO / 'configs' / 'DRAFT-CUDA-BATTER-ID-EXT-20261006.json',
+                         '389c81b369a206460202aeda8b683a66da5df3e565dda0c380417e61f998782a', 'EXP-P43-002',
+                         pid.P43_EXT_SEEDS, pid.P43_EXT_FITS, pid.P43_EXT_PROJECTION_SECONDS,
+                         REPO / 'configs' / 'EXP-P43-002.json')}
 MANIFEST_SHA = '49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578'
 PREREG = 'experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P43-001-batter-id-2026-10-06.md'
-OUT = REPO / 'configs' / 'EXP-P43-001.json'
 CLOCK_FIELDS = ('date', 'launch_by', 'no_new_fit_after', 'kill_own_after', 'aggregate_by')
 CLOCK_SKEW = timedelta(minutes=15)
 MODES = {pid.BATTER: (['batter'], 'identity', None), pid.BATTER_SHUFFLE: (['batter'], 'row_shuffle',
                                                                          pid.BATTER_SHUFFLE_SEED),
-         pid.PITCHER_BATTER: (['pitcher', 'batter'], 'identity', None)}
+         pid.PITCHER_BATTER: (['pitcher', 'batter'], 'identity', None)}  # the pitcher-only arm keeps the P38 record
+
+
+def family(config):
+    key = config.get(pid.DESIGN_KEY)
+    if key not in FAMILIES:
+        raise ValueError('Not a P43 design: ' + str(key))
+    return FAMILIES[key]
 
 
 def dated_check(text):
     """The dated DRAFT differs from the committed undated DRAFT only in the five queue clock fields, and those equal
     make_p43_config.clock(date, launch_by) (deterministic window; no other field may move)."""
-    if hashlib.sha256(UNDATED.read_bytes()).hexdigest() != UNDATED_SHA:
+    dated = json.loads(text)
+    undated, undated_sha, *_ = family(dated)
+    if hashlib.sha256(undated.read_bytes()).hexdigest() != undated_sha:
         raise ValueError('Undated DRAFT differs from its pinned sha')
-    base, dated = json.loads(UNDATED.read_text()), json.loads(text)
+    base = json.loads(undated.read_text())
     if {k for k in set(base) | set(dated) if base.get(k) != dated.get(k)} - {'queue'}:
         raise ValueError('Dated DRAFT changes more than the queue')
     moved = {k for k in set(base['queue']) | set(dated['queue']) if base['queue'].get(k) != dated['queue'].get(k)}
     if moved != set(CLOCK_FIELDS):
         raise ValueError(f'Dated DRAFT must change exactly the clock fields, changed {sorted(moved)}')
     q = dated['queue']
-    window = runpy.run_path(str(LAUNCH / 'make_p43_config.py'))['clock'](q['date'], q['launch_by'])
+    window = runpy.run_path(str(LAUNCH / 'make_p43_config.py'))['clock'](
+        q['date'], q['launch_by'], extension=dated[pid.DESIGN_KEY] == pid.P43_EXT_DESIGN)
     if {k: q[k] for k in CLOCK_FIELDS} != window:
         raise ValueError('Dated clock is not the make_p43_config window for its date / launch_by')
     return dated
 
 
-def evaluate(fits, allowed_uuids=(pid.RETAINED_GPU,)):
+def evaluate(fits, allowed_uuids=(pid.RETAINED_GPU,), design=pid.P43_DESIGN):
     """fits: {arm: {seed: fit.json dict}} -> validity record (pure; no IO)."""
+    _, _, _, seeds, n_fits, projection, _ = FAMILIES[design]
     errors, per_arm, uuids, vocab = [], {}, set(), {}
     for arm in pid.P43_ARM_ORDER:
         values = []
-        for seed in pid.P43_SEEDS:
+        for seed in seeds:
             fit = (fits.get(arm) or {}).get(seed)
             if fit is None:
                 errors.append(f'{arm}/{seed}: fit.json missing')
@@ -84,6 +102,14 @@ def evaluate(fits, allowed_uuids=(pid.RETAINED_GPU,)):
             if arm == pid.REFERENCE:
                 if block is not None:
                     errors.append(f'{arm}/{seed}: reference carries an id record')
+            elif arm == pid.CANDIDATE:  # P38 entry verbatim: P38 record (one pitcher vocabulary at top level)
+                if not isinstance(block, dict) or 'vocabs' in block or not isinstance(block.get('n_vocab'), int) \
+                        or block.get('train_max_date') is None or int(block['train_max_date']) > pid.LAST_TRAIN_DATE \
+                        or block.get('index_source') is not None or block.get('id_dropout') is not None:
+                    errors.append(f'{arm}/{seed}: P38 pitcher vocabulary record missing, moded or after the cutoff')
+                else:
+                    vocab.setdefault('pitcher', set()).add(json.dumps({k: block.get(k) for k in pid.VOCAB_KEYS},
+                                                                      sort_keys=True))
             else:
                 columns, source, shuffle = MODES[arm]
                 if not isinstance(block, dict) or block.get('id_columns') != columns \
@@ -103,7 +129,7 @@ def evaluate(fits, allowed_uuids=(pid.RETAINED_GPU,)):
                 values.append(train_epoch_seconds(fit))
             except ValueError as error:
                 errors.append(f'{arm}/{seed}: {error}')
-        per_arm[arm] = statistics.median(values) if len(values) == len(pid.P43_SEEDS) else None
+        per_arm[arm] = statistics.median(values) if len(values) == len(seeds) else None
     if set(vocab) != {'pitcher', 'batter'} or any(len(v) != 1 for v in vocab.values()):
         errors.append('smoke fits must carry one TRAIN-only vocabulary record per id column (pitcher, batter)')
     if uuids != set(allowed_uuids):
@@ -116,8 +142,8 @@ def evaluate(fits, allowed_uuids=(pid.RETAINED_GPU,)):
             'over_reference_descriptive': {a: (v / ref if v is not None and ref else None) for a, v in per_arm.items()},
             'bound_uuids': sorted(map(str, uuids)),
             'smoke_vocabulary': {c: json.loads(next(iter(v))) for c, v in vocab.items() if len(v) == 1},
-            'tasks': sum(len(fits.get(a) or {}) for a in pid.P43_ARM_ORDER),
-            'family_projection_seconds': pid.P43_FAMILY_PROJECTION_SECONDS,
+            'tasks': sum(len(fits.get(a) or {}) for a in pid.P43_ARM_ORDER), 'expected_tasks': n_fits,
+            'design': design, 'family_projection_seconds': projection,
             'note': 'TRAIN-only smoke (8,192 rows x smoke epochs): validity only, no resource gate; projection fixed '
                     'from P38 actual task walls in the registry; no prediction / DEV / 2026 read'}
 
@@ -130,25 +156,26 @@ def smoke_check(argv):
     config = dated_check(text)
     draft_sha = hashlib.sha256(text.encode()).hexdigest()
     import run_cuda_direct as runner
-    assert config['device'] == pid.DEVICE and config['seeds'] == pid.P43_SEEDS
+    _, undated_sha, _, seeds, n_fits, _, _ = family(config)
+    assert config['device'] == pid.DEVICE and config['seeds'] == seeds
     assert [a['name'] for a in config['arms']] == list(pid.P43_ARM_ORDER)
     counts = json.loads((queue_dir / 'summary.json').read_text())['counts']
     sources = runner.own_hashes()
     fits, identity_errors = {}, []
     for arm in pid.P43_ARM_ORDER:
-        for seed in pid.P43_SEEDS:
+        for seed in seeds:
             d = runner.task_dir(runs, arm, seed, True)
             try:
                 runner.verify_task(d, runner.expected_identity(config, MANIFEST_SHA, arm, seed, True, 'cuda', sources))
                 fits.setdefault(arm, {})[seed] = json.loads((d / 'fit.json').read_text())
             except Exception as error:  # noqa: BLE001 - every identity failure is a refusal
                 identity_errors.append(f'{arm}/{seed}: identity {error!r}')
-    record = evaluate(fits, config['device']['allowed_gpu_uuids'])
-    if counts != {'done': pid.P43_FITS}:
-        record['errors'].append(f'smoke queue counts {counts} != done {pid.P43_FITS}')
+    record = evaluate(fits, config['device']['allowed_gpu_uuids'], config[pid.DESIGN_KEY])
+    if counts != {'done': n_fits}:
+        record['errors'].append(f'smoke queue counts {counts} != done {n_fits}')
     record['errors'] += identity_errors
     record['valid'] = not record['errors']
-    record.update(config_sha256=draft_sha, undated_draft_sha256=UNDATED_SHA, export_manifest_sha256=MANIFEST_SHA,
+    record.update(config_sha256=draft_sha, undated_draft_sha256=undated_sha, export_manifest_sha256=MANIFEST_SHA,
                   batter_sidecar_sha256=config[pid.BATTER_SIDECAR_KEY]['sidecar_sha256'], smoke_queue=str(queue_dir),
                   smoke_runs=str(runs), source_sha256=sources)
     with out.open('x') as handle:
@@ -160,14 +187,15 @@ def smoke_check(argv):
 
 def build_registered(draft_text, smoke, smoke_sha, registered_hhmm, commit, go_reference, now):
     config = dated_check(draft_text)
+    _, undated_sha, _, _, n_fits, projection, _ = family(config)
     draft_sha = hashlib.sha256(draft_text.encode()).hexdigest()
     if smoke.get('protocol') != SMOKE_PROTOCOL or smoke.get('valid') is not True or smoke.get('errors') != []:
         raise ValueError('smoke check is not valid')
     if smoke.get('config_sha256') != draft_sha or smoke.get('export_manifest_sha256') != MANIFEST_SHA \
-            or smoke.get('tasks') != pid.P43_FITS or smoke.get('bound_uuids') != [pid.RETAINED_GPU] \
+            or smoke.get('tasks') != n_fits or smoke.get('bound_uuids') != [pid.RETAINED_GPU] \
             or smoke.get('batter_sidecar_sha256') != config[pid.BATTER_SIDECAR_KEY]['sidecar_sha256']:
-        raise ValueError('smoke check identity (dated DRAFT / manifest / sidecar / 20 tasks / {GPU3}) differs')
-    if smoke.get('family_projection_seconds') != pid.P43_FAMILY_PROJECTION_SECONDS:
+        raise ValueError('smoke check identity (dated DRAFT / manifest / sidecar / task count / {GPU3}) differs')
+    if smoke.get('family_projection_seconds') != projection or smoke.get('design') != config[pid.DESIGN_KEY]:
         raise ValueError('projection constant differs')
     q = config['queue']
     registered = at(q['date'], registered_hhmm)
@@ -175,7 +203,7 @@ def build_registered(draft_text, smoke, smoke_sha, registered_hhmm, commit, go_r
         raise ValueError('registration after launch_by: re-date the DRAFT first')
     if registered > now + timedelta(minutes=1) or now - registered > CLOCK_SKEW:
         raise ValueError('registration time must be the real clock (not future, within 15 min)')
-    if registered + timedelta(seconds=pid.P43_FAMILY_PROJECTION_SECONDS) > at(q['date'], q['no_new_fit_after']):
+    if registered + timedelta(seconds=projection) > at(q['date'], q['no_new_fit_after']):
         raise ValueError('projection does not end before no_new_fit_after')
     if len(commit) < 7 or not all(c in '0123456789abcdef' for c in commit):
         raise ValueError('source commit must be a hex sha')
@@ -183,7 +211,7 @@ def build_registered(draft_text, smoke, smoke_sha, registered_hhmm, commit, go_r
                   decision='None. Registered for execution only; descriptive repeated-DEV contrasts, no verdict.',
                   execution={'enabled': True, 'executable': True},
                   registration={'registered_kst': q['date'] + ' ' + registered_hhmm, 'draft_sha256': draft_sha,
-                                'undated_draft_sha256': UNDATED_SHA, 'source_commit': commit,
+                                'undated_draft_sha256': undated_sha, 'source_commit': commit,
                                 'go_reference': go_reference, 'prereg': PREREG,
                                 'smoke': {'protocol': SMOKE_PROTOCOL, 'check_sha256': smoke_sha,
                                           'train_seconds_per_epoch_median': smoke['train_seconds_per_epoch_median'],
@@ -197,9 +225,10 @@ def register(argv):
     config = build_registered(Path(draft).read_text(), json.loads(smoke_bytes),
                               hashlib.sha256(smoke_bytes).hexdigest(), hhmm, commit, go_reference, datetime.now(KST))
     text = json.dumps(config, indent=2, ensure_ascii=False) + '\n'
-    with OUT.open('x') as handle:
+    out = family(config)[6]
+    with out.open('x') as handle:
         handle.write(text)
-    print(OUT.relative_to(REPO), hashlib.sha256(text.encode()).hexdigest())
+    print(out.relative_to(REPO), hashlib.sha256(text.encode()).hexdigest())
     return 0
 
 

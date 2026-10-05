@@ -127,23 +127,30 @@ DESIGNS = {
                  'projection_seconds': P40_FAMILY_PROJECTION_SECONDS},
 }
 # ------------------------------------------------------------------ P43 batter identity (tentative EXP-P43-001 DRAFT)
-# Pre-registration docs/PREREG-DRAFT-EXP-P43-001-batter-id-2026-10-06.md, written 2026-10-06 01:20 KST before any P43
-# output (post-selection: designed after P25 showed the 17-d batter summary matters and after P38's pitcher-ID signal;
-# exploratory, repeated DEV).  The P38 mechanism applied to the batter of the row (hash-pinned sidecar joined by the
-# export keys, batter_sidecar.py; never in the export, never read by a direct head before).  Four arms, seeds 70-74:
+# Pre-registration docs/PREREG-DRAFT-EXP-P43-001-batter-id-2026-10-06.md, written 2026-10-06 before any P43 output
+# (post-selection: designed after P25 showed the 17-d batter summary matters and after P38's pitcher-ID signal;
+# exploratory, repeated DEV).  Design accepted by Root 01:08 KST (ROOT-NOTES): a real 2x2 identity factorial plus the
+# information-free batter control, all arms at MATCHED seeds.  Five arms, seeds 70-72 (15 fits):
 #   periodic_residual_counts                         reference (P36/P38 entry verbatim)
-#   batter_id_periodic_residual_counts               P38 network on the TRAIN-only BATTER vocabulary (>= 100 TRAIN rows)
-#   batter_id_row_shuffle_periodic_residual_counts   same network, batter column permuted across rows per split by a
+#   pitcher_id_periodic_residual_counts              P38 candidate entry verbatim (pitcher only)
+#   batter_id_periodic_residual_counts               the P38 id path on the batter column (TRAIN vocab >= 100 rows)
+#   pitcher_batter_id_periodic_residual_counts       both id paths, additive
+#   batter_id_row_shuffle_periodic_residual_counts   batter network, batter column permuted across rows per split by a
 #                                                    fixed label-free seed (information-free, parameter/compute matched)
-#   pitcher_batter_id_periodic_residual_counts       P38 pitcher table + the batter table, additive (two id paths)
-# The arm block keeps the family key FLAG ('pitcher_id') for dispatch; `id_columns` names the id column(s) it reads.
+# Optional clock-only extension: the SAME five arms on seeds 73-74 (10 fits) as a separate design / family, run only if
+# it fits the window after the main family; scored on its own (never mixed into the 70-72 bootstrap).
+# The arm block keeps the family key FLAG ('pitcher_id') for dispatch; `id_columns` names the column(s) a new arm reads
+# (the pitcher-only arm is the P38 entry, which reads `pitcher` without the key).  Batter ids come from the sha-pinned
+# sidecar (batter_sidecar.py; never in the export, never read by a direct head before).
 P43_DESIGN = 'p43_batter_id_v1'
+P43_EXT_DESIGN = 'p43_batter_id_ext_v1'
 BATTER_SIDECAR_KEY = 'batter_sidecar'
 BATTER = 'batter_id_periodic_residual_counts'
 BATTER_SHUFFLE = 'batter_id_row_shuffle_periodic_residual_counts'
 PITCHER_BATTER = 'pitcher_batter_id_periodic_residual_counts'
 BATTER_SHUFFLE_SEED = 43_001
-P43_SEEDS = [70, 71, 72, 73, 74]
+P43_SEEDS = [70, 71, 72]
+P43_EXT_SEEDS = [73, 74]
 P43_EARLIER_SEEDS = {**P40_EARLIER_SEEDS, 'EXP-P40-001': list(P40_SEEDS),
                      'EXP-P42-001 (GPU lead DRAFT f1e950c)': [65, 66, 67, 68, 69]}
 BASELINES[BATTER] = {**BASELINES[CANDIDATE], 'name': BATTER, FLAG: {**PITCHER_ID, 'id_columns': ['batter']}}
@@ -154,29 +161,42 @@ BASELINES[PITCHER_BATTER] = {**BASELINES[CANDIDATE], 'name': PITCHER_BATTER,
                              FLAG: {**PITCHER_ID, 'id_columns': ['pitcher', 'batter']}}
 P43_ID_ARMS = (BATTER, BATTER_SHUFFLE, PITCHER_BATTER)
 ID_ARMS = ID_ARMS + P43_ID_ARMS
-P43_ARM_ORDER = (REFERENCE, BATTER, BATTER_SHUFFLE, PITCHER_BATTER)
+P43_ARM_ORDER = (REFERENCE, CANDIDATE, BATTER, PITCHER_BATTER, BATTER_SHUFFLE)
 P43_FITS = len(P43_ARM_ORDER) * len(P43_SEEDS)
+P43_EXT_FITS = len(P43_ARM_ORDER) * len(P43_EXT_SEEDS)
 P43_CONTRASTS = [
     {'name': 'batter_id_vs_row_shuffle', 'candidate': BATTER, 'reference': BATTER_SHUFFLE,
      'isolates': 'batter_identity_information', 'role': 'primary', 'parameter_matched': True,
      'compute_matched': True, 'information_free_capacity_control': 'this contrast (reference = row-shuffled batter ids)'},
+    {'name': 'pitcher_batter_id_vs_pitcher_id', 'candidate': PITCHER_BATTER, 'reference': CANDIDATE,
+     'isolates': 'adding_batter_identity_to_pitcher_identity', 'role': 'primary', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'see batter_id_vs_row_shuffle (batter path only)'},
+    {'name': 'pitcher_batter_id_vs_batter_id', 'candidate': PITCHER_BATTER, 'reference': BATTER,
+     'isolates': 'adding_pitcher_identity_to_batter_identity', 'role': 'secondary', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'not included (P40 holds the pitcher controls)'},
     {'name': 'batter_id_vs_periodic_residual_counts', 'candidate': BATTER, 'reference': REFERENCE,
      'isolates': 'batter_identity_with_id_parameters', 'role': 'secondary', 'parameter_matched': False,
      'compute_matched': False, 'information_free_capacity_control': 'see batter_id_vs_row_shuffle'},
+    {'name': 'pitcher_id_vs_periodic_residual_counts', 'candidate': CANDIDATE, 'reference': REFERENCE,
+     'isolates': 'pitcher_identity_with_id_parameters', 'role': 'secondary', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'not included (P40 holds the pitcher controls)'},
     {'name': 'batter_row_shuffle_vs_periodic_residual_counts', 'candidate': BATTER_SHUFFLE, 'reference': REFERENCE,
      'isolates': 'batter_id_parameters_without_information', 'role': 'capacity_control', 'parameter_matched': False,
      'compute_matched': False, 'information_free_capacity_control': 'candidate side is information-free'},
-    {'name': 'pitcher_batter_id_vs_batter_id', 'candidate': PITCHER_BATTER, 'reference': BATTER,
-     'isolates': 'pitcher_identity_given_batter_identity', 'role': 'secondary', 'parameter_matched': False,
-     'compute_matched': False, 'information_free_capacity_control': 'not included (P40 covers the pitcher path)'},
 ]
 P43_PRIMARY = P43_CONTRASTS[0]['name']
 P43_SUBSET_COLUMN = 'batter'  # in-vocab / UNK subsets use the TRUE batter's TRAIN-vocabulary membership for every arm
 P43_TASK_BOUND_SECONDS = P40_TASK_BOUND_SECONDS  # 1.25 x P38 max task wall 244.7 s (one extra 8 -> 128 gather at most)
-P43_FAMILY_PROJECTION_SECONDS = P43_FITS * P43_TASK_BOUND_SECONDS  # serial, one GPU: 6,117.5 s
+P43_FAMILY_PROJECTION_SECONDS = P43_FITS * P43_TASK_BOUND_SECONDS  # serial, one GPU: 4,588.125 s
+P43_EXT_PROJECTION_SECONDS = P43_EXT_FITS * P43_TASK_BOUND_SECONDS  # 3,058.75 s
 DESIGNS[P43_DESIGN] = {'arms': P43_ARM_ORDER, 'seeds': P43_SEEDS, 'fits': P43_FITS, 'contrasts': P43_CONTRASTS,
                        'primary': P43_PRIMARY, 'earlier_seeds': P43_EARLIER_SEEDS,
                        'projection_seconds': P43_FAMILY_PROJECTION_SECONDS}
+DESIGNS[P43_EXT_DESIGN] = {'arms': P43_ARM_ORDER, 'seeds': P43_EXT_SEEDS, 'fits': P43_EXT_FITS,
+                           'contrasts': P43_CONTRASTS, 'primary': P43_PRIMARY,
+                           'earlier_seeds': {**P43_EARLIER_SEEDS, 'EXP-P43-001': list(P43_SEEDS)},
+                           'projection_seconds': P43_EXT_PROJECTION_SECONDS}
+P43_DESIGNS = (P43_DESIGN, P43_EXT_DESIGN)
 VOCAB_KEYS = ('n_vocab', 'ids_sha256', 'min_count', 'train_rows', 'train_pitchers', 'train_unk_rows',
               'train_max_date', 'last_train_date')
 
@@ -218,7 +238,7 @@ def id_columns(arm):
 
 
 def is_p43(config):
-    return config.get(DESIGN_KEY) == P43_DESIGN
+    return config.get(DESIGN_KEY) in P43_DESIGNS
 
 
 def check_device(config):
@@ -235,8 +255,8 @@ def design(config):
     key = config.get(DESIGN_KEY)
     if key is None:
         return DESIGNS['p38']
-    if key not in (P40_DESIGN, P43_DESIGN):
-        raise ValueError(DESIGN_KEY + ' must be absent (P38) or exactly ' + P40_DESIGN + ' or ' + P43_DESIGN)
+    if key not in (P40_DESIGN, *P43_DESIGNS):
+        raise ValueError(DESIGN_KEY + ' must be absent (P38) or one of ' + ', '.join((P40_DESIGN, *P43_DESIGNS)))
     return DESIGNS[key]
 
 
@@ -396,6 +416,12 @@ def check_fit_p43(config, arm, fit):
         if block is not None:
             raise ValueError(f'{arm}: reference fit carries an id record')
         vocabs, expected = None, BASE_PARAMETERS
+    elif arm == CANDIDATE:  # the P38 entry verbatim: P38 record format (one pitcher vocabulary, no id_columns key)
+        if not isinstance(block, dict) or 'id_columns' in block or 'vocabs' in block \
+                or block.get('index_source', 'identity') != 'identity' or block.get('id_dropout', 0.) != 0.:
+            raise ValueError(f'{arm}: pitcher-only fit must carry the P38 vocabulary record')
+        vocabs = {'pitcher': check_vocab_record(arm, block)}
+        expected = BASE_PARAMETERS + id_parameters(vocabs['pitcher']['n_vocab'])
     else:
         columns = BASELINES[arm][FLAG]['id_columns']
         if not isinstance(block, dict) or block.get('id_columns') != columns \
@@ -410,6 +436,11 @@ def check_fit_p43(config, arm, fit):
     if record['parameter_count'] != expected:
         raise ValueError(f'{arm}: parameter_count {record["parameter_count"]} != registered {expected}')
     return {'cost': record, 'vocab': vocabs}
+
+
+def arm_columns(arm):
+    """Id columns an arm of any pitcher-ID design reads ([] for the reference)."""
+    return [] if arm == REFERENCE else list(BASELINES[arm][FLAG].get('id_columns', ['pitcher']))
 
 
 def check_column_vocabs(tasks):

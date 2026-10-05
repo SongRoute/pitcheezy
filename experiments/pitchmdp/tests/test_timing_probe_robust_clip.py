@@ -754,7 +754,13 @@ RESOURCE_TOOL_DELTA = ['A\texperiments/pitchmdp/scripts/gpu3_bench_child.py',
                        'A\texperiments/pitchmdp/scripts/gpu3_two_slot.py',
                        'A\texperiments/pitchmdp/scripts/p38_resource_child.py',
                        'A\texperiments/pitchmdp/scripts/p38_resource_measure.py']
-RUNTIME_DELTA = sorted(P37_RUNTIME_DELTA + P38_RUNTIME_DELTA + RESOURCE_TOOL_DELTA, key=lambda line: line.split('\t')[1])
+# The P43 DRAFT (next-research, 2026-10-06, batter-ID design inside the pitcher-ID family) adds exactly two new files
+# (the sha-pinned batter sidecar module and the two-path model); its registry / runner / scorer edits are inside the
+# A / M lines above.  P43 will run from its own archived commit; nothing else may move.
+P43_RUNTIME_DELTA = ['A\texperiments/pitchmdp/pitchmdp/batter_sidecar.py',
+                     'A\texperiments/pitchmdp/pitchmdp/direct_pitcher_batter_id_model.py']
+RUNTIME_DELTA = sorted(P37_RUNTIME_DELTA + P38_RUNTIME_DELTA + RESOURCE_TOOL_DELTA + P43_RUNTIME_DELTA,
+                       key=lambda line: line.split('\t')[1])
 
 
 # ------------------------------------------------------------------ full parent run with a fake worker

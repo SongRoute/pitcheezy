@@ -845,10 +845,14 @@ P40_NOTE = ('fresh model RNG seeds 60-64 on the same export and exposed DEV rows
             'subsets and contrasts reported, no verdict')
 
 
-P43_NOTE = ('fresh model RNG seeds 70-74 on the same export and exposed DEV rows: not new data, not an independent '
-            'confirmatory test; designed after reading P25 and P38 (post-selection). Primary contrast = batter id vs '
-            'row-shuffled batter id (same network, parameters and compute; batter column permuted across rows per '
-            'split by a fixed permutation): isolates batter identity information from the id path. Batter ids come '
+P43_NOTE = ('fresh model RNG seeds (70-72; extension 73-74 scored separately) on the same export and exposed DEV rows: '
+            'not new data, not an independent confirmatory test; designed after reading P25 and P38 (post-selection). '
+            'Two co-primary contrasts, exploratory and not multiplicity-adjusted: batter id vs row-shuffled batter id '
+            '(same network, parameters and compute; batter column permuted across rows per split by a fixed '
+            'permutation; isolates batter identity information from the id path) and pitcher+batter vs pitcher id '
+            '(adding batter identity to pitcher identity; not parameter-matched). pitcher+batter vs batter measures '
+            'adding PITCHER to batter, not the reverse. All arms share seeds; P40 / P42 seeds are never paired with '
+            'these. Batter ids come '
             'from a sha-pinned sidecar joined by the export keys (ids only). Vocabularies are TRAIN-only per column '
             'and re-derived here; subsets use TRAIN-vocabulary membership of the TRUE batter; all seeds, subsets and '
             'contrasts reported, no verdict')
@@ -856,8 +860,8 @@ P43_NOTE = ('fresh model RNG seeds 70-74 on the same export and exposed DEV rows
 
 def p43_parameters(arms, vocab):
     """Allocated parameters per P43 arm: base + one id path per column the arm reads."""
-    return {arm: pid_registry.BASE_PARAMETERS + sum(vocab[c]['id_parameters'] for c in (
-        pid_registry.BASELINES[arm].get(pid_registry.FLAG, {}).get('id_columns', []))) for arm in arms}
+    return {arm: pid_registry.BASE_PARAMETERS + sum(vocab[c]['id_parameters'] for c in pid_registry.arm_columns(arm))
+            for arm in arms}
 
 
 def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256, family, destination, rows,
@@ -983,8 +987,9 @@ def pitcher_id_table(result):
         for column, one in v.items():
             lines.append(f"{column} TRAIN 어휘 {one['n_vocab']}명(TRAIN {one['min_count']}구 이상, 전체 {one['train_pitchers']}명, "
                          f"UNK TRAIN 행 {one['train_unk_rows']}/{one['train_rows']}), 추가 파라미터 {one['id_parameters']}.")
-        lines += ['주 대비는 타자 ID − 행 섞기 대조군(같은 망·파라미터·연산, 타자 열만 행끼리 섞음)입니다. 행 묶음(in_vocab/unk)은 실제 '
-                  '타자의 TRAIN 어휘 포함 여부입니다. 대조군은 ID 경로와 크기를 맞춘 것이고 일반 백본 확장과 같다는 뜻은 아닙니다.', '']
+        lines += ['주 대비는 두 개입니다(탐색, 다중 비교 보정 없음): ① 타자 ID − 행 섞기 대조군(같은 망·파라미터·연산, 타자 열만 행끼리 섞음), '
+                  '② 투수+타자 − 투수(투수 ID에 타자 ID를 더한 효과). 투수+타자 − 타자는 타자에 투수를 더한 효과입니다. 행 묶음(in_vocab/unk)은 '
+                  '실제 타자의 TRAIN 어휘 포함 여부입니다. 대조군은 ID 경로와 크기를 맞춘 것이고 일반 백본 확장과 같다는 뜻은 아닙니다.', '']
         return '\n'.join(lines + pitcher_id_table_body(result))
     lines = [f"# {result['family']} 투수 ID 임베딩 (후보 − 기준, 반복 DEV 서술, 판정 없음)", '',
              f"TRAIN 어휘 {v['n_vocab']}명(TRAIN {v['min_count']}구 이상, 전체 TRAIN 투수 {v['train_pitchers']}명, "
@@ -1006,7 +1011,8 @@ def pitcher_id_table_body(result):
     block, lines = result['seed_block'], []
     for split, contrasts in result['pitcher_id_contrasts'].items():
         for name, by_subset in contrasts.items():
-            head = f'## {split}' if len(contrasts) == 1 else f'## {split} — {name}' + (' (주 대비)' if name == block['primary'] else '')
+            primary = name == block['primary'] or any((one or {}).get('role') == 'primary' for one in by_subset.values())
+            head = f'## {split}' if len(contrasts) == 1 else f'## {split} — {name}' + (' (주 대비)' if primary else '')
             lines += [head, '', '| 행 묶음 | 행 수 | ΔNLL 앙상블 [95%] | ΔBrier 앙상블 [95%] | 시드별 ΔNLL |', '|---|---|---|---|---|']
             for subset, one in by_subset.items():
                 rows = result['pitcher_id_rows'][split][subset]['rows']

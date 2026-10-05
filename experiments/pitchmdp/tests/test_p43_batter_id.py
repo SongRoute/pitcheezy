@@ -34,9 +34,11 @@ from pitchmdp import direct_pitcher_id_model as pidm  # noqa: E402
 from pitchmdp import direct_pitcher_id_registry as pid  # noqa: E402
 
 RUN = REPO / 'configs' / 'DRAFT-CUDA-BATTER-ID-20261006.json'
-RUN_SHA256 = '00202862d08725c6898e0d213b8c46c1288d9b7e694343792b1c1a8bcf2cd3c4'
+RUN_SHA256 = 'bc94ae86a2482c920ebd3cb8a898774bcbbb4c5862d58639556621f4b7a442e2'
+EXT = REPO / 'configs' / 'DRAFT-CUDA-BATTER-ID-EXT-20261006.json'
+EXT_SHA256 = '389c81b369a206460202aeda8b683a66da5df3e565dda0c380417e61f998782a'
 MAKE = LAUNCH / 'make_p43_config.py'
-REF, BAT, SHUF, BOTH = pid.REFERENCE, pid.BATTER, pid.BATTER_SHUFFLE, pid.PITCHER_BATTER
+REF, PIT, BAT, SHUF, BOTH = pid.REFERENCE, pid.CANDIDATE, pid.BATTER, pid.BATTER_SHUFFLE, pid.PITCHER_BATTER
 DIRNAME = 'batter-sidecar-test'
 
 
@@ -173,8 +175,16 @@ def test_draft_is_generated_deterministically_and_passes_the_runner_check():
         assert raw[key] == p40[key], key
     cfg = rc.config_check(copy.deepcopy(raw))
     assert cfg['status'] == 'DRAFT' and cfg['execution']['enabled'] is False and 'registration' not in cfg
-    assert cfg['seeds'] == [70, 71, 72, 73, 74] and cfg['fits'] == 20 and cfg['training']['epochs'] == 60
-    assert [a['name'] for a in cfg['arms']] == list(pid.P43_ARM_ORDER)
+    assert cfg['seeds'] == [70, 71, 72] and cfg['fits'] == 15 and cfg['training']['epochs'] == 60
+    assert [a['name'] for a in cfg['arms']] == [REF, PIT, BAT, BOTH, SHUF] == list(pid.P43_ARM_ORDER)
+    assert cfg['arms'][1] == json.loads((REPO / 'configs' / 'EXP-P38-001.json').read_text())['arms'][1]  # P38 verbatim
+    roles = {c['name']: c['role'] for c in cfg['comparison'][pid.CONTRAST_KEY]}
+    assert [n for n, r in roles.items() if r == 'primary'] == ['batter_id_vs_row_shuffle', 'pitcher_batter_id_vs_pitcher_id']
+    ext = rc.config_check(json.loads(EXT.read_text()))
+    assert hashlib.sha256(EXT.read_bytes()).hexdigest() == EXT_SHA256 and ext['experiment_id'] == 'EXP-P43-002'
+    assert ext['seeds'] == [73, 74] and ext['fits'] == 10 and ext['arms'] == cfg['arms']
+    assert {k for k in set(ext) | set(cfg) if ext.get(k) != cfg.get(k)} <= {
+        'experiment_id', pid.DESIGN_KEY, 'purpose', 'control_reuse', 'seeds', 'seed_rule', 'fits', 'queue', 'execution'}
     assert cfg['device'] == {'kind': 'cuda', 'allowed_gpu_uuids': [w.GPU3], 'max_parallel': 1, 'cpu_fallback': False}
     assert cfg['queue']['date'] is None and cfg['queue']['launch_by'] is None  # no window until registration
     assert cfg[pid.BATTER_SIDECAR_KEY]['sidecar_sha256'].startswith('ad2eacc6')
@@ -188,10 +198,11 @@ def test_design_guards():
     assert {65, 66, 67, 68, 69, 60, 49, 53} <= {s for b in pid.P43_EARLIER_SEEDS.values() for s in b}
     for change, match in ((lambda c: c.pop(pid.BATTER_SIDECAR_KEY), 'batter_sidecar'),
                           (lambda c: c[pid.BATTER_SIDECAR_KEY].update(dirname='../x'), 'batter_sidecar'),
-                          (lambda c: c.update(seeds=[60, 61, 62, 63, 64]), 'seeds'),
-                          (lambda c: c['arms'][1][pid.FLAG].update(id_columns=['pitcher']), 'differs'),
-                          (lambda c: c['arms'][2][pid.FLAG].update(shuffle_seed=40001), 'differs'),
-                          (lambda c: c['arms'].pop(3), 'exactly')):
+                          (lambda c: c.update(seeds=[60, 61, 62]), 'seeds'),
+                          (lambda c: c.update(seeds=[73, 74], fits=10), 'seeds'),  # extension seeds need the ext design
+                          (lambda c: c['arms'][2][pid.FLAG].update(id_columns=['pitcher']), 'differs'),
+                          (lambda c: c['arms'][4][pid.FLAG].update(shuffle_seed=40001), 'differs'),
+                          (lambda c: c['arms'].pop(1), 'exactly')):
         cfg = copy.deepcopy(base)
         change(cfg)
         with pytest.raises(ValueError, match=match):
@@ -200,7 +211,11 @@ def test_design_guards():
     p40[pid.BATTER_SIDECAR_KEY] = base[pid.BATTER_SIDECAR_KEY]
     with pytest.raises(ValueError, match='P43 batter-ID design only'):
         rc.config_check(p40)
-    assert pid.P43_FAMILY_PROJECTION_SECONDS == 6117.5
+    assert pid.P43_FAMILY_PROJECTION_SECONDS == 4588.125 and pid.P43_EXT_PROJECTION_SECONDS == 3058.75
+    ext = json.loads(EXT.read_text())
+    ext['seeds'] = [70, 71]
+    with pytest.raises(ValueError, match='seeds'):  # the extension never reuses main seeds
+        rc.config_check(ext)
 
 
 # ------------------------------------------------------------------ networks
@@ -298,6 +313,12 @@ def test_end_to_end_cpu_family_scores_four_contrasts(tmp_path, monkeypatch):
             if arm == REF:
                 assert block is None and fit['parameter_count'] == pid.BASE_PARAMETERS
                 continue
+            if arm == PIT:  # P38 entry verbatim: P38 record format and network
+                assert 'id_columns' not in block and block['n_vocab'] == 2
+                assert fit['parameter_count'] == pid.BASE_PARAMETERS + pid.id_parameters(2)
+                assert rc.load_model(rc.arm_spec(cfg, arm), dest / 'model.pt', 'cpu').net.config['id_seed'] == \
+                    seed + pidm.ID_SEED_OFFSET
+                continue
             columns = pid.BASELINES[arm][pid.FLAG]['id_columns']
             assert block['id_columns'] == columns and set(block['vocabs']) == set(columns)
             assert block['vocabs']['batter']['n_vocab'] == 2 and block['vocabs']['batter']['train_unk_rows'] == 50
@@ -313,7 +334,8 @@ def test_end_to_end_cpu_family_scores_four_contrasts(tmp_path, monkeypatch):
     assert result['decision'] is None and result['seed_block']['primary'] == pid.P43_PRIMARY
     assert result['seed_block']['subset_column'] == 'batter' and set(result['vocabulary']) == {'pitcher', 'batter'}
     params = result['seed_block']['parameters']
-    assert params[BAT] == params[SHUF] > params[REF] and params[BOTH] > params[BAT]
+    assert params[BAT] == params[SHUF] > params[REF] and params[PIT] > params[REF]
+    assert params[BOTH] == params[PIT] + params[BAT] - params[REF]
     for split in ('dev', 'mlb_dev'):
         assert set(result['pitcher_id_contrasts'][split]) == {c['name'] for c in pid.P43_CONTRASTS}
         unk = int(np.isin(splits[split]['batter'], [203, 299]).sum())  # TRUE batter membership for every arm
@@ -324,7 +346,7 @@ def test_end_to_end_cpu_family_scores_four_contrasts(tmp_path, monkeypatch):
     assert 'row-shuffled batter id' in result['seed_block']['note']
     assert 'batter_sidecar.json' in result['provenance']['export']['scored_arrays_sha256']
     table = (tmp_path / 'score' / 'table_ko.md').read_text()
-    assert '타자 ID 임베딩' in table and '(주 대비)' in table and table.count('## mlb_dev — ') == 4
+    assert '타자 ID 임베딩' in table and table.count('(주 대비)') == 4 and table.count('## mlb_dev — ') == 6
     # a tampered sidecar after the fits is refused by the scorer
     np.save(directory / 'mlb_dev' / 'batter.npy', splits['mlb_dev']['batter'][::-1].copy())
     with pytest.raises(ValueError, match='array hash'):
@@ -346,13 +368,15 @@ def dated_text(tmp_path, date='2026-10-06', hhmm='10:00'):
     return out.read_text()
 
 
-def smoke_fits(vocab=None):
+def smoke_fits(vocab=None, seeds=tuple(pid.P43_SEEDS)):
     fits = {}
     for arm in pid.P43_ARM_ORDER:
-        for seed in pid.P43_SEEDS:
+        for seed in seeds:
             fit = {'runtime': {'bound_uuid': pid.RETAINED_GPU}, 'dev_used_for_fit_or_selection': False,
                    'report': {'seconds': 30. + (arm != REF), 'epochs_run': 2}}
-            if arm != REF:
+            if arm == PIT:
+                fit[pid.FLAG] = {**{k: 1 for k in pid.VOCAB_KEYS}, 'n_vocab': 3, 'train_max_date': 20250430}
+            elif arm != REF:
                 columns, source, shuffle = launch.MODES[arm]
                 fit[pid.FLAG] = {'id_columns': columns, 'index_source': source, 'shuffle_seed': shuffle,
                                  'vocabs': {c: {**{k: 1 for k in pid.VOCAB_KEYS}, 'n_vocab': 3 if c == 'pitcher' else
@@ -365,7 +389,7 @@ def smoke_fits(vocab=None):
 def test_dated_draft_moves_only_the_clock(tmp_path):
     text = dated_text(tmp_path)
     cfg = launch.dated_check(text)
-    assert cfg['queue']['launch_by'] == '10:00' and cfg['queue']['no_new_fit_after'] == '11:45'
+    assert cfg['queue']['launch_by'] == '10:00' and cfg['queue']['no_new_fit_after'] == '11:20'
     bad = json.loads(text)
     bad['seeds'] = [70, 71, 72, 73, 75]
     with pytest.raises(ValueError, match='more than the queue'):
@@ -378,11 +402,23 @@ def test_dated_draft_moves_only_the_clock(tmp_path):
         subprocess.run([sys.executable, str(MAKE), '--clock', '2026-10-06', '10:00', '--out', str(RUN)], check=True,
                        capture_output=True)
     assert hashlib.sha256(RUN.read_bytes()).hexdigest() == RUN_SHA256
+    out = tmp_path / 'ext-dated.json'
+    subprocess.run([sys.executable, str(MAKE), '--extension', '--clock', '2026-10-06', '12:00', '--out', str(out)],
+                   check=True, capture_output=True)
+    ext = launch.dated_check(out.read_text())
+    assert ext['experiment_id'] == 'EXP-P43-002' and ext['queue']['no_new_fit_after'] == '12:55'  # 10 x 305.9 s
+    assert hashlib.sha256(EXT.read_bytes()).hexdigest() == EXT_SHA256
 
 
 def test_smoke_validity_refuses_wrong_mode_gpu_and_vocab():
     good = launch.evaluate(smoke_fits())
-    assert good['valid'] and good['tasks'] == 20 and set(good['smoke_vocabulary']) == {'pitcher', 'batter'}
+    assert good['valid'] and good['tasks'] == 15 and set(good['smoke_vocabulary']) == {'pitcher', 'batter'}
+    fits = smoke_fits()
+    fits[PIT][71][pid.FLAG]['n_vocab'] = 4  # pitcher vocabulary differs between the P38 arm and the two-path arm
+    assert any('per id column' in e for e in launch.evaluate(fits)['errors'])
+    fits = smoke_fits()
+    fits[PIT][70][pid.FLAG]['index_source'] = 'row_shuffle'
+    assert any('P38 pitcher vocabulary' in e for e in launch.evaluate(fits)['errors'])
     fits = smoke_fits({(BAT, 71): 6})  # a seed-dependent batter vocabulary
     assert 'one TRAIN-only vocabulary record per id column' in ' '.join(launch.evaluate(fits)['errors'])
     fits = smoke_fits()
@@ -392,9 +428,12 @@ def test_smoke_validity_refuses_wrong_mode_gpu_and_vocab():
     fits[BOTH][70][pid.FLAG]['id_columns'] = ['batter']
     assert any('name exactly' in e for e in launch.evaluate(fits)['errors'])
     fits = smoke_fits()
-    fits[REF][73]['runtime']['bound_uuid'] = pid.RELEASED_GPUS[0]
+    fits[REF][72]['runtime']['bound_uuid'] = pid.RELEASED_GPUS[0]
     errors = launch.evaluate(fits)['errors']
     assert any('released GPU' in e for e in errors) and any('UUID set' in e for e in errors)
+    ext = launch.evaluate(smoke_fits(seeds=(73, 74)), design=pid.P43_EXT_DESIGN)
+    assert ext['valid'] and ext['tasks'] == ext['expected_tasks'] == 10
+    assert not launch.evaluate(smoke_fits(), design=pid.P43_EXT_DESIGN)['valid']  # main seeds are not the extension
 
 
 def test_registration_changes_only_registration_paths_and_checks_the_clock(tmp_path):
@@ -419,7 +458,7 @@ def test_registration_changes_only_registration_paths_and_checks_the_clock(tmp_p
 
 def test_pipeline_template_fails_closed_and_names_only_gpu3():
     text = TEMPLATE.read_text()
-    assert text.count("'FILL_AT_REGISTRATION'") == 8  # 7 placeholders + the not-filled guard and 'template: placeholder not filled' in text
+    assert text.count("'FILL_AT_REGISTRATION'") == 9  # 8 placeholders + the not-filled guard and 'template: placeholder not filled' in text
     assert w.GPU4 not in text and pid.RETAINED_GPU in text and "'--gpu',GPU3" in text
     assert 'run-p4' not in text.replace('run-p40-pipeline', '').replace('run-p42-pipeline', '')  # no pgrep self-match
     assert "score-p40-state.json','score-p42-state.json" in text and 'batter-sidecar-49097109/sidecar.json' in text
