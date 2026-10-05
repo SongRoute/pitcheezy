@@ -161,3 +161,17 @@ def test_template_clock_bounds():
     with pytest.raises(AssertionError, match='queue.date'):
         clock(q, now('18:55') + timedelta(days=1), gate.FAMILY_PROJECTION_SECONDS)
     assert math.isclose(gate.FAMILY_PROJECTION_SECONDS / 3600, 1.9115, abs_tol=1e-3)
+
+
+def test_template_scores_only_after_15_of_15_and_before_the_score_deadline():
+    """Launch review (codex/p37-launch-1005): the two 'incomplete' branches precede the only scorer call."""
+    tree = ast.parse(TEMPLATE.read_text())
+    branch = next(n for n in ast.walk(tree) if isinstance(n, ast.If)
+                  and ast.unparse(n.test) == "counts != {'done': 15}")
+    assert "save('incomplete'" in ast.unparse(branch.body[0])
+    late = branch.orelse[0]
+    assert isinstance(late, ast.If) and ast.unparse(late.test) == 'datetime.datetime.now(kst) > score_by'
+    assert "save('incomplete'" in ast.unparse(late.body[0])
+    scored = ast.unparse(ast.Module(late.orelse, []))
+    assert "execute('score-p37-001', score, SCORE_SECONDS)" in scored and "save('complete'" in scored
+    assert ast.unparse(tree).count('score_cuda_direct.py') == 1

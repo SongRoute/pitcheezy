@@ -106,7 +106,7 @@ Reading guide fixed now (descriptive, not a decision rule):
   these rows (still repeated DEV, not promotion);
 - intervals covering 0 or splits disagreeing (as in P32 mlb_dev) → these rows do not show the periodic map beating the
   LR map at near-equal parameters. This is **not** evidence that capacity caused the P36 periodic-vs-control gain (a null
-  here proves no cause; any "capacity" reading is a cross-family inference, review 6b66436 m5) — reported as not
+  here cannot establish any cause; any "capacity" reading is a cross-family inference, review 6b66436 m5) — reported as not
   distinguished, nothing more;
 - interval above 0 → LR at least as good at lower compute; reported, not adopted.
 Any later adoption needs a separate gated decision (unseen data / G0 / D155 rules unchanged).
@@ -139,6 +139,11 @@ Any later adoption needs a separate gated decision (unseen data / G0 / D155 rule
   dated plan. **Scoring (review 6b66436 m2)**: only after 15/15, scorer timeout 900 s, started no later than 21:45 so it
   ends ≤ 22:00; if the family is not 15/15 or the scorer cannot end by 22:00, it is not scored and is reported
   **incomplete by 22:30** (< 23:00). An incomplete family is reported as incomplete; rigor is not reduced to fit the clock.
+- **Config erratum (launch review, codex/p37-launch-1005, before any smoke)**: the DRAFT config string
+  `queue.stop_rule` is inherited verbatim from EXP-P36-001 (it mentions 20 tasks, GPU3/GPU4 and robust-clip). It is
+  descriptive text read by no code and is left unchanged so the reviewed DRAFT sha `75265fc7…` stays pinned. It is NOT
+  the P37 stop rule: the P37 rules are §4 (TRAIN-smoke gate), §7 (clock, GPU3 only) and §8 (order); the queue code
+  enforces `max_attempts` 2 and the clock.
 
 ## 8. Gates before registration / launch (in order)
 
