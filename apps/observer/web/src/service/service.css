@@ -78,7 +78,7 @@ body.sv-locked{overflow:hidden}
 .sv-key-prev{width:12px;height:12px;border-radius:50%;background:#9aa39e;flex:none}
 .sv-key-actual{width:13px;height:13px;border-radius:50%;background:var(--sv-actual);flex:none}
 .sv-cands{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-.sv-cand{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"rank type" "zone zone" "share share";align-items:center;gap:1px 6px;min-height:72px;padding:6px 8px;border:1.5px solid var(--sv-line);border-radius:12px;background:var(--sv-paper);text-align:left;color:var(--sv-ink);font-size:15px}
+.sv-cand{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"rank type" "share zone";align-items:center;gap:1px 6px;min-height:56px;padding:6px 8px;border:1.5px solid var(--sv-line);border-radius:12px;background:var(--sv-paper);text-align:left;color:var(--sv-ink);font-size:15px}
 .sv-cand.on{border:2.5px solid var(--sv-rec);background:#eaf3ef}
 .sv-cand-rank{grid-area:rank;width:24px;height:24px;border:2px dashed var(--sv-rec);border-radius:4px;display:grid;place-items:center;font-weight:900;font-size:14px;color:var(--sv-rec)}
 .sv-cand-type{grid-area:type;font-weight:900;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -118,7 +118,7 @@ body.sv-locked{overflow:hidden}
 .sv-notes{margin:0;padding-left:18px;display:grid;gap:8px;font-size:15px;line-height:1.5}
 
 /* short screens: tighten spacing, keep type sizes; below ~560px tall the page may scroll instead of clipping */
-@media (max-height:700px){.sv-top{min-height:44px}.sv-board{padding:4px 8px;gap:2px}.sv-score strong{font-size:21px}.sv-mode{min-height:44px;margin-top:4px}.sv-cand{min-height:64px;padding:4px 6px}.sv-stage{gap:4px}.sv-foot .sv-link{min-height:36px}}
+@media (max-height:700px){.sv-top{min-height:44px}.sv-board{padding:4px 8px;gap:2px}.sv-score strong{font-size:21px}.sv-mode{min-height:44px;margin-top:4px}.sv-cand{min-height:52px;padding:4px 6px}.sv-stage{gap:4px}.sv-foot .sv-link{min-height:36px}}
 @media (max-width:359px){.sv-actual-line{flex-wrap:nowrap;min-width:0}.sv-actual-line b{white-space:nowrap}.sv-actual-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sv-top{min-height:44px;padding:2px 8px}.sv-cand{font-size:14px;padding:4px 5px}.sv-cand-type{font-size:15px}.sv-cand-zone{font-size:13px}.sv-matchup{font-size:14px}.sv-btn{padding:0 8px}}
 @media (min-width:700px){.sv-page{border-left:1px solid var(--sv-line);border-right:1px solid var(--sv-line)}}
 @media (max-height:620px){.sv-cand{min-height:0;padding:3px 6px;line-height:1.2;gap:0 6px}.sv-cand-rank{width:22px;height:22px}.sv-zone-wrap{min-height:140px}.sv-nav{gap:4px;padding-top:4px}.sv-board{gap:0}.sv-rec-head{font-size:14px}.sv-actual-line{min-height:26px}.sv-top{min-height:44px;padding-top:0;padding-bottom:0}}
@@ -126,3 +126,7 @@ body.sv-locked{overflow:hidden}
 /* Integration (review-integration-002): the zone keeps a legible minimum (labels ≥ ~11px rendered) instead of being
    squeezed; on default-size phones everything fits one screen, and only with very large text / page zoom on small
    phones does the page scroll normally (nothing clipped, no text shrunk). */
+@media (max-height:700px){.sv-zone-wrap{min-height:116px}}
+@media (max-height:620px){.sv-zone-wrap{min-height:110px}.sv-pa-open small{display:none}.sv-pa-open{min-height:44px}.sv-stage{padding-top:4px}}
+.sv-cand-type,.sv-cand-zone{white-space:normal;overflow:visible;text-overflow:clip;word-break:keep-all;overflow-wrap:anywhere;line-height:1.2}
+.sv-cand{gap:2px 5px;padding-left:6px;padding-right:6px}
