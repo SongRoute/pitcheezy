@@ -245,6 +245,14 @@ def build(feed, watch=None, setup=None):
     away = home = 0
     prev_half, outs = None, 0
     bases = dict.fromkeys(('first', 'second', 'third'))
+    previous = None  # last pitch so far: its after-state and whether a state-changing non-pitch event follows it
+
+    def snapshot(inning, half, balls, strikes):
+        state = {'inning': inning, 'half': half, 'outs': outs, 'balls': balls, 'strikes': strikes,
+                 'home_score': home, 'away_score': away, 'runners': _occupied(bases)}
+        state['bases'] = sum(bit for bit, base in ((1, 'first'), (2, 'second'), (4, 'third')) if state['runners'][base])
+        return state
+
     for play in plays:
         about, matchup = play.get('about') or {}, play.get('matchup') or {}
         half = 'Top' if about.get('isTopInning') else 'Bot'
@@ -310,6 +318,7 @@ def build(feed, watch=None, setup=None):
                 pa['first_index'] = pitch['index'] if pa['first_index'] is None else pa['first_index']
                 pa['last_index'] = pitch['index']
             # after this event: its runner moves, its runs, the feed's count (balls/strikes/outs after the event)
+            before_event = (outs, away, home, tuple(_occupied(bases).values()))
             _pinch_runner(bases, event)
             runs = _apply_moves(bases, moves.get(event_index, []))
             if about.get('isTopInning'):
@@ -320,6 +329,19 @@ def build(feed, watch=None, setup=None):
                 away, home = details['awayScore'], details['homeScore']
             count = event.get('count') or {}
             balls, strikes, outs = count.get('balls', balls), count.get('strikes', strikes), count.get('outs', outs)
+            if is_pitch:
+                if last_of_pa:  # the PA's own result (runs, outs) belongs to its last pitch
+                    away, home = result.get('awayScore', away), result.get('homeScore', home)
+                    outs = (play.get('count') or {}).get('outs', outs)
+                after = snapshot(inning, half, 0 if last_of_pa else balls, 0 if last_of_pa else strikes)
+                if after['outs'] >= 3:  # side retired: the board shows the half as over, nobody on
+                    after |= {'runners': {'first': False, 'second': False, 'third': False}, 'bases': 0}
+                pitches[-1]['situation_after'], pitches[-1]['gap_after'] = after, False
+                previous = pitches[-1]
+            elif previous is not None and (
+                    before_event != (outs, away, home, tuple(_occupied(bases).values()))
+                    or details.get('eventType') in ('pitching_substitution', 'offensive_substitution')):
+                previous['gap_after'] = True  # runner/score/out change or a new pitcher/batter between two pitches
         pas.append(pa)
         if complete:
             away, home = result.get('awayScore', away), result.get('homeScore', home)
@@ -329,5 +351,9 @@ def build(feed, watch=None, setup=None):
         line = live.get('linescore') or {}
         final = {'away': ((line.get('teams') or {}).get('away') or {}).get('runs', away),
                  'home': ((line.get('teams') or {}).get('home') or {}).get('runs', home)}
+    last_half = prev_half or (None, None)
+    now = snapshot(last_half[0], last_half[1], balls, strikes)  # after every event in the feed
+    if now['outs'] >= 3:
+        now |= {'runners': {'first': False, 'second': False, 'third': False}, 'bases': 0}
     return {'card': game_card(feed), 'pitches': pitches, 'pas': pas, 'final': final, 'zone_bounds': bounds,
-            'has_watch': watch is not None}
+            'has_watch': watch is not None, 'state_now': now}

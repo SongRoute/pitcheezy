@@ -24,6 +24,7 @@ from .demo_clock import DemoError
 DEFAULT_FEED_DIR = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/feeds')
 EMBARGO_PATH = re.compile(r'^/api/(?:watch|replay|live)/(\d+)(?:/|$)')
 NO_STORE = {'Cache-Control': 'no-store'}
+INTERNAL = ('situation_after', 'gap_after')  # server-only: gap_after would reveal that something happens later
 LIVE_STALE_S = 30
 
 
@@ -104,21 +105,26 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
     cutoff = min(cutoff, last)
     over = cutoff == last and record['final'] is not None and live_current is None
     nxt = pitches_all[cutoff+1] if cutoff+1 <= last else None
+    lastp = pitches_all[cutoff] if cutoff >= 0 else None
+    # A runner/score/out change or a pitcher/batter substitution between the last released pitch and the next one is
+    # not released yet (its own time is not mapped): hold the after-last-pitch state and withhold the next pitch's view.
+    held = nxt is not None and live_current is None and lastp is not None and lastp.get('gap_after', False)
     visible = pitches_all[:cutoff+1]
-    boundary_ab = nxt['at_bat_number'] if nxt else float('inf')
+    boundary_ab = (lastp['at_bat_number'] if held else nxt['at_bat_number']) if nxt else float('inf')
     whole = over or live_current is not None or nxt is None
     pas = []
     for pa in pas_all:
         if not whole and pa['at_bat_number'] > boundary_ab:
             continue
-        done = pa['complete'] and (whole or pa['at_bat_number'] < boundary_ab)
+        done = pa['complete'] and (whole or pa['at_bat_number'] < boundary_ab or
+                                   (pa['last_index'] is not None and pa['last_index'] <= cutoff))
         item = dict(pa)
         item['pitch_count'] = sum(1 for p in visible if p['pa_key'] == pa['pa_key'])
         item['last_index'] = max((p['index'] for p in visible if p['pa_key'] == pa['pa_key']), default=None)
         if not done:
             item |= {'complete': False, 'event': None, 'event_label': None, 'result_text': None, 'play_text': None}
         pas.append(item)
-    visible = [dict(p) for p in visible]
+    visible = [{k: v for k, v in p.items() if k not in INTERNAL} for p in visible]
     for pitch in visible:  # terminal fields of a PA still in progress at the cutoff stay hidden
         if not next((pa for pa in pas if pa['pa_key'] == pitch['pa_key']), {}).get('complete'):
             pitch['actual'] = pitch['actual'] | {'event': None, 'event_label': None, 'play_text': None,
@@ -126,10 +132,15 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
     card = dict(record['card'])
     if live_current is not None:
         current, situation = live_current, live_current.get('situation')
-    elif over:
-        lastp = pitches_all[-1]
-        situation = dict(lastp['situation_before']) | {'away_score': record['final']['away'], 'home_score': record['final']['home']}
+    elif over:  # after the final event, not before the last pitch
+        situation = dict(lastp.get('situation_after') or lastp['situation_before']) | {'away_score': record['final']['away'], 'home_score': record['final']['home']}
         current = {'phase': 'final', 'situation': situation, 'batter': lastp['batter'], 'pitcher': lastp['pitcher'], 'pa_key': lastp['pa_key']}
+    elif held:
+        situation = dict(lastp['situation_after'])
+        pa_done = next((pa for pa in pas_all if pa['pa_key'] == lastp['pa_key']), {}).get('last_index') == lastp['index']
+        current = {'phase': 'between_innings' if situation['outs'] >= 3 else 'resolving', 'situation': situation,
+                   'batter': None if pa_done else lastp['batter'], 'pitcher': lastp['pitcher'],
+                   'pa_key': None if pa_done else lastp['pa_key']}
     elif nxt is not None:
         situation = nxt['situation_before']
         current = {'phase': 'pre_pitch', 'situation': situation, 'batter': nxt['batter'], 'pitcher': nxt['pitcher'], 'pa_key': nxt['pa_key']}
@@ -141,11 +152,12 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
     if situation:
         card |= {'away_score': situation.get('away_score'), 'home_score': situation.get('home_score')}
         if not over:
-            card |= {'inning': nxt['inning'] if nxt and live_current is None else situation.get('inning'),
-                     'half': nxt['half'] if nxt and live_current is None else situation.get('half')}
+            ahead = nxt and live_current is None and not held
+            card |= {'inning': nxt['inning'] if ahead else situation.get('inning'),
+                     'half': nxt['half'] if ahead else situation.get('half')}
     if over:
         card |= {'away_score': record['final']['away'], 'home_score': record['final']['home'], 'inning': None, 'half': None}
-    if next_rec is None and nxt is not None and not over and live_current is None:
+    if next_rec is None and nxt is not None and not over and live_current is None and not held:
         next_rec = {'pitch_key': None, 'rec': nxt['rec']}
     if after is not None:
         visible = [p for p in visible if p['index'] > after]
