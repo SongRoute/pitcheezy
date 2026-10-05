@@ -20,13 +20,22 @@ export type PitchRow = { index: number; key: string; pa_key: string; at_bat_numb
 export type GameStatus = 'scheduled' | 'live' | 'final' | 'postponed' | 'other';
 export type GameCard = { game_pk: number; start: string | null; kst_date: string; status: GameStatus; status_text: string;
   away_team: string; home_team: string; away_score: number | null; home_score: number | null; inning: number | null; half: Half | null;
-  game_number: number; double_header: boolean; embargoed: boolean };
+  game_number: number; double_header: boolean; embargoed: boolean;
+  /** rev3 optional (api-rev3-031): venue name from the feed; absent → not shown. */
+  venue?: string | null };
 export type Phase = 'pregame' | 'pre_pitch' | 'resolving' | 'between_innings' | 'final';
 export type Current = { phase: Phase; situation: Situation; batter: (Person & { side: string }) | null; pitcher: (Person & { hand: string }) | null; pa_key: string | null };
 export type Pa = { pa_key: string; at_bat_number: number; inning: number; half: Half; batter: string; pitcher: string;
   first: number; last: number; complete: boolean; result: string };
 export type Detail = { game: GameCard; pitches: PitchRow[]; pas: Pa[]; current: Current | null; next: Rec | null; cutoff: number | null; session: string | null;
-  feed: { as_of: string | null; ok: boolean; stale_s: number | null }; zone_bounds: Bounds; notes: string[] };
+  feed: { as_of: string | null; ok: boolean; stale_s: number | null }; zone_bounds: Bounds; notes: string[];
+  /** rev3 optional: half-innings computed from plays published up to the cutoff only; null cell = not reached yet. */
+  linescore_asof?: Linescore | null;
+  /** rev3 optional: per-player game jersey and pre-game (as-of) season stats; null stat = unknown → '–', never a current-season value. */
+  players?: Record<string, PlayerInfo> | null };
+export type LineTeam = { innings: (number | null)[]; r: number | null; h: number | null; e: number | null; bb_hbp: number | null };
+export type Linescore = { innings: number; away: LineTeam; home: LineTeam };
+export type PlayerInfo = { jersey?: string | null; era?: number | null; avg?: number | null; ops?: number | null; stats_as_of?: string | null };
 
 const TEAMS: Record<string, string> = {
   'Arizona Diamondbacks': '애리조나', 'Athletics': '애슬레틱스', 'Atlanta Braves': '애틀랜타', 'Baltimore Orioles': '볼티모어',
