@@ -30,7 +30,7 @@ GPU3 = 'GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9'
 RELEASED = ('GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99',)  # GPU4, returned to another project
 MAX_SLOTS = 2  # hard cap; 3-4 slots are not part of this protocol
 TERMINAL = ('complete', 'incomplete', 'blocked')
-OTHER_GPU_WORK = 'cuda_direct_queue.py|score_cuda_direct|timing_probe_|gpu3_bench_child'
+OTHER_GPU_WORK = 'cuda_direct_queue.py|score_cuda_direct|timing_probe_|gpu3_bench_child|run-p3[0-9]-pipeline'
 GIB = 1 << 30
 
 
@@ -369,6 +369,18 @@ def bench(spec_path, out, *, preflight_fn=preflight, sampler_cls=Sampler, comman
     return record
 
 
+def interrupted(signum, frame):
+    """SIGTERM/SIGINT/SIGHUP (e.g. the outer `timeout`) become an exception, so run() stops its own child groups
+    (they live in their own sessions and would otherwise outlive the supervisor on GPU3) and bench() releases the
+    lock and still writes bench.json."""
+    raise RuntimeError(f'supervisor interrupted by signal {signum}')
+
+
+def install_signal_handlers():
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, interrupted)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='command', required=True)
@@ -376,6 +388,7 @@ def main(argv=None):
     b.add_argument('--spec', type=Path, required=True)
     b.add_argument('--out', type=Path, required=True)
     args = p.parse_args(argv)
+    install_signal_handlers()
     result = bench(args.spec, args.out)
     print('GPU3_TWO_SLOT_BENCH', result['decision']['verdict'], flush=True)
 

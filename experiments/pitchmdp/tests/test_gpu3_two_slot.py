@@ -2,6 +2,7 @@
 import copy
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -395,3 +396,64 @@ def test_child_evidence_is_deterministic_on_cpu_with_real_fit():
     assert runs[0]['initial_param_sha256'] and all(runs[0][k] == runs[1][k] for k in keys)
     assert other['initial_param_sha256'] != runs[0]['initial_param_sha256']
     assert other['state_dict_sha256'] != runs[0]['state_dict_sha256']
+
+
+# ------------------------------------------------------------------ review (execute-004): outer-timeout signal
+
+SIGNAL_DRIVER = r"""
+import sys, time
+sys.path.insert(0, sys.argv[1])
+import gpu3_two_slot as g
+g.install_signal_handlers()
+sup = g.TwoSlotSupervisor(sys.argv[2], g.GPU3, grace=2.)
+sup.acquire()
+cmd = lambda task, out: [sys.executable, sys.argv[3], str(out), task['id'], '60', 'spawn']
+try:
+    sup.run([{'id': 't0'}, {'id': 't1'}], cmd, sys.argv[4], 2, task_timeout=120, total_timeout=120)
+except RuntimeError as error:
+    sup.release()
+    print('STOPPED', error, flush=True)
+"""
+
+
+def test_sigterm_stops_own_child_groups_and_releases_lock(tmp_path, fake):
+    """Without a handler, SIGTERM from the outer `timeout` kills only the supervisor; the children (own sessions)
+    would keep running on GPU3 after the lock is gone."""
+    driver = tmp_path / 'driver.py'
+    driver.write_text(SIGNAL_DRIVER)
+    out = tmp_path / 'm'
+    proc = subprocess.Popen([sys.executable, str(driver), str(SCRIPTS), str(tmp_path / 'locks'), str(fake), str(out)],
+                            stdout=subprocess.PIPE, text=True)
+    deadline = time.time() + 20
+    while time.time() < deadline and len(list(out.glob('*.start'))) < 2:
+        time.sleep(.05)
+    assert len(list(out.glob('*.start'))) == 2
+    time.sleep(.3)  # let each child spawn its grandchild
+    groups = [int(s.read_text().split()[2]) for s in out.glob('*.start')]
+    proc.send_signal(signal.SIGTERM)
+    try:
+        stdout, _ = proc.communicate(timeout=30)
+        assert 'STOPPED supervisor interrupted by signal' in stdout
+        time.sleep(.3)
+        for pgid in groups:
+            left = subprocess.run(['pgrep', '-g', str(pgid)], capture_output=True, text=True).stdout.split()
+            assert not [p for p in left if alive(int(p))], f'own group {pgid} outlived the supervisor'
+    finally:
+        for pgid in groups:  # test hygiene only: never leave a sleeping fake behind
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    lock = GpuLock(tmp_path / 'locks', GPU3)
+    assert lock.acquire()
+    lock.release()
+
+
+def test_preflight_refuses_while_a_p3x_pipeline_is_alive(tmp_path):
+    procs = lambda pattern: [4242] if 'run-p3[0-9]-pipeline' in pattern else []
+    spec = copy.deepcopy(SPEC)
+    state = tmp_path / 'p37.json'
+    state.write_text(json.dumps({'status': 'complete'}))
+    spec['wait_for_terminal'] = [str(state)]
+    with pytest.raises(RuntimeError, match='still running'):
+        g.preflight(spec, mem_available=lambda: 1 << 40, gpu=lambda u: (1 << 40, 0, 0), apps=lambda: [], procs=procs)
