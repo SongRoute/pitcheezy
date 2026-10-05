@@ -29,8 +29,9 @@ P40_REGISTERED_SHA256 = '61d210eca2aa028808b5fce07252ebb6bd054c7ea31fdc096631460
 OUT = REPO / 'configs/DRAFT-CUDA-BATTER-ID-20261006.json'
 EXT_OUT = REPO / 'configs/DRAFT-CUDA-BATTER-ID-EXT-20261006.json'
 PREREG = 'experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P43-001-batter-id-2026-10-06.md'
-# Built 2026-10-06 01:14 KST on the Mac mini from the local verified copy of export 49097109 and raw statcast
-# 2023/2024/2025 (ids only); 0.74 s, 0 missing rows, 0 pitcher mismatches.  Rebuilding on newsrv must give this sha.
+# Built 2026-10-06 01:06:42 KST on the Mac mini from the local verified copy of export 49097109 and raw statcast
+# 2023/2024/2025 (ids only); 0.74 s, 0 missing rows, 0 pitcher mismatches.  newsrv has no raw statcast: the directory is
+# copied there as a NEW read-only sibling of the export and verified by the runner against the server manifest.
 SIDECAR = {'dirname': 'batter-sidecar-49097109', 'format': bs.FORMAT,
            'sidecar_sha256': 'ad2eacc64d46985a57527167486d7762a435f02d51fc5ed86a9e2e2644c160a4'}
 KILL_AFTER_NO_NEW = timedelta(minutes=15)

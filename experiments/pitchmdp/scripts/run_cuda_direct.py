@@ -589,7 +589,7 @@ def batter_sidecar(export, config, manifest, hash_arrays=True):
     from pitchmdp import batter_sidecar as bs  # numpy only
     from pitchmdp.direct_pitcher_id_registry import check_sidecar_pin
     pin = check_sidecar_pin(config)
-    directory = Path(export).resolve().parent / pin['dirname']
+    directory = Path(export).absolute().parent / pin['dirname']  # sibling of the export path as given (no symlink resolution)
     return directory, bs.verify(directory, manifest, pin['sidecar_sha256'], hash_arrays)
 
 
