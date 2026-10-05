@@ -1,0 +1,374 @@
+{
+ "protocol": "DRAFT-CUDA-PITCHER-ID-20261005",
+ "experiment_id": "EXP-P38-001",
+ "status": "DRAFT",
+ "decision": null,
+ "purpose": "One information change: TRAIN-only pitcher-ID embedding (export column `pitcher`, never read by a direct-head model before) added to the frozen periodic_residual_counts arm. Descriptive repeated-DEV NLL/Brier only; no policy, RL, OPE or service claim.",
+ "source_configs": [
+  "configs/EXP-P36-001.json (arm periodic_residual_counts copied verbatim, export manifest and training budget)"
+ ],
+ "export": {
+  "splits": [
+   "train",
+   "earlystop",
+   "temperature",
+   "blend",
+   "dev",
+   "mlb_dev"
+  ],
+  "fit_splits": [
+   "train"
+  ],
+  "earlystop_split": "earlystop",
+  "temperature_split": "temperature",
+  "predict_splits": [
+   "blend",
+   "dev",
+   "mlb_dev"
+  ],
+  "workload_columns": [
+   "prior_records_per100",
+   "thruorder_minus1_over3",
+   "log_rest_days",
+   "rest_missing"
+  ],
+  "shapes": {
+   "length": 6,
+   "n_token": 38,
+   "n_context": 52,
+   "n_workload": 4
+  },
+  "last_year": 2025,
+  "normalization": "none learned here; arrays are the frozen EXP-P4-001 TRAIN-fitted transforms (parent preparation pinned)",
+  "manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+  "context_layout": {
+   "groups": {
+    "base": [
+     0,
+     28
+    ],
+    "pitcher_profile": [
+     28,
+     51
+    ],
+    "pitcher_support": [
+     51,
+     52
+    ]
+   },
+   "base_features": [
+    "balls",
+    "strikes",
+    "outs",
+    "inning",
+    "defensive_score_lead",
+    "defender_is_home",
+    "first_base",
+    "second_base",
+    "third_base",
+    "batter_left",
+    "pitcher_left",
+    "six_batter_style_rates",
+    "six_style_reliabilities",
+    "five_soft_memberships"
+   ],
+   "style_columns": [
+    "batter_style_contact_prior",
+    "batter_style_swing_prior",
+    "batter_style_walk_prior",
+    "batter_style_strikeout_prior",
+    "batter_style_isolated_power_prior",
+    "batter_style_groundball_prior"
+   ],
+   "reliability_columns": [
+    "batter_style_contact_reliability",
+    "batter_style_swing_reliability",
+    "batter_style_walk_reliability",
+    "batter_style_strikeout_reliability",
+    "batter_style_isolated_power_reliability",
+    "batter_style_groundball_reliability"
+   ],
+   "n_clusters": 5,
+   "pitcher_profile_columns": [
+    "effective_speed",
+    "release_spin_rate",
+    "pfx_x",
+    "pfx_z",
+    "left_share",
+    "type_CH",
+    "type_CS",
+    "type_CU",
+    "type_EP",
+    "type_FA",
+    "type_FC",
+    "type_FF",
+    "type_FO",
+    "type_FS",
+    "type_KC",
+    "type_KN",
+    "type_PO",
+    "type_SC",
+    "type_SI",
+    "type_SL",
+    "type_ST",
+    "type_SV",
+    "type_UN"
+   ],
+   "stripped_tail": 7
+  },
+  "context_layout_source": "export manifest lineage.context_layout (SequenceContext.report features, Archetypes.report style/reliability columns and n_clusters, SharingContext clusters columns); names via direct_frontier_registry.direct_context_names; grouped labels map to names only through these source equivalences",
+  "context_names": [
+   "balls",
+   "strikes",
+   "outs",
+   "inning",
+   "defensive_score_lead",
+   "defender_is_home",
+   "first_base",
+   "second_base",
+   "third_base",
+   "batter_left",
+   "pitcher_left",
+   "batter_style_contact_prior",
+   "batter_style_swing_prior",
+   "batter_style_walk_prior",
+   "batter_style_strikeout_prior",
+   "batter_style_isolated_power_prior",
+   "batter_style_groundball_prior",
+   "batter_style_contact_reliability",
+   "batter_style_swing_reliability",
+   "batter_style_walk_reliability",
+   "batter_style_strikeout_reliability",
+   "batter_style_isolated_power_reliability",
+   "batter_style_groundball_reliability",
+   "batter_archetype_membership_0",
+   "batter_archetype_membership_1",
+   "batter_archetype_membership_2",
+   "batter_archetype_membership_3",
+   "batter_archetype_membership_4",
+   "pitcher_effective_speed",
+   "pitcher_release_spin_rate",
+   "pitcher_pfx_x",
+   "pitcher_pfx_z",
+   "pitcher_left_share",
+   "pitcher_type_CH",
+   "pitcher_type_CS",
+   "pitcher_type_CU",
+   "pitcher_type_EP",
+   "pitcher_type_FA",
+   "pitcher_type_FC",
+   "pitcher_type_FF",
+   "pitcher_type_FO",
+   "pitcher_type_FS",
+   "pitcher_type_KC",
+   "pitcher_type_KN",
+   "pitcher_type_PO",
+   "pitcher_type_SC",
+   "pitcher_type_SI",
+   "pitcher_type_SL",
+   "pitcher_type_ST",
+   "pitcher_type_SV",
+   "pitcher_type_UN",
+   "pitcher_log1p_train_count_over10"
+  ]
+ },
+ "training": {
+  "epochs": 60,
+  "patience": 5,
+  "batch_size": 1024,
+  "learning_rate": 0.0005,
+  "loss_weighting": "uniform",
+  "hpo_trials": 0
+ },
+ "calibration": {
+  "method": "minimize_scalar bounded",
+  "bounds": [
+   0.5,
+   2.5
+  ],
+  "chain": "G0 SharingPredictor: log(clip(softmax(logits),1e-30,1)) / T",
+  "split": "temperature"
+ },
+ "seeds": [
+  44,
+  45,
+  46,
+  47,
+  48
+ ],
+ "seed_rule": "only EXP-P38-001 may use seeds 44-48, fixed before any P38 output; disjoint from every registered config seed 0-38 (audit 2026-10-05 over all worktree configs) and the P37 DRAFT 39-43. New model randomness only, not new data.",
+ "fits": 10,
+ "arms": [
+  {
+   "name": "periodic_residual_counts",
+   "priority": 1,
+   "embed_residual": true,
+   "workload": [
+    "prior_records_per100"
+   ],
+   "family": "embed_residual",
+   "model": "periodic_residual_mlp",
+   "embedding": "periodic",
+   "width": 128,
+   "workload_level": "counts",
+   "context_continuous": [
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52
+   ]
+  },
+  {
+   "name": "pitcher_id_periodic_residual_counts",
+   "priority": 1,
+   "embed_residual": true,
+   "workload": [
+    "prior_records_per100"
+   ],
+   "family": "pitcher_id",
+   "model": "periodic_residual_mlp",
+   "embedding": "periodic",
+   "width": 128,
+   "workload_level": "counts",
+   "context_continuous": [
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52
+   ],
+   "pitcher_id": {
+    "min_train_pitches": 100,
+    "d_id": 8,
+    "unk_index": 0,
+    "vocab_source": "train",
+    "last_train_date": 20250430
+   }
+  }
+ ],
+ "pitcher_id": {
+  "module": "experiments/pitchmdp/pitchmdp/direct_pitcher_id_model.py",
+  "vocabulary": "TRAIN split `pitcher` array only (labels not read); ids with >= 100 TRAIN rows sorted ascending; all other ids -> UNK 0 in every split",
+  "index_column": "appended after the workload column as the last context column (float32 exact integer), stripped by the network before the registered raw/continuous maps",
+  "init": "id table zeros, projection from a private generator seeded seed+7919: the untrained network equals the baseline at the same seed (CPU test)",
+  "recorded": [
+   "n_vocab",
+   "ids_sha256",
+   "train_pitchers",
+   "train_unk_rows",
+   "per-split UNK row share"
+  ]
+ },
+ "comparison": {
+  "control_arm": "periodic_residual_counts",
+  "scorer": "experiments/pitchmdp/scripts/score_cuda_direct.py (portable, numpy only; runs on newsrv)",
+  "contrasts": [
+   {
+    "name": "pitcher_id_vs_periodic_residual_counts",
+    "candidate": "pitcher_id_periodic_residual_counts",
+    "reference": "periodic_residual_counts",
+    "isolates": "pitcher identity information plus its embedding parameters (not separable, see capacity_note)",
+    "role": "primary"
+   }
+  ],
+  "report": "every seed and both splits (dev Cpanel, mlb_dev) as paired same-seed differences with game-cluster bootstrap 95% CI; also the UNK-row and in-vocabulary-row subsets of each split; no winner field",
+  "positive_criterion": "mlb_dev and dev paired dNLL CI both below 0 and >= 4/5 seeds negative on each split: report as \"pitcher ID adds information on repeated DEV\" (exploratory, not adoption)",
+  "negative_criterion": "either split CI includes 0 or is above 0: report as \"no evidence pitcher ID adds information beyond profile/support context\"; close the axis for the direct head",
+  "practical_floor": "-0.003 NLL (D118 minimum effect) is quoted next to the result; crossing it is still not adoption",
+  "capacity_note": "Candidate adds (n_vocab + 1) x 8 + 128 x 8 parameters (n_vocab unmeasured). No parameter-matched control is registered: an all-UNK arm adds one learned bias vector and is near-identical to the baseline; a hashed many-to-one map still carries identity; a one-to-one permutation is the same information. The parameter increase is therefore disclosed as part of the treatment, not removed."
+ },
+ "device": {
+  "kind": "cuda",
+  "allowed_gpu_uuids": [
+   "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9"
+  ],
+  "max_parallel": 1,
+  "cpu_fallback": false,
+  "lock": "GPU3 common exclusive lock (docs/handoffs/GPU-allocation-2026-10-05.md)"
+ },
+ "exposure": "DEV / MLB DEV are the same repeatedly exposed <=2025 rows (P24-P37). Designed after reading P24-P36 reports (post-selection). Exploratory only, not an independent test, no promotion. No 2026 data.",
+ "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks manifest). DEV/mlb_dev only predicted, never used for fit, robust-scale statistics, early stop, temperature or selection. Same export manifest as EXP-P35-001 (P24-P35 export). Pitcher vocabulary and counts from TRAIN rows only (date <= 20250430 checked); DEV-only or rare pitchers fall back to UNK.",
+ "execution": {
+  "executable": false,
+  "blocked_until": [
+   "runner/scorer/queue wiring on the P37 final lineage",
+   "distinct review",
+   "GPU3 smoke 2/2",
+   "registration with fresh config sha"
+  ]
+ },
+ "registration": null
+}
