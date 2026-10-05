@@ -18,13 +18,13 @@ from fastapi import Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import game_history
+from . import game_history, player_metadata
 from .demo_clock import DemoError
 
 DEFAULT_FEED_DIR = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/feeds')
 EMBARGO_PATH = re.compile(r'^/api/(?:watch|replay|live)/(\d+)(?:/|$)')
 NO_STORE = {'Cache-Control': 'no-store'}
-INTERNAL = ('situation_after', 'gap_after')  # server-only: gap_after would reveal that something happens later
+INTERNAL = ('situation_after', 'gap_after', 'line_before', 'line_after')  # server-only: gap_after would reveal that something happens later
 LIVE_STALE_S = 30
 
 
@@ -53,9 +53,10 @@ def _read_feed(path):
 class GameArchive:
     """Completed games: ``<feed_dir>/<pk>_final.json.gz`` + optional watch dataset + CV setup rows."""
 
-    def __init__(self, feed_dir=None, watch=None, setups=None):
+    def __init__(self, feed_dir=None, watch=None, setups=None, snapshot_dir=None):
         self.feed_dir = Path(feed_dir or os.environ.get('PITCHEEZY_FEED_DIR', DEFAULT_FEED_DIR))
         self.watch, self.setups, self._cache = watch, setups, {}
+        self.snapshot_dir = snapshot_dir or os.environ.get('PITCHEEZY_PLAYER_SNAPSHOT_DIR') or None
 
     def game_pks(self):
         if not self.feed_dir.is_dir():
@@ -80,7 +81,9 @@ class GameArchive:
                     setup = self.setups.view(int(game_pk))
                 except (KeyError, ValueError):
                     setup = None
-            cached = self._cache[game_pk] = (stamp, game_history.build(_read_feed(path), watch, setup))
+            record = game_history.build(_read_feed(path), watch, setup)
+            record['pregame'] = player_metadata.load_pregame(self.snapshot_dir, int(game_pk), record['official_date'])
+            cached = self._cache[game_pk] = (stamp, record)
         return cached[1]
 
     def cards(self):
@@ -95,6 +98,23 @@ class GameArchive:
 
 def keys_of(record):
     return [p['key'] for p in record['pitches']]
+
+
+def _pregame_view(record, people):
+    """Pre-game stats of the people shown in this view only (pitchers: ERA, batters: AVG/OPS); None without a cache."""
+    cache = record.get('pregame')
+    if cache is None:
+        return None
+    players = {}
+    for role, person in people:
+        entry = cache['players'].get(str((person or {}).get('id')))
+        if entry is None:
+            continue
+        stats = entry['pitching'] if role == 'pitcher' else entry['batting']
+        keys = ('era',) if role == 'pitcher' else ('avg', 'ops')
+        out = players.setdefault(str(person['id']), {'as_of': entry['as_of'], 'source': entry['source']})
+        out |= {k: (stats or {}).get(k) for k in keys}
+    return {'basis': cache['date_basis'], 'as_of': cache['as_of'], 'players': players}
 
 
 def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=None, after=None):
@@ -168,13 +188,24 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
         card |= {'away_score': record['final']['away'], 'home_score': record['final']['home'], 'inning': None, 'half': None}
     if next_rec is None and nxt is not None and not over and live_current is None and not held:
         next_rec = {'pitch_key': None, 'rec': nxt['rec']}
+    if live_current is not None or over:
+        linescore = record.get('line_now')
+    elif held:
+        linescore = lastp.get('line_after')
+    elif nxt is not None:
+        linescore = nxt.get('line_before')
+    else:
+        linescore = None
+    people = [(role, holder.get(role)) for holder in [current, *visible, *pas] for role in ('pitcher', 'batter')
+              if holder.get(role)]
+    pregame = _pregame_view(record, people)
     if after is not None:
         visible = [p for p in visible if p['index'] > after]
     return {'schema': 'pitcheezy-service-game-v2', 'source': source, 'game': card,
             'feed': feed or {'as_of': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'ok': True, 'stale_s': None},
             'cutoff': {'index': cutoff, 'pitch_key': pitches_all[cutoff]['key'] if cutoff >= 0 else None},
             'zone_bounds': record['zone_bounds'], 'pitches': visible, 'pas': pas, 'current': current,
-            'next': None if over else next_rec}
+            'next': None if over else next_rec, 'linescore': linescore, 'pregame': pregame}
 
 
 def list_card(record, cutoff, source):
@@ -329,6 +360,9 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
             phase = 'final' if abstract == 'Final' else 'pregame'
         current = {'phase': phase, 'situation': parsed.get('situation'), 'batter': parsed.get('batter'),
                    'pitcher': parsed.get('pitcher'), 'pa_key': None}
+        for role in ('batter', 'pitcher'):
+            if isinstance(current[role], dict):
+                current[role] = current[role] | {'jersey': game_history.jersey(feed, current[role].get('id'))}
         next_rec = None
         if phase == 'pre_pitch':
             rec = live_rec(feed, parsed) if live_rec else None

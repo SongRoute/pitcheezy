@@ -135,7 +135,7 @@ def test_mid_pa_pitching_change_keeps_earlier_pitcher():
                                                action('pitching_substitution', 1, 0, 0, player={'id': 91}, replacedPlayer={'id': 90}),
                                                pitch(2, 'X', 1, 0, 1)],
                           [move(11, 2, None, None, out=True)], outs=1), players=players)
-    assert pitches[f'{PK}:1:1']['pitcher'] == {'id': 90, 'name': 'Starter', 'hand': 'L'}
+    assert pitches[f'{PK}:1:1']['pitcher'] == {'id': 90, 'name': 'Starter', 'hand': 'L', 'jersey': None}  # rev3: game boxscore number, absent here
     assert pitches[f'{PK}:1:2']['pitcher']['id'] == 91
 
 

@@ -24,6 +24,8 @@ EXTRA_EVENTS = {'field_error': '실책 출루', 'catcher_interf': '타격 방해
                 'caught_stealing_2b': '도루 실패', 'caught_stealing_3b': '도루 실패', 'caught_stealing_home': '도루 실패',
                 'pickoff_1b': '견제 아웃', 'pickoff_2b': '견제 아웃', 'pickoff_3b': '견제 아웃',
                 'sac_bunt': '희생 번트', 'strikeout_double_play': '삼진 병살', 'triple_play': '삼중살'}
+LINE_PROVENANCE = {'runs': 'score_deltas', 'hits': 'pa_result_events',
+                   'errors': 'fielding_error_credits_dedup', 'bb_hbp': 'pa_result_events(walk,intent_walk,hit_by_pitch)'}
 DEFAULT_ZONE_BOUNDS = {'bottom': 1.6, 'top': 3.3899}
 
 
@@ -57,6 +59,7 @@ def game_card(feed):
             'away_team': teams['away'].get('name'), 'home_team': teams['home'].get('name'),
             'away_abbr': teams['away'].get('abbreviation'), 'home_abbr': teams['home'].get('abbreviation'),
             'away_score': None, 'home_score': None, 'inning': None, 'half': None,
+            'venue': (data.get('venue') or {}).get('name'),
             'game_number': data['game'].get('gameNumber') or 1, 'double_header': code in ('Y', 'S'),
             'double_header_code': code, 'embargoed': False, 'has_history': True}
 
@@ -65,12 +68,25 @@ def _player(feed, player_id):
     return feed['gameData'].get('players', {}).get(f'ID{player_id}', {})
 
 
+def jersey(feed, player_id):
+    """Game-specific number from this game's boxscore (never ``gameData.players.primaryNumber``); None if absent."""
+    if player_id is None:
+        return None
+    teams = ((feed.get('liveData') or {}).get('boxscore') or {}).get('teams') or {}
+    for side in ('away', 'home'):
+        number = (((teams.get(side) or {}).get('players') or {}).get(f'ID{player_id}') or {}).get('jerseyNumber')
+        if number not in (None, ''):
+            return str(number)
+    return None
+
+
 def _person(feed, matchup, role):
     person = matchup.get(role) or {}
     pid = person.get('id')
     side = (matchup.get('batSide') if role == 'batter' else matchup.get('pitchHand')) or {}
     key = 'side' if role == 'batter' else 'hand'
-    return {'id': pid, 'name': person.get('fullName') or _player(feed, pid).get('fullName'), key: side.get('code')}
+    return {'id': pid, 'name': person.get('fullName') or _player(feed, pid).get('fullName'), key: side.get('code'),
+            'jersey': jersey(feed, pid)}
 
 
 def _batter_credits(play):
@@ -202,7 +218,7 @@ def _replaced(feed, replaced, role):
     info = _player(feed, pid) if pid is not None else {}
     side = (info.get('batSide') if role == 'batter' else info.get('pitchHand')) or {}
     return {'id': pid, 'name': replaced.get('fullName') or info.get('fullName'),
-            'side' if role == 'batter' else 'hand': side.get('code')}
+            'side' if role == 'batter' else 'hand': side.get('code'), 'jersey': jersey(feed, pid)}
 
 
 def _rec_from_decision(decision, generated_utc, policy):
@@ -246,6 +262,43 @@ def build(feed, watch=None, setup=None):
     prev_half, outs = None, 0
     bases = dict.fromkeys(('first', 'second', 'third'))
     previous = None  # last pitch so far: its after-state and whether a state-changing non-pitch event follows it
+    # linescore as of each state point, from revealed events only (never the feed's final liveData.linescore)
+    totals = {'away': dict.fromkeys(('hits', 'errors', 'bb_hbp'), 0), 'home': dict.fromkeys(('hits', 'errors', 'bb_hbp'), 0)}
+    halves = []  # [inning, half, batting team's score when the half started]
+    errors_seen = set()
+
+    def line_asof():
+        if not halves:
+            return None
+        rows = {}
+        for i, (inning, half, start) in enumerate(halves):
+            team = 'away' if half == 'Top' else 'home'
+            later = next((h for h in halves[i+1:] if h[1] == half), None)
+            rows.setdefault(inning, {'inning': inning, 'away': None, 'home': None})[team] = \
+                (later[2] if later else (away if team == 'away' else home)) - start
+        last = max(rows)
+        return {'basis': 'revealed_events',
+                'innings': [rows.get(i) or {'inning': i, 'away': None, 'home': None} for i in range(1, max(9, last)+1)],
+                'teams': {'away': {'runs': away} | totals['away'], 'home': {'runs': home} | totals['home']},
+                'current': {'inning': halves[-1][0], 'half': halves[-1][1]}, 'provenance': LINE_PROVENANCE}
+
+    def credit_result(play, top):
+        event = (play.get('result') or {}).get('eventType')
+        team = 'away' if top else 'home'
+        if event in HITS:
+            totals[team]['hits'] += 1
+        elif event in ('walk', 'intent_walk', 'hit_by_pitch'):
+            totals[team]['bb_hbp'] += 1
+
+    def credit_errors(ab, runners, top):
+        for runner in runners:
+            for credit in runner.get('credits') or []:
+                if credit.get('credit') in ('f_fielding_error', 'f_throwing_error'):
+                    key = (ab, (runner.get('details') or {}).get('playIndex'), (credit.get('player') or {}).get('id'),
+                           credit.get('credit'))
+                    if key not in errors_seen:
+                        errors_seen.add(key)
+                        totals['home' if top else 'away']['errors'] += 1
 
     def snapshot(inning, half, balls, strikes):
         state = {'inning': inning, 'half': half, 'outs': outs, 'balls': balls, 'strikes': strikes,
@@ -259,6 +312,8 @@ def build(feed, watch=None, setup=None):
         inning, ab = about.get('inning'), about.get('atBatIndex', 0)+1
         if (inning, half) != prev_half:  # new half-inning: nobody on, nobody out
             outs, bases, prev_half = 0, dict.fromkeys(('first', 'second', 'third')), (inning, half)
+            halves.append([inning, half, away if half == 'Top' else home])
+        credited = False
         pa_key = f'{game_pk}:{ab}'
         batter, pitcher = _person(feed, matchup, 'batter'), _person(feed, matchup, 'pitcher')
         earlier = {role: _substitution_before(play, role) for role in ('batter', 'pitcher')}
@@ -299,6 +354,7 @@ def build(feed, watch=None, setup=None):
                 situation = {'inning': inning, 'half': half, 'outs': outs, 'balls': balls, 'strikes': strikes,
                              'home_score': home, 'away_score': away, 'runners': _occupied(bases)}
                 situation['bases'] = sum(bit for bit, base in ((1, 'first'), (2, 'second'), (4, 'third')) if situation['runners'][base])
+                line_before = line_asof()
                 people = {}
                 for role, current in (('batter', batter), ('pitcher', pitcher)):
                     later = [i for i in earlier[role] if i > event_index]
@@ -306,7 +362,7 @@ def build(feed, watch=None, setup=None):
                 cv = setups.get((ab, event.get('pitchNumber') or numbered))
                 pitch = {'index': len(pitches), 'key': key, 'pa_key': pa_key, 'at_bat_number': ab,
                          'pitch_number': event.get('pitchNumber') or numbered, 'inning': inning, 'half': half,
-                         'situation_before': situation, 'batter': people['batter'], 'pitcher': people['pitcher'],
+                         'situation_before': situation, 'line_before': line_before, 'batter': people['batter'], 'pitcher': people['pitcher'],
                          'rec': _rec_from_decision(decision, generated, policy) if watch else absent_rec(),
                          'actual': {'pitch_type': code,
                                     'pitch_label': PITCH_LABELS.get(code, (details.get('type') or {}).get('description')),
@@ -328,6 +384,7 @@ def build(feed, watch=None, setup=None):
             before_event = (outs, away, home, tuple(_occupied(bases).values()))
             _pinch_runner(bases, event)
             runs = _apply_moves(bases, moves.get(event_index, []))
+            credit_errors(ab, moves.get(event_index, []), about.get('isTopInning'))
             if about.get('isTopInning'):
                 away += runs
             else:
@@ -340,10 +397,13 @@ def build(feed, watch=None, setup=None):
                 if last_of_pa:  # the PA's own result (runs, outs) belongs to its last pitch
                     away, home = result.get('awayScore', away), result.get('homeScore', home)
                     outs = (play.get('count') or {}).get('outs', outs)
+                    credit_result(play, about.get('isTopInning'))
+                    credited = True
                 after = snapshot(inning, half, 0 if last_of_pa else balls, 0 if last_of_pa else strikes)
                 if after['outs'] >= 3:  # side retired: the board shows the half as over, nobody on
                     after |= {'runners': {'first': False, 'second': False, 'third': False}, 'bases': 0}
                 pitches[-1]['situation_after'], pitches[-1]['gap_after'] = after, False
+                pitches[-1]['line_after'] = line_asof()
                 previous = pitches[-1]
             elif previous is not None and (
                     before_event != (outs, away, home, tuple(_occupied(bases).values()))
@@ -353,6 +413,8 @@ def build(feed, watch=None, setup=None):
         if complete:
             away, home = result.get('awayScore', away), result.get('homeScore', home)
             outs = (play.get('count') or {}).get('outs', outs)
+            if not credited:
+                credit_result(play, about.get('isTopInning'))
     final = None
     if (data.get('status') or {}).get('abstractGameState') == 'Final':
         line = live.get('linescore') or {}
@@ -363,4 +425,5 @@ def build(feed, watch=None, setup=None):
     if now['outs'] >= 3:
         now |= {'runners': {'first': False, 'second': False, 'third': False}, 'bases': 0}
     return {'card': game_card(feed), 'pitches': pitches, 'pas': pas, 'final': final, 'zone_bounds': bounds,
-            'has_watch': watch is not None, 'state_now': now}
+            'has_watch': watch is not None, 'state_now': now, 'line_now': line_asof(),
+            'official_date': data['datetime'].get('officialDate') or (data['datetime'].get('dateTime') or '')[:10] or None}
