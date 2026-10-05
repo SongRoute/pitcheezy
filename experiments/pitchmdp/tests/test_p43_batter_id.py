@@ -482,3 +482,18 @@ def test_batter_row_shuffle_indices_keep_frequencies_and_remove_the_association(
     assert (a != true).mean() > .3  # association destroyed
     with pytest.raises(ValueError, match='index source'):
         rc.p43_indices({'batter': batter}, {**vocab, 'index_source': 'dropout'}, 'dev')
+
+
+def test_runner_and_queue_preflight_refuse_a_tampered_or_missing_sidecar(tmp_path):
+    exp, directory, sha = synthetic(tmp_path)
+    path, digest, splits = exp
+    cfg = load(sha, registered=True)
+    assert rc.verify_export(path, cfg, digest)  # verified sidecar passes
+    np.save(directory / 'train' / 'batter.npy', splits['train']['batter'][::-1].copy())
+    with pytest.raises(ValueError, match='array hash'):
+        rc.verify_export(path, cfg, digest)  # queue preflight and run_task both call this with array hashing
+    with pytest.raises(ValueError, match='array hash'):
+        rc.run_task(cfg, path, digest, tmp_path / 'fam', BAT, 70, 'cpu', {})
+    other = load('0' * 64, registered=True)
+    with pytest.raises(ValueError, match='config pin'):
+        rc.verify_export(path, other, digest, hash_arrays=False)
