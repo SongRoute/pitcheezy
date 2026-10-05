@@ -249,27 +249,32 @@ body.sv-locked{overflow:hidden}
 .sv-mitt.out line{stroke-dasharray:2 5}
 .sv-zone.mini{overflow:visible}
 
-/* ---- calm polish (ui-calm-polish-1006): the reference 'zone-centred' look applied as display only ----
-   Warm light background, off-white surface, dark green ink, ONE restrained emerald for recommendations, a warm orange for the
-   actual pitch, red only for LIVE/errors, green/amber/red B·S·O dots, team colours only as thin team marks. Fewer boxes inside
-   boxes, lighter weights (scores, names and results stay the heaviest), tabular numbers. Geometry, sizes of marks, layout
-   columns and every state are unchanged; no font is made smaller than before. */
-:root{--sv-bg:#f7f8f4;--sv-paper:#fffefa;--sv-ink:#1b3028;--sv-muted:#637267;--sv-line:#dce3d9;--sv-teal:#176d58;--sv-rec:#176d58;--sv-recfill:#e5f2e9;
-  --sv-actual:#b4521f;--sv-live:#bf3140;--sv-ball:#298b52;--sv-strike:#a87c00;--sv-out:#bc4149;--sv-past:#eef1e8;--sv-dot-off:#879189;--sv-mitt:#4f5f93}
+/* ---- design tokens: 'Sports Studio' (ui-studio-1006, user 2026-10-06; was the calm palette of ui-calm-polish-1006) ----
+   Cool light neutral background, white paper, dark slate ink, ONE teal for recommendations and selection, a dark slate filled circle for
+   the actual pitch (shape + label, not colour only), red only for LIVE/errors, green/yellow/red B·S·O dots, team colours as thin team
+   rules. Light only: the service has no dark mode and none is added. Text tokens ≥4.5:1 on --sv-bg, graphic tokens ≥3:1 (STUDIO-DESIGN.md).
+   Geometry, sizes, layout and every state are unchanged; no font is made smaller. */
+:root{--sv-bg:#f5f7f8;--sv-paper:#ffffff;--sv-ink:#192e38;--sv-muted:#60727a;--sv-line:#dce5e8;--sv-grid:#c2cfd4;
+  --sv-teal:#06776f;--sv-rec:#06776f;--sv-recfill:rgba(6,119,111,.10);--sv-tint:#e4f3ef;
+  --sv-actual:#2f4155;--sv-live:#c33349;--sv-ball:#188652;--sv-strike:#ae7d06;--sv-out:#c33349;--sv-dot-off:#7d8e95;--sv-mitt:#8a5a12;
+  --sv-past:#eaeff1;--sv-alert-bg:#fbecee;--sv-alert-ink:#8e2335;--sv-highlight:#fbf1d6;--sv-figure:#d6dfe3;--sv-figure-line:#9fb0b7;
+  --sv-overlay:rgba(18,38,47,.34);--sv-radius:12px;--sv-radius-s:8px}
 .sv-page{font-variant-numeric:tabular-nums}
 .sv-btn,.sv-icon-btn{border-width:1px;font-weight:600}
 .sv-back{font-weight:500;font-size:28px}
 /* header: team names regular, scores the heaviest; venue and KST start wrap instead of being cut */
-.sv-head-score{font-weight:600;letter-spacing:-.3px}.sv-head-score strong{font-weight:700}.sv-head-score i{font-weight:400}
+.sv-head-score{font-weight:600;letter-spacing:-.3px}.sv-head-score strong{font-weight:700;letter-spacing:-.5px}.sv-head-score i{font-weight:400}
 .sv-head-main small{white-space:normal;overflow:visible;text-overflow:clip;display:flex;flex-wrap:wrap;justify-content:center;column-gap:.5em;font-weight:400;margin-top:1px}
 .sv-head-main small>span{white-space:normal;word-break:keep-all}
-.sv-live{border:1px solid var(--sv-line);background:transparent;color:var(--sv-muted);font-weight:700;border-radius:11px}
+.sv-head{background:var(--sv-paper);box-shadow:0 1px 0 var(--sv-line)}  /* hairline without layout height */
+@media (min-height:701px){.sv-head-score strong{font-size:26px}}  /* larger scores only where the height budget allows */
+.sv-live{border:1px solid var(--sv-line);background:transparent;color:var(--sv-muted);font-weight:700;border-radius:var(--sv-radius)}
 .sv-live.on{border-color:var(--sv-live);background:transparent;color:var(--sv-live)}
-.sv-live:focus-visible,.sv-page button:focus-visible,.sv-page a:focus-visible{outline:3px solid var(--sv-rec);outline-offset:2px}
+.sv-live:focus-visible,.sv-page button:focus-visible,.sv-page a:focus-visible,.sv-sheet button:focus-visible{outline:2px solid var(--sv-teal);outline-offset:2px}
 /* status line: past = quiet note, connection problem = red-tinted alert (never just a grey LIVE) */
-.sv-notice{font-weight:500;border-radius:7px;padding:3px 9px}
+.sv-notice{font-weight:500;border-radius:var(--sv-radius-s);padding:3px 9px}
 .sv-notice.past{background:var(--sv-past);color:var(--sv-ink)}
-.sv-notice.warn{background:#fbeceb;color:#8f2530;border:1px solid var(--sv-live)}
+.sv-notice.warn{background:var(--sv-alert-bg);color:var(--sv-alert-ink);border:1px solid var(--sv-live)}
 .sv-link-btn{font-weight:600}
 /* board: one flat band, no card around the players */
 .sv-board{background:transparent;border:0;padding:2px 0;margin:4px 12px 0;gap:6px;border-radius:0}
@@ -287,30 +292,35 @@ body.sv-locked{overflow:hidden}
 .sv-rk{border-width:1.5px;border-color:var(--sv-rec);color:var(--sv-rec);font-weight:700}
 .sv-rec-type{font-weight:600}
 /* zone */
-.sv-zone-box{fill:var(--sv-paper);stroke:var(--sv-ink);stroke-width:1.5}.sv-zone-grid{stroke:#c5cfc3}
-.sv-rec rect{fill:rgba(23,109,88,.08);stroke:var(--sv-rec);stroke-width:2}.sv-rec text{font-weight:700;stroke:var(--sv-paper)}
-.sv-actual circle{fill:var(--sv-actual);stroke:var(--sv-paper);stroke-width:2.5}.sv-actual text{font-weight:700}
-.sv-batter{fill:#d3d9d1;stroke:#a3ada5}
+.sv-zone-box{fill:var(--sv-paper);stroke:var(--sv-ink);stroke-width:1.5}.sv-zone-grid{stroke:var(--sv-grid)}
+.sv-rec rect{fill:var(--sv-recfill);stroke:var(--sv-rec);stroke-width:2}.sv-rec text{font-weight:700;stroke:var(--sv-paper)}
+.sv-actual circle{fill:var(--sv-actual);stroke:var(--sv-paper);stroke-width:3}
+.sv-actual text{paint-order:stroke;stroke:var(--sv-paper);stroke-width:3px}  /* halo: readable over grid lines */
+body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service pages only (legacy pages keep styles.css) */.sv-actual text{font-weight:700}
+.sv-batter{fill:var(--sv-figure);stroke:var(--sv-figure-line)}
 .sv-mitt line{stroke:var(--sv-mitt)}.sv-mitt text{fill:var(--sv-mitt);font-weight:600}
 .sv-actual-cap b{font-weight:650}
 .sv-key-actual{display:inline-block;width:10px;height:10px;margin-right:4px;vertical-align:baseline}
 /* pitch cards */
-.sv-strip .sv-card{border-width:1px;border-radius:12px;background:var(--sv-paper)}
-.sv-strip .sv-card.on{border:2px solid var(--sv-ink);background:var(--sv-past)}
+.sv-strip .sv-card{border:1px solid var(--sv-line);border-radius:var(--sv-radius);background:var(--sv-paper)}
+.sv-strip .sv-card.on{border:2px solid var(--sv-teal);background:var(--sv-tint)}  /* selected = teal frame + tint + aria-pressed */
 .sv-strip .sv-card.pending{border:1.5px dashed var(--sv-rec);color:var(--sv-rec)}
 .sv-card-cap{font-weight:600}.sv-card-q{font-weight:400}
 /* sheets */
-.sv-backdrop{background:rgba(27,48,40,.36)}
+.sv-backdrop{background:var(--sv-overlay)}
 .sv-sheet{border-radius:20px 20px 0 0}
 .sv-sheet-head h2{font-weight:650}
 .sv-pa-half,.sv-detail h3{font-weight:650}
 .sv-pa-item{border:0;border-bottom:1px solid var(--sv-line);border-radius:0;background:transparent}
-.sv-pa-item[aria-current="true"]{border:0;border-left:3px solid var(--sv-ink);background:var(--sv-past);padding-left:8px}
+.sv-pa-item[aria-current="true"]{border:0;border-left:3px solid var(--sv-teal);background:var(--sv-tint);padding-left:8px}
 .sv-pa-result{font-weight:600}
-.sv-box .curcol{background:var(--sv-past)}.sv-box .cur{background:#f3e6c4;color:var(--sv-ink);font-weight:700}
-.sv-alert{border-width:1px;background:#fbeceb}
+.sv-box .curcol{background:var(--sv-past)}.sv-box .cur{background:var(--sv-tint);color:var(--sv-ink);font-weight:700;box-shadow:inset 0 -2px 0 var(--sv-teal)}
+.sv-alert{border-width:1px;background:var(--sv-alert-bg)}
+.sv-sheet{background:var(--sv-paper)}.sv-sheet-head .sv-btn{border-radius:var(--sv-radius-s);background:var(--sv-bg)}
+.sv-btn,.sv-icon-btn{border-color:var(--sv-line);border-radius:var(--sv-radius-s)}
 /* game list (shares the page): flat rows */
-.sv-card{border-width:1px}.sv-card-time,.sv-card-team{font-weight:600}.sv-card-team b{font-weight:700}
+.sv-card{border-width:1px;border-color:var(--sv-line);border-radius:var(--sv-radius)}.sv-card-time,.sv-card-team{font-weight:600}.sv-card-team b{font-weight:700}
+.sv-card-time em{color:var(--sv-teal)}
 .sv-datebar h1{font-weight:700}.sv-brand{font-weight:800}
 .sv-status{border-width:1px;font-weight:600}
 /* sizing (Root notes 2026-10-06): side columns follow the rec-list text (4-syllable pitch names such as 체인지업 + rank/share fit at
