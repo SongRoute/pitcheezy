@@ -1,0 +1,778 @@
+{
+  "protocol": "cuda_direct_v1",
+  "export": {
+    "splits": [
+      "train",
+      "earlystop",
+      "temperature",
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "fit_splits": [
+      "train"
+    ],
+    "earlystop_split": "earlystop",
+    "temperature_split": "temperature",
+    "predict_splits": [
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "workload_columns": [
+      "prior_records_per100",
+      "thruorder_minus1_over3",
+      "log_rest_days",
+      "rest_missing"
+    ],
+    "shapes": {
+      "length": 6,
+      "n_token": 38,
+      "n_context": 52,
+      "n_workload": 4
+    },
+    "last_year": 2025,
+    "normalization": "none learned here; arrays are the frozen EXP-P4-001 TRAIN-fitted transforms (parent preparation pinned)",
+    "manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+    "context_layout": {
+      "groups": {
+        "base": [
+          0,
+          28
+        ],
+        "pitcher_profile": [
+          28,
+          51
+        ],
+        "pitcher_support": [
+          51,
+          52
+        ]
+      },
+      "base_features": [
+        "balls",
+        "strikes",
+        "outs",
+        "inning",
+        "defensive_score_lead",
+        "defender_is_home",
+        "first_base",
+        "second_base",
+        "third_base",
+        "batter_left",
+        "pitcher_left",
+        "six_batter_style_rates",
+        "six_style_reliabilities",
+        "five_soft_memberships"
+      ],
+      "style_columns": [
+        "batter_style_contact_prior",
+        "batter_style_swing_prior",
+        "batter_style_walk_prior",
+        "batter_style_strikeout_prior",
+        "batter_style_isolated_power_prior",
+        "batter_style_groundball_prior"
+      ],
+      "reliability_columns": [
+        "batter_style_contact_reliability",
+        "batter_style_swing_reliability",
+        "batter_style_walk_reliability",
+        "batter_style_strikeout_reliability",
+        "batter_style_isolated_power_reliability",
+        "batter_style_groundball_reliability"
+      ],
+      "n_clusters": 5,
+      "pitcher_profile_columns": [
+        "effective_speed",
+        "release_spin_rate",
+        "pfx_x",
+        "pfx_z",
+        "left_share",
+        "type_CH",
+        "type_CS",
+        "type_CU",
+        "type_EP",
+        "type_FA",
+        "type_FC",
+        "type_FF",
+        "type_FO",
+        "type_FS",
+        "type_KC",
+        "type_KN",
+        "type_PO",
+        "type_SC",
+        "type_SI",
+        "type_SL",
+        "type_ST",
+        "type_SV",
+        "type_UN"
+      ],
+      "stripped_tail": 7
+    },
+    "context_layout_source": "export manifest lineage.context_layout (SequenceContext.report features, Archetypes.report style/reliability columns and n_clusters, SharingContext clusters columns); names via direct_frontier_registry.direct_context_names; grouped labels map to names only through these source equivalences",
+    "context_names": [
+      "balls",
+      "strikes",
+      "outs",
+      "inning",
+      "defensive_score_lead",
+      "defender_is_home",
+      "first_base",
+      "second_base",
+      "third_base",
+      "batter_left",
+      "pitcher_left",
+      "batter_style_contact_prior",
+      "batter_style_swing_prior",
+      "batter_style_walk_prior",
+      "batter_style_strikeout_prior",
+      "batter_style_isolated_power_prior",
+      "batter_style_groundball_prior",
+      "batter_style_contact_reliability",
+      "batter_style_swing_reliability",
+      "batter_style_walk_reliability",
+      "batter_style_strikeout_reliability",
+      "batter_style_isolated_power_reliability",
+      "batter_style_groundball_reliability",
+      "batter_archetype_membership_0",
+      "batter_archetype_membership_1",
+      "batter_archetype_membership_2",
+      "batter_archetype_membership_3",
+      "batter_archetype_membership_4",
+      "pitcher_effective_speed",
+      "pitcher_release_spin_rate",
+      "pitcher_pfx_x",
+      "pitcher_pfx_z",
+      "pitcher_left_share",
+      "pitcher_type_CH",
+      "pitcher_type_CS",
+      "pitcher_type_CU",
+      "pitcher_type_EP",
+      "pitcher_type_FA",
+      "pitcher_type_FC",
+      "pitcher_type_FF",
+      "pitcher_type_FO",
+      "pitcher_type_FS",
+      "pitcher_type_KC",
+      "pitcher_type_KN",
+      "pitcher_type_PO",
+      "pitcher_type_SC",
+      "pitcher_type_SI",
+      "pitcher_type_SL",
+      "pitcher_type_ST",
+      "pitcher_type_SV",
+      "pitcher_type_UN",
+      "pitcher_log1p_train_count_over10"
+    ]
+  },
+  "training": {
+    "epochs": 60,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005,
+    "loss_weighting": "uniform",
+    "hpo_trials": 0
+  },
+  "calibration": {
+    "method": "minimize_scalar bounded",
+    "bounds": [
+      0.5,
+      2.5
+    ],
+    "chain": "G0 SharingPredictor: log(clip(softmax(logits),1e-30,1)) / T",
+    "split": "temperature"
+  },
+  "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks manifest). DEV/mlb_dev only predicted, never used for fit, robust-scale statistics, early stop, temperature or selection. Same export manifest as EXP-P35-001 (P24-P35 export).",
+  "device": {
+    "kind": "cuda",
+    "allowed_gpu_uuids": [
+      "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9"
+    ],
+    "max_parallel": 1,
+    "cpu_fallback": false
+  },
+  "experiment_id": "EXP-P43-001",
+  "status": "REGISTERED",
+  "pitcher_id_family": true,
+  "pitcher_id_design": "p43_batter_id_v1",
+  "batter_sidecar": {
+    "dirname": "batter-sidecar-49097109",
+    "format": "cuda_direct_batter_sidecar_v1",
+    "sidecar_sha256": "ad2eacc64d46985a57527167486d7762a435f02d51fc5ed86a9e2e2644c160a4"
+  },
+  "decision": "None. Registered for execution only; descriptive repeated-DEV contrasts, no verdict.",
+  "purpose": "Exploratory study (pre-registration experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P43-001-batter-id-2026-10-06.md, written 2026-10-06 before any P43 output): does a TRAIN-only BATTER identity embedding, never given to a direct head before, lower calibrated NLL / Brier beyond the 17-d batter style summary the reference already reads (P25: removing that summary costs +0.0075 mlb_dev NLL)? A 2x2 identity factorial (reference / pitcher / batter / both) plus an information-free row-shuffled batter control, all at matched seeds. Co-primary contrasts: batter id vs shuffled batter id (information) and pitcher+batter vs pitcher id (adding batter identity to pitcher identity); exploratory, not multiplicity-adjusted. Descriptive repeated-DEV NLL / Brier / ECE only; no policy, RL, OPE or service claim.",
+  "source_configs": {
+    "base_cuda": {
+      "path": "configs/DRAFT-CUDA-DIRECT-20261004.json",
+      "sha256": "8dc8d22b781e25fe0cd972801d6edb5c34a2b927a94e00eeb27ea438d34dc096"
+    },
+    "frontier_run": {
+      "path": "configs/DRAFT-CUDA-FRONTIER-RUN-20261004.json",
+      "sha256": "2b057e8ede5ddb9dd2f880d352fc272fc51fa9e1344c4d7993e55d02bac42fc7"
+    },
+    "data_combo_run": {
+      "path": "configs/DRAFT-CUDA-DATA-COMBO-RUN-20261004.json",
+      "sha256": "87530cc8ccb62b5723bbce8db999e332a582d601a3582659e35ff5a14756c0f9"
+    },
+    "dropout_run": {
+      "path": "configs/DRAFT-CUDA-DROPOUT-RUN-20261004.json",
+      "sha256": "d50f7ca9036e7c5868cadcab8fa9542f0ec70f219f1664104354320a29343d61"
+    },
+    "workload_dropout_run": {
+      "path": "configs/EXP-P30-001.json",
+      "sha256": "7152ebcaef6a764f8084f73a0fa51b2339e930873759b862a6ae08e985954962"
+    },
+    "tabm_run": {
+      "path": "configs/DRAFT-CUDA-TABM-MINI-20261004.json",
+      "sha256": "334528a5904bd78f9f4a70955114d3434f3085b99a079a699daff07d252eae70"
+    },
+    "embed_residual_run": {
+      "path": "configs/DRAFT-CUDA-EMBED-RESIDUAL-20261004.json",
+      "sha256": "bb0ce6209db7b5b6bbc9243cb57e7ba4913dc1cf567756c67feacf2f508ac14e"
+    },
+    "ema_run": {
+      "path": "configs/DRAFT-CUDA-EMA-20261004.json",
+      "sha256": "a6cf64eb2698a47c3a9302bd07abdecbdcf33e6057b14654a1bd947058ce8de7"
+    },
+    "tabm_registered": {
+      "path": "configs/EXP-P31-001.json",
+      "sha256": "a26442bccde9d8d5d0f46e3863d42d9361132078184b06c0a4a44d2233010404"
+    },
+    "embed_residual_registered": {
+      "path": "configs/EXP-P32-001.json",
+      "sha256": "e8b60d820477b222cfe7d3a61f654735a3952aba97e521bd85846dcba6374fdd"
+    },
+    "ema_registered": {
+      "path": "configs/EXP-P33-001.json",
+      "sha256": "e803ce31b8451c8c70c58cc7513b739e2d4123a5a512751ca4ea446311976d88"
+    },
+    "tabm_residual_run": {
+      "path": "configs/DRAFT-CUDA-TABM-RESIDUAL-20261004.json",
+      "sha256": "5e3ce3adc7ecc30f94425d9dc8a9234441cee2160644fe1ed4d9d54788b76d34"
+    },
+    "tabm_residual_registered": {
+      "path": "configs/EXP-P34-001.json",
+      "sha256": "2bfd0e03aa8cdba6923a237b748ec7f59ca23c44331e1ba1149da23ef2111909"
+    },
+    "ple_draft": {
+      "path": "configs/DRAFT-CUDA-PLE-RESIDUAL-20261004.json",
+      "sha256": "f0ae4e9116d3efe90d119fcc84616172bde183a981206caacc4804d68a31b9b2"
+    },
+    "design_note": {
+      "path": "experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P36-001-robust-clip-2026-10-04.md",
+      "sha256": "947e56c62444ed1cd4f8cf42ba2e6272cf31e30e9099b5ec03cd407fa52b4750"
+    },
+    "ple_registered": {
+      "path": "configs/EXP-P35-001.json",
+      "sha256": "0a7cefda17ed961a1563d7fa762888d1eea4f97bf267f7e40f31dd81e870833a"
+    },
+    "robust_clip_registered": {
+      "path": "configs/EXP-P36-001.json",
+      "sha256": "b6479afa43a59df91774e0b714da2397692bdb06959fabb7716a129a5826b87e"
+    },
+    "model_author_commit": "684f4b4 (codex/next-information-1005; cherry-picked with -x)",
+    "p38_draft": {
+      "path": "configs/DRAFT-CUDA-PITCHER-ID-20261005.json",
+      "sha256": "8518f754236447fd054550dee75a5c3da7c510c3dd646f028662f097a02ee537"
+    },
+    "p38_registered": {
+      "path": "configs/EXP-P38-001.json",
+      "sha256": "e80ff2e4082078fb045c4980e03afa237dd205e96b38a0df3dcbae76f06e2755"
+    },
+    "p40_draft": {
+      "path": "configs/DRAFT-CUDA-PITCHER-ID-CONTROLS-20261006.json",
+      "sha256": "3dba5445b3a76dbc5f19c73f1cd60f6a69fd18312c775a6f82e06db656ab6944"
+    },
+    "p40_registered": {
+      "path": "configs/EXP-P40-001.json",
+      "sha256": "61d210eca2aa028808b5fce07252ebb6bd054c7ea31fdc096631460033a29fe9"
+    }
+  },
+  "arm_notes": {
+    "periodic_residual_counts": "EXP-P32/P34/P35 arm unchanged (frozen PLR-lite embedding + residual backbone, blocks Dropout .1, counts workload), old code path; keeps its embed_residual flag, so the robust-clip family predicate is tested first in the runner and scorer",
+    "pitcher_id_periodic_residual_counts": "Reference entry + pitcher_id block (direct_pitcher_id_model): TRAIN-only vocabulary of pitcher ids with >= 100 TRAIN rows (sorted), UNK 0 otherwise (rare TRAIN pitchers and ids first seen after TRAIN), index appended as the last context column and stripped before the frozen maps; z += P @ T[idx] (T zeros [n_vocab + 1, 8], P [128, 8] private generator seed + 7919) so the untrained network equals the reference at the same seed (P38 entry verbatim) Pitcher-only cell of the 2x2, paired with the other arms at the same seeds (P40 / P42 seeds are never paired with these).",
+    "batter_id_periodic_residual_counts": "P38 id path on the batter column: TRAIN-only vocabulary (batters with >= 100 TRAIN rows, sorted ids, UNK 0), zero-init table [n_vocab + 1, 8], projection 128 x 8 from the private generator seed + 7919 + 1009, z += P T[idx]. Batter ids come from the pinned sidecar.",
+    "batter_id_row_shuffle_periodic_residual_counts": "Batter-id network, parameters and compute; before the vocabulary lookup the split's `batter` column is permuted across rows by np.random.default_rng([43001, split position]) (fixed, independent of labels, features and the model seed). Index frequencies / UNK share kept, row -> batter association destroyed (information-free).",
+    "pitcher_batter_id_periodic_residual_counts": "Two id paths, additive: the P38 pitcher path verbatim (projection seed + 7919) and the batter path above (seed + 7919 + 1009). Index columns (pitcher, batter).",
+    "epoch_cap": "Epoch cap 60, patience 5 for both arms (as EXP-P34-P37). fit.json records cap, epochs_run, best_epoch and stopped_by per fit",
+    "parameters": "Reference 244898; each id path adds (n_vocab + 1) x 8 + 128 x 8 (n_vocab per column measured from TRAIN, recorded per fit, re-derived and checked by the scorer)",
+    "capacity": "Batter id vs row-shuffle is parameter- and compute-matched with information removed; the control matches the id path, not a generic wider backbone. Pitcher + batter vs pitcher adds the batter path; pitcher + batter vs batter adds the pitcher path (neither matched; P40 holds the pitcher controls)."
+  },
+  "control_reuse": "none: fresh five arms; P38 / P40 / P42 tasks are never mixed in",
+  "seeds": [
+    70,
+    71,
+    72
+  ],
+  "seed_rule": "exactly [70, 71, 72] (main; the optional extension EXP-P43-002 uses [73, 74]) no repeat_tag; disjoint from 0-69 used or reserved before (P40 60-64, P42 DRAFT 65-69, P41 MPS 49-53); fixed before any P43 output. New model randomness only, not new data.",
+  "fits": 15,
+  "arms": [
+    {
+      "name": "periodic_residual_counts",
+      "priority": 1,
+      "embed_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "embed_residual",
+      "model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "name": "pitcher_id_periodic_residual_counts",
+      "priority": 1,
+      "embed_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "pitcher_id",
+      "model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ],
+      "pitcher_id": {
+        "min_train_pitches": 100,
+        "d_id": 8,
+        "unk_index": 0,
+        "vocab_source": "train",
+        "last_train_date": 20250430
+      }
+    },
+    {
+      "name": "batter_id_periodic_residual_counts",
+      "priority": 1,
+      "embed_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "pitcher_id",
+      "model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ],
+      "pitcher_id": {
+        "min_train_pitches": 100,
+        "d_id": 8,
+        "unk_index": 0,
+        "vocab_source": "train",
+        "last_train_date": 20250430,
+        "id_columns": [
+          "batter"
+        ]
+      }
+    },
+    {
+      "name": "pitcher_batter_id_periodic_residual_counts",
+      "priority": 1,
+      "embed_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "pitcher_id",
+      "model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ],
+      "pitcher_id": {
+        "min_train_pitches": 100,
+        "d_id": 8,
+        "unk_index": 0,
+        "vocab_source": "train",
+        "last_train_date": 20250430,
+        "id_columns": [
+          "pitcher",
+          "batter"
+        ]
+      }
+    },
+    {
+      "name": "batter_id_row_shuffle_periodic_residual_counts",
+      "priority": 1,
+      "embed_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "pitcher_id",
+      "model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ],
+      "pitcher_id": {
+        "min_train_pitches": 100,
+        "d_id": 8,
+        "unk_index": 0,
+        "vocab_source": "train",
+        "last_train_date": 20250430,
+        "id_columns": [
+          "batter"
+        ],
+        "index_source": "row_shuffle",
+        "shuffle_seed": 43001
+      }
+    }
+  ],
+  "pitcher_id_data_rule": "Vocabularies per id column from the TRAIN split only (labels never read): rows dated <= 20250430 (manifest TRAIN max_date <= cutoff and every later split min_date > cutoff, checked by runner and scorer), ids with >= 100 TRAIN rows (the P38 rule, not tuned); DEV / mlb_dev never used for vocabulary, min count, width, calibration or selection. `batter` is joined by the export keys from raw statcast 2023-2025 (id columns only, no 2026 / holdout file), every row matched once and raw pitcher == export pitcher on every row; the sidecar is pinned by sha and verified per split. Row shuffle uses only the split's own batter column and a fixed seed; scorer subsets use the TRUE batter's TRAIN vocabulary membership for every arm. No 2026 rows.",
+  "comparison": {
+    "reference_arm": "periodic_residual_counts",
+    "scorer": "experiments/pitchmdp/scripts/score_cuda_direct.py (portable, numpy only; runs on newsrv)",
+    "scope": "unblended calibrated direct-head probabilities on dev and mlb_dev; six fixed contrasts on all rows and TRAIN batter-vocabulary in-vocab / UNK subsets, every seed and the seed-mean ensemble; two co-primary contrasts (batter id vs row shuffle; pitcher+batter vs pitcher id), the rest secondary / capacity control; per-arm NLL / Brier / accuracy / top-label ECE; descriptive repeated-DEV only; no decision, ranking, automatic selection or winner",
+    "not_compared": "P24-P42 tasks, frozen MPS numbers or other families",
+    "pitcher_id_contrasts": [
+      {
+        "name": "batter_id_vs_row_shuffle",
+        "candidate": "batter_id_periodic_residual_counts",
+        "reference": "batter_id_row_shuffle_periodic_residual_counts",
+        "isolates": "batter_identity_information",
+        "role": "primary",
+        "parameter_matched": true,
+        "compute_matched": true,
+        "information_free_capacity_control": "this contrast (reference = row-shuffled batter ids)"
+      },
+      {
+        "name": "pitcher_batter_id_vs_pitcher_id",
+        "candidate": "pitcher_batter_id_periodic_residual_counts",
+        "reference": "pitcher_id_periodic_residual_counts",
+        "isolates": "adding_batter_identity_to_pitcher_identity",
+        "role": "primary",
+        "parameter_matched": false,
+        "compute_matched": false,
+        "information_free_capacity_control": "see batter_id_vs_row_shuffle (batter path only)"
+      },
+      {
+        "name": "pitcher_batter_id_vs_batter_id",
+        "candidate": "pitcher_batter_id_periodic_residual_counts",
+        "reference": "batter_id_periodic_residual_counts",
+        "isolates": "adding_pitcher_identity_to_batter_identity",
+        "role": "secondary",
+        "parameter_matched": false,
+        "compute_matched": false,
+        "information_free_capacity_control": "not included (P40 holds the pitcher controls)"
+      },
+      {
+        "name": "batter_id_vs_periodic_residual_counts",
+        "candidate": "batter_id_periodic_residual_counts",
+        "reference": "periodic_residual_counts",
+        "isolates": "batter_identity_with_id_parameters",
+        "role": "secondary",
+        "parameter_matched": false,
+        "compute_matched": false,
+        "information_free_capacity_control": "see batter_id_vs_row_shuffle"
+      },
+      {
+        "name": "pitcher_id_vs_periodic_residual_counts",
+        "candidate": "pitcher_id_periodic_residual_counts",
+        "reference": "periodic_residual_counts",
+        "isolates": "pitcher_identity_with_id_parameters",
+        "role": "secondary",
+        "parameter_matched": false,
+        "compute_matched": false,
+        "information_free_capacity_control": "not included (P40 holds the pitcher controls)"
+      },
+      {
+        "name": "batter_row_shuffle_vs_periodic_residual_counts",
+        "candidate": "batter_id_row_shuffle_periodic_residual_counts",
+        "reference": "periodic_residual_counts",
+        "isolates": "batter_id_parameters_without_information",
+        "role": "capacity_control",
+        "parameter_matched": false,
+        "compute_matched": false,
+        "information_free_capacity_control": "candidate side is information-free"
+      }
+    ]
+  },
+  "queue": {
+    "timezone": "Asia/Seoul",
+    "task_timeout_seconds": 3600,
+    "family_budget_seconds": 36000,
+    "max_attempts": 2,
+    "date": "2026-10-06",
+    "launch_by": "05:08",
+    "no_new_fit_after": "06:25",
+    "kill_own_after": "06:40",
+    "aggregate_by": "07:00",
+    "batch": "P43 batter-ID 5 arms x fresh seeds 70-72, epoch cap 60 (DRAFT)",
+    "stop_rule": "any task failing twice aborts the family (no partial comparison, failures reported); GPU3 TRAIN smoke of every task valid before registration; smoke per-epoch seconds reported descriptively (the batter path is the P38 id path; the two-path arm adds one gather)",
+    "clock_rule": "DRAFT has no window; registration writes a dated copy with make_p43_config.py --clock: no_new_fit_after >= launch_by + fits x 1.25 x P38 max task wall 244.7 s (main 15 fits 4,588.125 s; extension 10 fits 3,058.75 s; ceil 5 min), kill_own_after = +15 min, aggregate_by = +20 min; only these fields change",
+    "order": "priority then seed then arm (all arms priority 1; config order)",
+    "start_after": "P40 and P42 queues finished or stopped by their owner; no other Pitcheezy queue, probe or scorer running; GPU3 has no compute process; common exclusive GPU3 lock held; exactly one fit at a time on GPU3 (UUID GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9)",
+    "resource_rule": "Song 2026-10-05: Pitcheezy uses ONLY physical GPU3 (UUID GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9), max 1 fit; GPU4 (UUID GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99) is released to another project: never allowed, probed or used as fallback (wait if GPU3 is busy)."
+  },
+  "exposure": "DEV / MLB DEV are the same repeatedly exposed <=2025 rows used for P24-P42. Designed after reading P25 and P38 (post-selection). Exploratory only, not an independent test, no promotion. No 2026 data. An unseen <=2025 confirmation set is proposed separately (metadata only, not part of this family).",
+  "execution": {
+    "enabled": true,
+    "executable": true
+  },
+  "registration": {
+    "registered_kst": "2026-10-06 04:56",
+    "draft_sha256": "33a16123f95290348997d73aa535f086f6c1e073f2a08f9000d8dc8cacd0f7d5",
+    "undated_draft_sha256": "bc94ae86a2482c920ebd3cb8a898774bcbbb4c5862d58639556621f4b7a442e2",
+    "source_commit": "0b49eba",
+    "go_reference": "ROOT-NOTES 04:49 recovery dispatch: Root accepts P43 0c22b57 + P43-REVIEW.md; smoke VALID 350c242e; full-TRAIN timing 18.44 s/epoch vocab 920/706",
+    "prereg": "experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P43-001-batter-id-2026-10-06.md",
+    "smoke": {
+      "protocol": "p43_train_smoke_validity_v1",
+      "check_sha256": "350c242e763380c4fcb8b4f5e39f2ad9ca3c48534861280f29db32fccefa236f",
+      "train_seconds_per_epoch_median": {
+        "batter_id_periodic_residual_counts": 0.794575892505236,
+        "batter_id_row_shuffle_periodic_residual_counts": 0.7891296884990879,
+        "periodic_residual_counts": 0.7464209850004409,
+        "pitcher_batter_id_periodic_residual_counts": 0.6931031009953585,
+        "pitcher_id_periodic_residual_counts": 0.6524609240004793
+      },
+      "source_sha256": {
+        "pitchmdp/batter_sidecar.py": "a920e6e19ab1d5392c31eec9a74a8ec07892ae76cdfea71bc5a76a6fd53f66d4",
+        "pitchmdp/direct_combo_model.py": "9d2efc09f805600778109f838d42c90c95ba3fdc0171da690986f840c6d59abf",
+        "pitchmdp/direct_combo_registry.py": "d64bba7057cfd81d8cac4abc806587876b2812e0c29d9d22254e35da8c81c50a",
+        "pitchmdp/direct_dropout_model.py": "c2ac98db015af7efae8c5eac2135f5c9500930b5fd0a257437a207313c581019",
+        "pitchmdp/direct_dropout_registry.py": "cdc9ba0aca4a472dcc870a24c27682b6f9402d35a143dd50e2fdefebcd51981f",
+        "pitchmdp/direct_ema_model.py": "d3dc546781f7c037898b0f1144865981d88591255b3ba3e4ff01b03e06f82baa",
+        "pitchmdp/direct_ema_registry.py": "b670f1a3a8fd0a81ff87f288a9fbca36efe6d726dc529de377af7d19ab691506",
+        "pitchmdp/direct_embed_residual_factory.py": "1899b8741fef50f43e11bb4f9455141d76aa241c7a8e1c268cc5541686c4ef8b",
+        "pitchmdp/direct_embed_residual_registry.py": "46c7330c0982bcf3a82fd5df2cfb7d6f51bfe8453adf941ac58309b0e070716c",
+        "pitchmdp/direct_embed_type_registry.py": "358c1797794dde8d0ab061e476a8b4d38c977045d3ff451257fe5bc2c1ff2e22",
+        "pitchmdp/direct_frontier_model.py": "2366aa1fecfe93ff4332968022fa9d5f5b92a827c1162df63dc4b230c3c7914d",
+        "pitchmdp/direct_frontier_registry.py": "3899d8ee41c3d44d0a67d2b24faf3e8318b2cfea1ca81f61fdec12ead2b994e3",
+        "pitchmdp/direct_periodic_model.py": "18f0b96a9b8a0d9eb39af2de4b0cc1b7a10a0dd42ca92977f726042e1aec80d3",
+        "pitchmdp/direct_periodic_residual_model.py": "ee1b3d3f84b19f3564c853acf2bd12c640b1e5e597b8c62d485f839aeb8c992b",
+        "pitchmdp/direct_pitcher_batter_id_model.py": "aa582215cc9e9769ae0e5e2c8d6d94b0b971a800e153e0892d90da3cf9086209",
+        "pitchmdp/direct_pitcher_id_model.py": "5c88c52c7df1c95d80ca5d69b42a2564cb18f547c02fc5cc994a14718091bc1e",
+        "pitchmdp/direct_pitcher_id_registry.py": "c6a029be785a6a29b6c1fcbd8a41479fd3e81fc27b528d513603561f00dc3185",
+        "pitchmdp/direct_ple_factory.py": "5b9faa25809973b85d8cca4006359635f5070a0e7807b0ec752cc9b731eab2fc",
+        "pitchmdp/direct_ple_model.py": "d3575019f971b06ba26060a1fa31e3894a070fd3b4b88191393743cb16ea175e",
+        "pitchmdp/direct_ple_registry.py": "97aadf9f75dd7958ac7e622ed4d90c36994c4f772bdfb002be62c28e0ef1fe09",
+        "pitchmdp/direct_residual_model.py": "7feb9cfdcad85f4cb02c50a75e2ba2b528dd5546e600526b0334dcf0cf8e2d59",
+        "pitchmdp/direct_robust_clip_factory.py": "d1a6ac2adb1044ea19228a9d9da462df58245d57d4f8a531923cbbab9efedee7",
+        "pitchmdp/direct_robust_clip_model.py": "a3d6cbcef8350586a23d1a6d35213e36ba8e0ccf21288288464f8ce7dcbf52fa",
+        "pitchmdp/direct_robust_clip_registry.py": "8aeff971513a4ee93a79695f53679867bd82de3a3e2918e7cc5eba8509a84444",
+        "pitchmdp/direct_tabm_factory.py": "a916da4408a7a290d65c380ae35f8438d423e1b4cfdb85e4282d7aef26214d28",
+        "pitchmdp/direct_tabm_model.py": "c968aec94fd7278d30dbbc53cb81fe4fcfc23c0b33b912a48ee09122e216b319",
+        "pitchmdp/direct_tabm_registry.py": "45b0c3168ced0f9df2e8e59f9b5f140bd1eede215329b8d7bf0cc875407e51e7",
+        "pitchmdp/direct_tabm_residual_factory.py": "e1d6aba8ad883b8210ce7d26a7c4d79b381c47e085b14a816128d5a00b28f86b",
+        "pitchmdp/direct_tabm_residual_model.py": "6a9daff6c3de13a753357d8615bd9f0d5a7bfe796b350f7f7bd0a5e60c9287cf",
+        "pitchmdp/direct_tabm_residual_registry.py": "4fe206ee475e47f1e2be3d2d011a2bf60b351408a0ff216321be9c96e1d6f319",
+        "pitchmdp/direct_workload_dropout_model.py": "6c800960ef8a534bc922c685720cfc6dc505933c0f109535a53177f75829a336",
+        "pitchmdp/direct_workload_dropout_registry.py": "15f7d99811456fb30b20a84e475bed1d0a82450940fa8ca5bb3701e859098d71",
+        "pitchmdp/matrix_models.py": "b6cc77fe3e337cf96f8c7cb31f02e8fd8a4bf71bb20713d01c462cdbd33d2fcd",
+        "scripts/run_cuda_direct.py": "29db606facbab7305958dbd6cf7e986aed45b903466d7c113e969a343f5bed23"
+      }
+    }
+  }
+}
