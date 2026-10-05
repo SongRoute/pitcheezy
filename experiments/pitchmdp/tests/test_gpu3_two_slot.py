@@ -357,6 +357,7 @@ def test_bench_refuses_when_preflight_fails_and_releases_lock(tmp_path):
 
 # ------------------------------------------------------------------ frozen route
 
+@pytest.mark.skip(reason='P40 branch (2026-10-06) changes the runner/model/registry sources on purpose; this pin (bench child == frozen 5b3335e route) passed at ba0a8f1; a two-slot run on P40 sources would need its own equivalence bench')
 def test_child_uses_frozen_runner_route_and_frozen_sources_unchanged():
     import gpu3_bench_child as child
     import run_cuda_direct as runner

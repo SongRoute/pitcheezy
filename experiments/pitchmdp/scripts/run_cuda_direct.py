@@ -872,7 +872,8 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
             if vocab is None:
                 return arm_inputs(arrays, arm, columns)
             from pitchmdp.direct_pitcher_id_model import id_inputs
-            arm_arrays, unk_share[split] = id_inputs(arm_inputs(arrays, arm, columns), arrays['pitcher'], vocab['ids'])
+            arm_arrays, unk_share[split] = id_inputs(arm_inputs(arrays, arm, columns), arrays['pitcher'], vocab['ids'],
+                                                     split, vocab['index_source'], vocab['shuffle_seed'])
             return arm_arrays
         model = build_model(arm, seed, device, names, None if vocab is None else vocab['ids'])
         train_inputs = inputs('train', train)
@@ -928,6 +929,9 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
                 raise RuntimeError('Model vocabulary differs from the TRAIN vocabulary record')
             fit_report[PITCHER_ID_FLAG] = {**vocab_record(vocab), 'unk_share': unk_share,
                                            'split_dates': vocab['split_dates']}
+            if vocab['index_source'] != 'identity' or model.id_dropout:  # P40 controls only (P38 record unchanged)
+                fit_report[PITCHER_ID_FLAG].update(index_source=vocab['index_source'],
+                                                   shuffle_seed=vocab['shuffle_seed'], id_dropout=model.id_dropout)
             print('PITCHER_ID_VOCAB', arm_name, seed, json.dumps({k: v for k, v in fit_report[PITCHER_ID_FLAG].items()
                                                                   if k != 'split_dates'}), flush=True)
         if is_ple_arm(arm):
@@ -970,12 +974,13 @@ def pitcher_vocab(arm, manifest, train):
     dated on/before the cutoff, labels never read."""
     if not is_pitcher_id_arm(arm):
         return None
-    from pitchmdp.direct_pitcher_id_registry import build_vocab, check_split_dates
+    from pitchmdp.direct_pitcher_id_registry import build_vocab, check_split_dates, id_spec
     spec = arm[PITCHER_ID_FLAG]
+    index_source, shuffle_seed, _ = id_spec(arm)
     split_dates = check_split_dates(manifest, spec['last_train_date'])
     vocab = build_vocab(np.asarray(train['pitcher']), np.asarray(train['date']), spec['last_train_date'],
                         spec['min_train_pitches'])
-    return {**vocab, 'split_dates': split_dates}
+    return {**vocab, 'split_dates': split_dates, 'index_source': index_source, 'shuffle_seed': shuffle_seed}
 
 
 def ple_bin_rows(inputs):

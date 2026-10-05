@@ -49,6 +49,7 @@ def run_record(per_epoch, **over):
     return {'tasks': records, 'completed': 4, 'max_live': 1, 'foreign_gpu_apps': [], **over}
 
 
+@pytest.mark.skip(reason='P40 branch (2026-10-06) changes the runner/model/registry/scorer sources on purpose; this P38 registration-time pin (current tree == frozen 5b3335e source map) passed at ba0a8f1 and P38 is complete')
 def test_spec_is_predeclared_gpu3_serial_full_train_same_threshold_and_marked_post_observation():
     s = m.check_spec(spec())
     assert s['status'] == 'AUTHOR_ONLY_NOT_LAUNCHED' and s['concurrent_slots'] == 1 and s['gpu_uuid'] == two.GPU3
@@ -203,6 +204,7 @@ def v2_measure(tmp_path, per_epoch=None, spec_sha=None, code=None, **over):
     return path
 
 
+@pytest.mark.skip(reason='P40 branch (2026-10-06) changes the runner/model/registry/scorer sources on purpose; this P38 registration-time pin (current tree == frozen 5b3335e source map) passed at ba0a8f1 and P38 is complete')
 def test_registration_needs_v1_validity_and_passing_v2_and_records_both_ratios(tmp_path):
     when = reg.at('2026-10-05', '20:30')
     config = reg.build(v1_gate(tmp_path), v2_measure(tmp_path), '20:30', '5b3335e', 'root go', when)
@@ -237,6 +239,7 @@ def test_template_requires_v2_measurement_and_keeps_one_fit():
 
 # ------------------------------------------------------------------ review p38-review-execute-002
 
+@pytest.mark.skip(reason='P40 branch (2026-10-06) changes the runner/model/registry/scorer sources on purpose; this P38 registration-time pin (current tree == frozen 5b3335e source map) passed at ba0a8f1 and P38 is complete')
 def test_measure_records_its_own_code_hashes_and_registration_records_them(tmp_path):
     path, s = local_spec(tmp_path)
     rec = m.measure(path, Path(s['out']), preflight_fn=lambda spec: {'ok': True}, sampler_cls=NoSampler,

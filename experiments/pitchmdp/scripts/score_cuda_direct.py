@@ -834,6 +834,15 @@ def export_pitchers(export, config, manifest_sha256):
     return manifest, out, hashes
 
 
+P40_NOTE = ('fresh model RNG seeds 60-64 on the same export and exposed DEV rows: not new data, not an independent '
+            'confirmatory test; designed after reading the P38 score (post-selection). Primary contrast = candidate vs '
+            'row-shuffled-id control (same network, parameters and compute; pitcher column permuted across rows per '
+            'split by a fixed permutation): isolates identity information from the id path. The row-shuffle control '
+            'matches the id path, not a generic wider backbone; ID dropout 0.2 is fixed, not tuned. Vocabulary is '
+            'TRAIN-only and re-derived here; subsets use TRAIN-vocabulary membership of the TRUE pitcher; all seeds, '
+            'subsets and contrasts reported, no verdict')
+
+
 def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256, family, destination, rows,
                      export_hashes, tasks, signature, sources, source_record):
     """Two-arm pitcher-ID family: candidate - reference on all / in-vocabulary / UNK rows, every seed + ensemble."""
@@ -843,39 +852,49 @@ def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256
     rederived = pid_registry.build_vocab(arrays['train/pitcher'], arrays['train/date'], pid_registry.LAST_TRAIN_DATE)
     if {k: rederived[k] for k in pid_registry.VOCAB_KEYS} != {k: vocab[k] for k in pid_registry.VOCAB_KEYS}:
         raise ValueError('Recorded vocabulary differs from the one re-derived from the export TRAIN rows')
-    seeds, (c,) = config['seeds'], pid_registry.CONTRASTS
+    seeds, design = config['seeds'], pid_registry.design(config)
+    arms = [a['name'] for a in config['arms']]
+    roles = {pid_registry.REFERENCE: 'reference', pid_registry.CANDIDATE: 'candidate'}
     splits, contrasts, subsets = {}, {}, {}
     for split, r in rows.items():
         index = pid_registry.map_ids(arrays[split + '/pitcher'], rederived['ids'])
         if len(index) != len(r['y']):
             raise ValueError(f'{split}: export pitcher ids misaligned with the scored rows')
-        load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731
-        ref, cand = load(c['reference']), load(c['candidate'])
-        splits[split] = {arm: {'role': role, 'ensemble': prediction_metrics(r['y'], np.mean(p, axis=0)),
+        probs = {arm: [member(family, arm, s, split, r) for s in seeds] for arm in arms}
+        splits[split] = {arm: {'role': roles.get(arm, 'control'),
+                               'ensemble': prediction_metrics(r['y'], np.mean(p, axis=0)),
                                'seeds': {str(s): summary(prediction_metrics(r['y'], q)) for s, q in zip(seeds, p)}}
-                         for arm, role, p in ((c['reference'], 'reference', ref), (c['candidate'], 'candidate', cand))}
-        contrasts[split] = {c['name']: {}}
+                         for arm, p in probs.items()}
+        contrasts[split] = {c['name']: {} for c in design['contrasts']}
         subsets[split] = {}
         for subset, mask in (('all', np.ones(len(index), bool)), ('in_vocab', index != pid_registry.UNK),
                              ('unk', index == pid_registry.UNK)):
             subsets[split][subset] = {'rows': int(mask.sum()), 'games': int(len(np.unique(r['game_pk'][mask])))}
-            if not mask.any():
-                contrasts[split][c['name']][subset] = None
-                continue
-            contrasts[split][c['name']][subset] = {
-                **{k: c[k] for k in ('candidate', 'reference', 'isolates', 'role', 'parameter_matched',
-                                     'compute_matched', 'information_free_capacity_control')},
-                **paired_block(r['y'][mask], r['game_pk'][mask], [p[mask] for p in cand], [p[mask] for p in ref], seeds)}
+            if subset != 'all' and mask.any():
+                subsets[split][subset]['arms'] = {
+                    arm: summary(prediction_metrics(r['y'][mask], np.mean(p, axis=0)[mask])) for arm, p in probs.items()}
+            for c in design['contrasts']:
+                if not mask.any():
+                    contrasts[split][c['name']][subset] = None
+                    continue
+                cand, ref = probs[c['candidate']], probs[c['reference']]
+                contrasts[split][c['name']][subset] = {
+                    **{k: c[k] for k in ('candidate', 'reference', 'isolates', 'role', 'parameter_matched',
+                                         'compute_matched', 'information_free_capacity_control')},
+                    **paired_block(r['y'][mask], r['game_pk'][mask], [p[mask] for p in cand], [p[mask] for p in ref],
+                                   seeds)}
+        del probs
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits, 'pitcher_id_contrasts': contrasts,
               'pitcher_id_rows': subsets, 'vocabulary': {k: v for k, v in vocab.items()},
               'cost': {arm: {str(s): t['pitcher_id']['cost'] for s, t in v.items()} for arm, v in tasks.items()},
               'seed_block': {'seeds': seeds, 'repeat_tag': None, 'epoch_cap': config['training']['epochs'],
-                             'primary': pid_registry.PRIMARY,
-                             'parameters': {pid_registry.REFERENCE: pid_registry.BASE_PARAMETERS,
-                                            pid_registry.CANDIDATE: pid_registry.BASE_PARAMETERS + vocab['id_parameters']},
-                             'same_gpu_pairs': same_gpu_pairs(tasks, pid_registry.CONTRASTS, seeds),
-                             'note': 'fresh model RNG seeds on the same export and exposed DEV rows: not new data, not '
+                             'primary': design['primary'],
+                             'parameters': {arm: pid_registry.BASE_PARAMETERS + (
+                                 0 if arm == pid_registry.REFERENCE else vocab['id_parameters']) for arm in arms},
+                             'same_gpu_pairs': same_gpu_pairs(tasks, design['contrasts'], seeds),
+                             'note': P40_NOTE if config.get(pid_registry.DESIGN_KEY) else
+                                     'fresh model RNG seeds on the same export and exposed DEV rows: not new data, not '
                                      'an independent confirmatory test; family designed after reading P24-P36 '
                                      '(post-selection); two arms only (no flatten control); the candidate adds pitcher '
                                      'identity AND id parameters together; NOT parameter-matched, NOT compute-matched; '
@@ -928,17 +947,22 @@ def pitcher_id_table(result):
              f"TRAIN 어휘 {v['n_vocab']}명(TRAIN {v['min_count']}구 이상, 전체 TRAIN 투수 {v['train_pitchers']}명, "
              f"UNK TRAIN 행 {v['train_unk_rows']}/{v['train_rows']}), TRAIN 마지막 날짜 {v['train_max_date']} ≤ "
              f"{v['last_train_date']}. 추가 파라미터 {v['id_parameters']}(파라미터·연산량 같지 않음). "
-             '정보 없이 크기만 맞춘 대조군은 이번 2팔 연구에 포함하지 않았으므로 차이를 ID 정보 때문이라고 단정할 수 없습니다.', '']
+             + ('정보 없이 크기만 맞춘 대조군은 이번 2팔 연구에 포함하지 않았으므로 차이를 ID 정보 때문이라고 단정할 수 없습니다.'
+              if len(result['seed_block']['parameters']) == 2 else
+              '주 대비는 후보 − 행 섞기 대조군(같은 망·파라미터·연산, 투수 열만 행끼리 섞음)입니다. 대조군은 ID 경로와 크기를 맞춘 것이고 '
+              '일반 백본 확장과 같다는 뜻은 아닙니다.'), '']
     for split, contrasts in result['pitcher_id_contrasts'].items():
-        lines += [f'## {split}', '', '| 행 묶음 | 행 수 | ΔNLL 앙상블 [95%] | ΔBrier 앙상블 [95%] | 시드별 ΔNLL |', '|---|---|---|---|---|']
-        for subset, one in contrasts[block['primary']].items():
-            rows = result['pitcher_id_rows'][split][subset]['rows']
-            if one is None:
-                lines.append(f'| {subset} | {rows} | 행 없음 | 행 없음 | - |')
-                continue
-            per_seed = ', '.join(f"{s}:{one['seeds'][s]['nll']['delta']:+.5f}" for s in one['seeds'])
-            lines.append(f"| {subset} | {rows} | {ci(one['ensemble'], 'nll')} | {ci(one['ensemble'], 'brier')} | {per_seed} |")
-        lines.append('')
+        for name, by_subset in contrasts.items():
+            head = f'## {split}' if len(contrasts) == 1 else f'## {split} — {name}' + (' (주 대비)' if name == block['primary'] else '')
+            lines += [head, '', '| 행 묶음 | 행 수 | ΔNLL 앙상블 [95%] | ΔBrier 앙상블 [95%] | 시드별 ΔNLL |', '|---|---|---|---|---|']
+            for subset, one in by_subset.items():
+                rows = result['pitcher_id_rows'][split][subset]['rows']
+                if one is None:
+                    lines.append(f'| {subset} | {rows} | 행 없음 | 행 없음 | - |')
+                    continue
+                per_seed = ', '.join(f"{s}:{one['seeds'][s]['nll']['delta']:+.5f}" for s in one['seeds'])
+                lines.append(f"| {subset} | {rows} | {ci(one['ensemble'], 'nll')} | {ci(one['ensemble'], 'brier')} | {per_seed} |")
+            lines.append('')
     lines += ['## 비용 (fit.json, 시드별 학습 루프 초 / epoch)', '', '| 팔 | 시드: 초/epoch, 파라미터 |', '|---|---|']
     for arm, seeds in result['cost'].items():
         lines.append(f"| {arm} | " + ', '.join(f"{s}: {c['train_seconds_per_epoch']:.2f}, {c['parameter_count']}"

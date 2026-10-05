@@ -73,6 +73,59 @@ SAFETY = 2.0
 TASK_BOUND_SECONDS = {REFERENCE: SAFETY * P36_PERIODIC_MAX_TASK_SECONDS,
                       CANDIDATE: RESOURCE_RATIO_MAX * SAFETY * P36_PERIODIC_MAX_TASK_SECONDS}
 FAMILY_PROJECTION_SECONDS = len(SEEDS) * sum(TASK_BOUND_SECONDS.values())  # serial, one GPU: 5,292.0 s
+# ------------------------------------------------------------------ P40 controls (tentative EXP-P40-001 DRAFT)
+# Pre-registration docs/PREREG-DRAFT-EXP-P40-001-pitcher-id-controls-2026-10-06.md, written 2026-10-06 00:50 KST after
+# the P38 score (post-selection, exploratory, repeated DEV) and before any P40 output.  Four arms, fresh seeds 60-64:
+#   periodic_residual_counts                          reference (P36/P38 entry verbatim)
+#   pitcher_id_periodic_residual_counts               P38 candidate verbatim (replication on fresh seeds)
+#   pitcher_id_row_shuffle_periodic_residual_counts   same network, parameters and compute as the candidate; the
+#       pitcher column is permuted ACROSS ROWS within every split by a fixed seed-independent permutation before the
+#       vocabulary lookup, so index frequencies / UNK share are kept and the row -> pitcher association is destroyed
+#       (information-free, parameter- and compute-matched control of the id path)
+#   pitcher_id_dropout_periodic_residual_counts       candidate + ID dropout: during training each row's index is
+#       replaced by UNK with probability 0.2 (private device generator; eval uses the true index), a fixed
+#       cold-start / shrinkage regulariser (DropoutNet-style input dropout), not tuned
+DESIGN_KEY = 'pitcher_id_design'
+P40_DESIGN = 'p40_controls_v1'
+SHUFFLE = 'pitcher_id_row_shuffle_periodic_residual_counts'
+DROPOUT = 'pitcher_id_dropout_periodic_residual_counts'
+SHUFFLE_SEED = 40_001
+ID_DROPOUT = 0.2
+P40_SEEDS = [60, 61, 62, 63, 64]
+P40_EARLIER_SEEDS = {**EARLIER_SEEDS, 'EXP-P38-001': list(SEEDS), 'EXP-P39-001 (MPS)': [49, 50, 51],
+                     'reserved for EXP-P41 (MPS sibling, 2026-10-06)': [52, 53, 54, 55, 56, 57, 58, 59]}
+BASELINES[SHUFFLE] = {**BASELINES[CANDIDATE], 'name': SHUFFLE,
+                      FLAG: {**PITCHER_ID, 'index_source': 'row_shuffle', 'shuffle_seed': SHUFFLE_SEED}}
+BASELINES[DROPOUT] = {**BASELINES[CANDIDATE], 'name': DROPOUT, FLAG: {**PITCHER_ID, 'id_dropout': ID_DROPOUT}}
+ID_ARMS = (CANDIDATE, SHUFFLE, DROPOUT)
+P40_ARM_ORDER = (REFERENCE, CANDIDATE, SHUFFLE, DROPOUT)
+P40_FITS = len(P40_ARM_ORDER) * len(P40_SEEDS)
+P40_CONTRASTS = [
+    {'name': 'pitcher_id_vs_row_shuffle', 'candidate': CANDIDATE, 'reference': SHUFFLE,
+     'isolates': 'pitcher_identity_information', 'role': 'primary', 'parameter_matched': True,
+     'compute_matched': True, 'information_free_capacity_control': 'this contrast (reference = row-shuffled ids)'},
+    {'name': 'pitcher_id_vs_periodic_residual_counts', 'candidate': CANDIDATE, 'reference': REFERENCE,
+     'isolates': 'pitcher_identity_with_id_parameters', 'role': 'replication_of_p38', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'see pitcher_id_vs_row_shuffle'},
+    {'name': 'row_shuffle_vs_periodic_residual_counts', 'candidate': SHUFFLE, 'reference': REFERENCE,
+     'isolates': 'id_parameters_without_information', 'role': 'capacity_control', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'candidate side is information-free'},
+    {'name': 'id_dropout_vs_pitcher_id', 'candidate': DROPOUT, 'reference': CANDIDATE,
+     'isolates': 'id_dropout_regularisation', 'role': 'secondary', 'parameter_matched': True,
+     'compute_matched': True, 'information_free_capacity_control': 'not applicable (both arms read ids)'},
+]
+P40_PRIMARY = P40_CONTRASTS[0]['name']
+P38_MAX_TASK_SECONDS = 244.70  # P38 actual per-task wall max (runs/EXP-P38-001 fit.json seconds_total, ref seed 48)
+P40_SAFETY = 1.25
+P40_TASK_BOUND_SECONDS = P40_SAFETY * P38_MAX_TASK_SECONDS
+P40_FAMILY_PROJECTION_SECONDS = P40_FITS * P40_TASK_BOUND_SECONDS  # serial, one GPU: 6,117.5 s
+DESIGNS = {
+    'p38': {'arms': ARM_ORDER, 'seeds': SEEDS, 'fits': FITS, 'contrasts': CONTRASTS, 'primary': PRIMARY,
+            'earlier_seeds': EARLIER_SEEDS, 'projection_seconds': FAMILY_PROJECTION_SECONDS},
+    P40_DESIGN: {'arms': P40_ARM_ORDER, 'seeds': P40_SEEDS, 'fits': P40_FITS, 'contrasts': P40_CONTRASTS,
+                 'primary': P40_PRIMARY, 'earlier_seeds': P40_EARLIER_SEEDS,
+                 'projection_seconds': P40_FAMILY_PROJECTION_SECONDS},
+}
 VOCAB_KEYS = ('n_vocab', 'ids_sha256', 'min_count', 'train_rows', 'train_pitchers', 'train_unk_rows',
               'train_max_date', 'last_train_date')
 
@@ -95,10 +148,17 @@ def id_parameters(n_vocab):
 
 
 def check_arm(arm):
-    """A pitcher-ID arm is exactly the registered candidate entry (old flags + the fixed pitcher_id block)."""
-    if arm.get('name') != CANDIDATE or not same(arm, BASELINES[CANDIDATE]):
-        raise ValueError('Pitcher-ID arm differs from the fixed registry entry: ' + str(arm.get('name')))
+    """A pitcher-ID arm is exactly one registered ID entry (P38 candidate or a P40 control; old flags + fixed block)."""
+    name = arm.get('name')
+    if name not in ID_ARMS or not same(arm, BASELINES[name]):
+        raise ValueError('Pitcher-ID arm differs from the fixed registry entry: ' + str(name))
     return arm
+
+
+def id_spec(arm):
+    """(index_source, shuffle_seed, id_dropout) of a checked pitcher-ID arm; P38 candidate = ('identity', None, 0.)."""
+    block = check_arm(arm)[FLAG]
+    return block.get('index_source', 'identity'), block.get('shuffle_seed'), float(block.get('id_dropout', 0.))
 
 
 def check_device(config):
@@ -110,21 +170,32 @@ def check_device(config):
     return device
 
 
+def design(config):
+    """The fixed design of a pitcher-ID config: P38 (no design key) or P40 controls (design key == P40_DESIGN)."""
+    key = config.get(DESIGN_KEY)
+    if key is None:
+        return DESIGNS['p38']
+    if key != P40_DESIGN:
+        raise ValueError(DESIGN_KEY + ' must be absent (P38) or exactly ' + P40_DESIGN)
+    return DESIGNS[P40_DESIGN]
+
+
 def check_family(config):
-    """Marker true, exactly the two arms in order, seeds 44-48 (10 fits), epoch cap 60, GPU3 only."""
+    """Marker true, exactly the design's arms in order and seeds (P38: 2 arms 44-48; P40: 4 arms 60-64), cap 60, GPU3."""
     if config.get(MARKER) is not True:
         raise ValueError(MARKER + ' must be exactly true')
-    if [a.get('name') for a in config['arms']] != list(ARM_ORDER):
-        raise ValueError('Pitcher-ID family must be exactly ' + ', '.join(ARM_ORDER))
+    d = design(config)
+    if [a.get('name') for a in config['arms']] != list(d['arms']):
+        raise ValueError('Pitcher-ID family must be exactly ' + ', '.join(d['arms']))
     for arm in config['arms']:
         if not same(arm, BASELINES[arm['name']]):
             raise ValueError(arm['name'] + ': arm differs from its fixed registry entry')
-    if 'repeat_tag' in config or not same(config.get('seeds'), SEEDS):
-        raise ValueError('Pitcher-ID seeds must be exactly [44, 45, 46, 47, 48] with no repeat_tag')
-    if set(SEEDS) & {s for block in EARLIER_SEEDS.values() for s in block}:
+    if 'repeat_tag' in config or not same(config.get('seeds'), d['seeds']):
+        raise ValueError(f"Pitcher-ID seeds must be exactly {d['seeds']} with no repeat_tag")
+    if set(d['seeds']) & {s for block in d['earlier_seeds'].values() for s in block}:
         raise ValueError('Pitcher-ID seeds overlap an earlier seed block')
-    if not same(config.get('fits'), FITS):
-        raise ValueError(f'Pitcher-ID family is exactly {FITS} fits')
+    if not same(config.get('fits'), d['fits']):
+        raise ValueError(f"Pitcher-ID family is exactly {d['fits']} fits")
     check_device(config)
     if not same(config.get('training'), TRAINING):
         raise ValueError(f'Pitcher-ID training must be the cuda_direct_v1 budget with epochs {EPOCH_CAP}')
@@ -136,8 +207,8 @@ def check_contrasts(config):
     contrasts = config.get('comparison', {}).get(CONTRAST_KEY)
     if contrasts is None:
         return None
-    if not same(contrasts, CONTRASTS):
-        raise ValueError(CONTRAST_KEY + ' differ from the fixed pre-registered pair')
+    if not same(contrasts, design(config)['contrasts']):
+        raise ValueError(CONTRAST_KEY + ' differ from the fixed pre-registered contrasts')
     check_family(config)
     return contrasts
 
@@ -200,6 +271,8 @@ def check_fit(config, arm, fit):
     """Per-fit record: vocabulary (candidate only), allocated parameters and cost; fail closed."""
     record = et.cost_record(fit)
     vocab = fit.get(FLAG)
+    if arm not in design(config)['arms']:
+        raise ValueError(f'{arm}: not an arm of this pitcher-ID design')
     if arm == REFERENCE:
         if vocab is not None:
             raise ValueError(f'{arm}: reference fit carries a pitcher-ID record')
@@ -222,7 +295,7 @@ def check_fit(config, arm, fit):
 
 def check_one_vocab(tasks):
     """All candidate fits carry one vocabulary record (TRAIN-only, seed-independent); the shared record."""
-    records = [t['vocab'] for t in tasks[CANDIDATE].values()]
+    records = [t['vocab'] for arm in tasks if arm != REFERENCE for t in tasks[arm].values()]
     if not records or len({json.dumps(r, sort_keys=True) for r in records}) != 1:
         raise ValueError('Pitcher-ID fits of one family must carry one vocabulary record')
     return {**records[0], 'n_fits': len(records), 'id_parameters': id_parameters(records[0]['n_vocab'])}
