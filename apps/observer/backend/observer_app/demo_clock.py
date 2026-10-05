@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import re
 import secrets
 import threading
 import time
@@ -26,6 +28,12 @@ KINDS = ('video_verified', 'game_timestamps_unsynced', 'test_fixture')
 ACTIVE = ('ready', 'running', 'paused')
 RATE_MIN, RATE_MAX = 0.25, 4.0
 DEFAULT_DIR = Path.home()/'.pitcheezy-demo'
+# video_verified provenance: a local file (bytes hashed, video.sha256) or a remote stream a person watched
+# (video.source remote_observed: no bytes, so no content hash; every row carries its own human review).
+REMOTE_SOURCE = 'remote_observed'
+REMOTE_METHOD = 'human_observation_result_visible'
+YOUTUBE_ID = re.compile(r'[A-Za-z0-9_-]{11}')
+SHA256 = re.compile(r'[0-9a-f]{64}')
 
 
 class DemoError(Exception):
@@ -44,8 +52,11 @@ def validate_mapping(mapping, keys=None):
         raise ValueError('mapping schema/kind')
     if mapping['kind'] != 'video_verified' and mapping.get('verified'):
         raise ValueError('only video_verified mappings may be verified')
-    if mapping['kind'] == 'video_verified' and not (mapping.get('verified') and (mapping.get('video') or {}).get('sha256')):
+    remote = (mapping.get('video') or {}).get('source') == REMOTE_SOURCE
+    if mapping['kind'] == 'video_verified' and not remote and not (mapping.get('verified') and (mapping.get('video') or {}).get('sha256')):
         raise ValueError('video_verified needs verified=true and a video sha256')
+    if remote:
+        _validate_remote(mapping)
     rows = mapping.get('rows') or []
     if not rows:
         raise ValueError('mapping has no rows')
@@ -58,6 +69,35 @@ def validate_mapping(mapping, keys=None):
         if keys is not None and (row['index'] >= len(keys) or keys[row['index']] != row['pitch_key']):
             raise ValueError(f"mapping row {row['index']} pitch_key differs from the game record")
     return mapping
+
+
+def _validate_remote(mapping):
+    """A remote_observed video is verified only by a person's per-row observation of the result-visible frame."""
+    video, check = mapping['video'], mapping.get('verification') or {}
+    if mapping['kind'] != 'video_verified' or mapping.get('verified') is not True:
+        raise ValueError('remote_observed video belongs to a verified video_verified mapping')
+    if video.get('sha256') is not None:
+        raise ValueError('remote_observed video has no content sha256 (bytes were never read)')
+    vid = video.get('video_id')
+    if video.get('platform') != 'youtube' or not isinstance(vid, str) or not YOUTUBE_ID.fullmatch(vid) \
+            or video.get('url') != f'https://www.youtube.com/watch?v={vid}':
+        raise ValueError('remote_observed video needs a canonical YouTube url and video_id')
+    duration = video.get('observed_duration_s')
+    if not isinstance(duration, (int, float)) or isinstance(duration, bool) or not math.isfinite(duration) or duration <= 0:
+        raise ValueError('remote_observed video needs a finite observed_duration_s')
+    if check.get('method') != REMOTE_METHOD or not str(check.get('by') or '').strip() or not str(check.get('observed_on') or '').strip() \
+            or not SHA256.fullmatch(str(check.get('csv_sha256') or '')):
+        raise ValueError('remote_observed verification needs method, by, observed_on and csv_sha256')
+    rows = mapping.get('rows') or []
+    for before, after in zip(rows, rows[1:]):
+        if after.get('index') != before.get('index', -2)+1 or not after.get('reveal_at_s', -1) > before.get('reveal_at_s', math.inf):
+            raise ValueError('remote_observed rows must be consecutive pitches with increasing result-visible times')
+    for row in rows:
+        at, review = row.get('reveal_at_s'), row.get('review') or {}
+        if not isinstance(at, (int, float)) or isinstance(at, bool) or not math.isfinite(at) or not 0 <= at <= duration:
+            raise ValueError(f"remote_observed row {row.get('index')} time outside 0..observed_duration_s")
+        if not str(review.get('by') or '').strip() or not str(review.get('evidence') or '').strip():
+            raise ValueError(f"remote_observed row {row.get('index')} lacks a per-row review (by, evidence)")
 
 
 class DemoClock:
@@ -180,7 +220,9 @@ class DemoClock:
             now = self.wall()
             session = {'schema': SESSION_SCHEMA, 'session_id': uuid.uuid4().hex, 'game_pk': game_pk,
                        'mapping': {'mapping_id': mapping['mapping_id'], 'kind': mapping['kind'], 'verified': bool(mapping.get('verified')),
-                                   'video_sha256': (mapping.get('video') or {}).get('sha256'), 'source_sha256': mapping['source_sha256']},
+                                   'video_sha256': (mapping.get('video') or {}).get('sha256'), 'source_sha256': mapping['source_sha256']}
+                       | ({'video_source': REMOTE_SOURCE, 'video_url': mapping['video']['url']}
+                          if (mapping.get('video') or {}).get('source') == REMOTE_SOURCE else {}),
                        'rows': rows, 'start_index': start, 'lead_s': float(lead_s), 'status': 'ready', 'rate': 1.0,
                        'version': 1, 'anchor': {'server_epoch': now, 'progress_s': 0.0}, 'ops': [],
                        'create_op_id': op_id, 'created_at': _iso(now), 'updated_at': _iso(now)}
