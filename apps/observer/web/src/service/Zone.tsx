@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { Bounds, Candidate } from './model';
 
 /** Catcher's-view strike zone, the largest element of the game screen.
@@ -16,21 +18,33 @@ export default function Zone({ bounds, candidate, actual, actualLabel, previous,
   const left = sx(-.83), right = sx(.83), top = sz(bounds.top), bottom = sz(bounds.bottom);
   const t = candidate?.target ?? null;
   const parts = [t ? `추천 ${candidate!.rank}순위 위치 네모` : null, actual ? `${actualLabel} 투구 동그라미` : null, previous ? '직전 투구 회색 동그라미' : null].filter(Boolean);
-  return <svg className="sv-zone" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img"
+  // Labels keep a readable on-screen size whatever the zone's drawn scale (SVG text otherwise scales with the drawing).
+  const ref = useRef<SVGSVGElement>(null);
+  const [scale, setScale] = useState(1);
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    const measure = () => { const r = el.getBoundingClientRect(); if (r.width && r.height) setScale(Math.min(r.width / W, r.height / H)); };
+    measure(); const ro = new ResizeObserver(measure); ro.observe(el); return () => ro.disconnect();
+  }, []);
+  const u = (n: number) => n / scale;  // on-screen px → drawing units
+  const px = (n: number) => `${u(n).toFixed(2)}px`;
+  const half = Math.max(12, u(13)), rA = Math.max(8, u(8)), rP = Math.max(6, u(6));
+  const labels = { '--zl-s': px(13), '--zl-m': px(14), '--zl-l': px(15) } as CSSProperties;
+  return <svg ref={ref} style={labels} className="sv-zone" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img"
     aria-label={`포수 쪽에서 본 스트라이크존${parts.length ? ': ' + parts.join(', ') : ''}`}>
     <rect x={left} y={top} width={right - left} height={bottom - top} className="sv-zone-box" />
     {[1, 2].map(i => <line key={`v${i}`} x1={left + (right - left) * i / 3} x2={left + (right - left) * i / 3} y1={top} y2={bottom} className="sv-zone-grid" />)}
     {[1, 2].map(i => <line key={`h${i}`} y1={top + (bottom - top) * i / 3} y2={top + (bottom - top) * i / 3} x1={left} x2={right} className="sv-zone-grid" />)}
     <path d={`M${sx(-.71)} 210 h${sx(.71) - sx(-.71)} l-8 6 h${-(sx(.71) - sx(-.71) - 16)} z`} className="sv-plate" />
     {typeof setupX === 'number' && Math.abs(setupX) <= 1.3 && <g className="sv-mitt" data-x={setupX}>
-      <line x1={sx(setupX)} x2={sx(setupX)} y1={top - 4} y2={bottom + 4} /><text x={sx(setupX)} y={top - 8} textAnchor="middle">미트</text></g>}
-    {previous && <g className="sv-prev"><circle cx={sx(clampX(previous.x))} cy={sz(clampZ(previous.z))} r="6" />
-      <text x={sx(clampX(previous.x))} y={sz(clampZ(previous.z)) + 17} textAnchor="middle">직전</text></g>}
+      <line x1={sx(setupX)} x2={sx(setupX)} y1={top - 4} y2={bottom + 4} /><text x={sx(setupX)} y={top - 4 - u(4)} textAnchor="middle">미트</text></g>}
+    {previous && <g className="sv-prev"><circle cx={sx(clampX(previous.x))} cy={sz(clampZ(previous.z))} r={rP} />
+      <text x={sx(clampX(previous.x))} y={sz(clampZ(previous.z)) + rP + u(15)} textAnchor="middle">직전</text></g>}
     {t && <g className="sv-rec" data-rank={candidate!.rank}>
-      <rect x={sx(t.x) - 12} y={sz(t.z) - 12} width="24" height="24" rx="3" />
-      <text x={sx(t.x)} y={sz(t.z) + 5} textAnchor="middle">{candidate!.rank}</text></g>}
-    {actual && <g className="sv-actual"><circle cx={sx(clampX(actual.x))} cy={sz(clampZ(actual.z))} r="8" />
-      <text x={sx(clampX(actual.x))} y={sz(clampZ(actual.z)) - 12} textAnchor="middle">{actualLabel}</text></g>}
-    <text x="4" y="12" className="sv-zone-caption">포수 시점</text>
+      <rect x={sx(t.x) - half} y={sz(t.z) - half} width={2 * half} height={2 * half} rx="3" />
+      <text x={sx(t.x)} y={sz(t.z) + u(5.5)} textAnchor="middle">{candidate!.rank}</text></g>}
+    {actual && <g className="sv-actual"><circle cx={sx(clampX(actual.x))} cy={sz(clampZ(actual.z))} r={rA} />
+      <text x={sx(clampX(actual.x))} y={sz(clampZ(actual.z)) - rA - u(4)} textAnchor="middle">{actualLabel}</text></g>}
+    <text x="4" y={2 + u(14)} className="sv-zone-caption">포수 시점</text>
   </svg>;
 }
