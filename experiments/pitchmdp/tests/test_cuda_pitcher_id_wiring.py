@@ -458,6 +458,43 @@ def test_gate_refuses_invalid_records_gpu4_and_vocab_problems():
     assert not gate.evaluate(f)['pass']
 
 
+def test_all_unk_smoke_vocabulary_runs_and_passes_the_gate(export, tmp_path, monkeypatch):
+    """Review-003: smoke reads only the first SMOKE['train'] TRAIN rows; if no pitcher reaches 100 of them the smoke
+    vocabulary is empty (every row UNK). That run must still work and must not be refused by the resource gate."""
+    path, digest, _ = export
+    monkeypatch.setitem(rc.SMOKE, 'train', 60)  # < 100 rows: no pitcher can enter the vocabulary
+    dest = rc.run_task(load(), path, digest, tmp_path / 'smoke', CAND, 44, 'cpu', {}, smoke=True)
+    v = read(dest / 'fit.json')[pid.FLAG]
+    assert (v['n_vocab'], v['train_rows'], v['train_unk_rows']) == (0, 60, 60) and v['unk_share']['train'] == 1.
+    assert v['ids_sha256'] == pidm.vocab_sha256([])
+    assert rc.load_model(rc.arm_spec(load(), CAND), dest / 'model.pt', 'cpu').net.n_ids == 0
+    fits = gate_fits()
+    for seed in pid.SEEDS:
+        fits[CAND][seed][pid.FLAG] = {k: v[k] for k in pid.VOCAB_KEYS}
+    ok = gate.evaluate(fits)
+    assert ok['pass'] and ok['smoke_vocabulary']['n_vocab'] == 0
+    fits[CAND][45][pid.FLAG]['n_vocab'] = -1
+    assert not gate.evaluate(fits)['pass']
+
+
+def test_gate_main_reads_runner_identities_and_refuses_missing_smoke(tmp_path):
+    """Review-003: the gate's IO path (runner.task_dir / expected_identity / verify_task / own_hashes, queue counts,
+    new summary file) runs without CUDA and fails closed with exit 3 when the 10 smoke tasks are absent."""
+    queue, runs, out = tmp_path / 'queue', tmp_path / 'runs-smoke', tmp_path / 'gate.json'
+    queue.mkdir(), runs.mkdir()
+    (queue / 'summary.json').write_text(json.dumps({'counts': {'done': 3, 'failed': 7}}))
+    assert gate.main([str(RUN), str(queue), str(runs), str(out)]) == 3
+    record = read(out)
+    assert record['pass'] is False and record['config_sha256'] == gate.DRAFT_SHA
+    assert any('smoke queue counts' in e for e in record['errors'])
+    assert sum('identity' in e for e in record['errors']) == pid.FITS
+    assert record['source_sha256'] == rc.own_hashes()
+    with pytest.raises(AssertionError, match='already exists'):
+        gate.main([str(RUN), str(queue), str(runs), str(out)])
+    with pytest.raises(AssertionError, match='-smoke'):
+        gate.main([str(RUN), str(queue), str(tmp_path / 'runs'), str(tmp_path / 'other.json')])
+
+
 def test_projection_fits_the_default_window():
     q = read(RUN)['queue']
     start = reg.at(q['date'], q['launch_by'])

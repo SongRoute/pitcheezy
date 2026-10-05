@@ -10,7 +10,8 @@ ONE resource gate (not the P37 linear/periodic gate): per arm, the median over t
 report.epochs_run (training loop only); refuse if candidate / reference > RESOURCE_RATIO_MAX (1.25) or any record is
 missing, nonfinite, nonpositive or has 0 epochs.  Validity (not resource) checks that also refuse: 10/10 identities,
 bound UUID set == {GPU3}, no released GPU, dev_used_for_fit_or_selection False, candidate fits carry one TRAIN-only
-vocabulary record (same hash on every seed, TRAIN max_date <= cutoff, n_vocab >= 1), reference fits carry none.  The
+vocabulary record (same hash on every seed, TRAIN max_date <= cutoff, n_vocab >= 0: the first 8,192 TRAIN rows may
+hold no pitcher with 100 rows, an all-UNK smoke still runs the gather + projection), reference fits carry none.  The
 smoke is 8,192 TRAIN rows x 2 epochs (its vocabulary is the smoke rows' vocabulary): NOT a cap-60 or full-vocabulary
 measurement.  The family projection is fixed from P36 actuals in the registry, not from the smoke.
 """
@@ -59,7 +60,7 @@ def evaluate(fits, seeds=pid.SEEDS, allowed_uuids=(pid.RETAINED_GPU,), released_
             if arm == pid.REFERENCE and record is not None:
                 errors.append(f'{arm}/{seed}: reference carries a pitcher-ID record')
             if arm == pid.CANDIDATE:
-                if not isinstance(record, dict) or int(record.get('n_vocab') or 0) < 1 \
+                if not isinstance(record, dict) or not isinstance(record.get('n_vocab'), int) or record['n_vocab'] < 0 \
                         or record.get('train_max_date') is None or int(record['train_max_date']) > pid.LAST_TRAIN_DATE:
                     errors.append(f'{arm}/{seed}: TRAIN vocabulary record missing or after the cutoff')
                 else:

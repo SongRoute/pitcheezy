@@ -2,7 +2,7 @@
 
 Job `pm-jobs/20261005-next-information/integration-002`, branch `codex/p38-integration-1005` (base = P37 delivery
 `2265f444be87e65adf9514173e3c08998a31700c`, P38 model `684f4b4` cherry-picked with `-x`). Nothing here touched a GPU, SSH
-or the server. `<C>` = the integration commit (full sha in REPORT-integration-002.md). `B=/home/sds733/pitcheezy-autonomy/20261004`.
+or the server. `<C>` = the review-003 commit on `codex/p38-review-1005` (P38 on final P37 head c44d5fc; full sha in REPORT-review-003.md). `B=/home/sds733/pitcheezy-autonomy/20261004`.
 
 Pins: DRAFT `configs/DRAFT-CUDA-PITCHER-ID-20261005.json` sha `8518f754236447fd054550dee75a5c3da7c510c3dd646f028662f097a02ee537`
 (deterministic `make_p38_config.py`); export manifest `49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578`
