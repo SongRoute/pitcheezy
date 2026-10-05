@@ -33,7 +33,9 @@ from pitchmdp.direct_periodic_residual_model import parameter_count as embed_par
 
 CONFIGS = REPO / 'configs'
 RUN = CONFIGS / 'DRAFT-CUDA-EMBED-TYPE-20261005.json'
-RUN_SHA256 = '1e3a529cfbed81be3833cd6082d297f13e5c913583fdf22711f04339d732ec7f'
+RUN_SHA256 = '75265fc715f0fec998f609f0316ffe1de486c609677588d0fbd7241fc427ace2'  # single-GPU regeneration (was 1e3a529c)
+GPU3 = 'GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9'  # retained (Song 2026-10-05)
+GPU4 = 'GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99'  # released to another project
 P36_SHA256 = 'b6479afa43a59df91774e0b714da2397692bdb06959fabb7716a129a5826b87e'
 PREREG = REPO / 'experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P37-001-embed-type-2026-10-05.md'
 MAKE = REPO / 'experiments/pitchmdp/docs/launch/make_p37_config.py'
@@ -88,10 +90,16 @@ def test_config_is_draft_exact_3_arm_family_on_seeds_39_43_with_cap_60():
     assert cfg['training'] == {'epochs': 60, 'patience': 5, 'batch_size': 1024, 'learning_rate': 0.0005,
                                'loss_weighting': 'uniform', 'hpo_trials': 0}
     p36 = read(CONFIGS / 'EXP-P36-001.json')
-    for key in ('protocol', 'export', 'training', 'calibration', 'device', 'data_rules'):
+    for key in ('protocol', 'export', 'training', 'calibration', 'data_rules'):
         assert cfg[key] == p36[key], key
-    assert cfg['device']['max_parallel'] == 2 and len(cfg['device']['allowed_gpu_uuids']) == 2
-    assert cfg['queue']['no_new_fit_after'] < cfg['queue']['kill_own_after'] <= '23:00'
+    # Song 2026-10-05 single-GPU rule: device replaced (P36 two-GPU history stays as registered)
+    assert p36['device']['max_parallel'] == 2 and sorted(p36['device']['allowed_gpu_uuids']) == sorted([GPU3, GPU4])
+    assert cfg['device'] == {'kind': 'cuda', 'allowed_gpu_uuids': [GPU3], 'max_parallel': 1, 'cpu_fallback': False}
+    assert cfg['device'] == et.DEVICE and et.RETAINED_GPU == GPU3 and et.RELEASED_GPUS == (GPU4,)
+    q = cfg['queue']
+    assert q['launch_by'] < q['no_new_fit_after'] < q['kill_own_after'] < q['aggregate_by'] < '23:00'
+    assert GPU3 in q['resource_rule'] and GPU4 in q['resource_rule'] and 'one fit at a time' in q['start_after']
+    assert GPU4 not in json.dumps({k: v for k, v in cfg.items() if k != 'queue'})
     assert cfg['comparison'][et.CONTRAST_KEY] == et.CONTRASTS
     assert not FORBIDDEN_KEYS & keys_deep(cfg)
 
@@ -141,6 +149,13 @@ EDITS = {
     'width': lambda c: c['arms'][2].update(width=144),
     'columns': lambda c: c['arms'][2].update(context_continuous=c['arms'][2]['context_continuous'][:-1]),
     'workload': lambda c: c['arms'][1].update(workload=[]),
+    'gpu4_added': lambda c: c['device'].update(allowed_gpu_uuids=[GPU3, GPU4]),
+    'gpu4_only': lambda c: c['device'].update(allowed_gpu_uuids=[GPU4]),
+    'gpu4_added_parallel_2': lambda c: c['device'].update(allowed_gpu_uuids=[GPU3, GPU4], max_parallel=2),
+    'parallel_2': lambda c: c['device'].update(max_parallel=2),
+    'other_gpu': lambda c: c['device'].update(allowed_gpu_uuids=['GPU-edb6bc12-c9aa-d79b-d3e7-9bc28118e4d4']),
+    'cpu_fallback': lambda c: c['device'].update(cpu_fallback=True),
+    'p36_device': lambda c: c.update(device=read(CONFIGS / 'EXP-P36-001.json')['device']),
 }
 
 
@@ -215,7 +230,8 @@ def test_draft_refuses_real_fits(export, tmp_path):
 def test_prereg_exists_and_states_the_fixed_family():
     text = PREREG.read_text()
     for needle in ('EXP-P37-001', '39, 40, 41, 42, 43', 'periodic_residual_counts', 'linear_residual_counts',
-                   'parameter-near-matched', 'NOT compute-matched', 'EXP-P32-001', '2026', RUN_SHA256[:12]):
+                   'parameter-near-matched', 'NOT compute-matched', 'EXP-P32-001', '2026', RUN_SHA256[:12],
+                   GPU3, GPU4, 'exactly one at a time', 'max_parallel` 1', 'aggregate by 22:30'):
         assert needle in text, needle
 
 
@@ -342,3 +358,32 @@ def test_scorer_refuses_missing_fit_or_contrast_key(export, tmp_path, few_draws)
     del no_key['comparison'][et.CONTRAST_KEY]
     with pytest.raises(ValueError, match='fixed contrast'):
         tf.run_score(tmp_path, no_key, export, fam, dest='s2')
+
+
+# ---- single-GPU resource rule (Song 2026-10-05): GPU3 only, max 1 fit, GPU4 refused everywhere it could be chosen
+
+def test_check_device_refuses_the_released_gpu_with_its_own_message():
+    with pytest.raises(ValueError, match='released GPU'):
+        et.check_device(mutate(read(RUN), EDITS['gpu4_added']))
+    assert et.check_device(read(RUN)) == et.DEVICE
+
+
+def test_queue_accepts_only_gpu3_alone(tmp_path):
+    import cuda_direct_queue as cq
+    cfg = read(RUN)
+    make = lambda gpus, d: cq.Queue(cfg, tmp_path / d, gpus, lambda *a: None, lambda *a: False,  # noqa: E731
+                                    lock_dir=tmp_path / 'locks')
+    queue = make([GPU3], 'ok')
+    assert queue.gpus == [GPU3] and list(queue.locks) == [GPU3] and len(queue.tasks) == 15
+    assert queue.locks[GPU3].path.name == GPU3 + '.lock'
+    for name, gpus in {'gpu4': [GPU4], 'both': [GPU3, GPU4], 'twice': [GPU3, GPU3], 'none': []}.items():
+        with pytest.raises(ValueError):
+            make(gpus, name)
+
+
+def test_fit_binding_refuses_gpu4_before_any_cuda_call(monkeypatch):
+    monkeypatch.delenv('CUDA_VISIBLE_DEVICES', raising=False)
+    with pytest.raises(ValueError, match='not in the allowed list'):
+        rc.bind_gpu(GPU4, read(RUN)['device']['allowed_gpu_uuids'])
+    import os
+    assert os.environ.get('CUDA_VISIBLE_DEVICES') is None

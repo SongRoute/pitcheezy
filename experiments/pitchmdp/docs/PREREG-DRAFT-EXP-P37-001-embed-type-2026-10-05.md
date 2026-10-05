@@ -8,7 +8,8 @@ on `codex/next-research-1005` from `f8a9a1b` (the P36 registration/launch lineag
 timing or fit**. No GPU, SSH, server write or data fetch in this job. The ID is tentative; it is assigned at registration.
 
 Config (DRAFT, generated): `configs/DRAFT-CUDA-EMBED-TYPE-20261005.json` sha256
-`1e3a529cfbed81be3833cd6082d297f13e5c913583fdf22711f04339d732ec7f`, written by
+`75265fc715f0fec998f609f0316ffe1de486c609677588d0fbd7241fc427ace2` (single-GPU regeneration 2026-10-05 ~14:35 KST by job
+`20261005-single-gpu/author-001`; the first draft `1e3a529c…ec7f` allowed GPU3/4 and is superseded, never registered), written by
 `experiments/pitchmdp/docs/launch/make_p37_config.py` from `configs/EXP-P36-001.json` (sha256 `b6479afa…b87e`).
 
 ## 요약 (Song용, 쉬운 말)
@@ -18,7 +19,7 @@ Config (DRAFT, generated): `configs/DRAFT-CUDA-EMBED-TYPE-20261005.json` sha256
 - 이번 실험은 ②를 고정하고 ①만 바꾼다: 같은 잔차 모델·같은 열·같은 임베딩 폭 8에서 사인/코사인 대신 "열마다 1차식"(linear)을
   쓰는 팔과 비교한다. 파라미터 수는 거의 같다(244,898 vs 244,634, 차이 264개 = 0.11 %). 계산량·시간은 같지 않다 → 따로 보고.
 - 비유: 같은 타자에게 같은 무게의 배트를 주고 그립만 바꿔 보는 것. 배트 무게(용량) 덕인지 그립(변환) 덕인지 가른다.
-- 3팔(대조군 포함, 러너 요구) × 새 시드 5개(39–43) = 15회. P36 실측으로 보면 GPU 2장에서 30분 안팎 예상(linear 팔 60 epoch 시간은 미측정).
+- 3팔(대조군 포함, 러너 요구) × 새 시드 5개(39–43) = 15회. **GPU3 1장에서 한 번에 1개씩**(2026-10-05 Song 자원 지시) — P36 실측 기준 학습만 약 40–60분 추정(linear 팔 60 epoch 시간·smoke 시간은 미측정).
 - 판정·승자 없음. dev/mlb_dev는 여러 번 본 자료라 "새 검증"이 아니다. 2026 자료는 쓰지 않는다.
 
 ## 1. What is already known (sources)
@@ -74,7 +75,7 @@ The residual_counts arm is deliberately NOT re-run (P36 has it; 2 arms × 5 seed
 - Pilot = CUDA smoke of all 15 tasks on the first 8,192 TRAIN rows, 2 epochs (runner SMOKE), checked by the existing
   identity checker. Smoke outputs are never scored; their only use is pass/fail of the pipeline.
 - Timing gate (before registration): no new timing probe is required because the per-arm cost is bounded by P36 actuals
-  (control mean 91.1 s, periodic mean 212.2 s / max 235.2 s at cap 60, same code, same GPUs). linear_residual at cap 60 is
+  (control mean 91.1 s, periodic mean 212.2 s / max 235.2 s at cap 60, same code; P36 ran on GPU3 and GPU4, P37 uses GPU3 only). linear_residual at cap 60 is
   **미측정** (P32 cap 30: 196.7 s mean). Gate: if the smoke shows any per-epoch time of linear > 1.5 × periodic, stop and
   re-plan instead of launching. Nothing from smoke or timing changes arms, seeds or training.
 
@@ -83,7 +84,8 @@ The residual_counts arm is deliberately NOT re-run (P36 has it; 2 arms × 5 seed
 Per split (dev, mlb_dev), seed-mean ensemble and each seed: ΔNLL and ΔBrier with 95 % game-bootstrap intervals; number of
 negative seeds; top-label ECE10 of each arm; each arm vs control. Cost per fit and per arm (median, min, max; per-seed
 candidate/reference ratios of fit seconds, optimizer updates, seconds per update); epochs run / best epoch / stopped-by.
-Same-GPU pair counts are observed, not scheduled. Size reference: control single-fit NLL SD (P36: dev 0.00076, mlb_dev 0.00026).
+All 15 fits run on GPU3 only, so every paired comparison is same-GPU by design; the scorer still reports the observed
+per-fit device UUID and any fit not on GPU3 is a protocol deviation to report. Size reference: control single-fit NLL SD (P36: dev 0.00076, mlb_dev 0.00026).
 
 Reading guide fixed now (descriptive, not a decision rule):
 - interval below 0 on both splits and ≥ 4/5 negative seeds on both → the periodic map carries signal beyond parameters on
@@ -104,12 +106,19 @@ Any later adoption needs a separate gated decision (unseen data / G0 / D155 rule
 
 ## 7. Budget, deadline and resources (planned 2026-10-05 KST)
 
-- 15 fits, ≤ 2 in parallel on GPU3/4 only (allowed UUIDs as P36), under the common exclusive GPU3/4 lock; no other family
-  queue running. Task timeout 3,600 s, max attempts 2, family budget 36,000 worker-seconds (as P36).
+- **Hardware (Song 2026-10-05, supersedes the first draft's GPU3/4 plan):** 15 fits, exactly one at a time, on physical
+  GPU3 only — UUID `GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9` (config `device.allowed_gpu_uuids` = [GPU3], `max_parallel` 1; registry `check_device`
+  refuses anything else; the queue then accepts only `[GPU3]`, and each fit process binds `CUDA_VISIBLE_DEVICES` to
+  that UUID). GPU4 `GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99` is released to another project: never allowed, probed or used as fallback; if GPU3 is busy
+  the family waits. Common exclusive GPU3 lock held; no other Pitcheezy family queue running. Task timeout 3,600 s, max
+  attempts 2, family budget 36,000 worker-seconds (as P36). Scientific design (arms, seeds, cap, data, contrast)
+  unchanged by the hardware change.
 - Estimate from P36 actuals (not a measurement of P37): control 5 × ~91 s + periodic 5 × ~212 s + linear 5 × (미측정, P32
-  ratio suggests ≤ periodic) ≈ 2,500–3,000 worker-seconds ≈ 25–35 min wall on 2 GPUs.
-- Clock: register + launch by 19:00; no new fit after 21:30; kill own fits after 22:30 (all fits end before the 23:00
-  cutoff); aggregate by 23:30. If not registered by 19:00 the family is not launched today and needs a new dated plan.
+  ratio suggests ≤ periodic; timing-gate worst case 1.5 × periodic) ≈ 2,500–3,100 worker-seconds ≈ **40–60 min of
+  training wall on one GPU** (serial). Smoke (15 tasks, 8,192 rows, 2 epochs) wall time on one GPU is 미측정.
+- Clock (all work ends before the 23:00 delegation deadline): register + launch by 19:00; no new fit after 21:00; kill
+  own fits after 21:45; aggregate by 22:30. If not registered by 19:00 the family is not launched today and needs a new
+  dated plan. An incomplete family is reported as incomplete; rigor is not reduced to fit the clock.
 
 ## 8. Gates before registration / launch (in order)
 
@@ -117,8 +126,10 @@ Any later adoption needs a separate gated decision (unseen data / G0 / D155 rule
    the registry/runner/scorer diff and tests; disposition recorded. (Not done; request prepared in the job dir.)
 2. Root PM acceptance of the reviewed commit.
 3. Launch pipeline from the P36 reviewed TEMPLATE (`docs/launch/run-p36-pipeline.TEMPLATE.py`) adapted to P37
-   (config sha, code commit, family dir `-smoke` naming) — to be authored and reviewed; not in this job.
+   (config sha, code commit, family dir `-smoke` naming) — to be authored and reviewed; not in this job. The P36
+   template's "smoke used exactly both pinned GPUs" check must become "exactly {GPU3}" (set equality with the config
+   allow-list, which is [GPU3]) — strengthened to the new allow-list, not dropped; queue started with `--gpu` GPU3 only.
 4. CUDA smoke 15/15 + identity checker exit 0 (§4 timing gate).
 5. Registration commit: status REGISTERED, execution.enabled true, registration block (source commit, smoke, go) — real
-   clock, never backdated. Then launch under the GPU3/4 lock. Scoring only with the pinned scorer after 15/15.
+   clock, never backdated. Then launch under the GPU3 lock (GPU3 only, 1 fit at a time). Scoring only with the pinned scorer after 15/15.
 Forbidden throughout: code-f429318 or any throughput fast loop, v5/v6 activation, 2026 data, promotion.

@@ -22,6 +22,8 @@ does more embedding work per row (2 x 16 cos/sin + a shared Linear(32, 8) per sc
 early stopping can also change epochs and optimizer updates.  Cost is therefore reported per fit (seconds, updates,
 seconds per update, epochs, parameters, peak device bytes), never used to adjust the NLL contrast.
 Every arm is also reported vs the same-family CUDA control by the scorer (runner requirement), not as a contrast.
+Hardware (Song 2026-10-05 single-GPU rule): all 15 fits on physical GPU3 only (UUID RETAINED_GPU), one at a time;
+the released GPU4 is refused by check_device (called from check_family, hence by the runner's config_check).
 """
 from __future__ import annotations
 
@@ -66,6 +68,11 @@ CONTRASTS = [
 ]
 PRIMARY = CONTRASTS[0]['name']
 CHANGED = {PRIMARY: {'embedding_map'}}
+# Single-GPU resource rule (Song 2026-10-05, supersedes the P36 two-GPU allow-list for this family): physical GPU3 by
+# UUID only, at most one fit at a time; GPU4 is released to another project and must never be allowed or used as fallback.
+RETAINED_GPU = 'GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9'
+RELEASED_GPUS = ('GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99',)
+DEVICE = {'kind': 'cuda', 'allowed_gpu_uuids': [RETAINED_GPU], 'max_parallel': 1, 'cpu_fallback': False}
 COST_KEYS = ('parameter_count', 'fit_seconds', 'seconds_total', 'optimizer_updates', 'epochs_run', 'best_epoch',
              'seconds_per_update', 'peak_device_bytes')
 
@@ -101,9 +108,20 @@ def check_family(config):
         if not same(arm, BASELINES[arm['name']]):
             raise ValueError(arm['name'] + ': arm differs from its exact earlier registered entry')
     check_seeds(config)
+    check_device(config)
     if not same(config.get('training'), TRAINING):
         raise ValueError(f'Embed-type training must be the cuda_direct_v1 budget with epochs {EPOCH_CAP}')
     return config
+
+
+def check_device(config):
+    """Exactly DEVICE: CUDA, allow-list == [RETAINED_GPU], max_parallel 1, no CPU fallback; a released GPU is refused."""
+    device = config.get('device') or {}
+    if any(g in RELEASED_GPUS for g in device.get('allowed_gpu_uuids') or []):
+        raise ValueError('Embed-type family must not allow a released GPU (GPU4 belongs to another project)')
+    if not same(device, DEVICE):
+        raise ValueError('Embed-type device must be exactly one GPU (GPU3 UUID) with max_parallel 1, no fallback')
+    return device
 
 
 def check_contrasts(config):

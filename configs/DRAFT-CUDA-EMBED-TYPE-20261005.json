@@ -185,10 +185,9 @@
   "device": {
     "kind": "cuda",
     "allowed_gpu_uuids": [
-      "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9",
-      "GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99"
+      "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9"
     ],
-    "max_parallel": 2,
+    "max_parallel": 1,
     "cpu_fallback": false
   },
   "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks manifest). DEV/mlb_dev only predicted, never used for fit, robust-scale statistics, early stop, temperature or selection. Same export manifest as EXP-P35-001 (P24-P35 export).",
@@ -442,12 +441,13 @@
     "date": "2026-10-05",
     "batch": "P37 embedding-map control 3 arms x fresh seeds 39-43, epoch cap 60 (DRAFT)",
     "launch_by": "19:00",
-    "no_new_fit_after": "21:30",
-    "kill_own_after": "22:30",
-    "aggregate_by": "23:30",
-    "date_note": "Planned 2026-10-05 KST bounds, fixed before registration: every fit ends by 22:30 (<= 23:00 overall fit cutoff); if registration has not happened by 19:00 the family is NOT launched today and needs a new dated plan",
+    "no_new_fit_after": "21:00",
+    "kill_own_after": "21:45",
+    "aggregate_by": "22:30",
+    "date_note": "Planned 2026-10-05 KST bounds, fixed before registration: every fit ends by 21:45 and the aggregate by 22:30, so ALL work ends before the 23:00 delegation deadline; if registration has not happened by 19:00 the family is NOT launched today and needs a new dated plan",
     "order": "priority then seed then arm (all 3 arms priority 1; config order)",
-    "start_after": "no other family queue running on GPU3/4; common exclusive GPU3/4 lock held; at most 2 fits in parallel"
+    "start_after": "no other Pitcheezy family queue running; common exclusive GPU3 lock held; exactly one fit at a time on GPU3 (UUID GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9)",
+    "resource_rule": "Song 2026-10-05: Pitcheezy uses ONLY physical GPU3 (UUID GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9), max 1 fit; GPU4 (UUID GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99) is released to another project: never allowed, probed or used as fallback (wait if GPU3 is busy). All 15 fits, hence every paired comparison, run on the same GPU. Completed P30-P36 families stay two-GPU history."
   },
   "exposure": "DEV / MLB DEV are the same repeatedly exposed <=2025 rows used for P24-P36 and EXP-P30-002; this exact pair ran once in EXP-P32-001 (seeds 16-18, cap 30; embedding_type dev -0.00126, mlb_dev -0.00012). Descriptive only; no unseen validation, no 2026, no G0 or policy change.",
   "execution": {

@@ -2,7 +2,8 @@
 
 Only family fields change (marker, arms, seeds, fits, comparison, purpose, notes, queue placeholders, status DRAFT,
 execution disabled, registration block removed); export, training (cap 60), calibration, device and data rules are
-copied byte-for-value from EXP-P36-001 (b6479afa...).  Deterministic: same input -> same bytes.
+copied byte-for-value from EXP-P36-001 (b6479afa...), EXCEPT the device block, which is replaced by the single-GPU
+rule of 2026-10-05 (et.DEVICE: GPU3 UUID only, max_parallel 1; GPU4 released).  Deterministic: same input -> same bytes.
   python experiments/pitchmdp/docs/launch/make_p37_config.py
 """
 import hashlib
@@ -26,6 +27,9 @@ def build():
     p36 = json.loads(SOURCE.read_text())
     keep = ('protocol', 'export', 'training', 'calibration', 'device', 'data_rules')
     config = {k: p36[k] for k in keep}
+    if set(p36['device']) != set(et.DEVICE) or p36['device']['kind'] != 'cuda' or p36['device']['cpu_fallback'] is not False:
+        raise SystemExit('EXP-P36-001 device block has an unexpected shape')
+    config['device'] = json.loads(json.dumps(et.DEVICE))  # Song 2026-10-05: GPU3 only, 1 fit; GPU4 released
     config.update({
         'experiment_id': 'EXP-P37-001',
         'status': 'DRAFT',
@@ -76,14 +80,20 @@ def build():
                                                   'max_attempts', 'stop_rule')},
                   'date': '2026-10-05',
                   'batch': 'P37 embedding-map control 3 arms x fresh seeds 39-43, epoch cap 60 (DRAFT)',
-                  'launch_by': '19:00', 'no_new_fit_after': '21:30', 'kill_own_after': '22:30',
-                  'aggregate_by': '23:30',
-                  'date_note': 'Planned 2026-10-05 KST bounds, fixed before registration: every fit ends by 22:30 '
-                               '(<= 23:00 overall fit cutoff); if registration has not happened by 19:00 the family '
-                               'is NOT launched today and needs a new dated plan',
+                  'launch_by': '19:00', 'no_new_fit_after': '21:00', 'kill_own_after': '21:45',
+                  'aggregate_by': '22:30',
+                  'date_note': 'Planned 2026-10-05 KST bounds, fixed before registration: every fit ends by 21:45 and '
+                               'the aggregate by 22:30, so ALL work ends before the 23:00 delegation deadline; if '
+                               'registration has not happened by 19:00 the family is NOT launched today and needs a '
+                               'new dated plan',
                   'order': 'priority then seed then arm (all 3 arms priority 1; config order)',
-                  'start_after': 'no other family queue running on GPU3/4; common exclusive GPU3/4 lock held; at most '
-                                 '2 fits in parallel'},
+                  'start_after': 'no other Pitcheezy family queue running; common exclusive GPU3 lock held; exactly '
+                                 'one fit at a time on GPU3 (UUID ' + et.RETAINED_GPU + ')',
+                  'resource_rule': 'Song 2026-10-05: Pitcheezy uses ONLY physical GPU3 (UUID ' + et.RETAINED_GPU +
+                                   '), max 1 fit; GPU4 (UUID ' + et.RELEASED_GPUS[0] + ') is released to another '
+                                   'project: never allowed, probed or used as fallback (wait if GPU3 is busy). All 15 '
+                                   'fits, hence every paired comparison, run on the same GPU. Completed P30-P36 '
+                                   'families stay two-GPU history.'},
         'exposure': 'DEV / MLB DEV are the same repeatedly exposed <=2025 rows used for P24-P36 and EXP-P30-002; this '
                     'exact pair ran once in EXP-P32-001 (seeds 16-18, cap 30; embedding_type dev -0.00126, mlb_dev '
                     '-0.00012). Descriptive only; no unseen validation, no 2026, no G0 or policy change.',
