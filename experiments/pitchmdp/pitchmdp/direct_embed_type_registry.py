@@ -28,6 +28,7 @@ the released GPU4 is refused by check_device (called from check_family, hence by
 from __future__ import annotations
 
 import json
+import math
 
 from pitchmdp import direct_embed_residual_registry as er
 from pitchmdp import direct_robust_clip_registry as robust_clip
@@ -141,19 +142,25 @@ def check_contrasts(config):
 
 
 def cost_record(fit):
-    """Per-fit cost from fit.json (runner fields, no prediction read); fail closed on missing or malformed values."""
+    """Per-fit cost from fit.json (runner fields, no prediction read); fail closed on missing or malformed values.
+
+    fit_seconds is fit wall (export load/hash + training); train_seconds is the frozen training-loop report.seconds
+    only (review 6b66436 M1/m1). The two are reported separately, never mixed."""
     report = fit.get('report') or {}
     try:
         updates, seconds = int(report['optimizer_updates']), float(fit['fit_seconds'])
+        train, epochs = float(report['seconds']), int(report['epochs_run'])
         record = {'parameter_count': int(fit['parameter_count']), 'fit_seconds': seconds,
                   'seconds_total': float(fit['seconds_total']), 'optimizer_updates': updates,
-                  'epochs_run': int(report['epochs_run']), 'best_epoch': int(report['best_epoch']),
+                  'epochs_run': epochs, 'best_epoch': int(report['best_epoch']),
                   'seconds_per_update': seconds / updates,
+                  'train_seconds': train, 'train_seconds_per_epoch': train / epochs,
+                  'train_seconds_per_update': train / updates,
                   'peak_device_bytes': None if fit.get('peak_device_bytes') is None else int(fit['peak_device_bytes'])}
     except (KeyError, TypeError, ValueError, ZeroDivisionError) as error:
         raise ValueError(f'Embed-type cost record malformed ({error!r})') from error
-    if updates <= 0 or not seconds > 0:
-        raise ValueError('Embed-type cost record needs positive updates and seconds')
+    if updates <= 0 or epochs <= 0 or not seconds > 0 or not (math.isfinite(train) and train > 0):
+        raise ValueError('Embed-type cost record needs positive updates, epochs, fit seconds and finite train seconds')
     return record
 
 

@@ -256,9 +256,16 @@ def test_runner_smoke_task_records_cap_and_registered_parameters(export, tmp_pat
 
 def test_cost_record_refuses_malformed_fits():
     good = {'parameter_count': 244634, 'fit_seconds': 10., 'seconds_total': 12., 'peak_device_bytes': None,
-            'report': {'optimizer_updates': 100, 'epochs_run': 7, 'best_epoch': 2}}
-    assert et.cost_record(good)['seconds_per_update'] == pytest.approx(.1)
+            'report': {'optimizer_updates': 100, 'epochs_run': 7, 'best_epoch': 2, 'seconds': 7.}}
+    record = et.cost_record(good)
+    assert record['seconds_per_update'] == pytest.approx(.1)
+    assert (record['train_seconds'], record['train_seconds_per_epoch'], record['train_seconds_per_update']) == \
+        pytest.approx((7., 1., .07))
     for bad in ({**good, 'fit_seconds': 0.}, {**good, 'report': {**good['report'], 'optimizer_updates': 0}},
+                {**good, 'report': {**good['report'], 'epochs_run': 0}},
+                {**good, 'report': {**good['report'], 'seconds': float('nan')}},
+                {**good, 'report': {**good['report'], 'seconds': 0.}},
+                {**good, 'report': {k: v for k, v in good['report'].items() if k != 'seconds'}},
                 {k: v for k, v in good.items() if k != 'parameter_count'}, {**good, 'report': {}}):
         with pytest.raises(ValueError):
             et.cost_record(bad)
@@ -281,7 +288,7 @@ def with_records(fam, cfg, skip=(), wrong=()):
                 continue
             fit = read(dest / 'fit.json')
             fit['report'] = {'epochs_run': 20 + seed - 39, 'best_epoch': 15 + seed - 39,
-                             'optimizer_updates': 1000 + seed}
+                             'optimizer_updates': 1000 + seed, 'seconds': 50. + (arm != 'control') * 25}
             fit['epoch_cap'] = rc.epoch_record(fit['report'], 60, 5)
             if (arm, seed) not in skip:
                 fit.update(parameter_count=et.PARAMETERS[arm] + ((arm, seed) in wrong),
@@ -325,6 +332,8 @@ def test_scorer_reports_the_contrast_cost_and_no_verdict(export, tmp_path, few_d
     assert cost['arms']['control']['fit_seconds_median'] == 141.
     ratio = cost['candidate_over_reference'][et.PRIMARY]['39']
     assert ratio['fit_seconds'] == pytest.approx(1.) and ratio['optimizer_updates'] == pytest.approx(1.)
+    assert cost['arms']['control']['train_seconds_median'] == 50. and ratio['train_seconds'] == pytest.approx(1.)
+    assert cost['arms']['control']['train_seconds_per_epoch_median'] == pytest.approx(50. / 22)
     table = (tmp_path / 'score' / 'table_ko.md').read_text()
     assert table.index('## dev 임베딩 함수') < table.index('## mlb_dev 임베딩 함수') < table.index('## 비용') \
         < table.index('epoch 상한(60)')

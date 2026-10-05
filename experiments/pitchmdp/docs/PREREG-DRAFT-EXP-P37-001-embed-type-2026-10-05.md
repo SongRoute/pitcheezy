@@ -1,6 +1,6 @@
 # DRAFT — EXP-P37-001 (tentative ID): periodic vs linear numeric embedding at near-equal parameters (pre-registration)
 
-Status: `author_draft; same_model_distinct_review_pending; not registered`. Written 2026-10-05 14:00–14:10 KST (real
+Status: `author_draft; same_model_distinct_review_done (6b66436, accept with fixes); delivery fixes M1/m1/m2/m3/m5 applied 2026-10-05 ~14:40 KST before any smoke (codex/p37-delivery-1005); not registered`. Written 2026-10-05 14:00–14:10 KST (real
 clock, `date` 14:00:04 at task start) by the Opus 5.5 next-research author (job `pm-jobs/20261005-next-research/author-001`)
 on `codex/next-research-1005` from `f8a9a1b` (the P36 registration/launch lineage; runtime code identical to
 `code-07ab288`, checked by `git diff --stat 07ab288 f8a9a1b -- experiments/pitchmdp/pitchmdp experiments/pitchmdp/scripts src`
@@ -66,7 +66,10 @@ The residual_counts arm is deliberately NOT re-run (P36 has it; 2 arms × 5 seed
   `embed_type_family: true`, tested FIRST because both embedded arms keep the P32 `embed_residual` flag); runner
   `config_check` / `training_budget` / `uses_epoch_cap` dispatch; scorer contrast key `embed_type_contrasts` plus a
   per-fit cost record (parameters == registered value, fit seconds, optimizer updates, seconds per update, epochs,
-  peak device bytes). Earlier registered configs P30–P36 route and budget exactly as before (tests).
+  peak device bytes; plus, added before any smoke (review 6b66436 m1, delivery job 2026-10-05), the pure training-loop
+  time `train_seconds` = frozen `report.seconds` and `train_seconds_per_epoch` / `train_seconds_per_update`, reported
+  separately from `fit_seconds` = fit wall incl. export load/hash). Earlier registered configs P30–P36 route and budget
+  exactly as before (tests).
 
 ## 4. TRAIN-only pilot / calibration methodology (fixed now; no DEV selection)
 
@@ -76,8 +79,19 @@ The residual_counts arm is deliberately NOT re-run (P36 has it; 2 arms × 5 seed
   identity checker. Smoke outputs are never scored; their only use is pass/fail of the pipeline.
 - Timing gate (before registration): no new timing probe is required because the per-arm cost is bounded by P36 actuals
   (control mean 91.1 s, periodic mean 212.2 s / max 235.2 s at cap 60, same code; P36 ran on GPU3 and GPU4, P37 uses GPU3 only). linear_residual at cap 60 is
-  **미측정** (P32 cap 30: 196.7 s mean). Gate: if the smoke shows any per-epoch time of linear > 1.5 × periodic, stop and
-  re-plan instead of launching. Nothing from smoke or timing changes arms, seeds or training.
+  **미측정** (P32 cap 30: 196.7 s mean).
+- **TRAIN-smoke timing gate (corrected 2026-10-05 before any smoke, review 6b66436 M1; supersedes "any per-epoch time")**:
+  per arm, the **median over the 5 smoke seeds of `report.seconds / report.epochs_run`** (frozen training-loop time only;
+  `fit_seconds` = fit wall incl. export load/hash is recorded separately as overhead and never gated). Stop and re-plan
+  (no registration) if linear median / periodic median **> 1.5**, or if any of the 15 records is missing, nonfinite,
+  nonpositive or has 0 epochs, or the smoke bound-UUID set ≠ {GPU3}. Implemented by `docs/launch/p37_smoke_gate.py`.
+  The smoke (8,192 TRAIN rows × 2 epochs) is **not a cap-60 measurement**; it only bounds the relative per-epoch cost.
+- **Schedule projection (fixed now, from P36 actuals, not from the smoke)**: per-task bound = 2 × the P36 per-arm max task
+  wall (control 100.13 s, periodic 235.20 s; P36 stopped at 10–13 epochs, so 2× covers ~20–26 epochs) and linear =
+  1.5 × the periodic bound (the gate maximum) → 5 × (200.26 + 470.40 + 705.60) = **6,881.4 s ≈ 1.91 h serial**.
+  Registration/launch is allowed only if launch + 6,881.4 s ≤ 21:00 (true for any launch ≤ 19:00). A fit that runs to
+  the cap 60 can exceed this bound; then the 21:00 / 21:45 clock below applies and the family is reported incomplete.
+  Nothing from smoke or timing changes arms, seeds or training.
 
 ## 5. Outcomes (all reported, no automatic winner)
 
@@ -90,8 +104,10 @@ per-fit device UUID and any fit not on GPU3 is a protocol deviation to report. S
 Reading guide fixed now (descriptive, not a decision rule):
 - interval below 0 on both splits and ≥ 4/5 negative seeds on both → the periodic map carries signal beyond parameters on
   these rows (still repeated DEV, not promotion);
-- intervals covering 0 or splits disagreeing (as in P32 mlb_dev) → the P36 periodic-vs-control gain is not attributable to
-  the periodic map over the LR map at near-equal parameters; capacity/embedding presence is the simpler account;
+- intervals covering 0 or splits disagreeing (as in P32 mlb_dev) → these rows do not show the periodic map beating the
+  LR map at near-equal parameters. This is **not** evidence that capacity caused the P36 periodic-vs-control gain (a null
+  here proves no cause; any "capacity" reading is a cross-family inference, review 6b66436 m5) — reported as not
+  distinguished, nothing more;
 - interval above 0 → LR at least as good at lower compute; reported, not adopted.
 Any later adoption needs a separate gated decision (unseen data / G0 / D155 rules unchanged).
 
@@ -110,7 +126,9 @@ Any later adoption needs a separate gated decision (unseen data / G0 / D155 rule
   GPU3 only — UUID `GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9` (config `device.allowed_gpu_uuids` = [GPU3], `max_parallel` 1; registry `check_device`
   refuses anything else; the queue then accepts only `[GPU3]`, and each fit process binds `CUDA_VISIBLE_DEVICES` to
   that UUID). GPU4 `GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99` is released to another project: never allowed, probed or used as fallback; if GPU3 is busy
-  the family waits. Common exclusive GPU3 lock held; no other Pitcheezy family queue running. Task timeout 3,600 s, max
+  the family waits. The queue is started with **exactly one `--gpu` GPU3** and the **COMMON** lock dir
+  `/home/sds733/pitcheezy-autonomy/gpu-locks` (never the per-queue default `<queue-dir>/locks`, review 6b66436 m3); the
+  smoke bound-UUID set must equal {GPU3}. No other Pitcheezy family queue running. Task timeout 3,600 s, max
   attempts 2, family budget 36,000 worker-seconds (as P36). Scientific design (arms, seeds, cap, data, contrast)
   unchanged by the hardware change.
 - Estimate from P36 actuals (not a measurement of P37): control 5 × ~91 s + periodic 5 × ~212 s + linear 5 × (미측정, P32
@@ -118,7 +136,9 @@ Any later adoption needs a separate gated decision (unseen data / G0 / D155 rule
   training wall on one GPU** (serial). Smoke (15 tasks, 8,192 rows, 2 epochs) wall time on one GPU is 미측정.
 - Clock (all work ends before the 23:00 delegation deadline): register + launch by 19:00; no new fit after 21:00; kill
   own fits after 21:45; aggregate by 22:30. If not registered by 19:00 the family is not launched today and needs a new
-  dated plan. An incomplete family is reported as incomplete; rigor is not reduced to fit the clock.
+  dated plan. **Scoring (review 6b66436 m2)**: only after 15/15, scorer timeout 900 s, started no later than 21:45 so it
+  ends ≤ 22:00; if the family is not 15/15 or the scorer cannot end by 22:00, it is not scored and is reported
+  **incomplete by 22:30** (< 23:00). An incomplete family is reported as incomplete; rigor is not reduced to fit the clock.
 
 ## 8. Gates before registration / launch (in order)
 
@@ -129,7 +149,8 @@ Any later adoption needs a separate gated decision (unseen data / G0 / D155 rule
    (config sha, code commit, family dir `-smoke` naming) — to be authored and reviewed; not in this job. The P36
    template's "smoke used exactly both pinned GPUs" check must become "exactly {GPU3}" (set equality with the config
    allow-list, which is [GPU3]) — strengthened to the new allow-list, not dropped; queue started with `--gpu` GPU3 only.
-4. CUDA smoke 15/15 + identity checker exit 0 (§4 timing gate).
+4. CUDA smoke 15/15 (one `--gpu` GPU3, common lock) + `p37_smoke_gate.py` exit 0 (identities, UUID set {GPU3}, §4
+   TRAIN-smoke timing gate); registration by `make_p37_registered_config.py`; pipeline `run-p37-pipeline.TEMPLATE.py`.
 5. Registration commit: status REGISTERED, execution.enabled true, registration block (source commit, smoke, go) — real
    clock, never backdated. Then launch under the GPU3 lock (GPU3 only, 1 fit at a time). Scoring only with the pinned scorer after 15/15.
 Forbidden throughout: code-f429318 or any throughput fast loop, v5/v6 activation, 2026 data, promotion.

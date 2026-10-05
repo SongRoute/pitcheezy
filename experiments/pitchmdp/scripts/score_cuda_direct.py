@@ -289,7 +289,8 @@ def cost_summary(tasks):
     arms = {}
     for arm, seeds in tasks.items():
         values = {k: [seeds[s]['cost'][k] for s in seeds] for k in ('fit_seconds', 'optimizer_updates',
-                                                                    'seconds_per_update', 'epochs_run')}
+                                                                    'seconds_per_update', 'epochs_run', 'train_seconds',
+                                                                    'train_seconds_per_epoch', 'train_seconds_per_update')}
         arms[arm] = {'parameter_count': embed_type_registry.PARAMETERS[arm],
                      **{f'{k}_median': float(np.median(v)) for k, v in values.items()},
                      **{f'{k}_min': float(np.min(v)) for k, v in values.items()},
@@ -298,10 +299,12 @@ def cost_summary(tasks):
     for c in embed_type_registry.CONTRASTS:
         cand, ref = tasks[c['candidate']], tasks[c['reference']]
         ratios[c['name']] = {str(s): {k: cand[s]['cost'][k] / ref[s]['cost'][k]
-                                      for k in ('fit_seconds', 'optimizer_updates', 'seconds_per_update')}
+                                      for k in ('fit_seconds', 'optimizer_updates', 'seconds_per_update',
+                                                'train_seconds', 'train_seconds_per_epoch', 'train_seconds_per_update')}
                              for s in cand}
     return {'arms': arms, 'candidate_over_reference': ratios,
-            'note': 'wall-clock depends on the GPU, co-running fit and early stopping; descriptive only'}
+            'note': 'wall-clock depends on the GPU, co-running fit and early stopping; descriptive only. fit_seconds = fit '
+                    'wall incl. export load/hash; train_seconds = training loop only (report.seconds)'}
 
 
 def member(family, arm, seed, split, rows):
@@ -606,10 +609,12 @@ def korean_table(result):
         lines.append('')
     if mapped:
         lines += ['## 비용 (fit.json, 시드 중앙값 [최소, 최대])', '',
-                  '| 팔 | 파라미터 | fit 초 | 갱신 수 | 갱신당 초 | epoch |', '|---|---|---|---|---|---|']
+                  '| 팔 | 파라미터 | fit 초 | 학습 루프 초 | 학습 epoch당 초 | 갱신 수 | 갱신당 초 | epoch |',
+                  '|---|---|---|---|---|---|---|---|']
         for arm, c in result['cost']['arms'].items():
             cell = lambda k, f='{:.1f}': f"{f.format(c[k + '_median'])} [{f.format(c[k + '_min'])}, {f.format(c[k + '_max'])}]"  # noqa: E731
-            lines.append(f"| {arm} | {c['parameter_count']} | {cell('fit_seconds')} | {cell('optimizer_updates', '{:.0f}')} | "
+            lines.append(f"| {arm} | {c['parameter_count']} | {cell('fit_seconds')} | {cell('train_seconds')} | "
+                         f"{cell('train_seconds_per_epoch', '{:.2f}')} | {cell('optimizer_updates', '{:.0f}')} | "
                          f"{cell('seconds_per_update', '{:.4f}')} | {cell('epochs_run', '{:.0f}')} |")
         lines.append('')
     if result.get('tabm_residual_contrasts') or ple or robust or mapped:
