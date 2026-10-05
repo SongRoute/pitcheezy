@@ -286,8 +286,14 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                                   (http_json, {'record_dir': REPO/LIVE_CONFIG['record_dir'],
                                                'delay_s': None if delay is None else float(delay)}))
             if (store := os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE')):  # opt-in restart-safe buffer (live_store.py)
+                import sqlite3
                 from .live_store import LiveSnapshotStore, PersistentLiveFeed
-                live['feed'] = PersistentLiveFeed(transport, store=LiveSnapshotStore(store), **options)
+                try:
+                    live['feed'] = PersistentLiveFeed(transport, store=LiveSnapshotStore(store), **options)
+                except (OSError, sqlite3.Error) as exc:  # unopenable store: serve live from memory, health says why
+                    LOGGER.warning('live store %s unavailable; serving from memory only', store, exc_info=True)
+                    live['feed'] = LiveFeed(transport, **options)
+                    live['feed'].store_error = f'open: {type(exc).__name__}: {exc}'
             else:
                 live['feed'] = LiveFeed(transport, **options)
         return live['feed']

@@ -146,3 +146,13 @@ def test_a_failing_store_keeps_serving_from_memory_and_says_so(tmp_path):
     with TestClient(app_for(live)) as client:
         body = client.get(f'/api/live/{GAME}/state').json()
     assert body['status'] == 'ready' and body['sync']['store_ok'] is False and 'disk I/O' in live.store_error
+
+
+def test_an_unopenable_store_path_still_serves_live_from_memory(tmp_path, monkeypatch):
+    (tmp_path/'file').write_text('')  # a file where the db's directory should be (like a missing/readonly volume)
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR', str(FIXTURES))
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_STORE', str(tmp_path/'file'/'live.sqlite3'))
+    with TestClient(create_app(object(), live_policy=LiveArmB(lambda: None))) as client:
+        assert client.get(f'/api/live/{GAME}/state?delay=0').json()['status'] == 'ready'
+        store = client.get('/api/health').json()['live_store']
+    assert store['started'] is False and store['error'].startswith('open: ')
