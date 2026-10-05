@@ -366,11 +366,15 @@ def test_child_uses_frozen_runner_route_and_frozen_sources_unchanged():
         assert f'runner.{name}(' in text
     for forbidden in ("'dev'", "'mlb_dev'", "'blend'", "'temperature'", 'fast_fit', 'run_task('):
         assert forbidden not in text
-    assert runner.own_hashes() == SPEC['pins']['source_sha256']  # matrix_models/fit/runner bytes == pinned P37 route
-    frozen = ['experiments/pitchmdp/' + p for p in SPEC['pins']['source_sha256']] + ['configs/EXP-P37-001.json',
-              'experiments/pitchmdp/scripts/cuda_direct_queue.py']
+    # p38-recovery-001 (on P38 review head 5b3335e): bench-001 pins the P37 route; here only the runner (P38 dispatch,
+    # reviewed in 5b3335e) differs and the two pitcher-ID modules are added; every other pinned model file is equal
+    own, p37 = runner.own_hashes(), SPEC['pins']['source_sha256']
+    assert {k for k in p37 if own.get(k) != p37[k]} == {'scripts/run_cuda_direct.py'}
+    assert set(own) - set(p37) == {'pitchmdp/direct_pitcher_id_model.py', 'pitchmdp/direct_pitcher_id_registry.py'}
+    frozen = ['experiments/pitchmdp/' + p for p in own] + ['configs/EXP-P37-001.json',
+              'configs/DRAFT-CUDA-PITCHER-ID-20261005.json', 'experiments/pitchmdp/scripts/cuda_direct_queue.py']
     root = SCRIPTS.parents[2]
-    diff = subprocess.run(['git', 'diff', '--stat', 'c44d5fc', '--', *frozen], cwd=root, capture_output=True, text=True)
+    diff = subprocess.run(['git', 'diff', '--stat', '5b3335e', '--', *frozen], cwd=root, capture_output=True, text=True)
     assert diff.returncode == 0 and diff.stdout == ''
 
 

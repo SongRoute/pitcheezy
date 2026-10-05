@@ -1,5 +1,8 @@
 # P38 (pitcher-ID) execution packet — PREPARED, NOT RUN (author_only; distinct Opus review pending)
 
+> **Recovery (2026-10-05 p38-recovery-001):** the v1 smoke gate REFUSED at 1.2528 (15:44). The next step is the ONE v2
+> TRAIN-only fixed-step resource measurement in `README-p38-recovery-v2.md`; registration now needs v1 validity + v2 pass.
+
 Job `pm-jobs/20261005-next-information/integration-002`, branch `codex/p38-integration-1005` (base = P37 delivery
 `2265f444be87e65adf9514173e3c08998a31700c`, P38 model `684f4b4` cherry-picked with `-x`). Nothing here touched a GPU, SSH
 or the server. `<C>` = the review-003 commit on `codex/p38-review-1005` (P38 on final P37 head c44d5fc; full sha in REPORT-review-003.md). `B=/home/sds733/pitcheezy-autonomy/20261004`.

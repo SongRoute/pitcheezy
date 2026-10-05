@@ -748,7 +748,13 @@ def test_runtime_code_on_this_lineage_equals_the_archived_probe_commit():
 # run from its own archived commit; nothing else may move.
 P38_RUNTIME_DELTA = ['A\texperiments/pitchmdp/pitchmdp/direct_pitcher_id_model.py',
                      'A\texperiments/pitchmdp/pitchmdp/direct_pitcher_id_registry.py']
-RUNTIME_DELTA = sorted(P37_RUNTIME_DELTA + P38_RUNTIME_DELTA, key=lambda line: line.split('\t')[1])
+# p38-recovery-001: additive resource tooling only (GPU3 two-slot supervisor + its bench child from c17a092 lineage, the
+# P38 v2 fixed-step resource measurement and its child). None is imported by the runner, queue, scorer or a model.
+RESOURCE_TOOL_DELTA = ['A\texperiments/pitchmdp/scripts/gpu3_bench_child.py',
+                       'A\texperiments/pitchmdp/scripts/gpu3_two_slot.py',
+                       'A\texperiments/pitchmdp/scripts/p38_resource_child.py',
+                       'A\texperiments/pitchmdp/scripts/p38_resource_measure.py']
+RUNTIME_DELTA = sorted(P37_RUNTIME_DELTA + P38_RUNTIME_DELTA + RESOURCE_TOOL_DELTA, key=lambda line: line.split('\t')[1])
 
 
 # ------------------------------------------------------------------ full parent run with a fake worker

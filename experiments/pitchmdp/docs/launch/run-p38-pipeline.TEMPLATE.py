@@ -1,5 +1,5 @@
 import os,json,subprocess,pathlib,datetime,signal,hashlib,sys
-# PREPARED TEMPLATE (P38 integration-002, author_only), NOT LAUNCHED. EXP-P38-001 (pitcher-ID, 10 fits, GPU3 only, 1 fit)
+# PREPARED TEMPLATE (P38 integration-002, author_only; p38-recovery-001 v2 resource check), NOT LAUNCHED. EXP-P38-001 (pitcher-ID, 10 fits, GPU3 only, 1 fit)
 # bounded pipeline derived from run-p37-pipeline.TEMPLATE.py (save/interrupted/execute/queue byte-identical). Requires P37
 # terminal (score-p37-state.json complete/incomplete/blocked) and GPU3 without any compute process; checks the registered
 # config, the passing TRAIN-only resource gate summary, the 10 smoke identities (bound UUID set == {GPU3}); queue with
@@ -12,7 +12,8 @@ codecommit='FILL_AT_REGISTRATION'  # smoke-verified P38 archive commit (= regist
 gatesha='FILL_AT_REGISTRATION'  # = registration.smoke.gate_summary_sha256
 smokeq='FILL_AT_REGISTRATION'  # P38 smoke queue dir (10/10 done)
 smokeruns='FILL_AT_REGISTRATION'  # P38 smoke runs dir (ends -smoke)
-assert 'FILL_AT_REGISTRATION' not in (codecommit,gatesha,smokeq,smokeruns),'template: placeholder not filled'
+ressha='FILL_AT_REGISTRATION'  # = registration.resource.measurement_sha256 (v2 fixed-step TRAIN measurement, p38-recovery-001)
+assert 'FILL_AT_REGISTRATION' not in (codecommit,gatesha,smokeq,smokeruns,ressha),'template: placeholder not filled'
 code=b/('code-'+codecommit)/'experiments/pitchmdp'
 python='/home/sds733/venv/bin/python'
 manifest='49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578'
@@ -20,7 +21,8 @@ draftsha='8518f754236447fd054550dee75a5c3da7c510c3dd646f028662f097a02ee537'
 GPU3='GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9'
 LOCKS='/home/sds733/pitcheezy-autonomy/gpu-locks'  # COMMON exclusive per-GPU lock dir (never the per-queue default)
 SCORE_SECONDS=900  # scorer must end by aggregate_by - 5 min (clock()); else 'incomplete'
-gate=b/'p38-smoke-gate.json'
+gate=b/'p38-smoke-gate.json'  # v1 smoke gate: its VALIDITY checks are required; its resource ratio (REFUSED 1.2528) is kept as-is
+resource=b/'p38-resource-v2-001/measure.json'  # the ONE v2 resource measurement; must pass (ratio <= 1.25, unchanged)
 state=b/'score-p38-state.json'
 if state.exists():raise SystemExit('already started')
 child=None
@@ -66,14 +68,20 @@ try:
  assert new['status']=='REGISTERED' and new['execution']=={'enabled':True,'executable':True}
  assert new['device']['allowed_gpu_uuids']==[GPU3] and new['device']['max_parallel']==1,'device must be GPU3 only, 1 fit'
  reg=new['registration'];assert reg['source_commit']==codecommit and reg['smoke']['gate_summary_sha256']==gatesha and reg['draft_sha256']==draftsha
+ assert reg['resource']['measurement_sha256']==ressha and reg['resource']['protocol']=='p38_train_fixed_step_resource_v2'
  assert hashlib.sha256(gate.read_bytes()).hexdigest()==gatesha
  g=json.loads(gate.read_text())
- assert g['protocol']=='p38_train_smoke_gate_v1' and g['pass'] is True and g['errors']==[] and g['tasks']==10 and g['bound_uuids']==[GPU3],'smoke gate not passed'
- assert g['config_sha256']==draftsha and g['export_manifest_sha256']==manifest and g['candidate_over_reference']<=g['ratio_max']==1.25
+ assert g['protocol']=='p38_train_smoke_gate_v1' and g['errors']==[] and g['tasks']==10 and g['bound_uuids']==[GPU3],'smoke gate validity not satisfied'
+ assert g['config_sha256']==draftsha and g['export_manifest_sha256']==manifest and g['ratio_max']==1.25
+ assert hashlib.sha256(resource.read_bytes()).hexdigest()==ressha
+ r=json.loads(resource.read_text());rd=r['decision']
+ assert r['protocol']==rd['protocol']=='p38_train_fixed_step_resource_v2' and rd['pass'] is True and rd['errors']==[],'v2 resource measurement not passed'
+ assert rd['candidate_over_reference']<=rd['ratio_max']==1.25 and rd['bound_uuids']==[GPU3] and rd['tasks']==4
+ assert r['serial']['max_live']==1,'v2 measurement was not serial'
  assert json.loads((b/smokeq/'summary.json').read_text())['counts']=={'done':10},'all 10 smoke tasks must finish'
  assert json.loads((b/'score-p37-state.json').read_text())['status'] in ('complete','incomplete','blocked'),'P37 must be terminal'
  assert not (b/'queue-p38-001').exists() and not (b/'runs/EXP-P38-001').exists() and not (b/'scores/EXP-P38-001').exists(),'P38 output already present'
- assert not subprocess.run(['pgrep','-f','cuda_direct_queue.py|timing_probe_|score_cuda_direct|run-p37-pipeline'],capture_output=True).stdout.strip(),'another queue/probe/scorer/pipeline is running: start_after not satisfied'
+ assert not subprocess.run(['pgrep','-f','cuda_direct_queue.py|timing_probe_|score_cuda_direct|run-p37-pipeline|p38_resource_child|gpu3_bench_child'],capture_output=True).stdout.strip(),'another queue/probe/scorer/pipeline is running: start_after not satisfied'
  apps=subprocess.run(['nvidia-smi','--query-compute-apps=gpu_uuid,pid','--format=csv,noheader'],capture_output=True,text=True,check=True).stdout
  assert GPU3 not in apps,'GPU3 has a compute process (foreign or ours): wait, never another GPU'
  sys.path[:0]=[str(code),str(code/'scripts')]
@@ -81,6 +89,7 @@ try:
  from pitchmdp import direct_pitcher_id_registry as pid
  assert pid.DEVICE['allowed_gpu_uuids']==[GPU3] and GPU3 not in pid.RELEASED_GPUS
  sources=runner.own_hashes();assert sources==g['source_sha256'],'sources differ from the smoke gate'
+ assert json.loads((b/'p38-resource-v2-001/spec-copy.json').read_text())['spec']['pins']['source_sha256']==sources,'v2 measured other sources'
  uuids=set()
  for arm in old['arms']:
   for seed in old['seeds']:

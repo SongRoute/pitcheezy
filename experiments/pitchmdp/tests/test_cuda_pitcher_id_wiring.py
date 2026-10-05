@@ -507,16 +507,17 @@ def test_projection_fits_the_default_window():
 
 def summary(tmp_path, **over):
     record = {**gate.evaluate(gate_fits()), 'config_sha256': gate.DRAFT_SHA,
-              'export_manifest_sha256': gate.MANIFEST_SHA, **over}
+              'export_manifest_sha256': gate.MANIFEST_SHA, 'source_sha256': rc.own_hashes(), **over}
     path = tmp_path / 'gate.json'
     path.write_text(json.dumps(record, sort_keys=True))
     return path
 
 
 def test_registration_changes_only_registration_paths_and_refuses_bad_gates(tmp_path):
-    s = summary(tmp_path)
+    from test_p38_resource_v2 import v2_measure  # p38-recovery-001: registration also needs the passing v2 measurement
+    s, v2 = summary(tmp_path), v2_measure(tmp_path)
     when = reg.at('2026-10-05', '20:40')
-    one = reg.build(s, '20:40', 'abc1234', 'root go ref', when)
+    one = reg.build(s, v2, '20:40', 'abc1234', 'root go ref', when)
     draft = read(RUN)
     assert {k for k in set(one) | set(draft) if one.get(k) != draft.get(k)} == \
         {'status', 'decision', 'execution', 'registration'}
@@ -524,12 +525,12 @@ def test_registration_changes_only_registration_paths_and_refuses_bad_gates(tmp_
     rc.config_check(one)
     rc.require_executable(one, False)
     with pytest.raises(AssertionError, match='launch_by'):
-        reg.build(s, '20:50', 'abc1234', 'go', reg.at('2026-10-05', '20:50'))
+        reg.build(s, v2, '20:50', 'abc1234', 'go', reg.at('2026-10-05', '20:50'))
     for over in ({'pass': False}, {'bound_uuids': [GPU3, GPU4]}, {'tasks': 15}, {'config_sha256': '0' * 64},
                  {'candidate_over_reference': 1.0}):
         (tmp_path / 'gate.json').unlink()
         with pytest.raises(AssertionError):
-            reg.build(summary(tmp_path, **over), '20:40', 'abc1234', 'go', when)
+            reg.build(summary(tmp_path, **over), v2, '20:40', 'abc1234', 'go', when)
 
 
 def test_template_fails_closed_gpu3_only_requires_p37_terminal_and_shares_functions():
@@ -553,3 +554,41 @@ def test_template_fails_closed_gpu3_only_requires_p37_terminal_and_shares_functi
     assert score_by == reg.at(q['date'], '22:30') and timeout == 110 * 60 + 300
     with pytest.raises(AssertionError, match='launch_by'):
         env['clock'](q, reg.at(q['date'], '20:50'), pid.FAMILY_PROJECTION_SECONDS)
+
+
+def test_p38_resource_child_runs_the_frozen_pitcher_id_route_train_only_on_cpu(export, tmp_path, monkeypatch):
+    """p38-recovery-001: the v2 measurement child fits both P38 arms through the runner's vocabulary/input/build rule
+    with fixed epochs (patience == epochs) and records the TRAIN-only vocabulary; CUDA binding stubbed for CPU."""
+    import p38_resource_child as child
+    path, digest, _ = export
+    cfg = tmp_path / 'draft-test.json'  # the DRAFT as the synthetic-export tests load it (test manifest pin)
+    cfg.write_text(json.dumps(load()))
+    spec = {'protocol': child.PROTOCOL, 'gpu_uuid': GPU3, 'config': str(cfg), 'export': str(path),
+            'pins': {'config_sha256': rc.sha256_file(cfg), 'export_manifest_sha256': digest,
+                     'source_sha256': rc.own_hashes()},
+            'tasks': [{'arm': REF, 'seed': 902}, {'arm': CAND, 'seed': 902}],
+            'workload': {'train_rows': None, 'earlystop_rows': None, 'epochs': 2}}
+    spec_path = tmp_path / 'spec.json'
+    spec_path.write_text(json.dumps(spec))
+    monkeypatch.setenv('CUDA_VISIBLE_DEVICES', GPU3)
+    monkeypatch.setattr(rc, 'bind_gpu', lambda uuid, allowed: {'bound_uuid': uuid} if allowed == [GPU3] else 1 / 0)
+    build = rc.build_model
+    monkeypatch.setattr(rc, 'build_model', lambda arm, seed, device, *a: build(arm, seed, 'cpu', *a))
+    monkeypatch.setattr(rc, 'peak_device_bytes', lambda device: None)
+    out = {}
+    for arm in (REF, CAND):
+        child.main(['--spec', str(spec_path), '--arm', arm, '--seed', '902', '--result', str(tmp_path / f'{arm}.json')])
+        out[arm] = read(tmp_path / f'{arm}.json')
+    for record in out.values():
+        assert record['epochs_run'] == 2 and record['splits_loaded'] == ['train', 'earlystop'] and record['train_only']
+        assert record['dev_used_for_fit_or_selection'] is False and record['runtime'] == {'bound_uuid': GPU3}
+    assert out[REF]['pitcher_id'] is None and out[REF]['optimizer_updates'] == out[CAND]['optimizer_updates']
+    manifest = rc.verify_export(path, load(), digest, hash_arrays=False)
+    train, _ = rc.train_subset(load(), rc.arm_spec(load(), CAND), rc.load_split(path, manifest, 'train'))
+    vocab = rc.pitcher_vocab(rc.arm_spec(load(), CAND), manifest, train)
+    assert {k: out[CAND]['pitcher_id'][k] for k in pid.VOCAB_KEYS} == pid.vocab_record(vocab)
+    assert out[CAND]['parameter_count'] == out[REF]['parameter_count'] + (vocab['n_vocab'] + 1) * 8 + 1024
+    with pytest.raises(FileExistsError):
+        child.main(['--spec', str(spec_path), '--arm', REF, '--seed', '902', '--result', str(tmp_path / f'{REF}.json')])
+    with pytest.raises(ValueError, match='predeclared'):
+        child.main(['--spec', str(spec_path), '--arm', REF, '--seed', '44', '--result', str(tmp_path / 'x.json')])
