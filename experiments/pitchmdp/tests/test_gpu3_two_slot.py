@@ -457,3 +457,26 @@ def test_preflight_refuses_while_a_p3x_pipeline_is_alive(tmp_path):
     spec['wait_for_terminal'] = [str(state)]
     with pytest.raises(RuntimeError, match='still running'):
         g.preflight(spec, mem_available=lambda: 1 << 40, gpu=lambda u: (1 << 40, 0, 0), apps=lambda: [], procs=procs)
+
+
+
+def test_exit_status_survives_a_sampler_that_spawns_subprocesses(tmp_path, fake):
+    """Real GPU3 run 2026-10-05 (bench-002): the 1 s nvidia-smi sampler's subprocess.run reaped a finished child
+    whose Popen object had been dropped, so a successful fit got returncode None and the mode counted 1/2."""
+    halt = __import__('threading').Event()
+
+    def spawner():
+        while not halt.is_set():
+            subprocess.run(['true'])
+            time.sleep(.01)
+    thread = __import__('threading').Thread(target=spawner, daemon=True)
+    thread.start()
+    try:
+        sup = supervisor(tmp_path)
+        run = sup.run(tasks(2), cmd(fake, .4), tmp_path / 'c', 2, task_timeout=20, total_timeout=30)
+        sup.release()
+    finally:
+        halt.set()
+        thread.join(5)
+    assert [r['returncode'] for r in run['tasks']] == [0, 0] and run['completed'] == 2
+    assert all(r['cpu_seconds'] is not None and 'proc' not in r for r in run['tasks'])

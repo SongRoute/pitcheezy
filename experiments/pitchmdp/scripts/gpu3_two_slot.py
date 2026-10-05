@@ -185,6 +185,9 @@ class TwoSlotSupervisor:
             return False
         record = self.running.pop(pid)
         record['log'].close()
+        proc = record.pop('proc', None)
+        if proc is not None and usage is not None:
+            proc.returncode = os.waitstatus_to_exitcode(status)  # reaped here; Popen must not wait again
         record.update(returncode=os.waitstatus_to_exitcode(status) if usage else None,
                       ended=time.monotonic(), finished_utc=utc(),
                       cpu_seconds=(usage.ru_utime + usage.ru_stime) if usage else None,
@@ -210,7 +213,9 @@ class TwoSlotSupervisor:
                     env = {**os.environ, 'CUDA_VISIBLE_DEVICES': self.uuid, 'PYTHONUNBUFFERED': '1'}
                     proc = subprocess.Popen(command_for(task, out_dir), stdout=log, stderr=subprocess.STDOUT,
                                             env=env, start_new_session=True)
-                    self.running[proc.pid] = {'task': task, 'pid': proc.pid, 'pgid': proc.pid, 'log': log,
+                    # keep the Popen object: a dropped running Popen goes to subprocess._active and is reaped by
+                    # the next subprocess call in ANY thread (the GPU3 sampler), which would hide its exit status
+                    self.running[proc.pid] = {'task': task, 'pid': proc.pid, 'pgid': proc.pid, 'log': log, 'proc': proc,
                                               'started': time.monotonic(), 'started_utc': utc(),
                                               'cuda_visible_devices': env['CUDA_VISIBLE_DEVICES']}
                     self.max_live = max(self.max_live, len(self.running))
