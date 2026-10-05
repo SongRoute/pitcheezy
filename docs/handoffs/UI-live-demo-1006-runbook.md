@@ -4,8 +4,8 @@
 상세 단계 로그: `/Users/song/Projects/pitcheezy-pm-jobs/20261005-ui-live-redesign/LIVE-INTEGRATION.md` (append-only).
 
 ## 0. 한눈에
-- **미리보기 반영(검토 가능한 부분 완성, Root 판정 REVIEWABLE PARTIAL)**: `http://100.108.252.111:8771/watch` (Tailscale 기기 전용). 21:40:03 KST에 교체, PID 18143. 기본 글자 크기 기준이며, 125% 글자 배치는 아직 고쳐야 할 결함이다(responsive-fix-013 진행 중).
-- **기준 커밋**: 브랜치 `codex/ui-live-preview-1005`, 서빙 코드 커밋 `d478795` (base `282dc6f` = 교체 전 8771; 이 문서 커밋은 그 다음). push·merge 안 함.
+- **미리보기 반영(검토 가능한 부분 완성, Root 판정 REVIEWABLE PARTIAL)**: `http://100.108.252.111:8771/watch` (Tailscale 기기 전용). 21:40:03 KST 첫 교체(PID 18143) → 21:57:55 재시작(PID 21786, 데이터 overlay-014 연결). 125% 글자 배치 결함은 responsive-fix-013(`7571f1e` → 체리픽 `8c56c7f`)로 해결: 320×568·360×640·375×553·390×600에서 125% 글자도 한 화면.
+- **기준 커밋**: 브랜치 `codex/ui-live-preview-1005`, 서빙 코드 커밋 `8c56c7f` (base `282dc6f` = 교체 전 8771; 이 문서 커밋은 그 다음). push·merge 안 함.
 - **실제 아이폰 Safari·맥북 확인: 아직 안 함(PHYSICAL 미확인).** 헤드리스 Chromium 모바일 에뮬레이션 결과만 있다. Safari·실기기 결과가 아니다.
 - **849843 전체 경기 영상: 막힘(BLOCKED).** Song에게 로그인된 전체 경기 다시보기 서비스가 없다. 13:51 압축본은 전체 영상이 아니다.
 - **대체 영상 후보 813031(2025 NLCS G4 MIL@LAD, MLB 공식 YouTube `45Rqrp4aZM4`)**: 21:49 Song이 맥북에서 "로그인 없이 재생돼요"라고 확인 = 실기기 재생·무료 확인. 투구별 결과 시각 대응표(0/16)와 5분 무편집 연속성은 미확인. 추천 묶음(alternative-data-010)은 review-011이 기능 재현용으로 수용했고, 서비스 반영은 overlay-014 준비 뒤 다음 8771 교체에서 검토한다. 849843(주 경기·CV)은 그대로 둔다.
@@ -17,7 +17,8 @@
   - 849843 = **2026-09-30(수) 11:00 KST** (MLB officialDate 9/29는 표시에 안 씀). 목록·상세 모두 같은 날짜.
 - §3 공통 경기 화면(라이브·종료·시연 같은 컴포넌트, 날짜·팀 항상 표시, 상세는 시트 안에서만 스크롤): I✅ R✅ P✅ Ph✗
   - 한 화면(세로 스크롤 없음): 기본 글자 크기에서 320×568·360×640·375×553·375×667·390×600·390×844·430×932 통과.
-  - **남은 결함(필수 재작업, 허용된 한계 아님)**: 글자 125%(text-size-adjust) 에뮬레이션에서 320×568·375×553은 22~42px 스크롤(아래 투구 번호 줄이 첫 화면 밖, 잘림은 없음). 360×640·320×568·375×553(125%)에서는 후보 줄이 스트라이크존보다 커진다. 320×460과 288×512(페이지 확대 대용)는 정상 스크롤 대체 동작만 보고한다(통과로 세지 않음).
+  - 125% 글자(text-size-adjust 에뮬레이션)에서도 320×568·360×640·375×553·390×600 한 화면 통과(013: 짧은/좁은 화면은 존 왼쪽·후보 오른쪽 세로 3칸 배치, 글자 축소·잘림 없음).
+  - **남은 결함**: 320×460(기본 13px 스크롤, 125% 104px)과 288×512(페이지 확대 대용)에서 존이 타석 영역보다 약간 작다. 이 두 크기는 엄격 기준 밖이라 스크롤 대체 동작만 보고한다(통과로 세지 않음).
 - §4 스트라이크존 중심 추천(존이 가장 큼, 1·2·3 같은 크기, 기본 1순위, 선택 시 존 표시, 실제=주황 원+'실제' / 추천=점선 번호 네모, '정책 선택 비중' 표기·값은 원본 그대로, 미지원은 이유만): I✅ R✅ P✅ Ph✗ (125% 글자 예외는 위 결함)
 - §5 라이브 동작(자동 갱신 기본, 끄기·수동 새로고침, 과거 고정, '최신으로' 복귀, LIVE 표시는 경기 상태만, 끊김·지연 표시와 재시도): I✅ R✅(가짜 라이브 피드 테스트·시연 세션) P✅ Ph✗
   - **실제 진행 중 MLB 경기로는 미검증**: 확인 시각에 진행 중 경기가 없었다. 10/6 06:00·09:00 KST 경기(849834·849839)가 다음 기회. 이 실행은 `LIVE_ARMB=0`이라 실제 라이브의 '다음 공 추천'은 "제공하지 않음"으로 정직하게 표시된다(운영 모델 변경 안 함).
@@ -34,6 +35,7 @@
 ## 2. 실행 주소
 - 경기 목록: `http://100.108.252.111:8771/watch` (날짜 이동 ‹ ›)
 - 849843 상세: `http://100.108.252.111:8771/watch/849843`
+- 대체 재현 경기 813031 (2025 NLCS G4 MIL@LAD, **2025-10-18(토) 09:38 KST**, 최종 1–5): `http://100.108.252.111:8771/watch/813031` — 추천 262/262 `asof_replay`, CV 없음.
 - 운영자 화면: `http://100.108.252.111:8771/demo-operator` (토큰 필요)
 - 시연 관람 주소: 운영자 화면에서 세션을 만들면 `/watch/849843?demo=<세션ID>`가 나온다. 이 주소를 아이폰에서 연다. 화면에는 시연 표시가 없다.
 - 시연 세션이 `ready/running/paused`인 동안에는 일반 주소의 849843이 잠긴다(목록 점수 비움, 상세 "지금 볼 수 없어요"). 미래 기록 노출을 막는 설계다. 일반 화면을 확인할 때는 활성 세션이 없어야 한다. 지금은 활성 세션이 없다.
@@ -43,13 +45,14 @@
 1. 맥미니에서 토큰 출력(화면에만, 메시지·문서에 붙이지 않는다):
    `PITCHEEZY_DEMO_DIR=/Users/song/Projects/pitcheezy-demo-sessions/preview8771 /Users/song/Projects/pitcheezy/.venv-observer/bin/python -c "import sys; sys.path.insert(0,'/Users/song/Projects/pitcheezy-worktrees/codex-ui-live-preview-1005/apps/observer/backend'); from observer_app.demo_clock import DemoClock; print(DemoClock().token())"`
 2. 맥북에서 `/demo-operator`를 열고 토큰을 입력한다(브라우저 탭 세션에만 저장).
-3. 대응표 `g849843-ab4-8-pace` 선택 → 세션 생성(시작 투구 = AB4 1구). 상태 `ready`, 아이폰에는 1회 초 종료·1회 말 시작 직전(0:0)이 보인다.
+3. 대응표 `g849843-ab4-8-pace`(주) 또는 `g813031-ab1-3-pace`(무료 영상 대체 경기, 1회 초 AB1~3, 삼진 2개) 선택 → 세션 생성(시작 투구 = AB4 1구). 상태 `ready`, 아이폰에는 1회 초 종료·1회 말 시작 직전(0:0)이 보인다.
    - 이 대응표는 **경기 피드 시각으로 만든 진행 속도표(game_timestamps_unsynced, verified=false)**다. 영상과 맞춘 것이 아니다.
 4. 아이폰에서 관람 주소를 연다.
 
 시작·정지(영상이 있을 때)
 - "3, 2, 1"에 맞춰 **영상 재생과 운영자 '시작'을 같이** 누른다. 서버는 영상 플레이어를 제어하지 않는다.
 - 정지: 영상 일시정지 → 바로 '일시정지'. 재개: '재개' → 영상 재생.
+- 813031 + YouTube `45Rqrp4aZM4`로 할 때: 대응표가 경기 피드 시각 기반(영상 미대조)이고 영상은 쉬는 시간 약 32분이 편집된 판이므로, 1회 초 첫 투구 직전에서 영상과 시계를 함께 시작하고 어긋나면 '특정 투구로 이동'으로 손으로 맞춘다. 이것은 기능 리허설이며 '영상과 동기화됨'이라고 말하지 않는다.
 - 광고·리플레이가 끼면 그 길이만큼 시계를 멈춘다. 차이가 커지면 '특정 투구로 이동'으로 시계를 맞춘다(영상 쪽은 건드리지 않는다).
 - '처음부터 다시' = 세션 생성 상태로. '진행 속도' 기본 1배.
 - 운영자 화면에서 마지막 공개 투구, 진행 시간(video_time_s), 다음 공개까지 남은 초를 본다.
@@ -62,9 +65,9 @@
 - 재접속: 새로고침·셀룰러 전환 뒤에도 서버 시계 기준으로 같은 투구로 돌아온다(두 브라우저 컨텍스트로 확인, 실기기 미확인).
 
 ## 4. 되돌리기 (8771만)
-교체 전: PID 80222, cwd `pitcheezy-worktrees/codex-showcase-1006` @282dc6f, 자산 `index-C2cOnYq0.js`, `dist/index.html` sha256 `47df5af1…`.
+현재: PID 21786, cwd `codex-ui-live-preview-1005` @8c56c7f, env에 DEMO/WATCH/FEED 디렉터리 추가(§5). 교체 전: PID 80222, cwd `pitcheezy-worktrees/codex-showcase-1006` @282dc6f, 자산 `index-C2cOnYq0.js`, `dist/index.html` sha256 `47df5af1…`.
 ```
-kill $(lsof -tnP -iTCP:8771 -sTCP:LISTEN)        # 현재 PID 18143 (codex-ui-live-preview-1005)
+kill $(lsof -tnP -iTCP:8771 -sTCP:LISTEN)        # 현재 PID 21786 (codex-ui-live-preview-1005)
 cd /Users/song/Projects/pitcheezy-worktrees/codex-showcase-1006
 env PITCHEEZY_OBSERVER_PORT=8771 PITCHEEZY_OBSERVER_HOST=tailscale PITCHEEZY_OBSERVER_LEGACY=0 PITCHEEZY_OBSERVER_LIVE_ARMB=0 \
     PITCHEEZY_OBSERVER_PYTHON=/Users/song/Projects/pitcheezy/.venv-observer/bin/python \
@@ -82,21 +85,25 @@ curl -s http://100.108.252.111:8771/api/health
 - `453d25b` 통합: 일반 번들에서 옛 영상·쇼케이스 화면 제외(MLB 영상 주소·장면 투구 목록이 어떤 자산에도 없음), 존 라벨 크기 고정.
 - `d3e0fbe` 통합: temporal-review-008 F1~F3(투구 뒤 비투구 사건으로 끝난 타석, 시연 중 경기 종료 보류, 진행 중 타석의 현재 투수).
 - `10e901e` 통합: 후보 2줄 배치(구종 이름 자르지 않음), 짧은 화면 존 최소 높이.
+- `8c56c7f` responsive-fix-013 `7571f1e`: 짧은/좁은 화면 존·후보 나란히, 125% 글자 한 화면. 8771 서빙 dist에 바로 빌드되어 검증 전에 반영된 점은 로그에 기록(곧바로 8771에서 QA 157/159 확인).
+- 데이터: 21:57:55 재시작부터 `PITCHEEZY_WATCH_DIR`/`PITCHEEZY_FEED_DIR` = `pm-jobs/.../preview-data-overlay-014/overlay/{watch,feeds}` (기존 15경기 바이트 동일 사본 + 813031, 읽기 전용, SHA256SUMS 32/32). 대응표 `g813031-ab1-3-pace`(sha256 `65e8677e…`, 1회 초 AB1~3 16구, 316.6초, unsynced, verified=false) 추가.
+- 현재 서빙 자산: `index-BmFP-fmA.js` `c7cef125…`, `index-u7MavTp0.js`(운영자) `cccffaa4…`, `index-BhmuV1aO.css` `2e9a740c…`, `index.html` `75a48ab7…`.
 - `d478795` 통합: 운영자 화면이 HTTP(Tailscale)에서 세션을 못 만들던 결함 수정(`crypto.randomUUID`는 보안 컨텍스트 전용). 8771 실서버 운영자 화면 확인 중 발견. 21:40 교체 뒤 같은 dist에 다시 빌드해 프로세스 재시작 없이 정적 자산만 바뀌었다(백엔드 동일).
-- 현재 서빙 자산: `index-B47PryN0.js` sha256 `a266c3c5…`, `index-Dk6NTGeZ.js` `e6fe2a0e…`, `index-DwNVxHau.css` `1e1c44b3…`, `index.html` `d84b9df3…`. (21:40 교체 직후 자산 `index-C8ync0tb.js` `eb898bf8…`는 운영자 결함이 있던 빌드.)
+- 그 시점 자산: `index-B47PryN0.js` sha256 `a266c3c5…`, `index-Dk6NTGeZ.js` `e6fe2a0e…`, `index-DwNVxHau.css` `1e1c44b3…`, `index.html` `d84b9df3…`. (21:40 교체 직후 자산 `index-C8ync0tb.js` `eb898bf8…`는 운영자 결함이 있던 빌드.)
 
 ## 6. 검증 근거 (모두 `pm-jobs/20261005-ui-live-redesign/review-integration-002/`)
 - 백엔드 `pytest`(apps/observer/backend): 287 passed (기준 282dc6f 257).
 - temporal-review-008 테스트를 이 트리에 실행: 5 passed (스냅샷에서는 3 failed).
 - 블랙박스 탐침 `demo_probe.py`: 8781 스테이징 90/90, **8771 실서버 90/90** (`probe-preview8771.txt`, 자산 갱신 뒤 `probe-preview8771-b.txt`). 토큰 없는 쓰기 401, 시작 전 상태 복원, 원본·옛 경로(/api/watch, reveal, summary, setup, replay, live, tap, legacy) 잠금, 목록 점수 비움(미국 날짜 포함), `?after`·잘못된 세션 ID 우회 차단, 두 클라이언트 일치, 정지·되감기·속도·초기화·버전 충돌, 구간 끝 ≠ 경기 종료, 번들에 토큰·투구 키·영상 주소 없음, 종료 세션은 마지막 공개 시점에 고정.
-- 브라우저 QA `integrated_qa.mjs`(헤드리스 Chromium): 8771 실서버 149/159 (`qa-preview8771.log`, 자산 갱신 뒤 `qa-preview8771-b.log`, 스크린샷 `qa-preview8771*/`).
+- 최종(21:58 이후, PID 21786): 탐침 849843 90/90·813031 90/90 (`probe-preview8771-e-*.txt`), 엄격 브라우저 QA 157/159 (`qa-preview8771-final.log`; 실패 2건 = 320×460·288×512 존 크기), 수렴 ≤1.8초, `service-ui-smoke` 110 ok, `responsive-fit-smoke` 통과, 백엔드 287 passed.
+- 이전 브라우저 QA `integrated_qa.mjs`(헤드리스 Chromium): 8771 실서버 149/159 (`qa-preview8771.log`, 자산 갱신 뒤 `qa-preview8771-b.log`, 스크린샷 `qa-preview8771*/`).
 - 운영자 화면(8771, 데스크톱 Chromium): 토큰 입력→세션 생성(ready, 마지막 공개 AB3 3구)→시작(0:05에 AB4 1구 공개)→일시정지→종료. URL·화면 글자에 토큰 없음, 페이지 오류 없음. 스크린샷 `operator-1280-paused.png`. 실패 10건은 모두 §1의 125% 글자 배치 결함. 이전 실행 기록(`qa-dryrun`, `qa-integrated-1~6`)은 그대로 보존. `qa-integrated-3~5`는 Root가 거부한 '확대 대용 자동 통과' 규칙을 썼으므로 근거로 쓰지 않는다.
 - frontend 자체 픽스처 테스트 `service-ui-smoke.mjs`: 통합 빌드에서 110 ok.
 - 옛(legacy) 웹 테스트는 실행하지 않았다(실서버 기본값 위험, incident-audit-004 §5).
 
 ## 7. 남은 문제
 1. 실제 아이폰 Safari·맥북 확인(안전 영역, 주소창 변화, dvh, 큰 글자) — Song 확인 필요.
-2. 125% 글자에서 320×568·375×553 22~42px 스크롤, 일부 크기에서 후보 줄이 존보다 큼 — 필수 재작업. responsive-fix-013(원 frontend 작성자, `codex/ui-responsive-fix-1005` from `10e901e`)이 21:43부터 담당. 통합 담당은 같은 CSS를 동시에 고치지 않고, 반환 커밋을 검토·체리픽한다. 그때까지 모바일 수용은 완료가 아니다.
+2. 125% 글자 배치: responsive-fix-013 `7571f1e`로 엄격 크기 전부 통과(8771 실서버 QA). 남은 것: 320×460·288×512에서 존이 타석 영역보다 약간 작음(엄격 기준 밖, 보고만). 실기기 큰 글자 확인은 아직.
 3. 전체 경기 영상 BLOCKED → 영상 대응표·동기화·5분 실리허설 미완료. media-rework-007이 공식 무료 후보(MLB YouTube `45Rqrp4aZM4`, 2025 NLCS G4, game_pk 813031)를 메타데이터로만 찾았다. alternative-data-010이 813031 as-of 추천 묶음을 만들었고 review-011이 기능 묶음으로 수용(채택·동기화 아님, 서비스에 미반영). media-sequential-012의 헤드리스 재생은 경기 전 43.9초에서 일반 오류로 멈췄다(실기기 아님). 영상 대응표 0/16. 남은 경로는 Song 맥북 재생 확인. 주 경기 변경은 Root 결정.
 4. 실제 진행 중 MLB 경기로 라이브 화면 미검증. 실라이브 다음 공 추천은 이 실행에서 꺼짐(LIVE_ARMB=0).
 5. 같은 '1구' 라벨이 이어지는 공개 시점에서는 수렴 측정이 약하다(타자 이름까지 비교하지 않음).
