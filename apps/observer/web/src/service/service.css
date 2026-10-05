@@ -165,3 +165,12 @@ body.sv-locked{overflow:hidden}
 /* the actual pitch result is never ellipsized: on narrow screens the line wraps (overrides the earlier ≤359px nowrap) */
 @media (max-width:359px){.sv-actual-line{flex-wrap:wrap}.sv-actual-text{white-space:normal;overflow:visible;text-overflow:clip}}
 @media (max-width:359px){.sv-cand{line-height:1.08;padding-top:2px;padding-bottom:2px}.sv-cands{gap:3px}}
+/* layout-final-017: short phones (<= 620px tall, e.g. 375x553 with 125% text) in LIVE past/stale, where the viewer bar
+   needs a second row for its 3 buttons. Place labels such as '가운데 높이 오른쪽' make a candidate three lines, and the equal
+   rows all take that height, so the candidate rows use the same tighter line box the <= 359px rule already uses; the
+   viewer bar's row gap and the record button's padding shrink a little. Fonts, controls and content are unchanged. */
+@media (max-height:620px){
+  .sv-cand,.sv-cand-type,.sv-cand-zone{line-height:1.08}.sv-cand{padding-top:2px;padding-bottom:2px}.sv-cands{gap:3px}
+  .sv-mode{row-gap:2px;margin-top:3px}.sv-stage{padding-top:3px}
+  .sv-pa-open{padding-top:0;padding-bottom:0}
+}
