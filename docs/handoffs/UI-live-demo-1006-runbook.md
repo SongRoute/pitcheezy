@@ -3,11 +3,11 @@
 작성: review-integration-002 → integration-resume-005/006 → 019 (같은 Claude Opus 5.5 세션). 최종 갱신 2026-10-05 22:23 KST (호스트 시계). 마지막으로 읽은 PM 노트: PM-REVIEW-NOTES.md의 "Root read mapping-review-018/REVIEW.md and accepts5ec5fa9 …" 노트.
 단계 로그: `/Users/song/Projects/pitcheezy-pm-jobs/20261005-ui-live-redesign/LIVE-INTEGRATION.md` (append-only). 외부 요약: 같은 폴더 `DELIVERY.md`.
 
-## 0. 현재 상태 (2026-10-06 00:20 KST, rev3)
-- 미리보기 `http://100.108.252.111:8771/watch` · PID **36069** (00:19:34 시작) · 서빙 소스 **`c84905a`** (base 282dc6f, 브랜치 codex/ui-live-preview-1005, push 안 함).
-- 자산 sha256: `index-CaAToUKj.js` 92977669c8afe1a6…, `index-Nq0zvYH7.js`(운영자) e88ca181ba9c21d4…, `index-CJLA7S2E.css` db53763d28c301e2…, `index.html` 4c095524aa83c7a9….
+## 0. 현재 상태 (2026-10-06 00:28 KST, rev3 + 040 표시 다듬기)
+- 미리보기 `http://100.108.252.111:8771/watch` · PID **36069** (00:19:34 시작, 00:27:17 화면 자산만 교체) · 서빙 소스 **`3ca9efc`** (base 282dc6f, push 안 함).
+- 자산·검사·되돌리기: `pm-jobs/20261005-ui-live-redesign/rev3-label-polish-040/REPORT.md` (직전 c84905a 자산 사본 포함).
 - rev3 화면: 작은 이닝 표시, 가운데 존(타자 좌우와 무관하게 화면 가운데), 추천 3개 동시 표시, 정사각형 투구 카드 `1. 포심 153`, 선수 칸 `팀약자 · 역할 · 이름` + 경기 전 기록·손·등번호, 이닝별 기록 시트. 상세는 `pm-jobs/20261005-ui-live-redesign/rev3-integration-034/REPORT.md`.
-- 존 좌표: 타자 존 + 바깥 여백 창, 창 안은 실제 좌표, 창 밖은 존 밖 가장자리 표시(화살표). 실측 격자 폭 375 기준 큰 존 119px, 미니 34px(목표 135/42 미달, 좌표 정확성 우선).
+- 존 좌표: 타자 존 + 바깥 여백 창, 창 안은 실제 좌표, 창 밖은 존 밖 가장자리 표시(화살표). 실측 격자 폭 375 기준 큰 존 119px, 미니 32–33px(목표 135/42 미달, 좌표 정확성 우선). 라벨·창 밖 표시 잘림/겹침은 040에서 정리(120 ok).
 - env: overlay-014(16경기), 시연 저장소 preview8771, LIVE_ARMB=0, `PITCHEEZY_PLAYER_SNAPSHOT_DIR=…/pregame-data-032/cache`(경기 전 기록: 849843·813031 두 경기만, 정규시즌 전날까지, 나머지 `–`, 라이브 경로는 없음).
 - 실기기: rev3 배치는 미확인(이전 배치 기본 글자 확인만 있음). 영상 결과 시각 3/16 관찰, 13 대기.
 - 되돌리기: 직전 화면은 REPORT.md의 15a4357 절차, 마지막 수단은 §4의 282dc6f.
