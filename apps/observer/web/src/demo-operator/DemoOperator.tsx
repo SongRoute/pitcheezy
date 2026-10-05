@@ -13,6 +13,9 @@ type Session = {
 };
 
 const TOKEN_KEY = 'pitcheezy-demo-operator-token';
+// crypto.randomUUID exists only in secure contexts (HTTPS/localhost); the preview is plain HTTP over Tailscale.
+// getRandomValues works in any context and is enough for an idempotency key.
+const opId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
 
 async function call<T>(token: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api/service/operator${path}`, {
@@ -67,7 +70,7 @@ export function DemoOperator() {
     if (!current) return;
     try {
       await call(token, `/sessions/${current.session_id}/control`,
-        { ...body, expected_version: current.version, op_id: crypto.randomUUID() });
+        { ...body, expected_version: current.version, op_id: opId() });
       await refresh();
     } catch (caught) {
       setError((caught as Error).message);
@@ -80,7 +83,7 @@ export function DemoOperator() {
     if (!mapping) return;
     try {
       const made = await call<Session>(token, '/sessions', {
-        game_pk: mapping.game_pk, mapping_id: mapping.mapping_id, op_id: crypto.randomUUID(),
+        game_pk: mapping.game_pk, mapping_id: mapping.mapping_id, op_id: opId(),
         ...(startIndex === '' ? {} : { start_index: Number(startIndex) }),
       });
       setSelected(made.session_id);
