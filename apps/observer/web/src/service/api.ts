@@ -2,7 +2,7 @@
  *  Primary: the service contract (pm-jobs/20261005-ui-live-redesign/CONTRACT.md, requested as FRONTEND-REQUESTS R1/R2).
  *  Fallback (404 on the service route only): the existing `/api/live/games` + `/api/watch/{game}` feeds, so the screen
  *  still renders real data before the contract lands. The fallback never invents scores or recommendations. */
-import type { Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
+import type { LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
 import { groupPas, kstDate, markDoubleheaders, plainZone, shiftDate } from './model';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
@@ -48,7 +48,7 @@ function status(raw: Raw): { status: GameStatus; text: string } {
 }
 export function normalizeCard(raw: Raw): GameCard {
   const st = status(raw);
-  return { game_pk: raw.game_pk, start: raw.start ?? null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
+  return { venue: raw.venue ?? null, game_pk: raw.game_pk, start: raw.start ?? null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
     status: st.status, status_text: st.text, away_team: raw.away_team, home_team: raw.home_team,
     away_score: num(raw.away_score), home_score: num(raw.home_score), inning: num(raw.inning), half: raw.half ?? null,
     game_number: num(raw.game_number) ?? 1, double_header: raw.double_header === true, embargoed: raw.embargoed === true };
@@ -130,6 +130,26 @@ export function mergeDetail(old: Detail, inc: Detail): Detail | null {
   const keep = old.pitches.filter(p => !inc.pitches.some(n => n.index === p.index));
   return { ...inc, pitches: [...keep, ...inc.pitches].sort((a, b) => a.index - b.index) };
 }
+/** CONTRACT-rev3 §3 `linescore` → screen shape. Cells stay null when the backend says not started / not reconstructible. */
+function linescoreRev3(raw: Raw | null | undefined): Linescore | null {
+  if (!raw || !Array.isArray(raw.innings) || !raw.teams) return null;
+  const rows: Raw[] = raw.innings.filter((r: unknown) => r && typeof r === 'object');
+  const team = (side: 'away' | 'home'): LineTeam => ({ innings: rows.map(r => num(r[side])),
+    r: num(raw.teams[side]?.runs), h: num(raw.teams[side]?.hits), e: num(raw.teams[side]?.errors), bb_hbp: num(raw.teams[side]?.bb_hbp) });
+  return { innings: rows.length, away: team('away'), home: team('home') };
+}
+/** Official stat strings ('.282', '1.014', '2.87') → numbers; anything else (missing, '-.--', '∞') → null = '–'. */
+const statNum = (v: unknown): number | null => { const n = typeof v === 'string' && /^-?\d*\.?\d+$/.test(v.trim()) ? Number(v) : num(v); return n === null || Number.isNaN(n) ? null : n; };
+/** CONTRACT-rev3 §4 flat `pregame.players[id]` (only revealed roles; a two-way player can carry era AND avg/ops) + game `jersey`
+ *  from every person card in the response. The card's slot (pitcher/batter) decides which fields are shown. */
+function playersRev3(raw: Raw): Record<string, PlayerInfo> | null {
+  const out: Record<string, PlayerInfo> = {};
+  const seen = (p: Raw | null | undefined) => { if (p && p.id != null) { const k = String(p.id); out[k] = { ...out[k], jersey: p.jersey ?? out[k]?.jersey ?? null }; } };
+  for (const h of [raw.current, ...(raw.pitches ?? []), ...(raw.pas ?? [])]) { seen(h?.batter); seen(h?.pitcher); }
+  for (const [id, st] of Object.entries((raw.pregame?.players ?? {}) as Record<string, Raw>))
+    out[id] = { ...out[id], era: statNum(st.era), avg: statNum(st.avg), ops: statNum(st.ops), stats_as_of: st.as_of ?? raw.pregame?.as_of ?? null };
+  return Object.keys(out).length ? out : null;
+}
 export function normalizeDetail(raw: Raw): Detail {
   const provenance: Rec['provenance'] = raw.source?.kind === 'live' ? 'captured_live' : 'asof_replay';
   const pitches = (raw.pitches ?? []).map((p: Raw) => pitchRow(p, provenance));
@@ -140,7 +160,8 @@ export function normalizeDetail(raw: Raw): Detail {
   return { game: normalizeCard(raw.game), pitches, pas: Array.isArray(raw.pas) ? raw.pas.map(pa) : groupPas(pitches, current), current,
     next: raw.next ? normalizeRec(nextRaw, provenance === 'captured_live' ? 'captured_live' : 'asof_replay') : null,
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
-    zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string') };
+    zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),
+    linescore_asof: linescoreRev3(raw.linescore), players: playersRev3(raw) };
 }
 
 /** Finished-game fallback: the precomputed watch file holds each pre-pitch record and, per pitch, the actual. */
