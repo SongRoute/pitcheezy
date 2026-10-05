@@ -329,3 +329,99 @@ def test_end_to_end_cpu_family_scores_four_contrasts(tmp_path, monkeypatch):
     np.save(directory / 'mlb_dev' / 'batter.npy', splits['mlb_dev']['batter'][::-1].copy())
     with pytest.raises(ValueError, match='array hash'):
         tf.run_score(tmp_path, cfg, exp, fam, dest='score2')
+
+
+# ------------------------------------------------------------------ dated DRAFT, smoke validity, registration, template
+
+import p43_launch as launch  # noqa: E402
+from datetime import datetime  # noqa: E402
+
+TEMPLATE = LAUNCH / 'run-p43-pipeline.TEMPLATE.py'
+
+
+def dated_text(tmp_path, date='2026-10-06', hhmm='10:00'):
+    out = tmp_path / 'dated.json'
+    subprocess.run([sys.executable, str(MAKE), '--clock', date, hhmm, '--out', str(out)], check=True,
+                   capture_output=True)
+    return out.read_text()
+
+
+def smoke_fits(vocab=None):
+    fits = {}
+    for arm in pid.P43_ARM_ORDER:
+        for seed in pid.P43_SEEDS:
+            fit = {'runtime': {'bound_uuid': pid.RETAINED_GPU}, 'dev_used_for_fit_or_selection': False,
+                   'report': {'seconds': 30. + (arm != REF), 'epochs_run': 2}}
+            if arm != REF:
+                columns, source, shuffle = launch.MODES[arm]
+                fit[pid.FLAG] = {'id_columns': columns, 'index_source': source, 'shuffle_seed': shuffle,
+                                 'vocabs': {c: {**{k: 1 for k in pid.VOCAB_KEYS}, 'n_vocab': 3 if c == 'pitcher' else
+                                                (vocab or {}).get((arm, seed), 5), 'train_max_date': 20250430}
+                                            for c in columns}}
+            fits.setdefault(arm, {})[seed] = fit
+    return fits
+
+
+def test_dated_draft_moves_only_the_clock(tmp_path):
+    text = dated_text(tmp_path)
+    cfg = launch.dated_check(text)
+    assert cfg['queue']['launch_by'] == '10:00' and cfg['queue']['no_new_fit_after'] == '11:45'
+    bad = json.loads(text)
+    bad['seeds'] = [70, 71, 72, 73, 75]
+    with pytest.raises(ValueError, match='more than the queue'):
+        launch.dated_check(json.dumps(bad))
+    bad = json.loads(text)
+    bad['queue']['no_new_fit_after'] = '10:30'  # shorter than the projection
+    with pytest.raises(ValueError, match='window'):
+        launch.dated_check(json.dumps(bad))
+    with pytest.raises(subprocess.CalledProcessError):  # never overwrite the undated DRAFT
+        subprocess.run([sys.executable, str(MAKE), '--clock', '2026-10-06', '10:00', '--out', str(RUN)], check=True,
+                       capture_output=True)
+    assert hashlib.sha256(RUN.read_bytes()).hexdigest() == RUN_SHA256
+
+
+def test_smoke_validity_refuses_wrong_mode_gpu_and_vocab():
+    good = launch.evaluate(smoke_fits())
+    assert good['valid'] and good['tasks'] == 20 and set(good['smoke_vocabulary']) == {'pitcher', 'batter'}
+    fits = smoke_fits({(BAT, 71): 6})  # a seed-dependent batter vocabulary
+    assert 'one TRAIN-only vocabulary record per id column' in ' '.join(launch.evaluate(fits)['errors'])
+    fits = smoke_fits()
+    fits[SHUF][72][pid.FLAG]['shuffle_seed'] = 40001
+    assert any('id mode' in e for e in launch.evaluate(fits)['errors'])
+    fits = smoke_fits()
+    fits[BOTH][70][pid.FLAG]['id_columns'] = ['batter']
+    assert any('name exactly' in e for e in launch.evaluate(fits)['errors'])
+    fits = smoke_fits()
+    fits[REF][73]['runtime']['bound_uuid'] = pid.RELEASED_GPUS[0]
+    errors = launch.evaluate(fits)['errors']
+    assert any('released GPU' in e for e in errors) and any('UUID set' in e for e in errors)
+
+
+def test_registration_changes_only_registration_paths_and_checks_the_clock(tmp_path):
+    text = dated_text(tmp_path)
+    sha = hashlib.sha256(text.encode()).hexdigest()
+    smoke = {**launch.evaluate(smoke_fits()), 'config_sha256': sha, 'export_manifest_sha256': launch.MANIFEST_SHA,
+             'batter_sidecar_sha256': json.loads(text)[pid.BATTER_SIDECAR_KEY]['sidecar_sha256'],
+             'source_sha256': {'x': '0' * 64}}
+    now = datetime(2026, 10, 6, 9, 50, tzinfo=launch.KST)
+    cfg = launch.build_registered(text, smoke, 'a' * 64, '09:45', 'd87e639', 'root go', now)
+    draft = json.loads(text)
+    assert {k for k in set(cfg) | set(draft) if cfg.get(k) != draft.get(k)} == {'status', 'decision', 'execution',
+                                                                                  'registration'}
+    assert cfg['registration']['undated_draft_sha256'] == RUN_SHA256 and rc.config_check(cfg)['status'] == 'REGISTERED'
+    for hhmm, when in (('10:05', now), ('09:55', now), ('09:20', now)):  # after launch_by / future / stale
+        with pytest.raises(ValueError):
+            launch.build_registered(text, smoke, 'a' * 64, hhmm, 'd87e639', 'root go', when)
+    with pytest.raises(ValueError, match='identity'):
+        launch.build_registered(text, {**smoke, 'batter_sidecar_sha256': '0' * 64}, 'a' * 64, '09:45', 'd87e639',
+                                'root go', now)
+
+
+def test_pipeline_template_fails_closed_and_names_only_gpu3():
+    text = TEMPLATE.read_text()
+    assert text.count("'FILL_AT_REGISTRATION'") == 8  # 7 placeholders + the not-filled guard and 'template: placeholder not filled' in text
+    assert w.GPU4 not in text and pid.RETAINED_GPU in text and "'--gpu',GPU3" in text
+    assert 'run-p4' not in text.replace('run-p40-pipeline', '').replace('run-p42-pipeline', '')  # no pgrep self-match
+    assert "score-p40-state.json','score-p42-state.json" in text and 'batter-sidecar-49097109/sidecar.json' in text
+    result = subprocess.run([sys.executable, str(TEMPLATE)], capture_output=True, text=True)
+    assert result.returncode != 0 and 'configsha not filled' in result.stderr

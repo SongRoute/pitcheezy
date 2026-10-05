@@ -5,8 +5,9 @@ row-shuffled batter id, pitcher + batter id), fresh seeds 70-74, fits 20, contra
 experiment id.  Export, training (cap 60), calibration, data rules and device (GPU3 only, max_parallel 1) are copied
 by value from the P40 DRAFT (3dba5445...), which copies P38 / EXP-P36-001.  Deterministic: same input -> same bytes.
 
-Clock: the DRAFT carries NO launch window (P40 / P42 hold GPU3 tonight).  The registering lead re-dates with
---clock YYYY-MM-DD HH:MM [LAST_AGGREGATE]; only the queue clock fields change, and that diff is reviewed.
+Clock: the DRAFT carries NO launch window (P40 / P42 hold GPU3 tonight).  The registering lead writes a dated copy
+with --clock YYYY-MM-DD HH:MM [LAST_AGGREGATE] --out NEW_PATH; only the five queue clock fields change
+(p43_launch.py dated-check), and that diff is reviewed.
 no_new_fit_after >= launch_by + P43_FAMILY_PROJECTION_SECONDS (6,117.5 s, ceil 5 min), kill +15 min, aggregate +20 min.
 """
 import hashlib
@@ -147,11 +148,18 @@ def build(date=None, launch_by=None, last_aggregate='23:59'):
 
 
 def main(argv):
-    if argv and (len(argv) not in (3, 4) or argv[0] != '--clock'):
-        raise SystemExit('usage: make_p43_config.py [--clock YYYY-MM-DD HH:MM [LAST_AGGREGATE]]')
-    text = json.dumps(build(*argv[1:]) if argv else build(), indent=2, ensure_ascii=False) + '\n'
-    OUT.write_text(text)
-    print(OUT.relative_to(REPO), hashlib.sha256(text.encode()).hexdigest())
+    """No args: rewrite the undated DRAFT.  --clock DATE HH:MM [LAST] --out NEW_PATH: write a dated copy to a NEW file
+    (the undated DRAFT is never overwritten by a dated one; p43_launch.py dated-check proves only the clock moved)."""
+    if not argv:
+        text, out = json.dumps(build(), indent=2, ensure_ascii=False) + '\n', OUT
+    else:
+        if argv[0] != '--clock' or '--out' not in argv or len(argv) not in (5, 6) or argv[-2] != '--out':
+            raise SystemExit('usage: make_p43_config.py [--clock YYYY-MM-DD HH:MM [LAST_AGGREGATE] --out NEW_PATH]')
+        text, out = json.dumps(build(*argv[1:-2]), indent=2, ensure_ascii=False) + '\n', Path(argv[-1])
+        if out.exists() or out.resolve() == OUT.resolve():
+            raise SystemExit(f'{out} exists or is the undated DRAFT; dated copies go to a NEW file')
+    out.write_text(text)
+    print(out, hashlib.sha256(text.encode()).hexdigest())
 
 
 if __name__ == '__main__':
