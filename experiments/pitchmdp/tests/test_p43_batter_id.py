@@ -464,3 +464,21 @@ def test_pipeline_template_fails_closed_and_names_only_gpu3():
     assert "score-p40-state.json','score-p42-state.json" in text and 'batter-sidecar-49097109/sidecar.json' in text
     result = subprocess.run([sys.executable, str(TEMPLATE)], capture_output=True, text=True)
     assert result.returncode != 0 and 'configsha not filled' in result.stderr
+
+
+def test_batter_row_shuffle_indices_keep_frequencies_and_remove_the_association():
+    rng = np.random.default_rng(9)
+    batter = rng.choice(np.array([201, 202, 203, 299]), 500)
+    vocab = {'columns': ['batter'], 'per_column': {'batter': {'ids': np.array([201, 202])}},
+             'index_source': 'identity', 'shuffle_seed': None}
+    (true,), shares = rc.p43_indices({'batter': batter}, vocab, 'dev')
+    assert shares['batter'] == pytest.approx(float(np.isin(batter, [203, 299]).mean()))
+    shuf = {**vocab, 'index_source': 'row_shuffle', 'shuffle_seed': pid.BATTER_SHUFFLE_SEED}
+    (a,), shares_a = rc.p43_indices({'batter': batter}, shuf, 'dev')
+    (b,), _ = rc.p43_indices({'batter': batter}, shuf, 'dev')
+    (c,), _ = rc.p43_indices({'batter': batter}, shuf, 'mlb_dev')
+    assert np.array_equal(a, b) and not np.array_equal(a, c)  # fixed per split, different across splits
+    assert np.array_equal(np.bincount(a, minlength=3), np.bincount(true, minlength=3)) and shares_a == shares
+    assert (a != true).mean() > .3  # association destroyed
+    with pytest.raises(ValueError, match='index source'):
+        rc.p43_indices({'batter': batter}, {**vocab, 'index_source': 'dropout'}, 'dev')
