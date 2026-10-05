@@ -71,16 +71,18 @@ async function run(w, h, big, which, state, side, many) {
       banned: ['다음 공 추천', '선택 비중', '방금 던진 공', '자동 ON', '새로고침', '최신으로'].filter((t) => text.includes(t)),
       live: document.querySelector('.sv-live')?.className ?? '', notice: document.querySelector('.sv-notice')?.className ?? '',
       players: [...document.querySelectorAll('.sv-player')].map((e) => e.className + '|' + e.querySelector('.sv-player-1').textContent),
-      dotsN: document.querySelectorAll('.sv-bso i').length, list: document.querySelector('.sv-zside.right .sv-reclist') ? 'right' : document.querySelector('.sv-zside.left .sv-reclist') ? 'left' : 'none',
+      dotsN: document.querySelectorAll('.sv-bso i').length, list: document.querySelector('.sv-recband.at-right .sv-reclist') ? 'right' : document.querySelector('.sv-recband.at-left .sv-reclist') ? 'left' : 'none',
       offscreen, minFont, overlapActualLabel: (() => { const t = [...document.querySelectorAll('.sv-zone-wrap .sv-rec text')].map((e) => e.getBoundingClientRect()); const a = document.querySelector('.sv-zone-wrap .sv-actual text')?.getBoundingClientRect(); return !!a && t.some((b) => !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)); })() };
   });
   const tag = `${w}x${h}${big ? '@125' : ''} ${which}/${state} ${side}${many ? ' 12p' : ''}`;
-  const fits = !(w === 320 && big);  // 320 at 125% is reported, not asserted (page scroll fallback allowed if content would clip)
+  // with 125% text the page may scroll (zone row keeps a 15em minimum instead of shrinking; ui-pitcher-view-1006) — reported, not asserted
+  const fits = !big;
   (fits ? ok : (c2, m, i) => console.log(c2 ? 'ok  ' : 'INFO', m, c2 ? '' : JSON.stringify(i)))(L.scrollH <= L.innerH + 1 && L.offscreen.length === 0, `${tag} one screen, controls on screen`, { scrollH: L.scrollH, innerH: L.innerH, off: L.offscreen });
   ok(L.scrollW <= L.innerW + 1, `${tag} no horizontal page scroll`, L);
   ok(L.zoneDx !== null && Math.abs(L.zoneDx) <= 2, `${tag} zone centred (dx ${L.zoneDx?.toFixed(2)})`, L.zoneDx);
   ok(L.zoneH >= 110, `${tag} zone height ${Math.round(L.zoneH)}`, L.zoneH);
-  ok(L.list === (side === 'L' ? 'left' : 'right'), `${tag} candidate list opposite batter (${L.list})`, L.list);
+  // pitcher's view (ui-pitcher-view-1006): a left-handed batter is on the screen LEFT, so the list is on the right (and vice versa)
+  ok(L.list === (side === 'L' ? 'right' : 'left'), `${tag} candidate list opposite batter (${L.list})`, L.list);
   ok(L.banned.length === 0, `${tag} removed visible texts`, L.banned);
   ok(L.minFont >= 12, `${tag} min text ${L.minFont}px`, L.minFont);
   ok(L.cardsSquare && L.cardsRow, `${tag} ${L.n} square cards in one row`, L);

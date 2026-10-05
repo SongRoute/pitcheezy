@@ -73,7 +73,7 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
           <p className="sv-muted">{provenanceText(rec)}{rec.policy ? ` · ${rec.policy}` : ''}</p>
           <table className="sv-table"><thead><tr><th scope="col">순위</th><th scope="col">구종</th><th scope="col">대략 위치</th><th scope="col">정책 선택 비중</th></tr></thead>
             <tbody>{rec.candidates.map((c: Candidate) => <tr key={c.rank}><td>{c.rank}</td><td>{c.pitch_label}</td><td>{c.zone_label || '위치 없음'}</td><td>{policyShare(c.probability)}</td></tr>)}</tbody></table>
-          <p className="sv-muted">정책 선택 비중은 성공·적중 확률이 아니에요. 위치는 포수 쪽에서 본 방향이에요.</p>
+          <p className="sv-muted">정책 선택 비중은 성공·적중 확률이 아니에요.</p>
         </>}
     </section>
     <section className="sv-detail">

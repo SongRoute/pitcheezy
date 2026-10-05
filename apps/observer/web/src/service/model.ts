@@ -28,7 +28,7 @@ export type GameCard = { game_pk: number; start: string | null; kst_date: string
 export type Phase = 'pregame' | 'pre_pitch' | 'resolving' | 'between_innings' | 'final';
 export type Current = { phase: Phase; situation: Situation; batter: (Person & { side: string }) | null; pitcher: (Person & { hand: string }) | null; pa_key: string | null };
 export type Pa = { pa_key: string; at_bat_number: number; inning: number; half: Half; batter: string; pitcher: string;
-  first: number; last: number; complete: boolean; result: string };
+  first: number; last: number; complete: boolean; result: string; batter_id?: number | null };
 export type Detail = { game: GameCard; pitches: PitchRow[]; pas: Pa[]; current: Current | null; next: Rec | null; cutoff: number | null; session: string | null;
   feed: { as_of: string | null; ok: boolean; stale_s: number | null }; zone_bounds: Bounds; notes: string[];
   /** rev3 optional: half-innings computed from plays published up to the cutoff only; null cell = not reached yet. */
@@ -133,6 +133,14 @@ export function groupPas(pitches: PitchRow[], current: Current | null): Pa[] {
   return out;
 }
 
-/** Plainer zone words (as WatchAlong.plainZone): '가운데 높이 중앙' → '한가운데'. Left/right stay catcher's view. */
-export const plainZone = (label: string) => label.replace('가운데 높이 중앙', '한가운데').replace('가운데 높이 ', '가운데 ');
+/** Plainer zone words (as WatchAlong.plainZone): '가운데 높이 중앙' → '한가운데', left/right in the pitcher's view (below). */
+/** Zone words come from the server in the CATCHER's view ('왼쪽' = catcher's left). The screen is drawn from the pitcher's view
+ *  (Zone.tsx VIEW_X), so left/right words are swapped for display; the zone id and coordinates are untouched. */
+/** Korean names for Statcast codes the server's PITCH_LABELS lacks (it then sends the feed's English description or the bare code).
+ *  Display only; an unknown code shows as the code itself, never an English full name. Approved by Root 2026-10-06 (CONTRACT-AUDIT §4). */
+const EXTRA_PITCH_NAMES: Record<string, string> = { CS: '슬로 커브', FO: '포크볼', FA: '패스트볼', KN: '너클볼', EP: '이퓨스', SC: '스크루볼' };
+export const pitchName = (label: string | null | undefined, code: string | null | undefined) =>
+  label && /[가-힣]/.test(label) ? label : (code && EXTRA_PITCH_NAMES[code]) || code || label || '구종 미상';
+export const pitcherSide = (label: string) => label.replace(/왼쪽|오른쪽/g, w => w === '왼쪽' ? '오른쪽' : '왼쪽');
+export const plainZone = (label: string) => pitcherSide(label.replace('가운데 높이 중앙', '한가운데').replace('가운데 높이 ', '가운데 '));
 export const policyShare = (p: number | null) => p === null ? '—' : `${Math.round(p * 100)}%`;

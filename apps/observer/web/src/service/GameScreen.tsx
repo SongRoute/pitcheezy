@@ -35,6 +35,13 @@ function Bases({ mask }: { mask: number }) {
   </svg>;
 }
 const handText = (h: string | null | undefined, role: 'p' | 'b') => h === 'R' ? (role === 'p' ? '우투' : '우타') : h === 'L' ? (role === 'p' ? '좌투' : '좌타') : h === 'S' ? '양타' : '';
+/** Text on the main zone's actual mark: Korean pitch name (the repository's PITCH_LABELS) or, when the feed only has an English
+ *  description (e.g. 'Slow Curve'), the Statcast code; then the speed number in the chosen unit (the unit is in the spoken text). */
+const actualMark = (a: Actual, unit: 'kmh' | 'mph') => {
+  const type = a.pitch_label;  // already Korean or the code (api.ts pitchName)
+  const sp = a.speed_mph === null ? '' : unit === 'kmh' ? String(Math.round(a.speed_mph * 1.609344)) : a.speed_mph.toFixed(1);
+  return [type, sp].filter(Boolean).join(' ');
+};
 const stat3 = (v: number | null | undefined) => typeof v === 'number' ? v.toFixed(3).replace(/^0/, '') : '–';
 const era = (v: number | null | undefined) => typeof v === 'number' ? v.toFixed(2) : '–';
 
@@ -46,22 +53,25 @@ function Count({ s }: { s: Situation }) {
 }
 
 /** Away always on the LEFT, home on the RIGHT; only the pitcher/batter roles swap with the half-inning. */
-function PlayerCell({ team, abbr, role, person, hand, info, onOpen, side }: { team: string; abbr?: string | null; role: 'p' | 'b'; person: Person | null; hand: string | null | undefined;
-  info: PlayerInfo | undefined; onOpen: () => void; side: 'away' | 'home' }) {
+function PlayerCell({ team, abbr, role, person, hand, info, onOpen, side, today }: { team: string; abbr?: string | null; role: 'p' | 'b'; person: Person | null; hand: string | null | undefined;
+  info: PlayerInfo | undefined; onOpen: () => void; side: 'away' | 'home'; today: { text: string; spoken: string } | null }) {
   const name = person?.name ?? '—';
   const stats = role === 'p' ? `ERA ${era(info?.era)}` : `AVG ${stat3(info?.avg)} OPS ${stat3(info?.ops)}`;
   const extra = [handText(hand, role), info?.jersey ? `#${info.jersey}` : ''].filter(Boolean).join(' · ');
-  const spoken = `${short(team)} ${role === 'p' ? '투수' : '타자'} ${name}${extra ? `, ${extra}` : ''}, ${role === 'p' ? `평균자책 ${era(info?.era)}` : `타율 ${stat3(info?.avg)}, OPS ${stat3(info?.ops)}`}${info?.stats_as_of ? ` (${info.stats_as_of} 경기 전 기준)` : ', 경기 전 기록 미확인'}. 타석 목록 열기`;
+  const spoken = `${short(team)} ${role === 'p' ? '투수' : '타자'} ${name}${extra ? `, ${extra}` : ''}, ${role === 'p' ? `평균자책 ${era(info?.era)}` : `타율 ${stat3(info?.avg)}, OPS ${stat3(info?.ops)}`}${info?.stats_as_of ? ` (${info.stats_as_of} 경기 전 기준)` : ', 경기 전 기록 미확인'}${today ? `, ${today.spoken}` : ''}. 타석 목록 열기`;
   return <button className={`sv-player ${side}`} style={{ '--team': teamColor(team) } as CSSProperties} onClick={onOpen} aria-haspopup="dialog" aria-label={spoken} title={name}>
     <span className="sv-player-1">{abbr || short(team)} · {role === 'p' ? '투수' : '타자'} · <b>{name}</b></span>
-    <span className="sv-player-2">{stats}{extra ? ` · ${extra}` : ''}</span>
+    <span className="sv-player-2">{stats}{extra ? ` · ${extra}` : ''}{today && <span className="sv-player-3">{today.text}</span>}</span>
   </button>;
 }
 
+/** Pitcher's view: a right-handed batter stands on the SCREEN RIGHT, a left-handed batter on the left (broadcast camera).
+ *  The figure holds the bat on the side away from the plate. */
 function Silhouette({ side }: { side: 'L' | 'R' }) {
-  return <svg className={`sv-batter ${side}`} viewBox="0 0 40 100" role="img" aria-label={side === 'R' ? '우타자: 포수 시점 왼쪽 타석' : '좌타자: 포수 시점 오른쪽 타석'}>
+  const atLeft = side === 'L';
+  return <svg className={`sv-batter ${side}`} viewBox="0 0 40 100" role="img" aria-label={side === 'R' ? '우타자, 화면 오른쪽 타석' : '좌타자, 화면 왼쪽 타석'}>
     <circle cx="20" cy="12" r="8" /><path d="M10 26h20l3 34h-7l-2 36h-6l-1-30-1 30h-6l-2-36H7z" />
-    <line x1={side === 'R' ? 30 : 10} y1="30" x2={side === 'R' ? 38 : 2} y2="4" />
+    <line x1={atLeft ? 10 : 30} y1="30" x2={atLeft ? 2 : 38} y2="4" />
   </svg>;
 }
 
@@ -72,7 +82,7 @@ function RecList({ rec, emptyText, onOpen }: { rec: Rec | null; emptyText: strin
   return <button className="sv-reclist" onClick={onOpen} aria-haspopup="dialog"
     aria-label={`추천 후보 ${rec.candidates.map(c => `${c.rank}순위 ${c.pitch_label} ${c.zone_label || '위치 없음'}, 정책 선택 비중 ${policyShare(c.probability)}`).join('; ')}. 퍼센트는 성공 확률이 아니에요. 자세히 보기`}>
     {rec.candidates.map((c: Candidate) => <span key={c.rank} className="sv-rec-row" aria-hidden="true">
-      <i className="sv-rk">{c.rank}</i><span className="sv-rec-type">{c.pitch_label}</span><span className="sv-rec-pct">{policyShare(c.probability)}</span></span>)}
+      <i className="sv-rk">{c.rank}</i><span className="sv-rec-pct">{policyShare(c.probability)}</span><span className="sv-rec-type">{c.pitch_label}</span></span>)}
   </button>;
 }
 
@@ -194,6 +204,18 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const when = `${dateHeading(game.kst_date)} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
   const emptyRec = nextPhase ? (detail.current?.phase === 'between_innings' ? '공수 교대 중' : detail.current?.phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
   const list = <RecList rec={rec} emptyText={emptyRec} onOpen={() => setSheet('detail')} />;
+  // Game numbers as of the shown moment, counted only from pitches already revealed up to that moment (never later ones) and only
+  // when the history starts at the game's first pitch (a partial history would undercount, so then nothing is shown).
+  const shownIndex = latest ? lastPitch?.index ?? -1 : pitch!.index;
+  const fullHistory = pitches.length > 0 && pitches[0].index === 0;
+  const upTo = fullHistory ? pitches.filter(p => p.index <= shownIndex) : [];
+  const pitcherToday = fullHistory && pitcherP ? (() => { const n = upTo.filter(p => p.pitcher?.id === pitcherP.id).length;
+    return { text: `투구 수 ${n}`, spoken: latest ? `이 경기 지금까지 투구 수 ${n}개` : `이 공이 이 경기 ${n}번째 투구` }; })() : null;
+  // batter's PA ordinal from the revealed PA list (counts a 0-pitch intentional walk too), PAs up to the shown one only
+  const shownAb = detail.pas.find(p => p.pa_key === paKey)?.at_bat_number ?? null;
+  const batterToday = fullHistory && batterP && shownAb !== null && detail.pas.every(p => p.batter_id !== undefined) ? (() => {
+    const n = detail.pas.filter(p => p.batter_id === batterP.id && p.at_bat_number <= shownAb).length;
+    return n > 0 ? { text: `오늘 ${n}번째 타석`, spoken: `이 경기 ${n}번째 타석` } : null; })() : null;
 
   return <div className="sv-page sv-game">
     <header className="sv-top sv-head">
@@ -206,10 +228,10 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         aria-label={`${live ? '경기 진행 중' : game.status === 'final' ? '경기 종료' : '진행 중 아님'}. ${live ? '최신 공으로 가고 자동 갱신 켜기' : '마지막 공 보기'}${live ? (auto && latest ? ' (지금 최신·자동 갱신 중)' : ' (지금 자동 갱신 꺼짐)') : ''}`}>
         <i aria-hidden="true" />LIVE</button>
     </header>
-    {(stale || error || !latest) && <p className={`sv-notice ${stale || error ? 'warn' : 'past'}`} role={stale || error ? 'alert' : 'status'} title={error?.text}>
-      {stale || error ? <>{error ? '⚠ 연결 끊김' : '⏱ 갱신 늦어짐'}{lastOk ? ` · ${hhmm(lastOk)} 수신` : ''}<span className="sr-only">{error ? ` ${error.text}` : ''}{lastOk ? ` (${clockText(lastOk)})` : ''}</span>
-        <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy}>{busy ? '…' : '다시'}</button></>
-        : <>⏸ 지난 기록 · {inningText(pitch!.situation)} {pitch!.pitch_number}구<span className="sr-only">, 자동 갱신 꺼짐. LIVE를 누르면 최신으로 돌아가요.</span></>}
+    {/* connection problems stay at the top (alert); the quiet 'past record' note sits at the very bottom (below the cards) */}
+    {(stale || error) && <p className="sv-notice warn" role="alert" title={error?.text}>
+      {error ? '⚠ 연결 끊김' : '⏱ 갱신 늦어짐'}{lastOk ? ` · ${hhmm(lastOk)} 수신` : ''}<span className="sr-only">{error ? ` ${error.text}` : ''}{lastOk ? ` (${clockText(lastOk)})` : ''}</span>
+        <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy}>{busy ? '…' : '다시'}</button>
     </p>}
 
     <section className="sv-board" aria-label="경기 상황">
@@ -219,24 +241,27 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         {situation && <Bases mask={situation.bases} />}
       </div>
       <div className="sv-players">
-        <PlayerCell side="away" team={game.away_team} abbr={game.away_abbr} role={top ? 'b' : 'p'} person={top ? batterP : pitcherP} hand={top ? batterP?.side : pitcherP?.hand} info={info(top ? batterP : pitcherP)} onOpen={openPa} />
-        <PlayerCell side="home" team={game.home_team} abbr={game.home_abbr} role={top ? 'p' : 'b'} person={top ? pitcherP : batterP} hand={top ? pitcherP?.hand : batterP?.side} info={info(top ? pitcherP : batterP)} onOpen={openPa} />
+        <PlayerCell side="away" team={game.away_team} abbr={game.away_abbr} role={top ? 'b' : 'p'} person={top ? batterP : pitcherP} hand={top ? batterP?.side : pitcherP?.hand} info={info(top ? batterP : pitcherP)} onOpen={openPa} today={top ? batterToday : pitcherToday} />
+        <PlayerCell side="home" team={game.home_team} abbr={game.home_abbr} role={top ? 'p' : 'b'} person={top ? pitcherP : batterP} hand={top ? pitcherP?.hand : batterP?.side} info={info(top ? pitcherP : batterP)} onOpen={openPa} today={top ? pitcherToday : batterToday} />
       </div>
     </section>
 
     <section className="sv-stage" aria-label={nextPhase ? '다음 공 추천' : '이 공의 추천과 실제 투구'}>
       <h2 className="sr-only">{recTitle} ({rec ? provenanceText(rec) : '추천 없음'}). 퍼센트는 정책 선택 비중이며 성공 확률이 아니에요.</h2>
-      {/* equal side columns keep the zone centred on the phone whichever side the batter stands */}
+      {/* pitcher's view: a right-handed batter stands on the screen RIGHT. The three recommendations are a top band on the other side
+          (one line each, may reach into the centre column); the zone's svg fills the centre column over the full height (equal side columns
+          keep it exactly centred) and Zone scales/bottom-aligns its drawing so nothing of it lies under the band. */}
       <div className={`sv-zrow ${side === 'L' ? 'bat-l' : 'bat-r'}`}>
-        <div className="sv-zside left">{side === 'L' ? list : side === 'R' ? <Silhouette side="R" /> : null}</div>
+        <div className={`sv-recband ${side === 'L' ? 'at-right' : 'at-left'}`}>{list}</div>
+        {side && <div className={`sv-batband ${side === 'L' ? 'at-left' : 'at-right'}`}><Silhouette side={side} /></div>}
         <div className="sv-zone-wrap">
           <Zone bounds={detail.zone_bounds} candidates={cands}
-            actual={!nextPhase && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel="실제"
-            setupX={!nextPhase ? actual?.setup_x ?? null : null} />
+            actual={!nextPhase && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel={actual ? actualMark(actual, unit) : ''}
+            setupX={!nextPhase ? actual?.setup_x ?? null : null} keepOut=".sv-recband" />
         </div>
-        <div className="sv-zside right">{side === 'L' ? <Silhouette side="L" /> : list}</div>
       </div>
-      {!nextPhase && <p className="sv-actual-cap">{actual ? <><span className="sv-key-actual" aria-hidden="true" />실제 {actual.pitch_label}{actual.speed_mph !== null ? ` ${speedText(actual.speed_mph, unit)}` : ''} · <b>{ending ?? actual.result_label}</b></> : <span className="sv-muted">실제 투구 기록 없음</span>}</p>}
+      {/* the selected pitch's RESULT, large; type and speed are on the actual mark in the zone (and spoken here with the unit) */}
+      {!nextPhase && <p className="sv-result">{actual ? <><span className="sr-only">실제 {actual.pitch_label}{actual.speed_mph !== null ? ` ${speedText(actual.speed_mph, unit)}` : ''}, 결과 </span>{ending ?? actual.result_label}</> : <span className="sv-muted">실제 투구 기록 없음</span>}</p>}
 
       <div className="sv-strip" ref={stripRef} role="group" aria-label="이 타석의 투구">
         {paPitches.map(p => { const on = !latest && pitch?.index === p.index; const a = p.actual;
@@ -244,10 +269,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
           return <button key={p.index} className={`sv-card ${on ? 'on' : ''}`} aria-pressed={on} onClick={() => pick(p.index)}
             aria-label={`${p.pitch_number}구 ${a?.pitch_label ?? '구종 미상'}${a?.speed_mph != null ? ` ${speedText(a.speed_mph, unit)}` : ''} ${a?.result_label ?? ''}`}>
             <Zone mini bounds={detail.zone_bounds} candidates={[]} actualLabel="" setupX={null} actual={a && a.x !== null && a.z !== null ? { x: a.x, z: a.z } : null} />
-            <span className="sv-card-cap" aria-hidden="true"><span>{p.pitch_number}. {a?.pitch_label ?? '–'}</span>{sp !== '' && <span>{sp}</span>}</span></button>; })}
+            <span className="sv-card-cap" aria-hidden="true">{p.pitch_number}. {a?.pitch_type || '–'}{sp !== '' ? ` ${sp}` : ''}</span></button>; })}
         {nextPhase && nextNumber && paKey === detail.current?.pa_key && <button className="sv-card pending on" aria-pressed="true" onClick={goLatest} aria-label={`다음 공 ${nextNumber}구, 아직 안 던짐`}>
           <span className="sv-card-q" aria-hidden="true">?</span><span className="sv-card-cap" aria-hidden="true">{nextNumber}. 다음</span></button>}
       </div>
+      {!latest && <p className="sv-notice past" role="status">⏸ 지난 기록 · {inningText(pitch!.situation)} {pitch!.pitch_number}구<span className="sr-only">, 자동 갱신 꺼짐. LIVE를 누르면 최신으로 돌아가요.</span></p>}
     </section>
 
     {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={() => setSheet(null)}

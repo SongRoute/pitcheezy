@@ -321,3 +321,43 @@ body.sv-locked{overflow:hidden}
 .sv-strip .sv-card{font-size:12px;width:7em;height:7em}
 .sv-card-cap{font-size:1em}
 @media (max-height:620px){.sv-strip .sv-card{width:6.35em;height:6.35em}}
+
+/* ---- pitcher's view (ui-pitcher-view-1006, user 2026-10-06) ----
+   Taller top bar and board; the past-record note moves to the very bottom; the selected pitch's result is a large line between
+   the zone and the cards; recommendations are one line each (rank · share · type); card captions use the Statcast code. */
+.sv-head{min-height:60px;padding-top:6px;padding-bottom:6px}
+.sv-live{min-height:44px}
+.sv-board{gap:8px;padding:6px 0 4px}
+.sv-inning{min-height:40px}
+.sv-player{gap:3px;padding-top:6px}
+/* as-of game numbers: own line on tall phones; on short phones they continue line 2 (saves a line for the zone) */
+.sv-player-3{display:block;color:var(--sv-muted);font-variant-numeric:tabular-nums}
+@media (max-height:700px){
+  .sv-player-3{display:inline}.sv-player-3::before{content:" · "}
+  .sv-head{min-height:52px;padding-top:2px;padding-bottom:2px}
+  .sv-board{gap:4px;padding-top:2px}
+  .sv-result{font-size:18px}
+}
+/* grouping: the zone's svg fills the centre column (equal side columns keep it centred). Zone.tsx scales/places its drawing and sets
+   --sv-band-top (recommendation band just above the drawing, the pair centred vertically) and --sv-zone-mid (silhouette centred on
+   the drawing). Band and silhouette are positioned, so their place never changes the size the zone is measured in. */
+.sv-zrow{position:relative;--sv-side:max(56px,4.5em);grid-template-columns:var(--sv-side) minmax(0,1fr) var(--sv-side);grid-template-rows:minmax(0,1fr);column-gap:4px}
+.sv-recband{position:absolute;grid-area:auto;top:var(--sv-band-top,0px);z-index:1;display:flex;max-width:100%}
+.sv-recband.at-left{left:0}.sv-recband.at-right{right:0}
+.sv-batband{position:absolute;grid-area:auto;top:var(--sv-zone-mid,50%);transform:translateY(-50%);width:var(--sv-side);display:flex}
+.sv-batband.at-left{left:0;justify-content:flex-start}.sv-batband.at-right{right:0;justify-content:flex-end}
+.sv-batband .sv-batter{height:clamp(56px,12vh,96px);width:auto;max-height:none}
+.sv-zrow .sv-zone-wrap{grid-row:1;grid-column:2;min-height:0}
+/* the zone row never shrinks below 15em (195px at the normal 13px; grows with enlarged text): with large text on short phones the
+   page scrolls instead of shrinking the zone to an unreadable size (the page's original rule, top of this file) */
+.sv-zrow{min-height:15em}
+.sv-recband .sv-reclist{gap:4px;padding-top:0}
+.sv-reclist{width:max-content;max-width:100%}
+.sv-rec-row{grid-template-columns:auto auto auto;grid-template-areas:"k p t";justify-content:start;column-gap:5px;white-space:nowrap;font-size:14px}
+.sv-rk{width:18px;height:18px;font-size:12.5px}
+.sv-rec-pct{color:var(--sv-muted);min-width:2.6em;text-align:right}
+.sv-rec-type{white-space:nowrap;font-size:14px}
+.sv-reclist.empty{max-width:100%}
+.sv-result{margin:2px 0 0;text-align:center;font-size:20px;font-weight:700;line-height:1.25}
+.sv-stage>.sv-notice.past{margin:2px 0 4px}
+.sv-card-cap{white-space:nowrap;display:block;font-variant-numeric:tabular-nums}

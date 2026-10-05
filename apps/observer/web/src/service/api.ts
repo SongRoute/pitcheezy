@@ -3,7 +3,7 @@
  *  Fallback (404 on the service route only): the existing `/api/live/games` + `/api/watch/{game}` feeds, so the screen
  *  still renders real data before the contract lands. The fallback never invents scores or recommendations. */
 import type { LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
-import { groupPas, kstDate, markDoubleheaders, plainZone, shiftDate } from './model';
+import { groupPas, kstDate, markDoubleheaders, pitchName, pitcherSide, plainZone, shiftDate } from './model';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
 export const TIMEOUT_MS = 15000;
@@ -54,7 +54,7 @@ export function normalizeCard(raw: Raw): GameCard {
     game_number: num(raw.game_number) ?? 1, double_header: raw.double_header === true, embargoed: raw.embargoed === true };
 }
 function candidate(raw: Raw): Candidate {
-  return { rank: raw.rank, pitch_type: raw.pitch_type, pitch_label: raw.pitch_label, zone_id: raw.zone_id ?? null, zone_label: plainZone(raw.zone_label ?? ''),
+  return { rank: raw.rank, pitch_type: raw.pitch_type, pitch_label: pitchName(raw.pitch_label, raw.pitch_type), zone_id: raw.zone_id ?? null, zone_label: plainZone(raw.zone_label ?? ''),
     target: raw.target && num(raw.target.x) !== null && num(raw.target.z) !== null ? { x: raw.target.x, z: raw.target.z } : null,
     probability: num(raw.probability ?? raw.detail?.probability) };
 }
@@ -69,9 +69,9 @@ export function normalizeRec(raw: Raw | null | undefined, fallbackProvenance: Re
 }
 function actual(raw: Raw | null | undefined): Actual | null {
   if (!raw) return null;
-  return { pitch_type: raw.pitch_type ?? null, pitch_label: raw.pitch_label ?? '구종 미상', description: raw.description ?? null,
+  return { pitch_type: raw.pitch_type ?? null, pitch_label: pitchName(raw.pitch_label, raw.pitch_type), description: raw.description ?? null,
     result_label: raw.result_label ?? '', event: raw.event ?? null, event_label: raw.event_label ?? null, play_text: raw.play_text ?? null,
-    speed_mph: num(raw.speed_mph), x: num(raw.x), z: num(raw.z), zone_label: raw.zone_label ?? '',
+    speed_mph: num(raw.speed_mph), x: num(raw.x), z: num(raw.z), zone_label: pitcherSide(raw.zone_label ?? ''),
     setup_x: num(raw.catcher_setup?.plate_x_feet) };
 }
 function pitchRow(raw: Raw, provenance: Rec['provenance']): PitchRow {
@@ -85,7 +85,7 @@ function pitchRow(raw: Raw, provenance: Rec['provenance']): PitchRow {
 function pa(raw: Raw): Pa {
   return { pa_key: raw.pa_key, at_bat_number: raw.at_bat_number, inning: raw.inning, half: raw.half,
     batter: raw.batter?.name ?? '타자 미상', pitcher: raw.pitcher?.name ?? '투수 미상', first: raw.first_index, last: raw.last_index,
-    complete: raw.complete === true,
+    complete: raw.complete === true, batter_id: typeof raw.batter?.id === 'number' ? raw.batter.id : null,
     result: raw.complete === true ? raw.result_text ?? raw.event_label ?? '결과 기록 없음' : '타석 진행 중' };
 }
 /** main.py catch-all answer for an /api path the running backend does not have (older deployment). */

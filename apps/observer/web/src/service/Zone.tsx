@@ -2,7 +2,9 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Bounds, Candidate } from './model';
 
-/** Catcher's-view strike zone, the largest element of the game screen.
+/** PITCHER's-view strike zone (2026-10-06 user decision, matches the broadcast centre-field camera), the largest element of the game screen.
+ *  Data stay in the contract's catcher-view feet (Statcast plate_x: + = catcher's right; zone ids 'left' = catcher's left;
+ *  CV plate_x_feet the same). Only the drawing mirrors x: screen x = −plate_x. z, sizes and every coordinate in data-* are unchanged.
  *  Recommendation = hollow dashed SQUARE with its rank number; actual pitch = filled CIRCLE labelled '실제'.
  *  Shapes and words, not only colour, tell them apart. Mitt = dashed vertical line (x only, never height).
  *
@@ -16,7 +18,9 @@ export const PLATE_HALF = .83;
 /** outside margins in feet around the zone (main view / mini cards) */
 export const MARGIN = { main: { x: .42, z: .45 }, mini: { x: .34, z: .36 } };
 const U = 100;  // drawing units per foot
-const ux = (x: number) => x * U;              // x right (catcher's view)
+/** −1 = pitcher's view (screen right = catcher's left = third-base side). The only place the horizontal direction is decided. */
+export const VIEW_X = -1;
+const ux = (x: number) => VIEW_X * x * U;     // feet (catcher-view plate_x) → screen units
 const uz = (z: number) => -z * U;             // z up
 
 export function zoneWindow(bounds: Bounds, mini: boolean) {
@@ -24,13 +28,14 @@ export function zoneWindow(bounds: Bounds, mini: boolean) {
   const xMax = PLATE_HALF + m.x, zLo = bounds.bottom - m.z, zHi = bounds.top + m.z;
   // drawn area = window + a pad so an edge marker (and its arrow) is fully visible; the pad changes no coordinate or out-of-window rule
   const pad = mini ? .2 : .16;
-  return { margin: m, xMin: -xMax, xMax, zLo, zHi, vb: { x: ux(-xMax - pad), y: uz(zHi + pad), w: ux(2 * (xMax + pad)), h: (zHi - zLo + 2 * pad) * U } };
+  return { margin: m, xMin: -xMax, xMax, zLo, zHi, vb: { x: -(xMax + pad) * U, y: uz(zHi + pad), w: 2 * (xMax + pad) * U, h: (zHi - zLo + 2 * pad) * U } };
 }
 /** Where a mark is drawn and whether it is beyond the window (then drawn as an edge marker, never a normal dot). */
 export function place(p: Mark, w: ReturnType<typeof zoneWindow>) {
   const out = p.x < w.xMin || p.x > w.xMax || p.z < w.zLo || p.z > w.zHi;
   const x = Math.max(w.xMin, Math.min(w.xMax, p.x)), z = Math.max(w.zLo, Math.min(w.zHi, p.z));
-  return { out, x: ux(x), y: uz(z), dx: Math.sign(p.x - x), dz: Math.sign(p.z - z) };
+  // dx = SCREEN direction of the clipped-off part (feet direction × VIEW_X), used for the edge inset and the outward arrow
+  return { out, x: ux(x), y: uz(z), dx: VIEW_X * Math.sign(p.x - x), dz: Math.sign(p.z - z) };
 }
 const ft = (p: Mark) => `가로 ${p.x.toFixed(2)}ft, 높이 ${p.z.toFixed(2)}ft`;
 
@@ -45,25 +50,66 @@ export function groupTargets(cands: Candidate[]): { x: number; z: number; ranks:
   return out;
 }
 
-export default function Zone({ bounds, candidates, actual, actualLabel, setupX, mini = false }:
-  { bounds: Bounds; candidates: Candidate[]; actual: Mark | null; actualLabel: string; setupX: number | null; mini?: boolean }) {
+export default function Zone({ bounds, candidates, actual, actualLabel, setupX, mini = false, keepOut = null }:
+  { bounds: Bounds; candidates: Candidate[]; actual: Mark | null; actualLabel: string; setupX: number | null; mini?: boolean;
+    /** CSS selector of a sibling block (the recommendation band) painted over this svg element's top-left/right corner. The drawing
+     *  is scaled (never distorted) and bottom-aligned so it does not reach under that block. */
+    keepOut?: string | null }) {
   const w = zoneWindow(bounds, mini);
-  const left = ux(-PLATE_HALF), right = ux(PLATE_HALF), top = uz(bounds.top), bottom = uz(bounds.bottom);
+  const left = -PLATE_HALF * U, right = PLATE_HALF * U, top = uz(bounds.top), bottom = uz(bounds.bottom);  // symmetric, view-independent
   const groups = groupTargets(candidates).map(g => ({ ...g, at: place(g, w) }));
   const act = actual ? place(actual, w) : null;
   const parts = [...groups.map(g => `추천 ${g.ranks.join('·')}순위 위치 네모${g.at.out ? `(화면 밖 ${ft(g)})` : ''}`),
-    actual ? `${actualLabel} 투구 동그라미${act!.out ? `(화면 밖, ${ft(actual)})` : ''}` : null].filter(Boolean);
+    actual ? `실제 투구${actualLabel ? ` ${actualLabel}` : ''} 동그라미${act!.out ? `(화면 밖, ${ft(actual)})` : ''}` : null].filter(Boolean);
   // Labels keep a readable on-screen size whatever the zone's drawn scale (SVG text otherwise scales with the drawing).
   const ref = useRef<SVGSVGElement>(null);
   const [scale, setScale] = useState(1);
+  // fit = the svg element's whole visible area in drawing units (the drawing window w.vb sits inside it, centred horizontally) plus the
+  // keep-out block in the same units. Labels may use the area around the drawing; marks never move.
+  type Fit = { x: number; y: number; w: number; h: number; ko: { x: number; y: number; w: number; h: number } | null };
+  const [fit, setFit] = useState<Fit | null>(null);
   useLayoutEffect(() => {
     const el = ref.current; if (!el) return;
-    const measure = () => { const r = el.getBoundingClientRect(); if (r.width && r.height) setScale(Math.min(r.width / w.vb.w, r.height / w.vb.h)); };
-    measure(); const ro = new ResizeObserver(measure); ro.observe(el); return () => ro.disconnect();
-  }, [w.vb.w, w.vb.h]);
+    const block = keepOut ? el.closest('.sv-zrow')?.querySelector<HTMLElement>(keepOut) ?? null : null;
+    const measure = () => {
+      const r = el.getBoundingClientRect(); if (!r.width || !r.height) return;
+      const PAD = mini ? 0 : 8;  // px kept free above and below the drawing (edge arrows and labels near the window edge)
+      const W = r.width, H = r.height, k1 = Math.min(W / w.vb.w, (H - 2 * PAD) / w.vb.h);
+      let k = k1, kb: DOMRect | null = null, bh = 0, lift = 0;
+      if (block) {
+        const b = block.getBoundingClientRect(); const gap = 8;
+        // the band is positioned by this component (below), so only its size and horizontal reach are read here (no feedback loop)
+        const left = b.left < r.left + W / 2, bx = Math.max(0, left ? b.right - r.left : r.right - b.left) + gap; bh = b.height + gap;
+        if (b.width && bx > gap && bh > gap) { kb = b;
+          // The band may come down over the drawing's empty top margin, but only to just above the highest PAINTED item in its
+          // horizontal reach: the zone box (and mitt line) or any mark there. Marks never move; labels avoid the band box (ko).
+          const paintedTop = (kk: number) => { const dw = w.vb.w * kk, reach = (bx - (W - dw) / 2) / kk;  // band reach into the drawing, units
+            const inReach = (xu: number, half: number) => left ? xu - half - w.vb.x < reach : w.vb.x + w.vb.w - (xu + half) < reach;
+            let top = uz(bounds.top) - 6 / kk;  // zone top incl. the mitt line overhang
+            for (const g of groupTargets(candidates)) { const q = place(g, w); if (inReach(q.x, 22 / kk)) top = Math.min(top, q.y - 36 / kk); }  // square + rank number
+            if (actual) { const q = place(actual, w); if (inReach(q.x, 12 / kk)) top = Math.min(top, q.y - 12 / kk); }
+            return Math.max(0, top - w.vb.y); };
+          let liftU = paintedTop(k1);
+          const below = Math.min(k1, (H - bh - 2 * PAD) / (w.vb.h - liftU)), beside = Math.min(k1, (W - 2 * bx) / w.vb.w);  // either one keeps it clear
+          k = Math.max(0.01, below, beside); liftU = paintedTop(k); lift = below >= beside ? liftU * k : 0; }
+      }
+      // below the band: band + drawing form one group centred vertically (band just above the highest painted item); otherwise the
+      // drawing is centred and the band (clear of it sideways) starts at the drawing's top
+      const dh = w.vb.h * k, free = H - bh - 2 * PAD - (dh - lift), stacked = !!kb && free >= -0.5;
+      const groupTop = stacked ? PAD + Math.max(0, free) / 2 : 0, topPx = stacked ? groupTop + bh - lift : (H - dh) / 2, bandTop = stacked ? groupTop : Math.max(0, topPx);
+      const row = el.closest<HTMLElement>('.sv-zrow');
+      if (row && !mini) { const off = r.top - row.getBoundingClientRect().top;
+        row.style.setProperty('--sv-band-top', `${Math.round(off + bandTop)}px`); row.style.setProperty('--sv-zone-mid', `${Math.round(off + topPx + dh / 2)}px`); }
+      const vw = W / k, vh = H / k, x0 = w.vb.x - (vw - w.vb.w) / 2, y0 = w.vb.y - topPx / k;
+      setScale(k);
+      setFit({ x: x0, y: y0, w: vw, h: vh, ko: kb ? { x: x0 + (kb.left - r.left) / k, y: y0 + bandTop / k, w: kb.width / k, h: kb.height / k } : null });
+    };
+    measure(); const ro = new ResizeObserver(measure); ro.observe(el); if (block) ro.observe(block); return () => ro.disconnect();
+  }, [w.vb.w, w.vb.h, w.vb.x, w.vb.y, keepOut, mini, bounds.top, JSON.stringify(candidates.map(c => c.target)), actual?.x, actual?.z]);
+  const room = fit ?? { x: w.vb.x, y: w.vb.y, w: w.vb.w, h: w.vb.h, ko: null };
   const u = (n: number) => n / scale;  // on-screen px → drawing units
   const px = (n: number) => `${u(n).toFixed(2)}px`;
-  const half = mini ? 0 : u(13), rA = mini ? u(5.5) : u(8), rOut = mini ? u(4) : rA;
+  const half = mini ? 0 : u(13), rA = mini ? u(6.5) : u(8), rOut = mini ? u(4.5) : rA;
   const labels = { '--zl-s': px(13), '--zl-m': px(14), '--zl-l': px(15) } as CSSProperties;
   const arrowLen = mini ? u(3) : u(7);
   // An edge marker is not a coordinate (the pitch is beyond the window); it is drawn just inside the window edge so that it and its
@@ -81,7 +127,8 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
   // ---- display-only label layout (marks keep their positions) ----
   type Box = { x: number; y: number; w: number; h: number };
   const hit = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-  const inside = (a: Box) => a.x >= w.vb.x && a.y >= w.vb.y && a.x + a.w <= w.vb.x + w.vb.w && a.y + a.h <= w.vb.y + w.vb.h;
+  // labels (actual, mitt) may use the whole visible svg area around the drawing (still on screen, never under the recommendation band)
+  const visible = (a: Box) => a.x >= room.x && a.y >= room.y && a.x + a.w <= room.x + room.w && a.y + a.h <= room.y + room.h && !(room.ko && hit(a, room.ko));
   const recs0 = groups.map(g => { const hw0 = Math.max(half, u(5 + 4.5 * (g.ranks.join('·').length))); const d = inset(g.at, Math.max(hw0, half));
     // a square near the drawing edge is drawn smaller (its centre = the target stays exact), never moved
     const room = (v: number, lo: number, hi: number) => Math.min(v - lo, hi - v);
@@ -98,7 +145,9 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     const pick = spots.find(sp => { const b = boxAt(sp); return fits(b) && !numBoxes.some(n => n.x < b.x + b.w && b.x < n.x + n.w && n.y < b.y + b.h && b.y < n.y + n.h); }) ?? spots[0];
     numBoxes.push(boxAt(pick));
     return { ...g, tx: g.d.x + pick[0], ty: g.d.y + pick[1] }; });
-  const recBoxes: Box[] = recs.flatMap(g => [{ x: g.d.x - g.hw, y: g.d.y - g.hh, w: 2 * g.hw, h: 2 * g.hh }, { x: g.tx - u(9), y: g.ty - u(14), w: u(18), h: u(16) }]);
+  // the number box is as wide as its text ('1·2·3' is wider than '1')
+  const recBoxes: Box[] = recs.flatMap(g => { const tw = u(6 + 8 * g.ranks.join('·').length);
+    return [{ x: g.d.x - g.hw, y: g.d.y - g.hh, w: 2 * g.hw, h: 2 * g.hh }, { x: g.tx - tw / 2, y: g.ty - u(15), w: tw, h: u(18) }]; });
   const actD = act ? inset(act, act.out ? rOut : rA) : null;
   const rD = act?.out ? rOut : rA;
   const dotBox: Box | null = actD ? { x: actD.x - rD - u(2), y: actD.y - rD - u(2), w: 2 * rD + u(4), h: 2 * rD + u(4) } : null;
@@ -107,24 +156,27 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
   const mittLabel = (() => {
     if (!mitt) return { x: 0, y: 0, box: null as Box | null };
     const x = Math.max(w.vb.x + mittW / 2, Math.min(w.vb.x + w.vb.w - mittW / 2, mitt.out ? mitt.x - mitt.dx * u(14) : mitt.x));
-    for (const y of [top - u(6), bottom + u(16)]) { const box = { x: x - mittW / 2, y: y - lh + u(3), w: mittW, h: lh };
-      if (inside(box) && !recBoxes.some(b => hit(b, box)) && !(dotBox && hit(dotBox, box))) return { x, y, box }; }
+    for (const y of [top - u(6), bottom + u(16), top - u(24), bottom + u(34)]) { const box = { x: x - mittW / 2, y: y - lh + u(3), w: mittW, h: lh };
+      if (visible(box) && !recBoxes.some(b => hit(b, box)) && !(dotBox && hit(dotBox, box))) return { x, y, box }; }
     return { x, y: top - u(6), box: { x: x - mittW / 2, y: top - u(6) - lh + u(3), w: mittW, h: lh } };
   })();
-  const labW = u(30);
+  // the actual's label is its pitch type + speed (e.g. '커브 133'); width from the text at the 15px label size (Hangul ≈1em,
+  // Latin/digits ≈0.62em, space ≈0.3em) so the placement below keeps it inside the drawing and off the recommendation marks
+  const textPx = [...actualLabel].reduce((a, ch) => a + (/[\uac00-\ud7a3]/.test(ch) ? 15 : ch === ' ' ? 4.5 : 9.3), 0);
+  const labW = u(Math.max(30, textPx + 6));
   const actLabel = (() => {
     if (!actD || mini) return null;
-    const o = Math.max(rD, half) + u(4), so = Math.max(rD, ...recs.map(g => g.hw), u(9)) + u(4), cands = [[0, o + lh - u(2)], [0, -o - u(3)], [so + labW / 2, u(5)], [-so - labW / 2, u(5)], [so + labW / 2, -o], [-so - labW / 2, -o], [so + labW / 2, o + lh], [-so - labW / 2, o + lh], [0, 2 * o + lh], [0, -2 * o]];
-    const avoid = [...recBoxes, ...(mittLabel.box ? [mittLabel.box] : [])];
+    const o = Math.max(rD, half) + u(4), so = Math.max(rD, ...recs.map(g => g.hw), u(9)) + u(4), cands = [[0, o + lh - u(2)], [0, -o - u(3)], [so + labW / 2, u(5)], [-so - labW / 2, u(5)], [so + labW / 2, -o], [-so - labW / 2, -o], [so + labW / 2, o + lh], [-so - labW / 2, o + lh], [0, 2 * o + lh], [0, -2 * o], [0, 3 * o + lh], [0, -3 * o]];
+    const avoid = [...recBoxes, ...(mittLabel.box ? [mittLabel.box] : []), ...(dotBox ? [dotBox] : [])];
     let first: { x: number; y: number } | null = null;
-    for (const [dx, dy] of cands) { const x = actD.x + dx, y = actD.y + dy, box = { x: x - labW / 2, y: y - lh + u(3), w: labW, h: lh };
-      if (!inside(box)) continue; first = first ?? { x, y }; if (!avoid.some(b => hit(b, box))) return { x, y, box }; }
-    return first ? { ...first, box: { x: first.x - labW / 2, y: first.y - lh + u(3), w: labW, h: lh } } : null;
+    // a wide label near the drawing edge slides sideways to stay fully visible (only the text moves; the dot stays at its coordinate)
+    const slide = (x: number) => Math.max(room.x + labW / 2 + u(1), Math.min(room.x + room.w - labW / 2 - u(1), x));
+    for (const [dx, dy] of cands) { const x = slide(actD.x + dx), y = actD.y + dy, box = { x: x - labW / 2, y: y - lh - u(1), w: labW, h: lh + u(5) };  // glyph box + 2px
+      if (!visible(box)) continue; first = first ?? { x, y }; if (!avoid.some(b => hit(b, box))) return { x, y, box }; }
+    return first ? { ...first, box: { x: first.x - labW / 2, y: first.y - lh - u(1), w: labW, h: lh + u(5) } } : null;
   })();
-  const capBox: Box = { x: w.vb.x + u(3), y: w.vb.y + u(1), w: u(58), h: lh };
-  const showCaption = ![...recBoxes, ...(dotBox ? [dotBox] : []), ...(mittLabel.box ? [mittLabel.box] : []), ...(actLabel ? [actLabel.box] : [])].some(b => hit(b, capBox));
-  return <svg ref={ref} style={labels} className={`sv-zone${mini ? ' mini' : ''}`} viewBox={`${w.vb.x} ${w.vb.y} ${w.vb.w} ${w.vb.h}`} preserveAspectRatio="xMidYMid meet" role="img"
-    aria-label={mini ? undefined : `포수 쪽에서 본 스트라이크존${parts.length ? ': ' + parts.join(', ') : ''}`} aria-hidden={mini || undefined}>
+  return <svg ref={ref} style={labels} className={`sv-zone${mini ? ' mini' : ''}`} viewBox={`${room.x} ${room.y} ${room.w} ${room.h}`} preserveAspectRatio="xMidYMid meet" role="img"
+    aria-label={mini ? undefined : `투수 쪽에서 본 스트라이크존${parts.length ? ': ' + parts.join(', ') : ''}`} aria-hidden={mini || undefined}>
     <rect x={left} y={top} width={right - left} height={bottom - top} className="sv-zone-box" />
     {[1, 2].map(i => <line key={`v${i}`} x1={left + (right - left) * i / 3} x2={left + (right - left) * i / 3} y1={top} y2={bottom} className="sv-zone-grid" />)}
     {[1, 2].map(i => <line key={`h${i}`} y1={top + (bottom - top) * i / 3} y2={top + (bottom - top) * i / 3} x1={left} x2={right} className="sv-zone-grid" />)}
@@ -138,6 +190,5 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     {recs.map(g => <g key={g.ranks.join()} className={`sv-rec${g.at.out ? ' out' : ''}`} data-rank={g.ranks.join('·')} data-x={g.x} data-z={g.z} data-out={g.at.out || undefined}>
       <rect x={g.d.x - g.hw} y={g.d.y - g.hh} width={2 * g.hw} height={2 * g.hh} rx="3" />{g.at.out && arrow(g.d, Math.min(g.hw, g.hh))}
       <text x={g.tx} y={g.ty} textAnchor="middle">{g.ranks.join('·')}</text></g>)}
-    {!mini && showCaption && <text x={capBox.x} y={capBox.y + capBox.h - u(2)} className="sv-zone-caption">포수 시점</text>}
   </svg>;
 }

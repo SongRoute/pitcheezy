@@ -1,4 +1,4 @@
-// Zone geometry regression (integration rev3, after geometry-review-037). Route-mocked fixture, headless Chromium.
+// Zone geometry regression (integration rev3, after geometry-review-037; pitcher's view since ui-pitcher-view-1006). Route-mocked fixture, headless Chromium.
 // For every probe point: if it lies inside the visible window it must be drawn at its TRUE coordinate (recovered from the
 // drawn zone box within 0.03 ft); if it lies beyond the window it must be an `.out` edge marker drawn OUTSIDE the zone box.
 // A pitch outside the strike zone must never render inside the zone box. Checked for the main zone and the mini card,
@@ -30,9 +30,10 @@ async function shot(w, h, bounds, [x, z], targets) {
   await p.goto('http://pz.test/watch/849843'); await p.waitForSelector('svg.sv-zone:not(.mini) .sv-zone-box'); await p.waitForTimeout(150);
   const m = await p.evaluate((B) => { const one = (svg) => { const box = svg.querySelector('.sv-zone-box').getBoundingClientRect(); const a = svg.querySelector('.sv-actual');
       if (!a) return null; const cr = a.querySelector('circle').getBoundingClientRect(); const cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
-      const fx = (cx - (box.left + box.width / 2)) / (box.width / 1.66), fz = B.bottom + (box.bottom - cy) / (box.height / (B.top - B.bottom));
+      // PITCHER's view (2026-10-06): screen right = catcher's left, so plate_x = −(screen offset); z unchanged
+      const fx = -(cx - (box.left + box.width / 2)) / (box.width / 1.66), fz = B.bottom + (box.bottom - cy) / (box.height / (B.top - B.bottom));
       const inBox = cx >= box.left && cx <= box.right && cy >= box.top && cy <= box.bottom;
-      return { fx, fz, inBox, out: a.classList.contains('out'), boxW: box.width, svgW: svg.getBoundingClientRect().width,
+      return { fx, fz, inBox, out: a.classList.contains('out'), dataX: Number(a.dataset.x), dataZ: Number(a.dataset.z), screenSide: Math.sign(cx - (box.left + box.width / 2)), boxW: box.width, svgW: svg.getBoundingClientRect().width,
         recs: [...svg.querySelectorAll('.sv-rec')].map(g => { const r = g.querySelector('rect').getBoundingClientRect(); const t = g.querySelector('text').getBoundingClientRect();
           const covered = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2); return { label: g.dataset.rank, visible: !!covered && g.contains(covered) }; }) }; };
     const main = document.querySelector('svg.sv-zone:not(.mini)'); const mini = document.querySelector('svg.sv-zone.mini');
@@ -49,6 +50,8 @@ for (const [w, h] of [[375, 667], [320, 568]]) for (const [bn, B] of Object.entr
     const tag = `${w}x${h} ${bn} ${view} (${pt})`;
     if (inWin) ok(!r.out && Math.abs(r.fx - pt[0]) < .03 && Math.abs(r.fz - pt[1]) < .03, `${tag}: true coordinate`, r);
     else ok(r.out, `${tag}: beyond window -> edge marker`, r);
+    ok(r.dataX === pt[0] && r.dataZ === pt[1], `${tag}: stored coordinate unchanged in data-x/z`, r);
+    if (Math.abs(pt[0]) > .05) ok(r.screenSide === -Math.sign(pt[0]), `${tag}: mirrored (plate_x ${pt[0]} drawn on the ${pt[0] > 0 ? 'left' : 'right'})`, r);
     if (!(strikeX && strikeZ)) ok(!r.inBox, `${tag}: ball not drawn inside zone`, r);
     rows.push({ tag, ...r, recs: undefined });
   }
