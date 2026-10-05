@@ -46,7 +46,8 @@
 - 추천 출처: 경기 뒤 그 공을 던지기 전 정보만으로 계산한 기록(asof_replay). 정책·과학적 판정은 바뀌지 않았다.
 
 ## 5. 시연 전 점검 (15:30)
-- 한 번에: `sh /Users/song/Projects/pitcheezy-pm-jobs/20261006-four-hour/demo-delivery/preflight.sh` (읽기만 함; 8771·자산·세션·대응표 4개·overlay 해시·경기 전 기록·예비 파일 확인, 실패 0이면 통과). 00:52 실행 결과 0 failure.
+- 한 번에(권장, 해시 비교판): `sh /Users/song/Projects/pitcheezy-pm-jobs/20261006-four-hour/next-research/preflight-verified.sh` — 아래 원본 점검을 그대로 돌린 뒤 서빙 번들·운영자 JS·CSS·index, 예비 화면, CV 오프라인 index·manifest의 sha256을 고정값과 **비교**한다(01:17 KST 실행: 원본 0 failure, 비교 8/8 OK). 마지막 줄 `hash comparisons 0 failure(s)`와 종료 코드 0이면 통과.
+- 원본(출력만): `sh /Users/song/Projects/pitcheezy-pm-jobs/20261006-four-hour/demo-delivery/preflight.sh` (읽기만 함; 8771·자산·세션·대응표 4개·overlay 해시·경기 전 기록·예비 파일 확인, 실패 0이면 통과). 00:52 실행 결과 0 failure.
 1. `curl -s http://100.108.252.111:8771/api/health` → status ok.
 2. 운영자 화면에서 활성 세션 없음 확인(있으면 '시연 종료').
 3. 맥북 YouTube 6:58 일시정지, 아이폰 Tailscale 켜짐.
