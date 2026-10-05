@@ -358,6 +358,8 @@ body.sv-locked{overflow:hidden}
 .sv-rec-pct{color:var(--sv-muted);min-width:2.6em;text-align:right}
 .sv-rec-type{white-space:nowrap;font-size:14px}
 .sv-reclist.empty{max-width:100%}
-.sv-result{margin:2px 0 0;text-align:center;font-size:20px;font-weight:700;line-height:1.25}
+.sv-result{margin:2px 0 0;text-align:center;font-size:20px;font-weight:700;line-height:1.25;position:relative;z-index:1}
+/* midway between the zone's lowest painted item and the cards: lifted by half of the free space Zone.tsx measures (--sv-below) */
+.sv-zrow+.sv-result{transform:translateY(calc(var(--sv-below, 0px) / -2))}
 .sv-stage>.sv-notice.past{margin:2px 0 4px}
 .sv-card-cap{white-space:nowrap;display:block;font-variant-numeric:tabular-nums}

@@ -107,6 +107,13 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     measure(); const ro = new ResizeObserver(measure); ro.observe(el); if (block) ro.observe(block); return () => ro.disconnect();
   }, [w.vb.w, w.vb.h, w.vb.x, w.vb.y, keepOut, mini, bounds.top, JSON.stringify(candidates.map(c => c.target)), actual?.x, actual?.z]);
   const room = fit ?? { x: w.vb.x, y: w.vb.y, w: w.vb.w, h: w.vb.h, ko: null };
+  // free space under the lowest PAINTED item (marks, labels, zone) inside the zone row, published as --sv-below so the result line
+  // can sit midway between the zone and the cards (display only; read after every render, no React state)
+  useLayoutEffect(() => {
+    const el = ref.current; const row = el?.closest<HTMLElement>('.sv-zrow'); if (!el || !row || mini) return;
+    const lowest = Math.max(...[...el.querySelectorAll('rect, circle, path, line, text')].map(e => e.getBoundingClientRect().bottom));
+    (row.parentElement ?? row).style.setProperty('--sv-below', `${Math.max(0, Math.round(row.getBoundingClientRect().bottom - lowest - 8))}px`);  // on the stage: the result line is the row's sibling
+  });
   const u = (n: number) => n / scale;  // on-screen px → drawing units
   const px = (n: number) => `${u(n).toFixed(2)}px`;
   const half = mini ? 0 : u(13), rA = mini ? u(6.5) : u(8), rOut = mini ? u(4.5) : rA;
