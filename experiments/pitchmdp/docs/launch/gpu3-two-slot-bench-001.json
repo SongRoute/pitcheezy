@@ -1,0 +1,97 @@
+{
+  "protocol": "gpu3_two_slot_bench_v1",
+  "status": "AUTHOR_ONLY_NOT_LAUNCHED",
+  "purpose": "Resource/scheduling measurement only: same two TRAIN fits serial (1 slot) vs concurrent (2 slots) on GPU3. Not performance research; no DEV/2026 rows; no scoring; no policy or model conclusion.",
+  "gpu_uuid": "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9",
+  "concurrent_slots": 2,
+  "lock_dir": "/home/sds733/pitcheezy-autonomy/gpu-locks",
+  "wait_for_terminal": [
+    "/home/sds733/pitcheezy-autonomy/20261004/score-p37-state.json"
+  ],
+  "python": "/home/sds733/venv/bin/python",
+  "config": "/home/sds733/pitcheezy-autonomy/20261004/EXP-P37-001.json",
+  "export": "/home/sds733/pitcheezy-autonomy/20261004/export-49097109",
+  "pins": {
+    "config_sha256": "77574125ba28a63015f9fdf0427de57567187300948972b8a3e9cf9191e69a5a",
+    "export_manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+    "source_commit_frozen_route": "9a08aef (P37 smoke-verified archive; c44d5fc adds only launch docs)",
+    "source_sha256": {
+      "scripts/run_cuda_direct.py": "132ef47a52980ee12d77571e5bfb3d06f4a54d43050a0397b370d33c501fb5eb",
+      "pitchmdp/matrix_models.py": "b6cc77fe3e337cf96f8c7cb31f02e8fd8a4bf71bb20713d01c462cdbd33d2fcd",
+      "pitchmdp/direct_residual_model.py": "7feb9cfdcad85f4cb02c50a75e2ba2b528dd5546e600526b0334dcf0cf8e2d59",
+      "pitchmdp/direct_periodic_model.py": "18f0b96a9b8a0d9eb39af2de4b0cc1b7a10a0dd42ca92977f726042e1aec80d3",
+      "pitchmdp/direct_combo_model.py": "9d2efc09f805600778109f838d42c90c95ba3fdc0171da690986f840c6d59abf",
+      "pitchmdp/direct_combo_registry.py": "d64bba7057cfd81d8cac4abc806587876b2812e0c29d9d22254e35da8c81c50a",
+      "pitchmdp/direct_dropout_model.py": "c2ac98db015af7efae8c5eac2135f5c9500930b5fd0a257437a207313c581019",
+      "pitchmdp/direct_dropout_registry.py": "cdc9ba0aca4a472dcc870a24c27682b6f9402d35a143dd50e2fdefebcd51981f",
+      "pitchmdp/direct_workload_dropout_model.py": "6c800960ef8a534bc922c685720cfc6dc505933c0f109535a53177f75829a336",
+      "pitchmdp/direct_workload_dropout_registry.py": "15f7d99811456fb30b20a84e475bed1d0a82450940fa8ca5bb3701e859098d71",
+      "pitchmdp/direct_tabm_model.py": "c968aec94fd7278d30dbbc53cb81fe4fcfc23c0b33b912a48ee09122e216b319",
+      "pitchmdp/direct_tabm_factory.py": "a916da4408a7a290d65c380ae35f8438d423e1b4cfdb85e4282d7aef26214d28",
+      "pitchmdp/direct_tabm_registry.py": "45b0c3168ced0f9df2e8e59f9b5f140bd1eede215329b8d7bf0cc875407e51e7",
+      "pitchmdp/direct_periodic_residual_model.py": "ee1b3d3f84b19f3564c853acf2bd12c640b1e5e597b8c62d485f839aeb8c992b",
+      "pitchmdp/direct_embed_residual_factory.py": "1899b8741fef50f43e11bb4f9455141d76aa241c7a8e1c268cc5541686c4ef8b",
+      "pitchmdp/direct_embed_residual_registry.py": "46c7330c0982bcf3a82fd5df2cfb7d6f51bfe8453adf941ac58309b0e070716c",
+      "pitchmdp/direct_ema_model.py": "d3dc546781f7c037898b0f1144865981d88591255b3ba3e4ff01b03e06f82baa",
+      "pitchmdp/direct_ema_registry.py": "b670f1a3a8fd0a81ff87f288a9fbca36efe6d726dc529de377af7d19ab691506",
+      "pitchmdp/direct_tabm_residual_model.py": "6a9daff6c3de13a753357d8615bd9f0d5a7bfe796b350f7f7bd0a5e60c9287cf",
+      "pitchmdp/direct_tabm_residual_factory.py": "e1d6aba8ad883b8210ce7d26a7c4d79b381c47e085b14a816128d5a00b28f86b",
+      "pitchmdp/direct_tabm_residual_registry.py": "4fe206ee475e47f1e2be3d2d011a2bf60b351408a0ff216321be9c96e1d6f319",
+      "pitchmdp/direct_ple_model.py": "d3575019f971b06ba26060a1fa31e3894a070fd3b4b88191393743cb16ea175e",
+      "pitchmdp/direct_ple_factory.py": "5b9faa25809973b85d8cca4006359635f5070a0e7807b0ec752cc9b731eab2fc",
+      "pitchmdp/direct_ple_registry.py": "97aadf9f75dd7958ac7e622ed4d90c36994c4f772bdfb002be62c28e0ef1fe09",
+      "pitchmdp/direct_robust_clip_model.py": "a3d6cbcef8350586a23d1a6d35213e36ba8e0ccf21288288464f8ce7dcbf52fa",
+      "pitchmdp/direct_robust_clip_factory.py": "d1a6ac2adb1044ea19228a9d9da462df58245d57d4f8a531923cbbab9efedee7",
+      "pitchmdp/direct_robust_clip_registry.py": "8aeff971513a4ee93a79695f53679867bd82de3a3e2918e7cc5eba8509a84444",
+      "pitchmdp/direct_embed_type_registry.py": "358c1797794dde8d0ab061e476a8b4d38c977045d3ff451257fe5bc2c1ff2e22",
+      "pitchmdp/direct_frontier_model.py": "2366aa1fecfe93ff4332968022fa9d5f5b92a827c1162df63dc4b230c3c7914d",
+      "pitchmdp/direct_frontier_registry.py": "3899d8ee41c3d44d0a67d2b24faf3e8318b2cfea1ca81f61fdec12ead2b994e3"
+    }
+  },
+  "tasks": [
+    {
+      "arm": "control",
+      "seed": 900
+    },
+    {
+      "arm": "periodic_residual_counts",
+      "seed": 901
+    }
+  ],
+  "seed_rule": "900/901 are outside every registered P37 (39-43) and P38 (44-48) seed; results are never registered or scored",
+  "workload": {
+    "train_rows": null,
+    "earlystop_rows": null,
+    "epochs": 5,
+    "patience": "== epochs (no early stop; fixed steps)",
+    "expected_steps_per_fit": "5 x ceil(TRAIN rows/1024); P37 control TRAIN 1,252,824 rows -> 6,120 updates",
+    "why": "full P37 TRAIN rows and batch 1024 are the real per-step workload; 8192-row smoke is launch-dominated"
+  },
+  "mode_order": [
+    "concurrent",
+    "serial"
+  ],
+  "mode_order_why": "concurrent first pays the cold page cache, so any cache bias works AGAINST the concurrent mode",
+  "budget": {
+    "total_wall_cap_seconds": 600,
+    "task_timeout_seconds": 240,
+    "min_seconds_to_start_mode": 240,
+    "projection_not_measured": "P37 control-39: 5.59 ms/step serial, load ~2.5 s, child start ~1.7 s -> ~40 s/fit serial; concurrent unknown"
+  },
+  "resources": {
+    "host_bytes_per_child": 10737418240,
+    "host_margin_bytes": 8589934592,
+    "vram_bytes_per_child": 4294967296,
+    "vram_margin_bytes": 2147483648,
+    "why": "P37 fit RSS 6.8 GB, GPU3 used 1.9 GB / peak allocated 1.52 GB per fit (diagnose-001), rounded up"
+  },
+  "decision": {
+    "equivalence": "exact",
+    "tolerance": 0,
+    "equivalence_why": "same binary, seeds and inputs; CUBLAS_WORKSPACE_CONFIG fixed by bind_gpu; no cuDNN autotune; separate processes share no numerical state, so any difference is a failure, not noise. No post-hoc tolerance.",
+    "min_throughput_gain": 1.15,
+    "gain_definition": "serial total wall / concurrent total wall, both including child startup and data load",
+    "adopt_if": "equivalent AND gain >= 1.15 AND 2/2 both modes AND no OOM/failure AND every child GPU3-only",
+    "else": "retain serial (max 1 fit) and record the negative result"
+  }
+}
