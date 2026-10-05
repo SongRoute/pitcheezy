@@ -47,8 +47,8 @@ function Candidates({ rec, selected, onSelect, label, upcoming }: { rec: Rec; se
       onClick={() => onSelect(c.rank)} aria-label={`${c.rank}순위 ${c.pitch_label}, ${c.zone_label || '위치 없음'}, 정책 선택 비중 ${policyShare(c.probability)}`}>
       <span className="sv-cand-rank" aria-hidden="true">{c.rank}</span>
       <span className="sv-cand-type">{c.pitch_label}</span>
-      <span className="sv-cand-zone">{c.zone_label || '위치 없음'}</span>
-      <span className="sv-cand-share">{policyShare(c.probability)}</span>
+      <span className="sv-cand-sub"><span className="sv-cand-zone">{c.zone_label || '위치 없음'}</span>
+        <span className="sv-cand-share">{policyShare(c.probability)}</span></span>
     </button>)}
   </div>;
 }
@@ -163,7 +163,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   };
   const paIdx = detail.pas.findIndex(p => p.pa_key === paKey);
   const recTitle = nextPhase ? `다음 공 추천${nextNumber ? ` · ${nextNumber}구` : ''}` : '이 공 던지기 전 추천';
-  const actualTitle = nextPhase ? `방금 던진 공${lastPitch ? ` · ${inningText(lastPitch.situation)} ${lastPitch.pitch_number}구` : ''}` : `실제 투구${pitch ? ` · ${pitch.pitch_number}구` : ''}`;
+  // the inning is left out when the board above already shows the same half-inning (it is repeated otherwise)
+  const sameHalf = !!lastPitch && !!situation && lastPitch.situation.inning === situation.inning && lastPitch.situation.half === situation.half;
+  const actualTitle = nextPhase ? `방금 던진 공${lastPitch ? ` · ${sameHalf ? '' : `${inningText(lastPitch.situation)} `}${lastPitch.pitch_number}구` : ''}` : `실제 투구${pitch ? ` · ${pitch.pitch_number}구` : ''}`;
 
   return <div className="sv-page sv-game">
     <TopBar right={<StatusChip g={game} />}
@@ -185,26 +187,30 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
 
     <section className={`sv-mode ${latest ? 'is-latest' : 'is-past'} ${stale || error ? 'is-stale' : ''}`} aria-live="polite">
       {stale || error ? <span className="sv-mode-text" role="alert">{error ? `연결 끊김 · ${error.text}` : '기록 갱신이 늦어지고 있어요'}{lastOk ? ` · 마지막 수신 ${clockText(lastOk)}` : ''}</span>
-        : latest ? <span className="sv-mode-text">{live ? (auto ? '최신 기록을 따라가는 중' : '자동 갱신 꺼짐') : '경기 종료 · 마지막 공'}</span>
+        : latest ? <span className="sv-mode-text">{live ? (auto ? '최신 따라가는 중' : '자동 갱신 꺼짐') : '경기 종료 · 마지막 공'}</span>
         : <span className="sv-mode-text">지난 기록 보는 중 · {inningText(pitch!.situation)} {pitch!.pitch_number}구</span>}
       <span className="sv-mode-actions">
         {!latest && <button className="sv-btn primary" onClick={goLatest}>{live ? '최신으로' : '마지막 공'}</button>}
-        {live && <button className="sv-btn" aria-pressed={auto} onClick={() => setAuto(a => !a)} aria-label={auto ? '자동 갱신 끄기' : '자동 갱신 켜기'}>{auto ? '자동 갱신 ON' : '자동 갱신 OFF'}</button>}
+        {live && <button className="sv-btn" aria-pressed={auto} onClick={() => setAuto(a => !a)} aria-label={auto ? '자동 갱신 끄기' : '자동 갱신 켜기'}>{auto ? '자동 ON' : '자동 OFF'}</button>}
         {(live || stale || error) && <button className="sv-btn" onClick={() => void load(stale || !!error, true)} disabled={busy} aria-label="지금 새로고침">{busy ? '…' : '새로고침'}</button>}
       </span>
     </section>
 
     <section className="sv-stage" aria-label={nextPhase ? '방금 던진 공과 다음 공 추천' : '이 공의 추천과 실제 투구'}>
-      <div className="sv-zone-wrap">
-        <Zone bounds={detail.zone_bounds} candidate={candidate}
-          actual={!nextPhase && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel="실제"
-          previous={sameAtBatPrev && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null}
-          setupX={!nextPhase ? actual?.setup_x ?? null : null} />
-      </div>
-      <div className="sv-recbox">
+      <div className="sv-split">
+        <div className="sv-zone-col">
         <div className="sv-rec-head"><span className="sv-key-rec" aria-hidden="true" /><b>{recTitle}</b><small>% = 정책 선택 비중</small></div>
-        {rec ? <Candidates rec={rec} selected={candidate?.rank ?? 1} onSelect={setRank} label={recTitle} upcoming={!!nextPhase} />
-          : <p className="sv-norec">{nextPhase ? (detail.current?.phase === 'between_innings' ? '공수 교대 중이에요.' : detail.current?.phase === 'resolving' ? '방금 공의 결과를 확인하는 중이에요.' : '다음 공 추천이 아직 없어요.') : '이 시점에는 추천이 없어요.'}</p>}
+        <div className="sv-zone-wrap">
+          <Zone bounds={detail.zone_bounds} candidate={candidate}
+            actual={!nextPhase && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel="실제"
+            previous={sameAtBatPrev && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null}
+            setupX={!nextPhase ? actual?.setup_x ?? null : null} />
+        </div>
+        </div>
+        <div className="sv-recbox">
+          {rec ? <Candidates rec={rec} selected={candidate?.rank ?? 1} onSelect={setRank} label={recTitle} upcoming={!!nextPhase} />
+            : <p className="sv-norec">{nextPhase ? (detail.current?.phase === 'between_innings' ? '공수 교대 중이에요.' : detail.current?.phase === 'resolving' ? '방금 공의 결과를 확인하는 중이에요.' : '다음 공 추천이 아직 없어요.') : '이 시점에는 추천이 없어요.'}</p>}
+        </div>
       </div>
       <ActualLine actual={actual} unit={unit} title={actualTitle} paResult={ending} previous={!!nextPhase} />
     </section>

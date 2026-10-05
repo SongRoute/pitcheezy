@@ -112,7 +112,7 @@ for (const [width, height] of [[320, 568], [360, 640], [375, 553], [390, 664], [
   await page.locator('.sv-zone').waitFor();
   ok(await page.getByRole('button', { name: /공개/ }).count() === 0, 'final: no reveal button');
   ok(await page.locator('.sv-zone .sv-rec').count() === 1 && await page.locator('.sv-zone .sv-actual').count() === 1, 'final: archived rec square and actual circle shown together');
-  ok(/이 공 던지기 전 추천/.test(await page.locator('.sv-recbox').innerText()) && /실제 투구/.test(await page.locator('.sv-actual-line').innerText()), 'final: titles say before-pitch rec and actual');
+  ok(/이 공 던지기 전 추천/.test(await page.locator('.sv-rec-head').innerText()) && /실제 투구/.test(await page.locator('.sv-actual-line').innerText()), 'final: titles say before-pitch rec and actual');
   await page.locator('.sv-cand').nth(1).click();
   ok(await page.locator('.sv-zone .sv-rec').getAttribute('data-rank') === '2', 'final: picking rank 2 moves the zone mark to rank 2');
   // pitch buttons of PA 1
@@ -168,7 +168,7 @@ for (const [width, height] of [[320, 568], [360, 640], [375, 553], [390, 664], [
   const body = await page.locator('body').innerText();
   ok(!/시연|demo|DEMO|데모/.test(body), 'live(demo): no demo banner or wording on the ordinary screen');
   ok(/LIVE/.test(await page.locator('.sv-top').innerText()), 'live: LIVE chip from game status');
-  ok(/다음 공 추천 · \d+구/.test(await page.locator('.sv-recbox').innerText()) && /방금 던진 공/.test(await page.locator('.sv-actual-line').innerText()), 'live latest: "방금 던진 공" vs "다음 공 추천 · n구" separated');
+  ok(/다음 공 추천 · \d+구/.test(await page.locator('.sv-rec-head').innerText()) && /방금 던진 공/.test(await page.locator('.sv-actual-line').innerText()), 'live latest: "방금 던진 공" vs "다음 공 추천 · n구" separated');
   ok(await page.locator('.sv-zone .sv-actual').count() === 0, 'live latest: last actual is not drawn as this rec\'s outcome (only grey 직전)');
   ok(/따라가는 중/.test(await page.locator('.sv-mode').innerText()), 'live: follow state shown');
   ok(await fitsOneScreen(page), 'live 390x664: one screen');

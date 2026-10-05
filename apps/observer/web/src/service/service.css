@@ -130,3 +130,38 @@ body.sv-locked{overflow:hidden}
 @media (max-height:620px){.sv-zone-wrap{min-height:110px}.sv-pa-open small{display:none}.sv-pa-open{min-height:44px}.sv-stage{padding-top:4px}}
 .sv-cand-type,.sv-cand-zone{white-space:normal;overflow:visible;text-overflow:clip;word-break:keep-all;overflow-wrap:anywhere;line-height:1.2}
 .sv-cand{gap:2px 5px;padding-left:6px;padding-right:6px}
+
+/* responsive-fix-013: one screen at CSS width >= 320 / height >= 553 with default AND 125% text. The record head sits
+   above a split; on tall phones zone and candidates stack (zone on top, full width). On short or narrow phones they sit
+   side by side — zone left (wider column, so it stays the largest block) and the three candidates as equal rows on the
+   right — which removes a whole candidate row from the height budget. No font is shrunk, nothing is clipped or hidden. */
+.sv-split{flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:6px}
+.sv-zone-col{flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:4px}
+.sv-nav{padding-left:0;padding-right:0;margin:0 10px}
+.sv-rec-head{flex-wrap:wrap;row-gap:0}.sv-rec-head small{white-space:nowrap}
+.sv-mode-text{flex:1 1 0;min-width:7em}
+.sv-mode .sv-btn{min-height:40px}
+@media (max-height:620px){.sv-pa-open small{display:block}}
+@media (max-height:700px),(max-width:359px){
+  .sv-split{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:6px;align-items:stretch}
+  .sv-zone-wrap{min-height:120px}
+  .sv-recbox{display:flex;flex-direction:column;min-height:0}
+  .sv-cands{flex:1 1 auto;grid-template-columns:minmax(0,1fr);grid-auto-rows:1fr;gap:4px}
+  .sv-split{min-height:auto}.sv-recbox{min-height:auto}
+  .sv-cand{min-height:0;padding:3px 6px;gap:0 5px;align-content:center}
+  .sv-norec{flex:1 1 auto;align-items:flex-start}
+  .sv-board{padding:3px 8px}.sv-top{min-height:44px;padding-top:0;padding-bottom:0}.sv-mode{margin-top:4px;min-height:40px}
+  .sv-stage{padding-top:4px;gap:4px}.sv-nav{gap:4px;padding-top:4px;padding-bottom:2px}.sv-actual-line{min-height:24px;line-height:1.2}
+  .sv-pa-open{padding:2px 10px;line-height:1.15}.sv-pitch,.sv-pa-row .sv-icon-btn{min-height:40px}.sv-nav .sv-btn{min-height:40px}
+  .sv-score,.sv-count,.sv-matchup{line-height:1.15}.sv-count{gap:10px}.sv-bases{height:24px}
+  .sv-cand{line-height:1.15}
+}
+/* candidate = rank+type on line 1, zone words and policy share on line 2 (wraps only when it must) */
+.sv-cand{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"rank type" "sub sub"}
+.sv-cand-sub{grid-area:sub;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;column-gap:6px;min-width:0}
+.sv-cand-type,.sv-cand-zone{overflow-wrap:normal;word-break:keep-all}
+/* the date never ellipsizes: on narrow screens it wraps under itself */
+.sv-title{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15;word-break:keep-all}
+/* the actual pitch result is never ellipsized: on narrow screens the line wraps (overrides the earlier ≤359px nowrap) */
+@media (max-width:359px){.sv-actual-line{flex-wrap:wrap}.sv-actual-text{white-space:normal;overflow:visible;text-overflow:clip}}
+@media (max-width:359px){.sv-cand{line-height:1.08;padding-top:2px;padding-bottom:2px}.sv-cands{gap:3px}}
