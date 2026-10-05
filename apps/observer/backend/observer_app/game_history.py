@@ -275,6 +275,13 @@ def build(feed, watch=None, setup=None):
         moves = _runner_moves(play)
         events = play.get('playEvents') or []
         last_pitch = next((e for e in reversed(events) if e.get('isPitch')), None)
+        # Does the PA end ON its last pitch, or on a later non-pitch event (caught stealing / pickoff for the 3rd out,
+        # runner moves after the last pitch)? Only in the first case do the PA's result fields belong to that pitch.
+        last_at = next((i for i in range(len(events)-1, -1, -1) if events[i] is last_pitch), -1)
+        pitch_outs = ((last_pitch or {}).get('count') or {}).get('outs', 0)
+        trailing = any(moves.get(i) or ((events[i].get('count') or {}).get('outs', 0) > pitch_outs)
+                       for i in range(last_at+1, len(events)) if not events[i].get('isPitch'))
+        pa['ends_on_pitch'] = complete and last_pitch is not None and not trailing
         for event_index, event in enumerate(events):
             details = event.get('details') or {}
             call = (details.get('call') or {}).get('code')
@@ -287,7 +294,7 @@ def build(feed, watch=None, setup=None):
                 code = (details.get('type') or {}).get('code')
                 coords = (event.get('pitchData') or {}).get('coordinates') or {}
                 x, z = coords.get('pX'), coords.get('pZ')
-                last_of_pa = complete and event is last_pitch
+                last_of_pa = pa['ends_on_pitch'] and event is last_pitch
                 # state before this pitch: every earlier event of the game applied, nothing from this one or later
                 situation = {'inning': inning, 'half': half, 'outs': outs, 'balls': balls, 'strikes': strikes,
                              'home_score': home, 'away_score': away, 'runners': _occupied(bases)}

@@ -103,26 +103,35 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
     pitches_all, pas_all = record['pitches'], record['pas']
     last = len(pitches_all)-1
     cutoff = min(cutoff, last)
-    over = cutoff == last and record['final'] is not None and live_current is None
+    # A finished game is shown as final at its last pitch only if nothing state-changing follows that pitch; in a demo
+    # a trailing game-ending event (CS/pickoff 3rd out, walk-off on a wild pitch...) has no released time, so it is held.
+    over = (cutoff == last and record['final'] is not None and live_current is None
+            and (source['kind'] != 'demo' or not pitches_all[last].get('gap_after', False)))
     nxt = pitches_all[cutoff+1] if cutoff+1 <= last else None
     lastp = pitches_all[cutoff] if cutoff >= 0 else None
     # A runner/score/out change or a pitcher/batter substitution between the last released pitch and the next one is
     # not released yet (its own time is not mapped): hold the after-last-pitch state and withhold the next pitch's view.
-    held = nxt is not None and live_current is None and lastp is not None and lastp.get('gap_after', False)
+    held = not over and live_current is None and lastp is not None and lastp.get('gap_after', False)
     visible = pitches_all[:cutoff+1]
-    boundary_ab = (lastp['at_bat_number'] if held else nxt['at_bat_number']) if nxt else float('inf')
-    whole = over or live_current is not None or nxt is None
+    boundary_ab = lastp['at_bat_number'] if held else nxt['at_bat_number'] if nxt else float('inf')
+    whole = over or live_current is not None or (nxt is None and not held)
     pas = []
     for pa in pas_all:
         if not whole and pa['at_bat_number'] > boundary_ab:
             continue
         done = pa['complete'] and (whole or pa['at_bat_number'] < boundary_ab or
-                                   (pa['last_index'] is not None and pa['last_index'] <= cutoff))
-        item = dict(pa)
+                                   (pa.get('ends_on_pitch') and pa['last_index'] is not None and pa['last_index'] <= cutoff))
+        item = {k: v for k, v in pa.items() if k != 'ends_on_pitch'}
         item['pitch_count'] = sum(1 for p in visible if p['pa_key'] == pa['pa_key'])
         item['last_index'] = max((p['index'] for p in visible if p['pa_key'] == pa['pa_key']), default=None)
         if not done:
             item |= {'complete': False, 'event': None, 'event_label': None, 'result_text': None, 'play_text': None}
+            # who is batting/pitching NOW in an unfinished PA: the last released pitch's people (the feed's matchup is
+            # the end-of-PA one and would announce a later reliever / pinch hitter); a PA with no released pitch yet
+            # takes the next pitch's pre-pitch people, or none while a between-pitch event is held.
+            seen = [p for p in visible if p['pa_key'] == pa['pa_key']]
+            people = seen[-1] if seen else (nxt if nxt is not None and nxt['pa_key'] == pa['pa_key'] and not held else None)
+            item |= {'batter': people['batter'] if people else None, 'pitcher': people['pitcher'] if people else None}
         pas.append(item)
     visible = [{k: v for k, v in p.items() if k not in INTERNAL} for p in visible]
     for pitch in visible:  # terminal fields of a PA still in progress at the cutoff stay hidden

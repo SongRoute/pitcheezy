@@ -104,3 +104,60 @@ def test_state_after_all_events_matches_feed_linescore_on_archived_games():
         offense = line.get('offense') or {}
         assert (now['away_score'], now['home_score'], now['outs']) == (line['teams']['away']['runs'], line['teams']['home']['runs'], line.get('outs')), path.name
         assert now['bases'] == ('first' in offense) + 2*('second' in offense) + 4*('third' in offense), path.name
+
+
+def trailing_cs_game(final=False):
+    record = build(
+        pa(1, 9, True, 11, 90, [pitch(1, 'X', 0, 0, 2)], [move(11, 0, None, '1B', kind='single')], event='single', outs=2),
+        pa(2, 9, True, 12, 90, [pitch(1, 'B', 1, 0, 2), action('caught_stealing_2b', 1, 0, 3)],
+           [move(11, 1, '1B', None, out=True, kind='caught_stealing_2b')], event='caught_stealing_2b', outs=3))[1]
+    if final:
+        record['final'] = {'away': 0, 'home': 1}
+    return record
+
+
+def test_pa_ending_on_a_later_non_pitch_event_is_not_attached_to_the_pitch():
+    record = trailing_cs_game()
+    ball = record['pitches'][1]
+    assert ball['actual']['event'] is None and ball['actual']['play_text'] is None
+    view = service_api.cut_view(record, 1, DEMO)
+    assert view['pas'][-1]['complete'] is False and view['pas'][-1]['event'] is None
+    cur = view['current']
+    assert cur['situation']['outs'] == 2 and cur['situation']['bases'] == 1 and cur['phase'] == 'resolving' and view['next'] is None
+
+
+def test_game_final_not_shown_before_a_trailing_game_ending_event_in_demo():
+    record = trailing_cs_game(final=True)
+    view = service_api.cut_view(record, 1, DEMO)
+    assert view['game']['status'] == 'live' and view['current']['phase'] != 'final' and view['current']['situation']['outs'] == 2
+    archive = service_api.cut_view(record, 1, {'kind': 'archive', 'session_id': None})  # ordinary finished game: whole feed
+    assert archive['current']['phase'] == 'final' and archive['pas'][-1]['complete'] is True
+
+
+def test_unfinished_pa_shows_the_pitcher_of_its_released_pitches_not_a_later_reliever():
+    record = build(
+        pa(1, 1, True, 11, 95, [pitch(1, 'B', 1, 0, 0), action('pitching_substitution', 1, 0, 0), pitch(2, 'X', 1, 0, 1)],
+           [move(11, 2, None, None, out=True)], outs=1),
+        players={'ID90': {'fullName': 'P90', 'pitchHand': {'code': 'R'}}})[1]
+    record['pitches'][0]['pitcher'] = {'id': 90, 'name': 'P90', 'hand': 'R'}  # as _replaced gives it when the feed names it
+    view = service_api.cut_view(record, 0, DEMO)
+    assert view['pas'][0]['pitcher']['id'] == 90 and view['pas'][0]['complete'] is False
+
+
+@pytest.mark.skipif(not FEEDS.is_dir(), reason='T7 archive not mounted')
+def test_every_demo_cutoff_of_every_archived_game_reveals_nothing_later():
+    for path in sorted(p for p in FEEDS.iterdir() if p.name.endswith('_final.json.gz') and p.name[0].isdigit()):
+        record = game_history.build(json.load(gzip.open(path)))
+        pitches = record['pitches']
+        for cutoff in range(-1, len(pitches)):
+            view = service_api.cut_view(record, cutoff, DEMO)
+            text = json.dumps(view)
+            assert 'gap_after' not in text and 'situation_after' not in text and 'ends_on_pitch' not in text
+            assert [p['index'] for p in view['pitches']] == list(range(cutoff+1)), path.name
+            later = {p['key'] for p in pitches[cutoff+2:]}
+            assert not any(f'"{k}"' in text for k in later), (path.name, cutoff)
+            for pa in view['pas']:
+                if not pa['complete']:
+                    assert pa['event'] is None and pa['result_text'] is None
+            if cutoff < len(pitches)-1 or pitches[-1]['gap_after']:
+                assert view['game']['status'] == 'live', (path.name, cutoff)
