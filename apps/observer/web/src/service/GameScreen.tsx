@@ -20,6 +20,7 @@ const UNIT_KEY = 'pitcheezy.unit';
 const readUnit = () => { try { return localStorage.getItem(UNIT_KEY) === 'mph' ? 'mph' : 'kmh'; } catch { return 'kmh'; } };
 const speedText = (mph: number | null, unit: 'kmh' | 'mph') => mph === null ? '' : unit === 'kmh' ? `${Math.round(mph * 1.609344)}km/h` : `${mph.toFixed(1)}mph`;
 const clockText = (ms: number) => new Date(ms).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
+const hhmm = (ms: number) => new Date(ms).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' });
 export const gameIdFromPath = () => {
   const m = /^\/(?:watch|game|live)\/(\d+)\/?$/.exec(window.location.pathname);
   const q = new URLSearchParams(window.location.search).get('game');
@@ -186,9 +187,12 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     </section>
 
     <section className={`sv-mode ${latest ? 'is-latest' : 'is-past'} ${stale || error ? 'is-stale' : ''}`} aria-live="polite">
-      {stale || error ? <span className="sv-mode-text" role="alert">{error ? `연결 끊김 · ${error.text}` : '기록 갱신이 늦어지고 있어요'}{lastOk ? ` · 마지막 수신 ${clockText(lastOk)}` : ''}</span>
+      {stale || error ? <span className="sv-mode-text" role="alert" title={error?.text}>
+          {/* short visible line so the bar stays one row with its 3 buttons; the server's full message stays readable for screen readers / tooltip */}
+          {error ? '연결 끊김' : '갱신 늦어짐'}{lastOk ? ` · 마지막 수신 ${hhmm(lastOk)}` : ''}
+          <span className="sr-only">{error ? ` ${error.text}` : ''}{lastOk ? ` (${clockText(lastOk)})` : ''}</span></span>
         : latest ? <span className="sv-mode-text">{live ? (auto ? '최신 따라가는 중' : '자동 갱신 꺼짐') : '경기 종료 · 마지막 공'}</span>
-        : <span className="sv-mode-text">지난 기록 보는 중 · {inningText(pitch!.situation)} {pitch!.pitch_number}구</span>}
+        : <span className="sv-mode-text">지난 기록 · {inningText(pitch!.situation)} {pitch!.pitch_number}구</span>}
       <span className="sv-mode-actions">
         {!latest && <button className="sv-btn primary" onClick={goLatest}>{live ? '최신으로' : '마지막 공'}</button>}
         {live && <button className="sv-btn" aria-pressed={auto} onClick={() => setAuto(a => !a)} aria-label={auto ? '자동 갱신 끄기' : '자동 갱신 켜기'}>{auto ? '자동 ON' : '자동 OFF'}</button>}

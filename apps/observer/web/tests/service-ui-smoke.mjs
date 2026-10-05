@@ -177,7 +177,7 @@ for (const [width, height] of [[320, 568], [360, 640], [375, 553], [390, 664], [
   await page.locator('.sv-pa-open').click();
   await page.locator('.sv-pa-item').nth(1).click();
   const pinned = await page.locator('.sv-mode').innerText();
-  ok(/지난 기록 보는 중/.test(pinned), 'live: picking a past PA → 지난 기록 보는 중');
+  ok(/지난 기록 ·/.test(pinned), 'live: picking a past PA → 지난 기록 · (viewer state, not the LIVE label)');
   ok(/LIVE/.test(await page.locator('.sv-top').innerText()), 'live: LIVE chip stays (viewer state is separate)');
   if (shots) await page.screenshot({ path: path.join(shots, 'live-past-390.png') });
   phase = 'more';
