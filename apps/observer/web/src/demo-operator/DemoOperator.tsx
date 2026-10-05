@@ -116,7 +116,7 @@ export function DemoOperator() {
           <option value="">선택</option>
           {mappings.map((m) => (
             <option key={m.mapping_id} value={m.mapping_id}>
-              {m.mapping_id} · 경기 {m.game_pk} · 투구 {m.first_index}–{m.last_index} · {m.verified ? '영상 대조 확인' : '영상 대조 미확인'}
+              {m.mapping_id} · 경기 {m.game_pk} · 투구 {m.first_index}–{m.last_index} · {m.kind === 'pa_end_observed' ? '타석 끝 시각만 영상 관찰(투구별 미확인)' : m.verified ? '영상 대조 확인' : '영상 대조 미확인'}
             </option>
           ))}
         </select>{' '}
@@ -142,7 +142,7 @@ export function DemoOperator() {
             <dt>영상 기준 시각</dt><dd aria-live="polite">{clock(current.video_time_s)}</dd>
             <dt>마지막 공개 투구</dt><dd>{current.cutoff.index} ({current.cutoff.pitch_key ?? '없음'})</dd>
             <dt>다음 공개</dt><dd>{current.next_reveal ? `${current.next_reveal.pitch_key} · 영상 ${clock(current.next_reveal.at_video_s)}${current.next_reveal.in_s === null ? '' : ` · ${current.next_reveal.in_s}초 뒤`}` : '구간 끝'}</dd>
-            <dt>대응표</dt><dd>{current.mapping.mapping_id} · {current.mapping.verified ? '영상 대조 확인' : '영상 대조 미확인(진행 속도만)'}</dd>
+            <dt>대응표</dt><dd>{current.mapping.mapping_id} · {current.mapping.kind === 'pa_end_observed' ? '타석 끝 시각만 영상 관찰 — 타석이 끝날 때 그 타석 투구가 한꺼번에 공개됨, 투구별 시각은 모름' : current.mapping.verified ? '영상 대조 확인' : '영상 대조 미확인(진행 속도만)'}</dd>
             <dt>관람 주소</dt><dd><code>{current.viewer_url_path}</code></dd>
           </dl>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

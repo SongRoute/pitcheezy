@@ -24,7 +24,10 @@ from pathlib import Path
 
 MAPPING_SCHEMA = 'pitcheezy-demo-mapping-v1'
 SESSION_SCHEMA = 'pitcheezy-demo-session-v1'
-KINDS = ('video_verified', 'game_timestamps_unsynced', 'test_fixture')
+KINDS = ('video_verified', 'game_timestamps_unsynced', 'test_fixture', 'pa_end_observed')
+# pa_end_observed: only PA-ENDING pitches carry a time, each one a person's observation of the PA result on the video; a
+# whole PA is revealed at that time. Pitches inside a PA have no time (none is interpolated); never 'verified'.
+PA_END_METHOD = 'human_observation_pa_end_result_visible'
 ACTIVE = ('ready', 'running', 'paused')
 RATE_MIN, RATE_MAX = 0.25, 4.0
 DEFAULT_DIR = Path.home()/'.pitcheezy-demo'
@@ -57,6 +60,8 @@ def validate_mapping(mapping, keys=None):
         raise ValueError('video_verified needs verified=true and a video sha256')
     if remote:
         _validate_remote(mapping)
+    if mapping['kind'] == 'pa_end_observed':
+        _validate_pa_end(mapping)
     rows = mapping.get('rows') or []
     if not rows:
         raise ValueError('mapping has no rows')
@@ -98,6 +103,29 @@ def _validate_remote(mapping):
             raise ValueError(f"remote_observed row {row.get('index')} time outside 0..observed_duration_s")
         if not str(review.get('by') or '').strip() or not str(review.get('evidence') or '').strip():
             raise ValueError(f"remote_observed row {row.get('index')} lacks a per-row review (by, evidence)")
+
+
+def _validate_pa_end(mapping):
+    if mapping.get('verified') is not False:
+        raise ValueError('pa_end_observed mappings are never verified (pitch-level sync is unknown)')
+    if (mapping.get('verification') or {}).get('method') != PA_END_METHOD:
+        raise ValueError('pa_end_observed needs verification.method human_observation_pa_end_result_visible')
+    rows, seg = mapping.get('rows') or [], mapping.get('segment') or {}
+    first = seg.get('first_index')
+    if type(first) is not int or first < 0 or not rows or first > rows[0].get('index', -1):
+        raise ValueError('pa_end_observed needs segment.first_index (first pitch of the first PA) <= first row index')
+    for before, after in zip(rows, rows[1:]):
+        if not after.get('reveal_at_s', -1) > before.get('reveal_at_s', math.inf):
+            raise ValueError('pa_end_observed rows need strictly increasing observed times')
+    for row in rows:
+        at, review = row.get('reveal_at_s'), row.get('review') or {}
+        if not isinstance(at, (int, float)) or isinstance(at, bool) or not math.isfinite(at) or at < 0:
+            raise ValueError(f"pa_end_observed row {row.get('index')} needs a finite observed time")
+        if not str(review.get('by') or '').strip() or not str(review.get('evidence') or '').strip():
+            raise ValueError(f"pa_end_observed row {row.get('index')} lacks a per-row review (by, evidence)")
+    lead = mapping.get('lead_s', 5.0)
+    if not isinstance(lead, (int, float)) or isinstance(lead, bool) or not math.isfinite(lead) or not 0 <= lead <= rows[0]['reveal_at_s']:
+        raise ValueError('pa_end_observed lead_s must be within 0..first observed time')
 
 
 class DemoClock:
@@ -193,7 +221,7 @@ class DemoClock:
         start row are always revealed (pre-segment state)."""
         progress = self.progress(session, now)
         revealed = [row['index'] for row in session['rows'] if row['reveal_at_s'] <= progress and row['index'] >= session['start_index']]
-        base = session['start_index']-1
+        base = session.get('pre_index', session['start_index'])-1  # pa_end_observed: state before the segment's first PA
         return max([base, *revealed])
 
     def _row(self, session, index):
@@ -223,10 +251,14 @@ class DemoClock:
                                    'video_sha256': (mapping.get('video') or {}).get('sha256'), 'source_sha256': mapping['source_sha256']}
                        | ({'video_source': REMOTE_SOURCE, 'video_url': mapping['video']['url']}
                           if (mapping.get('video') or {}).get('source') == REMOTE_SOURCE else {}),
-                       'rows': rows, 'start_index': start, 'lead_s': float(lead_s), 'status': 'ready', 'rate': 1.0,
+                       'rows': rows, 'start_index': start, 'lead_s': float(mapping.get('lead_s', lead_s) if mapping['kind'] == 'pa_end_observed' else lead_s), 'status': 'ready', 'rate': 1.0,
                        'version': 1, 'anchor': {'server_epoch': now, 'progress_s': 0.0}, 'ops': [],
                        'create_op_id': op_id, 'created_at': _iso(now), 'updated_at': _iso(now)}
             self._row(session, start)
+            if mapping['kind'] == 'pa_end_observed':
+                if start != rows[0]['index']:
+                    raise DemoError(400, '타석 끝 관찰 대응표는 첫 관찰 행에서만 시작합니다.')
+                session['pre_index'] = mapping['segment']['first_index']
             session['anchor']['progress_s'] = self._start_progress(session)
             self._save(session)
             return session
