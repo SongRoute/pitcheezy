@@ -114,7 +114,12 @@ def test_config_is_the_generated_draft_under_a_draft_name():
                           'print(json.dumps(ns["build"](), indent=2, ensure_ascii=False))'],
                          capture_output=True, text=True, check=True).stdout
     assert out == RUN.read_text()  # deterministic generator, nothing hand-edited
-    assert not (CONFIGS / 'EXP-P38-001.json').exists()  # no registered-looking file before registration
+    registered = CONFIGS / 'EXP-P38-001.json'  # p38-review-execute-002: registered 2026-10-05 from this DRAFT
+    if registered.exists():  # only the registration paths may differ from the DRAFT
+        reg_cfg, draft = read(registered), read(RUN)
+        assert reg_cfg['status'] == 'REGISTERED' and reg_cfg['registration']['draft_sha256'] == RUN_SHA256
+        assert {k for k in set(draft) | set(reg_cfg) if draft.get(k) != reg_cfg.get(k)} == \
+            {'status', 'decision', 'execution', 'registration'}
     cfg = read(RUN)
     assert cfg['status'] == 'DRAFT' and cfg['execution']['enabled'] is False and cfg['execution']['executable'] is False
     assert 'registration' not in cfg and cfg['experiment_id'] == 'EXP-P38-001' and cfg[pid.MARKER] is True
