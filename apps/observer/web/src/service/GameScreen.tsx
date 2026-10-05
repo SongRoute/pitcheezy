@@ -191,7 +191,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const openPa = () => setSheet('pa');
   const cands = rec?.status === 'ready' ? rec.candidates : [];
   const venue = game.venue ? `${game.venue} · ` : '';
-  const when = `${dateHeading(game.kst_date).replace(/^\d{4}년 /, '')} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
+  const when = `${dateHeading(game.kst_date)} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
   const emptyRec = nextPhase ? (detail.current?.phase === 'between_innings' ? '공수 교대 중' : detail.current?.phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
   const list = <RecList rec={rec} emptyText={emptyRec} onOpen={() => setSheet('detail')} />;
 

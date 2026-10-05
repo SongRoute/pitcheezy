@@ -262,7 +262,7 @@ body.sv-locked{overflow:hidden}
 /* header: team names regular, scores the heaviest; venue and KST start wrap instead of being cut */
 .sv-head-score{font-weight:600;letter-spacing:-.3px}.sv-head-score strong{font-weight:700}.sv-head-score i{font-weight:400}
 .sv-head-main small{white-space:normal;overflow:visible;text-overflow:clip;display:flex;flex-wrap:wrap;justify-content:center;column-gap:.5em;font-weight:400;margin-top:1px}
-.sv-head-main small>span{white-space:nowrap}
+.sv-head-main small>span{white-space:normal;word-break:keep-all}
 .sv-live{border:1px solid var(--sv-line);background:transparent;color:var(--sv-muted);font-weight:700;border-radius:11px}
 .sv-live.on{border-color:var(--sv-live);background:transparent;color:var(--sv-live)}
 .sv-live:focus-visible,.sv-page button:focus-visible,.sv-page a:focus-visible{outline:3px solid var(--sv-rec);outline-offset:2px}
@@ -313,3 +313,11 @@ body.sv-locked{overflow:hidden}
 .sv-card{border-width:1px}.sv-card-time,.sv-card-team{font-weight:600}.sv-card-team b{font-weight:700}
 .sv-datebar h1{font-weight:700}.sv-brand{font-weight:800}
 .sv-status{border-width:1px;font-weight:600}
+/* sizing (Root notes 2026-10-06): side columns follow the rec-list text (4-syllable pitch names such as 체인지업 + rank/share fit at
+   4.5em of 13px = 58.5px, was a fixed 72px), so the centred zone column is wider and the isotropic grid grows; with larger text the
+   columns grow with it. Pitch cards are sized in em of their 12px caption, so enlarged text enlarges the card instead of eating the
+   mini zone. Coordinates, window margins and the centre rule are unchanged. */
+.sv-zrow{font-size:13px;--sv-side:max(56px,4.5em);grid-template-columns:var(--sv-side) minmax(0,1fr) var(--sv-side)}
+.sv-strip .sv-card{font-size:12px;width:7em;height:7em}
+.sv-card-cap{font-size:1em}
+@media (max-height:620px){.sv-strip .sv-card{width:6.35em;height:6.35em}}
