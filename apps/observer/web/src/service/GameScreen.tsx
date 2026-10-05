@@ -252,7 +252,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
 
     {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={() => setSheet(null)}
       onPick={p => { setSheet(null); if ((live && p.pa_key === detail.current?.pa_key && !p.complete) || typeof p.first !== 'number' || !byIndex.has(p.first)) goLatest(); else pick(p.first); }} />}
-    {sheet === 'box' && <BoxSheet ls={detail.linescore_asof} game={game} at={situation} onClose={() => setSheet(null)} />}
+    {/* a selected past pitch shows the linescore as of that pitch (never the latest one, which would reveal later play) */}
+    {sheet === 'box' && <BoxSheet ls={latest ? detail.linescore_asof : pitch!.line ?? null} game={game} at={situation} onClose={() => setSheet(null)} />}
     {sheet === 'detail' && <DetailSheet onClose={() => setSheet(null)} rec={rec} recTitle={rec ? `${recTitle} (${provenanceText(rec)})` : recTitle}
       actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} notes={detail.notes} speed={mph => speedText(mph, unit)}
       extra={<div className="sv-row"><button className="sv-btn" onClick={() => setSheet('info')}>기준과 한계 보기</button>

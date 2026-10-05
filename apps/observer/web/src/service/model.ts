@@ -16,7 +16,9 @@ export type Actual = { pitch_type: string | null; pitch_label: string; descripti
   /** CV catcher setup, horizontal only, present only after the actual pitch (never height / zone cell). */
   setup_x: number | null };
 export type PitchRow = { index: number; key: string; pa_key: string; at_bat_number: number; pitch_number: number;
-  situation: Situation; batter: Person & { side: string }; pitcher: Person & { hand: string }; rec: Rec; actual: Actual | null };
+  situation: Situation; batter: Person & { side: string }; pitcher: Person & { hand: string }; rec: Rec; actual: Actual | null;
+  /** linescore as of just before this pitch (server `linescore_before`); null when the backend does not send it. */
+  line?: Linescore | null };
 export type GameStatus = 'scheduled' | 'live' | 'final' | 'postponed' | 'other';
 export type GameCard = { game_pk: number; start: string | null; kst_date: string; status: GameStatus; status_text: string;
   away_team: string; home_team: string; away_score: number | null; home_score: number | null; inning: number | null; half: Half | null;

@@ -79,7 +79,8 @@ function pitchRow(raw: Raw, provenance: Rec['provenance']): PitchRow {
   return { index: raw.index, key: raw.key ?? `${raw.pa_key ?? raw.pa_id}:${raw.pitch_number}`, pa_key: raw.pa_key ?? raw.pa_id,
     at_bat_number: raw.at_bat_number, pitch_number: raw.pitch_number,
     situation: { ...before, inning: raw.inning ?? before.inning, half: raw.half ?? before.half } as Situation,
-    batter: raw.batter, pitcher: raw.pitcher, rec: normalizeRec(raw.rec ?? raw.pre, provenance), actual: actual(raw.actual) };
+    batter: raw.batter, pitcher: raw.pitcher, rec: normalizeRec(raw.rec ?? raw.pre, provenance), actual: actual(raw.actual),
+    line: linescoreRev3(raw.linescore_before) };
 }
 function pa(raw: Raw): Pa {
   return { pa_key: raw.pa_key, at_bat_number: raw.at_bat_number, inning: raw.inning, half: raw.half,

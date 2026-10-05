@@ -153,7 +153,9 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
             people = seen[-1] if seen else (nxt if nxt is not None and nxt['pa_key'] == pa['pa_key'] and not held else None)
             item |= {'batter': people['batter'] if people else None, 'pitcher': people['pitcher'] if people else None}
         pas.append(item)
-    visible = [{k: v for k, v in p.items() if k not in INTERNAL} for p in visible]
+    # linescore_before: the server's as-of linescore BEFORE this visible pitch (same pre-pitch moment as situation_before), so a
+    # selected past pitch never shows later runs/hits/errors. Built only from events before the pitch; the rest of INTERNAL stays hidden.
+    visible = [{k: v for k, v in p.items() if k not in INTERNAL} | {'linescore_before': p.get('line_before')} for p in visible]
     for pitch in visible:  # terminal fields of a PA still in progress at the cutoff stay hidden
         if not next((pa for pa in pas if pa['pa_key'] == pitch['pa_key']), {}).get('complete'):
             pitch['actual'] = pitch['actual'] | {'event': None, 'event_label': None, 'play_text': None,
