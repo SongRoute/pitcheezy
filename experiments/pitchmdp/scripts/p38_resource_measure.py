@@ -18,6 +18,7 @@ import json
 import math
 from pathlib import Path
 import statistics
+import subprocess
 import sys
 import time
 
@@ -31,6 +32,34 @@ RATIO_MAX = 1.25
 LAST_TRAIN_DATE = 20250430
 # not 'p38_resource_measure': the outer timeout / ssh shell of this very launch carries that string (pgrep self-match)
 OTHER_WORK = two.OTHER_GPU_WORK + '|p38_resource_child'
+
+
+# review p38-review-execute-002: the measurement code itself is part of the source identity (registration checks these
+# bytes against the reviewed commit), next to the frozen runner/model map in pins.source_sha256
+MEASUREMENT_CODE = ('p38_resource_measure.py', 'p38_resource_child.py', 'gpu3_two_slot.py', 'gpu3_bench_child.py')
+
+
+def measurement_code_sha256(scripts=Path(__file__).resolve().parent):
+    return {name: two.sha256_file(Path(scripts) / name) for name in MEASUREMENT_CODE}
+
+
+def gpu3_apps(uuid=two.GPU3):
+    """[(gpu_uuid, pid)] of compute apps on GPU3 ONLY (nvidia-smi --id filter): one-card rule, no other GPU is queried.
+    A child cannot reach another GPU anyway: CUDA_VISIBLE_DEVICES is the GPU3 UUID and bind_gpu's bound_uuid is checked."""
+    out = subprocess.run(['nvidia-smi', f'--id={uuid}', '--query-compute-apps=gpu_uuid,pid', '--format=csv,noheader,nounits'],
+                         capture_output=True, text=True, timeout=20, check=True).stdout
+    rows = [(u.strip(), int(p)) for u, p in (line.split(',') for line in out.strip().splitlines() if line.strip())]
+    if any(u != uuid for u, _ in rows):
+        raise RuntimeError(f'nvidia-smi --id={uuid} answered for another GPU: {rows}')
+    return rows
+
+
+def gpu3_preflight(spec):
+    return two.preflight(spec, apps=gpu3_apps)
+
+
+def gpu3_sampler(uuid):
+    return two.Sampler(uuid, apps=gpu3_apps)
 
 
 def check_spec(spec):
@@ -116,7 +145,7 @@ def evaluate(spec, run):
                     'not a science result; no DEV/2026 read, nothing registered or scored'}
 
 
-def preflight(spec, base=two.preflight, procs=two.pgrep):
+def preflight(spec, base=gpu3_preflight, procs=two.pgrep):
     for path in spec['absent_before']:
         if Path(path).exists():
             raise RuntimeError(f'{path} exists: P38 already registered/started; the v2 measurement is pre-registration only')
@@ -133,7 +162,7 @@ def child_command(spec, spec_path):
     return command
 
 
-def measure(spec_path, out, *, preflight_fn=preflight, sampler_cls=two.Sampler, command_for=None):
+def measure(spec_path, out, *, preflight_fn=preflight, sampler_cls=gpu3_sampler, command_for=None):
     spec_path, out = Path(spec_path).resolve(), Path(out)
     spec = check_spec(json.loads(spec_path.read_text()))
     if str(out) != spec['out']:
@@ -152,6 +181,7 @@ def measure(spec_path, out, *, preflight_fn=preflight, sampler_cls=two.Sampler, 
     tasks = [{**t, 'id': f'{t["arm"]}-{t["seed"]}'} for t in spec['tasks']]
     command_for = command_for or child_command(spec, spec_path)
     record = {'started_utc': two.utc(), 'spec_sha256': two.sha256_file(spec_path), 'protocol': PROTOCOL,
+              'measurement_code_sha256': measurement_code_sha256(), 'code_dir': str(Path(__file__).resolve().parents[1]),
               'preflight': checked}
     try:
         budget, start = spec['budget'], time.monotonic()

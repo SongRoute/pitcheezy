@@ -53,7 +53,7 @@ cherry-picked with `-x` (2ffe51f, 7566828, da74997, c17a092). No GPU, SSH, serve
 ## Executor steps (after a DISTINCT review accepts `R`; one ssh call per step, no remote wait loop)
 0. Read-only preflight: `cat $B/score-p37-state.json` terminal; `pgrep -af 'cuda_direct_queue.py|timing_probe_|score_cuda_direct|gpu3_bench_child|p38_resource_child|run-p3[0-9]-pipeline'`
    empty (run it in its OWN ssh call: the pattern must not sit in the same command line as a launch);
-   `nvidia-smi --query-compute-apps=gpu_uuid,pid --format=csv` has no GPU3 row; absent: `$B/EXP-P38-001.json`,
+   `nvidia-smi --id=GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9 --query-compute-apps=gpu_uuid,pid --format=csv` empty (GPU3 only; no other GPU is queried — review p38-review-execute-002); absent: `$B/EXP-P38-001.json`,
    `$B/run-p38-pipeline.py`, `$B/score-p38-state.json`, `$B/queue-p38-001`, `$B/runs/EXP-P38-001`, `$B/p38-resource-v2-001`;
    present read-only `$B/code-5b3335e` (DRAFT sha 8518f754…). Any failure: wait/report, never another GPU.
 1. Stage: `git archive --format=tar R configs experiments/pitchmdp | ssh newsrv 'mkdir $B/code-R7 && tar -x -C $B/code-R7 && chmod -R a-w $B/code-R7'`;

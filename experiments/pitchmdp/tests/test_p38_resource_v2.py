@@ -193,11 +193,11 @@ def v1_gate(tmp_path, **over):
     return path
 
 
-def v2_measure(tmp_path, per_epoch=None, spec_sha=None, **over):
+def v2_measure(tmp_path, per_epoch=None, spec_sha=None, code=None, **over):
     decision = m.evaluate(spec(), run_record(per_epoch or {m.REFERENCE: 10., m.CANDIDATE: 11.}))
     decision.update(over)
     record = {'protocol': m.PROTOCOL, 'spec_sha256': spec_sha or two.sha256_file(SPEC), 'decision': decision,
-              'serial': {'max_live': 1}}
+              'serial': {'max_live': 1}, 'measurement_code_sha256': code or m.measurement_code_sha256()}
     path = tmp_path / 'measure.json'
     path.write_text(json.dumps(record, sort_keys=True))
     return path
@@ -218,6 +218,7 @@ def test_registration_needs_v1_validity_and_passing_v2_and_records_both_ratios(t
         ({'errors': ['identity']}, {}), ({'tasks': 9}, {}), ({'bound_uuids': [two.GPU3, GPU4]}, {}), ({'pass': True}, {}),
         ({'source_sha256': {}}, {}), ({}, {'per_epoch': {m.REFERENCE: 10., m.CANDIDATE: 12.6}}),
         ({}, {'spec_sha': '0' * 64}), ({}, {'pass': False, 'errors': ['3/4 fits completed']}), ({}, {'ratio_max': 1.3}), ({}, {'bound_uuids': [GPU4]}), ({}, {'tasks': 3}),
+        ({}, {'code': {**m.measurement_code_sha256(), 'p38_resource_child.py': '0' * 64}}),
     ]
     for v1_over, v2_kw in cases:
         for name in ('gate.json', 'measure.json'):
@@ -232,3 +233,42 @@ def test_template_requires_v2_measurement_and_keeps_one_fit():
     assert "rd['pass'] is True" in text and "rd['ratio_max']==1.25" in text and "r['serial']['max_live']==1" in text
     assert "new['device']['max_parallel']==1" in text and GPU4 not in text
     assert "g['pass'] is True" not in text, 'v1 resource verdict is replaced by v2, not silently re-passed'
+
+
+# ------------------------------------------------------------------ review p38-review-execute-002
+
+def test_measure_records_its_own_code_hashes_and_registration_records_them(tmp_path):
+    path, s = local_spec(tmp_path)
+    rec = m.measure(path, Path(s['out']), preflight_fn=lambda spec: {'ok': True}, sampler_cls=NoSampler,
+                    command_for=fake_command(tmp_path, {m.REFERENCE: 10., m.CANDIDATE: 11.}))
+    assert rec['measurement_code_sha256'] == {n: two.sha256_file(PROJECT / 'scripts' / n) for n in m.MEASUREMENT_CODE}
+    assert rec['code_dir'] == str(PROJECT)
+    config = reg.build(v1_gate(tmp_path), v2_measure(tmp_path), '20:30', '5b3335e', 'go', reg.at('2026-10-05', '20:30'))
+    assert config['registration']['resource']['measurement_code_sha256'] == rec['measurement_code_sha256']
+
+
+def test_gpu_queries_name_gpu3_only(monkeypatch):
+    calls = []
+
+    class Done:
+        def __init__(self, stdout):
+            self.stdout = stdout
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return Done(fake_run.out)
+    monkeypatch.setattr(m.subprocess, 'run', fake_run)
+    fake_run.out = f'{two.GPU3}, 4242\n'
+    assert m.gpu3_apps() == [(two.GPU3, 4242)]
+    assert calls[-1][1] == f'--id={two.GPU3}' and GPU4 not in ' '.join(calls[-1])
+    fake_run.out = f'{GPU4}, 1\n'
+    with pytest.raises(RuntimeError, match='another GPU'):
+        m.gpu3_apps()
+    fake_run.out = ''
+    assert m.gpu3_apps() == []
+    import inspect
+    assert inspect.signature(m.measure).parameters['sampler_cls'].default is m.gpu3_sampler
+    assert inspect.signature(m.preflight).parameters['base'].default is m.gpu3_preflight
+    text = (LAUNCH / 'run-p38-pipeline.TEMPLATE.py').read_text()
+    assert "'nvidia-smi','--id='+GPU3,'--query-compute-apps" in text
+    assert "['nvidia-smi','--query-compute-apps" not in text, 'template must not list every GPU'

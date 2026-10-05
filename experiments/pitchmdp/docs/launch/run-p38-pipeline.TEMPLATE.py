@@ -82,7 +82,7 @@ try:
  assert json.loads((b/'score-p37-state.json').read_text())['status'] in ('complete','incomplete','blocked'),'P37 must be terminal'
  assert not (b/'queue-p38-001').exists() and not (b/'runs/EXP-P38-001').exists() and not (b/'scores/EXP-P38-001').exists(),'P38 output already present'
  assert not subprocess.run(['pgrep','-f','cuda_direct_queue.py|timing_probe_|score_cuda_direct|run-p37-pipeline|p38_resource_child|gpu3_bench_child'],capture_output=True).stdout.strip(),'another queue/probe/scorer/pipeline is running: start_after not satisfied'
- apps=subprocess.run(['nvidia-smi','--query-compute-apps=gpu_uuid,pid','--format=csv,noheader'],capture_output=True,text=True,check=True).stdout
+ apps=subprocess.run(['nvidia-smi','--id='+GPU3,'--query-compute-apps=gpu_uuid,pid','--format=csv,noheader'],capture_output=True,text=True,check=True).stdout  # GPU3 only: no other GPU is queried
  assert GPU3 not in apps,'GPU3 has a compute process (foreign or ours): wait, never another GPU'
  sys.path[:0]=[str(code),str(code/'scripts')]
  import run_cuda_direct as runner

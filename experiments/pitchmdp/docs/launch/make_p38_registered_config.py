@@ -33,6 +33,7 @@ DRAFT = REPO / 'configs' / 'DRAFT-CUDA-PITCHER-ID-20261005.json'
 DRAFT_SHA = gate.DRAFT_SHA
 RESOURCE_PROTOCOL = 'p38_train_fixed_step_resource_v2'
 RESOURCE_SPEC = 'experiments/pitchmdp/docs/launch/p38-resource-v2-001.json'
+MEASUREMENT_CODE = ('p38_resource_measure.py', 'p38_resource_child.py', 'gpu3_two_slot.py', 'gpu3_bench_child.py')
 PREREG = 'experiments/pitchmdp/docs/PREREG-DRAFT-EXP-P38-001-pitcher-id-2026-10-05.md'
 REGISTRATION_PATHS = ('status', 'decision', 'execution.enabled', 'execution.executable', 'execution.blocked_until',
                       'registration')
@@ -73,6 +74,9 @@ def check_resource(measure, smoke):
     pins = spec['pins']
     assert pins['config_sha256'] == DRAFT_SHA and pins['export_manifest_sha256'] == gate.MANIFEST_SHA
     assert pins['source_sha256'] == smoke['source_sha256'], 'v2 measured a different source map than the smoke'
+    scripts = REPO / 'experiments/pitchmdp/scripts'
+    reviewed = {name: hashlib.sha256((scripts / name).read_bytes()).hexdigest() for name in MEASUREMENT_CODE}
+    assert measure.get('measurement_code_sha256') == reviewed, 'v2 measurement code differs from this reviewed commit'
     return ratio
 
 
@@ -113,6 +117,7 @@ def build(summary_path, measure_path, registered, commit, go, now):
                                 'resource': {'protocol': RESOURCE_PROTOCOL,
                                              'measurement_sha256': hashlib.sha256(measure_raw).hexdigest(),
                                              'spec': RESOURCE_SPEC,
+                                             'measurement_code_sha256': measure['measurement_code_sha256'],
                                              'candidate_over_reference_train_seconds_per_epoch': ratio,
                                              'ratio_max': pid.RESOURCE_RATIO_MAX,
                                              'method_revised_after_observing_v1': True,
