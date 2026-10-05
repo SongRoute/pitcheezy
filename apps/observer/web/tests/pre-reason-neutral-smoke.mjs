@@ -71,7 +71,7 @@ try {
     const errors = [];
     page.on('pageerror', (error) => errors.push(String(error)));
     for (const d of decisions) {
-      await page.goto(`http://pz.test/watch?game=900100#i=${d.index}`);
+      await page.goto(`http://pz.test/legacy/watch?game=900100#i=${d.index}`);
       await page.getByText('추천 없음').waitFor({ timeout: 8000 });
       const before = await page.locator('.wa-reason').first().innerText();
       const outcome = expected.includes(d.pre.reason);
@@ -87,7 +87,7 @@ try {
     }
     // next pitch starts unrevealed again (neutral line back); a fresh load so the reveals cached above are gone
     await page.goto('about:blank');
-    await page.goto(`http://pz.test/watch?game=900100#i=1`);
+    await page.goto(`http://pz.test/legacy/watch?game=900100#i=1`);
     await page.getByRole('button', { name: '실제 투구 공개' }).click();
     await page.locator('.wa-reveal').waitFor({ timeout: 5000 });
     await page.keyboard.press('ArrowRight');
@@ -101,7 +101,7 @@ try {
     if ((await page.locator('.wa-reason').first().innerText()) !== expected[0]) fail(`${width}: revealed pitch lost its real reason after ←`);
     // failed reveal: the neutral line stays next to the error; Space retries and only then the real reason shows
     await page.goto('about:blank');
-    await page.goto(`http://pz.test/watch?game=900100#i=3`);
+    await page.goto(`http://pz.test/legacy/watch?game=900100#i=3`);
     await page.getByText('추천 없음').waitFor({ timeout: 8000 });
     failNextReveal = true;
     await page.keyboard.press(' ');
@@ -114,7 +114,7 @@ try {
     if (await page.locator('.wa-error').count()) fail(`${width}: error left on screen after a successful retry`);
     // embedded (Showcase iframe) uses the same rule
     await page.goto('about:blank');
-    await page.goto(`http://pz.test/watch?game=900100&embed=1#i=2`);
+    await page.goto(`http://pz.test/legacy/watch?game=900100&embed=1#i=2`);
     await page.getByText('추천 없음').waitFor({ timeout: 8000 });
     if ((await page.locator('.wa-reason').first().innerText()) !== NEUTRAL) fail(`${width}: embedded view shows the outcome reason before reveal`);
     await page.keyboard.press(' ');

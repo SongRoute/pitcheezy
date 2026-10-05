@@ -44,7 +44,7 @@ export default function Showcase() {
   const compare = useRef<HTMLElement>(null);
   const scene = source.scenes[selected];
   const decision = timeline?.decisions.find(d => d.at_bat_number === scene.atBat && d.pitch_number === scene.pitchNumber);
-  const watchPath = decision ? `/watch?game=${source.gamePk}#i=${decision.index}` : null;
+  const watchPath = decision ? `/legacy/watch?game=${source.gamePk}#i=${decision.index}` : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -112,7 +112,7 @@ export default function Showcase() {
     ? `${d.situation.inning}회 ${d.situation.half === 'Top' ? '초' : '말'} · ${d.batter.name ?? '타자'} · ${n}구째`
     : `영상 장면 · ${n}구째`;
   return <div className="sc-page">
-    <header className="sc-head"><a href={localMedia ? '/watch?media=local' : '/watch'}>← 경기 목록</a><span>{BADGE}</span></header>
+    <header className="sc-head"><a href={localMedia ? '/legacy/watch?media=local' : '/legacy/watch'}>← 경기 목록</a><span>{BADGE}</span></header>
     <main>
       <h1>영상으로 보는 투구 선택</h1>
       <p className="sc-sub">{timeline ? `${short(timeline.game.away_team)} · ${short(timeline.game.home_team)}` : '경기 자료 확인 중'}

@@ -40,7 +40,7 @@ const open = async () => {
   page.on('requestfailed', (request) => {
     if (/\/api\/live\/\d+\/state/.test(request.url()) && /ERR_ABORTED/.test(request.failure()?.errorText ?? '')) dropped += 1;
   });
-  await page.goto('http://pz.test/game?game=849845');
+  await page.goto('http://pz.test/legacy/game?game=849845');
   return page;
 };
 const chip = (page, text, timeout = 9000) => page.locator('.gm-stage .gm-chip', { hasText: text }).waitFor({ timeout });

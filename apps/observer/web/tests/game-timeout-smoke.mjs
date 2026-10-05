@@ -52,7 +52,7 @@ const nextHang = async (what, timeout = 6000) => {   // until one more request i
 // 1. The very first request never answers and the viewer does nothing. It is dropped at about 15 s (not before), the
 //    page says the server did not answer, the next poll asks again by itself and the game appears.
 let t = Date.now();
-await page.goto('http://pz.test/game?game=849845');
+await page.goto('http://pz.test/legacy/game?game=849845');
 await page.waitForTimeout(LIMIT - 2000);
 if (dropped.length) fail(`a request was dropped after ${dropped[0] - t} ms, before the ${LIMIT} ms limit`);
 if (asks.length !== 1) fail(`polls piled up behind a hung first request: ${asks.length} asks`);

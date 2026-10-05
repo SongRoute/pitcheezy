@@ -54,7 +54,7 @@ const errors = [];
 page.on('pageerror', (error) => errors.push(String(error)));
 const row = () => page.locator('.wa-innings button').allInnerTexts();
 const current = () => page.locator('.wa-innings button.current').innerText();
-const open = async (game, i) => { await page.goto(`http://pz.test/watch?game=${game}#i=${i}`); await page.locator('.wa-board').waitFor({ timeout: 8000 }); };
+const open = async (game, i) => { await page.goto(`http://pz.test/legacy/watch?game=${game}#i=${i}`); await page.locator('.wa-board').waitFor({ timeout: 8000 }); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // Game 1 ends after 9초 (home team ahead): the old row ended at 9초 and told the winner.

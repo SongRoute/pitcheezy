@@ -42,7 +42,7 @@ const setHidden = (hidden) => page.evaluate((h) => {
 }, hidden);
 
 // 1. First load cannot reach the server: plain words, automatic retries counted, a real tap target to retry now.
-await page.goto('http://pz.test/game?game=849845');
+await page.goto('http://pz.test/legacy/game?game=849845');
 await chip('불러오는 중', 1200);
 if (await page.locator('.gm-live').innerText() !== '연결 중') fail('header does not say 연결 중 while the first answer is pending');
 await chip('연결 안 됨');

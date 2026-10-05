@@ -120,7 +120,7 @@ try {
     const frame = page.frameLocator('.sc-compare iframe');
     await page.getByText(note).waitFor();
     assert.equal(seen.offline.length, 0, 'video loads only on viewer request');
-    assert.equal(await page.locator('iframe').getAttribute('src'), '/watch?game=849843&embed=1#i=3', 'scene=1 kept with media=local');
+    assert.equal(await page.locator('iframe').getAttribute('src'), '/legacy/watch?game=849843&embed=1#i=3', 'scene=1 kept with media=local');
     let params = new URL(page.url()).searchParams;
     assert.equal(params.get('media'), 'local'); assert.equal(params.get('scene'), '1');
     await page.getByRole('button', { name: '공식 경기 영상 불러오기' }).click();
@@ -181,7 +181,7 @@ try {
     const back = page.getByRole('link', { name: '← 경기 목록' });
     const backHref = await back.getAttribute('href');
     await back.click();
-    await page.waitForURL(u => new URL(u).pathname === '/watch');
+    await page.waitForURL(u => new URL(u).pathname === '/legacy/watch');
     await page.getByRole('link', { name: '영상과 나란히 비교 ▸' }).click();
     await page.waitForURL(u => new URL(u).pathname === '/showcase');
     assert.equal(new URL(page.url()).searchParams.get('media'), null, 'the list link itself carries no media=');
@@ -189,15 +189,15 @@ try {
     await page.getByRole('button', { name: '공식 경기 영상 불러오기' }).click();
     assert.equal(await page.locator('video').getAttribute('src'), local, 'plain /showcase in the same tab stays local');
     assert.equal(await page.getByText(note).count(), 1, 'local note shown after in-app navigation');
-    assert.equal(backHref, '/watch?media=local', 'back link keeps the opt-in');
-    assert.equal(await back.getAttribute('href'), '/watch?media=local');
+    assert.equal(backHref, '/legacy/watch?media=local', 'back link keeps the opt-in');
+    assert.equal(await back.getAttribute('href'), '/legacy/watch?media=local');
     const tab = await page.context().newPage();  // new tab, same browser profile: sessionStorage is per tab
     tab.on('pageerror', e => seen.errors.push(String(e)));
     await tab.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : (seen.other++, route.abort()));
     await tab.goto(`${base}/showcase`);
     await tab.locator('.sc-compare iframe').waitFor();
     assert.equal(await tab.getByText(note).count(), 0, 'a new tab starts from the MLB URL');
-    assert.equal(await tab.getByRole('link', { name: '← 경기 목록' }).getAttribute('href'), '/watch');
+    assert.equal(await tab.getByRole('link', { name: '← 경기 목록' }).getAttribute('href'), '/legacy/watch');
     await tab.close();
     await page.goto(`${base}/showcase?media=online`);
     await page.locator('.sc-compare iframe').waitFor();
@@ -205,7 +205,7 @@ try {
     await page.goto(`${base}/showcase`);
     await page.locator('.sc-compare iframe').waitFor();
     assert.equal(await page.getByText(note).count(), 0, 'cleared opt-in stays cleared');
-    assert.equal(await back.getAttribute('href'), '/watch');
+    assert.equal(await back.getAttribute('href'), '/legacy/watch');
     await page.getByRole('button', { name: '공식 경기 영상 불러오기' }).click();
     await alertOf(page).waitFor();
     assert.equal(await page.locator('video').getAttribute('src'), source.mediaUrl);

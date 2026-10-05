@@ -74,7 +74,7 @@ for (const [device, width, height] of [['iphone17', 402, 681], ['galaxy-s26', 36
   {
     const { context, page, server, errors } = await open(width, height);
     server.current = 'third_pitch';
-    await page.goto(`http://pz.test/game?game=${GAME}`);
+    await page.goto(`http://pz.test/legacy/game?game=${GAME}`);
     await stageChip(page, '다음 공');
     if (await page.locator('.gm-stale').count()) fail(`${device}: stale banner on a healthy feed`);
     server.mode = 'down';
@@ -114,7 +114,7 @@ for (const [device, width, height] of [['iphone17', 402, 681], ['galaxy-s26', 36
   {
     const { context, page, server, errors } = await open(width, height);
     server.current = 'new_batter_after_strikeout';  // next is 11:1; the zone shows the recommendation only
-    await page.goto(`http://pz.test/game?game=${GAME}&replay=0&t0=${Date.now() / 1000 - 5}`);
+    await page.goto(`http://pz.test/legacy/game?game=${GAME}&replay=0&t0=${Date.now() / 1000 - 5}`);
     await stageChip(page, '다음 공');
     await page.waitForTimeout(500);
     if (await page.locator('.gm-setup').count()) fail(`${device}: setup drawn before the pitch`);
@@ -150,7 +150,7 @@ for (const [device, width, height] of [['iphone17', 402, 681], ['galaxy-s26', 36
   {
     const { context, page, server, errors } = await open(width, height);
     server.current = 'third_pitch';
-    await page.goto(`http://pz.test/game?game=${GAME}&replay=0`);
+    await page.goto(`http://pz.test/legacy/game?game=${GAME}&replay=0`);
     await page.waitForFunction(() => new URLSearchParams(window.location.search).has('t0'));
     await stageChip(page, '다음 공');
     await page.getByRole('button', { name: '다시 보기 조작' }).click();
@@ -198,11 +198,11 @@ for (const [device, width, height] of [['iphone17', 402, 681], ['galaxy-s26', 36
   // 4. /watch list links each finished game to the /game replay; the old links stay.
   {
     const { context, page, errors } = await open(width, height);
-    await page.goto('http://pz.test/watch');
-    const link = page.locator(`a[href="/game?game=${GAME}&replay=0"]`);
+    await page.goto('http://pz.test/legacy/watch');
+    const link = page.locator(`a[href="/legacy/game?game=${GAME}&replay=0"]`);
     await link.waitFor();
-    if (!await page.locator(`a[href="/watch?game=${GAME}"]`).count()) fail(`${device}: step-through watch link lost`);
-    if (!await page.locator(`a[href="/live?game=${GAME}&replay=0"]`).count()) fail(`${device}: real-pace /live link lost`);
+    if (!await page.locator(`a[href="/legacy/watch?game=${GAME}"]`).count()) fail(`${device}: step-through watch link lost`);
+    if (!await page.locator(`a[href="/legacy/live?game=${GAME}&replay=0"]`).count()) fail(`${device}: real-pace /live link lost`);
     await layout(page, device, 'watch');
     await link.click();
     await page.waitForURL(/\/game\?game=849845&replay=0/);

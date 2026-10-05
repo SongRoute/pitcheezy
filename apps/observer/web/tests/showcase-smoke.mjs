@@ -82,25 +82,25 @@ try {
 
     await page.goto('http://showcase.test/showcase?scene=0');
     await page.locator('.sc-compare iframe').waitFor();
-    assert.equal(await page.locator('iframe').getAttribute('src'), '/watch?game=849843&embed=1#i=2', 'use pitch identity, not scene ordinal');
+    assert.equal(await page.locator('iframe').getAttribute('src'), '/legacy/watch?game=849843&embed=1#i=2', 'use pitch identity, not scene ordinal');
     await frame.getByText('합성 검사: 추천 없음').waitFor();
     assert.equal(await frame.locator('.wa-reveal').count(), 0, 'no actual pitch before explicit reveal');
     assert.equal(await frame.locator('.wa-guide').count(), 0, 'outer instructions replace embedded onboarding');
     assert.equal(await frame.locator('.wa-innings, .wa-nav, .wa-step').count(), 0, 'embedded scene cannot navigate independently');
     await frame.locator('.wa-page').press('ArrowLeft');
-    const inner = () => page.frames().find(f => f.url().includes('/watch?'));
+    const inner = () => page.frames().find(f => f.url().includes('/legacy/watch?'));
     assert(inner().url().endsWith('&embed=1#i=2'), 'keyboard cannot change embedded pitch');
 
     // Copy link: the copied URL and the open link follow the selected pitch; the note resets on scene change.
     await page.getByRole('button', { name: '아이폰용 관전 링크 복사' }).click();
     await page.getByText('링크를 복사했어요').waitFor();
-    assert.equal(await page.evaluate(() => window.__copied), 'http://showcase.test/watch?game=849843#i=2');
+    assert.equal(await page.evaluate(() => window.__copied), 'http://showcase.test/legacy/watch?game=849843#i=2');
     await select.selectOption('1');
-    assert.equal(await page.locator('iframe').getAttribute('src'), '/watch?game=849843&embed=1#i=3');
+    assert.equal(await page.locator('iframe').getAttribute('src'), '/legacy/watch?game=849843&embed=1#i=3');
     await page.getByText('링크를 복사했어요').waitFor({ state: 'detached', timeout: 2000 });  // note does not carry over
-    assert.equal(await page.getByRole('link', { name: '이 공 관전 화면 열기' }).getAttribute('href'), '/watch?game=849843#i=3');
+    assert.equal(await page.getByRole('link', { name: '이 공 관전 화면 열기' }).getAttribute('href'), '/legacy/watch?game=849843#i=3');
     await page.getByRole('button', { name: '아이폰용 관전 링크 복사' }).click();
-    assert.equal(await page.evaluate(() => window.__copied), 'http://showcase.test/watch?game=849843#i=3');
+    assert.equal(await page.evaluate(() => window.__copied), 'http://showcase.test/legacy/watch?game=849843#i=3');
     assert.equal(new URL(page.url()).searchParams.get('scene'), '1', 'page URL keeps the selected scene');
     await select.selectOption('0');
 
@@ -145,7 +145,7 @@ try {
 
     // Reselect: another scene and back remounts a fresh, unrevealed frame and re-seeks the paused video.
     await select.selectOption('1');
-    assert.equal(await page.locator('iframe').getAttribute('src'), '/watch?game=849843&embed=1#i=3');
+    assert.equal(await page.locator('iframe').getAttribute('src'), '/legacy/watch?game=849843&embed=1#i=3');
     await frame.locator('.wa-pitchno').getByText('5구째').waitFor();
     assert.equal(await frame.locator('.wa-reveal').count(), 0);
     m = await media(); near(m.t, scene1.releaseSeconds - 3, 'scene 1 seek'); assert(m.paused);
@@ -192,7 +192,7 @@ try {
     await page.waitForFunction(() => !document.querySelector('.sc-primary')?.disabled);
     assert.equal(await alert.count(), 0, 'retry clears the media error');
     m = await media(); near(m.t, scene0.releaseSeconds - 3, 'retry seeks to scene start'); assert(m.paused);
-    assert.equal(await page.locator('iframe').getAttribute('src'), '/watch?game=849843&embed=1#i=2');
+    assert.equal(await page.locator('iframe').getAttribute('src'), '/legacy/watch?game=849843&embed=1#i=2');
     assert.equal(await frame.locator('.wa-reveal').count(), 0, 'media retry does not reveal');
 
     // A failed reveal is announced inside the frame, shows no actual pitch, and a retry clears the stale error.
@@ -214,7 +214,7 @@ try {
     failApi = false;
     await page.locator('.sc-compare').getByRole('button', { name: '다시 시도' }).click();
     await page.locator('.sc-compare iframe').waitFor();
-    assert.equal(await page.locator('iframe').getAttribute('src'), '/watch?game=849843&embed=1#i=2');
+    assert.equal(await page.locator('iframe').getAttribute('src'), '/legacy/watch?game=849843&embed=1#i=2');
     await frame.getByText('합성 검사: 추천 없음').waitFor();
     assert.equal(await frame.locator('.wa-reveal').count(), 0, 'timeline retry does not reveal');
     assert.equal(await page.locator('.sc-compare [role=alert]').count(), 0);

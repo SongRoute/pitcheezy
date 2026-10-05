@@ -195,7 +195,7 @@ function Picker() {
         <h2>지금 경기 · 지연 중계</h2>
         <p className="wa-muted">내 중계 화면에 시점을 맞춰, 다음 공의 추천 구종과 대략 위치를 먼저 보여 줘요.</p>
         {liveError ? <p className="wa-error" role="alert">{liveError}</p> : live === null ? <p className="wa-loading">오늘 경기를 불러오는 중…</p> : live.length === 0 ? <p className="wa-empty">오늘(미국 동부 기준) 예정된 포스트시즌 경기가 없어요.</p> :
-          <ul className="wa-games">{live.map(g => <li key={g.game_pk}><a className={`wa-game ${g.live ? 'is-live' : ''}`} href={`/live?game=${g.game_pk}`}>
+          <ul className="wa-games">{live.map(g => <li key={g.game_pk}><a className={`wa-game ${g.live ? 'is-live' : ''}`} href={`/legacy/live?game=${g.game_pk}`}>
             <span className="wa-game-teams"><strong>{short(g.away_team)} @ {short(g.home_team)}</strong><span>{SERIES[g.game_type] ?? g.game_type}</span></span>
             <span className="wa-game-meta">{g.live ? <em className="wa-live-dot">경기 중</em> : <em>{g.status === 'Final' || g.status === 'Game Over' ? '종료' : `${kstTime(g.start)} 시작(한국)`}</em>}</span></a></li>)}</ul>}
       </section>
@@ -204,13 +204,13 @@ function Picker() {
         <p className="wa-muted">한 공씩 넘기며 추천 → 실제 투구를 비교해요. “실제 속도로 다시 보기”는 경기 때와 같은 간격으로 저절로 넘어가요. 목록에 최종 점수는 없어요.</p>
         {error && <p className="wa-error" role="alert">{error}</p>}
         {games === null ? (!error && <p className="wa-loading">경기 목록을 불러오는 중…</p>) : games.length === 0 ? <p className="wa-empty">아직 준비된 경기가 없어요. 맥미니에서 <code>scripts/demo_precompute.py sync</code>를 실행하면 끝난 경기가 추가돼요. (저장장치 T7이 연결돼 있어야 해요)</p> :
-          <ul className="wa-games">{games.map(g => <li key={g.game_pk} className="wa-game-row"><a className="wa-game" href={`/watch?game=${g.game_pk}`}>
+          <ul className="wa-games">{games.map(g => <li key={g.game_pk} className="wa-game-row"><a className="wa-game" href={`/legacy/watch?game=${g.game_pk}`}>
             <span className="wa-game-teams"><strong>{short(g.away_team)} @ {short(g.home_team)}</strong><span>{g.date} · {SERIES[g.game_type] ?? g.game_type}</span></span>
             {g.ready_share !== undefined && g.ready_share !== null && <span className="wa-coverage" title="추천을 낼 수 있었던 공의 비율">
               <span className="bar"><i style={{ width: `${Math.round(g.ready_share * 100)}%` }} /></span>추천 {Math.round(g.ready_share * 100)}%</span>}</a>
-            <span className="wa-replay-links"><a className="wa-replay-link" href={`/game?game=${g.game_pk}&replay=0`}>한 화면으로 다시 보기 ▸</a>
+            <span className="wa-replay-links"><a className="wa-replay-link" href={`/legacy/game?game=${g.game_pk}&replay=0`}>한 화면으로 다시 보기 ▸</a>
               {g.game_pk === showcaseSource.gamePk && <a className="wa-replay-link" href="/showcase">영상과 나란히 비교 ▸</a>}
-              <a className="wa-replay-link" href={`/live?game=${g.game_pk}&replay=0`}>실제 속도로 다시 보기 ▸</a></span></li>)}</ul>}
+              <a className="wa-replay-link" href={`/legacy/live?game=${g.game_pk}&replay=0`}>실제 속도로 다시 보기 ▸</a></span></li>)}</ul>}
         <p className="wa-footnote">추천 비율이 낮은 경기는 2025년 4월 이후 데뷔했거나 기록이 적은 투수가 많이 던진 경기예요. 그런 투수의 공은 추천 없이 이유만 보여 줘요.</p>
       </section>
     </main></div>;

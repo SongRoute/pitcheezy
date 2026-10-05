@@ -49,7 +49,7 @@ for (const [device, width, height] of SIZES) {
     if (shots) await page.screenshot({ path: `${shots}/game-${device}-${label}.png` });
   };
 
-  await page.goto('http://pz.test/game?game=849845');
+  await page.goto('http://pz.test/legacy/game?game=849845');
   await chip('다음 공');
   await check('1-pre');
 

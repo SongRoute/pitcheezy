@@ -93,7 +93,7 @@ try {
     };
     const open = async (game, i, extra = '') => {
       await page.goto('about:blank'); setupCalls = 0;
-      await page.goto(`http://pz.test/watch?game=${game}${extra}#i=${i}`);
+      await page.goto(`http://pz.test/legacy/watch?game=${game}${extra}#i=${i}`);
       await page.locator('.wa-card').waitFor({ timeout: 8000 });
     };
     const settle = () => page.waitForTimeout(delayMs + 150);  // let the setup answer land
