@@ -24,6 +24,8 @@ from .video_annotations import VideoAnnotations
 from .live_armb import LiveArmB
 from .setup_estimates import SetupEstimates
 from .watch_along import BADGE as WATCH_BADGE, WatchAlong
+from . import service_api
+from .demo_clock import DemoClock
 
 LOGGER = logging.getLogger(__name__)
 
@@ -74,7 +76,7 @@ def _timed_replay(game_pk, **options):
 
 
 def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=None, watch_dir=None,
-               timed_replay=_timed_replay):
+               timed_replay=_timed_replay, feed_dir=None, demo_dir=None, intent_dir=None, demo_wall=None):
     injected = service is not None
     if start_worker is None:
         start_worker = not injected
@@ -132,6 +134,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     app.state.startup_error = None
     app.state.worker = None
     media_registry = MediaRegistry(RUN)
+    demo_clock = DemoClock(demo_dir, **({} if demo_wall is None else {'wall': demo_wall}))
+    app.state.demo_clock = demo_clock
     video_annotations = VideoAnnotations(RUN)
 
     def active():
@@ -291,7 +295,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
             raise ServiceError(400, 'date는 YYYY-MM-DD 형식이어야 합니다.')
         feed = live_parts()
-        return live_call(lambda: {'date': date, 'games': feed.schedule(date)})
+        hidden = demo_clock.active_games()
+        return live_call(lambda: {'date': date, 'games': [g for g in feed.schedule(date) if g['game_pk'] not in hidden]})
 
     def armb_view(snapshot, parsed):
         """Frozen ARM-B pre-pitch recommendation for the served (delayed) state, from the worker cache."""
@@ -402,7 +407,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
 
     @app.get('/api/watch/games')
     def watch_games():
-        return {'games': watch.games()}
+        hidden = demo_clock.active_games()
+        return {'games': [g for g in watch.games() if g['game_pk'] not in hidden]}
 
     @app.get('/api/watch/{game_pk}')
     def watch_timeline(game_pk: int):
@@ -416,7 +422,36 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     def watch_summary(game_pk: int, through: int = Query(..., ge=-1), top: int = Query(5, ge=0, le=20)):
         return watch_call(lambda: watch.summary(game_pk, through, top))
 
-    setups = SetupEstimates()
+    setups = SetupEstimates(intent_dir)
+
+    def service_live_feed(game_pk):
+        feed = live_parts()
+        entry, _ = feed.snapshot(game_pk, 0)
+        if entry is None:
+            from .live_feed import LiveFeedError
+            raise LiveFeedError('no snapshot yet')
+        now = time.time()
+        return entry['feed'], {'as_of': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(entry['fetched'])),
+                               'ok': game_pk not in feed.failing, 'stale_s': round(now-entry['fetched'], 1)}
+
+    def service_live_rec(snapshot, parsed):
+        view = armb_view(snapshot, parsed) if parsed.get('status') == 'ready' else None
+        candidates = ((view or {}).get('recommendation') or {}).get('candidates') or []
+        if not view or view.get('status') != 'ready' or not candidates:
+            return None if view is None else {'provenance': 'absent', 'status': 'missing' if view.get('status') == 'computing' else 'unsupported',
+                                              'reason': view.get('reason'), 'recorded_at': None, 'policy': None, 'candidates': []}
+        return {'provenance': 'captured_live', 'status': 'ready', 'reason': None,
+                'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                'policy': {'name': 'ARM-B', 'identity': view.get('policy_identity')},
+                'candidates': [{'rank': c.get('rank', i+1), 'pitch_type': c.get('pitch_type'), 'pitch_label': c.get('pitch_label'),
+                                'zone_id': c.get('zone_id'), 'zone_label': c.get('zone_label'), 'target': c.get('target'),
+                                'detail': {'probability': (c.get('detail') or {}).get('probability')}}
+                               for i, c in enumerate(candidates)]}
+
+    service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
+                         schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
+                         live_feed=None if live_feed is False else service_live_feed,
+                         live_rec=service_live_rec)
 
     @app.get('/api/watch/{game_pk}/setup')
     def watch_setup(game_pk: int):

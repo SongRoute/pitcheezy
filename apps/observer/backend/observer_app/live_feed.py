@@ -166,7 +166,10 @@ class LiveFeed:
         allowed = self.config['allowed_game_types']
         return [{'game_pk': g['gamePk'], 'game_type': g['gameType'], 'start': g.get('gameDate'),
                  'status': g['status'].get('detailedState'), 'live': g['status'].get('abstractGameState') == 'Live',
-                 'away_team': g['teams']['away']['team']['name'], 'home_team': g['teams']['home']['team']['name']}
+                 'away_team': g['teams']['away']['team']['name'], 'home_team': g['teams']['home']['team']['name'],
+                 'abstract': g['status'].get('abstractGameState'), 'official_date': g.get('officialDate'),
+                 'away_score': g['teams']['away'].get('score'), 'home_score': g['teams']['home'].get('score'),
+                 'game_number': g.get('gameNumber'), 'double_header': g.get('doubleHeader')}
                 for day in data.get('dates', []) for g in day['games'] if g['gameType'] in allowed]
 
     def _record(self, game_pk, feed):
