@@ -8,6 +8,8 @@
 
 **최신 우선순위(2026-10-05 Song, 이전 Opus 전용 규칙 대체)**: ① 실험으로 예측 성능 개선 ② 실시간 처리 ③ 사용자 친화 UI/UX, 맥미니 배포·DB 보조 작업 자율. Opus5.5 우선, 실제 Opus 사용량 소진 때만 GPT Sol 대체. 과학 승격·운영 교체는 게이트 유지. [AI_COLLABORATION 현재 역할](../AI_COLLABORATION.md).
 
+**GPU 자원(2026-10-05 Song 최신, 아래 GPU3·4/최대 2장 기록보다 우선)**: Pitcheezy는 물리 GPU3 UUID `GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9` 1장·동시 1fit만. GPU4 UUID `GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99`는 다른 프로젝트에 반납(할당·probe·대체 금지). 아래 표·이력의 2장 사용은 당시 기록이다. [GPU 배정](GPU-allocation-2026-10-05.md).
+
 **운영 규칙(2026-10-05 Song 절대 규칙)**: Root PM은 관리자 전용(목표·위임·읽기 전용 검토·수용 판정·보고). 조사·구현·실험·테스트·문서·통합 실행은 전부 서브에이전트(Claude Opus5.5)가 한다. 상세 [AI_COLLABORATION 현재 역할](../AI_COLLABORATION.md).
 
 ## 현재 상태
