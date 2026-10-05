@@ -60,6 +60,7 @@
 ## 7. 재시작·되돌리기 (8771만)
 - 맥미니 재부팅·프로세스 종료 시: `sh /Users/song/Projects/pitcheezy-pm-jobs/20261006-four-hour/demo-delivery/start-preview-8771.sh`(현재와 같은 env, 8771이 이미 쓰이면 거부). 시연 세션·대응표는 디스크에 있어 그대로 이어진다(스테이징 재시작 실측 0.75초, 같은 컷오프).
 - 직전 서빙본 3ca9efc(타석 끝 대응표 기능 전): `git -C /Users/song/Projects/pitcheezy worktree add <새 디렉터리> 3ca9efc` → 그 트리 `apps/observer/web/dist`에 `pm-jobs/20261006-four-hour/demo-delivery/rollback-dist-3ca9efc/` 복사 → 현재 8771 리스너 종료 → 그 트리에서 1절의 env 그대로 `sh apps/observer/serve.sh`. (그 백엔드는 `pa_end_observed` 대응표를 목록에서 건너뛴다.)
+  - **되돌리기 전에 반드시 A 방식(`pa_end_observed`) 세션을 운영자 화면에서 '시연 종료'한다.** 3ca9efc 백엔드는 디스크에 남은 그 세션을 그대로 읽지만 `pre_index`를 모르므로 시작 전 컷오프를 `start_index−1`=4로 계산해, AB1 투랑 타석 6구 중 5구를 7:28 전에 보여 준다(독립 검토 재현: 새 코드 −1, 옛 코드 4). 되돌린 뒤에는 B(시계만) 대응표로 새 세션을 만든다.
 - 더 이전: c84905a(`rev3-label-polish-040/rollback-dist-c84905a/`), 15a4357, 최후 282dc6f(보관본 §4).
 
 ## 8. 남은 것
