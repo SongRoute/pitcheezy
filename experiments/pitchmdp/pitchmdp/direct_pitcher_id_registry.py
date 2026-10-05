@@ -126,6 +126,57 @@ DESIGNS = {
                  'primary': P40_PRIMARY, 'earlier_seeds': P40_EARLIER_SEEDS,
                  'projection_seconds': P40_FAMILY_PROJECTION_SECONDS},
 }
+# ------------------------------------------------------------------ P43 batter identity (tentative EXP-P43-001 DRAFT)
+# Pre-registration docs/PREREG-DRAFT-EXP-P43-001-batter-id-2026-10-06.md, written 2026-10-06 01:20 KST before any P43
+# output (post-selection: designed after P25 showed the 17-d batter summary matters and after P38's pitcher-ID signal;
+# exploratory, repeated DEV).  The P38 mechanism applied to the batter of the row (hash-pinned sidecar joined by the
+# export keys, batter_sidecar.py; never in the export, never read by a direct head before).  Four arms, seeds 70-74:
+#   periodic_residual_counts                         reference (P36/P38 entry verbatim)
+#   batter_id_periodic_residual_counts               P38 network on the TRAIN-only BATTER vocabulary (>= 100 TRAIN rows)
+#   batter_id_row_shuffle_periodic_residual_counts   same network, batter column permuted across rows per split by a
+#                                                    fixed label-free seed (information-free, parameter/compute matched)
+#   pitcher_batter_id_periodic_residual_counts       P38 pitcher table + the batter table, additive (two id paths)
+# The arm block keeps the family key FLAG ('pitcher_id') for dispatch; `id_columns` names the id column(s) it reads.
+P43_DESIGN = 'p43_batter_id_v1'
+BATTER_SIDECAR_KEY = 'batter_sidecar'
+BATTER = 'batter_id_periodic_residual_counts'
+BATTER_SHUFFLE = 'batter_id_row_shuffle_periodic_residual_counts'
+PITCHER_BATTER = 'pitcher_batter_id_periodic_residual_counts'
+BATTER_SHUFFLE_SEED = 43_001
+P43_SEEDS = [70, 71, 72, 73, 74]
+P43_EARLIER_SEEDS = {**P40_EARLIER_SEEDS, 'EXP-P40-001': list(P40_SEEDS),
+                     'EXP-P42-001 (GPU lead DRAFT f1e950c)': [65, 66, 67, 68, 69]}
+BASELINES[BATTER] = {**BASELINES[CANDIDATE], 'name': BATTER, FLAG: {**PITCHER_ID, 'id_columns': ['batter']}}
+BASELINES[BATTER_SHUFFLE] = {**BASELINES[CANDIDATE], 'name': BATTER_SHUFFLE,
+                             FLAG: {**PITCHER_ID, 'id_columns': ['batter'], 'index_source': 'row_shuffle',
+                                    'shuffle_seed': BATTER_SHUFFLE_SEED}}
+BASELINES[PITCHER_BATTER] = {**BASELINES[CANDIDATE], 'name': PITCHER_BATTER,
+                             FLAG: {**PITCHER_ID, 'id_columns': ['pitcher', 'batter']}}
+P43_ID_ARMS = (BATTER, BATTER_SHUFFLE, PITCHER_BATTER)
+ID_ARMS = ID_ARMS + P43_ID_ARMS
+P43_ARM_ORDER = (REFERENCE, BATTER, BATTER_SHUFFLE, PITCHER_BATTER)
+P43_FITS = len(P43_ARM_ORDER) * len(P43_SEEDS)
+P43_CONTRASTS = [
+    {'name': 'batter_id_vs_row_shuffle', 'candidate': BATTER, 'reference': BATTER_SHUFFLE,
+     'isolates': 'batter_identity_information', 'role': 'primary', 'parameter_matched': True,
+     'compute_matched': True, 'information_free_capacity_control': 'this contrast (reference = row-shuffled batter ids)'},
+    {'name': 'batter_id_vs_periodic_residual_counts', 'candidate': BATTER, 'reference': REFERENCE,
+     'isolates': 'batter_identity_with_id_parameters', 'role': 'secondary', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'see batter_id_vs_row_shuffle'},
+    {'name': 'batter_row_shuffle_vs_periodic_residual_counts', 'candidate': BATTER_SHUFFLE, 'reference': REFERENCE,
+     'isolates': 'batter_id_parameters_without_information', 'role': 'capacity_control', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'candidate side is information-free'},
+    {'name': 'pitcher_batter_id_vs_batter_id', 'candidate': PITCHER_BATTER, 'reference': BATTER,
+     'isolates': 'pitcher_identity_given_batter_identity', 'role': 'secondary', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'not included (P40 covers the pitcher path)'},
+]
+P43_PRIMARY = P43_CONTRASTS[0]['name']
+P43_SUBSET_COLUMN = 'batter'  # in-vocab / UNK subsets use the TRUE batter's TRAIN-vocabulary membership for every arm
+P43_TASK_BOUND_SECONDS = P40_TASK_BOUND_SECONDS  # 1.25 x P38 max task wall 244.7 s (one extra 8 -> 128 gather at most)
+P43_FAMILY_PROJECTION_SECONDS = P43_FITS * P43_TASK_BOUND_SECONDS  # serial, one GPU: 6,117.5 s
+DESIGNS[P43_DESIGN] = {'arms': P43_ARM_ORDER, 'seeds': P43_SEEDS, 'fits': P43_FITS, 'contrasts': P43_CONTRASTS,
+                       'primary': P43_PRIMARY, 'earlier_seeds': P43_EARLIER_SEEDS,
+                       'projection_seconds': P43_FAMILY_PROJECTION_SECONDS}
 VOCAB_KEYS = ('n_vocab', 'ids_sha256', 'min_count', 'train_rows', 'train_pitchers', 'train_unk_rows',
               'train_max_date', 'last_train_date')
 
@@ -161,6 +212,15 @@ def id_spec(arm):
     return block.get('index_source', 'identity'), block.get('shuffle_seed'), float(block.get('id_dropout', 0.))
 
 
+def id_columns(arm):
+    """Id column(s) a checked arm reads, in index-column order: ['pitcher'] for P38/P40 arms; P43 arms name theirs."""
+    return list(check_arm(arm)[FLAG].get('id_columns', ['pitcher']))
+
+
+def is_p43(config):
+    return config.get(DESIGN_KEY) == P43_DESIGN
+
+
 def check_device(config):
     device = config.get('device') or {}
     if any(g in RELEASED_GPUS for g in device.get('allowed_gpu_uuids') or []):
@@ -175,9 +235,9 @@ def design(config):
     key = config.get(DESIGN_KEY)
     if key is None:
         return DESIGNS['p38']
-    if key != P40_DESIGN:
-        raise ValueError(DESIGN_KEY + ' must be absent (P38) or exactly ' + P40_DESIGN)
-    return DESIGNS[P40_DESIGN]
+    if key not in (P40_DESIGN, P43_DESIGN):
+        raise ValueError(DESIGN_KEY + ' must be absent (P38) or exactly ' + P40_DESIGN + ' or ' + P43_DESIGN)
+    return DESIGNS[key]
 
 
 def check_family(config):
@@ -199,7 +259,24 @@ def check_family(config):
     check_device(config)
     if not same(config.get('training'), TRAINING):
         raise ValueError(f'Pitcher-ID training must be the cuda_direct_v1 budget with epochs {EPOCH_CAP}')
+    check_sidecar_pin(config)
     return config
+
+
+def check_sidecar_pin(config):
+    """P43 needs exactly one batter-sidecar pin (sibling dirname of the export + sidecar.json sha); others none."""
+    pin = config.get(BATTER_SIDECAR_KEY)
+    if not is_p43(config):
+        if pin is not None:
+            raise ValueError(BATTER_SIDECAR_KEY + ' belongs to the P43 batter-ID design only')
+        return None
+    from pitchmdp.batter_sidecar import FORMAT
+    if not isinstance(pin, dict) or set(pin) != {'dirname', 'sidecar_sha256', 'format'} or pin['format'] != FORMAT \
+            or not isinstance(pin['dirname'], str) or not pin['dirname'] or '/' in pin['dirname'] \
+            or pin['dirname'] in ('.', '..') or not isinstance(pin['sidecar_sha256'], str) \
+            or len(pin['sidecar_sha256']) != 64 or set(pin['sidecar_sha256']) - set('0123456789abcdef'):
+        raise ValueError(BATTER_SIDECAR_KEY + ' must be {dirname (sibling of the export), sidecar_sha256, format}')
+    return pin
 
 
 def check_contrasts(config):
@@ -269,6 +346,8 @@ def check_split_dates(manifest, last_train_date=LAST_TRAIN_DATE):
 
 def check_fit(config, arm, fit):
     """Per-fit record: vocabulary (candidate only), allocated parameters and cost; fail closed."""
+    if is_p43(config):
+        return check_fit_p43(config, arm, fit)
     record = et.cost_record(fit)
     vocab = fit.get(FLAG)
     if arm not in design(config)['arms']:
@@ -291,6 +370,59 @@ def check_fit(config, arm, fit):
         raise ValueError(f'{arm}: parameter_count {record["parameter_count"]} != registered {expected}')
     return {'cost': record, 'vocab': None if vocab is None else {**{k: vocab[k] for k in VOCAB_KEYS},
                                                                     'unk_share': dict(vocab['unk_share'])}}
+
+
+def check_vocab_record(arm, vocab, last_train_date=LAST_TRAIN_DATE):
+    """One column's TRAIN vocabulary record (fit.json) with per-split UNK shares; fail closed."""
+    if not isinstance(vocab, dict) or set(VOCAB_KEYS) - set(vocab) or vocab.get('min_count') != MIN_TRAIN_PITCHES \
+            or vocab.get('last_train_date') != last_train_date or vocab.get('train_max_date') is None \
+            or int(vocab['train_max_date']) > last_train_date or int(vocab.get('n_vocab', 0)) < 1:
+        raise ValueError(f'{arm}: id vocabulary record missing or malformed')
+    shares = vocab.get('unk_share') or {}
+    if set(shares) != set(VOCAB_SPLITS) or not all(isinstance(v, float) and math.isfinite(v) and 0 <= v <= 1
+                                                   for v in shares.values()):
+        raise ValueError(f'{arm}: per-split UNK shares missing or malformed')
+    return {**{k: vocab[k] for k in VOCAB_KEYS}, 'unk_share': dict(shares)}
+
+
+def check_fit_p43(config, arm, fit):
+    """P43 per-fit record: {id_columns, vocabs: {column: vocab record}} for id arms; parameters = base + one id path
+    per column; the reference carries none."""
+    record = et.cost_record(fit)
+    block = fit.get(FLAG)
+    if arm not in P43_ARM_ORDER:
+        raise ValueError(f'{arm}: not an arm of the P43 design')
+    if arm == REFERENCE:
+        if block is not None:
+            raise ValueError(f'{arm}: reference fit carries an id record')
+        vocabs, expected = None, BASE_PARAMETERS
+    else:
+        columns = BASELINES[arm][FLAG]['id_columns']
+        if not isinstance(block, dict) or block.get('id_columns') != columns \
+                or set(block.get('vocabs') or {}) != set(columns):
+            raise ValueError(f'{arm}: id record must name exactly the columns {columns}')
+        spec = BASELINES[arm][FLAG]
+        if block.get('index_source', 'identity') != spec.get('index_source', 'identity') \
+                or block.get('shuffle_seed') != spec.get('shuffle_seed'):
+            raise ValueError(f'{arm}: recorded index source differs from the registry entry')
+        vocabs = {c: check_vocab_record(arm, block['vocabs'][c]) for c in columns}
+        expected = BASE_PARAMETERS + sum(id_parameters(v['n_vocab']) for v in vocabs.values())
+    if record['parameter_count'] != expected:
+        raise ValueError(f'{arm}: parameter_count {record["parameter_count"]} != registered {expected}')
+    return {'cost': record, 'vocab': vocabs}
+
+
+def check_column_vocabs(tasks):
+    """P43: for every id column, all fits that read it carry one identical TRAIN vocabulary record."""
+    by_column = {}
+    for arm, seeds in tasks.items():
+        for task in seeds.values():
+            for column, record in (task['vocab'] or {}).items():
+                by_column.setdefault(column, []).append(json.dumps(record, sort_keys=True))
+    if set(by_column) != {'pitcher', 'batter'} or any(len(set(v)) != 1 for v in by_column.values()):
+        raise ValueError('P43 fits must carry one vocabulary record per id column (pitcher, batter)')
+    return {c: {**json.loads(v[0]), 'n_fits': len(v), 'id_parameters': id_parameters(json.loads(v[0])['n_vocab'])}
+            for c, v in by_column.items()}
 
 
 def check_one_vocab(tasks):

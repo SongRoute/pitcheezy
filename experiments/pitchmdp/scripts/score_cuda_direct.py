@@ -105,6 +105,7 @@ from pitchmdp import direct_ple_registry as ple_registry  # noqa: E402  torch-fr
 from pitchmdp import direct_robust_clip_registry as robust_clip_registry  # noqa: E402  torch-free
 from pitchmdp import direct_embed_type_registry as embed_type_registry  # noqa: E402  torch-free
 from pitchmdp import direct_pitcher_id_registry as pid_registry  # noqa: E402  torch-free
+from pitchmdp import batter_sidecar as bs  # noqa: E402  numpy only (P43 batter ids)
 from pitchmdp.matrix_metrics import paired_game_comparison, pitch_losses, prediction_metrics  # noqa: E402
 
 FORMAT = 'cuda_direct_score_v1'
@@ -118,7 +119,8 @@ SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 
                   'pitchmdp/direct_tabm_registry.py', 'pitchmdp/direct_embed_residual_registry.py',
                   'pitchmdp/direct_ema_registry.py', 'pitchmdp/direct_tabm_residual_registry.py',
                   'pitchmdp/direct_ple_registry.py', 'pitchmdp/direct_robust_clip_registry.py',
-                  'pitchmdp/direct_embed_type_registry.py', 'pitchmdp/direct_pitcher_id_registry.py')
+                  'pitchmdp/direct_embed_type_registry.py', 'pitchmdp/direct_pitcher_id_registry.py',
+                  'pitchmdp/batter_sidecar.py')
 RUNTIME_SIGNATURE = ('torch', 'torch_cuda', 'cudnn', 'numpy', 'scipy', 'device_name', 'device_capability',
                      'device_total_memory')
 SCOPE = ('unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; '
@@ -843,23 +845,54 @@ P40_NOTE = ('fresh model RNG seeds 60-64 on the same export and exposed DEV rows
             'subsets and contrasts reported, no verdict')
 
 
+P43_NOTE = ('fresh model RNG seeds 70-74 on the same export and exposed DEV rows: not new data, not an independent '
+            'confirmatory test; designed after reading P25 and P38 (post-selection). Primary contrast = batter id vs '
+            'row-shuffled batter id (same network, parameters and compute; batter column permuted across rows per '
+            'split by a fixed permutation): isolates batter identity information from the id path. Batter ids come '
+            'from a sha-pinned sidecar joined by the export keys (ids only). Vocabularies are TRAIN-only per column '
+            'and re-derived here; subsets use TRAIN-vocabulary membership of the TRUE batter; all seeds, subsets and '
+            'contrasts reported, no verdict')
+
+
+def p43_parameters(arms, vocab):
+    """Allocated parameters per P43 arm: base + one id path per column the arm reads."""
+    return {arm: pid_registry.BASE_PARAMETERS + sum(vocab[c]['id_parameters'] for c in (
+        pid_registry.BASELINES[arm].get(pid_registry.FLAG, {}).get('id_columns', []))) for arm in arms}
+
+
 def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256, family, destination, rows,
                      export_hashes, tasks, signature, sources, source_record):
     """Two-arm pitcher-ID family: candidate - reference on all / in-vocabulary / UNK rows, every seed + ensemble."""
-    vocab = pid_registry.check_one_vocab({a: {s: t['pitcher_id'] for s, t in v.items()} for a, v in tasks.items()})
+    p43 = pid_registry.is_p43(config)
     manifest, arrays, pitcher_hashes = export_pitchers(export, config, manifest_sha256)
     pid_registry.check_split_dates(manifest)
-    rederived = pid_registry.build_vocab(arrays['train/pitcher'], arrays['train/date'], pid_registry.LAST_TRAIN_DATE)
-    if {k: rederived[k] for k in pid_registry.VOCAB_KEYS} != {k: vocab[k] for k in pid_registry.VOCAB_KEYS}:
-        raise ValueError('Recorded vocabulary differs from the one re-derived from the export TRAIN rows')
+    if p43:  # one TRAIN vocabulary per id column; subsets by the TRUE batter's TRAIN-vocabulary membership
+        vocab = pid_registry.check_column_vocabs({a: {s: t['pitcher_id'] for s, t in v.items()} for a, v in tasks.items()})
+        directory, record = rc.batter_sidecar(export, config, manifest, hash_arrays=True)
+        for split in ('train', *SPLITS):
+            arrays[split + '/batter'] = np.asarray(bs.load(directory, record, split))
+            pitcher_hashes[split + '/batter'] = record['splits'][split]['sha256']
+        pitcher_hashes['batter_sidecar.json'] = config[pid_registry.BATTER_SIDECAR_KEY]['sidecar_sha256']
+        rederived_all = {c: pid_registry.build_vocab(arrays['train/' + c], arrays['train/date'],
+                                                     pid_registry.LAST_TRAIN_DATE) for c in ('pitcher', 'batter')}
+        for c, one in rederived_all.items():
+            if {k: one[k] for k in pid_registry.VOCAB_KEYS} != {k: vocab[c][k] for k in pid_registry.VOCAB_KEYS}:
+                raise ValueError(f'Recorded {c} vocabulary differs from the one re-derived from the export TRAIN rows')
+        subset_column, rederived = pid_registry.P43_SUBSET_COLUMN, rederived_all[pid_registry.P43_SUBSET_COLUMN]
+    else:
+        vocab = pid_registry.check_one_vocab({a: {s: t['pitcher_id'] for s, t in v.items()} for a, v in tasks.items()})
+        rederived = pid_registry.build_vocab(arrays['train/pitcher'], arrays['train/date'], pid_registry.LAST_TRAIN_DATE)
+        if {k: rederived[k] for k in pid_registry.VOCAB_KEYS} != {k: vocab[k] for k in pid_registry.VOCAB_KEYS}:
+            raise ValueError('Recorded vocabulary differs from the one re-derived from the export TRAIN rows')
+        subset_column = 'pitcher'
     seeds, design = config['seeds'], pid_registry.design(config)
     arms = [a['name'] for a in config['arms']]
     roles = {pid_registry.REFERENCE: 'reference', pid_registry.CANDIDATE: 'candidate'}
     splits, contrasts, subsets = {}, {}, {}
     for split, r in rows.items():
-        index = pid_registry.map_ids(arrays[split + '/pitcher'], rederived['ids'])
+        index = pid_registry.map_ids(arrays[split + '/' + subset_column], rederived['ids'])
         if len(index) != len(r['y']):
-            raise ValueError(f'{split}: export pitcher ids misaligned with the scored rows')
+            raise ValueError(f'{split}: export {subset_column} ids misaligned with the scored rows')
         probs = {arm: [member(family, arm, s, split, r) for s in seeds] for arm in arms}
         splits[split] = {arm: {'role': roles.get(arm, 'control'),
                                'ensemble': prediction_metrics(r['y'], np.mean(p, axis=0)),
@@ -890,10 +923,12 @@ def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256
               'cost': {arm: {str(s): t['pitcher_id']['cost'] for s, t in v.items()} for arm, v in tasks.items()},
               'seed_block': {'seeds': seeds, 'repeat_tag': None, 'epoch_cap': config['training']['epochs'],
                              'primary': design['primary'],
-                             'parameters': {arm: pid_registry.BASE_PARAMETERS + (
-                                 0 if arm == pid_registry.REFERENCE else vocab['id_parameters']) for arm in arms},
+                             'parameters': p43_parameters(arms, vocab) if p43 else {
+                                 arm: pid_registry.BASE_PARAMETERS + (
+                                     0 if arm == pid_registry.REFERENCE else vocab['id_parameters']) for arm in arms},
+                             **({'subset_column': subset_column} if p43 else {}),
                              'same_gpu_pairs': same_gpu_pairs(tasks, design['contrasts'], seeds),
-                             'note': P40_NOTE if config.get(pid_registry.DESIGN_KEY) else
+                             'note': P43_NOTE if p43 else P40_NOTE if config.get(pid_registry.DESIGN_KEY) else
                                      'fresh model RNG seeds on the same export and exposed DEV rows: not new data, not '
                                      'an independent confirmatory test; family designed after reading P24-P36 '
                                      '(post-selection); two arms only (no flatten control); the candidate adds pitcher '
@@ -919,7 +954,11 @@ def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256
                                      'hostname': platform.node()},
                   'bootstrap': {'draws': DRAWS, 'seed': BOOTSTRAP_SEED, 'function': 'matrix_metrics.paired_game_comparison'},
                   'created_utc': datetime.now(timezone.utc).isoformat()}}
-    result['vocabulary'].pop('n_fits', None)
+    if p43:
+        for one in result['vocabulary'].values():
+            one.pop('n_fits', None)
+    else:
+        result['vocabulary'].pop('n_fits', None)
     if scorer_sources() != result['provenance']['scorer_sources_sha256']:
         raise RuntimeError('Scorer sources changed during scoring')
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -938,11 +977,15 @@ def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256
 
 def pitcher_id_table(result):
     """Korean descriptive table: every split, subset and seed; no winner column."""
-    def ci(block, key):
-        b = block[key]
-        lo, hi = b['ci95'] or (float('nan'), float('nan'))
-        return f"{b['delta']:+.5f} [{lo:+.5f}, {hi:+.5f}]"
     v, block = result['vocabulary'], result['seed_block']
+    if block.get('subset_column') == 'batter':
+        lines = [f"# {result['family']} 타자 ID 임베딩 (후보 − 기준, 반복 DEV 서술, 판정 없음)", '']
+        for column, one in v.items():
+            lines.append(f"{column} TRAIN 어휘 {one['n_vocab']}명(TRAIN {one['min_count']}구 이상, 전체 {one['train_pitchers']}명, "
+                         f"UNK TRAIN 행 {one['train_unk_rows']}/{one['train_rows']}), 추가 파라미터 {one['id_parameters']}.")
+        lines += ['주 대비는 타자 ID − 행 섞기 대조군(같은 망·파라미터·연산, 타자 열만 행끼리 섞음)입니다. 행 묶음(in_vocab/unk)은 실제 '
+                  '타자의 TRAIN 어휘 포함 여부입니다. 대조군은 ID 경로와 크기를 맞춘 것이고 일반 백본 확장과 같다는 뜻은 아닙니다.', '']
+        return '\n'.join(lines + pitcher_id_table_body(result))
     lines = [f"# {result['family']} 투수 ID 임베딩 (후보 − 기준, 반복 DEV 서술, 판정 없음)", '',
              f"TRAIN 어휘 {v['n_vocab']}명(TRAIN {v['min_count']}구 이상, 전체 TRAIN 투수 {v['train_pitchers']}명, "
              f"UNK TRAIN 행 {v['train_unk_rows']}/{v['train_rows']}), TRAIN 마지막 날짜 {v['train_max_date']} ≤ "
@@ -951,6 +994,16 @@ def pitcher_id_table(result):
               if len(result['seed_block']['parameters']) == 2 else
               '주 대비는 후보 − 행 섞기 대조군(같은 망·파라미터·연산, 투수 열만 행끼리 섞음)입니다. 대조군은 ID 경로와 크기를 맞춘 것이고 '
               '일반 백본 확장과 같다는 뜻은 아닙니다.'), '']
+    return '\n'.join(lines + pitcher_id_table_body(result))
+
+
+def pitcher_id_table_body(result):
+    """Contrast and cost rows shared by the pitcher-ID designs (P38 / P40 / P43)."""
+    def ci(block, key):
+        b = block[key]
+        lo, hi = b['ci95'] or (float('nan'), float('nan'))
+        return f"{b['delta']:+.5f} [{lo:+.5f}, {hi:+.5f}]"
+    block, lines = result['seed_block'], []
     for split, contrasts in result['pitcher_id_contrasts'].items():
         for name, by_subset in contrasts.items():
             head = f'## {split}' if len(contrasts) == 1 else f'## {split} — {name}' + (' (주 대비)' if name == block['primary'] else '')
@@ -967,7 +1020,7 @@ def pitcher_id_table(result):
     for arm, seeds in result['cost'].items():
         lines.append(f"| {arm} | " + ', '.join(f"{s}: {c['train_seconds_per_epoch']:.2f}, {c['parameter_count']}"
                                                for s, c in seeds.items()) + ' |')
-    return '\n'.join(lines)
+    return lines
 
 
 def main(argv=None):

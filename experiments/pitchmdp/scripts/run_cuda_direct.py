@@ -112,6 +112,10 @@ candidate's vocabulary is built in run_task from the loaded TRAIN rows' `pitcher
 otherwise; every split the model sees (TRAIN, earlystop, temperature, blend, dev, mlb_dev) gets the same index column
 via id_inputs; fit.json records the vocabulary (n_vocab, ids sha, counts, cutoff, per-split UNK share); load checks
 the archived vocabulary against that hash.  The reference arm runs the unchanged embedded-residual path.
+P43 batter-ID design (pitcher_id_design p43_batter_id_v1, tentative EXP-P43-001 DRAFT): the same family with batter
+arms; the `batter` column comes from the hash-pinned sidecar named by config.batter_sidecar (a sibling directory of
+the export, verified in verify_export and attached to every loaded split by with_ids); vocabularies are built per id
+column from TRAIN rows only; fit.json records {id_columns, vocabs, index_source, shuffle_seed}.
 
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
@@ -158,6 +162,7 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_robust_clip_model.py', 'pitchmdp/direct_robust_clip_factory.py',
                  'pitchmdp/direct_robust_clip_registry.py', 'pitchmdp/direct_embed_type_registry.py',
                  'pitchmdp/direct_pitcher_id_model.py', 'pitchmdp/direct_pitcher_id_registry.py',
+                 'pitchmdp/direct_pitcher_batter_id_model.py', 'pitchmdp/batter_sidecar.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -569,7 +574,35 @@ def verify_export(export, config, manifest_sha256, hash_arrays=True):
             for name, meta in record['files'].items():
                 if sha256_file(export / meta['path']) != meta['sha256']:
                     raise ValueError(f'{split}/{name}: array hash differs from the manifest')
+    if uses_batter_sidecar(config):
+        batter_sidecar(export, config, manifest, hash_arrays)
     return manifest
+
+
+def uses_batter_sidecar(config):
+    from pitchmdp.direct_pitcher_id_registry import is_p43  # torch-free
+    return uses_pitcher_id(config) and is_p43(config)
+
+
+def batter_sidecar(export, config, manifest, hash_arrays=True):
+    """(directory, verified record) of the P43 batter sidecar: sibling `dirname` of the export, sidecar.json sha pinned."""
+    from pitchmdp import batter_sidecar as bs  # numpy only
+    from pitchmdp.direct_pitcher_id_registry import check_sidecar_pin
+    pin = check_sidecar_pin(config)
+    directory = Path(export).resolve().parent / pin['dirname']
+    return directory, bs.verify(directory, manifest, pin['sidecar_sha256'], hash_arrays)
+
+
+def with_ids(config, export, manifest, split, arrays, limit=None):
+    """P43: the split's arrays plus `batter` from the verified sidecar (same row order / limit); others unchanged."""
+    if not uses_batter_sidecar(config):
+        return arrays
+    from pitchmdp import batter_sidecar as bs
+    directory, record = batter_sidecar(export, config, manifest, hash_arrays=False)
+    batter = bs.load(directory, record, split, limit)
+    if len(batter) != len(arrays['y']):
+        raise ValueError(f'{split}: batter sidecar misaligned with the export split')
+    return {**arrays, 'batter': batter}
 
 
 def load_split(export, manifest, split, limit=None):
@@ -608,6 +641,12 @@ def arm_inputs(arrays, arm, columns):
 # ------------------------------------------------------------------ model / calibration
 
 def build_model(arm, seed, device, context_names=None, vocab_ids=None):
+    if is_pitcher_id_arm(arm) and 'id_columns' in arm[PITCHER_ID_FLAG]:  # P43 arms
+        from pitchmdp import direct_pitcher_batter_id_model as pbm
+        if context_names or vocab_ids is None:
+            raise ValueError('Batter-ID arms take no context names and need the TRAIN vocabularies')
+        builder = pbm.build_pitcher_batter_id if len(arm[PITCHER_ID_FLAG]['id_columns']) == 2 else pbm.build_batter_id
+        return builder(arm, seed, device, vocab_ids)
     if is_pitcher_id_arm(arm):
         from pitchmdp.direct_pitcher_id_model import build_pitcher_id
         if context_names or vocab_ids is None:
@@ -696,10 +735,19 @@ def recorded_vocab(path):
     record = Path(path).parent / 'fit.json'
     if not record.is_file():
         raise ValueError('Pitcher-ID load needs the run-recorded vocabulary hash (fit.json next to the archive)')
-    return (read_json(record).get(PITCHER_ID_FLAG) or {}).get('ids_sha256')
+    block = read_json(record).get(PITCHER_ID_FLAG) or {}
+    if 'vocabs' in block:  # P43: {column: ids_sha256}
+        return {c: v.get('ids_sha256') for c, v in block['vocabs'].items()}
+    return block.get('ids_sha256')
 
 
 def load_model(arm, path, device, context_names=None, ple_bins_sha256=None, rc_stats_sha256=None, ids_sha256=None):
+    if is_pitcher_id_arm(arm) and 'id_columns' in arm[PITCHER_ID_FLAG]:  # P43 arms
+        from pitchmdp import direct_pitcher_batter_id_model as pbm
+        hashes = ids_sha256 or recorded_vocab(path)
+        if len(arm[PITCHER_ID_FLAG]['id_columns']) == 2:
+            return pbm.load_pitcher_batter_id(arm, path, device, hashes)
+        return pbm.load_batter_id(arm, path, device, hashes)
     if is_pitcher_id_arm(arm):
         from pitchmdp.direct_pitcher_id_model import load_pitcher_id
         return load_pitcher_id(arm, path, device, ids_sha256 or recorded_vocab(path))
@@ -861,8 +909,9 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         manifest = verify_export(export, config, manifest_sha256)
         columns = config['export']['workload_columns']
         lim = (lambda key: SMOKE[key]) if smoke else (lambda key: None)
-        train, subset = train_subset(config, arm, load_split(export, manifest, 'train', lim('train')))
-        early = load_split(export, manifest, 'earlystop', lim('earlystop'))
+        load = lambda split, n: with_ids(config, export, manifest, split, load_split(export, manifest, split, n), n)  # noqa: E731
+        train, subset = train_subset(config, arm, load('train', lim('train')))
+        early = load('earlystop', lim('earlystop'))
         spec = config['training']
         names = verified_context_names(config, manifest) if needs_context_names(arm) else None
         vocab = pitcher_vocab(arm, manifest, train)
@@ -871,11 +920,16 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         def inputs(split, arrays):  # the arm's inputs; pitcher-ID arms append the TRAIN-vocabulary index column
             if vocab is None:
                 return arm_inputs(arrays, arm, columns)
+            if 'per_column' in vocab:  # P43 arms: one index column per id column, in id_columns order
+                from pitchmdp.direct_pitcher_batter_id_model import append_indices
+                index, shares = p43_indices(arrays, vocab, split)
+                unk_share[split] = shares
+                return append_indices(arm_inputs(arrays, arm, columns), index)
             from pitchmdp.direct_pitcher_id_model import id_inputs
             arm_arrays, unk_share[split] = id_inputs(arm_inputs(arrays, arm, columns), arrays['pitcher'], vocab['ids'],
                                                      split, vocab['index_source'], vocab['shuffle_seed'])
             return arm_arrays
-        model = build_model(arm, seed, device, names, None if vocab is None else vocab['ids'])
+        model = build_model(arm, seed, device, names, None if vocab is None else vocab_ids_of(vocab))
         train_inputs = inputs('train', train)
         context_width = int(train_inputs[2].shape[1])
         epochs = SMOKE['epochs'] if smoke else spec['epochs']
@@ -892,7 +946,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         stats_rows = ple_bin_rows(train_inputs) if is_robust_clip_arm(arm) else None  # same row rule as PLE bins
         del train, train_inputs
         # calibration on the May 16-31 Cpanel rows only
-        temp = load_split(export, manifest, 'temperature', lim('temperature'))
+        temp = load('temperature', lim('temperature'))
         temperature, temp_loss = fit_temperature(g0_log_probs(model.logits(inputs('temperature', temp))), temp['y'])
         calibration = {**model.report, 'delivery_temperature': temperature,
                        'calibration_integrated_log_loss': temp_loss, 'delivery_calibration_rows': int(len(temp['y']))}
@@ -902,7 +956,7 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
         for archive, splits in archives.items():
             values = {}
             for split in splits:
-                part = load_split(export, manifest, split, lim('predict'))
+                part = load(split, lim('predict'))
                 calibrated, raw = probabilities(g0_log_probs(model.logits(inputs(split, part))), temperature)
                 values.update({split: calibrated, split + '_raw': raw,
                                split + '_delivery_level': np.full(len(calibrated), NO_PHYSICS_LEVEL, dtype=np.int64),
@@ -922,7 +976,10 @@ def run_task(config, export, manifest_sha256, output, arm_name, seed, device, ru
                       'finished_utc': datetime.now(timezone.utc).isoformat(), 'dev_used_for_fit_or_selection': False}
         if uses_epoch_cap(config):
             fit_report['epoch_cap'] = epoch_record(model.report, epochs, spec['patience'])
-        if vocab is not None:
+        if vocab is not None and 'per_column' in vocab:
+            fit_report[PITCHER_ID_FLAG] = p43_fit_record(model, vocab, unk_share)
+            print('PITCHER_ID_VOCAB', arm_name, seed, json.dumps(fit_report[PITCHER_ID_FLAG]), flush=True)
+        elif vocab is not None:
             from pitchmdp.direct_pitcher_id_model import vocab_sha256
             from pitchmdp.direct_pitcher_id_registry import vocab_record
             if vocab_sha256(model.vocab_ids) != vocab['ids_sha256']:
@@ -976,11 +1033,59 @@ def pitcher_vocab(arm, manifest, train):
         return None
     from pitchmdp.direct_pitcher_id_registry import build_vocab, check_split_dates, id_spec
     spec = arm[PITCHER_ID_FLAG]
+    if 'id_columns' in spec:  # P43: one TRAIN-only vocabulary per id column (same rule as P38)
+        from pitchmdp.direct_pitcher_id_registry import id_columns
+        index_source, shuffle_seed, _ = id_spec(arm)
+        split_dates = check_split_dates(manifest, spec['last_train_date'])
+        per_column = {c: build_vocab(np.asarray(train[c]), np.asarray(train['date']), spec['last_train_date'],
+                                     spec['min_train_pitches']) for c in id_columns(arm)}
+        return {'per_column': per_column, 'columns': id_columns(arm), 'split_dates': split_dates,
+                'index_source': index_source, 'shuffle_seed': shuffle_seed}
     index_source, shuffle_seed, _ = id_spec(arm)
     split_dates = check_split_dates(manifest, spec['last_train_date'])
     vocab = build_vocab(np.asarray(train['pitcher']), np.asarray(train['date']), spec['last_train_date'],
                         spec['min_train_pitches'])
     return {**vocab, 'split_dates': split_dates, 'index_source': index_source, 'shuffle_seed': shuffle_seed}
+
+
+def vocab_ids_of(vocab):
+    """Vocabulary ids for build_model: P38/P40 one array; P43 a list in id_columns order (one per column)."""
+    if 'per_column' not in vocab:
+        return vocab['ids']
+    ids = [vocab['per_column'][c]['ids'] for c in vocab['columns']]
+    return ids if len(ids) > 1 else ids[0]
+
+
+def p43_indices(arrays, vocab, split):
+    """Index arrays (id_columns order) and per-column UNK shares; row shuffle permutes the split's own column with the
+    fixed label-free seed before the lookup (subsets elsewhere always use the TRUE column)."""
+    from pitchmdp.direct_pitcher_id_model import shuffled_pitcher  # generic fixed permutation of a split column
+    from pitchmdp.direct_pitcher_id_registry import UNK, map_ids
+    index, shares = [], {}
+    for c in vocab['columns']:
+        column = np.asarray(arrays[c], dtype=np.int64)
+        if vocab['index_source'] == 'row_shuffle':
+            column = shuffled_pitcher(column, split, vocab['shuffle_seed'])
+        elif vocab['index_source'] != 'identity':
+            raise ValueError('Unknown id index source: ' + str(vocab['index_source']))
+        one = map_ids(column, vocab['per_column'][c]['ids'])
+        index.append(one)
+        shares[c] = float((one == UNK).mean()) if len(one) else 0.
+    return index, shares
+
+
+def p43_fit_record(model, vocab, unk_share):
+    """fit.json id block of a P43 arm: per column the TRAIN vocabulary record + per-split UNK share."""
+    from pitchmdp.direct_pitcher_id_model import vocab_sha256
+    from pitchmdp.direct_pitcher_id_registry import vocab_record
+    archived = model.vocab_ids if isinstance(model.vocab_ids, list) else [model.vocab_ids]
+    vocabs = {}
+    for c, ids in zip(vocab['columns'], archived):
+        if vocab_sha256(ids) != vocab['per_column'][c]['ids_sha256']:
+            raise RuntimeError(f'Model {c} vocabulary differs from the TRAIN vocabulary record')
+        vocabs[c] = {**vocab_record(vocab['per_column'][c]), 'unk_share': {s: v[c] for s, v in unk_share.items()}}
+    return {'id_columns': list(vocab['columns']), 'vocabs': vocabs, 'index_source': vocab['index_source'],
+            'shuffle_seed': vocab['shuffle_seed'], 'split_dates': vocab['split_dates']}
 
 
 def ple_bin_rows(inputs):
