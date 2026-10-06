@@ -197,6 +197,48 @@ DESIGNS[P43_EXT_DESIGN] = {'arms': P43_ARM_ORDER, 'seeds': P43_EXT_SEEDS, 'fits'
                            'earlier_seeds': {**P43_EARLIER_SEEDS, 'EXP-P43-001': list(P43_SEEDS)},
                            'projection_seconds': P43_EXT_PROJECTION_SECONDS}
 P43_DESIGNS = (P43_DESIGN, P43_EXT_DESIGN)
+# P47 is a separate unregistered, post-P40/P43 exploratory design. No P43 arm/config is altered.
+P47_DESIGN = 'p47_batter_dropout_v1'
+PITCHER_BATTER_DROPOUT = 'pitcher_batter_id_dropout_periodic_residual_counts'
+PITCHER_BATTER_ZERO_UNK = 'pitcher_batter_id_dropout_zero_unk_periodic_residual_counts'
+P47_SEEDS = [80, 81, 82, 83]
+P47_EARLIER_SEEDS = {**P43_EARLIER_SEEDS, 'EXP-P43-001': list(P43_SEEDS),
+                     'reserved EXP-P43-002': list(P43_EXT_SEEDS), 'reserved EXP-P44': [75, 76, 77, 78, 79]}
+BASELINES[PITCHER_BATTER_DROPOUT] = {
+    **BASELINES[PITCHER_BATTER], 'name': PITCHER_BATTER_DROPOUT,
+    FLAG: {**BASELINES[PITCHER_BATTER][FLAG], 'id_dropout': ID_DROPOUT}}
+BASELINES[PITCHER_BATTER_ZERO_UNK] = {
+    **BASELINES[PITCHER_BATTER_DROPOUT], 'name': PITCHER_BATTER_ZERO_UNK,
+    FLAG: {**BASELINES[PITCHER_BATTER_DROPOUT][FLAG], 'freeze_unk': True}}
+ID_ARMS += (PITCHER_BATTER_DROPOUT, PITCHER_BATTER_ZERO_UNK)
+P47_ARM_ORDER = (REFERENCE, PITCHER_BATTER, PITCHER_BATTER_DROPOUT, PITCHER_BATTER_ZERO_UNK)
+P47_FITS = len(P47_ARM_ORDER) * len(P47_SEEDS)
+P47_FAMILY_PROJECTION_SECONDS = P47_FITS * P40_TASK_BOUND_SECONDS  # 4,894 seconds, fits only
+P47_CONTRASTS = [
+    {'name': 'dropout_vs_both', 'candidate': PITCHER_BATTER_DROPOUT, 'reference': PITCHER_BATTER,
+     'isolates': 'joint_pitcher_batter_id_dropout', 'role': 'primary', 'primary_split': 'mlb_dev',
+     'primary_subset': 'batter_unknown', 'parameter_matched': True, 'compute_matched': False,
+     'information_free_capacity_control': 'not included; both arms read true IDs'},
+    {'name': 'dropout_vs_reference', 'candidate': PITCHER_BATTER_DROPOUT, 'reference': REFERENCE,
+     'isolates': 'two_id_paths_plus_dropout_bundle', 'role': 'primary', 'primary_split': 'mlb_dev',
+     'primary_subset': 'all', 'parameter_matched': False, 'compute_matched': False,
+     'information_free_capacity_control': 'not included; reference has no ID paths'},
+    {'name': 'zero_unk_vs_dropout', 'candidate': PITCHER_BATTER_ZERO_UNK, 'reference': PITCHER_BATTER_DROPOUT,
+     'isolates': 'zero_unk_gate_both_columns', 'role': 'secondary', 'parameter_matched': True,
+     'compute_matched': False, 'information_free_capacity_control': 'not applicable'},
+    {'name': 'both_vs_reference', 'candidate': PITCHER_BATTER, 'reference': REFERENCE,
+     'isolates': 'two_identity_paths_replication', 'role': 'secondary', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'not included'},
+    {'name': 'zero_unk_vs_reference', 'candidate': PITCHER_BATTER_ZERO_UNK, 'reference': REFERENCE,
+     'isolates': 'two_id_paths_dropout_and_gate_bundle', 'role': 'secondary', 'parameter_matched': False,
+     'compute_matched': False, 'information_free_capacity_control': 'not included'},
+]
+P47_PRIMARIES = [{'contrast': c['name'], 'split': c['primary_split'], 'subset': c['primary_subset']}
+                 for c in P47_CONTRASTS if c['role'] == 'primary']
+DESIGNS[P47_DESIGN] = {'arms': P47_ARM_ORDER, 'seeds': P47_SEEDS, 'fits': P47_FITS,
+                      'contrasts': P47_CONTRASTS, 'primary': P47_CONTRASTS[0]['name'],
+                      'primaries': P47_PRIMARIES, 'earlier_seeds': P47_EARLIER_SEEDS,
+                      'projection_seconds': P47_FAMILY_PROJECTION_SECONDS}
 VOCAB_KEYS = ('n_vocab', 'ids_sha256', 'min_count', 'train_rows', 'train_pitchers', 'train_unk_rows',
               'train_max_date', 'last_train_date')
 
@@ -241,6 +283,24 @@ def is_p43(config):
     return config.get(DESIGN_KEY) in P43_DESIGNS
 
 
+def is_p47(config):
+    return config.get(DESIGN_KEY) == P47_DESIGN
+
+
+def is_batter_family(config):
+    return is_p43(config) or is_p47(config)
+
+
+def p47_subsets(pitcher_index, batter_index):
+    """TRUE IDs mapped by TRAIN-only vocabularies; never dropped/shuffled training indices."""
+    p, b = np.asarray(pitcher_index) != UNK, np.asarray(batter_index) != UNK
+    if p.ndim != 1 or p.shape != b.shape:
+        raise ValueError('P47 TRUE pitcher and batter indices must be aligned 1-D arrays')
+    return {'all': np.ones(len(p), bool), 'batter_known': b, 'batter_unknown': ~b,
+            'pitcher_known_batter_known': p & b, 'pitcher_known_batter_unknown': p & ~b,
+            'pitcher_unknown_batter_known': ~p & b, 'pitcher_unknown_batter_unknown': ~p & ~b}
+
+
 def check_device(config):
     device = config.get('device') or {}
     if any(g in RELEASED_GPUS for g in device.get('allowed_gpu_uuids') or []):
@@ -255,8 +315,8 @@ def design(config):
     key = config.get(DESIGN_KEY)
     if key is None:
         return DESIGNS['p38']
-    if key not in (P40_DESIGN, *P43_DESIGNS):
-        raise ValueError(DESIGN_KEY + ' must be absent (P38) or one of ' + ', '.join((P40_DESIGN, *P43_DESIGNS)))
+    if key not in (P40_DESIGN, *P43_DESIGNS, P47_DESIGN):
+        raise ValueError(DESIGN_KEY + ' must be absent (P38) or one of ' + ', '.join((P40_DESIGN, *P43_DESIGNS, P47_DESIGN)))
     return DESIGNS[key]
 
 
@@ -280,13 +340,15 @@ def check_family(config):
     if not same(config.get('training'), TRAINING):
         raise ValueError(f'Pitcher-ID training must be the cuda_direct_v1 budget with epochs {EPOCH_CAP}')
     check_sidecar_pin(config)
+    if is_p47(config) and not same(config.get('comparison', {}).get(CONTRAST_KEY), P47_CONTRASTS):
+        raise ValueError('P47 contrast/split/subset definitions differ from the fixed design')
     return config
 
 
 def check_sidecar_pin(config):
     """P43 needs exactly one batter-sidecar pin (sibling dirname of the export + sidecar.json sha); others none."""
     pin = config.get(BATTER_SIDECAR_KEY)
-    if not is_p43(config):
+    if not is_batter_family(config):
         if pin is not None:
             raise ValueError(BATTER_SIDECAR_KEY + ' belongs to the P43 batter-ID design only')
         return None
@@ -366,7 +428,7 @@ def check_split_dates(manifest, last_train_date=LAST_TRAIN_DATE):
 
 def check_fit(config, arm, fit):
     """Per-fit record: vocabulary (candidate only), allocated parameters and cost; fail closed."""
-    if is_p43(config):
+    if is_batter_family(config):
         return check_fit_p43(config, arm, fit)
     record = et.cost_record(fit)
     vocab = fit.get(FLAG)
@@ -410,7 +472,7 @@ def check_fit_p43(config, arm, fit):
     per column; the reference carries none."""
     record = et.cost_record(fit)
     block = fit.get(FLAG)
-    if arm not in P43_ARM_ORDER:
+    if arm not in design(config)['arms']:
         raise ValueError(f'{arm}: not an arm of the P43 design')
     if arm == REFERENCE:
         if block is not None:
@@ -431,6 +493,11 @@ def check_fit_p43(config, arm, fit):
         if block.get('index_source', 'identity') != spec.get('index_source', 'identity') \
                 or block.get('shuffle_seed') != spec.get('shuffle_seed'):
             raise ValueError(f'{arm}: recorded index source differs from the registry entry')
+        if is_p47(config) and (block.get('id_dropout', 0.) != spec.get('id_dropout', 0.)
+                              or block.get('freeze_unk', False) != spec.get('freeze_unk', False)):
+            raise ValueError(f'{arm}: recorded dropout / UNK gate differs from the registry entry')
+        if spec.get('freeze_unk') and block.get('unk_rows_exact_zero') != {'pitcher': True, 'batter': True}:
+            raise ValueError(f'{arm}: frozen UNK rows must be exactly zero')
         vocabs = {c: check_vocab_record(arm, block['vocabs'][c]) for c in columns}
         expected = BASE_PARAMETERS + sum(id_parameters(v['n_vocab']) for v in vocabs.values())
     if record['parameter_count'] != expected:

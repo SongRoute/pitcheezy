@@ -580,8 +580,8 @@ def verify_export(export, config, manifest_sha256, hash_arrays=True):
 
 
 def uses_batter_sidecar(config):
-    from pitchmdp.direct_pitcher_id_registry import is_p43  # torch-free
-    return uses_pitcher_id(config) and is_p43(config)
+    from pitchmdp.direct_pitcher_id_registry import is_batter_family  # torch-free
+    return uses_pitcher_id(config) and is_batter_family(config)
 
 
 def batter_sidecar(export, config, manifest, hash_arrays=True):
@@ -1084,8 +1084,17 @@ def p43_fit_record(model, vocab, unk_share):
         if vocab_sha256(ids) != vocab['per_column'][c]['ids_sha256']:
             raise RuntimeError(f'Model {c} vocabulary differs from the TRAIN vocabulary record')
         vocabs[c] = {**vocab_record(vocab['per_column'][c]), 'unk_share': {s: v[c] for s, v in unk_share.items()}}
-    return {'id_columns': list(vocab['columns']), 'vocabs': vocabs, 'index_source': vocab['index_source'],
-            'shuffle_seed': vocab['shuffle_seed'], 'split_dates': vocab['split_dates']}
+    record = {'id_columns': list(vocab['columns']), 'vocabs': vocabs, 'index_source': vocab['index_source'],
+              'shuffle_seed': vocab['shuffle_seed'], 'split_dates': vocab['split_dates']}
+    if model.id_dropout:
+        record['id_dropout'] = model.id_dropout
+    if getattr(model, 'freeze_unk', False):
+        record['freeze_unk'] = True
+        record['unk_rows_exact_zero'] = {c: bool((t[0].detach() == 0).all().item())
+                                         for c, t in zip(vocab['columns'], model.net.id_tables)}
+        if not all(record['unk_rows_exact_zero'].values()):
+            raise RuntimeError('Frozen UNK rows moved away from zero')
+    return record
 
 
 def ple_bin_rows(inputs):

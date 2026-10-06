@@ -867,7 +867,7 @@ def p43_parameters(arms, vocab):
 def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256, family, destination, rows,
                      export_hashes, tasks, signature, sources, source_record):
     """Two-arm pitcher-ID family: candidate - reference on all / in-vocabulary / UNK rows, every seed + ensemble."""
-    p43 = pid_registry.is_p43(config)
+    p43, p47 = pid_registry.is_batter_family(config), pid_registry.is_p47(config)
     manifest, arrays, pitcher_hashes = export_pitchers(export, config, manifest_sha256)
     pid_registry.check_split_dates(manifest)
     if p43:  # one TRAIN vocabulary per id column; subsets by the TRUE batter's TRAIN-vocabulary membership
@@ -904,12 +904,21 @@ def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256
                          for arm, p in probs.items()}
         contrasts[split] = {c['name']: {} for c in design['contrasts']}
         subsets[split] = {}
-        for subset, mask in (('all', np.ones(len(index), bool)), ('in_vocab', index != pid_registry.UNK),
-                             ('unk', index == pid_registry.UNK)):
+        masks = dict((('all', np.ones(len(index), bool)), ('in_vocab', index != pid_registry.UNK),
+                      ('unk', index == pid_registry.UNK)))
+        if p47:
+            pitcher_index = pid_registry.map_ids(arrays[split + '/pitcher'], rederived_all['pitcher']['ids'])
+            masks = pid_registry.p47_subsets(pitcher_index, index)
+        for subset, mask in masks.items():
             subsets[split][subset] = {'rows': int(mask.sum()), 'games': int(len(np.unique(r['game_pk'][mask])))}
             if subset != 'all' and mask.any():
                 subsets[split][subset]['arms'] = {
                     arm: summary(prediction_metrics(r['y'][mask], np.mean(p, axis=0)[mask])) for arm, p in probs.items()}
+            if p47 and mask.any():
+                subsets[split][subset]['arm_metrics'] = {
+                    arm: {'ensemble': prediction_metrics(r['y'][mask], np.mean(p, axis=0)[mask]),
+                          'seeds': {str(s): prediction_metrics(r['y'][mask], q[mask]) for s, q in zip(seeds, p)}}
+                    for arm, p in probs.items()}
             for c in design['contrasts']:
                 if not mask.any():
                     contrasts[split][c['name']][subset] = None
@@ -920,6 +929,9 @@ def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256
                                          'compute_matched', 'information_free_capacity_control')},
                     **paired_block(r['y'][mask], r['game_pk'][mask], [p[mask] for p in cand], [p[mask] for p in ref],
                                    seeds)}
+                if p47:
+                    contrasts[split][c['name']][subset]['role'] = (
+                        'primary' if (split, subset) == (c.get('primary_split'), c.get('primary_subset')) else 'secondary')
         del probs
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits, 'pitcher_id_contrasts': contrasts,
@@ -963,6 +975,16 @@ def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256
             one.pop('n_fits', None)
     else:
         result['vocabulary'].pop('n_fits', None)
+    if p47:
+        result['seed_block'].update(design=pid_registry.P47_DESIGN, primaries=design['primaries'],
+                                   primary=None, subset_columns=['pitcher', 'batter'],
+                                   note='Post-P40/P43 adaptive exploratory screen on repeated DEV; new seeds are not '
+                                        'new data. Primary A: dropout minus both on mlb_dev batter_unknown; primary B: '
+                                        'dropout minus reference on mlb_dev all. All other split/subset contrasts are '
+                                        'secondary. TRUE TRAIN-vocabulary membership defines the four joint cells and '
+                                        'batter margins. No multiplicity adjustment or confirmatory verdict. '
+                                        'Allocated parameter counts match ID arms; the gated arm has 16 fewer free '
+                                        'table scalars. Runtime is not matched. Joint dropout changes both ID paths.')
     if scorer_sources() != result['provenance']['scorer_sources_sha256']:
         raise RuntimeError('Scorer sources changed during scoring')
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -982,6 +1004,13 @@ def score_pitcher_id(config, config_path, config_sha256, export, manifest_sha256
 def pitcher_id_table(result):
     """Korean descriptive table: every split, subset and seed; no winner column."""
     v, block = result['vocabulary'], result['seed_block']
+    if block.get('design') == pid_registry.P47_DESIGN:
+        lines = [f"# {result['family']} ID dropout / 미지 선수 0 고정 (반복 DEV 탐색, 판정 없음)", '',
+                 '주 대비 A: mlb_dev / batter_unknown의 dropout − both. '
+                 '주 대비 B: mlb_dev / all의 dropout − reference. 나머지는 보조 대비입니다.',
+                 '행 묶음은 실제 투수·타자의 TRAIN 어휘 포함 여부이며 dropout 후 ID로 나누지 않습니다. '
+                 '다중 비교 보정 없음. 새 시드는 새 자료가 아닙니다.', '']
+        return '\n'.join(lines + pitcher_id_table_body(result))
     if block.get('subset_column') == 'batter':
         lines = [f"# {result['family']} 타자 ID 임베딩 (후보 − 기준, 반복 DEV 서술, 판정 없음)", '']
         for column, one in v.items():
