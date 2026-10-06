@@ -17,6 +17,7 @@ import sys
 PROJECT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(PROJECT), str(PROJECT / 'scripts'), str(Path(__file__).resolve().parent)]
 import p47_launch
+import p47_probe
 import run_cuda_direct as runner
 from pitchmdp import direct_pitcher_id_registry as pid
 
@@ -62,6 +63,8 @@ def preflight(config, check, draft, config_bytes, check_bytes, source_commit):
             or check['config_sha256'] != p47_launch.UNDATED_SHA \
             or not check['source_sha256'] == reg['preflight']['source_sha256'] == runner.own_hashes():
         raise ValueError('TRAIN-only probe identity differs')
+    if not check.get('probe_code_sha256') == reg['preflight'].get('probe_code_sha256') == p47_probe.code_hashes():
+        raise ValueError('Staged probe/common-lock/spec-generator bytes differ from the accepted probe')
     if check['export_manifest_sha256'] != config['export']['manifest_sha256'] \
             or check['sidecar_sha256'] != config[pid.BATTER_SIDECAR_KEY]['sidecar_sha256']:
         raise ValueError('Export or sidecar pin differs')

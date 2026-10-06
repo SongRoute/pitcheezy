@@ -15,7 +15,8 @@ from pitchmdp import direct_pitcher_id_registry as pid
 
 PROTOCOL = 'p47_train_earlystop_probe_v1'
 LOCK_DIR = '/home/sds733/pitcheezy-autonomy/gpu-locks'
-CODE = ('p47_probe.py', 'p47_probe_child.py', 'gpu3_two_slot.py', 'gpu3_bench_child.py')
+CODE = ('p47_probe.py', 'p47_probe_child.py', 'gpu3_two_slot.py', 'gpu3_bench_child.py',
+        'cuda_direct_queue.py', 'docs/launch/make_p47_probe_spec.py')  # lock provider + spec generator
 
 
 def tasks():
@@ -26,7 +27,8 @@ def tasks():
 
 
 def code_hashes():
-    return {name: runner.sha256_file(Path(__file__).resolve().parent / name) for name in CODE}
+    scripts = Path(__file__).resolve().parent
+    return {name: runner.sha256_file(scripts.parent / name if '/' in name else scripts / name) for name in CODE}
 
 
 def gpu3_apps():

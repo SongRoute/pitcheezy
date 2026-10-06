@@ -82,6 +82,7 @@ def test_frozen_probe_spec_has_only_gpu3_serial_and_absent_registration_paths(tm
     for change in (lambda s: s.update(concurrent_slots=2),
                    lambda s: s['tasks'].pop(),
                    lambda s: s['pins'].update(probe_code_sha256={}),
+                   lambda s: s['pins']['probe_code_sha256'].update({'cuda_direct_queue.py': '0' * 64}),
                    lambda s: s.update(absent_before=[])):
         bad = copy.deepcopy(value)
         change(bad)
@@ -98,6 +99,21 @@ def test_gpu_probe_is_uuid_scoped(monkeypatch):
     assert probe.gpu3_apps() == []
     assert commands == [['nvidia-smi', f'--id={pid.RETAINED_GPU}', '--query-compute-apps=gpu_uuid,pid',
                          '--format=csv,noheader,nounits']]
+
+
+def test_registration_requires_clean_reviewed_head_and_lock_provider_pin(monkeypatch):
+    assert 'cuda_direct_queue.py' in probe.code_hashes()
+    assert 'docs/launch/make_p47_probe_spec.py' in probe.code_hashes()
+    outputs = iter(['a' * 40 + '\n', ''])
+    monkeypatch.setattr(launch.subprocess, 'run', lambda *args, **kwargs:
+                        type('Completed', (), {'stdout': next(outputs)})())
+    launch.verify_reviewed_checkout('a' * 40)
+    outputs = iter(['a' * 40 + '\n', ' M experiments/pitchmdp/scripts/p47_probe.py\n'])
+    with pytest.raises(ValueError, match='clean worktree'):
+        launch.verify_reviewed_checkout('a' * 40)
+    outputs = iter(['b' * 40 + '\n', ''])
+    with pytest.raises(ValueError, match='reviewed HEAD'):
+        launch.verify_reviewed_checkout('a' * 40)
 
 
 def test_probe_child_denies_non_train_payload_hash_and_load(tmp_path, monkeypatch):
@@ -206,7 +222,7 @@ def test_legacy_smoke_refused_and_dated_registration_requires_budget_and_ledger(
              'tasks': 17, 'bound_uuids': [pid.RETAINED_GPU], 'preflight_seconds_measured': 123,
              'source_sha256': {'source': 'a'}, 'export_manifest_sha256': launch.MANIFEST_SHA,
              'sidecar_sha256': draft()[pid.BATTER_SIDECAR_KEY]['sidecar_sha256'],
-             'probe_code_sha256': {'probe': 'b'}}
+             'probe_code_sha256': probe.code_hashes()}
     value = launch.dated(launch.UNDATED.read_text(), '2026-10-06', '10:00', check)
     text = json.dumps(value)
     assert launch.dated_check(text, check) == value
@@ -217,15 +233,23 @@ def test_legacy_smoke_refused_and_dated_registration_requires_budget_and_ledger(
     go = tmp_path / 'go.txt'; go.write_text('accepted')
     ledger = tmp_path / 'ledger.json'; ledger.write_text(json.dumps({'experiment_id': 'EXP-P47-001',
                   'seeds': pid.P47_SEEDS, 'reserved': True, 'checked_kst': '2026-10-06T10:00:00+09:00'}))
-    registered = launch.build_registered(text, check, 'a' * 64, '10:00', 'abcdef0', str(go), str(ledger),
+    commit = 'a' * 40
+    registered = launch.build_registered(text, check, 'a' * 64, '10:00', commit, str(go), str(ledger),
                                          launch.at('2026-10-06', '10:00'))
     assert registered['status'] == 'REGISTERED' and registered['registration']['seed_id_ledger_review']['sha256']
     monkeypatch.setattr(runner, 'verify_export', lambda *args, **kwargs: pytest.fail('payload touched in identity gate'))
     check_bytes = b'check bytes'
     registered['registration']['preflight']['check_sha256'] = hashlib.sha256(check_bytes).hexdigest()
-    pipeline.preflight(registered, check, text.encode(), json.dumps(registered).encode(), check_bytes, 'abcdef0')
+    pipeline.preflight(registered, check, text.encode(), json.dumps(registered).encode(), check_bytes, commit)
+    forged = copy.deepcopy(check)
+    forged['probe_code_sha256'] = {key: '0' * 64 for key in probe.code_hashes()}
+    with pytest.raises(ValueError, match='Probe, common lock'):
+        launch.build_registered(text, forged, 'a' * 64, '10:00', commit, str(go), str(ledger),
+                                launch.at('2026-10-06', '10:00'))
+    with pytest.raises(ValueError, match='Staged probe'):
+        pipeline.preflight(registered, forged, text.encode(), json.dumps(registered).encode(), check_bytes, commit)
     with pytest.raises(ValueError, match='ledger'):
-        launch.build_registered(text, check, 'a' * 64, '10:00', 'abcdef0', str(go), 'missing',
+        launch.build_registered(text, check, 'a' * 64, '10:00', commit, str(go), 'missing',
                                 launch.at('2026-10-06', '10:00'))
     bad = copy.deepcopy(value); bad['queue']['aggregate_by'] = '10:05'
     with pytest.raises(ValueError):

@@ -12,6 +12,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 REPO = PROJECT.parents[1]
 sys.path[:0] = [str(PROJECT), str(PROJECT / 'scripts')]
 import run_cuda_direct as runner
+import p47_probe
 from p40_launch import KST, at
 from pitchmdp import direct_pitcher_id_registry as pid
 
@@ -31,6 +32,16 @@ def sha(data):
 
 def execution_hashes():
     return {name: sha((PROJECT / name).read_bytes()) for name in EXECUTION_FILES}
+
+
+def verify_reviewed_checkout(commit):
+    """Registration CLI must use exactly the reviewed commit with no modified or untracked source."""
+    head = subprocess.run(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], capture_output=True,
+                          text=True, check=True).stdout.strip()
+    dirty = subprocess.run(['git', '-C', str(REPO), 'status', '--porcelain', '--untracked-files=all'],
+                           capture_output=True, text=True, check=True).stdout.strip()
+    if head != commit or dirty:
+        raise ValueError('Registration requires exact reviewed HEAD and a clean worktree')
 
 
 def clock(day, launch_by, preflight_seconds):
@@ -91,8 +102,10 @@ def build_registered(draft_text, check, check_sha, hhmm, source_commit, go_refer
         raise ValueError('Probe source/export/sidecar pins differ')
     if check['source_sha256'] != runner.own_hashes():
         raise ValueError('Registration source differs from the reviewed probe source map')
-    if len(source_commit) < 7 or any(c not in '0123456789abcdef' for c in source_commit):
-        raise ValueError('Source commit must be a hex SHA')
+    if check.get('probe_code_sha256') != p47_probe.code_hashes():
+        raise ValueError('Probe, common lock or spec generator code differs from the reviewed probe map')
+    if len(source_commit) != 40 or any(c not in '0123456789abcdef' for c in source_commit):
+        raise ValueError('Source commit must be a full 40-character hex SHA')
     q = value['queue']
     registered = at(q['date'], hhmm)
     if registered > at(q['date'], q['launch_by']) or registered > now + timedelta(minutes=1) \
@@ -142,10 +155,7 @@ def main():
     if args.command == 'date':
         value = dated(UNDATED.read_text(), args.day, args.launch_by, check)
     else:
-        head = subprocess.run(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], capture_output=True,
-                              text=True, check=True).stdout.strip()
-        if head != args.source_commit:
-            raise ValueError('Registration source commit must be this checkout HEAD')
+        verify_reviewed_checkout(args.source_commit)
         value = build_registered(args.draft.read_text(), check, sha(check_bytes), args.hhmm, args.source_commit,
                                  args.go_reference, args.ledger_review, datetime.now(KST))
     with args.out.open('x') as handle:
