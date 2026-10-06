@@ -24,7 +24,7 @@ from .demo_clock import DemoError
 DEFAULT_FEED_DIR = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/feeds')
 EMBARGO_PATH = re.compile(r'^/api/(?:watch|replay|live)/(\d+)(?:/|$)')
 NO_STORE = {'Cache-Control': 'no-store'}
-INTERNAL = ('situation_after', 'gap_after', 'line_before', 'line_after')  # server-only: gap_after would reveal that something happens later
+INTERNAL = ('situation_after', 'gap_after', 'line_before', 'line_after', 'context_after')  # server-only: gap_after would reveal that something happens later
 LIVE_STALE_S = 30
 
 
@@ -198,6 +198,25 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
         linescore = nxt.get('line_before')
     else:
         linescore = None
+    if live_current is not None or over:
+        current_context = record.get('context_now')
+        context_people = record.get('context_people_now') or {}
+    elif held:
+        current_context = lastp.get('context_after')
+        context_people = lastp
+    elif nxt is not None:
+        current_context = nxt.get('context_before')
+        context_people = nxt
+    else:
+        current_context, context_people = None, {}
+    if current_context is not None:
+        current_context = dict(current_context)
+        for role in ('batter', 'pitcher'):
+            if (current.get(role) or {}).get('id') != (context_people.get(role) or {}).get('id'):
+                current_context[role] = dict.fromkeys(current_context[role])
+                if role == 'batter':
+                    current_context['next_batters'] = []
+    current = current | {'context': current_context}
     people = [(role, holder.get(role)) for holder in [current, *visible, *pas] for role in ('pitcher', 'batter')
               if holder.get(role)]
     pregame = _pregame_view(record, people)
@@ -294,7 +313,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         def run():
             if demo is not None:
                 session, record, _ = demo_session(demo)
-                return ok({'schema': 'pitcheezy-service-dates-v2', 'source': {'kind': 'demo', 'session_id': demo},
+                return ok({'schema': 'pitcheezy-service-dates-v2', 'source': {'kind': 'demo', 'session_id': demo, 'session_status': session['status']},
                            'dates': [record['card']['date_kst']]})
             dates = sorted({r['card']['date_kst'] for r in archive.cards() if r['card']['date_kst']}, reverse=True)
             return ok({'schema': 'pitcheezy-service-dates-v2', 'source': {'kind': 'archive', 'session_id': None}, 'dates': dates})
@@ -308,7 +327,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         def run():
             if demo is not None:
                 session, record, cutoff = demo_session(demo)
-                source = {'kind': 'demo', 'session_id': demo}
+                source = {'kind': 'demo', 'session_id': demo, 'session_status': session['status']}
                 games = [list_card(record, cutoff, source)] if record['card']['date_kst'] == date else []
                 return ok({'schema': 'pitcheezy-service-games-v2', 'source': source, 'date': date, 'games': games, 'live_ok': True})
             embargoed = clock.active_games()
@@ -334,7 +353,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                 session, record, cutoff = demo_session(demo)
                 if session['game_pk'] != game_pk:
                     return fail(404, '이 시연에 없는 경기입니다.')
-                return ok(cut_view(record, cutoff, {'kind': 'demo', 'session_id': demo}, after=after))
+                return ok(cut_view(record, cutoff, {'kind': 'demo', 'session_id': demo, 'session_status': session['status']}, after=after))
             if game_pk in clock.active_games():
                 return fail(423, '이 경기는 지금 다른 화면에서 진행 중입니다.')
             try:

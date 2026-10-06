@@ -244,6 +244,128 @@ def absent_rec(reason='이 투구의 저장된 추천이 없습니다.'):
             'candidates': []}
 
 
+# Completed-PA events with an official at-bat (sacrifices, walks and interference excluded).
+AT_BAT_EVENTS = set(HITS) | {'field_out', 'force_out', 'grounded_into_double_play', 'double_play',
+                           'triple_play', 'fielders_choice', 'fielders_choice_out', 'field_error',
+                           'strikeout', 'strikeout_double_play'}
+NO_AB_EVENTS = {'walk', 'intent_walk', 'hit_by_pitch', 'catcher_interf', 'sac_fly', 'sac_bunt',
+                'sac_fly_double_play', 'sac_bunt_double_play'}
+
+
+class _GameContext:
+    """Display-only event-prefix counts; no final boxscore statistics or future substitutions.
+
+    Earned runs use the current feed's scorer decisions for already reached scoring events. This is
+    retrospective reconstruction, not proof of what the scorer knew at that historical instant.
+    """
+
+    def __init__(self, feed):
+        self.feed = feed
+        self.batters, self.pitchers = {}, {}
+        self.lineups = {'away': {}, 'home': {}}
+        self.complete = True
+        self.er_unknown = False
+        teams = ((feed.get('liveData') or {}).get('boxscore') or {}).get('teams') or {}
+        for side in self.lineups:
+            for key, player in ((teams.get(side) or {}).get('players') or {}).items():
+                order = str(player.get('battingOrder', ''))
+                if order in {str(i*100) for i in range(1, 10)}:
+                    pid = (player.get('person') or {}).get('id')
+                    if pid is None and key.startswith('ID') and key[2:].isdigit():
+                        pid = int(key[2:])
+                    self.lineups[side][int(order)//100] = {'id': pid,
+                        'name': (player.get('person') or {}).get('fullName') or _player(feed, pid).get('fullName')}
+
+    def stats(self, role, pid):
+        table = self.batters if role == 'batter' else self.pitchers
+        keys = ('at_bats', 'hits', 'on_base') if role == 'batter' else ('pitches', 'strikeouts', 'earned_runs')
+        return table.setdefault(pid, dict.fromkeys(keys, 0))
+
+    def add(self, role, pid, key, amount=1):
+        stats = self.stats(role, pid)
+        if stats[key] is not None:
+            stats[key] += amount
+
+    def substitution(self, event, batting_side):
+        kind = (event.get('details') or {}).get('eventType')
+        if kind not in ('offensive_substitution', 'defensive_substitution', 'pitching_substitution'):
+            return
+        side = batting_side if kind == 'offensive_substitution' else ('home' if batting_side == 'away' else 'away')
+        lineup = self.lineups[side]
+        old, player = (event.get('replacedPlayer') or {}).get('id'), event.get('player') or {}
+        order = str(event.get('battingOrder', ''))
+        slot = int(order)//100 if order.isdigit() and 100 <= int(order) < 1000 else None
+        if slot is None and old is not None:
+            slot = next((n for n, p in lineup.items() if p['id'] == old), None)
+        if slot is not None:
+            pid = player.get('id')
+            lineup[slot] = {'id': pid, 'name': player.get('fullName') or _player(self.feed, pid).get('fullName')}
+
+    def runs(self, runners):
+        # A runner may have multiple advance segments; only its final scoring segment counts.
+        seen = set()
+        for runner in runners:
+            move, details = runner.get('movement') or {}, runner.get('details') or {}
+            if move.get('end') != 'score' or move.get('isOut'):
+                continue
+            rid = (details.get('runner') or {}).get('id')
+            if rid is not None and rid in seen:
+                continue
+            seen.add(rid)
+            earned, responsible = details.get('earned'), (details.get('responsiblePitcher') or {}).get('id')
+            if earned is False:
+                continue
+            if responsible is None:
+                self.er_unknown = True
+            elif earned is True:
+                self.add('pitcher', responsible, 'earned_runs')
+            else:
+                self.stats('pitcher', responsible)['earned_runs'] = None
+
+    def result(self, play, batter, pitcher, ambiguous_batters, ambiguous_pitchers):
+        event = (play.get('result') or {}).get('eventType')
+        bid, pid = batter.get('id'), pitcher.get('id')
+        if event in AT_BAT_EVENTS | NO_AB_EVENTS:
+            if event in AT_BAT_EVENTS:
+                self.add('batter', bid, 'at_bats')
+            if event in HITS:
+                self.add('batter', bid, 'hits')
+            if event in set(HITS) | {'walk', 'intent_walk', 'hit_by_pitch'}:
+                self.add('batter', bid, 'on_base')
+            if event in ('strikeout', 'strikeout_double_play'):
+                if ambiguous_pitchers:
+                    for who in ambiguous_pitchers | {pid}:
+                        self.stats('pitcher', who)['strikeouts'] = None
+                else:
+                    self.add('pitcher', pid, 'strikeouts')
+                # A hitter inheriting two strikes may not own the charged at-bat.
+                if ambiguous_batters:
+                    for who in ambiguous_batters | {bid}:
+                        self.stats('batter', who)['at_bats'] = None
+        elif not (event or '').startswith(('caught_stealing', 'pickoff', 'stolen_base')) and event not in (
+                'wild_pitch', 'passed_ball', 'balk', 'other_out', 'runner_double_play', 'pickoff_error_1b',
+                'pickoff_error_2b', 'pickoff_error_3b'):
+            for key in ('at_bats', 'hits', 'on_base'):
+                self.stats('batter', bid)[key] = None
+            self.stats('pitcher', pid)['strikeouts'] = None
+
+    def view(self, batter, pitcher, side):
+        out = {'basis': 'event_prefix_current_feed'}
+        for role, person in (('batter', batter), ('pitcher', pitcher)):
+            pid = (person or {}).get('id')
+            out[role] = {k: (v if self.complete and pid is not None else None)
+                         for k, v in self.stats(role, pid).items()}
+        if self.er_unknown:
+            out['pitcher']['earned_runs'] = None
+        lineup = self.lineups.get(side, {})
+        bid = (batter or {}).get('id')
+        slot = next((n for n, p in lineup.items() if bid is not None and p['id'] == bid), None) if self.complete else None
+        out['next_batters'] = [] if slot is None else [
+            {'id': lineup.get(n, {}).get('id'), 'name': lineup.get(n, {}).get('name'), 'order': n}
+            for n in ((slot % 9)+1, ((slot+1) % 9)+1)]
+        return out
+
+
 def build(feed, watch=None, setup=None):
     """Complete game record (server-only; callers cut it at their visibility cutoff).
 
@@ -266,6 +388,9 @@ def build(feed, watch=None, setup=None):
     totals = {'away': dict.fromkeys(('hits', 'errors', 'bb_hbp'), 0), 'home': dict.fromkeys(('hits', 'errors', 'bb_hbp'), 0)}
     halves = []  # [inning, half, batting team's score when the half started]
     errors_seen = set()
+    context = _GameContext(feed)
+    current_people = {'batter': None, 'pitcher': None}
+    current_side = None
 
     def line_asof():
         if not halves:
@@ -306,16 +431,22 @@ def build(feed, watch=None, setup=None):
         state['bases'] = sum(bit for bit, base in ((1, 'first'), (2, 'second'), (4, 'third')) if state['runners'][base])
         return state
 
-    for play in plays:
+    for play_index, play in enumerate(plays):
         about, matchup = play.get('about') or {}, play.get('matchup') or {}
         half = 'Top' if about.get('isTopInning') else 'Bot'
+        current_side = 'away' if half == 'Top' else 'home'
+        if about.get('atBatIndex') != play_index:
+            context.complete = False
         inning, ab = about.get('inning'), about.get('atBatIndex', 0)+1
         if (inning, half) != prev_half:  # new half-inning: nobody on, nobody out
             outs, bases, prev_half = 0, dict.fromkeys(('first', 'second', 'third')), (inning, half)
             halves.append([inning, half, away if half == 'Top' else home])
         credited = False
+        context_credited = False
+        ambiguous_batters, ambiguous_pitchers = set(), set()
         pa_key = f'{game_pk}:{ab}'
         batter, pitcher = _person(feed, matchup, 'batter'), _person(feed, matchup, 'pitcher')
+        current_people = {'batter': batter, 'pitcher': pitcher}
         earlier = {role: _substitution_before(play, role) for role in ('batter', 'pitcher')}
         complete = bool(about.get('isComplete'))
         result = play.get('result') or {}
@@ -335,12 +466,24 @@ def build(feed, watch=None, setup=None):
         last_at = next((i for i in range(len(events)-1, -1, -1) if events[i] is last_pitch), -1)
         pitch_outs = ((last_pitch or {}).get('count') or {}).get('outs', 0)
         trailing = any(moves.get(i) or ((events[i].get('count') or {}).get('outs', 0) > pitch_outs)
+                       or ((events[i].get('details') or {}).get('eventType') == result.get('eventType')
+                           and result.get('eventType') in AT_BAT_EVENTS | NO_AB_EVENTS)
                        for i in range(last_at+1, len(events)) if not events[i].get('isPitch'))
         pa['ends_on_pitch'] = complete and last_pitch is not None and not trailing
         for event_index, event in enumerate(events):
             details = event.get('details') or {}
             call = (details.get('call') or {}).get('code')
             is_pitch = bool(event.get('isPitch'))
+            people = {}
+            for role, current in (('batter', batter), ('pitcher', pitcher)):
+                later = [i for i in earlier[role] if i > event_index]
+                people[role] = current if not later else _replaced(feed, earlier[role][min(later)], role)
+            current_people = people
+            context.substitution(event, current_side)
+            if strikes >= 2 and details.get('eventType') in ('pitching_substitution', 'offensive_substitution'):
+                affected = ambiguous_pitchers if details['eventType'] == 'pitching_substitution' else ambiguous_batters
+                affected.update(((event.get('replacedPlayer') or {}).get('id'), (event.get('player') or {}).get('id')))
+
             if is_pitch or (event.get('type') == 'no_pitch' and call):
                 numbered += 1
             if is_pitch:
@@ -355,14 +498,13 @@ def build(feed, watch=None, setup=None):
                              'home_score': home, 'away_score': away, 'runners': _occupied(bases)}
                 situation['bases'] = sum(bit for bit, base in ((1, 'first'), (2, 'second'), (4, 'third')) if situation['runners'][base])
                 line_before = line_asof()
-                people = {}
-                for role, current in (('batter', batter), ('pitcher', pitcher)):
-                    later = [i for i in earlier[role] if i > event_index]
-                    people[role] = current if not later else _replaced(feed, earlier[role][min(later)], role)
+                if event.get('pitchNumber') is not None and event['pitchNumber'] != numbered:
+                    context.complete = False
                 cv = setups.get((ab, event.get('pitchNumber') or numbered))
                 pitch = {'index': len(pitches), 'key': key, 'pa_key': pa_key, 'at_bat_number': ab,
                          'pitch_number': event.get('pitchNumber') or numbered, 'inning': inning, 'half': half,
-                         'situation_before': situation, 'line_before': line_before, 'batter': people['batter'], 'pitcher': people['pitcher'],
+                         'situation_before': situation, 'line_before': line_before,
+                         'context_before': context.view(people['batter'], people['pitcher'], current_side), 'batter': people['batter'], 'pitcher': people['pitcher'],
                          'rec': _rec_from_decision(decision, generated, policy) if watch else absent_rec(),
                          'actual': {'pitch_type': code,
                                     'pitch_label': PITCH_LABELS.get(code, (details.get('type') or {}).get('description')),
@@ -380,10 +522,20 @@ def build(feed, watch=None, setup=None):
                 pa['pitch_count'] += 1
                 pa['first_index'] = pitch['index'] if pa['first_index'] is None else pa['first_index']
                 pa['last_index'] = pitch['index']
+                if pa['first_index'] == pitch['index']:
+                    pa['batting_order'] = next((n for n, p in context.lineups[current_side].items()
+                                               if p['id'] == people['batter'].get('id')), None) if context.complete else None
             # after this event: its runner moves, its runs, the feed's count (balls/strikes/outs after the event)
             before_event = (outs, away, home, tuple(_occupied(bases).values()))
             _pinch_runner(bases, event)
             runs = _apply_moves(bases, moves.get(event_index, []))
+            context.runs(moves.get(event_index, []))
+            if is_pitch:
+                context.add('pitcher', people['pitcher'].get('id'), 'pitches')
+            if complete and ((is_pitch and last_of_pa) or (not pa['ends_on_pitch'] and event_index == len(events)-1)):
+                context.result(play, people['batter'], people['pitcher'], ambiguous_batters, ambiguous_pitchers)
+                context_credited = True
+
             credit_errors(ab, moves.get(event_index, []), about.get('isTopInning'))
             if about.get('isTopInning'):
                 away += runs
@@ -391,11 +543,16 @@ def build(feed, watch=None, setup=None):
                 home += runs
             if details.get('awayScore') is not None and details.get('homeScore') is not None:
                 away, home = details['awayScore'], details['homeScore']
+            if (away + home) - (before_event[1] + before_event[2]) > runs:
+                context.er_unknown = True
             count = event.get('count') or {}
             balls, strikes, outs = count.get('balls', balls), count.get('strikes', strikes), count.get('outs', outs)
             if is_pitch:
                 if last_of_pa:  # the PA's own result (runs, outs) belongs to its last pitch
+                    prior_runs = away + home
                     away, home = result.get('awayScore', away), result.get('homeScore', home)
+                    if away + home > prior_runs:
+                        context.er_unknown = True
                     outs = (play.get('count') or {}).get('outs', outs)
                     credit_result(play, about.get('isTopInning'))
                     credited = True
@@ -404,14 +561,23 @@ def build(feed, watch=None, setup=None):
                     after |= {'runners': {'first': False, 'second': False, 'third': False}, 'bases': 0}
                 pitches[-1]['situation_after'], pitches[-1]['gap_after'] = after, False
                 pitches[-1]['line_after'] = line_asof()
+                pitches[-1]['context_after'] = context.view(people['batter'], people['pitcher'], current_side)
                 previous = pitches[-1]
             elif previous is not None and (
                     before_event != (outs, away, home, tuple(_occupied(bases).values()))
-                    or details.get('eventType') in ('pitching_substitution', 'offensive_substitution')):
+                    or details.get('eventType') in ('pitching_substitution', 'offensive_substitution', 'defensive_substitution')
+                    or (complete and context_credited)):
                 previous['gap_after'] = True  # runner/score/out change or a new pitcher/batter between two pitches
         pas.append(pa)
         if complete:
+            if not context_credited:
+                context.result(play, batter, pitcher, ambiguous_batters, ambiguous_pitchers)
+                if previous is not None:
+                    previous['gap_after'] = True
+            prior_runs = away + home
             away, home = result.get('awayScore', away), result.get('homeScore', home)
+            if away + home > prior_runs:
+                context.er_unknown = True
             outs = (play.get('count') or {}).get('outs', outs)
             if not credited:
                 credit_result(play, about.get('isTopInning'))
@@ -426,4 +592,6 @@ def build(feed, watch=None, setup=None):
         now |= {'runners': {'first': False, 'second': False, 'third': False}, 'bases': 0}
     return {'card': game_card(feed), 'pitches': pitches, 'pas': pas, 'final': final, 'zone_bounds': bounds,
             'has_watch': watch is not None, 'state_now': now, 'line_now': line_asof(),
+            'context_now': context.view(current_people['batter'], current_people['pitcher'], current_side),
+            'context_people_now': current_people,
             'official_date': data['datetime'].get('officialDate') or (data['datetime'].get('dateTime') or '')[:10] or None}
