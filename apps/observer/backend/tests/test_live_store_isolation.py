@@ -120,3 +120,81 @@ def test_unopenable_store_health_redacts_private_path(tmp_path, monkeypatch):
         assert health.json()['live_store']['error'] == 'open: FileExistsError'
         assert health.json()['live_store']['started'] is False
         assert str(tmp_path) not in health.text
+
+
+@pytest.mark.parametrize('first_persisted', [True, False])
+def test_outage_correction_keeps_first_and_version_arrival(tmp_path, first_persisted):
+    store = LiveSnapshotStore(tmp_path/'arrival.sqlite3')
+    live = PersistentLiveFeed(None, store=store, wall=lambda: 130)
+    buffer = live._buffer(1)
+    ingest = store.ingest
+    def fail(*args, **kwargs):
+        raise sqlite3.OperationalError('outage')
+    if not first_persisted:
+        store.ingest = fail
+    live._accept(1, feed(100), 100, buffer)
+    store.ingest = fail
+    corrected = feed(100)
+    corrected['metaData']['timeStamp'] = '101'
+    live._accept(1, corrected, 120, buffer)
+    live._accept(1, corrected, 125, buffer)
+    store.ingest = ingest
+    live._accept(1, corrected, 130, buffer)
+    row = store.read_after(1, until_event=200)['items'][-1]
+    assert (row['event_wall'], row['first_fetched'], row['fetched']) == (100, 100, 120)
+    assert row['source'] == 'memory_recovery'
+    assert live.sync_extra(1, None)['store_ok']
+
+
+@pytest.mark.parametrize('healthy', [True, False])
+def test_staging_owns_process_before_health_and_cleans_up(tmp_path, healthy):
+    import socket
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    assert not 8760 <= port <= 8779
+    fake = tmp_path/'synthetic-python'
+    fake.write_text(f'''#!{sys.executable}
+import http.server, os, sys, time
+from pathlib import Path
+Path(os.environ['SYNTHETIC_PID']).write_text(str(os.getpid()))
+if os.environ['SYNTHETIC_HEALTH'] == 'yes':
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{{}}')
+        def log_message(self, *args): pass
+    http.server.HTTPServer(('127.0.0.1', int(sys.argv[sys.argv.index('--port') + 1])), Handler).serve_forever()
+else:
+    time.sleep(60)
+''')
+    fake.chmod(0o755)
+    directory = tmp_path/'stage'
+    directory.mkdir()
+    (directory/'server.identity').write_text('stale prior launch identity')
+    env = dict(os.environ, PZ_STAGING_DIR=str(directory), PITCHEEZY_STAGING_PORT=str(port),
+               PITCHEEZY_OBSERVER_PYTHON=str(fake), SYNTHETIC_PID=str(tmp_path/'child.pid'),
+               SYNTHETIC_HEALTH='yes' if healthy else 'no')
+    script = Path(__file__).resolve().parents[2]/'deploy/staging/live_store_staging.sh'
+    try:
+        launched = subprocess.run(['sh', str(script), 'start'], env=env, capture_output=True, text=True, timeout=25)
+        assert launched.returncode == (0 if healthy else 1), launched.stderr
+        if healthy:
+            assert 'stale' not in (directory/'server.identity').read_text()
+            stopped = subprocess.run(['sh', str(script), 'stop'], env=env, capture_output=True, text=True, timeout=15)
+            assert stopped.returncode == 0, stopped.stderr
+        else:
+            assert 'no health' in launched.stderr and 'unowned' not in launched.stderr
+        assert not (directory/'server.pid').exists()
+        assert not (directory/'server.identity').exists()
+        child = int((tmp_path/'child.pid').read_text())
+        with pytest.raises(ProcessLookupError):
+            os.kill(child, 0)
+    finally:
+        pidfile = tmp_path/'child.pid'
+        if pidfile.exists():
+            child = int(pidfile.read_text())
+            command = subprocess.run(['ps', '-p', str(child), '-o', 'command='], capture_output=True, text=True).stdout
+            if str(fake) in command:
+                os.kill(child, 15)

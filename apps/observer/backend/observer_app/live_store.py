@@ -84,7 +84,7 @@ class LiveSnapshotStore:
                 raise
             db.execute('COMMIT')
 
-    def ingest(self, game_pk, feed, *, fetched, source, slot_event=None):
+    def ingest(self, game_pk, feed, *, fetched, source, slot_event=None, first_fetched=None):
         """Returns (outcome, entry); ``entry`` is the ``LiveFeed`` buffer entry for the slot (None if stale)."""
         game_pk, body = int(game_pk), _canonical(feed)
         event, sha = event_wall(feed) if slot_event is None else slot_event, hashlib.sha256(body).hexdigest()
@@ -94,7 +94,7 @@ class LiveSnapshotStore:
             newest = db.execute('SELECT event_wall, version, feed_ts, sha, first_fetched FROM snapshots WHERE game_pk=? '
                                 'ORDER BY event_wall DESC, version DESC LIMIT 1', (game_pk,)).fetchone()
             if newest is None or event > newest[0]:
-                outcome, slot, version, first = 'new', event, 1, fetched
+                outcome, slot, version, first = 'new', event, 1, fetched if first_fetched is None else first_fetched
             elif feed_ts and newest[2] and feed_ts < newest[2]:
                 return 'stale', None
             elif sha == newest[3]:
@@ -187,7 +187,8 @@ class PersistentLiveFeed(LiveFeed):
             if game_pk in self._unsaved:
                 # ponytail: resync only the bounded delay window; pruned outage history is not recoverable.
                 for saved in buffer:
-                    self.store.ingest(game_pk, saved['feed'], fetched=saved['fetched'], source='memory_recovery', slot_event=saved['event'])
+                    self.store.ingest(game_pk, saved['feed'], fetched=saved.get('version_fetched', saved['fetched']),
+                                      source='memory_recovery', slot_event=saved['event'], first_fetched=saved['fetched'])
                 self._unsaved.discard(game_pk)
             if stale:
                 self.stale[game_pk] = self.stale.get(game_pk, 0)+1
@@ -201,13 +202,19 @@ class PersistentLiveFeed(LiveFeed):
             if stale:
                 self.stale[game_pk] = self.stale.get(game_pk, 0)+1
                 return
-            return super()._accept(game_pk, feed, wall, buffer)
+            changed = not buffer or feed != buffer[-1]['feed']
+            super()._accept(game_pk, feed, wall, buffer)
+            if changed:
+                buffer[-1]['version_fetched'] = wall
+            return
         if not self._unsaved and not self._restore_failed:
             self.store_error = None
         if outcome == 'stale':  # an older feed answered late: never rewind what viewers already saw
             self.stale[game_pk] = self.stale.get(game_pk, 0)+1
         elif buffer and entry['event'] == buffer[-1]['event']:
             buffer[-1]['feed'] = feed
+            if outcome == 'correction':
+                buffer[-1]['version_fetched'] = wall
         elif not buffer or entry['event'] > buffer[-1]['event']:
             buffer.append(entry)
 

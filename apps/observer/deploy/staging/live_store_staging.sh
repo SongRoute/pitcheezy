@@ -25,13 +25,31 @@ export PYTHONPATH="$APP/backend" PYTHONUNBUFFERED=1
 running() { [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; }
 owned() {
   [ -f "$DIR/server.identity" ] || return 1
-  ps -p "$(cat "$PID")" -o lstart=,command= > "$DIR/server.current"
-  cmp -s "$DIR/server.identity" "$DIR/server.current"
+  ps -p "$(cat "$PID")" -o lstart= > "$DIR/server.current" || return 1
+  cmp -s "$DIR/server.identity" "$DIR/server.current" || return 1
+  case "$(ps -p "$(cat "$PID")" -o command=)" in
+    *" -m uvicorn observer_app.main:app --host 127.0.0.1 --port $PORT --log-config $APP/logging.json") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+stop_owned() {
+  if running && ! owned; then echo "refusing to stop unowned pid" >&2; return 1; fi
+  if running; then
+    kill "$(cat "$PID")"
+    i=0
+    while running; do
+      i=$((i+1)); [ "$i" -lt 50 ] || { echo "stop timed out; ownership files retained" >&2; return 1; }
+      sleep 0.2
+    done
+  fi
+  rm -f "$PID" "$DIR/server.identity" "$DIR/server.current"
 }
 
 launch() {  # $1 = store|nostore
   if running; then echo "already running: pid $(cat "$PID")" >&2; exit 1; fi
   if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then echo "port $PORT is in use" >&2; exit 1; fi
+  rm -f "$PID" "$DIR/server.identity" "$DIR/server.current"
   STORE_ENV=""
   [ "$1" = store ] && STORE_ENV="$DB"
   DELAY="${PITCHEEZY_OBSERVER_LIVE_DELAY_S:-${PZ_STAGING_REPLAY_DIR:+0}}"
@@ -49,11 +67,16 @@ launch() {  # $1 = store|nostore
       nohup "$PY" -m uvicorn observer_app.main:app --host 127.0.0.1 --port "$PORT" --log-config "$APP/logging.json" \
       >> "$LOG" 2>&1 &
   echo $! > "$PID"
+  # Capture birth identity before readiness; exec preserves PID and start time.
+  if ! ps -p "$(cat "$PID")" -o lstart= > "$DIR/server.identity"; then
+    rm -f "$PID" "$DIR/server.identity"
+    echo "process exited before ownership capture; see $LOG" >&2; return 1
+  fi
   i=0
   until curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; do
-    i=$((i+1)); [ $i -lt 50 ] || { echo "no health after 10 s; see $LOG" >&2; exit 1; }; sleep 0.2
+    i=$((i+1)); [ $i -lt 50 ] || { echo "no health after 10 s; see $LOG" >&2; stop_owned; return 1; }; sleep 0.2
   done
-  ps -p "$(cat "$PID")" -o lstart=,command= > "$DIR/server.identity"
+  if ! owned; then echo "ownership mismatch after readiness" >&2; return 1; fi
   echo "started pid $(cat "$PID") on 127.0.0.1:$PORT ($1)"
 }
 
@@ -61,9 +84,7 @@ case "${1:-}" in
   start) launch store ;;
   nostore) launch nostore ;;
   stop)
-    if running && ! owned; then echo "refusing to stop unowned pid" >&2; exit 1; fi
-    if running; then kill "$(cat "$PID")"; while running; do sleep 0.2; done; echo "stopped pid $(cat "$PID")"; fi
-    rm -f "$PID" ;;
+    stop_owned ;;
   status) running && echo "running pid $(cat "$PID")" || echo stopped; "$PY" -m observer_app.live_store status --db "$DB" ;;
   health) curl -fsS "http://127.0.0.1:$PORT/api/health" ;;
   state) curl -fsS "http://127.0.0.1:$PORT/api/live/${2:?gamePk}/state?delay=${3:-0}" ;;
