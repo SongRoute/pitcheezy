@@ -360,9 +360,9 @@ def config_check(config):
     if list(config['calibration']['bounds']) != list(BOUNDS):
         raise ValueError('Temperature bounds differ from JointDelivery.calibrate')
     device = config['device']
-    if device['kind'] != 'cuda' or device['cpu_fallback'] is not False or len(device['allowed_gpu_uuids']) > 2 \
-            or device['max_parallel'] > 2:
-        raise ValueError('Explicit CUDA on at most two allowed GPUs, no fallback')
+    if device['kind'] != 'cuda' or device['cpu_fallback'] is not False or len(device['allowed_gpu_uuids']) > 5 \
+            or device['max_parallel'] > 5:
+        raise ValueError('Explicit CUDA on at most five allowed GPUs, no fallback')
     columns = config['export']['workload_columns']
     names = set()
     for arm in config['arms']:

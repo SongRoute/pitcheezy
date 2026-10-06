@@ -197,7 +197,7 @@ def test_config_rejects_changed_budget():
     with pytest.raises(ValueError, match='budget'):
         rc.config_check(cfg)
     cfg = json.loads(CONFIG.read_text())
-    cfg['device']['allowed_gpu_uuids'].append('GPU-x')
+    cfg['device']['allowed_gpu_uuids'].extend(['GPU-x', 'GPU-y', 'GPU-z', 'GPU-six'])
     with pytest.raises(ValueError, match='CUDA'):
         rc.config_check(cfg)
 
@@ -226,6 +226,43 @@ def make_queue(tmp_path, command, complete, clock, gpus=(GPU3,), priorities=(1,)
 
 
 Queue = cq.Queue
+
+
+@pytest.mark.parametrize('allowed,parallel,selected,accepted', [
+    (1, 1, [0], True), (2, 2, [0, 1], True), (5, 5, list(range(5)), True),
+    (6, 5, [0], False), (5, 6, [0], False), (5, 5, [0, 0], False),
+    (5, 1, [0, 1], False), (1, 1, [1], False),
+])
+def test_queue_cli_preflight_device_limits(export, tmp_path, monkeypatch, allowed, parallel, selected, accepted):
+    """Real CLI/config/export preflight; stop before any model, GPU probe or fit."""
+    path, digest, _ = export
+    cfg = config()
+    uuids = [f'GPU-00000000-0000-0000-0000-{i:012d}' for i in range(6)]
+    cfg['device'].update(allowed_gpu_uuids=uuids[:allowed], max_parallel=parallel)
+    config_path = tmp_path / 'config.json'
+    config_path.write_text(json.dumps(cfg))
+    reached = []
+
+    def no_run(queue):
+        reached.append(queue.gpus)
+        assert list(queue.locks) == [uuids[i] for i in selected]
+        assert all(lock.path.parent == tmp_path / 'common-locks' for lock in queue.locks.values())
+        return {'counts': {}, 'comparison_allowed': False}
+
+    monkeypatch.setattr(cq.Queue, 'run', no_run)
+    args = ['--config', str(config_path), '--config-sha256', rc.sha256_file(config_path),
+            '--export', str(path), '--export-manifest-sha256', digest,
+            '--output', str(tmp_path / 'out-smoke'), '--queue-dir', str(tmp_path / 'q'),
+            '--lock-dir', str(tmp_path / 'common-locks'), '--smoke']
+    for index in selected:
+        args.extend(['--gpu', uuids[index]])
+    if accepted:
+        cq.main(args + ['run'])
+        assert reached == [[uuids[i] for i in selected]]
+    else:
+        with pytest.raises(ValueError):
+            cq.main(args + ['run'])
+        assert reached == []
 
 
 def test_plan_is_predeclared_priority_first():
