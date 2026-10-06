@@ -35,13 +35,6 @@ function Bases({ mask }: { mask: number }) {
   </svg>;
 }
 const handText = (h: string | null | undefined, role: 'p' | 'b') => h === 'R' ? (role === 'p' ? '우투' : '우타') : h === 'L' ? (role === 'p' ? '좌투' : '좌타') : h === 'S' ? '양타' : '';
-/** Text on the main zone's actual mark: Korean pitch name (the repository's PITCH_LABELS) or, when the feed only has an English
- *  description (e.g. 'Slow Curve'), the Statcast code; then the speed number in the chosen unit (the unit is in the spoken text). */
-const actualMark = (a: Actual, unit: 'kmh' | 'mph') => {
-  const type = a.pitch_label;  // already Korean or the code (api.ts pitchName)
-  const sp = a.speed_mph === null ? '' : unit === 'kmh' ? String(Math.round(a.speed_mph * 1.609344)) : a.speed_mph.toFixed(1);
-  return [type, sp].filter(Boolean).join(' ');
-};
 const stat3 = (v: number | null | undefined) => typeof v === 'number' ? v.toFixed(3).replace(/^0/, '') : '–';
 const era = (v: number | null | undefined) => typeof v === 'number' ? v.toFixed(2) : '–';
 
@@ -57,11 +50,13 @@ function PlayerCell({ team, abbr, role, person, hand, info, onOpen, side, today 
   info: PlayerInfo | undefined; onOpen: () => void; side: 'away' | 'home'; today: { text: string; spoken: string } | null }) {
   const name = person?.name ?? '—';
   const stats = role === 'p' ? `ERA ${era(info?.era)}` : `AVG ${stat3(info?.avg)} OPS ${stat3(info?.ops)}`;
-  const extra = [handText(hand, role), info?.jersey ? `#${info.jersey}` : ''].filter(Boolean).join(' · ');
-  const spoken = `${short(team)} ${role === 'p' ? '투수' : '타자'} ${name}${extra ? `, ${extra}` : ''}, ${role === 'p' ? `평균자책 ${era(info?.era)}` : `타율 ${stat3(info?.avg)}, OPS ${stat3(info?.ops)}`}${info?.stats_as_of ? ` (${info.stats_as_of} 경기 전 기준)` : ', 경기 전 기록 미확인'}${today ? `, ${today.spoken}` : ''}. 타석 목록 열기`;
+  const handed = handText(hand, role);
+  const spoken = `${short(team)} ${role === 'p' ? '투수' : '타자'} ${name}, ${handed}, ${stats}, ${today?.spoken ?? '오늘 기록 미확인'}. 선수 상세 열기`;
   return <button className={`sv-player ${side}`} style={{ '--team': teamColor(team) } as CSSProperties} onClick={onOpen} aria-haspopup="dialog" aria-label={spoken} title={name}>
-    <span className="sv-player-1">{abbr || short(team)} · {role === 'p' ? '투수' : '타자'} · <b>{name}</b></span>
-    <span className="sv-player-2">{stats}{extra ? ` · ${extra}` : ''}{today && <span className="sv-player-3">{today.text}</span>}</span>
+    <span className="sv-player-1">{abbr || short(team)} · #{info?.jersey ?? '–'}</span>
+    <span className="sv-player-name"><b>{name}</b> <small>{handed}</small></span>
+    <span className="sv-player-2">{stats}</span>
+    <span className="sv-player-3">{today?.text ?? (role === 'b' ? '–타수 · –안타 · –출루' : '–구 · –삼진 · –자책')}</span>
   </button>;
 }
 
@@ -108,8 +103,12 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const [sel, setSel] = useState<Selection | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [sheet, setSheet] = useState<'pa' | 'detail' | 'info' | 'box' | null>(null);
+  const [sheet, setSheet] = useState<'pa' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
+  const sheetOpener = useRef<HTMLElement | null>(null);
+  const openSheet = (kind: typeof sheet) => { sheetOpener.current = document.activeElement as HTMLElement; setSheet(kind); };
+  const closeSheet = () => { setSheet(null); const opener = sheetOpener.current; requestAnimationFrame(() => opener?.isConnected && opener.focus()); };
+  const [edges, setEdges] = useState({ left: false, right: false });
   const [busy, setBusy] = useState(false);
   const [unit, setUnit] = useState<'kmh' | 'mph'>(readUnit);
   const detailRef = useRef<Detail | null>(null);
@@ -138,7 +137,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, [gamePk]);
 
   useEffect(() => { void load(true, true); return () => inflight.current?.abort(); }, [load]);
-  const live = detail ? detail.game.status === 'live' || (detail.next !== null && detail.game.status !== 'final') : false;
+  const live = detail ? detail.session_status !== 'ended' && (detail.game.status === 'live' || (detail.next !== null && detail.game.status !== 'final')) : false;
   // Polling follows the viewer's switch only; the game's LIVE status decides whether there is anything to poll.
   useEffect(() => {
     if (!auto || !live) return;
@@ -156,8 +155,17 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // a pinned pitch that disappeared (demo seek back) falls back to latest
   useEffect(() => { if (detail && sel?.kind === 'pitch' && !detail.pitches.some(p => p.index === sel.index)) setSel({ kind: 'latest' }); }, [detail, sel]);
   // following the latest keeps the newest card in view; a pinned card never moves the strip
-  useEffect(() => { const el = stripRef.current; if (el && sel?.kind !== 'pitch') el.scrollLeft = el.scrollWidth; }, [sel, detail?.pitches.length]);
+  useEffect(() => { const el = stripRef.current; if (!el) return; if (sel?.kind !== 'pitch') el.scrollLeft = el.scrollWidth; else { const selected = el.querySelector<HTMLElement>('[aria-pressed="true"]'); if (selected) el.scrollLeft = selected.offsetLeft - el.offsetLeft - (el.clientWidth - selected.clientWidth) / 2; } }, [sel, detail?.pitches.length]);
   useEffect(() => { if (detail) document.title = `${short(detail.game.away_team)} 대 ${short(detail.game.home_team)} · 피치이지`; }, [detail?.game.away_team, detail?.game.home_team]);
+
+  useEffect(() => {
+    const el = stripRef.current; if (!el) return;
+    const measure = () => setEdges({ left: el.scrollLeft > 2, right: el.scrollWidth - el.clientWidth - el.scrollLeft > 2 });
+    const ro = new ResizeObserver(measure); ro.observe(el);
+    for (const child of el.children) ro.observe(child);
+    el.addEventListener('scroll', measure, { passive: true }); measure();
+    return () => { ro.disconnect(); el.removeEventListener('scroll', measure); };
+  }, [detail, sel]);
 
   const byIndex = useMemo(() => new Map(detail?.pitches.map(p => [p.index, p]) ?? []), [detail?.pitches]);
   if (!detail) {
@@ -198,37 +206,39 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const actualTitle = nextPhase ? `직전 투구${lastPitch ? ` · ${inningText(lastPitch.situation)} ${lastPitch.pitch_number}구` : ''}` : `실제 투구${pitch ? ` · ${pitch.pitch_number}구` : ''}`;
   const top = situation?.half === 'Top';
   const info = (p: Person | null) => p ? detail.players?.[String(p.id)] : undefined;
-  const openPa = () => setSheet('pa');
+  const openPa = () => openSheet('pa');
   const cands = rec?.status === 'ready' ? rec.candidates : [];
   const venue = game.venue ? `${game.venue} · ` : '';
   const when = `${dateHeading(game.kst_date)} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
   const emptyRec = nextPhase ? (detail.current?.phase === 'between_innings' ? '공수 교대 중' : detail.current?.phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
-  const list = <RecList rec={rec} emptyText={emptyRec} onOpen={() => setSheet('detail')} />;
-  // Game numbers as of the shown moment, counted only from pitches already revealed up to that moment (never later ones) and only
-  // when the history starts at the game's first pitch (a partial history would undercount, so then nothing is shown).
-  const shownIndex = latest ? lastPitch?.index ?? -1 : pitch!.index;
-  const fullHistory = pitches.length > 0 && pitches[0].index === 0;
-  const upTo = fullHistory ? pitches.filter(p => p.index <= shownIndex) : [];
-  const pitcherToday = fullHistory && pitcherP ? (() => { const n = upTo.filter(p => p.pitcher?.id === pitcherP.id).length;
-    return { text: `투구 수 ${n}`, spoken: latest ? `이 경기 지금까지 투구 수 ${n}개` : `이 공이 이 경기 ${n}번째 투구` }; })() : null;
-  // batter's PA ordinal from the revealed PA list (counts a 0-pitch intentional walk too), PAs up to the shown one only
-  const shownAb = detail.pas.find(p => p.pa_key === paKey)?.at_bat_number ?? null;
-  const batterToday = fullHistory && batterP && shownAb !== null && detail.pas.every(p => p.batter_id !== undefined) ? (() => {
-    const n = detail.pas.filter(p => p.batter_id === batterP.id && p.at_bat_number <= shownAb).length;
-    return n > 0 ? { text: `오늘 ${n}번째 타석`, spoken: `이 경기 ${n}번째 타석` } : null; })() : null;
+  const list = <RecList rec={rec} emptyText={emptyRec} onOpen={() => openSheet('detail')} />;
+  // New as-of player context is optional; absent fields stay unknown rather than guessed from an incomplete pitch list.
+  const context = latest ? detail.current_context : pitch?.context;
+  const fmt = (v: number | null | undefined) => typeof v === 'number' ? v : '–';
+  const bt = context?.batter;
+  const pt = context?.pitcher;
+  const batterToday = { text: `${fmt(bt?.at_bats)}타수 · ${fmt(bt?.hits)}안타 · ${fmt(bt?.on_base)}출루`, spoken: `이 시점까지 ${fmt(bt?.at_bats)}타수 ${fmt(bt?.hits)}안타 ${fmt(bt?.on_base)}출루` };
+  const pitcherToday = { text: `${fmt(pt?.pitches)}구 · ${fmt(pt?.strikeouts)}삼진 · ${fmt(pt?.earned_runs)}자책`, spoken: `이 시점까지 ${fmt(pt?.pitches)}구 ${fmt(pt?.strikeouts)}삼진 ${fmt(pt?.earned_runs)}자책` };
+  const upcoming = context?.next_batters ?? [];
+  const isDemo = detail.session !== null;
+  const statusLabel = isDemo && detail.session_status === 'ended' ? '시연 종료' : isDemo && detail.session_status === 'ready' && latest ? '시연 대기' : live ? (!latest || !auto ? '최신으로 ↗' : isDemo ? (detail.session_status === 'paused' ? '일시정지' : '시연 중') : 'LIVE') : game.status === 'final' ? '종료' : game.status === 'scheduled' ? '예정' : '대기';
+  const playerSheetSide = sheet === 'player-away' ? 'away' : 'home';
+  const playerRole = (playerSheetSide === 'away') === top ? 'b' : 'p';
+  const sheetPerson = playerRole === 'b' ? batterP : pitcherP;
+  const sheetInfo = info(sheetPerson);
 
   return <div className="sv-page sv-game">
     <header className="sv-top sv-head">
       <a className="sv-back" href={backHref()} aria-label="경기 목록으로">‹</a>
       <h1 className="sv-head-main" aria-label={`${short(game.away_team)} ${awayScore ?? '–'} 대 ${homeScore ?? '–'} ${short(game.home_team)}. ${venue}${dateHeading(game.kst_date)} ${kstTime(game.start)} 시작`}>
-        <span className="sv-head-score" aria-hidden="true"><span className="sv-tn">{short(game.away_team)}</span><strong>{awayScore ?? '–'}</strong><i>vs</i><strong>{homeScore ?? '–'}</strong><span className="sv-tn">{short(game.home_team)}</span></span>
+        <span className="sv-head-score" aria-hidden="true"><span className="sv-tn">{short(game.away_team)}</span><strong style={{ color: scoreColor(game.away_team) }}>{awayScore ?? '–'}</strong><i>vs</i><strong style={{ color: scoreColor(game.home_team) }}>{homeScore ?? '–'}</strong><span className="sv-tn">{short(game.home_team)}</span></span>
         <small aria-hidden="true">{game.venue && <span>{game.venue}</span>}<span>{when} KST</span></small>
       </h1>
-      <button className={`sv-live ${live ? 'on' : ''}`} onClick={goLatest}
-        aria-label={`${live ? '경기 진행 중' : game.status === 'final' ? '경기 종료' : '진행 중 아님'}. ${live ? '최신 공으로 가고 자동 갱신 켜기' : '마지막 공 보기'}${live ? (auto && latest ? ' (지금 최신·자동 갱신 중)' : ' (지금 자동 갱신 꺼짐)') : ''}`}>
-        <i aria-hidden="true" />LIVE</button>
+      <button className={`sv-live ${live && latest && auto && !isDemo ? 'on' : ''}`} onClick={live ? goLatest : undefined} disabled={!live}
+        aria-label={`${isDemo ? '지난 경기 시연. ' : ''}${statusLabel}${live ? ', 최신 공으로 이동하고 자동 갱신 켜기' : ''}`}>
+        {live && latest && auto && !isDemo && <i aria-hidden="true" />}{statusLabel}</button>
     </header>
-    {/* connection problems stay at the top (alert); the quiet 'past record' note sits at the very bottom (below the cards) */}
+    {/* Connection problems remain explicit alerts; history state is in the header. */}
     {(stale || error) && <p className="sv-notice warn" role="alert" title={error?.text}>
       {error ? '⚠ 연결 끊김' : '⏱ 갱신 늦어짐'}{lastOk ? ` · ${hhmm(lastOk)} 수신` : ''}<span className="sr-only">{error ? ` ${error.text}` : ''}{lastOk ? ` (${clockText(lastOk)})` : ''}</span>
         <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy}>{busy ? '…' : '다시'}</button>
@@ -236,13 +246,14 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
 
     <section className="sv-board" aria-label="경기 상황">
       <div className="sv-board-row">
-        {situation ? <button className="sv-inning" onClick={() => setSheet('box')} aria-haspopup="dialog" aria-label={`${inningText(situation)}, 이닝별 기록 보기`}>{situation.inning}회{situation.half === 'Top' ? '초' : '말'} ▾</button> : <span />}
+        {situation ? <button className="sv-inning" onClick={openPa} aria-haspopup="dialog" aria-label={`${inningText(situation)}, 타석 선택`}>{situation.inning}회{situation.half === 'Top' ? '초' : '말'} ▾<small>타석 선택</small></button> : <span />}
         {situation && <Count s={situation} />}
         {situation && <Bases mask={situation.bases} />}
+        <div className="sv-upcoming" aria-label="다음 두 타자">{[0, 1].map(i => <span key={i} title={upcoming[i]?.name ?? undefined}>{upcoming[i] ? `${upcoming[i].order}번 · ${upcoming[i].name ?? '타자 미확인'}` : '–번 · 타자 미확인'}</span>)}</div>
       </div>
       <div className="sv-players">
-        <PlayerCell side="away" team={game.away_team} abbr={game.away_abbr} role={top ? 'b' : 'p'} person={top ? batterP : pitcherP} hand={top ? batterP?.side : pitcherP?.hand} info={info(top ? batterP : pitcherP)} onOpen={openPa} today={top ? batterToday : pitcherToday} />
-        <PlayerCell side="home" team={game.home_team} abbr={game.home_abbr} role={top ? 'p' : 'b'} person={top ? pitcherP : batterP} hand={top ? pitcherP?.hand : batterP?.side} info={info(top ? pitcherP : batterP)} onOpen={openPa} today={top ? pitcherToday : batterToday} />
+        <PlayerCell side="away" team={game.away_team} abbr={game.away_abbr} role={top ? 'b' : 'p'} person={top ? batterP : pitcherP} hand={top ? batterP?.side : pitcherP?.hand} info={info(top ? batterP : pitcherP)} onOpen={() => openSheet('player-away')} today={top ? batterToday : pitcherToday} />
+        <PlayerCell side="home" team={game.home_team} abbr={game.home_abbr} role={top ? 'p' : 'b'} person={top ? pitcherP : batterP} hand={top ? pitcherP?.hand : batterP?.side} info={info(top ? pitcherP : batterP)} onOpen={() => openSheet('player-home')} today={top ? pitcherToday : batterToday} />
       </div>
     </section>
 
@@ -256,36 +267,45 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         {side && <div className={`sv-batband ${side === 'L' ? 'at-left' : 'at-right'}`}><Silhouette side={side} /></div>}
         <div className="sv-zone-wrap">
           <Zone bounds={detail.zone_bounds} candidates={cands}
-            actual={!nextPhase && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel={actual ? actualMark(actual, unit) : ''}
+            actual={!nextPhase && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel=""
             setupX={!nextPhase ? actual?.setup_x ?? null : null} keepOut=".sv-recband" />
         </div>
       </div>
-      {/* the selected pitch's RESULT, large; type and speed are on the actual mark in the zone (and spoken here with the unit) */}
-      {!nextPhase && <p className="sv-result">{actual ? <><span className="sr-only">실제 {actual.pitch_label}{actual.speed_mph !== null ? ` ${speedText(actual.speed_mph, unit)}` : ''}, 결과 </span>{ending ?? actual.result_label}</> : <span className="sv-muted">실제 투구 기록 없음</span>}</p>}
+      {!nextPhase && <div className="sv-actual-summary">{actual ? <>
+        <p className="sv-actual-caption"><i className="sv-key-actual" /><b>{actual.pitch_label}</b> {actual.speed_mph !== null && <><b>{unit === 'kmh' ? Math.round(actual.speed_mph * 1.609344) : actual.speed_mph.toFixed(1)}</b><small>{unit === 'kmh' ? 'km/h' : 'mph'}</small></>}</p>
+        <p className="sv-result">{ending ?? actual.result_label}</p>
+      </> : <p className="sv-muted">실제 투구 기록 없음</p>}</div>}
 
-      <div className="sv-strip" ref={stripRef} role="group" aria-label="이 타석의 투구">
+      <div className={`sv-strip-shell${edges.left ? ' fade-left' : ''}${edges.right ? ' fade-right' : ''}`}>
+      <div className="sv-strip" ref={stripRef} role="group" aria-label="이 타석의 투구, 좌우로 스크롤">
         {paPitches.map(p => { const on = !latest && pitch?.index === p.index; const a = p.actual;
           const sp = a?.speed_mph != null ? (unit === 'kmh' ? Math.round(a.speed_mph * 1.609344) : a.speed_mph.toFixed(1)) : '';
           return <button key={p.index} className={`sv-card ${on ? 'on' : ''}`} aria-pressed={on} onClick={() => pick(p.index)}
             aria-label={`${p.pitch_number}구 ${a?.pitch_label ?? '구종 미상'}${a?.speed_mph != null ? ` ${speedText(a.speed_mph, unit)}` : ''} ${a?.result_label ?? ''}`}>
             <Zone mini bounds={detail.zone_bounds} candidates={[]} actualLabel="" setupX={null} actual={a && a.x !== null && a.z !== null ? { x: a.x, z: a.z } : null} />
-            <span className="sv-card-cap" aria-hidden="true">{p.pitch_number}. {a?.pitch_type || '–'}{sp !== '' ? ` ${sp}` : ''}</span></button>; })}
+            <span className="sv-card-cap" aria-hidden="true"><span>{p.pitch_number}. {a?.pitch_label || '구종 미상'}</span><span>{sp || '–'} <small>{unit === 'kmh' ? 'km/h' : 'mph'}</small></span></span></button>; })}
         {nextPhase && nextNumber && paKey === detail.current?.pa_key && <button className="sv-card pending on" aria-pressed="true" onClick={goLatest} aria-label={`다음 공 ${nextNumber}구, 아직 안 던짐`}>
           <span className="sv-card-q" aria-hidden="true">?</span><span className="sv-card-cap" aria-hidden="true">{nextNumber}. 다음</span></button>}
       </div>
-      {!latest && <p className="sv-notice past" role="status">⏸ 지난 기록 · {inningText(pitch!.situation)} {pitch!.pitch_number}구<span className="sr-only">, 자동 갱신 꺼짐. LIVE를 누르면 최신으로 돌아가요.</span></p>}
+      </div>
     </section>
 
-    {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={() => setSheet(null)}
+    {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')}
       onPick={p => { setSheet(null); if ((live && p.pa_key === detail.current?.pa_key && !p.complete) || typeof p.first !== 'number' || !byIndex.has(p.first)) goLatest(); else pick(p.first); }} />}
     {/* a selected past pitch shows the linescore as of that pitch (never the latest one, which would reveal later play) */}
-    {sheet === 'box' && <BoxSheet ls={latest ? detail.linescore_asof : pitch!.line ?? null} game={game} at={situation} onClose={() => setSheet(null)} />}
-    {sheet === 'detail' && <DetailSheet onClose={() => setSheet(null)} rec={rec} recTitle={rec ? `${recTitle} (${provenanceText(rec)})` : recTitle}
+    {sheet === 'box' && <BoxSheet ls={latest ? detail.linescore_asof : pitch!.line ?? null} game={game} at={situation} onClose={closeSheet} />}
+    {sheet === 'detail' && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={rec} recTitle={rec ? `${recTitle} (${provenanceText(rec)})` : recTitle}
       actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} notes={detail.notes} speed={mph => speedText(mph, unit)}
       extra={<div className="sv-row"><button className="sv-btn" onClick={() => setSheet('info')}>기준과 한계 보기</button>
         <button className="sv-btn" onClick={() => { const u = unit === 'kmh' ? 'mph' : 'kmh'; setUnit(u); try { localStorage.setItem(UNIT_KEY, u); } catch { /* ignore */ } }}
           aria-label={`속도 단위 바꾸기, 지금 ${unit === 'kmh' ? 'km/h' : 'mph'}`}>속도 단위: {unit === 'kmh' ? 'km/h' : 'mph'}</button></div>} />}
-    {sheet === 'info' && <InfoSheet onClose={() => setSheet(null)} notes={detail.notes} />}
+    {(sheet === 'player-away' || sheet === 'player-home') && <Sheet title={sheetPerson?.name ?? '선수 정보'} onClose={closeSheet}>
+      <dl className="sv-dl"><dt>팀</dt><dd>{short(playerSheetSide === 'away' ? game.away_team : game.home_team)} · {playerRole === 'b' ? '타자' : '투수'}</dd>
+        <dt>등번호</dt><dd>#{sheetInfo?.jersey ?? '–'}</dd><dt>시즌 기록</dt><dd>{playerRole === 'b' ? `AVG ${stat3(sheetInfo?.avg)} · OPS ${stat3(sheetInfo?.ops)}` : `ERA ${era(sheetInfo?.era)}`}</dd>
+        <dt>오늘 기록</dt><dd>{playerRole === 'b' ? batterToday.text : pitcherToday.text}</dd></dl>
+      <p className="sv-muted">{sheetInfo?.stats_as_of ? `${sheetInfo.stats_as_of} 경기 전 시즌 기록` : '경기 전 시즌 기록 미확인'}. 오늘 기록은 현재 공식 피드의 해당 시점까지 사건을 재구성한 값으로 이후 기록 정정이 반영될 수 있습니다. 출루는 안타+볼넷+몸에 맞는 공입니다. 확인되지 않은 값은 –로 표시합니다.</p>
+    </Sheet>}
+    {sheet === 'info' && <InfoSheet onClose={closeSheet} notes={detail.notes} />}
   </div>;
 }
 
@@ -297,4 +317,12 @@ function TopBar({ right, title, label }: { right?: ReactNode; title?: string; la
     {title ? <h1 className="sv-title" aria-label={label}>{title}</h1> : <a className="sv-brand small" href="/watch">Pitcheezy<span>.</span></a>}
     <span className="sv-top-right">{right}</span>
   </header>;
+}
+
+/** Darken only low-contrast team colours for score text; team identity hue remains. */
+function scoreColor(team: string) {
+  const hex = teamColor(team); const rgb = [1,3,5].map(i => parseInt(hex.slice(i,i+2),16));
+  const lum = (v: number[]) => v.map(x => x / 255).map(x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4).reduce((a,x,i) => a+x*[.2126,.7152,.0722][i],0);
+  while ((.928 + .05) / (lum(rgb) + .05) < 4.5) for (let i=0;i<3;i++) rgb[i] = Math.floor(rgb[i] * .94);
+  return '#' + rgb.map(x=>x.toString(16).padStart(2,'0')).join('');
 }

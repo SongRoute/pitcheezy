@@ -1,16 +1,16 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Bounds, Candidate } from './model';
 
 /** PITCHER's-view strike zone (2026-10-06 user decision, matches the broadcast centre-field camera), the largest element of the game screen.
  *  Data stay in the contract's catcher-view feet (Statcast plate_x: + = catcher's right; zone ids 'left' = catcher's left;
  *  CV plate_x_feet the same). Only the drawing mirrors x: screen x = −plate_x. z, sizes and every coordinate in data-* are unchanged.
- *  Recommendation = hollow dashed SQUARE with its rank number; actual pitch = filled CIRCLE labelled '실제'.
+ *  Recommendation = hollow dashed SQUARE with its rank number; actual pitch = orange filled CIRCLE; name/speed live in the summary below.
  *  Shapes and words, not only colour, tell them apart. Mitt = dashed vertical line (x only, never height).
  *
- *  Geometry (integration rev3, after geometry-review-037): ONE linear transform feet → drawing units for every mark.
- *  The visible window is built from this batter's zone (half-width 0.83 ft, bounds.bottom..bounds.top) plus a fixed outside
- *  margin, so the whole zone always fits. A mark inside the window is drawn at its true position. A mark beyond the window
+ *  Geometry (integration rev3, after geometry-review-037): ONE axis-wise linear transform feet → drawing units for every mark. The main grid may be taller; minis retain physical aspect.
+ *  The visible window is built from this batter's zone (half-width 0.83 ft, bounds.bottom..bounds.top) plus an explicit outside margin: main x ±0.95 ft, full detail ±1.25 ft, mini ±1.17 ft.
+ *  This stable window never changes with the selected pitch; compact edge arrows do not represent measured coordinates. A mark inside the window is drawn at its true position. A mark beyond the window
  *  is NOT moved into view as a normal mark: it becomes a hollow edge marker with an outward arrow, placed on the window
  *  edge (which is always outside the zone), and its accessible text gives the true coordinates. Labels can move; marks don't. */
 export type Mark = { x: number; z: number };
@@ -21,21 +21,22 @@ const U = 100;  // drawing units per foot
 /** −1 = pitcher's view (screen right = catcher's left = third-base side). The only place the horizontal direction is decided. */
 export const VIEW_X = -1;
 const ux = (x: number) => VIEW_X * x * U;     // feet (catcher-view plate_x) → screen units
-const uz = (z: number) => -z * U;             // z up
+const uz = (z: number, aspect = 1) => -z * U * aspect;             // z up
 
-export function zoneWindow(bounds: Bounds, mini: boolean) {
-  const m = mini ? MARGIN.mini : MARGIN.main;
+export function zoneWindow(bounds: Bounds, mini: boolean, compact = false, fullWindow = false) {
+  const m = mini ? MARGIN.mini : fullWindow ? MARGIN.main : { x: .12, z: .45 };
+  const aspect = mini || fullWindow ? 1 : compact ? 1.8 : 1.4;
   const xMax = PLATE_HALF + m.x, zLo = bounds.bottom - m.z, zHi = bounds.top + m.z;
   // drawn area = window + a pad so an edge marker (and its arrow) is fully visible; the pad changes no coordinate or out-of-window rule
   const pad = mini ? .2 : .16;
-  return { margin: m, xMin: -xMax, xMax, zLo, zHi, vb: { x: -(xMax + pad) * U, y: uz(zHi + pad), w: 2 * (xMax + pad) * U, h: (zHi - zLo + 2 * pad) * U } };
+  return { aspect, margin: m, xMin: -xMax, xMax, zLo, zHi, vb: { x: -(xMax + pad) * U, y: uz(zHi + pad, aspect), w: 2 * (xMax + pad) * U, h: (zHi - zLo + 2 * pad) * U * aspect } };
 }
 /** Where a mark is drawn and whether it is beyond the window (then drawn as an edge marker, never a normal dot). */
 export function place(p: Mark, w: ReturnType<typeof zoneWindow>) {
   const out = p.x < w.xMin || p.x > w.xMax || p.z < w.zLo || p.z > w.zHi;
   const x = Math.max(w.xMin, Math.min(w.xMax, p.x)), z = Math.max(w.zLo, Math.min(w.zHi, p.z));
   // dx = SCREEN direction of the clipped-off part (feet direction × VIEW_X), used for the edge inset and the outward arrow
-  return { out, x: ux(x), y: uz(z), dx: VIEW_X * Math.sign(p.x - x), dz: Math.sign(p.z - z) };
+  return { out, x: ux(x), y: uz(z, w.aspect), dx: VIEW_X * Math.sign(p.x - x), dz: Math.sign(p.z - z) };
 }
 const ft = (p: Mark) => `가로 ${p.x.toFixed(2)}ft, 높이 ${p.z.toFixed(2)}ft`;
 
@@ -50,13 +51,15 @@ export function groupTargets(cands: Candidate[]): { x: number; z: number; ranks:
   return out;
 }
 
-export default function Zone({ bounds, candidates, actual, actualLabel, setupX, mini = false, keepOut = null }:
-  { bounds: Bounds; candidates: Candidate[]; actual: Mark | null; actualLabel: string; setupX: number | null; mini?: boolean;
+export default function Zone({ bounds, candidates, actual, actualLabel, setupX, mini = false, keepOut = null, fullWindow = false }:
+  { bounds: Bounds; candidates: Candidate[]; actual: Mark | null; actualLabel: string; setupX: number | null; mini?: boolean; fullWindow?: boolean;
     /** CSS selector of a sibling block (the recommendation band) painted over this svg element's top-left/right corner. The drawing
-     *  is scaled (never distorted) and bottom-aligned so it does not reach under that block. */
+     *  reserves horizontal room, and the recommendation block aligns with the grid top. */
     keepOut?: string | null }) {
-  const w = zoneWindow(bounds, mini);
-  const left = -PLATE_HALF * U, right = PLATE_HALF * U, top = uz(bounds.top), bottom = uz(bounds.bottom);  // symmetric, view-independent
+  const [compact, setCompact] = useState(() => window.innerWidth < 360);
+  useEffect(() => { const resize = () => setCompact(window.innerWidth < 360); window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize); }, []);
+  const w = zoneWindow(bounds, mini, compact && !fullWindow, fullWindow);
+  const left = -PLATE_HALF * U, right = PLATE_HALF * U, top = uz(bounds.top, w.aspect), bottom = uz(bounds.bottom, w.aspect);  // symmetric, view-independent
   const groups = groupTargets(candidates).map(g => ({ ...g, at: place(g, w) }));
   const act = actual ? place(actual, w) : null;
   const parts = [...groups.map(g => `추천 ${g.ranks.join('·')}순위 위치 네모${g.at.out ? `(화면 밖 ${ft(g)})` : ''}`),
@@ -75,37 +78,27 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
       const r = el.getBoundingClientRect(); if (!r.width || !r.height) return;
       const PAD = mini ? 0 : 8;  // px kept free above and below the drawing (edge arrows and labels near the window edge)
       const W = r.width, H = r.height, k1 = Math.min(W / w.vb.w, (H - 2 * PAD) / w.vb.h);
-      let k = k1, kb: DOMRect | null = null, bh = 0, lift = 0;
-      if (block) {
-        const b = block.getBoundingClientRect(); const gap = 8;
-        // the band is positioned by this component (below), so only its size and horizontal reach are read here (no feedback loop)
-        const left = b.left < r.left + W / 2, bx = Math.max(0, left ? b.right - r.left : r.right - b.left) + gap; bh = b.height + gap;
-        if (b.width && bx > gap && bh > gap) { kb = b;
-          // The band may come down over the drawing's empty top margin, but only to just above the highest PAINTED item in its
-          // horizontal reach: the zone box (and mitt line) or any mark there. Marks never move; labels avoid the band box (ko).
-          const paintedTop = (kk: number) => { const dw = w.vb.w * kk, reach = (bx - (W - dw) / 2) / kk;  // band reach into the drawing, units
-            const inReach = (xu: number, half: number) => left ? xu - half - w.vb.x < reach : w.vb.x + w.vb.w - (xu + half) < reach;
-            let top = uz(bounds.top) - 6 / kk;  // zone top incl. the mitt line overhang
-            for (const g of groupTargets(candidates)) { const q = place(g, w); if (inReach(q.x, 22 / kk)) top = Math.min(top, q.y - 36 / kk); }  // square + rank number
-            if (actual) { const q = place(actual, w); if (inReach(q.x, 12 / kk)) top = Math.min(top, q.y - 12 / kk); }
-            return Math.max(0, top - w.vb.y); };
-          let liftU = paintedTop(k1);
-          const below = Math.min(k1, (H - bh - 2 * PAD) / (w.vb.h - liftU)), beside = Math.min(k1, (W - 2 * bx) / w.vb.w);  // either one keeps it clear
-          k = Math.max(0.01, below, beside); liftU = paintedTop(k); lift = below >= beside ? liftU * k : 0; }
-      }
-      // below the band: band + drawing form one group centred vertically (band just above the highest painted item); otherwise the
-      // drawing is centred and the band (clear of it sideways) starts at the drawing's top
-      const dh = w.vb.h * k, free = H - bh - 2 * PAD - (dh - lift), stacked = !!kb && free >= -0.5;
-      const groupTop = stacked ? PAD + Math.max(0, free) / 2 : 0, topPx = stacked ? groupTop + bh - lift : (H - dh) / 2, bandTop = stacked ? groupTop : Math.max(0, topPx);
+      let k = k1;
       const row = el.closest<HTMLElement>('.sv-zrow');
+      const b = block?.getBoundingClientRect();
+      // Reserve space beside the grid for recommendation rows, aligned to its top edge.
+      if (b && row) {
+        const rr = row.getBoundingClientRect();
+        const sideRoom = rr.width / 2 - b.width - 4;
+        // A stable visible window reserves room for the outside-zone dot/arrow too. It never depends on the selected pitch.
+        k = Math.max(.01, Math.min(k1, (sideRoom - 8) / (w.xMax * U)));
+      }
+      const dh = w.vb.h * k, topPx = (H - dh) / 2;
+      const bandTop = topPx + (uz(bounds.top, w.aspect) - w.vb.y) * k;
       if (row && !mini) { const off = r.top - row.getBoundingClientRect().top;
-        row.style.setProperty('--sv-band-top', `${Math.round(off + bandTop)}px`); row.style.setProperty('--sv-zone-mid', `${Math.round(off + topPx + dh / 2)}px`); }
+        row.style.setProperty('--sv-band-top', `${off + bandTop}px`);
+        row.style.setProperty('--sv-zone-mid', `${off + topPx + dh / 2}px`); }
       const vw = W / k, vh = H / k, x0 = w.vb.x - (vw - w.vb.w) / 2, y0 = w.vb.y - topPx / k;
       setScale(k);
-      setFit({ x: x0, y: y0, w: vw, h: vh, ko: kb ? { x: x0 + (kb.left - r.left) / k, y: y0 + bandTop / k, w: kb.width / k, h: kb.height / k } : null });
+      setFit({ x: x0, y: y0, w: vw, h: vh, ko: b ? { x: x0 + (b.left - r.left) / k, y: y0 + bandTop / k, w: b.width / k, h: b.height / k } : null });
     };
     measure(); const ro = new ResizeObserver(measure); ro.observe(el); if (block) ro.observe(block); return () => ro.disconnect();
-  }, [w.vb.w, w.vb.h, w.vb.x, w.vb.y, keepOut, mini, bounds.top, JSON.stringify(candidates.map(c => c.target)), actual?.x, actual?.z]);
+  }, [w.vb.w, w.vb.h, w.vb.x, w.vb.y, keepOut, mini, bounds.top, JSON.stringify(candidates.map(c => c.target)), actual?.x, actual?.z, setupX, w.aspect]);
   const room = fit ?? { x: w.vb.x, y: w.vb.y, w: w.vb.w, h: w.vb.h, ko: null };
   // free space under the lowest PAINTED item (marks, labels, zone) inside the zone row, published as --sv-below so the result line
   // can sit midway between the zone and the cards (display only; read after every render, no React state)
@@ -172,7 +165,7 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
   const textPx = [...actualLabel].reduce((a, ch) => a + (/[\uac00-\ud7a3]/.test(ch) ? 15 : ch === ' ' ? 4.5 : 9.3), 0);
   const labW = u(Math.max(30, textPx + 6));
   const actLabel = (() => {
-    if (!actD || mini) return null;
+    if (!actD || mini || !actualLabel) return null;
     const o = Math.max(rD, half) + u(4), so = Math.max(rD, ...recs.map(g => g.hw), u(9)) + u(4), cands = [[0, o + lh - u(2)], [0, -o - u(3)], [so + labW / 2, u(5)], [-so - labW / 2, u(5)], [so + labW / 2, -o], [-so - labW / 2, -o], [so + labW / 2, o + lh], [-so - labW / 2, o + lh], [0, 2 * o + lh], [0, -2 * o], [0, 3 * o + lh], [0, -3 * o]];
     const avoid = [...recBoxes, ...(mittLabel.box ? [mittLabel.box] : []), ...(dotBox ? [dotBox] : [])];
     let first: { x: number; y: number } | null = null;

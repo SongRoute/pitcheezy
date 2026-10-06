@@ -15,9 +15,13 @@ export type Actual = { pitch_type: string | null; pitch_label: string; descripti
   event: string | null; event_label: string | null; play_text: string | null; speed_mph: number | null; x: number | null; z: number | null; zone_label: string;
   /** CV catcher setup, horizontal only, present only after the actual pitch (never height / zone cell). */
   setup_x: number | null };
+export type PlayerContext = { batter: { at_bats: number | null; hits: number | null; on_base: number | null } | null;
+  pitcher: { pitches: number | null; strikeouts: number | null; earned_runs: number | null } | null;
+  basis?: string; next_batters: { id: number | null; name: string | null; order: number }[] };
 export type PitchRow = { index: number; key: string; pa_key: string; at_bat_number: number; pitch_number: number;
   situation: Situation; batter: Person & { side: string }; pitcher: Person & { hand: string }; rec: Rec; actual: Actual | null;
   /** linescore as of just before this pitch (server `linescore_before`); null when the backend does not send it. */
+  context?: PlayerContext | null;
   line?: Linescore | null };
 export type GameStatus = 'scheduled' | 'live' | 'final' | 'postponed' | 'other';
 export type GameCard = { game_pk: number; start: string | null; kst_date: string; status: GameStatus; status_text: string;
@@ -28,8 +32,8 @@ export type GameCard = { game_pk: number; start: string | null; kst_date: string
 export type Phase = 'pregame' | 'pre_pitch' | 'resolving' | 'between_innings' | 'final';
 export type Current = { phase: Phase; situation: Situation; batter: (Person & { side: string }) | null; pitcher: (Person & { hand: string }) | null; pa_key: string | null };
 export type Pa = { pa_key: string; at_bat_number: number; inning: number; half: Half; batter: string; pitcher: string;
-  first: number; last: number; complete: boolean; result: string; batter_id?: number | null };
-export type Detail = { game: GameCard; pitches: PitchRow[]; pas: Pa[]; current: Current | null; next: Rec | null; cutoff: number | null; session: string | null;
+  first: number; last: number; complete: boolean; result: string; batter_id?: number | null; batting_order?: number | null; pitch_count?: number | null };
+export type Detail = { current_context?: PlayerContext | null; session_status?: string | null; game: GameCard; pitches: PitchRow[]; pas: Pa[]; current: Current | null; next: Rec | null; cutoff: number | null; session: string | null;
   feed: { as_of: string | null; ok: boolean; stale_s: number | null }; zone_bounds: Bounds; notes: string[];
   /** rev3 optional: half-innings computed from plays published up to the cutoff only; null cell = not reached yet. */
   linescore_asof?: Linescore | null;
@@ -138,9 +142,9 @@ export function groupPas(pitches: PitchRow[], current: Current | null): Pa[] {
  *  (Zone.tsx VIEW_X), so left/right words are swapped for display; the zone id and coordinates are untouched. */
 /** Korean names for Statcast codes the server's PITCH_LABELS lacks (it then sends the feed's English description or the bare code).
  *  Display only; an unknown code shows as the code itself, never an English full name. Approved by Root 2026-10-06 (CONTRACT-AUDIT §4). */
-const EXTRA_PITCH_NAMES: Record<string, string> = { CS: '슬로 커브', FO: '포크볼', FA: '패스트볼', KN: '너클볼', EP: '이퓨스', SC: '스크루볼' };
+const EXTRA_PITCH_NAMES: Record<string, string> = { FF:'포심', SI:'싱커', FC:'커터', SL:'슬라이더', ST:'스위퍼', CU:'커브', KC:'너클 커브', CH:'체인지업', FS:'스플리터', SV:'슬러브', CS: '슬로 커브', FO: '포크볼', FA: '패스트볼', KN: '너클볼', EP: '이퓨스', SC: '스크루볼' };
 export const pitchName = (label: string | null | undefined, code: string | null | undefined) =>
-  label && /[가-힣]/.test(label) ? label : (code && EXTRA_PITCH_NAMES[code]) || code || label || '구종 미상';
+  label && /[가-힣]/.test(label) ? label : (code && EXTRA_PITCH_NAMES[code]) || label || code || '구종 미상';
 export const pitcherSide = (label: string) => label.replace(/왼쪽|오른쪽/g, w => w === '왼쪽' ? '오른쪽' : '왼쪽');
 export const plainZone = (label: string) => pitcherSide(label.replace('가운데 높이 중앙', '한가운데').replace('가운데 높이 ', '가운데 '));
 export const policyShare = (p: number | null) => p === null ? '—' : `${Math.round(p * 100)}%`;

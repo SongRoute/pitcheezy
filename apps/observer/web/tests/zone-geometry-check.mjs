@@ -44,7 +44,7 @@ const rows = [];
 for (const [w, h] of [[375, 667], [320, 568]]) for (const [bn, B] of Object.entries(BOUNDS)) for (const pt of PROBES) {
   const { c, m } = await shot(w, h, B, pt);
   const strikeX = Math.abs(pt[0]) <= .83, strikeZ = pt[1] >= B.bottom && pt[1] <= B.top;
-  for (const [view, mg] of [['main', { x: .42, z: .45 }], ['mini', { x: .34, z: .36 }]]) {
+  for (const [view, mg] of [['main', { x: .12, z: .45 }], ['mini', { x: .34, z: .36 }]]) {
     const r = m[view]; if (!r) { ok(false, `${view} missing`, pt); continue; }
     const inWin = Math.abs(pt[0]) <= .83 + mg.x && pt[1] >= B.bottom - mg.z && pt[1] <= B.top + mg.z;
     const tag = `${w}x${h} ${bn} ${view} (${pt})`;

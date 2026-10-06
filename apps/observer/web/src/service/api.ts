@@ -80,12 +80,12 @@ function pitchRow(raw: Raw, provenance: Rec['provenance']): PitchRow {
     at_bat_number: raw.at_bat_number, pitch_number: raw.pitch_number,
     situation: { ...before, inning: raw.inning ?? before.inning, half: raw.half ?? before.half } as Situation,
     batter: raw.batter, pitcher: raw.pitcher, rec: normalizeRec(raw.rec ?? raw.pre, provenance), actual: actual(raw.actual),
-    line: linescoreRev3(raw.linescore_before) };
+    context: raw.context_before ?? null, line: linescoreRev3(raw.linescore_before) };
 }
 function pa(raw: Raw): Pa {
   return { pa_key: raw.pa_key, at_bat_number: raw.at_bat_number, inning: raw.inning, half: raw.half,
     batter: raw.batter?.name ?? '타자 미상', pitcher: raw.pitcher?.name ?? '투수 미상', first: raw.first_index, last: raw.last_index,
-    complete: raw.complete === true, batter_id: typeof raw.batter?.id === 'number' ? raw.batter.id : null,
+    batting_order: num(raw.batting_order), pitch_count: num(raw.pitch_count), complete: raw.complete === true, batter_id: typeof raw.batter?.id === 'number' ? raw.batter.id : null,
     result: raw.complete === true ? raw.result_text ?? raw.event_label ?? '결과 기록 없음' : '타석 진행 중' };
 }
 /** main.py catch-all answer for an /api path the running backend does not have (older deployment). */
@@ -158,7 +158,7 @@ export function normalizeDetail(raw: Raw): Detail {
   const current: Current | null = cur?.situation ? { phase: cur.phase ?? 'pre_pitch', situation: cur.situation, batter: cur.batter ?? null,
     pitcher: cur.pitcher ?? null, pa_key: cur.pa_key ?? null } : null;
   const nextRaw = raw.next?.rec ?? null;
-  return { game: normalizeCard(raw.game), pitches, pas: Array.isArray(raw.pas) ? raw.pas.map(pa) : groupPas(pitches, current), current,
+  return { session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game: normalizeCard(raw.game), pitches, pas: Array.isArray(raw.pas) ? raw.pas.map(pa) : groupPas(pitches, current), current,
     next: raw.next ? normalizeRec(nextRaw, provenance === 'captured_live' ? 'captured_live' : 'asof_replay') : null,
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
     zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),

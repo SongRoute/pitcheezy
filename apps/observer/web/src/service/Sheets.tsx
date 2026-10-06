@@ -1,19 +1,31 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Actual, Candidate, Pa, Rec } from './model';
 import { halfText, policyShare } from './model';
+import Zone from './Zone';
+import type { Bounds } from './model';
 
 /** Bottom sheet: the only place with inner scrolling. Esc / backdrop / 닫기 close it and focus returns to the opener. */
 export function Sheet({ title, onClose, children, labelledBy = 'sv-sheet-title' }: { title: string; onClose: () => void; children: ReactNode; labelledBy?: string }) {
   const box = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     box.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); closeRef.current(); }
+      if (e.key === 'Tab') {
+        const nodes = [...(box.current?.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],select,input,[tabindex="0"]') ?? [])];
+        const first = nodes[0], last = nodes[nodes.length - 1];
+        if (!first) { e.preventDefault(); return; }
+        if (e.shiftKey && (document.activeElement === first || document.activeElement === box.current)) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (document.activeElement === last || document.activeElement === box.current)) { e.preventDefault(); first.focus(); }
+      }
+    };
     window.addEventListener('keydown', onKey);
     document.body.classList.add('sv-locked');
     return () => { window.removeEventListener('keydown', onKey); document.body.classList.remove('sv-locked'); opener?.focus?.(); };
-  }, [onClose]);
+  }, []);
   return <div className="sv-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div className="sv-sheet" role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1} ref={box}>
       <div className="sv-sheet-head"><h2 id={labelledBy}>{title}</h2><button className="sv-btn" onClick={onClose}>닫기</button></div>
@@ -37,21 +49,22 @@ export function InfoSheet({ onClose, notes }: { onClose: () => void; notes: stri
   </Sheet>;
 }
 
-export function PaSheet({ pas, selected, onPick, onClose }: { pas: Pa[]; selected: string | null; onPick: (pa: Pa) => void; onClose: () => void }) {
-  const list = useRef<HTMLOListElement>(null);
-  useEffect(() => { list.current?.querySelector<HTMLElement>('[aria-current="true"]')?.scrollIntoView({ block: 'center' }); }, []);
-  let lastHalf = '';
-  return <Sheet title={`전체 타석 (${pas.length})`} onClose={onClose}>
-    <ol className="sv-pa-list" ref={list}>{pas.map(pa => {
-      const half = `${pa.inning}회 ${halfText(pa.half)}`, heading = half !== lastHalf; lastHalf = half;
-      return <li key={pa.pa_key}>
-        {heading && <h3 className="sv-pa-half">{half}</h3>}
-        <button className={`sv-pa-item ${pa.complete ? '' : 'open'}`} aria-current={pa.pa_key === selected ? 'true' : undefined} onClick={() => onPick(pa)}>
-          <span className="sv-pa-who">{half} · <b>{pa.batter}</b> @ {pa.pitcher}</span>
-          <span className="sv-pa-result">{pa.result}</span>
-        </button>
-      </li>;
-    })}</ol>
+export function PaSheet({ pas, selected, onPick, onClose, onBox }: { pas: Pa[]; selected: string | null; onPick: (pa: Pa) => void; onClose: () => void; onBox: () => void }) {
+  const current = pas.find(p => p.pa_key === selected) ?? pas[0];
+  const key = (p: Pa) => `${p.inning}:${p.half}`;
+  const [half, setHalf] = useState(current ? key(current) : '');
+  const halves = [...new Map(pas.map(p => [key(p), p])).entries()];
+  const visible = pas.filter(p => key(p) === half);
+  return <Sheet title="타석 선택" onClose={onClose}>
+    <div className="sv-pa-controls"><label>이닝 <select aria-label="이닝과 초말 선택" value={half} onChange={e => setHalf(e.target.value)}>
+      {halves.map(([k,p]) => <option key={k} value={k}>{p.inning}회 {halfText(p.half)}</option>)}
+    </select></label><button className="sv-btn" onClick={onBox}>박스스코어</button></div>
+    <ol className="sv-pa-list">{visible.map(pa => <li key={pa.pa_key}>
+      <button className={`sv-pa-item ${pa.complete ? '' : 'open'}`} aria-current={pa.pa_key === selected ? 'true' : undefined} onClick={() => onPick(pa)}>
+        <span className="sv-pa-who">{pa.batting_order ? `${pa.batting_order}번 · ` : ''}<b>{pa.batter}</b>{pa.pa_key === selected && <small> · 보는 중</small>}</span>
+        <span className="sv-pa-result">{pa.result} · {pa.pitch_count ?? (Number.isFinite(pa.first) && Number.isFinite(pa.last) ? Math.max(0, pa.last - pa.first + 1) : '–')}구</span>
+      </button></li>)}</ol>
+    {!visible.length && <p className="sv-muted">공개된 타석이 아직 없어요.</p>}
   </Sheet>;
 }
 
@@ -62,8 +75,8 @@ const PROVENANCE: Record<Rec['provenance'], string> = {
 };
 export const provenanceText = (rec: Rec) => PROVENANCE[rec.provenance];
 
-export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra }:
-  { onClose: () => void; rec: Rec | null; recTitle: string; actual: Actual | null; actualTitle: string; paResult: string | null; notes: string[]; speed: (mph: number | null) => string; extra?: ReactNode }) {
+export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds }:
+  { onClose: () => void; rec: Rec | null; recTitle: string; actual: Actual | null; actualTitle: string; paResult: string | null; notes: string[]; speed: (mph: number | null) => string; extra?: ReactNode; bounds?: Bounds }) {
   return <Sheet title="자세히" onClose={onClose}>
     <section className="sv-detail">
       <h3>{recTitle}</h3>
@@ -78,9 +91,10 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
     </section>
     <section className="sv-detail">
       <h3>{actualTitle}</h3>
+      {actual && bounds && <div className="sv-detail-zone"><Zone fullWindow bounds={bounds} candidates={rec?.candidates ?? []} actual={actual.x !== null && actual.z !== null ? {x:actual.x,z:actual.z} : null} actualLabel="" setupX={actual.setup_x} /></div>}
       {actual === null ? <p className="sv-muted">아직 던지지 않았어요.</p> : <dl className="sv-dl">
         <dt>구종</dt><dd>{actual.pitch_label}{actual.speed_mph !== null ? ` · ${speed(actual.speed_mph)}` : ''}</dd>
-        <dt>판정</dt><dd>{actual.result_label || '기록 없음'}</dd>
+        <dt>원본 좌표</dt><dd>{actual.x !== null && actual.z !== null ? `가로 ${actual.x.toFixed(2)} ft · 높이 ${actual.z.toFixed(2)} ft (포수 기준)` : '위치 정보 없음'}</dd><dt>판정</dt><dd>{actual.result_label || '기록 없음'}</dd>
         <dt>위치</dt><dd>{actual.zone_label || '위치 정보 없음'}</dd>
         {paResult && <><dt>타석 결과</dt><dd>{paResult}</dd></>}
         {actual.play_text && <><dt>원본 기록</dt><dd lang="en">{actual.play_text}</dd></>}
