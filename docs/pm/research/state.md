@@ -1,6 +1,6 @@
 # 연구 PM 상태·실행 큐
 
-초기값: 2026-10-06 09:46–09:48 감사에서 이관. 아래는 실시간 프로세스 상태가 아니다. 책임 연구 PM(Astra), 실제 기록은 지정 작업자. `/root/research_pm`이 이 전환 턴에 관리 역할 인수를 회신했다. 기존 작업자 `/root/status_research`(Astra)에 P47 준비를 followup으로 실제 배정했으며, 경로 생성·코드 작업·fit 시작 증거는 아직 없다. 새 Sol 호출은 `agent thread limit reached`로 실패했고 Sol 실행/쿼터 소진으로 기록하지 않는다.
+초기값: 2026-10-06 09:46–09:48 감사에서 이관. 아래는 실시간 프로세스 상태가 아니다. 책임 연구 PM(Astra), 실제 기록은 지정 작업자. `/root/research_pm`이 이 전환 턴에 관리 역할 인수를 회신했다. 기존 작업자 `/root/status_research`(Astra)에 P47 준비를 followup으로 실제 배정했으며, 작업자가 10:37:40 KST 착수·기준88860a40c3629b483db28d3eb689f4a73492ce13을 확인했다. 작업트리 `/Users/song/Projects/pitcheezy-worktrees/codex-p47-prep-astra-20261006`, 증거 `/Users/song/Projects/pitcheezy-pm-jobs/20261006-p47/prep-astra-001`. 준비 작업 진행 중이며 fit은 시작하지 않았다. 새 Sol 호출은 `agent thread limit reached`로 실패했고 Sol 실행/쿼터 소진으로 기록하지 않는다.
 
 최근90fit 완료·실패0(전체 누계 아님), 연구 G15 mix·서비스 G0, D131/D155 유지. 선수ID는 미지 선수 악화 가능, dropout 후속 후보. P47은 아직 초안·미등록·미실행. 당시 GPU0%·MPSfit 없음.
 
