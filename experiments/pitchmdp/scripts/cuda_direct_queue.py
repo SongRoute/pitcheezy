@@ -1,6 +1,6 @@
 """DRAFT persistent queue for DRAFT-CUDA-DIRECT-20261004 on newsrv (stdlib only).
 
-Predeclared tasks = registered arms x seeds (priority 1 first).  At most two GPUs,
+Predeclared tasks = registered arms x seeds (priority 1 first).  At most five GPUs,
 each from the config allow-list, each guarded by an exclusive flock; one task per
 GPU.  Every task runs run_cuda_direct.py in its OWN process group bound to its GPU
 UUID.  Fail closed before launching anything if the config/export/runner identity
@@ -134,9 +134,9 @@ class Queue:
                  clock=lambda: datetime.now(KST), sleep=time.sleep, poll=5., grace=20., before_launch=None):
         q = config['queue']
         allowed = config['device']['allowed_gpu_uuids']
-        if not gpus or len(gpus) > min(2, config['device']['max_parallel']) or len(set(gpus)) != len(gpus) \
+        if not gpus or len(gpus) > min(5, config['device']['max_parallel']) or len(set(gpus)) != len(gpus) \
                 or any(g not in allowed for g in gpus):
-            raise ValueError('One or two distinct GPUs from the allow-list only')
+            raise ValueError('One to five distinct GPUs from the allow-list, within max_parallel only')
         self.config, self.dir, self.gpus = config, Path(queue_dir), list(gpus)
         self.command_for, self.is_complete, self.before_launch = command_for, is_complete, before_launch
         self.deadlines, self.clock, self.sleep, self.poll, self.grace = Deadlines(q), clock, sleep, poll, grace
