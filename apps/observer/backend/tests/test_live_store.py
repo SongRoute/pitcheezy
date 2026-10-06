@@ -145,7 +145,7 @@ def test_a_failing_store_keeps_serving_from_memory_and_says_so(tmp_path):
                               clock=lambda: now[0], wall=lambda: now[0], sleep=lambda _: None)
     with TestClient(app_for(live)) as client:
         body = client.get(f'/api/live/{GAME}/state').json()
-    assert body['status'] == 'ready' and body['sync']['store_ok'] is False and 'disk I/O' in live.store_error
+    assert body['status'] == 'ready' and body['sync']['store_ok'] is False and 'OperationalError' in live.store_error
 
 
 def test_an_unopenable_store_path_still_serves_live_from_memory(tmp_path, monkeypatch):

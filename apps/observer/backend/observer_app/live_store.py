@@ -30,6 +30,7 @@ import logging
 from pathlib import Path
 import re
 import sqlite3
+import zlib
 
 from .live_feed import LiveFeed, event_wall
 
@@ -83,10 +84,10 @@ class LiveSnapshotStore:
                 raise
             db.execute('COMMIT')
 
-    def ingest(self, game_pk, feed, *, fetched, source):
+    def ingest(self, game_pk, feed, *, fetched, source, slot_event=None):
         """Returns (outcome, entry); ``entry`` is the ``LiveFeed`` buffer entry for the slot (None if stale)."""
         game_pk, body = int(game_pk), _canonical(feed)
-        event, sha = event_wall(feed), hashlib.sha256(body).hexdigest()
+        event, sha = event_wall(feed) if slot_event is None else slot_event, hashlib.sha256(body).hexdigest()
         event = fetched if event is None else min(event, fetched)
         feed_ts = (feed.get('metaData') or {}).get('timeStamp')
         with self._write() as db:
@@ -159,27 +160,50 @@ class PersistentLiveFeed(LiveFeed):
     def __init__(self, transport, *, store, **options):
         super().__init__(transport, **options)
         self.store, self.store_error, self.stale = store, None, {}
+        self._unsaved = set()
+        self._restore_failed = False
 
     def _buffer(self, game_pk):
         if game_pk not in self.buffers:
             try:
                 self.buffers[game_pk] = self.store.restore(game_pk, self.wall(), self.max_delay_s)
-            except sqlite3.Error as exc:
+            except (sqlite3.Error, OSError, EOFError, ValueError, zlib.error) as exc:
+                self._restore_failed = True
                 self._failed('restore', exc)
                 self.buffers[game_pk] = []
         return self.buffers[game_pk]
 
     def _failed(self, operation, exc):
-        self.store_error = f'{operation}: {type(exc).__name__}: {exc}'
+        self.store_error = f'{operation}: {type(exc).__name__}'
         LOGGER.warning('live store %s failed; serving from memory only', operation, exc_info=True)
 
     def _accept(self, game_pk, feed, wall, buffer):
+        # Reject stale input against memory too: it may be ahead of disk after an outage.
+        feed_ts = (feed.get('metaData') or {}).get('timeStamp')
+        newest_ts = (buffer[-1]['feed'].get('metaData') or {}).get('timeStamp') if buffer else None
+        stale = bool(buffer and (event_wall(feed) or wall) <= buffer[-1]['event']
+                     and feed_ts and newest_ts and feed_ts < newest_ts)
         try:
+            if game_pk in self._unsaved:
+                # ponytail: resync only the bounded delay window; pruned outage history is not recoverable.
+                for saved in buffer:
+                    self.store.ingest(game_pk, saved['feed'], fetched=saved['fetched'], source='memory_recovery', slot_event=saved['event'])
+                self._unsaved.discard(game_pk)
+            if stale:
+                self.stale[game_pk] = self.stale.get(game_pk, 0)+1
+                if not self._unsaved and not self._restore_failed:
+                    self.store_error = None
+                return
             outcome, entry = self.store.ingest(game_pk, feed, fetched=wall, source='live_poll')
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, OSError) as exc:
+            self._unsaved.add(game_pk)
             self._failed('ingest', exc)
+            if stale:
+                self.stale[game_pk] = self.stale.get(game_pk, 0)+1
+                return
             return super()._accept(game_pk, feed, wall, buffer)
-        self.store_error = None
+        if not self._unsaved and not self._restore_failed:
+            self.store_error = None
         if outcome == 'stale':  # an older feed answered late: never rewind what viewers already saw
             self.stale[game_pk] = self.stale.get(game_pk, 0)+1
         elif buffer and entry['event'] == buffer[-1]['event']:

@@ -182,7 +182,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                          'watch_games': len(watch.games()), 'live_policy': policy}}
         if os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE'):
             feed = live['feed']
-            body['live_store'] = {'path': os.environ['PITCHEEZY_OBSERVER_LIVE_STORE'], 'started': hasattr(feed, 'store'),
+            body['live_store'] = {'configured': True, 'started': hasattr(feed, 'store'),
                                   'error': getattr(feed, 'store_error', None), 'games_buffered': sorted(getattr(feed, 'buffers', {}))}
         return body
 
@@ -293,7 +293,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 except (OSError, sqlite3.Error) as exc:  # unopenable store: serve live from memory, health says why
                     LOGGER.warning('live store %s unavailable; serving from memory only', store, exc_info=True)
                     live['feed'] = LiveFeed(transport, **options)
-                    live['feed'].store_error = f'open: {type(exc).__name__}: {exc}'
+                    live['feed'].store_error = f'open: {type(exc).__name__}'
             else:
                 live['feed'] = LiveFeed(transport, **options)
         return live['feed']

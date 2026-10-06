@@ -23,6 +23,11 @@ mkdir -p "$DIR/backups"
 export PYTHONPATH="$APP/backend" PYTHONUNBUFFERED=1
 
 running() { [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; }
+owned() {
+  [ -f "$DIR/server.identity" ] || return 1
+  ps -p "$(cat "$PID")" -o lstart=,command= > "$DIR/server.current"
+  cmp -s "$DIR/server.identity" "$DIR/server.current"
+}
 
 launch() {  # $1 = store|nostore
   if running; then echo "already running: pid $(cat "$PID")" >&2; exit 1; fi
@@ -48,6 +53,7 @@ launch() {  # $1 = store|nostore
   until curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; do
     i=$((i+1)); [ $i -lt 50 ] || { echo "no health after 10 s; see $LOG" >&2; exit 1; }; sleep 0.2
   done
+  ps -p "$(cat "$PID")" -o lstart=,command= > "$DIR/server.identity"
   echo "started pid $(cat "$PID") on 127.0.0.1:$PORT ($1)"
 }
 
@@ -55,6 +61,7 @@ case "${1:-}" in
   start) launch store ;;
   nostore) launch nostore ;;
   stop)
+    if running && ! owned; then echo "refusing to stop unowned pid" >&2; exit 1; fi
     if running; then kill "$(cat "$PID")"; while running; do sleep 0.2; done; echo "stopped pid $(cat "$PID")"; fi
     rm -f "$PID" ;;
   status) running && echo "running pid $(cat "$PID")" || echo stopped; "$PY" -m observer_app.live_store status --db "$DB" ;;
