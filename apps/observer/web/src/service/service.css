@@ -470,3 +470,29 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 .sv-upcoming span{font-size:12px}
 @media(max-height:700px){.sv-stage{padding-top:4px}.sv-pitch-summary{min-height:86px}.sv-context{margin-top:5px}}
 @media(max-width:359px){.sv-board-row{grid-template-columns:auto 1fr 38px}.sv-bases{width:38px}.sv-duel b{font-size:13px}.sv-pitch-summary{gap:8px}.sv-rec-summary .sv-rec-row,.sv-rec-summary .sv-rec-type{font-size:11px}}
+
+/* One-screen contract: keep the three as-of rows, with identity at the central duel. */
+.sv-player{grid-row:span 3}
+.sv-context{gap:4px}
+.sv-upcoming{grid-template-columns:auto repeat(2,minmax(0,1fr));gap:5px}
+.sv-upcoming::before{grid-column:auto;align-self:start}
+.sv-upcoming span{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+@media(max-height:780px){
+  .sv-head{min-height:46px;padding-top:1px;padding-bottom:1px}
+  .sv-board{margin-top:2px}
+  .sv-board-row{min-height:42px}
+  .sv-inning{min-height:40px}
+  .sv-stage{padding-top:2px;gap:2px}
+  .sv-duel{min-height:24px}
+  .sv-zrow{height:clamp(190px,31dvh,220px);min-height:190px;margin-top:-8px}
+  .sv-pitch-summary{min-height:70px;gap:6px;padding:3px 0 1px;margin-top:calc(2px - var(--sv-below,0px))}
+  .sv-summary-label{margin-bottom:2px}
+  .sv-rec-summary .sv-reclist{gap:2px}
+  .sv-actual-summary{min-height:64px}
+  .sv-strip-shell{padding-top:2px;margin-top:0}
+  .sv-strip{--sv-tile-height:66px;padding-top:0;padding-bottom:2px}
+  .sv-context{margin-top:2px;margin-bottom:0;padding-top:2px;gap:2px}
+  .sv-player{padding-top:2px;gap:1px;line-height:1.1}
+  .sv-player-name{font-size:12px}
+  .sv-upcoming{padding-top:2px}
+}

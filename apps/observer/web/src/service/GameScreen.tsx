@@ -53,8 +53,7 @@ function PlayerCell({ team, abbr, role, person, hand, info, onOpen, side, today 
   const handed = handText(hand, role);
   const spoken = `${short(team)} ${role === 'p' ? '투수' : '타자'} ${name}, ${handed}, ${stats}, ${today?.spoken ?? '오늘 기록 미확인'}. 선수 상세 열기`;
   return <button className={`sv-player ${side}`} style={{ '--team': teamColor(team) } as CSSProperties} onClick={onOpen} aria-haspopup="dialog" aria-label={spoken} title={name}>
-    <span className="sv-player-1">{abbr || short(team)} · #{info?.jersey ?? '–'}</span>
-    <span className="sv-player-name"><b>{name}</b> <small>{handed}</small></span>
+    <span className="sv-player-name"><b>{role === 'b' ? '타자' : '투수'}: {abbr || short(team)} #{info?.jersey ?? '–'}</b> <small>{handed}</small></span>
     <span className="sv-player-2">{stats}</span>
     <span className="sv-player-3">{today?.text ?? (role === 'b' ? '–타수 · –안타 · –출루' : '–구 · –삼진 · –자책')}</span>
   </button>;
@@ -256,9 +255,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     <section className="sv-stage" aria-label={nextPhase ? '다음 공 추천' : '이 공의 추천과 실제 투구'}>
       <h2 className="sr-only">{recTitle} ({rec ? provenanceText(rec) : '추천 없음'}). 퍼센트는 정책 선택 비중이며 성공 확률이 아니에요.</h2>
       <div className="sv-duel" aria-label="타자와 투수 대결">
-        <span><small>{top ? '타자' : '투수'} · {handText(top ? batterP?.side : pitcherP?.hand, top ? 'b' : 'p')}</small><b>{(top ? batterP : pitcherP)?.name ?? '선수 미확인'}</b></span>
+        <span><b>타자: {batterP?.name ?? '선수 미확인'}</b></span>
         <i aria-hidden="true">vs</i>
-        <span><small>{top ? '투수' : '타자'} · {handText(top ? pitcherP?.hand : batterP?.side, top ? 'p' : 'b')}</small><b>{(top ? pitcherP : batterP)?.name ?? '선수 미확인'}</b></span>
+        <span><b>투수: {pitcherP?.name ?? '선수 미확인'}</b></span>
       </div>
       {/* Pitcher's view, with the batter on the correct screen side. The zone owns the centre;
           recommendations now live below it, leaving its outside-coordinate margin unobstructed. */}
