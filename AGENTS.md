@@ -1,5 +1,9 @@
 # Repository agent instructions
 
+## 현재 작업 모델 우선 적용 — 2026-10-06 Song
+
+Song 최신 지시: “지금부터 opus 사용량이 부족해서 astra를 활용해서 작업하자.” **현재 작업은 Astra(`gpt-6-astra`)로 실행한다.** 아래 2026-10-05 Opus 우선·소진 시 Sol만 허용 규칙보다 이 사용자 지시가 우선한다. 사용량 부족은 사용자 보고이며 별도 계량·잔여량 확인 결과가 아니다. Root PM 관리자 전용과 서브에이전트 실행 분담, 단일 작성자·검토·과학/운영 게이트는 유지한다. 타자 그림을 제외한 [합의 UI 개선 계획](docs/handoffs/UI-refinement-2026-10-06.md)은 구현 승인 상태이며, 구현·검증·배포 완료를 뜻하지 않는다.
+
 Read `CLAUDE.md` for project and experiment rules, and `docs/SESSION_HANDOFF.md` for current research state. Codex–Claude collaboration follows `docs/AI_COLLABORATION.md`; task-specific user instructions take precedence. Do not duplicate another task's heavy run or overwrite sealed artifacts.
 
 ## 절대 규칙 — Root PM은 관리자 전용 (2026-10-05 Song)
