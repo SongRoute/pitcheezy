@@ -20,6 +20,7 @@ body.sv-locked{overflow:hidden}
 .sv-page main{max-width:none;margin:0}
 .sv-center{flex:1;display:grid;place-items:center;padding:24px}
 .sv-alert{border:2px solid var(--sv-live);border-radius:12px;background:#fff4f1;padding:14px;display:grid;gap:10px;max-width:420px}
+.sv-alert .sv-btn{min-height:44px}
 
 /* status chip: LIVE dot = game in progress, nothing else */
 .sv-status{display:inline-flex;align-items:center;gap:5px;font-size:14px;font-weight:800;color:var(--sv-muted);border:1.5px solid var(--sv-line);border-radius:999px;padding:3px 9px;white-space:nowrap;background:var(--sv-paper)}
