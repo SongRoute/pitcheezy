@@ -211,6 +211,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const venue = game.venue ? `${game.venue} · ` : '';
   const when = `${dateHeading(game.kst_date)} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
   const emptyRec = nextPhase ? (detail.current?.phase === 'between_innings' ? '공수 교대 중' : detail.current?.phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
+  const actualWait = detail.current?.phase === 'between_innings' ? '공수 교대 중' : detail.current?.phase === 'resolving' ? '결과 확인 중' : '다음 공 대기 중';
   const list = <RecList rec={rec} emptyText={emptyRec} onOpen={() => openSheet('detail')} />;
   // New as-of player context is optional; absent fields stay unknown rather than guessed from an incomplete pitch list.
   const context = latest ? detail.current_context : pitch?.context;
@@ -249,32 +250,33 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         {situation ? <button className="sv-inning" onClick={openPa} aria-haspopup="dialog" aria-label={`${inningText(situation)}, 타석 선택`}>{situation.inning}회{situation.half === 'Top' ? '초' : '말'} ▾<small>타석 선택</small></button> : <span />}
         {situation && <Count s={situation} />}
         {situation && <Bases mask={situation.bases} />}
-        <div className="sv-upcoming" aria-label="다음 두 타자">{[0, 1].map(i => <span key={i} title={upcoming[i]?.name ?? undefined}>{upcoming[i] ? `${upcoming[i].order}번 · ${upcoming[i].name ?? '타자 미확인'}` : '–번 · 타자 미확인'}</span>)}</div>
-      </div>
-      <div className="sv-players">
-        <PlayerCell side="away" team={game.away_team} abbr={game.away_abbr} role={top ? 'b' : 'p'} person={top ? batterP : pitcherP} hand={top ? batterP?.side : pitcherP?.hand} info={info(top ? batterP : pitcherP)} onOpen={() => openSheet('player-away')} today={top ? batterToday : pitcherToday} />
-        <PlayerCell side="home" team={game.home_team} abbr={game.home_abbr} role={top ? 'p' : 'b'} person={top ? pitcherP : batterP} hand={top ? pitcherP?.hand : batterP?.side} info={info(top ? pitcherP : batterP)} onOpen={() => openSheet('player-home')} today={top ? pitcherToday : batterToday} />
       </div>
     </section>
 
     <section className="sv-stage" aria-label={nextPhase ? '다음 공 추천' : '이 공의 추천과 실제 투구'}>
       <h2 className="sr-only">{recTitle} ({rec ? provenanceText(rec) : '추천 없음'}). 퍼센트는 정책 선택 비중이며 성공 확률이 아니에요.</h2>
-      {/* pitcher's view: a right-handed batter stands on the screen RIGHT. The three recommendations are a top band on the other side
-          (one line each, may reach into the centre column); the zone's svg fills the centre column over the full height (equal side columns
-          keep it exactly centred) and Zone scales/bottom-aligns its drawing so nothing of it lies under the band. */}
+      <div className="sv-duel" aria-label="타자와 투수 대결">
+        <span><small>{top ? '타자' : '투수'} · {handText(top ? batterP?.side : pitcherP?.hand, top ? 'b' : 'p')}</small><b>{(top ? batterP : pitcherP)?.name ?? '선수 미확인'}</b></span>
+        <i aria-hidden="true">vs</i>
+        <span><small>{top ? '투수' : '타자'} · {handText(top ? pitcherP?.hand : batterP?.side, top ? 'p' : 'b')}</small><b>{(top ? pitcherP : batterP)?.name ?? '선수 미확인'}</b></span>
+      </div>
+      {/* Pitcher's view, with the batter on the correct screen side. The zone owns the centre;
+          recommendations now live below it, leaving its outside-coordinate margin unobstructed. */}
       <div className={`sv-zrow ${side === 'L' ? 'bat-l' : 'bat-r'}`}>
-        <div className={`sv-recband ${side === 'L' ? 'at-right' : 'at-left'}`}>{list}</div>
         {side && <div className={`sv-batband ${side === 'L' ? 'at-left' : 'at-right'}`}><Silhouette side={side} /></div>}
         <div className="sv-zone-wrap">
           <Zone bounds={detail.zone_bounds} candidates={cands}
             actual={!nextPhase && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel=""
-            setupX={!nextPhase ? actual?.setup_x ?? null : null} keepOut=".sv-recband" />
+            setupX={!nextPhase ? actual?.setup_x ?? null : null} />
         </div>
       </div>
-      {!nextPhase && <div className="sv-actual-summary">{actual ? <>
+      <div className="sv-pitch-summary">
+        <div className="sv-rec-summary"><span className="sv-summary-label">{recTitle}</span>{list}</div>
+        <div className={`sv-actual-summary${nextPhase ? ' waiting' : ''}`}><span className="sv-summary-label">{nextPhase ? '실제 투구' : actualTitle}</span>{nextPhase ? <p className="sv-muted" role="status">{actualWait}</p> : actual ? <>
         <p className="sv-actual-caption"><i className="sv-key-actual" /><b>{actual.pitch_label}</b> {actual.speed_mph !== null && <><b>{unit === 'kmh' ? Math.round(actual.speed_mph * 1.609344) : actual.speed_mph.toFixed(1)}</b><small>{unit === 'kmh' ? 'km/h' : 'mph'}</small></>}</p>
         <p className="sv-result">{ending ?? actual.result_label}</p>
-      </> : <p className="sv-muted">실제 투구 기록 없음</p>}</div>}
+      </> : <p className="sv-muted">실제 투구 기록 없음</p>}</div>
+      </div>
 
       <div className={`sv-strip-shell${edges.left ? ' fade-left' : ''}${edges.right ? ' fade-right' : ''}`}>
       <div className="sv-strip" ref={stripRef} role="group" aria-label="이 타석의 투구, 좌우로 스크롤">
@@ -288,6 +290,14 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
           <span className="sv-card-q" aria-hidden="true">?</span><span className="sv-card-cap" aria-hidden="true">{nextNumber}. 다음</span></button>}
       </div>
       </div>
+    </section>
+
+    <section className="sv-context" aria-label="선수와 다음 타자">
+      <div className="sv-players">
+        <PlayerCell side="away" team={game.away_team} abbr={game.away_abbr} role={top ? 'b' : 'p'} person={top ? batterP : pitcherP} hand={top ? batterP?.side : pitcherP?.hand} info={info(top ? batterP : pitcherP)} onOpen={() => openSheet('player-away')} today={top ? batterToday : pitcherToday} />
+        <PlayerCell side="home" team={game.home_team} abbr={game.home_abbr} role={top ? 'p' : 'b'} person={top ? pitcherP : batterP} hand={top ? pitcherP?.hand : batterP?.side} info={info(top ? pitcherP : batterP)} onOpen={() => openSheet('player-home')} today={top ? pitcherToday : batterToday} />
+      </div>
+      <div className="sv-upcoming" aria-label="다음 두 타자">{[0, 1].map(i => <span key={i} title={upcoming[i]?.name ?? undefined}>{upcoming[i] ? `${upcoming[i].order}번 · ${upcoming[i].name ?? '타자 미확인'}` : '–번 · 타자 미확인'}</span>)}</div>
     </section>
 
     {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')}

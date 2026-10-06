@@ -427,16 +427,46 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 @media(max-width:359px){.sv-board-row{gap:6px;grid-template-columns:auto auto 38px minmax(0,1fr)}.sv-upcoming{font-size:12px}.sv-player-name{font-size:14px}.sv-bases{width:38px}
   .sv-recband{width:96px}.sv-rec-row,.sv-rec-type{font-size:12px}.sv-rec-row{column-gap:3px}.sv-rec-pct{min-width:2.4em}.sv-rk{width:16px;height:16px;font-size:12px}}
 
-/* Demo polish: visual hierarchy without changing the accepted zone or height budget. */
+/* Studio layout: game context, matchup/zone, paired recommendation and revealed pitch,
+   pitch sequence, then as-of player context. The SVG keeps its feet-based geometry. */
 .sv-head{background:var(--sv-paper)}
 .sv-head-score{font-weight:650}.sv-head-score strong{font-weight:800}
 .sv-head-main small{color:var(--sv-muted);font-size:12px;line-height:1.2}
-.sv-board{background:var(--sv-paper);border-radius:12px;box-shadow:inset 0 0 0 1px var(--sv-line),0 2px 8px rgba(25,46,56,.04)}
-.sv-board-row{border-bottom:1px solid var(--sv-line)}
-.sv-player{background:var(--sv-bg);border-radius:7px;padding-left:5px;padding-right:5px}
-.sv-player-name b{font-weight:800}
-.sv-recband .sv-reclist{position:relative;isolation:isolate}
-.sv-recband .sv-reclist::before{content:"";position:absolute;inset:-3px -5px;z-index:-1;background:var(--sv-paper);border-radius:8px;box-shadow:0 1px 6px rgba(25,46,56,.10),inset 0 0 0 1px var(--sv-line)}
-.sv-rec-row:first-child .sv-rec-type{font-weight:800;color:var(--sv-rec)}
-.sv-actual-summary{background:linear-gradient(180deg,transparent,var(--sv-paper) 28%,var(--sv-paper) 84%,transparent);border-radius:10px}
-.sv-strip .sv-card.on{background:var(--sv-tint);border-radius:7px;box-shadow:inset 0 0 0 1px var(--sv-line)}
+.sv-board{background:transparent;border:0;border-radius:0;box-shadow:none;margin:4px 12px 0;padding:0}
+.sv-board-row{grid-template-columns:auto 1fr 44px;gap:8px;min-height:52px;border-bottom:1px solid var(--sv-line)}
+.sv-bso{justify-self:center;flex-direction:row;gap:8px}
+.sv-inning{min-height:44px}
+.sv-stage{flex:none;padding-top:8px;gap:5px}
+.sv-duel{display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);align-items:center;gap:5px;min-height:46px;text-align:center}
+.sv-duel span{min-width:0;display:grid;gap:1px}
+.sv-duel small{font-size:11px;color:var(--sv-muted);line-height:1.2}
+.sv-duel b{font-size:14px;font-weight:650;line-height:1.2;overflow-wrap:anywhere}
+.sv-duel i{font-size:11px;font-style:normal;color:var(--sv-muted)}
+.sv-zrow{flex:none;height:clamp(245px,36dvh,300px);min-height:245px;--sv-side:40px;grid-template-columns:var(--sv-side) minmax(0,1fr) var(--sv-side)}
+.sv-batband.at-left{justify-content:flex-end}.sv-batband.at-right{justify-content:flex-start}
+.sv-pitch-summary{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start;min-height:92px;border-top:1px solid var(--sv-line);padding:6px 2px 2px;margin-top:calc(5px - var(--sv-below, 0px))}
+.sv-summary-label{display:block;color:var(--sv-muted);font-size:11px;line-height:1.2;margin-bottom:4px}
+.sv-rec-summary{min-width:0}.sv-rec-summary .sv-reclist{width:100%;max-width:none;min-height:0;padding:0;border:0;background:transparent;gap:5px}
+.sv-rec-summary .sv-rec-row{font-size:12px;column-gap:3px}
+.sv-rec-summary .sv-rec-type{font-size:12px}
+.sv-rec-summary .sv-rk{width:16px;height:16px;font-size:11px}
+.sv-rec-summary .sv-rec-pct{min-width:2.4em}
+.sv-rec-summary .sv-reclist.empty .sv-norec{padding:0;border:0}
+.sv-rec-row:first-child .sv-rec-type{font-weight:750;color:var(--sv-rec)}
+.sv-actual-summary{min-width:0;min-height:82px;display:block;text-align:right;padding:0;background:none;border-radius:0}
+.sv-actual-summary .sv-muted{margin:0;font-size:13px}
+.sv-actual-caption{font-size:14px;line-height:1.3;overflow-wrap:anywhere}
+.sv-actual-summary .sv-result{font-size:16px;line-height:1.3;text-align:right;margin-top:3px}
+.sv-strip-shell{margin-top:1px;border-top:1px solid var(--sv-line);padding-top:5px}
+.sv-strip{--sv-tile-height:85px}
+.sv-strip .sv-card.on{background:var(--sv-tint);border-radius:5px;box-shadow:none}
+.sv-strip .sv-card.pending.on{background:transparent}
+.sv-context{margin:8px 12px 10px;border-top:1px solid var(--sv-line);padding-top:7px;display:grid;gap:8px;flex:none}
+.sv-players{gap:12px}
+.sv-player{background:transparent;border:0;border-top:2px solid var(--team);border-radius:0;padding:5px 0 0;box-shadow:none}
+.sv-player-name b{font-weight:700}
+.sv-upcoming{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;border-top:1px solid var(--sv-line);padding-top:6px;color:var(--sv-muted)}
+.sv-upcoming::before{content:"다음 타자";grid-column:1/-1;font-size:11px;color:var(--sv-muted)}
+.sv-upcoming span{font-size:12px}
+@media(max-height:700px){.sv-stage{padding-top:4px}.sv-pitch-summary{min-height:86px}.sv-context{margin-top:5px}}
+@media(max-width:359px){.sv-board-row{grid-template-columns:auto 1fr 38px}.sv-bases{width:38px}.sv-duel b{font-size:13px}.sv-pitch-summary{gap:8px}.sv-rec-summary .sv-rec-row,.sv-rec-summary .sv-rec-type{font-size:11px}}
