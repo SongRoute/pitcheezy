@@ -212,6 +212,9 @@ def config_digest(config):
 def require_executable(config, smoke):
     """Real (non-smoke) fits need a registered, enabled config; DRAFT allows smoke only."""
     if smoke:
+        from pitchmdp.direct_pitcher_id_registry import is_p47
+        if is_p47(config):
+            raise ValueError('P47 legacy --smoke reads DEV payloads; use the TRAIN/earlystop-only P47 probe')
         return
     if config.get('status') != 'REGISTERED' or config.get('execution', {}).get('enabled') is not True:
         raise ValueError('Real CUDA fits require status REGISTERED and execution.enabled true; DRAFT allows smoke only')
