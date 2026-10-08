@@ -91,20 +91,24 @@ class LiveSnapshotStore:
         event = fetched if event is None else min(event, fetched)
         feed_ts = (feed.get('metaData') or {}).get('timeStamp')
         with self._write() as db:
-            newest = db.execute('SELECT event_wall, version, feed_ts, sha, first_fetched FROM snapshots WHERE game_pk=? '
+            newest = db.execute('SELECT event_wall, version, feed_ts, sha, first_fetched, seq, fetched, source FROM snapshots WHERE game_pk=? '
                                 'ORDER BY event_wall DESC, version DESC LIMIT 1', (game_pk,)).fetchone()
             if newest is None or event > newest[0]:
                 outcome, slot, version, first = 'new', event, 1, fetched if first_fetched is None else first_fetched
             elif feed_ts and newest[2] and feed_ts < newest[2]:
                 return 'stale', None
             elif sha == newest[3]:
-                return 'duplicate', {'feed': feed, 'event': newest[0], 'fetched': newest[4]}
+                return 'duplicate', {'game_pk': game_pk, 'feed': feed, 'event': newest[0], 'fetched': newest[4],
+                                     'seq': newest[5], 'version': newest[1], 'sha': newest[3],
+                                     'version_fetched': newest[6], 'source': newest[7]}
             else:
                 outcome, slot, version, first = 'correction', newest[0], newest[1]+1, newest[4]
             db.execute('INSERT INTO snapshots(game_pk, event_wall, version, feed_ts, sha, first_fetched, fetched, source, body) '
                        'VALUES (?,?,?,?,?,?,?,?,?)', (game_pk, slot, version, feed_ts, sha, first, fetched, source,
                                                       gzip.compress(body, compresslevel=5)))
-        return outcome, {'feed': feed, 'event': slot, 'fetched': first}
+            seq = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+        return outcome, {'game_pk': game_pk, 'feed': feed, 'event': slot, 'fetched': first, 'seq': seq,
+                         'version': version, 'sha': sha, 'version_fetched': fetched, 'source': source}
 
     def restore(self, game_pk, wall, max_delay_s):
         """The in-memory buffer ``LiveFeed`` would hold at ``wall``: the current version of every slot newer
@@ -115,11 +119,13 @@ class LiveSnapshotStore:
             floor = db.execute('SELECT MAX(event_wall) FROM snapshots WHERE game_pk=? AND event_wall<=?',
                                (game_pk, bound)).fetchone()[0]
             rows = db.execute(
-                'SELECT event_wall, first_fetched, body FROM snapshots s WHERE game_pk=? AND event_wall>=? AND version='
+                'SELECT event_wall, first_fetched, body, seq, version, sha, fetched, source FROM snapshots s WHERE game_pk=? AND event_wall>=? AND version='
                 '(SELECT MAX(version) FROM snapshots WHERE game_pk=s.game_pk AND event_wall=s.event_wall) ORDER BY event_wall',
                 (game_pk, bound if floor is None else floor)).fetchall()
-        return [{'feed': json.loads(gzip.decompress(body)), 'event': event, 'fetched': first, 'restored': True}
-                for event, first, body in rows]
+        return [{'game_pk': int(game_pk), 'feed': json.loads(gzip.decompress(body)), 'event': event, 'fetched': first,
+                 'seq': seq, 'version': version, 'sha': sha, 'version_fetched': received,
+                 'source': source, 'restored': True}
+                for event, first, body, seq, version, sha, received, source in rows]
 
     def read_after(self, game_pk, after=0, *, until_event, limit=100):
         """Committed versions of ``game_pk`` with ``seq > after`` whose game event is at or before
@@ -214,7 +220,7 @@ class PersistentLiveFeed(LiveFeed):
         elif buffer and entry['event'] == buffer[-1]['event']:
             buffer[-1]['feed'] = feed
             if outcome == 'correction':
-                buffer[-1]['version_fetched'] = wall
+                buffer[-1].update({key: entry[key] for key in ('seq', 'version', 'sha', 'version_fetched', 'source', 'game_pk')})
         elif not buffer or entry['event'] > buffer[-1]['event']:
             buffer.append(entry)
 
