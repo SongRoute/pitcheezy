@@ -113,15 +113,24 @@ def _stale_stamp(feed_ts, newest_ts, newer_event):
     return bool(isinstance(feed_ts, str) and isinstance(newest_ts, str) and feed_ts and newest_ts and feed_ts < newest_ts)
 
 
-def _provider_order(db, game_pk, feed_ts, seq):
-    """Provider-revision order of the committed version ``seq``, which local receipt order does not imply:
-    'unorderable' (missing/malformed stamp), 'stale' (an earlier committed version of the game carries a later
-    valid stamp, e.g. a newer-event slot selected under an older revision) or 'ordered'."""
+def _provider_order(db, game_pk, feed_ts, seq, sha):
+    """Provider-revision order of the committed version ``seq`` (content ``sha``), which local receipt order does
+    not imply: 'unorderable' (missing/malformed stamp), 'stale' (an earlier committed version of the game carries a
+    later valid stamp, e.g. a newer-event slot selected under an older revision), 'same_stamp_conflict' (an earlier
+    committed version carries the same valid stamp with different content, so only receipt order separates them)
+    or 'ordered'. Only versions committed before ``seq`` are consulted, so restore agrees with ingest."""
     if not _provider_ts(feed_ts):
         return 'unorderable'
+    # ponytail: O(prior versions) per call, O(n^2) per game (~0.6 ms/ingest at 3000 versions); if that grows,
+    # keep a per-game running MAX(valid feed_ts) instead of rescanning.
     later = db.execute('SELECT DISTINCT feed_ts FROM snapshots WHERE game_pk=? AND seq<? AND feed_ts>?',
                        (game_pk, seq, feed_ts)).fetchall()  # valid stamps sort as text; parse filters the rest
-    return 'stale' if any(_provider_ts(ts) for ts, in later) else 'ordered'
+    if any(_provider_ts(ts) for ts, in later):
+        return 'stale'
+    if db.execute('SELECT 1 FROM snapshots WHERE game_pk=? AND seq<? AND feed_ts=? AND sha<>? LIMIT 1',
+                  (game_pk, seq, feed_ts, sha)).fetchone():
+        return 'same_stamp_conflict'
+    return 'ordered'
 
 
 def _pitches(feed):
@@ -202,7 +211,7 @@ class LiveSnapshotStore:
                 return 'duplicate', {'game_pk': game_pk, 'feed': feed, 'event': newest[0], 'fetched': newest[4],
                                      'seq': newest[5], 'version': newest[1], 'sha': newest[3],
                                      'version_fetched': newest[6], 'source': newest[7],
-                                     'provider_order': _provider_order(db, game_pk, newest[2], newest[5])}
+                                     'provider_order': _provider_order(db, game_pk, newest[2], newest[5], newest[3])}
             else:
                 outcome, slot, version, first = 'correction', newest[0], newest[1]+1, newest[4]
             db.execute('INSERT INTO snapshots(game_pk, event_wall, version, feed_ts, sha, first_fetched, fetched, source, body) '
@@ -211,7 +220,7 @@ class LiveSnapshotStore:
             seq = db.execute('SELECT last_insert_rowid()').fetchone()[0]
             self._record_pitches(db, game_pk, feed, feed_ts=feed_ts, event=slot, received=fetched,
                                  source=source, seq=seq)
-            order = _provider_order(db, game_pk, feed_ts, seq)
+            order = _provider_order(db, game_pk, feed_ts, seq, sha)
         return outcome, {'game_pk': game_pk, 'feed': feed, 'event': slot, 'fetched': first, 'seq': seq,
                          'version': version, 'sha': sha, 'version_fetched': fetched, 'source': source,
                          'provider_order': order}
@@ -223,7 +232,9 @@ class LiveSnapshotStore:
         (kept, never accepted). Every snapshot that reaches this store is seen, including a ``stale`` one that
         was not selected; for that one ``event_wall``/``store_seq`` reference the selected version it lost to, not
         a stored copy of the arrival. Corrections superseded while the store was unreachable are not recoverable,
-        so this is a pitch receipt ledger, not a complete log of raw snapshots."""
+        so this is a pitch receipt ledger, not a complete log of raw snapshots. ``first_received`` is the first
+        *recorded* receipt, an upper bound on the local first receipt: after a store outage it is the last in-memory
+        receipt (``memory_recovery``), after a crash the restart poll time."""
         clock = 'observer_local' if source == 'live_poll' else 'unverified'
         for pid, at_bat, number, payload, reason in _pitches(feed):
             body = _canonical(payload)
@@ -308,7 +319,7 @@ class LiveSnapshotStore:
                 (game_pk, bound if floor is None else floor)).fetchall()
             return [{'game_pk': int(game_pk), 'feed': json.loads(gzip.decompress(body)), 'event': event, 'fetched': first,
                      'seq': seq, 'version': version, 'sha': sha, 'version_fetched': received,
-                     'source': source, 'restored': True, 'provider_order': _provider_order(db, game_pk, feed_ts, seq)}
+                     'source': source, 'restored': True, 'provider_order': _provider_order(db, game_pk, feed_ts, seq, sha)}
                     for event, first, body, seq, version, sha, received, source, feed_ts in rows]
 
     def read_after(self, game_pk, after=0, *, until_event, limit=100):

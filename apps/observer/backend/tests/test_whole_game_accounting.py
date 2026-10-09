@@ -87,6 +87,22 @@ class Flaky(LiveSnapshotStore):
         return outcome, entry
 
 
+def gate(entry, decision_wall, calls):
+    """capture_input -> conditional_candidates with a stub predictor (never a model) that records its calls."""
+    def predict(x):
+        calls.append(len(x))
+        return np.full((len(x), 10), .1)
+    vectors = np.zeros((1, 199))
+    receipt = capture_input(entry, {'seq': entry['seq']}, game_pk=GAME, trusted_clock=True,
+                            decision_at=datetime.fromtimestamp(decision_wall, timezone.utc).isoformat())
+    evidence = {'kind': 'synthetic_fixture', 'input_sha256': receipt['input_sha256'],
+                'vectors_sha256': hashlib.sha256(vectors.tobytes()).hexdigest(),
+                'actions_sha256': hashlib.sha256(json.dumps(['FF']).encode()).hexdigest(),
+                'model_sha256': 'a'*64, 'encoder_sha256': 'b'*64}
+    return receipt, conditional_candidates(receipt, vectors, ['FF'], predict, model_sha256='a'*64,
+                                           encoder_sha256='b'*64, support_counts=[40], input_evidence=evidence)
+
+
 def partition(store, upto):
     """Independent denominator TRUTH[:upto+1] split into mutually exclusive accepted / quarantined-only /
     missing identity keys; ``extra`` are accepted keys absent from that truth."""
@@ -146,7 +162,25 @@ def test_nine_inning_first_to_last_accounting_through_outage_gap_and_restart(tmp
             poll(provider(step, s), at+s/10)
         if step == 30:
             poll(provider(step, conflict=True), at+.2)  # same provider stamp, different payload
+            served, calls = live.buffers[GAME][-1], []
+            receipt, result = gate(served, at+1, calls)
+            restored = LiveSnapshotStore(path).restore(GAME, at+1, 0)[-1]
+            checks['conflict'] = (served['provider_order'], receipt['freshness_reason'], result, len(calls),
+                                  (restored['seq'], restored['provider_order']) == (served['seq'], served['provider_order']))
+        if step == 31:
+            served, calls = live.buffers[GAME][-1], []
+            receipt, result = gate(served, at+1, calls)
+            restored = LiveSnapshotStore(path).restore(GAME, at+1, 0)[-1]
+            checks['recovered'] = (served['provider_order'], receipt['freshness_reason'], result['status'], len(calls),
+                                   (restored['seq'], restored['provider_order']) == (served['seq'], served['provider_order']))
     store = live.store
+
+    # B1: the step-30 same-stamp conflict is selected (ledger quarantines it) but never fresh prediction input
+    assert checks['conflict'] == ('same_stamp_conflict', 'same_stamp_conflict_provider_stamp',
+                                  {'status': 'unsupported', 'reason': 'same_stamp_conflict_provider_stamp',
+                                   'candidates': []}, 0, True)
+    # a strictly later valid stamp is ordered again; the stub predictor may then run
+    assert checks['recovered'] == ('ordered', None, 'conditional_fixture', 1, True)
     final = partition(store, LAST)
 
     assert len(TRUTH) == 129 and TRUTH[0] == (1, 1, 'g01p1') and TRUTH[-1] == (51, 4, 'g51p4')
@@ -224,3 +258,22 @@ def test_newer_event_with_stale_or_missing_provider_stamp_is_not_fresh_input(tmp
     memory_only = {k: v for k, v in restored[-1].items() if k != 'provider_order'}
     assert capture_input(memory_only, {}, game_pk=GAME, decision_at=datetime.fromtimestamp(
         T0+100, timezone.utc).isoformat())['freshness_reason'] == 'provider_order_unknown'
+
+
+def test_equal_provider_stamp_with_different_content_is_never_fresh_input(tmp_path):
+    path, calls = tmp_path/'same.sqlite3', []
+    store = LiveSnapshotStore(path)
+    orders = [store.ingest(GAME, provider(0), fetched=T0+1, source='live_poll'),
+              store.ingest(GAME, provider(0, conflict=True), fetched=T0+2, source='live_poll'),  # same slot
+              store.ingest(GAME, provider(1, ts=stamp(0)), fetched=T0+11, source='live_poll'),  # newer event
+              store.ingest(GAME, provider(1, ts=stamp(0)), fetched=T0+12, source='live_poll'),  # duplicate
+              store.ingest(GAME, provider(2), fetched=T0+21, source='live_poll')]               # later stamp
+    assert [(o, e['provider_order']) for o, e in orders] == [
+        ('new', 'ordered'), ('correction', 'same_stamp_conflict'), ('new', 'same_stamp_conflict'),
+        ('duplicate', 'same_stamp_conflict'), ('new', 'ordered')]
+    restored = LiveSnapshotStore(path).restore(GAME, T0+100, 1000)
+    assert [e['provider_order'] for e in restored] == ['same_stamp_conflict', 'same_stamp_conflict', 'ordered']
+    statuses = [gate(e, T0+100, calls)[1]['status'] for e in restored]
+    assert statuses == ['unsupported', 'unsupported', 'conditional_fixture'] and calls == [1]
+    assert [(r['outcome'], r['reason']) for r in store.pitch_events(GAME)['events']][:2] == [
+        ('new', None), ('quarantine', 'same_revision_hash_mismatch')]

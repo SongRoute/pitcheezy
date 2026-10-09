@@ -14,6 +14,10 @@ from .intent import setup_actual_difference, validate_intent_estimate
 from .live_store import _canonical
 from .domain import PITCH_LABELS
 
+# ``LiveSnapshotStore`` provider order -> abstention reason; only 'ordered' is fresh, anything else abstains.
+FRESHNESS = {'ordered': None, 'stale': 'stale_provider_stamp', 'unorderable': 'unorderable_provider_stamp',
+             'same_stamp_conflict': 'same_stamp_conflict_provider_stamp'}
+
 
 def _bytes(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
@@ -32,6 +36,7 @@ def capture_input(entry, pre_pitch_input, *, game_pk, decision_at, trusted_clock
 
     ``trusted_clock`` means the supplied first/version receipt times came from a
     trusted local clock; replay file mtime and provider timestamps do not qualify.
+    A memory-only ``LiveFeed`` entry (store down) carries no committed identity and raises ``ValueError``.
     """
     decision = _utc(decision_at)
     if entry.get('game_pk') != int(game_pk):
@@ -51,9 +56,8 @@ def capture_input(entry, pre_pitch_input, *, game_pk, decision_at, trusted_clock
     # A newer game event selects a slot whatever its provider stamp; a verified local receipt clock says nothing
     # about provider revision order, so only an 'ordered' store version counts as fresh prediction input.
     order = entry.get('provider_order')
-    freshness = None if order == 'ordered' else f'{order}_provider_stamp' if order in ('stale', 'unorderable') \
-        else 'provider_order_unknown'
-    return {'provider_order': order, 'freshness_reason': freshness,'schema': 'service-input-receipt-v1', 'game_pk': int(game_pk),
+    freshness = FRESHNESS.get(order, 'provider_order_unknown') if isinstance(order, str) else 'provider_order_unknown'
+    return {'provider_order': order, 'freshness_reason': freshness, 'schema': 'service-input-receipt-v1', 'game_pk': int(game_pk),
             'store_seq': entry['seq'], 'slot_version': entry['version'], 'feed_sha256': digest,
             'input': copied, 'input_sha256': hashlib.sha256(_bytes(copied)).hexdigest(),
             'first_received_at': datetime.fromtimestamp(first, timezone.utc).isoformat(),
