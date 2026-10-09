@@ -16,6 +16,9 @@ the replay cursor. Ingest outcomes for one game, under one ``BEGIN IMMEDIATE`` t
 * same content as the newest slot's current version -> ``duplicate`` (no write)
 * otherwise -> ``correction`` of the newest slot (first-seen times kept, as the in-memory buffer does)
 
+``context_decisions`` / ``context_reconciliations`` hold append-only NextPitchContext decisions and their later,
+separate target reconciliations (``append_decision`` / ``append_reconciliation``); no other reader uses them.
+
     python -m observer_app.live_store ingest --db D --dir apps/observer/live_snapshots [--game 849844] [--limit N]
     python -m observer_app.live_store status --db D
     python -m observer_app.live_store backup --db D --to D.bak
@@ -76,6 +79,30 @@ CREATE TRIGGER IF NOT EXISTS pitch_events_no_update
     BEFORE UPDATE ON pitch_events BEGIN SELECT RAISE(ABORT, 'append-only pitch event'); END;
 CREATE TRIGGER IF NOT EXISTS pitch_events_no_delete
     BEFORE DELETE ON pitch_events BEGIN SELECT RAISE(ABORT, 'append-only pitch event'); END;
+CREATE TABLE IF NOT EXISTS context_decisions (
+    decision_id TEXT PRIMARY KEY,
+    game_pk INTEGER NOT NULL,
+    decision_at TEXT NOT NULL,
+    category TEXT NOT NULL,
+    store_seq INTEGER,
+    sha TEXT NOT NULL,
+    body BLOB NOT NULL);
+CREATE TRIGGER IF NOT EXISTS context_decisions_no_update
+    BEFORE UPDATE ON context_decisions BEGIN SELECT RAISE(ABORT, 'append-only decision'); END;
+CREATE TRIGGER IF NOT EXISTS context_decisions_no_delete
+    BEFORE DELETE ON context_decisions BEGIN SELECT RAISE(ABORT, 'append-only decision'); END;
+CREATE TABLE IF NOT EXISTS context_reconciliations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decision_id TEXT NOT NULL REFERENCES context_decisions(decision_id),
+    revision INTEGER NOT NULL,
+    reconciled_at TEXT NOT NULL,
+    sha TEXT NOT NULL,
+    body BLOB NOT NULL,
+    UNIQUE(decision_id, revision));
+CREATE TRIGGER IF NOT EXISTS context_reconciliations_no_update
+    BEFORE UPDATE ON context_reconciliations BEGIN SELECT RAISE(ABORT, 'append-only reconciliation'); END;
+CREATE TRIGGER IF NOT EXISTS context_reconciliations_no_delete
+    BEFORE DELETE ON context_reconciliations BEGIN SELECT RAISE(ABORT, 'append-only reconciliation'); END;
 '''
 ACCEPTED = "outcome IN ('new', 'correction')"
 
@@ -304,6 +331,94 @@ class LiveSnapshotStore:
                 'gaps': {ab: g for ab, g in gaps.items() if g},
                 'missing_at_bats': sorted(set(range(1, max(coverage, default=0)+1))-set(coverage)),
                 'history': history}
+
+    def append_decision(self, record):
+        """Persist one ``next-pitch-context-v1`` decision record (``service_research.next_pitch_context``) exactly
+        once, as its canonical bytes. Its snapshot must be a version committed here with the same slot version and
+        sha, received at or before ``decision_at``, and every KNOWN field must cite that version. Returns 'appended',
+        or 'duplicate' for the same bytes; a different body under a stored ``decision_id`` raises and the stored one
+        is kept. Committed with ``synchronous=FULL`` like the snapshots: a crash before this call loses the decision,
+        so this is a record of persisted decisions, not proof of every decision made."""
+        body, snap = _canonical(record), record['snapshot']
+        decided = datetime.fromisoformat(record['decision_at']).timestamp()
+        with self._write() as db:
+            if snap is not None:
+                row = db.execute('SELECT version, sha, fetched FROM snapshots WHERE seq=? AND game_pk=?',
+                                 (snap['store_seq'], record['game_pk'])).fetchone()
+                if row is None or (row[0], row[1]) != (snap['slot_version'], snap['feed_sha256']) or row[2] > decided:
+                    raise ValueError('Decision snapshot is not a committed version received by decision_at')
+            for name, field in record['fields'].items():
+                cited = field['provenance'] and (field['provenance']['store_seq'], field['provenance']['feed_sha256'])
+                if field['status'] == 'KNOWN' and (snap is None or cited != (snap['store_seq'], snap['feed_sha256'])):
+                    raise ValueError(f'KNOWN {name} does not cite the decision snapshot')
+            held = db.execute('SELECT body FROM context_decisions WHERE decision_id=?', (record['decision_id'],)).fetchone()
+            if held:
+                if bytes(held[0]) == body:
+                    return 'duplicate'
+                raise ValueError('A conflicting decision exists for this decision_id; the stored record is kept')
+            db.execute('INSERT INTO context_decisions(decision_id, game_pk, decision_at, category, store_seq, sha, body) '
+                       'VALUES (?,?,?,?,?,?,?)', (record['decision_id'], record['game_pk'], record['decision_at'],
+                                                  record['opportunity']['category'], snap and snap['store_seq'],
+                                                  hashlib.sha256(body).hexdigest(), body))
+        return 'appended'
+
+    def append_reconciliation(self, decision_id, *, reconciled_at, evidence):
+        """Append a target reconciliation for a stored decision as a separate revision; the decision is never
+        rewritten. ``evidence`` are accepted ``pitch_events`` ids of one key, each recorded on the observer clock,
+        first received after ``decision_at`` and by ``reconciled_at`` (> ``decision_at``). A later correction is
+        a new revision citing its own row. Returns the stored body."""
+        at = datetime.fromisoformat(reconciled_at)
+        if at.tzinfo is None:
+            raise ValueError('A timezone-aware reconciled_at is required')
+        with self._write() as db:
+            held = db.execute('SELECT game_pk, decision_at FROM context_decisions WHERE decision_id=?',
+                              (decision_id,)).fetchone()
+            if held is None:
+                raise ValueError('Unknown decision_id')
+            decided = datetime.fromisoformat(held[1]).timestamp()
+            if at.timestamp() <= decided:
+                raise ValueError('reconciled_at must be after decision_at')
+            keys = ('pitch_event_id', 'at_bat_number', 'pitch_number', 'outcome', 'revision', 'sha', 'first_received',
+                    'received', 'receipt_clock', 'store_seq')
+            rows = [db.execute(f'SELECT id, at_bat_number, pitch_number, outcome, revision, sha, first_received, received, '
+                               f'receipt_clock, store_seq FROM pitch_events WHERE id=? AND game_pk=? AND {ACCEPTED}',
+                               (int(i), held[0])).fetchone() for i in evidence]
+            if not rows or None in rows:
+                raise ValueError('Evidence must be accepted pitch ledger rows of this game')
+            rows = [dict(zip(keys, row)) for row in rows]
+            if any(r['receipt_clock'] != 'observer_local' for r in rows):
+                raise ValueError('Evidence receipt clock is unverified')
+            if any(not decided < r['first_received'] <= r['received'] <= at.timestamp() for r in rows):
+                raise ValueError('Evidence must be first received after the decision and by reconciled_at')
+            if len({(r['at_bat_number'], r['pitch_number']) for r in rows}) != 1:
+                raise ValueError('Evidence rows name conflicting keys')
+            revision = db.execute('SELECT COUNT(*) FROM context_reconciliations WHERE decision_id=?',
+                                  (decision_id,)).fetchone()[0]+1
+            body = _canonical({'schema': 'next-pitch-reconciliation-v1', 'decision_id': decision_id, 'revision': revision,
+                               'reconciled_at': at.isoformat(), 'evidence': rows,
+                               'target': {'game_pk': held[0], 'at_bat_number': rows[0]['at_bat_number'],
+                                          'pitch_number': rows[0]['pitch_number']}})
+            db.execute('INSERT INTO context_reconciliations(decision_id, revision, reconciled_at, sha, body) VALUES (?,?,?,?,?)',
+                       (decision_id, revision, at.isoformat(), hashlib.sha256(body).hexdigest(), body))
+        return json.loads(body)
+
+    def decision_history(self, decision_id):
+        """The stored decision bytes (and parsed record) plus every reconciliation revision in append order."""
+        with closing(self.connect()) as db:
+            held = db.execute('SELECT body FROM context_decisions WHERE decision_id=?', (decision_id,)).fetchone()
+            later = db.execute('SELECT body FROM context_reconciliations WHERE decision_id=? ORDER BY revision',
+                               (decision_id,)).fetchall()
+        if held is None:
+            return None
+        return {'decision': bytes(held[0]), 'record': json.loads(held[0]),
+                'reconciliations': [json.loads(body) for body, in later]}
+
+    def decision_counts(self, game_pk):
+        """Local decision opportunities by category, one per stored ``decision_id``; not a physical-pitch count."""
+        with closing(self.connect()) as db:
+            rows = db.execute('SELECT category, COUNT(*) FROM context_decisions WHERE game_pk=? GROUP BY category',
+                              (int(game_pk),)).fetchall()
+        return {'unit': 'local_decision_opportunity', 'decisions': sum(n for _, n in rows), 'categories': dict(rows)}
 
     def restore(self, game_pk, wall, max_delay_s):
         """The in-memory buffer ``LiveFeed`` would hold at ``wall``: the current version of every slot newer

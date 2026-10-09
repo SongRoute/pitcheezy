@@ -9,14 +9,23 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import uuid
 
 from .intent import setup_actual_difference, validate_intent_estimate
-from .live_store import _canonical
+from .live_store import _canonical, _pitches
 from .domain import PITCH_LABELS
 
 # ``LiveSnapshotStore`` provider order -> abstention reason; only 'ordered' is fresh, anything else abstains.
 FRESHNESS = {'ordered': None, 'stale': 'stale_provider_stamp', 'unorderable': 'unorderable_provider_stamp',
              'same_stamp_conflict': 'same_stamp_conflict_provider_stamp'}
+# NextPitchContext v1 provisional F1 subset (not the unbound 199-vector composition). The last two have no snapshot
+# source yet, so 'eligible' stays unreachable; even 'eligible' would not mean model support.
+CONTEXT_FIELDS = ('balls', 'strikes', 'outs_when_up', 'inning', 'inning_topbot', 'home_score', 'away_score', 'bases',
+                  'stand', 'p_throws', 'pitcher', 'batter', 'batter_style_priors', 'prior_pitch_tokens')
+UNSOURCED = {'batter_style_priors': 'pre_game_profile_not_wired_to_service',
+             'prior_pitch_tokens': 'f1_token_constructor_unbound'}
+# Path segments naming a received play or pitch (its call, physics, playId): never the next pitch's state.
+RECEIVED_PLAY = {'allPlays', 'currentPlay', 'playEvents', 'playId', 'details', 'pitchData', 'hitData', 'result'}
 
 
 def _bytes(value):
@@ -73,6 +82,83 @@ def capture_input(entry, pre_pitch_input, *, game_pk, decision_at, trusted_clock
             'input_provenance': 'unverified',
             'first_to_decision_ms': round(1000*(decision.timestamp()-first), 3),
             'version_to_decision_ms': round(1000*(decision.timestamp()-version_at), 3)}
+
+
+def _at(feed, path):
+    for step in path:
+        if isinstance(feed, dict) and isinstance(step, str):
+            feed = feed.get(step)
+        elif isinstance(feed, list) and type(step) is int and -len(feed) <= step < len(feed):
+            feed = feed[step]
+        else:
+            return None
+    return feed
+
+
+def next_pitch_context(entry, *, game_pk, decision_at, decision_clock, disconnected, known_paths=None,
+                       trusted_clock=False):
+    """One ``next-pitch-context-v1`` decision record (NEXTPITCHCONTEXT-v1) for a local decision; never calls a model.
+
+    ``known_paths`` maps a field to a caller-declared path of an explicit pre-pitch state inside the selected
+    snapshot body; no real provider path is assumed here. A field is KNOWN only if the snapshot passes
+    ``capture_input`` (committed sha, receipt <= ``decision_at``), its provider order is 'ordered', ``disconnected``
+    is an explicit False captured with that snapshot (None: not captured, abstain), and both the receipt and the
+    decision are on the observer's local clock. Otherwise every field is UNKNOWN. The target key is always
+    UNKNOWN here; only ``LiveSnapshotStore.append_reconciliation`` attaches one later. ``persistence: committed``
+    is checked by ``LiveSnapshotStore.append_decision``, which refuses any other snapshot.
+    """
+    decision, known_paths = _utc(decision_at), dict(known_paths or {})
+    for field, path in known_paths.items():
+        if field not in CONTEXT_FIELDS or field in UNSOURCED:
+            raise ValueError(f'No snapshot source is allowed for {field}')
+        if not path or RECEIVED_PLAY & {step for step in path if isinstance(step, str)}:
+            raise ValueError(f'{field}: a latest received play or pitch is not the next pitch state')
+    record = {'schema': 'next-pitch-context-v1', 'decision_id': uuid.uuid4().hex, 'game_pk': int(game_pk),
+              'decision_at': decision.isoformat(), 'decision_clock': decision_clock, 'snapshot': None,
+              'last_received_pitch': None, 'model': None,
+              'target': {'game_pk': int(game_pk), 'at_bat_number': None, 'pitch_number': None, 'status': 'UNKNOWN',
+                         'reason': 'next_key_not_assignable_before_pitch'}}
+    category, reason = None, None
+    if entry is None:
+        category, reason = 'unsupported', 'no_snapshot'
+    else:
+        try:
+            receipt = capture_input(entry, {}, game_pk=game_pk, decision_at=decision_at, trusted_clock=trusted_clock,
+                                    disconnected=disconnected)
+        except (KeyError, TypeError, ValueError):  # memory-only, future, foreign or altered snapshot
+            category, reason = 'unsupported', 'selected_snapshot_unverifiable'
+        else:
+            clock = 'observer_local' if receipt['feed_receipt_status'] == 'verified_local_receipt' else 'UNKNOWN'
+            record['snapshot'] = {key: receipt[key] for key in (
+                'store_seq', 'slot_version', 'feed_sha256', 'provider_generated_at', 'provider_order',
+                'first_received_at', 'version_received_at', 'source')} | {
+                'provider_time_label': 'provider_metaData_timeStamp', 'receipt_clock': clock,
+                'persistence': 'committed', 'restored': bool(entry.get('restored')),
+                'disconnected': disconnected if type(disconnected) is bool else None}
+            keys = [(ab, n) for _, ab, n, _, why in _pitches(entry['feed']) if not why]
+            if keys:  # prior-pitch identity only, never the target
+                record['last_received_pitch'] = dict(zip(('at_bat_number', 'pitch_number'), max(keys)))
+            reason = receipt['freshness_reason']
+            if reason == 'feed_disconnected_last_snapshot_only' and disconnected is not True:
+                reason = 'connection_status_not_captured_with_snapshot'
+            reason = reason or ('receipt_clock_unverified' if clock != 'observer_local' else
+                                'decision_clock_unverified' if decision_clock != 'observer_local' else None)
+            category = reason and 'ambiguous'
+    fields = {}
+    for field in CONTEXT_FIELDS:
+        why = reason or UNSOURCED.get(field) or (None if field in known_paths else 'no_declared_source')
+        value = None if why else _at(entry['feed'], known_paths[field])
+        why = why or (None if value is not None else 'declared_path_absent_in_selected_snapshot')
+        fields[field] = {'value': None, 'status': 'UNKNOWN', 'provenance': None, 'reason': why} if why else {
+            'value': json.loads(_bytes(value)), 'status': 'KNOWN', 'reason': None,
+            'provenance': {'source': 'selected_snapshot', 'path': list(known_paths[field]),
+                           'store_seq': receipt['store_seq'], 'slot_version': receipt['slot_version'],
+                           'feed_sha256': receipt['feed_sha256'], 'version_received_at': receipt['version_received_at'],
+                           'receipt_clock': 'observer_local', 'evidence': 'caller_declared_synthetic_path'}}
+    if category is None:
+        unknown = any(f['status'] == 'UNKNOWN' for f in fields.values())
+        category, reason = ('feature_unavailable', 'required_f1_field_unknown') if unknown else ('eligible', 'all_listed_fields_known')
+    return record | {'fields': fields, 'opportunity': {'category': category, 'reason': reason}}
 
 
 def conditional_candidates(receipt, vectors, actions, predict, *, model_sha256, encoder_sha256,
