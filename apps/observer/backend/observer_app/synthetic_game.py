@@ -148,8 +148,10 @@ class Script:
                 if step == CONFLICT_STEP:
                     served = poll(provider(step, conflict=True), at+.2)  # same provider stamp, different payload
             ledger = live.store.pitch_events(GAME)
+            store_ok = live.store_error is None
+            committed = served['feed'] if served and store_ok else committed if step else None
             self.frames.append({'entry': dict(served) if served else None, 'disconnected': GAME in live.failing,
-                                'store_ok': live.store_error is None, 'as_of': ledger['history']['as_of'],
+                                'store_ok': store_ok, 'committed_feed': committed, 'as_of': ledger['history']['as_of'],
                                 'history': ledger['history']})
         self.store = live.store
 
@@ -173,6 +175,22 @@ def _received(feed, key):
                 if event.get('isPitch') and event.get('pitchNumber') == n:
                     return event['details']['call']['code']
     return None
+
+
+def _shown(frame, key, rows):
+    """What the fan view may say about ``key`` as of ``frame``: (result, status, reason). A body the ledger
+    quarantined at the selected seq is never shown as an observed call, and a memory-only call that differs from
+    the last committed body is not durable."""
+    entry = frame['entry']
+    call = _received(entry['feed'] if entry else None, key)
+    if not call:
+        return None, 'not_received', None
+    refused = [r for r in rows if r['outcome'] == 'quarantine' and r['store_seq'] == entry.get('seq')]
+    if refused:
+        return '확인 중', 'unconfirmed', f"{entry.get('provider_order')}/{refused[-1]['reason']}"
+    if not frame['store_ok'] and call != _received(frame.get('committed_feed'), key):
+        return f'{CALLS[call]} · 저장 전', 'unsaved', 'uncommitted_memory_entry'
+    return CALLS[call], 'received', None
 
 
 def comparison(entry, decision_wall, predict=None):
@@ -209,17 +227,23 @@ class Game:
     def __init__(self, script, predict=None):
         self.script, self.predict = script, predict
 
-    def _pitch_log(self, frame, upto):
-        """Ledger rows committed by ``frame`` for the first ``upto`` plan pitches (all already revealed)."""
+    def _pitch_log(self, frame, upto, shown_from):
+        """Ledger rows committed by ``frame`` for the first ``upto`` plan pitches (all already revealed). Frames
+        ``i..shown_from-1`` were already shown for pitch ``i``; a differing earlier display is marked, not hidden."""
         rows = [r for r in self.script.store.pitch_events(GAME)['events'] if r['id'] <= (frame['as_of']['pitch_event_id'] or 0)]
         log = []
         for i, key in enumerate(PLAN[:upto]):
             mine = [r for r in rows if (r['at_bat_number'], r['pitch_number']) == key[:2] or r['provider_event_id'] == key[2]]
             accepted = [r for r in mine if r['outcome'] != 'quarantine' and (r['at_bat_number'], r['pitch_number']) == key[:2]]
-            call = _received(frame['entry']['feed'] if frame['entry'] else None, key)
-            log.append({'game_pitch': i+1, 'inning': (key[0]-1)//6+1, 'result': CALLS.get(call) if call else '아직 받지 못함',
-                        'corrected': any(r['outcome'] == 'correction' for r in accepted),
+            result, status, reason = _shown(frame, key, mine)
+            corrected = any(r['outcome'] == 'correction' for r in accepted)
+            earlier = [_shown(self.script.frames[j], key, mine)[0] for j in range(i, shown_from)]
+            changed = [s for s in earlier if s is not None and s != result]
+            log.append({'game_pitch': i+1, 'inning': (key[0]-1)//6+1, 'result': result or '아직 받지 못함',
+                        'status': status, 'corrected': corrected,
+                        'changed_from': changed[-1] if changed and not corrected else None,
                         'diagnostics': {'key': {'game_pk': GAME, 'at_bat_number': key[0], 'pitch_number': key[1]},
+                                        'display_reason': reason,
                                         'provider_event_ids': sorted({r['provider_event_id'] for r in accepted if r['provider_event_id']}),
                                         'first_recorded_receipt': accepted[0]['first_received'] if accepted else None,
                                         'receipt_clock': accepted[0]['receipt_clock'] if accepted else 'unknown',
@@ -237,7 +261,8 @@ class Game:
         view = {'schema': 'synthetic-game-view-v1', 'synthetic': True, 'live': False, 'game_label': '합성 경기',
                 'game_pitch': cursor+1, 'reveal': revealed, 'situation': _situation(entry['feed']) if entry else None,
                 'connection': '연결이 끊겨 마지막으로 받은 자료를 보여 줍니다.' if frame['disconnected'] else None,
-                'comparison': None, 'actual': None, 'history': self._pitch_log(frame, cursor+int(revealed)),
+                'comparison': None, 'actual': None,
+                'history': self._pitch_log(frame, cursor+int(revealed), cursor if revealed else max(cursor-1, 0)),
                 'complete': False, 'partition': None, 'limitations': LIMITS,
                 'diagnostics': {'selected': None if not entry else {
                                     'store_seq': entry.get('seq'), 'slot_version': entry.get('version'),
@@ -248,9 +273,12 @@ class Game:
         if not revealed:
             view['comparison'] = comparison(entry, T0+10*cursor+.5, self.predict)
         else:
-            call = _received(entry['feed'] if entry else None, PLAN[cursor])
-            view['actual'] = {'game_pitch': cursor+1, 'result': CALLS.get(call) if call else None,
-                              'note': None if call else '이 시점에는 이 투구 자료를 받지 못했습니다.'}
+            row = view['history'][cursor]
+            view['actual'] = {'game_pitch': cursor+1, 'result': None if row['status'] == 'not_received' else row['result'],
+                              'status': row['status'], 'reason': row['diagnostics']['display_reason'],
+                              'note': {'not_received': '이 시점에는 이 투구 자료를 받지 못했습니다.',
+                                       'unconfirmed': '받은 자료가 저장소 검증을 통과하지 못해 결과를 확정하지 않았습니다.',
+                                       'unsaved': '저장소에 기록되기 전의 임시 자료입니다.'}.get(row['status'])}
             if cursor == LAST:
                 view['complete'], view['partition'] = True, self.partition()
         return view

@@ -12,7 +12,7 @@ async function request(path, method = 'GET') {
 
 function historyHTML(rows) {
   if (!rows.length) return '<p class="empty">공을 공개하면 이곳에 받은 투구 기록이 쌓입니다.</p>';
-  return `<ol class="history-list">${rows.slice().reverse().map(row => `<li><span>${row.game_pitch}구 · ${row.inning}회</span><b>${escapeHTML(row.result)}${row.corrected ? ' <small>정정됨</small>' : ''}</b></li>`).join('')}</ol>`;
+  return `<ol class="history-list">${rows.slice().reverse().map(row => `<li><span>${row.game_pitch}구 · ${row.inning}회</span><b>${escapeHTML(row.result)}${row.corrected ? ' <small>정정됨</small>' : ''}${row.changed_from ? ` <small>표시 바뀜 · 이전 ${escapeHTML(row.changed_from)}</small>` : ''}</b></li>`).join('')}</ol>`;
 }
 
 function render() {
@@ -33,7 +33,7 @@ function render() {
       ${a ? `<div class="actual"><small>관측기가 받은 기록</small><strong>${escapeHTML(a.result ?? '자료 없음')}</strong>${a.note ? `<p>${escapeHTML(a.note)}</p>` : ''}</div>` : ''}
       <div class="action-bar">${!view.reveal ? '<button type="button" class="primary" id="reveal">결과 공개</button>' : view.complete ? '<button type="button" class="secondary" id="restart">처음부터 다시 보기</button>' : '<button type="button" class="primary" id="next">다음 투구</button>'}</div>
       ${view.complete ? `<div class="summary"><b>합성 경기 종료 · 기대 키 ${view.partition.expected_keys}개</b><p>수용 ${view.partition.counts.accepted} · 격리만 ${view.partition.counts.quarantined_only} · 누락 ${view.partition.counts.missing} · 계획 밖 ${view.partition.counts.extra}</p><small>${escapeHTML(view.partition.note)}</small></div>` : ''}
-      <details class="detail diag"><summary>근거/진단</summary><pre>${json(view.diagnostics)}${c ? '\n' + json(c.gate) : ''}</pre></details>
+      <details class="detail diag"><summary>근거/진단</summary><pre>${json(view.diagnostics)}${c ? '\n' + json(c.gate) : ''}${a?.reason ? '\n' + json({display_reason: a.reason}) : ''}</pre></details>
     </div>
     <aside class="card"><div class="section-head"><div><div class="number">PITCH LOG</div><h2>지금까지의 투구</h2><p>공개된 기록만 표시합니다.</p></div></div>${historyHTML(view.history)}
       <p class="note">${view.limitations.map(escapeHTML).join('<br>')}</p></aside>

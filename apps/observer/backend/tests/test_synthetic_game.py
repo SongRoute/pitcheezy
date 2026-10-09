@@ -77,7 +77,8 @@ def test_correction_disconnect_and_crash_restart_in_the_log(script):
     trail = [r['outcome'] for r in after['history'][18]['diagnostics']['trail']]
     assert trail == ['new', 'correction']
     gap = game.state(60, True)
-    assert gap['actual'] == {'game_pitch': 61, 'result': None, 'note': '이 시점에는 이 투구 자료를 받지 못했습니다.'}
+    assert gap['actual'] == {'game_pitch': 61, 'result': None, 'status': 'not_received', 'reason': None,
+                             'note': '이 시점에는 이 투구 자료를 받지 못했습니다.'}
     assert gap['connection'] and gap['history'][60]['result'] == '아직 받지 못함'
     restarted = game.state(106, False)  # frame 105: new process restored the store, then polled
     assert restarted['comparison']['state'] == 'waiting' and restarted['diagnostics']['store_ok']
@@ -85,6 +86,25 @@ def test_correction_disconnect_and_crash_restart_in_the_log(script):
     assert restarted['history'][99]['corrected']  # 'C' was lost in the crash; 'S' recorded after restart
     receipts = [row['diagnostics'] for row in restarted['history'][100:105]]
     assert all(d['receipt_clock'] == 'observer_local' and d['first_recorded_receipt'] == sg.T0+10*105+1 for d in receipts)
+
+
+def test_refused_or_unsaved_body_is_not_shown_as_an_observed_call(script):
+    """D1: the selected step-30 body is same_stamp_conflict and quarantined; it is never an unqualified call."""
+    game = sg.Game(script)
+    reveal = game.state(30, True)
+    assert reveal['diagnostics']['selected']['provider_order'] == 'same_stamp_conflict'
+    assert (reveal['actual']['result'], reveal['actual']['status']) == ('확인 중', 'unconfirmed')
+    assert reveal['actual']['reason'] == 'same_stamp_conflict/same_revision_hash_mismatch'
+    assert game.state(31, False)['history'][30]['result'] == '확인 중'
+    for later in (game.state(31, True), game.state(LAST, True)):  # reconciled body: change shown, not a correction
+        row = later['history'][30]
+        assert (row['result'], row['status'], row['corrected'], row['changed_from']) == ('볼', 'received', False, '확인 중')
+    corrected = game.state(LAST, True)['history'][18]
+    assert corrected['corrected'] and corrected['changed_from'] is None
+    unsaved = game.state(81, True)
+    assert unsaved['actual']['status'] == 'unsaved' and unsaved['actual']['result'].endswith(' · 저장 전')
+    assert game.state(82, False)['comparison']['label'] == '지원 없음'
+    assert 'changed_from' in (sg.WEB/'app.js').read_text()
 
 
 def test_http_first_to_last_reveal_next_restart_and_final_partition(script):
