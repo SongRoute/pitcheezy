@@ -51,7 +51,42 @@ CREATE TABLE IF NOT EXISTS snapshots (
 CREATE INDEX IF NOT EXISTS snapshots_game_event ON snapshots(game_pk, event_wall, version);
 CREATE TRIGGER IF NOT EXISTS snapshots_append_only
     BEFORE UPDATE ON snapshots BEGIN SELECT RAISE(ABORT, 'append-only snapshot'); END;
+CREATE TABLE IF NOT EXISTS pitch_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_pk INTEGER NOT NULL,
+    provider_event_id TEXT,
+    at_bat_number INTEGER,
+    pitch_number INTEGER,
+    outcome TEXT NOT NULL,
+    reason TEXT,
+    revision INTEGER,
+    provider_ts TEXT,
+    provider_event_time TEXT,
+    event_wall REAL NOT NULL,
+    sha TEXT NOT NULL,
+    first_received REAL,
+    received REAL NOT NULL,
+    receipt_clock TEXT NOT NULL,
+    store_seq INTEGER NOT NULL,
+    body BLOB NOT NULL);
+CREATE INDEX IF NOT EXISTS pitch_events_id ON pitch_events(game_pk, provider_event_id, id);
+CREATE TRIGGER IF NOT EXISTS pitch_events_no_update
+    BEFORE UPDATE ON pitch_events BEGIN SELECT RAISE(ABORT, 'append-only pitch event'); END;
+CREATE TRIGGER IF NOT EXISTS pitch_events_no_delete
+    BEFORE DELETE ON pitch_events BEGIN SELECT RAISE(ABORT, 'append-only pitch event'); END;
 '''
+ACCEPTED = "outcome IN ('new', 'correction')"
+
+
+def _pitches(feed):
+    """(provider_event_id, at_bat_number, pitch_number, playEvent) for every pitch in the feed. The official
+    key is GUMBO ``atBatIndex``+1 / ``pitchNumber``; ``playId`` is the provider's id, not a promised stable one."""
+    for play in ((feed.get('liveData') or {}).get('plays') or {}).get('allPlays') or []:
+        index = (play.get('about') or {}).get('atBatIndex')
+        for event in play.get('playEvents') or []:
+            if event.get('isPitch'):
+                yield (event.get('playId'), None if index is None else int(index)+1,
+                       event.get('pitchNumber'), event)
 
 
 def _canonical(feed):
@@ -107,8 +142,68 @@ class LiveSnapshotStore:
                        'VALUES (?,?,?,?,?,?,?,?,?)', (game_pk, slot, version, feed_ts, sha, first, fetched, source,
                                                       gzip.compress(body, compresslevel=5)))
             seq = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            self._record_pitches(db, game_pk, feed, feed_ts=feed_ts, event=slot, received=fetched,
+                                 source=source, seq=seq)
         return outcome, {'game_pk': game_pk, 'feed': feed, 'event': slot, 'fetched': first, 'seq': seq,
                          'version': version, 'sha': sha, 'version_fetched': fetched, 'source': source}
+
+    def _record_pitches(self, db, game_pk, feed, *, feed_ts, event, received, source, seq):
+        """Append each pitch whose provider id is new or whose payload changed in a later provider revision.
+        Same id with a different official key, a key already held by another id, or a changed payload under
+        the same provider ``timeStamp`` is quarantined (kept, never accepted). Only snapshots that reach this
+        store are seen: corrections superseded while it was unreachable are not recoverable."""
+        clock = 'observer_local' if source == 'live_poll' else 'unverified'
+        for pid, at_bat, number, payload in _pitches(feed):
+            body = _canonical(payload)
+            sha = hashlib.sha256(body).hexdigest()
+            current = db.execute(f'SELECT at_bat_number, pitch_number, sha, provider_ts, revision, first_received '
+                                 f'FROM pitch_events WHERE game_pk=? AND provider_event_id=? AND {ACCEPTED} '
+                                 'ORDER BY id DESC LIMIT 1', (game_pk, pid)).fetchone()
+            holder = db.execute(f'SELECT provider_event_id FROM pitch_events WHERE game_pk=? AND at_bat_number=? '
+                                f'AND pitch_number=? AND {ACCEPTED} AND provider_event_id IS NOT ?',
+                                (game_pk, at_bat, number, pid)).fetchone()
+            revision, first, reason = None, None, None
+            if not pid or at_bat is None or type(number) is not int:
+                reason = 'incomplete_identity'
+            elif holder:
+                reason = 'ambiguous_remap'
+            elif current is None:
+                revision, first = 1, received
+            elif (current[0], current[1]) != (at_bat, number):
+                reason = 'conflicting_key'
+            elif current[2] == sha:
+                continue
+            elif not feed_ts or current[3] == feed_ts:
+                reason = 'same_revision_hash_mismatch'
+            else:
+                revision, first = current[4]+1, current[5]
+            if reason and db.execute('SELECT 1 FROM pitch_events WHERE game_pk=? AND provider_event_id IS ? AND sha=? '
+                                     'AND reason=?', (game_pk, pid, sha, reason)).fetchone():
+                continue
+            db.execute('INSERT INTO pitch_events(game_pk, provider_event_id, at_bat_number, pitch_number, outcome, reason, '
+                       'revision, provider_ts, provider_event_time, event_wall, sha, first_received, received, receipt_clock, '
+                       'store_seq, body) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                       (game_pk, pid, at_bat, number, 'quarantine' if reason else 'new' if revision == 1 else 'correction',
+                        reason, revision, feed_ts, payload.get('startTime'), event, sha, first, received, clock, seq,
+                        gzip.compress(body, compresslevel=5)))
+
+    def pitch_events(self, game_pk):
+        """Every pitch row in append order plus the accepted key coverage per at-bat (synthetic reconciliation
+        only: gaps say which pitch numbers this store never saw, not that the game is complete)."""
+        keys = ('id', 'provider_event_id', 'at_bat_number', 'pitch_number', 'outcome', 'reason', 'revision',
+                'provider_ts', 'provider_event_time', 'event_wall', 'sha', 'first_received', 'received',
+                'receipt_clock', 'store_seq')
+        with closing(self.connect()) as db:
+            rows = [dict(zip(keys, row)) for row in db.execute(
+                f'SELECT {", ".join(keys)} FROM pitch_events WHERE game_pk=? ORDER BY id', (int(game_pk),))]
+        coverage = {}
+        for row in rows:
+            if row['outcome'] == 'new':
+                coverage.setdefault(row['at_bat_number'], []).append(row['pitch_number'])
+        gaps = {ab: sorted(set(range(1, max(n)+1))-set(n)) for ab, n in coverage.items()}
+        return {'events': rows, 'coverage': {ab: sorted(n) for ab, n in coverage.items()},
+                'gaps': {ab: g for ab, g in gaps.items() if g},
+                'missing_at_bats': sorted(set(range(1, max(coverage, default=0)+1))-set(coverage))}
 
     def restore(self, game_pk, wall, max_delay_s):
         """The in-memory buffer ``LiveFeed`` would hold at ``wall``: the current version of every slot newer
