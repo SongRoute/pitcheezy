@@ -17,7 +17,7 @@ the replay cursor. Ingest outcomes for one game, under one ``BEGIN IMMEDIATE`` t
 * otherwise -> ``correction`` of the newest slot (first-seen times kept, as the in-memory buffer does)
 
 ``context_decisions`` / ``context_reconciliations`` hold append-only NextPitchContext decisions and their later,
-separate target reconciliations (``append_decision`` / ``append_reconciliation``); no other reader uses them.
+separate unverified candidate observations (``append_decision`` / ``append_reconciliation``); no other reader uses them.
 
     python -m observer_app.live_store ingest --db D --dir apps/observer/live_snapshots [--game 849844] [--limit N]
     python -m observer_app.live_store status --db D
@@ -105,6 +105,41 @@ CREATE TRIGGER IF NOT EXISTS context_reconciliations_no_delete
     BEFORE DELETE ON context_reconciliations BEGIN SELECT RAISE(ABORT, 'append-only reconciliation'); END;
 '''
 ACCEPTED = "outcome IN ('new', 'correction')"
+# Test-only snapshot source. No production writer emits it (``PersistentLiveFeed``: 'live_poll'/'memory_recovery',
+# ``ingest_dir``: 'recorded:*'), so a live, recorded or Final provider body can never carry KNOWN pre-pitch state
+# until a separately reviewed real provider contract exists. Bound to the committed row, not to a caller flag.
+SYNTHETIC_SOURCE = 'synthetic_test_pre_pitch'
+SYNTHETIC_SCHEMA = 'synthetic-pre-pitch-v1'
+SYNTHETIC_EVIDENCE = 'synthetic_test_state_not_provider'
+
+
+def _int_in(low, high):
+    return lambda v: type(v) is int and low <= v <= high
+
+
+# The only field -> path mapping that can be KNOWN, each with its validator (no bool-as-int).
+SYNTHETIC_PRE_PITCH = {
+    'balls': ('balls', _int_in(0, 3)), 'strikes': ('strikes', _int_in(0, 2)), 'outs_when_up': ('outs', _int_in(0, 2)),
+    'inning': ('inning', _int_in(1, 30)), 'inning_topbot': ('inning_topbot', lambda v: v in ('Top', 'Bottom')),
+    'home_score': ('home_score', _int_in(0, 99)), 'away_score': ('away_score', _int_in(0, 99)),
+    'bases': ('bases', lambda v: type(v) is list and all(type(b) is int for b in v) and v == sorted(set(v))
+              and set(v) <= {1, 2, 3}),
+    'stand': ('stand', lambda v: v in ('L', 'R')), 'p_throws': ('p_throws', lambda v: v in ('L', 'R')),
+    'pitcher': ('pitcher', _int_in(1, 10**7)), 'batter': ('batter', _int_in(1, 10**7))}
+
+
+def synthetic_pre_pitch(feed, source, field):
+    """(value, None) for a valid synthetic pre-pitch ``field`` of a committed ``SYNTHETIC_SOURCE`` body, else
+    (None, reason). Never reads plays, results, physics or provider linescore."""
+    if source != SYNTHETIC_SOURCE:
+        return None, 'not_synthetic_test_source'
+    state = feed.get('syntheticPrePitch') if isinstance(feed, dict) else None
+    if not isinstance(state, dict) or state.get('schema') != SYNTHETIC_SCHEMA:
+        return None, 'synthetic_envelope_absent'
+    key, valid = SYNTHETIC_PRE_PITCH[field]
+    if key not in state or state[key] is None:
+        return None, 'synthetic_field_absent'
+    return (state[key], None) if valid(state[key]) else (None, 'invalid_synthetic_value')
 
 
 def _provider_ts(value):
@@ -342,15 +377,27 @@ class LiveSnapshotStore:
         body, snap = _canonical(record), record['snapshot']
         decided = datetime.fromisoformat(record['decision_at']).timestamp()
         with self._write() as db:
+            row = None
             if snap is not None:
-                row = db.execute('SELECT version, sha, fetched FROM snapshots WHERE seq=? AND game_pk=?',
+                row = db.execute('SELECT version, sha, fetched, source, body FROM snapshots WHERE seq=? AND game_pk=?',
                                  (snap['store_seq'], record['game_pk'])).fetchone()
                 if row is None or (row[0], row[1]) != (snap['slot_version'], snap['feed_sha256']) or row[2] > decided:
                     raise ValueError('Decision snapshot is not a committed version received by decision_at')
+            stored = None
             for name, field in record['fields'].items():
-                cited = field['provenance'] and (field['provenance']['store_seq'], field['provenance']['feed_sha256'])
-                if field['status'] == 'KNOWN' and (snap is None or cited != (snap['store_seq'], snap['feed_sha256'])):
+                if field['status'] != 'KNOWN':
+                    continue
+                prov = field['provenance'] or {}
+                if snap is None or (prov.get('store_seq'), prov.get('feed_sha256')) != (snap['store_seq'], snap['feed_sha256']):
                     raise ValueError(f'KNOWN {name} does not cite the decision snapshot')
+                # Re-derive from the stored body: only the fixed synthetic path, same value, same validator.
+                if name not in SYNTHETIC_PRE_PITCH or prov.get('evidence') != SYNTHETIC_EVIDENCE or \
+                        prov.get('path') != ['syntheticPrePitch', SYNTHETIC_PRE_PITCH[name][0]]:
+                    raise ValueError(f'KNOWN {name} is not the fixed synthetic pre-pitch path')
+                stored = stored or json.loads(gzip.decompress(row[4]))
+                value, why = synthetic_pre_pitch(stored, row[3], name)
+                if why or type(value) is not type(field['value']) or value != field['value']:
+                    raise ValueError(f'KNOWN {name} is not the stored synthetic value ({why or "value_mismatch"})')
             held = db.execute('SELECT body FROM context_decisions WHERE decision_id=?', (record['decision_id'],)).fetchone()
             if held:
                 if bytes(held[0]) == body:
@@ -363,10 +410,13 @@ class LiveSnapshotStore:
         return 'appended'
 
     def append_reconciliation(self, decision_id, *, reconciled_at, evidence):
-        """Append a target reconciliation for a stored decision as a separate revision; the decision is never
-        rewritten. ``evidence`` are accepted ``pitch_events`` ids of one key, each recorded on the observer clock,
-        first received after ``decision_at`` and by ``reconciled_at`` (> ``decision_at``). A later correction is
-        a new revision citing its own row. Returns the stored body."""
+        """Append one later candidate observation for a stored decision as a separate revision; the decision (and its
+        UNKNOWN target) is never rewritten. ``evidence`` are accepted ``pitch_events`` ids of one key, each recorded
+        on the observer clock, first received after ``decision_at`` and by ``reconciled_at`` (> ``decision_at``).
+        A ledger row received later proves only a later observation, never the immediately next physical pitch:
+        ``candidate_target`` is ``UNVERIFIED_NEXT``, or ``NOT_NEXT`` when an accepted ``new`` row of another key was
+        first received after the decision and no later than the cited one. Each revision links the previous one
+        (``previous``), saying whether it supersedes a different key. Returns the stored body."""
         at = datetime.fromisoformat(reconciled_at)
         if at.tzinfo is None:
             raise ValueError('A timezone-aware reconciled_at is required')
@@ -392,12 +442,35 @@ class LiveSnapshotStore:
                 raise ValueError('Evidence must be first received after the decision and by reconciled_at')
             if len({(r['at_bat_number'], r['pitch_number']) for r in rows}) != 1:
                 raise ValueError('Evidence rows name conflicting keys')
-            revision = db.execute('SELECT COUNT(*) FROM context_reconciliations WHERE decision_id=?',
-                                  (decision_id,)).fetchone()[0]+1
-            body = _canonical({'schema': 'next-pitch-reconciliation-v1', 'decision_id': decision_id, 'revision': revision,
-                               'reconciled_at': at.isoformat(), 'evidence': rows,
-                               'target': {'game_pk': held[0], 'at_bat_number': rows[0]['at_bat_number'],
-                                          'pitch_number': rows[0]['pitch_number']}})
+            key = (rows[0]['at_bat_number'], rows[0]['pitch_number'])
+            cited_first = min(r['first_received'] for r in rows)
+            between = db.execute("SELECT id, at_bat_number, pitch_number, first_received FROM pitch_events WHERE game_pk=? "
+                                 "AND outcome='new' AND first_received>? AND first_received<=? "
+                                 'AND NOT (at_bat_number=? AND pitch_number=?) ORDER BY id',
+                                 (held[0], decided, cited_first, *key)).fetchall()
+            prior = db.execute('SELECT revision, body FROM context_reconciliations WHERE decision_id=? '
+                               'ORDER BY revision DESC LIMIT 1', (decision_id,)).fetchone()
+            previous = None
+            if prior:
+                last = json.loads(prior[1])['candidate_target']
+                same = (last['at_bat_number'], last['pitch_number']) == key
+                previous = {'revision': prior[0], 'at_bat_number': last['at_bat_number'],
+                            'pitch_number': last['pitch_number'],
+                            'relation': 'same_key_later_observation' if same else 'supersedes_different_key'}
+            body = _canonical({'schema': 'next-pitch-reconciliation-v2', 'decision_id': decision_id,
+                               'revision': (prior[0] if prior else 0)+1, 'reconciled_at': at.isoformat(),
+                               'evidence': rows, 'previous': previous,
+                               'candidate_observation': {'pitch_event_ids': [r['pitch_event_id'] for r in rows],
+                                                         'first_received': cited_first, 'receipt_clock': 'observer_local'},
+                               'candidate_target': {
+                                   'game_pk': held[0], 'at_bat_number': key[0], 'pitch_number': key[1],
+                                   'status': 'NOT_NEXT' if between else 'UNVERIFIED_NEXT',
+                                   'basis': 'accepted_row_first_received_after_decision',
+                                   'reason': 'intervening_accepted_new_key' if between else
+                                             'later_observation_not_proof_of_immediate_next_pitch',
+                                   'intervening': [dict(zip(('pitch_event_id', 'at_bat_number', 'pitch_number',
+                                                             'first_received'), r)) for r in between]}})
+            revision = json.loads(body)['revision']
             db.execute('INSERT INTO context_reconciliations(decision_id, revision, reconciled_at, sha, body) VALUES (?,?,?,?,?)',
                        (decision_id, revision, at.isoformat(), hashlib.sha256(body).hexdigest(), body))
         return json.loads(body)
