@@ -69,7 +69,9 @@ def test_replay_is_unverified_and_probability_adapter_guards_support(tmp_path):
     kwargs = dict(model_sha256='a'*64, encoder_sha256='b'*64, support_counts=[40, 2])
     assert conditional_candidates(replay, vectors, ['FF', 'SL'], predict, **kwargs)['reason'] == 'input_lineage_unverified'
     assert not calls
-    _, live = store.ingest(8, {'metaData': {'eventWall': 100.}}, fetched=110., source='live_poll')
+    unstamped = store.ingest(9, {'metaData': {'eventWall': 100.}}, fetched=110., source='live_poll')[1]
+    _, live = store.ingest(8, {'metaData': {'eventWall': 100., 'timeStamp': '20261008_000100'}}, fetched=110.,
+                           source='live_poll')
     receipt = capture_input(live, {'balls': 1}, game_pk=8, decision_at=iso(112.), trusted_clock=True)
     evidence = {'kind': 'synthetic_fixture', 'input_sha256': receipt['input_sha256'],
                 'vectors_sha256': hashlib.sha256(np.ascontiguousarray(vectors.astype(np.float64)).tobytes()).hexdigest(),
@@ -78,6 +80,10 @@ def test_replay_is_unverified_and_probability_adapter_guards_support(tmp_path):
     result = conditional_candidates(receipt, vectors, ['FF', 'SL'], predict,
                                     input_evidence=evidence, **kwargs)
     assert result['status'] == 'conditional_fixture' and calls == [2]
+    receipt = capture_input(unstamped, {'balls': 1}, game_pk=9, decision_at=iso(112.), trusted_clock=True)
+    evidence['input_sha256'] = receipt['input_sha256']
+    assert conditional_candidates(receipt, vectors, ['FF', 'SL'], predict, input_evidence=evidence, **kwargs) == {
+        'status': 'unsupported', 'reason': 'unorderable_provider_stamp', 'candidates': []} and calls == [2]
     assert result['candidates'][0]['probabilities'] == [.1]*10
     assert result['candidates'][1]['probabilities'] is None
     assert result['causal_effect'] is False and result['policy_adopted'] is False

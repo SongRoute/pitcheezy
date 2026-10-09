@@ -48,7 +48,12 @@ def capture_input(entry, pre_pitch_input, *, game_pk, decision_at, trusted_clock
     if type(entry.get('seq')) is not int or type(entry.get('version')) is not int:
         raise ValueError('Committed version identity is required')
     copied = json.loads(_bytes(pre_pitch_input))
-    return {'schema': 'service-input-receipt-v1', 'game_pk': int(game_pk),
+    # A newer game event selects a slot whatever its provider stamp; a verified local receipt clock says nothing
+    # about provider revision order, so only an 'ordered' store version counts as fresh prediction input.
+    order = entry.get('provider_order')
+    freshness = None if order == 'ordered' else f'{order}_provider_stamp' if order in ('stale', 'unorderable') \
+        else 'provider_order_unknown'
+    return {'provider_order': order, 'freshness_reason': freshness,'schema': 'service-input-receipt-v1', 'game_pk': int(game_pk),
             'store_seq': entry['seq'], 'slot_version': entry['version'], 'feed_sha256': digest,
             'input': copied, 'input_sha256': hashlib.sha256(_bytes(copied)).hexdigest(),
             'first_received_at': datetime.fromtimestamp(first, timezone.utc).isoformat(),
@@ -92,6 +97,8 @@ def conditional_candidates(receipt, vectors, actions, predict, *, model_sha256, 
         return {'status': 'unsupported', 'reason': 'input_lineage_unverified', 'candidates': []}
     if input_evidence.get('kind') not in ('synthetic_fixture', 'audited_offline_book96'):
         return {'status': 'unsupported', 'reason': 'input_lineage_unverified', 'candidates': []}
+    if (stale := receipt.get('freshness_reason', 'provider_order_unknown')):  # abstain: not fresh input
+        return {'status': 'unsupported', 'reason': stale, 'candidates': []}
     probabilities = np.asarray(predict(x), dtype=np.float64)
     if probabilities.shape != (len(actions), 10) or not np.isfinite(probabilities).all() or (probabilities < 0).any() or not np.allclose(probabilities.sum(axis=1), 1, rtol=0, atol=1e-6):
         raise ValueError('Predictor must return normalized ten-class probabilities')

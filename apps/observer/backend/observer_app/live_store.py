@@ -113,6 +113,17 @@ def _stale_stamp(feed_ts, newest_ts, newer_event):
     return bool(isinstance(feed_ts, str) and isinstance(newest_ts, str) and feed_ts and newest_ts and feed_ts < newest_ts)
 
 
+def _provider_order(db, game_pk, feed_ts, seq):
+    """Provider-revision order of the committed version ``seq``, which local receipt order does not imply:
+    'unorderable' (missing/malformed stamp), 'stale' (an earlier committed version of the game carries a later
+    valid stamp, e.g. a newer-event slot selected under an older revision) or 'ordered'."""
+    if not _provider_ts(feed_ts):
+        return 'unorderable'
+    later = db.execute('SELECT DISTINCT feed_ts FROM snapshots WHERE game_pk=? AND seq<? AND feed_ts>?',
+                       (game_pk, seq, feed_ts)).fetchall()  # valid stamps sort as text; parse filters the rest
+    return 'stale' if any(_provider_ts(ts) for ts, in later) else 'ordered'
+
+
 def _pitches(feed):
     """(provider_event_id, at_bat_number, pitch_number, playEvent, reason) for every pitch in the feed. The
     official key is GUMBO ``atBatIndex``+1 / ``pitchNumber``; ``playId`` is the provider's id, not a promised
@@ -190,7 +201,8 @@ class LiveSnapshotStore:
             elif sha == newest[3]:
                 return 'duplicate', {'game_pk': game_pk, 'feed': feed, 'event': newest[0], 'fetched': newest[4],
                                      'seq': newest[5], 'version': newest[1], 'sha': newest[3],
-                                     'version_fetched': newest[6], 'source': newest[7]}
+                                     'version_fetched': newest[6], 'source': newest[7],
+                                     'provider_order': _provider_order(db, game_pk, newest[2], newest[5])}
             else:
                 outcome, slot, version, first = 'correction', newest[0], newest[1]+1, newest[4]
             db.execute('INSERT INTO snapshots(game_pk, event_wall, version, feed_ts, sha, first_fetched, fetched, source, body) '
@@ -199,8 +211,10 @@ class LiveSnapshotStore:
             seq = db.execute('SELECT last_insert_rowid()').fetchone()[0]
             self._record_pitches(db, game_pk, feed, feed_ts=feed_ts, event=slot, received=fetched,
                                  source=source, seq=seq)
+            order = _provider_order(db, game_pk, feed_ts, seq)
         return outcome, {'game_pk': game_pk, 'feed': feed, 'event': slot, 'fetched': first, 'seq': seq,
-                         'version': version, 'sha': sha, 'version_fetched': fetched, 'source': source}
+                         'version': version, 'sha': sha, 'version_fetched': fetched, 'source': source,
+                         'provider_order': order}
 
     def _record_pitches(self, db, game_pk, feed, *, feed_ts, event, received, source, seq):
         """Append each pitch whose provider id is new or whose payload changed under a strictly later, valid
@@ -253,13 +267,23 @@ class LiveSnapshotStore:
 
     def pitch_events(self, game_pk):
         """Every pitch row in append order plus the accepted key coverage per at-bat (synthetic reconciliation
-        only: gaps say which pitch numbers this store never saw, not that the game is complete)."""
+        only: gaps say which pitch numbers this store never saw, not that the game is complete).
+
+        ``history`` is always UNKNOWN: revisions never fetched (network gap) or fetched but superseded/lost while
+        the store was down or the process crashed leave no trace, and no raw arrival log exists, so this ledger
+        cannot prove every intermediate revision. It is derived from committed rows, so a restart reports the
+        same; ``as_of`` is the reconciliation boundary."""
         keys = ('id', 'provider_event_id', 'at_bat_number', 'pitch_number', 'outcome', 'reason', 'revision',
                 'provider_ts', 'provider_event_time', 'event_wall', 'sha', 'first_received', 'received',
                 'receipt_clock', 'store_seq')
         with closing(self.connect()) as db:
             rows = [dict(zip(keys, row)) for row in db.execute(
                 f'SELECT {", ".join(keys)} FROM pitch_events WHERE game_pk=? ORDER BY id', (int(game_pk),))]
+            max_seq, recovered = db.execute("SELECT MAX(seq), SUM(source='memory_recovery') FROM snapshots "
+                                            'WHERE game_pk=?', (int(game_pk),)).fetchone()
+        history = {'status': 'UNKNOWN',
+                   'reasons': ['intermediate_revisions_unlogged'] + (['store_outage_recovered'] if recovered else []),
+                   'as_of': {'store_seq': max_seq, 'pitch_event_id': rows[-1]['id'] if rows else None}}
         coverage = {}
         for row in rows:
             if row['outcome'] == 'new':
@@ -267,7 +291,8 @@ class LiveSnapshotStore:
         gaps = {ab: sorted(set(range(1, max(n)+1))-set(n)) for ab, n in coverage.items()}
         return {'events': rows, 'coverage': {ab: sorted(n) for ab, n in coverage.items()},
                 'gaps': {ab: g for ab, g in gaps.items() if g},
-                'missing_at_bats': sorted(set(range(1, max(coverage, default=0)+1))-set(coverage))}
+                'missing_at_bats': sorted(set(range(1, max(coverage, default=0)+1))-set(coverage)),
+                'history': history}
 
     def restore(self, game_pk, wall, max_delay_s):
         """The in-memory buffer ``LiveFeed`` would hold at ``wall``: the current version of every slot newer
@@ -278,13 +303,13 @@ class LiveSnapshotStore:
             floor = db.execute('SELECT MAX(event_wall) FROM snapshots WHERE game_pk=? AND event_wall<=?',
                                (game_pk, bound)).fetchone()[0]
             rows = db.execute(
-                'SELECT event_wall, first_fetched, body, seq, version, sha, fetched, source FROM snapshots s WHERE game_pk=? AND event_wall>=? AND version='
+                'SELECT event_wall, first_fetched, body, seq, version, sha, fetched, source, feed_ts FROM snapshots s WHERE game_pk=? AND event_wall>=? AND version='
                 '(SELECT MAX(version) FROM snapshots WHERE game_pk=s.game_pk AND event_wall=s.event_wall) ORDER BY event_wall',
                 (game_pk, bound if floor is None else floor)).fetchall()
-        return [{'game_pk': int(game_pk), 'feed': json.loads(gzip.decompress(body)), 'event': event, 'fetched': first,
-                 'seq': seq, 'version': version, 'sha': sha, 'version_fetched': received,
-                 'source': source, 'restored': True}
-                for event, first, body, seq, version, sha, received, source in rows]
+            return [{'game_pk': int(game_pk), 'feed': json.loads(gzip.decompress(body)), 'event': event, 'fetched': first,
+                     'seq': seq, 'version': version, 'sha': sha, 'version_fetched': received,
+                     'source': source, 'restored': True, 'provider_order': _provider_order(db, game_pk, feed_ts, seq)}
+                    for event, first, body, seq, version, sha, received, source, feed_ts in rows]
 
     def read_after(self, game_pk, after=0, *, until_event, limit=100):
         """Committed versions of ``game_pk`` with ``seq > after`` whose game event is at or before
@@ -373,7 +398,8 @@ class PersistentLiveFeed(LiveFeed):
         elif buffer and entry['event'] == buffer[-1]['event']:
             buffer[-1]['feed'] = feed
             if outcome == 'correction':
-                buffer[-1].update({key: entry[key] for key in ('seq', 'version', 'sha', 'version_fetched', 'source', 'game_pk')})
+                buffer[-1].update({key: entry[key] for key in ('seq', 'version', 'sha', 'version_fetched', 'source', 'game_pk',
+                                                               'provider_order')})
         elif not buffer or entry['event'] > buffer[-1]['event']:
             buffer.append(entry)
 
