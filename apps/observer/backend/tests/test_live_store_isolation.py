@@ -11,7 +11,7 @@ from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed
 
 
 def feed(event):
-    return {'metaData': {'eventWall': event, 'timeStamp': str(event)}, 'liveData': {}}
+    return {'metaData': {'eventWall': event, 'timeStamp': f'20260101_000{event}'}, 'liveData': {}}
 
 
 def test_recovery_flushes_memory_before_accepting_late_feed(tmp_path):
@@ -69,8 +69,11 @@ def test_older_provider_stamp_with_newer_event_wall_is_never_a_correction(tmp_pa
     live._accept(1, stale_late, 210, buffer)
     assert buffer[-1]['feed'] == late and live.stale[1] == 1
     rows = store.pitch_events(1)['events']
-    assert [(r['outcome'], r['reason'], r['revision'], r['first_received']) for r in rows] == [
-        ('new', None, 1, 100), ('quarantine', 'stale_revision', None, None)]
+    # the late slot is selected despite its older stamp (newer event); its changed pitch is still refused, and the
+    # stale arrival's pitch gets a receipt whose store_seq names the selected version (2), not the arrival
+    assert [(r['outcome'], r['reason'], r['revision'], r['first_received'], r['received'], r['store_seq']) for r in rows] == [
+        ('new', None, 1, 100, 100, 1), ('quarantine', 'stale_revision', None, None, 200, 2),
+        ('quarantine', 'stale_revision', None, None, 210, 2)]
     assert [x['feed'] for x in store.restore(1, 300, 300)] == [first, late]
 
 
@@ -172,7 +175,7 @@ def test_outage_correction_keeps_first_and_version_arrival(tmp_path, first_persi
     live._accept(1, feed(100), 100, buffer)
     store.ingest = fail
     corrected = feed(100)
-    corrected['metaData']['timeStamp'] = '101'
+    corrected['metaData']['timeStamp'] = '20260101_000101'
     live._accept(1, corrected, 120, buffer)
     live._accept(1, corrected, 125, buffer)
     store.ingest = ingest

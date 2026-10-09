@@ -11,7 +11,8 @@ slot without a newer game event is a correction (``version`` + 1). ``seq`` order
 the replay cursor. Ingest outcomes for one game, under one ``BEGIN IMMEDIATE`` transaction:
 
 * newer game event than the newest slot -> ``new`` slot
-* same or older event, older ``metaData.timeStamp`` than the newest slot -> ``stale`` (out of order; dropped)
+* same or older event, older or unorderable ``metaData.timeStamp`` than the newest slot's valid one -> ``stale``
+  (out of order: the snapshot is not kept, its changed pitches still reach the pitch ledger; see ``_stale_stamp``)
 * same content as the newest slot's current version -> ``duplicate`` (no write)
 * otherwise -> ``correction`` of the newest slot (first-seen times kept, as the in-memory buffer does)
 
@@ -96,14 +97,19 @@ def _feed_ts(feed):
 
 def _stale_stamp(feed_ts, newest_ts, newer_event):
     """True if a snapshot stamped ``feed_ts`` whose event is not newer must not replace the newest one stamped
-    ``newest_ts``. Two valid provider stamps compare as times. If either is missing or malformed, fail closed as
-    before and compare the raw strings. A newer event is always kept as its own slot: the pitch ledger then
-    refuses any changed pitch under an older (``stale_revision``) or unparseable (``unordered_revision``) stamp."""
+    ``newest_ts``. Two valid provider stamps compare as times. A missing or malformed stamp never replaces a valid
+    one, and a valid stamp always replaces an unorderable one. If neither parses, ordering is unknown: the legacy
+    raw string compare is kept (only refuses when both are non-empty strings and ``feed_ts`` sorts first), so
+    otherwise the later arrival is selected. A newer event is always kept as its own slot whatever its stamp, so
+    a newer slot's selected snapshot may carry an older or unorderable provider revision: the pitch ledger then
+    refuses any changed pitch under it (``stale_revision`` / ``unordered_revision``)."""
     if newer_event:
         return False
     new, old = _provider_ts(feed_ts), _provider_ts(newest_ts)
     if new and old:
         return new < old
+    if new or old:
+        return not new
     return bool(isinstance(feed_ts, str) and isinstance(newest_ts, str) and feed_ts and newest_ts and feed_ts < newest_ts)
 
 
@@ -113,7 +119,9 @@ def _pitches(feed):
     stable one. A malformed item gets ``reason`` and no key, so it is quarantined alone."""
     def number(value, low):
         return value if type(value) is int and value >= low else None
-    plays = ((feed.get('liveData') or {}).get('plays') or {}).get('allPlays') or []
+    live = feed.get('liveData') if isinstance(feed, dict) else None
+    plays = live.get('plays') if isinstance(live, dict) else None
+    plays = plays.get('allPlays') if isinstance(plays, dict) else None
     for play in plays if isinstance(plays, list) else []:
         about = play.get('about') if isinstance(play, dict) else None
         index = number(about.get('atBatIndex') if isinstance(about, dict) else None, 0)
@@ -174,6 +182,10 @@ class LiveSnapshotStore:
             if newest is None or event > newest[0]:
                 outcome, slot, version, first = 'new', event, 1, fetched if first_fetched is None else first_fetched
             elif _stale_stamp(feed_ts, newest[2], False):
+                # Selection is unchanged and the stale snapshot body is not kept, but its changed pitches still get
+                # a receipt (quarantined unless new). ``store_seq`` then names the selected version, not this arrival.
+                self._record_pitches(db, game_pk, feed, feed_ts=feed_ts, event=newest[0], received=fetched,
+                                     source=source, seq=newest[5])
                 return 'stale', None
             elif sha == newest[3]:
                 return 'duplicate', {'game_pk': game_pk, 'feed': feed, 'event': newest[0], 'fetched': newest[4],
@@ -194,8 +206,10 @@ class LiveSnapshotStore:
         """Append each pitch whose provider id is new or whose payload changed under a strictly later, valid
         provider ``timeStamp``. A malformed item, same id with a different official key, a key already held by
         another id, or a changed payload under an equal, older or unparseable ``timeStamp`` is quarantined
-        (kept, never accepted). Only snapshots that reach this store are seen: corrections superseded while it
-        was unreachable are not recoverable."""
+        (kept, never accepted). Every snapshot that reaches this store is seen, including a ``stale`` one that
+        was not selected; for that one ``event_wall``/``store_seq`` reference the selected version it lost to, not
+        a stored copy of the arrival. Corrections superseded while the store was unreachable are not recoverable,
+        so this is a pitch receipt ledger, not a complete log of raw snapshots."""
         clock = 'observer_local' if source == 'live_poll' else 'unverified'
         for pid, at_bat, number, payload, reason in _pitches(feed):
             body = _canonical(payload)
@@ -329,7 +343,8 @@ class PersistentLiveFeed(LiveFeed):
         LOGGER.warning('live store %s failed; serving from memory only', operation, exc_info=True)
 
     def _accept(self, game_pk, feed, wall, buffer):
-        # Reject stale input against memory too: it may be ahead of disk after an outage.
+        # Memory may be ahead of disk during an outage, so stale input is also judged against memory, but only
+        # when the store is down: once the flush below makes disk >= memory, ingest decides and keeps the receipt.
         stale = bool(buffer and _stale_stamp(_feed_ts(feed), _feed_ts(buffer[-1]['feed']),
                                              (event_wall(feed) or wall) > buffer[-1]['event']))
         try:
@@ -339,16 +354,11 @@ class PersistentLiveFeed(LiveFeed):
                     self.store.ingest(game_pk, saved['feed'], fetched=saved.get('version_fetched', saved['fetched']),
                                       source='memory_recovery', slot_event=saved['event'], first_fetched=saved['fetched'])
                 self._unsaved.discard(game_pk)
-            if stale:
-                self.stale[game_pk] = self.stale.get(game_pk, 0)+1
-                if not self._unsaved and not self._restore_failed:
-                    self.store_error = None
-                return
             outcome, entry = self.store.ingest(game_pk, feed, fetched=wall, source='live_poll')
         except (sqlite3.Error, OSError) as exc:
             self._unsaved.add(game_pk)
             self._failed('ingest', exc)
-            if stale:
+            if stale:  # received but never persisted: the known store-outage loss bound
                 self.stale[game_pk] = self.stale.get(game_pk, 0)+1
                 return
             changed = not buffer or feed != buffer[-1]['feed']

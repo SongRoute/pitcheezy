@@ -8,7 +8,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from observer_app.live_store import LiveSnapshotStore
+from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed, _stale_stamp
 from observer_app.service_research import capture_input
 
 
@@ -127,10 +127,68 @@ def test_malformed_items_quarantine_alone_and_keep_valid_pitches(tmp_path):
     assert {e['reason'] for e in quarantined} == {'incomplete_identity', 'malformed_event'}
 
 
+@pytest.mark.parametrize('bad', ['junk', None, '2026109_0000099'])
+def test_unorderable_stamp_never_displaces_valid_selection_and_still_gets_receipt(tmp_path, bad):
+    store = LiveSnapshotStore(tmp_path/'ledger.sqlite3')
+    live = PersistentLiveFeed(None, store=store, wall=lambda: 1000.)
+    buffer = live._buffer(13)
+
+    def poll(call, ts, at):
+        f = feed([(1, [pitch('p1', 1, call)])], ts, 100.)
+        if ts is None:
+            del f['metaData']['timeStamp']
+        live._accept(13, f, at, buffer)
+        return f
+
+    def selected():
+        stored = store.read_after(13, until_event=200.)['items'][-1]
+        assert store.restore(13, 1000., 1000.)[-1]['seq'] == stored['seq'] == buffer[-1]['seq']
+        return buffer[-1]['feed'], stored['version']
+
+    def ledger():
+        return [(r['outcome'], r['reason'], r['revision'], r['first_received'], r['received'], r['store_seq'])
+                for r in store.pitch_events(13)['events']]
+
+    b = poll('B', '20261009_000100', 100.)
+    poll('C', bad, 110.)  # same slot, unorderable stamp: refused, but its changed pitch is received
+    assert selected() == (b, 1) and live.stale[13] == 1
+    assert ledger() == [('new', None, 1, 100., 100., 1), ('quarantine', 'unordered_revision', None, None, 110., 1)]
+    s = poll('S', '20261009_000200', 120.)  # later valid correction recovers
+    assert selected() == (s, 2)
+    assert ledger()[2:] == [('correction', None, 2, 100., 120., 2)]
+    poll('C', bad, 130.)  # repeat: refused again, quarantine deduplicated
+    assert selected() == (s, 2) and live.stale[13] == 2 and len(ledger()) == 3
+    poll('F', '20261009_000050', 140.)  # older valid stamp: refused, received as stale_revision
+    assert selected() == (s, 2) and live.stale[13] == 3
+    assert ledger()[3:] == [('quarantine', 'stale_revision', None, None, 140., 2)]
+    assert ledger()[0][3] == 100. and live.store_error is None
+
+
+def test_stale_stamp_ordering_rule():
+    valid, later = '20261009_000100', '20261009_000200'
+    assert _stale_stamp(valid, later, False) and not _stale_stamp(later, valid, False)
+    for bad in ('junk', None, '', '2026109_0000099'):
+        assert _stale_stamp(bad, valid, False) and not _stale_stamp(valid, bad, False)
+        assert not _stale_stamp(bad, valid, True)  # a newer event is its own slot whatever its stamp
+    # neither orderable: legacy raw compare, so a lexically smaller string is refused, otherwise the later arrival wins
+    assert _stale_stamp('110', '120', False) and not _stale_stamp('junk', None, False) and not _stale_stamp(None, 'x', False)
+
+
+@pytest.mark.parametrize('live_data', ['bad', {'plays': 'bad'}, {'plays': {'allPlays': 'bad'}}])
+def test_malformed_live_data_or_plays_is_stored_without_raising(tmp_path, live_data):
+    store = LiveSnapshotStore(tmp_path/'ledger.sqlite3')
+    live = PersistentLiveFeed(None, store=store, wall=lambda: 1000.)
+    buffer = live._buffer(14)
+    live._accept(14, feed([(1, [pitch('p1', 1)])], '20261009_000100', 100.), 100., buffer)
+    bad = {'metaData': {'eventWall': 200., 'timeStamp': '20261009_000200'}, 'liveData': live_data}
+    live._accept(14, bad, 200., buffer)
+    assert buffer[-1]['feed'] == bad and buffer[-1]['seq'] == 2 and live.store_error is None
+    assert [(r['provider_event_id'], r['outcome']) for r in store.pitch_events(14)['events']] == [('p1', 'new')]
+
+
 def test_sqlite_outage_and_network_gap_lose_different_things(tmp_path):
     """Observed ceiling of the SVC-003 memory recovery: per slot only the last version received during the outage
     is written back (as unverified ``memory_recovery``); a correction the poller never fetched leaves no trace."""
-    from observer_app.live_store import PersistentLiveFeed
 
     class Flaky(LiveSnapshotStore):
         down = False
