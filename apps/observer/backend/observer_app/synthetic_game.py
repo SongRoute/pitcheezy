@@ -38,7 +38,8 @@ CALLS = {'B': '볼', 'C': '루킹 스트라이크', 'S': '헛스윙', 'X': '인�
 CHECKING = {'stale_provider_stamp': '제공처 시각이 앞선 자료보다 이르기 때문에 최신 자료로 확정하지 않았습니다.',
             'unorderable_provider_stamp': '제공처 시각이 없거나 형식이 맞지 않아 순서를 확정할 수 없습니다.',
             'same_stamp_conflict_provider_stamp': '같은 제공처 시각에 내용이 다른 자료가 있어 확정할 수 없습니다.',
-            'provider_order_unknown': '자료 순서를 확인할 수 없습니다.'}
+            'provider_order_unknown': '자료 순서를 확인할 수 없습니다.',
+            'feed_disconnected_last_snapshot_only': '연결이 끊겨 마지막으로 받은 자료만 있어 비교하지 않습니다.'}
 LIMITS = ['합성 경기 · 실제 경기나 실시간 중계가 아닙니다.',
           '예측 모델을 연결하지 않아 확률이나 추천을 표시하지 않습니다.',
           '수신 시각은 관측기 로컬 시계 기준 첫 *기록* 시각이며 절대 정확도는 검증되지 않았습니다.']
@@ -217,13 +218,14 @@ def _shown(frame, key, rows):
     return '확인 중', 'unconfirmed', f"{order}/{refused[-1]['reason'] if refused else 'not_accepted'}"
 
 
-def comparison(entry, decision_wall, predict=None):
-    """Plain fan state for the pre-pitch comparison plus the gate's machine reason. Never a probability."""
+def comparison(entry, decision_wall, predict=None, *, disconnected):
+    """Plain fan state for the pre-pitch comparison plus the gate's machine reason. Never a probability.
+    ``disconnected`` (required) is whether the feed's last poll failed, so ``entry`` is only the last snapshot."""
     if entry is None:
         return {'state': 'checking', 'label': '자료 확인 중', 'reason': '아직 받은 경기 자료가 없습니다.',
                 'gate': {'status': 'unsupported', 'reason': 'no_snapshot'}}
     try:
-        receipt = capture_input(entry, {'game_pk': GAME}, game_pk=GAME, trusted_clock=True,
+        receipt = capture_input(entry, {'game_pk': GAME}, game_pk=GAME, trusted_clock=True, disconnected=disconnected,
                                 decision_at=datetime.fromtimestamp(decision_wall, timezone.utc).isoformat())
     except (KeyError, ValueError) as exc:  # a memory-only entry (store down) has no committed identity
         return {'state': 'unsupported', 'label': '지원 없음',
@@ -232,7 +234,7 @@ def comparison(entry, decision_wall, predict=None):
     gate = {'status': 'unsupported', 'reason': receipt['freshness_reason'] or 'no_predictor_connected',
             'receipt': {k: receipt[k] for k in ('store_seq', 'slot_version', 'feed_sha256', 'provider_order',
                                                'provider_generated_at', 'first_received_at', 'version_received_at',
-                                               'feed_receipt_status')}}
+                                               'feed_receipt_status', 'feed_disconnected')}}
     if predict is not None:
         vectors = np.zeros((1, 199))
         evidence = {'kind': 'synthetic_fixture', 'input_sha256': receipt['input_sha256'],
@@ -295,7 +297,7 @@ class Game:
                                 'store_ok': frame['store_ok'], 'history': frame['history'],
                                 'clock_note': '관측기 로컬 시계 · 첫 기록 수신 시각(상한) · 절대 정확도 미검증'}}
         if not revealed:
-            view['comparison'] = comparison(entry, T0+10*cursor+.5, self.predict)
+            view['comparison'] = comparison(entry, T0+10*cursor+.5, self.predict, disconnected=frame['disconnected'])
         else:
             row = view['history'][cursor]
             view['actual'] = {'game_pitch': cursor+1, 'result': None if row['status'] == 'not_received' else row['result'],

@@ -31,11 +31,13 @@ def _utc(value):
     return parsed.astimezone(timezone.utc)
 
 
-def capture_input(entry, pre_pitch_input, *, game_pk, decision_at, trusted_clock=False):
+def capture_input(entry, pre_pitch_input, *, game_pk, decision_at, trusted_clock=False, disconnected=False):
     """Copy the exact input and store-version identity before an inference call.
 
     ``trusted_clock`` means the supplied first/version receipt times came from a
     trusted local clock; replay file mtime and provider timestamps do not qualify.
+    ``disconnected`` means the feed's last poll failed and ``entry`` is only the last snapshot served: an
+    otherwise fresh receipt abstains with ``feed_disconnected_last_snapshot_only``.
     A memory-only ``LiveFeed`` entry (store down) carries no committed identity and raises ``ValueError``.
     """
     decision = _utc(decision_at)
@@ -57,7 +59,10 @@ def capture_input(entry, pre_pitch_input, *, game_pk, decision_at, trusted_clock
     # about provider revision order, so only an 'ordered' store version counts as fresh prediction input.
     order = entry.get('provider_order')
     freshness = FRESHNESS.get(order, 'provider_order_unknown') if isinstance(order, str) else 'provider_order_unknown'
-    return {'provider_order': order, 'freshness_reason': freshness, 'schema': 'service-input-receipt-v1', 'game_pk': int(game_pk),
+    if disconnected is not False:  # anything but an explicit False is treated as disconnected
+        freshness = freshness or 'feed_disconnected_last_snapshot_only'
+    return {'provider_order': order, 'freshness_reason': freshness, 'feed_disconnected': disconnected is not False,
+            'schema': 'service-input-receipt-v1', 'game_pk': int(game_pk),
             'store_seq': entry['seq'], 'slot_version': entry['version'], 'feed_sha256': digest,
             'input': copied, 'input_sha256': hashlib.sha256(_bytes(copied)).hexdigest(),
             'first_received_at': datetime.fromtimestamp(first, timezone.utc).isoformat(),

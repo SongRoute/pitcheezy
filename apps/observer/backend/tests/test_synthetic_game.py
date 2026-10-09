@@ -69,6 +69,55 @@ def test_freshness_gate_abstains_before_predict(script):
     assert sg.Game(script).state(32, False)['comparison']['gate']['status'] == 'unsupported'  # default: no predictor
 
 
+def test_disconnected_last_snapshot_never_reaches_predict(script):
+    """Actual caller (Game.state -> comparison -> capture_input -> conditional_candidates) with a spy predictor."""
+    calls = []
+
+    def predict(x):  # spy stub, never a model
+        calls.append(len(x))
+        return np.full((len(x), 10), .1)
+
+    game = sg.Game(script, predict=predict)
+    gap = range(sg.GAP.start+1, sg.GAP.stop+1)  # pre-reveal cursors whose served frame is a disconnected poll
+    assert all(script.frames[c-1]['disconnected'] for c in gap) and not script.frames[sg.GAP.stop]['disconnected']
+    for cursor in gap:
+        c = game.state(cursor, False)['comparison']
+        assert script.frames[cursor-1]['entry']['provider_order'] == 'ordered'  # only the disconnect makes it unfit
+        assert (c['state'], c['gate']['status'], c['gate']['reason']) == (
+            'checking', 'unsupported', 'feed_disconnected_last_snapshot_only')
+        assert c['gate']['receipt']['feed_disconnected'] is True
+    assert calls == []
+    # reconnected fresh committed state goes through the existing gates again
+    c = game.state(sg.GAP.stop+1, False)['comparison']
+    assert (c['state'], c['gate']['status'], c['gate']['receipt']['feed_disconnected']) == (
+        'waiting', 'conditional_fixture', False) and calls == [1]
+    # whole game: predict runs exactly on connected, committed, ordered frames; every other frame stays fail-closed
+    calls.clear()
+    reached = []
+    for cursor in range(1, LAST+1):
+        before = len(calls)
+        reason = game.state(cursor, False)['comparison']['gate']['reason']
+        if len(calls) > before:
+            reached.append(cursor)
+        else:
+            assert reason in ('feed_disconnected_last_snapshot_only', 'stale_provider_stamp', 'unorderable_provider_stamp',
+                              'same_stamp_conflict_provider_stamp', 'uncommitted_memory_entry'), (cursor, reason)
+    frame = lambda c: script.frames[c-1]
+    assert reached == [c for c in range(1, LAST+1) if not frame(c)['disconnected'] and frame(c)['store_ok']
+                       and frame(c)['entry'].get('provider_order') == 'ordered']
+    assert not set(reached) & {*gap, 31, 41, 46, *range(81, 86), *range(101, 106)} and len(calls) == len(reached)
+    # the shared gate: anything but an explicit False abstains, and a stale reason keeps precedence
+    entry = frame(sg.GAP.stop+1)['entry']
+    at = sg.datetime.fromtimestamp(sg.T0+1e4, sg.timezone.utc).isoformat()
+    for flag in (True, None, 1):
+        assert sg.capture_input(entry, {}, game_pk=sg.GAME, decision_at=at, disconnected=flag)['freshness_reason'] == \
+            'feed_disconnected_last_snapshot_only'
+    assert sg.capture_input(entry, {}, game_pk=sg.GAME, decision_at=at, disconnected=False)['freshness_reason'] is None
+    stale = frame(41)['entry']
+    assert sg.capture_input(stale, {}, game_pk=sg.GAME, decision_at=at, disconnected=True)['freshness_reason'] == \
+        'stale_provider_stamp'
+
+
 def test_correction_disconnect_and_crash_restart_in_the_log(script):
     game = sg.Game(script)
     before, after = game.state(19, False), game.state(20, True)
