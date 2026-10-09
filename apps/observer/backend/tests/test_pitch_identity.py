@@ -91,3 +91,78 @@ def test_recorded_or_recovered_receipt_is_unverified(tmp_path):
     store = LiveSnapshotStore(tmp_path/'ledger.sqlite3')
     store.ingest(8, feed([(1, [pitch('r1', 1)])], '20261009_000001', 100.), fetched=105., source='recorded:x.json.gz')
     assert store.pitch_events(8)['events'][0]['receipt_clock'] == 'unverified'
+
+
+def test_changed_payload_needs_strictly_later_valid_provider_timestamp(tmp_path):
+    store = LiveSnapshotStore(tmp_path/'ledger.sqlite3')
+    store.ingest(10, feed([(1, [pitch('p1', 1, 'B')])], '20261009_000005', 100.), fetched=101., source='live_poll')
+    # newer game event (event_wall 200 > 100) but OLDER provider timeStamp: never a correction
+    store.ingest(10, feed([(1, [pitch('p1', 1, 'C')])], '20261009_000004', 200.), fetched=201., source='live_poll')
+    # malformed timeStamp cannot be ordered; '2026109_0000099' would sort after lexically
+    store.ingest(10, feed([(1, [pitch('p1', 1, 'S')])], '2026109_0000099', 300.), fetched=301., source='live_poll')
+    store.ingest(10, feed([(1, [pitch('p1', 1, 'X')])], '20261009_000006', 400.), fetched=401., source='live_poll')
+    rows = store.pitch_events(10)['events']
+    assert [(r['outcome'], r['reason'], r['revision']) for r in rows] == [
+        ('new', None, 1), ('quarantine', 'stale_revision', None), ('quarantine', 'unordered_revision', None),
+        ('correction', None, 2)]
+
+
+def test_malformed_items_quarantine_alone_and_keep_valid_pitches(tmp_path):
+    store = LiveSnapshotStore(tmp_path/'ledger.sqlite3')
+    bad = [dict(pitch('n1', 1), pitchNumber=True), dict(pitch('n2', 0)), dict(pitch('n3', 2), pitchNumber='2'),
+           dict(pitch('', 3)), dict(pitch(None, 4)), dict(pitch(True, 5)), dict(pitch(['l'], 6)), 'junk']
+    plays = [{'about': {'atBatIndex': 0}, 'playEvents': [pitch('ok1', 1), *bad]},
+             {'about': {'atBatIndex': True}, 'playEvents': [pitch('b1', 1)]},
+             {'about': {'atBatIndex': -1}, 'playEvents': [pitch('b2', 1)]},
+             {'about': {'atBatIndex': 'x'}, 'playEvents': [pitch('b3', 1)]},
+             {'about': {'atBatIndex': 4}, 'playEvents': [pitch('ok2', 1)]}]
+    outcome, _ = store.ingest(11, {'metaData': {'eventWall': 100., 'timeStamp': '20261009_000001'},
+                                   'liveData': {'plays': {'allPlays': plays}}}, fetched=101., source='live_poll')
+    ledger = store.pitch_events(11)
+    assert outcome == 'new'
+    assert [(e['provider_event_id'], e['at_bat_number'], e['pitch_number']) for e in accepted(ledger)] == [
+        ('ok1', 1, 1), ('ok2', 5, 1)]
+    quarantined = [e for e in ledger['events'] if e['outcome'] == 'quarantine']
+    assert len(quarantined) == 11 and all(e['at_bat_number'] is None and e['pitch_number'] is None for e in quarantined)
+    assert {e['reason'] for e in quarantined} == {'incomplete_identity', 'malformed_event'}
+
+
+def test_sqlite_outage_and_network_gap_lose_different_things(tmp_path):
+    """Observed ceiling of the SVC-003 memory recovery: per slot only the last version received during the outage
+    is written back (as unverified ``memory_recovery``); a correction the poller never fetched leaves no trace."""
+    from observer_app.live_store import PersistentLiveFeed
+
+    class Flaky(LiveSnapshotStore):
+        down = False
+
+        def ingest(self, *args, **kwargs):
+            if self.down:
+                raise sqlite3.OperationalError('disk I/O error')
+            return super().ingest(*args, **kwargs)
+
+    serving, now = [None], [1000.]
+    store = Flaky(tmp_path/'ledger.sqlite3')
+    live = PersistentLiveFeed(lambda url, timeout: serving[0], store=store, delay_s=0,
+                              clock=lambda: now[0], wall=lambda: now[0], sleep=lambda _: None)
+
+    def poll(f, at):
+        serving[0], now[0] = f, at
+        live.fetched_at.clear()
+        live.snapshot(12)
+
+    poll(feed([(1, [pitch('p1', 1, 'B')])], '20261009_000001', 1000.), 1000.)
+    store.down = True  # received but unpersisted
+    poll(feed([(1, [pitch('p1', 1, 'C')])], '20261009_000002', 1000.), 1010.)
+    poll(feed([(1, [pitch('p1', 1, 'S')])], '20261009_000003', 1000.), 1020.)
+    assert live.store_error == 'ingest: OperationalError'
+    store.down = False
+    # network gap: the provider's '20261009_000004' version (call 'F') is never fetched
+    poll(feed([(1, [pitch('p1', 1, 'X')])], '20261009_000005', 1000.), 1050.)
+    rows = store.pitch_events(12)['events']
+    assert [(r['outcome'], r['revision'], r['provider_ts'], r['receipt_clock'], r['received']) for r in rows] == [
+        ('new', 1, '20261009_000001', 'observer_local', 1000.),
+        ('correction', 2, '20261009_000003', 'unverified', 1020.),
+        ('correction', 3, '20261009_000005', 'observer_local', 1050.)]
+    assert live.store_error is None
+    # 'C' (received, unpersisted) and 'F' (never received) are both absent; revisions stay contiguous, so
+    # neither loss is detectable from the ledger alone.

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import closing, contextmanager
+from datetime import datetime
 import gzip
 import hashlib
 import json
@@ -78,15 +79,39 @@ CREATE TRIGGER IF NOT EXISTS pitch_events_no_delete
 ACCEPTED = "outcome IN ('new', 'correction')"
 
 
+def _provider_ts(value):
+    """GUMBO ``metaData.timeStamp`` (``%Y%m%d_%H%M%S`` UTC) as a datetime, or None if absent or malformed."""
+    if not isinstance(value, str) or not re.fullmatch(r'\d{8}_\d{6}', value):
+        return None
+    try:
+        return datetime.strptime(value, '%Y%m%d_%H%M%S')
+    except ValueError:
+        return None
+
+
 def _pitches(feed):
-    """(provider_event_id, at_bat_number, pitch_number, playEvent) for every pitch in the feed. The official
-    key is GUMBO ``atBatIndex``+1 / ``pitchNumber``; ``playId`` is the provider's id, not a promised stable one."""
-    for play in ((feed.get('liveData') or {}).get('plays') or {}).get('allPlays') or []:
-        index = (play.get('about') or {}).get('atBatIndex')
-        for event in play.get('playEvents') or []:
-            if event.get('isPitch'):
-                yield (event.get('playId'), None if index is None else int(index)+1,
-                       event.get('pitchNumber'), event)
+    """(provider_event_id, at_bat_number, pitch_number, playEvent, reason) for every pitch in the feed. The
+    official key is GUMBO ``atBatIndex``+1 / ``pitchNumber``; ``playId`` is the provider's id, not a promised
+    stable one. A malformed item gets ``reason`` and no key, so it is quarantined alone."""
+    def number(value, low):
+        return value if type(value) is int and value >= low else None
+    plays = ((feed.get('liveData') or {}).get('plays') or {}).get('allPlays') or []
+    for play in plays if isinstance(plays, list) else []:
+        about = play.get('about') if isinstance(play, dict) else None
+        index = number(about.get('atBatIndex') if isinstance(about, dict) else None, 0)
+        events = play.get('playEvents') if isinstance(play, dict) else None
+        for event in events if isinstance(events, list) else []:
+            if not isinstance(event, dict):
+                yield None, None, None, event, 'malformed_event'
+                continue
+            if not event.get('isPitch'):
+                continue
+            pid, pitch = event.get('playId'), number(event.get('pitchNumber'), 1)
+            pid = pid.strip() if isinstance(pid, str) else str(pid) if type(pid) is int else None
+            if not pid or index is None or pitch is None:
+                yield pid or None, None, None, event, 'incomplete_identity'
+            else:
+                yield pid, index+1, pitch, event, None
 
 
 def _canonical(feed):
@@ -148,23 +173,26 @@ class LiveSnapshotStore:
                          'version': version, 'sha': sha, 'version_fetched': fetched, 'source': source}
 
     def _record_pitches(self, db, game_pk, feed, *, feed_ts, event, received, source, seq):
-        """Append each pitch whose provider id is new or whose payload changed in a later provider revision.
-        Same id with a different official key, a key already held by another id, or a changed payload under
-        the same provider ``timeStamp`` is quarantined (kept, never accepted). Only snapshots that reach this
-        store are seen: corrections superseded while it was unreachable are not recoverable."""
+        """Append each pitch whose provider id is new or whose payload changed under a strictly later, valid
+        provider ``timeStamp``. A malformed item, same id with a different official key, a key already held by
+        another id, or a changed payload under an equal, older or unparseable ``timeStamp`` is quarantined
+        (kept, never accepted). Only snapshots that reach this store are seen: corrections superseded while it
+        was unreachable are not recoverable."""
         clock = 'observer_local' if source == 'live_poll' else 'unverified'
-        for pid, at_bat, number, payload in _pitches(feed):
+        for pid, at_bat, number, payload, reason in _pitches(feed):
             body = _canonical(payload)
             sha = hashlib.sha256(body).hexdigest()
-            current = db.execute(f'SELECT at_bat_number, pitch_number, sha, provider_ts, revision, first_received '
-                                 f'FROM pitch_events WHERE game_pk=? AND provider_event_id=? AND {ACCEPTED} '
-                                 'ORDER BY id DESC LIMIT 1', (game_pk, pid)).fetchone()
-            holder = db.execute(f'SELECT provider_event_id FROM pitch_events WHERE game_pk=? AND at_bat_number=? '
-                                f'AND pitch_number=? AND {ACCEPTED} AND provider_event_id IS NOT ?',
-                                (game_pk, at_bat, number, pid)).fetchone()
-            revision, first, reason = None, None, None
-            if not pid or at_bat is None or type(number) is not int:
-                reason = 'incomplete_identity'
+            current = holder = None
+            if not reason:
+                current = db.execute(f'SELECT at_bat_number, pitch_number, sha, provider_ts, revision, first_received '
+                                     f'FROM pitch_events WHERE game_pk=? AND provider_event_id=? AND {ACCEPTED} '
+                                     'ORDER BY id DESC LIMIT 1', (game_pk, pid)).fetchone()
+                holder = db.execute(f'SELECT provider_event_id FROM pitch_events WHERE game_pk=? AND at_bat_number=? '
+                                    f'AND pitch_number=? AND {ACCEPTED} AND provider_event_id IS NOT ?',
+                                    (game_pk, at_bat, number, pid)).fetchone()
+            revision, first = None, None
+            if reason:
+                pass
             elif holder:
                 reason = 'ambiguous_remap'
             elif current is None:
@@ -173,8 +201,12 @@ class LiveSnapshotStore:
                 reason = 'conflicting_key'
             elif current[2] == sha:
                 continue
-            elif not feed_ts or current[3] == feed_ts:
+            elif not _provider_ts(feed_ts) or not _provider_ts(current[3]):
+                reason = 'unordered_revision'
+            elif _provider_ts(feed_ts) == _provider_ts(current[3]):
                 reason = 'same_revision_hash_mismatch'
+            elif _provider_ts(feed_ts) < _provider_ts(current[3]):
+                reason = 'stale_revision'
             else:
                 revision, first = current[4]+1, current[5]
             if reason and db.execute('SELECT 1 FROM pitch_events WHERE game_pk=? AND provider_event_id IS ? AND sha=? '
@@ -184,7 +216,7 @@ class LiveSnapshotStore:
                        'revision, provider_ts, provider_event_time, event_wall, sha, first_received, received, receipt_clock, '
                        'store_seq, body) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                        (game_pk, pid, at_bat, number, 'quarantine' if reason else 'new' if revision == 1 else 'correction',
-                        reason, revision, feed_ts, payload.get('startTime'), event, sha, first, received, clock, seq,
+                        reason, revision, feed_ts, payload.get('startTime') if isinstance(payload, dict) else None, event, sha, first, received, clock, seq,
                         gzip.compress(body, compresslevel=5)))
 
     def pitch_events(self, game_pk):
