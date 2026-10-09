@@ -111,6 +111,10 @@ ACCEPTED = "outcome IN ('new', 'correction')"
 SYNTHETIC_SOURCE = 'synthetic_test_pre_pitch'
 SYNTHETIC_SCHEMA = 'synthetic-pre-pitch-v1'
 SYNTHETIC_EVIDENCE = 'synthetic_test_state_not_provider'
+# The only receipt clock a stored snapshot source can truthfully claim; 'UNKNOWN' (abstention) is always truthful.
+RECEIPT_CLOCK = {'live_poll': 'observer_local', SYNTHETIC_SOURCE: 'synthetic_test_clock'}
+# 'eligible' is never persisted: two required fields are deliberately UNSOURCED and no model mapping exists.
+DECISION_CATEGORIES = ('feature_unavailable', 'ambiguous', 'unsupported')
 
 
 def _int_in(low, high):
@@ -370,19 +374,31 @@ class LiveSnapshotStore:
     def append_decision(self, record):
         """Persist one ``next-pitch-context-v1`` decision record (``service_research.next_pitch_context``) exactly
         once, as its canonical bytes. Its snapshot must be a version committed here with the same slot version and
-        sha, received at or before ``decision_at``, and every KNOWN field must cite that version. Returns 'appended',
-        or 'duplicate' for the same bytes; a different body under a stored ``decision_id`` raises and the stored one
-        is kept. Committed with ``synchronous=FULL`` like the snapshots: a crash before this call loses the decision,
-        so this is a record of persisted decisions, not proof of every decision made."""
+        sha, received at or before ``decision_at``, its ``source`` must be the stored row's and its receipt clock that
+        source's clock (``RECEIPT_CLOCK``) or 'UNKNOWN', and every KNOWN field must cite that version on that clock
+        with ``decision_clock`` equal to it. An abstaining record ('ambiguous'/'unsupported') may truthfully carry an
+        UNKNOWN or mismatched clock and is appended and counted; 'eligible' is refused. Returns 'appended', or
+        'duplicate' for the same bytes; a refused or different body under a stored ``decision_id`` raises and the
+        stored one is kept. Committed with ``synchronous=FULL`` like the snapshots: a crash before this call loses
+        the decision, so this is a record of persisted decisions, not proof of every decision made."""
         body, snap = _canonical(record), record['snapshot']
         decided = datetime.fromisoformat(record['decision_at']).timestamp()
+        category = record['opportunity']['category']
+        if category not in DECISION_CATEGORIES:
+            raise ValueError(f'Decision category {category!r} is not persisted by this provisional contract')
+        abstains = category != 'feature_unavailable'
         with self._write() as db:
-            row = None
+            row = clock = None
             if snap is not None:
                 row = db.execute('SELECT version, sha, fetched, source, body FROM snapshots WHERE seq=? AND game_pk=?',
                                  (snap['store_seq'], record['game_pk'])).fetchone()
                 if row is None or (row[0], row[1]) != (snap['slot_version'], snap['feed_sha256']) or row[2] > decided:
                     raise ValueError('Decision snapshot is not a committed version received by decision_at')
+                clock = snap.get('receipt_clock')
+                if snap.get('source') != row[3] or clock not in ('UNKNOWN', RECEIPT_CLOCK.get(row[3])):
+                    raise ValueError('Decision snapshot source/receipt clock is not the stored row\'s')
+            if not abstains and (clock in (None, 'UNKNOWN') or record['decision_clock'] != clock):
+                raise ValueError('Only an abstaining decision may carry an unverified or mismatched clock')
             stored = None
             for name, field in record['fields'].items():
                 if field['status'] != 'KNOWN':
@@ -390,6 +406,8 @@ class LiveSnapshotStore:
                 prov = field['provenance'] or {}
                 if snap is None or (prov.get('store_seq'), prov.get('feed_sha256')) != (snap['store_seq'], snap['feed_sha256']):
                     raise ValueError(f'KNOWN {name} does not cite the decision snapshot')
+                if abstains or prov.get('source') != 'selected_snapshot' or prov.get('receipt_clock') != clock:
+                    raise ValueError(f'KNOWN {name} source/receipt clock is not the decision snapshot\'s')
                 # Re-derive from the stored body: only the fixed synthetic path, same value, same validator.
                 if name not in SYNTHETIC_PRE_PITCH or prov.get('evidence') != SYNTHETIC_EVIDENCE or \
                         prov.get('path') != ['syntheticPrePitch', SYNTHETIC_PRE_PITCH[name][0]]:
@@ -412,19 +430,26 @@ class LiveSnapshotStore:
     def append_reconciliation(self, decision_id, *, reconciled_at, evidence):
         """Append one later candidate observation for a stored decision as a separate revision; the decision (and its
         UNKNOWN target) is never rewritten. ``evidence`` are accepted ``pitch_events`` ids of one key, each recorded
-        on the observer clock, first received after ``decision_at`` and by ``reconciled_at`` (> ``decision_at``).
-        A ledger row received later proves only a later observation, never the immediately next physical pitch:
-        ``candidate_target`` is ``UNVERIFIED_NEXT``, or ``NOT_NEXT`` when an accepted ``new`` row of another key was
-        first received after the decision and no later than the cited one. Each revision links the previous one
-        (``previous``), saying whether it supersedes a different key. Returns the stored body."""
+        on the observer clock, first received after ``decision_at`` and by ``reconciled_at`` (> ``decision_at``); the
+        decision itself must be on the observer clock too (its ``decision_clock`` and snapshot receipt clock), else
+        the two times are not comparable and this refuses. A ledger row received later proves only a later
+        observation, never the immediately next physical pitch: ``candidate_target`` is always ``UNVERIFIED_NEXT``.
+        Accepted ``new`` rows of other keys first received after the decision and no later than the cited one are
+        listed as ``supplementary_observations`` only; receipt order is not physical order, so they never change the
+        status. Each revision links the previous one (``previous``), saying whether it supersedes a different key.
+        Returns the stored body."""
         at = datetime.fromisoformat(reconciled_at)
         if at.tzinfo is None:
             raise ValueError('A timezone-aware reconciled_at is required')
         with self._write() as db:
-            held = db.execute('SELECT game_pk, decision_at FROM context_decisions WHERE decision_id=?',
+            held = db.execute('SELECT game_pk, decision_at, body FROM context_decisions WHERE decision_id=?',
                               (decision_id,)).fetchone()
             if held is None:
                 raise ValueError('Unknown decision_id')
+            record = json.loads(held[2])
+            if record['decision_clock'] != 'observer_local' or \
+                    (record['snapshot'] or {}).get('receipt_clock') != 'observer_local':
+                raise ValueError('Decision clock is not observer_local; it is not comparable with observer receipts')
             decided = datetime.fromisoformat(held[1]).timestamp()
             if at.timestamp() <= decided:
                 raise ValueError('reconciled_at must be after decision_at')
@@ -444,7 +469,7 @@ class LiveSnapshotStore:
                 raise ValueError('Evidence rows name conflicting keys')
             key = (rows[0]['at_bat_number'], rows[0]['pitch_number'])
             cited_first = min(r['first_received'] for r in rows)
-            between = db.execute("SELECT id, at_bat_number, pitch_number, first_received FROM pitch_events WHERE game_pk=? "
+            between = db.execute("SELECT id, at_bat_number, pitch_number, first_received, receipt_clock FROM pitch_events WHERE game_pk=? "
                                  "AND outcome='new' AND first_received>? AND first_received<=? "
                                  'AND NOT (at_bat_number=? AND pitch_number=?) ORDER BY id',
                                  (held[0], decided, cited_first, *key)).fetchall()
@@ -457,19 +482,20 @@ class LiveSnapshotStore:
                 previous = {'revision': prior[0], 'at_bat_number': last['at_bat_number'],
                             'pitch_number': last['pitch_number'],
                             'relation': 'same_key_later_observation' if same else 'supersedes_different_key'}
-            body = _canonical({'schema': 'next-pitch-reconciliation-v2', 'decision_id': decision_id,
+            body = _canonical({'schema': 'next-pitch-reconciliation-v3', 'decision_id': decision_id,
                                'revision': (prior[0] if prior else 0)+1, 'reconciled_at': at.isoformat(),
-                               'evidence': rows, 'previous': previous,
+                               'decision_clock': 'observer_local', 'evidence': rows, 'previous': previous,
                                'candidate_observation': {'pitch_event_ids': [r['pitch_event_id'] for r in rows],
                                                          'first_received': cited_first, 'receipt_clock': 'observer_local'},
+                               'supplementary_observations': {
+                                   'relation': 'receipt_order_not_physical_order_proof',
+                                   'rows': [dict(zip(('pitch_event_id', 'at_bat_number', 'pitch_number',
+                                                      'first_received', 'receipt_clock'), r)) for r in between]},
                                'candidate_target': {
                                    'game_pk': held[0], 'at_bat_number': key[0], 'pitch_number': key[1],
-                                   'status': 'NOT_NEXT' if between else 'UNVERIFIED_NEXT',
+                                   'status': 'UNVERIFIED_NEXT',
                                    'basis': 'accepted_row_first_received_after_decision',
-                                   'reason': 'intervening_accepted_new_key' if between else
-                                             'later_observation_not_proof_of_immediate_next_pitch',
-                                   'intervening': [dict(zip(('pitch_event_id', 'at_bat_number', 'pitch_number',
-                                                             'first_received'), r)) for r in between]}})
+                                   'reason': 'later_observation_not_proof_of_immediate_next_pitch'}})
             revision = json.loads(body)['revision']
             db.execute('INSERT INTO context_reconciliations(decision_id, revision, reconciled_at, sha, body) VALUES (?,?,?,?,?)',
                        (decision_id, revision, at.isoformat(), hashlib.sha256(body).hexdigest(), body))

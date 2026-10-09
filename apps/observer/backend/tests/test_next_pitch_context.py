@@ -102,7 +102,7 @@ def test_known_context_abstains_and_persists_immutably(tmp_path):
     assert cases['same_stamp'][0]['snapshot']['restored'] is True
     assert not predicted
 
-    # (3) append once, reload, reconcile later, correct later, reload: the original never changes
+    # (3) append once, count abstentions, refuse a mixed-clock reconciliation, reload: the original never changes
     assert store.append_decision(record) == 'appended'
     original = LiveSnapshotStore(path).decision_history(record['decision_id'])['decision']
     assert store.append_decision(copy.deepcopy(record)) == 'duplicate'
@@ -117,44 +117,28 @@ def test_known_context_abstains_and_persists_immutably(tmp_path):
                       'categories': {'feature_unavailable': 1, 'ambiguous': 5, 'unsupported': 3}}
 
     ledger = store.pitch_events(GAME)['events']
-    before, arrived = ledger[0], [r for r in ledger if (r['pitch_number'], r['outcome']) == (2, 'new')][0]
-    with pytest.raises(ValueError, match='receipt clock'):  # the synthetic-source row is not on the observer clock
-        store.append_reconciliation(record['decision_id'], reconciled_at=iso(120.), evidence=[before['id']])
-    with pytest.raises(ValueError, match='after decision_at'):
-        store.append_reconciliation(record['decision_id'], reconciled_at=iso(104.), evidence=[arrived['id']])
-    first = store.append_reconciliation(record['decision_id'], reconciled_at=iso(120.), evidence=[arrived['id']])
-    assert first['revision'] == 1 and first['previous'] is None and 'target' not in first
-    assert first['candidate_target'] == {'game_pk': GAME, 'at_bat_number': 1, 'pitch_number': 2,
-                                         'status': 'UNVERIFIED_NEXT', 'intervening': [],
-                                         'basis': 'accepted_row_first_received_after_decision',
-                                         'reason': 'later_observation_not_proof_of_immediate_next_pitch'}
-    _, fixed = store.ingest(GAME, feed(2, ts='20261008_000300', wall=110., call='C', state={'balls': 2}), fetched=130.,
-                            source='live_poll')
-    correction = [r for r in store.pitch_events(GAME)['events'] if r['outcome'] == 'correction'][-1]
-    second = store.append_reconciliation(record['decision_id'], reconciled_at=iso(131.), evidence=[correction['id']])
-    assert second['revision'] == 2 and second['evidence'][0]['outcome'] == 'correction'
-    assert second['candidate_target']['status'] == 'UNVERIFIED_NEXT'
-    assert second['previous'] == {'revision': 1, 'at_bat_number': 1, 'pitch_number': 2,
-                                  'relation': 'same_key_later_observation'}
+    arrived = [r for r in ledger if (r['pitch_number'], r['outcome']) == (2, 'new')][0]
+    # a synthetic_test_clock decision vs an observer_local receipt is not a comparable temporal proof
+    assert arrived['receipt_clock'] == 'observer_local'
+    with pytest.raises(ValueError, match='not observer_local'):
+        store.append_reconciliation(record['decision_id'], reconciled_at=iso(120.), evidence=[arrived['id']])
 
     history = LiveSnapshotStore(path).decision_history(record['decision_id'])
-    assert history['decision'] == original
-    assert [r['revision'] for r in history['reconciliations']] == [1, 2]
-    assert history['reconciliations'][0] == first and history['reconciliations'][1] == second
+    assert history['decision'] == original and history['reconciliations'] == []
     restored = history['record']
     assert restored['decision_at'] == iso(105.) and restored['snapshot'] == record['snapshot']
     assert restored['target']['at_bat_number'] is None
     with sqlite3.connect(path) as db, pytest.raises(sqlite3.IntegrityError, match='append-only'):
         db.execute("UPDATE context_decisions SET body=x'00'")
     with sqlite3.connect(path) as db, pytest.raises(sqlite3.IntegrityError, match='append-only'):
-        db.execute('DELETE FROM context_reconciliations')
+        db.execute('DELETE FROM context_decisions')
     assert LiveSnapshotStore(path).decision_history(record['decision_id']) == history
 
     # an unverified receipt clock cannot place evidence after the decision
     recorded = LiveSnapshotStore(tmp_path/'recorded.sqlite3')
     _, old = recorded.ingest(GAME, feed(1, ts='20261008_000100', wall=100.), fetched=101., source='live_poll')
-    late = build(old, 105.)
-    recorded.append_decision(late)
+    late = build(old, 105., decision_clock='observer_local')
+    assert recorded.append_decision(late) == 'appended'
     recorded.ingest(GAME, feed(2, ts='20261008_000200', wall=110.), fetched=111., source='recorded:x.json')
     row = recorded.pitch_events(GAME)['events'][-1]
     assert row['receipt_clock'] == 'unverified'
@@ -220,32 +204,156 @@ def test_reviewer_counterexamples_stay_unknown_and_unverified(tmp_path):
     assert store.decision_history(honest['decision_id']) is None
     assert store.append_decision(honest) == 'appended'
 
-    # CE2: decision after (1,1); accepted (1,2) then (1,3) arrive; citing (1,3) is NOT_NEXT, nothing is verified next
-    s2 = LiveSnapshotStore(tmp_path/'ce2.sqlite3')
-    _, d0 = s2.ingest(GAME, feed(1, ts='20261008_000100', wall=100.), fetched=101., source='live_poll')
+
+def test_forged_labels_refused_and_truthful_abstention_counted(tmp_path):
+    path = tmp_path/'labels.sqlite3'
+    store = LiveSnapshotStore(path)
+    state = {'balls': 1, 'strikes': 0, 'outs': 2, 'bases': [1]}
+    _, syn = store.ingest(GAME, feed(1, ts='20261008_000100', wall=100., state=state), fetched=101.,
+                          source=SYNTHETIC_SOURCE)
+    honest = build(syn, 105.)
+    assert honest['opportunity']['category'] == 'feature_unavailable' and honest['fields']['balls']['status'] == 'KNOWN'
+
+    def relabel(record, *, source=None, clock=None, decision_clock=None, prov_clock=None):
+        lie = copy.deepcopy(record)
+        lie['snapshot']['source'] = source or lie['snapshot']['source']
+        lie['snapshot']['receipt_clock'] = clock or lie['snapshot']['receipt_clock']
+        lie['decision_clock'] = decision_clock or lie['decision_clock']
+        for v in lie['fields'].values():
+            if v['provenance'] and prov_clock:
+                v['provenance']['receipt_clock'] = prov_clock
+        return lie
+
+    # rework-review probe p2_forged_source_clock_labels plus each single-label variant: synthetic as live_poll
+    forgeries = [relabel(honest, source='live_poll', clock='observer_local', decision_clock='observer_local',
+                         prov_clock='observer_local'),
+                 relabel(honest, source='live_poll'),
+                 relabel(honest, clock='observer_local'),
+                 relabel(honest, decision_clock='observer_local'),
+                 relabel(honest, prov_clock='observer_local'),
+                 relabel(honest, clock='UNKNOWN', prov_clock='UNKNOWN', decision_clock='UNKNOWN')]
+    # probe p2_forged_category_eligible_all_unknown, and eligible on the honest KNOWN record
+    for record in (honest, build(syn, 105., trusted_clock=False)):
+        forgeries.append(copy.deepcopy(record) | {'opportunity': {'category': 'eligible',
+                                                                  'reason': 'all_listed_fields_known'}})
+    for lie in forgeries:
+        with pytest.raises(ValueError):
+            store.append_decision(lie)
+    assert store.decision_history(honest['decision_id']) is None
+    assert store.append_decision(honest) == 'appended'  # the honest record under the same decision_id
+
+    # a live_poll row cannot be laundered into the synthetic source/clock
+    _, live = store.ingest(GAME, feed(2, ts='20261008_000200', wall=110.), fetched=111., source='live_poll')
+    plain = build(live, 115., decision_clock='observer_local')
+    assert not [f for f, v in plain['fields'].items() if v['status'] == 'KNOWN']  # Final-like/production source
+    for lie in (relabel(plain, source=SYNTHETIC_SOURCE), relabel(plain, clock='synthetic_test_clock',
+                                                                 decision_clock='synthetic_test_clock')):
+        with pytest.raises(ValueError, match='source/receipt clock'):
+            store.append_decision(lie)
+
+    # truthful unverified-clock abstentions are durably appended and counted
+    abstentions = [build(syn, 105., trusted_clock=False), build(syn, 106., decision_clock='UNKNOWN'),
+                   build(live, 115., decision_clock='UNKNOWN'), build(live, 116., trusted_clock=False)]
+    for record in abstentions:
+        assert record['opportunity']['category'] == 'ambiguous'
+        assert all(v['status'] == 'UNKNOWN' for v in record['fields'].values())
+        assert store.append_decision(record) == 'appended'
+    assert abstentions[0]['snapshot']['receipt_clock'] == 'UNKNOWN'
+    assert abstentions[1]['decision_clock'] == 'UNKNOWN'
+    assert store.append_decision(plain) == 'appended'
+    reloaded = LiveSnapshotStore(path)
+    assert reloaded.decision_counts(GAME) == {'unit': 'local_decision_opportunity', 'decisions': 6,
+                                              'categories': {'feature_unavailable': 2, 'ambiguous': 4}}
+    for record in abstentions + [honest, plain]:
+        assert reloaded.decision_history(record['decision_id'])['record'] == record
+
+
+def test_reconciliation_is_observer_local_and_never_beyond_unverified_next(tmp_path):
+    path = tmp_path/'recon.sqlite3'
+    store = LiveSnapshotStore(path)
+    _, d0 = store.ingest(GAME, feed(1, ts='20261008_000100', wall=100.), fetched=101., source='live_poll')
     dec = build(d0, 105., decision_clock='observer_local')
-    s2.append_decision(dec)
-    original = s2.decision_history(dec['decision_id'])['decision']
+    assert dec['snapshot']['receipt_clock'] == 'observer_local'
+    assert all(v['status'] == 'UNKNOWN' for v in dec['fields'].values())
+    assert store.append_decision(dec) == 'appended'
+    original = store.decision_history(dec['decision_id'])['decision']
     with pytest.raises(ValueError, match='after the decision'):
-        s2.append_reconciliation(dec['decision_id'], reconciled_at=iso(106.),
-                                 evidence=[s2.pitch_events(GAME)['events'][0]['id']])
-    s2.ingest(GAME, feed(2, ts='20261008_000200', wall=110.), fetched=111., source='live_poll')
-    s2.ingest(GAME, feed(3, ts='20261008_000300', wall=120.), fetched=121., source='live_poll')
-    rows = {(r['pitch_number'], r['outcome']): r for r in s2.pitch_events(GAME)['events']}
-    nxt, later = rows[(2, 'new')], rows[(3, 'new')]
-    skip = s2.append_reconciliation(dec['decision_id'], reconciled_at=iso(130.), evidence=[later['id']])
-    assert 'target' not in skip and skip['candidate_target']['status'] == 'NOT_NEXT'
-    assert skip['candidate_target']['reason'] == 'intervening_accepted_new_key'
-    assert skip['candidate_target']['intervening'] == [{'pitch_event_id': nxt['id'], 'at_bat_number': 1,
-                                                        'pitch_number': 2, 'first_received': 111.}]
-    assert skip['candidate_observation'] == {'pitch_event_ids': [later['id']], 'first_received': 121.,
-                                             'receipt_clock': 'observer_local'}
-    other = s2.append_reconciliation(dec['decision_id'], reconciled_at=iso(131.), evidence=[nxt['id']])
-    assert other['candidate_target']['status'] == 'UNVERIFIED_NEXT'
-    assert other['previous'] == {'revision': 1, 'at_bat_number': 1, 'pitch_number': 3,
-                                 'relation': 'supersedes_different_key'}
-    history = LiveSnapshotStore(tmp_path/'ce2.sqlite3').decision_history(dec['decision_id'])
-    assert history['decision'] == original and history['record']['target']['status'] == 'UNKNOWN'
-    assert [(r['revision'], r['candidate_target']['pitch_number'], r['candidate_target']['status'])
-            for r in history['reconciliations']] == [(1, 3, 'NOT_NEXT'), (2, 2, 'UNVERIFIED_NEXT')]
-    assert all(r['candidate_target']['status'] != 'VERIFIED' and 'target' not in r for r in history['reconciliations'])
+        store.append_reconciliation(dec['decision_id'], reconciled_at=iso(106.),
+                                    evidence=[store.pitch_events(GAME)['events'][0]['id']])
+    # out of order: (1,3) received at 111 before (1,2); a recorded (unverified) (1,4) row; then (1,2) at 121
+    early = feed(3, ts='20261008_000200', wall=110.)
+    early['liveData']['plays']['allPlays'][0]['playEvents'].pop(1)
+    store.ingest(GAME, early, fetched=111., source='live_poll')
+    recorded = feed(4, ts='20261008_000250', wall=115.)
+    recorded['liveData']['plays']['allPlays'][0]['playEvents'].pop(1)
+    store.ingest(GAME, recorded, fetched=116., source='recorded:synthetic.json')
+    store.ingest(GAME, feed(3, ts='20261008_000300', wall=120.), fetched=121., source='live_poll')
+    rows = {(r['pitch_number'], r['outcome']): r for r in store.pitch_events(GAME)['events']}
+    two, three = rows[(2, 'new')], rows[(3, 'new')]
+    assert (two['first_received'], three['first_received']) == (121., 111.)
+
+    def status(rec):
+        return rec['candidate_target']['status'], rec['candidate_target']['reason']
+
+    unverified = ('UNVERIFIED_NEXT', 'later_observation_not_proof_of_immediate_next_pitch')
+    with pytest.raises(ValueError, match='after decision_at'):
+        store.append_reconciliation(dec['decision_id'], reconciled_at=iso(104.), evidence=[two['id']])
+    out_of_order = store.append_reconciliation(dec['decision_id'], reconciled_at=iso(130.), evidence=[two['id']])
+    assert status(out_of_order) == unverified and 'target' not in out_of_order
+    assert out_of_order['decision_clock'] == 'observer_local'
+    supplementary = out_of_order['supplementary_observations']
+    assert supplementary['relation'] == 'receipt_order_not_physical_order_proof'
+    assert {(r['pitch_number'], r['receipt_clock']) for r in supplementary['rows']} == {(3, 'observer_local'),
+                                                                                       (4, 'unverified')}
+    assert out_of_order['candidate_observation'] == {'pitch_event_ids': [two['id']], 'first_received': 121.,
+                                                     'receipt_clock': 'observer_local'}
+    higher = store.append_reconciliation(dec['decision_id'], reconciled_at=iso(131.), evidence=[three['id']])
+    assert status(higher) == unverified and higher['supplementary_observations']['rows'] == []
+    assert higher['previous'] == {'revision': 1, 'at_bat_number': 1, 'pitch_number': 2,
+                                  'relation': 'supersedes_different_key'}
+    with pytest.raises(ValueError, match='receipt clock'):  # the recorded row is never evidence
+        store.append_reconciliation(dec['decision_id'], reconciled_at=iso(132.), evidence=[rows[(4, 'new')]['id']])
+    # same-key correction of (1,3): a separate append, first_received kept from the 'new' row
+    store.ingest(GAME, feed(3, ts='20261008_000400', wall=120., call='C'), fetched=140., source='live_poll')
+    fixed = [r for r in store.pitch_events(GAME)['events'] if r['outcome'] == 'correction'][-1]
+    assert (fixed['pitch_number'], fixed['first_received']) == (3, 111.)
+    corrected = store.append_reconciliation(dec['decision_id'], reconciled_at=iso(141.), evidence=[fixed['id']])
+    assert status(corrected) == unverified and corrected['evidence'][0]['outcome'] == 'correction'
+    assert corrected['previous'] == {'revision': 2, 'at_bat_number': 1, 'pitch_number': 3,
+                                     'relation': 'same_key_later_observation'}
+
+    # same-time: (2,1) and (2,2) first received in one snapshot; neither is NOT_NEXT because of the other
+    same = feed(3, ts='20261008_000500', wall=150.)
+    same['liveData']['plays']['allPlays'].append({'about': {'atBatIndex': 1}, 'matchup': {'batter': 102, 'pitcher': 1},
+                                                  'playEvents': [{'isPitch': True, 'playId': f'q{n}', 'pitchNumber': n}
+                                                                 for n in (1, 2)]})
+    store.ingest(GAME, same, fetched=151., source='live_poll')
+    pair = [r for r in store.pitch_events(GAME)['events'] if r['at_bat_number'] == 2]
+    for at, row in zip((160., 161.), pair):
+        rec = store.append_reconciliation(dec['decision_id'], reconciled_at=iso(at), evidence=[row['id']])
+        assert status(rec) == unverified
+        assert (2, 151.) in {(r['at_bat_number'], r['first_received']) for r in rec['supplementary_observations']['rows']}
+
+    history = LiveSnapshotStore(path).decision_history(dec['decision_id'])
+    assert history['decision'] == original and history['record'] == dec
+    assert history['record']['target'] == {'game_pk': GAME, 'at_bat_number': None, 'pitch_number': None,
+                                           'status': 'UNKNOWN', 'reason': 'next_key_not_assignable_before_pitch'}
+    assert [(r['revision'], r['candidate_target']['status']) for r in history['reconciliations']] == \
+        [(n, 'UNVERIFIED_NEXT') for n in range(1, 6)]
+    assert all('target' not in r for r in history['reconciliations'])
+    with sqlite3.connect(path) as db, pytest.raises(sqlite3.IntegrityError, match='append-only'):
+        db.execute('DELETE FROM context_reconciliations')
+    with sqlite3.connect(path) as db, pytest.raises(sqlite3.IntegrityError, match='append-only'):
+        db.execute("UPDATE context_reconciliations SET body=x'00'")
+
+    # mixed: a synthetic_test_clock decision vs an observer_local row is refused, and the store is unchanged
+    _, syn = store.ingest(GAME, feed(3, ts='20261008_000600', wall=170., state={'balls': 0}), fetched=171.,
+                          source=SYNTHETIC_SOURCE)
+    sdec = build(syn, 175.)
+    assert store.append_decision(sdec) == 'appended'
+    store.ingest(GAME, feed(5, ts='20261008_000700', wall=180.), fetched=181., source='live_poll')
+    late = [r for r in store.pitch_events(GAME)['events'] if r['pitch_number'] == 5][0]
+    assert (late['outcome'], late['receipt_clock'], late['first_received']) == ('new', 'observer_local', 181.)
+    with pytest.raises(ValueError, match='not observer_local'):
+        store.append_reconciliation(sdec['decision_id'], reconciled_at=iso(190.), evidence=[late['id']])
+    assert LiveSnapshotStore(path).decision_history(sdec['decision_id'])['reconciliations'] == []
