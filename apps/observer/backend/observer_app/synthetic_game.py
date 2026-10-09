@@ -188,30 +188,33 @@ def _sha(value):
 
 
 def _shown(frame, key, rows):
-    """What the fan view may say about ``key`` as of ``frame``: (result, status, reason). A body the ledger
-    quarantined at the selected seq is never shown as an observed call, and a memory-only call that differs from
-    the last committed body is not durable. A quarantine row refuses the display only if its hash is the displayed
-    pitch body's (the ledger's ``sha256(_canonical(playEvent))``): a stale arrival's row also names the selected
-    seq but not its body. An unusable hash on either side fails closed as unconfirmed."""
+    """What the fan view may say about ``key`` as of ``frame``: (result, status, reason). A memory-only call that
+    differs from the last committed body is not durable. Otherwise the displayed pitch body is an observed call only
+    if its hash (the ledger's ``sha256(_canonical(playEvent))``) is the key's newest accepted (new/correction) body
+    among the rows committed by ``frame``: the ledger dedups repeat quarantine rows whatever the seq, so neither the
+    absence of a row at the selected seq nor an older accepted copy of the body clears it. A body only quarantined,
+    or superseded by a later accepted revision, is unconfirmed; an unusable hash fails closed as unconfirmed."""
     entry = frame['entry']
     event = _pitch_event(entry['feed'] if entry else None, key)
     call = event['details']['call']['code'] if event else None
     if not call:
         return None, 'not_received', None
-    at_seq = [r for r in rows if r['outcome'] == 'quarantine' and r['store_seq'] == entry.get('seq')]
-    if at_seq:
-        try:
-            shown = hashlib.sha256(_canonical(event)).hexdigest()
-        except (TypeError, ValueError):
-            shown = None
-        if shown is None or any(_sha(r['sha']) is None for r in at_seq):
-            return '확인 중', 'unconfirmed', f"{entry.get('provider_order')}/body_hash_unusable"
-        refused = [r for r in at_seq if r['sha'] == shown]
-        if refused:
-            return '확인 중', 'unconfirmed', f"{entry.get('provider_order')}/{refused[-1]['reason']}"
     if not frame['store_ok'] and call != _received(frame.get('committed_feed'), key):
         return f'{CALLS[call]} · 저장 전', 'unsaved', 'uncommitted_memory_entry'
-    return CALLS[call], 'received', None
+    order = entry.get('provider_order')
+    if 'as_of' in frame:
+        rows = [r for r in rows if r['id'] <= (frame['as_of']['pitch_event_id'] or 0)]
+    accepted = [r for r in rows if r['outcome'] != 'quarantine' and (r['at_bat_number'], r['pitch_number']) == key[:2]]
+    try:
+        shown = hashlib.sha256(_canonical(event)).hexdigest()
+    except (TypeError, ValueError):
+        shown = None
+    if shown is None or (accepted and _sha(accepted[-1]['sha']) is None):
+        return '확인 중', 'unconfirmed', f'{order}/body_hash_unusable'
+    if accepted and accepted[-1]['sha'] == shown:
+        return CALLS[call], 'received', None
+    refused = [r for r in rows if r['outcome'] == 'quarantine' and r['sha'] == shown]
+    return '확인 중', 'unconfirmed', f"{order}/{refused[-1]['reason'] if refused else 'not_accepted'}"
 
 
 def comparison(entry, decision_wall, predict=None):
@@ -258,11 +261,11 @@ class Game:
             accepted = [r for r in mine if r['outcome'] != 'quarantine' and (r['at_bat_number'], r['pitch_number']) == key[:2]]
             result, status, reason = _shown(frame, key, mine)
             corrected = any(r['outcome'] == 'correction' for r in accepted)
-            earlier = [_shown(self.script.frames[j], key, mine)[0] for j in range(i, shown_from)]
-            changed = [s for s in earlier if s is not None and s != result]
+            earlier = [_shown(self.script.frames[j], key, mine)[:2] for j in range(i, shown_from)]
+            changed = [s for s in earlier if s[0] is not None and s[0] != result]
             log.append({'game_pitch': i+1, 'inning': (key[0]-1)//6+1, 'result': result or '아직 받지 못함',
-                        'status': status, 'corrected': corrected,
-                        'changed_from': changed[-1] if changed and not corrected else None,
+                        'status': status, 'corrected': corrected,  # a correction explains only a received display
+                        'changed_from': changed[-1][0] if changed and (not corrected or changed[-1][1] != 'received') else None,
                         'diagnostics': {'key': {'game_pk': GAME, 'at_bat_number': key[0], 'pitch_number': key[1]},
                                         'display_reason': reason,
                                         'provider_event_ids': sorted({r['provider_event_id'] for r in accepted if r['provider_event_id']}),

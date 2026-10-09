@@ -99,8 +99,14 @@ def test_refused_or_unsaved_body_is_not_shown_as_an_observed_call(script):
     for later in (game.state(31, True), game.state(LAST, True)):  # reconciled body: change shown, not a correction
         row = later['history'][30]
         assert (row['result'], row['status'], row['corrected'], row['changed_from']) == ('볼', 'received', False, '확인 중')
-    corrected = game.state(LAST, True)['history'][18]
+    final = game.state(LAST, True)['history']
+    corrected = final[18]
     assert corrected['corrected'] and corrected['changed_from'] is None
+    # renumbered g11p2/g11p3: bodies the ledger only quarantined stay unconfirmed under every later seq
+    assert [(r['result'], r['status'], r['diagnostics']['display_reason']) for r in final[26:28]] == \
+        [('확인 중', 'unconfirmed', 'ordered/ambiguous_remap'), ('확인 중', 'unconfirmed', 'ordered/conflicting_key')]
+    # first sighting without a playId is only quarantined (incomplete_identity): not an observed call yet
+    assert game.state(10, True)['actual']['status'] == 'unconfirmed' and final[10]['changed_from'] == '확인 중'
     unsaved = game.state(81, True)
     assert unsaved['actual']['status'] == 'unsaved' and unsaved['actual']['result'].endswith(' · 저장 전')
     assert game.state(82, False)['comparison']['label'] == '지원 없음'
@@ -119,6 +125,75 @@ def test_stale_arrival_quarantine_does_not_alias_the_selected_body(tmp_path):
         [('quarantine', 'stale_revision', entry['seq'])]
     frame = {'entry': entry, 'store_ok': True, 'committed_feed': selected}
     assert sg._shown(frame, key, rows) == ('볼', 'received', None)
+
+
+def _ingest(store, feed, at):
+    outcome, entry = store.ingest(sg.GAME, feed, fetched=sg.T0+at, source='live_poll')
+    ledger = store.pitch_events(sg.GAME)
+    return outcome, {'entry': entry, 'store_ok': True, 'committed_feed': entry and entry['feed'],
+                     'as_of': ledger['history']['as_of']}
+
+
+def _with_call(feed, key, code):
+    sg._pitch_event(feed, key)['details']['call']['code'] = code
+    return feed
+
+
+def _mine(store, key):
+    return [r for r in store.pitch_events(sg.GAME)['events']
+            if (r['at_bat_number'], r['pitch_number']) == key[:2] or r['provider_event_id'] == key[2]]
+
+
+def test_quarantined_body_reselected_under_a_later_seq_stays_unconfirmed(tmp_path):
+    """Reviewer B1/B2: the ledger dedups X's repeat quarantine row, so no row names the later selected seq."""
+    key = sg.PLAN[3]
+    store = sg.LiveSnapshotStore(tmp_path/'b1.sqlite3')  # B1: same-stamp X, then X again with an unrelated change
+    _ingest(store, sg.provider(3), 31)
+    _, f2 = _ingest(store, sg.provider(3, conflict=True), 32)
+    later = sg.provider(3, conflict=True)
+    later['metaData']['unrelated'] = 1
+    o3, f3 = _ingest(store, later, 33)
+    assert o3 == 'correction' and f3['entry']['seq'] > f2['entry']['seq']
+    assert [r['store_seq'] for r in _mine(store, key) if r['outcome'] == 'quarantine'] == [f2['entry']['seq']]
+    for frame in (f2, f3):
+        assert sg._shown(frame, key, _mine(store, key)) == \
+            ('확인 중', 'unconfirmed', 'same_stamp_conflict/same_revision_hash_mismatch')
+    store = sg.LiveSnapshotStore(tmp_path/'b2.sqlite3')  # B2: stale X, then a newer-event slot still carrying X
+    _ingest(store, sg.provider(3), 31)
+    assert _ingest(store, sg.provider(3, ts=sg.stamp(0), conflict=True), 32)[0] == 'stale'
+    o3, f3 = _ingest(store, _with_call(sg.provider(4, ts=sg.stamp(0)), key, 'X'), 41)
+    assert o3 == 'new' and sg._shown(f3, key, _mine(store, key)) == ('확인 중', 'unconfirmed', 'stale/stale_revision')
+
+
+def test_an_older_accepted_copy_does_not_clear_a_later_stale_arrival(tmp_path):
+    """B accepted, then C accepted under a later stamp: B selected again under an older stamp is not confirmed."""
+    key, store = sg.PLAN[3], sg.LiveSnapshotStore(tmp_path/'order.sqlite3')
+    _ingest(store, sg.provider(3), 31)
+    _, f2 = _ingest(store, _with_call(sg.provider(3, 1), key, 'C'), 32)
+    assert sg._shown(f2, key, _mine(store, key)) == ('루킹 스트라이크', 'received', None)
+    _, f3 = _ingest(store, sg.provider(4, ts=sg.stamp(0)), 41)
+    rows = _mine(store, key)
+    assert [(r['outcome'], r['reason']) for r in rows] == [('new', None), ('correction', None), ('quarantine', 'stale_revision')]
+    assert sg._shown(f3, key, rows) == ('확인 중', 'unconfirmed', 'stale/stale_revision')
+
+
+def test_a_later_accepted_revision_of_a_refused_body_is_confirmed_with_the_change_shown(tmp_path):
+    """Same-stamp X is refused; X under a strictly later provider stamp is a genuine accepted correction. Each
+    frame is judged by the rows it had committed, so the earlier refusal stays visible as changed_from."""
+    key, store = sg.PLAN[3], sg.LiveSnapshotStore(tmp_path/'recover.sqlite3')
+    _, f1 = _ingest(store, sg.provider(3), 31)
+    _, f2 = _ingest(store, sg.provider(3, conflict=True), 32)
+    _, f3 = _ingest(store, sg.provider(3, 1, conflict=True), 33)
+    rows = _mine(store, key)
+    assert [(r['outcome'], r['reason']) for r in rows] == [('new', None), ('quarantine', 'same_revision_hash_mismatch'),
+                                                           ('correction', None)]
+    assert sg._shown(f2, key, rows) == ('확인 중', 'unconfirmed', 'same_stamp_conflict/same_revision_hash_mismatch')
+    assert sg._shown(f3, key, rows) == ('인플레이', 'received', None)
+    game = sg.Game(type('S', (), {'store': store, 'frames': [f2]*4})())
+    row = game._pitch_log(f3, 4, 4)[3]
+    assert (row['result'], row['status'], row['corrected'], row['changed_from']) == ('인플레이', 'received', True, '확인 중')
+    back = sg.Game(type('S', (), {'store': store, 'frames': [f1]*4})())._pitch_log(f2, 4, 4)[3]
+    assert (back['result'], back['status'], back['changed_from']) == ('확인 중', 'unconfirmed', '볼')
 
 
 def test_http_first_to_last_reveal_next_restart_and_final_partition(script):
