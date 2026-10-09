@@ -29,7 +29,7 @@ import uuid
 
 import numpy as np
 
-from .live_store import LiveSnapshotStore, PersistentLiveFeed
+from .live_store import LiveSnapshotStore, PersistentLiveFeed, _canonical
 from .service_research import capture_input, conditional_candidates
 
 WEB = Path(__file__).resolve().parents[2]/'synthetic-game'
@@ -166,28 +166,49 @@ def _situation(feed):
             'count': {'balls': min(3, calls.count('B')), 'strikes': min(2, sum(c in 'CS' for c in calls))}}
 
 
-def _received(feed, key):
-    """The call recorded for ``key`` in this frame's feed, or None if it had not arrived."""
+def _pitch_event(feed, key):
+    """The playEvent recorded for ``key`` in this frame's feed, or None if it had not arrived."""
     ab, n, _ = key
     for play in feed['liveData']['plays']['allPlays'] if feed else []:
         if play['about']['atBatIndex'] == ab-1:
             for event in play['playEvents']:
                 if event.get('isPitch') and event.get('pitchNumber') == n:
-                    return event['details']['call']['code']
+                    return event
     return None
+
+
+def _received(feed, key):
+    """The call recorded for ``key`` in this frame's feed, or None if it had not arrived."""
+    event = _pitch_event(feed, key)
+    return event['details']['call']['code'] if event else None
+
+
+def _sha(value):
+    return value if isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value) else None
 
 
 def _shown(frame, key, rows):
     """What the fan view may say about ``key`` as of ``frame``: (result, status, reason). A body the ledger
     quarantined at the selected seq is never shown as an observed call, and a memory-only call that differs from
-    the last committed body is not durable."""
+    the last committed body is not durable. A quarantine row refuses the display only if its hash is the displayed
+    pitch body's (the ledger's ``sha256(_canonical(playEvent))``): a stale arrival's row also names the selected
+    seq but not its body. An unusable hash on either side fails closed as unconfirmed."""
     entry = frame['entry']
-    call = _received(entry['feed'] if entry else None, key)
+    event = _pitch_event(entry['feed'] if entry else None, key)
+    call = event['details']['call']['code'] if event else None
     if not call:
         return None, 'not_received', None
-    refused = [r for r in rows if r['outcome'] == 'quarantine' and r['store_seq'] == entry.get('seq')]
-    if refused:
-        return '확인 중', 'unconfirmed', f"{entry.get('provider_order')}/{refused[-1]['reason']}"
+    at_seq = [r for r in rows if r['outcome'] == 'quarantine' and r['store_seq'] == entry.get('seq')]
+    if at_seq:
+        try:
+            shown = hashlib.sha256(_canonical(event)).hexdigest()
+        except (TypeError, ValueError):
+            shown = None
+        if shown is None or any(_sha(r['sha']) is None for r in at_seq):
+            return '확인 중', 'unconfirmed', f"{entry.get('provider_order')}/body_hash_unusable"
+        refused = [r for r in at_seq if r['sha'] == shown]
+        if refused:
+            return '확인 중', 'unconfirmed', f"{entry.get('provider_order')}/{refused[-1]['reason']}"
     if not frame['store_ok'] and call != _received(frame.get('committed_feed'), key):
         return f'{CALLS[call]} · 저장 전', 'unsaved', 'uncommitted_memory_entry'
     return CALLS[call], 'received', None

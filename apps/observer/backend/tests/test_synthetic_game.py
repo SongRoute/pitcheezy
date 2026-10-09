@@ -107,6 +107,20 @@ def test_refused_or_unsaved_body_is_not_shown_as_an_observed_call(script):
     assert 'changed_from' in (sg.WEB/'app.js').read_text()
 
 
+def test_stale_arrival_quarantine_does_not_alias_the_selected_body(tmp_path):
+    """Alias: a stale changed arrival's quarantine row names the selected seq, not the selected body."""
+    store, key = sg.LiveSnapshotStore(tmp_path/'alias.sqlite3'), sg.PLAN[3]
+    selected = sg.provider(3)
+    out, entry = store.ingest(sg.GAME, selected, fetched=sg.T0+31, source='live_poll')
+    stale = sg.provider(3, ts=sg.stamp(0), conflict=True)  # body X under an older provider stamp
+    assert (out, store.ingest(sg.GAME, stale, fetched=sg.T0+32, source='live_poll')[0]) == ('new', 'stale')
+    rows = [r for r in store.pitch_events(sg.GAME)['events'] if r['provider_event_id'] == key[2]]
+    assert [(r['outcome'], r['reason'], r['store_seq']) for r in rows if r['outcome'] == 'quarantine'] == \
+        [('quarantine', 'stale_revision', entry['seq'])]
+    frame = {'entry': entry, 'store_ok': True, 'committed_feed': selected}
+    assert sg._shown(frame, key, rows) == ('볼', 'received', None)
+
+
 def test_http_first_to_last_reveal_next_restart_and_final_partition(script):
     server = ThreadingHTTPServer(('127.0.0.1', 0), sg.make_handler(sg.Game(script)))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
