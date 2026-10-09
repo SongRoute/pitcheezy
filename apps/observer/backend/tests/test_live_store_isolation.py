@@ -37,6 +37,43 @@ def test_recovery_flushes_memory_before_accepting_late_feed(tmp_path):
     assert LiveSnapshotStore(backup).restore(1, 130, 120) == restored
 
 
+def pitch(details='ball'):
+    return {'isPitch': True, 'playId': 'p1', 'pitchNumber': 1, 'startTime': '2026-01-01T00:00:00Z', 'details': details}
+
+
+def test_malformed_plays_beside_valid_pitch_reach_ledger(tmp_path):
+    store = LiveSnapshotStore(tmp_path/'synthetic.sqlite3')
+    live = PersistentLiveFeed(None, store=store, wall=lambda: 1767225700)
+    buffer = live._buffer(1)
+    events = [pitch(), 'junk', {'isPitch': True, 'startTime': 'not-a-time'}]
+    malformed = {'metaData': {'timeStamp': '20260101_000010'},
+                 'liveData': {'plays': {'currentPlay': 'bad', 'allPlays': [{'about': {'atBatIndex': 0}, 'playEvents': events}, None]}}}
+    live._accept(1, malformed, 1767225700, buffer)
+    assert buffer[-1]['feed'] == malformed and live.store_error is None
+    rows = store.pitch_events(1)['events']
+    assert [(r['provider_event_id'], r['outcome'], r['reason']) for r in rows] == [
+        ('p1', 'new', None), (None, 'quarantine', 'malformed_event'), (None, 'quarantine', 'incomplete_identity')]
+
+
+def test_older_provider_stamp_with_newer_event_wall_is_never_a_correction(tmp_path):
+    store = LiveSnapshotStore(tmp_path/'synthetic.sqlite3')
+    live = PersistentLiveFeed(None, store=store, wall=lambda: 300)
+    buffer = live._buffer(1)
+    def snap(event, stamp, details):
+        play = {'about': {'atBatIndex': 0}, 'playEvents': [pitch(details)]}
+        return {'metaData': {'eventWall': event, 'timeStamp': stamp}, 'liveData': {'plays': {'allPlays': [play]}}}
+    first, late = snap(100, '20260101_000100', 'ball'), snap(200, '20260101_000050', 'strike')
+    live._accept(1, first, 100, buffer)
+    live._accept(1, late, 200, buffer)
+    stale_late = snap(150, '20260101_000040', 'foul')
+    live._accept(1, stale_late, 210, buffer)
+    assert buffer[-1]['feed'] == late and live.stale[1] == 1
+    rows = store.pitch_events(1)['events']
+    assert [(r['outcome'], r['reason'], r['revision'], r['first_received']) for r in rows] == [
+        ('new', None, 1, 100), ('quarantine', 'stale_revision', None, None)]
+    assert [x['feed'] for x in store.restore(1, 300, 300)] == [first, late]
+
+
 @pytest.mark.parametrize('body', [b'broken gzip', gzip.compress(b'broken json'), b'\x1f\x8b'])
 def test_corrupt_restore_degrades_once_and_keeps_error(tmp_path, body):
     store = LiveSnapshotStore(tmp_path/'synthetic.sqlite3')

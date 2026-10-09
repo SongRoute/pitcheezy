@@ -89,6 +89,24 @@ def _provider_ts(value):
         return None
 
 
+def _feed_ts(feed):
+    meta = feed.get('metaData') if isinstance(feed, dict) else None
+    return meta.get('timeStamp') if isinstance(meta, dict) else None
+
+
+def _stale_stamp(feed_ts, newest_ts, newer_event):
+    """True if a snapshot stamped ``feed_ts`` whose event is not newer must not replace the newest one stamped
+    ``newest_ts``. Two valid provider stamps compare as times. If either is missing or malformed, fail closed as
+    before and compare the raw strings. A newer event is always kept as its own slot: the pitch ledger then
+    refuses any changed pitch under an older (``stale_revision``) or unparseable (``unordered_revision``) stamp."""
+    if newer_event:
+        return False
+    new, old = _provider_ts(feed_ts), _provider_ts(newest_ts)
+    if new and old:
+        return new < old
+    return bool(isinstance(feed_ts, str) and isinstance(newest_ts, str) and feed_ts and newest_ts and feed_ts < newest_ts)
+
+
 def _pitches(feed):
     """(provider_event_id, at_bat_number, pitch_number, playEvent, reason) for every pitch in the feed. The
     official key is GUMBO ``atBatIndex``+1 / ``pitchNumber``; ``playId`` is the provider's id, not a promised
@@ -149,13 +167,13 @@ class LiveSnapshotStore:
         game_pk, body = int(game_pk), _canonical(feed)
         event, sha = event_wall(feed) if slot_event is None else slot_event, hashlib.sha256(body).hexdigest()
         event = fetched if event is None else min(event, fetched)
-        feed_ts = (feed.get('metaData') or {}).get('timeStamp')
+        feed_ts = _feed_ts(feed)
         with self._write() as db:
             newest = db.execute('SELECT event_wall, version, feed_ts, sha, first_fetched, seq, fetched, source FROM snapshots WHERE game_pk=? '
                                 'ORDER BY event_wall DESC, version DESC LIMIT 1', (game_pk,)).fetchone()
             if newest is None or event > newest[0]:
                 outcome, slot, version, first = 'new', event, 1, fetched if first_fetched is None else first_fetched
-            elif feed_ts and newest[2] and feed_ts < newest[2]:
+            elif _stale_stamp(feed_ts, newest[2], False):
                 return 'stale', None
             elif sha == newest[3]:
                 return 'duplicate', {'game_pk': game_pk, 'feed': feed, 'event': newest[0], 'fetched': newest[4],
@@ -312,10 +330,8 @@ class PersistentLiveFeed(LiveFeed):
 
     def _accept(self, game_pk, feed, wall, buffer):
         # Reject stale input against memory too: it may be ahead of disk after an outage.
-        feed_ts = (feed.get('metaData') or {}).get('timeStamp')
-        newest_ts = (buffer[-1]['feed'].get('metaData') or {}).get('timeStamp') if buffer else None
-        stale = bool(buffer and (event_wall(feed) or wall) <= buffer[-1]['event']
-                     and feed_ts and newest_ts and feed_ts < newest_ts)
+        stale = bool(buffer and _stale_stamp(_feed_ts(feed), _feed_ts(buffer[-1]['feed']),
+                                             (event_wall(feed) or wall) > buffer[-1]['event']))
         try:
             if game_pk in self._unsaved:
                 # ponytail: resync only the bounded delay window; pruned outage history is not recoverable.
