@@ -187,6 +187,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             body['live_store'] = {'configured': True, 'started': hasattr(feed, 'store'),
                                   'error': getattr(feed, 'store_error', None), 'games_buffered': sorted(getattr(feed, 'buffers', {})),
                                   'source': getattr(feed, 'source', None),
+                                  'poll_interval_s': getattr(feed, 'config', {}).get('poll_interval_s'),
                                   'recommendation_ledger': hasattr(feed, 'store') and live_ledger.enabled()}
         return body
 
@@ -282,11 +283,13 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     app.state.live_policy = armb
 
     def live_parts():
-        from .live_feed import LIVE_CONFIG, LiveFeed, ReplayTransport, http_json
+        from .live_feed import LIVE_CONFIG, LiveFeed, ReplayTransport, http_json, replay_config
         if live['feed'] is None:
             replay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR')
             delay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_DELAY_S')
-            transport, options = ((ReplayTransport(replay), {'delay_s': float(delay or 0)}) if replay else
+            # Rehearsal speed: a replay hands out one recorded body per poll, so only a replay may change the pace.
+            pace = replay_config(os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S'))
+            transport, options = ((ReplayTransport(replay), {'delay_s': float(delay or 0), 'config': pace}) if replay else
                                   (http_json, {'record_dir': REPO/LIVE_CONFIG['record_dir'],
                                                'delay_s': None if delay is None else float(delay)}))
             if (store := os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE')):  # opt-in restart-safe buffer (live_store.py)
@@ -587,9 +590,12 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         if entry is None:
             from .live_feed import LiveFeedError
             raise LiveFeedError('no snapshot yet')
-        now = time.time()
+        # ``stale_s`` is the age of the last upstream answer, not of the shown state's first receipt: a game with
+        # no new event for a while (inning break, mound visit, review) is still fresh while polls keep answering.
+        answered = getattr(feed, 'polled_ok', {}).get(game_pk, entry['fetched'])
+        now = feed.wall() if hasattr(feed, 'wall') else time.time()
         return entry['feed'], {'as_of': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(entry['fetched'])),
-                               'ok': game_pk not in feed.failing, 'stale_s': round(now-entry['fetched'], 1)}, entry
+                               'ok': game_pk not in feed.failing, 'stale_s': round(max(0.0, now-answered), 1)}, entry
 
     def service_live_display(snapshot, parsed, entry=None):
         """(next-pitch rec in the service shape or None, display state, pitch receipts) for the fan screen."""

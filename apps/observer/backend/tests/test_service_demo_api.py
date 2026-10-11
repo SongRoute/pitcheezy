@@ -334,6 +334,17 @@ def test_live_game_lists_and_serves_only_occurred_pitches(tmp_path):
             assert view['current']['phase'] == 'pre_pitch' and view['current']['situation']['balls'] == 1
             assert view['next']['rec']['provenance'] == 'absent' and view['next']['rec']['candidates'] == []
             assert view['feed']['as_of'] == '2027-01-15T08:00:00Z'
+            # the screen is in the open plate appearance: its key is the one its pitches carry
+            assert view['current']['pa_key'] == view['pitches'][-1]['pa_key'] == '900200:5'
+            # the batter is done and the next one is up with no pitch yet: a new PA, not the previous batter's
+            current['about']['isComplete'] = True
+            snap['liveData']['linescore']['offense'] = {'batter': {'id': 33}}
+            view = client.get('/api/service/games/900200').json()
+            assert view['current']['phase'] == 'pre_pitch' and view['current']['situation']['balls'] == 0
+            assert view['current']['pa_key'] == '900200:6' and view['pitches'][-1]['pa_key'] == '900200:5'
+            snap['liveData']['linescore'] |= {'outs': 3, 'inningState': 'Middle'}  # inning break: no pending PA
+            view = client.get('/api/service/games/900200').json()
+            assert view['current']['phase'] == 'between_innings' and view['current']['pa_key'] is None
     finally:
         os.environ.pop('PITCHEEZY_OBSERVER_LIVE_ARMB')
 
