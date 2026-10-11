@@ -167,6 +167,7 @@ class LiveFeed:
         self.max_delay_s = max(config.get('max_delay_s', 120), self.delay_s)
         self.record_dir = Path(record_dir) if record_dir else None
         self.buffers, self.fetched_at, self.watching, self.failing, self._lock = {}, {}, {}, {}, threading.Lock()
+        self.failing_since, self.polled_ok = {}, {}  # first failure of the current outage / last complete response
         self._receipt = _reports_receipt(transport)
 
     def _interval(self, game_pk, delay, now):
@@ -257,11 +258,17 @@ class LiveFeed:
                         del self.fetched_at[game_pk]  # nothing to show yet: the very next poll tries again
                         raise
                     self.failing[game_pk] = wall  # keep serving what we have; the route tells the viewer
+                    self.failing_since.setdefault(game_pk, wall)
                 else:
                     # Receipt = the whole response has arrived: the transport's own mark, else its return.
                     wall = complete[-1] if complete else self.wall()
                     self.failing.pop(game_pk, None)
+                    self.failing_since.pop(game_pk, None)
+                    prior, self.polled_ok[game_pk] = self.polled_ok.get(game_pk), wall
                     self._accept(game_pk, feed, wall, buffer, requested)
+                    if buffer and buffer[-1]['fetched'] == wall and 'prior_poll' not in buffer[-1]:
+                        # a new slot: the last good poll before it did not have this event yet (None: no such poll)
+                        buffer[-1]['prior_poll'] = prior
                     if self.record_dir:
                         self._record(game_pk, feed)
             old = [i for i, entry in enumerate(buffer) if entry['event'] <= wall-self.max_delay_s]
