@@ -31,10 +31,16 @@ A pitch gets an expectation only if every rule holds (``ShadowExpectations.expla
     automatic ball or a runner move is not this pitch's forecast;
  6. the cell of exactly the realized pitch type is ``scored`` in all three places that state it, and the ledger's
     own latest observation of the pitch (when it has one) names the same type;
- 7. "recorded before the pitch" (``_timing``). ``live_before_pitch`` needs a decision stamped on the live observer
-    clock from a live poll AND that decision (plus compute time and ``min_lead_s``) to be earlier than the wall
-    time the RC store first received the pitch. A post-game replay ledger cannot prove that: it is refused unless
+ 7. "recorded before the pitch" (``_timing``). ``live_before_pitch`` ("던지기 전 예상") needs a decision stamped on the
+    live observer clock from a live poll, that decision (plus compute time and ``min_lead_s``) to be earlier than
+    the wall time the RC store first received the pitch, AND the runner's own order reconciliation row for the
+    attempt, labelled ``provider_time_after_decision_unverified`` (local receipt order alone does not show the
+    forecast was made before the physical pitch: the pitch reaches us a feed lag after it is thrown). Without that
+    row the answer is at most ``live_before_pitch_record_arrived`` ("던지기 전 정보로 본 예상", note "이 공의 기록이
+    도착하기 전에 계산"), and only with ``allow_replayed``. A post-game replay ledger is refused unless
     ``allow_replayed``, and is then marked ``replayed_pre_pitch_inputs`` with wording that says so;
+ 7b. the run itself is allowed on a fan screen: its ``shadow_run`` body says ``fan_facing_output: true``. A run that
+    says false or nothing shows nothing (``run_not_granted_fan_facing``), whatever ``allow_replayed`` is;
  8. only leaves with calibration evidence are shown, and only inside the probability range that evidence covers
     (``SHOWN_LEAVES``); an item outside it is dropped, never clipped. No item left: nothing.
 
@@ -63,6 +69,9 @@ LEAD_LIVE = '던지기 전 예상'
 LEAD_REPLAYED = '던지기 전 정보로 본 예상'
 NOTE = '2024 모델 · 참고'
 NOTE_REPLAYED = '2024 모델 · 참고 · 경기 뒤 던지기 전 정보만으로 다시 계산'
+# A live forecast whose order against the provider's pitch time is not (yet) reconciled: all that is known is that it
+# was computed before the record of this pitch reached this server. The sentence says exactly that and no more.
+NOTE_LOCAL = '2024 모델 · 참고 · 이 공의 기록이 도착하기 전에 계산'
 # One line for the detail sheet: both leaves are per PITCH, not per swing and not per ball in play.
 EXPLAIN = ('이 공 하나가 어떻게 끝날지 본 비율이에요. 헛스윙은 휘둘러서 못 맞힌 경우(파울팁 제외), '
            '땅볼은 이 공을 쳐서 땅볼 타구가 된 경우예요. 스윙했을 때만 따진 비율이 아니에요.')
@@ -100,6 +109,8 @@ KEY_MOMENT_EVENTS_PROVISIONAL = frozenset((
 LIVE_CLOCK, LIVE_SOURCE = 'observer_local', 'live_poll'
 REPLAY_CLOCK, REPLAY_SOURCE = 'capture_receipt_times_replayed_post_hoc', 'replay_folder'
 RECORDED_LIVE, RECORDED_REPLAYED = 'live_before_pitch', 'replayed_pre_pitch_inputs'
+RECORDED_LOCAL = 'live_before_pitch_record_arrived'  # weaker than RECORDED_LIVE: local receipt order only
+ORDER_OK = 'provider_time_after_decision_unverified'  # the runner's order-reconciliation label that is not ``late``
 
 SITUATION = ('inning', 'half', 'outs', 'balls', 'strikes', 'bases', 'home_score', 'away_score')
 # Refusal codes (operator only, never fan text). A code may carry a detail after a colon.
@@ -111,10 +122,10 @@ REASONS = (
     'model_unknown', 'forecast_inputs_unknown', 'different_pitcher', 'different_batter', 'different_situation',
     'realized_type_disagrees', 'written_after_pitch_shown', 'cell_unsupported', 'cell_invalid',
     'provenance_unknown', 'replayed_not_allowed', 'pitch_first_seen_unknown', 'recorded_after_pitch_appeared',
-    'above_supported_range', 'error')
+    'above_supported_range', 'run_not_granted_fan_facing', 'order_not_reconciled', 'error')
 # Refusals that can pass by themselves (the sidecar has not written the row yet, a read collided with a commit).
 TRANSIENT = ('ledger_missing', 'ledger_not_ready', 'ledger_busy', 'ledger_unreadable', 'no_forecast',
-             'pitch_first_seen_unknown', 'realized_type_disagrees')
+             'pitch_first_seen_unknown', 'realized_type_disagrees', 'order_not_reconciled')
 # Words no text built here may contain (tests enforce it): this is not a recommendation or a pitch prediction.
 FORBIDDEN_WORDS = ('추천', '예측 구종', '구종 예측', '최적', '가장 좋은', '던져야')
 
@@ -203,6 +214,7 @@ class _Ledger:
         self.forecasts = {}     # (game, PA, pitch) -> [(attempt_key, decision, written_index, attempt_sha)]
         self.quarantined = set()  # (game, PA) with a matchup_changed_quarantine on any of its attempts
         self.late = set()       # attempt keys an order reconciliation labelled late
+        self.ordered = set()    # attempt keys whose order reconciliation row exists and is ``ORDER_OK``
         self.physical = {}      # (game, PA, pitch) -> (label, attempt_key) of the latest reconciliation
         self.seen = {}          # (game, PA) -> {'pitcher': {ids}, 'batter': {ids}} every poll showed
         self.realized = {}      # (game, PA, pitch) -> [first observed index, latest pitch type]
@@ -316,8 +328,10 @@ class _Ledger:
                         label = json.loads(body).get('label') if body is not None else None
                     except (ValueError, AttributeError):
                         label = None
-                    if label != 'provider_time_after_decision_unverified':  # late, unknown or unreadable
+                    if label != ORDER_OK:  # late, unknown or unreadable
                         self.late.add(key)
+                    else:
+                        self.ordered.add(key)
                 marks['later'] = row_id
             for row_id, game, ab, number, key, label in db.execute(
                     'SELECT id, game_pk, at_bat_number, pitch_number, attempt_key, label FROM physical_reconciliation '
@@ -366,7 +380,7 @@ class _Ledger:
             if row and row[0] is not None:
                 try:
                     body = json.loads(row[0])
-                    self.run = {k: body.get(k) for k in ('schema', 'mode', 'clock', 'game_pk')} if isinstance(body, dict) else {}
+                    self.run = {k: body.get(k) for k in ('schema', 'mode', 'clock', 'game_pk', 'fan_facing_output')} if isinstance(body, dict) else {}
                 except ValueError:
                     self.run = {}
 
@@ -421,12 +435,20 @@ class ShadowExpectations:
     them). ``enabled`` is the display flag and is OFF by default. ``allow_replayed`` lets a post-game replay
     ledger answer (marked as such). ``min_lead_s``: how much earlier than the pitch's first receipt a live decision
     must be. ``caps``: stricter or other per-leaf upper bounds (``{'ground_ball_in_play': 0.2}``); a cap can only
-    lower a bound of ``SHOWN_LEAVES``."""
+    lower a bound of ``SHOWN_LEAVES``.
 
-    def __init__(self, ledger_path, *, enabled=False, allow_replayed=False, min_lead_s=1.0, caps=None,
+    A run is answered from only if its ``shadow_run`` body explicitly says ``fan_facing_output: true``; a run that
+    says false or nothing (every run recorded so far) yields nothing: ``run_not_granted_fan_facing``, whatever
+    ``allow_replayed`` is. ``allow_replayed`` also covers the other weaker class: a LIVE forecast whose order
+    against the provider's pitch time has no ``ORDER_OK`` reconciliation row (yet) is, at most,
+    ``RECORDED_LOCAL`` with its own truthful wording, and nothing without the flag."""
+
+    def __init__(self, ledger_path, *, enabled=False, allow_replayed=False, min_lead_s=1.0, caps=None, require_fan_grant=True,
                  max_cached=512, max_ledgers=4, max_index_rows=200_000, max_body_bytes=1 << 20, busy_timeout_s=0.05):
         self.ledger_path, self.enabled, self.allow_replayed = str(ledger_path), bool(enabled), bool(allow_replayed)
         self.min_lead_s, self.max_cached, self.max_ledgers = float(min_lead_s), int(max_cached), int(max_ledgers)
+        # False only for an offline check of the join itself (tests): never for a reader whose answers reach a screen
+        self.require_fan_grant = bool(require_fan_grant)
         self.max_index_rows, self.max_body_bytes, self.busy_timeout_s = int(max_index_rows), int(max_body_bytes), float(busy_timeout_s)
         self.below = {leaf['leaf']: min(leaf['below'], float((caps or {}).get(leaf['leaf'], leaf['below']))) for leaf in SHOWN_LEAVES}
         self._lock, self._ledgers = threading.RLock(), OrderedDict()
@@ -584,7 +606,9 @@ class ShadowExpectations:
             seven = slim['cells'][kind]
             if seven is None:
                 raise _Refuse('cell_invalid')
-            recorded = self._timing(slim, shown, ledger.run, first_received)
+            if self.require_fan_grant and (ledger.run or {}).get('fan_facing_output') is not True:
+                raise _Refuse('run_not_granted_fan_facing')
+            recorded = self._timing(slim, shown, ledger.run, first_received, key in ledger.ordered)
             items, omitted = [], []
             for leaf in SHOWN_LEAVES:
                 p = seven[LEAF_ORDER.index(leaf['leaf'])]
@@ -600,7 +624,7 @@ class ShadowExpectations:
             hashes = slim['hashes']
             return {'kind': KIND, 'lead': lead, 'pitch_type': kind, 'pitch_label': PITCH_LABELS.get(kind, kind),
                     'items': items, 'text': lead+': '+' · '.join(f"{i['label']} {i['pct_text']}" for i in items),
-                    'note': NOTE if recorded == RECORDED_LIVE else NOTE_REPLAYED, 'explain': EXPLAIN,
+                    'note': {RECORDED_LIVE: NOTE, RECORDED_LOCAL: NOTE_LOCAL}.get(recorded, NOTE_REPLAYED), 'explain': EXPLAIN,
                     'basis': 'per_pitch', 'recorded': recorded, 'omitted': omitted,
                     'provenance': {'attempt_key': key, 'decision_unix': slim['decision_unix'],
                                    'decision_clock': slim['decision_clock'], 'source': slim['source'],
@@ -611,7 +635,7 @@ class ShadowExpectations:
                                       if k != 'model_sha256'}}}
         return ledger.read(work)
 
-    def _timing(self, slim, shown, run, first_received):
+    def _timing(self, slim, shown, run, first_received, ordered=False):
         """``live_before_pitch`` or ``replayed_pre_pitch_inputs``; refuses otherwise.
 
         Live: the attempt says so positively (decision on the observer's own clock, from a live poll, in a run not
@@ -628,7 +652,15 @@ class ShadowExpectations:
                 raise _Refuse('pitch_first_seen_unknown')
             if decided+max(slim['compute_ms'] or 0.0, 0.0)/1000+self.min_lead_s > received:
                 raise _Refuse('recorded_after_pitch_appeared')
-            return RECORDED_LIVE
+            # ``decision < first local receipt of the pitch`` is receipt order only: the pitch reaches this server a
+            # feed lag after it was thrown, so the decision can still be AFTER the physical pitch. "던지기 전 예상" is
+            # claimed only once the runner's own order reconciliation says the provider's pitch time is after the
+            # decision; until that row exists the answer is the weaker class, and only where that is permitted.
+            if ordered:
+                return RECORDED_LIVE
+            if not self.allow_replayed:
+                raise _Refuse('order_not_reconciled')
+            return RECORDED_LOCAL
         if clock == REPLAY_CLOCK and source == REPLAY_SOURCE:
             if not self.allow_replayed:
                 raise _Refuse('replayed_not_allowed')

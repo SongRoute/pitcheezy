@@ -129,6 +129,9 @@ CREATE TRIGGER IF NOT EXISTS {table}_no_{verb} BEFORE {verb} ON {table}
                           'physical_reconciliation', 'shadow_run', 'shadow_forecasts', 'shadow_realized')
             for verb in ('update', 'delete'))
 REPLAY = {'clock': SE.REPLAY_CLOCK, 'source': SE.REPLAY_SOURCE}
+# A live run (the ``Ledger`` helper adds ``fan_facing_output: true``: without that grant nothing is ever shown)
+LIVE_RUN = {'schema': 'step5-shadow-run-v1', 'mode': 'actual', 'clock': SE.LIVE_CLOCK, 'game_pk': GAME}
+ORDERED = ('physical_order_reconciliation', {'label': SE.ORDER_OK})  # the runner's row that the pitch came after the decision
 LIVE = {'clock': SE.LIVE_CLOCK, 'source': SE.LIVE_SOURCE}
 
 
@@ -157,7 +160,7 @@ class Ledger:
         self.db.executescript(SCHEMA)
         if run is not False:
             self.db.execute('INSERT INTO shadow_run(id, body) VALUES (1, ?)', (_j(
-                run or {'schema': 'step5-shadow-run-v1', 'mode': 'actual', 'clock': SE.REPLAY_CLOCK, 'game_pk': GAME}).encode(),))
+                {'fan_facing_output': True} | (run or {'schema': 'step5-shadow-run-v1', 'mode': 'actual', 'clock': SE.REPLAY_CLOCK, 'game_pk': GAME})).encode(),))
 
     def attempt(self, ab=5, last=2, *, pitcher=111, batter=222, cells=None, outcome='scored', clock=REPLAY,
                 decision_unix=1000.0, written=10, state=None, leaf_order=LEAVES, kind=SE.MODEL_KIND, game=GAME,
@@ -280,11 +283,13 @@ def test_replayed_shape_text_and_truthful_marking(ledger):
 
 
 def test_no_text_reads_as_a_recommendation_or_a_pitch_prediction(ledger):
-    live = Ledger(ledger.path.with_name('live.sqlite3'), run=False)
-    live.attempt(clock=LIVE)
-    outputs = [ask(view(ledger))[0], ask(view(live), pitch_first_received=1010.0)[0]]
-    assert all(outputs)
-    for text in [*strings(outputs), SE.EXPLAIN, SE.NOTE, SE.NOTE_REPLAYED, SE.LEAD_LIVE, SE.LEAD_REPLAYED, SE.BELOW_ONE]:
+    live = Ledger(ledger.path.with_name('live.sqlite3'), run=LIVE_RUN)
+    key = live.attempt(clock=LIVE)
+    outputs = [ask(view(ledger))[0], ask(view(live), pitch_first_received=1010.0)[0]]  # replayed; live, order not reconciled
+    live.later(key, *ORDERED)
+    outputs.append(ask(view(live), pitch_first_received=1010.0)[0])  # live, reconciled
+    assert all(outputs) and [o['recorded'] for o in outputs] == [SE.RECORDED_REPLAYED, SE.RECORDED_LOCAL, SE.RECORDED_LIVE]
+    for text in [*strings(outputs), SE.EXPLAIN, SE.NOTE, SE.NOTE_REPLAYED, SE.NOTE_LOCAL, SE.LEAD_LIVE, SE.LEAD_REPLAYED, SE.BELOW_ONE]:
         assert not any(word in text for word in SE.FORBIDDEN_WORDS), text
     for shown in outputs:  # no ranking, no other type, nothing about what should have been thrown
         assert not {'candidates', 'rank', 'best', 'types'} & set(shown)
@@ -506,8 +511,8 @@ def test_replay_proves_pre_pitch_inputs_only_when_the_ledger_shows_the_order(tmp
 
 
 def test_live_needs_a_decision_before_the_store_first_received_the_pitch(tmp_path):
-    held = Ledger(tmp_path/'l.sqlite3', run=False)
-    held.attempt(clock=LIVE, decision_unix=1000.0, compute_ms=200.0)
+    held = Ledger(tmp_path/'l.sqlite3', run=LIVE_RUN)
+    held.later(held.attempt(clock=LIVE, decision_unix=1000.0, compute_ms=200.0), *ORDERED)
     reader = SE.ShadowExpectations(held.path, enabled=True)   # allow_replayed stays off
     shown, why = ask(reader, pitch_first_received=1008.0)
     assert why is None and shown['recorded'] == 'live_before_pitch' and shown['lead'] == '던지기 전 예상'
@@ -527,13 +532,13 @@ def test_live_needs_a_decision_before_the_store_first_received_the_pitch(tmp_pat
 
 def test_unproven_clock_labels_never_count(tmp_path):
     for name, options, run in (
-            ('unknown', {'clock': {'clock': 'UNKNOWN', 'source': 'live_poll'}}, False),
-            ('mixed', {'clock': {'clock': SE.LIVE_CLOCK, 'source': SE.REPLAY_SOURCE}}, False),
-            ('receipt', {'clock': LIVE, 'receipt_clock': 'UNKNOWN'}, False),
+            ('unknown', {'clock': {'clock': 'UNKNOWN', 'source': 'live_poll'}}, LIVE_RUN),
+            ('mixed', {'clock': {'clock': SE.LIVE_CLOCK, 'source': SE.REPLAY_SOURCE}}, LIVE_RUN),
+            ('receipt', {'clock': LIVE, 'receipt_clock': 'UNKNOWN'}, LIVE_RUN),
             ('replay_run', {'clock': LIVE}, None),          # live labels inside a run declared a post-hoc replay
-            ('no_time', {'clock': LIVE, 'decision_unix': None}, False)):
+            ('no_time', {'clock': LIVE, 'decision_unix': None}, LIVE_RUN)):
         held = Ledger(tmp_path/f'{name}.sqlite3', run=run)
-        held.attempt(**options)
+        held.later(held.attempt(**options), *ORDERED)
         held.realized()
         shown, why = ask(view(held), pitch_first_received=10.0**10)
         assert shown is None and why in ('provenance_unknown', 'pitch_first_seen_unknown'), (name, why)
@@ -766,14 +771,22 @@ def test_real_ledger_key_moments_849831():
     assert len(pas) == len(last) == 30 and all(pa['ends_on_pitch'] for pa in pas)
 
     assert all(SE.ShadowExpectations(REAL).for_pitch(p) is None for p in last)                 # flag off
-    locked = SE.ShadowExpectations(REAL, enabled=True)                                         # a replay cannot be "live"
+    # The run's own body says ``fan_facing_output: false``: nothing of it is ever shown, with or without allow_replayed
+    for options in ({}, {'allow_replayed': True}):
+        refused = SE.ShadowExpectations(REAL, enabled=True, **options)
+        assert all(refused.for_pitch(p) is None for p in last) and refused.status()['counts'].get('shown', 0) == 0
+        assert set(refused.status()['counts']) <= {'run_not_granted_fan_facing', 'cell_unsupported', 'matchup_changed'}
+        assert refused.status()['counts']['run_not_granted_fan_facing'] == 25
+        refused.close()
+    # The rest checks the JOIN on real rows, offline (``require_fan_grant=False`` is never used by a serving reader)
+    locked = SE.ShadowExpectations(REAL, enabled=True, require_fan_grant=False)                # a replay cannot be "live"
     assert {locked.explain(849831, p['at_bat_number'], p['pitch_number'], p['actual']['pitch_type'], pa_event=p['actual']['event'],
                            pitcher_id=p['pitcher']['id'], batter_id=p['batter']['id'], situation_before=p['situation_before'],
                            pitch_first_received=10.0**10)[1] for p in last} <= {
         'replayed_not_allowed', 'cell_unsupported', 'matchup_changed:quarantine_in_plate_appearance'}
     assert locked.status()['counts'].get('shown', 0) == 0
 
-    reader = SE.ShadowExpectations(REAL, enabled=True, allow_replayed=True)
+    reader = SE.ShadowExpectations(REAL, enabled=True, allow_replayed=True, require_fan_grant=False)
     shown, reasons = {}, {}
     for pitch in last:
         result = reader.for_pitch(pitch)
@@ -804,7 +817,7 @@ def test_real_ledger_agrees_with_the_runner_reconciliation_on_every_pitch():
     """Every pitch of the game, asked as if it were a key moment: the module answers only for pitches the runner
     itself linked (``had_attempt``) and never for an unlinked, skipped or abstained one."""
     history = _real_game()
-    reader = SE.ShadowExpectations(REAL, enabled=True, allow_replayed=True)
+    reader = SE.ShadowExpectations(REAL, enabled=True, allow_replayed=True, require_fan_grant=False)
     db = sqlite3.connect(f'file:{REAL}?mode=ro', uri=True)
     labels = {(ab, n): label for ab, n, label in db.execute('SELECT at_bat_number, pitch_number, label FROM physical_reconciliation')}
     scored = {(ab, n) for ab, n in db.execute("SELECT at_bat_number, candidate_pitch_number FROM shadow_forecasts WHERE decision='scored'")}
@@ -824,3 +837,47 @@ def test_real_ledger_agrees_with_the_runner_reconciliation_on_every_pitch():
         None: 211, 'cell_unsupported': 29, 'matchup_changed:quarantine_in_plate_appearance': 11, 'no_forecast': 3,
         'different_situation:balls,strikes': 2, 'forecast_abstained': 1}
     reader.close()
+
+
+# ---------- review round 2: E2 (what "before the pitch" may claim), E3 (the run's own grant) ----------
+def test_live_wording_needs_the_runners_order_reconciliation_not_local_receipt_order_alone(tmp_path):
+    held = Ledger(tmp_path/'l.sqlite3', run=LIVE_RUN)
+    key = held.attempt(clock=LIVE, decision_unix=1000.0)
+    strict, lenient = SE.ShadowExpectations(held.path, enabled=True), SE.ShadowExpectations(held.path, enabled=True, allow_replayed=True)
+    # decided 10 s before the pitch's record reached us, but no order reconciliation row yet
+    assert ask(strict, pitch_first_received=1010.0) == (None, 'order_not_reconciled')
+    weaker, why = ask(lenient, pitch_first_received=1010.0)
+    assert why is None and weaker['recorded'] == 'live_before_pitch_record_arrived' and weaker['lead'] == '던지기 전 정보로 본 예상'
+    assert weaker['text'] == '던지기 전 정보로 본 예상: 헛스윙 12% · 땅볼 9%' and weaker['note'] == '2024 모델 · 참고 · 이 공의 기록이 도착하기 전에 계산'
+    assert '경기 뒤' not in weaker['note'] and weaker['lead'] != SE.LEAD_LIVE
+    assert ask(lenient, pitch_first_received=1000.5) == (None, 'recorded_after_pitch_appeared')  # the receipt order still has to hold
+    held.later(key, *ORDERED)  # the runner reconciles: the provider's pitch time is after the decision
+    for reader in (strict, lenient):
+        shown, why = ask(reader, pitch_first_received=1010.0)
+        assert why is None and (shown['recorded'], shown['lead'], shown['note']) == ('live_before_pitch', '던지기 전 예상', '2024 모델 · 참고')
+    held.later(key, 'physical_order_reconciliation', {'label': 'late'})  # ... and a late label withdraws it for good
+    assert ask(strict, pitch_first_received=1010.0) == ask(lenient, pitch_first_received=1010.0) == (None, 'recorded_late')
+    held.db.close()
+
+
+@pytest.mark.parametrize('body', [{'fan_facing_output': False}, {'fan_facing_output': None}, {'fan_facing_output': 'true'},
+                                  {'fan_facing_output': 1}, {'grant': {'fan_facing_output': True}, 'fan_facing_output': False}])
+def test_a_run_that_does_not_explicitly_allow_fan_facing_output_shows_nothing(tmp_path, body):
+    run = {'schema': 'step5-shadow-run-v1', 'mode': 'actual', 'clock': SE.REPLAY_CLOCK, 'game_pk': GAME} | body
+    held = Ledger(tmp_path/'l.sqlite3', run=run)
+    held.attempt()
+    held.realized()
+    for options in ({}, {'allow_replayed': True}):
+        reader = SE.ShadowExpectations(held.path, enabled=True, **options)
+        assert ask(reader) == (None, 'run_not_granted_fan_facing') if options else ask(reader)[0] is None
+        assert reader.status()['counts'].get('shown', 0) == 0
+        reader.close()
+    held.db.close()
+
+
+def test_a_ledger_without_a_run_record_shows_nothing(tmp_path):
+    held = Ledger(tmp_path/'l.sqlite3', run=False)
+    held.attempt()
+    held.realized()
+    assert ask(view(held)) == (None, 'run_not_granted_fan_facing')
+    held.db.close()
