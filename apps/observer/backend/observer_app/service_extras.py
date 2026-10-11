@@ -6,7 +6,8 @@
   pitcher-level reason and the phase is ``pre_pitch``. The honest state stays as it is: "추천 없음" with its reason;
   the card is a separate, labelled reference, not a recommendation and not a prediction of the next pitch.
 * B2 ``pitches[i].expectation``: the one sentence of ``shadow_expectation`` ("던지기 전 예상: 헛스윙 x% · 땅볼 y%"),
-  only on a PAST pitch that ended a plate appearance in a key moment and whose body is ``received``.
+  only on a PAST pitch that ended a plate appearance in a key moment and whose body is ``received``. Asked again
+  on every request: a line the ledger later disowns disappears.
 
 Both read nothing but the view being served and the snapshot it was built from (``parsed`` and ``receipts`` of
 that snapshot), so a viewer on a delay gets what belongs to THEIR moment: a card for the count they are shown, an
@@ -30,9 +31,9 @@ PITCHER_REASONS = ('unknown_pitcher', 'no_supported_pitch_types')
 # of it needs). Operator facts (profile hash and thresholds, attempt key, model hashes, omitted leaves) stay in the
 # modules' own ``health()`` / ``status()`` under ``/api/health``.
 REFERENCE_PUBLIC = ('kind', 'reason_code', 'chip', 'title', 'items', 'other', 'sample', 'as_of', 'note')
+REFERENCE_ITEM, REFERENCE_SAMPLE = ('pitch_type', 'pitch_label', 'share_pct'), ('pitches', 'batter_side', 'balls', 'strikes')
 EXPECTATION_PUBLIC = ('kind', 'lead', 'pitch_type', 'pitch_label', 'items', 'text', 'note', 'explain', 'basis', 'recorded')
 RECENT_S = 12*3600  # the list guard only concerns games that started this recently
-RETRY_S = 5.0  # a pitch without an expectation is asked again at most this often (the ledger may still be filling)
 
 
 class Extras:
@@ -40,7 +41,6 @@ class Extras:
         self._features, self._clock, self._lock = features or feature_flags.features, clock, threading.Lock()
         self._reference = self._reference_key = None
         self._shadow = self._shadow_key = None
-        self._found, self._missed = {}, {}  # expectation cache per (ledger, pitch): a past pitch does not change
         self._first_final = {}  # gamePk -> wall time the schedule first said Final (list guard)
 
     # ---- the modules, built on first use and again when the configuration changes -----------------------------
@@ -57,7 +57,7 @@ class Extras:
 
     def shadow(self, block):
         """``ShadowExpectations`` for the configured ledger, or None (off, or no ledger)."""
-        key = (block.get('ledger'), bool(block.get('allow_replayed')))
+        key = (block.get('ledger'), bool(block.get('allow_replayed')), block.get('ground_ball_cap'), block.get('whiff_cap'))
         if not block.get('enabled') or not key[0]:
             return None
         with self._lock:
@@ -65,8 +65,8 @@ class Extras:
                 from .shadow_expectation import ShadowExpectations
                 if self._shadow is not None:
                     self._shadow.close()
-                self._shadow, self._shadow_key = ShadowExpectations(key[0], enabled=True, allow_replayed=key[1]), key
-                self._found, self._missed = {}, {}
+                caps = {leaf: cap for leaf, cap in (('ground_ball_in_play', key[2]), ('narrow_whiff', key[3])) if cap is not None}
+                self._shadow, self._shadow_key = ShadowExpectations(key[0], enabled=True, allow_replayed=key[1], caps=caps), key
             return self._shadow
 
     # ---- the one call of the route -----------------------------------------------------------------------------
@@ -99,13 +99,22 @@ class Extras:
         card = reference.card(pitcher.get('id'), batter.get('side'), situation.get('balls'), situation.get('strikes'),
                               (parsed.get('game') or {}).get('date'), pitcher_hand=hand)
         if card is not None:
-            nxt['reference'] = {key: card[key] for key in REFERENCE_PUBLIC if key in card}
+            nxt['reference'] = self._public_card(card)
+
+    @staticmethod
+    def _public_card(card):
+        slim = lambda item, keys: {key: item[key] for key in keys if key in item} if isinstance(item, dict) else None
+        out = {key: card[key] for key in REFERENCE_PUBLIC if key in card}
+        out['items'] = [slim(item, REFERENCE_ITEM) for item in card.get('items') or []]
+        out['other'] = slim(card.get('other'), ('share_pct',))
+        out['sample'] = slim(card.get('sample'), REFERENCE_SAMPLE)
+        return out
 
     def _attach_expectations(self, view, parsed, receipts, block):
         from .shadow_expectation import is_key_moment
         if receipts is None:  # no store: nothing says when a pitch was first received, or that its body is admitted
             return
-        shadow, now = None, self._clock()
+        shadow = None
         for pitch in view.get('pitches') or ():
             actual = pitch.get('actual') or {}
             if not is_key_moment(actual.get('event')) or (pitch.get('receipt') or {}).get('status') != 'received':
@@ -116,25 +125,18 @@ class Extras:
             shadow = shadow or self.shadow(block)
             if shadow is None:
                 return
-            mark = (pitch.get('key'), actual.get('pitch_type'), actual.get('event'), item.get('sha'), item.get('first_received'))
-            found = self._found.get(mark)
-            if found is None and now-self._missed.get(mark, -1e18) >= RETRY_S:
-                found = shadow.for_pitch(pitch, pitch_first_received=item.get('first_received'))
-                with self._lock:
-                    if found is None:
-                        self._missed[mark] = now
-                    else:
-                        self._found[mark] = found
-                    for held in (self._found, self._missed):
-                        while len(held) > 2048:
-                            held.pop(next(iter(held)))
+            # Asked on every request and never kept here: the ledger can disown a forecast later (a quarantine, a
+            # ``late`` order reconciliation, an unlinking at the end of the game, another player seen in the plate
+            # appearance), and the line must then go. The module keeps its own per-attempt index, so this is cheap.
+            found = shadow.for_pitch(pitch, pitch_first_received=item.get('first_received'))
             if found is not None:
                 pitch['expectation'] = {key: found[key] for key in EXPECTATION_PUBLIC if key in found}
 
     # ---- games list for a delayed viewer (viewer delay on, ``?delay=`` > 0) -----------------------------------------
     def list_card(self, card, delay, feed=None):
         """A schedule card as a viewer ``delay`` seconds behind may see it. The schedule is the ballpark's present:
-        a LIVE game loses score, inning, half and status words; a game the schedule calls FINAL stays presented as
+        a LIVE game loses score, inning, half and status words; a game the schedule calls FINAL (or suspended,
+        postponed, cancelled with a score: anything that says the play stopped) stays presented as
         live (no score) until that viewer's own game page could have reached the end: the state the live buffer
         serves at that delay is Final, or ``delay`` seconds have passed since this server first saw the schedule
         say Final (fail closed: after a restart that clock starts again). Never polls and registers no viewer."""
@@ -144,7 +146,9 @@ class Extras:
                 return card
             if card.get('status') == 'live' or card.get('live'):
                 return card | hidden
-            if card.get('status') != 'final':
+            # every other card that is past its start: final, and suspended / postponed / cancelled with a score
+            scored = card.get('away_score') is not None or card.get('home_score') is not None
+            if card.get('status') == 'scheduled' or (card.get('status') != 'final' and not scored):
                 return card
             from datetime import datetime
             now = feed.wall() if feed is not None and hasattr(feed, 'wall') else time.time()
@@ -169,7 +173,7 @@ class Extras:
             return card | hidden | {'status': 'live', 'live': True}
         except Exception:  # noqa: BLE001 - when unsure the card says nothing about the score
             LOGGER.warning('list card for a delayed viewer could not be judged; shown without score', exc_info=True)
-            return card | hidden | ({'status': 'live', 'live': True} if card.get('status') == 'final' else {})
+            return card | hidden | ({'status': 'live', 'live': True} if card.get('status') != 'scheduled' else {})
 
     # ---- operator view (``/api/health``), never on a fan payload ------------------------------------------------
     def health(self):
@@ -179,7 +183,9 @@ class Extras:
                                          'sources': len(flags['profile_reference'].get('profile_sources') or ())},
                    'step5_expectation': {'enabled': bool(flags['step5_expectation']['enabled']),
                                          'ledger_configured': bool(flags['step5_expectation'].get('ledger')),
-                                         'allow_replayed': bool(flags['step5_expectation'].get('allow_replayed'))}}
+                                         'allow_replayed': bool(flags['step5_expectation'].get('allow_replayed')),
+                                         'ground_ball_cap': flags['step5_expectation'].get('ground_ball_cap'),
+                                         'whiff_cap': flags['step5_expectation'].get('whiff_cap')}}
             if self._reference is not None:
                 out['profile_reference']['module'] = self._reference.health()
             if self._shadow is not None:

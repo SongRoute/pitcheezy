@@ -24,7 +24,9 @@ Environment (0/1 unless noted):
   PITCHEEZY_OBSERVER_PROFILE_SOURCES         ``os.pathsep``-separated paths
   PITCHEEZY_OBSERVER_STEP5_EXPECTATION       step-5 expectation block
   PITCHEEZY_OBSERVER_STEP5_LEDGER            path
-  PITCHEEZY_OBSERVER_STEP5_ALLOW_REPLAYED    allow a replayed ledger
+  PITCHEEZY_OBSERVER_STEP5_ALLOW_REPLAYED    allow the weaker classes (a replayed ledger, an unreconciled live forecast)
+  PITCHEEZY_OBSERVER_STEP5_GROUND_BALL_CAP   probability at or above which the ground-ball item is dropped (default 0.20, max 0.30)
+  PITCHEEZY_OBSERVER_STEP5_WHIFF_CAP         the same for the swinging-strike item (default 0.30, max 0.30)
 """
 from __future__ import annotations
 
@@ -39,7 +41,9 @@ DEFAULTS = {
     'viewer_delay': {'enabled': False, 'default_s': 30, 'sync_prompt': True, 'fold_actual_until_synced': True,
                      'record_at_receipt': True},
     'profile_reference': {'enabled': False, 'profile_sources': []},
-    'step5_expectation': {'enabled': False, 'ledger': None, 'allow_replayed': False},
+    # ground_ball_cap 0.20: PROVISIONAL and stricter than the PM's upper bound (never show 30% or more); the 20-30%
+    # calibration bin has n=611, below the experiment's own 1,000. An open owner decision. Caps above 0.30 are ignored.
+    'step5_expectation': {'enabled': False, 'ledger': None, 'allow_replayed': False, 'ground_ball_cap': 0.20, 'whiff_cap': 0.30},
 }
 _warned = set()
 
@@ -74,6 +78,21 @@ def _seconds(name, current):
     return int(number) if number == int(number) else number
 
 
+def _cap(name, current):
+    """A probability cap in (0, 0.30]; anything else (also a value above 0.30) is ignored with one warning."""
+    value = os.environ.get(name)
+    if value is None or value == '':
+        return current
+    try:
+        number = float(value)
+    except ValueError:
+        number = math.nan
+    if not 0 < number <= 0.30:  # also refuses NaN
+        _warn(name, value)
+        return current
+    return number
+
+
 def _configured(live_config):
     """``DEFAULTS`` with the well-typed values of ``live_config['features']``; anything else keeps the default."""
     out = copy.deepcopy(DEFAULTS)
@@ -86,6 +105,8 @@ def _configured(live_config):
             value = values[key]
             if isinstance(default, bool):
                 ok = isinstance(value, bool)
+            elif key in ('ground_ball_cap', 'whiff_cap'):
+                ok = type(value) in (int, float) and 0 < value <= 0.30
             elif key == 'default_s':
                 ok = type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 600
             elif key == 'profile_sources':
@@ -115,6 +136,8 @@ def features(live_config=None):
     step5['enabled'] = _flag('PITCHEEZY_OBSERVER_STEP5_EXPECTATION', step5['enabled'])
     step5['ledger'] = os.environ.get('PITCHEEZY_OBSERVER_STEP5_LEDGER') or step5['ledger']
     step5['allow_replayed'] = _flag('PITCHEEZY_OBSERVER_STEP5_ALLOW_REPLAYED', step5['allow_replayed'])
+    step5['ground_ball_cap'] = _cap('PITCHEEZY_OBSERVER_STEP5_GROUND_BALL_CAP', step5['ground_ball_cap'])
+    step5['whiff_cap'] = _cap('PITCHEEZY_OBSERVER_STEP5_WHIFF_CAP', step5['whiff_cap'])
     return out | {'provisional': PROVISIONAL}
 
 

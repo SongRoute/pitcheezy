@@ -172,7 +172,7 @@ def test_features_come_from_the_config_with_environment_overrides_and_survive_ba
                                            'step5_expectation': {'ledger': '/x/ledger.sqlite3', 'enabled': True}}}) == {
         'viewer_delay': features.DEFAULTS['viewer_delay'] | {'default_s': 20, 'sync_prompt': False},
         'profile_reference': features.DEFAULTS['profile_reference'],
-        'step5_expectation': {'enabled': True, 'ledger': '/x/ledger.sqlite3', 'allow_replayed': False}, 'provisional': True}
+        'step5_expectation': features.DEFAULTS['step5_expectation'] | {'enabled': True, 'ledger': '/x/ledger.sqlite3'}, 'provisional': True}
     for name, value in [('VIEWER_DELAY', '1'), ('VIEWER_DELAY_DEFAULT_S', '45'), ('VIEWER_SYNC_PROMPT', '0'),
                         ('PROFILE_REFERENCE', '1'), ('PROFILE_SOURCES', f'/a/one.json{features.os.pathsep}/b/two.json'),
                         ('STEP5_EXPECTATION', '1'), ('STEP5_LEDGER', '/c/ledger.sqlite3'), ('STEP5_ALLOW_REPLAYED', '1')]:
@@ -180,7 +180,7 @@ def test_features_come_from_the_config_with_environment_overrides_and_survive_ba
     now = features.features()
     assert now['viewer_delay'] == features.DEFAULTS['viewer_delay'] | {'enabled': True, 'default_s': 45, 'sync_prompt': False}
     assert now['profile_reference'] == {'enabled': True, 'profile_sources': ['/a/one.json', '/b/two.json']}
-    assert now['step5_expectation'] == {'enabled': True, 'ledger': '/c/ledger.sqlite3', 'allow_replayed': True}
+    assert now['step5_expectation'] == {'enabled': True, 'ledger': '/c/ledger.sqlite3', 'allow_replayed': True, 'ground_ball_cap': 0.2, 'whiff_cap': 0.3}
     shown_to_fans = features.public(now)
     assert shown_to_fans == {'provisional': True, 'profile_reference': {'enabled': True}, 'step5_expectation': {'enabled': True},
                              'viewer_delay': {'enabled': True, 'default_s': 45, 'sync_prompt': False, 'fold_actual_until_synced': True}}
@@ -499,3 +499,37 @@ def test_a_correction_without_a_newer_event_waits_for_the_delayed_viewers_own_mo
     # 30 s behind, so it shows the overturn at about 1066
     ask(run, after=6.0, body=snap(995.0, '20261005_100100', call='C'))
     assert ask(run, 30)['pitches'][-1]['actual'] == before
+
+
+# ---------- review round 2 ----------
+@pytest.mark.parametrize('status, kind', [('Suspended: Rain', 'postponed'), ('Postponed', 'postponed'), ('Cancelled', 'postponed'),
+                                          ('Forfeit', 'other'), ('Completed Early: Rain', 'other')])
+def test_a_game_that_stopped_with_a_score_is_guarded_like_a_final_one(run, status, kind):
+    """L1: suspended / postponed / cancelled cards say the play stopped (and carry the score) just as Final does."""
+    day = '1970-01-01'
+    stopped = final_row(GAME+7, '1970-01-01T00:10:00Z') | {'status': status, 'abstract': 'Live' if kind == 'postponed' else 'Other', 'live': False}
+    unplayed = final_row(GAME+8, '1970-01-01T00:10:00Z') | {'status': 'Postponed', 'abstract': 'Preview', 'away_score': None, 'home_score': None}
+    run.feed.schedule = lambda asked: [stopped, unplayed] if asked == day else []
+    cards = lambda **params: {c['game_pk']: c for c in run.client.get('/api/service/games', params={'date': day} | params).json()['games']}
+    run.now[0] = 1012.0
+    plain, late = cards(), cards(delay=30)
+    assert plain[GAME+7]['home_score'] == 7 and plain[GAME+7]['status_text'] == status
+    hidden = late[GAME+7]
+    assert (hidden['status'], hidden['away_score'], hidden['home_score'], hidden['status_text'], hidden['score_hidden']) == ('live', None, None, None, True)
+    assert late[GAME+8] == plain[GAME+8]  # a game that never started has nothing to give away
+    run.now[0] = 1043.0
+    assert cards(delay=30)[GAME+7] == plain[GAME+7]  # 30 s after this server first saw it stopped
+
+
+def test_with_the_switch_off_the_tap_route_is_a_404_whatever_is_sent(run, monkeypatch):
+    """O1: malformed requests included (they used to be answered 400 before the switch was looked at)."""
+    monkeypatch.delenv('PITCHEEZY_OBSERVER_VIEWER_DELAY')
+    for params in ({}, {'ago': ''}, {'ago': 'x'}, {'ago': '1', 'current': 'abc'}, {'ago': '1', 'current': -5, 'sure': 7}, {'ago': '1,2,3,4,5,6,7,8,9'}):
+        answer = run.client.get(TAP_URL, params=params)
+        assert answer.status_code == 404 and answer.json() == {'detail': '이 실행에서는 중계 맞추기를 쓰지 않아요.'}, params
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', '1')  # switched on: a malformed request is a 400, a sloppy one is read safely
+    assert run.client.get(TAP_URL).status_code == 400 and run.client.get(TAP_URL, params={'ago': 'x'}).status_code == 400
+    ask(run, 30, after=30.0)
+    assert run.client.get(TAP_URL, params={'ago': '2', 'current': 'abc'}).status_code == 400
+    loose = run.client.get(TAP_URL, params={'ago': '2', 'current': '9999', 'sure': 'yes'})  # an out-of-range setting is no prior
+    assert loose.status_code == 200 and loose.json()['status'] == 'wait'

@@ -84,7 +84,7 @@ def test_the_card_is_attached_only_for_a_pitcher_level_unsupported_state(run, st
     assert ('reference' in view['next']) is attached
     if attached:
         current = view['current']
-        assert view['next']['reference'] == CARD | {'note': '1-0'}  # no provenance, no thresholds, no hash
+        assert view['next']['reference'] == CARD | {'note': '1-0', 'other': None, 'sample': None}  # no provenance, thresholds or hash
         assert 'provenance' not in view['next']['reference'] and 'abcdef' not in json.dumps(view) and 'min_total' not in json.dumps(view)
         assert run.reference.asked[-1] == (current['pitcher']['id'], current['batter']['side'], 1, 0, '2026-10-05', current['pitcher']['hand'])
     else:
@@ -180,8 +180,7 @@ def test_only_the_last_pitch_of_a_key_moment_plate_appearance_gets_the_expectati
     assert 'attempt_key' not in json.dumps(view) and 'omitted' not in json.dumps(view)
     received = next(e for e in run.feed.store.pitch_events(GAME)['events']
                     if (e['at_bat_number'], e['pitch_number'], e['outcome']) == (5, 2, 'new'))['received']
-    assert [a for a in run.shadow.asked if a[0] == KEY] == [(KEY, 'strikeout', received)]  # with its first receipt, once
-    assert len(run.shadow.asked) == len(earlier)+1  # every pitch is asked once and then kept
+    assert set(a for a in run.shadow.asked if a[0] == KEY) == {(KEY, 'strikeout', received)}  # with its first receipt
     assert 'expectation' not in json.dumps(view['next']) and 'expectation' not in json.dumps(view['current'])
 
 
@@ -196,11 +195,9 @@ def test_switch_off_abstain_and_failure_leave_the_pitch_without_the_field(run, m
     ask(run, after=12.0)
     assert marked(ask(run, after=12.0, body=struck_out())) == set()
     run.shadow.answer = RuntimeError('boom')
-    run.app.state.service_extras._missed.clear()
     view = ask(run)
     assert view['display_state']['state'] in ('recommended', 'waiting') and marked(view) == set()
     run.shadow.answer = EXPECT | PRIVATE_EXPECT
-    run.app.state.service_extras._missed.clear()
     on = ask(run)
     monkeypatch.setenv('PITCHEEZY_OBSERVER_STEP5_EXPECTATION', '0')
     asked = len(run.shadow.asked)
@@ -211,15 +208,103 @@ def test_switch_off_abstain_and_failure_leave_the_pitch_without_the_field(run, m
     assert off['pitches'] == on['pitches']
 
 
-def test_an_abstention_is_asked_again_only_after_a_while(run):
-    run.shadow.answer = None
+def test_the_module_is_asked_on_every_request_so_a_withdrawn_line_disappears(run):
+    """Review E1 (stand-in module): nothing is kept between requests."""
     ask(run, after=12.0)
-    asked = len(run.shadow.asked)
-    ask(run), ask(run)
-    assert len(run.shadow.asked) == asked  # not on every poll
-    run.app.state.service_extras._missed.clear()  # (the retry time has passed)
+    assert KEY in marked(ask(run, after=12.0, body=struck_out()))
+    run.shadow.answer = None  # the ledger disowned the forecast meanwhile
+    assert marked(ask(run)) == set()
     run.shadow.answer = EXPECT | PRIVATE_EXPECT
-    assert marked(ask(run)) == key_moments(ask(run))
+    assert KEY in marked(ask(run))
+
+
+def shadow_pitch():
+    from test_shadow_expectation import GAME as SHADOW_GAME, SITUATION
+    return {'key': f'{SHADOW_GAME}:5:3', 'at_bat_number': 5, 'pitch_number': 3, 'actual': {'event': 'strikeout', 'pitch_type': 'FF'},
+            'receipt': {'status': 'received'}, 'pitcher': {'id': 111}, 'batter': {'id': 222}, 'situation_before': SITUATION}
+
+
+RECEIPTS = {(5, 3): {'status': 'received', 'sha': 'abc', 'first_received': 1010.0}}
+
+
+def real_extras(path, **block):
+    flags = lambda: {'profile_reference': {'enabled': False},
+                     'step5_expectation': {'enabled': True, 'ledger': str(path), 'allow_replayed': False} | block}
+    return service_extras.Extras(flags)
+
+
+def line(extras):
+    return extras.attach({'pitches': [shadow_pitch()]}, None, {}, RECEIPTS)['pitches'][0].get('expectation', {}).get('text')
+
+
+@pytest.mark.parametrize('disown', ['quarantine', 'late', 'unlinked', 'another_player'])
+def test_a_line_the_ledger_later_disowns_is_withdrawn_from_the_route(tmp_path, disown):
+    """Review E1 with the REAL module on a synthetic live ledger (the reviewer's probe_cache_withdrawal.py)."""
+    from test_shadow_expectation import LIVE, LIVE_RUN, ORDERED, Ledger
+    held = Ledger(tmp_path/'l.sqlite3', run=LIVE_RUN)
+    key = held.attempt(clock=LIVE, decision_unix=1000.0)
+    held.later(key, *ORDERED)
+    held.realized()
+    extras = real_extras(held.path)
+    assert line(extras) == line(extras) == '던지기 전 예상: 헛스윙 12% · 땅볼 9%'
+    {'quarantine': lambda: held.later(key, 'matchup_changed_quarantine'),
+     'late': lambda: held.later(key, 'physical_order_reconciliation', {'label': 'late'}),
+     'unlinked': lambda: held.physical(label='attempt_unlinked_matchup_changed', key=key),
+     'another_player': lambda: held.poll(ab=None, observed={'at_bat_number': 5, 'pitcher': 111, 'batter': 400})}[disown]()
+    assert line(extras) is None and line(extras) is None  # gone on the very next request, and it stays gone
+    extras.shadow({'enabled': True, 'ledger': str(held.path), 'allow_replayed': False}).close()
+    held.db.close()
+
+
+def test_through_the_route_object_a_live_forecast_needs_reconciliation_and_a_granted_run(tmp_path):
+    """Review E2/E3 through ``Extras`` with the real module."""
+    from test_shadow_expectation import LIVE, LIVE_RUN, ORDERED, Ledger
+    held = Ledger(tmp_path/'l.sqlite3', run=LIVE_RUN)
+    key = held.attempt(clock=LIVE, decision_unix=1000.0)
+    held.realized()
+    strict, lenient = real_extras(held.path), real_extras(held.path, allow_replayed=True)
+    assert line(strict) is None  # local receipt order alone claims nothing
+    weaker = lenient.attach({'pitches': [shadow_pitch()]}, None, {}, RECEIPTS)['pitches'][0]['expectation']
+    assert (weaker['text'], weaker['note'], weaker['recorded']) == (
+        '던지기 전 정보로 본 예상: 헛스윙 12% · 땅볼 9%', '2024 모델 · 참고 · 이 공의 기록이 도착하기 전에 계산', 'live_before_pitch_record_arrived')
+    assert set(weaker) == set(service_extras.EXPECTATION_PUBLIC)
+    held.later(key, *ORDERED)
+    assert line(strict) == line(lenient) == '던지기 전 예상: 헛스윙 12% · 땅볼 9%'
+    ungranted = Ledger(tmp_path/'u.sqlite3', run=LIVE_RUN | {'fan_facing_output': False})
+    ungranted.later(ungranted.attempt(clock=LIVE, decision_unix=1000.0), *ORDERED)
+    for extras in (real_extras(ungranted.path), real_extras(ungranted.path, allow_replayed=True)):
+        assert line(extras) is None
+        assert extras.health()['step5_expectation']['module']['last_reason'] == 'run_not_granted_fan_facing'
+    held.db.close(), ungranted.db.close()
+
+
+@pytest.mark.parametrize('ground, block, text', [
+    (0.25, {}, None),  # default cap 0.20 (features.DEFAULTS): 25% is dropped, and with whiff alone...
+    (0.19, {'ground_ball_cap': 0.20, 'whiff_cap': 0.30}, '던지기 전 예상: 헛스윙 12% · 땅볼 19%'),
+    (0.25, {'ground_ball_cap': 0.20, 'whiff_cap': 0.30}, '던지기 전 예상: 헛스윙 12%'),
+    (0.25, {'ground_ball_cap': 0.30, 'whiff_cap': 0.30}, '던지기 전 예상: 헛스윙 12% · 땅볼 25%'),
+    (0.09, {'ground_ball_cap': 0.20, 'whiff_cap': 0.10}, '던지기 전 예상: 땅볼 9%'),
+    (0.35, {'ground_ball_cap': 0.90, 'whiff_cap': 0.90}, '던지기 전 예상: 헛스윙 12%')])  # a cap can never loosen the 30% bound
+def test_the_caps_come_from_the_features_block_and_the_ground_ball_default_is_twenty_percent(tmp_path, monkeypatch, ground, block, text):
+    from observer_app import features
+    from test_shadow_expectation import LIVE, LIVE_RUN, ORDERED, Ledger, seven
+    held = Ledger(tmp_path/'l.sqlite3', run=LIVE_RUN)
+    held.later(held.attempt(clock=LIVE, decision_unix=1000.0, cells={'FF': seven(0.12, ground)}), *ORDERED)
+    if not block:  # the real switches: the defaults and the environment
+        assert (features.features()['step5_expectation']['ground_ball_cap'], features.features()['step5_expectation']['whiff_cap']) == (0.20, 0.30)
+        extras = service_extras.Extras(lambda: features.features() | {'step5_expectation': features.features()['step5_expectation'] | {
+            'enabled': True, 'ledger': str(held.path)}})
+        assert line(extras) == '던지기 전 예상: 헛스윙 12%'
+        monkeypatch.setenv('PITCHEEZY_OBSERVER_STEP5_GROUND_BALL_CAP', '0.3')
+        assert line(extras) == '던지기 전 예상: 헛스윙 12% · 땅볼 25%'
+        for bad in ('0.31', '1', '0', '-0.1', 'high', 'nan'):  # above 0.30 or not a probability: ignored
+            monkeypatch.setenv('PITCHEEZY_OBSERVER_STEP5_GROUND_BALL_CAP', bad)
+            assert features.features()['step5_expectation']['ground_ball_cap'] == 0.20, bad
+        monkeypatch.setenv('PITCHEEZY_OBSERVER_STEP5_WHIFF_CAP', '0.1')
+        assert features.features()['step5_expectation']['whiff_cap'] == 0.1
+    else:
+        assert line(real_extras(held.path, **block)) == text
+    held.db.close()
 
 
 def test_an_unconfirmed_key_moment_pitch_gets_nothing(run):
@@ -260,5 +345,6 @@ def test_the_real_modules_refuse_quietly_when_their_sources_are_unusable(tmp_pat
     view = ask(run, after=12.0, body=struck_out())
     assert all('expectation' not in p for p in view['pitches']) and not list(tmp_path.glob('missing*'))  # nothing created
     health = run.client.get('/api/health').json()['service_extras']
-    assert health['step5_expectation'] | {'module': None} == {'enabled': True, 'ledger_configured': True, 'allow_replayed': False, 'module': None}
+    assert health['step5_expectation'] | {'module': None} == {'enabled': True, 'ledger_configured': True, 'allow_replayed': False,
+                                                              'ground_ball_cap': 0.2, 'whiff_cap': 0.3, 'module': None}
     assert service_extras.PITCHER_REASONS == ('unknown_pitcher', 'no_supported_pitch_types')

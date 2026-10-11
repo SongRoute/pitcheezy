@@ -713,8 +713,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 'wait': '맞추는 중이에요. 잠시만 기다려 주세요.'}
 
     @app.get('/api/service/games/{game_pk}/tap')
-    def service_tap(game_pk: int, ago: str = Query(..., max_length=80), current: float | None = Query(None, ge=0, le=600),
-                    sure: int = Query(0, ge=0, le=1)):
+    def service_tap(game_pk: int, ago: str | None = Query(None), current: str | None = Query(None), sure: str | None = Query(None)):
         """One-time sync of the fan screen: the fan tapped as a pitch reached the mitt on THEIR broadcast, ``ago``
         seconds before this request (client-measured; several taps comma-separated, newest in any position).
         Answers a delay in seconds or asks to wait / tap again (``live_feed.tap_sync``); never any game content.
@@ -725,10 +724,13 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             return JSONResponse({'detail': '이 실행에서는 중계 맞추기를 쓰지 않아요.'}, status_code=404, headers=headers)
         if game_pk in demo_clock.active_games():
             return JSONResponse({'detail': '이 경기는 지금 다른 화면에서 진행 중입니다.'}, status_code=423, headers=headers)
-        try:
-            ages = [float(part) for part in ago.split(',') if part.strip()]
+        try:  # read only now: with the switch off the route is a 404 whatever was sent
+            ages = [float(part) for part in (ago or '')[:80].split(',') if part.strip()]
+            current = None if current in (None, '') else float(current)
         except ValueError:
-            ages = []
+            ages, current = [], None
+        sure = sure == '1' and current is not None and 0 <= current <= 600
+        current = current if current is not None and 0 <= current <= 600 else None
         if not ages or len(ages) > 4 or not all(0 <= age <= 600 for age in ages):  # also refuses NaN
             raise ServiceError(400, '요청 형식을 확인해 주세요.')
         feed = live_parts()
