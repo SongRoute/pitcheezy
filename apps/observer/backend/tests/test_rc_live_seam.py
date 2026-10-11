@@ -17,6 +17,7 @@ from observer_app.live_armb import LiveArmB
 from observer_app.live_feed import LIVE_CONFIG, LiveFeed, ReplayTransport, http_json, replay_config
 from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed
 from observer_app.main import create_app
+from live_fixture import listed_dir
 from test_live_feed import FakePolicy, wait_computed
 
 FIXTURES = Path(__file__).parent/'fixtures/live'
@@ -216,7 +217,8 @@ def test_recommendation_ledger_refuses_a_snapshot_that_is_not_the_committed_one(
 
 
 def serve(tmp_path, now, armb, **options):
-    feed = persistent(tmp_path, ReplayTransport(FIXTURES), now, **options)
+    # the fixtures as a real feed lists them (current play in ``allPlays``, identified pitches): see live_fixture
+    feed = persistent(tmp_path, ReplayTransport(listed_dir(tmp_path/'replay')), now, **options)
     return feed, create_app(object(), live_feed=feed, live_policy=armb, watch_dir=tmp_path, feed_dir=tmp_path,
                             demo_dir=tmp_path/'demo', intent_dir=tmp_path)
 
@@ -312,7 +314,7 @@ def test_a_game_with_no_play_yet_is_served_not_an_error(tmp_path):
 
 def test_env_configured_replay_run_goes_through_the_store_and_the_ledger(tmp_path, monkeypatch):
     """The RC rehearsal configuration (``serve.sh`` env): recorded snapshots -> store -> ledger -> display."""
-    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR', str(FIXTURES))
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR', str(listed_dir(tmp_path/'replay')))
     monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_STORE', str(tmp_path/'rc.sqlite3'))
     monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_DELAY_S', '0')
     armb = LiveArmB(lambda: FakePolicy())

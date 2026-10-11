@@ -306,11 +306,43 @@ def _unconfirmed(facts, receipts, feed):
     return None
 
 
+def unlisted_current(feed, receipts):
+    """Pitches of ``currentPlay`` whose body on screen has no admission: ``{(at_bat_number, pitch_number): reason}``.
+
+    The pitch ledger and ``pitch_receipts`` read ``allPlays`` only, while the pending decision and the legacy live
+    view read ``currentPlay``. In a real feed ``currentPlay`` is the last ``allPlays`` entry, so every one of its
+    pitches has a receipt for exactly that body. A ``currentPlay`` pitch that ``allPlays`` does not list
+    (``not_in_pitch_ledger``) or lists with another body (``body_differs_from_listed``) was never admitted and
+    fails closed. Empty without a store (``receipts`` None)."""
+    if receipts is None:
+        return {}
+    plays = ((feed.get('liveData') or {}).get('plays') or {}) if isinstance(feed, dict) else {}
+    play = plays.get('currentPlay')
+    if not isinstance(play, dict):
+        return {}
+    index = (play.get('about') or {}).get('atBatIndex')
+    at_bat = index+1 if type(index) is int and index >= 0 else None
+    out = {}
+    for event in play.get('playEvents') or []:
+        if not isinstance(event, dict) or not event.get('isPitch'):
+            continue
+        key = (at_bat, event.get('pitchNumber') if type(event.get('pitchNumber')) is int else None)
+        item = receipts.get(key)
+        if item is None:
+            out[key] = 'not_in_pitch_ledger'
+        elif item.get('sha') != body_sha(event):
+            out[key] = 'body_differs_from_listed'
+    return out
+
+
 def _blocking_receipt(feed, receipts):
-    """The first not-admitted pitch among the pending decision's inputs: every pitch of the open at-bat and the
-    game's newest pitch. Returns (key, reason) or None."""
-    if not receipts:
+    """The first not-admitted pitch among the pending decision's inputs: every pitch of the open at-bat, the
+    game's newest pitch, and any ``currentPlay`` pitch without an admission of its own (``unlisted_current``).
+    Returns (key, reason) or None."""
+    if receipts is None:
         return None
+    if RECEIPT_ALL in receipts:
+        return (None, None), receipts[RECEIPT_ALL]['reason']
     plays = feed['liveData']['plays']
     done = plays.get('allPlays') or []
     play = plays.get('currentPlay') or (done[-1] if done else None)
@@ -318,13 +350,11 @@ def _blocking_receipt(feed, receipts):
     if play is not None and not (play.get('about') or {}).get('isComplete', True):
         index = (play.get('about') or {}).get('atBatIndex')
         open_ab = index+1 if type(index) is int else None
-    if RECEIPT_ALL in receipts:
-        return (None, None), receipts[RECEIPT_ALL]['reason']
-    newest = list(receipts)[-1]
+    newest = list(receipts)[-1] if receipts else None
     for key, item in receipts.items():
         if item['status'] != 'received' and (key == newest or (open_ab is not None and key[0] == open_ab)):
             return key, item['reason']
-    return None
+    return next(iter(unlisted_current(feed, receipts).items()), None)
 
 
 def correction(history, shown_now):

@@ -452,16 +452,20 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 {'status': 'unavailable', 'reason': state['message']} if view.get('recommendation') else {})
         return view, state, receipts
 
-    def _confirmed_only(parsed, receipts, at_bat):
+    def _confirmed_only(parsed, receipts, at_bat, snapshot):
         """``/api/live/{pk}/state``: a pitch body that is not admitted is not listed as an observed pitch (D1).
-        ``at_bat`` is the open at-bat's number, whose pitches ``pitch_sequence`` lists."""
+        ``at_bat`` is the open at-bat's number, whose pitches ``pitch_sequence`` lists from ``currentPlay``.
+        With a store on, a listed pitch needs an admission of its own: one the pitch ledger has no row for (a
+        ``currentPlay`` that is not the last ``allPlays`` entry) or holds with another body is blanked like a
+        refused one, and ``display_state.gate`` withholds the recommendation (``prior_pitch_unconfirmed``).
+        Without a store (``receipts`` None) nothing is checked."""
         if receipts is None:
             return parsed
         blank = lambda item, keep: {k: (v if k in keep else None) for k, v in item.items()} | {'receipt': 'unconfirmed'}
         tainted = display_state.RECEIPT_ALL in receipts
-        # A pitch the store has no row for at all (a trimmed feed whose ``currentPlay`` is not in ``allPlays``: the
-        # pitch ledger only reads ``allPlays``) is outside this check and passes; a refused or superseded body does not.
-        admitted = lambda ab, number: not tainted and (receipts.get((ab, number)) or {'status': 'received'})['status'] == 'received'
+        unlisted = display_state.unlisted_current(snapshot, receipts)
+        admitted = lambda ab, number: (not tainted and (ab, number) not in unlisted
+                                       and (receipts.get((ab, number)) or {}).get('status') == 'received')
         out = parsed | {'pitch_sequence': [item if admitted(at_bat, item.get('pitch_number')) else blank(item, ('pitch_number',))
                                            for item in parsed.get('pitch_sequence') or []]}
         last = parsed.get('last_pitch')
@@ -536,7 +540,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             view, shown, receipts = live_display(game_pk, snapshot, parsed, entry, feed)
             play = snapshot['liveData']['plays'].get('currentPlay') or {}
             index = (play.get('about') or {}).get('atBatIndex')
-            parsed = _confirmed_only(parsed, receipts, index+1 if type(index) is int else None)
+            parsed = _confirmed_only(parsed, receipts, index+1 if type(index) is int else None, snapshot)
             return parsed | timing | {'sync': sync, 'recommendation': view, 'display_state': shown}
         return live_call(state)
 

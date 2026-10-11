@@ -13,13 +13,14 @@ from observer_app.live_armb import LiveArmB
 from observer_app.live_feed import LiveFeed
 from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed
 from observer_app.main import create_app
+from live_fixture import listed
 
 FIXTURES = Path(__file__).parent/'fixtures/live'
 GAME = 849845
 
 
 def at(name, wall):
-    snapshot = json.loads((FIXTURES/name).read_text())
+    snapshot = listed(json.loads((FIXTURES/name).read_text()))  # as a real feed lists its current play
     snapshot['metaData']['eventWall'] = wall
     return snapshot
 
