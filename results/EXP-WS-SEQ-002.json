@@ -1,0 +1,60 @@
+{
+  "id": "EXP-WS-SEQ-002",
+  "recorded_at": "2026-10-11",
+  "data_role": "2026 EXPOSED DEVELOPMENT; EVAL read once for the selected config only, but EVAL was already read by scale-002, E1, E3, E1b, E4 (SEQ-001), CAL2 and STEP5-CAL today; the grid itself was designed after the E4 EVAL result; no independent TEST; no winner, no adoption",
+  "question": "Does a finite pre-registered sweep of the pitch-sequence model (history length, depth/width, richer prior-pitch tokens: zone / release_speed / pfx buckets, optional batter-side context) improve on EXP-WS-SEQ-001 N1 and on the prequential tree P? Selection strictly on seed-0 SELECT NLL; the selected config gets seeds {0,1,2}, CAL-CV calibrator selection, and one EVAL read.",
+  "source": {
+    "job": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e6-seq2/",
+    "sweep_registration_sha256": "e3619ca9d973d9e90326caf9b503696f3624e018890fac7427098604095a8755",
+    "sweep_review_sha256": "b48d18d0d20820511900ecc97b5acc135cb0742fdf656eac5282dbbb7677bf3b (PASS; reviewer's own leak tests on all 10 configs: own-row perturbation changes own margins by exactly 0.0)",
+    "code_commit": "0d1d3f1 (experiments/ws_seq/{prepare_inputs2,train_seq2,select_config}.py, configs/EXP-WS-SEQ-002.{json,yaml}); calibrator experiments/ws_seq/calibrate_logits.py 866d003 (sha 7568b8b4…26e7)",
+    "stage_registration": {"path": "e6-seq2/cal/REGISTRATION.json", "sha256": "bda8bce85be2837b6e29f4dd615e5ec14fd85a0047d97ab28a4db9df83ffa343", "derived_from": "EXP-WS-SEQ-CAL-001 registration, input fields only (DERIVATION-DIFF.json)", "review_sha256": "3d854bf32581368d2726567e61f7f2d49256b11ee34464286bb9f0dbe640160a (PASS)"},
+    "selection": {"path": "e6-seq2/attempts/seq2-001/SELECTION.json", "selected": "G03", "config_hash": "f07856f88acd7967b42e920a7a044b9f19c05bd83f8aba4c8bf6e8e14de1222e", "rule": "lowest seed-0 uncalibrated SELECT seven-leaf NLL over the 10 configs; stop rule (must beat tree P SELECT 1.5685147057271014) not triggered"},
+    "attempt": "seq2-001 (sweep + selection + calibration stage)",
+    "result_sha256": "ade72e158275c659da78 (prefix; full in e6-seq2/cal/attempts/seq2-001/result.json)",
+    "inputs_on_server": "inputs2 = seq-inputs2.npz (sha 6f41dd55…), bucket-edges.json (a74e9132…), manifest.json (11631ed1…) + SEQ-001 inputs by sha; zone read = key + zone only; no parquet/sealed/OPE on the server",
+    "gpu_jobs": {"smoke": "261011-164320-ws-seq2-smoke rc 0", "seed0_wave1": "G01-G04 jobs 261011-1653xx on GPU0-3", "seed0_wave2": "G05-G08 jobs 261011-1754xx", "seed0_wave3": "G09-G10 jobs 261011-1854xx", "selected_seeds": "G03-s1 261011-195728 GPU0, G03-s2 261011-195732 GPU1", "all_rc": 0, "launcher": "/Users/song/.local/bin/gpu run only; <=4 cards in parallel; gpu st before each wave"}
+  },
+  "sweep_SELECT_only_seed0": {
+    "note": "uncalibrated seven-leaf NLL on SELECT (82,908 rows); descriptive; winner's-curse over 10 configs; no EVAL quantity",
+    "G01 L32 base (= SEQ-001 N1 arch)": {"select_nll": 1.567239, "elapsed_s": 96, "peak_gpu_gb": 1.4, "note": "reproduces SEQ-001 N1 seed 0 exactly (1.567239@7)"},
+    "G02 L16 base": {"select_nll": 1.567983, "elapsed_s": 81, "peak_gpu_gb": 1.1},
+    "G03 L64 base": {"select_nll": 1.566203, "elapsed_s": 151, "peak_gpu_gb": 2.7, "selected": true},
+    "G04 L32 + physics/zone": {"select_nll": 1.567721, "elapsed_s": 100, "peak_gpu_gb": 1.4},
+    "G05 L64 + physics/zone": {"select_nll": 1.567346, "elapsed_s": 165, "peak_gpu_gb": 2.7},
+    "G06 L32 + physics/zone + batter16": {"select_nll": 1.5667, "elapsed_s": 164, "peak_gpu_gb": 1.7},
+    "G07 L64 + physics/zone + batter16": {"select_nll": 1.567048, "elapsed_s": 223, "peak_gpu_gb": 2.8},
+    "G08 L32 + physics/zone d96x3": {"select_nll": 1.567076, "elapsed_s": 166, "peak_gpu_gb": 2.9},
+    "G09 L64 + physics/zone d96x3": {"select_nll": 1.567356, "elapsed_s": 298, "peak_gpu_gb": 3.4},
+    "G10 L64 + physics/zone + batter16 d96x3": {"select_nll": 1.566702, "elapsed_s": 100, "peak_gpu_gb": 1.5},
+    "selected_G03_seeds": {"s0": 1.566203, "s1": 1.567049, "s2": 1.567013, "SEQ-001_N1_seeds_for_reference": {"s0": 1.567239, "s1": 1.566975, "s2": 1.567022}, "reading": "the seed-0 lead of L=64 is within seed-to-seed spread; seeds 1,2 are at the SEQ-001 level"}
+  },
+  "calibration_stage_EVAL": {
+    "denominators": {"rows": 80584, "games": 275},
+    "gates": {"per_seed_C0_reproduction_max_abs": "<= 2.2e-16 (tolerance 1e-12)", "reference_ensemble": "not registered (skipped, recorded)", "inputs": "16/16 sha256 verified"},
+    "cal_selected_per_seed": {"0": "C2", "1": "C1", "2": "C2"},
+    "ensemble_arms": {
+      "C0": {"nll": 1.573773, "brier": 0.75221, "ece_top_label_10bin": 0.00679, "leaf_ece": {"narrow_whiff": 0.00092, "ground_ball_in_play": 0.00142}},
+      "C1": {"nll": 1.573643, "brier": 0.752181, "ece_top_label_10bin": 0.005441},
+      "C2": {"nll": 1.573677, "brier": 0.752236, "ece_top_label_10bin": 0.005506},
+      "C3": {"nll": 1.574363, "brier": 0.752195, "ece_top_label_10bin": 0.002603},
+      "SEL": {"nll": 1.573665, "brier": 0.752219, "ece_top_label_10bin": 0.005194, "leaf_ece": {"narrow_whiff": 0.00241, "ground_ball_in_play": 0.00069}},
+      "baseline_P_tree": {"nll": 1.577576, "brier": 0.753429, "ece_top_label_10bin": 0.002257},
+      "baseline_N1_SEQ001_ensemble": {"nll": 1.573965, "brier": 0.752323, "ece_top_label_10bin": 0.006781}
+    },
+    "paired_EVAL": {
+      "bootstrap": "whole-game paired, 10000 draws, seed 20261211, pitch-weighted ratio of game sums, percentile 95%",
+      "SEL-C0": {"nll": [-0.00011, [-0.00035, 0.00013]], "brier": [1e-05, [-9e-05, 0.00011]], "ece": [-0.0016, [-0.00451, 0.00019]]},
+      "C3-C0": {"nll": [0.00059, [4e-05, 0.00124]], "ece": [-0.00419, [-0.00556, -0.00125]], "label": "ECE_IMPROVED but NLL_NOT_NON_INFERIOR"},
+      "SEL-P": {"nll": [-0.00391, [-0.00478, -0.00306]], "brier": [-0.00121, [-0.00152, -0.00091]], "ece": [0.00294, [-0.00086, 0.00469]]},
+      "C0-P": {"nll": [-0.0038, [-0.00467, -0.00296]], "ece": [0.00453, [0.00074, 0.00654]]},
+      "SEL-N1": {"nll": [-0.0003, [-0.00073, 0.00013]], "brier": [-0.0001, [-0.00028, 7e-05]], "ece": [-0.00159, [-0.00388, 0.00051]]},
+      "C0-N1": {"nll": [-0.00019, [-0.00054, 0.00016]], "ece": [1e-05, [-0.00136, 0.00181]]},
+      "format": "[difference, [ci95 lower, ci95 upper]] rounded to 5 decimals; exact in the job result.json"
+    },
+    "per_seed_EVAL_point_estimates": {"G03-s0": {"C0_nll": 1.575682, "C0_ece": 0.01038, "SEL": "C2", "SEL_nll": 1.575209, "SEL_ece": 0.00501}, "G03-s1": {"C0_nll": 1.576314, "C0_ece": 0.00521, "SEL": "C1", "SEL_nll": 1.575648, "SEL_ece": 0.00592}, "G03-s2": {"C0_nll": 1.576452, "C0_ece": 0.01138, "SEL": "C2", "SEL_nll": 1.575767, "SEL_ece": 0.00477}, "note": "per-seed vs P/N1 are point estimates by the F11 decision; registered CIs are the ensemble ones"},
+    "advisory_labels_vs_C0": {"C1": "NOT_CANDIDATE", "C2": "NOT_CANDIDATE", "C3": "NOT_CANDIDATE (ECE improved, NLL degraded)", "SEL": "NOT_CANDIDATE (ECE CI upper +0.00019)"},
+    "strata_SEL_minus_C0_nll": {"S0": [-0.0007, [-0.00145, 5e-05]], "S1": [-0.00081, [-0.00163, -1e-05]], "S2": [-8e-05, [-0.0005, 0.00033]], "S3": [0.00017, [-0.00019, 0.00052]], "B0": [0.00063, [-0.00038, 0.00165]], "B1": [-0.00015, [-0.0004, 9e-05]]}
+  },
+  "interpretation": "The sweep found no configuration that beats EXP-WS-SEQ-001's N1 with a CI excluding zero: the selected G03 (history length 64, base tokens) ensemble is -0.00019 NLL vs the N1 ensemble before calibration and -0.00030 [-0.00073, +0.00013] after (SEL-N1), i.e. within noise, while its advantage over the tree P is unchanged (-0.0039, CI below zero). The seed-0 SELECT lead of L=64 did not persist in seeds 1-2, which land at the SEQ-001 level; so the L=32 -> 64 change is not an improvement one can rely on. The richer prior-pitch tokens (Statcast zone, velocity and movement buckets of EARLIER pitches) and the batter-side context did not lower SELECT NLL in any of G04-G10 — the within-game sequence of pitch types and outcomes already carries the usable signal, and the extra physics tokens add noise at this data size. Deeper/wider encoders (d96 x 3) did not help either. Calibration repeats the CAL2 picture: CAL-CV selection lowers ensemble ECE from 0.0068 to 0.0052 with the CI touching zero; isotonic reaches 0.0026 but degrades NLL (+0.0006, CI above zero). Fan-display leaves stay well calibrated (whiff 0.001-0.003, ground ball <= 0.0014). Bottom line for the PM: the sequence-model gain over the tree is real on this exposed split (about -0.004 NLL) but saturated under this training recipe; further grid search is not worth GPU time; the next levers are (a) a prospective (unexposed) evaluation via the research shadow, and (b) if more modelling is wanted, a different recipe (longer training with lower LR / label smoothing / multi-game pitcher memory) rather than more tokens. LIMITS: EXPOSED DEVELOPMENT with many EVAL reads today; winner's curse on the selection; 3 seeds; CUDA runs reproduced SEQ-001 seed 0 bit-for-bit here but that is not a general guarantee; no adoption or winner claim."
+}
