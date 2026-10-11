@@ -116,6 +116,9 @@ PITCHEEZY_OBSERVER_HOST=tailscale sh apps/observer/serve.sh
   - `GET /api/service/games?date=&delay=`: 진행 중 경기 카드는 점수·이닝 없이 `score_hidden: true`.
   - `GET /api/service/games/{pk}/tap?ago=<초,초…>&current=<초>&sure=0|1`: 내 TV에서 공이 미트에 들어온 순간을 누른 뒤 지난 시간(기기에서 잰 값). 답은 `status: ok|wait|unclear`와 지연 초뿐이고 경기 내용은 없다. 한 번으로 어느 공인지 가리지 못하면 다음 공에서 한 번 더 누르게 한다.
   - 수신 즉시 기록(`record_at_receipt`): 지연 시청자만 있어도 가장 새 본문의 추천을 같은 게이트를 거쳐 원장에 바로 기록한다. 그 시청자에게는 보여 주지 않는다.
+- 참고 카드(A2, `PITCHEEZY_OBSERVER_PROFILE_REFERENCE=1` + `PITCHEEZY_OBSERVER_PROFILE_SOURCES`): 다음 공의 상태가 "추천 없음"이고 사유가 투수 단위(기록 없는 투수, 구종 기록 부족)일 때만 `next.reference`에 `profile_reference` 카드를 싣는다. 상태·사유는 그대로다. 화면은 상태 칸 안 한 줄("참고 · 기록 통계" + 구종 NN%)을 보이고, 누르면 카드 전체(제목, 구종별 비율, 표본, "추천이나 다음 공 예측이 아닙니다")를 연다. 순위·위치·추천 색은 쓰지 않는다.
+- 던지기 전 예상(B2, `PITCHEEZY_OBSERVER_STEP5_EXPECTATION=1` + `PITCHEEZY_OBSERVER_STEP5_LEDGER`, 재생 원장은 `PITCHEEZY_OBSERVER_STEP5_ALLOW_REPLAYED=1`일 때만): 주요 장면(삼진·홈런·병살 등 잠정 목록)으로 타석을 끝낸, 수신 확인된 지난 공에만 `pitches[i].expectation`을 싣는다. 화면은 그 공의 "자세히" 안 실제 투구 부분에 한 줄로만 보인다. 땅볼 30% 이상은 모듈 기본값대로 뺀다(설정 미연결).
+- 두 기능의 서버 쪽 연결은 `backend/observer_app/service_extras.py` 한 곳이고, 운영자용 상태는 `/api/health`의 `service_extras`에만 나온다. 꺼져 있으면 필드가 없다.
 - 화면(`/watch/{pk}`): 공개 빌드(`VITE_PUBLISH_BASE` 설정)에서는 지연·맞추기 화면이 아예 없다. 그 외 빌드에서 서버가 켜져 있다고 답할 때만 "중계 맞추기"가 보인다. 맞추기 전에는 실제 투구·결과(투구 카드의 구종·속도·위치, 선택한 공의 실제 투구 줄, 자세히의 실제 투구, 타석 결과)를 "중계 맞추기 후 표시"로 접는다. 점수·볼카운트·아웃·주자·이닝별 기록은 그대로 둔다.
 
 ## 현재 구성
