@@ -85,3 +85,31 @@ def test_the_env_switch_builds_the_paced_player_only_for_a_replay(tmp_path, monk
         client.get('/api/live/games', params={'date': '2026-10-10'})
         health = client.get('/api/health').json()['live_store']
     assert health['source'] == 'replay_poll' and health['replay_position']['bodies'] == 1
+
+
+def test_first_requests_arriving_together_build_one_feed(tmp_path, monkeypatch):
+    """Sync routes run in a thread pool: two first requests must not each build a feed (two transports would replay
+    or poll twice and store one body as two versions)."""
+    import threading
+    import time
+    from observer_app import live_feed as module
+    from observer_app.main import create_app
+    from starlette.testclient import TestClient
+    built = []
+
+    class Slow(module.RecordedPaceReplay):
+        def __init__(self, *args, **kwargs):
+            built.append(1)
+            time.sleep(0.2)
+            super().__init__(*args, **kwargs)
+    monkeypatch.setattr(module, 'RecordedPaceReplay', Slow)
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR', str(folder(tmp_path, [(100.0, 95.0)])))
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE', 'recorded')
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_ARMB', '0')
+    with TestClient(create_app(object())) as client:
+        threads = [threading.Thread(target=client.get, args=('/api/live/games',), kwargs={'params': {'date': '2026-10-10'}}) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    assert built == [1]

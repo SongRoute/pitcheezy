@@ -283,34 +283,37 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     armb_enabled = lambda: os.environ.get('PITCHEEZY_OBSERVER_LIVE_ARMB', '1') != '0'
     app.state.live_policy = armb
 
+    live_lock = threading.Lock()  # sync routes run in a thread pool; the one live feed is built once
+
     def live_parts():
         from .live_feed import LIVE_CONFIG, LiveFeed, RecordedPaceReplay, ReplayTransport, http_json, replay_config
-        if live['feed'] is None:
-            replay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR')
-            delay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_DELAY_S')
-            # Rehearsal speed: a replay hands out one recorded body per poll, so only a replay may change the pace.
-            pace = replay_config(os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S'))
-            if replay and os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE') == 'recorded':
-                # delayed-viewing rehearsal: bodies at their recorded receipt times on today's clock (never upstream)
-                gap = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_MAX_GAP_S')
-                player = RecordedPaceReplay(replay, max_gap_s=float(gap) if gap else None)
-            elif replay:
-                player = ReplayTransport(replay)
-            transport, options = ((player, {'delay_s': float(delay or 0), 'config': pace}) if replay else
-                                  (http_json, {'record_dir': REPO/LIVE_CONFIG['record_dir'],
-                                               'delay_s': None if delay is None else float(delay)}))
-            if (store := os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE')):  # opt-in restart-safe buffer (live_store.py)
-                import sqlite3
-                from .live_store import LiveSnapshotStore, PersistentLiveFeed
-                try:  # a replayed recording is labelled as such: its receipts are not the game's arrival times
-                    live['feed'] = PersistentLiveFeed(transport, store=LiveSnapshotStore(store),
-                                                      source='replay_poll' if replay else 'live_poll', **options)
-                except (OSError, sqlite3.Error) as exc:  # unopenable store: serve live from memory, health says why
-                    LOGGER.warning('live store %s unavailable; serving from memory only', store, exc_info=True)
+        with live_lock:  # first requests arrive together: two feeds would poll and replay twice
+            if live['feed'] is None:
+                replay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR')
+                delay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_DELAY_S')
+                # Rehearsal speed: a replay hands out one recorded body per poll, so only a replay may change the pace.
+                pace = replay_config(os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S'))
+                if replay and os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE') == 'recorded':
+                    # delayed-viewing rehearsal: bodies at their recorded receipt times on today's clock (never upstream)
+                    gap = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_MAX_GAP_S')
+                    player = RecordedPaceReplay(replay, max_gap_s=float(gap) if gap else None)
+                elif replay:
+                    player = ReplayTransport(replay)
+                transport, options = ((player, {'delay_s': float(delay or 0), 'config': pace}) if replay else
+                                      (http_json, {'record_dir': REPO/LIVE_CONFIG['record_dir'],
+                                                   'delay_s': None if delay is None else float(delay)}))
+                if (store := os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE')):  # opt-in restart-safe buffer (live_store.py)
+                    import sqlite3
+                    from .live_store import LiveSnapshotStore, PersistentLiveFeed
+                    try:  # a replayed recording is labelled as such: its receipts are not the game's arrival times
+                        live['feed'] = PersistentLiveFeed(transport, store=LiveSnapshotStore(store),
+                                                          source='replay_poll' if replay else 'live_poll', **options)
+                    except (OSError, sqlite3.Error) as exc:  # unopenable store: serve live from memory, health says why
+                        LOGGER.warning('live store %s unavailable; serving from memory only', store, exc_info=True)
+                        live['feed'] = LiveFeed(transport, **options)
+                        live['feed'].store_error = f'open: {type(exc).__name__}'
+                else:
                     live['feed'] = LiveFeed(transport, **options)
-                    live['feed'].store_error = f'open: {type(exc).__name__}'
-            else:
-                live['feed'] = LiveFeed(transport, **options)
         return live['feed']
 
     def live_call(operation):
