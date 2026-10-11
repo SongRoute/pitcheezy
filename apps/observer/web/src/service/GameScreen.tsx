@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, isGamePublishedSoon, mergeDetail } from './api';
 import { PUBLISH_CONFIG, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
 import type { PublishStamp } from './publish';
-import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
+import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Pa, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
 import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, short } from './model';
 import { teamColor } from './teams';
 import Zone from './Zone';
@@ -136,7 +136,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // the tab was hidden: polling paused on purpose, so that time never counts as a late or lost connection (re-based on return)
   const [hidden, setHidden] = useState(() => document.hidden);
   const [resumed, setResumed] = useState(0);
-  const [sheet, setSheet] = useState<'pa' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | null>(null);
+  const [sheet, setSheet] = useState<'pa' | 'pa-empty' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | null>(null);
+  const [emptyPa, setEmptyPa] = useState<Pa | null>(null);  // a plate appearance with no pitch, shown by itself in a sheet
   const stripRef = useRef<HTMLDivElement>(null);
   const sheetOpener = useRef<HTMLElement | null>(null);
   const openSheet = (kind: typeof sheet) => { sheetOpener.current = document.activeElement as HTMLElement; setSheet(kind); };
@@ -207,6 +208,14 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     const id = window.setInterval(() => { if (!document.hidden) void load(); }, pollMs);
     return () => window.clearInterval(id);
   }, [auto, pollMs, load]);
+  // static mode: a screen pinned on a past pitch (auto off) still reads, slowly, while the game is not final. If the server turns the
+  // pinned pitch back to 확인 중, the same fail-closed rules blank it here too; the view stays pinned (no jump to the latest).
+  const pinnedMs = __PZ_STATIC__ && !auto && pollMs > 0 && fileStamp?.final !== true ? PUBLISH_CONFIG.pinnedPollMs : 0;
+  useEffect(() => {
+    if (!pinnedMs) return;
+    const id = window.setInterval(() => { if (!document.hidden) void load(); }, pinnedMs);
+    return () => window.clearInterval(id);
+  }, [pinnedMs, load]);
   // first load failed (nothing to show yet): keep trying by itself, but only when the server could not be reached or failed (network
   // error / timeout = 0, 5xx). A refusal (423 embargo, 400, 404) is an answer, not an outage: it is shown as before and not retried.
   const firstLoadRetry = detail === null && error !== null && (error.status === 0 || error.status >= 500);
@@ -530,7 +539,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     </section>
 
     {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')}
-      onPick={p => { setSheet(null); if ((live && p.pa_key === detail.current?.pa_key && !p.complete) || typeof p.first !== 'number' || !byIndex.has(p.first)) goLatest(); else pick(p.first); }} />}
+      onPick={p => {
+        // a finished plate appearance with no pitch at all (intentional walk and the like): its own result, no jump elsewhere
+        if (p.complete && !pitches.some(x => x.pa_key === p.pa_key) && (typeof p.first !== 'number' || !byIndex.has(p.first))) { setEmptyPa(p); setSheet('pa-empty'); return; }
+        setSheet(null); if ((live && p.pa_key === detail.current?.pa_key && !p.complete) || typeof p.first !== 'number' || !byIndex.has(p.first)) goLatest(); else pick(p.first); }} />}
+    {sheet === 'pa-empty' && emptyPa && <Sheet title={`${inningText(emptyPa)} · ${emptyPa.batter}`} onClose={closeSheet}>
+      <p><b>{emptyPa.result}</b></p><p className="sv-muted">이 타석은 투구 기록이 없어요. 공을 던지지 않고 끝난 타석이에요.</p>
+    </Sheet>}
     {/* a selected past pitch shows the linescore as of that pitch (never the latest one, which would reveal later play) */}
     {sheet === 'box' && <BoxSheet ls={latest ? detail.linescore_asof : pitch!.line ?? null} game={game} at={situation} onClose={closeSheet} />}
     {sheet === 'detail' && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={stateSlot && !shownRec ? null : rec} recTitle={stateSlot && !shownRec ? `다음 공: ${eff!.label}` : liveRecord ? recTitle : rec ? `${held ? '마지막으로 받은 추천' : recTitle} (${provenanceText(rec)})` : recTitle}

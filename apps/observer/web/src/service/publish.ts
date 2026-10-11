@@ -26,6 +26,8 @@ export const PUBLISH_CONFIG = {
   lostAfterMs: positive(env.VITE_PUBLISH_LOST_MS, 30000),
   tickMs: positive(env.VITE_PUBLISH_TICK_MS, 5000),
   datesPollMs: positive(env.VITE_PUBLISH_DATES_POLL_MS, 10000),
+  /** a screen pinned on a past pitch of a game that is not final still reads at this interval. PROVISIONAL; default = the pregame cadence. */
+  pinnedPollMs: positive(env.VITE_PUBLISH_PINNED_POLL_MS, positive(env.VITE_PUBLISH_PREGAME_POLL_MS, 10000)),
   /** a game with no file yet: first re-ask after this long, doubling up to the max. PROVISIONAL (not measured). */
   missingRetryMs: positive(env.VITE_PUBLISH_MISSING_RETRY_MS, 10000),
   missingMaxMs: positive(env.VITE_PUBLISH_MISSING_MAX_MS, 60000),
