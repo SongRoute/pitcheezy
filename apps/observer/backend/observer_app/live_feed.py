@@ -82,6 +82,20 @@ class ReplayTransport:
         return _load(files[index])
 
 
+def replay_config(poll_s, config=LIVE_CONFIG):
+    """``config`` for a recorded-snapshot replay that hands out one body per ``poll_s`` seconds instead of the
+    live poll pace (``PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S``; rehearsal only). ``ReplayTransport`` advances one
+    body per upstream fetch, so this alone sets the replay speed: 0 = one body per request. ``None``/'' keeps
+    the live pace. The fast poll never exceeds it. A real upstream is never polled with this config."""
+    if poll_s is None or poll_s == '':
+        return config
+    poll = float(poll_s)
+    if not 0 <= poll <= 3600:  # also refuses NaN
+        raise ValueError('replay poll interval must be between 0 and 3600 seconds')
+    fast = config.get('fast_poll_s')
+    return config | {'poll_interval_s': poll, 'fast_poll_s': min(fast, poll) if fast else fast}
+
+
 def _wall(text):
     return datetime.fromisoformat(text.replace('Z', '+00:00')).timestamp()
 

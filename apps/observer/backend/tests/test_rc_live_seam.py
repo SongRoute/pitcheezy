@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from observer_app import live_feed as live_feed_module, live_ledger
 from observer_app.live_armb import LiveArmB
-from observer_app.live_feed import LiveFeed, ReplayTransport, http_json
+from observer_app.live_feed import LIVE_CONFIG, LiveFeed, ReplayTransport, http_json, replay_config
 from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed
 from observer_app.main import create_app
 from test_live_feed import FakePolicy, wait_computed
@@ -365,3 +365,42 @@ def test_after_a_store_outage_the_buffer_gets_its_committed_identity_back(tmp_pa
         entry, _ = feed.snapshot(GAME)
         assert feed.store_error is None and entry['feed'] == body and admit(entry)['status'] == 'recorded', step
     assert [(e['event'], e.get('seq') is not None) for e in feed.buffers[GAME]] == [(990.0, True), (1030.0, True)]
+
+
+def test_replay_pace_is_configurable_for_a_rehearsal_and_never_changes_the_live_pace(tmp_path, monkeypatch):
+    """``PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S``: a replay hands out one recorded body per poll, so the poll
+    interval is the replay speed. Only a replay run reads it; a real upstream keeps the feed's pace."""
+    assert replay_config(None) is LIVE_CONFIG and replay_config('') is LIVE_CONFIG
+    fast = replay_config('0.5')
+    assert (fast['poll_interval_s'], fast['fast_poll_s']) == (0.5, 0.5) and LIVE_CONFIG['poll_interval_s'] == 10
+    assert replay_config('60')['fast_poll_s'] == LIVE_CONFIG['fast_poll_s']  # the fast poll never exceeds the pace
+    for bad in ('-1', 'nan', '99999', 'soon'):
+        with pytest.raises(ValueError):
+            replay_config(bad)
+
+    def versions(name, pace):
+        monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR', str(FIXTURES))
+        monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_STORE', str(tmp_path/name))
+        monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_ARMB', '0')
+        if pace is None:
+            monkeypatch.delenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S', raising=False)
+        else:
+            monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S', pace)
+        app = create_app(object(), watch_dir=tmp_path, feed_dir=tmp_path, demo_dir=tmp_path/'demo', intent_dir=tmp_path)
+        with TestClient(app) as client:
+            for _ in range(3):
+                assert client.get(f'/api/service/games/{GAME}').status_code == 200
+            health = client.get('/api/health').json()['live_store']
+            return health['poll_interval_s'], len(client.get(f'/api/live/{GAME}/log', params={'delay': 0}).json()['items'])
+
+    assert versions('paced.sqlite3', None) == (10, 1)  # three requests inside one live poll interval: one body
+    assert versions('fast.sqlite3', '0') == (0.0, 2)  # one body per request: both recorded bodies, then the last is held
+
+    monkeypatch.delenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR')  # a real upstream: the rehearsal pace is not applied
+    monkeypatch.delenv('PITCHEEZY_OBSERVER_LIVE_STORE')
+    seen, init = {}, LiveFeed.__init__
+    monkeypatch.setattr(LiveFeed, '__init__', lambda self, transport, **options: (seen.update(options), init(self, transport, **options))[1])
+    app = create_app(object(), watch_dir=tmp_path, feed_dir=tmp_path, demo_dir=tmp_path/'demo', intent_dir=tmp_path)
+    with TestClient(app) as client:
+        assert client.get(f'/api/live/{GAME}/log').status_code == 404  # builds the feed without fetching anything
+    assert 'config' not in seen and 'record_dir' in seen
