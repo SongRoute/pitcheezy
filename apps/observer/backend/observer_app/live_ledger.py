@@ -55,12 +55,14 @@ def _is_committed_version(feed, entry):
     return True
 
 
-def admit(feed, entry, view, *, game_pk, snapshot=None, policy_identity=None):
+def admit(feed, entry, view, *, game_pk, snapshot=None, policy_identity=None, record_new=True):
     """``view`` (``main.armb_view`` output for ``entry``'s snapshot) as it may be displayed. ``feed`` is the
     ``LiveFeed`` that served ``entry``; ``entry`` is the copy ``LiveFeed.snapshot`` returned (None when the
     caller has none). ``snapshot`` is the body the view was computed from: it must be ``entry['feed']`` itself,
     so the row can never cite another version than the one the recommendation was made for.
-    ``policy_identity`` is the policy's full identity (the view only shows a short prefix)."""
+    ``policy_identity`` is the policy's full identity (the view only shows a short prefix).
+    ``record_new=False`` (the feed is disconnected: ``entry`` is only the last snapshot) never writes: the
+    recommendation is returned only if the ledger already holds it for this decision, else it is withheld."""
     store = getattr(feed, 'store', None)
     if store is None or not enabled() or not view or not view.get('recommendation'):
         return view
@@ -70,9 +72,20 @@ def admit(feed, entry, view, *, game_pk, snapshot=None, policy_identity=None):
         return _withheld('view_not_computed_from_this_snapshot')
     if not _is_committed_version(feed, entry):
         return _withheld('snapshot_differs_from_committed_version')
+    state_sha = hashlib.sha256(state_key(entry['feed']).encode()).hexdigest()
+    if not record_new:
+        try:
+            record = store.stored_recommendation(game_pk, state_sha, policy_identity or view.get('policy_identity'))
+        except (sqlite3.Error, OSError, ValueError) as exc:
+            return _withheld(type(exc).__name__)
+        if record is None:
+            return _withheld('feed_disconnected_nothing_recorded')
+        return view | record['displayed'] | {'ledger': {'status': 'recorded', 'outcome': 'held',
+                                                        'decision_id': record['decision_id'], 'decided': record['decided'],
+                                                        'decision_clock': record['decision_clock']}}
     try:
         outcome, record = store.append_recommendation(
-            game_pk=game_pk, state_sha=hashlib.sha256(state_key(entry['feed']).encode()).hexdigest(),
+            game_pk=game_pk, state_sha=state_sha,
             policy_identity=policy_identity or view.get('policy_identity'), pitch_key=view.get('key'), snapshot=entry,
             displayed={key: view.get(key) for key in DISPLAYED}, decided=feed.wall(),
             feed_ok=int(game_pk) not in feed.failing)

@@ -18,7 +18,7 @@ from fastapi import Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import game_history, player_metadata
+from . import display_state, game_history, player_metadata
 from .demo_clock import DemoError
 
 DEFAULT_FEED_DIR = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/feeds')
@@ -229,15 +229,36 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
             'next': None if over else next_rec, 'linescore': linescore, 'pregame': pregame}
 
 
+UNCONFIRMED_LABEL = '확인 중'
+
+
+def _apply_receipts(pitches, receipts):
+    """Attach each pitch's SVC-WS-03 receipt. A body that is not admitted is never shown as an observed pitch (D1):
+    its type, speed, location and result are blanked and the row says 확인 중. A pitch this store has no admission
+    for at all fails closed the same way. Returns the summary the client compares between polls."""
+    unconfirmed = corrected = 0
+    for pitch in pitches:
+        item = receipts.get(display_state.RECEIPT_ALL) or receipts.get((pitch['at_bat_number'], pitch['pitch_number']))
+        receipt = display_state.public_receipt(item) if item else {'status': 'unconfirmed', 'reason': 'incomplete_identity', 'corrected': False}
+        pitch['receipt'] = receipt
+        corrected += receipt['corrected']
+        if receipt['status'] != 'received':
+            unconfirmed += 1
+            pitch['actual'] = dict.fromkeys(pitch['actual']) | {'result_label': UNCONFIRMED_LABEL, 'call_label': UNCONFIRMED_LABEL}
+    return {'version': display_state.receipts_version(receipts), 'unconfirmed': unconfirmed, 'corrected': corrected}
+
+
 def list_card(record, cutoff, source):
     return cut_view(record, cutoff, source)['game']
 
 
-def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None):
+def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
     reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
     ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
-    next-pitch rec (and records it in the append-only ledger before it is returned, when a store is on)."""
+    next-pitch rec (and records it in the append-only ledger before it is returned, when a store is on).
+    ``live_display(feed, parsed, entry)`` replaces ``live_rec`` on the real fan screen: it returns
+    ``(rec or None, display_state, pitch receipts or None)`` so the payload states what is shown and why."""
 
     def ok(payload, status=200):
         return JSONResponse(payload, status_code=status, headers=NO_STORE)
@@ -386,14 +407,39 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         for role in ('batter', 'pitcher'):
             if isinstance(current[role], dict):
                 current[role] = current[role] | {'jersey': game_history.jersey(feed, current[role].get('id'))}
-        next_rec = None
+        next_rec = state = receipts = None
+        entry = rest[0] if rest else None
+        if live_display is not None:
+            rec, state, receipts = live_display(feed, parsed, entry)
+        else:  # no display hook (archive-only or an older caller): the state is still explicit
+            rec = live_rec(feed, parsed, entry) if live_rec and phase == 'pre_pitch' else None
+            facts = {'ok': meta.get('ok', True), 'delayed': False, 'lag_s': None, 'lag_measured': False,
+                     'lag_threshold_s': display_state.config()['feed_lag_delayed_s'], 'thresholds_provisional': True,
+                     'last_ok_at': None, 'failing_since': None, 'failing_for_s': None, 'received_at': meta.get('as_of'),
+                     'provider_order': (entry or {}).get('provider_order'), 'store': 'off', 'store_ok': True, 'committed': None}
+            ready = bool(rec and rec.get('status') == 'ready' and rec.get('candidates'))
+            state = display_state.decide(
+                gated=display_state.gate(parsed['status'], abstract, facts, None, feed), facts=facts,
+                view=None if rec is None else {'status': 'ready', 'recommendation': {'candidates': rec['candidates']},
+                                               'ledger': rec.get('ledger')} if ready else
+                {'status': 'computing' if rec.get('status') == 'missing' else 'unsupported', 'reason': rec.get('reason')},
+                recommender=live_rec is not None, pitch_key=None, held=ready)
+            if not state['recommendation_shown']:
+                rec = None if not ready else game_history.absent_rec(state['message'])
         if phase == 'pre_pitch':
-            rec = live_rec(feed, parsed, rest[0] if rest else None) if live_rec else None
-            next_rec = {'pitch_key': None, 'rec': rec or game_history.absent_rec('이 실행에서는 실시간 추천을 제공하지 않습니다.')}
+            next_rec = {'pitch_key': state['pitch_key'],
+                        'rec': rec or game_history.absent_rec(state['message'] or '이 실행에서는 실시간 추천을 제공하지 않습니다.')}
         view = cut_view(record, len(record['pitches'])-1, {'kind': 'live', 'session_id': None},
-                        feed=meta, live_current=None if abstract == 'Final' else current, next_rec=next_rec, after=after)
+                        feed=meta, live_current=None if abstract == 'Final' else current, next_rec=next_rec)
         if abstract == 'Final':
             view['game'] |= {'status': 'final', 'live': False}
+        view['display_state'] = state
+        view['receipts'] = None
+        if receipts is not None:
+            view['receipts'] = _apply_receipts(view['pitches'], receipts)
+        if after is not None:  # a pitch whose record is unconfirmed or was corrected is re-sent whatever the cursor
+            view['pitches'] = [p for p in view['pitches'] if p['index'] > after or
+                               (p.get('receipt') and (p['receipt']['status'] != 'received' or p['receipt']['corrected']))]
         return view
 
     @app.get('/api/service/demo/{sid}')

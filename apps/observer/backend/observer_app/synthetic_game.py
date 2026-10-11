@@ -29,7 +29,8 @@ import uuid
 
 import numpy as np
 
-from .live_store import LiveSnapshotStore, PersistentLiveFeed, _canonical
+from .display_state import admit_body
+from .live_store import LiveSnapshotStore, PersistentLiveFeed
 from .service_research import capture_input, conditional_candidates
 
 WEB = Path(__file__).resolve().parents[2]/'synthetic-game'
@@ -184,10 +185,6 @@ def _received(feed, key):
     return event['details']['call']['code'] if event else None
 
 
-def _sha(value):
-    return value if isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value) else None
-
-
 def _shown(frame, key, rows):
     """What the fan view may say about ``key`` as of ``frame``: (result, status, reason). A memory-only call that
     differs from the last committed body is not durable. Otherwise the displayed pitch body is an observed call only
@@ -205,17 +202,10 @@ def _shown(frame, key, rows):
     order = entry.get('provider_order')
     if 'as_of' in frame:
         rows = [r for r in rows if r['id'] <= (frame['as_of']['pitch_event_id'] or 0)]
-    accepted = [r for r in rows if r['outcome'] != 'quarantine' and (r['at_bat_number'], r['pitch_number']) == key[:2]]
-    try:
-        shown = hashlib.sha256(_canonical(event)).hexdigest()
-    except (TypeError, ValueError):
-        shown = None
-    if shown is None or (accepted and _sha(accepted[-1]['sha']) is None):
-        return '확인 중', 'unconfirmed', f'{order}/body_hash_unusable'
-    if accepted and accepted[-1]['sha'] == shown:
+    status, detail = admit_body(event, key[:2], rows)  # the SVC-WS-03 rule the real fan screen uses too
+    if status == 'received':
         return CALLS[call], 'received', None
-    refused = [r for r in rows if r['outcome'] == 'quarantine' and r['sha'] == shown]
-    return '확인 중', 'unconfirmed', f"{order}/{refused[-1]['reason'] if refused else 'not_accepted'}"
+    return '확인 중', 'unconfirmed', f'{order}/{detail}'
 
 
 def comparison(entry, decision_wall, predict=None, *, disconnected):

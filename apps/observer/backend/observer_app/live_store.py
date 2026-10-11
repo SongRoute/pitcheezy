@@ -615,6 +615,24 @@ class LiveSnapshotStore:
                        (decision_id, game_pk, pitch_key, outcome, decided, clock, snapshot['seq'], sha, body))
         return outcome, record if first is None else first
 
+    def stored_recommendation(self, game_pk, state_sha, policy_identity):
+        """The ``first`` (displayable) record already stored for this decision, or None. A plain read: nothing is
+        written, so a caller that must not record anything new (a disconnected feed) can still keep showing what
+        the ledger already holds."""
+        decision_id = hashlib.sha256(_canonical([int(game_pk), state_sha, policy_identity])).hexdigest()
+        with closing(self.connect()) as db:
+            held = db.execute("SELECT body FROM served_recommendations WHERE decision_id=? AND outcome='first'",
+                              (decision_id,)).fetchone()
+        return json.loads(held[0]) if held else None
+
+    def recommendations_for_pitch(self, game_pk, pitch_key):
+        """The ``first`` (displayable) ledger rows stored for one pending pitch, in append order. More than one
+        means the decision's inputs were corrected after a recommendation for that pitch had been recorded."""
+        with closing(self.connect()) as db:
+            rows = db.execute("SELECT id, body FROM served_recommendations WHERE game_pk=? AND pitch_key=? AND "
+                              "outcome='first' ORDER BY id", (int(game_pk), pitch_key)).fetchall()
+        return [{'id': i} | json.loads(body) for i, body in rows]
+
     def served_recommendations(self, game_pk):
         """Every ledger row of a game in append order (``first`` rows were displayable, ``conflict`` rows never)."""
         with closing(self.connect()) as db:
