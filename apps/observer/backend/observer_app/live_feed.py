@@ -181,6 +181,7 @@ class LiveFeed:
         self.max_delay_s = max(config.get('max_delay_s', 120), self.delay_s)
         self.record_dir = Path(record_dir) if record_dir else None
         self.buffers, self.fetched_at, self.watching, self.failing, self._lock = {}, {}, {}, {}, threading.Lock()
+        self.polled = {}  # gamePk -> wall time of the last upstream answer (new content or not): the feed's freshness
         self._receipt = _reports_receipt(transport)
 
     def _interval(self, game_pk, delay, now):
@@ -275,6 +276,7 @@ class LiveFeed:
                     # Receipt = the whole response has arrived: the transport's own mark, else its return.
                     wall = complete[-1] if complete else self.wall()
                     self.failing.pop(game_pk, None)
+                    self.polled[game_pk] = wall
                     self._accept(game_pk, feed, wall, buffer, requested)
                     if self.record_dir:
                         self._record(game_pk, feed)

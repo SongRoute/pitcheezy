@@ -472,9 +472,12 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         if entry is None:
             from .live_feed import LiveFeedError
             raise LiveFeedError('no snapshot yet')
-        now = time.time()
+        # ``stale_s`` is the age of the last upstream answer, not of the shown state's first receipt: a game with
+        # no new event for a while (inning break, mound visit, review) is still fresh while polls keep answering.
+        answered = getattr(feed, 'polled', {}).get(game_pk, entry['fetched'])
+        now = feed.wall() if hasattr(feed, 'wall') else time.time()
         return entry['feed'], {'as_of': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(entry['fetched'])),
-                               'ok': game_pk not in feed.failing, 'stale_s': round(now-entry['fetched'], 1)}, entry
+                               'ok': game_pk not in feed.failing, 'stale_s': round(max(0.0, now-answered), 1)}, entry
 
     def service_live_rec(snapshot, parsed, entry=None):
         view = armb_view(snapshot, parsed, live_parts(), entry) if parsed.get('status') == 'ready' else None

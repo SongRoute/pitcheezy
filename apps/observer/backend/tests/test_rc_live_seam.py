@@ -404,3 +404,26 @@ def test_replay_pace_is_configurable_for_a_rehearsal_and_never_changes_the_live_
     with TestClient(app) as client:
         assert client.get(f'/api/live/{GAME}/log').status_code == 404  # builds the feed without fetching anything
     assert 'config' not in seen and 'record_dir' in seen
+
+
+def test_a_quiet_game_is_not_reported_stale_while_the_feed_keeps_answering(tmp_path):
+    """``feed.stale_s`` (the fan screen warns above 30 s) is the age of the last upstream answer. It used to be the
+    age of the shown state's first receipt, so every inning break looked like a stalled feed."""
+    now, body = [1000.0], at('849845_20260929_203124.json', 990.0)
+    feed = persistent(tmp_path, lambda url, timeout: copy.deepcopy(body), now)
+    app = create_app(object(), live_feed=feed, live_policy=LiveArmB(lambda: FakePolicy()), watch_dir=tmp_path,
+                     feed_dir=tmp_path, demo_dir=tmp_path/'demo', intent_dir=tmp_path)
+    with TestClient(app) as client:
+        stale = lambda: client.get(f'/api/service/games/{GAME}').json()['feed']
+        first = stale()
+        assert first == {'as_of': '1970-01-01T00:16:40Z', 'ok': True, 'stale_s': 0.0}
+        for now[0] in (1040.0, 1100.0):  # the same body again: nothing new in the game, the feed still answers
+            assert stale() == first  # ``as_of`` stays the state's first receipt; it is not stale
+        now[0] = 1103.0
+        assert stale()['stale_s'] == 3.0  # between polls it is the time since the last answer
+
+        def down(url, timeout):
+            raise OSError('upstream down')
+        feed.transport = down
+        now[0] = 1150.0
+        assert stale() == first | {'ok': False, 'stale_s': 50.0}  # a failing feed ages from its last answer
