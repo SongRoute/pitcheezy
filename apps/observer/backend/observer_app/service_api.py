@@ -19,7 +19,7 @@ from fastapi import Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import display_state, game_history, player_metadata, rec_pairing
+from . import display_state, features as feature_flags, game_history, player_metadata, rec_pairing
 from .demo_clock import DemoError
 
 DEFAULT_FEED_DIR = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/feeds')
@@ -290,7 +290,8 @@ def list_card(record, cutoff, source):
     return cut_view(record, cutoff, source)['game']
 
 
-def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None):
+def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None,
+             features=None):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
     reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
     ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
@@ -298,7 +299,14 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
     ``live_display(feed, parsed, entry)`` replaces ``live_rec`` on the real fan screen: it returns
     ``(rec or None, display_state, pitch receipts or None)`` so the payload states what is shown and why.
     ``live_pairing(feed, pitches, receipts, entry)`` returns ``{pitch key: rec}``: the recommendation recorded
-    before each PAST pitch of a live game (``rec_pairing``); without it every past live pitch says none is recorded."""
+    before each PAST pitch of a live game (``rec_pairing``); without it every past live pitch says none is recorded.
+
+    Viewer delay (``features()['viewer_delay']``, default ``features.features``; PROVISIONAL settings): with
+    ``?delay=<seconds>`` the live game is served as it stood for a viewer whose broadcast runs that far behind:
+    ``live_feed(pk, delay)`` returns that viewer's snapshot and everything in the payload derives from it. Its
+    ``meta['viewer']`` (delay used, buffer limit, buffering) is echoed as ``viewer``; a ``None`` snapshot is the
+    calm buffering answer. Without the parameter (or with the feature off) ``live_feed(pk)`` is called as before."""
+    features = features or feature_flags.features
 
     def ok(payload, status=200):
         return JSONResponse(payload, status_code=status, headers=NO_STORE)
@@ -367,6 +375,21 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
             schedule_cache[day] = (time.time(), cards)
         return cards, healthy
 
+    def unspoiled(card):
+        """A live game's list card for a delayed viewer: the schedule row is the ballpark's present, so its score
+        and inning would run ahead of that viewer's broadcast. Final and scheduled games are unchanged."""
+        if card.get('status') != 'live' and not card.get('live'):
+            return card
+        return card | {'away_score': None, 'home_score': None, 'inning': None, 'half': None, 'score_hidden': True}
+
+    def flags():
+        return feature_flags.public(features())
+
+    @app.get('/api/service/features')
+    def service_features():
+        """The owner switches the screen obeys (booleans and default seconds only), asked once before the first load."""
+        return ok({'schema': 'pitcheezy-service-features-v1', 'features': flags()})
+
     def redact(card):
         return card | {'away_score': None, 'home_score': None, 'inning': None, 'half': None, 'status': 'other',
                        'status_text': None, 'live': False, 'embargoed': True}
@@ -383,7 +406,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         return guarded(run)
 
     @app.get('/api/service/games')
-    def service_games(date: str = Query(...), demo: str | None = Query(None)):
+    def service_games(date: str = Query(...), demo: str | None = Query(None), delay: float | None = Query(None, ge=0)):
         if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
             return fail(400, 'date는 YYYY-MM-DD 형식이어야 합니다.')
 
@@ -392,7 +415,8 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                 session, record, cutoff = demo_session(demo)
                 source = {'kind': 'demo', 'session_id': demo, 'session_status': session['status']}
                 games = [list_card(record, cutoff, source)] if record['card']['date_kst'] == date else []
-                return ok({'schema': 'pitcheezy-service-games-v2', 'source': source, 'date': date, 'games': games, 'live_ok': True})
+                return ok({'schema': 'pitcheezy-service-games-v2', 'source': source, 'date': date, 'games': games, 'live_ok': True,
+                           'features': flags()})
             embargoed = clock.active_games()
             games = {}
             for record in archive.cards():
@@ -404,39 +428,67 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
             for card in live:  # a stored final record wins over the schedule row of the same game
                 games.setdefault(card['game_pk'], card)
             out = [redact(c) if c['game_pk'] in embargoed else c for c in games.values()]
+            if delay and features()['viewer_delay']['enabled']:
+                out = [unspoiled(c) for c in out]
             out.sort(key=lambda c: (c['start'] or '', c['game_number'], c['game_pk']))
             return ok({'schema': 'pitcheezy-service-games-v2', 'source': {'kind': 'archive', 'session_id': None},
-                       'date': date, 'games': out, 'live_ok': healthy})
+                       'date': date, 'games': out, 'live_ok': healthy, 'features': flags()})
         return guarded(run)
 
     @app.get('/api/service/games/{game_pk}')
-    def service_game(game_pk: int, demo: str | None = Query(None), after: int | None = Query(None, ge=-1)):
+    def service_game(game_pk: int, demo: str | None = Query(None), after: int | None = Query(None, ge=-1),
+                     delay: float | None = Query(None, ge=0)):
         def run():
+            view = answer()
+            if isinstance(view, JSONResponse):
+                return view
+            return ok(view | {'features': flags()})
+
+        def answer():
             if demo is not None:
                 session, record, cutoff = demo_session(demo)
                 if session['game_pk'] != game_pk:
                     return fail(404, '이 시연에 없는 경기입니다.')
-                return ok(cut_view(record, cutoff, {'kind': 'demo', 'session_id': demo, 'session_status': session['status']}, after=after))
+                return cut_view(record, cutoff, {'kind': 'demo', 'session_id': demo, 'session_status': session['status']}, after=after)
             if game_pk in clock.active_games():
                 return fail(423, '이 경기는 지금 다른 화면에서 진행 중입니다.')
             try:
                 record = archive.record(game_pk)
                 if record['final'] is not None:
-                    return ok(cut_view(record, len(record['pitches'])-1, {'kind': 'archive', 'session_id': None}, after=after))
+                    return cut_view(record, len(record['pitches'])-1, {'kind': 'archive', 'session_id': None}, after=after)
             except KeyError:
                 pass
             if live_feed is None:
                 raise KeyError(game_pk)
-            view = live_view(game_pk, after)
-            return view if isinstance(view, JSONResponse) else ok(view)  # the calm 503 of a failed first poll, as is
+            return live_view(game_pk, after, delay)  # a JSONResponse is the calm 503 of a failed first poll, as is
         return guarded(run)
 
-    def live_view(game_pk, after):
+    def buffering_view(static, meta, viewer):
+        """A delayed viewer whose moment the buffer does not reach back to yet: who plays and when, and one calm
+        state. No score, inning, pitch or recommendation, and never a newer state in their place."""
+        card = game_history.game_card(static)
+        if card['status'] != 'scheduled':  # whatever the ballpark's present is (even a game just over), not said here
+            card |= {'status': 'live', 'live': True, 'status_text': None}
+        card |= {'score_hidden': True}
+        return {'schema': 'pitcheezy-service-game-v2', 'source': {'kind': 'live', 'session_id': None}, 'game': card,
+                'feed': meta, 'cutoff': {'index': -1, 'pitch_key': None}, 'zone_bounds': dict(game_history.DEFAULT_ZONE_BOUNDS),
+                'pitches': [], 'pas': [], 'next': None, 'linescore': None, 'pregame': None, 'receipts': None,
+                'current': {'phase': None, 'situation': None, 'batter': None, 'pitcher': None, 'pa_key': None, 'context': None},
+                'display_state': meta.pop('display_state'), 'viewer': viewer}
+
+    def live_view(game_pk, after, delay=None):
         from .live_feed import LiveFeedError, parse_state
+        switch = features()['viewer_delay']
         try:
-            feed, meta, *rest = live_feed(game_pk)
+            feed, meta, *rest = live_feed(game_pk, delay) if delay and switch['enabled'] else live_feed(game_pk)
         except LiveFeedError:
             return fail(503, 'MLB 경기 정보를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.')
+        meta = dict(meta)
+        viewer = {'delay_s': 0.0, 'max_delay_s': None, 'buffering': False, 'wait_s': 0.0} | (meta.pop('viewer', None) or {})
+        viewer = {'enabled': switch['enabled'], 'default_s': switch['default_s'], 'provisional': True} | viewer
+        static = meta.pop('static', None)
+        if feed is None:
+            return buffering_view(static, meta, viewer)
         record = game_history.build(feed)
         parsed = parse_state(feed, None)
         phase = {'ready': 'pre_pitch', 'resolving': 'resolving', 'between_innings': 'between_innings'}.get(parsed['status'])
@@ -484,6 +536,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         elif phase == 'between_innings':  # ``situation`` is None then, so the card takes the score from the feed's line
             view['game'] |= _line_score(feed)
         view['display_state'] = state
+        view['viewer'] = viewer
         view['receipts'] = None
         if receipts is not None:
             view['receipts'] = _apply_receipts(view['pitches'], receipts, view['pas'])

@@ -644,6 +644,19 @@ class LiveSnapshotStore:
                               (int(game_pk), int(after))).fetchall()
         return [{'id': i, 'outcome': outcome} | json.loads(body) for i, outcome, body in rows]
 
+    def superseded_at(self, game_pk, seq):
+        """``(event_wall, replaced)`` of the committed version ``seq``: its slot's game-event time and the receipt
+        time of the next version of the same slot (None while it is the slot's current one), or None if unknown.
+        A viewer on delay D is first served the slot at ``event_wall + D``: a version replaced by then was never
+        on that viewer's screen. A plain read."""
+        with closing(self.connect()) as db:
+            row = db.execute('SELECT event_wall, version FROM snapshots WHERE seq=? AND game_pk=?', (seq, int(game_pk))).fetchone()
+            if row is None:
+                return None
+            later = db.execute('SELECT MIN(fetched) FROM snapshots WHERE game_pk=? AND event_wall=? AND version>?',
+                               (int(game_pk), row[0], row[1])).fetchone()[0]
+        return row[0], later
+
     def snapshot_feed(self, game_pk, seq):
         """``(sha, feed)`` of the committed version ``seq`` of ``game_pk``, or None. A plain read."""
         with closing(self.connect()) as db:

@@ -238,12 +238,14 @@ def _iso(wall):
     return None if wall is None else time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(wall))
 
 
-def feed_facts(feed, game_pk, entry, cfg, *, now):
+def feed_facts(feed, game_pk, entry, cfg, *, now, viewer_delay_s=0.0):
     """Connection facts of the served snapshot. Polling runs only while someone watches, so ``receipt - event``
     alone may just be time nobody polled. ``lag_s`` is therefore the PROVEN minimum: the last good poll before the
     one that brought this event did not have it yet, so the event reached us at least ``prior poll - event`` late
     (``lag_max_s`` = ``receipt - event`` is the upper bound). Without such a prior poll (first poll, restart) or for
-    a replayed recording (its event times are in the past) nothing is measured and nothing is called delayed."""
+    a replayed recording (its event times are in the past) nothing is measured and nothing is called delayed.
+    ``viewer_delay_s`` is the broadcast delay this viewer chose: data is late FOR THEM only when it reached us later
+    than their own delay as well, so choosing a delay is never itself reported as late data."""
     game_pk = int(game_pk)
     failing = game_pk in getattr(feed, 'failing', {})
     prior = (entry or {}).get('prior_poll')
@@ -253,7 +255,8 @@ def feed_facts(feed, game_pk, entry, cfg, *, now):
     has_store, store_error = hasattr(feed, 'store'), getattr(feed, 'store_error', None)
     return {'ok': not failing, 'lag_s': lag, 'lag_max_s': round(entry['fetched']-entry['event'], 1) if measured else None,
             'lag_measured': measured, 'lag_threshold_s': cfg['feed_lag_delayed_s'],
-            'delayed': lag is not None and lag > cfg['feed_lag_delayed_s'], 'thresholds_provisional': True,
+            'delayed': lag is not None and lag > max(cfg['feed_lag_delayed_s'], viewer_delay_s or 0.0),
+            'viewer_delay_s': viewer_delay_s or 0.0, 'thresholds_provisional': True,
             'last_ok_at': _iso(getattr(feed, 'polled_ok', {}).get(game_pk)), 'failing_since': _iso(since) if failing else None,
             'failing_for_s': round(now-since, 1) if failing and since is not None else None,
             'received_at': _iso(entry['fetched']) if entry else None,
@@ -445,7 +448,8 @@ def decide(*, gated, view, facts, history=(), pitch_key=None, recommender=True, 
     history = history or ()
     label, message = COPY.get((state, reason)) or COPY.get((state, None)) or (state, None)
     if state == 'feed_delayed' and facts['lag_s'] is not None:
-        message = f"경기 자료가 {int(facts['lag_s'])}초 넘게 늦게 도착했어요. 추천이 실제 경기보다 늦을 수 있어요."
+        behind = '내 중계' if facts.get('viewer_delay_s') else '실제 경기'  # a delayed viewer compares with their broadcast
+        message = f"경기 자료가 {int(facts['lag_s'])}초 넘게 늦게 도착했어요. 추천이 {behind}보다 늦을 수 있어요."
     refusal = (view or {}).get('reason')
     if (state == 'unsupported' and reason == 'policy_refused' and isinstance(refusal, str) and len(refusal) <= 60
             and re.search('[가-힣]', refusal) and not re.search('[A-Z_]{4,}', refusal)):
@@ -459,3 +463,11 @@ def decide(*, gated, view, facts, history=(), pitch_key=None, recommender=True, 
                        (ledger or {}).get('status') or 'not_applicable',
                        'outcome': (ledger or {}).get('outcome'), 'why': (ledger or {}).get('why'),
                        'store_ok': facts['store_ok']}}
+
+
+def buffering(facts, wait_s):
+    """The state of a viewer whose chosen delay has nothing to show yet (the server only just started to receive the
+    game): nothing newer is ever shown instead. ``wait_s`` is how long until their moment is reached."""
+    state = decide(gated=('waiting', 'buffering', None), view=None, facts=facts)
+    seconds = max(1, int(-(-float(wait_s or 0)//1)))
+    return state | {'message': f'내 중계 시점까지 기다리는 중이에요 (약 {seconds}초).'}
