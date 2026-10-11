@@ -49,6 +49,7 @@ class CaptureReplayTransport:
             raise ValueError('a replay needs at least one stored version, in receipt order')
         self.loaders, self.clock, self.game_pk, self.schedule_game = [load for _, load in rows], clock, int(game_pk), schedule_game
         self.requests, self.highest = 0, -1  # game-feed requests answered; newest row index ever handed out
+        self.served = set()  # every row index ever handed out (a row between two polls is never in it)
 
     def index(self):
         """Row held at the clock's time, or -1 before the first receipt."""
@@ -67,6 +68,7 @@ class CaptureReplayTransport:
         if index < 0:
             return None
         self.highest = max(self.highest, index)
+        self.served.add(index)
         return self.loaders[index]()
 
     def __call__(self, url, timeout):

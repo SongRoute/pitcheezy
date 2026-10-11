@@ -95,8 +95,9 @@ def validate(instance, schema, path='$'):
 
 def problems(instance, schema, pointer=''):
     """Like ``validate`` but for reports on real data: each problem is ``{'pointer', 'keyword', 'seen'}`` where
-    ``pointer`` is a JSON pointer and ``seen`` is the JSON TYPE found there (or the missing key's name), never a
-    value from the instance."""
+    ``pointer`` is a JSON pointer made of the schema's own property names, array indices and ``*`` for any key
+    the schema does not name; ``seen`` is the JSON TYPE found there (``missing`` for an absent required key).
+    Nothing from the instance's values or its own keys is reported."""
     out = []
     add = lambda keyword, seen: out.append({'pointer': pointer or '/', 'keyword': keyword, 'seen': seen})
     if 'const' in schema and instance != schema['const']:
@@ -121,7 +122,8 @@ def problems(instance, schema, pointer=''):
             if key in known:
                 out += problems(value, known[key], f'{pointer}/{token}')
             elif isinstance(schema.get('additionalProperties'), dict):
-                out += problems(value, schema['additionalProperties'], f'{pointer}/{token}')
+                # a key the schema does not name is an identifier from the data (a player id...): never reported
+                out += problems(value, schema['additionalProperties'], f'{pointer}/*')
     if isinstance(instance, list) and 'items' in schema:
         for index, value in enumerate(instance):
             out += problems(value, schema['items'], f'{pointer}/{index}')

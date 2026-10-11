@@ -12,11 +12,16 @@ newest stored version the capture had received by ``t`` (``observer_app.capture_
 Everything the run writes is under ``<job>/<run-name>/``: the publisher's OWN new store and ledger
 (``publisher-store.sqlite3``), its output (``out/``), state, temporary files, the policy's scratch folder and style
 cache copy, and the results (``CYCLES.jsonl``, ``SUMMARY.json``, ``SUMMARY.md``). No snapshot recording, no port,
-no network, no other process. An interpreter audit hook refuses and records any write outside that folder, any
-new process and any socket (``observer_app.publish_audit.FsAudit``); it also lists the files read under T7.
+no network, no other process. An interpreter audit hook (a tripwire, not isolation: native-library I/O is
+invisible to it) refuses and records any write outside that folder, any new process and any socket
+(``observer_app.publish_audit.FsAudit``) and lists the files read under T7. Independently, the folders named in
+the config (plus this worktree and the capture original) are listed by path, size and mtime before and after, and
+any difference fails the run.
 
-The run stops at the first broken invariant, outside write, memory or time cap; what was written until then
-stays. Exit codes: 0 completed, 2 refused before start (nothing written), 3 stopped by a stop condition.
+The run stops at the first broken invariant, outside write, integrity or policy failure, memory or time cap; what
+was written until then stays, ``STATUS.json`` says how it ended and ``INCOMPLETE`` stays beside partial output.
+Exit codes: 0 completed, 2 refused before start (nothing written), 3 stopped or failed, 87 killed by its own
+watchdog.
 """
 from __future__ import annotations
 
@@ -33,6 +38,9 @@ import os  # noqa: E402
 from pathlib import Path  # noqa: E402
 import re  # noqa: E402
 import resource  # noqa: E402
+import signal  # noqa: E402
+import sqlite3  # noqa: E402
+import struct  # noqa: E402
 import subprocess  # noqa: E402
 import threading  # noqa: E402
 import time  # noqa: E402
@@ -51,7 +59,11 @@ CLEARED_ENV = ('PITCHEEZY_OBSERVER_LIVE_STORE', 'PITCHEEZY_OBSERVER_LIVE_REPLAY_
                'PITCHEEZY_PUBLISH_INTERVAL_S', 'PITCHEEZY_PUBLISH_DELAY_S', 'PITCHEEZY_PUBLISH_COMMIT', 'PITCHEEZY_FEED_DIR',
                'PITCHEEZY_WATCH_DIR', 'PITCHEEZY_INTENT_DIR', 'PITCHEEZY_DEMO_DIR', 'PITCHEEZY_PLAYER_SNAPSHOT_DIR')
 CONFIG_KEYS = ('publish_interval_s', 'fixed_delay_s', 'tail_cycles', 'max_rss_bytes', 'min_free_bytes', 'max_seconds',
-               'settle_cap_s', 'max_body_bytes', 'policy_load_cap_s')
+               'settle_cap_s', 'max_body_bytes', 'policy_load_cap_s', 'min_free_bytes_running', 'free_check_every_cycles',
+               'policy_device', 'style_sha256', 'unchanged_dirs')
+PACKAGES = ('numpy', 'pandas', 'torch', 'fastapi', 'starlette', 'pydantic')
+THREAD_ENV = ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS', 'OPENBLAS_NUM_THREADS', 'NUMEXPR_NUM_THREADS',
+              'PYTORCH_ENABLE_MPS_FALLBACK', 'PYTORCH_MPS_HIGH_WATERMARK_RATIO')
 
 
 class Refused(Exception):
@@ -66,41 +78,66 @@ class Stop(Exception):
         self.reason, self.detail = reason, detail
 
 
+class Interrupted(BaseException):
+    """A termination signal reached this process."""
+
+
 def sha256_file(path):
     return c2r.file_sha256(path)
 
 
 def capture_rows(db_path, game_pk, max_body_bytes):
     """(rows, info) of a capture store: ``rows`` = ``[(fetched, load)]`` in receipt (``seq``) order for
-    ``capture_replay.CaptureReplayTransport``; ``info`` gets ``final_fetched`` once a loaded body is Final.
-    Bodies stay in the database and are read one at a time; each is checked against its stored sha256."""
+    ``capture_replay.CaptureReplayTransport``. Every stored version is read once here, before anything runs:
+    a body that is not one complete gzip member within the limit, does not match its stored sha256 or is not JSON
+    refuses the run (``Refused``). The same pass finds the FIRST version whose status is Final (by receipt time,
+    served later or not): ``info['final_fetched']``. Bodies are then read again one at a time as the replay asks
+    for them; a mismatch then sets ``info['integrity_error']`` (the runner stops on it) and raises."""
     db = c2r.open_source(db_path)
-    meta = db.execute('SELECT seq, fetched, sha FROM snapshots WHERE game_pk=? ORDER BY seq', (int(game_pk),)).fetchall()
+    try:
+        meta = db.execute('SELECT seq, fetched, sha FROM snapshots WHERE game_pk=? ORDER BY seq', (int(game_pk),)).fetchall()
+    except sqlite3.Error as error:
+        db.close()
+        raise Refused(f'the capture cannot be read: {type(error).__name__}') from None
     if not meta:
         db.close()
         raise Refused(f'the capture holds no stored version of game {game_pk}')
     info = {'versions': len(meta), 'first_fetched': meta[0][1], 'last_fetched': meta[-1][1], 'final_fetched': None,
-            'final_seq': None, 'loads': 0, 'db': db}
+            'final_seq': None, 'final_index': None, 'loads': 0, 'db': db, 'integrity_error': None, 'seqs': [seq for seq, _, _ in meta]}
     lock = threading.Lock()
 
-    def loader(seq, fetched, sha):
+    def read(seq, sha):
+        with lock:
+            blob = db.execute('SELECT body FROM snapshots WHERE seq=?', (seq,)).fetchone()[0]
+        raw = c2r.inflate(blob, max_body_bytes)
+        if raw is None or hashlib.sha256(raw).hexdigest() != sha:
+            raise ValueError(f'stored version {seq} does not match its sha256 or exceeds the body limit')
+        return json.loads(raw)
+
+    for index, (seq, fetched, sha) in enumerate(meta):
+        try:
+            body = read(seq, sha)
+        except ValueError as error:
+            db.close()
+            raise Refused(str(error)) from None
+        if info['final_fetched'] is None and ((body.get('gameData') or {}).get('status') or {}).get('abstractGameState') == 'Final':
+            info['final_fetched'], info['final_seq'], info['final_index'] = fetched, seq, index
+
+    def loader(seq, sha):
         def load():
-            with lock:
-                blob = db.execute('SELECT body FROM snapshots WHERE seq=?', (seq,)).fetchone()[0]
-            raw = c2r.inflate(blob, max_body_bytes)
-            if raw is None or hashlib.sha256(raw).hexdigest() != sha:
-                raise ValueError(f'stored version {seq} does not match its sha256 or exceeds the body limit')
-            body = json.loads(raw)
+            try:
+                body = read(seq, sha)
+            except Exception as error:  # noqa: BLE001 - the feed layer would turn this into an ordinary outage
+                info['integrity_error'] = {'seq': seq, 'error': type(error).__name__}
+                raise
             info['loads'] += 1
-            if info['final_fetched'] is None and ((body.get('gameData') or {}).get('status') or {}).get('abstractGameState') == 'Final':
-                info['final_fetched'], info['final_seq'] = fetched, seq
             return body
         return load
-    return [(fetched, loader(seq, fetched, sha)) for seq, fetched, sha in meta], info
+    return [(fetched, loader(seq, sha)) for seq, fetched, sha in meta], info
 
 
-def free_memory_bytes():
-    """free + inactive + speculative pages (``vm_stat``), or None if it cannot be read. Called before the audit."""
+def free_memory_vm_stat():
+    """free + inactive + speculative pages by ``vm_stat`` (a process: only before the audit is armed), or None."""
     try:
         out = subprocess.run(['/usr/bin/vm_stat'], capture_output=True, text=True, timeout=10, env={'LC_ALL': 'C'}).stdout
         page = int(re.search(r'page size of (\d+) bytes', out)[1])
@@ -108,6 +145,68 @@ def free_memory_bytes():
         return page*pages
     except Exception:  # noqa: BLE001
         return None
+
+
+def free_memory_bytes():
+    """The same quantity read in-process (Mach ``host_statistics64``; no child process, so usable during the
+    run), or None where that call does not exist."""
+    try:
+        import ctypes
+        libc = ctypes.CDLL(None)
+        libc.mach_host_self.restype = ctypes.c_uint
+        libc.host_statistics64.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint)]
+        buffer, count = ctypes.create_string_buffer(4*64), ctypes.c_uint(64)
+        if libc.host_statistics64(libc.mach_host_self(), 4, buffer, ctypes.byref(count)) != 0 or count.value < 24:  # HOST_VM_INFO64
+            return None
+        # vm_statistics64: free, active, inactive, wire (natural_t) then nine 64-bit counters, purgeable, speculative
+        fields = struct.unpack_from('<4I9Q2I', buffer.raw)
+        return os.sysconf('SC_PAGE_SIZE')*(fields[0]+fields[2]+fields[14])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def versions():
+    """Versions of what the result depends on, read from package metadata (nothing is imported for it)."""
+    from importlib import metadata
+    found = {'python': sys.version.split()[0], 'sqlite': sqlite3.sqlite_version}
+    for name in PACKAGES:
+        try:
+            found[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            found[name] = None
+    return found
+
+
+def threads():
+    out = {'env': {name: os.environ.get(name) for name in THREAD_ENV}, 'torch_threads': None, 'cpu_count': os.cpu_count()}
+    torch = sys.modules.get('torch')
+    if torch is not None:
+        out['torch_threads'] = torch.get_num_threads()
+    return out
+
+
+def mps_bytes():
+    """Memory the Metal (MPS) backend holds for this process, or None when torch/MPS is not in use. Unified
+    memory: it is real RAM and is not part of ``ru_maxrss``."""
+    torch = sys.modules.get('torch')
+    try:
+        if torch is not None and torch.backends.mps.is_available():
+            return int(torch.mps.driver_allocated_memory())
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def policy_devices(policy):
+    """Devices the bound ARM-B members actually sit on (``['mps']``), or None while no game is bound or the
+    objects cannot be read."""
+    found = set()
+    for binding in (getattr(policy, 'bindings', None) or {}).values():
+        components = binding.get('components') if isinstance(binding, dict) else None
+        for member in getattr(getattr(components, 'g0', None), 'models', None) or []:
+            device = getattr(getattr(getattr(member, 'model', None), 'global_model', None), 'device', None)
+            found.add('unknown' if device is None else str(device))
+    return sorted(found) or None
 
 
 def head_commit(repo=REPO):
@@ -160,10 +259,26 @@ def armb_idle(armb):
     return not (armb.pending or armb.running is not None or armb.loading)
 
 
+def write_status(run_dir, state, **more):
+    """``STATUS.json`` is the top-level record of how the run stands; ``INCOMPLETE`` lies beside partial output
+    from the first moment and is removed only when the run completed."""
+    run_dir = Path(run_dir)
+    (run_dir/'STATUS.json').write_text(json.dumps({'state': state, 'incomplete': state != 'COMPLETED',
+                                                   'at_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} | more,
+                                                  ensure_ascii=False, indent=1)+'\n')
+    marker = run_dir/'INCOMPLETE'
+    if state == 'COMPLETED':
+        marker.unlink(missing_ok=True)
+    elif not marker.exists():
+        marker.write_text('This run did not complete (see STATUS.json). Its output is partial.\n')
+
+
 def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs_audit=None, schemas=None,
         publish_config=None, perf=time.perf_counter, rss=lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-        log=lambda text: print(text, file=sys.stderr, flush=True)):
-    """Replay ``rows`` through a publisher that lives entirely in ``run_dir``. Returns the summary (also written)."""
+        free_memory=free_memory_bytes, log=lambda text: print(text, file=sys.stderr, flush=True)):
+    """Replay ``rows`` through a publisher that lives entirely in ``run_dir``. Returns the summary (also written).
+    Whatever happens inside (a stop condition, any exception, a termination signal) ends in a written summary and
+    status; only a kill that cannot be caught leaves ``STATUS.json`` at RUNNING with ``INCOMPLETE`` beside it."""
     from observer_app import publish_audit, publish_schema, publisher
     from observer_app.capture_replay import CaptureReplayTransport, SimClock
     from observer_app.live_armb import LiveArmB
@@ -171,39 +286,44 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
 
     run_dir = Path(run_dir).resolve()
     out, started = run_dir/'out', perf()
-    for folder in ('empty', 'demo', 'tmp'):
-        (run_dir/folder).mkdir(parents=True, exist_ok=True)
-    clock = SimClock(rows[0][0])
-    transport = CaptureReplayTransport(rows, clock, game_pk=game_pk, schedule_game=c2r._schedule_game)
-    store = LiveSnapshotStore(run_dir/'publisher-store.sqlite3')  # the publisher's own: never the capture
-    feed = PersistentLiveFeed(transport, store=store, source='replay_poll', delay_s=0, clock=clock, wall=clock, sleep=lambda _: None)
-    os.environ['PITCHEEZY_OBSERVER_LIVE_ARMB'] = '1' if policy_factory else '0'
-    armb = LiveArmB(policy_factory) if policy_factory else LiveArmB(lambda: None)
-    config = publisher.load_config(publish_config, env={}, out_dir=str(out), state_path=str(run_dir/'publisher.state.json'),
-                                   publish_interval_s=limits['publish_interval_s'], fixed_delay_s=limits['fixed_delay_s'])
-    app, pub = publisher.build(config, live_feed=feed, live_policy=armb, feed_dir=run_dir/'empty', watch_dir=run_dir/'empty',
-                               intent_dir=run_dir/'empty', demo_dir=run_dir/'demo', demo_wall=clock, service_wall=clock,
-                               wall=clock, commit=(commit, None))
-    ledger_ids = lambda: {row['decision_id'] for row in store.served_recommendations(game_pk) if row['outcome'] == 'first'}
-    audit = publish_audit.PublishAudit(contract=config['contract_version'], ledger_ids=ledger_ids,
-                                       forbidden=[str(run_dir), str(run_dir.parent), str(Path.home()), str(REPO)])
-    game_path = pub.layout['game'].format(game_pk=game_pk)
-    interval = config['publish_interval_s']
+    write_status(run_dir, 'RUNNING')
     cycles, shas, schema_problems, kinds_seen = [], {}, Counter(), Counter()
-    bytes_by_kind = {}
-    states, codes, recs = Counter(), Counter(), Counter()
-    final_published, stop, policy = None, None, {'requested': bool(policy_factory)}
-    over_interval = 0
+    bytes_by_kind, states, codes, recs = {}, Counter(), Counter(), Counter()
+    final_published, stop, policy = None, None, {'requested': bool(policy_factory), 'registered_device': limits.get('policy_device')}
+    over_interval, mps_peak, free_seen, failure = 0, None, [], None
+    status, pub, store, audit, transport, armb, config = 'FAILED', None, None, None, None, None, None
+
+    def memory():
+        nonlocal mps_peak
+        held = mps_bytes()
+        if held is not None:
+            mps_peak = max(mps_peak or 0, held)
+        return rss()+(held or 0)
 
     def guard(stage):
+        if info.get('integrity_error'):
+            raise Stop('capture_integrity', info['integrity_error'])
         if fs_audit is not None and fs_audit.violations:
             raise Stop('write_process_or_network_outside_the_job_folder', fs_audit.violations[:20])
-        if audit.violations:
+        if audit is not None and audit.violations:
             raise Stop('invariant', audit.violations[:50])
-        if rss() > limits['max_rss_bytes']:
-            raise Stop('rss_cap', {'stage': stage, 'rss': rss()})
+        if armb is not None and armb.failed:
+            raise Stop('policy_compute_failed', {'states': len(armb.failed), 'errors': sorted(set(armb.failed.values()))})
+        if memory() > limits['max_rss_bytes']:
+            raise Stop('memory_cap', {'stage': stage, 'rss': rss(), 'mps': mps_bytes()})
         if perf()-started > limits['max_seconds']:
             raise Stop('runtime_cap', {'stage': stage})
+
+    def check_device():
+        if not policy_factory or not limits.get('policy_device'):
+            return
+        seen = policy_devices(armb.policy)
+        if seen is not None:
+            policy['devices_seen'] = seen
+            if seen != [limits['policy_device']]:
+                raise Stop('policy_device', {'registered': limits['policy_device'], 'seen': seen})
+        elif armb.computed and getattr(armb.policy, 'binds', 0):
+            raise Stop('policy_device_unknown', {'registered': limits['policy_device']})
 
     def one_cycle(label):
         nonlocal final_published, over_interval
@@ -213,12 +333,13 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         waited = perf()
         while not armb_idle(armb) and perf()-waited < limits['settle_cap_s']:
             time.sleep(.005)
+            if perf()-started > limits['max_seconds']:
+                raise Stop('runtime_cap', {'stage': 'policy settle'})
         settle_s = perf()-waited
         if not armb_idle(armb):
             raise Stop('policy_did_not_settle', {'cycle': len(cycles)+1})
         over_interval += settle_s+wall_s > interval
-        written, sizes = [], {}
-        present = {}
+        written, sizes, present = [], {}, {}
         for path in sorted(out.rglob('*')):
             if path.is_file():
                 present[path.relative_to(out).as_posix()] = path
@@ -260,19 +381,44 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                 final_published = {'simulated': clock(), 'cycle': len(cycles)+1, 'sequence': health['sequence']}
         for item in health['unavailable_games']:
             codes[item['code']] += 1
+        free = None
+        if len(cycles) % limits['free_check_every_cycles'] == 0:
+            free = free_memory()
+            free_seen.append(free)
         row = {'cycle': len(cycles)+1, 'label': label, 'simulated': round(clock(), 3), 'capture_index': transport.index(),
                'sequence': health['sequence'], 'wall_s': round(wall_s, 6), 'settle_s': round(settle_s, 6),
                'files_written': len(written), 'written': written, 'bytes': sizes, 'game': facts,
                'health': {'unavailable_games': [item['code'] for item in health['unavailable_games']],
                           'unavailable_dates': len(health['unavailable_dates']), 'feed_failing_games': len(health['feed_failing_games'])},
-               'rss': rss()}
+               'rss': rss(), 'mps_bytes': mps_bytes(), 'free_bytes': free}
         cycles.append(row)
         with open(run_dir/'CYCLES.jsonl', 'a') as handle:
             handle.write(json.dumps(row, ensure_ascii=False)+'\n')
         guard(f'cycle {row["cycle"]}')
+        check_device()
+        if free is not None and free < limits['min_free_bytes_running']:
+            raise Stop('free_memory_low', {'free_bytes': free, 'cycle': row['cycle']})
         return row
 
     try:
+        for folder in ('empty', 'demo', 'tmp'):
+            (run_dir/folder).mkdir(parents=True, exist_ok=True)
+        clock = SimClock(rows[0][0])
+        transport = CaptureReplayTransport(rows, clock, game_pk=game_pk, schedule_game=c2r._schedule_game)
+        store = LiveSnapshotStore(run_dir/'publisher-store.sqlite3')  # the publisher's own: never the capture
+        feed = PersistentLiveFeed(transport, store=store, source='replay_poll', delay_s=0, clock=clock, wall=clock, sleep=lambda _: None)
+        os.environ['PITCHEEZY_OBSERVER_LIVE_ARMB'] = '1' if policy_factory else '0'
+        armb = LiveArmB(policy_factory) if policy_factory else LiveArmB(lambda: None)
+        config = publisher.load_config(publish_config, env={}, out_dir=str(out), state_path=str(run_dir/'publisher.state.json'),
+                                       publish_interval_s=limits['publish_interval_s'], fixed_delay_s=limits['fixed_delay_s'])
+        app, pub = publisher.build(config, live_feed=feed, live_policy=armb, feed_dir=run_dir/'empty', watch_dir=run_dir/'empty',
+                                   intent_dir=run_dir/'empty', demo_dir=run_dir/'demo', demo_wall=clock, service_wall=clock,
+                                   wall=clock, commit=(commit, None))
+        ledger_rows = lambda: {row['decision_id']: row for row in store.served_recommendations(game_pk) if row['outcome'] == 'first'}
+        audit = publish_audit.PublishAudit(contract=config['contract_version'], ledger_rows=ledger_rows,
+                                           forbidden=[str(run_dir), str(run_dir.parent), str(Path.home()), str(REPO)])
+        game_path = pub.layout['game'].format(game_pk=game_pk)
+        interval = config['publish_interval_s']
         guard('start')
         if policy_factory:
             armb.start()
@@ -280,7 +426,7 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
             while armb.loading and perf()-waited < limits['policy_load_cap_s']:
                 time.sleep(.05)
                 guard('policy load')
-            policy |= {'load_s': round(perf()-waited, 3), 'status': armb.status(), 'rss_after_load': rss()}
+            policy |= {'load_s': round(perf()-waited, 3), 'status': armb.status(), 'rss_after_load': rss(), 'mps_after_load': mps_bytes()}
             if armb.policy is None:
                 raise Stop('policy_unavailable', {'state': armb.status()['state']})
         while not transport.exhausted():
@@ -295,22 +441,42 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         status = 'COMPLETED'
     except Stop as stopped:
         status, stop = 'STOPPED', {'reason': stopped.reason, 'detail': stopped.detail}
+    except Interrupted as signalled:
+        status, stop = 'INTERRUPTED', {'reason': 'signal', 'detail': str(signalled)}
+    except BaseException as error:  # noqa: BLE001 - every exit leaves a record; the error is re-raised below
+        status, failure = 'FAILED', error
+        stop = {'reason': 'exception', 'detail': {'type': type(error).__name__, 'where': 'see the traceback on stderr'}}
     finally:
-        pub.close()
-    held = {name: not any(v['invariant'] == name for v in audit.violations) for name in publish_audit.INVARIANTS}
+        if pub is not None:
+            pub.close()
+    violations = [] if audit is None else audit.violations
+    held = {name: (None if audit is None else not any(v['invariant'] == name for v in violations)) for name in publish_audit.INVARIANTS}
     held['nothing_outside_the_job_folder'] = None if fs_audit is None else not fs_audit.violations
     final_wait = None
     if final_published is not None and info.get('final_fetched') is not None:
         final_wait = round(final_published['simulated']-info['final_fetched'], 3)
+    served = sorted(transport.served) if transport is not None else []
+    never = [index for index in range(info['versions']) if index not in set(served)]
+
+    def safely(read, default=None):
+        try:
+            return read()
+        except Exception:  # noqa: BLE001 - the summary is written whatever state the run died in
+            return default
     summary = {
-        'schema': 'pitcheezy-publisher-replay-summary-v1', 'status': status, 'stop': stop, 'game_pk': game_pk, 'commit': commit,
+        'schema': 'pitcheezy-publisher-replay-summary-v2', 'status': status, 'incomplete': status != 'COMPLETED', 'stop': stop,
+        'game_pk': game_pk, 'commit': commit,
         'data_role': 'SERVICE_EXPOSED_DEV', 'claim': 'one captured game replayed offline through the publisher; descriptive only',
-        'config': {key: limits[key] for key in CONFIG_KEYS} | {'settled_recheck_s': config['settled_recheck_s'],
-                                                              'contract_version': config['contract_version']},
+        'config': {key: limits.get(key) for key in CONFIG_KEYS} | ({} if config is None else {
+            'settled_recheck_s': config['settled_recheck_s'], 'contract_version': config['contract_version']}),
+        'environment': {'versions': versions(), 'threads': threads()},
         'capture': {'versions': info['versions'], 'first_fetched': info['first_fetched'], 'last_fetched': info['last_fetched'],
                     'span_s': round(info['last_fetched']-info['first_fetched'], 3), 'bodies_loaded': info['loads'],
-                    'versions_never_served': info['versions']-(transport.highest+1) if status == 'COMPLETED' else None,
-                    'upstream_requests_answered': transport.requests},
+                    'served_version_indices': served, 'versions_served': len(served),
+                    'versions_never_served_indices': never if status == 'COMPLETED' else None,
+                    'versions_never_served': len(never) if status == 'COMPLETED' else None,
+                    'upstream_requests_answered': None if transport is None else transport.requests,
+                    'integrity_error': info.get('integrity_error')},
         'cycles': {'n': len(cycles), 'by_label': dict(Counter(row['label'] for row in cycles)),
                    'wall_s': spread([row['wall_s'] for row in cycles]), 'settle_s': spread([row['settle_s'] for row in cycles]),
                    'files_written': spread([row['files_written'] for row in cycles]),
@@ -323,28 +489,43 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                       'pitches_in_last_file': next((row['game']['pitches'] for row in reversed(cycles) if row['game']), None),
                       'paired_past_recommendations_in_last_file': next((row['game']['paired_past_recommendations'] for row in reversed(cycles) if row['game']), None)},
         'health_codes': dict(codes),
-        'ledger': {'rows': len(store.served_recommendations(game_pk)), 'first_rows': len(ledger_ids())},
-        'final': {'feed_final_first_served_version_fetched': info.get('final_fetched'), 'publish_final': final_published,
-                  'simulated_seconds_from_feed_final_to_publish_final': final_wait,
-                  'note': 'simulated capture clock; resolution is one publish interval. 미측정 if either side is null.'},
+        'ledger': {'rows': safely(lambda: len(store.served_recommendations(game_pk))),
+                   'first_rows': safely(lambda: sum(row['outcome'] == 'first' for row in store.served_recommendations(game_pk)))},
+        'final': {'feed_final_first_version_fetched': info.get('final_fetched'), 'feed_final_first_version_index': info.get('final_index'),
+                  'first_final_version_was_served': None if info.get('final_index') is None else info['final_index'] in set(served),
+                  'publish_final': final_published, 'simulated_seconds_from_feed_final_to_publish_final': final_wait,
+                  'note': 'first capture version whose status is Final, by its receipt time (served or not); simulated capture '
+                          'clock, resolution one publish interval. 미측정 if either side is null.'},
         'schema_validation': {'validated': schemas is not None, 'kinds_seen': dict(kinds_seen),
                               'kinds_never_seen': sorted(set(schemas or {})-set(kinds_seen)),
                               'problems': [{'kind': kind, 'pointer': pointer, 'keyword': keyword, 'seen': seen, 'count': count}
                                            for (kind, pointer, keyword, seen), count in sorted(schema_problems.items())]},
-        'invariants': {'held': held, 'violations': audit.violations[:200], 'violation_count': len(audit.violations),
-                       'files_checked': audit.checked},
-        'fs_audit': None if fs_audit is None else {'violations': fs_audit.violations[:200], 'violation_count': len(fs_audit.violations),
+        'invariants': {'held': held, 'violations': violations[:200], 'violation_count': len(violations),
+                       'files_checked': 0 if audit is None else audit.checked},
+        'fs_audit': None if fs_audit is None else {'kind': 'tripwire (Python audit events only; native-library I/O is not seen)',
+                                                   'violations': fs_audit.violations[:200], 'violation_count': len(fs_audit.violations),
                                                    'files_read_under_watch': dict(sorted(fs_audit.read.items()))},
-        'policy': policy | {'final_status': armb.status(), 'binds': getattr(armb.policy, 'binds', None)},
-        'memory': {'peak_rss_bytes': rss(), 'source': 'resource.getrusage(RUSAGE_SELF).ru_maxrss (process peak, bytes on macOS)'},
+        'policy': policy | {'final_status': safely(lambda: armb.status()), 'binds': safely(lambda: getattr(armb.policy, 'binds', None)),
+                            'failed_states': safely(lambda: len(armb.failed), 0)},
+        'memory': {'peak_rss_bytes': rss(), 'source': 'resource.getrusage(RUSAGE_SELF).ru_maxrss (process peak, bytes on macOS)',
+                   'mps_driver_allocated_peak_bytes': mps_peak,
+                   'mps_note': 'Metal (MPS) memory is unified RAM outside ru_maxrss; sampled once per cycle, so a peak between samples is not seen. null = MPS not in use.',
+                   'free_bytes_min_sampled': min((value for value in free_seen if value is not None), default=None),
+                   'free_samples': len(free_seen)},
         'wall_seconds_total': round(perf()-started, 3),
         'not_measured': ['live polling against the real upstream', 'hosting and upload', 'any other game',
                          'provider versions between the capture polls', 'stale or duplicate responses (the capture stores none)',
-                         'end-to-end delay to a viewer'],
+                         'end-to-end delay to a viewer', 'I/O done inside native libraries (outside the audit; covered only by the before/after folder listing)'],
     }
     (run_dir/'SUMMARY.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1)+'\n')
     (run_dir/'SUMMARY.md').write_text(summary_text(summary))
+    write_status(run_dir, status, stop=stop, cycles=len(cycles))
     log(f"{status}: {len(cycles)} cycles, summary at {run_dir/'SUMMARY.json'}")
+    if failure is not None and not isinstance(failure, Exception):
+        raise failure  # KeyboardInterrupt / SystemExit go on after the record is written
+    if failure is not None:
+        import traceback
+        traceback.print_exception(failure, file=sys.stderr)
     return summary
 
 
@@ -352,14 +533,17 @@ def summary_text(s):
     """Short Korean summary. Every number is copied from the summary; a missing one is written 미측정."""
     show = lambda value: '미측정' if value is None else value
     lines = [f"# 발행기 오프라인 재생 요약 — 경기 {s['game_pk']}", '',
-             f"- 상태: **{s['status']}**" + (f" (중단 사유: {s['stop']['reason']})" if s['stop'] else ''),
+             f"- 상태: **{s['status']}**" + (f" (사유: {s['stop']['reason']})" if s['stop'] else '') + (' — **미완료, 부분 결과**' if s['incomplete'] else ''),
              f"- 코드 커밋: `{s['commit']}` / 자료 역할: {s['data_role']}",
              f"- 주기 수: {s['cycles']['n']} ({s['cycles']['by_label']}), 마지막 순번: {show(s['cycles']['last_sequence'])}",
              f"- 주기 실제 소요(초): 중앙값 {show(s['cycles']['wall_s'].get('p50'))}, p99 {show(s['cycles']['wall_s'].get('p99'))}, 최대 {show(s['cycles']['wall_s'].get('max'))}",
-             f"- 최대 RSS(바이트): {s['memory']['peak_rss_bytes']}",
+             f"- 최대 RSS(바이트): {s['memory']['peak_rss_bytes']} / MPS 최대(바이트): {show(s['memory']['mps_driver_allocated_peak_bytes'])}",
+             f"- 정책 장치: 등록 {show(s['policy'].get('registered_device'))}, 실제 {show(s['policy'].get('devices_seen'))}",
              f"- 종료 표시까지(재생 시계 초): {show(s['final']['simulated_seconds_from_feed_final_to_publish_final'])}",
-             f"- 추천 원장 행: {s['ledger']['rows']}", '', '## 불변 조건', '']
+             f"- 추천 원장 행: {show(s['ledger']['rows'])}", '', '## 불변 조건', '']
     lines += [f"- {name}: {'지켜짐' if ok else '미측정' if ok is None else '**깨짐**'}" for name, ok in s['invariants']['held'].items()]
+    if 'outside_changes' in s:
+        lines += [f"- 실행 폴더 밖 변화(전후 목록 비교): {'없음' if not s['outside_changes']['changed'] else '**있음**'}"]
     lines += ['', '## 파일 크기(바이트, 종류별 최대 raw / gzip)', '']
     lines += [f"- {kind}: {v['raw_max']} / {v['gzip_max']} (쓴 횟수 {v['writes']})" for kind, v in sorted(s['bytes_by_kind'].items())]
     lines += ['', '## 스키마', '',
@@ -369,10 +553,11 @@ def summary_text(s):
     return '\n'.join(lines)+'\n'
 
 
-def armb_factory(run_dir, style_dir=STYLE_DIR):
+def armb_factory(run_dir, style_sha256, style_dir=STYLE_DIR):
     """The frozen ARM-B live policy with every write redirected into the run folder: the pinned 2026 style
     snapshot is COPIED from T7 into ``<run>/policy-root/style`` (so the policy reads its cache there and never
-    writes under T7), and the per-game scratch ledger goes to ``<run>/tmp``. T7 is only read."""
+    writes under T7), and the per-game scratch ledger goes to ``<run>/tmp``. T7 is only read. The two style
+    files must have the registered sha256 (``style_sha256``: name -> sha256), checked on the copied bytes."""
     def factory():
         import tempfile
         import demo_precompute
@@ -380,11 +565,28 @@ def armb_factory(run_dir, style_dir=STYLE_DIR):
         tempfile.tempdir = str(Path(run_dir)/'tmp')
         target = Path(run_dir)/'policy-root/style'
         target.mkdir(parents=True, exist_ok=True)
-        index = json.loads((Path(style_dir)/'style_2026_index.json').read_text())
-        for name in ('style_2026_index.json', index['file']):
-            (target/name).write_bytes((Path(style_dir)/name).read_bytes())
+        for name, sha in style_sha256.items():
+            data = (Path(style_dir)/name).read_bytes()
+            if hashlib.sha256(data).hexdigest() != sha:
+                raise RuntimeError(f'style file {name} does not have its registered sha256')
+            (target/name).write_bytes(data)
         return demo_precompute.LivePolicy(output_root=Path(run_dir)/'policy-root', max_games=LIVE_CONFIG.get('max_bound_games', 2))
     return factory
+
+
+def outside_snapshot(folders):
+    """``{folder: tree}`` of the folders that must not change, plus the scratch folders this policy would create
+    in the system temporary folder (other programs' files there are not ours to judge)."""
+    import tempfile
+    from observer_app import publish_audit
+    trees = {str(folder): publish_audit.tree_snapshot(folder) for folder in folders}
+    system = os.path.realpath(os.environ.get('PITCHEEZY_REPLAY_SYSTEM_TMP') or tempfile.gettempdir())
+    try:
+        names = sorted(name for name in os.listdir(system) if name.startswith('pitcheezy-live-'))
+    except OSError:
+        names = []
+    trees[f'{system} (pitcheezy-live-* only)'] = {name: (None, 0) for name in names}
+    return trees
 
 
 def main(argv=None):
@@ -395,20 +597,23 @@ def main(argv=None):
     parser.add_argument('--capture-db', required=True)
     parser.add_argument('--capture-sha256', required=True)
     parser.add_argument('--commit', required=True)
-    parser.add_argument('--config', required=True, help='replay_config.json (limits and pace)')
+    parser.add_argument('--config', required=True, help='replay_config.json (limits, pace, pins)')
+    parser.add_argument('--config-sha256', required=True)
     parser.add_argument('--policy', choices=('armb', 'off'), required=True)
     parser.add_argument('--allow-dirty', action='store_true', help='synthetic tests only')
     args = parser.parse_args(argv)
     job, db = Path(args.job_dir).resolve(), Path(args.capture_db).resolve()
     run_dir = job/args.run_name
     try:
+        if sha256_file(args.config) != args.config_sha256:
+            raise Refused('the replay config does not have the registered sha256')
         limits = json.loads(Path(args.config).read_text())
         missing = [key for key in CONFIG_KEYS if key not in limits]
         if missing:
             raise Refused(f'replay config lacks {missing}')
         if limits['fixed_delay_s'] != 0:
             raise Refused('this rehearsal is registered for fixed delay 0 only')
-        if not job.is_dir() or re.fullmatch(r'[A-Za-z0-9._-]+', args.run_name) is None:
+        if not job.is_dir() or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', args.run_name) is None or '..' in args.run_name:
             raise Refused('the job folder must exist and the run name must be a plain name')
         if run_dir.exists():
             raise Refused(f'{run_dir} already exists: one run, one new folder')
@@ -424,46 +629,82 @@ def main(argv=None):
         changed = tracked_changes()
         if changed is None or (changed and not args.allow_dirty):
             raise Refused(f'tracked files differ from the commit: {changed}')
-        free = free_memory_bytes()
-        if free is None or free < limits['min_free_bytes']:
-            raise Refused(f'free memory {free} is below the registered minimum {limits["min_free_bytes"]}')
-        if args.policy == 'armb' and not (T7.is_mount() and (STYLE_DIR/'style_2026_index.json').is_file()):
-            raise Refused('the policy needs the T7 volume (read-only use) and its pinned style snapshot')
+        free, in_process = free_memory_vm_stat(), free_memory_bytes()
+        if free is None or in_process is None or min(free, in_process) < limits['min_free_bytes']:
+            raise Refused(f'free memory (vm_stat {free}, in-process {in_process}) is below the registered minimum {limits["min_free_bytes"]}')
+        unchanged = [Path(folder) for folder in limits['unchanged_dirs']]
+        absent = [str(folder) for folder in unchanged if not folder.is_dir()]
+        if absent:
+            raise Refused(f'folders registered as unchanged do not exist: {absent}')
+        if args.policy == 'armb':
+            if not T7.is_mount():
+                raise Refused('the policy needs the T7 volume (read-only use)')
+            if not limits['style_sha256'] or not limits['policy_device']:
+                raise Refused('a policy run needs the registered style sha256 values and the registered device')
+            for name, sha in limits['style_sha256'].items():
+                if not (STYLE_DIR/name).is_file() or sha256_file(STYLE_DIR/name) != sha:
+                    raise Refused(f'style file {name} is missing or does not have its registered sha256')
+        rows, info = capture_rows(db, args.game, limits['max_body_bytes'])  # reads and verifies every stored version
     except Refused as refused:
         print(f'REFUSED: {refused}', file=sys.stderr)
         return 2
     for name in CLEARED_ENV:
         os.environ.pop(name, None)
+    trees_before = outside_snapshot([REPO, *unchanged])
     run_dir.mkdir()
+    os.chdir(run_dir)  # a relative path opened for writing resolves inside the run folder
     os.environ['TMPDIR'] = str(run_dir/'tmp')
+    write_status(run_dir, 'RUNNING')
     from observer_app import publish_audit
     fs_audit = publish_audit.FsAudit([run_dir], watch=[T7])
-    sys.addaudithook(fs_audit.event)  # from here on: no write outside the run folder, no process, no socket
+    sys.addaudithook(fs_audit.event)  # tripwire from here on: no write outside the run folder, no process, no socket
+
+    def on_signal(number, frame):
+        raise Interrupted(signal.Signals(number).name)
+    for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(number, on_signal)
 
     def watchdog():  # a hard stop of THIS process only, if the main loop cannot get to its own checks
-        started = time.monotonic()
+        begun = time.monotonic()
         while True:
             time.sleep(.5)
-            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            if peak > limits['max_rss_bytes'] or time.monotonic()-started > limits['max_seconds']+60:
-                (run_dir/'ABORTED.json').write_text(json.dumps({'peak_rss_bytes': peak, 'elapsed_s': round(time.monotonic()-started, 1)}))
+            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss+(mps_bytes() or 0)
+            if peak > limits['max_rss_bytes'] or time.monotonic()-begun > limits['max_seconds']+60:
+                record = {'peak_rss_plus_mps_bytes': peak, 'elapsed_s': round(time.monotonic()-begun, 1),
+                          'why': 'memory_cap' if peak > limits['max_rss_bytes'] else 'runtime_cap_hard'}
+                (run_dir/'ABORTED.json').write_text(json.dumps(record))
+                write_status(run_dir, 'ABORTED', stop={'reason': record['why'], 'detail': record})
                 os._exit(87)
     threading.Thread(target=watchdog, name='replay-watchdog', daemon=True).start()
-    rows, info = capture_rows(db, args.game, limits['max_body_bytes'])
     contract = REPO/'apps/observer/publish_contract/v1/schema'
     schemas = {path.name.split('.')[0]: json.loads(path.read_text()) for path in sorted(contract.glob('*.schema.json'))}
     (run_dir/'RUN.json').write_text(json.dumps({
         'argv': sys.argv if argv is None else list(argv), 'commit': args.commit, 'capture_sha256_before': before,
-        'free_memory_bytes_at_start': free, 'limits': limits, 'policy': args.policy, 'python': sys.version,
+        'config_sha256': args.config_sha256, 'free_memory_bytes_at_start': {'vm_stat': free, 'in_process': in_process},
+        'limits': limits, 'policy': args.policy, 'python': sys.version, 'versions': versions(), 'threads': threads(),
         'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}, indent=1)+'\n')
-    summary = run(rows=rows, info=info, run_dir=run_dir, game_pk=args.game, commit=args.commit, limits=limits,
-                  policy_factory=armb_factory(run_dir) if args.policy == 'armb' else None, fs_audit=fs_audit, schemas=schemas)
-    with closing(info['db']):
-        pass
+    try:
+        summary = run(rows=rows, info=info, run_dir=run_dir, game_pk=args.game, commit=args.commit, limits=limits,
+                      policy_factory=armb_factory(run_dir, limits['style_sha256']) if args.policy == 'armb' else None,
+                      fs_audit=fs_audit, schemas=schemas)
+    finally:
+        with closing(info['db']):
+            pass
     after = sha256_file(db)
+    trees_after = outside_snapshot([REPO, *unchanged])
+    changes = {folder: publish_audit.tree_changes(trees_before[folder], trees_after[folder])[:200] for folder in trees_before}
+    changed_any = any(changes.values())
     summary['capture_copy'] = {'sha256_before': before, 'sha256_after': after, 'unchanged': before == after}
+    summary['outside_changes'] = {'method': 'path, size and mtime of every entry, listed before the run and after it',
+                                  'folders': list(trees_before), 'entries_before': {k: len(v) for k, v in trees_before.items()},
+                                  'changed': changed_any, 'changes': {k: v for k, v in changes.items() if v}}
+    if (changed_any or before != after) and summary['status'] == 'COMPLETED':
+        summary['status'], summary['incomplete'] = 'FAILED', True
+        summary['stop'] = {'reason': 'something_outside_the_job_folder_changed', 'detail': None}
     (run_dir/'SUMMARY.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1)+'\n')
-    return 0 if summary['status'] == 'COMPLETED' and before == after else 3
+    (run_dir/'SUMMARY.md').write_text(summary_text(summary))
+    write_status(run_dir, summary['status'], stop=summary['stop'], cycles=summary['cycles']['n'])
+    return 0 if summary['status'] == 'COMPLETED' else 3
 
 
 if __name__ == '__main__':
