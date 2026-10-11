@@ -594,6 +594,20 @@ for (const [name, edit] of [
     ok(errors.length === 0, `${tag}: no page errors ${errors.join(' | ')}`);
     await context.close();
   }
+  // review round 2, N1: a card that is neither live nor final but carries pitches and a pending pitch is not called 경기 전
+  for (const [name, game] of [['card postponed (Suspended, live false)', { status: 'postponed', status_text: 'Suspended: Rain', live: false }], ['card other (status missing)', { status: undefined, status_text: undefined, live: undefined }], ['card scheduled, live false', { status: 'scheduled', status_text: 'Scheduled', live: false }]]) {
+    const tag = `fail closed [no display_state, ${name}, pitches + next present]`;
+    const server = serve(); const b = live('recommended/ledger_recorded', { pitch_key: '849843:11:2' }); delete b.display_state; b.game = { ...b.game, ...game }; server.body = b;
+    const { context, page, errors } = await open({ width: 390, height: 844, handler: server.handler });
+    await page.goto('http://pz.test/watch/849843');
+    await page.locator('.sv-pitch-summary.sv-state').waitFor();
+    await page.waitForTimeout(2600);   // also after an incremental (?after=) answer, which lists no old pitch
+    const t = await spoken(page);
+    ok(await slot(page).getAttribute('data-state') === 'unconfirmed' && (await slot(page).locator('.sv-chip').innerText()).includes('확인 중') && (await slot(page).locator('.sv-state-msg').innerText()).trim() === UNSURE && !/경기 전|경기 시작 전/.test(t),
+      `${tag}: chip 확인 중 with the default sentence, never 경기 전 (header "${(await page.locator('.sv-live').innerText()).trim()}")`);
+    ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zrow .sv-zone .sv-rec').count() === 0 && errors.length === 0, `${tag}: no candidate, no page errors ${errors.join(' | ')}`);
+    await context.close();
+  }
   // without a display state the fallback still tells the card's own story: final and pregame are not called 확인 중
   for (const [name, build, state, chip] of [['final card', () => { const b = live('final/game_over', { pitch_key: null }); delete b.display_state; return b; }, null, null],
     ['scheduled card', () => { const b = live('pregame/scheduled', { pitch_key: null }); delete b.display_state; return b; }, 'pregame', '경기 전']]) {

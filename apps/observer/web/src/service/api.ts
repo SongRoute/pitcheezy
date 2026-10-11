@@ -122,8 +122,10 @@ const SHOWING: DisplayStateName[] = ['recommended', 'feed_delayed', 'disconnecte
  *  otherwise the default 확인 중 sentence. The pending pitch's key is kept so the D1 guard can say that a list went away. */
 function fallbackDisplay(raw: Raw, card: GameCard): Display {
   const phase = raw.current?.phase;
+  // 경기 전 only when nothing has been thrown and nothing is pending (the cutoff also covers an `?after=` answer, which lists no old pitch)
+  const nothingYet = !(raw.pitches?.length) && (num(raw.cutoff?.index) ?? -1) < 0 && !raw.next;
   const [state, label, message]: [DisplayStateName, string, string | null] = card.status === 'final' ? ['final', ...STATE_COPY.final]
-    : card.status !== 'live' ? ['pregame', ...STATE_COPY.pregame]
+    : card.status !== 'live' && nothingYet ? ['pregame', ...STATE_COPY.pregame]
     : phase === 'between_innings' ? ['waiting', '공수 교대', '공수 교대 중이에요.'] : phase === 'resolving' ? ['waiting', '결과 확인 중', '방금 공의 결과를 기다리고 있어요.']
     : ['unconfirmed', ...STATE_COPY.unconfirmed];
   return { state, reason: phase === 'between_innings' && state === 'waiting' ? 'between_innings' : 'client_fail_closed', label, message,
