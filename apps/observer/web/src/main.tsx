@@ -1,4 +1,5 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Component, Suspense, lazy } from 'react';
+import type { ReactNode } from 'react';
 import type { ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import WatchList from './service/WatchList';
@@ -34,4 +35,15 @@ function page() {
   // the one empty extension point for the hosting page (feedback / analytics are the host's, never ours): see service/HostSlot.tsx
   return __PZ_STATIC__ ? <>{screen}<HostSlot screen={game ? 'game' : 'list'} gamePk={game} /></> : screen;
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode>{page()}</React.StrictMode>);
+/** One boundary around the screens: an exception while drawing (a file with a value the screen did not expect) shows plain words and
+ *  a reload control instead of a blank page. The exception text is never shown. */
+class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return <div className="sv-page"><main className="sv-center sv-crash" role="alert"><p>화면을 표시하지 못했어요. 새로 고치면 다시 불러와요.</p>
+      <button className="sv-btn" onClick={() => window.location.reload()}>새로 고침</button></main></div>;
+  }
+}
+createRoot(document.getElementById('root')!).render(<React.StrictMode><ScreenBoundary>{page()}</ScreenBoundary></React.StrictMode>);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { fetchDates, fetchGames, fetchPublishHealth, fetchPublishedDates, fetchPublishedGames } from './api';
+import { FetchError, fetchDates, fetchGames, fetchPublishHealth, fetchPublishedDates, fetchPublishedGames } from './api';
 import type { GameList } from './api';
 import type { GameCard } from './model';
 import { dateHeading, inningText, kstTime, shiftDate, short, todayKst } from './model';
@@ -121,7 +121,7 @@ export default function WatchList() {
       } catch (e) {
         if (signal.aborted) return false;
         good = false;
-        if (!shown) setError(e instanceof Error ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen
+        if (!shown) setError(e instanceof FetchError ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen
       }
       if (signal.aborted || document.hidden) return good;   // hidden meanwhile: the follow-up read waits until the tab is back
       try { const h = await fetchPublishHealth(signal); if (!signal.aborted) { setHealth(h); setHealthFresh(true); } } catch { /* the last health stays */ }

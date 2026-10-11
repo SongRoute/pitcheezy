@@ -40,7 +40,7 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
  *  ends like an unreachable server instead of leaving the request (and every later poll) waiting for ever.
  *  A missing file keeps its HTTP status (404); an answer that is not JSON (half-written file, a host's HTML fallback page) is treated
  *  like an unreachable server (status 0) so the screen keeps its last state and asks again. */
-async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promise<{ body: T; stamp: PublishStamp }> {
+async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promise<{ body: T; stamp: Omit<PublishStamp, 'seenAt'> & { seq: number } }> {
   const path = publishedPath(file);
   if (path === null) throw new FetchError('자료를 불러오지 못했어요.', 404);   // not a real date / game number: nothing is asked
   const timeout = new AbortController();
@@ -63,6 +63,7 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
     if (raw === null || typeof raw !== 'object') throw new FetchError('서버 응답을 읽지 못했어요.', 0);
     const p = unwrapPublished<T>(raw);
+    if (p.seq === null) throw new FetchError('서버 응답을 읽지 못했어요.', 0);   // no integer sequence: cannot be ordered, so never applied
     if (p.publishedAt) observePublishTime(Date.parse(p.publishedAt));   // used as server time only when no hosting time is readable
     return { body: p.body, stamp: { seq: p.seq, publishedAt: p.publishedAt, final: p.final } };
   } finally { window.clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
@@ -72,11 +73,15 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
  *  A sequence is the publish cycle that last wrote that file, so it is compared per file only, never across files. */
 const applied = new Map<string, { stamp: PublishStamp & { seq: number }; value: unknown }>();
 async function readPublished<T, R>(file: PublishedFile, signal: AbortSignal | undefined, shape: (body: T) => R): Promise<{ value: R; stamp: PublishStamp }> {
-  const { body, stamp } = await getPublished<T>(file, signal);
+  const got = await getPublished<T>(file, signal);
   const key = publishedPath(file)!, last = applied.get(key);
-  if (stamp.seq !== null && last && stamp.seq < last.stamp.seq) return { value: last.value as R, stamp: last.stamp };
-  const value = shape(body);
-  if (stamp.seq !== null) applied.set(key, { stamp: { ...stamp, seq: stamp.seq }, value });
+  if (last && got.stamp.seq < last.stamp.seq) return { value: last.value as R, stamp: last.stamp };
+  let value: R;
+  // a body that does not have the expected shape is an unreadable answer; the raw exception never reaches the screen
+  try { value = shape(got.body); } catch (e) { throw e instanceof FetchError ? e : new FetchError('서버 응답을 읽지 못했어요.', 0); }
+  // the same sequence seen again keeps the moment it was first seen
+  const stamp = { ...got.stamp, seenAt: last && last.stamp.seq === got.stamp.seq ? last.stamp.seenAt : performance.now() };
+  applied.set(key, { stamp, value });
   return { value, stamp };
 }
 /** `v1/health.json`: last publish sequence and time. Only the publish stamp is read. */
@@ -85,15 +90,26 @@ export async function fetchPublishHealth(signal?: AbortSignal): Promise<PublishS
 }
 /** `v1/game/<pk>.json`: always the whole game (no cursor, no merge). */
 export async function fetchPublishedDetail(game: number, signal?: AbortSignal): Promise<{ detail: Detail; stamp: PublishStamp }> {
-  const got = await readPublished<Raw, Detail>({ kind: 'game', gamePk: game }, signal, normalizeDetail);
+  const got = await readPublished<Raw, Detail>({ kind: 'game', gamePk: game }, signal, body => {
+    const detail = normalizeDetail(body);
+    // fail closed: a file that holds another game is never drawn under this game's address
+    if (detail.game.game_pk !== game) throw new FetchError('자료를 불러오지 못했어요.', 404);
+    return detail;
+  });
   return { detail: got.value, stamp: got.stamp };
 }
 /** `v1/games/<date>.json`. No file for a date = nothing published for it (a date outside the archive and the followed window). */
 export async function fetchPublishedGames(date: string, signal?: AbortSignal): Promise<GameList> {
   try {
-    return (await readPublished<{ games: Raw[]; live_ok?: boolean }, GameList>({ kind: 'games', date }, signal, body =>
-      Object.assign(markDoubleheaders(body.games.map(normalizeCard).filter(g => g.kst_date === date))
-        .sort((a, b) => (a.start ?? '').localeCompare(b.start ?? '') || a.game_pk - b.game_pk), { liveOk: body.live_ok !== false }))).value;
+    return (await readPublished<{ games: unknown; live_ok?: boolean }, GameList>({ kind: 'games', date }, signal, body => {
+      if (!Array.isArray(body.games)) throw new FetchError('서버 응답을 읽지 못했어요.', 0);
+      // only rows that are objects with a positive integer game number, each game once (a link is built from that number)
+      const seen = new Set<number>();
+      const rows = (body.games as unknown[]).filter((r): r is Raw => r !== null && typeof r === 'object' && Number.isSafeInteger((r as Raw).game_pk)
+        && (r as Raw).game_pk > 0 && !seen.has((r as Raw).game_pk) && seen.add((r as Raw).game_pk) !== undefined);
+      return Object.assign(markDoubleheaders(rows.map(normalizeCard).filter(g => g.kst_date === date))
+        .sort((a, b) => (a.start ?? '').localeCompare(b.start ?? '') || a.game_pk - b.game_pk), { liveOk: body.live_ok !== false });
+    })).value;
   } catch (e) {
     if (e instanceof FetchError && e.status === 404) return Object.assign([], { liveOk: true });
     throw e;
@@ -147,7 +163,7 @@ function status(raw: Raw): { status: GameStatus; text: string } {
 }
 export function normalizeCard(raw: Raw): GameCard {
   const st = status(raw);
-  return { venue: raw.venue ?? null, away_abbr: raw.away_abbr ?? null, home_abbr: raw.home_abbr ?? null, game_pk: raw.game_pk, start: raw.start ?? null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
+  return { venue: raw.venue ?? null, away_abbr: raw.away_abbr ?? null, home_abbr: raw.home_abbr ?? null, game_pk: raw.game_pk, start: typeof raw.start === 'string' ? raw.start : null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
     status: st.status, status_text: st.text, away_team: raw.away_team, home_team: raw.home_team,
     away_score: num(raw.away_score), home_score: num(raw.home_score), inning: num(raw.inning), half: raw.half ?? null,
     game_number: num(raw.game_number) ?? 1, double_header: raw.double_header === true, embargoed: raw.embargoed === true };

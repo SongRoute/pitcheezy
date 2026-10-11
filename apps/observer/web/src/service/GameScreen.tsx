@@ -48,7 +48,8 @@ const hhmm = (ms: number) => new Date(ms).toLocaleTimeString('en-GB', { timeZone
 export const gameIdFromPath = () => {
   const m = /^\/(?:watch|game|live)\/(\d+)\/?$/.exec(window.location.pathname);
   const q = new URLSearchParams(window.location.search).get('game');
-  const id = Number(m?.[1] ?? q);
+  // public bundle: `?game=` counts only as plain decimal digits (no 1e3, 0x10, signs or spaces)
+  const id = Number(m?.[1] ?? (__PZ_STATIC__ && !/^[0-9]+$/.test(q ?? '') ? NaN : q));
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 

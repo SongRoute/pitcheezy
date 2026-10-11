@@ -65,14 +65,14 @@ type Raw = Record<string, any>;
  *  `sequence` is the publish cycle that last wrote THIS file, so it is only ever compared with the same file's earlier value.
  *  Two older guesses are still accepted so a change of mind is absorbed here only:
  *      { ...body, publish_seq, published_at }          and          { publish_seq, published_at, body: { ... } }
- *  A file with none of them is passed through with sequence / time unknown (no ordering or staleness can then be judged from it). */
+ *  A file without an integer sequence comes back with `seq: null`; the reader (api.ts) does not apply such a file (it cannot be ordered). */
 export function unwrapPublished<T>(raw: unknown): Published<T> {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Raw;
   const p = r.publish !== null && typeof r.publish === 'object' ? r.publish as Raw : null;
   const enveloped = !p && r.body !== null && typeof r.body === 'object' && !Array.isArray(r.body) && ('publish_seq' in r || 'published_at' in r);
   const seq = p ? p.sequence : r.publish_seq, at = p ? p.published_at : r.published_at;
   return { body: (enveloped ? r.body : raw) as T, final: p?.final === true,
-    seq: typeof seq === 'number' && Number.isFinite(seq) ? seq : null,
+    seq: Number.isSafeInteger(seq) ? seq as number : null,   // an ordering needs an integer: a string or a fraction is "no sequence"
     publishedAt: typeof at === 'string' && Number.isFinite(Date.parse(at)) ? at : null };
 }
 
@@ -116,7 +116,8 @@ export function serverNow(windowMs: number): { ms: number; clock: ServerClock } 
 export const clockWindowMs = (pollMs: number) => 2 * staleAfterMs(pollMs);
 
 // ---------- staleness ("갱신 지연") ----------
-export type PublishStamp = { seq: number | null; publishedAt: string | null; final: boolean };
+/** `seenAt`: the page's monotonic time at which this sequence of this file was first applied. */
+export type PublishStamp = { seq: number | null; publishedAt: string | null; final: boolean; seenAt: number };
 export type PublishLag = { lagMs: number; clock: 'publisher' | ServerClock };
 /** How far behind the published state is; null = cannot be judged (no publish time seen).
  *  1. publisher clock only: health.json's last publish − this game file's publish time. The publisher rewrites a game file that is not
@@ -124,14 +125,17 @@ export type PublishLag = { lagMs: number; clock: 'publisher' | ServerClock };
  *     health.json's `unavailable_games`). Never for a file marked `publish.final` (it keeps its old time on purpose). The caller
  *     passes `file` only for a game whose own status says it is in play; for any other game (pregame, delayed, postponed) only
  *     health.json is judged, so a fresh health.json is never late.
- *  2. server time now (see above) − the newest publish time seen (health.json, else the game file): the publisher itself stopped. */
+ *  2. server time now (see above) − the newest publish time seen (health.json, else the game file): the publisher itself stopped.
+ *  A publish time that is AHEAD of server time (publisher clock wrong, a bad file) says nothing: it is left out of 1, and for 2 the
+ *  lag is then the time since that publish was first seen on this page, so a publisher that stops is still noticed. */
 export function publishLag(file: PublishStamp | null, health: PublishStamp | null, now: { ms: number; clock: ServerClock } | null): PublishLag | null {
   const ms = (s: PublishStamp | null) => s?.publishedAt ? Date.parse(s.publishedAt) : null;
   const fileAt = file?.final ? null : ms(file), healthAt = ms(health);
+  const ahead = (at: number) => now !== null && at > now.ms;
   const out: PublishLag[] = [];
-  if (fileAt !== null && healthAt !== null) out.push({ lagMs: healthAt - fileAt, clock: 'publisher' });
-  const newest = Math.max(healthAt ?? -Infinity, fileAt ?? -Infinity);
-  if (now && Number.isFinite(newest)) out.push({ lagMs: now.ms - newest, clock: now.clock });
+  if (fileAt !== null && healthAt !== null && !ahead(fileAt) && !ahead(healthAt)) out.push({ lagMs: healthAt - fileAt, clock: 'publisher' });
+  const newest = healthAt !== null && (fileAt === null || healthAt >= fileAt) ? { at: healthAt, stamp: health! } : fileAt !== null ? { at: fileAt, stamp: file! } : null;
+  if (now && newest) out.push(ahead(newest.at) ? { lagMs: performance.now() - newest.stamp.seenAt, clock: 'elapsed' } : { lagMs: now.ms - newest.at, clock: now.clock });
   return out.length ? out.reduce((a, b) => b.lagMs > a.lagMs ? b : a) : null;
 }
 export const isPublishStale = (lag: PublishLag | null, pollMs: number) => lag !== null && lag.lagMs > staleAfterMs(pollMs);
