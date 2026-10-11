@@ -23,8 +23,8 @@ const GAME = '/api/service/games/849843';
 const NOTE = '올해 9월 27일까지 이 투수가 같은 상황에서 실제로 던진 공 160개의 비율입니다. 추천이나 다음 공 예측이 아닙니다.';
 // the card profile_reference gave for Grant Taylor, 0-0 against a right-handed batter (game 849831, in-process check 2026-10-11)
 const CARD = { kind: 'profile_reference', reason_code: 'unsupported/profile_reference', title: '이 투수가 올해 이 카운트·타자 방향에서 자주 던진 공', chip: '참고 · 기록 통계',
-  items: [['SI', '싱커', 29, 47], ['FF', '포심', 28, 44], ['SL', '슬라이더', 24, 38], ['CU', '커브', 19, 31]].map(([pitch_type, pitch_label, share_pct, count]) => ({ pitch_type, pitch_label, share: share_pct / 100, share_pct, count })),
-  other: null, sample: { pitches: 160, batter_side: 'R', scope: 'count_and_batter_side', balls: 0, strikes: 0 }, as_of: '2026-09-27', note: NOTE,
+  items: [['SI', '싱커', 29], ['FF', '포심', 28], ['SL', '슬라이더', 24], ['CU', '커브', 19]].map(([pitch_type, pitch_label, share_pct]) => ({ pitch_type, pitch_label, share_pct })),
+  other: null, sample: { pitches: 160, batter_side: 'R', balls: 0, strikes: 0 }, as_of: '2026-09-27', note: NOTE,
   };   // the public subset the route sends (no provenance)
 const EXPECT = { kind: 'step5_expectation', lead: '던지기 전 예상', pitch_type: 'SL', pitch_label: '슬라이더', items: [{ leaf: 'narrow_whiff', label: '헛스윙', pct: 12, pct_text: '12%' }, { leaf: 'ground_ball_in_play', label: '땅볼', pct: 9, pct_text: '9%' }],
   text: '던지기 전 예상: 헛스윙 12% · 땅볼 9%', note: '2024 모델 · 참고', explain: '이 공 하나가 어떻게 끝날지 본 비율이에요. 헛스윙은 휘둘러서 못 맞힌 경우(파울팁 제외), 땅볼은 이 공을 쳐서 땅볼 타구가 된 경우예요. 스윙했을 때만 따진 비율이 아니에요.',
@@ -35,6 +35,7 @@ function state(name, reason, label, message, shown) {
     feed: { ok: true, delayed: false, lag_s: 18.2, lag_max_s: 24, lag_measured: true, lag_threshold_s: 45, thresholds_provisional: true, last_ok_at: null, failing_since: null, failing_for_s: null, received_at: null, provider_order: 'ordered' },
     ledger: { status: 'recorded', outcome: 'first', why: null, store_ok: true } };
 }
+const LONG = { ...CARD, items: [['SL', '슬라이더', 40], ['CH', '체인지업', 26], ['FF', '포심', 23]].map(([pitch_type, pitch_label, share_pct]) => ({ pitch_type, pitch_label, share_pct })) };
 function liveBody({ reason = 'unknown_pitcher', reference = CARD, recommended = false, expectation, viewer = null } = {}) {
   const body = clone(fx.live_more);
   body.source = { kind: 'live', session_id: null }; body.receipts = null;
@@ -85,7 +86,8 @@ for (const reason of ['unknown_pitcher', 'no_supported_pitch_types']) {
   ok(await slot.getAttribute('data-state') === 'unsupported' && (await slot.locator('.sv-chip').innerText()).trim().endsWith('추천 없음'), `A2 ${reason}: the state is still "추천 없음"`);
   ok((await slot.locator('.sv-state-msg').innerText()).trim() === UNSUPPORTED[reason], `A2 ${reason}: its sentence is unchanged`);
   const teaser = (await page.locator('.sv-ref-teaser').innerText()).replace(/\s+/g, ' ');
-  ok(/참고 · 기록 통계/.test(teaser) && /싱커 29% · 포심 28% · 슬라이더 24% · 커브 19%/.test(teaser), `A2 ${reason}: reference line with its chip ("${teaser}")`);
+  ok(/^참고 · 기록 통계 자주 던진 공 싱커 29% · 포심 28% … ›$/.test(teaser), `A2 ${reason}: chip, "자주 던진 공", the first two and … ("${teaser}")`);
+  ok(await page.evaluate(() => ['.sv-ref-chip', '.sv-ref-line'].every((s) => { const e = document.querySelector(s); return e.scrollWidth <= e.clientWidth + 1; })), `A2 ${reason}: nothing in the line is cut off`);
   ok(await page.locator('.sv-zone:not(.mini) .sv-rec').count() === 0 && await slot.locator('.sv-rk, .sv-rec-row, .sv-reclist').count() === 0, `A2 ${reason}: nothing on the strike zone, no rank badge, no recommendation list`);
   ok(!REC_WORDS.test(await slot.innerText()) && /추천이 아니에요/.test(await page.locator('.sv-ref-teaser').getAttribute('aria-label')), `A2 ${reason}: spoken as a reference, not a recommendation`);
   const [teal, ink] = await page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue('--sv-teal').trim(), getComputedStyle(document.querySelector('.sv-ref-line')).color]);
@@ -96,14 +98,17 @@ for (const reason of ['unknown_pitcher', 'no_supported_pitch_types']) {
   const card = (await page.locator('.sv-sheet').innerText()).replace(/\s+/g, ' ');
   ok(/참고 · 기록 통계/.test(card) && card.includes(CARD.title), `A2 ${reason}: the card has the chip and the title`);
   ok(['싱커 29%', '포심 28%', '슬라이더 24%', '커브 19%'].every((t) => card.includes(t)), `A2 ${reason}: items read "구종 NN%"`);
-  ok(card.includes('올해 9월 27일까지 같은 상황 160구') && card.includes(NOTE), `A2 ${reason}: sample line and the note that it is not a recommendation or a prediction`);
+  ok(card.includes('2026년 9월 27일까지 같은 상황 160구') && card.includes(NOTE), `A2 ${reason}: sample line and the note that it is not a recommendation or a prediction`);
   ok(card.includes('추천 없음') && !REC_WORDS.test(card) && !/abcdef|SERVICE_PROFILE|sha|scope/.test(card) && await page.locator('.sv-sheet .sv-zone, .sv-sheet .sv-rk').count() === 0, `A2 ${reason}: the sheet repeats the state, shows no rank, zone or provenance`);
   if (shots && reason === 'unknown_pitcher') await page.screenshot({ path: path.join(shots, 'A2-reference-card-sheet-390x844.png') });
   await page.keyboard.press('Escape');
   ok(errors.length === 0, `A2 ${reason}: no page errors ${errors.join(' | ')}`);
   await context.close();
 }
+const shaped = (change) => { const b = liveBody(); change(b); return b; };
 for (const [name, body] of [['field absent (switch off)', liveBody({ reference: null })], ['a recommendation is shown', liveBody({ recommended: true })],
+  ['unsupported for an at-bat reason', shaped((b) => { b.display_state.reason = 'at_bat_rejected'; })], ['not a pending pitch (resolving)', shaped((b) => { b.current.phase = 'resolving'; })],
+  ['a card without its chip', shaped((b) => { delete b.next.reference.chip; })],
   ['another kind of card', liveBody({ reference: { ...CARD, kind: 'something_else' } })], ['a card without items', liveBody({ reference: { ...CARD, items: [] } })]]) {
   const { context, page, errors } = await open({ body });
   await page.waitForTimeout(600);
@@ -111,10 +116,43 @@ for (const [name, body] of [['field absent (switch off)', liveBody({ reference: 
   ok(errors.length === 0, `A2 ${name}: no page errors ${errors.join(' | ')}`);
   await context.close();
 }
+{ // R2/R3: the chip is the screen's own words; the date is the server's, in full, whatever the year
+  const { context, page } = await open({ body: liveBody({ reference: { ...CARD, chip: '오늘의 추천', as_of: '2025-09-27' } }) });
+  await page.locator('.sv-ref-teaser').waitFor();
+  ok((await page.locator('.sv-ref-chip').innerText()).trim() === '참고 · 기록 통계' && !/오늘의 추천/.test(await page.locator('.sv-page').innerText()), 'A2: the chip always reads "참고 · 기록 통계" (a payload cannot relabel it)');
+  await page.locator('.sv-ref-teaser').click();
+  await page.locator('.sv-ref-card').waitFor();
+  const text = await page.locator('.sv-ref-sample').innerText();
+  ok(text.trim() === '2025년 9월 27일까지 같은 상황 160구' && !/올해/.test(text), `A2: the sample line states the date as sent, no "올해" assumed ("${text.trim()}")`);
+  await context.close();
+}
+{ // R4: the sheet opens only by a tap; when the card goes the sheet goes, and it does not come back by itself
+  let body = liveBody();
+  const { context, page, errors } = await open({ body: () => body });
+  await page.locator('.sv-ref-teaser').click();
+  await page.locator('.sv-ref-card').waitFor();
+  body = shaped((b) => { b.display_state = state('waiting', 'resolving', '결과 확인 중', '방금 공의 결과를 기다리고 있어요.', false); b.current.phase = 'resolving'; b.next = null; });
+  await page.locator('.sv-ref-card').waitFor({ state: 'detached', timeout: 6000 });
+  ok(await page.locator('.sv-sheet').count() === 0, 'A2: the sheet closes when the state is no longer unsupported');
+  body = liveBody();
+  await page.locator('.sv-ref-teaser').waitFor({ timeout: 6000 });
+  await page.waitForTimeout(2500);
+  ok(await page.locator('.sv-sheet').count() === 0, 'A2: back to unsupported: the line returns, the sheet does not reopen by itself');
+  ok(errors.length === 0, `A2 sheet lifecycle: no page errors ${errors.join(' | ')}`);
+  await context.close();
+}
 { // viewer delay on and the device not synced: the card still shows (it reveals no thrown pitch)
   const { context, page } = await open({ body: liveBody({ viewer: true }) });
   await page.locator('.sv-ref-teaser').waitFor();
   ok(await page.locator('.sv-sync-open').count() === 1 && await page.locator('.sv-ref-teaser').count() === 1, 'A2 with viewer delay on and unsynced: the reference line still shows');
+  await context.close();
+}
+for (const [width, height] of [[390, 844], [390, 664], [375, 553], [360, 640], [320, 568]]) {   // long pitch names
+  const { context, page } = await open({ width, height, body: liveBody({ reference: LONG }) });
+  await page.locator('.sv-ref-teaser').waitFor();
+  const text = (await page.locator('.sv-ref-teaser').innerText()).replace(/\s+/g, ' ');
+  ok(await page.evaluate(() => ['.sv-ref-chip', '.sv-ref-line'].every((s) => { const e = document.querySelector(s); return e.scrollWidth <= e.clientWidth + 1; })) && /^참고 · 기록 통계 자주 던진 공 슬라이더 40%/.test(text) && /… ›$/.test(text),
+    `A2 ${width}x${height} long names: not cut off ("${text}")`);
   await context.close();
 }
 for (const [width, height] of [[390, 844], [390, 664], [375, 553], [360, 640], [320, 568]]) {
@@ -131,6 +169,8 @@ for (const [width, height] of [[390, 844], [390, 664], [375, 553], [360, 640], [
     ok(out.length === 0, `A2 ${width}x${height} ${reason}: the line stays inside the slot ${out.join(',')}`);
     const visible = await page.evaluate(() => { const m = document.querySelector('.sv-state-msg').getBoundingClientRect(), t = document.querySelector('.sv-ref-teaser').getBoundingClientRect(); return t.height >= 24 && t.top >= m.bottom - 0.5; });
     ok(visible, `A2 ${width}x${height} ${reason}: sentence and reference line do not overlap`);
+    const whole = () => page.evaluate(() => ['.sv-ref-chip', '.sv-ref-line'].every((s) => { const e = document.querySelector(s); return e.scrollWidth <= e.clientWidth + 1; }) && /자주 던진 공/.test(document.querySelector('.sv-ref-line').innerText));
+    ok(await whole(), `A2 ${width}x${height} ${reason}: chip whole, "자주 던진 공" and the shown items not cut off ("${(await page.locator('.sv-ref-teaser').innerText()).replace(/\s+/g, ' ')}")`);
     if (shots && reason === 'unknown_pitcher' && width === 375) await page.screenshot({ path: path.join(shots, 'A2-reference-line-375x553.png') });
     await context.close();
   }

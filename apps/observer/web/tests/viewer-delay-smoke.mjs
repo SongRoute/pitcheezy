@@ -237,6 +237,24 @@ for (const [name, make] of [['switch off', () => server({ enabled: false })], ['
   await b.page.waitForTimeout(2500);
   ok(delays(b.asks).at(-1) === '50' && /50초 늦춰 보는 중/.test(await b.page.locator('.sv-line-text').innerText()), `second tab: asks at 50 s from then on (${delays(b.asks).slice(-3).join(', ')})`);
   ok(gameAsks(b.asks).filter((u) => u.searchParams.get('delay') === '50')[0].searchParams.get('after') === null, 'second tab: the first request at the new delay is a full one');
+  // F1: quick successive changes in the first tab: the second tab ends at the LAST one, not at one in between
+  for (let i = 0; i < 6; i++) await a.page.locator('.sv-sync-adjust button', { hasText: '-5초' }).click({ delay: 20 });   // 50 → 20, six writes
+  await b.page.waitForFunction(() => /20초 늦춰 보는 중/.test(document.querySelector('.sv-line-text')?.textContent ?? ''), null, { timeout: 8000 }).then(() => ok(true, 'second tab: after six quick changes it shows the last delay (20 s)'), () => ok(false, 'second tab: after six quick changes it shows the last delay (20 s)'));
+  await b.page.waitForTimeout(4500);
+  ok(delays(b.asks).slice(-2).every((d) => d === '20') && JSON.parse(await stored(b.page)).delay_s === 20, `second tab: keeps asking at 20 s and did not write an older value back (${delays(b.asks).slice(-3).join(', ')})`);
+  // F2: a list page in a third tab follows too
+  const list = await context.newPage(); const listAsks = [];
+  await list.route('http://pz.test/**', async (route) => { const url = new URL(route.request().url());
+    if (url.pathname.startsWith('/api/')) { listAsks.push(url); return s.handler(route, url); }
+    const file = path.join(DIST, url.pathname); const target = existsSync(file) && statSync(file).isFile() ? file : path.join(DIST, 'index.html');
+    return route.fulfill({ body: readFileSync(target), contentType: TYPES[path.extname(target)] ?? 'application/octet-stream' }); });
+  await list.goto('http://pz.test/watch?date=2026-10-02');
+  await list.locator('.sv-list .sv-card').first().waitFor();
+  const listDelays = () => listAsks.filter((u) => u.pathname === '/api/service/games').map((u) => u.searchParams.get('delay'));
+  ok(listDelays().at(-1) === '20', `list tab: asks at the device's delay (${listDelays().join(', ')})`);
+  await a.page.locator('.sv-sync-adjust button', { hasText: '+5초' }).click();
+  await list.waitForTimeout(1500);
+  ok(listDelays().at(-1) === '25' && (await list.locator('.sv-card-team b').allInnerTexts()).every((t) => t.trim() === ''), `list tab: follows a delay changed in another tab (${listDelays().slice(-2).join(', ')})`);
   await context.close();
 }
 {
