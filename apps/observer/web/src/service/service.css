@@ -592,3 +592,26 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 @media(max-height:780px){.sv-game.has-display .sv-duel{height:24px}}
 /* nothing in the zone row takes taps; its transparent area must not swallow taps on the summary that overlaps its lower edge */
 .sv-zrow,.sv-zrow .sv-zone{pointer-events:none}
+
+/* ---- viewer delay (중계 맞추기, 2026-10-11; rendered only when the live payload carries `viewer` with the feature on) ----
+   The entry sits in the reserved status line (fixed height), the folded row inside the fixed-height state slot: nothing moves. */
+.sv-notice.line .sv-sync-open{flex:none;color:var(--sv-teal);text-underline-offset:3px;padding:0 2px;min-width:44px}
+.sv-notice.line .sv-link-btn+.sv-sync-open{margin-left:6px}
+.sv-notice.line.warn .sv-sync-open,.sv-notice.line.late .sv-sync-open{color:inherit}
+.sv-fold{border:1px dashed var(--sv-line);border-radius:var(--sv-radius-s);background:var(--sv-past);color:var(--sv-ink);font-size:13px;font-weight:600;min-height:32px;padding:0 10px;white-space:nowrap;position:relative}
+.sv-fold::after{content:"";position:absolute;inset:-6px -4px}
+.sv-strip .sv-card.folded .sv-card-cap{color:var(--sv-muted)}
+.sv-strip .sv-card.folded .sv-card-cap>span:last-child{font-size:11px;letter-spacing:-.3px}
+.sv-sync-host{font-size:16px;color:var(--sv-ink);font-variant-numeric:tabular-nums}
+.sv-sync{display:grid;gap:10px;padding:4px 0 2px}
+.sv-sync-why{margin:0;font-size:15px;line-height:1.45}
+.sv-sync-tap{min-height:112px;border:0;border-radius:16px;background:var(--sv-teal);color:#fff;display:grid;align-content:center;justify-items:center;gap:6px;padding:12px;touch-action:manipulation}
+.sv-sync-tap b{font-size:20px;font-weight:700}.sv-sync-tap small{font-size:13px;opacity:.9}
+.sv-sync-tap:active{transform:scale(.985)}
+.sv-sync-status{margin:0;min-height:44px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:16px;font-weight:650;line-height:1.35}
+.sv-sync[data-phase="ok"] .sv-sync-status{color:var(--sv-teal);font-size:18px}
+.sv-sync-adjust{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto auto;gap:6px;align-items:center}
+.sv-sync-adjust .sv-btn{min-height:44px;min-width:52px;padding:0 6px}
+.sv-sync-now{text-align:center;font-size:14px;color:var(--sv-muted);white-space:nowrap}.sv-sync-now b{font-size:22px;color:var(--sv-ink);margin-right:1px}
+.sv-sync-hint{margin:0;font-size:13px;text-align:center}
+.sv-sync-foot{justify-content:space-between;margin-top:2px}.sv-sync-foot .sv-btn{min-height:44px;flex:1 1 0}

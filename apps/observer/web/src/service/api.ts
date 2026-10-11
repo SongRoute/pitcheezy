@@ -4,6 +4,7 @@
  *  still renders real data before the contract lands. The fallback never invents scores or recommendations. */
 import type { Correction, Display, DisplayStateName, Receipt, LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
 import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, plainZone, shiftDate } from './model';
+import { learnViewer, normalizeViewer, viewerOn, withDelay } from './viewer';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
 export const TIMEOUT_MS = 15000;
@@ -165,7 +166,8 @@ const PHASES: unknown[] = ['pregame', 'pre_pitch', 'resolving', 'between_innings
 export type GameList = GameCard[] & { liveOk?: boolean };
 export async function fetchGames(date: string, signal?: AbortSignal): Promise<GameList> {
   try {
-    const body = await getJson<{ games: Raw[]; live_ok?: boolean }>(`/service/games?date=${date}`, signal);
+    let body = await getJson<{ games: Raw[]; live_ok?: boolean }>(withDelay(`/service/games?date=${date}`), signal);
+    if (!demoParam() && learnViewer(body)) body = await getJson(withDelay(`/service/games?date=${date}`), signal);  // viewer delay switched on: ask again at this device's delay
     return Object.assign(markDoubleheaders(body.games.map(normalizeCard).filter(g => g.kst_date === date))
       .sort((a, b) => (a.start ?? '').localeCompare(b.start ?? '') || a.game_pk - b.game_pk), { liveOk: body.live_ok !== false });
   } catch (e) { if (!(e instanceof FetchError) || e.status !== 404 || e.message !== ROUTE_MISSING || demoParam()) throw e; }
@@ -180,10 +182,10 @@ export async function fetchGames(date: string, signal?: AbortSignal): Promise<Ga
 // ---------- detail ----------
 let serviceMissing = false;  // backend without /api/service (404 on the route itself): use the legacy feeds; never in demo
 /** Full history from the backend. `after` asks only for newer pitches (contract §3); the caller merges with mergeDetail. */
-export async function fetchDetail(game: number, signal?: AbortSignal, after?: number): Promise<Detail> {
+export async function fetchDetail(game: number, signal?: AbortSignal, after?: number, delay: number | null = null): Promise<Detail> {
   if (!serviceMissing || demoParam()) {
     try {
-      const raw = await getJson<Raw>(`/service/games/${game}${after === undefined ? '' : `?after=${after}`}`, signal);
+      const raw = await getJson<Raw>(withDelay(`/service/games/${game}${after === undefined ? '' : `?after=${after}`}`, demoParam() ? null : delay), signal);
       return normalizeDetail(raw);
     } catch (e) {
       if (!(e instanceof FetchError) || e.status !== 404 || demoParam()) throw e;
@@ -197,6 +199,7 @@ export async function fetchDetail(game: number, signal?: AbortSignal, after?: nu
 export function mergeDetail(old: Detail, inc: Detail): Detail | null {
   if (inc.cutoff !== null && old.cutoff !== null && inc.cutoff < old.cutoff) return null;
   if (inc.session !== old.session) return null;  // contract rev2 client cache rule: a new demo session never merges with the old one
+  if ((inc.viewer?.delay_s ?? null) !== (old.viewer?.delay_s ?? null) || inc.viewer?.buffering || old.viewer?.buffering) return null;  // another viewer delay = another moment: never merged
   // a receipt changed somewhere (a pitch became unconfirmed, corrected, or plain received again): take the full history again
   if ((inc.receipts_version ?? null) !== (old.receipts_version ?? null)) return null;
   const keep = old.pitches.filter(p => !inc.pitches.some(n => n.index === p.index));
@@ -242,7 +245,7 @@ export function normalizeDetail(raw: Raw): Detail {
     next, display, receipts_version: text(raw.receipts?.version), phase: PHASES.includes(cur?.phase) ? cur.phase : null, live_source: provenance === 'captured_live',
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
     zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),
-    linescore_asof: linescoreRev3(raw.linescore), players: playersRev3(raw) };
+    linescore_asof: linescoreRev3(raw.linescore), players: playersRev3(raw), viewer: normalizeViewer(raw), viewer_on: viewerOn(raw) };
 }
 
 /** Finished-game fallback: the precomputed watch file holds each pre-pitch record and, per pitch, the actual. */

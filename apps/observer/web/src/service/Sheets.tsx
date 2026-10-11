@@ -49,7 +49,9 @@ export function InfoSheet({ onClose, notes }: { onClose: () => void; notes: stri
   </Sheet>;
 }
 
-export function PaSheet({ pas, selected, onPick, onClose, onBox }: { pas: Pa[]; selected: string | null; onPick: (pa: Pa) => void; onClose: () => void; onBox: () => void }) {
+export function PaSheet({ pas, selected, onPick, onClose, onBox, foldText = null }: { pas: Pa[]; selected: string | null; onPick: (pa: Pa) => void; onClose: () => void; onBox: () => void;
+  /** viewer delay, device not synced yet: finished plate appearances do not say how they ended */
+  foldText?: string | null }) {
   const current = pas.find(p => p.pa_key === selected) ?? pas[0];
   const key = (p: Pa) => `${p.inning}:${p.half}`;
   const [half, setHalf] = useState(current ? key(current) : '');
@@ -62,7 +64,7 @@ export function PaSheet({ pas, selected, onPick, onClose, onBox }: { pas: Pa[]; 
     <ol className="sv-pa-list">{visible.map(pa => <li key={pa.pa_key}>
       <button className={`sv-pa-item ${pa.complete ? '' : 'open'}`} aria-current={pa.pa_key === selected ? 'true' : undefined} onClick={() => onPick(pa)}>
         <span className="sv-pa-who">{pa.batting_order ? `${pa.batting_order}번 · ` : ''}<b>{pa.batter}</b>{pa.pa_key === selected && <small> · 보는 중</small>}</span>
-        <span className="sv-pa-result">{pa.result} · {pa.pitch_count ?? (Number.isFinite(pa.first) && Number.isFinite(pa.last) ? Math.max(0, pa.last - pa.first + 1) : '–')}구</span>
+        <span className="sv-pa-result">{foldText && pa.complete ? foldText : pa.result} · {pa.pitch_count ?? (Number.isFinite(pa.first) && Number.isFinite(pa.last) ? Math.max(0, pa.last - pa.first + 1) : '–')}구</span>
       </button></li>)}</ol>
     {!visible.length && <p className="sv-muted">공개된 타석이 아직 없어요.</p>}
   </Sheet>;
@@ -80,10 +82,12 @@ const LEGACY_ABSENT = '이 투구의 저장된 추천이 없습니다.';
 export const absentLine = (rec: Rec, fallback = ABSENT_PAST) => rec.reason && rec.reason.trim() !== LEGACY_ABSENT ? rec.reason : fallback;
 export const provenanceText = (rec: Rec) => PROVENANCE[rec.provenance];
 
-export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false, pair = null, absentText = ABSENT_PAST }:
+export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false, pair = null, absentText = ABSENT_PAST, actualFolded = null }:
   { onClose: () => void; rec: Rec | null; recTitle: string; actual: Actual | null; actualTitle: string; paResult: string | null; notes: string[]; speed: (mph: number | null) => string; extra?: ReactNode; bounds?: Bounds;
     /** live display state: the server's sentence (and any change note) for the pending pitch */
     recNote?: string | null; actualPending?: boolean; actualCorrected?: boolean;
+    /** viewer delay, device not synced yet: the thrown pitch is not described */
+    actualFolded?: string | null;
     /** past pitch with a recorded recommendation: its first pick and the pitch that was thrown, side by side in words (never a score) */
     pair?: { rec: string; actual: string } | null; absentText?: string }) {
   return <Sheet title="자세히" onClose={onClose}>
@@ -103,7 +107,8 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
     </section>
     <section className="sv-detail">
       <h3>{actualTitle}</h3>
-      {actualPending ? <p className="sv-muted">이 공을 다시 확인하고 있어요. 확인되면 구종과 위치를 보여 드려요.</p> : <>
+      {actualFolded ? <p className="sv-muted">{actualFolded}. 화면 위쪽의 ‘중계 맞추기’에서 내 중계에 맞추면 구종·위치·결과를 보여 드려요.</p>
+      : actualPending ? <p className="sv-muted">이 공을 다시 확인하고 있어요. 확인되면 구종과 위치를 보여 드려요.</p> : <>
       {actualCorrected && <p className="sv-muted">이 공의 기록은 처음 받은 뒤에 정정됐어요.</p>}
       {actual && bounds && <div className="sv-detail-zone"><Zone fullWindow bounds={bounds} candidates={rec?.candidates ?? []} actual={actual.x !== null && actual.z !== null ? {x:actual.x,z:actual.z} : null} actualLabel="" setupX={actual.setup_x} /></div>}
       {actual === null ? <p className="sv-muted">아직 던지지 않았어요.</p> : <dl className="sv-dl">

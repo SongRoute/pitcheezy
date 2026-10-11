@@ -1,3 +1,4 @@
+import type { Viewer } from './viewer';
 /** Service (ordinary viewer) data model — UI redesign 2026-10-05 (frontend-001).
  *  One normalized shape for live and finished games so both use the same screen. The backend contract
  *  (pm-jobs/20261005-ui-live-redesign/CONTRACT.md) is mapped onto this in api.ts only. */
@@ -59,6 +60,10 @@ export type Detail = { current_context?: PlayerContext | null; session_status?: 
   players?: Record<string, PlayerInfo> | null;
   /** live only; absent (archive, demo, older backend) → the screen behaves as before the display-state contract. */
   display?: Display | null;
+  /** viewer delay (live route with the feature on); null/absent → no delay parameter, no sync UI, nothing folded. */
+  viewer?: Viewer | null;
+  /** the server's feature switch as this answer states it (false also for an older server that says nothing). */
+  viewer_on?: boolean;
   /** the server's phase even when it sends no situation (between innings: `current.situation` / batter / pitcher are all null). */
   phase?: Phase | null;
   /** true = the live route's answer (`source.kind = 'live'`), whatever the game status; false/absent = archive, demo, legacy feeds. */

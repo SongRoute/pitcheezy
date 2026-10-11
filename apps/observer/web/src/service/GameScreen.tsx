@@ -6,6 +6,9 @@ import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, sh
 import { teamColor } from './teams';
 import Zone from './Zone';
 import { ABSENT_PAST, DetailSheet, InfoSheet, PaSheet, Sheet, absentLine, provenanceText } from './Sheets';
+import SyncSheet, { FOLD_TEXT } from './SyncSheet';
+import type { ViewerSetting } from './viewer';
+import { learnViewer, readViewer, requestDelay, wantedDelay, writeViewer } from './viewer';
 import './service.css';
 
 /** One game screen for live, demo and finished games (UI redesign 2026-10-05).
@@ -126,7 +129,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // the tab was hidden: polling paused on purpose, so that time never counts as a late or lost connection (re-based on return)
   const [hidden, setHidden] = useState(() => document.hidden);
   const [resumed, setResumed] = useState(0);
-  const [sheet, setSheet] = useState<'pa' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | null>(null);
+  const [sheet, setSheet] = useState<'pa' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | 'sync' | null>(null);
+  // viewer delay (중계 맞추기): this device's setting, what the server last said about its limits, and the one-time question
+  const [setting, setSetting] = useState<ViewerSetting>(readViewer);
+  const viewerMeta = useRef<{ max: number | null } | null>(null);
+  const prompted = useRef(false);
   const stripRef = useRef<HTMLDivElement>(null);
   const sheetOpener = useRef<HTMLElement | null>(null);
   const openSheet = (kind: typeof sheet) => { sheetOpener.current = document.activeElement as HTMLElement; setSheet(kind); };
@@ -148,10 +155,21 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     try {
       const old = detailRef.current;
       const last = old?.pitches.length ? old.pitches[old.pitches.length - 1].index : undefined;
-      let next = await fetchDetail(gamePk, ctrl.signal, full || !old || last === undefined ? undefined : last);
+      let next = await fetchDetail(gamePk, ctrl.signal, full || !old || last === undefined ? undefined : last, requestDelay());
       if (old && !full && last !== undefined) {
         const merged = mergeDetail(old, next);
-        next = merged ?? await fetchDetail(gamePk, ctrl.signal);  // cutoff moved back (demo seek/reset): take the full history again
+        next = merged ?? await fetchDetail(gamePk, ctrl.signal, undefined, requestDelay());  // cutoff moved back (demo seek/reset): take the full history again
+      }
+      // Viewer delay: the answer states the server's switch and the delay it was served at. Switched off (or an older server) → no
+      // delay parameter from now on. Served at another delay than this device's (the switch just came on, another default, a
+      // clamp) → that answer is a different moment of the game and is never drawn: ask again in full at this device's delay.
+      for (let round = 0; ; round++) {
+        if (learnViewer({ features: { viewer_delay: { enabled: next.viewer_on === true, default_s: next.viewer?.default_s } } })) setSetting(readViewer());
+        if (!next.viewer) break;
+        const want = next.viewer.max_delay_s !== null ? Math.min(wantedDelay(), next.viewer.max_delay_s) : wantedDelay();
+        if (Math.abs(next.viewer.delay_s - want) < 0.05) break;
+        if (round >= 2) throw new FetchError('자료를 불러오지 못했어요.', 0);
+        next = await fetchDetail(gamePk, ctrl.signal, undefined, requestDelay());
       }
       if (ctrl.signal.aborted) return;
       detailRef.current = next; setDetail(next); setError(null); setLastOk(Date.now());
@@ -162,6 +180,22 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, [gamePk]);
 
   useEffect(() => { void load(true, true); return () => inflight.current?.abort(); }, [load]);
+  /** Another delay is another moment of the game (a longer one is further BACK): nothing already downloaded stays on screen, the
+   *  cursor starts over, and the screen's own D1 memory is cleared so the jump is not announced as a changed recommendation. */
+  const changeDelay = useCallback((seconds: number) => {
+    const max = viewerMeta.current?.max ?? null;
+    setSetting(writeViewer({ delay_s: Math.max(0, max !== null ? Math.min(seconds, max) : seconds), synced: true, asked: true }));
+    inflight.current?.abort(); detailRef.current = null; drawn.current = null;
+    setDetail(null); setError(null);
+    void load(true, true);
+  }, [load]);
+  const viewer = detail && detail.session === null ? detail.viewer ?? null : null;
+  useEffect(() => { if (viewer) viewerMeta.current = { max: viewer.max_delay_s }; }, [viewer]);
+  // first open of a live game on a device that never synced: ask once (the entry in the status line stays for later)
+  useEffect(() => {
+    if (!detail || !viewer || !viewer.prompt || prompted.current || setting.synced || setting.asked || detail.game.status !== 'live' || sheet !== null) return;
+    prompted.current = true; setSheet('sync');
+  }, [detail, viewer, setting, sheet]);
   const live = detail ? detail.session_status !== 'ended' && (detail.game.status === 'live' || (detail.next !== null && detail.game.status !== 'final')) : false;
   // Polling follows the viewer's switch only; the game's LIVE status decides whether there is anything to poll.
   // Failed or slow answers never stop the loop: the next tick asks again, so the screen recovers without a reload.
@@ -216,12 +250,16 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, [detail, sel]);
 
   const byIndex = useMemo(() => new Map(detail?.pitches.map(p => [p.index, p]) ?? []), [detail?.pitches]);
+  // The sync sheet sits beside the page (not inside it) so it stays open, with its own state, while a changed delay reloads the game.
+  const closeSync = () => { if (!readViewer().asked) setSetting(writeViewer({ asked: true })); closeSheet(); };
+  const syncSheet = !import.meta.env.VITE_PUBLISH_BASE && sheet === 'sync' ? <div className="sv-sync-host"><SyncSheet gamePk={gamePk} delay={viewer?.delay_s ?? wantedDelay(setting)} max={viewerMeta.current?.max ?? null}
+    synced={setting.synced} onDelay={changeDelay} onClose={closeSync} /></div> : null;
   if (!detail) {
-    return <div className="sv-page"><TopBar /><main className="sv-center">{error
+    return <><div className="sv-page"><TopBar /><main className="sv-center">{error
       ? <div className="sv-alert" role="alert"><p>{error.status === 423 ? '이 경기는 지금 기록을 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.' : error.text}</p>
         <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 시도</button><a className="sv-btn" href="/watch">경기 목록</a></div>
         {firstLoadRetry && <p className="sv-muted sv-retrying">자동으로 다시 연결하고 있어요.</p>}</div>
-      : <p className="sv-muted" role="status">경기 기록을 불러오는 중…</p>}</main></div>;
+      : <p className="sv-muted" role="status">경기 기록을 불러오는 중…</p>}</main></div>{syncSheet}</>;
   }
 
   const { game } = detail;
@@ -243,7 +281,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const shownPitch = latest ? lastPitch : pitch;
   const paKey = latest ? detail.current?.pa_key ?? lastPitch?.pa_key ?? null : pitch!.pa_key;
   const paPitches = breakNow ? [] : pitches.filter(p => p.pa_key === paKey);
-  const ending = shownPitch?.actual?.event ? detail.pas.find(p => p.pa_key === shownPitch.pa_key && p.complete)?.result ?? null : null;
+  const endingShown = shownPitch?.actual?.event ? detail.pas.find(p => p.pa_key === shownPitch.pa_key && p.complete)?.result ?? null : null;
   const stateSlot = disp !== null && latest && (nextPhase || disp.state === 'pregame');
   const slotNumber = Number(/^\d+:\d+:(\d+)$/.exec(disp?.pitch_key ?? '')?.[1] ?? NaN);
   const nextNumber = nextPhase && !breakNow ? (stateSlot && Number.isInteger(slotNumber) ? slotNumber
@@ -261,10 +299,17 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const feedDown = disp ? !disp.feed.ok : live && (detail.feed.ok === false || (detail.feed.stale_s ?? 0) > 30);
   const stale = clientStale || feedDown;
   // lag_s is a proven lower bound (never an estimate): floor it and say '넘게', never '약'
+  // Viewer delay on (live route, feature on): how far behind this screen is shown, and whether thrown-pitch details are folded.
+  // Folded until this device is synced: every realized pitch detail of a LIVE game (type, speed, location, call/result of each
+  // pitch card, the actual-pitch row of a selected pitch, the detail sheet's actual part and the plate-appearance results).
+  // Score, count, outs, runners, inning, the linescore and the players' game totals stay (PM decision).
+  const behind = viewer ? Math.round(viewer.delay_s) : 0;
+  const fold = viewer !== null && viewer.fold && !setting.synced && game.status === 'live';
+  const openSync = () => openSheet('sync');
   const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
   const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
     : lagText ? { kind: 'late', text: `${LATE} 자료 늦음 · ${lagText}` }
-    : { kind: 'ok', text: live ? (auto ? '실시간으로 받는 중' : '자동 갱신 멈춤') : disp?.message?.replace(/\.$/, '') ?? disp?.label ?? '' };
+    : { kind: 'ok', text: live ? (auto ? (behind > 0 ? `${behind}초 늦춰 보는 중` : '실시간으로 받는 중') : '자동 갱신 멈춤') : disp?.message?.replace(/\.$/, '') ?? disp?.label ?? '' };
   // D1 "no silent flip": server note first; otherwise compare with what this screen last drew for the same pending pitch.
   let clientNote: string | null = null;
   if (stateSlot) {
@@ -287,6 +332,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     }
     if (d!.prev) clientNote = `${d!.sig ? '추천이 갱신됐어요' : '조금 전에 보여 드린 추천은 지금 표시하지 않아요'} (이전: ${d!.prev.top})`;
   }
+  const ending = fold ? null : endingShown;
   const fix = stateSlot ? disp!.correction : null;
   const fixPrev = previousText(fix?.previous ?? null);
   const note = fix ? `${fix.message}${fixPrev ? ` (이전: ${fixPrev})` : ''}` : clientNote;
@@ -324,7 +370,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const actualWait = phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '다음 공 대기 중';
   const list = <RecList rec={rec} emptyText={emptyRec} onOpen={() => openSheet('detail')} lead={held ? '마지막으로 받은 ' : liveRecord ? '투구 전에 기록된 ' : ''} pair={!nextPhase} absentText={absentText} />;
   const top1 = !nextPhase && !pastUnconfirmed && rec?.status === 'ready' ? rec.candidates[0] ?? null : null;
-  const pairText = top1 && actual ? { rec: pickText(top1.pitch_label, top1.zone_label), actual: pickText(actual.pitch_label, actual.zone_label) } : null;
+  const pairText = top1 && actual && !fold ? { rec: pickText(top1.pitch_label, top1.zone_label), actual: pickText(actual.pitch_label, actual.zone_label) } : null;
   // New as-of player context is optional; absent fields stay unknown rather than guessed from an incomplete pitch list.
   const context = latest ? detail.current_context : pitch?.context;
   const fmt = (v: number | null | undefined) => typeof v === 'number' ? v : '–';
@@ -340,7 +386,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const sheetPerson = playerRole === 'b' ? batterP : pitcherP;
   const sheetInfo = info(sheetPerson);
 
-  return <div className={`sv-page sv-game${disp ? ' has-display' : ''}`}>
+  return <><div className={`sv-page sv-game${disp ? ' has-display' : ''}`}>
     <header className="sv-top sv-head">
       <a className="sv-back" href={backHref()} aria-label="경기 목록으로">‹</a>
       <h1 className="sv-head-main" aria-label={`${short(game.away_team)} ${awayScore ?? '–'} 대 ${homeScore ?? '–'} ${short(game.home_team)}. ${venue}${dateHeading(game.kst_date)} ${kstTime(game.start)} 시작`}>
@@ -356,8 +402,10 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         screen reader is not re-triggered every minute or every poll. */}
     {disp ? <div className={`sv-notice line ${line.kind}`} data-kind={error ? 'client' : feedDown ? 'feed' : clientStale ? 'slow' : lagText ? 'late' : 'ok'}>
       <span className="sv-line-text" role="status">{line.kind === 'ok' && live && auto && <i className="sv-line-dot" aria-hidden="true" />}{line.text}<span className="sr-only">{error ? ` ${error.text} 자동으로 다시 연결하고 있어요.` : feedDown ? ' 경기 자료 연결이 잠시 끊겼어요.' : ''}</span></span>
-      {lastOk && <span className="sv-line-time" aria-hidden="true">· {hhmm(lastOk)} 수신</span>}
+      {lastOk && !(viewer && line.kind !== 'ok') && <span className="sv-line-time" aria-hidden="true">· {hhmm(lastOk)} 수신</span>}
       {line.kind !== 'ok' && <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy} aria-label="지금 다시 불러오기">{busy ? '…' : '다시'}</button>}
+      {viewer && <button className="sv-link-btn sv-sync-open" onClick={openSync} aria-haspopup="dialog"
+        aria-label={`중계 맞추기. 지금 ${behind > 0 ? `${behind}초 늦춰 보는 중` : '늦추지 않고 보는 중'}${setting.synced ? '' : ', 아직 맞추지 않았어요'}`}>{setting.synced ? '맞추기' : '중계 맞추기'}</button>}
     </div> : (stale || error) && <p className="sv-notice warn" role="alert" title={error?.text}>
       {error ? '⚠ 연결 끊김' : '⏱ 갱신 늦어짐'}{lastOk ? ` · ${hhmm(lastOk)} 수신` : ''}<span className="sr-only">{error ? ` ${error.text}` : ''}{lastOk ? ` (${clockText(lastOk)})` : ''}</span>
         <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy}>{busy ? '…' : '다시'}</button>
@@ -375,7 +423,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
 
     <section className="sv-stage" aria-label={nextPhase ? '다음 공 추천' : '이 공의 추천과 실제 투구'}>
       <h2 className="sr-only">{stateSlot && !shownRec ? `다음 공: ${eff!.label}` : held ? `마지막으로 받은 추천 (${rec ? provenanceText(rec) : '추천 없음'}). 퍼센트는 정책 선택 비중이며 성공 확률이 아니에요.` : `${recHeading}.${shownRec ? ' 퍼센트는 정책 선택 비중이며 성공 확률이 아니에요.' : ''}`}</h2>
-      {idle ? <div className="sv-duel idle"><span>{breakNow ? '다음 타자를 기다리고 있어요' : game.status === 'final' ? '' : '경기가 시작되면 타자와 투수를 보여 드려요'}</span></div>
+      {idle ? <div className="sv-duel idle"><span>{viewer?.buffering ? '내 중계 시점이 되면 보여 드려요' : breakNow ? '다음 타자를 기다리고 있어요' : game.status === 'final' ? '' : '경기가 시작되면 타자와 투수를 보여 드려요'}</span></div>
       : <div className="sv-duel" role="group" aria-label={`타자 ${batterP?.name ?? '선수 미확인'} 대 투수 ${pitcherP?.name ?? '선수 미확인'}`}>
         <span title={batterP?.name ?? undefined}><b>타자: {batterP?.name ?? '선수 미확인'}</b></span>
         <i aria-hidden="true">vs</i>
@@ -387,8 +435,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         {side && <div className={`sv-batband ${side === 'L' ? 'at-left' : 'at-right'}`}><Silhouette side={side} /></div>}
         <div className="sv-zone-wrap">
           <Zone bounds={detail.zone_bounds} candidates={cands}
-            actual={!nextPhase && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel=""
-            setupX={!nextPhase ? actual?.setup_x ?? null : null} />
+            actual={!nextPhase && !fold && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel=""
+            setupX={!nextPhase && !fold ? actual?.setup_x ?? null : null} />
         </div>
       </div>
       {stateSlot ? <div className={`sv-pitch-summary sv-state${shownRec ? ' has-rec' : ''}${held ? ' held' : ''}`} data-state={eff!.state} data-pitch={disp!.pitch_key ?? undefined}>
@@ -407,12 +455,14 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
               <p className={`sv-state-msg${shownRec && note ? ' sr-only' : ''}${note ? ' with-note' : ''}`}>{eff!.message}</p>
               <p className="sv-state-note" data-kind={note ? (fix ? fix.kind : 'client') : undefined}>{note}</p>
             </div>
-            {!eff!.message && !note && nextPhase && <p className="sv-state-idle"><span className="sv-summary-label">실제 투구</span><span className="sv-muted">{actualWait}</span></p>}
+            {!eff!.message && !note && nextPhase && (fold
+              ? <p className="sv-state-idle"><span className="sv-summary-label">실제 투구·결과</span><button className="sv-fold" onClick={openSync} aria-haspopup="dialog">{FOLD_TEXT}</button></p>
+              : <p className="sv-state-idle"><span className="sv-summary-label">실제 투구</span><span className="sv-muted">{actualWait}</span></p>)}
           </div>
         </div>
       </div> : <div className="sv-pitch-summary">
         <div className="sv-rec-summary"><span className="sv-summary-label">{recTitle}</span>{list}</div>
-        <div className={`sv-actual-summary${nextPhase ? ' waiting' : ''}`}><span className="sv-summary-label">{nextPhase ? '실제 투구' : actualTitle}</span>{nextPhase ? <p className="sv-muted" role="status">{actualWait}</p> : actual && unconfirmed(shownPitch) ? <>
+        <div className={`sv-actual-summary${nextPhase ? ' waiting' : ''}`}><span className="sv-summary-label">{nextPhase ? '실제 투구' : actualTitle}</span>{nextPhase ? <p className="sv-muted" role="status">{actualWait}</p> : fold && actual ? <button className="sv-fold" onClick={openSync} aria-haspopup="dialog">{FOLD_TEXT}</button> : actual && unconfirmed(shownPitch) ? <>
         <p className="sv-actual-caption pending">확인 중</p>
         <p className="sv-muted">이 공을 다시 확인하고 있어요.</p>
       </> : actual ? <>
@@ -426,6 +476,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <div className="sv-strip" ref={stripRef} role="group" aria-label="이 타석의 투구, 좌우로 스크롤">
         {paPitches.map(p => { const on = !latest && pitch?.index === p.index; const a = p.actual; const un = unconfirmed(p); const fixed = !un && p.receipt?.corrected === true;
           const sp = a?.speed_mph != null ? (unit === 'kmh' ? Math.round(a.speed_mph * 1.609344) : a.speed_mph.toFixed(1)) : '';
+          if (fold) return <button key={p.index} className={`sv-card folded ${on ? 'on' : ''}`} aria-pressed={on} onClick={openSync} aria-haspopup="dialog" aria-label={`${p.pitch_number}구, ${FOLD_TEXT}`}>
+            <Zone mini bounds={detail.zone_bounds} candidates={[]} actualLabel="" setupX={null} actual={null} />
+            <span className="sv-card-cap" aria-hidden="true"><span>{p.pitch_number}구</span><span>맞춘 뒤 표시</span></span></button>;
           return <button key={p.index} className={`sv-card ${on ? 'on' : ''}${un ? ' unconfirmed' : ''}`} aria-pressed={on} onClick={() => pick(p.index)}
             aria-label={un ? `${p.pitch_number}구 확인 중` : `${p.pitch_number}구 ${a?.pitch_label || '구종 미상'}${a?.speed_mph != null ? ` ${speedText(a.speed_mph, unit)}` : ''} ${a?.result_label ?? ''}${fixed ? ', 기록이 정정된 공' : ''}`}>
             <Zone mini bounds={detail.zone_bounds} candidates={[]} actualLabel="" setupX={null} actual={!un && a && a.x !== null && a.z !== null ? { x: a.x, z: a.z } : null} />
@@ -448,13 +501,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <div className="sv-upcoming" aria-label="다음 두 타자">{[0, 1].map(i => <span key={i} title={upcoming[i]?.name ?? undefined}>{upcoming[i] ? `${upcoming[i].order}번 · ${upcoming[i].name ?? '타자 미확인'}` : idle ? '–' : '–번 · 타자 미확인'}</span>)}</div>
     </section>
 
-    {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')}
+    {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')} foldText={fold ? FOLD_TEXT : null}
       onPick={p => { setSheet(null); if ((live && p.pa_key === detail.current?.pa_key && !p.complete) || typeof p.first !== 'number' || !byIndex.has(p.first)) goLatest(); else pick(p.first); }} />}
     {/* a selected past pitch shows the linescore as of that pitch (never the latest one, which would reveal later play) */}
     {sheet === 'box' && <BoxSheet ls={latest ? detail.linescore_asof : pitch!.line ?? null} game={game} at={situation} onClose={closeSheet} />}
     {sheet === 'detail' && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={stateSlot && !shownRec ? null : rec} recTitle={stateSlot && !shownRec ? `다음 공: ${eff!.label}` : liveRecord ? recTitle : rec ? `${held ? '마지막으로 받은 추천' : recTitle} (${provenanceText(rec)})` : recTitle}
       pair={pairText} absentText={absentText}
-      actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} notes={detail.notes} speed={mph => speedText(mph, unit)}
+      actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} actualFolded={fold && !nextPhase && actual !== null ? FOLD_TEXT : null} notes={detail.notes} speed={mph => speedText(mph, unit)}
       recNote={stateSlot ? [eff!.message, note].filter(Boolean).join(' ') || null : pastUnconfirmed ? '이 공을 확인하는 동안에는 추천을 함께 보여 드리지 않아요.' : null} actualPending={!nextPhase && unconfirmed(shownPitch)} actualCorrected={!nextPhase && shownPitch?.receipt?.corrected === true}
       extra={<div className="sv-row"><button className="sv-btn" onClick={() => setSheet('info')}>기준과 한계 보기</button>
         <button className="sv-btn" onClick={() => { const u = unit === 'kmh' ? 'mph' : 'kmh'; setUnit(u); try { localStorage.setItem(UNIT_KEY, u); } catch { /* ignore */ } }}
@@ -466,7 +519,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <p className="sv-muted">{sheetInfo?.stats_as_of ? `${sheetInfo.stats_as_of} 경기 전 시즌 기록` : '경기 전 시즌 기록 미확인'}. 오늘 기록은 현재 공식 피드의 해당 시점까지 사건을 재구성한 값으로 이후 기록 정정이 반영될 수 있습니다. 출루는 안타+볼넷+몸에 맞는 공입니다. 확인되지 않은 값은 –로 표시합니다.</p>
     </Sheet>}
     {sheet === 'info' && <InfoSheet onClose={closeSheet} notes={detail.notes} />}
-  </div>;
+  </div>{syncSheet}</>;
 }
 
 const backHref = () => { const demo = new URLSearchParams(window.location.search).get('demo'); return demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'; };
