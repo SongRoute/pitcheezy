@@ -16,6 +16,10 @@ the replay cursor. Ingest outcomes for one game, under one ``BEGIN IMMEDIATE`` t
 * same content as the newest slot's current version -> ``duplicate`` (no write)
 * otherwise -> ``correction`` of the newest slot (first-seen times kept, as the in-memory buffer does)
 
+``served_recommendations`` is the append-only ledger of pre-pitch recommendations the serving path was about to
+display (``append_recommendation``, called through ``live_ledger.admit`` before the response is built). It is
+separate from the NextPitchContext tables below and never claims model eligibility or a verified next pitch.
+
 ``context_decisions`` / ``context_reconciliations`` hold append-only NextPitchContext decisions and their later,
 separate unverified candidate observations (``append_decision`` / ``append_reconciliation``); no other reader uses them.
 
@@ -104,6 +108,23 @@ CREATE TRIGGER IF NOT EXISTS context_reconciliations_no_update
     BEFORE UPDATE ON context_reconciliations BEGIN SELECT RAISE(ABORT, 'append-only reconciliation'); END;
 CREATE TRIGGER IF NOT EXISTS context_reconciliations_no_delete
     BEFORE DELETE ON context_reconciliations BEGIN SELECT RAISE(ABORT, 'append-only reconciliation'); END;
+CREATE TABLE IF NOT EXISTS served_recommendations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decision_id TEXT NOT NULL,
+    game_pk INTEGER NOT NULL,
+    pitch_key TEXT,
+    outcome TEXT NOT NULL,
+    decided REAL NOT NULL,
+    decision_clock TEXT NOT NULL,
+    store_seq INTEGER NOT NULL,
+    sha TEXT NOT NULL,
+    body BLOB NOT NULL,
+    UNIQUE(decision_id, sha));
+CREATE INDEX IF NOT EXISTS served_recommendations_game ON served_recommendations(game_pk, id);
+CREATE TRIGGER IF NOT EXISTS served_recommendations_no_update
+    BEFORE UPDATE ON served_recommendations BEGIN SELECT RAISE(ABORT, 'append-only served recommendation'); END;
+CREATE TRIGGER IF NOT EXISTS served_recommendations_no_delete
+    BEFORE DELETE ON served_recommendations BEGIN SELECT RAISE(ABORT, 'append-only served recommendation'); END;
 '''
 ACCEPTED = "outcome IN ('new', 'correction')"
 # Test-only snapshot source. No production writer emits it (``PersistentLiveFeed``: 'live_poll'/'memory_recovery',
@@ -526,6 +547,65 @@ class LiveSnapshotStore:
             rows = db.execute('SELECT category, COUNT(*) FROM context_decisions WHERE game_pk=? GROUP BY category',
                               (int(game_pk),)).fetchall()
         return {'unit': 'local_decision_opportunity', 'decisions': sum(n for _, n in rows), 'categories': dict(rows)}
+
+    def append_recommendation(self, *, game_pk, state_sha, policy_identity, pitch_key, snapshot, displayed, decided,
+                              feed_ok):
+        """Persist the pre-pitch recommendation about to be displayed, before it is displayed. Returns
+        (outcome, record) where ``record['displayed']`` is what may be shown:
+
+        * 'first' — nothing was stored for this decision; ``displayed`` is now the stored one.
+        * 'duplicate' — the same content is already stored (another viewer or poll); nothing is written.
+        * 'conflict' — a different content was stored first for the same decision. The new content is appended
+          as a ``conflict`` row (kept, never displayed) and the *first* stored record is returned, so a viewer
+          never sees the recommendation for one decision silently change.
+
+        A decision is ``(game_pk, state_sha, policy_identity)``: ``state_sha`` hashes every pre-pitch input the
+        policy reads (``live_armb.state_key``), so a provider correction of an earlier pitch is a new decision and
+        a new row for the same ``pitch_key``, never a rewrite. ``pitch_key`` is the policy's name for the pending
+        pitch, not a provider id, and the ledger never says which physical pitch followed (``target`` stays
+        UNKNOWN). ``snapshot`` must be a version committed here (same ``seq``/``version``/``sha``) and received at
+        or before ``decided``; anything else raises ``ValueError`` and nothing is written. ``decision_clock`` is
+        'observer_local' only for a real upstream poll (``RECEIPT_CLOCK``), else 'unverified'. Committed with
+        ``synchronous=FULL``: a crash before this returns means the recommendation was not displayed either."""
+        game_pk = int(game_pk)
+        shown = _canonical(displayed)
+        decision_id = hashlib.sha256(_canonical([game_pk, state_sha, policy_identity])).hexdigest()
+        with self._write() as db:
+            row = db.execute('SELECT version, sha, fetched, source FROM snapshots WHERE seq=? AND game_pk=?',
+                             (snapshot.get('seq'), game_pk)).fetchone()
+            if row is None or (row[0], row[1]) != (snapshot.get('version'), snapshot.get('sha')) or row[2] > decided:
+                raise ValueError('Recommendation snapshot is not a committed version received by the decision time')
+            held = db.execute("SELECT body FROM served_recommendations WHERE decision_id=? AND outcome='first'",
+                              (decision_id,)).fetchone()
+            first = json.loads(held[0]) if held else None
+            if first is not None and _canonical(first['displayed']) == shown:
+                return 'duplicate', first
+            clock = RECEIPT_CLOCK.get(row[3], 'unverified')
+            record = {'schema': 'served-recommendation-v1', 'decision_id': decision_id, 'game_pk': game_pk,
+                      'pitch_key': pitch_key, 'state_sha256': state_sha, 'policy_identity': policy_identity,
+                      'decided': decided, 'decision_clock': clock, 'feed_ok': bool(feed_ok),
+                      'snapshot': {'store_seq': snapshot['seq'], 'slot_version': row[0], 'feed_sha256': row[1],
+                                   'source': row[3], 'received': row[2],
+                                   'provider_order': snapshot.get('provider_order')},
+                      'displayed': json.loads(shown),
+                      'target': {'status': 'UNKNOWN', 'reason': 'next_pitch_not_observed_at_decision'}}
+            body = _canonical(record)
+            sha = hashlib.sha256(shown).hexdigest()
+            outcome = 'first' if first is None else 'conflict'
+            if outcome == 'conflict' and db.execute('SELECT 1 FROM served_recommendations WHERE decision_id=? AND sha=?',
+                                                    (decision_id, sha)).fetchone():
+                return 'conflict', first  # this differing content is already on record
+            db.execute('INSERT INTO served_recommendations(decision_id, game_pk, pitch_key, outcome, decided, '
+                       'decision_clock, store_seq, sha, body) VALUES (?,?,?,?,?,?,?,?,?)',
+                       (decision_id, game_pk, pitch_key, outcome, decided, clock, snapshot['seq'], sha, body))
+        return outcome, record if first is None else first
+
+    def served_recommendations(self, game_pk):
+        """Every ledger row of a game in append order (``first`` rows were displayable, ``conflict`` rows never)."""
+        with closing(self.connect()) as db:
+            rows = db.execute('SELECT id, outcome, body FROM served_recommendations WHERE game_pk=? ORDER BY id',
+                              (int(game_pk),)).fetchall()
+        return [{'id': i, 'outcome': outcome} | json.loads(body) for i, outcome, body in rows]
 
     def restore(self, game_pk, wall, max_delay_s):
         """The in-memory buffer ``LiveFeed`` would hold at ``wall``: the current version of every slot newer

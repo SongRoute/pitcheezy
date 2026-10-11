@@ -235,7 +235,9 @@ def list_card(record, cutoff, source):
 
 def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
-    reach the real live feed (``None`` = archive only); ``live_rec(feed)`` returns the next-pitch rec."""
+    reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
+    ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
+    next-pitch rec (and records it in the append-only ledger before it is returned, when a store is on)."""
 
     def ok(payload, status=200):
         return JSONResponse(payload, status_code=status, headers=NO_STORE)
@@ -370,7 +372,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
     def live_view(game_pk, after):
         from .live_feed import LiveFeedError, parse_state
         try:
-            feed, meta = live_feed(game_pk)
+            feed, meta, *rest = live_feed(game_pk)
         except LiveFeedError:
             return fail(503, 'MLB 경기 정보를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.')
         record = game_history.build(feed)
@@ -386,7 +388,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                 current[role] = current[role] | {'jersey': game_history.jersey(feed, current[role].get('id'))}
         next_rec = None
         if phase == 'pre_pitch':
-            rec = live_rec(feed, parsed) if live_rec else None
+            rec = live_rec(feed, parsed, rest[0] if rest else None) if live_rec else None
             next_rec = {'pitch_key': None, 'rec': rec or game_history.absent_rec('이 실행에서는 실시간 추천을 제공하지 않습니다.')}
         view = cut_view(record, len(record['pitches'])-1, {'kind': 'live', 'session_id': None},
                         feed=meta, live_current=None if abstract == 'Final' else current, next_rec=next_rec, after=after)

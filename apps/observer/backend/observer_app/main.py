@@ -22,6 +22,7 @@ from .settings import CONFIG, REPO, RUN, WEB, database_path
 from .store import Store
 from .video_annotations import VideoAnnotations
 from .live_armb import LiveArmB
+from . import live_ledger
 from .setup_estimates import SetupEstimates
 from .watch_along import BADGE as WATCH_BADGE, WatchAlong
 from . import service_api
@@ -183,7 +184,9 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         if os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE'):
             feed = live['feed']
             body['live_store'] = {'configured': True, 'started': hasattr(feed, 'store'),
-                                  'error': getattr(feed, 'store_error', None), 'games_buffered': sorted(getattr(feed, 'buffers', {}))}
+                                  'error': getattr(feed, 'store_error', None), 'games_buffered': sorted(getattr(feed, 'buffers', {})),
+                                  'source': getattr(feed, 'source', None),
+                                  'recommendation_ledger': hasattr(feed, 'store') and live_ledger.enabled()}
         return body
 
     @app.get('/api/catalog')
@@ -288,8 +291,9 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             if (store := os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE')):  # opt-in restart-safe buffer (live_store.py)
                 import sqlite3
                 from .live_store import LiveSnapshotStore, PersistentLiveFeed
-                try:
-                    live['feed'] = PersistentLiveFeed(transport, store=LiveSnapshotStore(store), **options)
+                try:  # a replayed recording is labelled as such: its receipts are not the game's arrival times
+                    live['feed'] = PersistentLiveFeed(transport, store=LiveSnapshotStore(store),
+                                                      source='replay_poll' if replay else 'live_poll', **options)
                 except (OSError, sqlite3.Error) as exc:  # unopenable store: serve live from memory, health says why
                     LOGGER.warning('live store %s unavailable; serving from memory only', store, exc_info=True)
                     live['feed'] = LiveFeed(transport, **options)
@@ -314,8 +318,10 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         hidden = demo_clock.active_games()
         return live_call(lambda: {'date': date, 'games': [g for g in feed.schedule(date) if g['game_pk'] not in hidden]})
 
-    def armb_view(snapshot, parsed):
-        """Frozen ARM-B pre-pitch recommendation for the served (delayed) state, from the worker cache."""
+    def armb_view(snapshot, parsed, feed=None, entry=None):
+        """Frozen ARM-B pre-pitch recommendation for the served (delayed) state, from the worker cache.
+        With ``feed`` (the ``LiveFeed`` that served buffer ``entry``) a recommendation passes the append-only
+        ledger before it is returned for display (``live_ledger.admit``); without a store that is a no-op."""
         if parsed['status'] != 'ready':
             return None
         if not armb_enabled():
@@ -332,11 +338,12 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         if result is None:
             return None
         pitch = result['pitch']
-        return {'status': pitch['pre']['status'], 'reason': pitch['pre']['reason'], 'key': result['key'],
+        view = {'status': pitch['pre']['status'], 'reason': pitch['pre']['reason'], 'key': result['key'],
                 'recommendation': pitch['pre']['recommendation'], 'pa_pitches': result['pa_pitches'],
                 'previous': result['previous'], 'home_we_now': result['home_we_now'],
                 'policy_identity': result['policy_identity'][:8], 'seconds': result['seconds'],
                 'tally': armb.tally(result['key'])}
+        return view if feed is None else live_ledger.admit(feed, entry, view, game_pk=snapshot['gameData']['game']['pk'])
 
     replays = OrderedDict()  # (gamePk, start, t0, speed) -> (LiveFeed, transport): one shared clock per link
 
@@ -394,9 +401,11 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             parsed.pop('pre_pitch')
             sync = {'max_delay_s': feed.max_delay_s, 'event_age_s': round(time.time()-entry['event'], 1),
                     'feed_lag_s': round(entry['fetched']-entry['event'], 1), 'feed_ok': game_pk not in feed.failing}
+            if entry.get('requested') is not None:  # how long the fetch that first brought this state took
+                sync['fetch_s'] = round(entry['fetched']-entry['requested'], 3)
             if hasattr(feed, 'sync_extra'):
                 sync |= feed.sync_extra(game_pk, entry)
-            return parsed | timing | {'sync': sync, 'recommendation': armb_view(snapshot, parsed)}
+            return parsed | timing | {'sync': sync, 'recommendation': armb_view(snapshot, parsed, feed, entry)}
         return live_call(state)
 
     @app.get('/api/live/{game_pk}/log')
@@ -461,16 +470,17 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             raise LiveFeedError('no snapshot yet')
         now = time.time()
         return entry['feed'], {'as_of': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(entry['fetched'])),
-                               'ok': game_pk not in feed.failing, 'stale_s': round(now-entry['fetched'], 1)}
+                               'ok': game_pk not in feed.failing, 'stale_s': round(now-entry['fetched'], 1)}, entry
 
-    def service_live_rec(snapshot, parsed):
-        view = armb_view(snapshot, parsed) if parsed.get('status') == 'ready' else None
+    def service_live_rec(snapshot, parsed, entry=None):
+        view = armb_view(snapshot, parsed, live_parts(), entry) if parsed.get('status') == 'ready' else None
         candidates = ((view or {}).get('recommendation') or {}).get('candidates') or []
         if not view or view.get('status') != 'ready' or not candidates:
             return None if view is None else {'provenance': 'absent', 'status': 'missing' if view.get('status') == 'computing' else 'unsupported',
                                               'reason': view.get('reason'), 'recorded_at': None, 'policy': None, 'candidates': []}
-        return {'provenance': 'captured_live', 'status': 'ready', 'reason': None,
-                'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        ledger = view.get('ledger')  # present only when the append-only ledger recorded it before this display
+        return {'provenance': 'captured_live', 'status': 'ready', 'reason': None, 'ledger': ledger,
+                'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(ledger['decided'] if ledger else None)),
                 'policy': {'name': 'ARM-B', 'identity': view.get('policy_identity')},
                 'candidates': [{'rank': c.get('rank', i+1), 'pitch_type': c.get('pitch_type'), 'pitch_label': c.get('pitch_label'),
                                 'zone_id': c.get('zone_id'), 'zone_label': c.get('zone_label'), 'target': c.get('target'),
