@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import time
 
 from .live_store import _canonical
@@ -384,8 +385,10 @@ def decide(*, gated, view, facts, history=(), pitch_key=None, recommender=True, 
     label, message = COPY.get((state, reason)) or COPY.get((state, None)) or (state, None)
     if state == 'feed_delayed' and facts['lag_s'] is not None:
         message = f"경기 자료가 {int(facts['lag_s'])}초 넘게 늦게 도착했어요. 추천이 실제 경기보다 늦을 수 있어요."
-    if state == 'unsupported' and reason == 'policy_refused' and view and view.get('reason'):
-        message = view['reason']
+    refusal = (view or {}).get('reason')
+    if (state == 'unsupported' and reason == 'policy_refused' and isinstance(refusal, str) and len(refusal) <= 60
+            and re.search('[가-힣]', refusal) and not re.search('[A-Z_]{4,}', refusal)):
+        message = refusal  # the policy's own short Korean sentence; a bare status code is never shown to a fan
     fix = correction(list(history), summary(rec) if shown else None) if pitch_key else None
     return {'schema': SCHEMA, 'state': state, 'reason': reason, 'detail': detail, 'label': label, 'message': message,
             'pitch_key': pitch_key, 'recommendation_shown': shown, 'correction': fix,

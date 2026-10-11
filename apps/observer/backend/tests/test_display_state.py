@@ -64,14 +64,14 @@ class Policy:
     """Stands in for ``demo_precompute.LivePolicy``: the top type follows the open at-bat's first call, so a
     provider correction of that pitch changes the recommendation. ``status`` forces a policy refusal."""
     def __init__(self):
-        self.calls, self.status, self.top = [], None, None
+        self.calls, self.status, self.top, self.reason = [], None, None, '정책 문구'
 
     def __call__(self, snapshot):
         key = display_state.pending_key(snapshot)
         self.calls.append(key)
         call = snapshot['liveData']['plays']['currentPlay']['playEvents'][0]['details']['call']['code']
         ready = self.status is None
-        pre = {'status': 'ready' if ready else 'unsupported', 'reason': None if ready else '정책 문구',
+        pre = {'status': 'ready' if ready else 'unsupported', 'reason': None if ready else self.reason,
                'recommendation': {'candidates': [CAND[self.top or ('SL' if call == 'B' else 'FF')]]} if ready else None}
         return {'key': key, 'pitch': {'key': key, 'pre': pre, 'status': self.status or 'SUPPORTED'}, 'pa_pitches': [],
                 'previous': None, 'home_we_now': .5, 'policy_identity': 'a6dffaea'+'0'*56, 'seconds': {'bind': 0.0}}
@@ -330,6 +330,10 @@ def test_an_unsupported_pitch_says_which_kind_in_one_sentence(run, status, reaso
     state = view['display_state']
     assert (state['state'], state['reason'], state['detail']) == ('unsupported', reason, status)
     assert words in state['message'] and state['recommendation_shown'] is False and shown(view) == []
+    run.policy.reason = 'UNSUPPORTED_SOMETHING'  # a refusal the copy table does not know: no code reaches the fan
+    if reason == 'policy_refused':
+        run.armb.cache.clear()
+        assert run.poll()['display_state']['message'] == '이 상황은 추천 대상이 아니에요.'
     assert run.feed.store.served_recommendations(GAME) == []
 
 
