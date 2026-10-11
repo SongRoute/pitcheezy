@@ -1,0 +1,13 @@
+{
+ "files_written": 7,
+ "publish": {
+  "contract": "v1",
+  "published_at": "2026-10-05T10:21:00Z",
+  "sequence": 4
+ },
+ "publish_interval_s": 10,
+ "published_at": "2026-10-05T10:21:00Z",
+ "schema": "pitcheezy-publish-health-v1",
+ "sequence": 4,
+ "unavailable_games": []
+}

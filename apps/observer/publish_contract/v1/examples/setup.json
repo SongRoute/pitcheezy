@@ -1,0 +1,74 @@
+{
+ "accuracy": {
+  "measured": false,
+  "note": "사람 검토와 다른 경기 정확도 측정 전입니다."
+ },
+ "badge": "포수 셋업 위치 추정(검토 전) · 투수의 실제 의도가 아님 · 가로 위치만",
+ "coverage": {
+  "estimated": 3,
+  "lines": 3,
+  "unavailable": 0,
+  "with_plate_x": 3
+ },
+ "display": {
+  "horizontal": true,
+  "vertical": false,
+  "vertical_reason": "셋업 높이는 목표 높이가 아닐 수 있어 제공하지 않습니다."
+ },
+ "game_pk": 900101,
+ "pitches": [
+  {
+   "at_bat_number": 1,
+   "is_intent_proxy": true,
+   "label_source": "assistant_visual_estimate",
+   "pitch_id": "900101:1:1",
+   "pitch_number": 1,
+   "plate_x_feet": 0.1,
+   "review_status": "unreviewed",
+   "status": "estimated",
+   "unavailable_reason": null,
+   "x_band": "middle"
+  },
+  {
+   "at_bat_number": 2,
+   "is_intent_proxy": true,
+   "label_source": "assistant_visual_estimate",
+   "pitch_id": "900101:2:2",
+   "pitch_number": 2,
+   "plate_x_feet": -0.5,
+   "review_status": "unreviewed",
+   "status": "estimated",
+   "unavailable_reason": null,
+   "x_band": "left"
+  },
+  {
+   "at_bat_number": 5,
+   "is_intent_proxy": true,
+   "label_source": "assistant_visual_estimate",
+   "pitch_id": "900101:5:2",
+   "pitch_number": 2,
+   "plate_x_feet": 1.2,
+   "review_status": "unreviewed",
+   "status": "estimated",
+   "unavailable_reason": null,
+   "x_band": "off_right"
+  }
+ ],
+ "publish": {
+  "contract": "v1",
+  "final": true,
+  "published_at": "2026-10-05T10:20:30Z",
+  "sequence": 1
+ },
+ "schema": "pitcheezy-setup-estimates-v1",
+ "source": {
+  "branch": "feature/intent-v0",
+  "commit": "abc1234",
+  "path": "docs/results/game_900001_intent_v0.jsonl",
+  "repository": "org/video-module",
+  "selection": "pitches the condensed game shows",
+  "sha256": "0120f8ed5b594d09ba5050cc060f31b12c4ecfca06ea1da41f178a9b1270b101",
+  "video": "condensed game"
+ },
+ "x_convention": "statcast_plate_x_catcher_view"
+}

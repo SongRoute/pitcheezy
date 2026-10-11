@@ -1,0 +1,33 @@
+{
+ "commit": "0000000000000000000000000000000000000000",
+ "commit_dirty": false,
+ "contract": "v1",
+ "files": {
+  "dates": "v1/dates.json",
+  "game": "v1/game/{game_pk}.json",
+  "games": "v1/games/{date}.json",
+  "health": "v1/health.json",
+  "manifest": "v1/manifest.json",
+  "setup": "v1/setup/{game_pk}.json"
+ },
+ "fixed_delay_s": 0,
+ "live_dates": [
+  "2026-10-04",
+  "2026-10-05",
+  "2026-10-06"
+ ],
+ "provisional": [
+  "publish_interval_s",
+  "settled_recheck_s",
+  "live_days_back",
+  "live_days_ahead"
+ ],
+ "publish": {
+  "contract": "v1",
+  "published_at": "2026-10-05T10:21:00Z",
+  "sequence": 4
+ },
+ "publish_interval_s": 10,
+ "published_at": "2026-10-05T10:21:00Z",
+ "schema": "pitcheezy-publish-manifest-v1"
+}

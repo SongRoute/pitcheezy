@@ -1,0 +1,39 @@
+{
+ "date": "2026-10-05",
+ "games": [
+  {
+   "away_abbr": null,
+   "away_score": 0,
+   "away_team": "Away Club",
+   "date_kst": "2026-10-05",
+   "double_header": false,
+   "double_header_code": "N",
+   "embargoed": false,
+   "game_number": 1,
+   "game_pk": 900200,
+   "half": null,
+   "has_history": true,
+   "home_abbr": null,
+   "home_score": 1,
+   "home_team": "Home Club",
+   "inning": null,
+   "live": true,
+   "official_date": "2026-10-05",
+   "start": "2026-10-05T10:00:00Z",
+   "start_kst": "2026-10-05T19:00:00+09:00",
+   "status": "live",
+   "status_text": "In Progress"
+  }
+ ],
+ "live_ok": true,
+ "publish": {
+  "contract": "v1",
+  "published_at": "2026-10-05T10:21:00Z",
+  "sequence": 4
+ },
+ "schema": "pitcheezy-service-games-v2",
+ "source": {
+  "kind": "archive",
+  "session_id": null
+ }
+}

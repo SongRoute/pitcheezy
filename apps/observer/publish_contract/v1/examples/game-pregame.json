@@ -1,0 +1,113 @@
+{
+ "current": {
+  "batter": null,
+  "context": {
+   "basis": "event_prefix_current_feed",
+   "batter": {
+    "at_bats": null,
+    "hits": null,
+    "on_base": null
+   },
+   "next_batters": [],
+   "pitcher": {
+    "earned_runs": null,
+    "pitches": null,
+    "strikeouts": null
+   }
+  },
+  "pa_key": null,
+  "phase": "pregame",
+  "pitcher": null,
+  "situation": null
+ },
+ "cutoff": {
+  "index": -1,
+  "pitch_key": null
+ },
+ "display_state": {
+  "correction": null,
+  "detail": null,
+  "feed": {
+   "delayed": false,
+   "failing_for_s": null,
+   "failing_since": null,
+   "lag_max_s": null,
+   "lag_measured": false,
+   "lag_s": null,
+   "lag_threshold_s": 45,
+   "last_ok_at": "2026-10-05T10:20:30Z",
+   "ok": true,
+   "provider_order": "ordered",
+   "received_at": "2026-10-05T10:20:30Z",
+   "thresholds_provisional": true
+  },
+  "label": "경기 전",
+  "ledger": {
+   "outcome": null,
+   "status": "not_applicable",
+   "store_ok": true,
+   "why": null
+  },
+  "message": "경기 시작 전이에요.",
+  "pitch_key": null,
+  "reason": "scheduled",
+  "recommendation_shown": false,
+  "schema": "pitcheezy-display-state-v1",
+  "state": "pregame"
+ },
+ "feed": {
+  "as_of": "2026-10-05T10:20:30Z",
+  "ok": true,
+  "stale_s": 0.0
+ },
+ "game": {
+  "away_abbr": "AWY",
+  "away_score": null,
+  "away_team": "Away Club",
+  "date_kst": "2026-10-05",
+  "double_header": false,
+  "double_header_code": "N",
+  "embargoed": false,
+  "game_number": 1,
+  "game_pk": 900200,
+  "half": null,
+  "has_history": true,
+  "home_abbr": "HOM",
+  "home_score": null,
+  "home_team": "Home Club",
+  "inning": null,
+  "live": false,
+  "official_date": "2026-10-05",
+  "start": "2026-10-05T10:00:00Z",
+  "start_kst": "2026-10-05T19:00:00+09:00",
+  "status": "scheduled",
+  "status_text": "Warmup",
+  "venue": null
+ },
+ "linescore": null,
+ "next": null,
+ "pas": [],
+ "pitches": [],
+ "pregame": null,
+ "publish": {
+  "contract": "v1",
+  "final": false,
+  "published_at": "2026-10-05T10:20:30Z",
+  "sequence": 2
+ },
+ "receipts": {
+  "corrected": 0,
+  "paired": 0,
+  "unconfirmed": 0,
+  "version": "4f53cda18c2b"
+ },
+ "schema": "pitcheezy-service-game-v2",
+ "source": {
+  "kind": "live",
+  "session_id": null
+ },
+ "zone_bounds": {
+  "bottom": 1.6,
+  "top": 3.3899
+ }
+}
