@@ -1,0 +1,27 @@
+# EXP-WS-CAL-001 — fit100(scale-002) 사후 보정 대안 비교 (분류기 재학습 없음)
+# 정본 등록: /Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e3-cal/REGISTRATION.json
+#   sha256 c67c586ee079379aecc5266057833da1c9aae7c3475f511810bacdd7d994ebd0 (실행 전 동결, 독립 검토 PASS)
+# 코드: 같은 디렉터리 cal_repair.py sha256 0daf2574192563dfdd72f3571f6d2ba7ed60f388969f987584466531ad492b5e
+id: EXP-WS-CAL-001
+phase: WS-adaptation
+baseline: scale-002 fit100 C0 (head별 스칼라 온도, CAL 적합)   # job 20261011-ws-step2-scale-f2-recovery-author-001/attempts/scale-002
+change: "같은 CAL 분할에서 적합한 사후 보정기 3종(C1 vector+Platt, C2 Dirichlet ODIR, C3 leaf별 isotonic+renorm)으로 C0 교체; 마진·분류기·특징은 그대로"
+data_version: d20260930-h2026f          # S2 2026 정규시즌 03-25..09-27, parquet sha c0c1eda4…9ed2ab
+data_role: 2026 EXPOSED DEVELOPMENT      # 독립 TEST 없음, 승자·채택 없음
+splits:
+  CAL: {dates: [2026-08-24, 2026-09-06], rows: 56275, games: 190}    # 보정기 적합
+  EVAL: {dates: [2026-09-07, 2026-09-27], rows: 80584, games: 275}   # 1회 평가
+seeds:
+  cv_fold_permutation: 20261212          # C2 λ 선택용 CAL 내부 5-fold(경기 단위)
+  bootstrap: 20261211
+params:
+  C1: {parent: vector scaling w,b in R^10, heads: Platt a,b, optimiser: L-BFGS-B ftol 1e-10 maxiter 2000}
+  C2: {parent: Dirichlet on log_softmax, penalty: ODIR lambda*offdiag(W)^2 + mu*b^2 (mu=lambda), lambda_grid: [1e-4, 1e-3, 1e-2, 1e-1, 1], cv: 5-fold by game within CAL, heads: same as C1}
+  C3: {per_leaf_isotonic: PAV on C0 seven-leaf probs, clip: 1e-6, renormalise: true}
+metrics:
+  primary: top-label ECE, 10 equal-width bins, bin=min(floor(10*conf),9), pitch-weighted (eop-001 정의)
+  must_not_degrade: [seven-leaf NLL, seven-leaf Brier]
+  paired: whole-game bootstrap 10000 draws, pitch-weighted ratio of game sums, percentile 95% CI
+  margins: {ece_improved: CI95 upper < 0, nll_non_inferior: CI95 upper <= 0.0010, brier_non_inferior: CI95 upper <= 0.0005}
+attempt: cal-001
+commit_at_execution: 686798ca97b78a6b73730941dbe56cf8b15a5bea   # pitcheezy repo HEAD (codex/ml-matrix-execution), 실험 코드는 job 디렉터리에 있음
