@@ -170,6 +170,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         const want = next.viewer.max_delay_s !== null ? Math.min(wantedDelay(), next.viewer.max_delay_s) : wantedDelay();
         if (Math.abs(next.viewer.delay_s - want) < 0.05) break;
         // the server keeps serving another delay than asked (a limit it did not state): take the one it serves rather than fail
+        if (ctrl.signal.aborted) return;  // a newer request owns the setting now: an overtaken one never writes it
         if (round >= 2) { setSetting(writeViewer({ delay_s: next.viewer.delay_s })); break; }
         next = await fetchDetail(gamePk, ctrl.signal, undefined, requestDelay());
       }
@@ -208,6 +209,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, [load]);
   const viewer = detail && detail.session === null ? detail.viewer ?? null : null;
   useEffect(() => { if (viewer) viewerMeta.current = { max: viewer.max_delay_s }; }, [viewer]);
+  // the reference sheet belongs to the card on screen: when the card goes (state changed), the sheet goes; it opens only by a tap
+  useEffect(() => { if (sheet === 'reference' && !(detail?.reference && detail.display?.state === 'unsupported')) setSheet(null); }, [detail, sheet]);
   // first open of a live game on a device that never synced: ask once (the entry in the status line stays for later)
   useEffect(() => {
     if (!detail || !viewer || !viewer.prompt || prompted.current || setting.synced || setting.asked || detail.game.status !== 'live' || sheet !== null) return;

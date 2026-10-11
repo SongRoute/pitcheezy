@@ -12,18 +12,25 @@ const str = (v: unknown): string | null => typeof v === 'string' && v.trim() ? v
 const whole = (v: unknown): number | null => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100 ? Math.round(v) : null;
 const NOT_A_PICK = '추천이나 다음 공 예측이 아닙니다.';
 
-/** `next.reference` → card; null unless it is the profile-reference kind with a title and at least one item. */
+/** What the reference is, in this screen's own words (a payload cannot relabel it). */
+export const REFERENCE_CHIP = '참고 · 기록 통계';
+/** Pitcher-level reasons of the unsupported state (backend service_extras.PITCHER_REASONS). */
+const PITCHER_REASONS = ['unknown_pitcher', 'no_supported_pitch_types'];
+/** `next.reference` → card. Shown only where the server attaches it: the profile-reference kind with its chip, a title and at least
+ *  one item, beside a pending pitch (`pre_pitch`) whose state is unsupported for a pitcher-level reason. Anything else → null. */
 export function normalizeReference(raw: Raw | null | undefined): ReferenceCard | null {
-  const card = raw?.next?.reference;
-  if (!card || typeof card !== 'object' || card.kind !== 'profile_reference' || !Array.isArray(card.items)) return null;
+  const card = raw?.next?.reference, state = raw?.display_state;
+  if (!card || typeof card !== 'object' || card.kind !== 'profile_reference' || !str(card.chip) || !Array.isArray(card.items)) return null;
+  if (raw?.current?.phase !== 'pre_pitch' || state?.state !== 'unsupported' || !PITCHER_REASONS.includes(state?.reason)) return null;
   const items: ReferenceItem[] = card.items.flatMap((i: Raw) => { const label = str(i?.pitch_label) ?? str(i?.pitch_type); const pct = whole(i?.share_pct);
     return label && pct !== null ? [{ pitch_type: String(i.pitch_type ?? label), label, pct }] : []; });
   const title = str(card.title);
   if (!title || !items.length) return null;
+  // the date as the server states it, in full: no "올해" is assumed here (the server's own note says which season it is)
   const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(card.as_of ?? '');
   const n = typeof card.sample?.pitches === 'number' ? card.sample.pitches : null;
-  return { chip: str(card.chip) ?? '참고 · 기록 통계', title, items, other_pct: whole(card.other?.share_pct),
-    sample: day && n !== null ? `올해 ${Number(day[2])}월 ${Number(day[3])}일까지 같은 상황 ${n}구` : n !== null ? `같은 상황 ${n}구` : null,
+  return { chip: REFERENCE_CHIP, title, items, other_pct: whole(card.other?.share_pct),
+    sample: day && n !== null ? `${Number(day[1])}년 ${Number(day[2])}월 ${Number(day[3])}일까지 같은 상황 ${n}구` : n !== null ? `같은 상황 ${n}구` : null,
     note: str(card.note) ?? NOT_A_PICK };
 }
 /** `pitches[i].expectation` → sentence; null unless it is the step-5 kind with a text. */

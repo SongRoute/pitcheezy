@@ -6,6 +6,7 @@ import type { GameCard } from './model';
 import { dateHeading, inningText, kstTime, shiftDate, short, todayKst } from './model';
 import { teamColor } from './teams';
 import { InfoSheet } from './Sheets';
+import { VIEWER_KEY, reloadViewer } from './viewer';
 import './service.css';
 
 /** Ordinary list: one KST date as the heading, that date's games in start order. No sections, no modes, no badge. */
@@ -47,6 +48,13 @@ export default function WatchList() {
   const [games, setGames] = useState<GameList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState(false);
+  const [viewerChange, setViewerChange] = useState(0);  // another tab changed the viewer delay: ask the list again at it
+  useEffect(() => {
+    if (import.meta.env.VITE_PUBLISH_BASE) return;
+    const onStorage = (e: StorageEvent) => { if (e.key === VIEWER_KEY) { reloadViewer(); setViewerChange(n => n + 1); } };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {  // available KST dates (contract §1); without them, today's KST date
     const ctrl = new AbortController();
@@ -60,7 +68,7 @@ export default function WatchList() {
     setGames(null); setError(null);
     fetchGames(date, ctrl.signal).then(setGames).catch(e => { if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : '경기 목록을 불러오지 못했어요.'); });
     return () => ctrl.abort();
-  }, [date]);
+  }, [date, viewerChange]);
   useEffect(() => { document.title = date ? `${dateHeading(date)} 경기 · 피치이지` : '피치이지'; }, [date]);
 
   // Previous/next: adjacent dates that have games when the server lists them, otherwise one calendar day.

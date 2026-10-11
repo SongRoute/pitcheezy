@@ -636,3 +636,6 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 .sv-expect-explain{margin:0;font-size:12px;line-height:1.4}
 .sv-sync-now i{font-style:normal}
 @media(max-width:359px){.sv-sync-now i{display:none}.sv-sync-adjust{gap:4px}.sv-sync-adjust .sv-btn{min-width:48px;padding:0 4px;font-size:14px}}
+.sv-ref-line{font-weight:400}.sv-ref-line b{font-weight:600}.sv-ref-what{color:var(--sv-muted)}
+.sv-ref-more.narrow{display:none}
+@media(max-width:379px){.sv-ref-line b.second,.sv-ref-more.wide{display:none}.sv-ref-more.narrow{display:inline}}

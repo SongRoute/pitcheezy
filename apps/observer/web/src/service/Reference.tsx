@@ -7,7 +7,11 @@ import { Sheet } from './Sheets';
 export function ReferenceTeaser({ card, onOpen }: { card: ReferenceCard; onOpen: () => void }) {
   return <button className="sv-ref-teaser" onClick={onOpen} aria-haspopup="dialog"
     aria-label={`${card.chip}. ${card.title}: ${referenceLine(card)}. 추천이 아니에요. 자세히 보기`}>
-    <span className="sv-ref-chip" aria-hidden="true">{card.chip}</span><span className="sv-ref-line" aria-hidden="true">{referenceLine(card)}</span><i aria-hidden="true">›</i></button>;
+    {/* the chip is never cut; the line says what the numbers are ("자주 던진 공") and names as many of the first two as fit */}
+    <span className="sv-ref-chip" aria-hidden="true">{card.chip}</span>
+    <span className="sv-ref-line" aria-hidden="true"><span className="sv-ref-what">자주 던진 공</span>{' '}<b>{card.items[0].label} {card.items[0].pct}%</b>
+      {card.items[1] && <b className="second"> · {card.items[1].label} {card.items[1].pct}%</b>}<span className="sv-ref-more wide">{card.items.length > 2 ? ' …' : ''}</span><span className="sv-ref-more narrow">{card.items.length > 1 ? ' …' : ''}</span></span>
+    <i aria-hidden="true">›</i></button>;
 }
 
 /** A2. The whole reference card: chip, title, "구종 NN%" rows (past frequency), the sample line and the note that it is neither a
