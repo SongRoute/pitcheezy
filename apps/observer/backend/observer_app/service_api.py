@@ -28,6 +28,15 @@ NO_STORE = {'Cache-Control': 'no-store'}
 INTERNAL = ('situation_after', 'gap_after', 'line_before', 'line_after', 'context_after')  # server-only: gap_after would reveal that something happens later
 
 
+class Refused(Exception):
+    """A service body that is not served right now (423 embargo, 503 feed): the route answers ``status`` with
+    ``detail``; the publisher (``publisher.py``) writes no file for it."""
+
+    def __init__(self, status, detail):
+        super().__init__(detail)
+        self.status, self.detail = status, detail
+
+
 class CreateDemo(BaseModel):
     model_config = ConfigDict(extra='forbid')
     game_pk: int = Field(strict=True, gt=0)
@@ -321,6 +330,8 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
     def guarded(operation):
         try:
             return operation()
+        except Refused as refused:
+            return fail(refused.status, refused.detail)
         except DemoError as error:
             payload = {'detail': error.detail}
             if error.payload is not None:
@@ -371,6 +382,42 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         return card | {'away_score': None, 'home_score': None, 'inning': None, 'half': None, 'status': 'other',
                        'status_text': None, 'live': False, 'embargoed': True}
 
+    # The three bodies a viewer without a demo session is served. The routes below and the public publisher
+    # (``publisher.py``) both call these, so a published file is the body a request would have been answered with.
+    def dates_body():
+        dates = sorted({r['card']['date_kst'] for r in archive.cards() if r['card']['date_kst']}, reverse=True)
+        return {'schema': 'pitcheezy-service-dates-v2', 'source': {'kind': 'archive', 'session_id': None}, 'dates': dates}
+
+    def games_body(date):
+        embargoed = clock.active_games()
+        games = {}
+        for record in archive.cards():
+            if record['card']['date_kst'] != date:
+                continue
+            card = list_card(record, len(record['pitches'])-1, {'kind': 'archive', 'session_id': None})
+            games[card['game_pk']] = card
+        live, healthy = live_cards(date)
+        for card in live:  # a stored final record wins over the schedule row of the same game
+            games.setdefault(card['game_pk'], card)
+        out = [redact(c) if c['game_pk'] in embargoed else c for c in games.values()]
+        out.sort(key=lambda c: (c['start'] or '', c['game_number'], c['game_pk']))
+        return {'schema': 'pitcheezy-service-games-v2', 'source': {'kind': 'archive', 'session_id': None},
+                'date': date, 'games': out, 'live_ok': healthy}
+
+    def game_body(game_pk, after=None):
+        """Raises ``Refused`` (423 embargo, 503 feed) or ``KeyError`` (no record) instead of returning a body."""
+        if game_pk in clock.active_games():
+            raise Refused(423, '이 경기는 지금 다른 화면에서 진행 중입니다.')
+        try:
+            record = archive.record(game_pk)
+            if record['final'] is not None:
+                return cut_view(record, len(record['pitches'])-1, {'kind': 'archive', 'session_id': None}, after=after)
+        except KeyError:
+            pass
+        if live_feed is None:
+            raise KeyError(game_pk)
+        return live_view(game_pk, after)
+
     @app.get('/api/service/dates')
     def service_dates(demo: str | None = Query(None)):
         def run():
@@ -378,8 +425,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                 session, record, _ = demo_session(demo)
                 return ok({'schema': 'pitcheezy-service-dates-v2', 'source': {'kind': 'demo', 'session_id': demo, 'session_status': session['status']},
                            'dates': [record['card']['date_kst']]})
-            dates = sorted({r['card']['date_kst'] for r in archive.cards() if r['card']['date_kst']}, reverse=True)
-            return ok({'schema': 'pitcheezy-service-dates-v2', 'source': {'kind': 'archive', 'session_id': None}, 'dates': dates})
+            return ok(dates_body())
         return guarded(run)
 
     @app.get('/api/service/games')
@@ -393,20 +439,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                 source = {'kind': 'demo', 'session_id': demo, 'session_status': session['status']}
                 games = [list_card(record, cutoff, source)] if record['card']['date_kst'] == date else []
                 return ok({'schema': 'pitcheezy-service-games-v2', 'source': source, 'date': date, 'games': games, 'live_ok': True})
-            embargoed = clock.active_games()
-            games = {}
-            for record in archive.cards():
-                if record['card']['date_kst'] != date:
-                    continue
-                card = list_card(record, len(record['pitches'])-1, {'kind': 'archive', 'session_id': None})
-                games[card['game_pk']] = card
-            live, healthy = live_cards(date)
-            for card in live:  # a stored final record wins over the schedule row of the same game
-                games.setdefault(card['game_pk'], card)
-            out = [redact(c) if c['game_pk'] in embargoed else c for c in games.values()]
-            out.sort(key=lambda c: (c['start'] or '', c['game_number'], c['game_pk']))
-            return ok({'schema': 'pitcheezy-service-games-v2', 'source': {'kind': 'archive', 'session_id': None},
-                       'date': date, 'games': out, 'live_ok': healthy})
+            return ok(games_body(date))
         return guarded(run)
 
     @app.get('/api/service/games/{game_pk}')
@@ -417,18 +450,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                 if session['game_pk'] != game_pk:
                     return fail(404, '이 시연에 없는 경기입니다.')
                 return ok(cut_view(record, cutoff, {'kind': 'demo', 'session_id': demo, 'session_status': session['status']}, after=after))
-            if game_pk in clock.active_games():
-                return fail(423, '이 경기는 지금 다른 화면에서 진행 중입니다.')
-            try:
-                record = archive.record(game_pk)
-                if record['final'] is not None:
-                    return ok(cut_view(record, len(record['pitches'])-1, {'kind': 'archive', 'session_id': None}, after=after))
-            except KeyError:
-                pass
-            if live_feed is None:
-                raise KeyError(game_pk)
-            view = live_view(game_pk, after)
-            return view if isinstance(view, JSONResponse) else ok(view)  # the calm 503 of a failed first poll, as is
+            return ok(game_body(game_pk, after))  # a failed first poll is ``Refused``: the calm 503, as before
         return guarded(run)
 
     def live_view(game_pk, after):
@@ -436,7 +458,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         try:
             feed, meta, *rest = live_feed(game_pk)
         except LiveFeedError:
-            return fail(503, 'MLB 경기 정보를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.')
+            raise Refused(503, 'MLB 경기 정보를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.') from None
         record = game_history.build(feed)
         parsed = parse_state(feed, None)
         phase = {'ready': 'pre_pitch', 'resolving': 'resolving', 'between_innings': 'between_innings'}.get(parsed['status'])
@@ -545,4 +567,13 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
     def operator_control(sid: str, body: ControlDemo, x_pitcheezy_operator: str | None = Header(None)):
         return operator(x_pitcheezy_operator, lambda: ok(op_view(clock.control(
             sid, body.action, expected_version=body.expected_version, op_id=body.op_id, index=body.index, rate=body.rate))))
+
+    return ServiceBodies(dates_body, games_body, game_body)
+
+
+class ServiceBodies:
+    """The non-demo body builders of one registered app (``register`` returns it; ``app.state.service_bodies``)."""
+
+    def __init__(self, dates, games, game):
+        self.dates, self.games, self.game = dates, games, game
 
