@@ -97,6 +97,8 @@ class World:
 
     def start(self, **extra):
         """(Re)start the publisher process over the same output folder, state file, store and clock."""
+        if getattr(self, 'publisher', None) is not None:
+            self.publisher.close()  # the old process is gone: its lock with it
         self.app, self.publisher = publisher.build(
             self.config, wall=lambda: self.now[0], commit=COMMIT, live_feed=self.feed, live_policy=self.armb,
             watch_dir=self.watch, feed_dir=self.feeds, demo_dir=self.demo, intent_dir=self.intent,
@@ -105,6 +107,7 @@ class World:
 
     def close(self):
         service_api.time = self._time
+        self.publisher.close()
 
     def write_setup(self, lines=None, game=ARCHIVE_GAME, **pin):
         est = lambda ab, n, x: setup_fixture.estimate(ab, n, x) | {'pitch_id': f'{game}:{ab}:{n}'}
@@ -131,6 +134,10 @@ class World:
             self.settle()
             health = self.publisher.cycle()
         return health
+
+    def read_after_cycle(self, name):
+        self.cycle(settle=False)
+        return self.read(name)
 
     def path(self, name):
         return self.out/name

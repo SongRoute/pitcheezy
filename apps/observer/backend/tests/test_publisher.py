@@ -207,8 +207,8 @@ def test_a_file_is_replaced_whole_and_a_failed_write_leaves_the_old_one(world, m
 
     def watching(source, target):
         if str(target).endswith(LIVE_FILE):  # at the swap: the published name still holds the complete old file,
-            assert Path(target).read_bytes() == before  # and the new one is complete under a hidden name
-            assert Path(source).name.startswith('.') and json.loads(Path(source).read_bytes())['publish']['sequence'] == 3
+            assert Path(target).read_bytes() == before  # and the new one is complete outside the output folder
+            assert not Path(source).is_relative_to(world.out) and json.loads(Path(source).read_bytes())['publish']['sequence'] == 3
             seen.append(source)
         return real(source, target)
     monkeypatch.setattr(publisher.os, 'replace', watching)
@@ -226,7 +226,8 @@ def test_a_file_is_replaced_whole_and_a_failed_write_leaves_the_old_one(world, m
     with pytest.raises(OSError):
         world.cycle(settle=False)
     assert world.path(LIVE_FILE).read_bytes() == kept and world.read('v1/health.json')['sequence'] == 3  # health did not move
-    assert all(not Path(name).name.startswith('.') for name in world.files())  # no temporary file is left behind
+    assert all(ALLOWED.fullmatch(name) for name in world.files())  # no temporary file is left behind,
+    assert list(world.publisher.sink.staging.iterdir()) == []  # in the output or beside it
     monkeypatch.undo()
     world.cycle(settle=False)
     assert world.game()['publish']['sequence'] == 5 and world.read('v1/health.json')['sequence'] == 5  # 4 was taken, never reused
@@ -507,3 +508,170 @@ def test_schema_inference_and_validation_basics():
     assert publish_schema.validate({'a': True, 'b': 1, 'm': {'99': {}}}, schema) == [
         '$.a: boolean is not integer', '$.b: integer is not string or null', "$.m.99: missing 'x'"]
     assert publish_schema.infer([]) == {}
+
+
+# ---------- review fixes (2026-10-11) ----------
+def polls(world):
+    return sum('/feed/live' in url for url in world.upstream.calls)
+
+
+def start_demo(world):
+    head = {'X-Pitcheezy-Operator': DemoClock(world.demo).token()}
+    made = world.client.post('/api/service/operator/sessions', json={'game_pk': ARCHIVE_GAME, 'mapping_id': 'fx', 'start_index': 4}, headers=head)
+    assert made.status_code == 201, made.text
+    return made.json()['session_id'], head
+
+
+def test_a_final_live_game_rechecked_with_no_upstream_change_keeps_its_bytes_and_sequence(world):
+    world.cycle()
+    world.cycle(snap('20261005_100100', half='final'), settle=False)
+    final, asked = world.path(LIVE_FILE).read_bytes(), polls(world)
+    assert json.loads(final)['publish']['final'] is True
+    for _ in range(3):  # each recheck polls upstream again and gets the same game; only the clock has moved
+        world.cycle(after=world.config['settled_recheck_s']+1, settle=False)
+    assert polls(world) == asked+3
+    assert world.path(LIVE_FILE).read_bytes() == final and world.game()['publish']['sequence'] == 3
+    world.cycle(OSError('upstream down'), after=world.config['settled_recheck_s']+1, settle=False)  # nor does a failed recheck
+    assert world.path(LIVE_FILE).read_bytes() == final
+    assert world.read('v1/health.json')['sequence'] == 7
+
+
+def test_the_change_digest_ignores_exactly_the_clock_driven_fields(world):
+    world.cycle()
+    body = strip(world.game())
+    moved = json.loads(json.dumps(body))
+    moved['feed'] = {'as_of': 'later', 'ok': False, 'stale_s': 99.0}
+    moved['display_state']['feed'] |= {'last_ok_at': 'later', 'received_at': 'later', 'lag_s': 9.9, 'lag_max_s': 9.9,
+                                       'failing_since': 'later', 'failing_for_s': 9.9, 'ok': False}
+    assert publisher.game_digest(moved) == publisher.game_digest(body)
+    for change in (lambda b: b['display_state'].update(state='final'), lambda b: b['pitches'][0]['actual'].update(pitch_type='XX'),
+                   lambda b: b['receipts'].update(version='x'), lambda b: b['game'].update(home_score=9),
+                   lambda b: b['display_state']['feed'].update(provider_order='stale')):
+        other = json.loads(json.dumps(body))
+        change(other)
+        assert publisher.game_digest(other) != publisher.game_digest(body), change
+
+
+def test_a_demo_that_starts_after_a_game_was_published_withdraws_its_files_at_once(world):
+    world.cycle()
+    assert world.path(ARCHIVE_FILE).exists() and world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()
+    assert world.read(f'v1/games/{ARCHIVE_DATE}.json')['games'][0]['home_score'] == 1
+    sid, head = start_demo(world)
+    world.cycle(settle=False)  # the very next cycle, long before any settled recheck is due
+    assert not world.path(ARCHIVE_FILE).exists() and not world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()
+    card = world.read(f'v1/games/{ARCHIVE_DATE}.json')['games'][0]
+    assert card['embargoed'] is True and card['home_score'] is None
+    assert world.read('v1/health.json')['unavailable_games'] == [] and world.path(LIVE_FILE).exists()
+    ended = world.client.post(f'/api/service/operator/sessions/{sid}/control', json={'action': 'end'}, headers=head)
+    assert ended.status_code == 200, ended.text
+    world.cycle(settle=False)  # the demo is over: the game is public again, with a new sequence
+    again = world.game(ARCHIVE_GAME)
+    assert again['publish']['final'] is True and again['publish']['sequence'] == world.read('v1/health.json')['sequence']
+    assert world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()
+    assert world.read(f'v1/games/{ARCHIVE_DATE}.json')['games'][0]['home_score'] == 1
+
+
+def test_a_second_publisher_over_the_same_output_fails_fast(world, monkeypatch):
+    world.cycle(settle=False)
+    with pytest.raises(publisher.AlreadyRunning, match='another publisher'):
+        publisher.Publisher(world.app.state.service_bodies, LocalDirSink(world.out), config=world.config,
+                            state_path=world.publisher.state_path)
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR', str(listed_dir(world.tmp/'replay')))
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_ARMB', '0')
+    monkeypatch.delenv('PITCHEEZY_OBSERVER_LIVE_STORE', raising=False)
+    monkeypatch.delenv('PITCHEEZY_PUBLISH_STATE', raising=False)
+    arguments = ['--out', str(world.out), '--once', '--feed-dir', str(world.feeds), '--watch-dir', str(world.watch),
+                 '--intent-dir', str(world.intent), '--demo-dir', str(world.demo)]
+    with pytest.raises(SystemExit, match='another publisher'):
+        publisher.main(arguments)
+    assert world.read('v1/health.json')['sequence'] == 1  # the second one wrote nothing
+    world.publisher.close()
+    other = publisher.Publisher(world.app.state.service_bodies, LocalDirSink(world.out), config=world.config,
+                                state_path=world.publisher.state_path)  # the lock is free once the first one is gone
+    other.close()
+
+
+def test_a_final_live_game_is_no_longer_polled_after_the_recheck_period_and_its_file_stays(world):
+    world.config['final_recheck_for_s'] = 1500
+    world.cycle(snap(half='final'), settle=False)
+    final, asked = world.path(LIVE_FILE).read_bytes(), polls(world)
+    world.cycle(after=601.0, settle=False)
+    world.cycle(after=601.0, settle=False)
+    assert polls(world) == asked+2  # still inside the period: rechecked
+    for _ in range(3):
+        world.cycle(snap('20261005_100900', half='final', call='C'), after=601.0, settle=False)
+    assert polls(world) == asked+2 and world.path(LIVE_FILE).read_bytes() == final  # past it: left alone, kept
+    assert world.path(ARCHIVE_FILE).exists()
+    world.config['final_recheck_for_s'] = None  # null: rechecked for as long as the publisher knows the game
+    world.cycle(after=601.0, settle=False)
+    assert polls(world) == asked+3 and world.game()['publish']['sequence'] == world.read('v1/health.json')['sequence']
+
+
+def test_a_setup_file_that_arrives_after_the_recheck_period_is_still_published(make):
+    world = make(first=snap(half='final'))
+    world.config['final_recheck_for_s'] = 0
+    world.cycle(settle=False)
+    assert not world.path(f'v1/setup/{LIVE_GAME}.json').exists()
+    world.write_setup(game=LIVE_GAME)
+    asked = polls(world)
+    world.cycle(after=601.0, settle=False)
+    assert world.read(f'v1/setup/{LIVE_GAME}.json')['publish']['final'] is True and polls(world) == asked  # a local read only
+
+
+def test_a_game_list_that_could_not_be_built_is_named_in_health(world):
+    world.cycle(settle=False)
+    real = world.publisher.bodies.games
+
+    def games(date):
+        if date == LIVE_DATE:
+            raise RuntimeError('secret detail /private/path')
+        return real(date)
+    world.publisher.bodies.games = games
+    kept = world.path(f'v1/games/{LIVE_DATE}.json').read_bytes()
+    health = world.cycle(settle=False)
+    assert health['unavailable_dates'] == [LIVE_DATE] and world.path(f'v1/games/{LIVE_DATE}.json').read_bytes() == kept
+    assert 'secret' not in world.path('v1/health.json').read_text() and 'private' not in world.path('v1/health.json').read_text()
+    world.publisher.bodies.games = real
+    assert world.cycle(settle=False)['unavailable_dates'] == []
+
+
+@pytest.mark.parametrize('garbage', ['{"sequence": 3, "files"', '[1, 2]', '{"sequence": "x"}', ''])
+def test_a_corrupted_state_file_does_not_stop_the_publisher_and_the_sequence_continues(world, garbage):
+    world.cycle(settle=False)
+    world.cycle(settle=False)
+    world.publisher.close()
+    Path(world.publisher.state_path).write_text(garbage)
+    world.start()
+    world.cycle(settle=False)
+    assert world.read('v1/health.json')['sequence'] == 3 and world.game()['publish']['sequence'] == 3
+    assert json.loads(Path(world.publisher.state_path).read_text())['sequence'] == 3
+
+
+def test_temporary_files_are_never_inside_the_output_folder(world, monkeypatch):
+    real, sources = os.replace, []
+
+    def watching(source, target):
+        if Path(target).is_relative_to(world.out):
+            sources.append(Path(source))
+            assert not Path(source).is_relative_to(world.out)
+            assert os.stat(Path(source).parent).st_dev == os.stat(Path(target).parent).st_dev  # same filesystem: a rename
+            assert sorted(str(p.relative_to(world.out)) for p in world.out.rglob('*') if p.is_file()) == world.files()
+            assert all(ALLOWED.fullmatch(name) for name in world.files())
+        return real(source, target)
+    monkeypatch.setattr(publisher.os, 'replace', watching)
+    world.cycle(settle=False)
+    assert len(sources) >= 6 and not any(source.exists() for source in sources)
+    assert all(ALLOWED.fullmatch(str(p.relative_to(world.out))) for p in world.out.rglob('*') if p.is_file())
+
+
+def test_the_file_prefix_and_the_contract_version_are_one_value(make):
+    world = make()
+    assert world.read_after_cycle('v1/manifest.json')['files']['game'] == 'v1/game/{game_pk}.json'
+    other = make(contract_version='v2')
+    manifest = other.read_after_cycle('v2/manifest.json')
+    assert manifest['contract'] == manifest['publish']['contract'] == 'v2' and manifest['files']['health'] == 'v2/health.json'
+    assert all(name.startswith('v2/') for name in other.files())
+    assert other.read(f'v2/game/{LIVE_GAME}.json')['publish']['contract'] == 'v2'
+    for bad in ('', 'v1/x', '../v1', 'V1', 1):
+        with pytest.raises(ValueError):
+            publisher.load_config(env={}, contract_version=bad)

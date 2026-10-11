@@ -568,12 +568,13 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         return operator(x_pitcheezy_operator, lambda: ok(op_view(clock.control(
             sid, body.action, expected_version=body.expected_version, op_id=body.op_id, index=body.index, rate=body.rate))))
 
-    return ServiceBodies(dates_body, games_body, game_body)
+    return ServiceBodies(dates_body, games_body, game_body, clock.active_games)
 
 
 class ServiceBodies:
     """The non-demo body builders of one registered app (``register`` returns it; ``app.state.service_bodies``)."""
 
-    def __init__(self, dates, games, game):
+    def __init__(self, dates, games, game, embargoed=lambda: set()):
         self.dates, self.games, self.game = dates, games, game
+        self.embargoed = embargoed  # game pks a demo session holds right now: ``game`` refuses them with 423
 

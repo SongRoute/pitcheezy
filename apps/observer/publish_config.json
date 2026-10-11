@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "contract_version": "v1",
+  "contract_version_note": "Also the path prefix of every published file (v1/...): the two cannot differ.",
   "publish_interval_s": 10,
   "publish_interval_note": "PROVISIONAL, not measured. Seconds between publish cycles. 10 only mirrors live_config.json poll_interval_s (the feed's own metaData.wait); the contract leaves the interval open until the rehearsal. The upstream poll pace itself stays in live_config.json (poll_interval_s / fast_poll_s): a cycle that comes sooner than that republishes the last snapshot. Env PITCHEEZY_PUBLISH_INTERVAL_S overrides.",
   "fixed_delay_s": 0,
@@ -11,6 +12,8 @@
   "state_path_note": "Publisher's own bookkeeping (sequence, per-file digests, which games are final). null = '<out_dir>.state.json' beside the output directory, so it is not part of what gets uploaded. Env PITCHEEZY_PUBLISH_STATE overrides.",
   "settled_recheck_s": 600,
   "settled_recheck_note": "PROVISIONAL, not measured. A file that no longer changes by itself (a game marked final, its setup file, the game list of a date outside the live window) is rebuilt at most this often and rewritten only if its content changed (a correction, with a new sequence). null = never rebuilt after it settled (then a setup file that arrives after the game ended is never picked up).",
+  "final_recheck_for_s": 21600,
+  "final_recheck_for_note": "PROVISIONAL, not measured. A game taken from the live feed stops being rebuilt (and so stops being polled upstream) this long after it was first marked final; its file stays as it is. Its setup file is still looked for at every settled recheck (a local read). null = rechecked for as long as the publisher knows the game. Finished games read from the local archive are not affected: rebuilding them asks nobody.",
   "live_days_back": 1,
   "live_days_ahead": 1,
   "live_days_note": "PROVISIONAL. KST dates around today whose game list and unfinished games are rebuilt every cycle (today-back .. today+ahead). --date on the command line replaces this window."

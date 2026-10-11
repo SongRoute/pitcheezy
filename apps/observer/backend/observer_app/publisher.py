@@ -6,7 +6,8 @@ Each cycle the publisher asks the SAME builders the ``/api/service/**`` routes c
 for the dates, each date's game list and each game's full body, and hands them to a sink:
 
     v1/manifest.json   contract version, code commit, published_at, publish interval, fixed delay
-    v1/health.json     last publish time and sequence (written last: a cycle is complete when it changes)
+    v1/health.json     last publish time and sequence (written last: a cycle is complete when it changes),
+                       the games and dates that could not be built this cycle
     v1/dates.json      GET /api/service/dates
     v1/games/<YYYY-MM-DD>.json   GET /api/service/games?date=
     v1/game/<game_pk>.json       GET /api/service/games/{pk}   (the full body, never ``after``)
@@ -24,11 +25,14 @@ unless its content changes (a correction), which gets the then-current, higher s
 
 Calling the game builder is what drives the upstream poll (``LiveFeed.snapshot`` fetches when its interval has
 passed), so the publisher is the "someone is watching". Demo sessions, the operator API and replay clocks are
-never asked for. Uploading is not done here: ``Sink`` is the seam; only ``LocalDirSink`` exists.
+never asked for; a game a demo session takes is withdrawn (its game and setup files are deleted) in the next
+cycle and published again when the demo ends. Uploading is not done here: ``Sink`` is the seam; only
+``LocalDirSink`` exists. One publisher per output: a second one over the same state file refuses to start.
 """
 from __future__ import annotations
 
 import argparse
+import fcntl
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -46,13 +50,20 @@ LOGGER = logging.getLogger(__name__)
 APP = Path(__file__).resolve().parents[2]
 CONFIG_PATH = APP/'publish_config.json'
 KST = timezone(timedelta(hours=9))
-PREFIX = 'v1'
-LAYOUT = {'manifest': f'{PREFIX}/manifest.json', 'health': f'{PREFIX}/health.json', 'dates': f'{PREFIX}/dates.json',
-          'games': f'{PREFIX}/games/{{date}}.json', 'game': f'{PREFIX}/game/{{game_pk}}.json',
-          'setup': f'{PREFIX}/setup/{{game_pk}}.json'}
+FILES = {'manifest': 'manifest.json', 'health': 'health.json', 'dates': 'dates.json', 'games': 'games/{date}.json',
+         'game': 'game/{game_pk}.json', 'setup': 'setup/{game_pk}.json'}
+# ``display_state.feed`` describes the connection at the moment a body was built (last good poll, receipt time,
+# measured lag, outage): it moves with the clock and with every poll. Only these keys say something about the
+# game's content (the admitted order of the served snapshot) or are configuration.
+STATE_FEED_CONTENT = ('provider_order', 'lag_threshold_s', 'thresholds_provisional')
+
+
+def layout(contract):
+    """Published path of each file kind. The contract version IS the prefix (``v1/...``): one value, never two."""
+    return {kind: f'{contract}/{path}' for kind, path in FILES.items()}
 ENV = {'out_dir': ('PITCHEEZY_PUBLISH_OUT_DIR', str), 'state_path': ('PITCHEEZY_PUBLISH_STATE', str),
        'publish_interval_s': ('PITCHEEZY_PUBLISH_INTERVAL_S', float), 'fixed_delay_s': ('PITCHEEZY_PUBLISH_DELAY_S', float)}
-PROVISIONAL = ('publish_interval_s', 'settled_recheck_s', 'live_days_back', 'live_days_ahead')
+PROVISIONAL = ('publish_interval_s', 'settled_recheck_s', 'final_recheck_for_s', 'live_days_back', 'live_days_ahead')
 
 
 def load_config(path=None, env=None, **overrides):
@@ -64,6 +75,11 @@ def load_config(path=None, env=None, **overrides):
             config[key] = kind(env[name])
     config |= {key: value for key, value in overrides.items() if value is not None}
     interval, delay, recheck = config['publish_interval_s'], config['fixed_delay_s'], config['settled_recheck_s']
+    if not isinstance(config['contract_version'], str) or re.fullmatch(r'v[1-9]\d*', config['contract_version']) is None:
+        raise ValueError('contract_version must look like v1, v2, ... (it is also the path prefix)')
+    period = config.get('final_recheck_for_s')
+    if period is not None and not (isinstance(period, (int, float)) and period >= 0):
+        raise ValueError('final_recheck_for_s must be null or a number of seconds')
     if not (isinstance(interval, (int, float)) and 0 < interval <= 3600):  # also refuses NaN
         raise ValueError('publish_interval_s must be between 0 (exclusive) and 3600 seconds')
     if not (isinstance(delay, (int, float)) and 0 <= delay <= 3600):
@@ -81,7 +97,13 @@ class Sink:
 
     ``write`` must replace the whole file at once (a reader sees the old or the new content, never a part).
     ``final`` says the content is not expected to change again (an uploader may cache it longer). An uploader to a
-    public host implements these three calls; the publisher's build logic does not change."""
+    public host implements these three calls; the publisher's build logic does not change.
+
+    Temporary names: a sink must never let a half-written or temporary object be readable under the public
+    prefix. ``LocalDirSink`` keeps its temporary files in a sibling folder outside the output directory, so the
+    output holds published files only. An uploader that mirrors a local folder must still skip dot-files and
+    anything that is not one of the published names (``publisher.FILES``), and one that writes remotely must
+    upload under a private name and switch, or rely on the host's atomic object replace."""
 
     def write(self, path, data, *, final=False):
         raise NotImplementedError
@@ -95,10 +117,13 @@ class Sink:
 
 
 class LocalDirSink(Sink):
-    """Files under one local directory, each replaced atomically (temporary file in the same folder + rename)."""
+    """Files under one local directory, each replaced atomically: the content is written completely to a
+    temporary file in ``<parent>/.<name>.tmp/`` (a sibling of the output directory, so on the same filesystem and
+    never inside what gets uploaded) and then renamed onto the published name."""
 
     def __init__(self, root):
         self.root = Path(root)
+        self.staging = self.root.parent/f'.{self.root.name}.tmp'
 
     def _target(self, path):
         parts = PurePosixPath(path).parts
@@ -109,7 +134,8 @@ class LocalDirSink(Sink):
     def write(self, path, data, *, final=False):
         target = self._target(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(f'.{target.name}.{os.getpid()}.tmp')  # a dot file: never one of the published names
+        self.staging.mkdir(parents=True, exist_ok=True)
+        temporary = self.staging/f"{'_'.join(PurePosixPath(path).parts)}.{os.getpid()}.tmp"
         try:
             with open(temporary, 'wb') as handle:
                 handle.write(data)
@@ -151,6 +177,20 @@ def _digest(body):
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
 
 
+def game_digest(body):
+    """What makes a settled game file new: its content, not the moment it was built. Left out are the fields that
+    move with the clock or with the connection while the game itself is unchanged: the whole top-level ``feed``
+    (``as_of``, ``ok``, ``stale_s``) and, inside ``display_state.feed``, everything but ``STATE_FEED_CONTENT``
+    (``ok``, ``delayed``, ``lag_s``, ``lag_max_s``, ``lag_measured``, ``last_ok_at``, ``failing_since``,
+    ``failing_for_s``, ``received_at``). Pitches, plate appearances, receipts, the display state itself, the
+    recommendation and its ledger record all count."""
+    stable = {key: value for key, value in body.items() if key != 'feed'}
+    state = stable.get('display_state')
+    if isinstance(state, dict) and isinstance(state.get('feed'), dict):
+        stable['display_state'] = state | {'feed': {key: state['feed'].get(key) for key in STATE_FEED_CONTENT}}
+    return _digest(stable)
+
+
 def is_final(body):
     """True when a game body is finished and settled: the builder calls the game final and no pitch of it is
     still unconfirmed (a body with a pitch in 확인 중 keeps being rewritten until the store admits it)."""
@@ -173,6 +213,10 @@ def check_public(body):
     return body
 
 
+class AlreadyRunning(RuntimeError):
+    """Another publisher holds this output's lock."""
+
+
 class Publisher:
     """One publish cycle at a time. ``bodies`` is ``service_api.ServiceBodies`` of the app whose routes would
     otherwise answer; ``setups`` is its ``SetupEstimates``; ``dates`` (KST ``YYYY-MM-DD``) replaces the live
@@ -184,16 +228,49 @@ class Publisher:
         for date in self.dates or []:
             if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
                 raise ValueError('date must be YYYY-MM-DD')
+        self.layout = layout(config['contract_version'])
         self.state_path = None if state_path is None else Path(state_path)
-        self.state = self._load_state()
+        self._lock = self._acquire()
+        try:
+            self.state = self._load_state()
+        except BaseException:
+            self.close()
+            raise
+
+    def _acquire(self):
+        """Exclusive, non-blocking lock on ``<state file>.lock`` for this object's life: two publishers over one
+        output would hand out the same sequence twice and overwrite each other's files with older ones."""
+        if self.state_path is None:
+            return None
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(f'{self.state_path}.lock', 'a')
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            raise AlreadyRunning(f'another publisher is already running on {self.state_path} (lock {self.state_path}.lock is held)') from None
+        return handle
+
+    def close(self):
+        """Release the lock (the process exiting does the same)."""
+        if getattr(self, '_lock', None) is not None:
+            self._lock.close()
+            self._lock = None
 
     # ---- bookkeeping --------------------------------------------------------------------------------
     def _load_state(self):
-        state = {'sequence': 0, 'files': {}, 'checked': {}}
+        state = {'sequence': 0, 'files': {}, 'checked': {}, 'embargoed': []}
         if self.state_path is not None and self.state_path.is_file():
-            state |= json.loads(self.state_path.read_text())
+            try:
+                saved = json.loads(self.state_path.read_text())
+                if not (isinstance(saved, dict) and type(saved.get('sequence')) is int and isinstance(saved.get('files'), dict)
+                        and isinstance(saved.get('checked'), dict) and isinstance(saved.get('embargoed', []), list)):
+                    raise ValueError('not a publisher state')
+                state |= saved
+            except (ValueError, OSError):  # unreadable bookkeeping: start as if it were lost (everything is rebuilt)
+                LOGGER.warning('state file %s unreadable; continuing from the published health file', self.state_path, exc_info=True)
         try:  # the sequence never goes back, even if the state file was lost: the last health file knows it too
-            health = self.sink.read(LAYOUT['health'])
+            health = self.sink.read(self.layout['health'])
             state['sequence'] = max(state['sequence'], int(json.loads(health)['sequence'])) if health else state['sequence']
         except (ValueError, KeyError, TypeError, OSError):
             LOGGER.warning('published health file unreadable; sequence continues from the state file only', exc_info=True)
@@ -219,10 +296,10 @@ class Publisher:
         return [(today+timedelta(days=offset)).isoformat()
                 for offset in range(-self.config['live_days_back'], self.config['live_days_ahead']+1)]
 
-    def _put(self, path, body, *, always, final=None, volatile=()):
-        """Write ``body`` + the ``publish`` key at ``path``. ``always`` False: only if the content (without the
-        ``volatile`` keys, which change on every build) or its final mark differs from what is published there."""
-        digest = _digest({key: value for key, value in body.items() if key not in volatile})
+    def _put(self, path, body, *, always, final=None, digest=None):
+        """Write ``body`` + the ``publish`` key at ``path``. ``always`` False: only if the content (``digest``,
+        default the whole body) or its final mark differs from what is published there."""
+        digest = _digest(body) if digest is None else digest
         known = self.state['files'].get(path)
         self.state['checked'][path] = self._now
         if not always and known and known['digest'] == digest and known.get('final') == final:
@@ -243,18 +320,37 @@ class Publisher:
             self.sink.delete(path)
             del self.state['files'][path]
 
+    def _withdraw(self, game_pk):
+        """A demo session holds this game: nothing of it stays public (its game and setup files are deleted) and
+        it is tried again in every cycle, so it returns as soon as the demo is over."""
+        for kind in ('game', 'setup'):
+            path = self.layout[kind].format(game_pk=game_pk)
+            self._drop(path)
+            self.state['checked'].pop(path, None)
+
     # ---- one cycle ----------------------------------------------------------------------------------
     def cycle(self):
         """Build and write everything that is due. Returns the health body of this cycle."""
         self._now, self._written = self.wall(), []
         self._sequence = self.state['sequence'] = self.state['sequence']+1
         self._save_state()  # the number is taken before any file carries it: a crash never reuses it
-        now, unavailable = self._now, []
+        now, unavailable, unavailable_dates = self._now, [], []
+        layout_ = self.layout
+        embargoed = {int(pk) for pk in self.bodies.embargoed()}
+        if sorted(embargoed) != self.state['embargoed']:
+            # a demo started or ended: every game list is rebuilt now (its card is hidden or shown again), not at
+            # the next settled recheck
+            prefix = layout_['games'].split('{')[0]
+            for path in [path for path in self.state['checked'] if path.startswith(prefix)]:
+                del self.state['checked'][path]
+            self.state['embargoed'] = sorted(embargoed)
+        for game_pk in embargoed:
+            self._withdraw(game_pk)
         dates_body = check_public(self.bodies.dates())
         live_dates = self.live_dates(now)
         fast, listed = set(), set()
         for date in sorted(set(dates_body['dates']) | set(live_dates)):
-            path, live = LAYOUT['games'].format(date=date), date in live_dates
+            path, live = layout_['games'].format(date=date), date in live_dates
             if not live and not self._due(path, now):
                 continue
             try:
@@ -262,6 +358,7 @@ class Publisher:
             except Exception:  # noqa: BLE001 - one date never stops the cycle; its last file stays
                 LOGGER.warning('game list of %s not built; the published one is kept', date, exc_info=True)
                 self.state['checked'][path] = now
+                unavailable_dates.append(date)
                 continue
             self._put(path, body, always=live)
             for card in body['games']:
@@ -270,17 +367,27 @@ class Publisher:
                 listed.add(int(card['game_pk']))
                 if live:
                     fast.add(int(card['game_pk']))
-        known = {int(PurePosixPath(path).stem) for path in self.state['files'] if path.startswith(f'{PREFIX}/game/')}
-        for game_pk in sorted(listed | known):
-            path = LAYOUT['game'].format(game_pk=game_pk)
-            settled = (self.state['files'].get(path) or {}).get('final') is True
+        prefix = layout_['game'].split('{')[0]
+        known = {int(PurePosixPath(path).stem) for path in self.state['files'] if path.startswith(prefix)}
+        period = self.config.get('final_recheck_for_s')
+        for game_pk in sorted((listed | known)-embargoed):
+            path = layout_['game'].format(game_pk=game_pk)
+            entry = self.state['files'].get(path) or {}
+            settled = entry.get('final') is True
             if (settled or game_pk not in fast) and not self._due(path, now):
                 continue
             self.state['checked'][path] = now
+            if settled and entry.get('kind') == 'live' and period is not None and now-entry['final_at'] >= period:
+                # long final: the upstream feed is not asked again and the file stays; a setup file that arrives
+                # late is still found (a local read)
+                self._setup(game_pk)
+                continue
             try:
                 body = check_public(self.bodies.game(game_pk))  # polls upstream; ledger is written in here
             except Refused as refused:
-                if refused.status != 423:  # a demo embargo is not a fault and is not reported
+                if refused.status == 423:  # a demo took the game between the check above and now: not a fault
+                    self._withdraw(game_pk)
+                else:
                     unavailable.append({'game_pk': game_pk, 'status': refused.status})
                 continue
             except NotPublic:
@@ -290,21 +397,25 @@ class Publisher:
                 unavailable.append({'game_pk': game_pk, 'status': None})
                 continue
             final = is_final(body)
-            # ``feed`` (as_of / stale_s) moves with the clock, not with the game: it never makes a final file new
-            self._put(path, body, always=not final, final=final, volatile=('feed',))
+            self._put(path, body, always=not final, final=final, digest=game_digest(body))
+            written = self.state['files'][path]
+            written['kind'] = body['source']['kind']
+            written['final_at'] = (entry.get('final_at') if settled else now) if final else None
             if final:
                 self._setup(game_pk)
-        self._put(LAYOUT['dates'], dates_body, always=True)
+            else:
+                self._drop(layout_['setup'].format(game_pk=game_pk))
+        self._put(layout_['dates'], dates_body, always=True)
         commit, dirty = self.commit
-        self._put(LAYOUT['manifest'], {
+        self._put(layout_['manifest'], {
             'schema': 'pitcheezy-publish-manifest-v1', 'contract': self.config['contract_version'],
             'commit': commit, 'commit_dirty': dirty, 'published_at': _iso(now),
             'publish_interval_s': self.config['publish_interval_s'], 'fixed_delay_s': self.config['fixed_delay_s'],
-            'provisional': list(PROVISIONAL), 'live_dates': live_dates, 'files': LAYOUT}, always=True)
+            'provisional': list(PROVISIONAL), 'live_dates': live_dates, 'files': layout_}, always=True)
         health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(now),
                   'publish_interval_s': self.config['publish_interval_s'], 'files_written': len(self._written)+1,
-                  'unavailable_games': unavailable}
-        self._put(LAYOUT['health'], health, always=True)
+                  'unavailable_games': unavailable, 'unavailable_dates': unavailable_dates}
+        self._put(layout_['health'], health, always=True)
         self._save_state()
         return health
 
@@ -313,7 +424,7 @@ class Publisher:
         line validated); a game without estimates has no file, and one that stops validating loses its file."""
         if self.setups is None:
             return
-        path = LAYOUT['setup'].format(game_pk=game_pk)
+        path = self.layout['setup'].format(game_pk=game_pk)
         try:
             view = self.setups.view(game_pk)
         except KeyError:
@@ -370,20 +481,31 @@ def main(argv=None):
     parser.add_argument('--demo-dir', help='demo clock folder (default PITCHEEZY_DEMO_DIR)')
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')
-    config = load_config(args.config, out_dir=args.out, publish_interval_s=args.interval, fixed_delay_s=args.delay)
-    app, publisher = build(config, dates=args.date, feed_dir=args.feed_dir, watch_dir=args.watch_dir,
-                           intent_dir=args.intent_dir, demo_dir=args.demo_dir)
-    feed = app.state.live_parts()
-    if config['fixed_delay_s'] > getattr(feed, 'max_delay_s', config['fixed_delay_s']):
-        raise SystemExit(f"fixed_delay_s {config['fixed_delay_s']} exceeds the live feed's max_delay_s {feed.max_delay_s}")
-    if os.environ.get('PITCHEEZY_OBSERVER_LIVE_ARMB', '1') != '0':
-        app.state.live_policy.start()  # warm the frozen policy in the background, as the server does at startup
+    config, publisher = _start(args)
     LOGGER.info('publishing to %s every %s s (fixed delay %s s)', config['out_dir'], config['publish_interval_s'], config['fixed_delay_s'])
     try:
         publisher.run(once=args.once)
     except KeyboardInterrupt:
-        return 0
+        pass
+    finally:
+        publisher.close()
     return 0
+
+
+def _start(args):
+    config = load_config(args.config, out_dir=args.out, publish_interval_s=args.interval, fixed_delay_s=args.delay)
+    try:
+        app, publisher = build(config, dates=args.date, feed_dir=args.feed_dir, watch_dir=args.watch_dir,
+                               intent_dir=args.intent_dir, demo_dir=args.demo_dir)
+    except AlreadyRunning as held:
+        raise SystemExit(str(held)) from None
+    feed = app.state.live_parts()
+    if config['fixed_delay_s'] > getattr(feed, 'max_delay_s', config['fixed_delay_s']):
+        publisher.close()
+        raise SystemExit(f"fixed_delay_s {config['fixed_delay_s']} exceeds the live feed's max_delay_s {feed.max_delay_s}")
+    if os.environ.get('PITCHEEZY_OBSERVER_LIVE_ARMB', '1') != '0':
+        app.state.live_policy.start()  # warm the frozen policy in the background, as the server does at startup
+    return config, publisher
 
 
 if __name__ == '__main__':

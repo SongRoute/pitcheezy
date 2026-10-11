@@ -9,5 +9,6 @@
  "published_at": "2026-10-05T10:21:00Z",
  "schema": "pitcheezy-publish-health-v1",
  "sequence": 4,
+ "unavailable_dates": [],
  "unavailable_games": []
 }

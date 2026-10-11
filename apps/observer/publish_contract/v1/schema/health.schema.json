@@ -40,6 +40,9 @@
   "sequence": {
    "type": "integer"
   },
+  "unavailable_dates": {
+   "type": "array"
+  },
   "unavailable_games": {
    "items": {
     "properties": {
@@ -66,6 +69,7 @@
   "published_at",
   "schema",
   "sequence",
+  "unavailable_dates",
   "unavailable_games"
  ],
  "title": "Pitcheezy public publish v1: health",
