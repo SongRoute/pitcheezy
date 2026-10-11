@@ -59,7 +59,7 @@ export default function SyncSheet({ gamePk, delay, max, synced, onDelay, onClose
         : message ?? (synced ? (shown > 0 ? `지금은 약 ${shown}초 늦춰서 보여 드리고 있어요.` : '지금은 늦추지 않고 바로 보여 드리고 있어요.') : `아직 맞추지 않았어요. 지금은 ${shown}초 늦춰서 보여 드려요.`)}</p>
       <div className="sv-sync-adjust" role="group" aria-label="조금씩 고치기">
         {steps.slice(0, 2).map(([step, label]) => <button key={step} className="sv-btn" onClick={() => adjust(step)} disabled={shown <= 0} aria-label={label}>{step}초</button>)}
-        <span className="sv-sync-now" aria-label={`지금 ${shown}초 늦게 보기`}><b>{shown}</b>초 늦게</span>
+        <span className="sv-sync-now" aria-label={`지금 ${shown}초 늦게 보기`}><b>{shown}</b>초<i> 늦게</i></span>
         {steps.slice(2).map(([step, label]) => <button key={step} className="sv-btn" onClick={() => adjust(step)} disabled={max !== null && shown >= max} aria-label={label}>+{step}초</button>)}
       </div>
       <p className="sv-muted sv-sync-hint">화면이 TV보다 빠르면 +, 늦으면 −를 눌러 주세요.</p>

@@ -9,7 +9,7 @@ import { ABSENT_PAST, DetailSheet, InfoSheet, PaSheet, Sheet, absentLine, proven
 import SyncSheet, { FOLD_TEXT } from './SyncSheet';
 import { ExpectationLine, ReferenceSheet, ReferenceTeaser } from './Reference';
 import type { ViewerSetting } from './viewer';
-import { learnViewer, readViewer, requestDelay, wantedDelay, writeViewer } from './viewer';
+import { VIEWER_KEY, learnViewer, readViewer, reloadViewer, requestDelay, wantedDelay, writeViewer } from './viewer';
 import './service.css';
 
 /** One game screen for live, demo and finished games (UI redesign 2026-10-05).
@@ -169,7 +169,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         if (!next.viewer) break;
         const want = next.viewer.max_delay_s !== null ? Math.min(wantedDelay(), next.viewer.max_delay_s) : wantedDelay();
         if (Math.abs(next.viewer.delay_s - want) < 0.05) break;
-        if (round >= 2) throw new FetchError('자료를 불러오지 못했어요.', 0);
+        // the server keeps serving another delay than asked (a limit it did not state): take the one it serves rather than fail
+        if (round >= 2) { setSetting(writeViewer({ delay_s: next.viewer.delay_s })); break; }
         next = await fetchDetail(gamePk, ctrl.signal, undefined, requestDelay());
       }
       if (ctrl.signal.aborted) return;
@@ -189,6 +190,21 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     inflight.current?.abort(); detailRef.current = null; drawn.current = null;
     setDetail(null); setError(null);
     void load(true, true);
+  }, [load]);
+  // another tab of this browser changed the delay: this one must not keep showing a later moment of the game
+  useEffect(() => {
+    if (import.meta.env.VITE_PUBLISH_BASE) return;  // public build: no viewer delay, nothing to follow
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== VIEWER_KEY || detailRef.current?.viewer == null) return;
+      const before = wantedDelay(), next = reloadViewer();
+      setSetting(next);
+      if (wantedDelay(next) === before) return;
+      inflight.current?.abort(); detailRef.current = null; drawn.current = null;
+      setDetail(null); setError(null);
+      void load(true, true);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, [load]);
   const viewer = detail && detail.session === null ? detail.viewer ?? null : null;
   useEffect(() => { if (viewer) viewerMeta.current = { max: viewer.max_delay_s }; }, [viewer]);

@@ -21,7 +21,8 @@ export type ViewerSetting = {
 export type Viewer = { delay_s: number; default_s: number; max_delay_s: number | null; buffering: boolean; wait_s: number | null; prompt: boolean; fold: boolean };
 type Raw = Record<string, any>;
 
-const KEY = 'pitcheezy.viewer';
+export const VIEWER_KEY = 'pitcheezy.viewer';
+const KEY = VIEWER_KEY;
 /** Used only when an answer names no default of its own (PROVISIONAL, same as live_config.json features.viewer_delay.default_s). */
 export const FIRST_DEFAULT_S = 30;
 let active = false;                      // the server's switch as last answered on this page (never true in the public build)
@@ -44,6 +45,8 @@ export function writeViewer(patch: Partial<ViewerSetting>): ViewerSetting {
   try { localStorage.setItem(KEY, JSON.stringify(memory)); } catch { /* storage blocked: the setting lasts for this page */ }
   return memory;
 }
+/** Another tab changed the setting: forget this page's copy and read it again. */
+export function reloadViewer(): ViewerSetting { memory = null; return readViewer(); }
 /** The server's switch in an answer (game or list body). An older server says nothing → off. */
 export const viewerOn = (raw: Raw | null | undefined): boolean => VIEWER_BUILD && (raw?.features?.viewer_delay?.enabled ?? raw?.viewer?.enabled) === true;
 /** Take the switch (and the server's default) from an answer. True = it differs from what this page assumed when it asked. */

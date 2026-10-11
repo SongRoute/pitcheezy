@@ -634,3 +634,5 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 .sv-expect{margin-top:6px;padding-top:6px;border-top:1px dashed var(--sv-line);display:grid;gap:3px}
 .sv-expect-text{margin:0;font-size:14px;color:var(--sv-ink)}.sv-expect-text small{color:var(--sv-muted);font-size:12px}
 .sv-expect-explain{margin:0;font-size:12px;line-height:1.4}
+.sv-sync-now i{font-style:normal}
+@media(max-width:359px){.sv-sync-now i{display:none}.sv-sync-adjust{gap:4px}.sv-sync-adjust .sv-btn{min-width:48px;padding:0 4px;font-size:14px}}
