@@ -2,8 +2,8 @@
  *  Primary: the service contract (pm-jobs/20261005-ui-live-redesign/CONTRACT.md, requested as FRONTEND-REQUESTS R1/R2).
  *  Fallback (404 on the service route only): the existing `/api/live/games` + `/api/watch/{game}` feeds, so the screen
  *  still renders real data before the contract lands. The fallback never invents scores or recommendations. */
-import type { LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
-import { groupPas, kstDate, markDoubleheaders, pitchName, pitcherSide, plainZone, shiftDate } from './model';
+import type { Correction, Display, DisplayStateName, Receipt, LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
+import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, pitcherSide, plainZone, shiftDate } from './model';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
 export const TIMEOUT_MS = 15000;
@@ -67,26 +67,71 @@ export function normalizeRec(raw: Raw | null | undefined, fallbackProvenance: Re
   return { status: st, reason: raw.reason ?? null, provenance, policy: raw.policy?.name ?? null,
     candidates: st === 'ready' ? cands.map(candidate).sort((a, b) => a.rank - b.rank).slice(0, 3) : [] };
 }
+/** Receipt blanking: the server sends every field of an unconfirmed pitch as null except the '확인 중' labels. */
+const BLANK_LABEL = '확인 중';
+const isBlank = (raw: Raw) => raw.pitch_type == null && raw.pitch_label == null && raw.speed_mph == null && raw.x == null && raw.z == null
+  && raw.description == null && raw.event == null;
+const blankActual = (): Actual => ({ pitch_type: null, pitch_label: '', description: null, result_label: BLANK_LABEL, event: null, event_label: null,
+  play_text: null, speed_mph: null, x: null, z: null, zone_label: '', setup_x: null });
 function actual(raw: Raw | null | undefined): Actual | null {
   if (!raw) return null;
+  if (isBlank(raw) && raw.result_label === BLANK_LABEL) return blankActual();  // only the server's own blanking; an archive row with no data keeps '구종 미상'
   return { pitch_type: raw.pitch_type ?? null, pitch_label: pitchName(raw.pitch_label, raw.pitch_type), description: raw.description ?? null,
     result_label: raw.result_label ?? '', event: raw.event ?? null, event_label: raw.event_label ?? null, play_text: raw.play_text ?? null,
     speed_mph: num(raw.speed_mph), x: num(raw.x), z: num(raw.z), zone_label: pitcherSide(raw.zone_label ?? ''),
     setup_x: num(raw.catcher_setup?.plate_x_feet) };
 }
+/** Fail closed: any receipt status other than 'received' is unconfirmed. No `receipt` key (store off, archive) → undefined, except a
+ *  row the server already blanked to '확인 중', which stays unconfirmed so it is never drawn as an observed pitch. */
+function receipt(raw: Raw): Receipt | undefined {
+  const r = raw.receipt;
+  if (r && typeof r === 'object') return { status: r.status === 'received' ? 'received' : 'unconfirmed', corrected: r.corrected === true };
+  return raw.actual && isBlank(raw.actual) && raw.actual.result_label === BLANK_LABEL ? { status: 'unconfirmed', corrected: false } : undefined;
+}
 function pitchRow(raw: Raw, provenance: Rec['provenance']): PitchRow {
   const before = raw.situation_before ?? raw.situation;
+  const rc = receipt(raw);
   return { index: raw.index, key: raw.key ?? `${raw.pa_key ?? raw.pa_id}:${raw.pitch_number}`, pa_key: raw.pa_key ?? raw.pa_id,
     at_bat_number: raw.at_bat_number, pitch_number: raw.pitch_number,
     situation: { ...before, inning: raw.inning ?? before.inning, half: raw.half ?? before.half } as Situation,
-    batter: raw.batter, pitcher: raw.pitcher, rec: normalizeRec(raw.rec ?? raw.pre, provenance), actual: actual(raw.actual),
+    batter: raw.batter, pitcher: raw.pitcher, rec: normalizeRec(raw.rec ?? raw.pre, provenance),
+    actual: rc?.status === 'unconfirmed' ? blankActual() : actual(raw.actual), receipt: rc,
     context: raw.context_before ?? null, line: linescoreRev3(raw.linescore_before) };
+}
+/** Local copy used only when the server sends no `label` / `message` for a state (the server's text always wins). */
+const STATE_COPY: Record<DisplayStateName, [string, string | null]> = {
+  recommended: ['다음 공 추천', null],
+  unconfirmed: ['확인 중', '앞선 기록을 확인하는 중이라 추천을 잠시 멈췄어요.'],
+  unsupported: ['추천 없음', '이 상황은 추천 대상이 아니에요.'],
+  feed_delayed: ['자료 늦음', '경기 자료가 평소보다 늦게 도착했어요. 추천이 실제 경기보다 늦을 수 있어요.'],
+  disconnected: ['연결 끊김', '경기 자료 연결이 잠시 끊겼어요. 마지막으로 받은 내용을 보여 드려요.'],
+  ledger_unavailable: ['추천 보류', '추천 기록을 저장하지 못해 이번 추천은 표시하지 않아요. 경기 상황은 계속 보여 드려요.'],
+  waiting: ['대기 중', '다음 공을 기다리고 있어요.'],
+  unavailable: ['추천 없음', '지금은 추천을 제공하지 못해요.'],
+  pregame: ['경기 전', '경기 시작 전이에요.'],
+  final: ['경기 종료', '경기가 끝났어요.'] };
+const CORRECTION_COPY: Record<Correction['kind'], string> = { replaced: '상황이나 기록이 바뀌어 추천이 달라졌어요.', withdrawn: '조금 전에 보여 드린 추천은 지금 표시하지 않아요.' };
+const text = (v: unknown): string | null => typeof v === 'string' && v.trim() ? v.trim() : null;
+/** `display_state` → Display. Anything that is not a known state (older backend, archive, demo, a future state name) → null, and the
+ *  screen keeps its pre-contract behaviour. `reason` is kept for tests/diagnostics only; `detail` is dropped. */
+export function normalizeDisplay(raw: Raw | null | undefined): Display | null {
+  if (!raw || typeof raw !== 'object' || !(DISPLAY_STATES as readonly string[]).includes(raw.state)) return null;
+  const state = raw.state as DisplayStateName;
+  const c = raw.correction;
+  const kind: Correction['kind'] | null = c && (c.kind === 'replaced' || c.kind === 'withdrawn') ? c.kind : null;
+  const prev = c?.previous && typeof c.previous === 'object' ? c.previous as Raw : null;
+  return { state, reason: text(raw.reason), label: text(raw.label) ?? STATE_COPY[state][0], message: text(raw.message) ?? STATE_COPY[state][1],
+    pitch_key: text(raw.pitch_key), shown: raw.recommendation_shown === true,
+    correction: kind ? { kind, message: text(c.message) ?? CORRECTION_COPY[kind],
+      previous: prev && (text(prev.pitch_type) || text(prev.pitch_label)) ? { pitch_type: text(prev.pitch_type), pitch_label: text(prev.pitch_label), zone_id: text(prev.zone_id), zone_label: text(prev.zone_label) } : null } : null,
+    feed: { ok: raw.feed?.ok !== false, delayed: raw.feed?.delayed === true, lag_s: num(raw.feed?.lag_s) } };
 }
 function pa(raw: Raw): Pa {
   return { pa_key: raw.pa_key, at_bat_number: raw.at_bat_number, inning: raw.inning, half: raw.half,
     batter: raw.batter?.name ?? '타자 미상', pitcher: raw.pitcher?.name ?? '투수 미상', first: raw.first_index, last: raw.last_index,
     batting_order: num(raw.batting_order), pitch_count: num(raw.pitch_count), complete: raw.complete === true, batter_id: typeof raw.batter?.id === 'number' ? raw.batter.id : null,
-    result: raw.complete === true ? raw.result_text ?? raw.event_label ?? '결과 기록 없음' : '타석 진행 중' };
+    // a plate appearance that holds an unconfirmed pitch: the server sends result_text '확인 중' (never its outcome)
+    result: raw.result_text === BLANK_LABEL ? BLANK_LABEL : raw.complete === true ? raw.result_text ?? raw.event_label ?? '결과 기록 없음' : '타석 진행 중' };
 }
 /** main.py catch-all answer for an /api path the running backend does not have (older deployment). */
 const ROUTE_MISSING = 'API 경로를 찾을 수 없습니다.';
@@ -128,6 +173,8 @@ export async function fetchDetail(game: number, signal?: AbortSignal, after?: nu
 export function mergeDetail(old: Detail, inc: Detail): Detail | null {
   if (inc.cutoff !== null && old.cutoff !== null && inc.cutoff < old.cutoff) return null;
   if (inc.session !== old.session) return null;  // contract rev2 client cache rule: a new demo session never merges with the old one
+  // a receipt changed somewhere (a pitch became unconfirmed, corrected, or plain received again): take the full history again
+  if ((inc.receipts_version ?? null) !== (old.receipts_version ?? null)) return null;
   const keep = old.pitches.filter(p => !inc.pitches.some(n => n.index === p.index));
   return { ...inc, pitches: [...keep, ...inc.pitches].sort((a, b) => a.index - b.index) };
 }
@@ -155,11 +202,17 @@ export function normalizeDetail(raw: Raw): Detail {
   const provenance: Rec['provenance'] = raw.source?.kind === 'live' ? 'captured_live' : 'asof_replay';
   const pitches = (raw.pitches ?? []).map((p: Raw) => pitchRow(p, provenance));
   const cur = raw.current;
+  const display = provenance === 'captured_live' ? normalizeDisplay(raw.display_state) : null;
+  // The pending slot's key ('game:at_bat:pitch') names the open plate appearance when `current.pa_key` is not sent.
+  const slot = /^(\d+:\d+):\d+$/.exec(display?.pitch_key ?? '');
   const current: Current | null = cur?.situation ? { phase: cur.phase ?? 'pre_pitch', situation: cur.situation, batter: cur.batter ?? null,
-    pitcher: cur.pitcher ?? null, pa_key: cur.pa_key ?? null } : null;
+    pitcher: cur.pitcher ?? null, pa_key: cur.pa_key ?? (cur.phase === 'pre_pitch' && slot ? slot[1] : null) } : null;
   const nextRaw = raw.next?.rec ?? null;
+  let next = raw.next ? normalizeRec(nextRaw, provenance === 'captured_live' ? 'captured_live' : 'asof_replay') : null;
+  // the server says nothing is shown for the pending pitch: candidates never reach the screen, whatever `next.rec` carries
+  if (next && display && !display.shown) next = { ...next, status: next.status === 'ready' ? 'missing' : next.status, candidates: [], provenance: next.status === 'ready' ? 'absent' : next.provenance };
   return { session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game: normalizeCard(raw.game), pitches, pas: Array.isArray(raw.pas) ? raw.pas.map(pa) : groupPas(pitches, current), current,
-    next: raw.next ? normalizeRec(nextRaw, provenance === 'captured_live' ? 'captured_live' : 'asof_replay') : null,
+    next, display, receipts_version: text(raw.receipts?.version),
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
     zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),
     linescore_asof: linescoreRev3(raw.linescore), players: playersRev3(raw) };

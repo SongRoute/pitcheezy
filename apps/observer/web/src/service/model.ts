@@ -22,7 +22,23 @@ export type PitchRow = { index: number; key: string; pa_key: string; at_bat_numb
   situation: Situation; batter: Person & { side: string }; pitcher: Person & { hand: string }; rec: Rec; actual: Actual | null;
   /** linescore as of just before this pitch (server `linescore_before`); null when the backend does not send it. */
   context?: PlayerContext | null;
-  line?: Linescore | null };
+  line?: Linescore | null;
+  /** live store receipt (display-state contract 2026-10-11). `unconfirmed` = the record is not admitted yet: `actual` is blank and
+   *  must never be presented as an observed pitch. `corrected` = the record changed after it was first received. Absent = store off / archive. */
+  receipt?: Receipt | null };
+export type Receipt = { status: 'received' | 'unconfirmed'; corrected: boolean };
+/** ONE explicit state of the pending pitch slot of a live game (`display_state`, schema pitcheezy-display-state-v1). Copy (`label`,
+ *  `message`) is server-authored; reason codes and diagnostics are kept out of this shape on purpose (never shown to fans). */
+export const DISPLAY_STATES = ['recommended', 'unconfirmed', 'unsupported', 'feed_delayed', 'disconnected', 'ledger_unavailable',
+  'waiting', 'unavailable', 'pregame', 'final'] as const;
+export type DisplayStateName = typeof DISPLAY_STATES[number];
+export type PreviousPick = { pitch_type: string | null; pitch_label: string | null; zone_id: string | null; zone_label: string | null };
+export type Correction = { kind: 'replaced' | 'withdrawn'; message: string; previous: PreviousPick | null };
+export type Display = { state: DisplayStateName; reason: string | null; label: string; message: string | null; pitch_key: string | null;
+  /** false = no recommendation may be on screen for the pending pitch (candidates are dropped in api.ts as well). */
+  shown: boolean; correction: Correction | null;
+  /** `lag_s` is a proven LOWER bound of the feed delay in seconds (null = not measured); shown as 'N초 넘게', never as an estimate. */
+  feed: { ok: boolean; delayed: boolean; lag_s: number | null } };
 export type GameStatus = 'scheduled' | 'live' | 'final' | 'postponed' | 'other';
 export type GameCard = { game_pk: number; start: string | null; kst_date: string; status: GameStatus; status_text: string;
   away_team: string; home_team: string; away_score: number | null; home_score: number | null; inning: number | null; half: Half | null;
@@ -38,7 +54,11 @@ export type Detail = { current_context?: PlayerContext | null; session_status?: 
   /** rev3 optional: half-innings computed from plays published up to the cutoff only; null cell = not reached yet. */
   linescore_asof?: Linescore | null;
   /** rev3 optional: per-player game jersey and pre-game (as-of) season stats; null stat = unknown → '–', never a current-season value. */
-  players?: Record<string, PlayerInfo> | null };
+  players?: Record<string, PlayerInfo> | null;
+  /** live only; absent (archive, demo, older backend) → the screen behaves as before the display-state contract. */
+  display?: Display | null;
+  /** changes whenever any pitch's receipt changes → the client takes the full history again. */
+  receipts_version?: string | null };
 export type LineTeam = { innings: (number | null)[]; r: number | null; h: number | null; e: number | null; bb_hbp: number | null };
 export type Linescore = { innings: number; away: LineTeam; home: LineTeam };
 export type PlayerInfo = { jersey?: string | null; era?: number | null; avg?: number | null; ops?: number | null; stats_as_of?: string | null };
