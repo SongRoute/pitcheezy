@@ -1,0 +1,42 @@
+{
+  "id": "EXP-WS-SEQ-CAL-001",
+  "recorded_at": "2026-10-11",
+  "data_role": "2026 EXPOSED DEVELOPMENT; EVAL already read in scale-002, E1, E1b, E4 (SEQ-001); advisory labels only; no winner, no adoption",
+  "question": "Do the E3 post-hoc calibrators (fit per seed on CAL only) repair the top-label ECE of the N1 sequence model (EXP-WS-SEQ-001) on EVAL without degrading NLL/Brier? Which calibrator does the pre-registered CAL-CV selection rule pick, and how do the fan-display leaves (narrow_whiff, ground_ball_in_play) look?",
+  "source": {
+    "job": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e5-seqcal/",
+    "registration_sha256": "daadff968b382d6619211fff9f08a723b5805f615593ad411f4bb525b83f5bd5",
+    "code": {"experiments/ws_seq/calibrate_logits.py": "7568b8b43c74de946d822c9b226406823b1789f1ceb4ee37ba80ca66c8b226e7", "commit": "866d003"},
+    "review_sha256": "6b02a51e698a078f8a6f8de0a3ca35b885d2e96e7335af0bb3ffce4a799afd7b",
+    "review_verdict": "PASS (independent reviewer, distinct from author; 0 critical/high/medium)",
+    "attempt": "seqcal-001",
+    "result_sha256": "def098b02af08ae0c3b8 (prefix; full in job dir)",
+    "inputs": "EXP-WS-SEQ-001 N1 seeds 0,1,2 margins/temperatures (gpu-pull ws-seq-001), scale-002 corpus.npz, E1 eval-meta.npz, baselines P (EXP-WS-RECENCY-002) and N0 ensemble (SEQ-001), reference N1 ensemble (SEQ-001)"
+  },
+  "execution_receipt": {"rc": 0, "elapsed_seconds": 243.5221215421334, "peak_rss_bytes": 446562304, "gates": {"per_seed_C0_reproduction_max_abs": 2.220446049250313e-16, "reference_ensemble_max_abs": 2.220446049250313e-16, "select_nll_receipt_replay": "all three seeds exact"}},
+  "arms": "C0 recorded scalar T per head; C1 vector + Platt; C2 Dirichlet ODIR (lambda by inner CV); C3 per-leaf isotonic + renormalise; SEL = per-seed arm chosen by the pre-registered CAL 5-fold game-grouped CV rule (argmin CV top-label ECE subject to CV NLL <= C0 + 0.0010): seed0 C3, seed1 C2, seed2 C2. Ensemble = mean of the three seeds' calibrated seven-leaf rows.",
+  "ensemble_EVAL": {
+    "C0": {"nll": 1.573965, "brier": 0.752323, "ece_top_label_10bin": 0.006781, "classwise_ece_mean": 0.003856, "leaf_ece": {"narrow_whiff": 0.001033, "ground_ball_in_play": 0.002294}},
+    "C1": {"nll": 1.573834, "brier": 0.752286, "ece_top_label_10bin": 0.005263, "classwise_ece_mean": 0.002309, "leaf_ece": {"narrow_whiff": 0.002091, "ground_ball_in_play": 0.000491}},
+    "C2": {"nll": 1.573752, "brier": 0.752276, "ece_top_label_10bin": 0.005537, "classwise_ece_mean": 0.002226, "leaf_ece": {"narrow_whiff": 0.002054, "ground_ball_in_play": 0.000585}},
+    "C3": {"nll": 1.573871, "brier": 0.752212, "ece_top_label_10bin": 0.003384, "classwise_ece_mean": 0.001919, "leaf_ece": {"narrow_whiff": 0.002579, "ground_ball_in_play": 0.001183}},
+    "SEL": {"nll": 1.573594, "brier": 0.75222, "ece_top_label_10bin": 0.004498, "classwise_ece_mean": 0.002163, "leaf_ece": {"narrow_whiff": 0.002423, "ground_ball_in_play": 0.000773}},
+    "baseline_P_tree": {"nll": 1.5775762095651042, "brier": 0.7534285736688853, "ece_top_label_10bin": 0.0022568302376040654}
+  },
+  "paired_EVAL_ensemble_vs_C0": {
+    "bootstrap": "whole-game paired, 10000 draws, seed 20261211, pitch-weighted ratio of game sums, ECE from per-game bin sums, percentile 95%",
+    "C1-C0": {"ece": [-0.00152, [-0.00372, 0.00078]], "nll": [-0.00013, [-0.00038, 0.00012]], "brier": [-4e-05, [-0.00014, 7e-05]]},
+    "C2-C0": {"ece": [-0.00124, [-0.0036, 0.00084]], "nll": [-0.00021, [-0.00047, 5e-05]], "brier": [-5e-05, [-0.00015, 6e-05]]},
+    "C3-C0": {"ece": [-0.0034, [-0.00505, -0.00024]], "nll": [-9e-05, [-0.00054, 0.00041]], "brier": [-0.00011, [-0.00025, 2e-05]]},
+    "SEL-C0": {"ece": [-0.00228, [-0.00424, 9e-05]], "nll": [-0.00037, [-0.00065, -0.0001]], "brier": [-0.0001, [-0.00022, 1e-05]]},
+    "format": "[difference, [ci95 lower, ci95 upper]] rounded to 5 decimals; exact values in the job result.json"
+  },
+  "paired_EVAL_vs_baselines_report_only": {
+    "SEL-P": {"nll": [-0.00398, [-0.00481, -0.00316]], "brier": [-0.00121, [-0.00151, -0.00091]], "ece": [0.00224, [-0.00126, 0.00387]]},
+    "C0-P": {"nll": [-0.00361, [-0.00444, -0.0028]], "brier": [-0.00111, [-0.00141, -0.0008]], "ece": [0.00452, [0.00049, 0.00614]]},
+    "SEL-N0": {"nll": [-0.00269, [-0.00321, -0.00215]], "ece": [-0.00058, [-0.0033, 0.0018]]}
+  },
+  "advisory_labels_vs_C0": {"C1": "NOT_CANDIDATE", "C2": "NOT_CANDIDATE", "C3": "CANDIDATE (ECE_IMPROVED, NLL and Brier non-inferior)", "SEL": "NOT_CANDIDATE (ECE CI upper +0.00009, NLL/Brier non-inferior)"},
+  "fan_display_leaves": {"narrow_whiff": {"ece_C0": 0.001033, "ece_SEL": 0.002423, "ece_threshold": 0.01, "all_arms_ok": true, "monotone_all_arms": true}, "ground_ball_in_play": {"ece_C0": 0.002294, "ece_SEL": 0.000773, "ece_threshold": 0.01, "all_arms_ok": true}},
+  "interpretation": "Calibration partly repairs the sequence model's top-label ECE. The per-seed CAL-CV selection (the pre-registered mechanism: seed0 C3, seeds1-2 C2) brings the ensemble ECE from 0.00678 to 0.00450 (SEL-C0 -0.00228, CI [-0.00424, +0.00009] just touching zero) while slightly improving NLL (-0.00037, CI below zero) and Brier; after calibration the ECE gap to the tree is no longer significant (SEL-P +0.00224 [-0.00126, +0.00387] vs C0-P +0.00452 [+0.00049, +0.00614]) and the NLL advantage over the tree grows to -0.00398. Applying isotonic (C3) to all three seeds would reach ECE 0.00338 with a CI excluding zero (the only arm labelled CANDIDATE), but that is a post-hoc reading of an EVAL split that has now been read six times today; the pre-registered SEL is the honest choice and it is 'almost there'. The fan-display leaves were never badly calibrated: narrow_whiff and ground_ball ECE are 0.001-0.003 for every arm, monotone, far under the 0.01 threshold; the miscalibration is in the ball/other_strike leaves (top-label bins 0.5-0.7 under-confident). LIMITS: exposed development, no multiplicity correction, per-fold ECE is a noisy selection statistic (hence the seed-dependent arm choice), 3 seeds. Reuse: the same script and selection rule are the registered final stage of EXP-WS-SEQ-002."
+}

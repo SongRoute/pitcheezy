@@ -1,0 +1,19 @@
+# EXP-WS-SEQ-CAL-001 — N1 시퀀스 모델(EXP-WS-SEQ-001) 로짓의 사후 보정 (시드별 CAL 적합, EVAL 1회)
+# 정본 등록: /Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e5-seqcal/REGISTRATION.json
+#   sha256 daadff968b382d6619211fff9f08a723b5805f615593ad411f4bb525b83f5bd5 (실행 전 동결, 독립 검토 PASS)
+# 코드: experiments/ws_seq/calibrate_logits.py sha256 7568b8b43c74de946d822c9b226406823b1789f1ceb4ee37ba80ca66c8b226e7 (커밋 866d003)
+id: EXP-WS-SEQ-CAL-001
+phase: WS-adaptation
+baseline: EXP-WS-SEQ-001 N1 C0 (head별 스칼라 온도, 시드 0·1·2 앙상블)
+change: "시드별로 CAL에서 C1 vector+Platt / C2 Dirichlet ODIR / C3 leaf별 isotonic을 적합하고, 사전 등록한 CAL 5-fold(경기 단위) CV 규칙으로 시드별 보정기 선택(SEL); 앙상블 = 보정된 7-leaf 행 평균"
+data_version: d20260930-h2026f (scale-002 corpus) + EXP-WS-SEQ-001 margins
+data_role: 2026 EXPOSED DEVELOPMENT      # EVAL은 scale-002·E1·E1b·E4에서 이미 열람; 승자·채택 없음
+splits: {CAL: [2026-08-24, 2026-09-06], EVAL: [2026-09-07, 2026-09-27]}
+seeds: {model_seeds: [0, 1, 2], cv_fold_permutation: 20261212, bootstrap: 20261211}
+selection_rule: "argmin CV mean top-label ECE among arms with CV mean NLL <= C0 CV NLL + 0.0010; ties -> C0"
+metrics:
+  primary: ensemble top-label ECE (10 bins) vs C0 ensemble, eop-001 bootstrap 10000
+  must_not_degrade: [NLL (+0.0010), Brier (+0.0005)]
+  fan_display_leaves: [narrow_whiff, ground_ball_in_play]   # leaf별 ECE·reliability·단조성, 임계 0.01
+attempt: seqcal-001
+commit_at_execution: 866d003
