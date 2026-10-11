@@ -147,36 +147,16 @@
   },
   "source": {
    "properties": {
-    "branch": {
-     "type": "string"
-    },
     "commit": {
-     "type": "string"
-    },
-    "path": {
-     "type": "string"
-    },
-    "repository": {
-     "type": "string"
-    },
-    "selection": {
      "type": "string"
     },
     "sha256": {
      "type": "string"
-    },
-    "video": {
-     "type": "string"
     }
    },
    "required": [
-    "branch",
     "commit",
-    "path",
-    "repository",
-    "selection",
-    "sha256",
-    "video"
+    "sha256"
    ],
    "type": "object"
   },

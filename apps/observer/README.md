@@ -120,40 +120,42 @@ PITCHEEZY_OBSERVER_LIVE_ARMB=0 PITCHEEZY_OBSERVER_LIVE_STORE="$T/store.sqlite3" 
 find "$T/out" -type f
 ```
 
+**실시간 저장소(`PITCHEEZY_OBSERVER_LIVE_STORE`)와 추천 장부가 켜져 있어야만 돈다.** 저장소가 없으면 서버는 확인 중인 공을 가리지 못하고 추천을 기록 없이 보여 주는데, 공개 파일에서는 그것을 허용하지 않는다. 둘 중 하나라도 없으면 시작하지 않고, 도는 중에 장부를 끄면(`PITCHEEZY_OBSERVER_REC_LEDGER=0`) 그 주기부터 아무것도 쓰지 않는다. 영수증이 없는 실시간 본문, 장부 기록이 없는 추천이 든 본문은 파일로 나가지 않는다(`not_public`).
+
 `--once`를 빼면 `publish_interval_s`마다 계속 발행한다. 포트를 열지 않고 다른 프로세스를 건드리지 않는다. `--date`(여러 번 가능, KST)를 주지 않으면 오늘 기준 앞뒤 날짜(`live_days_back`/`live_days_ahead`)의 경기를 매 주기 다시 만든다.
 
 ### 파일
 
 - `v1/manifest.json` — 계약 버전, 코드 커밋(`commit`, 커밋 안 된 변경이 있으면 `commit_dirty: true`), 발행 시각, 발행 간격, 고정 지연, 매 주기 다시 만드는 날짜.
-- `v1/health.json` — 마지막 발행 시각과 순번. 한 주기의 맨 마지막에 쓴다. 이 파일이 움직이지 않으면 발행이 멈춘 것이다. 이번 주기에 만들지 못한 경기는 `unavailable_games`에, 만들지 못한 날짜 목록은 `unavailable_dates`(날짜만)에 남는다.
+- `v1/health.json` — 마지막 발행 시각과 순번. 한 주기의 맨 마지막에 쓴다. 이 파일이 움직이지 않으면 발행이 멈춘 것이다. 이번 주기에 만들거나 쓰지 못한 경기는 `unavailable_games`(`game_pk`, `status`, 정해진 `code`: `refused`·`build_failed`·`write_failed`·`setup_failed`·`not_public`)에, 날짜 목록은 `unavailable_dates`(날짜만)에, 피드가 응답하지 않아 마지막 상태로 만든 경기는 `feed_failing_games`에 남는다. 경로나 오류 문장은 싣지 않는다. 한 경기의 실패는 다른 경기와 health 발행을 막지 않는다.
 - `v1/dates.json` — `GET /api/service/dates`와 같은 본문.
 - `v1/games/<YYYY-MM-DD>.json` — `GET /api/service/games?date=`와 같은 본문.
 - `v1/game/<game_pk>.json` — `GET /api/service/games/{pk}`와 같은 본문(항상 전체, `after` 없음).
-- `v1/setup/<game_pk>.json` — `GET /api/watch/{pk}/setup`와 같은 본문. 끝난 경기이고 `setup_estimates.py` 검사(sha256 고정값, 줄마다 `validate_intent_estimate`)를 통과한 경우에만 있다. 검사에서 떨어지면 지운다.
+- `v1/setup/<game_pk>.json` — `GET /api/watch/{pk}/setup`의 본문에서 `source`만 `commit`과 `sha256` 두 개로 줄인 것(파일 경로·저장소·브랜치·영상 이름은 내보내지 않는다. 서버 경로의 본문은 그대로다). 끝난 경기이고 `setup_estimates.py` 검사(sha256 고정값, 줄마다 `validate_intent_estimate`)를 통과한 경우에만 있다. 검사에서 떨어지면 지운다.
 
-본문은 서버 경로가 쓰는 **같은 함수**(`service_api.ServiceBodies`)가 만든다. 그래서 표시 판정, 확인 중인 공 비우기, 추천 장부 먼저 쓰기가 그대로 적용된다. 발행기가 더하는 것은 모든 파일의 맨 위 키 하나뿐이다.
+셋업 파일을 뺀 본문은 서버 경로가 쓰는 **같은 함수**(`service_api.ServiceBodies`)가 만든다. 그래서 표시 판정, 확인 중인 공 비우기, 추천 장부 먼저 쓰기가 그대로 적용된다. 발행기가 더하는 것은 모든 파일의 맨 위 키 하나뿐이다.
 
 ```json
 "publish": {"contract": "v1", "sequence": 42, "published_at": "2026-10-05T10:20:12Z", "final": false}
 ```
 
-- `sequence`는 발행기 하나에 하나뿐인 번호이고 주기마다 1씩 오른다. 파일은 자신을 마지막으로 쓴 주기의 번호를 갖는다. 재시작해도 이어지고(상태 파일, 없으면 마지막 `health.json`), 뒤로 가지 않는다.
+- `sequence`는 발행기 하나에 하나뿐인 번호이고 주기마다 1씩 오른다. 파일은 자신을 마지막으로 쓴 주기의 번호를 갖는다. 재시작해도 이어지고 뒤로 가지 않는다: 시작할 때 상태 파일과 **이미 나가 있는 모든 파일**의 순번 중 가장 큰 값에서 이어 가고, 주기마다 번호를 디스크에 확실히 기록(fsync)한 뒤에 파일을 쓴다.
 - `final`은 경기 파일과 셋업 파일에만 있다. 경기가 끝났고 확인 중인 공이 하나도 없으면 `final: true`로 한 번 쓰고 더 쓰지 않는다. 이후에는 `settled_recheck_s`마다 다시 만들어 보고, 내용이 달라졌을 때만(정정) 새 번호로 다시 쓴다. 경기 뒤에 도착한 셋업 파일도 이때 발견한다.
 - 파일은 출력 폴더 **바깥** 옆 폴더(`<상위>/.<출력 폴더 이름>.tmp/`, 같은 파일시스템)에 다 쓴 뒤 이름을 바꿔 통째로 교체한다. 반쯤 쓰인 파일은 보이지 않고, 출력 폴더에는 발행 파일만 있다. 그래도 올리는 쪽(업로더)은 점(.)으로 시작하는 파일과 위 여섯 가지 이름이 아닌 파일을 올리지 말아야 한다.
 - 끝난 경기를 다시 만들 때 시계에 따라 움직이는 값(맨 위 `feed` 전체, `display_state.feed`의 `ok`·`delayed`·`lag_*`·`last_ok_at`·`failing_*`·`received_at`)은 변화로 치지 않는다. 경기 내용이 같으면 파일도 순번도 그대로다.
-- 실시간 피드에서 받은 경기는 종료 표시 뒤 `final_recheck_for_s`가 지나면 더 조회하지 않고 파일만 남겨 둔다(셋업 파일은 계속 찾는다).
-- 발행기는 출력 하나에 하나만 돈다. 상태 파일 옆 `<출력 폴더>.state.json.lock`을 잡고, 이미 잡혀 있으면 바로 끝난다. 상태 파일이 깨져 있으면 경고만 남기고 마지막 `health.json`의 순번에서 이어 간다.
+- 실시간 피드에서 받은 경기는 종료 표시 뒤 `final_recheck_for_s`가 지나면 `final_slow_recheck_s`마다 한 번만 다시 조회한다(늦은 공식 정정을 찾기 위해). 셋업 파일은 계속 찾고, 보관 폴더에 최종 피드가 들어오면 조회 없이 바로 그것으로 바꿔 쓴다.
+- 발행기는 출력 폴더 하나에 하나만 돈다. 출력 폴더 옆 `.<출력 폴더 이름>.lock`을 잡고(상태 파일 위치나 경로 표기가 달라도 같은 폴더면 같은 잠금), 이미 잡혀 있으면 바로 끝난다. 잡고 있던 프로세스가 죽으면 잠금은 풀린다. 상태 파일이 깨져 있으면 경고만 남기고 이어 간다.
 - 상태 파일은 출력 폴더 옆 `<출력 폴더>.state.json`에 둔다(올릴 대상이 아니다).
 
 ### 발행하지 않는 것
 
-- 시연 세션(`?demo=`), 운영자 API(`/api/service/operator/**`), 시연 시계·다시 보기. 시연 중인 경기는 서버 경로와 똑같이 경기 파일을 쓰지 않고 목록 카드는 가린다. 이미 발행된 경기에 시연이 시작되면 다음 주기에 그 경기 파일과 셋업 파일을 지우고, 시연이 끝나면 다시 발행한다.
+- 시연 세션(`?demo=`), 운영자 API(`/api/service/operator/**`), 시연 시계·다시 보기. 시연 중인 경기는 서버 경로와 똑같이 경기 파일을 쓰지 않고 목록 카드는 가린다. 이미 발행된 경기에 시연이 시작되면 다음 주기에 그 경기 파일과 셋업 파일을 지우고(상태 파일이 그 파일을 모르더라도 지운다), 시연이 끝나면 다시 발행한다. 파일을 쓰기 직전과 직후에도 시연 여부를 다시 확인하고, 주기 도중에 시연이 시작되면 같은 주기 안에 파일을 지우고 목록을 다시 만든다. 시연 중에 목록을 다시 만들지 못하면 옛 점수를 남기지 않고 그 목록 파일을 지운다. 남는 틈: 한 주기가 끝난 직후 시작된 시연은 다음 주기(발행 간격)까지 반영되지 않는다.
 - 서버가 지금 보여 주지 않는 것: 확인 중인 공의 구종·속도·위치·결과, 고정 지연보다 새로운 공, 표시 상태가 추천을 보여 주지 않을 때의 후보, 장부에 기록하지 못한 추천.
 - 서버 경로가 거절하는 본문(피드 첫 조회 실패 503 등). 이때는 이전 파일을 그대로 둔다.
 
 ### 설정
 
-값은 `apps/observer/publish_config.json`에 있고 코드에 박아 두지 않았다. `publish_interval_s`(기본 10), `settled_recheck_s`(기본 600), `final_recheck_for_s`(기본 21600), `live_days_back`/`live_days_ahead`(기본 1)는 **재지 않은 잠정값**이며 리허설에서 정한다. `fixed_delay_s`는 모든 시청자에게 같은 지연 하나이고 기본 0초다. `contract_version`(`v1`)이 곧 파일 경로 앞부분이다. 환경 변수 `PITCHEEZY_PUBLISH_OUT_DIR`, `PITCHEEZY_PUBLISH_INTERVAL_S`, `PITCHEEZY_PUBLISH_DELAY_S`, `PITCHEEZY_PUBLISH_STATE`, `PITCHEEZY_PUBLISH_COMMIT`와 명령줄 `--out`/`--interval`/`--delay`가 덮어쓴다. 피드를 실제로 조회하는 간격은 여전히 `live_config.json`(`poll_interval_s`, `fast_poll_s`)이 정한다.
+값은 `apps/observer/publish_config.json`에 있고 코드에 박아 두지 않았다. `publish_interval_s`(기본 10), `settled_recheck_s`(기본 600), `final_recheck_for_s`·`final_slow_recheck_s`(기본 21600), `live_days_back`/`live_days_ahead`(기본 1)는 **재지 않은 잠정값**이며 리허설에서 정한다. `fixed_delay_s`는 모든 시청자에게 같은 지연 하나이고 기본 0초다. `contract_version`(`v1`)이 곧 파일 경로 앞부분이다. 환경 변수 `PITCHEEZY_PUBLISH_OUT_DIR`, `PITCHEEZY_PUBLISH_INTERVAL_S`, `PITCHEEZY_PUBLISH_DELAY_S`, `PITCHEEZY_PUBLISH_STATE`, `PITCHEEZY_PUBLISH_COMMIT`와 명령줄 `--out`/`--interval`/`--delay`가 덮어쓴다. 피드를 실제로 조회하는 간격은 여전히 `live_config.json`(`poll_interval_s`, `fast_poll_s`)이 정한다.
 
 ### 다른 팀에 넘기는 예제와 스키마
 

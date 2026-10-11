@@ -1,4 +1,5 @@
 {
+ "feed_failing_games": [],
  "files_written": 7,
  "publish": {
   "contract": "v1",

@@ -27,7 +27,9 @@ Calling the game builder is what drives the upstream poll (``LiveFeed.snapshot``
 passed), so the publisher is the "someone is watching". Demo sessions, the operator API and replay clocks are
 never asked for; a game a demo session takes is withdrawn (its game and setup files are deleted) in the next
 cycle and published again when the demo ends. Uploading is not done here: ``Sink`` is the seam; only
-``LocalDirSink`` exists. One publisher per output: a second one over the same state file refuses to start.
+``LocalDirSink`` exists. One publisher per output folder: a second one refuses to start. The live store and the recommendation ledger are
+required: without either the publisher does not start, and it stops publishing if the ledger is switched off.
+The setup file is the one body that is NOT the route's: its ``source`` keeps only ``commit`` and ``sha256``.
 """
 from __future__ import annotations
 
@@ -63,7 +65,7 @@ def layout(contract):
     return {kind: f'{contract}/{path}' for kind, path in FILES.items()}
 ENV = {'out_dir': ('PITCHEEZY_PUBLISH_OUT_DIR', str), 'state_path': ('PITCHEEZY_PUBLISH_STATE', str),
        'publish_interval_s': ('PITCHEEZY_PUBLISH_INTERVAL_S', float), 'fixed_delay_s': ('PITCHEEZY_PUBLISH_DELAY_S', float)}
-PROVISIONAL = ('publish_interval_s', 'settled_recheck_s', 'final_recheck_for_s', 'live_days_back', 'live_days_ahead')
+PROVISIONAL = ('publish_interval_s', 'settled_recheck_s', 'final_recheck_for_s', 'final_slow_recheck_s', 'live_days_back', 'live_days_ahead')
 
 
 def load_config(path=None, env=None, **overrides):
@@ -77,9 +79,9 @@ def load_config(path=None, env=None, **overrides):
     interval, delay, recheck = config['publish_interval_s'], config['fixed_delay_s'], config['settled_recheck_s']
     if not isinstance(config['contract_version'], str) or re.fullmatch(r'v[1-9]\d*', config['contract_version']) is None:
         raise ValueError('contract_version must look like v1, v2, ... (it is also the path prefix)')
-    period = config.get('final_recheck_for_s')
-    if period is not None and not (isinstance(period, (int, float)) and period >= 0):
-        raise ValueError('final_recheck_for_s must be null or a number of seconds')
+    for key in ('final_recheck_for_s', 'final_slow_recheck_s'):
+        if config.get(key) is not None and not (isinstance(config[key], (int, float)) and config[key] >= 0):
+            raise ValueError(f'{key} must be null or a number of seconds')
     if not (isinstance(interval, (int, float)) and 0 < interval <= 3600):  # also refuses NaN
         raise ValueError('publish_interval_s must be between 0 (exclusive) and 3600 seconds')
     if not (isinstance(delay, (int, float)) and 0 <= delay <= 3600):
@@ -108,12 +110,20 @@ class Sink:
     def write(self, path, data, *, final=False):
         raise NotImplementedError
 
+    lock_path = None  # a local file naming this destination, for the one-publisher lock (None: the state file's)
+
     def read(self, path):
         """The bytes last written at ``path``, or None if there are none or this sink cannot read back."""
         return None
 
     def delete(self, path):
+        """Remove ``path`` if it is there (never an error when it is not): a withdrawn file must not stay readable."""
         raise NotImplementedError
+
+    def paths(self):
+        """Every published path this sink holds (empty if it cannot list). Read at startup so the sequence
+        continues above every file already out, whatever happened to the publisher's own bookkeeping."""
+        return []
 
 
 class LocalDirSink(Sink):
@@ -123,7 +133,9 @@ class LocalDirSink(Sink):
 
     def __init__(self, root):
         self.root = Path(root)
-        self.staging = self.root.parent/f'.{self.root.name}.tmp'
+        resolved = self.root.resolve()  # one folder, one lock: however the path was spelled or linked
+        self.staging = resolved.parent/f'.{resolved.name}.tmp'
+        self.lock_path = resolved.parent/f'.{resolved.name}.lock'
 
     def _target(self, path):
         parts = PurePosixPath(path).parts
@@ -152,6 +164,12 @@ class LocalDirSink(Sink):
 
     def delete(self, path):
         self._target(path).unlink(missing_ok=True)
+
+    def paths(self):
+        if not self.root.is_dir():
+            return []
+        found = (path.relative_to(self.root) for path in self.root.rglob('*.json') if path.is_file())
+        return sorted(path.as_posix() for path in found if not any(part.startswith('.') for part in path.parts))
 
 
 def code_commit(repo=None, env=None):
@@ -213,8 +231,45 @@ def check_public(body):
     return body
 
 
+UNCONFIRMED_KEPT = ('call_label', 'result_label')  # all an unadmitted pitch may say (both read 확인 중)
+
+
+def check_live(body):
+    """A body from the live feed may leave only in the store-and-ledger form (also a last line of defence: the
+    builders decide, this refuses). Without a store the builders attach no receipts and mask no unconfirmed pitch,
+    and show a recommendation unrecorded: neither is ever published."""
+    if (body.get('source') or {}).get('kind') != 'live':
+        return body
+    if not isinstance(body.get('receipts'), dict):
+        raise NotPublic('a live body without pitch receipts (no live store): unconfirmed pitches would not be masked')
+    for pitch in body.get('pitches') or []:
+        if (pitch.get('receipt') or {}).get('status') != 'received' and any(
+                value is not None for key, value in (pitch.get('actual') or {}).items() if key not in UNCONFIRMED_KEPT):
+            raise NotPublic('an unconfirmed pitch carries observed details')
+    rec = (body.get('next') or {}).get('rec') or {}
+    if rec.get('candidates') and not ((rec.get('ledger') or {}).get('status') == 'recorded'
+                                      and (body.get('display_state') or {}).get('recommendation_shown') is True):
+        raise NotPublic('a recommendation that is not recorded in the ledger, or that the display state does not show')
+    return body
+
+
+def public_setup(view):
+    """The setup body as published: the route's body with its ``source`` cut down to what a viewer can use to
+    name the estimates (the video module's commit and the content hash that was validated). Where the file
+    lives, its repository, branch, video and selection notes are internal and free text: none of them leaves."""
+    source = view.get('source') or {}
+    commit, sha = source.get('commit'), source.get('sha256')
+    return view | {'source': {
+        'commit': commit if isinstance(commit, str) and re.fullmatch(r'[0-9a-fA-F]{4,64}', commit) else None,
+        'sha256': sha if isinstance(sha, str) and re.fullmatch(r'[0-9a-f]{64}', sha) else None}}
+
+
 class AlreadyRunning(RuntimeError):
     """Another publisher holds this output's lock."""
+
+
+class Unsafe(RuntimeError):
+    """The publisher may not run as configured: it would publish without the live store or the ledger."""
 
 
 class Publisher:
@@ -222,9 +277,10 @@ class Publisher:
     otherwise answer; ``setups`` is its ``SetupEstimates``; ``dates`` (KST ``YYYY-MM-DD``) replaces the live
     window. ``state_path`` keeps the sequence and what was written across restarts."""
 
-    def __init__(self, bodies, sink, *, config, setups=None, state_path=None, wall=time.time, commit=(None, None), dates=None):
+    def __init__(self, bodies, sink, *, config, setups=None, state_path=None, wall=time.time, commit=(None, None),
+                 dates=None, safe=None):
         self.bodies, self.sink, self.config, self.setups, self.wall = bodies, sink, config, setups, wall
-        self.commit, self.dates = commit, None if dates is None else sorted(set(dates))
+        self.commit, self.dates, self.safe = commit, None if dates is None else sorted(set(dates)), safe
         for date in self.dates or []:
             if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
                 raise ValueError('date must be YYYY-MM-DD')
@@ -238,17 +294,22 @@ class Publisher:
             raise
 
     def _acquire(self):
-        """Exclusive, non-blocking lock on ``<state file>.lock`` for this object's life: two publishers over one
-        output would hand out the same sequence twice and overwrite each other's files with older ones."""
-        if self.state_path is None:
+        """Exclusive, non-blocking lock for this object's life, on the file the sink names for its destination
+        (``LocalDirSink``: beside the resolved output folder, so the same folder is one lock whatever state file
+        or spelling a second process uses), else on ``<state file>.lock``. Two publishers over one output would
+        hand out the same sequence twice and overwrite each other's files with older ones. The kernel drops the
+        lock when the holder exits or is killed."""
+        target = getattr(self.sink, 'lock_path', None) or (None if self.state_path is None else f'{self.state_path}.lock')
+        if target is None:
             return None
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(f'{self.state_path}.lock', 'a')
+        target = Path(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(target, 'a')
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             handle.close()
-            raise AlreadyRunning(f'another publisher is already running on {self.state_path} (lock {self.state_path}.lock is held)') from None
+            raise AlreadyRunning(f'another publisher is already running on this output (lock {target} is held)') from None
         return handle
 
     def close(self):
@@ -268,21 +329,45 @@ class Publisher:
                     raise ValueError('not a publisher state')
                 state |= saved
             except (ValueError, OSError):  # unreadable bookkeeping: start as if it were lost (everything is rebuilt)
-                LOGGER.warning('state file %s unreadable; continuing from the published health file', self.state_path, exc_info=True)
-        try:  # the sequence never goes back, even if the state file was lost: the last health file knows it too
-            health = self.sink.read(self.layout['health'])
-            state['sequence'] = max(state['sequence'], int(json.loads(health)['sequence'])) if health else state['sequence']
-        except (ValueError, KeyError, TypeError, OSError):
-            LOGGER.warning('published health file unreadable; sequence continues from the state file only', exc_info=True)
+                LOGGER.warning('state file %s unreadable; continuing from the published files', self.state_path, exc_info=True)
+        # The sequence never goes back, whatever happened to the state file: it continues above EVERY file that
+        # is out. Health alone is not enough: a cycle that failed before health may have written files above it.
+        state['sequence'] = max(state['sequence'], self._published_sequence())
         return state
 
+    def _published_sequence(self):
+        highest = 0
+        try:
+            paths = list(self.sink.paths())
+        except OSError:
+            LOGGER.warning('published files cannot be listed; the sequence continues from the state file only', exc_info=True)
+            paths = []
+        for path in {*paths, self.layout['health']}:
+            try:
+                data = self.sink.read(path)
+                number = json.loads(data)['publish']['sequence'] if data else 0
+                highest = max(highest, number if type(number) is int else 0)
+            except (ValueError, KeyError, TypeError, OSError):
+                LOGGER.warning('published file %s unreadable; ignored for the sequence', path)
+        return highest
+
     def _save_state(self):
+        """Durably: the state is on disk (file and folder synced) before the caller goes on. The cycle calls this
+        right after taking a sequence number, so no file can ever carry a number the state does not know."""
         if self.state_path is None:
             return
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.state_path.with_name(f'.{self.state_path.name}.{os.getpid()}.tmp')
-        temporary.write_text(json.dumps(self.state, sort_keys=True))
+        with open(temporary, 'w') as handle:
+            handle.write(json.dumps(self.state, sort_keys=True))
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temporary, self.state_path)
+        folder = os.open(self.state_path.parent, os.O_RDONLY)
+        try:
+            os.fsync(folder)
+        finally:
+            os.close(folder)
 
     def _due(self, path, now):
         """A settled file is rebuilt when it was never tried or ``settled_recheck_s`` has passed since."""
@@ -315,113 +400,195 @@ class Publisher:
         self._written.append(path)
         return True
 
-    def _drop(self, path):
-        if path in self.state['files']:
+    def _drop(self, path, *, force=False):
+        """Delete a published file. ``force``: whether or not the state knows it (the state file may have been
+        lost, or a crash may have come between the write and the save): what must not be public is deleted."""
+        if force or path in self.state['files']:
             self.sink.delete(path)
-            del self.state['files'][path]
+            self.state['files'].pop(path, None)
 
     def _withdraw(self, game_pk):
-        """A demo session holds this game: nothing of it stays public (its game and setup files are deleted) and
-        it is tried again in every cycle, so it returns as soon as the demo is over."""
+        """A demo session holds this game: nothing of it stays public. Its game and setup files are deleted,
+        registered in the state or not, and it is tried again in every cycle, so it returns when the demo ends."""
         for kind in ('game', 'setup'):
             path = self.layout[kind].format(game_pk=game_pk)
-            self._drop(path)
+            self._drop(path, force=True)
             self.state['checked'].pop(path, None)
+            self.state['checked'].pop(f'{path}#built', None)
+
+    def _embargoed(self):
+        return {int(game_pk) for game_pk in self.bodies.embargoed()}
+
+    def _forget_lists(self):
+        prefix = self.layout['games'].split('{')[0]
+        for path in [path for path in self.state['checked'] if path.startswith(prefix)]:
+            del self.state['checked'][path]
+
+    def _fail(self, game_pk, status, code):
+        """Health names the game and a fixed code only: never a path, an exception text or a file name."""
+        self._unavailable.append({'game_pk': game_pk, 'status': status, 'code': code})
 
     # ---- one cycle ----------------------------------------------------------------------------------
     def cycle(self):
         """Build and write everything that is due. Returns the health body of this cycle."""
-        self._now, self._written = self.wall(), []
+        reason = self.safe() if self.safe is not None else None
+        if reason:
+            raise Unsafe(reason)  # before a sequence is taken or a file is touched
+        self._now, self._written, self._unavailable, self._feed_failing = self.wall(), [], [], []
         self._sequence = self.state['sequence'] = self.state['sequence']+1
-        self._save_state()  # the number is taken before any file carries it: a crash never reuses it
-        now, unavailable, unavailable_dates = self._now, [], []
-        layout_ = self.layout
-        embargoed = {int(pk) for pk in self.bodies.embargoed()}
+        self._save_state()  # the number is durably taken before any file carries it: a crash never reuses it
+        now, unavailable_dates = self._now, []
+        embargoed = self._embargoed()
         if sorted(embargoed) != self.state['embargoed']:
             # a demo started or ended: every game list is rebuilt now (its card is hidden or shown again), not at
             # the next settled recheck
-            prefix = layout_['games'].split('{')[0]
-            for path in [path for path in self.state['checked'] if path.startswith(prefix)]:
-                del self.state['checked'][path]
+            self._forget_lists()
             self.state['embargoed'] = sorted(embargoed)
         for game_pk in embargoed:
             self._withdraw(game_pk)
         dates_body = check_public(self.bodies.dates())
         live_dates = self.live_dates(now)
-        fast, listed = set(), set()
+        fast, listed = self._lists(dates_body, live_dates, unavailable_dates)
+        archived = {int(game_pk) for game_pk in self.bodies.archived()}
+        prefix = self.layout['game'].split('{')[0]
+        known = {int(PurePosixPath(path).stem) for path in self.state['files'] if path.startswith(prefix)}
+        for game_pk in sorted((listed | known)-embargoed):
+            self._game(game_pk, fast=game_pk in fast, archived=game_pk in archived)
+        late = self._embargoed()-embargoed
+        if late:
+            # a demo took a game while this cycle ran: its files go now, and every list (some were written before
+            # the demo began, with its score) is built again
+            for game_pk in late:
+                self._withdraw(game_pk)
+            self._forget_lists()
+            unavailable_dates.clear()
+            self._lists(dates_body, live_dates, unavailable_dates)
+            self.state['embargoed'] = sorted(embargoed | late)
+        self._put(self.layout['dates'], dates_body, always=True)
+        commit, dirty = self.commit
+        self._put(self.layout['manifest'], {
+            'schema': 'pitcheezy-publish-manifest-v1', 'contract': self.config['contract_version'],
+            'commit': commit, 'commit_dirty': dirty, 'published_at': _iso(now),
+            'publish_interval_s': self.config['publish_interval_s'], 'fixed_delay_s': self.config['fixed_delay_s'],
+            'provisional': list(PROVISIONAL), 'live_dates': live_dates, 'files': self.layout}, always=True)
+        health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(now),
+                  'publish_interval_s': self.config['publish_interval_s'], 'files_written': len(self._written)+1,
+                  'unavailable_games': self._unavailable, 'unavailable_dates': sorted(set(unavailable_dates)),
+                  'feed_failing_games': sorted(set(self._feed_failing))}
+        self._put(self.layout['health'], health, always=True)
+        self._save_state()
+        return health
+
+    def _lists(self, dates_body, live_dates, failed):
+        """Write the game list of every date that is due. Returns (games to rebuild every cycle, games listed).
+        A list never shows a game a demo holds: it is built again if a demo began meanwhile, and a list that
+        cannot be built or written while any demo is on is deleted rather than left with its old scores."""
+        now, fast, listed = self._now, set(), set()
         for date in sorted(set(dates_body['dates']) | set(live_dates)):
-            path, live = layout_['games'].format(date=date), date in live_dates
+            path, live = self.layout['games'].format(date=date), date in live_dates
             if not live and not self._due(path, now):
                 continue
-            try:
-                body = check_public(self.bodies.games(date))
-            except Exception:  # noqa: BLE001 - one date never stops the cycle; its last file stays
-                LOGGER.warning('game list of %s not built; the published one is kept', date, exc_info=True)
-                self.state['checked'][path] = now
-                unavailable_dates.append(date)
-                continue
-            self._put(path, body, always=live)
+            self.state['checked'][path] = now
+            body = None
+            for _ in range(2):
+                try:
+                    body = check_public(self.bodies.games(date))
+                except Exception:  # noqa: BLE001 - one date never stops the cycle
+                    LOGGER.warning('game list of %s not built', date, exc_info=True)
+                    body = None
+                    break
+                held = self._embargoed()
+                if not any(int(card['game_pk']) in held and not card.get('embargoed') for card in body['games']):
+                    break
+                body = None  # a demo began while the list was being built: once more
+            if body is not None:
+                try:
+                    self._put(path, body, always=live)
+                except OSError:
+                    LOGGER.warning('game list of %s not written', date, exc_info=True)
+                    body = None
+            if body is None:
+                failed.append(date)
+                if self._embargoed():
+                    self._drop(path, force=True)  # no list is better than one that still shows an embargoed score
+                continue  # otherwise the last published list stays
             for card in body['games']:
-                if card.get('embargoed'):  # a demo is running on it: its game body is refused anyway
+                if card.get('embargoed'):
                     continue
                 listed.add(int(card['game_pk']))
                 if live:
                     fast.add(int(card['game_pk']))
-        prefix = layout_['game'].split('{')[0]
-        known = {int(PurePosixPath(path).stem) for path in self.state['files'] if path.startswith(prefix)}
-        period = self.config.get('final_recheck_for_s')
-        for game_pk in sorted((listed | known)-embargoed):
-            path = layout_['game'].format(game_pk=game_pk)
-            entry = self.state['files'].get(path) or {}
-            settled = entry.get('final') is True
-            if (settled or game_pk not in fast) and not self._due(path, now):
-                continue
-            self.state['checked'][path] = now
-            if settled and entry.get('kind') == 'live' and period is not None and now-entry['final_at'] >= period:
-                # long final: the upstream feed is not asked again and the file stays; a setup file that arrives
-                # late is still found (a local read)
-                self._setup(game_pk)
-                continue
-            try:
-                body = check_public(self.bodies.game(game_pk))  # polls upstream; ledger is written in here
-            except Refused as refused:
-                if refused.status == 423:  # a demo took the game between the check above and now: not a fault
-                    self._withdraw(game_pk)
-                else:
-                    unavailable.append({'game_pk': game_pk, 'status': refused.status})
-                continue
-            except NotPublic:
-                raise
-            except Exception:  # noqa: BLE001 - one game never stops the cycle; its last file stays
-                LOGGER.warning('game %s not built; the published file is kept', game_pk, exc_info=True)
-                unavailable.append({'game_pk': game_pk, 'status': None})
-                continue
-            final = is_final(body)
-            self._put(path, body, always=not final, final=final, digest=game_digest(body))
-            written = self.state['files'][path]
-            written['kind'] = body['source']['kind']
-            written['final_at'] = (entry.get('final_at') if settled else now) if final else None
-            if final:
-                self._setup(game_pk)
+        return fast, listed
+
+    def _game(self, game_pk, *, fast, archived):
+        """One game: decide whether it is due, build it, write it, then its setup file. Nothing that goes wrong
+        here stops the cycle: the game's last file stays and health carries a fixed code for it."""
+        now, path = self._now, self.layout['game'].format(game_pk=game_pk)
+        entry = self.state['files'].get(path) or {}
+        settled = entry.get('final') is True
+        from_feed = settled and entry.get('kind') == 'live'
+        # The local final archive of a game so far published from the live feed has arrived: taken at once (a
+        # local read, no upstream poll), once.
+        arrived = from_feed and archived and not entry.get('archive_tried')
+        if not arrived:
+            period = self.config.get('final_recheck_for_s')
+            if from_feed and period is not None and now-entry['final_at'] >= period:
+                # Long final: upstream is asked only at the slow pace (a late official correction is still found);
+                # the setup file is still looked for at the settled pace (a local read).
+                slow = self.config.get('final_slow_recheck_s')
+                built = self.state['checked'].get(f'{path}#built', entry['final_at'])
+                if slow is None or now-built < slow:
+                    if self._due(path, now):
+                        self.state['checked'][path] = now
+                        self._setup(game_pk)
+                    return
+            elif (settled or not fast) and not self._due(path, now):
+                return
+        self.state['checked'][path] = self.state['checked'][f'{path}#built'] = now
+        if arrived:
+            entry['archive_tried'] = True
+        try:
+            body = check_live(check_public(self.bodies.game(game_pk)))  # polls upstream; the ledger is written in here
+        except Refused as refused:
+            if refused.status == 423:  # a demo took the game since the cycle began: not a fault
+                self._withdraw(game_pk)
             else:
-                self._drop(layout_['setup'].format(game_pk=game_pk))
-        self._put(layout_['dates'], dates_body, always=True)
-        commit, dirty = self.commit
-        self._put(layout_['manifest'], {
-            'schema': 'pitcheezy-publish-manifest-v1', 'contract': self.config['contract_version'],
-            'commit': commit, 'commit_dirty': dirty, 'published_at': _iso(now),
-            'publish_interval_s': self.config['publish_interval_s'], 'fixed_delay_s': self.config['fixed_delay_s'],
-            'provisional': list(PROVISIONAL), 'live_dates': live_dates, 'files': layout_}, always=True)
-        health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(now),
-                  'publish_interval_s': self.config['publish_interval_s'], 'files_written': len(self._written)+1,
-                  'unavailable_games': unavailable, 'unavailable_dates': unavailable_dates}
-        self._put(layout_['health'], health, always=True)
-        self._save_state()
-        return health
+                self._fail(game_pk, refused.status, 'refused')
+            return
+        except NotPublic:
+            LOGGER.error('game %s: the body is not the public view; not written', game_pk, exc_info=True)
+            return self._fail(game_pk, None, 'not_public')
+        except Exception:  # noqa: BLE001
+            LOGGER.warning('game %s not built; the published file is kept', game_pk, exc_info=True)
+            return self._fail(game_pk, None, 'build_failed')
+        if (body.get('feed') or {}).get('ok') is False:
+            # the body is the last snapshot: upstream did not answer. Said here, because a final file that does
+            # not change (the digest leaves ``feed`` out) would otherwise hide it.
+            self._feed_failing.append(game_pk)
+        final = is_final(body)
+        if game_pk in self._embargoed():  # a demo began after the builder's own check
+            return self._withdraw(game_pk)
+        try:
+            self._put(path, body, always=not final, final=final, digest=game_digest(body))
+        except OSError:
+            LOGGER.warning('game %s not written; the published file is kept', game_pk, exc_info=True)
+            return self._fail(game_pk, None, 'write_failed')
+        written = self.state['files'][path]
+        written['kind'] = body['source']['kind']
+        written['final_at'] = (entry.get('final_at') if settled else now) if final else None
+        if entry.get('archive_tried'):
+            written['archive_tried'] = True
+        if game_pk in self._embargoed():  # ...or while the file was being written
+            return self._withdraw(game_pk)
+        if final:
+            self._setup(game_pk)
+        else:
+            self._drop(self.layout['setup'].format(game_pk=game_pk))
 
     def _setup(self, game_pk):
         """A finished game's catcher-setup file: only what ``SetupEstimates.view`` accepts (sha256 pin and every
-        line validated); a game without estimates has no file, and one that stops validating loses its file."""
+        line validated), as ``public_setup`` cuts it. A game without estimates has no file, one that stops
+        validating loses its file, and one whose estimates cannot be read at all loses it too (code in health)."""
         if self.setups is None:
             return
         path = self.layout['setup'].format(game_pk=game_pk)
@@ -432,10 +599,17 @@ class Publisher:
         except ValueError:
             LOGGER.warning('setup estimates of %s refused by validation; not published', game_pk, exc_info=True)
             view = None
+        except Exception:  # noqa: BLE001 - unreadable or malformed beyond what validation names
+            LOGGER.warning('setup estimates of %s could not be read; not published', game_pk, exc_info=True)
+            self._drop(path, force=True)
+            return self._fail(game_pk, None, 'setup_failed')
         if view is None:
-            self._drop(path)
-        else:
-            self._put(path, view, always=False, final=True)
+            return self._drop(path)
+        try:
+            self._put(path, public_setup(view), always=False, final=True)
+        except OSError:
+            LOGGER.warning('setup file of %s not written', game_pk, exc_info=True)
+            self._fail(game_pk, None, 'setup_failed')
 
     def run(self, *, once=False, sleep=time.sleep, clock=time.monotonic):
         """Cycles forever at ``publish_interval_s`` (start to start). A failed cycle is logged and the next one
@@ -453,6 +627,22 @@ class Publisher:
             sleep(max(0.0, self.config['publish_interval_s']-(clock()-started)))
 
 
+def unsafe_reason(app):
+    """Why this app must not be published from, or None. The publisher needs the live store (pitch admission:
+    without it no pitch is masked as 확인 중) and the recommendation ledger (without it a recommendation is shown
+    unrecorded). The server tolerates both being off; a public file does not."""
+    from . import live_ledger
+    feed = app.state.live_parts()
+    if not hasattr(feed, 'store'):
+        error = getattr(feed, 'store_error', None)
+        return ('the live store is not on: set PITCHEEZY_OBSERVER_LIVE_STORE to the store database'
+                + (f' (it was set but could not be opened: {error})' if error else '')
+                + '. Without it nothing is published.')
+    if not live_ledger.enabled():
+        return 'the recommendation ledger is off (PITCHEEZY_OBSERVER_REC_LEDGER=0). Without it nothing is published.'
+    return None
+
+
 def build(config, *, sink=None, dates=None, commit=None, wall=None, **app_options):
     """A ``Publisher`` over a private app (never served: no port, no worker) built like the server's. The app's
     fan route delay is the publisher's fixed delay. ``app_options`` go to ``main.create_app``."""
@@ -461,9 +651,13 @@ def build(config, *, sink=None, dates=None, commit=None, wall=None, **app_option
         raise ValueError('an output directory is required (--out, PITCHEEZY_PUBLISH_OUT_DIR or publish_config.json out_dir)')
     app_options.setdefault('service', object())  # the legacy replay service and its database are not opened
     app = create_app(start_worker=False, service_delay_s=config['fixed_delay_s'], **app_options)
+    safe = None if app_options.get('live_feed') is False else (lambda: unsafe_reason(app))  # archive only: no live path
+    reason = safe() if safe else None
+    if reason:
+        raise Unsafe(reason)  # before the output folder, the lock or the state file is touched
     state_path = config.get('state_path') or (config.get('out_dir') and f"{str(config['out_dir']).rstrip('/')}.state.json")
     return app, Publisher(app.state.service_bodies, sink or LocalDirSink(config['out_dir']), config=config,
-                          setups=app.state.setups, state_path=state_path, dates=dates,
+                          setups=app.state.setups, state_path=state_path, dates=dates, safe=safe,
                           commit=code_commit() if commit is None else commit, **({} if wall is None else {'wall': wall}))
 
 
@@ -497,8 +691,8 @@ def _start(args):
     try:
         app, publisher = build(config, dates=args.date, feed_dir=args.feed_dir, watch_dir=args.watch_dir,
                                intent_dir=args.intent_dir, demo_dir=args.demo_dir)
-    except AlreadyRunning as held:
-        raise SystemExit(str(held)) from None
+    except (AlreadyRunning, Unsafe) as refused:
+        raise SystemExit(str(refused)) from None
     feed = app.state.live_parts()
     if config['fixed_delay_s'] > getattr(feed, 'max_delay_s', config['fixed_delay_s']):
         publisher.close()

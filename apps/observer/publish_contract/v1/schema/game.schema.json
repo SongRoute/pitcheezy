@@ -1,7 +1,7 @@
 {
  "$id": "pitcheezy-publish-v1-game",
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "description": "Inferred from 12 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes; the publish block is fixed. It describes what those bodies contain, not every value a real game can produce: treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "description": "Inferred from 11 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes; the publish block is fixed. It describes what those bodies contain, not every value a real game can produce: treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
  "properties": {
   "current": {
    "properties": {
@@ -344,10 +344,7 @@
        "type": "boolean"
       },
       "provider_order": {
-       "type": [
-        "string",
-        "null"
-       ]
+       "type": "string"
       },
       "received_at": {
        "type": "string"
@@ -790,10 +787,7 @@
         "outcome",
         "status"
        ],
-       "type": [
-        "object",
-        "null"
-       ]
+       "type": "object"
       },
       "policy": {
        "properties": {
@@ -1651,10 +1645,7 @@
     "unconfirmed",
     "version"
    ],
-   "type": [
-    "object",
-    "null"
-   ]
+   "type": "object"
   },
   "schema": {
    "enum": [

@@ -20,6 +20,7 @@
   "publish_interval_s",
   "settled_recheck_s",
   "final_recheck_for_s",
+  "final_slow_recheck_s",
   "live_days_back",
   "live_days_ahead"
  ],

@@ -93,7 +93,12 @@ class World:
         self.armb = LiveArmB(lambda: self.policy)
         self.config = publisher.load_config(env={}, out_dir=str(self.out), **config)
         self._time, service_api.time = service_api.time, _ServiceTime(self.now)
-        self.start()
+        self.publisher = None
+        try:
+            self.start()
+        except BaseException:
+            service_api.time = self._time
+            raise
 
     def start(self, **extra):
         """(Re)start the publisher process over the same output folder, state file, store and clock."""
@@ -107,7 +112,8 @@ class World:
 
     def close(self):
         service_api.time = self._time
-        self.publisher.close()
+        if self.publisher is not None:
+            self.publisher.close()
 
     def write_setup(self, lines=None, game=ARCHIVE_GAME, **pin):
         est = lambda ab, n, x: setup_fixture.estimate(ab, n, x) | {'pitch_id': f'{game}:{ab}:{n}'}
@@ -184,7 +190,7 @@ def _broken_ledger(**_):
 
 def collect(tmp):
     """``{kind: [(example file name, published body), ...]}``: one live game walked from before its first pitch to
-    its end through the states the fan screen has, the archive game, and a run without a store. Every body goes
+    its end through the states the fan screen has, and the archive game. Every body goes
     into the schemas; ``EXAMPLES`` names the ones written out as example files."""
     tmp = Path(tmp)
     out = {kind: [] for kind in KINDS}
@@ -220,12 +226,6 @@ def collect(tmp):
         out['setup'].append(('setup.json', world.read(f'v1/setup/{ARCHIVE_GAME}.json')))
     finally:
         world.close()
-    plain = World(tmp/'plain', store=False, setup=False)  # no store: no receipts, an unrecorded recommendation
-    try:
-        plain.cycle()
-        out['game'].append(('game-live-no-store.json', plain.game()))
-    finally:
-        plain.close()
     failing = World(tmp/'failing', first=OSError('upstream down'))  # the first poll fails: health names the game
     try:
         failing.cycle(settle=False)

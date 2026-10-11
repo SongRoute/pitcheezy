@@ -62,13 +62,8 @@
  },
  "schema": "pitcheezy-setup-estimates-v1",
  "source": {
-  "branch": "feature/intent-v0",
   "commit": "abc1234",
-  "path": "docs/results/game_900001_intent_v0.jsonl",
-  "repository": "org/video-module",
-  "selection": "pitches the condensed game shows",
-  "sha256": "0120f8ed5b594d09ba5050cc060f31b12c4ecfca06ea1da41f178a9b1270b101",
-  "video": "condensed game"
+  "sha256": "0120f8ed5b594d09ba5050cc060f31b12c4ecfca06ea1da41f178a9b1270b101"
  },
  "x_convention": "statcast_plate_x_catcher_view"
 }
