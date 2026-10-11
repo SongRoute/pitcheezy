@@ -104,6 +104,64 @@ PITCHEEZY_OBSERVER_HOST=tailscale sh apps/observer/serve.sh
 - 폰 폭 확인: `node apps/observer/web/tests/service-smoke.mjs http://127.0.0.1:8766 [라이브 gamePk|-] [스크린샷 폴더|-] [다시 보기 gamePk]`.
 - 실경기 측정(서비스 시간·지원 범위, 모델 평가 아님): `python3 scripts/live_rehearsal.py record --game-pk N --server http://…:8766 --output DIR [--not-before 2026-10-03T16:50:00Z]`가 폰처럼 상태를 조회해 한 줄씩 기록하고, 경기가 끝나면 `report --game-pk N --output DIR --snapshots apps/observer/live_snapshots`가 피드 도착 지연·다음 공 전 여유·추천 가능 비율·응답 시간을 낸다. `simulate --feeds …/DEMO-WS-2026/feeds --lags 5 10 15`는 끝난 경기의 투구 시각으로 조회 간격별 "5초 전 추천" 비율을 계산한다.
 
+## 공개 발행기 (정적 파일로 내보내기, 검증 전 실험 버전)
+
+팬의 브라우저가 이 맥에 닿지 않도록, 화면이 가져갈 내용을 **요청 없이 미리 파일로 써 두는** 프로그램이다. 계약 초안은 `docs/pm/service/public-publish-contract-draft.md`(아직 커밋 전, 주 작업 폴더에만 있음)이고, 이 절은 그 구현을 설명한다. 공개 호스팅에 올리는 일은 아직 없다(호스팅 미정). 지금은 로컬 폴더에만 쓴다. 실제 MLB 피드·실제 저장소로 돌리는 것은 별도 승인 단계이며 아직 해 보지 않았다.
+
+```sh
+# 저장소에 들어 있는 녹화 픽스처(849845)로 한 번 발행해 보기. 네트워크·T7·모델을 쓰지 않는다.
+T=$(mktemp -d); mkdir "$T/empty"
+PYTHONPATH=apps/observer/backend:apps/observer/backend/tests .venv-observer/bin/python -c "from live_fixture import listed_dir; listed_dir('$T/replay')"
+PYTHONPATH=apps/observer/backend \
+PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR="$T/replay" PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S=0 \
+PITCHEEZY_OBSERVER_LIVE_ARMB=0 PITCHEEZY_OBSERVER_LIVE_STORE="$T/store.sqlite3" \
+.venv-observer/bin/python -m observer_app.publisher --out "$T/out" --once --date 2026-09-30 \
+  --feed-dir "$T/empty" --watch-dir "$T/empty" --intent-dir "$T/empty" --demo-dir "$T/demo"
+find "$T/out" -type f
+```
+
+`--once`를 빼면 `publish_interval_s`마다 계속 발행한다. 포트를 열지 않고 다른 프로세스를 건드리지 않는다. `--date`(여러 번 가능, KST)를 주지 않으면 오늘 기준 앞뒤 날짜(`live_days_back`/`live_days_ahead`)의 경기를 매 주기 다시 만든다.
+
+### 파일
+
+- `v1/manifest.json` — 계약 버전, 코드 커밋(`commit`, 커밋 안 된 변경이 있으면 `commit_dirty: true`), 발행 시각, 발행 간격, 고정 지연, 매 주기 다시 만드는 날짜.
+- `v1/health.json` — 마지막 발행 시각과 순번. 한 주기의 맨 마지막에 쓴다. 이 파일이 움직이지 않으면 발행이 멈춘 것이다. 이번 주기에 만들지 못한 경기는 `unavailable_games`에 남는다.
+- `v1/dates.json` — `GET /api/service/dates`와 같은 본문.
+- `v1/games/<YYYY-MM-DD>.json` — `GET /api/service/games?date=`와 같은 본문.
+- `v1/game/<game_pk>.json` — `GET /api/service/games/{pk}`와 같은 본문(항상 전체, `after` 없음).
+- `v1/setup/<game_pk>.json` — `GET /api/watch/{pk}/setup`와 같은 본문. 끝난 경기이고 `setup_estimates.py` 검사(sha256 고정값, 줄마다 `validate_intent_estimate`)를 통과한 경우에만 있다. 검사에서 떨어지면 지운다.
+
+본문은 서버 경로가 쓰는 **같은 함수**(`service_api.ServiceBodies`)가 만든다. 그래서 표시 판정, 확인 중인 공 비우기, 추천 장부 먼저 쓰기가 그대로 적용된다. 발행기가 더하는 것은 모든 파일의 맨 위 키 하나뿐이다.
+
+```json
+"publish": {"contract": "v1", "sequence": 42, "published_at": "2026-10-05T10:20:12Z", "final": false}
+```
+
+- `sequence`는 발행기 하나에 하나뿐인 번호이고 주기마다 1씩 오른다. 파일은 자신을 마지막으로 쓴 주기의 번호를 갖는다. 재시작해도 이어지고(상태 파일, 없으면 마지막 `health.json`), 뒤로 가지 않는다.
+- `final`은 경기 파일과 셋업 파일에만 있다. 경기가 끝났고 확인 중인 공이 하나도 없으면 `final: true`로 한 번 쓰고 더 쓰지 않는다. 이후에는 `settled_recheck_s`마다 다시 만들어 보고, 내용이 달라졌을 때만(정정) 새 번호로 다시 쓴다. 경기 뒤에 도착한 셋업 파일도 이때 발견한다.
+- 파일은 같은 폴더의 숨김 임시 파일에 다 쓴 뒤 이름을 바꿔 통째로 교체한다. 반쯤 쓰인 파일은 보이지 않는다.
+- 상태 파일은 출력 폴더 옆 `<출력 폴더>.state.json`에 둔다(올릴 대상이 아니다).
+
+### 발행하지 않는 것
+
+- 시연 세션(`?demo=`), 운영자 API(`/api/service/operator/**`), 시연 시계·다시 보기. 시연 중인 경기는 서버 경로와 똑같이 경기 파일을 쓰지 않고 목록 카드는 가린다.
+- 서버가 지금 보여 주지 않는 것: 확인 중인 공의 구종·속도·위치·결과, 고정 지연보다 새로운 공, 표시 상태가 추천을 보여 주지 않을 때의 후보, 장부에 기록하지 못한 추천.
+- 서버 경로가 거절하는 본문(피드 첫 조회 실패 503 등). 이때는 이전 파일을 그대로 둔다.
+
+### 설정
+
+값은 `apps/observer/publish_config.json`에 있고 코드에 박아 두지 않았다. `publish_interval_s`(기본 10), `settled_recheck_s`(기본 600), `live_days_back`/`live_days_ahead`(기본 1)는 **재지 않은 잠정값**이며 리허설에서 정한다. `fixed_delay_s`는 모든 시청자에게 같은 지연 하나이고 기본 0초다. 환경 변수 `PITCHEEZY_PUBLISH_OUT_DIR`, `PITCHEEZY_PUBLISH_INTERVAL_S`, `PITCHEEZY_PUBLISH_DELAY_S`, `PITCHEEZY_PUBLISH_STATE`, `PITCHEEZY_PUBLISH_COMMIT`와 명령줄 `--out`/`--interval`/`--delay`가 덮어쓴다. 피드를 실제로 조회하는 간격은 여전히 `live_config.json`(`poll_interval_s`, `fast_poll_s`)이 정한다.
+
+### 다른 팀에 넘기는 예제와 스키마
+
+`apps/observer/publish_contract/v1/`에 파일 종류별 예제(`examples/`)와 JSON Schema(`schema/`)가 있다. 합성 경기를 실제 발행기로 돌려 만든 것이고 스키마는 그 본문에서 뽑았다. 그래서 스키마는 합성 경기에 나온 값만 안다. 실제 경기에서 다른 타입(예: null)이 나올 수 있으니 리허설 뒤 다시 뽑아야 한다. 읽는 쪽은 모르는 키를 무시해야 한다.
+
+```sh
+PYTHONPATH=apps/observer/backend .venv-observer/bin/python apps/observer/scripts/export_publish_contract.py   # 다시 만들기
+```
+
+`test_publisher.py`가 커밋된 폴더와 지금 코드가 쓰는 결과가 같은지 확인한다. 올리기(업로드)는 `publisher.Sink`의 `write`/`read`/`delete` 세 가지를 구현해 붙이면 되고 본문을 만드는 코드는 바꾸지 않는다.
+
 ## 현재 구성
 
 | 모듈 | 구현 |
