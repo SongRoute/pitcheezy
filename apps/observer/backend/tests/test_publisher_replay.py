@@ -1489,17 +1489,21 @@ def test_the_in_cycle_wait_cannot_end_in_a_computing_body_either(replayed, monke
     run = replayed.job/'run-001'
     assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'policy_compute_cap')
     assert summary['stop']['detail']['where'] == 'inside the cycle' and summary['stop']['detail']['partial_cycle'] is True
-    assert summary['ledger']['rows'] == 0 and summary['cycles']['n'] == 4
+    assert summary['ledger']['rows'] == 0 and summary['cycles']['n'] == 4  # no ledger row for the stopped decision
     game = run/'out/v1/game/900200.json'
-    assert json.loads(game.read_text())['publish']['sequence'] == 4  # the game file of the stopped cycle was never written
+    assert json.loads(game.read_text())['publish']['sequence'] == 4  # no body with that recommendation, none saying "computing"
     assert not any('computing' in path.read_text() for path in (run/'out').rglob('*.json'))
+    # the cycle IS partial, and the record says so: its number was taken and files of other kinds were already written
+    assert json.loads((run/'publisher.state.json').read_text())['sequence'] == 5
+    assert json.loads((run/'out/v1/games/2026-10-05.json').read_text())['publish']['sequence'] == 5
+    assert json.loads((run/'SUMMARY.json').read_text())['stop']['detail']['partial_cycle'] is True
 
 
 def test_compute_times_are_kept_unrounded_and_the_over_wait_count_uses_them(replayed):
     summary = replayed(policy_factory=lambda: Policy())
     lines = [json.loads(line) for line in (replayed.job/'run-001/POLICY-COMPUTE.jsonl').read_text().splitlines()]
     assert [line['index'] for line in lines] == list(range(summary['policy']['computations'])) and len(lines) >= 2
-    assert all(set(line) == {'index', 'seconds', 'by_cycle'} and isinstance(line['seconds'], float) for line in lines)
+    assert all(set(line) == {'index', 'seconds', 'by_cycle', 'state'} and isinstance(line['seconds'], float) and len(line['state']) == 16 for line in lines)
     exact = [line['seconds'] for line in lines]
     assert summary['policy']['compute_s']['max'] == round(max(exact), 6)
     # a time that only rounds to the wait is not over it; one a hair above it is
@@ -1509,3 +1513,45 @@ def test_compute_times_are_kept_unrounded_and_the_over_wait_count_uses_them(repl
                                                            (replayed.job/'run-c/POLICY-COMPUTE.jsonl').read_text().splitlines()])
     tiny = replayed('run-c', policy_factory=lambda: Policy(), live_wait_s=1e-9)
     assert tiny['policy']['computations_over_the_live_wait'] == recount(1e-9) == tiny['policy']['computations']
+
+
+def fixed_durations(seconds):
+    """A compute clock under which every computation lasts exactly ``seconds``, however fast it really was."""
+    state = {'calls': 0}
+
+    def clock():
+        state['calls'] += 1
+        return ((state['calls']-1)//2)*1024.0+(seconds if state['calls'] % 2 == 0 else 0.0)  # begin, end, begin, end...
+    return clock
+
+
+def test_a_computation_longer_than_the_cap_stops_the_run_even_when_the_wait_for_it_was_short(replayed):
+    """It finishes at once (so no wait ever runs out) but its own measured duration is just over the cap."""
+    summary = replayed(limits=LIMITS | {'settle_cap_s': 5}, policy_factory=lambda: Policy(), compute_clock=fixed_durations(5.001))
+    run = replayed.job/'run-001'
+    assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'policy_compute_cap')
+    assert summary['stop']['detail'] == {'cycle': 5, 'where': 'before the cycle', 'partial_cycle': False, 'cap_s': 5, 'computations_over_the_cap': 1}
+    assert summary['cycles']['n'] == 4 and summary['ledger']['rows'] == 0 and summary['wall_seconds_total'] < 5
+    assert max(json.loads(path.read_text())['publish']['sequence'] for path in (run/'out').rglob('*.json')) == 4
+    exactly = replayed('run-b', limits=LIMITS | {'settle_cap_s': 5}, policy_factory=lambda: Policy(), compute_clock=fixed_durations(5.0))
+    assert exactly['status'] == 'COMPLETED'  # the cap itself is allowed; over it is not
+
+
+def test_the_live_wait_count_uses_the_unrounded_time_and_is_reported_for_published_decisions_only(replayed):
+    summary = replayed(policy_factory=lambda: Policy(), compute_clock=fixed_durations(1.0000004))
+    policy = summary['policy']
+    assert policy['compute_s']['max'] == 1.0  # the report rounds to six places...
+    assert policy['computations_over_the_live_wait'] == policy['computations'] >= 2  # ...the count does not
+    under = replayed('run-b', policy_factory=lambda: Policy(), compute_clock=fixed_durations(1.0))
+    assert under['policy']['computations_over_the_live_wait'] == 0
+    # two sets: everything that was computed, and only what was published in a body
+    published = policy['published']
+    assert 0 < published['computations'] <= policy['computations']
+    assert published['decisions'] == summary['ledger']['first_rows'] == published['computations']
+    # a computation whose recommendation never reaches a body is in the first set only
+    gated = replayed('run-c', policy_factory=lambda: Policy(), compute_clock=fixed_durations(1.0000004), prepare=lambda rows, info: rows.__delitem__(slice(3, None)))
+    assert gated['policy']['computations'] == 2 and gated['policy']['published']['computations'] == 1  # the unidentified pitch's state: computed, blocked
+    assert gated['policy']['computations_over_the_live_wait'] == 2 and gated['policy']['published']['computations_over_the_live_wait'] == 1
+    assert published['computations_over_the_live_wait'] == published['computations'] and published['compute_s']['n'] == published['computations']
+    assert 'OFFLINE ESTIMATE' in published['note'] and 'gate' in policy['all_computations_note']
+    assert '오프라인 추정' in (replayed.job/'run-001/SUMMARY.md').read_text()

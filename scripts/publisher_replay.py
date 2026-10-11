@@ -305,15 +305,22 @@ class ComputeCap(BaseException):
 class Timed:
     """The policy with every computation timed (wall seconds, in call order). Everything else is the policy's own."""
 
-    def __init__(self, policy, perf):
-        self._policy, self._perf, self.seconds = policy, perf, []
+    def __init__(self, policy, perf, state_of=None):
+        self._policy, self._perf, self._state_of, self.seconds, self.states = policy, perf, state_of, [], []
 
     def __call__(self, feed):
+        state = None
+        if self._state_of is not None:
+            try:
+                state = self._state_of(feed)  # sha256 of the decision's state key: what the ledger calls state_sha256
+            except Exception:  # noqa: BLE001
+                state = None
         begun = self._perf()
         try:
             return self._policy(feed)
         finally:
             self.seconds.append(self._perf()-begun)
+            self.states.append(state)
 
     def __getattr__(self, name):
         return getattr(self._policy, name)
@@ -347,6 +354,7 @@ def mark(run_dir, status, **more):
 def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs_audit=None, schemas=None,
         publish_config=None, perf=time.perf_counter, rss=lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
         free_memory=free_memory_bytes, mps=mps_bytes, finalize=True, live_wait_s=None,
+        compute_clock=time.perf_counter,
         log=lambda text: print(text, file=sys.stderr, flush=True)):
     """Replay ``rows`` through a publisher that lives entirely in ``run_dir``. Returns the summary (also written).
     Whatever happens inside (a stop condition, any exception, a termination signal) ends in a written summary and
@@ -371,7 +379,7 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
     timed = []
 
     def timed_factory():
-        policy = Timed(policy_factory(), time.perf_counter)
+        policy = Timed(policy_factory(), compute_clock, lambda feed: hashlib.sha256(state_key(feed).encode()).hexdigest())
         timed.append(policy)
         return policy
 
@@ -492,20 +500,37 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
             time.sleep(.002)
         barrier_s[0] = perf()-begun
 
+    checked_times = [0]
+
+    def check_compute_durations(where, partial):
+        """Every computation finished since the last check must itself have taken no longer than the cap, however
+        short the wait for it was (it may have been running before the wait began)."""
+        done = [value for policy_ in timed for value in policy_.seconds]
+        fresh, checked_times[0] = done[checked_times[0]:], len(done)
+        over = [value for value in fresh if value > limits['settle_cap_s']]
+        if over:
+            raise Stop('policy_compute_cap', {'cycle': len(cycles)+1, 'where': where, 'partial_cycle': partial,
+                                              'cap_s': limits['settle_cap_s'], 'computations_over_the_cap': len(over)})
+
     def flush_compute_times():
         """Append the computations finished since the last call: index and unrounded wall seconds, no content."""
         done = [value for policy_ in timed for value in policy_.seconds]
+        states_done = [value for policy_ in timed for value in policy_.states]
         if len(done) > written_times[0]:
             with open(run_dir/'POLICY-COMPUTE.jsonl', 'a') as handle:
                 for number in range(written_times[0], len(done)):
-                    handle.write(json.dumps({'index': number, 'seconds': done[number], 'by_cycle': len(cycles)+1})+'\n')
+                    handle.write(json.dumps({'index': number, 'seconds': done[number], 'by_cycle': len(cycles)+1,
+                                             'state': (states_done[number] or '')[:16] or None})+'\n')
             written_times[0] = len(done)
 
     written_times = [0]
+    published_decisions = set()
 
     def one_cycle(label):
         nonlocal final_published, over_interval
         barrier()
+        flush_compute_times()
+        check_compute_durations('before the cycle', False)  # nothing of this cycle exists yet
         begun = perf()
         try:
             health = pub.cycle()
@@ -514,6 +539,7 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                                               'cap_s': limits['settle_cap_s']}) from capped
         finally:
             flush_compute_times()
+        check_compute_durations('inside the cycle', True)
         wall_s = perf()-begun
         settle_s = barrier_s[0]
         if not armb_idle(armb):  # nothing may still be computing once a cycle's files are out
@@ -554,7 +580,11 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                         schema_problems[kind, general(problem['pointer']), problem['keyword'], problem['seen']] += 1
         facts = None
         if game_path in present:
-            facts = publish_audit.game_facts(json.loads(present[game_path].read_bytes()))
+            game_body = json.loads(present[game_path].read_bytes())
+            facts = publish_audit.game_facts(game_body)
+            shown = (game_body.get('next') or {}).get('rec') or {}
+            if shown.get('candidates') and (shown.get('ledger') or {}).get('decision_id'):
+                published_decisions.add(shown['ledger']['decision_id'])
             states[f"{facts['state']}|{facts['reason']}"] += 1
             recs[facts['recommendation'] if facts['recommendation'] == 'published' else f"none|{facts['state']}|{facts['reason']}"] += 1
             if facts['final'] is True and final_published is None:
@@ -649,8 +679,14 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         if pub is not None:
             pub.close()
     violations = [] if audit is None else audit.violations
-    exact = [value for policy_ in timed for value in policy_.seconds]  # unrounded: what the count below compares
+    exact = [value for policy_ in timed for value in policy_.seconds]  # unrounded: what the counts below compare
     computed = [round(value, 6) for value in exact]  # rounded for the report only
+    exact_states = [value for policy_ in timed for value in policy_.states]
+    try:  # the computations whose recommendation actually went out in a body, found through the ledger's state hash
+        published_states = {row['state_sha256'] for row in store.served_recommendations(game_pk) if row['decision_id'] in published_decisions}
+    except Exception:  # noqa: BLE001
+        published_states = set()
+    shown_exact = [value for value, state in zip(exact, exact_states) if state in published_states]
     try:
         flush_compute_times()
     except Exception:  # noqa: BLE001
@@ -725,6 +761,13 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                             'computations': len(computed), 'compute_s': spread(computed),
                             'live_wait_s': live_wait,
                             'computations_over_the_live_wait': sum(value > live_wait for value in exact),
+                            'all_computations_note': 'every computation, including states the display gate then blocked',
+                            'published': {'decisions': len(published_decisions), 'computations': len(shown_exact),
+                                          'compute_s': spread([round(value, 6) for value in shown_exact]),
+                                          'computations_over_the_live_wait': sum(value > live_wait for value in shown_exact),
+                                          'note': 'only computations whose recommendation was published in a body: the set comparable '
+                                                  'to "would have shown computing live". An OFFLINE ESTIMATE on this machine during '
+                                                  'this replay, not a measurement of the live service.'},
                             'compute_times_file': 'POLICY-COMPUTE.jsonl (index, unrounded seconds, the cycle by which it was done)',
                             'replay_differs_from_live': 'the replay finishes each computation before the cycle produces anything and stops '
                                                         'if one exceeds settle_cap_s; live waits live_wait_s and shows "computing" until '
@@ -776,6 +819,7 @@ def summary_text(s):
              f"- 최대 RSS(바이트): {s['memory']['peak_rss_bytes']} / MPS 최대(바이트): {show(s['memory']['mps_driver_allocated_peak_bytes'])}",
              f"- 정책 장치: 등록 {show(s['policy'].get('registered_device'))}, 실제 {show(s['policy'].get('devices_seen'))}",
              f"- 종료 표시까지(재생 시계 초): {show(s['final']['simulated_seconds_from_feed_final_to_publish_final'])}",
+             f"- 정책 계산: 전체 {show(s['policy'].get('computations'))}회(표시 판정이 막은 상태 포함), 그중 추천이 실제로 발행된 것 {show((s['policy'].get('published') or {}).get('computations'))}회, 발행된 것 중 {show(s['policy'].get('live_wait_s'))}초 초과 {show((s['policy'].get('published') or {}).get('computations_over_the_live_wait'))}회 — 이 기계에서 이 재생 중에 잰 **오프라인 추정**이며 실시간 측정이 아니다",
              f"- 추천 원장 행: {show(s['ledger']['rows'])}", '', '## 불변 조건', '']
     lines += [f"- {name}: {'지켜짐' if ok else '미측정' if ok is None else '**깨짐**'}" for name, ok in s['invariants']['held'].items()]
     if 'outside_check' in s:
