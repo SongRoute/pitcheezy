@@ -6,6 +6,8 @@
 #   PITCHEEZY_OBSERVER_PYTHON, PITCHEEZY_WATCH_DIR, PITCHEEZY_OBSERVER_LIVE_DELAY_S,
 #   PITCHEEZY_OBSERVER_LIVE_ARMB (0 = 라이브 추천 끄기), PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR (녹화 재생),
 #   PITCHEEZY_OBSERVER_LEGACY (1 = 예전 과거 기록 관전 화면도 켜기; T7에 DB를 씀).
+#   PITCHEEZY_OBSERVER_LIVE_STORE (SQLite 경로 = 수신 스냅샷·투구 원장·추천 원장을 append-only로 저장; 켜면 추천은
+#   원장에 기록된 뒤에만 표시), PITCHEEZY_OBSERVER_REC_LEDGER (0 = 추천 원장만 끄기).
 # 공개 주소(0.0.0.0, 공인 IP, Funnel)로는 열지 않는다.
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)

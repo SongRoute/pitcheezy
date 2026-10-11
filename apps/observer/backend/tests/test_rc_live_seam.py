@@ -305,3 +305,22 @@ def test_a_game_with_no_play_yet_is_served_not_an_error(tmp_path):
         response = client.get('/api/service/games/900200')
         assert response.status_code == 200 and response.json()['pitches'] == []
         assert response.json()['current']['phase'] == 'pregame'
+
+
+def test_env_configured_replay_run_goes_through_the_store_and_the_ledger(tmp_path, monkeypatch):
+    """The RC rehearsal configuration (``serve.sh`` env): recorded snapshots -> store -> ledger -> display."""
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR', str(FIXTURES))
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_STORE', str(tmp_path/'rc.sqlite3'))
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_DELAY_S', '0')
+    armb = LiveArmB(lambda: FakePolicy())
+    app = create_app(object(), live_policy=armb, watch_dir=tmp_path, feed_dir=tmp_path, demo_dir=tmp_path/'demo',
+                     intent_dir=tmp_path)
+    with TestClient(app) as client:
+        shown = ready(client, armb)
+        assert shown['recommendation']['ledger']['decision_clock'] == 'unverified'  # a replay is not the game's clock
+        assert shown['sync']['store_ok'] is True and shown['sync']['fetch_s'] >= 0
+        store = client.get('/api/health').json()['live_store']
+        assert store['source'] == 'replay_poll' and store['recommendation_ledger'] is True and store['error'] is None
+        assert client.get(f'/api/live/{GAME}/log', params={'delay': 0}).json()['items'][0]['source'] == 'replay_poll'
+    stored = LiveSnapshotStore(tmp_path/'rc.sqlite3').served_recommendations(GAME)
+    assert [(row['outcome'], row['snapshot']['source']) for row in stored] == [('first', 'replay_poll')]
