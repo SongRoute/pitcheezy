@@ -402,8 +402,11 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         abstract = (feed['gameData'].get('status') or {}).get('abstractGameState')
         if phase is None:
             phase = 'final' if abstract == 'Final' else 'pregame'
+        # The plate appearance the screen is in: the pending pitch's while one is awaited or resolving (a new batter's
+        # PA has no pitch yet, so the previous batter's pitches are not shown under his name); none between innings.
+        pending = display_state.pending_key(feed) if phase in ('pre_pitch', 'resolving') else None
         current = {'phase': phase, 'situation': parsed.get('situation'), 'batter': parsed.get('batter'),
-                   'pitcher': parsed.get('pitcher'), 'pa_key': None}
+                   'pitcher': parsed.get('pitcher'), 'pa_key': pending.rsplit(':', 1)[0] if pending else None}
         for role in ('batter', 'pitcher'):
             if isinstance(current[role], dict):
                 current[role] = current[role] | {'jersey': game_history.jersey(feed, current[role].get('id'))}
