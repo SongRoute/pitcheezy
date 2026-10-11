@@ -562,7 +562,7 @@ await block(async () => {
 });
 
 // ---------- R5. a cached health.json / stale Date header cannot hide a stopped publisher ----------
-const distQuick = variant('quick', { VITE_PUBLISH_STALE_S: '6', VITE_PUBLISH_MISSING_RETRY_MS: '1000', VITE_PUBLISH_MISSING_MAX_MS: '4000' });   // same code, a short (test-only) late threshold so elapsed time can be watched
+const distQuick = variant('quick', { VITE_PUBLISH_STALE_S: '6', VITE_PUBLISH_MISSING_RETRY_MS: '1000', VITE_PUBLISH_MISSING_MAX_MS: '4000', VITE_PUBLISH_PINNED_POLL_MS: '1500' });   // same code, a short (test-only) late threshold so elapsed time can be watched
 await block(async () => {
   // (a) every answer is the same cached copy: same sequence, same publish time, same (old) Date header, no Age
   const t0 = FILE_AT;
@@ -1015,6 +1015,60 @@ await block(async () => {
   ok(games.length === 0, `game number: anything but plain decimal digits opens the list and asks for no game file (${games.join(' ') || 'none asked'})`);
   await context.close();
 }, 'game-digits');
+
+// ====================================================================================================================
+// After the real-file check (2026-10-12)
+// ====================================================================================================================
+// ---------- U1. a screen pinned on a past pitch keeps reading (slowly): a pitch turned back to 확인 중 is blanked there too ----------
+await block(async () => {
+  let mode = 'normal', seq = 2000;
+  const body = () => { const b = liveBody(fx.live, '849843:11:2'); seq++;
+    if (mode === 'unsure' || mode === 'final') { const p = b.pitches.at(-1); p.receipt = { status: 'unconfirmed', reason: 'incomplete_identity', corrected: false };
+      p.actual = { ...Object.fromEntries(Object.keys(p.actual).map((k) => [k, null])), result_label: '확인 중', call_label: '확인 중' }; }
+    if (mode === 'final') { b.game = { ...b.game, status: 'final', status_text: 'Final', live: false }; b.current = null; b.next = null; b.display_state = display(null, { state: 'final', label: '경기 종료', message: '경기가 끝났어요.', shown: false }); }
+    return top(b, seq, Date.now(), mode === 'final'); };
+  const { context, page, counts, errors } = await open({ dist: distQuick, answer: (file) => {
+    if (file === 'health.json') return { json: health(seq, Date.now()), date: Date.now() };
+    if (file === `game/${LIVE}.json`) return { json: body(), date: Date.now() };
+  } });
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2'), 'pinned: loaded, following the latest');
+  const cards = page.locator('.sv-strip .sv-card:not(.pending)');
+  await cards.last().click();                                       // the viewer pins the last thrown pitch
+  ok(/최신으로/.test(await page.locator('.sv-live').innerText()) && await page.locator('.sv-actual-caption:not(.pending)').count() === 1 && await page.locator('.sv-zone-wrap .sv-actual').count() === 1, 'pinned: the past pitch shows its type and location');
+  const n0 = counts.get(`game/${LIVE}.json`); await sleep(4000);
+  const pinnedReads = counts.get(`game/${LIVE}.json`) - n0;
+  ok(pinnedReads >= 2 && pinnedReads <= 4, `pinned: the game file is still read while pinned, at the slower configured interval (${pinnedReads} reads in 4 s; test config 1.5 s, live poll 2 s is off)`);
+  mode = 'unsure';
+  ok(await page.locator('.sv-actual-caption.pending').waitFor({ timeout: 6000 }).then(() => true, () => false), 'pinned: the server turns that pitch back to 확인 중 → the pinned view says 확인 중');
+  ok(await page.locator('.sv-zone-wrap .sv-actual').count() === 0 && await page.locator('.sv-strip .sv-card.unconfirmed').count() === 1 && await page.locator('.sv-rec-row').count() === 0, 'pinned: its location, type and paired recommendation are gone (fail closed)');
+  ok(/최신으로/.test(await page.locator('.sv-live').innerText()), 'pinned: the view stays pinned (no jump to the latest)');
+  mode = 'final'; await sleep(4000);
+  const n1 = counts.get(`game/${LIVE}.json`); await sleep(5000);
+  ok(counts.get(`game/${LIVE}.json`) === n1, `pinned: once the file is final, reading stops (${counts.get(`game/${LIVE}.json`) - n1} more in 5 s)`);
+  ok(errors.length === 0, `pinned: no page errors ${errors.join(' | ')}`);
+  await context.close();
+}, 'pinned');
+// ---------- U2. a plate appearance with no pitch (first/last index null): its own result, no jump ----------
+await block(async () => {
+  const b = asGame(560, clone(fx.final)); const model = b.pas[0];
+  b.pas.splice(1, 0, { ...model, pa_key: '849843:999', at_bat_number: 999, first_index: null, last_index: null, pitch_count: 0, complete: true, result_text: '고의4구', event_label: '고의4구', batter: { ...model.batter, name: 'Zero Pitch' } });
+  delete b.pas[1].batting_order;
+  const { context, page, errors } = await open({ width: 375, height: 553, answer: (file) => file === 'game/560.json' ? { json: top(b, 5, FILE_AT, true) } : undefined });
+  await page.goto('http://pz.test/pub/?game=560');
+  await page.locator('.sv-zone').first().waitFor();
+  const before = { inning: await page.locator('.sv-inning').innerText(), cards: await page.locator('.sv-strip .sv-card').count(), duel: await page.locator('.sv-duel').innerText() };
+  await page.locator('.sv-inning').click(); await page.locator('.sv-sheet select').selectOption(`${model.inning}:${model.half}`);
+  await page.locator('.sv-pa-item', { hasText: 'Zero Pitch' }).click();
+  const sheet = page.getByRole('dialog');
+  ok(await sheet.getByText('투구 기록이 없어요', { exact: false }).waitFor({ timeout: 4000 }).then(() => true, () => false), 'no-pitch PA: a plain 투구 기록이 없어요 line');
+  ok(/Zero Pitch/.test(await sheet.innerText()) && /고의4구/.test(await sheet.innerText()), "no-pitch PA: that plate appearance's own batter and result");
+  ok(!/undefined|null|NaN/.test(await sheet.innerText()), 'no-pitch PA: no leaked value');
+  await sheet.getByRole('button', { name: '닫기' }).click();
+  ok(await page.locator('.sv-inning').innerText() === before.inning && await page.locator('.sv-strip .sv-card').count() === before.cards && await page.locator('.sv-duel').innerText() === before.duel, 'no-pitch PA: the screen behind does not jump to another plate appearance');
+  ok(await fitsOneScreen(page) && errors.length === 0, `no-pitch PA: one screen at 375x553, no page errors ${errors.join(' | ')}`);
+  await context.close();
+}, 'no-pitch-pa');
 
 // ---------- R13. the public bundle contains no API / demo / cursor / operator code ----------
 for (const dir of [distPublic, distQuick]) {
