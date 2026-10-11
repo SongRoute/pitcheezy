@@ -25,24 +25,30 @@ const NOTE = '올해 9월 27일까지 이 투수가 같은 상황에서 실제�
 const CARD = { kind: 'profile_reference', reason_code: 'unsupported/profile_reference', title: '이 투수가 올해 이 카운트·타자 방향에서 자주 던진 공', chip: '참고 · 기록 통계',
   items: [['SI', '싱커', 29, 47], ['FF', '포심', 28, 44], ['SL', '슬라이더', 24, 38], ['CU', '커브', 19, 31]].map(([pitch_type, pitch_label, share_pct, count]) => ({ pitch_type, pitch_label, share: share_pct / 100, share_pct, count })),
   other: null, sample: { pitches: 160, batter_side: 'R', scope: 'count_and_batter_side', balls: 0, strikes: 0 }, as_of: '2026-09-27', note: NOTE,
-  provenance: { profile_sha256_prefix: 'abcdef012345', role: 'SERVICE_PROFILE_STRICTLY_PRIOR', cutoff: '2026-09-27' } };
+  };   // the public subset the route sends (no provenance)
 const EXPECT = { kind: 'step5_expectation', lead: '던지기 전 예상', pitch_type: 'SL', pitch_label: '슬라이더', items: [{ leaf: 'narrow_whiff', label: '헛스윙', pct: 12, pct_text: '12%' }, { leaf: 'ground_ball_in_play', label: '땅볼', pct: 9, pct_text: '9%' }],
   text: '던지기 전 예상: 헛스윙 12% · 땅볼 9%', note: '2024 모델 · 참고', explain: '이 공 하나가 어떻게 끝날지 본 비율이에요. 헛스윙은 휘둘러서 못 맞힌 경우(파울팁 제외), 땅볼은 이 공을 쳐서 땅볼 타구가 된 경우예요. 스윙했을 때만 따진 비율이 아니에요.',
-  basis: 'per_pitch', recorded: 'live_before_pitch', omitted: [], provenance: { attempt_key: '849843:11:after2' } };
+  basis: 'per_pitch', recorded: 'live_before_pitch' };   // the public subset the route sends
 const UNSUPPORTED = { unknown_pitcher: '이 투수는 2025년까지 쌓인 기록이 없어 추천하지 않아요.', no_supported_pitch_types: '이 투수가 이 타석 방향에 던진 구종 기록이 부족해 추천하지 않아요.' };
 function state(name, reason, label, message, shown) {
   return { schema: 'pitcheezy-display-state-v1', state: name, reason, detail: null, label, message, pitch_key: '849843:12:1', recommendation_shown: shown, correction: null,
     feed: { ok: true, delayed: false, lag_s: 18.2, lag_max_s: 24, lag_measured: true, lag_threshold_s: 45, thresholds_provisional: true, last_ok_at: null, failing_since: null, failing_for_s: null, received_at: null, provider_order: 'ordered' },
     ledger: { status: 'recorded', outcome: 'first', why: null, store_ok: true } };
 }
-function liveBody({ reason = 'unknown_pitcher', reference = CARD, recommended = false, expectation = null, viewer = null } = {}) {
+function liveBody({ reason = 'unknown_pitcher', reference = CARD, recommended = false, expectation, viewer = null } = {}) {
   const body = clone(fx.live_more);
   body.source = { kind: 'live', session_id: null }; body.receipts = null;
   if (recommended) body.display_state = state('recommended', 'ledger_recorded', '다음 공 추천', null, true);
   else { body.display_state = state('unsupported', reason, '추천 없음', UNSUPPORTED[reason], false);
     body.next = { pitch_key: '849843:12:1', rec: { provenance: 'absent', status: 'unsupported', reason: UNSUPPORTED[reason], recorded_at: null, policy: null, candidates: [] } }; }
   if (reference) body.next.reference = clone(reference);
-  if (expectation) { const p = body.pitches.find((x) => x.index === 32); p.actual = { ...p.actual, event: 'strikeout', event_label: '삼진' }; p.expectation = clone(expectation); }
+  if (expectation !== undefined) {   // the previous plate appearance ends in a swinging strikeout on its third pitch (self-consistent, with or without the line)
+    const p = body.pitches.find((x) => x.index === 32);
+    p.actual = { ...p.actual, pitch_type: 'SL', pitch_label: '슬라이더', description: 'Swinging Strike', call_label: '헛스윙', result_label: '삼진', event: 'strikeout', event_label: '삼진',
+      play_text: 'Nico Hoerner strikes out swinging.', x: 0.62, z: 1.45, zone_label: '낮은 오른쪽', speed_mph: 86.4 };
+    const pa = body.pas.find((x) => x.pa_key === p.pa_key); Object.assign(pa, { event: 'strikeout', event_label: '삼진', result_text: '헛스윙 삼진', play_text: p.actual.play_text });
+    if (expectation) p.expectation = clone(expectation);
+  }
   if (viewer) { body.viewer = { enabled: true, default_s: 30, provisional: true, delay_s: 30, max_delay_s: 120, buffering: false, wait_s: 0 };
     body.features = { viewer_delay: { enabled: true, default_s: 30, sync_prompt: false, fold_actual_until_synced: true } }; }
   return body;

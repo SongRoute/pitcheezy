@@ -121,7 +121,7 @@ for (const [name, make] of [['switch off', () => server({ enabled: false })], ['
   const s = server({ tap: (url) => url.searchParams.get('ago').split(',').length < 2
     ? { status: 'wait', delay_s: null, hint: 'tap_again', message: '좋아요. 다음 공에서 한 번 더 눌러 주세요.', retry_s: 0.3, max_delay_s: 120 }
     : pairs++ < 1 ? { status: 'wait', delay_s: null, hint: null, message: '맞추는 중이에요. 잠시만 기다려 주세요.', retry_s: 0.3, max_delay_s: 120 }
-    : { status: 'ok', delay_s: 33.1, hint: null, message: null, retry_s: null, max_delay_s: 120 } });
+    : { status: 'ok', delay_s: 33, hint: null, message: null, retry_s: null, max_delay_s: 120 } });
   const { context, page, asks, errors } = await open({ handler: s.handler });
   await page.goto('http://pz.test/watch/849843');
   await page.locator('.sv-sync').waitFor();
@@ -164,7 +164,7 @@ for (const [name, make] of [['switch off', () => server({ enabled: false })], ['
   ok(last.searchParams.get('ago').split(',').length === 2 && last.searchParams.get('current') === '30' && last.searchParams.get('sure') === '0', `tap 2: both taps are sent as ages (${last.search})`);
   ok(Number(last.searchParams.get('ago').split(',')[0]) > 3, 'tap: the age of a tap grows while the client keeps asking (no clock comparison)');
   await page.waitForFunction(() => document.querySelectorAll('.sv-strip .sv-card').length > 0);
-  ok(delays(asks).at(-1) === '33.1', 'synced: requests carry the measured delay');
+  ok(delays(asks).at(-1) === '33', 'synced: requests carry the measured delay');
   ok(await page.locator('.sv-sync').count() === 1, 'synced: the sheet stays open across the reload of the game');
   if (shots) await page.screenshot({ path: path.join(shots, '04-adjust-sheet-after-sync-390x844.png') });
   // ---- ± adjust
@@ -211,6 +211,62 @@ for (const [name, make] of [['switch off', () => server({ enabled: false })], ['
   await page.locator('.sv-sync-foot [data-act="later"]').click();
   await page.locator('.sv-pitch-summary .sv-rec-row').first().waitFor();
   ok(/실시간으로 받는 중/.test(await page.locator('.sv-line-text').innerText()) && await page.locator('.sv-fold').count() === 0, '중계 없이 보기: the line reads 실시간으로 받는 중, nothing folded');
+  await context.close();
+}
+
+// ---------- 2b. review round 1: another tab, a narrow sheet, a server that clamps without saying its limit ----------
+{
+  const s = server();
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  await context.addInitScript((value) => { if (!sessionStorage.getItem('seeded')) { if (!localStorage.getItem('pitcheezy.viewer')) localStorage.setItem('pitcheezy.viewer', value); sessionStorage.setItem('seeded', '1'); } }, JSON.stringify({ delay_s: 30, synced: true, asked: true }));
+  const tabs = [];
+  for (const name of ['A', 'B']) {
+    const page = await context.newPage(); const asks = [];
+    await page.route('http://pz.test/**', async (route) => { const url = new URL(route.request().url());
+      if (url.pathname.startsWith('/api/')) { asks.push(url); return s.handler(route, url); }
+      const file = path.join(DIST, url.pathname); const target = existsSync(file) && statSync(file).isFile() ? file : path.join(DIST, 'index.html');
+      return route.fulfill({ body: readFileSync(target), contentType: TYPES[path.extname(target)] ?? 'application/octet-stream' }); });
+    await page.goto('http://pz.test/watch/849843');
+    await page.locator('.sv-pitch-summary[data-pitch="849843:9:2"]').waitFor();
+    tabs.push({ page, asks });
+  }
+  const [a, b] = tabs;
+  await a.page.locator('.sv-sync-open').click();
+  for (let i = 0; i < 4; i++) await a.page.locator('.sv-sync-adjust button', { hasText: '+5초' }).click();   // 30 → 50: further back
+  await b.page.locator('.sv-pitch-summary[data-pitch="849843:7:2"]').waitFor({ timeout: 6000 }).then(() => ok(true, 'second tab: follows the longer delay set in the first tab (the later moment is dropped)'), () => ok(false, 'second tab: follows the longer delay set in the first tab'));
+  await b.page.waitForTimeout(2500);
+  ok(delays(b.asks).at(-1) === '50' && /50초 늦춰 보는 중/.test(await b.page.locator('.sv-line-text').innerText()), `second tab: asks at 50 s from then on (${delays(b.asks).slice(-3).join(', ')})`);
+  ok(gameAsks(b.asks).filter((u) => u.searchParams.get('delay') === '50')[0].searchParams.get('after') === null, 'second tab: the first request at the new delay is a full one');
+  await context.close();
+}
+{
+  const s = server();
+  const { context, page, errors } = await open({ width: 320, height: 568, handler: s.handler, storage: { delay_s: 30, synced: true, asked: true } });
+  await page.goto('http://pz.test/watch/849843');
+  await page.locator('.sv-pitch-summary .sv-rec-row').first().waitFor();
+  await page.locator('.sv-sync-open').click();
+  await page.locator('.sv-sync-adjust').waitFor();
+  const clipped = await page.evaluate(() => { const now = document.querySelector('.sv-sync-now'); const r = now.getBoundingClientRect();
+    const hit = [...document.querySelectorAll('.sv-sync-adjust button')].some((b) => { const q = b.getBoundingClientRect(); return q.left < r.right - 0.5 && q.right > r.left + 0.5; });
+    return hit || now.scrollWidth > now.clientWidth + 1 || document.querySelector('.sv-sheet-body').scrollWidth > document.querySelector('.sv-sheet-body').clientWidth + 1; });
+  ok(!clipped && /30/.test(await page.locator('.sv-sync-now').innerText()), '320 px: the seconds between the ± buttons are not clipped or covered');
+  if (shots) await page.screenshot({ path: path.join(shots, '06-adjust-sheet-320x568.png') });
+  ok(errors.length === 0, `320 px sheet: no page errors ${errors.join(' | ')}`);
+  await context.close();
+}
+{
+  const s = server(); const base = s.handler;   // serves at most 20 s and does not say so (no max_delay_s)
+  s.handler = (route, url) => { if (url.pathname !== GAME) return base(route, url);
+    const asked = Number(url.searchParams.get('delay') ?? 0); const body = liveBody({ delay: Math.min(20, asked) }); body.viewer.max_delay_s = null;
+    const after = url.searchParams.get('after'); if (after !== null) body.pitches = body.pitches.filter((p) => p.index > Number(after));
+    return route.fulfill({ json: body }); };
+  const { context, page, asks, errors } = await open({ handler: s.handler, storage: { delay_s: 50, synced: true, asked: true } });
+  await page.goto('http://pz.test/watch/849843');
+  const loaded = await page.locator('.sv-pitch-summary .sv-rec-row').first().waitFor({ timeout: 8000 }).then(() => true, () => false);
+  ok(loaded && await page.locator('.sv-alert').count() === 0, 'unstated clamp: the game is shown, not an error screen');
+  await page.waitForTimeout(2500);
+  ok(loaded && /20초 늦춰 보는 중/.test(await page.locator('.sv-line-text').innerText()) && delays(asks).at(-1) === '20', `unstated clamp: the screen takes the delay the server serves (${delays(asks).slice(-3).join(', ')})`);
+  ok(errors.length === 0, `unstated clamp: no page errors ${errors.join(' | ')}`);
   await context.close();
 }
 
