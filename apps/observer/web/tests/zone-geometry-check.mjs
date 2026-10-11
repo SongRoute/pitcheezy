@@ -36,8 +36,14 @@ async function shot(w, h, bounds, [x, z], targets) {
       return { fx, fz, inBox, out: a.classList.contains('out'), dataX: Number(a.dataset.x), dataZ: Number(a.dataset.z), screenSide: Math.sign(cx - (box.left + box.width / 2)), boxW: box.width, svgW: svg.getBoundingClientRect().width,
         recs: [...svg.querySelectorAll('.sv-rec')].map(g => { const r = g.querySelector('rect').getBoundingClientRect(); const t = g.querySelector('text').getBoundingClientRect();
           const covered = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2); return { label: g.dataset.rank, visible: !!covered && g.contains(covered) }; }) }; };
+    // "Visible" is probed with elementFromPoint, which is a HIT test: it skips anything with pointer-events:none. Since afe893f the
+    // zone row and its drawing are pointer-events:none on purpose (they must not swallow taps on the summary under their lower edge),
+    // so the probe saw through every label and reported them hidden although the pixels were unchanged. Record that intent, then
+    // make the drawing hit-testable for this measurement only, so the probe again answers "is something painted over the label".
+    const tapThrough = getComputedStyle(document.querySelector('svg.sv-zone:not(.mini)')).pointerEvents === 'none' && getComputedStyle(document.querySelector('.sv-zrow')).pointerEvents === 'none';
+    const probe = document.createElement('style'); probe.textContent = '.sv-zrow,.sv-zrow .sv-zone{pointer-events:auto!important}'; document.head.append(probe);
     const main = document.querySelector('svg.sv-zone:not(.mini)'); const mini = document.querySelector('svg.sv-zone.mini');
-    return { main: one(main), mini: mini ? one(mini) : null, centre: main.querySelector('.sv-zone-box').getBoundingClientRect().left + main.querySelector('.sv-zone-box').getBoundingClientRect().width / 2 - innerWidth / 2 }; }, bounds);
+    return { tapThrough, main: one(main), mini: mini ? one(mini) : null, centre: main.querySelector('.sv-zone-box').getBoundingClientRect().left + main.querySelector('.sv-zone-box').getBoundingClientRect().width / 2 - innerWidth / 2 }; }, bounds);
   return { p, c, m };
 }
 const rows = [];
@@ -63,6 +69,7 @@ for (const [w, h] of [[375, 667], [320, 568]]) {
   const { p, c, m } = await shot(w, h, BOUNDS.normal, [.3, 2.4], [{ x: .3, z: 2.4 }, { x: -.4, z: 2.0 }, { x: .3, z: 2.4 }]);
   ok(m.main.recs.length === 2 && m.main.recs.every(r => r.visible) && m.main.recs.some(r => r.label === '1·3'), `${w}x${h} overlap: merged '1·3' + '2' labels visible over actual`, m.main.recs);
   ok(!m.main.out && Math.abs(m.main.fx - .3) < .03, `${w}x${h} overlap: actual still at its true spot`, m.main);
+  ok(m.tapThrough, `${w}x${h} overlap: zone row and drawing still let taps through (afe893f)`, m.tapThrough);
   if (out) await p.screenshot({ path: path.join(out, `overlap-${w}x${h}.png`) });
   await c.close();
 }
