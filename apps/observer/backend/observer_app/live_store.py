@@ -553,7 +553,7 @@ class LiveSnapshotStore:
         return {'unit': 'local_decision_opportunity', 'decisions': sum(n for _, n in rows), 'categories': dict(rows)}
 
     def append_recommendation(self, *, game_pk, state_sha, policy_identity, pitch_key, snapshot, displayed, decided,
-                              feed_ok):
+                              feed_ok, inputs=None):
         """Persist the pre-pitch recommendation about to be displayed, before it is displayed. Returns
         (outcome, record) where ``record['displayed']`` is what may be shown:
 
@@ -603,6 +603,9 @@ class LiveSnapshotStore:
                                    'source': row[3], 'received': row[2],
                                    'provider_order': snapshot.get('provider_order')},
                       'displayed': json.loads(shown),
+                      # the pre-pitch situation the decision was computed for (pitcher, batter, count...): what a
+                      # later reconciliation compares with the pitch that was then thrown (``rec_pairing``)
+                      'inputs': inputs,
                       'target': {'status': 'UNKNOWN', 'reason': 'next_pitch_not_observed_at_decision'}}
             body = _canonical(record)
             sha = hashlib.sha256(shown).hexdigest()
@@ -633,12 +636,19 @@ class LiveSnapshotStore:
                               "outcome='first' ORDER BY id", (int(game_pk), pitch_key)).fetchall()
         return [{'id': i} | json.loads(body) for i, body in rows]
 
-    def served_recommendations(self, game_pk):
-        """Every ledger row of a game in append order (``first`` rows were displayable, ``conflict`` rows never)."""
+    def served_recommendations(self, game_pk, after=0):
+        """Every ledger row of a game in append order (``first`` rows were displayable, ``conflict`` rows never).
+        ``after``: only rows appended after that row id (rows never change, so a reader can keep what it has)."""
         with closing(self.connect()) as db:
-            rows = db.execute('SELECT id, outcome, body FROM served_recommendations WHERE game_pk=? ORDER BY id',
-                              (int(game_pk),)).fetchall()
+            rows = db.execute('SELECT id, outcome, body FROM served_recommendations WHERE game_pk=? AND id>? ORDER BY id',
+                              (int(game_pk), int(after))).fetchall()
         return [{'id': i, 'outcome': outcome} | json.loads(body) for i, outcome, body in rows]
+
+    def snapshot_feed(self, game_pk, seq):
+        """``(sha, feed)`` of the committed version ``seq`` of ``game_pk``, or None. A plain read."""
+        with closing(self.connect()) as db:
+            row = db.execute('SELECT sha, body FROM snapshots WHERE seq=? AND game_pk=?', (seq, int(game_pk))).fetchone()
+        return None if row is None else (row[0], json.loads(gzip.decompress(row[1])))
 
     def restore(self, game_pk, wall, max_delay_s):
         """The in-memory buffer ``LiveFeed`` would hold at ``wall``: the current version of every slot newer

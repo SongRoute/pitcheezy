@@ -55,14 +55,16 @@ def _is_committed_version(feed, entry):
     return True
 
 
-def admit(feed, entry, view, *, game_pk, snapshot=None, policy_identity=None, record_new=True):
+def admit(feed, entry, view, *, game_pk, snapshot=None, policy_identity=None, record_new=True, inputs=None):
     """``view`` (``main.armb_view`` output for ``entry``'s snapshot) as it may be displayed. ``feed`` is the
     ``LiveFeed`` that served ``entry``; ``entry`` is the copy ``LiveFeed.snapshot`` returned (None when the
     caller has none). ``snapshot`` is the body the view was computed from: it must be ``entry['feed']`` itself,
     so the row can never cite another version than the one the recommendation was made for.
     ``policy_identity`` is the policy's full identity (the view only shows a short prefix).
     ``record_new=False`` (the feed is disconnected: ``entry`` is only the last snapshot) never writes: the
-    recommendation is returned only if the ledger already holds it for this decision, else it is withheld."""
+    recommendation is returned only if the ledger already holds it for this decision, else it is withheld.
+    ``inputs`` (``rec_pairing.decision_inputs`` of the same snapshot) is stored with a new row: who was pitching
+    and batting and the count the decision was computed for, so the pitch thrown next can be reconciled with it."""
     store = getattr(feed, 'store', None)
     if store is None or not enabled() or not view or not view.get('recommendation'):
         return view
@@ -88,7 +90,7 @@ def admit(feed, entry, view, *, game_pk, snapshot=None, policy_identity=None, re
             game_pk=game_pk, state_sha=state_sha,
             policy_identity=policy_identity or view.get('policy_identity'), pitch_key=view.get('key'), snapshot=entry,
             displayed={key: view.get(key) for key in DISPLAYED}, decided=feed.wall(),
-            feed_ok=int(game_pk) not in feed.failing)
+            feed_ok=int(game_pk) not in feed.failing, inputs=inputs)
     except (sqlite3.Error, OSError, ValueError) as exc:
         LOGGER.warning('recommendation ledger write failed; recommendation withheld', exc_info=True)
         return _withheld(type(exc).__name__)

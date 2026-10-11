@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date as Date, timedelta
 import gzip
+import hashlib
 import json
 import os
 import re
@@ -18,7 +19,7 @@ from fastapi import Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import display_state, game_history, player_metadata
+from . import display_state, game_history, player_metadata, rec_pairing
 from .demo_clock import DemoError
 
 DEFAULT_FEED_DIR = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026/feeds')
@@ -253,17 +254,52 @@ def _apply_receipts(pitches, receipts, pas=()):
     return {'version': display_state.receipts_version(receipts), 'unconfirmed': unconfirmed, 'corrected': corrected}
 
 
+def _finished_half(feed):
+    """``{'inning', 'half'}`` of the half-inning that just ended, from the feed's linescore, or None. A fact about
+    what is over: which half comes next is not stated (after the last out of a game the feed stays Live a while)."""
+    line = (feed.get('liveData') or {}).get('linescore') or {}
+    inning, state = line.get('currentInning'), line.get('inningState')
+    half = {'Middle': 'Top', 'End': 'Bot', 'Top': 'Top', 'Bottom': 'Bot'}.get(state)
+    return {'inning': inning, 'half': half} if type(inning) is int and half else None
+
+
+def _line_score(feed):
+    teams = ((feed.get('liveData') or {}).get('linescore') or {}).get('teams') or {}
+    runs = {side: (teams.get(side) or {}).get('runs') for side in ('away', 'home')}
+    return {f'{side}_score': value for side, value in runs.items() if type(value) is int}
+
+
+def _pair_recommendations(view, recs):
+    """Each past pitch of a live game gets the recommendation recorded before it, or a plain absent one. ``recs``
+    is ``live_pairing``'s ``{pitch key: rec}`` or None. A pairing is settled when its pitch first appears, except:
+    the pitch's own receipt changes (already in ``receipts.version``), a passing condition withholds pairings
+    (``rec_pairing.TRANSIENT``: the ledger could not be read just now), or a provider correction changes whether
+    a decision's inputs match the pitch (``rec_pairing.REVISABLE``). The last two are folded into
+    ``receipts.version``: it is the value an open screen already compares to take the full history again."""
+    recs = recs or {}
+    for pitch in view['pitches']:
+        pitch['rec'] = recs.get(pitch['key']) or rec_pairing.absent('no_store')
+    if view['receipts'] is not None:
+        view['receipts']['paired'] = sum(p['rec']['provenance'] != 'absent' for p in view['pitches'])
+        watched = (*rec_pairing.TRANSIENT, *rec_pairing.REVISABLE)
+        marks = sorted((p['key'], p['rec']['pairing']['rule']) for p in view['pitches'] if p['rec']['pairing']['rule'] in watched)
+        if marks:
+            view['receipts']['version'] = hashlib.sha256(repr((view['receipts']['version'], marks)).encode()).hexdigest()[:12]
+
+
 def list_card(record, cutoff, source):
     return cut_view(record, cutoff, source)['game']
 
 
-def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None):
+def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
     reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
     ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
     next-pitch rec (and records it in the append-only ledger before it is returned, when a store is on).
     ``live_display(feed, parsed, entry)`` replaces ``live_rec`` on the real fan screen: it returns
-    ``(rec or None, display_state, pitch receipts or None)`` so the payload states what is shown and why."""
+    ``(rec or None, display_state, pitch receipts or None)`` so the payload states what is shown and why.
+    ``live_pairing(feed, pitches, receipts, entry)`` returns ``{pitch key: rec}``: the recommendation recorded
+    before each PAST pitch of a live game (``rec_pairing``); without it every past live pitch says none is recorded."""
 
     def ok(payload, status=200):
         return JSONResponse(payload, status_code=status, headers=NO_STORE)
@@ -415,6 +451,8 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         for role in ('batter', 'pitcher'):
             if isinstance(current[role], dict):
                 current[role] = current[role] | {'jersey': game_history.jersey(feed, current[role].get('id'))}
+        if phase == 'between_innings':  # nobody is batting: no situation, batter or pitcher; only the half that ended
+            current['finished_half'] = _finished_half(feed)
         next_rec = state = receipts = None
         entry = rest[0] if rest else None
         if live_display is not None:
@@ -443,10 +481,13 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                         feed=meta, live_current=None if abstract == 'Final' else current, next_rec=next_rec)
         if abstract == 'Final':
             view['game'] |= {'status': 'final', 'live': False}
+        elif phase == 'between_innings':  # ``situation`` is None then, so the card takes the score from the feed's line
+            view['game'] |= _line_score(feed)
         view['display_state'] = state
         view['receipts'] = None
         if receipts is not None:
             view['receipts'] = _apply_receipts(view['pitches'], receipts, view['pas'])
+        _pair_recommendations(view, live_pairing and live_pairing(feed, view['pitches'], receipts, entry))
         if after is not None:  # a pitch whose record is unconfirmed or was corrected is re-sent whatever the cursor
             view['pitches'] = [p for p in view['pitches'] if p['index'] > after or
                                (p.get('receipt') and (p['receipt']['status'] != 'received' or p['receipt']['corrected']))]

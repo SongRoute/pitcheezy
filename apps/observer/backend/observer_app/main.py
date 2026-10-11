@@ -23,7 +23,7 @@ from .settings import CONFIG, REPO, RUN, WEB, database_path
 from .store import Store
 from .video_annotations import VideoAnnotations
 from .live_armb import LiveArmB
-from . import display_state, live_ledger
+from . import display_state, live_ledger, rec_pairing
 from .setup_estimates import SetupEstimates
 from .watch_along import BADGE as WATCH_BADGE, WatchAlong
 from . import service_api
@@ -364,7 +364,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 'tally': armb.tally(result['key']), 'policy_status': pitch.get('status')}
         return view if feed is None else live_ledger.admit(feed, entry, view, game_pk=snapshot['gameData']['game']['pk'],
                                                            snapshot=snapshot, policy_identity=result['policy_identity'],
-                                                           record_new=record_new)
+                                                           record_new=record_new, inputs=rec_pairing.decision_inputs(parsed))
 
     shown_memory = OrderedDict()  # runs without a ledger: (gamePk, pitch key) -> what was displayed, oldest first
     receipt_memory = {}  # gamePk -> {pitch key: body sha} last admitted, for when the pitch ledger cannot be read
@@ -630,10 +630,28 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                                 'detail': {'probability': (c.get('detail') or {}).get('probability')}}
                                for i, c in enumerate(candidates)]}
 
+    ledger_rows = rec_pairing.LedgerCache()
+
+    def service_live_pairing(snapshot, pitches, receipts, entry=None):
+        """``{pitch key: rec}`` for the PAST pitches of the fan screen: the recommendation the ledger recorded
+        before each pitch, or an absent one naming the rule that refused it (``rec_pairing`` has the rules).
+        Read-only and fail closed: without a store or a ledger, or when one cannot be read, nothing is paired."""
+        feed, game_pk = live_parts(), int(snapshot['gameData']['game']['pk'])
+        nothing = lambda rule: {pitch['key']: rec_pairing.absent(rule) for pitch in pitches}
+        if receipts is None or not hasattr(feed, 'store') or not live_ledger.enabled():
+            return nothing('no_store')
+        try:
+            rows = ledger_rows.rows(feed.store, game_pk)
+            return rec_pairing.pair(pitches, receipts, rows, (entry or {}).get('seq'),
+                                    lambda row: ledger_rows.inputs(feed.store, game_pk, row))
+        except Exception:  # noqa: BLE001 - a display-only read: any failure shows no pairing, never an error page
+            LOGGER.warning('recommendation ledger unreadable; past pitches shown without a recorded recommendation', exc_info=True)
+            return nothing('ledger_unreadable')
+
     service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
                          schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
                          live_feed=None if live_feed is False else service_live_feed,
-                         live_display=service_live_display)
+                         live_display=service_live_display, live_pairing=service_live_pairing)
 
     @app.get('/api/watch/{game_pk}/setup')
     def watch_setup(game_pk: int):

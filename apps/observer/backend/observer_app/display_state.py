@@ -141,7 +141,8 @@ def pitch_receipts(feed, rows, *, committed=True):
     key (``incomplete_identity``) is keyed by its position ``(at_bat_number or None, pitchNumber or None)`` and is
     never ``received``. ``committed=False`` (memory-only entry during a store outage) relabels a body the ledger
     never accepted as ``uncommitted_memory_entry``. ``corrected`` = an accepted correction exists for the key, so a
-    viewer who saw the first version is told the record changed."""
+    viewer who saw the first version is told the record changed. ``first_seq``/``first_received`` are the store
+    version and receipt of the first body that held the pitch (its ``new`` row), or None."""
     by_key, by_sha = {}, {}
     for row in rows:
         if row['outcome'] == 'quarantine':
@@ -165,8 +166,10 @@ def pitch_receipts(feed, rows, *, committed=True):
             status, reason = admit_body(event, key, [*mine, *by_sha.get(sha, [])])
             if status != 'received' and reason == 'not_accepted' and not committed:
                 reason = 'uncommitted_memory_entry'
+            first = mine[0] if mine and mine[0]['outcome'] == 'new' else None  # the body that first held this pitch
             out[key] = {'status': status, 'reason': reason, 'sha': sha,
-                        'corrected': status == 'received' and any(r['outcome'] == 'correction' for r in mine)}
+                        'corrected': status == 'received' and any(r['outcome'] == 'correction' for r in mine),
+                        'first_seq': first and first['store_seq'], 'first_received': first and first['received']}
             if number is None or at_bat is None:
                 tainted.add(at_bat)
     # A pitch without an official key is listed by position downstream (``pitchNumber or its order``), which can
