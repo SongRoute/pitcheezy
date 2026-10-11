@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
 import time
 
 from fastapi import FastAPI, Query, Request
@@ -22,7 +23,7 @@ from .settings import CONFIG, REPO, RUN, WEB, database_path
 from .store import Store
 from .video_annotations import VideoAnnotations
 from .live_armb import LiveArmB
-from . import live_ledger
+from . import display_state, live_ledger
 from .setup_estimates import SetupEstimates
 from .watch_along import BADGE as WATCH_BADGE, WatchAlong
 from . import service_api
@@ -318,22 +319,27 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         hidden = demo_clock.active_games()
         return live_call(lambda: {'date': date, 'games': [g for g in feed.schedule(date) if g['game_pk'] not in hidden]})
 
-    def armb_view(snapshot, parsed, feed=None, entry=None):
+    def armb_view(snapshot, parsed, feed=None, entry=None, record_new=True):
         """Frozen ARM-B pre-pitch recommendation for the served (delayed) state, from the worker cache.
         With ``feed`` (the ``LiveFeed`` that served buffer ``entry``) a recommendation passes the append-only
-        ledger before it is returned for display (``live_ledger.admit``); without a store that is a no-op."""
+        ledger before it is returned for display (``live_ledger.admit``); without a store that is a no-op.
+        ``record_new=False`` (disconnected feed) computes and records nothing: only a recommendation already
+        cached and already in the ledger comes back. ``code`` is the machine reason ``display_state`` reads."""
         if parsed['status'] != 'ready':
             return None
         if not armb_enabled():
-            return {'status': 'unavailable', 'reason': '이 실행에서는 지연 중계 추천을 껐습니다.'}
-        cached = armb.lookup(snapshot, first=True, wait_s=LIVE_WAIT_S)
+            return {'status': 'unavailable', 'code': 'recommender_off', 'reason': '이 실행에서는 지연 중계 추천을 껐습니다.'}
+        cached = armb.lookup(snapshot, first=True, wait_s=LIVE_WAIT_S) if record_new else armb.lookup(snapshot, queue=False)
         policy = armb.status()
         if cached is None:
+            if not record_new:
+                return None
             if policy['state'] == 'unavailable':
-                return {'status': 'unavailable', 'reason': '추천 모델을 준비하지 못했습니다(저장장치 연결을 확인해 주세요).'}
-            return {'status': 'computing', 'reason': '추천을 계산하는 중입니다(보통 10초 안쪽).'}
+                return {'status': 'unavailable', 'code': 'recommender_unavailable',
+                        'reason': '추천 모델을 준비하지 못했습니다(저장장치 연결을 확인해 주세요).'}
+            return {'status': 'computing', 'code': 'computing', 'reason': '추천을 계산하는 중입니다(보통 10초 안쪽).'}
         if 'error' in cached:
-            return {'status': 'unavailable', 'reason': '이 상황의 추천을 계산하지 못했습니다.'}
+            return {'status': 'unavailable', 'code': 'compute_failed', 'reason': '이 상황의 추천을 계산하지 못했습니다.'}
         result = cached['result']
         if result is None:
             return None
@@ -342,9 +348,115 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 'recommendation': pitch['pre']['recommendation'], 'pa_pitches': result['pa_pitches'],
                 'previous': result['previous'], 'home_we_now': result['home_we_now'],
                 'policy_identity': result['policy_identity'][:8], 'seconds': result['seconds'],
-                'tally': armb.tally(result['key'])}
+                'tally': armb.tally(result['key']), 'policy_status': pitch.get('status')}
         return view if feed is None else live_ledger.admit(feed, entry, view, game_pk=snapshot['gameData']['game']['pk'],
-                                                           snapshot=snapshot, policy_identity=result['policy_identity'])
+                                                           snapshot=snapshot, policy_identity=result['policy_identity'],
+                                                           record_new=record_new)
+
+    shown_memory = OrderedDict()  # runs without a ledger: (gamePk, pitch key) -> what was displayed, oldest first
+    receipt_memory = {}  # gamePk -> {pitch key: body sha} last admitted, for when the pitch ledger cannot be read
+    memory_lock = threading.Lock()  # sync routes run in a thread pool
+
+    def _displayed_before(feed, game_pk, key, entry):
+        """Earlier displays of the pending pitch ``key`` (D1: a later, different one is a visible correction), or
+        None if they cannot be read. From the append-only ledger when one is on (restart-safe), else from this
+        process's memory. Only displays made from a snapshot no newer than the served ``entry`` count: a viewer on
+        a longer delay is never told about a decision made for a later state of the same pitch."""
+        if key is None:
+            return []
+        if hasattr(feed, 'store') and live_ledger.enabled():
+            import sqlite3
+            try:
+                rows = feed.store.recommendations_for_pitch(game_pk, key)
+            except (sqlite3.Error, OSError, ValueError):
+                LOGGER.warning('recommendation ledger unreadable; earlier displays of %s unknown', key, exc_info=True)
+                return None
+            seq = (entry or {}).get('seq')
+            return [{'summary': display_state.summary(row['displayed'].get('recommendation')), 'decided': row['decided'],
+                     'candidates': (row['displayed'].get('recommendation') or {}).get('candidates'),
+                     'decision_id': row['decision_id']} for row in rows
+                    if seq is None or row['snapshot']['store_seq'] <= seq]
+        event = (entry or {}).get('event')
+        with memory_lock:
+            return [item for item in shown_memory.get((game_pk, key), []) if event is None or item['event'] <= event]
+
+    def _pitch_receipts(feed, game_pk, snapshot, entry, committed):
+        """SVC-WS-03 admission of every pitch body in the served snapshot (None without a store), as of that
+        snapshot: ledger rows written for a later store version are not consulted, so a viewer on a longer delay
+        is judged against what was known when their snapshot was the newest."""
+        if not hasattr(feed, 'store'):
+            return None
+        import sqlite3
+        seq = (entry or {}).get('seq')
+        try:
+            rows = [row for row in feed.store.pitch_events(game_pk)['events'] if seq is None or row['store_seq'] <= seq]
+            receipts = display_state.pitch_receipts(snapshot, rows, committed=committed)
+        except (sqlite3.Error, OSError, ValueError):
+            LOGGER.warning('pitch ledger unreadable; only bodies admitted earlier stay confirmed', exc_info=True)
+            with memory_lock:
+                return display_state.fallback_receipts(snapshot, dict(receipt_memory.get(game_pk, {})))
+        if seq is not None:
+            with memory_lock:  # per served version, so another viewer's delay never lends this one an admission
+                receipt_memory[game_pk] = {key: item['sha'] for key, item in receipts.items() if item['status'] == 'received'}
+        return receipts
+
+    def live_display(game_pk, snapshot, parsed, entry, feed):
+        """(recommendation view as it may be displayed, the single display state, pitch receipts or None) for the
+        served snapshot. The gate (final/pregame/disconnected/waiting/확인 중) is decided from store facts before
+        the recommender is asked for a view, so a recommendation on an unconfirmed input is never recorded in the
+        ledger or returned (the legacy route's head start may still compute it into the worker cache)."""
+        game_pk = int(game_pk)
+        facts = display_state.feed_facts(feed, game_pk, entry, display_state.config(), now=getattr(feed, 'wall', time.time)())
+        receipts = _pitch_receipts(feed, game_pk, snapshot, entry, bool(facts['committed']))
+        abstract = (snapshot['gameData'].get('status') or {}).get('abstractGameState')
+        gated = display_state.gate(parsed['status'], abstract, facts, receipts, snapshot)
+        ready = parsed['status'] == 'ready'
+        view = None
+        if gated is None:
+            view = armb_view(snapshot, parsed, feed, entry)
+        elif gated[0] == 'disconnected' and gated[2] is None and ready:
+            view = armb_view(snapshot, parsed, feed, entry, record_new=False)
+        key = ((view or {}).get('key') or display_state.pending_key(snapshot)) if ready else None
+        history = _displayed_before(feed, game_pk, key, entry)
+        now_shown = display_state.summary((view or {}).get('recommendation'))
+        ledgered = hasattr(feed, 'store') and live_ledger.enabled()
+        held = ((view or {}).get('ledger') or {}).get('status') == 'recorded' if ledgered else \
+            bool(history) and history[-1]['summary'] == now_shown
+        state = display_state.decide(gated=gated, view=view, facts=facts, history=history, pitch_key=key, held=held)
+        if state['recommendation_shown']:
+            if not ledgered:
+                with memory_lock:
+                    seen = shown_memory.setdefault((game_pk, key), [])
+                    shown_memory.move_to_end((game_pk, key))
+                    if not seen or seen[-1]['summary'] != now_shown:
+                        seen.append({'summary': now_shown, 'decided': getattr(feed, 'wall', time.time)(),
+                                     'event': (entry or {}).get('event', 0), 'candidates': view['recommendation'].get('candidates')})
+                    while len(shown_memory) > 64:
+                        shown_memory.popitem(last=False)
+        elif view:  # the state says nothing is shown: no candidate leaves, not even the at-bat's recomputed ones
+            hidden = {'recommendation': None, 'pa_pitches': [], 'previous': None}
+            view = view | {key: value for key, value in hidden.items() if key in view} | (
+                {'status': 'unavailable', 'reason': state['message']} if view.get('recommendation') else {})
+        return view, state, receipts
+
+    def _confirmed_only(parsed, receipts, at_bat):
+        """``/api/live/{pk}/state``: a pitch body that is not admitted is not listed as an observed pitch (D1).
+        ``at_bat`` is the open at-bat's number, whose pitches ``pitch_sequence`` lists."""
+        if receipts is None:
+            return parsed
+        blank = lambda item, keep: {k: (v if k in keep else None) for k, v in item.items()} | {'receipt': 'unconfirmed'}
+        tainted = display_state.RECEIPT_ALL in receipts
+        # A pitch the store has no row for at all (a trimmed feed whose ``currentPlay`` is not in ``allPlays``: the
+        # pitch ledger only reads ``allPlays``) is outside this check and passes; a refused or superseded body does not.
+        admitted = lambda ab, number: not tainted and (receipts.get((ab, number)) or {'status': 'received'})['status'] == 'received'
+        out = parsed | {'pitch_sequence': [item if admitted(at_bat, item.get('pitch_number')) else blank(item, ('pitch_number',))
+                                           for item in parsed.get('pitch_sequence') or []]}
+        last = parsed.get('last_pitch')
+        if last:
+            _, last_ab, number = (int(part) for part in last['key'].split(':'))
+            if not admitted(last_ab, number):
+                out['last_pitch'] = blank(last, ('key', 'inning', 'half'))
+        return out
 
     replays = OrderedDict()  # (gamePk, start, t0, speed) -> (LiveFeed, transport): one shared clock per link
 
@@ -395,8 +507,10 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             timing = {'delay_s': used, 'replay': None if transport is None else
                       {'start': replay, 't0': transport.t0, 'speed': speed, 'lag_s': transport.lag_s} | transport.position()}
             if entry is None:
+                facts = display_state.feed_facts(feed, game_pk, None, display_state.config(), now=getattr(feed, 'wall', time.time)())
                 return timing | {'status': 'buffering', 'reason': f'내 중계 시점까지 기다리는 중입니다({wait}초).',
-                                 'recommendation': None, 'sync': {'max_delay_s': feed.max_delay_s}}
+                                 'recommendation': None, 'sync': {'max_delay_s': feed.max_delay_s},
+                                 'display_state': display_state.decide(gated=('waiting', 'buffering', None), view=None, facts=facts)}
             snapshot = entry['feed']
             parsed = parse_state(snapshot, None)
             parsed.pop('pre_pitch')
@@ -406,7 +520,11 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 sync['fetch_s'] = round(entry['fetched']-entry['requested'], 3)
             if hasattr(feed, 'sync_extra'):
                 sync |= feed.sync_extra(game_pk, entry)
-            return parsed | timing | {'sync': sync, 'recommendation': armb_view(snapshot, parsed, feed, entry)}
+            view, shown, receipts = live_display(game_pk, snapshot, parsed, entry, feed)
+            play = snapshot['liveData']['plays'].get('currentPlay') or {}
+            index = (play.get('about') or {}).get('atBatIndex')
+            parsed = _confirmed_only(parsed, receipts, index+1 if type(index) is int else None)
+            return parsed | timing | {'sync': sync, 'recommendation': view, 'display_state': shown}
         return live_call(state)
 
     @app.get('/api/live/{game_pk}/log')
@@ -473,12 +591,16 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         return entry['feed'], {'as_of': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(entry['fetched'])),
                                'ok': game_pk not in feed.failing, 'stale_s': round(now-entry['fetched'], 1)}, entry
 
-    def service_live_rec(snapshot, parsed, entry=None):
-        view = armb_view(snapshot, parsed, live_parts(), entry) if parsed.get('status') == 'ready' else None
+    def service_live_display(snapshot, parsed, entry=None):
+        """(next-pitch rec in the service shape or None, display state, pitch receipts) for the fan screen."""
+        view, state, receipts = live_display(snapshot['gameData']['game']['pk'], snapshot, parsed, entry, live_parts())
+        return (service_rec(view, state) if parsed.get('status') == 'ready' else None), state, receipts
+
+    def service_rec(view, state):
         candidates = ((view or {}).get('recommendation') or {}).get('candidates') or []
         if not view or view.get('status') != 'ready' or not candidates:
-            return None if view is None else {'provenance': 'absent', 'status': 'missing' if view.get('status') == 'computing' else 'unsupported',
-                                              'reason': view.get('reason'), 'recorded_at': None, 'policy': None, 'candidates': []}
+            return {'provenance': 'absent', 'status': 'missing' if state['state'] == 'waiting' else 'unsupported',
+                    'reason': (view or {}).get('reason') or state['message'], 'recorded_at': None, 'policy': None, 'candidates': []}
         ledger = view.get('ledger')  # present only when the append-only ledger recorded it before this display
         return {'provenance': 'captured_live', 'status': 'ready', 'reason': None, 'ledger': ledger,
                 'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(ledger['decided'] if ledger else None)),
@@ -491,7 +613,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
                          schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
                          live_feed=None if live_feed is False else service_live_feed,
-                         live_rec=service_live_rec)
+                         live_display=service_live_display)
 
     @app.get('/api/watch/{game_pk}/setup')
     def watch_setup(game_pk: int):
