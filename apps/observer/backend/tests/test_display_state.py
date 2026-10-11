@@ -168,7 +168,7 @@ def test_a_snapshot_whose_provider_order_is_not_established_is_unconfirmed_and_n
     view = run.poll(snap(1010.0, ts, second=True))
     state = view['display_state']
     assert (state['state'], state['reason'], state['feed']['provider_order']) == ('unconfirmed', reason, order)
-    assert state['label'] == '확인 중' and '추천을 잠시 멈췄어요' in state['message'] and state['recommendation_shown'] is False
+    assert state['label'] == '확인 중' and state['message'] == display_state.RECHECK_GAME and state['recommendation_shown'] is False
     assert shown(view) == [] and view['next']['rec']['reason'] == state['message']
     assert run.policy.calls == calls and len(run.feed.store.served_recommendations(GAME)) == rows  # abstained before predict
     assert run.poll(path=LIVE)['recommendation'] is None

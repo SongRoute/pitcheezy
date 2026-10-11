@@ -48,17 +48,23 @@ POLICY_REASONS = {
     'UNSUPPORTED_INCOMPLETE_START': 'at_bat_rejected', 'UNSUPPORTED_INCONSISTENT_HISTORY': 'at_bat_rejected',
     'NOT_SUBMITTED': 'at_bat_rejected', 'NO_DECISION': 'at_bat_rejected'}
 
+# The 확인 중 family for a first-time fan: what is happening and what comes next, without a word about how the data
+# arrives (the reason code keeps the exact cause for operators).
+RECHECK_GAME = '경기 상황을 다시 확인하고 있어요. 확인되면 추천을 보여 드려요.'
+RECHECK_PITCH = '방금 던진 공을 다시 확인하고 있어요. 확인되면 추천을 보여 드려요.'
+# Words that describe the pipeline, not the game: no sentence a fan reads in the 확인 중 family may contain them.
+PIPELINE_WORDS = ('자료', '시각', '순서', '격리', '스냅샷', '원장')
 # (state, reason) -> (short label, one calm sentence). The frontend renders these as they are.
 COPY = {
     ('recommended', 'ledger_recorded'): ('다음 공 추천', None),
     ('recommended', 'ledger_conflict_first_kept'): ('다음 공 추천', None),
     ('recommended', 'shown_unrecorded_no_ledger'): ('다음 공 추천', None),
-    ('unconfirmed', 'stale_provider_stamp'): ('확인 중', '방금 받은 자료가 앞선 자료보다 이른 시각이라, 확인될 때까지 추천을 잠시 멈췄어요.'),
-    ('unconfirmed', 'unorderable_provider_stamp'): ('확인 중', '받은 자료의 순서를 확인할 수 없어, 확인될 때까지 추천을 잠시 멈췄어요.'),
-    ('unconfirmed', 'same_stamp_conflict_provider_stamp'): ('확인 중', '같은 시각에 내용이 다른 자료가 와서, 확인될 때까지 추천을 잠시 멈췄어요.'),
-    ('unconfirmed', 'provider_order_unknown'): ('확인 중', '받은 자료의 순서를 확인하는 중이라 추천을 잠시 멈췄어요.'),
-    ('unconfirmed', 'prior_pitch_unconfirmed'): ('확인 중', '앞선 공의 기록을 확인하는 중이라 추천을 잠시 멈췄어요.'),
-    ('unconfirmed', 'receipts_unreadable'): ('확인 중', '받은 기록을 확인할 수 없어 추천을 잠시 멈췄어요.'),
+    ('unconfirmed', 'stale_provider_stamp'): ('확인 중', RECHECK_GAME),
+    ('unconfirmed', 'unorderable_provider_stamp'): ('확인 중', RECHECK_GAME),
+    ('unconfirmed', 'same_stamp_conflict_provider_stamp'): ('확인 중', RECHECK_GAME),
+    ('unconfirmed', 'provider_order_unknown'): ('확인 중', RECHECK_GAME),
+    ('unconfirmed', 'prior_pitch_unconfirmed'): ('확인 중', RECHECK_PITCH),
+    ('unconfirmed', 'receipts_unreadable'): ('확인 중', RECHECK_GAME),
     ('unsupported', 'unknown_pitcher'): ('추천 없음', '이 투수는 2025년까지 쌓인 기록이 없어 추천하지 않아요.'),
     ('unsupported', 'no_supported_pitch_types'): ('추천 없음', '이 투수가 이 타석 방향에 던진 구종 기록이 부족해 추천하지 않아요.'),
     ('unsupported', 'at_bat_rejected'): ('추천 없음', '이 타석은 앞선 공 기록을 이어 볼 수 없어 추천을 쉬어요.'),
