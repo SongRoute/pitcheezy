@@ -1,7 +1,7 @@
 {
  "$id": "pitcheezy-publish-v1-game",
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "description": "Inferred from 11 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes; the publish block is fixed. It describes what those bodies contain, not every value a real game can produce: treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "description": "Inferred from 11 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
  "properties": {
   "current": {
    "properties": {
@@ -11,7 +11,10 @@
        "type": "integer"
       },
       "jersey": {
-       "type": "null"
+       "type": [
+        "string",
+        "null"
+       ]
       },
       "name": {
        "type": [
@@ -73,7 +76,10 @@
       "pitcher": {
        "properties": {
         "earned_runs": {
-         "type": "null"
+         "type": [
+          "integer",
+          "null"
+         ]
         },
         "pitches": {
          "type": [
@@ -137,7 +143,10 @@
        "type": "integer"
       },
       "jersey": {
-       "type": "null"
+       "type": [
+        "string",
+        "null"
+       ]
       },
       "name": {
        "type": [
@@ -541,7 +550,10 @@
      "type": "string"
     },
     "venue": {
-     "type": "null"
+     "type": [
+      "string",
+      "null"
+     ]
     }
    },
    "required": [
@@ -858,7 +870,10 @@
         "type": "integer"
        },
        "jersey": {
-        "type": "null"
+        "type": [
+         "string",
+         "null"
+        ]
        },
        "name": {
         "type": "string"
@@ -873,10 +888,16 @@
        "name",
        "side"
       ],
-      "type": "object"
+      "type": [
+       "object",
+       "null"
+      ]
      },
      "batting_order": {
-      "type": "null"
+      "type": [
+       "integer",
+       "null"
+      ]
      },
      "complete": {
       "type": "boolean"
@@ -894,7 +915,10 @@
       ]
      },
      "first_index": {
-      "type": "integer"
+      "type": [
+       "integer",
+       "null"
+      ]
      },
      "half": {
       "type": "string"
@@ -903,7 +927,10 @@
       "type": "integer"
      },
      "last_index": {
-      "type": "integer"
+      "type": [
+       "integer",
+       "null"
+      ]
      },
      "pa_key": {
       "type": "string"
@@ -920,7 +947,10 @@
         "type": "integer"
        },
        "jersey": {
-        "type": "null"
+        "type": [
+         "string",
+         "null"
+        ]
        },
        "name": {
         "type": "string"
@@ -932,7 +962,10 @@
        "jersey",
        "name"
       ],
-      "type": "object"
+      "type": [
+       "object",
+       "null"
+      ]
      },
      "play_text": {
       "type": [
@@ -950,7 +983,6 @@
     "required": [
      "at_bat_number",
      "batter",
-     "batting_order",
      "complete",
      "event",
      "event_label",
@@ -1088,7 +1120,10 @@
         "type": "integer"
        },
        "jersey": {
-        "type": "null"
+        "type": [
+         "string",
+         "null"
+        ]
        },
        "name": {
         "type": "string"
@@ -1326,7 +1361,10 @@
         "type": "integer"
        },
        "jersey": {
-        "type": "null"
+        "type": [
+         "string",
+         "null"
+        ]
        },
        "name": {
         "type": "string"

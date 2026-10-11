@@ -63,7 +63,13 @@ CLEARED_ENV = ('PITCHEEZY_OBSERVER_LIVE_STORE', 'PITCHEEZY_OBSERVER_LIVE_REPLAY_
 # ``observer_app.main`` builds a default app at import time and resolves these paths. The server's defaults are
 # not changed.
 PINNED_ENV = {'PITCHEEZY_OBSERVER_RUN': 'legacy-run', 'PITCHEEZY_FEED_DIR': 'empty', 'PITCHEEZY_WATCH_DIR': 'empty',
-              'PITCHEEZY_INTENT_DIR': 'empty', 'PITCHEEZY_DEMO_DIR': 'demo'}
+              'PITCHEEZY_INTENT_DIR': 'empty', 'PITCHEEZY_DEMO_DIR': 'demo',
+              # caches a numeric library may want in the home folder: sent into the run folder before torch is imported
+              # (the policy code imports neither matplotlib nor torch.hub; these are set anyway, they cost nothing)
+              'MPLCONFIGDIR': 'cache/matplotlib', 'XDG_CACHE_HOME': 'cache/xdg', 'TORCH_HOME': 'cache/torch',
+              'PYTORCH_KERNEL_CACHE_PATH': 'cache/torch-kernels'}
+CACHE_DIRS = ('~/.cache', '~/Library/Caches')  # looked at before and after a policy run: top-level names and mtimes only
+CACHE_ENTRY_LIMIT = 5000
 CONFIG_KEYS = ('publish_interval_s', 'fixed_delay_s', 'tail_cycles', 'max_rss_bytes', 'min_free_bytes', 'max_seconds',
                'settle_cap_s', 'max_body_bytes', 'policy_load_cap_s', 'min_free_bytes_running', 'free_check_every_cycles',
                'policy_device', 'style_sha256', 'capture_original_dir', 'policy_dirs', 'listing_time_limit_s',
@@ -291,6 +297,23 @@ def _replace_record(run_dir, record):
     os.replace(temporary, run_dir/'SUMMARY.json')
 
 
+class Timed:
+    """The policy with every computation timed (wall seconds, in call order). Everything else is the policy's own."""
+
+    def __init__(self, policy, perf):
+        self._policy, self._perf, self.seconds = policy, perf, []
+
+    def __call__(self, feed):
+        begun = self._perf()
+        try:
+            return self._policy(feed)
+        finally:
+            self.seconds.append(self._perf()-begun)
+
+    def __getattr__(self, name):
+        return getattr(self._policy, name)
+
+
 def write_record(run_dir, record):
     """Replace ``SUMMARY.json`` whole (temporary file + rename): a reader sees the previous record or this one.
     Serialised with the watchdog: once the watchdog has taken the lock to write ABORTED it never gives it back
@@ -318,7 +341,7 @@ def mark(run_dir, status, **more):
 
 def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs_audit=None, schemas=None,
         publish_config=None, perf=time.perf_counter, rss=lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-        free_memory=free_memory_bytes, mps=mps_bytes, finalize=True,
+        free_memory=free_memory_bytes, mps=mps_bytes, finalize=True, live_wait_s=None,
         log=lambda text: print(text, file=sys.stderr, flush=True)):
     """Replay ``rows`` through a publisher that lives entirely in ``run_dir``. Returns the summary (also written).
     Whatever happens inside (a stop condition, any exception, a termination signal) ends in a written summary and
@@ -327,6 +350,22 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
     from observer_app.capture_replay import CaptureReplayTransport, SimClock
     from observer_app.live_armb import LiveArmB
     from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed
+    import observer_app.main as app_main
+
+    # REPLAY IS NOT LIVE HERE, on purpose. Live, a request waits LIVE_WAIT_S (1.0 s) for the policy and otherwise
+    # shows "computing" until the next poll. Whether a computation beats that wait depends on the machine's speed
+    # at that moment, so a replay built that way is not reproducible. In the replay the builder waits for the
+    # computation it asked for (up to settle_cap_s, a stop condition): the body and the ledger row of a cycle are
+    # built only after the policy has finished for the state that cycle shows. What live would have looked like is
+    # measured instead: every computation is timed and the ones over the live wait are counted.
+    restore_wait = app_main.LIVE_WAIT_S
+    live_wait = restore_wait if live_wait_s is None else live_wait_s
+    timed = []
+
+    def timed_factory():
+        policy = Timed(policy_factory(), time.perf_counter)
+        timed.append(policy)
+        return policy
 
     run_dir = Path(run_dir).resolve()
     out, started = run_dir/'out', perf()
@@ -473,12 +512,14 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                 final_published = {'simulated': clock(), 'cycle': len(cycles)+1, 'sequence': health['sequence']}
         for item in health['unavailable_games']:
             codes[item['code']] += 1
+        ledger_now = len(store.served_recommendations(game_pk))
         checked = len(cycles) % limits['free_check_every_cycles'] == 0
         row = {'cycle': len(cycles)+1, 'label': label, 'simulated': round(clock(), 3), 'capture_index': transport.index(),
                'sequence': health['sequence'], 'wall_s': round(wall_s, 6), 'settle_s': round(settle_s, 6),
                'files_written': len(written), 'written': written, 'bytes': sizes, 'game': facts,
                'health': {'unavailable_games': [item['code'] for item in health['unavailable_games']],
                           'unavailable_dates': len(health['unavailable_dates']), 'feed_failing_games': len(health['feed_failing_games'])},
+               'ledger_rows': ledger_now, 'policy_computations': sum(len(policy_.seconds) for policy_ in timed),
                'rss': rss(), 'mps_bytes': None, 'mps_known': True, 'free_bytes': None, 'free_checked': checked}
         cycles.append(row)
         problem = None
@@ -506,7 +547,8 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         store = LiveSnapshotStore(run_dir/'publisher-store.sqlite3')  # the publisher's own: never the capture
         feed = PersistentLiveFeed(transport, store=store, source='replay_poll', delay_s=0, clock=clock, wall=clock, sleep=lambda _: None)
         os.environ['PITCHEEZY_OBSERVER_LIVE_ARMB'] = '1' if policy_factory else '0'
-        armb = LiveArmB(policy_factory) if policy_factory else LiveArmB(lambda: None)
+        armb = LiveArmB(timed_factory) if policy_factory else LiveArmB(lambda: None)
+        app_main.LIVE_WAIT_S = limits['settle_cap_s']
         config = publisher.load_config(publish_config, env={}, out_dir=str(out), state_path=str(run_dir/'publisher.state.json'),
                                        publish_interval_s=limits['publish_interval_s'], fixed_delay_s=limits['fixed_delay_s'])
         app, pub = publisher.build(config, live_feed=feed, live_policy=armb, feed_dir=run_dir/'empty', watch_dir=run_dir/'empty',
@@ -546,9 +588,11 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         status, failure = 'FAILED', error
         stop = {'reason': 'exception', 'detail': {'type': type(error).__name__, 'where': 'see the traceback on stderr'}}
     finally:
+        app_main.LIVE_WAIT_S = restore_wait
         if pub is not None:
             pub.close()
     violations = [] if audit is None else audit.violations
+    computed = [round(value, 6) for policy_ in timed for value in policy_.seconds]
     held = {name: (None if audit is None else not any(v['invariant'] == name for v in violations)) for name in publish_audit.INVARIANTS}
     held['nothing_outside_the_job_folder'] = None if fs_audit is None else not fs_audit.violations  # the caller's outside check can still turn this false
     final_wait = None
@@ -589,7 +633,15 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                       'paired_past_recommendations_in_last_file': next((row['game']['paired_past_recommendations'] for row in reversed(cycles) if row['game']), None)},
         'health_codes': dict(codes),
         'ledger': {'rows': safely(lambda: len(store.served_recommendations(game_pk))),
-                   'first_rows': safely(lambda: sum(row['outcome'] == 'first' for row in store.served_recommendations(game_pk)))},
+                   'first_rows': safely(lambda: sum(row['outcome'] == 'first' for row in store.served_recommendations(game_pk))),
+                   'distinct_decisions': safely(lambda: len({row['decision_id'] for row in store.served_recommendations(game_pk)})),
+                   'distinct_pitch_keys': safely(lambda: len({row['pitch_key'] for row in store.served_recommendations(game_pk)})),
+                   # a row written in a cycle whose file shows no recommendation: expected 0 (the gate runs before the
+                   # policy is asked); anything else is reported, cycle by cycle
+                   'cycles_adding_rows_without_a_published_recommendation': [
+                       row['cycle'] for previous, row in zip([None, *cycles], cycles)
+                       if row['game'] and row['game']['recommendation'] != 'published'
+                       and row['ledger_rows'] > (previous['ledger_rows'] if previous else 0)]},
         'final': {'feed_final_first_version_fetched': info.get('final_fetched'), 'feed_final_first_version_index': info.get('final_index'),
                   'first_final_version_was_served': None if info.get('final_index') is None else info['final_index'] in set(served),
                   'publish_final': final_published, 'simulated_seconds_from_feed_final_to_publish_final': final_wait,
@@ -607,7 +659,13 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                                                    'violations': fs_audit.violations[:200], 'violation_count': len(fs_audit.violations),
                                                    'files_read_under_watch': dict(sorted(fs_audit.read.items()))},
         'policy': policy | {'final_status': safely(lambda: armb.status()), 'binds': safely(lambda: getattr(armb.policy, 'binds', None)),
-                            'failed_states': safely(lambda: len(armb.failed), 0)},
+                            'failed_states': safely(lambda: len(armb.failed), 0),
+                            'computations': len(computed), 'compute_s': spread(computed),
+                            'live_wait_s': live_wait,
+                            'computations_over_the_live_wait': sum(value > live_wait for value in computed),
+                            'replay_differs_from_live': 'the replay waits for each computation before it builds the body (up to '
+                                                        'settle_cap_s); live waits live_wait_s and shows "computing" until the next '
+                                                        'poll. computations_over_the_live_wait is how many would have done that.'},
         'memory': {'peak_rss_bytes': rss(), 'source': 'resource.getrusage(RUSAGE_SELF).ru_maxrss (process peak, bytes on macOS)',
                    'mps_driver_allocated_peak_bytes': mps_peak,
                    'mps_note': 'Metal (MPS) memory is unified RAM outside ru_maxrss; sampled once per cycle, so a peak between samples is not seen. null = MPS not in use.',
@@ -719,12 +777,28 @@ def outside_state(limits, policy, repo=REPO):
         capture = {path.name: sha256_file(path) for path in sorted(Path(limits['capture_original_dir']).iterdir()) if path.is_file()}
     except OSError:
         capture = None
-    state = {'capture': capture, 'worktree': git_porcelain(repo), 'policy': {}}
+    state = {'capture': capture, 'worktree': git_porcelain(repo), 'policy': {}, 'caches': None}
     if policy:
+        state['caches'] = {folder: cache_entries(os.path.expanduser(folder)) for folder in CACHE_DIRS}
         deadline = time.monotonic()+limits['listing_time_limit_s']
         for folder in limits['policy_dirs']:
             state['policy'][folder] = publish_audit.tree_snapshot(folder, deadline=deadline, clock=time.monotonic)
     return state
+
+
+def cache_entries(folder):
+    """``{name: mtime_ns}`` of the TOP-LEVEL entries of a cache folder (nothing below is read), or None if it cannot
+    be listed or holds more than ``CACHE_ENTRY_LIMIT`` entries."""
+    found = {}
+    try:
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if len(found) >= CACHE_ENTRY_LIMIT:
+                    return None
+                found[entry.name] = entry.stat(follow_symlinks=False).st_mtime_ns
+    except OSError:
+        return None
+    return found
 
 
 def outside_check(before, after, policy):
@@ -763,10 +837,26 @@ def outside_check(before, after, policy):
     verdicts = [result['capture'], result['worktree'], *(result['policy'].values() if isinstance(result['policy'], dict) else [])]
     result['overall'] = ('failed' if any(v.startswith('failed') for v in verdicts)
                          else 'not_checked' if any(v.startswith('not_checked') for v in verdicts) else 'passed')
+    # Home caches (policy runs only): recorded, never a failure. Other programs and the OS (Metal shader cache) write
+    # there all the time, so a change cannot be attributed to this run; what is listed is top-level names only.
+    result['caches'] = 'not_applicable'
+    if policy and before.get('caches') is not None and after.get('caches') is not None:
+        result['caches'], touched = {}, {}
+        for folder, earlier in before['caches'].items():
+            later = after['caches'].get(folder)
+            if earlier is None or later is None:
+                result['caches'][folder] = 'not_checked'
+                continue
+            names = sorted(name for name in set(earlier) | set(later) if earlier.get(name) != later.get(name))
+            result['caches'][folder] = 'changed_outside: caches' if names else 'unchanged'
+            if names:
+                touched[folder] = names[:200]
+        result['cache_entries_changed'] = touched
     result['changes'] = changes
     result['method'] = ('capture: sha256 of every file; worktree: git status --porcelain --ignored; policy folders (policy runs only): '
                         'size and mtime of every entry within a time limit. Cannot see transient writes, or a same-size same-mtime '
-                        'rewrite in a policy folder. The system temporary folder is not checked.')
+                        'rewrite in a policy folder. The system temporary folder is not checked. Home cache folders (policy runs only): '
+                        'top-level names and mtimes, recorded and never failing.')
     return result
 
 
@@ -876,7 +966,7 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
         os.environ.pop(name, None)
     run_dir.mkdir()
     for name, folder in PINNED_ENV.items():
-        (run_dir/folder).mkdir(exist_ok=True)
+        (run_dir/folder).mkdir(parents=True, exist_ok=True)
         os.environ[name] = str(run_dir/folder)
     mark(run_dir, 'RUNNING', phase='starting')
     summary = {'schema': 'pitcheezy-publisher-replay-summary-v3', 'status': 'FAILED', 'incomplete': True, 'game_pk': args.game,

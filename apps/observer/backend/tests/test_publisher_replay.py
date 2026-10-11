@@ -399,7 +399,7 @@ def test_the_whole_command_runs_in_its_own_process_under_the_audit(tmp_path):
     assert 'tripwire' in summary['fs_audit']['kind']
     # policy off: the policy folders named in the config are not part of the check at all
     assert summary['outside_check'] | {'method': 0} == {'method': 0, 'capture': 'passed', 'worktree': 'passed', 'policy': 'not_applicable',
-                                                        'overall': 'passed', 'changes': {}}
+                                                        'caches': 'not_applicable', 'overall': 'passed', 'changes': {}}
     assert 'transient' in summary['outside_check']['method'] and summary['invariants']['all_held'] is True
     assert summary['invariants']['not_applicable'] and summary['incomplete'] is False
     assert sorted(p.name for p in (job/'run-001').iterdir() if 'SUMMARY' in p.name or 'STATUS' in p.name or 'INCOMPLETE' in p.name) == ['SUMMARY.json', 'SUMMARY.md']
@@ -1043,6 +1043,7 @@ def Fake(output_root, max_games):
     policy.scratch = tempfile.TemporaryDirectory(prefix='pitcheezy-live-')
     open(os.path.join(policy.scratch.name, 'ledger.jsonl'), 'w').write('header')
     (output_root/'scratch-path.txt').write_text(policy.scratch.name)
+    (output_root/'env.json').write_text(json.dumps({{name: os.environ.get(name) for name in ('MPLCONFIGDIR', 'XDG_CACHE_HOME', 'TORCH_HOME', 'PYTORCH_KERNEL_CACHE_PATH', 'TMPDIR')}}))
     member = N(model=N(global_model=N(device='mps')))
     policy.bindings, policy.binds = {{900200: {{'components': N(g0=N(models=[member, member]))}}}}, 1
     if fd is not None:
@@ -1099,6 +1100,12 @@ def test_the_whole_command_with_the_policy_on_runs_to_a_completed_record(command
     assert sorted(p.name for p in (run/'policy-root/style').iterdir()) == ['style_2026-03-25.json', 'style_2026_index.json']
     scratch = Path((run/'policy-root/scratch-path.txt').read_text())  # where tempfile put the policy's scratch ledger
     assert scratch.parent == (run/'tmp').resolve() and scratch.name.startswith('pitcheezy-live-')
+    seen_env = json.loads((run/'policy-root/env.json').read_text())  # what the policy saw: every cache points into the run folder
+    assert all(value and Path(value).resolve().is_relative_to(run.resolve()) for value in seen_env.values()), seen_env
+    assert summary['outside_check']['caches'].keys() == {'~/.cache', '~/Library/Caches'}
+    assert summary['ledger']['cycles_adding_rows_without_a_published_recommendation'] == []
+    assert summary['policy']['computations'] >= 2 and summary['policy']['compute_s']['n'] == summary['policy']['computations']
+    assert summary['policy']['live_wait_s'] == 1.0 and summary['policy']['computations_over_the_live_wait'] == 0
     assert sorted(p.name for p in run.iterdir() if p.is_file()) == ['.out.lock', 'CYCLES.jsonl', 'RUN.json', 'SUMMARY.json', 'SUMMARY.md',
                                                                     'publisher-store.sqlite3', 'publisher.state.json']
     assert sorted(p.name for p in command.job.iterdir()) == ['input', 'replay_config.json', 'run-001']
@@ -1173,11 +1180,14 @@ def test_the_outside_check_compares_exactly_what_it_says(tmp_path, monkeypatch):
     (original/'live.sqlite3').write_bytes(b'12345')
     (policy_dir/'model.pt').write_bytes(b'weights')
     limits = {'capture_original_dir': str(original), 'policy_dirs': [str(policy_dir)], 'listing_time_limit_s': 30}
+    caches = {'~/.cache': {'a': 1}, '~/Library/Caches': {'com.example': 5}}
+    monkeypatch.setattr(publisher_replay, 'cache_entries', lambda folder: dict(caches['~/'+folder.split(os.path.expanduser('~')+os.sep, 1)[1]]))
     porcelain = ['?? new.txt']
     monkeypatch.setattr(publisher_replay, 'git_porcelain', lambda repo=None: list(porcelain))
     before = publisher_replay.outside_state(limits, True)
     assert publisher_replay.outside_check(before, publisher_replay.outside_state(limits, True), True) | {'method': 0} == {
-        'method': 0, 'capture': 'passed', 'worktree': 'passed', 'policy': {str(policy_dir): 'passed'}, 'overall': 'passed', 'changes': {}}
+        'method': 0, 'capture': 'passed', 'worktree': 'passed', 'policy': {str(policy_dir): 'passed'}, 'overall': 'passed', 'changes': {},
+        'caches': {'~/.cache': 'unchanged', '~/Library/Caches': 'unchanged'}, 'cache_entries_changed': {}}
     stamp = (original/'live.sqlite3').stat()
     (original/'live.sqlite3').write_bytes(b'12346')  # same size, and the old mtime put back: the sha256 still sees it
     os.utime(original/'live.sqlite3', ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
@@ -1198,13 +1208,33 @@ def test_the_outside_check_compares_exactly_what_it_says(tmp_path, monkeypatch):
     assert gone['capture'].startswith('failed')
     monkeypatch.undo()
     assert publisher_replay.git_porcelain(REPO) is not None
+    # a home cache entry that appears or is re-stamped is recorded and never fails the run (the OS writes there too)
+    monkeypatch.setattr(publisher_replay, 'git_porcelain', lambda repo=None: [])
+    monkeypatch.setattr(publisher_replay, 'cache_entries', lambda folder: dict(caches['~/'+folder.split(os.path.expanduser('~')+os.sep, 1)[1]]))
+    clean = publisher_replay.outside_state(limits, True)
+    caches['~/Library/Caches']['com.apple.metal'] = 9
+    caches['~/.cache']['a'] = 2
+    touched = publisher_replay.outside_check(clean, publisher_replay.outside_state(limits, True), True)
+    assert touched['caches'] == {'~/.cache': 'changed_outside: caches', '~/Library/Caches': 'changed_outside: caches'}
+    assert touched['cache_entries_changed'] == {'~/.cache': ['a'], '~/Library/Caches': ['com.apple.metal']} and touched['overall'] == 'passed'
+    monkeypatch.undo()
+    folder = tmp_path/'cachedir'
+    (folder/'sub').mkdir(parents=True)
+    (folder/'sub/deep').write_text('never read')
+    (folder/'x').write_text('1')
+    assert set(publisher_replay.cache_entries(folder)) == {'sub', 'x'} and publisher_replay.cache_entries(tmp_path/'none') is None
+    monkeypatch.setattr(publisher_replay, 'CACHE_ENTRY_LIMIT', 1)
+    assert publisher_replay.cache_entries(folder) is None  # too many to list: not checked, not a partial listing
+    monkeypatch.undo()
+    monkeypatch.setattr(publisher_replay, 'cache_entries', lambda folder: {})
     # without the policy the policy folders are not looked at at all
     monkeypatch.setattr(publisher_replay, 'git_porcelain', lambda repo=None: [])
     walked = []
     monkeypatch.setattr(publish_audit, 'tree_snapshot', lambda *args, **kwargs: walked.append(args) or ({}, None))
     off = publisher_replay.outside_state(limits, False)
     assert off['policy'] == {} and walked == []
-    assert publisher_replay.outside_check(off, off, False)['policy'] == 'not_applicable'
+    assert off['caches'] is None and publisher_replay.outside_check(off, off, False)['policy'] == 'not_applicable'
+    assert publisher_replay.outside_check(off, off, False)['caches'] == 'not_applicable'
 
 
 WATCHDOG = '''
@@ -1380,3 +1410,52 @@ def test_a_writer_that_cannot_take_the_record_lock_writes_nothing(tmp_path, monk
             child.wait(timeout=20)
     left = json.loads((child_dir/'SUMMARY.json').read_text())
     assert (left['status'], left['incomplete']) == ('RUNNING', True) and not (child_dir/'ABORTED.json').exists()
+
+
+def test_the_replay_publishes_the_same_bodies_however_slow_the_policy_is(replayed):
+    """Live, a computation slower than the wait shows "computing" for a poll; the replay waits for it, so its
+    files do not depend on the machine's speed. How many computations were over the live wait is counted."""
+    import time as real_time
+
+    class Slow(Policy):
+        delay = 0.0
+
+        def __call__(self, snapshot):
+            real_time.sleep(self.delay)
+            return super().__call__(snapshot)
+
+    def out_of(name):
+        root = replayed.job/name/'out'
+        return {path.relative_to(root).as_posix(): path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+
+    fast = replayed('run-fast', policy_factory=lambda: Slow(), live_wait_s=.05)
+
+    class Slower(Slow):
+        delay = 0.15  # three times the live wait used here
+    slow = replayed('run-slow', policy_factory=lambda: Slower(), live_wait_s=.05)
+    assert fast['status'] == slow['status'] == 'COMPLETED'
+    assert out_of('run-fast') == out_of('run-slow')  # byte for byte
+    strip = lambda rows: [(row['sequence'], row['written'], row['game']) for row in rows]
+    cycles = lambda name: [json.loads(line) for line in (replayed.job/name/'CYCLES.jsonl').read_text().splitlines()]
+    assert strip(cycles('run-fast')) == strip(cycles('run-slow'))
+    assert fast['ledger'] == slow['ledger'] and fast['game_file']['recommendation_by_cycle'] == slow['game_file']['recommendation_by_cycle']
+    assert 'none|waiting|computing' not in str(slow['game_file']['recommendation_by_cycle'])  # never published as still computing
+    n = slow['policy']['computations']
+    assert n == fast['policy']['computations'] >= 2 and slow['policy']['compute_s']['n'] == n
+    assert (fast['policy']['computations_over_the_live_wait'], slow['policy']['computations_over_the_live_wait']) == (0, n)
+    assert slow['policy']['compute_s']['min'] >= .15 and slow['policy']['live_wait_s'] == .05
+    assert cycles('run-slow')[-1]['policy_computations'] == n and cycles('run-slow')[-1]['ledger_rows'] == slow['ledger']['rows']
+    import observer_app.main as app_main
+    assert app_main.LIVE_WAIT_S == 1.0  # the server's own wait is put back
+
+
+def test_a_computation_that_outlasts_the_cap_stops_the_run(replayed):
+    import time as real_time
+
+    class Stuck(Policy):
+        def __call__(self, snapshot):
+            real_time.sleep(1.0)
+            return super().__call__(snapshot)
+    summary = replayed(limits=LIMITS | {'settle_cap_s': .2}, policy_factory=lambda: Stuck())
+    assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'policy_did_not_settle')
+    assert summary['ledger']['rows'] == 0

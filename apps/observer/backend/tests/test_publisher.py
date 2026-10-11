@@ -1222,3 +1222,40 @@ def test_running_without_an_output_folder_is_a_clear_refusal(monkeypatch):
     monkeypatch.delenv('PITCHEEZY_PUBLISH_OUT_DIR', raising=False)
     with pytest.raises(SystemExit, match='--out'):
         publisher.main(['--once'])
+
+
+def test_the_schemas_accept_the_shapes_the_builders_can_produce_beyond_the_fixtures():
+    """Types decided from the builder code (publish_schema.CONTRACT_TYPES), first seen on a real replayed game."""
+    schema = json.loads((CONTRACT_DIR/'schema/game.schema.json').read_text())
+    body = json.loads((CONTRACT_DIR/'examples/game-live.json').read_text())
+    assert publish_schema.validate(body, schema) == []
+    body['game']['venue'] = 'A Ballpark'
+    for holder in (body['current'], *body['pas'], *body['pitches']):
+        for role in ('batter', 'pitcher'):
+            if isinstance(holder.get(role), dict):
+                holder[role]['jersey'] = '27'
+    body['current']['context']['pitcher']['earned_runs'] = 2
+    body['pas'][0]['batting_order'] = 3
+    body['pas'][1].pop('batting_order', None)  # not set before the plate appearance's first pitch
+    body['pas'][-1] |= {'batter': None, 'pitcher': None, 'first_index': None, 'last_index': None}
+    for stat in body['current']['context']['batter']:
+        body['current']['context']['batter'][stat] = None
+    assert publish_schema.validate(body, schema) == []
+    for change in (lambda b: b['game'].update(venue=5), lambda b: b['pitches'][0]['batter'].update(jersey=27),
+                   lambda b: b['pas'][0].update(batting_order='3'), lambda b: b['pas'][0].update(first_index='0'),
+                   lambda b: b['pas'][0].update(batter='x'), lambda b: b['current']['context']['pitcher'].update(earned_runs='2')):
+        broken = json.loads(json.dumps(body))
+        change(broken)
+        assert publish_schema.validate(broken, schema), change  # widened to the builder's types, not to anything
+    manifest_schema = json.loads((CONTRACT_DIR/'schema/manifest.schema.json').read_text())
+    manifest = json.loads((CONTRACT_DIR/'examples/manifest-live.json').read_text())
+    assert publish_schema.validate(manifest | {'commit': None, 'commit_dirty': None}, manifest_schema) == []
+    assert publish_schema.validate(manifest | {'commit_dirty': 'no'}, manifest_schema)
+    widened = {'type': 'object', 'required': ['a', 'b'], 'properties': {'a': {'type': 'integer'}, 'b': {'type': 'object', 'properties': {'x': {'type': 'string'}}},
+                                                                     'c': {'type': 'array', 'items': {'type': 'object', 'properties': {'y': {'type': 'integer'}}}}}}
+    publish_schema.widen(widened, ('a',), ('null',), optional=True)
+    publish_schema.widen(widened, ('b', '*'), ('null',))
+    publish_schema.widen(widened, ('c', '*', 'y'), ('number',))
+    publish_schema.widen(widened, ('missing', 'path'), ('null',))  # a path the schema does not have: nothing is invented
+    assert widened == {'type': 'object', 'required': ['b'], 'properties': {'a': {'type': ['integer', 'null']}, 'b': {'type': 'object', 'properties': {'x': {'type': ['string', 'null']}}},
+                                                                    'c': {'type': 'array', 'items': {'type': 'object', 'properties': {'y': {'type': 'number'}}}}}}

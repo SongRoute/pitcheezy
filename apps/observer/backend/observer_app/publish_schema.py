@@ -130,6 +130,61 @@ def problems(instance, schema, pointer=''):
     return out
 
 
+# What the BUILDERS can legitimately produce where the synthetic fixtures show only one shape. Each line was decided
+# from the builder code, not from data: (path, types the field can take, True if the key may be absent).
+#   jersey          game_history.jersey: ``str(number)`` from the game's boxscore, or None
+#   venue           game_history card: ``(venue or {}).get('name')``: a string or None
+#   context stats   game_history context: every stat is None while the context is incomplete or the player is unknown;
+#                   earned_runs is also None when an earned-run attribution is unknown
+#   batting_order   set when the plate appearance's first pitch is seen (absent before); an integer or None
+#   pas batter/pitcher   service_api.cut_view: None for an unfinished plate appearance with no released pitch
+#   first/last_index     None until the plate appearance has a pitch
+#   commit, commit_dirty publisher.code_commit: None when the commit or its dirty state is not known
+PEOPLE = (('current',), ('pas', '*'), ('pitches', '*'))
+CONTRACT_TYPES = {
+    'game': [(('game', 'venue'), ('string', 'null'), False),
+             *(((*where, role, 'jersey'), ('string', 'null'), False) for where in PEOPLE for role in ('batter', 'pitcher')),
+             (('current', 'context', 'batter', '*'), ('null',), False), (('current', 'context', 'pitcher', '*'), ('null',), False),
+             (('current', 'context', 'pitcher', 'earned_runs'), ('integer', 'null'), False),
+             (('pas', '*', 'batting_order'), ('integer', 'null'), True),
+             (('pas', '*', 'batter'), ('null',), False), (('pas', '*', 'pitcher'), ('null',), False),
+             (('pas', '*', 'first_index'), ('integer', 'null'), False), (('pas', '*', 'last_index'), ('integer', 'null'), False)],
+    'manifest': [(('commit',), ('string', 'null'), False), (('commit_dirty',), ('boolean', 'null'), False)],
+}
+_ORDER = ('object', 'array', 'string', 'number', 'integer', 'boolean', 'null')
+
+
+def _add_types(schema, types):
+    have = [schema['type']] if isinstance(schema.get('type'), str) else list(schema.get('type') or [])
+    merged = {*have, *types}
+    if 'number' in merged:
+        merged.discard('integer')
+    names = [name for name in _ORDER if name in merged]
+    schema['type'] = names[0] if len(names) == 1 else names
+
+
+def widen(schema, path, types, optional=False):
+    """Add ``types`` to what the schema allows at ``path`` (``*`` = every array item, or every property of an
+    object) and, with ``optional``, drop the key from its parent's ``required``. A path the schema does not have
+    is left alone: nothing is invented."""
+    if not path:
+        return _add_types(schema, types)
+    head, rest = path[0], path[1:]
+    if head == '*':
+        if isinstance(schema.get('items'), dict):
+            widen(schema['items'], rest, types, optional)
+        elif not rest:
+            for child in (schema.get('properties') or {}).values():
+                _add_types(child, types)
+        return
+    child = (schema.get('properties') or {}).get(head)
+    if child is None:
+        return
+    if not rest and optional and head in schema.get('required', []):
+        schema['required'] = [key for key in schema['required'] if key != head]
+    widen(child, rest, types, optional)
+
+
 def publish_block(*, final):
     """The one key the publisher adds to every file. ``final`` True: the file kind carries the final mark."""
     properties = {'contract': {'const': 'v1'}, 'sequence': {'type': 'integer', 'minimum': 1},
@@ -147,10 +202,13 @@ def document(kind, samples, *, final, source):
     names = sorted({body['schema'] for body in bodies if isinstance(body.get('schema'), str)})
     if names:
         schema['properties']['schema'] = {'enum': names}
+    for path, types, optional in CONTRACT_TYPES.get(kind, ()):
+        widen(schema, path, types, optional)
     schema['properties']['publish'] = publish_block(final=final)
     schema['required'] = sorted({*schema.get('required', []), 'publish'})
     return {'$schema': DRAFT, '$id': f'pitcheezy-publish-v1-{kind}', 'title': f'Pitcheezy public publish v1: {kind}',
             'description': (f'Inferred from {len(bodies)} synthetic fixture bodies ({source}) built by the same code that '
-                            'answers the service routes; the publish block is fixed. It describes what those bodies '
-                            'contain, not every value a real game can produce: treat a type listed here as the minimum '
-                            'a reader must accept, and accept unknown keys.')} | schema
+                            'answers the service routes, then widened where the builder code can produce another type '
+                            '(publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance '
+                            'people and indices, optional batting_order, unknown commit); the publish block is fixed. '
+                            'Treat a type listed here as the minimum a reader must accept, and accept unknown keys.')} | schema
