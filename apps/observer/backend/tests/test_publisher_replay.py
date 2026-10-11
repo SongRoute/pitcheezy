@@ -1,6 +1,8 @@
 """Offline replay of a capture through the publisher (``capture_replay``, ``publish_audit``,
 ``scripts/publisher_replay.py``) on SYNTHETIC captures only: no real capture, network, T7, model or port."""
 from contextlib import closing
+import re
+import threading
 import gzip
 import hashlib
 import json
@@ -307,6 +309,8 @@ def test_the_command_refuses_before_writing_anything(tmp_path, capsys):
     for words, argv in cases.items():
         assert publisher_replay.main(argv) == 2
         assert words.strip() in capsys.readouterr().err
+    assert 'observer_app.main' in sys.modules  # this test process imported the app long ago, with its default folders:
+    assert publisher_replay.main(make()) == 2 and 'before its folders could be pinned' in capsys.readouterr().err  # so a full run is refused here
     (job/'run-001').mkdir()
     assert publisher_replay.main(base) == 2 and 'already exists' in capsys.readouterr().err
     (job/'run-001').rmdir()
@@ -949,7 +953,8 @@ def test_one_record_says_how_the_run_stands_and_its_final_form_is_the_last_write
         return real(self, *args, **kwargs)
     monkeypatch.setattr(Path, 'write_text', write_text)
     publisher_replay.finish(tmp_path, done)
-    assert writes == ['SUMMARY.md', '.SUMMARY.json.tmp'] and json.loads((tmp_path/'SUMMARY.json').read_text()) == done  # the record last
+    assert len(writes) == 2 and writes[0] == 'SUMMARY.md' and re.fullmatch(r'\.SUMMARY\.json\.\d+\.tmp', writes[1])
+    assert json.loads((tmp_path/'SUMMARY.json').read_text()) == done  # the record last
     assert sorted(p.name for p in tmp_path.iterdir()) == ['SUMMARY.json', 'SUMMARY.md']  # no second status file to disagree
     # a write that fails on the way: nothing is written after it, and the record still says what it said before
     publisher_replay.mark(tmp_path, 'POST_RUN_CHECKS_PENDING')
@@ -1019,25 +1024,30 @@ import json, os, sys, tempfile
 from types import SimpleNamespace as N
 sys.path[:0] = [{tests!r}, {backend!r}, {scripts!r}]
 import publisher_replay
-from test_display_state import Policy
 mode, style_dir, leak = sys.argv[1], sys.argv[2], sys.argv[3]
 fd = os.open(leak, os.O_WRONLY | os.O_APPEND) if mode == 'leak' else None  # opened before the tripwire exists
+if mode == 'post_fail':
+    def broken(*args, **kwargs):
+        raise RuntimeError('the post-run check itself broke')
+    publisher_replay.outside_check = broken
 
 
-class Fake(Policy):
+def Fake(output_root, max_games):
     """Stands in for demo_precompute.LivePolicy: reads its style cache where it was told to, makes its scratch
-    folder through tempfile like the real bind, and holds its members on a device."""
-    def __init__(self, output_root, max_games):
-        super().__init__()
-        index = json.loads((output_root/'style'/'style_2026_index.json').read_text())
-        assert (output_root/'style'/index['file']).is_file() and max_games >= 1
-        self.scratch = tempfile.TemporaryDirectory(prefix='pitcheezy-live-')
-        open(os.path.join(self.scratch.name, 'ledger.jsonl'), 'w').write('header')
-        (output_root/'scratch-path.txt').write_text(self.scratch.name)
-        member = N(model=N(global_model=N(device='mps')))
-        self.bindings, self.binds = {{900200: {{'components': N(g0=N(models=[member, member]))}}}}, 1
-        if fd is not None:
-            os.write(fd, b'x')  # a write no audit event reports: only the after-the-fact check can see it
+    folder through tempfile like the real bind, and holds its members on a device. Built only when the run asks
+    for the policy, like the real one (the app is not imported before its folders are pinned)."""
+    from test_display_state import Policy
+    policy = Policy()
+    index = json.loads((output_root/'style'/'style_2026_index.json').read_text())
+    assert (output_root/'style'/index['file']).is_file() and max_games >= 1
+    policy.scratch = tempfile.TemporaryDirectory(prefix='pitcheezy-live-')
+    open(os.path.join(policy.scratch.name, 'ledger.jsonl'), 'w').write('header')
+    (output_root/'scratch-path.txt').write_text(policy.scratch.name)
+    member = N(model=N(global_model=N(device='mps')))
+    policy.bindings, policy.binds = {{900200: {{'components': N(g0=N(models=[member, member]))}}}}, 1
+    if fd is not None:
+        os.write(fd, b'x')  # a write no audit event reports: only the after-the-fact check can see it
+    return policy
 
 
 sys.exit(publisher_replay.execute(sys.argv[4:], make_policy=Fake, style_dir=style_dir, volume='/dev'))
@@ -1108,6 +1118,43 @@ def test_a_change_outside_that_the_tripwire_cannot_see_fails_the_run_at_the_very
     assert '미완료' in (run/'SUMMARY.md').read_text() and not (run/'STATUS.json').exists()
 
 
+def test_an_exception_after_the_replay_leaves_a_failed_record_that_does_not_say_all_held(command):
+    done = command('post_fail')
+    assert done.returncode == 3, done.stderr[-3000:]
+    summary = json.loads((command.run/'SUMMARY.json').read_text())
+    assert (summary['status'], summary['incomplete'], summary['stop']['reason']) == ('FAILED', True, 'exception_outside_the_replay')
+    assert summary['cycles']['n'] == 16 and summary['invariants']['all_held'] is False  # the replay had completed with every invariant held
+    assert all(value is True for value in summary['invariants']['held'].values())
+
+
+def test_summary_writes_are_serialised_and_each_writer_has_its_own_temporary_name(tmp_path, monkeypatch):
+    names, inside, overlap, real = set(), [0], [], publisher_replay._replace_record
+
+    def watched(run_dir, record):
+        inside[0] += 1
+        overlap.append(inside[0])
+        names.add(threading.get_ident())
+        try:
+            return real(run_dir, record)
+        finally:
+            inside[0] -= 1
+    monkeypatch.setattr(publisher_replay, '_replace_record', watched)
+    workers = [threading.Thread(target=lambda n=n: [publisher_replay.mark(tmp_path, 'RUNNING', writer=n, i=i) for i in range(40)]) for n in range(6)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    assert max(overlap) == 1 and len(names) == 6  # never two writers at once
+    assert json.loads((tmp_path/'SUMMARY.json').read_text())['status'] == 'RUNNING'
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['SUMMARY.json']  # no temporary file left
+    seen = []
+    monkeypatch.setattr(Path, 'write_text', lambda self, *a, **k: seen.append(self.name))
+    monkeypatch.setattr(publisher_replay.os, 'replace', lambda *a: None)
+    monkeypatch.undo() if False else None
+    real(tmp_path, {'x': 1})
+    assert seen == [f'.SUMMARY.json.{threading.get_ident()}.tmp']
+
+
 def test_the_replay_record_is_not_called_completed_before_the_last_check(replayed):
     summary = replayed(finalize=False)
     run = replayed.job/'run-001'
@@ -1168,17 +1215,20 @@ mode, run_dir = sys.argv[1], sys.argv[2]
 if mode == 'record_fails':
     def broken(*args, **kwargs):
         raise OSError('disk full')
-    publisher_replay.mark = broken
+    publisher_replay._replace_record = broken
 peak = (lambda: 1/0) if mode == 'cannot_measure' else None
 limits = {{'max_rss_bytes': 1, 'max_seconds': 3600}} if mode != 'time' else {{'max_rss_bytes': 1 << 60, 'max_seconds': -60}}
 publisher_replay.start_watchdog(run_dir, limits, peak=peak, interval=.05)
+if mode == 'racing':  # the main flow keeps writing its own progress record as fast as it can
+    while True:
+        publisher_replay.mark(run_dir, 'RUNNING', phase='replay')
 time.sleep(30)  # a main thread that never gets to its own checks
 sys.exit(0)
 '''
 
 
 @pytest.mark.parametrize('mode, why', [('memory', 'memory_cap'), ('time', 'runtime_cap_hard'), ('cannot_measure', 'watchdog_could_not_measure'),
-                                       ('record_fails', None)])
+                                       ('racing', 'memory_cap'), ('record_fails', None)])
 def test_the_watchdog_ends_its_own_process_whatever_happens_while_it_records(tmp_path, mode, why):
     script = tmp_path/'watchdog.py'
     script.write_text(WATCHDOG.format(backend=str(BACKEND), scripts=str(REPO/'scripts')))
@@ -1210,7 +1260,7 @@ def under(path):
         text = os.path.abspath(os.fsdecode(path))  # no system call: this runs inside the wrapped ones
     except (TypeError, ValueError):
         return False
-    return text == volume or text.startswith(volume+os.sep)
+    return text == volume or text.startswith(volume+os.sep) or text == '/Volumes' or text.startswith('/Volumes/')  # the fake volume AND the real one
 
 
 def wrap(name):
@@ -1256,7 +1306,7 @@ def test_a_policy_off_run_never_touches_the_external_volume_or_any_policy_folder
     env = {key: value for key, value in os.environ.items() if not key.startswith('PITCHEEZY_')}
     done = subprocess.run(argv, capture_output=True, text=True, timeout=300, env=env, cwd=tmp_path)
     assert done.returncode == 0, done.stderr[-3000:]
-    assert json.loads(log.read_text()) == []  # nothing under the volume was stat'ed, listed or opened
+    assert json.loads(log.read_text()) == []  # nothing under the fake volume or under /Volumes/ was stat'ed, listed or opened
     summary = json.loads((job/'run-off-001/SUMMARY.json').read_text())
     assert summary['status'] == 'COMPLETED' and summary['policy']['requested'] is False and summary['outside_check']['policy'] == 'not_applicable'
     assert summary['fs_audit']['files_read_under_watch'] == {} and summary['memory']['mps_driver_allocated_peak_bytes'] is None

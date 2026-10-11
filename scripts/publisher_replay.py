@@ -57,8 +57,13 @@ STYLE_DIR = T7/'pitcheezy/pitchmdp/runs/DEMO-WS-2026/style'
 CLEARED_ENV = ('PITCHEEZY_OBSERVER_LIVE_STORE', 'PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR', 'PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S',
                'PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE', 'PITCHEEZY_OBSERVER_LIVE_DELAY_S', 'PITCHEEZY_OBSERVER_REC_LEDGER',
                'PITCHEEZY_OBSERVER_FEED_LAG_DELAYED_S', 'PITCHEEZY_PUBLISH_OUT_DIR', 'PITCHEEZY_PUBLISH_STATE',
-               'PITCHEEZY_PUBLISH_INTERVAL_S', 'PITCHEEZY_PUBLISH_DELAY_S', 'PITCHEEZY_PUBLISH_COMMIT', 'PITCHEEZY_FEED_DIR',
-               'PITCHEEZY_WATCH_DIR', 'PITCHEEZY_INTENT_DIR', 'PITCHEEZY_DEMO_DIR', 'PITCHEEZY_PLAYER_SNAPSHOT_DIR')
+               'PITCHEEZY_PUBLISH_INTERVAL_S', 'PITCHEEZY_PUBLISH_DELAY_S', 'PITCHEEZY_PUBLISH_COMMIT', 'PITCHEEZY_PLAYER_SNAPSHOT_DIR')
+# Every default folder of the observer app that would otherwise point at the external volume (or the home folder)
+# is pinned to a folder inside the run, through the app's own environment variables, BEFORE the app is imported:
+# ``observer_app.main`` builds a default app at import time and resolves these paths. The server's defaults are
+# not changed.
+PINNED_ENV = {'PITCHEEZY_OBSERVER_RUN': 'legacy-run', 'PITCHEEZY_FEED_DIR': 'empty', 'PITCHEEZY_WATCH_DIR': 'empty',
+              'PITCHEEZY_INTENT_DIR': 'empty', 'PITCHEEZY_DEMO_DIR': 'demo'}
 CONFIG_KEYS = ('publish_interval_s', 'fixed_delay_s', 'tail_cycles', 'max_rss_bytes', 'min_free_bytes', 'max_seconds',
                'settle_cap_s', 'max_body_bytes', 'policy_load_cap_s', 'min_free_bytes_running', 'free_check_every_cycles',
                'policy_device', 'style_sha256', 'capture_original_dir', 'policy_dirs', 'listing_time_limit_s',
@@ -271,12 +276,27 @@ def armb_idle(armb):
     return not (armb.pending or armb.running is not None or armb.loading)
 
 
-def write_record(run_dir, record):
-    """Replace ``SUMMARY.json`` whole (temporary file + rename): a reader sees the previous record or this one."""
+RECORD_LOCK = threading.Lock()  # one writer of SUMMARY.json at a time: the main flow or the watchdog
+
+
+def _replace_record(run_dir, record):
     run_dir = Path(run_dir)
-    temporary = run_dir/'.SUMMARY.json.tmp'
+    temporary = run_dir/f'.SUMMARY.json.{threading.get_ident()}.tmp'  # a name of its own per writing thread
     temporary.write_text(json.dumps(record, ensure_ascii=False, indent=1)+'\n')
     os.replace(temporary, run_dir/'SUMMARY.json')
+
+
+def write_record(run_dir, record):
+    """Replace ``SUMMARY.json`` whole (temporary file + rename): a reader sees the previous record or this one.
+    Serialised with the watchdog: once the watchdog has taken the lock to write ABORTED it never gives it back
+    (the process exits), so no later write of the main flow can cover its record."""
+    with RECORD_LOCK:
+        _replace_record(run_dir, record)
+
+
+def aborted_record(record):
+    return {'schema': 'pitcheezy-publisher-replay-summary-v3', 'status': 'ABORTED', 'incomplete': True,
+            'at_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'stop': {'reason': record['why'], 'detail': record}}
 
 
 def mark(run_dir, status, **more):
@@ -758,10 +778,11 @@ def start_watchdog(run_dir, limits, *, peak=None, interval=.5):
             except BaseException:  # noqa: BLE001 - a watchdog that cannot measure does not keep the process alive
                 held, elapsed = None, time.monotonic()-begun
             try:
+                RECORD_LOCK.acquire(timeout=5)  # held until the process is gone: the main flow cannot write after this
                 record = {'peak_rss_bytes': held, 'elapsed_s': round(elapsed, 1),
                           'why': 'runtime_cap_hard' if elapsed > limits['max_seconds']+60 else 'memory_cap' if held is not None else 'watchdog_could_not_measure'}
                 (Path(run_dir)/'ABORTED.json').write_text(json.dumps(record))
-                mark(run_dir, 'ABORTED', stop={'reason': record['why'], 'detail': record})
+                _replace_record(run_dir, aborted_record(record))
             finally:
                 os._exit(87)
     thread = threading.Thread(target=loop, name='replay-watchdog', daemon=True)
@@ -837,9 +858,15 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
     except Refused as refused:
         print(f'REFUSED: {refused}', file=sys.stderr)
         return 2
+    if 'observer_app.settings' in sys.modules or 'observer_app.main' in sys.modules:
+        print('REFUSED: the observer app was imported before its folders could be pinned to the run folder', file=sys.stderr)
+        return 2
     for name in CLEARED_ENV:
         os.environ.pop(name, None)
     run_dir.mkdir()
+    for name, folder in PINNED_ENV.items():
+        (run_dir/folder).mkdir(exist_ok=True)
+        os.environ[name] = str(run_dir/folder)
     mark(run_dir, 'RUNNING', phase='starting')
     summary = {'schema': 'pitcheezy-publisher-replay-summary-v3', 'status': 'FAILED', 'incomplete': True, 'game_pk': args.game,
                'commit': args.commit, 'stop': {'reason': 'failed_before_the_replay', 'detail': None}, 'cycles': {'n': 0, 'by_label': {}, 'wall_s': {}, 'last_sequence': None}}
@@ -892,6 +919,8 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
         summary['status'], summary['incomplete'] = 'FAILED', True
         summary['stop'] = {'reason': 'exception_outside_the_replay', 'detail': {'type': type(error).__name__}}
     finally:
+        if summary['status'] != 'COMPLETED' and isinstance(summary.get('invariants'), dict):
+            summary['invariants']['all_held'] = False  # a run that did not complete never reports "all held"
         if fs_audit is not None:
             fs_audit.armed = False
         try:
