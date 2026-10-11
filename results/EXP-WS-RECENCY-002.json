@@ -1,0 +1,47 @@
+{
+  "id": "EXP-WS-RECENCY-002",
+  "recorded_at": "2026-10-11",
+  "data_role": "2026 EXPOSED DEVELOPMENT; no independent TEST; advisory labels only; no winner, no adoption, no serving replacement; research-model evidence",
+  "question": "If the fit100 backbone is refit so that FIT, SELECT (early stop), CAL (temperature) and EVAL all use consistent prequential (strictly-prior per game date) 2026 history features, does prediction improve vs H0 (recorded fit100) and vs H2 (frozen fit100 + prequential EVAL features, EXP-WS-RECENCY-001)? Is the refit a candidate for a future serving SHADOW?",
+  "structural_note": "FIT-row features are unchanged by construction (every FIT row's history was already strictly prior), so the deterministic LightGBM refit reproduces the same trees; arm P can differ from H2 only through the SELECT-chosen iteration (early stop on fresh SELECT features) and the CAL temperatures. Observed: parent iteration 162 vs 195 (model.txt differs), narrow_whiff 195 vs 195 (model.txt byte-identical), ground_ball 186 vs 191; temperatures parent 0.99415 vs 0.99460, narrow_whiff 0.95104 vs 0.94970, ground_ball 0.99189 vs 1.01522.",
+  "source": {
+    "job": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e1b-refit/",
+    "registration_sha256": "3edac1709b272826b43d51bcd4e6574a405b51697bc996dc473e2d87c353d1a1",
+    "code_sha256": {"refit_run.py": "946ffd8c6a70a6c1425a279561c3a6dbc5aa8933dd2b31fe384f4a4e2dc93ce0"},
+    "review_sha256": "938db6722166e68ffa9af626449b4143fbc5854d465191bdb7ac84006437cd63",
+    "review_verdict": "PASS (independent reviewer, distinct from author; 0 critical/high, 2 medium, 13 low)",
+    "attempt": "refit-001",
+    "result_sha256": "52ebad30c3401c1c4c9844841fcccab3d04f91ba66b97075bb1ee7980c0d122a",
+    "terminal_sha256": "ca3e7914aa134a9a112884be8a952073ec19b41ab67117449e0da7c8abb925a9",
+    "x_prequential_sha256": "c0d446f745cc1839bdc6baed9c7bac92573a82a28ec345e47ccec09db42bff31",
+    "seven_leaf_P_evaluation_sha256": "b81daceaa1485f1968ddc85092684c95fbe1764cb58bda9eeda2618337c96e4b",
+    "repo_commit_at_execution": "a2ab5d7e70de583347b41f99bdb8b490d3c3474a",
+    "data_version": "d20260930-h2026f (S2 parquet sha256 c0c1eda4b515fc14dab79defe577b449e2695d40dd036f5c35ae52e37093ed9b)",
+    "classifier": "pinned weighted_tree_child.py (LightGBM 4.7.0), MULTICLASS/BINARY params, seed 20261043, 200 rounds, first-argmin SELECT early stop; frozen scale-002 encoder"
+  },
+  "execution_receipt": {"rc": 0, "child_rc": {"parent": 0, "narrow_whiff": 0, "ground_ball_per_pitch": 0}, "elapsed_seconds": 398.17696316726506, "elapsed_by_stage": {"projection": 1.87, "features": 100.70, "leak_gate": 101.98, "child_parent": 179.11, "child_narrow_whiff": 8.39, "child_ground_ball": 4.82, "temperatures": 0.42, "metrics": 0.85}, "peak_tree_rss_bytes_sampled": 5376557056, "peak_by_phase_bytes": {"features": 3245277184, "leak_gate": 3801792512, "child_parent": 5376557056}, "cap_bytes": 6442450944, "note": "sampled every 5 s; the parent-child phase (runner holding x + child 1.94 GB) is the peak"},
+  "gates": {"a_FIT_rows_equal_x_fit100": "passed (exact)", "b_EVAL_rows_equal_E1_x_eval_H2": "passed (exact)", "c_keys_roles_equal_corpus": "passed", "d_SELECT_CAL_rows_differ": "passed", "e_full_corpus_leak_check": "passed", "reference_replay_E1_H0_H2_metrics_and_CI": {"max_abs_diff": 0.0, "tolerance": 1e-12}},
+  "denominators": {"EVAL": {"rows": 80584, "games": 275, "leaf_counts": [28725, 14923, 250, 8906, 13894, 5798, 8088]}, "SELECT": {"rows": 82908, "games": 282}, "CAL": {"rows": 56275, "games": 190}, "FIT": 493254},
+  "select_descriptive": {"P_uncalibrated_seven_leaf_nll": 1.5685147057271014, "scale002_fit100_recorded": 1.5690237775067952, "note": "same SELECT rows; P scores them with prequential history; in-sample for the iteration choice"},
+  "arms_EVAL": {
+    "H0": {"nll": 1.5793491627848582, "brier": 0.7539770353025491, "ece_top_label_10bin": 0.00356166321549404},
+    "H2": {"nll": 1.577579066507608, "brier": 0.7534161756033052, "ece_top_label_10bin": 0.002174592323526013},
+    "P": {"nll": 1.5775762095651042, "brier": 0.7534285736688853, "ece_top_label_10bin": 0.0022568302376040654, "ece_classwise_10bin": 0.0025583052084595173}
+  },
+  "paired_EVAL_differences": {
+    "P-H0_PRIMARY": {"nll": {"difference": -0.0017729532197539033, "ci95": [-0.0023539286768871496, -0.0012028468640849234]}, "brier": {"difference": -0.0005484616336638437, "ci95": [-0.0007750141481166035, -0.0003273275843881306]}, "ece_top_label_10bin": {"difference": -0.0013048329778899749, "ci95": [-0.003308504786370896, 0.0020784231638977446]}},
+    "P-H2_CO_PRIMARY": {"nll": {"difference": -2.8569425036817364e-06, "ci95": [-9.817768737124634e-05, 9.058944581044589e-05]}, "brier": {"difference": 1.2398065580065953e-05, "ci95": [-2.6440474844841444e-05, 5.2081421488960086e-05]}, "ece_top_label_10bin": {"difference": 8.223791407805216e-05, "ci95": [-0.0009272679611098418, 0.001017276745117684]}},
+    "bootstrap": "whole-game paired, 10000 draws, seed 20261211, unit game_pk, pitch-weighted ratio of game sums, percentile 95%"
+  },
+  "advisory_label": {"label": "NO_ADDITIONAL_GAIN_OVER_H2", "p_minus_h0_nll_ci95_upper_below_0": true, "p_minus_h2_nll_ci95_upper_below_0": false, "brier_ci95_upper_within_margin_both": true},
+  "strata_P_minus_H0_nll": {
+    "S0_zero_fit_history (7699 rows, 66 pitchers)": {"difference": -0.00608, "ci95": [-0.00888, -0.0032], "P_minus_H2": {"difference": -7.9e-05, "ci95": [-0.00033, 0.000176]}},
+    "S1_1_to_199 (7985)": {"difference": -0.00201, "ci95": [-0.00404, 7e-05]},
+    "S2_200_to_999 (30892)": {"difference": -0.00181, "ci95": [-0.00266, -0.00097]},
+    "S3_1000_plus (34008)": {"difference": -0.00071, "ci95": [-0.00152, 0.00012]},
+    "B0_batter_zero (4825)": {"difference": -0.00731, "ci95": [-0.01111, -0.00338]},
+    "B1_batter_positive (75759)": {"difference": -0.00142, "ci95": [-0.002, -0.00086]},
+    "note": "rounded to 5-6 decimals here; exact values in the job result.json; P-H2 within every stratum covers 0"
+  },
+  "interpretation": "The consistent prequential refit reproduces the E1 gain over the recorded fit100 (P-H0 NLL -0.00177, CI below zero; S0 pitchers -0.0061) but adds nothing over simply feeding the frozen fit100 prequential features (P-H2 -0.000003, CI [-0.0001, +0.0001]; Brier +0.00001). This is the expected outcome given the structural note: the trees are determined by FIT features that did not change, and only the early-stop iteration and the temperatures moved. Serving-shadow reading (pre-registered labels, never a winner): the refit is NOT a shadow candidate in its own right — the cheaper H2 configuration (existing fit100 model + nightly strictly-prior history refresh) is the candidate to carry forward; a classifier retrain is not required for this gain. What would be needed for a further gain is a change in model inputs or architecture (E4 sequence model), not more consistent history for the same trees. LIMITS: 2026 EXPOSED DEVELOPMENT; EVAL already exposed in scale-002/E1; one seed, one arm; 2026-only history; prequential features are a retrospective replay (live arrival timing unknown)."
+}
