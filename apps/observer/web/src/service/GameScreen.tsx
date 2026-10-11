@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { FetchError, fetchDetail, mergeDetail } from './api';
+import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, mergeDetail } from './api';
+import { PUBLISH_CONFIG, STATIC_MODE, isPublishStale, publicListHref, publishLag } from './publish';
+import type { PublishStamp } from './publish';
 import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
 import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, short } from './model';
 import { teamColor } from './teams';
@@ -16,6 +18,9 @@ export const STALE_MS = 30000;
 /** a scheduled live game is asked again slowly so the screen starts by itself; a first load that failed is retried by itself */
 export const PREGAME_POLL_MS = 10000;
 export const FIRST_LOAD_RETRY_MS = 4000;
+/** Static (public) mode takes the same three cadences from build-time config; the defaults are the values above. */
+const CADENCE = STATIC_MODE ? { live: PUBLISH_CONFIG.livePollMs, pregame: PUBLISH_CONFIG.pregamePollMs, retry: PUBLISH_CONFIG.firstLoadRetryMs }
+  : { live: POLL_MS, pregame: PREGAME_POLL_MS, retry: FIRST_LOAD_RETRY_MS };
 /** Display state → chip mark. The state is always written as words (server label); the mark and the colour only support it. */
 /** U+FE0E asks for the text (not emoji) form of the two symbols. */
 const LATE = '⏱\uFE0E', WARN = '⚠\uFE0E';
@@ -23,6 +28,8 @@ const STATE_MARK: Record<DisplayStateName, string> = { recommended: '', unconfir
   ledger_unavailable: '', waiting: '…', unavailable: '–', pregame: '', final: '' };
 /** The client's own connection is failing: what is on screen is the last answer, not the current state. */
 const CLIENT_LOST = { state: 'disconnected' as DisplayStateName, label: '연결 끊김', message: '연결이 잠시 끊겼어요. 마지막으로 받은 내용을 보여 드려요.' };
+/** Static mode: the files are reachable but the last publish is older than the (provisional) threshold. Same held look as a lost connection. */
+const PUBLISH_LATE = { state: 'disconnected' as DisplayStateName, label: '갱신 지연', message: '새 내용이 늦어지고 있어요. 마지막으로 받은 내용을 보여 드려요.' };
 const isDemoSession = (d: Detail) => d.session !== null;
 const unconfirmed = (p: PitchRow | null | undefined) => p?.receipt?.status === 'unconfirmed';
 const pickText = (pitch: string, zone: string | null | undefined) => zone ? `${pitch} · ${zone}` : pitch;
@@ -135,6 +142,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const [busy, setBusy] = useState(false);
   const [unit, setUnit] = useState<'kmh' | 'mph'>(readUnit);
   const detailRef = useRef<Detail | null>(null);
+  // static mode only: what the last game file and health.json said about publish time
+  const [fileStamp, setFileStamp] = useState<PublishStamp | null>(null);
+  const [health, setHealth] = useState<PublishStamp | null>(null);
   const inflight = useRef<AbortController | null>(null);
   const drawn = useRef<Drawn | null>(null);
   const picked = useRef(false);  // the viewer chose a past pitch (as opposed to the default first pitch of a game that is not live)
@@ -146,6 +156,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     const ctrl = new AbortController(); inflight.current = ctrl;
     setBusy(true);
     try {
+      if (STATIC_MODE) {  // whole file every time; health.json is read beside it and never holds the game answer back
+        void fetchPublishHealth(ctrl.signal).then(h => { if (!ctrl.signal.aborted) setHealth(h); }, () => { if (!ctrl.signal.aborted) setHealth(null); });
+        const got = await fetchPublishedDetail(gamePk, ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now());
+        return;
+      }
       const old = detailRef.current;
       const last = old?.pitches.length ? old.pitches[old.pitches.length - 1].index : undefined;
       let next = await fetchDetail(gamePk, ctrl.signal, full || !old || last === undefined ? undefined : last);
@@ -169,7 +186,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // server names while the card is not live) is asked again slowly, with or without a display state, so the screen starts by itself.
   const waitingToStart = detail !== null && !live && detail.session === null && detail.game.status !== 'final'
     && (detail.display?.state === 'pregame' || detail.live_source === true);
-  const pollMs = live ? POLL_MS : waitingToStart ? PREGAME_POLL_MS : 0;
+  const pollMs = live ? CADENCE.live : waitingToStart ? CADENCE.pregame : 0;
   useEffect(() => {
     if (!auto || !pollMs) return;
     const id = window.setInterval(() => { if (!document.hidden) void load(); }, pollMs);
@@ -180,7 +197,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const firstLoadRetry = detail === null && error !== null && (error.status === 0 || error.status >= 500);
   useEffect(() => {
     if (!firstLoadRetry) return;
-    const id = window.setTimeout(() => void load(true), FIRST_LOAD_RETRY_MS);
+    const id = window.setTimeout(() => void load(true), CADENCE.retry);
     return () => window.clearTimeout(id);
   }, [firstLoadRetry, error, load]);
   useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 5000); return () => window.clearInterval(id); }, []);
@@ -218,8 +235,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const byIndex = useMemo(() => new Map(detail?.pitches.map(p => [p.index, p]) ?? []), [detail?.pitches]);
   if (!detail) {
     return <div className="sv-page"><TopBar /><main className="sv-center">{error
-      ? <div className="sv-alert" role="alert"><p>{error.status === 423 ? '이 경기는 지금 기록을 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.' : error.text}</p>
-        <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 시도</button><a className="sv-btn" href="/watch">경기 목록</a></div>
+      // public bundle: no file for a game (not published yet, or withheld while a demo runs on it) = not available now, said calmly
+      ? STATIC_MODE && error.status === 404 ? <div className="sv-unavailable"><p className="sv-muted" role="status">이 경기는 지금 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.</p>
+        <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 확인</button><a className="sv-btn" href={publicListHref()}>경기 목록</a></div></div>
+      : <div className="sv-alert" role="alert"><p>{error.status === 423 ? '이 경기는 지금 기록을 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.' : error.text}</p>
+        <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 시도</button><a className="sv-btn" href={STATIC_MODE ? publicListHref() : '/watch'}>경기 목록</a></div>
         {firstLoadRetry && <p className="sv-muted sv-retrying">자동으로 다시 연결하고 있어요.</p>}</div>
       : <p className="sv-muted" role="status">경기 기록을 불러오는 중…</p>}</main></div>;
   }
@@ -260,9 +280,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const clientStale = live && auto && !hidden && lastOk !== null && now - Math.max(lastOk, resumed) > STALE_MS;
   const feedDown = disp ? !disp.feed.ok : live && (detail.feed.ok === false || (detail.feed.stale_s ?? 0) > 30);
   const stale = clientStale || feedDown;
+  // static mode: the files answer, but nothing new has been published for longer than the threshold (only while this game is followed)
+  const lag = STATIC_MODE && pollMs > 0 ? publishLag(fileStamp, health, true) : null;
+  const publishStale = isPublishStale(lag);
   // lag_s is a proven lower bound (never an estimate): floor it and say '넘게', never '약'
   const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
   const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
+    : publishStale ? { kind: 'late', text: `${LATE} 갱신 지연` }
     : lagText ? { kind: 'late', text: `${LATE} 자료 늦음 · ${lagText}` }
     : { kind: 'ok', text: live ? (auto ? '실시간으로 받는 중' : '자동 갱신 멈춤') : disp?.message?.replace(/\.$/, '') ?? disp?.label ?? '' };
   // D1 "no silent flip": server note first; otherwise compare with what this screen last drew for the same pending pitch.
@@ -292,11 +316,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const note = fix ? `${fix.message}${fixPrev ? ` (이전: ${fixPrev})` : ''}` : clientNote;
   // The client's own requests failing (or silent for too long): the slot says so instead of looking current.
   const clientLost = disp !== null && (error !== null || clientStale);
-  const eff = !stateSlot ? null : clientLost ? CLIENT_LOST
+  const eff = !stateSlot ? null : clientLost ? CLIENT_LOST : publishStale ? PUBLISH_LATE
     : { state: disp!.state, label: disp!.label, message: disp!.message ?? (shownRec || disp!.state !== 'recommended' ? null : '추천을 준비하고 있어요.') };
   // candidates kept from the last answer while disconnected: still visible, dimmed, labelled as last received
   const held = stateSlot && shownRec && eff!.state === 'disconnected';
-  const liveDot = live && latest && auto && !isDemoSession(detail) && !(disp !== null && (clientLost || feedDown));
+  const liveDot = live && latest && auto && !isDemoSession(detail) && !(disp !== null && (clientLost || feedDown)) && !publishStale;
   const scored = situation ?? null;
   // between innings the card carries no score: the as-of linescore (runs up to the last published play) keeps it on screen
   const breakScore = (k: 'away' | 'home') => breakNow ? detail.linescore_asof?.[k].r ?? lastPitch?.situation[`${k}_score`] ?? null : null;
@@ -354,8 +378,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     {/* Connection problems remain explicit alerts; history state is in the header. */}
     {/* The status line is a plain box; only its words are a live region. The time stamp and the retry control sit outside it so a
         screen reader is not re-triggered every minute or every poll. */}
-    {disp ? <div className={`sv-notice line ${line.kind}`} data-kind={error ? 'client' : feedDown ? 'feed' : clientStale ? 'slow' : lagText ? 'late' : 'ok'}>
-      <span className="sv-line-text" role="status">{line.kind === 'ok' && live && auto && <i className="sv-line-dot" aria-hidden="true" />}{line.text}<span className="sr-only">{error ? ` ${error.text} 자동으로 다시 연결하고 있어요.` : feedDown ? ' 경기 자료 연결이 잠시 끊겼어요.' : ''}</span></span>
+    {disp ? <div className={`sv-notice line ${line.kind}`} data-kind={error ? 'client' : feedDown ? 'feed' : clientStale ? 'slow' : publishStale ? 'publish-late' : lagText ? 'late' : 'ok'} data-publish-clock={publishStale ? lag!.clock : undefined}>
+      <span className="sv-line-text" role="status">{line.kind === 'ok' && live && auto && <i className="sv-line-dot" aria-hidden="true" />}{line.text}<span className="sr-only">{error ? ` ${error.text} 자동으로 다시 연결하고 있어요.` : feedDown ? ' 경기 자료 연결이 잠시 끊겼어요.' : publishStale && !clientStale ? ` ${PUBLISH_LATE.message}` : ''}</span></span>
       {lastOk && <span className="sv-line-time" aria-hidden="true">· {hhmm(lastOk)} 수신</span>}
       {line.kind !== 'ok' && <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy} aria-label="지금 다시 불러오기">{busy ? '…' : '다시'}</button>}
     </div> : (stale || error) && <p className="sv-notice warn" role="alert" title={error?.text}>
@@ -469,12 +493,12 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   </div>;
 }
 
-const backHref = () => { const demo = new URLSearchParams(window.location.search).get('demo'); return demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'; };
+const backHref = () => { if (STATIC_MODE) return publicListHref(); const demo = new URLSearchParams(window.location.search).get('demo'); return demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'; };
 function TopBar({ right, title, label }: { right?: ReactNode; title?: string; label?: string }) {
   const demo = new URLSearchParams(window.location.search).get('demo');
   return <header className="sv-top">
-    <a className="sv-back" href={demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'} aria-label="경기 목록으로">‹</a>
-    {title ? <h1 className="sv-title" aria-label={label}>{title}</h1> : <a className="sv-brand small" href="/watch">Pitcheezy<span>.</span></a>}
+    <a className="sv-back" href={STATIC_MODE ? publicListHref() : demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'} aria-label="경기 목록으로">‹</a>
+    {title ? <h1 className="sv-title" aria-label={label}>{title}</h1> : <a className="sv-brand small" href={STATIC_MODE ? publicListHref() : '/watch'}>Pitcheezy<span>.</span></a>}
     <span className="sv-top-right">{right}</span>
   </header>;
 }

@@ -1,19 +1,22 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { fetchGames, getJson } from './api';
+import { fetchDates, fetchGames, fetchPublishHealth, fetchPublishedDates } from './api';
 import type { GameList } from './api';
 import type { GameCard } from './model';
 import { dateHeading, inningText, kstTime, shiftDate, short, todayKst } from './model';
 import { teamColor } from './teams';
 import { InfoSheet } from './Sheets';
+import { STATIC_MODE, isPublishStale, publicGameHref, publicListHref, publishLag } from './publish';
 import './service.css';
 
 /** Ordinary list: one KST date as the heading, that date's games in start order. No sections, no modes, no badge. */
 export const gameHref = (pk: number) => {
+  if (STATIC_MODE) return publicGameHref(pk);
   const demo = new URLSearchParams(window.location.search).get('demo');
   return `/watch/${pk}${demo ? `?demo=${encodeURIComponent(demo)}` : ''}`;
 };
 const listHref = (date: string) => {
+  if (STATIC_MODE) return publicListHref(date);
   const q = new URLSearchParams(window.location.search); q.set('date', date);
   return `/watch?${q.toString()}`;
 };
@@ -50,7 +53,11 @@ export default function WatchList() {
 
   useEffect(() => {  // available KST dates (contract §1); without them, today's KST date
     const ctrl = new AbortController();
-    getJson<{ dates: string[] }>('/service/dates', ctrl.signal).then(b => { setDates(b.dates); setDate(d => d ?? b.dates[0] ?? todayKst()); })
+    // public bundle: today when the publisher follows it, else the newest published date that is not in the future
+    const first = STATIC_MODE ? fetchPublishedDates(ctrl.signal).then(p => { const today = todayKst(); setDates(p.dates);
+      setDate(d => d ?? (p.dates.includes(today) ? today : p.dates.find(x => x <= today) ?? p.dates[p.dates.length - 1] ?? today)); })
+      : fetchDates(ctrl.signal).then(list => { setDates(list); setDate(d => d ?? list[0] ?? todayKst()); });
+    first
       .catch(() => { if (!ctrl.signal.aborted) { setDates([]); setDate(d => d ?? todayKst()); } });
     return () => ctrl.abort();
   }, []);
@@ -59,6 +66,14 @@ export default function WatchList() {
     const ctrl = new AbortController();
     setGames(null); setError(null);
     fetchGames(date, ctrl.signal).then(setGames).catch(e => { if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : '경기 목록을 불러오지 못했어요.'); });
+    return () => ctrl.abort();
+  }, [date]);
+  // public bundle only: the list is read once, so one look at health.json says whether what it shows may be behind
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    if (!STATIC_MODE || !date) return;
+    const ctrl = new AbortController();
+    fetchPublishHealth(ctrl.signal).then(h => setLate(isPublishStale(publishLag(null, h, false)))).catch(() => { if (!ctrl.signal.aborted) setLate(false); });
     return () => ctrl.abort();
   }, [date]);
   useEffect(() => { document.title = date ? `${dateHeading(date)} 경기 · 피치이지` : '피치이지'; }, [date]);
@@ -88,6 +103,8 @@ export default function WatchList() {
         : games === null ? <p className="sv-muted" role="status">경기 목록을 불러오는 중…</p>
         : games.length === 0 ? <p className="sv-muted">이 날짜에는 경기가 없어요.</p>
         : <ul>{games.map(g => <li key={g.game_pk}><Card g={g} /></li>)}</ul>}
+      {/* only while a game on this list is in play: between games the publisher may be idle on purpose */}
+      {late && games?.some(g => g.status === 'live') && <p className="sv-muted sv-publish-late" role="status">갱신 지연 · 새 내용이 늦어지고 있어요. 마지막으로 올라온 내용을 보여 드려요.</p>}
       {games && games.liveOk === false && <p className="sv-muted" role="status">실시간 경기 일정을 지금 불러오지 못해, 저장된 경기만 보여요.</p>}
     </main>
     {info && <InfoSheet onClose={() => setInfo(false)} notes={[]} />}

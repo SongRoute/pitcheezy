@@ -4,12 +4,14 @@
  *  still renders real data before the contract lands. The fallback never invents scores or recommendations. */
 import type { Correction, Display, DisplayStateName, Receipt, LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
 import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, plainZone, shiftDate } from './model';
+import { STATIC_MODE, publishUrl, unwrapPublished } from './publish';
+import type { PublishStamp } from './publish';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
 export const TIMEOUT_MS = 15000;
 
 /** Demo binding travels on the URL (`?demo=<session>`) and is forwarded to the API as-is; the screen never shows it. */
-export const demoParam = () => new URLSearchParams(window.location.search).get('demo');
+export const demoParam = () => STATIC_MODE ? null : new URLSearchParams(window.location.search).get('demo');  // the public bundle carries no demo binding
 function withDemo(path: string) {
   const demo = demoParam();
   if (!demo) return path;
@@ -31,6 +33,68 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
   if (!response.ok) throw new FetchError(typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.', response.status);
   if (body === null) throw new FetchError('서버 응답을 읽지 못했어요.', response.status);
   return body as T;
+}
+
+// ---------- static (public) mode: published files only; never `/api/**`, never `?demo=`, no `?after=` cursor ----------
+/** One published file. A missing file keeps its HTTP status (404); an answer that is not JSON (half-written file, a host's HTML
+ *  fallback page) is treated like an unreachable server (status 0) so the screen keeps its last state and asks again. */
+async function getPublished<T>(file: string, signal?: AbortSignal): Promise<{ body: T; stamp: PublishStamp }> {
+  const timeout = new AbortController();
+  const timer = window.setTimeout(() => timeout.abort(), TIMEOUT_MS);
+  const onAbort = () => timeout.abort();
+  signal?.addEventListener('abort', onAbort);
+  let response: Response;
+  try { response = await fetch(publishUrl(file), { cache: 'no-store', signal: timeout.signal }); }
+  catch (e) {
+    if (signal?.aborted) throw e;
+    throw new FetchError('서버에 연결하지 못했어요. 네트워크 연결을 확인해 주세요.', 0);
+  } finally { window.clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
+  if (!response.ok) throw new FetchError('자료를 불러오지 못했어요.', response.status);
+  const raw = await response.json().catch(() => null);
+  if (raw === null || typeof raw !== 'object') throw new FetchError('서버 응답을 읽지 못했어요.', 0);
+  const p = unwrapPublished<T>(raw);
+  // the hosting server's own clock for this answer (Date, plus Age when a cache served it); unreadable cross-origin unless exposed
+  const date = Date.parse(response.headers.get('date') ?? ''), age = Number(response.headers.get('age') ?? '');
+  return { body: p.body, stamp: { seq: p.seq, publishedAt: p.publishedAt, final: p.final, clientAt: Date.now(),
+    hostNow: Number.isFinite(date) ? date + (Number.isFinite(age) && age > 0 ? age * 1000 : 0) : null } };
+}
+/** Last applied publish per file. Contract: "화면은 순번이 뒤로 가는 파일을 버린다" — an answer whose sequence is LOWER than the one already
+ *  applied (a cache serving an older copy) is discarded and the applied value stays; its clock readings are still current.
+ *  A sequence is the publish cycle that last wrote that file, so it is compared per file only, never across files. */
+const applied = new Map<string, { seq: number; publishedAt: string | null; final: boolean; value: unknown }>();
+async function readPublished<T, R>(file: string, signal: AbortSignal | undefined, shape: (body: T) => R): Promise<{ value: R; stamp: PublishStamp }> {
+  const { body, stamp } = await getPublished<T>(file, signal);
+  const last = applied.get(file);
+  if (stamp.seq !== null && last && stamp.seq < last.seq) return { value: last.value as R, stamp: { ...stamp, seq: last.seq, publishedAt: last.publishedAt, final: last.final } };
+  const value = shape(body);
+  if (stamp.seq !== null) applied.set(file, { seq: stamp.seq, publishedAt: stamp.publishedAt, final: stamp.final, value });
+  return { value, stamp };
+}
+/** `v1/health.json`: last publish sequence and time. Only the two publish extras are read. */
+export async function fetchPublishHealth(signal?: AbortSignal): Promise<PublishStamp> {
+  return (await readPublished<Raw, null>('health.json', signal, () => null)).stamp;
+}
+/** `v1/game/<pk>.json`: always the whole game (no cursor, no merge). */
+export async function fetchPublishedDetail(game: number, signal?: AbortSignal): Promise<{ detail: Detail; stamp: PublishStamp }> {
+  const got = await readPublished<Raw, Detail>(`game/${game}.json`, signal, normalizeDetail);
+  return { detail: got.value, stamp: got.stamp };
+}
+/** Static mode: `v1/dates.json` lists archived-game dates only (as the server route does), so the dates the publisher is following now
+ *  (`live_dates` of `v1/manifest.json`: today and its neighbours) are added. Either file may be missing; both missing = an error. */
+export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates: string[]; liveDates: string[] }> {
+  const day = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const [archived, manifest] = await Promise.allSettled([
+    readPublished<Raw, string[]>('dates.json', signal, b => (Array.isArray(b.dates) ? b.dates : []).filter(day)),
+    readPublished<Raw, string[]>('manifest.json', signal, b => (Array.isArray(b.live_dates) ? b.live_dates : []).filter(day))]);
+  if (archived.status === 'rejected' && manifest.status === 'rejected') throw archived.reason;
+  const liveDates = manifest.status === 'fulfilled' ? manifest.value.value : [];
+  const dates = [...new Set([...(archived.status === 'fulfilled' ? archived.value.value : []), ...liveDates])].sort().reverse();
+  return { dates, liveDates };
+}
+/** KST dates that have games: `GET /api/service/dates`, or `v1/dates.json` in static mode. */
+export async function fetchDates(signal?: AbortSignal): Promise<string[]> {
+  if (STATIC_MODE) return (await fetchPublishedDates(signal)).dates;
+  return (await getJson<{ dates: string[] }>('/service/dates', signal)).dates;
 }
 
 // ---------- shared normalizers ----------
@@ -164,6 +228,16 @@ const PHASES: unknown[] = ['pregame', 'pre_pitch', 'resolving', 'between_innings
 // ---------- list ----------
 export type GameList = GameCard[] & { liveOk?: boolean };
 export async function fetchGames(date: string, signal?: AbortSignal): Promise<GameList> {
+  if (STATIC_MODE) {
+    try {
+      return (await readPublished<{ games: Raw[]; live_ok?: boolean }, GameList>(`games/${date}.json`, signal, body =>
+        Object.assign(markDoubleheaders(body.games.map(normalizeCard).filter(g => g.kst_date === date))
+          .sort((a, b) => (a.start ?? '').localeCompare(b.start ?? '') || a.game_pk - b.game_pk), { liveOk: body.live_ok !== false }))).value;
+    } catch (e) {  // no file for a date = nothing published for it (a date outside the archive and the followed window)
+      if (e instanceof FetchError && e.status === 404) return Object.assign([], { liveOk: true });
+      throw e;
+    }
+  }
   try {
     const body = await getJson<{ games: Raw[]; live_ok?: boolean }>(`/service/games?date=${date}`, signal);
     return Object.assign(markDoubleheaders(body.games.map(normalizeCard).filter(g => g.kst_date === date))
@@ -181,6 +255,7 @@ export async function fetchGames(date: string, signal?: AbortSignal): Promise<Ga
 let serviceMissing = false;  // backend without /api/service (404 on the route itself): use the legacy feeds; never in demo
 /** Full history from the backend. `after` asks only for newer pitches (contract §3); the caller merges with mergeDetail. */
 export async function fetchDetail(game: number, signal?: AbortSignal, after?: number): Promise<Detail> {
+  if (STATIC_MODE) return (await fetchPublishedDetail(game, signal)).detail;
   if (!serviceMissing || demoParam()) {
     try {
       const raw = await getJson<Raw>(`/service/games/${game}${after === undefined ? '' : `?after=${after}`}`, signal);

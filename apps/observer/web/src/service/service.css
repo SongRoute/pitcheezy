@@ -592,3 +592,5 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 @media(max-height:780px){.sv-game.has-display .sv-duel{height:24px}}
 /* nothing in the zone row takes taps; its transparent area must not swallow taps on the summary that overlaps its lower edge */
 .sv-zrow,.sv-zrow .sv-zone{pointer-events:none}
+/* public bundle: a game with no published file (not an error) */
+.sv-unavailable{display:grid;gap:10px;max-width:420px}.sv-unavailable .sv-btn{min-height:44px}
