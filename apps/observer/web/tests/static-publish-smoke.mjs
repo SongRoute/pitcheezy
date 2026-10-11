@@ -46,6 +46,8 @@ function liveBody(base, pitch_key, opts = {}) {
   return body;
 }
 const iso = (ms) => new Date(ms).toISOString();
+/** the same body published under another game number (a file is only drawn when its body is the game that was asked for) */
+const asGame = (pk, body) => ({ ...body, game: { ...body.game, game_pk: pk } });
 /** primary placement (publisher on svc/ws-publisher): the body plus one top-level `publish` key */
 const top = (body, seq, at, final = false) => ({ ...body, publish: { contract: 'v1', sequence: seq, published_at: iso(at), final } });
 const legacy = (body, seq, at) => ({ ...body, publish_seq: seq, published_at: iso(at) });          // older guess, still accepted
@@ -385,7 +387,7 @@ await block(async () => {
 });
 await block(async () => {  // first load: a missing game file is an answer (shown, with a way back); an unreachable host is retried by itself
   let mode = '404';
-  const { context, page, asks } = await open({ answer: (file) => file === 'game/555.json' ? (mode === '404' ? { status: 404 } : mode === 'down' ? { abort: true } : { json: top(liveBody(fx.live, '849843:11:2'), 1, FILE_AT) }) : undefined });
+  const { context, page, asks } = await open({ answer: (file) => file === 'game/555.json' ? (mode === '404' ? { status: 404 } : mode === 'down' ? { abort: true } : { json: top(asGame(555, liveBody(fx.live, '849843:11:2')), 1, FILE_AT) }) : undefined });
   await page.goto('http://pz.test/pub/?game=555');
   await page.locator('.sv-unavailable').waitFor();
   ok(/지금 볼 수 없어요/.test(await page.locator('.sv-unavailable').innerText()) && await page.locator('.sv-alert').count() === 0 && await page.locator('.sv-unavailable a.sv-btn').getAttribute('href') === './', 'first load 404: a missing game file reads "지금 볼 수 없어요" (not an error box), with a list link inside the prefix');
@@ -638,7 +640,7 @@ await block(async () => {
 await block(async () => {
   let there = false;
   const listed = JSON.parse(readFileSync(path.join(files, 'games/2026-09-30.json'), 'utf8')); listed.games.push({ ...listed.games[1], game_pk: 556 });
-  const { context, page, counts } = await open({ answer: (file) => file === 'game/556.json' ? (there ? { json: top(liveBody(fx.live, '849843:11:2'), 1, FILE_AT) } : { status: 404 })
+  const { context, page, counts } = await open({ answer: (file) => file === 'game/556.json' ? (there ? { json: top(asGame(556, liveBody(fx.live, '849843:11:2')), 1, FILE_AT) } : { status: 404 })
     : file === 'games/2026-09-30.json' ? { json: listed } : undefined });
   await page.goto('http://pz.test/pub/?game=556');
   await page.locator('.sv-unavailable').waitFor();
@@ -900,9 +902,119 @@ await block(async () => {
   ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'health inversion: calm');
   old = true; await page.evaluate(() => { window.__kinds = []; }); await sleep(6500);
   const kinds = await page.evaluate(() => window.__kinds);
-  ok(await kind(page) === 'ok' && kinds.length === 0, 'health inversion: a lower-sequence health.json after a higher one is discarded (requests are single-flight, so answers cannot cross on the wire)');
+  ok(await kind(page) === 'ok' && kinds.every((k) => k === 'ok'), 'health inversion: a lower-sequence health.json after a higher one is discarded (requests are single-flight, so answers cannot cross on the wire)');
   await context.close();
 }, 'health-inversion');
+
+// ====================================================================================================================
+// Final review round (2026-10-11): malformed files never blank the page, never leak raw errors, never show the wrong game
+// ====================================================================================================================
+const listFile = () => JSON.parse(readFileSync(path.join(files, 'games/2026-09-30.json'), 'utf8'));
+// ---------- T1. a start time that is not a time; any render exception ends in a plain fallback, not a blank page ----------
+await block(async () => {
+  const list = listFile(); list.games[0] = { ...list.games[0], start: 'soon' }; list.games[1] = { ...list.games[1], start: { at: 1 } };
+  const badStart = liveBody(fx.live, '849843:11:2'); badStart.game = { ...badStart.game, start: 'not a time' };
+  const broken = liveBody(fx.live, '849843:11:2'); broken.game = { ...broken.game, away_team: 12345 };   // makes the screen's own code throw while drawing
+  let which = 'badStart';
+  const { context, page, errors } = await open({ width: 375, height: 553, answer: (file) => {
+    if (file === 'games/2026-09-30.json') return { json: list };
+    if (file === 'health.json') return { json: health(1500, FILE_AT) };
+    if (file === `game/${LIVE}.json`) return { json: top(which === 'badStart' ? badStart : broken, which === 'badStart' ? 1500 : 1501, FILE_AT) };
+  } });
+  await page.goto('http://pz.test/pub/?date=2026-09-30');
+  ok(await page.locator('.sv-list .sv-card').first().waitFor({ timeout: 6000 }).then(() => true, () => false) && await page.locator('.sv-list .sv-card').count() === 2, 'bad start: the list still shows both games');
+  ok((await page.locator('.sv-list').innerText()).split('시간 미정').length === 3, 'bad start: each unreadable start time reads 시간 미정');
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2', 6000) && /시간 미정/.test(await page.locator('.sv-head-main').innerText()), 'bad start: the game screen is drawn, start time 시간 미정');
+  ok(errors.length === 0, `bad start: no page errors ${errors.join(' | ')}`);
+  which = 'broken';
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await page.locator('.sv-crash').waitFor({ timeout: 6000 }).then(() => true, () => false), 'boundary: a render exception shows the fallback instead of a blank page');
+  const text = await page.locator('body').innerText();
+  ok(/화면을 표시하지 못했어요/.test(text) && await page.getByRole('button', { name: '새로 고침' }).count() === 1 && !/TypeError|undefined|is not a function|split/.test(text), 'boundary: plain Korean words and a reload control, no raw error text');
+  await context.close();
+}, 'bad-start');
+// ---------- T2. null entries, non-numeric and duplicate game numbers in a list ----------
+await block(async () => {
+  const list = listFile();
+  list.games = [null, list.games[0], 'x', { ...list.games[1], game_pk: 'abc' }, { ...list.games[1], game_pk: -4 }, { ...list.games[1], game_pk: 12.5 }, list.games[1], { ...list.games[1] }, 7];
+  let shape = 'mixed';
+  const { context, page, errors } = await open({ answer: (file) => file === 'games/2026-09-30.json' ? { json: shape === 'mixed' ? list : { ...list, games: 'nope' } } : undefined });
+  await page.goto('http://pz.test/pub/?date=2026-09-30');
+  ok(await page.locator('.sv-list .sv-card').first().waitFor({ timeout: 6000 }).then(() => true, () => false), 'bad list: the list is drawn');
+  const hrefs = await page.locator('.sv-list .sv-card').evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+  ok(hrefs.length === 2 && new Set(hrefs).size === 2 && hrefs.every((h) => /^\.\/\?game=[1-9]\d*$/.test(h)), `bad list: only cards with a positive integer game number, each once (${hrefs.join(' ')})`);
+  ok(await page.locator('.sv-alert').count() === 0 && errors.length === 0, `bad list: no error box, no page errors ${errors.join(' | ')}`);
+  shape = 'broken';
+  await page.goto('http://pz.test/pub/?date=2026-09-30');
+  await page.locator('.sv-alert').waitFor({ timeout: 6000 }).catch(() => {});
+  const alert = await page.locator('.sv-alert').count() ? await page.locator('.sv-alert').innerText() : await page.locator('.sv-list').innerText();
+  ok(!/TypeError|is not a function|undefined|Cannot read|\.map|null/.test(alert), `bad list: a list that is not a list never shows raw exception text ("${alert.replace(/\s+/g, ' ').slice(0, 60)}")`);
+  await context.close();
+}, 'bad-list');
+// ---------- T3. a game file whose body is another game ----------
+await block(async () => {
+  const other = liveBody(fx.live, '849843:11:2');   // its game.game_pk is 990003
+  let wrong = true;
+  const { context, page } = await open({ answer: (file) => {
+    if (file === 'game/558.json') return { json: top(wrong ? other : { ...other, game: { ...other.game, game_pk: 558 } }, wrong ? 1 : 2, FILE_AT) };
+    if (file === `game/${LIVE}.json`) return { json: top(wrong && mid ? { ...liveBody(fx.live_more, '849843:12:2'), game: { ...other.game, game_pk: 558 } } : other, mid ? 1601 : 1600, FILE_AT), date: FILE_AT + 1000 };
+    if (file === 'health.json') return { json: health(1600, FILE_AT), date: FILE_AT + 1000 };
+  } });
+  let mid = false;
+  await page.goto('http://pz.test/pub/?game=558');
+  ok(await page.locator('.sv-unavailable').waitFor({ timeout: 6000 }).then(() => true, () => false) && await page.locator('.sv-rec-row').count() === 0, 'wrong game: a file for another game is not drawn on first load (지금 볼 수 없어요)');
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2'), 'wrong game: the right file loads');
+  mid = true; await sleep(5000);
+  ok(await page.locator('.sv-state').getAttribute('data-pitch') === '849843:11:2', 'wrong game: a later answer for another game is not applied over the game on screen');
+  await context.close();
+}, 'wrong-game');
+// ---------- T4. a future published_at with a readable Date cannot hide a stopped publisher; a non-integer sequence is not applied ----------
+await block(async () => {
+  let seq = 1700, stop = false, frozen = null;
+  const { context, page } = await open({ dist: distQuick, answer: (file) => {
+    if (!stop) { seq++; frozen = Date.now() + 3600000; }           // every publish is stamped one hour ahead (publisher clock wrong)
+    if (file === 'health.json') return { json: health(seq, frozen), date: Date.now() };
+    if (file === `game/${LIVE}.json`) return { json: top(liveBody(fx.live, '849843:11:2'), seq, frozen), date: Date.now() };
+  } });
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2'), 'future+host: loaded');
+  await sleep(4000);
+  ok(await kind(page) === 'ok', 'future+host: publishes keep coming (stamped ahead) → calm');
+  stop = true;
+  ok(await waitKind(page, 'publish-late', 20000), 'future+host: the publisher stops → 갱신 지연 still appears (time since the last new publish was seen)');
+  stop = false;
+  ok(await waitKind(page, 'ok'), 'future+host: clears when publishes resume');
+  await context.close();
+}, 'future-host');
+await block(async () => {
+  let mode = 'good';
+  const { context, page } = await open({ answer: (file) => {
+    if (file === 'health.json') return { json: health(1800, FILE_AT), date: FILE_AT + 1000 };
+    if (file === 'game/559.json') { const b = top({ ...liveBody(fx.live, '849843:11:2'), game: { ...liveBody(fx.live, '849843:11:2').game, game_pk: 559 } }, 1, FILE_AT); b.publish.sequence = '1'; return { json: b }; }
+    if (file !== `game/${LIVE}.json`) return undefined;
+    if (mode === 'good') return { json: top(liveBody(fx.live, '849843:11:2'), 1800, FILE_AT), date: FILE_AT + 1000 };
+    const b = top(liveBody(fx.live_more, '849843:12:2'), 0, FILE_AT); b.publish.sequence = mode === 'string' ? '5' : 12.5; return { json: b, date: FILE_AT + 1000 };
+  } });
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2'), 'sequence type: loaded with an integer sequence');
+  for (const m of ['string', 'fraction']) {
+    mode = m; await sleep(4500);
+    ok(await page.locator('.sv-state').getAttribute('data-pitch') === '849843:11:2', `sequence type: a file whose sequence is a ${m} is not applied (it cannot be ordered)`);
+  }
+  await page.goto('http://pz.test/pub/?game=559'); await sleep(2500);
+  ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone').count() === 0, 'sequence type: on first load such a file is not drawn either');
+  await context.close();
+}, 'sequence-type');
+// ---------- T5. ?game= is decimal digits only ----------
+await block(async () => {
+  const { context, page, asks } = await open({});
+  for (const g of ['1e3', '0x10', ' 849843 ', '849843.0', '+849843', '８４９８４３']) { await page.goto(`http://pz.test/pub/?game=${encodeURIComponent(g)}`); await page.locator('.sv-datebar h1').waitFor(); await sleep(500); }
+  const games = dataAsks(asks).filter((a) => a.includes('/v1/game/'));
+  ok(games.length === 0, `game number: anything but plain decimal digits opens the list and asks for no game file (${games.join(' ') || 'none asked'})`);
+  await context.close();
+}, 'game-digits');
 
 // ---------- R13. the public bundle contains no API / demo / cursor / operator code ----------
 for (const dir of [distPublic, distQuick]) {
