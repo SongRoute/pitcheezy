@@ -232,11 +232,12 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
 UNCONFIRMED_LABEL = '확인 중'
 
 
-def _apply_receipts(pitches, receipts):
+def _apply_receipts(pitches, receipts, pas=()):
     """Attach each pitch's SVC-WS-03 receipt. A body that is not admitted is never shown as an observed pitch (D1):
     its type, speed, location and result are blanked and the row says 확인 중. A pitch this store has no admission
     for at all fails closed the same way. Returns the summary the client compares between polls."""
     unconfirmed = corrected = 0
+    open_pas = set()
     for pitch in pitches:
         item = receipts.get(display_state.RECEIPT_ALL) or receipts.get((pitch['at_bat_number'], pitch['pitch_number']))
         receipt = display_state.public_receipt(item) if item else {'status': 'unconfirmed', 'reason': 'incomplete_identity', 'corrected': False}
@@ -244,7 +245,11 @@ def _apply_receipts(pitches, receipts):
         corrected += receipt['corrected']
         if receipt['status'] != 'received':
             unconfirmed += 1
+            open_pas.add(pitch['pa_key'])
             pitch['actual'] = dict.fromkeys(pitch['actual']) | {'result_label': UNCONFIRMED_LABEL, 'call_label': UNCONFIRMED_LABEL}
+    for pa in pas:  # a plate appearance holding an unadmitted pitch does not announce a result either
+        if pa['pa_key'] in open_pas and pa.get('complete'):
+            pa |= {'event': None, 'event_label': None, 'result_text': UNCONFIRMED_LABEL, 'play_text': None}
     return {'version': display_state.receipts_version(receipts), 'unconfirmed': unconfirmed, 'corrected': corrected}
 
 
@@ -427,6 +432,8 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
             if not state['recommendation_shown']:
                 rec = None if not ready else game_history.absent_rec(state['message'])
         if phase == 'pre_pitch':
+            if state['pitch_key']:  # the pending pitch's plate appearance, so the screen can number the next pitch
+                current['pa_key'] = state['pitch_key'].rsplit(':', 1)[0]
             next_rec = {'pitch_key': state['pitch_key'],
                         'rec': rec or game_history.absent_rec(state['message'] or '이 실행에서는 실시간 추천을 제공하지 않습니다.')}
         view = cut_view(record, len(record['pitches'])-1, {'kind': 'live', 'session_id': None},
@@ -436,7 +443,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         view['display_state'] = state
         view['receipts'] = None
         if receipts is not None:
-            view['receipts'] = _apply_receipts(view['pitches'], receipts)
+            view['receipts'] = _apply_receipts(view['pitches'], receipts, view['pas'])
         if after is not None:  # a pitch whose record is unconfirmed or was corrected is re-sent whatever the cursor
             view['pitches'] = [p for p in view['pitches'] if p['index'] > after or
                                (p.get('receipt') and (p['receipt']['status'] != 'received' or p['receipt']['corrected']))]

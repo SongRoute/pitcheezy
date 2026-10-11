@@ -138,6 +138,7 @@ def test_a_ledger_committed_recommendation_is_the_recommended_state(run):
     assert state['ledger']['status'] == 'recorded' and state['ledger']['outcome'] in ('first', 'duplicate')
     assert state['feed']['ok'] is True and state['feed']['provider_order'] == 'ordered' and state['feed']['thresholds_provisional'] is True
     assert shown(view) == ['SL'] and view['next']['pitch_key'] == f'{GAME}:5:2'
+    assert view['current']['pa_key'] == view['pitches'][-1]['pa_key'] == f'{GAME}:5'
     assert len(run.feed.store.served_recommendations(GAME)) == 1  # committed before it was returned
     assert {p['receipt']['status'] for p in view['pitches']} == {'received'} and view['receipts']['unconfirmed'] == 0
 
@@ -571,3 +572,12 @@ def test_an_unconfirmed_pitch_before_the_cursor_is_resent_and_its_return_changes
 def test_a_final_live_game_keeps_its_receipts(tmp_path):
     view = Run(tmp_path, first=snap(995.0, '20261005_100000', half='final')).poll(settle=False)
     assert view['display_state']['state'] == 'final' and {p['receipt']['status'] for p in view['pitches']} == {'received'}
+
+
+def test_a_plate_appearance_holding_an_unadmitted_pitch_announces_no_result(tmp_path):
+    body = snap(995.0, '20261005_100000')
+    del body['liveData']['plays']['allPlays'][3]['playEvents'][1]['playId']  # the home-run pitch of at-bat 4
+    view = Run(tmp_path, first=body).poll()
+    done = view['pas'][3]
+    assert (done['complete'], done['event'], done['result_text'], done['play_text']) == (True, None, '확인 중', None)
+    assert view['pas'][2]['event'] == 'field_out' and view['pitches'][7]['actual']['result_label'] == '확인 중'
