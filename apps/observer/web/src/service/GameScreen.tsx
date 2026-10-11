@@ -7,6 +7,7 @@ import { teamColor } from './teams';
 import Zone from './Zone';
 import { ABSENT_PAST, DetailSheet, InfoSheet, PaSheet, Sheet, absentLine, provenanceText } from './Sheets';
 import SyncSheet, { FOLD_TEXT } from './SyncSheet';
+import { ExpectationLine, ReferenceSheet, ReferenceTeaser } from './Reference';
 import type { ViewerSetting } from './viewer';
 import { learnViewer, readViewer, requestDelay, wantedDelay, writeViewer } from './viewer';
 import './service.css';
@@ -129,7 +130,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // the tab was hidden: polling paused on purpose, so that time never counts as a late or lost connection (re-based on return)
   const [hidden, setHidden] = useState(() => document.hidden);
   const [resumed, setResumed] = useState(0);
-  const [sheet, setSheet] = useState<'pa' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | 'sync' | null>(null);
+  const [sheet, setSheet] = useState<'pa' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | 'sync' | 'reference' | null>(null);
   // viewer delay (중계 맞추기): this device's setting, what the server last said about its limits, and the one-time question
   const [setting, setSetting] = useState<ViewerSetting>(readViewer);
   const viewerMeta = useRef<{ max: number | null } | null>(null);
@@ -333,6 +334,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     if (d!.prev) clientNote = `${d!.sig ? '추천이 갱신됐어요' : '조금 전에 보여 드린 추천은 지금 표시하지 않아요'} (이전: ${d!.prev.top})`;
   }
   const ending = fold ? null : endingShown;
+  // A2: a reference card rides only on the pending pitch's unsupported state; it is never drawn as a recommendation
+  const reference = stateSlot && latest && nextPhase && !shownRec && disp!.state === 'unsupported' ? detail.reference ?? null : null;
   const fix = stateSlot ? disp!.correction : null;
   const fixPrev = previousText(fix?.previous ?? null);
   const note = fix ? `${fix.message}${fixPrev ? ` (이전: ${fixPrev})` : ''}` : clientNote;
@@ -452,9 +455,10 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
             {/* one always-present polite live region for the sentence and the change note (so a note that appears is announced).
                 Beside a candidate list the note has priority; the sentence then stays for screen readers (chip + status line carry it). */}
             <div className="sv-state-live" role="status">
-              <p className={`sv-state-msg${shownRec && note ? ' sr-only' : ''}${note ? ' with-note' : ''}`}>{eff!.message}</p>
+              <p className={`sv-state-msg${shownRec && note ? ' sr-only' : ''}${note || reference ? ' with-note' : ''}`}>{eff!.message}</p>
               <p className="sv-state-note" data-kind={note ? (fix ? fix.kind : 'client') : undefined}>{note}</p>
             </div>
+            {reference && eff!.state === 'unsupported' && !note && <ReferenceTeaser card={reference} onOpen={() => openSheet('reference')} />}
             {!eff!.message && !note && nextPhase && (fold
               ? <p className="sv-state-idle"><span className="sv-summary-label">실제 투구·결과</span><button className="sv-fold" onClick={openSync} aria-haspopup="dialog">{FOLD_TEXT}</button></p>
               : <p className="sv-state-idle"><span className="sv-summary-label">실제 투구</span><span className="sv-muted">{actualWait}</span></p>)}
@@ -507,7 +511,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     {sheet === 'box' && <BoxSheet ls={latest ? detail.linescore_asof : pitch!.line ?? null} game={game} at={situation} onClose={closeSheet} />}
     {sheet === 'detail' && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={stateSlot && !shownRec ? null : rec} recTitle={stateSlot && !shownRec ? `다음 공: ${eff!.label}` : liveRecord ? recTitle : rec ? `${held ? '마지막으로 받은 추천' : recTitle} (${provenanceText(rec)})` : recTitle}
       pair={pairText} absentText={absentText}
-      actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} actualFolded={fold && !nextPhase && actual !== null ? FOLD_TEXT : null} notes={detail.notes} speed={mph => speedText(mph, unit)}
+      actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} actualFolded={fold && !nextPhase && actual !== null ? FOLD_TEXT : null}
+      actualExtra={!nextPhase && !fold && shownPitch?.expectation && shownPitch.actual?.event ? <ExpectationLine e={shownPitch.expectation} /> : null} notes={detail.notes} speed={mph => speedText(mph, unit)}
       recNote={stateSlot ? [eff!.message, note].filter(Boolean).join(' ') || null : pastUnconfirmed ? '이 공을 확인하는 동안에는 추천을 함께 보여 드리지 않아요.' : null} actualPending={!nextPhase && unconfirmed(shownPitch)} actualCorrected={!nextPhase && shownPitch?.receipt?.corrected === true}
       extra={<div className="sv-row"><button className="sv-btn" onClick={() => setSheet('info')}>기준과 한계 보기</button>
         <button className="sv-btn" onClick={() => { const u = unit === 'kmh' ? 'mph' : 'kmh'; setUnit(u); try { localStorage.setItem(UNIT_KEY, u); } catch { /* ignore */ } }}
@@ -519,6 +524,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <p className="sv-muted">{sheetInfo?.stats_as_of ? `${sheetInfo.stats_as_of} 경기 전 시즌 기록` : '경기 전 시즌 기록 미확인'}. 오늘 기록은 현재 공식 피드의 해당 시점까지 사건을 재구성한 값으로 이후 기록 정정이 반영될 수 있습니다. 출루는 안타+볼넷+몸에 맞는 공입니다. 확인되지 않은 값은 –로 표시합니다.</p>
     </Sheet>}
     {sheet === 'info' && <InfoSheet onClose={closeSheet} notes={detail.notes} />}
+    {sheet === 'reference' && reference && <ReferenceSheet card={reference} state={eff ? `${eff.label}${eff.message ? ` · ${eff.message}` : ''}` : null} onClose={closeSheet} />}
   </div>{syncSheet}</>;
 }
 

@@ -82,12 +82,14 @@ const LEGACY_ABSENT = '이 투구의 저장된 추천이 없습니다.';
 export const absentLine = (rec: Rec, fallback = ABSENT_PAST) => rec.reason && rec.reason.trim() !== LEGACY_ABSENT ? rec.reason : fallback;
 export const provenanceText = (rec: Rec) => PROVENANCE[rec.provenance];
 
-export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false, pair = null, absentText = ABSENT_PAST, actualFolded = null }:
+export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false, pair = null, absentText = ABSENT_PAST, actualFolded = null, actualExtra = null }:
   { onClose: () => void; rec: Rec | null; recTitle: string; actual: Actual | null; actualTitle: string; paResult: string | null; notes: string[]; speed: (mph: number | null) => string; extra?: ReactNode; bounds?: Bounds;
     /** live display state: the server's sentence (and any change note) for the pending pitch */
     recNote?: string | null; actualPending?: boolean; actualCorrected?: boolean;
     /** viewer delay, device not synced yet: the thrown pitch is not described */
     actualFolded?: string | null;
+    /** an optional quiet line that belongs to the thrown pitch (never shown while the pitch is folded or being confirmed) */
+    actualExtra?: ReactNode;
     /** past pitch with a recorded recommendation: its first pick and the pitch that was thrown, side by side in words (never a score) */
     pair?: { rec: string; actual: string } | null; absentText?: string }) {
   return <Sheet title="자세히" onClose={onClose}>
@@ -117,7 +119,7 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
         <dt>위치</dt><dd>{actual.zone_label || '위치 정보 없음'}</dd>
         {paResult && <><dt>타석 결과</dt><dd>{paResult}</dd></>}
         {actual.play_text && <><dt>원본 기록</dt><dd lang="en">{actual.play_text}</dd></>}
-      </dl>}</>}
+      </dl>}{actual !== null && actualExtra}</>}
     </section>
     {notes.length > 0 && <section className="sv-detail"><h3>자료 설명</h3><ul className="sv-notes">{notes.map(n => <li key={n}>{n}</li>)}</ul></section>}
     {extra && <section className="sv-detail">{extra}</section>}

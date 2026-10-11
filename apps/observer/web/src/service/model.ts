@@ -1,4 +1,5 @@
 import type { Viewer } from './viewer';
+import type { Expectation, ReferenceCard } from './extras';
 /** Service (ordinary viewer) data model — UI redesign 2026-10-05 (frontend-001).
  *  One normalized shape for live and finished games so both use the same screen. The backend contract
  *  (pm-jobs/20261005-ui-live-redesign/CONTRACT.md) is mapped onto this in api.ts only. */
@@ -21,7 +22,7 @@ export type Actual = { pitch_type: string | null; pitch_label: string; descripti
 export type PlayerContext = { batter: { at_bats: number | null; hits: number | null; on_base: number | null } | null;
   pitcher: { pitches: number | null; strikeouts: number | null; earned_runs: number | null } | null;
   basis?: string; next_batters: { id: number | null; name: string | null; order: number }[] };
-export type PitchRow = { index: number; key: string; pa_key: string; at_bat_number: number; pitch_number: number;
+export type PitchRow = { /** B2, optional: the sentence for a past key-moment pitch (detail sheet only). */ expectation?: Expectation | null; index: number; key: string; pa_key: string; at_bat_number: number; pitch_number: number;
   situation: Situation; batter: Person & { side: string }; pitcher: Person & { hand: string }; rec: Rec; actual: Actual | null;
   /** linescore as of just before this pitch (server `linescore_before`); null when the backend does not send it. */
   context?: PlayerContext | null;
@@ -64,6 +65,8 @@ export type Detail = { current_context?: PlayerContext | null; session_status?: 
   viewer?: Viewer | null;
   /** the server's feature switch as this answer states it (false also for an older server that says nothing). */
   viewer_on?: boolean;
+  /** A2, optional: reference card beside an unsupported state (never a recommendation). */
+  reference?: ReferenceCard | null;
   /** the server's phase even when it sends no situation (between innings: `current.situation` / batter / pitcher are all null). */
   phase?: Phase | null;
   /** true = the live route's answer (`source.kind = 'live'`), whatever the game status; false/absent = archive, demo, legacy feeds. */

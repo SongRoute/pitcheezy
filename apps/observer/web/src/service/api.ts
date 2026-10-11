@@ -5,6 +5,7 @@
 import type { Correction, Display, DisplayStateName, Receipt, LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
 import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, plainZone, shiftDate } from './model';
 import { learnViewer, normalizeViewer, viewerOn, withDelay } from './viewer';
+import { normalizeExpectation, normalizeReference } from './extras';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
 export const TIMEOUT_MS = 15000;
@@ -103,7 +104,7 @@ function pitchRow(raw: Raw, provenance: Rec['provenance']): PitchRow {
     // an unconfirmed pitch is never paired with a recommendation, whatever the row carries (fail closed)
     batter: raw.batter, pitcher: raw.pitcher, rec: rc?.status === 'unconfirmed' ? normalizeRec(null) : normalizeRec(raw.rec ?? raw.pre, provenance),
     actual: rc?.status === 'unconfirmed' ? blankActual() : actual(raw.actual), receipt: rc,
-    context: raw.context_before ?? null, line: linescoreRev3(raw.linescore_before) };
+    context: raw.context_before ?? null, line: linescoreRev3(raw.linescore_before), expectation: rc?.status === 'unconfirmed' ? null : normalizeExpectation(raw) };
 }
 /** Local copy used only when the server sends no `label` / `message` for a state (the server's text always wins). */
 const STATE_COPY: Record<DisplayStateName, [string, string | null]> = {
@@ -245,7 +246,7 @@ export function normalizeDetail(raw: Raw): Detail {
     next, display, receipts_version: text(raw.receipts?.version), phase: PHASES.includes(cur?.phase) ? cur.phase : null, live_source: provenance === 'captured_live',
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
     zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),
-    linescore_asof: linescoreRev3(raw.linescore), players: playersRev3(raw), viewer: normalizeViewer(raw), viewer_on: viewerOn(raw) };
+    linescore_asof: linescoreRev3(raw.linescore), players: playersRev3(raw), viewer: normalizeViewer(raw), viewer_on: viewerOn(raw), reference: display?.state === 'unsupported' ? normalizeReference(raw) : null };
 }
 
 /** Finished-game fallback: the precomputed watch file holds each pre-pitch record and, per pitch, the actual. */
