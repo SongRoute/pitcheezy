@@ -12,10 +12,11 @@
 #   PITCHEEZY_OBSERVER_LIVE_STORE (SQLite 경로 = 수신 스냅샷·투구 원장·추천 원장을 append-only로 저장; 켜면 추천은
 #   원장에 기록된 뒤에만 표시), PITCHEEZY_OBSERVER_REC_LEDGER (0 = 추천 원장만 끄기).
 # 기능 스위치(잠정값. 웹을 다시 빌드하지 않고 끌 수 있다. 기본값은 live_config.json "features", 설명은 observer_app/features.py):
-#   PITCHEEZY_OBSERVER_VIEWER_DELAY (0 = 팬 화면 시청 지연·중계 맞추기 끄기 → 예전처럼 지연 0),
+#   모두 기본 꺼짐(공개 서비스는 지연 0 본문 하나를 모두에게 배포한다. 시청자별 지연은 이 서버에 직접 붙는 폰 시연·내부용).
+#   PITCHEEZY_OBSERVER_VIEWER_DELAY (1 = 팬 화면 시청 지연·중계 맞추기 켜기; 꺼져 있으면 ?delay= 는 무시되고 지연 0 그대로),
 #   PITCHEEZY_OBSERVER_VIEWER_DELAY_DEFAULT_S (맞추기 전 기본 지연 초, 기본 30),
 #   PITCHEEZY_OBSERVER_VIEWER_SYNC_PROMPT (0 = 첫 화면에서 맞추기를 묻지 않음; 수동 진입은 남음),
-#   PITCHEEZY_OBSERVER_PROFILE_REFERENCE (0/1), PITCHEEZY_OBSERVER_PROFILE_SOURCES (경로 여러 개는 ':'로 구분),
+#   PITCHEEZY_OBSERVER_PROFILE_REFERENCE (1 = 켜기), PITCHEEZY_OBSERVER_PROFILE_SOURCES (경로 여러 개는 ':'로 구분),
 #   PITCHEEZY_OBSERVER_STEP5_EXPECTATION (0/1), PITCHEEZY_OBSERVER_STEP5_LEDGER (경로), PITCHEEZY_OBSERVER_STEP5_ALLOW_REPLAYED (0/1).
 #   값이 잘못되면 설정 파일 값을 그대로 쓰고 경고를 한 번 남긴다(서비스는 멈추지 않는다).
 # 공개 주소(0.0.0.0, 공인 IP, Funnel)로는 열지 않는다.

@@ -18,6 +18,12 @@ from test_rec_pairing import KEY, past, rule, thrown, tops
 TAP_URL = f'{SERVICE}/tap'
 
 
+@pytest.fixture(autouse=True)
+def switched_on(monkeypatch):
+    """The feature is OFF by default (owner decision 2026-10-11); these tests are about the switched-on path."""
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', '1')
+
+
 @pytest.fixture
 def run(tmp_path):
     return Run(tmp_path)
@@ -130,9 +136,14 @@ def test_the_very_first_poll_failing_is_still_the_calm_503(run):
 
 
 # ---------- the owner switches ----------
-def test_with_the_switch_off_the_parameter_is_ignored(run, monkeypatch):
-    monkeypatch.setenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', '0')
+@pytest.mark.parametrize('value', [None, '0'])
+def test_with_the_switch_off_the_parameter_is_ignored(run, monkeypatch, value):
+    monkeypatch.delenv('PITCHEEZY_OBSERVER_VIEWER_DELAY') if value is None else monkeypatch.setenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', value)
     view = ask(run, 30, after=2.0)
+    plain = ask(run)
+    assert {k: v for k, v in view.items() if k != 'feed'} == {k: v for k, v in plain.items() if k != 'feed'}  # same body as no parameter
+    assert view['features']['viewer_delay'] == {'enabled': False, 'default_s': 30, 'sync_prompt': False, 'fold_actual_until_synced': False}
+    assert run.feed.store.served_recommendations(GAME)[0]['snapshot']['store_seq'] == 1 and len(run.policy.calls) == 1
     assert view['viewer'] | {'max_delay_s': None} == {'enabled': False, 'default_s': 30, 'provisional': True, 'delay_s': 0.0,
                                                       'max_delay_s': None, 'buffering': False, 'wait_s': 0.0}
     assert view['next']['pitch_key'] == KEY and len(view['pitches']) == 9  # served at delay 0, as before the feature
@@ -152,23 +163,26 @@ def test_no_parameter_is_delay_zero_and_a_huge_one_is_clamped_to_the_buffer(run)
 
 
 def test_features_come_from_the_config_with_environment_overrides_and_survive_bad_values(monkeypatch, caplog):
+    monkeypatch.delenv('PITCHEEZY_OBSERVER_VIEWER_DELAY')
     assert features.features() == features.DEFAULTS | {'provisional': True}
+    assert [features.DEFAULTS[block]['enabled'] for block in features.DEFAULTS] == [False, False, False]  # all off by default
+    assert json.loads((Path(features.__file__).resolve().parents[2]/'live_config.json').read_text())['features'] == features.DEFAULTS
     assert features.features({'features': {'viewer_delay': {'default_s': 20, 'sync_prompt': False, 'enabled': 'yes'},
                                            'step5_expectation': {'ledger': '/x/ledger.sqlite3', 'enabled': True}}}) == {
         'viewer_delay': features.DEFAULTS['viewer_delay'] | {'default_s': 20, 'sync_prompt': False},
         'profile_reference': features.DEFAULTS['profile_reference'],
         'step5_expectation': {'enabled': True, 'ledger': '/x/ledger.sqlite3', 'allow_replayed': False}, 'provisional': True}
-    for name, value in [('VIEWER_DELAY', '0'), ('VIEWER_DELAY_DEFAULT_S', '45'), ('VIEWER_SYNC_PROMPT', '0'),
-                        ('PROFILE_REFERENCE', '0'), ('PROFILE_SOURCES', f'/a/one.json{features.os.pathsep}/b/two.json'),
+    for name, value in [('VIEWER_DELAY', '1'), ('VIEWER_DELAY_DEFAULT_S', '45'), ('VIEWER_SYNC_PROMPT', '0'),
+                        ('PROFILE_REFERENCE', '1'), ('PROFILE_SOURCES', f'/a/one.json{features.os.pathsep}/b/two.json'),
                         ('STEP5_EXPECTATION', '1'), ('STEP5_LEDGER', '/c/ledger.sqlite3'), ('STEP5_ALLOW_REPLAYED', '1')]:
         monkeypatch.setenv(f'PITCHEEZY_OBSERVER_{name}', value)
     now = features.features()
-    assert now['viewer_delay'] == features.DEFAULTS['viewer_delay'] | {'enabled': False, 'default_s': 45, 'sync_prompt': False}
-    assert now['profile_reference'] == {'enabled': False, 'profile_sources': ['/a/one.json', '/b/two.json']}
+    assert now['viewer_delay'] == features.DEFAULTS['viewer_delay'] | {'enabled': True, 'default_s': 45, 'sync_prompt': False}
+    assert now['profile_reference'] == {'enabled': True, 'profile_sources': ['/a/one.json', '/b/two.json']}
     assert now['step5_expectation'] == {'enabled': True, 'ledger': '/c/ledger.sqlite3', 'allow_replayed': True}
     shown_to_fans = features.public(now)
-    assert shown_to_fans == {'provisional': True, 'profile_reference': {'enabled': False}, 'step5_expectation': {'enabled': True},
-                             'viewer_delay': {'enabled': False, 'default_s': 45, 'sync_prompt': False, 'fold_actual_until_synced': True}}
+    assert shown_to_fans == {'provisional': True, 'profile_reference': {'enabled': True}, 'step5_expectation': {'enabled': True},
+                             'viewer_delay': {'enabled': True, 'default_s': 45, 'sync_prompt': False, 'fold_actual_until_synced': True}}
     assert '/' not in json.dumps(shown_to_fans)  # never a path
     for name, value in [('VIEWER_DELAY', 'maybe'), ('VIEWER_DELAY_DEFAULT_S', 'soon'), ('VIEWER_SYNC_PROMPT', '2'),
                         ('STEP5_EXPECTATION', 'TRUE')]:

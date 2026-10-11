@@ -7,11 +7,17 @@ the server process at most, never a web build: the fan payload carries ``public(
 Everything here is PROVISIONAL configuration (first settings for the 2026 World Series dry run), not a validated
 limit. An invalid environment value never breaks serving: the configured value stays and one warning is logged.
 
+Defaults (owner decision 2026-10-11): every block is OFF. The public World Series service publishes the
+``/api/service/**`` bodies as static files that every fan reads at one delay (0), so a per-viewer delay exists only
+on the direct path to this server (phone demo, internal) and is switched on by ``PITCHEEZY_OBSERVER_VIEWER_DELAY=1``.
+With ``viewer_delay`` off its other keys are inert: ``?delay=`` is ignored on the game, list and tap routes (the tap
+route answers 404), nothing is recorded at receipt and the public subset reports no prompt and no fold.
+
 Only ``viewer_delay`` has behaviour in this module's callers so far; ``profile_reference`` and
 ``step5_expectation`` are carried for the code that consumes them.
 
 Environment (0/1 unless noted):
-  PITCHEEZY_OBSERVER_VIEWER_DELAY            viewer delay on the fan screen (``/api/service/games/{pk}?delay=``)
+  PITCHEEZY_OBSERVER_VIEWER_DELAY            1 = viewer delay on the fan screen (``/api/service/games/{pk}?delay=``)
   PITCHEEZY_OBSERVER_VIEWER_DELAY_DEFAULT_S  seconds: the delay a device starts with before it is synced
   PITCHEEZY_OBSERVER_VIEWER_SYNC_PROMPT      ask once to sync on the first open of a live game
   PITCHEEZY_OBSERVER_PROFILE_REFERENCE       profile reference block
@@ -30,9 +36,9 @@ import os
 LOGGER = logging.getLogger(__name__)
 PROVISIONAL = True
 DEFAULTS = {
-    'viewer_delay': {'enabled': True, 'default_s': 30, 'sync_prompt': True, 'fold_actual_until_synced': True,
+    'viewer_delay': {'enabled': False, 'default_s': 30, 'sync_prompt': True, 'fold_actual_until_synced': True,
                      'record_at_receipt': True},
-    'profile_reference': {'enabled': True, 'profile_sources': []},
+    'profile_reference': {'enabled': False, 'profile_sources': []},
     'step5_expectation': {'enabled': False, 'ledger': None, 'allow_replayed': False},
 }
 _warned = set()
@@ -118,7 +124,7 @@ def public(current=None):
     viewer = current['viewer_delay']
     return {'provisional': PROVISIONAL,
             'viewer_delay': {'enabled': viewer['enabled'], 'default_s': viewer['default_s'],
-                             'sync_prompt': viewer['sync_prompt'],
-                             'fold_actual_until_synced': viewer['fold_actual_until_synced']},
+                             'sync_prompt': viewer['enabled'] and viewer['sync_prompt'],
+                             'fold_actual_until_synced': viewer['enabled'] and viewer['fold_actual_until_synced']},
             'profile_reference': {'enabled': current['profile_reference']['enabled']},
             'step5_expectation': {'enabled': current['step5_expectation']['enabled']}}
