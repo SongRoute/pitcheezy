@@ -23,7 +23,7 @@ from .settings import CONFIG, REPO, RUN, WEB, database_path
 from .store import Store
 from .video_annotations import VideoAnnotations
 from .live_armb import LiveArmB
-from . import display_state, features, live_ledger, rec_pairing
+from . import display_state, features, live_ledger, rec_pairing, service_extras
 from .setup_estimates import SetupEstimates
 from .watch_along import BADGE as WATCH_BADGE, WatchAlong
 from . import service_api
@@ -182,6 +182,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 'dataset_ready': current is not None, 'mode': 'historical_replay', 'cv_mode': 'unavailable:no_media',
                 'demo': {'status': demo, 'storage_mounted': STORAGE.is_mount(), 'watch_dir_ready': watch.available(),
                          'watch_games': len(watch.games()), 'live_policy': policy}}
+        body['service_extras'] = app.state.service_extras.health()  # operator only
         if os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE'):
             feed = live['feed']
             body['live_store'] = {'configured': True, 'started': hasattr(feed, 'store'),
@@ -282,6 +283,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     armb = live_policy if live_policy is not None else LiveArmB()
     armb_enabled = lambda: os.environ.get('PITCHEEZY_OBSERVER_LIVE_ARMB', '1') != '0'
     app.state.live_policy = armb
+    app.state.service_extras = service_extras.Extras()
 
     live_lock = threading.Lock()  # sync routes run in a thread pool; the one live feed is built once
 
@@ -780,7 +782,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             return nothing('ledger_unreadable')
 
     service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
-                         features=features.features,
+                         features=features.features, live_extras=app.state.service_extras.attach,
                          schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
                          live_feed=None if live_feed is False else service_live_feed,
                          live_display=service_live_display, live_pairing=service_live_pairing)

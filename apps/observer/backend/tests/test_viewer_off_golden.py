@@ -30,10 +30,12 @@ def strip(step):
 
 @pytest.mark.parametrize('switch', [None, '0'])
 def test_switched_off_the_fan_routes_answer_exactly_what_a72f1fa_answered(tmp_path, monkeypatch, switch):
-    monkeypatch.delenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', raising=False)
-    if switch is not None:
-        monkeypatch.setenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', switch)
+    for name in ('VIEWER_DELAY', 'PROFILE_REFERENCE', 'STEP5_EXPECTATION'):  # all three owner switches off
+        monkeypatch.delenv(f'PITCHEEZY_OBSERVER_{name}', raising=False)
+        if switch is not None:
+            monkeypatch.setenv(f'PITCHEEZY_OBSERVER_{name}', switch)
     now, then = scenario(tmp_path), golden()
+    assert '"reference"' not in json.dumps(now) and '"expectation"' not in json.dumps(now)  # service_extras adds nothing
     assert sorted(now) == sorted(then) and len(then) == 19
     for name in sorted(then):
         assert set(now[name]['body']) - set(then[name]['body']) <= set(ADDED), name  # nothing else was added

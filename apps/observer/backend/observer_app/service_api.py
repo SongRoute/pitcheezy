@@ -291,7 +291,7 @@ def list_card(record, cutoff, source):
 
 
 def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None,
-             features=None):
+             features=None, live_extras=None):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
     reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
     ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
@@ -541,6 +541,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         if receipts is not None:
             view['receipts'] = _apply_receipts(view['pitches'], receipts, view['pas'])
         _pair_recommendations(view, live_pairing and live_pairing(feed, view['pitches'], receipts, entry))
+        view = live_extras(view, feed, parsed, receipts, entry) if live_extras else view  # service_extras: optional, switched
         if after is not None:  # a pitch whose record is unconfirmed or was corrected is re-sent whatever the cursor
             view['pitches'] = [p for p in view['pitches'] if p['index'] > after or
                                (p.get('receipt') and (p['receipt']['status'] != 'received' or p['receipt']['corrected']))]
