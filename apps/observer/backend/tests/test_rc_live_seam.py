@@ -270,10 +270,12 @@ def test_an_unrecorded_recommendation_is_withheld_not_displayed(tmp_path, monkey
         monkeypatch.setattr(feed.store, 'append_recommendation', broken)
         shown = ready(client, armb)
         assert shown['status'] == 'ready' and shown['situation'] is not None  # the game state is still served
-        assert shown['recommendation'] == {'status': 'unavailable', 'reason': live_ledger.WITHHELD, 'recommendation': None,
+        said = shown['display_state']['message']  # what is not shown is explained by the state's own sentence
+        assert shown['display_state']['state'] == 'ledger_unavailable' and '저장하지 못해' in said
+        assert shown['recommendation'] == {'status': 'unavailable', 'reason': said, 'recommendation': None,
                                            'ledger': {'status': 'withheld', 'why': 'OperationalError'}}
         rec = client.get(f'/api/service/games/{GAME}').json()['next']['rec']
-        assert rec['provenance'] == 'absent' and rec['candidates'] == []
+        assert rec['provenance'] == 'absent' and rec['candidates'] == [] and rec['reason'] == said
         monkeypatch.undo()
         entry = feed.buffers[GAME][-1]
         memory_only = {key: entry[key] for key in ('feed', 'event', 'fetched')}  # what a store outage leaves

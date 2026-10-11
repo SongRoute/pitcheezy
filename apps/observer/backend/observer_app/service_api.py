@@ -26,7 +26,6 @@ DEFAULT_FEED_DIR = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026
 EMBARGO_PATH = re.compile(r'^/api/(?:watch|replay|live)/(\d+)(?:/|$)')
 NO_STORE = {'Cache-Control': 'no-store'}
 INTERNAL = ('situation_after', 'gap_after', 'line_before', 'line_after', 'context_after')  # server-only: gap_after would reveal that something happens later
-LIVE_STALE_S = 30
 
 
 class CreateDemo(BaseModel):
@@ -428,7 +427,8 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                 pass
             if live_feed is None:
                 raise KeyError(game_pk)
-            return ok(live_view(game_pk, after))
+            view = live_view(game_pk, after)
+            return view if isinstance(view, JSONResponse) else ok(view)  # the calm 503 of a failed first poll, as is
         return guarded(run)
 
     def live_view(game_pk, after):

@@ -292,7 +292,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 replay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR')
                 delay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_DELAY_S')
                 # Rehearsal speed: a replay hands out one recorded body per poll, so only a replay may change the pace.
-                pace = replay_config(os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S'))
+                # A real upstream never reads the variable: a stray or invalid value must not break live polling.
+                pace = replay_config(os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S')) if replay else None
                 if replay and os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE') == 'recorded':
                     # delayed-viewing rehearsal: bodies at their recorded receipt times on today's clock (never upstream)
                     gap = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_MAX_GAP_S')
@@ -448,8 +449,10 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                         shown_memory.popitem(last=False)
         elif view:  # the state says nothing is shown: no candidate leaves, not even the at-bat's recomputed ones
             hidden = {'recommendation': None, 'pa_pitches': [], 'previous': None}
-            view = view | {key: value for key, value in hidden.items() if key in view} | (
-                {'status': 'unavailable', 'reason': state['message']} if view.get('recommendation') else {})
+            # ...and the reason is the state's sentence, never a policy status code or a ledger note that would
+            # contradict the state the screen shows (a disconnect before the first ledger write is "연결 끊김")
+            view = view | {key: value for key, value in hidden.items() if key in view} | {'reason': state['message']} | (
+                {'status': 'unavailable'} if view.get('recommendation') else {})
         return view, state, receipts
 
     def _confirmed_only(parsed, receipts, at_bat, snapshot):
@@ -620,7 +623,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         candidates = ((view or {}).get('recommendation') or {}).get('candidates') or []
         if not view or view.get('status') != 'ready' or not candidates:
             return {'provenance': 'absent', 'status': 'missing' if state['state'] == 'waiting' else 'unsupported',
-                    'reason': (view or {}).get('reason') or state['message'], 'recorded_at': None, 'policy': None, 'candidates': []}
+                    'reason': state['message'], 'recorded_at': None, 'policy': None, 'candidates': []}
         ledger = view.get('ledger')  # present only when the append-only ledger recorded it before this display
         return {'provenance': 'captured_live', 'status': 'ready', 'reason': None, 'ledger': ledger,
                 'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(ledger['decided'] if ledger else None)),

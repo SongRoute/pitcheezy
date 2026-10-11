@@ -18,9 +18,10 @@ wrong pairing. A pitch gets a recommendation only if every rule holds (``pair``)
 5. the policy's key counts automatic balls/strikes while the official ``pitchNumber`` might not, so the key alone
    could point one pitch off: the previous pitch of the same at-bat must already be in the decision's snapshot
    (and the pitch itself is not, by rule 3), which pins the pending pitch to this one;
-6. the decision's own inputs equal the pitch as thrown: pitcher, batter, inning, half, outs, balls and strikes.
-   A recommendation computed for the pitcher who was then replaced, or for a count that was later corrected,
-   is not this pitch's recommendation.
+6. the decision's own inputs equal the pitch as thrown: pitcher, batter, inning, half, outs, balls, strikes,
+   runners (``bases``) and score. A recommendation computed for the pitcher who was then replaced, for a count
+   that was later corrected, or before a runner moved (a balk or steal that arrived in the same body as the
+   pitch) is not this pitch's recommendation.
 
 A recommendation that left the screen before the pitch (the state went to 확인 중, or was being recomputed) is still
 paired when rules 1-6 hold. Reason: the ledger cannot say what stayed on a screen, so the honest claim is the one
@@ -40,7 +41,7 @@ from .display_state import RECEIPT_ALL
 
 ABSENT = '이 공은 기록된 추천이 없어요.'  # the one calm sentence a fan reads when nothing is paired
 IDENTITY = ('pitcher_id', 'batter_id')
-SITUATION = ('inning', 'half', 'outs', 'balls', 'strikes')
+SITUATION = ('inning', 'half', 'outs', 'balls', 'strikes', 'bases', 'home_score', 'away_score')
 # Refusal codes (machine-readable, never shown to a fan): which rule left a pitch without a recommendation.
 RULES = ('no_store', 'ledger_unreadable', 'snapshot_not_committed', 'pitch_unconfirmed', 'pitch_first_seen_unknown',
          'no_recorded_recommendation', 'recorded_after_pitch_appeared', 'previous_pitch_not_in_decision',
@@ -66,7 +67,7 @@ def decision_inputs(parsed):
     situation = parsed['situation']
     try:
         return {'pitcher_id': int(parsed['pitcher']['id']), 'batter_id': int(parsed['batter']['id'])} | {
-            key: situation.get(key) for key in (*SITUATION, 'bases', 'home_score', 'away_score')}
+            key: situation.get(key) for key in SITUATION}
     except (KeyError, TypeError, ValueError):
         return None
 

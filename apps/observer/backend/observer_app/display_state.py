@@ -309,22 +309,35 @@ def _unconfirmed(facts, receipts, feed):
     return None
 
 
+def _pitch_keys(play):
+    """(at-bat number or None, [official pitch numbers]) of a play."""
+    index = (play.get('about') or {}).get('atBatIndex')
+    at_bat = index+1 if type(index) is int and index >= 0 else None
+    return at_bat, [event.get('pitchNumber') if type(event.get('pitchNumber')) is int else None
+                    for event in play.get('playEvents') or [] if isinstance(event, dict) and event.get('isPitch')]
+
+
 def unlisted_current(feed, receipts):
-    """Pitches of ``currentPlay`` whose body on screen has no admission: ``{(at_bat_number, pitch_number): reason}``.
+    """Where ``currentPlay`` and the listed plays disagree: ``{(at_bat_number, pitch_number): reason}``.
 
     The pitch ledger and ``pitch_receipts`` read ``allPlays`` only, while the pending decision and the legacy live
-    view read ``currentPlay``. In a real feed ``currentPlay`` is the last ``allPlays`` entry, so every one of its
-    pitches has a receipt for exactly that body. A ``currentPlay`` pitch that ``allPlays`` does not list
-    (``not_in_pitch_ledger``) or lists with another body (``body_differs_from_listed``) was never admitted and
-    fails closed. Empty without a store (``receipts`` None)."""
+    view read ``currentPlay``. In a real feed ``currentPlay`` is the last ``allPlays`` entry, so the two name the
+    same at-bat and the same pitches, each admitted with exactly that body. Anything else fails closed:
+
+    * a ``currentPlay`` pitch that ``allPlays`` does not list (``not_in_pitch_ledger``) or lists with another body
+      (``body_differs_from_listed``) was never admitted;
+    * a ``currentPlay`` that LAGS the listed plays (an older at-bat, or fewer pitches than the last listed play)
+      would have the next pitch decided on a state that is already over: the listed pitches it misses are named
+      (``current_play_lags_listed``), or the at-bat itself (``current_play_not_last_listed``).
+
+    Empty without a store (``receipts`` None)."""
     if receipts is None:
         return {}
     plays = ((feed.get('liveData') or {}).get('plays') or {}) if isinstance(feed, dict) else {}
     play = plays.get('currentPlay')
-    if not isinstance(play, dict):
+    if not isinstance(play, dict) or not play:
         return {}
-    index = (play.get('about') or {}).get('atBatIndex')
-    at_bat = index+1 if type(index) is int and index >= 0 else None
+    at_bat, numbers = _pitch_keys(play)
     out = {}
     for event in play.get('playEvents') or []:
         if not isinstance(event, dict) or not event.get('isPitch'):
@@ -335,12 +348,21 @@ def unlisted_current(feed, receipts):
             out[key] = 'not_in_pitch_ledger'
         elif item.get('sha') != body_sha(event):
             out[key] = 'body_differs_from_listed'
+    listed = plays.get('allPlays')
+    last = listed[-1] if isinstance(listed, list) and listed and isinstance(listed[-1], dict) else None
+    if last is not None and _pitch_keys(last) != (at_bat, numbers):
+        last_at_bat, last_numbers = _pitch_keys(last)
+        missed = {(last_at_bat, number): 'current_play_lags_listed' for number in last_numbers
+                  if last_at_bat != at_bat or number not in numbers}
+        out |= {key: reason for key, reason in missed.items() if key not in out}
+        if not out:
+            out[(at_bat, None)] = 'current_play_not_last_listed'
     return out
 
 
 def _blocking_receipt(feed, receipts):
     """The first not-admitted pitch among the pending decision's inputs: every pitch of the open at-bat, the
-    game's newest pitch, and any ``currentPlay`` pitch without an admission of its own (``unlisted_current``).
+    game's newest pitch, and any disagreement between ``currentPlay`` and the listed plays (``unlisted_current``).
     Returns (key, reason) or None."""
     if receipts is None:
         return None

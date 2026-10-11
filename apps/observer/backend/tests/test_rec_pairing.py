@@ -6,7 +6,10 @@ import copy
 from pathlib import Path
 import sqlite3
 import sys
+import time
+import urllib.error
 
+from fastapi.testclient import TestClient
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -203,7 +206,8 @@ def test_the_cursor_sends_the_new_pitch_with_its_pairing_and_nothing_older(run):
 def pitch(at_bat, number, *, pitcher=41, batter=32, balls=0, strikes=0):
     return {'key': f'{GAME}:{at_bat}:{number}', 'at_bat_number': at_bat, 'pitch_number': number,
             'pitcher': {'id': pitcher}, 'batter': {'id': batter},
-            'situation_before': {'inning': 1, 'half': 'Top', 'outs': 0, 'balls': balls, 'strikes': strikes}}
+            'situation_before': {'inning': 1, 'half': 'Top', 'outs': 0, 'balls': balls, 'strikes': strikes,
+                                 'bases': 0, 'home_score': 0, 'away_score': 0}}
 
 
 def receipt(seq, *, status='received', received=None):
@@ -216,7 +220,7 @@ def ledger(row_id, at_bat, number, seq, *, top='SL', outcome='first', decided=No
             'decided': seq*10.0+1 if decided is None else decided, 'decision_clock': 'observer_local', 'store_seq': seq,
             'feed_sha256': 's', 'policy_identity': 'a6dffaea', 'candidates': [{'pitch_type': top}], 'derived': False,
             'inputs': {'pitcher_id': pitcher, 'batter_id': batter, 'inning': 1, 'half': 'Top', 'outs': 0, 'balls': balls,
-                       'strikes': strikes}}
+                       'strikes': strikes, 'bases': 0, 'home_score': 0, 'away_score': 0}}
 
 
 def verdict(pitches, receipts, rows, served):
@@ -255,6 +259,38 @@ def test_a_key_that_is_one_pitch_off_is_refused():
     assert verdict(pitches, receipts, rows, 9) == {'1:1': 'different_situation', '1:2': 'previous_pitch_not_in_decision'}
     rows = [ledger(1, 1, 2, 6, balls=1, strikes=1)]  # decided when pitch 1 was already listed: this one is pitch 2's
     assert verdict(pitches, receipts, rows, 9) == {'1:1': 'no_recorded_recommendation', '1:2': 'SL'}
+
+
+@pytest.mark.parametrize('field, value', [('bases', 2), ('home_score', 1), ('away_score', 1)])
+def test_a_decision_made_before_a_runner_moved_or_a_run_scored_is_refused(field, value):
+    thrown_ = pitch(1, 1)
+    thrown_['situation_before'] |= {field: value}  # the pitch was thrown with a runner on second, or a run in
+    assert verdict([thrown_], {(1, 1): receipt(5)}, [ledger(1, 1, 1, 2)], 5) == {'1:1': 'different_situation'}
+    row = ledger(1, 1, 1, 2)
+    del row['inputs'][field]  # a row that does not say cannot be checked
+    assert verdict([pitch(1, 1)], {(1, 1): receipt(5)}, [row], 5) == {'1:1': 'decision_inputs_unknown'}
+
+
+def on_first(body):
+    play = body['liveData']['plays']['currentPlay']
+    play['runners'] = [{'movement': {'start': None, 'end': '1B'}, 'details': {'playIndex': 0, 'runner': {'id': 99}}}]
+    body['liveData']['linescore']['offense'] = {'batter': {'id': 32}, 'first': {'id': 99}}
+    return body
+
+
+def test_a_balk_that_arrives_with_the_pitch_leaves_it_without_a_recommendation(run):
+    assert tops(run.poll(on_first(snap(995.0, '20261005_100000')))['next']['rec']) == ['SL']  # decided with a runner on first
+    assert run.feed.store.served_recommendations(GAME)[-1]['inputs']['bases'] == 1
+    body = on_first(thrown())
+    play = body['liveData']['plays']['currentPlay']
+    play['playEvents'].insert(1, {'isPitch': False, 'type': 'action', 'index': 1, 'count': dict(play['playEvents'][0]['count']),
+                                  'details': {'event': 'Balk', 'eventType': 'balk', 'description': 'Balk'}})
+    play['runners'].append({'movement': {'start': '1B', 'end': '2B'}, 'details': {'playIndex': 1, 'runner': {'id': 99}}})
+    body['liveData']['linescore']['offense'] = {'batter': {'id': 32}, 'second': {'id': 99}}
+    view = run.poll(body)  # the balk (first -> second) and the pitch arrive in ONE body
+    thrown_ = next(p for p in view['pitches'] if p['key'] == KEY)
+    assert thrown_['situation_before']['bases'] == 2 and thrown_['receipt']['status'] == 'received'
+    assert rule(view) == 'different_situation' and view['receipts']['paired'] == 0
 
 
 def test_unknown_inputs_or_an_unknown_first_appearance_refuse():
@@ -376,6 +412,38 @@ def test_a_complete_current_play_that_is_not_listed_blocks_the_next_at_bat_too(t
     assert (state['state'], state['reason'], state['detail']) == ('unconfirmed', 'prior_pitch_unconfirmed', '5:1/not_in_pitch_ledger')
 
 
+def test_a_current_play_that_lags_the_listed_plays_gets_no_recommendation(tmp_path):
+    body = snap(995.0, '20261005_100000', second=True)  # allPlays: 5:1 and 5:2 were thrown
+    plays = body['liveData']['plays']
+    plays['currentPlay'] = copy.deepcopy(plays['allPlays'][-1])
+    plays['currentPlay']['playEvents'] = plays['currentPlay']['playEvents'][:1]  # currentPlay still says only 5:1
+    plays['currentPlay']['count'] = {'balls': 1, 'strikes': 0, 'outs': 0}
+    run = Run(tmp_path, first=body)
+    for path in (SERVICE, LIVE):
+        state = run.poll(path=path)['display_state']
+        assert (state['state'], state['reason'], state['detail']) == (
+            'unconfirmed', 'prior_pitch_unconfirmed', '5:2/current_play_lags_listed'), path
+        assert state['recommendation_shown'] is False and state['message'] == display_state.RECHECK_PITCH
+    assert run.feed.store.served_recommendations(GAME) == []  # nothing recorded on a state that is already over
+
+
+def test_a_current_play_that_is_an_older_at_bat_gets_no_recommendation(tmp_path):
+    body = snap(995.0, '20261005_100000')
+    plays = body['liveData']['plays']
+    plays['currentPlay'] = copy.deepcopy(plays['allPlays'][-3])  # a finished, older at-bat
+    run = Run(tmp_path, first=body)
+    for path in (SERVICE, LIVE):
+        state = run.poll(path=path)['display_state']
+        assert (state['state'], state['reason'], state['detail']) == (
+            'unconfirmed', 'prior_pitch_unconfirmed', '5:1/current_play_lags_listed'), path
+    assert run.feed.store.served_recommendations(GAME) == []
+    empty = snap(995.0, '20261005_100000')  # same pitches, but another at-bat: named by the at-bat itself
+    empty['liveData']['plays']['allPlays'][-1]['playEvents'] = []
+    empty['liveData']['plays']['currentPlay'] = copy.deepcopy(empty['liveData']['plays']['allPlays'][-2])
+    empty['liveData']['plays']['currentPlay']['playEvents'] = []
+    assert display_state.unlisted_current(empty, {}) == {(4, None): 'current_play_not_last_listed'}
+
+
 def test_the_real_feed_shape_and_a_run_without_a_store_are_unchanged(tmp_path):
     listed = Run(tmp_path/'a').poll(path=LIVE)  # ``currentPlay`` is the last ``allPlays`` entry, as MLB sends it
     assert listed['display_state']['state'] == 'recommended' and listed['pitch_sequence'][0]['pitch_type'] == 'FF'
@@ -400,3 +468,50 @@ def test_between_innings_names_nobody_and_keeps_the_score(tmp_path):
     middle['liveData']['linescore'] |= {'inningState': 'Middle', 'currentInning': 3}
     assert service_api._finished_half(middle) == {'inning': 3, 'half': 'Top'}
     assert service_api._finished_half({'liveData': {'linescore': {'inningState': 'Middle'}}}) is None
+
+
+# ---------- review round 1 ----------
+def test_what_the_fan_reads_under_a_withheld_recommendation_is_the_states_sentence(run):
+    run.policy.status = run.policy.reason = 'UNSUPPORTED_BRAND_NEW_CODE'  # a policy status this build does not know
+    view = run.poll()
+    state = view['display_state']
+    assert (state['state'], state['reason'], state['recommendation_shown']) == ('unsupported', 'policy_refused', False)
+    assert view['next']['rec']['reason'] == state['message'] == '이 상황은 추천 대상이 아니에요.'
+    assert run.poll(path=LIVE)['recommendation']['reason'] == state['message']  # never the bare code
+
+
+def test_a_disconnect_before_the_first_ledger_write_reads_as_disconnected(run):
+    run.client.get(LIVE, params={'delay': 45})  # a delayed viewer is buffering; the head start computes the newest state
+    deadline = time.time()+5
+    while time.time() < deadline and not run.armb.cache:
+        time.sleep(.01)
+    assert run.armb.cache and run.feed.store.served_recommendations(GAME) == []  # computed, never recorded
+    view = run.poll(urllib.error.URLError('down'))
+    state = view['display_state']
+    assert (state['state'], state['recommendation_shown']) == ('disconnected', False)
+    assert view['next']['rec']['reason'] == state['message'] and view['next']['rec']['candidates'] == []
+    assert run.poll(path=LIVE)['recommendation']['reason'] == state['message']  # not "추천 기록을 저장하지 못해…"
+
+
+def test_a_first_poll_that_fails_is_a_calm_503_not_a_generic_error(tmp_path):
+    run = Run(tmp_path, store=False)
+    run.upstream.body = urllib.error.URLError('down')
+    answer = run.client.get(SERVICE)
+    assert answer.status_code == 503 and answer.headers['cache-control'] == 'no-store'
+    assert answer.json() == {'detail': 'MLB 경기 정보를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.'}
+
+
+@pytest.mark.parametrize('value', ['fast', '-1', '5'])
+def test_a_real_upstream_ignores_the_replay_pace_variable(tmp_path, monkeypatch, value):
+    from observer_app import live_feed
+    from observer_app.main import create_app
+    asked = []
+    monkeypatch.setattr(live_feed, 'http_json', lambda url, timeout, **_: asked.append(url) or snap(time.time()-5, '20261005_100000'))
+    for name in ('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR', 'PITCHEEZY_OBSERVER_LIVE_STORE', 'PITCHEEZY_OBSERVER_LIVE_DELAY_S'):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S', value)  # stray, even invalid: this is not a replay
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_ARMB', '0')
+    monkeypatch.setattr(live_feed.LiveFeed, '_record', lambda *a, **k: None, raising=False)  # no snapshot files from a test
+    app = create_app(object(), start_worker=False, watch_dir=tmp_path, feed_dir=tmp_path, demo_dir=tmp_path/'demo', intent_dir=tmp_path)
+    answer = TestClient(app).get(SERVICE)
+    assert answer.status_code == 200 and len(asked) == 1 and answer.json()['display_state']['reason'] == 'recommender_off'
