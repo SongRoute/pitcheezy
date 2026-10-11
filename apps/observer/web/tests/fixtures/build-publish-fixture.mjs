@@ -22,7 +22,7 @@ const live = structuredClone(fx.live);
 live.synthetic = 'game_pk, teams on the card, source.kind and display_state are synthetic; pitches are real 849843 pitches';
 live.source = { kind: 'live', session_id: null };
 live.game = { ...live.game, game_pk: 990003, status: 'live', status_text: 'In Progress', live: true };
-live.receipts = null;
+live.receipts = { version: 'fixture', corrected: 0, paired: 0, unconfirmed: 0 };
 live.display_state = { schema: 'pitcheezy-display-state-v1', state: 'recommended', reason: 'ledger_recorded', label: '다음 공 추천', message: null,
   pitch_key: live.next.pitch_key, recommendation_shown: true, correction: null, feed: { ok: true, delayed: false, lag_s: null } };
 
@@ -35,4 +35,4 @@ write('game/849843.json', stamp(final, 3, '2026-09-30T04:40:30Z', true));
 write('game/990003.json', stamp(live, SEQ, AT, false));
 write('manifest.json', stamp({ schema: 'pitcheezy-publish-manifest-v1', contract: 'v1', commit: '0000000000000000000000000000000000000000', commit_dirty: false, published_at: AT,
   publish_interval_s: 10, fixed_delay_s: 0, provisional: ['publish_interval_s', 'settled_recheck_s', 'live_days_back', 'live_days_ahead'], live_dates: ['2026-09-29', '2026-09-30'] }));
-write('health.json', stamp({ schema: 'pitcheezy-publish-health-v1', sequence: SEQ, published_at: AT, publish_interval_s: 10, files_written: 6, unavailable_games: [] }));
+write('health.json', stamp({ schema: 'pitcheezy-publish-health-v1', sequence: SEQ, published_at: AT, publish_interval_s: 10, files_written: 6, unavailable_games: [], unavailable_dates: [], feed_failing_games: [] }));
