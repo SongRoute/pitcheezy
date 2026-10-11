@@ -60,7 +60,8 @@ CLEARED_ENV = ('PITCHEEZY_OBSERVER_LIVE_STORE', 'PITCHEEZY_OBSERVER_LIVE_REPLAY_
                'PITCHEEZY_WATCH_DIR', 'PITCHEEZY_INTENT_DIR', 'PITCHEEZY_DEMO_DIR', 'PITCHEEZY_PLAYER_SNAPSHOT_DIR')
 CONFIG_KEYS = ('publish_interval_s', 'fixed_delay_s', 'tail_cycles', 'max_rss_bytes', 'min_free_bytes', 'max_seconds',
                'settle_cap_s', 'max_body_bytes', 'policy_load_cap_s', 'min_free_bytes_running', 'free_check_every_cycles',
-               'policy_device', 'style_sha256', 'unchanged_dirs')
+               'policy_device', 'style_sha256', 'capture_original_dir', 'policy_dirs', 'listing_time_limit_s',
+               'free_floor_consecutive', 'max_measure_failures')
 PACKAGES = ('numpy', 'pandas', 'torch', 'fastapi', 'starlette', 'pydantic')
 THREAD_ENV = ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS', 'OPENBLAS_NUM_THREADS', 'NUMEXPR_NUM_THREADS',
               'PYTORCH_ENABLE_MPS_FALLBACK', 'PYTORCH_MPS_HIGH_WATERMARK_RATIO')
@@ -80,6 +81,10 @@ class Stop(Exception):
 
 class Interrupted(BaseException):
     """A termination signal reached this process."""
+
+
+class MeasureError(Exception):
+    """A resource reading could not be taken (distinct from a reading of zero or 'not in use')."""
 
 
 def sha256_file(path):
@@ -186,15 +191,18 @@ def threads():
 
 
 def mps_bytes():
-    """Memory the Metal (MPS) backend holds for this process, or None when torch/MPS is not in use. Unified
+    """Memory the Metal (MPS) backend holds for this process; None only when torch is not loaded or has no MPS
+    (nothing to measure). A reading that fails raises ``MeasureError``: it is never taken for zero. Unified
     memory: it is real RAM and is not part of ``ru_maxrss``."""
     torch = sys.modules.get('torch')
+    if torch is None:
+        return None
     try:
-        if torch is not None and torch.backends.mps.is_available():
-            return int(torch.mps.driver_allocated_memory())
-    except Exception:  # noqa: BLE001
-        pass
-    return None
+        if not torch.backends.mps.is_available():
+            return None
+        return int(torch.mps.driver_allocated_memory())
+    except Exception as error:  # noqa: BLE001
+        raise MeasureError(f'MPS memory: {type(error).__name__}') from None
 
 
 def policy_devices(policy):
@@ -275,7 +283,8 @@ def write_status(run_dir, state, **more):
 
 def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs_audit=None, schemas=None,
         publish_config=None, perf=time.perf_counter, rss=lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-        free_memory=free_memory_bytes, log=lambda text: print(text, file=sys.stderr, flush=True)):
+        free_memory=free_memory_bytes, mps=mps_bytes, finalize=True,
+        log=lambda text: print(text, file=sys.stderr, flush=True)):
     """Replay ``rows`` through a publisher that lives entirely in ``run_dir``. Returns the summary (also written).
     Whatever happens inside (a stop condition, any exception, a termination signal) ends in a written summary and
     status; only a kill that cannot be caught leaves ``STATUS.json`` at RUNNING with ``INCOMPLETE`` beside it."""
@@ -291,14 +300,51 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
     bytes_by_kind, states, codes, recs = {}, Counter(), Counter(), Counter()
     final_published, stop, policy = None, None, {'requested': bool(policy_factory), 'registered_device': limits.get('policy_device')}
     over_interval, mps_peak, free_seen, failure = 0, None, [], None
+    measure = {'mps_failures': 0, 'mps_failures_in_a_row': 0, 'free_failures': 0, 'free_failures_in_a_row': 0, 'free_below_floor_in_a_row': 0,
+               'free_below_floor_checks': 0}
     status, pub, store, audit, transport, armb, config = 'FAILED', None, None, None, None, None, None
 
-    def memory():
+    def mps_now():
+        """MPS bytes now (None = not in use). A failed reading is counted, never read as zero: the run stops
+        after ``max_measure_failures`` of them in a row."""
         nonlocal mps_peak
-        held = mps_bytes()
+        try:
+            held = mps()
+        except MeasureError:
+            measure['mps_failures'] += 1
+            measure['mps_failures_in_a_row'] += 1
+            if measure['mps_failures_in_a_row'] >= limits['max_measure_failures']:
+                raise Stop('measurement_failed', {'what': 'mps_memory', 'in_a_row': measure['mps_failures_in_a_row']}) from None
+            return None
+        measure['mps_failures_in_a_row'] = 0
         if held is not None:
             mps_peak = max(mps_peak or 0, held)
-        return rss()+(held or 0)
+        return held
+
+    def memory():
+        return rss()+(mps_now() or 0)
+
+    def free_now(cycle):
+        """One free-memory check. Could-not-measure and below-the-floor are different conditions: the first stops
+        after ``max_measure_failures`` in a row, the second after ``free_floor_consecutive`` checks in a row (one
+        momentary system-wide dip does not end a healthy run)."""
+        free = free_memory()
+        free_seen.append(free)
+        if free is None:
+            measure['free_failures'] += 1
+            measure['free_failures_in_a_row'] += 1
+            if measure['free_failures_in_a_row'] >= limits['max_measure_failures']:
+                raise Stop('measurement_failed', {'what': 'free_memory', 'in_a_row': measure['free_failures_in_a_row']})
+            return None
+        measure['free_failures_in_a_row'] = 0
+        if free < limits['min_free_bytes_running']:
+            measure['free_below_floor_checks'] += 1
+            measure['free_below_floor_in_a_row'] += 1
+            if measure['free_below_floor_in_a_row'] >= limits['free_floor_consecutive']:
+                raise Stop('free_memory_low', {'free_bytes': free, 'cycle': cycle, 'checks_in_a_row': measure['free_below_floor_in_a_row']})
+        else:
+            measure['free_below_floor_in_a_row'] = 0
+        return free
 
     def guard(stage):
         if info.get('integrity_error'):
@@ -310,7 +356,7 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         if armb is not None and armb.failed:
             raise Stop('policy_compute_failed', {'states': len(armb.failed), 'errors': sorted(set(armb.failed.values()))})
         if memory() > limits['max_rss_bytes']:
-            raise Stop('memory_cap', {'stage': stage, 'rss': rss(), 'mps': mps_bytes()})
+            raise Stop('memory_cap', {'stage': stage, 'rss': rss(), 'mps': mps_peak})
         if perf()-started > limits['max_seconds']:
             raise Stop('runtime_cap', {'stage': stage})
 
@@ -381,23 +427,27 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                 final_published = {'simulated': clock(), 'cycle': len(cycles)+1, 'sequence': health['sequence']}
         for item in health['unavailable_games']:
             codes[item['code']] += 1
-        free = None
-        if len(cycles) % limits['free_check_every_cycles'] == 0:
-            free = free_memory()
-            free_seen.append(free)
+        checked = len(cycles) % limits['free_check_every_cycles'] == 0
         row = {'cycle': len(cycles)+1, 'label': label, 'simulated': round(clock(), 3), 'capture_index': transport.index(),
                'sequence': health['sequence'], 'wall_s': round(wall_s, 6), 'settle_s': round(settle_s, 6),
                'files_written': len(written), 'written': written, 'bytes': sizes, 'game': facts,
                'health': {'unavailable_games': [item['code'] for item in health['unavailable_games']],
                           'unavailable_dates': len(health['unavailable_dates']), 'feed_failing_games': len(health['feed_failing_games'])},
-               'rss': rss(), 'mps_bytes': mps_bytes(), 'free_bytes': free}
+               'rss': rss(), 'mps_bytes': None, 'free_bytes': None, 'free_checked': checked}
         cycles.append(row)
+        problem = None
+        try:
+            row['mps_bytes'] = mps_now()
+            if checked:
+                row['free_bytes'] = free_now(row['cycle'])
+        except Stop as stopped:
+            problem = stopped
         with open(run_dir/'CYCLES.jsonl', 'a') as handle:
             handle.write(json.dumps(row, ensure_ascii=False)+'\n')
+        if problem is not None:
+            raise problem
         guard(f'cycle {row["cycle"]}')
         check_device()
-        if free is not None and free < limits['min_free_bytes_running']:
-            raise Stop('free_memory_low', {'free_bytes': free, 'cycle': row['cycle']})
         return row
 
     try:
@@ -426,7 +476,7 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
             while armb.loading and perf()-waited < limits['policy_load_cap_s']:
                 time.sleep(.05)
                 guard('policy load')
-            policy |= {'load_s': round(perf()-waited, 3), 'status': armb.status(), 'rss_after_load': rss(), 'mps_after_load': mps_bytes()}
+            policy |= {'load_s': round(perf()-waited, 3), 'status': armb.status(), 'rss_after_load': rss(), 'mps_after_load': mps_now()}
             if armb.policy is None:
                 raise Stop('policy_unavailable', {'state': armb.status()['state']})
         while not transport.exhausted():
@@ -511,22 +561,38 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                    'mps_driver_allocated_peak_bytes': mps_peak,
                    'mps_note': 'Metal (MPS) memory is unified RAM outside ru_maxrss; sampled once per cycle, so a peak between samples is not seen. null = MPS not in use.',
                    'free_bytes_min_sampled': min((value for value in free_seen if value is not None), default=None),
-                   'free_samples': len(free_seen)},
+                   'free_samples': len(free_seen), 'measurement': measure},
         'wall_seconds_total': round(perf()-started, 3),
         'not_measured': ['live polling against the real upstream', 'hosting and upload', 'any other game',
                          'provider versions between the capture polls', 'stale or duplicate responses (the capture stores none)',
                          'end-to-end delay to a viewer', 'I/O done inside native libraries (outside the audit; covered only by the before/after folder listing)'],
     }
-    (run_dir/'SUMMARY.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1)+'\n')
-    (run_dir/'SUMMARY.md').write_text(summary_text(summary))
-    write_status(run_dir, status, stop=stop, cycles=len(cycles))
-    log(f"{status}: {len(cycles)} cycles, summary at {run_dir/'SUMMARY.json'}")
-    if failure is not None and not isinstance(failure, Exception):
-        raise failure  # KeyboardInterrupt / SystemExit go on after the record is written
-    if failure is not None:
+    if failure is not None and isinstance(failure, Exception):
         import traceback
         traceback.print_exception(failure, file=sys.stderr)
+    if finalize:
+        finish(run_dir, summary)
+    else:  # the caller still has checks to make: nothing here says COMPLETED yet
+        (run_dir/'SUMMARY.json').write_text(json.dumps(summary | {'status': 'POST_RUN_CHECKS_PENDING', 'incomplete': True,
+                                                                  'replay_status': status}, ensure_ascii=False, indent=1)+'\n')
+        write_status(run_dir, 'RUNNING', phase='post_run_checks', replay_status=status, cycles=len(cycles))
+    log(f"{status}: {len(cycles)} cycles")
+    if failure is not None and not isinstance(failure, Exception):
+        raise failure  # KeyboardInterrupt / SystemExit go on after the record is written
     return summary
+
+
+def finish(run_dir, summary):
+    """The last thing a run does: the summary, then the status. COMPLETED (and the removal of ``INCOMPLETE``) is
+    written here and nowhere else, after every check the caller makes."""
+    run_dir = Path(run_dir)
+    (run_dir/'SUMMARY.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1)+'\n')
+    try:
+        text = summary_text(summary)
+    except Exception:  # noqa: BLE001 - a run that died before the replay has no numbers to lay out
+        text = f"# 발행기 오프라인 재생 요약 — 경기 {summary.get('game_pk')}\n\n- 상태: **{summary['status']}** — **미완료, 부분 결과**\n"
+    (run_dir/'SUMMARY.md').write_text(text)
+    write_status(run_dir, summary['status'], stop=summary['stop'], cycles=summary['cycles']['n'])
 
 
 def summary_text(s):
@@ -543,7 +609,8 @@ def summary_text(s):
              f"- 추천 원장 행: {show(s['ledger']['rows'])}", '', '## 불변 조건', '']
     lines += [f"- {name}: {'지켜짐' if ok else '미측정' if ok is None else '**깨짐**'}" for name, ok in s['invariants']['held'].items()]
     if 'outside_changes' in s:
-        lines += [f"- 실행 폴더 밖 변화(전후 목록 비교): {'없음' if not s['outside_changes']['changed'] else '**있음**'}"]
+        lines += [f"- 실행 폴더 밖 변화(전후 비교, 범위는 SUMMARY.json): {'없음' if not s['outside_changes']['changed'] else '**있음**'}"
+                  + (f", 확인하지 못한 폴더 {len(s['outside_changes']['not_checked'])}곳" if s['outside_changes']['not_checked'] else '')]
     lines += ['', '## 파일 크기(바이트, 종류별 최대 raw / gzip)', '']
     lines += [f"- {kind}: {v['raw_max']} / {v['gzip_max']} (쓴 횟수 {v['writes']})" for kind, v in sorted(s['bytes_by_kind'].items())]
     lines += ['', '## 스키마', '',
@@ -553,14 +620,18 @@ def summary_text(s):
     return '\n'.join(lines)+'\n'
 
 
-def armb_factory(run_dir, style_sha256, style_dir=STYLE_DIR):
+def live_policy(output_root, max_games):
+    import demo_precompute
+    return demo_precompute.LivePolicy(output_root=output_root, max_games=max_games)
+
+
+def armb_factory(run_dir, style_sha256, style_dir=STYLE_DIR, make_policy=live_policy):
     """The frozen ARM-B live policy with every write redirected into the run folder: the pinned 2026 style
     snapshot is COPIED from T7 into ``<run>/policy-root/style`` (so the policy reads its cache there and never
     writes under T7), and the per-game scratch ledger goes to ``<run>/tmp``. T7 is only read. The two style
     files must have the registered sha256 (``style_sha256``: name -> sha256), checked on the copied bytes."""
     def factory():
         import tempfile
-        import demo_precompute
         from observer_app.live_feed import LIVE_CONFIG
         tempfile.tempdir = str(Path(run_dir)/'tmp')
         target = Path(run_dir)/'policy-root/style'
@@ -570,26 +641,94 @@ def armb_factory(run_dir, style_sha256, style_dir=STYLE_DIR):
             if hashlib.sha256(data).hexdigest() != sha:
                 raise RuntimeError(f'style file {name} does not have its registered sha256')
             (target/name).write_bytes(data)
-        return demo_precompute.LivePolicy(output_root=Path(run_dir)/'policy-root', max_games=LIVE_CONFIG.get('max_bound_games', 2))
+        return make_policy(Path(run_dir)/'policy-root', LIVE_CONFIG.get('max_bound_games', 2))
     return factory
 
 
-def outside_snapshot(folders):
-    """``{folder: tree}`` of the folders that must not change, plus the scratch folders this policy would create
-    in the system temporary folder (other programs' files there are not ours to judge)."""
-    import tempfile
-    from observer_app import publish_audit
-    trees = {str(folder): publish_audit.tree_snapshot(folder) for folder in folders}
-    system = os.path.realpath(os.environ.get('PITCHEEZY_REPLAY_SYSTEM_TMP') or tempfile.gettempdir())
+def git_porcelain(repo=REPO):
+    """``git status --porcelain --ignored`` (tracked, untracked and ignored paths) or None. Optional locks off:
+    the index is not refreshed. A child process: only before the tripwire is armed or after it is disarmed."""
     try:
-        names = sorted(name for name in os.listdir(system) if name.startswith('pitcheezy-live-'))
-    except OSError:
-        names = []
-    trees[f'{system} (pitcheezy-live-* only)'] = {name: (None, 0) for name in names}
-    return trees
+        done = subprocess.run(['git', '-C', str(repo), 'status', '--porcelain', '--ignored'], capture_output=True, text=True,
+                              timeout=60, env=os.environ | {'GIT_OPTIONAL_LOCKS': '0'}, check=True)
+        return sorted(done.stdout.splitlines())
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
-def main(argv=None):
+def outside_state(limits, repo=REPO):
+    """What is looked at before and after the run, and nothing more:
+      capture   sha256 of every file in the ORIGINAL capture folder (exact)
+      worktree  ``git status --porcelain --ignored`` of the code checkout (sees new, deleted and modified paths;
+                not a change inside an already ignored folder)
+      policy    size and mtime of every entry of each registered policy source folder, within one time limit for
+                all of them together; a folder not finished in time is None = "not checked"
+    The system temporary folder is NOT looked at (other programs use it). None of this can see a write that was
+    undone again, or one that kept size and mtime (policy folders)."""
+    from observer_app import publish_audit
+    capture = Path(limits['capture_original_dir'])
+    state = {'capture': {path.name: sha256_file(path) for path in sorted(capture.iterdir()) if path.is_file()},
+             'worktree': git_porcelain(repo), 'policy': {}}
+    deadline = time.monotonic()+limits['listing_time_limit_s']
+    for folder in limits['policy_dirs']:
+        state['policy'][folder] = publish_audit.tree_snapshot(folder, deadline=deadline, clock=time.monotonic)
+    return state
+
+
+def outside_changes(before, after):
+    from observer_app import publish_audit
+    changes, not_checked = {}, []
+    capture = sorted(name for name in set(before['capture']) | set(after['capture']) if before['capture'].get(name) != after['capture'].get(name))
+    if capture:
+        changes['capture'] = capture
+    if before['worktree'] is None or after['worktree'] is None:
+        not_checked.append('worktree')
+    elif before['worktree'] != after['worktree']:
+        changes['worktree'] = sorted(set(before['worktree']) ^ set(after['worktree']))[:200]
+    for folder in before['policy']:
+        if before['policy'][folder] is None or after['policy'].get(folder) is None:
+            not_checked.append(folder)
+            continue
+        found = publish_audit.tree_changes(before['policy'][folder], after['policy'][folder])
+        if found:
+            changes[folder] = found[:200]
+    return {'method': 'capture: sha256 of every file; worktree: git status --porcelain --ignored; policy folders: size and mtime '
+                      'of every entry within a time limit. Cannot see transient writes, or a same-size same-mtime rewrite in a '
+                      'policy folder. The system temporary folder is not checked.',
+            'changed': bool(changes), 'changes': changes, 'not_checked': not_checked,
+            'entries': {'capture_files': len(before['capture']),
+                        'policy': {folder: None if tree is None else len(tree) for folder, tree in before['policy'].items()}}}
+
+
+def start_watchdog(run_dir, limits, *, peak=None, interval=.5):
+    """A hard stop of THIS process only, for when the main thread cannot get to its own checks. Whatever happens
+    while it writes its record, the process exits (87)."""
+    peak = peak or (lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    begun = time.monotonic()
+
+    def loop():
+        while True:
+            time.sleep(interval)
+            try:
+                held = peak()
+                elapsed = time.monotonic()-begun
+                if held <= limits['max_rss_bytes'] and elapsed <= limits['max_seconds']+60:
+                    continue
+            except BaseException:  # noqa: BLE001 - a watchdog that cannot measure does not keep the process alive
+                held, elapsed = None, time.monotonic()-begun
+            try:
+                record = {'peak_rss_bytes': held, 'elapsed_s': round(elapsed, 1),
+                          'why': 'runtime_cap_hard' if elapsed > limits['max_seconds']+60 else 'memory_cap' if held is not None else 'watchdog_could_not_measure'}
+                (Path(run_dir)/'ABORTED.json').write_text(json.dumps(record))
+                write_status(run_dir, 'ABORTED', stop={'reason': record['why'], 'detail': record})
+            finally:
+                os._exit(87)
+    thread = threading.Thread(target=loop, name='replay-watchdog', daemon=True)
+    thread.start()
+    return thread
+
+
+def parse(argv):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--job-dir', required=True)
     parser.add_argument('--run-name', required=True)
@@ -601,9 +740,15 @@ def main(argv=None):
     parser.add_argument('--config-sha256', required=True)
     parser.add_argument('--policy', choices=('armb', 'off'), required=True)
     parser.add_argument('--allow-dirty', action='store_true', help='synthetic tests only')
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T7):
+    """The whole command. ``make_policy``, ``style_dir`` and ``volume`` exist so a synthetic test can run this
+    exact path with a stand-in policy; ``main`` passes none of them."""
+    args = parse(argv)
     job, db = Path(args.job_dir).resolve(), Path(args.capture_db).resolve()
-    run_dir = job/args.run_name
+    run_dir, style_dir = job/args.run_name, Path(style_dir)
     try:
         if sha256_file(args.config) != args.config_sha256:
             raise Refused('the replay config does not have the registered sha256')
@@ -630,19 +775,20 @@ def main(argv=None):
         if changed is None or (changed and not args.allow_dirty):
             raise Refused(f'tracked files differ from the commit: {changed}')
         free, in_process = free_memory_vm_stat(), free_memory_bytes()
-        if free is None or in_process is None or min(free, in_process) < limits['min_free_bytes']:
+        if free is None or in_process is None:
+            raise Refused(f'free memory could not be measured (vm_stat {free}, in-process {in_process})')
+        if min(free, in_process) < limits['min_free_bytes']:
             raise Refused(f'free memory (vm_stat {free}, in-process {in_process}) is below the registered minimum {limits["min_free_bytes"]}')
-        unchanged = [Path(folder) for folder in limits['unchanged_dirs']]
-        absent = [str(folder) for folder in unchanged if not folder.is_dir()]
+        absent = [str(folder) for folder in (limits['capture_original_dir'], *limits['policy_dirs']) if not Path(folder).is_dir()]
         if absent:
             raise Refused(f'folders registered as unchanged do not exist: {absent}')
         if args.policy == 'armb':
-            if not T7.is_mount():
+            if not Path(volume).is_mount():
                 raise Refused('the policy needs the T7 volume (read-only use)')
             if not limits['style_sha256'] or not limits['policy_device']:
                 raise Refused('a policy run needs the registered style sha256 values and the registered device')
             for name, sha in limits['style_sha256'].items():
-                if not (STYLE_DIR/name).is_file() or sha256_file(STYLE_DIR/name) != sha:
+                if not (style_dir/name).is_file() or sha256_file(style_dir/name) != sha:
                     raise Refused(f'style file {name} is missing or does not have its registered sha256')
         rows, info = capture_rows(db, args.game, limits['max_body_bytes'])  # reads and verifies every stored version
     except Refused as refused:
@@ -650,61 +796,67 @@ def main(argv=None):
         return 2
     for name in CLEARED_ENV:
         os.environ.pop(name, None)
-    trees_before = outside_snapshot([REPO, *unchanged])
     run_dir.mkdir()
-    os.chdir(run_dir)  # a relative path opened for writing resolves inside the run folder
-    os.environ['TMPDIR'] = str(run_dir/'tmp')
-    write_status(run_dir, 'RUNNING')
-    from observer_app import publish_audit
-    fs_audit = publish_audit.FsAudit([run_dir], watch=[T7])
-    sys.addaudithook(fs_audit.event)  # tripwire from here on: no write outside the run folder, no process, no socket
-
-    def on_signal(number, frame):
-        raise Interrupted(signal.Signals(number).name)
-    for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(number, on_signal)
-
-    def watchdog():  # a hard stop of THIS process only, if the main loop cannot get to its own checks
-        begun = time.monotonic()
-        while True:
-            time.sleep(.5)
-            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss+(mps_bytes() or 0)
-            if peak > limits['max_rss_bytes'] or time.monotonic()-begun > limits['max_seconds']+60:
-                record = {'peak_rss_plus_mps_bytes': peak, 'elapsed_s': round(time.monotonic()-begun, 1),
-                          'why': 'memory_cap' if peak > limits['max_rss_bytes'] else 'runtime_cap_hard'}
-                (run_dir/'ABORTED.json').write_text(json.dumps(record))
-                write_status(run_dir, 'ABORTED', stop={'reason': record['why'], 'detail': record})
-                os._exit(87)
-    threading.Thread(target=watchdog, name='replay-watchdog', daemon=True).start()
-    contract = REPO/'apps/observer/publish_contract/v1/schema'
-    schemas = {path.name.split('.')[0]: json.loads(path.read_text()) for path in sorted(contract.glob('*.schema.json'))}
-    (run_dir/'RUN.json').write_text(json.dumps({
-        'argv': sys.argv if argv is None else list(argv), 'commit': args.commit, 'capture_sha256_before': before,
-        'config_sha256': args.config_sha256, 'free_memory_bytes_at_start': {'vm_stat': free, 'in_process': in_process},
-        'limits': limits, 'policy': args.policy, 'python': sys.version, 'versions': versions(), 'threads': threads(),
-        'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}, indent=1)+'\n')
+    write_status(run_dir, 'RUNNING', phase='starting')
+    summary = {'schema': 'pitcheezy-publisher-replay-summary-v2', 'status': 'FAILED', 'incomplete': True, 'game_pk': args.game,
+               'commit': args.commit, 'stop': {'reason': 'failed_before_the_replay', 'detail': None}, 'cycles': {'n': 0, 'by_label': {}, 'wall_s': {}, 'last_sequence': None}}
+    fs_audit = None
     try:
-        summary = run(rows=rows, info=info, run_dir=run_dir, game_pk=args.game, commit=args.commit, limits=limits,
-                      policy_factory=armb_factory(run_dir, limits['style_sha256']) if args.policy == 'armb' else None,
-                      fs_audit=fs_audit, schemas=schemas)
-    finally:
-        with closing(info['db']):
-            pass
-    after = sha256_file(db)
-    trees_after = outside_snapshot([REPO, *unchanged])
-    changes = {folder: publish_audit.tree_changes(trees_before[folder], trees_after[folder])[:200] for folder in trees_before}
-    changed_any = any(changes.values())
-    summary['capture_copy'] = {'sha256_before': before, 'sha256_after': after, 'unchanged': before == after}
-    summary['outside_changes'] = {'method': 'path, size and mtime of every entry, listed before the run and after it',
-                                  'folders': list(trees_before), 'entries_before': {k: len(v) for k, v in trees_before.items()},
-                                  'changed': changed_any, 'changes': {k: v for k, v in changes.items() if v}}
-    if (changed_any or before != after) and summary['status'] == 'COMPLETED':
+        def on_signal(number, frame):
+            raise Interrupted(signal.Signals(number).name)
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(number, on_signal)
+        start_watchdog(run_dir, limits)
+        state_before = outside_state(limits)  # under the watchdog; git runs here, before the tripwire
+        os.chdir(run_dir)  # a relative path opened for writing resolves inside the run folder
+        os.environ['TMPDIR'] = str(run_dir/'tmp')
+        from observer_app import publish_audit
+        fs_audit = publish_audit.FsAudit([run_dir], watch=[volume])
+        sys.addaudithook(fs_audit.event)  # tripwire from here on: no write outside the run folder, no process, no socket
+        contract = REPO/'apps/observer/publish_contract/v1/schema'
+        schemas = {path.name.split('.')[0]: json.loads(path.read_text()) for path in sorted(contract.glob('*.schema.json'))}
+        (run_dir/'RUN.json').write_text(json.dumps({
+            'argv': sys.argv if argv is None else list(argv), 'commit': args.commit, 'capture_sha256_before': before,
+            'config_sha256': args.config_sha256, 'free_memory_bytes_at_start': {'vm_stat': free, 'in_process': in_process},
+            'limits': limits, 'policy': args.policy, 'python': sys.version, 'versions': versions(), 'threads': threads(),
+            'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}, indent=1)+'\n')
+        try:
+            summary = run(rows=rows, info=info, run_dir=run_dir, game_pk=args.game, commit=args.commit, limits=limits,
+                          policy_factory=armb_factory(run_dir, limits['style_sha256'], style_dir, make_policy) if args.policy == 'armb' else None,
+                          fs_audit=fs_audit, schemas=schemas, finalize=False)
+        finally:
+            info['db'].close()
+        tripped = len(fs_audit.violations)
+        fs_audit.armed = False  # the replay is over: the checks below need git, a child process
+        after = sha256_file(db)
+        outside = outside_changes(state_before, outside_state(limits))
+        summary['capture_copy'] = {'sha256_before': before, 'sha256_after': after, 'unchanged': before == after}
+        summary['outside_changes'] = outside
+        if summary['status'] == 'COMPLETED' and (outside['changed'] or before != after or tripped):
+            summary['status'] = 'FAILED'
+            summary['stop'] = {'reason': 'something_outside_the_job_folder_changed', 'detail': None}
+        summary['incomplete'] = summary['status'] != 'COMPLETED'
+    except Interrupted as signalled:
+        summary['status'], summary['incomplete'] = 'INTERRUPTED', True
+        summary['stop'] = {'reason': 'signal', 'detail': str(signalled)}
+    except BaseException as error:  # noqa: BLE001 - whatever broke, the record below is still written
+        import traceback
+        traceback.print_exception(error, file=sys.stderr)
         summary['status'], summary['incomplete'] = 'FAILED', True
-        summary['stop'] = {'reason': 'something_outside_the_job_folder_changed', 'detail': None}
-    (run_dir/'SUMMARY.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1)+'\n')
-    (run_dir/'SUMMARY.md').write_text(summary_text(summary))
-    write_status(run_dir, summary['status'], stop=summary['stop'], cycles=summary['cycles']['n'])
+        summary['stop'] = {'reason': 'exception_outside_the_replay', 'detail': {'type': type(error).__name__}}
+    finally:
+        if fs_audit is not None:
+            fs_audit.armed = False
+        try:
+            finish(run_dir, summary)  # COMPLETED and the removal of INCOMPLETE happen here, last, or not at all
+        except BaseException:  # noqa: BLE001
+            write_status(run_dir, 'FAILED', stop={'reason': 'the_summary_could_not_be_written', 'detail': None})
+            summary['status'] = 'FAILED'
     return 0 if summary['status'] == 'COMPLETED' else 3
+
+
+def main(argv=None):
+    return execute(argv)
 
 
 if __name__ == '__main__':

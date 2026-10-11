@@ -32,6 +32,7 @@ from . import publisher
 
 UNCONFIRMED_KEPT = publisher.UNCONFIRMED_KEPT
 UNCONFIRMED_LABEL = '확인 중'  # service_api.UNCONFIRMED_LABEL, restated: this module checks the builders, it does not ask them
+POLICY_ID_LENGTH = 8
 CANDIDATE_FIELDS = ('rank', 'pitch_type', 'pitch_label', 'zone_id', 'zone_label', 'target')
 ABSOLUTE = re.compile(r'^(/|~|[A-Za-z]:\\|file:)|/(Users|Volumes|private|tmp|var|home|opt|etc)/')
 INVARIANTS = ('unconfirmed_pitch_blank', 'recommendation_in_ledger', 'sequence_monotonic', 'final_stable',
@@ -178,7 +179,9 @@ class PublishAudit:
                 ('pitch_key', row.get('pitch_key') == pitch_key),
                 ('candidates', rec.get('candidates') == shown_candidates((displayed.get('recommendation') or {}).get('candidates'))),
                 ('decided', ledger.get('decided') == row.get('decided')),
-                ('policy', str(row.get('policy_identity') or '').startswith(str((rec.get('policy') or {}).get('identity') or '\0'))),
+                # the published form is exactly the first 8 characters of the stored identity (``main.armb_view``)
+                ('policy', isinstance((rec.get('policy') or {}).get('identity'), str) and len(rec['policy']['identity']) == POLICY_ID_LENGTH
+                 and str(row.get('policy_identity') or '')[:POLICY_ID_LENGTH] == rec['policy']['identity']),
                 ('stored_status', displayed.get('status') == 'ready' and row.get('outcome', 'first') == 'first')) if not same]
             if differs:
                 self._fail('recommendation_in_ledger', path, pointer, 'differs from its ledger row in: '+','.join(differs))
@@ -315,11 +318,17 @@ class FsAudit:
             self._refuse('network', name, None)
 
 
-def tree_snapshot(root, *, skip=()):
+def tree_snapshot(root, *, skip=(), deadline=None, clock=None):
     """``{relative path: (size, mtime_ns)}`` of every file and folder under ``root`` (links not followed);
-    ``skip``: relative folder names not descended into. The after-the-fact evidence of what a run touched."""
+    ``skip``: relative folder names not descended into. Returns None when ``clock()`` passes ``deadline`` before
+    the walk is done: an unfinished listing is "not checked", never a result.
+
+    What a before/after pair of these can show: a file added, removed, resized or re-stamped. What it cannot: a
+    rewrite that keeps size and mtime, or anything created and deleted in between."""
     root, found = os.path.realpath(root), {}
     for folder, folders, files in os.walk(root, followlinks=False):
+        if deadline is not None and clock() > deadline:
+            return None
         relative = os.path.relpath(folder, root)
         for name in (*folders, *files):
             path = os.path.join(folder, name)

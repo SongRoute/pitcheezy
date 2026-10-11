@@ -29,7 +29,8 @@ DDL = '''CREATE TABLE snapshots (seq INTEGER PRIMARY KEY AUTOINCREMENT, game_pk 
     source TEXT NOT NULL, body BLOB NOT NULL, UNIQUE(game_pk, event_wall, version))'''
 LIMITS = {'publish_interval_s': 10, 'fixed_delay_s': 0, 'tail_cycles': 2, 'max_rss_bytes': 1 << 40, 'min_free_bytes': 0,
           'max_seconds': 600, 'settle_cap_s': 10, 'max_body_bytes': 1 << 26, 'policy_load_cap_s': 30,
-          'min_free_bytes_running': 0, 'free_check_every_cycles': 1, 'policy_device': None, 'style_sha256': {}, 'unchanged_dirs': []}
+          'min_free_bytes_running': 0, 'free_check_every_cycles': 1, 'policy_device': None, 'style_sha256': {},
+          'capture_original_dir': None, 'policy_dirs': [], 'listing_time_limit_s': 30, 'free_floor_consecutive': 1, 'max_measure_failures': 2}
 
 
 def canonical(body):
@@ -286,8 +287,10 @@ def test_the_command_refuses_before_writing_anything(tmp_path, capsys):
     job = tmp_path/'job'
     path = capture_db(job/'input')
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
-    config = job/'replay_config.json'
-    config.write_text(json.dumps(LIMITS))
+    config, original = job/'replay_config.json', tmp_path/'original'
+    original.mkdir()
+    limits = LIMITS | {'capture_original_dir': str(original)}
+    config.write_text(json.dumps(limits))
     commit = publisher_replay.head_commit()
     assert commit and len(commit) == 40
     digest = lambda: hashlib.sha256(config.read_bytes()).hexdigest()
@@ -307,20 +310,61 @@ def test_the_command_refuses_before_writing_anything(tmp_path, capsys):
     (job/'run-001').mkdir()
     assert publisher_replay.main(base) == 2 and 'already exists' in capsys.readouterr().err
     (job/'run-001').rmdir()
-    config.write_text(json.dumps(LIMITS | {'fixed_delay_s': 5}))
+    config.write_text(json.dumps(limits | {'fixed_delay_s': 5}))
     assert publisher_replay.main(make()) == 2 and 'fixed delay 0' in capsys.readouterr().err
-    config.write_text(json.dumps(LIMITS | {'min_free_bytes': 1 << 60}))
-    assert publisher_replay.main(make()) == 2 and 'free memory' in capsys.readouterr().err
-    config.write_text(json.dumps(LIMITS | {'unchanged_dirs': [str(tmp_path/'not-there')]}))
+    config.write_text(json.dumps(limits | {'min_free_bytes': 1 << 60}))
+    assert publisher_replay.main(make()) == 2 and 'below the registered minimum' in capsys.readouterr().err
+    config.write_text(json.dumps(limits | {'policy_dirs': [str(tmp_path/'not-there')]}))
     assert publisher_replay.main(make()) == 2 and 'registered as unchanged' in capsys.readouterr().err
-    config.write_text(json.dumps({k: v for k, v in LIMITS.items() if k != 'policy_device'}))
+    config.write_text(json.dumps({k: v for k, v in limits.items() if k != 'policy_device'}))
     assert publisher_replay.main(make()) == 2 and 'policy_device' in capsys.readouterr().err
-    config.write_text(json.dumps(LIMITS))
+    config.write_text(json.dumps(limits))
+    for broken_reader in ('free_memory_vm_stat', 'free_memory_bytes'):  # could not measure is its own refusal, not "zero"
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(publisher_replay, broken_reader, lambda: None)
+            assert publisher_replay.main(make()) == 2 and 'could not be measured' in capsys.readouterr().err
+    # a policy run needs its pins: the style files must be there with the registered sha256
+    style = tmp_path/'style'
+    style.mkdir()
+    (style/'style_2026_index.json').write_text('{"file": "s.json"}')
+    (style/'s.json').write_text('{}')
+    pins = {name: hashlib.sha256((style/name).read_bytes()).hexdigest() for name in ('style_2026_index.json', 's.json')}
+    config.write_text(json.dumps(limits | {'policy_device': 'mps', 'style_sha256': pins}))
+    armb = [('armb' if base[i-1] == '--policy' else digest() if base[i-1] == '--config-sha256' else item) for i, item in enumerate(base)]
+    (style/'s.json').write_text('{"tampered": true}')  # one byte of the style snapshot differs from its pin
+    assert publisher_replay.execute(armb, style_dir=style, volume='/') == 2 and 's.json is missing or does not have its registered sha256' in capsys.readouterr().err
+    assert publisher_replay.execute(armb, style_dir=style, volume=tmp_path) == 2 and 'T7 volume' in capsys.readouterr().err
+    config.write_text(json.dumps(limits | {'style_sha256': pins}))
+    armb[armb.index('--config-sha256')+1] = digest()
+    assert publisher_replay.execute(armb, style_dir=style, volume='/') == 2 and 'registered device' in capsys.readouterr().err
+    config.write_text(json.dumps(limits))
     with closing(sqlite3.connect(path, isolation_level=None)) as db:
         db.execute("UPDATE snapshots SET sha='0' WHERE seq=3")
     broken = swap('--capture-sha256', hashlib.sha256(path.read_bytes()).hexdigest())
     assert publisher_replay.main(broken) == 2 and 'stored version 3' in capsys.readouterr().err  # a corrupt body: refused, not replayed
     assert sorted(p.name for p in job.iterdir()) == ['input', 'replay_config.json']  # nothing was written
+
+
+def test_a_tampered_style_file_never_reaches_the_policy(tmp_path):
+    style, run = tmp_path/'style', tmp_path/'run'
+    style.mkdir()
+    run.mkdir()
+    (style/'style_2026_index.json').write_text('{"file": "s.json"}')
+    (style/'s.json').write_text('{}')
+    pins = {name: hashlib.sha256((style/name).read_bytes()).hexdigest() for name in ('style_2026_index.json', 's.json')}
+    made = []
+    import tempfile
+    kept = tempfile.tempdir
+    try:
+        factory = publisher_replay.armb_factory(run, pins, style, make_policy=lambda root, games: made.append(root) or 'policy')
+        assert factory() == 'policy' and made == [run/'policy-root'] and tempfile.tempdir == str(run/'tmp')
+        assert sorted(p.name for p in (run/'policy-root/style').iterdir()) == ['s.json', 'style_2026_index.json']
+        (style/'s.json').write_text('{"tampered": true}')  # changed after the start-up check, before the copy
+        with pytest.raises(RuntimeError, match='registered sha256'):
+            factory()
+        assert len(made) == 1 and (run/'policy-root/style/s.json').read_text() == '{}'  # the tampered bytes were not copied
+    finally:
+        tempfile.tempdir = kept
 
 
 def test_the_whole_command_runs_in_its_own_process_under_the_audit(tmp_path):
@@ -329,10 +373,12 @@ def test_the_whole_command_runs_in_its_own_process_under_the_audit(tmp_path):
     job = tmp_path/'job'
     path = capture_db(job/'input')
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
-    watched = tmp_path/'watched'
+    watched, original = tmp_path/'watched', tmp_path/'original'
     watched.mkdir()
+    original.mkdir()
     (watched/'model.bin').write_bytes(b'x')
-    (job/'replay_config.json').write_text(json.dumps(LIMITS | {'unchanged_dirs': [str(watched)]}))
+    (original/'live.sqlite3').write_bytes(b'the original capture')
+    (job/'replay_config.json').write_text(json.dumps(LIMITS | {'policy_dirs': [str(watched)], 'capture_original_dir': str(original)}))
     argv = [sys.executable, '-B', str(REPO/'scripts/publisher_replay.py'), '--job-dir', str(job), '--run-name', 'run-001',
             '--game', str(LIVE_GAME), '--capture-db', str(path), '--capture-sha256', sha, '--commit', publisher_replay.head_commit(),
             '--config', str(job/'replay_config.json'), '--config-sha256', hashlib.sha256((job/'replay_config.json').read_bytes()).hexdigest(),
@@ -343,8 +389,8 @@ def test_the_whole_command_runs_in_its_own_process_under_the_audit(tmp_path):
     summary = json.loads((job/'run-001/SUMMARY.json').read_text())
     assert summary['status'] == 'COMPLETED' and summary['fs_audit']['violations'] == [] and summary['fs_audit']['files_read_under_watch'] == {}
     assert 'tripwire' in summary['fs_audit']['kind']
-    assert summary['outside_changes']['changed'] is False and summary['outside_changes']['changes'] == {}
-    assert summary['outside_changes']['entries_before'][str(watched)] == 1 and str(REPO) in summary['outside_changes']['folders']
+    assert summary['outside_changes']['changed'] is False and summary['outside_changes']['changes'] == {} and summary['outside_changes']['not_checked'] == []
+    assert summary['outside_changes']['entries'] == {'capture_files': 1, 'policy': {str(watched): 1}} and 'transient' in summary['outside_changes']['method']
     assert json.loads((job/'run-001/STATUS.json').read_text()) | {'at_utc': 0} == {'state': 'COMPLETED', 'incomplete': False, 'at_utc': 0, 'stop': None, 'cycles': 16}
     assert not (job/'run-001/INCOMPLETE').exists()
     assert json.loads((job/'run-001/RUN.json').read_text())['versions']['python']
@@ -452,7 +498,11 @@ def test_a_recommendation_that_differs_from_its_ledger_row_fails():
                               lambda b: b['next']['rec']['candidates'][0]['detail'].update(probability=0.99)],
                'pitch_key': [lambda b: b['next'].update(pitch_key='900200:9:9')],
                'decided': [lambda b: b['next']['rec']['ledger'].update(decided=1.0)],
-               'policy': [lambda b: b['next']['rec']['policy'].update(identity='ffffffff')]}
+               'policy': [lambda b: b['next']['rec']['policy'].update(identity='ffffffff'),
+                          lambda b: b['next']['rec']['policy'].update(identity=b['next']['rec']['policy']['identity'][:4]),  # a shorter prefix
+                          lambda b: b['next']['rec']['policy'].update(identity=''),
+                          lambda b: b['next']['rec']['policy'].update(identity=b['next']['rec']['policy']['identity']+'0'),
+                          lambda b: b['next']['rec']['policy'].update(identity=None)]}
     for name, mutations in changes.items():
         for change in mutations:
             body = example('game-live.json')
@@ -723,6 +773,9 @@ def test_the_before_and_after_listing_sees_what_the_tripwire_cannot(tmp_path):
     changes = publish_audit.tree_changes(before, publish_audit.tree_snapshot(root, skip=('skipped',)))
     assert ('changed', 'a.bin') in changes and ('removed', os.path.join('sub', 'b.bin')) in changes
     assert ('added', os.path.join('sub', 'c.bin')) in changes and not any('x' == os.path.basename(path) for _, path in changes)
+    ticks = iter(range(100))
+    assert publish_audit.tree_snapshot(root, deadline=0, clock=lambda: next(ticks)) is None  # out of time: not a listing at all
+    assert publish_audit.tree_snapshot(root, deadline=1000, clock=lambda: next(ticks)) is not None
 
 
 def test_the_in_process_memory_reading_agrees_with_vm_stat():
@@ -791,7 +844,40 @@ def test_low_free_memory_during_the_run_stops_it(replayed):
     summary = replayed(limits=LIMITS | {'min_free_bytes_running': 2 << 30}, free_memory=lambda: next(readings))
     assert (summary['status'], summary['stop']['reason'], summary['cycles']['n']) == ('STOPPED', 'free_memory_low', 3)
     assert summary['memory']['free_bytes_min_sampled'] == 1 << 30
-    summary = replayed('run-b', limits=LIMITS | {'min_free_bytes_running': 2 << 30, 'free_check_every_cycles': 5}, free_memory=lambda: 8 << 30)
+
+
+def test_one_momentary_dip_does_not_stop_a_healthy_run_but_a_lasting_one_does(replayed):
+    floor = LIMITS | {'min_free_bytes_running': 2 << 30, 'free_floor_consecutive': 3}
+    dips = iter([8 << 30, 1 << 30, 8 << 30, 1 << 30, 1 << 30, 8 << 30]+[8 << 30]*20)  # never three in a row
+    summary = replayed(limits=floor, free_memory=lambda: next(dips))
+    assert summary['status'] == 'COMPLETED' and summary['memory']['measurement']['free_below_floor_checks'] == 3
+    lasting = iter([8 << 30, 1 << 30, 1 << 30, 1 << 30])
+    summary = replayed('run-b', limits=floor, free_memory=lambda: next(lasting))
+    assert (summary['status'], summary['stop']['reason'], summary['cycles']['n']) == ('STOPPED', 'free_memory_low', 4)
+    assert summary['stop']['detail']['checks_in_a_row'] == 3
+
+
+def test_a_reading_that_cannot_be_taken_is_not_a_zero(replayed):
+    # free memory: one failure is recorded and tolerated, N in a row stop the run with their own reason
+    flaky = iter([8 << 30, None, 8 << 30]+[8 << 30]*20)
+    summary = replayed(free_memory=lambda: next(flaky))
+    assert summary['status'] == 'COMPLETED' and summary['memory']['measurement']['free_failures'] == 1
+    rows = [json.loads(line) for line in (replayed.job/'run-001/CYCLES.jsonl').read_text().splitlines()]
+    assert rows[1]['free_checked'] is True and rows[1]['free_bytes'] is None
+    summary = replayed('run-b', free_memory=lambda: None)
+    assert (summary['status'], summary['stop']['reason'], summary['cycles']['n']) == ('STOPPED', 'measurement_failed', 2)
+    assert summary['stop']['detail'] == {'what': 'free_memory', 'in_a_row': 2}
+
+    def broken():
+        raise publisher_replay.MeasureError('MPS memory: RuntimeError')
+    summary = replayed('run-c', mps=broken)
+    assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'measurement_failed') and summary['stop']['detail']['what'] == 'mps_memory'
+    assert summary['memory']['mps_driver_allocated_peak_bytes'] is None and summary['memory']['measurement']['mps_failures'] == 2
+    summary = replayed('run-d', mps=lambda: 3 << 20)  # a real reading counts against the cap and is reported
+    assert summary['status'] == 'COMPLETED' and summary['memory']['mps_driver_allocated_peak_bytes'] == 3 << 20
+    summary = replayed('run-e', mps=lambda: LIMITS['max_rss_bytes'])
+    assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'memory_cap')
+    summary = replayed('run-f', limits=LIMITS | {'min_free_bytes_running': 2 << 30, 'free_check_every_cycles': 5}, free_memory=lambda: 8 << 30)
     assert summary['status'] == 'COMPLETED' and summary['memory']['free_samples'] == 4
 
 
@@ -880,3 +966,174 @@ def test_the_schedule_cache_follows_the_injected_clock(tmp_path, monkeypatch):
     now[0] += 21
     bodies.games('2026-10-05')
     assert len(calls) == 4
+
+
+# ---------- the whole command with the policy on, and its last steps ----------
+DRIVER = '''
+import json, os, sys, tempfile
+from types import SimpleNamespace as N
+sys.path[:0] = [{tests!r}, {backend!r}, {scripts!r}]
+import publisher_replay
+from test_display_state import Policy
+mode, style_dir, leak = sys.argv[1], sys.argv[2], sys.argv[3]
+fd = os.open(leak, os.O_WRONLY | os.O_APPEND) if mode == 'leak' else None  # opened before the tripwire exists
+
+
+class Fake(Policy):
+    """Stands in for demo_precompute.LivePolicy: reads its style cache where it was told to, makes its scratch
+    folder through tempfile like the real bind, and holds its members on a device."""
+    def __init__(self, output_root, max_games):
+        super().__init__()
+        index = json.loads((output_root/'style'/'style_2026_index.json').read_text())
+        assert (output_root/'style'/index['file']).is_file() and max_games >= 1
+        self.scratch = tempfile.TemporaryDirectory(prefix='pitcheezy-live-')
+        open(os.path.join(self.scratch.name, 'ledger.jsonl'), 'w').write('header')
+        (output_root/'scratch-path.txt').write_text(self.scratch.name)
+        member = N(model=N(global_model=N(device='mps')))
+        self.bindings, self.binds = {{900200: {{'components': N(g0=N(models=[member, member]))}}}}, 1
+        if fd is not None:
+            os.write(fd, b'x')  # a write no audit event reports: only the after-the-fact check can see it
+
+
+sys.exit(publisher_replay.execute(sys.argv[4:], make_policy=Fake, style_dir=style_dir, volume='/dev'))
+'''
+
+
+@pytest.fixture
+def command(tmp_path):
+    job, style, policy_dir, original = tmp_path/'job', tmp_path/'style', tmp_path/'policy', tmp_path/'original'
+    for folder in (style, policy_dir, original):
+        folder.mkdir()
+    path = capture_db(job/'input')
+    (style/'style_2026_index.json').write_text('{"file": "style_2026-03-25.json"}')
+    (style/'style_2026-03-25.json').write_text('{"snapshot": 1}')
+    (policy_dir/'model.pt').write_bytes(b'weights')
+    (original/'live.sqlite3').write_bytes(b'the original capture')
+    pins = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in style.iterdir()}
+    config = job/'replay_config.json'
+    config.write_text(json.dumps(LIMITS | {'policy_device': 'mps', 'style_sha256': pins, 'policy_dirs': [str(policy_dir)],
+                                           'capture_original_dir': str(original)}))
+    driver = tmp_path/'driver.py'
+    driver.write_text(DRIVER.format(tests=str(Path(__file__).resolve().parent), backend=str(BACKEND), scripts=str(REPO/'scripts')))
+    env = {key: value for key, value in os.environ.items() if not key.startswith('PITCHEEZY_') and key != 'TMPDIR'}
+
+    def go(mode, policy='armb'):
+        argv = [sys.executable, '-B', str(driver), mode, str(style), str(policy_dir/'model.pt'), '--job-dir', str(job), '--run-name', 'run-001',
+                '--game', str(LIVE_GAME), '--capture-db', str(path), '--capture-sha256', hashlib.sha256(path.read_bytes()).hexdigest(),
+                '--commit', publisher_replay.head_commit(), '--config', str(config),
+                '--config-sha256', hashlib.sha256(config.read_bytes()).hexdigest(), '--policy', policy, '--allow-dirty']
+        return subprocess.run(argv, capture_output=True, text=True, timeout=300, env=env, cwd=tmp_path)
+    go.run, go.job = job/'run-001', job
+    return go
+
+
+def test_the_whole_command_with_the_policy_on_runs_to_a_completed_record(command):
+    """The registered code path end to end with a stand-in policy: start-up pins, the tripwire, the temp-folder
+    redirection, the style copy, the device check, the replay and the before/after check, in one process."""
+    done = command('clean')
+    assert done.returncode == 0, done.stderr[-3000:]
+    summary, run = json.loads((command.run/'SUMMARY.json').read_text()), command.run
+    assert (summary['status'], summary['incomplete'], summary['stop']) == ('COMPLETED', False, None)
+    assert summary['policy']['devices_seen'] == ['mps'] and summary['policy']['requested'] is True and summary['policy']['final_status']['state'] == 'ready'
+    assert summary['game_file']['recommendation_by_cycle']['published'] >= 2 and summary['ledger']['rows'] >= 2
+    assert summary['invariants']['held'] == {name: True for name in publish_audit.INVARIANTS} | {'nothing_outside_the_job_folder': True}
+    assert summary['fs_audit']['violations'] == []
+    assert summary['outside_changes']['changed'] is False and summary['outside_changes']['not_checked'] == []
+    assert summary['capture_copy']['unchanged'] is True
+    assert sorted(p.name for p in (run/'policy-root/style').iterdir()) == ['style_2026-03-25.json', 'style_2026_index.json']
+    scratch = Path((run/'policy-root/scratch-path.txt').read_text())  # where tempfile put the policy's scratch ledger
+    assert scratch.parent == (run/'tmp').resolve() and scratch.name.startswith('pitcheezy-live-')
+    state = json.loads((run/'STATUS.json').read_text())
+    assert (state['state'], state['incomplete']) == ('COMPLETED', False) and not (run/'INCOMPLETE').exists()
+    assert sorted(p.name for p in command.job.iterdir()) == ['input', 'replay_config.json', 'run-001']
+
+
+def test_a_change_outside_that_the_tripwire_cannot_see_fails_the_run_at_the_very_end(command):
+    done = command('leak')
+    assert done.returncode == 3, done.stderr[-3000:]
+    summary, run = json.loads((command.run/'SUMMARY.json').read_text()), command.run
+    assert summary['status'] == 'FAILED' and summary['incomplete'] is True
+    assert summary['stop']['reason'] == 'something_outside_the_job_folder_changed'
+    assert summary['fs_audit']['violations'] == []  # the tripwire saw nothing: the listing did
+    assert list(summary['outside_changes']['changes'].values()) == [[['changed', 'model.pt']]]
+    assert summary['cycles']['n'] == 16  # the replay itself ran to its end; COMPLETED was never written
+    state = json.loads((run/'STATUS.json').read_text())
+    assert (state['state'], state['incomplete']) == ('FAILED', True) and (run/'INCOMPLETE').exists()
+    assert '미완료' in (run/'SUMMARY.md').read_text()
+
+
+def test_the_replay_record_is_not_called_completed_before_the_last_check(replayed):
+    summary = replayed(finalize=False)
+    run = replayed.job/'run-001'
+    assert summary['status'] == 'COMPLETED'  # what the replay itself found...
+    on_disk, state = json.loads((run/'SUMMARY.json').read_text()), json.loads((run/'STATUS.json').read_text())
+    assert (on_disk['status'], on_disk['incomplete'], on_disk['replay_status']) == ('POST_RUN_CHECKS_PENDING', True, 'COMPLETED')
+    assert (state['state'], state['incomplete'], state['phase']) == ('RUNNING', True, 'post_run_checks') and (run/'INCOMPLETE').exists()
+    publisher_replay.finish(run, summary | {'status': 'FAILED', 'incomplete': True, 'stop': {'reason': 'x', 'detail': None}})
+    assert json.loads((run/'STATUS.json').read_text())['state'] == 'FAILED' and (run/'INCOMPLETE').exists()
+    publisher_replay.finish(run, summary)
+    assert json.loads((run/'STATUS.json').read_text())['state'] == 'COMPLETED' and not (run/'INCOMPLETE').exists()
+
+
+def test_the_outside_check_compares_exactly_what_it_says(tmp_path, monkeypatch):
+    original, policy_dir = tmp_path/'original', tmp_path/'policy'
+    original.mkdir()
+    policy_dir.mkdir()
+    (original/'live.sqlite3').write_bytes(b'12345')
+    (policy_dir/'model.pt').write_bytes(b'weights')
+    limits = {'capture_original_dir': str(original), 'policy_dirs': [str(policy_dir)], 'listing_time_limit_s': 30}
+    porcelain = ['?? new.txt']
+    monkeypatch.setattr(publisher_replay, 'git_porcelain', lambda repo=None: list(porcelain))
+    before = publisher_replay.outside_state(limits)
+    assert publisher_replay.outside_changes(before, publisher_replay.outside_state(limits)) | {'method': 0} == {
+        'method': 0, 'changed': False, 'changes': {}, 'not_checked': [], 'entries': {'capture_files': 1, 'policy': {str(policy_dir): 1}}}
+    stamp = (original/'live.sqlite3').stat()
+    (original/'live.sqlite3').write_bytes(b'12346')  # same size, and the old mtime put back: the sha256 still sees it
+    os.utime(original/'live.sqlite3', ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    porcelain.append(' M scripts/x.py')
+    changed = publisher_replay.outside_changes(before, publisher_replay.outside_state(limits))
+    assert changed['changed'] is True and changed['changes'] == {'capture': ['live.sqlite3'], 'worktree': [' M scripts/x.py']}
+    # what could not be looked at is "not checked", never "unchanged"
+    monkeypatch.setattr(publisher_replay, 'git_porcelain', lambda repo=None: None)
+    late = publisher_replay.outside_state(limits | {'listing_time_limit_s': -1})
+    result = publisher_replay.outside_changes(before, late)
+    assert sorted(result['not_checked']) == sorted(['worktree', str(policy_dir)]) and result['changes'] == {'capture': ['live.sqlite3']}
+    monkeypatch.undo()
+    assert publisher_replay.git_porcelain(REPO) is not None
+
+
+WATCHDOG = '''
+import sys, time
+sys.path[:0] = [{backend!r}, {scripts!r}]
+import publisher_replay
+mode, run_dir = sys.argv[1], sys.argv[2]
+if mode == 'record_fails':
+    def broken(*args, **kwargs):
+        raise OSError('disk full')
+    publisher_replay.write_status = broken
+peak = (lambda: 1/0) if mode == 'cannot_measure' else None
+limits = {{'max_rss_bytes': 1, 'max_seconds': 3600}} if mode != 'time' else {{'max_rss_bytes': 1 << 60, 'max_seconds': -60}}
+publisher_replay.start_watchdog(run_dir, limits, peak=peak, interval=.05)
+time.sleep(30)  # a main thread that never gets to its own checks
+sys.exit(0)
+'''
+
+
+@pytest.mark.parametrize('mode, why', [('memory', 'memory_cap'), ('time', 'runtime_cap_hard'), ('cannot_measure', 'watchdog_could_not_measure'),
+                                       ('record_fails', None)])
+def test_the_watchdog_ends_its_own_process_whatever_happens_while_it_records(tmp_path, mode, why):
+    script = tmp_path/'watchdog.py'
+    script.write_text(WATCHDOG.format(backend=str(BACKEND), scripts=str(REPO/'scripts')))
+    child = subprocess.Popen([sys.executable, '-B', str(script), mode, str(tmp_path)], cwd=tmp_path)
+    try:
+        assert child.wait(timeout=20) == 87  # this test's own child, ended by its own watchdog
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=20)
+    if why is None:
+        assert not (tmp_path/'STATUS.json').exists()  # the record could not be written; the process still ended
+    else:
+        assert json.loads((tmp_path/'ABORTED.json').read_text())['why'] == why
+        state = json.loads((tmp_path/'STATUS.json').read_text())
+        assert (state['state'], state['incomplete']) == ('ABORTED', True) and (tmp_path/'INCOMPLETE').exists()
