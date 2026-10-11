@@ -55,7 +55,8 @@ const health = (seq, at, unavailable = []) => ({ schema: 'pitcheezy-publish-heal
 
 const browser = await chromium.launch();
 /** One scenario: a wait that times out fails that scenario by name and the run goes on to the next one. */
-async function block(fn) { try { await fn(); } catch (e) { ok(false, `scenario aborted: ${String(e).split('\n')[0]} @ ${(e.stack ?? '').split('\n').find((l) => l.includes('static-publish-smoke'))?.trim() ?? ''}`); for (const c of browser.contexts()) await c.close().catch(() => {}); } }
+const ONLY = process.env.PZ_ONLY ?? null;   // run one tagged scenario (used to replay a scenario on an older build)
+async function block(fn, tag = null) { if (ONLY && tag !== ONLY) return; try { await fn(); } catch (e) { ok(false, `scenario aborted: ${String(e).split('\n')[0]} @ ${(e.stack ?? '').split('\n').find((l) => l.includes('static-publish-smoke'))?.trim() ?? ''}`); for (const c of browser.contexts()) await c.close().catch(() => {}); } }
 /** `answer(file, n)` → { json, status, date, abort, hang } for `v1/<file>` (n = how many times that file was asked), or undefined to
  *  serve the fixture file from disk with a hosting `Date` one second after the fixture's publish time. Every request is logged. */
 async function open({ width = 390, height = 664, dist = distPublic, answer = () => undefined, api = null, hidden = false, skewMs = 0 } = {}) {
@@ -67,7 +68,15 @@ async function open({ width = 390, height = 664, dist = distPublic, answer = () 
     window.__hidden = startHidden;
     Object.defineProperty(Document.prototype, 'hidden', { configurable: true, get() { return window.__hidden; } });
     Object.defineProperty(Document.prototype, 'visibilityState', { configurable: true, get() { return window.__hidden ? 'hidden' : 'visible'; } });
-    if (skew) { const real = Date.now.bind(Date); Date.now = () => real() + skew; }
+    // steerable clocks: `__skew` shifts the device wall clock; `__perfLag` holds the monotonic clock back (what a device sleep does)
+    window.__skew = skew; window.__perfLag = 0;
+    const realNow = Date.now.bind(Date), realPerf = performance.now.bind(performance);
+    Date.now = () => realNow() + window.__skew; performance.now = () => realPerf() - window.__perfLag;
+    // every status-line kind and chip text the screen ever shows (a flash between two reads is caught too)
+    window.__kinds = []; window.__chips = [];
+    const note = () => { const k = document.querySelector('.sv-notice.line')?.getAttribute('data-kind'); if (k && window.__kinds.at(-1) !== k) window.__kinds.push(k);
+      const c = document.querySelector('.sv-chip')?.textContent; if (c && window.__chips.at(-1) !== c) window.__chips.push(c); };
+    new MutationObserver(note).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
   }, [hidden, skewMs]);
   await page.addInitScript(() => { window.__slot = []; window.addEventListener('pitcheezy:host-slot', (e) => window.__slot.push({ screen: e.detail.screen, gamePk: e.detail.gamePk, id: e.detail.element?.id })); });
   await page.route('http://pz.test/**', async (route) => {
@@ -104,6 +113,20 @@ function variant(name, env) {
 }
 /** What a request may be in static mode: the page, its assets, or one of the published files — nothing else, and never with a query. */
 const ALLOWED = /^\/pub\/(?:(?:index\.html)?(?:\?.*)?|favicon\.svg|assets\/[\w.-]+|v1\/(?:dates|manifest|health)\.json|v1\/games\/\d{4}-\d{2}-\d{2}\.json|v1\/game\/\d+\.json)$/;
+/** A throwaway HTTP server on an OS-assigned loopback port (never a fixed one), for what route interception cannot do: an answer whose
+ *  headers arrive and whose body does not. `handle(rel, res)` returns true when it answered; otherwise the bundle is served. */
+async function withServer(dist, handle, fn) {
+  const server = http.createServer((req, res) => {
+    const rel = new URL(req.url, 'http://x').pathname.replace(/^\/pub(?=\/)/, '');
+    if (handle(rel, res)) return;
+    if (rel.startsWith('/v1/')) { const disk = path.join(files, rel.slice(4)); if (!existsSync(disk)) { res.writeHead(404); return res.end('not found'); }
+      res.writeHead(200, { 'content-type': 'application/json' }); return res.end(readFileSync(disk)); }
+    const file = path.join(dist, rel); const target = existsSync(file) && statSync(file).isFile() ? file : path.join(dist, 'index.html');
+    res.writeHead(200, { 'content-type': TYPES[path.extname(target)] ?? 'application/octet-stream' }); res.end(readFileSync(target));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try { await fn(`http://127.0.0.1:${server.address().port}`); } finally { server.closeAllConnections(); await new Promise((r) => server.close(r)); }
+}
 const fitsOneScreen = (page) => page.evaluate(() => document.scrollingElement.scrollHeight <= window.innerHeight + 1 && document.scrollingElement.scrollWidth <= window.innerWidth + 1);
 const noSideScroll = (page) => page.evaluate(() => document.scrollingElement.scrollWidth <= window.innerWidth + 1);
 const dataAsks = (asks) => asks.filter((a) => a.includes('/v1/'));
@@ -300,7 +323,7 @@ await block(async () => {
   ok(clean(asks) && errors.length === 0, `today: no /api/, no page errors ${errors.join(' | ')}`);
   await context.close();
 });
-// (f) a game the publisher could not build keeps its old file while health.json moves on (unavailable_games) → 갱신 지연; a pregame file too
+// (f) a game that is NOT in play (pregame, rain delay, postponed, doubleheader wait) with a fresh health.json is never late, however old its own file
 await block(async () => {
   const t0 = FILE_AT; let healthAt = t0;
   const pre = liveBody(fx.live, null, { state: 'pregame', label: '경기 전', message: '경기 시작 전이에요.', shown: false });
@@ -313,8 +336,9 @@ await block(async () => {
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   await page.locator('.sv-chip').waitFor();
   ok(await page.locator('.sv-chip').innerText() === '경기 전' && await kind(page) === 'ok', 'pregame: calm 경기 전');
-  healthAt = t0 + 120000;
-  ok(await waitKind(page, 'publish-late', 25000) && /갱신 지연/.test(await page.locator('.sv-chip').innerText()), 'pregame: the file stops while health.json moves on → 갱신 지연 (slow pregame polling)');
+  healthAt = t0 + 4 * 3600000;   // hours past the scheduled start (02:00Z): a rain delay; the publisher is alive, this file just has nothing new
+  await sleep(23000);
+  ok(await kind(page) === 'ok' && await page.locator('.sv-chip').innerText() === '경기 전' && !(await page.evaluate(() => window.__kinds)).includes('publish-late'), 'pregame: start time long past, health.json fresh, own file old → still calm (a delay is not a late publish)');
   ok(errors.length === 0, `pregame: no page errors ${errors.join(' | ')}`);
   await context.close();
 });
@@ -536,7 +560,7 @@ await block(async () => {
 });
 
 // ---------- R5. a cached health.json / stale Date header cannot hide a stopped publisher ----------
-const distQuick = variant('quick', { VITE_PUBLISH_STALE_S: '6' });   // same code, a short (test-only) late threshold so elapsed time can be watched
+const distQuick = variant('quick', { VITE_PUBLISH_STALE_S: '6', VITE_PUBLISH_MISSING_RETRY_MS: '1000', VITE_PUBLISH_MISSING_MAX_MS: '4000' });   // same code, a short (test-only) late threshold so elapsed time can be watched
 await block(async () => {
   // (a) every answer is the same cached copy: same sequence, same publish time, same (old) Date header, no Age
   const t0 = FILE_AT;
@@ -613,7 +637,9 @@ await block(async () => {
 // ---------- R7. a game file that is missing at first is asked again by itself ----------
 await block(async () => {
   let there = false;
-  const { context, page, counts } = await open({ answer: (file) => file === 'game/556.json' ? (there ? { json: top(liveBody(fx.live, '849843:11:2'), 1, FILE_AT) } : { status: 404 }) : undefined });
+  const listed = JSON.parse(readFileSync(path.join(files, 'games/2026-09-30.json'), 'utf8')); listed.games.push({ ...listed.games[1], game_pk: 556 });
+  const { context, page, counts } = await open({ answer: (file) => file === 'game/556.json' ? (there ? { json: top(liveBody(fx.live, '849843:11:2'), 1, FILE_AT) } : { status: 404 })
+    : file === 'games/2026-09-30.json' ? { json: listed } : undefined });
   await page.goto('http://pz.test/pub/?game=556');
   await page.locator('.sv-unavailable').waitFor();
   there = true;
@@ -714,6 +740,170 @@ await block(async () => {
   ok(errors.length === 0, `race: no page errors ${errors.join(' | ')}`);
   await context.close();
 });
+// ====================================================================================================================
+// Second review round (2026-10-11)
+// ====================================================================================================================
+
+// ---------- S1. date A's HEADERS arrive, the viewer switches to B, then A's BODY completes ----------
+await block(async () => {
+  const bodyA = readFileSync(path.join(files, 'games/2026-09-30.json'), 'utf8');
+  let held = null;
+  await withServer(distPublic, (rel, res) => {
+    if (rel !== '/v1/games/2026-09-30.json') return false;
+    res.writeHead(200, { 'content-type': 'application/json' }); res.write(bodyA.slice(0, 40)); held = res; return true;   // headers + a little body, rest withheld
+  }, async (origin) => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 664 } }); const page = await context.newPage();
+    await page.goto(`${origin}/pub/?date=2026-09-30`);
+    for (let i = 0; i < 50 && !held; i++) await sleep(100);
+    await sleep(400);                                             // the page has A's headers and is reading its body
+    await page.getByRole('button', { name: /이전 날짜 2026년 9월 29일/ }).click();
+    await page.getByText('이 날짜에는 경기가 없어요.').waitFor();
+    held.end(bodyA.slice(40));                                    // A's body completes after the switch
+    await sleep(2000);
+    ok(held !== null && /9월 29일/.test(await page.locator('.sv-datebar h1').innerText()) && await page.locator('.sv-list .sv-card').count() === 0, 'date body: A (headers in, body late) never overwrites B after the switch');
+    await context.close();
+  });
+}, 'date-body');
+
+// ---------- S2. dates.json / manifest.json are read again: a new followed date appears without a reload ----------
+await block(async () => {
+  let more = false;
+  const { context, page, counts } = await open({ answer: (file) => {
+    if (file === 'manifest.json') return { json: top({ schema: 'pitcheezy-publish-manifest-v1', contract: 'v1', live_dates: more ? ['2026-09-29', '2026-09-30', '2026-10-01'] : ['2026-09-29', '2026-09-30'] }, more ? 121 : 120, FILE_AT) };
+  } });
+  await page.goto('http://pz.test/pub/?date=2026-09-30');
+  await page.locator('.sv-list .sv-card').first().waitFor();
+  ok(await page.getByRole('button', { name: '다음 날짜 없음' }).count() === 1, 'dates: no later date at first');
+  more = true;
+  ok(await page.getByRole('button', { name: /다음 날짜 2026년 10월 1일/ }).waitFor({ timeout: 14000 }).then(() => true, () => false), 'dates: a date the publisher starts to follow appears without a reload');
+  ok(counts.get('manifest.json') >= 2 && counts.get('dates.json') >= 2 && /9월 30일/.test(await page.locator('.sv-datebar h1').innerText()), 'dates: (requests) both files were read again; the shown date did not change');
+  await context.close();
+}, 'dates');
+
+// ---------- S3. hidden while the list answer is on its way: no follow-up health.json request ----------
+await block(async () => {
+  let slow = false;
+  const { context, page, counts } = await open({ answer: async (file) => file === 'games/2026-09-30.json' && slow ? { delay: 1500, json: JSON.parse(readFileSync(path.join(files, file), 'utf8')) } : undefined });
+  await page.goto('http://pz.test/pub/?date=2026-09-30');
+  await page.locator('.sv-list .sv-card').first().waitFor(); await sleep(600);
+  slow = true; const n = counts.get('games/2026-09-30.json');
+  for (let i = 0; i < 140 && counts.get('games/2026-09-30.json') === n; i++) await sleep(100);   // the next list read has started
+  await setHidden(page, true);
+  const h = counts.get('health.json'), d = counts.get('dates.json');
+  await sleep(3500);
+  ok(counts.get('games/2026-09-30.json') === n + 1 && counts.get('health.json') === h && counts.get('dates.json') === d, `list hidden: the tab went hidden while the list was on its way → no follow-up request (health +${counts.get('health.json') - h}, dates +${counts.get('dates.json') - d})`);
+  await context.close();
+}, 'list-hidden');
+
+// ---------- S4. one published_at in the future does not poison server time ----------
+for (const withDate of [false, true]) await block(async () => {
+  let bad = false, seq = 1000;
+  const tag = `future ${withDate ? 'with' : 'without'} Date header`;
+  const { context, page } = await open({ dist: distQuick, answer: (file) => {
+    const at = Date.now() + (bad ? 3600000 : 0); seq++;
+    if (file === 'health.json') return { json: health(seq, at), date: withDate ? Date.now() : null };
+    if (file === `game/${LIVE}.json`) return { json: top(liveBody(fx.live, '849843:11:2'), seq, at), date: withDate ? Date.now() : null };
+  } });
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', `${tag}: calm`);
+  bad = true; await sleep(3000); bad = false;                    // a few answers stamped one hour ahead, then normal ones again
+  await sleep(withDate ? 5000 : 20000);
+  await page.evaluate(() => { window.__kinds = []; });
+  await sleep(9000);
+  const kinds = await page.evaluate(() => window.__kinds);
+  ok(await kind(page) === 'ok' && !kinds.includes('publish-late'), `${tag}: after normal answers return there is no lasting false 갱신 지연 (saw ${kinds.join(',') || 'no change'})`);
+  await context.close();
+}, 'future');
+
+// ---------- S5. coming back: read first, say 확인 중, never flash 갱신 지연 from what was on screen before ----------
+await block(async () => {
+  let seq = 1100, slow = 0;
+  const { context, page } = await open({ dist: distQuick, answer: async (file) => { seq++;
+    if (file === 'health.json') return { delay: slow, json: health(seq, Date.now()), date: Date.now() };
+    if (file === `game/${LIVE}.json`) return { delay: slow, json: top(liveBody(fx.live, '849843:11:2'), seq, Date.now()), date: Date.now() };
+  } });
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'resume: calm');
+  await setHidden(page, true); await sleep(11000);               // in the background for longer than the (test) late threshold; the publisher goes on
+  await page.evaluate(() => { window.__kinds = []; window.__chips = []; });
+  slow = 1500;                                                    // the first answers after coming back take a moment
+  await setHidden(page, false); await sleep(600);
+  ok(await kind(page) === 'checking' && /확인 중/.test(await page.locator('.sv-notice.line').innerText()), 'resume: back in view → the line says 확인 중 while the first read is on its way');
+  slow = 0; await sleep(4000);
+  const kinds = await page.evaluate(() => window.__kinds), chips = await page.evaluate(() => window.__chips);
+  ok(!kinds.includes('publish-late') && !chips.some((c) => /갱신 지연/.test(c)), `resume: 갱신 지연 never shown from the old data (line: ${kinds.join(',')}; chip: ${chips.join(',')})`);
+  ok(await kind(page) === 'ok', 'resume: calm again after the fresh answer');
+  await context.close();
+}, 'resume');
+await block(async () => {  // a device sleep: the wall clock jumps, the page's monotonic clock does not
+  let seq = 1200, stop = false, at = Date.now();
+  const { context, page } = await open({ dist: distQuick, answer: (file) => { if (!stop) { seq++; at = Date.now(); }
+    if (file === 'health.json') return { json: health(seq, at), date: Date.now() };
+    if (file === `game/${LIVE}.json`) return { json: top(liveBody(fx.live, '849843:11:2'), seq, at), date: Date.now() };
+  } });
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'sleep: calm');
+  await page.evaluate(() => { window.__kinds = []; window.__perfLag += 600000; });   // ten minutes pass for the world, none for performance.now()
+  await sleep(7000);
+  const kinds = await page.evaluate(() => window.__kinds);
+  ok(await kind(page) === 'ok' && !kinds.includes('publish-late'), `sleep: after a 10 min sleep gap, fresh answers re-anchor time; no false 갱신 지연 (saw ${kinds.join(',') || 'no change'})`);
+  stop = true;
+  ok(await waitKind(page, 'publish-late', 16000), 'sleep: and a publisher that then stops is still noticed (time re-anchored from the answers)');
+  await context.close();
+}, 'sleep');
+
+// ---------- S6. a game in play with fresh health but its own file behind is late; health itself stale is late ----------
+await block(async () => {
+  const t0 = FILE_AT; let healthAt = t0;
+  const { context, page } = await open({ answer: (file) => {
+    if (file === 'health.json') return { json: health(1300 + Math.round((healthAt - t0) / 1000), healthAt, [{ game_pk: LIVE, status: 503, code: 'feed' }]), date: healthAt + 1000 };
+    if (file === `game/${LIVE}.json`) return { json: top(liveBody(fx.live, '849843:11:2'), 1300, t0), date: healthAt + 1000 };
+  } });
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'in play: calm');
+  healthAt = t0 + 80000;
+  ok(await waitKind(page, 'publish-late') && await page.locator('.sv-notice.line').getAttribute('data-publish-clock') === 'publisher', 'in play: health.json fresh, this game file 80 s behind, status in progress → 갱신 지연');
+  await context.close();
+}, 'in-play');
+
+// ---------- S7. a game file that never exists: bounded backoff, and no asking at all once no followed list names the game ----------
+await block(async () => {
+  const stamps = [];
+  const listed = JSON.parse(readFileSync(path.join(files, 'games/2026-09-30.json'), 'utf8')); listed.games.push({ ...listed.games[1], game_pk: 557 });
+  let inList = true;
+  const { context, page, counts } = await open({ dist: distQuick, answer: (file) => {
+    if (file === 'game/557.json') { stamps.push(Date.now()); return { status: 404 }; }
+    if (file === 'games/2026-09-30.json') return inList ? { json: listed } : undefined;
+  } });
+  await page.goto('http://pz.test/pub/?game=557');
+  await page.locator('.sv-unavailable').waitFor();
+  await sleep(17000);
+  const gaps = stamps.slice(1).map((t, i) => Math.round((t - stamps[i]) / 100) / 10);
+  ok(gaps.length >= 3 && gaps.at(-1) >= 3.5 && gaps.at(-1) <= 6 && gaps[0] < gaps.at(-1), `never there: listed but missing → asked again with growing, bounded gaps (${gaps.join(' s, ')} s; test config 1 s → max 4 s)`);
+  ok((counts.get('health.json') ?? 0) === 0, 'never there: health.json is not read for a game that has nothing on screen');
+  ok(/지금 볼 수 없어요/.test(await page.locator('.sv-unavailable').innerText()), 'never there: the calm 지금 볼 수 없어요 state stays meanwhile');
+  inList = false; await sleep(6000);
+  const n = stamps.length; await sleep(9000);
+  ok(stamps.length === n, `never there: once no followed list names the game, asking stops (${stamps.length - n} more requests in 9 s)`);
+  ok(await page.getByRole('button', { name: '다시 확인' }).count() === 1, 'never there: the manual 다시 확인 stays');
+  await context.close();
+}, 'never-there');
+
+// ---------- S8. an older health.json arriving after a newer one (a cache serving an old copy) ----------
+await block(async () => {
+  const t0 = FILE_AT; let old = false;
+  const { context, page } = await open({ answer: (file) => {
+    if (file === 'health.json') return old ? { json: health(1390, t0 - 600000), date: t0 + 1000 } : { json: health(1400, t0), date: t0 + 1000 };
+    if (file === `game/${LIVE}.json`) return { json: top(liveBody(fx.live, '849843:11:2'), 1400, t0), date: t0 + 1000 };
+  } });
+  await page.goto(`http://pz.test/pub/?game=${LIVE}`);
+  ok(await waitPitch(page, '849843:11:2') && await kind(page) === 'ok', 'health inversion: calm');
+  old = true; await page.evaluate(() => { window.__kinds = []; }); await sleep(6500);
+  const kinds = await page.evaluate(() => window.__kinds);
+  ok(await kind(page) === 'ok' && kinds.length === 0, 'health inversion: a lower-sequence health.json after a higher one is discarded (requests are single-flight, so answers cannot cross on the wire)');
+  await context.close();
+}, 'health-inversion');
+
 // ---------- R13. the public bundle contains no API / demo / cursor / operator code ----------
 for (const dir of [distPublic, distQuick]) {
   const js = readdirSync(path.join(dir, 'assets')).filter((f) => f.endsWith('.js')).map((f) => readFileSync(path.join(dir, 'assets', f), 'utf8')).join('\n');
