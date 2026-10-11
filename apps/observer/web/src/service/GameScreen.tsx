@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, mergeDetail } from './api';
-import { PUBLISH_CONFIG, STATIC_MODE, isPublishStale, publicListHref, publishLag } from './publish';
+import { PUBLISH_CONFIG, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
 import type { PublishStamp } from './publish';
 import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
 import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, short } from './model';
@@ -19,7 +19,7 @@ export const STALE_MS = 30000;
 export const PREGAME_POLL_MS = 10000;
 export const FIRST_LOAD_RETRY_MS = 4000;
 /** Static (public) mode takes the same three cadences from build-time config; the defaults are the values above. */
-const CADENCE = STATIC_MODE ? { live: PUBLISH_CONFIG.livePollMs, pregame: PUBLISH_CONFIG.pregamePollMs, retry: PUBLISH_CONFIG.firstLoadRetryMs }
+const CADENCE = __PZ_STATIC__ ? { live: PUBLISH_CONFIG.livePollMs, pregame: PUBLISH_CONFIG.pregamePollMs, retry: PUBLISH_CONFIG.firstLoadRetryMs }
   : { live: POLL_MS, pregame: PREGAME_POLL_MS, retry: FIRST_LOAD_RETRY_MS };
 /** Display state → chip mark. The state is always written as words (server label); the mark and the colour only support it. */
 /** U+FE0E asks for the text (not emoji) form of the two symbols. */
@@ -149,6 +149,15 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const drawn = useRef<Drawn | null>(null);
   const picked = useRef(false);  // the viewer chose a past pitch (as opposed to the default first pitch of a game that is not live)
 
+  // health.json has its own single flight: requests never overlap, so an older one can never land after a newer one. A failed read
+  // keeps the last health seen (server time goes on by itself, see publish.ts), it never wipes it.
+  const healthBusy = useRef<AbortController | null>(null);
+  const loadHealth = useCallback(() => {
+    if (healthBusy.current) return;
+    const ctrl = healthBusy.current = new AbortController();
+    fetchPublishHealth(ctrl.signal).then(h => { if (!ctrl.signal.aborted) setHealth(h); }, () => undefined)
+      .finally(() => { if (healthBusy.current === ctrl) healthBusy.current = null; });
+  }, []);
   const load = useCallback(async (full = false, force = false) => {
     // a background poll never cancels a slower answer still on its way (only a manual refresh does)
     if (inflight.current && !inflight.current.signal.aborted && !force) return;
@@ -156,8 +165,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     const ctrl = new AbortController(); inflight.current = ctrl;
     setBusy(true);
     try {
-      if (STATIC_MODE) {  // whole file every time; health.json is read beside it and never holds the game answer back
-        void fetchPublishHealth(ctrl.signal).then(h => { if (!ctrl.signal.aborted) setHealth(h); }, () => { if (!ctrl.signal.aborted) setHealth(null); });
+      if (__PZ_STATIC__) {  // whole file every time; health.json is read beside it and never holds the game answer back
+        loadHealth();
         const got = await fetchPublishedDetail(gamePk, ctrl.signal);
         if (ctrl.signal.aborted) return;
         detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now());
@@ -176,9 +185,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       if (ctrl.signal.aborted) return;
       setError(e instanceof FetchError ? { text: e.message, status: e.status } : { text: '자료를 불러오지 못했어요.', status: 0 });
     } finally { if (inflight.current === ctrl) { inflight.current = null; setBusy(false); } }
-  }, [gamePk]);
+  }, [gamePk, loadHealth]);
 
-  useEffect(() => { void load(true, true); return () => inflight.current?.abort(); }, [load]);
+  useEffect(() => { void load(true, true); return () => { inflight.current?.abort(); healthBusy.current?.abort(); }; }, [load]);
   const live = detail ? detail.session_status !== 'ended' && (detail.game.status === 'live' || (detail.next !== null && detail.game.status !== 'final')) : false;
   // Polling follows the viewer's switch only; the game's LIVE status decides whether there is anything to poll.
   // Failed or slow answers never stop the loop: the next tick asks again, so the screen recovers without a reload.
@@ -195,15 +204,20 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // first load failed (nothing to show yet): keep trying by itself, but only when the server could not be reached or failed (network
   // error / timeout = 0, 5xx). A refusal (423 embargo, 400, 404) is an answer, not an outage: it is shown as before and not retried.
   const firstLoadRetry = detail === null && error !== null && (error.status === 0 || error.status >= 500);
+  // static mode: a game with no file yet (404) is asked again slowly, so it appears by itself once it is published; and nothing is
+  // asked while the tab is hidden (the retry starts again when it is visible)
+  const missing = __PZ_STATIC__ && detail === null && error !== null && error.status === 404;
+  const holdHidden = __PZ_STATIC__ && hidden;
   useEffect(() => {
-    if (!firstLoadRetry) return;
-    const id = window.setTimeout(() => void load(true), CADENCE.retry);
+    if (!(firstLoadRetry || missing) || holdHidden) return;
+    const id = window.setTimeout(() => void load(true), missing ? CADENCE.pregame : CADENCE.retry);
     return () => window.clearTimeout(id);
-  }, [firstLoadRetry, error, load]);
-  useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 5000); return () => window.clearInterval(id); }, []);
+  }, [firstLoadRetry, missing, holdHidden, error, load]);
+  useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), __PZ_STATIC__ ? PUBLISH_CONFIG.tickMs : 5000); return () => window.clearInterval(id); }, []);
   useEffect(() => {  // coming back to the tab: refresh at once when following
-    const onVis = () => { setHidden(document.hidden); if (!document.hidden) { setResumed(Date.now()); setNow(Date.now()); } if (!document.hidden && auto && pollMs) void load(); };
-    const onOnline = () => { if (auto && (pollMs || detailRef.current === null)) void load(detailRef.current === null); };
+    const onVis = () => { setHidden(document.hidden); if (!document.hidden) { setResumed(Date.now()); setNow(Date.now()); } if (!document.hidden && auto && pollMs) void load();
+      if (__PZ_STATIC__ && !document.hidden && detailRef.current === null) void load(true); };
+    const onOnline = () => { if (__PZ_STATIC__ && document.hidden) return; if (auto && (pollMs || detailRef.current === null)) void load(detailRef.current === null); };
     document.addEventListener('visibilitychange', onVis); window.addEventListener('online', onOnline);
     return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('online', onOnline); };
   }, [auto, pollMs, load]);
@@ -236,10 +250,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   if (!detail) {
     return <div className="sv-page"><TopBar /><main className="sv-center">{error
       // public bundle: no file for a game (not published yet, or withheld while a demo runs on it) = not available now, said calmly
-      ? STATIC_MODE && error.status === 404 ? <div className="sv-unavailable"><p className="sv-muted" role="status">이 경기는 지금 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.</p>
-        <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 확인</button><a className="sv-btn" href={publicListHref()}>경기 목록</a></div></div>
+      ? __PZ_STATIC__ && error.status === 404 ? <div className="sv-unavailable"><p className="sv-muted" role="status">이 경기는 지금 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.</p>
+        <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 확인</button><a className="sv-btn" href={publicListHref()}>경기 목록</a></div>
+        <p className="sv-muted sv-retrying">올라오면 자동으로 보여 드려요.</p></div>
       : <div className="sv-alert" role="alert"><p>{error.status === 423 ? '이 경기는 지금 기록을 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.' : error.text}</p>
-        <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 시도</button><a className="sv-btn" href={STATIC_MODE ? publicListHref() : '/watch'}>경기 목록</a></div>
+        <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 시도</button><a className="sv-btn" href={__PZ_STATIC__ ? publicListHref() : '/watch'}>경기 목록</a></div>
         {firstLoadRetry && <p className="sv-muted sv-retrying">자동으로 다시 연결하고 있어요.</p>}</div>
       : <p className="sv-muted" role="status">경기 기록을 불러오는 중…</p>}</main></div>;
   }
@@ -277,12 +292,17 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
 
   // Connection: the client's own polling (clientStale / error) and the server's upstream feed. With a display state the server part
   // comes from display.feed; the old `stale_s > 30` guess (which also fires in long breaks) is used only without one.
-  const clientStale = live && auto && !hidden && lastOk !== null && now - Math.max(lastOk, resumed) > STALE_MS;
+  const clientStale = live && auto && !hidden && lastOk !== null && now - Math.max(lastOk, resumed) > (__PZ_STATIC__ ? lostAfterMs(pollMs) : STALE_MS);
   const feedDown = disp ? !disp.feed.ok : live && (detail.feed.ok === false || (detail.feed.stale_s ?? 0) > 30);
   const stale = clientStale || feedDown;
-  // static mode: the files answer, but nothing new has been published for longer than the threshold (only while this game is followed)
-  const lag = STATIC_MODE && pollMs > 0 ? publishLag(fileStamp, health, true) : null;
-  const publishStale = isPublishStale(lag);
+  // static mode: the files answer, but nothing new has been published for longer than the threshold. "Is polled" is not "publishing is
+  // expected": a game in play is expected to move; a game that has not started is expected to be published only once its scheduled
+  // start has passed (before that the publisher may be idle on purpose, e.g. a day without a live game).
+  const srv = __PZ_STATIC__ ? serverNow() : null;
+  const startMs = game.start ? Date.parse(game.start) : NaN;
+  const expectPublish = live || (waitingToStart && srv !== null && Number.isFinite(startMs) && srv.ms >= startMs);
+  const lag = __PZ_STATIC__ && expectPublish ? publishLag(fileStamp, health, srv) : null;
+  const publishStale = __PZ_STATIC__ && isPublishStale(lag, pollMs);
   // lag_s is a proven lower bound (never an estimate): floor it and say '넘게', never '약'
   const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
   const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
@@ -493,12 +513,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   </div>;
 }
 
-const backHref = () => { if (STATIC_MODE) return publicListHref(); const demo = new URLSearchParams(window.location.search).get('demo'); return demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'; };
+const backHref = () => { if (__PZ_STATIC__) return publicListHref(); const demo = new URLSearchParams(window.location.search).get('demo'); return demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'; };
 function TopBar({ right, title, label }: { right?: ReactNode; title?: string; label?: string }) {
-  const demo = new URLSearchParams(window.location.search).get('demo');
   return <header className="sv-top">
-    <a className="sv-back" href={STATIC_MODE ? publicListHref() : demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'} aria-label="경기 목록으로">‹</a>
-    {title ? <h1 className="sv-title" aria-label={label}>{title}</h1> : <a className="sv-brand small" href={STATIC_MODE ? publicListHref() : '/watch'}>Pitcheezy<span>.</span></a>}
+    <a className="sv-back" href={backHref()} aria-label="경기 목록으로">‹</a>
+    {title ? <h1 className="sv-title" aria-label={label}>{title}</h1> : <a className="sv-brand small" href={__PZ_STATIC__ ? publicListHref() : '/watch'}>Pitcheezy<span>.</span></a>}
     <span className="sv-top-right">{right}</span>
   </header>;
 }

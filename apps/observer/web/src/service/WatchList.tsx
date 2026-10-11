@@ -1,22 +1,23 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { fetchDates, fetchGames, fetchPublishHealth, fetchPublishedDates } from './api';
+import { fetchDates, fetchGames, fetchPublishHealth, fetchPublishedDates, fetchPublishedGames } from './api';
 import type { GameList } from './api';
 import type { GameCard } from './model';
 import { dateHeading, inningText, kstTime, shiftDate, short, todayKst } from './model';
 import { teamColor } from './teams';
 import { InfoSheet } from './Sheets';
-import { STATIC_MODE, isPublishStale, publicGameHref, publicListHref, publishLag } from './publish';
+import { PUBLISH_CONFIG, isCalendarDate, isPublishStale, publicGameHref, publicListHref, publishLag, serverNow } from './publish';
+import type { PublishStamp } from './publish';
 import './service.css';
 
 /** Ordinary list: one KST date as the heading, that date's games in start order. No sections, no modes, no badge. */
 export const gameHref = (pk: number) => {
-  if (STATIC_MODE) return publicGameHref(pk);
+  if (__PZ_STATIC__) return publicGameHref(pk);
   const demo = new URLSearchParams(window.location.search).get('demo');
   return `/watch/${pk}${demo ? `?demo=${encodeURIComponent(demo)}` : ''}`;
 };
 const listHref = (date: string) => {
-  if (STATIC_MODE) return publicListHref(date);
+  if (__PZ_STATIC__) return publicListHref(date);
   const q = new URLSearchParams(window.location.search); q.set('date', date);
   return `/watch?${q.toString()}`;
 };
@@ -45,37 +46,72 @@ function Card({ g }: { g: GameCard }) {
 
 export default function WatchList() {
   const params = new URLSearchParams(window.location.search);
-  const [date, setDate] = useState<string | null>(params.get('date'));
+  // public bundle: `?date=` is used only when it is a real calendar date (it ends up in a file name)
+  const [date, setDate] = useState<string | null>(() => { const d = params.get('date'); return __PZ_STATIC__ && !isCalendarDate(d) ? null : d; });
   const [dates, setDates] = useState<string[] | null>(null);
   const [games, setGames] = useState<GameList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState(false);
 
+  // ---- API mode: read once (as before) ----
   useEffect(() => {  // available KST dates (contract §1); without them, today's KST date
+    if (__PZ_STATIC__) return;
     const ctrl = new AbortController();
-    // public bundle: today when the publisher follows it, else the newest published date that is not in the future
-    const first = STATIC_MODE ? fetchPublishedDates(ctrl.signal).then(p => { const today = todayKst(); setDates(p.dates);
-      setDate(d => d ?? (p.dates.includes(today) ? today : p.dates.find(x => x <= today) ?? p.dates[p.dates.length - 1] ?? today)); })
-      : fetchDates(ctrl.signal).then(list => { setDates(list); setDate(d => d ?? list[0] ?? todayKst()); });
-    first
+    fetchDates(ctrl.signal).then(list => { setDates(list); setDate(d => d ?? list[0] ?? todayKst()); })
       .catch(() => { if (!ctrl.signal.aborted) { setDates([]); setDate(d => d ?? todayKst()); } });
     return () => ctrl.abort();
   }, []);
   useEffect(() => {
-    if (!date) return;
+    if (__PZ_STATIC__ || !date) return;
     const ctrl = new AbortController();
     setGames(null); setError(null);
-    fetchGames(date, ctrl.signal).then(setGames).catch(e => { if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : '경기 목록을 불러오지 못했어요.'); });
+    fetchGames(date, ctrl.signal).then(list => { if (!ctrl.signal.aborted) setGames(list); }).catch(e => { if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : '경기 목록을 불러오지 못했어요.'); });
     return () => ctrl.abort();
   }, [date]);
-  // public bundle only: the list is read once, so one look at health.json says whether what it shows may be behind
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    if (!STATIC_MODE || !date) return;
+
+  // ---- public bundle: published files, read again at the configured interval ----
+  const [health, setHealth] = useState<PublishStamp | null>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => {  // dates: today when the publisher follows it, else the newest published date that is not in the future
+    if (!__PZ_STATIC__) return;
     const ctrl = new AbortController();
-    fetchPublishHealth(ctrl.signal).then(h => setLate(isPublishStale(publishLag(null, h, false)))).catch(() => { if (!ctrl.signal.aborted) setLate(false); });
+    fetchPublishedDates(ctrl.signal).then(p => { if (ctrl.signal.aborted) return; const today = todayKst(); setDates(p.dates);
+      setDate(d => d ?? (p.dates.includes(today) ? today : p.dates.find(x => x <= today) ?? p.dates[p.dates.length - 1] ?? today)); })
+      .catch(() => { if (!ctrl.signal.aborted) { setDates([]); setDate(d => d ?? todayKst()); } });
     return () => ctrl.abort();
+  }, []);
+  useEffect(() => {
+    if (!__PZ_STATIC__ || !date) return;
+    // One reader per shown date. `alive` is this date's generation: an answer for a date the viewer has left is never applied.
+    // One request at a time; nothing is asked while the tab is hidden; a failed read is retried sooner and never blanks a list on screen.
+    let alive = true, busy: AbortController | null = null, timer = 0, shown = false;
+    setGames(null); setError(null);
+    const run = async () => {
+      window.clearTimeout(timer);
+      if (!alive || busy || document.hidden) return;
+      const ctrl = busy = new AbortController();
+      let failed = false;
+      try {
+        const list = await fetchPublishedGames(date, ctrl.signal);
+        if (!alive) return;
+        shown = true; setGames(list); setError(null);
+      } catch (e) {
+        if (!alive) return;
+        failed = true;
+        if (!shown) setError(e instanceof Error ? e.message : '경기 목록을 불러오지 못했어요.');
+      }
+      try { const h = await fetchPublishHealth(ctrl.signal); if (alive) setHealth(h); } catch { /* the last health stays; time goes on by itself */ }
+      if (busy === ctrl) busy = null;
+      if (alive) timer = window.setTimeout(() => void run(), failed ? PUBLISH_CONFIG.firstLoadRetryMs : PUBLISH_CONFIG.listPollMs);
+    };
+    const wake = () => { if (!document.hidden) void run(); };
+    void run();
+    document.addEventListener('visibilitychange', wake); window.addEventListener('online', wake);
+    const tick = window.setInterval(() => setTick(t => t + 1), PUBLISH_CONFIG.tickMs);  // lets the late notice appear between reads
+    return () => { alive = false; busy?.abort(); window.clearTimeout(timer); window.clearInterval(tick);
+      document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake); };
   }, [date]);
+  const late = __PZ_STATIC__ && isPublishStale(publishLag(null, health, serverNow()), PUBLISH_CONFIG.listPollMs);
   useEffect(() => { document.title = date ? `${dateHeading(date)} 경기 · 피치이지` : '피치이지'; }, [date]);
 
   // Previous/next: adjacent dates that have games when the server lists them, otherwise one calendar day.
