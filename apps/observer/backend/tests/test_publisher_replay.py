@@ -223,7 +223,7 @@ def test_a_synthetic_capture_replays_to_a_final_file_with_every_invariant_held(r
     assert final_writes == [14]  # written once: the tail and the settled recheck left its bytes alone
     assert summary['capture']['versions_never_served'] == 0 and summary['capture']['bodies_loaded'] > 0
     assert summary['capture']['served_version_indices'] == [0, 1, 2, 3, 4] and summary['capture']['versions_never_served_indices'] == []
-    assert summary['incomplete'] is False and json.loads((run/'STATUS.json').read_text())['state'] == 'COMPLETED' and not (run/'INCOMPLETE').exists()
+    assert summary['incomplete'] is False and summary['invariants']['all_held'] is True and summary['invariants']['not_applicable'] == []
     assert summary['environment']['versions']['python'] and 'torch' in summary['environment']['versions'] and summary['environment']['threads']['cpu_count']
     assert summary['memory']['free_samples'] == 16 and summary['memory']['free_bytes_min_sampled'] > 0
     assert summary['schema_validation']['validated'] and set(summary['schema_validation']['kinds_seen']) == {'manifest', 'health', 'dates', 'games', 'game'}
@@ -237,7 +237,7 @@ def test_a_synthetic_capture_replays_to_a_final_file_with_every_invariant_held(r
     assert sorted(p.name for p in replayed.path.parent.iterdir()) == ['capture.sqlite3']
     assert (run/'publisher-store.sqlite3').is_file() and (run/'out/v1/health.json').is_file()
     assert sorted(p.name for p in replayed.job.iterdir()) == ['input', 'run-001']
-    assert sorted(p.name for p in run.iterdir()) == ['.out.lock', '.out.tmp', 'CYCLES.jsonl', 'STATUS.json', 'SUMMARY.json', 'SUMMARY.md', 'demo', 'empty',
+    assert sorted(p.name for p in run.iterdir()) == ['.out.lock', '.out.tmp', 'CYCLES.jsonl', 'SUMMARY.json', 'SUMMARY.md', 'demo', 'empty',
                                                     'out', 'publisher-store.sqlite3', 'publisher.state.json', 'tmp']
 
 
@@ -314,7 +314,7 @@ def test_the_command_refuses_before_writing_anything(tmp_path, capsys):
     assert publisher_replay.main(make()) == 2 and 'fixed delay 0' in capsys.readouterr().err
     config.write_text(json.dumps(limits | {'min_free_bytes': 1 << 60}))
     assert publisher_replay.main(make()) == 2 and 'below the registered minimum' in capsys.readouterr().err
-    config.write_text(json.dumps(limits | {'policy_dirs': [str(tmp_path/'not-there')]}))
+    config.write_text(json.dumps(limits | {'capture_original_dir': str(tmp_path/'not-there')}))
     assert publisher_replay.main(make()) == 2 and 'registered as unchanged' in capsys.readouterr().err
     config.write_text(json.dumps({k: v for k, v in limits.items() if k != 'policy_device'}))
     assert publisher_replay.main(make()) == 2 and 'policy_device' in capsys.readouterr().err
@@ -337,6 +337,10 @@ def test_the_command_refuses_before_writing_anything(tmp_path, capsys):
     config.write_text(json.dumps(limits | {'style_sha256': pins}))
     armb[armb.index('--config-sha256')+1] = digest()
     assert publisher_replay.execute(armb, style_dir=style, volume='/') == 2 and 'registered device' in capsys.readouterr().err
+    config.write_text(json.dumps(limits | {'policy_device': 'mps', 'style_sha256': pins, 'policy_dirs': [str(tmp_path/'not-there')]}))
+    armb[armb.index('--config-sha256')+1] = digest()
+    (style/'s.json').write_text('{}')
+    assert publisher_replay.execute(armb, style_dir=style, volume='/') == 2 and 'registered as unchanged' in capsys.readouterr().err  # only a policy run needs them
     config.write_text(json.dumps(limits))
     with closing(sqlite3.connect(path, isolation_level=None)) as db:
         db.execute("UPDATE snapshots SET sha='0' WHERE seq=3")
@@ -389,10 +393,12 @@ def test_the_whole_command_runs_in_its_own_process_under_the_audit(tmp_path):
     summary = json.loads((job/'run-001/SUMMARY.json').read_text())
     assert summary['status'] == 'COMPLETED' and summary['fs_audit']['violations'] == [] and summary['fs_audit']['files_read_under_watch'] == {}
     assert 'tripwire' in summary['fs_audit']['kind']
-    assert summary['outside_changes']['changed'] is False and summary['outside_changes']['changes'] == {} and summary['outside_changes']['not_checked'] == []
-    assert summary['outside_changes']['entries'] == {'capture_files': 1, 'policy': {str(watched): 1}} and 'transient' in summary['outside_changes']['method']
-    assert json.loads((job/'run-001/STATUS.json').read_text()) | {'at_utc': 0} == {'state': 'COMPLETED', 'incomplete': False, 'at_utc': 0, 'stop': None, 'cycles': 16}
-    assert not (job/'run-001/INCOMPLETE').exists()
+    # policy off: the policy folders named in the config are not part of the check at all
+    assert summary['outside_check'] | {'method': 0} == {'method': 0, 'capture': 'passed', 'worktree': 'passed', 'policy': 'not_applicable',
+                                                        'overall': 'passed', 'changes': {}}
+    assert 'transient' in summary['outside_check']['method'] and summary['invariants']['all_held'] is True
+    assert summary['invariants']['not_applicable'] and summary['incomplete'] is False
+    assert sorted(p.name for p in (job/'run-001').iterdir() if 'SUMMARY' in p.name or 'STATUS' in p.name or 'INCOMPLETE' in p.name) == ['SUMMARY.json', 'SUMMARY.md']
     assert json.loads((job/'run-001/RUN.json').read_text())['versions']['python']
     assert summary['invariants']['held']['nothing_outside_the_job_folder'] is True
     assert summary['capture_copy'] == {'sha256_before': sha, 'sha256_after': sha, 'unchanged': True}
@@ -763,19 +769,32 @@ def test_the_before_and_after_listing_sees_what_the_tripwire_cannot(tmp_path):
     (root/'a.bin').write_bytes(b'12345')
     (root/'sub/b.bin').write_bytes(b'1')
     (root/'skipped').mkdir()
-    before = publish_audit.tree_snapshot(root, skip=('skipped',))
+    before, reason = publish_audit.tree_snapshot(root, skip=('skipped',))
+    assert reason is None
     assert set(before) == {'a.bin', 'sub', os.path.join('sub', 'b.bin'), 'skipped'} and before['a.bin'][0] == 5
-    assert publish_audit.tree_changes(before, publish_audit.tree_snapshot(root, skip=('skipped',))) == []
+    assert publish_audit.tree_changes(before, publish_audit.tree_snapshot(root, skip=('skipped',))[0]) == []
     (root/'skipped/x').write_text('not looked at')
     os.utime(root/'a.bin', ns=(1, 1))  # same size, another mtime
     (root/'sub/b.bin').unlink()
     (root/'sub/c.bin').write_bytes(b'new')
-    changes = publish_audit.tree_changes(before, publish_audit.tree_snapshot(root, skip=('skipped',)))
+    changes = publish_audit.tree_changes(before, publish_audit.tree_snapshot(root, skip=('skipped',))[0])
     assert ('changed', 'a.bin') in changes and ('removed', os.path.join('sub', 'b.bin')) in changes
     assert ('added', os.path.join('sub', 'c.bin')) in changes and not any('x' == os.path.basename(path) for _, path in changes)
     ticks = iter(range(100))
-    assert publish_audit.tree_snapshot(root, deadline=0, clock=lambda: next(ticks)) is None  # out of time: not a listing at all
-    assert publish_audit.tree_snapshot(root, deadline=1000, clock=lambda: next(ticks)) is not None
+    assert publish_audit.tree_snapshot(root, deadline=0, clock=lambda: next(ticks)) == (None, 'timeout')  # not a listing at all
+    assert publish_audit.tree_snapshot(root, deadline=1000, clock=lambda: next(ticks))[1] is None
+    assert publish_audit.tree_snapshot(tmp_path/'not-there') == (None, 'walk_error')
+    with pytest.MonkeyPatch.context() as patch:  # an entry that cannot be examined is a reason, never a silent gap
+        real = os.lstat
+        patch.setattr(publish_audit.os, 'lstat', lambda path: (_ for _ in ()).throw(OSError('gone')) if str(path).endswith('a.bin') else real(path))
+        assert publish_audit.tree_snapshot(root) == (None, 'lstat_error')
+    locked = root/'locked'
+    locked.mkdir()
+    locked.chmod(0)
+    try:
+        assert publish_audit.tree_snapshot(root) == (None, 'walk_error')  # a folder that cannot be read
+    finally:
+        locked.chmod(0o700)
 
 
 def test_the_in_process_memory_reading_agrees_with_vm_stat():
@@ -798,7 +817,7 @@ def test_a_capture_body_that_fails_its_check_mid_run_stops_the_run(replayed):
     assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'capture_integrity') and summary['stop']['detail']['seq'] == 3
     assert summary['capture']['integrity_error'] == {'seq': 3, 'error': 'ValueError'} and summary['incomplete'] is True
     assert summary['cycles']['n'] == 8  # the cycle that first asked for that version, not the end of the game
-    assert json.loads((replayed.job/'run-001/STATUS.json').read_text())['state'] == 'STOPPED' and (replayed.job/'run-001/INCOMPLETE').exists()
+    assert json.loads((replayed.job/'run-001/SUMMARY.json').read_text())['incomplete'] is True and summary['invariants']['all_held'] is False
 
 
 def test_a_policy_computation_that_fails_stops_the_run(replayed):
@@ -866,13 +885,17 @@ def test_a_reading_that_cannot_be_taken_is_not_a_zero(replayed):
     assert rows[1]['free_checked'] is True and rows[1]['free_bytes'] is None
     summary = replayed('run-b', free_memory=lambda: None)
     assert (summary['status'], summary['stop']['reason'], summary['cycles']['n']) == ('STOPPED', 'measurement_failed', 2)
-    assert summary['stop']['detail'] == {'what': 'free_memory', 'in_a_row': 2}
+    assert summary['stop']['detail'] == {'what': 'free_memory', 'checks_in_a_row': 2}
 
     def broken():
         raise publisher_replay.MeasureError('MPS memory: RuntimeError')
     summary = replayed('run-c', mps=broken)
     assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'measurement_failed') and summary['stop']['detail']['what'] == 'mps_memory'
-    assert summary['memory']['mps_driver_allocated_peak_bytes'] is None and summary['memory']['measurement']['mps_failures'] == 2
+    assert summary['stop']['detail'] == {'what': 'mps_memory', 'cycles_in_a_row': 2} and summary['cycles']['n'] == 2  # cycles, not calls
+    assert summary['memory']['mps_driver_allocated_peak_bytes'] is None and summary['memory']['measurement']['mps_unknown_cycles'] == 2
+    assert summary['memory']['measurement']['mps_failed_readings'] > 2  # several readings per cycle failed: counted once per cycle
+    rows = [json.loads(line) for line in (replayed.job/'run-c/CYCLES.jsonl').read_text().splitlines()]
+    assert [(row['mps_bytes'], row['mps_known']) for row in rows] == [(None, False)]*2  # unknown, not zero
     summary = replayed('run-d', mps=lambda: 3 << 20)  # a real reading counts against the cap and is reported
     assert summary['status'] == 'COMPLETED' and summary['memory']['mps_driver_allocated_peak_bytes'] == 3 << 20
     summary = replayed('run-e', mps=lambda: LIMITS['max_rss_bytes'])
@@ -897,8 +920,7 @@ def test_an_unexpected_exception_or_a_signal_still_leaves_a_summary_and_an_incom
     assert (summary['status'], summary['stop']['reason'], summary['incomplete'], summary['cycles']['n']) == (status, reason, True, 2)
     on_disk = json.loads((run/'SUMMARY.json').read_text())
     assert on_disk['status'] == status and '미완료' in (run/'SUMMARY.md').read_text()
-    state = json.loads((run/'STATUS.json').read_text())
-    assert (state['state'], state['incomplete'], state['cycles']) == (status, True, 2) and (run/'INCOMPLETE').exists()
+    assert on_disk['incomplete'] is True and on_disk['cycles']['n'] == 2 and on_disk['invariants']['all_held'] is False
     # the lock was released on the way out: the folder is not left held
     publisher.Publisher(None, publisher.LocalDirSink(run/'out'), config=publisher.load_config(env={}), state_path=run/'x.json').close()
 
@@ -910,16 +932,39 @@ def test_a_failure_before_the_first_cycle_is_recorded_too(replayed, monkeypatch)
     summary = replayed()
     assert (summary['status'], summary['stop']['detail']['type'], summary['cycles']['n']) == ('FAILED', 'OSError', 0)
     assert summary['invariants']['held']['sequence_monotonic'] is None  # nothing was checked: not claimed as held
-    assert json.loads((replayed.job/'run-001/STATUS.json').read_text())['state'] == 'FAILED'
+    assert json.loads((replayed.job/'run-001/SUMMARY.json').read_text())['status'] == 'FAILED'
 
 
-def test_the_status_file_says_running_and_incomplete_until_the_run_ends(tmp_path):
-    publisher_replay.write_status(tmp_path, 'RUNNING')
-    assert json.loads((tmp_path/'STATUS.json').read_text())['incomplete'] is True and (tmp_path/'INCOMPLETE').exists()
-    publisher_replay.write_status(tmp_path, 'ABORTED', stop={'reason': 'memory_cap'})  # what the watchdog writes before it kills
-    assert json.loads((tmp_path/'STATUS.json').read_text())['state'] == 'ABORTED' and (tmp_path/'INCOMPLETE').exists()
-    publisher_replay.write_status(tmp_path, 'COMPLETED')
-    assert json.loads((tmp_path/'STATUS.json').read_text())['incomplete'] is False and not (tmp_path/'INCOMPLETE').exists()
+def test_one_record_says_how_the_run_stands_and_its_final_form_is_the_last_write(tmp_path, monkeypatch):
+    publisher_replay.mark(tmp_path, 'RUNNING', phase='starting')
+    first = json.loads((tmp_path/'SUMMARY.json').read_text())
+    assert (first['status'], first['incomplete'], first['phase']) == ('RUNNING', True, 'starting')
+    with pytest.raises(AssertionError):
+        publisher_replay.mark(tmp_path, 'COMPLETED')  # a progress record can never claim completion
+    done = {'status': 'COMPLETED', 'incomplete': False, 'stop': None, 'game_pk': 1, 'cycles': {'n': 3}}
+    writes, real = [], Path.write_text
+
+    def write_text(self, *args, **kwargs):
+        writes.append(self.name)
+        return real(self, *args, **kwargs)
+    monkeypatch.setattr(Path, 'write_text', write_text)
+    publisher_replay.finish(tmp_path, done)
+    assert writes == ['SUMMARY.md', '.SUMMARY.json.tmp'] and json.loads((tmp_path/'SUMMARY.json').read_text()) == done  # the record last
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['SUMMARY.json', 'SUMMARY.md']  # no second status file to disagree
+    # a write that fails on the way: nothing is written after it, and the record still says what it said before
+    publisher_replay.mark(tmp_path, 'POST_RUN_CHECKS_PENDING')
+    writes.clear()
+
+    def failing(self, *args, **kwargs):
+        writes.append(self.name)
+        if self.name == 'SUMMARY.md':
+            raise OSError('disk full')
+        return real(self, *args, **kwargs)
+    monkeypatch.setattr(Path, 'write_text', failing)
+    with pytest.raises(OSError):
+        publisher_replay.finish(tmp_path, done)
+    after = json.loads((tmp_path/'SUMMARY.json').read_text())
+    assert writes == ['SUMMARY.md'] and (after['status'], after['incomplete']) == ('POST_RUN_CHECKS_PENDING', True)
 
 
 def test_a_version_between_two_polls_is_reported_as_never_served_and_the_first_final_counts_even_then(tmp_path, monkeypatch):
@@ -1038,13 +1083,14 @@ def test_the_whole_command_with_the_policy_on_runs_to_a_completed_record(command
     assert summary['game_file']['recommendation_by_cycle']['published'] >= 2 and summary['ledger']['rows'] >= 2
     assert summary['invariants']['held'] == {name: True for name in publish_audit.INVARIANTS} | {'nothing_outside_the_job_folder': True}
     assert summary['fs_audit']['violations'] == []
-    assert summary['outside_changes']['changed'] is False and summary['outside_changes']['not_checked'] == []
+    assert summary['outside_check']['overall'] == 'passed' and summary['outside_check']['capture'] == summary['outside_check']['worktree'] == 'passed'
+    assert list(summary['outside_check']['policy'].values()) == ['passed'] and summary['invariants']['all_held'] is True
     assert summary['capture_copy']['unchanged'] is True
     assert sorted(p.name for p in (run/'policy-root/style').iterdir()) == ['style_2026-03-25.json', 'style_2026_index.json']
     scratch = Path((run/'policy-root/scratch-path.txt').read_text())  # where tempfile put the policy's scratch ledger
     assert scratch.parent == (run/'tmp').resolve() and scratch.name.startswith('pitcheezy-live-')
-    state = json.loads((run/'STATUS.json').read_text())
-    assert (state['state'], state['incomplete']) == ('COMPLETED', False) and not (run/'INCOMPLETE').exists()
+    assert sorted(p.name for p in run.iterdir() if p.is_file()) == ['.out.lock', 'CYCLES.jsonl', 'RUN.json', 'SUMMARY.json', 'SUMMARY.md',
+                                                                    'publisher-store.sqlite3', 'publisher.state.json']
     assert sorted(p.name for p in command.job.iterdir()) == ['input', 'replay_config.json', 'run-001']
 
 
@@ -1053,26 +1099,24 @@ def test_a_change_outside_that_the_tripwire_cannot_see_fails_the_run_at_the_very
     assert done.returncode == 3, done.stderr[-3000:]
     summary, run = json.loads((command.run/'SUMMARY.json').read_text()), command.run
     assert summary['status'] == 'FAILED' and summary['incomplete'] is True
-    assert summary['stop']['reason'] == 'something_outside_the_job_folder_changed'
+    assert summary['stop']['reason'] == 'something_outside_the_job_folder_changed_or_could_not_be_checked'
     assert summary['fs_audit']['violations'] == []  # the tripwire saw nothing: the listing did
-    assert list(summary['outside_changes']['changes'].values()) == [[['changed', 'model.pt']]]
+    assert list(summary['outside_check']['changes'].values()) == [[['changed', 'model.pt']]] and summary['outside_check']['overall'] == 'failed'
+    assert list(summary['outside_check']['policy'].values()) == ['failed']
+    assert summary['invariants']['held']['nothing_outside_the_job_folder'] is False and summary['invariants']['all_held'] is False
     assert summary['cycles']['n'] == 16  # the replay itself ran to its end; COMPLETED was never written
-    state = json.loads((run/'STATUS.json').read_text())
-    assert (state['state'], state['incomplete']) == ('FAILED', True) and (run/'INCOMPLETE').exists()
-    assert '미완료' in (run/'SUMMARY.md').read_text()
+    assert '미완료' in (run/'SUMMARY.md').read_text() and not (run/'STATUS.json').exists()
 
 
 def test_the_replay_record_is_not_called_completed_before_the_last_check(replayed):
     summary = replayed(finalize=False)
     run = replayed.job/'run-001'
     assert summary['status'] == 'COMPLETED'  # what the replay itself found...
-    on_disk, state = json.loads((run/'SUMMARY.json').read_text()), json.loads((run/'STATUS.json').read_text())
+    on_disk = json.loads((run/'SUMMARY.json').read_text())
     assert (on_disk['status'], on_disk['incomplete'], on_disk['replay_status']) == ('POST_RUN_CHECKS_PENDING', True, 'COMPLETED')
-    assert (state['state'], state['incomplete'], state['phase']) == ('RUNNING', True, 'post_run_checks') and (run/'INCOMPLETE').exists()
-    publisher_replay.finish(run, summary | {'status': 'FAILED', 'incomplete': True, 'stop': {'reason': 'x', 'detail': None}})
-    assert json.loads((run/'STATUS.json').read_text())['state'] == 'FAILED' and (run/'INCOMPLETE').exists()
+    assert not (run/'SUMMARY.md').exists()
     publisher_replay.finish(run, summary)
-    assert json.loads((run/'STATUS.json').read_text())['state'] == 'COMPLETED' and not (run/'INCOMPLETE').exists()
+    assert json.loads((run/'SUMMARY.json').read_text())['status'] == 'COMPLETED' and (run/'SUMMARY.md').exists()
 
 
 def test_the_outside_check_compares_exactly_what_it_says(tmp_path, monkeypatch):
@@ -1084,22 +1128,36 @@ def test_the_outside_check_compares_exactly_what_it_says(tmp_path, monkeypatch):
     limits = {'capture_original_dir': str(original), 'policy_dirs': [str(policy_dir)], 'listing_time_limit_s': 30}
     porcelain = ['?? new.txt']
     monkeypatch.setattr(publisher_replay, 'git_porcelain', lambda repo=None: list(porcelain))
-    before = publisher_replay.outside_state(limits)
-    assert publisher_replay.outside_changes(before, publisher_replay.outside_state(limits)) | {'method': 0} == {
-        'method': 0, 'changed': False, 'changes': {}, 'not_checked': [], 'entries': {'capture_files': 1, 'policy': {str(policy_dir): 1}}}
+    before = publisher_replay.outside_state(limits, True)
+    assert publisher_replay.outside_check(before, publisher_replay.outside_state(limits, True), True) | {'method': 0} == {
+        'method': 0, 'capture': 'passed', 'worktree': 'passed', 'policy': {str(policy_dir): 'passed'}, 'overall': 'passed', 'changes': {}}
     stamp = (original/'live.sqlite3').stat()
     (original/'live.sqlite3').write_bytes(b'12346')  # same size, and the old mtime put back: the sha256 still sees it
     os.utime(original/'live.sqlite3', ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
     porcelain.append(' M scripts/x.py')
-    changed = publisher_replay.outside_changes(before, publisher_replay.outside_state(limits))
-    assert changed['changed'] is True and changed['changes'] == {'capture': ['live.sqlite3'], 'worktree': [' M scripts/x.py']}
-    # what could not be looked at is "not checked", never "unchanged"
+    changed = publisher_replay.outside_check(before, publisher_replay.outside_state(limits, True), True)
+    assert (changed['capture'], changed['worktree'], changed['overall']) == ('failed', 'failed', 'failed')
+    assert changed['changes'] == {'capture': ['live.sqlite3'], 'worktree': [' M scripts/x.py']}
+    (original/'live.sqlite3').write_bytes(b'12345')
+    porcelain.pop()
+    # a policy folder that could not be listed in time is "not checked" (allowed), with its reason
+    late = publisher_replay.outside_check(before, publisher_replay.outside_state(limits | {'listing_time_limit_s': -1}, True), True)
+    assert late['policy'] == {str(policy_dir): 'not_checked: timeout'} and late['overall'] == 'not_checked' and late['changes'] == {}
+    # git status that cannot be read is a failure, not "not checked"
     monkeypatch.setattr(publisher_replay, 'git_porcelain', lambda repo=None: None)
-    late = publisher_replay.outside_state(limits | {'listing_time_limit_s': -1})
-    result = publisher_replay.outside_changes(before, late)
-    assert sorted(result['not_checked']) == sorted(['worktree', str(policy_dir)]) and result['changes'] == {'capture': ['live.sqlite3']}
+    no_git = publisher_replay.outside_check(before, publisher_replay.outside_state(limits, True), True)
+    assert no_git['worktree'].startswith('failed') and no_git['overall'] == 'failed'
+    gone = publisher_replay.outside_check(before, publisher_replay.outside_state(limits | {'capture_original_dir': str(tmp_path/'x')}, True), True)
+    assert gone['capture'].startswith('failed')
     monkeypatch.undo()
     assert publisher_replay.git_porcelain(REPO) is not None
+    # without the policy the policy folders are not looked at at all
+    monkeypatch.setattr(publisher_replay, 'git_porcelain', lambda repo=None: [])
+    walked = []
+    monkeypatch.setattr(publish_audit, 'tree_snapshot', lambda *args, **kwargs: walked.append(args) or ({}, None))
+    off = publisher_replay.outside_state(limits, False)
+    assert off['policy'] == {} and walked == []
+    assert publisher_replay.outside_check(off, off, False)['policy'] == 'not_applicable'
 
 
 WATCHDOG = '''
@@ -1110,7 +1168,7 @@ mode, run_dir = sys.argv[1], sys.argv[2]
 if mode == 'record_fails':
     def broken(*args, **kwargs):
         raise OSError('disk full')
-    publisher_replay.write_status = broken
+    publisher_replay.mark = broken
 peak = (lambda: 1/0) if mode == 'cannot_measure' else None
 limits = {{'max_rss_bytes': 1, 'max_seconds': 3600}} if mode != 'time' else {{'max_rss_bytes': 1 << 60, 'max_seconds': -60}}
 publisher_replay.start_watchdog(run_dir, limits, peak=peak, interval=.05)
@@ -1132,8 +1190,104 @@ def test_the_watchdog_ends_its_own_process_whatever_happens_while_it_records(tmp
             child.kill()
             child.wait(timeout=20)
     if why is None:
-        assert not (tmp_path/'STATUS.json').exists()  # the record could not be written; the process still ended
+        assert not (tmp_path/'SUMMARY.json').exists()  # the record could not be written; the process still ended
     else:
         assert json.loads((tmp_path/'ABORTED.json').read_text())['why'] == why
-        state = json.loads((tmp_path/'STATUS.json').read_text())
-        assert (state['state'], state['incomplete']) == ('ABORTED', True) and (tmp_path/'INCOMPLETE').exists()
+        state = json.loads((tmp_path/'SUMMARY.json').read_text())
+        assert (state['status'], state['incomplete'], state['stop']['reason']) == ('ABORTED', True, why)
+
+
+# ---------- final round: policy OFF touches nothing of the policy; the registered K / N values ----------
+OFF_DRIVER = '''
+import json, os, sys
+sys.path[:0] = [{backend!r}, {scripts!r}]
+volume, log = os.path.realpath(sys.argv[1]), sys.argv[2]
+touched = []
+
+
+def under(path):
+    try:
+        text = os.path.abspath(os.fsdecode(path))  # no system call: this runs inside the wrapped ones
+    except (TypeError, ValueError):
+        return False
+    return text == volume or text.startswith(volume+os.sep)
+
+
+def wrap(name):
+    real = getattr(os, name)
+
+    def call(path, *args, **kwargs):
+        if not isinstance(path, int) and under(path):
+            touched.append([name, os.fsdecode(path)])
+        return real(path, *args, **kwargs)
+    setattr(os, name, call)
+
+
+for name in ('stat', 'lstat', 'scandir', 'listdir', 'open'):
+    wrap(name)
+sys.addaudithook(lambda event, args: touched.append([event, str(args[0])]) if event in ('open', 'os.scandir', 'os.listdir') and args
+                 and isinstance(args[0], (str, bytes)) and under(args[0]) else None)
+import publisher_replay
+code = publisher_replay.execute(sys.argv[3:], style_dir=os.path.join(volume, 'style'), volume=volume)
+open(log, 'w').write(json.dumps(touched))
+sys.exit(code)
+'''
+
+
+def test_a_policy_off_run_never_touches_the_external_volume_or_any_policy_folder(tmp_path):
+    """The volume, the style folder and the policy folders all exist and are even named in the config: an OFF run
+    must not stat, list or open any of them."""
+    job, volume, original = tmp_path/'job', tmp_path/'volume', tmp_path/'original'
+    (volume/'style').mkdir(parents=True)
+    (volume/'policy').mkdir()
+    (volume/'policy/model.pt').write_bytes(b'weights')
+    (volume/'style/style_2026_index.json').write_text('{}')
+    original.mkdir()
+    (original/'live.sqlite3').write_bytes(b'the original capture')
+    path = capture_db(job/'input')
+    config = job/'replay_config.json'
+    config.write_text(json.dumps(LIMITS | {'capture_original_dir': str(original), 'policy_dirs': [str(volume/'policy'), str(volume/'missing')],
+                                           'policy_device': 'mps', 'style_sha256': {'style_2026_index.json': '0'*64}}))
+    driver, log = tmp_path/'driver.py', tmp_path/'touched.json'
+    driver.write_text(OFF_DRIVER.format(backend=str(BACKEND), scripts=str(REPO/'scripts')))
+    argv = [sys.executable, '-B', str(driver), str(volume), str(log), '--job-dir', str(job), '--run-name', 'run-off-001', '--game', str(LIVE_GAME),
+            '--capture-db', str(path), '--capture-sha256', hashlib.sha256(path.read_bytes()).hexdigest(), '--commit', publisher_replay.head_commit(),
+            '--config', str(config), '--config-sha256', hashlib.sha256(config.read_bytes()).hexdigest(), '--policy', 'off', '--allow-dirty']
+    env = {key: value for key, value in os.environ.items() if not key.startswith('PITCHEEZY_')}
+    done = subprocess.run(argv, capture_output=True, text=True, timeout=300, env=env, cwd=tmp_path)
+    assert done.returncode == 0, done.stderr[-3000:]
+    assert json.loads(log.read_text()) == []  # nothing under the volume was stat'ed, listed or opened
+    summary = json.loads((job/'run-off-001/SUMMARY.json').read_text())
+    assert summary['status'] == 'COMPLETED' and summary['policy']['requested'] is False and summary['outside_check']['policy'] == 'not_applicable'
+    assert summary['fs_audit']['files_read_under_watch'] == {} and summary['memory']['mps_driver_allocated_peak_bytes'] is None
+    assert summary['invariants']['all_held'] is True and summary['ledger']['rows'] == 0
+    assert 'torch' not in done.stderr and not (job/'run-off-001/policy-root').exists()
+
+
+def test_the_registered_memory_rules_k3_every_10_cycles_n3(replayed):
+    registered = LIMITS | {'tail_cycles': 50, 'min_free_bytes_running': 2 << 30, 'free_check_every_cycles': 10,
+                           'free_floor_consecutive': 3, 'max_measure_failures': 3}
+    low, fine = 1 << 30, 8 << 30
+    # checks happen at cycles 1, 11, 21, 31, 41, 51: two low ones, a good one, then three low in a row
+    readings = iter([low, low, fine, low, low, low])
+    summary = replayed(limits=registered, free_memory=lambda: next(readings))
+    assert (summary['status'], summary['stop']['reason'], summary['cycles']['n']) == ('STOPPED', 'free_memory_low', 51)
+    assert summary['stop']['detail']['checks_in_a_row'] == 3 and summary['memory']['measurement']['free_below_floor_checks'] == 5
+    rows = [json.loads(line) for line in (replayed.job/'run-001/CYCLES.jsonl').read_text().splitlines()]
+    assert [row['cycle'] for row in rows if row['free_checked']] == [1, 11, 21, 31, 41, 51]
+    # an unreadable check between two low ones neither breaks the streak nor extends it
+    readings = iter([low, None, low, None, low])
+    summary = replayed('run-b', limits=registered, free_memory=lambda: next(readings))
+    assert (summary['stop']['reason'], summary['cycles']['n'], summary['stop']['detail']['checks_in_a_row']) == ('free_memory_low', 41, 3)
+    # three unreadable checks in a row are their own stop
+    summary = replayed('run-c', limits=registered, free_memory=lambda: None)
+    assert (summary['stop']['reason'], summary['cycles']['n']) == ('measurement_failed', 21)
+    # MPS unreadable for three CYCLES in a row (whatever the number of readings inside a cycle)
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        raise publisher_replay.MeasureError('MPS memory: RuntimeError')
+    summary = replayed('run-d', limits=registered, mps=flaky)
+    assert (summary['stop']['reason'], summary['cycles']['n'], summary['stop']['detail']) == ('measurement_failed', 3, {'what': 'mps_memory', 'cycles_in_a_row': 3})
+    assert len(calls) > 3 and summary['memory']['measurement']['mps_unknown_cycles'] == 3

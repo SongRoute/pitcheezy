@@ -19,7 +19,8 @@ the config (plus this worktree and the capture original) are listed by path, siz
 any difference fails the run.
 
 The run stops at the first broken invariant, outside write, integrity or policy failure, memory or time cap; what
-was written until then stays, ``STATUS.json`` says how it ended and ``INCOMPLETE`` stays beside partial output.
+was written until then stays. ``SUMMARY.json`` exists from the first moment with ``incomplete: true`` and is the
+ONE record of how the run stands; its final form is the last thing written.
 Exit codes: 0 completed, 2 refused before start (nothing written), 3 stopped or failed, 87 killed by its own
 watchdog.
 """
@@ -81,6 +82,9 @@ class Stop(Exception):
 
 class Interrupted(BaseException):
     """A termination signal reached this process."""
+
+
+UNKNOWN = object()  # a reading that could not be taken: neither a number nor 'not in use'
 
 
 class MeasureError(Exception):
@@ -267,18 +271,20 @@ def armb_idle(armb):
     return not (armb.pending or armb.running is not None or armb.loading)
 
 
-def write_status(run_dir, state, **more):
-    """``STATUS.json`` is the top-level record of how the run stands; ``INCOMPLETE`` lies beside partial output
-    from the first moment and is removed only when the run completed."""
+def write_record(run_dir, record):
+    """Replace ``SUMMARY.json`` whole (temporary file + rename): a reader sees the previous record or this one."""
     run_dir = Path(run_dir)
-    (run_dir/'STATUS.json').write_text(json.dumps({'state': state, 'incomplete': state != 'COMPLETED',
-                                                   'at_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} | more,
-                                                  ensure_ascii=False, indent=1)+'\n')
-    marker = run_dir/'INCOMPLETE'
-    if state == 'COMPLETED':
-        marker.unlink(missing_ok=True)
-    elif not marker.exists():
-        marker.write_text('This run did not complete (see STATUS.json). Its output is partial.\n')
+    temporary = run_dir/'.SUMMARY.json.tmp'
+    temporary.write_text(json.dumps(record, ensure_ascii=False, indent=1)+'\n')
+    os.replace(temporary, run_dir/'SUMMARY.json')
+
+
+def mark(run_dir, status, **more):
+    """A progress record in ``SUMMARY.json``: never COMPLETED, always ``incomplete: true``. There is no second
+    status file that could disagree with it."""
+    assert status != 'COMPLETED'
+    write_record(run_dir, {'schema': 'pitcheezy-publisher-replay-summary-v3', 'status': status, 'incomplete': True,
+                           'at_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} | more)
 
 
 def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs_audit=None, schemas=None,
@@ -287,7 +293,7 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         log=lambda text: print(text, file=sys.stderr, flush=True)):
     """Replay ``rows`` through a publisher that lives entirely in ``run_dir``. Returns the summary (also written).
     Whatever happens inside (a stop condition, any exception, a termination signal) ends in a written summary and
-    status; only a kill that cannot be caught leaves ``STATUS.json`` at RUNNING with ``INCOMPLETE`` beside it."""
+    status. If the process dies without getting there, ``SUMMARY.json`` still says RUNNING and ``incomplete``."""
     from observer_app import publish_audit, publish_schema, publisher
     from observer_app.capture_replay import CaptureReplayTransport, SimClock
     from observer_app.live_armb import LiveArmB
@@ -295,34 +301,41 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
 
     run_dir = Path(run_dir).resolve()
     out, started = run_dir/'out', perf()
-    write_status(run_dir, 'RUNNING')
+    mark(run_dir, 'RUNNING', phase='replay')
     cycles, shas, schema_problems, kinds_seen = [], {}, Counter(), Counter()
     bytes_by_kind, states, codes, recs = {}, Counter(), Counter(), Counter()
     final_published, stop, policy = None, None, {'requested': bool(policy_factory), 'registered_device': limits.get('policy_device')}
     over_interval, mps_peak, free_seen, failure = 0, None, [], None
-    measure = {'mps_failures': 0, 'mps_failures_in_a_row': 0, 'free_failures': 0, 'free_failures_in_a_row': 0, 'free_below_floor_in_a_row': 0,
-               'free_below_floor_checks': 0}
+    # "in a row" counts cycles (MPS: every cycle; free memory: every checked cycle), never individual calls
+    measure = {'mps_failed_readings': 0, 'mps_unknown_cycles': 0, 'mps_unknown_cycles_in_a_row': 0, 'free_failures': 0,
+               'free_failures_in_a_row': 0, 'free_below_floor_in_a_row': 0, 'free_below_floor_checks': 0}
+    cycle_flags = {'mps_unknown': False}
     status, pub, store, audit, transport, armb, config = 'FAILED', None, None, None, None, None, None
 
     def mps_now():
-        """MPS bytes now (None = not in use). A failed reading is counted, never read as zero: the run stops
-        after ``max_measure_failures`` of them in a row."""
+        """MPS bytes now: a number, None when MPS is not in use, or ``UNKNOWN`` when the reading failed. A failed
+        reading is never taken for zero; it marks the current cycle as unknown."""
         nonlocal mps_peak
         try:
             held = mps()
         except MeasureError:
-            measure['mps_failures'] += 1
-            measure['mps_failures_in_a_row'] += 1
-            if measure['mps_failures_in_a_row'] >= limits['max_measure_failures']:
-                raise Stop('measurement_failed', {'what': 'mps_memory', 'in_a_row': measure['mps_failures_in_a_row']}) from None
-            return None
-        measure['mps_failures_in_a_row'] = 0
+            measure['mps_failed_readings'] += 1
+            cycle_flags['mps_unknown'] = True
+            return UNKNOWN
         if held is not None:
             mps_peak = max(mps_peak or 0, held)
         return held
 
-    def memory():
-        return rss()+(mps_now() or 0)
+    def close_cycle_measurements():
+        """Once per cycle: a cycle in which MPS memory could not be read counts toward ``max_measure_failures``."""
+        if cycle_flags['mps_unknown']:
+            measure['mps_unknown_cycles'] += 1
+            measure['mps_unknown_cycles_in_a_row'] += 1
+        else:
+            measure['mps_unknown_cycles_in_a_row'] = 0
+        cycle_flags['mps_unknown'] = False
+        if measure['mps_unknown_cycles_in_a_row'] >= limits['max_measure_failures']:
+            raise Stop('measurement_failed', {'what': 'mps_memory', 'cycles_in_a_row': measure['mps_unknown_cycles_in_a_row']})
 
     def free_now(cycle):
         """One free-memory check. Could-not-measure and below-the-floor are different conditions: the first stops
@@ -330,11 +343,11 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         momentary system-wide dip does not end a healthy run)."""
         free = free_memory()
         free_seen.append(free)
-        if free is None:
+        if free is None:  # unknown: neither a breach nor an all-clear, so the below-floor streak is left as it is
             measure['free_failures'] += 1
             measure['free_failures_in_a_row'] += 1
             if measure['free_failures_in_a_row'] >= limits['max_measure_failures']:
-                raise Stop('measurement_failed', {'what': 'free_memory', 'in_a_row': measure['free_failures_in_a_row']})
+                raise Stop('measurement_failed', {'what': 'free_memory', 'checks_in_a_row': measure['free_failures_in_a_row']})
             return None
         measure['free_failures_in_a_row'] = 0
         if free < limits['min_free_bytes_running']:
@@ -355,8 +368,12 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
             raise Stop('invariant', audit.violations[:50])
         if armb is not None and armb.failed:
             raise Stop('policy_compute_failed', {'states': len(armb.failed), 'errors': sorted(set(armb.failed.values()))})
-        if memory() > limits['max_rss_bytes']:
-            raise Stop('memory_cap', {'stage': stage, 'rss': rss(), 'mps': mps_peak})
+        held = mps_now()
+        # an unknown MPS reading is not zero: only what IS known is compared here (RSS alone can already break the
+        # cap), and the cycle is counted as unknown (close_cycle_measurements)
+        if rss()+(held if isinstance(held, int) else 0) > limits['max_rss_bytes']:
+            raise Stop('memory_cap', {'stage': stage, 'rss': rss(), 'mps': held if isinstance(held, int) else None,
+                                      'mps_known': held is not UNKNOWN})
         if perf()-started > limits['max_seconds']:
             raise Stop('runtime_cap', {'stage': stage})
 
@@ -433,11 +450,12 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                'files_written': len(written), 'written': written, 'bytes': sizes, 'game': facts,
                'health': {'unavailable_games': [item['code'] for item in health['unavailable_games']],
                           'unavailable_dates': len(health['unavailable_dates']), 'feed_failing_games': len(health['feed_failing_games'])},
-               'rss': rss(), 'mps_bytes': None, 'free_bytes': None, 'free_checked': checked}
+               'rss': rss(), 'mps_bytes': None, 'mps_known': True, 'free_bytes': None, 'free_checked': checked}
         cycles.append(row)
         problem = None
         try:
-            row['mps_bytes'] = mps_now()
+            held = mps_now()
+            row['mps_bytes'], row['mps_known'] = (held if isinstance(held, int) else None), held is not UNKNOWN
             if checked:
                 row['free_bytes'] = free_now(row['cycle'])
         except Stop as stopped:
@@ -447,6 +465,7 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         if problem is not None:
             raise problem
         guard(f'cycle {row["cycle"]}')
+        close_cycle_measurements()
         check_device()
         return row
 
@@ -476,7 +495,8 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
             while armb.loading and perf()-waited < limits['policy_load_cap_s']:
                 time.sleep(.05)
                 guard('policy load')
-            policy |= {'load_s': round(perf()-waited, 3), 'status': armb.status(), 'rss_after_load': rss(), 'mps_after_load': mps_now()}
+            policy |= {'load_s': round(perf()-waited, 3), 'status': armb.status(), 'rss_after_load': rss(),
+                       'mps_after_load': (lambda held: held if isinstance(held, int) else None)(mps_now())}
             if armb.policy is None:
                 raise Stop('policy_unavailable', {'state': armb.status()['state']})
         while not transport.exhausted():
@@ -501,7 +521,7 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
             pub.close()
     violations = [] if audit is None else audit.violations
     held = {name: (None if audit is None else not any(v['invariant'] == name for v in violations)) for name in publish_audit.INVARIANTS}
-    held['nothing_outside_the_job_folder'] = None if fs_audit is None else not fs_audit.violations
+    held['nothing_outside_the_job_folder'] = None if fs_audit is None else not fs_audit.violations  # the caller's outside check can still turn this false
     final_wait = None
     if final_published is not None and info.get('final_fetched') is not None:
         final_wait = round(final_published['simulated']-info['final_fetched'], 3)
@@ -514,7 +534,7 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         except Exception:  # noqa: BLE001 - the summary is written whatever state the run died in
             return default
     summary = {
-        'schema': 'pitcheezy-publisher-replay-summary-v2', 'status': status, 'incomplete': status != 'COMPLETED', 'stop': stop,
+        'schema': 'pitcheezy-publisher-replay-summary-v3', 'status': status, 'incomplete': status != 'COMPLETED', 'stop': stop,
         'game_pk': game_pk, 'commit': commit,
         'data_role': 'SERVICE_EXPOSED_DEV', 'claim': 'one captured game replayed offline through the publisher; descriptive only',
         'config': {key: limits.get(key) for key in CONFIG_KEYS} | ({} if config is None else {
@@ -550,7 +570,9 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                               'kinds_never_seen': sorted(set(schemas or {})-set(kinds_seen)),
                               'problems': [{'kind': kind, 'pointer': pointer, 'keyword': keyword, 'seen': seen, 'count': count}
                                            for (kind, pointer, keyword, seen), count in sorted(schema_problems.items())]},
-        'invariants': {'held': held, 'violations': violations[:200], 'violation_count': len(violations),
+        'invariants': {'held': held, 'all_held': all(value is not False for value in held.values()) and status == 'COMPLETED',
+                       'not_applicable': [] if policy_factory else ['recommendation_in_ledger (no policy: nothing is recommended, so nothing is compared)'],
+                       'violations': violations[:200], 'violation_count': len(violations),
                        'files_checked': 0 if audit is None else audit.checked},
         'fs_audit': None if fs_audit is None else {'kind': 'tripwire (Python audit events only; native-library I/O is not seen)',
                                                    'violations': fs_audit.violations[:200], 'violation_count': len(fs_audit.violations),
@@ -572,10 +594,8 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         traceback.print_exception(failure, file=sys.stderr)
     if finalize:
         finish(run_dir, summary)
-    else:  # the caller still has checks to make: nothing here says COMPLETED yet
-        (run_dir/'SUMMARY.json').write_text(json.dumps(summary | {'status': 'POST_RUN_CHECKS_PENDING', 'incomplete': True,
-                                                                  'replay_status': status}, ensure_ascii=False, indent=1)+'\n')
-        write_status(run_dir, 'RUNNING', phase='post_run_checks', replay_status=status, cycles=len(cycles))
+    else:  # the caller still has checks to make: nothing on disk says COMPLETED yet
+        mark(run_dir, 'POST_RUN_CHECKS_PENDING', replay_status=status, cycles=len(cycles))
     log(f"{status}: {len(cycles)} cycles")
     if failure is not None and not isinstance(failure, Exception):
         raise failure  # KeyboardInterrupt / SystemExit go on after the record is written
@@ -583,16 +603,16 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
 
 
 def finish(run_dir, summary):
-    """The last thing a run does: the summary, then the status. COMPLETED (and the removal of ``INCOMPLETE``) is
-    written here and nowhere else, after every check the caller makes."""
+    """The end of a run: ``SUMMARY.md`` first, then ``SUMMARY.json`` with its final status as the LAST write. If
+    anything before it fails there is no later write, so the record on disk stays at its last progress state
+    (``incomplete: true``); nothing else on disk can contradict it."""
     run_dir = Path(run_dir)
-    (run_dir/'SUMMARY.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1)+'\n')
     try:
         text = summary_text(summary)
     except Exception:  # noqa: BLE001 - a run that died before the replay has no numbers to lay out
         text = f"# 발행기 오프라인 재생 요약 — 경기 {summary.get('game_pk')}\n\n- 상태: **{summary['status']}** — **미완료, 부분 결과**\n"
     (run_dir/'SUMMARY.md').write_text(text)
-    write_status(run_dir, summary['status'], stop=summary['stop'], cycles=summary['cycles']['n'])
+    write_record(run_dir, summary)
 
 
 def summary_text(s):
@@ -608,9 +628,8 @@ def summary_text(s):
              f"- 종료 표시까지(재생 시계 초): {show(s['final']['simulated_seconds_from_feed_final_to_publish_final'])}",
              f"- 추천 원장 행: {show(s['ledger']['rows'])}", '', '## 불변 조건', '']
     lines += [f"- {name}: {'지켜짐' if ok else '미측정' if ok is None else '**깨짐**'}" for name, ok in s['invariants']['held'].items()]
-    if 'outside_changes' in s:
-        lines += [f"- 실행 폴더 밖 변화(전후 비교, 범위는 SUMMARY.json): {'없음' if not s['outside_changes']['changed'] else '**있음**'}"
-                  + (f", 확인하지 못한 폴더 {len(s['outside_changes']['not_checked'])}곳" if s['outside_changes']['not_checked'] else '')]
+    if 'outside_check' in s:
+        lines += [f"- 실행 폴더 밖 전후 비교: {s['outside_check']['overall']} (캡처 원본 {s['outside_check']['capture']}, 워크트리 {s['outside_check']['worktree']}, 정책 폴더 {s['outside_check']['policy']})"]
     lines += ['', '## 파일 크기(바이트, 종류별 최대 raw / gzip)', '']
     lines += [f"- {kind}: {v['raw_max']} / {v['gzip_max']} (쓴 횟수 {v['writes']})" for kind, v in sorted(s['bytes_by_kind'].items())]
     lines += ['', '## 스키마', '',
@@ -656,48 +675,70 @@ def git_porcelain(repo=REPO):
         return None
 
 
-def outside_state(limits, repo=REPO):
+def outside_state(limits, policy, repo=REPO):
     """What is looked at before and after the run, and nothing more:
       capture   sha256 of every file in the ORIGINAL capture folder (exact)
       worktree  ``git status --porcelain --ignored`` of the code checkout (sees new, deleted and modified paths;
                 not a change inside an already ignored folder)
-      policy    size and mtime of every entry of each registered policy source folder, within one time limit for
-                all of them together; a folder not finished in time is None = "not checked"
+      policy    ONLY for a policy run: size and mtime of every entry of each registered policy source folder,
+                within one time limit for all of them together; a folder whose listing is not complete is
+                ``(None, reason)`` = not checked. A run without the policy does not touch these folders at all.
     The system temporary folder is NOT looked at (other programs use it). None of this can see a write that was
     undone again, or one that kept size and mtime (policy folders)."""
     from observer_app import publish_audit
-    capture = Path(limits['capture_original_dir'])
-    state = {'capture': {path.name: sha256_file(path) for path in sorted(capture.iterdir()) if path.is_file()},
-             'worktree': git_porcelain(repo), 'policy': {}}
-    deadline = time.monotonic()+limits['listing_time_limit_s']
-    for folder in limits['policy_dirs']:
-        state['policy'][folder] = publish_audit.tree_snapshot(folder, deadline=deadline, clock=time.monotonic)
+    try:
+        capture = {path.name: sha256_file(path) for path in sorted(Path(limits['capture_original_dir']).iterdir()) if path.is_file()}
+    except OSError:
+        capture = None
+    state = {'capture': capture, 'worktree': git_porcelain(repo), 'policy': {}}
+    if policy:
+        deadline = time.monotonic()+limits['listing_time_limit_s']
+        for folder in limits['policy_dirs']:
+            state['policy'][folder] = publish_audit.tree_snapshot(folder, deadline=deadline, clock=time.monotonic)
     return state
 
 
-def outside_changes(before, after):
+def outside_check(before, after, policy):
+    """Per scope item ``passed`` / ``failed`` / ``not_checked`` (with the reason), and ``overall``:
+    ``failed`` if any item failed; else ``not_checked`` if one could not be looked at; else ``passed``.
+    Registered rules: the capture originals and the worktree MUST be checked (a hash or ``git status`` that cannot
+    be taken is a failure); a policy folder whose listing timed out or hit a read error is ``not_checked`` and
+    does not by itself fail the run; without the policy the policy scope is ``not_applicable``."""
     from observer_app import publish_audit
-    changes, not_checked = {}, []
-    capture = sorted(name for name in set(before['capture']) | set(after['capture']) if before['capture'].get(name) != after['capture'].get(name))
-    if capture:
-        changes['capture'] = capture
+    result, changes = {'policy': {}}, {}
+    if before['capture'] is None or after['capture'] is None:
+        result['capture'] = 'failed: the original capture files could not be hashed'
+    else:
+        differing = sorted(name for name in set(before['capture']) | set(after['capture']) if before['capture'].get(name) != after['capture'].get(name))
+        result['capture'] = 'failed' if differing else 'passed'
+        if differing:
+            changes['capture'] = differing
     if before['worktree'] is None or after['worktree'] is None:
-        not_checked.append('worktree')
-    elif before['worktree'] != after['worktree']:
-        changes['worktree'] = sorted(set(before['worktree']) ^ set(after['worktree']))[:200]
-    for folder in before['policy']:
-        if before['policy'][folder] is None or after['policy'].get(folder) is None:
-            not_checked.append(folder)
+        result['worktree'] = 'failed: git status could not be read'
+    else:
+        differing = sorted(set(before['worktree']) ^ set(after['worktree']))
+        result['worktree'] = 'failed' if differing else 'passed'
+        if differing:
+            changes['worktree'] = differing[:200]
+    if not policy:
+        result['policy'] = 'not_applicable'
+    for folder, (tree, reason) in (before['policy'] if policy else {}).items():
+        later, later_reason = after['policy'].get(folder, (None, 'missing'))
+        if tree is None or later is None:
+            result['policy'][folder] = f'not_checked: {reason or later_reason}'
             continue
-        found = publish_audit.tree_changes(before['policy'][folder], after['policy'][folder])
+        found = publish_audit.tree_changes(tree, later)
+        result['policy'][folder] = 'failed' if found else 'passed'
         if found:
             changes[folder] = found[:200]
-    return {'method': 'capture: sha256 of every file; worktree: git status --porcelain --ignored; policy folders: size and mtime '
-                      'of every entry within a time limit. Cannot see transient writes, or a same-size same-mtime rewrite in a '
-                      'policy folder. The system temporary folder is not checked.',
-            'changed': bool(changes), 'changes': changes, 'not_checked': not_checked,
-            'entries': {'capture_files': len(before['capture']),
-                        'policy': {folder: None if tree is None else len(tree) for folder, tree in before['policy'].items()}}}
+    verdicts = [result['capture'], result['worktree'], *(result['policy'].values() if isinstance(result['policy'], dict) else [])]
+    result['overall'] = ('failed' if any(v.startswith('failed') for v in verdicts)
+                         else 'not_checked' if any(v.startswith('not_checked') for v in verdicts) else 'passed')
+    result['changes'] = changes
+    result['method'] = ('capture: sha256 of every file; worktree: git status --porcelain --ignored; policy folders (policy runs only): '
+                        'size and mtime of every entry within a time limit. Cannot see transient writes, or a same-size same-mtime '
+                        'rewrite in a policy folder. The system temporary folder is not checked.')
+    return result
 
 
 def start_watchdog(run_dir, limits, *, peak=None, interval=.5):
@@ -720,7 +761,7 @@ def start_watchdog(run_dir, limits, *, peak=None, interval=.5):
                 record = {'peak_rss_bytes': held, 'elapsed_s': round(elapsed, 1),
                           'why': 'runtime_cap_hard' if elapsed > limits['max_seconds']+60 else 'memory_cap' if held is not None else 'watchdog_could_not_measure'}
                 (Path(run_dir)/'ABORTED.json').write_text(json.dumps(record))
-                write_status(run_dir, 'ABORTED', stop={'reason': record['why'], 'detail': record})
+                mark(run_dir, 'ABORTED', stop={'reason': record['why'], 'detail': record})
             finally:
                 os._exit(87)
     thread = threading.Thread(target=loop, name='replay-watchdog', daemon=True)
@@ -779,10 +820,12 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
             raise Refused(f'free memory could not be measured (vm_stat {free}, in-process {in_process})')
         if min(free, in_process) < limits['min_free_bytes']:
             raise Refused(f'free memory (vm_stat {free}, in-process {in_process}) is below the registered minimum {limits["min_free_bytes"]}')
-        absent = [str(folder) for folder in (limits['capture_original_dir'], *limits['policy_dirs']) if not Path(folder).is_dir()]
+        policy_on = args.policy == 'armb'  # OFF: no policy folder, style file or external volume is touched below, at all
+        absent = [str(folder) for folder in (limits['capture_original_dir'], *(limits['policy_dirs'] if policy_on else ()))
+                  if not Path(folder).is_dir()]
         if absent:
             raise Refused(f'folders registered as unchanged do not exist: {absent}')
-        if args.policy == 'armb':
+        if policy_on:
             if not Path(volume).is_mount():
                 raise Refused('the policy needs the T7 volume (read-only use)')
             if not limits['style_sha256'] or not limits['policy_device']:
@@ -797,8 +840,8 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
     for name in CLEARED_ENV:
         os.environ.pop(name, None)
     run_dir.mkdir()
-    write_status(run_dir, 'RUNNING', phase='starting')
-    summary = {'schema': 'pitcheezy-publisher-replay-summary-v2', 'status': 'FAILED', 'incomplete': True, 'game_pk': args.game,
+    mark(run_dir, 'RUNNING', phase='starting')
+    summary = {'schema': 'pitcheezy-publisher-replay-summary-v3', 'status': 'FAILED', 'incomplete': True, 'game_pk': args.game,
                'commit': args.commit, 'stop': {'reason': 'failed_before_the_replay', 'detail': None}, 'cycles': {'n': 0, 'by_label': {}, 'wall_s': {}, 'last_sequence': None}}
     fs_audit = None
     try:
@@ -807,11 +850,11 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
         for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             signal.signal(number, on_signal)
         start_watchdog(run_dir, limits)
-        state_before = outside_state(limits)  # under the watchdog; git runs here, before the tripwire
+        state_before = outside_state(limits, policy_on)  # under the watchdog; git runs here, before the tripwire
         os.chdir(run_dir)  # a relative path opened for writing resolves inside the run folder
         os.environ['TMPDIR'] = str(run_dir/'tmp')
         from observer_app import publish_audit
-        fs_audit = publish_audit.FsAudit([run_dir], watch=[volume])
+        fs_audit = publish_audit.FsAudit([run_dir], watch=[volume] if policy_on else [])
         sys.addaudithook(fs_audit.event)  # tripwire from here on: no write outside the run folder, no process, no socket
         contract = REPO/'apps/observer/publish_contract/v1/schema'
         schemas = {path.name.split('.')[0]: json.loads(path.read_text()) for path in sorted(contract.glob('*.schema.json'))}
@@ -822,20 +865,24 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
             'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}, indent=1)+'\n')
         try:
             summary = run(rows=rows, info=info, run_dir=run_dir, game_pk=args.game, commit=args.commit, limits=limits,
-                          policy_factory=armb_factory(run_dir, limits['style_sha256'], style_dir, make_policy) if args.policy == 'armb' else None,
+                          policy_factory=armb_factory(run_dir, limits['style_sha256'], style_dir, make_policy) if policy_on else None,
                           fs_audit=fs_audit, schemas=schemas, finalize=False)
         finally:
             info['db'].close()
         tripped = len(fs_audit.violations)
         fs_audit.armed = False  # the replay is over: the checks below need git, a child process
         after = sha256_file(db)
-        outside = outside_changes(state_before, outside_state(limits))
+        outside = outside_check(state_before, outside_state(limits, policy_on), policy_on)
         summary['capture_copy'] = {'sha256_before': before, 'sha256_after': after, 'unchanged': before == after}
-        summary['outside_changes'] = outside
-        if summary['status'] == 'COMPLETED' and (outside['changed'] or before != after or tripped):
-            summary['status'] = 'FAILED'
-            summary['stop'] = {'reason': 'something_outside_the_job_folder_changed', 'detail': None}
+        summary['outside_check'] = outside
+        if outside['overall'] == 'failed' or before != after or tripped:
+            summary['invariants']['held']['nothing_outside_the_job_folder'] = False
+            if summary['status'] == 'COMPLETED':
+                summary['status'] = 'FAILED'
+                summary['stop'] = {'reason': 'something_outside_the_job_folder_changed_or_could_not_be_checked', 'detail': None}
         summary['incomplete'] = summary['status'] != 'COMPLETED'
+        summary['invariants']['all_held'] = (summary['status'] == 'COMPLETED'
+                                             and all(value is not False for value in summary['invariants']['held'].values()))
     except Interrupted as signalled:
         summary['status'], summary['incomplete'] = 'INTERRUPTED', True
         summary['stop'] = {'reason': 'signal', 'detail': str(signalled)}
@@ -848,9 +895,10 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
         if fs_audit is not None:
             fs_audit.armed = False
         try:
-            finish(run_dir, summary)  # COMPLETED and the removal of INCOMPLETE happen here, last, or not at all
-        except BaseException:  # noqa: BLE001
-            write_status(run_dir, 'FAILED', stop={'reason': 'the_summary_could_not_be_written', 'detail': None})
+            finish(run_dir, summary)  # the final SUMMARY.json is the last write; if it fails nothing is written after it
+        except BaseException:  # noqa: BLE001 - the record on disk stays at its last progress state (incomplete)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
             summary['status'] = 'FAILED'
     return 0 if summary['status'] == 'COMPLETED' else 3
 

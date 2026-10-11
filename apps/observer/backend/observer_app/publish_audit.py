@@ -319,26 +319,30 @@ class FsAudit:
 
 
 def tree_snapshot(root, *, skip=(), deadline=None, clock=None):
-    """``{relative path: (size, mtime_ns)}`` of every file and folder under ``root`` (links not followed);
-    ``skip``: relative folder names not descended into. Returns None when ``clock()`` passes ``deadline`` before
-    the walk is done: an unfinished listing is "not checked", never a result.
+    """``(tree, None)`` with ``tree = {relative path: (size, mtime_ns)}`` for every file and folder under ``root``
+    (links not followed; ``skip``: relative folder names not descended into), or ``(None, reason)`` when the
+    listing is not complete: ``timeout`` (``clock()`` passed ``deadline``), ``walk_error`` (a folder could not be
+    read) or ``lstat_error`` (an entry could not be examined). An incomplete listing is "not checked", never a
+    result: nothing is silently left out.
 
     What a before/after pair of these can show: a file added, removed, resized or re-stamped. What it cannot: a
     rewrite that keeps size and mtime, or anything created and deleted in between."""
-    root, found = os.path.realpath(root), {}
-    for folder, folders, files in os.walk(root, followlinks=False):
+    root, found, errors = os.path.realpath(root), {}, []
+    for folder, folders, files in os.walk(root, followlinks=False, onerror=errors.append):
         if deadline is not None and clock() > deadline:
-            return None
+            return None, 'timeout'
         relative = os.path.relpath(folder, root)
         for name in (*folders, *files):
             path = os.path.join(folder, name)
             try:
                 info = os.lstat(path)
             except OSError:
-                continue
+                return None, 'lstat_error'
             found[os.path.normpath(os.path.join(relative, name))] = (info.st_size if not os.path.isdir(path) else None, info.st_mtime_ns)
         folders[:] = [name for name in folders if os.path.normpath(os.path.join(relative, name)) not in skip]
-    return found
+    if errors or not os.path.isdir(root):
+        return None, 'walk_error'
+    return found, None
 
 
 def tree_changes(before, after):
