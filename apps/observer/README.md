@@ -104,6 +104,20 @@ PITCHEEZY_OBSERVER_HOST=tailscale sh apps/observer/serve.sh
 - 폰 폭 확인: `node apps/observer/web/tests/service-smoke.mjs http://127.0.0.1:8766 [라이브 gamePk|-] [스크린샷 폴더|-] [다시 보기 gamePk]`.
 - 실경기 측정(서비스 시간·지원 범위, 모델 평가 아님): `python3 scripts/live_rehearsal.py record --game-pk N --server http://…:8766 --output DIR [--not-before 2026-10-03T16:50:00Z]`가 폰처럼 상태를 조회해 한 줄씩 기록하고, 경기가 끝나면 `report --game-pk N --output DIR --snapshots apps/observer/live_snapshots`가 피드 도착 지연·다음 공 전 여유·추천 가능 비율·응답 시간을 낸다. `simulate --feeds …/DEMO-WS-2026/feeds --lags 5 10 15`는 끝난 경기의 투구 시각으로 조회 간격별 "5초 전 추천" 비율을 계산한다.
 
+## 기능 스위치와 시청 지연(잠정, 기본 꺼짐)
+
+- 스위치는 `live_config.json`의 `features`와 환경 변수로 정한다(`backend/observer_app/features.py`). 웹을 다시 빌드하지 않고 끌 수 있다. 값은 모두 잠정이고, 잘못된 환경 변수 값은 무시하고 경고를 한 번 남긴다.
+  - `PITCHEEZY_OBSERVER_VIEWER_DELAY=1`: 팬 화면 시청 지연. **기본 꺼짐.** 공개 서비스는 지연 0 본문 하나를 모두에게 배포하므로, 시청자별 지연은 이 서버에 직접 붙는 경로(폰 시연·내부)에서만 켠다.
+  - `PITCHEEZY_OBSERVER_VIEWER_DELAY_DEFAULT_S`(기본 30), `PITCHEEZY_OBSERVER_VIEWER_SYNC_PROMPT`(0 = 첫 화면에서 묻지 않음).
+  - `PITCHEEZY_OBSERVER_PROFILE_REFERENCE`, `PITCHEEZY_OBSERVER_PROFILE_SOURCES`, `PITCHEEZY_OBSERVER_STEP5_EXPECTATION`, `PITCHEEZY_OBSERVER_STEP5_LEDGER`, `PITCHEEZY_OBSERVER_STEP5_ALLOW_REPLAYED`: 기본 꺼짐. 값만 전달하고 동작은 각 모듈이 정한다.
+- 꺼져 있을 때: `?delay=`는 경기·목록에서 무시되고(지연 0), 맞추기 경로는 404, 응답에는 `features`와 `viewer`(`enabled: false`, `delay_s: 0`)만 더해진다. 그 밖의 본문은 a72f1fa와 같다(`tests/test_viewer_off_golden.py`).
+- 켜져 있을 때:
+  - `GET /api/service/games/{pk}?delay=<초>`: 중계가 그만큼 늦은 시청자의 시점(가장 새 사건이 그만큼 지난 본문 중 최신)으로 본문 전체를 만든다. 상한은 `max_delay_s`(120). 아직 그 시점의 본문이 없으면 점수·투구 없이 `viewer.buffering: true`와 "내 중계 시점까지 기다리는 중이에요 (약 N초)."를 준다. 더 새 본문으로 대신하지 않는다.
+  - `GET /api/service/games?date=&delay=`: 진행 중 경기 카드는 점수·이닝 없이 `score_hidden: true`.
+  - `GET /api/service/games/{pk}/tap?ago=<초,초…>&current=<초>&sure=0|1`: 내 TV에서 공이 미트에 들어온 순간을 누른 뒤 지난 시간(기기에서 잰 값). 답은 `status: ok|wait|unclear`와 지연 초뿐이고 경기 내용은 없다. 한 번으로 어느 공인지 가리지 못하면 다음 공에서 한 번 더 누르게 한다.
+  - 수신 즉시 기록(`record_at_receipt`): 지연 시청자만 있어도 가장 새 본문의 추천을 같은 게이트를 거쳐 원장에 바로 기록한다. 그 시청자에게는 보여 주지 않는다.
+- 화면(`/watch/{pk}`): 공개 빌드(`VITE_PUBLISH_BASE` 설정)에서는 지연·맞추기 화면이 아예 없다. 그 외 빌드에서 서버가 켜져 있다고 답할 때만 "중계 맞추기"가 보인다. 맞추기 전에는 실제 투구·결과(투구 카드의 구종·속도·위치, 선택한 공의 실제 투구 줄, 자세히의 실제 투구, 타석 결과)를 "중계 맞추기 후 표시"로 접는다. 점수·볼카운트·아웃·주자·이닝별 기록은 그대로 둔다.
+
 ## 현재 구성
 
 | 모듈 | 구현 |
