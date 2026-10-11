@@ -123,6 +123,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const [sel, setSel] = useState<Selection | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+  // the tab was hidden: polling paused on purpose, so that time never counts as a late or lost connection (re-based on return)
+  const [hidden, setHidden] = useState(() => document.hidden);
+  const [resumed, setResumed] = useState(0);
   const [sheet, setSheet] = useState<'pa' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const sheetOpener = useRef<HTMLElement | null>(null);
@@ -182,7 +185,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, [firstLoadRetry, error, load]);
   useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 5000); return () => window.clearInterval(id); }, []);
   useEffect(() => {  // coming back to the tab: refresh at once when following
-    const onVis = () => { if (!document.hidden && auto && pollMs) void load(); };
+    const onVis = () => { setHidden(document.hidden); if (!document.hidden) { setResumed(Date.now()); setNow(Date.now()); } if (!document.hidden && auto && pollMs) void load(); };
     const onOnline = () => { if (auto && (pollMs || detailRef.current === null)) void load(detailRef.current === null); };
     document.addEventListener('visibilitychange', onVis); window.addEventListener('online', onOnline);
     return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('online', onOnline); };
@@ -254,12 +257,12 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
 
   // Connection: the client's own polling (clientStale / error) and the server's upstream feed. With a display state the server part
   // comes from display.feed; the old `stale_s > 30` guess (which also fires in long breaks) is used only without one.
-  const clientStale = live && auto && lastOk !== null && now - lastOk > STALE_MS;
+  const clientStale = live && auto && !hidden && lastOk !== null && now - Math.max(lastOk, resumed) > STALE_MS;
   const feedDown = disp ? !disp.feed.ok : live && (detail.feed.ok === false || (detail.feed.stale_s ?? 0) > 30);
   const stale = clientStale || feedDown;
   // lag_s is a proven lower bound (never an estimate): floor it and say '넘게', never '약'
   const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
-  const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: `${LATE} 갱신 늦어짐` }
+  const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
     : lagText ? { kind: 'late', text: `${LATE} 자료 늦음 · ${lagText}` }
     : { kind: 'ok', text: live ? (auto ? '실시간으로 받는 중' : '자동 갱신 멈춤') : disp?.message?.replace(/\.$/, '') ?? disp?.label ?? '' };
   // D1 "no silent flip": server note first; otherwise compare with what this screen last drew for the same pending pitch.
@@ -373,10 +376,10 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     <section className="sv-stage" aria-label={nextPhase ? '다음 공 추천' : '이 공의 추천과 실제 투구'}>
       <h2 className="sr-only">{stateSlot && !shownRec ? `다음 공: ${eff!.label}` : held ? `마지막으로 받은 추천 (${rec ? provenanceText(rec) : '추천 없음'}). 퍼센트는 정책 선택 비중이며 성공 확률이 아니에요.` : `${recHeading}.${shownRec ? ' 퍼센트는 정책 선택 비중이며 성공 확률이 아니에요.' : ''}`}</h2>
       {idle ? <div className="sv-duel idle"><span>{breakNow ? '다음 타자를 기다리고 있어요' : game.status === 'final' ? '' : '경기가 시작되면 타자와 투수를 보여 드려요'}</span></div>
-      : <div className="sv-duel" aria-label="타자와 투수 대결">
-        <span><b>타자: {batterP?.name ?? '선수 미확인'}</b></span>
+      : <div className="sv-duel" role="group" aria-label={`타자 ${batterP?.name ?? '선수 미확인'} 대 투수 ${pitcherP?.name ?? '선수 미확인'}`}>
+        <span title={batterP?.name ?? undefined}><b>타자: {batterP?.name ?? '선수 미확인'}</b></span>
         <i aria-hidden="true">vs</i>
-        <span><b>투수: {pitcherP?.name ?? '선수 미확인'}</b></span>
+        <span title={pitcherP?.name ?? undefined}><b>투수: {pitcherP?.name ?? '선수 미확인'}</b></span>
       </div>}
       {/* Pitcher's view, with the batter on the correct screen side. The zone owns the centre;
           recommendations now live below it, leaving its outside-coordinate margin unobstructed. */}

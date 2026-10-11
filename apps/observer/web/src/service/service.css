@@ -583,3 +583,12 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 /* 375x553 (small iPhone with browser bars): the live screen fits without page scroll. The zone row gives up 16px; the drawing scales
    with it and the state slot is still placed from --sv-below-min, so no mark moves the slot. */
 @media(max-height:560px){.sv-game.has-display .sv-zrow{height:174px;min-height:174px}}
+
+/* review round 1 (2026-10-11). The matchup line of a live game is ONE line of fixed height whatever the names (long names end in an
+   ellipsis; the full names are in title and aria-label), so a new batter never moves the state slot or adds page scroll. */
+.sv-game.has-display .sv-duel{height:38px;min-height:0}
+.sv-game.has-display .sv-duel span{display:block;overflow:hidden}
+.sv-game.has-display .sv-duel b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+@media(max-height:780px){.sv-game.has-display .sv-duel{height:24px}}
+/* nothing in the zone row takes taps; its transparent area must not swallow taps on the summary that overlaps its lower edge */
+.sv-zrow,.sv-zrow .sv-zone{pointer-events:none}

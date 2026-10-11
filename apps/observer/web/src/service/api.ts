@@ -40,10 +40,15 @@ function status(raw: Raw): { status: GameStatus; text: string } {
   const text = String(raw.status_text ?? raw.status ?? '');
   const s = String(raw.status ?? '').toLowerCase();
   if (raw.embargoed === true) return { status: 'other', text: '' };
+  // The server's own decision (the `live` flag / a status kind) comes first: a mid-game 'Delayed', 'Suspended', 'Manager challenge' or
+  // 'Review' stays live, and a 'Delayed Start' before the first pitch is not live. The status words are read only for rows that carry
+  // neither (legacy schedule feed), and there 'Delayed Start' is a game that has not started.
+  if (raw.live === true || s === 'live') return { status: 'live', text: text || '진행 중' };
+  const decided = typeof raw.live === 'boolean' || ['final', 'scheduled', 'postponed', 'other'].includes(s);
   if (s === 'postponed' || /postponed|suspended|cancel/i.test(text)) return { status: 'postponed', text };
-  if (raw.live === true || s === 'live' || /in progress|manager challenge|delayed|review/i.test(text)) return { status: 'live', text: text || '진행 중' };
   if (s === 'final' || /final|game over|completed/i.test(text)) return { status: 'final', text };
-  if (s === 'scheduled' || /scheduled|pre-game|warmup/i.test(text)) return { status: 'scheduled', text };
+  if (!decided && /in progress|manager challenge|review|delayed(?! start)/i.test(text)) return { status: 'live', text: text || '진행 중' };
+  if (s === 'scheduled' || /scheduled|pre-game|warmup|delayed start/i.test(text)) return { status: 'scheduled', text };
   return { status: 'other', text };
 }
 export function normalizeCard(raw: Raw): GameCard {
@@ -111,6 +116,20 @@ const STATE_COPY: Record<DisplayStateName, [string, string | null]> = {
   unavailable: ['추천 없음', '지금은 추천을 제공하지 못해요.'],
   pregame: ['경기 전', '경기 시작 전이에요.'],
   final: ['경기 종료', '경기가 끝났어요.'] };
+const SHOWING: DisplayStateName[] = ['recommended', 'feed_delayed', 'disconnected'];
+/** Fail closed: an answer of the LIVE route without a usable `display_state` (missing, or a state name this build does not know) never
+ *  shows a recommendation. The slot still says one calm thing: what the card and phase allow (경기 전 / 경기 종료 / 공수 교대 / 결과 확인 중),
+ *  otherwise the default 확인 중 sentence. The pending pitch's key is kept so the D1 guard can say that a list went away. */
+function fallbackDisplay(raw: Raw, card: GameCard): Display {
+  const phase = raw.current?.phase;
+  const [state, label, message]: [DisplayStateName, string, string | null] = card.status === 'final' ? ['final', ...STATE_COPY.final]
+    : card.status !== 'live' ? ['pregame', ...STATE_COPY.pregame]
+    : phase === 'between_innings' ? ['waiting', '공수 교대', '공수 교대 중이에요.'] : phase === 'resolving' ? ['waiting', '결과 확인 중', '방금 공의 결과를 기다리고 있어요.']
+    : ['unconfirmed', ...STATE_COPY.unconfirmed];
+  return { state, reason: phase === 'between_innings' && state === 'waiting' ? 'between_innings' : 'client_fail_closed', label, message,
+    pitch_key: text(raw.display_state?.pitch_key) ?? text(raw.next?.pitch_key), shown: false, correction: null,
+    feed: { ok: raw.feed?.ok !== false, delayed: false, lag_s: null } };
+}
 const CORRECTION_COPY: Record<Correction['kind'], string> = { replaced: '상황이나 기록이 바뀌어 추천이 달라졌어요.', withdrawn: '조금 전에 보여 드린 추천은 지금 표시하지 않아요.' };
 const text = (v: unknown): string | null => typeof v === 'string' && v.trim() ? v.trim() : null;
 /** `display_state` → Display. Anything that is not a known state (older backend, archive, demo, a future state name) → null, and the
@@ -122,17 +141,18 @@ export function normalizeDisplay(raw: Raw | null | undefined): Display | null {
   const kind: Correction['kind'] | null = c && (c.kind === 'replaced' || c.kind === 'withdrawn') ? c.kind : null;
   const prev = c?.previous && typeof c.previous === 'object' ? c.previous as Raw : null;
   return { state, reason: text(raw.reason), label: text(raw.label) ?? STATE_COPY[state][0], message: text(raw.message) ?? STATE_COPY[state][1],
-    pitch_key: text(raw.pitch_key), shown: raw.recommendation_shown === true,
+    // candidates may be on screen only when the server says so AND the state is one that carries a recommendation
+    pitch_key: text(raw.pitch_key), shown: raw.recommendation_shown === true && SHOWING.includes(state),
     correction: kind ? { kind, message: text(c.message) ?? CORRECTION_COPY[kind],
       previous: prev && (text(prev.pitch_type) || text(prev.pitch_label)) ? { pitch_type: text(prev.pitch_type), pitch_label: text(prev.pitch_label), zone_id: text(prev.zone_id), zone_label: text(prev.zone_label) } : null } : null,
     feed: { ok: raw.feed?.ok !== false, delayed: raw.feed?.delayed === true, lag_s: num(raw.feed?.lag_s) } };
 }
-function pa(raw: Raw): Pa {
+function pa(raw: Raw, unsure = false): Pa {
   return { pa_key: raw.pa_key, at_bat_number: raw.at_bat_number, inning: raw.inning, half: raw.half,
     batter: raw.batter?.name ?? '타자 미상', pitcher: raw.pitcher?.name ?? '투수 미상', first: raw.first_index, last: raw.last_index,
     batting_order: num(raw.batting_order), pitch_count: num(raw.pitch_count), complete: raw.complete === true, batter_id: typeof raw.batter?.id === 'number' ? raw.batter.id : null,
     // a plate appearance that holds an unconfirmed pitch: the server sends result_text '확인 중' (never its outcome)
-    result: raw.result_text === BLANK_LABEL ? BLANK_LABEL : raw.complete === true ? raw.result_text ?? raw.event_label ?? '결과 기록 없음' : '타석 진행 중' };
+    result: raw.result_text === BLANK_LABEL || unsure ? BLANK_LABEL : raw.complete === true ? raw.result_text ?? raw.event_label ?? '결과 기록 없음' : '타석 진행 중' };
 }
 /** main.py catch-all answer for an /api path the running backend does not have (older deployment). */
 const ROUTE_MISSING = 'API 경로를 찾을 수 없습니다.';
@@ -204,7 +224,10 @@ export function normalizeDetail(raw: Raw): Detail {
   const provenance: Rec['provenance'] = raw.source?.kind === 'live' ? 'captured_live' : 'asof_replay';
   const pitches = (raw.pitches ?? []).map((p: Raw) => pitchRow(p, provenance));
   const cur = raw.current;
-  const display = provenance === 'captured_live' ? normalizeDisplay(raw.display_state) : null;
+  const game = normalizeCard(raw.game);
+  const display = provenance === 'captured_live' ? normalizeDisplay(raw.display_state) ?? fallbackDisplay(raw, game) : null;
+  // a plate appearance that holds an unconfirmed pitch reads 확인 중 here too, even when the server did not blank it
+  const unsurePas = new Set(pitches.filter((p: PitchRow) => p.receipt?.status === 'unconfirmed').map((p: PitchRow) => p.pa_key));
   // The pending slot's key ('game:at_bat:pitch') names the open plate appearance when `current.pa_key` is not sent.
   const slot = /^(\d+:\d+):\d+$/.exec(display?.pitch_key ?? '');
   const current: Current | null = cur?.situation ? { phase: cur.phase ?? 'pre_pitch', situation: cur.situation, batter: cur.batter ?? null,
@@ -213,7 +236,7 @@ export function normalizeDetail(raw: Raw): Detail {
   let next = raw.next ? normalizeRec(nextRaw, provenance === 'captured_live' ? 'captured_live' : 'asof_replay') : null;
   // the server says nothing is shown for the pending pitch: candidates never reach the screen, whatever `next.rec` carries
   if (next && display && !display.shown) next = { ...next, status: next.status === 'ready' ? 'missing' : next.status, candidates: [], provenance: next.status === 'ready' ? 'absent' : next.provenance };
-  return { session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game: normalizeCard(raw.game), pitches, pas: Array.isArray(raw.pas) ? raw.pas.map(pa) : groupPas(pitches, current), current,
+  return { session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game, pitches, pas: Array.isArray(raw.pas) ? raw.pas.map((p: Raw) => pa(p, unsurePas.has(p.pa_key))) : groupPas(pitches, current).map(p => unsurePas.has(p.pa_key) ? { ...p, result: BLANK_LABEL } : p), current,
     next, display, receipts_version: text(raw.receipts?.version), phase: PHASES.includes(cur?.phase) ? cur.phase : null, live_source: provenance === 'captured_live',
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
     zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),

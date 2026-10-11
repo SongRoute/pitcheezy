@@ -95,7 +95,7 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
         : <>
           {pair && <dl className="sv-dl sv-pair"><dt>추천 1순위</dt><dd>{pair.rec}</dd><dt>실제 투구</dt><dd>{pair.actual}</dd></dl>}
           {pair && <p className="sv-muted">투구 전에 기록된 추천과 실제로 던진 공을 나란히 보여 드려요. 맞고 틀림을 매긴 것이 아니에요.</p>}
-          <p className="sv-muted">{provenanceText(rec)}{rec.policy ? ` · ${rec.policy}` : ''}{rec.recorded_at ? ` · ${kstTime(rec.recorded_at)} 기록` : ''}</p>
+          <p className="sv-muted">{provenanceText(rec)}{rec.recorded_at ? ` · ${kstTime(rec.recorded_at)} 기록` : ''}</p>
           <table className="sv-table"><thead><tr><th scope="col">순위</th><th scope="col">구종</th><th scope="col">대략 위치</th><th scope="col">정책 선택 비중</th></tr></thead>
             <tbody>{rec.candidates.map((c: Candidate) => <tr key={c.rank}><td>{c.rank}</td><td>{c.pitch_label}</td><td>{c.zone_label || '위치 없음'}</td><td>{policyShare(c.probability)}</td></tr>)}</tbody></table>
           <p className="sv-muted">정책 선택 비중은 성공·적중 확률이 아니에요.</p>
