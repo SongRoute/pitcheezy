@@ -1,5 +1,16 @@
 # 연구 PM 현재 상태
 
+**2026-10-11 ~12:55 KST Claude PM 체크포인트 2 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·HOLD 문장만 이 블록이 대체한다):**
+
+- **연구 결과 2건 기록(2026 EXPOSED DEVELOPMENT, 독립 TEST 없음, 승자·채택 없음; [README](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/README.md)):**
+  - **EXP-WS-CAL-001 (E3)** [results/EXP-WS-CAL-001.json](../../../results/EXP-WS-CAL-001.json), 커밋 `c8639ae`, 검토 PASS, rc 0, 17.88초, peak RSS 212,254,720 B. 고정 fit100의 EVAL(80,584행/275경기) 기준 C0 top-label ECE 0.00356166321549404, NLL 1.5793491627848582. 대안 C0 대비 ECE 차(CI95): C1 벡터 스케일링+Platt -0.0011295 [-0.0025694, 0.0018294]; C2 Dirichlet ODIR -0.0001089 [-0.0029554, 0.00277]; C3 구간별 isotonic -0.0002749 [-0.0019188, 0.0012813]. C3는 NLL +0.0011416 [0.0004144, 0.0020277]로 비열등 마진(+0.0010) 초과. 셋 다 `NOT_CANDIDATE`. 교체 가치 입증 안 됨.
+  - **EXP-WS-RECENCY-001 (E1)** [results/EXP-WS-RECENCY-001.json](../../../results/EXP-WS-RECENCY-001.json), 커밋 `fcfd5d8`, 검토 PASS, rc 0, 148.78초, peak RSS 1,894,973,440 B, 재학습 없음(특징만 갱신). H0(FIT 2026-08-02 동결) 대비 H1(컷오프 2026-09-06) NLL -0.0012710519700791512 [-0.0018252099881693295, -0.0007277831182018368]; H2(경기일별 strictly-prior, 2026-09-27) NLL -0.0017700962772502216 [-0.0023630670154146183, -0.0011883135483216727], Brier -0.0005608596992439097 [-0.0007919620649035453, -0.0003375670291978988], ECE 차 CI는 0 포함. 층별 H2−H0 NLL: S0(FIT 이력 0, 투수 66명/7,699구) -0.00600445109453851 [-0.008824068771636705, -0.0031270587327467112]; S1 -0.00182 [-0.00392, 0.0003]; S2 -0.00184 [-0.00269, -0.00099]; S3(1000행 이상) -0.00074 [-0.00155, 0.00011]. FIT에 없던 타자(B0) -0.00751 [-0.01134, -0.00355].
+  - **구조적 발견:** SELECT·CAL·EVAL 점수가 모두 2026-08-02에 동결한 이력으로 계산됐다(FIT 행은 신선한 strictly-prior 이력으로 학습). 학습/서빙 이력 불일치가 있었고 이를 없애면 NLL이 좋아진다.
+  - **한계:** EXPOSED DEV, 독립 TEST 없음, 재학습 없음, 이력 풀은 2026 단독(S0은 2026 FIT 이력 없음이지 기록 없음이 아님), 연구 모델이며 서빙 경로가 아님.
+  - **다음(승인됨, 둘 다 대기):** E1b 경기일별 재학습(CPU) → Song 2026-10-11 5장 허가 아래 `gpu run`으로 GPU 시퀀스 모델 실험([gpu-proposal.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/gpu-proposal.md)). README 기준 GPU job은 아직 띄우지 않았다.
+- **결정(D175):** RC 기반은 기존 ARM-B 서빙 경로(`rc/ws-2026`), Step 5/2026 프로파일 경로는 그림자 원장으로만 연결, 보정기 교체(E3)는 닫음, 이력 최신화(E1)는 후속 재학습·GPU 시퀀스 실험으로 이어감 — 서빙 모델 교체는 별도 게이트.
+
+
 **2026-10-11 ~11:50 KST Claude PM 체크포인트 1 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·HOLD 문장만 이 블록이 대체한다):**
 
 - **선수별 패널 실행 완료 — 2026 EXPOSED DEVELOPMENT, 기술 통계만:** job [/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-eop-player-panels-next-001/](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-eop-player-panels-next-001/). author-003(6 GiB 시작/4 GiB 실행 중 메모리 게이트 + locale 수정; 과학 파일은 author-002와 byte 동일) → Fable 통합 검토 PASS(`combined-review-001/REVIEW.md`, REVIEW-PASS.json SHA-256 `9512f7b8680cfcd522f5c82e5fc76aa08653ea926be3046f5d8d34c7d266000e`; critical/high 0, medium 2, low 5) → PM 실행 허가 → 실제 1회 `eop-panels-001`(약 11:20 KST): supervisor rc 0, COMPLETED, 0.918초, peak RSS 450,019,328 B, failed_checks [], 메모리 guard 최소 free 9,828,007,936 B. 결과 `author-003/attempts/eop-panels-001/result.json` SHA-256 `96d2f9df8d23c27fd635c5c91ab94147cd7a10a192c66553097a539702693662`. 이전 HOLD `ROOT_ACTUAL_HOLD_RESOURCE_HEADROOM`은 해소됐다.

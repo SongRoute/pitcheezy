@@ -1,5 +1,23 @@
 # 서비스 PM 상태·실행 큐
 
+**2026-10-11 ~12:55 KST Claude PM 체크포인트 2 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·HOLD 문장만 이 블록이 대체한다):**
+
+- **849831 한 경기 수신 수용(제한적):** 종료 [TERMINAL.json](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step4-capture-849831/TERMINAL.json) `FINAL_PLUS_ONE`·`CLEAN`, 요청 1,084, 오류 0, gap 0. post-capture [REPLAY-RESULT.json](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step4-postcapture-run-849831/REPLAY-RESULT.json) `CANDIDATE_COMPLETE`/`ALL_CHECKS_HELD`: Final 키 257 accepted, missing 0, 격리 전용 extra 6, 재생 일치 1,085/1,085. 독립 검토 [REVIEW.md](/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step4-capture-replay-distinct-review-001/REVIEW.md) 판정 `ACCEPT_BOUNDED_ONE_GAME_CAPTURE_REPLAY`. PM 처분: 한 경기 제한 증거로 수용. "재생 동일"은 같은 코드·같은 본문의 결정성 확인이지 저장 규칙이 옳다는 독립 증거가 아니다.
+  - 증명됨: 수신본 마지막 Final 본문 기준 빠진 투구 없음, 저장 본문만으로 두 표 재현, 격리 6개는 accepted된 적 없음. 증명 안 됨: 저장 규칙의 옳음(순환), 제공자의 이후 정정·공식 Final. 미확인: 폴 사이 제공자 버전, 첫 폴 이전, 상류 도착 시각, wire 바이트(duplicate 719건 본문 미저장).
+  - 서비스 함의: 폴 간격 중앙 10.84초·최대 12.14초; 257투구 중 251은 혼자, 6은 묶음으로 처음 보임; 첫 수신 − 제공자 startTime 중앙 20.5초; 다음 투구 startTime이 직전 투구 첫 수신 시점에 이미 지난 경우 99/256.
+- **Step 5 그림자 실행 1회 완료(한 경기·기술 통계·채택 없음):** 등록 [REGISTRATION.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-step5-shadow-001/REGISTRATION.md), 독립 검토 [REVIEW.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-step5-shadow-001-review/REVIEW.md) `PASS_READY_FOR_PM_GRANT`, 실행 [SUMMARY.json](/Users/song/Projects/pitcheezy-pm-jobs/20261011-step5-shadow-001/run-849831-001/SUMMARY.json): rc 0, 사후 하드 체크 전부 true. 자료 역할 SERVICE_EXPOSED_DEV(fit·튜닝·선택·OPE 없음).
+  - 분모: 물리 투구 257 = 연결 243(채점 242) + 투수 교체로 미연결 11 + 선행 본문 없어 건너뜀 3. 시도 254(기권 1, same_stamp_conflict). 지원 범위: 현행 서빙 경로 미지원 투수 1명(13구, 연결·채점 12).
+  - decide 호출 지연(ms) p50 5.467874929308891 / p90 7.452541962265968 / max 40.773124899715185; peak RSS 155,451,392 B; 경과 5.9969169166870415초.
+  - 결과 지표 n=212 (`FROZEN_2024_SEVEN_LEAF_AT_REALIZED_PITCH_TYPE`): top-1 61/212 = 0.28773584905660377, NLL 1.6161628851097787, Brier 0.7743105545090772. 구종 비율 기준선 n=242는 모델 출력이 아니다(`..._NOT_A_MODEL_OUTPUT`): top-1 78/242 = 0.32231404958677684, NLL 4.666754705624229, Brier 0.8035641193397007.
+  - 단서: 이 모델은 후보 구종별 결과 확률을 주며 다음 구종을 예측하지 않는다. ABS 판정 번복으로 투구 전 카운트가 바뀐 예측 2건, 학습 라벨 밖 인플레이 1구. GUMBO와 Statcast `bb_type` 일치는 UNKNOWN, 2026 프로파일과 2024 프로파일 빌더 일치는 UNKNOWN. 로스터 62명 투수 모두 2026 프로파일 지원 규칙 통과(규칙 통과 수일 뿐 품질 아님, [COVERAGE-2026-PROFILE.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-step5-shadow-001/COVERAGE-2026-PROFILE.md)).
+- **노출 장부:** 849831 재생 그림자 실행은 SERVICE_EXPOSED_DEV, fit·튜닝·선택·OPE 없음.
+- **RC 첫 종단 리허설(8772, 127.0.0.1):** [REPORT.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-rehearsal-001/REPORT.md)·metrics.json, 브랜치 `rc/rehearsal-1011`. 849831 전체를 2회 재생, 저장 결과 캡처와 일치. 257투구: 결과 전 원장 기록 241(화면 유지 228, 결과 전 철회 13), 지원 안 함 11(투수 1명), 묶음 3, 확인 중만 2, 원장 충돌 0. 기술 통계 top-1 79/241, top-3 141/241. 정책 계산 중앙 0.13초·p90 0.19초, 팬 API 중앙 28ms·p90 144ms, 서버 peak RSS 1.83 GiB. 지연 0 기준 투구 전 5초 이상 여유 103/241.
+- **화면 상태:** [HANDOFF.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-states-001/HANDOFF.md), `rc/ws-2026` 커밋 10개(끝 `a753735`), 백엔드 484 통과/1 기존 실패, 웹 테스트 794 ok. 독립 검토 2건 REWORK → 수정, 재검토 대기.
+- **진행 중:** 통합 job `20261011-rc-integration-001`(병합, 남은 결함, 재검토, 지연 시청 리허설, tailnet 폰 데모, 실경기 드라이런 계획). **미완:** 실기기 확인, 저장소+원장을 켠 실제 폴링, 8766/8771 변경(변경 없음).
+- **서비스 연결 방향:** E1 결과는 연구 모델 증거이며 서빙 경로 증거가 아니다. 야간 strictly-prior 프로파일 갱신은 별도 work order로 다룬다.
+- **결정(D175):** RC 기반은 기존 ARM-B 서빙 경로(`rc/ws-2026`), Step 5/2026 프로파일 경로는 그림자 원장으로만 연결, 보정기 교체(E3)는 닫음, 이력 최신화(E1)는 후속 재학습·GPU 시퀀스 실험으로 이어감 — 서빙 모델 교체는 별도 게이트.
+
+
 **2026-10-11 ~11:50 KST Claude PM 체크포인트 1 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·HOLD 문장만 이 블록이 대체한다):**
 
 - **2026 strict-prior 프로파일 실제 읽기 완료:** 별개 검토 001 REWORK(major 2: ko_KR에서 locale 의존 ps 파싱이 정상 자식을 죽임 / live_adapter가 supervisor가 쓸 수 없다고 판정한 프로파일을 로드; minor 5) → 다른 작성자의 수리(`step5-2026-profile-reader-source-repair-001`) → 재검토 002 `PASS_BOUNDED_SOURCE_READY_FOR_SEPARATE_DATA_GATE`(REVIEW.md SHA-256 `578ed219…8106`) → PM이 `HOLD_LOCAL_MATERIALIZATION_UNKNOWN` 해제(같은 S2 parquet을 패널 실행이 전부 읽고 hash 검증; reader 자체 게이트도 두 파일 `PASS_ALREADY_LOCAL`) → 실제 1회 `step5-2026-profile-read-001`(11:43 KST): rc 0, COMMITTED, profile_usable true, 14.16초, 자식 peak RSS 484,638,720 B.
