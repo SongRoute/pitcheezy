@@ -15,6 +15,8 @@
   "max_delay_s": 120,
   "max_bound_games": 3,
   "replay_lag_s": 0,
+  "display": {"feed_lag_delayed_s": 45},
+  "display_note": "PROVISIONAL, not a validated limit. feed_lag_delayed_s: a served snapshot whose newest game event was still missing from a good poll made more than this many seconds after it (the proven minimum lag) puts the fan screen in the feed_delayed display state (display_state.py). 45 is a first guess above the lag seen on one live game (849844, 2026-10-02: median about 19 s); revisit after the replay rehearsal. Env PITCHEEZY_OBSERVER_FEED_LAG_DELAYED_S overrides.",
   "record_dir": "apps/observer/live_snapshots",
   "zone_bounds": {"bottom": 1.6, "top": 3.3899},
   "zone_bounds_source": "League median sz_bot/sz_top of data/raw/d20260911-s2325 statcast_2023-2025 rows with game_date <= 2025-04-30 (bundle training_cutoff), n=1567136. Not batter-specific; the live feed's 2026 strikeZoneTop/Bottom are deliberately ignored.",
