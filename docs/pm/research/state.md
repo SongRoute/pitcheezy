@@ -1,5 +1,14 @@
 # 연구 PM 현재 상태
 
+**2026-10-11 ~11:50 KST Claude PM 체크포인트 1 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·HOLD 문장만 이 블록이 대체한다):**
+
+- **선수별 패널 실행 완료 — 2026 EXPOSED DEVELOPMENT, 기술 통계만:** job [/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-eop-player-panels-next-001/](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-eop-player-panels-next-001/). author-003(6 GiB 시작/4 GiB 실행 중 메모리 게이트 + locale 수정; 과학 파일은 author-002와 byte 동일) → Fable 통합 검토 PASS(`combined-review-001/REVIEW.md`, REVIEW-PASS.json SHA-256 `9512f7b8680cfcd522f5c82e5fc76aa08653ea926be3046f5d8d34c7d266000e`; critical/high 0, medium 2, low 5) → PM 실행 허가 → 실제 1회 `eop-panels-001`(약 11:20 KST): supervisor rc 0, COMPLETED, 0.918초, peak RSS 450,019,328 B, failed_checks [], 메모리 guard 최소 free 9,828,007,936 B. 결과 `author-003/attempts/eop-panels-001/result.json` SHA-256 `96d2f9df8d23c27fd635c5c91ab94147cd7a10a192c66553097a539702693662`. 이전 HOLD `ROOT_ACTUAL_HOLD_RESOURCE_HEADROOM`은 해소됐다.
+- **분모:** 80,584 = 공통 80,559 + OLD-unsupported 25. 기록된 eop-001 재현(NLL 차 -0.0012849726597854438, Brier 차 -0.00038700551426285035).
+- **PM이 result.json에서 계산한 기술 요약**(안정 = 100행 이상, fit100 − OLD NLL): 투수 524집단·안정 357·fit100 NLL 낮음 194; 타자 466집단·안정 330·fit100 NLL 낮음 190. 구종(행, NLL 차): FF 25368 -0.00099, SI 13160 -0.00072, SL 10070 -0.00132, CH 8948 -0.00218, FC 6809 -0.00118, ST 6578 -0.00230, CU 5503 +0.00103, FS 2597 -0.00619, KC 1017 -0.00307, SV 371 -0.00312.
+- **한계:** 구간·검정 없음, 승자·채택 없음. 작은 셀은 불안정. UNKNOWN 구종은 OLD-unsupported와 다르다. 독립 TEST·정책 성능·서비스 채택의 근거가 아니다.
+- **수집 849831:** 11:43 KST에도 `CAPTURING`, 요청 1,071, 오류 0, 기록된 gap 0(메타데이터일 뿐 물리적 투구 전체 수신 입증 아님). 종료·replay 판정 대기.
+- **진행 중:** 팬 화면 정직한 상태(job `20261011-rc-states-001`), Step 5 shadow 경로 작성(`20261011-step5-shadow-001`). GPU 5장 사용 허가·전부 유휴, GPU 잡 실행 없음.
+
 **2026-10-11 ~11:00 KST Claude PM 인수 (Song 결정; 문서 기록일 뿐 새 수용 기준·승격 없음. 아래 블록은 이력으로 보존하고 역할·슬롯·GPU 문장은 [overview](../overview.md) 기준으로 대체한다):** 이 Claude Code 세션이 단일 PM이다. 진행 중이며 결과는 모두 대기다.
 
 - reader source 별개 검토: job `/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2026-profile-reader-source-distinct-review-001/` — 결과 대기.

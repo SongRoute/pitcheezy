@@ -1,5 +1,15 @@
 # 통합 PM 현재 상태
 
+**2026-10-11 ~11:50 KST Claude PM 체크포인트 1 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·HOLD 문장만 이 블록이 대체한다):**
+
+- 요약: 선수별 패널 실제 1회 완료(2026 EXPOSED DEVELOPMENT 기술 통계, 채택 없음, 상세 [연구 state](../research/state.md)); 2026 strict-prior 프로파일 실제 읽기 완료(716,792행 읽음, 모델 추론 아님); RC 기반 `rc/ws-2026` 구성(미기동). 상세 [서비스 state](../service/state.md).
+- **선수별 패널 실행 완료 — 2026 EXPOSED DEVELOPMENT, 기술 통계만:** job [/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-eop-player-panels-next-001/](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-eop-player-panels-next-001/). author-003(6 GiB 시작/4 GiB 실행 중 메모리 게이트 + locale 수정; 과학 파일은 author-002와 byte 동일) → Fable 통합 검토 PASS(`combined-review-001/REVIEW.md`, REVIEW-PASS.json SHA-256 `9512f7b8680cfcd522f5c82e5fc76aa08653ea926be3046f5d8d34c7d266000e`; critical/high 0, medium 2, low 5) → PM 실행 허가 → 실제 1회 `eop-panels-001`(약 11:20 KST): supervisor rc 0, COMPLETED, 0.918초, peak RSS 450,019,328 B, failed_checks [], 메모리 guard 최소 free 9,828,007,936 B. 결과 `author-003/attempts/eop-panels-001/result.json` SHA-256 `96d2f9df8d23c27fd635c5c91ab94147cd7a10a192c66553097a539702693662`. 이전 HOLD `ROOT_ACTUAL_HOLD_RESOURCE_HEADROOM`은 해소됐다.
+- **2026 strict-prior 프로파일 실제 읽기 완료:** 별개 검토 001 REWORK(major 2: ko_KR에서 locale 의존 ps 파싱이 정상 자식을 죽임 / live_adapter가 supervisor가 쓸 수 없다고 판정한 프로파일을 로드; minor 5) → 다른 작성자의 수리(`step5-2026-profile-reader-source-repair-001`) → 재검토 002 `PASS_BOUNDED_SOURCE_READY_FOR_SEPARATE_DATA_GATE`(REVIEW.md SHA-256 `578ed219…8106`) → PM이 `HOLD_LOCAL_MATERIALIZATION_UNKNOWN` 해제(같은 S2 parquet을 패널 실행이 전부 읽고 hash 검증; reader 자체 게이트도 두 파일 `PASS_ALREADY_LOCAL`) → 실제 1회 `step5-2026-profile-read-001`(11:43 KST): rc 0, COMMITTED, profile_usable true, 14.16초, 자식 peak RSS 484,638,720 B.
+- **RC 기반:** 새 worktree `/Users/song/Projects/pitcheezy-worktrees/rc-ws-2026`, 브랜치 `rc/ws-2026` = serving 커밋 5488c93 + `codex/svc-ws-02`(83f6072) 병합: live store는 env `PITCHEEZY_OBSERVER_LIVE_STORE` 뒤에 연결, 수신 시각은 응답 완료 뒤, 추천 장부는 표시 전에 커밋. 백엔드 테스트 441 통과 / 기존 실패 1(T7 아카이브 의존). 브리지 `scripts/capture_to_replay.py`(커밋 18eaa64, 합성 테스트 15개) — 실제 DB는 아직 열지 않았다. 인수인계 [HANDOFF.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-base-001/HANDOFF.md). 어느 포트에도 띄우지 않았고 실제 end-to-end 실행 없음.
+
+- **수집 849831:** 11:43 KST에도 `CAPTURING`, 요청 1,071, 오류 0, 기록된 gap 0(메타데이터일 뿐 물리적 투구 전체 수신 입증 아님). 종료·replay 판정 대기.
+- **진행 중:** 팬 화면 정직한 상태(job `20261011-rc-states-001`), Step 5 shadow 경로 작성(`20261011-step5-shadow-001`). GPU 5장 사용 허가·전부 유휴, GPU 잡 실행 없음.
+
 **2026-10-11 ~11:00 KST Claude PM 인수 (Song 결정; 문서 기록일 뿐 새 수용 기준·승격 없음. 아래 블록은 이력으로 보존하고 역할·슬롯·GPU 문장은 [overview](../overview.md) 기준으로 대체한다):** 이 Claude Code 세션이 단일 PM이다. 진행 중이며 결과는 모두 대기다.
 
 - reader source 별개 검토: job `/Users/song/Projects/pitcheezy-pm-jobs/20261010-ws-service-006/step5-2026-profile-reader-source-distinct-review-001/` — 결과 대기.
