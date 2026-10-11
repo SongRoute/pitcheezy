@@ -153,13 +153,21 @@ npm run build:public        # 결과: dist-public/ (평소 빌드 dist/는 그�
 node tests/static-publish-smoke.mjs   # npm run build 도 먼저 해 둘 것 (API 방식 비교 검사 포함)
 ```
 
-- 방식 선택은 빌드할 때 정한다. `VITE_PUBLISH_BASE`가 비어 있으면 지금까지의 API 방식 그대로다.
+- 방식 선택은 빌드할 때 정한다. `VITE_PUBLISH_BASE`가 비어 있으면 지금까지의 API 방식 그대로다. 공개 번들에는 API 호출 코드가 아예 들어가지 않는다(검사가 번들을 직접 뒤져 확인).
 - 설정 이름(기본값은 `web/.env.public`, 셸 환경변수가 우선):
   - `VITE_PUBLISH_BASE`: `v1/` 폴더가 있는 주소나 경로. 기본 `.` = index.html 옆.
-  - `VITE_PUBLISH_POLL_MS`(2000) · `VITE_PUBLISH_PREGAME_POLL_MS`(10000) · `VITE_PUBLISH_RETRY_MS`(4000): 다시 읽는 간격. API 방식과 같은 값.
-  - `VITE_PUBLISH_STALE_S`(30, **임시값·미측정**): 새 발행이 이만큼 없으면 화면에 "갱신 지연"을 띄운다. 리허설에서 잰 발행 간격으로 다시 정한다.
-- 읽는 파일: `v1/dates.json`, `v1/manifest.json`(`live_dates`로 오늘 날짜), `v1/games/<날짜>.json`, `v1/game/<game_pk>.json`, `v1/health.json`. 경기 파일은 항상 통째로 읽고, 같은 파일에서 순번(`publish.sequence`)이 뒤로 간 응답은 버린다.
-- 올리는 법: `dist-public/` 내용을 `v1/`과 같은 폴더에 둔다. 주소는 `…/?game=<game_pk>`, `…/?date=<날짜>` 꼴이라 호스팅에 주소 다시쓰기 규칙이 필요 없다. 다른 출처에 두면 "갱신 지연" 판정이 기기 시계에 기대게 되므로, 호스팅이 `Date` 응답 헤더를 읽을 수 있게 해 주는 편이 좋다.
+  - `VITE_PUBLISH_POLL_MS`(2000) · `VITE_PUBLISH_PREGAME_POLL_MS`(10000) · `VITE_PUBLISH_LIST_POLL_MS`(10000) · `VITE_PUBLISH_RETRY_MS`(4000): 경기 중 / 경기 전 / 목록 / 실패 뒤 다시 읽는 간격.
+  - `VITE_PUBLISH_TIMEOUT_MS`(15000): 요청 하나의 제한 시간(본문 끝까지). `VITE_PUBLISH_LOST_MS`(30000): 이만큼 못 읽으면 "연결 끊김". `VITE_PUBLISH_TICK_MS`(5000): 시간 표시를 다시 따지는 간격.
+  - `VITE_PUBLISH_STALE_S`(30, **임시값·미측정**): 새 발행이 이만큼 없으면 "갱신 지연". 리허설에서 잰 발행 간격으로 다시 정한다.
+  - `LOST_MS`와 `STALE_S`는 그 화면이 읽는 간격의 3배보다 짧게는 적용되지 않는다(읽는 간격을 늘려도 매번 경고가 뜨지 않게).
+- 읽는 파일: `v1/dates.json`, `v1/manifest.json`(`live_dates`로 오늘 날짜), `v1/games/<날짜>.json`, `v1/game/<game_pk>.json`, `v1/health.json`. 이 다섯 꼴 말고는 요청하지 않는다(주소의 `?date=`는 실제 달력 날짜, `?game=`은 숫자일 때만 쓴다). 경기 파일은 항상 통째로 읽고, 같은 파일에서 순번(`publish.sequence`)이 뒤로 간 응답은 버린다.
+- "갱신 지연" 판정: ① health의 발행 시각 − 경기 파일의 발행 시각(발행기 시계끼리), ② 서버 기준 지금 − 가장 최근 발행 시각. "서버 기준 지금"은 응답의 `Date`(+`Age`) 헤더로 잡고, 그 뒤 흐른 시간은 화면이 직접 센다. 헤더를 못 읽으면 "가장 최근 발행 시각을 본 뒤 흐른 시간"으로 대신한다. 기기 시계는 쓰지 않는다. 경기 전 화면은 예정 시작 시각이 지난 뒤에만 판정한다.
+- 올리는 법: `dist-public/` 내용을 `v1/`과 같은 폴더에 둔다. 주소는 `…/?game=<game_pk>`, `…/?date=<날짜>` 꼴이라 주소 다시쓰기 규칙이 필요 없다.
+- 호스팅이 지켜 줘야 할 것:
+  - `v1/*.json`은 매번 원본에 확인하게 한다(`Cache-Control: no-cache` 또는 발행 간격보다 짧은 `max-age`). 종료 표시(`publish.final`)가 있는 경기 파일만 길게 캐시해도 된다.
+  - 캐시가 응답을 대신 줄 때는 `Age` 헤더를 붙인다. `Date` 헤더는 지우지 않는다.
+  - 화면과 `v1/`을 다른 출처에 두면 `Access-Control-Allow-Origin`과 `Access-Control-Expose-Headers: Date, Age`가 필요하다(없어도 동작하지만, 화면을 열기 전에 이미 멈춘 발행은 기준 시간만큼 늦게 알아챈다).
+  - 없는 파일은 404로 답한다(index.html을 200으로 대신 주지 않는다). 파일은 통째로 바꿔치기한다.
 - 공개 번들에 없는 것: `/api/**` 호출과 옛 경로 대체, 시연 세션(`?demo=`), 운영자 화면, `?after=` 이어받기. 접속 기록·피드백·영상도 넣지 않았다.
 - 호스트용 빈 자리 하나: 화면 뒤에 `<div id="pitcheezy-host-slot" data-screen="list|game" data-game-pk="…">`가 비어 있고, 생길 때 `window`에 `pitcheezy:host-slot` 이벤트(`detail.element/screen/gamePk`)가 난다. 피드백·접속 기록은 호스트 페이지가 여기에 붙인다(`web/src/service/HostSlot.tsx`).
 
