@@ -1,6 +1,10 @@
 // ui-rev3-030: compact game screen (header scores + LIVE, B/S/O dots, fixed away/home player cells, centred zone with all
 // candidates at once, square pitch-card strip). Route-mocked on tests/fixtures/service-849843.json + in-memory variants
 // (L/R batter, overlapping targets, >10 pitches). No server; screenshots only to argv[2]. Headless Chromium, not Safari.
+// Brought up to the current screen (2026-10-11; the checks had been stale since f407bcb and the script crashed since 5488c93):
+// recommendations are listed under the zone and the batter silhouette marks the side; '다음 공 추천' is the list's label and a
+// pinned live view says '최신으로 ↗' on the header button (no separate notice); the pitch cards are equal frameless tiles with a
+// two-line caption (number + type, speed + unit); the smallest text is the 11px unit; a demo session never shows the red LIVE dot.
 //   npx vite build --outDir <tmp> && PZ_WEB_DIST=<tmp> node tests/compact-rev3-fit.mjs [outDir]
 import { chromium } from 'playwright';
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
@@ -65,13 +69,13 @@ async function run(w, h, big, which, state, side, many) {
       zoneDx: box && page ? (box.left + box.width / 2) - (page.left + page.width / 2) : null, zoneH: r('.sv-zone-wrap .sv-zone')?.height ?? 0,
       recs: [...document.querySelectorAll('.sv-zone-wrap .sv-zone .sv-rec')].map((g) => g.getAttribute('data-rank')),
       actual: !!document.querySelector('.sv-zone-wrap .sv-zone .sv-actual'), prev: !!document.querySelector('.sv-prev'),
-      cardsSquare: cards.every((c) => Math.abs(c.width - c.height) < 1.5), cardsRow: new Set(cards.map((c) => Math.round(c.top))).size <= 1, n: cards.length,
+      cardsEqual: cards.every((c) => Math.abs(c.width - cards[0].width) < 1.5 && Math.abs(c.height - cards[0].height) < 1.5), cardsRow: new Set(cards.map((c) => Math.round(c.top))).size <= 1, n: cards.length,
       stripScroll: strip ? strip.scrollWidth > strip.clientWidth : false, dotR: dots ? dots.width / 2 : 0,
-      caption: document.querySelector('.sv-card:not(.pending) .sv-card-cap')?.textContent ?? '', badge: !!document.querySelector('.sv-card .sv-card-num'),
-      banned: ['다음 공 추천', '선택 비중', '방금 던진 공', '자동 ON', '새로고침', '최신으로'].filter((t) => text.includes(t)),
-      live: document.querySelector('.sv-live')?.className ?? '', notice: document.querySelector('.sv-notice')?.className ?? '',
-      players: [...document.querySelectorAll('.sv-player')].map((e) => e.className + '|' + e.querySelector('.sv-player-1').textContent),
-      dotsN: document.querySelectorAll('.sv-bso i').length, list: document.querySelector('.sv-recband.at-right .sv-reclist') ? 'right' : document.querySelector('.sv-recband.at-left .sv-reclist') ? 'left' : 'none',
+      caption: [...(document.querySelector('.sv-card:not(.pending) .sv-card-cap')?.children ?? [])].map((e) => e.textContent.trim()), badge: !!document.querySelector('.sv-card .sv-card-num'),
+      banned: ['선택 비중', '방금 던진 공', '자동 ON', '새로고침'].filter((t) => text.includes(t)), toLatest: text.includes('최신으로'),
+      live: document.querySelector('.sv-live')?.className ?? '', liveText: document.querySelector('.sv-live')?.textContent.trim() ?? '', liveDisabled: document.querySelector('.sv-live')?.disabled ?? null, notice: document.querySelector('.sv-notice')?.className ?? '',
+      players: [...document.querySelectorAll('.sv-player')].map((e) => e.className + '|' + (e.querySelector('.sv-player-name')?.textContent ?? '')),
+      dotsN: document.querySelectorAll('.sv-bso i').length, bat: document.querySelector('.sv-zrow .sv-batband.at-left') ? 'left' : document.querySelector('.sv-zrow .sv-batband.at-right') ? 'right' : 'none', listUnder: (() => { const z = r('.sv-zrow .sv-zone-box'), l = r('.sv-reclist'); return !!z && !!l && l.top >= z.bottom; })(),
       offscreen, minFont, overlapActualLabel: (() => { const t = [...document.querySelectorAll('.sv-zone-wrap .sv-rec text')].map((e) => e.getBoundingClientRect()); const a = document.querySelector('.sv-zone-wrap .sv-actual text')?.getBoundingClientRect(); return !!a && t.some((b) => !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)); })() };
   });
   const tag = `${w}x${h}${big ? '@125' : ''} ${which}/${state} ${side}${many ? ' 12p' : ''}`;
@@ -81,25 +85,26 @@ async function run(w, h, big, which, state, side, many) {
   ok(L.scrollW <= L.innerW + 1, `${tag} no horizontal page scroll`, L);
   ok(L.zoneDx !== null && Math.abs(L.zoneDx) <= 2, `${tag} zone centred (dx ${L.zoneDx?.toFixed(2)})`, L.zoneDx);
   ok(L.zoneH >= 110, `${tag} zone height ${Math.round(L.zoneH)}`, L.zoneH);
-  // pitcher's view (ui-pitcher-view-1006): a left-handed batter is on the screen LEFT, so the list is on the right (and vice versa)
-  ok(L.list === (side === 'L' ? 'right' : 'left'), `${tag} candidate list opposite batter (${L.list})`, L.list);
+  // pitcher's view (ui-pitcher-view-1006): a left-handed batter stands on the screen LEFT (and vice versa); the list is under the zone
+  ok(L.bat === (side === 'L' ? 'left' : 'right') && L.listUnder, `${tag} batter silhouette on the ${side} side, list under the zone (${L.bat})`, [L.bat, L.listUnder]);
   ok(L.banned.length === 0, `${tag} removed visible texts`, L.banned);
-  ok(L.minFont >= 12, `${tag} min text ${L.minFont}px`, L.minFont);
-  ok(L.cardsSquare && L.cardsRow, `${tag} ${L.n} square cards in one row`, L);
-  ok(!L.badge && /^\d+\. \S+/.test(L.caption) && !/km|mph/.test(L.caption), `${tag} card caption '${L.caption}'`, L.caption);
+  ok(L.toLatest === (state === 'pinned' && which === 'live'), `${tag} '최신으로' only on a pinned live view`, [L.toLatest, L.liveText]);
+  ok(L.minFont >= 11, `${tag} min text ${L.minFont}px`, L.minFont);
+  ok(L.cardsEqual && L.cardsRow, `${tag} ${L.n} equal cards in one row`, L);
+  ok(!L.badge && L.caption.length === 2 && /^\d+\. \S+/.test(L.caption[0]) && !/km|mph/.test(L.caption[0]) && /^(\d+(\.\d)?|–) ?(km\/h|mph)$/.test(L.caption[1]), `${tag} card caption '${L.caption.join(' / ')}'`, L.caption);
   ok(L.dotR >= 5, `${tag} mini dot radius ${L.dotR?.toFixed(1)}px`, L.dotR);
   ok(L.dotsN === 7, `${tag} B3 S2 O2 dots`, L.dotsN);
   ok(L.players.length === 2 && L.players[0].includes('away') && L.players[1].includes('home'), `${tag} away left / home right`, L.players);
   ok(!L.prev, `${tag} no previous-pitch marker`, L);
   if (many) ok(L.stripScroll, `${tag} >10 pitches scroll horizontally in the strip`, L);
-  if (state === 'latest' && which === 'live') ok(!L.actual && L.live.includes('on'), `${tag} latest: no actual marker, LIVE red`, L);
+  if (state === 'latest' && which === 'live') ok(!L.actual && L.liveText === '시연 중' && !L.live.includes('on'), `${tag} latest: no actual marker, demo label without the LIVE dot`, L);
   if (state === 'pinned') {
     ok(L.recs.length >= 2 && L.recs.some((x) => x.includes('·')) && L.actual, `${tag} all ranks at once + combined label + actual (${L.recs.join(' ')})`, L.recs);
     ok(!L.overlapActualLabel, `${tag} actual label does not cover rank labels`, L);
-    ok(L.notice.includes('past'), `${tag} pinned notice`, L.notice);
+    ok(which === 'live' ? /^최신으로/.test(L.liveText) && L.liveDisabled === false : L.liveText === '종료' && L.liveDisabled === true, `${tag} pinned: header button '${L.liveText}'`, [L.liveText, L.liveDisabled]);
     if (which === 'live') ok(polls === pollsBefore, `${tag} no fetch while pinned (auto off)`, { polls, pollsBefore });
   }
-  if (state === 'stale') ok(L.notice.includes('warn') && L.live.includes('on'), `${tag} network failure keeps LIVE red, warn notice`, L);
+  if (state === 'stale') ok(L.notice.includes('warn') && L.liveDisabled === false, `${tag} network failure: warn notice, header button still usable`, L);
   if (which === 'final') ok(!L.live.includes('on'), `${tag} finished: LIVE gray`, L.live);
   if (out) await p.screenshot({ path: path.join(out, `${tag.replace(/[ /@]/g, '_')}.png`) });
   await c.close();

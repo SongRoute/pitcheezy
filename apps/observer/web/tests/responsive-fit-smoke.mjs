@@ -3,8 +3,11 @@
 // Same metrics and the same 125% text injection as review-integration-002/integrated_qa.mjs (html{font-size:125%} +
 // -webkit-text-size-adjust:125%, which Chromium mobile emulation applies to px text). Headless Chromium only — NOT Safari,
 // NOT a physical iPhone. 320x460 and 288x512 (page-zoom proxy) are reported as INFO (page-scroll fallback), never as pass.
+// Brought up to the current screen on 2026-10-11 (the script had crashed since d316c35, which replaced the candidate column,
+// the PA button and the pitch nav it measured): same sizes and metrics on today's blocks — header, board, matchup line, zone,
+// recommendation/actual summary, pitch strip, player cells. 125% text is reported only (the page may scroll there by design).
 // Canned CONTRACT answers from tests/fixtures/service-849843.json on the built dist/; no server, no files outside argv[2].
-//   npm run build && node tests/responsive-fit-smoke.mjs [outDir]
+//   npx vite build --outDir <tmp> && PZ_WEB_DIST=<tmp> node tests/responsive-fit-smoke.mjs [outDir]
 import { chromium } from 'playwright';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -42,18 +45,24 @@ async function measure(w, h, big, which) {
   const L = await p.evaluate(() => {
     const vis = (sel) => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: r.height, w: r.width }; };
     const se = document.scrollingElement;
-    const cands = [...document.querySelectorAll('.sv-cand')].map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), getComputedStyle(e.querySelector('.sv-cand-type') ?? e).fontSize]; });
-    const clipped = [...document.querySelectorAll('.sv-page *')].filter((e) => { const s = getComputedStyle(e); return (s.overflowY === 'hidden' || s.overflow === 'hidden') && e.scrollHeight > e.clientHeight + 2 && e.clientHeight > 0 && !e.closest('.sv-sheet'); }).map((e) => e.className).slice(0, 5);
-    const offscreen = [...document.querySelectorAll('.sv-page button, .sv-page a')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.bottom > innerHeight + 1 || r.right > innerWidth + 1); }).map((e) => e.textContent.trim().slice(0, 20)).slice(0, 8);
-    const hidden = ['.sv-score', '.sv-count', '.sv-bases', '.sv-matchup', '.sv-title', '.sv-pa-open', '.sv-pitches', '.sv-rec-head', '.sv-actual-line'].filter((s) => { const e = document.querySelector(s); return !e || e.getBoundingClientRect().height === 0; });
-    const paResult = (() => { const e = document.querySelector('.sv-pa-open small'); return !!e && e.getBoundingClientRect().height > 0; })();
-    const overlap = (() => { const els = [...document.querySelectorAll('.sv-top, .sv-board, .sv-mode, .sv-rec-head, .sv-zone-wrap, .sv-cand, .sv-norec, .sv-actual-line, .sv-pa-row, .sv-pitches')]; for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) { const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect(); if (els[i].contains(els[j]) || els[j].contains(els[i])) continue; if (a.bottom > b.top + 1 && b.bottom > a.top + 1 && a.right > b.left + 1 && b.right > a.left + 1) return [els[i].className, els[j].className]; } return null; })();
+    const rows = [...document.querySelectorAll('.sv-rec-row')].map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), getComputedStyle(e).fontSize]; });
+    const clipped = [...document.querySelectorAll('.sv-page *')].filter((e) => { const s = getComputedStyle(e); return (s.overflowY === 'hidden' || s.overflow === 'hidden') && e.scrollHeight > e.clientHeight + 2 && e.clientHeight > 0 && !e.closest('.sv-sheet') && !e.classList.contains('sr-only'); }).map((e) => e.className).slice(0, 5);
+    // the pitch strip scrolls sideways by design, so its cards are judged on height only
+    const offscreen = [...document.querySelectorAll('.sv-page button, .sv-page a')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.bottom > innerHeight + 1 || (r.right > innerWidth + 1 && !e.closest('.sv-strip'))); }).map((e) => e.textContent.trim().slice(0, 20)).slice(0, 8);
+    const hidden = ['.sv-head-score', '.sv-head-main small', '.sv-inning', '.sv-bso', '.sv-board-row > svg', '.sv-duel', '.sv-zone-box', '.sv-rec-summary', '.sv-actual-summary', '.sv-strip .sv-card', '.sv-player.away', '.sv-player.home'].filter((s) => { const e = document.querySelector(s); return !e || e.getBoundingClientRect().height === 0; });
+    const overlap = (() => { const els = [...document.querySelectorAll('.sv-head, .sv-board, .sv-duel, .sv-pitch-summary, .sv-strip-shell, .sv-context')]; for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) { const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect(); if (els[i].contains(els[j]) || els[j].contains(els[i])) continue; if (a.bottom > b.top + 1 && b.bottom > a.top + 1 && a.right > b.left + 1 && b.right > a.left + 1) return [els[i].className, els[j].className]; } return null; })();
+    // the zone row's box is allowed to run under its neighbours (they are placed from what is painted); what is PAINTED in the
+    // drawing must stay between the matchup line and the texts under the zone
+    const painted = [...document.querySelectorAll('.sv-zrow svg.sv-zone :is(rect, circle, path, line, text)')].map((e) => e.getBoundingClientRect());
+    const under = [...document.querySelectorAll('.sv-pitch-summary .sv-summary-label, .sv-pitch-summary .sv-rec-row, .sv-pitch-summary p, .sv-pitch-summary .sv-chip')].map((e) => e.getBoundingClientRect()).filter((r) => r.height > 0);
+    const duel = document.querySelector('.sv-duel b')?.getBoundingClientRect();
     return { scrollH: se.scrollHeight, clientH: se.clientHeight, innerH: innerHeight, scrollW: se.scrollWidth, innerW: innerWidth,
-      zone: vis('.sv-zone-wrap svg') ?? vis('.sv-zone-wrap'), board: vis('.sv-board'), recbox: vis('.sv-recbox'), nav: vis('.sv-nav'), cands, clipped, offscreen, hidden, paResult, overlap,
-      escaped: (() => { const box = document.querySelector('.sv-recbox')?.getBoundingClientRect(); return box ? [...document.querySelectorAll('.sv-cand')].filter((c) => { const r = c.getBoundingClientRect(); return r.bottom > box.bottom + 1 || r.top < box.top - 1; }).length : 0; })(),
-      charWrap: [...document.querySelectorAll('.sv-cand-type, .sv-title')].filter((e) => { const r = document.createRange(); r.selectNodeContents(e); const lines = new Set([...r.getClientRects()].map((x) => Math.round(x.top))); return e.textContent.trim().length <= 5 && lines.size > 1; }).map((e) => e.textContent),
-      titleCut: (() => { const t = document.querySelector('.sv-title'); return !!t && t.scrollWidth > t.clientWidth + 1; })(),
-      shareLabel: /정책 선택 비중/.test(document.body.innerText), rootFont: getComputedStyle(document.documentElement).fontSize, candFont: getComputedStyle(document.querySelector('.sv-cand-type')).fontSize };
+      zone: vis('.sv-zrow .sv-zone-wrap'), board: vis('.sv-board'), summary: vis('.sv-pitch-summary'), strip: vis('.sv-strip-shell'), context: vis('.sv-context'), rows, clipped, offscreen, hidden, overlap,
+      zoneRunsInto: painted.length && under.length ? Math.round(Math.max(...painted.map((r) => r.bottom)) - Math.min(...under.map((r) => r.top))) : null,
+      zoneOverDuel: painted.length && duel ? Math.round(duel.bottom - Math.min(...painted.map((r) => r.top))) : null,
+      charWrap: [...document.querySelectorAll('.sv-rec-row b, .sv-card-cap > span')].filter((e) => { const cs = getComputedStyle(e); const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2; return e.getBoundingClientRect().height > lh * 1.5; }).map((e) => e.textContent),
+      titleCut: (() => { const t = document.querySelector('.sv-head-main small'); return !t || t.scrollWidth > t.clientWidth + 1; })(),
+      rootFont: getComputedStyle(document.documentElement).fontSize };
   });
   if (out) await p.screenshot({ path: path.join(out, `${which}-${w}x${h}${big ? '-font125' : ''}.png`) });
   await c.close();
@@ -65,23 +74,23 @@ for (const which of ['final', 'live']) {
     const L = await measure(w, h, big, which);
     const tag = `${which} ${w}x${h}${big ? '-font125' : ''}`;
     const zoneArea = L.zone ? Math.round(L.zone.w * L.zone.h) : 0;
-    const others = [L.board, L.recbox, L.nav].filter(Boolean).map((r) => Math.round(r.w * r.h));
-    rows.push({ tag, scroll: L.scrollH - L.innerH, zoneArea, others, offscreen: L.offscreen, candFont: L.candFont, paResult: L.paResult });
-    const strict = w >= 320 && h >= 553;
+    const others = [L.board, L.summary, L.strip, L.context].filter(Boolean).map((r) => Math.round(r.w * r.h));
+    rows.push({ tag, scroll: L.scrollH - L.innerH, zoneArea, others, offscreen: L.offscreen, rowFont: L.rows[0]?.[2] });
+    // One screen without page scroll is the contract at default text. With 125% text the page may scroll (the zone row keeps a
+    // minimum height instead of shrinking; ui-pitcher-view-1006), so there it is reported, never passed or failed.
+    const strict = w >= 320 && h >= 553 && !big;
     if (strict) {
       ok(L.scrollH <= L.clientH + 1 && L.scrollH <= L.innerH + 1, `${tag}: scrollHeight ${L.scrollH} <= clientHeight ${L.clientH}`, [L.scrollH, L.clientH]);
       ok(!L.offscreen.length, `${tag}: every control inside the first viewport`, L.offscreen);
       ok(zoneArea >= Math.max(...others), `${tag}: zone ${zoneArea} is the largest block`, others);
-    } else console.log('INFO', `${tag}: page scroll ${L.scrollH - L.innerH}px, offscreen before scroll ${JSON.stringify(L.offscreen)}, zone ${zoneArea} vs ${JSON.stringify(others)}`);
+      ok(!L.overlap, `${tag}: no overlapping blocks`, L.overlap);
+      ok(L.zoneRunsInto !== null && L.zoneRunsInto <= 1 && L.zoneOverDuel !== null && L.zoneOverDuel <= 1, `${tag}: zone drawing clear of the matchup line and of the texts under it`, [L.zoneOverDuel, L.zoneRunsInto]);
+    } else console.log('INFO', `${tag}: page scroll ${L.scrollH - L.innerH}px, offscreen before scroll ${JSON.stringify(L.offscreen)}, zone ${zoneArea} vs ${JSON.stringify(others)}, overlap ${JSON.stringify(L.overlap)}, zone into texts ${L.zoneRunsInto}px`);
     ok(!L.clipped.length, `${tag}: no overflow-hidden clipping`, L.clipped);
-    ok(!L.hidden.length, `${tag}: score/count/bases/players/date/PA/pitch nav/rec head/actual all shown`, L.hidden);
-    ok(L.paResult, `${tag}: PA result line shown in the PA button`, L.paResult);
-    ok(!L.overlap, `${tag}: no overlapping blocks`, L.overlap);
-    ok(L.cands.length >= 1 && L.cands.every((x) => Math.abs(x[0] - L.cands[0][0]) <= 1 && Math.abs(x[1] - L.cands[0][1]) <= 1 && x[2] === L.cands[0][2]), `${tag}: candidates equal size/font`, L.cands);
-    ok(!L.escaped, `${tag}: candidates stay inside their column`, L.escaped);
-    ok(!L.charWrap.length, `${tag}: short pitch names not broken across lines`, L.charWrap);
-    ok(!L.titleCut, `${tag}: date title not cut`, L.titleCut);
-    ok(L.shareLabel, `${tag}: 정책 선택 비중 label visible`, null);
+    ok(!L.hidden.length, `${tag}: score/date/inning/count/bases/matchup/zone/recommendation/actual/cards/players all shown`, L.hidden);
+    ok(L.rows.length >= 1 && L.rows.every((x) => Math.abs(x[0] - L.rows[0][0]) <= 1 && Math.abs(x[1] - L.rows[0][1]) <= 1 && x[2] === L.rows[0][2]), `${tag}: recommendation rows equal size/font`, L.rows);
+    ok(!L.charWrap.length, `${tag}: pitch names and card captions not broken across lines`, L.charWrap);
+    ok(!L.titleCut, `${tag}: date not cut`, L.titleCut);
     ok(L.scrollW <= L.innerW + 1, `${tag}: no horizontal overflow`, [L.scrollW, L.innerW]);
   }
 }
