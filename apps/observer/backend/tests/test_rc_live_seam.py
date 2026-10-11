@@ -51,7 +51,7 @@ class SlowReporting(Slow):
 
 def thrown(wall, speed=90.0, ts='20261009_000100'):
     """A minimal synthetic feed with one identified pitch (the 849845 fixture is trimmed: no ``allPlays``)."""
-    return {'metaData': {'eventWall': wall, 'timeStamp': ts}, 'liveData': {'plays': {'allPlays': [
+    return {'metaData': {'eventWall': wall, 'timeStamp': ts}, 'gameData': {'game': {'pk': GAME}}, 'liveData': {'plays': {'allPlays': [
         {'about': {'atBatIndex': 0, 'inning': 1}, 'playEvents': [
             {'isPitch': True, 'playId': 'p1', 'pitchNumber': 1, 'startTime': '2026-10-09T00:00:01Z',
              'details': {'call': {'code': 'B'}}, 'pitchData': {'startSpeed': speed}}]}]}}}
@@ -280,6 +280,9 @@ def test_an_unrecorded_recommendation_is_withheld_not_displayed(tmp_path, monkey
             'status': 'withheld', 'why': 'snapshot_not_committed'}
         tampered = entry | {'feed': copy.deepcopy(entry['feed']) | {'extra': 1}}
         assert live_ledger.admit(feed, tampered, view, game_pk=GAME)['ledger']['why'] == 'snapshot_differs_from_committed_version'
+        other = copy.deepcopy(entry['feed'])  # a view computed from another body than the entry's is never recorded
+        assert live_ledger.admit(feed, entry, view, game_pk=GAME, snapshot=other)['ledger']['why'] == \
+            'view_not_computed_from_this_snapshot'
         assert feed.store.served_recommendations(GAME) == []
 
 
@@ -324,3 +327,41 @@ def test_env_configured_replay_run_goes_through_the_store_and_the_ledger(tmp_pat
         assert client.get(f'/api/live/{GAME}/log', params={'delay': 0}).json()['items'][0]['source'] == 'replay_poll'
     stored = LiveSnapshotStore(tmp_path/'rc.sqlite3').served_recommendations(GAME)
     assert [(row['outcome'], row['snapshot']['source']) for row in stored] == [('first', 'replay_poll')]
+
+
+def test_a_correction_arriving_mid_request_never_relabels_the_snapshot_a_view_was_computed_from(tmp_path):
+    now, before, fixed = [1000.0], thrown(990.0), thrown(990.0, 91.5, '20261009_000200')
+    transport = SlowPlain(now, before, 0.0)
+    feed = persistent(tmp_path, transport, now)
+    held, _ = feed.snapshot(GAME)  # request A holds version 1 and is still computing
+    transport.feed, now[0] = fixed, 1020.0
+    newer, _ = feed.snapshot(GAME)  # another request's poll corrects the same slot
+    assert (held['feed'], held['version']) == (before, 1) and (newer['feed'], newer['version']) == (fixed, 2)
+    view = {'recommendation': {'candidates': [1]}, 'status': 'ready', 'key': 'k', 'policy_identity': 'abc'}
+    for entry in (held, newer):
+        assert live_ledger.admit(feed, entry, view, game_pk=GAME, snapshot=entry['feed'])['ledger']['status'] == 'recorded'
+    # the revised pitch is another decision state: each row cites the version its view was computed from
+    assert [row['snapshot']['slot_version'] for row in feed.store.served_recommendations(GAME)] == [1, 2]
+
+
+def test_after_a_store_outage_the_buffer_gets_its_committed_identity_back(tmp_path, monkeypatch):
+    now, first, fixed, later = [1000.0], thrown(990.0), thrown(990.0, 91.5, '20261009_000200'), thrown(1030.0, 92.0, '20261009_000300')
+    transport = SlowPlain(now, first, 0.0)
+    feed = persistent(tmp_path, transport, now)
+    feed.snapshot(GAME)
+    real = feed.store.ingest
+
+    def down(*args, **kwargs):
+        raise sqlite3.OperationalError('database is locked')
+    view = {'recommendation': {'candidates': [1]}, 'status': 'ready', 'key': 'k', 'policy_identity': 'abc'}
+    admit = lambda entry: live_ledger.admit(feed, entry, view, game_pk=GAME, snapshot=entry['feed'])['ledger']
+    for step, (body, wall) in enumerate(((fixed, 1020.0), (later, 1040.0))):  # a correction, then a new slot, both unsaved
+        monkeypatch.setattr(feed.store, 'ingest', down)
+        transport.feed, now[0] = body, wall
+        entry, _ = feed.snapshot(GAME)
+        assert 'seq' not in entry and admit(entry) == {'status': 'withheld', 'why': 'snapshot_not_committed'}
+        monkeypatch.setattr(feed.store, 'ingest', real)  # the store is back; the same content is polled again
+        now[0] = wall+10
+        entry, _ = feed.snapshot(GAME)
+        assert feed.store_error is None and entry['feed'] == body and admit(entry)['status'] == 'recorded', step
+    assert [(e['event'], e.get('seq') is not None) for e in feed.buffers[GAME]] == [(990.0, True), (1030.0, True)]

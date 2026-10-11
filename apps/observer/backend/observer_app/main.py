@@ -343,7 +343,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                 'previous': result['previous'], 'home_we_now': result['home_we_now'],
                 'policy_identity': result['policy_identity'][:8], 'seconds': result['seconds'],
                 'tally': armb.tally(result['key'])}
-        return view if feed is None else live_ledger.admit(feed, entry, view, game_pk=snapshot['gameData']['game']['pk'])
+        return view if feed is None else live_ledger.admit(feed, entry, view, game_pk=snapshot['gameData']['game']['pk'],
+                                                           snapshot=snapshot, policy_identity=result['policy_identity'])
 
     replays = OrderedDict()  # (gamePk, start, t0, speed) -> (LiveFeed, transport): one shared clock per link
 

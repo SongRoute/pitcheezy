@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import gzip
+import http.client
 import inspect
 import json
 import re
@@ -193,7 +194,7 @@ class LiveFeed:
                 if exc.code < 500 and exc.code != 429:
                     raise LiveFeedError(f'HTTP {exc.code} for {url}') from exc
                 error = exc
-            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, http.client.HTTPException) as exc:
                 error = exc
             if attempt+1 < attempts:
                 self.sleep(min(self.config['max_backoff_s'], self.config['backoff_s']*2**attempt))
@@ -236,7 +237,9 @@ class LiveFeed:
     def snapshot(self, game_pk, delay_s=None):
         """Returns (entry or None, seconds until this delay has something to show). An entry is
         ``{'feed', 'event', 'fetched', 'requested'}``: the snapshot, its newest event's wall time, when its
-        response was completely received and when that request was sent."""
+        response was completely received and when that request was sent. It is a copy taken under the lock:
+        a later poll that corrects the same slot never changes what this caller holds, so its ``feed`` and the
+        store identity beside it (``seq``/``version``/``sha``, when persistent) stay one consistent version."""
         game_pk = int(game_pk)
         delay = self.delay_s if delay_s is None else min(max(0.0, float(delay_s)), self.max_delay_s)
         with self._lock:
@@ -267,7 +270,7 @@ class LiveFeed:
             ready = [entry for entry in buffer if entry['event'] <= wall-delay]
             if not ready:
                 return None, round(max(0.0, buffer[0]['event']+delay-wall), 1)
-            return ready[-1], 0.0
+            return dict(ready[-1]), 0.0
 
     def latest(self, game_pk):
         """The newest fetched (not yet delayed) snapshot, or None."""

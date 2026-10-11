@@ -260,7 +260,11 @@ class LiveSnapshotStore:
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript(SCHEMA)
             if 'requested' not in [row[1] for row in db.execute('PRAGMA table_info(snapshots)')]:
-                db.execute('ALTER TABLE snapshots ADD COLUMN requested REAL')  # stores made before the receipt split
+                try:  # stores made before the receipt split
+                    db.execute('ALTER TABLE snapshots ADD COLUMN requested REAL')
+                except sqlite3.OperationalError as exc:  # another process migrated it between the two statements
+                    if 'duplicate column' not in str(exc):
+                        raise
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
@@ -566,18 +570,29 @@ class LiveSnapshotStore:
         UNKNOWN). ``snapshot`` must be a version committed here (same ``seq``/``version``/``sha``) and received at
         or before ``decided``; anything else raises ``ValueError`` and nothing is written. ``decision_clock`` is
         'observer_local' only for a real upstream poll (``RECEIPT_CLOCK``), else 'unverified'. Committed with
-        ``synchronous=FULL``: a crash before this returns means the recommendation was not displayed either."""
+        ``synchronous=FULL``: a crash before this returns means the recommendation was not displayed either.
+        Both times are the observer's wall clock: if it steps back between the receipt and the decision this
+        refuses (fail-closed) until it has passed the receipt again. The usual repeat (another viewer or poll of
+        the same decision) is answered from a plain read, without taking the write lock."""
         game_pk = int(game_pk)
         shown = _canonical(displayed)
         decision_id = hashlib.sha256(_canonical([game_pk, state_sha, policy_identity])).hexdigest()
-        with self._write() as db:
+
+        def look(db):
             row = db.execute('SELECT version, sha, fetched, source FROM snapshots WHERE seq=? AND game_pk=?',
                              (snapshot.get('seq'), game_pk)).fetchone()
             if row is None or (row[0], row[1]) != (snapshot.get('version'), snapshot.get('sha')) or row[2] > decided:
                 raise ValueError('Recommendation snapshot is not a committed version received by the decision time')
             held = db.execute("SELECT body FROM served_recommendations WHERE decision_id=? AND outcome='first'",
                               (decision_id,)).fetchone()
-            first = json.loads(held[0]) if held else None
+            return row, json.loads(held[0]) if held else None
+
+        with closing(self.connect()) as db:
+            _, first = look(db)
+        if first is not None and _canonical(first['displayed']) == shown:
+            return 'duplicate', first
+        with self._write() as db:
+            row, first = look(db)  # again, now serialized with every other writer
             if first is not None and _canonical(first['displayed']) == shown:
                 return 'duplicate', first
             clock = RECEIPT_CLOCK.get(row[3], 'unverified')
@@ -656,6 +671,10 @@ class LiveSnapshotStore:
         return target
 
 
+# What ties a buffer entry to the committed version whose bytes its ``feed`` is.
+IDENTITY = ('seq', 'version', 'sha', 'version_fetched', 'source', 'game_pk', 'provider_order', 'version_requested')
+
+
 class PersistentLiveFeed(LiveFeed):
     """``LiveFeed`` whose delay buffer is written through to a ``LiveSnapshotStore`` and rebuilt from it the first
     time a game is asked for after a restart. The memory buffer changes only after the commit; if the store
@@ -694,9 +713,11 @@ class PersistentLiveFeed(LiveFeed):
             if game_pk in self._unsaved:
                 # ponytail: resync only the bounded delay window; pruned outage history is not recoverable.
                 for saved in buffer:
-                    self.store.ingest(game_pk, saved['feed'], fetched=saved.get('version_fetched', saved['fetched']),
-                                      source='memory_recovery', slot_event=saved['event'], first_fetched=saved['fetched'],
-                                      requested=saved.get('version_requested', saved.get('requested')))
+                    _, kept = self.store.ingest(game_pk, saved['feed'], fetched=saved.get('version_fetched', saved['fetched']),
+                                                source='memory_recovery', slot_event=saved['event'], first_fetched=saved['fetched'],
+                                                requested=saved.get('version_requested', saved.get('requested')))
+                    if kept and kept['event'] == saved['event']:  # now committed: it has a store identity again
+                        saved.update({key: kept[key] for key in IDENTITY})
                 self._unsaved.discard(game_pk)
             outcome, entry = self.store.ingest(game_pk, feed, fetched=wall, source=self.source, requested=requested)
         except (sqlite3.Error, OSError) as exc:
@@ -709,6 +730,8 @@ class PersistentLiveFeed(LiveFeed):
             super()._accept(game_pk, feed, wall, buffer, requested)
             if changed:
                 buffer[-1]['version_fetched'], buffer[-1]['version_requested'] = wall, requested
+                for key in ('seq', 'version', 'sha', 'provider_order'):  # memory-only content: no committed identity
+                    buffer[-1].pop(key, None)
             return
         if not self._unsaved and not self._restore_failed:
             self.store_error = None
@@ -716,9 +739,8 @@ class PersistentLiveFeed(LiveFeed):
             self.stale[game_pk] = self.stale.get(game_pk, 0)+1
         elif buffer and entry['event'] == buffer[-1]['event']:
             buffer[-1]['feed'] = feed
-            if outcome == 'correction':
-                buffer[-1].update({key: entry[key] for key in ('seq', 'version', 'sha', 'version_fetched', 'source', 'game_pk',
-                                                               'provider_order', 'version_requested')})
+            if outcome == 'correction' or buffer[-1].get('sha') != entry['sha']:  # the latter: identity lost in an outage
+                buffer[-1].update({key: entry[key] for key in IDENTITY})
         elif not buffer or entry['event'] > buffer[-1]['event']:
             buffer.append(entry)
 

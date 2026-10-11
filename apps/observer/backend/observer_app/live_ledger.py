@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 import hashlib
 import logging
 import os
@@ -39,22 +40,40 @@ def _withheld(why):
             'ledger': {'status': 'withheld', 'why': why}}
 
 
-def admit(feed, entry, view, *, game_pk):
+def _is_committed_version(feed, entry):
+    """True if ``entry['feed']`` hashes to the committed ``entry['sha']``. Remembered per served body (held by
+    reference, so never confused with another object) on the ``LiveFeed``: one hash per poll, not per request."""
+    seen = feed.__dict__.setdefault('_ledger_verified', OrderedDict())
+    held = seen.get(entry['seq'])
+    if held is not None and held[0] is entry['feed'] and held[1] == entry['sha']:
+        return True
+    if hashlib.sha256(_canonical(entry['feed'])).hexdigest() != entry['sha']:
+        return False
+    seen[entry['seq']] = (entry['feed'], entry['sha'])
+    while len(seen) > 32:
+        seen.popitem(last=False)
+    return True
+
+
+def admit(feed, entry, view, *, game_pk, snapshot=None, policy_identity=None):
     """``view`` (``main.armb_view`` output for ``entry``'s snapshot) as it may be displayed. ``feed`` is the
-    ``LiveFeed`` that served ``entry``; ``entry`` is its buffer entry (None when the caller has none)."""
+    ``LiveFeed`` that served ``entry``; ``entry`` is the copy ``LiveFeed.snapshot`` returned (None when the
+    caller has none). ``snapshot`` is the body the view was computed from: it must be ``entry['feed']`` itself,
+    so the row can never cite another version than the one the recommendation was made for.
+    ``policy_identity`` is the policy's full identity (the view only shows a short prefix)."""
     store = getattr(feed, 'store', None)
     if store is None or not enabled() or not view or not view.get('recommendation'):
         return view
     if not entry or entry.get('seq') is None or entry.get('sha') is None:
         return _withheld('snapshot_not_committed')
-    if entry.get('_verified') is not entry['feed']:  # once per served body: it is the committed version's bytes
-        if hashlib.sha256(_canonical(entry['feed'])).hexdigest() != entry['sha']:
-            return _withheld('snapshot_differs_from_committed_version')
-        entry['_verified'] = entry['feed']
+    if snapshot is not None and snapshot is not entry['feed']:
+        return _withheld('view_not_computed_from_this_snapshot')
+    if not _is_committed_version(feed, entry):
+        return _withheld('snapshot_differs_from_committed_version')
     try:
         outcome, record = store.append_recommendation(
             game_pk=game_pk, state_sha=hashlib.sha256(state_key(entry['feed']).encode()).hexdigest(),
-            policy_identity=view.get('policy_identity'), pitch_key=view.get('key'), snapshot=entry,
+            policy_identity=policy_identity or view.get('policy_identity'), pitch_key=view.get('key'), snapshot=entry,
             displayed={key: view.get(key) for key in DISPLAYED}, decided=feed.wall(),
             feed_ok=int(game_pk) not in feed.failing)
     except (sqlite3.Error, OSError, ValueError) as exc:
