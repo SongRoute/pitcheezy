@@ -1,5 +1,16 @@
 # 연구 PM 현재 상태
 
+**2026-10-11 저녁 Claude PM 체크포인트 3 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "대기" 문장만 이 블록이 대체한다):**
+
+- **연구 결과 5건 추가(전부 2026 EXPOSED DEVELOPMENT, 독립 TEST 없음, 승자·채택 없음; 행은 [experiments](../../experiments.md), 서술은 [README](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/README.md)):** EXP-WS-RECENCY-002(`d665ae5`), EXP-WS-SEQ-001(`b47b7e6`), EXP-WS-SEQ-CAL-001(`fa89825`), EXP-WS-SEQ-002(`800a867`), EXP-WS-STEP5-CAL-001(`223d500`).
+- **시퀀스 모델이 트리보다 EVAL NLL이 낮다(재현됨):** SEQ-001 N1 앙상블−P NLL -0.00361 [-0.00444, -0.00280], SEQ-002 선택 설정−P -0.00391 [-0.00478, -0.00306](약 -0.004, CI 0 아래). 단 이 조리법은 포화다: SEQ-002 스윕 10설정 중 SEQ-001 N1을 CI 밖으로 넘는 설정이 없다(SEL−N1 -0.0003 [-0.00073, +0.00013]). 물리·zone 토큰과 타자 컨텍스트는 SELECT에서 이득이 없었다. 격자 탐색을 더 하는 것은 GPU 시간 값어치가 없다고 연구 리드가 정리했다.
+- **재학습 쪽:** RECENCY-002 경기일별 재학습 P는 H0 대비 NLL -0.00177이나 H2(고정 fit100 + strictly-prior 이력)에 더하는 이득이 없다(NO_ADDITIONAL_GAIN_OVER_H2). 더 싼 후보는 H2다.
+- **보정:** N1의 ECE 악화(+0.00452 [+0.00049, +0.00614])는 CAL-CV 선택 보정기로 앙상블 ECE 0.00678 → 0.00450까지 줄었고(SEL−C0 -0.00228 [-0.00424, +0.00009], CI가 0에 닿음) 트리와의 ECE 차는 더는 유의하지 않다. 팬 표시 leaf(narrow_whiff, ground_ball)는 모든 팔에서 ECE 0.001~0.003. Step 5 그림자 경로(2024 동결 3-head) 보정은 top-label ECE 0.00306(CI 상한 0.00678), leaf ECE 0.0021 / 0.0044로 권고 라벨 CALIBRATION_ACCEPTABLE_FOR_DESCRIPTIVE_DISPLAY(STEP5-CAL-001).
+- **노출:** EVAL(2026-09-07..09-27)은 이날 7번 읽었다. 격자도 SEQ-001 EVAL 결과를 본 뒤 설계했으므로 이 자료는 완전히 노출된 개발 자료이고 선택 편향(winner's curse)이 있다.
+- **다음 제안(Song 결정 대기, 아직 시작 안 함):** 노출되지 않은 표본을 만드는 LCS/WS 전향적 그림자 — SEQ-001 N1 앙상블 + CAL2 선택 보정기를 투구 전 예측만 원장에 기록. 제안서 [shadow-workorder-proposal.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/shadow-workorder-proposal.md). 선행 조건: 학습 특징과 Step 5 프로필 특징의 열 단위 동일성 검증(합성 1행 동치 테스트), 일일 프로필 갱신 일정의 설치 여부.
+- **미측정:** CPU 추론 지연(제안서의 추정일 뿐), 실제 경기에서의 시퀀스 모델 성능.
+
+
 **2026-10-11 ~12:55 KST Claude PM 체크포인트 2 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·HOLD 문장만 이 블록이 대체한다):**
 
 - **연구 결과 2건 기록(2026 EXPOSED DEVELOPMENT, 독립 TEST 없음, 승자·채택 없음; [README](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/README.md)):**
