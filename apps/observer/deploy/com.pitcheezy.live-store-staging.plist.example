@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Example only (NOT installed or loaded). Starts the live-store staging build on 127.0.0.1:8791 at login.
+     launchd needs a foreground process, so this runs uvicorn directly (live_store_staging.sh daemonizes).
+     Install (only after review): cp to ~/Library/LaunchAgents/com.pitcheezy.live-store-staging.plist, fix the
+     paths, then  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pitcheezy.live-store-staging.plist
+     Remove:      launchctl bootout gui/$(id -u)/com.pitcheezy.live-store-staging  (then delete the plist) -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.pitcheezy.live-store-staging</string>
+  <key>WorkingDirectory</key><string>/Users/song/Projects/pitcheezy-worktrees/codex-realtime-storage-1005/apps/observer/backend</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/song/Projects/pitcheezy/.venv-observer/bin/python</string><string>-m</string><string>uvicorn</string>
+    <string>observer_app.main:app</string><string>--host</string><string>127.0.0.1</string><string>--port</string><string>8791</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key><string>/Users/song/Projects/pitcheezy-worktrees/codex-realtime-storage-1005/apps/observer/backend</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+    <key>PITCHEEZY_OBSERVER_LEGACY</key><string>0</string>
+    <key>PITCHEEZY_OBSERVER_LIVE_ARMB</key><string>0</string>
+    <key>PITCHEEZY_OBSERVER_LIVE_STORE</key><string>/Users/song/pitcheezy-staging/live-store/live.sqlite3</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/Users/song/pitcheezy-staging/live-store/server.log</string>
+  <key>StandardErrorPath</key><string>/Users/song/pitcheezy-staging/live-store/server.log</string>
+</dict>
+</plist>

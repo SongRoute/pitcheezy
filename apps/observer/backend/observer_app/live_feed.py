@@ -70,6 +70,21 @@ def _wall(text):
     return datetime.fromisoformat(text.replace('Z', '+00:00')).timestamp()
 
 
+def _recent_events(feed, last):
+    """(event, wall time of its ``endTime``/``startTime`` or None) for every dict play event in the current
+    play and the ``last`` newest plays. Malformed plays, events and times are skipped, not raised: the
+    snapshot still reaches the store, whose pitch ledger quarantines them beside the valid pitches."""
+    live = feed.get('liveData')
+    plays = live.get('plays') if isinstance(live, dict) else None
+    plays = plays if isinstance(plays, dict) else {}
+    done = plays.get('allPlays') if isinstance(plays.get('allPlays'), list) else []
+    for play in [plays.get('currentPlay'), *done[-last:]]:
+        events = play.get('playEvents') if isinstance(play, dict) else None
+        for event in events if isinstance(events, list) else []:
+            if isinstance(event, dict):
+                yield event, event.get('endTime') or event.get('startTime')
+
+
 def event_wall(feed):
     """Wall-clock time (epoch s) of the newest game event a snapshot contains, or None.
 
@@ -80,20 +95,19 @@ def event_wall(feed):
     feed rewrites an older event's ``endTime`` to the next event's start, which never exceeds the newest
     event's own times, and a ball in play gets its ``endTime`` moved to the end of the play.
     """
-    meta = feed.get('metaData') or {}
+    meta = feed.get('metaData') if isinstance(feed.get('metaData'), dict) else {}
     if meta.get('eventWall') is not None:
         return float(meta['eventWall'])
     times = []
     try:
         times.append(datetime.strptime(meta.get('timeStamp') or '', '%Y%m%d_%H%M%S').replace(tzinfo=timezone.utc).timestamp())
-    except ValueError:
+    except (TypeError, ValueError):
         pass
-    plays = (feed.get('liveData') or {}).get('plays') or {}
-    for play in [plays.get('currentPlay') or {}, *(plays.get('allPlays') or [])[-2:]]:
-        for event in play.get('playEvents') or []:
-            stamp = event.get('endTime') or event.get('startTime')
-            if stamp:
-                times.append(_wall(stamp))
+    for _, stamp in _recent_events(feed, 2):
+        try:
+            times.append(_wall(stamp))
+        except (AttributeError, TypeError, ValueError):
+            pass
     return max(times) if times else None
 
 
@@ -106,9 +120,13 @@ def tap_delay(feed, now, current, *, tolerance_s=8.0):
     recent pitch that puts the delay within ``tolerance_s`` of their ``current`` setting counts (a fine
     adjustment after the +/- buttons); otherwise None. A pitch's ``startTime`` is its release and stays
     fixed; ``endTime`` is not used because the live feed rewrites it to the next event's start."""
-    plays = (feed.get('liveData') or {}).get('plays') or {}
-    arrivals = {_wall(event['startTime'])+FLIGHT_S for play in [*(plays.get('allPlays') or [])[-4:], plays.get('currentPlay') or {}]
-                for event in play.get('playEvents') or [] if event.get('isPitch') and event.get('startTime')}
+    arrivals = set()
+    for event, _ in _recent_events(feed, 4):
+        try:
+            if event.get('isPitch') and event.get('startTime'):
+                arrivals.add(_wall(event['startTime'])+FLIGHT_S)
+        except (AttributeError, TypeError, ValueError):
+            pass
     delays = [now-arrival for arrival in arrivals if abs(now-arrival-current) <= tolerance_s and now >= arrival]
     return round(min(delays, key=lambda delay: abs(delay-current)), 1) if delays else None
 
@@ -180,6 +198,17 @@ class LiveFeed:
             with gzip.open(path, 'wt') as handle:
                 json.dump(feed, handle)
 
+    def _buffer(self, game_pk):
+        return self.buffers.setdefault(game_pk, [])
+
+    def _accept(self, game_pk, feed, wall, buffer):
+        event = event_wall(feed)
+        entry = {'feed': feed, 'event': wall if event is None else min(event, wall), 'fetched': wall}
+        if buffer and entry['event'] <= buffer[-1]['event']:
+            buffer[-1]['feed'] = feed  # no newer game event: keep its first-seen times, refresh the content
+        else:
+            buffer.append(entry)
+
     def snapshot(self, game_pk, delay_s=None):
         """Returns (entry or None, seconds until this delay has something to show). An entry is
         ``{'feed', 'event', 'fetched'}``: the snapshot, its newest event's wall time and when it was fetched."""
@@ -187,7 +216,7 @@ class LiveFeed:
         delay = self.delay_s if delay_s is None else min(max(0.0, float(delay_s)), self.max_delay_s)
         with self._lock:
             now, wall = self.clock(), self.wall()
-            buffer = self.buffers.setdefault(game_pk, [])
+            buffer = self._buffer(game_pk)
             if now-self.fetched_at.get(game_pk, -1e18) >= self._interval(game_pk, delay, now):
                 self.fetched_at[game_pk] = now
                 try:  # one attempt: every viewer waits on this lock, and the next poll retries anyway
@@ -199,12 +228,7 @@ class LiveFeed:
                     self.failing[game_pk] = wall  # keep serving what we have; the route tells the viewer
                 else:
                     self.failing.pop(game_pk, None)
-                    event = event_wall(feed)
-                    entry = {'feed': feed, 'event': wall if event is None else min(event, wall), 'fetched': wall}
-                    if buffer and entry['event'] <= buffer[-1]['event']:
-                        buffer[-1]['feed'] = feed  # no newer game event: keep its first-seen times, refresh the content
-                    else:
-                        buffer.append(entry)
+                    self._accept(game_pk, feed, wall, buffer)
                     if self.record_dir:
                         self._record(game_pk, feed)
             old = [i for i, entry in enumerate(buffer) if entry['event'] <= wall-self.max_delay_s]

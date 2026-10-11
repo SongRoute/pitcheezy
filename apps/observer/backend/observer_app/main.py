@@ -176,10 +176,15 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         legacy = 'ok' if ready else ('degraded' if current is not None else 'unavailable')
         if os.environ.get('PITCHEEZY_OBSERVER_LEGACY', '1') == '0':
             legacy = demo  # this run serves the watch-along/live product only
-        return {'status': legacy, 'model_ready': ready,
+        body = {'status': legacy, 'model_ready': ready,
                 'dataset_ready': current is not None, 'mode': 'historical_replay', 'cv_mode': 'unavailable:no_media',
                 'demo': {'status': demo, 'storage_mounted': STORAGE.is_mount(), 'watch_dir_ready': watch.available(),
                          'watch_games': len(watch.games()), 'live_policy': policy}}
+        if os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE'):
+            feed = live['feed']
+            body['live_store'] = {'configured': True, 'started': hasattr(feed, 'store'),
+                                  'error': getattr(feed, 'store_error', None), 'games_buffered': sorted(getattr(feed, 'buffers', {}))}
+        return body
 
     @app.get('/api/catalog')
     def catalog():
@@ -277,9 +282,20 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         if live['feed'] is None:
             replay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR')
             delay = os.environ.get('PITCHEEZY_OBSERVER_LIVE_DELAY_S')
-            live['feed'] = (LiveFeed(ReplayTransport(replay), delay_s=float(delay or 0)) if replay else
-                            LiveFeed(http_json, record_dir=REPO/LIVE_CONFIG['record_dir'],
-                                     delay_s=None if delay is None else float(delay)))
+            transport, options = ((ReplayTransport(replay), {'delay_s': float(delay or 0)}) if replay else
+                                  (http_json, {'record_dir': REPO/LIVE_CONFIG['record_dir'],
+                                               'delay_s': None if delay is None else float(delay)}))
+            if (store := os.environ.get('PITCHEEZY_OBSERVER_LIVE_STORE')):  # opt-in restart-safe buffer (live_store.py)
+                import sqlite3
+                from .live_store import LiveSnapshotStore, PersistentLiveFeed
+                try:
+                    live['feed'] = PersistentLiveFeed(transport, store=LiveSnapshotStore(store), **options)
+                except (OSError, sqlite3.Error) as exc:  # unopenable store: serve live from memory, health says why
+                    LOGGER.warning('live store %s unavailable; serving from memory only', store, exc_info=True)
+                    live['feed'] = LiveFeed(transport, **options)
+                    live['feed'].store_error = f'open: {type(exc).__name__}'
+            else:
+                live['feed'] = LiveFeed(transport, **options)
         return live['feed']
 
     def live_call(operation):
@@ -378,8 +394,21 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             parsed.pop('pre_pitch')
             sync = {'max_delay_s': feed.max_delay_s, 'event_age_s': round(time.time()-entry['event'], 1),
                     'feed_lag_s': round(entry['fetched']-entry['event'], 1), 'feed_ok': game_pk not in feed.failing}
+            if hasattr(feed, 'sync_extra'):
+                sync |= feed.sync_extra(game_pk, entry)
             return parsed | timing | {'sync': sync, 'recommendation': armb_view(snapshot, parsed)}
         return live_call(state)
+
+    @app.get('/api/live/{game_pk}/log')
+    def live_log(game_pk: int, after: int = Query(0, ge=0), delay: float | None = Query(None, ge=0, le=600),
+                 limit: int = Query(100, ge=1, le=500)):
+        """Replay cursor over the opt-in live store: committed snapshot versions no newer than the delay."""
+        feed = live_parts()
+        if not hasattr(feed, 'store'):
+            raise ServiceError(404, '이 실행에서는 라이브 저장소를 켜지 않았습니다.')
+        used = feed.delay_s if delay is None else min(delay, feed.max_delay_s)
+        return {'game_pk': game_pk, 'delay_s': used, 'store_ok': feed.store_error is None} | feed.store.read_after(
+            game_pk, after, until_event=feed.wall()-used, limit=limit)
 
     @app.get('/api/live/{game_pk}/tap')
     def live_tap(game_pk: int, delay: float = Query(..., ge=0, le=600)):
