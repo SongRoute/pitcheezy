@@ -5,7 +5,7 @@
 // NOT a physical iPhone. 320x460 and 288x512 (page-zoom proxy) are reported as INFO (page-scroll fallback), never as pass.
 // Brought up to the current screen on 2026-10-11 (the script had crashed since d316c35, which replaced the candidate column,
 // the PA button and the pitch nav it measured): same sizes and metrics on today's blocks — header, board, matchup line, zone,
-// recommendation/actual summary, pitch strip, player cells. 125% text is reported only (the page may scroll there by design).
+// recommendation/actual summary, pitch strip, player cells, at default and 125% text (one known 16px scroll at 375x553@125).
 // Canned CONTRACT answers from tests/fixtures/service-849843.json on the built dist/; no server, no files outside argv[2].
 //   npx vite build --outDir <tmp> && PZ_WEB_DIST=<tmp> node tests/responsive-fit-smoke.mjs [outDir]
 import { chromium } from 'playwright';
@@ -76,11 +76,13 @@ for (const which of ['final', 'live']) {
     const zoneArea = L.zone ? Math.round(L.zone.w * L.zone.h) : 0;
     const others = [L.board, L.summary, L.strip, L.context].filter(Boolean).map((r) => Math.round(r.w * r.h));
     rows.push({ tag, scroll: L.scrollH - L.innerH, zoneArea, others, offscreen: L.offscreen, rowFont: L.rows[0]?.[2] });
-    // One screen without page scroll is the contract at default text. With 125% text the page may scroll (the zone row keeps a
-    // minimum height instead of shrinking; ui-pitcher-view-1006), so there it is reported, never passed or failed.
-    const strict = w >= 320 && h >= 553 && !big;
+    // One screen without page scroll is the contract at default text and at 125% text. Known shortfall, pinned so it cannot grow:
+    // at 375x553 with 125% text the page scrolls by up to 16px (the zone row keeps a minimum height instead of shrinking;
+    // ui-pitcher-view-1006).
+    const strict = w >= 320 && h >= 553;
+    const slack = big && w === 375 && h === 553 ? 16 : 0;
     if (strict) {
-      ok(L.scrollH <= L.clientH + 1 && L.scrollH <= L.innerH + 1, `${tag}: scrollHeight ${L.scrollH} <= clientHeight ${L.clientH}`, [L.scrollH, L.clientH]);
+      ok(L.scrollH <= L.clientH + 1 + slack && L.scrollH <= L.innerH + 1 + slack, `${tag}: scrollHeight ${L.scrollH} <= clientHeight ${L.clientH}${slack ? ` (+${slack} known)` : ''}`, [L.scrollH, L.clientH]);
       ok(!L.offscreen.length, `${tag}: every control inside the first viewport`, L.offscreen);
       ok(zoneArea >= Math.max(...others), `${tag}: zone ${zoneArea} is the largest block`, others);
       ok(!L.overlap, `${tag}: no overlapping blocks`, L.overlap);

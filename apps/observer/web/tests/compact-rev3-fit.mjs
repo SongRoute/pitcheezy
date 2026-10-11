@@ -76,7 +76,7 @@ async function run(w, h, big, which, state, side, many) {
       live: document.querySelector('.sv-live')?.className ?? '', liveText: document.querySelector('.sv-live')?.textContent.trim() ?? '', liveDisabled: document.querySelector('.sv-live')?.disabled ?? null, notice: document.querySelector('.sv-notice')?.className ?? '',
       players: [...document.querySelectorAll('.sv-player')].map((e) => e.className + '|' + (e.querySelector('.sv-player-name')?.textContent ?? '')),
       dotsN: document.querySelectorAll('.sv-bso i').length, bat: document.querySelector('.sv-zrow .sv-batband.at-left') ? 'left' : document.querySelector('.sv-zrow .sv-batband.at-right') ? 'right' : 'none', listUnder: (() => { const z = r('.sv-zrow .sv-zone-box'), l = r('.sv-reclist'); return !!z && !!l && l.top >= z.bottom; })(),
-      offscreen, minFont, overlapActualLabel: (() => { const t = [...document.querySelectorAll('.sv-zone-wrap .sv-rec text')].map((e) => e.getBoundingClientRect()); const a = document.querySelector('.sv-zone-wrap .sv-actual text')?.getBoundingClientRect(); return !!a && t.some((b) => !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)); })() };
+      offscreen, minFont, inDrawingLabel: !!document.querySelector('.sv-zone-wrap .sv-actual text'), named: (document.querySelector('.sv-actual-caption b')?.textContent ?? '').trim() };
   });
   const tag = `${w}x${h}${big ? '@125' : ''} ${which}/${state} ${side}${many ? ' 12p' : ''}`;
   // with 125% text the page may scroll (zone row keeps a 15em minimum instead of shrinking; ui-pitcher-view-1006) — reported, not asserted
@@ -100,7 +100,7 @@ async function run(w, h, big, which, state, side, many) {
   if (state === 'latest' && which === 'live') ok(!L.actual && L.liveText === '시연 중' && !L.live.includes('on'), `${tag} latest: no actual marker, demo label without the LIVE dot`, L);
   if (state === 'pinned') {
     ok(L.recs.length >= 2 && L.recs.some((x) => x.includes('·')) && L.actual, `${tag} all ranks at once + combined label + actual (${L.recs.join(' ')})`, L.recs);
-    ok(!L.overlapActualLabel, `${tag} actual label does not cover rank labels`, L);
+    ok(!L.inDrawingLabel && L.named.length > 0, `${tag} no label on the actual pitch inside the drawing, pitch named under the zone ('${L.named}')`, [L.inDrawingLabel, L.named]);
     ok(which === 'live' ? /^최신으로/.test(L.liveText) && L.liveDisabled === false : L.liveText === '종료' && L.liveDisabled === true, `${tag} pinned: header button '${L.liveText}'`, [L.liveText, L.liveDisabled]);
     if (which === 'live') ok(polls === pollsBefore, `${tag} no fetch while pinned (auto off)`, { polls, pollsBefore });
   }
