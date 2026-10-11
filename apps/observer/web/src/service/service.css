@@ -639,3 +639,8 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 .sv-ref-line{font-weight:400}.sv-ref-line b{font-weight:600}.sv-ref-what{color:var(--sv-muted)}
 .sv-ref-more.narrow{display:none}
 @media(max-width:379px){.sv-ref-line b.second,.sv-ref-more.wide{display:none}.sv-ref-more.narrow{display:inline}}
+/* A pitch above a pitch card's small window is drawn as an edge marker whose circle and outward arrow reach up to 6px above the
+   card. The strip scrolls sideways, so it clips vertically at its own box: that box now starts 6px higher (padding), pulled back
+   by the same negative margin, so nothing moves or resizes and the marker is no longer cut on short screens. */
+.sv-strip{padding-top:8px;margin-top:-6px}
+@media(max-height:780px){.sv-strip{padding-top:6px}}

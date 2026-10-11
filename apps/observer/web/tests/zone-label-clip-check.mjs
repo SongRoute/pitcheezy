@@ -1,6 +1,9 @@
 // Display check (rev3-label-polish-040; cases from final-review-039, author rerun, not independent): for each case the actual
-// marker, its arrow, the '실제' label, every rank square+number, the mitt label and the caption (if shown) must lie fully inside the
-// drawing (main) / the card (mini), and the '실제' label, rank numbers, mitt label and caption must not overlap one another.
+// marker, its arrow, every rank square+number, the mitt label and any in-drawing label must lie fully inside the drawing (main),
+// and the texts must not overlap one another. Since f407bcb the main drawing carries NO label for the actual pitch (its name is
+// in the summary under the zone), so the check is now: no label inside the drawing, the pitch named in the summary.
+// Mini cards (frameless since f407bcb): the marker and its outward arrow may reach above the card but must stay inside the
+// strip's own box (the strip scrolls sideways and clips vertically there) and inside the card's width — i.e. never cut.
 //   PZ_WEB_DIST=<dist> node tests/zone-label-clip-check.mjs [outDir]
 import { chromium } from 'playwright';
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
@@ -16,7 +19,7 @@ const BOUNDS = { normal: { bottom: 1.6, top: 3.39 }, tall: { bottom: 1.2, top: 4
 const CASES = [['tall', [0, .9], null], ['tall', [0, .4], null], ['normal', [-1.5, 4.6], -1.0], ['normal', [0, 3.8], null], ['short', [0, 3.8], null],
   ['normal', [1.6, 2.5], 1.4], ['normal', [.3, 2.4], .3], ['tall', [-1.5, 4.6], 1.2], ['normal', [1.25, 2.5], null], ['normal', [.86, 1.58], -1.0]];
 const b = await chromium.launch();
-for (const [vw, vh] of [[375, 553], [320, 568], [390, 844]]) for (const [bn, [x, z], mitt] of CASES) {
+for (const [vw, vh] of [[375, 553], [320, 568], [375, 667], [390, 844]]) for (const [bn, [x, z], mitt] of CASES) {
   const c = await b.newContext({ viewport: { width: vw, height: vh }, deviceScaleFactor: 2, isMobile: true }); const p = await c.newPage();
   const body = JSON.parse(JSON.stringify(fx.final)); body.zone_bounds = BOUNDS[bn];
   const pt = body.pitches[0]; pt.actual.x = x; pt.actual.z = z; pt.actual.catcher_setup = mitt === null ? null : { status: 'estimated', x_band: 'x', plate_x_feet: mitt };
@@ -38,17 +41,17 @@ for (const [vw, vh] of [[375, 553], [320, 568], [390, 844]]) for (const [bn, [x,
     const texts = parts.filter(q => q.k.includes('text') || q.k.includes('caption'));
     const overlaps = []; for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) if (hit(texts[i].r, texts[j].r)) overlaps.push([texts[i].k, texts[j].k]);
     const card = document.querySelector('.sv-card'); const strip = document.querySelector('.sv-strip'); const cr = R(card), st = R(strip);
-    const vis = { x: Math.max(cr.x, st.x), y: Math.max(cr.y, st.y), w: Math.min(cr.x + cr.w, st.x + st.w) - Math.max(cr.x, st.x), h: Math.min(cr.y + cr.h, st.y + st.h) - Math.max(cr.y, st.y) };
+    const vis = { x: Math.max(cr.x, st.x), y: st.y, w: Math.min(cr.x + cr.w, st.x + st.w) - Math.max(cr.x, st.x), h: st.h };
     const miniParts = [...card.querySelectorAll('svg.sv-zone.mini .sv-actual circle, svg.sv-zone.mini .sv-actual path')].map(e => R(e));
     const miniClipped = miniParts.filter(r => !inBox(r, vis)).length;
     const labelShown = !!main.querySelector('.sv-actual text'); const caption = !!main.querySelector('.sv-zone-caption');
-    return { clipped, overlaps, miniClipped, labelShown, caption, out: main.querySelector('.sv-actual')?.classList.contains('out') };
+    return { clipped, overlaps, miniClipped, miniN: miniParts.length, labelShown, caption, named: (document.querySelector('.sv-actual-caption b')?.textContent ?? '').trim(), out: main.querySelector('.sv-actual')?.classList.contains('out') };
   });
   const tag = `${vw}x${vh} ${bn} (${x},${z}) mitt ${mitt}`;
   ok(!m.clipped.length, `${tag}: main marks/labels inside drawing`, m.clipped);
   ok(!m.overlaps.length, `${tag}: no text overlaps`, m.overlaps);
-  ok(m.labelShown, `${tag}: '실제' label shown`, m);
-  ok(!m.miniClipped, `${tag}: mini marker+arrow inside visible card`, m.miniClipped);
+  ok(!m.labelShown && m.named.length > 0, `${tag}: no label inside the drawing, pitch named in the summary`, m);
+  ok(m.miniN >= 1 && !m.miniClipped, `${tag}: mini marker+arrow not cut by the strip`, m);
   if (out) await p.screenshot({ path: path.join(out, `${bn}_${vw}x${vh}_${x}_${z}.png`) });
   await c.close();
 }
