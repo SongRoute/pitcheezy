@@ -142,6 +142,27 @@ npm ci
 npm run build
 ```
 
+### 공개용(정적 파일 읽기) 화면 빌드
+
+공개 화면은 백엔드 API를 부르지 않고, 발행기가 올린 파일만 읽는다([공개 발행 계약 초안](../../docs/pm/service/public-publish-contract-draft.md), 파일 형태는 `apps/observer/publish_contract/v1`).
+
+```sh
+cd apps/observer/web
+npm ci
+npm run build:public        # 결과: dist-public/ (평소 빌드 dist/는 그대로)
+node tests/static-publish-smoke.mjs   # npm run build 도 먼저 해 둘 것 (API 방식 비교 검사 포함)
+```
+
+- 방식 선택은 빌드할 때 정한다. `VITE_PUBLISH_BASE`가 비어 있으면 지금까지의 API 방식 그대로다.
+- 설정 이름(기본값은 `web/.env.public`, 셸 환경변수가 우선):
+  - `VITE_PUBLISH_BASE`: `v1/` 폴더가 있는 주소나 경로. 기본 `.` = index.html 옆.
+  - `VITE_PUBLISH_POLL_MS`(2000) · `VITE_PUBLISH_PREGAME_POLL_MS`(10000) · `VITE_PUBLISH_RETRY_MS`(4000): 다시 읽는 간격. API 방식과 같은 값.
+  - `VITE_PUBLISH_STALE_S`(30, **임시값·미측정**): 새 발행이 이만큼 없으면 화면에 "갱신 지연"을 띄운다. 리허설에서 잰 발행 간격으로 다시 정한다.
+- 읽는 파일: `v1/dates.json`, `v1/manifest.json`(`live_dates`로 오늘 날짜), `v1/games/<날짜>.json`, `v1/game/<game_pk>.json`, `v1/health.json`. 경기 파일은 항상 통째로 읽고, 같은 파일에서 순번(`publish.sequence`)이 뒤로 간 응답은 버린다.
+- 올리는 법: `dist-public/` 내용을 `v1/`과 같은 폴더에 둔다. 주소는 `…/?game=<game_pk>`, `…/?date=<날짜>` 꼴이라 호스팅에 주소 다시쓰기 규칙이 필요 없다. 다른 출처에 두면 "갱신 지연" 판정이 기기 시계에 기대게 되므로, 호스팅이 `Date` 응답 헤더를 읽을 수 있게 해 주는 편이 좋다.
+- 공개 번들에 없는 것: `/api/**` 호출과 옛 경로 대체, 시연 세션(`?demo=`), 운영자 화면, `?after=` 이어받기. 접속 기록·피드백·영상도 넣지 않았다.
+- 호스트용 빈 자리 하나: 화면 뒤에 `<div id="pitcheezy-host-slot" data-screen="list|game" data-game-pk="…">`가 비어 있고, 생길 때 `window`에 `pitcheezy:host-slot` 이벤트(`detail.element/screen/gamePk`)가 난다. 피드백·접속 기록은 호스트 페이지가 여기에 붙인다(`web/src/service/HostSlot.tsx`).
+
 백엔드 테스트:
 
 ```sh
