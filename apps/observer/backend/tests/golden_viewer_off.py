@@ -58,6 +58,50 @@ def scenario(tmp_path, extra_params=None):
     ask('09-final', snap(1100.0, '20261005_100700', half='final'))
     listed = run.client.get('/api/service/games', params={'date': '2026-10-05'} | extra)
     out['10-list'] = {'status': listed.status_code, 'body': listed.json()}
+    out |= stored(Path(tmp_path)/'stored', extra)
+    return out
+
+
+def stored(tmp_path, extra):
+    """Archive and demo bodies (stored final games; no live feed): the same routes, which must not notice ``?delay=``.
+    The demo session id is random and an archive body stamps ``feed.as_of`` with the wall clock: both are replaced
+    by fixed words before comparing (they are not content)."""
+    import gzip as gz
+    from fastapi.testclient import TestClient
+    from observer_app.main import create_app
+    from test_service_demo_api import GAME, Wall, feed, start_demo, watch
+    feeds, wdir, demo, intent = (tmp_path/name for name in ('feeds', 'watch', 'demo', 'intent'))
+    for folder in (feeds, wdir, demo/'mappings', intent):
+        folder.mkdir(parents=True)
+    with gz.open(feeds/f'{GAME}_final.json.gz', 'wt') as handle:
+        json.dump(feed(GAME, '2026-09-30T02:00:00Z'), handle)
+    (wdir/f'{GAME}.json').write_text(json.dumps(watch(GAME)))
+    rows = [{'index': i, 'pitch_key': key, 'reveal_at_s': 10.0*i} for i, key in
+            enumerate(f'{GAME}:{ab}:{n}' for ab in range(1, 6) for n in (1, 2))]
+    (demo/'mappings'/'fx.json').write_text(json.dumps({'schema': 'pitcheezy-demo-mapping-v1', 'mapping_id': 'fx', 'game_pk': GAME,
+                                                       'kind': 'test_fixture', 'verified': False, 'video': None, 'rows': rows}))
+    out = {}
+    with TestClient(create_app(object(), start_worker=False, watch_dir=wdir, feed_dir=feeds, demo_dir=demo, intent_dir=intent,
+                               demo_wall=Wall(), live_feed=False)) as client:
+        def keep(name, path, **params):
+            answer = client.get(path, params=params | extra)
+            text = json.dumps(answer.json(), ensure_ascii=False, sort_keys=True)
+            body = json.loads(text.replace(sid, 'SID') if sid else text)
+            if isinstance(body.get('feed'), dict) and body['source']['kind'] != 'live':
+                body['feed']['as_of'] = 'WALL-CLOCK'
+            out[name] = {'status': answer.status_code, 'body': body}
+        sid = None
+        keep('20-archive-game', f'/api/service/games/{GAME}')
+        keep('21-archive-cursor', f'/api/service/games/{GAME}', after=6)
+        keep('22-archive-list', '/api/service/games', date='2026-09-30')
+        keep('23-dates', '/api/service/dates')
+        keep('24-unknown-game', f'/api/service/games/{GAME+50}')
+        keep('25-bad-date', '/api/service/games', date='9/30')
+        sid = start_demo(client, demo)[0]['session_id']
+        keep('30-demo-game', f'/api/service/games/{GAME}', demo=sid)
+        keep('31-demo-list', '/api/service/games', date='2026-09-30', demo=sid)
+        keep('32-embargoed-archive-game', f'/api/service/games/{GAME}')
+        keep('33-embargoed-list', '/api/service/games', date='2026-09-30')
     return out
 
 

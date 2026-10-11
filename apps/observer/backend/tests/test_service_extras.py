@@ -15,7 +15,10 @@ from test_rec_pairing import KEY, thrown
 from test_viewer_delay import ask
 
 CARD = {'kind': 'profile_reference', 'title': PR.TITLE, 'chip': PR.CHIP, 'items': [{'pitch_type': 'FF', 'pitch_label': '포심', 'share_pct': 60}]}
-EXPECT = {'kind': 'step5_expectation', 'text': '던지기 전 예상: 헛스윙 12% · 땅볼 9%', 'note': '2024 모델 · 참고'}
+EXPECT = {'kind': 'step5_expectation', 'text': '던지기 전 예상: 헛스윙 12% · 땅볼 9%', 'note': '2024 모델 · 참고', 'recorded': 'live_before_pitch'}
+# operator facts the modules also return: never on the fan payload (``service_extras.*_PUBLIC``)
+PRIVATE_CARD = {'provenance': {'profile_sha256_prefix': 'abcdef012345', 'thresholds': {'min_total': 50}}}
+PRIVATE_EXPECT = {'provenance': {'attempt_key': 'k', 'model': {'parent': 'pppp'}}, 'omitted': [{'leaf': 'ground_ball_in_play'}]}
 
 
 class Reference:
@@ -26,12 +29,12 @@ class Reference:
         self.asked.append((pitcher_id, batter_side, balls, strikes, official_date, pitcher_hand))
         if self.fail:
             raise RuntimeError('boom')
-        return dict(CARD, count=f'{balls}-{strikes}')
+        return CARD | PRIVATE_CARD | {'note': f'{balls}-{strikes}'}
 
 
 class Shadow:
     def __init__(self):
-        self.asked, self.answer = [], EXPECT
+        self.asked, self.answer = [], EXPECT | PRIVATE_EXPECT
 
     def for_pitch(self, pitch, *, pitch_first_received=None):
         self.asked.append((pitch['key'], pitch['actual']['event'], pitch_first_received))
@@ -81,7 +84,8 @@ def test_the_card_is_attached_only_for_a_pitcher_level_unsupported_state(run, st
     assert ('reference' in view['next']) is attached
     if attached:
         current = view['current']
-        assert view['next']['reference'] == CARD | {'count': '1-0'}
+        assert view['next']['reference'] == CARD | {'note': '1-0'}  # no provenance, no thresholds, no hash
+        assert 'provenance' not in view['next']['reference'] and 'abcdef' not in json.dumps(view) and 'min_total' not in json.dumps(view)
         assert run.reference.asked[-1] == (current['pitcher']['id'], current['batter']['side'], 1, 0, '2026-10-05', current['pitcher']['hand'])
     else:
         assert run.reference.asked == []
@@ -126,8 +130,8 @@ def test_a_delayed_viewer_gets_the_card_of_the_count_they_are_shown(run, monkeyp
     ask(run, after=12.0)
     now = ask(run, after=12.0, body=snap(1015.0, '20261005_100100', second=True))  # wall 1024: count 2-0, pitch 5:3 pending
     late = ask(run, 30, after=12.0)  # 30 s behind: still 1-0, pitch 5:2 pending
-    assert now['next']['reference']['count'] == '2-0' and now['next']['pitch_key'] == f'{GAME}:5:3'
-    assert late['next']['reference']['count'] == '1-0' and late['next']['pitch_key'] == KEY
+    assert now['next']['reference']['note'] == '2-0' and now['next']['pitch_key'] == f'{GAME}:5:3'
+    assert late['next']['reference']['note'] == '1-0' and late['next']['pitch_key'] == KEY
 
 
 @pytest.mark.skipif(not all(Path(PR.SOURCE[k]).is_file() for k in PR.SOURCE['pins']), reason='pinned Step 5 source is not on this machine')
@@ -172,7 +176,8 @@ def test_only_the_last_pitch_of_a_key_moment_plate_appearance_gets_the_expectati
     view = ask(run, after=12.0, body=struck_out())
     assert marked(view) == earlier | {KEY} == key_moments(view)  # the strikeout pitch joins; no other pitch does
     pitch = next(p for p in view['pitches'] if p['key'] == KEY)
-    assert pitch['actual']['event'] == 'strikeout' and pitch['expectation'] == EXPECT
+    assert pitch['actual']['event'] == 'strikeout' and pitch['expectation'] == EXPECT  # no provenance, no omitted leaves
+    assert 'attempt_key' not in json.dumps(view) and 'omitted' not in json.dumps(view)
     received = next(e for e in run.feed.store.pitch_events(GAME)['events']
                     if (e['at_bat_number'], e['pitch_number'], e['outcome']) == (5, 2, 'new'))['received']
     assert [a for a in run.shadow.asked if a[0] == KEY] == [(KEY, 'strikeout', received)]  # with its first receipt, once
@@ -194,7 +199,7 @@ def test_switch_off_abstain_and_failure_leave_the_pitch_without_the_field(run, m
     run.app.state.service_extras._missed.clear()
     view = ask(run)
     assert view['display_state']['state'] in ('recommended', 'waiting') and marked(view) == set()
-    run.shadow.answer = EXPECT
+    run.shadow.answer = EXPECT | PRIVATE_EXPECT
     run.app.state.service_extras._missed.clear()
     on = ask(run)
     monkeypatch.setenv('PITCHEEZY_OBSERVER_STEP5_EXPECTATION', '0')
@@ -213,7 +218,7 @@ def test_an_abstention_is_asked_again_only_after_a_while(run):
     ask(run), ask(run)
     assert len(run.shadow.asked) == asked  # not on every poll
     run.app.state.service_extras._missed.clear()  # (the retry time has passed)
-    run.shadow.answer = EXPECT
+    run.shadow.answer = EXPECT | PRIVATE_EXPECT
     assert marked(ask(run)) == key_moments(ask(run))
 
 

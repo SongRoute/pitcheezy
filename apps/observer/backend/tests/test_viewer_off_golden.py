@@ -28,6 +28,10 @@ def strip(step):
     return {'status': step['status'], 'body': {key: value for key, value in step['body'].items() if key not in ADDED}}
 
 
+# Also not compared (replaced by fixed words in ``golden_viewer_off.stored``, in both trees): the random demo session id
+# and ``feed.as_of`` of an archive/demo body, which is the wall clock of the request.
+
+
 @pytest.mark.parametrize('switch', [None, '0'])
 def test_switched_off_the_fan_routes_answer_exactly_what_a72f1fa_answered(tmp_path, monkeypatch, switch):
     for name in ('VIEWER_DELAY', 'PROFILE_REFERENCE', 'STEP5_EXPECTATION'):  # all three owner switches off
@@ -36,7 +40,7 @@ def test_switched_off_the_fan_routes_answer_exactly_what_a72f1fa_answered(tmp_pa
             monkeypatch.setenv(f'PITCHEEZY_OBSERVER_{name}', switch)
     now, then = scenario(tmp_path), golden()
     assert '"reference"' not in json.dumps(now) and '"expectation"' not in json.dumps(now)  # service_extras adds nothing
-    assert sorted(now) == sorted(then) and len(then) == 19
+    assert sorted(now) == sorted(then) and len(then) == 29  # 19 live, 6 archive (2 refusals), 4 demo/embargo
     for name in sorted(then):
         assert set(now[name]['body']) - set(then[name]['body']) <= set(ADDED), name  # nothing else was added
         assert strip(now[name]) == then[name], name
@@ -47,11 +51,23 @@ def test_switched_off_the_fan_routes_answer_exactly_what_a72f1fa_answered(tmp_pa
     assert 'viewer' not in now['10-list']['body'] and now['10-list']['body']['features'] == live['features']
 
 
-def test_switched_off_a_delay_parameter_changes_no_body(tmp_path, monkeypatch):
+@pytest.mark.parametrize('value', ['30', '0', '120.5', 'inf', '-1', 'abc', 'nan', ''])
+def test_switched_off_a_delay_parameter_changes_no_body(tmp_path, monkeypatch, value):
+    """Valid or not, the parameter is not looked at: same status and same body as without it, live, archive, demo,
+    refusals (404, 400 for a bad date, 423) and the list included (review A1: an invalid value used to answer 400)."""
     monkeypatch.delenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', raising=False)
-    plain, asked = scenario(tmp_path/'plain'), scenario(tmp_path/'delay', {'delay': 30})
+    plain, asked = scenario(tmp_path/'plain'), scenario(tmp_path/'delay', {'delay': value})
     assert asked == plain  # game bodies (also ``viewer``: served at 0) and the list, score included
     assert {name: strip(step) for name, step in asked.items()} == golden()
+    assert {step['status'] for step in asked.values()} == {200, 400, 404, 423}
+
+
+@pytest.mark.parametrize('value', ['-1', 'abc', 'nan', ''])
+def test_switched_on_an_invalid_delay_is_treated_as_absent(tmp_path, monkeypatch, value):
+    monkeypatch.setenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', '1')
+    asked = scenario(tmp_path, {'delay': value})
+    assert {name: {'status': step['status'], 'body': {k: v for k, v in strip(step)['body'].items()}} for name, step in asked.items()} == golden()
+    assert asked['01-pending']['body']['viewer']['delay_s'] == 0.0
 
 
 def test_switched_off_the_tap_route_refuses_and_reads_nothing(tmp_path, monkeypatch):

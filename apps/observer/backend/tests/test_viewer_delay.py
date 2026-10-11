@@ -10,7 +10,7 @@ import time
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from observer_app import features, live_feed as live_feed_module
+from observer_app import features, live_feed as live_feed_module, service_extras
 from observer_app.live_feed import TAP, pitch_arrivals, tap_sync
 from test_display_state import GAME, LIVE, SERVICE, EventPolicy, Run, brief, shown, snap, with_pickoff
 from test_rec_pairing import KEY, past, rule, thrown, tops
@@ -157,9 +157,10 @@ def test_no_parameter_is_delay_zero_and_a_huge_one_is_clamped_to_the_buffer(run)
     assert ask(run, after=2.0)['viewer']['delay_s'] == 0.0
     view = ask(run, 99999)
     assert view['viewer']['delay_s'] == 120.0 and view['viewer']['max_delay_s'] == 120 and view['viewer']['buffering'] is True
-    assert run.client.get(SERVICE, params={'delay': -1}).status_code == 400
-    assert run.client.get(SERVICE, params={'delay': 'nan'}).status_code == 400
-    assert run.client.get(SERVICE, params={'delay': 'soon'}).status_code == 400
+    for bad in ('-1', 'nan', 'soon', ''):  # not a delay: treated as absent, never a refusal (as before the feature)
+        answer = run.client.get(SERVICE, params={'delay': bad})
+        assert answer.status_code == 200 and answer.json()['viewer']['delay_s'] == 0.0, bad
+        assert run.client.get('/api/service/games', params={'date': '2026-10-05', 'delay': bad}).status_code == 200, bad
 
 
 def test_features_come_from_the_config_with_environment_overrides_and_survive_bad_values(monkeypatch, caplog):
@@ -199,23 +200,24 @@ def test_features_come_from_the_config_with_environment_overrides_and_survive_ba
 # ---------- the list ----------
 def test_a_live_game_card_carries_no_score_for_a_delayed_viewer(run, monkeypatch):
     row = lambda pk, abstract, status: {
-        'game_pk': pk, 'game_type': 'W', 'start': '2026-10-05T10:00:00Z', 'status': status, 'live': abstract == 'Live',
+        'game_pk': pk, 'game_type': 'W', 'start': '2000-01-01T00:00:00Z', 'status': status, 'live': abstract == 'Live',
         'away_team': 'A', 'home_team': 'B', 'abstract': abstract, 'official_date': '2026-10-05', 'away_score': 2, 'home_score': 5,
         'game_number': 1, 'double_header': 'N', 'inning': 7, 'half': 'Top'}
     run.feed.schedule = lambda day: ([row(1, 'Live', 'In Progress'), row(2, 'Final', 'Final'), row(3, 'Preview', 'Scheduled')]
-                                     if day == '2026-10-05' else [])
-    cards = lambda **params: {c['game_pk']: c for c in run.client.get('/api/service/games', params={'date': '2026-10-05'} | params).json()['games']}
+                                     if day == '2000-01-01' else [])
+    cards = lambda **params: {c['game_pk']: c for c in run.client.get('/api/service/games', params={'date': '2000-01-01'} | params).json()['games']}
     plain = cards()
     assert (plain[1]['away_score'], plain[1]['home_score'], plain[1]['inning'], plain[1]['half']) == (2, 5, 7, 'Top')
     assert 'score_hidden' not in plain[1]
     late = cards(delay=30)
     assert (late[1]['away_score'], late[1]['home_score'], late[1]['inning'], late[1]['half']) == (None, None, None, None)
     assert late[1]['score_hidden'] is True and late[1]['status'] == 'live' and late[1]['live'] is True
+    assert plain[1]['status_text'] == 'In Progress' and late[1]['status_text'] is None  # no present-time status words either
     assert late[2] == plain[2] and late[3] == plain[3]  # final and scheduled games are unchanged
     assert cards(delay=0) == plain
     monkeypatch.setenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', '0')
     assert cards(delay=30) == plain
-    assert run.client.get('/api/service/games', params={'date': '2026-10-05', 'delay': 30}).json()['features']['viewer_delay']['enabled'] is False
+    assert run.client.get('/api/service/games', params={'date': '2000-01-01', 'delay': 30}).json()['features']['viewer_delay']['enabled'] is False
 
 
 # ---------- D1 per viewer delay ----------
@@ -420,10 +422,10 @@ def test_the_tap_endpoint_answers_a_number_and_nothing_about_the_game(run):
     assert run.client.get(TAP_URL, params={'ago': '17', 'current': 30, 'sure': 1}).json()['delay_s'] == 33.0
     ask(run, 30, after=30.0)  # wall 1060: 45 s after the newest tap, every pitch before it has reached the feed
     answer = run.client.get(TAP_URL, params={'ago': f'{1060-995.0},{1060-1013.2}', 'current': 30})  # taps at 995 and 1013.2
-    assert answer.json() == {'status': 'ok', 'hint': None, 'delay_s': 33.1, 'message': None, 'retry_s': None, 'max_delay_s': 120.0}
+    assert answer.json() == {'status': 'ok', 'hint': None, 'delay_s': 33.0, 'message': None, 'retry_s': None, 'max_delay_s': 120.0}  # whole seconds
     assert set(answer.json()) == {'status', 'hint', 'delay_s', 'message', 'retry_s', 'max_delay_s'}
     assert set(run.feed.watching[GAME]) == {30.0}  # the tap is not a viewer and polled nothing
-    for bad in ('', 'x', '-1', '1,nan', '700', ','.join(['1']*9)):
+    for bad in ('', 'x', '-1', '1,nan', '700', ','.join(['1']*5)):
         assert run.client.get(TAP_URL, params={'ago': bad}).status_code == 400, bad
     assert run.client.get(f'/api/service/games/{GAME+1}/tap', params={'ago': '1'}).json()['hint'] == 'no_pitch'  # unknown game
 
@@ -436,3 +438,64 @@ def test_the_legacy_route_is_unchanged_and_serves_the_same_snapshot_as_the_fan_r
     assert old['delay_s'] == 30.0 and fan['display_state']['pitch_key'] == old['display_state']['pitch_key'] == KEY
     assert shown(fan) == [c['pitch_type'] for c in old['recommendation']['recommendation']['candidates']] == ['SL']
     assert fan['current']['situation']['balls'] == old['situation']['balls'] and len(old['pitch_sequence']) == 1
+
+
+# ---------- review round 1 ----------
+def final_row(pk, start):
+    return {'game_pk': pk, 'game_type': 'W', 'start': start, 'status': 'Final', 'live': False, 'away_team': 'A', 'home_team': 'B',
+            'abstract': 'Final', 'official_date': '1970-01-01', 'away_score': 3, 'home_score': 7, 'game_number': 1, 'double_header': 'N'}
+
+
+def test_the_list_keeps_a_just_finished_game_scoreless_until_the_delayed_viewer_could_have_seen_the_end(run):
+    """B2: the schedule says Final the moment the game ends; a viewer D seconds behind has not seen the end yet."""
+    day = '1970-01-01'
+    run.feed.schedule = lambda asked: [final_row(GAME, '1970-01-01T00:10:00Z'), final_row(GAME+1, '1970-01-01T00:10:00Z')] if asked == day else []
+    card = lambda delay, pk=GAME: next(c for c in run.client.get('/api/service/games', params={'date': day, 'delay': delay}).json()['games'] if c['game_pk'] == pk)
+    ask(run, 30, after=12.0)  # wall 1012: the screen is open
+    ask(run, 30, after=12.0, body=snap(1020.0, '20261005_100900', half='final'))  # wall 1024: the game ended at 1020
+    hidden = card(30)  # the schedule says Final now; this viewer's game page is still 26 s from the end
+    assert (hidden['status'], hidden['live'], hidden['away_score'], hidden['home_score'], hidden['status_text'], hidden['score_hidden']) == (
+        'live', True, None, None, None, True)
+    assert card(30, GAME+1)['score_hidden'] is True  # a game nobody is watching here: unsure, so nothing is said yet
+    assert card(10)['score_hidden'] is True  # 10 s behind: the end is only 4 s old
+    plain = next(c for c in run.client.get('/api/service/games', params={'date': day}).json()['games'] if c['game_pk'] == GAME)
+    assert (plain['status'], plain['home_score']) == ('final', 7) and 'score_hidden' not in plain  # delay 0: as before
+    run.now[0] = 1031.0
+    assert card(10)['home_score'] == 7 and card(30)['score_hidden'] is True  # 10 s behind has been served the end
+    run.now[0] = 1049.0
+    assert card(30)['score_hidden'] is True  # the end is 29 s old
+    run.now[0] = 1051.0
+    shown_card = card(30)
+    assert (shown_card['status'], shown_card['home_score'], shown_card['status_text']) == ('final', 7, 'Final') and 'score_hidden' not in shown_card
+    assert card(30, GAME+1)['score_hidden'] is True  # no buffer to ask: 30 s after this server first saw Final (1024)
+    run.now[0] = 1055.0
+    assert card(30, GAME+1)['home_score'] == 7
+    old = final_row(GAME+2, '1969-12-01T00:00:00Z')
+    assert service_extras.Extras().list_card({'game_pk': GAME+2, 'status': 'final', 'start': old['start'], 'home_score': 7}, 30, run.feed)['home_score'] == 7
+
+
+def test_after_a_legacy_delayed_request_an_unreadable_pitch_ledger_is_judged_on_the_fan_viewers_own_version(run, monkeypatch):
+    """Intended change of 59ad2bc in a failure path (review A2): the receipt memory is kept per store version. Before,
+    the last request of ANY viewer overwrote it, so after a legacy-route viewer on a delay had asked, a fan at the
+    newest version was answered ``unconfirmed`` once the pitch ledger could not be read."""
+    import sqlite3
+    assert shown(ask(run, after=12.0)) == ['SL']
+    ask(run, after=12.0, body=thrown())  # the fan is at the newest version (5:2 thrown)
+    run.client.get(LIVE, params={'delay': 20})  # a legacy viewer still at the older version asks last
+    def broken(game_pk):
+        raise sqlite3.OperationalError('disk I/O error')
+    monkeypatch.setattr(run.feed.store, 'pitch_events', broken)
+    view = ask(run)
+    assert view['display_state']['state'] == 'recommended' and view['pitches'][-1]['receipt']['status'] == 'received'
+
+
+@pytest.mark.xfail(strict=True, reason='KNOWN LIMIT (review B1): the delay buffer keeps one entry per game-event time and refreshes '
+                                       'it in place, so a correction without a newer game event reaches every delay at once')
+def test_a_correction_without_a_newer_event_waits_for_the_delayed_viewers_own_moment(run):
+    ask(run, after=12.0)  # wall 1012: state A (event 995), first pitch of the at-bat called a ball
+    assert ask(run, 30, after=18.0)['pitches'][-1]['actual']['call_label'] == ask(run)['pitches'][-1]['actual']['call_label']
+    before = ask(run, 30)['pitches'][-1]['actual']
+    # wall 1036: the call is overturned (ball -> called strike) with no newer game event; this viewer's broadcast is
+    # 30 s behind, so it shows the overturn at about 1066
+    ask(run, after=6.0, body=snap(995.0, '20261005_100100', call='C'))
+    assert ask(run, 30)['pitches'][-1]['actual'] == before
