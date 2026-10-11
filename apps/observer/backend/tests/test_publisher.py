@@ -1171,3 +1171,54 @@ def test_the_last_embargo_check_comes_right_before_health(world):
     world.cycle(settle=False)
     assert order[-1] == 'v1/health.json' and started
     assert not world.path(ARCHIVE_FILE).exists() and world.read(f'v1/games/{ARCHIVE_DATE}.json')['games'][0]['embargoed'] is True
+
+
+# ---------- final review (2026-10-11) ----------
+def test_a_deeply_nested_state_file_does_not_block_start_up(world):
+    world.cycle(settle=False)
+    world.publisher.close()
+    Path(world.publisher.state_path).write_text('['*200000)
+    world.start()
+    world.cycle(settle=False)
+    assert world.read('v1/health.json')['sequence'] == 2
+
+
+def test_an_unreadable_setup_file_is_reported_but_a_failed_validation_is_not(world):
+    world.cycle()
+    assert world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()
+    (world.intent/f'{ARCHIVE_GAME}.source.json').write_text('5')  # corrupt: not a pin at all
+    health = world.cycle(after=world.config['settled_recheck_s'], settle=False)
+    assert codes(health) == [(ARCHIVE_GAME, 'setup_failed')] and not world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()
+    assert world.client.get(f'/api/watch/{ARCHIVE_GAME}/setup').status_code == 503
+    world.write_setup(sha256='0'*64)  # readable, but it fails validation: simply not published, no fault
+    health = world.cycle(after=world.config['settled_recheck_s'], settle=False)
+    assert codes(health) == [] and not world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()
+    assert world.client.get(f'/api/watch/{ARCHIVE_GAME}/setup').status_code == 503
+    world.write_setup()
+    assert codes(world.cycle(after=world.config['settled_recheck_s'], settle=False)) == []
+    assert world.client.get(f'/api/watch/{ARCHIVE_GAME}/setup').status_code == 200
+    assert world.client.get(f'/api/watch/{LIVE_GAME}/setup').status_code == 404
+
+
+def test_temporary_files_left_by_a_crash_are_removed_at_start_up_and_nothing_else_is(world):
+    world.cycle(settle=False)
+    world.publisher.close()
+    staging = world.publisher.sink.staging
+    left = [staging/'v1_game_900200.json.12345.tmp', staging/'v1_health.json.7.tmp']
+    kept = [staging/'notes.txt', staging/'v1_health.json.tmp', staging/'sub']
+    for path in left:
+        path.write_text('{"half": ')
+    kept[0].write_text('mine')
+    kept[1].write_text('not our pattern')
+    kept[2].mkdir()
+    (kept[2]/'x.1.tmp').write_text('nested: not ours to touch')
+    before = tree(world)
+    world.start()
+    assert not any(path.exists() for path in left) and all(path.exists() for path in kept) and (kept[2]/'x.1.tmp').exists()
+    assert tree(world) == before
+
+
+def test_running_without_an_output_folder_is_a_clear_refusal(monkeypatch):
+    monkeypatch.delenv('PITCHEEZY_PUBLISH_OUT_DIR', raising=False)
+    with pytest.raises(SystemExit, match='--out'):
+        publisher.main(['--once'])

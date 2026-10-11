@@ -32,6 +32,11 @@ def x_band(x):
     return SIDES[min(2, int((x + PLATE_HALF_WIDTH_FEET) / (2 * PLATE_HALF_WIDTH_FEET) * 3))]
 
 
+class Unreadable(ValueError):
+    """The estimate files exist but cannot be read as estimates at all (unreadable, corrupt, wrong shape), as
+    opposed to a readable file that fails validation. A ``ValueError`` for every existing caller."""
+
+
 class SetupEstimates:
     def __init__(self, directory=None):
         self.directory = Path(directory or os.environ.get('PITCHEEZY_INTENT_DIR', DEFAULT_DIR))
@@ -51,7 +56,7 @@ class SetupEstimates:
             except ValueError:
                 raise
             except Exception as exc:  # noqa: BLE001 - a pin that is not an object, an unreadable file, a line of the wrong shape
-                raise ValueError('setup estimates are unreadable or malformed') from exc
+                raise Unreadable('setup estimates are unreadable or malformed') from exc
         return cached[1], cached[2]
 
     @staticmethod
@@ -77,7 +82,7 @@ class SetupEstimates:
         try:
             return self._view(game_pk, source, pitches)
         except Exception as exc:  # noqa: BLE001 - validated lines should never get here; refuse rather than half-serve
-            raise ValueError('setup estimates are malformed') from exc
+            raise Unreadable('setup estimates are malformed') from exc
 
     @staticmethod
     def _view(game_pk, source, pitches):

@@ -47,6 +47,7 @@ import sys
 import time
 
 from .service_api import Refused
+from .setup_estimates import Unreadable
 
 LOGGER = logging.getLogger(__name__)
 APP = Path(__file__).resolve().parents[2]
@@ -186,6 +187,19 @@ class LocalDirSink(Sink):
         except BaseException:
             temporary.unlink(missing_ok=True)
             raise
+
+    def cleanup(self):
+        """Remove temporary files a crashed publisher left behind: plain files directly in the temporary folder
+        whose name has this class's own pattern (``<name>.<pid>.tmp``). Nothing else there is touched. Called by
+        the publisher once it holds the lock."""
+        if self.staging.is_symlink() or not self.staging.is_dir():
+            return
+        for path in self.staging.iterdir():
+            if re.fullmatch(r'.+\.\d+\.tmp', path.name) and path.is_file() and not path.is_symlink():
+                try:
+                    path.unlink()
+                except OSError:
+                    LOGGER.warning('leftover temporary file %s not removed', path.name)
 
     def read(self, path):
         target = self._target(path)
@@ -327,6 +341,8 @@ class Publisher:
         self.state_path = None if state_path is None else Path(state_path)
         self._lock = self._acquire()
         try:
+            if hasattr(self.sink, 'cleanup'):
+                self.sink.cleanup()  # only now: the lock says no other publisher is in the middle of a write
             self.state = self._load_state()
         except BaseException:
             self.close()
@@ -368,7 +384,7 @@ class Publisher:
                         and isinstance(saved.get('pending', {}), dict)):
                     raise ValueError('not a publisher state')
                 state |= saved
-            except (ValueError, OSError):  # unreadable bookkeeping: start as if it were lost (everything is rebuilt)
+            except (ValueError, OSError, RecursionError):  # unreadable bookkeeping: start as if it were lost (everything is rebuilt)
                 LOGGER.warning('state file %s unreadable; continuing from the published files', self.state_path, exc_info=True)
         # The sequence never goes back, whatever happened to the state file: it continues above EVERY file that
         # is out. Health alone is not enough: a cycle that failed before health may have written files above it.
@@ -668,10 +684,14 @@ class Publisher:
             view = self.setups.view(game_pk)
         except KeyError:
             view = None
-        except ValueError:
+        except Unreadable:  # there, but not readable as estimates: a fault somebody must see
+            LOGGER.warning('setup estimates of %s could not be read; not published', game_pk, exc_info=True)
+            self._drop(path, force=True)
+            return self._fail(game_pk, None, 'setup_failed')
+        except ValueError:  # readable, refused by validation: simply not published
             LOGGER.warning('setup estimates of %s refused by validation; not published', game_pk, exc_info=True)
             view = None
-        except Exception:  # noqa: BLE001 - unreadable or malformed beyond what validation names
+        except Exception:  # noqa: BLE001 - anything else the reader did not name
             LOGGER.warning('setup estimates of %s could not be read; not published', game_pk, exc_info=True)
             self._drop(path, force=True)
             return self._fail(game_pk, None, 'setup_failed')
@@ -760,6 +780,8 @@ def main(argv=None):
 
 def _start(args):
     config = load_config(args.config, out_dir=args.out, publish_interval_s=args.interval, fixed_delay_s=args.delay)
+    if not config.get('out_dir'):
+        raise SystemExit('no output folder: give --out <dir>, or set PITCHEEZY_PUBLISH_OUT_DIR or out_dir in publish_config.json')
     try:
         app, publisher = build(config, dates=args.date, feed_dir=args.feed_dir, watch_dir=args.watch_dir,
                                intent_dir=args.intent_dir, demo_dir=args.demo_dir)
