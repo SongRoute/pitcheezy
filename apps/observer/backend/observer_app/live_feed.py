@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import gzip
+import inspect
 import json
 import re
 import threading
@@ -35,10 +36,24 @@ class LiveFeedError(RuntimeError):
     pass
 
 
-def http_json(url, timeout):
+def http_json(url, timeout, received=None):
+    """GET ``url`` as JSON. ``received()`` is called once the whole response body has arrived, before it is
+    parsed, so the caller can stamp the receipt without the parse time."""
     request = urllib.request.Request(url, headers={'User-Agent': 'pitcheezy-observer-demo'})
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.load(response)
+        body = response.read()
+    if received is not None:
+        received()
+    return json.loads(body)
+
+
+def _reports_receipt(transport):
+    """True if ``transport`` takes a ``received`` callback (``http_json`` does; replay and test transports
+    usually do not, and are then stamped when they return)."""
+    try:
+        return 'received' in inspect.signature(transport).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _load(path):
@@ -138,6 +153,10 @@ class LiveFeed:
     event (``event_wall``) happened at least that long ago, so a pitch appears here when it appears on a
     broadcast running that far behind the ballpark. A snapshot that reached us later than that is served as
     soon as it is fetched. Snapshots are kept for ``max_delay_s`` so viewers can use different delays.
+
+    Receipt times: an entry's ``fetched`` is the wall time at which the HTTP response was completely received
+    (never the time the request was sent, which is kept beside it as ``requested``), so a pitch is never
+    recorded as received before it could have been.
     """
 
     def __init__(self, transport=http_json, *, config=LIVE_CONFIG, delay_s=None, record_dir=None,
@@ -147,6 +166,7 @@ class LiveFeed:
         self.max_delay_s = max(config.get('max_delay_s', 120), self.delay_s)
         self.record_dir = Path(record_dir) if record_dir else None
         self.buffers, self.fetched_at, self.watching, self.failing, self._lock = {}, {}, {}, {}, threading.Lock()
+        self._receipt = _reports_receipt(transport)
 
     def _interval(self, game_pk, delay, now):
         """Seconds between upstream fetches. The feed asks for ``poll_interval_s``; while a viewer whose
@@ -162,10 +182,12 @@ class LiveFeed:
             return min(fast, self.config['poll_interval_s'])
         return self.config['poll_interval_s']
 
-    def _get(self, url, attempts=None):
+    def _get(self, url, attempts=None, received=None):
         attempts = attempts or self.config['retries']+1
         for attempt in range(attempts):
             try:
+                if received is not None and self._receipt:
+                    return self.transport(url, self.config['timeout_s'], received=received)
                 return self.transport(url, self.config['timeout_s'])
             except urllib.error.HTTPError as exc:
                 if exc.code < 500 and exc.code != 429:
@@ -201,9 +223,11 @@ class LiveFeed:
     def _buffer(self, game_pk):
         return self.buffers.setdefault(game_pk, [])
 
-    def _accept(self, game_pk, feed, wall, buffer):
+    def _accept(self, game_pk, feed, wall, buffer, requested=None):
+        """``wall`` is when the response was completely received, ``requested`` when its request was sent."""
         event = event_wall(feed)
-        entry = {'feed': feed, 'event': wall if event is None else min(event, wall), 'fetched': wall}
+        entry = {'feed': feed, 'event': wall if event is None else min(event, wall), 'fetched': wall,
+                 'requested': requested}
         if buffer and entry['event'] <= buffer[-1]['event']:
             buffer[-1]['feed'] = feed  # no newer game event: keep its first-seen times, refresh the content
         else:
@@ -211,7 +235,8 @@ class LiveFeed:
 
     def snapshot(self, game_pk, delay_s=None):
         """Returns (entry or None, seconds until this delay has something to show). An entry is
-        ``{'feed', 'event', 'fetched'}``: the snapshot, its newest event's wall time and when it was fetched."""
+        ``{'feed', 'event', 'fetched', 'requested'}``: the snapshot, its newest event's wall time, when its
+        response was completely received and when that request was sent."""
         game_pk = int(game_pk)
         delay = self.delay_s if delay_s is None else min(max(0.0, float(delay_s)), self.max_delay_s)
         with self._lock:
@@ -219,16 +244,21 @@ class LiveFeed:
             buffer = self._buffer(game_pk)
             if now-self.fetched_at.get(game_pk, -1e18) >= self._interval(game_pk, delay, now):
                 self.fetched_at[game_pk] = now
+                requested, complete = wall, []  # ``wall`` so far is the request start, not a receipt
                 try:  # one attempt: every viewer waits on this lock, and the next poll retries anyway
-                    feed = self._get(f"{self.config['base_url']}/api/v1.1/game/{game_pk}/feed/live", attempts=1)
+                    feed = self._get(f"{self.config['base_url']}/api/v1.1/game/{game_pk}/feed/live", attempts=1,
+                                     received=lambda: complete.append(self.wall()))
                 except LiveFeedError:
+                    wall = self.wall()
                     if not buffer:
                         del self.fetched_at[game_pk]  # nothing to show yet: the very next poll tries again
                         raise
                     self.failing[game_pk] = wall  # keep serving what we have; the route tells the viewer
                 else:
+                    # Receipt = the whole response has arrived: the transport's own mark, else its return.
+                    wall = complete[-1] if complete else self.wall()
                     self.failing.pop(game_pk, None)
-                    self._accept(game_pk, feed, wall, buffer)
+                    self._accept(game_pk, feed, wall, buffer, requested)
                     if self.record_dir:
                         self._record(game_pk, feed)
             old = [i for i, entry in enumerate(buffer) if entry['event'] <= wall-self.max_delay_s]

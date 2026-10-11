@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     fetched REAL NOT NULL,
     source TEXT NOT NULL,
     body BLOB NOT NULL,
+    requested REAL,
     UNIQUE(game_pk, event_wall, version));
 CREATE INDEX IF NOT EXISTS snapshots_game_event ON snapshots(game_pk, event_wall, version);
 CREATE TRIGGER IF NOT EXISTS snapshots_append_only
@@ -237,6 +238,8 @@ class LiveSnapshotStore:
         with closing(self.connect()) as db:
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript(SCHEMA)
+            if 'requested' not in [row[1] for row in db.execute('PRAGMA table_info(snapshots)')]:
+                db.execute('ALTER TABLE snapshots ADD COLUMN requested REAL')  # stores made before the receipt split
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
@@ -256,14 +259,17 @@ class LiveSnapshotStore:
                 raise
             db.execute('COMMIT')
 
-    def ingest(self, game_pk, feed, *, fetched, source, slot_event=None, first_fetched=None):
-        """Returns (outcome, entry); ``entry`` is the ``LiveFeed`` buffer entry for the slot (None if stale)."""
+    def ingest(self, game_pk, feed, *, fetched, source, slot_event=None, first_fetched=None, requested=None):
+        """Returns (outcome, entry); ``entry`` is the ``LiveFeed`` buffer entry for the slot (None if stale).
+
+        ``fetched`` is the receipt: the wall time the response was completely received. ``requested`` (optional)
+        is when that request was sent; it is kept per version (``version_requested``) and never used as a receipt."""
         game_pk, body = int(game_pk), _canonical(feed)
         event, sha = event_wall(feed) if slot_event is None else slot_event, hashlib.sha256(body).hexdigest()
         event = fetched if event is None else min(event, fetched)
         feed_ts = _feed_ts(feed)
         with self._write() as db:
-            newest = db.execute('SELECT event_wall, version, feed_ts, sha, first_fetched, seq, fetched, source FROM snapshots WHERE game_pk=? '
+            newest = db.execute('SELECT event_wall, version, feed_ts, sha, first_fetched, seq, fetched, source, requested FROM snapshots WHERE game_pk=? '
                                 'ORDER BY event_wall DESC, version DESC LIMIT 1', (game_pk,)).fetchone()
             if newest is None or event > newest[0]:
                 outcome, slot, version, first = 'new', event, 1, fetched if first_fetched is None else first_fetched
@@ -277,19 +283,21 @@ class LiveSnapshotStore:
                 return 'duplicate', {'game_pk': game_pk, 'feed': feed, 'event': newest[0], 'fetched': newest[4],
                                      'seq': newest[5], 'version': newest[1], 'sha': newest[3],
                                      'version_fetched': newest[6], 'source': newest[7],
+                                     'requested': newest[8] if newest[1] == 1 else None, 'version_requested': newest[8],
                                      'provider_order': _provider_order(db, game_pk, newest[2], newest[5], newest[3])}
             else:
                 outcome, slot, version, first = 'correction', newest[0], newest[1]+1, newest[4]
-            db.execute('INSERT INTO snapshots(game_pk, event_wall, version, feed_ts, sha, first_fetched, fetched, source, body) '
-                       'VALUES (?,?,?,?,?,?,?,?,?)', (game_pk, slot, version, feed_ts, sha, first, fetched, source,
-                                                      gzip.compress(body, compresslevel=5)))
+            db.execute('INSERT INTO snapshots(game_pk, event_wall, version, feed_ts, sha, first_fetched, fetched, source, body, '
+                       'requested) VALUES (?,?,?,?,?,?,?,?,?,?)', (game_pk, slot, version, feed_ts, sha, first, fetched, source,
+                                                                   gzip.compress(body, compresslevel=5), requested))
             seq = db.execute('SELECT last_insert_rowid()').fetchone()[0]
             self._record_pitches(db, game_pk, feed, feed_ts=feed_ts, event=slot, received=fetched,
                                  source=source, seq=seq)
             order = _provider_order(db, game_pk, feed_ts, seq, sha)
         return outcome, {'game_pk': game_pk, 'feed': feed, 'event': slot, 'fetched': first, 'seq': seq,
                          'version': version, 'sha': sha, 'version_fetched': fetched, 'source': source,
-                         'provider_order': order}
+                         'requested': requested if outcome == 'new' and first == fetched else None,
+                         'version_requested': requested, 'provider_order': order}
 
     def _record_pitches(self, db, game_pk, feed, *, feed_ts, event, received, source, seq):
         """Append each pitch whose provider id is new or whose payload changed under a strictly later, valid
@@ -528,13 +536,14 @@ class LiveSnapshotStore:
             floor = db.execute('SELECT MAX(event_wall) FROM snapshots WHERE game_pk=? AND event_wall<=?',
                                (game_pk, bound)).fetchone()[0]
             rows = db.execute(
-                'SELECT event_wall, first_fetched, body, seq, version, sha, fetched, source, feed_ts FROM snapshots s WHERE game_pk=? AND event_wall>=? AND version='
+                'SELECT event_wall, first_fetched, body, seq, version, sha, fetched, source, feed_ts, requested FROM snapshots s WHERE game_pk=? AND event_wall>=? AND version='
                 '(SELECT MAX(version) FROM snapshots WHERE game_pk=s.game_pk AND event_wall=s.event_wall) ORDER BY event_wall',
                 (game_pk, bound if floor is None else floor)).fetchall()
             return [{'game_pk': int(game_pk), 'feed': json.loads(gzip.decompress(body)), 'event': event, 'fetched': first,
                      'seq': seq, 'version': version, 'sha': sha, 'version_fetched': received,
-                     'source': source, 'restored': True, 'provider_order': _provider_order(db, game_pk, feed_ts, seq, sha)}
-                    for event, first, body, seq, version, sha, received, source, feed_ts in rows]
+                     'source': source, 'restored': True, 'provider_order': _provider_order(db, game_pk, feed_ts, seq, sha),
+                     'requested': requested if version == 1 and first == received else None, 'version_requested': requested}
+                    for event, first, body, seq, version, sha, received, source, feed_ts, requested in rows]
 
     def read_after(self, game_pk, after=0, *, until_event, limit=100):
         """Committed versions of ``game_pk`` with ``seq > after`` whose game event is at or before
@@ -572,8 +581,12 @@ class PersistentLiveFeed(LiveFeed):
     time a game is asked for after a restart. The memory buffer changes only after the commit; if the store
     fails, serving falls back to the plain in-memory behaviour and ``store_error`` says so."""
 
-    def __init__(self, transport, *, store, **options):
+    def __init__(self, transport, *, store, source='live_poll', **options):
+        """``source`` labels every polled snapshot row. Only 'live_poll' (a real upstream poll) puts pitch
+        receipts on the 'observer_local' clock; a replayed recording must say so ('replay_poll') and is recorded
+        with an 'unverified' receipt clock, because its arrival times are the replay's, not the game's."""
         super().__init__(transport, **options)
+        self.source = source
         self.store, self.store_error, self.stale = store, None, {}
         self._unsaved = set()
         self._restore_failed = False
@@ -592,7 +605,7 @@ class PersistentLiveFeed(LiveFeed):
         self.store_error = f'{operation}: {type(exc).__name__}'
         LOGGER.warning('live store %s failed; serving from memory only', operation, exc_info=True)
 
-    def _accept(self, game_pk, feed, wall, buffer):
+    def _accept(self, game_pk, feed, wall, buffer, requested=None):
         # Memory may be ahead of disk during an outage, so stale input is also judged against memory, but only
         # when the store is down: once the flush below makes disk >= memory, ingest decides and keeps the receipt.
         stale = bool(buffer and _stale_stamp(_feed_ts(feed), _feed_ts(buffer[-1]['feed']),
@@ -602,9 +615,10 @@ class PersistentLiveFeed(LiveFeed):
                 # ponytail: resync only the bounded delay window; pruned outage history is not recoverable.
                 for saved in buffer:
                     self.store.ingest(game_pk, saved['feed'], fetched=saved.get('version_fetched', saved['fetched']),
-                                      source='memory_recovery', slot_event=saved['event'], first_fetched=saved['fetched'])
+                                      source='memory_recovery', slot_event=saved['event'], first_fetched=saved['fetched'],
+                                      requested=saved.get('version_requested', saved.get('requested')))
                 self._unsaved.discard(game_pk)
-            outcome, entry = self.store.ingest(game_pk, feed, fetched=wall, source='live_poll')
+            outcome, entry = self.store.ingest(game_pk, feed, fetched=wall, source=self.source, requested=requested)
         except (sqlite3.Error, OSError) as exc:
             self._unsaved.add(game_pk)
             self._failed('ingest', exc)
@@ -612,9 +626,9 @@ class PersistentLiveFeed(LiveFeed):
                 self.stale[game_pk] = self.stale.get(game_pk, 0)+1
                 return
             changed = not buffer or feed != buffer[-1]['feed']
-            super()._accept(game_pk, feed, wall, buffer)
+            super()._accept(game_pk, feed, wall, buffer, requested)
             if changed:
-                buffer[-1]['version_fetched'] = wall
+                buffer[-1]['version_fetched'], buffer[-1]['version_requested'] = wall, requested
             return
         if not self._unsaved and not self._restore_failed:
             self.store_error = None
@@ -624,7 +638,7 @@ class PersistentLiveFeed(LiveFeed):
             buffer[-1]['feed'] = feed
             if outcome == 'correction':
                 buffer[-1].update({key: entry[key] for key in ('seq', 'version', 'sha', 'version_fetched', 'source', 'game_pk',
-                                                               'provider_order')})
+                                                               'provider_order', 'version_requested')})
         elif not buffer or entry['event'] > buffer[-1]['event']:
             buffer.append(entry)
 
