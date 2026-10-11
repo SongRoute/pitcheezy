@@ -58,6 +58,10 @@ FILES = {'manifest': 'manifest.json', 'health': 'health.json', 'dates': 'dates.j
 # measured lag, outage): it moves with the clock and with every poll. Only these keys say something about the
 # game's content (the admitted order of the served snapshot) or are configuration.
 STATE_FEED_CONTENT = ('provider_order', 'lag_threshold_s', 'thresholds_provisional')
+# The publish block is the last key of every file this module writes and is far shorter than this: the start-up
+# scan reads no more than this much of the end of a file (a bound of the format, not a tunable).
+PUBLISH_TAIL_BYTES = 1024
+PUBLISH_TAIL = re.compile(rb'"publish"\s*:\s*(\{[^{}]*\})\s*\}\s*$')
 
 
 def layout(contract):
@@ -116,6 +120,12 @@ class Sink:
         """The bytes last written at ``path``, or None if there are none or this sink cannot read back."""
         return None
 
+    def read_tail(self, path, size):
+        """At most the last ``size`` bytes at ``path`` (None as ``read``). The publisher's start-up scan only
+        ever needs the end of a file, so a sink that can should not fetch the rest."""
+        data = self.read(path)
+        return None if data is None else data[-size:]
+
     def delete(self, path):
         """Remove ``path`` if it is there (never an error when it is not): a withdrawn file must not stay readable."""
         raise NotImplementedError
@@ -126,22 +136,41 @@ class Sink:
         return []
 
 
+class UnsafeOutput(OSError):
+    """The output folder is not a plain tree of our own: a symbolic link sits inside it."""
+
+
 class LocalDirSink(Sink):
     """Files under one local directory, each replaced atomically: the content is written completely to a
     temporary file in ``<parent>/.<name>.tmp/`` (a sibling of the output directory, so on the same filesystem and
-    never inside what gets uploaded) and then renamed onto the published name."""
+    never inside what gets uploaded) and then renamed onto the published name.
+
+    The root is resolved ONCE, here: the lock, the temporary folder and every read, write and delete use that
+    one resolved folder, so repointing a link later cannot move the writes away from the folder that is locked.
+    Nothing under the root may be a symbolic link (checked now and again on every operation): a link there
+    would make a write or a forced delete land outside the output folder."""
 
     def __init__(self, root):
-        self.root = Path(root)
-        resolved = self.root.resolve()  # one folder, one lock: however the path was spelled or linked
-        self.staging = resolved.parent/f'.{resolved.name}.tmp'
-        self.lock_path = resolved.parent/f'.{resolved.name}.lock'
+        self.root = Path(root).resolve()
+        self.staging = self.root.parent/f'.{self.root.name}.tmp'
+        self.lock_path = self.root.parent/f'.{self.root.name}.lock'
+        if self.staging.is_symlink():
+            raise UnsafeOutput(f'{self.staging} is a symbolic link; refusing to publish')
+        for folder, folders, files in os.walk(self.root, followlinks=False):
+            for name in (*folders, *files):
+                if os.path.islink(os.path.join(folder, name)):
+                    raise UnsafeOutput(f'{os.path.join(folder, name)} is a symbolic link inside the output folder; refusing to publish')
 
     def _target(self, path):
         parts = PurePosixPath(path).parts
         if not parts or PurePosixPath(path).is_absolute() or any(part in ('..', '.') or part.startswith('.') for part in parts):
             raise ValueError(f'not a relative publish path: {path}')
-        return self.root.joinpath(*parts)
+        target = self.root
+        for part in parts:  # no component below the root may be a link: the file stays inside the root
+            target = target/part
+            if target.is_symlink():
+                raise UnsafeOutput(f'{path}: a symbolic link inside the output folder; nothing is read, written or deleted through it')
+        return target
 
     def write(self, path, data, *, final=False):
         target = self._target(path)
@@ -162,14 +191,24 @@ class LocalDirSink(Sink):
         target = self._target(path)
         return target.read_bytes() if target.is_file() else None
 
+    def read_tail(self, path, size):
+        target = self._target(path)
+        if not target.is_file():
+            return None
+        with open(target, 'rb') as handle:
+            handle.seek(max(0, target.stat().st_size-size))
+            return handle.read(size)
+
     def delete(self, path):
         self._target(path).unlink(missing_ok=True)
 
     def paths(self):
-        if not self.root.is_dir():
-            return []
-        found = (path.relative_to(self.root) for path in self.root.rglob('*.json') if path.is_file())
-        return sorted(path.as_posix() for path in found if not any(part.startswith('.') for part in path.parts))
+        found = []
+        for folder, folders, files in os.walk(self.root, followlinks=False):
+            folders[:] = [name for name in folders if not name.startswith('.') and not os.path.islink(os.path.join(folder, name))]
+            found += [(Path(folder)/name).relative_to(self.root).as_posix() for name in files
+                      if name.endswith('.json') and not name.startswith('.') and not os.path.islink(os.path.join(folder, name))]
+        return sorted(found)
 
 
 def code_commit(repo=None, env=None):
@@ -320,12 +359,13 @@ class Publisher:
 
     # ---- bookkeeping --------------------------------------------------------------------------------
     def _load_state(self):
-        state = {'sequence': 0, 'files': {}, 'checked': {}, 'embargoed': []}
+        state = {'sequence': 0, 'files': {}, 'checked': {}, 'embargoed': [], 'pending': {}}
         if self.state_path is not None and self.state_path.is_file():
             try:
                 saved = json.loads(self.state_path.read_text())
                 if not (isinstance(saved, dict) and type(saved.get('sequence')) is int and isinstance(saved.get('files'), dict)
-                        and isinstance(saved.get('checked'), dict) and isinstance(saved.get('embargoed', []), list)):
+                        and isinstance(saved.get('checked'), dict) and isinstance(saved.get('embargoed', []), list)
+                        and isinstance(saved.get('pending', {}), dict)):
                     raise ValueError('not a publisher state')
                 state |= saved
             except (ValueError, OSError):  # unreadable bookkeeping: start as if it were lost (everything is rebuilt)
@@ -336,18 +376,26 @@ class Publisher:
         return state
 
     def _published_sequence(self):
+        """The highest sequence any of OUR files carries. Only paths of this contract's layout are looked at, only
+        the end of each file is read, only a publish block of this contract counts, and nothing a file contains
+        can stop the start-up: whatever cannot be read as such a block is skipped."""
+        prefix = re.escape(self.config['contract_version'])
+        ours = re.compile(prefix+r'/(manifest\.json|health\.json|dates\.json|games/\d{4}-\d{2}-\d{2}\.json|game/\d+\.json|setup/\d+\.json)')
         highest = 0
         try:
-            paths = list(self.sink.paths())
-        except OSError:
-            LOGGER.warning('published files cannot be listed; the sequence continues from the state file only', exc_info=True)
+            paths = [path for path in self.sink.paths() if isinstance(path, str) and ours.fullmatch(path)]
+        except Exception:  # noqa: BLE001
+            LOGGER.warning('published files cannot be listed; the sequence continues from the state and health files only', exc_info=True)
             paths = []
         for path in {*paths, self.layout['health']}:
             try:
-                data = self.sink.read(path)
-                number = json.loads(data)['publish']['sequence'] if data else 0
-                highest = max(highest, number if type(number) is int else 0)
-            except (ValueError, KeyError, TypeError, OSError):
+                tail = self.sink.read_tail(path, PUBLISH_TAIL_BYTES)
+                match = PUBLISH_TAIL.search(tail) if tail else None
+                block = json.loads(match[1]) if match else {}
+                number = block.get('sequence')
+                if block.get('contract') == self.config['contract_version'] and type(number) is int and number > 0:
+                    highest = max(highest, number)
+            except Exception:  # noqa: BLE001 - incl. undecodable bytes and RecursionError: a file never blocks start-up
                 LOGGER.warning('published file %s unreadable; ignored for the sequence', path)
         return highest
 
@@ -403,18 +451,28 @@ class Publisher:
     def _drop(self, path, *, force=False):
         """Delete a published file. ``force``: whether or not the state knows it (the state file may have been
         lost, or a crash may have come between the write and the save): what must not be public is deleted."""
-        if force or path in self.state['files']:
+        if not (force or path in self.state['files']):
+            return True
+        try:
             self.sink.delete(path)
-            self.state['files'].pop(path, None)
+        except OSError:  # the file may still be out: the caller reports it; it is tried again when next due
+            LOGGER.error('%s could not be deleted', path, exc_info=True)
+            return False
+        self.state['files'].pop(path, None)
+        return True
 
     def _withdraw(self, game_pk):
         """A demo session holds this game: nothing of it stays public. Its game and setup files are deleted,
         registered in the state or not, and it is tried again in every cycle, so it returns when the demo ends."""
+        gone = True
         for kind in ('game', 'setup'):
             path = self.layout[kind].format(game_pk=game_pk)
-            self._drop(path, force=True)
-            self.state['checked'].pop(path, None)
-            self.state['checked'].pop(f'{path}#built', None)
+            gone = self._drop(path, force=True) and gone
+            for timer in (path, f'{path}#built', f'{path}#archive'):
+                self.state['checked'].pop(timer, None)
+        self.state['pending'].pop(str(game_pk), None)
+        if not gone:
+            self._fail(game_pk, None, 'withdraw_failed')  # loud: a file that must not be public may still be out
 
     def _embargoed(self):
         return {int(game_pk) for game_pk in self.bodies.embargoed()}
@@ -426,7 +484,9 @@ class Publisher:
 
     def _fail(self, game_pk, status, code):
         """Health names the game and a fixed code only: never a path, an exception text or a file name."""
-        self._unavailable.append({'game_pk': game_pk, 'status': status, 'code': code})
+        item = {'game_pk': game_pk, 'status': status, 'code': code}
+        if item not in self._unavailable:
+            self._unavailable.append(item)
 
     # ---- one cycle ----------------------------------------------------------------------------------
     def cycle(self):
@@ -454,6 +514,17 @@ class Publisher:
         known = {int(PurePosixPath(path).stem) for path in self.state['files'] if path.startswith(prefix)}
         for game_pk in sorted((listed | known)-embargoed):
             self._game(game_pk, fast=game_pk in fast, archived=game_pk in archived)
+        self._put(self.layout['dates'], dates_body, always=True)
+        commit, dirty = self.commit
+        self._put(self.layout['manifest'], {
+            'schema': 'pitcheezy-publish-manifest-v1', 'contract': self.config['contract_version'],
+            'commit': commit, 'commit_dirty': dirty, 'published_at': _iso(now),
+            'publish_interval_s': self.config['publish_interval_s'], 'fixed_delay_s': self.config['fixed_delay_s'],
+            'provisional': list(PROVISIONAL), 'live_dates': live_dates, 'files': self.layout}, always=True)
+        # The last embargo check, and the last step before health. ACCEPTED WINDOW (PM decision 2026-10-11): the
+        # demo clock lives in another process and there is deliberately no lock shared with it, so a demo that
+        # begins after this line is reflected by the NEXT cycle (at most one publish interval later). The embargo
+        # hides an already finished game from a demo audience; it does not guard unreleased information.
         late = self._embargoed()-embargoed
         if late:
             # a demo took a game while this cycle ran: its files go now, and every list (some were written before
@@ -464,13 +535,8 @@ class Publisher:
             unavailable_dates.clear()
             self._lists(dates_body, live_dates, unavailable_dates)
             self.state['embargoed'] = sorted(embargoed | late)
-        self._put(self.layout['dates'], dates_body, always=True)
-        commit, dirty = self.commit
-        self._put(self.layout['manifest'], {
-            'schema': 'pitcheezy-publish-manifest-v1', 'contract': self.config['contract_version'],
-            'commit': commit, 'commit_dirty': dirty, 'published_at': _iso(now),
-            'publish_interval_s': self.config['publish_interval_s'], 'fixed_delay_s': self.config['fixed_delay_s'],
-            'provisional': list(PROVISIONAL), 'live_dates': live_dates, 'files': self.layout}, always=True)
+        for game_pk, code in sorted(self.state['pending'].items()):  # still unresolved, asked this cycle or not
+            self._fail(int(game_pk), None, code)
         health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(now),
                   'publish_interval_s': self.config['publish_interval_s'], 'files_written': len(self._written)+1,
                   'unavailable_games': self._unavailable, 'unavailable_dates': sorted(set(unavailable_dates)),
@@ -528,9 +594,12 @@ class Publisher:
         settled = entry.get('final') is True
         from_feed = settled and entry.get('kind') == 'live'
         # The local final archive of a game so far published from the live feed has arrived: taken at once (a
-        # local read, no upstream poll), once.
-        arrived = from_feed and archived and not entry.get('archive_tried')
-        if not arrived:
+        # local read, no upstream poll). Until it has actually been read as the archive it is tried again at the
+        # settled pace and health keeps saying ``archive_unread``.
+        arrived = from_feed and archived and self._due(f'{path}#archive', now)
+        if arrived:
+            self.state['checked'][f'{path}#archive'] = now
+        else:
             period = self.config.get('final_recheck_for_s')
             if from_feed and period is not None and now-entry['final_at'] >= period:
                 # Long final: upstream is asked only at the slow pace (a late official correction is still found);
@@ -545,8 +614,6 @@ class Publisher:
             elif (settled or not fast) and not self._due(path, now):
                 return
         self.state['checked'][path] = self.state['checked'][f'{path}#built'] = now
-        if arrived:
-            entry['archive_tried'] = True
         try:
             body = check_live(check_public(self.bodies.game(game_pk)))  # polls upstream; the ledger is written in here
         except Refused as refused:
@@ -560,7 +627,14 @@ class Publisher:
             return self._fail(game_pk, None, 'not_public')
         except Exception:  # noqa: BLE001
             LOGGER.warning('game %s not built; the published file is kept', game_pk, exc_info=True)
+            if arrived:
+                self.state['pending'][str(game_pk)] = 'archive_unread'
+                return self._fail(game_pk, None, 'archive_unread')
             return self._fail(game_pk, None, 'build_failed')
+        if arrived and body['source']['kind'] != 'archive':
+            self.state['pending'][str(game_pk)] = 'archive_unread'  # a stored feed that is not a final one
+        elif body['source']['kind'] == 'archive':
+            self.state['pending'].pop(str(game_pk), None)
         if (body.get('feed') or {}).get('ok') is False:
             # the body is the last snapshot: upstream did not answer. Said here, because a final file that does
             # not change (the digest leaves ``feed`` out) would otherwise hide it.
@@ -576,14 +650,12 @@ class Publisher:
         written = self.state['files'][path]
         written['kind'] = body['source']['kind']
         written['final_at'] = (entry.get('final_at') if settled else now) if final else None
-        if entry.get('archive_tried'):
-            written['archive_tried'] = True
         if game_pk in self._embargoed():  # ...or while the file was being written
             return self._withdraw(game_pk)
         if final:
             self._setup(game_pk)
-        else:
-            self._drop(self.layout['setup'].format(game_pk=game_pk))
+        elif not self._drop(self.layout['setup'].format(game_pk=game_pk)):
+            self._fail(game_pk, None, 'setup_failed')
 
     def _setup(self, game_pk):
         """A finished game's catcher-setup file: only what ``SetupEstimates.view`` accepts (sha256 pin and every
@@ -604,7 +676,7 @@ class Publisher:
             self._drop(path, force=True)
             return self._fail(game_pk, None, 'setup_failed')
         if view is None:
-            return self._drop(path)
+            return None if self._drop(path) else self._fail(game_pk, None, 'setup_failed')
         try:
             self._put(path, public_setup(view), always=False, final=True)
         except OSError:
@@ -691,7 +763,7 @@ def _start(args):
     try:
         app, publisher = build(config, dates=args.date, feed_dir=args.feed_dir, watch_dir=args.watch_dir,
                                intent_dir=args.intent_dir, demo_dir=args.demo_dir)
-    except (AlreadyRunning, Unsafe) as refused:
+    except (AlreadyRunning, Unsafe, UnsafeOutput) as refused:
         raise SystemExit(str(refused)) from None
     feed = app.state.live_parts()
     if config['fixed_delay_s'] > getattr(feed, 'max_delay_s', config['fixed_delay_s']):

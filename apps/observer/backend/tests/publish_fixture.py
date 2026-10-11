@@ -226,6 +226,13 @@ def collect(tmp):
         out['setup'].append(('setup.json', world.read(f'v1/setup/{ARCHIVE_GAME}.json')))
     finally:
         world.close()
+    odd = World(tmp/'odd')  # a setup source whose commit is not a hash: published as null
+    try:
+        odd.write_setup(commit='main')
+        odd.cycle(settle=False)
+        out['setup'].append(('setup-no-commit.json', odd.read(f'v1/setup/{ARCHIVE_GAME}.json')))
+    finally:
+        odd.close()
     failing = World(tmp/'failing', first=OSError('upstream down'))  # the first poll fails: health names the game
     try:
         failing.cycle(settle=False)

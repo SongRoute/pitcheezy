@@ -860,24 +860,28 @@ def test_a_second_process_cannot_publish_and_a_killed_holder_frees_the_lock(tmp_
               'time.sleep(60)\n')
     spawn = lambda state: subprocess.Popen([sys.executable, '-c', script, str(out), str(tmp_path/state)], cwd=backend,
                                            env=os.environ | {'PYTHONPATH': str(backend)}, stdout=subprocess.PIPE, text=True)
-    holder = spawn('a.state.json')
+    children = []  # only processes this test started are ever signalled, and every one of them is reaped
+
+    def child(state):
+        children.append(spawn(state))
+        return children[-1]
     try:
+        holder = child('a.state.json')
         assert holder.stdout.readline().strip() == 'HELD'
-        second = spawn('b.state.json')  # another process, another state file, the same output folder
+        second = child('b.state.json')  # another process, another state file, the same output folder
         assert second.stdout.readline().startswith('REFUSED another publisher') and second.wait(timeout=20) == 3
         with pytest.raises(publisher.AlreadyRunning):
             publisher.Publisher(None, LocalDirSink(out), config=publisher.load_config(env={}), state_path=tmp_path/'c.state.json')
-        holder.kill()  # this test's own child process
-        holder.wait(timeout=20)
-        third = spawn('b.state.json')
-        try:
-            assert third.stdout.readline().strip() == 'HELD'  # the dead holder's lock is gone
-        finally:
-            third.kill()
-            third.wait(timeout=20)
-    finally:
         holder.kill()
         holder.wait(timeout=20)
+        third = child('b.state.json')
+        assert third.stdout.readline().strip() == 'HELD'  # the dead holder's lock is gone
+    finally:
+        for process in children:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=20)
+            process.stdout.close()
 
 
 # F: the public setup file carries no internal source field
@@ -1001,3 +1005,169 @@ def test_a_failed_refetch_is_counted_in_health_although_the_final_file_does_not_
 def test_a_disconnected_live_game_is_counted_in_health(world):
     world.cycle()
     assert world.cycle(OSError('upstream down'))['feed_failing_games'] == [LIVE_GAME]
+
+
+# ---------- third review (2026-10-11) ----------
+def test_an_output_folder_with_a_symlink_inside_is_refused_and_nothing_outside_is_deleted(world, tmp_path):
+    world.cycle()
+    world.publisher.close()
+    outside = tmp_path/'outside'
+    outside.mkdir()
+    precious = outside/f'{ARCHIVE_GAME}.json'
+    precious.write_text('{"not": "ours"}')
+    game_dir = world.out/'v1/game'
+    for path in game_dir.iterdir():
+        path.unlink()
+    game_dir.rmdir()
+    game_dir.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(publisher.UnsafeOutput, match='symbolic link'):
+        world.start()  # at start-up
+    assert precious.read_text() == '{"not": "ours"}'
+
+
+def test_a_symlink_that_appears_while_running_stops_writes_and_deletes_through_it(world, tmp_path):
+    world.cycle()
+    outside = tmp_path/'outside'
+    outside.mkdir()
+    precious = outside/f'{ARCHIVE_GAME}.json'
+    precious.write_text('{"not": "ours"}')
+    game_dir = world.out/'v1/game'
+    for path in game_dir.iterdir():
+        path.unlink()
+    game_dir.rmdir()
+    game_dir.symlink_to(outside, target_is_directory=True)
+    start_demo(world)  # a forced withdrawal of ARCHIVE_GAME: v1/game/<pk>.json now points outside
+    health = world.cycle(settle=False)
+    assert precious.read_text() == '{"not": "ours"}' and sorted(p.name for p in outside.iterdir()) == [precious.name]
+    assert (ARCHIVE_GAME, 'withdraw_failed') in codes(health) and (LIVE_GAME, 'write_failed') in codes(health)
+    for sink_call in (lambda: world.publisher.sink.delete(ARCHIVE_FILE), lambda: world.publisher.sink.write(ARCHIVE_FILE, b'{}'),
+                      lambda: world.publisher.sink.read(ARCHIVE_FILE)):
+        with pytest.raises(publisher.UnsafeOutput):
+            sink_call()
+
+
+def test_the_output_root_is_resolved_once_so_a_moved_link_cannot_move_the_writes(tmp_path):
+    first, second, link = tmp_path/'first', tmp_path/'second', tmp_path/'out'
+    first.mkdir()
+    second.mkdir()
+    link.symlink_to(first, target_is_directory=True)
+    sink = LocalDirSink(link)
+    held = publisher.Publisher(None, sink, config=publisher.load_config(env={}), state_path=tmp_path/'s.json')
+    try:
+        link.unlink()
+        link.symlink_to(second, target_is_directory=True)  # someone repoints the link while the publisher runs
+        sink.write('v1/health.json', b'{}')
+        assert (first/'v1/health.json').exists() and not (second/'v1').exists()
+        assert sink.root == first.resolve() and sink.lock_path.name == '.first.lock' and sink.staging.name == '.first.tmp'
+        assert sink.read('v1/health.json') == b'{}' and sink.paths() == ['v1/health.json']
+        with pytest.raises(publisher.AlreadyRunning):  # the folder that is locked is the folder that is written
+            publisher.Publisher(None, LocalDirSink(first), config=publisher.load_config(env={}), state_path=tmp_path/'t.json')
+    finally:
+        held.close()
+
+
+def store_archive(world, text=None):
+    import gzip
+    target = world.feeds/f'{LIVE_GAME}_final.json.gz'
+    if text is not None:
+        target.write_bytes(text)
+        return
+    with gzip.open(target, 'wt') as handle:
+        json.dump(publish_fixture.final_feed(LIVE_GAME, '2026-10-05T10:00:00Z'), handle)
+
+
+def test_an_arrived_archive_that_cannot_be_read_stays_in_health_and_is_taken_once_it_can(world):
+    world.config |= {'final_recheck_for_s': 0, 'final_slow_recheck_s': None}
+    world.cycle(snap(half='final'), settle=False)
+    final, asked = world.path(LIVE_FILE).read_bytes(), polls(world)
+    store_archive(world, b'not gzip at all')  # the sync left a broken file
+    health = world.cycle(settle=False)
+    assert (LIVE_GAME, 'archive_unread') in codes(health) and world.path(LIVE_FILE).read_bytes() == final
+    for _ in range(3):  # between retries the problem does not vanish from health
+        assert (LIVE_GAME, 'archive_unread') in codes(world.cycle(settle=False))
+    assert polls(world) == asked  # and nobody was polled for it
+    store_archive(world)  # the next sync writes a good one
+    health = world.cycle(after=world.config['settled_recheck_s'], settle=False)
+    assert codes(health) == [] and world.game()['source']['kind'] == 'archive' and world.game()['publish']['final'] is True
+    assert codes(world.cycle(settle=False)) == [] and polls(world) == asked
+
+
+def test_a_malformed_setup_file_on_the_very_first_cycle_does_not_stop_it(make):
+    world = make(setup=False)
+    lines = b''
+    (world.intent/f'{ARCHIVE_GAME}.jsonl').write_bytes(lines)
+    (world.intent/f'{ARCHIVE_GAME}.source.json').write_text('5')  # a pin that is not even an object
+    health = world.cycle()
+    assert health['sequence'] == 2 and strip(world.read('v1/dates.json'))['dates'] == [ARCHIVE_DATE]
+    assert world.path(ARCHIVE_FILE).exists() and not world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()
+    assert world.served('/api/service/dates')['dates'] == [ARCHIVE_DATE]  # the route survives it too
+    assert world.client.get(f'/api/watch/{ARCHIVE_GAME}/setup').status_code == 503
+
+
+def test_a_delete_that_fails_does_not_stop_the_cycle_and_is_reported(world):
+    world.cycle()
+    start_demo(world)
+    real = world.publisher.sink.delete
+
+    def delete(path):
+        raise OSError('read-only file system /secret/place')
+    world.publisher.sink.delete = delete
+    health = world.cycle(settle=False)
+    assert (ARCHIVE_GAME, 'withdraw_failed') in codes(health) and health['sequence'] == world.game()['publish']['sequence']
+    assert 'secret' not in world.path('v1/health.json').read_text()
+    world.publisher.sink.delete = real
+    health = world.cycle(settle=False)  # tried again in the next cycle: gone, and no longer reported
+    assert codes(health) == [] and not world.path(ARCHIVE_FILE).exists() and not world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()
+
+
+def test_recovery_reads_only_our_own_files_and_survives_hostile_json(world):
+    world.cycle(settle=False)
+    world.cycle(settle=False)
+    world.publisher.close()
+    Path(world.publisher.state_path).unlink()
+    (world.out/'v1/notes.json').write_text('{"publish": {"contract": "v1", "sequence": 900}}')  # not a published name
+    (world.out/'stray.json').write_text('{"publish": {"contract": "v1", "sequence": 901}}')
+    (world.out/'v1/game/1.json').write_text('{"x": 1, "publish": {"contract": "v9", "sequence": 902}}')  # another contract
+    (world.out/'v1/game/2.json').write_text('['*200000)  # would blow the parser's stack
+    (world.out/'v1/game/3.json').write_text('{"publish":{"contract":"v1","sequence":"903"}}')
+    (world.out/'v1/game/4.json').write_bytes(b'\xff\xfe'*50)
+    (world.out/'v1/game/5.json').write_text('{"publish":{"contract":"v1","sequence":true}}')
+    world.start()
+    assert world.publisher.state['sequence'] == 2
+    world.cycle(settle=False)
+    assert world.read('v1/health.json')['sequence'] == 3
+
+
+def test_recovery_never_reads_more_than_the_end_of_a_file(world, monkeypatch):
+    world.cycle(settle=False)
+    world.publisher.close()
+    read = []
+    monkeypatch.setattr(LocalDirSink, 'read', lambda self, path: read.append(path) or b'{}')
+    world.start()
+    assert read == [] and world.publisher.state['sequence'] == 1  # the tail reader was used, never a whole file
+    assert len(world.publisher.sink.read_tail(LIVE_FILE, 64)) == 64
+
+
+def test_a_setup_source_without_a_hash_like_commit_is_published_as_null_and_the_schema_allows_it(world):
+    world.write_setup(commit='main (dirty) /Users/song/checkout')
+    world.cycle()
+    setup = world.read(f'v1/setup/{ARCHIVE_GAME}.json')
+    assert setup['source']['commit'] is None and re.fullmatch(r'[0-9a-f]{64}', setup['source']['sha256'])
+    schema = json.loads((CONTRACT_DIR/'schema/setup.schema.json').read_text())
+    assert publish_schema.validate(setup, schema) == []
+    assert schema['properties']['source']['properties']['commit']['type'] == ['string', 'null']
+
+
+def test_the_last_embargo_check_comes_right_before_health(world):
+    world.cycle()
+    real, order, started = world.publisher.sink.write, [], []
+
+    def write(path, data, *, final=False):
+        order.append(path)
+        real(path, data, final=final)
+        if path == 'v1/manifest.json' and not started:  # everything but health is out; a demo begins now
+            started.append(start_demo(world))
+    world.publisher.sink.write = write
+    world.cycle(settle=False)
+    assert order[-1] == 'v1/health.json' and started
+    assert not world.path(ARCHIVE_FILE).exists() and world.read(f'v1/games/{ARCHIVE_DATE}.json')['games'][0]['embargoed'] is True
