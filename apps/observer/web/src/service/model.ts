@@ -10,7 +10,9 @@ export type Candidate = { rank: number; pitch_type: string; pitch_label: string;
   target: { x: number; z: number } | null; probability: number | null };
 /** A recommendation as it was recorded before the pitch. `missing` = no archived record; never filled after the fact. */
 export type Provenance = 'captured_live' | 'asof_replay' | 'absent';
-export type Rec = { status: 'ready' | 'unsupported' | 'missing'; reason: string | null; candidates: Candidate[]; provenance: Provenance; policy: string | null };
+export type Rec = { status: 'ready' | 'unsupported' | 'missing'; reason: string | null; candidates: Candidate[]; provenance: Provenance; policy: string | null;
+  /** when the ledger recorded it (ISO instant), only for a live record; absent/unknown → not shown. */
+  recorded_at?: string | null };
 export type Actual = { pitch_type: string | null; pitch_label: string; description: string | null; result_label: string;
   event: string | null; event_label: string | null; play_text: string | null; speed_mph: number | null; x: number | null; z: number | null; zone_label: string;
   /** CV catcher setup, horizontal only, present only after the actual pitch (never height / zone cell). */
@@ -57,6 +59,10 @@ export type Detail = { current_context?: PlayerContext | null; session_status?: 
   players?: Record<string, PlayerInfo> | null;
   /** live only; absent (archive, demo, older backend) → the screen behaves as before the display-state contract. */
   display?: Display | null;
+  /** the server's phase even when it sends no situation (between innings: `current.situation` / batter / pitcher are all null). */
+  phase?: Phase | null;
+  /** true = the live route's answer (`source.kind = 'live'`), whatever the game status; false/absent = archive, demo, legacy feeds. */
+  live_source?: boolean;
   /** changes whenever any pitch's receipt changes → the client takes the full history again. */
   receipts_version?: string | null };
 export type LineTeam = { innings: (number | null)[]; r: number | null; h: number | null; e: number | null; bb_hbp: number | null };

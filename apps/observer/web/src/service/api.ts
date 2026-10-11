@@ -3,7 +3,7 @@
  *  Fallback (404 on the service route only): the existing `/api/live/games` + `/api/watch/{game}` feeds, so the screen
  *  still renders real data before the contract lands. The fallback never invents scores or recommendations. */
 import type { Correction, Display, DisplayStateName, Receipt, LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
-import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, pitcherSide, plainZone, shiftDate } from './model';
+import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, plainZone, shiftDate } from './model';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
 export const TIMEOUT_MS = 15000;
@@ -64,7 +64,7 @@ export function normalizeRec(raw: Raw | null | undefined, fallbackProvenance: Re
   const cands: Raw[] = raw.candidates ?? raw.recommendation?.candidates ?? [];
   const st = raw.status === 'ready' && cands.length ? 'ready' : raw.status === 'unsupported' || raw.status === 'unavailable' ? 'unsupported' : 'missing';
   const provenance = raw.provenance === 'captured_live' || raw.provenance === 'asof_replay' ? raw.provenance : st === 'missing' ? 'absent' : fallbackProvenance;
-  return { status: st, reason: raw.reason ?? null, provenance, policy: raw.policy?.name ?? null,
+  return { status: st, reason: raw.reason ?? null, provenance, policy: raw.policy?.name ?? null, recorded_at: st === 'ready' && typeof raw.recorded_at === 'string' ? raw.recorded_at : null,
     candidates: st === 'ready' ? cands.map(candidate).sort((a, b) => a.rank - b.rank).slice(0, 3) : [] };
 }
 /** Receipt blanking: the server sends every field of an unconfirmed pitch as null except the '확인 중' labels. */
@@ -78,7 +78,7 @@ function actual(raw: Raw | null | undefined): Actual | null {
   if (isBlank(raw) && raw.result_label === BLANK_LABEL) return blankActual();  // only the server's own blanking; an archive row with no data keeps '구종 미상'
   return { pitch_type: raw.pitch_type ?? null, pitch_label: pitchName(raw.pitch_label, raw.pitch_type), description: raw.description ?? null,
     result_label: raw.result_label ?? '', event: raw.event ?? null, event_label: raw.event_label ?? null, play_text: raw.play_text ?? null,
-    speed_mph: num(raw.speed_mph), x: num(raw.x), z: num(raw.z), zone_label: pitcherSide(raw.zone_label ?? ''),
+    speed_mph: num(raw.speed_mph), x: num(raw.x), z: num(raw.z), zone_label: plainZone(raw.zone_label ?? ''),  // same plain words as a recommended zone
     setup_x: num(raw.catcher_setup?.plate_x_feet) };
 }
 /** Fail closed: any receipt status other than 'received' is unconfirmed. No `receipt` key (store off, archive) → undefined, except a
@@ -94,14 +94,15 @@ function pitchRow(raw: Raw, provenance: Rec['provenance']): PitchRow {
   return { index: raw.index, key: raw.key ?? `${raw.pa_key ?? raw.pa_id}:${raw.pitch_number}`, pa_key: raw.pa_key ?? raw.pa_id,
     at_bat_number: raw.at_bat_number, pitch_number: raw.pitch_number,
     situation: { ...before, inning: raw.inning ?? before.inning, half: raw.half ?? before.half } as Situation,
-    batter: raw.batter, pitcher: raw.pitcher, rec: normalizeRec(raw.rec ?? raw.pre, provenance),
+    // an unconfirmed pitch is never paired with a recommendation, whatever the row carries (fail closed)
+    batter: raw.batter, pitcher: raw.pitcher, rec: rc?.status === 'unconfirmed' ? normalizeRec(null) : normalizeRec(raw.rec ?? raw.pre, provenance),
     actual: rc?.status === 'unconfirmed' ? blankActual() : actual(raw.actual), receipt: rc,
     context: raw.context_before ?? null, line: linescoreRev3(raw.linescore_before) };
 }
 /** Local copy used only when the server sends no `label` / `message` for a state (the server's text always wins). */
 const STATE_COPY: Record<DisplayStateName, [string, string | null]> = {
   recommended: ['다음 공 추천', null],
-  unconfirmed: ['확인 중', '앞선 기록을 확인하는 중이라 추천을 잠시 멈췄어요.'],
+  unconfirmed: ['확인 중', '경기 상황을 다시 확인하고 있어요. 확인되면 추천을 보여 드려요.'],
   unsupported: ['추천 없음', '이 상황은 추천 대상이 아니에요.'],
   feed_delayed: ['자료 늦음', '경기 자료가 평소보다 늦게 도착했어요. 추천이 실제 경기보다 늦을 수 있어요.'],
   disconnected: ['연결 끊김', '경기 자료 연결이 잠시 끊겼어요. 마지막으로 받은 내용을 보여 드려요.'],
@@ -136,6 +137,7 @@ function pa(raw: Raw): Pa {
 /** main.py catch-all answer for an /api path the running backend does not have (older deployment). */
 const ROUTE_MISSING = 'API 경로를 찾을 수 없습니다.';
 const ZONE: Bounds = { bottom: 1.6, top: 3.3899 };
+const PHASES: unknown[] = ['pregame', 'pre_pitch', 'resolving', 'between_innings', 'final'];
 
 // ---------- list ----------
 export type GameList = GameCard[] & { liveOk?: boolean };
@@ -212,7 +214,7 @@ export function normalizeDetail(raw: Raw): Detail {
   // the server says nothing is shown for the pending pitch: candidates never reach the screen, whatever `next.rec` carries
   if (next && display && !display.shown) next = { ...next, status: next.status === 'ready' ? 'missing' : next.status, candidates: [], provenance: next.status === 'ready' ? 'absent' : next.provenance };
   return { session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game: normalizeCard(raw.game), pitches, pas: Array.isArray(raw.pas) ? raw.pas.map(pa) : groupPas(pitches, current), current,
-    next, display, receipts_version: text(raw.receipts?.version),
+    next, display, receipts_version: text(raw.receipts?.version), phase: PHASES.includes(cur?.phase) ? cur.phase : null, live_source: provenance === 'captured_live',
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
     zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),
     linescore_asof: linescoreRev3(raw.linescore), players: playersRev3(raw) };
