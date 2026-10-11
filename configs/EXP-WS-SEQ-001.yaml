@@ -1,0 +1,58 @@
+# EXP-WS-SEQ-001 (E4) — 같은 투수·같은 경기의 이전 투구 최대 32구를 보는 소형 신경망 vs prequential 트리(E1b P)
+# 기계가 읽는 정본은 configs/EXP-WS-SEQ-001.json 이다. 이 YAML은 레포 관례·사람용 쌍둥이이며 값이 JSON과 같아야 한다
+#   (train_seq.py --selfcheck 가 yaml.safe_load == json.load 를 확인한다. 한쪽만 고치지 말 것).
+# 정본 등록: /Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e4-seq/REGISTRATION.json
+# 2026 EXPOSED DEVELOPMENT — 독립 TEST 없음, 승자·채택 없음. 실행은 독립 검토 PASS 뒤 `gpu run` 으로만.
+id: EXP-WS-SEQ-001
+phase: WS-adaptation
+baseline: "E1b arm P (prequential-refit LightGBM 10+2 backbone, 199 prequential features)"
+change: "neural classifier on the same 199 prequential pre-pitch features (N0), plus a transformer encoder over up to 32 earlier pitches of the same pitcher in the same game (N1)"
+data_version: d20260930-h2026f
+data_role: 2026 EXPOSED DEVELOPMENT
+authoritative: configs/EXP-WS-SEQ-001.json
+arms: [N0, N1]
+seeds: [0, 1, 2]
+inputs:
+  features_file: x-prequential.npy
+  corpus_file: corpus-subset.npz
+  sequence_file: seq-inputs.npz
+  manifest_file: manifest.json
+  feature_dimension: 199
+labels:
+  parent_classes: 10
+  whiff_parent_class: 1
+  bip_classes: [3, 4, 5, 6, 7, 9]
+  leaf_order: [ball, foul, hit_by_pitch, narrow_whiff, other_strike, ground_ball_in_play, other_in_play]
+context:
+  max_length: 32
+  pitch_type_vocab: 19
+  outcome_vocab: 10
+  balls_vocab: 4
+  strikes_vocab: 3
+  same_batter_vocab: 2
+  position_vocab: 33
+model:
+  trunk_hidden: [256, 128]
+  activation: gelu
+  dropout: 0.1
+  layer_norm: true
+  token_dim: 64
+  encoder_layers: 2
+  encoder_heads: 4
+  encoder_ff: 128
+  encoder_dropout: 0.1
+  encoder_activation: gelu
+training:
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  batch_size: 2048
+  max_epochs: 30
+  patience: 5
+  loss_weights: {parent: 1.0, narrow_whiff: 1.0, ground_ball_per_pitch: 1.0}
+  precision: fp32
+  eval_batch_size: 8192
+  wall_cap_seconds: 3600
+temperature:
+  bounds_T: [0.05, 20.0]
+nll_clip: 1.0e-15
