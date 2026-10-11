@@ -299,7 +299,8 @@ def list_card(record, cutoff, source):
     return cut_view(record, cutoff, source)['game']
 
 
-def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None):
+def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None,
+             wall=None):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
     reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
     ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
@@ -343,13 +344,14 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
             return fail(503, '기록 형식을 확인할 수 없습니다.')
 
     schedule_cache = {}
+    now = wall or (lambda: time.time())  # the schedule cache's clock; a replay passes its simulated one
 
     def live_cards(day):
         """Real schedule entries whose ORIGINAL start falls on KST date ``day`` (two US dates queried)."""
         if schedule is None:
             return [], True
         cached = schedule_cache.get(day)
-        if cached and time.time()-cached[0] < 20:
+        if cached and now()-cached[0] < 20:
             return cached[1], True
         cards, healthy = [], True
         d = Date.fromisoformat(day)
@@ -375,7 +377,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                               'game_number': row.get('game_number') or 1, 'double_header': code in ('Y', 'S'),
                               'double_header_code': code, 'embargoed': False, 'has_history': True})
         if healthy:
-            schedule_cache[day] = (time.time(), cards)
+            schedule_cache[day] = (now(), cards)
         return cards, healthy
 
     def redact(card):

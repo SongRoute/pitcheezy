@@ -79,9 +79,11 @@ def _timed_replay(game_pk, **options):
 
 def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=None, watch_dir=None,
                timed_replay=_timed_replay, feed_dir=None, demo_dir=None, intent_dir=None, demo_wall=None,
-               service_delay_s=0):
+               service_delay_s=0, service_wall=None):
     """``service_delay_s``: the one delay every viewer of ``/api/service/games/{pk}`` gets (seconds behind the
-    game's own event times). The routes keep 0; the public publisher passes its configured fixed delay."""
+    game's own event times). The routes keep 0; the public publisher passes its configured fixed delay.
+    ``service_wall``: the clock of the service routes' 20 s schedule cache (None = the machine's; an offline
+    replay passes its simulated clock so the game list ages with the replayed game, not with the run)."""
     injected = service is not None
     if start_worker is None:
         start_worker = not injected
@@ -659,7 +661,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     app.state.service_bodies = service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
                          schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
                          live_feed=None if live_feed is False else service_live_feed,
-                         live_display=service_live_display, live_pairing=service_live_pairing)
+                         live_display=service_live_display, live_pairing=service_live_pairing, wall=service_wall)
 
     @app.get('/api/watch/{game_pk}/setup')
     def watch_setup(game_pk: int):

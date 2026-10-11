@@ -93,6 +93,41 @@ def validate(instance, schema, path='$'):
     return errors
 
 
+def problems(instance, schema, pointer=''):
+    """Like ``validate`` but for reports on real data: each problem is ``{'pointer', 'keyword', 'seen'}`` where
+    ``pointer`` is a JSON pointer and ``seen`` is the JSON TYPE found there (or the missing key's name), never a
+    value from the instance."""
+    out = []
+    add = lambda keyword, seen: out.append({'pointer': pointer or '/', 'keyword': keyword, 'seen': seen})
+    if 'const' in schema and instance != schema['const']:
+        add('const', _type(instance))
+    if 'enum' in schema and instance not in schema['enum']:
+        add('enum', _type(instance))
+    if 'type' in schema:
+        allowed = [schema['type']] if isinstance(schema['type'], str) else schema['type']
+        actual = _type(instance)
+        if actual not in allowed and not (actual == 'integer' and 'number' in allowed):
+            add('type', actual)
+            return out
+    if isinstance(instance, (int, float)) and not isinstance(instance, bool) and 'minimum' in schema and instance < schema['minimum']:
+        add('minimum', _type(instance))
+    if isinstance(instance, dict):
+        for key in schema.get('required', []):
+            if key not in instance:
+                out.append({'pointer': f'{pointer}/{key}', 'keyword': 'required', 'seen': 'missing'})
+        known = schema.get('properties', {})
+        for key, value in instance.items():
+            token = str(key).replace('~', '~0').replace('/', '~1')
+            if key in known:
+                out += problems(value, known[key], f'{pointer}/{token}')
+            elif isinstance(schema.get('additionalProperties'), dict):
+                out += problems(value, schema['additionalProperties'], f'{pointer}/{token}')
+    if isinstance(instance, list) and 'items' in schema:
+        for index, value in enumerate(instance):
+            out += problems(value, schema['items'], f'{pointer}/{index}')
+    return out
+
+
 def publish_block(*, final):
     """The one key the publisher adds to every file. ``final`` True: the file kind carries the final mark."""
     properties = {'contract': {'const': 'v1'}, 'sequence': {'type': 'integer', 'minimum': 1},
