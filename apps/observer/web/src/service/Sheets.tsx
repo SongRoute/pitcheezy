@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Actual, Candidate, Pa, Rec } from './model';
-import { halfText, policyShare } from './model';
+import { halfText, kstTime, policyShare } from './model';
 import Zone from './Zone';
 import type { Bounds } from './model';
 
@@ -71,22 +71,31 @@ export function PaSheet({ pas, selected, onPick, onClose, onBox }: { pas: Pa[]; 
 const PROVENANCE: Record<Rec['provenance'], string> = {
   captured_live: '경기 중 투구 전에 기록한 추천',
   asof_replay: '경기 뒤, 그 공을 던지기 전 정보만으로 계산한 추천',
-  absent: '저장된 추천 기록 없음',
+  absent: '기록된 추천 없음',
 };
+/** The one calm line for a pitch without a recorded recommendation: the server's sentence when it sends one (the pre-2026-10-11 stock
+ *  sentence counts as none), else ours. */
+export const ABSENT_PAST = '이 공은 기록된 추천이 없어요.';
+const LEGACY_ABSENT = '이 투구의 저장된 추천이 없습니다.';
+export const absentLine = (rec: Rec, fallback = ABSENT_PAST) => rec.reason && rec.reason.trim() !== LEGACY_ABSENT ? rec.reason : fallback;
 export const provenanceText = (rec: Rec) => PROVENANCE[rec.provenance];
 
-export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false }:
+export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false, pair = null, absentText = ABSENT_PAST }:
   { onClose: () => void; rec: Rec | null; recTitle: string; actual: Actual | null; actualTitle: string; paResult: string | null; notes: string[]; speed: (mph: number | null) => string; extra?: ReactNode; bounds?: Bounds;
     /** live display state: the server's sentence (and any change note) for the pending pitch */
-    recNote?: string | null; actualPending?: boolean; actualCorrected?: boolean }) {
+    recNote?: string | null; actualPending?: boolean; actualCorrected?: boolean;
+    /** past pitch with a recorded recommendation: its first pick and the pitch that was thrown, side by side in words (never a score) */
+    pair?: { rec: string; actual: string } | null; absentText?: string }) {
   return <Sheet title="자세히" onClose={onClose}>
     <section className="sv-detail">
       <h3>{recTitle}</h3>
       {recNote && <p>{recNote}</p>}
       {recNote && (rec === null || rec.status !== 'ready') ? null : rec === null ? <p className="sv-muted">이 시점에는 추천이 없어요.</p>
-        : rec.status !== 'ready' ? <p>{rec.status === 'unsupported' ? rec.reason ?? '추천을 지원하지 않는 상황이에요.' : '이 공은 추천 기록이 없어요.'}</p>
+        : rec.status !== 'ready' ? <p>{rec.status === 'unsupported' ? rec.reason ?? '추천을 지원하지 않는 상황이에요.' : absentLine(rec, absentText)}</p>
         : <>
-          <p className="sv-muted">{provenanceText(rec)}{rec.policy ? ` · ${rec.policy}` : ''}</p>
+          {pair && <dl className="sv-dl sv-pair"><dt>추천 1순위</dt><dd>{pair.rec}</dd><dt>실제 투구</dt><dd>{pair.actual}</dd></dl>}
+          {pair && <p className="sv-muted">투구 전에 기록된 추천과 실제로 던진 공을 나란히 보여 드려요. 맞고 틀림을 매긴 것이 아니에요.</p>}
+          <p className="sv-muted">{provenanceText(rec)}{rec.policy ? ` · ${rec.policy}` : ''}{rec.recorded_at ? ` · ${kstTime(rec.recorded_at)} 기록` : ''}</p>
           <table className="sv-table"><thead><tr><th scope="col">순위</th><th scope="col">구종</th><th scope="col">대략 위치</th><th scope="col">정책 선택 비중</th></tr></thead>
             <tbody>{rec.candidates.map((c: Candidate) => <tr key={c.rank}><td>{c.rank}</td><td>{c.pitch_label}</td><td>{c.zone_label || '위치 없음'}</td><td>{policyShare(c.probability)}</td></tr>)}</tbody></table>
           <p className="sv-muted">정책 선택 비중은 성공·적중 확률이 아니에요.</p>
@@ -94,7 +103,7 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
     </section>
     <section className="sv-detail">
       <h3>{actualTitle}</h3>
-      {actualPending ? <p className="sv-muted">이 공의 기록을 확인하고 있어요. 확인되면 구종과 위치를 보여 드려요.</p> : <>
+      {actualPending ? <p className="sv-muted">이 공을 다시 확인하고 있어요. 확인되면 구종과 위치를 보여 드려요.</p> : <>
       {actualCorrected && <p className="sv-muted">이 공의 기록은 처음 받은 뒤에 정정됐어요.</p>}
       {actual && bounds && <div className="sv-detail-zone"><Zone fullWindow bounds={bounds} candidates={rec?.candidates ?? []} actual={actual.x !== null && actual.z !== null ? {x:actual.x,z:actual.z} : null} actualLabel="" setupX={actual.setup_x} /></div>}
       {actual === null ? <p className="sv-muted">아직 던지지 않았어요.</p> : <dl className="sv-dl">

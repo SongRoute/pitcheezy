@@ -563,3 +563,23 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
   .sv-state-msg{font-size:12px;line-height:1.3}.sv-state-text,.sv-state-live{gap:2px}
   .sv-state-note{line-height:1.3}
 }
+
+/* ---- RC 2026-10-11: nobody at the plate (before the first pitch, between innings), past-pitch pairing, 375x553 ----
+   Idle pieces keep the size of what they replace (board row, duel row, card strip, player cells), so entering or leaving an inning
+   break moves nothing. */
+.sv-board-idle{justify-self:center;font-size:13px;color:var(--sv-muted)}
+.sv-duel.idle{grid-template-columns:minmax(0,1fr);font-size:13px;color:var(--sv-muted)}
+.sv-strip .sv-card.sv-card-idle{visibility:hidden}
+.sv-player.idle{cursor:default}
+.sv-game.has-display .sv-upcoming span{min-height:16px}  /* a bare '–' is 1px shorter than a Hangul line */
+/* a past pitch: each recorded candidate names its target zone in words, next to the actual pitch's type and location */
+.sv-reclist.pair .sv-rec-row{grid-template-columns:auto auto auto minmax(0,1fr);grid-template-areas:"k p t z"}
+.sv-rec-zone{grid-area:z;min-width:0;color:var(--sv-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-rec-zone::before{content:"· "}
+.sv-actual-zone{font-weight:400}
+.sv-actual-speed{font-size:12px;font-weight:400;color:var(--sv-muted);margin-right:6px}.sv-actual-speed b{font-weight:600}
+.sv-pair{margin-bottom:6px}
+@media(max-width:359px){.sv-reclist.pair .sv-rec-pct,.sv-actual-speed{display:none}}  /* share and speed stay in 자세히 and on the pitch card */
+/* 375x553 (small iPhone with browser bars): the live screen fits without page scroll. The zone row gives up 16px; the drawing scales
+   with it and the state slot is still placed from --sv-below-min, so no mark moves the slot. */
+@media(max-height:560px){.sv-game.has-display .sv-zrow{height:174px;min-height:174px}}
