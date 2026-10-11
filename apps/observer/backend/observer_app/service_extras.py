@@ -26,6 +26,12 @@ LOGGER = logging.getLogger(__name__)
 # Display-state reasons that say "this PITCHER is not covered" (``display_state.POLICY_REASONS``). An at-bat or
 # game-level refusal is not a statement about the pitcher, so no card is offered for it.
 PITCHER_REASONS = ('unknown_pitcher', 'no_supported_pitch_types')
+# What of each module's answer goes on the fan payload (a published body is a public contract: only what a reader
+# of it needs). Operator facts (profile hash and thresholds, attempt key, model hashes, omitted leaves) stay in the
+# modules' own ``health()`` / ``status()`` under ``/api/health``.
+REFERENCE_PUBLIC = ('kind', 'reason_code', 'chip', 'title', 'items', 'other', 'sample', 'as_of', 'note')
+EXPECTATION_PUBLIC = ('kind', 'lead', 'pitch_type', 'pitch_label', 'items', 'text', 'note', 'explain', 'basis', 'recorded')
+RECENT_S = 12*3600  # the list guard only concerns games that started this recently
 RETRY_S = 5.0  # a pitch without an expectation is asked again at most this often (the ledger may still be filling)
 
 
@@ -35,6 +41,7 @@ class Extras:
         self._reference = self._reference_key = None
         self._shadow = self._shadow_key = None
         self._found, self._missed = {}, {}  # expectation cache per (ledger, pitch): a past pitch does not change
+        self._first_final = {}  # gamePk -> wall time the schedule first said Final (list guard)
 
     # ---- the modules, built on first use and again when the configuration changes -----------------------------
     def reference(self, block):
@@ -92,7 +99,7 @@ class Extras:
         card = reference.card(pitcher.get('id'), batter.get('side'), situation.get('balls'), situation.get('strikes'),
                               (parsed.get('game') or {}).get('date'), pitcher_hand=hand)
         if card is not None:
-            nxt['reference'] = card
+            nxt['reference'] = {key: card[key] for key in REFERENCE_PUBLIC if key in card}
 
     def _attach_expectations(self, view, parsed, receipts, block):
         from .shadow_expectation import is_key_moment
@@ -122,7 +129,47 @@ class Extras:
                         while len(held) > 2048:
                             held.pop(next(iter(held)))
             if found is not None:
-                pitch['expectation'] = found
+                pitch['expectation'] = {key: found[key] for key in EXPECTATION_PUBLIC if key in found}
+
+    # ---- games list for a delayed viewer (viewer delay on, ``?delay=`` > 0) -----------------------------------------
+    def list_card(self, card, delay, feed=None):
+        """A schedule card as a viewer ``delay`` seconds behind may see it. The schedule is the ballpark's present:
+        a LIVE game loses score, inning, half and status words; a game the schedule calls FINAL stays presented as
+        live (no score) until that viewer's own game page could have reached the end: the state the live buffer
+        serves at that delay is Final, or ``delay`` seconds have passed since this server first saw the schedule
+        say Final (fail closed: after a restart that clock starts again). Never polls and registers no viewer."""
+        hidden = {'away_score': None, 'home_score': None, 'inning': None, 'half': None, 'status_text': None, 'score_hidden': True}
+        try:
+            if card.get('embargoed'):
+                return card
+            if card.get('status') == 'live' or card.get('live'):
+                return card | hidden
+            if card.get('status') != 'final':
+                return card
+            from datetime import datetime
+            now = feed.wall() if feed is not None and hasattr(feed, 'wall') else time.time()
+            started = datetime.fromisoformat(str(card.get('start')).replace('Z', '+00:00')).timestamp()
+            if not 0 <= now-started <= RECENT_S:
+                return card
+            game_pk = int(card['game_pk'])
+            delay = min(float(delay), float(getattr(feed, 'max_delay_s', delay)))
+            with self._lock:
+                first = self._first_final.setdefault(game_pk, now)
+                while len(self._first_final) > 256:
+                    self._first_final.pop(next(iter(self._first_final)))
+            if now-first >= delay:
+                return card
+            served = None
+            if feed is not None and hasattr(feed, '_lock'):
+                with feed._lock:  # a read of the buffer as it is: no fetch, no viewer registered
+                    ready = [entry for entry in feed.buffers.get(game_pk, ()) if entry['event'] <= now-delay]
+                    served = ready[-1]['feed'] if ready else None
+            if served is not None and (served['gameData'].get('status') or {}).get('abstractGameState') == 'Final':
+                return card
+            return card | hidden | {'status': 'live', 'live': True}
+        except Exception:  # noqa: BLE001 - when unsure the card says nothing about the score
+            LOGGER.warning('list card for a delayed viewer could not be judged; shown without score', exc_info=True)
+            return card | hidden | ({'status': 'live', 'live': True} if card.get('status') == 'final' else {})
 
     # ---- operator view (``/api/health``), never on a fan payload ------------------------------------------------
     def health(self):

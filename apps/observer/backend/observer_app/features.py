@@ -118,6 +118,19 @@ def features(live_config=None):
     return out | {'provisional': PROVISIONAL}
 
 
+def delay_param(raw, current=None):
+    """The viewer delay a request asks for, in seconds, or None. ``raw`` is the query value as sent. With the switch
+    off it is not looked at; anything that is not a finite number >= 0 counts as absent (a request is never refused
+    because of this parameter: before the feature it was an unknown parameter and was ignored)."""
+    if raw is None or not (current or features())['viewer_delay']['enabled']:
+        return None
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds >= 0 and not math.isnan(seconds) else None
+
+
 def public(current=None):
     """What the fan payload carries: booleans and the default seconds only, never a path."""
     current = current or features()

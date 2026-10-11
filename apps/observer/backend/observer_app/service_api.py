@@ -291,7 +291,7 @@ def list_card(record, cutoff, source):
 
 
 def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None,
-             features=None, live_extras=None):
+             features=None, live_extras=None, delayed_card=None):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
     reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
     ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
@@ -380,7 +380,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         and inning would run ahead of that viewer's broadcast. Final and scheduled games are unchanged."""
         if card.get('status') != 'live' and not card.get('live'):
             return card
-        return card | {'away_score': None, 'home_score': None, 'inning': None, 'half': None, 'score_hidden': True}
+        return card | {'away_score': None, 'home_score': None, 'inning': None, 'half': None, 'status_text': None, 'score_hidden': True}
 
     def flags():
         return feature_flags.public(features())
@@ -406,7 +406,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         return guarded(run)
 
     @app.get('/api/service/games')
-    def service_games(date: str = Query(...), demo: str | None = Query(None), delay: float | None = Query(None, ge=0)):
+    def service_games(date: str = Query(...), demo: str | None = Query(None), delay: str | None = Query(None)):
         if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
             return fail(400, 'date는 YYYY-MM-DD 형식이어야 합니다.')
 
@@ -428,8 +428,9 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
             for card in live:  # a stored final record wins over the schedule row of the same game
                 games.setdefault(card['game_pk'], card)
             out = [redact(c) if c['game_pk'] in embargoed else c for c in games.values()]
-            if delay and features()['viewer_delay']['enabled']:
-                out = [unspoiled(c) for c in out]
+            seconds = feature_flags.delay_param(delay, features())
+            if seconds:
+                out = [delayed_card(c, seconds) if delayed_card else unspoiled(c) for c in out]
             out.sort(key=lambda c: (c['start'] or '', c['game_number'], c['game_pk']))
             return ok({'schema': 'pitcheezy-service-games-v2', 'source': {'kind': 'archive', 'session_id': None},
                        'date': date, 'games': out, 'live_ok': healthy, 'features': flags()})
@@ -437,7 +438,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
 
     @app.get('/api/service/games/{game_pk}')
     def service_game(game_pk: int, demo: str | None = Query(None), after: int | None = Query(None, ge=-1),
-                     delay: float | None = Query(None, ge=0)):
+                     delay: str | None = Query(None)):
         def run():
             view = answer()
             if isinstance(view, JSONResponse):
@@ -479,8 +480,9 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
     def live_view(game_pk, after, delay=None):
         from .live_feed import LiveFeedError, parse_state
         switch = features()['viewer_delay']
+        delay = feature_flags.delay_param(delay, features())
         try:
-            feed, meta, *rest = live_feed(game_pk, delay) if delay and switch['enabled'] else live_feed(game_pk)
+            feed, meta, *rest = live_feed(game_pk, delay) if delay else live_feed(game_pk)
         except LiveFeedError:
             return fail(503, 'MLB 경기 정보를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.')
         meta = dict(meta)

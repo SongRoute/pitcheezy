@@ -729,7 +729,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             ages = [float(part) for part in ago.split(',') if part.strip()]
         except ValueError:
             ages = []
-        if not ages or len(ages) > 8 or not all(0 <= age <= 600 for age in ages):  # also refuses NaN
+        if not ages or len(ages) > 4 or not all(0 <= age <= 600 for age in ages):  # also refuses NaN
             raise ServiceError(400, '요청 형식을 확인해 주세요.')
         feed = live_parts()
         newest = feed.newest(game_pk)
@@ -740,6 +740,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         else:
             found = tap_sync(pitch_arrivals(newest['feed']), [now-age for age in ages], newest_event=newest['event'], now=now,
                              current=current, sure=bool(sure), max_delay_s=limit)
+        if found['delay_s'] is not None:  # whole seconds only: the answer is not a stopwatch on the pitch
+            found['delay_s'] = float(int(found['delay_s']+0.5))
         message = TAP_COPY.get(found['hint'] or ('wait' if found['status'] == 'wait' else ''))
         return JSONResponse(found | {'message': message, 'retry_s': 2.0 if found['status'] == 'wait' else None,
                                      'max_delay_s': limit}, headers=headers)
@@ -783,6 +785,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
 
     service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
                          features=features.features, live_extras=app.state.service_extras.attach,
+                         delayed_card=lambda card, delay: app.state.service_extras.list_card(card, delay, live_parts()),
                          schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
                          live_feed=None if live_feed is False else service_live_feed,
                          live_display=service_live_display, live_pairing=service_live_pairing)
