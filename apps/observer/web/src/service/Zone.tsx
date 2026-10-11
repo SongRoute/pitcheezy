@@ -106,6 +106,11 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     const el = ref.current; const row = el?.closest<HTMLElement>('.sv-zrow'); if (!el || !row || mini) return;
     const lowest = Math.max(...[...el.querySelectorAll('rect, circle, path, line, text')].map(e => e.getBoundingClientRect().bottom));
     (row.parentElement ?? row).style.setProperty('--sv-below', `${Math.max(0, Math.round(row.getBoundingClientRect().bottom - lowest - 8))}px`);  // on the stage: the result line is the row's sibling
+    // --sv-below-min: free space under the DRAWING WINDOW (no mark, arrow or label is ever painted below it), so a block that must
+    // not move when marks appear or disappear (the live state slot) is placed from a value that does not depend on what is painted.
+    const ctm = el.getScreenCTM();
+    const windowBottom = ctm ? ctm.f + ctm.d * (w.vb.y + w.vb.h) : row.getBoundingClientRect().bottom;
+    (row.parentElement ?? row).style.setProperty('--sv-below-min', `${Math.max(0, Math.floor(row.getBoundingClientRect().bottom - windowBottom))}px`);
   });
   const u = (n: number) => n / scale;  // on-screen px → drawing units
   const px = (n: number) => `${u(n).toFixed(2)}px`;

@@ -496,3 +496,70 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
   .sv-player-name{font-size:12px}
   .sv-upcoming{padding-top:2px}
 }
+
+/* ---- live display state (2026-10-11): one explicit state for the pending pitch, a reserved status line, receipts ----
+   Only rendered when the payload carries `display_state` (live games); every rule above is unchanged for archive and demo.
+   Nothing here moves the layout between states: the status line and the state slot have fixed heights, and the slot is placed from
+   --sv-below-min (Zone.tsx: the free space under the drawing window), which does not depend on which marks are drawn.
+   States are words first; marks and tints only support. */
+.sv-notice.line{height:30px;min-height:0;margin:2px 10px 0;padding:0 9px;border:1px solid transparent;white-space:nowrap;overflow:hidden;font-size:13px;font-weight:500;gap:4px}
+.sv-notice.line.ok{background:transparent;color:var(--sv-muted)}
+.sv-notice.line.late{background:var(--sv-highlight);color:#5c4300;border-color:#e2c97a}
+.sv-notice.line.warn{border-color:#e3b4bc}
+.sv-line-text{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.sv-line-time{flex:none}
+.sv-line-dot{width:7px;height:7px;border-radius:50%;background:var(--sv-teal);flex:none}
+.sv-notice.line .sv-link-btn{min-height:28px}
+.sv-pitch-summary.sv-state{display:flex;flex-direction:column;gap:4px;height:112px;min-height:0;margin-top:calc(2px - var(--sv-below-min,0px))}
+.sv-state-head{flex:none;display:flex;align-items:center;gap:7px;height:22px;min-width:0}
+.sv-state-head .sv-summary-label{margin:0;font-size:12px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* the old list button also opened the detail sheet; this keeps that way in every state. Small text, 44px tall touch area. */
+.sv-state-more{position:relative;margin-left:auto;flex:none;border:0;background:none;padding:0 2px;height:22px;font-size:12px;font-weight:600;color:var(--sv-teal);text-decoration:underline;text-underline-offset:3px}
+.sv-state-more::after{content:"";position:absolute;inset:-11px -8px}
+.sv-chip{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 9px;border-radius:999px;border:1px solid var(--sv-line);background:var(--sv-past);color:var(--sv-ink);font-size:12px;font-weight:650;white-space:nowrap;flex:none}
+.sv-chip i{font-style:normal;font-weight:700}
+.sv-chip[data-state="recommended"]{background:var(--sv-tint);border-color:transparent;color:var(--sv-rec)}
+.sv-chip[data-state="feed_delayed"],.sv-chip[data-state="ledger_unavailable"]{background:var(--sv-highlight);border-color:#e2c97a;color:#5c4300}
+.sv-chip[data-state="disconnected"]{background:var(--sv-alert-bg);border-color:#e3b4bc;color:var(--sv-alert-ink)}
+.sv-chip[data-state="unsupported"],.sv-chip[data-state="unavailable"]{background:transparent;border-style:dashed;color:var(--sv-muted)}
+.sv-chip[data-state="pregame"],.sv-chip[data-state="final"]{background:transparent}
+.sv-state-body{flex:1 1 0;min-height:0;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
+.sv-state.has-rec .sv-state-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.sv-state-text{min-width:0;display:flex;flex-direction:column;gap:4px}
+.sv-state-live{min-width:0;display:flex;flex-direction:column;gap:4px}
+/* a long server sentence is cut with an ellipsis inside the slot (never over the cards); the whole text is in 자세히 */
+.sv-state-msg,.sv-state-note{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
+.sv-state-msg{margin:0;font-size:13px;line-height:1.35;color:var(--sv-ink);word-break:keep-all;overflow-wrap:anywhere;-webkit-line-clamp:3}
+.sv-state-msg.with-note{-webkit-line-clamp:2}
+.sv-state.has-rec .sv-state-msg{font-size:12px;color:var(--sv-muted);-webkit-line-clamp:4}
+.sv-state-note{margin:0;padding:0 7px;border-left:3px solid var(--sv-teal);border-radius:0 6px 6px 0;background:var(--sv-tint);font-size:12px;line-height:1.35;font-weight:600;color:var(--sv-ink);word-break:keep-all;overflow-wrap:anywhere;-webkit-line-clamp:2}
+.sv-state.has-rec .sv-state-note{-webkit-line-clamp:4}
+.sv-state-msg:empty,.sv-state-note:empty{display:none}
+.sv-state-msg.sr-only{display:block}
+.sv-state-idle{margin:0;display:grid;justify-items:end;text-align:right;font-size:13px}
+.sv-state[data-state="unconfirmed"] .sv-state-msg,.sv-state[data-state="waiting"] .sv-state-msg,.sv-state[data-state="pregame"] .sv-state-msg{color:var(--sv-muted)}
+/* held = the last received recommendation while the connection is down: still there, visibly not current */
+.sv-state.held .sv-rec-summary,.sv-zrow.held .sv-rec{opacity:.5}
+/* receipts: a pitch whose record is not confirmed has no dot and says so; a corrected record carries a small tag */
+.sv-strip .sv-card{position:relative}
+.sv-strip .sv-card.unconfirmed .sv-card-cap{color:var(--sv-muted)}
+.sv-card-tag{position:absolute;top:0;right:0;font-style:normal;font-size:11px;line-height:1.3;font-weight:600;padding:0 4px;border-radius:4px;background:var(--sv-highlight);color:#5c4300;border:1px solid #e2c97a}
+.sv-tag{display:inline-block;margin-left:5px;font-size:11px;line-height:1.4;font-weight:600;padding:0 5px;border-radius:4px;background:var(--sv-highlight);color:#5c4300;border:1px solid #e2c97a;vertical-align:1px}
+.sv-actual-caption.pending{color:var(--sv-muted);font-weight:650}
+.sv-retrying{font-size:14px}
+/* room for the reserved line and slot on tall phones (live display only) */
+.sv-game.has-display .sv-duel{min-height:38px}.sv-game.has-display .sv-context{margin-bottom:4px}
+@media(max-height:780px){
+  .sv-notice.line{height:28px;margin-top:1px}
+  .sv-pitch-summary.sv-state{height:100px;gap:3px}
+  .sv-state-head,.sv-chip,.sv-state-more{height:20px}
+  .sv-state-body{gap:6px}.sv-state-text,.sv-state-live{gap:3px}
+  .sv-game.has-display .sv-duel{min-height:24px}.sv-game.has-display .sv-context{margin-bottom:0}
+}
+/* very short phones: a little tighter (same words, 12px minimum) */
+@media(max-height:620px){
+  .sv-notice.line{height:24px;margin-top:0;font-size:12px}.sv-notice.line .sv-link-btn{min-height:22px}
+  .sv-pitch-summary.sv-state{height:92px;gap:2px}
+  .sv-state-msg{font-size:12px;line-height:1.3}.sv-state-text,.sv-state-live{gap:2px}
+  .sv-state-note{line-height:1.3}
+}

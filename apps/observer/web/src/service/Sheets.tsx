@@ -75,12 +75,15 @@ const PROVENANCE: Record<Rec['provenance'], string> = {
 };
 export const provenanceText = (rec: Rec) => PROVENANCE[rec.provenance];
 
-export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds }:
-  { onClose: () => void; rec: Rec | null; recTitle: string; actual: Actual | null; actualTitle: string; paResult: string | null; notes: string[]; speed: (mph: number | null) => string; extra?: ReactNode; bounds?: Bounds }) {
+export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false }:
+  { onClose: () => void; rec: Rec | null; recTitle: string; actual: Actual | null; actualTitle: string; paResult: string | null; notes: string[]; speed: (mph: number | null) => string; extra?: ReactNode; bounds?: Bounds;
+    /** live display state: the server's sentence (and any change note) for the pending pitch */
+    recNote?: string | null; actualPending?: boolean; actualCorrected?: boolean }) {
   return <Sheet title="자세히" onClose={onClose}>
     <section className="sv-detail">
       <h3>{recTitle}</h3>
-      {rec === null ? <p className="sv-muted">이 시점에는 추천이 없어요.</p>
+      {recNote && <p>{recNote}</p>}
+      {recNote && (rec === null || rec.status !== 'ready') ? null : rec === null ? <p className="sv-muted">이 시점에는 추천이 없어요.</p>
         : rec.status !== 'ready' ? <p>{rec.status === 'unsupported' ? rec.reason ?? '추천을 지원하지 않는 상황이에요.' : '이 공은 추천 기록이 없어요.'}</p>
         : <>
           <p className="sv-muted">{provenanceText(rec)}{rec.policy ? ` · ${rec.policy}` : ''}</p>
@@ -91,6 +94,8 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
     </section>
     <section className="sv-detail">
       <h3>{actualTitle}</h3>
+      {actualPending ? <p className="sv-muted">이 공의 기록을 확인하고 있어요. 확인되면 구종과 위치를 보여 드려요.</p> : <>
+      {actualCorrected && <p className="sv-muted">이 공의 기록은 처음 받은 뒤에 정정됐어요.</p>}
       {actual && bounds && <div className="sv-detail-zone"><Zone fullWindow bounds={bounds} candidates={rec?.candidates ?? []} actual={actual.x !== null && actual.z !== null ? {x:actual.x,z:actual.z} : null} actualLabel="" setupX={actual.setup_x} /></div>}
       {actual === null ? <p className="sv-muted">아직 던지지 않았어요.</p> : <dl className="sv-dl">
         <dt>구종</dt><dd>{actual.pitch_label}{actual.speed_mph !== null ? ` · ${speed(actual.speed_mph)}` : ''}</dd>
@@ -98,7 +103,7 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
         <dt>위치</dt><dd>{actual.zone_label || '위치 정보 없음'}</dd>
         {paResult && <><dt>타석 결과</dt><dd>{paResult}</dd></>}
         {actual.play_text && <><dt>원본 기록</dt><dd lang="en">{actual.play_text}</dd></>}
-      </dl>}
+      </dl>}</>}
     </section>
     {notes.length > 0 && <section className="sv-detail"><h3>자료 설명</h3><ul className="sv-notes">{notes.map(n => <li key={n}>{n}</li>)}</ul></section>}
     {extra && <section className="sv-detail">{extra}</section>}
