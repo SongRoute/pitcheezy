@@ -6,6 +6,8 @@
 #   PITCHEEZY_OBSERVER_PYTHON, PITCHEEZY_WATCH_DIR, PITCHEEZY_OBSERVER_LIVE_DELAY_S,
 #   PITCHEEZY_OBSERVER_LIVE_ARMB (0 = 라이브 추천 끄기), PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR (녹화 재생),
 #   PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S (녹화 재생 때만: 본문 하나를 내주는 간격(초). 리허설 가속용, 0 = 요청마다 한 개),
+#   PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE (recorded = 녹화 재생 때만: 본문을 캡처 수신 간격 그대로, 사건 시각을 오늘 시계로 옮겨
+#   내준다. 시청 지연 리허설용. capture_to_replay.py 폴더의 MANIFEST.json 필요; _MAX_GAP_S = 긴 공백을 이 초로 줄임),
 #   PITCHEEZY_OBSERVER_LEGACY (1 = 예전 과거 기록 관전 화면도 켜기; T7에 DB를 씀).
 #   PITCHEEZY_OBSERVER_LIVE_STORE (SQLite 경로 = 수신 스냅샷·투구 원장·추천 원장을 append-only로 저장; 켜면 추천은
 #   원장에 기록된 뒤에만 표시), PITCHEEZY_OBSERVER_REC_LEDGER (0 = 추천 원장만 끄기).

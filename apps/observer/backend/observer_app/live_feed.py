@@ -82,6 +82,56 @@ class ReplayTransport:
         return _load(files[index])
 
 
+class RecordedPaceReplay(ReplayTransport):
+    """Rehearsal only (``PITCHEEZY_OBSERVER_LIVE_REPLAY_PACE=recorded``): the folder's bodies in order, each handed
+    out no earlier than its RECORDED receipt time moved onto today's clock, so a viewer delay can be rehearsed.
+
+    Timing comes from the folder's ``MANIFEST.json`` (``capture_to_replay.py``: per file ``fetched`` = when the
+    capture received it, ``event_wall`` = its newest game event). The first game request starts the clock; body k
+    is due ``fetched_k - fetched_0`` later, with every gap longer than ``max_gap_s`` shortened to it (pregame, long
+    breaks). Each body is served with ``metaData.eventWall`` = its event time moved by the same shift as its
+    receipt, so receipt minus event (the feed lag the capture saw) is kept per body. A poll before the next body is
+    due gets the previous body again (a duplicate, as a real unchanged feed answers); bodies are never skipped.
+    The served bodies are MODIFIED (``eventWall`` added): their sha is not the capture's."""
+
+    def __init__(self, directory, *, max_gap_s=None, wall=time.time):
+        super().__init__(directory)
+        manifest = json.loads((self.directory/'MANIFEST.json').read_text())
+        if manifest.get('status') != 'OK' or (manifest.get('mode') or {}).get('bodies_modified'):
+            raise LiveFeedError('recorded-pace replay needs an unmodified capture_to_replay folder (MANIFEST status OK)')
+        self.game, self.wall, self.max_gap_s = str(manifest['game_pk']), wall, max_gap_s
+        self.files, offset, previous = [], 0.0, None
+        for item in manifest['files']:
+            gap = 0.0 if previous is None else max(0.0, item['fetched']-previous)
+            offset += gap if max_gap_s is None else min(gap, max_gap_s)
+            previous = item['fetched']
+            self.files.append({'file': item['file'], 'offset': offset, 'lag': item['fetched']-item['event_wall']})
+        if not self.files:
+            raise LiveFeedError('recorded-pace replay: the manifest lists no body')
+        self.started, self.index, self.body = None, -1, None
+
+    def position(self):
+        """Where the replay is: bodies handed out, total, seconds since the first request, total paced seconds."""
+        return {'served': self.index+1, 'bodies': len(self.files), 'duration_s': round(self.files[-1]['offset'], 1),
+                'elapsed_s': None if self.started is None else round(self.wall()-self.started, 1)}
+
+    def __call__(self, url, timeout):
+        match = re.search(r'/game/(\d+)/feed/live', url)
+        if match is None or match[1] != self.game:
+            return super().__call__(url, timeout)
+        now = self.wall()
+        if self.started is None:
+            self.started = now
+        following = self.index+1
+        if self.body is None or (following < len(self.files) and self.started+self.files[following]['offset'] <= now):
+            item = self.files[following]
+            body = _load(self.directory/item['file'])
+            due = self.started+item['offset']
+            body['metaData'] = (body.get('metaData') or {}) | {'eventWall': round(due-item['lag'], 3)}
+            self.index, self.body = following, body
+        return self.body
+
+
 def replay_config(poll_s, config=LIVE_CONFIG):
     """``config`` for a recorded-snapshot replay that hands out one body per ``poll_s`` seconds instead of the
     live poll pace (``PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S``; rehearsal only). ``ReplayTransport`` advances one
