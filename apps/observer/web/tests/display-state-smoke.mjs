@@ -104,6 +104,7 @@ function live(id, opts = {}) {
     body.current = { phase: 'pregame', situation: null, batter: null, pitcher: null, pa_key: null };
   }
   if (state === 'final') { body.game = { ...body.game, status: 'final', status_text: 'Final', live: false }; body.current = null; body.next = null; }
+  if (opts.names) return JSON.parse(JSON.stringify(body).replaceAll('Nico Hoerner', opts.names[0]).replaceAll('Michael King', opts.names[1]));
   return body;
 }
 /** Server rule for `?after=N`: newer pitches, plus older ones whose receipt is unconfirmed or corrected. */
@@ -132,12 +133,14 @@ async function open({ width, height, handler }) {
 }
 /** One mutable answer per page: `server.body` is what the next poll gets. */
 function serve() {
-  const server = { body: null, down: false, hang: false, hung: [] };
-  server.handler = (route, url) => {
+  const server = { body: null, down: false, hang: false, hung: [], delay: 0 };
+  server.handler = async (route, url) => {
     if (url.pathname !== GAME) return route.fulfill({ status: 404, json: { detail: 'not in this smoke' } });
     if (server.hang) { server.hung.push(route); return undefined; }   // never answered: the client must time out by itself
     if (server.down) return route.abort('internetdisconnected');
-    return route.fulfill({ json: answer(server.body, url) });
+    const body = answer(server.body, url);
+    if (server.delay) await new Promise((r) => setTimeout(r, server.delay));
+    return route.fulfill({ json: body }).catch(() => {});
   };
   return server;
 }
@@ -175,6 +178,7 @@ async function shown(page, body, timeout = 6000) {
 }
 
 // ---------- 1. every state, one at a time, same layout (390x844; fit also at 390x664) ----------
+const LONG_NAMES = [['Vladimir Guerrero Jr.', 'Yoshinobu Yamamoto'], ['Pete Crow-Armstrong', 'Simeon Woods Richardson'], ['Jackson Chourio', 'Christopher Sánchez'], ['Lourdes Gurriel Jr.', 'Emmanuel Clase']];
 const SWEEP = [
   ['recommended/ledger_recorded'], ['recommended/ledger_conflict_first_kept'], ['recommended/shown_unrecorded_no_ledger'],
   ['feed_delayed/feed_lag_above_threshold'],
@@ -195,6 +199,9 @@ const SWEEP = [
   ['ledger_unavailable/write_failed', { correction: 'withdrawn' }, 'withdrawn'],
   ['ledger_unavailable/display_history_unreadable', { correction: 'withdrawn' }, 'withdrawn'],
   ['disconnected/poll_failed_last_snapshot_only', { correction: 'withdrawn' }, 'withdrawn'],
+  // real long names (review round 1, M1): the matchup line stays one line, so neither the names nor the state move anything
+  ...LONG_NAMES.flatMap((names) => [['recommended/ledger_recorded', { names }, `names ${names.join(' vs ')}`], ['unconfirmed/prior_pitch_unconfirmed', { names }, `names ${names.join(' vs ')}`]]),
+  ['ledger_unavailable/display_history_unreadable', { correction: 'withdrawn', names: LONG_NAMES[0] }, `withdrawn+names ${LONG_NAMES[0].join(' vs ')}`],
 ];
 for (const [width, height] of [[390, 844], [390, 664], [375, 553], [360, 640], [320, 568]]) {
   const server = serve();
@@ -249,6 +256,13 @@ for (const [width, height] of [[390, 844], [390, 664], [375, 553], [360, 640], [
     ok(out.length === 0, `${tag} ${name}: nothing spills out of the reserved slot, no sideways scroll${out.length ? ` — ${out.join(' | ')}` : ''}`);
     const over = await page.evaluate(() => document.scrollingElement.scrollHeight - window.innerHeight);
     ok(over <= 0, `${tag} ${name}: one screen, no vertical scroll (scrollHeight − innerHeight = ${over})`);
+    if (opts.names) {
+      await page.waitForFunction((n) => document.querySelector('.sv-duel')?.getAttribute('aria-label')?.includes(n), opts.names[0], { timeout: 6000 }).catch(() => {});
+      const duel = await page.evaluate(() => { const d = document.querySelector('.sv-duel'); const lines = [...d.querySelectorAll('b')].map((b) => Math.round(b.getBoundingClientRect().height / parseFloat(getComputedStyle(b).lineHeight)));
+        return { lines, label: d.getAttribute('aria-label'), titles: [...d.querySelectorAll('span[title]')].map((e) => e.getAttribute('title')) }; });
+      ok(duel.lines.every((n) => n === 1) && duel.label === `타자 ${opts.names[0]} 대 투수 ${opts.names[1]}` && duel.titles.join('|') === opts.names.join('|'), `${tag} ${name}: matchup on one line; full names in aria-label and title (${JSON.stringify(duel.lines)})`);
+      if (shots && (width === 375 || width === 320) && opts.names === LONG_NAMES[0] && id.startsWith('recommended')) await page.screenshot({ path: path.join(shots, `long-names-${tag}.png`) });
+    }
     if (d.state === 'unconfirmed') {   // (d) every word a fan reads or hears in the 확인 중 family is plain
       const heard = await spoken(page);
       ok(!TECH.test(heard), `${tag} ${name}: no 자료/시각/순서/격리/스냅샷/원장 anywhere on screen${TECH.test(heard) ? ` — "${heard.match(TECH)[0]}"` : ''}`);
@@ -519,11 +533,9 @@ for (const [status, retried] of [[423, false], [400, false], [404, false], [503,
   await context.close();
 }
 
-// ---------- 7. absent / unknown display_state → the screen as before the contract ----------
+// ---------- 7. no display_state by design (demo, archive) → the screen as before the contract ----------
 for (const [name, edit] of [
   ['absent (demo fixture)', (b) => b],
-  ['absent (live source, older backend)', (b) => { b.source = { kind: 'live', session_id: null }; return b; }],
-  ['unknown state name', (b) => { b.source = { kind: 'live', session_id: null }; b.display_state = { ...display('recommended/ledger_recorded'), state: 'something_new' }; return b; }],
   ['display_state on a demo payload is ignored', (b) => { b.display_state = display('unconfirmed/prior_pitch_unconfirmed'); return b; }],
 ]) {
   const server = serve();
@@ -536,13 +548,91 @@ for (const [name, edit] of [
   ok(await page.locator('.sv-state').count() === 0 && await page.locator('.sv-notice').count() === 0 && await page.locator('.sv-chip').count() === 0, `${name}: no state slot, no status line`);
   ok(/다음 공 추천 · 2구/.test(text) && /실제 투구/.test(text) && /다음 공 대기 중/.test(text) && await page.locator('.sv-pitch-summary .sv-rec-row').count() === 3 && await page.locator('.sv-actual-summary').count() === 1, `${name}: summary as before (다음 공 추천 · 2구 / 실제 투구 · 다음 공 대기 중, 3 candidates)`);
   ok(await page.evaluate(() => getComputedStyle(document.querySelector('.sv-pitch-summary')).display) === 'grid', `${name}: two-column summary layout unchanged`);
-  if (name.startsWith('absent (live')) {
+  if (name.startsWith('absent')) {
     const old = edit(clone(fx.live)); old.feed = { ...old.feed, stale_s: 40 };
     server.body = old;
     await waited(`${name}: old notice appears`, () => page.locator('.sv-notice.warn').waitFor({ timeout: 6000 }));
     ok(await page.locator('.sv-notice.warn').getAttribute('role') === 'alert' && /갱신 늦어짐/.test(await page.locator('.sv-notice.warn').innerText()), `${name}: old feed.stale_s > 30 notice kept without a display state`);
   }
   ok(errors.length === 0, `${name}: no page errors ${errors.join(' | ')}`);
+  await context.close();
+}
+
+// ---------- 7b. LIVE route fails closed (review round 1, M2 + minor 4): no usable display_state → no recommendation, calm 확인 중 ----------
+{
+  const K = '849843:11:2';
+  const full = () => live('recommended/ledger_recorded', { pitch_key: K });
+  const CASES = [
+    ['display_state missing, next.rec ready', () => { const b = full(); delete b.display_state; return b; }, 'unconfirmed', '확인 중', UNSURE],
+    ['display_state null, next.rec ready', () => { const b = full(); b.display_state = null; return b; }, 'unconfirmed', '확인 중', UNSURE],
+    ['unknown state name with recommendation_shown true', () => { const b = full(); b.display_state.state = 'quarantined'; b.display_state.label = '격리'; b.display_state.message = '격리된 자료'; return b; }, 'unconfirmed', '확인 중', UNSURE],
+    ['unknown state name with recommendation_shown false', () => { const b = full(); b.display_state.state = 'something_new'; b.display_state.recommendation_shown = false; return b; }, 'unconfirmed', '확인 중', UNSURE],
+    ['known state unconfirmed but recommendation_shown true + candidates', () => { const b = full(); Object.assign(b.display_state, { state: 'unconfirmed', reason: 'provider_order_unknown', label: '확인 중', message: UNSURE, recommendation_shown: true }); return b; }, 'unconfirmed', '확인 중', UNSURE],
+    ['known state waiting but recommendation_shown true + candidates', () => { const b = full(); Object.assign(b.display_state, { state: 'waiting', reason: 'computing', label: '계산 중', message: '추천을 계산하고 있어요.', recommendation_shown: true }); return b; }, 'waiting', '계산 중', '추천을 계산하고 있어요.'],
+    ['recommended but recommendation_shown missing', () => { const b = full(); delete b.display_state.recommendation_shown; return b; }, 'recommended', '다음 공 추천', '추천을 준비하고 있어요.'],
+  ];
+  for (const first of [false, true]) for (const [name, build, state, chip, message] of CASES) {
+    const tag = `fail closed [${name}${first ? ', as the first answer' : ''}]`;
+    const server = serve();
+    server.body = first ? build() : full();
+    const { context, page, errors } = await open({ width: 390, height: 844, handler: server.handler });
+    await page.goto('http://pz.test/watch/849843');
+    await page.locator('.sv-pitch-summary.sv-state').waitFor();
+    if (!first) { await shown(page, server.body); ok(await slot(page).locator('.sv-rec-row').count() === 3, `${tag}: list A on screen first`); server.body = build(); }
+    await waited(`${tag}: slot turns to ${state}`, () => page.waitForFunction(([st, c]) => { const e = document.querySelector('.sv-pitch-summary.sv-state'); return e?.getAttribute('data-state') === st && e.querySelector('.sv-chip')?.textContent.includes(c) && !e.querySelector('.sv-rec-row'); }, [state, chip], { timeout: 6000 }));
+    await page.waitForTimeout(150);
+    ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zrow .sv-zone .sv-rec').count() === 0 && !/추천 \d순위/.test(await page.locator('.sv-zrow .sv-zone').getAttribute('aria-label')), `${tag}: no candidate row, no target square`);
+    ok((await slot(page).locator('.sv-state-msg').innerText()).trim() === message && await page.locator('.sv-notice.line').count() === 1, `${tag}: state box with chip "${chip}" and "${message}", status line present`);
+    const heard = await spoken(page);
+    ok(!/싱커|스위퍼/.test(heard.replace(/\(이전: [^)]*\)/g, '')) && !/격리|quarantined|something_new/.test(heard), `${tag}: no candidate named anywhere outside the change note, no unknown label`);
+    const note = (await slot(page).locator('.sv-state-note').innerText()).trim();
+    if (!first) ok(note === '조금 전에 보여 드린 추천은 지금 표시하지 않아요 (이전: 싱커 · 가운데 오른쪽)', `${tag}: the D1 guard says the list went away: "${note}"`);
+    else ok(note === '', `${tag}: nothing was shown before, no note`);
+    if (shots && !first && name.startsWith('display_state missing')) await page.screenshot({ path: path.join(shots, 'fail-closed-display-state-missing-390x844.png') });
+    if (shots && !first && name.startsWith('unknown state name with recommendation_shown true')) await page.screenshot({ path: path.join(shots, 'fail-closed-unknown-state-390x844.png') });
+    if (!first) { server.body = full(); await shown(page, server.body); await slot(page).locator('.sv-rec-row').first().waitFor({ timeout: 6000 }).catch(() => {}); await page.waitForTimeout(120); ok(await slot(page).locator('.sv-rec-row').count() === 3 && (await slot(page).locator('.sv-state-note').innerText()).trim() === '', `${tag}: the same list coming back with a proper state is shown again, not called a change`); }
+    ok(errors.length === 0, `${tag}: no page errors ${errors.join(' | ')}`);
+    await context.close();
+  }
+  // without a display state the fallback still tells the card's own story: final and pregame are not called 확인 중
+  for (const [name, build, state, chip] of [['final card', () => { const b = live('final/game_over', { pitch_key: null }); delete b.display_state; return b; }, null, null],
+    ['scheduled card', () => { const b = live('pregame/scheduled', { pitch_key: null }); delete b.display_state; return b; }, 'pregame', '경기 전']]) {
+    const server = serve(); server.body = build();
+    const { context, page } = await open({ width: 390, height: 844, handler: server.handler });
+    await page.goto('http://pz.test/watch/849843');
+    await page.locator('.sv-notice.line').waitFor();
+    const t = await spoken(page);
+    ok(!/확인 중|다시 확인하고/.test(t) && (state === null ? /경기가 끝났어요/.test(await lineWords(page)) : (await slot(page).locator('.sv-chip').innerText()).includes(chip)), `fail closed [${name}, no display_state]: reads ${state ?? 'final'}, not 확인 중`);
+    await context.close();
+  }
+}
+
+// ---------- 7c. tab hidden longer than the stale limit, then visible with a slow answer (review round 1, minor 1) ----------
+{
+  const server = serve();
+  server.body = live('recommended/ledger_recorded', { pitch_key: '849843:11:2' });
+  const { context, page, asks, errors } = await open({ width: 390, height: 844, handler: server.handler });
+  await page.goto('http://pz.test/watch/849843');
+  await shown(page, server.body);
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => window.__hidden === true }); window.__hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+  const n = asks.length;
+  await page.waitForTimeout(37000);
+  ok(asks.length - n <= 1, `hidden tab: polling pauses (${asks.length - n} request(s) in 37 s)`);
+  ok(await slot(page).getAttribute('data-state') === 'recommended' && await page.locator('.sv-notice.line').getAttribute('data-kind') === 'ok', 'hidden tab: the paused time is not called a lost connection while hidden');
+  server.delay = 1500;
+  await page.evaluate(() => { window.__hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+  const seen = new Set(); const t0 = Date.now();
+  while (Date.now() - t0 < 1300) { seen.add(await page.evaluate(() => `${document.querySelector('.sv-pitch-summary').getAttribute('data-state')}/${document.querySelector('.sv-notice.line').getAttribute('data-kind')}/${document.querySelector('.sv-pitch-summary').classList.contains('held')}`)); await page.waitForTimeout(60); }
+  ok(seen.size === 1 && seen.has('recommended/ok/false'), `hidden tab → visible, answer still on its way: no false 연결 끊김 / 갱신 늦어짐 / dimmed list (${[...seen].join(', ')})`);
+  server.delay = 0;
+  await page.waitForTimeout(3000);
+  ok(asks.length - n >= 2 && await page.locator('.sv-notice.line').getAttribute('data-kind') === 'ok', 'hidden tab → visible: polling resumed at once');
+  // a real silence while visible still turns into ONE story: chip and status line both say 연결 끊김
+  server.hang = true;
+  await waited('visible and silent for 30 s+: the screen says so', () => page.locator('.sv-notice.line.warn').waitFor({ timeout: 45000 }));
+  ok(/연결 끊김/.test(await lineWords(page)) && !/갱신 늦어짐/.test(await lineWords(page)) && (await slot(page).locator('.sv-chip').innerText()).includes('연결 끊김'), `visible and silent: chip and status line tell the same story ("${await lineWords(page)}")`);
+  server.hang = false; for (const r of server.hung) await r.abort().catch(() => {});
+  ok(errors.length === 0, `hidden tab: no page errors ${errors.join(' | ')}`);
   await context.close();
 }
 
@@ -649,6 +739,9 @@ for (const [width, height, fit] of [[360, 640, true], [375, 553, true]]) {
     ['live with no play yet (nothing pending)', () => { const b = live('waiting/no_pending_pitch', { pitch_key: null }); b.pitches = []; b.pas = []; b.cutoff = { index: -1, pitch_key: null }; b.current = null; b.next = null; return b; }, /LIVE/],
     // a suspended game that already has pitches opens on its first pitch; once live it must follow the latest by itself
     ['not live with earlier pitches (resumed game)', () => { const b = pre('pregame/not_live'); b.game = { ...b.game, status: 'other', status_text: 'Suspended', live: false }; b.next = null; b.current = null; return b; }, /대기/],
+    // 'Delayed Start' before the first pitch is not live (review round 1, minor 6): with the server's flag, and from the words alone
+    ['Delayed Start, live:false', () => { const b = scheduled(pre('pregame/scheduled')); b.game.status_text = 'Delayed Start'; return b; }, /예정/],
+    ['Delayed Start, words only (no live flag, no status kind)', () => { const b = scheduled(pre('pregame/scheduled')); delete b.game.live; b.game.status = 'Delayed Start'; b.game.status_text = 'Delayed Start'; return b; }, /예정/],
     ['503 before the first snapshot, then pregame', () => pre('pregame/scheduled'), /예정/, 503],
   ];
   await Promise.all(SHAPES.map(async ([name, build, label, firstStatus], i) => {
@@ -663,6 +756,7 @@ for (const [width, height, fit] of [[360, 640, true], [375, 553, true]]) {
     await page.waitForTimeout(300);
     await page.evaluate(() => { window.__sameDocument = true; });
     const before = (await page.locator('.sv-live').innerText()).trim();
+    if (/Delayed Start/.test(name)) { const m0 = asks.length; await page.waitForTimeout(4500); ok(asks.length - m0 <= 1 && await page.locator('.sv-live.on').count() === 0, `pregame → live [${name}]: not LIVE and not on the 2 s poll (${asks.length - m0} request(s) in 4.5 s)`); }
     ok(label.test(before) && await page.locator('.sv-rec-row').count() === 0, `pregame → live [${name}]: opened before play (header "${before}", no recommendation)`);
     if (shots && i === 0) await page.screenshot({ path: path.join(shots, 'pregame-to-live-1-opened-pregame-390x844.png') });
     const n = asks.length;
@@ -681,6 +775,15 @@ for (const [width, height, fit] of [[360, 640, true], [375, 553, true]]) {
     ok(errors.length === 0, `pregame → live [${name}]: no page errors ${errors.join(' | ')}`);
     await context.close();
   }));
+  // mid-game interruptions stay live when the server says live
+  for (const words of ['Delayed: Rain', 'Suspended: Rain', 'Manager challenge: Tag play', 'Umpire Review', 'Delayed']) {
+    const s2 = serve(); s2.body = live('recommended/ledger_recorded'); s2.body.game.status_text = words;
+    const h = await open({ width: 390, height: 844, handler: s2.handler });
+    await h.page.goto('http://pz.test/watch/849843');
+    const up = await waited(`mid-game "${words}" with live:true: screen opens`, () => shown(h.page, s2.body));
+    if (up) { const m0 = h.asks.length; await h.page.waitForTimeout(4500); ok(/LIVE/.test(await h.page.locator('.sv-live').innerText()) && h.asks.length - m0 >= 2, `mid-game "${words}" with live:true: stays LIVE on the 2 s poll (${h.asks.length - m0} asks in 4.5 s)`); }
+    await h.context.close();
+  }
   // a finished game from the live route is not polled (nothing more will come)
   const server = serve();
   server.body = live('final/game_over', { pitch_key: null });
@@ -731,8 +834,9 @@ for (const [width, height] of [[390, 844], [375, 553], [320, 568]]) {
   // older backend: phase only, no display state
   const bare = live('waiting/between_innings', { pitch_key: null, linescore: line }); delete bare.display_state;
   server.body = bare;
-  await waited(`${tag}: (no display_state) the break is still drawn from current.phase`, () => page.waitForFunction(() => !document.querySelector('.sv-state') && document.querySelector('.sv-board-idle'), null, { timeout: 6000 }));
-  { const t = await spoken(page); ok(!/Hoerner|King|추천 대기 중/.test(t) && /공수 교대 중/.test(t), `${tag}: (no display_state) no previous matchup, "공수 교대 중" instead of "추천 대기 중"`); }
+  await page.waitForTimeout(2600);
+  { const t = await spoken(page); ok(await page.locator('.sv-board-idle').count() === 1 && (await slot(page).locator('.sv-chip').innerText()).includes('공수 교대') && !/Hoerner|King|추천 대기 중|확인 중/.test(t) && /공수 교대 중이에요/.test(t) && sameBoxes(inPlay, await boxes(page)).length === 0,
+    `${tag}: (no display_state) the break is still drawn from current.phase, with the same slot and no previous matchup`); }
   // the next half starts
   server.body = play();
   await shown(page, server.body);
@@ -768,7 +872,7 @@ for (const [width, height] of [[390, 844], [375, 553], [320, 568]]) {
     b.receipts = { version: 'cccccccccccc', unconfirmed: 1, corrected: 0 };
     return b;
   };
-  for (const [width, height] of [[390, 844], [320, 568]]) {
+  for (const [width, height] of [[390, 844], [390, 664], [375, 553], [360, 640], [320, 568]]) {
     const tag = `past pitch ${width}x${height}`;
     const server = serve();
     server.body = body();
@@ -793,10 +897,17 @@ for (const [width, height] of [[390, 844], [375, 553], [320, 568]]) {
     ok(!SCORING.test(all.replace(/성공 확률이 아니에요/g, '')) , `${tag}: not presented as a hit / miss or accuracy${SCORING.test(all.replace(/성공 확률이 아니에요/g, '')) ? ` — "${all.replace(/성공 확률이 아니에요/g, '').match(SCORING)[0]}"` : ''}`);
     ok(/투구 전에 기록된 추천\./.test(await page.locator('.sv-stage h2.sr-only').textContent()) && /투구 전에 기록된 추천 후보 1순위 슬라이더 낮은 오른쪽/.test(await recCol.locator('.sv-reclist').getAttribute('aria-label')), `${tag}: screen readers hear "투구 전에 기록된 추천" and the first pick with its zone`);
     ok(summary.locator('.sv-state') && await page.locator('.sv-state').count() === 0 && await fitsWidth(page), `${tag}: past pitch uses the two-column summary, no sideways scroll`);
+    ok(!/ARM-B|arm-b/i.test(all), `${tag}: the internal policy name is nowhere on the fan screen`);
+    // every row of the list (the only way into 자세히 here) really receives a tap: nothing transparent lies over it
+    const covered = await page.evaluate(() => [...document.querySelectorAll('.sv-pitch-summary .sv-reclist, .sv-pitch-summary .sv-rec-row')].map((el) => { const r = el.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return top && (el === top || el.contains(top) || top.contains(el) && top.closest('.sv-reclist')) ? null : `<${top?.tagName.toLowerCase()} class="${top?.getAttribute('class') ?? ''}">`; }).filter(Boolean));
+    ok(covered.length === 0, `${tag}: every row of the recorded list can be tapped${covered.length ? ` — covered by ${covered.join(', ')}` : ''}`);
+    await page.locator('.sv-pitch-summary .sv-rec-row').first().tap({ timeout: 2000 }).catch(() => {});
+    ok(await page.getByRole('dialog').count() === 1, `${tag}: a tap on the first row opens 자세히`);
+    await page.keyboard.press('Escape');
     if (shots) await page.screenshot({ path: path.join(shots, `past-pitch-rec-ready-${width}x${height}.png`) });
     await recCol.locator('.sv-reclist').click();
     { const dialog = page.getByRole('dialog'); const t = (await dialog.locator('.sv-detail').first().innerText()).replace(/\s+/g, ' ');
-      ok(/^투구 전에 기록된 추천 /.test(t) && /추천 1순위 슬라이더 · 낮은 오른쪽 실제 투구/.test(t) && t.includes(thrown.pitch_label) && /맞고 틀림을 매긴 것이 아니에요/.test(t) && /경기 중 투구 전에 기록한 추천 · ARM-B · 11:31 기록/.test(t) && await dialog.locator('.sv-table tbody tr').count() === 3,
+      ok(/^투구 전에 기록된 추천 /.test(t) && /추천 1순위 슬라이더 · 낮은 오른쪽 실제 투구/.test(t) && t.includes(thrown.pitch_label) && /맞고 틀림을 매긴 것이 아니에요/.test(t) && /경기 중 투구 전에 기록한 추천 · 11:31 기록/.test(t) && !/ARM-B|arm-b/i.test(await dialog.innerText()) && await dialog.locator('.sv-table tbody tr').count() === 3,
         `${tag}: 자세히 pairs the first pick with the actual pitch in words, says it is not a score, and when it was recorded ("${t.slice(0, 150)}…")`);
       if (shots && width === 390) await page.screenshot({ path: path.join(shots, 'past-pitch-rec-ready-detail-390x844.png') });
       await page.keyboard.press('Escape'); }
@@ -822,6 +933,8 @@ for (const [width, height] of [[390, 844], [375, 553], [320, 568]]) {
     if (shots) await page.screenshot({ path: path.join(shots, `past-pitch-unconfirmed-${width}x${height}.png`) });
     // ---- an earlier plate appearance: stock sentence of the older backend and no sentence at all both read calmly
     await page.locator('.sv-inning').click();
+    { const item = (await page.locator('.sv-pa-item', { hasText: 'Nico Hoerner' }).last().innerText()).replace(/\s+/g, ' ');
+      ok(/확인 중 · 3구/.test(item) && !/타석 진행 중/.test(item), `${tag}: a plate appearance holding an unconfirmed pitch reads 확인 중 although the server did not blank it ("${item}")`); }
     await page.locator('.sv-pa-item').first().click();
     await recCol.locator('.sv-norec').waitFor();
     ok((await recCol.locator('.sv-norec').innerText()).trim() === '이 공은 기록된 추천이 없어요.', `${tag}: the pre-contract sentence "이 투구의 저장된 추천이 없습니다." is replaced by the calm line`);
