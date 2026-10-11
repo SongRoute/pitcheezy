@@ -6,7 +6,7 @@ import type { GameCard } from './model';
 import { dateHeading, inningText, kstTime, shiftDate, short, todayKst } from './model';
 import { teamColor } from './teams';
 import { InfoSheet } from './Sheets';
-import { PUBLISH_CONFIG, isCalendarDate, isPublishStale, publicGameHref, publicListHref, publishLag, serverNow } from './publish';
+import { PUBLISH_CONFIG, clockWindowMs, isCalendarDate, isPublishStale, publicGameHref, publicListHref, publishLag, serverNow } from './publish';
 import type { PublishStamp } from './publish';
 import './service.css';
 
@@ -44,6 +44,27 @@ function Card({ g }: { g: GameCard }) {
   </a>;
 }
 
+/** Public bundle: one repeating reader. One request chain at a time; nothing is asked while the tab is hidden (it starts again when the
+ *  tab is visible or the network is back); `read` answers true (next read after `okMs`) or false (after `failMs`). Returns the stop
+ *  function, which also aborts the signal `read` was given. */
+function startReader(read: (signal: AbortSignal) => Promise<boolean>, okMs: number, failMs: number, onWake?: () => void) {
+  let alive = true, busy: AbortController | null = null, timer = 0;
+  const run = async () => {
+    window.clearTimeout(timer);
+    if (!alive || busy || document.hidden) return;
+    const ctrl = busy = new AbortController();
+    let good = false;
+    try { good = await read(ctrl.signal); } catch { good = false; }
+    if (busy === ctrl) busy = null;
+    if (alive) timer = window.setTimeout(() => void run(), good ? okMs : failMs);
+  };
+  const wake = () => { if (!document.hidden) { onWake?.(); void run(); } };
+  void run();
+  document.addEventListener('visibilitychange', wake); window.addEventListener('online', wake);
+  return () => { alive = false; busy?.abort(); window.clearTimeout(timer);
+    document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake); };
+}
+
 export default function WatchList() {
   const params = new URLSearchParams(window.location.search);
   // public bundle: `?date=` is used only when it is a real calendar date (it ends up in a file name)
@@ -69,49 +90,48 @@ export default function WatchList() {
     return () => ctrl.abort();
   }, [date]);
 
-  // ---- public bundle: published files, read again at the configured interval ----
+  // ---- public bundle: published files, read again at the configured intervals ----
   const [health, setHealth] = useState<PublishStamp | null>(null);
+  const [healthFresh, setHealthFresh] = useState(false);   // health.json was read since the tab last came back into view
   const [, setTick] = useState(0);
-  useEffect(() => {  // dates: today when the publisher follows it, else the newest published date that is not in the future
+  useEffect(() => {  // dates.json + manifest live_dates, read again so a date the publisher starts to follow appears without a reload
     if (!__PZ_STATIC__) return;
-    const ctrl = new AbortController();
-    fetchPublishedDates(ctrl.signal).then(p => { if (ctrl.signal.aborted) return; const today = todayKst(); setDates(p.dates);
-      setDate(d => d ?? (p.dates.includes(today) ? today : p.dates.find(x => x <= today) ?? p.dates[p.dates.length - 1] ?? today)); })
-      .catch(() => { if (!ctrl.signal.aborted) { setDates([]); setDate(d => d ?? todayKst()); } });
-    return () => ctrl.abort();
+    return startReader(async signal => {
+      try {
+        const p = await fetchPublishedDates(signal);
+        if (signal.aborted) return false;
+        const today = todayKst(); setDates(p.dates);
+        // first answer only: today when the publisher follows it, else the newest published date that is not in the future
+        setDate(d => d ?? (p.dates.includes(today) ? today : p.dates.find(x => x <= today) ?? p.dates[p.dates.length - 1] ?? today));
+        return true;
+      } catch { if (!signal.aborted) { setDates(d => d ?? []); setDate(d => d ?? todayKst()); } return false; }
+    }, PUBLISH_CONFIG.datesPollMs, PUBLISH_CONFIG.firstLoadRetryMs);
   }, []);
   useEffect(() => {
     if (!__PZ_STATIC__ || !date) return;
-    // One reader per shown date. `alive` is this date's generation: an answer for a date the viewer has left is never applied.
-    // One request at a time; nothing is asked while the tab is hidden; a failed read is retried sooner and never blanks a list on screen.
-    let alive = true, busy: AbortController | null = null, timer = 0, shown = false;
+    // One reader per shown date; its abort signal is this date's generation: an answer for a date the viewer has left is never applied.
+    let shown = false;
     setGames(null); setError(null);
-    const run = async () => {
-      window.clearTimeout(timer);
-      if (!alive || busy || document.hidden) return;
-      const ctrl = busy = new AbortController();
-      let failed = false;
+    const stop = startReader(async signal => {
+      let good = true;
       try {
-        const list = await fetchPublishedGames(date, ctrl.signal);
-        if (!alive) return;
+        const list = await fetchPublishedGames(date, signal);
+        if (signal.aborted) return false;
         shown = true; setGames(list); setError(null);
       } catch (e) {
-        if (!alive) return;
-        failed = true;
-        if (!shown) setError(e instanceof Error ? e.message : '경기 목록을 불러오지 못했어요.');
+        if (signal.aborted) return false;
+        good = false;
+        if (!shown) setError(e instanceof Error ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen
       }
-      try { const h = await fetchPublishHealth(ctrl.signal); if (alive) setHealth(h); } catch { /* the last health stays; time goes on by itself */ }
-      if (busy === ctrl) busy = null;
-      if (alive) timer = window.setTimeout(() => void run(), failed ? PUBLISH_CONFIG.firstLoadRetryMs : PUBLISH_CONFIG.listPollMs);
-    };
-    const wake = () => { if (!document.hidden) void run(); };
-    void run();
-    document.addEventListener('visibilitychange', wake); window.addEventListener('online', wake);
+      if (signal.aborted || document.hidden) return good;   // hidden meanwhile: the follow-up read waits until the tab is back
+      try { const h = await fetchPublishHealth(signal); if (!signal.aborted) { setHealth(h); setHealthFresh(true); } } catch { /* the last health stays */ }
+      return good;
+    }, PUBLISH_CONFIG.listPollMs, PUBLISH_CONFIG.firstLoadRetryMs, () => setHealthFresh(false));
     const tick = window.setInterval(() => setTick(t => t + 1), PUBLISH_CONFIG.tickMs);  // lets the late notice appear between reads
-    return () => { alive = false; busy?.abort(); window.clearTimeout(timer); window.clearInterval(tick);
-      document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake); };
+    return () => { stop(); window.clearInterval(tick); };
   }, [date]);
-  const late = __PZ_STATIC__ && isPublishStale(publishLag(null, health, serverNow()), PUBLISH_CONFIG.listPollMs);
+  // judged only on a health.json read since the tab came back: what was on screen before a background period is never called late
+  const late = __PZ_STATIC__ && healthFresh && isPublishStale(publishLag(null, health, serverNow(clockWindowMs(PUBLISH_CONFIG.listPollMs))), PUBLISH_CONFIG.listPollMs);
   useEffect(() => { document.title = date ? `${dateHeading(date)} 경기 · 피치이지` : '피치이지'; }, [date]);
 
   // Previous/next: adjacent dates that have games when the server lists them, otherwise one calendar day.

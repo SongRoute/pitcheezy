@@ -25,6 +25,10 @@ export const PUBLISH_CONFIG = {
   timeoutMs: positive(env.VITE_PUBLISH_TIMEOUT_MS, 15000),
   lostAfterMs: positive(env.VITE_PUBLISH_LOST_MS, 30000),
   tickMs: positive(env.VITE_PUBLISH_TICK_MS, 5000),
+  datesPollMs: positive(env.VITE_PUBLISH_DATES_POLL_MS, 10000),
+  /** a game with no file yet: first re-ask after this long, doubling up to the max. PROVISIONAL (not measured). */
+  missingRetryMs: positive(env.VITE_PUBLISH_MISSING_RETRY_MS, 10000),
+  missingMaxMs: positive(env.VITE_PUBLISH_MISSING_MAX_MS, 60000),
   staleAfterS: positive(env.VITE_PUBLISH_STALE_S, 30),
 };
 /** A threshold is never shorter than this many poll intervals: with a slow poll (say 60 s) a 30 s threshold would otherwise report
@@ -73,22 +77,43 @@ export function unwrapPublished<T>(raw: unknown): Published<T> {
 }
 
 // ---------- server time ----------
-/** "What time is it for the servers" without the device's wall clock. Every answer gives a reading that can only be at or before the
- *  true server time: the hosting `Date` header (+ `Age` when a cache says how old its copy is), and a file's own `published_at`.
- *  A reading is kept as an offset to the page's monotonic clock (`performance.now()`), and the LARGEST offset wins, so
- *    - time goes on between answers and while the same cached answer repeats (the anchor is never reset by an older reading),
- *    - a stale `Date` from a cache cannot pull the estimate back,
- *    - a hosting time, when any answer exposes one, beats a publish time (it is later).
- *  Without any hosting time the estimate is "the newest publish time seen + time elapsed since": it starts at zero lag, so a publisher
- *  that had already stopped before the page was opened is noticed only one threshold later. The device clock is never used. */
+/** "What time is it for the servers" without the device's wall clock. Two kinds of reading, kept apart:
+ *    host     the hosting `Date` header (+ `Age` when a cache says how old its copy is)
+ *    publish  a file's own `published_at` (the publisher's clock)
+ *  Each reading can only be at or before the true server time, and is kept as an offset to the page's monotonic clock
+ *  (`performance.now()`), so time goes on between answers and while the same cached answer repeats.
+ *  - Host time wins whenever any answer has exposed one. Its largest offset is kept: a stale `Date` from a cache cannot pull it back,
+ *    and after a device sleep (the monotonic clock stood still) the next answer simply raises it.
+ *  - Publish times are used only when no host time is readable, and only the readings of the last `windowMs` count (largest wins).
+ *    So one `published_at` in the future (publisher clock ahead, a bad file) stops mattering once the window has passed, while a
+ *    publisher that stops still shows a lag that grows up to the window. The caller passes a window longer than its threshold.
+ *    This estimate starts at zero lag: a publisher that had already stopped before the page was opened is noticed one threshold later.
+ *  The device clock is never used as "now". */
 export type ServerClock = 'host' | 'elapsed';
-let anchor: { offset: number; clock: ServerClock } | null = null;
-export function observeServerTime(ms: number | null, clock: ServerClock) {
-  if (ms === null || !Number.isFinite(ms)) return;
+let hostOffset: number | null = null;
+let publishReadings: { offset: number; at: number }[] = [];
+const KEEP_MS = 3600000, KEEP_MAX = 4000;   // bookkeeping bounds only (memory), not thresholds
+export function observeHostTime(ms: number) {
+  if (!Number.isFinite(ms)) return;
   const offset = ms - performance.now();
-  if (anchor === null || offset > anchor.offset) anchor = { offset, clock };
+  if (hostOffset === null || offset > hostOffset) hostOffset = offset;
 }
-export const serverNow = (): { ms: number; clock: ServerClock } | null => anchor ? { ms: anchor.offset + performance.now(), clock: anchor.clock } : null;
+export function observePublishTime(ms: number) {
+  if (!Number.isFinite(ms)) return;
+  const at = performance.now();
+  publishReadings.push({ offset: ms - at, at });
+  if (publishReadings.length > KEEP_MAX || at - publishReadings[0].at > KEEP_MS) publishReadings = publishReadings.filter(r => at - r.at <= KEEP_MS).slice(-KEEP_MAX);
+}
+export function serverNow(windowMs: number): { ms: number; clock: ServerClock } | null {
+  const t = performance.now();
+  if (hostOffset !== null) return { ms: hostOffset + t, clock: 'host' };
+  let best: number | null = null;
+  // `r.at <= t`: a reading "from the future" of the monotonic clock is from before a clock step and is ignored
+  for (const r of publishReadings) if (r.at <= t && t - r.at <= windowMs && (best === null || r.offset > best)) best = r.offset;
+  return best === null ? null : { ms: best + t, clock: 'elapsed' };
+}
+/** the window to pass to `serverNow` for a screen that reads every `pollMs` */
+export const clockWindowMs = (pollMs: number) => 2 * staleAfterMs(pollMs);
 
 // ---------- staleness ("갱신 지연") ----------
 export type PublishStamp = { seq: number | null; publishedAt: string | null; final: boolean };
@@ -96,7 +121,9 @@ export type PublishLag = { lagMs: number; clock: 'publisher' | ServerClock };
 /** How far behind the published state is; null = cannot be judged (no publish time seen).
  *  1. publisher clock only: health.json's last publish − this game file's publish time. The publisher rewrites a game file that is not
  *     final on every cycle and writes health.json last, so a gap means this file stopped while the publisher went on (the game is in
- *     health.json's `unavailable_games`). Never for a file marked `publish.final` (it keeps its old time on purpose).
+ *     health.json's `unavailable_games`). Never for a file marked `publish.final` (it keeps its old time on purpose). The caller
+ *     passes `file` only for a game whose own status says it is in play; for any other game (pregame, delayed, postponed) only
+ *     health.json is judged, so a fresh health.json is never late.
  *  2. server time now (see above) − the newest publish time seen (health.json, else the game file): the publisher itself stopped. */
 export function publishLag(file: PublishStamp | null, health: PublishStamp | null, now: { ms: number; clock: ServerClock } | null): PublishLag | null {
   const ms = (s: PublishStamp | null) => s?.publishedAt ? Date.parse(s.publishedAt) : null;

@@ -4,7 +4,7 @@
  *  still renders real data before the contract lands. The fallback never invents scores or recommendations. */
 import type { Correction, Display, DisplayStateName, Receipt, LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
 import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, plainZone, shiftDate } from './model';
-import { PUBLISH_CONFIG, isCalendarDate, observeServerTime, publishUrl, publishedPath, unwrapPublished } from './publish';
+import { PUBLISH_CONFIG, isCalendarDate, observeHostTime, observePublishTime, publishUrl, publishedPath, unwrapPublished } from './publish';
 import type { PublishStamp, PublishedFile } from './publish';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
@@ -57,13 +57,13 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
     }
     // the hosting server's own clock for this answer (Date, plus Age when a cache says how old its copy is); unreadable cross-origin unless exposed
     const date = Date.parse(response.headers.get('date') ?? ''), age = Number(response.headers.get('age') ?? '');
-    if (Number.isFinite(date)) observeServerTime(date + (Number.isFinite(age) && age > 0 ? age * 1000 : 0), 'host');
+    if (Number.isFinite(date)) observeHostTime(date + (Number.isFinite(age) && age > 0 ? age * 1000 : 0));
     if (!response.ok) { void response.body?.cancel().catch(() => undefined); throw new FetchError('자료를 불러오지 못했어요.', response.status); }
     const raw = await response.json().catch(() => null);
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
     if (raw === null || typeof raw !== 'object') throw new FetchError('서버 응답을 읽지 못했어요.', 0);
     const p = unwrapPublished<T>(raw);
-    if (p.publishedAt) observeServerTime(Date.parse(p.publishedAt), 'elapsed');   // server time cannot be earlier than a publish time
+    if (p.publishedAt) observePublishTime(Date.parse(p.publishedAt));   // used as server time only when no hosting time is readable
     return { body: p.body, stamp: { seq: p.seq, publishedAt: p.publishedAt, final: p.final } };
   } finally { window.clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
 }
@@ -109,6 +109,17 @@ export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates
   const liveDates = manifest.status === 'fulfilled' ? manifest.value.value : [];
   const dates = [...new Set([...(archived.status === 'fulfilled' ? archived.value.value : []), ...liveDates])].sort().reverse();
   return { dates, liveDates };
+}
+/** Is this game on the list of any date the publisher is following now? true / false, or null when that could not be read.
+ *  A game with no file that no followed list names (a demo runs on it, a wrong number, long over) is not waited for. */
+export async function isGamePublishedSoon(game: number, signal?: AbortSignal): Promise<boolean | null> {
+  let liveDates: string[];
+  try { liveDates = (await fetchPublishedDates(signal)).liveDates; } catch { return null; }
+  let unknown = false;
+  for (const date of liveDates) {
+    try { if ((await fetchPublishedGames(date, signal)).some(g => g.game_pk === game)) return true; } catch { unknown = true; }
+  }
+  return unknown ? null : false;
 }
 /** KST dates that have games: `GET /api/service/dates` (API mode). */
 export async function fetchDates(signal?: AbortSignal): Promise<string[]> {
