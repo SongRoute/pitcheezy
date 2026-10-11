@@ -1219,6 +1219,10 @@ if mode == 'record_fails':
 peak = (lambda: 1/0) if mode == 'cannot_measure' else None
 limits = {{'max_rss_bytes': 1, 'max_seconds': 3600}} if mode != 'time' else {{'max_rss_bytes': 1 << 60, 'max_seconds': -60}}
 publisher_replay.start_watchdog(run_dir, limits, peak=peak, interval=.05)
+if mode == 'lock_held':  # someone else holds the record lock for longer than the watchdog will wait
+    publisher_replay.RECORD_LOCK_TIMEOUT_S = .1
+    publisher_replay.mark(run_dir, 'RUNNING', phase='replay')
+    publisher_replay.RECORD_LOCK.acquire()
 if mode == 'racing':  # the main flow keeps writing its own progress record as fast as it can
     while True:
         publisher_replay.mark(run_dir, 'RUNNING', phase='replay')
@@ -1341,3 +1345,38 @@ def test_the_registered_memory_rules_k3_every_10_cycles_n3(replayed):
     summary = replayed('run-d', limits=registered, mps=flaky)
     assert (summary['stop']['reason'], summary['cycles']['n'], summary['stop']['detail']) == ('measurement_failed', 3, {'what': 'mps_memory', 'cycles_in_a_row': 3})
     assert len(calls) > 3 and summary['memory']['measurement']['mps_unknown_cycles'] == 3
+
+
+def test_a_writer_that_cannot_take_the_record_lock_writes_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(publisher_replay, 'RECORD_LOCK_TIMEOUT_S', .05)
+    publisher_replay.mark(tmp_path, 'RUNNING', phase='replay')
+    before = (tmp_path/'SUMMARY.json').read_bytes()
+    done = {'status': 'COMPLETED', 'incomplete': False, 'stop': None, 'game_pk': 1, 'cycles': {'n': 3}}
+    publisher_replay.RECORD_LOCK.acquire()  # held longer than the timeout, as the watchdog holds it while it aborts
+    try:
+        with pytest.raises(publisher_replay.RecordBusy):
+            publisher_replay.write_record(tmp_path, done)
+        with pytest.raises(publisher_replay.RecordBusy):  # so the main flow cannot end the run as COMPLETED
+            publisher_replay.finish(tmp_path, done)
+        with pytest.raises(publisher_replay.RecordBusy):
+            publisher_replay.mark(tmp_path, 'POST_RUN_CHECKS_PENDING')
+        assert (tmp_path/'SUMMARY.json').read_bytes() == before
+        assert not any(p.name.startswith('.SUMMARY') for p in tmp_path.iterdir())
+    finally:
+        publisher_replay.RECORD_LOCK.release()
+    publisher_replay.write_record(tmp_path, done)  # free again: written
+    assert json.loads((tmp_path/'SUMMARY.json').read_text()) == done
+    # the watchdog itself: it cannot take the lock either, writes nothing, and still ends its process
+    child_dir = tmp_path/'child'
+    child_dir.mkdir()
+    script = tmp_path/'watchdog.py'
+    script.write_text(WATCHDOG.format(backend=str(BACKEND), scripts=str(REPO/'scripts')))
+    child = subprocess.Popen([sys.executable, '-B', str(script), 'lock_held', str(child_dir)], cwd=tmp_path)
+    try:
+        assert child.wait(timeout=20) == 87
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=20)
+    left = json.loads((child_dir/'SUMMARY.json').read_text())
+    assert (left['status'], left['incomplete']) == ('RUNNING', True) and not (child_dir/'ABORTED.json').exists()

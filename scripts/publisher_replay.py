@@ -277,6 +277,11 @@ def armb_idle(armb):
 
 
 RECORD_LOCK = threading.Lock()  # one writer of SUMMARY.json at a time: the main flow or the watchdog
+RECORD_LOCK_TIMEOUT_S = 5.0  # how long a writer waits for it; a writer that does not get it does NOT write
+
+
+class RecordBusy(RuntimeError):
+    """The record lock could not be taken in time: nothing was written."""
 
 
 def _replace_record(run_dir, record):
@@ -290,8 +295,12 @@ def write_record(run_dir, record):
     """Replace ``SUMMARY.json`` whole (temporary file + rename): a reader sees the previous record or this one.
     Serialised with the watchdog: once the watchdog has taken the lock to write ABORTED it never gives it back
     (the process exits), so no later write of the main flow can cover its record."""
-    with RECORD_LOCK:
+    if not RECORD_LOCK.acquire(timeout=RECORD_LOCK_TIMEOUT_S):
+        raise RecordBusy('SUMMARY.json is being written by the watchdog (or the lock is stuck); this record was not written')
+    try:
         _replace_record(run_dir, record)
+    finally:
+        RECORD_LOCK.release()
 
 
 def aborted_record(record):
@@ -778,7 +787,9 @@ def start_watchdog(run_dir, limits, *, peak=None, interval=.5):
             except BaseException:  # noqa: BLE001 - a watchdog that cannot measure does not keep the process alive
                 held, elapsed = None, time.monotonic()-begun
             try:
-                RECORD_LOCK.acquire(timeout=5)  # held until the process is gone: the main flow cannot write after this
+                if not RECORD_LOCK.acquire(timeout=RECORD_LOCK_TIMEOUT_S):
+                    continue  # the lock is not ours: write nothing (the ``finally`` below still ends the process)
+                # held until the process is gone: the main flow cannot write after this
                 record = {'peak_rss_bytes': held, 'elapsed_s': round(elapsed, 1),
                           'why': 'runtime_cap_hard' if elapsed > limits['max_seconds']+60 else 'memory_cap' if held is not None else 'watchdog_could_not_measure'}
                 (Path(run_dir)/'ABORTED.json').write_text(json.dumps(record))
