@@ -382,6 +382,7 @@ def build(feed, watch=None, setup=None):
     pitches, pas = [], []
     away = home = 0
     prev_half, outs = None, 0
+    balls = strikes = 0  # a game with no play yet (before the first pitch) still has a current state
     bases = dict.fromkeys(('first', 'second', 'third'))
     previous = None  # last pitch so far: its after-state and whether a state-changing non-pitch event follows it
     # linescore as of each state point, from revealed events only (never the feed's final liveData.linescore)
