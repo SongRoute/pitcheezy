@@ -297,6 +297,11 @@ def _replace_record(run_dir, record):
     os.replace(temporary, run_dir/'SUMMARY.json')
 
 
+class ComputeCap(BaseException):
+    """A policy computation did not finish within the cap. A BaseException on purpose: the publisher isolates
+    ordinary exceptions per game, and this one must reach the runner and end the run."""
+
+
 class Timed:
     """The policy with every computation timed (wall seconds, in call order). Everything else is the policy's own."""
 
@@ -348,16 +353,19 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
     status. If the process dies without getting there, ``SUMMARY.json`` still says RUNNING and ``incomplete``."""
     from observer_app import publish_audit, publish_schema, publisher
     from observer_app.capture_replay import CaptureReplayTransport, SimClock
-    from observer_app.live_armb import LiveArmB
+    from observer_app.live_armb import LiveArmB, state_key
+    from observer_app.live_feed import parse_state
     from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed
     import observer_app.main as app_main
 
     # REPLAY IS NOT LIVE HERE, on purpose. Live, a request waits LIVE_WAIT_S (1.0 s) for the policy and otherwise
     # shows "computing" until the next poll. Whether a computation beats that wait depends on the machine's speed
-    # at that moment, so a replay built that way is not reproducible. In the replay the builder waits for the
-    # computation it asked for (up to settle_cap_s, a stop condition): the body and the ledger row of a cycle are
-    # built only after the policy has finished for the state that cycle shows. What live would have looked like is
-    # measured instead: every computation is timed and the ones over the live wait are counted.
+    # at that moment, so a replay built that way is not reproducible. In the replay there is a completion barrier
+    # BEFORE a cycle produces anything: the state the capture holds at that moment is handed to the policy (the
+    # same head start the live route gives the newest snapshot) and the cycle starts only when that computation
+    # is done. A computation that exceeds settle_cap_s STOPS the run (policy_compute_cap) before any body, ledger
+    # row or file of that cycle exists; no "computing" body is ever published in a replay. What live would have
+    # looked like is measured instead: every computation is timed and the ones over the live wait are counted.
     restore_wait = app_main.LIVE_WAIT_S
     live_wait = restore_wait if live_wait_s is None else live_wait_s
     timed = []
@@ -456,19 +464,60 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         elif armb.computed and getattr(armb.policy, 'binds', 0):
             raise Stop('policy_device_unknown', {'registered': limits['policy_device']})
 
+    barrier_s = [0.0]
+
+    def barrier():
+        """Before a cycle produces anything: the policy has finished the state the capture holds now, or the run
+        stops. Returns the seconds waited."""
+        barrier_s[0] = 0.0
+        if not policy_factory:
+            return
+        index = transport.index()
+        try:
+            body = transport.loaders[index]() if index >= 0 else None
+        except Exception:  # noqa: BLE001 - a capture body that fails its check: the guard names it and stops the run
+            guard('policy barrier')
+            raise
+        if body is None or parse_state(body, None).get('status') != 'ready':
+            return
+        key = state_key(body)
+        begun = perf()
+        armb.lookup(body, first=True)  # queue it (the head start of the live route); never waits here
+        while key not in armb.cache and key not in armb.failed:
+            if perf()-begun > limits['settle_cap_s']:
+                raise Stop('policy_compute_cap', {'cycle': len(cycles)+1, 'where': 'before the cycle', 'partial_cycle': False,
+                                                  'cap_s': limits['settle_cap_s']})
+            if perf()-started > limits['max_seconds']:
+                raise Stop('runtime_cap', {'stage': 'policy barrier'})
+            time.sleep(.002)
+        barrier_s[0] = perf()-begun
+
+    def flush_compute_times():
+        """Append the computations finished since the last call: index and unrounded wall seconds, no content."""
+        done = [value for policy_ in timed for value in policy_.seconds]
+        if len(done) > written_times[0]:
+            with open(run_dir/'POLICY-COMPUTE.jsonl', 'a') as handle:
+                for number in range(written_times[0], len(done)):
+                    handle.write(json.dumps({'index': number, 'seconds': done[number], 'by_cycle': len(cycles)+1})+'\n')
+            written_times[0] = len(done)
+
+    written_times = [0]
+
     def one_cycle(label):
         nonlocal final_published, over_interval
+        barrier()
         begun = perf()
-        health = pub.cycle()
+        try:
+            health = pub.cycle()
+        except ComputeCap as capped:  # the in-cycle wait for another state ran out: this cycle is partial
+            raise Stop('policy_compute_cap', {'cycle': len(cycles)+1, 'where': 'inside the cycle', 'partial_cycle': True,
+                                              'cap_s': limits['settle_cap_s']}) from capped
+        finally:
+            flush_compute_times()
         wall_s = perf()-begun
-        waited = perf()
-        while not armb_idle(armb) and perf()-waited < limits['settle_cap_s']:
-            time.sleep(.005)
-            if perf()-started > limits['max_seconds']:
-                raise Stop('runtime_cap', {'stage': 'policy settle'})
-        settle_s = perf()-waited
-        if not armb_idle(armb):
-            raise Stop('policy_did_not_settle', {'cycle': len(cycles)+1})
+        settle_s = barrier_s[0]
+        if not armb_idle(armb):  # nothing may still be computing once a cycle's files are out
+            raise Stop('policy_compute_cap', {'cycle': len(cycles)+1, 'where': 'after the cycle', 'partial_cycle': True})
         over_interval += settle_s+wall_s > interval
         written, sizes, present = [], {}, {}
         for path in sorted(out.rglob('*')):
@@ -547,7 +596,15 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         store = LiveSnapshotStore(run_dir/'publisher-store.sqlite3')  # the publisher's own: never the capture
         feed = PersistentLiveFeed(transport, store=store, source='replay_poll', delay_s=0, clock=clock, wall=clock, sleep=lambda _: None)
         os.environ['PITCHEEZY_OBSERVER_LIVE_ARMB'] = '1' if policy_factory else '0'
-        armb = LiveArmB(timed_factory) if policy_factory else LiveArmB(lambda: None)
+        class ReplayArmB(LiveArmB):
+            """In a replay a builder that asks and waits either gets the result or the run ends: it never goes on
+            to publish "computing"."""
+            def lookup(self, feed, *, queue=True, first=False, wait_s=0.0):
+                found = super().lookup(feed, queue=queue, first=first, wait_s=wait_s)
+                if found is None and wait_s > 0 and queue and self.policy is not None and self.error is None:
+                    raise ComputeCap(state_key(feed))
+                return found
+        armb = ReplayArmB(timed_factory) if policy_factory else LiveArmB(lambda: None)
         app_main.LIVE_WAIT_S = limits['settle_cap_s']
         config = publisher.load_config(publish_config, env={}, out_dir=str(out), state_path=str(run_dir/'publisher.state.json'),
                                        publish_interval_s=limits['publish_interval_s'], fixed_delay_s=limits['fixed_delay_s'])
@@ -592,7 +649,12 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         if pub is not None:
             pub.close()
     violations = [] if audit is None else audit.violations
-    computed = [round(value, 6) for policy_ in timed for value in policy_.seconds]
+    exact = [value for policy_ in timed for value in policy_.seconds]  # unrounded: what the count below compares
+    computed = [round(value, 6) for value in exact]  # rounded for the report only
+    try:
+        flush_compute_times()
+    except Exception:  # noqa: BLE001
+        pass
     held = {name: (None if audit is None else not any(v['invariant'] == name for v in violations)) for name in publish_audit.INVARIANTS}
     held['nothing_outside_the_job_folder'] = None if fs_audit is None else not fs_audit.violations  # the caller's outside check can still turn this false
     final_wait = None
@@ -662,10 +724,11 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                             'failed_states': safely(lambda: len(armb.failed), 0),
                             'computations': len(computed), 'compute_s': spread(computed),
                             'live_wait_s': live_wait,
-                            'computations_over_the_live_wait': sum(value > live_wait for value in computed),
-                            'replay_differs_from_live': 'the replay waits for each computation before it builds the body (up to '
-                                                        'settle_cap_s); live waits live_wait_s and shows "computing" until the next '
-                                                        'poll. computations_over_the_live_wait is how many would have done that.'},
+                            'computations_over_the_live_wait': sum(value > live_wait for value in exact),
+                            'compute_times_file': 'POLICY-COMPUTE.jsonl (index, unrounded seconds, the cycle by which it was done)',
+                            'replay_differs_from_live': 'the replay finishes each computation before the cycle produces anything and stops '
+                                                        'if one exceeds settle_cap_s; live waits live_wait_s and shows "computing" until '
+                                                        'the next poll. computations_over_the_live_wait is how many would have done that.'},
         'memory': {'peak_rss_bytes': rss(), 'source': 'resource.getrusage(RUSAGE_SELF).ru_maxrss (process peak, bytes on macOS)',
                    'mps_driver_allocated_peak_bytes': mps_peak,
                    'mps_note': 'Metal (MPS) memory is unified RAM outside ru_maxrss; sampled once per cycle, so a peak between samples is not seen. null = MPS not in use.',

@@ -239,7 +239,7 @@ def test_a_synthetic_capture_replays_to_a_final_file_with_every_invariant_held(r
     assert sorted(p.name for p in replayed.path.parent.iterdir()) == ['capture.sqlite3']
     assert (run/'publisher-store.sqlite3').is_file() and (run/'out/v1/health.json').is_file()
     assert sorted(p.name for p in replayed.job.iterdir()) == ['input', 'run-001']
-    assert sorted(p.name for p in run.iterdir()) == ['.out.lock', '.out.tmp', 'CYCLES.jsonl', 'SUMMARY.json', 'SUMMARY.md', 'demo', 'empty',
+    assert sorted(p.name for p in run.iterdir()) == ['.out.lock', '.out.tmp', 'CYCLES.jsonl', 'POLICY-COMPUTE.jsonl', 'SUMMARY.json', 'SUMMARY.md', 'demo', 'empty',
                                                     'out', 'publisher-store.sqlite3', 'publisher.state.json', 'tmp']
 
 
@@ -820,7 +820,7 @@ def test_a_capture_body_that_fails_its_check_mid_run_stops_the_run(replayed):
     summary = replayed(prepare=corrupt)
     assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'capture_integrity') and summary['stop']['detail']['seq'] == 3
     assert summary['capture']['integrity_error'] == {'seq': 3, 'error': 'ValueError'} and summary['incomplete'] is True
-    assert summary['cycles']['n'] == 8  # the cycle that first asked for that version, not the end of the game
+    assert summary['cycles']['n'] == 7  # stopped before the cycle that would have shown that version began
     assert json.loads((replayed.job/'run-001/SUMMARY.json').read_text())['incomplete'] is True and summary['invariants']['all_held'] is False
 
 
@@ -1106,7 +1106,7 @@ def test_the_whole_command_with_the_policy_on_runs_to_a_completed_record(command
     assert summary['ledger']['cycles_adding_rows_without_a_published_recommendation'] == []
     assert summary['policy']['computations'] >= 2 and summary['policy']['compute_s']['n'] == summary['policy']['computations']
     assert summary['policy']['live_wait_s'] == 1.0 and summary['policy']['computations_over_the_live_wait'] == 0
-    assert sorted(p.name for p in run.iterdir() if p.is_file()) == ['.out.lock', 'CYCLES.jsonl', 'RUN.json', 'SUMMARY.json', 'SUMMARY.md',
+    assert sorted(p.name for p in run.iterdir() if p.is_file()) == ['.out.lock', 'CYCLES.jsonl', 'POLICY-COMPUTE.jsonl', 'RUN.json', 'SUMMARY.json', 'SUMMARY.md',
                                                                     'publisher-store.sqlite3', 'publisher.state.json']
     assert sorted(p.name for p in command.job.iterdir()) == ['input', 'replay_config.json', 'run-001']
 
@@ -1449,13 +1449,63 @@ def test_the_replay_publishes_the_same_bodies_however_slow_the_policy_is(replaye
     assert app_main.LIVE_WAIT_S == 1.0  # the server's own wait is put back
 
 
-def test_a_computation_that_outlasts_the_cap_stops_the_run(replayed):
+def test_a_computation_that_outlasts_the_cap_stops_the_run_before_the_cycle_produces_anything(replayed):
+    """The fake finishes between the cap and twice the cap: with two waits of one cap each it would slip through."""
     import time as real_time
 
-    class Stuck(Policy):
+    class Late(Policy):
         def __call__(self, snapshot):
-            real_time.sleep(1.0)
+            real_time.sleep(.3)
             return super().__call__(snapshot)
-    summary = replayed(limits=LIMITS | {'settle_cap_s': .2}, policy_factory=lambda: Stuck())
-    assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'policy_did_not_settle')
-    assert summary['ledger']['rows'] == 0
+    summary = replayed(limits=LIMITS | {'settle_cap_s': .2}, policy_factory=lambda: Late())
+    run = replayed.job/'run-001'
+    assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'policy_compute_cap')
+    assert summary['stop']['detail'] == {'cycle': 5, 'where': 'before the cycle', 'partial_cycle': False, 'cap_s': .2}
+    rows = [json.loads(line) for line in (run/'CYCLES.jsonl').read_text().splitlines()]
+    assert len(rows) == summary['cycles']['n'] == 4  # the fifth cycle (the first with a pitch to recommend for) never began
+    # nothing of cycle 5 exists: no file carries its sequence, no ledger row, and nothing says "computing"
+    sequences = {json.loads(path.read_text())['publish']['sequence'] for path in (run/'out').rglob('*.json')}
+    assert max(sequences) == 4 and summary['ledger']['rows'] == 0
+    assert json.loads((run/'publisher.state.json').read_text())['sequence'] == 4
+    assert not any('computing' in path.read_text() for path in (run/'out').rglob('*.json'))
+    assert all(row['game']['reason'] != 'computing' for row in rows if row['game'])
+    assert summary['invariants']['all_held'] is False and summary['incomplete'] is True
+
+
+def test_the_in_cycle_wait_cannot_end_in_a_computing_body_either(replayed, monkeypatch):
+    """Should a cycle ask for a state the barrier did not prepare, an expired wait ends the run: it is not swallowed
+    by the publisher's per-game isolation and no "computing" body is published."""
+    import time as real_time
+
+    class Late(Policy):
+        def __call__(self, snapshot):
+            real_time.sleep(.3)
+            return super().__call__(snapshot)
+    from observer_app import live_feed
+    real = live_feed.parse_state
+    monkeypatch.setattr(live_feed, 'parse_state', lambda feed, pins, **kw: real(feed, pins, **kw) | (
+        {'status': 'not_ready_for_the_barrier'} if __import__('sys')._getframe(1).f_code.co_name == 'barrier' else {}))
+    summary = replayed(limits=LIMITS | {'settle_cap_s': .2}, policy_factory=lambda: Late())
+    run = replayed.job/'run-001'
+    assert (summary['status'], summary['stop']['reason']) == ('STOPPED', 'policy_compute_cap')
+    assert summary['stop']['detail']['where'] == 'inside the cycle' and summary['stop']['detail']['partial_cycle'] is True
+    assert summary['ledger']['rows'] == 0 and summary['cycles']['n'] == 4
+    game = run/'out/v1/game/900200.json'
+    assert json.loads(game.read_text())['publish']['sequence'] == 4  # the game file of the stopped cycle was never written
+    assert not any('computing' in path.read_text() for path in (run/'out').rglob('*.json'))
+
+
+def test_compute_times_are_kept_unrounded_and_the_over_wait_count_uses_them(replayed):
+    summary = replayed(policy_factory=lambda: Policy())
+    lines = [json.loads(line) for line in (replayed.job/'run-001/POLICY-COMPUTE.jsonl').read_text().splitlines()]
+    assert [line['index'] for line in lines] == list(range(summary['policy']['computations'])) and len(lines) >= 2
+    assert all(set(line) == {'index', 'seconds', 'by_cycle'} and isinstance(line['seconds'], float) for line in lines)
+    exact = [line['seconds'] for line in lines]
+    assert summary['policy']['compute_s']['max'] == round(max(exact), 6)
+    # a time that only rounds to the wait is not over it; one a hair above it is
+    slightly = replayed('run-b', policy_factory=lambda: Policy(), live_wait_s=max(exact)+1)
+    assert slightly['policy']['computations_over_the_live_wait'] == 0
+    recount = lambda wait: sum(value > wait for value in [json.loads(line)['seconds'] for line in
+                                                           (replayed.job/'run-c/POLICY-COMPUTE.jsonl').read_text().splitlines()])
+    tiny = replayed('run-c', policy_factory=lambda: Policy(), live_wait_s=1e-9)
+    assert tiny['policy']['computations_over_the_live_wait'] == recount(1e-9) == tiny['policy']['computations']
