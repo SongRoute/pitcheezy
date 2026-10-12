@@ -341,6 +341,13 @@ class HttpSink(Sink):
             self._request('DELETE', path)
 
 
+def _upload_pending(state):
+    pending = state.setdefault('upload_pending', {})
+    if not isinstance(pending, dict) or any(not public_path(p) or a not in ('put', 'delete') for p, a in pending.items()):
+        raise UploadError('upload_state_invalid')
+    return pending
+
+
 class MirrorSink(Sink):
     """Local state first; a durable path -> action outbox contains no payload or credentials."""
 
@@ -351,13 +358,12 @@ class MirrorSink(Sink):
         self.save = lambda: None
 
     def bind(self, state, save):
-        # First activation also uploads existing settled files, without rebuilding them.
-        if 'upload_pending' not in state:
-            state['upload_pending'] = {path: 'put' for path in self.paths()
-                                       if public_path(path) and not path.endswith('/health.json')}
-        self.pending, self.save = state['upload_pending'], save
-        if not isinstance(self.pending, dict) or any(not public_path(p) or a not in ('put', 'delete') for p, a in self.pending.items()):
-            raise UploadError('upload_state_invalid')
+        self.pending, self.save = _upload_pending(state), save
+        # Reconcile settled files after local-only publishing; durable DELETEs win over residual files.
+        for path in self.paths():
+            if public_path(path) and not path.endswith('/health.json'):
+                self.pending.setdefault(path, 'put')
+        self.save()
 
     def cleanup(self):
         self.local.cleanup()
@@ -541,6 +547,8 @@ class Publisher:
             self.state = self._load_state()
             if isinstance(self.sink, MirrorSink):
                 self.sink.bind(self.state, self._save_state)
+            elif 'upload_pending' in self.state:
+                _upload_pending(self.state)  # disabled upload must not discard a corrupt outbox
         except BaseException:
             self.close()
             raise
@@ -642,6 +650,12 @@ class Publisher:
         return [(today+timedelta(days=offset)).isoformat()
                 for offset in range(-self.config['live_days_back'], self.config['live_days_ahead']+1)]
 
+    def _queue_local_upload(self, path, action):
+        # Keep the existing remote's intents durable while only local publishing is enabled.
+        if not isinstance(self.sink, MirrorSink) and 'upload_pending' in self.state:
+            self.state['upload_pending'][path] = action
+            self._save_state()
+
     def _put(self, path, body, *, always, final=None, digest=None):
         """Write ``body`` + the ``publish`` key at ``path``. ``always`` False: only if the content (``digest``,
         default the whole body) or its final mark differs from what is published there."""
@@ -656,6 +670,7 @@ class Publisher:
         if final is not None:
             publish['final'] = final
         data = json.dumps(body | {'publish': publish}, ensure_ascii=False, separators=(',', ':')).encode()
+        self._queue_local_upload(path, 'put')
         self.sink.write(path, data, final=bool(final))
         self.state['files'][path] = {'digest': digest, 'sequence': self._sequence, 'final': final}
         self._written.append(path)
@@ -667,6 +682,7 @@ class Publisher:
         if not (force or path in self.state['files']):
             return True
         try:
+            self._queue_local_upload(path, 'delete')
             self.sink.delete(path)
         except OSError:  # the file may still be out: the caller reports it; it is tried again when next due
             LOGGER.error('%s could not be deleted', path, exc_info=True)

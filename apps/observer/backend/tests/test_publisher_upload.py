@@ -489,3 +489,61 @@ def test_mirror_preserves_local_symlink_guards(world, endpoint, monkeypatch):
     world.path(GAME).symlink_to(world.tmp/'outside.json')
     with pytest.raises(publisher.UnsafeOutput):
         world.start()
+
+
+def test_reactivation_uploads_file_finalized_while_disabled(world, endpoint, monkeypatch):
+    attach(world, endpoint, monkeypatch)
+    world.cycle(settle=False)
+    path = f'v1/game/{LIVE_GAME}.json'
+    world.config['upload']['enabled'] = False
+    world.start()
+    world.cycle(snap('20261005_102100', half='final'), settle=False)
+    new_path = 'v1/game/990099.json'
+    world.publisher._put(new_path, {'synthetic': 'new settled file'}, always=False, final=True)
+    world.publisher._save_state()
+    new_file = world.path(new_path).read_bytes()
+    final = world.path(path).read_bytes()
+    assert json.loads(final)['publish']['final'] is True
+    assert endpoint.objects[path] != final
+    assert json.loads(world.publisher.state_path.read_text())['upload_pending'][path] == 'put'
+    # Even an older local-only writer that failed to track the PUT is recovered by catalog reconciliation.
+    world.publisher.state['upload_pending'].pop(path)
+    world.publisher._save_state()
+    world.config['upload']['enabled'] = True
+    world.start()
+    health = world.cycle(settle=False)
+    assert endpoint.objects[path] == final == world.path(path).read_bytes()
+    assert endpoint.objects[new_path] == new_file == world.path(new_path).read_bytes()
+    assert world.publisher.state['upload_pending'] == {} and codes(health) == []
+
+
+def test_reactivation_preserves_deletion_made_while_disabled(world, endpoint, monkeypatch):
+    attach(world, endpoint, monkeypatch)
+    world.cycle(settle=False)
+    world.config['upload']['enabled'] = False
+    world.start()
+    assert world.publisher._drop(GAME)
+    assert GAME in endpoint.objects and not world.path(GAME).exists()
+    assert json.loads(world.publisher.state_path.read_text())['upload_pending'][GAME] == 'delete'
+    world.config['upload']['enabled'] = True
+    world.start()
+    world.publisher.sink.retry(HEALTH)
+    assert GAME not in endpoint.objects
+    assert ('DELETE', GAME) in [r[:2] for r in endpoint.requests]
+
+
+def test_reactivation_keeps_pending_delete_over_residual_local_file(world, endpoint, monkeypatch):
+    sink = attach(world, endpoint, monkeypatch)
+    world.cycle(settle=False)
+    def failed_delete(path):
+        raise OSError('local delete failed')
+    monkeypatch.setattr(sink.local, 'delete', failed_delete)
+    assert not world.publisher._drop(GAME)
+    assert world.path(GAME).exists() and GAME in endpoint.objects
+    world.config['upload']['enabled'] = False
+    world.start()
+    world.config['upload']['enabled'] = True
+    world.start()
+    assert world.publisher.sink.pending[GAME] == 'delete'
+    world.publisher.sink.retry(HEALTH)
+    assert not world.path(GAME).exists() and GAME not in endpoint.objects
