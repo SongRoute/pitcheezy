@@ -1,0 +1,184 @@
+{
+ "$id": "pitcheezy-publish-v1-setup",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "Inferred from 2 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "properties": {
+  "accuracy": {
+   "properties": {
+    "measured": {
+     "type": "boolean"
+    },
+    "note": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "measured",
+    "note"
+   ],
+   "type": "object"
+  },
+  "badge": {
+   "type": "string"
+  },
+  "coverage": {
+   "properties": {
+    "estimated": {
+     "type": "integer"
+    },
+    "lines": {
+     "type": "integer"
+    },
+    "unavailable": {
+     "type": "integer"
+    },
+    "with_plate_x": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "estimated",
+    "lines",
+    "unavailable",
+    "with_plate_x"
+   ],
+   "type": "object"
+  },
+  "display": {
+   "properties": {
+    "horizontal": {
+     "type": "boolean"
+    },
+    "vertical": {
+     "type": "boolean"
+    },
+    "vertical_reason": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "horizontal",
+    "vertical",
+    "vertical_reason"
+   ],
+   "type": "object"
+  },
+  "game_pk": {
+   "type": "integer"
+  },
+  "pitches": {
+   "items": {
+    "properties": {
+     "at_bat_number": {
+      "type": "integer"
+     },
+     "is_intent_proxy": {
+      "type": "boolean"
+     },
+     "label_source": {
+      "type": "string"
+     },
+     "pitch_id": {
+      "type": "string"
+     },
+     "pitch_number": {
+      "type": "integer"
+     },
+     "plate_x_feet": {
+      "type": "number"
+     },
+     "review_status": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "unavailable_reason": {
+      "type": "null"
+     },
+     "x_band": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "at_bat_number",
+     "is_intent_proxy",
+     "label_source",
+     "pitch_id",
+     "pitch_number",
+     "plate_x_feet",
+     "review_status",
+     "status",
+     "unavailable_reason",
+     "x_band"
+    ],
+    "type": "object"
+   },
+   "type": "array"
+  },
+  "publish": {
+   "properties": {
+    "contract": {
+     "const": "v1"
+    },
+    "final": {
+     "type": "boolean"
+    },
+    "published_at": {
+     "type": "string"
+    },
+    "sequence": {
+     "minimum": 1,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "contract",
+    "final",
+    "published_at",
+    "sequence"
+   ],
+   "type": "object"
+  },
+  "schema": {
+   "enum": [
+    "pitcheezy-setup-estimates-v1"
+   ]
+  },
+  "source": {
+   "properties": {
+    "commit": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "sha256": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "commit",
+    "sha256"
+   ],
+   "type": "object"
+  },
+  "x_convention": {
+   "type": "string"
+  }
+ },
+ "required": [
+  "accuracy",
+  "badge",
+  "coverage",
+  "display",
+  "game_pk",
+  "pitches",
+  "publish",
+  "schema",
+  "source",
+  "x_convention"
+ ],
+ "title": "Pitcheezy public publish v1: setup",
+ "type": "object"
+}

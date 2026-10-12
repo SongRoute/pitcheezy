@@ -1,0 +1,114 @@
+{
+ "$id": "pitcheezy-publish-v1-manifest",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "Inferred from 10 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "properties": {
+  "commit": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "commit_dirty": {
+   "type": [
+    "boolean",
+    "null"
+   ]
+  },
+  "contract": {
+   "type": "string"
+  },
+  "files": {
+   "properties": {
+    "dates": {
+     "type": "string"
+    },
+    "game": {
+     "type": "string"
+    },
+    "games": {
+     "type": "string"
+    },
+    "health": {
+     "type": "string"
+    },
+    "manifest": {
+     "type": "string"
+    },
+    "setup": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "dates",
+    "game",
+    "games",
+    "health",
+    "manifest",
+    "setup"
+   ],
+   "type": "object"
+  },
+  "fixed_delay_s": {
+   "type": "integer"
+  },
+  "live_dates": {
+   "items": {
+    "type": "string"
+   },
+   "type": "array"
+  },
+  "provisional": {
+   "items": {
+    "type": "string"
+   },
+   "type": "array"
+  },
+  "publish": {
+   "properties": {
+    "contract": {
+     "const": "v1"
+    },
+    "published_at": {
+     "type": "string"
+    },
+    "sequence": {
+     "minimum": 1,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "contract",
+    "published_at",
+    "sequence"
+   ],
+   "type": "object"
+  },
+  "publish_interval_s": {
+   "type": "integer"
+  },
+  "published_at": {
+   "type": "string"
+  },
+  "schema": {
+   "enum": [
+    "pitcheezy-publish-manifest-v1"
+   ]
+  }
+ },
+ "required": [
+  "commit",
+  "commit_dirty",
+  "contract",
+  "files",
+  "fixed_delay_s",
+  "live_dates",
+  "provisional",
+  "publish",
+  "publish_interval_s",
+  "published_at",
+  "schema"
+ ],
+ "title": "Pitcheezy public publish v1: manifest",
+ "type": "object"
+}

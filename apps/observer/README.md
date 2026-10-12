@@ -129,6 +129,90 @@ PITCHEEZY_OBSERVER_HOST=tailscale sh apps/observer/serve.sh
   - 연결 상태 값(`feed.ok`, `stale_s`, `display_state.feed.last_ok_at`)은 지연 시청자에게도 현재 기준이다.
 - 화면(`/watch/{pk}`): 공개 빌드(`VITE_PUBLISH_BASE` 설정)에서는 지연·맞추기 화면이 아예 없다. 그 외 빌드에서 서버가 켜져 있다고 답할 때만 "중계 맞추기"가 보인다. 맞추기 전에는 실제 투구·결과(투구 카드의 구종·속도·위치, 선택한 공의 실제 투구 줄, 자세히의 실제 투구, 타석 결과)를 "중계 맞추기 후 표시"로 접는다. 점수·볼카운트·아웃·주자·이닝별 기록은 그대로 둔다.
 
+## 공개 발행기 (정적 파일로 내보내기, 검증 전 실험 버전)
+
+팬의 브라우저가 이 맥에 닿지 않도록, 화면이 가져갈 내용을 **요청 없이 미리 파일로 써 두는** 프로그램이다. 계약 초안은 `docs/pm/service/public-publish-contract-draft.md`(아직 커밋 전, 주 작업 폴더에만 있음)이고, 이 절은 그 구현을 설명한다. 기본은 로컬 폴더 발행이며, 선택적으로 HTTP 업로드를 켤 수 있다. 호스팅·업로드 API는 아직 미정이다. 실제 MLB 피드·실제 저장소로 돌리는 것은 별도 승인 단계이며 아직 해 보지 않았다.
+
+```sh
+# 저장소에 들어 있는 녹화 픽스처(849845)로 한 번 발행해 보기. 네트워크·T7·모델을 쓰지 않는다.
+T=$(mktemp -d); mkdir "$T/empty"
+PYTHONPATH=apps/observer/backend:apps/observer/backend/tests .venv-observer/bin/python -c "from live_fixture import listed_dir; listed_dir('$T/replay')"
+PYTHONPATH=apps/observer/backend \
+PITCHEEZY_OBSERVER_LIVE_REPLAY_DIR="$T/replay" PITCHEEZY_OBSERVER_LIVE_REPLAY_POLL_S=0 \
+PITCHEEZY_OBSERVER_LIVE_ARMB=0 PITCHEEZY_OBSERVER_LIVE_STORE="$T/store.sqlite3" \
+.venv-observer/bin/python -m observer_app.publisher --out "$T/out" --once --date 2026-09-30 \
+  --feed-dir "$T/empty" --watch-dir "$T/empty" --intent-dir "$T/empty" --demo-dir "$T/demo"
+find "$T/out" -type f
+```
+
+**실시간 저장소(`PITCHEEZY_OBSERVER_LIVE_STORE`)와 추천 장부가 켜져 있어야만 돈다.** 저장소가 없으면 서버는 확인 중인 공을 가리지 못하고 추천을 기록 없이 보여 주는데, 공개 파일에서는 그것을 허용하지 않는다. 둘 중 하나라도 없으면 시작하지 않고, 도는 중에 장부를 끄면(`PITCHEEZY_OBSERVER_REC_LEDGER=0`) 그 주기부터 아무것도 쓰지 않는다. 영수증이 없는 실시간 본문, 장부 기록이 없는 추천이 든 본문은 파일로 나가지 않는다(`not_public`).
+
+`--once`를 빼면 `publish_interval_s`마다 계속 발행한다. 포트를 열지 않고 다른 프로세스를 건드리지 않는다. `--date`(여러 번 가능, KST)를 주지 않으면 오늘 기준 앞뒤 날짜(`live_days_back`/`live_days_ahead`)의 경기를 매 주기 다시 만든다.
+
+### 파일
+
+- `v1/manifest.json` — 계약 버전, 코드 커밋(`commit`, 커밋 안 된 변경이 있으면 `commit_dirty: true`), 발행 시각, 발행 간격, 고정 지연, 매 주기 다시 만드는 날짜.
+- `v1/health.json` — 마지막 발행 시각과 순번. 한 주기의 맨 마지막에 쓴다. 이 파일이 움직이지 않으면 발행이 멈춘 것이다. 이번 주기에 만들거나 쓰지 못한 경기는 `unavailable_games`(`game_pk`, `status`, 정해진 `code`: `refused`·`build_failed`·`write_failed`·`setup_failed`·`not_public`·`withdraw_failed`(지워야 할 파일을 지우지 못함)·`archive_unread`(보관 폴더에 들어온 최종 피드를 읽지 못함, 읽힐 때까지 계속 표시))에, 날짜 목록은 `unavailable_dates`(날짜만)에, 피드가 응답하지 않아 마지막 상태로 만든 경기는 `feed_failing_games`에 남는다. 경로나 오류 문장은 싣지 않는다. 한 경기의 실패는 다른 경기와 health 발행을 막지 않는다.
+- `v1/dates.json` — `GET /api/service/dates`와 같은 본문.
+- `v1/games/<YYYY-MM-DD>.json` — `GET /api/service/games?date=`와 같은 본문.
+- `v1/game/<game_pk>.json` — `GET /api/service/games/{pk}`와 같은 본문(항상 전체, `after` 없음).
+- `v1/setup/<game_pk>.json` — `GET /api/watch/{pk}/setup`의 본문에서 `source`만 `commit`과 `sha256` 두 개로 줄인 것(`commit`은 해시 모양이 아니면 null, 파일 경로·저장소·브랜치·영상 이름은 내보내지 않는다. 서버 경로의 본문은 그대로다). 끝난 경기이고 `setup_estimates.py` 검사(sha256 고정값, 줄마다 `validate_intent_estimate`)를 통과한 경우에만 있다. 검사에서 떨어지면 지운다.
+
+통합본은 RC의 `features`(목록·경기)와 `viewer`(실시간 경기) 메타데이터도 싣는다. v1에서 이 두 필드는 선택 사항이며 기존 파일도 유효하다. 기본 스위치는 모두 꺼져 있고 공개 고정 지연은 여전히 0초다. 꺼진 시청자 지연 설정의 `default_s: 30`은 공개 적용값이 아니다.
+
+셋업 파일을 뺀 본문은 서버 경로가 쓰는 **같은 함수**(`service_api.ServiceBodies`)가 만든다. 그래서 표시 판정, 확인 중인 공 비우기, 추천 장부 먼저 쓰기가 그대로 적용된다. 발행기가 더하는 것은 모든 파일의 맨 위 키 하나뿐이다.
+
+```json
+"publish": {"contract": "v1", "sequence": 42, "published_at": "2026-10-05T10:20:12Z", "final": false}
+```
+
+- `sequence`는 발행기 하나에 하나뿐인 번호이고 주기마다 1씩 오른다. 파일은 자신을 마지막으로 쓴 주기의 번호를 갖는다. 재시작해도 이어지고 뒤로 가지 않는다: 시작할 때 상태 파일과 **이미 나가 있는 모든 파일**의 순번 중 가장 큰 값에서 이어 가고, 주기마다 번호를 디스크에 확실히 기록(fsync)한 뒤에 파일을 쓴다.
+- `final`은 경기 파일과 셋업 파일에만 있다. 경기가 끝났고 확인 중인 공이 하나도 없으면 `final: true`로 한 번 쓰고 더 쓰지 않는다. 이후에는 `settled_recheck_s`마다 다시 만들어 보고, 내용이 달라졌을 때만(정정) 새 번호로 다시 쓴다. 경기 뒤에 도착한 셋업 파일도 이때 발견한다.
+- 파일은 출력 폴더 **바깥** 옆 폴더(`<상위>/.<출력 폴더 이름>.tmp/`, 같은 파일시스템)에 다 쓴 뒤 이름을 바꿔 통째로 교체한다. 반쯤 쓰인 파일은 보이지 않고, 출력 폴더에는 발행 파일만 있다. 그래도 올리는 쪽(업로더)은 점(.)으로 시작하는 파일과 위 여섯 가지 이름이 아닌 파일을 올리지 말아야 한다.
+- 끝난 경기를 다시 만들 때 시계에 따라 움직이는 값(맨 위 `feed` 전체, `display_state.feed`의 `ok`·`delayed`·`lag_*`·`last_ok_at`·`failing_*`·`received_at`)은 변화로 치지 않는다. 경기 내용이 같으면 파일도 순번도 그대로다.
+- 실시간 피드에서 받은 경기는 종료 표시 뒤 `final_recheck_for_s`가 지나면 `final_slow_recheck_s`마다 한 번만 다시 조회한다(늦은 공식 정정을 찾기 위해). 셋업 파일은 계속 찾고, 보관 폴더에 최종 피드가 들어오면 조회 없이 바로 그것으로 바꿔 쓴다.
+- 발행기는 출력 폴더 하나에 하나만 돈다. 출력 폴더 옆 `.<출력 폴더 이름>.lock`을 잡고(상태 파일 위치나 경로 표기가 달라도 같은 폴더면 같은 잠금), 이미 잡혀 있으면 바로 끝난다. 잡고 있던 프로세스가 죽으면 잠금은 풀린다. 출력 폴더의 실제 경로는 시작할 때 한 번만 정하고, 잠금·임시 파일·읽기·쓰기·지우기가 모두 그 경로를 쓴다.
+- 출력 폴더 안에 심볼릭 링크가 하나라도 있으면 시작하지 않는다. 도는 중에 생기면 그 경로로는 읽지도 쓰지도 지우지도 않는다(출력 폴더 밖 파일을 건드리지 않기 위해서다).
+- 시작할 때 순번을 찾는 검사는 이 계약의 파일 이름에 맞는 파일만, 파일 끝부분만 읽는다. 다른 파일이나 깨진 파일은 무시한다. 상태 파일이 깨져 있으면 경고만 남기고 이어 간다.
+- 상태 파일은 출력 폴더 옆 `<출력 폴더>.state.json`에 둔다(올릴 대상이 아니다).
+
+### 발행하지 않는 것
+
+- 시연 세션(`?demo=`), 운영자 API(`/api/service/operator/**`), 시연 시계·다시 보기. 시연 중인 경기는 서버 경로와 똑같이 경기 파일을 쓰지 않고 목록 카드는 가린다. 이미 발행된 경기에 시연이 시작되면 다음 주기에 그 경기 파일과 셋업 파일을 지우고(상태 파일이 그 파일을 모르더라도 지운다), 시연이 끝나면 다시 발행한다. 파일을 쓰기 직전과 직후에도 시연 여부를 다시 확인하고, 주기 도중에 시연이 시작되면 같은 주기 안에 파일을 지우고 목록을 다시 만든다. 시연 중에 목록을 다시 만들지 못하면 옛 점수를 남기지 않고 그 목록 파일을 지운다. 마지막 시연 확인은 `health.json`을 쓰기 바로 전이다. **받아들인 틈(2026-10-11 PM 결정)**: 그 확인 뒤에 시작된 시연은 다음 주기(최대 발행 간격 한 번)에 반영된다. 시연 시계는 다른 프로세스이고 둘 사이에 공유 잠금은 두지 않는다. 시연 가림은 이미 끝난 경기를 시연 관객에게 가리는 용도이며, 공개 전 정보를 지키는 장치가 아니다.
+- 서버가 지금 보여 주지 않는 것: 확인 중인 공의 구종·속도·위치·결과, 고정 지연보다 새로운 공, 표시 상태가 추천을 보여 주지 않을 때의 후보, 장부에 기록하지 못한 추천.
+- 서버 경로가 거절하는 본문(피드 첫 조회 실패 503 등). 이때는 이전 파일을 그대로 둔다.
+
+### 설정
+
+값은 `apps/observer/publish_config.json`에 있고 코드에 박아 두지 않았다. `publish_interval_s`(기본 10), `settled_recheck_s`(기본 600), `final_recheck_for_s`·`final_slow_recheck_s`(기본 21600), `live_days_back`/`live_days_ahead`(기본 1)는 **재지 않은 잠정값**이며 리허설에서 정한다. `fixed_delay_s`는 모든 시청자에게 같은 지연 하나이고 기본 0초다. `contract_version`(`v1`)이 곧 파일 경로 앞부분이다. 환경 변수 `PITCHEEZY_PUBLISH_OUT_DIR`, `PITCHEEZY_PUBLISH_INTERVAL_S`, `PITCHEEZY_PUBLISH_DELAY_S`, `PITCHEEZY_PUBLISH_STATE`, `PITCHEEZY_PUBLISH_COMMIT`와 명령줄 `--out`/`--interval`/`--delay`가 덮어쓴다. 피드를 실제로 조회하는 간격은 여전히 `live_config.json`(`poll_interval_s`, `fast_poll_s`)이 정한다.
+
+### 선택적 HTTP 업로드 (잠정 API)
+
+`publish_config.json`의 `upload.enabled`를 `true`로, `upload.base_url`을 파트너의 업로드 전용 HTTPS 주소로 설정한다. 파일은 `<base_url>/v1/game/123.json`처럼 PUT하고, 철회는 같은 주소에 DELETE한다. HTTP는 loopback(`127.0.0.1`, `::1`, `localhost`)에서만 허용한다. 리다이렉트와 환경 변수의 HTTP 프록시는 사용하지 않는다. 팬은 별도 공개 호스트만 읽는다.
+
+토큰 값은 저장소·설정 파일에 넣지 않는다. 기본은 실행 환경의 `PITCHEEZY_PUBLISH_TOKEN`이며 `upload.token_env`에는 **환경 변수 이름만** 넣는다. 파일을 쓰려면 `token_env: null`, `token_file: "/절대경로/저장소밖/토큰파일"`로 정한다. 토큰 파일은 운영자만 읽게 권한을 제한하고(예: 0600), 토큰 문자열 한 줄만 저장한다. git checkout 안 파일과 그곳으로 향하는 링크는 거절한다. 오류·health·상태에는 토큰, 원격 응답 본문, 업로드 URL을 기록하지 않는다.
+
+- `upload.timeout_s`: 요청 소켓 제한 시간(0 초과, 최대 60초). `retries`: 최초 요청 뒤 추가 시도 수(0–5). `backoff_s`: 첫 대기(0–10초), 재시도마다 두 배. 기본값 5초/2회/0.25초는 모두 **잠정값**이다.
+- `upload.headers.live` / `upload.headers.final`: `Content-Type: application/json`과 `Cache-Control`. 기본 캐시는 각각 5초/300초이며 **잠정값**이다. final은 종료 확정 경기·셋업, live는 나머지 파일이다. 정정될 수 있으므로 immutable은 쓰지 않는다.
+- `--check-remote --config <설정>`: 앱·피드·출력 폴더를 열지 않고 `_publisher_probe/<임의 ID>.json`에 무해한 PUT 후 DELETE하고 종료한다. PUT 응답을 못 받아도 DELETE를 시도한다. 실패하면 0이 아닌 종료 코드와 고정 오류 코드를 표시한다. DELETE 자체가 실패하면 probe가 남을 수 있다.
+- `--dry-run-upload --once --config <설정> --out <시험출력>`: 토큰을 읽거나 네트워크로 보내지 않고 메서드·상대 경로·바이트 수·파일 종류만 로그에 남긴다. **로컬 발행과 본문 생성은 실제로 실행**하므로 시험에는 위 녹화 픽스처 설정을 사용한다. 미전송 목록은 유지되어 이후 실제 업로드에서 다시 보낸다. check와 dry-run은 동시에 쓰지 않는다.
+
+`MirrorSink`의 읽기·순번 복구는 항상 로컬 `LocalDirSink`에서 한다(GET 없음). 로컬 기록은 원격 장애와 무관하게 진행한다. 원격 실패는 `upload_failed`로 health의 `unavailable_games`와 `upload` 요약에 표시하고 다른 경기·health 업로드를 계속한다. health 자체가 실패하면 공개 health는 멈추며 다음 주기에 최신 health를 다시 보낸다. health 요약은 그 파일을 보내기 **직전**의 미전송 수이므로 이전 health 실패를 한 주기 더 표시할 수 있다.
+
+상태 파일의 `upload_pending`은 상대 경로와 `put`/`delete`만 보관하고 기존과 같은 원자 교체로 저장한다. 내용이 안 바뀐 최종 파일도 재시작·다음 주기에 재전송하며, 철회는 오래된 PUT을 DELETE로 대체한다. 첫 활성화 시 기존 공개 파일도 보낸다. 점 파일·임시 파일·여섯 공개 이름 외 파일은 보내지 않는다. 순차 전송으로 데이터/철회를 먼저 처리하고 health를 마지막에 보낸다. 상태·로컬 출력은 함께 보관해야 하며, 원격 GET 없이 원격에만 남은 파일을 복구하거나 찾아 지울 수는 없다. 업로드 목적지를 바꿀 때는 중지한 발행기의 상태 JSON에서 `upload_pending` 키를 제거해 기존 로컬 파일 전체를 다시 등록한다.
+
+파트너 엔드포인트는 bearer 인증, 경로별 **원자적 전체 PUT 교체**, 반복 가능한 DELETE(없는 객체 404 허용), 설정한 Content-Type/Cache-Control 저장·서빙, probe 경로를 지원해야 한다. PUT/DELETE의 모든 2xx는 성공으로 간주하므로 응답 전에 공개 읽기에 반영되어야 한다. 여러 파일 전체가 한 번에 교체되는 보장은 없다. DELETE는 CDN 캐시도 무효화해야 하며, 원격 장애 중에는 이미 공개된 파일을 즉시 철회할 수 없다. 이때 health의 실패와 멈춘 발행 시각을 읽는 쪽에서 확인해야 한다. 로컬 폴더 하나와 원격 prefix 하나에는 발행기 하나만 배정한다. 순차 업로드·재시도 때문에 주기가 길어질 수 있으며 재시도 한도/캐시/주기는 파트너와 리허설 후 확정한다.
+
+### 다른 팀에 넘기는 예제와 스키마
+
+`apps/observer/publish_contract/v1/`에 파일 종류별 예제(`examples/`)와 JSON Schema(`schema/`)가 있다. 합성 경기를 실제 발행기로 돌려 만든 것이고 스키마는 그 본문에서 뽑았다. 그래서 스키마는 합성 경기에 나온 값만 안다. 실제 경기에서 다른 타입(예: null)이 나올 수 있으니 리허설 뒤 다시 뽑아야 한다. 읽는 쪽은 모르는 키를 무시해야 한다.
+
+```sh
+PYTHONPATH=apps/observer/backend .venv-observer/bin/python apps/observer/scripts/export_publish_contract.py   # 다시 만들기
+```
+
+`test_publisher.py`가 커밋된 폴더와 지금 코드가 쓰는 결과가 같은지 확인한다. 업로드는 `publisher.HttpSink`와 `MirrorSink`가 맡으며 본문을 만드는 함수는 그대로다.
+
 ## 현재 구성
 
 | 모듈 | 구현 |

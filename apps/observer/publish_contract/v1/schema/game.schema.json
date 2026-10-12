@@ -1,0 +1,1835 @@
+{
+ "$id": "pitcheezy-publish-v1-game",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "Inferred from 11 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "properties": {
+  "current": {
+   "properties": {
+    "batter": {
+     "properties": {
+      "id": {
+       "type": "integer"
+      },
+      "jersey": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "name": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "side": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "id",
+      "jersey",
+      "name",
+      "side"
+     ],
+     "type": [
+      "object",
+      "null"
+     ]
+    },
+    "context": {
+     "properties": {
+      "basis": {
+       "type": "string"
+      },
+      "batter": {
+       "properties": {
+        "at_bats": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "hits": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "on_base": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        }
+       },
+       "required": [
+        "at_bats",
+        "hits",
+        "on_base"
+       ],
+       "type": "object"
+      },
+      "next_batters": {
+       "type": "array"
+      },
+      "pitcher": {
+       "properties": {
+        "earned_runs": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "pitches": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "strikeouts": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        }
+       },
+       "required": [
+        "earned_runs",
+        "pitches",
+        "strikeouts"
+       ],
+       "type": "object"
+      }
+     },
+     "required": [
+      "basis",
+      "batter",
+      "next_batters",
+      "pitcher"
+     ],
+     "type": "object"
+    },
+    "finished_half": {
+     "properties": {
+      "half": {
+       "type": "string"
+      },
+      "inning": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "half",
+      "inning"
+     ],
+     "type": "object"
+    },
+    "pa_key": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "phase": {
+     "type": "string"
+    },
+    "pitcher": {
+     "properties": {
+      "hand": {
+       "type": "string"
+      },
+      "id": {
+       "type": "integer"
+      },
+      "jersey": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "name": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "hand",
+      "id",
+      "jersey",
+      "name"
+     ],
+     "type": [
+      "object",
+      "null"
+     ]
+    },
+    "situation": {
+     "properties": {
+      "away_score": {
+       "type": "integer"
+      },
+      "balls": {
+       "type": "integer"
+      },
+      "bases": {
+       "type": "integer"
+      },
+      "half": {
+       "type": "string"
+      },
+      "home_score": {
+       "type": "integer"
+      },
+      "inning": {
+       "type": "integer"
+      },
+      "outs": {
+       "type": "integer"
+      },
+      "runners": {
+       "properties": {
+        "first": {
+         "type": "boolean"
+        },
+        "second": {
+         "type": "boolean"
+        },
+        "third": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "first",
+        "second",
+        "third"
+       ],
+       "type": "object"
+      },
+      "strikes": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "away_score",
+      "balls",
+      "bases",
+      "half",
+      "home_score",
+      "inning",
+      "outs",
+      "runners",
+      "strikes"
+     ],
+     "type": [
+      "object",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "batter",
+    "context",
+    "pa_key",
+    "phase",
+    "pitcher",
+    "situation"
+   ],
+   "type": "object"
+  },
+  "cutoff": {
+   "properties": {
+    "index": {
+     "type": "integer"
+    },
+    "pitch_key": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "index",
+    "pitch_key"
+   ],
+   "type": "object"
+  },
+  "display_state": {
+   "properties": {
+    "correction": {
+     "properties": {
+      "kind": {
+       "type": "string"
+      },
+      "message": {
+       "type": "string"
+      },
+      "previous": {
+       "properties": {
+        "pitch_label": {
+         "type": "string"
+        },
+        "pitch_type": {
+         "type": "string"
+        },
+        "zone_id": {
+         "type": "string"
+        },
+        "zone_label": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "pitch_label",
+        "pitch_type",
+        "zone_id",
+        "zone_label"
+       ],
+       "type": "object"
+      },
+      "previous_decided": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "kind",
+      "message",
+      "previous",
+      "previous_decided"
+     ],
+     "type": [
+      "object",
+      "null"
+     ]
+    },
+    "detail": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "feed": {
+     "properties": {
+      "delayed": {
+       "type": "boolean"
+      },
+      "failing_for_s": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "failing_since": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "lag_max_s": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "lag_measured": {
+       "type": "boolean"
+      },
+      "lag_s": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "lag_threshold_s": {
+       "type": "integer"
+      },
+      "last_ok_at": {
+       "type": "string"
+      },
+      "ok": {
+       "type": "boolean"
+      },
+      "provider_order": {
+       "type": "string"
+      },
+      "received_at": {
+       "type": "string"
+      },
+      "thresholds_provisional": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "delayed",
+      "failing_for_s",
+      "failing_since",
+      "lag_max_s",
+      "lag_measured",
+      "lag_s",
+      "lag_threshold_s",
+      "last_ok_at",
+      "ok",
+      "provider_order",
+      "received_at",
+      "thresholds_provisional"
+     ],
+     "type": "object"
+    },
+    "label": {
+     "type": "string"
+    },
+    "ledger": {
+     "properties": {
+      "outcome": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "status": {
+       "type": "string"
+      },
+      "store_ok": {
+       "type": "boolean"
+      },
+      "why": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "outcome",
+      "status",
+      "store_ok",
+      "why"
+     ],
+     "type": "object"
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "pitch_key": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "reason": {
+     "type": "string"
+    },
+    "recommendation_shown": {
+     "type": "boolean"
+    },
+    "schema": {
+     "type": "string"
+    },
+    "state": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "correction",
+    "detail",
+    "feed",
+    "label",
+    "ledger",
+    "message",
+    "pitch_key",
+    "reason",
+    "recommendation_shown",
+    "schema",
+    "state"
+   ],
+   "type": "object"
+  },
+  "features": {
+   "properties": {
+    "profile_reference": {
+     "properties": {
+      "enabled": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "enabled"
+     ],
+     "type": "object"
+    },
+    "provisional": {
+     "type": "boolean"
+    },
+    "step5_expectation": {
+     "properties": {
+      "enabled": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "enabled"
+     ],
+     "type": "object"
+    },
+    "viewer_delay": {
+     "properties": {
+      "default_s": {
+       "type": "integer"
+      },
+      "enabled": {
+       "type": "boolean"
+      },
+      "fold_actual_until_synced": {
+       "type": "boolean"
+      },
+      "sync_prompt": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "default_s",
+      "enabled",
+      "fold_actual_until_synced",
+      "sync_prompt"
+     ],
+     "type": "object"
+    }
+   },
+   "required": [
+    "profile_reference",
+    "provisional",
+    "step5_expectation",
+    "viewer_delay"
+   ],
+   "type": "object"
+  },
+  "feed": {
+   "properties": {
+    "as_of": {
+     "type": "string"
+    },
+    "ok": {
+     "type": "boolean"
+    },
+    "stale_s": {
+     "type": [
+      "number",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "as_of",
+    "ok",
+    "stale_s"
+   ],
+   "type": "object"
+  },
+  "game": {
+   "properties": {
+    "away_abbr": {
+     "type": "string"
+    },
+    "away_score": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "away_team": {
+     "type": "string"
+    },
+    "date_kst": {
+     "type": "string"
+    },
+    "double_header": {
+     "type": "boolean"
+    },
+    "double_header_code": {
+     "type": "string"
+    },
+    "embargoed": {
+     "type": "boolean"
+    },
+    "game_number": {
+     "type": "integer"
+    },
+    "game_pk": {
+     "type": "integer"
+    },
+    "half": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "has_history": {
+     "type": "boolean"
+    },
+    "home_abbr": {
+     "type": "string"
+    },
+    "home_score": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "home_team": {
+     "type": "string"
+    },
+    "inning": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "live": {
+     "type": "boolean"
+    },
+    "official_date": {
+     "type": "string"
+    },
+    "start": {
+     "type": "string"
+    },
+    "start_kst": {
+     "type": "string"
+    },
+    "status": {
+     "type": "string"
+    },
+    "status_text": {
+     "type": "string"
+    },
+    "venue": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "away_abbr",
+    "away_score",
+    "away_team",
+    "date_kst",
+    "double_header",
+    "double_header_code",
+    "embargoed",
+    "game_number",
+    "game_pk",
+    "half",
+    "has_history",
+    "home_abbr",
+    "home_score",
+    "home_team",
+    "inning",
+    "live",
+    "official_date",
+    "start",
+    "start_kst",
+    "status",
+    "status_text",
+    "venue"
+   ],
+   "type": "object"
+  },
+  "linescore": {
+   "properties": {
+    "basis": {
+     "type": "string"
+    },
+    "current": {
+     "properties": {
+      "half": {
+       "type": "string"
+      },
+      "inning": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "half",
+      "inning"
+     ],
+     "type": "object"
+    },
+    "innings": {
+     "items": {
+      "properties": {
+       "away": {
+        "type": [
+         "integer",
+         "null"
+        ]
+       },
+       "home": {
+        "type": [
+         "integer",
+         "null"
+        ]
+       },
+       "inning": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "away",
+       "home",
+       "inning"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    },
+    "provenance": {
+     "properties": {
+      "bb_hbp": {
+       "type": "string"
+      },
+      "errors": {
+       "type": "string"
+      },
+      "hits": {
+       "type": "string"
+      },
+      "runs": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "bb_hbp",
+      "errors",
+      "hits",
+      "runs"
+     ],
+     "type": "object"
+    },
+    "teams": {
+     "properties": {
+      "away": {
+       "properties": {
+        "bb_hbp": {
+         "type": "integer"
+        },
+        "errors": {
+         "type": "integer"
+        },
+        "hits": {
+         "type": "integer"
+        },
+        "runs": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "bb_hbp",
+        "errors",
+        "hits",
+        "runs"
+       ],
+       "type": "object"
+      },
+      "home": {
+       "properties": {
+        "bb_hbp": {
+         "type": "integer"
+        },
+        "errors": {
+         "type": "integer"
+        },
+        "hits": {
+         "type": "integer"
+        },
+        "runs": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "bb_hbp",
+        "errors",
+        "hits",
+        "runs"
+       ],
+       "type": "object"
+      }
+     },
+     "required": [
+      "away",
+      "home"
+     ],
+     "type": "object"
+    }
+   },
+   "required": [
+    "basis",
+    "current",
+    "innings",
+    "provenance",
+    "teams"
+   ],
+   "type": [
+    "object",
+    "null"
+   ]
+  },
+  "next": {
+   "properties": {
+    "pitch_key": {
+     "type": "string"
+    },
+    "rec": {
+     "properties": {
+      "candidates": {
+       "items": {
+        "properties": {
+         "detail": {
+          "properties": {
+           "probability": {
+            "type": "null"
+           }
+          },
+          "required": [
+           "probability"
+          ],
+          "type": "object"
+         },
+         "pitch_label": {
+          "type": "string"
+         },
+         "pitch_type": {
+          "type": "string"
+         },
+         "rank": {
+          "type": "integer"
+         },
+         "target": {
+          "type": "null"
+         },
+         "zone_id": {
+          "type": "string"
+         },
+         "zone_label": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "detail",
+         "pitch_label",
+         "pitch_type",
+         "rank",
+         "target",
+         "zone_id",
+         "zone_label"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "ledger": {
+       "properties": {
+        "decided": {
+         "type": "number"
+        },
+        "decision_clock": {
+         "type": "string"
+        },
+        "decision_id": {
+         "type": "string"
+        },
+        "outcome": {
+         "type": "string"
+        },
+        "status": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "decided",
+        "decision_clock",
+        "decision_id",
+        "outcome",
+        "status"
+       ],
+       "type": "object"
+      },
+      "policy": {
+       "properties": {
+        "identity": {
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "identity",
+        "name"
+       ],
+       "type": [
+        "object",
+        "null"
+       ]
+      },
+      "provenance": {
+       "type": "string"
+      },
+      "reason": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "recorded_at": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "status": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "candidates",
+      "policy",
+      "provenance",
+      "reason",
+      "recorded_at",
+      "status"
+     ],
+     "type": "object"
+    }
+   },
+   "required": [
+    "pitch_key",
+    "rec"
+   ],
+   "type": [
+    "object",
+    "null"
+   ]
+  },
+  "pas": {
+   "items": {
+    "properties": {
+     "at_bat_number": {
+      "type": "integer"
+     },
+     "batter": {
+      "properties": {
+       "id": {
+        "type": "integer"
+       },
+       "jersey": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "name": {
+        "type": "string"
+       },
+       "side": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "jersey",
+       "name",
+       "side"
+      ],
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "batting_order": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "complete": {
+      "type": "boolean"
+     },
+     "event": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "event_label": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "first_index": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "half": {
+      "type": "string"
+     },
+     "inning": {
+      "type": "integer"
+     },
+     "last_index": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "pa_key": {
+      "type": "string"
+     },
+     "pitch_count": {
+      "type": "integer"
+     },
+     "pitcher": {
+      "properties": {
+       "hand": {
+        "type": "string"
+       },
+       "id": {
+        "type": "integer"
+       },
+       "jersey": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "name": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "hand",
+       "id",
+       "jersey",
+       "name"
+      ],
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "play_text": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "result_text": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "at_bat_number",
+     "batter",
+     "complete",
+     "event",
+     "event_label",
+     "first_index",
+     "half",
+     "inning",
+     "last_index",
+     "pa_key",
+     "pitch_count",
+     "pitcher",
+     "play_text",
+     "result_text"
+    ],
+    "type": "object"
+   },
+   "type": "array"
+  },
+  "pitches": {
+   "items": {
+    "properties": {
+     "actual": {
+      "properties": {
+       "call_label": {
+        "type": "string"
+       },
+       "catcher_setup": {
+        "properties": {
+         "plate_x_feet": {
+          "type": "number"
+         },
+         "status": {
+          "type": "string"
+         },
+         "x_band": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "plate_x_feet",
+         "status",
+         "x_band"
+        ],
+        "type": [
+         "object",
+         "null"
+        ]
+       },
+       "description": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "event": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "event_label": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "pitch_label": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "pitch_type": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "play_text": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "result_label": {
+        "type": "string"
+       },
+       "speed_mph": {
+        "type": [
+         "number",
+         "null"
+        ]
+       },
+       "x": {
+        "type": [
+         "number",
+         "null"
+        ]
+       },
+       "z": {
+        "type": [
+         "number",
+         "null"
+        ]
+       },
+       "zone_label": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      },
+      "required": [
+       "call_label",
+       "catcher_setup",
+       "description",
+       "event",
+       "event_label",
+       "pitch_label",
+       "pitch_type",
+       "play_text",
+       "result_label",
+       "speed_mph",
+       "x",
+       "z",
+       "zone_label"
+      ],
+      "type": "object"
+     },
+     "at_bat_number": {
+      "type": "integer"
+     },
+     "batter": {
+      "properties": {
+       "id": {
+        "type": "integer"
+       },
+       "jersey": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "name": {
+        "type": "string"
+       },
+       "side": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "jersey",
+       "name",
+       "side"
+      ],
+      "type": "object"
+     },
+     "context_before": {
+      "properties": {
+       "basis": {
+        "type": "string"
+       },
+       "batter": {
+        "properties": {
+         "at_bats": {
+          "type": "integer"
+         },
+         "hits": {
+          "type": "integer"
+         },
+         "on_base": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "at_bats",
+         "hits",
+         "on_base"
+        ],
+        "type": "object"
+       },
+       "next_batters": {
+        "type": "array"
+       },
+       "pitcher": {
+        "properties": {
+         "earned_runs": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "pitches": {
+          "type": "integer"
+         },
+         "strikeouts": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "earned_runs",
+         "pitches",
+         "strikeouts"
+        ],
+        "type": "object"
+       }
+      },
+      "required": [
+       "basis",
+       "batter",
+       "next_batters",
+       "pitcher"
+      ],
+      "type": "object"
+     },
+     "half": {
+      "type": "string"
+     },
+     "index": {
+      "type": "integer"
+     },
+     "inning": {
+      "type": "integer"
+     },
+     "key": {
+      "type": "string"
+     },
+     "linescore_before": {
+      "properties": {
+       "basis": {
+        "type": "string"
+       },
+       "current": {
+        "properties": {
+         "half": {
+          "type": "string"
+         },
+         "inning": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "half",
+         "inning"
+        ],
+        "type": "object"
+       },
+       "innings": {
+        "items": {
+         "properties": {
+          "away": {
+           "type": [
+            "integer",
+            "null"
+           ]
+          },
+          "home": {
+           "type": [
+            "integer",
+            "null"
+           ]
+          },
+          "inning": {
+           "type": "integer"
+          }
+         },
+         "required": [
+          "away",
+          "home",
+          "inning"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "provenance": {
+        "properties": {
+         "bb_hbp": {
+          "type": "string"
+         },
+         "errors": {
+          "type": "string"
+         },
+         "hits": {
+          "type": "string"
+         },
+         "runs": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "bb_hbp",
+         "errors",
+         "hits",
+         "runs"
+        ],
+        "type": "object"
+       },
+       "teams": {
+        "properties": {
+         "away": {
+          "properties": {
+           "bb_hbp": {
+            "type": "integer"
+           },
+           "errors": {
+            "type": "integer"
+           },
+           "hits": {
+            "type": "integer"
+           },
+           "runs": {
+            "type": "integer"
+           }
+          },
+          "required": [
+           "bb_hbp",
+           "errors",
+           "hits",
+           "runs"
+          ],
+          "type": "object"
+         },
+         "home": {
+          "properties": {
+           "bb_hbp": {
+            "type": "integer"
+           },
+           "errors": {
+            "type": "integer"
+           },
+           "hits": {
+            "type": "integer"
+           },
+           "runs": {
+            "type": "integer"
+           }
+          },
+          "required": [
+           "bb_hbp",
+           "errors",
+           "hits",
+           "runs"
+          ],
+          "type": "object"
+         }
+        },
+        "required": [
+         "away",
+         "home"
+        ],
+        "type": "object"
+       }
+      },
+      "required": [
+       "basis",
+       "current",
+       "innings",
+       "provenance",
+       "teams"
+      ],
+      "type": "object"
+     },
+     "pa_key": {
+      "type": "string"
+     },
+     "pitch_number": {
+      "type": "integer"
+     },
+     "pitcher": {
+      "properties": {
+       "hand": {
+        "type": "string"
+       },
+       "id": {
+        "type": "integer"
+       },
+       "jersey": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "name": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "hand",
+       "id",
+       "jersey",
+       "name"
+      ],
+      "type": "object"
+     },
+     "rec": {
+      "properties": {
+       "candidates": {
+        "items": {
+         "properties": {
+          "detail": {
+           "properties": {
+            "probability": {
+             "type": [
+              "number",
+              "null"
+             ]
+            }
+           },
+           "required": [
+            "probability"
+           ],
+           "type": "object"
+          },
+          "pitch_label": {
+           "type": "string"
+          },
+          "pitch_type": {
+           "type": "string"
+          },
+          "rank": {
+           "type": "integer"
+          },
+          "target": {
+           "properties": {
+            "x": {
+             "type": "number"
+            },
+            "z": {
+             "type": "number"
+            }
+           },
+           "required": [
+            "x",
+            "z"
+           ],
+           "type": [
+            "object",
+            "null"
+           ]
+          },
+          "zone_id": {
+           "type": "string"
+          },
+          "zone_label": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "detail",
+          "pitch_label",
+          "pitch_type",
+          "rank",
+          "target",
+          "zone_id",
+          "zone_label"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "ledger": {
+        "properties": {
+         "decided": {
+          "type": "number"
+         },
+         "decision_clock": {
+          "type": "string"
+         },
+         "decision_id": {
+          "type": "string"
+         },
+         "outcome": {
+          "type": "string"
+         },
+         "status": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "decided",
+         "decision_clock",
+         "decision_id",
+         "outcome",
+         "status"
+        ],
+        "type": "object"
+       },
+       "pairing": {
+        "properties": {
+         "rule": {
+          "type": "string"
+         },
+         "status": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "rule",
+         "status"
+        ],
+        "type": "object"
+       },
+       "policy": {
+        "properties": {
+         "identity": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "identity",
+         "name"
+        ],
+        "type": [
+         "object",
+         "null"
+        ]
+       },
+       "provenance": {
+        "type": "string"
+       },
+       "reason": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "recorded_at": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "status": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "candidates",
+       "policy",
+       "provenance",
+       "reason",
+       "recorded_at",
+       "status"
+      ],
+      "type": "object"
+     },
+     "receipt": {
+      "properties": {
+       "corrected": {
+        "type": "boolean"
+       },
+       "reason": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "status": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "corrected",
+       "reason",
+       "status"
+      ],
+      "type": "object"
+     },
+     "situation_before": {
+      "properties": {
+       "away_score": {
+        "type": "integer"
+       },
+       "balls": {
+        "type": "integer"
+       },
+       "bases": {
+        "type": "integer"
+       },
+       "half": {
+        "type": "string"
+       },
+       "home_score": {
+        "type": "integer"
+       },
+       "inning": {
+        "type": "integer"
+       },
+       "outs": {
+        "type": "integer"
+       },
+       "runners": {
+        "properties": {
+         "first": {
+          "type": "boolean"
+         },
+         "second": {
+          "type": "boolean"
+         },
+         "third": {
+          "type": "boolean"
+         }
+        },
+        "required": [
+         "first",
+         "second",
+         "third"
+        ],
+        "type": "object"
+       },
+       "strikes": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "away_score",
+       "balls",
+       "bases",
+       "half",
+       "home_score",
+       "inning",
+       "outs",
+       "runners",
+       "strikes"
+      ],
+      "type": "object"
+     }
+    },
+    "required": [
+     "actual",
+     "at_bat_number",
+     "batter",
+     "context_before",
+     "half",
+     "index",
+     "inning",
+     "key",
+     "linescore_before",
+     "pa_key",
+     "pitch_number",
+     "pitcher",
+     "rec",
+     "situation_before"
+    ],
+    "type": "object"
+   },
+   "type": "array"
+  },
+  "pregame": {
+   "type": "null"
+  },
+  "publish": {
+   "properties": {
+    "contract": {
+     "const": "v1"
+    },
+    "final": {
+     "type": "boolean"
+    },
+    "published_at": {
+     "type": "string"
+    },
+    "sequence": {
+     "minimum": 1,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "contract",
+    "final",
+    "published_at",
+    "sequence"
+   ],
+   "type": "object"
+  },
+  "receipts": {
+   "properties": {
+    "corrected": {
+     "type": "integer"
+    },
+    "paired": {
+     "type": "integer"
+    },
+    "unconfirmed": {
+     "type": "integer"
+    },
+    "version": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "corrected",
+    "paired",
+    "unconfirmed",
+    "version"
+   ],
+   "type": "object"
+  },
+  "schema": {
+   "enum": [
+    "pitcheezy-service-game-v2"
+   ]
+  },
+  "source": {
+   "properties": {
+    "kind": {
+     "type": "string"
+    },
+    "session_id": {
+     "type": "null"
+    }
+   },
+   "required": [
+    "kind",
+    "session_id"
+   ],
+   "type": "object"
+  },
+  "viewer": {
+   "properties": {
+    "buffering": {
+     "type": "boolean"
+    },
+    "default_s": {
+     "type": "integer"
+    },
+    "delay_s": {
+     "type": "number"
+    },
+    "enabled": {
+     "type": "boolean"
+    },
+    "max_delay_s": {
+     "type": "integer"
+    },
+    "provisional": {
+     "type": "boolean"
+    },
+    "wait_s": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "buffering",
+    "default_s",
+    "delay_s",
+    "enabled",
+    "max_delay_s",
+    "provisional",
+    "wait_s"
+   ],
+   "type": "object"
+  },
+  "zone_bounds": {
+   "properties": {
+    "bottom": {
+     "type": "number"
+    },
+    "top": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "bottom",
+    "top"
+   ],
+   "type": "object"
+  }
+ },
+ "required": [
+  "current",
+  "cutoff",
+  "feed",
+  "game",
+  "linescore",
+  "next",
+  "pas",
+  "pitches",
+  "pregame",
+  "publish",
+  "schema",
+  "source",
+  "zone_bounds"
+ ],
+ "title": "Pitcheezy public publish v1: game",
+ "type": "object"
+}

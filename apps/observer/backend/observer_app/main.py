@@ -78,7 +78,12 @@ def _timed_replay(game_pk, **options):
 
 
 def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=None, watch_dir=None,
-               timed_replay=_timed_replay, feed_dir=None, demo_dir=None, intent_dir=None, demo_wall=None):
+               timed_replay=_timed_replay, feed_dir=None, demo_dir=None, intent_dir=None, demo_wall=None,
+               service_delay_s=0, service_wall=None):
+    """``service_delay_s``: the one delay every viewer of ``/api/service/games/{pk}`` gets (seconds behind the
+    game's own event times). The routes keep 0; the public publisher passes its configured fixed delay.
+    ``service_wall``: the clock of the service routes' 20 s schedule cache (None = the machine's; an offline
+    replay passes its simulated clock so the game list ages with the replayed game, not with the run)."""
     injected = service is not None
     if start_worker is None:
         start_worker = not injected
@@ -681,7 +686,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         game) the snapshot is None and ``meta`` carries the calm buffering state: a newer state is never served
         instead. ``entry['viewer_delay_s']`` tells ``live_display`` whose view this is."""
         feed = live_parts()
-        used = viewer_delay(feed, delay)
+        used = service_delay_s or viewer_delay(feed, delay)
         entry, wait = feed.snapshot(game_pk, used)
         if used and features.features()['viewer_delay']['record_at_receipt']:
             try:
@@ -691,7 +696,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         now = feed.wall() if hasattr(feed, 'wall') else time.time()
         viewer = {'delay_s': used, 'max_delay_s': getattr(feed, 'max_delay_s', None), 'buffering': entry is None, 'wait_s': wait}
         if entry is None:
-            newest = feed.newest(game_pk) if used else None
+            newest = feed.newest(game_pk) if used and not service_delay_s else None
             if newest is None:
                 from .live_feed import LiveFeedError
                 raise LiveFeedError('no snapshot yet')
@@ -785,12 +790,14 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
             LOGGER.warning('recommendation ledger unreadable; past pitches shown without a recorded recommendation', exc_info=True)
             return nothing('ledger_unreadable')
 
-    service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
+    app.state.setups = setups
+    app.state.live_parts = live_parts
+    app.state.service_bodies = service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
                          features=features.features, live_extras=app.state.service_extras.attach,
                          delayed_card=lambda card, delay: app.state.service_extras.list_card(card, delay, live_parts()),
                          schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
                          live_feed=None if live_feed is False else service_live_feed,
-                         live_display=service_live_display, live_pairing=service_live_pairing)
+                         live_display=service_live_display, live_pairing=service_live_pairing, wall=service_wall)
 
     @app.get('/api/watch/{game_pk}/setup')
     def watch_setup(game_pk: int):
