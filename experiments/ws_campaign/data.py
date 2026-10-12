@@ -44,11 +44,27 @@ def validate_plan(plan):
                     parse_day(spec["codec_fit_end"]) < spans[1][0], "frozen codec precedes SELECT")
         else:
             require(spec.get("codec_mode") == "refit_excluding_heldout", "heldout-free codec")
-            heldout = spec.get("heldout_pitchers")
-            require(isinstance(heldout, list) and heldout and len(heldout) == len(set(heldout)),
-                    "fixed heldout pitcher IDs")
-            require(spec.get("heldout_selection") == "deterministic_pre_score", "heldout selection rule")
+            rule = spec.get("heldout_selection")
+            require(rule == {"method": "sha256_mod", "namespace": "EXP-WS-CAMPAIGN-001",
+                             "modulus": 5, "remainder": 0}, "fixed heldout selection rule")
     return plan
+
+
+def select_heldout(pitcher_ids, rule):
+    """ID-only deterministic partition; call before label/score access."""
+    require(rule == {"method": "sha256_mod", "namespace": "EXP-WS-CAMPAIGN-001",
+                     "modulus": 5, "remainder": 0}, "heldout selection rule")
+    ids = []
+    for value in pitcher_ids:
+        require(not isinstance(value, (bool, np.bool_)) and isinstance(value, (int, np.integer))
+                and value >= 0, "pitcher ID integer domain")
+        ids.append(str(int(value)))
+    ids = sorted(set(ids))
+    require(ids, "empty pitcher inventory")
+    heldout = [int(v) for v in ids if int(hashlib.sha256((rule["namespace"] + ":" + v).encode()).hexdigest(), 16)
+               % rule["modulus"] == rule["remainder"]]
+    require(heldout and len(heldout) < len(ids), "degenerate heldout selection")
+    return heldout
 
 
 def role_masks(days, pitchers, spec, *, heldout=False):
@@ -104,3 +120,55 @@ def expanded_history_columns(raw_names, continuous, knots, history_names):
                                          "knots": list(knots), "history_names": sorted(history_names),
                                          "indices": indices}, sort_keys=True).encode()).hexdigest()
     return {"indices": indices, "sha256": digest, "raw_names": sorted(history_names)}
+
+
+def fit_prior_support(days, pitchers, games, at_bat, pitch_no, fit):
+    """Count only earlier FIT pitches: prior dates, plus earlier pitches in the same game.
+
+    Different games on one date have no registered start-time ordering and do not
+    contribute to each other's support. This conservative tie rule is fixed here.
+    """
+    arrays = [np.asarray(v) for v in (days, pitchers, games, at_bat, pitch_no, fit)]
+    require(all(a.ndim == 1 and len(a) == len(arrays[0]) for a in arrays), "support row shape")
+    n = len(arrays[0]); require(n > 0, "empty support population")
+    days, pitchers, games, at_bat, pitch_no, fit = arrays
+    require(fit.dtype == np.bool_, "FIT mask type")
+    parsed = np.array([parse_day(str(v)).toordinal() for v in days], dtype=np.int64)
+    result = np.zeros(n, dtype=np.int64)
+    order = np.lexsort((pitch_no, at_bat, games, parsed, pitchers))
+    last_pitcher = None; last_day = None; last_game = None
+    previous_dates = 0; today = 0; game_seen = 0
+    for i in order:
+        pitcher, day, game = int(pitchers[i]), int(parsed[i]), int(games[i])
+        if pitcher != last_pitcher:
+            previous_dates = today = game_seen = 0
+        elif day != last_day:
+            previous_dates += today; today = game_seen = 0
+        elif game != last_game:
+            game_seen = 0
+        result[i] = previous_dates + game_seen
+        if fit[i]:
+            today += 1; game_seen += 1
+        last_pitcher, last_day, last_game = pitcher, day, game
+    return result
+
+
+OWN_HISTORY_COLUMNS = tuple(range(50, 59)) + tuple(range(66, 78))
+
+
+def splice_heldout_own_history(clean, enriched, eval_mask, fit_mask):
+    """Only pitcher-owned features may cross from the EVAL-only history pass."""
+    clean = np.asarray(clean)
+    enriched = np.asarray(enriched)
+    eval_mask = np.asarray(eval_mask, bool)
+    fit_mask = np.asarray(fit_mask, bool)
+    require(clean.ndim == enriched.ndim == 2 and clean.shape[1] == enriched.shape[1] == 91
+            and len(eval_mask) == len(fit_mask) == len(clean)
+            and len(enriched) == int(eval_mask.sum()), "own-history splice shape")
+    require(not (eval_mask & fit_mask).any(), "EVAL/FIT overlap")
+    require(np.all(clean[eval_mask, 90] == 1), "heldout clean-pool similarity abstention")
+    before = clean[fit_mask].copy()
+    clean[np.ix_(np.flatnonzero(eval_mask), OWN_HISTORY_COLUMNS)] = enriched[:, OWN_HISTORY_COLUMNS]
+    require(np.array_equal(before, clean[fit_mask], equal_nan=True), "heldout pass changed FIT features")
+    require(np.all(clean[eval_mask, 90] == 1), "heldout similarity abstention changed")
+    return clean

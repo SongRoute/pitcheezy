@@ -1,0 +1,50 @@
+{
+  "campaign_id": "EXP-WS-CAMPAIGN-001",
+  "status": "SOURCE_ONLY_PENDING_INPUT_BINDING_AND_REVIEW",
+  "data_role": "2026 EXPOSED DEVELOPMENT",
+  "data_version": "d20260930-h2026f",
+  "source_sha256": null,
+  "exposure_ledger_sha256": null,
+  "codec_source_sha256": null,
+  "windows": {
+    "chrono1": {
+      "roles": {
+        "FIT": ["2026-03-25", "2026-08-09"],
+        "SELECT": ["2026-08-10", "2026-08-16"],
+        "CAL": ["2026-08-17", "2026-08-23"],
+        "EVAL": ["2026-08-24", "2026-09-06"]
+      },
+      "codec_mode": "frozen_pre_fit",
+      "codec_fit_end": "2026-08-02",
+      "claim": "exposed development chronological window; no independent confirmation"
+    },
+    "chrono2": {
+      "roles": {
+        "FIT": ["2026-03-25", "2026-08-16"],
+        "SELECT": ["2026-08-17", "2026-08-23"],
+        "CAL": ["2026-08-24", "2026-09-06"],
+        "EVAL": ["2026-09-07", "2026-09-27"]
+      },
+      "codec_mode": "frozen_pre_fit",
+      "codec_fit_end": "2026-08-02",
+      "claim": "reuses already exposed September development period; not an independent replicate"
+    },
+    "pitcher_holdout": {
+      "roles": {
+        "FIT": ["2026-03-25", "2026-08-02"],
+        "SELECT": ["2026-08-03", "2026-08-23"],
+        "CAL": ["2026-08-24", "2026-09-06"],
+        "EVAL": ["2026-09-07", "2026-09-27"]
+      },
+      "codec_mode": "refit_excluding_heldout",
+      "codec_fit_end": "2026-08-02",
+      "heldout_selection": {
+        "method": "sha256_mod",
+        "namespace": "EXP-WS-CAMPAIGN-001",
+        "modulus": 5,
+        "remainder": 0
+      },
+      "claim": "unseen-to-all-fitting pitcher only after heldout-free donor, encoder, model and CAL checks"
+    }
+  }
+}

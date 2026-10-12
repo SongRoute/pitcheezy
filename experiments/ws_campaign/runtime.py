@@ -17,6 +17,10 @@ SOURCES = (
     "experiments/ws_campaign/train.py",
     "experiments/ws_campaign/models.py",
     "experiments/ws_campaign/data.py",
+    "experiments/ws_campaign/prepare.py",
+    "experiments/ws_campaign/C-PLAN.json",
+    "experiments/ws_campaign/HISTMASK-MANIFEST.json",
+    "experiments/ws_campaign/REGISTRATION.md",
     "configs/EXP-WS-CAMPAIGN-001.json",
     "experiments/ws_seq/train_seq.py",
     "experiments/ws_seq/tm002.py",
@@ -78,6 +82,9 @@ def load_job(manifest_path, root_grant_path, job_id):
             and grant.get("distinct_from_author") is True and grant.get("author")
             and grant.get("reviewer") and grant["author"] != grant["reviewer"], "job independent review")
     require(grant.get("job_id") == job_id and grant.get("campaign_id") == cfg["id"]
+            and grant.get("data_role") == cfg["data_role"]
+            and grant.get("data_version") == cfg["data_version"]
+            and grant.get("window") == job["window"]
             and grant.get("config_sha256") == manifest["config_sha256"]
             and grant.get("sources_sha256") == source_hashes()
             and grant.get("attempt_id") == job.get("attempt_id")
@@ -89,13 +96,16 @@ def load_job(manifest_path, root_grant_path, job_id):
             and grant.get("exposure_ledger_sha256") == job.get("exposure_ledger_sha256")
             and grant.get("commit") == job.get("commit"), "job grant binding")
     budgets = cfg["budgets"]
-    require(0 < grant.get("max_wall_seconds", 0) <= budgets["per_job_seconds"]
+    wall_cap = budgets["teacher_seconds"] if job["kind"] == "teacher" else budgets["per_job_seconds"]
+    require(0 < grant.get("max_wall_seconds", 0) <= wall_cap
             and 0 < grant.get("max_rss_bytes", 0) <= budgets["host_rss_bytes"]
             and budgets["gpu_reserved_bytes"] > 0, "registered resource limits")
     require(Path(job["output"]).is_absolute() and Path(job["inputs"]).is_absolute()
             and Path(job["input_manifest"]).is_absolute()
             and Path(job["exposure_ledger"]).is_absolute()
             and Path(job["common_lock"]).is_absolute(), "absolute server paths")
+    require(Path(job["input_manifest"]) == Path(job["inputs"]) / cfg["base"]["inputs"]["manifest_file"],
+            "worker input manifest path")
     return cfg, job, grant, grant_path
 
 
@@ -106,12 +116,21 @@ def worker(args, cfg, job, grant, grant_path):
     values = dict(line.strip().split("=", 1) for line in env.read_text().splitlines() if "=" in line)
     # Grants are issued after the reviewed source commit, so gpu snapshots them as
     # untracked bytes. Their exact hashes and every executable source are checked.
-    require(grant["commit"].startswith(values.get("COMMIT", "missing:"))
+    short = values.get("COMMIT", "")
+    require(len(short) >= 7 and all(c in "0123456789abcdef" for c in short)
+            and grant["commit"].startswith(short)
             and len(grant["commit"]) == 40, "source commit")
     require(os.environ.get("CUDA_VISIBLE_DEVICES") == str(grant["gpu_index"]), "selected GPU index")
     uuid = subprocess.check_output(["nvidia-smi", "-i", str(grant["gpu_index"]),
                                     "--query-gpu=uuid", "--format=csv,noheader"], text=True, timeout=10).strip()
     require(uuid == grant["gpu_uuid"], "physical GPU UUID")
+    processes = subprocess.check_output(["nvidia-smi", "--query-compute-apps=pid,gpu_uuid",
+                                         "--format=csv,noheader"], text=True, timeout=10)
+    lines = [line.split(",") for line in processes.splitlines() if line.strip()]
+    require(all(len(line) == 2 and line[0].strip().isdigit() for line in lines),
+            "compute process inventory format")
+    require(not any(line[1].strip() == uuid for line in lines),
+            "selected GPU already has compute process")
     require(sha(job["input_manifest"]) == grant["input_manifest_sha256"], "input manifest")
     require(sha(job["exposure_ledger"]) == grant["exposure_ledger_sha256"], "exposure ledger")
     lock_path = Path(grant["common_lock"])
@@ -149,7 +168,8 @@ def worker(args, cfg, job, grant, grant_path):
         metadata = {"job_id": job["id"], "attempt_id": job["attempt_id"], "commit": grant["commit"],
                     "grant_sha256": sha(grant_path), "input_manifest_sha256": grant["input_manifest_sha256"],
                     "exposure_ledger_sha256": grant["exposure_ledger_sha256"], "gpu_uuid": uuid,
-                    "dependencies": dependencies, "eval_scores_opened": False}
+                    "dependencies": dependencies, "eval_scores_opened": False,
+                    "runtime_reviewed": True}
         receipt = train.run_job(job, cfg, Path(job["inputs"]), out, metadata)
         require(isinstance(receipt, dict) and receipt.get("status") == "COMPLETED"
                 and receipt.get("eval_scores_opened") is False, "worker completion contract")

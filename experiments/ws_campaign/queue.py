@@ -75,6 +75,11 @@ def gpu_status():
     return found
 
 
+def idle_gpu(job, available):
+    card = available.get(int(job["gpu_index"]))
+    return card is not None and card["used_mib"] <= 1024 and card["util"] <= 10
+
+
 def remote_status(job_id):
     info = command(GPU, "info", job_id)
     match = re.search(r"상태:\s+(\S+)", info)
@@ -108,8 +113,7 @@ def certify(job, gpu_id):
 
 def launch(job, manifest_path, grant_path, available):
     index = int(job["gpu_index"])
-    runtime.require(index in available and available[index]["used_mib"] <= 1024
-                    and available[index]["util"] <= 10, "GPU not idle at dispatch")
+    runtime.require(idle_gpu(job, available), "GPU not idle at dispatch")
     result = command(GPU, "run", "-n", "ws-" + job["id"], "-g", str(index), "--",
                      "python", "-m", "experiments.ws_campaign.runtime", "--manifest",
                      str(manifest_path.relative_to(runtime.ROOT)), "--launch-grant",
@@ -124,6 +128,11 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
     runtime.require(manifest_path.is_relative_to(runtime.ROOT)
                     and launch_grant_path.is_relative_to(runtime.ROOT), "snapshot must contain manifest and grant")
     jobs = validate(manifest_path, launch_grant_path)
+    cfg = json.loads((runtime.ROOT / json.loads(manifest_path.read_text())["config"]).read_text())
+    runtime.require(cfg["budgets"]["max_concurrent_jobs"] == 5
+                    and cfg["budgets"]["max_jobs_per_gpu"] == 1
+                    and cfg["budgets"]["retries"] == 0
+                    and cfg["budgets"]["max_campaign_wall_seconds"] > 0, "global resource budget")
     allowed = {str(path.relative_to(runtime.ROOT)) for path in (manifest_path, launch_grant_path)}
     allowed.update(job["grant"] for job in jobs)
     status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"],
@@ -148,6 +157,8 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
         lookup = {j["id"]: j for j in jobs}
         while True:
             state["heartbeat_unix"] = time.time()
+            if state["heartbeat_unix"] - state["created_unix"] > cfg["budgets"]["max_campaign_wall_seconds"]:
+                state["global_stop"] = "campaign wall budget reached"
             if state["global_stop"]:
                 atomic(state_path, state)
                 return 87
@@ -188,6 +199,8 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
                         # Recheck immutable files and occupancy immediately before every submission.
                         runtime.load_job(manifest_path, launch_grant_path, job["id"])
                         available = gpu_status()
+                        if not idle_gpu(job, available):
+                            continue
                         item.update(status="CLAIMED", claimed_unix=time.time())
                         atomic(state_path, state)
                         gpu_job_id = launch(job, manifest_path, launch_grant_path, available)
@@ -199,8 +212,7 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
                         state["global_stop"] = "launch failure: " + job["id"]
                         changed = True
                         break
-            if changed or state["global_stop"]:
-                atomic(state_path, state)
+            atomic(state_path, state)
             if all(item["status"] in TERMINAL for item in state["jobs"].values()):
                 return 0 if all(item["status"] == "COMPLETED" for item in state["jobs"].values()) else 87
             time.sleep(poll_seconds)
