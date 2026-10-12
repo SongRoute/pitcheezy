@@ -12,6 +12,35 @@
   "files_written": {
    "type": "integer"
   },
+  "game_checks": {
+   "additionalProperties": {
+    "properties": {
+     "checked_at": {
+      "type": "string"
+     },
+     "feed_ok": {
+      "type": "boolean"
+     },
+     "file_sequence": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "sequence_checked": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "checked_at",
+     "feed_ok",
+     "file_sequence",
+     "sequence_checked"
+    ],
+    "type": "object"
+   },
+   "type": "object"
+  },
   "publish": {
    "properties": {
     "contract": {

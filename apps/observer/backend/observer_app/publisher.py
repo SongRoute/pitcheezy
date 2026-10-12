@@ -769,6 +769,25 @@ class Publisher:
             unavailable_dates.clear()
             self._lists(dates_body, live_dates, unavailable_dates)
             self.state['embargoed'] = sorted(embargoed | late)
+        # Verify the on-disk publish tail even when a final body was intentionally left unchanged: health can
+        # report this cycle's check without claiming that the game file was rewritten or still exists when it does not.
+        checked_games = listed | known | embargoed | late
+        failures = {item['game_pk'] for item in self._unavailable} | set(self._feed_failing)
+        game_checks = {}
+        for game_pk in sorted(checked_games):
+            path = self.layout['game'].format(game_pk=game_pk)
+            try:
+                tail = None if game_pk in embargoed | late else self.sink.read_tail(path, PUBLISH_TAIL_BYTES)
+                match = PUBLISH_TAIL.search(tail) if tail else None
+                block = json.loads(match[1]) if match else {}
+            except (OSError, ValueError, RecursionError):
+                block = {}
+            file_sequence = block.get('sequence') if block.get('contract') == self.config['contract_version'] else None
+            if type(file_sequence) is not int or not 0 < file_sequence <= self._sequence:
+                file_sequence = None
+            game_checks[str(game_pk)] = {'checked_at': _iso(now), 'sequence_checked': self._sequence,
+                                         'file_sequence': file_sequence,
+                                         'feed_ok': file_sequence is not None and game_pk not in failures and game_pk not in embargoed | late}
         for game_pk, code in sorted(self.state['pending'].items()):  # still unresolved, asked this cycle or not
             self._fail(int(game_pk), None, code)
         if isinstance(self.sink, MirrorSink) and not self.sink.remote.dry_run:
@@ -779,7 +798,7 @@ class Publisher:
         health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(now),
                   'publish_interval_s': self.config['publish_interval_s'], 'files_written': len(self._written)+1,
                   'unavailable_games': self._unavailable, 'unavailable_dates': sorted(set(unavailable_dates)),
-                  'feed_failing_games': sorted(set(self._feed_failing))}
+                  'feed_failing_games': sorted(set(self._feed_failing)), 'game_checks': game_checks}
         if isinstance(self.sink, MirrorSink):
             health['upload'] = {'code': 'upload_failed' if self.sink.pending and not self.sink.remote.dry_run else None,
                                 'pending': len(self.sink.pending), 'dry_run': self.sink.remote.dry_run}

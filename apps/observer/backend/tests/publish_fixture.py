@@ -188,6 +188,16 @@ def _broken_ledger(**_):
     raise sqlite3.OperationalError('disk I/O error')
 
 
+class RichPolicy(Policy):
+    """A synthetic policy candidate with optional values the normal fake policy leaves unknown."""
+
+    def __call__(self, snapshot):
+        result = super().__call__(snapshot)
+        candidate = result['pitch']['pre']['recommendation']['candidates'][0]
+        candidate.update(target={'x': 0.1, 'z': 2.5}, detail={'probability': 0.4})
+        return result
+
+
 def collect(tmp):
     """``{kind: [(example file name, published body), ...]}``: one live game walked from before its first pitch to
     its end through the states the fan screen has, and the archive game. Every body goes
@@ -226,6 +236,21 @@ def collect(tmp):
         out['setup'].append(('setup.json', world.read(f'v1/setup/{ARCHIVE_GAME}.json')))
     finally:
         world.close()
+    rich = World(tmp/'rich')
+    try:
+        rich.policy = RichPolicy()
+        rich.cycle()
+        rich.cycle(snap('20261005_100100', second=True, wall=rich.now[0]-5))
+        out['game'].append(('game-rich-candidate.json', rich.game()))
+    finally:
+        rich.close()
+    unsupported = World(tmp/'unsupported')
+    try:
+        unsupported.policy.status = 'UNSUPPORTED_PITCHER'
+        unsupported.cycle()
+        out['game'].append(('game-live-unsupported.json', unsupported.game()))
+    finally:
+        unsupported.close()
     odd = World(tmp/'odd')  # a setup source whose commit is not a hash: published as null
     try:
         odd.write_setup(commit='main')
@@ -244,7 +269,7 @@ def collect(tmp):
 
 EXAMPLES = {'manifest': ('manifest-live.json',), 'health': ('health-live.json',), 'dates': ('dates.json',),
             'games': ('games-live.json', 'games-archive.json'),
-            'game': ('game-pregame.json', 'game-live.json', 'game-live-unconfirmed.json', 'game-disconnected.json',
+            'game': ('game-pregame.json', 'game-live.json', 'game-live-unconfirmed.json', 'game-live-unsupported.json', 'game-disconnected.json',
                      'game-between-innings.json', 'game-final.json', 'game-final-archive.json'),
             'setup': ('setup.json',)}
 

@@ -143,6 +143,7 @@ def problems(instance, schema, pointer=''):
 PEOPLE = (('current',), ('pas', '*'), ('pitches', '*'))
 CONTRACT_TYPES = {
     # RC adds feature/viewer metadata; already published v1 files without it remain valid.
+    'health': [(('game_checks',), ('object',), True)],
     'games': [(('features',), ('object',), True)],
     'game': [(('features',), ('object',), True), (('viewer',), ('object',), True),
              (('game', 'venue'), ('string', 'null'), False),

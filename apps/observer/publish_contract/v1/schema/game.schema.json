@@ -1,7 +1,7 @@
 {
  "$id": "pitcheezy-publish-v1-game",
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "description": "Inferred from 11 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "description": "Inferred from 12 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
  "properties": {
   "current": {
    "properties": {
@@ -793,7 +793,10 @@
          "detail": {
           "properties": {
            "probability": {
-            "type": "null"
+            "type": [
+             "number",
+             "null"
+            ]
            }
           },
           "required": [
@@ -811,7 +814,22 @@
           "type": "integer"
          },
          "target": {
-          "type": "null"
+          "properties": {
+           "x": {
+            "type": "number"
+           },
+           "z": {
+            "type": "number"
+           }
+          },
+          "required": [
+           "x",
+           "z"
+          ],
+          "type": [
+           "object",
+           "null"
+          ]
          },
          "zone_id": {
           "type": "string"

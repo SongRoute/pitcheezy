@@ -149,10 +149,51 @@ def test_one_fixed_delay_holds_back_every_pitch_newer_than_it(make):
     assert [p['key'] for p in world.game()['pitches']][-1] == '900200:5:2'
 
 
+def test_health_game_checks_track_file_changes_and_feed_failures(world):
+    first = world.cycle(settle=False)
+    check = first['game_checks'][str(LIVE_GAME)]
+    assert check == {'checked_at': first['published_at'], 'sequence_checked': first['sequence'],
+                     'file_sequence': world.game()['publish']['sequence'], 'feed_ok': True}
+    archived = first['game_checks'][str(ARCHIVE_GAME)]['file_sequence']
+    later = world.cycle(settle=False)
+    assert later['game_checks'][str(ARCHIVE_GAME)]['file_sequence'] == archived
+    assert later['game_checks'][str(ARCHIVE_GAME)]['sequence_checked'] == later['sequence'] > archived
+    failed = world.cycle(OSError('upstream down'), settle=False)
+    assert failed['game_checks'][str(LIVE_GAME)]['feed_ok'] is False
+    assert failed['game_checks'][str(LIVE_GAME)]['file_sequence'] <= failed['sequence']
+    final = world.cycle(snap('20261005_100100', half='final'), settle=False)
+    old = final['game_checks'][str(LIVE_GAME)]['file_sequence']
+    corrected = world.cycle(snap('20261005_100200', half='final', call='C'),
+                            after=world.config['settled_recheck_s'], settle=False)
+    assert corrected['game_checks'][str(LIVE_GAME)]['file_sequence'] > old
+
+
+def test_health_game_checks_mark_withdrawal_and_reopening(world):
+    world.cycle(settle=False)
+    sid, head = start_demo(world)
+    withdrawn = world.cycle(settle=False)
+    check = withdrawn['game_checks'][str(ARCHIVE_GAME)]
+    assert check['file_sequence'] is None and check['feed_ok'] is False
+    assert check['checked_at'] <= withdrawn['published_at']
+    assert world.client.post(f'/api/service/operator/sessions/{sid}/control', json={'action': 'end'}, headers=head).status_code == 200
+    reopened = world.cycle(settle=False)
+    check = reopened['game_checks'][str(ARCHIVE_GAME)]
+    assert check['file_sequence'] == world.read(ARCHIVE_FILE)['publish']['sequence']
+    assert check['feed_ok'] is True
+
+
+def test_health_game_check_does_not_claim_a_broken_file(world):
+    world.cycle(settle=False)
+    world.path(ARCHIVE_FILE).write_text('broken')
+    health = world.cycle(settle=False)
+    assert health['game_checks'][str(ARCHIVE_GAME)]['file_sequence'] is None
+    assert health['game_checks'][str(ARCHIVE_GAME)]['feed_ok'] is False
+
+
 def test_fixed_delay_list_holds_schedule_final_until_game_view_catches_up(make):
     world = make(fixed_delay_s=30)
     world.cycle(after=20.0, settle=False)
-    world.cycle(snap('20261005_100100', half='final', wall=world.now[0]+7), after=12.0, settle=False)
+    world.cycle(snap('20261005_100100', half='final', wall=world.now[0]+7), after=22.0, settle=False)
     card = world.read(f'v1/games/{LIVE_DATE}.json')['games'][0]
     assert world.game()['game']['status'] == 'live'
     assert card['status'] == 'live' and card['score_hidden'] is True
@@ -473,6 +514,31 @@ def test_v1_files_without_optional_rc_metadata_remain_valid(world):
         body.pop('features')
         body.pop('viewer', None)
         assert publish_schema.validate(body, schema) == []
+    health = world.read('v1/health.json')
+    health.pop('game_checks')
+    schema = json.loads((CONTRACT_DIR/'schema/health.schema.json').read_text())
+    assert publish_schema.validate(health, schema) == []
+
+
+def test_candidate_schema_covers_both_current_and_recorded_values(tmp_path):
+    bodies = dict(publish_fixture.collect(tmp_path)['game'])
+    rich = bodies['game-rich-candidate.json']
+    schema = json.loads((CONTRACT_DIR/'schema/game.schema.json').read_text())
+    assert rich['next']['rec']['candidates'][0]['detail']['probability'] == 0.4
+    assert rich['next']['rec']['candidates'][0]['target'] == {'x': 0.1, 'z': 2.5}
+    assert publish_schema.validate(rich, schema) == []
+    next_candidate = schema['properties']['next']['properties']['rec']['properties']['candidates']['items']
+    past_candidate = schema['properties']['pitches']['items']['properties']['rec']['properties']['candidates']['items']
+    for candidate in (next_candidate, past_candidate):
+        assert 'number' in candidate['properties']['detail']['properties']['probability']['type']
+        assert 'object' in candidate['properties']['target']['type']
+
+
+def test_unsupported_example_is_an_unsupported_state_without_reference_card():
+    body = json.loads((CONTRACT_DIR/'examples/game-live-unsupported.json').read_text())
+    assert body['display_state']['state'] == 'unsupported'
+    assert body['next']['rec']['candidates'] == []
+    assert body.get('reference') is None
 
 
 def test_every_example_and_every_fixture_body_validates_against_its_schema(tmp_path):
