@@ -97,6 +97,12 @@ def test_six_tiny_fit_to_paired_evaluation(bundle,monkeypatch):
     assert set(result['paired'])=={'R-T','R-s0-T-s0','R-s1-T-s1','R-s2-T-s2'}
     assert result['primary']['difference']==pytest.approx(result['arms']['R']['nll']-result['arms']['T']['nll'])
     assert result['bootstrap']['unit']=='game_pk'
+    _,C,_=base.load_package(inputs,bc);ev=C['evaluation']
+    Q={a:np.load(out/f'{a}-ensemble.npy',allow_pickle=False) for a in cfg['arms']}
+    brute=evaluator.metrics.brute_bootstrap(Q,C['y7'][ev],C['games'][ev],('R','T'),
+                                          cfg['bootstrap']['draws'],cfg['bootstrap']['seed'],100)
+    for key,metric in (('nll','nll'),('brier','brier'),('ece','ece_top_label_10bin')):
+        np.testing.assert_allclose(result['paired']['R-T'][metric]['ci95'],brute[key],rtol=0,atol=1e-12)
     another=dict(grant,output=str(out.parent/'duplicate'))
     with pytest.raises(FileExistsError):evaluator.evaluate(cfg,bc,another,inputs,Path(another['output']),synthetic=True)
     assert not Path(another['output']).exists()
