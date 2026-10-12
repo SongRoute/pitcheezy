@@ -6,9 +6,11 @@ An external supervisor stops only its newly spawned worker on budget breach.
 No other process is signalled. A self-watchdog is an additional backstop.
 """
 import argparse
+# Set before the first CUDA import/context creation; validate actual UUID below.
 import fcntl
 import json
 import os
+os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
 from pathlib import Path
 import subprocess
 import sys
@@ -22,7 +24,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ('experiments/ws_seq/train_tm002.py', 'experiments/ws_seq/tm002.py',
            'experiments/ws_seq/train_seq.py', 'configs/EXP-WS-SEQ-001.json',
            'configs/EXP-WS-TM-002.json', 'experiments/ws_seq/TM002-REGISTRATION.md',
-           'tests/test_tm002.py')
+           'tests/test_tm002.py', 'experiments/ws_seq/evaluate_tm002.py',
+           'experiments/ws_seq/evaluate_seq.py', 'experiments/ws_seq/prepare_inputs.py',
+           'tests/test_tm002_evaluation.py')
 
 
 def source_hashes():
@@ -33,7 +37,9 @@ def check_grant(grant, cfg, arm, seed, inputs, out):
     """Metadata only; reject before payload access or output creation."""
     if (grant.get('id') != cfg['id'] or grant.get('execute') is not True
             or grant.get('verdict') != 'PASS' or grant.get('distinct_from_author') is not True
-            or not grant.get('reviewer') or grant.get('reviewer') == grant.get('author')
+            or not isinstance(grant.get('author'), str) or not grant['author'].strip()
+            or not isinstance(grant.get('reviewer'), str) or not grant['reviewer'].strip()
+            or grant['reviewer'].strip() == grant['author'].strip()
             or grant.get('sources_sha256') != source_hashes()
             or grant.get('arm') != arm or grant.get('seed') != seed
             or arm not in cfg['arms'] or seed not in cfg['seeds']
@@ -46,9 +52,10 @@ def check_grant(grant, cfg, arm, seed, inputs, out):
             or grant.get('budget') != cfg['budgets']
             or grant.get('data_version') != cfg['data_version']):
         raise base.Stop('STOP missing/mismatched reviewed grant')
-    ledger = Path(grant.get('data_exposure_ledger', ''))
-    if not ledger.is_file() or base.sha(ledger) != grant['data_exposure_ledger_sha256']:
-        raise base.Stop('STOP exposure ledger binding')
+    _, attempts = tm002.check_contract(grant, cfg)
+    slot = attempts['slots'][f'{arm}-s{seed}']
+    if slot != {'attempt_id':grant['attempt_id'], 'output':str(out.resolve())}:
+        raise base.Stop('STOP attempt not in six-fit ledger')
     if seed != 0:
         gate_path = Path(grant.get('seed0_gate', ''))
         if not gate_path.is_file() or base.sha(gate_path) != grant.get('seed0_gate_sha256'):
@@ -69,7 +76,9 @@ def check_grant(grant, cfg, arm, seed, inputs, out):
                     or supervision.get('receipt_sha256')!=pin
                     or receipt.get('arm')!=name[0] or receipt.get('seed')!=0
                     or receipt.get('input_manifest_sha256')!=grant['input_manifest_sha256']
-                    or receipt.get('source_sha256')!=source_hashes()):
+                    or receipt.get('source_sha256')!=source_hashes()
+                    or receipt.get('attempt_id')!=attempts['slots'][name]['attempt_id']
+                    or receipt_path.parent.resolve()!=Path(attempts['slots'][name]['output']).resolve()):
                 raise base.Stop('STOP seed0 integrity receipt mismatch')
             initial_hashes.add(receipt.get('shared_initial_sha256'))
         if len(initial_hashes) != 1 or None in initial_hashes:
@@ -94,10 +103,12 @@ def watchdog(out, seconds, rss_cap, done):
             os._exit(87)  # self only; no retry, no complete receipt
 
 
-def train(torch, cfg, arm, seed, x, C, S, ctx, out, metadata):
+def train(torch, cfg, arm, seed, x, C, S, ctx, out, metadata, *, device=None):
     """Same N1 loss/selection/CAL; no performance-triggered seed stop."""
     import numpy as np
-    t = cfg['training']; device = torch.device('cuda:0')
+    t = cfg['training']; device = device or torch.device('cuda:0')
+    if device.type != 'cuda' and metadata.get('synthetic') is not True:
+        raise base.Stop('STOP non-CUDA train allowed only for owned synthetic arrays')
     torch.manual_seed(seed); np.random.seed(seed)
     torch.backends.cudnn.deterministic = True; torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True, warn_only=True)
@@ -146,17 +157,22 @@ def train(torch, cfg, arm, seed, x, C, S, ctx, out, metadata):
           base.HEADS[2]:base.temperature(z[base.HEADS[2]][bm],C['ground_ball_per_pitch'][cal][bm])}
     q=base.seven_from_margins(*(margins['evaluation'][h] for h in base.HEADS),T=temp)
     np.save(out/'seven-leaf-evaluation.npy',q,allow_pickle=False)  # no EVAL metric computed
-    np.savez(out/'margins.npz',**{f'{r}__{h}':margins[r][h] for r in base.ROLES for h in base.HEADS})
+    np.savez(out/'margins.npz',**{f'{r}__{h}':margins[r][h] for r in base.ROLES for h in base.HEADS},
+             **{f'{r}__keys':C['keys'][C[r]] for r in base.ROLES})
     torch.save(best['state'],out/'model-state.pt')
-    base.save_json(out/'temperatures.json',temp);base.save_json(out/'curve.json',curve)
+    calibration = {'temperatures':temp,'role':'CAL','bounds_T':list(base.T_BOUNDS),
+                   'fit_rows':{'parent':int(cal.sum()),'narrow_whiff':int(wm.sum()),'ground_ball_per_pitch':int(bm.sum())},
+                   'calibration_keys_sha256':base.hashlib.sha256(C['keys'][cal].astype('<i8').tobytes()).hexdigest()}
+    base.save_json(out/'temperatures.json',calibration);base.save_json(out/'curve.json',curve)
     files=('seven-leaf-evaluation.npy','margins.npz','model-state.pt','temperatures.json','curve.json')
     return dict(metadata,status='COMPLETED',arm=arm,seed=seed,best_epoch=best['epoch'],
                 best_select_nll7=best['nll'],eval_scores_opened=False,parameters=sum(p.numel() for p in model.parameters()),
-                rows={r:int(C[r].sum()) for r in rows},
+                rows={r:int(C[r].sum()) for r in rows},calibration=calibration,
+                evaluation_keys_sha256=base.hashlib.sha256(C['keys'][C['evaluation']].astype('<i8').tobytes()).hexdigest(),
                 versions={'python':sys.version,'torch':torch.__version__,'numpy':np.__version__,
                           'scipy':__import__('scipy').__version__,'cuda':torch.version.cuda,'cudnn':torch.backends.cudnn.version()},
-                peak_gpu_allocated_bytes=torch.cuda.max_memory_allocated(),
-                peak_gpu_reserved_bytes=torch.cuda.max_memory_reserved(),
+                peak_gpu_allocated_bytes=torch.cuda.max_memory_allocated() if device.type=='cuda' else None,
+                peak_gpu_reserved_bytes=torch.cuda.max_memory_reserved() if device.type=='cuda' else None,
                 outputs_sha256={f:base.sha(out/f) for f in files})
 
 
@@ -183,14 +199,21 @@ def run(args):
     try:
         manifest=args.inputs/bc['inputs']['manifest_file']
         if base.sha(manifest) != grant['input_manifest_sha256']: raise base.Stop('STOP input manifest grant binding')
-        _,manifest_sha,input_sha,_=base.verify_package(args.inputs,bc,ROOT/cfg['base_config'])
+        man,manifest_sha,input_sha,_=base.verify_package(args.inputs,bc,ROOT/cfg['base_config'])
+        exposure,attempts=tm002.check_contract(grant,cfg)
+        tm002.check_manifest_contract(man,exposure,cfg)
         torch,_=base.imports()
         if not torch.cuda.is_available() or torch.cuda.device_count()!=1:raise base.Stop('STOP one CUDA device required')
-        cap=cfg['budgets']['gpu_reserved_bytes']; total=torch.cuda.get_device_properties(0).total_memory
+        prop=torch.cuda.get_device_properties(0)
+        actual_uuid=str(getattr(prop,'uuid',''))
+        if actual_uuid != grant['gpu_uuid']:
+            raise base.Stop('STOP actual CUDA device UUID unavailable or different from grant')
+        cap=cfg['budgets']['gpu_reserved_bytes']; total=prop.total_memory
         if cap>=total:raise base.Stop('STOP registered GPU cap leaves no device headroom')
         torch.cuda.set_per_process_memory_fraction(cap/total,0)
         torch.cuda.reset_peak_memory_stats()
         x,C,S=base.load_package(args.inputs,bc)
+        tm002.check_role_partition(C)
         for role,key in (('FIT','fit'),('SELECT','tuning'),('CAL','calibration'),('EVAL','evaluation')):
             if int(C[key].sum()) != cfg['expected_rows'][role]:raise base.Stop('STOP registered role count mismatch')
         ctx=base.build_context_index(S['pitcher'],S['game_pk'],S['at_bat_number'],S['pitch_number'],bc['context']['max_length'])
@@ -198,7 +221,10 @@ def run(args):
         receipt=train(torch,bc,args.arm,args.seed,x,C,S,ctx,args.out,
                       {'id':cfg['id'],'data_role':cfg['data_role'],'data_version':cfg['data_version'],'commit':grant['commit'],
                        'attempt_id':grant['attempt_id'],'source_sha256':source_hashes(),'grant_sha256':base.sha(args.grant),
-                       'input_manifest_sha256':manifest_sha,'inputs_sha256':input_sha,'gpu_uuid':uuid,'job':job,'context':context})
+                       'input_manifest_sha256':manifest_sha,'inputs_sha256':input_sha,'gpu_uuid':uuid,'job':job,'context':context,
+                       'bundle_id':attempts['bundle_id'],'scoring_root':attempts['scoring_root'],'attempt_ledger_sha256':grant['attempt_ledger_sha256'],
+                       'data_exposure_ledger_sha256':grant['data_exposure_ledger_sha256'],
+                       'config_sha256':base.sha(args.config),'grant':grant})
         receipt['elapsed_seconds']=time.monotonic()-start
         base.save_json(args.out/'receipt.json',receipt)
     except Exception as exc:
@@ -214,19 +240,29 @@ def supervise(args):
     check_grant(grant,cfg,args.arm,args.seed,args.inputs,args.out)
     if sys.platform != 'linux' or not os.environ.get('GPU_JOB_ID'):
         raise base.Stop('STOP supervisor requires Linux gpu run job')
-    child=subprocess.Popen([sys.executable,'-m','experiments.ws_seq.train_tm002',
-                            *sys.argv[1:],'--worker'])
+    return supervise_command([sys.executable,'-m','experiments.ws_seq.train_tm002',
+                              *sys.argv[1:],'--worker'],args.out,cfg['budgets']['per_fit_and_cal_seconds'],
+                             cfg['budgets']['host_rss_bytes_per_fit'],base.sha(args.grant))
+
+
+def supervise_command(command, out, wall_seconds, rss_bytes, grant_sha):
+    """Watch only the new child handle; shared by fitting and scoring."""
+    child=subprocess.Popen(command)
     started=time.monotonic(); reason=None; peak=0
     try:
         while child.poll() is None:
-            if time.monotonic()-started >= cfg['budgets']['per_fit_and_cal_seconds']:
+            if time.monotonic()-started >= wall_seconds:
                 reason='wall';break
             try:
-                status=Path(f'/proc/{child.pid}/status').read_text()
-                rss=int(next(line.split()[1] for line in status.splitlines() if line.startswith('VmRSS:')))*1024
+                if sys.platform=='linux':
+                    status=Path(f'/proc/{child.pid}/status').read_text()
+                    rss=int(next(line.split()[1] for line in status.splitlines() if line.startswith('VmRSS:')))*1024
+                elif sys.platform=='darwin':
+                    rss=int(subprocess.check_output(['/bin/ps','-o','rss=','-p',str(child.pid)],text=True,timeout=2).strip())*1024
+                else:raise OSError('unsupported RSS monitor platform')
                 peak=max(peak,rss)
-                if rss>cfg['budgets']['host_rss_bytes_per_fit']:reason='rss';break
-            except (OSError,StopIteration):
+                if rss>rss_bytes:reason='rss';break
+            except (OSError,StopIteration,ValueError,subprocess.SubprocessError):
                 if child.poll() is not None:break
                 reason='supervisor-memory-read-failure';break
             time.sleep(0.25)
@@ -236,11 +272,15 @@ def supervise(args):
             child.terminate()
             try:child.wait(timeout=5)
             except subprocess.TimeoutExpired:child.kill();child.wait()
+    receipt_path=out/'receipt.json'
+    try:completed_receipt=receipt_path.is_file() and json.loads(receipt_path.read_text()).get('status')=='COMPLETED'
+    except (OSError,ValueError):completed_receipt=False
+    if child.returncode==0 and reason is None and not completed_receipt:reason='missing-completed-receipt'
     result={'status':'COMPLETED' if child.returncode==0 and reason is None else 'INCOMPLETE',
             'returncode':child.returncode,'reason':reason,'peak_worker_rss_bytes':peak,
-            'elapsed_seconds':time.monotonic()-started,'grant_sha256':base.sha(args.grant),
-            'receipt_sha256':base.sha(args.out/'receipt.json') if (args.out/'receipt.json').exists() else None}
-    if args.out.is_dir():base.save_json(args.out/'SUPERVISOR.json',result)
+            'elapsed_seconds':time.monotonic()-started,'grant_sha256':grant_sha,
+            'receipt_sha256':base.sha(out/'receipt.json') if (out/'receipt.json').exists() else None}
+    if out.is_dir():base.save_json(out/'SUPERVISOR.json',result)
     return 0 if result['status']=='COMPLETED' else 87
 
 

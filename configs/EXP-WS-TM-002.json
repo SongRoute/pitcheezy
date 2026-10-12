@@ -80,5 +80,6 @@
     "hard wall/RSS/GPU watchdog",
     "fresh output attempt",
     "environment versions"
-  ]
+  ],
+  "expected_eval_games": 275
 }

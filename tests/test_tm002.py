@@ -88,17 +88,28 @@ def test_grant_rejects_missing_and_score_selected_seed_gate(tmp_path):
     cfg,_=tm.load_config(ROOT/'configs/EXP-WS-TM-002.json')
     inputs=tmp_path/'inputs';out=tmp_path/'out'
     with pytest.raises(base.Stop):runner.check_grant({},cfg,'T',0,inputs,out)
-    ledger=tmp_path/'ledger.json';ledger.write_text('{}')
+    ledger=tmp_path/'ledger.json'
+    ledger.write_text(json.dumps({**{k:cfg[k] for k in ('data_version','data_role','roles','expected_rows')},
+                                 'input_manifest_sha256':'synthetic','role_dates_verified':True,'source_registration_sha256':'synthetic',
+                                 'prepare_inputs_sha256':base.sha(ROOT/'experiments/ws_seq/prepare_inputs.py')}))
+    attempts=tmp_path/'attempts.json'
+    slots={f'{a}-s{i}':{'attempt_id':f'synthetic-{a}-{i}','output':str(tmp_path/f'{a}-s{i}')} for a in cfg['arms'] for i in cfg['seeds']}
+    slots['T-s0']={'attempt_id':'synthetic','output':str(out)}
+    slots['T-s1']={'attempt_id':'synthetic-next','output':str(tmp_path/'next')}
+    attempts.write_text(json.dumps({'id':cfg['id'],'bundle_id':'synthetic','input_manifest_sha256':'synthetic','scoring_root':str(tmp_path/'scores'),'slots':slots}))
     grant={'id':cfg['id'],'execute':True,'verdict':'PASS','distinct_from_author':True,
            'reviewer':'reviewer','author':'author','sources_sha256':runner.source_hashes(),
            'arm':'T','seed':0,'inputs':str(inputs),'output':str(out),
            'data_exposure_ledger':str(ledger),'data_exposure_ledger_sha256':base.sha(ledger),
+           'attempt_ledger':str(attempts),'attempt_ledger_sha256':base.sha(attempts),
            'commit':'synthetic','attempt_id':'synthetic','gpu_uuid':'synthetic','common_lock':'synthetic',
            'input_manifest_sha256':'synthetic','budget':cfg['budgets'],'data_version':cfg['data_version']}
     runner.check_grant(grant,cfg,'T',0,inputs,out)
+    missing_author=dict(grant);missing_author.pop('author')
+    with pytest.raises(base.Stop):runner.check_grant(missing_author,cfg,'T',0,inputs,out)
     out.mkdir()
     with pytest.raises(base.Stop,match='already exists'):runner.check_grant(grant,cfg,'T',0,inputs,out)
-    out.rmdir();grant['seed']=1
+    out.rmdir();grant.update(seed=1,attempt_id='synthetic-next',output=str(tmp_path/'next'));out=tmp_path/'next'
     gate=tmp_path/'gate.json';gate.write_text(json.dumps({'verdict':'PASS','distinct_from_author':True,
         'sources_sha256':runner.source_hashes(),'eval_scores_opened':True,
         'receipts_sha256':{'T-s0':'synthetic','R-s0':'synthetic'}}))

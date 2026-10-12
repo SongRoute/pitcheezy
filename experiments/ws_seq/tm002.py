@@ -22,6 +22,9 @@ def load_config(path):
             for v in value:
                 finite(v)
     finite(cfg)
+    registered = Path(__file__).resolve().parents[2] / 'configs/EXP-WS-TM-002.json'
+    if base.sha(path) != base.sha(registered):
+        raise ValueError('unregistered config bytes')
     if (cfg['id'] != 'EXP-WS-TM-002' or cfg['execution_enabled'] is not False
             or cfg['arms'] != ['T', 'R'] or cfg['seeds'] != [0, 1, 2]):
         raise ValueError('preparation-only identity/arms/seeds gate')
@@ -89,3 +92,57 @@ def packed_encoder(torch, cfg):
 
 def shared_state(net):
     return {k: v for k, v in net.state_dict().items() if not k.startswith('encoder.')}
+
+
+def check_contract(grant, cfg):
+    """Bind reviewed metadata contracts; this reads JSON metadata only."""
+    ledger_path = Path(grant['data_exposure_ledger'])
+    if base.sha(ledger_path) != grant['data_exposure_ledger_sha256']:
+        raise base.Stop('STOP exposure ledger binding')
+    ledger = json.loads(ledger_path.read_text())
+    for key in ('data_version', 'data_role', 'roles', 'expected_rows'):
+        if ledger.get(key) != cfg[key]:
+            raise base.Stop('STOP exposure role/date/version/count contract: ' + key)
+    if (ledger.get('input_manifest_sha256') != grant['input_manifest_sha256']
+            or ledger.get('role_dates_verified') is not True
+            or not ledger.get('source_registration_sha256')
+            or not ledger.get('prepare_inputs_sha256')):
+        raise base.Stop('STOP exposure source-registration/manifest role proof')
+    attempt_path = Path(grant['attempt_ledger'])
+    if base.sha(attempt_path) != grant['attempt_ledger_sha256']:
+        raise base.Stop('STOP attempt ledger hash')
+    attempts = json.loads(attempt_path.read_text())
+    slots = {f'{a}-s{s}' for a in cfg['arms'] for s in cfg['seeds']}
+    if (attempts.get('id') != cfg['id'] or not attempts.get('bundle_id')
+            or attempts.get('input_manifest_sha256') != grant['input_manifest_sha256']
+            or set(attempts.get('slots', {})) != slots
+            or not Path(attempts.get('scoring_root', '')).is_absolute()):
+        raise base.Stop('STOP six-fit attempt ledger identity')
+    outputs = [v.get('output') for v in attempts['slots'].values()]
+    ids = [v.get('attempt_id') for v in attempts['slots'].values()]
+    if (len(set(outputs)) != 6 or len(set(ids)) != 6 or not all(ids)
+            or not all(isinstance(v,str) and Path(v).is_absolute() for v in outputs)):
+        raise base.Stop('STOP six unique attempt IDs and absolute outputs required')
+    return ledger, attempts
+
+
+def check_manifest_contract(manifest, exposure, cfg):
+    if (manifest.get('registration_sha256') != exposure['source_registration_sha256']
+            or manifest.get('denominators', {}).get('role_rows') != cfg['expected_rows']
+            or manifest.get('prepare_inputs_sha256') != exposure['prepare_inputs_sha256']
+            or manifest.get('prepare_inputs_sha256') != base.sha(Path(__file__).with_name('prepare_inputs.py'))
+            or manifest.get('synthetic') is not False):
+        raise base.Stop('STOP accepted package role/count/registration binding')
+
+
+def check_role_partition(C):
+    """A game (and hence any plate appearance) cannot cross registered roles."""
+    import numpy as np
+    seen = set()
+    for role in ('fit',) + base.ROLES:
+        if C[role].dtype != np.bool_:
+            raise base.Stop('STOP role mask must be boolean')
+        games = set(C['games'][C[role]].tolist())
+        if seen & games:
+            raise base.Stop('STOP game split across roles')
+        seen.update(games)
