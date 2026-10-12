@@ -237,7 +237,8 @@ def test_marker_publication_is_atomic_and_exclusive(tmp_path,monkeypatch,failure
 
 @pytest.mark.parametrize('case',['grace_z','grace_enoent','timeout','permission_live',
                                 'unknown_live','nonzero','missing_receipt','exhausted_wall',
-                                'remaining_wall','grace_x','unknown_state','wait_crosses_wall','normal'])
+                                'remaining_wall','grace_x','unknown_state','wait_crosses_wall','normal',
+                                'grace_r','live_r','malformed_numeric','unknown_io'])
 def test_supervisor_bounded_exit_grace(tmp_path,monkeypatch,case):
     import errno
     import subprocess
@@ -249,7 +250,7 @@ def test_supervisor_bounded_exit_grace(tmp_path,monkeypatch,case):
         def wait(self,timeout=None):
             waits.append(timeout)
             if self.returncode is not None:return self.returncode
-            if case=='timeout':
+            if case in ('timeout','unknown_live','unknown_state','live_r'):
                 clock[0]+=timeout
                 raise subprocess.TimeoutExpired('synthetic',timeout)
             clock[0]+=1.01 if case=='wait_crosses_wall' else .01
@@ -264,9 +265,11 @@ def test_supervisor_bounded_exit_grace(tmp_path,monkeypatch,case):
             if case=='remaining_wall':clock[0]=.9
             if case=='permission_live':raise PermissionError(errno.EACCES,'synthetic')
             if case=='grace_enoent':raise FileNotFoundError(errno.ENOENT,'synthetic')
+            if case=='unknown_io':raise OSError(errno.EIO,'synthetic')
+            if case=='malformed_numeric':return 'State: R (running)\nVmRSS: invalid kB\n'
             if case=='normal':return 'State: R (running)\nVmRSS: 100 kB\n'
             if case=='unknown_state':return 'Name: synthetic\n'
-            return 'State: '+('R' if case=='unknown_live' else 'X' if case=='grace_x' else 'Z')+'\n'
+            return 'State: '+('R' if case in ('unknown_live','grace_r','live_r') else 'X' if case=='grace_x' else 'Z')+'\n'
         return original(path,*args,**kwargs)
     def sleep(seconds):clock[0]+=seconds;child.returncode=0
     if case!='missing_receipt':(tmp_path/'receipt.json').write_text('{"status":"COMPLETED","synthetic":true}')
@@ -277,7 +280,7 @@ def test_supervisor_bounded_exit_grace(tmp_path,monkeypatch,case):
     monkeypatch.setattr(trainer.time,'sleep',sleep)
     rc=trainer.supervise_command(['synthetic'],tmp_path,1.,1024**3,'synthetic')
     result=json.loads((tmp_path/'SUPERVISOR.json').read_text())
-    if case in ('grace_z','grace_enoent','remaining_wall','grace_x','normal'):
+    if case in ('grace_z','grace_enoent','remaining_wall','grace_x','grace_r','normal'):
         assert rc==0 and result['status']=='COMPLETED' and not signals
     else:
         assert rc==87 and result['status']=='INCOMPLETE'
@@ -290,8 +293,10 @@ def test_supervisor_bounded_exit_grace(tmp_path,monkeypatch,case):
         assert event['poll_returncode'] is None
         assert event['wait_seconds']<=min(.25,event['remaining_wall_seconds'])
         if case=='permission_live':assert event['errno']==errno.EACCES and event['wait_seconds']==0
-        if case=='unknown_live':assert event['process_state']=='R' and event['wait_seconds']==0
-        if case=='unknown_state':assert event['process_state'] is None and event['wait_seconds']==0
+        if case in ('unknown_live','live_r'):assert event['process_state']=='R' and event['wait_timed_out'] and event['wait_seconds']==.25
+        if case=='unknown_state':assert event['process_state'] is None and event['wait_timed_out']
+        if case=='grace_r':assert event['process_state']=='R' and event['wait_returncode']==0 and event['linux_status_read']
+        if case in ('malformed_numeric','unknown_io'):assert event['wait_seconds']==0 and signals==['owned-terminate']
         if case=='timeout':assert event['wait_timed_out'] and signals==['owned-terminate']
         if case=='exhausted_wall':assert event['wait_seconds']==0 and signals==['owned-terminate']
         if case=='remaining_wall':assert event['wait_seconds']==pytest.approx(.1)

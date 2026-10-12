@@ -254,10 +254,11 @@ def supervise_command(command, out, wall_seconds, rss_bytes, grant_sha):
         while child.poll() is None:
             if time.monotonic()-started >= wall_seconds:
                 reason='wall';break
-            process_state=None
+            process_state=None; linux_status_read=False
             try:
                 if sys.platform=='linux':
                     status=Path(f'/proc/{child.pid}/status').read_text()
+                    linux_status_read=True
                     process_state=next((line.split()[1] for line in status.splitlines() if line.startswith('State:')),None)
                     rss=int(next(line.split()[1] for line in status.splitlines() if line.startswith('VmRSS:')))*1024
                 elif sys.platform=='darwin':
@@ -270,6 +271,7 @@ def supervise_command(command, out, wall_seconds, rss_bytes, grant_sha):
                 remaining=wall_seconds-(observed-started)
                 event={'exception':type(exc).__name__,'message':str(exc),
                        'errno':getattr(exc,'errno',None),'process_state':process_state,
+                       'linux_status_read':linux_status_read,
                        'elapsed_seconds':observed-started,'poll_returncode':polled,
                        'remaining_wall_seconds':max(0,remaining),'wait_seconds':0,
                        'wait_elapsed_seconds':0,'wait_returncode':None,'wait_timed_out':False}
@@ -277,7 +279,7 @@ def supervise_command(command, out, wall_seconds, rss_bytes, grant_sha):
                 if remaining<=0:reason='wall';break
                 if polled is not None:break
                 exit_transient=(isinstance(exc,OSError) and exc.errno==errno.ENOENT or
-                                isinstance(exc,StopIteration) and process_state in ('Z','X'))
+                                isinstance(exc,StopIteration) and linux_status_read)
                 if exit_transient:
                     wait_started=time.monotonic()
                     remaining=wall_seconds-(wait_started-started)
