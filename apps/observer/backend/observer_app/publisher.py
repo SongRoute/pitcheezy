@@ -26,8 +26,8 @@ unless its content changes (a correction), which gets the then-current, higher s
 Calling the game builder is what drives the upstream poll (``LiveFeed.snapshot`` fetches when its interval has
 passed), so the publisher is the "someone is watching". Demo sessions, the operator API and replay clocks are
 never asked for; a game a demo session takes is withdrawn (its game and setup files are deleted) in the next
-cycle and published again when the demo ends. Uploading is not done here: ``Sink`` is the seam; only
-``LocalDirSink`` exists. One publisher per output folder: a second one refuses to start. The live store and the recommendation ledger are
+cycle and published again when the demo ends. ``MirrorSink`` optionally sends local files through ``HttpSink``;
+local files remain the recovery source. One publisher per output folder: a second one refuses to start. The live store and the recommendation ledger are
 required: without either the publisher does not start, and it stops publishing if the ledger is switched off.
 The setup file is the one body that is NOT the route's: its ``source`` keeps only ``commit`` and ``sha256``.
 """
@@ -37,6 +37,8 @@ import argparse
 import fcntl
 from datetime import datetime, timedelta, timezone
 import hashlib
+import http.client
+import ipaddress
 import json
 import logging
 import os
@@ -45,6 +47,8 @@ import re
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit
+import uuid
 
 from .service_api import Refused
 from .setup_estimates import Unreadable
@@ -225,6 +229,197 @@ class LocalDirSink(Sink):
         return sorted(found)
 
 
+def public_path(path):
+    """Only the publisher's names, never directory scans of arbitrary JSON or temporary files."""
+    return isinstance(path, str) and re.fullmatch(
+        r'v[1-9]\d*/(manifest\.json|health\.json|dates\.json|games/\d{4}-\d{2}-\d{2}\.json|(?:game|setup)/\d+\.json)', path) is not None
+
+
+class UploadError(OSError):
+    """Fixed codes only; credentials, URLs and server error bodies never cross this boundary."""
+
+
+class HttpSink(Sink):
+    """PUT/DELETE transport. No GET, redirects, proxy environment or response-body logging."""
+
+    def __init__(self, config, *, dry_run=False):
+        self.dry_run = dry_run
+        try:
+            self.url = urlsplit(config['base_url'])
+            host = self.url.hostname
+            loopback = host == 'localhost'
+            try:
+                loopback = loopback or ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                pass
+            if (not host or self.url.username is not None or self.url.password is not None
+                    or self.url.query or self.url.fragment or self.url.scheme not in ('http', 'https')
+                    or (self.url.scheme == 'http' and not loopback)):
+                raise ValueError
+            self.url.port  # validate port without echoing it in an exception
+            self.prefix = self.url.path.rstrip('/')
+            if any(ord(c) <= 32 or ord(c) >= 127 for c in config['base_url']):
+                raise ValueError
+            self.timeout = config['timeout_s']
+            self.retries = config['retries']
+            self.backoff = config['backoff_s']
+            if (type(self.timeout) not in (int, float) or not 0 < self.timeout <= 60
+                    or type(self.retries) is not int or not 0 <= self.retries <= 5
+                    or type(self.backoff) not in (int, float) or not 0 <= self.backoff <= 10):
+                raise ValueError
+            self.headers = config['headers']
+            for kind in ('live', 'final'):
+                headers = self.headers[kind]
+                if (set(headers) != {'Content-Type', 'Cache-Control'} or headers['Content-Type'] != 'application/json'
+                        or not isinstance(headers['Cache-Control'], str)
+                        or any(ord(c) < 32 or ord(c) > 126 for c in headers['Cache-Control'])):
+                    raise ValueError
+            # A dry run deliberately does not load credentials.
+            if not dry_run:
+                env_name, file_name = config.get('token_env'), config.get('token_file')
+                if bool(env_name) == bool(file_name):
+                    raise ValueError
+                if file_name:
+                    token_path = Path(file_name).expanduser()
+                    if not token_path.is_absolute():
+                        raise ValueError
+                    token_path = token_path.resolve()
+                    # Reject files inside ANY checkout (including another worktree or a symlink into one).
+                    if any((parent/'.git').exists() for parent in token_path.parents):
+                        raise ValueError
+                    token = token_path.read_text().strip()
+                else:
+                    token = os.environ[env_name]
+                if not token or re.fullmatch(r'[A-Za-z0-9._~+/-]+=*', token) is None:
+                    raise ValueError
+                self._authorization = f'Bearer {token}'
+        except (KeyError, TypeError, ValueError, OSError):
+            raise UploadError('upload_config_invalid') from None
+
+    def _request(self, method, path, data=None, *, final=False):
+        if self.dry_run:
+            LOGGER.info('dry-run-upload %s %s (%s bytes, %s)', method, path, len(data or b''), 'final' if final else 'live')
+            return
+        for attempt in range(self.retries+1):
+            connection = None
+            try:
+                factory = http.client.HTTPSConnection if self.url.scheme == 'https' else http.client.HTTPConnection
+                connection = factory(self.url.hostname, self.url.port, timeout=self.timeout)
+                headers = self.headers['final' if final else 'live'] | {'Authorization': self._authorization}
+                connection.request(method, f'{self.prefix}/{path}', body=data, headers=headers)
+                response = connection.getresponse()
+                if 200 <= response.status < 300 or (method == 'DELETE' and response.status == 404):
+                    return
+            except (OSError, http.client.HTTPException, ValueError):
+                pass  # never retain the transport exception or response text
+            finally:
+                if connection is not None:
+                    try:
+                        connection.close()
+                    except OSError:
+                        pass
+            if attempt < self.retries:
+                time.sleep(self.backoff*2**attempt)
+        raise UploadError('upload_failed')
+
+    def write(self, path, data, *, final=False):
+        if not public_path(path):
+            raise UploadError('upload_path_invalid')
+        self._request('PUT', path, data, final=final)
+
+    def delete(self, path):
+        if not public_path(path):
+            raise UploadError('upload_path_invalid')
+        self._request('DELETE', path)
+
+    def check(self):
+        """Reserved, unique non-game object; always try cleanup even if the PUT response was lost."""
+        path = f'_publisher_probe/{uuid.uuid4().hex}.json'
+        try:
+            self._request('PUT', path, b'{"probe":true}')
+        finally:
+            self._request('DELETE', path)
+
+
+class MirrorSink(Sink):
+    """Local state first; a durable path -> action outbox contains no payload or credentials."""
+
+    def __init__(self, local, remote):
+        self.local, self.remote = local, remote
+        self.lock_path = local.lock_path
+        self.pending, self.attempted = {}, set()
+        self.save = lambda: None
+
+    def bind(self, state, save):
+        # First activation also uploads existing settled files, without rebuilding them.
+        if 'upload_pending' not in state:
+            state['upload_pending'] = {path: 'put' for path in self.paths()
+                                       if public_path(path) and not path.endswith('/health.json')}
+        self.pending, self.save = state['upload_pending'], save
+        if not isinstance(self.pending, dict) or any(not public_path(p) or a not in ('put', 'delete') for p, a in self.pending.items()):
+            raise UploadError('upload_state_invalid')
+
+    def cleanup(self):
+        self.local.cleanup()
+
+    def paths(self):
+        return self.local.paths()
+
+    def read(self, path):
+        return self.local.read(path)
+
+    def read_tail(self, path, size):
+        return self.local.read_tail(path, size)
+
+    def _queue(self, path, action):
+        if not public_path(path):
+            raise UploadError('upload_path_invalid')
+        self.pending[path] = action
+        self.save()  # write-ahead, with the same atomic state-file writer as sequence recovery
+
+    def _send(self, path, data=None, *, final=False):
+        self.attempted.add(path)
+        try:
+            if self.pending[path] == 'delete':
+                self.remote.delete(path)
+            else:
+                self.remote.write(path, data, final=final)
+        except UploadError:
+            LOGGER.warning('upload_failed')
+        else:
+            if not self.remote.dry_run:
+                del self.pending[path]
+                self.save()
+
+    def write(self, path, data, *, final=False):
+        self._queue(path, 'put')
+        self.local.write(path, data, final=final)
+        self._send(path, data, final=final)
+
+    def delete(self, path):
+        self._queue(path, 'delete')
+        self.local.delete(path)
+        self._send(path)
+
+    def retry(self, health):
+        for path in sorted(set(self.pending)-self.attempted-{health}):
+            try:
+                if self.pending[path] == 'delete':
+                    self.local.delete(path)
+                    self._send(path)
+                else:
+                    data = self.read(path)
+                    if data is None:
+                        # A crash after queueing but before the first local write left no object to send.
+                        del self.pending[path]
+                        self.save()
+                    else:
+                        final = json.loads(data).get('publish', {}).get('final') is True
+                        self._send(path, data, final=final)
+            except (OSError, ValueError, RecursionError):
+                LOGGER.warning('upload_failed')
+
+
 def code_commit(repo=None, env=None):
     """(commit sha or None, dirty flag or None) of the code that publishes. Never guessed: None when unknown."""
     env = os.environ if env is None else env
@@ -344,6 +539,8 @@ class Publisher:
             if hasattr(self.sink, 'cleanup'):
                 self.sink.cleanup()  # only now: the lock says no other publisher is in the middle of a write
             self.state = self._load_state()
+            if isinstance(self.sink, MirrorSink):
+                self.sink.bind(self.state, self._save_state)
         except BaseException:
             self.close()
             raise
@@ -511,6 +708,8 @@ class Publisher:
         if reason:
             raise Unsafe(reason)  # before a sequence is taken or a file is touched
         self._now, self._written, self._unavailable, self._feed_failing = self.wall(), [], [], []
+        if isinstance(self.sink, MirrorSink):
+            self.sink.attempted.clear()
         self._sequence = self.state['sequence'] = self.state['sequence']+1
         self._save_state()  # the number is durably taken before any file carries it: a crash never reuses it
         now, unavailable_dates = self._now, []
@@ -537,6 +736,8 @@ class Publisher:
             'commit': commit, 'commit_dirty': dirty, 'published_at': _iso(now),
             'publish_interval_s': self.config['publish_interval_s'], 'fixed_delay_s': self.config['fixed_delay_s'],
             'provisional': list(PROVISIONAL), 'live_dates': live_dates, 'files': self.layout}, always=True)
+        if isinstance(self.sink, MirrorSink):
+            self.sink.retry(self.layout['health'])
         # The last embargo check, and the last step before health. ACCEPTED WINDOW (PM decision 2026-10-11): the
         # demo clock lives in another process and there is deliberately no lock shared with it, so a demo that
         # begins after this line is reflected by the NEXT cycle (at most one publish interval later). The embargo
@@ -553,10 +754,18 @@ class Publisher:
             self.state['embargoed'] = sorted(embargoed | late)
         for game_pk, code in sorted(self.state['pending'].items()):  # still unresolved, asked this cycle or not
             self._fail(int(game_pk), None, code)
+        if isinstance(self.sink, MirrorSink) and not self.sink.remote.dry_run:
+            for path in sorted(self.sink.pending):
+                match = re.fullmatch(re.escape(self.config['contract_version'])+r'/(?:game|setup)/(\d+)\.json', path)
+                if match:
+                    self._fail(int(match[1]), None, 'upload_failed')
         health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(now),
                   'publish_interval_s': self.config['publish_interval_s'], 'files_written': len(self._written)+1,
                   'unavailable_games': self._unavailable, 'unavailable_dates': sorted(set(unavailable_dates)),
                   'feed_failing_games': sorted(set(self._feed_failing))}
+        if isinstance(self.sink, MirrorSink):
+            health['upload'] = {'code': 'upload_failed' if self.sink.pending and not self.sink.remote.dry_run else None,
+                                'pending': len(self.sink.pending), 'dry_run': self.sink.remote.dry_run}
         self._put(self.layout['health'], health, always=True)
         self._save_state()
         return health
@@ -748,7 +957,11 @@ def build(config, *, sink=None, dates=None, commit=None, wall=None, **app_option
     if reason:
         raise Unsafe(reason)  # before the output folder, the lock or the state file is touched
     state_path = config.get('state_path') or (config.get('out_dir') and f"{str(config['out_dir']).rstrip('/')}.state.json")
-    return app, Publisher(app.state.service_bodies, sink or LocalDirSink(config['out_dir']), config=config,
+    if sink is None:
+        sink = LocalDirSink(config['out_dir'])
+        if config.get('upload', {}).get('enabled') or config.get('dry_run_upload'):
+            sink = MirrorSink(sink, HttpSink(config['upload'], dry_run=config.get('dry_run_upload', False)))
+    return app, Publisher(app.state.service_bodies, sink, config=config,
                           setups=app.state.setups, state_path=state_path, dates=dates, safe=safe,
                           commit=code_commit() if commit is None else commit, **({} if wall is None else {'wall': wall}))
 
@@ -759,6 +972,9 @@ def main(argv=None):
     parser.add_argument('--once', action='store_true', help='one cycle, then exit')
     parser.add_argument('--date', action='append', help='KST date whose games are rebuilt every cycle (repeatable); default: the window in publish_config.json')
     parser.add_argument('--config', help='publish_config.json to use')
+    upload_mode = parser.add_mutually_exclusive_group()
+    upload_mode.add_argument('--check-remote', action='store_true', help='PUT and DELETE a reserved probe, then exit (no app or local output)')
+    upload_mode.add_argument('--dry-run-upload', action='store_true', help='log upload operations without sending or loading a token; local publishing still runs')
     parser.add_argument('--interval', type=float, help='publish interval in seconds')
     parser.add_argument('--delay', type=float, help='fixed delay in seconds')
     parser.add_argument('--feed-dir', help='finished-game feeds (default PITCHEEZY_FEED_DIR)')
@@ -767,6 +983,13 @@ def main(argv=None):
     parser.add_argument('--demo-dir', help='demo clock folder (default PITCHEEZY_DEMO_DIR)')
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+    if args.check_remote:
+        try:
+            HttpSink(load_config(args.config)['upload']).check()
+        except UploadError as error:
+            raise SystemExit(f'remote check failed: {error}') from None
+        print('remote check passed: PUT and DELETE accepted')
+        return 0
     config, publisher = _start(args)
     LOGGER.info('publishing to %s every %s s (fixed delay %s s)', config['out_dir'], config['publish_interval_s'], config['fixed_delay_s'])
     try:
@@ -779,13 +1002,14 @@ def main(argv=None):
 
 
 def _start(args):
-    config = load_config(args.config, out_dir=args.out, publish_interval_s=args.interval, fixed_delay_s=args.delay)
+    config = load_config(args.config, out_dir=args.out, publish_interval_s=args.interval, fixed_delay_s=args.delay,
+                         dry_run_upload=args.dry_run_upload)
     if not config.get('out_dir'):
         raise SystemExit('no output folder: give --out <dir>, or set PITCHEEZY_PUBLISH_OUT_DIR or out_dir in publish_config.json')
     try:
         app, publisher = build(config, dates=args.date, feed_dir=args.feed_dir, watch_dir=args.watch_dir,
                                intent_dir=args.intent_dir, demo_dir=args.demo_dir)
-    except (AlreadyRunning, Unsafe, UnsafeOutput) as refused:
+    except (AlreadyRunning, Unsafe, UnsafeOutput, UploadError) as refused:
         raise SystemExit(str(refused)) from None
     feed = app.state.live_parts()
     if config['fixed_delay_s'] > getattr(feed, 'max_delay_s', config['fixed_delay_s']):

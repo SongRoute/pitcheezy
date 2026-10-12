@@ -106,7 +106,7 @@ PITCHEEZY_OBSERVER_HOST=tailscale sh apps/observer/serve.sh
 
 ## 공개 발행기 (정적 파일로 내보내기, 검증 전 실험 버전)
 
-팬의 브라우저가 이 맥에 닿지 않도록, 화면이 가져갈 내용을 **요청 없이 미리 파일로 써 두는** 프로그램이다. 계약 초안은 `docs/pm/service/public-publish-contract-draft.md`(아직 커밋 전, 주 작업 폴더에만 있음)이고, 이 절은 그 구현을 설명한다. 공개 호스팅에 올리는 일은 아직 없다(호스팅 미정). 지금은 로컬 폴더에만 쓴다. 실제 MLB 피드·실제 저장소로 돌리는 것은 별도 승인 단계이며 아직 해 보지 않았다.
+팬의 브라우저가 이 맥에 닿지 않도록, 화면이 가져갈 내용을 **요청 없이 미리 파일로 써 두는** 프로그램이다. 계약 초안은 `docs/pm/service/public-publish-contract-draft.md`(아직 커밋 전, 주 작업 폴더에만 있음)이고, 이 절은 그 구현을 설명한다. 기본은 로컬 폴더 발행이며, 선택적으로 HTTP 업로드를 켤 수 있다. 호스팅·업로드 API는 아직 미정이다. 실제 MLB 피드·실제 저장소로 돌리는 것은 별도 승인 단계이며 아직 해 보지 않았다.
 
 ```sh
 # 저장소에 들어 있는 녹화 픽스처(849845)로 한 번 발행해 보기. 네트워크·T7·모델을 쓰지 않는다.
@@ -159,6 +159,23 @@ find "$T/out" -type f
 
 값은 `apps/observer/publish_config.json`에 있고 코드에 박아 두지 않았다. `publish_interval_s`(기본 10), `settled_recheck_s`(기본 600), `final_recheck_for_s`·`final_slow_recheck_s`(기본 21600), `live_days_back`/`live_days_ahead`(기본 1)는 **재지 않은 잠정값**이며 리허설에서 정한다. `fixed_delay_s`는 모든 시청자에게 같은 지연 하나이고 기본 0초다. `contract_version`(`v1`)이 곧 파일 경로 앞부분이다. 환경 변수 `PITCHEEZY_PUBLISH_OUT_DIR`, `PITCHEEZY_PUBLISH_INTERVAL_S`, `PITCHEEZY_PUBLISH_DELAY_S`, `PITCHEEZY_PUBLISH_STATE`, `PITCHEEZY_PUBLISH_COMMIT`와 명령줄 `--out`/`--interval`/`--delay`가 덮어쓴다. 피드를 실제로 조회하는 간격은 여전히 `live_config.json`(`poll_interval_s`, `fast_poll_s`)이 정한다.
 
+### 선택적 HTTP 업로드 (잠정 API)
+
+`publish_config.json`의 `upload.enabled`를 `true`로, `upload.base_url`을 파트너의 업로드 전용 HTTPS 주소로 설정한다. 파일은 `<base_url>/v1/game/123.json`처럼 PUT하고, 철회는 같은 주소에 DELETE한다. HTTP는 loopback(`127.0.0.1`, `::1`, `localhost`)에서만 허용한다. 리다이렉트와 환경 변수의 HTTP 프록시는 사용하지 않는다. 팬은 별도 공개 호스트만 읽는다.
+
+토큰 값은 저장소·설정 파일에 넣지 않는다. 기본은 실행 환경의 `PITCHEEZY_PUBLISH_TOKEN`이며 `upload.token_env`에는 **환경 변수 이름만** 넣는다. 파일을 쓰려면 `token_env: null`, `token_file: "/절대경로/저장소밖/토큰파일"`로 정한다. 토큰 파일은 운영자만 읽게 권한을 제한하고(예: 0600), 토큰 문자열 한 줄만 저장한다. git checkout 안 파일과 그곳으로 향하는 링크는 거절한다. 오류·health·상태에는 토큰, 원격 응답 본문, 업로드 URL을 기록하지 않는다.
+
+- `upload.timeout_s`: 요청 소켓 제한 시간(0 초과, 최대 60초). `retries`: 최초 요청 뒤 추가 시도 수(0–5). `backoff_s`: 첫 대기(0–10초), 재시도마다 두 배. 기본값 5초/2회/0.25초는 모두 **잠정값**이다.
+- `upload.headers.live` / `upload.headers.final`: `Content-Type: application/json`과 `Cache-Control`. 기본 캐시는 각각 5초/300초이며 **잠정값**이다. final은 종료 확정 경기·셋업, live는 나머지 파일이다. 정정될 수 있으므로 immutable은 쓰지 않는다.
+- `--check-remote --config <설정>`: 앱·피드·출력 폴더를 열지 않고 `_publisher_probe/<임의 ID>.json`에 무해한 PUT 후 DELETE하고 종료한다. PUT 응답을 못 받아도 DELETE를 시도한다. 실패하면 0이 아닌 종료 코드와 고정 오류 코드를 표시한다. DELETE 자체가 실패하면 probe가 남을 수 있다.
+- `--dry-run-upload --once --config <설정> --out <시험출력>`: 토큰을 읽거나 네트워크로 보내지 않고 메서드·상대 경로·바이트 수·파일 종류만 로그에 남긴다. **로컬 발행과 본문 생성은 실제로 실행**하므로 시험에는 위 녹화 픽스처 설정을 사용한다. 미전송 목록은 유지되어 이후 실제 업로드에서 다시 보낸다. check와 dry-run은 동시에 쓰지 않는다.
+
+`MirrorSink`의 읽기·순번 복구는 항상 로컬 `LocalDirSink`에서 한다(GET 없음). 로컬 기록은 원격 장애와 무관하게 진행한다. 원격 실패는 `upload_failed`로 health의 `unavailable_games`와 `upload` 요약에 표시하고 다른 경기·health 업로드를 계속한다. health 자체가 실패하면 공개 health는 멈추며 다음 주기에 최신 health를 다시 보낸다. health 요약은 그 파일을 보내기 **직전**의 미전송 수이므로 이전 health 실패를 한 주기 더 표시할 수 있다.
+
+상태 파일의 `upload_pending`은 상대 경로와 `put`/`delete`만 보관하고 기존과 같은 원자 교체로 저장한다. 내용이 안 바뀐 최종 파일도 재시작·다음 주기에 재전송하며, 철회는 오래된 PUT을 DELETE로 대체한다. 첫 활성화 시 기존 공개 파일도 보낸다. 점 파일·임시 파일·여섯 공개 이름 외 파일은 보내지 않는다. 순차 전송으로 데이터/철회를 먼저 처리하고 health를 마지막에 보낸다. 상태·로컬 출력은 함께 보관해야 하며, 원격 GET 없이 원격에만 남은 파일을 복구하거나 찾아 지울 수는 없다. 업로드 목적지를 바꿀 때는 중지한 발행기의 상태 JSON에서 `upload_pending` 키를 제거해 기존 로컬 파일 전체를 다시 등록한다.
+
+파트너 엔드포인트는 bearer 인증, 경로별 **원자적 전체 PUT 교체**, 반복 가능한 DELETE(없는 객체 404 허용), 설정한 Content-Type/Cache-Control 저장·서빙, probe 경로를 지원해야 한다. PUT/DELETE의 모든 2xx는 성공으로 간주하므로 응답 전에 공개 읽기에 반영되어야 한다. 여러 파일 전체가 한 번에 교체되는 보장은 없다. DELETE는 CDN 캐시도 무효화해야 하며, 원격 장애 중에는 이미 공개된 파일을 즉시 철회할 수 없다. 이때 health의 실패와 멈춘 발행 시각을 읽는 쪽에서 확인해야 한다. 로컬 폴더 하나와 원격 prefix 하나에는 발행기 하나만 배정한다. 순차 업로드·재시도 때문에 주기가 길어질 수 있으며 재시도 한도/캐시/주기는 파트너와 리허설 후 확정한다.
+
 ### 다른 팀에 넘기는 예제와 스키마
 
 `apps/observer/publish_contract/v1/`에 파일 종류별 예제(`examples/`)와 JSON Schema(`schema/`)가 있다. 합성 경기를 실제 발행기로 돌려 만든 것이고 스키마는 그 본문에서 뽑았다. 그래서 스키마는 합성 경기에 나온 값만 안다. 실제 경기에서 다른 타입(예: null)이 나올 수 있으니 리허설 뒤 다시 뽑아야 한다. 읽는 쪽은 모르는 키를 무시해야 한다.
@@ -167,7 +184,7 @@ find "$T/out" -type f
 PYTHONPATH=apps/observer/backend .venv-observer/bin/python apps/observer/scripts/export_publish_contract.py   # 다시 만들기
 ```
 
-`test_publisher.py`가 커밋된 폴더와 지금 코드가 쓰는 결과가 같은지 확인한다. 올리기(업로드)는 `publisher.Sink`의 `write`/`read`/`delete` 세 가지를 구현해 붙이면 되고 본문을 만드는 코드는 바꾸지 않는다.
+`test_publisher.py`가 커밋된 폴더와 지금 코드가 쓰는 결과가 같은지 확인한다. 업로드는 `publisher.HttpSink`와 `MirrorSink`가 맡으며 본문을 만드는 함수는 그대로다.
 
 ## 현재 구성
 
