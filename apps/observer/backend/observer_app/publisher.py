@@ -580,13 +580,15 @@ class Publisher:
 
     # ---- bookkeeping --------------------------------------------------------------------------------
     def _load_state(self):
-        state = {'sequence': 0, 'files': {}, 'checked': {}, 'embargoed': [], 'pending': {}}
+        state = {'sequence': 0, 'files': {}, 'checked': {}, 'embargoed': [], 'pending': {}, 'check_failed': []}
         if self.state_path is not None and self.state_path.is_file():
             try:
                 saved = json.loads(self.state_path.read_text())
                 if not (isinstance(saved, dict) and type(saved.get('sequence')) is int and isinstance(saved.get('files'), dict)
                         and isinstance(saved.get('checked'), dict) and isinstance(saved.get('embargoed', []), list)
-                        and isinstance(saved.get('pending', {}), dict)):
+                        and isinstance(saved.get('pending', {}), dict)
+                        and isinstance(saved.get('check_failed', []), list)
+                        and all(type(pk) is int and pk > 0 for pk in saved.get('check_failed', []))):
                     raise ValueError('not a publisher state')
                 state |= saved
             except (ValueError, OSError, RecursionError):  # unreadable bookkeeping: start as if it were lost (everything is rebuilt)
@@ -718,6 +720,14 @@ class Publisher:
         if item not in self._unavailable:
             self._unavailable.append(item)
 
+    def _check_result(self, game_pk, ok):
+        failed = set(self.state['check_failed'])
+        if ok:
+            failed.discard(game_pk)
+        else:
+            failed.add(game_pk)
+        self.state['check_failed'] = sorted(failed)
+
     # ---- one cycle ----------------------------------------------------------------------------------
     def cycle(self):
         """Build and write everything that is due. Returns the health body of this cycle."""
@@ -769,10 +779,18 @@ class Publisher:
             unavailable_dates.clear()
             self._lists(dates_body, live_dates, unavailable_dates)
             self.state['embargoed'] = sorted(embargoed | late)
-        # Verify the on-disk publish tail even when a final body was intentionally left unchanged: health can
-        # report this cycle's check without claiming that the game file was rewritten or still exists when it does not.
+        for game_pk, code in sorted(self.state['pending'].items()):  # still unresolved, asked this cycle or not
+            self._fail(int(game_pk), None, code)
+        if isinstance(self.sink, MirrorSink) and not self.sink.remote.dry_run:
+            for path in sorted(self.sink.pending):
+                match = re.fullmatch(re.escape(self.config['contract_version'])+r'/(?:game|setup)/(\d+)\.json', path)
+                if match:
+                    self._fail(int(match[1]), None, 'upload_failed')
+        # checked_at is this cycle's local file verification, not a claim that upstream was polled. Carry the
+        # last failed build/feed check through skipped final rechecks until a successful one clears it. Compute
+        # after durable and remote pending failures have been added to health's unavailable list.
         checked_games = listed | known | embargoed | late
-        failures = {item['game_pk'] for item in self._unavailable} | set(self._feed_failing)
+        failures = {item['game_pk'] for item in self._unavailable} | set(self._feed_failing) | set(self.state['check_failed'])
         game_checks = {}
         for game_pk in sorted(checked_games):
             path = self.layout['game'].format(game_pk=game_pk)
@@ -788,13 +806,6 @@ class Publisher:
             game_checks[str(game_pk)] = {'checked_at': _iso(now), 'sequence_checked': self._sequence,
                                          'file_sequence': file_sequence,
                                          'feed_ok': file_sequence is not None and game_pk not in failures and game_pk not in embargoed | late}
-        for game_pk, code in sorted(self.state['pending'].items()):  # still unresolved, asked this cycle or not
-            self._fail(int(game_pk), None, code)
-        if isinstance(self.sink, MirrorSink) and not self.sink.remote.dry_run:
-            for path in sorted(self.sink.pending):
-                match = re.fullmatch(re.escape(self.config['contract_version'])+r'/(?:game|setup)/(\d+)\.json', path)
-                if match:
-                    self._fail(int(match[1]), None, 'upload_failed')
         health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(now),
                   'publish_interval_s': self.config['publish_interval_s'], 'files_written': len(self._written)+1,
                   'unavailable_games': self._unavailable, 'unavailable_dates': sorted(set(unavailable_dates)),
@@ -881,12 +892,15 @@ class Publisher:
             if refused.status == 423:  # a demo took the game since the cycle began: not a fault
                 self._withdraw(game_pk)
             else:
+                self._check_result(game_pk, False)
                 self._fail(game_pk, refused.status, 'refused')
             return
         except NotPublic:
+            self._check_result(game_pk, False)
             LOGGER.error('game %s: the body is not the public view; not written', game_pk, exc_info=True)
             return self._fail(game_pk, None, 'not_public')
         except Exception:  # noqa: BLE001
+            self._check_result(game_pk, False)
             LOGGER.warning('game %s not built; the published file is kept', game_pk, exc_info=True)
             if arrived:
                 self.state['pending'][str(game_pk)] = 'archive_unread'
@@ -896,7 +910,9 @@ class Publisher:
             self.state['pending'][str(game_pk)] = 'archive_unread'  # a stored feed that is not a final one
         elif body['source']['kind'] == 'archive':
             self.state['pending'].pop(str(game_pk), None)
-        if (body.get('feed') or {}).get('ok') is False:
+        feed_ok = (body.get('feed') or {}).get('ok') is not False
+        self._check_result(game_pk, feed_ok)
+        if not feed_ok:
             # the body is the last snapshot: upstream did not answer. Said here, because a final file that does
             # not change (the digest leaves ``feed`` out) would otherwise hide it.
             self._feed_failing.append(game_pk)
@@ -906,6 +922,7 @@ class Publisher:
         try:
             self._put(path, body, always=not final, final=final, digest=game_digest(body))
         except OSError:
+            self._check_result(game_pk, False)
             LOGGER.warning('game %s not written; the published file is kept', game_pk, exc_info=True)
             return self._fail(game_pk, None, 'write_failed')
         written = self.state['files'][path]

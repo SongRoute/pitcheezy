@@ -145,6 +145,7 @@ def test_permanent_failure_isolated_pending_survives_restart_and_unchanged_file_
     endpoint.statuses['PUT', GAME] = 403
     health = world.cycle(settle=False)
     assert codes(health) == [(ARCHIVE_GAME, 'upload_failed')]
+    assert health['game_checks'][str(ARCHIVE_GAME)]['feed_ok'] is False
     assert HEALTH in endpoint.objects and f'v1/game/{LIVE_GAME}.json' in endpoint.objects
     saved = json.loads(world.publisher.state_path.read_text())
     assert saved['upload_pending'] == {GAME: 'put'}
@@ -154,6 +155,7 @@ def test_permanent_failure_isolated_pending_survives_restart_and_unchanged_file_
     endpoint.statuses['PUT', GAME] = 204
     health = world.cycle(settle=False)
     assert codes(health) == [] and health['upload']['pending'] == 0
+    assert health['game_checks'][str(ARCHIVE_GAME)]['feed_ok'] is True
     assert endpoint.objects[GAME] == before == world.path(GAME).read_bytes()
     assert endpoint.requests[-1][1] == HEALTH and any(r[:2] == ('PUT', GAME) for r in endpoint.requests)
     assert json.loads(world.publisher.state_path.read_text())['upload_pending'] == {}
