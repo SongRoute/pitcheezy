@@ -92,3 +92,22 @@ def test_all_training_kinds_and_no_eval(tmp_path):
     job=next(j for j in cfg['jobs'] if j['id']=='B-mask-pre-s0')
     with pytest.raises(ValueError,match='outside FIT'):
         train.run_job(job,cfg,None,tmp_path/'bad',{'synthetic':True,'synthetic_arrays':bad})
+
+
+def test_eval_values_do_not_change_fit_and_cal(tmp_path):
+    cfg,arrays=fixture();job=next(j for j in cfg['jobs'] if j['id']=='A-N0-s0')
+    changed=copy.deepcopy(arrays);ev=changed[1]['evaluation']
+    changed[0][ev]=999
+    changed[1]['y7'][ev]=(changed[1]['y7'][ev]+1)%7
+    changed[1]['y10'][ev]=(changed[1]['y10'][ev]+1)%10
+    receipts=[]
+    for name,data in [('base',arrays),('changed-eval',changed)]:
+        receipts.append(train.run_job(job,cfg,None,tmp_path/name,{'synthetic':True,'synthetic_arrays':data}))
+    assert receipts[0]['best_select_nll7']==receipts[1]['best_select_nll7']
+    assert (tmp_path/'base'/'temperatures.json').read_bytes()==(tmp_path/'changed-eval'/'temperatures.json').read_bytes()
+    a=torch.load(tmp_path/'base'/'model-state.pt',weights_only=True)
+    b=torch.load(tmp_path/'changed-eval'/'model-state.pt',weights_only=True)
+    assert all(torch.equal(a[k],b[k]) for k in a)
+    c=copy.deepcopy(arrays[2]);del c['fit_prior_support']
+    with pytest.raises(ValueError,match='chronological FIT support'):
+        train.support_groups(arrays[1],c,cfg['dro'])
