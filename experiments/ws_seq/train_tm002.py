@@ -59,6 +59,7 @@ def check_grant(grant, cfg, arm, seed, inputs, out):
                 or gate.get('eval_scores_opened') is not False
                 or set(gate.get('receipts_sha256', {})) != {'T-s0', 'R-s0'}):
             raise base.Stop('STOP both seed0 integrity receipts required; no score selection')
+        initial_hashes = set()
         for name, pin in gate['receipts_sha256'].items():
             receipt_path=Path(gate['receipts'][name])
             if base.sha(receipt_path) != pin:raise base.Stop('STOP seed0 receipt hash')
@@ -70,6 +71,9 @@ def check_grant(grant, cfg, arm, seed, inputs, out):
                     or receipt.get('input_manifest_sha256')!=grant['input_manifest_sha256']
                     or receipt.get('source_sha256')!=source_hashes()):
                 raise base.Stop('STOP seed0 integrity receipt mismatch')
+            initial_hashes.add(receipt.get('shared_initial_sha256'))
+        if len(initial_hashes) != 1 or None in initial_hashes:
+            raise base.Stop('STOP seed0 shared initial weights differ')
     if out.exists():
         raise base.Stop('STOP output path already exists; new attempt required')
 
@@ -97,7 +101,12 @@ def train(torch, cfg, arm, seed, x, C, S, ctx, out, metadata):
     torch.manual_seed(seed); np.random.seed(seed)
     torch.backends.cudnn.deterministic = True; torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True, warn_only=True)
-    model = tm002.build_model(torch, cfg, arm, seed).to(device).float()
+    model = tm002.build_model(torch, cfg, arm, seed)
+    initial = base.hashlib.sha256()
+    for key,value in sorted(tm002.shared_state(model).items()):
+        initial.update(key.encode());initial.update(value.detach().numpy().tobytes())
+    metadata = dict(metadata,shared_initial_sha256=initial.hexdigest())
+    model = model.to(device).float()
     data = base.Data(torch, device, x, C, S, ctx)
     rows = {r: torch.as_tensor(np.flatnonzero(C[r]), dtype=torch.int64, device=device)
             for r in ('fit',) + base.ROLES}
