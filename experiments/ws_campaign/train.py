@@ -250,6 +250,18 @@ def run_job(job, cfg, inputs, out, metadata):
     registered = [x for x in cfg['jobs'] if x['id'] == job['id']]
     if len(registered) != 1 or any(job.get(k) != v for k, v in registered[0].items()):
         raise ValueError('job differs from registered scientific slot')
+    if not synthetic:
+        binding = cfg['variants']['history_columns_manifest']
+        root = Path(__file__).resolve().parents[2]
+        manifest_path = (root / binding['path']).resolve()
+        if not manifest_path.is_relative_to(root) or base.sha(manifest_path) != binding['sha256']:
+            raise ValueError('histmask structural manifest binding')
+        layout = json.loads(manifest_path.read_text())
+        if (layout.get('status') != 'COMPLETED' or layout.get('scope') != 'encoder_structure'
+                or layout.get('data_role') != cfg['data_role']
+                or layout.get('history_columns') != cfg['variants']['history_columns']
+                or layout.get('dimension') != cfg['base']['inputs']['feature_dimension']):
+            raise ValueError('histmask structural layout mismatch')
     out = Path(out); out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()): raise ValueError('scientific output must be empty')
     x, c, s, ctx = metadata['synthetic_arrays'] if synthetic else load_inputs(inputs, cfg)
