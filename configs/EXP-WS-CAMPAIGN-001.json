@@ -1,0 +1,1185 @@
+{
+  "id": "EXP-WS-CAMPAIGN-001",
+  "status": "PREPARED_PENDING_INDEPENDENT_REVIEW",
+  "base_commit": "d0f4a6e",
+  "data_role": "2026 EXPOSED DEVELOPMENT",
+  "data_version": "d20260930-h2026f",
+  "base": {
+    "id": "EXP-WS-SEQ-001",
+    "phase": "WS-adaptation",
+    "baseline": "E1b arm P (prequential-refit LightGBM 10+2 backbone, 199 prequential features)",
+    "change": "neural classifier on the same 199 prequential pre-pitch features (N0), plus a transformer encoder over up to 32 earlier pitches of the same pitcher in the same game (N1)",
+    "data_version": "d20260930-h2026f",
+    "data_role": "2026 EXPOSED DEVELOPMENT",
+    "authoritative": "configs/EXP-WS-SEQ-001.json",
+    "arms": [
+      "N0",
+      "N1"
+    ],
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "inputs": {
+      "features_file": "x-prequential.npy",
+      "corpus_file": "corpus-subset.npz",
+      "sequence_file": "seq-inputs.npz",
+      "manifest_file": "manifest.json",
+      "feature_dimension": 199
+    },
+    "labels": {
+      "parent_classes": 10,
+      "whiff_parent_class": 1,
+      "bip_classes": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        9
+      ],
+      "leaf_order": [
+        "ball",
+        "foul",
+        "hit_by_pitch",
+        "narrow_whiff",
+        "other_strike",
+        "ground_ball_in_play",
+        "other_in_play"
+      ]
+    },
+    "context": {
+      "max_length": 32,
+      "pitch_type_vocab": 19,
+      "outcome_vocab": 10,
+      "balls_vocab": 4,
+      "strikes_vocab": 3,
+      "same_batter_vocab": 2,
+      "position_vocab": 33
+    },
+    "model": {
+      "trunk_hidden": [
+        256,
+        128
+      ],
+      "activation": "gelu",
+      "dropout": 0.1,
+      "layer_norm": true,
+      "token_dim": 64,
+      "encoder_layers": 2,
+      "encoder_heads": 4,
+      "encoder_ff": 128,
+      "encoder_dropout": 0.1,
+      "encoder_activation": "gelu"
+    },
+    "training": {
+      "optimizer": "adamw",
+      "lr": 0.001,
+      "weight_decay": 0.0001,
+      "batch_size": 2048,
+      "max_epochs": 30,
+      "patience": 5,
+      "loss_weights": {
+        "parent": 1.0,
+        "narrow_whiff": 1.0,
+        "ground_ball_per_pitch": 1.0
+      },
+      "precision": "fp32",
+      "eval_batch_size": 8192,
+      "wall_cap_seconds": 3600
+    },
+    "temperature": {
+      "bounds_T": [
+        0.05,
+        20.0
+      ]
+    },
+    "nll_clip": 1e-15
+  },
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "budgets": {
+    "jobs": 87,
+    "supervised": 78,
+    "pretrain": 6,
+    "teacher": 3,
+    "scalar_calibrations": 228,
+    "max_concurrent_jobs": 5,
+    "max_jobs_per_gpu": 1,
+    "retries": 0,
+    "per_job_seconds": 3600,
+    "host_rss_bytes": 8589934592,
+    "gpu_reserved_bytes": 17179869184,
+    "teacher_seconds": 900,
+    "total_gpu_job_seconds": 305100,
+    "total_gpu_hours_upper_bound": 84.75,
+    "max_campaign_wall_seconds": 345600
+  },
+  "variants": {
+    "tcn": {
+      "kernel": 3,
+      "dilations": [
+        1,
+        2,
+        4,
+        8,
+        16
+      ],
+      "dropout": 0.1
+    },
+    "token_dropout": 0.15,
+    "history_columns": [],
+    "history_columns_manifest": null,
+    "history_mask_probability": 0.1
+  },
+  "pretraining": {
+    "epochs": 2,
+    "max_steps": 512,
+    "batch_size": 256,
+    "masked_probability": 0.15,
+    "contrast_temperature": 0.2,
+    "paired_compute": "optimizer_steps",
+    "finetune_epochs": 15
+  },
+  "distill": {
+    "temperature": 2.0,
+    "weight": 0.5,
+    "teacher": "fixed mean probabilities of A-T seeds0,1,2",
+    "soft_targets": "parent softmax(logits/2), binary sigmoid(logits/2), averaged after temperature"
+  },
+  "dro": {
+    "boundaries": [
+      0,
+      10,
+      100,
+      1000
+    ],
+    "min_rows": 32,
+    "eta": 0.01,
+    "merge": "ascending under-supported group into next higher; final under-supported group into previous"
+  },
+  "evaluation": {
+    "automatic_scoring": false,
+    "metrics": [
+      "NLL",
+      "Brier",
+      "ECE10"
+    ],
+    "bootstrap_unit": "game_pk",
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 20261211,
+    "reports_per_completed_block": 1
+  },
+  "jobs": [
+    {
+      "id": "A-T-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-T-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-T-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-R-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "R",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-R-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "R",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-R-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-R-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "R",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-R-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-C-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-C-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-C-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-C-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-C-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-G-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "G",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-G-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "G",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-G-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-G-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "G",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-G-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-K-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-K-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-K-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-K-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-K-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-N0-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "N0",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-N0-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "N0",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-N0-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-N0-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "N0",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-N0-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-recent4-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-recent4",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-recent4-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-recent4",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-T-recent4-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-recent4-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-recent4",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-T-recent4-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-C-shuf-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "C-shuf",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-C-shuf-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "C-shuf",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-C-shuf-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-C-shuf-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "C-shuf",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-C-shuf-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-leaf7-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-leaf7",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 1
+    },
+    {
+      "id": "A-T-leaf7-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-leaf7",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-T-leaf7-s0"
+      ],
+      "calibrations": 1
+    },
+    {
+      "id": "A-T-leaf7-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-leaf7",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-T-leaf7-s0"
+      ],
+      "calibrations": 1
+    },
+    {
+      "id": "A-T-tokdrop-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-tokdrop",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-tokdrop-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-tokdrop",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-T-tokdrop-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-tokdrop-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-tokdrop",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-T-tokdrop-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-histmask-s0",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-histmask",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-histmask-s1",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-histmask",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-T-histmask-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "A-T-histmask-s2",
+      "block": "A",
+      "kind": "supervised",
+      "arm": "T-histmask",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-T-histmask-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-mask-pre-s0",
+      "block": "B",
+      "kind": "pretrain",
+      "arm": "mask",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 0
+    },
+    {
+      "id": "B-T-mask-pre-s0",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-mask-pre",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [
+        "B-mask-pre-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-T-mask-scratch-s0",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-mask-scratch",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [
+        "B-mask-pre-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-contrast-pre-s0",
+      "block": "B",
+      "kind": "pretrain",
+      "arm": "contrast",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 0
+    },
+    {
+      "id": "B-T-contrast-pre-s0",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-contrast-pre",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [
+        "B-contrast-pre-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-T-contrast-scratch-s0",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-contrast-scratch",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [
+        "B-contrast-pre-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-T-dro-s0",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-dro",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "B-teacher-s0",
+      "block": "B",
+      "kind": "teacher",
+      "arm": "T",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [
+        "A-T-s0"
+      ],
+      "calibrations": 0
+    },
+    {
+      "id": "B-N0-distill-s0",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "N0-distill",
+      "seed": 0,
+      "window": "base",
+      "depends_on": [
+        "B-teacher-s0",
+        "B-teacher-s1",
+        "B-teacher-s2"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-mask-pre-s1",
+      "block": "B",
+      "kind": "pretrain",
+      "arm": "mask",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 0
+    },
+    {
+      "id": "B-T-mask-pre-s1",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-mask-pre",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "B-mask-pre-s1",
+        "B-T-mask-pre-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-T-mask-scratch-s1",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-mask-scratch",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "B-mask-pre-s1",
+        "B-T-mask-scratch-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-contrast-pre-s1",
+      "block": "B",
+      "kind": "pretrain",
+      "arm": "contrast",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 0
+    },
+    {
+      "id": "B-T-contrast-pre-s1",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-contrast-pre",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "B-contrast-pre-s1",
+        "B-T-contrast-pre-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-T-contrast-scratch-s1",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-contrast-scratch",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "B-contrast-pre-s1",
+        "B-T-contrast-scratch-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-T-dro-s1",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-dro",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "B-T-dro-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-teacher-s1",
+      "block": "B",
+      "kind": "teacher",
+      "arm": "T",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "A-T-s1"
+      ],
+      "calibrations": 0
+    },
+    {
+      "id": "B-N0-distill-s1",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "N0-distill",
+      "seed": 1,
+      "window": "base",
+      "depends_on": [
+        "B-teacher-s0",
+        "B-teacher-s1",
+        "B-teacher-s2",
+        "B-N0-distill-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-mask-pre-s2",
+      "block": "B",
+      "kind": "pretrain",
+      "arm": "mask",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 0
+    },
+    {
+      "id": "B-T-mask-pre-s2",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-mask-pre",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "B-mask-pre-s2",
+        "B-T-mask-pre-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-T-mask-scratch-s2",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-mask-scratch",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "B-mask-pre-s2",
+        "B-T-mask-scratch-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-contrast-pre-s2",
+      "block": "B",
+      "kind": "pretrain",
+      "arm": "contrast",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [],
+      "calibrations": 0
+    },
+    {
+      "id": "B-T-contrast-pre-s2",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-contrast-pre",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "B-contrast-pre-s2",
+        "B-T-contrast-pre-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-T-contrast-scratch-s2",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-contrast-scratch",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "B-contrast-pre-s2",
+        "B-T-contrast-scratch-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-T-dro-s2",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "T-dro",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "B-T-dro-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "B-teacher-s2",
+      "block": "B",
+      "kind": "teacher",
+      "arm": "T",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "A-T-s2"
+      ],
+      "calibrations": 0
+    },
+    {
+      "id": "B-N0-distill-s2",
+      "block": "B",
+      "kind": "supervised",
+      "arm": "N0-distill",
+      "seed": 2,
+      "window": "base",
+      "depends_on": [
+        "B-teacher-s0",
+        "B-teacher-s1",
+        "B-teacher-s2",
+        "B-N0-distill-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono1-T-s0",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 0,
+      "window": "chrono1",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono1-T-s1",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 1,
+      "window": "chrono1",
+      "depends_on": [
+        "C-chrono1-T-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono1-T-s2",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 2,
+      "window": "chrono1",
+      "depends_on": [
+        "C-chrono1-T-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono1-C-s0",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 0,
+      "window": "chrono1",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono1-C-s1",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 1,
+      "window": "chrono1",
+      "depends_on": [
+        "C-chrono1-C-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono1-C-s2",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 2,
+      "window": "chrono1",
+      "depends_on": [
+        "C-chrono1-C-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono1-K-s0",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 0,
+      "window": "chrono1",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono1-K-s1",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 1,
+      "window": "chrono1",
+      "depends_on": [
+        "C-chrono1-K-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono1-K-s2",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 2,
+      "window": "chrono1",
+      "depends_on": [
+        "C-chrono1-K-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono2-T-s0",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 0,
+      "window": "chrono2",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono2-T-s1",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 1,
+      "window": "chrono2",
+      "depends_on": [
+        "C-chrono2-T-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono2-T-s2",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 2,
+      "window": "chrono2",
+      "depends_on": [
+        "C-chrono2-T-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono2-C-s0",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 0,
+      "window": "chrono2",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono2-C-s1",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 1,
+      "window": "chrono2",
+      "depends_on": [
+        "C-chrono2-C-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono2-C-s2",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 2,
+      "window": "chrono2",
+      "depends_on": [
+        "C-chrono2-C-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono2-K-s0",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 0,
+      "window": "chrono2",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono2-K-s1",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 1,
+      "window": "chrono2",
+      "depends_on": [
+        "C-chrono2-K-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-chrono2-K-s2",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 2,
+      "window": "chrono2",
+      "depends_on": [
+        "C-chrono2-K-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-pitcher_holdout-T-s0",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 0,
+      "window": "pitcher_holdout",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "C-pitcher_holdout-T-s1",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 1,
+      "window": "pitcher_holdout",
+      "depends_on": [
+        "C-pitcher_holdout-T-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-pitcher_holdout-T-s2",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "T",
+      "seed": 2,
+      "window": "pitcher_holdout",
+      "depends_on": [
+        "C-pitcher_holdout-T-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-pitcher_holdout-C-s0",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 0,
+      "window": "pitcher_holdout",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "C-pitcher_holdout-C-s1",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 1,
+      "window": "pitcher_holdout",
+      "depends_on": [
+        "C-pitcher_holdout-C-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-pitcher_holdout-C-s2",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "C",
+      "seed": 2,
+      "window": "pitcher_holdout",
+      "depends_on": [
+        "C-pitcher_holdout-C-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-pitcher_holdout-K-s0",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 0,
+      "window": "pitcher_holdout",
+      "depends_on": [],
+      "calibrations": 3
+    },
+    {
+      "id": "C-pitcher_holdout-K-s1",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 1,
+      "window": "pitcher_holdout",
+      "depends_on": [
+        "C-pitcher_holdout-K-s0"
+      ],
+      "calibrations": 3
+    },
+    {
+      "id": "C-pitcher_holdout-K-s2",
+      "block": "C",
+      "kind": "supervised",
+      "arm": "K",
+      "seed": 2,
+      "window": "pitcher_holdout",
+      "depends_on": [
+        "C-pitcher_holdout-K-s0"
+      ],
+      "calibrations": 3
+    }
+  ]
+}
