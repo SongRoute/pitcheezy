@@ -358,6 +358,8 @@ await block(async () => {
   let behind = 2000, seq = 40;
   const { context, page, errors } = await open({ answer: (file) => {
     if (file === 'health.json') return { status: 404 };
+    // The screen also reads the manifest: this scenario must expose no hosting clock on any successful response.
+    if (file === 'manifest.json') return { json: top({ live_dates: ['2026-09-30'] }, 1, Date.now()), date: null };
     if (file === `game/${LIVE}.json`) return { json: top(liveBody(fx.live, '849843:11:2'), seq++, Date.now() - behind), date: null };
   } });
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
@@ -368,7 +370,7 @@ await block(async () => {
   ok(await waitKind(page, 'ok'), 'late/elapsed: clears');
   ok(errors.length === 0, `late/elapsed: no page errors ${errors.join(' | ')}`);
   await context.close();
-});
+}, 'late-elapsed');
 // (d) list: late only while a listed game is in play
 await block(async () => {
   const { context, page } = await open({ width: 375, height: 553, answer: (file) => file === 'health.json' ? { json: health(120, FILE_AT), date: FILE_AT + 300000 } : undefined });
@@ -1155,7 +1157,7 @@ async function advance(page, ms) {
 const manifestBody = (period, seq = 120) => top({ live_dates: ['2026-09-30'], publish_interval_s: period }, seq, FILE_AT);
 async function protocolScreen({ checks = true, period = 10, final = false, pregame = false, dist = distPublic, list = false } = {}) {
   const state = { checks, period, fileSequence: 1, bodySequence: 1, feedOk: true, failures: [], fileMode: 'ok', final, checkedAt: null,
-    healthAt: null, key: '849843:11:2', malformed: undefined, healthSequence: 10000, manifestSequence: 120, etag: null, pregame, start: FILE_AT + 3600000 };
+    healthAt: null, pitchScore: null, key: '849843:11:2', malformed: undefined, healthSequence: 10000, manifestSequence: 120, etag: null, pregame, start: FILE_AT + 3600000 };
   let h;
   h = await open({ dist, protocol: true, clock: true, answer: async (file, n, headers) => {
     const now = await h.page.evaluate(() => Date.now());
@@ -1172,6 +1174,8 @@ async function protocolScreen({ checks = true, period = 10, final = false, prega
       if (state.fileMode === '404') return { status: 404 };
       if (state.etag && headers['if-none-match'] === state.etag) return { status: 304, etag: state.etag, date: now };
       const body = state.final ? { ...asGame(LIVE, fx.final), game: { ...fx.final.game, game_pk: LIVE, away_score: state.bodySequence } } : liveBody(state.bodySequence > 1 ? fx.live_more : fx.live, state.key);
+      if (state.final && state.pitchScore !== null) body.pitches = body.pitches.map((p, i) => i === 0
+        ? { ...p, situation_before: { ...p.situation_before, away_score: state.pitchScore } } : p);
       if (state.pregame) { body.game = { ...body.game, status: 'scheduled', live: false, start: iso(state.start) }; body.next = null; body.current = null;
         body.display_state = display(null, { shown: false, state: 'pregame', label: '경기 전' }); }
       return { json: top(body, state.bodySequence, FILE_AT, state.final), date: now, etag: state.etag };
@@ -1272,8 +1276,16 @@ await block(async () => {
   const h = await protocolScreen({ final: true }); const { page, state } = h;
   state.healthAt = FILE_AT; state.checkedAt = FILE_AT; await advance(page, 120000);
   ok(await page.locator('.sv-notice').count() === 0 && count(h, `game/${LIVE}.json`) === 1, 'final checks: no time warnings or unchanged-body downloads');
+  const selected = page.locator('.sv-strip .sv-card[aria-pressed="true"]');
+  const selectedLabel = await selected.getAttribute('aria-label');
+  const score = page.locator('.sv-head-score strong').first();
+  ok(await score.innerText() === '0', 'final checks: the default first pitch shows its historical score');
   state.fileSequence = 2; state.bodySequence = 2; await advance(page, 10000);
-  ok(count(h, `game/${LIVE}.json`) === 2 && await page.locator('.sv-head-score strong').first().innerText() === '2', 'final checks: higher file_sequence applies late score correction');
+  ok(count(h, `game/${LIVE}.json`) === 2 && await score.innerText() === '0', 'final checks: a changed final total does not overwrite the selected pitch score');
+  // Correct the selected pitch itself, not only the final total: the screen deliberately shows that pitch as of its time.
+  state.fileSequence = 3; state.bodySequence = 3; state.pitchScore = 2; await advance(page, 10000);
+  ok(count(h, `game/${LIVE}.json`) === 3 && await score.innerText() === '2' && await selected.getAttribute('aria-label') === selectedLabel,
+    'final checks: higher file_sequence applies late score correction without changing the selected pitch');
   state.feedOk = false; await advance(page, 10000);
   ok(await kind(page) === 'feed', 'final checks: explicit failure remains visible');
   state.fileSequence = null; await advance(page, 10000);
