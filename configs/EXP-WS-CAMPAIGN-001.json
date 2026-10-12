@@ -117,7 +117,7 @@
     "teacher_seconds": 900,
     "total_gpu_job_seconds": 305100,
     "total_gpu_hours_upper_bound": 84.75,
-    "max_campaign_wall_seconds": 345600
+    "max_campaign_wall_seconds": 86400
   },
   "variants": {
     "tcn": {
