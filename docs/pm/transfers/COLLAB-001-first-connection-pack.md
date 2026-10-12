@@ -9,7 +9,7 @@
 - 이 전달 문서: Song 저장소 `codex/first-connection-pack`. 작성 전 기준 커밋은 `ed3a51c60482dbccdb084f437cc3c5e93f2dfc6a`다. 이 문서를 담은 새 커밋은 전달할 때 함께 적는다.
 - 두 `svc/` 브랜치는 현재 로컬 작업트리에서 확인했다. 원격에 올라갔는지는 확인하지 못했으므로 팀원이 위 커밋을 받을 수 있다고 전제하지 않는다.
 
-원격 push 여부: (PM이 채움)
+- 원격 push 여부: 2026-10-12에 올렸다. `svc/ws-publisher`(`d5a1dd9`), `svc/ws-static-web`(`ef4e4df`), 이 문서가 있는 `collab/ws-2026`. 화면 쪽은 읽기 횟수를 줄이는 변경이, 발행기 쪽은 업로드 기능과 추천 항목 스키마 수정이 이어서 올라올 예정이며 올라오면 이 줄과 해시를 갱신한다.
 
 ## 2. 화면 빌드와 배치
 
@@ -145,3 +145,5 @@ PYTHONPATH=apps/observer/backend .venv-observer/bin/python -m pytest apps/observ
 - 진행 중 경기 파일의 매 주기 재작성과 화면의 기본 `2000 ms` 조회는 검토 중이다. 화면이 `setup`을 읽는 연결도 아직 없다. 근거: `svc/ws-publisher`의 `publisher.py::Publisher._game`, `svc/ws-static-web`의 `src/service/publish.ts::publishedPath`.
 - `unsupported` 화면 상태를 보여 주는 고정 예시와 그 SHA-256은 아직 없다. 첫 연결 합격 전 별도 합의가 필요하다. 근거: `apps/observer/publish_contract/v1/examples/`.
 - 동시 접속 수·끝에서 끝까지의 지연·공개 업로드 성능·알림 시간은 **미측정**이다. 공개 자료 이용 허가도 확인되지 않았다. 근거: `docs/pm/transfers/COLLAB-001-ws-public-launch-request-draft.md` 「합격 기준」, `docs/pm/service/mlb-data-terms-research-2026-10-11.md`.
+- 고정 예시에 '미지원 투수' 상태 파일이 아직 없다. 첫 연결 합격 기준의 '미지원 구별'을 확인하려면 필요하므로 추가해서 보낸다.
+- 추천을 켠 실제 경기 재생(849831, 한 경기, 오프라인)에서 경기 파일은 최대 732,239바이트(gzip 53,114)였다. 5절의 크기 수치는 추천을 끈 재생의 값이다.
