@@ -86,14 +86,24 @@ def support_groups(c, s, cfg):
 
 
 def dependency(job, metadata, kind):
-    ids = [x for x in job['depends_on'] if (('pre-s' in x) if kind == 'pretrain' else
-                                             ('teacher-s' in x) if kind == 'teacher' else x.startswith('A-T-s'))]
-    if len(ids) != 1: raise ValueError('exact one dependency required: ' + kind)
-    root = Path(metadata['dependencies'][ids[0]])
+    seed = job['seed']
+    if kind == 'pretrain':
+        objective = 'mask' if job['arm'].startswith('T-mask-') else 'contrast' if job['arm'].startswith('T-contrast-') else None
+        if objective is None: raise ValueError('unknown paired pretraining objective')
+        expected = f'B-{objective}-pre-s{seed}'
+    elif kind == 'model':
+        objective = 'T'; expected = f'A-T-s{seed}'
+    else: raise ValueError('unknown dependency kind')
+    if job['depends_on'].count(expected) != 1: raise ValueError('exact registered dependency required')
+    root = Path(metadata['dependencies'][expected])
     receipt = json.loads((root / 'receipt.json').read_text())
-    if receipt.get('status') != 'COMPLETED': raise ValueError('incomplete scientific dependency')
+    if (receipt.get('status') != 'COMPLETED' or receipt.get('id') != expected
+            or receipt.get('seed') != seed or receipt.get('arm') != objective
+            or receipt.get('kind') != ('pretrain' if kind == 'pretrain' else 'supervised')):
+        raise ValueError('dependency seed/objective/identity mismatch')
     for name, sha in receipt['outputs_sha256'].items():
-        if base.sha(root / name) != sha: raise ValueError('dependency artifact hash mismatch')
+        if Path(name).name != name or base.sha(root / name) != sha:
+            raise ValueError('dependency artifact hash mismatch')
     return root, receipt
 
 
@@ -102,7 +112,7 @@ def run_pretrain(job, cfg, model, data, keys, fit, out):
     head = torch.nn.Linear(cfg['base']['model']['token_dim'], 10).to(data.x.device)
     opt = torch.optim.AdamW(list(model.parameters()) + list(head.parameters()),
                            lr=cfg['base']['training']['lr'], weight_decay=cfg['base']['training']['weight_decay'])
-    steps = 0; start = time.monotonic(); final_loss = None
+    steps = 0; examples = 0; token_targets = 0; start = time.monotonic(); final_loss = None
     for epoch in range(p['epochs']):
         order = fit[torch.randperm(len(fit), device=fit.device)]
         for offset in range(0, len(order), p['batch_size']):
@@ -123,7 +133,9 @@ def run_pretrain(job, cfg, model, data, keys, fit, out):
                 loss = (torch.nn.functional.cross_entropy(similarity, labels) + torch.nn.functional.cross_entropy(similarity.T, labels)) / 2
             else: raise ValueError('unknown pretraining objective')
             update(loss, model, opt, extra=head.parameters())
-            steps += 1; final_loss = float(loss.detach())
+            steps += 1; examples += len(idx)
+            token_targets += int(masked.sum()) if job['arm'] == 'mask' else 2 * len(idx)
+            final_loss = float(loss.detach())
             if steps >= p['max_steps']: break
         if steps >= p['max_steps']: break
     if not steps: raise ValueError('no nonempty FIT context pretraining steps')
@@ -131,7 +143,8 @@ def run_pretrain(job, cfg, model, data, keys, fit, out):
     state = {k: v.detach().cpu() for k, v in model.state_dict().items()
              if k.startswith('net.encoder.') or k.startswith('net.e_') or k == 'net.no_context'}
     torch.save(state, out / 'pretrained-state.pt')
-    return {'optimization_steps': steps, 'elapsed_compute_seconds': time.monotonic() - start,
+    return {'optimization_steps': steps, 'sample_presentations': examples, 'objective_targets': token_targets,
+            'elapsed_compute_seconds': time.monotonic() - start,
             'objective_final_loss': final_loss, 'files': ['pretrained-state.pt'], 'calibrations': 0}
 
 
@@ -160,7 +173,8 @@ def run_supervised(job, cfg, model, data, keys, rows, c, s, out, metadata):
         else: max_steps += parent_steps
         paired_info = {'rule': 'optimizer_steps', 'pretraining_steps': parent_steps,
                        'supervised_target_steps': max_steps, 'total_target_steps': max_steps + (parent_steps if arm.endswith('-pre') else 0),
-                       'wall_compute_matched': False}
+                       'wall_compute_matched': False, 'sample_count_matched': False,
+                       'pretraining_sample_presentations': receipt['sample_presentations']}
     group_info = None
     if arm == 'T-dro':
         groups, group_info = support_groups(c, s, cfg['dro']); groups = torch.as_tensor(groups, device=device)
@@ -174,7 +188,8 @@ def run_supervised(job, cfg, model, data, keys, rows, c, s, out, metadata):
             if teacher_id not in job['depends_on']: raise ValueError('all fixed teacher seeds required')
             root = Path(metadata['dependencies'][teacher_id])
             receipt = json.loads((root / 'receipt.json').read_text())
-            if receipt.get('status') != 'COMPLETED' or receipt.get('seed') != seed:
+            if (receipt.get('status') != 'COMPLETED' or receipt.get('seed') != seed
+                    or receipt.get('id') != teacher_id or receipt.get('kind') != 'teacher' or receipt.get('arm') != 'T'):
                 raise ValueError('teacher receipt identity')
             if base.sha(root / 'teacher-fit.npz') != receipt['outputs_sha256']['teacher-fit.npz']:
                 raise ValueError('teacher artifact hash')
@@ -187,7 +202,7 @@ def run_supervised(job, cfg, model, data, keys, rows, c, s, out, metadata):
                    for k in base.HEADS}
         teacher_row = torch.full((len(c['fit']),), -1, dtype=torch.long, device=device)
         teacher_row[rows['fit']] = torch.arange(len(rows['fit']), device=device)
-    best = None; best_nll = math.inf; best_epoch = 0; curve = []; steps = 0; epoch = 0
+    best = None; best_nll = math.inf; best_epoch = 0; curve = []; steps = 0; examples = 0; epoch = 0
     while steps < max_steps:
         epoch += 1; model.train(); order = rows['fit'][torch.randperm(len(rows['fit']), device=device)]
         for offset in range(0, len(order), t['batch_size']):
@@ -211,7 +226,7 @@ def run_supervised(job, cfg, model, data, keys, rows, c, s, out, metadata):
                     dl = f.binary_cross_entropy_with_logits(z[name] / tau, target, reduction='none') * tau ** 2
                     distill += base.masked_mean(torch, dl, mask.float())
                 w = cfg['distill']['weight']; loss = (1 - w) * loss + w * distill
-            update(loss, model, opt); steps += 1
+            update(loss, model, opt); steps += 1; examples += len(idx)
             if steps >= max_steps: break
         z = predict(model, data, keys, rows['tuning'], t['eval_batch_size'])
         nll = base.nll7(probabilities(z), c['y7'][c['tuning']], cfg['base']['nll_clip'])
@@ -237,7 +252,7 @@ def run_supervised(job, cfg, model, data, keys, rows, c, s, out, metadata):
     torch.save(best, out / 'model-state.pt'); save_json(out / 'temperatures.json', temperatures)
     save_json(out / 'curve.json', curve)
     np.savez(out / 'calibration-margins.npz', keys=c['keys'][cal], **z)
-    return {'optimization_steps': steps, 'best_epoch': best_epoch, 'best_select_nll7': best_nll,
+    return {'optimization_steps': steps, 'sample_presentations': examples, 'best_epoch': best_epoch, 'best_select_nll7': best_nll,
             'paired_compute': paired_info, 'support_groups': group_info, 'calibrations': len(temperatures),
             'files': ['model-state.pt', 'temperatures.json', 'curve.json', 'calibration-margins.npz']}
 
@@ -298,7 +313,8 @@ def run_job(job, cfg, inputs, out, metadata):
         model.load_state_dict(torch.load(root / 'model-state.pt', map_location=device, weights_only=True))
         z = predict(model, data, keys, rows['fit'], cfg['base']['training']['eval_batch_size'])
         np.savez(out / 'teacher-fit.npz', keys=c['keys'][c['fit']], **{k:v.astype(np.float32) for k,v in z.items()})
-        result = {'files': ['teacher-fit.npz'], 'calibrations': 0, 'optimization_steps': 0}
+        result = {'files': ['teacher-fit.npz'], 'calibrations': 0, 'optimization_steps': 0,
+                  'sample_presentations': len(rows['fit'])}
     elif job['kind'] == 'supervised':
         result = run_supervised(job, cfg, model, data, keys, rows, c, s, out, metadata)
     else: raise ValueError('unregistered job kind')

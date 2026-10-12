@@ -76,7 +76,9 @@ def test_all_training_kinds_and_no_eval(tmp_path):
     ids=['A-T-s0','A-T-s1','A-T-s2','A-R-s0','A-C-s0','A-G-s0','A-K-s0','A-N0-s0','A-T-recent4-s0','A-C-shuf-s0',
          'A-T-leaf7-s0','A-T-tokdrop-s0','A-T-histmask-s0','B-mask-pre-s0','B-contrast-pre-s0',
          'B-T-mask-pre-s0','B-T-mask-scratch-s0','B-T-contrast-pre-s0','B-T-contrast-scratch-s0',
-         'B-T-dro-s0','B-teacher-s0','B-teacher-s1','B-teacher-s2','B-N0-distill-s0']
+         'B-T-dro-s0','B-teacher-s0','B-teacher-s1','B-teacher-s2','B-N0-distill-s0',
+         'B-mask-pre-s1','B-T-mask-pre-s1','B-T-mask-scratch-s1',
+         'B-contrast-pre-s1','B-T-contrast-pre-s1','B-T-contrast-scratch-s1','B-N0-distill-s1']
     results={}
     for id in ids:
         job=next(j for j in cfg['jobs'] if j['id']==id);out=tmp_path/id
@@ -88,6 +90,11 @@ def test_all_training_kinds_and_no_eval(tmp_path):
     for objective in ['mask','contrast']:
         a=results[f'B-T-{objective}-pre-s0']['paired_compute'];b=results[f'B-T-{objective}-scratch-s0']['paired_compute']
         assert a['total_target_steps']==b['total_target_steps']
+    dep_job=next(j for j in cfg['jobs'] if j['id']=='B-T-mask-pre-s1')
+    receipt_path=Path(deps['B-mask-pre-s1'])/'receipt.json'
+    damaged=json.loads(receipt_path.read_text());damaged['seed']=0;train.save_json(receipt_path,damaged)
+    with pytest.raises(ValueError,match='seed/objective/identity'):
+        train.dependency(dep_job,{'dependencies':deps},'pretrain')
     bad=copy.deepcopy(arrays);bad[3][np.flatnonzero(bad[1]['fit'])[0],0]=np.flatnonzero(bad[1]['evaluation'])[0]
     job=next(j for j in cfg['jobs'] if j['id']=='B-mask-pre-s0')
     with pytest.raises(ValueError,match='outside FIT'):
