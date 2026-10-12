@@ -178,6 +178,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const pending = useRef<number | null>(null);
   const pendingTarget = useRef<number | null>(null);
   const [withdrawn, setWithdrawn] = useState(false);
+  const withdrawal = useRef(false);  // only a valid, explicit non-null game check can reopen a withdrawn game
   const appliedSequence = useRef<number | null>(null);
   const [checking, setChecking] = useState(false);
   const inflight = useRef<AbortController | null>(null);
@@ -196,13 +197,14 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         try { h = await fetchPublishHealth(ctrl.signal); if (!ctrl.signal.aborted) setHealth(h); } catch { /* keep the last health */ }
         if (ctrl.signal.aborted) return;
         const { present, check } = gameCheck(h, gamePk);
+        if (withdrawal.current && !check) { setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 }); return; }
         if (present) { setLastOk(Date.now()); setError(null); }
         if (check && check.file_sequence !== null && (appliedSequence.current === null || check.file_sequence > appliedSequence.current)) {
           pendingTarget.current = Math.max(pendingTarget.current ?? 0, check.file_sequence);
           pending.current ??= performance.now(); setPendingSince(pending.current);
         }
         if (check?.file_sequence === null) {
-          pendingTarget.current = null; pending.current = null; setPendingSince(null); setWithdrawn(true); detailRef.current = null; setDetail(null); setFileStamp(null);
+          pendingTarget.current = null; pending.current = null; setPendingSince(null); withdrawal.current = true; setWithdrawn(true); detailRef.current = null; setDetail(null); setFileStamp(null);
           setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 });
           return;
         }
@@ -213,7 +215,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         if (ctrl.signal.aborted) return;
         if (pendingTarget.current !== null && got.stamp.seq! < pendingTarget.current) return;  // propagation delay: retry this target next tick
         pendingTarget.current = null; pending.current = null; setPendingSince(null); appliedSequence.current = got.stamp.seq;
-        setWithdrawn(false); detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now());
+        withdrawal.current = false; setWithdrawn(false); detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now());
         return;
       }
       const old = detailRef.current;

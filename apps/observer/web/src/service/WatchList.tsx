@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { FetchError, fetchDates, fetchGames, fetchPublishHealth, fetchPublishedDates, fetchPublishedGames } from './api';
 import type { GameList } from './api';
@@ -101,6 +101,8 @@ export default function WatchList() {
   // ---- public bundle: published files, read again at the configured intervals ----
   const [manifestMs, setManifestMs] = useState<number | null>(null);
   const listPollMs = manifestMs ?? PUBLISH_CONFIG.listPollMs;
+  const listPeriod = useRef(listPollMs);
+  listPeriod.current = listPollMs;  // the next timer uses the new period without clearing this date's cards
   const [health, setHealth] = useState<PublishStamp | null>(null);
   const [healthFresh, setHealthFresh] = useState(false);   // health.json was read since the tab last came back into view
   const [, setTick] = useState(0);
@@ -137,10 +139,10 @@ export default function WatchList() {
         if (!shown) setError(e instanceof FetchError ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen
       }
       return good;
-    }, () => listPollMs, () => listPollMs, () => setHealthFresh(false));
+    }, () => listPeriod.current, () => listPeriod.current, () => setHealthFresh(false));
     const tick = window.setInterval(() => setTick(t => t + 1), PUBLISH_CONFIG.tickMs);  // lets the late notice appear between reads
     return () => { stop(); window.clearInterval(tick); };
-  }, [date, listPollMs]);
+  }, [date]);
   // judged only on a health.json read since the tab came back: what was on screen before a background period is never called late
   const late = __PZ_STATIC__ && healthFresh && isPublishStale(publishLag(null, health, serverNow(clockWindowMs(listPollMs))), listPollMs);
   useEffect(() => { document.title = date ? `${dateHeading(date)} 경기 · 피치이지` : '피치이지'; }, [date]);

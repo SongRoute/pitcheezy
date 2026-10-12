@@ -266,13 +266,13 @@ PZ_STATIC_CORE_ONLY=1 node tests/static-publish-smoke.mjs  # 브라우저 없는
 - 방식 선택은 빌드할 때 정한다. `VITE_PUBLISH_BASE`가 비어 있으면 지금까지의 API 방식 그대로다. 공개 번들에는 API 호출 코드가 아예 들어가지 않는다(검사가 번들을 직접 뒤져 확인).
 - 설정 이름(기본값은 `web/.env.public`, 셸 환경변수가 우선):
   - `VITE_PUBLISH_BASE`: `v1/` 폴더가 있는 주소나 경로. 기본 `.` = index.html 옆.
-  - `VITE_PUBLISH_POLL_MS`(10000) · `VITE_PUBLISH_PREGAME_POLL_MS`(10000) · `VITE_PUBLISH_LIST_POLL_MS`(10000) · `VITE_PUBLISH_RETRY_MS`(4000): 경기 중 / 경기 전 / 목록 / 실패 뒤 다시 읽는 간격.
-  - `VITE_PUBLISH_TIMEOUT_MS`(15000): 요청 하나의 제한 시간(본문 끝까지). `VITE_PUBLISH_LOST_MS`(30000): 이만큼 못 읽으면 "연결 끊김". `VITE_PUBLISH_TICK_MS`(5000): 시간 표시를 다시 따지는 간격.
+  - `VITE_PUBLISH_POLL_MS`(10000) · `VITE_PUBLISH_PREGAME_POLL_MS`(10000) · `VITE_PUBLISH_LIST_POLL_MS`(10000) · `VITE_PUBLISH_RETRY_MS`(4000): 경기 중 / 경기 전 / 목록 / 경기 화면의 최초 읽기 실패 뒤 다시 읽는 간격. 목록 읽기 실패는 P, dates·manifest 실패는 max(60초, P) 뒤에 재시도한다.
+  - `VITE_PUBLISH_TIMEOUT_MS`(15000): 요청 하나의 제한 시간(본문 끝까지). health → 경기 파일은 직렬이므로 둘 다 시간 제한에 걸리면 한 묶음은 최대 약 30초와 처리 시간이 걸린다. `VITE_PUBLISH_LOST_MS`(30000): 이만큼 못 읽으면 "연결 끊김". `VITE_PUBLISH_TICK_MS`(5000): 시간 표시를 다시 따지는 간격.
   - `VITE_PUBLISH_STALE_S`(30, **임시값·미측정**): 새 발행이 이만큼 없으면 "갱신 지연". 리허설에서 잰 발행 간격으로 다시 정한다.
   - `LOST_MS`와 `STALE_S`는 그 화면이 읽는 간격의 3배보다 짧게는 적용되지 않는다(읽는 간격을 늘려도 매번 경고가 뜨지 않게).
 - 읽는 파일: `v1/dates.json`, `v1/manifest.json`(`live_dates`로 오늘 날짜), `v1/games/<날짜>.json`, `v1/game/<game_pk>.json`, `v1/health.json`. 이 다섯 꼴 말고는 요청하지 않는다(주소의 `?date=`는 실제 달력 날짜, `?game=`은 숫자일 때만 쓴다). 경기 파일은 항상 통째로 읽고, 같은 파일에서 순번(`publish.sequence`)이 뒤로 간 응답은 버린다.
-- health를 먼저 읽는다. 해당 경기의 유효한 `game_checks[game_pk]`가 있으면 최초 로드 또는 `file_sequence` 증가 때만 경기 파일을 받는다. 전파 지연·실패는 다음 주기에 같은 목표 순번을 다시 확인하며, 목표보다 높은 본문은 허용하고 역행은 버린다. `file_sequence: null`은 철회로 처리한다. 종료 파일도 같은 주기로 정정·철회를 확인한다.
-- 새 health의 경기 확인값은 `checked_at`(유효한 시각), `sequence_checked`(0 이상 정수), `file_sequence`(확인 순번 이하의 0 이상 정수 또는 null), `feed_ok`(boolean)다. 누락·오류가 있으면 매 주기 경기 파일을 읽는다. 해당 경기 키가 있지만 값이 잘못되면 정상 확인으로 표시하지 않는다.
+- health를 먼저 읽는다. 해당 경기의 유효한 `game_checks[game_pk]`가 있으면 최초 로드 또는 `file_sequence` 증가 때만 경기 파일을 받는다. 전파 지연·실패는 다음 주기에 같은 목표 순번을 다시 확인하며, 목표보다 높은 본문은 허용하고 역행은 버린다. `file_sequence: null`은 철회로 처리한다. 철회 뒤에는 health 실패·키 누락·잘못된 확인값으로 구형 파일 읽기로 돌아가지 않는다. 유효한 비null 확인값과 그 순번 이상의 파일을 받아야 다시 보인다. 종료 파일도 같은 주기로 정정·철회를 확인한다.
+- 새 health의 경기 확인값은 `checked_at`(유효한 시각), `sequence_checked`(0 이상 정수), `file_sequence`(확인 순번 이하의 0 이상 정수 또는 null), `feed_ok`(boolean)다. 아직 철회되지 않은 경기의 확인값에 누락·오류가 있으면 매 주기 경기 파일을 읽는다. 해당 경기 키가 있지만 값이 잘못되면 정상 확인으로 표시하지 않는다. `checked_at`은 health의 `publish.published_at` 이하이어야 정상 갱신으로 판단한다. 발행기에서 game_checks를 추가할 때는 모든 확인을 마친 뒤의 시각으로 health를 찍어야 하며, 아직 이 필드를 쓰지 않는 발행기는 구형 파일 규칙을 따른다.
 - 새 확인값이 있는 경기의 "갱신 지연": `T=max(VITE_PUBLISH_STALE_S, 3P)`초이며, 서버 추정시각에서 health 발행 시각 또는 `checked_at`까지 T를 넘으면 경고한다. 경기 파일 나이는 사용하지 않는다. `feed_ok:false` 또는 `feed_failing_games`에 이 경기가 있으면 즉시 연결 끊김을 표시한다. 새 본문을 적용하지 못한 동안 추천·실제 투구는 가리고 "확인 중", T 초과 시 "갱신 지연"이다. 경기 전에는 예정 시작 이후부터 시간 경고를 적용하며, 종료 상태이면서 `publish.final:true`인 경기는 시간 경고에서 제외한다.
 - 구형 파일(`game_checks`에 해당 경기 없음)의 "갱신 지연" 판정:
   - 진행 중인 경기: health가 오래됐거나, health는 새것인데 이 경기 파일만 뒤처졌을 때.
@@ -281,7 +281,7 @@ PZ_STATIC_CORE_ONLY=1 node tests/static-publish-smoke.mjs  # 브라우저 없는
   - 탭으로 돌아오거나 기기가 깨어나면 먼저 다시 읽고, 그 응답이 올 때까지는 "확인 중"으로 둔다.
 - 없는 경기 파일: "지금 볼 수 없어요"로 두고 간격을 두 배씩 늘려 다시 묻는다(`VITE_PUBLISH_MISSING_RETRY_MS` 10000 → `VITE_PUBLISH_MISSING_MAX_MS` 60000, **임시값**). 발행기가 따라가는 날짜의 목록 어디에도 그 경기가 없으면 묻기를 멈춘다.
 - 지난 공을 골라 고정해 둔 화면도 계속 확인한다(종료 후 정정 포함). manifest가 없을 때는 `VITE_PUBLISH_PINNED_POLL_MS`(10000, **임시값**)를 쓴다. 서버가 그 공을 "확인 중"으로 되돌리면 고정 화면에서도 구종·위치를 지운다.
-- 정적 모드의 경기 중·경기 전·고정 투구·목록·health 주기는 manifest의 `publish_interval_s`(숫자 초)를 우선한다. 유한한 양수이면서 브라우저 타이머 범위(1ms–2147483647ms)일 때만 사용하며, 그 밖에는 위 설정으로 대체한다. health는 해당 화면 주기를 따른다.
+- 정적 모드의 경기 중·경기 전·고정 투구·목록·health 주기는 manifest의 `publish_interval_s`(숫자 초)를 우선한다. 유한한 양수이면서 브라우저 타이머 범위(1ms–2147483647ms)일 때만 사용하며, 그 밖에는 위 설정으로 대체한다. health는 해당 화면 주기를 따른다. 목록의 P가 바뀌어도 같은 날짜의 카드는 유지하며 진행 중인 읽기/예약은 마친 뒤 다음 타이머부터 새 P를 쓴다.
 - manifest(경기·목록 화면)와 dates(목록 화면)는 `max(60초, P)`마다 다시 읽는다. `VITE_PUBLISH_DATES_POLL_MS`는 제거했다. 탭 복귀·온라인 복귀 시에는 즉시 확인한다.
 - 올리는 법: `dist-public/` 내용을 `v1/`과 같은 폴더에 둔다. 주소는 `…/?game=<game_pk>`, `…/?date=<날짜>` 꼴이라 주소 다시쓰기 규칙이 필요 없다.
 - 호스팅이 지켜 줘야 할 것:

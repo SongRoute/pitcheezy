@@ -1157,12 +1157,13 @@ async function advance(page, ms) {
 const manifestBody = (period, seq = 120) => top({ live_dates: ['2026-09-30'], publish_interval_s: period }, seq, FILE_AT);
 async function protocolScreen({ checks = true, period = 10, final = false, pregame = false, dist = distPublic, list = false } = {}) {
   const state = { checks, period, fileSequence: 1, bodySequence: 1, feedOk: true, failures: [], fileMode: 'ok', final, checkedAt: null,
-    healthAt: null, pitchScore: null, key: '849843:11:2', malformed: undefined, healthSequence: 10000, manifestSequence: 120, etag: null, pregame, start: FILE_AT + 3600000 };
+    healthAt: null, healthMode: 'ok', pitchScore: null, key: '849843:11:2', malformed: undefined, healthSequence: 10000, manifestSequence: 120, etag: null, pregame, start: FILE_AT + 3600000 };
   let h;
   h = await open({ dist, protocol: true, clock: true, answer: async (file, n, headers) => {
     const now = await h.page.evaluate(() => Date.now());
     if (file === 'manifest.json') return { json: manifestBody(state.period, state.manifestSequence), date: now };
     if (file === 'health.json') {
+      if (state.healthMode === 'abort') return { abort: true };
       const json = health(++state.healthSequence, state.healthAt ?? now);
       if (state.checks) json.game_checks = { [LIVE]: state.malformed !== undefined ? state.malformed : {
         checked_at: iso(state.checkedAt ?? now), sequence_checked: 100000, file_sequence: state.fileSequence, feed_ok: state.feedOk } };
@@ -1370,6 +1371,53 @@ await block(async () => {
   ok(conditional[2] === '"a"' && await waitPitch(h.page, '849843:12:2'), 'ETag screen: subsequent 200 applies changed game');
   ok(h.errors.length === 0, 'ETag screen: no page errors'); await h.context.close();
 }, 'etag-screen');
+
+// ---------- integration review: withdrawal remains closed; changing P keeps the same-date list ----------
+await block(async () => {
+  const h = await protocolScreen(); const { page, state } = h;
+  state.fileSequence = null; await advance(page, 10000);
+  ok(await page.locator('.sv-unavailable').count() === 1, 'withdrawal recovery: explicit null clears the game');
+  const reads = count(h, `game/${LIVE}.json`);
+  for (const mode of ['abort', 'absent', 'invalid']) {
+    state.healthMode = mode === 'abort' ? 'abort' : 'ok'; state.checks = mode !== 'absent';
+    state.malformed = mode === 'invalid' ? {} : undefined;
+    await advance(page, 10000);
+    ok(count(h, `game/${LIVE}.json`) === reads && await page.locator('.sv-unavailable').count() === 1 && await page.locator('.sv-zone').count() === 0,
+      `withdrawal recovery: ${mode} health never reopens a residual old game file`);
+  }
+  state.healthMode = 'ok'; state.checks = true; state.malformed = undefined; state.fileSequence = 2;
+  await advance(page, 10000);
+  ok(await page.locator('.sv-zone').count() === 0, 'withdrawal recovery: valid republication waits for its announced file sequence');
+  state.bodySequence = 2; state.key = '849843:12:2'; await advance(page, 10000);
+  ok(await waitPitch(page, state.key) && await page.locator('.sv-unavailable').count() === 0, 'withdrawal recovery: valid check plus matching file reopens the game');
+  ok(h.errors.length === 0, 'withdrawal recovery: no page errors'); await h.context.close();
+}, 'integration-review');
+
+await block(async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const h = await open({ dist: distPublic, protocol: true, clock: true, answer: async file => {
+    if (file === 'manifest.json') { await gate; return { json: manifestBody(20) }; }
+  } });
+  await h.page.goto('http://pz.test/pub/?date=2026-09-30');
+  await h.page.locator('.sv-list .sv-card').first().waitFor();
+  const cards = await h.page.locator('.sv-list .sv-card').count();
+  const reads = count(h, 'games/2026-09-30.json');
+  await h.page.evaluate(() => {
+    window.__listCleared = false;
+    new MutationObserver(() => { if (!document.querySelector('.sv-list .sv-card')) window.__listCleared = true; })
+      .observe(document.querySelector('.sv-list'), { subtree: true, childList: true });
+  });
+  const delivered = h.page.waitForResponse('**/v1/manifest.json'); release(); await delivered; await sleep(150);
+  ok(await h.page.locator('.sv-list .sv-card').count() === cards && !(await h.page.evaluate(() => window.__listCleared)) && count(h, 'games/2026-09-30.json') === reads,
+    'list period: late manifest changes P without blanking cards or duplicating the same-date request');
+  await advance(h.page, 10000); const next = count(h, 'games/2026-09-30.json');
+  await advance(h.page, 19000);
+  ok(next === reads + 1 && count(h, 'games/2026-09-30.json') === next, 'list period: pending timer finishes and the next timer uses the new 20s period');
+  await advance(h.page, 1000);
+  ok(count(h, 'games/2026-09-30.json') === next + 1 && h.errors.length === 0, 'list period: exactly one next read, no page errors');
+  await h.context.close();
+}, 'integration-review');
 
 // ---------- R13. the public bundle contains no API / demo / cursor / operator code ----------
 for (const dir of [distPublic, distQuick]) {
