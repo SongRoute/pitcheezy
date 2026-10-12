@@ -120,9 +120,9 @@ function EventCard({ event, pitchNumber }: { event: EventAnalysis | null | undef
   return <section className="event-card" aria-labelledby="event-title"><div className="section-heading"><div><span className="eyebrow">03 · 사건 설명 · 수비팀 승률 모델</span><h2 id="event-title">{pitchNumber ? `타석 마지막 ${pitchNumber}구의 변화` : '이번 타석의 변화'}</h2></div><span className={`event-status ${event.status}`}>{statusLabel}</span></div>
     {developmentOnly ? <p className="event-empty">개발용 합성 사례입니다. 실제 경기의 기여 수치로 표시하지 않습니다.</p> : <>
       <p className="event-total">{finite(event.values?.total_pp) ? <><strong>{displayNumber(event.values.total_pp)}</strong><span>마지막 공의 사전 기준과 타석 종료 후 수비팀 승률 추정치의 차이</span></> : <span>이 사건의 승률 변화를 계산할 수 없습니다.</span>}</p>
-      {event.status === 'partial' && <p className="event-callout">투구 의도 정보가 없어 선택·실행의 몫은 분리할 수 없습니다. 남은 차이를 선수에게 배분하지 않습니다.</p>}
+      {event.status === 'partial' && <p className="event-callout">비교에 필요한 근거가 부족해 일부 항목만 계산할 수 있습니다. 남은 차이를 선수에게 배분하지 않습니다.</p>}
       {event.status === 'failed' && <p className="event-callout">분석 계산이 실패했습니다. 기록과 저장된 사전 추천은 계속 볼 수 있습니다.</p>}
-      <p className="event-plain">관측: 실제 타석 결과. 추정: 고정 모델의 승률 변화. 미측정: 투구 의도와 선수별 기여.</p>
+      <p className="event-plain">관측: 실제 타석 결과. 추정: 고정 모델의 승률 변화. 미측정: 선수별 인과적 기여.</p>
       <details className="event-technical"><summary>계산 범위와 항목 자세히 보기<span aria-hidden="true">＋</span></summary>
         {(event.status === 'complete' || event.status === 'partial') && <div className="event-components">{components.map(([label, component]) => <div key={label}><span>{label}</span><strong>{displayNumber(component?.value_pp)}</strong>{finite(component?.abs_share) && event.shares?.stable && <small>계산된 절댓값 중 {(component.abs_share * 100).toFixed(0)}%</small>}</div>)}</div>}
         {finite(event.components?.unallocated_residual_pp) && <p className="event-residual">배분하지 않은 차이 · {displayNumber(event.components.unallocated_residual_pp)}</p>}
