@@ -6,6 +6,7 @@ An external supervisor stops only its newly spawned worker on budget breach.
 No other process is signalled. A self-watchdog is an additional backstop.
 """
 import argparse
+import errno
 # Set before the first CUDA import/context creation; validate actual UUID below.
 import fcntl
 import json
@@ -248,22 +249,45 @@ def supervise(args):
 def supervise_command(command, out, wall_seconds, rss_bytes, grant_sha):
     """Watch only the new child handle; shared by fitting and scoring."""
     child=subprocess.Popen(command)
-    started=time.monotonic(); reason=None; peak=0
+    started=time.monotonic(); reason=None; peak=0; read_events=[]
     try:
         while child.poll() is None:
             if time.monotonic()-started >= wall_seconds:
                 reason='wall';break
+            process_state=None
             try:
                 if sys.platform=='linux':
                     status=Path(f'/proc/{child.pid}/status').read_text()
+                    process_state=next((line.split()[1] for line in status.splitlines() if line.startswith('State:')),None)
                     rss=int(next(line.split()[1] for line in status.splitlines() if line.startswith('VmRSS:')))*1024
                 elif sys.platform=='darwin':
                     rss=int(subprocess.check_output(['/bin/ps','-o','rss=','-p',str(child.pid)],text=True,timeout=2).strip())*1024
                 else:raise OSError('unsupported RSS monitor platform')
                 peak=max(peak,rss)
                 if rss>rss_bytes:reason='rss';break
-            except (OSError,StopIteration,ValueError,subprocess.SubprocessError):
-                if child.poll() is not None:break
+            except (OSError,StopIteration,ValueError,subprocess.SubprocessError) as exc:
+                observed=time.monotonic(); polled=child.poll()
+                remaining=wall_seconds-(observed-started)
+                event={'exception':type(exc).__name__,'message':str(exc),
+                       'errno':getattr(exc,'errno',None),'process_state':process_state,
+                       'elapsed_seconds':observed-started,'poll_returncode':polled,
+                       'remaining_wall_seconds':max(0,remaining),'wait_seconds':0,
+                       'wait_elapsed_seconds':0,'wait_returncode':None,'wait_timed_out':False}
+                read_events.append(event)
+                if remaining<=0:reason='wall';break
+                if polled is not None:break
+                exit_transient=(isinstance(exc,OSError) and exc.errno==errno.ENOENT or
+                                isinstance(exc,StopIteration) and process_state in ('Z','X'))
+                if exit_transient:
+                    wait_started=time.monotonic()
+                    remaining=wall_seconds-(wait_started-started)
+                    if remaining<=0:reason='wall';break
+                    event['wait_seconds']=min(.25,remaining)
+                    try:event['wait_returncode']=child.wait(timeout=event['wait_seconds'])
+                    except subprocess.TimeoutExpired:event['wait_timed_out']=True
+                    finally:event['wait_elapsed_seconds']=time.monotonic()-wait_started
+                    if time.monotonic()-started>=wall_seconds:reason='wall';break
+                    if not event['wait_timed_out']:break
                 reason='supervisor-memory-read-failure';break
             time.sleep(0.25)
     finally:
@@ -279,6 +303,7 @@ def supervise_command(command, out, wall_seconds, rss_bytes, grant_sha):
     result={'status':'COMPLETED' if child.returncode==0 and reason is None else 'INCOMPLETE',
             'returncode':child.returncode,'reason':reason,'peak_worker_rss_bytes':peak,
             'elapsed_seconds':time.monotonic()-started,'grant_sha256':grant_sha,
+            'memory_read_events':read_events,
             'receipt_sha256':base.sha(out/'receipt.json') if (out/'receipt.json').exists() else None}
     if out.is_dir():base.save_json(out/'SUPERVISOR.json',result)
     return 0 if result['status']=='COMPLETED' else 87

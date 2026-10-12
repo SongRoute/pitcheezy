@@ -233,3 +233,65 @@ def test_marker_publication_is_atomic_and_exclusive(tmp_path,monkeypatch,failure
         assert not marker.exists()
         evaluator.claim_open(grant,attempts,out)
         assert json.loads(marker.read_text())['status']=='OPENED'
+
+
+@pytest.mark.parametrize('case',['grace_z','grace_enoent','timeout','permission_live',
+                                'unknown_live','nonzero','missing_receipt','exhausted_wall',
+                                'remaining_wall','grace_x','unknown_state','wait_crosses_wall','normal'])
+def test_supervisor_bounded_exit_grace(tmp_path,monkeypatch,case):
+    import errno
+    import subprocess
+    clock=[0.];waits=[];signals=[]
+    class OwnedChild:
+        pid=990000001
+        returncode=None
+        def poll(self):return self.returncode
+        def wait(self,timeout=None):
+            waits.append(timeout)
+            if self.returncode is not None:return self.returncode
+            if case=='timeout':
+                clock[0]+=timeout
+                raise subprocess.TimeoutExpired('synthetic',timeout)
+            clock[0]+=1.01 if case=='wait_crosses_wall' else .01
+            self.returncode=3 if case=='nonzero' else 0
+            return self.returncode
+        def terminate(self):signals.append('owned-terminate');self.returncode=-15
+        def kill(self):raise AssertionError('unneeded synthetic kill')
+    child=OwnedChild();original=Path.read_text
+    def read(path,*args,**kwargs):
+        if str(path)==f'/proc/{child.pid}/status':
+            if case=='exhausted_wall':clock[0]=1.
+            if case=='remaining_wall':clock[0]=.9
+            if case=='permission_live':raise PermissionError(errno.EACCES,'synthetic')
+            if case=='grace_enoent':raise FileNotFoundError(errno.ENOENT,'synthetic')
+            if case=='normal':return 'State: R (running)\nVmRSS: 100 kB\n'
+            if case=='unknown_state':return 'Name: synthetic\n'
+            return 'State: '+('R' if case=='unknown_live' else 'X' if case=='grace_x' else 'Z')+'\n'
+        return original(path,*args,**kwargs)
+    def sleep(seconds):clock[0]+=seconds;child.returncode=0
+    if case!='missing_receipt':(tmp_path/'receipt.json').write_text('{"status":"COMPLETED","synthetic":true}')
+    monkeypatch.setattr(trainer.subprocess,'Popen',lambda *a,**k:child)
+    monkeypatch.setattr(trainer.sys,'platform','linux')
+    monkeypatch.setattr(Path,'read_text',read)
+    monkeypatch.setattr(trainer.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(trainer.time,'sleep',sleep)
+    rc=trainer.supervise_command(['synthetic'],tmp_path,1.,1024**3,'synthetic')
+    result=json.loads((tmp_path/'SUPERVISOR.json').read_text())
+    if case in ('grace_z','grace_enoent','remaining_wall','grace_x','normal'):
+        assert rc==0 and result['status']=='COMPLETED' and not signals
+    else:
+        assert rc==87 and result['status']=='INCOMPLETE'
+        expected=('wall' if case in ('exhausted_wall','wait_crosses_wall') else 'missing-completed-receipt' if case=='missing_receipt'
+                  else None if case=='nonzero' else 'supervisor-memory-read-failure')
+        assert result['reason']==expected
+    if case=='normal':assert result['memory_read_events']==[]
+    else:
+        event=result['memory_read_events'][0]
+        assert event['poll_returncode'] is None
+        assert event['wait_seconds']<=min(.25,event['remaining_wall_seconds'])
+        if case=='permission_live':assert event['errno']==errno.EACCES and event['wait_seconds']==0
+        if case=='unknown_live':assert event['process_state']=='R' and event['wait_seconds']==0
+        if case=='unknown_state':assert event['process_state'] is None and event['wait_seconds']==0
+        if case=='timeout':assert event['wait_timed_out'] and signals==['owned-terminate']
+        if case=='exhausted_wall':assert event['wait_seconds']==0 and signals==['owned-terminate']
+        if case=='remaining_wall':assert event['wait_seconds']==pytest.approx(.1)
