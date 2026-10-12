@@ -21,3 +21,18 @@ Intent consumption requires the existing `validate_intent_estimate`, exact `pitc
 The C3 request boundary is `unavailable_replacement(keep_pitcher_id=..., substitute_pitcher_ids=..., decision_at=..., roster_as_of=..., candidates=..., workload_evidence=..., inning_evaluator=...)`. Substitutes must be distinct from the kept pitcher and must exactly match a roster snapshot of eligible candidates whose timestamp does not follow the decision. Seeing a pitcher enter later is not proof they were available at decision time. Even with these inputs, the function returns `unavailable` until a separately validated `inning_end` evaluator exists; it never adds its value to this PA decomposition.
 
 The example is synthetic and marked `development_only`; it is a schema/calculation fixture, not video evidence, performance measurement, or an actual player attribution.
+
+## Reproducible synthetic consumer packet
+
+`python scripts/c_contract_examples.py` prints deterministic `{inputs, result}` pairs
+for eight cases: complete, cancelling contrasts, zero contrasts, missing intent,
+partial coordinates, missing execution, missing observed value, and calculation
+failure. It reuses the C0 synthetic builder and calls the existing C1 functions;
+no data, video, model weights, or network access is needed. Redirect stdout to a
+scratch JSON file when handing the packet to a consumer. Every case explicitly
+excludes training and performance evaluation at packet level, and marks the C1
+result as development-only. The values are chosen arithmetic constants, not model
+predictions. Run `pytest tests/test_c_contract_examples.py` with the observer
+interpreter to check JSON round-trip/recomputation and all 16 value-presence
+combinations. In particular, a zero net total may contain cancelling nonzero
+contrasts: magnitude shares use their absolute sum, never the net total.
