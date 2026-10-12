@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, fetchPublishedManifest, isGamePublishedSoon, mergeDetail } from './api';
-import { PUBLISH_CONFIG, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
-import type { PublishStamp } from './publish';
+import { PUBLISH_CONFIG, gameCheck, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
+import type { PublishStamp, PublishHealth } from './publish';
 import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Pa, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
 import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, short } from './model';
 import { teamColor } from './teams';
@@ -165,21 +165,14 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     return () => { stopped = true; ctrl.abort(); window.clearTimeout(timer); document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake); };
   }, []);
   const [fileStamp, setFileStamp] = useState<PublishStamp | null>(null);
-  const [health, setHealth] = useState<PublishStamp | null>(null);
+  const [health, setHealth] = useState<PublishHealth | null>(null);
+  const [withdrawn, setWithdrawn] = useState(false);
+  const appliedSequence = useRef<number | null>(null);
   const [checking, setChecking] = useState(false);
   const inflight = useRef<AbortController | null>(null);
   const drawn = useRef<Drawn | null>(null);
   const picked = useRef(false);  // the viewer chose a past pitch (as opposed to the default first pitch of a game that is not live)
 
-  // health.json has its own single flight: requests never overlap, so an older one can never land after a newer one. A failed read
-  // keeps the last health seen (server time goes on by itself, see publish.ts), it never wipes it.
-  const healthBusy = useRef<AbortController | null>(null);
-  const loadHealth = useCallback(() => {
-    if (healthBusy.current) return;
-    const ctrl = healthBusy.current = new AbortController();
-    fetchPublishHealth(ctrl.signal).then(h => { if (!ctrl.signal.aborted) setHealth(h); }, () => undefined)
-      .finally(() => { if (healthBusy.current === ctrl) healthBusy.current = null; });
-  }, []);
   const load = useCallback(async (full = false, force = false) => {
     // a background poll never cancels a slower answer still on its way (only a manual refresh does)
     if (inflight.current && !inflight.current.signal.aborted && !force) return;
@@ -187,13 +180,24 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     const ctrl = new AbortController(); inflight.current = ctrl;
     setBusy(true);
     try {
-      if (__PZ_STATIC__) {  // whole file every time; health.json is read beside it and never holds the game answer back
-        const first = detailRef.current === null;
-        if (!first) loadHealth();   // nothing on screen yet (or no file for this game): health.json is not needed
+      if (__PZ_STATIC__) {  // one health-first chain; malformed/old health falls back to a whole-file read
+        let h: PublishHealth | null = null;
+        try { h = await fetchPublishHealth(ctrl.signal); if (!ctrl.signal.aborted) setHealth(h); } catch { /* keep the last health */ }
+        if (ctrl.signal.aborted) return;
+        const { check } = gameCheck(h, gamePk);
+        if (check?.file_sequence === null) {
+          setWithdrawn(true); detailRef.current = null; setDetail(null); setFileStamp(null);
+          setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 });
+          return;
+        }
+        if (check && detailRef.current && appliedSequence.current !== null && check.file_sequence! <= appliedSequence.current) {
+          setError(null); setLastOk(Date.now()); return;
+        }
         const got = await fetchPublishedDetail(gamePk, ctrl.signal);
         if (ctrl.signal.aborted) return;
-        if (first) loadHealth();
-        detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now());
+        if (check && got.stamp.seq! < check.file_sequence!) return;  // propagation delay: retry this target next tick
+        appliedSequence.current = got.stamp.seq;
+        setWithdrawn(false); detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now());
         return;
       }
       const old = detailRef.current;
@@ -209,9 +213,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       if (ctrl.signal.aborted) return;
       setError(e instanceof FetchError ? { text: e.message, status: e.status } : { text: '자료를 불러오지 못했어요.', status: 0 });
     } finally { if (inflight.current === ctrl) { inflight.current = null; setBusy(false); if (__PZ_STATIC__) setChecking(false); } }
-  }, [gamePk, loadHealth]);
+  }, [gamePk]);
 
-  useEffect(() => { void load(true, true); return () => { inflight.current?.abort(); healthBusy.current?.abort(); }; }, [load]);
+  useEffect(() => { void load(true, true); return () => { inflight.current?.abort(); }; }, [load]);
   const live = detail ? detail.session_status !== 'ended' && (detail.game.status === 'live' || (detail.next !== null && detail.game.status !== 'final')) : false;
   // Polling follows the viewer's switch only; the game's LIVE status decides whether there is anything to poll.
   // Failed or slow answers never stop the loop: the next tick asks again, so the screen recovers without a reload.
@@ -219,7 +223,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // server names while the card is not live) is asked again slowly, with or without a display state, so the screen starts by itself.
   const waitingToStart = detail !== null && !live && detail.session === null && detail.game.status !== 'final'
     && (detail.display?.state === 'pregame' || detail.live_source === true);
-  const pollMs = live ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.live : CADENCE.live) : waitingToStart ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.pregame : CADENCE.pregame) : 0;
+  const pollMs = live ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.live : CADENCE.live) : waitingToStart ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.pregame : CADENCE.pregame) : __PZ_STATIC__ && (detail !== null || withdrawn) ? manifestMs ?? CADENCE.live : 0;
   useEffect(() => {
     if (!auto || !pollMs) return;
     const id = window.setInterval(() => { if (!document.hidden) void load(); }, pollMs);
@@ -227,7 +231,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, [auto, pollMs, load]);
   // static mode: a screen pinned on a past pitch (auto off) still reads, slowly, while the game is not final. If the server turns the
   // pinned pitch back to 확인 중, the same fail-closed rules blank it here too; the view stays pinned (no jump to the latest).
-  const pinnedMs = __PZ_STATIC__ && !auto && pollMs > 0 && fileStamp?.final !== true ? manifestMs ?? PUBLISH_CONFIG.pinnedPollMs : 0;
+  const pinnedMs = __PZ_STATIC__ && !auto && pollMs > 0 ? manifestMs ?? PUBLISH_CONFIG.pinnedPollMs : 0;
   useEffect(() => {
     if (!pinnedMs) return;
     const id = window.setInterval(() => { if (!document.hidden) void load(); }, pinnedMs);
@@ -238,7 +242,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const firstLoadRetry = detail === null && error !== null && (error.status === 0 || error.status >= 500);
   // static mode: a game with no file yet (404) is asked again slowly, so it appears by itself once it is published; and nothing is
   // asked while the tab is hidden (the retry starts again when it is visible)
-  const missing = __PZ_STATIC__ && detail === null && error !== null && error.status === 404;
+  const missing = __PZ_STATIC__ && !withdrawn && detail === null && error !== null && error.status === 404;
   const holdHidden = __PZ_STATIC__ && hidden;
   useEffect(() => {
     if (!firstLoadRetry || holdHidden) return;

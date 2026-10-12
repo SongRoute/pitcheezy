@@ -123,6 +123,17 @@ export const clockWindowMs = (pollMs: number) => 2 * staleAfterMs(pollMs);
 // ---------- staleness ("갱신 지연") ----------
 /** `seenAt`: the page's monotonic time at which this sequence of this file was first applied. */
 export type PublishStamp = { seq: number | null; publishedAt: string | null; final: boolean; seenAt: number };
+export type GameCheck = { checked_at: string; sequence_checked: number; file_sequence: number | null; feed_ok: boolean };
+export type PublishHealth = PublishStamp & { gameChecks: Record<string, unknown> | null; failingGames: unknown[] };
+/** Presence and validity are separate: malformed checks use full-file polling, but can never assert health. */
+export function gameCheck(health: PublishHealth | null, game: number): { present: boolean; check: GameCheck | null } {
+  const present = health?.gameChecks !== null && health?.gameChecks !== undefined && Object.hasOwn(health.gameChecks, String(game));
+  const c = present ? health!.gameChecks![String(game)] as Partial<GameCheck> | null : null;
+  const seq = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+  const valid = c && typeof c === 'object' && !Array.isArray(c) && typeof c.checked_at === 'string' && Number.isFinite(Date.parse(c.checked_at))
+    && seq(c.sequence_checked) && (c.file_sequence === null || (seq(c.file_sequence) && c.file_sequence! <= c.sequence_checked!)) && typeof c.feed_ok === 'boolean';
+  return { present, check: valid ? c as GameCheck : null };
+}
 export type PublishLag = { lagMs: number; clock: 'publisher' | ServerClock };
 /** How far behind the published state is; null = cannot be judged (no publish time seen).
  *  1. publisher clock only: health.json's last publish − this game file's publish time. The publisher rewrites a game file that is not

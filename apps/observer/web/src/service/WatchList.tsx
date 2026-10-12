@@ -117,6 +117,8 @@ export default function WatchList() {
     setGames(null); setError(null);
     const stop = startReader(async signal => {
       let good = true;
+      try { const h = await fetchPublishHealth(signal); if (!signal.aborted) { setHealth(h); setHealthFresh(true); } } catch { /* the last health stays */ }
+      if (signal.aborted || document.hidden) return false;
       try {
         const list = await fetchPublishedGames(date, signal);
         if (signal.aborted) return false;
@@ -126,8 +128,6 @@ export default function WatchList() {
         good = false;
         if (!shown) setError(e instanceof FetchError ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen
       }
-      if (signal.aborted || document.hidden) return good;   // hidden meanwhile: the follow-up read waits until the tab is back
-      try { const h = await fetchPublishHealth(signal); if (!signal.aborted) { setHealth(h); setHealthFresh(true); } } catch { /* the last health stays */ }
       return good;
     }, () => listPollMs, listPollMs, () => setHealthFresh(false));
     const tick = window.setInterval(() => setTick(t => t + 1), PUBLISH_CONFIG.tickMs);  // lets the late notice appear between reads

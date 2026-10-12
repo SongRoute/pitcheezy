@@ -5,7 +5,7 @@
 import type { Correction, Display, DisplayStateName, Receipt, LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
 import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, plainZone, shiftDate } from './model';
 import { PUBLISH_CONFIG, manifestPollMs, isCalendarDate, observeHostTime, observePublishTime, publishUrl, publishedPath, unwrapPublished } from './publish';
-import type { PublishStamp, PublishedFile } from './publish';
+import type { PublishStamp, PublishHealth, PublishedFile } from './publish';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
 export const TIMEOUT_MS = 15000;
@@ -84,9 +84,13 @@ async function readPublished<T, R>(file: PublishedFile, signal: AbortSignal | un
   applied.set(key, { stamp, value });
   return { value, stamp };
 }
-/** `v1/health.json`: last publish sequence and time. Only the publish stamp is read. */
-export async function fetchPublishHealth(signal?: AbortSignal): Promise<PublishStamp> {
-  return (await readPublished<Raw, null>({ kind: 'health' }, signal, () => null)).stamp;
+/** Health additions are optional: today's publisher still supplies only the stamp and failure lists. */
+export async function fetchPublishHealth(signal?: AbortSignal): Promise<PublishHealth> {
+  const got = await readPublished<Raw, Pick<PublishHealth, 'gameChecks' | 'failingGames'>>({ kind: 'health' }, signal, b => ({
+    gameChecks: b.game_checks && typeof b.game_checks === 'object' && !Array.isArray(b.game_checks) ? b.game_checks : null,
+    failingGames: Array.isArray(b.feed_failing_games) ? b.feed_failing_games : [],
+  }));
+  return { ...got.stamp, ...got.value };
 }
 /** `v1/game/<pk>.json`: always the whole game (no cursor, no merge). */
 export async function fetchPublishedDetail(game: number, signal?: AbortSignal): Promise<{ detail: Detail; stamp: PublishStamp }> {
