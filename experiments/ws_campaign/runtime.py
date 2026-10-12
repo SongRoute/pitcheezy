@@ -54,6 +54,25 @@ def source_hashes():
     return {name: sha(ROOT / name) for name in SOURCES}
 
 
+def check_exposure_ledger(path, digest, job, cfg, input_manifest):
+    ledger = read_bound(path, digest)
+    require(ledger.get("campaign_id") == cfg["id"]
+            and ledger.get("data_role") == cfg["data_role"]
+            and ledger.get("data_version") == cfg["data_version"]
+            and ledger.get("window") == job["window"]
+            and ledger.get("input_manifest_sha256") == sha(input_manifest)
+            and ledger.get("eval_scores_opened") is False
+            and ledger.get("independent_test") is False, "campaign exposure binding")
+    plan = json.loads((ROOT / "experiments/ws_campaign/C-PLAN.json").read_text())
+    expected = plan["windows"].get(job["window"], {}).get("roles")
+    if job["window"] == "base":
+        expected = plan["windows"]["pitcher_holdout"]["roles"]
+    require(ledger.get("roles") == expected, "campaign role dates")
+    require(all(isinstance(ledger.get("rows", {}).get(r), int) and ledger["rows"][r] > 0
+                for r in ("FIT", "SELECT", "CAL", "EVAL")), "campaign role counts")
+    return ledger
+
+
 def load_job(manifest_path, root_grant_path, job_id):
     root_grant = json.loads(root_grant_path.read_text())
     require(root_grant.get("execute") is True and root_grant.get("verdict") == "PASS"
@@ -99,7 +118,10 @@ def load_job(manifest_path, root_grant_path, job_id):
     wall_cap = budgets["teacher_seconds"] if job["kind"] == "teacher" else budgets["per_job_seconds"]
     require(0 < grant.get("max_wall_seconds", 0) <= wall_cap
             and 0 < grant.get("max_rss_bytes", 0) <= budgets["host_rss_bytes"]
-            and budgets["gpu_reserved_bytes"] > 0, "registered resource limits")
+            and budgets["gpu_reserved_bytes"] > 0
+            and grant.get("min_free_host_bytes", 0) >=
+            budgets["host_rss_bytes"] * budgets["max_concurrent_jobs"] + (8 << 30),
+            "registered resource limits")
     require(Path(job["output"]).is_absolute() and Path(job["inputs"]).is_absolute()
             and Path(job["input_manifest"]).is_absolute()
             and Path(job["exposure_ledger"]).is_absolute()
@@ -132,7 +154,8 @@ def worker(args, cfg, job, grant, grant_path):
     require(not any(line[1].strip() == uuid for line in lines),
             "selected GPU already has compute process")
     require(sha(job["input_manifest"]) == grant["input_manifest_sha256"], "input manifest")
-    require(sha(job["exposure_ledger"]) == grant["exposure_ledger_sha256"], "exposure ledger")
+    check_exposure_ledger(job["exposure_ledger"], grant["exposure_ledger_sha256"], job, cfg,
+                          job["input_manifest"])
     lock_path = Path(grant["common_lock"])
     require(lock_path.is_file(), "existing common GPU lock")
     out = Path(job["output"])
@@ -154,6 +177,9 @@ def worker(args, cfg, job, grant, grant_path):
         dependencies[dep] = binding["directory"]
     with lock_path.open("r") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        available = next((int(line.split()[1]) * 1024 for line in Path("/proc/meminfo").read_text().splitlines()
+                          if line.startswith("MemAvailable:")), 0)
+        require(available >= grant["min_free_host_bytes"], "host headroom for all five workers")
         require(not out.exists(), "output claimed while waiting for lock")
         out.mkdir(parents=True, exist_ok=False)
         from experiments.ws_campaign import train

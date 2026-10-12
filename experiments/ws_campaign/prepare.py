@@ -164,13 +164,16 @@ def package(grant, plan, window):
     support = data.fit_prior_support(days[selected], new_seq["pitcher"], new_seq["game_pk"],
                                      new_seq["at_bat_number"], new_seq["pitch_number"], new_corpus["fit"])
     np.save(out / "fit-prior-support.npy", support, allow_pickle=False)
+    np.save(out / "game-date.npy", days[selected].astype("U10"), allow_pickle=False)
     np.savez(out / "corpus-subset.npz", **new_corpus)
     np.savez(out / "seq-inputs.npz", **new_seq)
     files = {name: {"sha256": runtime.sha(out / name), "bytes": (out / name).stat().st_size}
-             for name in ("x-prequential.npy", "corpus-subset.npz", "seq-inputs.npz", "fit-prior-support.npy")}
+             for name in ("x-prequential.npy", "corpus-subset.npz", "seq-inputs.npz",
+                          "fit-prior-support.npy", "game-date.npy")}
     receipt = {"status": "COMPLETED", "window": window, "data_role": plan["data_role"],
                "data_version": plan["data_version"], "source_binding": binding,
                "heldout_pitchers_sha256": __import__("hashlib").sha256(json.dumps(heldout).encode()).hexdigest(),
+               "heldout_pitchers": heldout,
                "rows": {role: int(mask.sum()) for role, mask in masks.items()},
                "eval_scores_opened": False, "files": files}
     manifest = {"id": base.EXP_ID, "campaign_id": plan["campaign_id"], "window": window,
@@ -180,6 +183,14 @@ def package(grant, plan, window):
                                   "config": runtime.sha(runtime.ROOT / "configs/EXP-WS-CAMPAIGN-001.json")},
                 "receipt": receipt}
     (out / "manifest.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
+    roles = plan["windows"][window]["roles"] if window != "base" else plan["windows"]["pitcher_holdout"]["roles"]
+    ledger = {"campaign_id": plan["campaign_id"], "window": window,
+              "data_role": plan["data_role"], "data_version": plan["data_version"],
+              "roles": roles, "rows": receipt["rows"],
+              "input_manifest_sha256": runtime.sha(out / "manifest.json"),
+              "source_exposure_ledger_sha256": grant["inputs"]["exposure_ledger"]["sha256"],
+              "eval_scores_opened": False, "independent_test": False}
+    (out / "exposure-ledger.json").write_text(json.dumps(ledger, sort_keys=True, indent=2) + "\n")
     (out / "receipt.json").write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
 
 
@@ -194,6 +205,11 @@ def owned_worker(grant, plan, window):
     uuid = subprocess.check_output(["nvidia-smi", "-i", str(grant["gpu_index"]), "--query-gpu=uuid",
                                     "--format=csv,noheader"], text=True, timeout=10).strip()
     runtime.require(uuid == grant["gpu_uuid"], "preparation GPU UUID")
+    processes = subprocess.check_output(["nvidia-smi", "--query-compute-apps=pid,gpu_uuid",
+                                         "--format=csv,noheader"], text=True, timeout=10)
+    rows = [line.split(",") for line in processes.splitlines() if line.strip()]
+    runtime.require(all(len(row) == 2 and row[0].strip().isdigit() for row in rows)
+                    and not any(row[1].strip() == uuid for row in rows), "preparation GPU occupancy")
     available = next((int(line.split()[1]) * 1024 for line in Path("/proc/meminfo").read_text().splitlines()
                       if line.startswith("MemAvailable:")), 0)
     runtime.require(available >= grant["min_free_host_bytes"], "preparation host memory headroom")

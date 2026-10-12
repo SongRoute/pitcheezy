@@ -38,6 +38,13 @@
       },
       "codec_mode": "refit_excluding_heldout",
       "codec_fit_end": "2026-08-02",
+      "feature_contract": {
+        "fit_select_cal_donors": "nonheldout_fit_only_strict_prior",
+        "eval_clean_donors": "nonheldout_fit_only_strict_prior",
+        "eval_own_history": "heldout_strict_prior_21_raw_columns_only",
+        "similarity_abstention": "clean_pool_flag_remains_one",
+        "encoder_fit": "nonheldout_fit_only"
+      },
       "heldout_selection": {
         "method": "sha256_mod",
         "namespace": "EXP-WS-CAMPAIGN-001",

@@ -111,6 +111,18 @@ def certify(job, gpu_id):
     return {"receipt_sha256": receipt_hash, "supervisor_sha256": sup_hash}
 
 
+def quarantine_failed_dependencies(state, jobs):
+    changed = False
+    lookup = {job["id"]: job for job in jobs}
+    for name, item in state["jobs"].items():
+        if item["status"] == "PENDING" and any(
+                state["jobs"][dep]["status"] in {"FAILED", "QUARANTINED"}
+                for dep in lookup[name]["depends_on"]):
+            item.update(status="QUARANTINED", reason="failed dependency")
+            changed = True
+    return changed
+
+
 def launch(job, manifest_path, grant_path, available):
     index = int(job["gpu_index"])
     runtime.require(idle_gpu(job, available), "GPU not idle at dispatch")
@@ -122,6 +134,13 @@ def launch(job, manifest_path, grant_path, available):
     runtime.require(match is not None and re.search(r"상태:\s+(running|ok)\b", result),
                     "gpu run did not confirm dispatch: " + result)
     return match.group(1)
+
+
+def assert_resumable(state, manifest_hash, launch_hash):
+    runtime.require(state["manifest_sha256"] == manifest_hash
+                    and state["launch_grant_sha256"] == launch_hash, "queue state binding")
+    runtime.require(not any(item["status"] == "CLAIMED" for item in state["jobs"].values()),
+                    "unresolved launch claim; human audit required")
 
 
 def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
@@ -145,15 +164,12 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if state_path.exists():
             state = json.loads(state_path.read_text())
-            runtime.require(state["manifest_sha256"] == manifest_hash
-                            and state["launch_grant_sha256"] == launch_hash, "queue state binding")
+            assert_resumable(state, manifest_hash, launch_hash)
         else:
             state = {"manifest_sha256": manifest_hash, "launch_grant_sha256": launch_hash,
                      "created_unix": time.time(), "jobs": {j["id"]: {"status": "PENDING"} for j in jobs},
                      "global_stop": None}
             atomic(state_path, state)
-        runtime.require(not any(item["status"] == "CLAIMED" for item in state["jobs"].values()),
-                        "unresolved launch claim; human audit required")
         lookup = {j["id"]: j for j in jobs}
         while True:
             state["heartbeat_unix"] = time.time()
@@ -178,13 +194,7 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
                 except Exception as exc:
                     state["global_stop"] = "monitor/certification failure: " + str(exc)
                     break
-            for name, item in state["jobs"].items():
-                if item["status"] != "PENDING":
-                    continue
-                deps = lookup[name]["depends_on"]
-                if any(state["jobs"][dep]["status"] in {"FAILED", "QUARANTINED"} for dep in deps):
-                    item.update(status="QUARANTINED", reason="failed dependency")
-                    changed = True
+            changed |= quarantine_failed_dependencies(state, jobs)
             if not state["global_stop"]:
                 active = {int(lookup[name]["gpu_index"]) for name, item in state["jobs"].items()
                           if item["status"] == "RUNNING"}
@@ -197,7 +207,12 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
                         continue
                     try:
                         # Recheck immutable files and occupancy immediately before every submission.
-                        runtime.load_job(manifest_path, launch_grant_path, job["id"])
+                        _, _, job_grant, _ = runtime.load_job(manifest_path, launch_grant_path, job["id"])
+                        remaining = (state["created_unix"] + cfg["budgets"]["max_campaign_wall_seconds"]
+                                     - time.time())
+                        if remaining < job_grant["max_wall_seconds"] + 10:
+                            state["global_stop"] = "insufficient campaign wall budget for next job"
+                            break
                         available = gpu_status()
                         if not idle_gpu(job, available):
                             continue
@@ -218,16 +233,44 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
             time.sleep(poll_seconds)
 
 
+def detach(manifest_path, launch_grant_path, state_path, poll_seconds):
+    """Return after one launch is recorded; the queue continues in its own session."""
+    runtime.require(not state_path.exists(), "detached campaign already has state")
+    validate(manifest_path, launch_grant_path)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path = state_path.with_suffix(".log")
+    with log_path.open("x") as log:
+        child = subprocess.Popen([sys.executable, "-m", "experiments.ws_campaign.queue",
+                                  "--manifest", str(manifest_path), "--launch-grant", str(launch_grant_path),
+                                  "--state", str(state_path), "--poll-seconds", str(poll_seconds)],
+                                 cwd=runtime.ROOT, stdin=subprocess.DEVNULL, stdout=log,
+                                 stderr=subprocess.STDOUT, close_fds=True, start_new_session=True)
+    until = time.monotonic() + 120
+    while time.monotonic() < until:
+        if state_path.is_file():
+            state = json.loads(state_path.read_text())
+            runtime.require(not state["global_stop"], "detached launch stopped: " + str(state["global_stop"]))
+            if any(item["status"] in {"RUNNING", "COMPLETED"} for item in state["jobs"].values()):
+                print(json.dumps({"queue_pid": child.pid, "state": str(state_path), "log": str(log_path),
+                                  "first_launch_recorded": True, "heartbeat_unix": state.get("heartbeat_unix")}))
+                return 0
+        runtime.require(child.poll() is None, "detached queue exited before first launch")
+        time.sleep(0.5)
+    runtime.require(False, "detached queue did not record first launch within 120 seconds")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument("--launch-grant", type=Path, required=True)
     p.add_argument("--state", type=Path, required=True)
     p.add_argument("--poll-seconds", type=int, default=30)
+    p.add_argument("--detach", action="store_true")
     args = p.parse_args()
     try:
         runtime.require(args.poll_seconds >= 10, "poll cadence")
-        return run_queue(args.manifest.resolve(), args.launch_grant.resolve(), args.state.resolve(), args.poll_seconds)
+        paths = (args.manifest.resolve(), args.launch_grant.resolve(), args.state.resolve())
+        return detach(*paths, args.poll_seconds) if args.detach else run_queue(*paths, args.poll_seconds)
     except (runtime.Stop, OSError, ValueError, KeyError, TypeError) as exc:
         print(str(exc), file=sys.stderr)
         return 87
