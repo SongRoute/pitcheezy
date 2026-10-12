@@ -211,3 +211,25 @@ def test_output_creation_failure_does_not_consume_marker(tmp_path):
     out=parent/'result';attempts={'scoring_root':str(tmp_path/'scoring'),'bundle_id':'synthetic'}
     with pytest.raises(OSError):evaluator.claim_open({'output':str(out),'runs':{}},attempts,out)
     assert not (tmp_path/'scoring'/'EVAL-OPENED.json').exists()
+
+
+@pytest.mark.parametrize('failure',['partial-write','fsync','permission','existing'])
+def test_marker_publication_is_atomic_and_exclusive(tmp_path,monkeypatch,failure):
+    root=tmp_path/'scoring';root.mkdir();out=tmp_path/'result'
+    marker=root/'EVAL-OPENED.json';original=b'{"status":"COMPLETED","owner":"other"}'
+    if failure=='existing':marker.write_bytes(original)
+    grant={'output':str(out),'runs':{}};attempts={'scoring_root':str(root),'bundle_id':'synthetic'}
+    def fail_write(obj,handle,**kwargs):
+        handle.write('{"status":');raise OSError('synthetic full disk')
+    def fail(*args,**kwargs):raise PermissionError('synthetic publication/flush failure')
+    with monkeypatch.context() as patch:
+        if failure=='partial-write':patch.setattr(evaluator.json,'dump',fail_write)
+        elif failure=='fsync':patch.setattr(evaluator.os,'fsync',fail)
+        elif failure=='permission':patch.setattr(evaluator.os,'link',fail)
+        with pytest.raises(OSError):evaluator.claim_open(grant,attempts,out)
+    assert not out.exists() and not list(root.glob('.EVAL-OPENED.json.*'))
+    if failure=='existing':assert marker.read_bytes()==original
+    else:
+        assert not marker.exists()
+        evaluator.claim_open(grant,attempts,out)
+        assert json.loads(marker.read_text())['status']=='OPENED'

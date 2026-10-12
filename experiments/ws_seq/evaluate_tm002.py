@@ -7,6 +7,8 @@ recorded retry and a fresh output directory, never overwriting the first marker.
 """
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 import sys
 import time
@@ -104,18 +106,30 @@ def claim_open(grant, attempts, out):
                 'completed scoring cannot be retried')
         marker=root/f'EVAL-OPENED-RETRY-{index}.json'
     out.mkdir(parents=True,exist_ok=False)
+    temporary=None
     try:
-        # O_EXCL prevents two workers opening the same bundle/attempt concurrently.
-        with marker.open('x') as handle:
+        # Reuse policy_artifacts.write_exclusive's hard-link pattern, but NEVER
+        # its exFAT O_EXCL fallback: a partial access marker cannot be recovered.
+        fd,temporary=tempfile.mkstemp(dir=root,prefix='.'+marker.name+'.')
+        with os.fdopen(fd,'w') as handle:
             json.dump({'status':'OPENED','bundle_id':attempts['bundle_id'],'output':str(out.resolve()),
                        'sources_sha256':runner.source_hashes(),'runs':grant['runs'],
                        'grant_content_sha256':base.hashlib.sha256(json.dumps(grant,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest(),
                        'retry':retry,'utc':time.time()},handle,indent=2)
-    except Exception:
-        # Remove only our still-empty directory; never erase another worker's files.
+            handle.flush()
+            os.fsync(handle.fileno())
+        # Atomic no-overwrite publication only after the complete file is closed.
+        os.link(temporary,marker)
+    except BaseException:
+        # Pre-publication failure: remove only our still-empty output.
         try: out.rmdir()
         except OSError: pass
         raise
+    finally:
+        if temporary is not None:
+            # A cleanup failure must not turn successful publication into failure.
+            try: os.unlink(temporary)
+            except OSError: pass
     return marker
 
 
