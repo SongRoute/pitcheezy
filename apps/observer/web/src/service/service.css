@@ -645,3 +645,5 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
    the room down to the block above on short screens (2px gap + 1px rule + 2px padding), so the strip takes no tap from it. */
 .sv-strip{padding-top:7px;margin-top:-5px}
 @media(max-height:780px){.sv-strip{padding-top:5px}}
+/* public bundle: a game with no published file (not an error) */
+.sv-unavailable{display:grid;gap:10px;max-width:420px}.sv-unavailable .sv-btn{min-height:44px}

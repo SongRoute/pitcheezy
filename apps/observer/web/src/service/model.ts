@@ -92,8 +92,10 @@ export const inningText = (s: { inning: number; half: Half }) => `${s.inning}회
 
 const KST = 'Asia/Seoul';
 /** KST calendar date (YYYY-MM-DD) of an instant. The game's date comes from its ORIGINAL start, never from today. */
-export const kstDate = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: KST }).format(new Date(iso));
-export const kstTime = (iso: string | null) => iso ? new Intl.DateTimeFormat('ko-KR', { timeZone: KST, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso)) : '시간 미정';
+/** A value from a file is a time only when it is a string that parses; anything else is shown as 시간 미정 instead of throwing while drawing. */
+const isTime = (iso: unknown): iso is string => typeof iso === 'string' && Number.isFinite(Date.parse(iso));
+export const kstDate = (iso: string) => isTime(iso) ? new Intl.DateTimeFormat('en-CA', { timeZone: KST }).format(new Date(iso)) : '';
+export const kstTime = (iso: string | null) => isTime(iso) ? new Intl.DateTimeFormat('ko-KR', { timeZone: KST, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso)) : '시간 미정';
 export const todayKst = (now = Date.now()) => kstDate(new Date(now).toISOString());
 export function dateHeading(ymd: string) {
   const [y, m, d] = ymd.split('-').map(Number);

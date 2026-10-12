@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { FetchError, fetchDetail, mergeDetail } from './api';
-import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
+import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, fetchPublishedManifest, isGamePublishedSoon, mergeDetail } from './api';
+import { PUBLISH_CONFIG, gameCheck, gameCheckLag, staleAfterMs, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
+import type { PublishStamp, PublishHealth } from './publish';
+import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Pa, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
 import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, short } from './model';
 import { teamColor } from './teams';
 import Zone from './Zone';
@@ -20,6 +22,9 @@ export const STALE_MS = 30000;
 /** a scheduled live game is asked again slowly so the screen starts by itself; a first load that failed is retried by itself */
 export const PREGAME_POLL_MS = 10000;
 export const FIRST_LOAD_RETRY_MS = 4000;
+/** API mode keeps these cadences; static mode uses the manifest period or build-time fallbacks. */
+const CADENCE = __PZ_STATIC__ ? { live: PUBLISH_CONFIG.livePollMs, pregame: PUBLISH_CONFIG.pregamePollMs, retry: PUBLISH_CONFIG.firstLoadRetryMs }
+  : { live: POLL_MS, pregame: PREGAME_POLL_MS, retry: FIRST_LOAD_RETRY_MS };
 /** Display state → chip mark. The state is always written as words (server label); the mark and the colour only support it. */
 /** U+FE0E asks for the text (not emoji) form of the two symbols. */
 const LATE = '⏱\uFE0E', WARN = '⚠\uFE0E';
@@ -27,6 +32,10 @@ const STATE_MARK: Record<DisplayStateName, string> = { recommended: '', unconfir
   ledger_unavailable: '', waiting: '…', unavailable: '–', pregame: '', final: '' };
 /** The client's own connection is failing: what is on screen is the last answer, not the current state. */
 const CLIENT_LOST = { state: 'disconnected' as DisplayStateName, label: '연결 끊김', message: '연결이 잠시 끊겼어요. 마지막으로 받은 내용을 보여 드려요.' };
+/** Static mode: the files are reachable but the last publish is older than the (provisional) threshold. Same held look as a lost connection. */
+const PUBLISH_LATE = { state: 'disconnected' as DisplayStateName, label: '갱신 지연', message: '새 내용이 늦어지고 있어요. 마지막으로 받은 내용을 보여 드려요.' };
+/** Static mode: back in view (or back online / awake) and the first read is still on its way: neutral, never "late" from old data. */
+const PUBLISH_CHECKING = { state: 'unconfirmed' as DisplayStateName, label: '확인 중', message: '새 내용을 확인하고 있어요.' };
 const isDemoSession = (d: Detail) => d.session !== null;
 const unconfirmed = (p: PitchRow | null | undefined) => p?.receipt?.status === 'unconfirmed';
 const pickText = (pitch: string, zone: string | null | undefined) => zone ? `${pitch} · ${zone}` : pitch;
@@ -43,7 +52,8 @@ const hhmm = (ms: number) => new Date(ms).toLocaleTimeString('en-GB', { timeZone
 export const gameIdFromPath = () => {
   const m = /^\/(?:watch|game|live)\/(\d+)\/?$/.exec(window.location.pathname);
   const q = new URLSearchParams(window.location.search).get('game');
-  const id = Number(m?.[1] ?? q);
+  // public bundle: `?game=` counts only as plain decimal digits (no 1e3, 0x10, signs or spaces)
+  const id = Number(m?.[1] ?? (__PZ_STATIC__ && !/^[0-9]+$/.test(q ?? '') ? NaN : q));
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
@@ -130,11 +140,12 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // the tab was hidden: polling paused on purpose, so that time never counts as a late or lost connection (re-based on return)
   const [hidden, setHidden] = useState(() => document.hidden);
   const [resumed, setResumed] = useState(0);
-  const [sheet, setSheet] = useState<'pa' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | 'sync' | 'reference' | null>(null);
+  const [sheet, setSheet] = useState<'pa' | 'pa-empty' | 'detail' | 'info' | 'box' | 'player-away' | 'player-home' | 'sync' | 'reference' | null>(null);
   // viewer delay (중계 맞추기): this device's setting, what the server last said about its limits, and the one-time question
   const [setting, setSetting] = useState<ViewerSetting>(readViewer);
   const viewerMeta = useRef<{ max: number | null } | null>(null);
   const prompted = useRef(false);
+  const [emptyPa, setEmptyPa] = useState<Pa | null>(null);  // a plate appearance with no pitch, shown by itself in a sheet
   const stripRef = useRef<HTMLDivElement>(null);
   const sheetOpener = useRef<HTMLElement | null>(null);
   const openSheet = (kind: typeof sheet) => { sheetOpener.current = document.activeElement as HTMLElement; setSheet(kind); };
@@ -143,6 +154,32 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const [busy, setBusy] = useState(false);
   const [unit, setUnit] = useState<'kmh' | 'mph'>(readUnit);
   const detailRef = useRef<Detail | null>(null);
+  // static mode only: what the last game file and health.json said about publish time
+  const [manifestMs, setManifestMs] = useState<number | null>(null);
+  useEffect(() => {
+    if (!__PZ_STATIC__) return;
+    let timer = 0, stopped = false, active = false, period = CADENCE.live;
+    const ctrl = new AbortController();
+    const read = async () => {
+      window.clearTimeout(timer);
+      if (stopped || active || document.hidden) return;
+      active = true;
+      try { const m = await fetchPublishedManifest(ctrl.signal); if (!stopped) { setManifestMs(m.pollMs); period = m.pollMs ?? CADENCE.live; } } catch { /* keep the last manifest */ }
+      active = false;
+      if (!stopped) timer = window.setTimeout(() => void read(), Math.max(60000, period));
+    };
+    const wake = () => { if (!document.hidden) void read(); };
+    void read(); document.addEventListener('visibilitychange', wake); window.addEventListener('online', wake);
+    return () => { stopped = true; ctrl.abort(); window.clearTimeout(timer); document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake); };
+  }, []);
+  const [fileStamp, setFileStamp] = useState<PublishStamp | null>(null);
+  const [health, setHealth] = useState<PublishHealth | null>(null);
+  const [pendingSince, setPendingSince] = useState<number | null>(null);
+  const pending = useRef<number | null>(null);
+  const pendingTarget = useRef<number | null>(null);
+  const [withdrawn, setWithdrawn] = useState(false);
+  const appliedSequence = useRef<number | null>(null);
+  const [checking, setChecking] = useState(false);
   const inflight = useRef<AbortController | null>(null);
   const drawn = useRef<Drawn | null>(null);
   const picked = useRef(false);  // the viewer chose a past pitch (as opposed to the default first pitch of a game that is not live)
@@ -154,6 +191,31 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     const ctrl = new AbortController(); inflight.current = ctrl;
     setBusy(true);
     try {
+      if (__PZ_STATIC__) {  // one health-first chain; malformed/old health falls back to a whole-file read
+        let h: PublishHealth | null = null;
+        try { h = await fetchPublishHealth(ctrl.signal); if (!ctrl.signal.aborted) setHealth(h); } catch { /* keep the last health */ }
+        if (ctrl.signal.aborted) return;
+        const { present, check } = gameCheck(h, gamePk);
+        if (present) { setLastOk(Date.now()); setError(null); }
+        if (check && check.file_sequence !== null && (appliedSequence.current === null || check.file_sequence > appliedSequence.current)) {
+          pendingTarget.current = Math.max(pendingTarget.current ?? 0, check.file_sequence);
+          pending.current ??= performance.now(); setPendingSince(pending.current);
+        }
+        if (check?.file_sequence === null) {
+          pendingTarget.current = null; pending.current = null; setPendingSince(null); setWithdrawn(true); detailRef.current = null; setDetail(null); setFileStamp(null);
+          setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 });
+          return;
+        }
+        if (pendingTarget.current === null && check && detailRef.current && appliedSequence.current !== null && check.file_sequence! <= appliedSequence.current) {
+          setError(null); setLastOk(Date.now()); return;
+        }
+        const got = await fetchPublishedDetail(gamePk, ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        if (pendingTarget.current !== null && got.stamp.seq! < pendingTarget.current) return;  // propagation delay: retry this target next tick
+        pendingTarget.current = null; pending.current = null; setPendingSince(null); appliedSequence.current = got.stamp.seq;
+        setWithdrawn(false); detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now());
+        return;
+      }
       const old = detailRef.current;
       const last = old?.pitches.length ? old.pitches[old.pitches.length - 1].index : undefined;
       let next = await fetchDetail(gamePk, ctrl.signal, full || !old || last === undefined ? undefined : last, requestDelay());
@@ -178,8 +240,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       detailRef.current = next; setDetail(next); setError(null); setLastOk(Date.now());
     } catch (e) {
       if (ctrl.signal.aborted) return;
+      if (__PZ_STATIC__ && pending.current !== null) return;  // announced file is still propagating; keep neutral and retry
       setError(e instanceof FetchError ? { text: e.message, status: e.status } : { text: '자료를 불러오지 못했어요.', status: 0 });
-    } finally { if (inflight.current === ctrl) { inflight.current = null; setBusy(false); } }
+    } finally { if (inflight.current === ctrl) { inflight.current = null; setBusy(false); if (__PZ_STATIC__) setChecking(false); } }
   }, [gamePk]);
 
   useEffect(() => { void load(true, true); return () => inflight.current?.abort(); }, [load]);
@@ -223,26 +286,66 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // server names while the card is not live) is asked again slowly, with or without a display state, so the screen starts by itself.
   const waitingToStart = detail !== null && !live && detail.session === null && detail.game.status !== 'final'
     && (detail.display?.state === 'pregame' || detail.live_source === true);
-  const pollMs = live ? POLL_MS : waitingToStart ? PREGAME_POLL_MS : 0;
+  const pollMs = live ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.live : CADENCE.live) : waitingToStart ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.pregame : CADENCE.pregame) : __PZ_STATIC__ && (detail !== null || withdrawn || pendingSince !== null) ? manifestMs ?? CADENCE.live : 0;
   useEffect(() => {
     if (!auto || !pollMs) return;
     const id = window.setInterval(() => { if (!document.hidden) void load(); }, pollMs);
     return () => window.clearInterval(id);
   }, [auto, pollMs, load]);
+  // static mode: a screen pinned on a past pitch (auto off) still checks, including final-game corrections. If the server turns the
+  // pinned pitch back to 확인 중, the same fail-closed rules blank it here too; the view stays pinned (no jump to the latest).
+  const pinnedMs = __PZ_STATIC__ && !auto && pollMs > 0 ? manifestMs ?? PUBLISH_CONFIG.pinnedPollMs : 0;
+  useEffect(() => {
+    if (!pinnedMs) return;
+    const id = window.setInterval(() => { if (!document.hidden) void load(); }, pinnedMs);
+    return () => window.clearInterval(id);
+  }, [pinnedMs, load]);
   // first load failed (nothing to show yet): keep trying by itself, but only when the server could not be reached or failed (network
   // error / timeout = 0, 5xx). A refusal (423 embargo, 400, 404) is an answer, not an outage: it is shown as before and not retried.
   const firstLoadRetry = detail === null && error !== null && (error.status === 0 || error.status >= 500);
+  // static mode: a game with no file yet (404) is asked again slowly, so it appears by itself once it is published; and nothing is
+  // asked while the tab is hidden (the retry starts again when it is visible)
+  const missing = __PZ_STATIC__ && !withdrawn && detail === null && error !== null && error.status === 404;
+  const holdHidden = __PZ_STATIC__ && hidden;
   useEffect(() => {
-    if (!firstLoadRetry) return;
-    const id = window.setTimeout(() => void load(true), FIRST_LOAD_RETRY_MS);
+    if (!firstLoadRetry || holdHidden) return;
+    const id = window.setTimeout(() => void load(true), CADENCE.retry);
     return () => window.clearTimeout(id);
-  }, [firstLoadRetry, error, load]);
-  useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 5000); return () => window.clearInterval(id); }, []);
+  }, [firstLoadRetry, holdHidden, error, load]);
+  // A missing file is not asked for ever: the gap doubles up to a maximum, and before each new try the lists of the dates the
+  // publisher is following are looked at; when none of them names this game (a demo runs on it, it is long over, the number is
+  // wrong) asking stops. The calm "지금 볼 수 없어요" stays, with the manual button.
+  const missingTries = useRef(0);
+  const [gaveUp, setGaveUp] = useState(false);
+  useEffect(() => {
+    if (!missing || holdHidden || gaveUp) return;
+    const ctrl = new AbortController();
+    const id = window.setTimeout(async () => {
+      const soon = await isGamePublishedSoon(gamePk, ctrl.signal);
+      if (ctrl.signal.aborted) return;
+      if (soon === false) { setGaveUp(true); return; }
+      missingTries.current += 1;
+      void load(true);
+    }, Math.min(PUBLISH_CONFIG.missingRetryMs * 2 ** missingTries.current, PUBLISH_CONFIG.missingMaxMs));
+    return () => { window.clearTimeout(id); ctrl.abort(); };
+  }, [missing, holdHidden, gaveUp, error, load, gamePk]);
+  const askAgain = () => { missingTries.current = 0; setGaveUp(false); void load(true, true); };
+  useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), __PZ_STATIC__ ? PUBLISH_CONFIG.tickMs : 5000); return () => window.clearInterval(id); }, []);
   useEffect(() => {  // coming back to the tab: refresh at once when following
-    const onVis = () => { setHidden(document.hidden); if (!document.hidden) { setResumed(Date.now()); setNow(Date.now()); } if (!document.hidden && auto && pollMs) void load(); };
-    const onOnline = () => { if (auto && (pollMs || detailRef.current === null)) void load(detailRef.current === null); };
+    // static mode: coming back (tab visible, network back, device awake) reads FIRST; until that read ends the screen says 확인 중
+    // instead of judging lateness from what was on screen before
+    const recheck = () => { if (__PZ_STATIC__ && pollMs && detailRef.current !== null) setChecking(true); };
+    const onVis = () => { setHidden(document.hidden); if (!document.hidden) { setResumed(Date.now()); setNow(Date.now()); } if (!document.hidden && (auto || __PZ_STATIC__) && pollMs) { recheck(); void load(); }
+      if (__PZ_STATIC__ && !document.hidden && detailRef.current === null) void load(true); };
+    const onOnline = () => { if (__PZ_STATIC__ && document.hidden) return; if ((auto || __PZ_STATIC__) && (pollMs || detailRef.current === null)) { recheck(); void load(detailRef.current === null); } };
     document.addEventListener('visibilitychange', onVis); window.addEventListener('online', onOnline);
-    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('online', onOnline); };
+    // a device sleep is seen as the wall clock running ahead of the page's monotonic clock (only the difference of the two is used)
+    let wall = Date.now(), mono = performance.now();
+    const awake = !__PZ_STATIC__ ? 0 : window.setInterval(() => {
+      const w = Date.now(), m = performance.now(), gap = (w - wall) - (m - mono); wall = w; mono = m;
+      if (gap > 2 * PUBLISH_CONFIG.tickMs && !document.hidden && (auto || __PZ_STATIC__) && pollMs) { setResumed(Date.now()); setNow(Date.now()); recheck(); void load(); }
+    }, PUBLISH_CONFIG.tickMs);
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('online', onOnline); window.clearInterval(awake); };
   }, [auto, pollMs, load]);
 
   // default selection once data arrives: live → follow latest; finished → first pitch
@@ -275,14 +378,24 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const syncSheet = !import.meta.env.VITE_PUBLISH_BASE && sheet === 'sync' ? <div className="sv-sync-host"><SyncSheet gamePk={gamePk} delay={viewer?.delay_s ?? wantedDelay(setting)} max={viewerMeta.current?.max ?? null}
     synced={setting.synced} onDelay={changeDelay} onClose={closeSync} /></div> : null;
   if (!detail) {
-    return <><div className="sv-page"><TopBar /><main className="sv-center">{error
-      ? <div className="sv-alert" role="alert"><p>{error.status === 423 ? '이 경기는 지금 기록을 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.' : error.text}</p>
-        <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 시도</button><a className="sv-btn" href="/watch">경기 목록</a></div>
+    return <><div className="sv-page"><TopBar /><main className="sv-center">{__PZ_STATIC__ && pendingSince !== null
+      ? <p className="sv-muted" role="status">{performance.now() - pendingSince > staleAfterMs(pollMs) ? '갱신 지연 · 새 내용이 늦어지고 있어요.' : '확인 중 · 새 내용을 확인하고 있어요.'}</p>
+      : error
+      // public bundle: no file for a game (not published yet, or withheld while a demo runs on it) = not available now, said calmly
+      ? __PZ_STATIC__ && error.status === 404 ? <div className="sv-unavailable"><p className="sv-muted" role="status">이 경기는 지금 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.</p>
+        <div className="sv-row"><button className="sv-btn" onClick={askAgain}>다시 확인</button><a className="sv-btn" href={publicListHref()}>경기 목록</a></div>
+        {!gaveUp && <p className="sv-muted sv-retrying">올라오면 자동으로 보여 드려요.</p>}</div>
+      : <div className="sv-alert" role="alert"><p>{error.status === 423 ? '이 경기는 지금 기록을 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.' : error.text}</p>
+        <div className="sv-row"><button className="sv-btn" onClick={() => void load(true, true)}>다시 시도</button><a className="sv-btn" href={__PZ_STATIC__ ? publicListHref() : '/watch'}>경기 목록</a></div>
         {firstLoadRetry && <p className="sv-muted sv-retrying">자동으로 다시 연결하고 있어요.</p>}</div>
       : <p className="sv-muted" role="status">경기 기록을 불러오는 중…</p>}</main></div>{syncSheet}</>;
   }
 
   const { game } = detail;
+  const verification = __PZ_STATIC__ ? gameCheck(health, gamePk) : { present: false, check: null };
+  const awaitingFile = __PZ_STATIC__ && pendingSince !== null;
+  const maskPublished = __PZ_STATIC__ && (awaitingFile || (verification.present && (!verification.check || checking)));
+
   const pitches = detail.pitches;
   const lastPitch = pitches[pitches.length - 1] ?? null;
   const pitch: PitchRow | null = sel?.kind === 'pitch' ? byIndex.get(sel.index) ?? null : null;
@@ -295,13 +408,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const ended = breakNow && lastPitch ? { inning: lastPitch.situation.inning, half: lastPitch.situation.half } : null;
   // What the stage shows
   const situation: Situation | null = latest ? (breakNow ? null : detail.current?.situation ?? lastPitch?.situation ?? null) : pitch!.situation;
-  const rec: Rec | null = latest ? (live ? detail.next : lastPitch?.rec ?? null) : pitch!.rec;
-  const actual: Actual | null = latest ? lastPitch?.actual ?? null : pitch!.actual;
+  const rec: Rec | null = maskPublished ? null : latest ? (live ? detail.next : lastPitch?.rec ?? null) : pitch!.rec;
+  const actual: Actual | null = maskPublished ? null : latest ? lastPitch?.actual ?? null : pitch!.actual;
   const nextPhase = latest && live;
   const shownPitch = latest ? lastPitch : pitch;
   const paKey = latest ? detail.current?.pa_key ?? lastPitch?.pa_key ?? null : pitch!.pa_key;
-  const paPitches = breakNow ? [] : pitches.filter(p => p.pa_key === paKey);
-  const endingShown = shownPitch?.actual?.event ? detail.pas.find(p => p.pa_key === shownPitch.pa_key && p.complete)?.result ?? null : null;
+  const paPitches = breakNow || maskPublished ? [] : pitches.filter(p => p.pa_key === paKey);
+  const endingShown = !maskPublished && shownPitch?.actual?.event ? detail.pas.find(p => p.pa_key === shownPitch.pa_key && p.complete)?.result ?? null : null;
   const stateSlot = disp !== null && latest && (nextPhase || disp.state === 'pregame');
   const slotNumber = Number(/^\d+:\d+:(\d+)$/.exec(disp?.pitch_key ?? '')?.[1] ?? NaN);
   const nextNumber = nextPhase && !breakNow ? (stateSlot && Number.isInteger(slotNumber) ? slotNumber
@@ -315,9 +428,28 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
 
   // Connection: the client's own polling (clientStale / error) and the server's upstream feed. With a display state the server part
   // comes from display.feed; the old `stale_s > 30` guess (which also fires in long breaks) is used only without one.
-  const clientStale = live && auto && !hidden && lastOk !== null && now - Math.max(lastOk, resumed) > STALE_MS;
-  const feedDown = disp ? !disp.feed.ok : live && (detail.feed.ok === false || (detail.feed.stale_s ?? 0) > 30);
+  const clientStale = live && auto && !hidden && lastOk !== null && now - Math.max(lastOk, resumed) > (__PZ_STATIC__ ? lostAfterMs(pollMs) : STALE_MS);
+  const rawCheck = health?.gameChecks?.[String(gamePk)];
+  const checkFeedFailed = rawCheck !== null && typeof rawCheck === 'object' && 'feed_ok' in rawCheck && rawCheck.feed_ok === false;
+  const healthFeedFailed = verification.present && (checkFeedFailed || health?.failingGames.some(g =>
+    g === gamePk || g === String(gamePk) || (g !== null && typeof g === 'object' && 'game_pk' in g && String(g.game_pk) === String(gamePk))));
+  const feedDown = __PZ_STATIC__ && verification.present ? healthFeedFailed : disp ? !disp.feed.ok : live && (detail.feed.ok === false || (detail.feed.stale_s ?? 0) > 30);
   const stale = clientStale || feedDown;
+  // static mode: the files answer, but nothing new has been published for longer than the threshold. "Is polled" is not "publishing is
+  // expected": a game in play is expected to move; a game that has not started is expected to be published only once its scheduled
+  // start has passed (before that the publisher may be idle on purpose, e.g. a day without a live game).
+  //  - a game whose own status says it is in play: late when health.json itself is stale, or health.json is fresh and this file is behind it;
+  //  - any other game that is polled (pregame, delayed start, postponed, doubleheader wait): only health.json is judged, and only once
+  //    the scheduled start has passed (before that an idle publisher is normal). A fresh health.json is never late for such a game.
+  const srv = __PZ_STATIC__ ? serverNow(clockWindowMs(pollMs)) : null;
+  const startMs = game.start ? Date.parse(game.start) : NaN;
+  const timeWarnings = !(fileStamp?.final && game.status === 'final') && (live || (waitingToStart && srv !== null && Number.isFinite(startMs) && srv.ms >= startMs));
+  const lag = !__PZ_STATIC__ ? null : verification.present ? (timeWarnings ? gameCheckLag(health, verification.check, srv) : null) : live ? publishLag(fileStamp, health, srv)
+    : waitingToStart && srv !== null && Number.isFinite(startMs) && srv.ms >= startMs ? publishLag(null, health, srv) : null;
+  const pendingLate = awaitingFile && !(fileStamp?.final && game.status === 'final') && performance.now() - pendingSince! > staleAfterMs(pollMs);
+  const lateNow = __PZ_STATIC__ && (pendingLate || isPublishStale(lag, pollMs));
+  const publishStale = lateNow && !checking;
+  const publishChecking = !publishStale && (awaitingFile || (verification.present && (!verification.check || checking)) || (lateNow && checking));
   // lag_s is a proven lower bound (never an estimate): floor it and say '넘게', never '약'
   // Viewer delay on (live route, feature on): how far behind this screen is shown, and whether thrown-pitch details are folded.
   // Folded until this device is synced: every realized pitch detail of a LIVE game (type, speed, location, call/result of each
@@ -328,6 +460,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const openSync = () => openSheet('sync');
   const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
   const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
+    : publishStale ? { kind: 'late', text: `${LATE} 갱신 지연` } : publishChecking ? { kind: 'ok', text: '확인 중…' }
     : lagText ? { kind: 'late', text: `${LATE} 자료 늦음 · ${lagText}` }
     : { kind: 'ok', text: live ? (auto ? (behind > 0 ? `${behind}초 늦춰 보는 중` : '실시간으로 받는 중') : '자동 갱신 멈춤') : disp?.message?.replace(/\.$/, '') ?? disp?.label ?? '' };
   // D1 "no silent flip": server note first; otherwise compare with what this screen last drew for the same pending pitch.
@@ -354,24 +487,24 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }
   const ending = fold ? null : endingShown;
   // A2: a reference card rides only on the pending pitch's unsupported state; it is never drawn as a recommendation
-  const reference = stateSlot && latest && nextPhase && !shownRec && disp!.state === 'unsupported' ? detail.reference ?? null : null;
+  const reference = !maskPublished && stateSlot && latest && nextPhase && !shownRec && disp!.state === 'unsupported' ? detail.reference ?? null : null;
   const fix = stateSlot ? disp!.correction : null;
   const fixPrev = previousText(fix?.previous ?? null);
-  const note = fix ? `${fix.message}${fixPrev ? ` (이전: ${fixPrev})` : ''}` : clientNote;
+  const note = maskPublished ? null : fix ? `${fix.message}${fixPrev ? ` (이전: ${fixPrev})` : ''}` : clientNote;
   // The client's own requests failing (or silent for too long): the slot says so instead of looking current.
-  const clientLost = disp !== null && (error !== null || clientStale);
-  const eff = !stateSlot ? null : clientLost ? CLIENT_LOST
+  const clientLost = disp !== null && (error !== null || clientStale || (__PZ_STATIC__ && healthFeedFailed === true));
+  const eff = !stateSlot ? null : clientLost ? CLIENT_LOST : publishStale ? PUBLISH_LATE : publishChecking ? PUBLISH_CHECKING
     : { state: disp!.state, label: disp!.label, message: disp!.message ?? (shownRec || disp!.state !== 'recommended' ? null : '추천을 준비하고 있어요.') };
   // candidates kept from the last answer while disconnected: still visible, dimmed, labelled as last received
   const held = stateSlot && shownRec && eff!.state === 'disconnected';
-  const liveDot = live && latest && auto && !isDemoSession(detail) && !(disp !== null && (clientLost || feedDown));
+  const liveDot = live && latest && auto && !isDemoSession(detail) && !(disp !== null && (clientLost || feedDown)) && !lateNow && !maskPublished;
   const scored = situation ?? null;
   // between innings the card carries no score: the as-of linescore (runs up to the last published play) keeps it on screen
   const breakScore = (k: 'away' | 'home') => breakNow ? detail.linescore_asof?.[k].r ?? lastPitch?.situation[`${k}_score`] ?? null : null;
   const awayScore = latest && game.away_score !== null ? game.away_score : scored?.away_score ?? breakScore('away');
   const homeScore = latest && game.home_score !== null ? game.home_score : scored?.home_score ?? breakScore('home');
 
-  // browsing a past pitch pins the view and switches auto refresh off (no fetch while pinned); LIVE brings both back
+  // Browsing pins the view and switches API refresh off; static mode keeps checking for corrections. LIVE resumes following.
   const pick = (index: number) => { picked.current = true; setSel({ kind: 'pitch', index }); setAuto(false); };
   const goLatest = () => { picked.current = false; setSel({ kind: 'latest' }); setAuto(true); void load(false, true); };
   // A past pitch of a live game: the recommendation the ledger recorded BEFORE that pitch, next to what was thrown. Never a score.
@@ -379,7 +512,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const liveRecord = !nextPhase && (detail.live_source === true || rec?.provenance === 'captured_live');
   const recTitle = nextPhase ? `다음 공 추천${nextNumber ? ` · ${nextNumber}구` : ''}` : liveRecord ? '투구 전에 기록된 추천' : '이 공 던지기 전 추천';
   const recHeading = liveRecord ? (pastUnconfirmed ? `${recTitle}: 확인 중` : rec?.status === 'ready' ? recTitle : `${recTitle} 없음`) : `${recTitle} (${rec ? provenanceText(rec) : '추천 없음'})`;
-  const absentText = pastUnconfirmed ? '확인 중이에요.' : nextPhase ? '추천 기록이 없어요.' : ABSENT_PAST;
+  const absentText = maskPublished ? '새 내용을 확인하고 있어요.' : pastUnconfirmed ? '확인 중이에요.' : nextPhase ? '추천 기록이 없어요.' : ABSENT_PAST;
   const actualTitle = nextPhase ? `직전 투구${lastPitch ? ` · ${inningText(lastPitch.situation)} ${lastPitch.pitch_number}구` : ''}` : `실제 투구${pitch ? ` · ${pitch.pitch_number}구` : ''}`;
   const top = situation?.half === 'Top';
   const info = (p: Person | null) => p ? detail.players?.[String(p.id)] : undefined;
@@ -388,8 +521,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const venue = game.venue ? `${game.venue} · ` : '';
   const when = `${dateHeading(game.kst_date)} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
   const phase = detail.current?.phase ?? detail.phase ?? null;
-  const emptyRec = nextPhase ? (phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
-  const actualWait = phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '다음 공 대기 중';
+  const emptyRec = maskPublished ? '확인 중' : nextPhase ? (phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
+  const actualWait = maskPublished ? '확인 중' : phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '다음 공 대기 중';
   const list = <RecList rec={rec} emptyText={emptyRec} onOpen={() => openSheet('detail')} lead={held ? '마지막으로 받은 ' : liveRecord ? '투구 전에 기록된 ' : ''} pair={!nextPhase} absentText={absentText} />;
   const top1 = !nextPhase && !pastUnconfirmed && rec?.status === 'ready' ? rec.candidates[0] ?? null : null;
   const pairText = top1 && actual && !fold ? { rec: pickText(top1.pitch_label, top1.zone_label), actual: pickText(actual.pitch_label, actual.zone_label) } : null;
@@ -422,8 +555,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     {/* Connection problems remain explicit alerts; history state is in the header. */}
     {/* The status line is a plain box; only its words are a live region. The time stamp and the retry control sit outside it so a
         screen reader is not re-triggered every minute or every poll. */}
-    {disp ? <div className={`sv-notice line ${line.kind}`} data-kind={error ? 'client' : feedDown ? 'feed' : clientStale ? 'slow' : lagText ? 'late' : 'ok'}>
-      <span className="sv-line-text" role="status">{line.kind === 'ok' && live && auto && <i className="sv-line-dot" aria-hidden="true" />}{line.text}<span className="sr-only">{error ? ` ${error.text} 자동으로 다시 연결하고 있어요.` : feedDown ? ' 경기 자료 연결이 잠시 끊겼어요.' : ''}</span></span>
+    {disp || (__PZ_STATIC__ && (healthFeedFailed || publishStale || publishChecking)) ? <div className={`sv-notice line ${line.kind}`} data-kind={error ? 'client' : feedDown ? 'feed' : clientStale ? 'slow' : publishStale ? 'publish-late' : publishChecking ? 'checking' : lagText ? 'late' : 'ok'} data-publish-clock={publishStale ? lag?.clock ?? 'elapsed' : undefined}>
+      <span className="sv-line-text" role="status">{line.kind === 'ok' && live && auto && <i className="sv-line-dot" aria-hidden="true" />}{line.text}<span className="sr-only">{error ? ` ${error.text} 자동으로 다시 연결하고 있어요.` : feedDown ? ' 경기 자료 연결이 잠시 끊겼어요.' : publishStale && !clientStale ? ` ${PUBLISH_LATE.message}` : ''}</span></span>
       {lastOk && !(viewer && line.kind !== 'ok') && <span className="sv-line-time" aria-hidden="true">· {hhmm(lastOk)} 수신</span>}
       {line.kind !== 'ok' && <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy} aria-label="지금 다시 불러오기">{busy ? '…' : '다시'}</button>}
       {viewer && <button className="sv-link-btn sv-sync-open" onClick={openSync} aria-haspopup="dialog"
@@ -524,11 +657,17 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <div className="sv-upcoming" aria-label="다음 두 타자">{[0, 1].map(i => <span key={i} title={upcoming[i]?.name ?? undefined}>{upcoming[i] ? `${upcoming[i].order}번 · ${upcoming[i].name ?? '타자 미확인'}` : idle ? '–' : '–번 · 타자 미확인'}</span>)}</div>
     </section>
 
-    {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')} foldText={fold ? FOLD_TEXT : null}
-      onPick={p => { setSheet(null); if ((live && p.pa_key === detail.current?.pa_key && !p.complete) || typeof p.first !== 'number' || !byIndex.has(p.first)) goLatest(); else pick(p.first); }} />}
+    {!maskPublished && sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')} foldText={fold ? FOLD_TEXT : null}
+      onPick={p => {
+        // a finished plate appearance with no pitch at all (intentional walk and the like): its own result, no jump elsewhere
+        if (p.complete && !pitches.some(x => x.pa_key === p.pa_key) && (typeof p.first !== 'number' || !byIndex.has(p.first))) { setEmptyPa(p); setSheet('pa-empty'); return; }
+        setSheet(null); if ((live && p.pa_key === detail.current?.pa_key && !p.complete) || typeof p.first !== 'number' || !byIndex.has(p.first)) goLatest(); else pick(p.first); }} />}
+    {!maskPublished && sheet === 'pa-empty' && emptyPa && <Sheet title={`${inningText(emptyPa)} · ${emptyPa.batter}`} onClose={closeSheet}>
+      <p><b>{fold ? FOLD_TEXT : emptyPa.result}</b></p><p className="sv-muted">이 타석은 투구 기록이 없어요. 공을 던지지 않고 끝난 타석이에요.</p>
+    </Sheet>}
     {/* a selected past pitch shows the linescore as of that pitch (never the latest one, which would reveal later play) */}
     {sheet === 'box' && <BoxSheet ls={latest ? detail.linescore_asof : pitch!.line ?? null} game={game} at={situation} onClose={closeSheet} />}
-    {sheet === 'detail' && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={stateSlot && !shownRec ? null : rec} recTitle={stateSlot && !shownRec ? `다음 공: ${eff!.label}` : liveRecord ? recTitle : rec ? `${held ? '마지막으로 받은 추천' : recTitle} (${provenanceText(rec)})` : recTitle}
+    {!maskPublished && sheet === 'detail' && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={stateSlot && !shownRec ? null : rec} recTitle={stateSlot && !shownRec ? `다음 공: ${eff!.label}` : liveRecord ? recTitle : rec ? `${held ? '마지막으로 받은 추천' : recTitle} (${provenanceText(rec)})` : recTitle}
       pair={pairText} absentText={absentText}
       actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} actualFolded={fold && !nextPhase && actual !== null ? FOLD_TEXT : null}
       actualExtra={!nextPhase && !fold && shownPitch?.expectation && shownPitch.actual?.event ? <ExpectationLine e={shownPitch.expectation} /> : null} notes={detail.notes} speed={mph => speedText(mph, unit)}
@@ -547,12 +686,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   </div>{syncSheet}</>;
 }
 
-const backHref = () => { const demo = new URLSearchParams(window.location.search).get('demo'); return demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'; };
+const backHref = () => { if (__PZ_STATIC__) return publicListHref(); const demo = new URLSearchParams(window.location.search).get('demo'); return demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'; };
 function TopBar({ right, title, label }: { right?: ReactNode; title?: string; label?: string }) {
-  const demo = new URLSearchParams(window.location.search).get('demo');
   return <header className="sv-top">
-    <a className="sv-back" href={demo ? `/watch?demo=${encodeURIComponent(demo)}` : '/watch'} aria-label="경기 목록으로">‹</a>
-    {title ? <h1 className="sv-title" aria-label={label}>{title}</h1> : <a className="sv-brand small" href="/watch">Pitcheezy<span>.</span></a>}
+    <a className="sv-back" href={backHref()} aria-label="경기 목록으로">‹</a>
+    {title ? <h1 className="sv-title" aria-label={label}>{title}</h1> : <a className="sv-brand small" href={__PZ_STATIC__ ? publicListHref() : '/watch'}>Pitcheezy<span>.</span></a>}
     <span className="sv-top-right">{right}</span>
   </header>;
 }

@@ -1,8 +1,10 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Component, Suspense, lazy } from 'react';
+import type { ReactNode } from 'react';
 import type { ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import WatchList from './service/WatchList';
 import GameScreen, { gameIdFromPath } from './service/GameScreen';
+import HostSlot from './service/HostSlot';
 import './styles.css';
 
 // iPhone safe areas: env(safe-area-inset-*) only applies with viewport-fit=cover (index.html is outside this module's scope).
@@ -11,9 +13,15 @@ if (viewport && !/viewport-fit/.test(viewport.getAttribute('content') ?? '')) vi
 
 // Operator console is owned by the backend author (src/demo-operator/**, CONTRACT rev2 §5: named export `DemoOperator`).
 // Wired only if that module exists in the build, so this file compiles with or without it.
-const operatorModules = import.meta.glob<{ DemoOperator: ComponentType }>('./demo-operator/index.{ts,tsx}');
-const operatorLoader = Object.values(operatorModules)[0];
-const Operator = operatorLoader ? lazy(() => operatorLoader().then(m => ({ default: m.DemoOperator }))) : null;
+// Public (static-mode) bundle (`__PZ_STATIC__`, a build-time literal): the operator console and demo sessions are not part of it;
+// the module is not looked up, so it is neither routed nor bundled.
+function operator() {
+  if (__PZ_STATIC__) return null;
+  const operatorModules = import.meta.glob<{ DemoOperator: ComponentType }>('./demo-operator/index.{ts,tsx}');
+  const operatorLoader = Object.values(operatorModules)[0];
+  return operatorLoader ? lazy(() => operatorLoader().then(m => ({ default: m.DemoOperator }))) : null;
+}
+const Operator = operator();
 
 const route = window.location.pathname.replace(/\/$/, '');
 // Ordinary service: /watch (KST date list) → /watch/{gamePk} (one game screen for live, demo and finished games).
@@ -22,7 +30,20 @@ const route = window.location.pathname.replace(/\/$/, '');
 // media URL or scene pitch list is in any served asset; they remain in git history and in the 282dc6f rollback build.
 function page() {
   const game = gameIdFromPath();
-  if (route === '/demo-operator') return Operator ? <Suspense fallback={null}><Operator /></Suspense> : <p style={{ padding: 24 }}>운영자 화면이 이 빌드에 없습니다.</p>;
-  return game ? <GameScreen gamePk={game} /> : <WatchList />;
+  if (!__PZ_STATIC__ && route === '/demo-operator') return Operator ? <Suspense fallback={null}><Operator /></Suspense> : <p style={{ padding: 24 }}>운영자 화면이 이 빌드에 없습니다.</p>;
+  const screen = game ? <GameScreen gamePk={game} /> : <WatchList />;
+  // the one empty extension point for the hosting page (feedback / analytics are the host's, never ours): see service/HostSlot.tsx
+  return __PZ_STATIC__ ? <>{screen}<HostSlot screen={game ? 'game' : 'list'} gamePk={game} /></> : screen;
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode>{page()}</React.StrictMode>);
+/** One boundary around the screens: an exception while drawing (a file with a value the screen did not expect) shows plain words and
+ *  a reload control instead of a blank page. The exception text is never shown. */
+class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return <div className="sv-page"><main className="sv-center sv-crash" role="alert"><p>화면을 표시하지 못했어요. 새로 고치면 다시 불러와요.</p>
+      <button className="sv-btn" onClick={() => window.location.reload()}>새로 고침</button></main></div>;
+  }
+}
+createRoot(document.getElementById('root')!).render(<React.StrictMode><ScreenBoundary>{page()}</ScreenBoundary></React.StrictMode>);

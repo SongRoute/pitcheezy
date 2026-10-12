@@ -6,12 +6,14 @@ import type { Correction, Display, DisplayStateName, Receipt, LineTeam, Linescor
 import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, plainZone, shiftDate } from './model';
 import { learnViewer, normalizeViewer, viewerOn, withDelay } from './viewer';
 import { normalizeExpectation, normalizeReference } from './extras';
+import { PUBLISH_CONFIG, manifestPollMs, isCalendarDate, observeHostTime, observePublishTime, publishUrl, publishedPath, unwrapPublished } from './publish';
+import type { PublishStamp, PublishHealth, PublishedFile } from './publish';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
 export const TIMEOUT_MS = 15000;
 
 /** Demo binding travels on the URL (`?demo=<session>`) and is forwarded to the API as-is; the screen never shows it. */
-export const demoParam = () => new URLSearchParams(window.location.search).get('demo');
+export const demoParam = () => __PZ_STATIC__ ? null : new URLSearchParams(window.location.search).get('demo');  // the public bundle carries no demo binding
 function withDemo(path: string) {
   const demo = demoParam();
   if (!demo) return path;
@@ -35,6 +37,137 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
   return body as T;
 }
 
+// ---------- static (public) mode: published files only; never `/api/**`, never `?demo=`, no `?after=` cursor ----------
+/** One published file. The timeout and the caller's abort cover the WHOLE answer, body included: a body that stalls after the headers
+ *  ends like an unreachable server instead of leaving the request (and every later poll) waiting for ever.
+ *  A missing file keeps its HTTP status (404); an answer that is not JSON (half-written file, a host's HTML fallback page) is treated
+ *  like an unreachable server (status 0) so the screen keeps its last state and asks again. */
+async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promise<{ body: T; stamp: Omit<PublishStamp, 'seenAt'> & { seq: number }; etag: string | null } | null> {
+  const path = publishedPath(file);
+  if (path === null) throw new FetchError('자료를 불러오지 못했어요.', 404);   // not a real date / game number: nothing is asked
+  const url = publishUrl(path), last = applied.get(url);
+  const timeout = new AbortController();
+  const timer = window.setTimeout(() => timeout.abort(), PUBLISH_CONFIG.timeoutMs);
+  const onAbort = () => timeout.abort();
+  signal?.addEventListener('abort', onAbort);
+  if (signal?.aborted) timeout.abort();
+  try {
+    let response: Response;
+    try { response = await fetch(url, { cache: 'no-cache', headers: last?.etag ? { 'If-None-Match': last.etag } : undefined, signal: timeout.signal }); }
+    catch (e) {
+      if (signal?.aborted) throw e;
+      throw new FetchError('서버에 연결하지 못했어요. 네트워크 연결을 확인해 주세요.', 0);
+    }
+    // the hosting server's own clock for this answer (Date, plus Age when a cache says how old its copy is); unreadable cross-origin unless exposed
+    const date = Date.parse(response.headers.get('date') ?? ''), age = Number(response.headers.get('age') ?? '');
+    if (Number.isFinite(date)) observeHostTime(date + (Number.isFinite(age) && age > 0 ? age * 1000 : 0));
+    if (response.status === 304) {
+      if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+      if (!last?.etag) throw new FetchError('서버 응답을 읽지 못했어요.', 0); // no validated body to reuse
+      if (last.stamp.publishedAt) observePublishTime(Date.parse(last.stamp.publishedAt));
+      return null; // reuse the already validated/normalized body; neither JSON parse nor shape runs again
+    }
+    if (!response.ok) { void response.body?.cancel().catch(() => undefined); throw new FetchError('자료를 불러오지 못했어요.', response.status); }
+    const raw = await response.json().catch(() => null);
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    if (raw === null || typeof raw !== 'object') throw new FetchError('서버 응답을 읽지 못했어요.', 0);
+    const p = unwrapPublished<T>(raw);
+    if (p.seq === null) throw new FetchError('서버 응답을 읽지 못했어요.', 0);   // no integer sequence: cannot be ordered, so never applied
+    if (p.publishedAt) observePublishTime(Date.parse(p.publishedAt));   // used as server time only when no hosting time is readable
+    return { body: p.body, etag: response.headers.get('etag'), stamp: { seq: p.seq, publishedAt: p.publishedAt, final: p.final } };
+  } finally { window.clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
+}
+/** Last applied publish per file. Contract: "화면은 순번이 뒤로 가는 파일을 버린다" — an answer whose sequence is LOWER than the one already
+ *  applied (a cache serving an older copy, or an older answer arriving after a newer one) is discarded and the applied value stays.
+ *  A sequence is the publish cycle that last wrote that file, so it is compared per file only, never across files. */
+const applied = new Map<string, { stamp: PublishStamp & { seq: number }; value: unknown; etag: string | null; readAt: number }>();
+async function readPublished<T, R>(file: PublishedFile, signal: AbortSignal | undefined, shape: (body: T) => R): Promise<{ value: R; stamp: PublishStamp }> {
+  const got = await getPublished<T>(file, signal);
+  const key = publishUrl(publishedPath(file)!), last = applied.get(key);
+  if (got === null) { last!.readAt = performance.now(); return { value: last!.value as R, stamp: last!.stamp }; }
+  if (last && got.stamp.seq < last.stamp.seq) return { value: last.value as R, stamp: last.stamp };
+  let value: R;
+  // a body that does not have the expected shape is an unreadable answer; the raw exception never reaches the screen
+  try { value = shape(got.body); } catch (e) { throw e instanceof FetchError ? e : new FetchError('서버 응답을 읽지 못했어요.', 0); }
+  // the same sequence seen again keeps the moment it was first seen
+  const stamp = { ...got.stamp, seenAt: last && last.stamp.seq === got.stamp.seq ? last.stamp.seenAt : performance.now() };
+  applied.set(key, { stamp, value, etag: got.etag, readAt: performance.now() });
+  return { value, stamp };
+}
+/** Health additions are optional: today's publisher still supplies only the stamp and failure lists. */
+export async function fetchPublishHealth(signal?: AbortSignal): Promise<PublishHealth> {
+  const got = await readPublished<Raw, Pick<PublishHealth, 'gameChecks' | 'failingGames'>>({ kind: 'health' }, signal, b => ({
+    gameChecks: b.game_checks && typeof b.game_checks === 'object' && !Array.isArray(b.game_checks) ? b.game_checks : null,
+    failingGames: Array.isArray(b.feed_failing_games) ? b.feed_failing_games : [],
+  }));
+  return { ...got.stamp, ...got.value };
+}
+/** `v1/game/<pk>.json`: always the whole game (no cursor, no merge). */
+export async function fetchPublishedDetail(game: number, signal?: AbortSignal): Promise<{ detail: Detail; stamp: PublishStamp }> {
+  const got = await readPublished<Raw, Detail>({ kind: 'game', gamePk: game }, signal, body => {
+    const detail = normalizeDetail(body);
+    // fail closed: a file that holds another game is never drawn under this game's address
+    if (detail.game.game_pk !== game) throw new FetchError('자료를 불러오지 못했어요.', 404);
+    return detail;
+  });
+  return { detail: got.value, stamp: got.stamp };
+}
+/** `v1/games/<date>.json`. No file for a date = nothing published for it (a date outside the archive and the followed window). */
+export async function fetchPublishedGames(date: string, signal?: AbortSignal): Promise<GameList> {
+  try {
+    return (await readPublished<{ games: unknown; live_ok?: boolean }, GameList>({ kind: 'games', date }, signal, body => {
+      if (!Array.isArray(body.games)) throw new FetchError('서버 응답을 읽지 못했어요.', 0);
+      // only rows that are objects with a positive integer game number, each game once (a link is built from that number)
+      const seen = new Set<number>();
+      const rows = (body.games as unknown[]).filter((r): r is Raw => r !== null && typeof r === 'object' && Number.isSafeInteger((r as Raw).game_pk)
+        && (r as Raw).game_pk > 0 && !seen.has((r as Raw).game_pk) && seen.add((r as Raw).game_pk) !== undefined);
+      return Object.assign(markDoubleheaders(rows.map(normalizeCard).filter(g => g.kst_date === date))
+        .sort((a, b) => (a.start ?? '').localeCompare(b.start ?? '') || a.game_pk - b.game_pk), { liveOk: body.live_ok !== false });
+    })).value;
+  } catch (e) {
+    if (e instanceof FetchError && e.status === 404) return Object.assign([], { liveOk: true });
+    throw e;
+  }
+}
+/** `v1/dates.json` lists archived-game dates only (as the server route does), so the dates the publisher is following now
+ *  (`live_dates` of `v1/manifest.json`: today and its neighbours) are added. Either file may be missing; both missing = an error. */
+export async function fetchPublishedManifest(signal?: AbortSignal) {
+  return (await readPublished<Raw, { liveDates: string[]; pollMs: number | null }>({ kind: 'manifest' }, signal, b => ({
+    liveDates: (Array.isArray(b.live_dates) ? b.live_dates : []).filter(isCalendarDate), pollMs: manifestPollMs(b.publish_interval_s),
+  }))).value;
+}
+export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates: string[]; liveDates: string[]; pollMs: number | null }> {
+  const [archived, manifest] = await Promise.allSettled([
+    readPublished<Raw, string[]>({ kind: 'dates' }, signal, b => (Array.isArray(b.dates) ? b.dates : []).filter(isCalendarDate)),
+    fetchPublishedManifest(signal)]);
+  if (archived.status === 'rejected' && manifest.status === 'rejected') throw archived.reason;
+  const liveDates = manifest.status === 'fulfilled' ? manifest.value.liveDates : [];
+  const dates = [...new Set([...(archived.status === 'fulfilled' ? archived.value.value : []), ...liveDates])].sort().reverse();
+  return { dates, liveDates, pollMs: manifest.status === 'fulfilled' ? manifest.value.pollMs : null };
+}
+/** Is this game on the list of any date the publisher is following now? true / false, or null when that could not be read.
+ *  A game with no file that no followed list names (a demo runs on it, a wrong number, long over) is not waited for. */
+export async function isGamePublishedSoon(game: number, signal?: AbortSignal): Promise<boolean | null> {
+  let liveDates: string[];
+  try {
+    // Missing-game retries reuse the manifest read by the screen, rather than re-reading dates/manifest on every backoff tick.
+    const cached = applied.get(publishUrl('manifest.json'));
+    const manifest = cached?.value as Awaited<ReturnType<typeof fetchPublishedManifest>> | undefined;
+    liveDates = manifest && performance.now() - cached!.readAt < Math.max(60000, manifest.pollMs ?? PUBLISH_CONFIG.livePollMs)
+      ? manifest.liveDates : (await fetchPublishedManifest(signal)).liveDates;
+  } catch { return null; }
+  let unknown = false;
+  for (const date of liveDates) {
+    try { if ((await fetchPublishedGames(date, signal)).some(g => g.game_pk === game)) return true; } catch { unknown = true; }
+  }
+  return unknown ? null : false;
+}
+/** KST dates that have games: `GET /api/service/dates` (API mode). */
+export async function fetchDates(signal?: AbortSignal): Promise<string[]> {
+  if (__PZ_STATIC__) return (await fetchPublishedDates(signal)).dates;
+  return (await getJson<{ dates: string[] }>('/service/dates', signal)).dates;
+}
+
 // ---------- shared normalizers ----------
 type Raw = Record<string, any>;
 const num = (v: unknown): number | null => typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -55,7 +188,7 @@ function status(raw: Raw): { status: GameStatus; text: string } {
 }
 export function normalizeCard(raw: Raw): GameCard {
   const st = status(raw);
-  return { venue: raw.venue ?? null, away_abbr: raw.away_abbr ?? null, home_abbr: raw.home_abbr ?? null, game_pk: raw.game_pk, start: raw.start ?? null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
+  return { venue: raw.venue ?? null, away_abbr: raw.away_abbr ?? null, home_abbr: raw.home_abbr ?? null, game_pk: raw.game_pk, start: typeof raw.start === 'string' ? raw.start : null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
     status: st.status, status_text: st.text, away_team: raw.away_team, home_team: raw.home_team,
     away_score: num(raw.away_score), home_score: num(raw.home_score), inning: num(raw.inning), half: raw.half ?? null,
     game_number: num(raw.game_number) ?? 1, double_header: raw.double_header === true, embargoed: raw.embargoed === true };
@@ -166,6 +299,7 @@ const PHASES: unknown[] = ['pregame', 'pre_pitch', 'resolving', 'between_innings
 // ---------- list ----------
 export type GameList = GameCard[] & { liveOk?: boolean };
 export async function fetchGames(date: string, signal?: AbortSignal): Promise<GameList> {
+  if (__PZ_STATIC__) return fetchPublishedGames(date, signal);
   try {
     let body = await getJson<{ games: Raw[]; live_ok?: boolean }>(withDelay(`/service/games?date=${date}`), signal);
     if (!demoParam() && learnViewer(body)) body = await getJson(withDelay(`/service/games?date=${date}`), signal);  // viewer delay switched on: ask again at this device's delay
@@ -184,6 +318,7 @@ export async function fetchGames(date: string, signal?: AbortSignal): Promise<Ga
 let serviceMissing = false;  // backend without /api/service (404 on the route itself): use the legacy feeds; never in demo
 /** Full history from the backend. `after` asks only for newer pitches (contract §3); the caller merges with mergeDetail. */
 export async function fetchDetail(game: number, signal?: AbortSignal, after?: number, delay: number | null = null): Promise<Detail> {
+  if (__PZ_STATIC__) return (await fetchPublishedDetail(game, signal)).detail;
   if (!serviceMissing || demoParam()) {
     try {
       const raw = await getJson<Raw>(withDelay(`/service/games/${game}${after === undefined ? '' : `?after=${after}`}`, demoParam() ? null : delay), signal);

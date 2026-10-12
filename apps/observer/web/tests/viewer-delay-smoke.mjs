@@ -57,7 +57,7 @@ async function open({ width = 390, height = 844, handler, dist = DIST, blockStor
   const asks = [];
   await page.route('http://pz.test/**', async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname.startsWith('/api/')) { asks.push(url); return handler(route, url, asks); }
+    if (url.pathname.startsWith('/api/') || url.pathname.includes('/v1/')) { asks.push(url); return handler(route, url, asks); }
     const file = path.join(dist, url.pathname);
     const target = existsSync(file) && statSync(file).isFile() ? file : path.join(dist, 'index.html');
     return route.fulfill({ body: readFileSync(target), contentType: TYPES[path.extname(target)] ?? 'application/octet-stream' });
@@ -383,12 +383,18 @@ for (const [width, height] of [[390, 844], [390, 664], [375, 553], [360, 640], [
     const bundle = readdirSync(path.join(out, 'assets')).filter((f) => f.endsWith('.js')).map((f) => readFileSync(path.join(out, 'assets', f), 'utf8')).join('\n');
     for (const words of ['미트에 들어오는 순간 누르기', '중계 없이 보기', 'pitcheezy.viewer', '/tap?ago=']) ok(!bundle.includes(words), `public build: the bundle does not contain "${words}"`);
     console.log(`note public build: fold label "중계 맞추기 후 표시" in bundle: ${bundle.includes('중계 맞추기 후 표시')} (unreachable at run time: viewer is always null there)`);
-    const s = server({ tap: () => ({ status: 'ok', delay_s: 33, hint: null, message: null, retry_s: null }) });
-    const { context, page, asks, errors } = await open({ handler: s.handler, dist: out, storage: { delay_s: 45, synced: false, asked: false } });
+    const published = async (route, url) => {
+      const stamp = { contract: 'v1', sequence: 1, published_at: new Date().toISOString() };
+      const body = url.pathname.endsWith('/v1/manifest.json') ? { publish_interval_s: 10, live_dates: [], publish: stamp }
+        : url.pathname.endsWith('/v1/health.json') ? { publish: stamp }
+        : url.pathname.endsWith('/v1/game/849843.json') ? { ...liveBody({ enabled: true }), publish: { ...stamp, final: false } } : null;
+      return route.fulfill({ status: body ? 200 : 404, contentType: 'application/json', body: JSON.stringify(body ?? {}) });
+    };
+    const { context, page, asks, errors } = await open({ handler: published, dist: out, storage: { delay_s: 45, synced: false, asked: false } });
     await page.goto('http://pz.test/watch/849843');
     await page.locator('.sv-pitch-summary .sv-rec-row').first().waitFor();
     await page.waitForTimeout(4500);
-    ok(gameAsks(asks).length >= 2 && delays(asks).every((d) => d === null), `public build: payload says enabled, yet no request carries a delay (${gameAsks(asks).length} asks)`);
+    ok(asks.some((u) => u.pathname.endsWith('/v1/game/849843.json')) && asks.every((u) => !u.pathname.startsWith('/api/') && !u.searchParams.has('delay')), 'public build: payload says enabled, yet only published files are read and none carries a delay');
     ok(await page.locator('.sv-sync-open, .sv-fold, .sv-card.folded, .sv-sync').count() === 0 && !SYNC_WORDS.test(await page.locator('.sv-page').innerText()), 'public build: no sync entry, no prompt, nothing folded');
     ok(asks.every((u) => !u.pathname.endsWith('/tap')) && errors.length === 0, `public build: no tap request, no page errors ${errors.join(' | ')}`);
     await context.close();
