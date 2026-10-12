@@ -137,6 +137,8 @@ def test_one_fixed_delay_holds_back_every_pitch_newer_than_it(make):
     assert not world.path(LIVE_FILE).exists() and health['unavailable_games'] == [{'game_pk': LIVE_GAME, 'status': 503, 'code': 'refused'}]
     world.cycle(after=20.0)
     assert len(world.game()['pitches']) == 9 and world.read('v1/manifest.json')['fixed_delay_s'] == 30
+    listed = world.read(f'v1/games/{LIVE_DATE}.json')['games'][0]
+    assert listed['score_hidden'] is True and listed['away_score'] is None and listed['home_score'] is None
     world.cycle(snap('20261005_100100', second=True, wall=world.now[0]+7), after=12.0)  # a new pitch, 5 s old
     held = world.game()
     # the newer pitch is nowhere among the thrown ones: for this viewer it is still the pitch to come
@@ -145,6 +147,16 @@ def test_one_fixed_delay_holds_back_every_pitch_newer_than_it(make):
     assert strip(held) == world.served(f'/api/service/games/{LIVE_GAME}')  # the private app's route has the same delay
     world.cycle(after=30.0)
     assert [p['key'] for p in world.game()['pitches']][-1] == '900200:5:2'
+
+
+def test_fixed_delay_list_holds_schedule_final_until_game_view_catches_up(make):
+    world = make(fixed_delay_s=30)
+    world.cycle(after=20.0, settle=False)
+    world.cycle(snap('20261005_100100', half='final', wall=world.now[0]+7), after=12.0, settle=False)
+    card = world.read(f'v1/games/{LIVE_DATE}.json')['games'][0]
+    assert world.game()['game']['status'] == 'live'
+    assert card['status'] == 'live' and card['score_hidden'] is True
+    assert card['away_score'] is None and card['home_score'] is None
 
 
 def test_a_published_game_never_holds_a_pitch_the_feed_has_not_delivered(world):

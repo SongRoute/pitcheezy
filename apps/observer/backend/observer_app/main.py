@@ -795,6 +795,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     app.state.service_bodies = service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
                          features=features.features, live_extras=app.state.service_extras.attach,
                          delayed_card=lambda card, delay: app.state.service_extras.list_card(card, delay, live_parts()),
+                         fixed_delay_s=service_delay_s,
                          schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
                          live_feed=None if live_feed is False else service_live_feed,
                          live_display=service_live_display, live_pairing=service_live_pairing, wall=service_wall)

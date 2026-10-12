@@ -300,7 +300,7 @@ def list_card(record, cutoff, source):
 
 
 def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None,
-             features=None, live_extras=None, delayed_card=None, wall=None):
+             features=None, live_extras=None, delayed_card=None, wall=None, fixed_delay_s=0):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
     reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
     ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
@@ -424,7 +424,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         for card in live:  # a stored final record wins over the schedule row of the same game
             games.setdefault(card['game_pk'], card)
         out = [redact(c) if c['game_pk'] in embargoed else c for c in games.values()]
-        seconds = feature_flags.delay_param(delay, features())
+        seconds = fixed_delay_s or feature_flags.delay_param(delay, features())
         if seconds:
             out = [delayed_card(c, seconds) if delayed_card else unspoiled(c) for c in out]
         out.sort(key=lambda c: (c['start'] or '', c['game_number'], c['game_pk']))
@@ -636,4 +636,3 @@ class ServiceBodies:
         self.dates, self.games, self.game = dates, games, game
         self.embargoed = embargoed  # game pks a demo session holds right now: ``game`` refuses them with 423
         self.archived = archived  # game pks with a stored final feed: ``game`` reads those locally, no upstream poll
-
