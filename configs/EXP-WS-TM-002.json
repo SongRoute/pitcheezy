@@ -1,0 +1,84 @@
+{
+  "id": "EXP-WS-TM-002",
+  "status": "PREPARATION_ONLY_PENDING_INDEPENDENT_REVIEW",
+  "execution_enabled": false,
+  "arms": [
+    "T",
+    "R"
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "base_commit": "35b3001debd95d10c070cc2dd02a68294eada17e",
+  "base_config": "configs/EXP-WS-SEQ-001.json",
+  "base_config_sha256": "bbee1279236ef52d4fcb7ab0c761bee7a0c7f363bc8dd86d31b6a74b97bd92bf",
+  "base_source_sha256": "1328c4148f5fa9e89728207a06dc839df72c26a7f6ead89a90ae4ecec8c24ac0",
+  "encoder": {
+    "kind": "lstm",
+    "layers": 2,
+    "width": 64,
+    "dropout": 0.1,
+    "bidirectional": false
+  },
+  "data_version": "d20260930-h2026f",
+  "data_role": "2026 EXPOSED DEVELOPMENT",
+  "roles": {
+    "FIT": [
+      "2026-03-25",
+      "2026-08-02"
+    ],
+    "SELECT": [
+      "2026-08-03",
+      "2026-08-23"
+    ],
+    "CAL": [
+      "2026-08-24",
+      "2026-09-06"
+    ],
+    "EVAL": [
+      "2026-09-07",
+      "2026-09-27"
+    ]
+  },
+  "expected_rows": {
+    "FIT": 493254,
+    "SELECT": 82908,
+    "CAL": 56275,
+    "EVAL": 80584
+  },
+  "bootstrap": {
+    "unit": "whole game",
+    "draws": 10000,
+    "seed": 20261211
+  },
+  "budgets": {
+    "fits": 6,
+    "scalar_calibrations": 18,
+    "per_fit_and_cal_seconds": 3600,
+    "preparation_seconds": 1800,
+    "evaluation_seconds": 900,
+    "total_work_seconds": 24300,
+    "gpu_reserved_bytes": 17179869184,
+    "host_rss_bytes_per_fit": 8589934592,
+    "max_fits_per_gpu": 1,
+    "max_concurrent_fits": 4
+  },
+  "sequence": [
+    "T-s0 and R-s0 integrity gates, EVAL sealed",
+    "T-s1 R-s1 T-s2 R-s2 only after independent gate receipt",
+    "single paired ensemble report after all six complete"
+  ],
+  "runtime_gate": "reviewed per-arm grant + clean gpu-run commit + UUID/common lock + input manifest + external wall/RSS supervisor; execution authorization still absent",
+  "required_bindings": [
+    "source commit and hashes",
+    "input manifest and input hashes",
+    "data exposure ledger",
+    "distinct reviewer acceptance",
+    "free GPU UUID and exclusive lock",
+    "hard wall/RSS/GPU watchdog",
+    "fresh output attempt",
+    "environment versions"
+  ]
+}
