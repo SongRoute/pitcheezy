@@ -662,7 +662,8 @@ class Publisher:
         digest = _digest(body) if digest is None else digest
         known = self.state['files'].get(path)
         self.state['checked'][path] = self._now
-        if not always and known and known['digest'] == digest and known.get('final') == final:
+        pending_delete = self.state.get('upload_pending', {}).get(path) == 'delete'
+        if not always and known and known['digest'] == digest and known.get('final') == final and not pending_delete:
             return False
         if 'publish' in body:
             raise NotPublic(f'{path}: the body already has a publish key')

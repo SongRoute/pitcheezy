@@ -547,3 +547,20 @@ def test_reactivation_keeps_pending_delete_over_residual_local_file(world, endpo
     assert world.publisher.sink.pending[GAME] == 'delete'
     world.publisher.sink.retry(HEALTH)
     assert not world.path(GAME).exists() and GAME not in endpoint.objects
+
+
+def test_cancelled_withdrawal_replaces_failed_delete_with_put(world, endpoint, monkeypatch):
+    sink = attach(world, endpoint, monkeypatch)
+    world.cycle(settle=False)
+    original_delete = sink.local.delete
+    sid, head = start_demo(world)
+    monkeypatch.setattr(sink.local, 'delete', lambda path: (_ for _ in ()).throw(OSError('local delete failed')))
+    world.cycle(settle=False)
+    assert world.publisher.state['upload_pending'][GAME] == 'delete'
+    monkeypatch.setattr(sink.local, 'delete', original_delete)
+    assert world.client.post(f'/api/service/operator/sessions/{sid}/control', json={'action': 'end'}, headers=head).status_code == 200
+    endpoint.requests.clear()
+    world.cycle(settle=False)
+    assert ('PUT', GAME) in [request[:2] for request in endpoint.requests]
+    assert world.publisher.state['upload_pending'].get(GAME) is None
+    assert endpoint.objects[GAME] == world.path(GAME).read_bytes()
