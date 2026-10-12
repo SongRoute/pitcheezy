@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from observer_app import display_state, synthetic_game
 from observer_app.live_armb import LiveArmB
 from observer_app.live_feed import LiveFeed
-from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed
+from observer_app.live_store import LiveSnapshotStore, PersistentLiveFeed, _stale_stamp
 from observer_app.main import create_app
 from test_service_demo_api import feed as final_feed
 
@@ -585,3 +585,24 @@ def test_a_plate_appearance_holding_an_unadmitted_pitch_announces_no_result(tmp_
     done = view['pas'][3]
     assert (done['complete'], done['event'], done['result_text'], done['play_text']) == (True, None, '확인 중', None)
     assert view['pas'][2]['event'] == 'field_out' and view['pitches'][7]['actual']['result_label'] == '확인 중'
+
+
+def test_a_game_over_body_behind_an_older_stamp_ends_the_game_and_keeps_every_pitch_admitted(run):
+    """849809 regression: the Game Over body carried an older provider stamp than the last in-progress body and
+    enriched every pitch's payload. Dropped as stale, it left the screen 'between innings' for good and, because its
+    per-pitch corrections were still accepted, every past pitch 확인 중 with its recorded recommendation gone."""
+    run.poll()
+    thrown = run.poll(snap(995.0, '20261005_100100', second=True))  # the recommended pitch 5:2 is thrown
+    assert thrown['pitches'][-1]['rec']['provenance'] == 'captured_live' and thrown['receipts']['unconfirmed'] == 0
+    over = snap(995.0, '20261005_100059', second=True, half='final')
+    for play in over['liveData']['plays']['allPlays'][:-1]:  # the finished at-bats come back with fuller pitch data
+        for event in play['playEvents']:
+            event['pitchData'] = dict(event.get('pitchData') or {}) | {'breaks': {'breakAngle': 7.2}}
+    assert _stale_stamp('20261005_100059', '20261005_100100', False)  # the stamp alone would drop it
+    view = run.poll(over)
+    state = view['display_state']
+    assert (state['state'], state['reason'], state['feed']['provider_order']) == ('final', 'game_over', 'stale')
+    assert view['receipts']['unconfirmed'] == 0 and {p['receipt']['status'] for p in view['pitches']} == {'received'}
+    assert view['pitches'][-1]['rec']['provenance'] == 'captured_live' and view['receipts']['paired'] == 1
+    newest = run.feed.store.restore(GAME, run.now[0], 120)[-1]
+    assert newest['version'] == 3 and newest['feed']['gameData']['status']['abstractGameState'] == 'Final'  # version 2 was the thrown pitch

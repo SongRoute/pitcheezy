@@ -12,7 +12,10 @@ the replay cursor. Ingest outcomes for one game, under one ``BEGIN IMMEDIATE`` t
 
 * newer game event than the newest slot -> ``new`` slot
 * same or older event, older or unorderable ``metaData.timeStamp`` than the newest slot's valid one -> ``stale``
-  (out of order: the snapshot is not kept, its changed pitches still reach the pitch ledger; see ``_stale_stamp``)
+  (out of order: the snapshot is not kept, its changed pitches still reach the pitch ledger; see ``_stale_stamp``),
+  unless the body moves ``abstractGameState`` forward (``_advances_status``: Live -> Final): the game ending is a
+  later state whatever the stamps say, so it is kept as a correction of the newest slot (seen live, 849809: the
+  Game Over body came one second behind the last in-progress stamp and would have been dropped for good)
 * same content as the newest slot's current version -> ``duplicate`` (no write)
 * otherwise -> ``correction`` of the newest slot (first-seen times kept, as the in-memory buffer does)
 
@@ -201,6 +204,38 @@ def _stale_stamp(feed_ts, newest_ts, newer_event):
     return bool(isinstance(feed_ts, str) and isinstance(newest_ts, str) and feed_ts and newest_ts and feed_ts < newest_ts)
 
 
+# GUMBO ``gameData.status.abstractGameState`` in the order a game passes through them; anything else is unranked.
+STATUS_RANK = {'Preview': 0, 'Live': 1, 'Final': 2}
+
+
+def _status_rank(feed):
+    data = feed.get('gameData') if isinstance(feed, dict) else None
+    status = data.get('status') if isinstance(data, dict) else None
+    return STATUS_RANK.get(status.get('abstractGameState')) if isinstance(status, dict) else None
+
+
+def _advances_status(feed, newest_feed):
+    """True if ``feed`` moves the game's ``abstractGameState`` forward past the newest selected body's (Preview ->
+    Live -> Final). A game that is over is a later state than the same game in progress, so the ``_stale_stamp``
+    refusal does not apply to it: it becomes a correction of the newest slot. Only an advance counts; a body that
+    goes back (Final -> Live) or has no ranked status is judged by its stamp as before. The pitch ledger still
+    orders each pitch's revisions by provider stamp, so a pitch whose accepted revision carries a later stamp than
+    this body stays ``stale_revision`` under it."""
+    new, old = _status_rank(feed), _status_rank(newest_feed)
+    return new is not None and old is not None and new > old
+
+
+def _selected_body(db, seq):
+    """The committed body of version ``seq`` for the status comparison, or None (then nothing advances and the
+    stamp rule decides as before): read only on the stale branch, and a row that cannot be decoded never aborts the
+    ingest transaction."""
+    row = db.execute('SELECT body FROM snapshots WHERE seq=?', (seq,)).fetchone()
+    try:
+        return None if row is None else json.loads(gzip.decompress(row[0]))
+    except (zlib.error, EOFError, ValueError, TypeError):
+        return None
+
+
 def _provider_order(db, game_pk, feed_ts, seq, sha):
     """Provider-revision order of the committed version ``seq`` (content ``sha``), which local receipt order does
     not imply: 'unorderable' (missing/malformed stamp), 'stale' (an earlier committed version of the game carries a
@@ -298,7 +333,7 @@ class LiveSnapshotStore:
                                 'ORDER BY event_wall DESC, version DESC LIMIT 1', (game_pk,)).fetchone()
             if newest is None or event > newest[0]:
                 outcome, slot, version, first = 'new', event, 1, fetched if first_fetched is None else first_fetched
-            elif _stale_stamp(feed_ts, newest[2], False):
+            elif _stale_stamp(feed_ts, newest[2], False) and not _advances_status(feed, _selected_body(db, newest[5])):
                 # Selection is unchanged and the stale snapshot body is not kept, but its changed pitches still get
                 # a receipt (quarantined unless new). ``store_seq`` then names the selected version, not this arrival.
                 self._record_pitches(db, game_pk, feed, feed_ts=feed_ts, event=newest[0], received=fetched,
@@ -749,7 +784,8 @@ class PersistentLiveFeed(LiveFeed):
         # Memory may be ahead of disk during an outage, so stale input is also judged against memory, but only
         # when the store is down: once the flush below makes disk >= memory, ingest decides and keeps the receipt.
         stale = bool(buffer and _stale_stamp(_feed_ts(feed), _feed_ts(buffer[-1]['feed']),
-                                             (event_wall(feed) or wall) > buffer[-1]['event']))
+                                             (event_wall(feed) or wall) > buffer[-1]['event'])
+                     and not _advances_status(feed, buffer[-1]['feed']))
         try:
             if game_pk in self._unsaved:
                 # ponytail: resync only the bounded delay window; pruned outage history is not recoverable.

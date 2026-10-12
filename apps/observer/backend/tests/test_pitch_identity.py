@@ -224,3 +224,51 @@ def test_sqlite_outage_and_network_gap_lose_different_things(tmp_path):
     assert live.store_error is None
     # 'C' (received, unpersisted) and 'F' (never received) are both absent; revisions stay contiguous, so
     # neither loss is detectable from the ledger alone.
+
+
+def _with_status(body, state):
+    body['gameData'] = {'status': {'abstractGameState': state}}
+    return body
+
+
+def test_a_game_over_body_behind_an_older_provider_stamp_is_kept_as_a_correction(tmp_path):
+    """Seen live (849809, 2026-10-12): the Game Over body came with ``metaData.timeStamp`` one second OLDER than the
+    last in-progress body's and the same newest event, so the stamp rule dropped it for good (the store never held
+    the end of the game) while its per-pitch corrections were still accepted, which made every pitch of the served
+    body ``not_accepted``. A status advance (Live -> Final) is kept as a correction of the newest slot; each pitch's
+    own revision order still goes by stamp, so a pitch whose accepted revision is stamped later stays refused."""
+    store = LiveSnapshotStore(tmp_path/'ledger.sqlite3')
+    live = feed([(9, [pitch('p1', 1), pitch('p2', 2)])], '20261009_000100', 100.)
+    assert store.ingest(7, _with_status(live, 'Live'), fetched=110., source='live_poll')[0] == 'new'
+    fixed = feed([(9, [pitch('p1', 1), pitch('p2', 2, 'C')])], '20261009_000200', 100.)  # p2 corrected under a later stamp
+    assert store.ingest(7, _with_status(fixed, 'Live'), fetched=120., source='live_poll')[0] == 'correction'
+    over = feed([(9, [pitch('p1', 1, speed=95.), pitch('p2', 2, 'C', speed=95.)])], '20261009_000150', 100.)  # Game Over, older stamp
+    assert _stale_stamp('20261009_000150', '20261009_000200', False)  # the stamp alone would refuse it
+    outcome, entry = store.ingest(7, _with_status(over, 'Final'), fetched=130., source='live_poll')
+    assert (outcome, entry['version'], entry['provider_order']) == ('correction', 3, 'stale')
+    newest = store.restore(7, 200., 120)[-1]
+    assert newest['feed']['gameData']['status']['abstractGameState'] == 'Final' and newest['seq'] == entry['seq']
+    rows = store.pitch_events(7)['events']
+    assert [(r['provider_event_id'], r['outcome'], r['reason'], r['store_seq']) for r in rows[2:]] == [
+        ('p2', 'correction', None, 2), ('p1', 'correction', None, entry['seq']), ('p2', 'quarantine', 'stale_revision', entry['seq'])]
+    from observer_app.display_state import pitch_receipts
+    receipts = pitch_receipts(newest['feed'], rows)
+    assert (receipts[(1, 1)]['status'], receipts[(1, 2)]['status'], receipts[(1, 2)]['reason']) == ('received', 'unconfirmed', 'stale_revision')
+    # only an advance counts: the game going "back" to Live under an older stamp is still a stale arrival
+    back = feed([(9, [pitch('p1', 1, speed=95.), pitch('p2', 2, 'C', speed=95.)])], '20261009_000140', 100.)
+    assert store.ingest(7, _with_status(back, 'Live'), fetched=140., source='live_poll') == ('stale', None)
+    assert store.restore(7, 200., 120)[-1]['seq'] == entry['seq']
+
+
+def test_a_game_over_body_behind_an_older_stamp_reaches_memory_while_the_store_is_down(tmp_path):
+    class Down(LiveSnapshotStore):
+        def ingest(self, *args, **kwargs):
+            raise sqlite3.OperationalError('disk I/O error')
+
+    live = PersistentLiveFeed(None, store=Down(tmp_path/'down.sqlite3'), wall=lambda: 1000.)
+    buffer = live._buffer(8)
+    live._accept(8, _with_status(feed([(9, [pitch('p1', 1)])], '20261009_000200', 100.), 'Live'), 110., buffer)
+    live._accept(8, _with_status(feed([(9, [pitch('p1', 1, speed=95.)])], '20261009_000150', 100.), 'Final'), 120., buffer)
+    assert buffer[-1]['feed']['gameData']['status']['abstractGameState'] == 'Final' and live.stale.get(8, 0) == 0
+    live._accept(8, _with_status(feed([(9, [pitch('p1', 1)])], '20261009_000140', 100.), 'Live'), 130., buffer)
+    assert buffer[-1]['feed']['gameData']['status']['abstractGameState'] == 'Final' and live.stale[8] == 1

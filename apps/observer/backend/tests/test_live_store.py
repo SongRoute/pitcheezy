@@ -157,3 +157,26 @@ def test_an_unopenable_store_path_still_serves_live_from_memory(tmp_path, monkey
         assert client.get(f'/api/live/{GAME}/state?delay=0').json()['status'] == 'ready'
         store = client.get('/api/health').json()['live_store']
     assert store['started'] is False and store['error'].startswith('open: ')
+
+
+def test_real_game_over_body_behind_an_older_stamp_is_selected_and_its_pitches_stay_admitted(tmp_path):
+    """Game 849809 (2026-10-12), trimmed to its last three at-bats: body 426 (in progress, stamp 031147), body 427
+    (in progress, stamp 031156) and the Game Over body (stamp 031155, one second behind, same newest event). Before the
+    status rule the third was 'stale' (never stored) and its per-pitch corrections made 13 of the 14 pitches of the
+    served body ``not_accepted``. It is now a correction of the newest slot and selected; the one pitch whose
+    accepted revision is stamped 031156 (70:2) is honestly ``stale_revision`` under the older-stamped body."""
+    import gzip
+    from observer_app.display_state import pitch_receipts
+    folder = Path(__file__).parent/'fixtures/game_over_behind_stamp'
+    store = LiveSnapshotStore(tmp_path/'live.sqlite3')
+    outcomes = []
+    for name, fetched in (('849809_426_live_20261012_031147', 1791774726.0), ('849809_427_live_20261012_031156', 1791774737.0),
+                          ('849809_428_final_20261012_031155', 1791774753.0)):  # the real receipts, UTC 03:12:06 / 03:12:17 / 03:12:33
+        with gzip.open(folder/f'{name}.json.gz', 'rt') as handle:
+            outcome, entry = store.ingest(849809, json.load(handle), fetched=fetched, source='live_poll')
+        outcomes.append((outcome, entry and entry['version']))
+    assert outcomes == [('new', 1), ('new', 1), ('correction', 2)]
+    newest = store.restore(849809, 1791774800.0, 120)[-1]
+    assert newest['feed']['gameData']['status']['abstractGameState'] == 'Final' and newest['provider_order'] == 'stale'
+    receipts = pitch_receipts(newest['feed'], store.pitch_events(849809)['events'])
+    assert len(receipts) == 14 and {k: v['reason'] for k, v in receipts.items() if v['status'] != 'received'} == {(70, 2): 'stale_revision'}
