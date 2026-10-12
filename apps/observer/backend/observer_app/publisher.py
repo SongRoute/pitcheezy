@@ -580,7 +580,7 @@ class Publisher:
 
     # ---- bookkeeping --------------------------------------------------------------------------------
     def _load_state(self):
-        state = {'sequence': 0, 'files': {}, 'checked': {}, 'embargoed': [], 'pending': {}, 'check_failed': []}
+        state = {'sequence': 0, 'files': {}, 'checked': {}, 'embargoed': [], 'pending': {}, 'check_failed': [], 'verified_at': {}}
         if self.state_path is not None and self.state_path.is_file():
             try:
                 saved = json.loads(self.state_path.read_text())
@@ -588,7 +588,10 @@ class Publisher:
                         and isinstance(saved.get('checked'), dict) and isinstance(saved.get('embargoed', []), list)
                         and isinstance(saved.get('pending', {}), dict)
                         and isinstance(saved.get('check_failed', []), list)
-                        and all(type(pk) is int and pk > 0 for pk in saved.get('check_failed', []))):
+                        and all(type(pk) is int and pk > 0 for pk in saved.get('check_failed', []))
+                        and isinstance(saved.get('verified_at', {}), dict)
+                        and all(isinstance(pk, str) and pk.isdigit() and isinstance(at, str)
+                                for pk, at in saved.get('verified_at', {}).items())):
                     raise ValueError('not a publisher state')
                 state |= saved
             except (ValueError, OSError, RecursionError):  # unreadable bookkeeping: start as if it were lost (everything is rebuilt)
@@ -786,9 +789,9 @@ class Publisher:
                 match = re.fullmatch(re.escape(self.config['contract_version'])+r'/(?:game|setup)/(\d+)\.json', path)
                 if match:
                     self._fail(int(match[1]), None, 'upload_failed')
-        # checked_at is this cycle's local file verification, not a claim that upstream was polled. Carry the
-        # last failed build/feed check through skipped final rechecks until a successful one clears it. Compute
-        # after durable and remote pending failures have been added to health's unavailable list.
+        # A local tail read proves which file exists, not that its live source advanced. checked_at is the last
+        # successful game-body verification; skipped/failed builds retain that time so a fresh health cannot mask
+        # a stalled live game. Durable and remote pending failures are folded in before these checks are built.
         checked_games = listed | known | embargoed | late
         failures = {item['game_pk'] for item in self._unavailable} | set(self._feed_failing) | set(self.state['check_failed'])
         game_checks = {}
@@ -803,7 +806,10 @@ class Publisher:
             file_sequence = block.get('sequence') if block.get('contract') == self.config['contract_version'] else None
             if type(file_sequence) is not int or not 0 < file_sequence <= self._sequence:
                 file_sequence = None
-            game_checks[str(game_pk)] = {'checked_at': _iso(now), 'sequence_checked': self._sequence,
+            checked_at = self.state['verified_at'].get(str(game_pk)) or block.get('published_at') or '1970-01-01T00:00:00Z'
+            if not isinstance(checked_at, str):
+                checked_at = '1970-01-01T00:00:00Z'
+            game_checks[str(game_pk)] = {'checked_at': checked_at, 'sequence_checked': self._sequence,
                                          'file_sequence': file_sequence,
                                          'feed_ok': file_sequence is not None and game_pk not in failures and game_pk not in embargoed | late}
         health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(now),
@@ -925,6 +931,8 @@ class Publisher:
             self._check_result(game_pk, False)
             LOGGER.warning('game %s not written; the published file is kept', game_pk, exc_info=True)
             return self._fail(game_pk, None, 'write_failed')
+        if feed_ok:
+            self.state['verified_at'][str(game_pk)] = _iso(now)
         written = self.state['files'][path]
         written['kind'] = body['source']['kind']
         written['final_at'] = (entry.get('final_at') if settled else now) if final else None

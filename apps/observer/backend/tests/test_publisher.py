@@ -4,6 +4,7 @@ never goes back, a final game is written once, and demo/operator data never reac
 Synthetic games and a fake policy only (``publish_fixture``); no network, no T7, no model, no port."""
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 import re
 import sqlite3
@@ -188,6 +189,44 @@ def test_health_game_check_does_not_claim_a_broken_file(world):
     health = world.cycle(settle=False)
     assert health['game_checks'][str(ARCHIVE_GAME)]['file_sequence'] is None
     assert health['game_checks'][str(ARCHIVE_GAME)]['feed_ok'] is False
+
+
+@pytest.mark.parametrize('failure', ['build', 'write'])
+def test_failed_live_list_does_not_refresh_a_skipped_game_check(world, monkeypatch, failure):
+    first = world.cycle(settle=False)
+    verified = first['game_checks'][str(LIVE_GAME)]['checked_at']
+    before = polls(world)
+    if failure == 'build':
+        original = world.publisher.bodies.games
+
+        def broken(date):
+            if date == LIVE_DATE:
+                raise OSError('synthetic list failure')
+            return original(date)
+
+        monkeypatch.setattr(world.publisher.bodies, 'games', broken)
+    else:
+        original = world.publisher.sink.write
+
+        def broken(path, data, *, final=False):
+            if path == f'v1/games/{LIVE_DATE}.json':
+                raise OSError('synthetic list write failure')
+            return original(path, data, final=final)
+
+        monkeypatch.setattr(world.publisher.sink, 'write', broken)
+    for _ in range(4):
+        health = world.cycle(after=12, settle=False)
+        assert LIVE_DATE in health['unavailable_dates']
+        assert health['game_checks'][str(LIVE_GAME)]['checked_at'] == verified
+    assert polls(world) == before
+    assert health['game_checks'][str(LIVE_GAME)]['file_sequence'] == first['game_checks'][str(LIVE_GAME)]['file_sequence']
+    lag = datetime.fromisoformat(health['published_at'].replace('Z', '+00:00')).timestamp() - datetime.fromisoformat(verified.replace('Z', '+00:00')).timestamp()
+    assert lag == 48  # the consumer's default 30 s freshness threshold is now crossed
+    monkeypatch.undo()
+    recovered = world.cycle(after=12, settle=False)
+    assert LIVE_DATE not in recovered['unavailable_dates']
+    assert polls(world) > before
+    assert recovered['game_checks'][str(LIVE_GAME)]['checked_at'] == recovered['published_at']
 
 
 def test_fixed_delay_list_holds_schedule_final_until_game_view_catches_up(make):
