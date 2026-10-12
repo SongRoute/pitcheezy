@@ -151,6 +151,7 @@ cd apps/observer/web
 npm ci
 npm run build:public        # 결과: dist-public/ (평소 빌드 dist/는 그대로)
 node tests/static-publish-smoke.mjs   # npm run build 도 먼저 해 둘 것 (API 방식 비교 검사 포함)
+PZ_STATIC_CORE_ONLY=1 node tests/static-publish-smoke.mjs  # 브라우저 없는 어댑터·시간 규칙 검사만
 ```
 
 - 방식 선택은 빌드할 때 정한다. `VITE_PUBLISH_BASE`가 비어 있으면 지금까지의 API 방식 그대로다. 공개 번들에는 API 호출 코드가 아예 들어가지 않는다(검사가 번들을 직접 뒤져 확인).
@@ -170,7 +171,7 @@ node tests/static-publish-smoke.mjs   # npm run build 도 먼저 해 둘 것 (AP
   - "지금"은 응답의 `Date`(+`Age`) 헤더로 잡고, 그 뒤 흐른 시간은 화면이 직접 센다. 헤더를 한 번도 못 읽었을 때만 최근에 본 발행 시각으로 대신한다(이때 미래 시각이 찍힌 파일이 하나 섞여도 잠시 뒤 회복). 기기 시계는 쓰지 않는다.
   - 탭으로 돌아오거나 기기가 깨어나면 먼저 다시 읽고, 그 응답이 올 때까지는 "확인 중"으로 둔다.
 - 없는 경기 파일: "지금 볼 수 없어요"로 두고 간격을 두 배씩 늘려 다시 묻는다(`VITE_PUBLISH_MISSING_RETRY_MS` 10000 → `VITE_PUBLISH_MISSING_MAX_MS` 60000, **임시값**). 발행기가 따라가는 날짜의 목록 어디에도 그 경기가 없으면 묻기를 멈춘다.
-- 지난 공을 골라 고정해 둔 화면도 경기가 끝나기 전에는 `VITE_PUBLISH_PINNED_POLL_MS`(10000, **임시값**)마다 다시 읽는다. 서버가 그 공을 "확인 중"으로 되돌리면 고정 화면에서도 구종·위치를 지운다.
+- 지난 공을 골라 고정해 둔 화면도 계속 확인한다(종료 후 정정 포함). manifest가 없을 때는 `VITE_PUBLISH_PINNED_POLL_MS`(10000, **임시값**)를 쓴다. 서버가 그 공을 "확인 중"으로 되돌리면 고정 화면에서도 구종·위치를 지운다.
 - 정적 모드의 경기 중·경기 전·고정 투구·목록·health 주기는 manifest의 `publish_interval_s`(숫자 초)를 우선한다. 유한한 양수이면서 브라우저 타이머 범위(1ms–2147483647ms)일 때만 사용하며, 그 밖에는 위 설정으로 대체한다. health는 해당 화면 주기를 따른다.
 - manifest(경기·목록 화면)와 dates(목록 화면)는 `max(60초, P)`마다 다시 읽는다. `VITE_PUBLISH_DATES_POLL_MS`는 제거했다. 탭 복귀·온라인 복귀 시에는 즉시 확인한다.
 - 올리는 법: `dist-public/` 내용을 `v1/`과 같은 폴더에 둔다. 주소는 `…/?game=<game_pk>`, `…/?date=<날짜>` 꼴이라 주소 다시쓰기 규칙이 필요 없다.

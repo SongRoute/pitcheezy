@@ -12,6 +12,8 @@ import { chromium } from 'playwright';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import http from 'node:http';
+import { build as bundle } from 'esbuild';
+import { build as viteBuild } from 'vite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -55,15 +57,85 @@ const envelope = (body, seq, at) => ({ publish_seq: seq, published_at: iso(at), 
 const health = (seq, at, unavailable = []) => ({ schema: 'pitcheezy-publish-health-v1', sequence: seq, published_at: iso(at), publish_interval_s: 10, files_written: 6,
   unavailable_games: unavailable, unavailable_dates: [], feed_failing_games: [], publish: { contract: 'v1', sequence: seq, published_at: iso(at) } });
 
+// Adapter/pure-rule checks also run when the sandbox cannot launch Chromium. No sockets or real fetches.
+async function coreChecks() {
+  const built = await bundle({ stdin: { contents: "export * from './api'; export * from './publish';", resolveDir: path.join(here, '../src/service') },
+    bundle: true, write: false, format: 'esm', platform: 'browser', define: { __PZ_STATIC__: 'true', 'import.meta.env': JSON.stringify({ VITE_PUBLISH_BASE: '.' }) } });
+  const api = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
+  ok(api.PUBLISH_CONFIG.livePollMs === 10000, 'core: live/health fallback is 10 seconds');
+  for (const bad of [undefined, null, '10', 0, -1, NaN, Infinity, 0.0001, 2147484]) ok(api.manifestPollMs(bad) === null, `core: invalid manifest period ${String(bad)} falls back`);
+  for (const seconds of [0.5, 10, 75]) ok(api.manifestPollMs(seconds) === seconds * 1000, `core: manifest ${seconds}s overrides fallback`);
+  ok(api.staleAfterMs(20000) === 60000, 'core: T is at least three periods');
+  const check = { checked_at: iso(FILE_AT), sequence_checked: 10, file_sequence: 8, feed_ok: true };
+  const h = { seq: 10, publishedAt: iso(FILE_AT), seenAt: performance.now(), final: false, gameChecks: { [LIVE]: check }, failingGames: [] };
+  ok(api.gameCheck(h, LIVE).check.file_sequence === 8, 'core: valid game check accepted');
+  for (const bad of [null, [], {}, { ...check, checked_at: null }, { ...check, checked_at: 'bad' }, { ...check, sequence_checked: null },
+    { ...check, sequence_checked: -1 }, { ...check, file_sequence: '8' }, { ...check, file_sequence: 11 }, { ...check, feed_ok: null }]) {
+    const got = api.gameCheck({ ...h, gameChecks: { [LIVE]: bad } }, LIVE);
+    ok(got.present && got.check === null, `core: malformed check stays unverified (${JSON.stringify(bad)})`);
+  }
+  ok(api.gameCheck({ ...h, gameChecks: {} }, LIVE).present === false, 'core: absent game check uses legacy rules');
+  ok(api.gameCheck({ ...h, gameChecks: { [LIVE]: { ...check, file_sequence: null } } }, LIVE).check.file_sequence === null, 'core: explicit withdrawal accepted');
+  ok(api.gameCheckLag(h, check, { ms: FILE_AT + 30000, clock: 'host' }).lagMs === 30000, 'core: new freshness uses check/health time');
+  ok(api.isPublishStale(api.gameCheckLag(h, check, { ms: FILE_AT + 30001, clock: 'host' }), 10000), 'core: new freshness is late above T');
+  const subsecond = { ...h, publishedAt: iso(FILE_AT + 500) };
+  ok(api.gameCheckLag(subsecond, { ...check, checked_at: iso(FILE_AT + 500) }, { ms: FILE_AT, clock: 'host' }).lagMs < 1000,
+    'core: second-resolution HTTP Date cannot falsely mark a fresh subsecond check late');
+  ok(api.gameCheckLag(h, null, { ms: FILE_AT, clock: 'host' }).lagMs === Infinity, 'core: missing check cannot be healthy');
+  ok(api.gameCheckLag(h, { ...check, checked_at: iso(FILE_AT + 1) }, { ms: FILE_AT, clock: 'host' }).lagMs === Infinity, 'core: future check cannot be healthy');
+  const oldFile = { ...h, publishedAt: iso(FILE_AT - 80000) };
+  ok(api.publishLag(oldFile, h, { ms: FILE_AT, clock: 'host' }).lagMs === 80000, 'core: legacy file-age rule preserved');
+  let reply, parses = 0; const requests = [];
+  const realFetch = globalThis.fetch, realWindow = globalThis.window;
+  globalThis.window = { setTimeout, clearTimeout };
+  globalThis.fetch = async (url, init) => { requests.push({ url, init }); return { status: reply.status ?? 200, ok: !reply.status || reply.status === 200,
+    headers: new Headers(reply.headers), body: null, json: async () => { parses++; return reply.body; } }; };
+  try {
+    reply = { body: top(liveBody(fx.live, '849843:11:2'), 8, FILE_AT), headers: { ETag: '"one"' } };
+    const a = await api.fetchPublishedDetail(LIVE);
+    ok(requests.at(-1).init.headers === undefined && parses === 1, 'core: first 200 parsed without conditional header');
+    reply = { status: 304 }; const b = await api.fetchPublishedDetail(LIVE);
+    ok(requests.at(-1).init.headers['If-None-Match'] === '"one"' && parses === 1 && b.detail === a.detail && b.stamp === a.stamp, 'core: 304 reuses validated body and stamp without parsing/normalizing');
+    reply = { body: top(liveBody(fx.live_more, '849843:12:2'), 9, FILE_AT), headers: { ETag: '"two"' } };
+    const c = await api.fetchPublishedDetail(LIVE);
+    ok(c.stamp.seq === 9 && c.detail !== a.detail && parses === 2, 'core: 200 → 304 → 200 applies a changed body');
+    reply = { body: top(liveBody(fx.live, '849843:11:2'), 7, FILE_AT), headers: { ETag: '"old"' } };
+    ok((await api.fetchPublishedDetail(LIVE)).detail === c.detail, 'core: a backwards sequence is rejected');
+    reply = { status: 304 }; await api.fetchPublishedDetail(LIVE);
+    ok(requests.at(-1).init.headers['If-None-Match'] === '"two"', 'core: backwards response cannot replace validated ETag');
+    reply = { body: top(liveBody(fx.live, '849843:13:1'), 10, FILE_AT) };
+    await api.fetchPublishedDetail(LIVE); await api.fetchPublishedDetail(LIVE);
+    ok(requests.at(-1).init.headers === undefined, 'core: no exposed ETag/Date/Age works as ordinary 200 reads');
+    reply = { status: 304 };
+    ok(await api.fetchPublishedDetail(559).then(() => false, e => e.status === 0), 'core: cacheless 304 is unreadable, never healthy');
+    reply = { body: top({ game: null }, 11, FILE_AT), headers: { ETag: '"bad"' } };
+    ok(await api.fetchPublishedDetail(LIVE).then(() => false, e => e.status === 0), 'core: invalid shape cannot populate conditional cache');
+    reply = { body: health(20, FILE_AT), headers: { ETag: '"health"' } }; await api.fetchPublishHealth();
+    ok(requests.at(-1).init.headers === undefined, 'core: ETags are isolated by URL');
+    reply = { body: top({ live_dates: [], publish_interval_s: 17 }, 21, FILE_AT) };
+    ok((await api.fetchPublishedManifest()).pollMs === 17000, 'core: manifest adapter exposes polling interval');
+    const reads = requests.length;
+    ok(await api.isGamePublishedSoon(559) === false && requests.length === reads, 'core: missing-game retries reuse the recent manifest without extra dates/manifest reads');
+  } finally { globalThis.fetch = realFetch; if (realWindow === undefined) delete globalThis.window; else globalThis.window = realWindow; }
+}
+await coreChecks();
+console.log(`Core checks: ${passed} passed, ${failures} failed (browser scenarios not yet run)`);
+if (process.env.PZ_STATIC_CORE_ONLY === '1') process.exit(failures ? 1 : 0);
+
 const browser = await chromium.launch();
+// Keep long-standing regression scenarios at their original test cadence; protocol scenarios below use the real public defaults.
+const distRegression = variant('regression', { VITE_PUBLISH_POLL_MS: '2000' });
+
 /** One scenario: a wait that times out fails that scenario by name and the run goes on to the next one. */
 const ONLY = process.env.PZ_ONLY ?? null;   // run one tagged scenario (used to replay a scenario on an older build)
 async function block(fn, tag = null) { if (ONLY && tag !== ONLY) return; try { await fn(); } catch (e) { ok(false, `scenario aborted: ${String(e).split('\n')[0]} @ ${(e.stack ?? '').split('\n').find((l) => l.includes('static-publish-smoke'))?.trim() ?? ''}`); for (const c of browser.contexts()) await c.close().catch(() => {}); } }
 /** `answer(file, n)` → { json, status, date, abort, hang } for `v1/<file>` (n = how many times that file was asked), or undefined to
  *  serve the fixture file from disk with a hosting `Date` one second after the fixture's publish time. Every request is logged. */
-async function open({ width = 390, height = 664, dist = distPublic, answer = () => undefined, api = null, hidden = false, skewMs = 0 } = {}) {
+async function open({ width = 390, height = 664, dist = distRegression, protocol = false, clock = false, answer = () => undefined, api = null, hidden = false, skewMs = 0 } = {}) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  await context.route('**/*', route => route.abort()); // no unhandled request may leave the test
   const page = await context.newPage();
+  if (clock) { await page.clock.install({ time: FILE_AT }); await page.clock.pauseAt(FILE_AT + 1000); }
   const asks = [], counts = new Map();
   // `hidden`: the tab starts hidden (document.hidden is steered by the test, see setHidden); `skewMs`: the device clock is wrong by this much
   await page.addInitScript(([startHidden, skew]) => {
@@ -88,12 +160,17 @@ async function open({ width = 390, height = 664, dist = distPublic, answer = () 
     const rel = url.pathname.replace(/^\/pub(?=\/)/, '');
     if (rel.startsWith('/v1/')) {
       const file = rel.slice(4), n = (counts.get(file) ?? 0) + 1; counts.set(file, n);
-      const a = await answer(file, n);
+      let a = await answer(file, n, route.request().headers());
+      if (!protocol && file === 'manifest.json' && (!a || a.json)) {
+        const json = clone(a?.json ?? JSON.parse(readFileSync(path.join(files, file), 'utf8'))); delete json.publish_interval_s;
+        a = { ...a, json };
+      }
       if (a?.hang) return;                                   // never answered: the client's own timeout has to end it
       if (a?.delay) await sleep(a.delay);
       if (a?.abort) return route.abort('connectionfailed').catch(() => {});
       if (a?.raw !== undefined) return route.fulfill({ status: 200, contentType: a.contentType ?? 'text/html', body: a.raw }).catch(() => {});
-      const headers = { 'content-type': 'application/json', ...(a?.date === null ? {} : { date: httpDate(a?.date ?? FILE_AT + 1000) }), ...(a?.age ? { age: String(a.age) } : {}) };
+      const headers = { 'content-type': 'application/json', ...(a?.date === null ? {} : { date: httpDate(a?.date ?? FILE_AT + 1000) }), ...(a?.age ? { age: String(a.age) } : {}), ...(a?.etag ? { etag: a.etag } : {}) };
+      if (a?.status === 304) return route.fulfill({ status: 304, headers, body: '' });
       if (a) return a.status && a.status !== 200 ? route.fulfill({ status: a.status, contentType: 'text/html', body: '<html>not found</html>' }) : route.fulfill({ headers, body: JSON.stringify(a.json) }).catch(() => {});
       const disk = path.join(files, file);
       if (!existsSync(disk)) return route.fulfill({ status: 404, contentType: 'text/html', body: '<html>not found</html>' });
@@ -110,7 +187,7 @@ const setHidden = (page, v) => page.evaluate((h) => { window.__hidden = h; docum
 /** Extra public bundles with other build-time config (same source, same `--mode public`), built into dist-public-<name>/. */
 function variant(name, env) {
   const out = path.join(here, '..', `dist-public-${name}`);
-  execFileSync('npx', ['vite', 'build', '--mode', 'public', '--outDir', out, '--logLevel', 'error'], { cwd: path.join(here, '..'), env: { ...process.env, ...env }, stdio: 'inherit' });
+  execFileSync(process.execPath, [path.join(here, '../node_modules/vite/bin/vite.js'), 'build', '--mode', 'public', '--outDir', out, '--logLevel', 'error'], { cwd: path.join(here, '..'), env: { ...process.env, ...env }, stdio: 'inherit' });
   return out;
 }
 /** What a request may be in static mode: the page, its assets, or one of the published files — nothing else, and never with a query. */
@@ -167,7 +244,7 @@ await block(async () => {
   await sleep(2500);
   const data = dataAsks(asks);
   ok(['/pub/v1/dates.json', '/pub/v1/manifest.json', '/pub/v1/games/2026-09-30.json', '/pub/v1/health.json', '/pub/v1/game/849843.json'].every((f) => data.includes(f)), `files: read ${[...new Set(data)].join(' ')}`);
-  ok(data.filter((a) => a === '/pub/v1/game/849843.json').length <= 2, 'files: a finished game is not polled');
+  ok(data.filter((a) => a === '/pub/v1/game/849843.json').length <= 2, 'files: finished legacy game keeps a bounded poll cadence');
   ok(clean(asks) && bare(asks), 'files: no request to /api/, none with demo= or after=');
   ok(asks.every((a) => a.startsWith('/pub/')), 'files: nothing is asked outside the hosting prefix');
   if (shots) await page.screenshot({ path: path.join(shots, 'static-final-375.png') });
@@ -377,7 +454,7 @@ await block(async () => {
     ok(await waitKind(page, 'ok') && await page.locator('.sv-state.held').count() === 0, `lost/${m}: recovers by polling alone`);
   }
   mode = 'hang';
-  ok(await waitKind(page, 'client', 22000), 'lost/hang: a request that never answers ends in the disconnected alert (client timeout)');
+  ok(await waitKind(page, 'client', 37000), 'lost/hang: a request that never answers ends in the disconnected alert (client timeout)');
   await kept('lost/hang');
   mode = 'ok';
   ok(await waitKind(page, 'ok', 22000), 'lost/hang: recovers by polling alone');
@@ -494,7 +571,7 @@ await block(async () => {
       return res.end(JSON.stringify(top(liveBody(fx.live, '849843:11:2'), 300 + stalled, Date.now())));
     }
     if (rel === '/v1/health.json') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(health(300, Date.now()))); }
-    const file = path.join(distPublic, rel); const target = existsSync(file) && statSync(file).isFile() ? file : path.join(distPublic, 'index.html');
+    const file = path.join(distRegression, rel); const target = existsSync(file) && statSync(file).isFile() ? file : path.join(distRegression, 'index.html');
     res.writeHead(200, { 'content-type': TYPES[path.extname(target)] ?? 'application/octet-stream' }); res.end(readFileSync(target));
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));   // an OS-assigned free port on loopback only
@@ -540,7 +617,7 @@ await block(async () => {
   await page.locator('.sv-alert').waitFor();
   ok(await page.locator('.sv-list .sv-card').count() === 0, 'list: first load failed → the error is shown');
   mode = 'ok';
-  ok(await page.locator('.sv-list .sv-card').first().waitFor({ timeout: 9000 }).then(() => true, () => false), 'list: recovers by itself after a failed first load (no tap)');
+  ok(await page.locator('.sv-list .sv-card').first().waitFor({ timeout: 14000 }).then(() => true, () => false), 'list: recovers by itself after a failed first load (no tap)');
   const before = counts.get('games/2026-09-30.json');
   liveScore = 7;
   ok(await page.locator(`.sv-card[href="./?game=${LIVE}"] .sv-card-team b`).first().filter({ hasText: '7' }).waitFor({ timeout: 14000 }).then(() => true, () => false), 'list: the list is read again at the configured interval (live score updates)');
@@ -562,7 +639,7 @@ await block(async () => {
 });
 
 // ---------- R5. a cached health.json / stale Date header cannot hide a stopped publisher ----------
-const distQuick = variant('quick', { VITE_PUBLISH_STALE_S: '6', VITE_PUBLISH_MISSING_RETRY_MS: '1000', VITE_PUBLISH_MISSING_MAX_MS: '4000', VITE_PUBLISH_PINNED_POLL_MS: '1500' });   // same code, a short (test-only) late threshold so elapsed time can be watched
+const distQuick = variant('quick', { VITE_PUBLISH_POLL_MS: '2000', VITE_PUBLISH_STALE_S: '6', VITE_PUBLISH_MISSING_RETRY_MS: '1000', VITE_PUBLISH_MISSING_MAX_MS: '4000', VITE_PUBLISH_PINNED_POLL_MS: '1500' });   // same code, a short (test-only) late threshold so elapsed time can be watched
 await block(async () => {
   // (a) every answer is the same cached copy: same sequence, same publish time, same (old) Date header, no Age
   const t0 = FILE_AT;
@@ -777,7 +854,7 @@ await block(async () => {
   await page.locator('.sv-list .sv-card').first().waitFor();
   ok(await page.getByRole('button', { name: '다음 날짜 없음' }).count() === 1, 'dates: no later date at first');
   more = true;
-  ok(await page.getByRole('button', { name: /다음 날짜 2026년 10월 1일/ }).waitFor({ timeout: 14000 }).then(() => true, () => false), 'dates: a date the publisher starts to follow appears without a reload');
+  ok(await page.getByRole('button', { name: /다음 날짜 2026년 10월 1일/ }).waitFor({ timeout: 65000 }).then(() => true, () => false), 'dates: a date the publisher starts to follow appears without a reload');
   ok(counts.get('manifest.json') >= 2 && counts.get('dates.json') >= 2 && /9월 30일/.test(await page.locator('.sv-datebar h1').innerText()), 'dates: (requests) both files were read again; the shown date did not change');
   await context.close();
 }, 'dates');
@@ -882,7 +959,7 @@ await block(async () => {
   await sleep(17000);
   const gaps = stamps.slice(1).map((t, i) => Math.round((t - stamps[i]) / 100) / 10);
   ok(gaps.length >= 3 && gaps.at(-1) >= 3.5 && gaps.at(-1) <= 6 && gaps[0] < gaps.at(-1), `never there: listed but missing → asked again with growing, bounded gaps (${gaps.join(' s, ')} s; test config 1 s → max 4 s)`);
-  ok((counts.get('health.json') ?? 0) === 0, 'never there: health.json is not read for a game that has nothing on screen');
+  ok((counts.get('health.json') ?? 0) >= stamps.length, 'never there: health-first checks also precede missing-game attempts');
   ok(/지금 볼 수 없어요/.test(await page.locator('.sv-unavailable').innerText()), 'never there: the calm 지금 볼 수 없어요 state stays meanwhile');
   inList = false; await sleep(6000);
   const n = stamps.length; await sleep(9000);
@@ -1045,7 +1122,7 @@ await block(async () => {
   ok(/최신으로/.test(await page.locator('.sv-live').innerText()), 'pinned: the view stays pinned (no jump to the latest)');
   mode = 'final'; await sleep(4000);
   const n1 = counts.get(`game/${LIVE}.json`); await sleep(5000);
-  ok(counts.get(`game/${LIVE}.json`) === n1, `pinned: once the file is final, reading stops (${counts.get(`game/${LIVE}.json`) - n1} more in 5 s)`);
+  ok(counts.get(`game/${LIVE}.json`) > n1, `pinned: final legacy files keep checking for corrections (${counts.get(`game/${LIVE}.json`) - n1} more in 5 s)`);
   ok(errors.length === 0, `pinned: no page errors ${errors.join(' | ')}`);
   await context.close();
 }, 'pinned');
@@ -1069,6 +1146,218 @@ await block(async () => {
   ok(await fitsOneScreen(page) && errors.length === 0, `no-pitch PA: one screen at 375x553, no page errors ${errors.join(' | ')}`);
   await context.close();
 }, 'no-pitch-pa');
+
+// ---------- V. polling-reduction protocol, real public defaults and deterministic browser time ----------
+// Clock advances execute the actual screen timers; all request counts exclude initial page/data loading.
+async function advance(page, ms) {
+  for (let left = ms; left > 0; left -= 1000) { await page.clock.runFor(Math.min(left, 1000)); await sleep(40); }
+}
+const manifestBody = (period, seq = 120) => top({ live_dates: ['2026-09-30'], publish_interval_s: period }, seq, FILE_AT);
+async function protocolScreen({ checks = true, period = 10, final = false, pregame = false, dist = distPublic, list = false } = {}) {
+  const state = { checks, period, fileSequence: 1, bodySequence: 1, feedOk: true, failures: [], fileMode: 'ok', final, checkedAt: null,
+    healthAt: null, key: '849843:11:2', malformed: undefined, healthSequence: 10000, manifestSequence: 120, etag: null, pregame, start: FILE_AT + 3600000 };
+  let h;
+  h = await open({ dist, protocol: true, clock: true, answer: async (file, n, headers) => {
+    const now = await h.page.evaluate(() => Date.now());
+    if (file === 'manifest.json') return { json: manifestBody(state.period, state.manifestSequence), date: now };
+    if (file === 'health.json') {
+      const json = health(++state.healthSequence, state.healthAt ?? now);
+      if (state.checks) json.game_checks = { [LIVE]: state.malformed !== undefined ? state.malformed : {
+        checked_at: iso(state.checkedAt ?? now), sequence_checked: 100000, file_sequence: state.fileSequence, feed_ok: state.feedOk } };
+      json.feed_failing_games = state.failures;
+      return { json, date: now };
+    }
+    if (file === `game/${LIVE}.json`) {
+      if (state.fileMode === 'abort') return { abort: true };
+      if (state.fileMode === '404') return { status: 404 };
+      if (state.etag && headers['if-none-match'] === state.etag) return { status: 304, etag: state.etag, date: now };
+      const body = state.final ? { ...asGame(LIVE, fx.final), game: { ...fx.final.game, game_pk: LIVE, away_score: state.bodySequence } } : liveBody(state.bodySequence > 1 ? fx.live_more : fx.live, state.key);
+      if (state.pregame) { body.game = { ...body.game, status: 'scheduled', live: false, start: iso(state.start) }; body.next = null; body.current = null;
+        body.display_state = display(null, { shown: false, state: 'pregame', label: '경기 전' }); }
+      return { json: top(body, state.bodySequence, FILE_AT, state.final), date: now, etag: state.etag };
+    }
+  } });
+  await h.page.goto(list ? 'http://pz.test/pub/?date=2026-09-30' : `http://pz.test/pub/?game=${LIVE}`);
+  await h.page.locator(list ? '.sv-list .sv-card' : '.sv-zone').first().waitFor();
+  await sleep(100);
+  return { ...h, state };
+}
+const count = (h, file) => h.counts.get(file) ?? 0;
+
+await block(async () => {
+  // Build the actual requested baseline screen/adapter sources, without checking out or mutating this worktree.
+  const baseline = path.join(here, '../dist-public-baseline');
+  const sourceFiles = new Set(['GameScreen.tsx', 'WatchList.tsx', 'api.ts', 'publish.ts']);
+  await viteBuild({ root: path.join(here, '..'), mode: 'public', logLevel: 'error', build: { outDir: baseline },
+    define: { 'import.meta.env.VITE_PUBLISH_POLL_MS': JSON.stringify('2000'), 'import.meta.env.VITE_PUBLISH_DATES_POLL_MS': JSON.stringify('10000') },
+    plugins: [{ name: 'baseline-screen', enforce: 'pre', load(id) {
+      if (id.startsWith(path.join(here, '../src/service/')) && sourceFiles.has(path.basename(id)))
+        return execFileSync('git', ['show', `ef4e4df:apps/observer/web/src/service/${path.basename(id)}`], { cwd: here, encoding: 'utf8' });
+    } }] });
+  for (const scenario of [
+    { name: 'baseline ef4e4df', dist: baseline, checks: false, expected: [30, 30, 0] },
+    { name: 'old-style files at P=10', checks: false, expected: [6, 6, 1] },
+    { name: 'game_checks unchanged at P=10', checks: true, expected: [6, 0, 1] },
+  ]) {
+    const h = await protocolScreen(scenario); const paths = ['health.json', `game/${LIVE}.json`, 'manifest.json'];
+    const before = paths.map(f => count(h, f)); const allBefore = dataAsks(h.asks).length;
+    await advance(h.page, 60000);
+    const got = paths.map((f, i) => count(h, f) - before[i]); const total = dataAsks(h.asks).length - allBefore;
+    ok(got.every((n, i) => n === scenario.expected[i]) && total === scenario.expected.reduce((a, b) => a + b),
+      `requests/min ${scenario.name}: health/game/manifest=${got.join('/')} total=${total} (expected ${scenario.expected.join('/')})`);
+    await h.context.close();
+  }
+  const changing = await protocolScreen(); const beforeChanging = dataAsks(changing.asks).length;
+  for (let tick = 0; tick < 6; tick++) {
+    if (tick % 2 === 0) { changing.state.fileSequence++; changing.state.bodySequence++; }
+    await advance(changing.page, 10000);
+  }
+  const changedTotal = dataAsks(changing.asks).length - beforeChanging;
+  ok(changedTotal === 10 && count(changing, `game/${LIVE}.json`) === 4, `requests/min three content changes: ${changedTotal} total, expected 7+3=10`);
+  await changing.context.close();
+  const h = await protocolScreen({ list: true }); const files = ['health.json', 'games/2026-09-30.json', 'dates.json', 'manifest.json'];
+  const before = files.map(f => count(h, f)); await advance(h.page, 60000);
+  const got = files.map((f, i) => count(h, f) - before[i]);
+  ok(got.join('/') === '6/6/1/1', `requests/min list: health/list/dates/manifest=${got.join('/')} total=${got.reduce((a, b) => a + b)} (expected 14)`);
+  await h.context.close();
+}, 'request-counts');
+
+await block(async () => {
+  const h = await protocolScreen(); const { page, state } = h;
+  await advance(page, 60000);
+  ok(count(h, `game/${LIVE}.json`) === 1 && await kind(page) === 'ok', 'checks: unchanged old file stays fresh; only health is read');
+  state.fileSequence = 2; state.bodySequence = 3; state.key = '849843:12:2';
+  await advance(page, 10000);
+  ok(await waitPitch(page, state.key) && count(h, `game/${LIVE}.json`) === 2, 'checks: advance fetches once and accepts body ahead of announced sequence');
+  state.fileSequence = 3; await advance(page, 10000);
+  ok(count(h, `game/${LIVE}.json`) === 2, 'checks: body already ahead means no redundant fetch');
+  state.fileSequence = 4; state.bodySequence = 2; await advance(page, 10000);
+  ok(await kind(page) === 'checking' && await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0,
+    'checks: announced but backwards body → 확인 중, no old recommendation or actual marker');
+  ok(await page.locator('.sv-state').getAttribute('data-pitch') === '849843:12:2', 'checks: backwards body cannot replace applied state');
+  state.fileMode = 'abort'; const n = count(h, `game/${LIVE}.json`);
+  await advance(page, 20000);
+  ok(await kind(page) === 'checking' && count(h, `game/${LIVE}.json`) === n + 2, 'checks: failed target retried every P and stays neutral below T');
+  await advance(page, 15000);
+  ok(await kind(page) === 'publish-late' && /갱신 지연/.test(await page.locator('.sv-chip').innerText()) && await page.locator('.sv-rec-row').count() === 0,
+    'checks: pending longer than T → 갱신 지연, old recommendation remains hidden');
+  state.fileMode = 'ok'; state.bodySequence = 4; state.key = '849843:13:1'; await advance(page, 10000);
+  ok(await waitPitch(page, state.key) && await kind(page) === 'ok', 'checks: same target succeeds later and restores current content');
+  state.checkedAt = FILE_AT; await advance(page, 10000);
+  ok(await kind(page) === 'publish-late', 'checks: fresh health cannot hide a stale checked_at');
+  state.checkedAt = null; state.healthAt = FILE_AT; await advance(page, 10000);
+  ok(await kind(page) === 'publish-late', 'checks: fresh checked_at cannot hide stale health');
+  state.healthAt = null; await advance(page, 10000);
+  ok(await kind(page) === 'ok', 'checks: fresh health and check recover');
+  const f = count(h, `game/${LIVE}.json`); state.feedOk = false; await advance(page, 10000);
+  ok(await kind(page) === 'feed' && /연결 끊김/.test(await page.locator('.sv-chip').innerText()), 'checks: feed_ok:false immediately uses disconnected copy');
+  await advance(page, 10000);
+  ok(await kind(page) === 'feed' && count(h, `game/${LIVE}.json`) === f, 'checks: fresh health does not clear feed failure or fetch an unchanged file');
+  state.feedOk = true; state.failures = [LIVE]; await advance(page, 10000);
+  ok(await kind(page) === 'feed', 'checks: feed_failing_games overrides feed_ok:true');
+  state.failures = [{ game_pk: LIVE, status: 503 }]; await advance(page, 10000);
+  ok(await kind(page) === 'feed', 'checks: object entries in feed_failing_games also fail this game');
+  state.failures = [LIVE + 1]; await advance(page, 10000);
+  ok(await kind(page) === 'ok', 'checks: another game failure does not affect this game');
+  state.fileSequence = null; await advance(page, 10000);
+  ok(await page.locator('.sv-unavailable').count() === 1 && await page.locator('.sv-rec-row').count() === 0 && count(h, `game/${LIVE}.json`) === f,
+    'checks: withdrawal clears the game without fetching its old file');
+  state.fileSequence = 5; state.bodySequence = 5; await advance(page, 10000);
+  ok(await waitPitch(page, state.key), 'checks: withdrawn game returns automatically when republished');
+  ok(h.errors.length === 0, `checks: no page errors ${h.errors.join(' | ')}`);
+  await h.context.close();
+}, 'game-checks');
+
+await block(async () => {
+  const h = await protocolScreen({ final: true }); const { page, state } = h;
+  state.healthAt = FILE_AT; state.checkedAt = FILE_AT; await advance(page, 120000);
+  ok(await page.locator('.sv-notice').count() === 0 && count(h, `game/${LIVE}.json`) === 1, 'final checks: no time warnings or unchanged-body downloads');
+  state.fileSequence = 2; state.bodySequence = 2; await advance(page, 10000);
+  ok(count(h, `game/${LIVE}.json`) === 2 && await page.locator('.sv-head-score strong').first().innerText() === '2', 'final checks: higher file_sequence applies late score correction');
+  state.feedOk = false; await advance(page, 10000);
+  ok(await kind(page) === 'feed', 'final checks: explicit failure remains visible');
+  state.fileSequence = null; await advance(page, 10000);
+  ok(await page.locator('.sv-unavailable').count() === 1, 'final checks: withdrawal still clears the screen');
+  await h.context.close();
+}, 'final-checks');
+
+await block(async () => {
+  const h = await protocolScreen(); const { page, state } = h;
+  for (const bad of [null, {}, [], { checked_at: 'bad', sequence_checked: 10, file_sequence: 1, feed_ok: true },
+    { checked_at: iso(FILE_AT), sequence_checked: 10, file_sequence: 1, feed_ok: null }]) {
+    state.malformed = bad; const n = count(h, `game/${LIVE}.json`); await advance(page, 10000);
+    ok(count(h, `game/${LIVE}.json`) === n + 1 && await kind(page) !== 'ok' && await page.locator('.sv-rec-row').count() === 0,
+      `malformed check: full read, never healthy (${JSON.stringify(bad)})`);
+  }
+  state.checks = false; await advance(page, 10000);
+  ok(await kind(page) === 'publish-late', 'fallback: absent game_checks restores legacy file-age staleness');
+  await h.context.close();
+}, 'malformed-checks');
+
+await block(async () => {
+  const h = await protocolScreen(); const { page } = h;
+  await page.locator('.sv-strip .sv-card:not(.pending)').last().click();
+  const g = count(h, `game/${LIVE}.json`), initial = count(h, 'health.json');
+  await advance(page, 10000);
+  ok(count(h, 'health.json') === initial + 1 && count(h, `game/${LIVE}.json`) === g, 'pinned checks: health uses P while the file stays unchanged');
+  h.state.fileSequence = 2; h.state.fileMode = '404'; await advance(page, 10000);
+  ok(await kind(page) === 'checking' && await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0,
+    'pinned checks: a pending correction hides paired recommendation and actual pitch');
+  await setHidden(page, true); const hidden = dataAsks(h.asks).length; await advance(page, 20000);
+  ok(dataAsks(h.asks).length === hidden, 'pinned checks: hidden tab sends nothing');
+  const before = count(h, 'health.json'); await setHidden(page, false); await sleep(200);
+  ok(count(h, 'health.json') === before + 1, 'pinned checks: tab return checks health immediately, before P');
+  const online = count(h, 'health.json'); await page.evaluate(() => window.dispatchEvent(new Event('online'))); await sleep(200);
+  ok(count(h, 'health.json') === online + 1, 'pinned checks: online also checks immediately');
+  await h.context.close();
+}, 'check-wake');
+
+await block(async () => {
+  for (const period of [undefined, '10', 0, -1, 75]) {
+    const h = await protocolScreen({ period }); h.state.period = period; h.state.manifestSequence++;
+    // undefined uses protocolScreen's default for initial loading; apply the invalid manifest on wake.
+    await h.page.evaluate(() => window.dispatchEvent(new Event('online'))); await sleep(200);
+    const n = count(h, 'health.json'), m = count(h, 'manifest.json'); await advance(h.page, period === 75 ? 75000 : 10000);
+    ok(count(h, 'health.json') === n + 1, `period ${String(period)}: ${period === 75 ? '75s manifest' : '10s fallback'} cadence`);
+    ok(count(h, 'manifest.json') - m === (period === 75 ? 1 : 0), `period ${String(period)}: manifest reread uses max(60s,P)`);
+    await h.context.close();
+  }
+}, 'manifest-period');
+
+await block(async () => {
+  const h = await protocolScreen({ pregame: true }); const { page, state } = h;
+  state.healthAt = FILE_AT; state.checkedAt = FILE_AT; await advance(page, 60000);
+  ok(await kind(page) === 'ok' && count(h, 'health.json') === 7 && count(h, `game/${LIVE}.json`) === 1,
+    'pregame checks: polls at P, no age warning before scheduled start');
+  state.start = FILE_AT; state.fileSequence = 2; state.bodySequence = 2; await advance(page, 10000);
+  ok(await kind(page) === 'publish-late', 'pregame checks: after scheduled start, stale health/check warns');
+  state.healthAt = null; state.checkedAt = null; await advance(page, 10000);
+  ok(await kind(page) === 'ok', 'pregame checks: fresh verification clears warning without rewriting the old file');
+  state.pregame = false; state.fileSequence = 3; state.bodySequence = 3; await advance(page, 10000);
+  ok(await page.locator('.sv-live').innerText() === 'LIVE', 'pregame checks: transition to live is fetched');
+  state.checkedAt = FILE_AT; await advance(page, 10000);
+  ok(await kind(page) === 'publish-late', 'live checks: in-play time rule applies after transition');
+  await h.context.close();
+}, 'pregame-checks');
+
+// HTTP behaviour has exact parse-count assertions in coreChecks; this exercises the rendered screen as well.
+await block(async () => {
+  let phase = 0; const conditional = [];
+  const h = await open({ dist: distPublic, protocol: true, clock: true, answer: (file, n, headers) => {
+    if (file === 'manifest.json') return { json: manifestBody(10) };
+    if (file === `game/${LIVE}.json`) {
+      conditional.push(headers['if-none-match']);
+      if (phase === 1) return { status: 304, etag: '"a"' };
+      return { json: top(liveBody(phase === 2 ? fx.live_more : fx.live, phase === 2 ? '849843:12:2' : '849843:11:2'), phase === 2 ? 2 : 1, FILE_AT), etag: phase === 2 ? '"b"' : '"a"', date: null };
+    }
+  } });
+  await h.page.goto(`http://pz.test/pub/?game=${LIVE}`); await h.page.locator('.sv-state').waitFor();
+  phase = 1; await advance(h.page, 10000);
+  ok(conditional[0] === undefined && conditional[1] === '"a"' && await waitPitch(h.page, '849843:11:2'), 'ETag screen: 200 → 304 keeps validated game');
+  phase = 2; await advance(h.page, 10000);
+  ok(conditional[2] === '"a"' && await waitPitch(h.page, '849843:12:2'), 'ETag screen: subsequent 200 applies changed game');
+  ok(h.errors.length === 0, 'ETag screen: no page errors'); await h.context.close();
+}, 'etag-screen');
 
 // ---------- R13. the public bundle contains no API / demo / cursor / operator code ----------
 for (const dir of [distPublic, distQuick]) {

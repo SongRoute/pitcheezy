@@ -78,18 +78,18 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
 /** Last applied publish per file. Contract: "화면은 순번이 뒤로 가는 파일을 버린다" — an answer whose sequence is LOWER than the one already
  *  applied (a cache serving an older copy, or an older answer arriving after a newer one) is discarded and the applied value stays.
  *  A sequence is the publish cycle that last wrote that file, so it is compared per file only, never across files. */
-const applied = new Map<string, { stamp: PublishStamp & { seq: number }; value: unknown; etag: string | null }>();
+const applied = new Map<string, { stamp: PublishStamp & { seq: number }; value: unknown; etag: string | null; readAt: number }>();
 async function readPublished<T, R>(file: PublishedFile, signal: AbortSignal | undefined, shape: (body: T) => R): Promise<{ value: R; stamp: PublishStamp }> {
   const got = await getPublished<T>(file, signal);
   const key = publishUrl(publishedPath(file)!), last = applied.get(key);
-  if (got === null) return { value: last!.value as R, stamp: last!.stamp };
+  if (got === null) { last!.readAt = performance.now(); return { value: last!.value as R, stamp: last!.stamp }; }
   if (last && got.stamp.seq < last.stamp.seq) return { value: last.value as R, stamp: last.stamp };
   let value: R;
   // a body that does not have the expected shape is an unreadable answer; the raw exception never reaches the screen
   try { value = shape(got.body); } catch (e) { throw e instanceof FetchError ? e : new FetchError('서버 응답을 읽지 못했어요.', 0); }
   // the same sequence seen again keeps the moment it was first seen
   const stamp = { ...got.stamp, seenAt: last && last.stamp.seq === got.stamp.seq ? last.stamp.seenAt : performance.now() };
-  applied.set(key, { stamp, value, etag: got.etag });
+  applied.set(key, { stamp, value, etag: got.etag, readAt: performance.now() });
   return { value, stamp };
 }
 /** Health additions are optional: today's publisher still supplies only the stamp and failure lists. */
@@ -147,7 +147,13 @@ export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates
  *  A game with no file that no followed list names (a demo runs on it, a wrong number, long over) is not waited for. */
 export async function isGamePublishedSoon(game: number, signal?: AbortSignal): Promise<boolean | null> {
   let liveDates: string[];
-  try { liveDates = (await fetchPublishedDates(signal)).liveDates; } catch { return null; }
+  try {
+    // Missing-game retries reuse the manifest read by the screen, rather than re-reading dates/manifest on every backoff tick.
+    const cached = applied.get(publishUrl('manifest.json'));
+    const manifest = cached?.value as Awaited<ReturnType<typeof fetchPublishedManifest>> | undefined;
+    liveDates = manifest && performance.now() - cached!.readAt < Math.max(60000, manifest.pollMs ?? PUBLISH_CONFIG.livePollMs)
+      ? manifest.liveDates : (await fetchPublishedManifest(signal)).liveDates;
+  } catch { return null; }
   let unknown = false;
   for (const date of liveDates) {
     try { if ((await fetchPublishedGames(date, signal)).some(g => g.game_pk === game)) return true; } catch { unknown = true; }

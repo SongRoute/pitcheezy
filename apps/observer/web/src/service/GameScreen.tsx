@@ -18,7 +18,7 @@ export const STALE_MS = 30000;
 /** a scheduled live game is asked again slowly so the screen starts by itself; a first load that failed is retried by itself */
 export const PREGAME_POLL_MS = 10000;
 export const FIRST_LOAD_RETRY_MS = 4000;
-/** Static (public) mode takes the same three cadences from build-time config; the defaults are the values above. */
+/** API mode keeps these cadences; static mode uses the manifest period or build-time fallbacks. */
 const CADENCE = __PZ_STATIC__ ? { live: PUBLISH_CONFIG.livePollMs, pregame: PUBLISH_CONFIG.pregamePollMs, retry: PUBLISH_CONFIG.firstLoadRetryMs }
   : { live: POLL_MS, pregame: PREGAME_POLL_MS, retry: FIRST_LOAD_RETRY_MS };
 /** Display state → chip mark. The state is always written as words (server label); the mark and the colour only support it. */
@@ -238,7 +238,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     const id = window.setInterval(() => { if (!document.hidden) void load(); }, pollMs);
     return () => window.clearInterval(id);
   }, [auto, pollMs, load]);
-  // static mode: a screen pinned on a past pitch (auto off) still reads, slowly, while the game is not final. If the server turns the
+  // static mode: a screen pinned on a past pitch (auto off) still checks, including final-game corrections. If the server turns the
   // pinned pitch back to 확인 중, the same fail-closed rules blank it here too; the view stays pinned (no jump to the latest).
   const pinnedMs = __PZ_STATIC__ && !auto && pollMs > 0 ? manifestMs ?? PUBLISH_CONFIG.pinnedPollMs : 0;
   useEffect(() => {
@@ -320,7 +320,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
 
   const byIndex = useMemo(() => new Map(detail?.pitches.map(p => [p.index, p]) ?? []), [detail?.pitches]);
   if (!detail) {
-    return <div className="sv-page"><TopBar /><main className="sv-center">{error
+    return <div className="sv-page"><TopBar /><main className="sv-center">{__PZ_STATIC__ && pendingSince !== null
+      ? <p className="sv-muted" role="status">{performance.now() - pendingSince > staleAfterMs(pollMs) ? '갱신 지연 · 새 내용이 늦어지고 있어요.' : '확인 중 · 새 내용을 확인하고 있어요.'}</p>
+      : error
       // public bundle: no file for a game (not published yet, or withheld while a demo runs on it) = not available now, said calmly
       ? __PZ_STATIC__ && error.status === 404 ? <div className="sv-unavailable"><p className="sv-muted" role="status">이 경기는 지금 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.</p>
         <div className="sv-row"><button className="sv-btn" onClick={askAgain}>다시 확인</button><a className="sv-btn" href={publicListHref()}>경기 목록</a></div>
@@ -389,7 +391,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const pendingLate = awaitingFile && !(fileStamp?.final && game.status === 'final') && performance.now() - pendingSince! > staleAfterMs(pollMs);
   const lateNow = __PZ_STATIC__ && (pendingLate || isPublishStale(lag, pollMs));
   const publishStale = lateNow && !checking;
-  const publishChecking = !publishStale && (awaitingFile || (verification.present && !verification.check) || (lateNow && checking));
+  const publishChecking = !publishStale && (awaitingFile || (verification.present && (!verification.check || checking)) || (lateNow && checking));
   // lag_s is a proven lower bound (never an estimate): floor it and say '넘게', never '약'
   const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
   const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
@@ -434,7 +436,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const awayScore = latest && game.away_score !== null ? game.away_score : scored?.away_score ?? breakScore('away');
   const homeScore = latest && game.home_score !== null ? game.home_score : scored?.home_score ?? breakScore('home');
 
-  // browsing a past pitch pins the view and switches auto refresh off (no fetch while pinned); LIVE brings both back
+  // Browsing pins the view and switches API refresh off; static mode keeps checking for corrections. LIVE resumes following.
   const pick = (index: number) => { picked.current = true; setSel({ kind: 'pitch', index }); setAuto(false); };
   const goLatest = () => { picked.current = false; setSel({ kind: 'latest' }); setAuto(true); void load(false, true); };
   // A past pitch of a live game: the recommendation the ledger recorded BEFORE that pitch, next to what was thrown. Never a score.

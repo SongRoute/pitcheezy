@@ -47,7 +47,7 @@ function Card({ g }: { g: GameCard }) {
 /** Public bundle: one repeating reader. One request chain at a time; nothing is asked while the tab is hidden (it starts again when the
  *  tab is visible or the network is back); `read` answers true (next read after `okMs`) or false (after `failMs`). Returns the stop
  *  function, which also aborts the signal `read` was given. */
-function startReader(read: (signal: AbortSignal) => Promise<boolean>, okMs: () => number, failMs: number, onWake?: () => void) {
+function startReader(read: (signal: AbortSignal) => Promise<boolean>, okMs: () => number, failMs: () => number, onWake?: () => void) {
   let alive = true, busy: AbortController | null = null, timer = 0;
   const run = async () => {
     window.clearTimeout(timer);
@@ -56,7 +56,7 @@ function startReader(read: (signal: AbortSignal) => Promise<boolean>, okMs: () =
     let good = false;
     try { good = await read(ctrl.signal); } catch { good = false; }
     if (busy === ctrl) busy = null;
-    if (alive) timer = window.setTimeout(() => void run(), good ? okMs() : failMs);
+    if (alive) timer = window.setTimeout(() => void run(), good ? okMs() : failMs());
   };
   const wake = () => { if (!document.hidden) { onWake?.(); void run(); } };
   void run();
@@ -108,7 +108,7 @@ export default function WatchList() {
         setDate(d => d ?? (p.dates.includes(today) ? today : p.dates.find(x => x <= today) ?? p.dates[p.dates.length - 1] ?? today));
         return true;
       } catch { if (!signal.aborted) { setDates(d => d ?? []); setDate(d => d ?? todayKst()); } return false; }
-    }, () => Math.max(60000, period), 60000);
+    }, () => Math.max(60000, period), () => Math.max(60000, period));
   }, []);
   useEffect(() => {
     if (!__PZ_STATIC__ || !date) return;
@@ -129,7 +129,7 @@ export default function WatchList() {
         if (!shown) setError(e instanceof FetchError ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen
       }
       return good;
-    }, () => listPollMs, listPollMs, () => setHealthFresh(false));
+    }, () => listPollMs, () => listPollMs, () => setHealthFresh(false));
     const tick = window.setInterval(() => setTick(t => t + 1), PUBLISH_CONFIG.tickMs);  // lets the late notice appear between reads
     return () => { stop(); window.clearInterval(tick); };
   }, [date, listPollMs]);
