@@ -40,9 +40,10 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
  *  ends like an unreachable server instead of leaving the request (and every later poll) waiting for ever.
  *  A missing file keeps its HTTP status (404); an answer that is not JSON (half-written file, a host's HTML fallback page) is treated
  *  like an unreachable server (status 0) so the screen keeps its last state and asks again. */
-async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promise<{ body: T; stamp: Omit<PublishStamp, 'seenAt'> & { seq: number } }> {
+async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promise<{ body: T; stamp: Omit<PublishStamp, 'seenAt'> & { seq: number }; etag: string | null } | null> {
   const path = publishedPath(file);
   if (path === null) throw new FetchError('자료를 불러오지 못했어요.', 404);   // not a real date / game number: nothing is asked
+  const url = publishUrl(path), last = applied.get(url);
   const timeout = new AbortController();
   const timer = window.setTimeout(() => timeout.abort(), PUBLISH_CONFIG.timeoutMs);
   const onAbort = () => timeout.abort();
@@ -50,7 +51,7 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
   if (signal?.aborted) timeout.abort();
   try {
     let response: Response;
-    try { response = await fetch(publishUrl(path), { cache: 'no-store', signal: timeout.signal }); }
+    try { response = await fetch(url, { cache: 'no-cache', headers: last?.etag ? { 'If-None-Match': last.etag } : undefined, signal: timeout.signal }); }
     catch (e) {
       if (signal?.aborted) throw e;
       throw new FetchError('서버에 연결하지 못했어요. 네트워크 연결을 확인해 주세요.', 0);
@@ -58,6 +59,12 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
     // the hosting server's own clock for this answer (Date, plus Age when a cache says how old its copy is); unreadable cross-origin unless exposed
     const date = Date.parse(response.headers.get('date') ?? ''), age = Number(response.headers.get('age') ?? '');
     if (Number.isFinite(date)) observeHostTime(date + (Number.isFinite(age) && age > 0 ? age * 1000 : 0));
+    if (response.status === 304) {
+      if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+      if (!last?.etag) throw new FetchError('서버 응답을 읽지 못했어요.', 0); // no validated body to reuse
+      if (last.stamp.publishedAt) observePublishTime(Date.parse(last.stamp.publishedAt));
+      return null; // reuse the already validated/normalized body; neither JSON parse nor shape runs again
+    }
     if (!response.ok) { void response.body?.cancel().catch(() => undefined); throw new FetchError('자료를 불러오지 못했어요.', response.status); }
     const raw = await response.json().catch(() => null);
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
@@ -65,23 +72,24 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
     const p = unwrapPublished<T>(raw);
     if (p.seq === null) throw new FetchError('서버 응답을 읽지 못했어요.', 0);   // no integer sequence: cannot be ordered, so never applied
     if (p.publishedAt) observePublishTime(Date.parse(p.publishedAt));   // used as server time only when no hosting time is readable
-    return { body: p.body, stamp: { seq: p.seq, publishedAt: p.publishedAt, final: p.final } };
+    return { body: p.body, etag: response.headers.get('etag'), stamp: { seq: p.seq, publishedAt: p.publishedAt, final: p.final } };
   } finally { window.clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
 }
 /** Last applied publish per file. Contract: "화면은 순번이 뒤로 가는 파일을 버린다" — an answer whose sequence is LOWER than the one already
  *  applied (a cache serving an older copy, or an older answer arriving after a newer one) is discarded and the applied value stays.
  *  A sequence is the publish cycle that last wrote that file, so it is compared per file only, never across files. */
-const applied = new Map<string, { stamp: PublishStamp & { seq: number }; value: unknown }>();
+const applied = new Map<string, { stamp: PublishStamp & { seq: number }; value: unknown; etag: string | null }>();
 async function readPublished<T, R>(file: PublishedFile, signal: AbortSignal | undefined, shape: (body: T) => R): Promise<{ value: R; stamp: PublishStamp }> {
   const got = await getPublished<T>(file, signal);
-  const key = publishedPath(file)!, last = applied.get(key);
+  const key = publishUrl(publishedPath(file)!), last = applied.get(key);
+  if (got === null) return { value: last!.value as R, stamp: last!.stamp };
   if (last && got.stamp.seq < last.stamp.seq) return { value: last.value as R, stamp: last.stamp };
   let value: R;
   // a body that does not have the expected shape is an unreadable answer; the raw exception never reaches the screen
   try { value = shape(got.body); } catch (e) { throw e instanceof FetchError ? e : new FetchError('서버 응답을 읽지 못했어요.', 0); }
   // the same sequence seen again keeps the moment it was first seen
   const stamp = { ...got.stamp, seenAt: last && last.stamp.seq === got.stamp.seq ? last.stamp.seenAt : performance.now() };
-  applied.set(key, { stamp, value });
+  applied.set(key, { stamp, value, etag: got.etag });
   return { value, stamp };
 }
 /** Health additions are optional: today's publisher still supplies only the stamp and failure lists. */

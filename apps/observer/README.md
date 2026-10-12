@@ -175,9 +175,9 @@ node tests/static-publish-smoke.mjs   # npm run build 도 먼저 해 둘 것 (AP
 - manifest(경기·목록 화면)와 dates(목록 화면)는 `max(60초, P)`마다 다시 읽는다. `VITE_PUBLISH_DATES_POLL_MS`는 제거했다. 탭 복귀·온라인 복귀 시에는 즉시 확인한다.
 - 올리는 법: `dist-public/` 내용을 `v1/`과 같은 폴더에 둔다. 주소는 `…/?game=<game_pk>`, `…/?date=<날짜>` 꼴이라 주소 다시쓰기 규칙이 필요 없다.
 - 호스팅이 지켜 줘야 할 것:
-  - `v1/*.json`은 매번 원본에 확인하게 한다(`Cache-Control: no-cache` 또는 발행 간격보다 짧은 `max-age`). 종료 표시(`publish.final`)가 있는 경기 파일만 길게 캐시해도 된다.
+  - `v1/*.json`은 gzip, 내용별 `ETag`, `Cache-Control: no-cache`를 제공한다. `If-None-Match`가 일치하면 본문 없는 304로 답한다. 화면은 URL별 마지막 ETag와 검증된 본문을 보관해 304에서 재파싱하지 않는다. ETag가 없으면 매번 200으로 동작한다. 종료 경기에도 정정이 오므로 무기한 immutable 캐시는 쓰지 않는다.
   - 캐시가 응답을 대신 줄 때는 `Age` 헤더를 붙인다. `Date` 헤더는 지우지 않는다.
-  - 화면과 `v1/`을 다른 출처에 두면 `Access-Control-Allow-Origin`과 `Access-Control-Expose-Headers: Date, Age`가 필요하다(없어도 동작하지만, 화면을 열기 전에 이미 멈춘 발행은 기준 시간만큼 늦게 알아챈다).
+  - 화면과 `v1/`을 다른 출처에 두면 `Access-Control-Allow-Origin`, `Access-Control-Allow-Headers: If-None-Match` 및 OPTIONS 처리, `Access-Control-Expose-Headers: ETag, Date, Age`가 필요하다. 동일 출처를 권장한다. ETag가 노출되지 않으면 조건부 헤더 없이 200을 읽으며, Date/Age도 없으면 발행 시각과 경과 시간으로 판단한다(화면을 열기 전에 이미 멈춘 발행은 기준 시간만큼 늦게 알아챈다).
   - 없는 파일은 404로 답한다(index.html을 200으로 대신 주지 않는다). 파일은 통째로 바꿔치기한다.
 - 공개 번들에 없는 것: `/api/**` 호출과 옛 경로 대체, 시연 세션(`?demo=`), 운영자 화면, `?after=` 이어받기. 접속 기록·피드백·영상도 넣지 않았다.
 - 호스트용 빈 자리 하나: 화면 뒤에 `<div id="pitcheezy-host-slot" data-screen="list|game" data-game-pk="…">`가 비어 있고, 생길 때 `window`에 `pitcheezy:host-slot` 이벤트(`detail.element/screen/gamePk`)가 난다. 피드백·접속 기록은 호스트 페이지가 여기에 붙인다(`web/src/service/HostSlot.tsx`).
