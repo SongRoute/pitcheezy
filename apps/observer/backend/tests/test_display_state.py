@@ -72,9 +72,17 @@ class Policy:
         call = snapshot['liveData']['plays']['currentPlay']['playEvents'][0]['details']['call']['code']
         ready = self.status is None
         pre = {'status': 'ready' if ready else 'unsupported', 'reason': None if ready else self.reason,
-               'recommendation': {'candidates': [CAND[self.top or ('SL' if call == 'B' else 'FF')]]} if ready else None}
+               'recommendation': {'candidates': [copy.deepcopy(CAND[self.top or ('SL' if call == 'B' else 'FF')])]} if ready else None}
         return {'key': key, 'pitch': {'key': key, 'pre': pre, 'status': self.status or 'SUPPORTED'}, 'pa_pitches': [],
                 'previous': None, 'home_we_now': .5, 'policy_identity': 'a6dffaea'+'0'*56, 'seconds': {'bind': 0.0}}
+
+
+def test_fake_policy_does_not_share_a_candidate_between_calls():
+    policy = Policy()
+    first = policy(snap(995.0, '20261005_100000'))['pitch']['pre']['recommendation']['candidates'][0]
+    first['target'] = {'x': 0.1, 'z': 2.5}
+    second = policy(snap(995.0, '20261005_100000'))['pitch']['pre']['recommendation']['candidates'][0]
+    assert 'target' not in second and 'target' not in CAND['SL']
 
 
 class Upstream:
