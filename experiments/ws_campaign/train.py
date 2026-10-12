@@ -268,6 +268,10 @@ def run_job(job, cfg, inputs, out, metadata):
     torch.backends.cudnn.deterministic = True; torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True, warn_only=True)
     model = build_model(cfg, job['arm'] if job['kind'] == 'supervised' else 'T', seed).to(device)
+    initial = hashlib.sha256()
+    for name, value in sorted(model.state_dict().items()):
+        if not name.startswith('net.encoder.'):
+            initial.update(name.encode()); initial.update(value.detach().cpu().numpy().tobytes())
     data = base.Data(torch, device, x, c, s, ctx)
     keys = torch.as_tensor(c['keys'], device=device, dtype=torch.long)
     rows = {r: torch.as_tensor(np.flatnonzero(c[r]), device=device, dtype=torch.long) for r in ('fit', 'tuning', 'calibration')}
@@ -290,6 +294,7 @@ def run_job(job, cfg, inputs, out, metadata):
     if result['calibrations'] != job['calibrations']: raise ValueError('CAL budget mismatch')
     return dict(result, status='COMPLETED', id=job['id'], arm=job['arm'], seed=seed, kind=job['kind'],
                 data_role=cfg['data_role'], data_version=cfg['data_version'], eval_scores_opened=False,
+                shared_initial_sha256=initial.hexdigest(), parameters=sum(p.numel() for p in model.parameters()),
                 evaluation_predictions_computed=False, elapsed_seconds=time.monotonic()-started,
                 rows={r:len(v) for r,v in rows.items()}, outputs_sha256={f:base.sha(out/f) for f in files},
                 versions={'torch':torch.__version__, 'numpy':np.__version__, 'cuda':torch.version.cuda})
