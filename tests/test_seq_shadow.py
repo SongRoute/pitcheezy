@@ -1258,7 +1258,7 @@ def test_registered_pins_match_the_files_on_disk_hash_only():
     for path, sha in pins:
         assert SS.file_sha256(path) == sha, path
     assert CONFIG['runtime_python'] == str(REPO/'.venv'/'bin'/'python')
-    assert STEP5['profile_sha256'] == '6699a33d119dc4dd6dfaab8afee16e98441055aad2488a7d2c218c8ba2a5a74f'
+    assert STEP5['profile_sha256'] == '42f0ce33010447bd07a2092eb018d3da5d88079668eed755914a54655b47e272'  # configuration revision 2 (game 849809)
     assert set(SS.OWN_SOURCE) == {str(p.relative_to(REPO)) for p in (REPO/'src'/'pitcheezy'/'seq_shadow').glob('*.py')} | {
         'scripts/seq_shadow_runner.py', 'scripts/seq_shadow_parity.py', 'configs/seq_shadow.json'}
 
