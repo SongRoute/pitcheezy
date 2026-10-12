@@ -47,7 +47,7 @@ function Card({ g }: { g: GameCard }) {
 /** Public bundle: one repeating reader. One request chain at a time; nothing is asked while the tab is hidden (it starts again when the
  *  tab is visible or the network is back); `read` answers true (next read after `okMs`) or false (after `failMs`). Returns the stop
  *  function, which also aborts the signal `read` was given. */
-function startReader(read: (signal: AbortSignal) => Promise<boolean>, okMs: number, failMs: number, onWake?: () => void) {
+function startReader(read: (signal: AbortSignal) => Promise<boolean>, okMs: () => number, failMs: number, onWake?: () => void) {
   let alive = true, busy: AbortController | null = null, timer = 0;
   const run = async () => {
     window.clearTimeout(timer);
@@ -56,7 +56,7 @@ function startReader(read: (signal: AbortSignal) => Promise<boolean>, okMs: numb
     let good = false;
     try { good = await read(ctrl.signal); } catch { good = false; }
     if (busy === ctrl) busy = null;
-    if (alive) timer = window.setTimeout(() => void run(), good ? okMs : failMs);
+    if (alive) timer = window.setTimeout(() => void run(), good ? okMs() : failMs);
   };
   const wake = () => { if (!document.hidden) { onWake?.(); void run(); } };
   void run();
@@ -91,21 +91,24 @@ export default function WatchList() {
   }, [date]);
 
   // ---- public bundle: published files, read again at the configured intervals ----
+  const [manifestMs, setManifestMs] = useState<number | null>(null);
+  const listPollMs = manifestMs ?? PUBLISH_CONFIG.listPollMs;
   const [health, setHealth] = useState<PublishStamp | null>(null);
   const [healthFresh, setHealthFresh] = useState(false);   // health.json was read since the tab last came back into view
   const [, setTick] = useState(0);
   useEffect(() => {  // dates.json + manifest live_dates, read again so a date the publisher starts to follow appears without a reload
     if (!__PZ_STATIC__) return;
+    let period = PUBLISH_CONFIG.listPollMs;
     return startReader(async signal => {
       try {
         const p = await fetchPublishedDates(signal);
         if (signal.aborted) return false;
-        const today = todayKst(); setDates(p.dates);
+        const today = todayKst(); setDates(p.dates); setManifestMs(p.pollMs); period = p.pollMs ?? PUBLISH_CONFIG.listPollMs;
         // first answer only: today when the publisher follows it, else the newest published date that is not in the future
         setDate(d => d ?? (p.dates.includes(today) ? today : p.dates.find(x => x <= today) ?? p.dates[p.dates.length - 1] ?? today));
         return true;
       } catch { if (!signal.aborted) { setDates(d => d ?? []); setDate(d => d ?? todayKst()); } return false; }
-    }, PUBLISH_CONFIG.datesPollMs, PUBLISH_CONFIG.firstLoadRetryMs);
+    }, () => Math.max(60000, period), 60000);
   }, []);
   useEffect(() => {
     if (!__PZ_STATIC__ || !date) return;
@@ -126,12 +129,12 @@ export default function WatchList() {
       if (signal.aborted || document.hidden) return good;   // hidden meanwhile: the follow-up read waits until the tab is back
       try { const h = await fetchPublishHealth(signal); if (!signal.aborted) { setHealth(h); setHealthFresh(true); } } catch { /* the last health stays */ }
       return good;
-    }, PUBLISH_CONFIG.listPollMs, PUBLISH_CONFIG.firstLoadRetryMs, () => setHealthFresh(false));
+    }, () => listPollMs, listPollMs, () => setHealthFresh(false));
     const tick = window.setInterval(() => setTick(t => t + 1), PUBLISH_CONFIG.tickMs);  // lets the late notice appear between reads
     return () => { stop(); window.clearInterval(tick); };
-  }, [date]);
+  }, [date, listPollMs]);
   // judged only on a health.json read since the tab came back: what was on screen before a background period is never called late
-  const late = __PZ_STATIC__ && healthFresh && isPublishStale(publishLag(null, health, serverNow(clockWindowMs(PUBLISH_CONFIG.listPollMs))), PUBLISH_CONFIG.listPollMs);
+  const late = __PZ_STATIC__ && healthFresh && isPublishStale(publishLag(null, health, serverNow(clockWindowMs(listPollMs))), listPollMs);
   useEffect(() => { document.title = date ? `${dateHeading(date)} 경기 · 피치이지` : '피치이지'; }, [date]);
 
   // Previous/next: adjacent dates that have games when the server lists them, otherwise one calendar day.

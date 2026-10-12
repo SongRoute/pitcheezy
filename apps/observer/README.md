@@ -156,7 +156,7 @@ node tests/static-publish-smoke.mjs   # npm run build 도 먼저 해 둘 것 (AP
 - 방식 선택은 빌드할 때 정한다. `VITE_PUBLISH_BASE`가 비어 있으면 지금까지의 API 방식 그대로다. 공개 번들에는 API 호출 코드가 아예 들어가지 않는다(검사가 번들을 직접 뒤져 확인).
 - 설정 이름(기본값은 `web/.env.public`, 셸 환경변수가 우선):
   - `VITE_PUBLISH_BASE`: `v1/` 폴더가 있는 주소나 경로. 기본 `.` = index.html 옆.
-  - `VITE_PUBLISH_POLL_MS`(2000) · `VITE_PUBLISH_PREGAME_POLL_MS`(10000) · `VITE_PUBLISH_LIST_POLL_MS`(10000) · `VITE_PUBLISH_RETRY_MS`(4000): 경기 중 / 경기 전 / 목록 / 실패 뒤 다시 읽는 간격.
+  - `VITE_PUBLISH_POLL_MS`(10000) · `VITE_PUBLISH_PREGAME_POLL_MS`(10000) · `VITE_PUBLISH_LIST_POLL_MS`(10000) · `VITE_PUBLISH_RETRY_MS`(4000): 경기 중 / 경기 전 / 목록 / 실패 뒤 다시 읽는 간격.
   - `VITE_PUBLISH_TIMEOUT_MS`(15000): 요청 하나의 제한 시간(본문 끝까지). `VITE_PUBLISH_LOST_MS`(30000): 이만큼 못 읽으면 "연결 끊김". `VITE_PUBLISH_TICK_MS`(5000): 시간 표시를 다시 따지는 간격.
   - `VITE_PUBLISH_STALE_S`(30, **임시값·미측정**): 새 발행이 이만큼 없으면 "갱신 지연". 리허설에서 잰 발행 간격으로 다시 정한다.
   - `LOST_MS`와 `STALE_S`는 그 화면이 읽는 간격의 3배보다 짧게는 적용되지 않는다(읽는 간격을 늘려도 매번 경고가 뜨지 않게).
@@ -168,7 +168,8 @@ node tests/static-publish-smoke.mjs   # npm run build 도 먼저 해 둘 것 (AP
   - 탭으로 돌아오거나 기기가 깨어나면 먼저 다시 읽고, 그 응답이 올 때까지는 "확인 중"으로 둔다.
 - 없는 경기 파일: "지금 볼 수 없어요"로 두고 간격을 두 배씩 늘려 다시 묻는다(`VITE_PUBLISH_MISSING_RETRY_MS` 10000 → `VITE_PUBLISH_MISSING_MAX_MS` 60000, **임시값**). 발행기가 따라가는 날짜의 목록 어디에도 그 경기가 없으면 묻기를 멈춘다.
 - 지난 공을 골라 고정해 둔 화면도 경기가 끝나기 전에는 `VITE_PUBLISH_PINNED_POLL_MS`(10000, **임시값**)마다 다시 읽는다. 서버가 그 공을 "확인 중"으로 되돌리면 고정 화면에서도 구종·위치를 지운다.
-- 목록 화면은 날짜 목록(`dates.json`, `manifest.json`)도 `VITE_PUBLISH_DATES_POLL_MS`(10000)마다 다시 읽는다.
+- 정적 모드의 경기 중·경기 전·고정 투구·목록·health 주기는 manifest의 `publish_interval_s`(숫자 초)를 우선한다. 유한한 양수이면서 브라우저 타이머 범위(1ms–2147483647ms)일 때만 사용하며, 그 밖에는 위 설정으로 대체한다. health는 해당 화면 주기를 따른다.
+- manifest(경기·목록 화면)와 dates(목록 화면)는 `max(60초, P)`마다 다시 읽는다. `VITE_PUBLISH_DATES_POLL_MS`는 제거했다. 탭 복귀·온라인 복귀 시에는 즉시 확인한다.
 - 올리는 법: `dist-public/` 내용을 `v1/`과 같은 폴더에 둔다. 주소는 `…/?game=<game_pk>`, `…/?date=<날짜>` 꼴이라 주소 다시쓰기 규칙이 필요 없다.
 - 호스팅이 지켜 줘야 할 것:
   - `v1/*.json`은 매번 원본에 확인하게 한다(`Cache-Control: no-cache` 또는 발행 간격보다 짧은 `max-age`). 종료 표시(`publish.final`)가 있는 경기 파일만 길게 캐시해도 된다.

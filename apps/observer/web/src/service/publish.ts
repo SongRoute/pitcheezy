@@ -14,18 +14,17 @@ const env = import.meta.env;
 export const PUBLISH_BASE: string = String(env.VITE_PUBLISH_BASE ?? '').trim().replace(/\/+$/, '');
 
 const positive = (v: unknown, fallback: number) => { const n = typeof v === 'string' && v.trim() ? Number(v) : NaN; return Number.isFinite(n) && n > 0 ? n : fallback; };
-/** Static-mode config (build-time env; `.env.public` carries the defaults). Every default is the value the API-mode screen already uses.
+/** Static-mode config (build-time env; `.env.public` carries the defaults). The manifest overrides polling fallbacks in static mode.
  *  PROVISIONAL: `staleAfterS` is NOT a measured value. It only reuses the screen's existing 30 s "connection is late" figure until the
  *  rehearsal measures the real publish interval and jitter; set `VITE_PUBLISH_STALE_S` from that measurement. */
 export const PUBLISH_CONFIG = {
-  livePollMs: positive(env.VITE_PUBLISH_POLL_MS, 2000),
+  livePollMs: positive(env.VITE_PUBLISH_POLL_MS, 10000),
   pregamePollMs: positive(env.VITE_PUBLISH_PREGAME_POLL_MS, 10000),
   listPollMs: positive(env.VITE_PUBLISH_LIST_POLL_MS, 10000),
   firstLoadRetryMs: positive(env.VITE_PUBLISH_RETRY_MS, 4000),
   timeoutMs: positive(env.VITE_PUBLISH_TIMEOUT_MS, 15000),
   lostAfterMs: positive(env.VITE_PUBLISH_LOST_MS, 30000),
   tickMs: positive(env.VITE_PUBLISH_TICK_MS, 5000),
-  datesPollMs: positive(env.VITE_PUBLISH_DATES_POLL_MS, 10000),
   /** a screen pinned on a past pitch of a game that is not final still reads at this interval. PROVISIONAL; default = the pregame cadence. */
   pinnedPollMs: positive(env.VITE_PUBLISH_PINNED_POLL_MS, positive(env.VITE_PUBLISH_PREGAME_POLL_MS, 10000)),
   /** a game with no file yet: first re-ask after this long, doubling up to the max. PROVISIONAL (not measured). */
@@ -40,6 +39,10 @@ const MIN_POLLS = 3;
 export const lostAfterMs = (pollMs: number) => Math.max(PUBLISH_CONFIG.lostAfterMs, MIN_POLLS * pollMs);
 /** "no new publish for this long = 갱신 지연", for the given poll interval */
 export const staleAfterMs = (pollMs: number) => Math.max(PUBLISH_CONFIG.staleAfterS * 1000, MIN_POLLS * pollMs);
+
+/** A finite positive interval that the browser can schedule without timer overflow. Strings are not manifest numbers. */
+export const manifestPollMs = (seconds: unknown): number | null => typeof seconds === 'number' && Number.isFinite(seconds)
+  && seconds * 1000 >= 1 && seconds * 1000 <= 2147483647 ? seconds * 1000 : null;
 
 // ---------- the one place that builds a published file's URL ----------
 /** `YYYY-MM-DD` that is a real calendar date (round-trips), nothing else. */

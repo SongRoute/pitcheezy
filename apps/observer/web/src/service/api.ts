@@ -4,7 +4,7 @@
  *  still renders real data before the contract lands. The fallback never invents scores or recommendations. */
 import type { Correction, Display, DisplayStateName, Receipt, LineTeam, Linescore, PlayerInfo, Actual, Bounds, Candidate, Current, Detail, GameCard, GameStatus, Half, Pa, PitchRow, Rec, Situation } from './model';
 import { DISPLAY_STATES, groupPas, kstDate, markDoubleheaders, pitchName, plainZone, shiftDate } from './model';
-import { PUBLISH_CONFIG, isCalendarDate, observeHostTime, observePublishTime, publishUrl, publishedPath, unwrapPublished } from './publish';
+import { PUBLISH_CONFIG, manifestPollMs, isCalendarDate, observeHostTime, observePublishTime, publishUrl, publishedPath, unwrapPublished } from './publish';
 import type { PublishStamp, PublishedFile } from './publish';
 
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
@@ -117,14 +117,19 @@ export async function fetchPublishedGames(date: string, signal?: AbortSignal): P
 }
 /** `v1/dates.json` lists archived-game dates only (as the server route does), so the dates the publisher is following now
  *  (`live_dates` of `v1/manifest.json`: today and its neighbours) are added. Either file may be missing; both missing = an error. */
-export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates: string[]; liveDates: string[] }> {
+export async function fetchPublishedManifest(signal?: AbortSignal) {
+  return (await readPublished<Raw, { liveDates: string[]; pollMs: number | null }>({ kind: 'manifest' }, signal, b => ({
+    liveDates: (Array.isArray(b.live_dates) ? b.live_dates : []).filter(isCalendarDate), pollMs: manifestPollMs(b.publish_interval_s),
+  }))).value;
+}
+export async function fetchPublishedDates(signal?: AbortSignal): Promise<{ dates: string[]; liveDates: string[]; pollMs: number | null }> {
   const [archived, manifest] = await Promise.allSettled([
     readPublished<Raw, string[]>({ kind: 'dates' }, signal, b => (Array.isArray(b.dates) ? b.dates : []).filter(isCalendarDate)),
-    readPublished<Raw, string[]>({ kind: 'manifest' }, signal, b => (Array.isArray(b.live_dates) ? b.live_dates : []).filter(isCalendarDate))]);
+    fetchPublishedManifest(signal)]);
   if (archived.status === 'rejected' && manifest.status === 'rejected') throw archived.reason;
-  const liveDates = manifest.status === 'fulfilled' ? manifest.value.value : [];
+  const liveDates = manifest.status === 'fulfilled' ? manifest.value.liveDates : [];
   const dates = [...new Set([...(archived.status === 'fulfilled' ? archived.value.value : []), ...liveDates])].sort().reverse();
-  return { dates, liveDates };
+  return { dates, liveDates, pollMs: manifest.status === 'fulfilled' ? manifest.value.pollMs : null };
 }
 /** Is this game on the list of any date the publisher is following now? true / false, or null when that could not be read.
  *  A game with no file that no followed list names (a demo runs on it, a wrong number, long over) is not waited for. */

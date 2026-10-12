@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, isGamePublishedSoon, mergeDetail } from './api';
+import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, fetchPublishedManifest, isGamePublishedSoon, mergeDetail } from './api';
 import { PUBLISH_CONFIG, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
 import type { PublishStamp } from './publish';
 import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Pa, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
@@ -147,6 +147,23 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const [unit, setUnit] = useState<'kmh' | 'mph'>(readUnit);
   const detailRef = useRef<Detail | null>(null);
   // static mode only: what the last game file and health.json said about publish time
+  const [manifestMs, setManifestMs] = useState<number | null>(null);
+  useEffect(() => {
+    if (!__PZ_STATIC__) return;
+    let timer = 0, stopped = false, active = false, period = CADENCE.live;
+    const ctrl = new AbortController();
+    const read = async () => {
+      window.clearTimeout(timer);
+      if (stopped || active || document.hidden) return;
+      active = true;
+      try { const m = await fetchPublishedManifest(ctrl.signal); if (!stopped) { setManifestMs(m.pollMs); period = m.pollMs ?? CADENCE.live; } } catch { /* keep the last manifest */ }
+      active = false;
+      if (!stopped) timer = window.setTimeout(() => void read(), Math.max(60000, period));
+    };
+    const wake = () => { if (!document.hidden) void read(); };
+    void read(); document.addEventListener('visibilitychange', wake); window.addEventListener('online', wake);
+    return () => { stopped = true; ctrl.abort(); window.clearTimeout(timer); document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake); };
+  }, []);
   const [fileStamp, setFileStamp] = useState<PublishStamp | null>(null);
   const [health, setHealth] = useState<PublishStamp | null>(null);
   const [checking, setChecking] = useState(false);
@@ -202,7 +219,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // server names while the card is not live) is asked again slowly, with or without a display state, so the screen starts by itself.
   const waitingToStart = detail !== null && !live && detail.session === null && detail.game.status !== 'final'
     && (detail.display?.state === 'pregame' || detail.live_source === true);
-  const pollMs = live ? CADENCE.live : waitingToStart ? CADENCE.pregame : 0;
+  const pollMs = live ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.live : CADENCE.live) : waitingToStart ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.pregame : CADENCE.pregame) : 0;
   useEffect(() => {
     if (!auto || !pollMs) return;
     const id = window.setInterval(() => { if (!document.hidden) void load(); }, pollMs);
@@ -210,7 +227,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, [auto, pollMs, load]);
   // static mode: a screen pinned on a past pitch (auto off) still reads, slowly, while the game is not final. If the server turns the
   // pinned pitch back to 확인 중, the same fail-closed rules blank it here too; the view stays pinned (no jump to the latest).
-  const pinnedMs = __PZ_STATIC__ && !auto && pollMs > 0 && fileStamp?.final !== true ? PUBLISH_CONFIG.pinnedPollMs : 0;
+  const pinnedMs = __PZ_STATIC__ && !auto && pollMs > 0 && fileStamp?.final !== true ? manifestMs ?? PUBLISH_CONFIG.pinnedPollMs : 0;
   useEffect(() => {
     if (!pinnedMs) return;
     const id = window.setInterval(() => { if (!document.hidden) void load(); }, pinnedMs);
@@ -251,9 +268,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     // static mode: coming back (tab visible, network back, device awake) reads FIRST; until that read ends the screen says 확인 중
     // instead of judging lateness from what was on screen before
     const recheck = () => { if (__PZ_STATIC__ && auto && pollMs && detailRef.current !== null) setChecking(true); };
-    const onVis = () => { setHidden(document.hidden); if (!document.hidden) { setResumed(Date.now()); setNow(Date.now()); } if (!document.hidden && auto && pollMs) { recheck(); void load(); }
+    const onVis = () => { setHidden(document.hidden); if (!document.hidden) { setResumed(Date.now()); setNow(Date.now()); } if (!document.hidden && (auto || __PZ_STATIC__) && pollMs) { recheck(); void load(); }
       if (__PZ_STATIC__ && !document.hidden && detailRef.current === null) void load(true); };
-    const onOnline = () => { if (__PZ_STATIC__ && document.hidden) return; if (auto && (pollMs || detailRef.current === null)) { recheck(); void load(detailRef.current === null); } };
+    const onOnline = () => { if (__PZ_STATIC__ && document.hidden) return; if ((auto || __PZ_STATIC__) && (pollMs || detailRef.current === null)) { recheck(); void load(detailRef.current === null); } };
     document.addEventListener('visibilitychange', onVis); window.addEventListener('online', onOnline);
     // a device sleep is seen as the wall clock running ahead of the page's monotonic clock (only the difference of the two is used)
     let wall = Date.now(), mono = performance.now();
