@@ -154,6 +154,15 @@ export function publishLag(file: PublishStamp | null, health: PublishStamp | nul
   if (now && newest) out.push(ahead(newest.at) ? { lagMs: performance.now() - newest.stamp.seenAt, clock: 'elapsed' } : { lagMs: now.ms - newest.at, clock: now.clock });
   return out.length ? out.reduce((a, b) => b.lagMs > a.lagMs ? b : a) : null;
 }
+/** New protocol: freshness is the health/check time, never the age of an unchanged game file. */
+export function gameCheckLag(health: PublishHealth | null, check: GameCheck | null, now: { ms: number; clock: ServerClock } | null): PublishLag {
+  if (!health?.publishedAt || !check || !now) return { lagMs: Infinity, clock: 'elapsed' };
+  const healthAt = Date.parse(health.publishedAt), checkedAt = Date.parse(check.checked_at);
+  // A future verification is not evidence that the game was checked successfully now.
+  if (checkedAt > healthAt || checkedAt > now.ms) return { lagMs: Infinity, clock: now.clock };
+  const healthAge = healthAt > now.ms ? performance.now() - health.seenAt : now.ms - healthAt;
+  return { lagMs: Math.max(healthAge, now.ms - checkedAt), clock: now.clock };
+}
 export const isPublishStale = (lag: PublishLag | null, pollMs: number) => lag !== null && lag.lagMs > staleAfterMs(pollMs);
 
 // ---------- links ----------

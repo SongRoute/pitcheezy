@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, fetchPublishedManifest, isGamePublishedSoon, mergeDetail } from './api';
-import { PUBLISH_CONFIG, gameCheck, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
+import { PUBLISH_CONFIG, gameCheck, gameCheckLag, staleAfterMs, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
 import type { PublishStamp, PublishHealth } from './publish';
 import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Pa, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
 import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, short } from './model';
@@ -166,6 +166,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }, []);
   const [fileStamp, setFileStamp] = useState<PublishStamp | null>(null);
   const [health, setHealth] = useState<PublishHealth | null>(null);
+  const [pendingSince, setPendingSince] = useState<number | null>(null);
+  const pending = useRef<number | null>(null);
+  const pendingTarget = useRef<number | null>(null);
   const [withdrawn, setWithdrawn] = useState(false);
   const appliedSequence = useRef<number | null>(null);
   const [checking, setChecking] = useState(false);
@@ -184,19 +187,24 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         let h: PublishHealth | null = null;
         try { h = await fetchPublishHealth(ctrl.signal); if (!ctrl.signal.aborted) setHealth(h); } catch { /* keep the last health */ }
         if (ctrl.signal.aborted) return;
-        const { check } = gameCheck(h, gamePk);
+        const { present, check } = gameCheck(h, gamePk);
+        if (present) { setLastOk(Date.now()); setError(null); }
+        if (check && check.file_sequence !== null && (appliedSequence.current === null || check.file_sequence > appliedSequence.current)) {
+          pendingTarget.current = Math.max(pendingTarget.current ?? 0, check.file_sequence);
+          pending.current ??= performance.now(); setPendingSince(pending.current);
+        }
         if (check?.file_sequence === null) {
-          setWithdrawn(true); detailRef.current = null; setDetail(null); setFileStamp(null);
+          pendingTarget.current = null; pending.current = null; setPendingSince(null); setWithdrawn(true); detailRef.current = null; setDetail(null); setFileStamp(null);
           setError({ text: '이 경기는 지금 볼 수 없어요.', status: 404 });
           return;
         }
-        if (check && detailRef.current && appliedSequence.current !== null && check.file_sequence! <= appliedSequence.current) {
+        if (pendingTarget.current === null && check && detailRef.current && appliedSequence.current !== null && check.file_sequence! <= appliedSequence.current) {
           setError(null); setLastOk(Date.now()); return;
         }
         const got = await fetchPublishedDetail(gamePk, ctrl.signal);
         if (ctrl.signal.aborted) return;
-        if (check && got.stamp.seq! < check.file_sequence!) return;  // propagation delay: retry this target next tick
-        appliedSequence.current = got.stamp.seq;
+        if (pendingTarget.current !== null && got.stamp.seq! < pendingTarget.current) return;  // propagation delay: retry this target next tick
+        pendingTarget.current = null; pending.current = null; setPendingSince(null); appliedSequence.current = got.stamp.seq;
         setWithdrawn(false); detailRef.current = got.detail; setDetail(got.detail); setFileStamp(got.stamp); setError(null); setLastOk(Date.now());
         return;
       }
@@ -211,6 +219,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       detailRef.current = next; setDetail(next); setError(null); setLastOk(Date.now());
     } catch (e) {
       if (ctrl.signal.aborted) return;
+      if (__PZ_STATIC__ && pending.current !== null) return;  // announced file is still propagating; keep neutral and retry
       setError(e instanceof FetchError ? { text: e.message, status: e.status } : { text: '자료를 불러오지 못했어요.', status: 0 });
     } finally { if (inflight.current === ctrl) { inflight.current = null; setBusy(false); if (__PZ_STATIC__) setChecking(false); } }
   }, [gamePk]);
@@ -223,7 +232,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // server names while the card is not live) is asked again slowly, with or without a display state, so the screen starts by itself.
   const waitingToStart = detail !== null && !live && detail.session === null && detail.game.status !== 'final'
     && (detail.display?.state === 'pregame' || detail.live_source === true);
-  const pollMs = live ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.live : CADENCE.live) : waitingToStart ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.pregame : CADENCE.pregame) : __PZ_STATIC__ && (detail !== null || withdrawn) ? manifestMs ?? CADENCE.live : 0;
+  const pollMs = live ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.live : CADENCE.live) : waitingToStart ? (__PZ_STATIC__ ? manifestMs ?? CADENCE.pregame : CADENCE.pregame) : __PZ_STATIC__ && (detail !== null || withdrawn || pendingSince !== null) ? manifestMs ?? CADENCE.live : 0;
   useEffect(() => {
     if (!auto || !pollMs) return;
     const id = window.setInterval(() => { if (!document.hidden) void load(); }, pollMs);
@@ -271,7 +280,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   useEffect(() => {  // coming back to the tab: refresh at once when following
     // static mode: coming back (tab visible, network back, device awake) reads FIRST; until that read ends the screen says 확인 중
     // instead of judging lateness from what was on screen before
-    const recheck = () => { if (__PZ_STATIC__ && auto && pollMs && detailRef.current !== null) setChecking(true); };
+    const recheck = () => { if (__PZ_STATIC__ && pollMs && detailRef.current !== null) setChecking(true); };
     const onVis = () => { setHidden(document.hidden); if (!document.hidden) { setResumed(Date.now()); setNow(Date.now()); } if (!document.hidden && (auto || __PZ_STATIC__) && pollMs) { recheck(); void load(); }
       if (__PZ_STATIC__ && !document.hidden && detailRef.current === null) void load(true); };
     const onOnline = () => { if (__PZ_STATIC__ && document.hidden) return; if ((auto || __PZ_STATIC__) && (pollMs || detailRef.current === null)) { recheck(); void load(detailRef.current === null); } };
@@ -280,7 +289,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     let wall = Date.now(), mono = performance.now();
     const awake = !__PZ_STATIC__ ? 0 : window.setInterval(() => {
       const w = Date.now(), m = performance.now(), gap = (w - wall) - (m - mono); wall = w; mono = m;
-      if (gap > 2 * PUBLISH_CONFIG.tickMs && !document.hidden && auto && pollMs) { setResumed(Date.now()); setNow(Date.now()); recheck(); void load(); }
+      if (gap > 2 * PUBLISH_CONFIG.tickMs && !document.hidden && (auto || __PZ_STATIC__) && pollMs) { setResumed(Date.now()); setNow(Date.now()); recheck(); void load(); }
     }, PUBLISH_CONFIG.tickMs);
     return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('online', onOnline); window.clearInterval(awake); };
   }, [auto, pollMs, load]);
@@ -323,6 +332,10 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }
 
   const { game } = detail;
+  const verification = __PZ_STATIC__ ? gameCheck(health, gamePk) : { present: false, check: null };
+  const awaitingFile = __PZ_STATIC__ && pendingSince !== null;
+  const maskPublished = __PZ_STATIC__ && (awaitingFile || (verification.present && (!verification.check || checking)));
+
   const pitches = detail.pitches;
   const lastPitch = pitches[pitches.length - 1] ?? null;
   const pitch: PitchRow | null = sel?.kind === 'pitch' ? byIndex.get(sel.index) ?? null : null;
@@ -335,13 +348,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const ended = breakNow && lastPitch ? { inning: lastPitch.situation.inning, half: lastPitch.situation.half } : null;
   // What the stage shows
   const situation: Situation | null = latest ? (breakNow ? null : detail.current?.situation ?? lastPitch?.situation ?? null) : pitch!.situation;
-  const rec: Rec | null = latest ? (live ? detail.next : lastPitch?.rec ?? null) : pitch!.rec;
-  const actual: Actual | null = latest ? lastPitch?.actual ?? null : pitch!.actual;
+  const rec: Rec | null = maskPublished ? null : latest ? (live ? detail.next : lastPitch?.rec ?? null) : pitch!.rec;
+  const actual: Actual | null = maskPublished ? null : latest ? lastPitch?.actual ?? null : pitch!.actual;
   const nextPhase = latest && live;
   const shownPitch = latest ? lastPitch : pitch;
   const paKey = latest ? detail.current?.pa_key ?? lastPitch?.pa_key ?? null : pitch!.pa_key;
-  const paPitches = breakNow ? [] : pitches.filter(p => p.pa_key === paKey);
-  const ending = shownPitch?.actual?.event ? detail.pas.find(p => p.pa_key === shownPitch.pa_key && p.complete)?.result ?? null : null;
+  const paPitches = breakNow || maskPublished ? [] : pitches.filter(p => p.pa_key === paKey);
+  const ending = !maskPublished && shownPitch?.actual?.event ? detail.pas.find(p => p.pa_key === shownPitch.pa_key && p.complete)?.result ?? null : null;
   const stateSlot = disp !== null && latest && (nextPhase || disp.state === 'pregame');
   const slotNumber = Number(/^\d+:\d+:(\d+)$/.exec(disp?.pitch_key ?? '')?.[1] ?? NaN);
   const nextNumber = nextPhase && !breakNow ? (stateSlot && Number.isInteger(slotNumber) ? slotNumber
@@ -356,7 +369,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   // Connection: the client's own polling (clientStale / error) and the server's upstream feed. With a display state the server part
   // comes from display.feed; the old `stale_s > 30` guess (which also fires in long breaks) is used only without one.
   const clientStale = live && auto && !hidden && lastOk !== null && now - Math.max(lastOk, resumed) > (__PZ_STATIC__ ? lostAfterMs(pollMs) : STALE_MS);
-  const feedDown = disp ? !disp.feed.ok : live && (detail.feed.ok === false || (detail.feed.stale_s ?? 0) > 30);
+  const rawCheck = health?.gameChecks?.[String(gamePk)];
+  const checkFeedFailed = rawCheck !== null && typeof rawCheck === 'object' && 'feed_ok' in rawCheck && rawCheck.feed_ok === false;
+  const healthFeedFailed = verification.present && (checkFeedFailed || health?.failingGames.some(g =>
+    g === gamePk || g === String(gamePk) || (g !== null && typeof g === 'object' && 'game_pk' in g && String(g.game_pk) === String(gamePk))));
+  const feedDown = __PZ_STATIC__ && verification.present ? healthFeedFailed : disp ? !disp.feed.ok : live && (detail.feed.ok === false || (detail.feed.stale_s ?? 0) > 30);
   const stale = clientStale || feedDown;
   // static mode: the files answer, but nothing new has been published for longer than the threshold. "Is polled" is not "publishing is
   // expected": a game in play is expected to move; a game that has not started is expected to be published only once its scheduled
@@ -366,10 +383,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   //    the scheduled start has passed (before that an idle publisher is normal). A fresh health.json is never late for such a game.
   const srv = __PZ_STATIC__ ? serverNow(clockWindowMs(pollMs)) : null;
   const startMs = game.start ? Date.parse(game.start) : NaN;
-  const lag = !__PZ_STATIC__ ? null : live ? publishLag(fileStamp, health, srv)
+  const timeWarnings = !(fileStamp?.final && game.status === 'final') && (live || (waitingToStart && srv !== null && Number.isFinite(startMs) && srv.ms >= startMs));
+  const lag = !__PZ_STATIC__ ? null : verification.present ? (timeWarnings ? gameCheckLag(health, verification.check, srv) : null) : live ? publishLag(fileStamp, health, srv)
     : waitingToStart && srv !== null && Number.isFinite(startMs) && srv.ms >= startMs ? publishLag(null, health, srv) : null;
-  const lateNow = __PZ_STATIC__ && isPublishStale(lag, pollMs);
-  const publishStale = lateNow && !checking, publishChecking = lateNow && checking;
+  const pendingLate = awaitingFile && !(fileStamp?.final && game.status === 'final') && performance.now() - pendingSince! > staleAfterMs(pollMs);
+  const lateNow = __PZ_STATIC__ && (pendingLate || isPublishStale(lag, pollMs));
+  const publishStale = lateNow && !checking;
+  const publishChecking = !publishStale && (awaitingFile || (verification.present && !verification.check) || (lateNow && checking));
   // lag_s is a proven lower bound (never an estimate): floor it and say '넘게', never '약'
   const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
   const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
@@ -400,14 +420,14 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   }
   const fix = stateSlot ? disp!.correction : null;
   const fixPrev = previousText(fix?.previous ?? null);
-  const note = fix ? `${fix.message}${fixPrev ? ` (이전: ${fixPrev})` : ''}` : clientNote;
+  const note = maskPublished ? null : fix ? `${fix.message}${fixPrev ? ` (이전: ${fixPrev})` : ''}` : clientNote;
   // The client's own requests failing (or silent for too long): the slot says so instead of looking current.
-  const clientLost = disp !== null && (error !== null || clientStale);
+  const clientLost = disp !== null && (error !== null || clientStale || (__PZ_STATIC__ && healthFeedFailed === true));
   const eff = !stateSlot ? null : clientLost ? CLIENT_LOST : publishStale ? PUBLISH_LATE : publishChecking ? PUBLISH_CHECKING
     : { state: disp!.state, label: disp!.label, message: disp!.message ?? (shownRec || disp!.state !== 'recommended' ? null : '추천을 준비하고 있어요.') };
   // candidates kept from the last answer while disconnected: still visible, dimmed, labelled as last received
   const held = stateSlot && shownRec && eff!.state === 'disconnected';
-  const liveDot = live && latest && auto && !isDemoSession(detail) && !(disp !== null && (clientLost || feedDown)) && !lateNow;
+  const liveDot = live && latest && auto && !isDemoSession(detail) && !(disp !== null && (clientLost || feedDown)) && !lateNow && !maskPublished;
   const scored = situation ?? null;
   // between innings the card carries no score: the as-of linescore (runs up to the last published play) keeps it on screen
   const breakScore = (k: 'away' | 'home') => breakNow ? detail.linescore_asof?.[k].r ?? lastPitch?.situation[`${k}_score`] ?? null : null;
@@ -422,7 +442,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const liveRecord = !nextPhase && (detail.live_source === true || rec?.provenance === 'captured_live');
   const recTitle = nextPhase ? `다음 공 추천${nextNumber ? ` · ${nextNumber}구` : ''}` : liveRecord ? '투구 전에 기록된 추천' : '이 공 던지기 전 추천';
   const recHeading = liveRecord ? (pastUnconfirmed ? `${recTitle}: 확인 중` : rec?.status === 'ready' ? recTitle : `${recTitle} 없음`) : `${recTitle} (${rec ? provenanceText(rec) : '추천 없음'})`;
-  const absentText = pastUnconfirmed ? '확인 중이에요.' : nextPhase ? '추천 기록이 없어요.' : ABSENT_PAST;
+  const absentText = maskPublished ? '새 내용을 확인하고 있어요.' : pastUnconfirmed ? '확인 중이에요.' : nextPhase ? '추천 기록이 없어요.' : ABSENT_PAST;
   const actualTitle = nextPhase ? `직전 투구${lastPitch ? ` · ${inningText(lastPitch.situation)} ${lastPitch.pitch_number}구` : ''}` : `실제 투구${pitch ? ` · ${pitch.pitch_number}구` : ''}`;
   const top = situation?.half === 'Top';
   const info = (p: Person | null) => p ? detail.players?.[String(p.id)] : undefined;
@@ -431,8 +451,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const venue = game.venue ? `${game.venue} · ` : '';
   const when = `${dateHeading(game.kst_date)} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
   const phase = detail.current?.phase ?? detail.phase ?? null;
-  const emptyRec = nextPhase ? (phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
-  const actualWait = phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '다음 공 대기 중';
+  const emptyRec = maskPublished ? '확인 중' : nextPhase ? (phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
+  const actualWait = maskPublished ? '확인 중' : phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '다음 공 대기 중';
   const list = <RecList rec={rec} emptyText={emptyRec} onOpen={() => openSheet('detail')} lead={held ? '마지막으로 받은 ' : liveRecord ? '투구 전에 기록된 ' : ''} pair={!nextPhase} absentText={absentText} />;
   const top1 = !nextPhase && !pastUnconfirmed && rec?.status === 'ready' ? rec.candidates[0] ?? null : null;
   const pairText = top1 && actual ? { rec: pickText(top1.pitch_label, top1.zone_label), actual: pickText(actual.pitch_label, actual.zone_label) } : null;
@@ -465,7 +485,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     {/* Connection problems remain explicit alerts; history state is in the header. */}
     {/* The status line is a plain box; only its words are a live region. The time stamp and the retry control sit outside it so a
         screen reader is not re-triggered every minute or every poll. */}
-    {disp ? <div className={`sv-notice line ${line.kind}`} data-kind={error ? 'client' : feedDown ? 'feed' : clientStale ? 'slow' : publishStale ? 'publish-late' : publishChecking ? 'checking' : lagText ? 'late' : 'ok'} data-publish-clock={publishStale ? lag!.clock : undefined}>
+    {disp || (__PZ_STATIC__ && (healthFeedFailed || publishStale || publishChecking)) ? <div className={`sv-notice line ${line.kind}`} data-kind={error ? 'client' : feedDown ? 'feed' : clientStale ? 'slow' : publishStale ? 'publish-late' : publishChecking ? 'checking' : lagText ? 'late' : 'ok'} data-publish-clock={publishStale ? lag?.clock ?? 'elapsed' : undefined}>
       <span className="sv-line-text" role="status">{line.kind === 'ok' && live && auto && <i className="sv-line-dot" aria-hidden="true" />}{line.text}<span className="sr-only">{error ? ` ${error.text} 자동으로 다시 연결하고 있어요.` : feedDown ? ' 경기 자료 연결이 잠시 끊겼어요.' : publishStale && !clientStale ? ` ${PUBLISH_LATE.message}` : ''}</span></span>
       {lastOk && <span className="sv-line-time" aria-hidden="true">· {hhmm(lastOk)} 수신</span>}
       {line.kind !== 'ok' && <button className="sv-link-btn" onClick={() => void load(true, true)} disabled={busy} aria-label="지금 다시 불러오기">{busy ? '…' : '다시'}</button>}
@@ -559,7 +579,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <div className="sv-upcoming" aria-label="다음 두 타자">{[0, 1].map(i => <span key={i} title={upcoming[i]?.name ?? undefined}>{upcoming[i] ? `${upcoming[i].order}번 · ${upcoming[i].name ?? '타자 미확인'}` : idle ? '–' : '–번 · 타자 미확인'}</span>)}</div>
     </section>
 
-    {sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')}
+    {!maskPublished && sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')}
       onPick={p => {
         // a finished plate appearance with no pitch at all (intentional walk and the like): its own result, no jump elsewhere
         if (p.complete && !pitches.some(x => x.pa_key === p.pa_key) && (typeof p.first !== 'number' || !byIndex.has(p.first))) { setEmptyPa(p); setSheet('pa-empty'); return; }
@@ -569,7 +589,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     </Sheet>}
     {/* a selected past pitch shows the linescore as of that pitch (never the latest one, which would reveal later play) */}
     {sheet === 'box' && <BoxSheet ls={latest ? detail.linescore_asof : pitch!.line ?? null} game={game} at={situation} onClose={closeSheet} />}
-    {sheet === 'detail' && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={stateSlot && !shownRec ? null : rec} recTitle={stateSlot && !shownRec ? `다음 공: ${eff!.label}` : liveRecord ? recTitle : rec ? `${held ? '마지막으로 받은 추천' : recTitle} (${provenanceText(rec)})` : recTitle}
+    {!maskPublished && sheet === 'detail' && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet} rec={stateSlot && !shownRec ? null : rec} recTitle={stateSlot && !shownRec ? `다음 공: ${eff!.label}` : liveRecord ? recTitle : rec ? `${held ? '마지막으로 받은 추천' : recTitle} (${provenanceText(rec)})` : recTitle}
       pair={pairText} absentText={absentText}
       actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} notes={detail.notes} speed={mph => speedText(mph, unit)}
       recNote={stateSlot ? [eff!.message, note].filter(Boolean).join(' ') || null : pastUnconfirmed ? '이 공을 확인하는 동안에는 추천을 함께 보여 드리지 않아요.' : null} actualPending={!nextPhase && unconfirmed(shownPitch)} actualCorrected={!nextPhase && shownPitch?.receipt?.corrected === true}
