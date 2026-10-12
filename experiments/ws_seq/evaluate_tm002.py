@@ -103,13 +103,19 @@ def claim_open(grant, attempts, out):
         require(not previous_receipt.exists() or json.loads(previous_receipt.read_text()).get('status')!='COMPLETED',
                 'completed scoring cannot be retried')
         marker=root/f'EVAL-OPENED-RETRY-{index}.json'
-    # O_EXCL prevents two workers opening the same bundle/attempt concurrently.
-    with marker.open('x') as handle:
-        json.dump({'status':'OPENED','bundle_id':attempts['bundle_id'],'output':str(out.resolve()),
-                   'sources_sha256':runner.source_hashes(),'runs':grant['runs'],
-                   'grant_content_sha256':base.hashlib.sha256(json.dumps(grant,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest(),
-                   'retry':retry,'utc':time.time()},handle,indent=2)
     out.mkdir(parents=True,exist_ok=False)
+    try:
+        # O_EXCL prevents two workers opening the same bundle/attempt concurrently.
+        with marker.open('x') as handle:
+            json.dump({'status':'OPENED','bundle_id':attempts['bundle_id'],'output':str(out.resolve()),
+                       'sources_sha256':runner.source_hashes(),'runs':grant['runs'],
+                       'grant_content_sha256':base.hashlib.sha256(json.dumps(grant,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest(),
+                       'retry':retry,'utc':time.time()},handle,indent=2)
+    except Exception:
+        # Remove only our still-empty directory; never erase another worker's files.
+        try: out.rmdir()
+        except OSError: pass
+        raise
     return marker
 
 

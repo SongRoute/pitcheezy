@@ -20,11 +20,12 @@ def dump(path,obj):
     return base.sha(path)
 
 
-def make_bundle(root):
+def make_bundle(root, device=None, seeds=None):
     """Six real tiny CPU optimizer/CAL passes, shared artificial rows, normal files."""
     root.mkdir(parents=True,exist_ok=True);torch.set_num_threads(1)
     cfg,bc=tm002.load_config(ROOT/'configs/EXP-WS-TM-002.json')
     cfg=copy.deepcopy(cfg);bc=copy.deepcopy(bc)
+    if seeds is not None: cfg['seeds']=list(seeds)
     sizes={'fit':256,'tuning':128,'calibration':1024,'evaluation':128}
     cfg['expected_rows']={r:sizes[k] for r,k in evaluator.ROLE_MAP.items()};cfg['bootstrap']['draws']=40;cfg['expected_eval_games']=16
     bc['model'].update(trunk_hidden=[32,16],token_dim=8,encoder_ff=16)
@@ -76,7 +77,7 @@ def make_bundle(root):
                       'source_sha256':trainer.source_hashes(),'input_manifest_sha256':manifest_sha,
                       'inputs_sha256':{f:v['sha256'] for f,v in files.items()},'grant':g,'grant_sha256':grantsha,
                       'data_exposure_ledger_sha256':base.sha(exposure),'config_sha256':base.sha(ROOT/'configs/EXP-WS-TM-002.json')}
-            receipt=trainer.train(torch,bc,arm,seed,x,C,S,ctx,out,metadata,device=torch.device('cpu'))
+            receipt=trainer.train(torch,bc,arm,seed,x,C,S,ctx,out,metadata,device=device or torch.device('cpu'))
             rsha=dump(out/'receipt.json',receipt)
             ssha=dump(out/'SUPERVISOR.json',{'status':'COMPLETED','returncode':0,'reason':None,'receipt_sha256':rsha,'grant_sha256':grantsha,'synthetic_fixture':True})
             grant['runs'][name]={'directory':str(out),'receipt_sha256':rsha,'supervisor_sha256':ssha}
@@ -203,3 +204,10 @@ def test_role_date_and_author_gates(tmp_path):
     p=tmp_path/'exposure.json';pin=dump(p,exposure)
     grant={'data_exposure_ledger':str(p),'data_exposure_ledger_sha256':pin,'input_manifest_sha256':'synthetic'}
     with pytest.raises(base.Stop,match='role proof'):tm002.check_contract(grant,cfg)
+
+
+def test_output_creation_failure_does_not_consume_marker(tmp_path):
+    parent=tmp_path/'not-a-directory';parent.write_text('occupied')
+    out=parent/'result';attempts={'scoring_root':str(tmp_path/'scoring'),'bundle_id':'synthetic'}
+    with pytest.raises(OSError):evaluator.claim_open({'output':str(out),'runs':{}},attempts,out)
+    assert not (tmp_path/'scoring'/'EVAL-OPENED.json').exists()

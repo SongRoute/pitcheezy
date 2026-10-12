@@ -26,7 +26,7 @@ SOURCES = ('experiments/ws_seq/train_tm002.py', 'experiments/ws_seq/tm002.py',
            'configs/EXP-WS-TM-002.json', 'experiments/ws_seq/TM002-REGISTRATION.md',
            'tests/test_tm002.py', 'experiments/ws_seq/evaluate_tm002.py',
            'experiments/ws_seq/evaluate_seq.py', 'experiments/ws_seq/prepare_inputs.py',
-           'tests/test_tm002_evaluation.py')
+           'tests/test_tm002_evaluation.py', 'tests/test_tm002_cuda_smoke.py')
 
 
 def source_hashes():
@@ -206,7 +206,7 @@ def run(args):
         if not torch.cuda.is_available() or torch.cuda.device_count()!=1:raise base.Stop('STOP one CUDA device required')
         prop=torch.cuda.get_device_properties(0)
         actual_uuid=str(getattr(prop,'uuid',''))
-        if actual_uuid != grant['gpu_uuid']:
+        if not actual_uuid or actual_uuid.removeprefix('GPU-') != grant['gpu_uuid'].removeprefix('GPU-'):
             raise base.Stop('STOP actual CUDA device UUID unavailable or different from grant')
         cap=cfg['budgets']['gpu_reserved_bytes']; total=prop.total_memory
         if cap>=total:raise base.Stop('STOP registered GPU cap leaves no device headroom')
