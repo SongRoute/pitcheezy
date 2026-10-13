@@ -9,12 +9,12 @@ import sys
 import time
 from types import SimpleNamespace
 from experiments.ws_campaign.runtime import ROOT, require, sha
-from experiments.ws_seq.train_tm002 import supervise_command
+from experiments.ws_campaign.diagnostic_supervisor import supervise
 
 CASES = {'K-det': ('K', True, True), 'C-det': ('C', True, True),
          'K-fast': ('K', False, True), 'K-native': ('K', True, False)}
 CONFIG = 'configs/EXP-WS-CAMPAIGN-001.json'
-SOURCES = (CONFIG, 'experiments/ws_campaign/probe_k.py', 'experiments/ws_campaign/models.py',
+SOURCES = ('experiments/ws_campaign/diagnostic_supervisor.py', CONFIG, 'experiments/ws_campaign/probe_k.py', 'experiments/ws_campaign/models.py',
            'experiments/ws_campaign/train.py', 'experiments/ws_campaign/runtime.py',
            'experiments/ws_seq/train_seq.py', 'experiments/ws_seq/tm002.py',
            'experiments/ws_seq/train_tm002.py')
@@ -123,8 +123,8 @@ def main():
         for case in CASES:
             require(time.monotonic()-start < 270, 'global wall')
             target = out / case; target.mkdir()
-            status[case] = supervise_command([sys.executable,'-m','experiments.ws_campaign.probe_k',
-                '--grant',str(args.grant),'--worker',case], target, min(60,270-(time.monotonic()-start)), 4 << 30, sha(args.grant))
+            status[case] = supervise([sys.executable,'-m','experiments.ws_campaign.probe_k',
+                '--grant',str(args.grant),'--worker',case], target, min(60,270-(time.monotonic()-start)), 4 << 30, sha(args.grant), f.fileno())
             # CUDA/OOM errors stop; a bounded slow-path timeout allows the next fixed case.
             supervisor = json.loads((target/'SUPERVISOR.json').read_text())
             if status[case] and supervisor['reason'] != 'wall': break
