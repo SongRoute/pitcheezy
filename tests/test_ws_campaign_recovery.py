@@ -31,3 +31,21 @@ def test_recovery_queue_selects_exact_twelve_only(monkeypatch,tmp_path):
     selected=queue.validate(manifest,grant)
     assert len(selected)==12 and len(calls)==12 and all(j['arm']=='K' for j in selected)
     assert sum(j['calibrations'] for j in selected)==36
+
+
+def test_all_four_seed_zero_integrity_gate_and_failure():
+    cfg=json.loads((queue.runtime.ROOT/'configs/EXP-WS-CAMPAIGN-001.json').read_text())
+    jobs=[j for j in cfg['jobs'] if j['arm']=='K']
+    first=[j['id'] for j in jobs if j['seed']==0]
+    state={'jobs':{j['id']:{'status':'PENDING'} for j in jobs}}
+    state['jobs'][first[0]]['status']='COMPLETED'
+    assert not queue.recovery_seed_gate(state,jobs)
+    assert all(state['jobs'][j['id']]['status']=='PENDING' for j in jobs if j['seed']>0)
+    for ident in first: state['jobs'][ident]['status']='COMPLETED'
+    assert queue.recovery_seed_gate(state,jobs)
+    for failure in ('FAILED','QUARANTINED'):
+        for j in jobs:
+            state['jobs'][j['id']]['status']='COMPLETED' if j['seed']==0 else 'PENDING'
+        state['jobs'][first[-1]]['status']=failure
+        assert not queue.recovery_seed_gate(state,jobs)
+        assert all(state['jobs'][j['id']]['status']=='QUARANTINED' for j in jobs if j['seed']>0)
