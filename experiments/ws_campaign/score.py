@@ -1,5 +1,6 @@
 """One reviewed fixed campaign development panel; never fit or select on EVAL."""
 import argparse
+from collections import Counter
 import fcntl
 import gc
 import json
@@ -8,7 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from experiments.ws_campaign.runtime import ROOT, require, sha, read_bound, SOURCES as TRAIN_SOURCES
+from experiments.ws_campaign.runtime import ROOT, require, sha, read_bound, check_exposure_ledger, SOURCES as TRAIN_SOURCES
 from experiments.ws_campaign.diagnostic_supervisor import supervise
 
 SOURCES = (*TRAIN_SOURCES, 'experiments/ws_campaign/diagnostic_supervisor.py', 'experiments/ws_campaign/score.py', 'experiments/ws_seq/evaluate_seq.py')
@@ -25,6 +26,8 @@ def inspect_artifacts(manifest, state):
     """Metadata/hash all75 before any scientific payload decoding."""
     jobs = manifest['jobs']; receipts = {}
     require(len(jobs) == 87 and len({j['id'] for j in jobs}) == 87, '87 unique slots')
+    require(Counter(j['kind'] for j in jobs if j['arm'] != 'K') ==
+            {'supervised':66,'pretrain':6,'teacher':3}, 'predecode 66/6/3 composition')
     for job in jobs:
         record = state['jobs'][job['id']]
         if job['arm'] == 'K':
@@ -97,7 +100,8 @@ def run(grant, manifest, state, out):
         first = jobs[0]; inputs = Path(first['inputs'])
         require(all(j['input_manifest_sha256'] == first['input_manifest_sha256'] and j['inputs'] == first['inputs'] for j in jobs), 'same window package')
         require(sha(inputs/'manifest.json') == first['input_manifest_sha256'], 'input manifest')
-        require(sha(first['exposure_ledger']) == first['exposure_ledger_sha256'], 'exposure ledger')
+        for job in jobs:
+            check_exposure_ledger(job['exposure_ledger'],job['exposure_ledger_sha256'],job,cfg,inputs/'manifest.json')
         x,c,s,ctx = train.load_inputs(inputs,cfg)
         require(c['keys'].ndim == 2 and c['keys'].shape[1] == 3 and
                 len(np.unique(c['keys'],axis=0)) == len(c['keys']), 'unique stable package keys')

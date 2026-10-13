@@ -15,3 +15,10 @@ def test_panel_identity_and_three_seed_gate():
         assert result['paired_differences']['T-C'][metric] == {'difference':0.,'ci95':[0.,0.]}
     del predictions['C'][2]
     with pytest.raises(Stop,match='matched three seeds'): panel(predictions,y,games,[('T','C')])
+
+
+def test_bad_composition_stops_before_artifact_decode():
+    from experiments.ws_campaign.score import inspect_artifacts
+    jobs=[{'id':str(i),'arm':'T' if i < 75 else 'K','kind':'supervised'} for i in range(87)]
+    with pytest.raises(Stop,match='predecode 66/6/3 composition'):
+        inspect_artifacts({'jobs':jobs},{'jobs':{}})
