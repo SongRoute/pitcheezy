@@ -2,33 +2,24 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Bounds, Candidate } from './model';
 
-/** PITCHER's-view strike zone (2026-10-06 user decision, matches the broadcast centre-field camera), the largest element of the game screen.
- *  Data stay in the contract's catcher-view feet (Statcast plate_x: + = catcher's right; zone ids 'left' = catcher's left;
- *  CV plate_x_feet the same). Only the drawing mirrors x: screen x = −plate_x. z, sizes and every coordinate in data-* are unchanged.
- *  Recommendation = hollow dashed SQUARE with its rank number; actual pitch = orange filled CIRCLE; name/speed live in the summary below.
- *  Shapes and words, not only colour, tell them apart. Mitt = dashed vertical line (x only, never height).
- *
- *  Geometry (integration rev3, after geometry-review-037): ONE axis-wise linear transform feet → drawing units for every mark. The main grid may be taller; minis retain physical aspect.
- *  The visible window is built from this batter's zone (half-width 0.83 ft, bounds.bottom..bounds.top) plus an explicit outside margin: main x ±0.95 ft, full detail ±1.25 ft, mini ±1.17 ft.
- *  This stable window never changes with the selected pitch; compact edge arrows do not represent measured coordinates. A mark inside the window is drawn at its true position. A mark beyond the window
- *  is NOT moved into view as a normal mark: it becomes a hollow edge marker with an outward arrow, placed on the window
- *  edge (which is always outside the zone), and its accessible text gives the true coordinates. Labels can move; marks don't. */
+/** Catcher's view. Data and drawing share plate_x; measured marks never move to avoid overlap.
+ * Off-window marks use the existing explicit edge-arrow contract. Mitt remains x-only. */
 export type Mark = { x: number; z: number };
 export const PLATE_HALF = .83;
-/** outside margins in feet around the zone (main view / mini cards) */
+/** Full detail / mini margins in feet. The live main window uses x=.12, z=.24. */
 export const MARGIN = { main: { x: .42, z: .45 }, mini: { x: .34, z: .36 } };
 const U = 100;  // drawing units per foot
-/** −1 = pitcher's view (screen right = catcher's left = third-base side). The only place the horizontal direction is decided. */
-export const VIEW_X = -1;
+/** +1 = catcher view; this changes drawing only, never source coordinates. */
+export const VIEW_X = 1;
 const ux = (x: number) => VIEW_X * x * U;     // feet (catcher-view plate_x) → screen units
 const uz = (z: number, aspect = 1) => -z * U * aspect;             // z up
 
-export function zoneWindow(bounds: Bounds, mini: boolean, compact = false, fullWindow = false) {
-  const m = mini ? MARGIN.mini : fullWindow ? MARGIN.main : { x: .12, z: .45 };
-  const aspect = mini || fullWindow ? 1 : compact ? 1.8 : 1.4;
+export function zoneWindow(bounds: Bounds, mini: boolean, _compact = false, fullWindow = false) {
+  const m = mini ? MARGIN.mini : fullWindow ? MARGIN.main : { x: .12, z: .24 };
+  const aspect = 1;
   const xMax = PLATE_HALF + m.x, zLo = bounds.bottom - m.z, zHi = bounds.top + m.z;
   // drawn area = window + a pad so an edge marker (and its arrow) is fully visible; the pad changes no coordinate or out-of-window rule
-  const pad = mini ? .2 : .16;
+  const pad = mini ? .2 : fullWindow ? .16 : .08;
   return { aspect, margin: m, xMin: -xMax, xMax, zLo, zHi, vb: { x: -(xMax + pad) * U, y: uz(zHi + pad, aspect), w: 2 * (xMax + pad) * U, h: (zHi - zLo + 2 * pad) * U * aspect } };
 }
 /** Where a mark is drawn and whether it is beyond the window (then drawn as an edge marker, never a normal dot). */
@@ -51,8 +42,8 @@ export function groupTargets(cands: Candidate[]): { x: number; z: number; ranks:
   return out;
 }
 
-export default function Zone({ bounds, candidates, actual, actualLabel, setupX, mini = false, keepOut = null, fullWindow = false }:
-  { bounds: Bounds; candidates: Candidate[]; actual: Mark | null; actualLabel: string; setupX: number | null; mini?: boolean; fullWindow?: boolean;
+export default function Zone({ bounds, candidates, actual, actualLabel, setupX, mini = false, keepOut = null, fullWindow = false, actuals = [] }:
+  { bounds: Bounds; candidates: Candidate[]; actual: Mark | null; actualLabel: string; setupX: number | null; mini?: boolean; fullWindow?: boolean; actuals?: (Mark & { number: number })[];
     /** CSS selector of a sibling block (the recommendation band) painted over this svg element's top-left/right corner. The drawing
      *  reserves horizontal room, and the recommendation block aligns with the grid top. */
     keepOut?: string | null }) {
@@ -62,6 +53,8 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
   const left = -PLATE_HALF * U, right = PLATE_HALF * U, top = uz(bounds.top, w.aspect), bottom = uz(bounds.bottom, w.aspect);  // symmetric, view-independent
   const groups = groupTargets(candidates).map(g => ({ ...g, at: place(g, w) }));
   const act = actual ? place(actual, w) : null;
+  const actualGroups: (Mark & { numbers: number[] })[] = [];
+  for (const p of actuals) { const g = actualGroups.find(g => g.x === p.x && g.z === p.z); if (g) g.numbers.push(p.number); else actualGroups.push({ ...p, numbers: [p.number] }); }
   const parts = [...groups.map(g => `추천 ${g.ranks.join('·')}순위 위치 네모${g.at.out ? `(화면 밖 ${ft(g)})` : ''}`),
     actual ? `실제 투구${actualLabel ? ` ${actualLabel}` : ''} 동그라미${act!.out ? `(화면 밖, ${ft(actual)})` : ''}` : null].filter(Boolean);
   // Labels keep a readable on-screen size whatever the zone's drawn scale (SVG text otherwise scales with the drawing).
@@ -181,7 +174,8 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     return first ? { ...first, box: { x: first.x - labW / 2, y: first.y - lh - u(1), w: labW, h: lh + u(5) } } : null;
   })();
   return <svg ref={ref} style={labels} className={`sv-zone${mini ? ' mini' : ''}`} viewBox={`${room.x} ${room.y} ${room.w} ${room.h}`} preserveAspectRatio="xMidYMid meet" role="img"
-    aria-label={mini ? undefined : `투수 쪽에서 본 스트라이크존${parts.length ? ': ' + parts.join(', ') : ''}`} aria-hidden={mini || undefined}>
+    aria-label={mini ? undefined : `포수 시점 스트라이크존${parts.length ? ': ' + parts.join(', ') : ''}${actuals.length ? `, 이번 타석 ${actuals.length}개 투구` : ''}`} aria-hidden={mini || undefined}>
+    <rect x={-w.xMax * U} y={uz(w.zHi, w.aspect)} width={2 * w.xMax * U} height={(w.zHi - w.zLo) * U * w.aspect} className="sv-zone-outside" />
     <rect x={left} y={top} width={right - left} height={bottom - top} className="sv-zone-box" />
     {[1, 2].map(i => <line key={`v${i}`} x1={left + (right - left) * i / 3} x2={left + (right - left) * i / 3} y1={top} y2={bottom} className="sv-zone-grid" />)}
     {[1, 2].map(i => <line key={`h${i}`} y1={top + (bottom - top) * i / 3} y2={top + (bottom - top) * i / 3} x1={left} x2={right} className="sv-zone-grid" />)}
@@ -195,5 +189,6 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     {recs.map(g => <g key={g.ranks.join()} className={`sv-rec${g.at.out ? ' out' : ''}`} data-rank={g.ranks.join('·')} data-x={g.x} data-z={g.z} data-out={g.at.out || undefined}>
       <rect x={g.d.x - g.hw} y={g.d.y - g.hh} width={2 * g.hw} height={2 * g.hh} rx="3" />{g.at.out && arrow(g.d, Math.min(g.hw, g.hh))}
       <text x={g.tx} y={g.ty} textAnchor="middle">{g.ranks.join('·')}</text></g>)}
+    {actualGroups.map(p => { const at = place(p, w), d = inset(at, rA); return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined}><circle cx={d.x} cy={d.y} r={rA} />{at.out && arrow(d, rA)}<text x={d.x} y={d.y + u(p.numbers.length > 1 ? -12 : 3.5)} textAnchor="middle" style={{fontSize:px(10),fill:p.numbers.length > 1 ? '#c2571a' : 'white',stroke:'none'}}>{p.numbers.join('·')}</text><title>{p.numbers.join('·')}구 · {ft(p)}{at.out ? ' · 화면 밖' : ''}</title></g>; })}
   </svg>;
 }

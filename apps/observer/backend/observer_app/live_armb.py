@@ -10,15 +10,33 @@ snapshot is queued as soon as it is fetched, before it is served.
 from __future__ import annotations
 
 from collections import OrderedDict
+import hashlib
 import json
 import logging
+import math
 import sys
 import threading
 import time
 
 from .settings import REPO
+from .live_store import _canonical
 
 LOGGER = logging.getLogger(__name__)
+
+
+def unavailable_win_expectancy(reason='not_available'):
+    return {'status': 'unavailable', 'home_probability': None, 'perspective': 'home',
+            'basis': 'count_independent_game_state', 'source': 'frozen_c0_we',
+            'policy_identity': None, 'pitch_key': None, 'reason': reason}
+
+
+def _we_input_sha256(feed):
+    # LivePolicy.live_rows/statcast_rows read gameData/liveData, never this poll stamp.
+    # Preserve every other byte-level JSON value, including eventWall and earlier corrections.
+    metadata = feed.get('metaData')
+    if isinstance(metadata, dict):
+        feed = feed | {'metaData': {key: value for key, value in metadata.items() if key != 'timeStamp'}}
+    return hashlib.sha256(_canonical(feed)).hexdigest()
 
 
 def _pitch_data(play):
@@ -119,6 +137,46 @@ class LiveArmB:
                     return None
                 self._cond.wait(remaining)
 
+    def win_expectancy(self, feed, *, pending_pitch_key, snapshot_revision=None):
+        """Read existing WE for the served input and pending pitch; never queue or infer.
+
+        C0 was fitted on PA-start states and ignores count. This is a home-team game-state
+        estimate, not pitch WPA. Only metaData.timeStamp may differ from the computed body.
+        The supplied receipt SHA must still match the exact, unmodified served body.
+        The caller additionally enforces its receipt, display and viewer-delay gates.
+        """
+        try:
+            digest = hashlib.sha256(_canonical(feed)).hexdigest()
+            input_sha256 = _we_input_sha256(feed)
+            key = state_key(feed)
+        except (KeyError, TypeError, ValueError):
+            return unavailable_win_expectancy('snapshot_unverifiable')
+        if not isinstance(pending_pitch_key, str) or not pending_pitch_key:
+            return unavailable_win_expectancy('pending_pitch_unavailable')
+        if snapshot_revision is not None and snapshot_revision != digest:
+            return unavailable_win_expectancy('snapshot_revision_mismatch')
+        with self._cond:
+            cached = self.cache.get(key)
+            if (not isinstance(cached, dict) or not cached.get('snapshot_sha256')
+                    or cached.get('we_input_sha256') != input_sha256):
+                return unavailable_win_expectancy('matching_snapshot_not_cached')
+            result = cached.get('result')
+            if not isinstance(result, dict):
+                return unavailable_win_expectancy('estimate_unavailable')
+            pitch = result.get('pitch')
+            if (result.get('key') != pending_pitch_key or not isinstance(pitch, dict)
+                    or pitch.get('key') != pending_pitch_key or pitch.get('actual') is not None
+                    or not isinstance(pitch.get('pre'), dict) or pitch['pre'].get('status') != 'ready'):
+                return unavailable_win_expectancy('pending_pitch_mismatch')
+            value, identity = result.get('home_we_now'), result.get('policy_identity')
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or not 0 <= value <= 1
+                    or not isinstance(identity, str) or len(identity) != 64
+                    or any(c not in '0123456789abcdef' for c in identity)):
+                return unavailable_win_expectancy('estimate_invalid')
+            return unavailable_win_expectancy() | {'status': 'available', 'home_probability': float(value),
+                'policy_identity': identity, 'pitch_key': pending_pitch_key, 'reason': None}
+
     def _note(self, result):
         """Remembers, per pitch of a game, the top recommended type before it and the type actually thrown."""
         game = self.games.setdefault(result['key'].split(':')[0], {'pre': {}, 'actual': {}})
@@ -162,7 +220,11 @@ class LiveArmB:
                 self.running = key
             started = time.perf_counter()
             try:
+                snapshot_sha256 = hashlib.sha256(_canonical(feed)).hexdigest()
+                we_input_sha256 = _we_input_sha256(feed)
                 result = self.policy(feed)
+                if hashlib.sha256(_canonical(feed)).hexdigest() != snapshot_sha256:
+                    snapshot_sha256 = None  # never attribute a result to a body changed during computation
             except Exception as exc:  # noqa: BLE001 - one bad state must not stop the worker
                 LOGGER.exception('ARM-B live computation failed')
                 with self._cond:
@@ -173,7 +235,8 @@ class LiveArmB:
             seconds = round(time.perf_counter() - started, 2)
             with self._cond:
                 self.running = None
-                self.cache[key] = {'result': result}
+                self.cache[key] = {'result': result, 'snapshot_sha256': snapshot_sha256,
+                                   'we_input_sha256': we_input_sha256}
                 if result is not None:
                     self._note(result)
                 while len(self.cache) > self.cache_size:

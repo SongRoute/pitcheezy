@@ -36,12 +36,12 @@ function Card({ g }: { g: GameCard }) {
   const name = `${short(g.away_team)} 대 ${short(g.home_team)}`;
   return <a className={`sv-card ${g.status}`} href={gameHref(g.game_pk)}
     aria-label={`${name}${g.double_header ? ` ${g.game_number}차전` : ''}, ${kstTime(g.start)} 시작, ${scored ? `${g.away_score} 대 ${g.home_score}, ` : ''}${g.status === 'live' ? '경기 중' : g.status === 'final' ? '경기 종료' : g.status === 'scheduled' ? '경기 전' : '상태 확인 중'}`}>
-    <span className="sv-card-time">{kstTime(g.start)}{g.double_header && <em>{g.game_number}차전</em>}</span>
+    <span className="sv-card-time">{kstTime(g.start)}{g.series_description && <em>{g.series_description}{g.series_game_number ? ` · ${g.series_game_number}차전` : ''}</em>}{g.double_header && <em>{g.game_number}차전</em>}</span>
     <span className="sv-card-teams">
       <span className="sv-card-team" style={{ '--team': teamColor(g.away_team) } as CSSProperties}><i aria-hidden="true" />{short(g.away_team)}<b>{scored ? g.away_score : ''}</b></span>
       <span className="sv-card-team" style={{ '--team': teamColor(g.home_team) } as CSSProperties}><i aria-hidden="true" />{short(g.home_team)}<b>{scored ? g.home_score : ''}</b></span>
     </span>
-    <StatusChip g={g} />
+    <StatusChip g={g} />{(g.probable_pitchers?.away || g.probable_pitchers?.home) && <small className="sv-card-starters">예상 선발 · {g.probable_pitchers?.away?.name ?? '미정'} / {g.probable_pitchers?.home?.name ?? '미정'}</small>}
   </a>;
 }
 
@@ -171,7 +171,7 @@ export default function WatchList() {
       {error ? <div className="sv-alert" role="alert"><p>{error}</p><button className="sv-btn" onClick={() => { const d = date; setDate(null); setTimeout(() => setDate(d), 0); }}>다시 시도</button></div>
         : games === null ? <p className="sv-muted" role="status">경기 목록을 불러오는 중…</p>
         : games.length === 0 ? <p className="sv-muted">이 날짜에는 경기가 없어요.</p>
-        : <ul>{games.map(g => <li key={g.game_pk}><Card g={g} /></li>)}</ul>}
+        : <>{(['live', 'scheduled', 'other'] as const).map(section => { const rows = games.filter(g => section === 'other' ? g.status !== 'live' && g.status !== 'scheduled' : g.status === section); return rows.length ? <section key={section}><h2>{section === 'live' ? '지금' : section === 'scheduled' ? '다음 · 예정 경기' : '경기 기록'}</h2><ul>{rows.map(g => <li key={g.game_pk}><Card g={g} /></li>)}</ul></section> : null; })}</>}
       {/* only while a game on this list is in play: between games the publisher may be idle on purpose */}
       {late && games?.some(g => g.status === 'live') && <p className="sv-muted sv-publish-late" role="status">갱신 지연 · 새 내용이 늦어지고 있어요. 마지막으로 올라온 내용을 보여 드려요.</p>}
       {games && games.liveOk === false && <p className="sv-muted" role="status">실시간 경기 일정을 지금 불러오지 못해, 저장된 경기만 보여요.</p>}

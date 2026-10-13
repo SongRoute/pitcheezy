@@ -165,6 +165,9 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
     # linescore_before: the server's as-of linescore BEFORE this visible pitch (same pre-pitch moment as situation_before), so a
     # selected past pitch never shows later runs/hits/errors. Built only from events before the pitch; the rest of INTERNAL stays hidden.
     visible = [{k: v for k, v in p.items() if k not in INTERNAL} | {'linescore_before': p.get('line_before')} for p in visible]
+    for pitch in visible:
+        if pitch.get('context_before') is not None:
+            pitch['context_before'] = {k: v for k, v in pitch['context_before'].items() if k not in ('lineups', 'boxscore')}
     for pitch in visible:  # terminal fields of a PA still in progress at the cutoff stay hidden
         if not next((pa for pa in pas if pa['pa_key'] == pitch['pa_key']), {}).get('complete'):
             pitch['actual'] = pitch['actual'] | {'event': None, 'event_label': None, 'play_text': None,
@@ -228,6 +231,8 @@ def cut_view(record, cutoff, source, *, feed=None, live_current=None, next_rec=N
     current = current | {'context': current_context}
     people = [(role, holder.get(role)) for holder in [current, *visible, *pas] for role in ('pitcher', 'batter')
               if holder.get(role)]
+    for team in (current_context or {}).get('boxscore', {}).values():
+        people.extend((role, person) for role in ('batter', 'pitcher') for person in team[role+'s'])
     pregame = _pregame_view(record, people)
     if after is not None:
         visible = [p for p in visible if p['index'] > after]
@@ -300,7 +305,7 @@ def list_card(record, cutoff, source):
 
 
 def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None,
-             features=None, live_extras=None, delayed_card=None, wall=None, fixed_delay_s=0):
+             features=None, live_extras=None, delayed_card=None, wall=None, fixed_delay_s=0, live_win_expectancy=None):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
     reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
     ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
@@ -378,6 +383,8 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
                               'status': game_history.status_kind(row.get('abstract'), row.get('status')),
                               'status_text': row.get('status'), 'live': bool(row.get('live')),
                               'away_team': row.get('away_team'), 'home_team': row.get('home_team'),
+                              **{key: row.get(key) for key in ('game_type', 'series_description', 'series_game_number',
+                                                              'games_in_series', 'probable_pitchers', 'venue')},
                               'away_abbr': None, 'home_abbr': None,
                               'away_score': row.get('away_score'), 'home_score': row.get('home_score'),
                               'inning': row.get('inning'), 'half': row.get('half'),
@@ -516,6 +523,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         if feed is None:
             return buffering_view(static, meta, viewer)
         record = game_history.build(feed)
+        record['pregame'] = player_metadata.load_pregame(archive.snapshot_dir, game_pk, record['official_date'])
         parsed = parse_state(feed, None)
         phase = {'ready': 'pre_pitch', 'resolving': 'resolving', 'between_innings': 'between_innings'}.get(parsed['status'])
         abstract = (feed['gameData'].get('status') or {}).get('abstractGameState')
@@ -566,6 +574,17 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         view['receipts'] = None
         if receipts is not None:
             view['receipts'] = _apply_receipts(view['pitches'], receipts, view['pas'])
+            if view['receipts']['unconfirmed']:
+                # An unadmitted result must not reappear as an incremented hit/K in the statistics.
+                view['current']['context'] = None
+                first = min(p['index'] for p in view['pitches'] if p['receipt']['status'] != 'received')
+                for pitch in view['pitches']:
+                    if pitch['index'] >= first:
+                        pitch['context_before'] = None
+        if (live_win_expectancy is not None and phase == 'pre_pitch' and state['state'] == 'recommended'
+                and state['recommendation_shown'] and view['receipts'] is not None
+                and not view['receipts']['unconfirmed'] and (state.get('ledger') or {}).get('status') == 'recorded'):
+            view['win_expectancy'] = live_win_expectancy(feed, state['pitch_key'], entry)
         _pair_recommendations(view, live_pairing and live_pairing(feed, view['pitches'], receipts, entry))
         view = live_extras(view, feed, parsed, receipts, entry) if live_extras else view  # service_extras: optional, switched
         if after is not None:  # a pitch whose record is unconfirmed or was corrected is re-sent whatever the cursor

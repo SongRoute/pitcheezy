@@ -8,6 +8,20 @@
     "hits": null,
     "on_base": null
    },
+   "boxscore": {
+    "away": {
+     "batters": [],
+     "pitchers": []
+    },
+    "home": {
+     "batters": [],
+     "pitchers": []
+    }
+   },
+   "lineups": {
+    "away": [],
+    "home": []
+   },
    "next_batters": [],
    "pitcher": {
     "earned_runs": null,
@@ -85,6 +99,8 @@
   "embargoed": false,
   "game_number": 1,
   "game_pk": 900200,
+  "game_type": "F",
+  "games_in_series": null,
   "half": null,
   "has_history": true,
   "home_abbr": "HOM",
@@ -93,6 +109,12 @@
   "inning": null,
   "live": false,
   "official_date": "2026-10-05",
+  "probable_pitchers": {
+   "away": null,
+   "home": null
+  },
+  "series_description": null,
+  "series_game_number": null,
   "start": "2026-10-05T10:00:00Z",
   "start_kst": "2026-10-05T19:00:00+09:00",
   "status": "scheduled",

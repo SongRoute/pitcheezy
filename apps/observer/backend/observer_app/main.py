@@ -22,7 +22,7 @@ from .service import ObserverService, ServiceError
 from .settings import CONFIG, REPO, RUN, WEB, database_path
 from .store import Store
 from .video_annotations import VideoAnnotations
-from .live_armb import LiveArmB
+from .live_armb import LiveArmB, unavailable_win_expectancy
 from . import display_state, features, live_ledger, rec_pairing, service_extras
 from .setup_estimates import SetupEstimates
 from .watch_along import BADGE as WATCH_BADGE, WatchAlong
@@ -798,6 +798,9 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
                          fixed_delay_s=service_delay_s,
                          schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
                          live_feed=None if live_feed is False else service_live_feed,
+                         live_win_expectancy=lambda snapshot, key, entry: (
+                             armb.win_expectancy(snapshot, pending_pitch_key=key, snapshot_revision=(entry or {}).get('sha'))
+                             if hasattr(armb, 'win_expectancy') else unavailable_win_expectancy('cache_unavailable')),
                          live_display=service_live_display, live_pairing=service_live_pairing, wall=service_wall)
 
     @app.get('/api/watch/{game_pk}/setup')

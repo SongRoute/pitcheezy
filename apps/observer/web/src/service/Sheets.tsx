@@ -8,13 +8,15 @@ import type { Bounds } from './model';
 /** Bottom sheet: the only place with inner scrolling. Esc / backdrop / 닫기 close it and focus returns to the opener. */
 export function Sheet({ title, onClose, children, labelledBy = 'sv-sheet-title' }: { title: string; onClose: () => void; children: ReactNode; labelledBy?: string }) {
   const box = useRef<HTMLDivElement>(null);
+  const [wide, setWide] = useState(() => window.matchMedia('(min-width: 1200px)').matches);
+  useEffect(() => { const mq = window.matchMedia('(min-width: 1200px)'); const change = () => setWide(mq.matches); mq.addEventListener('change', change); return () => mq.removeEventListener('change', change); }, []);
   const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     box.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); closeRef.current(); }
-      if (e.key === 'Tab') {
+      if (e.key === 'Tab' && !wide) {
         const nodes = [...(box.current?.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],select,input,[tabindex="0"]') ?? [])];
         const first = nodes[0], last = nodes[nodes.length - 1];
         if (!first) { e.preventDefault(); return; }
@@ -23,11 +25,11 @@ export function Sheet({ title, onClose, children, labelledBy = 'sv-sheet-title' 
       }
     };
     window.addEventListener('keydown', onKey);
-    document.body.classList.add('sv-locked');
+    if (!wide) document.body.classList.add('sv-locked');
     return () => { window.removeEventListener('keydown', onKey); document.body.classList.remove('sv-locked'); opener?.focus?.(); };
-  }, []);
-  return <div className="sv-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-    <div className="sv-sheet" role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1} ref={box}>
+  }, [wide]);
+  return <div className={`sv-backdrop${wide ? ' nonmodal' : ''}`}  onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="sv-sheet" role="dialog" aria-modal={wide ? undefined : true} aria-labelledby={labelledBy} tabIndex={-1} ref={box}>
       <div className="sv-sheet-head"><h2 id={labelledBy}>{title}</h2><button className="sv-btn" onClick={onClose}>닫기</button></div>
       <div className="sv-sheet-body">{children}</div>
     </div>
@@ -92,7 +94,7 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
     actualExtra?: ReactNode;
     /** past pitch with a recorded recommendation: its first pick and the pitch that was thrown, side by side in words (never a score) */
     pair?: { rec: string; actual: string } | null; absentText?: string }) {
-  return <Sheet title="자세히" onClose={onClose}>
+  return <Sheet title={actual ? `투구 상세 · ${actualTitle}` : "추천 구종 · 대략 위치"} onClose={onClose}>
     <section className="sv-detail">
       <h3>{recTitle}</h3>
       {recNote && <p>{recNote}</p>}
@@ -104,7 +106,7 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
           <p className="sv-muted">{provenanceText(rec)}{rec.recorded_at ? ` · ${kstTime(rec.recorded_at)} 기록` : ''}</p>
           <table className="sv-table"><thead><tr><th scope="col">순위</th><th scope="col">구종</th><th scope="col">대략 위치</th><th scope="col">정책 선택 비중</th></tr></thead>
             <tbody>{rec.candidates.map((c: Candidate) => <tr key={c.rank}><td>{c.rank}</td><td>{c.pitch_label}</td><td>{c.zone_label || '위치 없음'}</td><td>{policyShare(c.probability)}</td></tr>)}</tbody></table>
-          <p className="sv-muted">정책 선택 비중은 성공·적중 확률이 아니에요.</p>
+          <p className="sv-muted">정책 선택 비중은 성공·적중 확률이 아니에요. 위치는 과거 투구 분포의 대략 위치이며, 칸별 가치 지도가 아닙니다.</p>
         </>}
     </section>
     <section className="sv-detail">
@@ -117,6 +119,10 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
         <dt>구종</dt><dd>{actual.pitch_label}{actual.speed_mph !== null ? ` · ${speed(actual.speed_mph)}` : ''}</dd>
         <dt>원본 좌표</dt><dd>{actual.x !== null && actual.z !== null ? `가로 ${actual.x.toFixed(2)} ft · 높이 ${actual.z.toFixed(2)} ft (포수 기준)` : '위치 정보 없음'}</dd><dt>판정</dt><dd>{actual.result_label || '기록 없음'}</dd>
         <dt>위치</dt><dd>{actual.zone_label || '위치 정보 없음'}</dd>
+        <dt>회전수</dt><dd>{actual.tracking?.spin_rate_rpm == null ? '—' : `${actual.tracking.spin_rate_rpm} rpm`}</dd>
+        <dt>익스텐션</dt><dd>{actual.tracking?.extension_feet == null ? '—' : `${actual.tracking.extension_feet} ft`}</dd>
+        <dt>타구 속도</dt><dd>{actual.tracking?.exit_velocity_mph == null ? '—' : `${actual.tracking.exit_velocity_mph} mph`}</dd>
+        <dt>발사각 / 비거리</dt><dd>{actual.tracking?.launch_angle_deg == null ? '—' : `${actual.tracking.launch_angle_deg}°`} / {actual.tracking?.distance_feet == null ? '—' : `${actual.tracking.distance_feet} ft`}</dd>
         {paResult && <><dt>타석 결과</dt><dd>{paResult}</dd></>}
         {actual.play_text && <><dt>원본 기록</dt><dd lang="en">{actual.play_text}</dd></>}
       </dl>}{actual !== null && actualExtra}</>}

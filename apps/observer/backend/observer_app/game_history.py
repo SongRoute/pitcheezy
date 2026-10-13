@@ -8,6 +8,7 @@ PA result text names a fielder or direction only when the feed itself carries it
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import math
 
 from .domain import PITCH_LABELS, RESULT_LABELS, actual_zone
 
@@ -60,8 +61,30 @@ def game_card(feed):
             'away_abbr': teams['away'].get('abbreviation'), 'home_abbr': teams['home'].get('abbreviation'),
             'away_score': None, 'home_score': None, 'inning': None, 'half': None,
             'venue': (data.get('venue') or {}).get('name'),
+            'game_type': data['game'].get('type'),
+            'series_description': data['game'].get('seriesDescription'),
+            'series_game_number': data['game'].get('seriesGameNumber'),
+            'games_in_series': data['game'].get('gamesInSeries'),
+            'probable_pitchers': {side: public_person((data.get('probablePitchers') or {}).get(side))
+                                  for side in ('away', 'home')},
             'game_number': data['game'].get('gameNumber') or 1, 'double_header': code in ('Y', 'S'),
             'double_header_code': code, 'embargoed': False, 'has_history': True}
+
+
+def public_person(person):
+    """Only an upstream identity, never a guessed starter or a player-profile lookup."""
+    if not isinstance(person, dict) or type(person.get('id')) is not int or person['id'] <= 0:
+        return None
+    return {'id': person['id'], 'name': person.get('fullName') if isinstance(person.get('fullName'), str) else None}
+
+
+def tracking(event):
+    """Observed tracking only; missing and non-finite measurements stay unknown."""
+    pitch, hit = event.get('pitchData') or {}, event.get('hitData') or {}
+    fields = {'extension_feet': pitch.get('extension'), 'spin_rate_rpm': (pitch.get('breaks') or {}).get('spinRate'),
+              'exit_velocity_mph': hit.get('launchSpeed'), 'launch_angle_deg': hit.get('launchAngle'),
+              'distance_feet': hit.get('totalDistance')}
+    return {key: value if type(value) in (int, float) and math.isfinite(value) else None for key, value in fields.items()}
 
 
 def _player(feed, player_id):
@@ -263,6 +286,7 @@ class _GameContext:
         self.feed = feed
         self.batters, self.pitchers = {}, {}
         self.lineups = {'away': {}, 'home': {}}
+        self.people = {side: {'batter': {}, 'pitcher': {}} for side in ('away', 'home')}
         self.complete = True
         self.er_unknown = False
         teams = ((feed.get('liveData') or {}).get('boxscore') or {}).get('teams') or {}
@@ -363,6 +387,21 @@ class _GameContext:
         out['next_batters'] = [] if slot is None else [
             {'id': lineup.get(n, {}).get('id'), 'name': lineup.get(n, {}).get('name'), 'order': n}
             for n in ((slot % 9)+1, ((slot+1) % 9)+1)]
+        # Save identities only when their event prefix has reached them. Final boxscore totals and
+        # replacement players elsewhere in the feed never populate this display-only summary.
+        if side in self.people:
+            for role, person, team in (('batter', batter, side), ('pitcher', pitcher, 'home' if side == 'away' else 'away')):
+                if person and person.get('id') is not None:
+                    self.people[team][role][person['id']] = {'id': person['id'], 'name': person.get('name')}
+        out['lineups'], out['boxscore'] = {}, {}
+        for team, order in self.lineups.items():
+            out['lineups'][team] = [dict(order[n], order=n) for n in sorted(order)] if self.complete else []
+            batters = {p['id']: p for p in order.values() if p.get('id') is not None} | self.people[team]['batter']
+            out['boxscore'][team] = {}
+            for role, people in (('batter', batters), ('pitcher', self.people[team]['pitcher'])):
+                out['boxscore'][team][role+'s'] = [
+                    person | {k: v if self.complete and not (k == 'earned_runs' and self.er_unknown) else None
+                              for k, v in self.stats(role, pid).items()} for pid, person in people.items()]
         return out
 
 
@@ -516,6 +555,7 @@ def build(feed, watch=None, setup=None):
                                     'event_label': pa['event_label'] if last_of_pa else None,
                                     'play_text': pa['play_text'] if last_of_pa else None,
                                     'speed_mph': (event.get('pitchData') or {}).get('startSpeed'), 'x': x, 'z': z,
+                                    'tracking': tracking(event),
                                     'zone_label': actual_zone(x, z, bounds),
                                     'catcher_setup': None if cv is None else
                                     {'status': cv['status'], 'x_band': cv.get('x_band'), 'plate_x_feet': cv.get('plate_x_feet')}}}

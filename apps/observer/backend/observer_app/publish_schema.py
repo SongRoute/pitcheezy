@@ -208,6 +208,38 @@ def document(kind, samples, *, final, source):
         schema['properties']['schema'] = {'enum': names}
     for path, types, optional in CONTRACT_TYPES.get(kind, ()):
         widen(schema, path, types, optional)
+    # UI additions are optional for older v1 files. Their full types cannot be inferred from
+    # examples with missing tracking, starting pitchers or an empty lineup alone.
+    person = {'type': 'object', 'properties': {'id': {'type': ['integer', 'null']},
+                                              'name': {'type': ['string', 'null']}}, 'required': ['id', 'name']}
+    metadata = {'game_type': {'type': ['string', 'null']}, 'series_description': {'type': ['string', 'null']},
+                'series_game_number': {'type': ['integer', 'null']}, 'games_in_series': {'type': ['integer', 'null']},
+                'probable_pitchers': {'type': ['object', 'null'], 'properties': {
+                    side: person | {'type': ['object', 'null']} for side in ('away', 'home')}}}
+    if kind in ('game', 'games'):
+        card = schema['properties']['game'] if kind == 'game' else schema['properties'].get('games', {}).get('items', {})
+        card.setdefault('properties', {}).update(metadata)
+        card['required'] = [key for key in card.get('required', []) if key not in metadata]
+    if kind == 'game':
+        lineup = person | {'properties': person['properties'] | {'order': {'type': 'integer'}}, 'required': ['id', 'name', 'order']}
+        box = {role+'s': {'type': 'array', 'items': person | {'properties': person['properties'] | {
+            key: {'type': ['integer', 'null']} for key in keys}, 'required': ['id', 'name', *keys]}}
+            for role, keys in (('batter', ('at_bats', 'hits', 'on_base')), ('pitcher', ('pitches', 'strikeouts', 'earned_runs')))}
+        contexts = [schema['properties']['current']['properties']['context']]
+        for context in contexts:
+            context.setdefault('properties', {}).update({
+                'lineups': {'type': 'object', 'properties': {side: {'type': 'array', 'items': lineup} for side in ('away', 'home')}},
+                'boxscore': {'type': 'object', 'properties': {side: {'type': 'object', 'properties': box} for side in ('away', 'home')}}})
+            context['required'] = [key for key in context.get('required', []) if key not in ('lineups', 'boxscore')]
+        actual = schema['properties']['pitches']['items']['properties']['actual']
+        widen(schema, ('pitches', '*', 'context_before'), ('object', 'null'))
+        actual['properties']['tracking'] = {'type': ['object', 'null'], 'properties': {
+            key: {'type': ['number', 'null']} for key in ('extension_feet', 'spin_rate_rpm', 'exit_velocity_mph', 'launch_angle_deg', 'distance_feet')}}
+        actual['required'] = [key for key in actual.get('required', []) if key != 'tracking']
+        schema['properties']['win_expectancy'] = {'type': 'object', 'properties': {
+            'status': {'enum': ['available', 'unavailable']}, 'home_probability': {'type': ['number', 'null']},
+            **{key: {'type': ['string', 'null']} for key in ('basis', 'perspective', 'source', 'policy_identity', 'pitch_key', 'reason')}}}
+        schema['required'] = [key for key in schema.get('required', []) if key != 'win_expectancy']
     schema['properties']['publish'] = publish_block(final=final)
     schema['required'] = sorted({*schema.get('required', []), 'publish'})
     return {'$schema': DRAFT, '$id': f'pitcheezy-publish-v1-{kind}', 'title': f'Pitcheezy public publish v1: {kind}',

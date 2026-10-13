@@ -70,6 +70,262 @@
        ],
        "type": "object"
       },
+      "boxscore": {
+       "properties": {
+        "away": {
+         "properties": {
+          "batters": {
+           "items": {
+            "properties": {
+             "at_bats": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "hits": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "id": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "name": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "on_base": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "id",
+             "name",
+             "at_bats",
+             "hits",
+             "on_base"
+            ],
+            "type": "object"
+           },
+           "type": "array"
+          },
+          "pitchers": {
+           "items": {
+            "properties": {
+             "earned_runs": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "id": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "name": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "pitches": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "strikeouts": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "id",
+             "name",
+             "pitches",
+             "strikeouts",
+             "earned_runs"
+            ],
+            "type": "object"
+           },
+           "type": "array"
+          }
+         },
+         "type": "object"
+        },
+        "home": {
+         "properties": {
+          "batters": {
+           "items": {
+            "properties": {
+             "at_bats": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "hits": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "id": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "name": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "on_base": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "id",
+             "name",
+             "at_bats",
+             "hits",
+             "on_base"
+            ],
+            "type": "object"
+           },
+           "type": "array"
+          },
+          "pitchers": {
+           "items": {
+            "properties": {
+             "earned_runs": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "id": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "name": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "pitches": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "strikeouts": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "id",
+             "name",
+             "pitches",
+             "strikeouts",
+             "earned_runs"
+            ],
+            "type": "object"
+           },
+           "type": "array"
+          }
+         },
+         "type": "object"
+        }
+       },
+       "type": "object"
+      },
+      "lineups": {
+       "properties": {
+        "away": {
+         "items": {
+          "properties": {
+           "id": {
+            "type": [
+             "integer",
+             "null"
+            ]
+           },
+           "name": {
+            "type": [
+             "string",
+             "null"
+            ]
+           },
+           "order": {
+            "type": "integer"
+           }
+          },
+          "required": [
+           "id",
+           "name",
+           "order"
+          ],
+          "type": "object"
+         },
+         "type": "array"
+        },
+        "home": {
+         "items": {
+          "properties": {
+           "id": {
+            "type": [
+             "integer",
+             "null"
+            ]
+           },
+           "name": {
+            "type": [
+             "string",
+             "null"
+            ]
+           },
+           "order": {
+            "type": "integer"
+           }
+          },
+          "required": [
+           "id",
+           "name",
+           "order"
+          ],
+          "type": "object"
+         },
+         "type": "array"
+        }
+       },
+       "type": "object"
+      },
       "next_batters": {
        "type": "array"
       },
@@ -108,7 +364,10 @@
       "next_batters",
       "pitcher"
      ],
-     "type": "object"
+     "type": [
+      "object",
+      "null"
+     ]
     },
     "finished_half": {
      "properties": {
@@ -563,6 +822,18 @@
     "game_pk": {
      "type": "integer"
     },
+    "game_type": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "games_in_series": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
     "half": {
      "type": [
       "string",
@@ -595,6 +866,74 @@
     },
     "official_date": {
      "type": "string"
+    },
+    "probable_pitchers": {
+     "properties": {
+      "away": {
+       "properties": {
+        "id": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "name": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       },
+       "required": [
+        "id",
+        "name"
+       ],
+       "type": [
+        "object",
+        "null"
+       ]
+      },
+      "home": {
+       "properties": {
+        "id": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "name": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       },
+       "required": [
+        "id",
+        "name"
+       ],
+       "type": [
+        "object",
+        "null"
+       ]
+      }
+     },
+     "type": [
+      "object",
+      "null"
+     ]
+    },
+    "series_description": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "series_game_number": {
+     "type": [
+      "integer",
+      "null"
+     ]
     },
     "start": {
      "type": "string"
@@ -1152,6 +1491,44 @@
          "null"
         ]
        },
+       "tracking": {
+        "properties": {
+         "distance_feet": {
+          "type": [
+           "number",
+           "null"
+          ]
+         },
+         "exit_velocity_mph": {
+          "type": [
+           "number",
+           "null"
+          ]
+         },
+         "extension_feet": {
+          "type": [
+           "number",
+           "null"
+          ]
+         },
+         "launch_angle_deg": {
+          "type": [
+           "number",
+           "null"
+          ]
+         },
+         "spin_rate_rpm": {
+          "type": [
+           "number",
+           "null"
+          ]
+         }
+        },
+        "type": [
+         "object",
+         "null"
+        ]
+       },
        "x": {
         "type": [
          "number",
@@ -1273,7 +1650,10 @@
        "next_batters",
        "pitcher"
       ],
-      "type": "object"
+      "type": [
+       "object",
+       "null"
+      ]
      },
      "half": {
       "type": "string"
@@ -1815,6 +2195,59 @@
     "provisional",
     "wait_s"
    ],
+   "type": "object"
+  },
+  "win_expectancy": {
+   "properties": {
+    "basis": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "home_probability": {
+     "type": [
+      "number",
+      "null"
+     ]
+    },
+    "perspective": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "pitch_key": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "policy_identity": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "reason": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "source": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "status": {
+     "enum": [
+      "available",
+      "unavailable"
+     ]
+    }
+   },
    "type": "object"
   },
   "zone_bounds": {
