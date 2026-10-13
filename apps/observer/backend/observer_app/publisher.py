@@ -686,6 +686,12 @@ class Publisher:
             self.sink.delete(path)
         except OSError:  # the file may still be out: the caller reports it; it is tried again when next due
             LOGGER.error('%s could not be deleted', path, exc_info=True)
+            if path in self.state['files']:
+                # The state keeps the file (a later drop still finds it), but not its content: the DELETE intent
+                # is already in the outbox and may still run, so the next write of an identical body must be a
+                # real PUT (which replaces that intent) rather than the unchanged-content skip.
+                self.state['files'][path]['digest'] = None
+                self._save_state()
             return False
         self.state['files'].pop(path, None)
         return True

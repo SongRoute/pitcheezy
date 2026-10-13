@@ -547,3 +547,33 @@ def test_reactivation_keeps_pending_delete_over_residual_local_file(world, endpo
     assert world.publisher.sink.pending[GAME] == 'delete'
     world.publisher.sink.retry(HEALTH)
     assert not world.path(GAME).exists() and GAME not in endpoint.objects
+
+
+@pytest.mark.parametrize('restart', [False, True])
+def test_canceled_withdrawal_after_failed_local_delete_turns_delete_into_put(world, endpoint, monkeypatch, restart):
+    # P3 (handoff 2026-10-12): the local delete fails, so the state still knows the file; the outbox holds DELETE.
+    # When the demo ends and the identical body comes back, that DELETE must become a PUT, not run late and
+    # remove a file the state calls published.
+    sink = attach(world, endpoint, monkeypatch)
+    world.cycle(settle=False)
+    before = world.path(GAME).read_bytes()
+    real_delete = sink.local.delete
+
+    def failed_delete(path):
+        raise OSError('local delete failed')
+    monkeypatch.setattr(sink.local, 'delete', failed_delete)
+    sid, head = start_demo(world)
+    health = world.cycle(settle=False)
+    assert (ARCHIVE_GAME, 'withdraw_failed') in codes(health)
+    assert world.path(GAME).read_bytes() == before and GAME in endpoint.objects
+    assert world.publisher.state['upload_pending'][GAME] == 'delete'
+    monkeypatch.setattr(sink.local, 'delete', real_delete)
+    assert world.client.post(f'/api/service/operator/sessions/{sid}/control', json={'action': 'end'}, headers=head).status_code == 200
+    if restart:
+        world.start()
+    endpoint.requests.clear()
+    health = world.cycle(settle=False)
+    assert ('PUT', GAME) in [r[:2] for r in endpoint.requests]
+    assert ('DELETE', GAME) not in [r[:2] for r in endpoint.requests]
+    assert world.path(GAME).exists() and endpoint.objects[GAME] == world.path(GAME).read_bytes()
+    assert GAME not in world.publisher.state['upload_pending'] and codes(health) == []
