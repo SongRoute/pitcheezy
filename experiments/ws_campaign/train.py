@@ -257,6 +257,18 @@ def run_supervised(job, cfg, model, data, keys, rows, c, s, out, metadata):
             'files': ['model-state.pt', 'temperatures.json', 'curve.json', 'calibration-margins.npz']}
 
 
+def configure_backend(job, metadata):
+    recovery = metadata.get('execution_policy') == 'K2_GENERATED_PROBE_FAST_V1'
+    if metadata.get('execution_policy') is not None and (not recovery or job['arm'] != 'K'):
+        raise ValueError('unregistered execution policy')
+    torch.backends.cudnn.deterministic = not recovery; torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(not recovery, warn_only=True)
+    if recovery:
+        torch.backends.cudnn.enabled = True
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+
+
 def run_job(job, cfg, inputs, out, metadata):
     """Runtime has already checked grant/source/UUID/lock/limits; no CLI bypass."""
     synthetic = metadata.get('synthetic') is True
@@ -292,8 +304,7 @@ def run_job(job, cfg, inputs, out, metadata):
             raise ValueError('unbound histmask manifest')
     device = torch.device('cpu' if synthetic else 'cuda:0'); seed = job['seed']
     torch.manual_seed(seed); np.random.seed(seed)
-    torch.backends.cudnn.deterministic = True; torch.backends.cudnn.benchmark = False
-    torch.use_deterministic_algorithms(True, warn_only=True)
+    configure_backend(job, metadata)
     model = build_model(cfg, job['arm'] if job['kind'] == 'supervised' else 'T', seed).to(device)
     initial = hashlib.sha256()
     for name, value in sorted(model.state_dict().items()):
@@ -325,4 +336,12 @@ def run_job(job, cfg, inputs, out, metadata):
                 shared_initial_sha256=initial.hexdigest(), parameters=sum(p.numel() for p in model.parameters()),
                 evaluation_predictions_computed=False, elapsed_seconds=time.monotonic()-started,
                 rows={r:len(v) for r,v in rows.items()}, outputs_sha256={f:base.sha(out/f) for f in files},
+                execution_policy=metadata.get('execution_policy', 'ORIGINAL_DETERMINISTIC'),
+                backend={'cudnn_enabled':torch.backends.cudnn.enabled,
+                         'cudnn_deterministic':torch.backends.cudnn.deterministic,
+                         'deterministic_algorithms':torch.are_deterministic_algorithms_enabled(),
+                         'benchmark':torch.backends.cudnn.benchmark,
+                         'matmul_tf32':torch.backends.cuda.matmul.allow_tf32,
+                         'cudnn_tf32':torch.backends.cudnn.allow_tf32,
+                         'cudnn_version':torch.backends.cudnn.version()},
                 versions={'torch':torch.__version__, 'numpy':np.__version__, 'cuda':torch.version.cuda})

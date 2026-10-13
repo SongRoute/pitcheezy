@@ -37,6 +37,10 @@ def validate(manifest_path, launch_grant_path):
     manifest = json.loads(manifest_path.read_text())
     jobs = manifest["jobs"]
     validate_inventory(jobs)
+    root_grant = json.loads(launch_grant_path.read_text())
+    if root_grant.get("recovery_amendment_sha256"):
+        jobs = [job for job in jobs if job["arm"] == "K"]
+        runtime.require(len(jobs) == 12 and sum(j["calibrations"] for j in jobs) == 36, "exact K recovery scope")
     for job in jobs:
         runtime.load_job(manifest_path, launch_grant_path, job["id"])
     return jobs
@@ -201,7 +205,7 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
                 for job in jobs:
                     item = state["jobs"][job["id"]]
                     index = int(job["gpu_index"])
-                    if item["status"] != "PENDING" or index in active or len(active) >= 5:
+                    if item["status"] != "PENDING" or index in active or len(active) >= (4 if len(jobs) == 12 else 5):
                         continue
                     if any(state["jobs"][dep]["status"] != "COMPLETED" for dep in job["depends_on"]):
                         continue

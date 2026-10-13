@@ -13,6 +13,7 @@ from experiments.ws_seq.train_tm002 import supervise_command
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = (
     "experiments/ws_campaign/runtime.py",
+    "experiments/ws_campaign/diagnostic_supervisor.py",
     "experiments/ws_campaign/queue.py",
     "experiments/ws_campaign/train.py",
     "experiments/ws_campaign/models.py",
@@ -81,6 +82,8 @@ def load_job(manifest_path, root_grant_path, job_id):
             and root_grant["author"] != root_grant["reviewer"], "campaign launch grant")
     require(root_grant.get("manifest_sha256") == sha(manifest_path), "campaign manifest hash")
     manifest = json.loads(manifest_path.read_text())
+    if root_grant.get("recovery_amendment_sha256"):
+        require(job_id in {j["id"] for j in manifest["jobs"] if j["arm"] == "K"}, "recovery grant is K-only")
     cfg_path = ROOT / manifest["config"]
     require(cfg_path.resolve().is_relative_to(ROOT) and cfg_path.is_file(), "config path")
     cfg = read_bound(cfg_path, manifest["config_sha256"])
@@ -114,6 +117,13 @@ def load_job(manifest_path, root_grant_path, job_id):
             and grant.get("input_manifest_sha256") == job.get("input_manifest_sha256")
             and grant.get("exposure_ledger_sha256") == job.get("exposure_ledger_sha256")
             and grant.get("commit") == job.get("commit"), "job grant binding")
+    if root_grant.get("recovery_amendment_sha256"):
+        require(grant.get("execution_policy") == "K2_GENERATED_PROBE_FAST_V1", "recovery execution policy required")
+    if grant.get("execution_policy") is not None:
+        require(grant["execution_policy"] == "K2_GENERATED_PROBE_FAST_V1"
+                and job["arm"] == "K" and job["kind"] == "supervised"
+                and grant.get("recovery_amendment_sha256") == root_grant.get("recovery_amendment_sha256")
+                and len(grant.get("recovery_amendment_sha256", "")) == 64, "K2 recovery amendment")
     budgets = cfg["budgets"]
     wall_cap = budgets["teacher_seconds"] if job["kind"] == "teacher" else budgets["per_job_seconds"]
     require(0 < grant.get("max_wall_seconds", 0) <= wall_cap
@@ -175,7 +185,12 @@ def worker(args, cfg, job, grant, grant_path):
                 and receipt.get("grant_sha256") == binding.get("grant_sha256")
                 and receipt.get("eval_scores_opened") is False, "dependency completion " + dep)
         dependencies[dep] = binding["directory"]
-    with lock_path.open("r") as lock:
+    inherited = os.environ.get("K2_LOCK_FD") if grant.get("execution_policy") else None
+    if grant.get("execution_policy"):
+        require(inherited is not None, "recovery requires inherited supervisor lock")
+        require(os.fstat(int(inherited)).st_ino == lock_path.stat().st_ino
+                and os.fstat(int(inherited)).st_dev == lock_path.stat().st_dev, "inherited common lock identity")
+    with (os.fdopen(os.dup(int(inherited)), "r") if inherited else lock_path.open("r")) as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         available = next((int(line.split()[1]) * 1024 for line in Path("/proc/meminfo").read_text().splitlines()
                           if line.startswith("MemAvailable:")), 0)
@@ -196,6 +211,9 @@ def worker(args, cfg, job, grant, grant_path):
                     "exposure_ledger_sha256": grant["exposure_ledger_sha256"], "gpu_uuid": uuid,
                     "dependencies": dependencies, "eval_scores_opened": False,
                     "runtime_reviewed": True}
+        if grant.get("execution_policy"):
+            metadata["execution_policy"] = grant["execution_policy"]
+            metadata["recovery_amendment_sha256"] = grant["recovery_amendment_sha256"]
         receipt = train.run_job(job, cfg, Path(job["inputs"]), out, metadata)
         require(isinstance(receipt, dict) and receipt.get("status") == "COMPLETED"
                 and receipt.get("eval_scores_opened") is False, "worker completion contract")
@@ -220,6 +238,14 @@ def main():
         require(sys.platform == "linux" and os.environ.get("GPU_JOB_ID"), "gpu run supervisor only")
         cmd = [sys.executable, "-m", "experiments.ws_campaign.runtime", "--manifest", str(args.manifest),
                "--launch-grant", str(args.launch_grant), "--job", args.job, "--worker"]
+        if grant.get("execution_policy"):
+            from experiments.ws_campaign.diagnostic_supervisor import supervise
+            require(not Path(job["output"]).exists(), "recovery output already exists")
+            with Path(grant["common_lock"]).open("r") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                os.environ["K2_LOCK_FD"] = str(lock.fileno())
+                return supervise(cmd, Path(job["output"]), grant["max_wall_seconds"],
+                                 grant["max_rss_bytes"], sha(grant_path), lock.fileno())
         return supervise_command(cmd, Path(job["output"]), grant["max_wall_seconds"],
                                  grant["max_rss_bytes"], sha(grant_path))
     except (Stop, OSError, ValueError, KeyError, TypeError) as exc:
