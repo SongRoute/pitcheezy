@@ -22,3 +22,16 @@ def test_bad_composition_stops_before_artifact_decode():
     jobs=[{'id':str(i),'arm':'T' if i < 75 else 'K','kind':'supervised'} for i in range(87)]
     with pytest.raises(Stop,match='predecode 66/6/3 composition'):
         inspect_artifacts({'jobs':jobs},{'jobs':{}})
+
+
+def test_exposure_role_mismatch_rejected(tmp_path):
+    import json
+    from experiments.ws_campaign.runtime import check_exposure_ledger,sha
+    manifest=tmp_path/'manifest.json';manifest.write_text('{}')
+    ledger=tmp_path/'exposure.json'
+    ledger.write_text(json.dumps({'campaign_id':'fixture','data_role':'2026 EXPOSED DEVELOPMENT',
+        'data_version':'fixture','window':'base','input_manifest_sha256':sha(manifest),
+        'eval_scores_opened':False,'independent_test':False,'roles':{'EVAL':['wrong','dates']}}))
+    with pytest.raises(Stop,match='campaign role dates'):
+        check_exposure_ledger(ledger,sha(ledger),{'window':'base'},
+            {'id':'fixture','data_role':'2026 EXPOSED DEVELOPMENT','data_version':'fixture'},manifest)
