@@ -1,7 +1,7 @@
 {
  "$id": "pitcheezy-publish-v1-health",
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "description": "Inferred from 11 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
+ "description": "Inferred from 10 synthetic fixture bodies (apps/observer/backend/tests/publish_fixture.py) built by the same code that answers the service routes, then widened where the builder code can produce another type (publish_schema.CONTRACT_TYPES: nullable jersey, venue, context stats, plate-appearance people and indices, optional batting_order, unknown commit); the publish block is fixed. Treat a type listed here as the minimum a reader must accept, and accept unknown keys.",
  "properties": {
   "feed_failing_games": {
    "items": {
@@ -11,6 +11,35 @@
   },
   "files_written": {
    "type": "integer"
+  },
+  "game_checks": {
+   "additionalProperties": {
+    "properties": {
+     "checked_at": {
+      "type": "string"
+     },
+     "feed_ok": {
+      "type": "boolean"
+     },
+     "file_sequence": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "sequence_checked": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "checked_at",
+     "feed_ok",
+     "file_sequence",
+     "sequence_checked"
+    ],
+    "type": "object"
+   },
+   "type": "object"
   },
   "publish": {
    "properties": {
@@ -75,6 +104,7 @@
  "required": [
   "feed_failing_games",
   "files_written",
+  "game_checks",
   "publish",
   "publish_interval_s",
   "published_at",

@@ -144,7 +144,12 @@ PEOPLE = (('current',), ('pas', '*'), ('pitches', '*'))
 CONTRACT_TYPES = {
     # RC adds feature/viewer metadata; already published v1 files without it remain valid.
     'games': [(('features',), ('object',), True)],
+    'health': [(('game_checks', '*', 'file_sequence'), ('integer', 'null'), False)],
     'game': [(('features',), ('object',), True), (('viewer',), ('object',), True),
+             # The synthetic fixture has an unsupported next pitch (nulls); a supported ARM-B candidate
+             # uses a probability and a target point, just like the saved past-pitch recommendation.
+             (('next', 'rec', 'candidates', '*', 'detail', 'probability'), ('number', 'null'), False),
+             (('next', 'rec', 'candidates', '*', 'target'), ('object', 'null'), False),
              (('game', 'venue'), ('string', 'null'), False),
              *(((*where, role, 'jersey'), ('string', 'null'), False) for where in PEOPLE for role in ('batter', 'pitcher')),
              (('current', 'context', 'batter', '*'), ('null',), False), (('current', 'context', 'pitcher', '*'), ('null',), False),
@@ -176,6 +181,8 @@ def widen(schema, path, types, optional=False):
     if head == '*':
         if isinstance(schema.get('items'), dict):
             widen(schema['items'], rest, types, optional)
+        elif isinstance(schema.get('additionalProperties'), dict):
+            widen(schema['additionalProperties'], rest, types, optional)
         elif not rest:
             for child in (schema.get('properties') or {}).values():
                 _add_types(child, types)

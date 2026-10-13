@@ -580,13 +580,13 @@ class Publisher:
 
     # ---- bookkeeping --------------------------------------------------------------------------------
     def _load_state(self):
-        state = {'sequence': 0, 'files': {}, 'checked': {}, 'embargoed': [], 'pending': {}}
+        state = {'sequence': 0, 'files': {}, 'checked': {}, 'embargoed': [], 'pending': {}, 'game_checks': {}}
         if self.state_path is not None and self.state_path.is_file():
             try:
                 saved = json.loads(self.state_path.read_text())
                 if not (isinstance(saved, dict) and type(saved.get('sequence')) is int and isinstance(saved.get('files'), dict)
                         and isinstance(saved.get('checked'), dict) and isinstance(saved.get('embargoed', []), list)
-                        and isinstance(saved.get('pending', {}), dict)):
+                        and isinstance(saved.get('pending', {}), dict) and isinstance(saved.get('game_checks', {}), dict)):
                     raise ValueError('not a publisher state')
                 state |= saved
             except (ValueError, OSError, RecursionError):  # unreadable bookkeeping: start as if it were lost (everything is rebuilt)
@@ -729,7 +729,7 @@ class Publisher:
         reason = self.safe() if self.safe is not None else None
         if reason:
             raise Unsafe(reason)  # before a sequence is taken or a file is touched
-        self._now, self._written, self._unavailable, self._feed_failing = self.wall(), [], [], []
+        self._now, self._written, self._unavailable, self._feed_failing, self._game_attempts = self.wall(), [], [], [], {}
         if isinstance(self.sink, MirrorSink):
             self.sink.attempted.clear()
         self._sequence = self.state['sequence'] = self.state['sequence']+1
@@ -781,10 +781,29 @@ class Publisher:
                 match = re.fullmatch(re.escape(self.config['contract_version'])+r'/(?:game|setup)/(\d+)\.json', path)
                 if match:
                     self._fail(int(match[1]), None, 'upload_failed')
-        health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(now),
+        # Only a real game-body check advances freshness; settled games may skip many cycles.
+        self._now = max(now, self.wall())
+        failed_games = {item['game_pk'] for item in self._unavailable}
+        game_checks = {}
+        for game_pk in sorted(listed | known | embargoed | late):
+            entry = self.state['files'].get(self.layout['game'].format(game_pk=game_pk))
+            withdrawn = game_pk in embargoed | late or bool(entry and entry.get('digest') is None)
+            if entry is None and not withdrawn:
+                continue  # no verified file: the client retains the full-file fetch path
+            key = str(game_pk)
+            if withdrawn or game_pk in self._game_attempts:
+                game_checks[key] = {'checked_at': _iso(self._game_attempts.get(game_pk, self._now)),
+                    'sequence_checked': self._sequence, 'file_sequence': None if withdrawn or entry is None else entry['sequence'],
+                    'feed_ok': entry is not None and not withdrawn and game_pk not in self._feed_failing and game_pk not in failed_games}
+            elif entry is not None:
+                previous = self.state['game_checks'].get(key)
+                if isinstance(previous, dict) and previous.get('file_sequence') == entry['sequence']:
+                    game_checks[key] = previous
+        self.state['game_checks'] = game_checks
+        health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': self._sequence, 'published_at': _iso(self._now),
                   'publish_interval_s': self.config['publish_interval_s'], 'files_written': len(self._written)+1,
                   'unavailable_games': self._unavailable, 'unavailable_dates': sorted(set(unavailable_dates)),
-                  'feed_failing_games': sorted(set(self._feed_failing))}
+                  'feed_failing_games': sorted(set(self._feed_failing)), 'game_checks': game_checks}
         if isinstance(self.sink, MirrorSink):
             health['upload'] = {'code': 'upload_failed' if self.sink.pending and not self.sink.remote.dry_run else None,
                                 'pending': len(self.sink.pending), 'dry_run': self.sink.remote.dry_run}
@@ -863,6 +882,7 @@ class Publisher:
             elif (settled or not fast) and not self._due(path, now):
                 return
         self.state['checked'][path] = self.state['checked'][f'{path}#built'] = now
+        self._game_attempts[game_pk] = self.wall()
         try:
             body = check_live(check_public(self.bodies.game(game_pk)))  # polls upstream; the ledger is written in here
         except Refused as refused:

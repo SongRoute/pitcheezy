@@ -793,7 +793,10 @@
          "detail": {
           "properties": {
            "probability": {
-            "type": "null"
+            "type": [
+             "number",
+             "null"
+            ]
            }
           },
           "required": [
@@ -811,7 +814,10 @@
           "type": "integer"
          },
          "target": {
-          "type": "null"
+          "type": [
+           "object",
+           "null"
+          ]
          },
          "zone_id": {
           "type": "string"

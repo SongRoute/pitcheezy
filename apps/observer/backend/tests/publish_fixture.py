@@ -211,8 +211,10 @@ def collect(tmp):
         take('live-corrected', body(call='C'))  # the provider changes the first pitch: a visible correction
         take('live-second-pitch', body(call='C', second=True))
         take('live-unconfirmed', unidentified(body(call='C', second=True, pid='g5p1b')))
+        # Keep the established cycle timing for the following fixture states. This
+        # decision key already has a recommendation, so it cannot be the unsupported example.
         world.policy.status = 'UNSUPPORTED_PITCHER'
-        take('live-unsupported', body(call='C', second=True))
+        world.cycle(body(call='C', second=True), after=30.0)
         world.policy.status = None
         real, world.feed.store.append_recommendation = world.feed.store.append_recommendation, _broken_ledger
         take('live-ledger-unavailable', body(second=True))
@@ -226,6 +228,15 @@ def collect(tmp):
         out['setup'].append(('setup.json', world.read(f'v1/setup/{ARCHIVE_GAME}.json')))
     finally:
         world.close()
+    # Use a new decision key: a previously recorded recommendation is immutable,
+    # so flipping the policy inside the main world's same pending pitch cannot make an unsupported example.
+    unsupported = World(tmp/'unsupported', first=snap('20261005_100100', wall=BASE, second=True))
+    try:
+        unsupported.policy.status = 'UNSUPPORTED_PITCHER'
+        unsupported.cycle()
+        out['game'].append(('game-live-unsupported.json', unsupported.game()))
+    finally:
+        unsupported.close()
     odd = World(tmp/'odd')  # a setup source whose commit is not a hash: published as null
     try:
         odd.write_setup(commit='main')
@@ -244,7 +255,7 @@ def collect(tmp):
 
 EXAMPLES = {'manifest': ('manifest-live.json',), 'health': ('health-live.json',), 'dates': ('dates.json',),
             'games': ('games-live.json', 'games-archive.json'),
-            'game': ('game-pregame.json', 'game-live.json', 'game-live-unconfirmed.json', 'game-disconnected.json',
+            'game': ('game-pregame.json', 'game-live.json', 'game-live-unconfirmed.json', 'game-live-unsupported.json', 'game-disconnected.json',
                      'game-between-innings.json', 'game-final.json', 'game-final-archive.json'),
             'setup': ('setup.json',)}
 

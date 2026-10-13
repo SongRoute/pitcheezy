@@ -54,6 +54,22 @@ def candidates(body):
 
 
 # ---------- the published body is the route's body ----------
+def test_health_checks_track_unchanged_final_and_advancing_live_file(world):
+    first = world.cycle()
+    for game in (LIVE_GAME, ARCHIVE_GAME):
+        check = first['game_checks'][str(game)]
+        assert check['file_sequence'] == world.game(game)['publish']['sequence'] and check['feed_ok'] is True
+        assert check['sequence_checked'] <= first['sequence']
+    assert first['game_checks'][str(LIVE_GAME)]['sequence_checked'] == first['sequence']
+    second = world.cycle(after=30)
+    assert second['game_checks'][str(LIVE_GAME)]['file_sequence'] > first['game_checks'][str(LIVE_GAME)]['file_sequence']
+    assert second['game_checks'][str(ARCHIVE_GAME)] == first['game_checks'][str(ARCHIVE_GAME)]  # no archive recheck
+    failed = world.cycle(OSError('upstream down'), after=30, settle=False)
+    check = failed['game_checks'][str(LIVE_GAME)]
+    assert check['sequence_checked'] == failed['sequence'] and check['feed_ok'] is False
+    assert check['file_sequence'] == world.game(LIVE_GAME)['publish']['sequence']
+
+
 @pytest.mark.parametrize('stage', ['pregame', 'live', 'unconfirmed', 'between', 'final'])
 def test_a_published_game_file_is_the_body_the_route_answers(make, stage):
     first = {'pregame': pregame, 'live': snap, 'unconfirmed': unconfirmed,
@@ -379,6 +395,10 @@ def test_demo_sessions_and_operator_data_are_never_published(world):
     health = world.cycle()
     assert not world.path(ARCHIVE_FILE).exists() and not world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()  # embargoed: 423, no file
     assert health['unavailable_games'] == []  # and a demo is not reported as a fault
+    assert health['game_checks'][str(ARCHIVE_GAME)]['file_sequence'] is None
+    assert health['game_checks'][str(ARCHIVE_GAME)]['feed_ok'] is False
+    schema = json.loads((CONTRACT_DIR/'schema/health.schema.json').read_text())
+    assert publish_schema.validate(world.read('v1/health.json'), schema) == []
     card = world.read(f'v1/games/{ARCHIVE_DATE}.json')['games'][0]
     assert card['embargoed'] is True and card['away_score'] is None
     assert strip(world.read(f'v1/games/{ARCHIVE_DATE}.json')) == world.served('/api/service/games', date=ARCHIVE_DATE)
@@ -498,6 +518,20 @@ def test_every_example_and_every_fixture_body_validates_against_its_schema(tmp_p
         assert bodies
         for name, body in bodies:
             assert publish_schema.validate(body, schemas[kind]) == [], name
+
+
+def test_recommendation_schema_accepts_real_candidate_types_and_unsupported_example():
+    schema = json.loads((CONTRACT_DIR/'schema/game.schema.json').read_text())
+    supported = json.loads((CONTRACT_DIR/'examples/game-live.json').read_text())
+    candidate = supported['next']['rec']['candidates'][0]
+    candidate['detail']['probability'] = .42
+    candidate['target'] = {'x': .3, 'z': 2.1}
+    assert publish_schema.validate(supported, schema) == []
+    unsupported = json.loads((CONTRACT_DIR/'examples/game-live-unsupported.json').read_text())
+    assert unsupported['display_state']['state'] == 'unsupported'
+    assert unsupported['next']['rec']['status'] == 'unsupported'
+    assert unsupported['next']['rec']['candidates'] == []
+    assert publish_schema.validate(unsupported, schema) == []
 
 
 def test_bodies_built_outside_the_export_validate_too(world):
