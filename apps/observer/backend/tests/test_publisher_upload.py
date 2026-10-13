@@ -146,6 +146,12 @@ def test_permanent_failure_isolated_pending_survives_restart_and_unchanged_file_
     health = world.cycle(settle=False)
     assert codes(health) == [(ARCHIVE_GAME, 'upload_failed')]
     assert HEALTH in endpoint.objects and f'v1/game/{LIVE_GAME}.json' in endpoint.objects
+    check = health['game_checks'][str(ARCHIVE_GAME)]
+    local_sequence = world.game(ARCHIVE_GAME)['publish']['sequence']
+    remote_health = json.loads(endpoint.objects[HEALTH])
+    assert check['feed_ok'] is True and check['file_sequence'] == local_sequence
+    assert remote_health['game_checks'][str(ARCHIVE_GAME)] == check and GAME not in endpoint.objects
+    assert health['upload']['pending'] == 1  # remote game transfer failed; local game/feed check succeeded
     saved = json.loads(world.publisher.state_path.read_text())
     assert saved['upload_pending'] == {GAME: 'put'}
     before = world.path(GAME).read_bytes()
