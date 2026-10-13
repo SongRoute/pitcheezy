@@ -1039,6 +1039,8 @@ def test_a_setup_file_that_cannot_be_read_does_not_stop_the_cycle(world, error):
     world.publisher.setups.view = view
     health = world.cycle(after=world.config['settled_recheck_s'], settle=False)
     assert codes(health) == [(ARCHIVE_GAME, 'setup_failed')] and health['sequence'] == world.game()['publish']['sequence']
+    check = health['game_checks'][str(ARCHIVE_GAME)]
+    assert check['sequence_checked'] == health['sequence'] and check['feed_ok'] is True
     assert not world.path(f'v1/setup/{ARCHIVE_GAME}.json').exists()  # what cannot be validated is not public
     assert str(error) not in world.path('v1/health.json').read_text()
 

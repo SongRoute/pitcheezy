@@ -783,7 +783,10 @@ class Publisher:
                     self._fail(int(match[1]), None, 'upload_failed')
         # Only a real game-body check advances freshness; settled games may skip many cycles.
         self._now = max(now, self.wall())
-        failed_games = {item['game_pk'] for item in self._unavailable}
+        # Setup and remote-upload faults are reported in unavailable_games, but neither says the
+        # game feed/body check failed. In particular, a good final game may lose only its setup file.
+        failed_games = {item['game_pk'] for item in self._unavailable
+                        if item['code'] not in ('setup_failed', 'upload_failed')}
         game_checks = {}
         for game_pk in sorted(listed | known | embargoed | late):
             entry = self.state['files'].get(self.layout['game'].format(game_pk=game_pk))
