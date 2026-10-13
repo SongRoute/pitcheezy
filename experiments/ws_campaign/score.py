@@ -34,6 +34,8 @@ def inspect_artifacts(manifest, state):
         directory = Path(job['output']); cert = record['certification']
         require(sha(directory/'receipt.json') == cert['receipt_sha256'] and
                 sha(directory/'SUPERVISOR.json') == cert['supervisor_sha256'], 'queue artifact pin')
+        supervisor = json.loads((directory/'SUPERVISOR.json').read_text())
+        require(supervisor.get('status') == 'COMPLETED' and supervisor.get('receipt_sha256') == cert['receipt_sha256'], 'completed supervisor pin')
         r = json.loads((directory/'receipt.json').read_text())
         for k in ('job_id','arm','seed','attempt_id','input_manifest_sha256','exposure_ledger_sha256'):
             require(r.get(k) == job.get('id' if k == 'job_id' else k), 'receipt identity '+k)
@@ -97,6 +99,8 @@ def run(grant, manifest, state, out):
         require(sha(inputs/'manifest.json') == first['input_manifest_sha256'], 'input manifest')
         require(sha(first['exposure_ledger']) == first['exposure_ledger_sha256'], 'exposure ledger')
         x,c,s,ctx = train.load_inputs(inputs,cfg)
+        require(c['keys'].ndim == 2 and c['keys'].shape[1] == 3 and
+                len(np.unique(c['keys'],axis=0)) == len(c['keys']), 'unique stable package keys')
         ev = c['evaluation']; rows_np = np.flatnonzero(ev)
         require(len(rows_np) > 0, 'nonempty EVAL')
         data = base.Data(torch,torch.device('cuda'),x,c,s,ctx)
