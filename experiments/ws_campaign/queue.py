@@ -199,6 +199,11 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
                     state["global_stop"] = "monitor/certification failure: " + str(exc)
                     break
             changed |= quarantine_failed_dependencies(state, jobs)
+            if len(jobs) == 12 and any(state["jobs"][j["id"]]["status"] in {"FAILED", "QUARANTINED"}
+                                       for j in jobs if j["seed"] == 0):
+                for j in jobs:
+                    if j["seed"] > 0 and state["jobs"][j["id"]]["status"] == "PENDING":
+                        state["jobs"][j["id"]].update(status="QUARANTINED", reason="K2 seed0 integrity gate failed")
             if not state["global_stop"]:
                 active = {int(lookup[name]["gpu_index"]) for name, item in state["jobs"].items()
                           if item["status"] == "RUNNING"}
@@ -206,6 +211,9 @@ def run_queue(manifest_path, launch_grant_path, state_path, poll_seconds):
                     item = state["jobs"][job["id"]]
                     index = int(job["gpu_index"])
                     if item["status"] != "PENDING" or index in active or len(active) >= (4 if len(jobs) == 12 else 5):
+                        continue
+                    if len(jobs) == 12 and job["seed"] > 0 and any(
+                            state["jobs"][j["id"]]["status"] != "COMPLETED" for j in jobs if j["seed"] == 0):
                         continue
                     if any(state["jobs"][dep]["status"] != "COMPLETED" for dep in job["depends_on"]):
                         continue
