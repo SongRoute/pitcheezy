@@ -147,6 +147,32 @@ def test_one_fixed_delay_holds_back_every_pitch_newer_than_it(make):
     assert [p['key'] for p in world.game()['pitches']][-1] == '900200:5:2'
 
 
+def test_one_fixed_delay_holds_back_the_game_list_as_it_holds_back_the_game(make, monkeypatch):
+    """M1: the published list is the as-of point of the same fixed delay as the game file, with the optional viewer
+    feature OFF (``?delay=`` stays ignored). The schedule row is the ballpark's present, so a LIVE card shows no
+    score, inning or status words while the game is buffering or held back, and a card the schedule already calls
+    Final stays presented as live without a score until the delayed game page could have reached the end. Delay 0
+    is unchanged. Only lead information is withheld: the card's other fields are not rebuilt to a past state."""
+    monkeypatch.delenv('PITCHEEZY_OBSERVER_VIEWER_DELAY', raising=False)
+    world = make(fixed_delay_s=30)
+    lead = lambda card: (card['away_score'], card['home_score'], card['inning'], card['half'], card['status_text'], card.get('score_hidden'))
+    listed = lambda w=world: {c['game_pk']: c for c in w.read(f'v1/games/{LIVE_DATE}.json')['games']}[LIVE_GAME]
+    world.cycle(settle=False)  # buffering: no game file yet, so the list may not run ahead of it
+    assert not world.path(LIVE_FILE).exists()
+    assert listed()['status'] == 'live' and lead(listed()) == (None, None, None, None, None, True)
+    world.cycle(after=20.0)  # the game file is 30 s behind; the list still says nothing the game file does not
+    assert len(world.game()['pitches']) == 9 and lead(listed()) == (None, None, None, None, None, True)
+    assert strip(world.read(f'v1/games/{LIVE_DATE}.json')) == world.served('/api/service/games', date=LIVE_DATE)  # the private route: same delay
+    assert world.served('/api/service/games', date=LIVE_DATE, delay='0') == world.served('/api/service/games', date=LIVE_DATE)  # feature off: ignored
+    world.cycle(snap('20261005_100100', half='final', wall=world.now[0]+7), after=25.0)  # the schedule says Final now (its cache is 20 s)
+    assert listed()['status'] == 'live' and lead(listed()) == (None, None, None, None, None, True)  # the delayed game page has not reached the end
+    world.cycle(after=30.0)
+    assert listed()['status'] == 'final' and listed()['home_score'] == 1 and not listed().get('score_hidden')
+    plain = make()  # delay 0: the schedule row as it is
+    plain.cycle()
+    assert listed(plain)['status'] == 'live' and listed(plain)['home_score'] == 1 and not listed(plain).get('score_hidden')
+
+
 def test_a_published_game_never_holds_a_pitch_the_feed_has_not_delivered(world):
     world.cycle()
     keys = [p['key'] for p in world.game()['pitches']]

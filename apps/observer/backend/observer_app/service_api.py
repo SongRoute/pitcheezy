@@ -300,7 +300,7 @@ def list_card(record, cutoff, source):
 
 
 def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=None, live_display=None, live_pairing=None,
-             features=None, live_extras=None, delayed_card=None, wall=None):
+             features=None, live_extras=None, delayed_card=None, wall=None, service_delay_s=0):
     """Adds /api/service/** and the embargo guard to ``app``. ``schedule(date)`` and ``live_feed(pk)``
     reach the real live feed (``None`` = archive only); ``live_feed`` returns ``(feed, meta)`` or
     ``(feed, meta, entry)`` with the store-backed buffer entry; ``live_rec(feed, parsed, entry)`` returns the
@@ -314,7 +314,10 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
     ``?delay=<seconds>`` the live game is served as it stood for a viewer whose broadcast runs that far behind:
     ``live_feed(pk, delay)`` returns that viewer's snapshot and everything in the payload derives from it. Its
     ``meta['viewer']`` (delay used, buffer limit, buffering) is echoed as ``viewer``; a ``None`` snapshot is the
-    calm buffering answer. Without the parameter (or with the feature off) ``live_feed(pk)`` is called as before."""
+    calm buffering answer. Without the parameter (or with the feature off) ``live_feed(pk)`` is called as before.
+    ``service_delay_s`` is the one fixed delay every viewer gets (the publisher's; ``main.create_app``): the game
+    list is then held back the same way whether or not the viewer feature is on, as ``live_feed`` already holds the
+    game. Only lead information (a live score, inning, status words; a too-recent Final) is withheld from a card."""
     features = features or feature_flags.features
 
     def ok(payload, status=200):
@@ -424,7 +427,7 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         for card in live:  # a stored final record wins over the schedule row of the same game
             games.setdefault(card['game_pk'], card)
         out = [redact(c) if c['game_pk'] in embargoed else c for c in games.values()]
-        seconds = feature_flags.delay_param(delay, features())
+        seconds = service_delay_s or feature_flags.delay_param(delay, features())  # as ``main.service_live_feed``
         if seconds:
             out = [delayed_card(c, seconds) if delayed_card else unspoiled(c) for c in out]
         out.sort(key=lambda c: (c['start'] or '', c['game_number'], c['game_pk']))
