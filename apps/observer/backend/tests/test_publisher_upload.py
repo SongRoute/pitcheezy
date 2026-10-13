@@ -576,4 +576,44 @@ def test_canceled_withdrawal_after_failed_local_delete_turns_delete_into_put(wor
     assert ('PUT', GAME) in [r[:2] for r in endpoint.requests]
     assert ('DELETE', GAME) not in [r[:2] for r in endpoint.requests]
     assert world.path(GAME).exists() and endpoint.objects[GAME] == world.path(GAME).read_bytes()
-    assert GAME not in world.publisher.state['upload_pending'] and codes(health) == []
+    assert ('PUT', SETUP) in [r[:2] for r in endpoint.requests] and ('DELETE', SETUP) not in [r[:2] for r in endpoint.requests]
+    assert world.path(SETUP).exists() and endpoint.objects[SETUP] == world.path(SETUP).read_bytes()
+    assert GAME not in world.publisher.state['upload_pending'] and SETUP not in world.publisher.state['upload_pending']
+    assert codes(health) == []
+
+
+@pytest.mark.parametrize('slow', [None, 100000], ids=['never', 'larger_than_period'])
+@pytest.mark.parametrize('restart', [False, True], ids=['same_process', 'restart'])
+def test_canceled_withdrawal_of_a_long_final_live_game_still_turns_delete_into_put(world, endpoint, monkeypatch, slow, restart):
+    # P3 follow-up (independent review 2026-10-13): the same failed local delete, but the game came from the live
+    # feed and is past final_recheck_for_s with a slow recheck that is null or not yet due. The long-final branch
+    # must not keep the file at its unknown content: the game body is rebuilt and PUT, the DELETE never runs.
+    world.config |= {'final_recheck_for_s': 0, 'final_slow_recheck_s': slow}
+    sink = attach(world, endpoint, monkeypatch)
+    world.write_setup(game=LIVE_GAME)
+    world.cycle(snap(half='final'), settle=False)
+    game, setup = f'v1/game/{LIVE_GAME}.json', f'v1/setup/{LIVE_GAME}.json'
+    assert world.game()['source']['kind'] == 'live' and world.publisher.state['files'][game]['final'] is True
+    before, setup_before = world.path(game).read_bytes(), world.path(setup).read_bytes()
+    real_delete, real_embargoed = sink.local.delete, world.publisher.bodies.embargoed
+
+    def failed_delete(path):
+        raise OSError('local delete failed')
+    monkeypatch.setattr(sink.local, 'delete', failed_delete)
+    monkeypatch.setattr(world.publisher.bodies, 'embargoed', lambda: [LIVE_GAME])  # a demo holds the live game
+    health = world.cycle(settle=False)
+    assert (LIVE_GAME, 'withdraw_failed') in codes(health)
+    assert world.path(game).read_bytes() == before and game in endpoint.objects and setup in endpoint.objects
+    assert world.publisher.state['upload_pending'][game] == 'delete' and world.publisher.state['upload_pending'][setup] == 'delete'
+    monkeypatch.setattr(sink.local, 'delete', real_delete)
+    monkeypatch.setattr(world.publisher.bodies, 'embargoed', real_embargoed)  # the demo ends
+    if restart:
+        world.start()
+    endpoint.requests.clear()
+    health = world.cycle(settle=False)
+    for path, kept in ((game, before), (setup, setup_before)):
+        assert ('PUT', path) in [r[:2] for r in endpoint.requests], path
+        assert ('DELETE', path) not in [r[:2] for r in endpoint.requests], path
+        assert world.path(path).exists() and endpoint.objects[path] == world.path(path).read_bytes()
+        assert path not in world.publisher.state['upload_pending']
+    assert world.game()['source']['kind'] == 'live' and codes(health) == []

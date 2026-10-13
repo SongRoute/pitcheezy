@@ -853,7 +853,9 @@ class Publisher:
                 # the setup file is still looked for at the settled pace (a local read).
                 slow = self.config.get('final_slow_recheck_s')
                 built = self.state['checked'].get(f'{path}#built', entry['final_at'])
-                if slow is None or now-built < slow:
+                # A kept entry without a digest (a withdrawal's delete failed) is rebuilt whatever the pace: its
+                # content is unknown and a DELETE may still be queued, so only a real PUT restores it.
+                if entry.get('digest') is not None and (slow is None or now-built < slow):
                     if self._due(path, now):
                         self.state['checked'][path] = now
                         self._setup(game_pk)
