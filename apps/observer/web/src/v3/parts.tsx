@@ -111,8 +111,9 @@ export function RecBlock({ v, opts, open, side, compact = false }: { v: GameView
   const title = v.nextPhase || (v.stateSlot && !v.final) ? `다음 공 추천${v.nextNumber ? ` · ${v.nextNumber}구` : ''}` : v.lastPitch ? (v.detail.live_source ? '마지막 공 · 투구 전에 기록된 추천' : '마지막 공 · 경기 뒤 같은 정보로 계산한 추천') : '추천';
   const count = v.situation ? `${v.situation.balls}-${v.situation.strikes}` : '';
   const pitches = v.paPitches;
-  // the state is written whenever it is not plain "recommended" — also next to a shown recommendation (자료 늦음, 연결 끊김 …)
-  const stateText = v.eff && (!v.shownRec || v.eff.state !== 'recommended') ? v.eff : null;
+  // the state is written whenever it is not plain "recommended" — also next to a shown recommendation (자료 늦음 …), unless the
+  // connection banner above already tells that story
+  const stateText = v.eff && (!v.shownRec || (v.eff.state !== 'recommended' && v.conn.kind === 'ok')) ? v.eff : null;
   const pastPending = !v.nextPhase && unconfirmed(v.lastPitch);
   const zone = <Zone bounds={v.detail.zone_bounds} view={opts.view} mark={opts.zone} batter={v.side} recs={v.cands}
     pitches={zonePitches(pitches)} held={v.held} label={zoneLabel(v, v.cands, pitches, opts.view)} size="main" />;
@@ -162,7 +163,7 @@ export function PitchList({ v, layout, open, density }: { v: GameView; layout: O
 /** ONE live region that is always in the page (classic rule: a region inserted already filled is often not read out). It repeats,
  *  in words, what changed: the connection story, the recommendation state, and the D1 / correction note. */
 export function Announcer({ v }: { v: GameView }) {
-  const st = v.eff && (!v.shownRec || v.eff.state !== 'recommended') ? `${v.eff.label}${v.eff.message ? `. ${v.eff.message}` : ''}` : '';
+  const st = v.eff && (!v.shownRec || (v.eff.state !== 'recommended' && v.conn.kind === 'ok')) ? `${v.eff.label}${v.eff.message ? `. ${v.eff.message}` : ''}` : '';
   const text = [v.conn.kind !== 'ok' ? `${v.conn.label}${v.conn.detail ? `. ${v.conn.detail}` : ''}` : '', st !== '' && !st.startsWith(v.conn.label) ? st : '', v.note ?? ''].filter(Boolean).join(' ');
   return <p className="v3-sr" role="status" aria-live="polite" aria-atomic="true">{text}</p>;
 }
