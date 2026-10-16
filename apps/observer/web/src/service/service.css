@@ -663,3 +663,20 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 .sv-game .sv-strip .sv-card{height:64px;min-height:64px}.sv-game .sv-zrow,.sv-game.has-display .sv-zrow{height:260px;min-height:260px}.sv-game .sv-stage{gap:8px}.sv-game .sv-state{min-height:68px}.sv-game .sv-pitch-summary{padding:6px 0}.sv-game .sv-pa-dot{pointer-events:none}
 @media(min-width:760px){.sv-game .sv-zrow,.sv-game.has-display .sv-zrow{height:330px;min-height:330px}}
 .sv-share-bar{display:block;flex-basis:100%;height:3px;border-radius:3px;background:#dde1dc;margin-top:4px}.sv-share-bar i{display:block;height:100%;background:var(--sv-rec);border-radius:3px}.sv-game .sv-rec-summary .sv-rec-row:nth-child(2) .sv-share-bar i{background:#84b59b}.sv-game .sv-rec-summary .sv-rec-row:nth-child(3) .sv-share-bar i{background:#aecdbb}
+/* ---- WS launch layout (2026-10-17, workstream D; tests/ws-launch-layout-check.mjs) ----
+   Header: the score line never runs under the LIVE/종료 button. It is tightened on phones, and a team name that still does not fit
+   ends in an ellipsis (the full names stay in the heading's aria-label). */
+.sv-head-score{max-width:100%;min-width:0}
+.sv-head-score .sv-tn{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.sv-head-score strong,.sv-head-score i{flex:none}
+@media(max-width:419px){.sv-game .sv-head{padding-left:8px;padding-right:8px;gap:2px}.sv-head-score{gap:4px}.sv-head-score .sv-tn{font-size:14px}.sv-head-score i{font-size:12px}.sv-game .sv-live{padding:0 6px}}
+@media(max-width:359px){.sv-head-score{gap:3px}.sv-head-score .sv-tn{font-size:13px}.sv-head-score strong{font-size:21px}}
+/* 이닝별 기록: R·H·E·사사구 stay pinned at the right edge; only the inning cells scroll under them (narrow phones, the 420px side sheet). */
+.sv-box th:nth-last-child(-n+4),.sv-box td:nth-last-child(-n+4){position:sticky;z-index:1;background:var(--sv-paper);box-sizing:border-box;width:30px;min-width:30px}
+.sv-box th:last-child,.sv-box td:last-child{right:0;width:56px;min-width:56px}
+.sv-box th:nth-last-child(2),.sv-box td:nth-last-child(2){right:56px}
+.sv-box th:nth-last-child(3),.sv-box td:nth-last-child(3){right:86px}
+.sv-box th:nth-last-child(4),.sv-box td:nth-last-child(4){right:116px;box-shadow:-6px 0 6px -6px rgba(21,25,30,.35)}
+/* 정정됨 on a pitch card (the 10/13 strip draws no mini zone): the tag sits in the card's top corner and the caption starts below it. */
+.sv-game .sv-strip .sv-card:has(.sv-card-tag){justify-content:flex-end;padding-bottom:4px}
+.sv-game .sv-strip .sv-card-tag{top:2px;right:2px;font-size:10px;line-height:1.25}

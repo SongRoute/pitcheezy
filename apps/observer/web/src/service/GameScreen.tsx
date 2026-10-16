@@ -468,6 +468,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const line = error || feedDown ? { kind: 'warn', text: `${WARN} 연결 끊김` } : clientStale ? { kind: 'warn', text: disp ? `${WARN} 연결 끊김` : `${LATE} 갱신 늦어짐` }  /* with a state slot the chip says 연결 끊김: one story */
     : publishStale ? { kind: 'late', text: `${LATE} 갱신 지연` } : publishChecking ? { kind: 'ok', text: '확인 중…' }
     : lagText ? { kind: 'late', text: `${LATE} 자료 늦음 · ${lagText}` }
+    /* game-level 확인 중 from the server: the line tells the chip's story, never 실시간으로 받는 중 beside it */
+    : live && auto && disp?.state === 'unconfirmed' ? { kind: 'ok', text: '확인 중…' }
     : { kind: 'ok', text: live ? (auto ? (behind > 0 ? `${behind}초 늦춰 보는 중` : '실시간으로 받는 중') : '자동 갱신 멈춤') : disp?.message?.replace(/\.$/, '') ?? disp?.label ?? '' };
   // D1 "no silent flip": server note first; otherwise compare with what this screen last drew for the same pending pitch.
   let clientNote: string | null = null;
