@@ -9,12 +9,13 @@ import math
 import os
 from pathlib import Path
 import signal
+import statistics
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / 'src')]
 from experiments.ws_fullseason.audit import checked_json, sha as file_sha
-from pitcheezy.seq_shadow import captured_bridge, captured_native, captured_native_state, fullseason_stream
+from pitcheezy.seq_shadow import captured_bridge, captured_native, captured_native_forecast, captured_native_state, fullseason_stream
 from pitcheezy.seq_shadow.fullseason_runtime import Runtime
 from pitcheezy.seq_shadow.ledger import sha as object_sha
 from scripts import fullseason_captured_replay as replay
@@ -65,8 +66,21 @@ def _probabilities(result):
         raise ValueError('invalid experimental seven-leaf output')
 
 
-def run(regpath, grantpath):
+def _latency(values):
+    values = sorted(values)
+    if not values:
+        return {'count': 0, 'min_ns': None, 'p50_ns': None, 'p90_ns': None,
+                'p99_ns': None, 'max_ns': None, 'mean_ns': None}
+    def rank(p): return values[math.ceil(p * len(values)) - 1]
+    return {'count': len(values), 'min_ns': values[0], 'p50_ns': rank(.5),
+            'p90_ns': rank(.9), 'p99_ns': rank(.99), 'max_ns': values[-1],
+            'mean_ns': statistics.fmean(values)}
+
+
+def run(regpath, grantpath, *, persist_forecasts=False):
     reg = gated(regpath, grantpath)
+    if persist_forecasts and reg.get('forecast_persistence') != 'append_only_native_forecast_v1':
+        raise ValueError('forecast persistence contract changed')
     os.fstat(int(os.environ['PITCHEEZY_FULLSEASON_LOCK_FD']))
     signal.signal(signal.SIGALRM, lambda *_: os._exit(124))
     signal.alarm(reg['bounds']['wall_seconds'] + 15)
@@ -81,6 +95,8 @@ def run(regpath, grantpath):
     scorer = captured_native_state.NativeRuntime(runtime, allow_native_experimental=True)
     state = captured_native_state.NativeShadow(Path(reg['output']) / 'native_stream.sqlite3',
         game_pk=replay.GAME, game_date=replay.DATE, normalizer_sha256=reg['normalizer_sha256'])
+    forecasts = (captured_native_forecast.NativeForecast(state, scorer, config,
+        reg['profile_bundle']['manifest_sha256'], file_sha(regpath)) if persist_forecasts else None)
     counts = Counter({name: 0 for name in (
         'bodies', 'strict_new', 'strict_correction', 'strict_unchanged_observation',
         'native_native_candidate', 'native_native_unknown', 'native_orphan_rows',
@@ -95,6 +111,7 @@ def run(regpath, grantpath):
         'selected_known_tokens_sum', 'selected_known_tokens_positive_decisions',
         'previous_pitch_known', 'previous_pitch_unknown', 'previous_pitch_missing')})
     selected, seen = [], set()
+    score_latencies = []
     compressed = inflated = 0
     try:
         for item in files:
@@ -148,14 +165,25 @@ def run(regpath, grantpath):
             seen.add(key)
             if candidate['pitch_type_basis'] != 'hypothetical_candidate' or candidate['query']['pitch_type'] != replay.TYPE:
                 raise ValueError('conditional FF query identity changed')
+            result = (forecasts.forecast(candidate, received_ns=received_ns)
+                      if persist_forecasts else None)
             decision = state.decide(candidate, received_ns=received_ns)
-            result = scorer.predict(decision)
+            if not persist_forecasts:
+                result = scorer.predict(decision)
             _probabilities(result)
             if result.get('prediction_ready') is not False or result.get('prospective_claim') is not False:
                 raise ValueError('experimental result claimed readiness or prospectivity')
             counts['strict_decision_' + decision['strict_status']] += 1
             counts['native_decision_' + decision['status']] += 1
             counts['experimental_' + result['status']] += 1
+            if persist_forecasts:
+                duration = result['score_compute_ns']
+                if result['status'] == 'experimental_conditional_score':
+                    if type(duration) is not int or duration < 0:
+                        raise ValueError('score-only latency missing')
+                    score_latencies.append(duration)
+                elif duration is not None:
+                    raise ValueError('abstention has score latency')
             if decision['reason']:
                 reasons['decision_' + decision['reason']] += 1
             for field in ('prior_known_same_pitcher_total', 'prior_unknown_relevant', 'selected_known_tokens'):
@@ -168,19 +196,40 @@ def run(regpath, grantpath):
             if previous not in ('known', 'unknown', 'missing'):
                 raise ValueError('native predecessor state')
             context['previous_pitch_' + previous] += 1
-            selected.append({'candidate': candidate, 'received_ns': received_ns,
+            selected_item = {'candidate': candidate, 'received_ns': received_ns,
                 'native_decision_sha256': decision['decision_sha256'],
                 'strict_snapshot_sha256': decision['strict_snapshot_sha256'],
                 'status': decision['status'],
-                'underlying_call_sha256': result.get('underlying_call_sha256')})
+                'underlying_call_sha256': result.get('underlying_call_sha256')}
+            if persist_forecasts:
+                selected_item.update(forecast_sha256=result['forecast_sha256'],
+                    probabilities_sha256=object_sha(result['probabilities']), key=key)
+            selected.append(selected_item)
         state.close()
         state = captured_native_state.NativeShadow(Path(reg['output']) / 'native_stream.sqlite3',
             game_pk=replay.GAME, game_date=replay.DATE, normalizer_sha256=reg['normalizer_sha256'])
+        if persist_forecasts:
+            forecasts = captured_native_forecast.NativeForecast(state, scorer, config,
+                reg['profile_bundle']['manifest_sha256'], file_sha(regpath))
+            scorer.predict = lambda *_: (_ for _ in ()).throw(ValueError('restart recomputed score'))
         for item in selected:
             same = state.decide(item['candidate'], received_ns=item['received_ns'])
             if (same['decision_sha256'], same['strict_snapshot_sha256'], same['status']) != (
                     item['native_decision_sha256'], item['strict_snapshot_sha256'], item['status']):
                 raise ValueError('native decision changed after later receipts/restart')
+            if persist_forecasts:
+                result = forecasts.forecast(item['candidate'], received_ns=item['received_ns'])
+                if (result['forecast_sha256'] != item['forecast_sha256']
+                        or object_sha(result['probabilities']) != item['probabilities_sha256']):
+                    raise ValueError('forecast changed after later receipts/restart')
+        if persist_forecasts:
+            intent_count, result_count, pending_count = state.db.execute('''SELECT
+                (SELECT COUNT(*) FROM native_forecast_intents),
+                (SELECT COUNT(*) FROM native_forecast_results),
+                (SELECT COUNT(*) FROM native_forecast_intents i LEFT JOIN native_forecast_results r
+                 ON r.decision_id=i.decision_id WHERE r.decision_id IS NULL)''').fetchone()
+            if (intent_count, result_count, pending_count) != (replay.MAX_QUERIES, replay.MAX_QUERIES, 0):
+                raise ValueError('forecast ledger count or pending gap')
         if state.db.execute("SELECT 1 FROM events WHERE status!='unknown' LIMIT 1").fetchone():
             raise ValueError('strict event promotion detected')
     finally:
@@ -188,7 +237,7 @@ def run(regpath, grantpath):
     if (counts['bodies'] != replay.MAX_FILES or compressed != reg['capture_compressed_bytes_reported']
             or inflated != reg['capture_inflated_bytes_reported']):
         raise ValueError('capture total changed')
-    export = [{k: value for k, value in item.items() if k != 'candidate'} for item in selected]
+    export = [{k: value for k, value in item.items() if k not in ('candidate', 'key')} for item in selected]
     report = {'status': 'COMPLETED', 'stage': 'CAPTURE_NATIVE_EXPERIMENTAL_CONDITIONAL_SHADOW',
         'registration_sha256': file_sha(regpath), 'grant_sha256': file_sha(grantpath),
         'source_commit': reg['source_commit'], 'game_pk': replay.GAME, 'official_date': replay.DATE,
@@ -207,6 +256,18 @@ def run(regpath, grantpath):
         'fits': 0, 'calibration_fits': 0, 'performance_metrics': False,
         'raw_probabilities_written': False, 'we_conversion': False,
         'operational_switch': False, 'corrected_reference_reads': 0}
+    if persist_forecasts:
+        if len(selected) != replay.MAX_QUERIES or len(score_latencies) != counts['experimental_experimental_conditional_score']:
+            raise ValueError('forecast denominator or score latency mismatch')
+        report.update({'stage': 'CAPTURE_NATIVE_FORECAST_PERSISTENCE_EXPERIMENTAL',
+            'forecast_intents': len(selected), 'forecast_terminal_results': len(selected),
+            'selected_keys_sha256': object_sha([list(item['key']) for item in selected]),
+            'forecast_results_sha256': object_sha([item['forecast_sha256'] for item in selected]),
+            'score_compute_latency': _latency(score_latencies),
+            'raw_probabilities_written': True,
+            'raw_probabilities_scope': 'internal_append_only_sqlite_only',
+            'individual_probabilities_exported': False,
+            'forecast_pending_gaps': 0})
     (Path(reg['output']) / 'receipt.pending.json').write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
 
 
