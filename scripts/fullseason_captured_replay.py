@@ -151,6 +151,12 @@ def run(regpath, grantpath):
             if hashlib.sha256(body).hexdigest() != item['sha256']:
                 raise ValueError('inflated canonical body digest mismatch')
             feed = json.loads(body)
+            if (not isinstance(feed, dict) or not isinstance(feed.get('gameData'), dict)
+                    or not isinstance(feed['gameData'].get('game'), dict)
+                    or not isinstance(feed['gameData'].get('datetime'), dict)
+                    or feed['gameData']['game'].get('pk') != GAME
+                    or feed['gameData']['datetime'].get('officialDate') != DATE):
+                raise ValueError('captured body game/officialDate mismatch')
             receipt_ns = int(item['fetched'] * 1_000_000_000)
             step = captured_bridge.step(feed, game_pk=GAME, game_date=DATE,
                 receipt_seq=item['seq'], source_sha256=item['sha256'], candidate_pitch_type=TYPE)
@@ -199,6 +205,11 @@ def run(regpath, grantpath):
                 'basis': candidate['pitch_type_basis'], 'coverage': candidate['coverage'],
                 'received_ns': receipt_ns, 'snapshot_sha256': snapshot['snapshot_sha256'],
                 'call_sha256': scored['call_sha256']})
+        # The same owned ledger must return every original decision after a
+        # genuine connection restart, including after later corrections.
+        state.close()
+        state = fullseason_stream.StreamState(out / 'stream.sqlite3', game_pk=GAME, game_date=DATE,
+            normalizer_sha256=reg['normalizer_sha256'], evidence_kind='captured')
         for d in selected:
             same = state.decide(d['decision_id'], d['query'], pitch_type_basis=d['basis'],
                 coverage=d['coverage'], received_ns=d['received_ns'])
@@ -208,15 +219,23 @@ def run(regpath, grantpath):
         state.close()
     if counts['bodies'] != MAX_FILES:
         raise ValueError('incomplete receipt replay')
+    if (compressed != reg['capture_compressed_bytes_reported']
+            or inflated != reg['capture_inflated_bytes_reported']):
+        raise ValueError('capture byte totals changed')
     decision_hash = hashlib.sha256(json.dumps(selected, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     report = {'status': 'COMPLETED', 'stage': 'CAPTURED_RETROSPECTIVE_ENGINEERING_REPLAY',
         'registration_sha256': sha(regpath), 'grant_sha256': sha(grantpath),
         'source_commit': reg['source_commit'], 'game_pk': GAME, 'official_date': DATE,
         'candidate_type': TYPE, 'candidate_basis': 'hypothetical_candidate',
         'receipt_order': 'manifest seq 1..427; local fetched time availability upper bound',
-        'counts': dict(counts), 'reasons': dict(reasons), 'compressed_bytes': compressed,
+        'counts': {k: counts[k] for k in ('bodies', 'event_new', 'event_correction',
+            'unchanged_observation', 'fate_accepted', 'fate_rejected', 'fate_unknown',
+            'bridge_abstain', 'decision_scored', 'decision_abstain',
+            'repeated_candidate_key', 'query_cap_skips')},
+        'reasons': dict(reasons), 'compressed_bytes': compressed,
         'inflated_bytes': inflated, 'selected_decisions_sha256': decision_hash,
-        'immutable_replay_checks': len(selected), 'bundle_sha256': runtime.bundle_sha256,
+        'selected_query_count': len(selected), 'prediction_ready': counts['decision_scored'] > 0,
+        'immutable_restart_checks': len(selected), 'bundle_sha256': runtime.bundle_sha256,
         'profile_origin': DATE, 'data_role': '2026 EXPOSED DEVELOPMENT',
         'prospective_claim': False, 'upstream_first_availability': 'UNKNOWN',
         'stored_prefix_only': True, 'fits': 0, 'calibration_fits': 0,

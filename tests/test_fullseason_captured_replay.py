@@ -26,7 +26,8 @@ def test_receipt_order_selection_and_unknown_abstention(tmp_path, monkeypatch):
     capture = tmp_path / 'capture'; capture.mkdir()
     files = []
     for seq in (1, 2):
-        body = json.dumps({'receipt': seq}).encode()
+        body = json.dumps({'receipt': seq, 'gameData': {'game': {'pk': 849809},
+                          'datetime': {'officialDate': '2026-10-11'}}}).encode()
         name = f'849809_{seq:06d}.json.gz'
         (capture / name).write_bytes(gzip.compress(body))
         files.append({'file': name, 'seq': seq, 'version': 1,
@@ -47,7 +48,10 @@ def test_receipt_order_selection_and_unknown_abstention(tmp_path, monkeypatch):
            'adapter_config': {'path': str(config), 'sha256': replay.sha(config)},
            'leaf_order': ['a'] * 7, 'normalizer_source': str(normalizer),
            'normalizer_sha256': replay.sha(normalizer), 'profile_bundle': {'directory': str(tmp_path),
-           'manifest_sha256': '0' * 64}, 'output': str(out), 'source_commit': 'generated'}
+           'manifest_sha256': '0' * 64}, 'output': str(out), 'source_commit': 'generated',
+           'capture_compressed_bytes_reported': sum((capture / f['file']).stat().st_size for f in files),
+           'capture_inflated_bytes_reported': sum(len(json.dumps({'receipt': f['seq'], 'gameData':
+              {'game': {'pk': 849809}, 'datetime': {'officialDate': '2026-10-11'}}}).encode()) for f in files)}
     monkeypatch.setattr(replay, 'gated', lambda *_: reg)
 
     class Runtime:
@@ -82,5 +86,6 @@ def test_receipt_order_selection_and_unknown_abstention(tmp_path, monkeypatch):
     assert receipt['counts']['unchanged_observation'] == 1
     assert receipt['counts']['decision_abstain'] == 1
     assert receipt['counts']['repeated_candidate_key'] == 1
-    assert receipt['immutable_replay_checks'] == 1
+    assert receipt['immutable_restart_checks'] == 1
+    assert receipt['prediction_ready'] is False
     assert receipt['raw_probabilities_written'] is False
