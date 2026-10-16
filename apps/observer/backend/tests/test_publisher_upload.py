@@ -96,7 +96,7 @@ def endpoint(monkeypatch):
 
 
 def config(endpoint, **overrides):
-    return publisher.load_config(env={})['upload'] | {'enabled': True, 'base_url': endpoint.url, 'retries': 0} | overrides
+    return publisher.load_config(env={})['upload'] | {'enabled': True, 'background': False, 'base_url': endpoint.url, 'retries': 0} | overrides
 
 
 def attach(world, endpoint, monkeypatch, **overrides):

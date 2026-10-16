@@ -47,6 +47,8 @@ import re
 import subprocess
 import sys
 import time
+import threading
+import uuid
 from urllib.parse import urlsplit
 
 from .service_api import Refused
@@ -266,7 +268,7 @@ class HttpSink(Sink):
     """PUT/DELETE transport. No GET, redirects, proxy environment or response-body logging."""
 
     def __init__(self, config, *, dry_run=False):
-        self.dry_run = dry_run
+        self.dry_run, self.config = dry_run, dict(config)
         try:
             self.url = urlsplit(config['base_url'])
             host = self.url.hostname
@@ -458,13 +460,16 @@ def _queue_upload(state, path, action, sha):
 class MirrorSink(Sink):
     """Local state first; durable latest intents and immutable CAS attempts, with fail-closed uncertainty."""
 
-    def __init__(self, local, remote):
+    def __init__(self, local, remote, *, background=False):
         self.local, self.remote = local, remote
         self.lock_path = local.lock_path
         self.pending, self.attempted = {}, set()
         self.save = lambda: None
+        self.background, self.worker, self.closing = background, None, False
+        self.lock = threading.RLock()
 
-    def bind(self, state, save):
+    def bind(self, state, save, lock=None):
+        self.lock = lock if lock is not None else self.lock
         self.pending, self.save, self.state = _upload_pending(state), save, state
         destination = state.setdefault('upload_destination', self.remote.destination)
         if destination != self.remote.destination:
@@ -480,9 +485,19 @@ class MirrorSink(Sink):
                 if data is not None:
                     _queue_upload(state, path, 'put', hashlib.sha256(data).hexdigest())
         self.save()
+        if self.background and not self.remote.dry_run:
+            from .upload_worker import UploadWorker
+            self.worker = UploadWorker(self._transfer, self.remote.config)
+
+    def close(self):
+        with self.lock:
+            self.closing = True
+        if self.worker is not None:
+            self.worker.close()
 
     def cleanup(self):
-        self.local.cleanup()
+        if self.worker is None:  # startup only; an active worker owns its immutable staging snapshot
+            self.local.cleanup()
 
     def paths(self):
         return self.local.paths()
@@ -508,72 +523,138 @@ class MirrorSink(Sink):
         _queue_upload(self.state, path, action, sha)
         self.save()
 
+    def _eligible(self, path):
+        if self.remote.dry_run:
+            return True
+        intent = self.state['upload_intents'].get(path)
+        if self.state.get('upload_recovery_blocked') or intent is None:
+            return False
+        attempt = self.state['upload_attempts'].get(path)
+        return not (attempt and (attempt['phase'] in ('blocked', 'inflight') or
+            (attempt['phase'] == 'rejected' and attempt.get('revision') == intent['revision']) or
+            (attempt['phase'] == 'retry' and time.time() < attempt.get('not_before', float('inf')))))
+
     def _send(self, path, data=None, *, final=False):
         self.attempted.add(path)
-        action = self.pending[path]
-        intent = self.state['upload_intents'].get(path)
-        attempts = self.state['upload_attempts']
-        attempt = attempts.get(path)
-        if self.remote.dry_run:
-            self.remote._request(action.upper(), path, data, final=final)
+        if not self._eligible(path):
             return
-        if self.state.get('upload_recovery_blocked') or intent is None:
-            return
-        if attempt and (attempt['phase'] in ('blocked', 'inflight') or
-                        (attempt['phase'] == 'rejected' and attempt.get('revision') == intent['revision'])):
-            return
-        if attempt and attempt['phase'] == 'retry' and time.time() < attempt.get('not_before', float('inf')):
-            return
-        sha = hashlib.sha256(data if action == 'put' else b'').hexdigest()
-        if sha != intent['sha256'] or action != intent['action']:
-            attempts[path] = {'phase': 'blocked', 'reason': 'local_intent_mismatch'}
-            self.save()
-            return
-        try:
-            meta = self.remote.head(path)
-        except UploadError:
-            LOGGER.warning('upload_failed')  # No mutation has started; a later cycle may retry the metadata read.
-            return
-        if action == 'delete' and meta['etag'] is None:
-            self.pending.pop(path)
-            self.state['upload_intents'].pop(path, None)
-            attempts.pop(path, None)
-            self.save()
-            return
-        # Never skip a write on matching SHA: bytes alone do not establish ownership or completion.
-        attempt = attempts[path] = intent | {'expected': meta['etag'], 'phase': 'inflight'}
-        self.save()  # fixed condition + body identity durable BEFORE any mutation request
-        try:
+        if self.worker is not None:
+            self.worker.submit(path)  # metadata only, bounded and coalesced before insertion
+        else:
+            self._transfer(path, data, final=final)
+
+    def _transfer(self, path, data=None, *, final=False):
+        with self.lock:
+            action = self.pending.get(path)
+            if action is None:
+                return
+            intent = self.state['upload_intents'].get(path)
+            attempts = self.state['upload_attempts']
+            attempt = attempts.get(path)
+            if self.remote.dry_run:
+                self.remote._request(action.upper(), path, data, final=final)
+                return
+            if not self._eligible(path):
+                return
+            intent = dict(intent)
             if action == 'delete':
+                self.local.delete(path)  # queued older work may now see a delete whose local unlink failed
+            if self.worker:
+                final = self.state.get('files', {}).get(path, {}).get('final') is True
+            if action == 'put' and self.worker is None:
+                data = self._read_upload(path) if data is None else data
+                if data is None or hashlib.sha256(data).hexdigest() != intent['sha256']:
+                    attempts[path] = {'phase': 'blocked', 'reason': 'local_intent_mismatch'}
+                    self.save()
+                    return
+        try:
+            meta = self.worker.request('HEAD', path) if self.worker else self.remote.head(path)
+        except UploadError:
+            LOGGER.warning('upload_failed')  # HEAD sent no mutation; later metadata retry remains safe.
+            return
+        snapshot = None
+        with self.lock:
+            # Includes DELETE+404: an old HEAD must never erase a newer local PUT intent.
+            if self.state['upload_intents'].get(path) != intent or self.pending.get(path) != action:
+                return
+            if action == 'delete' and meta['etag'] is None:
+                self.pending.pop(path, None)
+                self.state['upload_intents'].pop(path, None)
+                attempts.pop(path, None)
+                self.save()
+                return
+            if self.worker and action == 'put':
+                target = self.local._target(path)
+                if not target.is_file():
+                    return
+                if target.stat().st_size > UPLOAD_MAX_BYTES:
+                    attempts[path] = {'phase': 'blocked', 'reason': 'upload_body_invalid'}
+                    self.save()
+                    return
+                self.local.staging.mkdir(parents=True, exist_ok=True)
+                snapshot = self.local.staging/f'upload_{uuid.uuid4().hex}.{os.getpid()}.tmp'
+                os.link(target, snapshot, follow_symlinks=False)  # our writer only replaces inodes atomically
+            attempt = attempts[path] = intent | {'expected': meta['etag'], 'phase': 'inflight'}
+            try:
+                self.save()  # immutable body/condition durably prepared before spawning the mutating child
+            except BaseException:
+                if snapshot is not None: snapshot.unlink(missing_ok=True)
+                raise
+        try:
+            if self.worker:
+                self.worker.request(action.upper(), path, expected=attempt['expected'],
+                    snapshot=str(snapshot) if snapshot else None, sha256=intent['sha256'], final=final)
+            elif action == 'delete':
                 self.remote.delete(path, expected=attempt['expected'])
             else:
                 self.remote.write(path, data, expected=attempt['expected'], final=final)
         except UploadError as error:
-            attempt.update(phase=error.outcome, reason=str(error))
-            if error.outcome == 'retry':
-                attempt['not_before'] = time.time()+error.retry_after
-            self.save()
+            with self.lock:
+                attempt.update(phase=error.outcome, reason=str(error))
+                if error.outcome == 'retry':
+                    attempt['not_before'] = time.time()+error.retry_after
+                self.save()
             LOGGER.warning('upload_failed')
         else:
-            # A newer local intent may have arrived while the response was in flight. Its outbox is not ours.
-            if self.state['upload_intents'].get(path) == intent:
-                self.pending.pop(path, None)
-                self.state['upload_intents'].pop(path, None)
-            attempts.pop(path, None)
-            self.save()
+            with self.lock:
+                if self.state['upload_intents'].get(path) == intent:
+                    self.pending.pop(path, None)
+                    self.state['upload_intents'].pop(path, None)
+                attempts.pop(path, None)
+                self.save()
+                if self.worker is not None and path in self.pending:
+                    self.worker.submit(path)  # a confirmed old ACK unlocks the queued newer intent
+        finally:
+            if snapshot is not None and (self.worker is None or self.worker.process is None):
+                snapshot.unlink(missing_ok=True)  # an unreaped child keeps its snapshot and output lock
 
     def write(self, path, data, *, final=False):
-        self._queue(path, 'put', data)
-        self.local.write(path, data, final=final)
-        self._send(path, data, final=final)
+        with self.lock:
+            if self.closing:
+                raise UploadError('upload_closed')
+            self._queue(path, 'put', data)
+            self.local.write(path, data, final=final)
+            self._send(path, data, final=final)
 
     def delete(self, path):
-        self._queue(path, 'delete')
-        self.local.delete(path)
-        self._send(path)
+        with self.lock:
+            if self.closing:
+                raise UploadError('upload_closed')
+            self._queue(path, 'delete')
+            self.local.delete(path)
+            self._send(path)
 
     def retry(self, health):
+        with self.lock:
+            self._retry(health)
+
+    def _retry(self, health):
         for path in sorted(set(self.pending)-self.attempted-{health}):
+            if not self._eligible(path):
+                continue
+            if self.worker is not None:
+                self._send(path)
+                continue
             try:
                 if self.pending[path] == 'delete':
                     self.local.delete(path)
@@ -696,6 +777,8 @@ class Publisher:
     def __init__(self, bodies, sink, *, config, setups=None, state_path=None, wall=time.time, commit=(None, None),
                  dates=None, safe=None):
         self.bodies, self.sink, self.config, self.setups, self.wall = bodies, sink, config, setups, wall
+        self._state_lock = threading.RLock()
+        self._closing = False
         self.commit, self.dates, self.safe = commit, None if dates is None else sorted(set(dates)), safe
         for date in self.dates or []:
             if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
@@ -708,7 +791,7 @@ class Publisher:
                 self.sink.cleanup()  # only now: the lock says no other publisher is in the middle of a write
             self.state = self._load_state()
             if isinstance(self.sink, MirrorSink):
-                self.sink.bind(self.state, self._save_state)
+                self.sink.bind(self.state, self._save_state, self._state_lock)
             elif 'upload_pending' in self.state:
                 _upload_pending(self.state)  # disabled upload must not discard a corrupt outbox
         except BaseException:
@@ -735,7 +818,11 @@ class Publisher:
         return handle
 
     def close(self):
-        """Release the lock (the process exiting does the same)."""
+        """Stop/reap owned upload work before releasing the exclusive output lock."""
+        with self._state_lock:
+            self._closing = True  # wait for any local cycle, then reject subsequent local writes
+        if isinstance(self.sink, MirrorSink):
+            self.sink.close()  # worker needs the state lock to commit its final outcome
         if getattr(self, '_lock', None) is not None:
             self._lock.close()
             self._lock = None
@@ -786,6 +873,10 @@ class Publisher:
         return highest
 
     def _save_state(self):
+        with self._state_lock:
+            self._save_state_locked()
+
+    def _save_state_locked(self):
         """Durably: the state is on disk (file and folder synced) before the caller goes on. The cycle calls this
         right after taking a sequence number, so no file can ever carry a number the state does not know."""
         if self.state_path is None:
@@ -822,6 +913,12 @@ class Publisher:
             self._save_state()
 
     def _put(self, path, body, *, always, final=None, digest=None):
+        with self._state_lock:
+            if self._closing:
+                raise Unsafe('publisher_closed')
+            return self._put_locked(path, body, always=always, final=final, digest=digest)
+
+    def _put_locked(self, path, body, *, always, final=None, digest=None):
         """Write ``body`` + the ``publish`` key at ``path``. ``always`` False: only if the content (``digest``,
         default the whole body) or its final mark differs from what is published there."""
         digest = _digest(body) if digest is None else digest
@@ -842,6 +939,12 @@ class Publisher:
         return True
 
     def _drop(self, path, *, force=False):
+        with self._state_lock:
+            if self._closing:
+                raise Unsafe('publisher_closed')
+            return self._drop_locked(path, force=force)
+
+    def _drop_locked(self, path, *, force=False):
         """Delete a published file. ``force``: whether or not the state knows it (the state file may have been
         lost, or a crash may have come between the write and the save): what must not be public is deleted."""
         if not (force or path in self.state['files']):
@@ -890,6 +993,12 @@ class Publisher:
 
     # ---- one cycle ----------------------------------------------------------------------------------
     def cycle(self):
+        with self._state_lock:
+            if self._closing:
+                raise Unsafe('publisher_closed')
+            return self._cycle()
+
+    def _cycle(self):
         """Build and write everything that is due. Returns the health body of this cycle."""
         reason = self.safe() if self.safe is not None else None
         if reason:
@@ -1172,7 +1281,8 @@ def build(config, *, sink=None, dates=None, commit=None, wall=None, **app_option
     if sink is None:
         sink = LocalDirSink(config['out_dir'])
         if config.get('upload', {}).get('enabled') or config.get('dry_run_upload'):
-            sink = MirrorSink(sink, HttpSink(config['upload'], dry_run=config.get('dry_run_upload', False)))
+            sink = MirrorSink(sink, HttpSink(config['upload'], dry_run=config.get('dry_run_upload', False)),
+                              background=config['upload'].get('background', True))
     return app, Publisher(app.state.service_bodies, sink, config=config,
                           setups=app.state.setups, state_path=state_path, dates=dates, safe=safe,
                           commit=code_commit() if commit is None else commit, **({} if wall is None else {'wall': wall}))
@@ -1223,12 +1333,15 @@ def _start(args):
                                intent_dir=args.intent_dir, demo_dir=args.demo_dir)
     except (AlreadyRunning, Unsafe, UnsafeOutput, UploadError) as refused:
         raise SystemExit(str(refused)) from None
-    feed = app.state.live_parts()
-    if config['fixed_delay_s'] > getattr(feed, 'max_delay_s', config['fixed_delay_s']):
+    try:
+        feed = app.state.live_parts()
+        if config['fixed_delay_s'] > getattr(feed, 'max_delay_s', config['fixed_delay_s']):
+            raise SystemExit(f"fixed_delay_s {config['fixed_delay_s']} exceeds the live feed's max_delay_s {feed.max_delay_s}")
+        if os.environ.get('PITCHEEZY_OBSERVER_LIVE_ARMB', '1') != '0':
+            app.state.live_policy.start()  # warm the frozen policy in the background, as the server does at startup
+    except BaseException:
         publisher.close()
-        raise SystemExit(f"fixed_delay_s {config['fixed_delay_s']} exceeds the live feed's max_delay_s {feed.max_delay_s}")
-    if os.environ.get('PITCHEEZY_OBSERVER_LIVE_ARMB', '1') != '0':
-        app.state.live_policy.start()  # warm the frozen policy in the background, as the server does at startup
+        raise
     return config, publisher
 
 

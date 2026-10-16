@@ -37,6 +37,9 @@
         "Cache-Control": "no-store"
       }
     },
-    "note": "Disabled by default. Pinned partner CAS protocol: authenticated HEAD, raw-byte SHA256, strong ETag conditions, validated 200 receipts, tombstones. HTTPS base_url must include /_publish once; bearer token must be 43-128 URL-safe characters. timeout_s is a socket timeout, not a total deadline. Legacy retries/backoff_s are accepted for config compatibility but mutations are never blindly retried; 429 waits for Retry-After in durable pending. Unknown/interrupted/conflict outcomes block until reviewed reconciliation."
+    "note": "Disabled by default. Pinned partner CAS protocol: authenticated HEAD, raw-byte SHA256, strong ETag conditions, validated 200 receipts, tombstones. HTTPS base_url must include /_publish once; bearer token must be 43-128 URL-safe characters. timeout_s is a socket timeout, not a total deadline. Legacy retries/backoff_s are accepted for config compatibility but mutations are never blindly retried; 429 waits for Retry-After in durable pending. Unknown/interrupted/conflict outcomes block until reviewed reconciliation. Background transport uses a 128-path metadata mailbox and one owned child per HTTP operation. operation_deadline_s includes child startup; shutdown_grace_s drains pending work before stopping/reaping the child. These are provisional local limits, not remote-server completion guarantees.",
+    "background": true,
+    "operation_deadline_s": 15,
+    "shutdown_grace_s": 5
   }
 }

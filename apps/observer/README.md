@@ -194,7 +194,7 @@ find "$T/out" -type f
 
 전송은 인증 HEAD로 missing/현재본/tombstone과 strong ETag를 읽은 뒤 PUT에 원본 바이트 SHA256을 붙인다. 최초 PUT은 `If-None-Match: *`, 교체·삭제·복원은 관측한 ETag의 `If-Match`를 사용한다. DELETE는 조건부 tombstone이며 삭제와 동일 바이트 복원도 서로 다른 ETag를 갖는다. 200 + 올바른 ETag/JSON 영수증만 성공이다. SHA는 원본 JSON 내용의 무결성이며 모델/스키마/경기 정합성 승인이 아니다. 파일은 UTF-8 JSON object, 최대 5 MiB이며 remote 경로는 partner v1 whitelist로 제한한다. local publisher의 다른 버전 경로 지원과 구분한다.
 
-- `timeout_s`는 소켓 제한(최대 60초)이며 DNS·서버 후행 완료까지 포함하는 전체 상한이 아니다. A 후보는 아직 동기 전송이다. 비차단 작업자와 종료/메모리 계약은 별도 U2 단계다.
+- `timeout_s`는 소켓 제한(최대 60초)이다. 기본 `background=true`는 로컬 cycle과 네트워크를 분리하며, 소유한 spawn 자식 하나가 각 HTTP 작업을 수행한다. `operation_deadline_s`(기본 15, 1–60초)가 DNS를 포함한 자식 수명을 제한한다. `shutdown_grace_s`(기본 5, 0–30초) 뒤 미완료 전송을 중단·회수하고 pending을 보존한다. 원격 서버가 이미 받은 요청의 후행 완료까지 취소하는 것은 아니다.
 - 예전 `retries`/`backoff_s`는 구 설정을 읽기 위해 검증만 한다. mutation을 무조건 재시도하지 않는다. 429는 영속 `not_before`에 Retry-After를 반영하고 이후 cycle에서만 다시 시도한다. 403 등의 확정 거부는 같은 intent를 반복하지 않으며 새 local intent는 다시 준비할 수 있다.
 - `--check-remote --config <config>`는 인증 HEAD `v1/manifest.json`만 수행한다. missing 404도 정상 진단이며 쓰기/삭제 성공을 주장하지 않는다. 임의 probe 객체나 경기 파일을 만들지 않는다.
 - `--dry-run-upload`는 토큰/네트워크 없이 상대 경로·크기를 기록하지만 **로컬 본문 생성은 실행**한다. 등록된 합성 입력에서만 사용한다.
@@ -204,10 +204,10 @@ find "$T/out" -type f
 
 **차단과 재개:** timeout/비정상 200/예상 밖 2xx/5xx/412 또는 재시작 때 남은 inflight는 `upload_attempts[path].phase=blocked`와 고정 reason으로 보존한다. 이전 무조건 전송 형식의 pending은 `legacy_unknown`, 손상/유실 state는 `upload_recovery_blocked`다. 새 local body, 재시작, 같은 SHA의 HEAD만으로 이를 성공/재시도 처리하지 않는다. 로컬 발행은 계속하고 health.upload.pending과 unavailable_games는 부분 실패를 표시한다. `game_checks.file_sequence`는 로컬 파일 기준이므로 원격 적용 증거로 읽지 않는다. health 자체가 실패하면 공개 health도 정지한다. 객체별 CAS는 다중 파일 원자 commit이 아니다.
 
-차단을 없애려고 `upload_pending`/attempt/destination을 지우거나 최신 ETag로 오래된 본문을 보내지 말 것. 우선 업로드를 OFF로 두고 exact state·최신 local SHA/revision·고정 endpoint의 인증 HEAD·동일 출력 lock 소유 및 이전 worker 종료 증거를 모아 별도 대사 검토한다. A에는 이를 자동 승인하는 reset 명령이 없다. 새 목적지는 별도의 출력/상태와 명시적 초기 등록으로 준비한다. 안전한 own-latest 대사는 U2 설계 검토 범위이며 타 작성자/원격 충돌의 출처가 불명확하면 blocked를 유지한다.
+차단을 없애려고 `upload_pending`/attempt/destination을 지우거나 최신 ETag로 오래된 본문을 보내지 말 것. 우선 업로드를 OFF로 두고 exact state·최신 local SHA/revision·고정 endpoint의 인증 HEAD·동일 출력 lock 소유 및 이전 worker 종료 증거를 모아 별도 대사 검토한다. 이를 자동 승인하는 reset 명령은 없다. 새 목적지는 별도의 출력/상태와 명시적 초기 등록으로 준비한다. 현재 gateway HEAD는 작성자/attempt ID를 제공하지 않는다. 유효한 mutation ACK와 일치하는 최신 intent만 완료 처리하며, ACK를 잃었거나 원격 충돌의 출처가 불명확하면 blocked를 유지한다.
 
 
-로컬 출력과 원격 prefix에는 발행기 하나만 배정한다. 원격 장애 중 이미 공개된 파일을 즉시 철회할 수 없으므로 읽는 쪽은 health의 부분 실패와 발행 시각 정체를 확인한다. health.upload의 pending=0은 그 시점의 로컬 outbox가 비었다는 뜻이며 원격 공개 GET 검증이나 다중 파일 transaction의 증거가 아니다. A의 순차 네트워크 호출은 로컬 cycle을 늦출 수 있으므로 비차단 U2와 시간 예산 검증 전 실제 연결을 하지 않는다.
+로컬 출력과 원격 prefix에는 발행기 하나만 배정한다. 원격 장애 중 이미 공개된 파일을 즉시 철회할 수 없으므로 읽는 쪽은 health의 부분 실패와 발행 시각 정체를 확인한다. health.upload의 pending=0은 그 시점의 로컬 outbox가 비었다는 뜻이며 원격 공개 GET 검증이나 다중 파일 transaction의 증거가 아니다. 메일박스는 경로 metadata 128개를 넣기 전에 합치고, 가득 차면 durable pending을 남겨 다음 cycle에서 다시 예약한다. blocked 항목은 슬롯을 쓰지 않는다. 전송 중 본문은 최대 5 MiB의 불변 hardlink snapshot 하나이며 기존 전체 outbox/state는 알려진 경로 수에 비례한다. 이는 전체 프로세스 RSS 상한이 아니다. 자식과 coordinator가 모두 종료되기 전에는 출력 flock을 놓지 않는다. 종료를 입증하지 못하면 오류와 함께 lock을 유지한다. `background=false`는 합성 프로토콜 시험용 동기 경로이며 운영의 비차단 보장을 제공하지 않는다.
 
 ### 다른 팀에 넘기는 예제와 스키마
 
