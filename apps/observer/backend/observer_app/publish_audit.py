@@ -18,6 +18,10 @@ Invariants (names are what the summary reports):
   final_stable              a file marked final changes its bytes only when its content changed
   no_private_strings        no ``path`` key, absolute path, demo/operator marker or forbidden string anywhere
   only_public_names         only the six published file names exist
+  received_pitch_accepted   (when the audit is given the ledger's accepted bodies) every live pitch shown as
+                            ``received`` shows the type, speed and plate location of a body the pitch ledger accepted
+                            for its key: a held pitch (shown with its last accepted body) included, so content no
+                            ledger row ever accepted is never on screen
 """
 from __future__ import annotations
 
@@ -36,7 +40,8 @@ POLICY_ID_LENGTH = 8
 CANDIDATE_FIELDS = ('rank', 'pitch_type', 'pitch_label', 'zone_id', 'zone_label', 'target')
 ABSOLUTE = re.compile(r'^(/|~|[A-Za-z]:\\|file:)|/(Users|Volumes|private|tmp|var|home|opt|etc)/')
 INVARIANTS = ('unconfirmed_pitch_blank', 'recommendation_in_ledger', 'sequence_monotonic', 'final_stable',
-              'no_private_strings', 'only_public_names')
+              'no_private_strings', 'only_public_names', 'received_pitch_accepted')
+HELD = 'held_last_accepted'  # display_state.HELD, restated for the same reason as UNCONFIRMED_LABEL
 
 
 def kind_of(path, contract='v1'):
@@ -74,6 +79,7 @@ def game_facts(body):
     return {'pitches': len(pitches),
             'unconfirmed': sum((p.get('receipt') or {}).get('status') != 'received' for p in pitches if 'receipt' in p),
             'corrected': sum(bool((p.get('receipt') or {}).get('corrected')) for p in pitches),
+            'held': sum((p.get('receipt') or {}).get('reason') == HELD for p in pitches),
             'paired_past_recommendations': sum(1 for pointer, *_ in recommendations(body) if pointer != '/next/rec'),
             'state': state.get('state'), 'reason': state.get('reason'),
             'recommendation': 'published' if shown else 'none',
@@ -82,11 +88,14 @@ def game_facts(body):
 
 
 class PublishAudit:
-    def __init__(self, *, contract='v1', forbidden=(), ledger_rows=lambda: {}):
+    def __init__(self, *, contract='v1', forbidden=(), ledger_rows=lambda: {}, accepted_views=None):
         """``forbidden``: strings that must appear in no file (the job folder, the home folder, a token...).
         ``ledger_rows()``: ``{decision_id: row}`` of the ``first`` rows the publisher's own ledger holds right now
-        (``LiveSnapshotStore.served_recommendations`` rows)."""
+        (``LiveSnapshotStore.served_recommendations`` rows). ``accepted_views(game_pk)``: ``{(at_bat, pitch): [view,
+        ...]}`` of every body the pitch ledger accepted (``live_store.pitch_view``); None leaves
+        ``received_pitch_accepted`` unchecked."""
         self.contract, self.forbidden, self.ledger_rows = contract, [text for text in forbidden if text], ledger_rows
+        self.accepted_views = accepted_views
         self.violations, self.checked, self.seen = [], 0, {}  # path -> {'sequence', 'sha', 'final', 'digest'}
         self.high_water = {}  # path -> highest sequence ever seen there, kept when the file is deleted
 
@@ -166,6 +175,7 @@ class PublishAudit:
                     self._fail('unconfirmed_pitch_blank', path, f'/pitches/{index}/actual', 'labels that do not read 확인 중: '+','.join(wrong))
         if not live:
             return
+        self._accepted(path, body)
         found = recommendations(body)
         held = self.ledger_rows() if found else {}
         for pointer, rec, pitch_key in found:
@@ -189,6 +199,24 @@ class PublishAudit:
         if any(pointer == '/next/rec' for pointer, *_ in found) and (
                 state.get('recommendation_shown') is not True or state.get('state') not in ('recommended', 'feed_delayed', 'disconnected')):
             self._fail('recommendation_in_ledger', path, '/display_state', 'candidates although the state shows none')
+
+
+    def _accepted(self, path, body):
+        if self.accepted_views is None:
+            return
+        try:
+            views = self.accepted_views((body.get('game') or {}).get('game_pk'))
+        except Exception:  # noqa: BLE001
+            views = None
+        for index, pitch in enumerate(body.get('pitches') or []):
+            if (pitch.get('receipt') or {}).get('status') != 'received':
+                continue
+            actual = pitch.get('actual') or {}
+            shown = (actual.get('pitch_type'), actual.get('speed_mph'), actual.get('x'), actual.get('z'))
+            known = (views or {}).get((pitch.get('at_bat_number'), pitch.get('pitch_number'))) or ()
+            if not any(shown == (v.get('type'), v.get('speed'), v.get('px'), v.get('pz')) for v in known if v):
+                self._fail('received_pitch_accepted', path, f'/pitches/{index}/actual',
+                           'shown as received, but no accepted ledger body of its key has this type/speed/location')
 
 
 WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND

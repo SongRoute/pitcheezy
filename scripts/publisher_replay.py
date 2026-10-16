@@ -642,8 +642,15 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                                    intent_dir=run_dir/'empty', demo_dir=run_dir/'demo', demo_wall=clock, service_wall=clock,
                                    wall=clock, commit=(commit, None))
         ledger_rows = lambda: {row['decision_id']: row for row in store.served_recommendations(game_pk) if row['outcome'] == 'first'}
+        def accepted_views(pk):  # every body the run's own pitch ledger accepted, by official key
+            views = {}
+            for row in store.pitch_events(pk)['events']:
+                if row['outcome'] != 'quarantine':
+                    views.setdefault((row['at_bat_number'], row['pitch_number']), []).append(row.get('view'))
+            return views
         audit = publish_audit.PublishAudit(contract=config['contract_version'], ledger_rows=ledger_rows,
-                                           forbidden=[str(run_dir), str(run_dir.parent), str(Path.home()), str(REPO)])
+                                           forbidden=[str(run_dir), str(run_dir.parent), str(Path.home()), str(REPO)],
+                                           accepted_views=accepted_views)
         game_path = pub.layout['game'].format(game_pk=game_pk)
         interval = config['publish_interval_s']
         guard('start')
@@ -727,6 +734,9 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         'game_file': {'display_states': dict(states), 'recommendation_by_cycle': dict(recs),
                       'unconfirmed_pitches_per_cycle': spread([row['game']['unconfirmed'] for row in cycles if row['game']]),
                       'cycles_with_an_unconfirmed_pitch': sum(1 for row in cycles if row['game'] and row['game']['unconfirmed']),
+                      'held_pitches_per_cycle': spread([row['game'].get('held', 0) for row in cycles if row['game']]),
+                      'cycles_with_a_held_pitch': sum(1 for row in cycles if row['game'] and row['game'].get('held')),
+                      'corrected_in_last_file': next((row['game']['corrected'] for row in reversed(cycles) if row['game']), None),
                       'pitches_in_last_file': next((row['game']['pitches'] for row in reversed(cycles) if row['game']), None),
                       'paired_past_recommendations_in_last_file': next((row['game']['paired_past_recommendations'] for row in reversed(cycles) if row['game']), None)},
         'health_codes': dict(codes),
