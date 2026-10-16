@@ -291,7 +291,7 @@
    "ledger": {
     "decided": 1791195660.0,
     "decision_clock": "observer_local",
-    "decision_id": "bdd2e4b75c13b01b1dc4b22eb7e17ee0792e6d2ba02e66ba33da01905e69491b",
+    "decision_id": "e4b62cce39b7ddadd02465761485f795edd2ea86f4b2d7f818edf82b00905c0b",
     "outcome": "duplicate",
     "status": "recorded"
    },

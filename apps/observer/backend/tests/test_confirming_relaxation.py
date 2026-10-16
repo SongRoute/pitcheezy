@@ -335,3 +335,62 @@ def test_the_stores_stay_append_only(run):
                 db.execute(statement)
         firsts = db.execute("SELECT first_received FROM pitch_events WHERE outcome='new' ORDER BY id").fetchall()
     assert len(firsts) == 9 and all(value is not None for value, in firsts)
+
+
+# ---------- REVIEW-001 C1: the policy's context inputs are decision inputs (gate and result cache) ----------
+def _score_runner(body):
+    """An earlier play's runner now scores: only the replayed score (home_score/away_score) changes."""
+    body['liveData']['plays']['allPlays'][0]['runners'][0]['movement'] |= {'start': None, 'end': 'score'}
+
+
+def _score_line(body):
+    body['liveData']['linescore']['teams']['home']['runs'] = 2
+
+
+def _stand(body):
+    body['liveData']['plays']['currentPlay']['matchup']['batSide'] = {'code': 'L'}
+
+
+def _p_throws(body):
+    body['liveData']['plays']['currentPlay']['matchup']['pitchHand'] = {'code': 'L'}
+
+
+def _event_count(body):  # an earlier at-bat's per-event count (statcast_rows replays the count from every event)
+    body['liveData']['plays']['allPlays'][1]['playEvents'][0]['count']['balls'] = 0
+
+
+CONTEXT_CHANGES = {'score_from_runner': _score_runner, 'score_on_linescore': _score_line, 'stand': _stand,
+                   'p_throws': _p_throws, 'per_event_count': _event_count}
+
+
+@pytest.mark.parametrize('change', sorted(CONTEXT_CHANGES))
+def test_a_same_stamp_conflict_in_a_policy_context_input_still_gates(run, change):
+    assert run.poll()['display_state']['state'] == 'recommended'
+    body = snap(995.0, T0)
+    CONTEXT_CHANGES[change](body)
+    state = run.poll(body)['display_state']
+    assert state['feed']['provider_order'] == 'same_stamp_conflict'
+    assert (state['state'], state['reason']) == ('unconfirmed', 'same_stamp_conflict_provider_stamp')
+
+
+@pytest.mark.parametrize('change', sorted(CONTEXT_CHANGES))
+def test_the_result_cache_misses_when_a_policy_context_input_changes(change):
+    from observer_app.live_armb import state_key
+    body = snap(995.0, T0)
+    changed = copy.deepcopy(body)
+    CONTEXT_CHANGES[change](changed)
+    assert state_key(changed) != state_key(body)
+    extras = copy.deepcopy(body)
+    extras['gameData']['weather'] = {'condition': 'Rain'}
+    extras['liveData']['boxscore'] = {'info': [{'label': 'Att', 'value': '1.'}]}
+    assert state_key(extras) == state_key(body)  # extras are still not decision inputs
+
+
+def test_a_score_change_on_a_new_stamp_is_computed_again(run):
+    """The LiveArmB cache is keyed by ``state_key``: a later (ordered) body that changes only the score asks the
+    policy again instead of serving the result computed for the old score."""
+    run.poll()
+    calls = len(run.policy.calls)
+    body = snap(995.0, T1)
+    _score_runner(body)
+    assert run.poll(body)['display_state']['state'] == 'recommended' and len(run.policy.calls) == calls+1

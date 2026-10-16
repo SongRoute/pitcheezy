@@ -257,7 +257,7 @@ def _apply_receipts(pitches, receipts, pas=()):
     for pitch in pitches:
         item = receipts.get(display_state.RECEIPT_ALL) or receipts.get((pitch['at_bat_number'], pitch['pitch_number']))
         receipt = display_state.public_receipt(item) if item else {'status': 'unconfirmed', 'reason': 'incomplete_identity', 'corrected': False}
-        if receipt['status'] == 'received' and receipt['reason'] == display_state.HELD and not (item or {}).get('held', {}).get('body'):
+        if receipt['status'] == 'received' and receipt['reason'] == display_state.HELD and not ((item or {}).get('held') or {}).get('body'):
             receipt = {'status': 'unconfirmed', 'reason': 'held_body_missing', 'corrected': False}  # never the refused body
         pitch['receipt'] = receipt
         corrected += receipt['corrected']

@@ -1649,7 +1649,7 @@
    "actual": {
     "call_label": "루킹 스트라이크",
     "catcher_setup": null,
-    "description": "Ball",
+    "description": "Called Strike",
     "event": null,
     "event_label": null,
     "pitch_label": "포심",

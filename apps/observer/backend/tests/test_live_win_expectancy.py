@@ -48,8 +48,13 @@ def test_exact_snapshot_and_pending_identity_are_required_without_loading(value)
     assert armb.win_expectancy(feed, pending_pitch_key=PITCH, snapshot_revision='b' * 64)['status'] == 'unavailable'
     corrected = copy.deepcopy(feed)
     corrected['liveData']['linescore']['teams']['home']['runs'] = 1
-    assert state_key(feed) == state_key(corrected)  # the recommendation key alone is insufficient for WE
+    assert state_key(feed) != state_key(corrected)  # the score is a policy context input (REVIEW-001 C1)
     rejected = armb.win_expectancy(corrected, pending_pitch_key=PITCH)
+    assert rejected['status'] == 'unavailable' and rejected['home_probability'] is None
+    extras = copy.deepcopy(feed)
+    extras['gameData']['weather'] = {'condition': 'Rain'}
+    assert state_key(feed) == state_key(extras)  # the recommendation key alone is insufficient for WE
+    rejected = armb.win_expectancy(extras, pending_pitch_key=PITCH)
     assert rejected['status'] == 'unavailable' and rejected['home_probability'] is None
 
 

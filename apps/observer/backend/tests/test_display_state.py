@@ -39,7 +39,7 @@ def snap(wall, ts, *, call='B', pid='g5p1', second=False, half='live'):
     current['playEvents'] = current['playEvents'][:2 if second else 1]
     first = current['playEvents'][0]
     first['playId'] = pid
-    first['details'] = first['details'] | {'call': {'code': call}}
+    first['details'] = first['details'] | {'call': {'code': call}, 'description': {'B': 'Ball', 'C': 'Called Strike'}.get(call, first['details'].get('description'))}
     first['count'] = {'balls': int(call == 'B'), 'strikes': int(call != 'B'), 'outs': 0}
     if second:
         current['playEvents'][1]['details'] = {'call': {'code': 'B'}, 'description': 'Ball', 'type': {'code': 'SL'}}
