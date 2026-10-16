@@ -50,7 +50,7 @@ def _ordered(events):
         prior = index
         if event.get('isPitch') is True:
             pitch += 1
-            if event.get('pitchNumber') != pitch:
+            if type(event.get('pitchNumber')) is not int or event['pitchNumber'] != pitch:
                 return False
         elif event.get('isPitch') is not False:
             return False
@@ -66,7 +66,10 @@ def _reverse_action(event, pitcher, batter):
         if incoming == pitcher and outgoing is not None and incoming != outgoing:
             return outgoing, batter, 'structured_pitching_substitution'
     elif (flag is False and isinstance(kind, str) and kind in BENIGN_NONPITCH
-          and all(name not in event for name in ('player', 'replacedPlayer', 'battingOrder', 'position'))):
+          and isinstance(event.get('details'), dict)
+          and set(event['details']) == {'eventType'}
+          and all(name not in event for name in ('player', 'replacedPlayer', 'battingOrder',
+                                               'position', 'pitcher', 'batter', 'matchup'))):
         return pitcher, batter, 'provider_flag_benign_mound_visit_assumption'
     return None
 

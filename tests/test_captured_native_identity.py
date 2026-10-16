@@ -104,3 +104,13 @@ def test_malformed_action_and_broken_pitcher_chain_keep_earlier_pitch_unknown():
     }
     body['liveData']['plays']['currentPlay']['matchup']['pitcher']['id'] = 11
     assert set(identity(body)) == {(99, 1, 2)}
+
+
+def test_boolean_pitch_number_and_nested_identity_block_hypothesis():
+    body = mixed({'isSubstitution': False, 'details': {'eventType': 'mound_visit'}})
+    body['liveData']['plays']['currentPlay']['playEvents'][0]['pitchNumber'] = True
+    assert identity(body) == {}
+    body['liveData']['plays']['currentPlay']['playEvents'][0]['pitchNumber'] = 1
+    body['liveData']['plays']['currentPlay']['playEvents'][1]['details']['matchup'] = {
+        'pitcher': {'id': 99}}
+    assert set(identity(body)) == {(99, 1, 2)}
