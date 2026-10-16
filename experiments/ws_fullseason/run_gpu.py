@@ -29,6 +29,7 @@ def checked_grant(path):
         raise ValueError('frozen T30 recipe')
     if g['wall_seconds_per_seed']!=3600 or g['rss_bytes']!=8<<30 or g['vram_bytes']!=16<<30 or g['output_bytes_per_seed']!=1<<29:
         raise ValueError('fixed fit caps')
+    if g.get('aggregate_wall_seconds')!=120 or g.get('aggregate_output_bytes')!=1<<20:raise ValueError('fixed aggregate caps')
     if sys.platform!='linux' or not os.environ.get('GPU_JOB_ID') or os.environ.get('CUDA_VISIBLE_DEVICES')!='3':
         raise ValueError('gpu run GPU3 only')
     env=dict(line.split('=',1) for line in (Path(os.environ['GPU_JOB_DIR'])/'job.env').read_text().splitlines() if '=' in line)
@@ -95,7 +96,7 @@ def ensemble_metrics(predictions, labels, expected_keys):
         'nll_clip':1e-15,'calibration_fits':0,'independent_test':False}
 
 
-def final_aggregate(g,out,records):
+def final_aggregate(g,out,records,grant_sha):
     import numpy as np
     from experiments.ws_fullseason.data import key_digest
     if [r['seed'] for r in records]!=[0,1,2]:raise ValueError('all three seeds required before scoring')
@@ -104,11 +105,20 @@ def final_aggregate(g,out,records):
         if sha(d/'receipt.json')!=r['receipt_sha256'] or sha(d/'SUPERVISOR.json')!=r['supervisor_sha256']:
             raise ValueError('completed receipt pins')
         receipt=checked_json(d/'receipt.json');supervisor=checked_json(d/'SUPERVISOR.json')
-        if receipt['status']!='COMPLETED' or supervisor['status']!='COMPLETED' or receipt['seed']!=r['seed']:
+        if (receipt['status']!='COMPLETED' or supervisor['status']!='COMPLETED' or receipt['seed']!=r['seed']
+                or supervisor.get('child_reaped') is not True or supervisor.get('returncode')!=0
+                or supervisor.get('receipt_sha256')!=r['receipt_sha256']
+                or supervisor.get('grant_sha256')!=grant_sha
+                or receipt.get('grant_sha256')!=grant_sha
+                or receipt.get('recipe_sha256')!=sha(ROOT/g['recipe'])
+                or receipt.get('input_manifest_sha256')!=g['input_manifest_sha256']
+                or receipt.get('source_commit')!=g['commit']):
             raise ValueError('completed seed identity')
         if sha(d/'oof-predictions.npz')!=receipt['outputs_sha256']['oof-predictions.npz']:
             raise ValueError('prediction byte custody')
-    inputs=ROOT/g['inputs'];manifest=checked_json(inputs/'manifest.json')
+    inputs=ROOT/g['inputs']
+    if sha(inputs/'manifest.json')!=g['input_manifest_sha256']:raise ValueError('aggregate manifest custody')
+    manifest=checked_json(inputs/'manifest.json')
     corpus=inputs/'corpus-subset.npz'
     if sha(corpus)!=manifest['files']['corpus-subset.npz']['sha256']:raise ValueError('label custody')
     with np.load(corpus,allow_pickle=False) as c:
@@ -121,7 +131,9 @@ def final_aggregate(g,out,records):
             predictions.append((z['keys'],z['probabilities']))
     result=ensemble_metrics(predictions,labels,keys)
     result.update(OOF_keys_sha256=key_digest(keys),recipe_sha256=sha(ROOT/g['recipe']),data_role='2026 EXPOSED DEVELOPMENT')
-    (out/'aggregate.json').write_text(json.dumps(result,indent=2,allow_nan=False)+'\n')
+    body=json.dumps(result,indent=2,allow_nan=False)+'\n'
+    if len(body.encode())>g['aggregate_output_bytes']:raise ValueError('aggregate output cap')
+    (out/'aggregate.json').write_text(body)
     return sha(out/'aggregate.json')
 
 
@@ -153,7 +165,10 @@ def main():
                 target,g['wall_seconds_per_seed'],g['rss_bytes'],sha(args.grant),lock.fileno(),g['output_bytes_per_seed'])
             if rc:return rc
             records.append({'seed':seed,'receipt_sha256':sha(target/'receipt.json'),'supervisor_sha256':sha(target/'SUPERVISOR.json')})
-        aggregate_sha=final_aggregate(g,out,records)
+        import signal
+        signal.signal(signal.SIGALRM,lambda *_:os._exit(124));signal.alarm(g['aggregate_wall_seconds'])
+        try:aggregate_sha=final_aggregate(g,out,records,sha(args.grant))
+        finally:signal.alarm(0)
         (out/'receipt.json').write_text(json.dumps({'status':'COMPLETED','seeds':records,'fits':3,'calibration_fits':0,
             'metrics_computed':True,'aggregate_sha256':aggregate_sha,'grant_sha256':sha(args.grant)},indent=2)+'\n')
     return 0

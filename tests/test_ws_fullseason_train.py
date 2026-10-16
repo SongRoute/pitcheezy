@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import numpy as np
 import torch
 from experiments.ws_fullseason import data,prepare,train,run_gpu
@@ -11,6 +12,32 @@ from test_ws_fullseason import rows
 
 
 class FixedTrain(unittest.TestCase):
+    def test_final_aggregate_receipt_gate(self):
+        keys=np.arange(6).reshape(2,3);labels=np.array([0,1]);q=np.eye(7)[labels]
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);inputs=root/'inputs';inputs.mkdir();out=root/'outputs';out.mkdir()
+            (root/'recipe.json').write_text('{}')
+            np.savez(inputs/'corpus-subset.npz',keys=keys,y7=labels,evaluation=np.ones(2,bool))
+            (inputs/'manifest.json').write_text(json.dumps({'files':{'corpus-subset.npz':{'sha256':run_gpu.sha(inputs/'corpus-subset.npz')}}}))
+            g={'inputs':'inputs','recipe':'recipe.json','input_manifest_sha256':run_gpu.sha(inputs/'manifest.json'),
+                'expected_rows':{'OOF':2},'expected_key_sha256':{'OOF':data.key_digest(keys)},'commit':'synthetic','aggregate_output_bytes':1<<20}
+            records=[]
+            for seed in [0,1,2]:
+                d=out/f'seed{seed}';d.mkdir();np.savez(d/'oof-predictions.npz',keys=keys,probabilities=q)
+                r={'status':'COMPLETED','seed':seed,'grant_sha256':'g','recipe_sha256':run_gpu.sha(root/'recipe.json'),
+                    'input_manifest_sha256':g['input_manifest_sha256'],'source_commit':'synthetic',
+                    'outputs_sha256':{'oof-predictions.npz':run_gpu.sha(d/'oof-predictions.npz')}}
+                (d/'receipt.json').write_text(json.dumps(r));rh=run_gpu.sha(d/'receipt.json')
+                supervisor={'status':'COMPLETED','child_reaped':True,'returncode':0,'receipt_sha256':rh,'grant_sha256':'g'}
+                (d/'SUPERVISOR.json').write_text(json.dumps(supervisor))
+                records.append({'seed':seed,'receipt_sha256':rh,'supervisor_sha256':run_gpu.sha(d/'SUPERVISOR.json')})
+            with patch.object(run_gpu,'ROOT',root):
+                self.assertEqual(run_gpu.final_aggregate(g,out,records,'g'),run_gpu.sha(out/'aggregate.json'))
+                with self.assertRaises(ValueError):run_gpu.final_aggregate(g,out,records,'wrong-grant')
+                supervisor['child_reaped']=False;(d/'SUPERVISOR.json').write_text(json.dumps(supervisor))
+                records[-1]['supervisor_sha256']=run_gpu.sha(d/'SUPERVISOR.json')
+                with self.assertRaises(ValueError):run_gpu.final_aggregate(g,out,records,'g')
+
     def test_ensemble_only_and_exact_keys(self):
         keys=np.arange(6).reshape(2,3);labels=np.array([0,1]);q=np.eye(7)[labels]
         r=run_gpu.ensemble_metrics([(keys,q)]*3,labels,keys)
