@@ -13,6 +13,73 @@
     "hits": 0,
     "on_base": 0
    },
+   "boxscore": {
+    "away": {
+     "batters": [
+      {
+       "at_bats": 1,
+       "hits": 0,
+       "id": 11,
+       "name": "B11",
+       "on_base": 0
+      },
+      {
+       "at_bats": 1,
+       "hits": 1,
+       "id": 12,
+       "name": "B12",
+       "on_base": 1
+      },
+      {
+       "at_bats": 1,
+       "hits": 0,
+       "id": 13,
+       "name": "B13",
+       "on_base": 0
+      }
+     ],
+     "pitchers": [
+      {
+       "earned_runs": null,
+       "id": 41,
+       "name": "P41",
+       "pitches": 4,
+       "strikeouts": 0
+      }
+     ]
+    },
+    "home": {
+     "batters": [
+      {
+       "at_bats": 1,
+       "hits": 1,
+       "id": 31,
+       "name": "B31",
+       "on_base": 1
+      },
+      {
+       "at_bats": 0,
+       "hits": 0,
+       "id": 32,
+       "name": "B32",
+       "on_base": 0
+      }
+     ],
+     "pitchers": [
+      {
+       "earned_runs": null,
+       "id": 21,
+       "name": "P21",
+       "pitches": 6,
+       "strikeouts": 1
+      }
+     ]
+    }
+   },
+   "lineups": {
+    "away": [],
+    "home": []
+   },
    "next_batters": [],
    "pitcher": {
     "earned_runs": null,
@@ -119,6 +186,8 @@
   "embargoed": false,
   "game_number": 1,
   "game_pk": 900200,
+  "game_type": "F",
+  "games_in_series": null,
   "half": "Bot",
   "has_history": true,
   "home_abbr": "HOM",
@@ -127,6 +196,12 @@
   "inning": 1,
   "live": true,
   "official_date": "2026-10-05",
+  "probable_pitchers": {
+   "away": null,
+   "home": null
+  },
+  "series_description": null,
+  "series_game_number": null,
   "start": "2026-10-05T10:00:00Z",
   "start_kst": "2026-10-05T19:00:00+09:00",
   "status": "live",
@@ -368,6 +443,13 @@
     "play_text": null,
     "result_label": "볼",
     "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 1.2,
     "z": 2.0,
     "zone_label": "존 바깥"
@@ -524,6 +606,13 @@
     "play_text": "text 1",
     "result_label": "삼진",
     "speed_mph": 86.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 0.1,
     "z": 2.5,
     "zone_label": "가운데 높이 중앙"
@@ -680,6 +769,13 @@
     "play_text": null,
     "result_label": "볼",
     "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 1.2,
     "z": 2.0,
     "zone_label": "존 바깥"
@@ -836,6 +932,13 @@
     "play_text": "text 2",
     "result_label": "안타",
     "speed_mph": 86.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 0.1,
     "z": 2.5,
     "zone_label": "가운데 높이 중앙"
@@ -992,6 +1095,13 @@
     "play_text": null,
     "result_label": "볼",
     "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 1.2,
     "z": 2.0,
     "zone_label": "존 바깥"
@@ -1148,6 +1258,13 @@
     "play_text": "text 3",
     "result_label": "타구 아웃",
     "speed_mph": 86.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 0.1,
     "z": 2.5,
     "zone_label": "가운데 높이 중앙"
@@ -1304,6 +1421,13 @@
     "play_text": null,
     "result_label": "볼",
     "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 1.2,
     "z": 2.0,
     "zone_label": "존 바깥"
@@ -1460,6 +1584,13 @@
     "play_text": "text 4",
     "result_label": "홈런",
     "speed_mph": 86.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 0.1,
     "z": 2.5,
     "zone_label": "가운데 높이 중앙"
@@ -1616,6 +1747,13 @@
     "play_text": null,
     "result_label": "볼",
     "speed_mph": 95.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 1.2,
     "z": 2.0,
     "zone_label": "존 바깥"
@@ -1772,6 +1910,13 @@
     "play_text": null,
     "result_label": "볼",
     "speed_mph": 86.0,
+    "tracking": {
+     "distance_feet": null,
+     "exit_velocity_mph": null,
+     "extension_feet": null,
+     "launch_angle_deg": null,
+     "spin_rate_rpm": null
+    },
     "x": 0.1,
     "z": 2.5,
     "zone_label": "가운데 높이 중앙"

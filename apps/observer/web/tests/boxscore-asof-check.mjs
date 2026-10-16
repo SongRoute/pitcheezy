@@ -16,7 +16,8 @@ let failures = 0;
 const ok = (cond, msg, info) => { if (!cond) failures++; console.log(cond ? 'ok  ' : 'FAIL', msg, cond ? '' : JSON.stringify(info)); };
 const line = (rows, away, home) => ({ basis: 'revealed_events', innings: rows.map(([a, h], i) => ({ inning: i + 1, away: a, home: h })),
   teams: { away: { runs: away[0], hits: away[1], errors: away[2], bb_hbp: away[3] }, home: { runs: home[0], hits: home[1], errors: home[2], bb_hbp: home[3] } } });
-const body = JSON.parse(readFileSync(path.join(here, 'fixtures', 'service-849843.json'), 'utf8')).final;
+// A live game can return to latest; the final-game header is deliberately disabled.
+const body = JSON.parse(readFileSync(path.join(here, 'fixtures', 'service-849843.json'), 'utf8')).live;
 body.linescore = line([[0, 7], [0, 0], [0, 1]], [0, 2, 0, 1], [8, 11, 1, 3]);           // latest: home scored 7 in the 1st (later play)
 body.pitches.forEach((p) => { if (p.index <= 1) p.linescore_before = line([[0, null]], [0, 0, 0, 0], [0, 0, 0, 0]); });  // 1회초 before the scoring
 // index 2 deliberately has no linescore_before (older backend): must not fall back to the latest line
@@ -33,8 +34,12 @@ await p.route('http://pz.test/**', (route) => {
 });
 await p.goto('http://pz.test/watch/849843'); await p.waitForSelector('.sv-board'); await p.waitForTimeout(250);
 const box = async (shot) => { await p.locator('.sv-inning').click(); await p.waitForSelector('.sv-sheet');
+  await p.getByRole('button', { name: '박스스코어', exact: true }).click();
   const t = await p.evaluate(() => ({ rows: [...document.querySelectorAll('.sv-box tbody tr')].map((r) => [...r.children].map((x) => x.textContent)), text: document.querySelector('.sv-sheet-body').textContent }));
   if (out) await p.screenshot({ path: path.join(out, shot) }); await p.keyboard.press('Escape'); await p.waitForTimeout(150); return t; };
+await p.locator('.sv-inning').click();
+await p.locator('.sv-pa-controls select').selectOption({ index: 0 });
+await p.locator('.sv-pa-item').first().click();
 await p.locator('.sv-strip .sv-card').nth(1).click(); await p.waitForTimeout(200);   // selected: 1회초 2구 (has linescore_before)
 let b = await box('asof-selected.png');
 ok(b.rows.length === 2, 'selected pitch shows a box score', b);

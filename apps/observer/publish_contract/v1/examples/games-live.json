@@ -26,6 +26,8 @@
    "embargoed": false,
    "game_number": 1,
    "game_pk": 900200,
+   "game_type": "F",
+   "games_in_series": null,
    "half": null,
    "has_history": true,
    "home_abbr": null,
@@ -34,10 +36,17 @@
    "inning": null,
    "live": true,
    "official_date": "2026-10-05",
+   "probable_pitchers": {
+    "away": null,
+    "home": null
+   },
+   "series_description": null,
+   "series_game_number": null,
    "start": "2026-10-05T10:00:00Z",
    "start_kst": "2026-10-05T19:00:00+09:00",
    "status": "live",
-   "status_text": "In Progress"
+   "status_text": "In Progress",
+   "venue": null
   }
  ],
  "live_ok": true,

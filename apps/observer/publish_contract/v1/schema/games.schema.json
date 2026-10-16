@@ -98,6 +98,18 @@
      "game_pk": {
       "type": "integer"
      },
+     "game_type": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "games_in_series": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
      "half": {
       "type": "null"
      },
@@ -124,6 +136,74 @@
      },
      "official_date": {
       "type": "string"
+     },
+     "probable_pitchers": {
+      "properties": {
+       "away": {
+        "properties": {
+         "id": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "name": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "id",
+         "name"
+        ],
+        "type": [
+         "object",
+         "null"
+        ]
+       },
+       "home": {
+        "properties": {
+         "id": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "name": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "id",
+         "name"
+        ],
+        "type": [
+         "object",
+         "null"
+        ]
+       }
+      },
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "series_description": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "series_game_number": {
+      "type": [
+       "integer",
+       "null"
+      ]
      },
      "start": {
       "type": "string"
@@ -162,7 +242,8 @@
      "start",
      "start_kst",
      "status",
-     "status_text"
+     "status_text",
+     "venue"
     ],
     "type": "object"
    },

@@ -104,7 +104,6 @@
  "required": [
   "feed_failing_games",
   "files_written",
-  "game_checks",
   "publish",
   "publish_interval_s",
   "published_at",

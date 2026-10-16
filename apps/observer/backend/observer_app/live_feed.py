@@ -359,6 +359,7 @@ class LiveFeed:
         raise LiveFeedError(f'feed unavailable after {attempts} attempts: {error}') from error
 
     def schedule(self, date):
+        from .game_history import public_person
         if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date):
             raise ValueError('date must be YYYY-MM-DD')
         data = self._get(f"{self.config['base_url']}/api/v1/schedule?sportId=1&date={date}")
@@ -368,7 +369,10 @@ class LiveFeed:
                  'away_team': g['teams']['away']['team']['name'], 'home_team': g['teams']['home']['team']['name'],
                  'abstract': g['status'].get('abstractGameState'), 'official_date': g.get('officialDate'),
                  'away_score': g['teams']['away'].get('score'), 'home_score': g['teams']['home'].get('score'),
-                 'game_number': g.get('gameNumber'), 'double_header': g.get('doubleHeader')}
+                 'game_number': g.get('gameNumber'), 'double_header': g.get('doubleHeader'),
+                 'series_description': g.get('seriesDescription'), 'series_game_number': g.get('seriesGameNumber'),
+                 'games_in_series': g.get('gamesInSeries'), 'venue': (g.get('venue') or {}).get('name'),
+                 'probable_pitchers': {side: public_person(g['teams'][side].get('probablePitcher')) for side in ('away', 'home')}}
                 for day in data.get('dates', []) for g in day['games'] if g['gameType'] in allowed]
 
     def _record(self, game_pk, feed):

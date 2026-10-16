@@ -188,7 +188,7 @@ function status(raw: Raw): { status: GameStatus; text: string } {
 }
 export function normalizeCard(raw: Raw): GameCard {
   const st = status(raw);
-  return { venue: raw.venue ?? null, away_abbr: raw.away_abbr ?? null, home_abbr: raw.home_abbr ?? null, game_pk: raw.game_pk, start: typeof raw.start === 'string' ? raw.start : null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
+  return { game_type: raw.game_type ?? null, series_description: raw.series_description ?? null, series_game_number: num(raw.series_game_number), games_in_series: num(raw.games_in_series), probable_pitchers: raw.probable_pitchers ?? null, venue: raw.venue ?? null, away_abbr: raw.away_abbr ?? null, home_abbr: raw.home_abbr ?? null, game_pk: raw.game_pk, start: typeof raw.start === 'string' ? raw.start : null, kst_date: raw.date_kst ?? (raw.start ? kstDate(raw.start) : raw.date),
     status: st.status, status_text: st.text, away_team: raw.away_team, home_team: raw.home_team,
     away_score: num(raw.away_score), home_score: num(raw.home_score), inning: num(raw.inning), half: raw.half ?? null,
     game_number: num(raw.game_number) ?? 1, double_header: raw.double_header === true, embargoed: raw.embargoed === true };
@@ -219,7 +219,7 @@ function actual(raw: Raw | null | undefined): Actual | null {
   return { pitch_type: raw.pitch_type ?? null, pitch_label: pitchName(raw.pitch_label, raw.pitch_type), description: raw.description ?? null,
     result_label: raw.result_label ?? '', event: raw.event ?? null, event_label: raw.event_label ?? null, play_text: raw.play_text ?? null,
     speed_mph: num(raw.speed_mph), x: num(raw.x), z: num(raw.z), zone_label: plainZone(raw.zone_label ?? ''),  // same plain words as a recommended zone
-    setup_x: num(raw.catcher_setup?.plate_x_feet) };
+    setup_x: num(raw.catcher_setup?.plate_x_feet), tracking: raw.tracking ? { extension_feet: num(raw.tracking.extension_feet), spin_rate_rpm: num(raw.tracking.spin_rate_rpm), exit_velocity_mph: num(raw.tracking.exit_velocity_mph), launch_angle_deg: num(raw.tracking.launch_angle_deg), distance_feet: num(raw.tracking.distance_feet) } : null };
 }
 /** Fail closed: any receipt status other than 'received' is unconfirmed. No `receipt` key (store off, archive) → undefined, except a
  *  row the server already blanked to '확인 중', which stays unconfirmed so it is never drawn as an observed pitch. */
@@ -338,7 +338,9 @@ export function mergeDetail(old: Detail, inc: Detail): Detail | null {
   if ((inc.viewer?.delay_s ?? null) !== (old.viewer?.delay_s ?? null) || inc.viewer?.buffering || old.viewer?.buffering) return null;  // another viewer delay = another moment: never merged
   // a receipt changed somewhere (a pitch became unconfirmed, corrected, or plain received again): take the full history again
   if ((inc.receipts_version ?? null) !== (old.receipts_version ?? null)) return null;
-  const keep = old.pitches.filter(p => !inc.pitches.some(n => n.index === p.index));
+  // Reindexing can collide with another known pitch's cursor. Reload the full history; never erase that neighbour.
+  if (inc.pitches.some(n => old.pitches.some(p => (p.key === n.key) !== (p.index === n.index)))) return null;
+  const keep = old.pitches.filter(p => !inc.pitches.some(n => n.key === p.key));
   return { ...inc, pitches: [...keep, ...inc.pitches].sort((a, b) => a.index - b.index) };
 }
 /** CONTRACT-rev3 §3 `linescore` → screen shape. Cells stay null when the backend says not started / not reconstructible. */
@@ -377,7 +379,7 @@ export function normalizeDetail(raw: Raw): Detail {
   let next = raw.next ? normalizeRec(nextRaw, provenance === 'captured_live' ? 'captured_live' : 'asof_replay') : null;
   // the server says nothing is shown for the pending pitch: candidates never reach the screen, whatever `next.rec` carries
   if (next && display && !display.shown) next = { ...next, status: next.status === 'ready' ? 'missing' : next.status, candidates: [], provenance: next.status === 'ready' ? 'absent' : next.provenance };
-  return { session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game, pitches, pas: Array.isArray(raw.pas) ? raw.pas.map((p: Raw) => pa(p, unsurePas.has(p.pa_key))) : groupPas(pitches, current).map(p => unsurePas.has(p.pa_key) ? { ...p, result: BLANK_LABEL } : p), current,
+  return { win_expectancy: raw.win_expectancy?.status === 'available' && raw.win_expectancy.perspective === 'home' && num(raw.win_expectancy.home_probability) !== null && raw.win_expectancy.home_probability >= 0 && raw.win_expectancy.home_probability <= 1 ? { status: 'available', home_probability: raw.win_expectancy.home_probability } : null, session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game, pitches, pas: Array.isArray(raw.pas) ? raw.pas.map((p: Raw) => pa(p, unsurePas.has(p.pa_key))) : groupPas(pitches, current).map(p => unsurePas.has(p.pa_key) ? { ...p, result: BLANK_LABEL } : p), current,
     next, display, receipts_version: text(raw.receipts?.version), phase: PHASES.includes(cur?.phase) ? cur.phase : null, live_source: provenance === 'captured_live',
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
     zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),

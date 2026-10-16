@@ -4,6 +4,7 @@ never goes back, a final game is written once, and demo/operator data never reac
 Synthetic games and a fake policy only (``publish_fixture``); no network, no T7, no model, no port."""
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 import re
 import sqlite3
@@ -1069,8 +1070,15 @@ def test_a_failed_refetch_is_counted_in_health_although_the_final_file_does_not_
     final = world.path(LIVE_FILE).read_bytes()
     health = world.cycle(OSError('upstream down'), after=world.config['settled_recheck_s']+1, settle=False)
     assert health['feed_failing_games'] == [LIVE_GAME] and health['unavailable_games'] == []
+    assert health['game_checks'][str(LIVE_GAME)]['feed_ok'] is False
     assert world.path(LIVE_FILE).read_bytes() == final
-    assert world.cycle(settle=False)['feed_failing_games'] == []  # not asked this cycle: nothing to report
+    world.start()  # a publisher restart cannot forget the last failed recheck
+    between = world.cycle(settle=False)
+    assert between['feed_failing_games'] == []  # not asked this cycle: nothing new to report
+    assert between['game_checks'][str(LIVE_GAME)]['feed_ok'] is False  # last check still failed
+    restored = world.cycle(snap('20261005_100100', half='final'),
+                           after=world.config['settled_recheck_s']+1, settle=False)
+    assert restored['game_checks'][str(LIVE_GAME)]['feed_ok'] is True
 
 
 def test_a_disconnected_live_game_is_counted_in_health(world):
@@ -1154,12 +1162,18 @@ def test_an_arrived_archive_that_cannot_be_read_stays_in_health_and_is_taken_onc
     store_archive(world, b'not gzip at all')  # the sync left a broken file
     health = world.cycle(settle=False)
     assert (LIVE_GAME, 'archive_unread') in codes(health) and world.path(LIVE_FILE).read_bytes() == final
+    first_check = health['game_checks'][str(LIVE_GAME)]
+    assert first_check['feed_ok'] is False and first_check['file_sequence'] == 1
     for _ in range(3):  # between retries the problem does not vanish from health
-        assert (LIVE_GAME, 'archive_unread') in codes(world.cycle(settle=False))
+        pending = world.cycle(settle=False)
+        assert (LIVE_GAME, 'archive_unread') in codes(pending)
+        assert pending['game_checks'][str(LIVE_GAME)]['feed_ok'] is False
+        assert pending['game_checks'][str(LIVE_GAME)]['file_sequence'] == first_check['file_sequence']
     assert polls(world) == asked  # and nobody was polled for it
     store_archive(world)  # the next sync writes a good one
     health = world.cycle(after=world.config['settled_recheck_s'], settle=False)
     assert codes(health) == [] and world.game()['source']['kind'] == 'archive' and world.game()['publish']['final'] is True
+    assert health['game_checks'][str(LIVE_GAME)]['feed_ok'] is True
     assert codes(world.cycle(settle=False)) == [] and polls(world) == asked
 
 
@@ -1330,3 +1344,73 @@ def test_the_schemas_accept_the_shapes_the_builders_can_produce_beyond_the_fixtu
     publish_schema.widen(widened, ('missing', 'path'), ('null',))  # a path the schema does not have: nothing is invented
     assert widened == {'type': 'object', 'required': ['b'], 'properties': {'a': {'type': ['integer', 'null']}, 'b': {'type': 'object', 'properties': {'x': {'type': ['string', 'null']}}},
                                                                     'c': {'type': 'array', 'items': {'type': 'object', 'properties': {'y': {'type': 'number'}}}}}}
+
+
+def test_candidate_schema_covers_both_current_and_recorded_values(tmp_path):
+    bodies = dict(publish_fixture.collect(tmp_path)['game'])
+    rich = bodies['game-rich-candidate.json']
+    schema = json.loads((CONTRACT_DIR/'schema/game.schema.json').read_text())
+    assert rich['next']['rec']['candidates'][0]['detail']['probability'] == 0.4
+    assert rich['next']['rec']['candidates'][0]['target'] == {'x': 0.1, 'z': 2.5}
+    assert publish_schema.validate(rich, schema) == []
+    next_candidate = schema['properties']['next']['properties']['rec']['properties']['candidates']['items']
+    past_candidate = schema['properties']['pitches']['items']['properties']['rec']['properties']['candidates']['items']
+    for candidate in (next_candidate, past_candidate):
+        assert 'number' in candidate['properties']['detail']['properties']['probability']['type']
+        assert 'object' in candidate['properties']['target']['type']
+
+
+
+def test_unsupported_example_is_an_unsupported_state_without_reference_card():
+    body = json.loads((CONTRACT_DIR/'examples/game-live-unsupported.json').read_text())
+    assert body['display_state']['state'] == 'unsupported'
+    assert body['next']['rec']['candidates'] == []
+    assert body.get('reference') is None
+
+
+
+@pytest.mark.parametrize('failure', ['build', 'write'])
+def test_failed_live_list_does_not_refresh_a_skipped_game_check(world, monkeypatch, failure):
+    first = world.cycle(settle=False)
+    verified = first['game_checks'][str(LIVE_GAME)]['checked_at']
+    before = polls(world)
+    if failure == 'build':
+        original = world.publisher.bodies.games
+
+        def broken(date):
+            if date == LIVE_DATE:
+                raise OSError('synthetic list failure')
+            return original(date)
+
+        monkeypatch.setattr(world.publisher.bodies, 'games', broken)
+    else:
+        original = world.publisher.sink.write
+
+        def broken(path, data, *, final=False):
+            if path == f'v1/games/{LIVE_DATE}.json':
+                raise OSError('synthetic list write failure')
+            return original(path, data, final=final)
+
+        monkeypatch.setattr(world.publisher.sink, 'write', broken)
+    for _ in range(4):
+        health = world.cycle(after=12, settle=False)
+        assert LIVE_DATE in health['unavailable_dates']
+        assert health['game_checks'][str(LIVE_GAME)]['checked_at'] == verified
+    assert polls(world) == before
+    assert health['game_checks'][str(LIVE_GAME)]['file_sequence'] == first['game_checks'][str(LIVE_GAME)]['file_sequence']
+    lag = datetime.fromisoformat(health['published_at'].replace('Z', '+00:00')).timestamp() - datetime.fromisoformat(verified.replace('Z', '+00:00')).timestamp()
+    assert lag == 48  # the consumer's default 30 s freshness threshold is now crossed
+    monkeypatch.undo()
+    recovered = world.cycle(after=12, settle=False)
+    assert LIVE_DATE not in recovered['unavailable_dates']
+    assert polls(world) > before
+    assert recovered['game_checks'][str(LIVE_GAME)]['checked_at'] == recovered['published_at']
+
+
+
+def test_v1_health_without_optional_game_checks_remains_valid(world):
+    world.cycle()
+    health = world.read('v1/health.json')
+    health.pop('game_checks')
+    schema = json.loads((CONTRACT_DIR/'schema/health.schema.json').read_text())
+    assert publish_schema.validate(health, schema) == []
