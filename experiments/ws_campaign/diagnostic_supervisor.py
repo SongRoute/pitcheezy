@@ -8,13 +8,15 @@ import time
 from experiments.ws_campaign.runtime import sha
 
 
-def supervise(command, out, wall, rss_cap, grant_sha, lock_fd):
+def supervise(command, out, wall, rss_cap, grant_sha, lock_fd, output_cap=None):
     # The child retains this same flock open-file-description even if parent dies.
     started = time.monotonic()
     child = subprocess.Popen(command, pass_fds=(lock_fd,))
     reason = None; peak = 0; reaped = False
     try:
         while child.poll() is None:
+            if output_cap is not None and sum(p.stat().st_size for p in out.iterdir() if p.is_file()) > output_cap:
+                reason = 'output-bytes'; break
             if time.monotonic()-started >= wall:
                 reason = 'wall'; break
             try:
