@@ -223,6 +223,25 @@ def test_prior_decision_survives_later_observed_target_key_and_restart(tmp_path)
     restarted.close()
 
 
+def test_strict_only_crash_gap_cannot_backfill_after_correction_or_restart(tmp_path):
+    bridge, native = source()
+    path = tmp_path/'shadow.sqlite'
+    s = state(path)
+    s.ingest(bridge['events'][0], None, received_ns=100, source_sha256=SHA)
+    s.strict.decide(**bridge['candidate'], received_ns=101)
+    correction = dict(bridge['events'][0], revision=2)
+    s.ingest(correction, dict(native, receipt_seq=2), received_ns=102,
+             source_sha256=SHA)
+    with pytest.raises(ValueError, match='cannot backfill'):
+        s.decide(bridge['candidate'], received_ns=103)
+    s.close()
+    restarted = state(path)
+    with pytest.raises(ValueError, match='cannot backfill'):
+        restarted.decide(bridge['candidate'], received_ns=104)
+    assert restarted.db.execute('SELECT COUNT(*) FROM native_decisions').fetchone()[0] == 0
+    restarted.close()
+
+
 def test_receipt_without_changed_pitch_is_still_bound_and_clocked(tmp_path):
     bridge, native = source()
     s = state(tmp_path/'shadow.sqlite')

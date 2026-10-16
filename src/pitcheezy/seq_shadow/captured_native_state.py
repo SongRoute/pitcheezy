@@ -170,6 +170,11 @@ class NativeShadow:
             if strict['snapshot_sha256'] != prior['strict_snapshot_sha256']:
                 raise ValueError('strict/native decision custody mismatch')
             return prior
+        if self.db.execute('SELECT 1 FROM decisions WHERE decision_id=?',
+                           (candidate['decision_id'],)).fetchone():
+            # ponytail: a crash between the strict and sidecar inserts sacrifices
+            # this ID; atomically sharing StreamState.decide would require a wider API.
+            raise ValueError('strict decision exists without native decision; cannot backfill')
         latest_receipt = self.db.execute('''SELECT source_sha256 FROM native_receipts
             ORDER BY receipt_seq DESC LIMIT 1''').fetchone()
         if (latest_receipt is None or not isinstance(candidate['coverage'], dict)
