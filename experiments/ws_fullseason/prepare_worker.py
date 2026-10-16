@@ -35,11 +35,13 @@ def run(regpath, grantpath):
     raw=pq.read_table(source['parquet'],columns=reg['columns'],filters=[
         ('game_date','>=',pd.Timestamp(recipe['window']['fit'][0])),
         ('game_date','<=',pd.Timestamp(recipe['window']['oof'][1]))],use_threads=False).to_pandas()
+    print('phase=project',flush=True)
     g,census,fit,oof,y=data.project(raw,recipe,M); del raw
     observed=data.audit_summary(g,census,fit,oof,y,M)
     if observed['census']!=quality['census'] or observed['roles']!=quality['roles']:
         raise ValueError('quality/key/label denominators changed')
     built=prepare.arrays(g,fit,oof,y,recipe,M)
+    print('phase=save-package',flush=True)
     out=Path(reg['output']); manifest=prepare.save_package(out/'inputs',built,sha(reg['recipe']),
         {'source_sha256':source['parquet_sha256'],'quality_receipt_sha256':reg['quality_receipt']['sha256']},sha)
     receipt={'status':'COMPLETED','stage':'OOF1_FEATURE_PACKAGE_NOT_FIT_OR_RELEASE',

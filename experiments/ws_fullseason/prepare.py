@@ -13,28 +13,62 @@ from experiments.ws_seq import train_seq as base
 from experiments.ws_fullseason import data
 
 
-def raw_features(g, fit, recipe, M):
+def raw_features(g, fit, recipe, M, chunk_rows=65536):
     cutoff = recipe['window']['fit'][1]
     donor = g.loc[fit, M.safe.DONOR].reset_index(drop=True)
     if donor.empty or str(donor.game_date.max().date()) > cutoff:
         raise ValueError('empty or future donor')
-    raw, transfer_audit = M.scale.features(donor, g, cutoff, M)
-    if raw.shape != (len(g), 91):
-        raise ValueError('raw feature schema')
-    return raw, transfer_audit
+    # Whole dates keep every same-game previous-pitch lookup intact. Reuse the
+    # exact feature helper on each batch; no query outcome enters the donor pool.
+    batches=[]; current=[]; size=0
+    for indices in g.groupby('game_date',sort=True).indices.values():
+        if len(indices)>chunk_rows: raise ValueError('one date exceeds query chunk cap')
+        if size+len(indices)>chunk_rows and current:
+            batches.append(np.concatenate(current)); current=[]; size=0
+        current.append(indices); size+=len(indices)
+    if current: batches.append(np.concatenate(current))
+    raw=np.empty((len(g),91),np.float64); totals={}
+    for indices in batches:
+        part,audit=M.scale.features(donor,g.iloc[indices],cutoff,M)
+        if part.shape!=(len(indices),91): raise ValueError('raw feature schema')
+        raw[indices]=part
+        for name,value in audit.items(): totals[name]=totals.get(name,0)+int(value)
+    return raw,totals
+
+
+def fit_encoder(raw, fit):
+    """Same FIT matrix reductions as fsf.encode, without allocating expanded FIT X.
+
+    This preserves median/mean/std/continuous/quantile operations and their axis;
+    only the unused 199-column FIT expansion is omitted.
+    """
+    training=raw[fit]
+    median=np.nanmedian(training,axis=0); median=np.where(np.isfinite(median),median,0)
+    filled=np.where(np.isfinite(training),training,median); del training
+    mean=filled.mean(0); scale=filled.std(0); scale=np.where(scale>1e-8,scale,1)
+    continuous=np.flatnonzero([len(np.unique(filled[:,j]))>2 for j in range(filled.shape[1])])
+    z=np.clip((filled-mean)/scale,-8,8); del filled
+    knots=np.quantile(z[:,continuous],[.25,.5,.75],axis=0)
+    return {'median':median.tolist(),'mean':mean.tolist(),'scale':scale.tolist(),
+        'continuous':continuous.tolist(),'knots':knots.tolist(),'dimension':raw.shape[1]+3*len(continuous)}
 
 
 def arrays(g, fit, oof, y7, recipe, M):
+    print('phase=raw-features',flush=True)
     raw, audit = raw_features(g, fit, recipe, M)
     # Every fitted statistic and continuous-column choice sees exactly FIT rows.
-    encoded_fit, encoder = M.fsf.encode(raw[fit], np.ones(int(fit.sum()), dtype=bool))
+    print('phase=fit-encoder',flush=True)
+    encoder = fit_encoder(raw,fit)
     dimension = recipe['base']['inputs']['feature_dimension']
     if encoder['dimension'] != dimension:
         raise ValueError(f'FIT-only encoder dimension {encoder["dimension"]} differs from frozen {dimension}; never use OOF to choose columns')
-    x = M.safe.apply_encoder(raw, encoder)
-    if not np.array_equal(encoded_fit, x[fit]) or not np.isfinite(x).all():
-        raise ValueError('stored encoder reproduction')
-    del raw, encoded_fit; gc.collect()
+    print('phase=apply-encoder',flush=True)
+    x=np.empty((len(g),dimension),np.float32)
+    for start in range(0,len(g),16384):
+        x[start:start+16384]=M.safe.apply_encoder(raw[start:start+16384],encoder)
+    if not np.isfinite(x).all(): raise ValueError('nonfinite encoded features')
+    del raw; gc.collect()
+    print('phase=sequence-and-proof',flush=True)
     seq = sequence_arrays(g, M)
     corpus = dict(keys=g[M.cp.KEY].to_numpy(dtype='<i8'), y10=g.outcome10.to_numpy(dtype=np.int64),
         y7=y7, games=g.game_pk.to_numpy(dtype=np.int64), fit=fit, tuning=np.zeros(len(g),bool),

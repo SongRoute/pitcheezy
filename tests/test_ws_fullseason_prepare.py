@@ -72,6 +72,23 @@ class Producer(unittest.TestCase):
             self.assertEqual(proof['encoder_fit']['keys_sha256'],data.key_digest(c['keys'][fit]))
             self.assertTrue(np.isfinite(x).all())
 
+    def test_bounded_encoder_exactly_matches_existing_matrix_reductions(self):
+        rng=np.random.default_rng(42); raw=rng.normal(size=(513,91)); raw[:,0]=3;raw[:,1]=np.nan
+        raw[::7,2:8]=np.nan;raw[::13,9]=np.inf;fit=np.arange(len(raw))%4!=0
+        expected_x,expected=self.M.fsf.encode(raw[fit],np.ones(fit.sum(),bool))
+        observed=prepare.fit_encoder(raw,fit)
+        self.assertEqual(expected,observed)
+        np.testing.assert_array_equal(expected_x,self.M.safe.apply_encoder(raw[fit],observed))
+        full=self.M.safe.apply_encoder(raw,observed)
+        chunked=np.concatenate([self.M.safe.apply_encoder(raw[i:i+17],observed) for i in range(0,len(raw),17)])
+        np.testing.assert_array_equal(full,chunked)
+
+    def test_whole_date_query_chunks_match_original_features(self):
+        g,_,fit,_,_=data.project(rows(),self.recipe,self.M)
+        expected,audit=self.M.scale.features(g.loc[fit,self.M.safe.DONOR].reset_index(drop=True),g,self.recipe['window']['fit'][1],self.M)
+        actual,actual_audit=prepare.raw_features(g,fit,self.recipe,self.M,chunk_rows=3)
+        np.testing.assert_array_equal(expected,actual);self.assertEqual(audit,actual_audit)
+
     def test_dimension_change_stops_before_package(self):
         g,_,fit,oof,y=data.project(rows(),self.recipe,self.M)
         bad=copy.deepcopy(self.recipe); bad['base']['inputs']['feature_dimension']=1
