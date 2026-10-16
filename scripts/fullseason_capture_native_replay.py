@@ -20,6 +20,7 @@ from pitcheezy.seq_shadow.ledger import sha as object_sha
 from scripts import fullseason_captured_replay as replay
 
 CONTRACT = captured_native.CONTRACT
+NORMALIZER_SHA_SEMANTICS = 'sha256(canonical_json(native_source_pins))'
 ORACLE_ABSENCE = ('No corrected I3 or other row reference is read, joined, or overlaid during native inference; '
                   'source-native six-field hypotheses remain non-Statcast-equivalent, strict observed rows UNKNOWN.')
 
@@ -27,10 +28,11 @@ ORACLE_ABSENCE = ('No corrected I3 or other row reference is read, joined, or ov
 def gated(regpath, grantpath):
     reg = replay.gated(regpath, grantpath)
     if (reg['input_contract'] != CONTRACT or reg['oracle_absence'] != ORACLE_ABSENCE
+            or reg['normalizer_sha_semantics'] != NORMALIZER_SHA_SEMANTICS
             or reg['normalizer_sha256'] != object_sha(reg['native_source_pins'])
             or any(reg['source_pins'].get(str(ROOT / name)) != digest
                    for name, digest in reg['native_source_pins'].items())
-            or reg['normalizer_source'] != str(ROOT / 'src/pitcheezy/seq_shadow/captured_native_state.py')
+            or 'normalizer_source' in reg
             or reg['data_role'] != '2026 EXPOSED DEVELOPMENT'
             or any(name in reg for name in ('i3', 'reference', 'corrected_rows'))):
         raise ValueError('capture-native source/oracle contract changed')

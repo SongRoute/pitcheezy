@@ -92,3 +92,25 @@ def test_native_row_custody_rejects_promotion():
         altered = dict(row, **{field: value})
         with pytest.raises(ValueError, match='custody or acceptance'):
             native._native_map([altered], receipt_seq=1, source_sha256='a' * 64)
+
+
+def test_composite_normalizer_provenance_is_explicit(tmp_path, monkeypatch):
+    monkeypatch.setattr(native, 'ROOT', tmp_path)
+    name = 'src/pitcheezy/seq_shadow/captured_native_state.py'
+    path = tmp_path / name; path.parent.mkdir(parents=True)
+    path.write_text('generated native source')
+    digest = native.file_sha(path)
+    sources = {name: digest}
+    reg = {'input_contract': native.CONTRACT, 'oracle_absence': native.ORACLE_ABSENCE,
+           'normalizer_sha_semantics': native.NORMALIZER_SHA_SEMANTICS,
+           'normalizer_sha256': native.object_sha(sources), 'native_source_pins': sources,
+           'source_pins': {str(path): digest}, 'data_role': '2026 EXPOSED DEVELOPMENT'}
+    monkeypatch.setattr(native.replay, 'gated', lambda *_: reg)
+    assert native.gated(tmp_path/'registration', tmp_path/'grant') is reg
+    reg['normalizer_source'] = str(path)
+    with pytest.raises(ValueError, match='source/oracle contract'):
+        native.gated(tmp_path/'registration', tmp_path/'grant')
+    reg.pop('normalizer_source')
+    reg['normalizer_sha_semantics'] = 'file_sha256'
+    with pytest.raises(ValueError, match='source/oracle contract'):
+        native.gated(tmp_path/'registration', tmp_path/'grant')
