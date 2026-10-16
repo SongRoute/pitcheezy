@@ -91,9 +91,24 @@ def test_a_display_state_change_alone_is_written(world):
 def test_a_correction_of_a_past_call_is_written(world):
     world.cycle()
     before = world.game()
-    health = world.cycle(snap('20261005_100000', call='S'), settle=False)
+    # a real correction arrives under a NEW provider stamp; the same stamp with other content is a same-stamp
+    # conflict that the store holds (display state unconfirmed, pitches kept), not a correction
+    health = world.cycle(snap('20261005_100030', call='S'), settle=False)
     after = world.game()
     assert [p['actual'] for p in after['pitches']] != [p['actual'] for p in before['pitches']]
+    assert after['receipts']['corrected'] == 1
+    assert after['publish']['sequence'] == health['sequence'] == check_of(health)['file_sequence']
+
+
+def test_a_same_stamp_conflict_is_held_but_its_state_is_written(world):
+    """Other content under the same provider stamp: the store holds the pitches (no correction shown) and the
+    display state turns to unconfirmed; that state change alone is written."""
+    world.cycle()
+    before = world.game()
+    health = world.cycle(snap('20261005_100000', call='S'), settle=False)
+    after = world.game()
+    assert [p['actual'] for p in after['pitches']] == [p['actual'] for p in before['pitches']]
+    assert (after['display_state']['state'], after['display_state']['reason']) == ('unconfirmed', 'same_stamp_conflict_provider_stamp')
     assert after['publish']['sequence'] == health['sequence'] == check_of(health)['file_sequence']
 
 
