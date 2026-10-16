@@ -234,6 +234,9 @@ def run(regpath, grantpath, *, persist_forecasts=False):
             raise ValueError('strict event promotion detected')
     finally:
         state.close()
+    if persist_forecasts and any(Path(str(Path(reg['output']) / 'native_stream.sqlite3') + suffix).exists()
+                                 for suffix in ('-wal', '-shm')):
+        raise ValueError('forecast SQLite WAL sidecar remains after close')
     if (counts['bodies'] != replay.MAX_FILES or compressed != reg['capture_compressed_bytes_reported']
             or inflated != reg['capture_inflated_bytes_reported']):
         raise ValueError('capture total changed')

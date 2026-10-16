@@ -7,6 +7,7 @@ import sqlite3
 from pitcheezy.seq_shadow import fullseason
 from pitcheezy.seq_shadow.ledger import sha
 from scripts import fullseason_capture_native_replay as native
+from scripts import verify_fullseason_native_forecast_output as verifier
 from test_captured_bridge import feed
 
 
@@ -63,6 +64,7 @@ def test_generated_forecast_runner_persists_and_reopens_without_model(tmp_path, 
                     'prospective_claim': False,
                     'call_sha256': sha({'bundle': self.bundle_sha256,
                                         'snapshot': snapshot['snapshot_sha256']}),
+                    'leaf_order': list(fullseason.LEAVES),
                     'probabilities': [1 / 7] * 7}
     monkeypatch.setattr(native, 'Runtime', Runtime)
     regpath = tmp_path / 'registration.json'
@@ -86,3 +88,8 @@ def test_generated_forecast_runner_persists_and_reopens_without_model(tmp_path, 
         assert db.execute('SELECT COUNT(*) FROM native_forecast_results').fetchone()[0] == 1
         result = json.loads(db.execute('SELECT body FROM native_forecast_results').fetchone()[0])
         assert len(result['probabilities']) == 7
+    monkeypatch.setattr(verifier, 'EXPECTED', 1)
+    checked = verifier.verify(output / 'native_stream.sqlite3', receipt)
+    assert checked['intents'] == checked['results'] == 1
+    assert checked['scores'] == Runtime.calls
+    assert checked['selected_keys_sha256'] == receipt['selected_keys_sha256']
