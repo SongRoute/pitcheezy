@@ -22,6 +22,10 @@ const httpDate = (ms) => new Date(ms).toUTCString();
 const iso = (ms) => new Date(ms).toISOString();
 const FILE_AT = Date.parse('2026-09-30T05:00:00Z');
 const LIVE = 990003;
+// the option defaults this bundle was built with (.env.v3 of this checkout; a preset branch changes only these)
+const BUILT = Object.fromEntries(readFileSync(path.join(here, '..', '.env.v3'), 'utf8').split('\n')
+  .map((l) => /^VITE_V3_(ZONE|LIST|VIEW)=(.*)$/.exec(l.trim())).filter(Boolean).map((m) => [m[1].toLowerCase(), m[2].trim()]));
+const OTHER_ZONE = BUILT.zone === 'A' ? 'C' : 'A', OTHER_LIST = BUILT.list === 'side' ? 'stack' : 'side';
 const disk = (f) => JSON.parse(readFileSync(path.join(files, f), 'utf8'));
 const liveBase = disk('game/990003.json');
 const stamp = (body, seq, at) => ({ ...body, publish: { contract: 'v1', sequence: seq, published_at: iso(at), final: false } });
@@ -84,14 +88,14 @@ await block('list', async () => {
 });
 
 await block('live', async () => {
-  const { context, page, errors } = await open({ query: `?game=${LIVE}&zone=A&list=side` });
+  const { context, page, errors } = await open({ query: `?game=${LIVE}&zone=${OTHER_ZONE}&list=${OTHER_LIST}&view=${BUILT.view === 'pitcher' ? 'catcher' : 'pitcher'}` });
   await page.locator('.v3-rec').waitFor({ timeout: 9000 });
   ok(await page.locator('.v3-cand').count() === 3, 'live: three candidates when the server shows them');
   ok(await page.locator('.v3-zone.main .v3-z-rec').count() >= 1, 'live: recommendation cells are drawn');
-  ok(await page.locator('.v3-zone.main').getAttribute('data-mark') === 'B', 'live: a public bundle keeps the built zone mark (ignores ?zone=A)');
-  ok(await page.locator('.v3-pitches.side').count() === 0 && await page.locator('.v3-pitches.row').count() === 1, 'live: a public bundle keeps the built list layout (ignores ?list=side)');
-  ok(await page.locator('.v3-zone.main').getAttribute('data-view') === 'catcher', 'live: catcher view by default');
-  ok(/포수 쪽에서 본 스트라이크존/.test(await page.locator('.v3-zone.main').getAttribute('aria-label') ?? ''), 'live: the zone has a text alternative');
+  ok(await page.locator('.v3-zone.main').getAttribute('data-mark') === BUILT.zone, `live: a public bundle keeps the built zone mark ${BUILT.zone} (ignores ?zone=${OTHER_ZONE})`);
+  ok(await page.locator(`.v3-pitches.${OTHER_LIST}`).count() === 0 && await page.locator(`.v3-pitches.${BUILT.list}`).count() === 1, `live: a public bundle keeps the built list layout ${BUILT.list} (ignores ?list=${OTHER_LIST})`);
+  ok(await page.locator('.v3-zone.main').getAttribute('data-view') === BUILT.view, `live: the built zone view (${BUILT.view}) by default`);
+  ok(new RegExp(`${BUILT.view === 'pitcher' ? '투수' : '포수'} 쪽에서 본 스트라이크존`).test(await page.locator('.v3-zone.main').getAttribute('aria-label') ?? ''), 'live: the zone has a text alternative');
   ok(await page.locator('.v3-chip.conn.ok').count() === 1, 'live: connection chip says ok');
   await shot(page, 'live-390');
   ok(errors.length === 0, `live: no page errors ${errors.join(' | ')}`);
