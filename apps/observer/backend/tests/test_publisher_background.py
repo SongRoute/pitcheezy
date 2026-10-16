@@ -293,3 +293,56 @@ def test_queued_path_with_failed_local_delete_never_sends_remote_delete(world, s
     sink.attempted.clear();sink.retry(HEALTH)
     until(lambda:not sink.worker.active and not sink.worker.mailbox)
     assert ('DELETE',GAME) not in server.arrivals
+
+
+def test_consumed_unreaped_error_preserves_handle_snapshot_and_output_lock(world, server, monkeypatch):
+    sink=attach_background(world,server,monkeypatch)
+    class Unreaped:
+        pid=123  # simulated handle: methods never signal any OS process
+        alive=True
+        def is_alive(self):return self.alive
+        def terminate(self):pass
+        def kill(self):pass
+        def join(self,*args):pass
+        def close(self):assert not self.alive
+    handle=Unreaped();calls=[];original=sink.worker.request
+    def request(method,path,**options):
+        calls.append((method,path))
+        if method=='HEAD':return {'etag':None,'sha256':None,'deleted':False}
+        sink.worker.process=handle
+        raise publisher.UploadError('upload_worker_not_stopped',outcome='blocked')
+    monkeypatch.setattr(sink.worker,'request',request)
+    with sink.lock:
+        sink.write(GAME,b'{}')
+        sink.write('v1/game/999999.json',b'{}')
+    until(lambda:not sink.worker.thread.is_alive())
+    assert calls==[('HEAD',GAME),('PUT',GAME)] and sink.worker.process is handle
+    assert sink.state['upload_attempts'][GAME]['phase']=='blocked'
+    snapshots=list(sink.local.staging.glob('upload_*.tmp'));assert len(snapshots)==1
+    with pytest.raises(publisher.UploadError,match='upload_worker_not_stopped'):
+        original('HEAD','v1/game/999999.json')
+    with pytest.raises(publisher.UploadError):world.publisher.close()
+    with pytest.raises(publisher.AlreadyRunning):
+        publisher.Publisher(None,publisher.LocalDirSink(world.out),config=world.config)
+    handle.alive=False;sink.worker._reap();world.publisher.close()
+    replacement=publisher.Publisher(None,publisher.LocalDirSink(world.out),config=world.config)
+    assert not snapshots[0].exists()  # startup sweep only after the previous owner has stopped
+    replacement.close()
+
+
+def test_retry_cursor_passes_large_head_failure_prefix(world, server, monkeypatch):
+    sink=attach_background(world,server,monkeypatch)
+    healthy='v1/game/999999.json';original=sink.worker.request
+    def request(method,path,**options):
+        if path!=healthy:raise publisher.UploadError('upload_unknown',outcome='blocked')
+        return original(method,path,**options)
+    monkeypatch.setattr(sink.worker,'request',request)
+    with sink.lock:
+        for path in [f'v1/game/{910000+i}.json' for i in range(140)]+[healthy]:
+            sink.local.write(path,b'{}')
+            publisher._queue_upload(sink.state,path,'put',hashlib.sha256(b'{}').hexdigest())
+        sink.save();sink.retry(HEALTH)
+    until(lambda:not sink.worker.active and not sink.worker.mailbox)
+    sink.attempted.clear();sink.retry(HEALTH)
+    until(lambda:healthy in server.objects)
+    assert len(sink.pending)==140

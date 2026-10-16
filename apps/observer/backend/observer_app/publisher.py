@@ -464,6 +464,7 @@ class MirrorSink(Sink):
         self.local, self.remote = local, remote
         self.lock_path = local.lock_path
         self.pending, self.attempted = {}, set()
+        self.retry_after = None  # scheduling cursor only; durable intent remains in state
         self.save = lambda: None
         self.background, self.worker, self.closing = background, None, False
         self.lock = threading.RLock()
@@ -539,7 +540,7 @@ class MirrorSink(Sink):
         if not self._eligible(path):
             return
         if self.worker is not None:
-            self.worker.submit(path)  # metadata only, bounded and coalesced before insertion
+            return self.worker.submit(path)  # metadata only, bounded and coalesced before insertion
         else:
             self._transfer(path, data, final=final)
 
@@ -649,11 +650,14 @@ class MirrorSink(Sink):
             self._retry(health)
 
     def _retry(self, health):
-        for path in sorted(set(self.pending)-self.attempted-{health}):
-            if not self._eligible(path):
-                continue
+        paths = sorted(path for path in set(self.pending)-self.attempted-{health} if self._eligible(path))
+        if self.worker is not None and self.retry_after is not None:
+            paths = [p for p in paths if p > self.retry_after]+[p for p in paths if p <= self.retry_after]
+        for path in paths:
             if self.worker is not None:
-                self._send(path)
+                if not self._send(path):
+                    break
+                self.retry_after = path  # repeated HEAD failures cannot monopolize the next cycle's mailbox
                 continue
             try:
                 if self.pending[path] == 'delete':

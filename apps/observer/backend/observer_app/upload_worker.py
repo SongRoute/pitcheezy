@@ -94,11 +94,17 @@ class UploadWorker:
                     if self.process is not None:
                         self.stop.set()  # never replace the handle of an unreaped owned child
                 finally:
+                    if self.process is not None:
+                        self.stop.set()  # transfer may have consumed a transport error; keep the owned handle
                     with self.condition:
                         self.active = False
                         self.condition.notify_all()
         finally:
-            self._reap()
+            try:
+                self._reap()
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning('upload_worker_not_stopped')
 
     def _reap(self):
         process = self.process
@@ -113,12 +119,14 @@ class UploadWorker:
                 process.join(1)
             if process.is_alive():
                 from .publisher import UploadError
-                raise UploadError('upload_worker_not_stopped')
+                raise UploadError('upload_worker_not_stopped', outcome='blocked')
         process.close()
         self.process = None
 
     def request(self, method, path, **options):
         from .publisher import UploadError
+        if self.process is not None:
+            raise UploadError('upload_worker_not_stopped', outcome='blocked')
         if self.stop.is_set():
             raise UploadError('upload_unknown', outcome='blocked')
         context = multiprocessing.get_context('spawn')
@@ -165,4 +173,4 @@ class UploadWorker:
         self.thread.join(3)
         if self.thread.is_alive() or self.process is not None:
             from .publisher import UploadError
-            raise UploadError('upload_worker_not_stopped')  # caller MUST retain its output lock
+            raise UploadError('upload_worker_not_stopped', outcome='blocked')  # caller MUST retain its output lock
