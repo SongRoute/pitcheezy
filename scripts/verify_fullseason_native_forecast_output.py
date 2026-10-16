@@ -17,6 +17,8 @@ from urllib.parse import quote
 MAX_DB = 16 << 20
 EXPECTED = 100
 TABLES = ('native_forecast_run', 'native_forecast_intents', 'native_forecast_results')
+LEAVES = ['ball', 'foul', 'hit_by_pitch', 'narrow_whiff', 'other_strike',
+          'ground_ball_in_play', 'other_in_play']
 
 
 def canonical(value):
@@ -84,6 +86,9 @@ def verify(db_path, receipt):
                     or digest(intent['binding']) != row['binding_sha']
                     or intent['binding']['registration_sha256'] != receipt['registration_sha256']
                     or intent['binding']['runtime_bundle_sha256'] != receipt['bundle_sha256']
+                    or intent['binding']['input_contract'] != 'CAPTURE_NATIVE_SHADOW'
+                    or intent['binding']['evidence_kind'] != 'capture_native_experimental'
+                    or intent['binding']['leaf_order'] != LEAVES
                     or intent['action'] != 'FF'):
                 raise ValueError('forecast intent custody mismatch')
             key = intent['key']
@@ -104,7 +109,9 @@ def verify(db_path, receipt):
                     or result['native_decision_sha256'] != intent['native_decision_sha256']
                     or result['binding_sha256'] != row['binding_sha']
                     or result['key'] != key or result['action'] != 'FF'
-                    or result['leaf_order'] != intent['binding']['leaf_order']
+                    or result['leaf_order'] != LEAVES
+                    or result['input_contract'] != 'CAPTURE_NATIVE_SHADOW'
+                    or result['evidence_kind'] != 'capture_native_experimental'
                     or result['local_pre_observation_only'] is not True
                     or result['prediction_ready'] is not False
                     or result['prospective_claim'] is not False):
