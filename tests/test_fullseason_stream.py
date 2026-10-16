@@ -167,3 +167,22 @@ def test_bounded_intake_and_decision_capacity_keeps_original_evidence(tmp_path, 
     r=row(pitcher=1<<53)
     with pytest.raises(ValueError): st.ingest('p',(10,1,1),3,r,received_ns=103)
     st.close()
+
+
+def test_unknown_is_ignored_only_outside_complete_last32_dependencies(tmp_path):
+    st=state(tmp_path)
+    st.ingest('old',(10,1,1),1,row(status='unknown'),received_ns=1)
+    for i in range(2,34):st.ingest(str(i),(10,1,i),1,row(),received_ns=i)
+    assert decide(st,query(pitch=33),id='31newer',now=100)['reason']=='prior_quality_unknown'
+    ready=decide(st,query(pitch=34),id='32newer',now=101)
+    assert ready['status']=='ready' and ready['context_dependency_floor']==[10,1,2]
+    assert s.arrays(ready)['valid'].sum()==32
+    assert decide(st,query(pitch=34),id='gap',now=102,complete=False)['reason']=='stored_prefix_incomplete'
+    st.ingest('20',(10,1,20),2,row(status='unknown'),received_ns=103)
+    assert decide(st,query(pitch=34),id='within',now=104)['reason']=='prior_quality_unknown'
+    # The original ready decision remains immutable after a later unknown correction.
+    assert decide(st,query(pitch=34),id='32newer',now=105)==ready
+    st.ingest('20',(10,1,20),3,row(),received_ns=106)
+    st.ingest('34',(10,1,34),1,row(status='unknown'),received_ns=107)
+    assert decide(st,query(pitch=35),id='exactprevious',now=108)['reason']=='prior_quality_unknown'
+    st.close()

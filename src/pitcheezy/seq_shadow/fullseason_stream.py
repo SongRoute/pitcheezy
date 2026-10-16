@@ -208,12 +208,22 @@ class StreamState:
             # is this transaction's receipt sequence, never retroactively backdated.
             latest = ''' FROM events e WHERE (e.ab,e.pitch)<(?,?) AND e.seq=(
                 SELECT MAX(v.seq) FROM events v WHERE v.ab=e.ab AND v.pitch=e.pitch)'''
-            unknown = self.db.execute('SELECT 1'+latest+" AND status='unknown' LIMIT 1", key[1:]).fetchone()
+            past = self.db.execute('SELECT e.*'+latest+" AND status='accepted' AND pitcher=? ORDER BY ab DESC,pitch DESC LIMIT 32",
+                                   (*key[1:], query['pitcher'])).fetchall()
+            unknown_sql = 'SELECT 1'+latest+" AND status='unknown'"
+            unknown_args = list(key[1:])
+            if len(past) == 32:
+                # Unknown fate/identity cannot displace 32 strictly newer accepted
+                # same-pitcher rows. Never make assumptions about its pitcher.
+                unknown_sql += ' AND ((ab,pitch)>=(?,?) OR (ab=? AND pitch=?))'
+                unknown_args += [past[-1]['ab'], past[-1]['pitch'], key[1], key[2]-1]
+            unknown = self.db.execute(unknown_sql+' LIMIT 1', unknown_args).fetchone()
             reason = 'stored_prefix_incomplete' if not coverage['complete'] else ('prior_quality_unknown' if unknown else None)
             seq = self.db.execute('SELECT COALESCE(MAX(seq),0) FROM events').fetchone()[0]
             result = dict(status='abstain' if reason else 'ready', reason=reason,
                 identity=dict(self.identity), evidence=dict(coverage), pitch_type_basis=pitch_type_basis,
                 prospective_claim=False, received_ns=received_ns, event_seq=seq,
+                context_dependency_floor=[key[0], past[-1]['ab'], past[-1]['pitch']] if len(past)==32 else None,
                 query=None, tokens=None)
             if reason is None:
                 previous = self.db.execute('SELECT body FROM events WHERE ab=? AND pitch=? ORDER BY seq DESC LIMIT 1',
@@ -221,8 +231,6 @@ class StreamState:
                 previous = json.loads(previous['body']) if previous else None
                 valid = previous is not None and previous['status'] == 'accepted'
                 result['query'] = dict(query, previous_type=previous['accepted']['pitch_type'] if valid else 'UNKNOWN', previous_valid=valid)
-                past = self.db.execute('SELECT e.*'+latest+" AND status='accepted' AND pitcher=? ORDER BY ab DESC,pitch DESC LIMIT 32",
-                                       (*key[1:], query['pitcher'])).fetchall()
                 t = {k: np.zeros((1, 32), np.int64) for k in FIELDS}
                 t['pos'][0] = np.arange(1, 33); t['valid'] = np.zeros((1, 32), bool)
                 t['context_keys'] = np.zeros((1, 32, 3), np.int64)
