@@ -15,8 +15,11 @@ sys.path.insert(0, str(ROOT))
 from experiments.ws_fullseason.audit import gates, sha
 
 
-def supervise(regpath, grantpath):
+def supervise(regpath, grantpath, worker="audit.py"):
     reg, _ = gates(regpath, grantpath)
+    worker_path = Path(__file__).with_name(worker)
+    if worker not in ('audit.py', 'prepare_worker.py') or str(worker_path) not in reg['source_pins']:
+        raise ValueError('unpinned worker')
     spec = importlib.util.spec_from_file_location('accepted_metadata_supervisor', reg['supervisor_helper'])
     helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
     bounds = reg['bounds']; out = Path(reg['output']); fence = Path(reg['fence'])
@@ -37,7 +40,7 @@ def supervise(regpath, grantpath):
         try:
             env = dict(os.environ, PITCHEEZY_FULLSEASON_LOCK_FD=str(lock.fileno()),
                        OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1')
-            command = [sys.executable, '-I', str(Path(__file__).with_name('audit.py')),
+            command = [sys.executable, '-I', str(worker_path),
                        '--registration', str(regpath), '--grant', str(grantpath)]
             with (out / 'worker.log').open('x') as log:
                 child = subprocess.Popen(command, env=env, pass_fds=(lock.fileno(),), stdout=log, stderr=log)
@@ -59,7 +62,7 @@ def supervise(regpath, grantpath):
                     if peak > bounds['rss_bytes']: reason = 'rss'; break
                     if free is None or free < bounds['free_memory_bytes']: reason = 'memory-headroom'; break
                     if time.monotonic() - start >= bounds['wall_seconds']: reason = 'wall'; break
-                    if sum(p.stat().st_size for p in out.iterdir() if p.is_file()) > bounds['output_bytes']: reason = 'output'; break
+                    if sum(p.stat().st_size for p in out.rglob('*') if p.is_file()) > bounds['output_bytes']: reason = 'output'; break
                     if shutil.disk_usage(out).free < bounds['free_disk_bytes']: reason = 'disk'; break
                     time.sleep(1)
         except Exception as exc:
@@ -70,7 +73,7 @@ def supervise(regpath, grantpath):
                     child.wait(); reaped = True
                 elif identity is not None:
                     reaped = helper.terminate_owned(child, identity)
-            size = sum(p.stat().st_size for p in out.iterdir() if p.is_file())
+            size = sum(p.stat().st_size for p in out.rglob('*') if p.is_file())
             if size > bounds['output_bytes']: reason = 'output'
             pending = out / 'receipt.pending.json'
             ok = child is not None and child.returncode == 0 and reaped and reason is None and pending.is_file()
@@ -87,4 +90,5 @@ def supervise(regpath, grantpath):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(); p.add_argument('--registration', required=True); p.add_argument('--grant', required=True)
-    a = p.parse_args(); sys.exit(supervise(Path(a.registration), Path(a.grant)))
+    p.add_argument('--worker', choices=['audit.py', 'prepare_worker.py'], default='audit.py')
+    a = p.parse_args(); sys.exit(supervise(Path(a.registration), Path(a.grant), a.worker))
