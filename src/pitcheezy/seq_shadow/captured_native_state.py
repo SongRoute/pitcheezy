@@ -44,11 +44,12 @@ def _native_row(event, native_row, source_sha256):
         return {'key': key, 'provider_id': event['event_id'], 'receipt_seq': event['revision'],
                 'source_sha256': source_sha256, 'input_contract': CONTRACT,
                 'status': 'native_unknown', 'reason': 'source_row_absent', 'native_token': None,
+                'identity_provenance': None,
                 'statcast_training_equivalent': False,
                 'provider_identity_scope': 'single_local_receipt', 'accepted': False}
     if (not isinstance(native_row, dict) or set(native_row) !=
             {'key', 'provider_id', 'receipt_seq', 'source_sha256', 'input_contract', 'status',
-             'reason', 'native_token', 'statcast_training_equivalent',
+             'reason', 'native_token', 'identity_provenance', 'statcast_training_equivalent',
              'provider_identity_scope', 'accepted'}
             or not isinstance(native_row['key'], (tuple, list)) or tuple(native_row['key']) != key
             or (native_row['status'] == 'native_candidate'
@@ -61,10 +62,18 @@ def _native_row(event, native_row, source_sha256):
             or native_row['statcast_training_equivalent'] is not False
             or native_row['provider_identity_scope'] != 'single_local_receipt'
             or native_row['status'] not in ('native_candidate', 'native_unknown')
+            or (native_row['identity_provenance'] is not None and
+                (not isinstance(native_row['identity_provenance'], dict)
+                 or native_row['identity_provenance'].get('accepted') is not False
+                 or native_row['identity_provenance'].get('rule') not in
+                    ('pitch_only_play_matchup', 'receipt_local_reverse_matchup')
+                 or len(canonical(native_row['identity_provenance'])) > 4096))
             or not isinstance(native_row['reason'], str) or not native_row['reason']):
         raise ValueError('mixed or invalid native evidence contract')
     if native_row['status'] == 'native_candidate' and native_row['reason'] != 'source_native_six_fields_unpaired':
         raise ValueError('native candidate proof reason')
+    if native_row['status'] == 'native_candidate' and native_row['identity_provenance'] is None:
+        raise ValueError('native candidate identity provenance required')
     if (native_row['status'] == 'native_candidate') != _valid_token(native_row['native_token']):
         raise ValueError('native status/token mismatch')
     if native_row['status'] == 'native_unknown' and native_row['native_token'] is not None:

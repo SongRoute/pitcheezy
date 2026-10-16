@@ -12,6 +12,7 @@ from pitcheezy.seq_shadow.fullseason_stream import StreamState
 from pitcheezy.seq_shadow import fullseason_profiles as profiles
 from pitcheezy.seq_shadow.fullseason_runtime import Runtime
 from test_captured_bridge import feed
+from test_captured_native_identity import mixed
 from test_seq_shadow_fullseason import generated_config
 from test_fullseason_profiles import donors, bundle
 
@@ -77,6 +78,9 @@ def test_mixed_contract_and_receipt_clock_regression_rejected(tmp_path):
     altered = dict(native, input_contract='STRICT_STATCAST')
     with pytest.raises(ValueError, match='mixed or invalid'):
         s.ingest(bridge['events'][0], altered, received_ns=100, source_sha256=SHA)
+    with pytest.raises(ValueError, match='identity provenance required'):
+        s.ingest(bridge['events'][0], dict(native, identity_provenance=None),
+                 received_ns=100, source_sha256=SHA)
     with pytest.raises(ValueError, match='native unknown must not carry'):
         s.ingest(bridge['events'][0], dict(native, status='native_unknown',
                  reason='missing_field', native_token={'malformed': True}),
@@ -256,3 +260,44 @@ def test_receipt_without_changed_pitch_is_still_bound_and_clocked(tmp_path):
     with pytest.raises(ValueError, match='current stored receipt'):
         s.decide(bridge['candidate'], received_ns=102)
     s.close()
+
+
+def test_later_receipt_identity_correction_does_not_backfill_frozen_decision(tmp_path):
+    body = mixed({'isSubstitution': False, 'details': {'eventType': 'unknown_action'}})
+    prior = body['liveData']['plays']['currentPlay']
+    prior['about']['isComplete'] = True
+    current = copy.deepcopy(feed()['liveData']['plays']['currentPlay'])
+    current['about']['atBatIndex'] = 1
+    current['playEvents'] = []
+    current['count'] = {'balls': 0, 'strikes': 0, 'outs': 0}
+    current['matchup']['batter']['id'] = 30
+    body['liveData']['plays'] = {'allPlays': [prior], 'currentPlay': current}
+    path = tmp_path/'shadow.sqlite'
+    s = state(path)
+    first_bridge = step(body, game_pk=99, game_date='2026-10-11', receipt_seq=1,
+                        source_sha256=SHA, candidate_pitch_type='FF')
+    first_native = {tuple(row['key']): row for row in inspect_tokens(
+        body, game_pk=99, game_date='2026-10-11', receipt_seq=1, source_sha256=SHA)}
+    for event in first_bridge['events']:
+        s.ingest(event, first_native.get(tuple(event['key'])), received_ns=100, source_sha256=SHA)
+    frozen = s.decide(first_bridge['candidate'], received_ns=101)
+    assert frozen['status'] == 'native_abstain' and frozen['reason'] == 'native_prior_quality_unknown'
+    corrected = copy.deepcopy(body)
+    corrected['liveData']['plays']['allPlays'][0]['playEvents'][1]['details']['eventType'] = 'mound_visit'
+    newer_sha = 'b'*64
+    second_bridge = step(corrected, game_pk=99, game_date='2026-10-11', receipt_seq=2,
+                         source_sha256=newer_sha, candidate_pitch_type='FF')
+    second_native = {tuple(row['key']): row for row in inspect_tokens(
+        corrected, game_pk=99, game_date='2026-10-11', receipt_seq=2,
+        source_sha256=newer_sha)}
+    for event in second_bridge['events']:
+        s.ingest(event, second_native.get(tuple(event['key'])), received_ns=102,
+                 source_sha256=newer_sha)
+    s.observe_receipt(2, newer_sha, 102)
+    assert s.decide(first_bridge['candidate'], received_ns=103) == frozen
+    later = s.decide(second_bridge['candidate'], received_ns=104)
+    assert later['status'] == 'native_ready'
+    s.close()
+    reopened = state(path)
+    assert reopened.decide(first_bridge['candidate'], received_ns=105) == frozen
+    reopened.close()

@@ -9,6 +9,7 @@ from collections import Counter
 
 from .captured_diagnostic import inspect_body
 from .captured_identity_bip import inspect_hypotheses
+from .captured_native_identity import inspect_receipt_identity
 
 CONTRACT = 'CAPTURE_NATIVE_SHADOW'
 TOKEN_FIELDS = ('pitcher', 'batter', 'pitch_type', 'outcome10', 'balls', 'strikes')
@@ -24,6 +25,8 @@ def inspect_tokens(feed, *, game_pk, game_date, receipt_seq, source_sha256):
         raise ValueError('receipt identity required')
     base_rows = inspect_body(feed, game_pk=game_pk, game_date=game_date)
     identity_rows = inspect_hypotheses(feed, game_pk=game_pk, game_date=game_date)
+    identity_by_key = inspect_receipt_identity(feed, game_pk=game_pk, game_date=game_date,
+                                               all_pitch_rows=identity_rows)
     by_key = {}
     for row in base_rows:
         if row['key'] is not None:
@@ -37,7 +40,7 @@ def inspect_tokens(feed, *, game_pk, game_date, receipt_seq, source_sha256):
         native, reason = None, None
         if len(observed) != 1 or row['provider_id'] is None or provider_counts[row['provider_id']] != 1:
             reason = 'physical_or_provider_identity_unverified'
-        elif helper is None or helper['identity_hypothesis'] is None:
+        elif key not in identity_by_key:
             reason = 'pitch_time_matchup_unverified'
         elif row['type_state'] != 'known':
             reason = 'direct_type_unavailable'
@@ -51,7 +54,7 @@ def inspect_tokens(feed, *, game_pk, game_date, receipt_seq, source_sha256):
             if not (nonbip or bip):
                 reason = 'source_outcome_unverified'
             else:
-                matchup = helper['identity_hypothesis']
+                matchup = identity_by_key[key]['identity_hypothesis']
                 native = dict(zip(TOKEN_FIELDS, (
                     matchup['pitcher'], matchup['batter'], row['observed']['event_type_code'],
                     row['outcome10_hypothesis'] if nonbip else helper['outcome10_bip_hypothesis'],
@@ -65,6 +68,8 @@ def inspect_tokens(feed, *, game_pk, game_date, receipt_seq, source_sha256):
                        'input_contract': CONTRACT,
                        'status': 'native_candidate' if native is not None else 'native_unknown',
                        'reason': reason, 'native_token': native,
+                       'identity_provenance': (identity_by_key[key]['identity_provenance']
+                                               if key in identity_by_key else None),
                        'statcast_training_equivalent': False,
                        'provider_identity_scope': 'single_local_receipt',
                        'accepted': False})
