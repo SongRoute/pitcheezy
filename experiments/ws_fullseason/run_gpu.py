@@ -19,19 +19,19 @@ def checked_grant(path):
     if not (g.get('execute') is True and g.get('verdict')=='PASS' and g.get('authorized_by')=='root'
             and g.get('author')=='research_readiness' and g.get('reviewer') and g['reviewer']!=g['author']):
         raise ValueError('independent Root fit grant')
-    if g.get('seeds')!=[0,1,2] or g.get('gpu_index')!=3:
-        raise ValueError('three fixed seeds on GPU3')
+    if g.get('seeds')!=[0,1,2] or type(g.get('gpu_index')) is not int or g['gpu_index'] not in (0,3):
+        raise ValueError('three fixed seeds on granted GPU0 or GPU3')
     for rel,digest in g['source_pins'].items():
         p=(ROOT/rel).resolve()
         if not p.is_relative_to(ROOT) or sha(p)!=digest: raise ValueError('source pin '+rel)
     recipe=checked_json(ROOT/g['recipe'])
-    if recipe['id']!='EXP-WS-FULLSEASON-T-001' or recipe['training_rule']['epochs']!=30:
+    if recipe['id']!=g['recipe_id'] or recipe['training_rule']['epochs']!=30:
         raise ValueError('frozen T30 recipe')
     if g['wall_seconds_per_seed']!=3600 or g['rss_bytes']!=8<<30 or g['vram_bytes']!=16<<30 or g['output_bytes_per_seed']!=1<<29:
         raise ValueError('fixed fit caps')
     if g.get('aggregate_wall_seconds')!=120 or g.get('aggregate_output_bytes')!=1<<20:raise ValueError('fixed aggregate caps')
-    if sys.platform!='linux' or not os.environ.get('GPU_JOB_ID') or os.environ.get('CUDA_VISIBLE_DEVICES')!='3':
-        raise ValueError('gpu run GPU3 only')
+    if sys.platform!='linux' or not os.environ.get('GPU_JOB_ID') or os.environ.get('CUDA_VISIBLE_DEVICES')!=str(g['gpu_index']):
+        raise ValueError('gpu run exact granted device only')
     env=dict(line.split('=',1) for line in (Path(os.environ['GPU_JOB_DIR'])/'job.env').read_text().splitlines() if '=' in line)
     if len(env.get('COMMIT',''))<7 or not g['commit'].startswith(env['COMMIT']): raise ValueError('source commit')
     return g,recipe
@@ -145,14 +145,15 @@ def main():
         if args.seed not in g['seeds']: raise ValueError('seed')
         worker(g,recipe,args.seed,out/f'seed{args.seed}',sha(args.grant));return 0
     if out.exists(): raise ValueError('fresh output')
-    uuid=subprocess.check_output(['nvidia-smi','-i','3','--query-gpu=uuid','--format=csv,noheader'],text=True,timeout=10).strip()
+    uuid=subprocess.check_output(['nvidia-smi','-i',str(g['gpu_index']),'--query-gpu=uuid','--format=csv,noheader'],text=True,timeout=10).strip()
     if uuid!=g['gpu_uuid']: raise ValueError('GPU UUID')
     with Path(g['common_lock']).open('rb') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         processes=subprocess.check_output(['nvidia-smi','--query-compute-apps=gpu_uuid','--format=csv,noheader'],text=True,timeout=10)
         if uuid in processes.splitlines(): raise ValueError('GPU occupied')
         available=next(int(s.split()[1])*1024 for s in Path('/proc/meminfo').read_text().splitlines() if s.startswith('MemAvailable:'))
-        if available<16<<30: raise ValueError('host memory headroom')
+        if g.get('host_memory_headroom_bytes')!=32<<30:raise ValueError('two-job host headroom floor')
+        if available<g['host_memory_headroom_bytes']: raise ValueError('host memory headroom')
         existing=out.parent
         while not existing.exists():existing=existing.parent
         if shutil.disk_usage(existing).free<4<<30:raise ValueError('server disk headroom')

@@ -1,5 +1,6 @@
 """Tiny generated CPU model checks; no real model or data read."""
 import copy
+import os
 import json
 from pathlib import Path
 import tempfile
@@ -12,6 +13,22 @@ from test_ws_fullseason import rows
 
 
 class FixedTrain(unittest.TestCase):
+    def test_exact_granted_gpu_mapping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve();(root/'recipe.json').write_text(json.dumps({'id':'generated','training_rule':{'epochs':30}}));(root/'job.env').write_text('COMMIT=abcdef1\n')
+            g={'execute':True,'verdict':'PASS','authorized_by':'root','author':'research_readiness','reviewer':'other','seeds':[0,1,2],
+                'recipe':'recipe.json','recipe_id':'generated','source_pins':{'recipe.json':run_gpu.sha(root/'recipe.json')},'commit':'abcdef123',
+                'wall_seconds_per_seed':3600,'rss_bytes':8<<30,'vram_bytes':16<<30,'output_bytes_per_seed':1<<29,'aggregate_wall_seconds':120,'aggregate_output_bytes':1<<20}
+            with patch.object(run_gpu,'ROOT',root),patch.object(run_gpu.sys,'platform','linux'):
+                for device in [0,3]:
+                    g['gpu_index']=device;(root/'grant.json').write_text(json.dumps(g))
+                    with patch.dict(os.environ,{'GPU_JOB_ID':'generated','GPU_JOB_DIR':str(root),'CUDA_VISIBLE_DEVICES':str(device)}):
+                        self.assertEqual(run_gpu.checked_grant(root/'grant.json')[0]['gpu_index'],device)
+                    with patch.dict(os.environ,{'GPU_JOB_ID':'generated','GPU_JOB_DIR':str(root),'CUDA_VISIBLE_DEVICES':'2'}):
+                        with self.assertRaises(ValueError):run_gpu.checked_grant(root/'grant.json')
+                g['gpu_index']=2;(root/'grant.json').write_text(json.dumps(g))
+                with self.assertRaises(ValueError):run_gpu.checked_grant(root/'grant.json')
+
     def test_final_aggregate_receipt_gate(self):
         keys=np.arange(6).reshape(2,3);labels=np.array([0,1]);q=np.eye(7)[labels]
         with tempfile.TemporaryDirectory() as tmp:
