@@ -25,18 +25,18 @@
     "token_env": "PITCHEEZY_PUBLISH_TOKEN",
     "token_file": null,
     "timeout_s": 5,
-    "retries": 2,
+    "retries": 0,
     "backoff_s": 0.25,
     "headers": {
       "live": {
         "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=5"
+        "Cache-Control": "no-store"
       },
       "final": {
         "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=300"
+        "Cache-Control": "no-store"
       }
     },
-    "note": "PROVISIONAL: API, URL, credential source, timeout, retries, backoff and all cache/header values await partner agreement. Disabled by default. Set HTTPS base_url; token_env XOR absolute token_file outside every git checkout. Never put token contents here. retries is additional attempts; backoff doubles per retry. final headers apply to settled game/setup files, live headers to all others."
+    "note": "Disabled by default. Pinned partner CAS protocol: authenticated HEAD, raw-byte SHA256, strong ETag conditions, validated 200 receipts, tombstones. HTTPS base_url must include /_publish once; bearer token must be 43-128 URL-safe characters. timeout_s is a socket timeout, not a total deadline. Legacy retries/backoff_s are accepted for config compatibility but mutations are never blindly retried; 429 waits for Retry-After in durable pending. Unknown/interrupted/conflict outcomes block until reviewed reconciliation."
   }
 }

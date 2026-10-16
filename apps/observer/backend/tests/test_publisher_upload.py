@@ -2,6 +2,7 @@
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import http.client
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -14,88 +15,84 @@ from observer_app import publisher
 from publish_fixture import ARCHIVE_GAME, ARCHIVE_DATE, LIVE_GAME, snap
 from test_publisher import make, world, start_demo, codes, candidates, unconfirmed
 
-TOKEN = 'upload-test-secret-never-persisted'
+TOKEN = 'synthetic-upload-token-never-persisted-0000000000'
 GAME = f'v1/game/{ARCHIVE_GAME}.json'
 SETUP = f'v1/setup/{ARCHIVE_GAME}.json'
 HEALTH = 'v1/health.json'
 
 
 class Endpoint:
+    """Socket-free model of the pinned gateway's CAS/receipt/tombstone contract."""
     def __init__(self):
-        self.requests, self.objects, self.statuses = [], {}, {}
-        self.default = 204
+        self.requests, self.objects, self.statuses, self.tags = [], {}, {}, {}
+        self.default, self.generation = 200, 0
         self.after = lambda method, path: None
+        self.response_headers, self.response_body = {}, b''
 
     def handle(self, method, path, data, headers):
         assert path.startswith('/channel/')
         path = path.removeprefix('/channel/')
         self.requests.append((method, path, data, dict(headers)))
+        self.response_headers, self.response_body = {}, b''
         status = self.statuses.get((method, path), self.default)
         if isinstance(status, deque):
             status = status.popleft()
-        if 200 <= status < 300:
-            if method == 'PUT':
-                self.objects[path] = data
-            else:
-                self.objects.pop(path, None)
+        if status != 200:
+            if status == 429:
+                self.response_headers['Retry-After'] = '60'
+            return status
+        if method == 'HEAD':
+            if path not in self.tags:
+                return 404
+            self.response_headers = {'ETag': self.tags[path], 'X-Publish-Deleted': str(path not in self.objects).lower(),
+                                     'X-Content-SHA256': hashlib.sha256(self.objects.get(path, b'')).hexdigest()}
+            return 200
+        current = self.tags.get(path)
+        valid = headers.get('If-Match') == current if 'If-Match' in headers else method == 'PUT' and headers.get('If-None-Match') == '*' and current is None
+        if not valid:
+            return 412
+        if method == 'PUT' and headers.get('X-Content-SHA256') != hashlib.sha256(data).hexdigest():
+            return 422
+        self.generation += 1
+        self.tags[path] = '"'+f'{self.generation:032x}'+'"'
+        if method == 'PUT':
+            self.objects[path] = data
+        else:
+            self.objects.pop(path, None)
+        self.response_headers = {'ETag': self.tags[path]}
+        self.response_body = json.dumps({'stored': True, 'deleted': method == 'DELETE',
+            'sha256': hashlib.sha256(data if method == 'PUT' else b'').hexdigest(), 'schema_validated': False}).encode()
         self.after(method, path)
-        return status
+        return 200
 
 
 @pytest.fixture
 def endpoint(monkeypatch):
     endpoint = Endpoint()
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_PUT(self):
-            data = self.rfile.read(int(self.headers.get('Content-Length', '0')))
-            self.respond('PUT', data)
+    class Connection:
+        def __init__(self, host, port=None, *, timeout):
+            assert host == '127.0.0.1' and 0 < timeout <= 60
 
-        def do_DELETE(self):
-            self.respond('DELETE', None)
+        def request(self, method, path, body=None, headers=None):
+            self.status = endpoint.handle(method, path, body, headers)
+            self.headers, self.body = dict(endpoint.response_headers), endpoint.response_body
 
-        def respond(self, method, data):
-            status = endpoint.handle(method, self.path, data, self.headers)
-            self.send_response(status)
-            self.end_headers()
-            # Deliberately hostile error response; the transport must never read/log it.
-            if status >= 400:
-                try:
-                    self.wfile.write(TOKEN.encode())
-                except (BrokenPipeError, ConnectionResetError):
-                    pass
+        def getresponse(self):
+            return self
 
-        def log_message(self, *_):
+        def getheader(self, name, default=None):
+            return self.headers.get(name, default)
+
+        def read(self, size):
+            return self.body[:size]
+
+        def close(self):
             pass
 
-    try:
-        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-    except PermissionError:
-        class Connection:
-            def __init__(self, host, port=None, *, timeout):
-                assert host == '127.0.0.1' and 0 < timeout <= 60
-
-            def request(self, method, path, body=None, headers=None):
-                self.status = endpoint.handle(method, path, body, headers)
-
-            def getresponse(self):
-                return type('Response', (), {'status': self.status})()
-
-            def close(self):
-                pass
-        monkeypatch.setattr(http.client, 'HTTPConnection', Connection)
-        endpoint.url, endpoint.mode = 'http://127.0.0.1/channel', 'in-process (sandbox blocked bind)'
-        yield endpoint
-    else:
-        endpoint.url, endpoint.mode = f'http://127.0.0.1:{server.server_port}/channel', 'loopback HTTP server'
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        try:
-            yield endpoint
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join()
+    monkeypatch.setattr(http.client, 'HTTPConnection', Connection)
+    endpoint.url, endpoint.mode = 'http://127.0.0.1/channel', 'socket-free CAS model'
+    return endpoint
 
 
 def config(endpoint, **overrides):
@@ -116,7 +113,7 @@ def test_http_happy_path_health_last_and_headers(world, endpoint, monkeypatch, r
     assert endpoint.requests[-1][0:2] == ('PUT', HEALTH)
     assert set(endpoint.objects) == set(world.files())
     for method, path, data, headers in endpoint.requests:
-        assert method in ('PUT', 'DELETE')
+        assert method in ('HEAD', 'PUT', 'DELETE')
         assert headers['Authorization'] == f'Bearer {TOKEN}'
         assert headers['Content-Type'] == 'application/json'
         if method == 'PUT':
@@ -130,15 +127,19 @@ def test_http_happy_path_health_last_and_headers(world, endpoint, monkeypatch, r
 
 
 def test_retry_with_backoff_then_success(world, endpoint, monkeypatch):
-    waits = []
     attach(world, endpoint, monkeypatch, retries=2, backoff_s=0.1)
-    monkeypatch.setattr(publisher.time, 'sleep', waits.append)
-    endpoint.statuses['PUT', GAME] = deque([503, 429, 201])
+    endpoint.statuses['PUT', GAME] = 429
     world.cycle(settle=False)
-    assert waits == [0.1, 0.2]
-    assert len([r for r in endpoint.requests if r[:2] == ('PUT', GAME)]) == 3
-    assert world.publisher.state['upload_pending'] == {}
-
+    attempt = world.publisher.state['upload_attempts'][GAME]
+    assert attempt['phase'] == 'retry'
+    before = len([r for r in endpoint.requests if r[:2] == ('PUT', GAME)])
+    endpoint.statuses['PUT', GAME] = 200
+    world.cycle(settle=False)
+    assert len([r for r in endpoint.requests if r[:2] == ('PUT', GAME)]) == before
+    monkeypatch.setattr(publisher.time, 'time', lambda: attempt['not_before']+1)
+    world.cycle(settle=False)
+    assert endpoint.objects[GAME] == world.path(GAME).read_bytes()
+    assert GAME not in world.publisher.state['upload_pending']
 
 def test_permanent_failure_isolated_pending_survives_restart_and_unchanged_file_retried(world, endpoint, monkeypatch):
     attach(world, endpoint, monkeypatch)
@@ -154,36 +155,33 @@ def test_permanent_failure_isolated_pending_survives_restart_and_unchanged_file_
     assert health['upload']['pending'] == 1  # remote game transfer failed; local game/feed check succeeded
     saved = json.loads(world.publisher.state_path.read_text())
     assert saved['upload_pending'] == {GAME: 'put'}
-    before = world.path(GAME).read_bytes()
     world.start()
     endpoint.requests.clear()
-    endpoint.statuses['PUT', GAME] = 204
-    health = world.cycle(settle=False)
-    assert codes(health) == [] and health['upload']['pending'] == 0
-    assert endpoint.objects[GAME] == before == world.path(GAME).read_bytes()
-    assert endpoint.requests[-1][1] == HEALTH and any(r[:2] == ('PUT', GAME) for r in endpoint.requests)
-    assert json.loads(world.publisher.state_path.read_text())['upload_pending'] == {}
+    endpoint.statuses['PUT', GAME] = 200
+    world.cycle(settle=False)
+    assert GAME not in endpoint.objects
+    assert not any(r[1] == GAME for r in endpoint.requests)
+    assert world.publisher.state['upload_attempts'][GAME]['phase'] == 'rejected'
 
 
 def test_health_failure_retries_latest_health_next_cycle(world, endpoint, monkeypatch):
     attach(world, endpoint, monkeypatch)
-    endpoint.statuses['PUT', HEALTH] = 500
+    endpoint.statuses['HEAD', HEALTH] = 500
     world.cycle(settle=False)
     assert world.publisher.state['upload_pending'] == {HEALTH: 'put'}
     assert world.read(HEALTH)['sequence'] == 1
-    endpoint.statuses['PUT', HEALTH] = 200
+    endpoint.statuses['HEAD', HEALTH] = 200
     endpoint.requests.clear()
     health = world.cycle(settle=False)
     assert health['upload']['code'] == 'upload_failed'  # previous failed health, sampled before this PUT
     assert json.loads(endpoint.objects[HEALTH])['sequence'] == 2
-    assert [r[1] for r in endpoint.requests].count(HEALTH) == 1 and endpoint.requests[-1][1] == HEALTH
+    assert [r[1] for r in endpoint.requests].count(HEALTH) == 2 and endpoint.requests[-1][1] == HEALTH
     assert world.publisher.state['upload_pending'] == {}
 
 
-@pytest.mark.parametrize('status', [204, 404, 503])
+@pytest.mark.parametrize('status', [200, 412, 503])
 def test_withdrawal_replaces_pending_put_and_retries_delete(world, endpoint, monkeypatch, status):
     attach(world, endpoint, monkeypatch)
-    endpoint.statuses['PUT', GAME] = 503
     world.cycle(settle=False)
     endpoint.statuses['DELETE', GAME] = status
     endpoint.requests.clear()
@@ -194,27 +192,29 @@ def test_withdrawal_replaces_pending_put_and_retries_delete(world, endpoint, mon
     assert ('DELETE', GAME) in [r[:2] for r in endpoint.requests]
     assert ('DELETE', SETUP) in [r[:2] for r in endpoint.requests]
     assert world.read(f'v1/games/{ARCHIVE_DATE}.json')['games'][0]['embargoed']
-    if status == 503:
-        assert codes(health) == [(ARCHIVE_GAME, 'upload_failed')]
-        assert world.publisher.state['upload_pending'] == {GAME: 'delete'}
+    if status != 200:
+        assert world.publisher.state['upload_attempts'][GAME]['phase'] == 'blocked'
         world.start()
-        endpoint.statuses['DELETE', GAME] = 404
-        assert codes(world.cycle(settle=False)) == []
-    assert world.publisher.state['upload_pending'] == {}
-    assert world.client.post(f'/api/service/operator/sessions/{sid}/control', json={'action': 'end'}, headers=head).status_code == 200
-    endpoint.statuses['PUT', GAME] = 204
-    world.cycle(settle=False)
-    assert GAME in endpoint.objects and world.path(GAME).exists()
+        endpoint.requests.clear()
+        endpoint.statuses['DELETE', GAME] = 200
+        world.cycle(settle=False)
+        assert not any(r[1] == GAME for r in endpoint.requests)
+        assert world.publisher.state['upload_pending'][GAME] == 'delete'
+    else:
+        assert world.publisher.state['upload_pending'] == {} and GAME not in endpoint.objects
+        assert world.client.post(f'/api/service/operator/sessions/{sid}/control', json={'action': 'end'}, headers=head).status_code == 200
+        world.cycle(settle=False)
+        assert GAME in endpoint.objects and world.path(GAME).exists()
 
 
 def test_pending_setup_delete_retried_when_game_not_due(world, endpoint, monkeypatch):
     attach(world, endpoint, monkeypatch)
     world.cycle(settle=False)
     world.write_setup(sha256='0'*64)
-    endpoint.statuses['DELETE', SETUP] = 503
+    endpoint.statuses['HEAD', SETUP] = 503
     world.cycle(after=world.config['settled_recheck_s'], settle=False)
     assert world.publisher.state['upload_pending'] == {SETUP: 'delete'}
-    endpoint.statuses['DELETE', SETUP] = 204
+    endpoint.statuses['HEAD', SETUP] = 200
     world.start()
     world.cycle(settle=False)
     assert SETUP not in endpoint.objects and world.publisher.state['upload_pending'] == {}
@@ -222,9 +222,9 @@ def test_pending_setup_delete_retried_when_game_not_due(world, endpoint, monkeyp
 
 def test_late_embargo_during_pending_retry_is_withdrawn_before_health(world, endpoint, monkeypatch):
     attach(world, endpoint, monkeypatch)
-    endpoint.statuses['PUT', GAME] = 503
+    endpoint.statuses['HEAD', GAME] = 503
     world.cycle(settle=False)
-    endpoint.statuses['PUT', GAME] = 204
+    endpoint.statuses['HEAD', GAME] = 200
     started = []
     def after(method, path):
         if (method, path) == ('PUT', GAME) and not started:
@@ -274,7 +274,7 @@ def test_local_invariants_during_whole_run_outage(world, endpoint, monkeypatch):
 def test_dot_temp_and_non_public_names_never_uploaded(endpoint, monkeypatch, path):
     monkeypatch.setenv('PITCHEEZY_PUBLISH_TOKEN', TOKEN)
     remote = publisher.HttpSink(config(endpoint))
-    for action in (lambda: remote.write(path, b'{}'), lambda: remote.delete(path)):
+    for action in (lambda: remote.write(path, b'{}'), lambda: remote.delete(path, expected='"'+'0'*32+'"')):
         with pytest.raises(publisher.UploadError, match='^upload_path_invalid$'):
             action()
     assert endpoint.requests == []
@@ -353,18 +353,17 @@ def test_token_file_outside_checkout_and_invalid_sources(tmp_path, endpoint, mon
     assert TOKEN not in ''.join(traceback.format_exception(caught.value))
 
 
-@pytest.mark.parametrize('method,status,success', [('PUT', 202, True), ('PUT', 299, True), ('PUT', 404, False),
-                                                 ('PUT', 302, False), ('DELETE', 404, True), ('DELETE', 401, False)])
-def test_status_contract(endpoint, monkeypatch, method, status, success):
+@pytest.mark.parametrize('method,status', [('PUT', 202), ('PUT', 299), ('PUT', 404),
+                                            ('PUT', 302), ('DELETE', 404), ('DELETE', 401)])
+def test_status_contract(endpoint, monkeypatch, method, status):
     monkeypatch.setenv('PITCHEEZY_PUBLISH_TOKEN', TOKEN)
     remote = publisher.HttpSink(config(endpoint))
     endpoint.statuses[method, GAME] = status
-    action = (lambda: remote.write(GAME, b'{}')) if method == 'PUT' else (lambda: remote.delete(GAME))
-    if success:
-        action()
-    else:
-        with pytest.raises(publisher.UploadError, match='^upload_failed$'):
-            action()
+    with pytest.raises(publisher.UploadError):
+        if method == 'PUT':
+            remote.write(GAME, b'{}')
+        else:
+            remote.delete(GAME, expected='"'+'0'*32+'"')
     assert len(endpoint.requests) == 1
 
 
@@ -378,23 +377,22 @@ def test_check_remote_cli_does_not_build_app(tmp_path, endpoint, monkeypatch, ca
     monkeypatch.setenv('PITCHEEZY_PUBLISH_TOKEN', TOKEN)
     monkeypatch.setattr(publisher, 'build', lambda *a, **kw: pytest.fail('probe must not build an app'))
     assert publisher.main(['--check-remote', '--config', cli_config(tmp_path, endpoint)]) == 0
-    assert 'PUT and DELETE accepted' in capsys.readouterr().out
-    assert [r[0] for r in endpoint.requests] == ['PUT', 'DELETE']
-    assert endpoint.requests[0][1] == endpoint.requests[1][1]
-    assert endpoint.requests[0][1].startswith('_publisher_probe/') and endpoint.objects == {}
+    assert 'authenticated HEAD only; writes not tested' in capsys.readouterr().out
+    assert [r[0] for r in endpoint.requests] == ['HEAD']
+    assert endpoint.requests[0][1] == 'v1/manifest.json' and endpoint.objects == {}
 
 
-@pytest.mark.parametrize('failed_method', ['PUT', 'DELETE'])
+@pytest.mark.parametrize('failed_method', ['HEAD'])
 def test_check_remote_cli_failure_still_cleans_up(tmp_path, endpoint, monkeypatch, failed_method):
     monkeypatch.setenv('PITCHEEZY_PUBLISH_TOKEN', TOKEN)
     original = endpoint.handle
     def handle(method, path, data, headers):
-        endpoint.default = 403 if method == failed_method else 204
+        endpoint.default = 403 if method == failed_method else 200
         return original(method, path, data, headers)
     endpoint.handle = handle
-    with pytest.raises(SystemExit, match='remote check failed: upload_failed'):
+    with pytest.raises(SystemExit, match='remote check failed: upload_rejected'):
         publisher.main(['--check-remote', '--config', cli_config(tmp_path, endpoint)])
-    assert [r[0] for r in endpoint.requests] == ['PUT', 'DELETE']
+    assert [r[0] for r in endpoint.requests] == ['HEAD']
 
 
 def test_dry_run_cli_sends_nothing_and_real_run_retries(world, endpoint, monkeypatch, caplog):
@@ -437,27 +435,28 @@ def test_transport_timeout_has_bounded_attempts_and_no_exception_text(endpoint, 
     monkeypatch.setattr(publisher.time, 'sleep', waits.append)
     with pytest.raises(publisher.UploadError) as caught:
         publisher.HttpSink(config(endpoint, timeout_s=1.5, retries=2, backoff_s=0.2)).write(GAME, b'{}')
-    assert timeouts == [1.5]*3 and waits == [0.2, 0.4]
+    assert timeouts == [1.5] and waits == []  # a mutation timeout is unknown; no blind retransmission
     assert TOKEN not in ''.join(traceback.format_exception(caught.value))
 
 
 def test_pending_is_durable_before_remote_attempt_even_if_process_crashes(world, endpoint, monkeypatch):
     sink = attach(world, endpoint, monkeypatch)
     real = sink.remote.write
-    def crash(path, data, *, final=False):
+    def crash(path, data, *, expected=None, final=False):
         if path == GAME:
             assert json.loads(world.publisher.state_path.read_text())['upload_pending'][path] == 'put'
             raise KeyboardInterrupt
-        return real(path, data, final=final)
+        return real(path, data, expected=expected, final=final)
     monkeypatch.setattr(sink.remote, 'write', crash)
     with pytest.raises(KeyboardInterrupt):
         world.cycle(settle=False)
     before = world.path(GAME).read_bytes()
     world.start()
+    endpoint.requests.clear()
     world.cycle(settle=False)
-    assert endpoint.objects[GAME] == before == world.path(GAME).read_bytes()
-    assert world.publisher.state['sequence'] > json.loads(before)['publish']['sequence']
-    assert world.publisher.state['upload_pending'] == {}
+    assert GAME not in endpoint.objects and world.path(GAME).read_bytes() == before
+    assert not any(r[1] == GAME for r in endpoint.requests)
+    assert world.publisher.state['upload_attempts'][GAME]['reason'] == 'interrupted_unknown'
 
 
 def test_local_write_failure_never_sends_uncommitted_bytes(world, endpoint, monkeypatch):

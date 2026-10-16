@@ -48,7 +48,6 @@ import subprocess
 import sys
 import time
 from urllib.parse import urlsplit
-import uuid
 
 from .service_api import Refused
 from .setup_estimates import Unreadable
@@ -235,8 +234,32 @@ def public_path(path):
         r'v[1-9]\d*/(manifest\.json|health\.json|dates\.json|games/\d{4}-\d{2}-\d{2}\.json|(?:game|setup)/\d+\.json)', path) is not None
 
 
+UPLOAD_MAX_BYTES = 5 * 1024 * 1024  # Partner gateway's fixed request limit.
+_ETAG = re.compile(r'"[a-f0-9]{32}"')
+_SHA256 = re.compile(r'[a-f0-9]{64}')
+
+
+def upload_path(path):
+    """The partner's v1 whitelist, separately from the local publisher's versioned layout."""
+    if not isinstance(path, str):
+        return False
+    if re.fullmatch(r'v1/(manifest|health|dates)\.json|v1/(game|setup)/[1-9][0-9]{0,11}\.json', path):
+        return True
+    match = re.fullmatch(r'v1/games/(\d{4}-\d{2}-\d{2})\.json', path)
+    if match:
+        try:
+            return datetime.fromisoformat(match[1]).strftime('%Y-%m-%d') == match[1]
+        except ValueError:
+            pass
+    return False
+
+
 class UploadError(OSError):
-    """Fixed codes only; credentials, URLs and server error bodies never cross this boundary."""
+    """Fixed codes only; no credentials, URLs, server bodies or chained transport errors."""
+
+    def __init__(self, code, *, outcome='rejected', retry_after=0):
+        super().__init__(code)
+        self.outcome, self.retry_after = outcome, retry_after
 
 
 class HttpSink(Sink):
@@ -290,66 +313,150 @@ class HttpSink(Sink):
                     token = token_path.read_text().strip()
                 else:
                     token = os.environ[env_name]
-                if not token or re.fullmatch(r'[A-Za-z0-9._~+/-]+=*', token) is None:
+                if not token or re.fullmatch(r'[A-Za-z0-9_-]{43,128}', token) is None:
                     raise ValueError
                 self._authorization = f'Bearer {token}'
         except (KeyError, TypeError, ValueError, OSError):
             raise UploadError('upload_config_invalid') from None
 
-    def _request(self, method, path, data=None, *, final=False):
+    @property
+    def destination(self):
+        # Bind attempts to an endpoint without putting the URL or credentials in the state file.
+        identity = (self.url.scheme, self.url.hostname, self.url.port or (443 if self.url.scheme == 'https' else 80), self.prefix)
+        return hashlib.sha256(repr(identity).encode()).hexdigest()
+
+    def _request(self, method, path, data=None, *, expected=None, final=False):
+        if not upload_path(path):
+            raise UploadError('upload_path_invalid')
         if self.dry_run:
             LOGGER.info('dry-run-upload %s %s (%s bytes, %s)', method, path, len(data or b''), 'final' if final else 'live')
-            return
-        for attempt in range(self.retries+1):
-            connection = None
-            try:
-                factory = http.client.HTTPSConnection if self.url.scheme == 'https' else http.client.HTTPConnection
-                connection = factory(self.url.hostname, self.url.port, timeout=self.timeout)
-                headers = self.headers['final' if final else 'live'] | {'Authorization': self._authorization}
-                connection.request(method, f'{self.prefix}/{path}', body=data, headers=headers)
-                response = connection.getresponse()
-                if 200 <= response.status < 300 or (method == 'DELETE' and response.status == 404):
-                    return
-            except (OSError, http.client.HTTPException, ValueError):
-                pass  # never retain the transport exception or response text
-            finally:
-                if connection is not None:
-                    try:
-                        connection.close()
-                    except OSError:
-                        pass
-            if attempt < self.retries:
-                time.sleep(self.backoff*2**attempt)
-        raise UploadError('upload_failed')
+            return None
+        connection = None
+        try:
+            factory = http.client.HTTPSConnection if self.url.scheme == 'https' else http.client.HTTPConnection
+            connection = factory(self.url.hostname, self.url.port, timeout=self.timeout)
+            headers = self.headers['final' if final else 'live'] | {'Authorization': self._authorization}
+            if method != 'HEAD':
+                if expected is not None and (not isinstance(expected, str) or _ETAG.fullmatch(expected) is None):
+                    raise UploadError('upload_precondition_invalid')
+                if method == 'DELETE' and expected is None:
+                    raise UploadError('upload_precondition_invalid')
+                headers |= {'If-None-Match': '*'} if expected is None else {'If-Match': expected}
+                if method == 'PUT':
+                    headers['X-Content-SHA256'] = hashlib.sha256(data).hexdigest()
+            connection.request(method, f'{self.prefix}/{path}', body=data, headers=headers)
+            response = connection.getresponse()
+            if method == 'HEAD' and response.status == 404:
+                return {'etag': None, 'sha256': None, 'deleted': False}
+            if response.status != 200:
+                if response.status == 412:
+                    raise UploadError('upload_conflict', outcome='blocked')
+                if response.status == 429:
+                    raw = response.getheader('Retry-After', '')
+                    delay = float(raw) if raw.isdigit() else 60.0
+                    raise UploadError('upload_rate_limited', outcome='retry', retry_after=max(1.0, delay))
+                # A timeout/5xx/unexpected 2xx does not establish that a mutation failed at the storage layer.
+                rejected = response.status in (400, 401, 403, 404, 405, 411, 413, 415, 422, 428)
+                raise UploadError('upload_rejected' if rejected else 'upload_unknown', outcome='rejected' if rejected else 'blocked')
+            etag = response.getheader('ETag', '')
+            if not isinstance(etag, str) or _ETAG.fullmatch(etag) is None:
+                raise UploadError('upload_receipt_invalid', outcome='blocked')
+            if method == 'HEAD':
+                deleted, sha = response.getheader('X-Publish-Deleted'), response.getheader('X-Content-SHA256', '')
+                if deleted not in ('true', 'false') or not isinstance(sha, str) or _SHA256.fullmatch(sha) is None:
+                    raise UploadError('upload_receipt_invalid', outcome='blocked')
+                if deleted == 'true' and sha != hashlib.sha256(b'').hexdigest():
+                    raise UploadError('upload_receipt_invalid', outcome='blocked')
+                return {'etag': etag, 'sha256': sha, 'deleted': deleted == 'true'}
+            raw = response.read(4097)
+            receipt = json.loads(raw) if len(raw) <= 4096 else None
+            sha = hashlib.sha256(data if method == 'PUT' else b'').hexdigest()
+            if (not isinstance(receipt, dict) or receipt.get('stored') is not True
+                    or receipt.get('deleted') is not (method == 'DELETE') or receipt.get('sha256') != sha
+                    or receipt.get('schema_validated') is not False or etag == expected):
+                raise UploadError('upload_receipt_invalid', outcome='blocked')
+            return {'etag': etag, 'sha256': sha, 'deleted': method == 'DELETE'}
+        except UploadError:
+            raise
+        except (OSError, http.client.HTTPException, ValueError, RecursionError, UnicodeError):
+            raise UploadError('upload_unknown', outcome='blocked') from None
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except OSError:
+                    pass
 
-    def write(self, path, data, *, final=False):
-        if not public_path(path):
-            raise UploadError('upload_path_invalid')
-        self._request('PUT', path, data, final=final)
+    def head(self, path):
+        return self._request('HEAD', path)
 
-    def delete(self, path):
-        if not public_path(path):
-            raise UploadError('upload_path_invalid')
-        self._request('DELETE', path)
+    def write(self, path, data, *, expected=None, final=False):
+        if not isinstance(data, bytes) or len(data) > UPLOAD_MAX_BYTES:
+            raise UploadError('upload_body_invalid')
+        try:
+            if not isinstance(json.loads(data.decode('utf-8')), dict):
+                raise ValueError
+        except (ValueError, UnicodeError, RecursionError):
+            raise UploadError('upload_body_invalid') from None
+        return self._request('PUT', path, data, expected=expected, final=final)
+
+    def delete(self, path, *, expected):
+        return self._request('DELETE', path, expected=expected)
 
     def check(self):
-        """Reserved, unique non-game object; always try cleanup even if the PUT response was lost."""
-        path = f'_publisher_probe/{uuid.uuid4().hex}.json'
-        try:
-            self._request('PUT', path, b'{"probe":true}')
-        finally:
-            self._request('DELETE', path)
+        """Authenticated metadata read only. A missing manifest is a valid diagnostic, never proof of writes."""
+        return self.head('v1/manifest.json')
 
 
 def _upload_pending(state):
     pending = state.setdefault('upload_pending', {})
-    if not isinstance(pending, dict) or any(not public_path(p) or a not in ('put', 'delete') for p, a in pending.items()):
+    if not isinstance(pending, dict) or any(not upload_path(p) or a not in ('put', 'delete') for p, a in pending.items()):
         raise UploadError('upload_state_invalid')
+    if 'upload_protocol' not in state:
+        # Old clients may have sent unconditioned requests whose completion is unknown. Do not infer safety.
+        state.update(upload_protocol=1, upload_revision=0, upload_intents={}, upload_attempts={
+            path: {'phase': 'blocked', 'reason': 'legacy_unknown'} for path in pending})
+    if state['upload_protocol'] != 1 or type(state.get('upload_revision')) is not int or state['upload_revision'] < 0:
+        raise UploadError('upload_state_invalid')
+    for key in ('upload_intents', 'upload_attempts'):
+        if not isinstance(state.get(key), dict) or any(not upload_path(p) or not isinstance(v, dict) for p, v in state[key].items()):
+            raise UploadError('upload_state_invalid')
+    for intent in state['upload_intents'].values():
+        if (intent.get('action') not in ('put', 'delete') or type(intent.get('revision')) is not int
+                or not 0 < intent['revision'] <= state['upload_revision']
+                or not isinstance(intent.get('sha256'), str) or _SHA256.fullmatch(intent['sha256']) is None):
+            raise UploadError('upload_state_invalid')
+    for attempt in state['upload_attempts'].values():
+        if attempt.get('phase') not in ('inflight', 'blocked', 'rejected', 'retry'):
+            raise UploadError('upload_state_invalid')
+        minimal = attempt['phase'] == 'blocked' and attempt.get('reason') in ('legacy_unknown', 'local_intent_mismatch', 'upload_body_invalid')
+        if not minimal and (attempt.get('action') not in ('put', 'delete')
+                or type(attempt.get('revision')) is not int or not 0 < attempt['revision'] <= state['upload_revision']
+                or not isinstance(attempt.get('sha256'), str) or _SHA256.fullmatch(attempt['sha256']) is None
+                or 'expected' not in attempt or (attempt['expected'] is not None and
+                    (not isinstance(attempt['expected'], str) or _ETAG.fullmatch(attempt['expected']) is None))
+                or (attempt['phase'] == 'retry' and (type(attempt.get('not_before')) not in (int, float)
+                    or not 0 <= attempt['not_before'] < float('inf')))):
+            raise UploadError('upload_state_invalid')
+        # Interrupted attempts are never retried/rebased, even if HEAD would show identical bytes.
+        if attempt['phase'] == 'inflight':
+            attempt.update(phase='blocked', reason='interrupted_unknown')
     return pending
 
 
+def _queue_upload(state, path, action, sha):
+    if not upload_path(path):
+        raise UploadError('upload_path_invalid')
+    pending = state['upload_pending']
+    old = state['upload_intents'].get(path)
+    if old is None or (old['action'], old['sha256']) != (action, sha):
+        state['upload_revision'] += 1
+        state['upload_intents'][path] = {'action': action, 'sha256': sha, 'revision': state['upload_revision']}
+    pending[path] = action
+
+
 class MirrorSink(Sink):
-    """Local state first; a durable path -> action outbox contains no payload or credentials."""
+    """Local state first; durable latest intents and immutable CAS attempts, with fail-closed uncertainty."""
 
     def __init__(self, local, remote):
         self.local, self.remote = local, remote
@@ -358,11 +465,20 @@ class MirrorSink(Sink):
         self.save = lambda: None
 
     def bind(self, state, save):
-        self.pending, self.save = _upload_pending(state), save
-        # Reconcile settled files after local-only publishing; durable DELETEs win over residual files.
+        self.pending, self.save, self.state = _upload_pending(state), save, state
+        destination = state.setdefault('upload_destination', self.remote.destination)
+        if destination != self.remote.destination:
+            raise UploadError('upload_destination_changed')
         for path in self.paths():
-            if public_path(path) and not path.endswith('/health.json'):
-                self.pending.setdefault(path, 'put')
+            if upload_path(path) and not path.endswith('/health.json') and path not in self.pending:
+                try:
+                    data = self._read_upload(path)
+                except UploadError:
+                    self.pending[path] = 'put'
+                    state['upload_attempts'][path] = {'phase': 'blocked', 'reason': 'upload_body_invalid'}
+                    continue
+                if data is not None:
+                    _queue_upload(state, path, 'put', hashlib.sha256(data).hexdigest())
         self.save()
 
     def cleanup(self):
@@ -377,28 +493,77 @@ class MirrorSink(Sink):
     def read_tail(self, path, size):
         return self.local.read_tail(path, size)
 
-    def _queue(self, path, action):
-        if not public_path(path):
-            raise UploadError('upload_path_invalid')
-        self.pending[path] = action
-        self.save()  # write-ahead, with the same atomic state-file writer as sequence recovery
+    def _read_upload(self, path):
+        target = self.local._target(path)
+        if not target.is_file():
+            return None
+        with target.open('rb') as handle:
+            data = handle.read(UPLOAD_MAX_BYTES+1)
+        if len(data) > UPLOAD_MAX_BYTES:
+            raise UploadError('upload_body_invalid')
+        return data
+
+    def _queue(self, path, action, data=None):
+        sha = hashlib.sha256(data if action == 'put' else b'').hexdigest()
+        _queue_upload(self.state, path, action, sha)
+        self.save()
 
     def _send(self, path, data=None, *, final=False):
         self.attempted.add(path)
+        action = self.pending[path]
+        intent = self.state['upload_intents'].get(path)
+        attempts = self.state['upload_attempts']
+        attempt = attempts.get(path)
+        if self.remote.dry_run:
+            self.remote._request(action.upper(), path, data, final=final)
+            return
+        if self.state.get('upload_recovery_blocked') or intent is None:
+            return
+        if attempt and (attempt['phase'] in ('blocked', 'inflight') or
+                        (attempt['phase'] == 'rejected' and attempt.get('revision') == intent['revision'])):
+            return
+        if attempt and attempt['phase'] == 'retry' and time.time() < attempt.get('not_before', float('inf')):
+            return
+        sha = hashlib.sha256(data if action == 'put' else b'').hexdigest()
+        if sha != intent['sha256'] or action != intent['action']:
+            attempts[path] = {'phase': 'blocked', 'reason': 'local_intent_mismatch'}
+            self.save()
+            return
         try:
-            if self.pending[path] == 'delete':
-                self.remote.delete(path)
-            else:
-                self.remote.write(path, data, final=final)
+            meta = self.remote.head(path)
         except UploadError:
+            LOGGER.warning('upload_failed')  # No mutation has started; a later cycle may retry the metadata read.
+            return
+        if action == 'delete' and meta['etag'] is None:
+            self.pending.pop(path)
+            self.state['upload_intents'].pop(path, None)
+            attempts.pop(path, None)
+            self.save()
+            return
+        # Never skip a write on matching SHA: bytes alone do not establish ownership or completion.
+        attempt = attempts[path] = intent | {'expected': meta['etag'], 'phase': 'inflight'}
+        self.save()  # fixed condition + body identity durable BEFORE any mutation request
+        try:
+            if action == 'delete':
+                self.remote.delete(path, expected=attempt['expected'])
+            else:
+                self.remote.write(path, data, expected=attempt['expected'], final=final)
+        except UploadError as error:
+            attempt.update(phase=error.outcome, reason=str(error))
+            if error.outcome == 'retry':
+                attempt['not_before'] = time.time()+error.retry_after
+            self.save()
             LOGGER.warning('upload_failed')
         else:
-            if not self.remote.dry_run:
-                del self.pending[path]
-                self.save()
+            # A newer local intent may have arrived while the response was in flight. Its outbox is not ours.
+            if self.state['upload_intents'].get(path) == intent:
+                self.pending.pop(path, None)
+                self.state['upload_intents'].pop(path, None)
+            attempts.pop(path, None)
+            self.save()
 
     def write(self, path, data, *, final=False):
-        self._queue(path, 'put')
+        self._queue(path, 'put', data)
         self.local.write(path, data, final=final)
         self._send(path, data, final=final)
 
@@ -414,14 +579,11 @@ class MirrorSink(Sink):
                     self.local.delete(path)
                     self._send(path)
                 else:
-                    data = self.read(path)
+                    data = self._read_upload(path)
                     if data is None:
-                        # A crash after queueing but before the first local write left no object to send.
-                        del self.pending[path]
-                        self.save()
-                    else:
-                        final = json.loads(data).get('publish', {}).get('final') is True
-                        self._send(path, data, final=final)
+                        continue  # write-ahead intent without local bytes: preserve, never silently call it sent
+                    final = json.loads(data).get('publish', {}).get('final') is True
+                    self._send(path, data, final=final)
             except (OSError, ValueError, RecursionError):
                 LOGGER.warning('upload_failed')
 
@@ -591,6 +753,9 @@ class Publisher:
                 state |= saved
             except (ValueError, OSError, RecursionError):  # unreadable bookkeeping: start as if it were lost (everything is rebuilt)
                 LOGGER.warning('state file %s unreadable; continuing from the published files', self.state_path, exc_info=True)
+                state['upload_recovery_blocked'] = True
+        if isinstance(self.sink, MirrorSink) and (self.state_path is None or not self.state_path.is_file()) and self.sink.paths():
+            state['upload_recovery_blocked'] = True  # missing custody cannot erase an older in-flight remote attempt
         # The sequence never goes back, whatever happened to the state file: it continues above EVERY file that
         # is out. Health alone is not enough: a cycle that failed before health may have written files above it.
         state['sequence'] = max(state['sequence'], self._published_sequence())
@@ -650,10 +815,10 @@ class Publisher:
         return [(today+timedelta(days=offset)).isoformat()
                 for offset in range(-self.config['live_days_back'], self.config['live_days_ahead']+1)]
 
-    def _queue_local_upload(self, path, action):
+    def _queue_local_upload(self, path, action, data=None):
         # Keep the existing remote's intents durable while only local publishing is enabled.
         if not isinstance(self.sink, MirrorSink) and 'upload_pending' in self.state:
-            self.state['upload_pending'][path] = action
+            _queue_upload(self.state, path, action, hashlib.sha256(data if action == 'put' else b'').hexdigest())
             self._save_state()
 
     def _put(self, path, body, *, always, final=None, digest=None):
@@ -670,7 +835,7 @@ class Publisher:
         if final is not None:
             publish['final'] = final
         data = json.dumps(body | {'publish': publish}, ensure_ascii=False, separators=(',', ':')).encode()
-        self._queue_local_upload(path, 'put')
+        self._queue_local_upload(path, 'put', data)
         self.sink.write(path, data, final=bool(final))
         self.state['files'][path] = {'digest': digest, 'sequence': self._sequence, 'final': final}
         self._written.append(path)
@@ -1020,7 +1185,7 @@ def main(argv=None):
     parser.add_argument('--date', action='append', help='KST date whose games are rebuilt every cycle (repeatable); default: the window in publish_config.json')
     parser.add_argument('--config', help='publish_config.json to use')
     upload_mode = parser.add_mutually_exclusive_group()
-    upload_mode.add_argument('--check-remote', action='store_true', help='PUT and DELETE a reserved probe, then exit (no app or local output)')
+    upload_mode.add_argument('--check-remote', action='store_true', help='authenticated HEAD of v1/manifest.json only (no app, write or local output)')
     upload_mode.add_argument('--dry-run-upload', action='store_true', help='log upload operations without sending or loading a token; local publishing still runs')
     parser.add_argument('--interval', type=float, help='publish interval in seconds')
     parser.add_argument('--delay', type=float, help='fixed delay in seconds')
@@ -1035,7 +1200,7 @@ def main(argv=None):
             HttpSink(load_config(args.config)['upload']).check()
         except UploadError as error:
             raise SystemExit(f'remote check failed: {error}') from None
-        print('remote check passed: PUT and DELETE accepted')
+        print('remote metadata check passed: authenticated HEAD only; writes not tested')
         return 0
     config, publisher = _start(args)
     LOGGER.info('publishing to %s every %s s (fixed delay %s s)', config['out_dir'], config['publish_interval_s'], config['fixed_delay_s'])

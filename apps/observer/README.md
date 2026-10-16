@@ -188,18 +188,24 @@ find "$T/out" -type f
 
 ### 선택적 HTTP 업로드 (잠정 API)
 
-`publish_config.json`의 `upload.enabled`를 `true`로, `upload.base_url`을 파트너의 업로드 전용 HTTPS 주소로 설정한다. 파일은 `<base_url>/v1/game/123.json`처럼 PUT하고, 철회는 같은 주소에 DELETE한다. HTTP는 loopback(`127.0.0.1`, `::1`, `localhost`)에서만 허용한다. 리다이렉트와 환경 변수의 HTTP 프록시는 사용하지 않는다. 팬은 별도 공개 호스트만 읽는다.
+업로드 기본값은 OFF다. `upload.base_url`은 전용 HTTPS `/_publish` 경로를 정확히 한 번 포함한다. HTTP는 로컬 합성 시험의 loopback에서만 허용한다. 팬 공개 URL과 인증 업로드 URL을 혼동하지 않는다. 현재 검증 범위는 로컬 합성 계약이며 실제 호스트 연결/배포 승인이 아니다.
 
-토큰 값은 저장소·설정 파일에 넣지 않는다. 기본은 실행 환경의 `PITCHEEZY_PUBLISH_TOKEN`이며 `upload.token_env`에는 **환경 변수 이름만** 넣는다. 파일을 쓰려면 `token_env: null`, `token_file: "/절대경로/저장소밖/토큰파일"`로 정한다. 토큰 파일은 운영자만 읽게 권한을 제한하고(예: 0600), 토큰 문자열 한 줄만 저장한다. git checkout 안 파일과 그곳으로 향하는 링크는 거절한다. 오류·health·상태에는 토큰, 원격 응답 본문, 업로드 URL을 기록하지 않는다.
+토큰은 `token_env`에 환경변수 이름만, 또는 `token_env: null`과 저장소 밖 절대 `token_file`로 지정한다. 두 방식을 동시에 쓰지 않는다. 파트너 형식인 URL-safe 문자 43–128자만 허용한다. 토큰/URL/서버 응답 원문을 health·오류·상태·로그에 남기지 않는다.
 
-- `upload.timeout_s`: 요청 소켓 제한 시간(0 초과, 최대 60초). `retries`: 최초 요청 뒤 추가 시도 수(0–5). `backoff_s`: 첫 대기(0–10초), 재시도마다 두 배. 기본값 5초/2회/0.25초는 모두 **잠정값**이다.
-- `upload.headers.live` / `upload.headers.final`: `Content-Type: application/json`과 `Cache-Control`. 기본 캐시는 각각 5초/300초이며 **잠정값**이다. final은 종료 확정 경기·셋업, live는 나머지 파일이다. 정정될 수 있으므로 immutable은 쓰지 않는다.
-- `--check-remote --config <설정>`: 앱·피드·출력 폴더를 열지 않고 `_publisher_probe/<임의 ID>.json`에 무해한 PUT 후 DELETE하고 종료한다. PUT 응답을 못 받아도 DELETE를 시도한다. 실패하면 0이 아닌 종료 코드와 고정 오류 코드를 표시한다. DELETE 자체가 실패하면 probe가 남을 수 있다.
-- `--dry-run-upload --once --config <설정> --out <시험출력>`: 토큰을 읽거나 네트워크로 보내지 않고 메서드·상대 경로·바이트 수·파일 종류만 로그에 남긴다. **로컬 발행과 본문 생성은 실제로 실행**하므로 시험에는 위 녹화 픽스처 설정을 사용한다. 미전송 목록은 유지되어 이후 실제 업로드에서 다시 보낸다. check와 dry-run은 동시에 쓰지 않는다.
+전송은 인증 HEAD로 missing/현재본/tombstone과 strong ETag를 읽은 뒤 PUT에 원본 바이트 SHA256을 붙인다. 최초 PUT은 `If-None-Match: *`, 교체·삭제·복원은 관측한 ETag의 `If-Match`를 사용한다. DELETE는 조건부 tombstone이며 삭제와 동일 바이트 복원도 서로 다른 ETag를 갖는다. 200 + 올바른 ETag/JSON 영수증만 성공이다. SHA는 원본 JSON 내용의 무결성이며 모델/스키마/경기 정합성 승인이 아니다. 파일은 UTF-8 JSON object, 최대 5 MiB이며 remote 경로는 partner v1 whitelist로 제한한다. local publisher의 다른 버전 경로 지원과 구분한다.
 
-`MirrorSink`의 읽기·순번 복구는 항상 로컬 `LocalDirSink`에서 한다(GET 없음). 로컬 기록은 원격 장애와 무관하게 진행한다. 원격 실패는 `upload_failed`로 health의 `unavailable_games`와 `upload` 요약에 표시하고 다른 경기·health 업로드를 계속한다. health 자체가 실패하면 공개 health는 멈추며 다음 주기에 최신 health를 다시 보낸다. health 요약은 그 파일을 보내기 **직전**의 미전송 수이므로 이전 health 실패를 한 주기 더 표시할 수 있다.
+- `timeout_s`는 소켓 제한(최대 60초)이며 DNS·서버 후행 완료까지 포함하는 전체 상한이 아니다. A 후보는 아직 동기 전송이다. 비차단 작업자와 종료/메모리 계약은 별도 U2 단계다.
+- 예전 `retries`/`backoff_s`는 구 설정을 읽기 위해 검증만 한다. mutation을 무조건 재시도하지 않는다. 429는 영속 `not_before`에 Retry-After를 반영하고 이후 cycle에서만 다시 시도한다. 403 등의 확정 거부는 같은 intent를 반복하지 않으며 새 local intent는 다시 준비할 수 있다.
+- `--check-remote --config <config>`는 인증 HEAD `v1/manifest.json`만 수행한다. missing 404도 정상 진단이며 쓰기/삭제 성공을 주장하지 않는다. 임의 probe 객체나 경기 파일을 만들지 않는다.
+- `--dry-run-upload`는 토큰/네트워크 없이 상대 경로·크기를 기록하지만 **로컬 본문 생성은 실행**한다. 등록된 합성 입력에서만 사용한다.
+- 모든 원격 JSON은 `no-store`, ETag 응답은 파트너의 `no-transform`을 요구한다. 이전 live 5초/final 300초 캐시 기대는 폐기했다.
 
-상태 파일의 `upload_pending`은 상대 경로와 `put`/`delete`만 보관하고 기존과 같은 원자 교체로 저장한다. 내용이 안 바뀐 최종 파일도 재시작·다음 주기에 재전송하며, 철회는 오래된 PUT을 DELETE로 대체한다. 활성화할 때마다 현재 로컬 공개 파일을 미전송 목록에 보충한다(이미 남은 DELETE는 우선 보존). 따라서 정상 재시작에도 확정 파일의 멱등 PUT이 추가될 수 있다. 업로드를 꺼도 기존 미전송 목록이 있다면 로컬 쓰기·삭제 전에 PUT/DELETE 의도를 저장해, 다시 켤 때 그동안 확정된 파일과 철회도 전송한다. 점 파일·임시 파일·여섯 공개 이름 외 파일은 보내지 않는다. 순차 전송으로 데이터/철회를 먼저 처리하고 health를 마지막에 보낸다. 상태·로컬 출력은 함께 보관해야 하며, 원격 GET 없이 원격에만 남은 파일을 복구하거나 찾아 지울 수는 없다. 업로드 목적지를 바꿀 때는 중지한 발행기의 상태 JSON에서 `upload_pending` 키를 제거해 기존 로컬 파일 전체를 다시 등록한다.
+`upload_pending`은 최신 path→action, `upload_intents`는 action/SHA/revision, `upload_attempts`는 실제 전송 직전에 영속한 동일 identity와 expected ETag/create 조건이다. 로컬 파일과 상태를 함께 보존한다. ACK가 늦게 와도 더 최신 intent를 지우지 않는다. 실패한 로컬 삭제는 remote DELETE를 보내지 않고 P3가 최신 PUT으로 바꿀 수 있다. 업로드 OFF 동안도 기존 outbox의 새 쓰기/삭제를 기록한다. 목적지는 URL 대신 hash로 상태에 묶이며 변경 시 시작을 거절한다.
+
+**차단과 재개:** timeout/비정상 200/예상 밖 2xx/5xx/412 또는 재시작 때 남은 inflight는 `upload_attempts[path].phase=blocked`와 고정 reason으로 보존한다. 이전 무조건 전송 형식의 pending은 `legacy_unknown`, 손상/유실 state는 `upload_recovery_blocked`다. 새 local body, 재시작, 같은 SHA의 HEAD만으로 이를 성공/재시도 처리하지 않는다. 로컬 발행은 계속하고 health.upload.pending과 unavailable_games는 부분 실패를 표시한다. `game_checks.file_sequence`는 로컬 파일 기준이므로 원격 적용 증거로 읽지 않는다. health 자체가 실패하면 공개 health도 정지한다. 객체별 CAS는 다중 파일 원자 commit이 아니다.
+
+차단을 없애려고 `upload_pending`/attempt/destination을 지우거나 최신 ETag로 오래된 본문을 보내지 말 것. 우선 업로드를 OFF로 두고 exact state·최신 local SHA/revision·고정 endpoint의 인증 HEAD·동일 출력 lock 소유 및 이전 worker 종료 증거를 모아 별도 대사 검토한다. A에는 이를 자동 승인하는 reset 명령이 없다. 새 목적지는 별도의 출력/상태와 명시적 초기 등록으로 준비한다. 안전한 own-latest 대사는 U2 설계 검토 범위이며 타 작성자/원격 충돌의 출처가 불명확하면 blocked를 유지한다.
+
 
 파트너 엔드포인트는 bearer 인증, 경로별 **원자적 전체 PUT 교체**, 반복 가능한 DELETE(없는 객체 404 허용), 설정한 Content-Type/Cache-Control 저장·서빙, probe 경로를 지원해야 한다. PUT/DELETE의 모든 2xx는 성공으로 간주하므로 응답 전에 공개 읽기에 반영되어야 한다. 여러 파일 전체가 한 번에 교체되는 보장은 없다. DELETE는 CDN 캐시도 무효화해야 하며, 원격 장애 중에는 이미 공개된 파일을 즉시 철회할 수 없다. 이때 health의 실패와 멈춘 발행 시각을 읽는 쪽에서 확인해야 한다. 로컬 폴더 하나와 원격 prefix 하나에는 발행기 하나만 배정한다. 순차 업로드·재시도는 본문 생성과 같은 주기 안에서 실행되어 피드 조회·수신 기록·로컬 발행도 늦출 수 있고, 현재 주기당 업로드 시간 상한은 없다. 실제 호스팅을 켜기 전에 타임아웃 장애의 주기 지연을 측정하고 주기당 시간 예산 또는 중단 기준을 정해야 한다. 재시도 한도/캐시/주기도 파트너와 리허설 후 확정한다. health의 정상 업로드 표시는 재등록과 철회 처리를 포함한 미전송 목록이 비었음을 뜻하며 원격 GET으로 공개 상태를 검증했다는 뜻은 아니다.
 
