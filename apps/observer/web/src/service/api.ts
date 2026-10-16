@@ -12,6 +12,20 @@ import type { PublishStamp, PublishHealth, PublishedFile } from './publish';
 export class FetchError extends Error { constructor(message: string, public status: number) { super(message); } }
 export const TIMEOUT_MS = 15000;
 
+/** Host access/notice codes use local copy: never display an arbitrary host message. */
+function hostErrorMessage(status: number, body: unknown): string | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const error = body as Record<string, unknown>;
+  if (status === 401 && error.error === 'access_required') return '접근 확인이 필요해요. 페이지를 새로고침해 다시 접속해 주세요.';
+  if (status !== 503 || error.error !== 'service_notice') return null;
+  const notice = error.notice;
+  if (!notice || typeof notice !== 'object' || Array.isArray(notice)) return null;
+  const id = (notice as Record<string, unknown>).id;
+  if (id === 'maintenance') return '서비스 점검 중이에요. 잠시 후 다시 확인해 주세요.';
+  if (id === 'data_hold') return '자료를 확인하고 있어요. 확인이 끝나면 다시 보여 드려요.';
+  return typeof id === 'string' ? '서비스 안내로 자료 제공이 잠시 중단됐어요. 잠시 후 다시 확인해 주세요.' : null;
+}
+
 /** Demo binding travels on the URL (`?demo=<session>`) and is forwarded to the API as-is; the screen never shows it. */
 export const demoParam = () => __PZ_STATIC__ ? null : new URLSearchParams(window.location.search).get('demo');  // the public bundle carries no demo binding
 function withDemo(path: string) {
@@ -32,7 +46,7 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
     throw new FetchError('서버에 연결하지 못했어요. 네트워크 연결을 확인해 주세요.', 0);
   } finally { window.clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
   const body = await response.json().catch(() => null);
-  if (!response.ok) throw new FetchError(typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.', response.status);
+  if (!response.ok) throw new FetchError(hostErrorMessage(response.status, body) ?? (typeof body?.detail === 'string' ? body.detail : '자료를 불러오지 못했어요.'), response.status);
   if (body === null) throw new FetchError('서버 응답을 읽지 못했어요.', response.status);
   return body as T;
 }
@@ -67,7 +81,13 @@ async function getPublished<T>(file: PublishedFile, signal?: AbortSignal): Promi
       if (last.stamp.publishedAt) observePublishTime(Date.parse(last.stamp.publishedAt));
       return null; // reuse the already validated/normalized body; neither JSON parse nor shape runs again
     }
-    if (!response.ok) { void response.body?.cancel().catch(() => undefined); throw new FetchError('자료를 불러오지 못했어요.', response.status); }
+    if (!response.ok) {
+      // Only the two host protocols need a body; other errors retain the bounded no-body path.
+      const body = response.status === 401 || response.status === 503 ? await response.json().catch(() => null) : null;
+      if (body === null) void response.body?.cancel().catch(() => undefined);
+      if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+      throw new FetchError(hostErrorMessage(response.status, body) ?? '자료를 불러오지 못했어요.', response.status);
+    }
     const raw = await response.json().catch(() => null);
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
     if (raw === null || typeof raw !== 'object') throw new FetchError('서버 응답을 읽지 못했어요.', 0);
