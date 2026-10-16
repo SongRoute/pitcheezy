@@ -149,7 +149,7 @@ class PooledTemperature(unittest.TestCase):
             with self.subTest(name=name, value=value), self.assertRaises(ValueError): cal.apply(qs, changed)
 
 
-def loader_fixture(root):
+def loader_fixture(root, order='C'):
     def bind(path):
         body = path.read_bytes()
         return {'path': str(path), 'bytes': len(body), 'sha256': hashlib.sha256(body).hexdigest()}
@@ -158,7 +158,7 @@ def loader_fixture(root):
     reg = {'folds': {}}
     for f, fold in enumerate(cal.FOLDS):
         folder = root / fold; folder.mkdir()
-        keys = np.array([[f * 10 + i + 1, 1, 1] for i in range(4)])
+        keys = np.array([[f * 10 + i + 1, 1, 1] for i in range(4)], order=order)
         fit = np.array([True, True, False, False]); keep = ~fit
         corpus = {n: np.zeros(4, dtype=np.int64) for n in worker.CORPUS}
         corpus.update(keys=keys, y7=np.arange(4), fit=fit, evaluation=keep,
@@ -198,6 +198,23 @@ def loader_fixture(root):
 
 
 class BoundedLoader(unittest.TestCase):
+    def test_producer_fortran_keys_equal_c_order(self):
+        import pandas as pd
+        columns = ['game_pk', 'at_bat_number', 'pitch_number']
+        frame = pd.DataFrame({columns[0]: [1, 2, 3, 4], columns[1]: [1] * 4, columns[2]: [1] * 4})
+        keys = frame[columns].to_numpy(dtype='<i8')
+        self.assertTrue(keys.flags.f_contiguous)
+        self.assertFalse(keys.flags.c_contiguous)
+        stream = io.BytesIO(); np.savez(stream, keys=keys)
+        worker.header_check(stream, {'keys'}, {'keys': ((4, 3), 'iu')})
+        with np.load(stream, allow_pickle=False) as z:
+            np.testing.assert_array_equal(z['keys'], keys)
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            c = cal.pool(worker.load_windows(loader_fixture(Path(a), order='C')))
+            f = cal.pool(worker.load_windows(loader_fixture(Path(b), order='F')))
+            for left, right in zip(c, f):
+                np.testing.assert_array_equal(left, right)
+
     def test_generated_registered_worker_writes_only_pending_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); reg = loader_fixture(root); out = root / 'out'; out.mkdir()

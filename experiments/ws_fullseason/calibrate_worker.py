@@ -79,7 +79,8 @@ def header_check(stream, members, selected):
                            (2, 0): np.lib.format.read_array_header_2_0}
                 if version not in readers: raise ValueError('NPY header version')
                 actual, fortran, dtype = readers[version](entry, max_header_size=10000)
-                if (actual != shape or fortran or dtype.hasobject or dtype.kind not in kind
+                # NumPy handles C/F layout; both have the same bounded allocation.
+                if (actual != shape or dtype.hasobject or dtype.kind not in kind
                         or dtype.itemsize not in (1, 2, 4, 8)
                         or entry.tell() + math.prod(actual) * dtype.itemsize != info.file_size):
                     raise ValueError('NPY shape/dtype/byte-length contract')
