@@ -27,6 +27,11 @@ def test_nonbip_count_hypothesis_and_frozen_parent_label_mapping():
     rows = observed(body)
     assert [r['pre_count'] for r in rows] == [(0, 0), (1, 0), (1, 1)]
     assert [r['outcome10_hypothesis'] for r in rows] == [0, 1, 2]
+    assert rows[0]['observed']['event_type_code'] == 'FF'
+    assert rows[0]['observed']['event_post_count'] == (1, 0)
+    assert rows[0]['observed']['play_final_pitcher'] == 10
+    assert rows[0]['observed']['play_final_home_score'] == 0
+    assert rows[0]['pre_count'] != rows[0]['observed']['event_post_count']
     assert all(r['native_nonbip_candidate'] and not r['accepted'] for r in rows)
     assert all('statcast_description' in r['proof_missing'] for r in rows)
     parent = closure().safe.outcome_labels(pd.DataFrame({

@@ -35,6 +35,10 @@ def _count(event):
     return (balls, strikes) if type(balls) is type(strikes) is int and 0 <= balls <= 4 and 0 <= strikes <= 3 else None
 
 
+def _int(value, low, high=(1 << 53)-1):
+    return value if type(value) is int and low <= value <= high else None
+
+
 def inspect_body(feed, *, game_pk, game_date):
     """Source-derived observations, keyed to one body; no row gets accepted status.
 
@@ -84,6 +88,23 @@ def inspect_body(feed, *, game_pk, game_date):
                 call = _get(event, 'details', 'call', 'code')
                 description = CALL_DESCRIPTION.get(call) if isinstance(call, str) else None
                 label = outcome10(description, '', prior_count[1])[0] if description and prior_count else None
+                # Keep direct event fields distinct from play-final fields.
+                # Neither the latter nor post-event count may label this
+                # observed pitch's own before-state or pitcher identity.
+                observed = {
+                    'event_type_code': code if isinstance(code, str) else None,
+                    'event_call_code': call if isinstance(call, str) else None,
+                    'event_post_count': _count(event),
+                    'event_post_outs': _int(_get(event, 'count', 'outs'), 0, 3),
+                    'event_trajectory': _get(event, 'hitData', 'trajectory') if isinstance(_get(event, 'hitData', 'trajectory'), str) else None,
+                    'play_final_pitcher': _int(_get(play, 'matchup', 'pitcher', 'id'), 1),
+                    'play_final_batter': _int(_get(play, 'matchup', 'batter', 'id'), 1),
+                    'play_final_stand': _get(play, 'matchup', 'batSide', 'code') if _get(play, 'matchup', 'batSide', 'code') in ('L', 'R') else None,
+                    'play_final_throws': _get(play, 'matchup', 'pitchHand', 'code') if _get(play, 'matchup', 'pitchHand', 'code') in ('L', 'R') else None,
+                    'play_final_outs': _int(_get(play, 'count', 'outs'), 0, 3),
+                    'play_final_home_score': _int(_get(play, 'result', 'homeScore'), 0),
+                    'play_final_away_score': _int(_get(play, 'result', 'awayScore'), 0),
+                }
                 if not keyed:
                     reason = 'physical_key_or_prefix_unverified'
                 elif not provider_ok:
@@ -101,6 +122,7 @@ def inspect_body(feed, *, game_pk, game_date):
                                  'known' if code in TYPES and code != 'UNKNOWN' else
                                  'unknown_code' if isinstance(code, str) and code else 'absent'),
                              'description_hypothesis': description, 'outcome10_hypothesis': label,
+                             'observed': observed,
                              'native_nonbip_candidate': reason == 'paired_row_quality_unverified',
                              'accepted': False, 'reason': reason,
                              'proof_missing': ('pitch_level_identity', 'before_outs_score',
