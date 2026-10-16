@@ -19,6 +19,10 @@ def test_one_member_and_exact_regular_file(tmp_path):
     with pytest.raises(ValueError): replay.inflate_one(blob, len(body) - 1)
     alias = tmp_path / 'alias.gz'; alias.symlink_to(path)
     with pytest.raises(ValueError): replay.exact_file(alias, 100)
+    for game, date in ((849810, '2026-10-11'), (849809, '2026-10-12')):
+        wrong = {'gameData': {'game': {'pk': game}, 'datetime': {'officialDate': date}}}
+        with pytest.raises(ValueError, match='game/officialDate'):
+            replay.feed_identity(json.dumps(wrong).encode())
 
 
 def test_receipt_order_selection_and_unknown_abstention(tmp_path, monkeypatch):

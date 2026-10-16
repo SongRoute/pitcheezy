@@ -86,6 +86,17 @@ def inflate_one(blob, cap):
     return body
 
 
+def feed_identity(body):
+    feed = json.loads(body)
+    if (not isinstance(feed, dict) or not isinstance(feed.get('gameData'), dict)
+            or not isinstance(feed['gameData'].get('game'), dict)
+            or not isinstance(feed['gameData'].get('datetime'), dict)
+            or feed['gameData']['game'].get('pk') != GAME
+            or feed['gameData']['datetime'].get('officialDate') != DATE):
+        raise ValueError('captured body game/officialDate mismatch')
+    return feed
+
+
 def entries(reg):
     if sha(reg['allowlist']['path']) != reg['allowlist']['sha256']:
         raise ValueError('allowlist changed')
@@ -150,13 +161,7 @@ def run(regpath, grantpath):
             if inflated > MAX_INFLATED: raise ValueError('inflated total cap')
             if hashlib.sha256(body).hexdigest() != item['sha256']:
                 raise ValueError('inflated canonical body digest mismatch')
-            feed = json.loads(body)
-            if (not isinstance(feed, dict) or not isinstance(feed.get('gameData'), dict)
-                    or not isinstance(feed['gameData'].get('game'), dict)
-                    or not isinstance(feed['gameData'].get('datetime'), dict)
-                    or feed['gameData']['game'].get('pk') != GAME
-                    or feed['gameData']['datetime'].get('officialDate') != DATE):
-                raise ValueError('captured body game/officialDate mismatch')
+            feed = feed_identity(body)
             receipt_ns = int(item['fetched'] * 1_000_000_000)
             step = captured_bridge.step(feed, game_pk=GAME, game_date=DATE,
                 receipt_seq=item['seq'], source_sha256=item['sha256'], candidate_pitch_type=TYPE)
