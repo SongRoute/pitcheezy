@@ -13,6 +13,17 @@ from experiments.ws_seq import train_seq as base
 from experiments.ws_fullseason import data
 
 
+def group_batches(g,column,chunk_rows):
+    batches=[]; current=[]; size=0
+    for indices in g.groupby(column,sort=True).indices.values():
+        if len(indices)>chunk_rows: raise ValueError('one group exceeds chunk cap')
+        if size+len(indices)>chunk_rows and current:
+            batches.append(np.concatenate(current)); current=[]; size=0
+        current.append(indices); size+=len(indices)
+    if current: batches.append(np.concatenate(current))
+    return batches
+
+
 def raw_features(g, fit, recipe, M, chunk_rows=65536):
     cutoff = recipe['window']['fit'][1]
     donor = g.loc[fit, M.safe.DONOR].reset_index(drop=True)
@@ -20,13 +31,7 @@ def raw_features(g, fit, recipe, M, chunk_rows=65536):
         raise ValueError('empty or future donor')
     # Whole dates keep every same-game previous-pitch lookup intact. Reuse the
     # exact feature helper on each batch; no query outcome enters the donor pool.
-    batches=[]; current=[]; size=0
-    for indices in g.groupby('game_date',sort=True).indices.values():
-        if len(indices)>chunk_rows: raise ValueError('one date exceeds query chunk cap')
-        if size+len(indices)>chunk_rows and current:
-            batches.append(np.concatenate(current)); current=[]; size=0
-        current.append(indices); size+=len(indices)
-    if current: batches.append(np.concatenate(current))
+    batches=group_batches(g,'game_date',chunk_rows)
     raw=np.empty((len(g),91),np.float64); totals={}
     for indices in batches:
         part,audit=M.scale.features(donor,g.iloc[indices],cutoff,M)
@@ -47,10 +52,26 @@ def fit_encoder(raw, fit):
     filled=np.where(np.isfinite(training),training,median); del training
     mean=filled.mean(0); scale=filled.std(0); scale=np.where(scale>1e-8,scale,1)
     continuous=np.flatnonzero([len(np.unique(filled[:,j]))>2 for j in range(filled.shape[1])])
-    z=np.clip((filled-mean)/scale,-8,8); del filled
+    z=filled; z-=mean; z/=scale; np.clip(z,-8,8,out=z)
     knots=np.quantile(z[:,continuous],[.25,.5,.75],axis=0)
     return {'median':median.tolist(),'mean':mean.tolist(),'scale':scale.tolist(),
         'continuous':continuous.tolist(),'knots':knots.tolist(),'dimension':raw.shape[1]+3*len(continuous)}
+
+
+
+def context_proof(g,seq,fit,oof,length,chunk_rows=65536):
+    # No context index is persisted here. Whole games make each local index
+    # scientifically identical to the corresponding global-index rows.
+    edges=oof_edges=0
+    for indices in group_batches(g,'game_pk',chunk_rows):
+        local=[seq[n][indices] for n in ['pitcher','game_pk','at_bat_number','pitch_number']]
+        ctx=base.build_context_index(*local,length)
+        base.check_context(ctx,*local)
+        valid=ctx>=0;local_fit=fit[indices]
+        if not (local_fit[np.maximum(ctx,0)]==local_fit[:,None])[valid].all():
+            raise ValueError('context crosses role')
+        edges+=int(valid.sum());oof_edges+=int(valid[oof[indices]].sum())
+    return {'edges':edges,'oof_edges':oof_edges,'same_pitcher_game_strict_order':True,'earlier_oof_outcomes_used':True}
 
 
 def arrays(g, fit, oof, y7, recipe, M):
@@ -74,11 +95,7 @@ def arrays(g, fit, oof, y7, recipe, M):
         y7=y7, games=g.game_pk.to_numpy(dtype=np.int64), fit=fit, tuning=np.zeros(len(g),bool),
         calibration=np.zeros(len(g),bool), evaluation=oof,
         narrow_whiff=g.narrow_whiff.to_numpy(), ground_ball_per_pitch=g.ground_ball_per_pitch.to_numpy())
-    ctx = base.build_context_index(seq['pitcher'], seq['game_pk'], seq['at_bat_number'], seq['pitch_number'], recipe['base']['context']['max_length'])
-    base.check_context(ctx, seq['pitcher'], seq['game_pk'], seq['at_bat_number'], seq['pitch_number'])
-    valid=ctx>=0
-    if not (fit[np.maximum(ctx,0)] == fit[:,None])[valid].all():
-        raise ValueError('context crosses role')
+    sequence_proof=context_proof(g,seq,fit,oof,recipe['base']['context']['max_length'])
     days=g.game_date.dt.strftime('%Y-%m-%d').to_numpy()
     support=fit_prior_support(days, seq['pitcher'], seq['game_pk'], seq['at_bat_number'], seq['pitch_number'], fit)
     fit_digest=data.key_digest(corpus['keys'][fit])
@@ -91,7 +108,7 @@ def arrays(g, fit, oof, y7, recipe, M):
             'physics_finite_by_column':{name:{'rows':int((fit & np.isfinite(g[name].to_numpy(float))).sum()),
                 'keys_sha256':data.key_digest(corpus['keys'][fit & np.isfinite(g[name].to_numpy(float))])} for name in M.fsf.PHYSICS}},
         'support_updates':{'rows':int(fit.sum()),'keys_sha256':fit_digest,'rule':'earlier FIT dates plus earlier FIT same-game pitches; no other same-day games'},
-        'sequence':{'edges':int(valid.sum()),'oof_edges':int(valid[oof].sum()),'same_pitcher_game_strict_order':True,'earlier_oof_outcomes_used':True},
+        'sequence':sequence_proof,
         'vocabulary':{'type_values':list(M.fsf.TYPES),'learned_from_rows':False},
         'arrival':'UNKNOWN; corrected retrospective reconstruction','transfer_audit':audit}
     return x,corpus,seq,encoder,support,days.astype('U10'),proof

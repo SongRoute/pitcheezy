@@ -89,6 +89,17 @@ class Producer(unittest.TestCase):
         actual,actual_audit=prepare.raw_features(g,fit,self.recipe,self.M,chunk_rows=3)
         np.testing.assert_array_equal(expected,actual);self.assertEqual(audit,actual_audit)
 
+    def test_whole_game_context_proof_matches_full_index(self):
+        g,_,fit,oof,_=data.project(rows(),self.recipe,self.M);seq=sequence_arrays(g,self.M)
+        full=base.build_context_index(*[seq[n] for n in ['pitcher','game_pk','at_bat_number','pitch_number']],32)
+        proof=prepare.context_proof(g,seq,fit,oof,32,chunk_rows=3)
+        self.assertEqual(proof['edges'],int((full>=0).sum()))
+        self.assertEqual(proof['oof_edges'],int((full[oof]>=0).sum()))
+        for indices in prepare.group_batches(g,'game_pk',3):
+            local=base.build_context_index(*[seq[n][indices] for n in ['pitcher','game_pk','at_bat_number','pitch_number']],32)
+            mapped=np.where(local>=0,indices[np.maximum(local,0)],-1)
+            np.testing.assert_array_equal(mapped,full[indices])
+
     def test_dimension_change_stops_before_package(self):
         g,_,fit,oof,y=data.project(rows(),self.recipe,self.M)
         bad=copy.deepcopy(self.recipe); bad['base']['inputs']['feature_dimension']=1
