@@ -258,6 +258,8 @@ for (const [width, height] of VIEWPORTS.filter(v => !VIEWPORT || v.join('x') ===
       ok(await line.getAttribute('role') === null && await line.locator('.sv-line-text[role="status"]').count() === 1 && await line.locator('.sv-line-time').getAttribute('aria-hidden') === 'true' && await line.locator('[role="status"] button').count() === 0, `${name}: only the status words are a live region (time stamp hidden from it, retry control outside)`);
       if (d.state === 'feed_delayed') ok(/자료 늦음 · 52초 넘게 늦음 · \d\d:\d\d 수신/.test(lineText) && !/약/.test(lineText) && await line.getAttribute('data-kind') === 'late', `${name}: status line "${lineText}" (lower bound 52.9 → floor, never '약')`);
       else if (d.state === 'disconnected') ok(/연결 끊김 · \d\d:\d\d 수신/.test(lineText) && await line.getAttribute('data-kind') === 'feed' && await line.getByRole('button').count() === 1, `${name}: status line "${lineText}" with a retry control`);
+      // game-level 확인 중: the line tells the chip's story (WS launch D, 2026-10-17), never 실시간으로 받는 중 beside it
+      else if (d.state === 'unconfirmed') ok(/^확인 중… · \d\d:\d\d 수신/.test(lineText) && !/실시간으로 받는 중/.test(lineText) && await line.getAttribute('data-kind') === 'ok', `${name}: status line agrees with the chip "${lineText}"`);
       else ok(/실시간으로 받는 중 · \d\d:\d\d 수신/.test(lineText) && await line.getAttribute('data-kind') === 'ok', `${name}: status line quiet "${lineText}"`);
       if (shots) await page.screenshot({ path: path.join(shots, `state-${name.replace(/[/+]/g, '-')}-390x844.png`) });
     }
