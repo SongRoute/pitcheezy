@@ -67,7 +67,7 @@ def score_population(prepared, predictor, *, source_sha256, bundle_sha256):
             'bundle_sha256': bundle_sha256, 'leaf_order': list(LEAVES),
             'baseline_counts': list(FIT_COUNTS), 'baseline_total': FIT_TOTAL,
             'rows': records}
-    if len(records) > MAX_ROWS or len(canonical(body).encode()) > MAX_OUTPUT:
+    if len(records) > MAX_ROWS or len((canonical(body) + '\n').encode()) > MAX_OUTPUT:
         raise ValueError('private score row artifact cap')
     return metrics, body
 
@@ -99,6 +99,8 @@ def _source(reg, M):
     if (projected.get('file') != 'postseason_six.parquet'
             or projected.get('columns') != M.cp.PROJECT
             or projected.get('rows') != sum(item['rows'] for item in manifest['games'])
+            or projected.get('rows') != src['projected']['rows']
+            or projected.get('rows') != reg['bounds']['source_rows']
             or projected.get('rows') > MAX_ROWS
             or any(projected.get(k) != src['projected'][k] for k in ('bytes', 'sha256'))):
         raise ValueError('projected source schema/count/binding')

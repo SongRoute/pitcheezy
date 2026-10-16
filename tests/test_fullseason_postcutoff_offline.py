@@ -62,13 +62,16 @@ def test_source_verifies_exact_manifest_and_projected_bytes_before_decode(tmp_pa
                 'projected': item}
     # A generated partial cohort is rejected before Parquet decode.
     mpath = tmp_path / 'manifest.json'; mpath.write_text(json.dumps(manifest))
-    reg = {'source': {'manifest': {'path': str(mpath), 'bytes': mpath.stat().st_size,
+    reg = {'bounds': {'source_rows': len(frame)},
+           'source': {'manifest': {'path': str(mpath), 'bytes': mpath.stat().st_size,
                                    'sha256': file_sha(mpath)},
                       'projected': {'path': str(projected), 'bytes': item['bytes'],
-                                    'sha256': item['sha256']}}}
+                                    'sha256': item['sha256'], 'rows': len(frame)}}}
     with pytest.raises(ValueError, match='projected source'):
         _source(reg, M)
     manifest['projected']['rows'] = sum(g['rows'] for g in manifest['games'])
+    reg['source']['projected']['rows'] = manifest['projected']['rows']
+    reg['bounds']['source_rows'] = manifest['projected']['rows']
     mpath.write_text(json.dumps(manifest)); reg['source']['manifest'].update(bytes=mpath.stat().st_size,
                                                                                sha256=file_sha(mpath))
     with pytest.raises(ValueError, match='Parquet footer'):
@@ -83,23 +86,27 @@ def test_independent_private_output_arithmetic_and_population_digest(tmp_path):
     metrics, body = score_population(prepared, fake, source_sha256=SHA, bundle_sha256=SHA)
     raw = (json.dumps(body, separators=(',', ':'), sort_keys=True) + '\n').encode()
     (tmp_path / 'score_rows.json').write_bytes(raw)
+    reg_path = tmp_path / 'registration.json'
+    reg_path.write_text(json.dumps({'bounds': {'source_rows': len(frame)},
+                                    'output': str(tmp_path)}))
     receipt = {'status': 'COMPLETED', 'score_rows_file': 'score_rows.json',
                'score_rows_bytes': len(raw), 'score_rows_sha256': hashlib.sha256(raw).hexdigest(),
+               'registration_sha256': file_sha(reg_path), 'collector_rows': len(frame),
                'prospective_claim': False, 'superiority_claim': False,
                'projected_sha256': SHA, 'runtime_bundle_sha256': SHA,
                'census': prepared['census'], 'metrics': metrics}
     path = tmp_path / 'receipt.json'; path.write_text(json.dumps(receipt))
-    assert verify(path)['scored'] == 3
+    assert verify(path, reg_path)['scored'] == 3
     changed = json.loads(path.read_text())
     changed['metrics']['overall']['model_nll'] += .1
     path.write_text(json.dumps(changed))
     with pytest.raises(ValueError, match='metric arithmetic'):
-        verify(path)
+        verify(path, reg_path)
     changed['metrics'] = metrics
     changed['census']['accepted_keys_sha256'] = '0' * 64
     path.write_text(json.dumps(changed))
     with pytest.raises(ValueError, match='population'):
-        verify(path)
+        verify(path, reg_path)
 
 
 def test_inactive_registration_builder_uses_collector_metadata_only(tmp_path):

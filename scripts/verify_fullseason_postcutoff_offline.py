@@ -51,9 +51,18 @@ def _point(rows):
                     (len(rows), *(math.fsum(v)/len(rows) for v in vals))))
 
 
-def verify(receipt_path):
+def verify(receipt_path, registration_path):
     receipt_path = Path(receipt_path)
     receipt = json.loads(_read(receipt_path, 1 << 20))
+    reg_path = Path(registration_path)
+    reg_raw = _read(reg_path, 1 << 20)
+    reg = json.loads(reg_raw)
+    source_rows = reg['bounds']['source_rows']
+    if (type(source_rows) is not int or not 0 < source_rows <= MAX_ROWS
+            or receipt.get('registration_sha256') != _sha(reg_raw)
+            or receipt.get('collector_rows') != source_rows
+            or reg.get('output') != str(receipt_path.parent)):
+        raise ValueError('reviewed registration/row bound changed')
     if (receipt.get('status') != 'COMPLETED' or receipt.get('score_rows_file') != 'score_rows.json'
             or receipt.get('prospective_claim') is not False
             or receipt.get('superiority_claim') is not False):
@@ -73,7 +82,7 @@ def verify(receipt_path):
             or body['bundle_sha256'] != receipt.get('runtime_bundle_sha256')
             or body['leaf_order'] != list(LEAVES)
             or body['baseline_counts'] != list(COUNTS) or body['baseline_total'] != TOTAL
-            or not isinstance(body['rows'], list) or len(body['rows']) > MAX_ROWS):
+            or not isinstance(body['rows'], list) or len(body['rows']) > source_rows):
         raise ValueError('private score artifact schema/identity')
     rows = body['rows']; keys = []; scored = defaultdict(list); reasons = Counter(); per_game = Counter(); abstained = Counter()
     for row in rows:
@@ -142,5 +151,6 @@ def verify(receipt_path):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(); p.add_argument('--receipt', required=True, type=Path)
+    p.add_argument('--registration', required=True, type=Path)
     a = p.parse_args()
-    print(json.dumps(verify(a.receipt), sort_keys=True))
+    print(json.dumps(verify(a.receipt, a.registration), sort_keys=True))

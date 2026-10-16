@@ -40,13 +40,16 @@ SOURCE = (
 OLD_REG = Path('/Users/song/Projects/pitcheezy-pm-jobs/20261016-autonomous-profile-stream-005/forecast_persistence/FORECAST-PERSISTENCE-REGISTRATION.json')
 SUPERVISOR = '/Users/song/Projects/pitcheezy-worktrees/codex-ws-metadata-supervisor-1013/scripts/supervise_2026_metadata.py'
 HEAVY_LOCK = '/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/.heavy.lock'
+PLAN = Path('/Users/song/Projects/pitcheezy-pm-jobs/20261016-autonomous-profile-stream-005/postseason_six/ANALYSIS-PLAN.md')
 
 
-def build(manifest_path, output, *, root=ROOT, prior=OLD_REG):
+def build(manifest_path, output, *, root=ROOT, prior=OLD_REG, registration_path=None):
     """Metadata only; never opens projected Parquet, CSV, model or profile payload."""
     root = Path(root).resolve(); manifest_path = Path(manifest_path).resolve(); output = Path(output)
     prior = json.loads(Path(prior).read_text())
     manifest = json.loads(manifest_path.read_text())
+    if file_sha(PLAN) != PLAN_SHA:
+        raise ValueError('frozen pre-access analytic plan changed')
     if (manifest.get('schema') != 'postseason-six-exact-game-v1'
             or manifest.get('status') != 'COMPLETE'
             or [(r.get('game_pk'), r.get('officialDate')) for r in manifest.get('games', [])] != list(SIX.items())
@@ -63,22 +66,26 @@ def build(manifest_path, output, *, root=ROOT, prior=OLD_REG):
     pins = {str(root / name): file_sha(root / name) for name in SOURCE}
     pins[str(root / 'scripts/build_fullseason_postcutoff_registration.py')] = file_sha(
         root / 'scripts/build_fullseason_postcutoff_registration.py')
+    regpath = Path(registration_path) if registration_path is not None else output.parent / 'SCORE-REGISTRATION.json'
+    grantpath = output.parent / 'SCORE-GRANT.json'
     reg = {'id': 'FS-POSTCUTOFF-FIXED-SIX-OFFLINE-SCORE-001', 'execute': False,
            'author': 'sol_service', 'source_commit': commit, 'source_pins': pins,
            'stage': 'POSTCUTOFF_FIXED_SIX_RETROSPECTIVE_SCORE',
-           'analysis_plan_sha256': PLAN_SHA, 'adapter_commit': ADAPTER_COMMIT,
+           'analysis_plan_sha256': PLAN_SHA, 'analysis_plan_path': str(PLAN),
+           'adapter_commit': ADAPTER_COMMIT,
            'leaf_order': list(prior['leaf_order']), 'data_role': '2026 EXPOSED DEVELOPMENT',
            'asof': 'Corrected retrospective Statcast; source arrival UNKNOWN; prior exposure UNKNOWN; no prospective claim.',
            'source': {'manifest': {'path': str(manifest_path), 'bytes': manifest_path.stat().st_size,
                                   'sha256': file_sha(manifest_path)},
-                      'projected': {'path': str(parquet), 'bytes': proj['bytes'], 'sha256': proj['sha256']}},
+                      'projected': {'path': str(parquet), 'bytes': proj['bytes'],
+                                    'sha256': proj['sha256'], 'rows': proj['rows']}},
            'adapter_config': dict(prior['adapter_config'], bytes=Path(prior['adapter_config']['path']).stat().st_size),
            'recipe': prior['recipe'], 'model_artifacts': prior['model_artifacts'],
            'profile_bundle': dict(prior['profile_bundle'], serving_origin='2026-10-12',
                                   note='Runtime loads all four accepted archives; Oct12 final donor-cutoff snapshot answers Oct12-15 queries.'),
            'supervisor_helper': SUPERVISOR, 'heavy_lock': HEAVY_LOCK,
            'output': str(output), 'fence': str(output.parent / '.postcutoff-score-fence.json'),
-           'bounds': {'wall_seconds': 1800, 'rss_bytes': 3 << 30,
+           'bounds': {'source_rows': proj['rows'], 'wall_seconds': 1800, 'rss_bytes': 3 << 30,
                       'free_memory_bytes': 4 << 30, 'free_disk_bytes': 12 << 30,
                       'output_bytes': 20 << 20, 'threads': 1},
            'physical_access': 'Only the six-game completed manifest and one pinned 29-column Parquet, fixed T config/three model states/recipe/encoder/calibrator, accepted profile manifest and all four archives loaded by Runtime. No raw CSV/network/old attempt/other game/model fit.',
@@ -87,7 +94,12 @@ def build(manifest_path, output, *, root=ROOT, prior=OLD_REG):
            'score_rules': 'Observed-type seven-leaf, source quality and complete prefix, up to32 same-game/pitcher prior tokens, relevant unknown floor, exact same-PA predecessor, fixed FIT marginal, NLL clip1e-12, seven-class Brier, simplex 1e-10.',
            'invocation': ['/Users/song/Projects/pitcheezy/.venv-observer/bin/python', '-I',
                           str(root / 'experiments/ws_fullseason/supervise_audit.py'), '--worker',
-                          'fullseason_postcutoff_offline.py', '--registration', '<registration>', '--grant', '<grant>']}
+                          'fullseason_postcutoff_offline.py', '--registration', str(regpath),
+                          '--grant', str(grantpath)],
+           'verifier_invocation': ['/Users/song/Projects/pitcheezy/.venv-observer/bin/python', '-I',
+                                   str(root / 'scripts/verify_fullseason_postcutoff_offline.py'),
+                                   '--receipt', str(output / 'receipt.json'),
+                                   '--registration', str(regpath)]}
     return reg
 
 
@@ -96,5 +108,5 @@ if __name__ == '__main__':
     p.add_argument('--output', required=True, type=Path)
     p.add_argument('--registration', required=True, type=Path)
     a = p.parse_args()
-    reg = build(a.manifest, a.output)
+    reg = build(a.manifest, a.output, registration_path=a.registration)
     a.registration.write_text(json.dumps(reg, sort_keys=True, indent=2) + '\n')
