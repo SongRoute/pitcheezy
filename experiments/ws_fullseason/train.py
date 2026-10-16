@@ -68,6 +68,8 @@ def run(recipe, seed, package, out, *, synthetic=False):
             ground_head_eligible_rows=int((c['fit']&np.isin(c['y10'],base.BIP)).sum()))
         trace.append(evidence)
     out=Path(out)
+    if any(not torch.isfinite(value).all() for value in model.state_dict().values()):
+        raise ValueError('nonfinite final checkpoint')
     torch.save(model.state_dict(),out/'model-state.pt')
     if not final_refit:
         oof=torch.as_tensor(oofrows,device=device,dtype=torch.long)

@@ -103,6 +103,14 @@ class FixedTrain(unittest.TestCase):
             self.assertEqual(result['sample_presentations'],len(x)*2)
             self.assertEqual(result['OOF_rows'],0)
             self.assertEqual({p.name for p in target.iterdir()},{'model-state.pt'})
+            poisoned=Path(tmp)/'poisoned';poisoned.mkdir();updates=[0];original_update=train.campaign.update
+            def overflow_last(loss,model,opt):
+                original_update(loss,model,opt);updates[0]+=1
+                if updates[0]==result['optimization_steps']:
+                    with torch.no_grad():next(model.parameters()).fill_(float('nan'))
+            with patch.object(train.campaign,'update',side_effect=overflow_last),self.assertRaisesRegex(ValueError,'nonfinite final checkpoint'):
+                train.run(final_recipe,0,(x,final_c,s),poisoned,synthetic=True)
+            self.assertFalse((poisoned/'model-state.pt').exists())
             with self.assertRaises(ValueError):train.run(recipe,0,(x,final_c,s),target,synthetic=True)
             with self.assertRaises(ValueError):train.run(final_recipe,0,(x,c,s),target,synthetic=True)
 
