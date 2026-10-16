@@ -1491,7 +1491,8 @@ def test_the_in_cycle_wait_cannot_end_in_a_computing_body_either(replayed, monke
     assert summary['stop']['detail']['where'] == 'inside the cycle' and summary['stop']['detail']['partial_cycle'] is True
     assert summary['ledger']['rows'] == 0 and summary['cycles']['n'] == 4  # no ledger row for the stopped decision
     game = run/'out/v1/game/900200.json'
-    assert json.loads(game.read_text())['publish']['sequence'] == 4  # no body with that recommendation, none saying "computing"
+    # no body with that recommendation, none saying "computing" (an unchanged live file may keep an older sequence)
+    assert json.loads(game.read_text())['publish']['sequence'] <= 4
     assert not any('computing' in path.read_text() for path in (run/'out').rglob('*.json'))
     # the cycle IS partial, and the record says so: its number was taken and files of other kinds were already written
     assert json.loads((run/'publisher.state.json').read_text())['sequence'] == 5

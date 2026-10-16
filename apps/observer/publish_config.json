@@ -16,6 +16,8 @@
   "final_recheck_for_note": "PROVISIONAL, not measured. This long after a game taken from the live feed was first marked final, it is no longer rebuilt at the settled pace: upstream is then asked only every final_slow_recheck_s. Its file stays as it is; its setup file is still looked for at every settled recheck (a local read), and a final feed that arrives in the local archive is taken at once. null = the settled pace for as long as the publisher knows the game. Finished games read from the local archive are not affected: rebuilding them asks nobody.",
   "final_slow_recheck_s": 21600,
   "final_slow_recheck_note": "PROVISIONAL, not measured. After final_recheck_for_s, how often a final live-feed game is still rebuilt to find a late official correction (one upstream request per game each time). null = never again.",
+  "skip_unchanged_live": true,
+  "skip_unchanged_live_note": "A game still in progress is rewritten only when its content or the connection facts a viewer reads in it (feed ok, display_state.feed ok/delayed, lag_s while delayed) changed; health.json still advances every cycle and its game_checks carry checked_at / file_sequence, which is how the viewer tells freshness. A skipped write queues no upload. false = rewrite every cycle (the behaviour before 2026-10-17). Final games are not affected (they always skip unchanged content).",
   "live_days_back": 1,
   "live_days_ahead": 1,
   "live_days_note": "PROVISIONAL. KST dates around today whose game list and unfinished games are rebuilt every cycle (today-back .. today+ahead). --date on the command line replaces this window.",
