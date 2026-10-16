@@ -66,7 +66,7 @@ def inspect_hypotheses(feed, *, game_pk, game_date):
         identity_reason = ('play_matchup_hypothesis_unpaired' if identity is not None
                            else 'provider_or_pa_identity_unverified')
 
-        bip_outcome, bb_type = None, None
+        bip_description, bip_events, bip_outcome, bb_type = None, None, None, None
         bip_reason = 'not_final_completed_bip'
         if unique and isinstance(events, list) and _get(play, 'about', 'isComplete') is True:
             pitch_events = [e for e in events if isinstance(e, dict) and e.get('isPitch') is True]
@@ -76,7 +76,9 @@ def inspect_hypotheses(feed, *, game_pk, game_date):
                     and row['observed']['event_call_code'] in BIP_CALLS):
                 event_type = _get(play, 'result', 'eventType')
                 trajectory = row['observed']['event_trajectory']
-                if isinstance(event_type, str) and row['pre_count'] is not None:
+                bip_description = 'hit_into_play'
+                if isinstance(event_type, str) and event_type and row['pre_count'] is not None:
+                    bip_events = event_type
                     label, _ = outcome10('hit_into_play', event_type, row['pre_count'][1])
                     if label >= 0:
                         bip_outcome = label
@@ -86,6 +88,8 @@ def inspect_hypotheses(feed, *, game_pk, game_date):
                               if bip_outcome is not None and bb_type is not None
                               else 'bip_result_or_trajectory_unavailable')
         result.append({'key': key, 'identity_hypothesis': identity,
+                       'description_bip_hypothesis': bip_description,
+                       'events_bip_hypothesis': bip_events,
                        'outcome10_bip_hypothesis': bip_outcome,
                        'bb_type_hypothesis': bb_type,
                        'accepted': False,

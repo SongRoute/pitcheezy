@@ -24,6 +24,8 @@ def test_pitch_only_pa_matchup_and_final_bip_are_unaccepted_hypotheses():
     row = hypotheses(bip_body())[0]
     assert row['key'] == (99, 1, 1)
     assert row['identity_hypothesis'] == {'pitcher': 10, 'batter': 20, 'stand': 'L', 'throws': 'R'}
+    assert row['description_bip_hypothesis'] == 'hit_into_play'
+    assert row['events_bip_hypothesis'] == 'single'
     assert row['outcome10_bip_hypothesis'] == 4
     assert row['bb_type_hypothesis'] == 'ground_ball'
     assert row['accepted'] is False
@@ -36,6 +38,7 @@ def test_unregistered_bip_result_or_trajectory_remains_unavailable():
     play['result']['eventType'] = 'field_error'
     play['playEvents'][0]['hitData']['trajectory'] = 'GB'
     row = hypotheses(body)[0]
+    assert row['events_bip_hypothesis'] == 'field_error'
     assert row['outcome10_bip_hypothesis'] is None
     assert row['bb_type_hypothesis'] is None
     assert row['reasons']['bip'] == 'bip_result_or_trajectory_unavailable'
