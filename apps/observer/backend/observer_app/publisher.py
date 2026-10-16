@@ -51,9 +51,6 @@ import threading
 import uuid
 from urllib.parse import urlsplit
 
-from .service_api import Refused
-from .setup_estimates import Unreadable
-
 LOGGER = logging.getLogger(__name__)
 APP = Path(__file__).resolve().parents[2]
 CONFIG_PATH = APP/'publish_config.json'
@@ -1164,6 +1161,7 @@ class Publisher:
                 return
         self.state['checked'][path] = self.state['checked'][f'{path}#built'] = now
         self._game_attempts[game_pk] = self.wall()
+        from .service_api import Refused
         try:
             body = check_live(check_public(self.bodies.game(game_pk)))  # polls upstream; the ledger is written in here
         except Refused as refused:
@@ -1213,6 +1211,7 @@ class Publisher:
         validating loses its file, and one whose estimates cannot be read at all loses it too (code in health)."""
         if self.setups is None:
             return
+        from .setup_estimates import Unreadable
         path = self.layout['setup'].format(game_pk=game_pk)
         try:
             view = self.setups.view(game_pk)
