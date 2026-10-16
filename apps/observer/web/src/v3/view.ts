@@ -28,6 +28,8 @@ export type GameView = {
   pitcherToday: { pitches: number | null; strikeouts: number | null; earned_runs: number | null } | null;
   upcoming: { id: number | null; name: string | null; order: number }[];
   phase: string | null;
+  /** an API-mode demo session (never in a public bundle): the chip says 시연, not 실시간, and shows no live dot */
+  demo: boolean;
 };
 
 const CLIENT_LOST: Eff = { state: 'disconnected', label: '연결 끊김', message: '연결이 잠시 끊겼어요. 마지막으로 받은 내용을 보여 드려요.' };
@@ -70,12 +72,14 @@ export function deriveView(feed: Feed, detail: Detail, drawn: MutableRefObject<D
     : waitingToStart && srv !== null && Number.isFinite(startMs) && srv.ms >= startMs ? publishLag(null, health, srv) : null;
   const lateNow = __PZ_STATIC__ && isPublishStale(lag, pollMs);
   const publishStale = lateNow && !checking, publishChecking = lateNow && checking;
+  const demo = !__PZ_STATIC__ && detail.session !== null;
   const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
   const conn: Conn = error || feedDown ? { kind: 'lost', label: '연결 끊김', detail: error ? '자동으로 다시 연결하고 있어요.' : '경기 자료 연결이 잠시 끊겼어요.' }
     : clientStale ? { kind: 'lost', label: '연결 끊김', detail: '마지막으로 받은 내용을 보여 드려요.' }
     : publishStale ? { kind: 'late', label: '갱신 지연', detail: PUBLISH_LATE.message }
     : publishChecking ? { kind: 'checking', label: '확인 중', detail: '새 내용을 확인하고 있어요.' }
     : lagText ? { kind: 'late', label: '자료 늦음', detail: `경기 자료가 ${lagText}. 실제 경기보다 늦을 수 있어요.` }
+    : demo ? { kind: 'ok', label: detail.session_status === 'ended' ? '시연 종료' : detail.session_status === 'ready' ? '시연 대기' : detail.session_status === 'paused' ? '일시정지' : '시연 중', detail: null }
     : { kind: 'ok', label: live ? '실시간' : game.status === 'final' ? '경기 종료' : game.status === 'scheduled' ? '경기 전' : (disp?.label ?? '대기'), detail: null };
 
   // D1 "no silent flip" (classic screen, verbatim rules): server note first, otherwise compare with what was last drawn for this slot.
@@ -117,7 +121,7 @@ export function deriveView(feed: Feed, detail: Detail, drawn: MutableRefObject<D
     lastPitch, paPitches, paKey, prevPa: pasDone[pasDone.length - 1] ?? null, currentPa: detail.pas.find(p => p.pa_key === paKey) ?? null,
     conn, lastOk, lagClock: publishStale ? lag!.clock : null,
     batterToday: ctx?.batter ?? null, pitcherToday: ctx?.pitcher ?? null, upcoming: ctx?.next_batters ?? [],
-    phase: detail.current?.phase ?? detail.phase ?? null,
+    phase: detail.current?.phase ?? detail.phase ?? null, demo,
   };
 }
 

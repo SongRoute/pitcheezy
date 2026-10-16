@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Candidate, PitchRow, Situation } from '../service/model';
 import { inningText, short } from '../service/model';
 import type { GameView } from './view';
+import { unconfirmed } from './view';
 import type { Options } from './options';
 import Zone from './Zone';
 import type { ZonePitch } from './Zone';
@@ -33,7 +34,7 @@ export function Count({ s }: { s: Situation }) {
 /** the connection story as a small chip (header) */
 export function ConnChip({ v }: { v: GameView }) {
   const { conn } = v;
-  return <span className={`v3-chip conn ${conn.kind}`} data-conn={conn.kind}>{conn.kind === 'ok' && v.live && <i aria-hidden="true" />}{conn.label}</span>;
+  return <span className={`v3-chip conn ${conn.kind}`} data-conn={conn.kind}>{conn.kind === 'ok' && v.live && !v.demo && <i aria-hidden="true" />}{conn.label}</span>;
 }
 
 /** Dark scoreboard: away left, home right; inning, count, outs, bases; the connection chip. */
@@ -61,7 +62,7 @@ export function ConnBanner({ v, busy, onRetry }: { v: GameView; busy: boolean; o
   if (v.conn.kind === 'ok') return null;
   const t = v.lastOk ? new Date(v.lastOk).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' }) : null;
   return <div className={`v3-banner ${v.conn.kind}`} data-kind={v.conn.kind} data-publish-clock={v.lagClock ?? undefined}>
-    <p role="status"><b>{v.conn.label}</b>{v.conn.detail && <span> · {v.conn.detail}</span>}</p>
+    <p><b>{v.conn.label}</b>{v.conn.detail && <span> · {v.conn.detail}</span>}</p>
     {t && <span className="v3-banner-time" aria-hidden="true">{t} 수신</span>}
     <button className="v3-link" onClick={onRetry} disabled={busy} aria-label="지금 다시 불러오기">{busy ? '…' : '다시'}</button>
   </div>;
@@ -97,8 +98,8 @@ export function zoneLabel(v: Pick<GameView, 'detail' | 'side'>, cands: Candidate
 /** Rank chips under the zone: rank + pitch name (+ location words in full density). Tapping opens the recommendation panel. */
 export function Candidates({ v, density, open }: { v: GameView; density: Options['density']; open: Open }) {
   if (!v.cands.length) return null;
-  return <div className="v3-cands" role="list">
-    {v.cands.map(c => <button key={c.rank} role="listitem" className={`v3-cand r${c.rank}`} onClick={() => open('rec')} aria-haspopup="dialog"
+  return <div className="v3-cands" role="group" aria-label="추천 후보">
+    {v.cands.map(c => <button key={c.rank} className={`v3-cand r${c.rank}`} onClick={() => open('rec')} aria-haspopup="dialog"
       aria-label={`${c.rank}순위 ${c.pitch_label}, ${candidateWords(c, v.side, v.detail.zone_bounds)}. 자세히 보기`}>
       <i aria-hidden="true">{c.rank}</i><b>{c.pitch_label}</b>{density === 'full' && <small>{candidateWords(c, v.side, v.detail.zone_bounds)}</small>}
     </button>)}
@@ -110,7 +111,9 @@ export function RecBlock({ v, opts, open, side, compact = false }: { v: GameView
   const title = v.nextPhase || (v.stateSlot && !v.final) ? `다음 공 추천${v.nextNumber ? ` · ${v.nextNumber}구` : ''}` : v.lastPitch ? (v.detail.live_source ? '마지막 공 · 투구 전에 기록된 추천' : '마지막 공 · 경기 뒤 같은 정보로 계산한 추천') : '추천';
   const count = v.situation ? `${v.situation.balls}-${v.situation.strikes}` : '';
   const pitches = v.paPitches;
-  const stateText = v.eff && !v.shownRec ? v.eff : null;
+  // the state is written whenever it is not plain "recommended" — also next to a shown recommendation (자료 늦음, 연결 끊김 …)
+  const stateText = v.eff && (!v.shownRec || v.eff.state !== 'recommended') ? v.eff : null;
+  const pastPending = !v.nextPhase && unconfirmed(v.lastPitch);
   const zone = <Zone bounds={v.detail.zone_bounds} view={opts.view} mark={opts.zone} batter={v.side} recs={v.cands}
     pitches={zonePitches(pitches)} held={v.held} label={zoneLabel(v, v.cands, pitches, opts.view)} size="main" />;
   return <section className={`v3-rec${v.held ? ' held' : ''}${compact ? ' compact' : ''}`} aria-label={title} data-state={v.eff?.state ?? (v.shownRec ? 'recommended' : 'none')}>
@@ -122,11 +125,11 @@ export function RecBlock({ v, opts, open, side, compact = false }: { v: GameView
       <div className="v3-zone-box">{zone}</div>
       {side}
     </div>
-    {stateText && <div className="v3-state" role="status" data-state={stateText.state}>
+    {stateText && <div className="v3-state" data-state={stateText.state}>
       <span className={`v3-chip st ${stateText.state}`}>{stateText.label}</span>{stateText.message && <p>{stateText.message}</p>}</div>}
-    {!stateText && !v.shownRec && <div className="v3-state" role="status"><p>{v.nextPhase ? (v.phase === 'between_innings' ? '공수 교대 중이에요.' : '추천 대기 중이에요.') : '이 공에는 기록된 추천이 없어요.'}</p></div>}
+    {!stateText && !v.shownRec && <div className="v3-state"><p>{v.nextPhase ? (v.phase === 'between_innings' ? '공수 교대 중이에요.' : '추천 대기 중이에요.') : pastPending ? '이 공을 다시 확인하고 있어요. 확인되면 추천과 함께 보여 드려요.' : '이 공에는 기록된 추천이 없어요.'}</p></div>}
     <Candidates v={v} density={opts.density} open={open} />
-    {v.note && <p className="v3-note" role="status" data-kind={v.noteKind ?? undefined}>{v.note}</p>}
+    {v.note && <p className="v3-note" data-kind={v.noteKind ?? undefined}>{v.note}</p>}
     {opts.density === 'full' && !compact && <p className="v3-legend" aria-hidden="true"><span className="k rec" />추천 칸 <span className="k past" />이번 타석 공 <span className="k latest" />직전 공</p>}
   </section>;
 }
@@ -151,9 +154,17 @@ export function PitchList({ v, layout, open, density }: { v: GameView; layout: O
     </button></li>;
   };
   return <section className={`v3-pitches ${layout}`} aria-label="이번 타석 투구">
-    {layout !== 'side' && <h3>이번 타석 {v.situation && list.length > 0 ? <span>{list.length}구 · {v.situation.balls}-{v.situation.strikes}</span> : null}</h3>}
-    <ol>{list.map(item)}{next && <li><span className="v3-pitch next" aria-label={`다음 공 ${next}구, 아직 안 던짐`}><i className="v3-pn" aria-hidden="true">{next}</i><b aria-hidden="true">다음</b></span></li>}</ol>
+    {layout !== 'side' && <h3>{v.final ? '마지막 타석' : '이번 타석'} {v.situation && !v.final && list.length > 0 ? <span>{list.length}구 · {v.situation.balls}-{v.situation.strikes}</span> : null}</h3>}
+    <ol>{list.map(item)}{next && <li><span className="v3-pitch next"><i className="v3-pn" aria-hidden="true">{next}</i><b aria-hidden="true">다음</b><span className="v3-sr">다음 공 {next}구, 아직 안 던짐</span></span></li>}</ol>
   </section>;
+}
+
+/** ONE live region that is always in the page (classic rule: a region inserted already filled is often not read out). It repeats,
+ *  in words, what changed: the connection story, the recommendation state, and the D1 / correction note. */
+export function Announcer({ v }: { v: GameView }) {
+  const st = v.eff && (!v.shownRec || v.eff.state !== 'recommended') ? `${v.eff.label}${v.eff.message ? `. ${v.eff.message}` : ''}` : '';
+  const text = [v.conn.kind !== 'ok' ? `${v.conn.label}${v.conn.detail ? `. ${v.conn.detail}` : ''}` : '', st !== '' && !st.startsWith(v.conn.label) ? st : '', v.note ?? ''].filter(Boolean).join(' ');
+  return <p className="v3-sr" role="status" aria-live="polite" aria-atomic="true">{text}</p>;
 }
 
 export function PrevAb({ v, open }: { v: GameView; open: Open }) {

@@ -12,6 +12,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, here, 'VITE_');
   const flag = (v: string | undefined) => JSON.stringify(v === '1' || v === 'true');
   const v3 = env.VITE_UI === 'v3';
+  // a public bundle (classic or v3) must never carry the replay or the variant switcher, even if the shell exports them
+  if (['public', 'v3'].includes(mode) && (flag(env.VITE_REPLAY) === 'true' || flag(env.VITE_V3_REVIEW) === 'true'))
+    throw new Error(`mode "${mode}" is a public build: unset VITE_REPLAY / VITE_V3_REVIEW (use --mode preview for the replay)`);
   // v3 builds start from src/v3/main.tsx, so none of the classic screens or their styles are bundled; classic builds are unchanged.
   const entry = { name: 'pz-entry', transformIndexHtml: { order: 'pre' as const, handler: (html: string) => v3 ? html.replace('/src/main.tsx', '/src/v3/main.tsx') : html } };
   return {

@@ -191,6 +191,16 @@ await block('dock', async () => {
   await page.locator('.v3-cand').first().click();
   ok((await page.locator('.v3-panel.dock h2').textContent())?.includes('추천'), 'dock: the live view stays usable (a chip switches the panel)');
   await shot(page, 'dock-1440');
+  // review fix: the game column is hidden (not removed) while docked, so focus returns to the button that opened the panel
+  await page.locator('.v3-panel.dock .v3-panel-head button').click();
+  const opener = page.locator('.v3-col-game .v3-link', { hasText: '경기 기록 전체' });
+  await opener.focus(); await page.keyboard.press('Enter');
+  ok(await page.locator('.v3-col-game').isHidden(), 'dock: the game column steps aside while docked');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  ok(await page.evaluate(() => document.activeElement?.textContent === '경기 기록 전체'), 'dock: focus returns to the opener after close');
+  ok(await page.locator('.v3-sr[role=status]').count() === 1, 'a11y: one always-present live region');
+  ok(await page.locator('.v3-cands [role=listitem]').count() === 0 && await page.locator('.v3-cands button').count() > 0, 'a11y: candidate chips stay buttons');
   await context.close();
 });
 

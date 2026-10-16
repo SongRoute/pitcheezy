@@ -6,7 +6,7 @@ import { deriveView } from './view';
 import type { Drawn, GameView } from './view';
 import { useOptions } from './options';
 import type { Options } from './options';
-import { Bases, ConnBanner, Dock, Matchup, PitchList, PrevAb, RecBlock, Scoreboard } from './parts';
+import { Announcer, Bases, ConnBanner, Dock, Matchup, PitchList, PrevAb, RecBlock, Scoreboard } from './parts';
 import type { Open, PanelKind } from './parts';
 import Panel from './Panel';
 import type { PanelMode } from './Panel';
@@ -59,8 +59,8 @@ export default function Game({ gamePk }: { gamePk: number }) {
   </Panel>;
   const cls = `v3 v3-game ${width} d-${opts.density} l-${opts.list}${panel && mode === 'dock' ? ' docked' : ''}`;
   if (width === 'phone') return <div className={cls}>
-    <Scoreboard v={v} /><ConnBanner v={v} busy={feed.busy} onRetry={feed.reload} />
-    <main className="v3-main">
+    <Scoreboard v={v} /><ConnBanner v={v} busy={feed.busy} onRetry={feed.reload} /><Announcer v={v} />
+    <main className="v3-main" tabIndex={-1} data-panel-return="">
       <Matchup v={v} density={opts.density} open={open} />
       <RecBlock v={v} opts={opts} open={open} side={opts.list === 'side' ? <PitchList v={v} layout="side" open={open} density={opts.density} /> : undefined} />
       {opts.list !== 'side' && <PitchList v={v} layout={opts.list} open={open} density={opts.density} />}
@@ -72,15 +72,16 @@ export default function Game({ gamePk }: { gamePk: number }) {
   </div>;
   // tablet: two columns (recommendation | game); PC: players | recommendation | game, details docked on the right
   return <div className={cls}>
-    <Scoreboard v={v} wide /><ConnBanner v={v} busy={feed.busy} onRetry={feed.reload} />
+    <Scoreboard v={v} wide /><ConnBanner v={v} busy={feed.busy} onRetry={feed.reload} /><Announcer v={v} />
     <div className="v3-cols">
       {width === 'pc' && <PlayersCol v={v} open={open} />}
-      <main className="v3-col v3-col-main">
+      <main className="v3-col v3-col-main" tabIndex={-1} data-panel-return="">
         {width === 'tablet' && <Matchup v={v} density={opts.density} open={open} />}
         <RecBlock v={v} opts={opts} open={open} side={opts.list === 'side' ? <PitchList v={v} layout="side" open={open} density={opts.density} /> : undefined} />
         {opts.list !== 'side' && <PitchList v={v} layout={width === 'pc' && opts.list === 'row' ? 'stack' : opts.list} open={open} density={opts.density} />}
       </main>
-      {!(panel && mode === 'dock') && <GameCol v={v} open={open} opts={opts} />}
+      {/* hidden, not unmounted, while the dock is open: the button that opened the panel stays in the page, so focus can return to it */}
+      <GameCol v={v} open={open} opts={opts} hidden={!!panel && mode === 'dock'} arsenal={width === 'tablet'} />
       {mode === 'dock' && content}
     </div>
     {mode !== 'dock' && content}
@@ -113,25 +114,28 @@ function PlayersCol({ v, open }: { v: GameView; open: Open }) {
 }
 
 /** Game column (tablet right, PC right): situation + linescore, recent plate appearances, win probability. */
-function GameCol({ v, open, opts }: { v: GameView; open: Open; opts: Options }) {
+function GameCol({ v, open, opts, hidden, arsenal }: { v: GameView; open: Open; opts: Options; hidden: boolean; arsenal: boolean }) {
   const d: Detail = v.detail;
   const ls = d.linescore_asof;
   const g = d.game;
-  const s = v.situation;
+  // a finished game's last situation is the one BEFORE its last pitch: no runners or count are drawn for it
+  const s = v.final ? null : v.situation;
+  const hasPitch = (p: Pa) => typeof p.first === 'number' && d.pitches.some(x => x.index === p.first && x.pa_key === p.pa_key);
   const recent: Pa[] = [...d.pas].filter(p => p.complete).slice(-5).reverse();
-  return <aside className="v3-col v3-col-game" aria-label="경기">
+  return <aside className="v3-col v3-col-game" aria-label="경기" hidden={hidden}>
     <section className="v3-gcard"><h3>경기 상황</h3>
-      {ls ? <div className="v3-scroll"><table className="v3-table line compact"><thead><tr><th scope="col" />{Array.from({ length: Math.max(9, ls.innings) }, (_, i) => <th key={i} scope="col" className={`num${s?.inning === i + 1 ? ' cur' : ''}`}>{i + 1}</th>)}<th scope="col" className="num">R</th><th scope="col" className="num">H</th></tr></thead>
+      {ls ? <div className="v3-scroll" tabIndex={0} role="region" aria-label="이닝 점수 표"><table className="v3-table line compact"><thead><tr><th scope="col" />{Array.from({ length: Math.max(9, ls.innings) }, (_, i) => <th key={i} scope="col" className={`num${s?.inning === i + 1 ? ' cur' : ''}`}>{i + 1}</th>)}<th scope="col" className="num">R</th><th scope="col" className="num">H</th></tr></thead>
         <tbody>{(['away', 'home'] as const).map(k => <tr key={k}><th scope="row">{k === 'away' ? (g.away_abbr || short(g.away_team)) : (g.home_abbr || short(g.home_team))}</th>
-          {Array.from({ length: Math.max(9, ls.innings) }, (_, i) => <td key={i} className="num">{ls[k].innings[i] ?? ''}</td>)}<td className="num"><b>{ls[k].r ?? '–'}</b></td><td className="num">{ls[k].h ?? '–'}</td></tr>)}</tbody></table></div>
+          {Array.from({ length: Math.max(9, ls.innings) }, (_, i) => <td key={i} className="num">{ls[k].innings[i] ?? '–'}</td>)}<td className="num"><b>{ls[k].r ?? '–'}</b></td><td className="num">{ls[k].h ?? '–'}</td></tr>)}</tbody></table></div>
         : <p className="v3-muted small">이닝별 점수 —</p>}
       {s && <p className="v3-situ"><Bases mask={s.bases} size={26} /><span>{s.outs}아웃 · {s.balls}-{s.strikes}</span></p>}
       {opts.density === 'full' && <PrevAb v={v} open={open} />}
     </section>
     <section className="v3-gcard"><h3>최근 타석</h3>
-      {recent.length ? <ol className="v3-recent">{recent.map(p => <li key={p.pa_key}><button onClick={() => open('pitch', { pitch: p.first })}><b>{p.batter}</b><span>{p.result}</span></button></li>)}</ol> : <p className="v3-muted small">아직 없어요.</p>}
+      {recent.length ? <ol className="v3-recent">{recent.map(p => <li key={p.pa_key}><button onClick={() => hasPitch(p) ? open('pitch', { pitch: p.first }) : open('record', { pa: p.pa_key })} aria-haspopup="dialog"><b>{p.batter}</b><span>{p.result}</span></button></li>)}</ol> : <p className="v3-muted small">아직 없어요.</p>}
       <button className="v3-link" onClick={() => open('record')} aria-haspopup="dialog">경기 기록 전체</button>
     </section>
+    {arsenal && <button className="v3-link" onClick={() => open('arsenal')} aria-haspopup="dialog">{v.pitcher?.name ?? '투수'} 구종 보기</button>}
     <section className="v3-gcard"><h3>승리확률</h3><p className="v3-muted small">아직 제공되지 않아요 (—).</p>
       <button className="v3-link" onClick={() => open('wp')} aria-haspopup="dialog">무엇을 보여 줄지</button></section>
     <button className="v3-link v3-info-link" onClick={() => open('info')} aria-haspopup="dialog">이 화면의 기준과 한계</button>

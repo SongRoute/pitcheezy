@@ -1,0 +1,12 @@
+/* review switcher: preview builds only. Imported by Review.tsx, so it ships in the lazy review chunk, never in a public bundle. */
+.v3-review { position: fixed; right: 0; top: 46%; z-index: 60; font-family: var(--txt); }
+.v3-review-toggle { writing-mode: vertical-rl; min-width: 34px; padding: 12px 0; border-radius: 12px 0 0 12px; border: 0; background: #3d7bd9; color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; box-shadow: 0 4px 14px rgba(21,25,30,.25); }
+.v3-review.open .v3-review-toggle { background: var(--ink); }
+.v3-review-body { position: absolute; right: 40px; top: 50%; transform: translateY(-50%); width: min(340px, calc(100vw - 24px)); max-height: 70dvh; overflow-y: auto; background: #fff; border-radius: 16px; padding: 12px;
+  box-shadow: 0 10px 34px rgba(21,25,30,.28); display: grid; gap: 8px; font-size: 12px; color: var(--ink); }
+.v3-review-note { color: var(--muted); }
+.v3-review fieldset { border: 0; border-top: 1px solid var(--line-2); padding: 8px 0 0; margin: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.v3-review legend { font-weight: 700; padding: 0 0 4px; float: left; width: 100%; }
+.v3-review fieldset button { min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; cursor: pointer; font-size: 12px; }
+.v3-review fieldset button[aria-pressed=true] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.v3-review-step { font-family: var(--num); font-size: 14px; margin-left: 4px; }

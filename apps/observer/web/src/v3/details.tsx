@@ -8,7 +8,7 @@ import Zone from './Zone';
 import type { Open } from './parts';
 import { zoneLabel, zonePitches } from './parts';
 import { candidateWords, pointWords } from './zones';
-import { callKind, callText, dash, era, handText, shareText, speedNum, stat3, toggleUnit, unitText, useUnit } from './format';
+import { callKind, callText, era, handText, shareText, speedNum, stat3, toggleUnit, unitText, useUnit } from './format';
 
 /** Fixed explanations (classic Sheets.tsx LIMITS, same words) — shown only on demand. */
 export const LIMITS = [
@@ -49,7 +49,7 @@ export function RecDetail({ v, opts }: { v: GameView; opts: Options }) {
     </>}
     <div className="v3-explain">
       <h3>숫자와 위치의 뜻</h3>
-      <p>순위와 비중은 추천 정책(ARM-B)이 이 상황에서 각 <b>구종</b>을 고르는 비중이에요. 성공·스트라이크 확률이 아니에요.</p>
+      <p>순위와 비중은 추천 정책{rec?.policy ? `(${rec.policy})` : ''}이 이 상황에서 각 <b>구종</b>을 고르는 비중이에요. 성공·스트라이크 확률이 아니에요.</p>
       <p>위치는 그 투수가 실제로 던진 공의 분포로 잡은 대략적인 칸이에요. 위치 자체는 평가되지 않았어요.</p>
     </div>
     <div className="v3-explain"><h3>추천 이유</h3><p className="v3-muted">{NA} 모델이 근거를 함께 내보내는 경우에만 보여 드려요. 근거가 없으면 설명을 지어 넣지 않아요.</p></div>
@@ -79,7 +79,8 @@ export function PitchDetail({ v, opts, index, open }: { v: GameView; opts: Optio
     if (/foul/.test(desc)) return `${s0.balls}-${Math.min(2, s0.strikes + 1)}`;
     if (/strike/.test(desc)) return `${s0.balls}-${Math.min(2, s0.strikes + 1)}`;
     return NA; };
-  const after = nextInPa ? `${nextInPa.situation.balls}-${nextInPa.situation.strikes}` : a?.event ? '타석 종료' : cur ? `${cur.balls}-${cur.strikes}` : pending ? NA : byCall();
+  // a pitch under review shows no "after": the next count would reveal its outcome
+  const after = pending ? NA : nextInPa ? `${nextInPa.situation.balls}-${nextInPa.situation.strikes}` : a?.event ? '타석 종료' : cur ? `${cur.balls}-${cur.strikes}` : byCall();
   const at = d.pitches.indexOf(p);
   const prev = d.pitches[at - 1], next = d.pitches[at + 1];
   const paResult = a?.event ? d.pas.find(x => x.pa_key === p.pa_key && x.complete)?.result ?? callText(p) : null;
@@ -90,7 +91,8 @@ export function PitchDetail({ v, opts, index, open }: { v: GameView; opts: Optio
       <div><b>{p.batter.name ?? '타자'} · {p.pitch_number}구</b><span className="v3-muted">{situText(p.situation)}</span></div>
       <button className="v3-btn ghost" disabled={!next} onClick={() => next && open('pitch', { pitch: next.index })} aria-label="다음 공">›</button>
     </div>
-    <ol className="v3-pa-strip" aria-label="이 타석의 공">{pa.map(x => <li key={x.index}><button aria-pressed={x.index === p.index} onClick={() => open('pitch', { pitch: x.index })}>{x.pitch_number}</button></li>)}</ol>
+    <ol className="v3-pa-strip" aria-label="이 타석의 공">{pa.map(x => <li key={x.index}><button aria-pressed={x.index === p.index} onClick={() => open('pitch', { pitch: x.index })}
+      aria-label={`${x.pitch_number}구 ${unconfirmed(x) ? '확인 중' : x.actual?.pitch_label ?? '구종 미상'}`}>{x.pitch_number}</button></li>)}</ol>
     <div className="v3-count-move"><span>{p.situation.balls}-{p.situation.strikes}</span><i aria-hidden="true">→</i><span>{after}</span>
       <b className={`v3-call ${pending ? 'none' : callKind(a)}`}>{pending ? '확인 중' : paResult ?? callText(p)}</b></div>
     <div className="v3-detail-zone"><Zone bounds={b} view={opts.view} mark={opts.zone} batter={side} recs={ready ? rec!.candidates : []} pitches={zonePitches(upto)}
@@ -121,20 +123,38 @@ export function PitchDetail({ v, opts, index, open }: { v: GameView; opts: Optio
 
 // ───────── players ─────────
 type Today = { label: string; value: string }[];
-function todayFor(d: Detail, who: 'batter' | 'pitcher', id: number | null, ctxPitches: number | null): Today {
-  const done = d.pas.filter(p => p.complete);
-  const ev = (pa: Pa) => d.pitches.find(x => x.index === pa.last)?.actual?.event ?? '';
-  const hit = ['single', 'double', 'triple', 'home_run'], walk = ['walk', 'intent_walk', 'hit_by_pitch'], notAb = [...walk, 'sac_fly', 'sac_bunt', 'catcher_interf'];
-  if (who === 'batter') {
-    const mine = id === null ? [] : done.filter(pa => d.pitches.find(x => x.index === pa.first)?.batter.id === id);
-    return [{ label: '타수', value: String(mine.filter(pa => !notAb.includes(ev(pa))).length) }, { label: '안타', value: String(mine.filter(pa => hit.includes(ev(pa))).length) },
-      { label: '홈런', value: String(mine.filter(pa => ev(pa) === 'home_run').length) }, { label: '볼넷', value: String(mine.filter(pa => walk.includes(ev(pa))).length) },
-      { label: '삼진', value: String(mine.filter(pa => /strikeout/.test(ev(pa))).length) }];
-  }
-  const mine = id === null ? [] : done.filter(pa => d.pitches.find(x => x.index === pa.first)?.pitcher.id === id);
-  return [{ label: '투구 수', value: dash(ctxPitches ?? (id === null ? null : d.pitches.filter(x => x.pitcher.id === id).length)) }, { label: '상대 타자', value: String(mine.length) },
-    { label: '피안타', value: String(mine.filter(pa => hit.includes(ev(pa))).length) }, { label: '볼넷', value: String(mine.filter(pa => walk.includes(ev(pa))).length) },
-    { label: '삼진', value: String(mine.filter(pa => /strikeout/.test(ev(pa))).length) }, { label: '실점', value: NA }];
+const HIT = ['single', 'double', 'triple', 'home_run'], WALK = ['walk', 'intent_walk', 'hit_by_pitch'];
+const NOT_AB = [...WALK, 'sac_fly', 'sac_bunt', 'sac_fly_double_play', 'sac_bunt_double_play', 'catcher_interf'];
+/** Today's line for one player.
+ *  1. The server's own count (`current_context`) wins whenever it is about this player: the matchup and the PC column show the same
+ *     numbers, so the panel never tells a second story. Only the fields the server sends are shown; the rest are "—".
+ *  2. Otherwise (a finished game, a player not at the plate) the published plays are counted — but only when every one of that
+ *     player's plate appearances has a known outcome. A plate appearance whose last pitch is being re-checked, or that has no
+ *     pitch at all (an intentional walk), has no event here, so the whole line is "—" rather than a wrong 0-for-1. */
+function todayFor(d: Detail, v: GameView, who: 'batter' | 'pitcher', id: number | null): Today {
+  const n = (x: number | null | undefined) => typeof x === 'number' ? String(x) : NA;
+  const atPlate = id !== null && (who === 'batter' ? v.batter?.id : v.pitcher?.id) === id;
+  if (atPlate && who === 'batter' && v.batterToday) { const t = v.batterToday;
+    return [{ label: '타수', value: n(t.at_bats) }, { label: '안타', value: n(t.hits) }, { label: '출루', value: n(t.on_base) }, { label: '홈런', value: NA }, { label: '볼넷', value: NA }, { label: '삼진', value: NA }]; }
+  if (atPlate && who === 'pitcher' && v.pitcherToday) { const t = v.pitcherToday;
+    return [{ label: '투구 수', value: n(t.pitches) }, { label: '삼진', value: n(t.strikeouts) }, { label: '자책', value: n(t.earned_runs) }, { label: '상대 타자', value: NA }, { label: '피안타', value: NA }, { label: '볼넷', value: NA }]; }
+  const byIndex = new Map(d.pitches.map(p => [p.index, p]));
+  const firstOf = (pa: Pa) => typeof pa.first === 'number' ? byIndex.get(pa.first) : undefined;
+  const lastOf = (pa: Pa) => typeof pa.last === 'number' ? byIndex.get(pa.last) : undefined;
+  const mine = id === null ? [] : d.pas.filter(pa => pa.complete && (who === 'batter' ? (pa.batter_id ?? firstOf(pa)?.batter.id) : firstOf(pa)?.pitcher.id) === id);
+  // pitchless plate appearances name no pitcher here, so a pitcher's line is only countable when none exist in this game
+  const pitchless = d.pas.some(pa => pa.complete && !firstOf(pa));
+  const known = (pa: Pa) => { const l = lastOf(pa); return !!l && l.pa_key === pa.pa_key && !unconfirmed(l) && !!l.actual?.event; };
+  const blank = id === null || mine.some(pa => !known(pa)) || (who === 'pitcher' && pitchless);
+  const ev = (pa: Pa) => lastOf(pa)?.actual?.event ?? '';
+  const count = (f: (e: string) => boolean) => blank ? NA : String(mine.filter(pa => f(ev(pa))).length);
+  if (who === 'batter') return [{ label: '타수', value: count(e => !NOT_AB.includes(e)) }, { label: '안타', value: count(e => HIT.includes(e)) },
+    { label: '출루', value: count(e => HIT.includes(e) || WALK.includes(e)) }, { label: '홈런', value: count(e => e === 'home_run') },
+    { label: '볼넷', value: count(e => WALK.includes(e)) }, { label: '삼진', value: count(e => /strikeout/.test(e)) }];
+  const thrown = id === null ? [] : d.pitches.filter(x => x.pitcher.id === id);
+  return [{ label: '투구 수', value: thrown.some(unconfirmed) || id === null ? NA : String(thrown.length) }, { label: '삼진', value: count(e => /strikeout/.test(e)) },
+    { label: '자책', value: NA }, { label: '상대 타자', value: blank ? NA : String(mine.length) },
+    { label: '피안타', value: count(e => HIT.includes(e)) }, { label: '볼넷', value: count(e => WALK.includes(e)) }];
 }
 const DEFS: Record<string, string> = { 타율: '안타 ÷ 타수', 출루율: '(안타+볼넷+사구) ÷ (타수+볼넷+사구+희생플라이)', 장타율: '루타 ÷ 타수', OPS: '출루율 + 장타율',
   'wRC+': '리그·구장 보정 득점 창출력. 100 = 리그 평균', ERA: '9이닝당 자책점', WHIP: '이닝당 (볼넷+피안타)', FIP: '삼진·볼넷·사구·홈런만으로 본 평균자책', 탈삼진율: '삼진 ÷ 상대 타자', 볼넷율: '볼넷 ÷ 상대 타자' };
@@ -148,7 +168,7 @@ export function PlayerDetail({ v, layout, initial }: { v: GameView; layout: Opti
   const rows: { k: string; reg: string; post: string }[] = who === 'batter'
     ? [{ k: '타석', reg: NA, post: NA }, { k: '타율', reg: stat3(info?.avg), post: NA }, { k: '출루율', reg: NA, post: NA }, { k: '장타율', reg: NA, post: NA }, { k: 'OPS', reg: stat3(info?.ops), post: NA }, { k: 'wRC+', reg: NA, post: NA }]
     : [{ k: '투구 이닝', reg: NA, post: NA }, { k: 'ERA', reg: era(info?.era), post: NA }, { k: 'WHIP', reg: NA, post: NA }, { k: 'FIP', reg: NA, post: NA }, { k: '탈삼진율', reg: NA, post: NA }, { k: '볼넷율', reg: NA, post: NA }];
-  const today = todayFor(v.detail, who, person?.id ?? null, who === 'pitcher' ? v.pitcherToday?.pitches ?? null : null);
+  const today = todayFor(v.detail, v, who, person?.id ?? null);
   const g = v.detail.game;
   const top = (v.situation ?? v.lastPitch?.situation)?.half === 'Top';
   const team = who === 'batter' ? (top ? g.away_team : g.home_team) : (top ? g.home_team : g.away_team);
@@ -169,7 +189,7 @@ export function PlayerDetail({ v, layout, initial }: { v: GameView; layout: Opti
     {defs && <dl className="v3-defs">{rows.filter(r => DEFS[r.k]).map(r => <div key={r.k}><dt>{r.k}</dt><dd>{DEFS[r.k]}</dd></div>)}</dl>}
     <h3 className="v3-h3">오늘</h3>
     <div className="v3-tiles">{today.map(t => <div key={t.label}><small>{t.label}</small><b className={t.value === NA ? 'na' : ''}>{t.value}</b></div>)}</div>
-    <p className="v3-muted small">오늘 기록은 지금까지 발행된 플레이로 센 값이에요. 이후 기록 정정이 반영될 수 있어요.</p>
+    <p className="v3-muted small">오늘 기록은 지금까지 발행된 플레이 기준이에요. 결과를 확인 중인 타석이 있으면 —로 비워 두고, 이후 기록 정정이 반영될 수 있어요.</p>
   </div>;
 }
 
@@ -212,9 +232,9 @@ export function RecordDetail({ v, open, focusPa }: { v: GameView; open: Open; fo
       <h3>{inningText(list[0])}</h3>
       <ol>{[...list].reverse().map(pa => { const hasPitch = d.pitches.some(x => x.index === pa.first && x.pa_key === pa.pa_key);
         return <li key={pa.pa_key} className={pa.pa_key === focusPa ? 'focus' : ''}><button disabled={!hasPitch} onClick={() => hasPitch && open('pitch', { pitch: pa.first })}>
-          <b>{pa.batter}</b><span>{pa.complete ? pa.result : pa.pa_key === v.paKey && v.live ? '타석 진행 중' : pa.result}</span><small>{pa.pitch_count ?? (pa.last - pa.first + 1)}구</small></button></li>; })}</ol>
+          <b>{pa.batter}</b><span>{pa.complete ? pa.result : pa.pa_key === v.paKey && v.live ? '타석 진행 중' : pa.result}</span><small>{pa.pitch_count != null ? `${pa.pitch_count}구` : hasPitch && typeof pa.last === 'number' ? `${pa.last - pa.first + 1}구` : '투구 없음'}</small></button></li>; })}</ol>
     </section>))}
-    {tab === 'line' && (ls ? <div className="v3-scroll"><table className="v3-table line">
+    {tab === 'line' && (ls ? <div className="v3-scroll" tabIndex={0} role="region" aria-label="이닝 점수 표, 옆으로 넘겨 보기"><table className="v3-table line">
       <thead><tr><th scope="col">팀</th>{Array.from({ length: n }, (_, i) => <th key={i} scope="col" className="num">{i + 1}</th>)}<th scope="col" className="num">R</th><th scope="col" className="num">H</th><th scope="col" className="num">E</th></tr></thead>
       <tbody>{(['away', 'home'] as const).map(k => <tr key={k}><th scope="row">{k === 'away' ? (g.away_abbr || short(g.away_team)) : (g.home_abbr || short(g.home_team))}</th>
         {Array.from({ length: n }, (_, i) => <td key={i} className="num">{ls[k].innings[i] ?? '–'}</td>)}<td className="num"><b>{ls[k].r ?? '–'}</b></td><td className="num">{ls[k].h ?? '–'}</td><td className="num">{ls[k].e ?? '–'}</td></tr>)}</tbody>

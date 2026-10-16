@@ -40,7 +40,8 @@ function linescore(k: number) {
   const starts = new Map<string, Raw>();
   for (const p of upTo) { const key = `${p.inning}:${p.half}`; if (!starts.has(key)) starts.set(key, p.situation_before); }
   const keys = [...starts.keys()];
-  const innings = Array.from({ length: 9 }, (_, i) => ({ inning: i + 1, away: null as number | null, home: null as number | null }));
+  const reached = Math.max(9, ...keys.map(k => Number(k.split(':')[0])));   // extra innings grow the table
+  const innings = Array.from({ length: reached }, (_, i) => ({ inning: i + 1, away: null as number | null, home: null as number | null }));
   keys.forEach((key, i) => {
     const [inn, half] = key.split(':'); const s = starts.get(key)!; const next = i + 1 < keys.length ? starts.get(keys[i + 1])! : last;
     const side = half === 'Top' ? 'away' : 'home';
@@ -98,7 +99,9 @@ export function liveBody(step: Step): Raw {
   const body: Raw = { schema: 'pitcheezy-service-game-v2', synthetic: 'replay of real 849843 pitches; game_pk, live keys and injected states are synthetic',
     zone_bounds: fx.zone_bounds, source: { kind: 'live', session_id: null }, game, feed: { as_of: null, ok: true, stale_s: null },
     cutoff: { index: k - 1, pitch_key: k > 0 ? P[k - 1].key : null }, pitches, pas, pregame: null,
-    linescore: kind === 'pregame' ? null : linescore(k), receipts: { version: `r${k}${inject === 'unconfirmed' ? 'u' : ''}`, paired: 0, corrected: 0, unconfirmed: inject === 'unconfirmed' ? 1 : 0 } };
+    // the final step carries the game's real final score but the fixture stops after 65 pitches: a partial linescore next to it would
+    // not add up, so the final step publishes none (the screen then says the inning-by-inning score is not available)
+    linescore: kind === 'pregame' || kind === 'final' ? null : linescore(k), receipts: { version: `r${k}${inject === 'unconfirmed' ? 'u' : ''}`, paired: 0, corrected: 0, unconfirmed: inject === 'unconfirmed' ? 1 : 0 } };
   if (kind === 'pregame') {
     body.current = { phase: 'pregame', pa_key: null, batter: null, pitcher: null, situation: null, context: null };
     body.next = null; body.display_state = display('pregame', null, false, { reason: 'pregame' });

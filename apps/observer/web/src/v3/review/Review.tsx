@@ -5,6 +5,7 @@ import { OPTION_LABELS, optionChoices, setOption, useOptions } from '../options'
 import type { Options } from '../options';
 import { STEPS, setReplay, useReplay } from '../replay/control';
 import type { Network } from '../replay/control';
+import './review.css';
 
 const KEYS = Object.keys(OPTION_LABELS) as (keyof Options)[];
 const KIND: Record<string, string> = { pregame: '경기 전', pitch: '투구 전', break: '공수 교대', final: '경기 종료' };
