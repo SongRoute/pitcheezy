@@ -42,6 +42,8 @@ def supervise(command, out, wall, rss_cap, grant_sha, lock_fd, output_cap=None):
                 except subprocess.TimeoutExpired: reason = 'unreaped-child-lock-retained'
         reaped = child.poll() is not None
     out.mkdir(parents=True, exist_ok=True)
+    if output_cap is not None and sum(p.stat().st_size for p in out.iterdir() if p.is_file()) > output_cap:
+        reason = 'output-bytes'
     receipt = out/'receipt.json'
     try: completed = receipt.is_file() and json.loads(receipt.read_text()).get('status') == 'COMPLETED'
     except (OSError,ValueError): completed = False

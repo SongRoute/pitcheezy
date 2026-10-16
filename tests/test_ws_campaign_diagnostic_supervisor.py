@@ -38,3 +38,14 @@ def test_output_byte_cap_stops_only_owned_child(monkeypatch,tmp_path):
     assert ds.supervise(['generated-only'],tmp_path,60,1024,'digest',17,output_cap=1)==87
     receipt=json.loads((tmp_path/'SUPERVISOR.json').read_text())
     assert receipt['reason']=='output-bytes' and receipt['child_reaped'] is True
+
+
+def test_finished_child_cannot_bypass_output_cap(monkeypatch,tmp_path):
+    class Child:
+        pid=125; returncode=0
+        def poll(self):return 0
+    monkeypatch.setattr(ds.subprocess,'Popen',lambda *a,**kw:Child())
+    (tmp_path/'receipt.json').write_text(json.dumps({'status':'COMPLETED'}))
+    assert ds.supervise(['generated-only'],tmp_path,60,1024,'digest',17,output_cap=1)==87
+    receipt=json.loads((tmp_path/'SUPERVISOR.json').read_text())
+    assert receipt['reason']=='output-bytes' and receipt['status']=='INCOMPLETE'
