@@ -186,6 +186,7 @@ class NativeForecast:
         elif (decision['status'] != 'native_ready'
               or prediction.get('status') != 'experimental_conditional_score'
               or prediction.get('reason') is not None
+              or prediction.get('leaf_order') != list(fullseason.LEAVES)
               or not _probabilities(prediction.get('probabilities'))
               or prediction.get('underlying_call_sha256') != sha({
                   'bundle': self.scorer.runtime.bundle_sha256,

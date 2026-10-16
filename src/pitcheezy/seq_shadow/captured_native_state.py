@@ -307,5 +307,6 @@ class NativeRuntime:
         return {'status': 'experimental_conditional_score', 'reason': None,
                 'input_contract': CONTRACT, 'native_decision_sha256': digest,
                 'underlying_call_sha256': prediction['call_sha256'],
+                'leaf_order': prediction.get('leaf_order'),
                 'probabilities': prediction['probabilities'], 'prospective_claim': False,
                 'prediction_ready': False}

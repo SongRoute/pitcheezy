@@ -7,7 +7,8 @@ import pytest
 from pitcheezy.seq_shadow import fullseason
 from pitcheezy.seq_shadow.captured_native_forecast import NativeForecast
 from pitcheezy.seq_shadow.captured_native_state import NativeRuntime
-from pitcheezy.seq_shadow.ledger import sha
+from pitcheezy.seq_shadow.fullseason_runtime import Runtime
+from pitcheezy.seq_shadow.ledger import canonical, sha
 from test_captured_native_state import SHA, source, state
 
 MANIFEST = 'b' * 64
@@ -22,25 +23,30 @@ def config():
             'recipe': {'sha256': '2' * 64}}
 
 
-class FakeRuntime:
-    def __init__(self, cfg, *, result=None, callback=None):
-        self.identity = {'adapter_config_sha256': sha(cfg),
-                         'profile_manifest_sha256': MANIFEST}
-        self.bundle_sha256 = sha(self.identity)
-        self.calls = 0
-        self.result = result
-        self.callback = callback
+def FakeRuntime(cfg, *, result=None, callback=None):
+    """Generated Runtime object with predict substituted; no model/profile files."""
+    runtime = Runtime.__new__(Runtime)
+    runtime.identity = {'adapter_config_sha256': sha(cfg),
+                        'profile_manifest_sha256': MANIFEST}
+    runtime.bundle_sha256 = sha(runtime.identity)
+    runtime.calls = 0
+    runtime.result = result
+    runtime.callback = callback
 
-    def predict(self, snapshot):
-        self.calls += 1
-        if self.callback:
-            self.callback()
-        if isinstance(self.result, Exception):
-            raise self.result
+    def predict(snapshot):
+        runtime.calls += 1
+        if runtime.callback:
+            runtime.callback()
+        if isinstance(runtime.result, Exception):
+            raise runtime.result
         return {'status': 'scored', 'stream_evidence_kind': 'capture_native_experimental',
                 'prospective_claim': False, 'call_sha256': sha({
-                    'bundle': self.bundle_sha256, 'snapshot': snapshot['snapshot_sha256']}),
-                'probabilities': self.result if self.result is not None else [1 / 7] * 7}
+                    'bundle': runtime.bundle_sha256, 'snapshot': snapshot['snapshot_sha256']}),
+                'leaf_order': list(fullseason.LEAVES),
+                'probabilities': runtime.result if runtime.result is not None else [1 / 7] * 7}
+
+    runtime.predict = predict
+    return runtime
 
 
 def setup(tmp_path, *, known=True, result=None, callback=None):
@@ -85,6 +91,9 @@ def test_scored_exact_vector_is_immutable_and_separate_after_later_receipt(tmp_p
     resumed = NativeForecast(reopened, NativeRuntime(fresh_fake, allow_native_experimental=True),
                              cfg, MANIFEST, REGISTRATION)
     assert resumed.forecast(candidate, received_ns=104) == first and fresh_fake.calls == 0
+    with sqlite3.connect(forecast_path) as db:
+        stored = db.execute('SELECT body FROM native_forecast_results').fetchone()[0]
+    assert canonical(resumed.forecast(candidate, received_ns=105)) == stored
     reopened.close()
 
 
@@ -179,6 +188,17 @@ def test_loaded_binding_and_fixed_ff_are_checked_before_reuse(tmp_path):
     not_ff['query']['pitch_type'] = 'SL'
     with pytest.raises(ValueError, match='exact forecast decision request'):
         ledger.forecast(not_ff, received_ns=101)
+    shadow.close()
+
+
+def test_wrong_runtime_leaf_order_leaves_no_forecast_result(tmp_path):
+    candidate, shadow, ledger, fake, _, db_path = setup(tmp_path)
+    original = fake.predict
+    fake.predict = lambda snapshot: dict(original(snapshot), leaf_order=list(reversed(fullseason.LEAVES)))
+    with pytest.raises(ValueError, match='invalid experimental seven-leaf score'):
+        ledger.forecast(candidate, received_ns=101)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute('SELECT COUNT(*) FROM native_forecast_results').fetchone()[0] == 0
     shadow.close()
 
 
