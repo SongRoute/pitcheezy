@@ -11,7 +11,7 @@ WEB = REPO/'apps/observer/web'
 BUILD = Path('/Users/song/Projects/pitcheezy-pm-jobs/20261016-parallel-execution-001/service/browser-review/dist-public')
 
 
-def test_public_viewer_consumes_synthetic_publisher_bytes(tmp_path, monkeypatch):
+def synthetic_publication(tmp_path, monkeypatch):
     monkeypatch.setenv('PITCHEEZY_OBSERVER_LIVE_ARMB', '1')
     monkeypatch.delenv('PITCHEEZY_OBSERVER_REC_LEDGER', raising=False)
     job = tmp_path/'job'
@@ -36,11 +36,21 @@ def test_public_viewer_consumes_synthetic_publisher_bytes(tmp_path, monkeypatch)
         'v1/games/2026-10-05.json', 'v1/games/2026-10-06.json', 'v1/health.json', 'v1/manifest.json']
     game = json.loads((output/f'v1/game/{LIVE_GAME}.json').read_text())
     assert game['game']['game_pk'] == LIVE_GAME and game['publish']['contract'] == 'v1'
+    return output
+
+
+def localhost_certificate(tmp_path):
 
     private_key, certificate = tmp_path/'key.pem', tmp_path/'cert.pem'
     subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
         '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost',
         '-keyout', str(private_key), '-out', str(certificate)], capture_output=True, check=True, timeout=20)
+    return private_key, certificate
+
+
+def test_public_viewer_consumes_synthetic_publisher_bytes(tmp_path, monkeypatch):
+    output = synthetic_publication(tmp_path, monkeypatch)
+    private_key, certificate = localhost_certificate(tmp_path)
     receipt = tmp_path/'browser-receipt.json'
     process = subprocess.run(['node', str(WEB/'tests/public-viewer-e2e-smoke.mjs'), str(BUILD), str(output),
         str(LIVE_GAME), str(certificate), str(private_key), str(receipt)],
