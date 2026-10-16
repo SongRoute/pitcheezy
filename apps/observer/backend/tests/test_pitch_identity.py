@@ -253,7 +253,9 @@ def test_a_game_over_body_behind_an_older_provider_stamp_is_kept_as_a_correction
         ('p2', 'correction', None, 2), ('p1', 'correction', None, entry['seq']), ('p2', 'quarantine', 'stale_revision', entry['seq'])]
     from observer_app.display_state import pitch_receipts
     receipts = pitch_receipts(newest['feed'], rows)
-    assert (receipts[(1, 1)]['status'], receipts[(1, 2)]['status'], receipts[(1, 2)]['reason']) == ('received', 'unconfirmed', 'stale_revision')
+    # (1, 2) was accepted under a later stamp: it is held with that body; why the served one was refused is kept
+    assert (receipts[(1, 1)]['status'], receipts[(1, 2)]['status'], receipts[(1, 2)]['reason']) == ('received', 'received', 'held_last_accepted')
+    assert receipts[(1, 2)]['held']['reason'] == 'stale_revision' and receipts[(1, 1)]['held'] is None
     # only an advance counts: the game going "back" to Live under an older stamp is still a stale arrival
     back = feed([(9, [pitch('p1', 1, speed=95.), pitch('p2', 2, 'C', speed=95.)])], '20261009_000140', 100.)
     assert store.ingest(7, _with_status(back, 'Live'), fetched=140., source='live_poll') == ('stale', None)

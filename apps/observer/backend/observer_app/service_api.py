@@ -249,12 +249,16 @@ UNCONFIRMED_LABEL = '확인 중'
 def _apply_receipts(pitches, receipts, pas=()):
     """Attach each pitch's SVC-WS-03 receipt. A body that is not admitted is never shown as an observed pitch (D1):
     its type, speed, location and result are blanked and the row says 확인 중. A pitch this store has no admission
-    for at all fails closed the same way. Returns the summary the client compares between polls."""
+    for at all fails closed the same way. A held pitch (``display_state.HELD``) was drawn from its last accepted body
+    (``held_feed``) and stays as it is; if that body is not attached it is blanked too. Returns the summary the
+    client compares between polls (the public contract is unchanged: a held pitch is told by its ``reason``)."""
     unconfirmed = corrected = 0
     open_pas = set()
     for pitch in pitches:
         item = receipts.get(display_state.RECEIPT_ALL) or receipts.get((pitch['at_bat_number'], pitch['pitch_number']))
         receipt = display_state.public_receipt(item) if item else {'status': 'unconfirmed', 'reason': 'incomplete_identity', 'corrected': False}
+        if receipt['status'] == 'received' and receipt['reason'] == display_state.HELD and not (item or {}).get('held', {}).get('body'):
+            receipt = {'status': 'unconfirmed', 'reason': 'held_body_missing', 'corrected': False}  # never the refused body
         pitch['receipt'] = receipt
         corrected += receipt['corrected']
         if receipt['status'] != 'received':
@@ -546,6 +550,9 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
         entry = rest[0] if rest else None
         if live_display is not None:
             rec, state, receipts = live_display(feed, parsed, entry)
+            shown_feed = display_state.held_feed(feed, receipts)
+            if shown_feed is not feed:  # a held pitch is drawn from its last accepted body, never the refused one
+                record = game_history.build(shown_feed) | {'pregame': record['pregame']}
         else:  # no display hook (archive-only or an older caller): the state is still explicit
             rec = live_rec(feed, parsed, entry) if live_rec and phase == 'pre_pitch' else None
             facts = {'ok': meta.get('ok', True), 'delayed': False, 'lag_s': None, 'lag_measured': False,
@@ -590,9 +597,10 @@ def register(app, *, archive, clock, schedule=None, live_feed=None, live_rec=Non
             view['win_expectancy'] = live_win_expectancy(feed, state['pitch_key'], entry)
         _pair_recommendations(view, live_pairing and live_pairing(feed, view['pitches'], receipts, entry))
         view = live_extras(view, feed, parsed, receipts, entry) if live_extras else view  # service_extras: optional, switched
-        if after is not None:  # a pitch whose record is unconfirmed or was corrected is re-sent whatever the cursor
+        if after is not None:  # a pitch whose record is unconfirmed, held or corrected is re-sent whatever the cursor
             view['pitches'] = [p for p in view['pitches'] if p['index'] > after or
-                               (p.get('receipt') and (p['receipt']['status'] != 'received' or p['receipt']['corrected']))]
+                               (p.get('receipt') and (p['receipt']['status'] != 'received' or p['receipt']['corrected']
+                                                      or p['receipt']['reason'] == display_state.HELD))]
         return view
 
     @app.get('/api/service/demo/{sid}')

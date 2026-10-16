@@ -179,4 +179,6 @@ def test_real_game_over_body_behind_an_older_stamp_is_selected_and_its_pitches_s
     newest = store.restore(849809, 1791774800.0, 120)[-1]
     assert newest['feed']['gameData']['status']['abstractGameState'] == 'Final' and newest['provider_order'] == 'stale'
     receipts = pitch_receipts(newest['feed'], store.pitch_events(849809)['events'])
-    assert len(receipts) == 14 and {k: v['reason'] for k, v in receipts.items() if v['status'] != 'received'} == {(70, 2): 'stale_revision'}
+    # 70:2 was accepted under the later stamp: held with that accepted body (Song 2026-10-12), refused body's reason kept
+    assert len(receipts) == 14 and {k: v['status'] for k, v in receipts.items()} == dict.fromkeys(receipts, 'received')
+    assert {k: v['held']['reason'] for k, v in receipts.items() if v['held']} == {(70, 2): 'stale_revision'}

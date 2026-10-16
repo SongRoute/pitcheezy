@@ -188,17 +188,19 @@ def test_same_stamp_with_different_content_is_unconfirmed(run):
     assert (state['state'], state['reason']) == ('unconfirmed', 'same_stamp_conflict_provider_stamp')
 
 
-def test_a_quarantined_pitch_of_the_open_at_bat_is_shown_as_unconfirmed_not_as_an_observed_pitch(run):
-    assert run.poll()['display_state']['state'] == 'recommended'
+def test_a_quarantined_pitch_of_the_open_at_bat_keeps_its_accepted_body_but_withholds_the_recommendation(run):
+    before = run.poll()
+    assert before['display_state']['state'] == 'recommended'
     # a later, ordered revision renames the open at-bat's pitch: its key is already held by another provider id
     view = run.poll(snap(995.0, '20261005_100100', pid='renamed'))
     state = view['display_state']
     assert (state['state'], state['reason'], state['detail']) == ('unconfirmed', 'prior_pitch_unconfirmed', '5:1/ambiguous_remap')
     assert state['feed']['provider_order'] == 'ordered' and shown(view) == []
     last = view['pitches'][-1]
-    assert last['receipt'] == {'status': 'unconfirmed', 'reason': 'ambiguous_remap', 'corrected': False}
-    assert last['actual']['result_label'] == '확인 중' and last['actual']['pitch_type'] is None and last['actual']['x'] is None
-    assert view['receipts']['unconfirmed'] == 1
+    # accepted once (Song 2026-10-12): the pitch stays on screen with its last accepted body, not 확인 중
+    assert last['receipt'] == {'status': 'received', 'reason': display_state.HELD, 'corrected': False}
+    assert last['actual'] == before['pitches'][-1]['actual']
+    assert view['receipts']['unconfirmed'] == 0 and [p['receipt']['reason'] for p in view['pitches']].count(display_state.HELD) == 1
     assert state['correction']['kind'] == 'withdrawn'  # the earlier recommendation for this pitch is said to be gone
 
 
@@ -475,7 +477,7 @@ def test_a_disconnect_never_brings_back_a_recommendation_whose_inputs_are_unconf
     view = run.poll(urllib.error.URLError('down'))
     state = view['display_state']
     assert (state['state'], state['detail'], state['recommendation_shown']) == ('disconnected', 'unconfirmed:prior_pitch_unconfirmed', False)
-    assert shown(view) == [] and view['pitches'][-1]['receipt']['status'] == 'unconfirmed'
+    assert shown(view) == [] and view['pitches'][-1]['receipt']['reason'] == display_state.HELD
     assert run.poll(path=LIVE)['recommendation'] is None
 
 
@@ -570,11 +572,11 @@ def test_with_the_ledger_off_and_the_store_on_displays_are_remembered_in_memory(
     assert run.feed.store.served_recommendations(GAME) == []
 
 
-def test_an_unconfirmed_pitch_before_the_cursor_is_resent_and_its_return_changes_the_version(run):
+def test_a_held_pitch_before_the_cursor_is_resent_and_its_return_changes_the_version(run):
     first = run.poll()
     run.poll(snap(995.0, '20261005_100100', pid='renamed'))
     tail = run.client.get(SERVICE, params={'after': 8}).json()
-    assert [(p['index'], p['receipt']['status']) for p in tail['pitches']] == [(8, 'unconfirmed')]
+    assert [(p['index'], p['receipt']['reason']) for p in tail['pitches']] == [(8, display_state.HELD)]
     assert tail['receipts']['version'] != first['receipts']['version']
     run.poll(snap(995.0, '20261005_100200'))  # the provider goes back to the admitted body
     tail = run.client.get(SERVICE, params={'after': 8}).json()

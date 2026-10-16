@@ -27,7 +27,7 @@ import os
 import re
 import time
 
-from .live_store import _canonical
+from .live_store import _canonical, view_changed
 
 SCHEMA = 'pitcheezy-display-state-v1'
 STATES = ('recommended', 'unconfirmed', 'unsupported', 'feed_delayed', 'disconnected', 'ledger_unavailable',
@@ -135,14 +135,38 @@ def admit_body(event, key, rows):
     return 'unconfirmed', refused[-1]['reason'] if refused else 'not_accepted'
 
 
+HELD = 'held_last_accepted'
+
+
+def _corrected(accepted):
+    """Did an accepted revision of this pitch change what a viewer was already shown? Consecutive accepted rows
+    are compared on their ``view`` (``live_store.pitch_view``); a row without one (an older caller) counts as a
+    change whenever it is a correction, as before."""
+    for before, after in zip(accepted, accepted[1:]):
+        if after['outcome'] != 'correction':
+            continue
+        if 'view' not in before or 'view' not in after or view_changed(before['view'], after['view']):
+            return True
+    return False
+
+
 def pitch_receipts(feed, rows, *, committed=True):
     """Admission of every pitch body in ``feed`` against the pitch ledger ``rows``:
-    ``{(at_bat_number, pitch_number): {'status', 'reason', 'corrected', 'sha'}}``. A pitch without a usable official
-    key (``incomplete_identity``) is keyed by its position ``(at_bat_number or None, pitchNumber or None)`` and is
-    never ``received``. ``committed=False`` (memory-only entry during a store outage) relabels a body the ledger
-    never accepted as ``uncommitted_memory_entry``. ``corrected`` = an accepted correction exists for the key, so a
-    viewer who saw the first version is told the record changed. ``first_seq``/``first_received`` are the store
-    version and receipt of the first body that held the pitch (its ``new`` row), or None."""
+    ``{(at_bat_number, pitch_number): {'status', 'reason', 'corrected', 'sha', 'held', ...}}``. A pitch without a
+    usable official key (``incomplete_identity``) is keyed by its position ``(at_bat_number or None, pitchNumber or
+    None)`` and is never ``received``. ``committed=False`` (memory-only entry during a store outage) relabels a body
+    the ledger never accepted as ``uncommitted_memory_entry``.
+
+    Held (Song, 2026-10-12): a pitch whose served body is not admitted but whose official key the ledger HAS
+    accepted before stays on screen with its last accepted body: ``status`` 'received', ``reason`` ``HELD`` and
+    ``held`` = ``{'id', 'sha', 'reason'}`` (the accepted row to show and why the served body was refused). The
+    caller must show that row's body (``attach_held`` + ``held_feed``), never the served one. Only a key no body
+    of which was ever accepted is ``unconfirmed``. A held pitch is not a decision input (``_blocking_receipt``).
+
+    ``corrected`` = an accepted revision changed a field the viewer had already been shown (``_corrected``);
+    provider bookkeeping (end times, refined break terms, ids) re-sent under a later stamp is not a correction.
+    ``first_seq``/``first_received`` are the store version and receipt of the first body that held the pitch (its
+    ``new`` row), or None."""
     by_key, by_sha = {}, {}
     for row in rows:
         if row['outcome'] == 'quarantine':
@@ -166,21 +190,77 @@ def pitch_receipts(feed, rows, *, committed=True):
             status, reason = admit_body(event, key, [*mine, *by_sha.get(sha, [])])
             if status != 'received' and reason == 'not_accepted' and not committed:
                 reason = 'uncommitted_memory_entry'
+            held = None
+            if (status != 'received' and at_bat is not None and number is not None and mine
+                    and _sha(mine[-1]['sha']) is not None and type(mine[-1].get('id')) is int):
+                held = {'id': mine[-1]['id'], 'sha': mine[-1]['sha'], 'reason': reason}
+                status, reason = 'received', HELD
             first = mine[0] if mine and mine[0]['outcome'] == 'new' else None  # the body that first held this pitch
-            out[key] = {'status': status, 'reason': reason, 'sha': sha,
-                        'corrected': status == 'received' and any(r['outcome'] == 'correction' for r in mine),
+            out[key] = {'status': status, 'reason': reason, 'sha': sha, 'held': held,
+                        'corrected': status == 'received' and _corrected(mine),
                         'first_seq': first and first['store_seq'], 'first_received': first and first['received']}
             if number is None or at_bat is None:
                 tainted.add(at_bat)
     # A pitch without an official key is listed by position downstream (``pitchNumber or its order``), which can
     # collide with a real key: every pitch of such an at-bat (of the whole feed, if the at-bat itself is unknown)
-    # fails closed rather than borrow another pitch's admission.
+    # fails closed rather than borrow another pitch's admission (a held one included: its slot is not certain).
     for key, item in out.items():
         if (None in tainted or key[0] in tainted) and item['status'] == 'received':
-            item.update(status='unconfirmed', reason='incomplete_identity', corrected=False)
+            item.update(status='unconfirmed', reason='incomplete_identity', corrected=False, held=None)
     if None in tainted:
-        out[RECEIPT_ALL] = {'status': 'unconfirmed', 'reason': 'incomplete_identity', 'sha': None, 'corrected': False}
+        out[RECEIPT_ALL] = {'status': 'unconfirmed', 'reason': 'incomplete_identity', 'sha': None, 'corrected': False,
+                            'held': None}
     return out
+
+
+def attach_held(receipts, load):
+    """Give every held receipt the accepted body it stands for: ``load(ids) -> {row id: playEvent}`` (a store
+    read). A held pitch whose body cannot be loaded falls back to ``unconfirmed`` with the served body's own
+    refusal reason, so nothing is ever shown that the ledger did not accept. Returns ``receipts``."""
+    wanted = [item['held']['id'] for item in (receipts or {}).values() if item.get('held')]
+    if not wanted:
+        return receipts
+    try:
+        bodies = load(wanted) or {}
+    except Exception:  # noqa: BLE001 - any read failure: fail closed below
+        bodies = {}
+    for item in receipts.values():
+        held = item.get('held')
+        if not held:
+            continue
+        body = bodies.get(held['id'])
+        if isinstance(body, dict) and body_sha(body) == held['sha']:
+            held['body'] = body
+        else:
+            item.update(status='unconfirmed', reason=held['reason'] or 'not_accepted', corrected=False, held=None)
+    return receipts
+
+
+def held_feed(feed, receipts):
+    """``feed`` with every held pitch's served body replaced by its last accepted body (``attach_held``), in
+    ``allPlays`` and in ``currentPlay``, for building what the viewer is shown. Plays without a held pitch are
+    shared, not copied. Returns ``feed`` itself when nothing is held. Never used for a decision: the policy
+    reads the served snapshot, and a held pitch among its inputs withholds the recommendation."""
+    held = {key: item['held']['body'] for key, item in (receipts or {}).items()
+            if key != RECEIPT_ALL and item.get('held') and 'body' in item['held']}
+    if not held:
+        return feed
+
+    def swap(play):
+        if not isinstance(play, dict):
+            return play
+        at_bat, _ = _pitch_keys(play)
+        events = play.get('playEvents')
+        if at_bat is None or not isinstance(events, list):
+            return play
+        new = [held.get((at_bat, e.get('pitchNumber')), e) if isinstance(e, dict) and e.get('isPitch')
+               and type(e.get('pitchNumber')) is int else e for e in events]
+        return play if all(a is b for a, b in zip(new, events)) else play | {'playEvents': new}
+    plays = feed['liveData']['plays']
+    out = plays | {'allPlays': [swap(play) for play in plays.get('allPlays') or []]}
+    if isinstance(plays.get('currentPlay'), dict):
+        out['currentPlay'] = swap(plays['currentPlay'])
+    return feed | {'liveData': feed['liveData'] | {'plays': out}}
 
 
 def fallback_receipts(feed, remembered):
@@ -201,12 +281,12 @@ def public_receipt(item):
 
 
 def receipts_version(receipts):
-    """Changes whenever any pitch's admission or correction mark changes, so a client that only asks for newer
-    pitches knows to take the full history again."""
+    """Changes whenever any pitch's admission, hold or correction mark changes, so a client that only asks for
+    newer pitches knows to take the full history again."""
     if receipts is None:
         return None
     marks = sorted((str(k), v['status'], v['reason'] or '', v['corrected']) for k, v in receipts.items()
-                   if v['status'] != 'received' or v['corrected'])
+                   if v['status'] != 'received' or v['corrected'] or v.get('held'))
     return hashlib.sha256(_canonical(marks)).hexdigest()[:12]
 
 
@@ -261,9 +341,23 @@ def feed_facts(feed, game_pk, entry, cfg, *, now, viewer_delay_s=0.0):
             'failing_for_s': round(now-since, 1) if failing and since is not None else None,
             'received_at': _iso(entry['fetched']) if entry else None,
             'provider_order': (entry or {}).get('provider_order'),
+            'same_stamp_scope': _same_stamp_scope(feed, game_pk, entry),
             # 'failed': a store was configured but could not be opened, so nothing can be recorded (fail closed)
             'store': 'on' if has_store else 'failed' if store_error else 'off', 'store_ok': store_error is None,
             'committed': None if not has_store else bool(entry and entry.get('seq') is not None and entry.get('sha') is not None)}
+
+
+def _same_stamp_scope(feed, game_pk, entry):
+    """``LiveSnapshotStore.same_stamp_scope`` of the served version when its provider order is a same-stamp
+    conflict: 'extras_only', 'inputs', or None (no conflict, no committed version, or the store could not say,
+    which keeps the gate)."""
+    if (entry or {}).get('provider_order') != 'same_stamp_conflict' or entry.get('seq') is None:
+        return None
+    reader = getattr(getattr(feed, 'store', None), 'same_stamp_scope', None)
+    try:
+        return reader(game_pk, entry['seq']) if reader else None
+    except Exception:  # noqa: BLE001 - an unreadable store keeps the same-stamp gate (fail closed)
+        return None
 
 
 def _is_real_poll(feed):
@@ -298,10 +392,17 @@ def gate(parsed_status, abstract, facts, receipts, feed):
 
 
 def _unconfirmed(facts, receipts, feed):
-    """(reason, detail) if the pending decision's inputs are not admitted (SVC-WS-03), else None."""
+    """(reason, detail) if the pending decision's inputs are not admitted (SVC-WS-03), else None.
+
+    The game-level same-stamp gate (Song, 2026-10-12) holds only when the conflict touches the decision: it is
+    lifted when the store says the conflicting bodies share the decision identity (``same_stamp_scope``
+    'extras_only': weather, attendance, boxscore and other extras differ) and whenever the served game has no
+    pitch yet. Stale and unorderable stamps keep the gate as before."""
     if facts['store'] == 'on' and facts['committed']:
         order = facts['provider_order']
         stale = FRESHNESS.get(order, 'provider_order_unknown') if isinstance(order, str) else 'provider_order_unknown'
+        if order == 'same_stamp_conflict' and (facts.get('same_stamp_scope') == 'extras_only' or pitch_count(feed) == 0):
+            stale = None
         if stale:
             return stale, order
     if receipts is not None:
@@ -310,6 +411,18 @@ def _unconfirmed(facts, receipts, feed):
             return ('receipts_unreadable' if blocking[1] == 'receipts_unreadable' else 'prior_pitch_unconfirmed',
                     f'{blocking[0][0]}:{blocking[0][1]}/{blocking[1]}')
     return None
+
+
+def pitch_count(feed):
+    """Pitch events in the served body (``allPlays`` and ``currentPlay``); None if the body is unreadable."""
+    plays = ((feed.get('liveData') or {}).get('plays') or {}) if isinstance(feed, dict) else None
+    if not isinstance(plays, dict):
+        return None
+    listed = [p for p in plays.get('allPlays') or [] if isinstance(p, dict)]
+    current = plays.get('currentPlay')
+    if isinstance(current, dict) and current and not any(p is current for p in listed):
+        listed.append(current)
+    return sum(1 for p in listed for e in p.get('playEvents') or [] if isinstance(e, dict) and e.get('isPitch'))
 
 
 def _pitch_keys(play):
@@ -366,7 +479,14 @@ def unlisted_current(feed, receipts):
 def _blocking_receipt(feed, receipts):
     """The first not-admitted pitch among the pending decision's inputs: every pitch of the open at-bat, the
     game's newest pitch, and any disagreement between ``currentPlay`` and the listed plays (``unlisted_current``).
-    Returns (key, reason) or None."""
+    Returns (key, reason) or None; for a held pitch the reason is why its served body was refused.
+
+    Why a held pitch of the current at-bat withholds the recommendation (2026-10-17): the policy's state for the
+    next pitch is the open at-bat's pitch history plus the count and situation (``policy_requests.pa_requests``),
+    read from the SERVED snapshot, while the screen shows the held body. On 849831 the dropped bodies also lost
+    pitch type and plate location, so a decision computed then would rest on inputs nobody accepted and its ledger
+    row (append-only) could not be taken back. Pitches of earlier at-bats are not in that state, so a held or
+    unconfirmed pitch there no longer stops the recommendation (receipt seq 310: 91 such pitches, none current)."""
     if receipts is None:
         return None
     if RECEIPT_ALL in receipts:
@@ -380,8 +500,9 @@ def _blocking_receipt(feed, receipts):
         open_ab = index+1 if type(index) is int else None
     newest = list(receipts)[-1] if receipts else None
     for key, item in receipts.items():
-        if item['status'] != 'received' and (key == newest or (open_ab is not None and key[0] == open_ab)):
-            return key, item['reason']
+        # a held pitch is shown with its last accepted body, but the policy reads the served one: not an input
+        if (item['status'] != 'received' or item.get('held')) and (key == newest or (open_ab is not None and key[0] == open_ab)):
+            return key, item['held']['reason'] if item.get('held') else item['reason']
     return next(iter(unlisted_current(feed, receipts).items()), None)
 
 

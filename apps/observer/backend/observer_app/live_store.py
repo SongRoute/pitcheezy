@@ -287,9 +287,57 @@ def _canonical(feed):
     return json.dumps(feed, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
 
 
+def pitch_view(event):
+    """The part of a pitch body a viewer is shown or the policy reads (``game_history`` pitch rows and
+    ``tracking``, ``live_armb._pitch_data``): type, call, description, count, speed, extension, spin, break,
+    plate location and batted-ball numbers. Provider bookkeeping that is rewritten without the pitch changing
+    (``endTime``, ``startTime``, ``playId``, ``typeConfidence``, ``breakAngle``/``breakLength``/``breakY``, raw
+    trajectory terms, colours) is left out: on 849831 every one of 257 pitches got an accepted correction that
+    touched only such fields, and each was announced to viewers as a changed record."""
+    if not isinstance(event, dict):
+        return None
+
+    def part(holder, key):
+        value = holder.get(key) if isinstance(holder, dict) else None
+        return value if isinstance(value, dict) else {}
+    details, data, hit, count = part(event, 'details'), part(event, 'pitchData'), part(event, 'hitData'), part(event, 'count')
+    breaks, where = part(data, 'breaks'), part(data, 'coordinates')
+    return {'type': part(details, 'type').get('code'), 'type_label': part(details, 'type').get('description'),
+            'call': part(details, 'call').get('code'), 'description': details.get('description'),
+            'event_type': details.get('eventType'), 'pitch_number': event.get('pitchNumber'),
+            'balls': count.get('balls'), 'strikes': count.get('strikes'), 'outs': count.get('outs'),
+            'speed': data.get('startSpeed'), 'extension': data.get('extension'), 'spin_rate': breaks.get('spinRate'),
+            'spin_direction': breaks.get('spinDirection'), 'break_horizontal': breaks.get('breakHorizontal'),
+            'break_vertical_induced': breaks.get('breakVerticalInduced'), 'px': where.get('pX'), 'pz': where.get('pZ'),
+            'launch_speed': hit.get('launchSpeed'), 'launch_angle': hit.get('launchAngle'),
+            'distance': hit.get('totalDistance')}
+
+
+def view_changed(before, after):
+    """True if a later accepted revision changes something a viewer already saw: a field of ``pitch_view`` that
+    had a value in ``before`` reads differently in ``after`` (removed included). A value that only appears
+    (tracking filled in after the first publish) is not a change of what was shown. Unknown views (None) count
+    as changed, so a row whose body could not be read still announces a correction (fail toward telling)."""
+    if before is None or after is None:
+        return True
+    return any(value is not None and after.get(key) != value for key, value in before.items())
+
+
+def _decision_identity(feed):
+    """The recommender's identity of the pending decision (``live_armb.state_key``), or None if unreadable."""
+    from .live_armb import state_key  # live_armb imports this module: resolved at call time
+    try:
+        return state_key(feed)
+    except (KeyError, TypeError, AttributeError, IndexError, ValueError):
+        return None
+
+
 class LiveSnapshotStore:
     def __init__(self, path):
         self.path = Path(path)
+        # Derived, read-side caches only (rows and versions are append-only, so an entry never goes stale):
+        # pitch row id -> ``pitch_view`` of its body; (game, seq) -> ``same_stamp_scope``.
+        self._views, self._scopes = {}, {}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             db.execute('PRAGMA journal_mode=WAL')
@@ -426,6 +474,16 @@ class LiveSnapshotStore:
                 f'SELECT {", ".join(keys)} FROM pitch_events WHERE game_pk=? ORDER BY id', (int(game_pk),))]
             max_seq, recovered = db.execute("SELECT MAX(seq), SUM(source='memory_recovery') FROM snapshots "
                                             'WHERE game_pk=?', (int(game_pk),)).fetchone()
+            missing = [row['id'] for row in rows if row['outcome'] != 'quarantine' and row['id'] not in self._views]
+            if missing:
+                for pid, body in db.execute(f'SELECT id, body FROM pitch_events WHERE game_pk=? AND id>=? AND {ACCEPTED}',
+                                            (int(game_pk), min(missing))):
+                    try:
+                        self._views[pid] = pitch_view(json.loads(gzip.decompress(body)))
+                    except (zlib.error, EOFError, ValueError, TypeError):
+                        self._views[pid] = None  # unreadable: ``view_changed`` treats it as changed
+        for row in rows:  # what a viewer is shown of each accepted body (``pitch_view``); None for a quarantine row
+            row['view'] = self._views.get(row['id']) if row['outcome'] != 'quarantine' else None
         history = {'status': 'UNKNOWN',
                    'reasons': ['intermediate_revisions_unlogged'] + (['store_outage_recovered'] if recovered else []),
                    'as_of': {'store_seq': max_seq, 'pitch_event_id': rows[-1]['id'] if rows else None}}
@@ -691,6 +749,51 @@ class LiveSnapshotStore:
             later = db.execute('SELECT MIN(fetched) FROM snapshots WHERE game_pk=? AND event_wall=? AND version>?',
                                (int(game_pk), row[0], row[1])).fetchone()[0]
         return row[0], later
+
+    def pitch_bodies(self, game_pk, ids):
+        """``{row id: playEvent}`` of the ACCEPTED pitch rows ``ids`` of ``game_pk`` (a plain read; a quarantined,
+        unknown or undecodable row is simply absent, so a caller that needs it fails closed)."""
+        ids = sorted({int(i) for i in ids})
+        if not ids:
+            return {}
+        out = {}
+        with closing(self.connect()) as db:
+            marks = ','.join('?'*len(ids))
+            for pid, body in db.execute(f'SELECT id, body FROM pitch_events WHERE game_pk=? AND {ACCEPTED} AND id IN ({marks})',
+                                        (int(game_pk), *ids)):
+                try:
+                    out[pid] = json.loads(gzip.decompress(body))
+                except (zlib.error, EOFError, ValueError, TypeError):
+                    continue
+        return out
+
+    def same_stamp_scope(self, game_pk, seq):
+        """What a ``same_stamp_conflict`` of committed version ``seq`` is about: 'extras_only' when every earlier
+        version with the same provider stamp and other content has the same pending-decision identity as ``seq``
+        (``live_armb.state_key``: current at-bat, count, runners/outs, pitcher/batter, the recent pitch bodies), so
+        the conflict lies only in weather, attendance, boxscore or other extras and whichever body is right, the
+        recommendation would be the same; 'inputs' otherwise or when any body cannot be read (fail closed); None if
+        ``seq`` has no such conflict. Like ``_provider_order``, only versions committed before ``seq`` are read."""
+        key = (int(game_pk), int(seq))
+        if key in self._scopes:
+            return self._scopes[key]
+        with closing(self.connect()) as db:
+            row = db.execute('SELECT feed_ts, sha, body FROM snapshots WHERE seq=? AND game_pk=?', key[::-1]).fetchone()
+            if row is None or not _provider_ts(row[0]):
+                return None
+            others = db.execute('SELECT body FROM snapshots WHERE game_pk=? AND seq<? AND feed_ts=? AND sha<>?',
+                                (key[0], key[1], row[0], row[1])).fetchall()
+        if not others:
+            scope = None
+        else:
+            try:
+                mine = _decision_identity(json.loads(gzip.decompress(row[2])))
+                theirs = [_decision_identity(json.loads(gzip.decompress(body))) for body, in others]
+            except (zlib.error, EOFError, ValueError, TypeError):
+                mine, theirs = None, [None]
+            scope = 'extras_only' if mine is not None and all(other == mine for other in theirs) else 'inputs'
+        self._scopes[key] = scope
+        return scope
 
     def snapshot_feed(self, game_pk, seq):
         """``(sha, feed)`` of the committed version ``seq`` of ``game_pk``, or None. A plain read."""
