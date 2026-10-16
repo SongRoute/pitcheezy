@@ -54,8 +54,10 @@ def _int(value):
 
 def reference(frame):
     game = frame.loc[frame.game_pk == GAME].copy()
-    if game.empty or len(game) > ROWS or not (pd.to_datetime(game.game_date) == pd.Timestamp(DATE)).all():
-        raise ValueError('registered I3 game/date absent or conflicting')
+    if (game.empty or len(game) > ROWS
+            or not (pd.to_datetime(game.game_date) == pd.Timestamp(DATE)).all()
+            or not game.game_type.eq('L').all()):
+        raise ValueError('registered I3 game/date/type absent or conflicting')
     if (game[['at_bat_number', 'pitch_number']].isna().any().any()
             or game.duplicated(['at_bat_number', 'pitch_number']).any()):
         raise ValueError('ambiguous I3 physical keys')
@@ -128,6 +130,7 @@ def paired(view, refs):
 def receipts(reg):
     files = replay.entries(reg)
     first, latest, final = {}, {}, {}
+    first_provider, provider_key, conflicting = {}, {}, set()
     counts = Counter(); compressed = inflated = 0
     for item in files:
         blob = replay.exact_file(Path(reg['capture_root']) / item['file'], replay.MAX_COMPRESSED)
@@ -154,6 +157,16 @@ def receipts(reg):
             group.pop(key)
         counts['duplicate_key_in_body'] += len(duplicate)
         for key, row in group.items():
+            provider = row['provider_id']
+            if provider is not None:
+                earlier = first_provider.get(key)
+                other_key = provider_key.get(provider)
+                if earlier is not None and earlier != provider:
+                    conflicting.add(key)
+                if other_key is not None and other_key != key:
+                    conflicting.update((key, other_key))
+                first_provider.setdefault(key, provider)
+                provider_key.setdefault(provider, key)
             first.setdefault(key, row)
             latest[key] = row
         if item['seq'] == replay.MAX_FILES:
@@ -162,6 +175,11 @@ def receipts(reg):
     if (counts['bodies'] != replay.MAX_FILES or compressed != reg['capture_compressed_bytes_reported']
             or inflated != reg['capture_inflated_bytes_reported']):
         raise ValueError('capture total/receipt mismatch')
+    counts['distinct_physical_keys_observed'] = len(first)
+    counts['provider_conflict_keys_excluded'] = len(conflicting)
+    first = {k: v for k, v in first.items() if k not in conflicting}
+    latest = {k: v for k, v in latest.items() if k not in conflicting}
+    final = {k: v for k, v in final.items() if k not in conflicting}
     counts['distinct_first_seen_keys'] = len(first)
     counts['distinct_latest_seen_keys'] = len(latest)
     counts['final_body_keys'] = len(final)
@@ -183,7 +201,7 @@ def run(regpath, grantpath):
             or reg['i3']['manifest_sha256'] != I3_MANIFEST_SHA
             or reg['i3']['version'] != 'd20261012-i2026-e20261011'):
         raise ValueError('fixed source/resource identity')
-    if (reg['selection_rule'] != 'all distinct physical keys first seen in 427 receipt bodies versus keys in final body 427; pair both to exact I3 game849809/officialOct11 rows'
+    if (reg['selection_rule'] != 'all distinct physical keys first seen in 427 receipt bodies versus keys in final body 427; cross-receipt provider-ID conflicts excluded and counted before pairing both to exact I3 game849809/officialOct11/L rows'
             or reg['comparison_rule'] != 'exact equality only for reconstructed pre_count, known direct event type code, source-derived nonBIP description and outcome10 hypotheses; missing is unavailable; play-final identity/outs/score/hands and trajectory/bb_type are availability-only; no tolerance widening'):
         raise ValueError('fixed pre-result selection/comparison rule')
     if (recipe['data_role'] != '2026 EXPOSED DEVELOPMENT' or reg['capture_root'] != reg['manifest']['path'].rsplit('/', 1)[0]):
