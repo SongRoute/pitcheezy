@@ -75,7 +75,8 @@ def run(regpath, grantpath):
         data_role=recipe['data_role'], source_sha256=source['parquet_sha256'],
         registration_sha256=sha(regpath), recipe_sha256=sha(reg['recipe']),
         bytes_hash_scope='whole pinned S2 file', decoded_columns=reg['columns'],
-        decoded_window=recipe['window'], original_arrival_time='UNKNOWN',
+        retained_window=recipe['window'],
+        physical_decode_scope='selected29 columns may decode other dates inside matching rowgroups before Arrow predicate filtering', original_arrival_time='UNKNOWN',
         snapshot_mode='corrected retrospective reconstruction; not prospective',
         learned_assets_produced=0, fits=0, raw_rows_output=0)
     encoded = json.dumps(result, indent=2, allow_nan=False) + '\n'
