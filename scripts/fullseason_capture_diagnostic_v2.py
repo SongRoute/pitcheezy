@@ -132,7 +132,7 @@ def transitions(first, final, refs):
                 continue
             expected = _expected(target, field)
             def status(value):
-                return ('unavailable' if value is None else 'reference_unavailable' if expected is None
+                return ('unavailable' if value is None else 'reference_unavailable' if expected is None or v1.pd.isna(expected)
                         else 'exact' if value == expected else 'mismatch')
             counts[field + '_reference_' + status(old) + '_to_' + status(new)] += 1
     return dict(sorted(counts.items()))
@@ -220,13 +220,19 @@ def run(regpath, grantpath):
     refs = v1.reference(source)  # hard game/date/type/duplicate-key check before capture read
     first, final, capture_counts, compressed, inflated = collect(reg)
     comparison = {'first_seen': paired(first, refs), 'final_body': paired(final, refs)}
+    base_comparison = {'first_seen': v1.paired({k: r['base'] for k, r in first.items()}, refs),
+                       'final_body': v1.paired({k: r['base'] for k, r in final.items()}, refs)}
+    if any(base_comparison[view].get('paired_key', 0) != comparison[view].get('paired_key', 0)
+           for view in v1.VIEWS):
+        raise ValueError('base/new paired denominator mismatch')
     result = {'status': 'COMPLETED', 'stage': 'CAPTURED_I3_FIELD_HYPOTHESIS_DIAGNOSTIC_V2',
               'registration_sha256': sha(regpath), 'grant_sha256': sha(grantpath),
               'source_commit': reg['source_commit'], 'game_pk': v1.GAME, 'official_date': v1.DATE,
               'capture_receipts': capture_counts, 'compressed_bytes': compressed,
               'inflated_bytes': inflated, 'i3_source_rows_decoded': v1.ROWS,
               'i3_game_rows': len(refs), 'i3_columns_decoded': v1.COLUMNS,
-              'comparison': comparison, 'first_to_final': transitions(first, final, refs),
+              'comparison': comparison, 'base_comparison': base_comparison,
+              'first_to_final': transitions(first, final, refs),
               'reference_only_final_body': reference_only(final, refs),
               'comparison_semantics': COMPARISON,
               'source_role': 'corrected retrospective I3, arrival UNKNOWN',

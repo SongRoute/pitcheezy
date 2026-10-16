@@ -3,6 +3,7 @@ import copy
 import gzip
 import hashlib
 import json
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -45,10 +46,23 @@ def test_first_to_final_categories_and_unpaired_identity():
     assert change['description_hypothesis_reference_mismatch_to_exact'] == 1
     assert change['outcome10_hypothesis_raw_changed'] == 1
     paired = v2.paired({key: new}, refs)
+    base_paired = v2.v1.paired({key: new['base']}, refs)
+    assert paired['paired_key'] == base_paired['paired_key'] == 1
     assert paired['pitcher_exact'] == 1
     assert paired['pitcher_eligibility_hypothesis_unpaired'] == 1
     assert paired['before_outs_unavailable'] == 1
     assert paired['accepted_false'] == 1
+
+
+def test_null_reference_transition_is_unavailable():
+    body = feed(); body['gameData']['game']['pk'] = v2.v1.GAME
+    body['liveData']['plays']['currentPlay']['playEvents'][0]['details']['type'] = {'code': 'FF'}
+    key, value = record(body)
+    reference = SimpleNamespace(pitch_type=pd.NA, description=float('nan'), source_outcome10=None)
+    change = v2.transitions({key: value}, {key: value}, {key: reference})
+    assert change['event_type_code_reference_reference_unavailable_to_reference_unavailable'] == 1
+    assert change['description_hypothesis_reference_reference_unavailable_to_reference_unavailable'] == 1
+    assert change['outcome10_hypothesis_reference_reference_unavailable_to_reference_unavailable'] == 1
 
 
 def test_bip_and_reference_only_are_descriptive():
