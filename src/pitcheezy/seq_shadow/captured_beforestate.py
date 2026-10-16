@@ -2,8 +2,9 @@
 
 Only the immediately prior completed PA supplies the initial state. Subsequent
 nonterminal, non-BIP pitches may carry that state if their direct event counts
-show unchanged outs. Scores lack pitch-level proof and always remain hypotheses
-for a separately registered paired audit. No row is accepted for inference.
+show unchanged outs. Play-level runner movements cannot be timed to each
+pitch; absent direct movement is not proof of no movement. Scores remain
+hypotheses for a separately registered paired audit. No row is accepted.
 """
 from __future__ import annotations
 
@@ -55,17 +56,23 @@ def _can_carry(event, state):
     call = _get(details, 'call', 'code')
     if (call not in CALL_DESCRIPTION or call in BIP_CALLS or call == 'H'
             or details.get('isInPlay') is not False or details.get('isOut') is not False
-            or details.get('eventType') or _get(event, 'hitData') or _get(event, 'runners')):
+            or details.get('eventType') or _get(event, 'hitData')):
         return False
     balls, strikes = _int(count.get('balls'), 0, 3), _int(count.get('strikes'), 0, 2)
     outs = _int(count.get('outs'), 0, 3)
     if None in (balls, strikes, outs) or outs != state[0]:
         return False
-    # An explicit event score may veto the carry, never seed or repair it.
-    for field, value in (('homeScore', state[1]), ('awayScore', state[2])):
-        supplied = event.get(field)
-        if supplied is not None and supplied != value:
+    # Explicit pitch-level movement/score may veto the carry, never seed it.
+    # Play-level runners/result are final PA fields and cannot time the change.
+    for holder in (event, details, _get(event, 'result'), _get(details, 'result')):
+        if not isinstance(holder, dict):
+            continue
+        if holder.get('runners') or holder.get('runner') or holder.get('eventType'):
             return False
+        for field, value in (('homeScore', state[1]), ('awayScore', state[2])):
+            supplied = holder.get(field)
+            if supplied is not None and supplied != value:
+                return False
     return True
 
 
@@ -133,7 +140,9 @@ def prefix_candidates(feed, *, game_pk, game_date):
             result.append({'key': key, 'before_outs_score_hypothesis': before,
                            'source': ('immediately_prior_completed_pa_final_then_direct_pitch_counts'
                                       if before is not None else None),
-                           'accepted': False, 'reason': reason})
+                           'accepted': False, 'reason': reason,
+                           'proof_missing': ('pitch_level_score_and_runner_transition',
+                                             'paired_statcast_beforestate')})
             if (reason != 'paired_beforestate_unverified' or not _can_carry(event, state)):
                 stopped = True
             next_pitch += 1
