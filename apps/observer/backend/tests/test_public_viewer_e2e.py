@@ -31,6 +31,9 @@ def test_public_viewer_consumes_synthetic_publisher_bytes(tmp_path, monkeypatch)
     assert summary['schema_validation']['validated'] and not summary['schema_validation']['problems']
     assert hashlib.sha256(capture.read_bytes()).hexdigest() == capture_sha
     output = run/'out'
+    assert sorted(str(path.relative_to(output)) for path in (output/'v1').rglob('*') if path.is_file()) == [
+        'v1/dates.json', f'v1/game/{LIVE_GAME}.json', 'v1/games/2026-10-04.json',
+        'v1/games/2026-10-05.json', 'v1/games/2026-10-06.json', 'v1/health.json', 'v1/manifest.json']
     game = json.loads((output/f'v1/game/{LIVE_GAME}.json').read_text())
     assert game['game']['game_pk'] == LIVE_GAME and game['publish']['contract'] == 'v1'
 
