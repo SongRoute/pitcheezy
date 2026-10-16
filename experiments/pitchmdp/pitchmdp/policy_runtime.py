@@ -10,6 +10,12 @@ v2 (COOP-018, D93): cause-split no-action refusals (D-3), the TRAIN single-hand 
 (D-8), a candidate-mode context check before any data refusal, the logging-positivity refusal
 before the candidate search, an explicit abort row, and the reference-continuation Q recorded
 for the DR estimator from a separate evaluation seed when registered (M-7).
+
+v3 (COOP-021/022, opt-in ``positivity_record=True``; the default keeps v2 byte for byte): the
+logging-positivity check runs AFTER the candidate computation, and the refused row records the
+policies, Q and ``rho_candidate = rho_reference = 0.0`` (both policies give the logged action no
+mass, so the true ratio is 0 under any logging law that played it; no 0/0 is formed). Status,
+stickiness and the refusal denominators are unchanged.
 """
 from __future__ import annotations
 
@@ -48,6 +54,7 @@ STATUSES = (SUPPORTED, OUTSIDE_POLICY_SUPPORT, UNKNOWN_PITCHER, EMPTY_SUPPORT, L
             MID_PA, NO_LOGGED_ACTION, MISSING_LABEL, INCOMPLETE_START, INCONSISTENT_HISTORY, PITCHER_HAND,
             FAILED_INTEGRITY, FAILED_RUNTIME)
 CONTRACT = 'ML-POLICY-RUNTIME-v2'
+CONTRACT_V3 = 'ML-POLICY-RUNTIME-v3'  # positivity rows record pi, Q and rho = 0 (COOP-021/022)
 ATOL = 1e-9
 NO_PITCH = '<NO_PITCH>'  # logged label AND history action of a registered no-pitch row
 MISSING = '<MISSING_LABEL>'  # logged label AND history action of a real pitch without a type label
@@ -126,50 +133,101 @@ def defer_or_raise(error):
 class Ledger:
     """Append-only JSONL; each row carries the previous row hash (tamper/truncation evident).
 
+    Low memory (D123): only the chain head (row count, last sha256, file size) and the row-kind
+    counts stay in memory. Rows are streamed back from the file, every row and the chain re-verified
+    up to the in-memory head, so a stream yields exactly the rows written or replayed (same bytes,
+    same hash chain as the former in-memory ``rows`` list).
+
     ponytail: single-writer file; concurrent writers need an OS lock (fcntl) upgrade.
     """
     def __init__(self, path, header):
-        self.path, self.rows = Path(path), []
+        self.path = Path(path)
+        self.count, self.head, self.size, self.offset, self.kinds = 0, None, 0, None, Counter()
         self.header = json.loads(_canonical_bytes({'kind': 'header', **header}))
         if self.path.exists():
             self._replay()
-            if {k: v for k, v in self.rows[0].items() if k not in ('seq', 'prev', 'sha256')} != self.header:
-                raise IntegrityError('ledger header pins differ from this runtime')
         else:
             self._append(self.header)
 
-    def _replay(self):
-        raw = self.path.read_bytes()
-        if not raw.endswith(b'\n'):
-            raise IntegrityError('ledger truncated mid-row; refuse to repair')
-        prev = None
-        for seq, line in enumerate(raw.splitlines(keepends=True)):
-            try:
-                row = json.loads(line)
-            except ValueError as error:
-                raise IntegrityError(f'ledger row {seq} malformed') from error
-            body = {k: v for k, v in row.items() if k != 'sha256'}
-            if (row.get('seq') != seq or row.get('prev') != prev or _canonical_bytes(row) != line
-                    or row.get('sha256') != canonical_hash(body)):
-                raise IntegrityError(f'ledger row {seq} tampered, reordered or not canonical')
-            prev = row['sha256']
-            self.rows.append(row)
-        if not self.rows or self.rows[0].get('kind') != 'header':
-            raise IntegrityError('ledger header missing')
-
-    def _append(self, record):
-        body = {**record, 'seq': len(self.rows), 'prev': self.rows[-1]['sha256'] if self.rows else None}
-        row = {**body, 'sha256': canonical_hash(body)}
-        with critical_section():  # a hang-guard interrupt lands after the row is on disk AND in memory
-            with self.path.open('ab') as stream:
-                stream.write(_canonical_bytes(row))
-                stream.flush()
-                os.fsync(stream.fileno())
-            self.rows.append(row)
+    @staticmethod
+    def _parse(line, seq):
+        try:
+            row = json.loads(line)
+        except ValueError as error:
+            raise IntegrityError(f'ledger row {seq} malformed') from error
+        if (not isinstance(row, dict) or _canonical_bytes(row) != line
+                or row.get('sha256') != canonical_hash({k: v for k, v in row.items() if k != 'sha256'})):
+            raise IntegrityError(f'ledger row {seq} tampered, reordered or not canonical')
         return row
 
+    def _stream(self, head=None):
+        """Yield (byte offset, row), each row verified (canonical bytes, own hash, seq, prev link).
+        With ``head`` = (rows, last sha256) the file must end exactly at that chain head."""
+        seq, prev, offset = 0, None, 0
+        with self.path.open('rb') as stream:
+            size = stream.seek(0, os.SEEK_END)
+            stream.seek(max(size - 1, 0))
+            if stream.read(1) != b'\n':
+                raise IntegrityError('ledger truncated mid-row; refuse to repair')
+            stream.seek(0)
+            for line in stream:
+                if head is not None and seq >= head[0]:
+                    raise IntegrityError('ledger file has rows beyond the in-memory chain head')
+                row = self._parse(line, seq)
+                if row.get('seq') != seq or row.get('prev') != prev:
+                    raise IntegrityError(f'ledger row {seq} tampered, reordered or not canonical')
+                yield offset, row
+                seq, prev, offset = seq + 1, row['sha256'], offset + len(line)
+        if head is not None and (seq, prev) != tuple(head):
+            raise IntegrityError('ledger file differs from the in-memory chain head')
+
+    def _replay(self):
+        first = None
+        for _, row in self._stream():
+            first = row if first is None else first
+            self.count, self.head = self.count + 1, row['sha256']
+            self.kinds[row['kind']] += 1
+        self.size = self.path.stat().st_size  # every byte was in a verified row (the file ends with a newline)
+        if first is None or first.get('kind') != 'header':
+            raise IntegrityError('ledger header missing')
+        if {k: v for k, v in first.items() if k not in ('seq', 'prev', 'sha256')} != self.header:
+            raise IntegrityError('ledger header pins differ from this runtime')
+
+    def _append(self, record):
+        body = {**record, 'seq': self.count, 'prev': self.head}
+        row = {**body, 'sha256': canonical_hash(body)}
+        data = _canonical_bytes(row)
+        with critical_section():  # a hang-guard interrupt lands after the row is on disk AND in memory
+            with self.path.open('ab') as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            self.offset, self.size, self.count, self.head = self.size, self.size + len(data), self.count + 1, row['sha256']
+            self.kinds[row['kind']] += 1
+        return row
+
+    def stream(self):
+        """(byte offset, row) of every row up to the in-memory head, re-verified while streaming."""
+        return self._stream((self.count, self.head))
+
+    def iter_rows(self):
+        return (row for _, row in self.stream())
+
+    def iter_decisions(self):
+        return (row for row in self.iter_rows() if row['kind'] == 'decision')
+
+    @property
+    def rows(self):
+        return list(self.iter_rows())
+
     def decisions(self):
-        return [r for r in self.rows if r['kind'] == 'decision']
+        return list(self.iter_decisions())
+
+    def read(self, offset):
+        """The row stored at ``offset`` (a runtime index entry), re-verified (canonical bytes, own hash)."""
+        with self.path.open('rb') as stream:
+            stream.seek(offset)
+            return self._parse(stream.readline(), f'at byte {offset}')
 
 
 class PolicyRuntime:
@@ -190,7 +248,8 @@ class PolicyRuntime:
     """
     def __init__(self, bc_artifact, support, support_sha256, ledger_path, *, candidate=None,
                  candidate_identity=None, predictor_identity=None, support_check=None, context_digest=None,
-                 context_check=None, hand_registry=None, hand_registry_sha256=None, provenance=None):
+                 context_check=None, hand_registry=None, hand_registry_sha256=None, provenance=None,
+                 positivity_record=False):
         if (candidate is None) != (candidate_identity is None):
             raise IntegrityError('a candidate needs a pinned identity (and vice versa)')
         if (hand_registry is None) != (hand_registry_sha256 is None):
@@ -216,6 +275,7 @@ class PolicyRuntime:
             if {p for p, _ in support} != single:
                 raise IntegrityError('support table pitchers must equal the single-hand registry pitchers')
         self.hand_registry = hand_registry
+        self.positivity_record = bool(positivity_record)
         self.bc, self.vocabulary = bc_artifact.bc, bc_artifact.vocabulary
         self.support, self.candidate = support, candidate
         self.reference = MaskedReference(self.bc, support)
@@ -225,17 +285,18 @@ class PolicyRuntime:
                                    'support_table_sha256': support_sha256},
                      'hand_registry_sha256': hand_registry_sha256, 'statuses': list(STATUSES),
                      'candidate': candidate_identity, 'predictor': predictor_identity, 'provenance': provenance,
-                     'population_value': None, 'contract': CONTRACT}))
+                     'population_value': None, 'contract': CONTRACT,
+                     **({'contract': CONTRACT_V3, 'positivity_record': True} if self.positivity_record else {})}))
         self.sha256 = canonical_hash(self.pins)
         self.ledger = Ledger(ledger_path, {'runtime_sha256': self.sha256, 'pins': self.pins})
-        self.by_request, self.pa = {}, {}
-        for row in self.ledger.decisions():
-            self._index(row)
-        self.halted = any(r['kind'] in ('conflict', 'malformed', 'aborted') or r.get('status') in FATAL
-                          for r in self.ledger.rows)
+        self.by_request, self.pa, self.halted = {}, {}, False  # by_request: request ID -> ledger byte offset
+        for offset, row in self.ledger.stream():
+            if row['kind'] == 'decision':
+                self._index(row, offset)
+            self.halted = self.halted or row['kind'] in ('conflict', 'malformed', 'aborted') or row.get('status') in FATAL
 
-    def _index(self, row):
-        self.by_request[row['request_id']] = row
+    def _index(self, row, offset):
+        self.by_request[row['request_id']] = offset
         pa = self.pa.setdefault(row['pa_id'], {'next': 0, 'refused': None, 'last_logged': None})
         pa['next'] = row['decision_index'] + 1
         pa['last_logged'] = row['logged_action']
@@ -343,13 +404,21 @@ class PolicyRuntime:
             raise IntegrityError('intervention mask outside the TRAIN BC support')
         reference = self._row(self.reference.probabilities(state), mask, 'reference')
         a = None
+        positivity = False
         if request.logged_action is not None:
             a = self.vocabulary.index(request.logged_action)
-            if logging[a] == 0:  # estimated logging law gives the observed action no mass (always off the mask)
+            positivity = logging[a] == 0  # estimated logging law gives the observed action no mass (always off the mask)
+            if positivity and not self.positivity_record:
                 raise Unsupported(LOGGING_POSITIVITY, request.logged_action)
         candidate, q_record = None, {}
         if self.candidate is not None:
-            out = self.candidate(state)  # probabilities, or (probabilities, reference-Q record)
+            try:
+                out = self.candidate(state)  # probabilities, or (probabilities, reference-Q record)
+            except Exception as failure:  # v3 (S-M1): a search failure on a refused row still fails closed, named
+                if positivity:
+                    failure.add_note(f'during the runtime-v3 candidate search on a {LOGGING_POSITIVITY} row '
+                                     f'(logged {request.logged_action!r})')
+                raise
             candidate = self._row(out[0] if isinstance(out, tuple) else out, mask, 'candidate')
             if isinstance(out, tuple):
                 q_record = self._q_record(out[1], mask)
@@ -359,6 +428,13 @@ class PolicyRuntime:
                   'logged_index': None, 'rho_reference': None, 'rho_candidate': None, **q_record}
         if a is None:
             return SUPPORTED, result
+        if positivity:  # v3: pi(a) = 0 for both policies, so rho = 0 exactly; recorded, never divided
+            if mask[a] or reference[a] != 0 or (candidate is not None and candidate[a] != 0):
+                raise IntegrityError('logging-positivity action with policy mass or on the mask')
+            result.update(logged_index=a, rho_reference=0.0, rho_candidate=None if candidate is None else 0.0)
+            refusal = Unsupported(LOGGING_POSITIVITY, request.logged_action)
+            refusal.result = result
+            raise refusal
         result.update(logged_index=a, rho_reference=float(reference[a] / logging[a]),
                       rho_candidate=None if candidate is None else float(candidate[a] / logging[a]))
         return (SUPPORTED if mask[a] else OUTSIDE_POLICY_SUPPORT), result
@@ -382,7 +458,9 @@ class PolicyRuntime:
             self.halted = True
             raise IntegrityError('malformed request') from failure
         if request.request_id in self.by_request:
-            stored = self.by_request[request.request_id]
+            stored = self.ledger.read(self.by_request[request.request_id])
+            if stored.get('kind') != 'decision' or stored.get('request_id') != request.request_id:
+                raise IntegrityError('ledger row at the indexed offset is not this request')
             if stored['fingerprint'] == fingerprint:
                 if stored['status'] in FATAL:
                     raise IntegrityError('replayed request had failed integrity: ' + stored['detail'])
@@ -400,11 +478,11 @@ class PolicyRuntime:
             try:
                 status, result = self._evaluate(request, pa)
             except Unsupported as refusal:
-                status, detail = refusal.status, str(refusal)
+                status, detail, result = refusal.status, str(refusal), getattr(refusal, 'result', None)
             except (IntegrityError, ValueError) as failure:
-                status, detail, error = FAILED_INTEGRITY, str(failure), failure
+                status, detail, error = FAILED_INTEGRITY, _described(failure), failure
             except Exception as failure:  # record before propagating; never lose the audit row
-                status, detail, error = FAILED_RUNTIME, f'{type(failure).__name__}: {failure}', failure
+                status, detail, error = FAILED_RUNTIME, f'{type(failure).__name__}: {_described(failure)}', failure
         s = request.state
         row = self.ledger._append({'kind': 'decision', 'request_id': request.request_id, 'pa_id': request.pa_id,
             'decision_index': request.decision_index, 'fingerprint': fingerprint, 'status': status, 'detail': detail,
@@ -412,7 +490,7 @@ class PolicyRuntime:
             'pitcher_hand': request.pitcher_hand, 'batter_side': s.batter_side, 'balls': int(s.balls),
             'strikes': int(s.strikes), 'history_actions': [h.action for h in s.history],
             'logged_action': request.logged_action, 'context_sha256': context, 'result': result})
-        self._index(row)
+        self._index(row, self.ledger.offset)
         if status in FATAL:
             self.halted = True
             if status == FAILED_RUNTIME:
@@ -426,10 +504,11 @@ class PolicyRuntime:
         self.halted = True
 
     def summary(self):
-        """Denominators from the ledger alone: every request ID once, every PA once."""
-        rows = self.ledger.decisions()
-        pas, first = {}, {}
-        for row in rows:  # ledger order = decision order within each PA
+        """Denominators from the ledger alone: every request ID once, every PA once (one streamed pass)."""
+        pas, first, statuses, requests, searches = {}, {}, Counter(), 0, 0
+        for row in self.ledger.iter_decisions():  # ledger order = decision order within each PA
+            requests += 1
+            statuses[row['status']] += 1
             status = pas.setdefault(row['pa_id'], SUPPORTED)
             if row['status'] in FATAL:
                 pas[row['pa_id']] = row['status']
@@ -437,15 +516,18 @@ class PolicyRuntime:
                 pas[row['pa_id']] = MID_PA if row['decision_index'] > 0 else row['status']
             if row['status'] not in EVALUATED and row['status'] != MID_PA:
                 first.setdefault(row['pa_id'], row['status'])
-        return {'requests': len(rows), 'request_status': dict(Counter(r['status'] for r in rows)),
+            searches += row['status'] == LOGGING_POSITIVITY and (row['result'] or {}).get('candidate') is not None
+        return {'requests': requests, 'request_status': dict(statuses),
                 'pas': len(pas), 'pa_status': dict(Counter(pas.values())),
                 'pa_first_refusal': dict(Counter(first.values())),
-                'conflicts': sum(r['kind'] == 'conflict' for r in self.ledger.rows),
-                'malformed': sum(r['kind'] == 'malformed' for r in self.ledger.rows),
-                'aborted': sum(r['kind'] == 'aborted' for r in self.ledger.rows),
+                'conflicts': self.ledger.kinds['conflict'],
+                'malformed': self.ledger.kinds['malformed'],
+                'aborted': self.ledger.kinds['aborted'],
                 'run_status': 'HALTED' if self.halted else 'OK',
-                'ledger_rows': len(self.ledger.rows), 'ledger_head_sha256': self.ledger.rows[-1]['sha256'],
-                'runtime_sha256': self.sha256, 'population_value': None}
+                'ledger_rows': self.ledger.count, 'ledger_head_sha256': self.ledger.head,
+                'runtime_sha256': self.sha256, 'population_value': None,
+                **({'positivity_candidate_searches': searches}  # v3 cost (S-M1): searches run for refused rows
+                   if self.positivity_record else {})}
 
     def verify_components(self):
         """Stage-end check before sealing results: for a candidate runtime, the pinned code,
@@ -455,6 +537,11 @@ class PolicyRuntime:
                 raise IntegrityError('a candidate without bound components cannot be verified')
             return True
         return self.components.verify(self.improvement)
+
+
+def _described(failure):
+    """str(failure) plus its notes (none on the v2 path, so v2 details are unchanged)."""
+    return ' '.join([str(failure), *getattr(failure, '__notes__', ())])
 
 
 class MaskedReference:
@@ -505,7 +592,7 @@ def candidate_identity(components, support_identity, hands_identity, settings, e
 
 def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path, *, components=None,
                   budget=None, tau=None, samples=None, pitch_cap=None, seed=None, evaluation_seed=None,
-                  expected_identity_sha256=None, hand_registry=None, provenance=None):
+                  expected_identity_sha256=None, hand_registry=None, provenance=None, positivity_record=False):
     """Entry path: pinned BC + pinned support table (+ optional P3 candidate over bound components).
 
     Without ``components`` the runtime evaluates logging law and reference only. A candidate
@@ -523,7 +610,8 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
     artifact = load_train_bc(bc_path, bc_sha256)
     support, support_identity = load_support_table(support_path, support_sha256, artifact)
     hands, hands_identity = (None, None) if hand_registry is None else load_hand_registry(*hand_registry, artifact)
-    common = dict(hand_registry=hands, hand_registry_sha256=hands_identity, provenance=provenance)
+    common = dict(hand_registry=hands, hand_registry_sha256=hands_identity, provenance=provenance,
+                  positivity_record=positivity_record)
     if components is None:
         if expected_identity_sha256 is not None or evaluation_seed is not None:
             raise IntegrityError('a policy identity pin or evaluation seed needs bound candidate components')
@@ -575,7 +663,7 @@ def build_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path,
 
 
 def build_reference_pair_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path, *, hand_registry=None,
-                                 provenance=None):
+                                 provenance=None, positivity_record=False):
     """M-10 / D89 V4(e): a candidate runtime whose candidate is an INDEPENDENT callable of the
     reference law (its own reloaded BC and support table, a separate MaskedReference). Submitted the
     same requests as the primary run, every complete PA must give a paired delta of exactly 0; the
@@ -596,4 +684,5 @@ def build_reference_pair_runtime(bc_path, bc_sha256, support_path, support_sha25
     return PolicyRuntime(artifact, support, support_identity, ledger_path, candidate=candidate,
                          candidate_identity={'name': 'cand=ref paired identity run (M-10, D89 V4 e)',
                                              'candidate': 'independent MaskedReference(TRAIN BC, pinned support table)'},
-                         hand_registry=hands, hand_registry_sha256=hands_identity, provenance=provenance)
+                         hand_registry=hands, hand_registry_sha256=hands_identity, provenance=provenance,
+                         positivity_record=positivity_record)

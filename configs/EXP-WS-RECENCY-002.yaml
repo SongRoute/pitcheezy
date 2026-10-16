@@ -1,0 +1,25 @@
+# EXP-WS-RECENCY-002 — fit100 백본의 prequential 재적합 (FIT·SELECT·CAL·EVAL 모두 strictly-prior 2026 이력으로 일관)
+# 정본 등록: /Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e1b-refit/REGISTRATION.json
+#   sha256 3edac1709b272826b43d51bcd4e6574a405b51697bc996dc473e2d87c353d1a1 (실행 전 동결, 독립 검토 PASS)
+# 코드: refit_run.py sha256 946ffd8c6a70a6c1425a279561c3a6dbc5aa8933dd2b31fe384f4a4e2dc93ce0
+id: EXP-WS-RECENCY-002
+phase: WS-adaptation
+baseline: [H0 scale-002 fit100 (FIT 동결 이력), H2 EXP-WS-RECENCY-001 (고정 모델 + prequential EVAL 특징)]
+change: "전체 713,021행 특징을 전체 수용 행 풀(2026-09-27 컷오프, 게임 날짜별 strictly prior)로 재계산 → 동결 scale-002 인코더 적용 → 동일 파라미터·시드(20261043)·역할로 3 head 재적합(SELECT 조기 종료는 새 SELECT 특징) → CAL 스칼라 온도 재적합. 구조 메모: FIT 행 특징은 scale-002와 동일하므로 트리는 같고, P는 H2와 선택 반복수·CAL 온도로만 다를 수 있음"
+data_version: d20260930-h2026f
+data_role: 2026 EXPOSED DEVELOPMENT      # 독립 TEST 없음, 승자·채택 없음
+splits: {FIT: [2026-03-25, 2026-08-02], SELECT: [2026-08-03, 2026-08-23], CAL: [2026-08-24, 2026-09-06], EVAL: [2026-09-07, 2026-09-27]}
+seeds: {classifier: 20261043, bootstrap: 20261211}
+gates:
+  a: FIT rows of x-prequential == x-fit100 FIT rows (float32 exact)
+  b: EVAL rows == E1 x-eval-H2.npy (exact)
+  c: keys/roles == corpus.npz
+  d: SELECT/CAL rows differ from x-fit100 (sanity)
+  e: full-corpus leak check (pivot = median accepted game date)
+metrics:
+  primary: P-H0 seven-leaf NLL; co_primary: P-H2 NLL (whole-game paired bootstrap 10000, pitch-weighted, percentile 95% CI)
+  secondary: [Brier, top-label ECE 10-bin, strata S0-S3 by pitcher FIT-pool rows, B0/B1 by batter]
+  labels: {SHADOW_CANDIDATE: "P-H0 and P-H2 NLL CI95 upper < 0 and Brier upper <= 0.0005", NO_ADDITIONAL_GAIN_OVER_H2: "P-H0 < 0 but P-H2 covers 0", NOT_CANDIDATE: otherwise}
+caps: {rss_bytes: 6442450944, feature_stage_seconds: 2400, child_seconds: 900, total_seconds: 7200, min_free_memory_bytes: 8589934592, lock: ML-MATRIX-20260924/.heavy.lock}
+attempt: refit-001
+commit_at_execution: fcfd5d8   # pitcheezy repo HEAD (codex/ml-matrix-execution) at execution; 실험 코드는 job 디렉터리에 있음

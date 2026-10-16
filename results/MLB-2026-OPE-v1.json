@@ -1,0 +1,169 @@
+{
+ "id": "MLB-2026-OPE-v1",
+ "attempt": "OPE-2026-a1",
+ "stage_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/MLB-2026-OPE-v1/OPE-2026-a1",
+ "ope2026_json_sha256": "5ed6b0ace081d335395df6a9ec4f324c3a2a0ba6f3eb96fd530850caa17914e7",
+ "registration": "configs/ML-POLICY-MATERIALIZATION-v1.json mlb2026_ope + addendum-1..8-d127 (code a09ed7d)",
+ "identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+ "snapshot": "d20260930-h2026f (2026-03-25..09-27, frozen)",
+ "games": 2429,
+ "pas": 184288,
+ "status": {
+  "COMPLETE": 132019,
+  "EXCLUDED_PRE_START": 34763,
+  "CENSORED": 17506
+ },
+ "reasons": {
+  "EXCLUDED_PRE_START:UNSUPPORTED_UNKNOWN_PITCHER": 34763,
+  "CENSORED:UNSUPPORTED_LOGGING_POSITIVITY": 16654,
+  "CENSORED:UNSUPPORTED_NO_LOGGED_ACTION": 659,
+  "CENSORED:no_terminal_event": 83,
+  "CENSORED:end_state_gap": 29,
+  "CENSORED:UNSUPPORTED_INCONSISTENT_HISTORY": 1,
+  "CENSORED:UNSUPPORTED_MISSING_ACTION_LABEL": 75,
+  "CENSORED:UNSUPPORTED_UNKNOWN_PITCHER": 5
+ },
+ "label": "NO_EVIDENCE_OF_IMPROVEMENT",
+ "labels": {
+  "primary": {
+   "mei": 0.001,
+   "b_v": 0.002734729542731599,
+   "gr_cap": 0.005,
+   "worst_case_residual_share": 0.0010566794850359472,
+   "passable_effect_approx": "Delta > 0.001 (+ b_V 0.002734729542731599) + s 0.001057 + 1.96 SE; worst-case residual width ~ 2 s = 0.002113",
+   "delta_lo_ci95": [
+    -0.001744870224354297,
+    -0.0007872588809334804
+   ],
+   "delta_hi_ci95": [
+    0.0005124213963688738,
+    0.0014688008997781586
+   ],
+   "label": "NO_EVIDENCE_OF_IMPROVEMENT"
+  },
+  "sensitivities": {
+   "S-v1": "NOT_DECIDABLE_CENSORING",
+   "S-NP": "NOT_DECIDABLE_CENSORING",
+   "S-B": "NO_EVIDENCE_OF_IMPROVEMENT",
+   "S-C:0.00801506103702984": "NO_EVIDENCE_OF_IMPROVEMENT",
+   "S-C:0.02784569868295147": "NO_EVIDENCE_OF_IMPROVEMENT"
+  },
+  "v3": {
+   "b_v": 0.002734729542731599,
+   "v3_law": "tempered_alpha_0.5",
+   "v3_max_abs_gap": 0.0008671251309177237,
+   "v3_flag": null
+  },
+  "s_b_disagrees_with_primary": false,
+  "sign_rule": "S-B label differing from the primary label is reported first; the primary alone decides"
+ },
+ "L1R_delta_bounds": [
+  -0.001204616445139576,
+  0.0009206006143749304
+ ],
+ "L1R_lower_endpoint_ci95": [
+  -0.001744870224354297,
+  -0.0007872588809334804
+ ],
+ "L1R_upper_endpoint_ci95": [
+  0.0005124213963688738,
+  0.0014688008997781586
+ ],
+ "L0_delta_bounds": [
+  -0.1896114791736836,
+  0.18938103841196433
+ ],
+ "L2_delta_mean": -0.00014858997929797347,
+ "L2_ci95": [
+  -0.0003110820070690677,
+  1.1744545917875063e-05
+ ],
+ "censoring_rule": {
+  "rule": "L1-R",
+  "natural_course_refusals": [
+   "UNSUPPORTED_NO_LOGGED_ACTION",
+   "UNSUPPORTED_UNKNOWN_PITCHER",
+   "UNSUPPORTED_PITCHER_HAND",
+   "UNSUPPORTED_EMPTY_SUPPORT",
+   "UNSUPPORTED_INCONSISTENT_HISTORY"
+  ],
+  "gap_delta": null,
+  "excluded_pas": 0,
+  "resolutions": {
+   "rho_zero": 16654,
+   "natural_course": 665,
+   "worst_case_residual": 158,
+   "shared_end_unknown": 29
+  },
+  "worst_case_residual_reasons": {
+   "NO_TERMINAL:no_terminal_event": 83,
+   "REFUSED:UNSUPPORTED_MISSING_ACTION_LABEL": 75
+  },
+  "worst_case_residual_share": 0.0010566794850359472,
+  "worst_case_residual_definition": [
+   "NO_TERMINAL",
+   "UNSUPPORTED_MISSING_ACTION_LABEL",
+   "structural:*",
+   "any other REFUSED reason outside POSITIVITY and the natural-course list"
+  ],
+  "estimand": "regime: pi until the first H_k-fixed event, then logged behaviour; no verdict on V(pi) itself"
+ },
+ "ess": {
+  "candidate": {
+   "pa": 123205.04984508279,
+   "game": 2259.093163887884
+  },
+  "reference": {
+   "pa": 132009.67251602514,
+   "game": 2261.8045251434855
+  },
+  "gate_min_candidate_reference": {
+   "pa": 123205.04984508279,
+   "game": 2259.093163887884
+  },
+  "label": null
+ },
+ "ess_all_e0": {
+  "candidate": {
+   "pa": 124038.38928198579,
+   "game": 2258.6641167380853
+  },
+  "reference": {
+   "pa": 132861.67206397696,
+   "game": 2261.432289305636
+  }
+ },
+ "paired_identity_run": {
+  "pas": 132019,
+  "max_abs_delta": 0.0,
+  "complete_sets_equal": true,
+  "runtime_sha256": "62ce46fd37f7cc320364ce9037e27d9441fb675f0729cf390393468b7d844dc8",
+  "pass": true
+ },
+ "vocabulary_mapping": {
+  "codes": {},
+  "rows": 0,
+  "labelled_rows": 714114,
+  "share": 0.0,
+  "share_max": 0.01,
+  "rule": "code outside the TRAIN vocabulary -> missing label (UNSUPPORTED_MISSING_ACTION_LABEL)"
+ },
+ "strata_role": {
+  "RP": [
+   -0.0013451705316972098,
+   0.0008313316091484282
+  ],
+  "SP": [
+   -0.001100581066552805,
+   0.000986675781467234
+  ]
+ },
+ "cost": {
+  "wall_seconds": 47827.57015162497,
+  "cpu_seconds": 26630.376639000002,
+  "peak_rss_raw": 7189774336,
+  "peak_rss_unit": "platform ru_maxrss"
+ },
+ "interpretation": "single registered 2026 OPE (exposed-window labels in the prereg); assumption-conditional, regime estimand; not a causal effect unless the identification assumptions hold",
+ "decision_record": "docs/decisions.md D131"
+}

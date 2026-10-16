@@ -1,0 +1,1011 @@
+{
+  "source_commit": "1687c1e8a7ea7213c164679e94d7515a0b530629",
+  "created_utc": "2026-10-04T03:56:43.463296+00:00",
+  "raw_and_blob_integrity": "passed",
+  "per_game": [
+    {
+      "game_pk": 849845,
+      "counts": {
+        "frames": 57,
+        "person_abstained": 1,
+        "assistant_abstained": 14,
+        "both_abstained": 1,
+        "person_marked": 56,
+        "person_only": 13,
+        "assistant_estimated": 43,
+        "both_marked": 43
+      },
+      "distances": {
+        "pixels": {
+          "n": 43,
+          "median": 2.0615528128088303,
+          "p90": 5.091168824543142
+        },
+        "same_plate": {
+          "n": 43,
+          "median": 0.05658992843254001,
+          "p90": 0.13906678251832824
+        },
+        "output_feet": {
+          "n": 43,
+          "median": 0.08843585245815183,
+          "p90": 0.1743107856674394
+        }
+      },
+      "labeler": "owner",
+      "labeler_source": "page",
+      "raw_sha256": "776c1c19fa00ccd568faaae6fe46362eb730016cf3d31c56b7c4a13a530a4766",
+      "pack_id": "e3e7cac83f68ebf1",
+      "exported_at": "2026-10-03T10:52:05.822Z",
+      "camera_check_reported": {
+        "error_status": "measured",
+        "rms_feet": 0.1488494360600154,
+        "human_verified_count": 0
+      }
+    },
+    {
+      "game_pk": 823407,
+      "counts": {
+        "frames": 29,
+        "person_marked": 28,
+        "assistant_estimated": 15,
+        "both_marked": 15,
+        "assistant_abstained": 14,
+        "person_only": 13,
+        "person_abstained": 1,
+        "both_abstained": 1
+      },
+      "distances": {
+        "pixels": {
+          "n": 15,
+          "median": 5.79827560572969,
+          "p90": 9.442986815621422
+        },
+        "same_plate": {
+          "n": 15,
+          "median": 0.11082531299301618,
+          "p90": 0.18547196553657375
+        },
+        "output_feet": {
+          "n": 15,
+          "median": 0.1391276032999922,
+          "p90": 0.2661246700326747
+        }
+      },
+      "labeler": "owner",
+      "labeler_source": "cli",
+      "raw_sha256": "c7242bb3560985f86492437cb4d52344d65475dbd03d79acfb672f08a42955b2",
+      "pack_id": "c72e8a15a8a67507",
+      "exported_at": "2026-10-04T01:55:22.266Z",
+      "camera_check_reported": {
+        "error_status": "unmeasured",
+        "rms_feet": null,
+        "human_verified_count": 0
+      }
+    }
+  ],
+  "pooled_counts": {
+    "frames": 86,
+    "person_abstained": 2,
+    "assistant_abstained": 28,
+    "both_abstained": 2,
+    "person_marked": 84,
+    "person_only": 26,
+    "assistant_estimated": 58,
+    "both_marked": 58
+  },
+  "pooled_distances": {
+    "pixels": {
+      "n": 58,
+      "median": 2.5298221281347035,
+      "p90": 6.511528238439882
+    },
+    "same_plate": {
+      "n": 58,
+      "median": 0.06253359097317217,
+      "p90": 0.16392254268403722
+    },
+    "output_feet": {
+      "n": 58,
+      "median": 0.09236584866713454,
+      "p90": 0.20090428069107935
+    }
+  },
+  "output_z_signed": {
+    "n": 58,
+    "mean": -0.04789827586206896,
+    "median": -0.049
+  },
+  "examples": {
+    "representative": "849845:10:4",
+    "best": "849845:23:6",
+    "worst": "849845:38:6"
+  },
+  "service_validator": {
+    "path": "/Users/song/Projects/pitcheezy-worktrees/codex-showcase-1006/apps/observer/backend/observer_app/intent.py",
+    "rows_passed": 86,
+    "sha256": "52f46e9ae09d6f3297c3ac6acc26016e34f5788d8dbd75c8864de4a82a15609d"
+  },
+  "m3_sample_rule_met": true,
+  "original_report_recalculation": "all_checked_counts_distances_and_examples_match",
+  "limits": [
+    "Shared-transform reading agreement; not physical accuracy or intent validation",
+    "One recorded labeler; raw FOX labeler blank, owner supplied at import",
+    "AI abstains on28/86; person marked26 of those; only58 comparable pairs",
+    "Physical camera checks quoted from pinned artifacts, not newly measured",
+    "No new image labeling or predictor training/evaluation"
+  ],
+  "calculator_sha256": "2b71ea600d8ec05c6c5840284405ee1f9f1b3ce96d873b83c2083088bee26cb6",
+  "per_frame": [
+    {
+      "pitch_id": "849845:4:5",
+      "pixels": [
+        0.0,
+        1.2
+      ],
+      "same_plate_feet": [
+        -0.0003,
+        -0.0316
+      ],
+      "output_feet": [
+        0.1053,
+        -0.1133
+      ]
+    },
+    {
+      "pitch_id": "849845:5:2",
+      "pixels": [
+        -0.8,
+        2.4
+      ],
+      "same_plate_feet": [
+        0.0201,
+        -0.0654
+      ],
+      "output_feet": [
+        0.069,
+        -0.1227
+      ]
+    },
+    {
+      "pitch_id": "849845:6:5",
+      "pixels": [
+        -2.1,
+        -0.5
+      ],
+      "same_plate_feet": [
+        0.0551,
+        0.0129
+      ],
+      "output_feet": [
+        0.1061,
+        0.0033
+      ]
+    },
+    {
+      "pitch_id": "849845:7:1",
+      "pixels": [
+        2.6,
+        -5.6
+      ],
+      "same_plate_feet": [
+        -0.0657,
+        0.1443
+      ],
+      "output_feet": [
+        -0.068,
+        0.1605
+      ]
+    },
+    {
+      "pitch_id": "849845:8:4",
+      "pixels": [
+        4.8,
+        -4.4
+      ],
+      "same_plate_feet": [
+        -0.1318,
+        0.1229
+      ],
+      "output_feet": [
+        -0.0072,
+        0.0824
+      ]
+    },
+    {
+      "pitch_id": "849845:10:4",
+      "pixels": [
+        2.3,
+        0.3
+      ],
+      "same_plate_feet": [
+        -0.0623,
+        -0.0054
+      ],
+      "output_feet": [
+        -0.0212,
+        -0.0899
+      ]
+    },
+    {
+      "pitch_id": "849845:11:3",
+      "pixels": [
+        -1,
+        -2.5
+      ],
+      "same_plate_feet": [
+        0.0277,
+        0.0678
+      ],
+      "output_feet": [
+        0.064,
+        0.0268
+      ]
+    },
+    {
+      "pitch_id": "849845:12:2",
+      "pixels": [
+        1.1,
+        0.5
+      ],
+      "same_plate_feet": [
+        -0.0298,
+        -0.0131
+      ],
+      "output_feet": [
+        -0.0558,
+        -0.0303
+      ]
+    },
+    {
+      "pitch_id": "849845:13:1",
+      "pixels": [
+        -5.3,
+        2.2
+      ],
+      "same_plate_feet": [
+        0.1486,
+        -0.0692
+      ],
+      "output_feet": [
+        0.1863,
+        -0.1854
+      ]
+    },
+    {
+      "pitch_id": "849845:15:3",
+      "pixels": [
+        -0.2,
+        -4.4
+      ],
+      "same_plate_feet": [
+        0.0085,
+        0.1162
+      ],
+      "output_feet": [
+        -0.0361,
+        0.0673
+      ]
+    },
+    {
+      "pitch_id": "849845:17:6",
+      "pixels": [
+        0.7,
+        -0.9
+      ],
+      "same_plate_feet": [
+        -0.0186,
+        0.025
+      ],
+      "output_feet": [
+        -0.0096,
+        -0.1267
+      ]
+    },
+    {
+      "pitch_id": "849845:19:3",
+      "pixels": [
+        -0.2,
+        0.5
+      ],
+      "same_plate_feet": [
+        0.0054,
+        -0.0143
+      ],
+      "output_feet": [
+        0.0983,
+        -0.1084
+      ]
+    },
+    {
+      "pitch_id": "849845:20:5",
+      "pixels": [
+        3.3,
+        -2.6
+      ],
+      "same_plate_feet": [
+        -0.0926,
+        0.0748
+      ],
+      "output_feet": [
+        -0.0756,
+        -0.0661
+      ]
+    },
+    {
+      "pitch_id": "849845:23:6",
+      "pixels": [
+        0.4,
+        -3.8
+      ],
+      "same_plate_feet": [
+        -0.0095,
+        0.0992
+      ],
+      "output_feet": [
+        -0.0082,
+        0.0021
+      ]
+    },
+    {
+      "pitch_id": "849845:24:5",
+      "pixels": [
+        3.6,
+        -3.6
+      ],
+      "same_plate_feet": [
+        -0.0973,
+        0.1008
+      ],
+      "output_feet": [
+        -0.0123,
+        0.0116
+      ]
+    },
+    {
+      "pitch_id": "849845:28:5",
+      "pixels": [
+        -0.4,
+        -2.6
+      ],
+      "same_plate_feet": [
+        0.0119,
+        0.0691
+      ],
+      "output_feet": [
+        -0.0313,
+        0.0334
+      ]
+    },
+    {
+      "pitch_id": "849845:31:2",
+      "pixels": [
+        4.2,
+        -1.4
+      ],
+      "same_plate_feet": [
+        -0.1109,
+        0.0412
+      ],
+      "output_feet": [
+        -0.1549,
+        -0.0069
+      ]
+    },
+    {
+      "pitch_id": "849845:32:2",
+      "pixels": [
+        0.5,
+        -2.0
+      ],
+      "same_plate_feet": [
+        -0.0146,
+        0.0586
+      ],
+      "output_feet": [
+        0.0024,
+        0.0107
+      ]
+    },
+    {
+      "pitch_id": "849845:33:4",
+      "pixels": [
+        0.0,
+        -0.1
+      ],
+      "same_plate_feet": [
+        0.0001,
+        0.0027
+      ],
+      "output_feet": [
+        -0.0103,
+        -0.0531
+      ]
+    },
+    {
+      "pitch_id": "849845:34:5",
+      "pixels": [
+        2.1,
+        -3.1
+      ],
+      "same_plate_feet": [
+        -0.0543,
+        0.0849
+      ],
+      "output_feet": [
+        -0.0729,
+        0.041
+      ]
+    },
+    {
+      "pitch_id": "849845:35:6",
+      "pixels": [
+        -1.9,
+        0.1
+      ],
+      "same_plate_feet": [
+        0.0516,
+        -0.0037
+      ],
+      "output_feet": [
+        -0.0181,
+        -0.0262
+      ]
+    },
+    {
+      "pitch_id": "849845:36:5",
+      "pixels": [
+        1.1,
+        1.2
+      ],
+      "same_plate_feet": [
+        -0.0302,
+        -0.0316
+      ],
+      "output_feet": [
+        -0.0087,
+        -0.0956
+      ]
+    },
+    {
+      "pitch_id": "849845:37:5",
+      "pixels": [
+        -2.2,
+        1.5
+      ],
+      "same_plate_feet": [
+        0.0595,
+        -0.0434
+      ],
+      "output_feet": [
+        0.093,
+        -0.149
+      ]
+    },
+    {
+      "pitch_id": "849845:38:6",
+      "pixels": [
+        0.3,
+        -1
+      ],
+      "same_plate_feet": [
+        -0.0077,
+        0.0274
+      ],
+      "output_feet": [
+        -0.0103,
+        -0.3221
+      ]
+    },
+    {
+      "pitch_id": "849845:39:3",
+      "pixels": [
+        1.3,
+        -0.6
+      ],
+      "same_plate_feet": [
+        -0.035,
+        0.0171
+      ],
+      "output_feet": [
+        0.0485,
+        -0.0708
+      ]
+    },
+    {
+      "pitch_id": "849845:40:2",
+      "pixels": [
+        4.8,
+        -1.9
+      ],
+      "same_plate_feet": [
+        -0.1279,
+        0.0546
+      ],
+      "output_feet": [
+        -0.1104,
+        -0.0093
+      ]
+    },
+    {
+      "pitch_id": "849845:42:3",
+      "pixels": [
+        0.9,
+        -0.4
+      ],
+      "same_plate_feet": [
+        -0.0239,
+        0.0119
+      ],
+      "output_feet": [
+        -0.0458,
+        -0.014
+      ]
+    },
+    {
+      "pitch_id": "849845:43:3",
+      "pixels": [
+        0.5,
+        -0.1
+      ],
+      "same_plate_feet": [
+        -0.0136,
+        0.003
+      ],
+      "output_feet": [
+        0.0808,
+        -0.1127
+      ]
+    },
+    {
+      "pitch_id": "849845:43:5",
+      "pixels": [
+        1.4,
+        -0.6
+      ],
+      "same_plate_feet": [
+        -0.0354,
+        0.0168
+      ],
+      "output_feet": [
+        -0.0491,
+        -0.0506
+      ]
+    },
+    {
+      "pitch_id": "849845:44:2",
+      "pixels": [
+        1.2,
+        0.2
+      ],
+      "same_plate_feet": [
+        -0.0324,
+        -0.005
+      ],
+      "output_feet": [
+        -0.056,
+        -0.0493
+      ]
+    },
+    {
+      "pitch_id": "849845:45:4",
+      "pixels": [
+        2.2,
+        0.9
+      ],
+      "same_plate_feet": [
+        -0.0573,
+        -0.0212
+      ],
+      "output_feet": [
+        -0.1465,
+        -0.0512
+      ]
+    },
+    {
+      "pitch_id": "849845:46:2",
+      "pixels": [
+        -3.1,
+        -0.1
+      ],
+      "same_plate_feet": [
+        0.0873,
+        0.0014
+      ],
+      "output_feet": [
+        0.128,
+        -0.1126
+      ]
+    },
+    {
+      "pitch_id": "849845:47:3",
+      "pixels": [
+        -3.0,
+        -0.4
+      ],
+      "same_plate_feet": [
+        0.0819,
+        0.0067
+      ],
+      "output_feet": [
+        0.0388,
+        0.0008
+      ]
+    },
+    {
+      "pitch_id": "849845:48:4",
+      "pixels": [
+        0.7,
+        1.5
+      ],
+      "same_plate_feet": [
+        -0.0184,
+        -0.0397
+      ],
+      "output_feet": [
+        0.0427,
+        -0.0861
+      ]
+    },
+    {
+      "pitch_id": "849845:49:3",
+      "pixels": [
+        4.2,
+        -0.5
+      ],
+      "same_plate_feet": [
+        -0.1156,
+        0.0168
+      ],
+      "output_feet": [
+        -0.1291,
+        -0.0234
+      ]
+    },
+    {
+      "pitch_id": "849845:50:2",
+      "pixels": [
+        -1.1,
+        0.5
+      ],
+      "same_plate_feet": [
+        0.0296,
+        -0.0145
+      ],
+      "output_feet": [
+        0.0077,
+        -0.0881
+      ]
+    },
+    {
+      "pitch_id": "849845:51:4",
+      "pixels": [
+        1.9,
+        -0.5
+      ],
+      "same_plate_feet": [
+        -0.0497,
+        0.0144
+      ],
+      "output_feet": [
+        -0.056,
+        -0.0303
+      ]
+    },
+    {
+      "pitch_id": "849845:52:4",
+      "pixels": [
+        -0.2,
+        0.5
+      ],
+      "same_plate_feet": [
+        0.0058,
+        -0.0145
+      ],
+      "output_feet": [
+        0.1051,
+        -0.147
+      ]
+    },
+    {
+      "pitch_id": "849845:53:5",
+      "pixels": [
+        1.2,
+        0.8
+      ],
+      "same_plate_feet": [
+        -0.0329,
+        -0.0214
+      ],
+      "output_feet": [
+        -0.0733,
+        -0.0216
+      ]
+    },
+    {
+      "pitch_id": "849845:54:2",
+      "pixels": [
+        0.9,
+        0.9
+      ],
+      "same_plate_feet": [
+        -0.0245,
+        -0.0237
+      ],
+      "output_feet": [
+        -0.0449,
+        -0.049
+      ]
+    },
+    {
+      "pitch_id": "849845:68:1",
+      "pixels": [
+        -3.7,
+        1.5
+      ],
+      "same_plate_feet": [
+        0.0942,
+        -0.0408
+      ],
+      "output_feet": [
+        0.0437,
+        -0.0413
+      ]
+    },
+    {
+      "pitch_id": "849845:69:2",
+      "pixels": [
+        0.6,
+        -1.8
+      ],
+      "same_plate_feet": [
+        -0.0164,
+        0.0522
+      ],
+      "output_feet": [
+        -0.0509,
+        -0.0283
+      ]
+    },
+    {
+      "pitch_id": "849845:70:4",
+      "pixels": [
+        0.5,
+        0.1
+      ],
+      "same_plate_feet": [
+        -0.0146,
+        -0.0025
+      ],
+      "output_feet": [
+        0.0367,
+        -0.1524
+      ]
+    },
+    {
+      "pitch_id": "823407:1:3",
+      "pixels": [
+        -4.4,
+        -4.1
+      ],
+      "same_plate_feet": [
+        0.0825,
+        0.074
+      ],
+      "output_feet": [
+        0.0864,
+        0.0728
+      ]
+    },
+    {
+      "pitch_id": "823407:4:2",
+      "pixels": [
+        8.6,
+        -1.6
+      ],
+      "same_plate_feet": [
+        -0.1643,
+        0.0313
+      ],
+      "output_feet": [
+        -0.144,
+        0.0079
+      ]
+    },
+    {
+      "pitch_id": "823407:5:2",
+      "pixels": [
+        0.5,
+        -2.1
+      ],
+      "same_plate_feet": [
+        -0.0094,
+        0.0395
+      ],
+      "output_feet": [
+        0.0553,
+        0.0106
+      ]
+    },
+    {
+      "pitch_id": "823407:6:4",
+      "pixels": [
+        3.1,
+        0.9
+      ],
+      "same_plate_feet": [
+        -0.057,
+        -0.0163
+      ],
+      "output_feet": [
+        0.0011,
+        -0.052
+      ]
+    },
+    {
+      "pitch_id": "823407:8:5",
+      "pixels": [
+        5.7,
+        3.9
+      ],
+      "same_plate_feet": [
+        -0.1194,
+        -0.0785
+      ],
+      "output_feet": [
+        -0.0432,
+        -0.1484
+      ]
+    },
+    {
+      "pitch_id": "823407:10:6",
+      "pixels": [
+        4.9,
+        -3.1
+      ],
+      "same_plate_feet": [
+        -0.099,
+        0.0641
+      ],
+      "output_feet": [
+        -0.009,
+        -0.0143
+      ]
+    },
+    {
+      "pitch_id": "823407:19:4",
+      "pixels": [
+        2.1,
+        1.4
+      ],
+      "same_plate_feet": [
+        -0.0409,
+        -0.0276
+      ],
+      "output_feet": [
+        -0.0077,
+        -0.0689
+      ]
+    },
+    {
+      "pitch_id": "823407:20:3",
+      "pixels": [
+        4.5,
+        -3.9
+      ],
+      "same_plate_feet": [
+        -0.0923,
+        0.0825
+      ],
+      "output_feet": [
+        0.1003,
+        -0.2465
+      ]
+    },
+    {
+      "pitch_id": "823407:21:2",
+      "pixels": [
+        12.0,
+        -7.6
+      ],
+      "same_plate_feet": [
+        -0.2235,
+        0.146
+      ],
+      "output_feet": [
+        -0.1867,
+        0.0742
+      ]
+    },
+    {
+      "pitch_id": "823407:22:3",
+      "pixels": [
+        -5.3,
+        -1.6
+      ],
+      "same_plate_feet": [
+        0.1023,
+        0.0305
+      ],
+      "output_feet": [
+        0.226,
+        -0.007
+      ]
+    },
+    {
+      "pitch_id": "823407:23:6",
+      "pixels": [
+        -1.6,
+        -3.6
+      ],
+      "same_plate_feet": [
+        0.0297,
+        0.0684
+      ],
+      "output_feet": [
+        0.1532,
+        0.0137
+      ]
+    },
+    {
+      "pitch_id": "823407:24:5",
+      "pixels": [
+        1.1,
+        -3.1
+      ],
+      "same_plate_feet": [
+        -0.0222,
+        0.0668
+      ],
+      "output_feet": [
+        0.0511,
+        -0.0722
+      ]
+    },
+    {
+      "pitch_id": "823407:49:1",
+      "pixels": [
+        -2.1,
+        -0.6
+      ],
+      "same_plate_feet": [
+        0.0519,
+        0.0149
+      ],
+      "output_feet": [
+        0.2508,
+        -0.1344
+      ]
+    },
+    {
+      "pitch_id": "823407:50:1",
+      "pixels": [
+        7.3,
+        -1.1
+      ],
+      "same_plate_feet": [
+        -0.1641,
+        0.0307
+      ],
+      "output_feet": [
+        -0.096,
+        -0.1007
+      ]
+    },
+    {
+      "pitch_id": "823407:61:3",
+      "pixels": [
+        3.9,
+        -8.6
+      ],
+      "same_plate_feet": [
+        -0.0788,
+        0.1679
+      ],
+      "output_feet": [
+        0.0429,
+        0.0809
+      ]
+    }
+  ]
+}

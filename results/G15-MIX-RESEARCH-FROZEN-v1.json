@@ -1,0 +1,16 @@
+{
+  "protocol": "g15_mix_research_frozen_verification_v1",
+  "status": "PASS",
+  "bundle_sha256": "b4c19988722c25d994b6f14c9b87b3ff3a177fb95702fe4c61a518fbbb201e6d",
+  "file_count": 61,
+  "member_count": 5,
+  "fit_predict_commit": "12f4fe944d2faa825dc4ea2b3c2668447b6e74eb",
+  "confirmation_commit": "fbcdaacd8ddb1ca987632cc315fd6a041a5b8bc5",
+  "research_only": true,
+  "service_promotion": false,
+  "independent_confirmation": false,
+  "policy_validated": false,
+  "new_fit_count": 0,
+  "inference_performed": false,
+  "self_contained": false
+}

@@ -1,7 +1,8 @@
 """<=2025 policy validation runner (ML-POLICY-VAL-v1, COOP-018, D93).
 
 Stages: census (S0), materialize-bc (S1), style-snapshot (S1b), bind-probe (S2), profile (S3),
-tau-select (S3b), v5-denominators (S4), v2-world (S5), dr-evaluate (S6/V4). The CLI refuses unless
+tau-select (S3b), v5-denominators (S4), v2-world (S5), dr-evaluate (S6/V4), and ope-2026 (the single
+registered 2026 OPE on the frozen holdout snapshot; COOP-021/022). The CLI refuses unless
 configs/ML-POLICY-MATERIALIZATION-v1.json is registered and execution-enabled, every decision has
 its registered value, the source commit is HEAD on a clean tree, the local config matches its
 pin, the stage's review gate is passed (M-3) and every field the stage reads is registered. Stage
@@ -10,14 +11,16 @@ outputs of earlier stages reach later ones only through an append-only addendum 
 under the registered root, records its start/identity, seals a manifest with its measured cost
 on success and preserves a failure record otherwise (no silent retry, no scope shrinking). D-11
 (measure first): label-blind stages carry only a hang guard; candidate rollouts carry registered
-RowBudgets. No row dated 2026 or later can enter. Stage logic is in pure functions over
-already-loaded inputs so it can be checked without real data.
+RowBudgets. No row dated 2026 or later can enter a <=2025 stage; ope-2026 reads only the pinned
+holdout snapshot d20260930-h2026f, once. Stage logic is in pure functions over already-loaded
+inputs so it can be checked without real data.
 """
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
+import gc
 import io
 import json
 from pathlib import Path
@@ -55,7 +58,17 @@ PROTOCOL = 'ml_policy_materialization_v1'
 STAGES = {'census': 'S0_census', 'materialize-bc': 'S1_materialize', 'style-snapshot': 'S1b_style_snapshot',
           'bind-probe': 'S2_bind_probe', 'profile': 'S3_profile', 'tau-select': 'S3b_tau_select',
           'v5-denominators': 'S4_V5_denominators', 'v2-world': 'S5_V2_V3', 'dr-evaluate': 'S6_V4'}
-COMMANDS = tuple(STAGES)
+OPE = 'ope-2026'
+COMMANDS = (*STAGES, OPE)
+HOLDOUT_VERSION = 'd20260930-h2026f'  # the frozen 2026 evaluation snapshot (prereg identities.collection_snapshot_*)
+HOLDOUT_SHA256 = 'c0c1eda4b515fc14dab79defe577b449e2695d40dd036f5c35ae52e37093ed9b'
+HOLDOUT_SEASON = ('2026-03-25', '2026-09-27')  # regular season (prereg evaluation_universe)
+HOLDOUT_COLUMNS = ('game_pk', 'at_bat_number', 'pitch_number', 'game_date', 'game_type', 'pitch_type', 'pitcher',
+                   'batter', 'stand', 'p_throws', 'balls', 'strikes', 'outs_when_up', 'inning', 'inning_topbot',
+                   'home_score', 'away_score', 'post_home_score', 'post_away_score', 'on_1b', 'on_2b', 'on_3b',
+                   'events', 'description', 'effective_speed', 'release_spin_rate', 'spin_axis', 'pfx_x', 'pfx_z',
+                   'plate_x', 'plate_z')  # only what requests, history tokens, contexts and the PA end read
+ESTIMATOR_KEYS = {'runtime', 'censoring', 'natural_course_refusals', 'gr_cap', 'c_deltas', 'mei', 'v3_law'}
 EARLY = ('census', 'materialize-bc', 'style-snapshot', 'bind-probe')  # M-3: open after the code review gate
 LAST_DATE = pd.Timestamp('2025-12-31')
 DECISION_VALUES = {  # D93: the user's decisions (2026-09-29); nothing else can run
@@ -99,6 +112,11 @@ REQUIRED = {  # config fields a stage reads; null = unregistered = refuse before
                     f'{S}.S6_V4.d7_diagnostic_starts', f'{P}.bootstrap.draws',
                     f'{P}.bootstrap.invalid_share_max', f'{P}.bootstrap.minimum.games', f'{P}.bootstrap.minimum.pa_starts',
                     'ess_gate.thresholds.pa', 'ess_gate.thresholds.game', 'sensitivity.same_ledger', 'seeds.planning_main'),
+    OPE: (f'{P}.bootstrap.draws', f'{P}.bootstrap.invalid_share_max', f'{P}.bootstrap.minimum.games',
+          f'{P}.bootstrap.minimum.pa_starts', f'{S}.S6_V4.n_games', 'ess_gate.thresholds.pa', 'ess_gate.thresholds.game',
+          'sensitivity.same_ledger', 'seeds.planning_main', 'mlb2026_ope.output_root', 'mlb2026_ope.row_budget',
+          'mlb2026_ope.b_v', 'mlb2026_ope.max_attempts', 'mlb2026_ope.hang_guard_multiplier',
+          'mlb2026_ope.candidate_identity_sha256', 'mlb2026_ope.estimator', 'mlb2026_ope.vocab_unmapped_share_max'),
 }
 PREREQUISITES = {  # registered inputs (sealed stage outputs) a stage needs, checked before any data load
     'census': (), 'materialize-bc': ('census',), 'style-snapshot': ('census',),
@@ -111,12 +129,14 @@ PREREQUISITES = {  # registered inputs (sealed stage outputs) a stage needs, che
                  'profile', 'tau_freeze', 'v5'),
     'dr-evaluate': ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'bind_identity', 'style_dev',
                     'profile', 'tau_freeze', 'v5', 'v2'),
+    OPE: ('census', 'bc', 'support', 'hands', 'materialize', 'bind_probe', 'bind_identity', 'profile', 'tau_freeze',
+          'v5', 'v2', 's6_dr'),
 }
 INPUT_COMMAND = {  # the stage whose sealed manifest must list each registered input
     'census': 'census', 'bc': 'materialize-bc', 'support': 'materialize-bc', 'hands': 'materialize-bc',
     'materialize': 'materialize-bc', 'style_dev': 'style-snapshot', 'style_temperature': 'style-snapshot',
     'style_blend': 'style-snapshot', 'bind_probe': 'bind-probe', 'bind_identity': 'bind-probe', 'profile': 'profile',
-    'tau_freeze': 'tau-select', 'v5': 'v5-denominators', 'v2': 'v2-world'}
+    'tau_freeze': 'tau-select', 'v5': 'v5-denominators', 'v2': 'v2-world', 's6_dr': 'dr-evaluate'}
 DR_Q_RULE = 'evaluation_seed_with_cost_fallback'  # M-7: fixed rule, applied mechanically from the S3 cost record
 SENSITIVITIES = ('flags_to_bounds', 'r5-events-v1', 'post_pitch_scores')
 CODE_PATHS = ('experiments', 'src', 'scripts')  # a registered run needs these unchanged since the source commit
@@ -192,11 +212,51 @@ def registration(config, command=None):
         _require(hazard is None or (isinstance(hazard, dict) and all(0 <= float(v) <= 1 for v in hazard.values())
                                     and type(s5.get('hazard_replicates')) is int and s5['hazard_replicates'] >= 1),
                  'a declared hazard needs {action: probability} and a positive replicate count')
-    if command == 'dr-evaluate':
+    if command == 'dr-evaluate' and stages['S6_V4'].get('estimator') is not None:
+        estimator_block(stages['S6_V4']['estimator'])
+    if command == OPE:
+        ope = config['mlb2026_ope']
+        _require(ope.get('registered') is True and ope.get('status') == 'REGISTERED',
+                 '2026 OPE is not registered; refusing to run')
+        _require((ope.get('review_gate') or {}).get('status') == 'PASS', '2026 OPE review gate not passed')
+        snapshot = ope.get('snapshot') or {}
+        _require(snapshot.get('version') == HOLDOUT_VERSION and snapshot.get('sha256') == HOLDOUT_SHA256
+                 and isinstance(snapshot.get('path'), str) and snapshot['path'],
+                 f'only the frozen holdout snapshot {HOLDOUT_VERSION} may be read')
+        _require(ope.get('season') == list(HOLDOUT_SEASON), 'registered 2026 regular season differs')
+        _require(type(ope['max_attempts']) is int and 1 <= ope['max_attempts'] <= 2, 'max_attempts: 1 or 2 (M2)')
+        _require(positive(ope['hang_guard_multiplier']) and positive(ope['row_budget']) and positive(ope['b_v']),
+                 '2026 hang-guard multiplier, row budget and b_V must be registered positive numbers')
+        _require(Path(ope['output_root']).resolve() != Path(plan['output_root']).resolve(),
+                 'the 2026 output root must differ from the <=2025 root')
+        cap = ope['vocab_unmapped_share_max']
+        _require(isinstance(cap, (int, float)) and not isinstance(cap, bool) and 0 <= cap <= 1,
+                 'vocab_unmapped_share_max must be a registered share in [0, 1]')
+        _require('hang_guard_seconds' not in ope,  # F-m4: a stage timer would be cancelled by the S6-scaled guard
+                 'mlb2026_ope must not register hang_guard_seconds (the guard is S6 seconds x games x multiplier)')
+        estimator_block(ope['estimator'])
+        batch = ope.get('bind_batch_games')  # D125: optional; absent = bind every PA at once
+        _require(batch is None or (type(batch) is int and batch >= 1), 'bind_batch_games must be a positive integer')
+    if command in ('dr-evaluate', OPE):
         share = config['le2025_validation_plan']['bootstrap']['invalid_share_max']
         _require(isinstance(share, (int, float)) and not isinstance(share, bool) and 0 <= share <= 1,
                  'bootstrap.invalid_share_max must be a registered share in [0, 1]')
     return decisions
+
+
+def estimator_block(block):
+    """Registered L1-R block (COOP-021/022): runtime v3, censoring l1r, the natural-course refusal
+    list, the G-R cap, the S-C deltas, MEI and the V3 law."""
+    _require(isinstance(block, dict) and set(block) == ESTIMATOR_KEYS, f'estimator block needs exactly {sorted(ESTIMATOR_KEYS)}')
+    _require(block['runtime'] == prt.CONTRACT_V3 and block['censoring'] == 'l1r', 'estimator: runtime v3 with L1-R')
+    _require(block['natural_course_refusals'] == list(est.H_K_REFUSALS), 'natural-course refusals differ from H_K_REFUSALS')
+    number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+    _require(number(block['gr_cap']) and 0 < block['gr_cap'] < 1 and number(block['mei']) and block['mei'] > 0,
+             'G-R cap and MEI must be registered numbers')
+    _require(isinstance(block['c_deltas'], list) and block['c_deltas'] and all(number(d) and d > 0 for d in block['c_deltas']),
+             'S-C deltas must be a nonempty list of positive numbers')
+    _require(isinstance(block['v3_law'], str) and block['v3_law'], 'registered V3 law required')
+    return block
 
 
 def load_registration(config_path, addendum_paths=()):
@@ -311,7 +371,9 @@ def stage(output, command, identity, hang_guard_seconds=None):
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
         dump(output / f'failure-{stamp}.json', {'command': command, 'error_type': type(error).__name__,
              'error': str(error), 'seconds': time.perf_counter() - started, 'preserve_partial_artifacts': True,
-             'partial_ledger_prefix': True, 'citable': False})
+             'partial_ledger_prefix': True, 'citable': False,
+             'partial_ledger_sha256': {str(p.relative_to(output)): hash_file(p)  # F-m2: bytes hashed, never parsed
+                                       for p in sorted(output.rglob('ledger*.jsonl')) if not is_appledouble(p)}})
         raise
     finally:
         if hang_guard_seconds is not None:
@@ -609,7 +671,7 @@ def seal_counts(facts, runtime, expected_pas):
     once, and every submitted request has exactly one ledger decision row (a fresh stage ledger)."""
     _require(len(facts) == expected_pas, 'handled PAs differ from the pinned census count')
     submitted = sum(info['submitted'] for info in facts.values())
-    _require(submitted == len(runtime.ledger.decisions()), 'ledger decision rows differ from the submitted requests')
+    _require(submitted == runtime.ledger.kinds['decision'], 'ledger decision rows differ from the submitted requests')
     return {'pas': len(facts), 'requests': submitted}
 
 
@@ -637,6 +699,24 @@ def outcome_function(store, components, games, rule, score_source='next_row'):
                                              score_source=score_source)
 
 
+def censoring_sensitivities(ledger, facts, kwargs, estimator):
+    """COOP-022 registered censoring sensitivities of L1-R (descriptive; the primary alone decides):
+    S-v1 = the D-5 worst case; S-NP = no-pitch calls kept worst case; S-B = PAs of pitchers who
+    revealed an off-TRAIN pitch type in an earlier PA leave E0; S-C = shared level plus a node gap
+    |V_c - V_r| <= delta (single node; under-bounds multi-step gaps)."""
+    base = {k: v for k, v in kwargs.items() if k != 'censoring'}
+    natural = tuple(r for r in est.H_K_REFUSALS if r != prt.NO_LOGGED_ACTION)
+    runs = {'S-v1': dict(censoring='worst_case'), 'S-NP': dict(censoring='l1r', natural=natural),
+            'S-B': dict(censoring='l1r', exclude=est.revealed_new_pitch(ledger.iter_decisions(), facts)),
+            **{f'S-C:{d}': dict(censoring='l1r', gap_delta=float(d)) for d in estimator['c_deltas']}}
+    out = {}
+    for name, extra in runs.items():
+        other, _ = est.estimate(ledger.iter_decisions(), facts, **base, **extra)
+        out[name] = {k: other.get(k) for k in ('layers', 'bootstrap', 'censoring_rule', 'censoring', 'ess', 'status')}
+        out[name]['label'] = 'registered censoring sensitivity; descriptive'
+    return out
+
+
 def variant_facts(facts, variant, store, components, games):
     """M-12 registered sensitivities from the same ledger (only the PA-end facts change)."""
     _require(variant in ('flags_to_bounds', 'r5-events-v1', 'post_pitch_scores'), f'unregistered sensitivity {variant}')
@@ -659,7 +739,7 @@ def paired_identity_run(runtime, store, blocks, facts, rows, *, no_pitch, kwargs
     pair_facts = submit_pas(runtime, store, blocks, Deadline(), no_pitch=no_pitch)
     for pa_id, info in pair_facts.items():  # the PA end is the same observed fact
         info.update({k: facts[pa_id].get(k) for k in ('reward', 'reason', 'kind', 'end', 'end_kind', 'flags')})
-    _, pair_rows = est.estimate(runtime.ledger.decisions(), pair_facts, **{**kwargs, 'ess_gate': None})
+    _, pair_rows = est.estimate(runtime.ledger.iter_decisions(), pair_facts, **{**kwargs, 'ess_gate': None})
     complete = {r['pa_id'] for r in pair_rows if r['status'] == est.COMPLETE}
     deltas = [abs(r['delta']) for r in pair_rows if r['status'] == est.COMPLETE]
     record = {'pas': len(complete), 'max_abs_delta': float(max(deltas, default=0.)),
@@ -670,24 +750,67 @@ def paired_identity_run(runtime, store, blocks, facts, rows, *, no_pitch, kwargs
     return record
 
 
+def game_batches(frame, blocks, batch_games):
+    """Consecutive runs of the PA blocks, each covering at most ``batch_games`` games (block order kept)."""
+    batches, seen = [], set()
+    for block in blocks:
+        game = int(frame.game_pk.iloc[block[1][0]])
+        if not batches or (game not in seen and len(seen) == batch_games):
+            batches.append([])
+            seen = set()
+        seen.add(game)
+        batches[-1].append(block)
+    return batches
+
+
+def submit_batches(rebind, store, blocks, deadline, batch_games, *, no_pitch, games):
+    """D125: the candidate bound to one game batch's context rows at a time. Each batch gets a fresh
+    ``rebind(batch) -> (runtime, components)`` (same pins, so the same runtime sha, reopening the same
+    ledger file and sharing one RowBudget); the previous batch's bound rows and caches are released
+    first. Every rebinding re-checks the certified identity (in ``rebind``) and every batch is
+    verified before it is released. Same requests in the same order as one unbatched pass."""
+    facts, runtime, components = {}, None, None
+    for part in game_batches(store.frame, blocks, batch_games):
+        runtime = components = None
+        gc.collect()  # the bound components hold reference cycles (closures); free them before rebinding
+        runtime, components = rebind(part)
+        submit_pas(runtime, store, part, deadline, no_pitch=no_pitch, facts=facts,
+                   outcome=outcome_function(store, components, games, 'structural-end-v1'))
+        runtime.verify_components()
+    return runtime, components, facts
+
+
 def run_dr(runtime, store, components, blocks, deadline, *, no_pitch, bootstrap, ess_gate, sensitivities, strata=None,
-           expected_pas=None, pair=None):
+           expected_pas=None, pair=None, estimator=None, rebind=None, batch_games=None):
     """Candidate runtime over the selected PAs, PA-end facts from the verified WE, the DR estimator
-    (primary), the registered same-ledger sensitivities and (``pair``) the M-10 paired run."""
+    (primary), the registered same-ledger sensitivities and (``pair``) the M-10 paired run. With a
+    registered ``estimator`` block the primary is L1-R and the censoring sensitivities S-v1, S-NP,
+    S-B and S-C are computed from the same ledger (COOP-021/022). With ``rebind`` (and no runtime)
+    the PAs are submitted in game batches (``submit_batches``); the outputs are the same bytes."""
     games = preq.game_table(store.frame, {int(store.frame.game_pk.iloc[p[0]]) for _, p in blocks})
-    facts = submit_pas(runtime, store, blocks, deadline, no_pitch=no_pitch,
-                       outcome=outcome_function(store, components, games, 'structural-end-v1'))
+    if rebind is None:
+        facts = submit_pas(runtime, store, blocks, deadline, no_pitch=no_pitch,
+                           outcome=outcome_function(store, components, games, 'structural-end-v1'))
+    else:
+        _require(runtime is None and components is None and type(batch_games) is int and batch_games >= 1,
+                 'batched binding takes no pre-bound runtime and a positive game count')
+        runtime, components, facts = submit_batches(rebind, store, blocks, deadline, batch_games, no_pitch=no_pitch,
+                                                    games=games)
     if strata is not None:
         for pa_id, info in facts.items():
             info['strata'] = strata(pa_id, info)
     kwargs = dict(draws=bootstrap['draws'], seed=bootstrap['seed'], invalid_share_max=bootstrap['invalid_share_max'],
                   minimum=bootstrap['minimum'], ess_gate=ess_gate)
+    if estimator is not None:
+        kwargs['censoring'] = 'l1r'
     sealed = seal_counts(facts, runtime, len(blocks) if expected_pas is None else expected_pas)
-    result, rows = est.estimate(runtime.ledger.decisions(), facts, **kwargs)
+    result, rows = est.estimate(runtime.ledger.iter_decisions(), facts, **kwargs)
+    if estimator is not None:
+        result['censoring_sensitivity'] = censoring_sensitivities(runtime.ledger, facts, kwargs, estimator)
     result['sealed_counts'] = sealed
     result['sensitivity'] = {}
     for variant in sensitivities:
-        other, _ = est.estimate(runtime.ledger.decisions(), variant_facts(facts, variant, store, components, games),
+        other, _ = est.estimate(runtime.ledger.iter_decisions(), variant_facts(facts, variant, store, components, games),
                                 **kwargs)
         result['sensitivity'][variant] = {'layers': other['layers'], 'status': other['status'],
                                           'label': 'registered sensitivity; descriptive'}
@@ -741,12 +864,14 @@ def census_pas(census_split, games):
     return sum(counts[str(g)] for g in games)
 
 
-def strata_function(frame, volume_edges, bc_p_only=()):
+def strata_function(frame, volume_edges, bc_p_only=(), train_counts=None):
     """M-13 descriptive strata per PA: D87 role, month, TRAIN volume bin, extra innings, and the
-    D-1 critic 5 stratum of pitchers known only through BC-P (no eligible TRAIN pitch)."""
+    D-1 critic 5 stratum of pitchers known only through BC-P (no eligible TRAIN pitch). For 2026
+    the TRAIN counts come from the <=2025 frame (``train_counts``)."""
     bc_p_only = {str(p) for p in bc_p_only}
     roles = preq.pitcher_roles(frame)
-    train_counts = frame.loc[frame.split.eq('train')].groupby('pitcher').size()
+    if train_counts is None:
+        train_counts = frame.loc[frame.split.eq('train')].groupby('pitcher').size()
     first = {}
     for pa_id, positions in preq.pa_blocks(frame):
         first[pa_id] = positions[0]
@@ -826,6 +951,14 @@ def load_inputs(config, local, *, store=True):
     return out
 
 
+def style_report(store, blocks, snapshot, as_of):
+    """The style report ``pa_contexts`` returns for these blocks, from the few columns it reads."""
+    safe = safe_rows(store.frame.iloc[:0]).columns
+    rows = store.frame.iloc[np.concatenate([positions for _, positions in blocks])]
+    return preq.apply_style_snapshot(rows[[c for c in ('game_date', 'batter', *preq.PA_KEY) if c in safe]],
+                                     snapshot, as_of)[1]
+
+
 def pa_contexts(store, blocks, snapshot=None, as_of=None):
     """Safe context rows of the PAs; with a snapshot, their style priors are the frozen values."""
     rows = store.frame.iloc[np.concatenate([positions for _, positions in blocks])]
@@ -857,6 +990,112 @@ def check_output(output, plan):
     output = Path(output).resolve()
     _require(output.parent == root, f'stage output must be a new directory directly under {root}')
     return root
+
+
+def load_holdout(snapshot):
+    """The pinned 2026 holdout snapshot (bytes hashed once), only the columns the OPE reads."""
+    _require(snapshot.get('version') == HOLDOUT_VERSION and snapshot.get('sha256') == HOLDOUT_SHA256,
+             f'only the frozen holdout snapshot {HOLDOUT_VERSION} may be read')
+    raw = pinned_bytes(snapshot['path'], snapshot['sha256'])
+    return pd.read_parquet(io.BytesIO(raw), columns=list(HOLDOUT_COLUMNS))
+
+
+def holdout_frame(raw, season=HOLDOUT_SEASON):
+    """2026 regular-season frame in the G0 order (game date, then pitch key). Games recorded on
+    more than one date (suspended and resumed) are dropped by the schedule alone (pre-decision) and
+    listed; the batter style columns are placeholders that the frozen 2026 snapshot replaces."""
+    from pitchmdp.archetypes import HISTORY_COLUMNS
+    frame = raw.loc[raw.game_type.eq('R')].drop(columns='game_type').copy()
+    frame['game_date'] = pd.to_datetime(frame.game_date).dt.normalize()
+    _require(len(frame) and frame.game_date.between(pd.Timestamp(season[0]), pd.Timestamp(season[1])).all(),
+             'regular-season rows outside the registered 2026 season')
+    dates = frame.groupby('game_pk').game_date.nunique()
+    dropped = sorted(int(g) for g in dates.index[dates > 1])
+    frame = frame.loc[~frame.game_pk.isin(dropped)].sort_values(['game_date', *KEY], kind='stable').reset_index(drop=True)
+    _require(not frame.duplicated(KEY).any(), 'duplicate pitch keys in the 2026 snapshot')
+    frame['bases'] = (frame.on_1b.notna().astype(int) + 2 * frame.on_2b.notna().astype(int)  # data.py formula
+                      + 4 * frame.on_3b.notna().astype(int))
+    frame['split'] = 'eval2026'
+    for column in HISTORY_COLUMNS:
+        frame[column] = np.float32(np.nan)
+    return frame, dropped
+
+
+def one_shot_guard(root, max_attempts):
+    """M2: a sealed ope-2026 stage ends the registration; failed attempts count toward the limit. Every
+    directory under the 2026 root is an attempt, with or without started.json (S-m4); a started.json
+    that does not parse as an ope-2026 record is an integrity failure, not a silent skip."""
+    root = Path(root)
+    attempts = []
+    for directory in sorted(root.iterdir()) if root.exists() else ():
+        if not directory.is_dir():
+            continue
+        started = directory / 'started.json'
+        if started.exists():
+            try:
+                command = json.loads(started.read_bytes()).get('command')
+            except (ValueError, AttributeError) as error:
+                raise IntegrityError(f'corrupt or partial started.json in 2026 attempt {directory}: {error}') from error
+            _require(command == OPE, f'2026 root holds a non-ope-2026 stage {directory} ({command!r})')
+        attempts.append(directory)
+    _require(not any((d / 'manifest.json').exists() for d in attempts),
+             '2026 OPE already sealed: one shot; a new run needs a new registration id')
+    _require(len(attempts) < max_attempts,
+             f'FAILED_INFRA: {len(attempts)} failed 2026 attempts; no further attempt under this registration')
+    return [str(d) for d in attempts]
+
+
+REFUSED_VOCABULARY = 'REFUSED_VOCABULARY'
+
+
+def map_vocabulary(frame, vocabulary, share_max):
+    """F-M1: 2026 pitch codes outside the TRAIN vocabulary become missing labels (MISSING_ACTION_LABEL
+    rows, worst-case residual in G-R; the history token was already the unknown type). Reports the
+    codes and counts; refuses (REFUSED_VOCABULARY, before any attempt) when the mapped share of labelled
+    rows exceeds the registered cap."""
+    codes = frame.pitch_type.astype('string')
+    labelled = (codes.notna() & codes.ne('')).fillna(False).astype(bool)
+    outside = labelled & ~codes.isin(list(vocabulary)).fillna(False).astype(bool)
+    share = float(outside.sum() / labelled.sum()) if labelled.any() else 0.
+    record = {'codes': {str(k): int(v) for k, v in sorted(codes[outside].value_counts().items())},
+              'rows': int(outside.sum()), 'labelled_rows': int(labelled.sum()), 'share': share, 'share_max': share_max,
+              'rule': 'code outside the TRAIN vocabulary -> missing label (UNSUPPORTED_MISSING_ACTION_LABEL)'}
+    _require(share <= share_max, f'{REFUSED_VOCABULARY}: mapped share {share} above the registered cap: {record}')
+    frame = frame.copy()
+    frame.loc[outside.to_numpy(), 'pitch_type'] = None
+    return frame, record
+
+
+def ope_pre_stage(reg, spec, load_holdout):
+    """S-M2/S-m3: inside the heavy lock and before the attempt directory: the one-shot guard again,
+    the snapshot pin, the season guard, duplicate keys and the vocabulary cap (all outcome-free)."""
+    prior = one_shot_guard(spec['output_root'], spec['max_attempts'])
+    vocabulary = load_train_bc(*registered_path(reg, 'bc')).vocabulary
+    holdout, dropped = holdout_frame(load_holdout(spec['snapshot']))
+    holdout, mapping = map_vocabulary(holdout, vocabulary, spec['vocab_unmapped_share_max'])
+    return {'prior_attempts': prior, 'holdout': holdout, 'dropped': dropped, 'vocabulary': list(vocabulary),
+            'vocabulary_mapping': mapping}
+
+
+def s6_estimator_block(s6):
+    """S-m8: the estimator block the sealed S6 rehearsal ran with, read back from its dr.json."""
+    rule, labels = s6.get('censoring_rule') or {}, s6.get('rehearsal_labels') or {}
+    primary = labels.get('primary') or {}
+    return {'runtime': prt.CONTRACT_V3 if rule else prt.CONTRACT, 'censoring': 'l1r' if rule.get('rule') == 'L1-R' else None,
+            'natural_course_refusals': rule.get('natural_course_refusals'), 'gr_cap': primary.get('gr_cap'),
+            'mei': primary.get('mei'), 'v3_law': (labels.get('v3') or {}).get('v3_law'),
+            'c_deltas': [float(k.split(':', 1)[1]) for k in s6.get('censoring_sensitivity') or {} if k.startswith('S-C:')]}
+
+
+@contextmanager
+def hang_guard(seconds):
+    previous = signal.signal(signal.SIGALRM, _raise_hang)
+    signal.setitimer(signal.ITIMER_REAL, float(seconds))
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 SPLIT_OF = {'materialize-bc': 'train', 'profile': 'temperature', 'tau-select': 'blend', 'v5-denominators': 'dev',
@@ -914,39 +1153,63 @@ def prerequisites(command, reg):
         _require(freeze['gate'] == json.loads(json.dumps(gate)), 'tau was frozen under another registered gate (D-9 critic 5)')
     if 'v5' in PREREQUISITES[command]:
         _require(registered_json(reg, 'v5').get('sealed_counts'), 'a sealed S4 record is required')
+    if 's6_dr' in PREREQUISITES[command]:
+        s6 = registered_json(reg, 's6_dr')
+        _require(s6.get('censoring_rule') is not None, 'the registered S6 rehearsal must be the runtime-v3 L1-R run')
+        manifest = json.loads(registered_path(reg, 's6_dr')[0].with_name('manifest.json').read_bytes())
+        out['s6_wall_seconds'] = float(manifest['cost']['wall_seconds'])
+        _require(isinstance(s6.get('games'), list) and s6['games'], 'the sealed S6 record must list its games')
+        out['s6_games'] = len(s6['games'])  # S-m6: the games S6 actually ran (after the straddle exclusion)
+        registered = config['mlb2026_ope']['estimator']
+        ran = s6_estimator_block(s6)
+        _require(ran == {**registered, 'c_deltas': [float(d) for d in registered['c_deltas']]},
+                 f'S6 rehearsal estimator block differs from the 2026 registration: {ran} vs {registered}')
     if 'v2' in PREREQUISITES[command]:
         v2 = registered_json(reg, 'v2')
         _require(v2.get('accept') is True, 'V2 acceptance is an S6 prerequisite')
         main = [r for r in v2['runs'] if r['check'] == 'V2' and r['planning_seed'] == config['seeds']['planning_main']]
         _require(main and all(r['world']['candidate_identity_sha256'] == out['freeze']['final_identity_sha256']
                               for r in main), 'V2 acceptance does not certify the S6 policy identity')
+    if command == OPE:  # data-free, outcome-free: refused before any attempt directory (S-M2)
+        spec, expected = config['mlb2026_ope'], out['freeze']['final_identity_sha256']
+        _require(spec['candidate_identity_sha256'] == expected and reg['expected_identity_sha256'] in (None, expected),
+                 'registered 2026 candidate identity differs from the tau record')
+        out['bias'] = est.v2_bias_record(v2, spec['estimator']['mei'], spec['estimator']['v3_law'])
+        _require(abs(out['bias']['b_v'] - spec['b_v']) <= 1e-12, 'registered b_V differs from the sealed S5 record')
     return out
 
 
-def dispatch(command, reg, local, output, load):
+def dispatch(command, reg, local, output, load, load_holdout=load_holdout):
     """Run one registered stage. Registration, gates and every prerequisite are checked before the
     data is touched; ``load(store: bool)`` is called only inside the heavy lock and the fresh stage
-    directory (C11)."""
+    directory (C11). ope-2026 exception (S-M2): the pinned holdout is read and checked (one-shot guard
+    again, snapshot pin, season, duplicate keys, vocabulary cap) inside the heavy lock but BEFORE the
+    attempt directory, so an outcome-free refusal never consumes an attempt."""
     config = reg['config']
     decisions = registration(config, command)
     plan, ident = config['le2025_validation_plan'], config['identity_registration']
-    stages, spec = plan['stages'], plan['stages'][STAGES[command]]
+    stages = plan['stages']
+    spec = config['mlb2026_ope'] if command == OPE else stages[STAGES[command]]
     from run_ml_matrix import check_location, heavy_lock
     root = check_location(local, output)
-    check_output(output, plan)
+    check_output(output, spec if command == OPE else plan)
+    if command == OPE:  # every refusal that needs no data happens before an attempt directory exists
+        one_shot_guard(spec['output_root'], spec['max_attempts'])
+        prerequisites(command, reg)
     no_pitch = frozenset(config['pa_time_rules']['R3_codes']['no_pitch_descriptions'])
     identity = {'config_sha256': reg['config_sha256'], 'registration_chain': reg['chain'], 'git': git_state(plan.get('source_commit')),
                 'environment': environment(), 'decisions': decisions, 'g0_bundle_file_sha256': ident['g0_bundle']['file_sha256'],
                 'runner_sources': {rel: hash_file(REPO / rel) for rel in SOURCES}}
-    with heavy_lock(root), stage(output, command, identity, spec.get('hang_guard_seconds')) as out:
+    with heavy_lock(root), nullcontext(ope_pre_stage(reg, spec, load_holdout) if command == OPE else None) as early, \
+            stage(output, command, identity, None if command == OPE else spec.get('hang_guard_seconds')) as out:
         pre = prerequisites(command, reg)
         inputs = load(command != 'census')
         frame, store = inputs['frame'], inputs['store']
         vocabulary = inputs['prep']['features']['tokens']['type_vocabulary']
         straddle = straddling_games(frame)
 
-        def bind(blocks, bc_artifact, snapshot=None, as_of=None):
-            contexts, style = pa_contexts(store, blocks, snapshot, as_of)
+        def bind(blocks, bc_artifact, snapshot=None, as_of=None, rows=None):
+            contexts, style = pa_contexts(store if rows is None else rows, blocks, snapshot, as_of)
             components = pid.bind_components(inputs['bundle_path'], inputs['bundle_sha'], inputs['paths'],
                                              bc_artifact=bc_artifact, context_rows=contexts,
                                              member_loader=inputs['member_loader'], classes=ident['classes'],
@@ -965,19 +1228,22 @@ def dispatch(command, reg, local, output, load):
             return snapshot, as_of, {'style_snapshot_sha256': content, 'as_of_exclusive': as_of, 'rolling_check': check}
 
         def candidate(blocks, split, *, tau, samples, pitch_cap, seed, budget, evaluation_seed=None, expected=None,
-                      tag=''):
+                      tag='', frozen=None, rows=None, positivity_record=False, style=None):
+            """``style`` (batched binding): the style report of the whole selection, so every batch's
+            runtime carries the pins of the unbatched run; ``budget`` may be a shared RowBudget."""
             bc_path, bc_sha = registered_path(reg, 'bc')
             support_path, support_sha = registered_path(reg, 'support')
-            snapshot, as_of, provenance = snapshot_for(split, blocks)
-            components, style = bind(blocks, load_train_bc(bc_path, bc_sha), snapshot, as_of)
+            snapshot, as_of, provenance = snapshot_for(split, blocks) if frozen is None else frozen
+            components, own = bind(blocks, load_train_bc(bc_path, bc_sha), snapshot, as_of, rows)
             _require(components.sha256 == pre['components_sha256'],
                      'bound components differ from the S2-certified identity (M-10)')
-            provenance = {**provenance, 'style_report': style}
+            provenance = {**provenance, 'style_report': own if style is None else style}
+            budget = budget if isinstance(budget, RowBudget) else RowBudget(int(budget), seed_count=5)
             runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, out / f'ledger-{split}-{seed}{tag}.jsonl',
-                                        components=components, budget=RowBudget(int(budget), seed_count=5), tau=tau,
+                                        components=components, budget=budget, tau=tau,
                                         samples=samples, pitch_cap=pitch_cap, seed=seed, evaluation_seed=evaluation_seed,
                                         expected_identity_sha256=expected, hand_registry=registered_path(reg, 'hands'),
-                                        provenance=provenance)
+                                        provenance=provenance, positivity_record=positivity_record)
             return runtime, components, provenance
 
         if command == 'census':
@@ -1086,8 +1352,11 @@ def dispatch(command, reg, local, output, load):
             evaluation = role_seed(config, 'evaluation') if freeze['dr_q']['source'] == 'evaluation_seed' else None
             dump(out / 'v2.json', run_v2_stage(reg, spec, frame, store, candidate, freeze['selected_tau'], pre['setting'],
                                                no_pitch, evaluation))
+        elif command == OPE:
+            dump(out / 'ope2026.json', run_ope_2026(reg, spec, pre, inputs, candidate, no_pitch, early, out))
         else:  # dr-evaluate (S6/V4)
             freeze, setting = pre['freeze'], pre['setting']
+            estimator = spec.get('estimator')
             expected = freeze['final_identity_sha256']
             evaluation = role_seed(config, 'evaluation') if freeze['dr_q']['source'] == 'evaluation_seed' else None
             _require(reg['expected_identity_sha256'] in (None, expected), 'registered identity differs from the tau record')
@@ -1096,12 +1365,13 @@ def dispatch(command, reg, local, output, load):
             runtime, components, provenance = candidate(
                 blocks, 'dev', tau=freeze['selected_tau'], samples=setting['samples'], pitch_cap=setting['pitch_cap'],
                 seed=config['seeds']['planning_main'], budget=spec['row_budget'], evaluation_seed=evaluation,
-                expected=expected)
+                expected=expected, positivity_record=estimator is not None)
             diagnostic = style_shift_diagnostic(runtime, components, lambda sub: bind(sub, load_train_bc(
                 *registered_path(reg, 'bc')))[0], store, blocks, spec['d7_diagnostic_starts'], no_pitch)
             pair = lambda: prt.build_reference_pair_runtime(
                 *registered_path(reg, 'bc'), *registered_path(reg, 'support'), out / 'ledger-dev-paired-identity.jsonl',
-                hand_registry=registered_path(reg, 'hands'), provenance=runtime.pins['provenance'])
+                hand_registry=registered_path(reg, 'hands'), provenance=runtime.pins['provenance'],
+                positivity_record=estimator is not None)
             boot = plan['bootstrap']
             materialized = registered_json(reg, 'materialize')
             result, rows = run_dr(runtime, store, components, blocks, Deadline(), no_pitch=no_pitch,
@@ -1110,13 +1380,99 @@ def dispatch(command, reg, local, output, load):
                                   sensitivities=config['sensitivity']['same_ledger'],
                                   strata=strata_function(frame, materialized['volume_edges'],
                                                          materialized['bc_p_only_pitchers']['ids']),
-                                  expected_pas=census_pas(pre['census']['dev'], games), pair=pair)
+                                  expected_pas=census_pas(pre['census']['dev'], games), pair=pair, estimator=estimator)
+            if estimator is not None:  # exposed <=2025 rehearsal of the 2026 labels (not a verdict)
+                bias = est.v2_bias_record(registered_json(reg, 'v2'), estimator['mei'], estimator['v3_law'])
+                result['rehearsal_labels'] = rehearsal_labels(result, estimator, bias, plan['bootstrap'])
             dump(out / 'dr.json', {**result, 'games': games, 'straddling_games_excluded': straddle,
                                    'identity_sha256': expected, 'dr_q': freeze['dr_q'], 'provenance': provenance,
                                    'd7_label_blind_diagnostic': diagnostic})
             table = pd.DataFrame([{**{k: v for k, v in r.items() if k != 'strata'},
                                    **{f'stratum_{k}': v for k, v in r['strata'].items()}} for r in rows])
             table.to_parquet(out / 'pa_values.parquet', index=False)
+
+
+def rehearsal_labels(result, estimator, bias, bootstrap):
+    """D108/D109 labels on L1-R (primary) and, descriptively, on each censoring sensitivity; the S-B
+    sign rule: S-B disagreeing with the primary label is printed on the first line of the report."""
+    decide = lambda r: est.decide(r, mei=estimator['mei'], b_v=bias['b_v'], gr_cap=estimator['gr_cap'],
+                                  invalid_share_max=bootstrap['invalid_share_max'],
+                                  pair_pass=bool((result.get('paired_identity_run') or {}).get('pass')))
+    primary = decide(result)
+    worst = lambda other: {'worst_case_residual_share': (other.get('censoring') or {}).get('observed_share')}
+    sensitivities = {name: decide({**other, 'censoring_rule': other.get('censoring_rule') or worst(other)})['label']
+                     for name, other in result['censoring_sensitivity'].items()}  # S-v1: every censored PA is worst case
+    return {'primary': primary, 'sensitivities': sensitivities, 'v3': bias,
+            's_b_disagrees_with_primary': sensitivities['S-B'] != primary['label'],
+            'sign_rule': 'S-B label differing from the primary label is reported first; the primary alone decides'}
+
+
+def run_ope_2026(reg, spec, pre, inputs, candidate, no_pitch, early, out):
+    """The single registered 2026 OPE (COOP-021/022, prereg D108/D109): frozen <=2025 components and
+    candidate identity, the 2026 style snapshot pinned at opening day with its source-date guard and
+    end-of-history check, runtime v3, L1-R with S-v1/S-NP/S-B/S-C, the M-10 paired run and the
+    labels. ``early`` is the holdout already checked before the attempt directory (``ope_pre_stage``).
+    The hang guard (S6 wall seconds x games / games S6 ran x multiplier) is armed first."""
+    config = reg['config']
+    plan = config['le2025_validation_plan']
+    freeze, setting = pre['freeze'], pre['setting']
+    expected, bias = freeze['final_identity_sha256'], pre['bias']
+    frame, store = inputs['frame'], inputs['store']
+    vocabulary = inputs['prep']['features']['tokens']['type_vocabulary']
+    holdout, dropped = early['holdout'], early['dropped']
+    games = int(holdout.game_pk.nunique())
+    seconds = pre['s6_wall_seconds'] * games / pre['s6_games'] * spec['hang_guard_multiplier']
+    with hang_guard(seconds):
+        _require(list(vocabulary) == early['vocabulary'], 'token vocabulary differs from the TRAIN BC vocabulary')
+        from pitchmdp.matrix_features import MatrixHistoryStore
+        store26 = MatrixHistoryStore.from_frame(holdout, normalizer=store.normalizer,
+                                                history_length=int(store.indices.shape[1]),  # F-m3: the <=2025 store's
+                                                type_vocabulary=vocabulary)
+        snapshot = preq.style_snapshot_2026(frame)
+        check = preq.snapshot_end_of_history_mismatches(frame, snapshot)
+        _require(check['same_batters'] and check['mismatches'] == 0, f'2026 style snapshot check failed: {check}')
+        provenance = {'style_snapshot_sha256': canonical_hash([list(snapshot.index), snapshot.to_numpy().tolist()]),
+                      'as_of_exclusive': preq.PROFILE_AS_OF_2026, 'end_of_history_check': check,
+                      'holdout': {'version': HOLDOUT_VERSION, 'sha256': HOLDOUT_SHA256}}
+        blocks = preq.pa_blocks(holdout)
+        evaluation = role_seed(config, 'evaluation') if freeze['dr_q']['source'] == 'evaluation_seed' else None
+        frozen = (snapshot, preq.PROFILE_AS_OF_2026, provenance)
+        bound = lambda part, **extra: candidate(
+            part, 'eval2026', tau=freeze['selected_tau'], samples=setting['samples'], pitch_cap=setting['pitch_cap'],
+            seed=config['seeds']['planning_main'], evaluation_seed=evaluation, expected=expected, frozen=frozen,
+            rows=store26, positivity_record=True, **extra)
+        batch_games, rebind = spec.get('bind_batch_games'), None
+        if batch_games is None:  # registered default: bind every PA at once
+            runtime, components, provenance = bound(blocks, budget=spec['row_budget'])
+            pins = runtime.pins['provenance']
+        else:  # D125: bind one game batch at a time; memory no longer grows with the season
+            style = style_report(store26, blocks, snapshot, preq.PROFILE_AS_OF_2026)
+            runtime = components = None
+            provenance = pins = {**provenance, 'style_report': style}
+            budget = RowBudget(int(spec['row_budget']), seed_count=5)  # one budget for the whole run
+            rebind = lambda part: bound(part, budget=budget, style=style)[:2]
+        pair = lambda: prt.build_reference_pair_runtime(
+            *registered_path(reg, 'bc'), *registered_path(reg, 'support'), out / 'ledger-2026-paired-identity.jsonl',
+            hand_registry=registered_path(reg, 'hands'), provenance=pins, positivity_record=True)
+        materialized = registered_json(reg, 'materialize')
+        train_counts = frame.loc[frame.split.eq('train')].groupby('pitcher').size()
+        result, rows = run_dr(runtime, store26, components, blocks, Deadline(), no_pitch=no_pitch,
+                              bootstrap={**plan['bootstrap'], 'seed': role_seed(config, 'bootstrap')},
+                              ess_gate=config['ess_gate']['thresholds'], sensitivities=config['sensitivity']['same_ledger'],
+                              strata=strata_function(holdout, materialized['volume_edges'],
+                                                     materialized['bc_p_only_pitchers']['ids'], train_counts),
+                              pair=pair, estimator=spec['estimator'], rebind=rebind, batch_games=batch_games)
+    labels = rehearsal_labels(result, spec['estimator'], bias, plan['bootstrap'])
+    table = pd.DataFrame([{**{k: v for k, v in r.items() if k != 'strata'},
+                           **{f'stratum_{k}': v for k, v in r['strata'].items()}} for r in rows])
+    table.to_parquet(out / 'pa_values.parquet', index=False)
+    return {**result, 'labels': labels, 'label': labels['primary']['label'], 'identity_sha256': expected,
+            'games': games, 'games_dropped_several_dates': dropped, 'hang_guard_seconds': seconds,
+            **({} if batch_games is None else {'bind_batch_games': batch_games}),
+            'vocabulary_mapping': early['vocabulary_mapping'], 'prior_attempts': early['prior_attempts'],
+            'dr_q': freeze['dr_q'], 'provenance': provenance,
+            'interpretation': 'single registered 2026 OPE (exposed-window labels in the prereg); assumption-conditional, '
+                              'regime estimand; not a causal effect unless the identification assumptions hold'}
 
 
 def style_shift_diagnostic(runtime, components, bind_rolling, store, blocks, count, no_pitch):

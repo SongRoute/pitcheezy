@@ -43,7 +43,7 @@
 - 목표 위치 효과나 서비스 추천의 인과 WE가 아니다. 구종 배정의 교환 가능성(H_t 조건부)과 ≤2025→2026 이동은 **가정으로 명시하고 입증하지 않는다**(`BLK-04` 미해소). 결과는 항상 "구종-only, 명시 가정 조건부, 노출 구간 포함 탐색적 평가"로 표시한다.
 - 사용자 결정(D100 ⑨)으로 **주 추정량 = ARM-B**다. 새 2026 열람 전에 정했고 결과를 본 뒤 바꾸지 않는다. ARM-A의 자동 대체가 아니며 ARM-A는 `BLOCKED_NOT_IDENTIFIED`로 남는다. 위치는 observer `experimental_location_proxy` 표시용 근사일 뿐 OPE 대상이 아니다.
 - **동결 구성요소(≤2025 리허설 [ML-POLICY-MATERIALIZATION-v1](ML-POLICY-MATERIALIZATION-v1.md), D104–D107):**
-  - 후보 π_cand: TRAIN 레퍼토리(지원 표 M) 위 P3 `kl_policy`, π ∝ π_ref·exp(Q_ref/τ), **τ = 0.1**(S3b-tau-a2), samples 6·pitch_cap 12(S3-profile-a2). 최종 정책 식별자 `a6dffaea70976368a9cdc9f1a8bff4267b1c138162ee48aafda00e81e989109c`(addendum 5 `tau_freeze.json` sha `1aedb2f5…`).
+  - 후보 π_cand: TRAIN 레퍼토리(지원 표 M) 위 P3 `kl_policy`, π ∝ π_ref·exp(Q_ref/τ), **τ = 0.1**(S3b-tau-a2), samples 6·pitch_cap 12(S3-profile-a2). 최종 정책 식별자 `c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c`(addendum 5 `tau_freeze.json` sha `1aedb2f5…`).
   - 기준 π_ref: SupportedBC(BC-P를 M으로 제한·재정규화, 동결 전 1회). BC-P sha `b4f274eb…`, 지원 표 sha `152cdab4…`(addendum 2).
   - 로깅 법칙 π̂_b: **전체 어휘 BC-P, 재정규화하지 않는다**(D-1). 2026 적합 없음.
   - DR q̂: 평가 seed의 동결 simulator MC(M-7, S3b에서 기계적으로 정해 식별자에 포함). 후보는 q̂ = Q^ref라 **단일 강건**, 기준은 이중 강건(COOP-019 F5).
@@ -80,6 +80,24 @@
 판정 상태: `IMPROVEMENT_SUPPORTED`·`IMPROVEMENT_SUPPORTED_STATISTICAL`(§5a; 식별 가정의 근거 ∧ CI 하한 > 0 ∧ 등록 최소 효과 ∧ overlap·무결성 통과), `HARM_SUPPORTED`(CI 상한 < 0, 같은 게이트), `NO_EFFECT_DETECTED`, `UNCONFIRMED_WEAK_OVERLAP`, `NOT_IDENTIFIED_CAUSAL_NULL`, `BLOCKED_NOT_IDENTIFIED`, `FAILED_INTEGRITY`. 계산 불가 값은 `null`과 사유. 최소 효과가 `null`인 동안은 우위 판정이 없는 기술적 연구이며 모델 선택·서비스 승격은 따라오지 않는다. ARM-B의 구체 판정 규칙은 §5a가 이 표보다 우선한다.
 
 ## 5a. ARM-B 성공 기준 (≤2025 S6 결과 열람 전 고정)
+
+> **개정 3(2026-09-30, COOP-021/022, ≤2025 S6 열람 뒤 — 공개).** ≤2025 S6(D115)에서 v1 L1 폭이 검열 질량의 약 2배(0.091)로 고정되는 것을 본 뒤 검열 처리를 바꿨다. 그래서 이 개정은 S6 열람 뒤의 변경이며, 새 등록 ID(`mlb2026_ope`, 러너 `ope-2026`)로 한다. MEI 0.001, ESS 게이트, 무효 0.05, 판정 순서는 그대로 둔다.
+> - **주 추정치 = L1-R**
+>   - 로깅 양성 노드: ρ = 0(두 정책 모두 그 행동에 질량 0이라 정확함). 런타임 v3가 기록한 π·q̂로 V_k = v_π(H_k)를 계산한다.
+>   - H_k로 정해지는 타석 중 거절(`NO_LOGGED_ACTION`, `UNKNOWN_PITCHER`, `PITCHER_HAND`, `EMPTY_SUPPORT`, `INCONSISTENT_HISTORY`)은 **regime으로 처리한다: π를 첫 H_k-확정 사건까지 따르고, 그 뒤는 로그 행동. V(π) 자체에 대한 판정은 없다.** 무투구(`automatic_ball/strike`만; 구종이 붙은 무투구 행 0, D97)에는 `P(no-pitch | H_k, type) = P(no-pitch | H_k)`를 가정한다.
+>   - 나머지 검열(NO_TERMINAL, `MISSING_ACTION_LABEL`, 구조 결함)은 D-5 최악 경계로 둔다.
+> - **G-R 게이트:** E0에서 최악 경계로 남은 비율 s ≤ **0.005**. 넘으면 `NOT_DECIDABLE_CENSORING`이다. 결과 옆에 통과 가능 효과 근사식 "Δ > MEI (+ b_V) + s + 1.96·SE, 최악 경계 폭 ≈ 2s"를 출력한다.
+> - **b_V = 0.002734729542731599**(봉인 S5 `v2.json`에서 계산한 값 그대로 등록; D111의 0.00272는 반올림 오기). 따라서 `IMPROVEMENT_SUPPORTED` 문턱은 CI 하한 > MEI + b_V = **0.0037347**이다.
+> - **민감도(판정 없음):**
+>   - S-v1: D-5 최악 경계
+>   - S-NP: 무투구만 최악 경계
+>   - S-B: 이 PA 이전(더 이른 날짜, 또는 같은 경기의 앞 타석)에 TRAIN 지원 밖 구종을 던진 투수의 PA를 E0에서 뺀다. **부호 규칙:** S-B 라벨이 주 라벨과 다르면 보고서 첫 줄에 적는다.
+>   - S-C: 노드에서 |V_c − V_r| ≤ δ. δ는 ≤2025 q99 0.0080·q999 0.0278이며, 단일 노드 기준이라 여러 단계 차이를 과소 경계한다.
+> - **π̂_b 오지정 크기:** 새 구종 질량 f를 놓치면 다른 비율이 (1 − f)배로 줄고, 한 단계 오차는 −f·(V − v̂)다(toy로 정확히 확인). ≤2025 비율로 보면 401/44,230 × G0 TV q99 0.0058 ≈ 5e-5 WE/PA다(대략적 상한, 측정값 아님).
+> - **hang guard:** ≤2025 S6(v3 재실행) 실측 초 × (2026 경기 수 / 150) × 등록 배수. 경기 수는 불러온 스냅샷에서 결과를 보지 않고 세며, 그 직후 guard를 건다(M3에서 미리 세는 대신 같은 스냅샷에서 기계적으로 셈).
+> - **시도 규칙:** 한 등록에서 봉인은 1회다. 실패 시도가 `max_attempts`(2)에 이르면 `FAILED_INFRA`다. 필요한 자료가 없는 거절은 시도 디렉터리를 만들기 전에 낸다.
+> - **2026 스냅샷 처리:** `d20260930-h2026f`(sha pin)만 읽는다. 정규시즌(R)과 2026-03-25~09-27만 받고, 여러 날짜에 걸친 경기(서스펜디드)는 일정만 보고 빼며 목록을 공개한다. 타자 프로필은 개막일 스냅샷(F2 가드와 end-of-history 검사)을 쓴다.
+> - **어휘 매핑 규칙(Fable 5.1 F-M1):** TRAIN 어휘 밖 2026 구종 코드는 실행을 막지 않고 **구종 누락(MISSING)으로 바꾼다.** 그 결정은 `UNSUPPORTED_MISSING_ACTION_LABEL` 거절(타석 안에서 sticky)이 되어 최악 경계 잔여로 G-R 비율 s에 들어간다. 이력 토큰은 원래도 미지 구종(0)이라 바뀌지 않는다. 바뀐 행 수·비율과 코드별 개수를 결과(`vocabulary_mapping`)에 공개한다. 바뀐 행이 구종 표시가 있는 행 중 등록 상한 `vocab_unmapped_share_max`를 넘으면 `REFUSED_VOCABULARY`로 실행하지 않으며, 이 거절은 시도 디렉터리를 만들기 전에 내므로 시도로 세지 않는다(`FAILED_INFRA` 아님).
 
 2026-09-30, ≤2025 S6(`S6_V4`) 결과를 읽기 전에 적는다. S6·V2 결과를 본 뒤 아래 값을 바꾸면 그 사실과 이유를 공개하고 새 등록 ID로 한다.
 
@@ -142,3 +160,5 @@
 4. 이 초안(특히 §3 ARM-B pin, §5a, §9)에 대한 **Fable 5.1 좁은 검토**(D100 ③).
 5. M3b 최종 실행 등록: 스냅샷·manifest sha, source commit, config/addendum sha, 부트스트랩 seed(`seeds.base` 파생 규칙), 2026 비용 예산(미측정)·hang guard, `registered=true`로 전환.
 6. **사용자 서명**(최종 등록과 1회 실행 승인). 어느 게이트도 앞 게이트 통과만으로 자동으로 열리지 않는다.
+
+> **개정(2026-10-01, D122/D123):** 후보 식별자 pin을 `c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c`로 바꿨다. 런타임 v3 소스 변경으로 식별자(소스 closure 포함)를 S2→S6에서 다시 인증했고, τ 표·V2 gap은 이전과 같다. ≤2025 L1-R 리허설: Δ [−0.00065, +0.00054], NO_EVIDENCE_OF_IMPROVEMENT. 2026 실행은 저메모리 원장(D123 차단 요인) 해결 뒤다.

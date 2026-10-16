@@ -1,3 +1,19 @@
+> 10/4 갱신: P22본실험과P23고정66조합완료. [P22](reviews/PM-P22-periodic-result-2026-10-04.md), [P23](reviews/PM-P23-ensemble-result-2026-10-04.md). P23최상위의G15대비ΔNLL은Cpanel−0.00172/MLB−0.00202(각3/3seed개선), 반복DEV의탐색이며최종채택아님. CUDA추가실험준비중.
+
+**새08:30 연구 창 최종 (2026-10-08T08:15:24.591457+09:00)**: 실제수행분(부분실패포함) classifier61(41CPU/20MPS)/온도61·별도Platt30.105/106까지 실행·독립검토·기록감사 완료,worker0·공통잠금 반환·recorder0·서비스ready. 원91 부분실패1/1과82 archiveBLOCK·87별도복구,미등록101/104를 보존한다. [짧은 진입점](/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0830/START-HERE.md) · [최종 자원](/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0830/inference-benchmark-preparation/FINAL-RESOURCE-READOUT.json).
+
+**04:30 확장 체인 완료·기록 복구(2026-10-08 04:45 KST):** [종합 보고](/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0430/REPORT.md)는 신규 **20 classifier(10 CPU/10 MPS)+20 CAL T**, 모델단계693.181483초·등록 진단/준비20.222588초 별도,9개 등록시도 전수와 독립 최종 검토를 담는다. Binary A의 F1 전체 과거 타자 이력 입력은 두 목표×두기간 NLL/Brier 모두 개선하여 고정 후속 개발 후보; B64/B16은 단순 A 대비 두 목표 후속 게이트 실패. PA-count A 소폭개선/B후기악화와 미등록 후속book62도 보존. [20모델 전수](/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0430/ALL-MODELS.md)·[재현/봉인 인덱스](/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0430/START-HERE.md). F0 A/B64 CAL/EVAL160bin 진단은5.058초/fit0·독립PASS이나 희소구간/내적합/재노출 한계; F1 전용book71은 사용량한도 중단 후 시한경과로 **PREP만·미등록/미실행**, 새 예약으로 자동 전환하지 않았다. Book64 실제 진단실패·별도book66 float64수정,book70 preclaim 셸오류 이력 구분. [최종자원](/Users/song/Projects/pitcheezy-pm-jobs/20261008-until-0430/event-label-readiness/FINAL-RESOURCE-HANDOFF.md) lock0/실험PID없음/recorder0/ready/free66%/swap2005.06MiB. 노출TRAIN 개발 결과이며 정책/운영승격·2026/OPE·논문B1/B2 변경0. 이전40/44체인은 아래 완료기록 그대로. **08:30까지 새 사용자 승인은 별도 연구 창/계약으로 관리**, 이 완료 체인의 만료GO를 재사용하지 않는다.
+
+**현재 4시간 연구 창 — 승인 유한 프로그램 전체 완료(2026-10-08 03:06 KST):** 신규 **40 classifier(10 CPU A/30 MPS B)+44 CAL 온도**, 10단계 실행2443.329초·준비1073.143초 별도, 독립 최종 제한 PASS와 과학 감사 완료. [현재 보고](/Users/song/Projects/pitcheezy-pm-jobs/20261008-four-hour-research/REPORT.md) · [40개 전수 지표](/Users/song/Projects/pitcheezy-pm-jobs/20261008-four-hour-research/ALL-40-MODELS.md) · [재현 진입점](/Users/song/Projects/pitcheezy-pm-jobs/20261008-four-hour-research/START-HERE.md) · [독립 과학 감사](/Users/song/Projects/pitcheezy-pm-jobs/20261008-four-hour-research/review/FINAL-SCIENCE-AUDIT.md). F1 이력 확장은20% B의3seed×2fold에서 개선했지만50% B는 후기 반전; A50의 작은 이득과 B50의 단일seed A대비 우세를 분리해 기록했다. 동일구조 S1−Slen은6/6 point 개선이나 NLL CI5/6이0을 포함하며, Slen은 관측 자료의 capped PA pitch count다. 노출TRAIN·교차fold·seed상관·다중비교 한계, 독립 holdout/정책가치/운영승격 주장 없음. 원 preclaim 실패와 A50 준비 swap초과 실패는 보존. **추가 classifier fit0**; 별도 late50 캐시 메모리 A/B478.750초(분류기/T/추론0·FIT encoder6)도 독립검토 완료: 출력byte동일, peak RSS7.22→7.69GiB로 절감지지 없음·채택/재실행0. 03:06 자원확인 PID부재/lock0/recorder0/서비스ready, 추가 heavy0. 원봉인·논문 B1/B2·2026/OPE·서비스 불변. [예산](/Users/song/Projects/pitcheezy-pm-jobs/20261008-four-hour-research/BUDGET.json), [그림](/Users/song/Projects/pitcheezy-pm-jobs/20261008-four-hour-research/figures/README.md).
+
+**이전 야간 유한 체인 완료(2026-10-07):** [종합 보고](/Users/song/Projects/pitcheezy-pm-jobs/20261007-overnight-history-research/REPORT.md)·[예산](/Users/song/Projects/pitcheezy-pm-jobs/20261007-overnight-history-research/BUDGET.json). 고정 이력20의 2×2 진단은 fit0/165.734초, dropout0.10은 신규 B4+온도4/421.786초, 총587.520초 완료. 양 단계 독립 최종 제한 PASS·Root 수용, 원봉인10/30 SHA·lock 반환·기록기/서비스 정상. Dropout NLL 개선2/4, early 평균−.000151·late+.000408; Brier early−.0000779·late+.000174로 기간/seed 일관 우세 없음. [전수 결과](/Users/song/Projects/pitcheezy-pm-jobs/20261007-sparse-history-dropout/RESULTS.md)·[모든 지원층](/Users/song/Projects/pitcheezy-pm-jobs/20261007-sparse-history-dropout/SUBGROUPS.md)·[독립 검토](/Users/song/Projects/pitcheezy-pm-jobs/20261007-sparse-history-dropout/review-sol/RESULT-REPORT.md). 사전 추가반복 비용조건4개 모두 미충족하여 seed46/다른 p/후보전환 실행0. A는 강한 개발 대조군 유지, late45 B의 양 지표 개선도 전수 보고; 노출·중첩 fold의 기술 결과이며 승격/운영교체 없음. 추가 [평가준비 inventory](/Users/song/Projects/pitcheezy-pm-jobs/20261007-overnight-history-research/evaluation-readiness/REPORT.md)는 전체 노출이력 불완전으로 미노출 holdout 입증 불가, [표현 known/unknown](/Users/song/Projects/pitcheezy-pm-jobs/20261007-overnight-history-research/representation-readiness/REPORT.md)은 기존 source 한계만 기록. 두 준비 모두 새 raw/label배열/추론/fit0. [다음 checkpoint](/Users/song/Projects/pitcheezy-pm-jobs/20261007-overnight-history-research/NEXT-CHECKPOINT.md)는 계약 초안만이며 추가 실행 미등록. 원 B1/B2/G0/G15·2026/OPE·서비스 불변.
+
+**이전 고정 이력지원 분석 완료(2026-10-07 22:36 KST):** [보고](/Users/song/Projects/pitcheezy-pm-jobs/20261007-support-conditioned-additive/REPORT.md) 저장A2+B6 모델추론·165.771초, classifier/encoder/온도fit0·독립최종제한PASS/Root수용·9SHA·16전체점수재현(max1.016e−7)·lock반환/기록기정상. 두이력 각각20이상 집단79,973/74,763행의 B−A meanNLL early−.000270(개선3/3),late−.000277(개선1/3·악화2/3), Brier혼재로안정적전지표우세없음. [12개 전수대비](/Users/song/Projects/pitcheezy-pm-jobs/20261007-support-conditioned-additive/RESULTS.md): 나머지30,873/27,325행은NLL/Brier모두B악화6/6(meanNLL+.002327/+.002177),일부CI0포함. [기여분해](/Users/song/Projects/pitcheezy-pm-jobs/20261007-support-conditioned-additive/DECOMPOSITION.md)는층별비중×차이로전체대비재구성·추가추론0. 투수구질count는불완전물리포함fullpool,타자는selectedFIT·모두fitcutoff동결strictprior라전체career아님. 사후노출/게임공유/비보정CI/seed불안정한계·인과효과/최적역치/모델routing채택0, A강한개발기준유지. [다음20고정2×2분모 DRAFT](/Users/song/Projects/pitcheezy-pm-jobs/20261007-support-conditioned-additive/NEXT-DRAFT.md)는미실행·미등록. 원봉인/B1B2/G0G15/서비스불변, 추가fit/추론0.
+
+**이전 동일20% A대조·B시드 체인 완료(2026-10-07 21:41 KST):** [체인 보고](/Users/song/Projects/pitcheezy-pm-jobs/20261007-matched-additive-chain/REPORT.md) 신규A2CPU+B4MPS classifier/6scalarT·등록실행총788.504초(사전nofit160.513초별도), 독립최종제한PASS/Root수용·18/22/22SHA·lock반환·기록기/서비스정상. 기존seed43 포함 B.1−A meanNLL early+.000453/late+.000380, 각B개선1·악화2; Brier earlyA우세3/3·late2/3. [3seed 전수결과](/Users/song/Projects/pitcheezy-pm-jobs/20261007-matched-additive-chain/ALL-SEEDS.md), [같은20% A수렴·원B 비교](/Users/song/Projects/pitcheezy-pm-jobs/20261007-matched-additive-chain/RESULTS-STAGE1.md). A는강한개발대조군유지·B안정적우세없음, 일부B우세/지표충돌도보고. [추가fit0 저장곡선 진단](/Users/song/Projects/pitcheezy-pm-jobs/20261007-matched-additive-chain/direction-review/REPORT.md)은 B train낮음5/6·tune높음5/6(동시4/6)·gap큼6/6, 원인확정아님. 반복노출/교차fold83·74게임/최적화차이한계, A반복표시는재학습아님·paperbaseline/과학/운영승격0. [후속 support 진단 준비안](/Users/song/Projects/pitcheezy-pm-jobs/20261007-matched-additive-chain/NEXT-DRAFT.md)은미실행·추가추론/fit0, 모델대형화/하이퍼sweep보류. 원봉인/B1B2/G0G15/서비스불변.
+
+**이전 20% 표본 정규화 검증 완료(2026-10-07 21:03 KST):** [확대 검증 보고](/Users/song/Projects/pitcheezy-pm-jobs/20261007-generalization-expansion/REPORT.md) 신규4MPS classifier+4scalarT·396.711초, 독립최종제한PASS/Root수용·22SHA·lock반환·기록기/서비스정상. 동일20% weighted입력에서 decay.1−.001 NLL early−.000449/late−.000514, Brier−.000137/−.000128; 양팔양fold 선택epoch5. [전수결과](/Users/song/Projects/pitcheezy-pm-jobs/20261007-generalization-expansion/RESULTS.md)·[40class calibration](/Users/song/Projects/pitcheezy-pm-jobs/20261007-generalization-expansion/CALIBRATION.md). 단일seed/노출TRAIN·교차fold83/74게임한계, 5%와 표본량 인과비교불가. 고정.1후보 유지·과학/운영승격없음. [다음 DRAFT](/Users/song/Projects/pitcheezy-pm-jobs/20261007-generalization-expansion/NEXT-DRAFT.md)는동일20% 단순A대조 재구축→고정B최소seed반복 순서와비용만제안·미등록미실행. 이번완료뒤추가fit0, 원봉인/B1B2/G0G15/서비스불변.
+
 # 실험 로그
 
 **D86 실행 완료:** 전체 June 보정 B1/B2를 10단계·공식 473.521126초로 완료했다. B1/B2의 작은 NLL 개선은 등록 최소 폭 −0.003에 미달했고 유형별 B2의 B1 대비 이득도 미확정이다. R78 통과, N3 미확정으로 G0를 유지한다. [실행 보고서](reports/ML-June-calibration-execution-2026-09-28.md). 아래 D83는 실행 전 이력이다.
@@ -16,6 +32,11 @@
 
 | 실행 ID·셀 | 비교 | seed | NLL / ΔNLL 95% CI | 판정·근거 |
 |---|---|---|---|---|
+| EXP-P18-001 | 탐색 잡음 바닥(P17 해석용, P17 결과를 본 뒤 등록한 사후 분석): 예측기는 G0 그대로, 계획 seed만 0 → 1. 같은 봉인 6월 결정 40,702개에서 P3 분포 차이 | 계획 seed 1 대 0 | seed만 바꾼 평균 TV **0.0497** [0.0466, 0.0527], 1순위 일치율 88.7%; 예측기 교체(P17) 0.0323·92.8%; 짝 초과 TV **-0.0174 [-0.0185, -0.0163]** | **완료(D155)·`WITHIN_SEARCH_NOISE`**(사전 규칙: 초과 ≥ 0.01 그리고 하한 > 0이어야 '잡음을 넘음'). 예측기 교체로 생긴 추천 차이가 seed 하나 바꾼 차이보다 작다. 단계 C는 하지 않고 정책 재검증은 CV 의도 자료·ARM-A까지 닫는다. 부수 관찰: 현재 탐색 설정(6×12)에서는 seed만 바꿔도 1순위 구종이 11.3% 바뀐다. 코드 브랜치 `claude/exp-p17-policy-predictor-diagnostic`(`8754bef`). [결과](../results/EXP-P18-001.json) |
+| EXP-P17-001 | 추천 계획기(P3, τ 0.1)의 예측기만 G0 → G15 mix로 바꿨을 때 추천 분포 변화(진단, 경기 결과 미열람). 6월 150경기, 봉인 S3b-tau-a4가 평가한 결정 40,702개, 같은 상태·계획 seed·기준 분포 | 계획 seed 0 | 평균 TV **0.0323** [0.0303, 0.0343], 1순위 구종 일치율 **92.8%** [92.1, 93.4], TV > 0.05인 결정 19.9%; 연결 probe 최대 차 1.3e-8, G0 재현 200결정 최대 차 0.0 | **완료(D152)·`DIFFERENT_RECOMMENDATIONS`**(사전 문턱: 평균 TV < 0.01 그리고 일치율 ≥ 98%). 정책 가치 추정이 아니며 탐색 잡음 바닥은 미측정(봉인 G0 계획 Q의 짝 차이 SE 중앙값 0.0145 대 교체로 생긴 Q 차이 평균 0.0199). 단계 C 여부는 사용자 결정 대기. 코드 브랜치 `claude/exp-p17-policy-predictor-diagnostic`(`792b058`). [결과](../results/EXP-P17-001.json) |
+| EXP-P16-001 | EXP-P15-002 고정 혼합(직접 head와 G0 확률 1/2)의 5 seed·전체 MLB 확인. 새 fit은 직접 head seed 3·4뿐, 나머지는 봉인 예측(P15-001, P4-001, P10-001, P11-001). 공동 주 비교 2개 모두 최종 N(4/5 seed) 통과 필요 | 0–4 (새 fit 2) | Cpanel 혼합 후 ΔNLL **-0.003442 [-0.005032, -0.001894]** 5/5(Holm p 0.0002); 전체 MLB 빈도 혼합 후 **-0.004062 [-0.004383, -0.003752]** 5/5. 직접 head 단독(기술): Cpanel -0.002392 [-0.005367, +0.000532], 전체 MLB -0.003032 [-0.003646, -0.002419] | **완료(D143)·확인(confirmed).** 고정 혼합은 '확인된 예측 후보'. G0 교체·정책 재검증은 별도 사용자 결정이며 그 전에는 G0 유지. 같은 후보의 3 seed 결과를 이미 본 DEV라 독립 자료 확인이 아니라 seed 안정성·전체 MLB 확인이다. 코드 브랜치 `claude/exp-p16-direct-mix-confirm`(`fbcdaac`). [결과](../results/EXP-P16-001.json) |
+| EXP-P15-001 / EXP-P15-002 | 직접 예측 head(현재 공 물리 8채널을 학습·추론 모두 0, 400개 투구 표본 적분 없음, P15-001)와 같은 seed의 G0와 확률 1/2 고정 혼합(P15-002, 추가 fit 없음) 대 동결 G0-global. Cpanel DEV 12,334구/328경기 주 비교(Holm α .05), 전체 MLB 311,721구 보조 | 0,1,2 (새 fit 3) | Cpanel 혼합 후 ΔNLL: 직접 -0.002233 [-0.005178, +0.000697] 3/3, 고정 혼합 **-0.003363 [-0.004979, -0.001789]** 3/3(Holm p 0.0002); 전체 MLB 빈도 혼합 후: 직접 -0.002846 [-0.003463, -0.002235], 고정 혼합 -0.004033 [-0.004351, -0.003722] | **완료(D139). P15-002 N 통과 → 5 seed·전체 MLB 확인 후보(G0는 아직 유지). P15-001 N 미확정, C(효율) 통과:** 전체 MLB 추론 초 65.2% 감소. 노출 DEV의 개발 평가이며 정책 효과 주장 없음. 코드 브랜치 `claude/exp-p15-direct-head`(`12f4fe9`). [결과](../results/EXP-P15-001.json) |
+| EXP-P14-001 | 투구 표본을 리그 공통으로 통일(투수별 2·3단계 제거) 대 동결 G0-global, 재학습 없음. Cpanel DEV 12,334구/328경기 주 비교, 전체 MLB 311,721구 보조 | 0,1,2 (가중치 재사용) | Cpanel 혼합 후 ΔNLL +0.000900 [-0.001515, +0.003324], 0/3 개선; 혼합 전 -0.003193 [-0.006475, +0.000071]; 전체 MLB 혼합 전 -0.004124 [-0.004828, -0.003424], 혼합 후 -0.000100 [-0.000605, +0.000410] | **완료(D132)·N 미확정, G0 유지.** 재현 검사 최대 오차 0.0. 신경망만 보면 리그 공통 표본이 낫지만 빈도 혼합 뒤 차이가 사라진다. 가설은 노출 DEV의 사후 진단(D130)에서 나왔고 독립 확인 아님. 코드 브랜치 `claude/exp-p14-league-pool`(`1f9cc0b`). [결과](../results/EXP-P14-001.json) |
 | EXP-P12-001 | 전체 June 공통 blend B1 대 동결 G0(B0), DEV 311,721구/1,161경기 | 앙상블+0–4, 신경망 재사용 | ΔNLL −.000579 [−.000704,−.000456], ΔBrier −.000567, Holm .000300, 5/5 개선 | **완료·N 미확정.** 최소 효과 −.003 미달; R26 모두 통과. G0 유지. P12 두 행 공유 family 공식 473.521초이며 행별 중복 합산 금지. [보고서](reports/ML-June-calibration-execution-2026-09-28.md) |
 | EXP-P12-002 | 동일 June의 TRAIN-volume 수축 blend B2 대 B0 및 B1 | 앙상블+0–4, 신경망 재사용 | B2−B0 ΔNLL −.000568 [−.000715,−.000423], 5/5 개선; B2−B1 +.000012 [−.000047,+.000071], 1/5 개선 | **완료·양쪽 N 미확정.** B0 대비 최소 폭 미달, B1 대비 방법 이득 미확인. 양쪽 R52 모두 통과; family R78 전체 측정. 후보 미선정·독립 확인/정책 채택 없음. [보고서](reports/ML-June-calibration-execution-2026-09-28.md) |
 | EXP-P11-001 | 동결 G0 대 빈도, 전체 MLB와 정확한 Cpanel 보완집합 | 0–4, 재사용5fit | 전체 NLL1.490408/1.504081; Δ−.013673 [−.014415,−.012924], 비패널Δ−.013666 [−.014421,−.012903] | **완료.** 양쪽N통과·5/5개선·Holm.000200, R24통과24.311,721구/1,161경기, 새신경망fit0. ECE10은빈도보다큼. 공식1821.246초. [보고서](reports/G0-whole-MLB-and-calibration-2026-09-27.md) |
@@ -70,6 +91,7 @@ e2e OPE 칸이 비면 "완료"가 아니다. 숫자는 results/에서 옮겨 적
 | EXP-P1-009 | P1 | 시퀀스 맥락 v1 (D35, 당겨온 축) | EXP-P1-004 | 맥락을 직전 구 구종 계열 × 존 안/밖(C=7)으로. 나머지 004 와 동일(count, 006 구조). OPE 정책 메뉴 4개로 축소(시간; 주 저울 불변) | d20260911-s2325 | f9b12ce | 0,1,2 | 1.2100 / 0.0054 (HR 0.0005) | 1스텝 SNIPS +0.0300 [+0.0252, +0.0350] ESS 60% | 기각 — 경계 (D36) | 짝지은 Δ vs 006 +0.0011 [−0.0002, +0.0024] (부트스트랩 시드 0/1/2 모두 하한 −0.0001~−0.0002), vs 004(v0) +0.0006 [−0.0001, +0.0014], **vs 002(B1) +0.0033 [+0.0013, +0.0054]** — 지금까지 최대. 2스트라이크: vs 006 +0.0023 [−0.0007, +0.0053], vs 004 +0.0025 [+0.0006, +0.0044] 유의, vs 002 +0.0056 [+0.0019, +0.0095]. NLL 은 006 과 같음. 위약 진짜/타투수/뒤섞기 +0.0406/+0.0318/+0.0206 — 투수별 몫(진짜−타투수) 0.0088 로 006(0.0051)보다 큼. 모델 내 +0.105. RSS 14.4GB, 시드당 ~14분(메뉴 축소) |
 | EXP-P1-010 | P1 | 시퀀스 맥락 v1 (neural) | EXP-P1-005 | P1-005(neural + 맥락 임베딩)에서 맥락을 v1(C=7)로. 에폭 11/9/9. 메뉴 축소 | d20260911-s2325 | f9b12ce | 0,1,2 | 시드별 1.1761 / 1.1759 / 1.1751, ECE 0.0041 (HR 0.0012) | 1스텝 SNIPS 시드별 +0.0301 [+0.0257, +0.0349] / +0.0297 / +0.0283, ESS 63% | 기각 (시드 2 가 0 아래, D29) | 시드별 짝지은 Δ vs P1-001 +0.0011 [−0.0003, +0.0023] / +0.0010 [−0.0000, +0.0020] / −0.0001 [−0.0013, +0.0011]. vs 005(v0) +0.0017 [+0.0003, +0.0029] / +0.0003 / −0.0004. vs 002 +0.0034 [+0.0014, +0.0053] / +0.0030 [+0.0011, +0.0048] / +0.0016 [−0.0004, +0.0035]. 2스트라이크 vs 006 +0.0039 / +0.0053 [+0.0002, +0.0105] / +0.0012. NLL 은 P1-001 과 같음. 위약 +0.0396/+0.0336/+0.0215 (s0). 모델 내 +0.089/+0.078/+0.086. RSS 14.4GB |
 | EXP-P1-011 | P1 | 시퀀스 맥락 v1 × 채택 구조 (D36 다음 단계, D37·D38) | EXP-P0-009 | 009 구조(투수층 구종×구역 + 군집 K=6)에 맥락 v1(C=7)을 접음. S=12096, P 26GB — 스트리밍 fit·투수 블록 OPE 로 맥미니에서 실행. α auto=50. 메뉴 축소 | d20260911-s2325 | 322027a (시드 1·2 는 1a0d22a, 문서만 다름) | 0,1,2 | 1.2061 / 0.0057 (HR 0.0003) | 1스텝 SNIPS +0.0297 [+0.0249, +0.0346] ESS 61% | 기각 (OPE 미구분, D39) | 짝지은 Δ vs 009 +0.0004 [−0.0004, +0.0011] (부트스트랩 시드 0/1/2 동일), vs P1-009(K=1 v1) −0.0004 [−0.0015, +0.0008], vs 006 +0.0007 [−0.0008, +0.0021], **vs 002(B1) +0.0030 [+0.0011, +0.0048] 유의**. 2스트라이크 Δ vs 009 +0.0006 [−0.0011, +0.0023], vs P1-009 −0.0015 [−0.0034, +0.0004]. 맥락 v1 의 경계 신호(+0.0011, D36)는 군집 K=6 위에서 커지지 않았다. 1스텝 DR +0.0296 [+0.0248, +0.0346] / 궤적 DR +0.0863 (보조). 모델 내 +0.098. 시간 전이 25분·가치 16분·OPE 50분(시드 1·2 는 캐시로 각 ~10초), 최대 RSS 17.6GB · footprint 11.9GB. 위약 검사 없음(ope_placebo 가 이 크기 미지원). runs 32GB 는 T7 |
+| EXP-P13-001 | G0-global + 투수 구종별 레퍼토리 특징(TRAIN만, 구종당 9채널+후보 구종 행, 수축 τ=50) 한 가지 변경 | 0,1,2 | Cpanel DEV ΔNLL −0.00004 [−0.00129,+0.00121]; 전체 MLB DEV NLL 1.49519 vs G0 1.49612 (ΔNLL −0.00093, CI<0, 3/3 seed) | **완료(D118), 미확정.** Cpanel 주 비교 N=inconclusive(방향 불안정), 전체 MLB는 개선 방향이지만 실용 최소 폭 −0.003 미달. G0 유지. 코드·결과 브랜치 `claude/exp-p13-arsenal-runner`(`8ebd7fd`, `5912a0a`), 학습 1,537초·최대 8.9GB. 노출된 DEV의 개발 평가. |
 
 ## 판정 규칙
 - 채택: 5시드 평균 OPE가 베이스라인보다 높고 CI가 겹치지 않음
@@ -78,3 +100,171 @@ e2e OPE 칸이 비면 "완료"가 아니다. 숫자는 results/에서 옮겨 적
 - (D30·D31, 2026-09-20) 저울 해상도: 짝지은 Δ 의 95% CI 반폭은 타석 68k 에서 약 0.001~0.0025/결정. 고감도 τ·DR 로도 좁혀지지 않았다. 따라서 "구분 안 됨" 은 "효과 없음" 이 아니라 "0.002 아래" 라는 뜻. `onestep_dr`·`traj_dr` 열은 보조 기록 (궤적 DR 은 모델 내 가치에 끌려 채택 근거로 쓰지 않음)
 - 기각: 그 외. 기각도 행을 남긴다
 - "계획 → 진행 → 완료/기각"
+
+## 실행 경로 점검 (정식 실험·판정과 별도)
+
+| 점검 | 기준 소스 | 범위 | 결과 | 근거 |
+|---|---|---|---|---|
+| PM-STABILITY-20261003-01-smoke | dd070d2 (구현 e72f04a), DRAFT/UNASSIGNED | 2025 June 3경기·888결정, seed/sample 5변형 | 실행 성공, 178.14초·5.18GB, 봉인 재현 20결정 Q차이0. 본 실험·성능 우위·채택 판정 아님 | [PM 검증 결과](reviews/PM-stability-smoke-result-2026-10-03.md) |
+
+## D165 신규 예측 탐색 (기존 판정 불변)
+
+| ID | 변경 | 상태 | 근거 |
+|---|---|---|---|
+| EXP-P19-001 | 기존직접head/G0 혼합비11 × 온도7, 5seed | 완료·노출DEV 탐색, 두범위NLL 개선6/77조합, 채택없음 | [결과](reviews/PM-P19-search-result-2026-10-03.md), code a4ae817/result4c7b805 |
+| EXP-P20-001 | TRAIN 최근성 가중 180/365/730일 × 3 seed | 9 fit 완료, 세 후보 주지표 NLL 개선 없음, 공식 판정 불변 | [결과](reviews/PM-P20-recency-result-2026-10-03.md), code f19c69e |
+| EXP-P21-001 | 직접 head ResNet형 구조 × 3 seed | 3 fit 완료. MLB 개선 방향3/3, Cpanel 개선 미확정. 공식 판정 불변 | [결과](reviews/PM-P21-residual-result-2026-10-03.md), code2c6d9e7 |
+| EXP-P22-001 | 연속값 주기 임베딩 + MLP × 3 seed | 완료·반복 DEV 개발비교, 공식판정불변 | [결과](reviews/PM-P22-periodic-result-2026-10-04.md) |
+
+## D167–D168 CUDA 및 경기 후 자원 재사용
+
+| ID | 변경 | 상태 | 근거 |
+|---|---|---|---|
+| EXP-P23-001 | 6계열 head 단일/쌍/전체평균22종×G0혼합3비중=66조합 | 완료·반복 DEV 탐색, 채택없음 | [결과](reviews/PM-P23-ensemble-result-2026-10-04.md) |
+| EXP-P24-001 | CUDA기준/구수/부담블록/ResNet/수치임베딩×3seed | 15fit+채점완료, 수치임베딩개발신호·판정불변 | [결과](reviews/PM-P24-CUDA-result-2026-10-04.md), 등록0da52e4 |
+| EXP-P25-001 | CUDA 용량·타자 정보/이력·정규화 9방식×3seed | 27 fit + 집계 완료. Dropout 양쪽 범위 3/3 개선 신호, 공식 판정 불변 | [결과](reviews/PM-P25-CUDA-result-2026-10-04.md), 등록34d56f4 |
+| EXP-P26-001 | 봉인18경기seed/sample안정성5변형,6shards | 등록·경기기록/대조/요약종료대기, 아직실행전 | f81434e; 경기후감독큐 |
+| EXP-P28-001 | 같은안정성진단을봉인150경기전체로확장,50shards | 등록·P26집계성공뒤실행대기, 아직실행전 | 6584b1c; 18경기중복은독립근거로합산하지않음 |
+| EXP-P27-001 | 구조3×정보3 전체 조합 + 학습량3 + 투수정보3, 15방식×3seed | 45/45 본 학습·집계 완료. 수치 임베딩+투수 정보 조합에 개발 개선 신호 | 등록7531dfc, source112d90c; 실제 상태는 자동 상태판 |
+| EXP-P29-001 | 기존 구조/ResNet/수치 임베딩 × 출력층 dropout 추가 유무, 6방식×3seed | 18/18 본 학습·집계 완료. 다른 구조의 dropout 추가 효과는 주 범위 불확실 | 등록c7bbc21, source6a7e392; P25를 본 뒤 정한 후속, 기존 ResNet 블록 dropout 유지 |
+| EXP-P30-001 | 수치 임베딩의 정보3종×dropout3종+기준, 10방식×새 seed3–7 | 상태파일상50/50 본 학습·집계 완료, PM 결과 해석 대기 | 등록a78ba3a, source5227ee1, [기동 근거](reviews/PM-continuous-launch-2026-10-04.md). 반복 DEV이며 새 시드는 새 자료가 아님 |
+| EXP-P31-001 | TabM 계열 실험,15fit | 10/4 12:59 상태파일상15/15 본 학습·집계 완료, Codex 과학 검토 대기 | newsrv queue-p31-001, score-p31-state.json; Opus 작업대장T11–T13 |
+| EXP-P32-001 | 수치 임베딩+잔차 구조 계열,18fit | 10/4 12:59 상태파일상18/18 본 학습·집계 완료, Codex 과학 검토 대기 | newsrv queue-p32-001, score-p32-state.json; Opus 작업대장T17–T18 |
+| EXP-P33-001 | EMA 가중치·dropout 조합 계열,20fit | 10/4 12:59 상태파일상20/20 본 학습·집계 완료, Codex 과학 검토 대기 | newsrv queue-p33-001, score-p33-state.json; 원격 p33-launch.json 작성 명령은 승인 미부여로 보류 |
+
+## P47 등록 (본 실행 검토 대기)
+
+| ID | seed·범위 | 상태 | 근거 |
+|---|---|---|---|
+| EXP-P47-001 | 80–83, 4팔×4seed·GPU3 단독 | 2026-10-06 11:40:05 KST Root 등록 검토 수용 후 본 실행 시작. supervisor431431/queue431444; 12:09:23 본6/16 done(returncode0), 일곱 번째 dropout seed81 child440786 running; 실패·재시도 관측 없음. 비교 성능 미판정. no-new13:15/kill13:30/aggregate13:50, 부분 채점·자동 연장 금지. preflight17은 별도 | [등록 config](/Users/song/Projects/pitcheezy-pm-jobs/20261006-p47/register-takeover-001/EXP-P47-001.json) SHA58bf2fe8; [실행 REPORT](/Users/song/Projects/pitcheezy-pm-jobs/20261006-p47/launch-takeover-001/REPORT.md). 단일 실행/기록 /root/queue_resume_astra; G15 mix/G0·D131/D155 유지, 2026 금지 |
+
+
+### 2026-10-06 TRAIN ML timing probe (별도 비용 측정, 성능 실험 아님)
+
+`PROBE-TRAIN-ML-20261006-001` seed20261006은 12:16 KST 등록·Root launch 수용 후 timing 완료. 정확한 source4e5c43a / config53e03b53, 독립15 CPU 검사 PASS, 신선한 ID/seed 예약과 GPU0 소유 확인. TRAIN discovery4096행, CPU1fit+CUDA2fit×2epochs, 300초+10초 cleanup, one attempt. 실제 timing CPU1+CUDA2 fit 완료(12:16:41–46, rc0, worker4.959초), 발견/정책 판정 없음. [등록 증거](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-probe-register-001/REPORT.md). P47 GPU3 불변, main pilot의10CPU+2GPU/1800초는 별도 검토 후 판단.
+
+[Timing terminal evidence](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-probe-launch-001/REPORT.md): 단순 main 비용 환산107.3초는1800초 상한 보증이나 본실험 launch 승인이 아니다.
+
+
+### 2026-10-06 첫 TRAIN interaction main pilot — 실행 실패
+
+EXP-TRAIN-ML-INTERACTION-001, modelseed20261007/data20261006, source5e1fd8ec/config22c5a3d0. RootGO 후12:29:01–06 단일attempt, OOF CPU fit의 maxiter200 미수렴으로 failed. 두 CUDA model fit/후보freeze/replication report/completion 이전 중단, 학습/성능 완료로 세지 않는다. 정확한 실패OOF ordinal/완료CPU수는 로그없어미상. GPU0 lock반환·claim/출력보존, 자동retry없음. [실패보고](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-main-launch-001/REPORT.md). 새프로토콜은 별도검토 필요.
+
+
+### 2026-10-06 OOF 수치수렴 진단 완료
+
+DIAG-TRAIN-ML-CONVERGENCE-001(seed20261008/data20261006),source3c8b7ad/config1357a007.12:39:12–15 oneattempt/2CPU/NN0/replication0. 첫fold동일9,944행에서200한도실패→2000한도1회비교nit288수렴(relative objective). 다른fit수렴/예측개선/과학판정없음. [진단증거](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-diagnostic-launch-001/REPORT.md). 새로운본등록/검토/GO필요, 실패main001그대로봉인.
+
+
+### 2026-10-06 terminal checkpoints
+
+P47:16/16attempt1rc0,12:49:41queue완료/12:50:51기존등록scorer완료,16sealed identity재검증·decisionnull·GPU3lock반환. [패킷](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/p47-terminal-001/REPORT.md). 독립과학해석대기,정책승격없음.
+
+EXP-TRAIN-ML-INTERACTION-002 modelseed20261009/data20261006:source55f2cc9/config4e375280,12:51:56–12:52:33단일attempt complete;10CPU+2CUDA20ep/worker36.857s/19artifact일치/7comparisonsnull decision. [기능완료](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-main002-launch-001/REPORT.md). 성능유효성은별도;반복seed배치는사전고정계획이며독립자료검증아님.
+
+
+### 2026-10-06 P47 독립 결과 제한 수용 / seed batch 등록
+
+P47 16/16 및 기존 scorer 봉인 후 독립 p47-result-review-001 검토를 Root가 수용했다. 등록 대비 ΔNLL unknown−bothID=−0.004862, all−noID=−0.002779, 각4seed 방향 일치. Dropout ECE0.003666 > noID0.002569; 전체 교정 우위 아님. 노출 DEV 기술 결과만이며 decision=null·G0/G15·D131/D155 유지, 새 독립확증/승격/정책교체 없음. 근거 `/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/p47-result-review-001/REPORT.md`.
+
+EXP-TRAIN-ML-INTERACTION-003/004/005: source397c604·독립31CPU PASS에 따라 검토 registrar로 정확 등록, GPU1/2/4 modelseed20261010/11/12 data20261006. 예약12:58:06–13:13:06, fit0·정확 Root launch GO 대기. 등록/hash/stage 증거 `/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-seed-batch-register-001/REPORT.md`. Anchor 실행 전 고정 계획으로 전결과 보고하며 같은 replication 반복 노출을 독립 검증으로 세지 않는다.
+
+
+2026-10-06 batch launch 보류: Root는 독립 main002 과학 검토에서 항등 후보(previous_type_16×previous_valid=기존열)와 두 shuffle 대조의 유의 gain을 확인해 추가003/004/005 launch GO를 보류했다. 실제0fit·등록/봉인 보존·예약 자동연장 없음. 원 pipeline seed 반복은 구조적 식별 문제를 해결하지 못하므로 새 protocol 독립 검토를 권고한다. 자동 코드 수정/재학습 없음. [근거 및 다음안](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-seed-batch-hold-001/REPORT.md). Main002 기능완료와 상호작용 발견 판정은 구분하며 decision=null 유지.
+
+
+13:06 KST: Root 지시에 따라 batch003/004/005 미실행 취소. 원격 claim/attempt 없음·launch0 확인, 등록/source 불변, 예약 연장 없음. 성능 불리한 seed를 거른 것이 아니라 항등 후보/대조 적합성 문제로 전체 batch 중단. 새 debug protocol은 별도 [비활성 준비본](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-debug-prep-001/REPORT.md), 35 CPU 합성 검사 PASS·독립 검토 대기·실제fit0.
+
+
+Debug001 exact source8bd4d7d/config09d1d0a6를 독립 검토·별도 등록·Root 명시 GO 후13:10:31KST 단일 durable supervisor462941로 실행.13:10:45 child462942/공통GPU0lockbusy·CPU4수렴/다음fit 진행 확인. 고정11CPU+2CUDA/1800+10/1attempt/kill13:50:10, 노출2025 exploratory-debug·발견/운영승격 없음. [실행 receipt](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-debug-launch-001/launch-stdout.json).
+
+
+Debug001 완료(13:11:10KST): supervisor rc0/worker38.295초, 실제11CPU finite수렴+2CUDA20epochs,25artifact해시 확인·봉인·GPU0lock반환. [실행/봉인](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-debug-launch-001/REPORT.md). 과학 기준 controls_pass=false/discovery_claim_allowed=false/decision=null. 기존 노출2025에서 원NN gain+0.000387(CI0포함), 원NN−residual-shuffle−0.001849(Holm.008), selected−baseline gain−0.001949(.009), history−context gain+0.172431(.005). top3는 previous_type17(SV)와strikes/scorelead/inning 곱이며 하위집단별 유효지원은 별도 미확인. 새 미세상호작용 발견·정책우위로 해석하지 않는다. 독립 결과 검토 요청 완료, 자동 재학습/seed추가/성과맞춤 retune 없음. 다른가설 다음안은 [checkpoint](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-next-hypotheses-001/REPORT.md)에만 고정, 실행승인 아님.
+
+
+Root가 [debug 독립 결과검토](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-debug-result-review-001/REPORT.md)를 읽고 기능완료·음성결과를 수용했다. 신규 상호작용 발견/정책 우위 없음. Batch003/004/005 취소는 debug 음성 결과 이전, main002 항등 후보/대조 적합성 문제로 실행 전에 결정됐으며 disappointing-seed 선택이 아니다. 후속 질문은 별도 [raw2024 풍부한 pre-pitch context 설계](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-outside-context-prep-001/REPORT.md)로 준비, 현재metadata만 읽음·projectionpayload0·실제fit0.
+
+
+Outside-context 신규 투영은 Root exact rawreadGO 후 source1c36b5a/configf2875e86으로 실제1CPU1.954초/fit0·GPU0 완료·봉인. 원2024raw711899→709172행,11개투구전특징·outside표적만; 신규context제외0. manifest1d159333/projection278aebb4, [실행receipt](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-outside-projection-run-001/REPORT.md) 및 [독립결과PASS](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-outside-projection-result-review-001/REPORT.md). 실제binarymodel은 sourceb7의문구/지원수누락을 독립검토 지적으로 최소보완한 b2fc15a로 재검토중. [모델 준비](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-outside-model-prep-001/REPORT.md),41CPU합성PASS/실제model fit0. 날짜·투수heldout/12CPU2CUDA/12대비·12count강한대조/600+10/GPU0 계획이며 별도등록/RootGO 필요. 현재관측outside예측은 의도/유인구/정책효용 아님.
+
+
+Outside-context001 exact sourceb2fc15a/config350d3720 RootGO 후13:26:30–13:26:38KST rc0,worker7.231초·12CPUfinite수렴/2CUDA20epochs/28artifact봉인. [완료/전비교](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-outside-model-launch-001/REPORT.md). 평가10k/984게임/141보류투수: 원NN−fulladditive gain−0.00118055(Holm.033),context−count−0.00010076(1.0),NN−null−0.00003565(1.0), 유익한신규상호작용주장없음·decisionnull. 독립science검토는서비스긴급무결성검토뒤대기.13:27:33실제GPU5장compute0/각2MiB0%, 우리학습모두종료. 음성결과후추가fit/retune/seed선별 없음.
+
+
+Outside [독립 science 결과 검토](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-outside-model-result-review-001/REPORT.md)를 Root가 읽고 기능완료·음성결과를 수용했다. 신규상호작용/정책긍정0, 원NN−additive gain−0.001181 jointHolm.033, context−count CI0포함; 부정결과를 상호작용 자체 부재 증명으로 확대하지 않는다. 13:33:00 read-only 최종확인GPU0~4모두2MiB0%·compute/우리연구프로세스없음. [사용자용 연구 한 장 요약](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-onepage-001/REPORT.md) PNG/SVG·봉인수치SHA·최종스냅샷 준비. 새fit/재채점/체리픽/메인commit/서비스변경0.
+
+
+연구 마감: Song 명시 지시에 따라 현재 완료·봉인된 실험까지 마무리하고 시연에 집중한다. 2026-10-06T05:33:42.832259+00:00 단회 실제 GPU5장compute0/연구프로세스0/기존공통lock전부반환 확인. [마감증거](/Users/song/Projects/pitcheezy-pm-jobs/20261006-autonomy-2h/research-close-001/REPORT.md). 신규실험·재학습·추가후속설계·13:50대기/반복poll 중단, 재개는새명시지시 필요.
+
+
+## 2026-10-07 새 사용자 승인 소규모 M4 연구 — 완료 기록
+
+| 등록 ID | 고정 source / seed | 실행·결과 | 근거·한계 |
+|---|---|---|---|
+| EXP-M4-OUTCOME-AB-SMALL-001 | 0b809b312e17b14014f090cd6aaac192cd6910d6 / model20261021,data20261020 | CPU1+MPS1(20epochs),30.147초 rc0; A NLL1.500780/B1.547601 | [보고](/Users/song/Projects/pitcheezy-pm-jobs/20261007-first-small-experiment/REPORT.md), probe001/002실패·003성공은 별도 evidence 보존; 노출TRAIN탐색/정책판정null |
+| EXP-M4-LEARNING-DIAGNOSTIC-001 | cecfde5e7326d52bf70b9aaf3acb710caa370abf / model20261030,data20261020 | full+3군제외 총4CPU+4MPS,100.504초 rc0; tuning최소epoch4/5/5/5; full A1.502519/B1.504424 | [전수결과·독립PASS](/Users/song/Projects/pitcheezy-pm-jobs/20261007-learning-diagnostic/REPORT.md); 기존58088내fit47324/tune10764,별도cal/eval; 작은차이·단일seed·비보정다중비교·medium0/서비스교체0 |
+
+
+**현재 반복 완료(2026-10-07 15:51 KST):** [과거 정보 지원량·3seed 반복](/Users/song/Projects/pitcheezy-pm-jobs/20261007-feature-support-replication/REPORT.md) 신규8MPS/CPU0·160.794초 완료, A4 exact재사용. 기존 포함12구성에서 A NLL/Brier 우세; 구질/직전공 제외 효과는 seed별 방향불안정, 타자제외3/3악화는 탐색기술에 한정. 평가 구질요약 selected-fit 기록나이 중앙320일, 직전invalid는 PA첫공. 독립 최종 제한 PASS; 자원반환·서비스정상, 추가fit/중간규모/서비스교체0.
+
+
+**현재 완료(2026-10-07 16:33 KST):** [이력보강·타투수 결과공유](/Users/song/Projects/pitcheezy-pm-jobs/20261007-history-transfer/REPORT.md) 두단계 총10fit(5CPU+5MPS,55.286+150.691초) 완료·독립 최종 제한 PASS·Root 수용. 물리이력보강은 A/B CI0포함; 일반 타투수 결과공유 NLL개선, 이번 유사도가중은소폭악화. 단일seed/기노출TRAIN/비보정탐색이며 NLL과Brier판정구분. 논문B1/B2·G0/G15·서비스불변, lock반환/기록기정상. 완료후추가fit0·중간규모0.
+
+
+**현재 반복 완료(2026-10-07 16:55 KST):** [일반 결과공유 3seed 안정성](/Users/song/Projects/pitcheezy-pm-jobs/20261007-outcome-sharing-replication/REPORT.md) 신규B4MPS fit/200.963초, A classifier·온도exactreuse/재fit0(B온도4회별도). 기존포함generic−own B NLL−.003566/−.002779/−.004106, Brier도3/3감소; sameeval기술반복이며독립확증/정책승격아님. NLL은A generic우세, Brierseed별구분. 독립 최종 제한 PASS·Root 수용, 자원반환·서비스정상/추가fit0/중간규모0.
+
+
+## 2026-10-07 temporal own/generic small — 8fit·고정추론 완료
+
+EXP-M4-TEMPORAL-SHARING-001 / seed20261037 / source47af8e6 / config235388e5. 사전고정 early와 기존late참조 두fold 각own/generic A+B 총8fit상한, 전체1800+10초, A180/B300개별상한보다 전체상한우선. 독립준비PASS와Root17:13:59KST exactGO 후 단일attempt실행. [등록·범위](/Users/song/Projects/pitcheezy-pm-jobs/20261007-temporal-sharing-validation/register-001/REPORT.md), [현행보고](/Users/song/Projects/pitcheezy-pm-jobs/20261007-temporal-sharing-validation/REPORT.md). 동일TRAIN노출·fold중첩탐색, 중간규모/서비스교체/정책승격0.
+
+완료 추기17:18KST: 단일rc0/215.935초,4CPU4MPS+scalarT8,32SHA검산·lock반환·recorder0. early/late generic−own A/B NLL모두감소, Brier평균도감소; 동일노출TRAIN/교차fold탐색, 과학·정책승격0. 후속은별도검토된고정checkpoint추론분석만(추가fit0).
+
+최종추기17:29KST: 추가fit0 checkpoint추론114.385초·16전체mean재현차0·44정의×2fold·42/43지원, 가족별행합/가중대비복원검사,독립최종제한PASS·Root수용. 3–0과own0기여합산금지/own100+B평균역방향/희귀support불확실을명시했다. [상황분석](/Users/song/Projects/pitcheezy-pm-jobs/20261007-temporal-sharing-validation/POSTFIT-RESULTS.md)과 [F-weighted/F-pooled후속초안](/Users/song/Projects/pitcheezy-pm-jobs/20261007-temporal-sharing-validation/NEXT-DRAFT.md); 후자는미등록·실행false,새classifier/calfit0. 서비스및논문원baseline불변.
+
+
+## 2026-10-07 frequency-only control — 완료
+
+EXP-M4-FREQUENCY-CONTROL-001/bookkeepingseed20261038/sourcef2c86dd/config62044f98, 독립준비PASS·Root17:40KST GO. 총scalarT4/classifierencoderfit0·기존8checkpoint추론,동일early/late모든eval/같은donor지원,600+10초단일attempt. [계약/현황](/Users/song/Projects/pitcheezy-pm-jobs/20261007-frequency-control/REPORT.md). 원논문/모델/서비스불변.
+
+최종완료: rc0/155.700912초·scalarT4/classifierencoderfit0·old8checkpoint재생.16원지표maxdiff4.63e−8·8SHA검산·lock0/recorder0/readytrue. 독립최종제한PASS·Root수용. Pooled직접예측vsweighted개선, NLL은genericA/B가낮고 Brier는pooled가낮음으로구분. [전수표](/Users/song/Projects/pitcheezy-pm-jobs/20261007-frequency-control/RESULTS.md), [체인완료](/Users/song/Projects/pitcheezy-pm-jobs/20261007-frequency-control/CHAIN-CHECKPOINT.md), [미실행후속DRAFT](/Users/song/Projects/pitcheezy-pm-jobs/20261007-frequency-control/NEXT-DRAFT.md). 현재추가fit/운영변경0.
+
+## 2026-10-07 pooled-input matched comparison — 완료
+
+**현재 pooled 입력 비교 완료(2026-10-07 18:16 KST):** [동일모델 합산빈도 입력 대조](/Users/song/Projects/pitcheezy-pm-jobs/20261007-pooled-input-comparison/REPORT.md) 총8 classifier(4CPU+4MPS)+8 scalarT·261.156초 완료, 독립최종제한PASS/Root수용·34SHA·lock반환·기록기/서비스정상. Pooled−weighted NLL은 A early−.000244/late−.000346 소폭감소, B early+.002570/late−.001323으로 방향불일치. 91열 중10 donor rate만 변경·81열동일; 양팔 donor0=zeros+missing1. [전수결과·지표별 차이](/Users/song/Projects/pitcheezy-pm-jobs/20261007-pooled-input-comparison/RESULTS.md), [80개 class calibration](/Users/song/Projects/pitcheezy-pm-jobs/20261007-pooled-input-comparison/CALIBRATION.md). 단일seed/노출fold/비보정CI·encoder/선택epoch차이 한계, 과학/정책승격 없음. [B seed 반복 DRAFT](/Users/song/Projects/pitcheezy-pm-jobs/20261007-pooled-input-comparison/NEXT-DRAFT.md)는미등록·미실행; 이번완료뒤추가fit0, 원봉인/B1B2/G0G15/서비스불변.
+
+## 2026-10-07 pooled-input seed replication — 완료
+
+**현재 pooled 입력 시드 반복 완료(2026-10-07 18:39 KST):** [3seed 반복과 방향판정](/Users/song/Projects/pitcheezy-pm-jobs/20261007-pooled-input-replication/REPORT.md) 신규B8MPS+8scalarT·451.977초 완료, A4 weights/encoder/온도/점수 exact재사용·CPUclassifier/AT0. 독립최종제한PASS, 각34SHA·lock반환·기록기/서비스정상. 기존seed포함 B pooled−weighted NLL early평균+.000900(개선1/3),late−.000335(개선2/3), 양fold seed부호반전; early Brier3/3악화·late2/3개선. [전수 NLL/Brier](/Users/song/Projects/pitcheezy-pm-jobs/20261007-pooled-input-replication/ALL-SEEDS.md)와[곡선](/Users/song/Projects/pitcheezy-pm-jobs/20261007-pooled-input-replication/CURVES.md). 방향: pooled B교체보류·기존weighted연구대조유지, 최적화/선택안정성점검우선. [추가fit0 공통epoch24쌍 진단](/Users/song/Projects/pitcheezy-pm-jobs/20261007-pooled-input-replication/direction-review/REPORT.md)에서 pooled train loss24/24감소·gap20/24증가, 원인은미확정. 일반공유전체부정아님·A작은이득은별도단순화후보이며반복재학습확증아님. 동일노출eval/중첩fold/비보정비교한계, 정책승격없음. 신규fit종료후추가0·중간규모/원봉인/B1B2/G0G15/서비스변경0.
+
+## 2026-10-07 weighted B generalization diagnostic — 완료
+
+**현재 가중입력 B 일반화 진단 완료(2026-10-07 19:21 KST):** [정규화·종료기준 진단](/Users/song/Projects/pitcheezy-pm-jobs/20261007-generalization-diagnostic/REPORT.md) 신규6MPS classifier+6scalarT·210.928초, 기존B6 weights/T재사용·baselinefit0, 독립최종제한PASS/Root수용·30SHA·lock반환·기록기/서비스정상. AdamW decay.001→.1만변경, NLL6/6감소(earlymean−.000398/latemean−.000948), Brier5/6감소·early41예외. [전수결과](/Users/song/Projects/pitcheezy-pm-jobs/20261007-generalization-diagnostic/RESULTS.md). [Patience3 곡선only 모의점검](/Users/song/Projects/pitcheezy-pm-jobs/20261007-generalization-diagnostic/STOPPING.md)은12/12동일best·후속개선놓침0이며 실제earlystop시간/점수개선미검증. Decay.1은후속검증후보·채택/승격아님. [더넓은사전고정검증 DRAFT](/Users/song/Projects/pitcheezy-pm-jobs/20261007-generalization-diagnostic/NEXT-DRAFT.md)는준비만·미실행, 미노출holdout입증없음/기존20%준비연결만. 추가fit/중간규모/A5000/2026sealed/서비스변경0·원봉인/B1B2/G0G15보존.
+
+## 2026-10-08 후보 고정·표본 반복·100% FIT 확대 — 완료
+
+| ID | 고정 범위와 실행 | 결과·검토 |
+|---|---|---|
+| EXP-M4-CONFIRM-SAMPLING-001 | 기존50%FIT의경기80%·표본seed20261045/46/47·2fold·같은F1표현.36CPU classifier/36CAL T,1304.52초. | 10class tree·헛스윙잔차tree안정성통과,땅볼은후기seed47 Brier+0.000000564로확대보류. [전수표](/Users/song/Projects/pitcheezy-pm-jobs/20261008-confirmation-001/REPEAT-RESULT.md), [독립PASS](/Users/song/Projects/pitcheezy-pm-jobs/20261008-confirmation-001/review/REPEAT-RESULT.json). |
+| EXP-M4-CONFIRM-FULLFIT-001 | 통과한10class·헛스윙만originalFIT100%로확대.50%encoder/history고정·2fold·8CPU classifier/8CAL T,977.12초. | 후보는100%A대비와원50%후보대비모두양기간NLL/Brier개선. 단순A후기10class는미세악화. [전수결과](/Users/song/Projects/pitcheezy-pm-jobs/20261008-confirmation-001/scale-execution/RESULT.md), [독립PASS](/Users/song/Projects/pitcheezy-pm-jobs/20261008-confirmation-001/review/SCALE-FIT-RESULT.json). |
+
+총44CPU classifier/44CAL T. source helper d08c2764a58fa39b92361213065a9e093451692e,10class child14f23dd72d8628b4ab61a7f2d87824191e0ca35f,jobwrapper는각설정의전체SHA로고정했다. [재현](/Users/song/Projects/pitcheezy-pm-jobs/20261008-confirmation-001/REPRODUCIBILITY.md). 미노출평가자료는인증하지못해개발증거로한정하며논문B1/B2·서비스·2026/OPE를변경하지않았다.
+
+
+## 2026-10-08 고정 확률 후속 진단
+
+- EXP-M4-FROZEN-PROB-DIAG-001: 기존 full10010class/full100whiff/full50GB 저장 확률만 진단. 신규 classifier0/CAL T0/추론0. [계약·결과](/Users/song/Projects/pitcheezy-pm-jobs/20261008-research-service-next-001/research/diagnostics/REPORT.md), [독립 검토PASS](/Users/song/Projects/pitcheezy-pm-jobs/20261008-research-service-next-001/review/DIAGNOSTICS-RESULT.json). 두 개발EVAL에서 whiff>strike1969/110846와1926/102088, whiff+GB>1은0. 혼합head 결합확률 표시 근거가 아님. GB late seed20261047 Brier차 +5.6427376466e−7 재현, 보정 전에도 +7.4586273794e−7; 원래 확장 실패 판정 유지. 전체6셀·CAL/EVAL·고정빈 지지수 보존. 2026/OPE·정책·운영·논문baseline 변경 없음.
+
+
+- EXP-M4-DONOR-TREE-001 (2026-10-08): 원래전체50%FIT·199차원고정F1encoder/history·동일10class tree의4입력방법×2기간,8CPU/8T/실패0. 기존generic재현NLL/Brier/T차1e−10미만. own donor보조정보제거ΔNLL early+0.000900273/late+0.000900864; similar +0.000033135/+0.000355831; pooled +0.000080135/+0.000102977. similar/pooled기술적구간은0포함, generic비교기준유지. [계약·결과](/Users/song/Projects/pitcheezy-pm-jobs/20261008-research-service-next-001/research/ablation/REPORT.md), [독립PASS](/Users/song/Projects/pitcheezy-pm-jobs/20261008-research-service-next-001/review/ABLATION-FIT-RESULT.json). 반복노출개발평가이며정책·운영·논문baseline·2026/OPE변경없음.
+
+- EXP-WS-EOP-PANELS-001 (2026-10-11, 기술 전용·fit 0): 2026 EXPOSED DEVELOPMENT 80,584행(공통 80,559 + OLD-unsupported 25)에서 OLD 대비 fit100 선수·구종 패널. 기록된 eop-001 재현(NLL 차 -0.0012849726597854438, Brier 차 -0.00038700551426285035). 투수 524집단(안정 357, fit100 NLL 낮음 194), 타자 466(안정 330, 190). 구종 NLL 차 CU +0.00103 외 FF/SI/SL/CH/FC/ST/FS/KC/SV 음수. 구간·승자·채택 없음, 작은 셀 불안정. [결과](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-eop-player-panels-next-001/author-003/attempts/eop-panels-001/result.json) SHA-256 96d2f9df8d23c27fd635c5c91ab94147cd7a10a192c66553097a539702693662, [통합 검토 PASS](/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-eop-player-panels-next-001/combined-review-001/REVIEW.md)
+
+- EXP-WS-CAL-001 (2026-10-11, 재학습 0): 고정 scale-002 fit100의 2026 EXPOSED DEVELOPMENT EVAL 80,584행/275경기에서 사후 보정기 3종을 CAL(56,275행)로 맞춰 비교. 기준 ECE 0.00356166321549404, NLL 1.5793491627848582. C0 대비 ECE 차(CI95): C1 -0.0011295 [-0.0025694, 0.0018294], C2 -0.0001089 [-0.0029554, 0.00277], C3 -0.0002749 [-0.0019188, 0.0012813]; C3 NLL +0.0011416 [0.0004144, 0.0020277]. 모두 NOT_CANDIDATE, 승자·채택 없음, 독립 TEST 없음. [결과](../results/EXP-WS-CAL-001.json) 커밋 c8639ae
+- EXP-WS-RECENCY-001 (2026-10-11, 재학습 0·특징만 갱신): 같은 고정 모델에 EVAL 행의 이력 특징을 strictly-prior 2026 풀로 다시 계산. H0(FIT 2026-08-02 동결) 대비 H1 NLL -0.0012710519700791512 [-0.0018252099881693295, -0.0007277831182018368], H2 NLL -0.0017700962772502216 [-0.0023630670154146183, -0.0011883135483216727], H2 Brier -0.0005608596992439097 [-0.0007919620649035453, -0.0003375670291978988]; ECE 차 CI는 0 포함. FIT 이력 0 투수(66명/7,699구) H2 NLL -0.00600445109453851 [-0.008824068771636705, -0.0031270587327467112]. 한계: EXPOSED DEV, 독립 TEST 없음, 연구 모델(서빙 경로 아님), 승자·채택 없음. [결과](../results/EXP-WS-RECENCY-001.json) 커밋 fcfd5d8
+
+- EXP-WS-RECENCY-002 (2026-10-11, 재학습 1회·CPU): fit100 백본을 FIT·SELECT(조기 종료)·CAL(온도)·EVAL 모두 경기일별 strictly-prior 2026 이력 특징으로 다시 학습(P). 자료 역할 2026 EXPOSED DEVELOPMENT, 독립 TEST 없음, 승자·채택 없음. 분할 FIT 03-25..08-02 / SELECT 08-03..08-23 / CAL 08-24..09-06 / EVAL 09-07..09-27(80,584행/275경기), data d20260930-h2026f, 모델 시드 20261043, 부트스트랩 시드 20261211(10,000회, 경기 단위 짝지음, 95% 백분위). P-H0 NLL -0.0017729532197539033 [-0.0023539286768871496, -0.0012028468640849234], Brier -0.0005484616336638437 [-0.0007750141481166035, -0.0003273275843881306], ECE 차 CI는 0 포함. P-H2(RECENCY-001) NLL -0.0000028569425036817364 [-0.00009817768737124634, 0.00009058944581044589]. 구조 메모: FIT 특징이 그대로라 트리가 같고 조기 종료 반복(parent 195→162, ground_ball 191→186)과 CAL 온도만 달라졌다. 라벨 NO_ADDITIONAL_GAIN_OVER_H2. 398.18초, 표본 peak RSS 5.38 GB(상한 6 GiB). [결과](../results/EXP-WS-RECENCY-002.json) 커밋 d665ae5
+- EXP-WS-SEQ-001 (2026-10-11, GPU 3잡): 같은 199칸 strictly-prior 특징에 같은 투수·같은 경기의 앞선 최대 32구 시퀀스를 더한 소형 PyTorch 모델(N1: MLP + 2층 Transformer)과 시퀀스 없는 MLP(N0)를 prequential 트리 P와 비교. 자료 역할 2026 EXPOSED DEVELOPMENT, 승자·채택 없음, 연구 모델(서빙 경로 아님). 분할은 RECENCY-002와 같음, 시드 0/1/2, 부트스트랩 시드 20261211, 코드 커밋 a2ab5d7(`gpu run`, A5000 GPU0·1·2, 잡당 약 2분). 정지 규칙(SELECT NLL이 트리 1.5685147057271014보다 낮아야 함) 미발동(N1 s0 1.567239). N1 3시드 앙상블−P: NLL -0.0036115975794805966 [-0.004442547332695765, -0.002802047524498772], Brier -0.001106 [-0.001412, -0.000801], top-label ECE +0.00452 [+0.00049, +0.00614](악화). N1−N0(시퀀스 효과) NLL -0.0023174679608890525 [-0.0028545580058946603, -0.0017813204579474513]. N1 단일 시드−P NLL -0.001161 ~ -0.001478(CI 모두 0 아래). N1−H0 NLL -0.005385 [-0.006313, -0.004497]. FIT 이력 0 투수(7,699구)에서는 N1−P CI가 0 포함. 라벨 SEQUENCE_HELPS_NLL / BEATS_TREE_P(권고). 한계: CUDA 비결정, 3시드, HPO 없음, 앙상블−단일 트리는 같은 조건 비교가 아니다(단일 시드 수치가 정직한 단일 모델 효과). [결과](../results/EXP-WS-SEQ-001.json) 커밋 b47b7e6
+- EXP-WS-SEQ-CAL-001 (2026-10-11, CPU): SEQ-001 N1의 ECE 악화를 CAL에서만 맞춘 사후 보정기(C1 벡터+Platt, C2 Dirichlet ODIR, C3 구간별 isotonic)와 사전 등록 CAL 5겹 CV 선택(SEL)으로 고치는지 본다. 자료 역할 2026 EXPOSED DEVELOPMENT(EVAL은 이미 여러 번 열람), 승자·채택 없음. 분할·부트스트랩 시드는 SEQ-001과 같음, 입력 시드 0/1/2 마진. 선택 결과 seed0 C3 / seed1 C2 / seed2 C2. 앙상블 EVAL: C0 ECE 0.006781 → SEL 0.004498, NLL 1.573965 → 1.573594. SEL−C0 ECE -0.00228 [-0.00424, +0.00009], NLL -0.00037 [-0.00065, -0.00010]. SEL−P NLL -0.00398 [-0.00481, -0.00316], ECE +0.00224 [-0.00126, +0.00387](더는 유의하지 않음). C3를 세 시드 모두에 쓰면 ECE 0.003384(C3−C0 -0.0034 [-0.00505, -0.00024], 라벨 CANDIDATE이나 사후 읽기). 라벨 SEL=NOT_CANDIDATE(ECE CI 상한 +0.00009, NLL/Brier 비열세). 팬 표시 leaf narrow_whiff·ground_ball ECE는 모든 팔 0.001~0.003. 243.5초, peak RSS 447 MB. [결과](../results/EXP-WS-SEQ-CAL-001.json) 코드 866d003, 결과 커밋 fa89825
+- EXP-WS-SEQ-002 (2026-10-11, GPU 스윕 10설정·선택 설정 시드 2잡, 모든 잡 rc 0): 시퀀스 모델 10설정 스윕(기록 길이 16/32/64, 깊이·너비, 앞선 공의 zone·구속·움직임 버킷, 타자 컨텍스트). 선택은 시드 0 SELECT NLL만으로, 선택 설정만 시드 0/1/2·CAL-CV 보정기·EVAL 1회 읽기. 격자는 SEQ-001 EVAL 결과를 본 뒤 설계했고 EVAL은 이날 이미 여러 번 노출됐다. 자료 역할 2026 EXPOSED DEVELOPMENT, 승자·채택 없음. 시드 0 SELECT NLL: G01 1.567239, G02 1.567983, G03 1.566203, G04 1.567721, G05 1.567346, G06 1.566700, G07 1.567048, G08 1.567076, G09 1.567356, G10 1.566702. 선택 G03(L=64): 시드 1/2 SELECT 1.567049/1.567013은 SEQ-001 N1 시드 1/2(1.566975/1.567022) 수준. EVAL 앙상블 SEL−N1 NLL -0.0003 [-0.00073, +0.00013](CI 0 포함), SEL−P NLL -0.00391 [-0.00478, -0.00306], SEL−C0 ECE -0.0016 [-0.00451, +0.00019], SEL ECE 0.005194. 라벨 SEL=NOT_CANDIDATE(ECE CI 상한 +0.00019), C3=NOT_CANDIDATE(ECE improved, NLL degraded). 물리·zone 토큰과 타자 컨텍스트는 SELECT에서 이득 없음. SEQ-001 N1을 CI 밖으로 넘는 설정 없음, 정지 규칙 미발동. [결과](../results/EXP-WS-SEQ-002.json) 코드 0d1d3f1, 결과 커밋 800a867
+- EXP-WS-STEP5-CAL-001 (2026-10-11, 학습 0·기술 통계): Step 5 그림자 경로(2026 strict-prior 프로필 → 199칸 → 2024 동결 3-head → 7 leaf, 실제 구종 칸)의 결과 확률 보정을 2026 EVAL 80,584행에 적용해 측정. 자료 역할 2026 EXPOSED DEVELOPMENT, 독립 TEST 없음, 승자·채택 없음, Statcast 파생 투구 전 맥락(라이브 GUMBO 매퍼 아님). 설계 A(주): EVAL 전 동결 프로필, 컷오프 2026-09-06. 설계 B: 경기일-1일 prequential. 부트스트랩 시드 20261211. A: 채점 78,136행(coverage 0.9696217611436514), NLL 1.5797880220431886 [1.575329499459225, 1.5842946958519775], Brier 0.7541997073164708, top-label ECE 0.00305643856281531 [0.001902135978934117, 0.006783081286112229], narrow_whiff leaf ECE 0.002103693021047984(CI 상한 0.0047542159312326335), ground_ball_in_play leaf ECE 0.004417065922376733(CI 상한 0.00619361990619764). B: 채점 78,997행, top-label ECE 0.003471411859553634. B−A(공통 78,136행) NLL -0.0004449694105241875 [-0.0007137686699925836, -0.0001772922482622078]. 임계값(ECE 0.01 등)은 결과 열람 전 고정. 라벨 CALIBRATION_ACCEPTABLE_FOR_DESCRIPTIVE_DISPLAY(A·B 모두). 336.9초, peak RSS 2.41 GB. [결과](../results/EXP-WS-STEP5-CAL-001.json) 커밋 223d500

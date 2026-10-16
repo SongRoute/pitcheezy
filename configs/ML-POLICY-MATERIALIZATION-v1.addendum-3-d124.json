@@ -1,0 +1,15 @@
+{
+  "parent_sha256": "e92e9ff5d141ad7f9f0e11e9c3fafdafbfd4b8594b4437550b0a3e8e51874144",
+  "stage": "bind-probe",
+  "registered_inputs": {
+    "bind_probe": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S2-bind-probe-a3/probe.json",
+      "file_sha256": "50f954c8caa745cfd325bd2c1950fe306792ef098027536980adb2c93e68eebe"
+    },
+    "bind_identity": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S2-bind-probe-a3/identity.json",
+      "file_sha256": "cff0d9cb2dddc71366c6870537d70c991d879d74b131856d08ec0772563775df"
+    }
+  },
+  "note": "d124: S2 re-certified."
+}

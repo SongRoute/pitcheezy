@@ -1,0 +1,59 @@
+{
+  "id": "EXP-WS-SEQ-001",
+  "recorded_at": "2026-10-11",
+  "data_role": "2026 EXPOSED DEVELOPMENT; no independent TEST; advisory labels only; never a winner; research model; CUDA nondeterminism caveat",
+  "question": "Does a small PyTorch model that sees the same 199 prequential pre-pitch features (N0: MLP) plus the sequence of up to 32 earlier same-pitcher same-game pitches (N1: MLP + 2-layer Transformer encoder) predict the seven-leaf outcome better than the prequential LightGBM backbone (P, EXP-WS-RECENCY-002), the frozen fit100 with prequential EVAL features (H2) and the recorded fit100 (H0)?",
+  "source": {
+    "job": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e4-seq/",
+    "registration_sha256": "a5dfd315bb3252755479699b8b3bb5cffd7b7dbac35dced1a641f4858c023ebb",
+    "review_sha256": "a0ea4c40f6ce53e72eccf649ff6cbe38876a8340eae543308772bc9fba6937d5",
+    "review_verdict": "PASS (independent reviewer, distinct from author; re-bound after the three E1b-derived fields were filled; 0 critical/high, 2 medium, 3 low)",
+    "code_commit": "a2ab5d7 (experiments/ws_seq/{prepare_inputs,train_seq,evaluate_seq}.py, configs/EXP-WS-SEQ-001.{json,yaml}, .gpurc; bytes unchanged through the run)",
+    "code_sha256": {"train_seq.py": "1328c4148f5fa9e89728207a06dc839df72c26a7f6ead89a90ae4ecec8c24ac0", "prepare_inputs.py": "4847d22a18659a7848209835e1e9189c48e0d016bf3e8821408e14396232c661", "evaluate_seq.py": "7a192df78b752c9d61137f38edbf9bcf24c422ceee211c9c87fcfc07535bf646", "config_json": "bbee1279236ef52d4fcb7ab0c761bee7a0c7f363bc8dd86d31b6a74b97bd92bf"},
+    "attempt": "seq-001",
+    "result_sha256": "071b217e5f46ec5e58abf886be822ce0bd5272e7ec1948f9f6bda0fd865e7383",
+    "inputs_on_server": {"x-prequential.npy": "c0d446f745cc1839bdc6baed9c7bac92573a82a28ec345e47ccec09db42bff31", "corpus-subset.npz": "92617d6327011e0a44ca432dd7ecbd1b63eaa7bd68021a1f476b1ede50c3f4d2", "seq-inputs.npz": "44682d7c7f1fa6c17f9c4b21a87702656fb8a62a82232f5617486f5fbd2f1255", "location": "newsrv:~/cc/shared/pitcheezy/ws-seq-001/data/inputs (derived 2026 EXPOSED DEVELOPMENT arrays only; no parquet, no sealed/OPE artifacts)"},
+    "data_version": "d20260930-h2026f via scale-002 corpus + EXP-WS-RECENCY-002 prequential features",
+    "gpu_jobs": {"smoke_synthetic": "261011-125712-ws-seq-smoke rc 0 (train_seq.py --selfcheck on GPU0, torch 2.5.1+cu121)", "seed0": "261011-130349-ws-seq-s0 GPU0 rc 0 (N0+N1, --stop-rule-reference 1.5685147057271014)", "seed1": "261011-150424-ws-seq-s1 GPU1 rc 0", "seed2": "261011-150428-ws-seq-s2 GPU2 rc 0", "launcher": "/Users/song/.local/bin/gpu run only; snapshot 24 MB; .gpurc links data/ws-seq and runs", "server_env": "~/venv python 3.12.3, torch 2.5.1+cu121, nothing installed"},
+    "pull": "/Users/song/gpu-pull/pitcheezy/ws-seq-001/runs/ws-seq/EXP-WS-SEQ-001 (154 MB; margins, seven-leaf EVAL probabilities, temperatures, curves, receipts, model-state per arm/seed)"
+  },
+  "model": {"N0": "MLP 199->256->128 (GELU, dropout 0.1, LayerNorm) -> parent 10 logits + narrow_whiff + ground_ball logits", "N1": "N0 trunk + token embeddings (pitch_type, outcome10 of the EARLIER pitch, balls, strikes, same_batter, position; dim 64) -> TransformerEncoder 2 layers / 4 heads / ff 128 / dropout 0.1, key padding mask, masked mean pool -> concat -> heads; learned no-context vector", "context": "up to 32 earlier pitches by the same pitcher in the same game (strictly earlier by at_bat_number, pitch_number); current pitch contributes only its 199 pre-pitch features; rows without context 20,800 of 713,021; mean context length 19.7", "training": "AdamW lr 1e-3 wd 1e-4, batch 2048, max 30 epochs, early stop on SELECT seven-leaf NLL (T=1) patience 5, best state restored, fp32, one card per job; scalar T per head on CAL (scale_runner.temperature copy)", "seeds": [0, 1, 2], "ensemble": "mean of the three seeds' seven-leaf EVAL probabilities"},
+  "execution_receipt": {"per_fit": {"N0-s0": {"best_epoch": 5, "epochs": 10, "elapsed_s": 21.5, "peak_gpu_bytes": 896224768}, "N0-s1": {"best_epoch": 6, "epochs": 11, "elapsed_s": 21.7}, "N0-s2": {"best_epoch": 7, "epochs": 12, "elapsed_s": 23.8}, "N1-s0": {"best_epoch": 7, "epochs": 12, "elapsed_s": 95.5, "peak_gpu_bytes": 1504153088}, "N1-s1": {"best_epoch": 6, "epochs": 11, "elapsed_s": 85.9}, "N1-s2": {"best_epoch": 7, "epochs": 12, "elapsed_s": 93.3}}, "wall_cap_hit": false, "gpu": "NVIDIA RTX A5000 (one per job)", "total_gpu_time_minutes": "about 6 (three jobs of about 2 minutes each)"},
+  "stop_rule": {"reference_select_nll_tree_P": 1.5685147057271014, "N1_seed0_best_select_nll": 1.5672385557111657, "triggered": false, "N0_seed0_best_select_nll": 1.568692, "N1_select_best_by_seed": {"s0": 1.567239, "s1": 1.566975, "s2": 1.567022}},
+  "sanity": {"arms_H0_nll_equals_recorded": 1.5793491627848582, "arms_P_nll_equals_E1b": 1.5775762095651042},
+  "denominators": {"EVAL": {"rows": 80584, "games": 275, "leaf_counts": [28725, 14923, 250, 8906, 13894, 5798, 8088], "pitchers": 524}},
+  "arms_EVAL": {
+    "H0": {"nll": 1.579349, "brier": 0.753977, "ece_top_label_10bin": 0.003562},
+    "H2": {"nll": 1.577579, "brier": 0.753416, "ece_top_label_10bin": 0.002175},
+    "P": {"nll": 1.577576, "brier": 0.753429, "ece_top_label_10bin": 0.002257},
+    "N0-s0": {"nll": 1.578021, "brier": 0.753654, "ece_top_label_10bin": 0.008704},
+    "N0-s1": {"nll": 1.577849, "brier": 0.753504, "ece_top_label_10bin": 0.003371},
+    "N0-s2": {"nll": 1.577882, "brier": 0.75364, "ece_top_label_10bin": 0.003731},
+    "N0_ensemble": {"nll": 1.576282, "brier": 0.753078, "ece_top_label_10bin": 0.005075},
+    "N1-s0": {"nll": 1.576098, "brier": 0.75296, "ece_top_label_10bin": 0.006747},
+    "N1-s1": {"nll": 1.576221, "brier": 0.752991, "ece_top_label_10bin": 0.003544},
+    "N1-s2": {"nll": 1.576415, "brier": 0.753368, "ece_top_label_10bin": 0.012791},
+    "N1_ensemble": {"nll": 1.573965, "brier": 0.752323, "ece_top_label_10bin": 0.006781},
+    "note": "rounded to 6 decimals here; exact values in the job result.json"
+  },
+  "paired_EVAL_differences": {
+    "bootstrap": "whole-game paired, 10000 draws, seed 20261211, unit game_pk, pitch-weighted ratio of game sums, ECE from per-game bin sums, percentile 95%",
+    "PRIMARY N1_ensemble - P": {"nll": {"difference": -0.0036115975794805966, "ci95": [-0.004442547332695765, -0.002802047524498772]}, "brier": {"difference": -0.001106, "ci95": [-0.001412, -0.000801]}, "ece_top_label_10bin": {"difference": 0.00452, "ci95": [0.00049, 0.00614]}},
+    "CO-PRIMARY N1_ensemble - N0_ensemble (sequence effect)": {"nll": {"difference": -0.0023174679608890525, "ci95": [-0.0028545580058946603, -0.0017813204579474513]}, "brier": {"difference": -0.000756, "ci95": [-0.000954, -0.000552]}, "ece_top_label_10bin": {"difference": 0.00171, "ci95": [-0.00047, 0.00341]}},
+    "N1_ensemble - H0": {"nll": {"difference": -0.005385, "ci95": [-0.006313, -0.004497]}, "brier": {"difference": -0.001654, "ci95": [-0.001981, -0.001335]}, "ece_top_label_10bin": {"difference": 0.00322, "ci95": [-0.00046, 0.006]}},
+    "N1_ensemble - H2": {"nll": {"difference": -0.003614, "ci95": [-0.004446, -0.002799]}},
+    "N0_ensemble - P": {"nll": {"difference": -0.001294, "ci95": [-0.002015, -0.000578]}},
+    "single_seed_vs_P (fair single-model comparison)": {"N1-s0 - P": {"nll": {"difference": -0.001478, "ci95": [-0.002418, -0.000513]}, "ece": {"difference": 0.00449, "ci95": [0.00035, 0.00633]}}, "N1-s1 - P": {"nll": {"difference": -0.001356, "ci95": [-0.002305, -0.000392]}, "ece": {"difference": 0.00129, "ci95": [-0.00166, 0.00376]}}, "N1-s2 - P": {"nll": {"difference": -0.001161, "ci95": [-0.002169, -0.000188]}, "ece": {"difference": 0.01053, "ci95": [0.00559, 0.01227]}}, "N0-s0 - P": {"nll": {"difference": 0.000445, "ci95": [-0.000367, 0.001266]}}, "N0-s1 - P": {"nll": {"difference": 0.000273, "ci95": [-0.000553, 0.001084]}}, "N0-s2 - P": {"nll": {"difference": 0.000306, "ci95": [-0.000545, 0.001166]}}},
+    "single_seed_sequence_effect N1-sk - N0-sk": {"s0": {"nll": -0.001923, "ci95": [-0.002802, -0.001005]}, "s1": {"nll": -0.001629, "ci95": [-0.002267, -0.000981]}, "s2": {"nll": -0.001467, "ci95": [-0.00216, -0.00077]}}
+  },
+  "advisory_labels": {"SEQUENCE_HELPS_NLL": true, "BEATS_TREE_P": true, "non_inferiority_N1_vs_P": {"nll": true, "brier": true}, "note": "pre-registered descriptive labels; not a winner, not adoption"},
+  "strata_N1_ensemble_minus_P_nll": {
+    "S0_zero_fit_history (7699)": {"difference": -0.00235, "ci95": [-0.00519, 0.00034], "N1-N0": {"difference": -0.00275, "ci95": [-0.00464, -0.00091]}},
+    "S1_1_to_199 (7985)": {"difference": -0.00365, "ci95": [-0.00628, -0.00109]},
+    "S2_200_to_999 (30892)": {"difference": -0.00315, "ci95": [-0.00454, -0.00174]},
+    "S3_1000_plus (34008)": {"difference": -0.00431, "ci95": [-0.00562, -0.00302]},
+    "B0_batter_zero (4825)": {"difference": -0.00072, "ci95": [-0.00459, 0.00299]},
+    "B1_batter_positive (75759)": {"difference": -0.0038, "ci95": [-0.00465, -0.00297]}
+  },
+  "interpretation": "The sequence model is the first input/architecture change in this track that beats the prequential tree on EVAL NLL with a CI excluding zero: N1 3-seed ensemble vs P -0.00361 [-0.00444, -0.00280] NLL and -0.00111 Brier; vs the recorded fit100 H0 the cumulative gain is -0.00539 (about 4x the recorded fit100-vs-OLD gain). The sequence encoder itself is responsible for -0.00232 (N1-N0, CI below zero; consistent per seed at -0.0015..-0.0019), while the plain MLP on the same features is only at parity with the tree per seed (N0-sk - P CIs cover zero) and gains from 3-seed averaging (-0.00129). Fair single-model reading: one N1 seed beats the single tree by -0.0012..-0.0015 NLL (all CIs below zero). The gain is largest for established pitchers (S3 -0.0043), i.e. the within-game sequence adds information the aggregate history profile lacks; for no-history pitchers (S0) and unseen batters (B0) the CIs cover zero. COST: top-label ECE gets WORSE for the neural arms (N1 ensemble vs P +0.0045 [+0.0005, +0.0061]; seed 2 alone +0.0105): the scalar temperature per head does not calibrate the neural logits as well as the tree's, so any fan-facing use needs a calibration pass (the E3 machinery, registered anew on these margins) before probabilities are shown. The ensemble-vs-single-tree comparison is not like-for-like; the per-seed numbers are the honest single-model effect. LIMITS: 2026 EXPOSED DEVELOPMENT, EVAL already exposed in scale-002/E1/E1b; CUDA runs are not bit-reproducible; 3 seeds; one architecture, no HPO; history pool 2026-only; research model, not the serving path; no adoption or winner claim. Suggested next: (1) calibrate N1 (vector/Dirichlet on its parent logits, registered) and re-check ECE; (2) prospective shadow logging of N1 ensemble predictions during the LCS/WS as a research shadow only, if the PM opens that work order."
+}

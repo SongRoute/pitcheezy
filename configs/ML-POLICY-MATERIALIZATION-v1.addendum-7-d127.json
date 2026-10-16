@@ -1,0 +1,12 @@
+{
+  "parent_sha256": "4cd224d35dc7696ff651c4b8e0f19fb59fa1a01a442408f619ce60b62dcd5e33",
+  "stage": "v2-world",
+  "registered_inputs": {
+    "v2": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S5-v2-a3/v2.json",
+      "file_sha256": "0643d49e9de9105c4ece37de9ec1e530bcb9c96f833a9b356d1ba4aee1e561d1"
+    }
+  },
+  "note": "d124: V2 re-certified; expected identity pinned. Re-chained as d126. Re-chained as d127 (review gate PASS).",
+  "expected_identity_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c"
+}

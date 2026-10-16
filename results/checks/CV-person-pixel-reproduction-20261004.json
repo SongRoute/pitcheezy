@@ -1,0 +1,20 @@
+{
+  "source_commit": "6245038f803236102156e9b42a477d8c9d62f07c",
+  "frames": 57,
+  "human_marked": 56,
+  "human_abstained": 1,
+  "both_marked": 43,
+  "model_abstained_human_marked": 13,
+  "pixel_euclidean_nearest_rank_median": 2.0615528128088303,
+  "pixel_euclidean_nearest_rank_p90": 5.091168824543175,
+  "raw_hash_verified": true,
+  "all_frame_hashes_and_times_equal": true,
+  "m3_met": false,
+  "scope": "Independent recomputation of reported pixel error only; no new visual labeling, physical location accuracy, intention or policy validation",
+  "files_sha256": {
+    "game_849845_intent_human_labels_raw_v0.json": "776c1c19fa00ccd568faaae6fe46362eb730016cf3d31c56b7c4a13a530a4766",
+    "game_849845_intent_human_labels_v0.json": "261d1a9e17774dcda527e84c9d21dbad466a8046695d6000420e3f06c00355d1",
+    "game_849845_intent_points_v0.json": "337c887ebc591503008b54d604c1e65033e0f3637d0647a09c069f92f525a695",
+    "game_849845_intent_plate_calibration_v0.json": "8c20068e3cc6e06c4df547ea0f3fff9e41b5d7380cd594c2727a37be681c6019"
+  }
+}

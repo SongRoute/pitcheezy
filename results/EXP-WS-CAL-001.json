@@ -1,0 +1,49 @@
+{
+  "id": "EXP-WS-CAL-001",
+  "recorded_at": "2026-10-11",
+  "data_role": "2026 EXPOSED DEVELOPMENT; no independent TEST; descriptive advisory labels only; no winner, no adoption",
+  "question": "Does a richer post-hoc calibrator fit on the registered CAL split improve EVAL top-label ECE of the frozen scale-002 fit100 model without degrading NLL/Brier? (classifier, features and margins frozen)",
+  "source": {
+    "job": "/Users/song/Projects/pitcheezy-pm-jobs/20261011-ws-research-e1e3-001/e3-cal/",
+    "registration_sha256": "c67c586ee079379aecc5266057833da1c9aae7c3475f511810bacdd7d994ebd0",
+    "code_sha256": {"cal_repair.py": "0daf2574192563dfdd72f3571f6d2ba7ed60f388969f987584466531ad492b5e"},
+    "review_sha256": "53e80e423ff3a34b479ec4d4fbf06e44968ac4ab90665dcf73e657d50130879a",
+    "review_verdict": "PASS (independent reviewer, distinct from author; 0 critical/high, 2 medium, 9 low)",
+    "attempt": "cal-001",
+    "result_sha256": "f7ea9c344c97d68c5f3b0a71d8231950db8b2163076f492de96aaaad319d4192",
+    "terminal_sha256": "cd720ceecc2219db14c4adbcbc349d8efbe30213d9c5d6ae3a2c8fc1fd530d9d",
+    "repo_commit_at_execution": "686798ca97b78a6b73730941dbe56cf8b15a5bea",
+    "data_version": "d20260930-h2026f (S2 parquet sha256 c0c1eda4b515fc14dab79defe577b449e2695d40dd036f5c35ae52e37093ed9b)",
+    "baseline_model": "scale-002 fit100 (job 20261011-ws-step2-scale-f2-recovery-author-001), parent LightGBM 10-class iteration 195 + 2 binary heads, seed 20261043"
+  },
+  "execution_receipt": {"rc": 0, "elapsed_seconds": 17.881463582627475, "peak_rss_bytes": 212254720, "python": "3.12.14", "numpy": "2.5.3", "scipy": "1.18.1", "free_memory_bytes_gate": 9436446720, "lock_wait_seconds": 2.874992787837982e-06},
+  "baseline_reproduction_gate": {"max_abs_diff_vs_persisted_seven_leaf": {"calibration": 0.0, "evaluation": 0.0}, "metrics_vs_scale002_result": "all within 1e-9"},
+  "denominators": {"CAL": {"rows": 56275, "games": 190}, "EVAL": {"rows": 80584, "games": 275, "leaf_counts": [28725, 14923, 250, 8906, 13894, 5798, 8088]}},
+  "metric_definitions": {
+    "ece_primary": "top-label ECE, 10 equal-width bins, bin=min(floor(10*conf),9), pitch-weighted (compare_e_op.ece, eop-001)",
+    "nll": "seven-leaf NLL, mean -log clip(q[y7],1e-15,1)",
+    "brier": "seven-leaf Brier, mean sum_k (q_k - 1[y7==k])^2",
+    "classwise_ece_secondary": "mean over 7 leaves of per-leaf 10-bin ECE",
+    "bootstrap": "whole-game paired, 10000 draws, seed 20261211, unit game_pk, pitch-weighted ratio of game sums, ECE from per-game bin sums, percentile 95% CI",
+    "margins_fixed_before_results": {"ece_improved": "CI95 upper < 0", "nll_non_inferior": "CI95 upper <= 0.0010", "brier_non_inferior": "CI95 upper <= 0.0005"}
+  },
+  "arms": {
+    "C0": {"name": "baseline scalar temperature per head (recorded)", "EVAL": {"nll": 1.5793491627848582, "brier": 0.7539770353025491, "ece_top_label_10bin": 0.00356166321549404, "classwise_ece_mean": 0.0020579650395376493}, "CAL": {"nll": 1.5786177742606555, "brier": 0.7541087815334521, "ece_top_label_10bin": 0.00271568140417242}},
+    "C1": {"name": "vector scaling (parent) + Platt (heads)", "EVAL": {"nll": 1.5792933795658453, "brier": 0.754018252023802, "ece_top_label_10bin": 0.002432203963256896, "classwise_ece_mean": 0.002037963429624315}, "CAL": {"nll": 1.578318857188546, "brier": 0.7540225356831025, "ece_top_label_10bin": 0.002395793070278016}},
+    "C2": {"name": "Dirichlet ODIR (parent, lambda selected 0.01 by 5-fold game-grouped CV in CAL) + Platt heads (= C1 heads)", "EVAL": {"nll": 1.5793810963140837, "brier": 0.7540623971699479, "ece_top_label_10bin": 0.0034528102845842357, "classwise_ece_mean": 0.0019096180098379866}, "CAL": {"nll": 1.5780396716417282, "brier": 0.7538952677763486, "ece_top_label_10bin": 0.002231695358528172}},
+    "C3": {"name": "per-leaf isotonic (PAV) on C0 seven-leaf probabilities, clip 1e-6, renormalised", "EVAL": {"nll": 1.5804907663753263, "brier": 0.7540933881759202, "ece_top_label_10bin": 0.003286730515565073, "classwise_ece_mean": 0.002167587795900527}, "CAL": {"nll": 1.574601101178779, "brier": 0.7529509780707074, "ece_top_label_10bin": 0.0017367212202454203}}
+  },
+  "paired_EVAL_differences_arm_minus_C0": {
+    "C1-C0": {"ece": {"difference": -0.0011295, "ci95": [-0.0025694, 0.0018294]}, "nll": {"difference": -5.58e-05, "ci95": [-0.0002327, 0.0001201]}, "brier": {"difference": 4.12e-05, "ci95": [-2.03e-05, 0.0001022]}},
+    "C2-C0": {"ece": {"difference": -0.0001089, "ci95": [-0.0029554, 0.00277]}, "nll": {"difference": 3.19e-05, "ci95": [-0.0001688, 0.0002329]}, "brier": {"difference": 8.54e-05, "ci95": [-2.1e-06, 0.0001741]}},
+    "C3-C0": {"ece": {"difference": -0.0002749, "ci95": [-0.0019188, 0.0012813]}, "nll": {"difference": 0.0011416, "ci95": [0.0004144, 0.0020277]}, "brier": {"difference": 0.0001164, "ci95": [-2.1e-06, 0.0002346]}},
+    "C2-C1": {"ece": {"difference": 0.0010206, "ci95": [-0.0011883, 0.0020661]}, "nll": {"difference": 8.77e-05, "ci95": [-4.96e-05, 0.0002271]}, "brier": {"difference": 4.41e-05, "ci95": [-1.78e-05, 0.0001067]}},
+    "note": "differences rounded to 7 decimals here; exact values in the job result.json"
+  },
+  "advisory_labels_vs_C0": {
+    "C1": {"ece": "ECE_NOT_IMPROVED", "nll": "NLL_NON_INFERIOR", "brier": "BRIER_NON_INFERIOR", "overall": "NOT_CANDIDATE"},
+    "C2": {"ece": "ECE_NOT_IMPROVED", "nll": "NLL_NON_INFERIOR", "brier": "BRIER_NON_INFERIOR", "overall": "NOT_CANDIDATE"},
+    "C3": {"ece": "ECE_NOT_IMPROVED", "nll": "NLL_NOT_NON_INFERIOR", "brier": "BRIER_NON_INFERIOR", "overall": "NOT_CANDIDATE"}
+  },
+  "interpretation": "No pre-registered alternative improves EVAL top-label ECE with a CI excluding zero. C1 (vector scaling) has the best point ECE (0.00243 vs 0.00356) and is non-inferior on NLL/Brier, but its ECE CI covers zero (-0.0026, +0.0018). C3 (isotonic) fits CAL best in-sample yet degrades EVAL NLL by +0.00114 (CI above zero), exceeding the +0.0010 margin: overfitting of the CAL split. The baseline ECE is already ~0.0036 (0.36 percentage points of top-label confidence), so the calibration headroom is small relative to the game-level sampling noise of 275 games. Fan-facing value of a calibrator swap: none demonstrable; the confidence numbers shown would move by well under one percentage point. Follow-up only if ECE is measured on a larger EVAL window or on service-relevant subgroups; a classifier change (not a calibrator) is the lever for NLL/Brier."
+}

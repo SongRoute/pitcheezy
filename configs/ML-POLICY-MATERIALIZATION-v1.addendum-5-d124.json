@@ -1,0 +1,11 @@
+{
+  "parent_sha256": "8f3e89fd21ebc8f43031468f50b3c1daf12564685fbe4c06db4621ad5b4c1440",
+  "stage": "tau-select",
+  "registered_inputs": {
+    "tau_freeze": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S3b-tau-a4/tau_freeze.json",
+      "file_sha256": "ed413fe0a0bd2eb6c25d43afd58a7d169a5cb1e63d28a45f3e64a42a165a669b"
+    }
+  },
+  "note": "d124: tau re-frozen."
+}

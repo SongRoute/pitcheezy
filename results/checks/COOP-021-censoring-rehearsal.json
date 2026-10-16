@@ -1,0 +1,295 @@
+{
+ "evaluated_rows": 38077,
+ "positivity_rows": 401,
+ "positivity_pitchers": 63,
+ "positivity_pitcher_action_pairs": 72,
+ "abs_vc_minus_vr": {
+  "median": 0.00010980899129420241,
+  "q99": 0.00801506103702984,
+  "q999": 0.02784569868295147,
+  "max": 0.13366711487468458
+ },
+ "v1_current": {
+  "pas": 10131,
+  "L1_delta_bounds": [
+   -0.04576266863735024,
+   0.045654991532388625
+  ],
+  "width": 0.09141766016973886,
+  "lower_endpoint_ci95": [
+   -0.05794969114567273,
+   -0.03483213699135866
+  ],
+  "upper_endpoint_ci95": [
+   0.03471828342103213,
+   0.05763549558819039
+  ],
+  "note": "reproduces sealed dr.json",
+  "lower_endpoint_se": 0.005897335243447466,
+  "lower_endpoint_se_2430_games": 0.0014652047211615338
+ },
+ "width_by_reason": {
+  "UNSUPPORTED_LOGGING_POSITIVITY": {
+   "pas": 401,
+   "width_contrib": 0.07926260377650202
+  },
+  "UNSUPPORTED_NO_LOGGED_ACTION": {
+   "pas": 54,
+   "width_contrib": 0.010769890615175371
+  },
+  "UNSUPPORTED_UNKNOWN_PITCHER": {
+   "pas": 1,
+   "width_contrib": 0.00019763740949732452
+  },
+  "end_state_gap": {
+   "pas": 1,
+   "width_contrib": 4.928569487186866e-06
+  },
+  "no_terminal_event": {
+   "pas": 6,
+   "width_contrib": 0.0011825997990769733
+  }
+ },
+ "width_by_node": {
+  "0": 0.0361267397098016,
+  "1": 0.02411480894532657,
+  "2": 0.014497365498062827,
+  "3": 0.008188420035295001,
+  "4": 0.005463456031976532,
+  "5": 0.0013200888411787355,
+  "6": 0.001295515235700802,
+  "7": 0.0004112658723967976
+ },
+ "positivity_at_node0": 149,
+ "censored_mean_abs_weight_gap": 0.05140964067609254,
+ "A_shared_all_refusals": {
+  "pas": 10131,
+  "L1_delta_bounds": [
+   -0.0017971614311540981,
+   0.0016894843261924721
+  ],
+  "width": 0.0034866457573465696,
+  "lower_endpoint_ci95": [
+   -0.002690691823739078,
+   -0.0009504436104772594
+  ],
+  "upper_endpoint_ci95": [
+   0.0008782917572683588,
+   0.0025494771732535674
+  ],
+  "note": "A: one shared unknown at every refusal node; not a valid regime for POSITIVITY (post-decision)",
+  "lower_endpoint_se": 0.00044394087073005575,
+  "lower_endpoint_se_2430_games": 0.00011029799610476126
+ },
+ "A_hk_natural_course_only": {
+  "pas": 10131,
+  "L1_delta_bounds": [
+   -0.04045515828748142,
+   0.040347481182519795
+  ],
+  "width": 0.0808026394700012,
+  "lower_endpoint_ci95": [
+   -0.05250658897711703,
+   -0.029796844800430496
+  ],
+  "upper_endpoint_ci95": [
+   0.029687888724565646,
+   0.052283443057250814
+  ],
+  "note": "H_k-fixed refusals -> natural course (shared end value) only",
+  "lower_endpoint_se": 0.0057933020858894225,
+  "lower_endpoint_se_2430_games": 0.0014393574753600081
+ },
+ "R_delta_max": {
+  "pas": 10131,
+  "L1_delta_bounds": [
+   -0.00710068903950853,
+   0.006993011934546902
+  ],
+  "width": 0.014093700974055432,
+  "lower_endpoint_ci95": [
+   -0.009116141954678914,
+   -0.005224844661503317
+  ],
+  "upper_endpoint_ci95": [
+   0.005147650843303535,
+   0.009035379003053491
+  ],
+  "note": "HK natural course + POSITIVITY rho=0 with |v_c-v_r| <= 0.13367 (rehearsal proxy; 2026 runtime records v_pi(H_k) exactly)",
+  "lower_endpoint_se": 0.000992677880912142,
+  "lower_endpoint_se_2430_games": 0.0002466328023866656
+ },
+ "R_delta_q999": {
+  "pas": 10131,
+  "L1_delta_bounds": [
+   -0.0029019988616425536,
+   0.0027943217566809273
+  ],
+  "width": 0.005696320618323481,
+  "lower_endpoint_ci95": [
+   -0.003955831355396078,
+   -0.0018985510219639938
+  ],
+  "upper_endpoint_ci95": [
+   0.0018437087960768558,
+   0.0038076186690354993
+  ],
+  "note": "HK natural course + POSITIVITY rho=0 with |v_c-v_r| <= 0.02785 (rehearsal proxy; 2026 runtime records v_pi(H_k) exactly)",
+  "lower_endpoint_se": 0.0005248164115898173,
+  "lower_endpoint_se_2430_games": 0.00013039168578026
+ },
+ "R_limit_gap0": {
+  "pas": 10131,
+  "L1_delta_bounds": [
+   -0.0017971614311540981,
+   0.0016894843261924721
+  ],
+  "width": 0.0034866457573465696,
+  "lower_endpoint_ci95": [
+   -0.002690691823739078,
+   -0.0009504436104772594
+  ],
+  "upper_endpoint_ci95": [
+   0.0008782917572683588,
+   0.0025494771732535674
+  ],
+  "note": "limit v_c = v_r at positivity nodes",
+  "lower_endpoint_se": 0.00044394087073005575,
+  "lower_endpoint_se_2430_games": 0.00011029799610476126
+ },
+ "B_within_game": {
+  "pas": 9270,
+  "L1_delta_bounds": [
+   -0.01753268949375622,
+   0.017392153887265324
+  ],
+  "width": 0.034924843381021545,
+  "lower_endpoint_ci95": [
+   -0.0212416032384187,
+   -0.014156707358869428
+  ],
+  "upper_endpoint_ci95": [
+   0.014265619007168466,
+   0.020844576214736163
+  ],
+  "note": "v1 bounds; PAs of pre-PA revealed new-pitch pitchers leave E0",
+  "positivity_left": 107,
+  "lower_endpoint_se": 0.001807371397844202,
+  "lower_endpoint_se_2430_games": 0.0004490450340187169
+ },
+ "R_plus_B_within_game": {
+  "pas": 9270,
+  "L1_delta_bounds": [
+   -0.0026504603672828525,
+   0.0025099247607919544
+  ],
+  "width": 0.005160385128074807,
+  "lower_endpoint_ci95": [
+   -0.0035780922208897845,
+   -0.0017712450823828584
+  ],
+  "upper_endpoint_ci95": [
+   0.0016505931939163254,
+   0.003429008936791362
+  ],
+  "note": "recommended (delta max proxy) + B restriction",
+  "lower_endpoint_se": 0.00046093039247625665,
+  "lower_endpoint_se_2430_games": 0.00011451907671917416
+ },
+ "B_within_and_across_games": {
+  "pas": 8945,
+  "L1_delta_bounds": [
+   -0.012869436117327717,
+   0.01275415921293189
+  ],
+  "width": 0.025623595330259607,
+  "lower_endpoint_ci95": [
+   -0.01625036328131133,
+   -0.009805672458924013
+  ],
+  "upper_endpoint_ci95": [
+   0.010009723284529336,
+   0.015803608801739998
+  ],
+  "note": "v1 bounds; PAs of pre-PA revealed new-pitch pitchers leave E0; across-game order approximated by (month, game_pk)",
+  "positivity_left": 63,
+  "lower_endpoint_se": 0.001644053781221254,
+  "lower_endpoint_se_2430_games": 0.0004084684459418101
+ },
+ "R_plus_B_within_and_across_games": {
+  "pas": 8945,
+  "L1_delta_bounds": [
+   -0.001902754452720151,
+   0.0017874775483243221
+  ],
+  "width": 0.0036902320010444726,
+  "lower_endpoint_ci95": [
+   -0.0028307956455370493,
+   -0.0010293328271207447
+  ],
+  "upper_endpoint_ci95": [
+   0.0009543684952807486,
+   0.0026780850451658834
+  ],
+  "note": "recommended (delta max proxy) + B restriction",
+  "lower_endpoint_se": 0.00045955684143273075,
+  "lower_endpoint_se_2430_games": 0.00011417781521874197
+ },
+ "C_delta_q99": {
+  "pas": 10131,
+  "L1_delta_bounds": [
+   -0.0015957129416072399,
+   0.001488035836645614
+  ],
+  "width": 0.003083748778252854,
+  "lower_endpoint_ci95": [
+   -0.0024403585248660006,
+   -0.000816094544335282
+  ],
+  "upper_endpoint_ci95": [
+   0.0008022829764927779,
+   0.002191422115132032
+  ],
+  "note": "C: shared unknown + |V_c - V_r| <= 0.00802 at every censored node",
+  "lower_endpoint_se": 0.0004143530562578364,
+  "lower_endpoint_se_2430_games": 0.00010294684449747964
+ },
+ "C_delta_q999": {
+  "pas": 10131,
+  "L1_delta_bounds": [
+   -0.002504056495313853,
+   0.002396379390352227
+  ],
+  "width": 0.00490043588566608,
+  "lower_endpoint_ci95": [
+   -0.00348185616878852,
+   -0.001595013579670921
+  ],
+  "upper_endpoint_ci95": [
+   0.0015881953085097786,
+   0.0032442840417097707
+  ],
+  "note": "C: shared unknown + |V_c - V_r| <= 0.02785 at every censored node",
+  "lower_endpoint_se": 0.00048133739518306095,
+  "lower_endpoint_se_2430_games": 0.00011958923730466712
+ },
+ "C_delta_max": {
+  "pas": 10131,
+  "L1_delta_bounds": [
+   -0.0073512128479303745,
+   0.007243535742968749
+  ],
+  "width": 0.014594748590899122,
+  "lower_endpoint_ci95": [
+   -0.009404870453430416,
+   -0.005469936914091242
+  ],
+  "upper_endpoint_ci95": [
+   0.005455494664484797,
+   0.009168924669830355
+  ],
+  "note": "C: shared unknown + |V_c - V_r| <= 0.13367 at every censored node",
+  "lower_endpoint_se": 0.001003809576362034,
+  "lower_endpoint_se_2430_games": 0.0002493984943567527
+ }
+}

@@ -1,0 +1,46 @@
+{
+  "train_rows": 1386362,
+  "train_start": "2023-05-15",
+  "train_end": "2025-04-30",
+  "columns": {
+    "n_thruorder_pitcher": {
+      "present": true,
+      "missing_rate": 0.0,
+      "rebuild_missing_rate": 0.0,
+      "agreement_rate": 0.9983027520950517,
+      "quantiles": [
+        1.0,
+        1.0,
+        3.0,
+        4.0
+      ]
+    },
+    "pitcher_days_since_prev_game": {
+      "present": true,
+      "missing_rate": 0.048951861057934365,
+      "rebuild_missing_rate": 0.01611916656688513,
+      "agreement_rate": 0.9997671591213328,
+      "quantiles": [
+        0.0,
+        5.0,
+        47.0,
+        180.0
+      ]
+    },
+    "prior_pitches_game": {
+      "present": true,
+      "missing_rate": 0.0,
+      "quantiles": [
+        0.0,
+        21.0,
+        95.0,
+        130.0
+      ]
+    }
+  },
+  "source_files": [
+    "statcast_2023.parquet",
+    "statcast_2024.parquet",
+    "statcast_2025.parquet"
+  ]
+}

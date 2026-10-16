@@ -1,0 +1,35 @@
+{
+  "parent_sha256": "ccb6fb5f3857486d0692d002c7b54ffb70acb4261b564905a93d13827c992d90",
+  "stage": "materialize-bc+style-snapshot",
+  "registered_inputs": {
+    "bc": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize-a3/bc_BC_P.json",
+      "file_sha256": "b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11"
+    },
+    "support": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize-a3/support_primary.json",
+      "file_sha256": "152cdab41e87faba57f0f46a402ec7796c4e131d41d6ff4a758a53616c6342d4"
+    },
+    "hands": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize-a3/hands.json",
+      "file_sha256": "0be0326e9d35a951b19749ada641097d240d0db6b7d8f6aadf90fa5c5cfd18ad"
+    },
+    "materialize": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize-a3/materialize.json",
+      "file_sha256": "d74267212cf4f08d92d4961b83dcdaa1720d3600d00bafd0588d2d81eeb4f94f"
+    },
+    "style_dev": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1b-style-a3/style_dev.json",
+      "file_sha256": "5183c61107e39e4f917963de58e08597c47342ef2cf46b0aff5d56af4a9d37ed"
+    },
+    "style_temperature": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1b-style-a3/style_temperature.json",
+      "file_sha256": "7b69ea52652a4d19a9213280d479e7c518d6268e2212dd30b55ed50f638d37e8"
+    },
+    "style_blend": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1b-style-a3/style_blend.json",
+      "file_sha256": "37cd0baa186913a9beab588cb61557bf287a03a37e2723d0df9282f7b80e7c84"
+    }
+  },
+  "note": "d124: re-pinned identity-independent sealed outputs. Re-chained as d126. Re-chained as d127 (review gate PASS)."
+}
