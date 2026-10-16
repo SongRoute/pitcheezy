@@ -95,8 +95,15 @@ def run(regpath, grantpath, *, persist_forecasts=False):
     scorer = captured_native_state.NativeRuntime(runtime, allow_native_experimental=True)
     state = captured_native_state.NativeShadow(Path(reg['output']) / 'native_stream.sqlite3',
         game_pk=replay.GAME, game_date=replay.DATE, normalizer_sha256=reg['normalizer_sha256'])
-    forecasts = (captured_native_forecast.NativeForecast(state, scorer, config,
-        reg['profile_bundle']['manifest_sha256'], file_sha(regpath)) if persist_forecasts else None)
+    if persist_forecasts and state.db.execute('PRAGMA journal_mode').fetchone()[0] != 'delete':
+        state.close()
+        raise ValueError('forecast SQLite must use single-file rollback journal mode')
+    try:
+        forecasts = (captured_native_forecast.NativeForecast(state, scorer, config,
+            reg['profile_bundle']['manifest_sha256'], file_sha(regpath)) if persist_forecasts else None)
+    except Exception:
+        state.close()
+        raise
     counts = Counter({name: 0 for name in (
         'bodies', 'strict_new', 'strict_correction', 'strict_unchanged_observation',
         'native_native_candidate', 'native_native_unknown', 'native_orphan_rows',
