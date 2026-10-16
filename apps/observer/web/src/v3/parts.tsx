@@ -47,9 +47,11 @@ export function Scoreboard({ v, wide = false }: { v: GameView; wide?: boolean })
     <h1 className="v3-score" aria-label={`${short(g.away_team)} ${v.awayScore ?? '–'} 대 ${v.homeScore ?? '–'} ${short(g.home_team)}${inning ? `, ${inning}` : ''}`}>
       <span aria-hidden="true">{away}</span><strong aria-hidden="true">{v.awayScore ?? '–'}</strong><i aria-hidden="true">:</i><strong aria-hidden="true">{v.homeScore ?? '–'}</strong><span aria-hidden="true">{home}</span>
     </h1>
-    <span className="v3-inning">{v.breakNow ? '공수 교대' : inning}</span>
-    {s && !v.final && <Count s={s} />}
-    {s && !v.final && <Bases mask={s.bases} />}
+    <div className="v3-board-meta">
+      <span className="v3-inning">{v.breakNow ? '공수 교대' : inning}</span>
+      {s && !v.final && <Count s={s} />}
+      {s && !v.final && <Bases mask={s.bases} />}
+    </div>
     <ConnChip v={v} />
   </header>;
 }

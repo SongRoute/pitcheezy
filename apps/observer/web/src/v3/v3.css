@@ -42,7 +42,7 @@ body.v3-locked { overflow: hidden; }
 
 /* ───────── scoreboard ───────── */
 .v3-board { background: var(--ink); color: #fff; display: grid; align-items: center; column-gap: 10px;
-  grid-template-columns: 36px auto 1fr auto auto; grid-template-areas: 'back score . . chip' 'back inning . count bases';
+  grid-template-columns: 36px minmax(0, 1fr) auto; grid-template-areas: 'back score chip' 'back meta meta';
   padding: max(6px, env(safe-area-inset-top)) 14px 10px 4px; position: sticky; top: 0; z-index: 20; }
 .v3-board.list { grid-template-columns: 1fr auto; grid-template-areas: 'brand info'; padding: max(10px, env(safe-area-inset-top)) 12px 10px 18px; }
 .v3-back { grid-area: back; color: #fff; text-decoration: none; font-size: 28px; line-height: 1; min-width: 36px; min-height: 44px; display: grid; place-items: center; }
@@ -50,18 +50,21 @@ body.v3-locked { overflow: hidden; }
 .v3-score span { font-size: 18px; font-weight: 600; color: #dfe3e6; }
 .v3-score strong { font-size: 32px; line-height: 1; }
 .v3-score i { font-style: normal; font-size: 22px; color: #6f7880; }
-.v3-inning { grid-area: inning; font-size: 14px; font-weight: 600; color: #dfe3e6; white-space: nowrap; }
-.v3-count { grid-area: count; display: flex; gap: 10px; justify-self: end; }
+.v3-board-meta { grid-area: meta; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.v3-board-meta .v3-count { margin-left: auto; }
+.v3-inning { font-size: 14px; font-weight: 600; color: #dfe3e6; white-space: nowrap; }
+.v3-count { display: flex; gap: 10px; }
 .v3-dots { display: inline-flex; align-items: center; gap: 4px; font-family: var(--num); font-size: 13px; }
 .v3-dots b { color: #8a9299; font-weight: 600; margin-right: 1px; }
 .v3-dots i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #6f7880; }
 .v3-dots i.on { border-color: transparent; }
 .v3-dots.b i.on { background: #7fc79a; } .v3-dots.s i.on { background: #f2c14e; } .v3-dots.o i.on { background: #ef6f78; }
-.v3-bases { grid-area: bases; justify-self: end; }
+.v3-bases { flex: none; }
 .v3-bases rect { fill: none; stroke: #8a9299; stroke-width: 1.6; }
 .v3-bases rect.on { fill: #fff; stroke: #fff; }
 .v3-board .v3-chip.conn { grid-area: chip; justify-self: end; }
-.v3-board.wide { grid-template-columns: 40px auto auto 1fr auto auto auto; grid-template-areas: 'back score inning . count bases chip'; padding: 8px 24px 8px 8px; column-gap: 18px; }
+.v3-board.wide { grid-template-columns: 40px auto minmax(0, 1fr) auto; grid-template-areas: 'back score meta chip'; padding: 8px 24px 8px 8px; column-gap: 18px; }
+.v3-board.wide .v3-board-meta { gap: 18px; }
 .v3-board.wide .v3-score strong { font-size: 36px; }
 .v3-board.list .v3-brand { grid-area: brand; }
 .v3-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 11px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
@@ -101,7 +104,7 @@ body.v3-locked { overflow: hidden; }
 .v3-rec.held .v3-rec-head h2 { color: var(--muted); }
 .v3-rec-stage { display: grid; justify-items: center; }
 .v3-rec-stage.with-side { grid-template-columns: minmax(0, 1.7fr) minmax(100px, 1fr); gap: 10px; align-items: start; justify-items: stretch; }
-.v3-zone-box { width: 100%; max-width: 310px; justify-self: center; }
+.v3-zone-box { width: 100%; max-width: clamp(220px, calc(100dvh - 430px), 310px); justify-self: center; }
 .v3-zone { width: 100%; height: auto; display: block; overflow: hidden; }
 .v3-zone.detail { max-width: 270px; margin: 0 auto; }
 .v3-state { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 2px 2px 0; font-size: 14px; color: var(--ink-2); }

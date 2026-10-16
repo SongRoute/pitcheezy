@@ -72,7 +72,14 @@ export function PitchDetail({ v, opts, index, open }: { v: GameView; opts: Optio
   const side = p.batter.side === 'R' || p.batter.side === 'L' ? p.batter.side as 'L' | 'R' : null;
   const b = d.zone_bounds;
   const nextInPa = pa.find(x => x.index > p.index);
-  const after = nextInPa ? `${nextInPa.situation.balls}-${nextInPa.situation.strikes}` : a?.event ? '타석 종료' : NA;
+  // count after this pitch: the next pitch of the plate appearance, else the current count of the same plate appearance, else the call
+  const cur = d.current?.pa_key === p.pa_key ? d.current.situation : null;
+  const byCall = () => { const s0 = p.situation, desc = a?.description ?? '';
+    if (/ball/.test(desc)) return `${Math.min(3, s0.balls + 1)}-${s0.strikes}`;
+    if (/foul/.test(desc)) return `${s0.balls}-${Math.min(2, s0.strikes + 1)}`;
+    if (/strike/.test(desc)) return `${s0.balls}-${Math.min(2, s0.strikes + 1)}`;
+    return NA; };
+  const after = nextInPa ? `${nextInPa.situation.balls}-${nextInPa.situation.strikes}` : a?.event ? '타석 종료' : cur ? `${cur.balls}-${cur.strikes}` : pending ? NA : byCall();
   const at = d.pitches.indexOf(p);
   const prev = d.pitches[at - 1], next = d.pitches[at + 1];
   const paResult = a?.event ? d.pas.find(x => x.pa_key === p.pa_key && x.complete)?.result ?? callText(p) : null;
