@@ -1,8 +1,13 @@
 """Generated GUMBO contracts; no captured body or model artifact is read."""
 import copy
+import hashlib
 
 from pitcheezy.seq_shadow.captured_bridge import step
 from pitcheezy.seq_shadow.fullseason_stream import StreamState
+from pitcheezy.seq_shadow import fullseason_profiles as profiles
+from pitcheezy.seq_shadow.fullseason_runtime import Runtime
+from test_seq_shadow_fullseason import generated_config
+from test_fullseason_profiles import donors, bundle
 
 
 SHA = 'a' * 64
@@ -99,4 +104,30 @@ def test_unknown_receipt_then_verified_correction_preserves_first_decision(tmp_p
     later = dict(candidate, decision_id=candidate['decision_id']+':later')
     after = stream.decide(**later, received_ns=104)
     assert after['status'] == 'ready' and after['tokens']['valid'][0][0]
+    stream.close()
+
+
+def test_generated_first_pitch_bridges_to_composed_seven_leaf_runtime(tmp_path):
+    body = feed()
+    body['gameData']['game']['pk'] = 105
+    body['gameData']['datetime']['officialDate'] = '2026-03-30'
+    play = body['liveData']['plays']['currentPlay']
+    play['playEvents'] = []
+    play['count'] = {'balls': 0, 'strikes': 0, 'outs': 0}
+    result = step(body, game_pk=105, game_date='2026-03-30', receipt_seq=1,
+                  source_sha256=SHA, candidate_pitch_type='FF')
+    assert result['events'] == [] and result['candidate']['query']['pitch_number'] == 1
+    config, _ = generated_config(tmp_path)
+    g, M = donors()
+    directory = tmp_path/'profiles'
+    profiles.save_bundle(bundle(g, M), directory, {'generated': True})
+    manifest_sha = hashlib.sha256((directory/'manifest.json').read_bytes()).hexdigest()
+    runtime = Runtime(config, directory, manifest_sha)
+    stream = StreamState(tmp_path/'stream.sqlite', game_pk=105, game_date='2026-03-30',
+                         normalizer_sha256=SHA, evidence_kind='captured')
+    snapshot = stream.decide(**result['candidate'], received_ns=100)
+    output = runtime.predict(snapshot)
+    assert output['status'] == 'scored' and len(output['probabilities']) == 7
+    assert abs(sum(output['probabilities'])-1) < 1e-12
+    assert output['stream_evidence_kind'] == 'captured' and not output['prospective_claim']
     stream.close()
