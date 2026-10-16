@@ -10,7 +10,7 @@ import pytest
 
 from experiments.ws_fullseason.audit import sha as file_sha
 from pitcheezy.seq_shadow.postcutoff_offline import SIX, prepare
-from scripts.fullseason_postcutoff_offline import _private_write, _source, score_population
+from scripts.fullseason_postcutoff_offline import _plan, _private_write, _source, score_population
 from scripts.build_fullseason_postcutoff_registration import build
 from scripts.verify_fullseason_postcutoff_offline import verify
 from test_postcutoff_offline import SHA, source
@@ -137,3 +137,9 @@ def test_private_artifact_exclusive_owner_only_mode(tmp_path):
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     with pytest.raises(FileExistsError):
         _private_write(target, b'changed')
+
+
+def test_changed_frozen_analysis_plan_refused_before_source_decode(tmp_path):
+    changed = tmp_path / 'plan.md'; changed.write_text('generated changed plan')
+    with pytest.raises(ValueError, match='analysis plan changed'):
+        _plan({'analysis_plan_path': str(changed)})

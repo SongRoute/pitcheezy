@@ -80,6 +80,11 @@ def _regular_pinned(path, size, digest, cap):
     return p
 
 
+def _plan(reg):
+    if file_sha(reg['analysis_plan_path']) != PLAN_SHA:
+        raise ValueError('frozen pre-access analysis plan changed')
+
+
 def _private_write(path, raw):
     fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     with os.fdopen(fd, 'wb') as f:
@@ -136,6 +141,7 @@ def run(regpath, grantpath):
             or reg['adapter_config']['sha256'] != CONFIG_SHA
             or reg['profile_bundle']['manifest_sha256'] != PROFILE_SHA):
         raise ValueError('fixed analytical contract changed')
+    _plan(reg)
     os.fstat(int(os.environ['PITCHEEZY_FULLSEASON_LOCK_FD']))
     signal.signal(signal.SIGALRM, lambda *_: os._exit(124))
     signal.alarm(reg['bounds']['wall_seconds'] + 15)
