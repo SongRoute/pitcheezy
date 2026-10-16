@@ -1,5 +1,7 @@
 # 서비스 PM 상태·실행 큐
 
+**2026-10-17 현재 로컬 handoff:** [fullseason capture shadow 현황](fullseason-capture-shadow-2026-10-17.md)에 strict/native 별도 원장, 100개 결정·forecast 저장, identity guard 원인, 생성 viewer gateway 증거와 남은 전향적 검증 경계를 정리했다. 이는 운영 모델 교체나 배포 수용이 아니다. 아래 날짜별 블록은 당시 이력으로 보존한다.
+
 **2026-10-11 저녁 Claude PM 체크포인트 3 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·미완 문장만 이 블록이 대체한다):**
 
 - **RC 팁:** `rc/ws-2026` 로컬 팁 `22abce0`(푸시 안 함; 원격 `origin/rc/ws-2026`은 `e39bb41`). 기반 병합 `62d88ff`, 통합 [REPORT.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-integration-001/REPORT.md).
