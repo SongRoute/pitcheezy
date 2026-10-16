@@ -63,6 +63,8 @@ def test_one_game_point_without_ci_and_nonff_never_in_loss():
     lambda r: r[0]['native'].__setitem__('probabilities', [1.0]*7),
     lambda r: r[0]['target'].__setitem__('first_receipt_seq', 2),
     lambda r: r[0]['target'].__setitem__('leaf', 'not_a_leaf'),
+    lambda r: r[0]['target'].__setitem__('realized_pitch_type', 'UNKNOWN'),
+    lambda r: r[0]['target'].__setitem__('realized_pitch_type', 'UN'),
     lambda r: r[0].__setitem__('action', 'SL'),
 ])
 def test_refuses_identity_vector_label_clock_conflicts(change):

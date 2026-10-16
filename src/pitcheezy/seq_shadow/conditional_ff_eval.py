@@ -99,7 +99,7 @@ def evaluate(attempts):
             raise ValueError('label malformed')
         if leaf is None and (not isinstance(reason, str) or not reason):
             raise ValueError('unresolved label needs reason')
-        if pitch_type is None and leaf is not None:
+        if pitch_type in (None, 'UNKNOWN', 'UN') and leaf is not None:
             raise ValueError('unknown realized type has label')
         unknown_type = pitch_type in (None, 'UNKNOWN', 'UN')
         realized['UNKNOWN' if unknown_type else pitch_type] += 1
