@@ -1,4 +1,2 @@
 venv ~/venv
-min_free_mb 8000
-link data/ws-seq ~/cc/shared/pitcheezy/ws-seq-001/data
-link runs ~/cc/shared/pitcheezy/ws-seq-001/runs
+min_free_mb 16000

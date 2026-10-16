@@ -1,0 +1,55 @@
+"""Tiny generated CPU model checks; no real model or data read."""
+import copy
+import json
+from pathlib import Path
+import tempfile
+import unittest
+import numpy as np
+import torch
+from experiments.ws_fullseason import data,prepare,train,run_gpu
+from test_ws_fullseason import rows
+
+
+class FixedTrain(unittest.TestCase):
+    def test_ensemble_only_and_exact_keys(self):
+        keys=np.arange(6).reshape(2,3);labels=np.array([0,1]);q=np.eye(7)[labels]
+        r=run_gpu.ensemble_metrics([(keys,q)]*3,labels,keys)
+        self.assertEqual((r['nll'],r['brier'],r['ece_top_label_10bin']),(0,0,0))
+        uniform=np.full((2,7),1/7)
+        r=run_gpu.ensemble_metrics([(keys,uniform)]*3,labels,keys)
+        self.assertAlmostEqual(r['nll'],np.log(7));self.assertAlmostEqual(r['brier'],6/7)
+        with self.assertRaises(ValueError):run_gpu.ensemble_metrics([(keys,q)]*2,labels,keys)
+        with self.assertRaises(ValueError):run_gpu.ensemble_metrics([(keys,q),(keys,q),(keys[::-1],q)],labels,keys)
+
+    def test_consumption_rejects_missing_duplicate_and_nonfit(self):
+        fit=np.array([True,True,False]); keys=np.arange(9).reshape(3,3)
+        for seen in [np.array([1,0,0]),np.array([2,1,0]),np.array([1,1,1])]:
+            with self.assertRaises(ValueError):train.check_epoch(seen,fit,keys)
+        self.assertEqual(train.check_epoch(np.array([1,1,0]),fit,keys)['rows'],2)
+
+    def test_final_epoch_and_no_oof_optimizer_leakage(self):
+        recipe=json.loads((Path(__file__).resolve().parents[1]/'configs/EXP-WS-FULLSEASON-T-001.json').read_text())
+        M=data.closure();g,_,fit,oof,y=data.project(rows(),recipe,M)
+        raw,_=prepare.raw_features(g,fit,recipe,M)
+        _,enc=M.fsf.encode(raw[fit],np.ones(fit.sum(),bool))
+        recipe['base']['inputs']['feature_dimension']=enc['dimension']
+        recipe['base']['model'].update(trunk_hidden=[8,4],token_dim=4,encoder_layers=1,encoder_heads=2,encoder_ff=8)
+        recipe['base']['training'].update(batch_size=4,eval_batch_size=4)
+        recipe['training_rule']['epochs']=2
+        built=prepare.arrays(g,fit,oof,y,recipe,M);x,c,s=built[:3]
+        altered_c={k:v.copy() for k,v in c.items()};altered_s={k:v.copy() for k,v in s.items()}
+        altered_c['y10'][oof]=2;altered_c['y7'][oof]=1;altered_s['outcome10'][oof]=2
+        with tempfile.TemporaryDirectory() as tmp:
+            a=Path(tmp)/'a';b=Path(tmp)/'b';a.mkdir();b.mkdir()
+            r=train.run(recipe,0,(x,c,s),a,synthetic=True)
+            train.run(recipe,0,(x,altered_c,altered_s),b,synthetic=True)
+            left=torch.load(a/'model-state.pt',weights_only=True);right=torch.load(b/'model-state.pt',weights_only=True)
+            self.assertTrue(all(torch.equal(left[k],right[k]) for k in left))
+            self.assertEqual(r['sample_presentations'],12);self.assertEqual(r['optimization_steps'],4)
+            self.assertEqual(len(r['consumption']),2);self.assertEqual(r['SELECT_queries'],0)
+            with np.load(a/'oof-predictions.npz',allow_pickle=False) as z:
+                np.testing.assert_array_equal(z['keys'],c['keys'][oof]);self.assertEqual(z['probabilities'].shape,(6,7))
+            self.assertFalse(r['metrics_computed'])
+
+
+if __name__=='__main__':unittest.main()
