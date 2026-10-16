@@ -71,9 +71,10 @@ def inspect_hypotheses(feed, *, game_pk, game_date):
         if unique and isinstance(events, list) and _get(play, 'about', 'isComplete') is True:
             pitch_events = [e for e in events if isinstance(e, dict) and e.get('isPitch') is True]
             final = pitch_events[-1] if pitch_events else None
+            call = row['observed']['event_call_code']
             if (final is not None and final.get('pitchNumber') == key[2]
                     and _get(final, 'details', 'isInPlay') is True
-                    and row['observed']['event_call_code'] in BIP_CALLS):
+                    and isinstance(call, str) and call in BIP_CALLS):
                 event_type = _get(play, 'result', 'eventType')
                 trajectory = row['observed']['event_trajectory']
                 bip_description = 'hit_into_play'
@@ -82,7 +83,7 @@ def inspect_hypotheses(feed, *, game_pk, game_date):
                     label, _ = outcome10('hit_into_play', event_type, row['pre_count'][1])
                     if label >= 0:
                         bip_outcome = label
-                if trajectory in BB_TYPES:
+                if isinstance(trajectory, str) and trajectory in BB_TYPES:
                     bb_type = trajectory
                 bip_reason = ('bip_result_and_trajectory_hypotheses_unpaired'
                               if bip_outcome is not None and bb_type is not None

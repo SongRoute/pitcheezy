@@ -72,3 +72,14 @@ def test_nonfinal_or_incomplete_inplay_pitch_does_not_borrow_result():
     later['details'].update(isInPlay=False, call={'code': 'B'})
     play['playEvents'].append(later)
     assert hypotheses(body)[0]['outcome10_bip_hypothesis'] is None
+
+
+def test_malformed_call_and_trajectory_are_unavailable_not_errors():
+    body = bip_body()
+    pitch = body['liveData']['plays']['currentPlay']['playEvents'][0]
+    pitch['details']['call']['code'] = ['X']
+    pitch['hitData']['trajectory'] = {'code': 'ground_ball'}
+    row = hypotheses(body)[0]
+    assert row['description_bip_hypothesis'] is None
+    assert row['events_bip_hypothesis'] is None
+    assert row['bb_type_hypothesis'] is None

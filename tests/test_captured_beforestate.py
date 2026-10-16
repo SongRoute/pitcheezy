@@ -102,3 +102,14 @@ def test_nested_direct_score_evidence_vetoes_later_prefix_only():
     assert found[0]['before_outs_score_hypothesis'] == (1, 2, 0)
     assert found[1]['before_outs_score_hypothesis'] is None
     assert 'pitch_level_score_and_runner_transition' in found[0]['proof_missing']
+
+
+def test_malformed_call_stops_carry_without_type_error():
+    body, _, current = body_with_prior()
+    second = copy.deepcopy(current['playEvents'][0])
+    second.update(pitchNumber=2, playId='p3')
+    current['playEvents'][0]['details']['call']['code'] = ['B']
+    current['playEvents'].append(second)
+    found = [r for r in candidates(body) if r['key'][1] == 2]
+    assert found[0]['before_outs_score_hypothesis'] == (1, 2, 0)
+    assert found[1]['before_outs_score_hypothesis'] is None

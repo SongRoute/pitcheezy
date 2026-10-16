@@ -54,7 +54,7 @@ def _can_carry(event, state):
     if not isinstance(details, dict) or not isinstance(count, dict):
         return False
     call = _get(details, 'call', 'code')
-    if (call not in CALL_DESCRIPTION or call in BIP_CALLS or call == 'H'
+    if (not isinstance(call, str) or call not in CALL_DESCRIPTION or call in BIP_CALLS or call == 'H'
             or details.get('isInPlay') is not False or details.get('isOut') is not False
             or details.get('eventType') or _get(event, 'hitData')):
         return False
