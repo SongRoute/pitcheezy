@@ -111,6 +111,8 @@ def inspect_body(feed, *, game_pk, game_date):
                     reason = 'provider_identity_unverified'
                 elif prior_count is None:
                     reason = 'before_count_unverified'
+                elif prior_count[0] > 3 or prior_count[1] > 2:
+                    reason = 'before_count_out_of_training_bounds'
                 elif isinstance(call, str) and call in BIP_CALLS:
                     reason = 'bip_event_and_bbtype_unverified'
                 elif label is None or label < 0:

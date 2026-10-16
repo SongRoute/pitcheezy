@@ -51,6 +51,8 @@ def test_automatic_count_action_and_missing_count_do_not_guess():
     assert observed(body)[1]['reason'] == 'before_count_unverified'
     del play['playEvents'][0]['count']
     assert observed(body)[1]['reason'] == 'before_count_unverified'
+    play['playEvents'] = [pitch(1, 'p1', 'B', 4, 0), pitch(2, 'p2', 'B', 4, 0)]
+    assert observed(body)[1]['reason'] == 'before_count_out_of_training_bounds'
 
 
 def test_bip_scoring_third_out_and_substitution_stay_unaccepted():
