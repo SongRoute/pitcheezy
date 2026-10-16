@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import hashlib
+import stat
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -9,7 +10,7 @@ import pytest
 
 from experiments.ws_fullseason.audit import sha as file_sha
 from pitcheezy.seq_shadow.postcutoff_offline import SIX, prepare
-from scripts.fullseason_postcutoff_offline import _source, score_population
+from scripts.fullseason_postcutoff_offline import _private_write, _source, score_population
 from scripts.build_fullseason_postcutoff_registration import build
 from scripts.verify_fullseason_postcutoff_offline import verify
 from test_postcutoff_offline import SHA, source
@@ -127,3 +128,12 @@ def test_inactive_registration_builder_uses_collector_metadata_only(tmp_path):
     reg = build(mpath, tmp_path / 'attempt', prior=old)
     assert reg['execute'] is False and reg['source']['projected']['sha256'] == 'b'*64
     assert reg['profile_bundle']['serving_origin'] == '2026-10-12'
+
+
+def test_private_artifact_exclusive_owner_only_mode(tmp_path):
+    target = tmp_path / 'score_rows.json'
+    _private_write(target, b'generated')
+    assert target.read_bytes() == b'generated'
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    with pytest.raises(FileExistsError):
+        _private_write(target, b'changed')

@@ -80,6 +80,12 @@ def _regular_pinned(path, size, digest, cap):
     return p
 
 
+def _private_write(path, raw):
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    with os.fdopen(fd, 'wb') as f:
+        f.write(raw); f.flush(); os.fsync(f.fileno())
+
+
 def _source(reg, M):
     """Verify final exact-six manifest and projected bytes before Parquet decode."""
     import pyarrow.parquet as pq
@@ -148,9 +154,9 @@ def run(regpath, grantpath):
     metrics, internal = score_population(prepared, runtime.predict,
                                          source_sha256=source_sha, bundle_sha256=runtime.bundle_sha256)
     output = Path(reg['output'])
+    output.chmod(0o700)
     raw = (canonical(internal) + '\n').encode()
-    with (output / 'score_rows.json').open('xb') as f:
-        f.write(raw); f.flush(); os.fsync(f.fileno())
+    _private_write(output / 'score_rows.json', raw)
     receipt = {'status': 'COMPLETED', 'stage': reg['stage'], 'registration_sha256': file_sha(regpath),
                'analysis_plan_sha256': PLAN_SHA, 'collector_manifest_sha256': reg['source']['manifest']['sha256'],
                'projected_sha256': source_sha, 'runtime_bundle_sha256': runtime.bundle_sha256,

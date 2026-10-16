@@ -85,7 +85,7 @@ def build(manifest_path, output, *, root=ROOT, prior=OLD_REG, registration_path=
                                   note='Runtime loads all four accepted archives; Oct12 final donor-cutoff snapshot answers Oct12-15 queries.'),
            'supervisor_helper': SUPERVISOR, 'heavy_lock': HEAVY_LOCK,
            'output': str(output), 'fence': str(output.parent / '.postcutoff-score-fence.json'),
-           'bounds': {'source_rows': proj['rows'], 'wall_seconds': 1800, 'rss_bytes': 3 << 30,
+           'bounds': {'source_rows': proj['rows'], 'wall_seconds': 300, 'rss_bytes': 2 << 30,
                       'free_memory_bytes': 4 << 30, 'free_disk_bytes': 12 << 30,
                       'output_bytes': 20 << 20, 'threads': 1},
            'physical_access': 'Only the six-game completed manifest and one pinned 29-column Parquet, fixed T config/three model states/recipe/encoder/calibrator, accepted profile manifest and all four archives loaded by Runtime. No raw CSV/network/old attempt/other game/model fit.',
