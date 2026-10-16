@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import inspect
+import io
 import json
 
 import pandas as pd
@@ -87,6 +88,14 @@ def test_http_exact_key_redirect_and_body_cap(monkeypatch):
     Response.status = 302
     with pytest.raises(six.CollectionStop, match="HTTP status"):
         six.fetch_game(six.GAMES[0][0])
+
+
+def test_missing_pitcher_censused_without_discarding_source(tmp_path):
+    pk, date = six.GAMES[0]
+    frame = pd.read_csv(io.BytesIO(body(pk, date)))
+    frame.loc[0, "pitcher"] = float("nan")
+    source = frame.to_csv(index=False).encode()
+    assert six.census(six.parse_csv(source), pk, date)["null_or_invalid_pitcher_rows"] == 1
 
 
 def test_managed_gate_binds_review_and_source_without_network(tmp_path, monkeypatch):

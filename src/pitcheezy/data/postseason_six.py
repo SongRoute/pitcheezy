@@ -96,10 +96,13 @@ def census(frame: pd.DataFrame, game_pk: int, official_date: str) -> dict:
         valid &= numeric[column].gt(0) & numeric[column].lt(2**53) & numeric[column].eq(numeric[column].floordiv(1))
     typed = frame["game_type"].astype("string")
     dated = pd.to_datetime(frame["game_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    pitcher = pd.to_numeric(frame["pitcher"], errors="coerce")
+    valid_pitcher = pitcher.notna() & pitcher.gt(0) & pitcher.lt(2**53) & pitcher.eq(pitcher.floordiv(1))
     duplicates = int(numeric.loc[valid].duplicated(list(keys), keep=False).sum())
     report = {"game_pk": game_pk, "officialDate": official_date, "gameType": "L",
               "rows": int(len(frame)), "source_columns": int(len(frame.columns)),
               "null_or_invalid_physical_key_rows": int((~valid).sum()),
+              "null_or_invalid_pitcher_rows": int((~valid_pitcher).sum()),
               "duplicate_physical_key_rows": duplicates,
               "wrong_game_pk_rows": int((numeric["game_pk"] != game_pk).fillna(True).sum()),
               "wrong_game_type_rows": int((typed != "L").fillna(True).sum()),
