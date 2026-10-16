@@ -17,8 +17,8 @@ from experiments.ws_fullseason.audit import gates, sha
 
 def supervise(regpath, grantpath, worker="audit.py"):
     reg, _ = gates(regpath, grantpath)
-    worker_path = ROOT / 'scripts' / worker if worker in ('fullseason_shadow_parity.py', 'fullseason_profile_export.py', 'fullseason_captured_replay.py') else Path(__file__).with_name(worker)
-    if worker not in ('audit.py', 'prepare_worker.py', 'calibrate_worker.py', 'final_worker.py', 'fullseason_shadow_parity.py', 'fullseason_profile_export.py', 'fullseason_captured_replay.py') or str(worker_path) not in reg['source_pins']:
+    worker_path = ROOT / 'scripts' / worker if worker in ('fullseason_shadow_parity.py', 'fullseason_profile_export.py', 'fullseason_captured_replay.py', 'fullseason_capture_diagnostic.py') else Path(__file__).with_name(worker)
+    if worker not in ('audit.py', 'prepare_worker.py', 'calibrate_worker.py', 'final_worker.py', 'fullseason_shadow_parity.py', 'fullseason_profile_export.py', 'fullseason_captured_replay.py', 'fullseason_capture_diagnostic.py') or str(worker_path) not in reg['source_pins']:
         raise ValueError('unpinned worker')
     spec = importlib.util.spec_from_file_location('accepted_metadata_supervisor', reg['supervisor_helper'])
     helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
@@ -90,5 +90,5 @@ def supervise(regpath, grantpath, worker="audit.py"):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(); p.add_argument('--registration', required=True); p.add_argument('--grant', required=True)
-    p.add_argument('--worker', choices=['audit.py', 'prepare_worker.py', 'calibrate_worker.py', 'final_worker.py', 'fullseason_shadow_parity.py', 'fullseason_profile_export.py', 'fullseason_captured_replay.py'], default='audit.py')
+    p.add_argument('--worker', choices=['audit.py', 'prepare_worker.py', 'calibrate_worker.py', 'final_worker.py', 'fullseason_shadow_parity.py', 'fullseason_profile_export.py', 'fullseason_captured_replay.py', 'fullseason_capture_diagnostic.py'], default='audit.py')
     a = p.parse_args(); sys.exit(supervise(Path(a.registration), Path(a.grant), a.worker))
