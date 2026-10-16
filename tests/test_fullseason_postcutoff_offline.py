@@ -10,7 +10,8 @@ import pytest
 
 from experiments.ws_fullseason.audit import sha as file_sha
 from pitcheezy.seq_shadow.postcutoff_offline import SIX, prepare
-from scripts.fullseason_postcutoff_offline import _plan, _private_write, _source, score_population
+from scripts.fullseason_postcutoff_offline import (_model_bindings, _plan, _private_write,
+                                                  _source, score_population)
 from scripts.build_fullseason_postcutoff_registration import build
 from scripts.verify_fullseason_postcutoff_offline import verify
 from test_postcutoff_offline import SHA, source
@@ -143,3 +144,13 @@ def test_changed_frozen_analysis_plan_refused_before_source_decode(tmp_path):
     changed = tmp_path / 'plan.md'; changed.write_text('generated changed plan')
     with pytest.raises(ValueError, match='analysis plan changed'):
         _plan({'analysis_plan_path': str(changed)})
+
+
+def test_registered_state_encoder_recipe_calibrator_must_match_loaded_config():
+    names = ('state', 'recipe', 'encoder', 'calibrator')
+    config = {name: {'sha256': name} for name in names}
+    reg = {'model_artifacts': {name: {'sha256': name} for name in names}}
+    _model_bindings(config, reg)
+    reg['model_artifacts']['encoder']['sha256'] = 'changed'
+    with pytest.raises(ValueError, match='artifact bindings'):
+        _model_bindings(config, reg)

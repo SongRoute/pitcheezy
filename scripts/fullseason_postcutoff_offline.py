@@ -85,6 +85,12 @@ def _plan(reg):
         raise ValueError('frozen pre-access analysis plan changed')
 
 
+def _model_bindings(config, reg):
+    names = ('state', 'recipe', 'encoder', 'calibrator')
+    if any(config.get(name) != reg['model_artifacts'][name] for name in names):
+        raise ValueError('registered T artifact bindings differ from loaded config')
+
+
 def _private_write(path, raw):
     fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     with os.fdopen(fd, 'wb') as f:
@@ -154,6 +160,7 @@ def run(regpath, grantpath):
     if (config.get('leaf_order') != list(LEAVES) or config.get('threads') != 1
             or config.get('schema') != 'ws-fullseason-shadow-v1'):
         raise ValueError('frozen adapter config')
+    _model_bindings(config, reg)
     runtime = Runtime(config, reg['profile_bundle']['directory'], PROFILE_SHA)
     if runtime.identity['adapter_config_sha256'] != object_sha(config):
         raise ValueError('actual Runtime loaded config mismatch')
