@@ -16,7 +16,11 @@ from experiments.ws_fullseason.audit import gates, sha
 
 
 def supervise(regpath, grantpath, worker="audit.py"):
-    reg, _ = gates(regpath, grantpath)
+    if worker == 'fullseason_native_identity_guard_audit.py':
+        from scripts.fullseason_native_identity_guard_audit import gated
+        reg, _ = gated(regpath, grantpath)
+    else:
+        reg, _ = gates(regpath, grantpath)
     worker_path = ROOT / 'scripts' / worker if worker in ('fullseason_shadow_parity.py', 'fullseason_profile_export.py', 'fullseason_captured_replay.py', 'fullseason_capture_diagnostic.py', 'fullseason_capture_diagnostic_v2.py', 'fullseason_capture_native_replay.py', 'fullseason_capture_native_forecast_replay.py', 'fullseason_native_identity_guard_audit.py') else Path(__file__).with_name(worker)
     if worker not in ('audit.py', 'prepare_worker.py', 'calibrate_worker.py', 'final_worker.py', 'fullseason_shadow_parity.py', 'fullseason_profile_export.py', 'fullseason_captured_replay.py', 'fullseason_capture_diagnostic.py', 'fullseason_capture_diagnostic_v2.py', 'fullseason_capture_native_replay.py', 'fullseason_capture_native_forecast_replay.py', 'fullseason_native_identity_guard_audit.py') or str(worker_path) not in reg['source_pins']:
         raise ValueError('unpinned worker')
