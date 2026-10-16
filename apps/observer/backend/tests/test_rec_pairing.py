@@ -362,7 +362,8 @@ def test_no_unconfirmed_family_message_uses_a_pipeline_word(tmp_path):
         assert (state['state'], state['reason'], state['label']) == ('unconfirmed', reason, '확인 중'), reason
         assert view['next']['rec']['reason'] == state['message']
         if reason == 'prior_pitch_unconfirmed':  # same pending pitch as before: the withdrawal note is in the payload too
-            assert state['correction']['kind'] == 'withdrawn' and view['pitches'][-1]['actual']['result_label'] == '확인 중'
+            # the renamed pitch was accepted before: held with its accepted body (Song 2026-10-12), not 확인 중
+            assert state['correction']['kind'] == 'withdrawn' and view['pitches'][-1]['receipt']['reason'] == display_state.HELD
         served += fan_text(view)
         legacy = run.poll(path=LIVE)
         served += [legacy['display_state']['message'], *(strings(legacy['recommendation']) if legacy['recommendation'] else [])]

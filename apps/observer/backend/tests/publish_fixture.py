@@ -219,8 +219,10 @@ def collect(tmp):
         take('pregame')
         take('live', body())
         take('live-corrected', body(call='C'))  # the provider changes the first pitch: a visible correction
-        take('live-second-pitch', body(call='C', second=True))
+        # Before the second pitch is ever admitted (a key accepted once is held with its last accepted body, Song
+        # 2026-10-12): the renamed first pitch is held, the unidentified second one is 확인 중.
         take('live-unconfirmed', unidentified(body(call='C', second=True, pid='g5p1b')))
+        take('live-second-pitch', body(call='C', second=True))
         # Keep the established cycle timing for the following fixture states. This
         # decision key already has a recommendation, so it cannot be the unsupported example.
         world.policy.status = 'UNSUPPORTED_PITCHER'

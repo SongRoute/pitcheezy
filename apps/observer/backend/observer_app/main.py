@@ -433,6 +433,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         try:
             rows = [row for row in feed.store.pitch_events(game_pk)['events'] if seq is None or row['store_seq'] <= seq]
             receipts = display_state.pitch_receipts(snapshot, rows, committed=committed)
+            # a held pitch is shown with the accepted body it stands for; one that cannot be read falls back to 확인 중
+            display_state.attach_held(receipts, lambda ids: feed.store.pitch_bodies(game_pk, ids))
         except (sqlite3.Error, OSError, ValueError):
             LOGGER.warning('pitch ledger unreadable; only bodies admitted earlier stay confirmed', exc_info=True)
             with memory_lock:  # what was admitted at the newest version no newer than the served one
@@ -442,7 +444,8 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         if seq is not None:
             with memory_lock:  # per served version, so another viewer's delay never lends this one an admission
                 held = receipt_memory.setdefault(game_pk, OrderedDict())
-                held[seq] = {key: item['sha'] for key, item in receipts.items() if item['status'] == 'received'}
+                held[seq] = {key: item['sha'] for key, item in receipts.items()
+                             if item['status'] == 'received' and not item.get('held')}  # only bodies admitted as served
                 held.move_to_end(seq)
                 while len(held) > 64:
                     held.popitem(last=False)
@@ -502,8 +505,10 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         blank = lambda item, keep: {k: (v if k in keep else None) for k, v in item.items()} | {'receipt': 'unconfirmed'}
         tainted = display_state.RECEIPT_ALL in receipts
         unlisted = display_state.unlisted_current(snapshot, receipts)
+        # a held pitch's served body was refused: this route lists served bodies, so it is blanked here
         admitted = lambda ab, number: (not tainted and (ab, number) not in unlisted
-                                       and (receipts.get((ab, number)) or {}).get('status') == 'received')
+                                       and (receipts.get((ab, number)) or {}).get('status') == 'received'
+                                       and not (receipts.get((ab, number)) or {}).get('held'))
         out = parsed | {'pitch_sequence': [item if admitted(at_bat, item.get('pitch_number')) else blank(item, ('pitch_number',))
                                            for item in parsed.get('pitch_sequence') or []]}
         last = parsed.get('last_pitch')
