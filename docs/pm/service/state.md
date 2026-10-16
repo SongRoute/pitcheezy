@@ -2,6 +2,8 @@
 
 **2026-10-17 현재 로컬 handoff:** [fullseason capture shadow 현황](fullseason-capture-shadow-2026-10-17.md)에 strict/native 별도 원장, 100개 결정·forecast 저장, identity guard 원인, 생성 viewer gateway 증거와 남은 전향적 검증 경계를 정리했다. 이는 운영 모델 교체나 배포 수용이 아니다. 아래 날짜별 블록은 당시 이력으로 보존한다.
 
+**2026-10-17 추가 분리 증거:** [postseason 6경기 계보](../research/postseason-six-lineage-2026-10-17.md)의 1,323개 T 점수와 고정 FIT 주변분포 비교는 정정 Statcast 기반 **EXPOSED DEVELOPMENT 회고 평가**다. 실시간 capture-native 품질 수락, 실제 투구 전 물리 시각, 추천/WE 정책 또는 팬 화면 성능을 검증하지 않는다. 원본 8파일의 로컬 Drive 바이트 보존은 확인됐지만 동기화는 미확인이다. PR42 [로컬 ZIP v3](/Users/song/Projects/pitcheezy-pm-jobs/20261016-autonomous-profile-stream-005/partner-runnable-pack-v3/partner-runnable-review-pr42-v3.zip)은 미발송·gateway 미배포이며 실제 파트너 host 검증 0회다.
+
 **2026-10-11 저녁 Claude PM 체크포인트 3 (문서 기록일 뿐 새 수용 기준·모델 선택·승격·정책·배포 없음; 아래 블록은 이력으로 보존하고 충돌하는 "결과 대기"·미완 문장만 이 블록이 대체한다):**
 
 - **RC 팁:** `rc/ws-2026` 로컬 팁 `22abce0`(푸시 안 함; 원격 `origin/rc/ws-2026`은 `e39bb41`). 기반 병합 `62d88ff`, 통합 [REPORT.md](/Users/song/Projects/pitcheezy-pm-jobs/20261011-rc-integration-001/REPORT.md).
