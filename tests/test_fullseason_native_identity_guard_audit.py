@@ -2,7 +2,7 @@
 import pytest
 
 from scripts.fullseason_native_identity_guard_audit import (
-    relevant_unknown_attribution, remember_native,
+    _fresh_supervisor_output, relevant_unknown_attribution, remember_native,
 )
 
 
@@ -41,3 +41,22 @@ def test_semantic_dedup_preserves_first_proof_then_correction_replaces_it():
     remember_native(latest, key, corrected, 'identity_hypothesis_present', 'correction')
     assert latest[key]['status'] == 'native_candidate'
     assert latest[key]['guard'] == 'source_native_six_fields_unpaired'
+
+
+def test_supervisor_owned_worker_log_is_only_allowed_initial_output(tmp_path):
+    with pytest.raises(ValueError, match='fresh supervised output'):
+        _fresh_supervisor_output(tmp_path)
+    (tmp_path / 'worker.log').write_text('')
+    _fresh_supervisor_output(tmp_path)
+    (tmp_path / 'old_receipt.json').write_text('{}')
+    with pytest.raises(ValueError, match='fresh supervised output'):
+        _fresh_supervisor_output(tmp_path)
+    (tmp_path / 'old_receipt.json').unlink()
+    (tmp_path / 'worker.log').unlink()
+    (tmp_path / 'worker.log').symlink_to('missing')
+    with pytest.raises(ValueError, match='regular supervisor worker log'):
+        _fresh_supervisor_output(tmp_path)
+    (tmp_path / 'worker.log').unlink()
+    (tmp_path / 'worker.log').mkdir()
+    with pytest.raises(ValueError, match='regular supervisor worker log'):
+        _fresh_supervisor_output(tmp_path)

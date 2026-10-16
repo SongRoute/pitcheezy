@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import stat
 import sys
 import tempfile
 
@@ -37,6 +38,7 @@ def gated(regpath, grantpath):
             or any(reg['source_pins'].get(str(ROOT / name)) != digest
                    for name, digest in reg['native_source_pins'].items())
             or reg['reference_receipt']['sha256'] != file_sha(reg['reference_receipt']['path'])
+            or reg['prior_stop']['sha256'] != file_sha(reg['prior_stop']['path'])
             or reg['guard_event_type_cap'] != 32 or reg['guard_extra_key_cap'] != 32
             or reg['guard_label_length_cap'] != 64):
         raise ValueError('identity guard audit registration changed')
@@ -102,6 +104,16 @@ def remember_native(latest, key, native, guard, strict_status):
                                  else native['reason'])}
 
 
+def _fresh_supervisor_output(output):
+    """The supervisor creates only its owned worker log before child startup."""
+    entries = list(output.iterdir())
+    if len(entries) != 1 or entries[0].name != 'worker.log':
+        raise ValueError('fresh supervised output required')
+    info = entries[0].lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError('regular supervisor worker log required')
+
+
 def run(regpath, grantpath):
     reg, prior = gated(regpath, grantpath)
     os.fstat(int(os.environ['PITCHEEZY_FULLSEASON_LOCK_FD']))
@@ -109,8 +121,7 @@ def run(regpath, grantpath):
     signal.alarm(reg['bounds']['wall_seconds'] + 15)
     files = replay.entries(reg)
     output = Path(reg['output'])
-    if any(output.iterdir()):
-        raise ValueError('fresh output directory required')
+    _fresh_supervisor_output(output)
     receipt_views, selected, seen = [], [], set()
     latest = {}
     counts, dependencies, decision_causes, native_reason_guard = (
