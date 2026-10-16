@@ -204,7 +204,9 @@ def collect(tmp):
     into the schemas; ``EXAMPLES`` names the ones written out as example files."""
     tmp = Path(tmp)
     out = {kind: [] for kind in KINDS}
-    world = World(tmp/'main', first=pregame())
+    # every-cycle rewrite mode (here and in the worlds below): the committed examples carry the sequence of the
+    # cycle that took them
+    world = World(tmp/'main', first=pregame(), skip_unchanged_live=False)
     stamps = iter(f'20261005_10{minute:02d}00' for minute in range(1, 60))
     # 30 s apart: past the feed's poll interval and the 20 s schedule cache of the game list
     body = lambda **options: snap(next(stamps), wall=world.now[0]+25, **options)
@@ -240,7 +242,7 @@ def collect(tmp):
         out['setup'].append(('setup.json', world.read(f'v1/setup/{ARCHIVE_GAME}.json')))
     finally:
         world.close()
-    rich = World(tmp/'rich')
+    rich = World(tmp/'rich', skip_unchanged_live=False)
     try:
         rich.policy = RichPolicy()
         rich.cycle()
@@ -250,21 +252,21 @@ def collect(tmp):
         rich.close()
     # Use a new decision key: a previously recorded recommendation is immutable,
     # so flipping the policy inside the main world's same pending pitch cannot make an unsupported example.
-    unsupported = World(tmp/'unsupported', first=snap('20261005_100100', wall=BASE, second=True))
+    unsupported = World(tmp/'unsupported', first=snap('20261005_100100', wall=BASE, second=True), skip_unchanged_live=False)
     try:
         unsupported.policy.status = 'UNSUPPORTED_PITCHER'
         unsupported.cycle()
         out['game'].append(('game-live-unsupported.json', unsupported.game()))
     finally:
         unsupported.close()
-    odd = World(tmp/'odd')  # a setup source whose commit is not a hash: published as null
+    odd = World(tmp/'odd', skip_unchanged_live=False)  # a setup source whose commit is not a hash: published as null
     try:
         odd.write_setup(commit='main')
         odd.cycle(settle=False)
         out['setup'].append(('setup-no-commit.json', odd.read(f'v1/setup/{ARCHIVE_GAME}.json')))
     finally:
         odd.close()
-    failing = World(tmp/'failing', first=OSError('upstream down'))  # the first poll fails: health names the game
+    failing = World(tmp/'failing', first=OSError('upstream down'), skip_unchanged_live=False)  # the first poll fails: health names the game
     try:
         failing.cycle(settle=False)
         out['health'].append(('health-game-unavailable.json', failing.read('v1/health.json')))

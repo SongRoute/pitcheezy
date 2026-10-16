@@ -22,6 +22,9 @@ written before the body is returned): nothing here selects or changes a field. A
 ``sequence`` is one counter per publisher, raised once per cycle; a file carries the sequence of the cycle that
 last wrote it. ``final`` exists on game files: once a game is written with ``final: true`` it is not rewritten
 unless its content changes (a correction), which gets the then-current, higher sequence.
+With ``skip_unchanged_live`` (publish_config.json, default true) a game still in progress is likewise rewritten
+only when what a viewer reads in it changed (``live_digest``); health's ``game_checks`` say every cycle that it was
+checked (``checked_at``, ``sequence_checked``) and which sequence its file carries (``file_sequence``).
 
 Calling the game builder is what drives the upstream poll (``LiveFeed.snapshot`` fetches when its interval has
 passed), so the publisher is the "someone is watching". Demo sessions, the operator API and replay clocks are
@@ -95,6 +98,8 @@ def load_config(path=None, env=None, **overrides):
         raise ValueError('fixed_delay_s must be between 0 and 3600 seconds')
     if recheck is not None and not (isinstance(recheck, (int, float)) and recheck >= 0):
         raise ValueError('settled_recheck_s must be null or a number of seconds')
+    if type(config.setdefault('skip_unchanged_live', True)) is not bool:
+        raise ValueError('skip_unchanged_live must be true or false')
     for key in ('live_days_back', 'live_days_ahead'):
         if type(config[key]) is not int or not 0 <= config[key] <= 7:
             raise ValueError(f'{key} must be an integer between 0 and 7')
@@ -700,11 +705,31 @@ def game_digest(body):
     (``ok``, ``delayed``, ``lag_s``, ``lag_max_s``, ``lag_measured``, ``last_ok_at``, ``failing_since``,
     ``failing_for_s``, ``received_at``). Pitches, plate appearances, receipts, the display state itself, the
     recommendation and its ledger record all count."""
+    return _digest(_game_stable(body))
+
+
+def _game_stable(body):
     stable = {key: value for key, value in body.items() if key != 'feed'}
     state = stable.get('display_state')
     if isinstance(state, dict) and isinstance(state.get('feed'), dict):
         stable['display_state'] = state | {'feed': {key: state['feed'].get(key) for key in STATE_FEED_CONTENT}}
-    return _digest(stable)
+    return stable
+
+
+def live_digest(body):
+    """What makes an in-progress game file new (``skip_unchanged_live``): ``game_digest``'s content plus the
+    connection facts a viewer reads from the game file itself while the game is on: top-level ``feed.ok``,
+    ``display_state.feed`` ``ok`` and ``delayed``, and ``lag_s`` while ``delayed`` is true (the screen then says
+    "N초 넘게 늦음"). Still left out, because they move with the clock alone: ``feed.as_of``/``stale_s`` and the
+    other ``display_state.feed`` timing keys. Freshness itself is health's ``game_checks`` (``checked_at`` moves
+    every cycle the game is built, ``file_sequence`` only when the file is written)."""
+    feed = body.get('feed') if isinstance(body.get('feed'), dict) else {}
+    state = body.get('display_state') if isinstance(body.get('display_state'), dict) else {}
+    state_feed = state.get('feed') if isinstance(state.get('feed'), dict) else {}
+    delayed = state_feed.get('delayed')
+    connection = {'feed_ok': feed.get('ok'), 'state_feed_ok': state_feed.get('ok'), 'delayed': delayed,
+                  'lag_s': state_feed.get('lag_s') if delayed else None}
+    return _digest({'content': _game_stable(body), 'connection': connection})
 
 
 def is_final(body):
@@ -913,19 +938,22 @@ class Publisher:
             _queue_upload(self.state, path, action, hashlib.sha256(data if action == 'put' else b'').hexdigest())
             self._save_state()
 
-    def _put(self, path, body, *, always, final=None, digest=None):
+    def _put(self, path, body, *, always, final=None, digest=None, on_disk=False):
         with self._state_lock:
             if self._closing:
                 raise Unsafe('publisher_closed')
-            return self._put_locked(path, body, always=always, final=final, digest=digest)
+            return self._put_locked(path, body, always=always, final=final, digest=digest, on_disk=on_disk)
 
-    def _put_locked(self, path, body, *, always, final=None, digest=None):
+    def _put_locked(self, path, body, *, always, final=None, digest=None, on_disk=False):
         """Write ``body`` + the ``publish`` key at ``path``. ``always`` False: only if the content (``digest``,
-        default the whole body) or its final mark differs from what is published there."""
+        default the whole body) or its final mark differs from what is published there. ``on_disk``: the skip
+        also needs the local file to still be the one the state says was last written (its publish block carries
+        the recorded sequence); a missing or other file is written again."""
         digest = _digest(body) if digest is None else digest
         known = self.state['files'].get(path)
         self.state['checked'][path] = self._now
-        if not always and known and known['digest'] == digest and known.get('final') == final:
+        if (not always and known and known['digest'] == digest and known.get('final') == final
+                and (not on_disk or self._on_disk(path, known['sequence']))):
             return False
         if 'publish' in body:
             raise NotPublic(f'{path}: the body already has a publish key')
@@ -938,6 +966,17 @@ class Publisher:
         self.state['files'][path] = {'digest': digest, 'sequence': self._sequence, 'final': final}
         self._written.append(path)
         return True
+
+    def _on_disk(self, path, sequence):
+        """True when the published file at ``path`` ends with this contract's publish block of ``sequence``
+        (only its tail is read). Anything that cannot be read as such says False: the caller writes it again."""
+        try:
+            tail = self.sink.read_tail(path, PUBLISH_TAIL_BYTES)
+            match = PUBLISH_TAIL.search(tail) if tail else None
+            block = json.loads(match[1]) if match else {}
+        except Exception:  # noqa: BLE001 - an unreadable file is rewritten, never trusted
+            return False
+        return block.get('contract') == self.config['contract_version'] and block.get('sequence') == sequence
 
     def _drop(self, path, *, force=False):
         with self._state_lock:
@@ -1190,8 +1229,12 @@ class Publisher:
         final = is_final(body)
         if game_pk in self._embargoed():  # a demo began after the builder's own check
             return self._withdraw(game_pk)
+        # An in-progress game is rewritten only when what a viewer reads in it changed (``live_digest``), unless
+        # ``skip_unchanged_live`` is off (then every cycle, as before). Health's game_checks still advance.
+        skip = not final and self.config.get('skip_unchanged_live', True)
         try:
-            self._put(path, body, always=not final, final=final, digest=game_digest(body))
+            self._put(path, body, always=not final and not skip, final=final,
+                      digest=live_digest(body) if skip else game_digest(body), on_disk=skip)
         except OSError:
             LOGGER.warning('game %s not written; the published file is kept', game_pk, exc_info=True)
             return self._fail(game_pk, None, 'write_failed')
