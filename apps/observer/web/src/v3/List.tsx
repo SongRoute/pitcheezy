@@ -11,6 +11,7 @@ import type { PublishStamp } from '../service/publish';
 import { gameHref, listHref } from './links';
 import Panel from './Panel';
 import { InfoDetail } from './details';
+import Series from './Series';
 
 function startReader(read: (signal: AbortSignal) => Promise<boolean>, okMs: number, failMs: number, onWake?: () => void) {
   let alive = true, busy: AbortController | null = null, timer = 0;
@@ -129,6 +130,7 @@ export default function List() {
       <button className="v3-btn ghost" onClick={() => go(next)} disabled={!next} aria-label={next ? `다음 날짜 ${dateHeading(next)}` : '다음 날짜 없음'}>›</button>
     </nav>
     <main className="v3-list-main">
+      <Series />
       {error ? <div className="v3-alert" role="alert"><p>{error}</p><button className="v3-btn" onClick={() => setRetry(r => r + 1)}>다시 시도</button></div>
         : games === null ? <p className="v3-muted" role="status">경기 목록을 불러오는 중…</p>
         : games.length === 0 ? <p className="v3-empty-line">이 날짜에는 경기가 없어요.</p>

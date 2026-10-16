@@ -320,7 +320,7 @@ body.v3-locked { overflow: hidden; }
 .v3-game.tablet .v3-col-game .v3-info-link, .v3-game.pc .v3-col-game .v3-info-link { justify-self: start; }
 
 /* ───────── list ───────── */
-.v3-datebar { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; padding: 8px 8px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.v3-datebar { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; padding: 8px max(8px, calc(50% - 320px)); background: var(--surface); border-bottom: 1px solid var(--line); }
 .v3-datebar h1 { text-align: center; font-size: 17px; display: grid; } .v3-datebar small { font-size: 11px; color: var(--muted); font-weight: 500; }
 .v3-datebar .v3-btn { font-size: 22px; padding: 0; }
 .v3-list-main { padding: 16px; display: grid; gap: 14px; max-width: 640px; margin: 0 auto; }
@@ -337,6 +337,23 @@ body.v3-locked { overflow: hidden; }
 .v3-gamerow-meta { font-size: 13px; color: var(--muted); text-align: right; display: grid; } .v3-gamerow-meta em { font-style: normal; font-size: 11px; }
 .v3-chev { color: #aeb5bc; font-size: 20px; }
 .v3-list .v3-banner { border-radius: var(--r-m); }
+
+/* world series strip */
+.v3-series { background: var(--ink); color: #fff; border-radius: var(--r-l); padding: 14px 16px; display: grid; gap: 12px; }
+.v3-series-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.v3-series-head h2 { font-size: 14px; color: #dfe3e6; padding: 0; }
+.v3-series-head p { display: flex; align-items: baseline; gap: 8px; font-family: var(--num); }
+.v3-series-head span { font-size: 18px; font-weight: 600; color: #dfe3e6; } .v3-series-head b { font-size: 30px; line-height: 1; } .v3-series-head i { font-style: normal; color: #6f7880; }
+.v3-series-pips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.v3-series-pips li { border-radius: 8px; background: rgba(255,255,255,.07); min-height: 40px; display: grid; justify-items: center; align-content: center; gap: 1px; }
+.v3-series-pips small { font-family: var(--num); font-size: 11px; color: #8a9299; }
+.v3-series-pips b { font-family: var(--num); font-size: 13px; }
+.v3-series-pips li.final { background: rgba(255,255,255,.16); } .v3-series-pips li.live { background: var(--live); } .v3-series-pips li.live small { color: #fff; }
+.v3-series-pips li.none { background: transparent; border: 1px dashed rgba(255,255,255,.18); }
+.v3-series-games a { display: grid; grid-template-columns: 48px auto 1fr auto; gap: 10px; align-items: baseline; padding: 8px 2px; border-top: 1px solid rgba(255,255,255,.1); color: #fff; text-decoration: none; font-size: 13px; }
+.v3-series-games b { font-family: var(--num); font-size: 15px; } .v3-series-games span { color: #c8ced3; } .v3-series-games .v3-series-score { font-family: var(--num); font-size: 16px; color: #fff; }
+.v3-series-games em { font-style: normal; font-size: 12px; color: #aeb5bc; } .v3-series-games a.live em { color: #ff9aa2; }
+.v3-series .v3-muted { color: #8a9299; }
 
 /* ───────── review switcher (preview builds only) ───────── */
 .v3-review { position: fixed; right: 0; top: 46%; z-index: 60; font-family: var(--txt); }

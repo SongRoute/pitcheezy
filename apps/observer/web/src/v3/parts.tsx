@@ -72,9 +72,9 @@ export function Matchup({ v, density, open }: { v: GameView; density: Options['d
   if (v.idle || (!v.batter && !v.pitcher)) return <div className="v3-matchup idle"><span>{v.breakNow ? '다음 타자를 기다리고 있어요' : v.final ? '경기가 끝났어요' : '경기가 시작되면 타자와 투수를 보여 드려요'}</span></div>;
   const bt = v.batterToday, pt = v.pitcherToday;
   const n = (x: number | null | undefined) => typeof x === 'number' ? x : '–';
-  return <div className="v3-matchup" role="group" aria-label="이번 타석">
+  return <div className="v3-matchup" role="group" aria-label={v.final ? '마지막 타석' : '이번 타석'}>
     <button onClick={() => open('player', { who: 'batter' })} aria-haspopup="dialog">
-      <small>타자</small><b>{v.batter?.name ?? '선수 미확인'}</b>
+      <small>{v.final ? '마지막 타석 · 타자' : '타자'}</small><b>{v.batter?.name ?? '선수 미확인'}</b>
       {density === 'full' && <span>{handText(v.batter?.side, 'b')}{bt ? ` · 오늘 ${n(bt.at_bats)}타수 ${n(bt.hits)}안타` : ''}</span>}
     </button>
     <button onClick={() => open('player', { who: 'pitcher' })} aria-haspopup="dialog">
@@ -107,7 +107,7 @@ export function Candidates({ v, density, open }: { v: GameView; density: Options
 
 /** The recommendation block: heading, the zone (hero), the chips, and ONE state sentence when nothing can be shown. */
 export function RecBlock({ v, opts, open, side, compact = false }: { v: GameView; opts: Options; open: Open; side?: ReactNode; compact?: boolean }) {
-  const title = v.nextPhase || (v.stateSlot && !v.final) ? `다음 공 추천${v.nextNumber ? ` · ${v.nextNumber}구` : ''}` : v.lastPitch ? `마지막 공 · 투구 전에 기록된 추천` : '추천';
+  const title = v.nextPhase || (v.stateSlot && !v.final) ? `다음 공 추천${v.nextNumber ? ` · ${v.nextNumber}구` : ''}` : v.lastPitch ? (v.detail.live_source ? '마지막 공 · 투구 전에 기록된 추천' : '마지막 공 · 경기 뒤 같은 정보로 계산한 추천') : '추천';
   const count = v.situation ? `${v.situation.balls}-${v.situation.strikes}` : '';
   const pitches = v.paPitches;
   const stateText = v.eff && !v.shownRec ? v.eff : null;
