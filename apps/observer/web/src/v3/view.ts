@@ -73,7 +73,7 @@ export function deriveView(feed: Feed, detail: Detail, drawn: MutableRefObject<D
   const lateNow = __PZ_STATIC__ && isPublishStale(lag, pollMs);
   const publishStale = lateNow && !checking, publishChecking = lateNow && checking;
   const demo = !__PZ_STATIC__ && detail.session !== null;
-  const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦음` : '평소보다 늦음') : null;
+  const lagText = disp?.feed.delayed ? (disp.feed.lag_s !== null ? `${Math.floor(disp.feed.lag_s)}초 넘게 늦어요` : '평소보다 늦어요') : null;
   const conn: Conn = error || feedDown ? { kind: 'lost', label: '연결 끊김', detail: error ? '자동으로 다시 연결하고 있어요.' : '경기 자료 연결이 잠시 끊겼어요.' }
     : clientStale ? { kind: 'lost', label: '연결 끊김', detail: '마지막으로 받은 내용을 보여 드려요.' }
     : publishStale ? { kind: 'late', label: '갱신 지연', detail: PUBLISH_LATE.message }
