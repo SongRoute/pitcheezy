@@ -63,7 +63,7 @@ def audit_summary(g, census, fit, oof, y7, M):
     for name, mask in [('FIT', fit), ('OOF', oof)]:
         frame = g.loc[mask]
         summary['roles'][name] = {'rows': int(mask.sum()), 'games': int(frame.game_pk.nunique()),
-            'first_date': str(frame.game_date.min().date()), 'last_date': str(frame.game_date.max().date()),
+            'first_date': str(frame.game_date.min().date()) if len(frame) else None, 'last_date': str(frame.game_date.max().date()) if len(frame) else None,
             'ordered_keys_sha256': key_digest(frame[M.cp.KEY].to_numpy()),
             'parent_label_counts': np.bincount(frame.outcome10, minlength=10).tolist(),
             'seven_leaf_counts': np.bincount(y7[mask], minlength=7).tolist(),

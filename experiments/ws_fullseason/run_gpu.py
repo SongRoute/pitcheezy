@@ -67,7 +67,7 @@ def worker(g,recipe,seed,out,grant_sha):
     result=train.run(recipe,seed,package,out)
     result.update(grant_sha256=grant_sha,recipe_sha256=sha(ROOT/g['recipe']),input_manifest_sha256=g['input_manifest_sha256'],
         data_role='2026 EXPOSED DEVELOPMENT',independent_test=False,source_commit=g['commit'],
-        outputs_sha256={name:sha(out/name) for name in ['model-state.pt','oof-predictions.npz']},
+        outputs_sha256={name:sha(out/name) for name in (['model-state.pt'] if recipe.get('execution_stage')=='FINAL_REFIT' else ['model-state.pt','oof-predictions.npz'])},
         gpu_max_reserved_bytes=torch.cuda.max_memory_reserved())
     if result['gpu_max_reserved_bytes']>g['vram_bytes']: raise ValueError('VRAM cap')
     (out/'receipt.json').write_text(json.dumps(result,indent=2,allow_nan=False)+'\n')
@@ -166,12 +166,16 @@ def main():
                 target,g['wall_seconds_per_seed'],g['rss_bytes'],sha(args.grant),lock.fileno(),g['output_bytes_per_seed'])
             if rc:return rc
             records.append({'seed':seed,'receipt_sha256':sha(target/'receipt.json'),'supervisor_sha256':sha(target/'SUPERVISOR.json')})
-        import signal
-        signal.signal(signal.SIGALRM,lambda *_:os._exit(124));signal.alarm(g['aggregate_wall_seconds'])
-        try:aggregate_sha=final_aggregate(g,out,records,sha(args.grant))
-        finally:signal.alarm(0)
+        final_refit=recipe.get('execution_stage')=='FINAL_REFIT'
+        aggregate_sha=None
+        if not final_refit:
+            import signal
+            signal.signal(signal.SIGALRM,lambda *_:os._exit(124));signal.alarm(g['aggregate_wall_seconds'])
+            try:aggregate_sha=final_aggregate(g,out,records,sha(args.grant))
+            finally:signal.alarm(0)
         (out/'receipt.json').write_text(json.dumps({'status':'COMPLETED','seeds':records,'fits':3,'calibration_fits':0,
-            'metrics_computed':True,'aggregate_sha256':aggregate_sha,'grant_sha256':sha(args.grant)},indent=2)+'\n')
+            'execution_stage':'FINAL_REFIT' if final_refit else 'OOF',
+            'metrics_computed':not final_refit,'aggregate_sha256':aggregate_sha,'grant_sha256':sha(args.grant)},indent=2)+'\n')
     return 0
 
 

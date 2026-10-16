@@ -71,7 +71,7 @@ def context_proof(g,seq,fit,oof,length,chunk_rows=65536):
         if not (local_fit[np.maximum(ctx,0)]==local_fit[:,None])[valid].all():
             raise ValueError('context crosses role')
         edges+=int(valid.sum());oof_edges+=int(valid[oof[indices]].sum())
-    return {'edges':edges,'oof_edges':oof_edges,'same_pitcher_game_strict_order':True,'earlier_oof_outcomes_used':True}
+    return {'edges':edges,'oof_edges':oof_edges,'same_pitcher_game_strict_order':True,'earlier_oof_outcomes_used':bool(oof.any())}
 
 
 def arrays(g, fit, oof, y7, recipe, M):

@@ -25,6 +25,9 @@ def run(recipe, seed, package, out, *, synthetic=False):
     if seed not in recipe['seeds'] or recipe['arm']!='T': raise ValueError('fixed T seed')
     if not synthetic and not torch.cuda.is_available(): raise ValueError('CUDA required')
     rule=recipe['training_rule']; t=recipe['base']['training']
+    stage=recipe.get('execution_stage','OOF')
+    if stage not in ('OOF','FINAL_REFIT'): raise ValueError('registered execution stage')
+    final_refit=stage=='FINAL_REFIT'
     if rule['early_stopping'] or rule['SELECT_rows'] or rule['CAL_rows'] or rule['temperature']!=1:
         raise ValueError('fixed-epoch uncalibrated recipe required')
     torch.set_num_threads(2); torch.manual_seed(seed); np.random.seed(seed)
@@ -44,7 +47,8 @@ def run(recipe, seed, package, out, *, synthetic=False):
     keys=torch.as_tensor(c['keys'],device=device,dtype=torch.long)
     y7=torch.as_tensor(c['y7'],device=device,dtype=torch.long)
     fitrows=np.flatnonzero(c['fit']); oofrows=np.flatnonzero(c['evaluation'])
-    if not len(fitrows) or not len(oofrows): raise ValueError('empty role')
+    if not len(fitrows) or (not final_refit and not len(oofrows)) or (final_refit and len(oofrows)):
+        raise ValueError('OOF requires two roles; FINAL_REFIT requires FIT only')
     model=build_model(recipe,'T',seed).to(device)
     opt=torch.optim.AdamW(model.parameters(),lr=t['lr'],weight_decay=t['weight_decay'])
     trace=[]; start=time.monotonic(); steps=0
@@ -65,16 +69,17 @@ def run(recipe, seed, package, out, *, synthetic=False):
         trace.append(evidence)
     out=Path(out)
     torch.save(model.state_dict(),out/'model-state.pt')
-    oof=torch.as_tensor(oofrows,device=device,dtype=torch.long)
-    z=campaign.predict(model,tensors,keys,oof,t['eval_batch_size'])
-    q=campaign.probabilities(z)
-    if q.shape!=(len(oofrows),7) or not np.isfinite(q).all() or (q<0).any() or not np.allclose(q.sum(1),1,atol=1e-7):
-        raise ValueError('complete finite normalized OOF probabilities')
-    np.savez(out/'oof-predictions.npz',keys=c['keys'][oofrows],probabilities=q)
+    if not final_refit:
+        oof=torch.as_tensor(oofrows,device=device,dtype=torch.long)
+        z=campaign.predict(model,tensors,keys,oof,t['eval_batch_size'])
+        q=campaign.probabilities(z)
+        if q.shape!=(len(oofrows),7) or not np.isfinite(q).all() or (q<0).any() or not np.allclose(q.sum(1),1,atol=1e-7):
+            raise ValueError('complete finite normalized OOF probabilities')
+        np.savez(out/'oof-predictions.npz',keys=c['keys'][oofrows],probabilities=q)
     return {'status':'COMPLETED','arm':'T','seed':seed,'epochs':rule['epochs'],
         'optimization_steps':steps,'sample_presentations':int(len(fitrows)*rule['epochs']),
         'consumption':trace,'OOF_rows':len(oofrows),'OOF_keys_sha256':key_digest(c['keys'][oofrows]),
         'temperature':1.0,'calibration_fits':0,'SELECT_queries':0,'checkpoint':'final epoch',
-        'metrics_computed':False,'elapsed_compute_seconds':time.monotonic()-start,
+        'metrics_computed':False,'execution_stage':stage,'elapsed_compute_seconds':time.monotonic()-start,
         'backend':{'deterministic':True,'warn_only':True,'cudnn_benchmark':False,'tf32':False,'dtype':'fp32'},
         'versions':{'torch':torch.__version__,'cuda':torch.version.cuda,'numpy':np.__version__}}

@@ -94,6 +94,17 @@ class FixedTrain(unittest.TestCase):
             with np.load(a/'oof-predictions.npz',allow_pickle=False) as z:
                 np.testing.assert_array_equal(z['keys'],c['keys'][oof]);self.assertEqual(z['probabilities'].shape,(6,7))
             self.assertFalse(r['metrics_computed'])
+            final_recipe=copy.deepcopy(recipe);final_recipe['execution_stage']='FINAL_REFIT'
+            final_c={k:v.copy() for k,v in c.items()}
+            final_c['fit'][:]=True;final_c['evaluation'][:]=False
+            target=Path(tmp)/'final';target.mkdir()
+            result=train.run(final_recipe,0,(x,final_c,s),target,synthetic=True)
+            self.assertEqual(result['execution_stage'],'FINAL_REFIT')
+            self.assertEqual(result['sample_presentations'],len(x)*2)
+            self.assertEqual(result['OOF_rows'],0)
+            self.assertEqual({p.name for p in target.iterdir()},{'model-state.pt'})
+            with self.assertRaises(ValueError):train.run(recipe,0,(x,final_c,s),target,synthetic=True)
+            with self.assertRaises(ValueError):train.run(final_recipe,0,(x,c,s),target,synthetic=True)
 
 
 if __name__=='__main__':unittest.main()
