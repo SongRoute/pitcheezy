@@ -24,7 +24,7 @@ const NOTE = '올해 9월 27일까지 이 투수가 같은 상황에서 실제�
 // the card profile_reference gave for Grant Taylor, 0-0 against a right-handed batter (game 849831, in-process check 2026-10-11)
 const CARD = { kind: 'profile_reference', reason_code: 'unsupported/profile_reference', title: '이 투수가 올해 이 카운트·타자 방향에서 자주 던진 공', chip: '참고 · 기록 통계',
   items: [['SI', '싱커', 29], ['FF', '포심', 28], ['SL', '슬라이더', 24], ['CU', '커브', 19]].map(([pitch_type, pitch_label, share_pct]) => ({ pitch_type, pitch_label, share_pct })),
-  other: null, sample: { pitches: 160, batter_side: 'R', balls: 0, strikes: 0 }, as_of: '2026-09-27', note: NOTE,
+  other: null, sample: { pitches: 160, batter_side: 'R', balls: 0, strikes: 0 }, as_of: '2026-09-27', stale: false, note: NOTE,
   };   // the public subset the route sends (no provenance)
 const EXPECT = { kind: 'step5_expectation', lead: '던지기 전 예상', pitch_type: 'SL', pitch_label: '슬라이더', items: [{ leaf: 'narrow_whiff', label: '헛스윙', pct: 12, pct_text: '12%' }, { leaf: 'ground_ball_in_play', label: '땅볼', pct: 9, pct_text: '9%' }],
   text: '던지기 전 예상: 헛스윙 12% · 땅볼 9%', note: '2024 모델 · 참고', explain: '이 공 하나가 어떻게 끝날지 본 비율이에요. 헛스윙은 휘둘러서 못 맞힌 경우(파울팁 제외), 땅볼은 이 공을 쳐서 땅볼 타구가 된 경우예요. 스윙했을 때만 따진 비율이 아니에요.',
@@ -125,6 +125,26 @@ for (const [name, body] of [['field absent (switch off)', liveBody({ reference: 
   const text = await page.locator('.sv-ref-sample').innerText();
   ok(text.trim() === '2025년 9월 27일까지 같은 상황 160구' && !/올해/.test(text), `A2: the sample line states the date as sent, no "올해" assumed ("${text.trim()}")`);
   await context.close();
+}
+{ // stale (server: profile cutoff more than 2 days before the game date): dated up front, "기록 기준 MM/DD"; a fresh card is not
+  for (const [width, height] of [[390, 844], [320, 568]]) {
+    const { context, page, errors } = await open({ width, height, body: liveBody({ reference: { ...CARD, stale: true } }) });
+    await page.locator('.sv-ref-teaser').waitFor();
+    ok((await page.locator('.sv-ref-asof').innerText()).trim() === '기록 기준 09/27', `A2 stale ${width}x${height}: the line says "기록 기준 09/27"`);
+    ok(/기록 기준 09\/27/.test(await page.locator('.sv-ref-teaser').getAttribute('aria-label')), `A2 stale ${width}x${height}: and so does its label`);
+    ok((await spill(page)).length === 0 && (await overflow(page))[1] <= 0, `A2 stale ${width}x${height}: nothing spills out of the state slot or the page`);
+    await page.locator('.sv-ref-teaser').click();
+    await page.locator('.sv-ref-card').waitFor();
+    ok((await page.locator('.sv-ref-stale').innerText()).includes('기록 기준 09/27'), `A2 stale ${width}x${height}: the sheet dates it too`);
+    ok(errors.length === 0, `A2 stale ${width}x${height}: no page errors ${errors.join(' | ')}`);
+    await context.close();
+  }
+  for (const stale of [false, undefined]) {
+    const { context, page } = await open({ body: liveBody({ reference: { ...CARD, stale } }) });
+    await page.locator('.sv-ref-teaser').waitFor();
+    ok(await page.locator('.sv-ref-asof, .sv-ref-stale').count() === 0, `A2 stale=${stale}: no "기록 기준" line`);
+    await context.close();
+  }
 }
 { // R4: the sheet opens only by a tap; when the card goes the sheet goes, and it does not come back by itself
   let body = liveBody();

@@ -103,7 +103,41 @@ def load_config(path=None, env=None, **overrides):
     for key in ('live_days_back', 'live_days_ahead'):
         if type(config[key]) is not int or not 0 <= config[key] <= 7:
             raise ValueError(f'{key} must be an integer between 0 and 7')
+    reference = config.get('profile_reference')
+    if reference is not None:
+        sources = reference.get('profile_sources') if isinstance(reference, dict) else None
+        if not isinstance(reference, dict) or type(reference.get('enabled')) is not bool or not (
+                sources is None or (isinstance(sources, list) and all(isinstance(item, str) and item for item in sources))):
+            raise ValueError('profile_reference must be {"enabled": true|false, "profile_sources": null or a list of paths}')
     return config
+
+
+def feature_base(config):
+    """The publisher's own layer of owner switches (``features.features(base=...)``), or None when
+    ``publish_config.json`` has no ``profile_reference`` block (then the server's switches apply as before).
+    ``profile_sources`` null leaves the sources to ``live_config.json`` and ``PITCHEEZY_OBSERVER_PROFILE_SOURCES``
+    (the operator's path to the daily ``LATEST.json``; never a path in the repository). The environment is applied
+    after this layer, so ``PITCHEEZY_OBSERVER_PROFILE_REFERENCE=0`` still turns the card off."""
+    reference = config.get('profile_reference')
+    if reference is None:
+        return None
+    block = {'enabled': reference['enabled']}
+    if reference.get('profile_sources') is not None:
+        block['profile_sources'] = list(reference['profile_sources'])
+    return {'profile_reference': block}
+
+
+def reference_status(app):
+    """Operator summary of the A2 card at start-up (for the log, never published): switch, number of sources and,
+    when on, each source's usability and profile cutoff (``ProfileReference.warm``)."""
+    flags = app.state.features()['profile_reference']
+    out = {'enabled': bool(flags['enabled']), 'sources': len(flags.get('profile_sources') or ())}
+    module = app.state.service_extras.reference(flags) if flags['enabled'] else None
+    if module is not None:
+        health = module.warm()
+        out['usable'] = [{'usable': s['usable'], 'cutoff': s['cutoff'], 'reason': s['reason']} for s in health['sources']]
+        out['freshness'] = health.get('freshness')
+    return out
 
 
 class Sink:
@@ -1318,6 +1352,7 @@ def build(config, *, sink=None, dates=None, commit=None, wall=None, **app_option
     if not config.get('out_dir') and sink is None:
         raise ValueError('an output directory is required (--out, PITCHEEZY_PUBLISH_OUT_DIR or publish_config.json out_dir)')
     app_options.setdefault('service', object())  # the legacy replay service and its database are not opened
+    app_options.setdefault('feature_base', feature_base(config))
     app = create_app(start_worker=False, service_delay_s=config['fixed_delay_s'], **app_options)
     safe = None if app_options.get('live_feed') is False else (lambda: unsafe_reason(app))  # archive only: no live path
     reason = safe() if safe else None
@@ -1385,6 +1420,14 @@ def _start(args):
             raise SystemExit(f"fixed_delay_s {config['fixed_delay_s']} exceeds the live feed's max_delay_s {feed.max_delay_s}")
         if os.environ.get('PITCHEEZY_OBSERVER_LIVE_ARMB', '1') != '0':
             app.state.live_policy.start()  # warm the frozen policy in the background, as the server does at startup
+        status = reference_status(app)
+        if status['enabled'] and not status.get('usable'):
+            LOGGER.warning('reference card (A2) is on but no profile source is configured: no card will be published '
+                           '(set PITCHEEZY_OBSERVER_PROFILE_SOURCES to the daily LATEST.json)')
+        elif status['enabled'] and not any(s['usable'] for s in status['usable']):
+            LOGGER.warning('reference card (A2) is on but no profile source is usable now: %s', status)
+        else:
+            LOGGER.info('reference card (A2): %s', status)
     except BaseException:
         publisher.close()
         raise
