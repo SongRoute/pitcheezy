@@ -83,11 +83,32 @@ def shown_candidates(candidates):
             | {'detail': {'probability': (c.get('detail') or {}).get('probability')}} for i, c in enumerate(candidates or [])]
 
 
+# What ``reference_free_digest`` leaves out: the publish block (sequence, published_at, final), the A2 card and the
+# switch that announces it. Everything else of a game body is compared as is.
+REFERENCE_FREE_EXCLUDED = ('/publish', '/next/reference', '/features/profile_reference/enabled')
+
+
+def reference_free_digest(body):
+    """sha256 of a game body without ``REFERENCE_FREE_EXCLUDED``: equal for a card-ON and a card-OFF body of the same
+    moment when the card changed nothing else."""
+    import copy
+    import hashlib
+    rest = copy.deepcopy({key: value for key, value in body.items() if key != 'publish'})
+    if isinstance(rest.get('next'), dict):
+        rest['next'].pop('reference', None)
+    if isinstance((rest.get('features') or {}).get('profile_reference'), dict):
+        rest['features']['profile_reference'].pop('enabled', None)
+    return hashlib.sha256(json.dumps(rest, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+
+
 def game_facts(body):
-    """What a cycle's game file says, as counts and codes (no values of the game)."""
+    """What a cycle's game file says, as counts and codes (no values of the game; ``reference_as_of`` is the
+    profile's cutoff date, a configuration fact)."""
     state = body.get('display_state') or {}
     pitches = body.get('pitches') or []
     shown = bool(((body.get('next') or {}).get('rec') or {}).get('candidates'))
+    card = (body.get('next') or {}).get('reference')
+    card = card if isinstance(card, dict) else None
     return {'pitches': len(pitches),
             'unconfirmed': sum((p.get('receipt') or {}).get('status') != 'received' for p in pitches if 'receipt' in p),
             'corrected': sum(bool((p.get('receipt') or {}).get('corrected')) for p in pitches),
@@ -96,7 +117,9 @@ def game_facts(body):
             'state': state.get('state'), 'reason': state.get('reason'),
             'recommendation': 'published' if shown else 'none',
             'phase': (body.get('current') or {}).get('phase'), 'game_status': (body.get('game') or {}).get('status'),
-            'feed_ok': (body.get('feed') or {}).get('ok'), 'final': (body.get('publish') or {}).get('final')}
+            'feed_ok': (body.get('feed') or {}).get('ok'), 'final': (body.get('publish') or {}).get('final'),
+            'reference': 'published' if card else 'none', 'reference_as_of': card.get('as_of') if card else None,
+            'reference_stale': card.get('stale') if card else None, 'reference_free_digest': reference_free_digest(body)}
 
 
 class PublishAudit:

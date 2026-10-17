@@ -273,3 +273,18 @@ def test_the_pointer_is_reread_and_moves_the_card_to_the_newer_profile(worlds, m
     second = world.game()['next'].get('reference')
     assert (first['as_of'], first['stale']) == ('2026-09-30', True)
     assert second is not None and (second['as_of'], second['stale']) == ('2026-10-04', False)
+
+
+def test_replay_facts_count_the_card_and_the_reference_free_digest_ignores_only_the_excluded_fields():
+    example = json.loads((CONTRACT_DIR/'examples/game-live-unsupported-reference.json').read_text())
+    facts = publish_audit.game_facts(example)
+    assert (facts['reference'], facts['reference_as_of'], facts['reference_stale']) == ('published', '2026-10-04', False)
+    off = copy.deepcopy(example)
+    off['next'].pop('reference')
+    off['features']['profile_reference']['enabled'] = False
+    off['publish'] = {'contract': 'v1', 'sequence': 999, 'published_at': '2030-01-01T00:00:00Z'}
+    assert publish_audit.game_facts(off)['reference'] == 'none'
+    assert publish_audit.reference_free_digest(off) == facts['reference_free_digest']
+    off['next']['pitch_key'] = 'other'
+    assert publish_audit.reference_free_digest(off) != facts['reference_free_digest']
+    assert publish_audit.REFERENCE_FREE_EXCLUDED == ('/publish', '/next/reference', '/features/profile_reference/enabled')
