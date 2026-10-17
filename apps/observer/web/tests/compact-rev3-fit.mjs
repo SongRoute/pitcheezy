@@ -5,6 +5,14 @@
 // recommendations are listed under the zone and the batter silhouette marks the side; '다음 공 추천' is the list's label and a
 // pinned live view says '최신으로 ↗' on the header button (no separate notice); the pitch cards are equal frameless tiles with a
 // two-line caption (number + type, speed + unit); the smallest text is the 11px unit; a demo session never shows the red LIVE dot.
+// Migrated to the approved 2026-10-13 redesign (0fe66af, UI-CONNECTION-2026-10-13.md; 2026-10-17): phones scroll vertically under a
+// fixed bottom tab bar, so 'one screen' became 'score/count/zone above the fold, 390x844 strip above the tab bar (precedent:
+// display-state-smoke fitsViewport, ws-responsive-smoke), every control reachable (not stranded under the tab bar, no sideways
+// overflow)'; catcher's view puts a right-handed batter on the LEFT; the card caption's second line may end in ' · <result>'; the
+// strip draws no mini zone (the current PA's last 3 pitches are numbered dots on the main zone instead); on a LIVE game a tapped past
+// card opens the detail sheet only (main view, '시연 중' header and polling continue; the past pitch's ranks/actual are checked in the
+// sheet), on a finished game it also moves the main view. The sheet's '정책 선택 비중' table header is an approved explanation, so the
+// removed-text check reads the main screen only.
 //   npx vite build --outDir <tmp> && PZ_WEB_DIST=<tmp> node tests/compact-rev3-fit.mjs [outDir]
 import { chromium } from 'playwright';
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
@@ -54,15 +62,49 @@ async function run(w, h, big, which, state, side, many) {
   await p.goto(`http://pz.test/watch/849843${which === 'live' ? '?demo=fixture' : ''}`);
   await p.waitForSelector('.sv-board'); await p.waitForTimeout(250);
   if (state === 'pinned' || state === 'stale') { await p.locator('.sv-card:not(.pending)').first().click(); await p.waitForTimeout(300); }
-  if (state === 'stale') { failApi = true; await p.locator('.sv-link-btn, .sv-live').first().click().catch(() => {}); await p.waitForTimeout(800); }
+  // stale: the card opened the (modal, on phones) detail sheet; close it so the header button is reachable, then fail the next fetch
+  if (state === 'stale') { await p.keyboard.press('Escape'); await p.waitForTimeout(200); failApi = true;
+    await p.locator('.sv-live').click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(800); }
   if (big) { await p.addStyleTag({ content: 'html{font-size:125% !important;-webkit-text-size-adjust:125%}' }); await p.waitForTimeout(250); }
   const pollsBefore = polls; if (state === 'pinned') await p.waitForTimeout(2600);
   const L = await p.evaluate(() => {
     const se = document.scrollingElement; const r = (s) => document.querySelector(s)?.getBoundingClientRect();
     const page = r('.sv-page'), box = r('.sv-zone-wrap .sv-zone-box'), strip = document.querySelector('.sv-strip');
     const cards = [...document.querySelectorAll('.sv-card')].map((e) => e.getBoundingClientRect());
-    const vis = document.querySelector('.sv-page').cloneNode(true); vis.querySelectorAll('.sr-only').forEach((e) => e.remove()); document.body.append(vis); const text = vis.innerText; vis.remove();
-    const offscreen = [...document.querySelectorAll('.sv-page button, .sv-page a')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && (b.bottom > innerHeight + 1 || b.right > innerWidth + 1) && !e.closest('.sv-strip'); }).map((e) => e.className);
+    // main screen text only: the detail sheet (.sv-backdrop) is an on-demand explanation and may name '정책 선택 비중'
+    const vis = document.querySelector('.sv-page').cloneNode(true); vis.querySelectorAll('.sr-only, .sv-backdrop').forEach((e) => e.remove()); document.body.append(vis); const text = vis.innerText; vis.remove();
+    // the fold: the fixed bottom tab bar's top on phones (it covers the viewport's bottom), else the viewport bottom
+    const nav = document.querySelector('.sv-bottom-nav'); const navFixed = !!nav && getComputedStyle(nav).position === 'fixed' && nav.getBoundingClientRect().height > 0;
+    const fold = navFixed ? nav.getBoundingClientRect().top : innerHeight; const navH = innerHeight - fold;
+    const absBottom = (s) => { const b = r(s); return b && b.height > 0 ? b.bottom + scrollY : null; };
+    const above = { score: absBottom('.sv-head-score'), bso: absBottom('.sv-bso'), zone: absBottom('.sv-zone-wrap .sv-zone-box'), strip: absBottom('.sv-strip'), fold };
+    // every page control can be brought into view: not wider than the viewport, and (at maximum scroll) not left under the fixed tab bar
+    const offscreen = [...document.querySelectorAll('.sv-page button, .sv-page a')].filter((e) => { const b = e.getBoundingClientRect();
+      if (!(b.width > 0) || e.closest('.sv-strip, .sv-backdrop, .sv-bottom-nav')) return false;
+      return b.right > innerWidth + 1 || b.left < -1 || b.bottom + scrollY > se.scrollHeight - navH + 1; }).map((e) => e.className + '|' + e.textContent.trim().slice(0, 12));
+    // controls inside an open sheet: the sheet sits in the viewport, its body scrolls when its content is taller, nothing overflows sideways
+    const sh = document.querySelector('.sv-sheet'), sb = sh?.querySelector('.sv-sheet-body');
+    const sheetOff = !sh ? [] : (() => { const s = sh.getBoundingClientRect(); const bad = [];
+      if (s.top < -1 || s.bottom > innerHeight + 1 || s.right > innerWidth + 1 || s.left < -1) bad.push('sheet-outside-viewport');
+      if (sb && sb.scrollHeight > sb.clientHeight + 1 && !/auto|scroll/.test(getComputedStyle(sb).overflowY)) bad.push('sheet-body-not-scrollable');
+      for (const e of sh.querySelectorAll('button, a')) { const b = e.getBoundingClientRect(); if (b.width > 0 && (b.right > s.right + 1 || b.left < s.left - 1)) bad.push(e.className + '|' + e.textContent.trim().slice(0, 12)); }
+      return bad; })();
+    const paDots = [...document.querySelectorAll('.sv-zone-wrap .sv-pa-dot')];
+    const capNums = [...document.querySelectorAll('.sv-strip .sv-card:not(.pending) .sv-card-cap > span:first-child')].map((e) => parseInt(e.textContent, 10)).filter(Number.isFinite);
+    // a caption line wider than its card is cut off (the second line now carries the result, e.g. '155 km/h · 타구 아웃')
+    const capClip = [...document.querySelectorAll('.sv-strip .sv-card:not(.pending)')].flatMap((card) => { const cb = card.getBoundingClientRect();
+      // the glyphs themselves (a Range), against the card's inner box
+      const cs = getComputedStyle(card), inL = cb.left + parseFloat(cs.borderLeftWidth), inR = cb.right - parseFloat(cs.borderRightWidth);
+      // a line may be shortened with a visible ellipsis inside its own card (full words in the card's aria-label and detail sheet,
+      // 2026-10-17); what must never happen is text painted past the card edge (under the next card) or cut with no mark
+      return [...card.querySelectorAll('.sv-card-cap > span')].map((s) => { const rg = document.createRange(); rg.selectNodeContents(s); const g = rg.getBoundingClientRect();
+        const box = s.getBoundingClientRect(), st = getComputedStyle(s); const clipped = st.overflow === 'hidden' && st.textOverflow === 'ellipsis';
+        return [s, clipped ? box : g, clipped ? null : g]; })
+        .filter(([, b]) => b.width > 0 && (b.left < inL - 0.5 || b.right > inR + 0.5))
+        .map(([s, b]) => `${s.textContent.trim()} (text ${Math.round(b.width)}px, card inner ${Math.round(inR - inL)}px)`); });
+    const capAria = [...document.querySelectorAll('.sv-strip .sv-card:not(.pending):not(.unconfirmed):not(.folded)')].filter((card) => { const last = card.querySelector('.sv-card-cap > span:last-child');
+      const result = last?.textContent.split(' · ').slice(1).join(' · ').trim(); return result && !(card.getAttribute('aria-label') ?? '').includes(result); }).map((c) => c.getAttribute('aria-label'));
+    const sel = document.querySelector('.sv-strip .sv-card[aria-pressed="true"]:not(.pending) .sv-card-cap > span:first-child')?.textContent.trim() ?? '';
     const minFont = Math.min(...[...document.querySelectorAll('.sv-page *')].filter((e) => e.childNodes.length && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && e.getBoundingClientRect().height > 0 && !e.closest('svg')).map((e) => parseFloat(getComputedStyle(e).fontSize)));
     const dots = r('.sv-card .sv-actual circle');
     return { scrollH: se.scrollHeight, innerH: innerHeight, scrollW: se.scrollWidth, innerW: innerWidth,
@@ -76,33 +118,67 @@ async function run(w, h, big, which, state, side, many) {
       live: document.querySelector('.sv-live')?.className ?? '', liveText: document.querySelector('.sv-live')?.textContent.trim() ?? '', liveDisabled: document.querySelector('.sv-live')?.disabled ?? null, notice: document.querySelector('.sv-notice')?.className ?? '',
       players: [...document.querySelectorAll('.sv-player')].map((e) => e.className + '|' + (e.querySelector('.sv-player-name')?.textContent ?? '')),
       dotsN: document.querySelectorAll('.sv-bso i').length, bat: document.querySelector('.sv-zrow .sv-batband.at-left') ? 'left' : document.querySelector('.sv-zrow .sv-batband.at-right') ? 'right' : 'none', listUnder: (() => { const z = r('.sv-zrow .sv-zone-box'), l = r('.sv-reclist'); return !!z && !!l && l.top >= z.bottom; })(),
-      offscreen, minFont, inDrawingLabel: !!document.querySelector('.sv-zone-wrap .sv-actual text'), named: (document.querySelector('.sv-actual-caption b')?.textContent ?? '').trim() };
+      offscreen, minFont, inDrawingLabel: !!document.querySelector('.sv-zone-wrap .sv-actual:not(.sv-pa-dot) text'), named: (document.querySelector('.sv-actual-caption b')?.textContent ?? '').trim(),
+      above, sheetOff, capClip, capAria, mainSingleActual: !!document.querySelector('.sv-zone-wrap .sv-zone .sv-actual:not(.sv-pa-dot)'),
+      miniHidden: [...document.querySelectorAll('.sv-strip .sv-card .sv-zone')].every((e) => getComputedStyle(e).display === 'none'),
+      paNums: paDots.flatMap((g) => (g.querySelector('text')?.textContent ?? '').split('·').map(Number)).sort((a, b) => a - b), paWant: capNums.slice(-3).sort((a, b) => a - b),
+      paDotR: Math.min(...paDots.map((g) => (g.querySelector('circle')?.getBoundingClientRect().width ?? 0) / 2)),
+      sel, sheetTitle: sh?.querySelector('.sv-sheet-head h2')?.textContent.trim() ?? null, sheetModal: sh?.getAttribute('aria-modal') ?? null,
+      sheetRecs: [...(sh?.querySelectorAll('.sv-detail-zone .sv-rec') ?? [])].map((g) => g.getAttribute('data-rank')), sheetActual: !!sh?.querySelector('.sv-detail-zone .sv-actual'),
+      sheetInLabel: !!sh?.querySelector('.sv-detail-zone .sv-actual text'), sheetNamed: (sh?.querySelector('.sv-dl:not(.sv-pair) dd')?.textContent ?? '').trim() };
   });
   const tag = `${w}x${h}${big ? '@125' : ''} ${which}/${state} ${side}${many ? ' 12p' : ''}`;
-  // with 125% text the page may scroll (zone row keeps a 15em minimum instead of shrinking; ui-pitcher-view-1006) — reported, not asserted
-  const fits = !big;
-  (fits ? ok : (c2, m, i) => console.log(c2 ? 'ok  ' : 'INFO', m, c2 ? '' : JSON.stringify(i)))(L.scrollH <= L.innerH + 1 && L.offscreen.length === 0, `${tag} one screen, controls on screen`, { scrollH: L.scrollH, innerH: L.innerH, off: L.offscreen });
+  // with 125% text the layout is reported, not asserted (zone row keeps a 15em minimum instead of shrinking; ui-pitcher-view-1006)
+  const fits = !big; const soft = fits ? ok : (c2, m, i) => console.log(c2 ? 'ok  ' : 'INFO', m, c2 ? '' : JSON.stringify(i));
+  // was 'one screen, controls on screen' (scrollH <= innerH and no control below the fold). The approved phone layout scrolls
+  // vertically under a fixed tab bar, so: the key state (score, count, zone) is above the tab bar without scrolling, the pitch
+  // strip too at 390x844 (display-state-smoke / ws-responsive-smoke precedent; shorter screens may scroll to it), and every control
+  // can be scrolled into view (none stranded under the tab bar or off to the side; sheet controls reachable inside the sheet).
+  const A = L.above, keyAbove = A.score !== null && A.score <= A.fold + 1 && A.bso !== null && A.bso <= A.fold + 1 && A.zone !== null && A.zone <= A.fold + 1;
+  soft(keyAbove && (w !== 390 || h !== 844 || (A.strip !== null && A.strip <= A.fold + 1)), `${tag} score, count and zone above the fold${w === 390 && h === 844 ? ', strip above the tab bar' : ''}`, A);
+  soft(L.offscreen.length === 0 && L.sheetOff.length === 0, `${tag} every control reachable (page scroll / sheet scroll, none under the tab bar)`, { scrollH: L.scrollH, innerH: L.innerH, off: L.offscreen, sheet: L.sheetOff });
   ok(L.scrollW <= L.innerW + 1, `${tag} no horizontal page scroll`, L);
   ok(L.zoneDx !== null && Math.abs(L.zoneDx) <= 2, `${tag} zone centred (dx ${L.zoneDx?.toFixed(2)})`, L.zoneDx);
   ok(L.zoneH >= 110, `${tag} zone height ${Math.round(L.zoneH)}`, L.zoneH);
-  // pitcher's view (ui-pitcher-view-1006): a left-handed batter stands on the screen LEFT (and vice versa); the list is under the zone
-  ok(L.bat === (side === 'L' ? 'left' : 'right') && L.listUnder, `${tag} batter silhouette on the ${side} side, list under the zone (${L.bat})`, [L.bat, L.listUnder]);
-  ok(L.banned.length === 0, `${tag} removed visible texts`, L.banned);
-  ok(L.toLatest === (state === 'pinned' && which === 'live'), `${tag} '최신으로' only on a pinned live view`, [L.toLatest, L.liveText]);
+  // catcher's view (2026-10-13, replaces the pitcher's view): a right-handed batter stands on the screen LEFT (and vice versa); the list is under the zone
+  ok(L.bat === (side === 'R' ? 'left' : 'right') && L.listUnder, `${tag} catcher's view: ${side} batter silhouette on the ${side === 'R' ? 'left' : 'right'}, list under the zone (${L.bat})`, [L.bat, L.listUnder]);
+  ok(L.banned.length === 0, `${tag} removed visible texts (main screen)`, L.banned);
+  // a tapped past card never leaves the latest view on a live game any more, so '최신으로' must not appear in any of these states
+  ok(!L.toLatest, `${tag} no '최신으로' while the main view follows the latest / on a finished game`, [L.toLatest, L.liveText]);
   ok(L.minFont >= 11, `${tag} min text ${L.minFont}px`, L.minFont);
   ok(L.cardsEqual && L.cardsRow, `${tag} ${L.n} equal cards in one row`, L);
-  ok(!L.badge && L.caption.length === 2 && /^\d+\. \S+/.test(L.caption[0]) && !/km|mph/.test(L.caption[0]) && /^(\d+(\.\d)?|–) ?(km\/h|mph)$/.test(L.caption[1]), `${tag} card caption '${L.caption.join(' / ')}'`, L.caption);
-  ok(L.dotR >= 5, `${tag} mini dot radius ${L.dotR?.toFixed(1)}px`, L.dotR);
+  ok(!L.badge && L.caption.length === 2 && /^\d+\. \S+/.test(L.caption[0]) && !/km|mph/.test(L.caption[0]) && /^(\d+(\.\d)?|–) ?(km\/h|mph)( · \S.*)?$/.test(L.caption[1]), `${tag} card caption '${L.caption.join(' / ')}'`, L.caption);
+  ok(L.capClip.length === 0, `${tag} every card caption line stays inside its card (a long line ends in an ellipsis there, never under the next card)`, L.capClip);
+  ok(L.capAria.length === 0, `${tag} a card's full result stays in its aria-label`, L.capAria);
+  // was 'mini dot radius >= 5px' on the card's mini zone. The strip no longer draws a mini zone; where the pitch went is shown by the
+  // main zone's numbered dots (the current PA's last 3 pitches), which must stay readable (r >= 5px) and carry the right numbers.
+  ok(L.miniHidden, `${tag} strip cards draw no mini zone`, L.miniHidden);
+  if (which === 'live') {
+    ok(L.paNums.length > 0 && JSON.stringify(L.paNums) === JSON.stringify(L.paWant) && L.paDotR >= 5, `${tag} main zone numbers the PA's last pitches (${L.paNums.join(',')}), dot radius ${L.paDotR?.toFixed(1)}px`, { got: L.paNums, want: L.paWant, r: L.paDotR });
+  }
   ok(L.dotsN === 7, `${tag} B3 S2 O2 dots`, L.dotsN);
   ok(L.players.length === 2 && L.players[0].includes('away') && L.players[1].includes('home'), `${tag} away left / home right`, L.players);
   ok(!L.prev, `${tag} no previous-pitch marker`, L);
   if (many) ok(L.stripScroll, `${tag} >10 pitches scroll horizontally in the strip`, L);
-  if (state === 'latest' && which === 'live') ok(!L.actual && L.liveText === '시연 중' && !L.live.includes('on'), `${tag} latest: no actual marker, demo label without the LIVE dot`, L);
+  // latest: no single 'actual' marker for a thrown pitch (only the PA's numbered dots), demo label without the LIVE dot
+  if (state === 'latest' && which === 'live') ok(!L.mainSingleActual && !L.inDrawingLabel && L.liveText === '시연 중' && !L.live.includes('on'), `${tag} latest: no single actual marker, demo label without the LIVE dot`, { single: L.mainSingleActual, liveText: L.liveText, live: L.live });
   if (state === 'pinned') {
-    ok(L.recs.length >= 2 && L.recs.some((x) => x.includes('·')) && L.actual, `${tag} all ranks at once + combined label + actual (${L.recs.join(' ')})`, L.recs);
-    ok(!L.inDrawingLabel && L.named.length > 0, `${tag} no label on the actual pitch inside the drawing, pitch named under the zone ('${L.named}')`, [L.inDrawingLabel, L.named]);
-    ok(which === 'live' ? /^최신으로/.test(L.liveText) && L.liveDisabled === false : L.liveText === '종료' && L.liveDisabled === true, `${tag} pinned: header button '${L.liveText}'`, [L.liveText, L.liveDisabled]);
-    if (which === 'live') ok(polls === pollsBefore, `${tag} no fetch while pinned (auto off)`, { polls, pollsBefore });
+    // the tapped pitch opens its detail sheet (all games): all ranks at once with the combined label and the actual, no label on the
+    // actual inside the drawing, the pitch named in words in the sheet
+    ok(L.sheetTitle !== null && L.sel !== '' && L.sheetTitle.includes(`${parseInt(L.sel, 10)}구`), `${tag} tapped card '${L.sel}' opens its detail sheet ('${L.sheetTitle}')`, [L.sel, L.sheetTitle]);
+    ok(L.sheetRecs.length >= 2 && L.sheetRecs.some((x) => x.includes('·')) && L.sheetActual, `${tag} sheet: all ranks at once + combined label + actual (${L.sheetRecs.join(' ')})`, [L.sheetRecs, L.sheetActual]);
+    ok(!L.sheetInLabel && L.sheetNamed.length > 0 && L.sheetNamed.startsWith(L.sel.replace(/^\d+\.\s*/, '')), `${tag} sheet: no label on the actual inside the drawing, pitch named in words ('${L.sheetNamed}')`, [L.sheetInLabel, L.sheetNamed, L.sel]);
+    if (which === 'live') {
+      // live: the main stage stays on the latest (no single actual, the PA's numbered dots stay), the header keeps '시연 중', polling continues
+      ok(!L.mainSingleActual && !L.inDrawingLabel, `${tag} live: main stage stays on the latest pitch while the sheet is open`, { single: L.mainSingleActual, label: L.inDrawingLabel });
+      ok(L.liveText === '시연 중' && L.liveDisabled === false && !L.live.includes('on'), `${tag} live: header button stays '${L.liveText}' (enabled, demo has no LIVE dot)`, [L.liveText, L.liveDisabled, L.live]);
+      ok(polls > pollsBefore, `${tag} live: polling continues while the detail sheet is open`, { polls, pollsBefore });
+    } else {
+      // finished game: the selection also moves the main view (all ranks + combined label + actual, pitch named under the zone)
+      ok(L.recs.length >= 2 && L.recs.some((x) => x.includes('·')) && L.actual, `${tag} all ranks at once + combined label + actual (${L.recs.join(' ')})`, L.recs);
+      ok(!L.inDrawingLabel && L.named.length > 0, `${tag} no label on the actual pitch inside the drawing, pitch named under the zone ('${L.named}')`, [L.inDrawingLabel, L.named]);
+      ok(L.liveText === '종료' && L.liveDisabled === true, `${tag} pinned: header button '${L.liveText}'`, [L.liveText, L.liveDisabled]);
+    }
   }
   if (state === 'stale') ok(L.notice.includes('warn') && L.liveDisabled === false, `${tag} network failure: warn notice, header button still usable`, L);
   if (which === 'final') ok(!L.live.includes('on'), `${tag} finished: LIVE gray`, L.live);

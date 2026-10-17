@@ -5,7 +5,7 @@
 // every request logged and none to /api/, none with ?demo= or ?after=; operator screen not routed / not bundled; a lower publish
 // sequence is discarded; "갱신 지연" appears and clears (publisher / hosting / device clock); 404, network failure and a hung
 // request keep the last state; display.shown=false hides candidates and an unconfirmed pitch is never paired with a recommendation;
-// both placements of publish_seq / published_at; one-screen fit at 375 px (and the other widths); the empty host slot;
+// both placements of publish_seq / published_at; key info on the first screen at 375 px (and the other widths; vertical scroll allowed since 2026-10-13); the empty host slot;
 // and that the API-mode bundle (dist/) still asks /api/service/** only.
 //   npm run build && npm run build:public && node tests/static-publish-smoke.mjs [screenshotDir]
 import { chromium } from 'playwright';
@@ -206,7 +206,32 @@ async function withServer(dist, handle, fn) {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   try { await fn(`http://127.0.0.1:${server.address().port}`); } finally { server.closeAllConnections(); await new Promise((r) => server.close(r)); }
 }
-const fitsOneScreen = (page) => page.evaluate(() => document.scrollingElement.scrollHeight <= window.innerHeight + 1 && document.scrollingElement.scrollWidth <= window.innerWidth + 1);
+/** Game-screen fit. Until 2026-10-13 this asked for one screen with no scroll at all. The approved redesign (docs/decisions.md 2026-10-13,
+ *  UI-CONNECTION-2026-10-13.md) lets the phone screen scroll vertically under a fixed bottom tab bar. What the old check protected
+ *  still has to hold: no sideways scroll; at first paint (scrollY 0) the header (score, LIVE / state), the status line (late /
+ *  disconnected alerts), the count board and the matchup lie fully above the tab bar and the zone (where the recommendation is drawn)
+ *  starts above it; on a tall phone (>= 800 px) the whole core down to the pitch cards does (as ws-responsive-smoke); scrolled to the
+ *  end, nothing is left under the tab bar. Returns '' when it fits, else what does not (printed with the check). */
+const keyOnFirstScreen = (page) => page.evaluate(async () => {
+  const bad = [], root = document.scrollingElement;
+  if (root.scrollWidth > innerWidth + 1) bad.push(`sideways ${root.scrollWidth}>${innerWidth}`);
+  window.scrollTo(0, 0); await new Promise((r) => requestAnimationFrame(() => r()));
+  const nav = document.querySelector('.sv-bottom-nav'), nr = nav?.getBoundingClientRect();
+  const fold = nr && nr.height && getComputedStyle(nav).position === 'fixed' ? nr.top : innerHeight;
+  const box = (sel) => { const e = document.querySelector(sel); const r = e?.getBoundingClientRect(); return r && r.width && r.height ? r : null; };
+  for (const sel of ['.sv-top', '.sv-zone']) if (!box(sel)) bad.push(`${sel} missing`);
+  for (const sel of ['.sv-top', '.sv-notice.line', '.sv-board', '.sv-duel']) { const r = box(sel); if (r && r.bottom > fold + 1) bad.push(`${sel} bottom ${Math.round(r.bottom)} > ${Math.round(fold)}`); }
+  const zone = box('.sv-zone'); if (zone && zone.top >= fold) bad.push(`.sv-zone top ${Math.round(zone.top)} >= ${Math.round(fold)}`);
+  const strip = box('.sv-strip-shell'); if (innerHeight >= 800 && strip && strip.bottom > fold + 1) bad.push(`.sv-strip-shell bottom ${Math.round(strip.bottom)} > ${Math.round(fold)}`);
+  window.scrollTo(0, root.scrollHeight); await new Promise((r) => requestAnimationFrame(() => r()));
+  const fold2 = nav && nav.getBoundingClientRect().height ? nav.getBoundingClientRect().top : innerHeight;
+  let low = 0, who = '';
+  for (const el of document.querySelectorAll('.sv-page *')) { if (el.closest('.sv-bottom-nav, .sv-backdrop, .sr-only')) continue; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+    if (!r.width || !r.height || cs.visibility === 'hidden' || cs.position === 'fixed') continue; if (r.bottom > low) { low = r.bottom; who = String(el.className || el.tagName); } }
+  if (low > fold2 + 1) bad.push(`at the end ${who} bottom ${Math.round(low)} stays under the tab bar (${Math.round(fold2)})`);
+  window.scrollTo(0, 0);
+  return bad.join('; ');
+}).then((bad) => { if (bad) console.error('     fit:', bad); return bad === ''; });
 const noSideScroll = (page) => page.evaluate(() => document.scrollingElement.scrollWidth <= window.innerWidth + 1);
 const dataAsks = (asks) => asks.filter((a) => a.includes('/v1/'));
 const clean = (asks) => asks.every((a) => !a.includes('/api/'));
@@ -224,7 +249,7 @@ await block(async () => {
   const body = await page.locator('body').innerText();
   ok(/2026년 9월 30일 \(수\)/.test(body), 'files: list opens on the newest published date (dates.json + manifest live_dates) that is not in the future');
   ok(await page.getByRole('button', { name: /이전 날짜 2026년 9월 29일/ }).count() === 1, 'files: 2026-09-29 is reachable only through manifest live_dates');
-  ok(await page.locator('.sv-list > ul > li').count() === 2, 'files: both games of v1/games/2026-09-30.json listed');
+  ok(await page.locator('.sv-list > section > ul > li').count() === 2, 'files: both games of v1/games/2026-09-30.json listed');
   const href = await page.locator('.sv-list .sv-card').first().getAttribute('href');
   ok(/^\.\/\?game=\d+$/.test(href), `files: game links use the query form on the page's own directory (${href})`);
   ok(await noSideScroll(page), 'files: list fits 375 px wide');
@@ -236,7 +261,7 @@ await block(async () => {
   const game = await page.locator('body').innerText();
   ok(/컵스/.test(game) && /샌디에이고/.test(game) && /종료/.test(game), 'files: finished game 849843 drawn from v1/game/849843.json');
   ok(await page.locator('.sv-rec-row').count() > 0, 'files: the recorded pre-pitch recommendation of the first pitch is shown');
-  ok(await fitsOneScreen(page), 'files: finished game fits one screen at 375x553');
+  ok(await keyOnFirstScreen(page), 'files: finished game keeps its key info on the first screen at 375x553');
   ok(await page.locator('.sv-notice').count() === 0, 'files: a settled final file (sequence 3, health at 120) shows no connection or late notice');
   const slot = await page.evaluate(() => window.__slot);
   ok(slot.length >= 1 && slot.at(-1).screen === 'game' && slot.at(-1).gamePk === 849843 && slot.at(-1).id === 'pitcheezy-host-slot', 'slot: pitcheezy:host-slot event names the screen and game');
@@ -260,7 +285,7 @@ for (const [width, height] of [[375, 553], [320, 568], [360, 640], [390, 664], [
   const tag = `live ${width}x${height}`;
   ok(await page.locator('.sv-rec-row').count() === 3 && await page.locator('.sv-chip').innerText() === '다음 공 추천', `${tag}: three candidates under the server's 다음 공 추천`);
   ok(await kind(page) === 'ok', `${tag}: status line calm (fresh by the hosting clock)`);
-  ok(await fitsOneScreen(page), `${tag}: one screen, no scroll`);
+  ok(await keyOnFirstScreen(page), `${tag}: key info on the first screen, no sideways scroll`);
   await sleep(2600);
   ok(dataAsks(asks).filter((a) => a.endsWith(`/v1/game/${LIVE}.json`)).length >= 2, `${tag}: the live game file is polled`);
   ok(clean(asks) && bare(asks), `${tag}: no /api/, and ?demo= on the page URL is not forwarded`);
@@ -328,7 +353,7 @@ await block(async () => {
   ok(await page.locator('.sv-rec-row').count() === 3 && await page.locator('.sv-state.held').count() === 1, 'late/host: the last candidates stay, dimmed as held');
   ok(await page.locator('.sv-strip .sv-card').count() > 0 && /컵스|샌디에이고/.test(await page.locator('.sv-head-main').innerText()), 'late/host: score and pitch cards stay on screen');
   ok(await page.locator('.sv-live.on').count() === 0, 'late/host: no LIVE dot while late');
-  ok(await fitsOneScreen(page), 'late/host: one screen at 375x553 while late');
+  ok(await keyOnFirstScreen(page), 'late/host: key info on the first screen at 375x553 while late');
   if (shots) await page.screenshot({ path: path.join(shots, 'static-late-375.png') });
   seq = 21; at = t0 + 94000;
   ok(await waitKind(page, 'ok'), 'late/host: a new publish clears the notice by polling alone');
@@ -377,7 +402,7 @@ await block(async () => {
   await page.goto('http://pz.test/pub/');
   await page.locator('.sv-publish-late').waitFor({ timeout: 5000 }).catch(() => {});
   ok(/갱신 지연/.test(await page.locator('.sv-list').innerText()), 'late/list: a list with a game in play says 갱신 지연 when health.json is old');
-  ok(await page.locator('.sv-list > ul > li').count() === 2 && await noSideScroll(page), 'late/list: the games stay listed, 375 px fits');
+  ok(await page.locator('.sv-list > section > ul > li').count() === 2 && await noSideScroll(page), 'late/list: the games stay listed, 375 px fits');
   await page.goto('http://pz.test/pub/?date=2026-09-29');
   await page.getByText('이 날짜에는 경기가 없어요.').waitFor();
   await sleep(500);
@@ -446,7 +471,7 @@ await block(async () => {
     ok(/연결 끊김/.test(await page.locator('.sv-notice.line').innerText()) && /연결 끊김/.test(await page.locator('.sv-chip').innerText()), `${tag}: line and chip say 연결 끊김`);
     ok(await page.locator('.sv-rec-row').count() === 3 && await page.locator('.sv-state.held').count() === 1, `${tag}: last candidates kept, dimmed`);
     ok(await page.locator('.sv-strip .sv-card').count() === cards && await page.locator('.sv-head-main').innerText() === head, `${tag}: pitch cards and score kept (screen not blanked)`);
-    ok(await fitsOneScreen(page), `${tag}: one screen at 375x553`);
+    ok(await keyOnFirstScreen(page), `${tag}: key info on the first screen at 375x553`);
   };
   for (const m of ['404', 'down', 'html']) {
     mode = m;
@@ -498,14 +523,20 @@ await block(async () => {
   ok(await waitPitch(page, '849843:11:2'), 'closed: loaded');
   ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone .sv-rec').count() === 0, 'closed: recommendation_shown=false → no candidate rows and no target marks');
   ok(/확인 중$/.test(await page.locator('.sv-chip').innerText()), 'closed: the slot says 확인 중');
-  ok(await fitsOneScreen(page), 'closed: one screen at 375x553');
+  ok(await keyOnFirstScreen(page), 'closed: key info on the first screen at 375x553');
   const un = page.locator('.sv-strip .sv-card.unconfirmed');
   ok(await un.count() === 1 && /확인 중/.test(await un.innerText()), 'closed: the unconfirmed pitch card says 확인 중, no pitch type or speed');
+  // Since the 2026-10-13 redesign a past pitch of a live game opens in a detail sheet and the live stage behind it stays; the
+  // fail-closed rule is checked on both: neither shows a recommendation, a target mark, a pitch location, a type or a speed.
   await un.click();
-  await page.locator('.sv-actual-caption.pending').waitFor();
-  ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone .sv-rec').count() === 0 && await page.locator('.sv-zone .sv-actual').count() === 0, 'closed: selecting it shows no recommendation and no pitch location');
-  ok(/확인 중/.test(await page.locator('.sv-pitch-summary').innerText()), 'closed: its summary says 확인 중');
-  ok(await fitsOneScreen(page), 'closed: one screen at 375x553 on the unconfirmed pitch');
+  const sheet = page.getByRole('dialog'); await sheet.waitFor();
+  const sheetText = await sheet.innerText();
+  ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zone .sv-rec').count() === 0 && await page.locator('.sv-zone .sv-actual').count() === 0
+    && await sheet.locator('.sv-table, .sv-detail-zone, .sv-rec, .sv-actual').count() === 0 && !/km\/h|mph|정책 선택 비중/.test(sheetText),
+    'closed: selecting it shows no recommendation and no pitch location (detail sheet and the stage behind it)');
+  ok(/이 공을 다시 확인하고 있어요/.test(sheetText), 'closed: its detail says it is being checked (확인 중)');
+  await sheet.getByRole('button', { name: '닫기' }).click(); await sheet.waitFor({ state: 'detached' });
+  ok(await keyOnFirstScreen(page), 'closed: key info on the first screen at 375x553 after looking at the unconfirmed pitch');
   which = 'none';
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   await page.locator('.sv-state').waitFor();
@@ -1112,16 +1143,25 @@ await block(async () => {
   } });
   await page.goto(`http://pz.test/pub/?game=${LIVE}`);
   ok(await waitPitch(page, '849843:11:2'), 'pinned: loaded, following the latest');
+  // Since the 2026-10-13 redesign (decisions 2026-10-13) a past pitch of a live game opens in a detail sheet while the live stage
+  // behind it keeps following the latest (LIVE stays on), so the file keeps being read at the live cadence. What this scenario
+  // protects is unchanged: the open past pitch is redrawn from every new file, blanked when the server turns it back to 확인 중,
+  // and the view stays on that pitch (no jump to another one).
   const cards = page.locator('.sv-strip .sv-card:not(.pending)');
-  await cards.last().click();                                       // the viewer pins the last thrown pitch
-  ok(/최신으로/.test(await page.locator('.sv-live').innerText()) && await page.locator('.sv-actual-caption:not(.pending)').count() === 1 && await page.locator('.sv-zone-wrap .sv-actual').count() === 1, 'pinned: the past pitch shows its type and location');
+  await cards.last().click();                                       // the viewer opens the last thrown pitch
+  const sheet = page.getByRole('dialog'); await sheet.waitFor();
+  const label = fx.live.pitches.at(-1).actual.pitch_label, title = await sheet.locator('h2').innerText();
+  ok(await sheet.locator('.sv-detail-zone .sv-actual').count() === 1 && (await sheet.innerText()).includes(label) && /km\/h|mph/.test(await sheet.innerText()),
+    `pinned: the past pitch shows its type and location (${label}, in its detail sheet)`);
+  ok(await page.locator('.sv-live.on').count() === 1 && await page.locator('.sv-pitch-summary .sv-rec-row').count() === 3, 'pinned: the live stage behind the sheet keeps the latest recommendation and LIVE');
   const n0 = counts.get(`game/${LIVE}.json`); await sleep(4000);
   const pinnedReads = counts.get(`game/${LIVE}.json`) - n0;
-  ok(pinnedReads >= 2 && pinnedReads <= 4, `pinned: the game file is still read while pinned, at the slower configured interval (${pinnedReads} reads in 4 s; test config 1.5 s, live poll 2 s is off)`);
+  ok(pinnedReads >= 2 && pinnedReads <= 4, `pinned: the game file is still read while a past pitch is open (${pinnedReads} reads in 4 s; live poll 2 s)`);
   mode = 'unsure';
-  ok(await page.locator('.sv-actual-caption.pending').waitFor({ timeout: 6000 }).then(() => true, () => false), 'pinned: the server turns that pitch back to 확인 중 → the pinned view says 확인 중');
-  ok(await page.locator('.sv-zone-wrap .sv-actual').count() === 0 && await page.locator('.sv-strip .sv-card.unconfirmed').count() === 1 && await page.locator('.sv-rec-row').count() === 0, 'pinned: its location, type and paired recommendation are gone (fail closed)');
-  ok(/최신으로/.test(await page.locator('.sv-live').innerText()), 'pinned: the view stays pinned (no jump to the latest)');
+  ok(await sheet.getByText('이 공을 다시 확인하고 있어요', { exact: false }).waitFor({ timeout: 6000 }).then(() => true, () => false), 'pinned: the server turns that pitch back to 확인 중 → the open view says 확인 중');
+  ok(await sheet.locator('.sv-detail-zone, .sv-actual, .sv-table, .sv-rec').count() === 0 && !(await sheet.innerText()).includes(label) && !/km\/h|mph/.test(await sheet.innerText())
+    && await page.locator('.sv-strip .sv-card.unconfirmed').count() === 1 && await page.locator('.sv-zone-wrap .sv-actual').count() === 0, 'pinned: its location, type and paired recommendation are gone (fail closed, sheet and stage)');
+  ok(await sheet.count() === 1 && await sheet.locator('h2').innerText() === title, `pinned: the view stays on that pitch (no jump to another one: ${title})`);
   mode = 'final'; await sleep(4000);
   const n1 = counts.get(`game/${LIVE}.json`); await sleep(5000);
   ok(counts.get(`game/${LIVE}.json`) > n1, `pinned: final legacy files keep checking for corrections (${counts.get(`game/${LIVE}.json`) - n1} more in 5 s)`);
@@ -1145,7 +1185,7 @@ await block(async () => {
   ok(!/undefined|null|NaN/.test(await sheet.innerText()), 'no-pitch PA: no leaked value');
   await sheet.getByRole('button', { name: '닫기' }).click();
   ok(await page.locator('.sv-inning').innerText() === before.inning && await page.locator('.sv-strip .sv-card').count() === before.cards && await page.locator('.sv-duel').innerText() === before.duel, 'no-pitch PA: the screen behind does not jump to another plate appearance');
-  ok(await fitsOneScreen(page) && errors.length === 0, `no-pitch PA: one screen at 375x553, no page errors ${errors.join(' | ')}`);
+  ok(await keyOnFirstScreen(page) && errors.length === 0, `no-pitch PA: key info on the first screen at 375x553, no page errors ${errors.join(' | ')}`);
   await context.close();
 }, 'no-pitch-pa');
 
@@ -1445,7 +1485,7 @@ if (existsSync(path.join(distApi, 'index.html'))) {
   ok(asks.includes('/api/service/dates?demo=abc') && asks.includes('/api/service/games?date=2026-09-30&demo=abc') && asks.includes('/api/service/games/849843?demo=abc'), 'api mode: the three service routes are asked, with ?demo= forwarded');
   ok(asks.every((a) => !a.includes('/v1/')), 'api mode: no published file is asked');
   ok(await page.locator('#pitcheezy-host-slot').count() === 0, 'api mode: no host slot');
-  ok(await fitsOneScreen(page), 'api mode: one screen at 375x553');
+  ok(await keyOnFirstScreen(page), 'api mode: key info on the first screen at 375x553');
   ok(errors.length === 0, `api mode: no page errors ${errors.join(' | ')}`);
   await context.close();
 } else ok(false, `api mode: ${distApi} is missing (run npm run build)`);
