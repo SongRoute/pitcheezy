@@ -680,3 +680,9 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 /* 정정됨 on a pitch card (the 10/13 strip draws no mini zone): the tag sits in the card's top corner and the caption starts below it. */
 .sv-game .sv-strip .sv-card:has(.sv-card-tag){justify-content:flex-end;padding-bottom:4px}
 .sv-game .sv-strip .sv-card-tag{top:2px;right:2px;font-size:10px;line-height:1.25}
+/* ---- pitch card captions (2026-10-17, workstream E; tests/compact-rev3-fit.mjs) ----
+   Since 2026-10-13 a card's second line is "speed · result". A long result ("138 km/h · 루킹 스트라이크") ran past the 100 px card and
+   under the next card. Each line now ends in an ellipsis inside its own card; the full words stay in the card's aria-label and its
+   detail sheet. */
+.sv-game .sv-strip .sv-card .sv-card-cap{max-width:100%;min-width:0}
+.sv-game .sv-strip .sv-card .sv-card-cap>span{max-width:100%;overflow:hidden;text-overflow:ellipsis}

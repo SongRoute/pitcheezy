@@ -5,7 +5,7 @@
 // first answer (which is never drawn) and every later request carries it; first-open prompt once; folded until synced with the
 // recommendation still showing; sync by tap (mocked endpoint: wait → one more tap → a number); ± adjust; persistence across a
 // reload; storage blocked; a changed delay drops everything downloaded (no newer pitch stays, no false "추천이 갱신됐어요");
-// buffering view; list without a live score; one screen at the five sizes; the PUBLIC build (VITE_PUBLISH_BASE) shows no delay
+// buffering view; list without a live score; key info on the first screen at the five sizes (vertical scroll allowed since 2026-10-13); the PUBLIC build (VITE_PUBLISH_BASE) shows no delay
 // UI and sends no delay even when a payload says enabled.
 //   npm run build && node tests/viewer-delay-smoke.mjs [screenshotDir]
 import { chromium } from 'playwright';
@@ -90,7 +90,33 @@ function server({ enabled = true, features = {}, tap = null, buffering = false }
 const gameAsks = (asks) => asks.filter((u) => u.pathname === GAME);
 const delays = (asks) => gameAsks(asks).map((u) => u.searchParams.get('delay'));
 const stored = (page) => page.evaluate(() => { try { return localStorage.getItem('pitcheezy.viewer'); } catch { return 'BLOCKED'; } });
-const fitsOneScreen = (page) => page.evaluate(() => document.scrollingElement.scrollHeight <= window.innerHeight + 1 && document.scrollingElement.scrollWidth <= window.innerWidth + 1);
+/* same rule as static-publish-smoke.mjs (kept in step by hand) */
+/** Game-screen fit. Until 2026-10-13 this asked for one screen with no scroll at all. The approved redesign (docs/decisions.md 2026-10-13,
+ *  UI-CONNECTION-2026-10-13.md) lets the phone screen scroll vertically under a fixed bottom tab bar. What the old check protected
+ *  still has to hold: no sideways scroll; at first paint (scrollY 0) the header (score, LIVE / state), the status line (late /
+ *  disconnected alerts), the count board and the matchup lie fully above the tab bar and the zone (where the recommendation is drawn)
+ *  starts above it; on a tall phone (>= 800 px) the whole core down to the pitch cards does (as ws-responsive-smoke); scrolled to the
+ *  end, nothing is left under the tab bar. Returns '' when it fits, else what does not (printed with the check). */
+const keyOnFirstScreen = (page) => page.evaluate(async () => {
+  const bad = [], root = document.scrollingElement;
+  if (root.scrollWidth > innerWidth + 1) bad.push(`sideways ${root.scrollWidth}>${innerWidth}`);
+  window.scrollTo(0, 0); await new Promise((r) => requestAnimationFrame(() => r()));
+  const nav = document.querySelector('.sv-bottom-nav'), nr = nav?.getBoundingClientRect();
+  const fold = nr && nr.height && getComputedStyle(nav).position === 'fixed' ? nr.top : innerHeight;
+  const box = (sel) => { const e = document.querySelector(sel); const r = e?.getBoundingClientRect(); return r && r.width && r.height ? r : null; };
+  for (const sel of ['.sv-top', '.sv-zone']) if (!box(sel)) bad.push(`${sel} missing`);
+  for (const sel of ['.sv-top', '.sv-notice.line', '.sv-board', '.sv-duel']) { const r = box(sel); if (r && r.bottom > fold + 1) bad.push(`${sel} bottom ${Math.round(r.bottom)} > ${Math.round(fold)}`); }
+  const zone = box('.sv-zone'); if (zone && zone.top >= fold) bad.push(`.sv-zone top ${Math.round(zone.top)} >= ${Math.round(fold)}`);
+  const strip = box('.sv-strip-shell'); if (innerHeight >= 800 && strip && strip.bottom > fold + 1) bad.push(`.sv-strip-shell bottom ${Math.round(strip.bottom)} > ${Math.round(fold)}`);
+  window.scrollTo(0, root.scrollHeight); await new Promise((r) => requestAnimationFrame(() => r()));
+  const fold2 = nav && nav.getBoundingClientRect().height ? nav.getBoundingClientRect().top : innerHeight;
+  let low = 0, who = '';
+  for (const el of document.querySelectorAll('.sv-page *')) { if (el.closest('.sv-bottom-nav, .sv-backdrop, .sr-only')) continue; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+    if (!r.width || !r.height || cs.visibility === 'hidden' || cs.position === 'fixed') continue; if (r.bottom > low) { low = r.bottom; who = String(el.className || el.tagName); } }
+  if (low > fold2 + 1) bad.push(`at the end ${who} bottom ${Math.round(low)} stays under the tab bar (${Math.round(fold2)})`);
+  window.scrollTo(0, 0);
+  return bad.join('; ');
+}).then((bad) => { if (bad) console.error('     fit:', bad); return bad === ''; });
 const overflow = (page) => page.evaluate(() => [document.scrollingElement.scrollHeight - window.innerHeight, document.scrollingElement.scrollWidth - window.innerWidth]);
 const box = (page, sel) => page.evaluate((s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r ? [r.left, r.top, r.width, r.height].map((v) => Math.round(v * 2) / 2).join(',') : 'none'; }, sel);
 const lineSpill = (page) => page.evaluate(() => { const l = document.querySelector('.sv-notice.line'); const r = l.getBoundingClientRect();
@@ -133,14 +159,19 @@ for (const [name, make] of [['switch off', () => server({ enabled: false })], ['
   await page.locator('.sv-sync-foot [data-act="later"]').click();
   await page.locator('.sv-sync').waitFor({ state: 'detached' });
   await page.locator('.sv-pitch-summary .sv-rec-row').first().waitFor();
-  ok(await page.locator('.sv-fold').count() === 1 && (await page.locator('.sv-fold').innerText()).trim() === '중계 맞추기 후 표시', 'unsynced: the actual pitch / result row is folded ("중계 맞추기 후 표시")');
+  // Since the 2026-10-13 redesign the stage's idle "실제 투구" line (.sv-state-idle, which holds the .sv-fold button) is not drawn on the
+  // game screen (display:none, decisions 2026-10-13): the folded state stays in the DOM, and what the viewer sees is checked instead —
+  // no thrown pitch described on the stage, folded cards, and the status line's 중계 맞추기 entry (below).
+  ok(await page.locator('.sv-fold').count() === 1 && (await page.locator('.sv-fold').textContent()).trim() === '중계 맞추기 후 표시'
+    && !/km\/h|mph/.test(await page.locator('.sv-stage').innerText()) && await page.locator('.sv-zone-wrap .sv-actual').count() === 0,
+    'unsynced: the actual pitch / result is folded ("중계 맞추기 후 표시"); nothing of it is drawn on the stage');
   ok(await page.locator('.sv-pitch-summary .sv-rec-row').count() >= 1, 'unsynced: the recommendation still shows');
   const n = await cards(page).count();
   ok(n >= 1 && await page.locator('.sv-strip .sv-card.folded').count() === n && /맞춘 뒤 표시/.test(await cards(page).first().innerText()), `unsynced: every thrown-pitch card is folded (${n})`);
   ok(!/km\/h|mph/.test(await page.locator('.sv-strip').innerText()), 'unsynced: no pitch speed or type on the cards');
   ok(/30초 늦춰 보는 중/.test(await page.locator('.sv-line-text').innerText()) && (await page.locator('.sv-sync-open').innerText()).trim() === '중계 맞추기', 'unsynced: the status line says 30초 늦춰 보는 중 and offers 중계 맞추기');
   ok(await page.locator('.sv-head-score strong').first().innerText() !== '–' && await page.locator('.sv-bso').count() === 1, 'unsynced: score and count stay');
-  ok(await fitsOneScreen(page) && (await lineSpill(page)).length === 0, 'unsynced: one screen, nothing spills from the status line');
+  ok(await keyOnFirstScreen(page) && (await lineSpill(page)).length === 0, 'unsynced: key info on the first screen, nothing spills from the status line');
   if (shots) await page.screenshot({ path: path.join(shots, '02-unsynced-folded-row-with-recommendation-390x844.png') });
   await page.locator('.sv-inning').click();
   ok((await page.locator('.sv-pa-item:not(.open) .sv-pa-result').allInnerTexts()).every((t) => /^중계 맞추기 후 표시 · /.test(t)), 'unsynced: finished plate appearances do not say how they ended');
@@ -151,9 +182,10 @@ for (const [name, make] of [['switch off', () => server({ enabled: false })], ['
   await page.waitForTimeout(800);
   ok(await page.locator('.sv-sync').count() === 0 && await page.locator('.sv-fold').count() === 1, 'reload: not asked a second time; still folded');
   // ---- sync by tap
-  await page.locator('.sv-fold').click();
+  // the folded pitch leads to syncing (the folded row is not drawn since 2026-10-13; a folded card does the same job)
+  await cards(page).first().click();
   await page.locator('.sv-sync').waitFor();
-  ok(true, 'the folded row opens the sync sheet');
+  ok(/미트에 들어오는 순간 누르기/.test(await page.locator('.sv-sync').innerText()) && !/km\/h|mph/.test(await page.locator('.sv-sync').innerText()), 'a folded pitch card opens the sync sheet (no pitch shown)');
   await page.locator('.sv-sync-tap').click();
   await page.waitForFunction(() => /한 번 더/.test(document.querySelector('.sv-sync-status')?.textContent ?? ''));
   ok(true, 'tap 1: "다음 공에서 한 번 더 눌러 주세요"');
@@ -326,7 +358,7 @@ for (const [name, make] of [['switch off', () => server({ enabled: false })], ['
   const text = await page.locator('.sv-page').innerText();
   ok(/내 중계 시점까지 기다리는 중이에요 \(약 23초\)/.test(text) && /내 중계 시점이 되면 보여 드려요/.test(text), 'buffering: one calm sentence from the server');
   ok((await page.locator('.sv-head-score strong').allInnerTexts()).every((t) => t.trim() === '–') && await cards(page).count() === 0 && await page.locator('.sv-rec-row').count() === 0, 'buffering: no score, no pitch, no recommendation');
-  ok(/LIVE/.test(await page.locator('.sv-live').innerText()) && await fitsOneScreen(page), 'buffering: still a live screen, one screen');
+  ok(/LIVE/.test(await page.locator('.sv-live').innerText()) && await keyOnFirstScreen(page), 'buffering: still a live screen, key info on the first screen');
   if (shots) await page.screenshot({ path: path.join(shots, '05-buffering-390x844.png') });
   s.buffering = false;
   await page.locator('.sv-pitch-summary .sv-rec-row').first().waitFor({ timeout: 6000 });
