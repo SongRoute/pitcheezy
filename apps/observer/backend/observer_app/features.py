@@ -13,8 +13,10 @@ on the direct path to this server (phone demo, internal) and is switched on by `
 With ``viewer_delay`` off its other keys are inert: ``?delay=`` is ignored on the game, list and tap routes (the tap
 route answers 404), nothing is recorded at receipt and the public subset reports no prompt and no fold.
 
-Only ``viewer_delay`` has behaviour in this module's callers so far; ``profile_reference`` and
-``step5_expectation`` are carried for the code that consumes them.
+``profile_reference`` (A2 card, ``service_extras``) and ``step5_expectation`` are consumed by ``service_extras``.
+The public publisher layers its own ``publish_config.json`` ``profile_reference`` block between
+``live_config.json`` and the environment (``features(base=...)``, owner decision 2026-10-18: the card is on for the
+World Series publish); the environment still wins, so ``PITCHEEZY_OBSERVER_PROFILE_REFERENCE=0`` turns it off.
 
 Environment (0/1 unless noted):
   PITCHEEZY_OBSERVER_VIEWER_DELAY            1 = viewer delay on the fan screen (``/api/service/games/{pk}?delay=``)
@@ -93,10 +95,18 @@ def _cap(name, current):
     return number
 
 
-def _configured(live_config):
-    """``DEFAULTS`` with the well-typed values of ``live_config['features']``; anything else keeps the default."""
+def _configured(live_config, base=None):
+    """``DEFAULTS`` with the well-typed values of ``live_config['features']``, then of ``base`` (a process's own
+    layer, e.g. the publisher's ``publish_config.json`` ``profile_reference`` block); anything else keeps the
+    value below it."""
     out = copy.deepcopy(DEFAULTS)
-    given = live_config.get('features') if isinstance(live_config, dict) else None
+    for layer, name in ((live_config.get('features') if isinstance(live_config, dict) else None, 'live_config.features'),
+                        (base, 'base')):
+        _apply(out, layer, name)
+    return out
+
+
+def _apply(out, given, name):
     for block, defaults in DEFAULTS.items():
         values = given.get(block) if isinstance(given, dict) else None
         for key, default in defaults.items():
@@ -116,15 +126,16 @@ def _configured(live_config):
             if ok:
                 out[block][key] = copy.deepcopy(value)
             else:
-                _warn(f'live_config.features.{block}.{key}', repr(value))
-    return out
+                _warn(f'{name}.{block}.{key}', repr(value))
 
 
-def features(live_config=None):
-    """The switches in force now: config, then environment. Never raises."""
+def features(live_config=None, base=None):
+    """The switches in force now: ``live_config.json``, then ``base`` (a process's own configuration layer; the
+    public publisher passes its ``publish_config.json`` ``profile_reference`` block), then environment. Never
+    raises."""
     if live_config is None:
         from .live_feed import LIVE_CONFIG as live_config
-    out = _configured(live_config)
+    out = _configured(live_config, base)
     viewer, profile, step5 = out['viewer_delay'], out['profile_reference'], out['step5_expectation']
     viewer['enabled'] = _flag('PITCHEEZY_OBSERVER_VIEWER_DELAY', viewer['enabled'])
     viewer['default_s'] = _seconds('PITCHEEZY_OBSERVER_VIEWER_DELAY_DEFAULT_S', viewer['default_s'])

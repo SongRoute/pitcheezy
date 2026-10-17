@@ -79,11 +79,14 @@ def _timed_replay(game_pk, **options):
 
 def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=None, watch_dir=None,
                timed_replay=_timed_replay, feed_dir=None, demo_dir=None, intent_dir=None, demo_wall=None,
-               service_delay_s=0, service_wall=None):
+               service_delay_s=0, service_wall=None, feature_base=None):
     """``service_delay_s``: the one delay every viewer of ``/api/service/games/{pk}`` and of the game list gets
     (seconds behind the game's own event times). The routes keep 0; the public publisher passes its configured fixed delay.
     ``service_wall``: the clock of the service routes' 20 s schedule cache (None = the machine's; an offline
-    replay passes its simulated clock so the game list ages with the replayed game, not with the run)."""
+    replay passes its simulated clock so the game list ages with the replayed game, not with the run).
+    ``feature_base``: this process's own layer of owner switches between ``live_config.json`` and the environment
+    (``features.features(base=...)``); the public publisher passes its ``publish_config.json`` ``profile_reference``
+    block. None = the server's switches as before."""
     injected = service is not None
     if start_worker is None:
         start_worker = not injected
@@ -288,7 +291,9 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     armb = live_policy if live_policy is not None else LiveArmB()
     armb_enabled = lambda: os.environ.get('PITCHEEZY_OBSERVER_LIVE_ARMB', '1') != '0'
     app.state.live_policy = armb
-    app.state.service_extras = service_extras.Extras()
+    flags = features.features if feature_base is None else (lambda: features.features(base=feature_base))
+    app.state.features = flags
+    app.state.service_extras = service_extras.Extras(flags)
 
     live_lock = threading.Lock()  # sync routes run in a thread pool; the one live feed is built once
 
@@ -680,7 +685,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
 
     def viewer_delay(feed, delay):
         """The delay a fan request is served at: 0 unless the feature is on; never above the feed's buffer."""
-        if not delay or not features.features()['viewer_delay']['enabled']:
+        if not delay or not flags()['viewer_delay']['enabled']:
             return 0.0
         return min(max(0.0, float(delay)), float(getattr(feed, 'max_delay_s', 0.0)))
 
@@ -693,7 +698,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         feed = live_parts()
         used = service_delay_s or viewer_delay(feed, delay)
         entry, wait = feed.snapshot(game_pk, used)
-        if used and features.features()['viewer_delay']['record_at_receipt']:
+        if used and flags()['viewer_delay']['record_at_receipt']:
             try:
                 record_newest(feed, int(game_pk))
             except Exception:  # noqa: BLE001 - a side duty of someone else's request: it must never fail that request
@@ -730,7 +735,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
         It does not poll upstream and registers no viewer: the open game screen keeps the feed moving."""
         from .live_feed import pitch_arrivals, tap_sync
         headers = {'Cache-Control': 'no-store'}
-        if not features.features()['viewer_delay']['enabled']:
+        if not flags()['viewer_delay']['enabled']:
             return JSONResponse({'detail': '이 실행에서는 중계 맞추기를 쓰지 않아요.'}, status_code=404, headers=headers)
         if game_pk in demo_clock.active_games():
             return JSONResponse({'detail': '이 경기는 지금 다른 화면에서 진행 중입니다.'}, status_code=423, headers=headers)
@@ -798,7 +803,7 @@ def create_app(service=None, *, start_worker=None, live_feed=None, live_policy=N
     app.state.setups = setups
     app.state.live_parts = live_parts
     app.state.service_bodies = service_api.register(app, archive=service_api.GameArchive(feed_dir, watch, setups), clock=demo_clock,
-                         features=features.features, live_extras=app.state.service_extras.attach,
+                         features=flags, live_extras=app.state.service_extras.attach,
                          delayed_card=lambda card, delay: app.state.service_extras.list_card(card, delay, live_parts()),
                          schedule=None if live_feed is False else (lambda day: live_parts().schedule(day)),
                          live_feed=None if live_feed is False else service_live_feed,

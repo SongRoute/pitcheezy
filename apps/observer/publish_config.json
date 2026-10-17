@@ -21,6 +21,11 @@
   "live_days_back": 1,
   "live_days_ahead": 1,
   "live_days_note": "PROVISIONAL. KST dates around today whose game list and unfinished games are rebuilt every cycle (today-back .. today+ahead). --date on the command line replaces this window.",
+  "profile_reference": {
+    "enabled": true,
+    "profile_sources": null
+  },
+  "profile_reference_note": "A2 reference card (next.reference: past pitch-type frequencies of a pitcher the recommender does not support; no rank, no target location, no model). ON for the World Series publish (Song decision 2026-10-18). profile_sources null = taken from env PITCHEEZY_OBSERVER_PROFILE_SOURCES (os.pathsep-separated; the operator points it at the daily refresh pointer LATEST.json, see docs/pm/service/ws-operations-runbook.md); never a path in the repository. The reader rereads the pointer at most every 30 s and uses the newest committed profile whose cutoff is strictly before the game's officialDate. Kept as before: cell minimum 20 pitches per count x batter side (provisional), broad (all-count) fallback OFF. A card whose cutoff is more than 2 days before officialDate is marked stale and the screen shows its date up front. With no usable source the card is simply absent. Env PITCHEEZY_OBSERVER_PROFILE_REFERENCE=0 turns it off without editing this file.",
   "upload": {
     "enabled": false,
     "base_url": null,

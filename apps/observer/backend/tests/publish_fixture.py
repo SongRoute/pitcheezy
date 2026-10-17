@@ -198,6 +198,43 @@ class RichPolicy(Policy):
         return result
 
 
+class SyntheticReference:
+    """Stand-in for ``profile_reference.ProfileReference`` in the contract world (the real module executes pinned
+    Step 5 source that only exists on the PM machine). It answers with the full card the real module builds,
+    provenance included, so the export shows what ``service_extras`` keeps of it. The numbers are synthetic."""
+
+    def __init__(self, as_of='2026-10-04', stale=False):
+        self.as_of, self.stale, self.asked = as_of, stale, []
+
+    def card(self, pitcher_id, batter_side, balls, strikes, official_date, *, pitcher_hand=None):
+        self.asked.append((pitcher_id, batter_side, balls, strikes, official_date, pitcher_hand))
+        return {'kind': 'profile_reference', 'reason_code': 'unsupported/profile_reference',
+                'title': '이 투수가 올해 이 카운트·타자 방향에서 자주 던진 공', 'chip': '참고 · 기록 통계',
+                'items': [{'pitch_type': 'FF', 'pitch_label': '포심', 'share': .55, 'share_pct': 55, 'count': 22},
+                          {'pitch_type': 'SL', 'pitch_label': '슬라이더', 'share': .3, 'share_pct': 30, 'count': 12}],
+                'other': {'share': .15, 'count': 6, 'share_pct': 15},
+                'sample': {'pitches': 40, 'batter_side': batter_side, 'scope': 'count_and_batter_side',
+                           'balls': balls, 'strikes': strikes},
+                'as_of': self.as_of, 'stale': self.stale,
+                'note': '올해 10월 4일까지 이 투수가 같은 상황에서 실제로 던진 공 40개의 비율입니다. 추천이나 다음 공 예측이 아닙니다.',
+                'provenance': {'profile_sha256_prefix': '0'*12, 'role': 'SERVICE_PROFILE_STRICTLY_PRIOR',
+                               'cutoff': self.as_of, 'thresholds': {'cell_min_pitches': 20}}}
+
+
+REFERENCE_ON = {'enabled': True, 'profile_sources': ['synthetic-profile-pointer']}
+
+
+def reference_world(tmp, reference=None, **config):
+    """A live game whose pending pitch belongs to a pitcher the policy does not know (``unknown_pitcher``), with the
+    publisher's A2 switch on and ``SyntheticReference`` behind it."""
+    world = World(tmp, first=snap('20261005_100100', wall=BASE, second=True), skip_unchanged_live=False,
+                  **({'profile_reference': REFERENCE_ON} | config))
+    world.reference = reference or SyntheticReference()
+    world.app.state.service_extras.reference = lambda block: world.reference if block.get('profile_sources') else None
+    world.policy.status = 'UNSUPPORTED_UNKNOWN_PITCHER'
+    return world
+
+
 def collect(tmp):
     """``{kind: [(example file name, published body), ...]}``: one live game walked from before its first pitch to
     its end through the states the fan screen has, and the archive game. Every body goes
@@ -259,6 +296,12 @@ def collect(tmp):
         out['game'].append(('game-live-unsupported.json', unsupported.game()))
     finally:
         unsupported.close()
+    referenced = reference_world(tmp/'reference')
+    try:
+        referenced.cycle()
+        out['game'].append(('game-live-unsupported-reference.json', referenced.game()))
+    finally:
+        referenced.close()
     odd = World(tmp/'odd', skip_unchanged_live=False)  # a setup source whose commit is not a hash: published as null
     try:
         odd.write_setup(commit='main')
@@ -277,7 +320,8 @@ def collect(tmp):
 
 EXAMPLES = {'manifest': ('manifest-live.json',), 'health': ('health-live.json',), 'dates': ('dates.json',),
             'games': ('games-live.json', 'games-archive.json'),
-            'game': ('game-pregame.json', 'game-live.json', 'game-live-unconfirmed.json', 'game-live-unsupported.json', 'game-disconnected.json',
+            'game': ('game-pregame.json', 'game-live.json', 'game-live-unconfirmed.json', 'game-live-unsupported.json',
+                     'game-live-unsupported-reference.json', 'game-disconnected.json',
                      'game-between-innings.json', 'game-final.json', 'game-final-archive.json'),
             'setup': ('setup.json',)}
 

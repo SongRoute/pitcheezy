@@ -30,7 +30,7 @@ PITCHER_REASONS = ('unknown_pitcher', 'no_supported_pitch_types')
 # What of each module's answer goes on the fan payload (a published body is a public contract: only what a reader
 # of it needs). Operator facts (profile hash and thresholds, attempt key, model hashes, omitted leaves) stay in the
 # modules' own ``health()`` / ``status()`` under ``/api/health``.
-REFERENCE_PUBLIC = ('kind', 'reason_code', 'chip', 'title', 'items', 'other', 'sample', 'as_of', 'note')
+REFERENCE_PUBLIC = ('kind', 'reason_code', 'chip', 'title', 'items', 'other', 'sample', 'as_of', 'stale', 'note')
 REFERENCE_ITEM, REFERENCE_SAMPLE = ('pitch_type', 'pitch_label', 'share_pct'), ('pitches', 'batter_side', 'balls', 'strikes')
 EXPECTATION_PUBLIC = ('kind', 'lead', 'pitch_type', 'pitch_label', 'items', 'text', 'note', 'explain', 'basis', 'recorded')
 RECENT_S = 12*3600  # the list guard only concerns games that started this recently

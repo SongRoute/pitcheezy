@@ -5,7 +5,9 @@
  *  - `pitches[i].expectation`: one quiet sentence in the detail sheet of a past key-moment pitch (B2). */
 type Raw = Record<string, any>;
 export type ReferenceItem = { pitch_type: string; label: string; pct: number };
-export type ReferenceCard = { chip: string; title: string; items: ReferenceItem[]; other_pct: number | null; sample: string | null; note: string };
+/** `stale_label`: "기록 기준 MM/DD", only when the server marks the card stale (its profile cutoff is more than 2 days before the game
+ *  date: daily refreshes were missed), so an old record is dated up front, not only in the sheet. */
+export type ReferenceCard = { chip: string; title: string; items: ReferenceItem[]; other_pct: number | null; sample: string | null; note: string; stale_label: string | null };
 export type Expectation = { text: string; note: string | null; explain: string | null };
 
 const str = (v: unknown): string | null => typeof v === 'string' && v.trim() ? v.trim() : null;
@@ -31,7 +33,7 @@ export function normalizeReference(raw: Raw | null | undefined): ReferenceCard |
   const n = typeof card.sample?.pitches === 'number' ? card.sample.pitches : null;
   return { chip: REFERENCE_CHIP, title, items, other_pct: whole(card.other?.share_pct),
     sample: day && n !== null ? `${Number(day[1])}년 ${Number(day[2])}월 ${Number(day[3])}일까지 같은 상황 ${n}구` : n !== null ? `같은 상황 ${n}구` : null,
-    note: str(card.note) ?? NOT_A_PICK };
+    note: str(card.note) ?? NOT_A_PICK, stale_label: card.stale === true && day ? `기록 기준 ${day[2]}/${day[3]}` : null };
 }
 /** `pitches[i].expectation` → sentence; null unless it is the step-5 kind with a text. */
 export function normalizeExpectation(raw: Raw | null | undefined): Expectation | null {
