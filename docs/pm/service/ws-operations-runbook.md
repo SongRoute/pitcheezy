@@ -26,6 +26,19 @@
 - 네트워크 없이 경로만 보고 싶으면 `--dry-run-upload`(로컬 파일은 실제로 만든다).
 - 실제 호스트 주소·토큰 발급/폐기 절차: **미확인**(팀원 쪽 F 작업, 아직 연결 안 함). 주소와 토큰은 공개 이슈·문서에 적지 않는다.
 
+### 참고 카드(A2 `next.reference`) — 2026-10-18 Song 결정으로 공개 발행에서 켬
+- 뜻: 추천 모델이 모르는 투수(2026 신인 등)의 다음 공 자리에 "이 투수가 올해 이 카운트·타자 방향에서 자주 던진 공"을 비율로 보여 주는 참고 카드. 추천·예측이 아니고 순위·목표 위치가 없다. 모델을 돌리지 않고 매일 갱신되는 2026 투구 기록 프로필에서 횟수만 센다.
+- 설정: `apps/observer/publish_config.json` `profile_reference.enabled: true`(커밋됨). 경로는 저장소에 적지 않는다(`profile_sources: null`). 발행기를 켤 때 환경 변수로 준다:
+  - `PITCHEEZY_OBSERVER_PROFILE_SOURCES=~/Projects/pitcheezy-pm-jobs/profile-refresh-daily/profiles/LATEST.json` (매일 21:00 KST launchd `com.pitcheezy.profile-refresh`가 새 프로필을 만든 뒤 옮기는 포인터. 코드는 `~`를 풀지 않으므로 셸이 펼친 절대 경로가 들어가야 한다. 따옴표로 감싸지 않는다.)
+  - 끄기: `PITCHEEZY_OBSERVER_PROFILE_REFERENCE=0`(설정 파일을 고치지 않고 발행기만 다시 켬). 끄면 카드 필드가 사라질 뿐 나머지 본문은 같다.
+- 읽는 규칙(코드 `observer_app/profile_reference.py`): 포인터를 최대 30초마다 다시 읽고, 프로필 마감일(cutoff)이 경기 officialDate보다 **엄격히 앞선** 것 중 가장 새것을 쓴다. 정상이면 마감일 = 경기 전날(1일 차).
+  - 칸 최소 투구 수 20(카운트×타자 방향, **잠정**, 유지), 넓은(모든 카운트) 대체 카드 **끔**(유지).
+  - 신선도: 마감일이 경기일보다 **2일 넘게** 앞서면(일일 갱신이 두 번 이상 연속 실패) 카드는 그대로 나가되 `stale: true`가 붙고 화면 줄에 "기록 기준 MM/DD"가 보인다. 2일은 **잠정**(PM 선택).
+  - 포인터가 없거나 깨졌거나 쓸 수 있는 프로필이 없으면 카드만 없다. 발행·추천에는 영향이 없다.
+- 켤 때 확인: 발행기 시작 로그 한 줄 `reference card (A2): {...}` — `enabled: True`, `usable`에 `True`와 `cutoff`(어제 날짜)가 보여야 한다. `WARNING reference card (A2) is on but no profile source ...`가 보이면 경로를 고친다.
+- 매일 확인(경기 전날 밤): **21:20 KST까지** `~/Projects/pitcheezy-pm-jobs/profile-refresh-daily/logs/RESULTS.log` 마지막 줄이 그날 날짜의 `ok target=<내일> cutoff=<오늘>`인지 본다. `failed`이면 포인터는 이전 것을 그대로 두므로 카드는 하루 묵은 기록으로 나간다(1일 실패는 아직 stale 아님). 이틀 연속 실패면 카드에 "기록 기준"이 붙는다. 디스크 여유가 12 GiB 하한 근처면 그날 갱신이 건너뛰어지므로 경기 주간에는 여유를 먼저 확보한다(삭제는 Song 확인).
+- 감사(PublishAudit): `reference_card_integrity` 불변식이 카드에 순위·목표·위치·확률 키가 없는지, 비율 합 ≤ 100, `as_of` < 경기일, 투수 단위 "추천 없음" 상태의 다음 공에만 붙었는지 본다.
+
 ### 끄기
 - 발행기를 띄운 터미널에서 Ctrl-C. 코드는 KeyboardInterrupt를 받아 `close()`로 업로드 자식 프로세스를 정리한 뒤 출력 lock을 놓는다(`shutdown_grace_s` 5초, **잠정**).
 - 다른 방식(kill·launchctl 등)으로 멈추면 `close()`가 돌지 않는다. 그때 전송 중이던 업로드는 재시작 때 `blocked`로 남는다(4.4 참고). 그러니 Ctrl-C로 끈다. **기록기·운영 서버 등 다른 프로세스에는 절대 신호를 보내지 않는다.**
@@ -61,6 +74,7 @@
 | 업로드 밀림 | `upload.pending` > 0이 3주기 넘게 계속 | **잠정**(실제 호스트로 재 본 적 없음) |
 | 업로드 막힘 | `upload_attempts`에 `phase=blocked` 하나라도 | 자동으로 풀리지 않으므로 바로 사람 확인 |
 | 맥 메모리 | 메모리 압박 "노랑" 이상, 또는 스왑 증가 | **잠정**. 24 GB 맥에서 수치 기준은 재지 않았다 |
+| 프로필 일일 갱신 | 21:20 KST에 `RESULTS.log` 마지막 줄이 그날 `ok`가 아님 | 하루 실패는 카드가 하루 묵음, 이틀 연속이면 "기록 기준 MM/DD" 표시(1절 참고 카드) |
 
 ## 4. 사고별 대응
 
