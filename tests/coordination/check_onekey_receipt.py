@@ -183,6 +183,7 @@ def check_v2(log, scope, expiry, mode):
         return verdict(invalid + ["PROBES_NOT_LIST"], incomplete, basis)
     expected_status = {"out_of_scope": 403, "expired": 403, "revoked": 401, "upload_off": 503}
     latest, initial, deferred_seen = {}, [], False
+    initial_scope = None
     main_rows = post_rows = 0
     for row in probes:
         if type(row) is not dict:
@@ -222,6 +223,8 @@ def check_v2(log, scope, expiry, mode):
             if type(passed) is bool and passed != accepted: invalid.append("PROBE_PASS_CONTRADICTION")
             if "error" in row: invalid.append("PROBE_ERROR_WITH_STATUS")
             latest[kind] = "pass" if accepted else "fail"
+        if kind == "out_of_scope" and deferred is not True:
+            initial_scope = latest[kind]
         # Transport-error upload_off rows return before this flag is added by the source.
         if kind == "upload_off" and status is not None and row.get("revocation_evidence") is not False:
             invalid.append("UPLOAD_OFF_REVOCATION_FLAG_INVALID")
@@ -230,6 +233,8 @@ def check_v2(log, scope, expiry, mode):
     if type(post) is int and post != post_rows: invalid.append("POST_COUNT_INCONSISTENT")
     if type(runner) is dict and type(runner.get("requests")) is int and type(main) is int and main != runner["requests"] + main_rows:
         invalid.append("MAIN_COUNT_INCONSISTENT")
+    if required["out_of_scope"] and type(runner) is dict and initial_scope != "pass":
+        invalid.append("RUNNER_WITHOUT_INITIAL_SCOPE_PASS")
     main_pass = runner_pass and (not required["out_of_scope"] or latest.get("out_of_scope") == "pass")
     missing = sorted(k for k in ("expired", "revoked") if required[k] and latest.get(k, "missing") == "missing")
     failed = sorted(k for k in ("expired", "revoked") if required[k] and latest.get(k) == "fail")

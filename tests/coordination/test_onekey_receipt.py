@@ -286,6 +286,34 @@ class V4ReceiptTests(unittest.TestCase):
         log["probes"][1]["pass"] = True; log["probes"][1]["status"] = 503
         self.assertEqual(self.check(log)["status"], "INVALID")  # Later pass cannot erase an earlier contradiction.
 
+    def test_runner_requires_initial_scope_pass(self):
+        for initial in ("missing", "failed"):
+            with self.subTest(initial=initial):
+                log = fixture_v4(expiry=False)
+                if initial == "missing":
+                    log["probes"].pop(0); log["main_requests"] = 17
+                else:
+                    log["probes"][0].update(status=503, **{"pass": False})
+                log["probes"].append(deferred_row("out_of_scope", 403)); log["post_requests"] += 1
+                result = self.check(log)
+                self.assertEqual(result["status"], "INVALID")
+                self.assertIn("RUNNER_WITHOUT_INITIAL_SCOPE_PASS", result["reasons"])
+        log = fixture_v4(expiry=False)
+        row = deferred_row("out_of_scope", 503); row["pass"] = False
+        log["probes"].append(row); log["post_requests"] += 1
+        log.update(main_result="MAIN_FAIL_OR_STOPPED", completion="FAILED", result="FAIL_OR_STOPPED")
+        self.assertEqual(self.check(log)["status"], "INCOMPLETE")
+        log["probes"].append(deferred_row("out_of_scope", 403)); log["post_requests"] += 1
+        log.update(main_result="MAIN_PASS", completion="COMPLETE", result=checker.PASS)
+        self.assertEqual(self.check(log)["status"], "LOCAL_EVIDENCE_CONSISTENT")
+        log = fixture_v4(expiry=False)
+        log["probes"] = log["probes"][:1]
+        log["probes"][0].update(status=503, **{"pass": False})
+        log.update(runner=None, runner_pass=False, main_requests=1, post_requests=0,
+                   main_result="MAIN_FAIL_OR_STOPPED", completion="FAILED", result="FAIL_OR_STOPPED",
+                   revocation="NOT_CHECKED", missing_evidence=["revoked"])
+        self.assertEqual(self.check(log)["status"], "INCOMPLETE")
+
 
 if __name__ == "__main__":
     unittest.main()
