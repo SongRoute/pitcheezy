@@ -298,8 +298,10 @@ def _played_game(tmp_path, reg_path, store_name="store.sqlite3"):
     led.close()
     copy = tmp_path / "store-backup.sqlite3"
     from ws_prospective.store_source import backup_store
-    backup_store(store.path, copy)  # sqlite online backup (a plain file copy would miss the WAL)
-    return {GAME: {"ledgers": [led.path], "store": copy, "store_sha256": file_sha256(copy)}}
+    digest = backup_store(store.path, copy)  # sqlite online backup (a plain file copy misses the WAL)
+    with open(tmp_path / "STORE-BACKUPS.jsonl", "a") as f:
+        f.write(json.dumps({"copy": str(copy), "sha256": digest, "games": [GAME]}) + "\n")
+    return {GAME: {"ledgers": [led.path], "store": copy, "store_sha256": digest}}
 
 
 def _exec_registration(tmp_path, **kw):
@@ -325,7 +327,7 @@ def test_single_look_then_refuses_second(tmp_path):
 
 
 @pytest.mark.parametrize("case", ["registration_edited", "store_copy_changed", "profile_differs",
-                                  "store_path_differs"])
+                                  "store_path_differs", "backup_not_recorded"])
 def test_look_refuses_when_ledger_pins_disagree(tmp_path, case):
     reg = _exec_registration(tmp_path)
     games = _played_game(tmp_path, reg)
@@ -339,6 +341,8 @@ def test_look_refuses_when_ledger_pins_disagree(tmp_path, case):
     reg.write_text(json.dumps(body))
     if case == "store_copy_changed":
         games[GAME]["store_sha256"] = "0" * 64
+    if case == "backup_not_recorded":
+        (tmp_path / "STORE-BACKUPS.jsonl").write_text("")
     _unseal(tmp_path, reg)  # UNSEAL quotes the (possibly edited) file: must still refuse
     called = []
     with pytest.raises(SealedError):
@@ -461,3 +465,57 @@ def test_cli_backup_store_records_sha(tmp_path):
     with pytest.raises(FileExistsError):
         cli.main(["backup-store", "--store", str(store.path), "--dest",
                   str(tmp_path / "copy.sqlite3"), "--record", str(rec)])
+
+
+def _dry_plan(tmp_path, store_copy, *, approved=True):
+    reg = tmp_path / "MODELREG.json"
+    reg.write_text(json.dumps({"model_sources": {}, "candidate_pitch_types": ["FF"]}))
+    plan = {"execute": approved, "review": {"status": "PASS" if approved else "PENDING"},
+            "model_registration": {"path": str(reg), "sha256": file_sha256(reg)},
+            "input": {"game_pk": GAME, "official_date": "2026-10-18",
+                      "store_copy_sha256": file_sha256(store_copy)},
+            "processes": {"A": {"python": sys.executable, "models": ["FIT_MARGINAL_7"]}},
+            "bounds": {"nice": 0, "max_rss_mb": 4096, "max_compute_ms": 2000, "max_wall_s": 60,
+                       "min_free_memory_mb": 0, "min_free_disk_gb": 0, "max_output_mb": 64}}
+    p = tmp_path / "DRYRUN-REGISTRATION.json"
+    p.write_text(json.dumps(plan))
+    return p
+
+
+def test_dryrun_replays_backup_copy_without_storing_probabilities(tmp_path, monkeypatch):
+    from ws_prospective import cli
+    from ws_prospective.store_source import backup_store
+    monkeypatch.setattr(cli, "_in_protected_window", lambda now_utc=None: False)
+    store = FakeStore(tmp_path / "store.sqlite3", GAME)
+    store.new_plate_appearance(1, received=1.0)
+    for i, call in enumerate("BSF"):
+        store.add_pitch(1, pitch_event(i + 1, "FF", call), received=2.0 + i, uid=f"d{i}")
+    copy = tmp_path / "copy.sqlite3"
+    backup_store(store.path, copy)
+    plan = _dry_plan(tmp_path, copy)
+    out = tmp_path / "dry"
+    assert cli.main(["dryrun", "--plan", str(plan), "--store", str(copy), "--out", str(out),
+                     "--proc", "A"]) == 0
+    summ = json.loads((out / "DRYRUN-SUMMARY-A.json").read_text())
+    assert summ["kind"].startswith("DRYRUN_METADATA_ONLY") and summ["store_pitch_keys"] == 3
+    fc = read_rows(out / f"game_{GAME}" / "ledger-A.sqlite", "forecasts")
+    assert fc and all(r["probs_json"] is None for r in fc)  # vectors never persisted
+    text = json.dumps(summ)
+    assert "probs" not in text and "0.358" not in text
+    # refusals: second run into an existing dir, unapproved plan, protected window
+    assert cli.main(["dryrun", "--plan", str(plan), "--store", str(copy), "--out", str(out),
+                     "--proc", "A"]) == 2
+    bad = _dry_plan(tmp_path, copy, approved=False)
+    assert cli.main(["dryrun", "--plan", str(bad), "--store", str(copy), "--out",
+                     str(tmp_path / "dry2"), "--proc", "A"]) == 2
+    monkeypatch.setattr(cli, "_in_protected_window", lambda now_utc=None: True)
+    assert cli.main(["dryrun", "--plan", str(plan), "--store", str(copy), "--out",
+                     str(tmp_path / "dry3"), "--proc", "A"]) == 2
+
+
+def test_protected_window_bounds():
+    from ws_prospective.cli import _in_protected_window
+    utc = dt.timezone.utc
+    assert _in_protected_window(dt.datetime(2026, 10, 18, 21, 0, tzinfo=utc))   # 06:00 KST
+    assert not _in_protected_window(dt.datetime(2026, 10, 19, 1, 0, tzinfo=utc))  # 10:00 KST
+    assert not _in_protected_window(dt.datetime(2026, 10, 18, 11, 0, tzinfo=utc))

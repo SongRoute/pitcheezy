@@ -112,6 +112,121 @@ def cmd_backup_store(a) -> int:
     return 0
 
 
+def _in_protected_window(now_utc=None) -> bool:
+    """10/19 rehearsal window 05:53-10:00 KST (= 10/18 20:53 - 10/19 01:00 UTC)."""
+    import datetime as dt
+    now = now_utc or dt.datetime.now(dt.timezone.utc)
+    lo = dt.datetime(2026, 10, 18, 20, 53, tzinfo=dt.timezone.utc)
+    hi = dt.datetime(2026, 10, 19, 1, 0, tzinfo=dt.timezone.utc)
+    return lo <= now < hi
+
+
+def cmd_dryrun(a) -> int:
+    """Metadata-only replay of a finished game's BACKUP store copy (DRYRUN-REGISTRATION).
+
+    Builds the registered adapters, replays snapshots in write order
+    (LiveStoreSource(max_seq)), never stores probability vectors, never reads
+    labels, and writes DRYRUN-SUMMARY-<proc>.json with counts, abstain reasons,
+    PA-first coverage, compute ms, peak RSS and runtime versions."""
+    import datetime as dt
+    from .adapters import resolve
+    from .analyzer import ops_check
+    from .ledger import Ledger
+    from .runner import GameRunner, Limits
+    from .store_source import LiveStoreSource, open_ro, snapshot_seqs
+
+    plan_path = Path(a.plan)
+    plan = json.loads(plan_path.read_text())
+    if plan.get("execute") is not True or plan.get("review", {}).get("status") != "PASS":
+        print("refused: dry-run plan not approved (execute!=true or no review PASS)")
+        return 2
+    if _in_protected_window():
+        print("refused: inside the 10/19 05:53-10:00 KST rehearsal window")
+        return 2
+    src_reg_path = Path(plan["model_registration"]["path"])
+    if file_sha256(src_reg_path) != plan["model_registration"]["sha256"]:
+        print("refused: model registration sha differs from the plan")
+        return 2
+    reg = json.loads(src_reg_path.read_text())
+    inp = plan["input"]
+    store = Path(a.store)
+    if inp.get("store_copy_sha256") and file_sha256(store) != inp["store_copy_sha256"]:
+        print("refused: store copy sha differs from the plan (use the backup copy, never the live store)")
+        return 2
+    out = Path(a.out)
+    if out.exists():
+        print("refused: fresh output directory required")
+        return 2
+    procs = plan["processes"]
+    if a.proc not in procs or sys.executable != procs[a.proc]["python"]:
+        print("refused: process/interpreter not registered in the plan")
+        return 2
+    try:
+        os.nice(int(plan["bounds"].get("nice", 10)))
+    except OSError:
+        pass
+    game = {"game_pk": int(inp["game_pk"]), "official_date": inp["official_date"],
+            "store_path": str(store), "profile_path": inp.get("profile_path"),
+            "profile_sha256": inp.get("profile_sha256")}
+    out.mkdir(parents=True)
+    forecasters = [resolve(m).build(reg, game, out) for m in procs[a.proc]["models"]]
+    versions = runtime_versions()
+    led = Ledger(out / f"game_{game['game_pk']}" / f"ledger-{a.proc}.sqlite", game_pk=game["game_pk"],
+                 registration_sha256=file_sha256(plan_path), code_commit=_code_commit(),
+                 meta={"kind": "DRYRUN_METADATA_ONLY", "store_path": str(store),
+                       "profile_sha256": str(game["profile_sha256"]), "runtime_versions": versions})
+    b = plan["bounds"]
+    src = LiveStoreSource(store, game["game_pk"], max_seq=0)
+    runner = GameRunner(game["game_pk"], src, forecasters, led, str(game["profile_sha256"]),
+                        Limits(max_rss_mb=b["max_rss_mb"], max_compute_ms=b["max_compute_ms"],
+                               record_post_hoc_replays=False, store_probabilities=False))
+    import time
+    t0 = time.monotonic()
+    seqs = snapshot_seqs(store, game["game_pk"])
+    led.event("DRYRUN_START", n_snapshots=len(seqs))
+    stopped = None
+    for seq in seqs:
+        if time.monotonic() - t0 > b["max_wall_s"]:
+            stopped = "MAX_WALL"
+            break
+        reason = resource_breach(out, {"min_free_memory_mb": b["min_free_memory_mb"],
+                                       "min_free_disk_gb": b["min_free_disk_gb"],
+                                       "max_output_mb": b["max_output_mb"]})
+        if reason:
+            stopped = "RESOURCE:" + reason
+            break
+        src.max_seq = seq
+        runner.step()
+    led.event("RUN_STOP", stopped=stopped, peak_rss_mb=round(_peak_rss_mb(), 1))
+    led.close()
+    con = open_ro(store)
+    try:
+        n_pitches, n_pa_first = con.execute(
+            "SELECT COUNT(DISTINCT at_bat_number || '-' || pitch_number), "
+            "COUNT(DISTINCT CASE WHEN pitch_number=1 THEN at_bat_number END) FROM pitch_events "
+            "WHERE game_pk=? AND outcome IN ('new','correction')", (game["game_pk"],)).fetchone()
+    finally:
+        con.close()
+    summary = {"kind": "DRYRUN_METADATA_ONLY_NO_LABELS_NO_METRICS", "proc": a.proc,
+               "plan_sha256": file_sha256(plan_path), "store_copy_sha256": file_sha256(store),
+               "game_pk": game["game_pk"], "n_snapshots": len(seqs), "stopped": stopped,
+               "store_pitch_keys": n_pitches, "store_pa_first_keys": n_pa_first,
+               "wall_s": round(time.monotonic() - t0, 1), "peak_rss_mb": round(_peak_rss_mb(), 1),
+               "runtime_versions": versions,
+               "ledger": ops_check(led.path),
+               "note": "replay timing classes are not meaningful; coverage = intents per store pitch key",
+               "at_utc": dt.datetime.now(dt.timezone.utc).isoformat()}
+    (out / f"DRYRUN-SUMMARY-{a.proc}.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
+    print(json.dumps({"summary": str(out / f"DRYRUN-SUMMARY-{a.proc}.json"), "stopped": stopped}))
+    return 0 if stopped is None else 3
+
+
+def _peak_rss_mb() -> float:
+    import resource
+    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return r / 2**20 if sys.platform == "darwin" else r / 1024
+
+
 def cmd_verify(a) -> int:
     reg = json.loads(Path(a.registration).read_text())
     bad = verify_artifacts(reg)
@@ -223,6 +338,9 @@ def main(argv=None) -> int:
     for k in ("--registration", "--game", "--store", "--out", "--proc"):
         r.add_argument(k, required=True)
     o = sub.add_parser("ops-check"); o.add_argument("--out", required=True)
+    d = sub.add_parser("dryrun")
+    for k in ("--plan", "--store", "--out", "--proc"):
+        d.add_argument(k, required=True)
     b = sub.add_parser("backup-store")
     for k in ("--store", "--dest", "--record"):
         b.add_argument(k, required=True)
@@ -232,7 +350,7 @@ def main(argv=None) -> int:
         n.add_argument(k, required=True)
     a = p.parse_args(argv)
     return {"verify": cmd_verify, "run": cmd_run, "ops-check": cmd_ops,
-            "backup-store": cmd_backup_store,
+            "backup-store": cmd_backup_store, "dryrun": cmd_dryrun,
             "analyze": cmd_analyze}[a.cmd](a)
 
 

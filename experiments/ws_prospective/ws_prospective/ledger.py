@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS intents (
   slot_ordinal INTEGER NOT NULL,
   target_at_bat_number INTEGER NOT NULL,
   target_pitch_number INTEGER NOT NULL,
+  target_pitcher_id INTEGER,
+  target_batter_id INTEGER,
+  mid_pa_substitution INTEGER NOT NULL DEFAULT 0,
   model_id TEXT NOT NULL,
   session_id TEXT NOT NULL REFERENCES sessions(session_id),
   context_asof_pitch_uid TEXT,
@@ -180,6 +183,8 @@ class Ledger:
 
     def write_intent(self, *, slot_key: str, slot_ordinal: int, target_at_bat_number: int,
                      target_pitch_number: int, model_id: str,
+                     target_pitcher_id: Optional[int] = None, target_batter_id: Optional[int] = None,
+                     mid_pa_substitution: int = 0,
                      context_asof_pitch_uid: Optional[str],
                      context_asof_receipt_wall_ns: Optional[int],
                      context_sha256: str, context_source_seq: Optional[int] = None,
@@ -188,9 +193,10 @@ class Ledger:
         iid = intent_id_for(self.game_pk, slot_key, model_id,
                             (int(target_at_bat_number), int(target_pitch_number)))
         cur = self.con.execute(
-            "INSERT OR IGNORE INTO intents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO intents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (iid, self.game_pk, slot_key, int(slot_ordinal), int(target_at_bat_number),
-             int(target_pitch_number), model_id, self.session_id,
+             int(target_pitch_number), target_pitcher_id, target_batter_id,
+             int(mid_pa_substitution), model_id, self.session_id,
              context_asof_pitch_uid, context_asof_receipt_wall_ns, context_sha256,
              context_source_seq, context_source_fetched_ns,
              self.clock.wall_ns(), self.clock.mono_ns()))

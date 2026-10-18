@@ -52,22 +52,22 @@ def open_ro(path: Path) -> sqlite3.Connection:
     return con
 
 
-def _receipts(con, game_pk: int) -> Dict[Tuple[int, int], tuple]:
+def _receipts(con, game_pk: int, max_seq: int = 1 << 62) -> Dict[Tuple[int, int], tuple]:
     out: Dict[Tuple[int, int], tuple] = {}
     for pid, ab, pn, first, recv, clock, etime in con.execute(
             "SELECT provider_event_id, at_bat_number, pitch_number, first_received, received, "
             "receipt_clock, provider_event_time "
-            "FROM pitch_events WHERE game_pk=? AND outcome IN (?,?) ORDER BY id",
-            (game_pk, *ACCEPTED)):
+            "FROM pitch_events WHERE game_pk=? AND outcome IN (?,?) AND store_seq<=? ORDER BY id",
+            (game_pk, *ACCEPTED, int(max_seq))):
         key = (int(ab), int(pn))
         if key not in out:  # first accepted revision carries the first receipt
             out[key] = (str(pid), _ns(first), _ns(recv), clock, etime)
     return out
 
 
-def _latest_body(con, game_pk: int, with_fetched: bool = False):
-    row = con.execute("SELECT seq, sha, body, fetched FROM snapshots WHERE game_pk=? "
-                      "ORDER BY seq DESC LIMIT 1", (game_pk,)).fetchone()
+def _latest_body(con, game_pk: int, with_fetched: bool = False, max_seq: int = 1 << 62):
+    row = con.execute("SELECT seq, sha, body, fetched FROM snapshots WHERE game_pk=? AND seq<=? "
+                      "ORDER BY seq DESC LIMIT 1", (game_pk, int(max_seq))).fetchone()
     if row is None:
         return (None, None, None, None) if with_fetched else (None, None, None)
     out = (int(row[0]), str(row[1]), json.loads(gzip.decompress(row[2])))
@@ -154,9 +154,14 @@ def parse_feed(feed: dict, receipts) -> Tuple[List[StorePitch], Optional[PreStat
 
 
 class LiveStoreSource:
-    def __init__(self, store_path: Path, game_pk: int):
+    """``max_seq`` (dry-run replay only) bounds every read to snapshots.seq <= max_seq
+    and pitch_events.store_seq <= max_seq, i.e. the store as it was right after that
+    snapshot was written.  Live runs leave it None."""
+
+    def __init__(self, store_path: Path, game_pk: int, max_seq: Optional[int] = None):
         self.store_path = Path(store_path)
         self.game_pk = int(game_pk)
+        self.max_seq = max_seq
         self._cache: tuple = (None, None)  # (snapshot seq, max pitch_events id) -> snapshot
         self._cached: Optional[SourceSnapshot] = None
 
@@ -166,14 +171,16 @@ class LiveStoreSource:
         con = open_ro(self.store_path)
         try:
             con.execute("BEGIN")  # one short read snapshot for both queries (WAL: never blocks the writer)
-            key = con.execute("SELECT (SELECT MAX(seq) FROM snapshots WHERE game_pk=?), "
-                              "(SELECT MAX(id) FROM pitch_events WHERE game_pk=?)",
-                              (self.game_pk, self.game_pk)).fetchone()
+            bound = (1 << 62) if self.max_seq is None else int(self.max_seq)
+            key = con.execute("SELECT (SELECT MAX(seq) FROM snapshots WHERE game_pk=? AND seq<=?), "
+                              "(SELECT MAX(id) FROM pitch_events WHERE game_pk=? AND store_seq<=?)",
+                              (self.game_pk, bound, self.game_pk, bound)).fetchone()
             if self._cached is not None and tuple(key) == self._cache:
                 con.execute("COMMIT")
                 return self._cached
-            receipts = _receipts(con, self.game_pk)
-            seq, sha, feed, fetched = _latest_body(con, self.game_pk, with_fetched=True)
+            receipts = _receipts(con, self.game_pk, bound)
+            seq, sha, feed, fetched = _latest_body(con, self.game_pk, with_fetched=True,
+                                                   max_seq=bound)
             con.execute("COMMIT")
         finally:
             con.close()
@@ -251,3 +258,13 @@ def backup_store(store_path: Path, dest: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def snapshot_seqs(store_path: Path, game_pk: int) -> list:
+    """Dry run: the game's snapshot seqs in write order (metadata only)."""
+    con = open_ro(store_path)
+    try:
+        return [int(r[0]) for r in con.execute(
+            "SELECT seq FROM snapshots WHERE game_pk=? ORDER BY seq", (int(game_pk),))]
+    finally:
+        con.close()

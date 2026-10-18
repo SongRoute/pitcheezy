@@ -35,11 +35,17 @@ def ops_check(ledger_path: Path) -> dict:
     sessions = read_rows(ledger_path, "sessions")
     by = Counter()
     pa_first = Counter()
+    reasons = Counter()
+    mid_sub = Counter()
     lat: Dict[str, List[float]] = defaultdict(list)
     for it in intents:
         f = forecasts.get(it["intent_id"])
         pa_first[(it["model_id"], it["target_pitch_number"] == 1,
                   f["provisional_timing"] if f else "INCOMPLETE")] += 1
+        if it.get("mid_pa_substitution"):
+            mid_sub[(it["model_id"], f["status"] if f else "INCOMPLETE")] += 1
+        if f is not None and f["status"] != "OK":
+            reasons[(it["model_id"], f["abstain_reason"] or "-")] += 1
         if f is None:
             by[(it["model_id"], "INCOMPLETE_INTENT", "-")] += 1
             continue
@@ -53,6 +59,10 @@ def ops_check(ledger_path: Path) -> dict:
         "compute_ms": {m: {"n": len(v), "p50": float(np.median(v)), "max": float(np.max(v))}
                        for m, v in lat.items() if v},
         "events": dict(Counter(e["kind"] for e in events)),
+        "abstain_reasons": [{"model_id": k[0], "reason": k[1], "n": v}
+                            for k, v in sorted(reasons.items())],
+        "mid_pa_substitution_slots": [{"model_id": k[0], "status": k[1], "n": v}
+                                      for k, v in sorted(mid_sub.items())],
         "by_pa_first_pitch": [{"model_id": k[0], "pa_first_pitch": k[1], "timing": k[2], "n": v}
                               for k, v in sorted(pa_first.items())],
         "distinct_target_keys_per_slot_gt1": sum(
@@ -133,7 +143,8 @@ def grade_game(ledger_path, label_rows: Dict[str, dict], *, leaf_of: LabelFn,
     return graded, excl
 
 
-def verify_ledger_pins(reg: dict, games: Dict[int, dict]) -> None:
+def verify_ledger_pins(reg: dict, games: Dict[int, dict], job_dir: Optional[Path] = None,
+                       backups_file: str = "STORE-BACKUPS.jsonl") -> None:
     """B1: every ledger must pin this registration, the registered per-game
     profile and live store path; the label store must be the registered backup
     copy (sha recorded at backup time).  Runs before LOOK.done / any label."""
@@ -156,13 +167,19 @@ def verify_ledger_pins(reg: dict, games: Dict[int, dict]) -> None:
                 raise SealedError(f"{lp}: ledger store path differs from registration")
         if g.get("store_sha256") is None or file_sha256(g["store"]) != g["store_sha256"]:
             raise SealedError(f"game {pk}: label store copy missing or sha differs from backup record")
+        if job_dir is not None:
+            bf = Path(job_dir) / backups_file
+            recs = [json.loads(x) for x in bf.read_text().splitlines() if x.strip()] if bf.exists() else []
+            if not any(r.get("copy") == str(g["store"]) and r.get("sha256") == g["store_sha256"]
+                       and int(pk) in [int(x) for x in r.get("games", [])] for r in recs):
+                raise SealedError(f"game {pk}: store copy/sha not recorded in {backups_file}")
 
 
 def sealed_look(registration_path: Path, job_dir: Path, games: Dict[int, dict], *,
                 leaf_of: LabelFn, type_of: TypeFn, label_loader, now_utc=None) -> dict:
     """games: {game_pk: {"ledger": path, "store": path}}; label_loader(store, pk, revision=...)."""
     reg = check_unsealed(registration_path, job_dir, now_utc=now_utc)
-    verify_ledger_pins(reg, games)
+    verify_ledger_pins(reg, games, job_dir)
     seal = reg["analysis"]["seal"]
     take_look(job_dir, seal["look_marker"],
               {"registration_sha256": reg["_sha256"], "games": sorted(games),

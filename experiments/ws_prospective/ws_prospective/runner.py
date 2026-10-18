@@ -92,6 +92,7 @@ class Limits:
     max_compute_ms: float = 2000.0
     poll_interval_s: float = 1.0
     record_post_hoc_replays: bool = False  # registered default: off
+    store_probabilities: bool = True       # dry run: False -> status kept, vectors never written
 
 
 class ResourceAbort(RuntimeError):
@@ -136,7 +137,12 @@ class GameRunner:
                             source_fetched_ns=None if post_hoc or snap is None
                             else snap.source_fetched_ns)
         key = slot_key(ctx.asof_pitch_uid)
+        prev = accepted[n - 2] if n >= 2 and len(accepted) >= n - 1 else None
+        mid_pa_sub = int(prev is not None and prev.at_bat_index == state.at_bat_index
+                         and (prev.pitcher_id != state.pitcher_id or prev.batter_id != state.batter_id))
         iid = self.ledger.write_intent(
+            target_pitcher_id=state.pitcher_id, target_batter_id=state.batter_id,
+            mid_pa_substitution=mid_pa_sub,
             slot_key=key, slot_ordinal=n, target_at_bat_number=state.at_bat_index,
             target_pitch_number=state.pitch_number, model_id=fc.model_id,
             context_asof_pitch_uid=ctx.asof_pitch_uid,
@@ -166,7 +172,8 @@ class GameRunner:
             if any(p.ordinal >= n for p in after.accepted):
                 timing = "POST_HOC_REPLAY"
         self.ledger.write_forecast(
-            iid, status=status, leaf_order=fc.leaf_order, probs=probs, abstain_reason=reason,
+            iid, status=status, leaf_order=fc.leaf_order,
+            probs=probs if self.limits.store_probabilities else None, abstain_reason=reason,
             generated_wall_ns=gen_wall, generated_mono_ns=t1, compute_ns=t1 - t0,
             provisional_timing=timing)
         if (t1 - t0) / 1e6 > self.limits.max_compute_ms:
@@ -218,4 +225,4 @@ class GameRunner:
                     return
                 sleep(self.limits.poll_interval_s)
         finally:
-            self.ledger.event("RUN_STOP", polls=polls)
+            self.ledger.event("RUN_STOP", polls=polls, peak_rss_mb=round(_rss_mb(), 1))
