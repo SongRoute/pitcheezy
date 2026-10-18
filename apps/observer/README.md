@@ -238,10 +238,12 @@ python3 $OPS stop --date 2026-10-24 --publisher-only  # 감독이 죽었을 때:
 
 - 시간: 시작 = 그날 첫 경기 예정 시각 − `lead_min`(30분). 끝 = 운영 경기가 모두 발행 파일에서 final이 된 뒤 `settle_s`(15분), 또는 마지막 경기 예정 + `hard_end_min`(9시간).
 - 시작 직전 다시 확인: 일정(연기·취소·이미 종료, 같은 날 다른 미종료 경기), 메모리·디스크·T7, 다른 발행기·리허설 감독, 코드 HEAD(추적 파일 깨끗, `--expect-commit`).
-- 재시작: 예상 밖 종료 또는 health 정체(`health_stall_s` 300초)면 `backoff_s` 30/60/120초 뒤 최대 3번. 발행기는 언제나 하나(감독 lock + 프로세스 표 + 발행기 출력 lock).
+- 일시적인 문제(일정 요청 실패, 메모리·디스크 하한, T7, 다른 발행기, 다른 미종료 경기)는 첫 투구까지 60초마다 다시 확인하고, 그래도 안 되면 `refused` + 긴급 문제(`prestart_refused`)로 끝낸다. 일정 요청이 실패하면 start 때 기록한 경기 목록(RUN.json)을 쓴다. 코드·배포 가드·업로드 설정 문제는 바로 거부한다.
+- 재시작: 예상 밖 종료 또는 health가 300초 멈추면(세그먼트 시작 뒤 최소 300초부터) `backoff_s` 30/60/120초 뒤 최대 3번. 발행기는 언제나 하나(감독 lock + 프로세스 표 + 발행기 출력 lock).
 - 배포 가드: 그날 처음 띄운 커밋과 HEAD가 다르면 경기가 final이 아닌 동안 재시작·새 start를 거부한다(B가 결정 ID를 바꾸므로 경기 사이에만 교체).
 - 업로드: 기본 꺼짐. `--upload` + 설정 `upload.allowed: true` + 환경의 토큰(`PITCHEEZY_PUBLISH_TOKEN` 또는 토큰 파일 경로 `PITCHEEZY_WS_OPS_TOKEN_FILE`)·주소(`PITCHEEZY_WS_OPS_UPLOAD_BASE_URL`)가 모두 있어야 켠다. 값은 출력·로그에 쓰지 않고 있음/없음만 남긴다. 주소는 실행 폴더의 `publish_config.runtime.json`(권한 0600, 저장소 밖)에만 들어간다.
 - 공통 지연: `fixed_delay_s`(지금 0, Song의 0/15초 결정 대기). 실행마다 런타임 설정에 넣고 저장소 파일은 고치지 않는다.
+- `runs/` 폴더(실행 기록, 런타임 설정에 업로드 주소 포함)는 이슈·저장소·채팅에 복사하지 않는다. 공유가 필요하면 `status.json`의 필요한 줄만 옮긴다.
 - 자동 시작 예시(설치하지 않음): `apps/observer/ops/com.pitcheezy.ws-operate.plist.example`.
 - 시험: `PYTHONPATH=apps/observer/backend .venv-observer/bin/python -m pytest apps/observer/backend/tests/test_ws_operate.py -q` (가짜 발행기, MLB·네트워크 없음).
 

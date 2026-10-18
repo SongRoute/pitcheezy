@@ -57,6 +57,7 @@ def env(tmp_path, monkeypatch):
     cfg['stop'] = {'graceful_s': 5, 'term_s': 2}
     cfg['guards'] = dict(cfg['guards'], start_min_free_disk_bytes=0, stop_free_disk_bytes=0)
     cfg['upload_read_s'] = 0.1
+    cfg['prestart_retry_s'] = 0.2
     cfg_path = tmp_path/'ws_ops_config.json'
     cfg_path.write_text(json.dumps(cfg))
     monkeypatch.setenv(ws.FAKE_ENV, str(FAKE))
@@ -184,7 +185,9 @@ def test_other_publisher_blocks_start(env, monkeypatch):
     ok, report, _ = ws.preflight(env.cfg(), env.date, upload_requested=False, schedule_file=str(env.schedule))
     assert not ok and [o['pid'] for o in report['other_publishers']] == [99991]  # the shell text is not a publisher
     control(env)
-    sup, reason = supervise(env)
+    cfg = env.cfg()
+    cfg['prestart_retry_s'] = 120  # a retry would land after first pitch: refuse at once (retries: separate tests)
+    sup, reason = supervise(env, cfg=cfg)
     assert reason == 'prestart_refused' and fake_events(env) == []
 
 
@@ -299,7 +302,13 @@ def test_status_file_schema(env):
     assert status['feed_ok'] is True and status['game_checks'][str(PK)]['feed_ok'] is True
     assert {'count', 'max', 'backoff_s', 'last_exit', 'next_restart_at', 'history'} <= set(status['restarts'])
     assert {'available_bytes', 'free_disk_bytes', 'publisher_rss_bytes', 'run_dir_bytes'} <= set(status['resources'])
-    assert status['publisher'] is None and status['supervisor']['pid'] == os.getpid()
+    assert status['publisher']['running'] is False and status['supervisor']['pid'] == os.getpid()
+    assert status['schema_version'] == '1.1' and status['updated_at'] == status['written_at']
+    assert status['out_dir'] == str(env.run/'out') and status['state_path'] == str(env.run/'out')+'.state.json'
+    game = status['games'][0]
+    assert game['game_pk'] == PK and game['status'] == 'final' and game['start'].endswith('+00:00')
+    assert game['window_start'] and game['window_end'] and game['window_start'] < game['window_end']
+    assert status['problems'] == [] or all(not p['active'] for p in status['problems'])
     # while running, the publisher block carries identity and commit
     rows = [json.loads(x) for x in (env.run/'segments.jsonl').read_text().splitlines() if '"start"' in x]
     assert rows[0]['commit'] and len(rows[0]['commit']) == 40
@@ -320,7 +329,8 @@ def test_status_during_run_has_publisher_identity(env):
                 break
             time.sleep(0.05)
         pub = status['publisher']
-        assert status['state'] == 'running' and pub['pid'] and pub['lstart'] and len(pub['commit']) == 40
+        assert status['state'] == 'running' and pub['running'] is True and pub['pid'] and pub['lstart']
+        assert len(pub['commit']) == 40 and status['games'][0]['status'] == 'scheduled'
         assert pub['fixed_delay_s'] == 0 and pub['upload_enabled'] is False and pub['fake'] is True
     finally:
         (env.run/'STOP').write_text('now')
@@ -432,3 +442,160 @@ def test_statsapi_schedule_rows_and_final_tail(env, tmp_path):
     (sup.out/'v1/game/7.json').write_text(json.dumps({'x': 'y'*5000, 'publish': {'sequence': 3, 'final': True}}))
     (sup.out/'v1/game/8.json').write_text(json.dumps({'publish': {'sequence': 3, 'final': False}}))
     assert sup.game_final('7') is True and sup.game_final('8') is False and sup.game_final('9') is False
+
+
+# ------------------------------------------------------------------------------------------------ review 001 fixes
+
+def problem(status, key):
+    rows = [p for p in status['problems'] if p['key'] == key]
+    assert len(rows) <= 1
+    return rows[0] if rows else None
+
+
+def test_problems_for_restart_limit(env):
+    control(env, crash_first=99, exit_after=2)
+    supervise(env)
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    row = problem(status, 'restart_limit')
+    assert row == dict(row, severity='urgent', active=True) and 'publisher_exited:3' in row['message']
+    assert problem(status, 'publisher_restarting')['active'] is False  # it was active during the backoffs
+    assert {'key', 'severity', 'message', 'active'} <= set(row)
+
+
+def test_problem_for_deploy_guard(env, monkeypatch):
+    real, calls = ws.code_commit, []
+
+    def moving(code_dir):
+        head, dirty = real(code_dir)
+        calls.append(head)
+        return (head if len(calls) == 1 else 'b'*40), dirty
+    monkeypatch.setattr(ws, 'code_commit', moving)
+    control(env, crash_first=99, exit_after=2)
+    supervise(env)
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    assert problem(status, 'deploy_guard')['severity'] == 'urgent' and problem(status, 'deploy_guard')['active']
+
+
+def test_exit_after_all_final_ends_normally_even_on_other_commit(env, monkeypatch):
+    real, calls = ws.code_commit, []
+
+    def moving(code_dir):
+        head, dirty = real(code_dir)
+        calls.append(head)
+        return (head if len(calls) == 1 else 'b'*40), dirty
+    monkeypatch.setattr(ws, 'code_commit', moving)
+    raw = json.loads(env.cfg_path.read_text())
+    raw['settle_s'] = 30
+    env.cfg_path.write_text(json.dumps(raw))
+    control(env, crash_first=99, final_after=2, exit_after=4)  # final, then the publisher dies during settle
+    sup, reason = supervise(env)
+    assert reason == 'final_settled' and sup.restarts == 0
+    assert json.loads((env.tmp/'ops/status.json').read_text())['state'] == 'stopped'
+
+
+def test_backoff_honors_hard_end(env, monkeypatch):
+    raw = json.loads(env.cfg_path.read_text())
+    raw['restart']['backoff_s'] = [600]
+    env.cfg_path.write_text(json.dumps(raw))
+    control(env, crash_first=99, exit_after=2)
+    sup = ws.Supervisor(env.cfg(), env.date, schedule_file=str(env.schedule))
+    real_prestart = sup.prestart
+
+    def prestart():
+        out = real_prestart()
+        sup.timeline['hard_end_epoch'] = time.time()+1.5  # the hard end falls inside the 600 s backoff
+        return out
+    sup.prestart = prestart
+    t0 = time.time()
+    assert sup.main() == 'hard_end' and time.time()-t0 < 10
+
+
+def test_prestart_retries_transient_memory_then_starts(env, monkeypatch):
+    seq = iter([ws.GIB, ws.GIB])
+    monkeypatch.setattr(ws, 'available_bytes', lambda: next(seq, 16*ws.GIB))
+    control(env, final_after=3)
+    sup, reason = supervise(env)
+    assert reason == 'final_settled' and sup.prestart_attempt == 3
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    assert problem(status, 'prestart_retrying')['active'] is False
+    assert len(list(env.run.glob('PRESTART-*.json'))) == 3
+
+
+def test_prestart_gives_up_at_first_pitch_with_urgent_problem(env, monkeypatch):
+    monkeypatch.setattr(ws, 'available_bytes', lambda: ws.GIB)
+    start = time.time()+1.0
+    env.schedule.write_text(json.dumps({'schema': 'pitcheezy-schedule-query-v1', 'rows': [
+        {'game_pk': PK, 'game_type': 'W', 'abstract': 'Preview', 'detailed': 'Scheduled',
+         'game_date_utc': datetime.fromtimestamp(start, timezone.utc).isoformat()}]}))
+    env.date = datetime.fromtimestamp(start, KST).date().isoformat()
+    env.run = env.tmp/'ops'/'runs'/env.date
+    control(env)
+    sup, reason = supervise(env)
+    assert reason == 'prestart_refused' and sup.prestart_attempt >= 2 and fake_events(env) == []
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    assert status['state'] == 'refused'
+    row = problem(status, 'prestart_refused')
+    assert row['severity'] == 'urgent' and row['active'] and 'available memory' in row['message']
+
+
+def test_permanent_prestart_problem_is_not_retried(env):
+    (env.code/'apps/observer/publish_config.json').write_text('{}')
+    control(env)
+    sup, reason = supervise(env)
+    assert reason == 'prestart_refused' and sup.prestart_attempt == 1
+
+
+def test_schedule_failure_falls_back_to_run_json(env):
+    control(env, final_after=3)
+    rows = ws.schedule_rows(json.loads(env.schedule.read_text()))
+    (env.run/'RUN.json').write_text(json.dumps({'games': rows}))
+    env.schedule.unlink()  # the schedule source fails at prestart
+    sup, reason = supervise(env)
+    assert reason == 'final_settled'
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    assert problem(status, 'schedule_fallback')['active'] and problem(status, 'schedule_fallback')['severity'] == 'warn'
+
+
+def test_upload_blocked_is_an_urgent_problem(env, monkeypatch):
+    raw = json.loads(env.cfg_path.read_text())
+    raw['upload']['allowed'] = True
+    env.cfg_path.write_text(json.dumps(raw))
+    monkeypatch.setenv(ws.TOKEN_ENV, TOKEN)
+    monkeypatch.setenv(ws.BASE_URL_ENV, 'https://example.invalid/x/_publish')
+    control(env, final_after=8, upload_blocked=True)
+    supervise(env, upload=True)
+    rows = [json.loads(x) for x in (env.run/'events.jsonl').read_text().splitlines()]
+    assert any(r['event'] == 'problem' and r['key'] == 'upload_blocked' for r in rows)
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    assert problem(status, 'upload_blocked')['severity'] == 'urgent'
+
+
+def test_token_file_must_be_private(env, monkeypatch, tmp_path_factory):
+    cfg = env.cfg()
+    cfg['upload']['allowed'] = True
+    token = tmp_path_factory.mktemp('secret')/'token'
+    token.write_text(TOKEN)
+    os.chmod(token, 0o644)
+    monkeypatch.setenv(ws.TOKEN_FILE_ENV, str(token))
+    monkeypatch.setenv(ws.BASE_URL_ENV, 'https://example.invalid/x/_publish')
+    enabled, problems, _ = ws.upload_decision(cfg, True)
+    assert not enabled and any('chmod 600' in p for p in problems) and str(token) not in json.dumps(problems)
+    os.chmod(token, 0o600)
+    assert ws.upload_decision(cfg, True)[0] is True
+
+
+def test_statsapi_query_has_all_game_types(env, monkeypatch):
+    seen = {}
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"dates": []}'
+    monkeypatch.setattr(ws.urllib.request, 'urlopen', lambda req, timeout: seen.setdefault('url', req.full_url) and Resp())
+    ws.fetch_schedule(env.cfg(), '2026-10-24', '2026-10-24')
+    assert 'gameType' not in seen['url']  # never sent anywhere: urlopen is replaced

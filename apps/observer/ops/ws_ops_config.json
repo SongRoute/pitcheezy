@@ -31,9 +31,12 @@
     "backoff_s": [30, 60, 120],
     "health_stall_s": 300,
     "startup_grace_s": 180,
-    "note": "Unexpected publisher exit (or a hung publisher whose health.json has not advanced for health_stall_s after startup_grace_s) -> restart after backoff_s[i] (last value repeats), at most max_restarts times per supervisor run (a new start of the same date after an operator stop begins again at 0). 3 restarts cover a transient crash or two without turning a deterministic crash into a loop that re-polls MLB and re-warms ARM-B every few seconds; the waits (30/60/120 s) let the output lock and the upload child go away and give the alert watcher time to see the outage (worst case 3.5 min of planned waiting)."
+    "note": "Unexpected publisher exit (or a hung publisher: health.json has not advanced for health_stall_s, counted from the later of segment start and the last new sequence, so the first stall restart is at least 300 s after a segment start; startup_grace_s only delays when the check begins) -> restart after backoff_s[i] (last value repeats), at most max_restarts times per supervisor run (a new start of the same date after an operator stop begins again at 0). 3 restarts cover a transient crash or two without turning a deterministic crash into a loop that re-polls MLB and re-warms ARM-B every few seconds; the waits (30/60/120 s) let the output lock and the upload child go away and give the alert watcher time to see the outage (worst case 3.5 min of planned waiting)."
   },
   "stop": {"graceful_s": 30, "term_s": 10},
+  "prestart_retry_s": 60,
+  "prestart_late_window_s": 600,
+  "prestart_note": "Checks at publisher start. Transient problems (schedule request failed with no recorded game list, memory/disk below the start floor, T7 not mounted, another publisher still running, other unfinished games) are retried every prestart_retry_s until first pitch (started after first pitch: for prestart_late_window_s), then the date ends refused with an urgent problem. A failed schedule request falls back to the game list recorded at start (RUN.json). Any other problem refuses at once.",
   "guards": {
     "start_min_available_bytes": 2147483648,
     "start_min_free_disk_bytes": 4294967296,

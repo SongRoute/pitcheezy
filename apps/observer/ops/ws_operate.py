@@ -39,7 +39,17 @@ DEFAULT_CODE_DIR = HERE.parents[2]
 KST = timezone(timedelta(hours=9))
 GIB = 2**30
 STATUS_SCHEMA = 'pitcheezy-ws-ops-status-v1'
-STATUS_KEYS = ('schema', 'written_at', 'written_epoch', 'state', 'state_reason', 'kst_date', 'run_dir', 'games', 'timeline',
+STATUS_VERSION = '1.1'  # 1.1 (2026-10-18 review B1): updated_at, publisher.running, problems[], per-game windows, out_dir
+# problems[] keys the alert watcher reads (severity is fixed per key)
+PROBLEM_SEVERITY = {
+    'prestart_refused': 'urgent', 'restart_limit': 'urgent', 'deploy_guard': 'urgent', 'resource_guard': 'urgent',
+    'upload_blocked': 'urgent', 'another_publisher': 'urgent', 'supervisor_error': 'urgent',
+    'protected_process_changed': 'warn', 'prestart_retrying': 'warn', 'publisher_restarting': 'warn',
+    'memory_low': 'warn', 'health_stale': 'warn', 'feed_failing': 'warn', 'schedule_fallback': 'warn',
+    'identity_unreadable': 'warn',
+}
+ALERT_KEYS = ('memory_low', 'health_stale', 'feed_failing', 'upload_blocked', 'protected_process_changed')
+STATUS_KEYS = ('schema', 'schema_version', 'updated_at', 'problems', 'out_dir', 'state_path', 'written_at', 'written_epoch', 'state', 'state_reason', 'kst_date', 'run_dir', 'games', 'timeline',
                'supervisor', 'publisher', 'health', 'game_checks', 'feed_ok', 'upload', 'resources', 'restarts',
                'protected', 'alerts', 'guard')
 STATES = ('waiting', 'prestart', 'running', 'backoff', 'stopping', 'stopped', 'refused', 'failed')
@@ -305,8 +315,8 @@ def schedule_rows(data):
 def fetch_schedule(cfg, first_kst, last_kst):
     """ONE statsapi schedule request (metadata only) covering the US dates of ``first_kst`` .. ``last_kst``."""
     start = (Date.fromisoformat(first_kst)-timedelta(days=1)).isoformat()
-    url = (f'https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate={start}&endDate={last_kst}'
-           f'&gameType={",".join(cfg["game_types"])}')
+    # all game types: the 'other unfinished games on the date' check needs the non-WS rows too
+    url = f'https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate={start}&endDate={last_kst}'
     request = urllib.request.Request(url, headers={'User-Agent': 'pitcheezy-ws-ops-schedule-check'})
     with urllib.request.urlopen(request, timeout=cfg['schedule']['timeout_s']) as response:
         return json.load(response)
@@ -314,7 +324,10 @@ def fetch_schedule(cfg, first_kst, last_kst):
 
 def load_schedule(cfg, schedule_file, first_kst, last_kst):
     if schedule_file:
-        return schedule_rows(read_json(schedule_file) or {}), {'source': 'file', 'path': str(schedule_file)}
+        data = read_json(schedule_file)
+        if data is None:
+            raise OSError('schedule file unreadable')
+        return schedule_rows(data), {'source': 'file', 'path': str(schedule_file)}
     return schedule_rows(fetch_schedule(cfg, first_kst, last_kst)), {'source': 'statsapi', 'requests': 1, 'at': now_iso()}
 
 
@@ -356,6 +369,8 @@ def upload_decision(cfg, requested, env=None):
             problems.append(f'{TOKEN_FILE_ENV} is present but the file does not exist (path not shown)')
         elif any((parent/'.git').exists() for parent in path.resolve().parents):
             problems.append(f'{TOKEN_FILE_ENV} points inside a git checkout: refused')
+        elif path.stat().st_mode & 0o077:
+            problems.append(f'{TOKEN_FILE_ENV} file is readable by group/other: chmod 600 it (path not shown)')
     else:
         problems.append(f'--upload needs {TOKEN_ENV} or {TOKEN_FILE_ENV} in the environment')
     base = env.get(BASE_URL_ENV)
@@ -456,79 +471,96 @@ def previous_run(run_dir):
 
 # ----------------------------------------------------------------------------------------------- preflight
 
-def preflight(cfg, kst_date, *, upload_requested, schedule_file=None, expect_commit=None, now=None, final=False):
-    """Read-only checks for ``kst_date``. Returns (ok, report, games)."""
+TRANSIENT = ('schedule_failed', 'other_games', 'other_publishers', 'mount', 'disk', 'memory')
+
+
+def preflight(cfg, kst_date, *, upload_requested, schedule_file=None, expect_commit=None, now=None, final=False,
+              fallback_games=None):
+    """Read-only checks for ``kst_date``. Returns (ok, report, games). ``report['problem_keys']`` names each problem;
+    keys in TRANSIENT may clear by themselves (the supervisor retries them). With ``fallback_games`` (the RUN.json
+    list) a failed schedule request is not a problem: those games are used and a warning is recorded."""
     now = time.time() if now is None else now
     paths = ops_paths(cfg, kst_date)
-    problems, warnings, report = [], [], {'kst_date': kst_date}
+    problems, keys, warnings, report = [], [], [], {'kst_date': kst_date}
+
+    def add(key, message):
+        problems.append(message)
+        keys.append(key)
     try:
         rows, source = load_schedule(cfg, schedule_file, kst_date, kst_date)
         report['schedule'] = source
+        games = eligible(rows, cfg, kst_date)
     except Exception as exc:  # noqa: BLE001
         rows, report['schedule'] = [], {'error': type(exc).__name__}
-        problems.append(f'schedule check failed: {type(exc).__name__}')
-    games = eligible(rows, cfg, kst_date)
+        if fallback_games:
+            games = list(fallback_games)
+            report['schedule']['fallback'] = 'RUN.json games'
+            warnings.append(f'schedule check failed ({type(exc).__name__}): using the game list recorded at start')
+        else:
+            games = []
+            add('schedule_failed', f'schedule check failed: {type(exc).__name__}')
     finals = previous_run(paths['run'])['finals'] if paths['run'].exists() else {}
     open_games = [g for g in games if g.get('abstract') != 'Final' and str(g['game_pk']) not in finals]
     report['games'] = games
-    if not games and 'error' not in report['schedule']:
-        problems.append(f'no {"/".join(cfg["game_types"])} game scheduled on KST {kst_date}')
+    if not games and 'schedule_failed' not in keys:
+        add('no_game', f'no {"/".join(cfg["game_types"])} game scheduled on KST {kst_date}')
     elif games and not open_games:
-        problems.append('every operated game of this date is already final')
+        add('all_final', 'every operated game of this date is already final')
     if games:
         report['timeline'] = timeline(games, cfg)
         if now >= report['timeline']['hard_end_epoch']:
-            problems.append('the hard end of this date has passed')
+            add('hard_end_passed', 'the hard end of this date has passed')
     others = [r for r in rows if r['kst_date'] == kst_date and r['game_type'] not in cfg['game_types']
               and r.get('abstract') != 'Final' and r['game_type'] in ('R', 'F', 'D', 'L', 'W')]
     if others:
-        problems.append(f'other unfinished games on {kst_date} that the publisher would also poll: '
-                        f'{[o["game_pk"] for o in others]}')
+        add('other_games', f'other unfinished games on {kst_date} that the publisher would also poll: '
+                           f'{[o["game_pk"] for o in others]}')
     # code / deploy guard
     head, dirty = code_commit(cfg['code_dir'])
     report['code'] = {'dir': cfg['code_dir'], 'head': head, 'dirty': dirty}
     want = expect_commit or cfg.get('expect_commit')
     if head is None:
-        problems.append(f'code_dir {cfg["code_dir"]} is not a git checkout')
+        add('code', f'code_dir {cfg["code_dir"]} is not a git checkout')
     if cfg.get('require_clean_code', True) and dirty is not False:
-        problems.append('code_dir has tracked changes (or git status failed): refused')
+        add('code', 'code_dir has tracked changes (or git status failed): refused')
     if want and head != want:
-        problems.append(f'code_dir HEAD {head} != expected {want}')
+        add('code', f'code_dir HEAD {head} != expected {want}')
     prev = previous_run(paths['run']) if paths['run'].exists() else {'segments': 0, 'commit': None}
     report['previous_run'] = {'segments': prev['segments'], 'commit': prev['commit']}
     if prev['commit'] and head and prev['commit'] != head and open_games:
-        problems.append(f'deploy guard: this date already ran commit {prev["commit"][:12]} and a game is not final; '
-                        f'starting {head[:12]} now would change decision IDs mid-game (deploy only between games)')
+        add('deploy_guard', f'deploy guard: this date already ran commit {prev["commit"][:12]} and a game is not final; '
+                            f'starting {head[:12]} now would change decision IDs mid-game (deploy only between games)')
     # processes and locks
     report['supervisor_lock_held'] = lock_held(paths['lock'])
     if report['supervisor_lock_held']:
-        problems.append('another ws_operate supervisor holds the lock (status / stop it first)')
+        add('supervisor_lock', 'another ws_operate supervisor holds the lock (status / stop it first)')
     report['other_publishers'] = other_publishers()
     if report['other_publishers']:
-        problems.append('another publisher or supervisor is running: '
-                        f'{[(o["pid"], o["kind"]) for o in report["other_publishers"]]}')
+        add('other_publishers', 'another publisher or supervisor is running: '
+                                f'{[(o["pid"], o["kind"]) for o in report["other_publishers"]]}')
     # machine
     if not os.access(cfg['python'], os.X_OK) and not os.environ.get(FAKE_ENV):
-        problems.append(f'python {cfg["python"]} missing')
+        add('python', f'python {cfg["python"]} missing')
     for mount in cfg.get('required_mounts', []):
         if not os.path.ismount(mount):
-            problems.append(f'{mount} is not mounted')
+            add('mount', f'{mount} is not mounted')
     report['available_bytes'] = available_bytes()
     report['free_disk_bytes'] = free_disk(paths['root'])
     guards = cfg['guards']
     if report['free_disk_bytes'] < guards['start_min_free_disk_bytes']:
-        problems.append(f'free disk {report["free_disk_bytes"]} < {guards["start_min_free_disk_bytes"]}')
+        add('disk', f'free disk {report["free_disk_bytes"]} < {guards["start_min_free_disk_bytes"]}')
     if final and (report['available_bytes'] or 0) < guards['start_min_available_bytes']:
-        problems.append(f'available memory {report["available_bytes"]} < {guards["start_min_available_bytes"]}')
+        add('memory', f'available memory {report["available_bytes"]} < {guards["start_min_available_bytes"]}')
     # upload / reference card
     upload, upload_problems, presence = upload_decision(cfg, upload_requested)
-    problems += upload_problems
+    for message in upload_problems:
+        add('upload_config', message)
     report['upload'] = {'requested': upload_requested, 'enabled': upload, **presence}
     report['profile_sources_present'] = bool(profile_sources(cfg))
     if not report['profile_sources_present']:
         warnings.append(f'{PROFILE_ENV} is not set: the reference card will be absent')
     report['fixed_delay_s'] = cfg['fixed_delay_s']
-    report['problems'], report['warnings'] = problems, warnings
+    report['problems'], report['problem_keys'], report['warnings'] = problems, keys, warnings
     return not problems, report, games
 
 
@@ -561,6 +593,8 @@ class Supervisor:
         self.childwatch_pid = None
         self.started_at = self.clock()
         self.me = None
+        self.problems = {}
+        self.run_games = []
 
     # -- records
     def log(self, name, row):
@@ -569,6 +603,42 @@ class Supervisor:
 
     def event(self, name, **more):
         self.log('events.jsonl', {'at': now_iso(self.clock()), 'event': name, **more})
+
+    def set_problem(self, key, active, message=None):
+        """Keep one entry per key: active while the condition holds, then active false (so the watcher can clear)."""
+        now = now_iso(self.clock())
+        current = self.problems.get(key)
+        if active:
+            since = current['since'] if current and current['active'] else now
+            self.problems[key] = {'key': key, 'severity': PROBLEM_SEVERITY[key], 'message': (message or key)[:500],
+                                  'active': True, 'since': since}
+            if not (current and current['active']):
+                self.event('problem', key=key, message=(message or key)[:500])
+        elif current and current['active']:
+            current |= {'active': False, 'cleared_at': now}
+            self.event('problem_cleared', key=key)
+
+    def game_rows(self, now):
+        win_start = self.timeline and now_iso(self.timeline['publisher_start_epoch'])
+        hard_end = self.timeline and self.timeline['hard_end_epoch']
+        rows = []
+        for g in self.games:
+            pk, start = str(g['game_pk']), parse_utc(g['start_utc'])
+            if pk in self.finals or g.get('abstract') == 'Final':
+                status = 'final'
+            elif g.get('detailed') in ('Postponed', 'Cancelled', 'Suspended'):
+                status = 'postponed'
+            elif now >= start:
+                status = 'live'
+            else:
+                status = 'scheduled'
+            end = hard_end
+            if hard_end and self.all_final_at is not None:
+                end = min(hard_end, self.all_final_at+self.cfg['settle_s'])
+            rows.append({'game_pk': g['game_pk'], 'label': g.get('label'), 'start': now_iso(start),
+                         'start_utc': g['start_utc'], 'status': status, 'window_start': win_start,
+                         'window_end': end and now_iso(end), 'final_seen_at': self.finals.get(pk)})
+        return rows
 
     def set_state(self, state, reason=None):
         assert state in STATES, state
@@ -595,18 +665,21 @@ class Supervisor:
             game_checks[pk]['feed_ok'] is not False for pk in game_checks if pk in checks))
         unavailable = health.get('unavailable_games') or []
         return {
-            'schema': STATUS_SCHEMA, 'written_at': now_iso(now), 'written_epoch': round(now, 3),
+            'schema': STATUS_SCHEMA, 'schema_version': STATUS_VERSION, 'updated_at': now_iso(now),
+            'written_at': now_iso(now), 'written_epoch': round(now, 3),
+            'out_dir': str(self.out), 'state_path': f'{self.out}.state.json',
+            'problems': sorted(self.problems.values(), key=lambda p: (not p['active'], p['key'])),
             'state': self.state, 'state_reason': self.state_reason, 'kst_date': self.date, 'run_dir': str(self.run_dir),
-            'games': [{'game_pk': g['game_pk'], 'label': g.get('label'), 'start_utc': g['start_utc'],
-                       'final_seen_at': self.finals.get(str(g['game_pk']))} for g in self.games],
+            'games': self.game_rows(now),
             'timeline': self.timeline and {k: v for k, v in self.timeline.items() if not k.endswith('_epoch')} | {
                 'publisher_start_epoch': self.timeline['publisher_start_epoch'],
                 'hard_end_epoch': self.timeline['hard_end_epoch'],
                 'all_final_at': self.all_final_at and now_iso(self.all_final_at),
                 'settle_until': self.all_final_at and now_iso(self.all_final_at+self.cfg['settle_s'])},
             'supervisor': {'pid': os.getpid(), 'lstart': me and me['lstart'], 'started_at': now_iso(self.started_at)},
-            'publisher': None if self.proc is None else {
-                'pid': self.proc.pid, 'lstart': self.ident and self.ident['lstart'], 'segment': self.segment,
+            'publisher': {'running': False, 'segment': self.segment, 'commit': self.commit,
+                          'last_exit': self.last_exit} if self.proc is None else {
+                'running': True, 'pid': self.proc.pid, 'lstart': self.ident and self.ident['lstart'], 'segment': self.segment,
                 'started_at': now_iso(self.segment_started), 'commit': self.commit, 'commit_dirty': self.commit_dirty,
                 'armb': self.armb, 'fixed_delay_s': self.cfg['fixed_delay_s'], 'upload_enabled': self.upload,
                 'childwatch_pid': self.childwatch_pid, 'fake': bool(os.environ.get(FAKE_ENV))},
@@ -654,7 +727,13 @@ class Supervisor:
                                          start_new_session=True)
         self.segment_started = self.clock()
         self.ident = ps_identity(self.proc.pid)
-        self.childwatch_pid = self.spawn_childwatch() if self.cfg.get('childwatch', True) else None
+        if self.ident is None:  # childwatch could not match it: say so instead of running without a watchdog silently
+            self.event('identity_unreadable', pid=self.proc.pid)
+            self.set_problem('identity_unreadable', True, f'ps identity of publisher pid {self.proc.pid} unreadable: '
+                                                          'no childwatch for this segment')
+        else:
+            self.set_problem('identity_unreadable', False)
+        self.childwatch_pid = (self.spawn_childwatch() if self.cfg.get('childwatch', True) and self.ident else None)
         row = {'segment': self.segment, 'kind': kind, 'pid': self.proc.pid, 'identity': self.ident, 'argv': argv,
                'commit': self.commit, 'commit_dirty': self.commit_dirty, 'armb': self.armb, 'upload': self.upload,
                'childwatch_pid': self.childwatch_pid, 'env': shown_env(env), 'started_at': now_iso(self.segment_started)}
@@ -788,6 +867,13 @@ class Supervisor:
         if not self.protected_now.get('ok', True):
             alerts.append('protected_process_changed')
         self.alerts = alerts
+        messages = {'memory_low': f'available memory {avail} < {guards["warn_available_bytes"]}',
+                    'health_stale': f'health.json not advanced for > {guards["health_stale_warn_s"]} s',
+                    'feed_failing': f'feed failing: {(self.health or {}).get("feed_failing_games")}',
+                    'upload_blocked': f'upload blocked: {self.upload_view.get("error_classes")}',
+                    'protected_process_changed': f'protected processes changed: {self.protected_now}'}
+        for key in ALERT_KEYS:
+            self.set_problem(key, key in alerts, messages[key])
         self.streak['rss'] = self.streak['rss']+1 if rss is not None and rss > guards['stop_rss_bytes'] else 0
         if self.streak['rss'] >= guards['stop_rss_samples']:
             return 'guard:publisher_rss_over_limit'
@@ -832,11 +918,13 @@ class Supervisor:
     def prestart(self):
         self.set_state('prestart')
         ok, report, games = preflight(self.cfg, self.date, upload_requested=self.upload, schedule_file=self.schedule_file,
-                                      expect_commit=self.expect_commit, now=self.clock(), final=True)
-        report['problems'] = [p for p in report['problems'] if not p.startswith('another ws_operate supervisor')]
-        report['other_publishers'] = other_publishers()
-        if report['other_publishers'] and not any(p.startswith('another publisher') for p in report['problems']):
-            report['problems'].append('another publisher or supervisor is running')
+                                      expect_commit=self.expect_commit, now=self.clock(), final=True,
+                                      fallback_games=self.run_games)
+        pairs = [(k, p) for k, p in zip(report['problem_keys'], report['problems']) if k != 'supervisor_lock']  # ours
+        report['problem_keys'], report['problems'] = [k for k, _ in pairs], [p for _, p in pairs]
+        fallback = report['schedule'].get('fallback')
+        self.set_problem('schedule_fallback', bool(fallback),
+                         f'schedule request failed ({report["schedule"].get("error")}): using the RUN.json game list')
         self.games = [g for g in games if g.get('abstract') != 'Final' and str(g['game_pk']) not in self.finals] or games
         if games:
             self.timeline = timeline(games, self.cfg)
@@ -845,25 +933,59 @@ class Supervisor:
         self.armb = avail >= self.cfg['armb_min_available_bytes'] if mode == 'auto' else mode == '1'
         if mode == '1' and avail < self.cfg['armb_min_available_bytes']:
             report['problems'].append(f'armb forced on but available memory {avail} is below the floor')
+            report['problem_keys'].append('memory')
         self.commit, self.commit_dirty = report['code']['head'], report['code']['dirty']
         self.protected = protected_processes()
         self.protected_now = protected_check(self.protected, self.protected)
         report['armb'] = self.armb
-        write_json_atomic(self.run_dir/f'PRESTART-{self.segment+1:03d}.json', report)
-        return report['problems']
+        self.prestart_attempt = getattr(self, 'prestart_attempt', 0)+1
+        write_json_atomic(self.run_dir/f'PRESTART-{self.segment+1:03d}-{self.prestart_attempt:02d}.json', report)
+        return report['problems'], report['problem_keys']
+
+    def prestart_with_retries(self):
+        """prestart until it passes. Transient problems (schedule request, memory, disk, mount, another publisher, other
+        games) are retried every prestart_retry_s until first pitch (or prestart_late_window_s when started late);
+        any other problem refuses at once. Returns (problems or [], stop_requested)."""
+        retry_s, began, deadline = self.cfg.get('prestart_retry_s', 60), self.clock(), None
+        while True:
+            problems, keys = self.prestart()
+            if deadline is None:  # after the first attempt the timeline is known (RUN.json or the schedule)
+                first = self.timeline['first_pitch_epoch'] if self.timeline else began
+                deadline = first if first > began else began+self.cfg.get('prestart_late_window_s', 600)
+                if self.timeline:
+                    deadline = min(deadline, self.timeline['hard_end_epoch'])
+            if not problems:
+                self.set_problem('prestart_retrying', False)
+                return [], False
+            permanent = [k for k in keys if k not in TRANSIENT]
+            if permanent or self.clock()+retry_s > deadline:
+                self.set_problem('prestart_retrying', False)
+                return problems, False
+            self.set_problem('prestart_retrying', True, f'attempt {self.prestart_attempt}: ' + '; '.join(problems))
+            self.set_state('prestart', 'retrying')
+            if not self.wait(retry_s, observe=False):
+                return problems, True
 
     def handle_exit(self, why):
         """After the publisher ended unexpectedly: restart within the policy, or a reason to end."""
         restart = self.cfg['restart']
+        if self.all_final_at is not None:  # every game already final: nothing left to publish, end normally
+            return 'final_settled'
         if self.restarts >= restart['max_restarts']:
             return f'restart_limit:{why}'
         delay = restart['backoff_s'][min(self.restarts, len(restart['backoff_s'])-1)]
+        delay = max(0.0, min(delay, self.timeline['hard_end_epoch']-self.clock()))
         self.next_restart_at = self.clock()+delay
+        self.set_problem('publisher_restarting', True, f'{why}; restart {self.restarts+1} in {delay:.0f} s')
         self.set_state('backoff', why)
         if not self.wait(delay):
             self.next_restart_at = None
             return 'operator_stop'
         self.next_restart_at = None
+        if self.clock() >= self.timeline['hard_end_epoch']:
+            return 'hard_end'
+        if self.all_final_at is not None:
+            return 'final_settled'
         ok, detail = self.deploy_check()
         if not ok:
             self.event('deploy_guard_refused', detail=detail)
@@ -874,6 +996,7 @@ class Supervisor:
         self.restarts += 1
         self.restart_history.append({'n': self.restarts, 'why': why, 'backoff_s': delay, 'at': now_iso(self.clock())})
         self.start_segment('restart')
+        self.set_problem('publisher_restarting', False)
         self.set_state('running')
         return None
 
@@ -931,6 +1054,7 @@ class Supervisor:
         try:
             run = read_json(self.run_dir/'RUN.json', {}) or {}
             self.games = run.get('games') or []
+            self.run_games = list(self.games)
             if self.games:
                 self.timeline = timeline(self.games, self.cfg)
             self.set_state('waiting')
@@ -938,10 +1062,13 @@ class Supervisor:
             if not self.wait(max(0.0, start_at-self.clock()), observe=False):
                 reason = 'operator_stop_before_start'
             else:
-                problems = self.prestart()
-                if problems:
+                problems, stopped = self.prestart_with_retries()
+                if stopped:
+                    reason = 'operator_stop_before_start'
+                elif problems:
                     reason, final_state = 'prestart_refused', 'refused'
                     self.event('prestart_refused', problems=problems)
+                    self.set_problem('prestart_refused', True, '; '.join(problems))
                 else:
                     self.start_segment('initial')
                     self.set_state('running')
@@ -955,6 +1082,13 @@ class Supervisor:
                 self.read_upload_state()
             if final_state != 'refused' and reason not in NORMAL_ENDS:
                 final_state = 'failed'
+            for prefix, key in (('restart_limit', 'restart_limit'), ('deploy_guard', 'deploy_guard'),
+                                ('guard:', 'resource_guard'), ('supervisor_error', 'supervisor_error'),
+                                ('another_publisher', 'another_publisher')):
+                if reason and reason.startswith(prefix):
+                    self.set_problem(key, True, reason)
+            for key in ('publisher_restarting', 'health_stale', 'feed_failing', 'memory_low'):
+                self.set_problem(key, False)  # the publisher is gone: these no longer describe anything
             end = {'at': now_iso(self.clock()), 'reason': reason, 'state': final_state, 'kst_date': self.date,
                    'segments': self.segment, 'restarts': self.restarts, 'finals': self.finals, 'commit': self.commit}
             write_json_atomic(self.run_dir/f'END-{self.segment:03d}.json', end)
@@ -1122,6 +1256,8 @@ def cmd_childwatch(args, cfg):
     def child_matches():
         return is_our_publisher(ps_identity(args.pid), args.lstart, args.run_dir)
     log(event='childwatch_start', deadline=now_iso(args.deadline))
+    if not child_matches():  # nothing to watch: say why instead of exiting silently
+        log(event='child_identity_unreadable_or_mismatch', identity=ps_identity(args.pid), lstart=args.lstart)
     while child_matches():
         sup = ps_identity(args.supervisor)
         orphaned = not (sup and sup['lstart'] == args.supervisor_lstart.strip())
