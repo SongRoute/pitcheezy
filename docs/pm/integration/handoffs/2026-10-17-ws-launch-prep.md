@@ -56,3 +56,11 @@
 - 실행 중인 서버·기록기·수집 프로세스에는 신호를 보내지 않는다. 메모리는 기록기가 먼저다.
 - 실자료 실행은 등록 + 작성자와 다른 에이전트의 독립 검토 뒤에만.
 - 2026 자료 역할(EXPOSED DEVELOPMENT 등)·as-of·누수 방지, 봉인 결과·OPE 경계 유지.
+
+## Added 2026-10-18
+- Launch branch `ws/launch-2026`: on top of B/C/D/E it now carries J (reference card), the operations launcher and alert watcher (`apps/observer/ops/`), robust daily start (retry, quiet off-days, schedule shape validation), and the WS game list pinned in the watcher. Every piece passed independent review; 110 tests pass.
+- Rehearsal: 849816 (10/18) refused at the prestart check because the PM session's pgrep waiter loop was misread as another publisher (no feed polled). Fixed (REGISTRATION-v4, REVIEW-003 PASS); retried on 849817 (10/19 06:08 KST, publisher at 05:53).
+- Reference card replay (J): card on 47 / off 0, body identical with the card excluded, 0 audit violations → merged.
+- Teammate: host pack (3ea7ad6) verified, Node 304/304, compatibility 4/4. Reply posted on transition-models#18. Our pack v4.2 sent privately by Song. One-key test registration v2 passed review (Fable) → waiting on the teammate's answers to 12 questions and a test window.
+- Song decisions: MLB permission not a gate (advised); UI pass on 10/21 (freeze exception); restart up to 3×, start 30 min before; phone alerts via ntfy+iMessage (**Song sets up Tue 10/20 afternoon/evening**); launchd daily start once the WS schedule is confirmed.
+- Open: 8772 switch after the rehearsal (Song), T7 move (~21GB, after the rehearsal), WS roster recount, confirmed WS times, pack v4.3 (adds reference card schema).
