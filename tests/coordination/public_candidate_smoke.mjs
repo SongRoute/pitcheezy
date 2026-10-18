@@ -127,9 +127,13 @@ function liveFixtures(base) {
         target: { x: 0, z: 2.25 }, detail: { probability: 1 } }] } };
     game.display_state = { state: name === 'unconfirmed' ? 'unconfirmed' : name === 'unknown_display' ? 'synthetic_future_state' : 'recommended',
       reason: 'synthetic_only', pitch_key: game.next.pitch_key, recommendation_shown: true,
-      feed: { ok: true, delayed: false, lag_s: null }, correction: null };
+      schema: 'synthetic-display-state-v1', label: '', message: null, detail: null,
+      ledger: { status: 'synthetic_only', store_ok: true, outcome: null, why: null },
+      feed: { ok: true, delayed: false, lag_s: null, failing_for_s: null, failing_since: null,
+        lag_max_s: null, lag_measured: false, lag_threshold_s: 0, last_ok_at: at,
+        provider_order: 'synthetic_only', received_at: at, thresholds_provisional: true }, correction: null };
     if (name === 'missing_display') delete game.display_state;
-    bodies['/v1/games/2030-01-01.json'].games = [structuredClone(game.game)];
+    bodies['/v1/games/2030-01-01.json'].games = [{ ...game.game, inning: null, half: null }];
     bodies['/v1/manifest.json'].live_dates = [base.date];
     for (const body of Object.values(bodies)) body.publish.final = false;
     const phases = (name === 'transition' ? [true, false, true] : [true]).map((feedOk, i) => {
