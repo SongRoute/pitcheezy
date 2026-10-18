@@ -197,6 +197,51 @@ class Acceptance(unittest.TestCase):
         self.assertFalse(self.probe403("text/html; charset=utf-8", False),
                          "HTML403 without cf-mitigated must not count as gateway scope evidence")
 
+    def test_clock_offset_requires_finite_bounded_number(self):
+        at = "2030-01-01T00:00:00.000Z"
+        pre = {
+            "schema": "pitcheezy-onekey-preconditions-v1", "run_id": "cx17-synthetic", "game_key": "123456",
+            "approvals": {"song_go": {"reference": "synthetic-only", "at_utc": at},
+                          "independent_review": {"reference": "synthetic-only", "at_utc": at,
+                                                 "reviewer": "synthetic-reviewer"}},
+            "clock": {"ntp_offset_s": 0, "measured_at_utc": at},
+            "teammate_confirmation": {
+                "at_utc": at, "reference_private": "synthetic-only", "deployed_source_commit": "0" * 40,
+                "deployed_runtime_sha256": {name: {"raw": raw, "lf": lf}
+                                            for name, (raw, lf) in self.w.EXPECTED_RUNTIME.items()},
+                "scope_mode": "scoped", "scope_feature_deployed": True, "expiry_feature_deployed": True,
+                "publish_key_scope": "v1/game/123456.json", "publish_expires_at": "2030-01-01T01:00:00.000Z",
+                "upload_enabled_for_window": True, "data_read_enabled": True,
+                "notice_switch_off": True, "limiter_allows_18_in_120s": True},
+            "game_key_fresh_attested_by_teammate": True,
+            "test_window": {"start_utc": at, "end_utc": "2030-01-01T00:30:00.000Z"},
+            "credentials": {"bearer_dedicated_new": True, "bearer_delivered_privately": True,
+                            "viewer_session_dedicated": True, "viewer_session_delivered_privately": True,
+                            "stored_on_disk": False},
+            "single_writer": {"teammate_confirms_no_other_writer_on_key": True},
+            "operators": {"ours_alias": "synthetic-ours", "theirs_alias": "synthetic-theirs"},
+            "abort_contact": {"private_channel_agreed": True, "stop_signal_agreed": True,
+                              "teammate_can_toggle_upload_off": True},
+            "post_test": {"teammate_will_toggle_upload_off": True, "teammate_will_replace_token_digest": True,
+                          "teammate_will_clear_scope": True},
+            "target": {"upload_base": "https://localhost/_publish", "public_origin": "https://localhost"},
+            "client": {"commit": "0" * 40, "worktree": str(self.tmp), "python": "never-executed-python"},
+            "probes": {"out_of_scope_head": True, "expired_head": True, "revoked_head": True},
+        }
+        self.assertEqual(self.w.validate_pre(pre, harness=True), [], "valid synthetic baseline")
+        cases = [("zero", 0, True), ("negative_boundary", -5, True), ("positive_boundary", 5, True),
+                 ("nan", float("nan"), False), ("positive_infinity", float("inf"), False),
+                 ("negative_infinity", float("-inf"), False), ("above", 5.001, False),
+                 ("below", -5.001, False), ("true_bool", True, False), ("false_bool", False, False),
+                 ("string", "0", False)]
+        for name, value, accepted in cases:
+            with self.subTest(clock_case=name):
+                pre["clock"]["ntp_offset_s"] = value
+                errors = self.w.validate_pre(pre, harness=True)
+                self.assertEqual([e for e in errors if not e.startswith("clock.")], [])
+                self.assertEqual(len(errors), 0 if accepted else 1,
+                                 "clock must be a finite int/float within inclusive [-5, 5]")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
