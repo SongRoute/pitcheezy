@@ -35,9 +35,15 @@ GIB = 1024 ** 3
 DEFAULT_CONFIG = Path(__file__).with_name('ws_alert_config.json')
 CRITICAL, WARN = 'critical', 'warn'
 UNKNOWN_REASONS = ('upload_unknown', 'interrupted_unknown', 'legacy_unknown')
+# MLB detailedState values in which the game is actually being played (the file must keep changing). Warmup,
+# Delayed*, Suspended*, Manager challenge and the like are 'live' in the service but may sit still for minutes.
+IN_PLAY_TEXT = ('In Progress',)
+OPS_DOWN_STATES = ('backoff', 'failed', 'refused', 'stopped')
+# Supervisor alert strings the watcher already judges itself from the same sources: not repeated.
+OPS_ALERTS_COVERED = ('memory_low', 'health_stale', 'feed_failing', 'upload_blocked')
 
 BUILTIN = {
-    'paths': {'out_dir': None, 'state_path': None, 'ops_status': None,
+    'paths': {'out_dir': None, 'state_path': None, 'ops_status': '~/Projects/pitcheezy-pm-jobs/ws-ops/status.json',
               'profile_log': '~/Projects/pitcheezy-pm-jobs/profile-refresh-daily/logs/RESULTS.log',
               'alert_dir': '~/.pitcheezy/ws-alert', 'disk_paths': ['~']},
     'contract_version': 'v1', 'loop_interval_s': 15,
@@ -45,13 +51,14 @@ BUILTIN = {
     'thresholds': {'health_stale_s': 30, 'publisher_down_s': 120, 'game_check_stale_s': 30,
                    'game_check_missing_hold_s': 60, 'feed_down_hold_s': 60, 'feed_lag_s': 45,
                    'feed_delayed_hold_s': 20, 'file_stuck_s': 300, 'file_stuck_upstream_s': 60,
-                   'game_unavailable_hold_s': 30, 'upload_pending_hold_s': 30, 'upload_code_hold_s': 60,
-                   'upload_error_count': 3, 'state_unreadable_hold_s': 30, 'memory_available_gib': 2.0,
-                   'memory_hold_s': 60, 'disk_free_gib': 12.5, 'profile_deadline_kst': '21:20', 'ops_stale_s': 300},
+                   'game_unavailable_hold_s': 30,
+                   'state_unreadable_hold_s': 30, 'memory_available_gib': 2.0,
+                   'memory_hold_s': 60, 'disk_free_gib': 12.5, 'profile_deadline_kst': '21:20',
+                   'ops_stale_running_s': 90, 'ops_stale_other_s': 300, 'upload_pending_floor': 5,
+                   'upload_pending_cycles': 4, 'upload_oldest_s': 60},
     'notify': {'cooldown_s': 300, 'renotify_s': {CRITICAL: 900, WARN: 1800}, 'renotify_outside_game_s': 21600},
     'game_gated': ['health_stalled', 'publisher_down', 'game_check_stalled', 'feed_down', 'feed_delayed',
-                   'file_stuck', 'game_unavailable', 'upload_pending', 'upload_errors', 'memory_low',
-                   'ops_status_stale'],
+                   'file_stuck', 'game_unavailable', 'upload_pending', 'upload_stalled', 'memory_low'],
 }
 
 
@@ -72,11 +79,14 @@ def load_config(path=None, *, out_dir=None, ops_status=None, alert_dir=None, env
     if path.exists():
         cfg = _merge(cfg, json.loads(path.read_text()))
     paths = cfg['paths']
+    if env.get('PITCHEEZY_WS_OPS_ROOT'):
+        paths['ops_status'] = str(Path(env['PITCHEEZY_WS_OPS_ROOT']) / 'status.json')
     for key, name in (('out_dir', 'PITCHEEZY_PUBLISH_OUT_DIR'), ('state_path', 'PITCHEEZY_PUBLISH_STATE'),
                       ('ops_status', 'PITCHEEZY_WS_OPS_STATUS'), ('profile_log', 'PITCHEEZY_PROFILE_REFRESH_LOG'),
                       ('alert_dir', 'PITCHEEZY_ALERT_DIR')):
         if env.get(name):
             paths[key] = env[name]
+    cfg['cli_out'] = bool(out_dir)  # an explicit --out wins over the ops status file's out_dir
     for key, value in (('out_dir', out_dir), ('ops_status', ops_status), ('alert_dir', alert_dir)):
         if value:
             paths[key] = value
@@ -163,8 +173,21 @@ def disk_free_bytes(paths):
 def collect(cfg, now, *, memory=memory_available_bytes, disk=disk_free_bytes):
     """Everything the rules look at, read once. Missing inputs are recorded, never raised."""
     paths, version = cfg['paths'], cfg['contract_version']
-    obs = {'now': now, 'out_dir': paths.get('out_dir'), 'games': [], 'game_files': {}}
-    root = Path(paths['out_dir']) / version if paths.get('out_dir') else None
+    obs = {'now': now, 'games': [], 'game_files': {}}
+    obs['ops'], obs['ops_error'] = _read_json(paths['ops_status']) if paths.get('ops_status') else (None, None)
+    out_dir, state_path = paths.get('out_dir'), paths.get('state_path')
+    ops = obs['ops']
+    # The ops status (v1.1) names the current day's publisher output and state file: follow it (--out still wins).
+    if isinstance(ops, dict) and ops_is_current(ops, now) and not cfg.get('cli_out'):
+        if isinstance(ops.get('out_dir'), str) and ops['out_dir']:
+            out_dir = str(Path(ops['out_dir']).expanduser())
+            state_path = None
+        if isinstance(ops.get('state_path'), str) and ops['state_path']:
+            state_path = str(Path(ops['state_path']).expanduser())
+        if out_dir and not state_path:
+            state_path = str(Path(out_dir).parent / f'{Path(out_dir).name}.state.json')
+    obs['out_dir'], obs['state_path'] = out_dir, state_path
+    root = Path(out_dir) / version if out_dir else None
     if root is not None:
         obs['health'], obs['health_error'] = _read_json(root / 'health.json')
         try:
@@ -177,8 +200,7 @@ def collect(cfg, now, *, memory=memory_available_bytes, disk=disk_free_bytes):
             for game in (body or {}).get('games') or []:
                 if isinstance(game, dict) and isinstance(game.get('game_pk'), int):
                     obs['games'].append(game)
-    obs['state'], obs['state_error'] = _read_json(paths.get('state_path'))
-    obs['ops'], obs['ops_error'] = _read_json(paths['ops_status']) if paths.get('ops_status') else (None, None)
+    obs['state'], obs['state_error'] = _read_json(state_path)
     pks = {g['game_pk'] for g in obs['games'] if g.get('status') == 'live' or g.get('live')}
     pks |= {int(k) for k in ((obs.get('health') or {}).get('game_checks') or {}) if str(k).isdigit()}
     for item in _ops_games(obs['ops']):
@@ -190,11 +212,18 @@ def collect(cfg, now, *, memory=memory_available_bytes, disk=disk_free_bytes):
                 obs['game_files'][pk] = body
     obs['memory'] = memory()
     disk_paths = list(paths.get('disk_paths') or [])
-    if paths.get('out_dir'):
-        disk_paths.append(str(Path(paths['out_dir']).parent))
+    if out_dir:
+        disk_paths.append(str(Path(out_dir).parent))
     obs['disk'] = disk(disk_paths)
     obs['profile_line'] = _last_line(Path(paths['profile_log']).expanduser()) if paths.get('profile_log') else None
     return obs
+
+
+def ops_is_current(ops, now):
+    """A status file from an older operating day says nothing about today (the supervisor writes kst_date)."""
+    day = datetime.fromtimestamp(now, KST).date()
+    return not isinstance(ops.get('kst_date'), str) or ops['kst_date'] in (
+        day.isoformat(), (day - timedelta(days=1)).isoformat())
 
 
 def _ops_games(ops):
@@ -217,7 +246,8 @@ def game_windows(cfg, obs):
     now, gw = obs['now'], cfg['game_window']
     cands = {}
     for source, items in (('schedule', cfg.get('schedule') or []), ('publisher', obs['games']),
-                          ('ops', _ops_games(obs.get('ops')))):
+                          ('ops', _ops_games(obs.get('ops')) if isinstance(obs.get('ops'), dict)
+                           and ops_is_current(obs['ops'], now) else [])):
         for item in items:
             try:
                 pk = int(item.get('game_pk'))
@@ -226,19 +256,23 @@ def game_windows(cfg, obs):
             entry = cands.setdefault(pk, {'game_pk': pk, 'start': None, 'status': None, 'sources': [],
                                           'window_start': None, 'window_end': None})
             entry['sources'].append(source)
-            entry['start'] = parse_time(item.get('start')) or entry['start']
+            entry['start'] = parse_time(item.get('start') or item.get('start_utc')) or entry['start']
             entry['status'] = item.get('status') or entry['status']
+            entry['status_text'] = item.get('status_text') or entry.get('status_text')
+            if source == 'ops' and item.get('final_seen_at'):
+                entry['status'] = 'final'
             if item.get('live') is True and source == 'publisher' and entry['status'] != 'final':
                 entry['status'] = 'live'
             entry['window_start'] = parse_time(item.get('window_start')) or entry['window_start']
             entry['window_end'] = parse_time(item.get('window_end')) or entry['window_end']
     for pk, body in obs['game_files'].items():  # the game file is the publisher's newest word on its status
-        status = (body.get('game') or {}).get('status')
-        if pk in cands and status:
-            cands[pk]['status'] = status
+        game = body.get('game') or {}
+        if pk in cands and game.get('status'):
+            cands[pk]['status'] = game['status']
+            cands[pk]['status_text'] = game.get('status_text')
     out = {}
     for pk, entry in cands.items():
-        if entry['status'] in ('final', 'other'):
+        if entry['status'] in ('final', 'other', 'postponed'):
             continue
         start = entry['window_start'] or (entry['start'] - gw['before_start_s'] if entry['start'] else None)
         end = entry['window_end'] or (entry['start'] + gw['max_game_s'] if entry['start'] else None)
@@ -269,6 +303,7 @@ def evaluate(cfg, obs, tracker):
     th, now = cfg['thresholds'], obs['now']
     windows = game_windows(cfg, obs)
     in_game = bool(windows)
+    tracker['windows_now'] = sorted(windows)
     gated = set(cfg['game_gated'])
     conds = []
 
@@ -281,18 +316,20 @@ def evaluate(cfg, obs, tracker):
 
     ops = obs.get('ops') if isinstance(obs.get('ops'), dict) else None
     ops_pub = (ops or {}).get('publisher') if isinstance((ops or {}).get('publisher'), dict) else {}
+    ops_current = ops is not None and ops_is_current(ops, now)
+    ops_state = ops.get('state') if ops_current and isinstance(ops.get('state'), str) else None
 
     # --- publisher liveness (game-gated)
     if in_game and obs.get('out_dir'):
         names = ', '.join(str(pk) for pk in sorted(windows))
         published = parse_time((health or {}).get('published_at')) or obs.get('health_mtime')
         age = None if published is None else max(0.0, now - published)
-        ops_says_down = ops_pub.get('running') is False
+        ops_says_down = ops_pub.get('running') is False or ops_state in OPS_DOWN_STATES
         down = health is None or age is None or age > th['publisher_down_s'] or ops_says_down
         why = ('health.json 없음' if obs.get('health_error') == 'missing' else
                'health.json 읽기 실패' if health is None else
                f'health {_fmt_s(age)} 멈춤' if age is not None and age > th['publisher_down_s'] else
-               '운영 상태 파일이 발행기 꺼짐으로 보고')
+               f'운영 상태 {ops_state or "publisher.running=false"}')
         conds.append(_cond('publisher_down', CRITICAL, down,
                            f'발행기 꺼진 듯: {why} (경기 {names} 시간대)', age_s=age))
         conds.append(_cond('health_stalled', WARN, age is not None and age > th['health_stale_s'],
@@ -306,7 +343,7 @@ def evaluate(cfg, obs, tracker):
         failing = set(health.get('feed_failing_games') or [])
         unavailable = {}
         for item in health.get('unavailable_games') or []:
-            if isinstance(item, dict) and 'game_pk' in item:
+            if isinstance(item, dict) and 'game_pk' in item and item.get('code') != 'upload_failed':
                 unavailable.setdefault(item['game_pk'], []).append(str(item.get('code')))
         for pk, info in sorted(windows.items()):
             body = obs['game_files'].get(pk) or {}
@@ -333,14 +370,18 @@ def evaluate(cfg, obs, tracker):
                                f'경기 {pk} 피드 끊김(feed_ok false) — 화면 "연결 끊김"', th['feed_down_hold_s']))
             feed = ((body.get('display_state') or {}).get('feed') or {}) if body else {}
             lag = feed.get('lag_s') if isinstance(feed.get('lag_s'), (int, float)) else None
-            delayed = feed.get('delayed') is True or (lag is not None and lag > th['feed_lag_s'])
+            delayed = feed.get('delayed') is True  # the publisher's own judgement (lag > max(45, viewer delay))
+            limit = feed.get('lag_threshold_s', th['feed_lag_s'])
             conds.append(_cond(f'feed_delayed:{pk}', WARN, delayed and not feed_bad,
-                               f'경기 {pk} 피드 지연 {lag if lag is not None else "?"}초(기준 {th["feed_lag_s"]}초)',
+                               f'경기 {pk} 피드 지연 {lag if lag is not None else "?"}초(기준 {limit}초)',
                                th['feed_delayed_hold_s'], lag_s=lag))
             # file_sequence must move while the game moves: checks happen, the feed is fine, yet no new file.
             seq = gc.get('file_sequence')
+            text = (body.get('game') or {}).get('status_text') or info.get('status_text')
+            in_play = text is None or any(str(text).startswith(t) for t in IN_PLAY_TEXT)
             track = files.get(str(pk))
-            if track is None or track.get('file_sequence') != seq:
+            if track is None or track.get('file_sequence') != seq or not in_play:
+                # Warmup / delay / review: the clock restarts, so the first minutes of play are not 'stuck'.
                 track = files[str(pk)] = {'file_sequence': seq, 'since': now}
             unchanged = now - track['since']
             upstream = parse_time((ops_by_pk.get(pk) or {}).get('upstream_changed_at'))
@@ -348,58 +389,74 @@ def evaluate(cfg, obs, tracker):
             stuck_long = unchanged > th['file_stuck_s']
             stuck_upstream = (upstream is not None and upstream > track['since']
                               and now - upstream > th['file_stuck_upstream_s'])
-            conds.append(_cond(f'file_stuck:{pk}', WARN, healthy_checks and (stuck_long or stuck_upstream),
+            conds.append(_cond(f'file_stuck:{pk}', WARN, in_play and healthy_checks and (stuck_long or stuck_upstream),
                                f'경기 {pk} 파일 갱신 멈춤: 확인은 도는데 file_sequence {seq}가 {_fmt_s(unchanged)} 그대로'
                                + (' (운영 상태는 경기 진행을 보고)' if stuck_upstream else ''), unchanged_s=unchanged))
     for key in list(files):
         if not in_game or int(key) not in windows:
             files.pop(key)
 
-    # --- upload (pending/errors game-gated; blocked always)
+    # --- upload. With background upload the publisher queues dates/manifest/changed game files every cycle and
+    # samples pending right after, so pending >= 2 and upload.code='upload_failed' are its normal steady state.
+    # Judge progress instead; never use upload.code. A --dry-run-upload publisher never drains: skip it all.
     upload = (health or {}).get('upload') if isinstance((health or {}).get('upload'), dict) else None
+    dry_upload = bool(upload and upload.get('dry_run'))
     up = tracker.setdefault('upload', {})
-    if upload is not None and in_game:
+    if upload is not None and in_game and not dry_upload:
         pending = upload.get('pending') if isinstance(upload.get('pending'), int) else 0
-        if pending > 0:
-            up.setdefault('first', pending)
-        else:
-            up.pop('first', None)
-        growing = pending > up.get('first', pending)
-        conds.append(_cond('upload_pending', WARN, pending > 0,
-                           f'업로드 밀림: pending {pending}건' + (f'(처음 {up["first"]}건에서 늘어남)' if growing else ''),
-                           th['upload_pending_hold_s'], pending=pending))
-        code = upload.get('code')
-        conds.append(_cond('upload_errors', WARN, bool(code), f'업로드 부분 실패: health upload.code={code}',
-                           th['upload_code_hold_s']))
+        samples = up.setdefault('samples', [])
+        seq = (health or {}).get('sequence')
+        if not samples or samples[-1][0] != seq:
+            samples.append([seq, pending])
+        del samples[:-th['upload_pending_cycles']]
+        values = [v for _, v in samples]
+        growing = (len(values) >= th['upload_pending_cycles'] and min(values) > th['upload_pending_floor']
+                   and all(b >= a for a, b in zip(values, values[1:])))
+        conds.append(_cond('upload_pending', WARN, growing,
+                           f'업로드 밀림: pending {" → ".join(map(str, values))}건, {len(values)}주기째 줄지 않음'
+                           f'(기준 {th["upload_pending_floor"]}건 초과)', pending=pending))
+    else:
+        up.pop('samples', None)
     state = obs.get('state') if isinstance(obs.get('state'), dict) else None
     if obs.get('state_error') == 'unreadable':
         conds.append(_cond('state_unreadable', WARN, True, '발행기 상태 파일 읽기 실패', th['state_unreadable_hold_s']))
     elif obs.get('state_error') is None:
         conds.append(_cond('state_unreadable', WARN, False, ''))
-    if state is not None:
+    if state is not None and not dry_upload:
         attempts = state.get('upload_attempts') if isinstance(state.get('upload_attempts'), dict) else {}
-        by_phase = {}
+        by_phase, stuck_paths = {}, set()
         for path, attempt in attempts.items():
             if isinstance(attempt, dict):
                 by_phase.setdefault(attempt.get('phase'), []).append(str(attempt.get('reason')))
+                if attempt.get('phase') in ('blocked', 'rejected'):
+                    stuck_paths.add(path)
         blocked = by_phase.get('blocked', [])
         conflict = [r for r in blocked if r == 'upload_conflict']
         unknown = [r for r in blocked if r in UNKNOWN_REASONS]
         other = [r for r in blocked if r not in UNKNOWN_REASONS and r != 'upload_conflict']
         if state.get('upload_recovery_blocked'):
             other.append('upload_recovery_blocked')
+        rejected = by_phase.get('rejected', [])
         conds.append(_cond('upload_conflict', CRITICAL, bool(conflict),
                            f'업로드 412 충돌 {len(conflict)}건: 다른 발행기가 같은 원격 경로에 쓰는지 확인(런북 4.4)'))
         conds.append(_cond('upload_unknown', CRITICAL, bool(unknown),
                            f'업로드 결과 모름 {len(unknown)}건({", ".join(sorted(set(unknown)))}) — 자동 재전송 없음, 런북 4.4'))
         conds.append(_cond('upload_blocked', CRITICAL, bool(other),
                            f'업로드 막힘 {len(other)}건({", ".join(sorted(set(other)))}) — 런북 4.4'))
+        conds.append(_cond('upload_rejected', CRITICAL, bool(rejected),
+                           f'업로드 거절(영구 4xx) {len(rejected)}건({", ".join(sorted(set(rejected)))}) — 런북 4.4'))
+        # The oldest queued intent (blocked/rejected ones are announced above) must be replaced or sent soon.
         if in_game:
-            errors = by_phase.get('rejected', []) + by_phase.get('retry', [])
-            if len(errors) >= th['upload_error_count']:
-                conds = [c for c in conds if c['key'] != 'upload_errors']
-                conds.append(_cond('upload_errors', WARN, True,
-                                   f'업로드 오류 반복 {len(errors)}건({", ".join(sorted(set(errors)))})'))
+            intents = state.get('upload_intents') if isinstance(state.get('upload_intents'), dict) else {}
+            pend = state.get('upload_pending') if isinstance(state.get('upload_pending'), dict) else {}
+            revs = [i.get('revision') for p, i in intents.items()
+                    if p in pend and p not in stuck_paths and isinstance(i, dict) and isinstance(i.get('revision'), int)]
+            oldest = min(revs) if revs else None
+            if oldest is None or up.get('oldest') != oldest:
+                up['oldest'], up['oldest_since'] = oldest, now
+            waited = now - up['oldest_since']
+            conds.append(_cond('upload_stalled', WARN, oldest is not None and waited > th['upload_oldest_s'],
+                               f'업로드 멈춤: 가장 오래된 전송 대기가 {_fmt_s(waited)}째 그대로(기준 {th["upload_oldest_s"]}초)'))
 
     # --- machine
     if in_game:
@@ -423,23 +480,42 @@ def evaluate(cfg, obs, tracker):
         if line is None:
             head = '로그 없음'
         else:
-            head = re.sub(r'\s(log|version)=\S+', '', line)[:90] or '빈 로그'
+            head = ' '.join(t for t in line.split() if '/' not in t and not t.startswith(('log=', 'version=')))
+            head = head[:90] or '빈 로그'
         conds.append(_cond(f'profile_refresh:{today}', WARN, not ok,
                            f'프로필 일일 갱신이 {th["profile_deadline_kst"]}까지 ok 아님: {head}'))
 
-    # --- operations status file (tolerant; interface in the runbook 7.3)
-    if ops is not None:
-        problems = ops.get('problems') if isinstance(ops.get('problems'), list) else ops.get('alerts')
-        for item in problems if isinstance(problems, list) else []:
-            if isinstance(item, dict) and item.get('key'):
-                sev = CRITICAL if item.get('severity') == CRITICAL else WARN
+    # --- operations status file (pitcheezy-ws-ops-status-v1 from ws_operate.py; tolerant, runbook 7.3)
+    if ops is not None and ops_current:
+        reason = ops.get('state_reason') or ops.get('guard') or ''
+        last_exit = ((ops.get('restarts') or {}).get('last_exit') or {}) if isinstance(ops.get('restarts'), dict) else {}
+        state_msgs = {
+            'backoff': (CRITICAL, f'운영: 발행기가 끝나 재시작 대기({last_exit.get("why") or reason or "이유 없음"}) — 공개 화면 갱신 멈춤'),
+            'refused': (CRITICAL, f'운영: 시작 전 점검 거부({reason or "이유 없음"})'),
+            'failed': (CRITICAL, f'운영: 비정상 종료({reason or "이유 없음"})'),
+        }
+        for name, (sev, msg) in state_msgs.items():
+            conds.append(_cond(f'ops_state:{name}', sev, ops_state == name, msg))
+        conds.append(_cond('ops_state:hard_end', WARN, ops_state == 'stopped' and reason == 'hard_end',
+                           '운영: 마감 시각(hard_end)에 발행기를 멈춤 — 경기가 끝났는지 확인'))
+        items = ops.get('problems') if isinstance(ops.get('problems'), list) else ops.get('alerts')
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, str) and item and item not in OPS_ALERTS_COVERED:
+                sev = CRITICAL if item == 'protected_process_changed' else WARN
+                text = '보호 프로세스(기록기·운영 서버) 변화 감지 — 신호 보내지 말고 확인' if sev == CRITICAL else item
+                conds.append(_cond(f'ops_problem:{item}', sev, True, f'운영: {text[:120]}'))
+            elif isinstance(item, dict) and item.get('key') and str(item['key']) not in OPS_ALERTS_COVERED:
+                sev = CRITICAL if item.get('severity') in (CRITICAL, 'urgent') else WARN
                 conds.append(_cond(f'ops_problem:{item["key"]}', sev, item.get('active', True) is not False,
                                    f'운영: {str(item.get("message") or item["key"])[:120]}'))
-        if in_game:
-            updated = parse_time(ops.get('updated_at'))
-            age = None if updated is None else now - updated
-            conds.append(_cond('ops_status_stale', WARN, age is None or age > th['ops_stale_s'],
-                               f'운영 상태 파일이 {_fmt_s(age) if age is not None else "시각 없음"} 갱신 안 됨'))
+        if ops_state in (None, 'waiting', 'prestart', 'running', 'backoff', 'stopping'):
+            written = parse_time(ops.get('written_epoch')) or parse_time(ops.get('written_at')) \
+                or parse_time(ops.get('updated_at'))
+            limit = th['ops_stale_running_s'] if ops_state in ('running', 'backoff') else th['ops_stale_other_s']
+            age = None if written is None else now - written
+            conds.append(_cond('ops_status_stale', WARN, age is None or age > limit,
+                               f'운영 감독이 멈춘 듯: 상태 파일 {_fmt_s(age) if age is not None else "시각 없음"} 갱신 안 됨'
+                               f'(기준 {limit}초)'))
     elif obs.get('ops_error') == 'unreadable':
         conds.append(_cond('ops_problem:unreadable', WARN, True, '운영 상태 파일 읽기 실패', 30))
 
@@ -513,18 +589,39 @@ def _event(kind, key, cond, now, since=None):
     return out
 
 
+def window_notices(tracker, now):
+    """One notice when a game window opens and one when it closes: a dead-man signal (no notice = no watcher)."""
+    current = tracker.pop('windows_now', [])
+    previous = tracker.get('window_pks', [])
+    tracker['window_pks'] = current
+    out = []
+    for pk in current:
+        if pk not in previous:
+            out.append({'kind': 'notice', 'key': f'watch_start:{pk}', 'severity': 'info', 'at': _iso(now),
+                        'message': f'감시 시작: 경기 {pk} 시간대(이 알림이 안 오면 감시기가 꺼진 것)'})
+    for pk in previous:
+        if pk not in current:
+            out.append({'kind': 'notice', 'key': f'watch_end:{pk}', 'severity': 'info', 'at': _iso(now),
+                        'message': f'감시 끝: 경기 {pk} 시간대 닫힘'})
+    return out
+
+
 def render(events, now):
     """(title, body) for one batched notification, or None when nothing is to be sent."""
-    sent = [e for e in events if e['kind'] in ('fire', 'renotify', 'recover')]
+    sent = [e for e in events if e['kind'] in ('fire', 'renotify', 'recover', 'notice')]
     if not sent:
         return None
-    bad = [e for e in sent if e['kind'] != 'recover']
+    bad = [e for e in sent if e['kind'] in ('fire', 'renotify')]
     crit = any(e['severity'] == CRITICAL for e in bad)
-    title = (f'Pitcheezy {"긴급" if crit else "경고"} {len(bad)}건' if bad else 'Pitcheezy 복구') + \
+    recovered = any(e['kind'] == 'recover' for e in sent)
+    title = (f'Pitcheezy {"긴급" if crit else "경고"} {len(bad)}건' if bad else
+             'Pitcheezy 복구' if recovered else 'Pitcheezy 감시') + \
         f' {datetime.fromtimestamp(now, KST):%H:%M} KST'
     lines = []
-    for e in sorted(sent, key=lambda e: (e['kind'] == 'recover', e['severity'] != CRITICAL)):
-        tag = {'fire': '긴급' if e['severity'] == CRITICAL else '경고', 'renotify': '계속', 'recover': '복구'}[e['kind']]
+    order = {'fire': 0, 'renotify': 1, 'recover': 2, 'notice': 3}
+    for e in sorted(sent, key=lambda e: (order[e['kind']], e['severity'] != CRITICAL)):
+        tag = {'fire': '긴급' if e['severity'] == CRITICAL else '경고', 'renotify': '계속', 'recover': '복구',
+               'notice': '알림'}[e['kind']]
         lines.append(f'[{tag}] {e["message"]}')
     return title, '\n'.join(lines)
 
@@ -539,9 +636,13 @@ class JsonlNotifier:
         self.path = Path(path)
 
     def log(self, record):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, 'a', encoding='utf-8') as handle:
-            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + '\n')
+        """Never raises: a full disk (exactly when disk_low matters) must not stop the phone/mac sends."""
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.path, 'a', encoding='utf-8') as handle:
+                handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + '\n')
+        except OSError as error:
+            print(f'ws_alert: alerts.jsonl write failed: {error}', file=sys.stderr)
 
 
 class MacNotifier:
@@ -675,7 +776,7 @@ def run_once(cfg, *, now=None, senders=(), journal=None, dry_run=False, collect_
     alerts, tracker = saved.get('alerts') or {}, saved.get('tracker') or {}
     obs = collect_fn(cfg, now)
     conds, in_game = evaluate(cfg, obs, tracker)
-    events = process(cfg, alerts, conds, now, in_game)
+    events = window_notices(tracker, now) + process(cfg, alerts, conds, now, in_game)
     message = render(events, now)
     if dry_run:
         active = [c for c in conds if c['active']]
@@ -685,11 +786,14 @@ def run_once(cfg, *, now=None, senders=(), journal=None, dry_run=False, collect_
         return events
     journal = journal or JsonlNotifier(alert_dir / 'alerts.jsonl')
     dispatch(events, now, senders, journal)
-    alert_dir.mkdir(parents=True, exist_ok=True)
-    tmp = state_path.with_suffix('.tmp')
-    tmp.write_text(json.dumps({'alerts': alerts, 'tracker': tracker, 'last_run': _iso(now), 'in_game': in_game},
-                              ensure_ascii=False, indent=1))
-    os.replace(tmp, state_path)
+    try:
+        alert_dir.mkdir(parents=True, exist_ok=True)
+        tmp = state_path.with_suffix('.tmp')
+        tmp.write_text(json.dumps({'alerts': alerts, 'tracker': tracker, 'last_run': _iso(now), 'in_game': in_game},
+                                  ensure_ascii=False, indent=1))
+        os.replace(tmp, state_path)
+    except OSError as error:  # sends already happened; the next run may repeat them, which beats silence
+        print(f'ws_alert: alert_state.json write failed: {error}', file=sys.stderr)
     return events
 
 

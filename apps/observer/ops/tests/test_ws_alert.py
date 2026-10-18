@@ -35,6 +35,8 @@ class World:
         self.cfg = wa.load_config(None, out_dir=str(self.out), alert_dir=str(tmp / 'alert'), env={})
         self.cfg['paths']['profile_log'] = str(self.log)
         self.cfg['paths']['disk_paths'] = [str(tmp)]
+        self.cfg['paths']['ops_status'] = None  # never the real ~/Projects/pitcheezy-pm-jobs/ws-ops/status.json
+        self.raw = []
         self.journal = wa.JsonlNotifier(tmp / 'alert' / 'alerts.jsonl')
 
     def games(self, *entries, date='2026-10-24'):
@@ -53,9 +55,10 @@ class World:
             body['upload'] = upload
         (self.out / 'v1' / 'health.json').write_text(json.dumps(body))
 
-    def game_file(self, pk=PK, *, delayed=False, lag=3.0, status='live'):
+    def game_file(self, pk=PK, *, delayed=False, lag=3.0, status='live', text='In Progress'):
         (self.out / 'v1' / 'game' / f'{pk}.json').write_text(json.dumps(
-            {'game': {'game_pk': pk, 'status': status}, 'display_state': {'feed': {'delayed': delayed, 'lag_s': lag}}}))
+            {'game': {'game_pk': pk, 'status': status, 'status_text': text},
+             'display_state': {'feed': {'delayed': delayed, 'lag_s': lag, 'lag_threshold_s': 45}}}))
 
     def state(self, attempts=None, **extra):
         self.state_path.write_text(json.dumps({'sequence': 10, 'upload_pending': {}, 'upload_attempts': attempts or {},
@@ -65,7 +68,9 @@ class World:
         return wa.collect(cfg, now, memory=lambda: self.memory, disk=lambda paths: {p: self.disk for p in paths})
 
     def run(self, now):
-        return wa.run_once(self.cfg, now=now, senders=[self.fake], journal=self.journal, collect_fn=self.collect)
+        """Events without the window open/close notices (tested on their own via self.raw)."""
+        self.raw = wa.run_once(self.cfg, now=now, senders=[self.fake], journal=self.journal, collect_fn=self.collect)
+        return [e for e in self.raw if e['kind'] != 'notice']
 
     def healthy(self, now):
         self.games(self.game())
@@ -85,7 +90,9 @@ def w(tmp_path):
 def test_healthy_live_game_is_quiet(w):
     w.healthy(T0)
     assert w.run(T0) == []
-    assert w.fake.sent == []
+    assert [m['title'].split()[1] for m in w.fake.sent] == ['감시']  # only the one window-open notice
+    w.health(T0 + 15)
+    assert w.run(T0 + 15) == [] and len(w.fake.sent) == 1
 
 
 def test_no_game_is_quiet_even_with_a_dead_publisher(w):
@@ -192,28 +199,75 @@ def test_game_unavailable_code(w):
     assert w.keys(w.run(T0 + 31)) == {f'game_unavailable:{PK}'}
 
 
-def test_upload_pending_growing(w):
+def test_background_upload_steady_state_is_quiet(w):
+    # B1: real background upload keeps 2-3 pending and upload.code='upload_failed' every cycle; that is normal.
     w.healthy(T0)
-    w.health(T0, upload={'pending': 2, 'code': None, 'dry_run': False})
-    w.run(T0)
-    w.health(T0 + 31, upload={'pending': 9, 'code': None, 'dry_run': False})
-    events = w.run(T0 + 31)
+    for i in range(12):
+        t = T0 + 10 * i
+        w.health(t, upload={'pending': 2 + i % 2, 'code': 'upload_failed', 'dry_run': False},
+                 unavailable=[{'game_pk': PK, 'code': 'upload_failed', 'status': 502}],
+                 checks={str(PK): {'checked_at': iso(t), 'sequence_checked': 10 + i, 'file_sequence': 10 + i,
+                                   'feed_ok': True}})
+        body = json.loads((w.out / 'v1' / 'health.json').read_text())
+        body['sequence'] = 10 + i
+        (w.out / 'v1' / 'health.json').write_text(json.dumps(body))
+        assert w.run(t) == [], i
+
+
+def _pending_cycle(w, t, seq, pending, dry=False):
+    w.health(t, upload={'pending': pending, 'code': 'upload_failed', 'dry_run': dry},
+             checks={str(PK): {'checked_at': iso(t), 'sequence_checked': seq, 'file_sequence': seq, 'feed_ok': True}})
+    body = json.loads((w.out / 'v1' / 'health.json').read_text())
+    body['sequence'] = seq
+    (w.out / 'v1' / 'health.json').write_text(json.dumps(body))
+    return w.run(t)
+
+
+def test_upload_pending_above_floor_and_not_decreasing(w):
+    w.healthy(T0)
+    for i, pending in enumerate((6, 8, 8)):
+        assert _pending_cycle(w, T0 + 10 * i, 20 + i, pending) == []
+    events = _pending_cycle(w, T0 + 30, 23, 11)
     assert w.keys(events) == {'upload_pending'}
-    assert '늘어남' in w.fake.sent[-1]['body']
+    assert '6 → 8 → 8 → 11' in w.fake.sent[-1]['body']
+    assert w.keys(_pending_cycle(w, T0 + 40, 24, 7), 'recover') == {'upload_pending'}  # draining again
 
 
-def test_upload_412_unknown_blocked_and_repeated_errors(w):
+def test_upload_rules_skipped_in_dry_run_upload(w):
     w.healthy(T0)
-    sha = 'a' * 64
+    w.state({'v1/game/1.json': {'phase': 'blocked', 'reason': 'upload_conflict'}})
+    for i in range(6):
+        assert _pending_cycle(w, T0 + 10 * i, 30 + i, 50 + 10 * i, dry=True) == []
+
+
+def test_upload_oldest_intent_stalled(w):
+    w.healthy(T0)
+    w.state(upload_pending={'v1/game/1.json': 'put', 'v1/manifest.json': 'put'},
+            upload_intents={'v1/game/1.json': {'action': 'put', 'revision': 7, 'sha256': 'a' * 64},
+                            'v1/manifest.json': {'action': 'put', 'revision': 9, 'sha256': 'b' * 64}})
+    assert w.run(T0) == []
+    w.health(T0 + 50)
+    assert w.run(T0 + 50) == []
+    w.health(T0 + 61)
+    assert w.keys(w.run(T0 + 61)) == {'upload_stalled'}
+    # the old intent went out; only newer ones are queued -> recovers
+    w.state(upload_pending={'v1/manifest.json': 'put'},
+            upload_intents={'v1/manifest.json': {'action': 'put', 'revision': 12, 'sha256': 'b' * 64}})
+    w.health(T0 + 70)
+    assert w.keys(w.run(T0 + 70), 'recover') == {'upload_stalled'}
+
+
+def test_upload_412_unknown_blocked_and_rejected(w):
+    w.healthy(T0)
     w.state({'v1/game/1.json': {'phase': 'blocked', 'reason': 'upload_conflict'},
              'v1/game/2.json': {'phase': 'blocked', 'reason': 'interrupted_unknown'},
              'v1/game/3.json': {'phase': 'blocked', 'reason': 'upload_receipt_invalid'},
-             **{f'v1/setup/{i}.json': {'phase': 'rejected', 'reason': 'upload_rejected', 'sha256': sha}
-                for i in range(3)}})
+             'v1/setup/1.json': {'phase': 'rejected', 'reason': 'upload_rejected', 'sha256': 'a' * 64}})
     events = w.run(T0)
-    assert w.keys(events) == {'upload_conflict', 'upload_unknown', 'upload_blocked', 'upload_errors'}
+    assert w.keys(events) == {'upload_conflict', 'upload_unknown', 'upload_blocked', 'upload_rejected'}
+    assert all(e['severity'] == 'critical' for e in events)
     body = w.fake.sent[-1]['body']
-    assert '412' in body and '결과 모름' in body
+    assert '412' in body and '결과 모름' in body and '거절' in body
     assert len(w.fake.sent) == 1  # batched into one message
 
 
@@ -246,9 +300,10 @@ def test_profile_refresh_deadline(w):
 
 def test_profile_failed_line(w):
     evening = datetime(2026, 10, 24, 12, 25, tzinfo=timezone.utc).timestamp()
-    w.log.write_text('2026-10-24T12:16:38Z failed refresh TIMEOUT (guard wall cap) log=/x\n')
+    w.log.write_text('2026-10-24T12:16:38Z failed refresh TIMEOUT (guard wall cap) receipt=/Users/x/a.log log=/x\n')
     assert w.keys(w.run(evening)) == {'profile_refresh:2026-10-24'}
-    assert 'failed refresh TIMEOUT' in w.fake.sent[-1]['body']
+    body = w.fake.sent[-1]['body']
+    assert 'failed refresh TIMEOUT' in body and '/' not in body.split('ok 아님:')[1]
 
 
 def test_dedup_renotify_and_cooldown(w):
@@ -296,31 +351,211 @@ def test_game_end_closes_silently(w):
     w.game_file(status='final')
     events = w.run(T0 + 30)
     assert [e['kind'] for e in events] == ['closed']
-    assert len(w.fake.sent) == n  # no "recovered" push for a game that just ended
+    assert len(w.fake.sent) == n + 1 and '복구' not in w.fake.sent[-1]['body']  # only the watch_end notice
+    assert '감시 끝' in w.fake.sent[-1]['body']
     lines = [json.loads(x) for x in (w.tmp / 'alert' / 'alerts.jsonl').read_text().splitlines()]
     assert [x['kind'] for x in lines].count('closed') == 1
 
 
-def test_ops_status_problems_publisher_flag_and_staleness(w):
+def ops_status(now, state='running', **extra):
+    """A body shaped like ws_operate.py writes it (docs/pm/service/ws-ops-status-contract.md)."""
+    body = {'schema': 'pitcheezy-ws-ops-status-v1', 'written_at': iso(now), 'written_epoch': now, 'state': state,
+            'state_reason': None, 'kst_date': datetime.fromtimestamp(now, wa.KST).date().isoformat(), 'run_dir': '/x',
+            'games': [{'game_pk': PK, 'label': 'G1', 'start_utc': iso(T0 - 1320), 'final_seen_at': None}],
+            'timeline': None, 'supervisor': {'pid': 1}, 'publisher': {'pid': 2, 'upload_enabled': False},
+            'health': None, 'game_checks': {}, 'feed_ok': True, 'upload': {'enabled': False}, 'resources': {},
+            'restarts': {'count': 0, 'max': 3, 'last_exit': None}, 'protected': {'ok': True}, 'alerts': [],
+            'guard': None}
+    body.update(extra)
+    return body
+
+
+def test_ops_contract_healthy_running_is_quiet_and_opens_window(w):
+    # no publisher games file at all: the ops games list (start_utc) alone opens the window
+    w.health(T0)
+    w.game_file()
+    w.state()
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps(ops_status(T0)))
+    assert w.run(T0) == []
+    assert [e['key'] for e in w.raw] == [f'watch_start:{PK}']
+
+
+def test_ops_contract_states(w):
     w.healthy(T0)
     w.cfg['paths']['ops_status'] = str(w.ops_path)
-    w.ops_path.write_text(json.dumps({'updated_at': iso(T0 - 400), 'publisher': {'running': False},
-                                      'problems': [{'key': 'recorder_gap', 'severity': 'critical',
-                                                    'message': '기록기 30초 공백'}]}))
-    keys = w.keys(w.run(T0))
-    assert keys == {'publisher_down', 'ops_problem:recorder_gap', 'ops_status_stale'}
+    w.ops_path.write_text(json.dumps(ops_status(T0, 'backoff', restarts={'count': 1, 'last_exit': {
+        'why': 'exit_code_3'}})))
+    assert w.keys(w.run(T0)) == {'ops_state:backoff', 'publisher_down'}
+    assert 'exit_code_3' in w.fake.sent[-1]['body']
+    w.ops_path.write_text(json.dumps(ops_status(T0 + 15, 'failed', state_reason='guard:disk_low')))
+    w.health(T0 + 15)
+    events = w.run(T0 + 15)
+    assert w.keys(events) == {'ops_state:failed'} and w.keys(events, 'recover') == {'ops_state:backoff'}
+    w.ops_path.write_text(json.dumps(ops_status(T0 + 30, 'refused', state_reason='supervisor_lock_held')))
+    w.health(T0 + 30)
+    assert 'ops_state:refused' in w.keys(w.run(T0 + 30))
+
+
+def test_ops_contract_stale_heartbeat_and_alert_strings(w):
+    w.healthy(T0)
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps(ops_status(T0 - 91, alerts=['memory_low', 'health_stale', 'feed_failing',
+                                                                 'upload_blocked', 'protected_process_changed'])))
+    events = w.run(T0)
+    assert w.keys(events) == {'ops_status_stale', 'ops_problem:protected_process_changed'}
+    assert [e['severity'] for e in events if e['key'] == 'ops_problem:protected_process_changed'] == ['critical']
+
+
+def test_ops_waiting_allows_300s_and_is_watched_before_the_window(w):
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    later = T0 + 6 * 3600  # 15:30 KST, the game list says nothing is in window
+    w.ops_path.write_text(json.dumps(ops_status(later - 290, 'waiting', games=[])))
+    assert w.run(later) == []
+    w.ops_path.write_text(json.dumps(ops_status(later - 310, 'waiting', games=[])))
+    assert w.keys(w.run(later + 1)) == {'ops_status_stale'}
+
+
+def test_ops_old_day_and_stopped_final_are_ignored(w):
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    old = ops_status(T0 - 3 * 86400, 'failed', state_reason='guard:disk_low', out_dir=str(w.tmp / 'gone'))
+    w.ops_path.write_text(json.dumps(old))
+    assert w.run(T0) == []
+    w.ops_path.write_text(json.dumps(ops_status(T0 - 3600, 'stopped', state_reason='final_settled', games=[
+        {'game_pk': PK, 'start_utc': iso(T0 - 1320), 'final_seen_at': iso(T0 - 3700)}])))
+    assert w.run(T0 + 1) == []
+
+
+def ops_v11(now, tmp, state='running', **extra):
+    """v1.1 sample (additive fields the launcher adds, coordinator message 2026-10-18)."""
+    body = ops_status(now, state, updated_at=iso(now), publisher={'running': state == 'running', 'pid': 2},
+                      problems=[], out_dir=str(tmp / 'day-out'), state_path=str(tmp / 'day-out.publisher.state.json'),
+                      games=[{'game_pk': PK, 'start': iso(T0 - 1320), 'status': 'live', 'window_start': None,
+                              'window_end': None, 'upstream_changed_at': None}])
+    body.pop('written_epoch')
+    body.pop('written_at')
+    body.update(extra)
+    return body
+
+
+def test_ops_v11_follows_out_dir_and_state_path(w):
+    day = World(w.tmp / 'day')  # a second publisher folder: the one the launcher really runs today
+    day.out = w.tmp / 'day-out'
+    (day.out / 'v1' / 'games').mkdir(parents=True)
+    (day.out / 'v1' / 'game').mkdir(parents=True)
+    day.healthy(T0)
+    (w.tmp / 'day-out.publisher.state.json').write_text(json.dumps(
+        {'upload_attempts': {'v1/game/1.json': {'phase': 'blocked', 'reason': 'upload_conflict'}}}))
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.cfg['cli_out'] = False  # as if w.out came from env PITCHEEZY_PUBLISH_OUT_DIR, not --out
+    w.ops_path.write_text(json.dumps(ops_v11(T0, w.tmp)))
+    # env/config out_dir (w.out) is empty; the watcher reads day-out and its publisher.state.json instead
+    events = w.run(T0)
+    assert w.keys(events) == {'upload_conflict'}
+    # an explicit --out still wins
+    cfg = wa.load_config(None, out_dir=str(w.out), alert_dir=str(w.tmp / 'alert2'), env={})
+    cfg['paths'].update(ops_status=str(w.ops_path), profile_log=None, disk_paths=[])
+    obs = w.collect(cfg, T0)
+    assert obs['out_dir'] == str(w.out)
+
+
+def test_ops_v11_states_problems_and_staleness(w):
+    w.healthy(T0)
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps(ops_v11(T0, w.tmp, out_dir=None, state_path=None)))
+    assert w.run(T0) == []
+    # refused during the window: urgent; urgent problem passes through; covered key is not repeated
+    w.ops_path.write_text(json.dumps(ops_v11(T0 + 15, w.tmp, 'refused', out_dir=None, state_path=None,
+        state_reason='prestart_refused', problems=[
+            {'key': 'prestart_refused', 'severity': 'urgent', 'message': '시작 전 점검 거부', 'active': True},
+            {'key': 'upload_blocked', 'severity': 'urgent', 'message': 'dup', 'active': True}])))
+    w.health(T0 + 15)
+    events = w.run(T0 + 15)
+    assert w.keys(events) == {'ops_state:refused', 'ops_problem:prestart_refused', 'publisher_down'}
+    assert all(e['severity'] == 'critical' for e in events)
+    # running heartbeat older than 90 s -> stale
+    w.ops_path.write_text(json.dumps(ops_v11(T0 - 100, w.tmp, out_dir=None, state_path=None)))
+    w.health(T0 + 30)
+    assert 'ops_status_stale' in w.keys(w.run(T0 + 30))
+
+
+def test_ops_v11_postponed_game_is_not_a_window(w):
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps(ops_v11(T0, w.tmp, 'waiting', out_dir=None, state_path=None, games=[
+        {'game_pk': PK, 'start': iso(T0 + 600), 'status': 'postponed'}])))
+    assert w.run(T0) == [] and w.raw == []
+
+
+def test_ops_hard_end_is_a_warning(w):
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps(ops_status(T0, 'stopped', state_reason='hard_end', games=[])))
+    events = w.run(T0)
+    assert w.keys(events) == {'ops_state:hard_end'} and events[0]['severity'] == 'warn'
 
 
 def test_ops_status_tolerates_garbage(w):
     w.healthy(T0)
     w.cfg['paths']['ops_status'] = str(w.ops_path)
-    w.ops_path.write_text(json.dumps({'games': 'nope', 'problems': [1, None, {'no_key': True}], 'publisher': 3,
-                                      'updated_at': iso(T0)}))
+    w.ops_path.write_text(json.dumps({'games': 'nope', 'alerts': [1, None, {'no_key': True}, ''], 'publisher': 3,
+                                      'restarts': 'x', 'written_epoch': T0, 'state': 7}))
     assert w.run(T0) == []
     w.ops_path.write_text('{not json')
     w.run(T0 + 1)
     w.health(T0 + 31)
     assert w.keys(w.run(T0 + 31)) == {'ops_problem:unreadable'}
+
+
+def test_file_stuck_not_in_warmup_or_delay(w):
+    # B2: Warmup and rain delays are 'live' in the service, but the file may sit still for many minutes.
+    w.healthy(T0)
+    for text in ('Warmup', 'Delayed: Rain', 'Suspended: Rain'):
+        w.game_file(text=text)
+        for dt in (0, 400, 800):
+            w.health(T0 + dt)
+            assert w.run(T0 + dt) == [], (text, dt)
+    # play starts: the clock restarted at the last Warmup/Delayed sighting (T0+800), not at the old file change
+    w.game_file(text='In Progress')
+    w.health(T0 + 900)
+    assert w.run(T0 + 900) == []
+    w.health(T0 + 1090)
+    assert w.run(T0 + 1090) == []
+    w.health(T0 + 1110)
+    assert w.keys(w.run(T0 + 1110)) == {f'file_stuck:{PK}'}
+
+
+def test_postponed_game_opens_no_window(w):
+    w.games(w.game(status='postponed'))
+    assert w.run(T0) == [] and w.raw == []
+
+
+def test_upload_failed_code_is_not_game_unavailable(w):
+    w.healthy(T0)
+    for t in (T0, T0 + 31):
+        w.health(t, unavailable=[{'game_pk': PK, 'code': 'upload_failed', 'status': 502}])
+        assert w.run(t) == []
+
+
+def test_window_open_and_close_notices(w):
+    w.healthy(T0)
+    w.run(T0)
+    assert [e['key'] for e in w.raw] == [f'watch_start:{PK}'] and '감시 시작' in w.fake.sent[-1]['body']
+    w.health(T0 + 15)
+    w.run(T0 + 15)
+    assert w.raw == []
+    w.games(w.game(status='final'))
+    w.game_file(status='final', text='Final')
+    w.run(T0 + 30)
+    assert [e['key'] for e in w.raw] == [f'watch_end:{PK}']
+
+
+def test_journal_failure_does_not_stop_sends(w, tmp_path):
+    w.healthy(T0)
+    w.health(T0, published=T0 - 45)
+    blocker = tmp_path / 'not-a-dir'
+    blocker.write_text('x')
+    journal = wa.JsonlNotifier(blocker / 'alerts.jsonl')  # parent is a file: every write fails
+    wa.run_once(w.cfg, now=T0, senders=[w.fake], journal=journal, collect_fn=w.collect)
+    assert 'health_stalled' not in str([]) and '발행 정체' in w.fake.sent[-1]['body']
 
 
 def test_missing_out_dir_is_reported(tmp_path):
