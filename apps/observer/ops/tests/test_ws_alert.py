@@ -35,6 +35,7 @@ class World:
         self.cfg = wa.load_config(None, out_dir=str(self.out), alert_dir=str(tmp / 'alert'), env={})
         self.cfg['paths']['profile_log'] = str(self.log)
         self.cfg['paths']['disk_paths'] = [str(tmp)]
+        self.cfg['schedule'] = []  # never the shipped World Series list (tests pick their own games)
         self.cfg['paths']['ops_status'] = None  # never the real ~/Projects/pitcheezy-pm-jobs/ws-ops/status.json
         self.raw = []
         self.journal = wa.JsonlNotifier(tmp / 'alert' / 'alerts.jsonl')
@@ -125,6 +126,14 @@ def test_publisher_missing_before_first_pitch(w):
 def test_manual_schedule_opens_a_window_without_publisher_files(w):
     w.cfg['schedule'] = [{'game_pk': PK, 'start': iso(T0 + 600)}]
     assert w.keys(w.run(T0)) == {'publisher_down'}
+
+
+def test_shipped_ws_schedule_is_quiet_outside_game_windows(w):
+    shipped = wa.load_config(None, out_dir=str(w.out), alert_dir=str(w.tmp / 'alert'), env={})['schedule']
+    assert len(shipped) == 7 and all(isinstance(g['game_pk'], int) for g in shipped)
+    w.cfg['schedule'] = shipped
+    assert w.run(T0 - 10 * 86400) == []  # long before the series: no window, nothing to say
+    assert w.run(T0 + 86400 * 20) == []  # after the series
 
 
 def test_feed_down_needs_60s_and_recovers(w):
@@ -562,6 +571,7 @@ def test_missing_out_dir_is_reported(tmp_path):
     cfg = wa.load_config(None, alert_dir=str(tmp_path / 'a'), env={})
     cfg['paths']['profile_log'] = None
     cfg['paths']['disk_paths'] = []
+    cfg['schedule'] = []
     fake = wa.FakeNotifier()
     events = wa.run_once(cfg, now=T0, senders=[fake], journal=wa.JsonlNotifier(tmp_path / 'a' / 'j.jsonl'),
                          collect_fn=partial(wa.collect, memory=lambda: None, disk=lambda p: {}))

@@ -21,7 +21,16 @@
     "max_game_s": 21600,
     "note": "A game is 'in window' from start-before_start_s until it is final, or at most start+max_game_s. Sources: the publisher's games/<KST date>.json (yesterday..tomorrow), the ops status file, and schedule below."
   },
-  "schedule": [],
+  "schedule": [
+    {"game_pk": 849805, "start": "2026-10-24T00:00:00Z"},
+    {"game_pk": 849802, "start": "2026-10-25T00:00:00Z"},
+    {"game_pk": 849804, "start": "2026-10-27T00:00:00Z"},
+    {"game_pk": 849803, "start": "2026-10-28T00:00:00Z"},
+    {"game_pk": 849799, "start": "2026-10-29T00:00:00Z"},
+    {"game_pk": 849801, "start": "2026-10-31T00:00:00Z"},
+    {"game_pk": 849800, "start": "2026-11-01T00:00:00Z"}
+  ],
+  "schedule_provisional_note": "provisional — update when MLB confirms. These World Series games (gameType W) come from the saved MLB schedule of 2026-10-17/18 whose times are all the 00:00:00Z placeholder (startTimeTBD false but not real first-pitch times). Windows around a wrong time are harmless (quiet outside windows) but a real game outside the window would be missed unless the publisher or ops status lists it, so replace the times when MLB confirms. See runbook section 7.1.",
   "schedule_note": "Manual fallback when the publisher has not listed the game: [{\"game_pk\": 123, \"start\": \"2026-10-24T00:08:00Z\"}].",
   "thresholds": {
     "health_stale_s": 30,

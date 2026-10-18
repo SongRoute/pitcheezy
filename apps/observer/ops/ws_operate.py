@@ -1181,7 +1181,11 @@ class Supervisor:
 def cmd_plan(args, cfg):
     today = datetime.now(KST).date()
     last = today+timedelta(days=args.days)
-    rows, source = load_schedule(cfg, args.schedule_file, today.isoformat(), last.isoformat())
+    try:
+        rows, source = load_schedule(cfg, args.schedule_file, today.isoformat(), last.isoformat())
+    except ValueError as exc:  # malformed schedule body (REVIEW-004 B4): one line, not a traceback
+        print(f'schedule check failed (ValueError): {exc}; check statsapi by hand or pass --schedule-file', file=sys.stderr)
+        return 2
     by_date = {}
     for row in rows:
         if row['game_type'] in cfg['game_types'] and today.isoformat() <= row['kst_date'] <= last.isoformat():

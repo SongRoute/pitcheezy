@@ -432,6 +432,16 @@ def test_plan_lists_ws_dates_with_timeline(env, capsys):
     assert 'publisher_start' in out['dates'][0]['timeline'] and out['fixed_delay_s'] == 0
 
 
+def test_plan_malformed_schedule_prints_one_line_not_traceback(env, capsys):
+    bad = env.tmp/'bad_schedule.json'
+    bad.write_text(json.dumps({'totalGames': 3, 'dates': [{'games': [{'gamePk': 1, 'gameType': 'W', 'gameDate': '2026-10-24T00:08:00Z'}]}]}))
+    assert ws.main(['--config', str(env.cfg_path), 'plan', '--schedule-file', str(bad)]) == 2
+    cap = capsys.readouterr()
+    lines = [l for l in cap.err.splitlines() if l.strip()]
+    assert len(lines) == 1 and lines[0].startswith('schedule check failed (ValueError)') and 'totalGames' in lines[0]
+    assert 'Traceback' not in cap.err+cap.out
+
+
 def test_statsapi_schedule_rows_and_final_tail(env, tmp_path):
     rows = ws.schedule_rows({'dates': [{'games': [{'gamePk': 1, 'gameType': 'W', 'gameDate': '2026-10-23T00:08:00Z',
                                                     'status': {'abstractGameState': 'Preview', 'detailedState': 'Scheduled'},
