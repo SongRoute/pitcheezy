@@ -43,7 +43,7 @@ STATUS_VERSION = '1.1'  # 1.1 (2026-10-18 review B1): updated_at, publisher.runn
 # problems[] keys the alert watcher reads (severity is fixed per key)
 PROBLEM_SEVERITY = {
     'prestart_refused': 'urgent', 'restart_limit': 'urgent', 'deploy_guard': 'urgent', 'resource_guard': 'urgent',
-    'upload_blocked': 'urgent', 'another_publisher': 'urgent', 'supervisor_error': 'urgent',
+    'upload_blocked': 'urgent', 'another_publisher': 'urgent', 'supervisor_error': 'urgent', 'start_refused': 'urgent',
     'protected_process_changed': 'warn', 'prestart_retrying': 'warn', 'publisher_restarting': 'warn',
     'memory_low': 'warn', 'health_stale': 'warn', 'feed_failing': 'warn', 'schedule_fallback': 'warn',
     'identity_unreadable': 'warn',
@@ -564,6 +564,82 @@ def preflight(cfg, kst_date, *, upload_requested, schedule_file=None, expect_com
     return not problems, report, games
 
 
+def game_rows(games, tl, finals, all_final_at, settle_s, now):
+    """status.json ``games[]`` (contract 1.1): start, status, window_start, window_end per operated game."""
+    win_start = tl and now_iso(tl['publisher_start_epoch'])
+    hard_end = tl and tl['hard_end_epoch']
+    rows = []
+    for g in games:
+        pk, start = str(g['game_pk']), parse_utc(g['start_utc'])
+        if pk in finals or g.get('abstract') == 'Final':
+            status = 'final'
+        elif g.get('detailed') in ('Postponed', 'Cancelled', 'Suspended'):
+            status = 'postponed'
+        elif now >= start:
+            status = 'live'
+        else:
+            status = 'scheduled'
+        end = hard_end
+        if hard_end and all_final_at is not None:
+            end = min(hard_end, all_final_at+settle_s)
+        rows.append({'game_pk': g['game_pk'], 'label': g.get('label'), 'start': now_iso(start),
+                     'start_utc': g['start_utc'], 'status': status, 'window_start': win_start,
+                     'window_end': end and now_iso(end), 'final_seen_at': finals.get(pk)})
+    return rows
+
+
+def carried_problems(previous, now):
+    """Problems still active in an earlier status file (yesterday's refused/failed, an earlier start refusal), carried
+    as ``active: false`` so the watcher sees them cleared by this new start (review REVIEW-002 D3)."""
+    out = {}
+    for item in (previous or {}).get('problems') or []:
+        if isinstance(item, dict) and item.get('active') is True and item.get('key') in PROBLEM_SEVERITY:
+            out[item['key']] = dict(item, active=False, cleared_at=now_iso(now),
+                                    cleared_by=f'new start ({previous.get("kst_date")} -> current)')
+    return out
+
+
+def write_start_refused(cfg, kst_date, report, games, now=None):
+    """``start`` refused: make it visible to the alert watcher in the shared status.json (state 'refused', urgent
+    'start_refused'), instead of leaving yesterday's file there (REVIEW-002 D1). Not written while a supervisor holds
+    the lock (that supervisor owns status.json). Returns True if written."""
+    now = time.time() if now is None else now
+    paths = ops_paths(cfg, kst_date)
+    paths['root'].mkdir(parents=True, exist_ok=True)
+    with open(paths['lock'], 'a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return False
+        try:
+            message = ('start refused: '+'; '.join(report.get('problems') or ['unknown']))[:500]
+            problems = carried_problems(read_json(paths['status']), now)
+            problems['start_refused'] = {'key': 'start_refused', 'severity': 'urgent', 'message': message,
+                                         'active': True, 'since': now_iso(now)}
+            tl = report.get('timeline')
+            out = paths['run']/'out'
+            body = {
+                'schema': STATUS_SCHEMA, 'schema_version': STATUS_VERSION, 'updated_at': now_iso(now),
+                'written_at': now_iso(now), 'written_epoch': round(now, 3), 'out_dir': str(out),
+                'state_path': f'{out}.state.json',
+                'problems': sorted(problems.values(), key=lambda p: (not p['active'], p['key'])),
+                'state': 'refused', 'state_reason': message, 'kst_date': kst_date, 'run_dir': str(paths['run']),
+                'games': game_rows(games, tl, {}, None, cfg['settle_s'], now),
+                'timeline': tl and {k: v for k, v in tl.items() if not k.endswith('_epoch')} | {
+                    'publisher_start_epoch': tl['publisher_start_epoch'], 'hard_end_epoch': tl['hard_end_epoch']},
+                'supervisor': None, 'publisher': {'running': False, 'segment': 0, 'commit': None, 'last_exit': None},
+                'health': None, 'game_checks': {}, 'feed_ok': None,
+                'upload': {'enabled': bool((report.get('upload') or {}).get('enabled'))}, 'resources': {},
+                'restarts': {'count': 0, 'max': cfg['restart']['max_restarts'], 'backoff_s': cfg['restart']['backoff_s'],
+                             'last_exit': None, 'next_restart_at': None, 'history': []},
+                'protected': {}, 'alerts': [], 'guard': None, 'refused_by': 'start',
+            }
+            write_json_atomic(paths['status'], body)
+            return True
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 # ----------------------------------------------------------------------------------------------- supervisor
 
 class Supervisor:
@@ -619,26 +695,7 @@ class Supervisor:
             self.event('problem_cleared', key=key)
 
     def game_rows(self, now):
-        win_start = self.timeline and now_iso(self.timeline['publisher_start_epoch'])
-        hard_end = self.timeline and self.timeline['hard_end_epoch']
-        rows = []
-        for g in self.games:
-            pk, start = str(g['game_pk']), parse_utc(g['start_utc'])
-            if pk in self.finals or g.get('abstract') == 'Final':
-                status = 'final'
-            elif g.get('detailed') in ('Postponed', 'Cancelled', 'Suspended'):
-                status = 'postponed'
-            elif now >= start:
-                status = 'live'
-            else:
-                status = 'scheduled'
-            end = hard_end
-            if hard_end and self.all_final_at is not None:
-                end = min(hard_end, self.all_final_at+self.cfg['settle_s'])
-            rows.append({'game_pk': g['game_pk'], 'label': g.get('label'), 'start': now_iso(start),
-                         'start_utc': g['start_utc'], 'status': status, 'window_start': win_start,
-                         'window_end': end and now_iso(end), 'final_seen_at': self.finals.get(pk)})
-        return rows
+        return game_rows(self.games, self.timeline, self.finals, self.all_final_at, self.cfg['settle_s'], now)
 
     def set_state(self, state, reason=None):
         assert state in STATES, state
@@ -1057,6 +1114,11 @@ class Supervisor:
             self.run_games = list(self.games)
             if self.games:
                 self.timeline = timeline(self.games, self.cfg)
+            previous = read_json(self.paths['status'])
+            if previous:  # we hold the lock: whoever wrote it is gone; its active problems end with this start
+                self.problems = carried_problems(previous, self.clock()) | self.problems
+                if self.problems:
+                    self.event('problems_carried_inactive', keys=sorted(self.problems))
             self.set_state('waiting')
             start_at = self.timeline['publisher_start_epoch'] if self.timeline else self.clock()
             if not self.wait(max(0.0, start_at-self.clock()), observe=False):
@@ -1121,6 +1183,9 @@ def cmd_plan(args, cfg):
     return 0
 
 
+_sleep = time.sleep  # tests replace it
+
+
 def spawn_supervisor(argv, run_dir):
     with open(Path(run_dir)/'supervisor.log', 'a') as logf:
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT, cwd=run_dir,
@@ -1147,9 +1212,24 @@ def cmd_start(args, cfg):
         print(json.dumps(plan, indent=1, ensure_ascii=False))
         print(f'--dry-run: preflight {"PASS" if ok else "REFUSED"}; nothing was written, started or signalled.')
         return 0 if ok else 2
+    retry_s, began, attempt = cfg.get('start_retry_s', 60), time.time(), 1
+    while not ok:  # transient problems (schedule request, disk, mount, another publisher, other games): retry
+        keys = report.get('problem_keys') or []
+        deadline = began+cfg.get('start_retry_window_s', 1800)
+        if report.get('timeline'):
+            deadline = min(deadline, report['timeline']['publisher_start_epoch'])
+        if not keys or any(k not in TRANSIENT for k in keys) or time.time()+retry_s > deadline:
+            break
+        print(f'start attempt {attempt}: transient problems {keys}; retrying in {retry_s} s', flush=True)
+        _sleep(retry_s)
+        attempt += 1
+        ok, report, games = preflight(cfg, kst_date, upload_requested=args.upload, schedule_file=args.schedule_file,
+                                      expect_commit=args.expect_commit)
     if not ok:
         print(json.dumps(report, indent=1, ensure_ascii=False))
         print('REFUSED: '+'; '.join(report['problems']))
+        wrote = write_start_refused(cfg, kst_date, report, games)
+        print(f'status.json: {"refused written" if wrote else "not written (a supervisor holds the lock and owns it)"}')
         return 2
     for sub in ('empty/feeds', 'empty/watch', 'empty/intent', 'empty/demo'):
         (run_dir/sub).mkdir(parents=True, exist_ok=True)

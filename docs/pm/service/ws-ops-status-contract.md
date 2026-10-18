@@ -13,6 +13,11 @@
 - 오래됨 기준(잠정, 2026-10-18 통합에서 감시기 값으로 맞춤): 감시기(`ws_alert_config.json` `ops_stale_running_s`/`ops_stale_other_s`)는 `state`가 `running`/`backoff`일 때 `updated_at`이 90초(heartbeat 10초의 9배), 그 밖의 진행 상태(`waiting`/`prestart`/`stopping`)일 때 300초(대기 heartbeat 60초의 5배)보다 오래되면 "감독 멈춤"(`ops_status_stale`)으로 본다. 끝난 상태(`stopped`/`refused`/`failed`)에서는 오래됨을 따지지 않는다. 처음 적었던 60/180초 안은 쓰지 않는다.
 - 비밀 값은 들어가지 않는다: 토큰·업로드 주소는 쓰지 않는다(업로드는 있음/없음과 개수·오류 종류만). `runs/` 폴더는 이슈·저장소에 복사하지 않는다(런타임 설정에 업로드 주소가 있다).
 
+## 이전 문제의 정리(REVIEW-002 D3)
+
+- 새 감독이 시작하면(다음 날이든 같은 날 재시작이든) 직전 status.json에서 `active: true`였던 문제를 `active: false` + `cleared_at` + `cleared_by`로 옮겨 적는다. 그래서 어제의 `refused`/`failed` 문제와 그날 아침 `start_refused`는 새 감독의 첫 heartbeat에서 풀린다. `state`도 새 감독의 값(`waiting`)으로 바뀐다.
+- 반대로 다음 `start`가 없으면(경기 없는 날) 어제의 끝 상태가 그대로 남는다. 감시기는 `kst_date`가 오늘·어제가 아니면 이 파일을 무시한다.
+
 ## 감시기가 읽는 핵심 필드
 
 | 키 | 타입 | 뜻 |
@@ -29,6 +34,7 @@
 
 | key | severity | 켜지는 때 |
 |---|---|---|
+| `start_refused` | urgent | `start` 명령 자체가 거부됨(재시도 창을 다 써도 일시적 문제가 남았거나, 영구 문제). 감독이 없으므로 `start`가 직접 status.json을 쓴다(state `refused`, `refused_by: "start"`, `supervisor: null`). 다른 감독이 lock을 잡고 있으면 쓰지 않는다 |
 | `prestart_refused` | urgent | 시작 점검이 끝내 통과하지 못해 그날 발행기를 띄우지 않음(state `refused`) |
 | `prestart_retrying` | warn | 일시적 문제로 시작 점검을 다시 하는 중(60초 간격, 첫 투구까지) |
 | `restart_limit` | urgent | 재시작 한도(3번)를 넘어 그날 운영을 멈춤(state `failed`) |
@@ -83,7 +89,7 @@
 | `backoff` | 예상 밖 종료 뒤 재시작 대기 | `publisher.running: false` + `publisher_restarting` |
 | `stopping` | 발행기 정상 종료 중 | 정상(최대 40초) |
 | `stopped` | 정상 끝(`final_settled`, `operator_stop`, `operator_stop_before_start`, `hard_end`) | `hard_end`면 확인 |
-| `refused` | 시작 거부(`prestart_refused`, `supervisor_lock_held`) | `prestart_refused` urgent |
+| `refused` | 시작 거부(`prestart_refused`, `supervisor_lock_held`, 또는 `start` 명령 거부 `start_refused`) | 해당 urgent 문제 |
 | `failed` | 비정상 끝(재시작 한도, 배포 가드, 자원 가드, 다른 발행기, 감독 오류) | 해당 urgent 문제 |
 
 ## 재시작·정체 기준(설정 값, 잠정)
@@ -91,6 +97,7 @@
 - 예상 밖 종료 → 30/60/120초 뒤 재시작, 최대 3번(감독 1회 실행 기준). 대기는 그날 상한을 넘지 않는다.
 - health 정체 재시작: 마지막 새 sequence와 세그먼트 시작 중 늦은 쪽부터 300초. 그래서 **첫 정체 재시작은 세그먼트 시작 뒤 최소 300초**다(`startup_grace_s` 180초는 확인을 시작하는 시점일 뿐).
 - 모든 경기가 final이 된 뒤 발행기가 끝나면 재시작하지 않고 `final_settled`로 정상 종료한다(그때는 배포 가드도 적용하지 않음).
+- `start` 명령: 일시적 문제(일정 요청 실패, 디스크, T7, 다른 발행기, 다른 미종료 경기)는 60초마다 최대 30분, 발행기 시작 시각을 넘기지 않고 다시 확인한다. 끝내 거부하면 위 `start_refused`를 쓴다. `--dry-run`은 재시도도 쓰기도 하지 않는다.
 - 시작 점검: 일시적 문제는 첫 투구까지 60초마다 다시 확인(늦게 시작했으면 10분), 그래도 안 되면 `refused` + `prestart_refused`. 일정 요청 실패는 start 때 기록한 경기 목록으로 대신한다.
 
 ## 예시(값은 예시)

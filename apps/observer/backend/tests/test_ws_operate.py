@@ -599,3 +599,96 @@ def test_statsapi_query_has_all_game_types(env, monkeypatch):
     monkeypatch.setattr(ws.urllib.request, 'urlopen', lambda req, timeout: seen.setdefault('url', req.full_url) and Resp())
     ws.fetch_schedule(env.cfg(), '2026-10-24', '2026-10-24')
     assert 'gameType' not in seen['url']  # never sent anywhere: urlopen is replaced
+
+
+# ------------------------------------------------------------------------------------------------ review 002 D1 / D3
+
+def fast_start_retries(env, **more):
+    raw = json.loads(env.cfg_path.read_text())
+    raw |= {'start_retry_s': 0.1, 'start_retry_window_s': 1.0, **more}
+    env.cfg_path.write_text(json.dumps(raw))
+
+
+def test_start_retries_a_failed_schedule_request_then_starts(env, monkeypatch, capsys):
+    fast_start_retries(env, start_retry_window_s=10)
+    good = env.schedule.read_text()
+    env.schedule.unlink()
+    calls = []
+
+    def sleep(seconds):
+        calls.append(seconds)
+        if len(calls) == 2:
+            env.schedule.write_text(good)  # the schedule source comes back on the third attempt
+    monkeypatch.setattr(ws, '_sleep', sleep)
+    monkeypatch.setattr(ws, 'spawn_supervisor', lambda argv, run_dir: 4242)
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 0
+    assert calls == [0.1, 0.1] and (env.run/'RUN.json').exists()
+    assert 'transient problems' in capsys.readouterr().out
+    assert not (env.tmp/'ops/status.json').exists()  # nothing refused: the supervisor will write it
+
+
+def test_start_refusal_after_retries_is_written_for_the_watcher(env, monkeypatch, capsys):
+    fast_start_retries(env)
+    env.schedule.unlink()
+    monkeypatch.setattr(ws, '_sleep', lambda s: time.sleep(s))
+    t0 = time.time()
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 2
+    assert 0.8 <= time.time()-t0 < 5  # retried for about the window, then gave up
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    assert set(ws.STATUS_KEYS) <= set(status) and status['schema_version'] == '1.1'
+    assert status['state'] == 'refused' and status['kst_date'] == env.date and status['updated_at']
+    assert status['publisher'] == dict(status['publisher'], running=False)
+    row = [p for p in status['problems'] if p['key'] == 'start_refused'][0]
+    assert row['severity'] == 'urgent' and row['active'] and 'schedule check failed' in row['message']
+    assert 'refused written' in capsys.readouterr().out
+
+
+def test_start_permanent_refusal_is_immediate_and_written(env, monkeypatch):
+    fast_start_retries(env, start_retry_window_s=600)
+    monkeypatch.setattr(ws, '_sleep', lambda s: pytest.fail('a permanent problem must not be retried'))
+    (env.code/'apps/observer/publish_config.json').write_text('{}')
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 2
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    assert status['state'] == 'refused' and status['games'][0]['game_pk'] == PK and status['games'][0]['window_start']
+    assert 'tracked changes' in status['state_reason']
+
+
+def test_start_refusal_does_not_touch_status_owned_by_a_supervisor(env, monkeypatch, capsys):
+    fast_start_retries(env)
+    (env.tmp/'ops').mkdir(parents=True)
+    (env.tmp/'ops/status.json').write_text(json.dumps({'state': 'running', 'kst_date': env.date}))
+    with open(env.tmp/'ops/supervisor.lock', 'a') as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date,
+                        '--schedule-file', str(env.schedule)]) == 2
+    assert json.loads((env.tmp/'ops/status.json').read_text())['state'] == 'running'
+    assert 'not written' in capsys.readouterr().out
+
+
+def test_dry_run_refusal_neither_retries_nor_writes(env, monkeypatch):
+    fast_start_retries(env, start_retry_window_s=600)
+    monkeypatch.setattr(ws, '_sleep', lambda s: pytest.fail('dry-run must not retry'))
+    env.schedule.unlink()
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--dry-run',
+                    '--schedule-file', str(env.schedule)]) == 2
+    assert not (env.tmp/'ops').exists()
+
+
+def test_new_supervisor_clears_previous_refused_and_failed_problems(env, monkeypatch):
+    (env.tmp/'ops').mkdir(parents=True)
+    yesterday = (datetime.fromisoformat(env.date)-timedelta(days=1)).date().isoformat()
+    (env.tmp/'ops/status.json').write_text(json.dumps({
+        'state': 'failed', 'kst_date': yesterday, 'problems': [
+            {'key': 'restart_limit', 'severity': 'urgent', 'message': 'old', 'active': True},
+            {'key': 'start_refused', 'severity': 'urgent', 'message': 'older', 'active': True},
+            {'key': 'memory_low', 'severity': 'warn', 'message': 'x', 'active': False}]}))
+    control(env, final_after=3)
+    sup, reason = supervise(env)
+    assert reason == 'final_settled'
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    rows = {p['key']: p for p in status['problems']}
+    assert rows['restart_limit']['active'] is False and rows['start_refused']['active'] is False
+    assert 'cleared_by' in rows['restart_limit'] and 'memory_low' not in rows
+    assert status['state'] == 'stopped' and status['kst_date'] == env.date
+    events = [json.loads(x) for x in (env.run/'events.jsonl').read_text().splitlines()]
+    assert any(e['event'] == 'problems_carried_inactive' for e in events)

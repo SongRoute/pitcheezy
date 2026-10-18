@@ -310,3 +310,27 @@ def test_all_final_is_quiet_and_says_watch_end(rig):
     assert '감시 끝' in rig.fake.sent[-1]['body'] and not rig.fake.sent[-1]['critical']
     rig.watch()
     assert rig.events == [] and len(rig.fake.sent) == 2
+
+
+def test_start_refusal_alerts_then_next_supervisor_clears_it(rig, monkeypatch):
+    """REVIEW-002 D1/D3: a refused `start` (schedule source down for the whole retry window) reaches the watcher as
+    critical; the next supervisor's status carries start_refused as inactive and the alert resolves."""
+    rig.config(start_retry_s=0.1, start_retry_window_s=0.5)
+    good = rig.schedule.read_text()
+    rig.schedule.unlink()
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 2
+    status = rig.status()
+    assert status['state'] == 'refused' and status['refused_by'] == 'start'
+    rig.watch()
+    fired = rig.fired()
+    assert fired['ops_state:refused'] == 'critical' and fired['ops_problem:start_refused'] == 'critical'
+    rig.schedule.write_text(good)
+    rig.control()
+    rig.start()
+    status = rig.until(running_with_health)
+    assert [p for p in status['problems'] if p['key'] == 'start_refused'][0]['active'] is False
+    rig.watch()
+    assert 'ops_state:refused' not in rig.fired() and 'ops_problem:start_refused' not in rig.fired()
+    closed = {e['key'] for e in rig.events if e['kind'] in ('recover', 'closed')}
+    assert {'ops_state:refused', 'ops_problem:start_refused'} <= closed
