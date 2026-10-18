@@ -8,8 +8,8 @@ import { dirname, extname, join, parse, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg, suiteArg] = process.argv.slice(2);
-assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery', '--partial-body', '--cache-propagation', '--keyboard-sheet'].includes(suiteArg)),
-  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery|--partial-body|--cache-propagation|--keyboard-sheet] required');
+assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery', '--partial-body', '--cache-propagation', '--keyboard-sheet', '--resize-sheet'].includes(suiteArg)),
+  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery|--partial-body|--cache-propagation|--keyboard-sheet|--resize-sheet] required');
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 assert.ok(hex(expectedManifest, 64) && hex(expectedSource, 40));
@@ -203,7 +203,7 @@ const modulePath = noLinks(playwrightArg);
 assert.equal(modulePath.split(sep).slice(-2).join('/'), 'playwright/index.mjs');
 const output = resolve(outArg); noLinks(dirname(output)); mkdirSync(output, { mode: 0o700 });
 const controls = pinControls(output), fixture = syntheticFiles();
-const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : suiteArg === '--withdrawal-recovery' ? withdrawalFixtures(fixture) : suiteArg === '--cache-propagation' ? cacheFixtures(fixture) : suiteArg === '--keyboard-sheet' ? [{ name: 'keyboard_sheet', phases: [liveFixtures(fixture)[0].phases[0]] }] : [];
+const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : suiteArg === '--withdrawal-recovery' ? withdrawalFixtures(fixture) : suiteArg === '--cache-propagation' ? cacheFixtures(fixture) : ['--keyboard-sheet', '--resize-sheet'].includes(suiteArg) ? [{ name: suiteArg === '--resize-sheet' ? 'resize_sheet' : 'keyboard_sheet', phases: [liveFixtures(fixture)[0].phases[0]] }] : [];
 if (liveCases.length) writeFileSync(join(output, 'live-phases.json'), JSON.stringify(liveCases, null, 2), { flag: 'wx' });
 writeFileSync(join(output, 'synthetic-files.json'), JSON.stringify(fixture.bodies, null, 2), { flag: 'wx' });
 const allowed = new Map([...assets.allowed, ...fixture.files]);
@@ -359,6 +359,47 @@ async function scenario(width, failing, hostCase = null, liveCase = null, partia
         const outside = await focus('desktop-outside');
         assert.equal(outside.insideDialog, false); assert.equal(outside.focusable, true);
       }
+      if (suiteArg === '--resize-sheet') {
+        const originalDialog = await dialog.elementHandle();
+        hostEvidence.resizePhases = receipt.resizePhases = [];
+        for (const [i, viewport] of [{ width: 390, height: 844 }, { width: 1440, height: 900 }, { width: 390, height: 844 }].entries()) {
+          const requestBegin = receipt.requests.length, modal = viewport.width < 1200;
+          if (i) await page.setViewportSize(viewport);
+          await page.waitForFunction(expected => {
+            const box = document.querySelector('.sv-sheet');
+            return box?.getAttribute('aria-modal') === (expected ? 'true' : null)
+              && document.body.classList.contains('sv-locked') === expected
+              && (getComputedStyle(document.body).overflowY === 'hidden') === expected;
+          }, modal);
+          if (i) await page.waitForFunction(node => document.activeElement === node, originalDialog);
+          const state = await page.evaluate(({ box, openerNode }) => ({
+            sameDialog: document.querySelector('.sv-sheet') === box && box.isConnected,
+            sameOpener: document.querySelector('button.sv-reclist') === openerNode && openerNode.isConnected,
+            ariaModal: box.getAttribute('aria-modal'), bodyLocked: document.body.classList.contains('sv-locked'),
+            bodyOverflowY: getComputedStyle(document.body).overflowY,
+          }), { box: originalDialog, openerNode: originalOpener });
+          assert.equal(state.sameDialog, true); assert.equal(state.sameOpener, true);
+          assert.equal(navigations, 1); assert.equal(await page.getByRole('dialog').count(), 1);
+          if (i) {
+            assert.equal((await focus(`resize-${i}-dialog`)).insideDialog, true);
+            await page.keyboard.press(modal ? 'Shift+Tab' : 'Tab');
+            assert.equal(await (modal ? last : close).evaluate(node => node === document.activeElement), true);
+            assert.equal((await focus(`resize-${i}-first-key`)).insideDialog, true);
+            await page.keyboard.press(modal ? 'Tab' : 'Shift+Tab');
+            const boundary = await focus(`resize-${i}-boundary`);
+            assert.equal(boundary.insideDialog, modal); assert.equal(boundary.focusable, true);
+            if (modal) assert.equal(await close.evaluate(node => node === document.activeElement), true);
+          }
+          const screenshot = i < 2 ? `resize-${i}-${viewport.width}.png` : `keyboard-open-${width}.png`;
+          if (i < 2) {
+            await page.screenshot({ path: join(output, screenshot), fullPage: true });
+            hostEvidence.screenshots.push(screenshot);
+          }
+          const newRequests = receipt.requests.length - requestBegin;
+          assert.equal(newRequests, 0, 'viewport transition must retain the loaded document without fetching');
+          hostEvidence.resizePhases.push({ viewport, ...state, navigations, newRequests, screenshot });
+        }
+      }
       const openPNG = `keyboard-open-${width}.png`, closedPNG = `keyboard-closed-${width}.png`;
       await page.screenshot({ path: join(output, openPNG), fullPage: true });
       hostEvidence.screenshots.push(openPNG);
@@ -367,6 +408,10 @@ async function scenario(width, failing, hostCase = null, liveCase = null, partia
       await page.waitForFunction(node => document.activeElement === node, originalOpener);
       assert.equal((await focus('escaped-to-opener')).sameOpener, true);
       assert.equal(await page.locator('body').evaluate(node => node.classList.contains('sv-locked')), false);
+      if (suiteArg === '--resize-sheet') {
+        hostEvidence.bodyOverflowAfterClose = await page.locator('body').evaluate(node => getComputedStyle(node).overflowY);
+        assert.notEqual(hostEvidence.bodyOverflowAfterClose, 'hidden');
+      }
       assert.equal(navigations, 1); assert.equal(await page.locator('.sv-rec-row').count(), 1);
       await page.screenshot({ path: join(output, closedPNG), fullPage: true });
       hostEvidence.screenshots.push(closedPNG);
@@ -570,7 +615,8 @@ try {
     const driverPort = Number(new URL(browserServer.wsEndpoint()).port);
     assert.ok(driverPort < 8766 || driverPort > 8772, 'protected driver port forbidden');
     browser = await chromium.connect(browserServer.wsEndpoint(), { timeout: 10000 });
-    if (suiteArg === '--keyboard-sheet') { await scenario(390, false, null, liveCases[0], false, true); await scenario(1440, false, null, liveCases[0], false, true); }
+    if (suiteArg === '--resize-sheet') await scenario(390, false, null, liveCases[0], false, true);
+    else if (suiteArg === '--keyboard-sheet') { await scenario(390, false, null, liveCases[0], false, true); await scenario(1440, false, null, liveCases[0], false, true); }
     else if (liveCases.length) { for (const liveCase of liveCases) await scenario(390, false, null, liveCase); }
     else if (suiteArg === '--partial-body') await scenario(390, false, null, null, true);
     else if (suiteArg) { for (const hostCase of hostCases) await scenario(390, false, hostCase); }
