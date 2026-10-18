@@ -243,7 +243,7 @@ class Acceptance(unittest.TestCase):
                                  "clock must be a finite int/float within inclusive [-5, 5]")
 
 
-    def deferred_probe(self, target="synthetic.invalid", transport_error=False):
+    def deferred_probe(self, target="synthetic.invalid", transport_error=False, http_status=401):
         pre = {"run_id": "cx04-synthetic", "game_key": "123456",
                "target": {"upload_base": f"https://{target}/_publish/", "public_origin": f"https://{target}"}}
         args = types.SimpleNamespace(out=str(self.tmp / "out"), kind="revoked")
@@ -253,7 +253,7 @@ class Acceptance(unittest.TestCase):
             heads.append((got_pre["target"].copy(), relative))
             if transport_error:
                 raise OSError("synthetic transport failure")
-            return 401, {"content_type": "application/json", "cf_mitigated_present": False,
+            return http_status, {"content_type": "application/json", "cf_mitigated_present": False,
                          "cf_ray_present": False}
 
         with ExitStack() as run:
@@ -306,6 +306,45 @@ class Acceptance(unittest.TestCase):
         self.assertNotEqual(rc, 0)
         self.assertEqual(heads, [], "fourth post attempt must stop before HEAD")
         self.assertEqual(log, complete, "refusal must preserve the completed log with post3/history4")
+
+
+    def test_receipt_checker_complete_generated_log(self):
+        import check_onekey_receipt as checker
+        rc, log, heads, children = self.scenario()
+        self.assertEqual((rc, len(heads), len(children)), (0, 3, 1))
+        result = checker.check(log, "required", "required", "REAL_HOST")
+        self.assertEqual((result["status"], result["reasons"]), ("LOCAL_EVIDENCE_CONSISTENT", []))
+        self.assertIn("SAME_TARGET_BINDING", result["unverified"])
+
+    def test_receipt_checker_deferred_expiry_generated_log(self):
+        import check_onekey_receipt as checker
+        rc, log, heads, children = self.scenario(expiry_after=1200)
+        self.assertEqual((rc, len(heads), len(children)), (4, 2, 1))
+        self.assertEqual(log["missing_evidence"], ["expired"])
+        result = checker.check(log, "required", "required", "REAL_HOST")
+        self.assertEqual((result["status"], result["reasons"]), ("INCOMPLETE", ["REQUIRED_EXPIRED_MISSING"]))
+
+    def test_receipt_checker_generated_retry_recovery(self):
+        import check_onekey_receipt as checker
+        rc, log, heads, children = self.scenario(expired=False, answer="SKIP")
+        self.assertEqual((rc, len(heads), len(children)), (4, 1, 1))
+        result = checker.check(log, "required", "not-selected", "REAL_HOST")
+        self.assertEqual((result["status"], result["reasons"]), ("INCOMPLETE", ["REQUIRED_REVOKED_MISSING"]))
+        for post_count, transport_error, http_status, expected_rc, status, reasons in (
+            (1, True, 401, 4, "INCOMPLETE", ["REQUIRED_REVOKED_MISSING"]),
+            (2, False, 503, 2, "INCOMPLETE", ["REQUIRED_REVOKED_FAILED"]),
+            (3, False, 401, 0, "LOCAL_EVIDENCE_CONSISTENT", []),
+        ):
+            with self.subTest(post_count=post_count):
+                history = log["probes"]
+                rc, log, heads = self.deferred_probe(transport_error=transport_error, http_status=http_status)
+                self.assertEqual((rc, len(heads), log["post_requests"], log["main_requests"]),
+                                 (expected_rc, 1, post_count, 18))
+                self.assertEqual(log["probes"][:-1], history)
+                result = checker.check(log, "required", "not-selected", "REAL_HOST")
+                self.assertEqual((result["status"], result["reasons"]), (status, reasons))
+        self.assertEqual([p["status"] for p in log["probes"]], [403, None, 503, 401])
+        self.assertEqual((log["completion"], log["failed_evidence"], log["missing_evidence"]), ("COMPLETE", [], []))
 
 
 if __name__ == "__main__":
