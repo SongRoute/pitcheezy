@@ -8,8 +8,8 @@ import { dirname, extname, join, parse, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg, suiteArg] = process.argv.slice(2);
-assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery', '--partial-body', '--cache-propagation'].includes(suiteArg)),
-  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery|--partial-body|--cache-propagation] required');
+assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery', '--partial-body', '--cache-propagation', '--keyboard-sheet'].includes(suiteArg)),
+  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery|--partial-body|--cache-propagation|--keyboard-sheet] required');
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 assert.ok(hex(expectedManifest, 64) && hex(expectedSource, 40));
@@ -203,7 +203,7 @@ const modulePath = noLinks(playwrightArg);
 assert.equal(modulePath.split(sep).slice(-2).join('/'), 'playwright/index.mjs');
 const output = resolve(outArg); noLinks(dirname(output)); mkdirSync(output, { mode: 0o700 });
 const controls = pinControls(output), fixture = syntheticFiles();
-const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : suiteArg === '--withdrawal-recovery' ? withdrawalFixtures(fixture) : suiteArg === '--cache-propagation' ? cacheFixtures(fixture) : [];
+const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : suiteArg === '--withdrawal-recovery' ? withdrawalFixtures(fixture) : suiteArg === '--cache-propagation' ? cacheFixtures(fixture) : suiteArg === '--keyboard-sheet' ? [{ name: 'keyboard_sheet', phases: [liveFixtures(fixture)[0].phases[0]] }] : [];
 if (liveCases.length) writeFileSync(join(output, 'live-phases.json'), JSON.stringify(liveCases, null, 2), { flag: 'wx' });
 writeFileSync(join(output, 'synthetic-files.json'), JSON.stringify(fixture.bodies, null, 2), { flag: 'wx' });
 const allowed = new Map([...assets.allowed, ...fixture.files]);
@@ -278,11 +278,12 @@ function activatePhase(phase) {
     allowed.set(path, Buffer.from(JSON.stringify(body)));
   }
 }
-async function scenario(width, failing, hostCase = null, liveCase = null, partialCase = false) {
+async function scenario(width, failing, hostCase = null, liveCase = null, partialCase = false, keyboardCase = false) {
   fault = failing; hostError = hostCase;
   if (partialCase) { partialBody = true; partialClosed = new Promise(done => { resolvePartialClosed = done; }); }
   if (liveCase) activatePhase(liveCase.phases[0]);
-  const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
+  const height = keyboardCase && width === 390 ? 844 : 900;
+  const context = await browser.newContext({ viewport: { width, height }, serviceWorkers: 'block' });
   try {
     await context.route('**/*', route => {
       const request = route.request(), url = new URL(request.url());
@@ -306,7 +307,75 @@ async function scenario(width, failing, hostCase = null, liveCase = null, partia
     page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
     await page.goto(`${origin}/?${failing || hostCase || liveCase || partialCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
     let hostEvidence;
-    if (partialCase) {
+    if (keyboardCase) {
+      const mobile = width < 1200, opener = page.locator('button.sv-reclist');
+      await page.locator('.sv-rec-row').waitFor();
+      assert.equal(await opener.count(), 1);
+      const originalOpener = await opener.elementHandle(), trace = [];
+      hostEvidence = { keyboardOnly: true, tabLimit: 40, trace, screenshots: [] };
+      (receipt.keyboardAttempts ??= []).push({ width, height, ...hostEvidence });
+      const focus = async step => {
+        const state = await page.evaluate(openerNode => {
+          const node = document.activeElement;
+          return { role: node?.getAttribute('role') ?? (node?.tagName === 'BUTTON' ? 'button' : node?.tagName?.toLowerCase()),
+            name: (node?.getAttribute('aria-label') ?? node?.textContent ?? '').trim().slice(0, 200),
+            insideDialog: Boolean(node?.closest('[role="dialog"]')), sameOpener: node === openerNode,
+            focusable: node instanceof HTMLElement && node.matches('button:not([disabled]),a[href],select,input,textarea,[tabindex]') && node.tabIndex >= 0 };
+        }, originalOpener);
+        trace.push({ step, ...state }); return state;
+      };
+      let reached = false, tabCount = 0;
+      for (; tabCount < 40; tabCount++) {
+        await page.keyboard.press('Tab');
+        if ((await focus(`reach-${tabCount + 1}`)).sameOpener) { reached = true; tabCount++; break; }
+      }
+      assert.ok(reached, 'recommendation opener not reached within 40 keyboard Tabs');
+      hostEvidence.openerTabs = tabCount;
+      await page.keyboard.press('Enter');
+      const dialog = page.getByRole('dialog', { name: '추천 구종 · 대략 위치', exact: true });
+      await dialog.waitFor();
+      await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'dialog');
+      assert.equal((await focus('opened')).insideDialog, true);
+      assert.equal(await dialog.getAttribute('aria-modal'), mobile ? 'true' : null);
+      assert.equal(await page.locator('body').evaluate(node => node.classList.contains('sv-locked')), mobile);
+      const close = dialog.getByRole('button', { name: '닫기', exact: true });
+      const last = dialog.getByRole('button', { name: /^속도 단위 바꾸기/ });
+      if (mobile) {
+        for (const [key, target, label] of [
+          ['Shift+Tab', last, 'container-to-last'], ['Tab', close, 'last-to-first'],
+          ['Shift+Tab', last, 'first-to-last'], ['Tab', close, 'return-first'],
+          ['Tab', dialog.getByRole('button', { name: '기준과 한계 보기', exact: true }), 'middle'],
+          ['Tab', last, 'forward-last'], ['Tab', close, 'forward-wrap'],
+        ]) {
+          await page.keyboard.press(key);
+          assert.equal(await target.evaluate(node => node === document.activeElement), true);
+          assert.equal((await focus(label)).insideDialog, true);
+        }
+      } else {
+        await page.keyboard.press('Tab');
+        assert.equal(await close.evaluate(node => node === document.activeElement), true);
+        assert.equal((await focus('desktop-first')).insideDialog, true);
+        await page.keyboard.press('Shift+Tab');
+        const outside = await focus('desktop-outside');
+        assert.equal(outside.insideDialog, false); assert.equal(outside.focusable, true);
+      }
+      const openPNG = `keyboard-open-${width}.png`, closedPNG = `keyboard-closed-${width}.png`;
+      await page.screenshot({ path: join(output, openPNG), fullPage: true });
+      hostEvidence.screenshots.push(openPNG);
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'detached' });
+      await page.waitForFunction(node => document.activeElement === node, originalOpener);
+      assert.equal((await focus('escaped-to-opener')).sameOpener, true);
+      assert.equal(await page.locator('body').evaluate(node => node.classList.contains('sv-locked')), false);
+      assert.equal(navigations, 1); assert.equal(await page.locator('.sv-rec-row').count(), 1);
+      await page.screenshot({ path: join(output, closedPNG), fullPage: true });
+      hostEvidence.screenshots.push(closedPNG);
+      const expectedHashes = Object.fromEntries(Object.entries(liveCase.phases[0].bodies).map(([path, body]) => [path, sha(Buffer.from(JSON.stringify(body)))]));
+      const servedPhase = receipt.requests.slice(begin);
+      for (const row of servedPhase.filter(row => expectedHashes[row.path])) assert.equal(row.sha256, expectedHashes[row.path]);
+      assert.ok(servedPhase.every(row => row.status === 200));
+      Object.assign(hostEvidence, { mobile, ariaModal: mobile, bodyUnlockedAfterClose: true, navigations, fixtureHashes: expectedHashes });
+    } else if (partialCase) {
       const alert = page.locator('.sv-alert[role=alert]');
       await alert.waitFor({ timeout: 25000 });
       const alertAt = performance.now();
@@ -476,7 +545,7 @@ async function scenario(width, failing, hostCase = null, liveCase = null, partia
       assert.ok(served.every(r => r.status === 200));
     } else if (!hostCase && !liveCase && !partialCase) assert.ok(served.some(r => r.path === '/v1/health.json' && r.status === 503));
     if (!hostCase && !liveCase && !partialCase) await page.screenshot({ path: join(output, `${failing ? '503' : 'final'}-${width}.png`), fullPage: true });
-    receipt.scenarios.push({ kind: liveCase?.name ?? hostCase?.name ?? (partialCase ? 'partial_body_timeout_recovery' : failing ? '503_no_recommendation' : 'list_to_final'), width, height: 900,
+    receipt.scenarios.push({ kind: liveCase?.name ?? hostCase?.name ?? (partialCase ? 'partial_body_timeout_recovery' : failing ? '503_no_recommendation' : 'list_to_final'), width, height,
       requestCount: served.length, pageErrors: errors, fixtureGame: fixture.game, ...(hostEvidence ?? {}) });
   } finally { await bounded(context.close(), 3000); }
 }
@@ -501,7 +570,8 @@ try {
     const driverPort = Number(new URL(browserServer.wsEndpoint()).port);
     assert.ok(driverPort < 8766 || driverPort > 8772, 'protected driver port forbidden');
     browser = await chromium.connect(browserServer.wsEndpoint(), { timeout: 10000 });
-    if (liveCases.length) { for (const liveCase of liveCases) await scenario(390, false, null, liveCase); }
+    if (suiteArg === '--keyboard-sheet') { await scenario(390, false, null, liveCases[0], false, true); await scenario(1440, false, null, liveCases[0], false, true); }
+    else if (liveCases.length) { for (const liveCase of liveCases) await scenario(390, false, null, liveCase); }
     else if (suiteArg === '--partial-body') await scenario(390, false, null, null, true);
     else if (suiteArg) { for (const hostCase of hostCases) await scenario(390, false, hostCase); }
     else { await scenario(390, false); await scenario(1440, false); await scenario(390, true); }
