@@ -8,8 +8,8 @@ import { dirname, extname, join, parse, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg, suiteArg] = process.argv.slice(2);
-assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness'].includes(suiteArg)),
-  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness] required');
+assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery'].includes(suiteArg)),
+  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery] required');
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 assert.ok(hex(expectedManifest, 64) && hex(expectedSource, 40));
@@ -158,13 +158,32 @@ function healthFixtures(base) {
   });
 }
 
+function withdrawalFixtures(base) {
+  const normal = liveFixtures(base)[0].phases[0], gamePath = `/v1/game/${base.game}.json`;
+  const phases = ['recommended', 'withdrawn', 'old_health', 'missing_check', 'recovered'].map((name, i) => {
+    const phase = structuredClone(normal), health = phase.bodies['/v1/health.json'];
+    const sequence = [1, 2, 1, 3, 4][i];
+    health.sequence = sequence; health.publish.sequence = sequence;
+    health.game_checks[base.game].sequence_checked = sequence;
+    if (i === 1) health.game_checks[base.game].file_sequence = null;
+    if (i === 3) health.game_checks = {};
+    if (i === 4) {
+      health.game_checks[base.game].file_sequence = 4;
+      phase.bodies[gamePath].publish.sequence = 4;
+    }
+    Object.assign(phase, { name, withdrawn: i > 0 && i < 4, visibleRows: i > 0 && i < 4 ? 0 : 1 });
+    return phase;
+  });
+  return [{ name: 'withdrawal_recovery', phases }];
+}
+
 // Pin validation happens before output creation, browser import, or any listening socket.
 const assets = pinnedAssets(manifestArg, expectedManifest, expectedSource, buildArg);
 const modulePath = noLinks(playwrightArg);
 assert.equal(modulePath.split(sep).slice(-2).join('/'), 'playwright/index.mjs');
 const output = resolve(outArg); noLinks(dirname(output)); mkdirSync(output, { mode: 0o700 });
 const controls = pinControls(output), fixture = syntheticFiles();
-const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : [];
+const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : suiteArg === '--withdrawal-recovery' ? withdrawalFixtures(fixture) : [];
 if (liveCases.length) writeFileSync(join(output, 'live-phases.json'), JSON.stringify(liveCases, null, 2), { flag: 'wx' });
 writeFileSync(join(output, 'synthetic-files.json'), JSON.stringify(fixture.bodies, null, 2), { flag: 'wx' });
 const allowed = new Map([...assets.allowed, ...fixture.files]);
@@ -235,6 +254,8 @@ async function scenario(width, failing, hostCase = null, liveCase = null) {
     const page = await context.newPage(), errors = [], begin = receipt.requests.length;
     page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
     page.on('pageerror', e => errors.push(String(e)));
+    let navigations = 0;
+    page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
     await page.goto(`${origin}/?${failing || hostCase || liveCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
     let hostEvidence;
     if (liveCase) {
@@ -243,8 +264,23 @@ async function scenario(width, failing, hostCase = null, liveCase = null) {
       for (const [i, phase] of liveCase.phases.entries()) {
         if (i) {
           phaseBegin = receipt.requests.length; activatePhase(phase);
-          await page.locator('.sv-head .sv-live').click();
+          if (liveCase.name === 'withdrawal_recovery') {
+            const response = page.waitForResponse(r => r.url() === `${origin}/v1/health.json`);
+            await (liveCase.phases[i - 1].withdrawn
+              ? page.locator('.sv-unavailable').getByRole('button', { name: '다시 확인', exact: true })
+              : page.locator('.sv-head .sv-live')).click();
+            assert.equal(await (await response).finished(), null, 'health response must finish');
+            await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+          } else await page.locator('.sv-head .sv-live').click();
         }
+        if (phase.withdrawn) {
+          const unavailable = page.locator('.sv-unavailable');
+          await unavailable.waitFor();
+          assert.equal(await unavailable.locator('[role=status]').first().innerText(),
+            '이 경기는 지금 볼 수 없어요. 잠시 뒤 다시 확인해 주세요.');
+          assert.equal(await page.locator('.sv-rec-row').count(), 0);
+          assert.equal(await page.locator('.sv-head .sv-live.on').count(), 0);
+        } else {
         const state = page.locator(`.sv-state[data-state="${phase.state}"]${phase.held ? '.held' : ':not(.held)'}`);
         await state.waitFor();
         assert.equal(await state.locator('.sv-rec-row').count(), phase.visibleRows);
@@ -260,18 +296,21 @@ async function scenario(width, failing, hostCase = null, liveCase = null) {
             assert.equal(await page.locator('.sv-head .sv-live.on').count(), 0);
           } else await page.locator('.sv-head .sv-live.on').waitFor();
         }
+        }
         const servedPhase = receipt.requests.slice(phaseBegin), healthPath = '/v1/health.json';
         const expectedHashes = Object.fromEntries(Object.entries(phase.bodies).map(([p, b]) => [p, sha(Buffer.from(JSON.stringify(b)))]));
         assert.ok(servedPhase.some(r => r.path === healthPath && r.sha256 === expectedHashes[healthPath]));
-        if (!i) assert.ok(servedPhase.some(r => r.path === `/v1/game/${fixture.game}.json` && r.sha256 === expectedHashes[`/v1/game/${fixture.game}.json`]));
+        if (phase.withdrawn) assert.ok(!servedPhase.some(r => r.path === `/v1/game/${fixture.game}.json`), 'withdrawn game must not refetch old recommendations');
+        if (liveCase.name === 'withdrawal_recovery') assert.equal(navigations, 1, 'one document must retain withdrawal/cache state');
+        if (!i || liveCase.name === 'withdrawal_recovery' && !phase.withdrawn) assert.ok(servedPhase.some(r => r.path === `/v1/game/${fixture.game}.json` && r.sha256 === expectedHashes[`/v1/game/${fixture.game}.json`]));
         assert.ok(servedPhase.every(r => r.status === 200));
         for (const r of servedPhase) if (fixture.files.has(r.path)) assert.equal(r.sha256, expectedHashes[r.path]);
         const screenshot = `${liveCase.name}-${phase.name}-390.png`;
         await page.screenshot({ path: join(output, screenshot), fullPage: true });
-        phases.push({ name: phase.name, expectedState: phase.state, visibleRows: phase.visibleRows, held: phase.held,
+        phases.push({ name: phase.name, expectedState: phase.withdrawn ? 'unavailable' : phase.state, ...(liveCase.name === 'withdrawal_recovery' ? { navigations, withdrawn: phase.withdrawn } : {}), visibleRows: phase.visibleRows, held: phase.held,
           payloadCandidateCount: phase.bodies[`/v1/game/${fixture.game}.json`].next.rec.candidates.length,
           requestCount: servedPhase.length, requests: servedPhase, fixtureHashes: expectedHashes, screenshot,
-          trigger: i ? 'manual_live_button' : 'initial_navigation' });
+          trigger: i ? (liveCase.phases[i - 1].withdrawn ? 'manual_retry_button' : 'manual_live_button') : 'initial_navigation' });
       }
       hostEvidence = { phases, syntheticHTTPDate: 'Tue, 01 Jan 2030 00:00:00 GMT' };
     } else if (hostCase) {
