@@ -304,6 +304,23 @@ def _played_game(tmp_path, reg_path, store_name="store.sqlite3"):
     return {GAME: {"ledgers": [led.path], "store": copy, "store_sha256": digest}}
 
 
+def test_primary_selection_falls_back_only_on_pair_floor(tmp_path):
+    reg = _exec_registration(tmp_path)
+    body = json.loads(reg.read_text())
+    body["analysis"]["min_paired_pitches"] = 5  # synthetic game has 4 pairs -> primary below floor
+    body["analysis"]["comparisons"] = [{"candidate": "m", "comparator": "base"},
+                                       {"candidate": "base", "comparator": "m"}]
+    body["analysis"]["primary"] = {"candidate": "m", "comparator": "base", "metric": "nll"}
+    body["analysis"]["fallback_primary"] = {"candidate": "base", "comparator": "m", "metric": "nll"}
+    reg.write_text(json.dumps(body))
+    games = _played_game(tmp_path, reg)
+    _unseal(tmp_path, reg)
+    out = analyzer.sealed_look(reg, tmp_path, games, leaf_of=leaf_of, type_of=type_of,
+                               label_loader=final_label_rows, now_utc=AFTER)
+    sel = out["revisions"]["final"]["primary_selection"]
+    assert sel["selected"] == "none" and sel["n_primary"] == 4 and sel["n_fallback"] == 4
+
+
 def _exec_registration(tmp_path, **kw):
     reg = _registration(tmp_path, **kw)
     body = json.loads(reg.read_text())
@@ -321,6 +338,7 @@ def test_single_look_then_refuses_second(tmp_path):
                                label_loader=final_label_rows, now_utc=AFTER)
     comp = out["revisions"]["final"]["comparisons"][0]
     assert comp["n_paired"] == 4 and set(comp["metrics"]) == {"nll", "brier", "ece", "top1"}
+    assert out["revisions"]["final"]["primary_selection"]["selected"] == "none"  # no primary declared
     with pytest.raises(SealedError, match="already taken"):
         analyzer.sealed_look(reg, tmp_path, games, leaf_of=leaf_of, type_of=type_of,
                              label_loader=final_label_rows, now_utc=AFTER)

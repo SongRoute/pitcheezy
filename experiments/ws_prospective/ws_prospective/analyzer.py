@@ -217,10 +217,26 @@ def sealed_look(registration_path: Path, job_dir: Path, games: Dict[int, dict], 
             else:
                 entry["metrics"] = "INSUFFICIENT_PAIRED_PITCHES"
             comps.append(entry)
-        result["revisions"][revision] = {
+        floor = an.get("min_paired_pitches", 1)
+
+        def _n(pair):
+            if not pair:
+                return 0
+            for c in comps:
+                if (c["candidate"], c["comparator"]) == (pair["candidate"], pair["comparator"]):
+                    return c["n_paired"]
+            return 0
+        prim, fb = an.get("primary"), an.get("fallback_primary")
+        selection = ("primary" if prim and _n(prim) >= floor else
+                     "fallback" if fb and _n(fb) >= floor else "none")
+        result["revisions"].setdefault(revision, {})
+        result["revisions"][revision]["primary_selection"] = {
+            "selected": selection, "n_primary": _n(prim), "n_fallback": _n(fb), "floor": floor,
+            "rule": "decided from pair counts only, before reading any metric"}
+        result["revisions"][revision].update({
             "exclusions": [{"model_id": k[0], "reason": k[1], "n": v}
                            for k, v in sorted(excl.items())],
-            "comparisons": comps}
+            "comparisons": comps})
     out = Path(job_dir) / an.get("result_file", "RESULT.json")
     out.write_text(json.dumps(result, indent=2, sort_keys=True))
     return result
