@@ -243,6 +243,48 @@ class Acceptance(unittest.TestCase):
                                  "clock must be a finite int/float within inclusive [-5, 5]")
 
 
+    def deferred_probe(self, target="synthetic.invalid"):
+        pre = {"run_id": "cx04-synthetic", "game_key": "123456",
+               "target": {"upload_base": f"https://{target}/_publish/", "public_origin": f"https://{target}"}}
+        args = types.SimpleNamespace(out=str(self.tmp / "out"), kind="revoked")
+        heads = []
+
+        def head(got_pre, relative, _token, _cafile):
+            heads.append((got_pre["target"].copy(), relative))
+            return 401, {"content_type": "application/json", "cf_mitigated_present": False,
+                         "cf_ray_present": False}
+
+        with ExitStack() as run:
+            for obj, name, value in (
+                (self.w, "head", head),
+                (getpass, "getpass", lambda _: "cx04-fake-bearer-only-0123456789abcdefghijklm"),
+                (sys, "stdin", TTY()), (sys, "stdout", TTY()), (sys, "stderr", TTY()),
+            ):
+                run.enter_context(patch.object(obj, name, value))
+            try:
+                rc = self.w.cmd_probe(args, pre, False, None)
+            except self.w.Refuse:
+                rc = 2
+        log = json.loads((self.tmp / "out" / "wrapper-log.json").read_text())
+        return rc, log, heads
+
+    def test_deferred_same_target_completes(self):
+        rc, log, _heads, _children = self.scenario(expired=False, answer="SKIP")
+        self.assertEqual((rc, log["result"]), (4, "MAIN_PASS_INCOMPLETE"))
+        rc, log, heads = self.deferred_probe()
+        self.assertEqual((rc, log["result"], log["completion"]), (0, PASS, "COMPLETE"))
+        self.assertEqual(len(heads), 1)
+        self.assertTrue(log["probes"][-1]["same_token_as_main_run"])
+
+    def test_deferred_changed_target_refused_before_head(self):
+        rc, log, _heads, _children = self.scenario(expired=False, answer="SKIP")
+        self.assertEqual((rc, log["result"]), (4, "MAIN_PASS_INCOMPLETE"))
+        rc, log, heads = self.deferred_probe("changed.synthetic.invalid")
+        self.assertEqual(len(heads), 0, f"different target must stop before HEAD; rc={rc}, result={log.get('result')}, completion={log.get('completion')}")
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(log["result"], "MAIN_PASS_INCOMPLETE")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
