@@ -19,6 +19,7 @@
 - 공통 지연: `fixed_delay_s`(기본 0) 또는 `--delay`/`PITCHEEZY_PUBLISH_DELAY_S`. `live_config.json` `max_delay_s` 120을 넘으면 시작을 거절한다. **0초/15초는 Song 결정 대기.**
 - 한 출력 폴더에는 발행기 하나만. 폴더 옆 `.<폴더이름>.lock`을 잡으며, 이미 다른 발행기가 잡고 있으면 `AlreadyRunning`으로 시작하지 않는다.
 - 실경기용 정확한 환경 변수 묶음(피드·프로필·저장소 경로)과 실행 위치(tmux 창, launchd 여부): **미확인.** 저장소에 발행기용 launchd 예시 파일은 없다(`apps/observer/deploy/`에는 observer·live-store-staging·demo-sync 예시만 있다). 리허설 E에서 정해 이 절에 적는다.
+- **운영 실행기(2026-10-18 H, 검증 전):** `apps/observer/ops/ws_operate.py` `plan` / `start --date <KST 날짜>` / `status` / `stop`. 리허설 E의 환경 묶음(최소 자식 환경, 날짜별 새 저장소, 빈 피드 폴더)에 참고 카드 경로를 더해 발행기를 띄우고, 예상 밖 종료는 30/60/120초 뒤 최대 3번 다시 띄우며, 경기 중 다른 커밋으로는 다시 띄우지 않는다. 사용법은 `apps/observer/README.md` "월드시리즈 운영 실행기", 경고 감시기가 읽는 상태 파일은 [ws-ops-status-contract.md](ws-ops-status-contract.md). launchd 예시는 설치하지 않았다.
 
 ### 업로드 켜기
 - `publish_config.json` `upload.enabled: true`, `upload.base_url`(전용 HTTPS `/_publish` 경로를 정확히 한 번 포함), 토큰은 `PITCHEEZY_PUBLISH_TOKEN`(또는 `token_file`). 기본은 꺼짐이다.
