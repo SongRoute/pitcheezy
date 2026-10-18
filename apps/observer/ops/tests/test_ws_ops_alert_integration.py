@@ -310,3 +310,59 @@ def test_all_final_is_quiet_and_says_watch_end(rig):
     assert '감시 끝' in rig.fake.sent[-1]['body'] and not rig.fake.sent[-1]['critical']
     rig.watch()
     assert rig.events == [] and len(rig.fake.sent) == 2
+
+
+def test_start_refusal_alerts_then_next_supervisor_clears_it(rig, monkeypatch):
+    """REVIEW-002 D1/D3: a refused `start` (schedule source down for the whole retry window) reaches the watcher as
+    critical; the next supervisor's status carries start_refused as inactive and the alert resolves."""
+    rig.config(start_retry_s=0.1, start_retry_window_s=0.5)
+    good = rig.schedule.read_text()
+    rig.schedule.unlink()
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 2
+    status = rig.status()
+    assert status['state'] == 'refused' and status['refused_by'] == 'start'
+    rig.watch()
+    fired = rig.fired()
+    assert fired['ops_state:refused'] == 'critical' and fired['ops_problem:start_refused'] == 'critical'
+    rig.schedule.write_text(good)
+    rig.control()
+    rig.start()
+    status = rig.until(running_with_health)
+    assert [p for p in status['problems'] if p['key'] == 'start_refused'][0]['active'] is False
+    rig.watch()
+    assert 'ops_state:refused' not in rig.fired() and 'ops_problem:start_refused' not in rig.fired()
+    closed = {e['key'] for e in rig.events if e['kind'] in ('recover', 'closed')}
+    assert {'ops_state:refused', 'ops_problem:start_refused'} <= closed
+
+
+def test_off_day_and_all_final_starts_leave_the_watcher_quiet(rig, tmp_path):
+    """REVIEW-003 B3: the daily start on a date with nothing to run (all games final, or no WS game at all) must not
+    page: status.json keeps the clean stop and the watcher stays quiet."""
+    rig.control(final_after=6, interval=0.1)
+    rig.start()
+    assert rig.join() == 'final_settled'
+    rig.watch()
+    rig.watch()
+    assert rig.fired() == {} and rig.events == []
+    before, sent = rig.status_path.read_bytes(), len(rig.fake.sent)
+    # same date again: every game final -> benign refusal, nothing written
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date, '--schedule-file', str(rig.schedule)]) == 2
+    # an off day: no WS game on the date
+    empty = tmp_path/'off_day.json'
+    empty.write_text(json.dumps({'dates': []}))
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date, '--schedule-file', str(empty)]) == 2
+    assert rig.status_path.read_bytes() == before and rig.status()['state'] == 'stopped'
+    rig.watch()
+    assert rig.fired() == {} and rig.events == [] and len(rig.fake.sent) == sent  # nothing new sent
+
+
+def test_statsapi_error_body_at_start_pages_instead_of_silence(rig):
+    """REVIEW-004 B4: an error body is a failed schedule check (retried, then urgent), never a quiet off day."""
+    rig.config(start_retry_s=0.1, start_retry_window_s=0.3)
+    rig.schedule.write_text(json.dumps({'messageNumber': 10, 'message': 'Object not found'}))
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 2
+    rig.watch()
+    fired = rig.fired()
+    assert fired['ops_state:refused'] == 'critical' and fired['ops_problem:start_refused'] == 'critical'

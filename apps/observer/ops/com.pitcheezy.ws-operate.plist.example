@@ -4,6 +4,11 @@
      nothing runs; on a game date it leaves a detached supervisor that sleeps until first pitch - 30 min.
      07:00 KST is before every expected WS first pitch (~09:00 KST for an 8 pm ET game); a day game would need an
      earlier time. Check `ws_operate.py plan` first.
+     start retries a failed schedule request (every 60 s, up to 30 min) and, if it still refuses, writes
+     status.json (state refused, urgent start_refused) so the alert watcher reports it. A date with nothing to run
+     (no WS game, all final, past the hard end) writes nothing and alerts nothing. A rehearsal (another publisher or
+     rehearsal supervisor) running at 07:00 makes start retry 30 min and then refuse urgently: do not schedule a
+     rehearsal over the daily start, or bootout this job for that day.
 
      Install (only after Song approves):
        cp apps/observer/ops/com.pitcheezy.ws-operate.plist.example ~/Library/LaunchAgents/com.pitcheezy.ws-operate.plist
