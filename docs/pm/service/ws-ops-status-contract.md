@@ -1,6 +1,6 @@
 # 월드시리즈 운영 상태 파일 계약 (`pitcheezy-ws-ops-status-v1`, 판 1.1, 2026-10-18)
 
-운영 실행기 `apps/observer/ops/ws_operate.py`의 감독 프로세스가 쓰고, 경고 감시기(`ws_alert.py`, 별도 작업)가 읽는 JSON 파일이다. 감시기는 이 파일만 읽으면 되고 프로세스 표를 뒤질 필요가 없다. 특히 감시 명령줄에 `rehearse.py supervise`나 `observer_app.publisher` 글자를 넣지 않는다.
+운영 실행기 `apps/observer/ops/ws_operate.py`의 감독 프로세스가 쓰고, 경고 감시기(`apps/observer/ops/ws_alert.py`)가 읽는 JSON 파일이다. 감시기는 이 파일만 읽으면 되고 프로세스 표를 뒤질 필요가 없다. 특히 감시 명령줄에 `rehearse.py supervise`나 `observer_app.publisher` 글자를 넣지 않는다.
 
 - 판 1.1(검토 REVIEW-001 B1): 1.0 필드는 모두 그대로 두고 `schema_version`, `updated_at`, `publisher.running`, `problems[]`, `games[]`의 `start`/`status`/`window_start`/`window_end`, `out_dir`, `state_path`를 **더했다**. `schema` 문자열은 그대로 `pitcheezy-ws-ops-status-v1`이다.
 
@@ -10,7 +10,7 @@
 - 공용 `status.json`은 감독 lock(`<ops_root>/supervisor.lock`)을 잡은 감독만 쓴다. 동시에 감독은 하나뿐이다.
 - 원자적 교체(임시 파일 → `rename`)로 쓴다. 읽는 쪽은 반쯤 쓴 파일을 보지 않는다.
 - 쓰는 때(= heartbeat, 매번 `updated_at` 갱신): 상태가 바뀔 때마다, 운영 중(`prestart`/`running`/`backoff`/`stopping`) `status_every_s`(10초)마다, 대기(`waiting`) 중 `waiting_status_every_s`(60초)마다. `stopped`/`refused`/`failed` 뒤에는 더 쓰지 않는다(감독이 끝났으므로).
-- 오래됨 기준(잠정): 감시기는 `state`가 운영 중일 때 `updated_at`이 60초, `waiting`일 때 180초보다 오래되면 "감독 멈춤"으로 본다. 끝난 상태(`stopped`/`refused`/`failed`)에서는 오래됨을 따지지 않는다. 감시기 쪽 기본값(300초)과 다르면 둘 중 하나로 맞춘다(열린 결정).
+- 오래됨 기준(잠정, 2026-10-18 통합에서 감시기 값으로 맞춤): 감시기(`ws_alert_config.json` `ops_stale_running_s`/`ops_stale_other_s`)는 `state`가 `running`/`backoff`일 때 `updated_at`이 90초(heartbeat 10초의 9배), 그 밖의 진행 상태(`waiting`/`prestart`/`stopping`)일 때 300초(대기 heartbeat 60초의 5배)보다 오래되면 "감독 멈춤"(`ops_status_stale`)으로 본다. 끝난 상태(`stopped`/`refused`/`failed`)에서는 오래됨을 따지지 않는다. 처음 적었던 60/180초 안은 쓰지 않는다.
 - 비밀 값은 들어가지 않는다: 토큰·업로드 주소는 쓰지 않는다(업로드는 있음/없음과 개수·오류 종류만). `runs/` 폴더는 이슈·저장소에 복사하지 않는다(런타임 설정에 업로드 주소가 있다).
 
 ## 감시기가 읽는 핵심 필드
@@ -50,7 +50,7 @@
 ### `games[]`
 
 - `start`: 예정 첫 투구(ISO UTC).
-- `status`: `final`(발행 파일이 final이거나 일정이 Final), `postponed`(일정이 Postponed/Cancelled/Suspended), `live`(예정 시각이 지났고 final 아님 — 시계 기준이지 실제 첫 투구 확인이 아님), `scheduled`(예정 전), `other`(예약값, 지금은 쓰지 않음).
+- `status`: `final`(발행 파일이 final이거나 일정이 Final), `postponed`(일정이 Postponed/Cancelled/Suspended), `live`(예정 시각이 지났고 final 아님 — 시계 기준이지 실제 첫 투구 확인이 아님), `scheduled`(예정 전), `other`(예약값, 지금은 쓰지 않음). 감시기는 `live`로 경기 시간대를 열지만, 이 값만으로 "실제 진행 중"으로 보지 않는다(`file_stuck`은 발행 파일의 `game.status_text`가 `In Progress`이거나 발행기 자신이 live라고 할 때만).
 - `window_start`: 발행기 시작 시각(그날 첫 경기 − 30분). `window_end`: 그날 상한(마지막 경기 + 9시간). 모든 경기가 final이 되면 `min(상한, 마지막 final + 15분)`으로 당겨진다. 감시기는 이 창 안에서만 "발행기 멈춤"을 경고하면 된다.
 
 ## 나머지 필드(1.0부터, 그대로)
@@ -110,4 +110,4 @@
 
 ## 바꿀 때
 
-필드를 지우거나 뜻을 바꾸면 `schema`의 버전을 올린다. 필드 추가는 같은 `schema`에서 `schema_version`만 올린다. 코드 쪽 키 목록은 `ws_operate.STATUS_KEYS`·`PROBLEM_SEVERITY`이고 `tests/test_ws_operate.py`(`test_status_file_schema`, `test_problems_*`)가 확인한다.
+필드를 지우거나 뜻을 바꾸면 `schema`의 버전을 올린다. 필드 추가는 같은 `schema`에서 `schema_version`만 올린다. 코드 쪽 키 목록은 `ws_operate.STATUS_KEYS`·`PROBLEM_SEVERITY`이고 `tests/test_ws_operate.py`(`test_status_file_schema`, `test_problems_*`)가 확인한다. 감시기가 넘기지 않는 키(`ws_alert.OPS_ALERTS_COVERED`: `memory_low`, `health_stale`, `feed_failing`, `upload_blocked`)와 실제 감독 → 감시기 흐름은 `apps/observer/ops/tests/test_ws_ops_alert_integration.py`가 확인한다. 함께 띄우는 법: 운영 런북 7.6.

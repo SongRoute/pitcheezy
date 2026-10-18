@@ -69,7 +69,8 @@ def main():
                 health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': sequence,
                           'published_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'files_written': 2,
                           'unavailable_games': [], 'feed_failing_games': [],
-                          'game_checks': {str(pk): {'checked_at': 'x', 'sequence_checked': sequence,
+                          'game_checks': {str(pk): {'checked_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                                                    'sequence_checked': sequence,
                                                     'file_sequence': sequence, 'feed_ok': True} for pk in games}}
                 if config['upload']['enabled']:
                     health['upload'] = {'code': 'upload_failed' if control.get('upload_blocked') else None,

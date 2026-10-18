@@ -254,8 +254,10 @@ def game_windows(cfg, obs):
             except (TypeError, ValueError):
                 continue
             entry = cands.setdefault(pk, {'game_pk': pk, 'start': None, 'status': None, 'sources': [],
-                                          'window_start': None, 'window_end': None})
+                                          'window_start': None, 'window_end': None, 'live_from': set()})
             entry['sources'].append(source)
+            if item.get('status') == 'live' or (item.get('live') is True and source == 'publisher'):
+                entry['live_from'].add(source)  # 'ops' alone = the launcher's clock (start passed), not play seen
             entry['start'] = parse_time(item.get('start') or item.get('start_utc')) or entry['start']
             entry['status'] = item.get('status') or entry['status']
             entry['status_text'] = item.get('status_text') or entry.get('status_text')
@@ -270,6 +272,8 @@ def game_windows(cfg, obs):
         if pk in cands and game.get('status'):
             cands[pk]['status'] = game['status']
             cands[pk]['status_text'] = game.get('status_text')
+            if game['status'] == 'live':
+                cands[pk]['live_from'].add('game_file')
     out = {}
     for pk, entry in cands.items():
         if entry['status'] in ('final', 'other', 'postponed'):
@@ -378,7 +382,10 @@ def evaluate(cfg, obs, tracker):
             # file_sequence must move while the game moves: checks happen, the feed is fine, yet no new file.
             seq = gc.get('file_sequence')
             text = (body.get('game') or {}).get('status_text') or info.get('status_text')
-            in_play = text is None or any(str(text).startswith(t) for t in IN_PLAY_TEXT)
+            # No status_text: trust a live status only when the publisher said it. The launcher's games[].status
+            # 'live' means "scheduled start has passed" (clock), so on its own it never makes a game 'in play'.
+            clock_only = info.get('live_from', set()) <= {'ops'} and (body.get('game') or {}).get('status') != 'live'
+            in_play = (any(str(text).startswith(t) for t in IN_PLAY_TEXT) if text is not None else not clock_only)
             track = files.get(str(pk))
             if track is None or track.get('file_sequence') != seq or not in_play:
                 # Warmup / delay / review: the clock restarts, so the first minutes of play are not 'stuck'.

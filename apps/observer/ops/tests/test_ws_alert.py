@@ -631,3 +631,23 @@ def test_shipped_config_loads_and_matches_runbook_numbers():
     th = cfg['thresholds']
     assert (th['health_stale_s'], th['feed_down_hold_s'], th['feed_lag_s'], th['memory_available_gib'],
             th['disk_free_gib'], th['profile_deadline_kst']) == (30, 60, 45, 2.0, 12.5, '21:20')
+
+
+def test_file_stuck_ignores_clock_only_live_from_ops(w):
+    # The launcher's games[].status 'live' only means the scheduled start passed. Without a publisher word on the
+    # game (no game block, no publisher games list) the file is not judged 'stuck', however long it sits.
+    w.health(T0)
+    (w.out / 'v1' / 'game' / f'{PK}.json').write_text(json.dumps({'game_pk': PK, 'publish': {'sequence': 5}}))
+    w.state()
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    for dt in (0, 400, 800):
+        w.ops_path.write_text(json.dumps(ops_v11(T0 + dt, w.tmp, out_dir=None, state_path=None)))
+        w.health(T0 + dt)
+        assert w.run(T0 + dt) == [], dt
+    # the publisher's games list says live: now the same unchanged file_sequence is stuck after 300 s
+    w.games(w.game())
+    for dt in (900, 1210):
+        w.ops_path.write_text(json.dumps(ops_v11(T0 + dt, w.tmp, out_dir=None, state_path=None)))
+        w.health(T0 + dt)
+        events = w.run(T0 + dt)
+    assert w.keys(events) == {f'file_stuck:{PK}'}

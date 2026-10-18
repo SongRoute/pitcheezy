@@ -246,6 +246,7 @@ python3 $OPS stop --date 2026-10-24 --publisher-only  # 감독이 죽었을 때:
 - `runs/` 폴더(실행 기록, 런타임 설정에 업로드 주소 포함)는 이슈·저장소·채팅에 복사하지 않는다. 공유가 필요하면 `status.json`의 필요한 줄만 옮긴다.
 - 자동 시작 예시(설치하지 않음): `apps/observer/ops/com.pitcheezy.ws-operate.plist.example`.
 - 시험: `PYTHONPATH=apps/observer/backend .venv-observer/bin/python -m pytest apps/observer/backend/tests/test_ws_operate.py -q` (가짜 발행기, MLB·네트워크 없음).
+- 경고 감시기와 함께: 감시기 `apps/observer/ops/ws_alert.py --loop`를 `--out` 없이 띄우면 `status.json`의 `out_dir`·`state_path`를 따라간다(런북 `docs/pm/service/ws-operations-runbook.md` 7.6). 통합 시험: `python -m pytest apps/observer/ops/tests/ -q`(실제 감독 + 가짜 발행기 + 감시기 `--once`, 가짜 알림만).
 
 ## 현재 구성
 

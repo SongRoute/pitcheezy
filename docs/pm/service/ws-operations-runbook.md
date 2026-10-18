@@ -149,7 +149,7 @@
 | `game_check_stalled:<경기>` | 진행 중 경기 `checked_at` 30초 넘게 멈춤, 또는 `game_checks`에 경기 없음 60초 | 경고 | 예 |
 | `feed_down:<경기>` | `feed_ok:false` 또는 `feed_failing_games`가 60초 넘게 계속 | 긴급 | 예 |
 | `feed_delayed:<경기>` | 경기 파일 `display_state.feed.delayed`(발행기 판단: lag > max(45초, 시청 지연))가 20초 넘게 | 경고 | 예 |
-| `file_stuck:<경기>` | 경기가 실제 진행 중(`status_text`가 `In Progress`)이고 확인·피드는 정상인데 `file_sequence`가 300초 넘게 그대로, 또는 운영 상태의 `upstream_changed_at`이 그보다 새롭고 60초가 지남. Warmup·Delayed·Suspended·비디오 판독 중에는 보지 않고, 그때마다 시계를 0으로 돌린다 | 경고 | 예 |
+| `file_stuck:<경기>` | 경기가 실제 진행 중(`status_text`가 `In Progress`)이고 확인·피드는 정상인데 `file_sequence`가 300초 넘게 그대로, 또는 운영 상태의 `upstream_changed_at`이 그보다 새롭고 60초가 지남. Warmup·Delayed·Suspended·비디오 판독 중에는 보지 않고, 그때마다 시계를 0으로 돌린다. `status_text`가 없을 때 운영 상태 `games[].status: live`만으로는 보지 않는다(실행기의 live는 예정 시각이 지났다는 시계 판단이지 경기 진행 확인이 아님) | 경고 | 예 |
 | `game_unavailable:<경기>` | `unavailable_games`에 그 경기 코드가 30초 넘게(`upload_failed`는 제외 — 업로드 규칙이 본다) | 경고 | 예 |
 | `upload_pending` | `upload.pending`이 5건 넘고 4주기 연속 줄지 않음. 백그라운드 업로드에서는 매 주기 2~3건 대기와 `upload.code='upload_failed'`가 **정상**이라 `upload.code`는 쓰지 않는다 | 경고 | 예 |
 | `upload_stalled` | 상태 파일의 대기 중 전송(blocked·rejected 제외) 가운데 가장 오래된 것(revision)이 60초 넘게 그대로 | 경고 | 예 |
@@ -209,5 +209,21 @@ Song이 할 일(iMessage, 쓰려면):
 ### 7.5 아직 안 정한 것
 - 기준값 전부(리허설 E에서 실제 주기·흔들림·피드 지연을 재서 고친다). 특히 `file_stuck` 300초는 이닝 교대·투수 교체로 거짓 경고가 날 수 있다.
 - 감시기 자체가 죽은 것은 "감시 시작" 알림이 없는 것으로만 안다(그 밖에는 `alert_state.json`의 `last_run`). launchd KeepAlive나 운영 감독 아래에서 띄울지 함께 정한다.
-- 운영 상태 v1.1 필드가 실제로 들어오면 가짜 감독 시험으로 한 번 맞춰 본다.
+- ~~운영 상태 v1.1 필드가 실제로 들어오면 가짜 감독 시험으로 한 번 맞춰 본다.~~ 2026-10-18 통합 시험 `apps/observer/ops/tests/test_ws_ops_alert_integration.py`(실제 감독 + 가짜 발행기 + 감시기 `--once`)로 맞췄다. 실경기·리허설에서 같이 돌려 본 적은 아직 없다.
 - 발행기가 죽으면 `publisher_down`·`health_stalled`·`game_check_stalled`가 함께 뜬다(한 메시지로 묶임).
+
+### 7.6 운영 실행기와 함께 띄우기 (2026-10-18 통합, 실경기 미검증)
+실행기(`ws_operate.py`)가 발행기를 띄우고 `<ops_root>/status.json`을 쓰며, 감시기는 그 파일 하나로 그날 출력 폴더(`out_dir`)·상태 파일(`state_path`)·경기 시간대(`games[].window_start/window_end`)를 찾는다. 두 프로그램은 서로 프로세스를 보거나 신호를 보내지 않는다.
+
+1. 실행기(경기 날, 첫 투구 30분 전보다 일찍): `apps/observer/README.md` "월드시리즈 운영 실행기"대로 `python3 apps/observer/ops/ws_operate.py start --date <KST 날짜>`(먼저 `--dry-run`). 분리된 감독이 뜨고 대기(`waiting`) 중에도 60초마다 `status.json`을 쓴다.
+2. 감시기(tmux `runs` 창 등 별도 셸, 실행기보다 먼저 띄워도 됨): `python3 apps/observer/ops/ws_alert.py --loop`. **`--out`을 주지 않는다**(주면 운영 상태의 `out_dir`보다 우선해 그날 폴더를 따라가지 않는다). 처음에는 `--once --dry-run`으로 무엇이 보일지 확인.
+3. 환경 변수:
+   - `PITCHEEZY_WS_OPS_ROOT`: 기본(`~/Projects/pitcheezy-pm-jobs/ws-ops`)을 바꿨다면 **두 셸에 같은 값**. 감시기는 `<root>/status.json`을 읽는다(`PITCHEEZY_WS_OPS_STATUS`·`--ops-status`가 더 우선).
+   - 실행기 쪽만: `PITCHEEZY_OBSERVER_PROFILE_SOURCES`(참고 카드), 업로드를 켤 때 `PITCHEEZY_PUBLISH_TOKEN` 또는 `PITCHEEZY_WS_OPS_TOKEN_FILE`, `PITCHEEZY_WS_OPS_UPLOAD_BASE_URL`.
+   - 감시기 쪽만: 폰 알림 `PITCHEEZY_ALERT_PUSH`와 그 방식의 값(7.4), 기록 폴더 `PITCHEEZY_ALERT_DIR`(기본 `~/.pitcheezy/ws-alert`), 프로필 로그 `PITCHEEZY_PROFILE_REFRESH_LOG`. `PITCHEEZY_PUBLISH_OUT_DIR`·`PITCHEEZY_PUBLISH_STATE`는 실행기와 함께 쓸 때 필요 없다(운영 상태가 그날 것이면 그쪽을 따른다).
+4. 무엇이 오나(통합 시험에서 확인한 순서): 정상 운영은 "감시 시작: 경기 <번호>" 한 번만. 발행기가 죽어 재시작 대기(`backoff`)면 긴급 `ops_state:backoff`+`publisher_down`(+경고 `ops_problem:publisher_restarting`), 재시작 한도를 넘으면 긴급 `ops_state:failed`+`ops_problem:restart_limit`, 시작 점검 재시도 중이면 경고 `ops_problem:prestart_retrying`(시간대 안이면 긴급 `publisher_down`도), 시작 거부면 긴급 `ops_state:refused`+`ops_problem:prestart_refused`, 업로드 막힘은 감시기 자신의 긴급 `upload_blocked` 한 줄(실행기의 같은 문제는 되풀이하지 않음). 모든 경기가 final이고 감독이 `final_settled`로 끝나면 조용히 "감시 끝" 한 번.
+5. 겹치는 판단: 실행기 `problems` 가운데 `memory_low`·`health_stale`·`feed_failing`·`upload_blocked`는 감시기가 같은 근거(health·상태 파일·vm_stat)로 직접 보므로 넘기지 않는다(`ws_alert.OPS_ALERTS_COVERED`, 통합 시험이 실행기 `PROBLEM_SEVERITY`와 맞는지 확인). 나머지 키(긴급: `prestart_refused`, `restart_limit`, `deploy_guard`, `resource_guard`, `another_publisher`, `supervisor_error` / 경고: `prestart_retrying`, `publisher_restarting`, `protected_process_changed`, `schedule_fallback`, `identity_unreadable`)는 `ops_problem:<키>`로 실행기가 준 등급 그대로 보낸다. 끝난 상태(refused/failed)에서는 `ops_state`와 해당 `ops_problem`이 같은 메시지에 함께 묶여 온다.
+6. 오래됨: 실행기 heartbeat는 운영 중 10초·대기 60초, 감시기의 "감독 멈춤"(`ops_status_stale`) 기준은 running/backoff 90초·그 밖(waiting·prestart·stopping) 300초. prestart·stopping도 실행기는 10초마다 쓰지만 감시기는 짧은 상태라 300초로 넉넉히 본다(잠정, 리허설에서 다시 본다).
+7. 끄기: 실행기는 `ws_operate.py stop --date <날짜>`, 감시기는 그 창의 Ctrl-C. 끄는 순서는 상관없다(감시기가 먼저 꺼지면 알림만 없다).
+
+모르는 것(아직 정하지 않음): 감시기를 launchd KeepAlive로 띄울지·실행기 감독 아래 둘지, 폰 알림 방식(ntfy 주제 미설정), 모든 기준값(잠정), 실경기·리허설에서 둘을 같이 돌린 기록 없음, 운영 상태의 `upstream_changed_at`은 실행기가 채우지 않음(`file_stuck`은 300초 기준만).
