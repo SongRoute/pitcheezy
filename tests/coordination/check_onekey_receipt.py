@@ -1,4 +1,4 @@
-"""Offline v2 wrapper-log consistency check; never a host test or GO decision."""
+"""Offline v2/v4 wrapper-log consistency check; never a host test or GO decision."""
 import argparse
 import json
 import math
@@ -16,10 +16,11 @@ UNVERIFIED = ["DEPLOY_GO", "WHOLE_JOINT_TEST_COMPLETION", "INDEPENDENT_SECRET_SC
               "ACTUAL_GATEWAY_OR_WIRE", "ARTIFACT_AUTHENTICITY"]
 
 
-def verdict(invalid=(), incomplete=()):
+def verdict(invalid=(), incomplete=(), basis="V2_SINGLE_WRAPPER_LOG_EMBEDDED_RUNNER_ONLY"):
     return {"status": "INVALID" if invalid else "INCOMPLETE" if incomplete else "LOCAL_EVIDENCE_CONSISTENT",
-            "reasons": sorted(set(invalid) | set(incomplete)), "unverified": UNVERIFIED,
-            "basis": "V2_SINGLE_WRAPPER_LOG_EMBEDDED_RUNNER_ONLY"}
+            "reasons": sorted(set(invalid) | set(incomplete)),
+            "unverified": UNVERIFIED + (["SAME_TARGET_BINDING"] if basis == "V4_SINGLE_WRAPPER_LOG_EMBEDDED_RUNNER_ONLY" else []),
+            "basis": basis}
 
 
 class InputRejected(ValueError):
@@ -64,19 +65,7 @@ def load_log(path):
     return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_float=finite, parse_constant=constant)
 
 
-def check(log, scope, expiry, mode):
-    invalid, incomplete = [], []
-    if scope not in ("required", "not-selected") or expiry not in ("required", "not-selected") or mode not in ("LOOPBACK_HARNESS", "REAL_HOST"):
-        return verdict(["SELECTION_INVALID"])
-    if type(log) is not dict:
-        return verdict(["LOG_NOT_OBJECT"])
-    if log.get("schema") != "pitcheezy-onekey-wrapper-log-v1": invalid.append("SCHEMA_MISMATCH")
-    if log.get("mode") != mode: invalid.append("MODE_MISMATCH")
-    if log.get("credentials_recorded") is not False: invalid.append("CREDENTIALS_FLAG_INVALID")
-    if type(log.get("result")) is not str: invalid.append("WRAPPER_RESULT_INVALID")
-    elif log["result"] != PASS: incomplete.append("WRAPPER_NOT_PASS")
-    if log.get("stop_code") is not None: incomplete.append("WRAPPER_STOPPED")
-
+def check_runner(log, invalid, incomplete):
     runner = log.get("runner")
     if runner is None:
         incomplete.append("RUNNER_MISSING")
@@ -98,6 +87,23 @@ def check(log, scope, expiry, mode):
         if "stop_code" not in runner: invalid.append("RUNNER_STOP_CODE_MISSING")
         elif runner["stop_code"] is not None: incomplete.append("RUNNER_STOPPED")
         if runner.get("methods") != METHODS: invalid.append("RUNNER_METHOD_SEQUENCE")
+
+
+
+def check_v1(log, scope, expiry, mode):
+    invalid, incomplete = [], []
+    if scope not in ("required", "not-selected") or expiry not in ("required", "not-selected") or mode not in ("LOOPBACK_HARNESS", "REAL_HOST"):
+        return verdict(["SELECTION_INVALID"])
+    if type(log) is not dict:
+        return verdict(["LOG_NOT_OBJECT"])
+    if log.get("schema") != "pitcheezy-onekey-wrapper-log-v1": invalid.append("SCHEMA_MISMATCH")
+    if log.get("mode") != mode: invalid.append("MODE_MISMATCH")
+    if log.get("credentials_recorded") is not False: invalid.append("CREDENTIALS_FLAG_INVALID")
+    if type(log.get("result")) is not str: invalid.append("WRAPPER_RESULT_INVALID")
+    elif log["result"] != PASS: incomplete.append("WRAPPER_NOT_PASS")
+    if log.get("stop_code") is not None: incomplete.append("WRAPPER_STOPPED")
+
+    check_runner(log, invalid, incomplete)
 
     probes = log.get("probes")
     if type(probes) is not list:
@@ -143,6 +149,108 @@ def check(log, scope, expiry, mode):
     elif main != expected_main or main > 18: invalid.append("MAIN_COUNT_INCONSISTENT")
     if post > 3 or (type(main) is int and main + post > 21): invalid.append("TOTAL_BUDGET_EXCEEDED")
     return verdict(invalid, incomplete)
+
+
+def check_v2(log, scope, expiry, mode):
+    """v4 source's log-v2 semantics, plus the stricter offline runner checks."""
+    invalid, incomplete = [], []
+    basis = "V4_SINGLE_WRAPPER_LOG_EMBEDDED_RUNNER_ONLY"
+    if scope not in ("required", "not-selected") or expiry not in ("required", "not-selected") or mode not in ("LOOPBACK_HARNESS", "REAL_HOST"):
+        return verdict(["SELECTION_INVALID"], basis=basis)
+    if log.get("mode") != mode: invalid.append("MODE_MISMATCH")
+    if log.get("credentials_recorded") is not False: invalid.append("CREDENTIALS_FLAG_INVALID")
+    if log.get("stop_code") is not None: incomplete.append("WRAPPER_STOPPED")
+    if "secret_found" in log and type(log["secret_found"]) is not bool: invalid.append("SECRET_FOUND_TYPE")
+    if log.get("secret_found") is True: incomplete.append("SECRET_FOUND")
+    required = {"out_of_scope": scope == "required", "expired": expiry == "required", "revoked": True}
+    req = log.get("required_evidence")
+    if type(req) is not dict or set(req) != set(required) or any(type(req[k]) is not bool or req[k] != required[k] for k in required):
+        invalid.append("REQUIRED_EVIDENCE_MISMATCH")
+    check_runner(log, invalid, incomplete)
+    runner = log.get("runner")
+    # This expression mirrors cmd_run; elapsed/methods/stop are additional checker policy.
+    runner_pass = type(runner) is dict and runner.get("result") == PASS and type(runner.get("requests")) is int and runner["requests"] == 17 and type(runner.get("exit")) is int and runner["exit"] == 0 and runner.get("owned_worker_stopped") is True and type(runner.get("pending_paths")) is int and runner["pending_paths"] == 0 and runner.get("remote_cleanup") == "confirmed_tombstone_retained"
+    main, post = log.get("main_requests"), log.get("post_requests")
+    if type(main) is not int or main < 0: invalid.append("MAIN_COUNT_TYPE")
+    if type(post) is not int or post < 0: invalid.append("POST_COUNT_TYPE")
+    if type(main) is int and main > 18 or type(post) is int and post > 3 or type(main) is int and type(post) is int and main + post > 21:
+        invalid.append("TOTAL_BUDGET_EXCEEDED")
+    runner_pass = runner_pass and type(main) is int and main <= 18
+    if type(log.get("runner_pass")) is not bool: invalid.append("RUNNER_PASS_TYPE")
+    elif log["runner_pass"] != runner_pass: invalid.append("RUNNER_PASS_CONTRADICTION")
+    probes = log.get("probes")
+    if type(probes) is not list:
+        return verdict(invalid + ["PROBES_NOT_LIST"], incomplete, basis)
+    expected_status = {"out_of_scope": 403, "expired": 403, "revoked": 401, "upload_off": 503}
+    latest, initial, deferred_seen = {}, [], False
+    main_rows = post_rows = 0
+    for row in probes:
+        if type(row) is not dict:
+            invalid.append("PROBE_NOT_OBJECT"); continue
+        kind = row.get("kind")
+        if type(kind) is not str or kind not in expected_status:
+            invalid.append("PROBE_KIND_UNSUPPORTED"); continue
+        deferred = row.get("deferred", False)
+        if type(deferred) is not bool: invalid.append("PROBE_DEFERRED_TYPE")
+        if deferred is True:
+            deferred_seen = True
+        else:
+            if deferred_seen: invalid.append("PROBE_ORDER_INVALID")
+            initial.append(kind)
+        if kind == "out_of_scope" and deferred is not True: main_rows += 1
+        else: post_rows += 1
+        if kind in ("out_of_scope", "expired") and deferred is not True and not required[kind]: invalid.append("UNSELECTED_" + kind.upper() + "_PRESENT")
+        if kind == "revoked" or deferred is True:
+            if row.get("same_token_as_main_run") is not True: invalid.append("PROBE_SAME_TOKEN_UNCONFIRMED")
+        expected = expected_status[kind]
+        if type(row.get("expected")) is not list or len(row["expected"]) != 1 or type(row["expected"][0]) is not int or row["expected"][0] != expected:
+            invalid.append("PROBE_EXPECTED_INVALID")
+        status, passed = row.get("status"), row.get("pass")
+        if "status" not in row or status is not None and (type(status) is not int or not 100 <= status <= 599): invalid.append("PROBE_STATUS_TYPE")
+        if type(passed) is not bool: invalid.append("PROBE_PASS_TYPE")
+        if status is None:
+            if type(row.get("error")) is not str or not row["error"]: invalid.append("PROBE_ERROR_MISSING")
+            if passed is not False or row.get("gateway_answer", False) is not False: invalid.append("PROBE_PASS_CONTRADICTION")
+            latest[kind] = "missing"
+        else:
+            content, mitigated = row.get("content_type"), row.get("cf_mitigated_present")
+            if content is not None and type(content) is not str: invalid.append("PROBE_CONTENT_TYPE_INVALID")
+            if type(mitigated) is not bool: invalid.append("PROBE_CF_FLAG_TYPE")
+            gateway = type(content) is str and content.split(";")[0].strip().lower() == "application/json" and mitigated is False
+            if type(row.get("gateway_answer")) is not bool or row["gateway_answer"] != gateway: invalid.append("PROBE_GATEWAY_CONTRADICTION")
+            accepted = type(status) is int and status == expected and gateway
+            if type(passed) is bool and passed != accepted: invalid.append("PROBE_PASS_CONTRADICTION")
+            if "error" in row: invalid.append("PROBE_ERROR_WITH_STATUS")
+            latest[kind] = "pass" if accepted else "fail"
+        # Transport-error upload_off rows return before this flag is added by the source.
+        if kind == "upload_off" and status is not None and row.get("revocation_evidence") is not False:
+            invalid.append("UPLOAD_OFF_REVOCATION_FLAG_INVALID")
+    if initial != [kind for kind in ("out_of_scope", "expired", "revoked") if kind in initial]: invalid.append("PROBE_ORDER_INVALID")
+    if main_rows > 1: invalid.append("MAIN_PROBE_DUPLICATE")
+    if type(post) is int and post != post_rows: invalid.append("POST_COUNT_INCONSISTENT")
+    if type(runner) is dict and type(runner.get("requests")) is int and type(main) is int and main != runner["requests"] + main_rows:
+        invalid.append("MAIN_COUNT_INCONSISTENT")
+    main_pass = runner_pass and (not required["out_of_scope"] or latest.get("out_of_scope") == "pass")
+    missing = sorted(k for k in ("expired", "revoked") if required[k] and latest.get(k, "missing") == "missing")
+    failed = sorted(k for k in ("expired", "revoked") if required[k] and latest.get(k) == "fail")
+    completion = "FAILED" if not main_pass or failed or log.get("secret_found") is True else "INCOMPLETE" if missing else "COMPLETE"
+    result = {"FAILED": "FAIL_OR_STOPPED", "INCOMPLETE": "MAIN_PASS_INCOMPLETE", "COMPLETE": PASS}[completion]
+    if log.get("secret_found") is True and log.get("result") == "SECRET_FOUND_IN_OUTPUT": result = "SECRET_FOUND_IN_OUTPUT"
+    summaries = {"main_result": "MAIN_PASS" if main_pass else "MAIN_FAIL_OR_STOPPED", "completion": completion,
+                 "result": result, "revocation": {"pass": "PROVEN_401", "missing": "NOT_CHECKED", "fail": "NOT_PROVEN"}[latest.get("revoked", "missing")],
+                 "missing_evidence": missing, "failed_evidence": failed}
+    for key, expected in summaries.items():
+        if type(log.get(key)) is not type(expected) or log[key] != expected: invalid.append("SUMMARY_" + key.upper() + "_CONTRADICTION")
+    if not main_pass: incomplete.append("MAIN_NOT_PASS")
+    incomplete.extend("REQUIRED_" + kind.upper() + "_MISSING" for kind in missing)
+    incomplete.extend("REQUIRED_" + kind.upper() + "_FAILED" for kind in failed)
+    return verdict(invalid, incomplete, basis)
+
+
+def check(log, scope, expiry, mode):
+    if type(log) is dict and log.get("schema") == "pitcheezy-onekey-wrapper-log-v2":
+        return check_v2(log, scope, expiry, mode)
+    return check_v1(log, scope, expiry, mode)
 
 
 class Parser(argparse.ArgumentParser):
