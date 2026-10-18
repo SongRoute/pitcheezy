@@ -692,3 +692,41 @@ def test_new_supervisor_clears_previous_refused_and_failed_problems(env, monkeyp
     assert status['state'] == 'stopped' and status['kst_date'] == env.date
     events = [json.loads(x) for x in (env.run/'events.jsonl').read_text().splitlines()]
     assert any(e['event'] == 'problems_carried_inactive' for e in events)
+
+
+# ------------------------------------------------------------------------------------------------ review 003 B3
+
+def test_off_day_start_writes_nothing_and_keeps_yesterday(env, capsys):
+    (env.tmp/'ops').mkdir(parents=True)
+    old = json.dumps({'state': 'stopped', 'state_reason': 'final_settled', 'kst_date': 'yesterday'})
+    (env.tmp/'ops/status.json').write_text(old)
+    empty = env.tmp/'off_day.json'
+    empty.write_text(json.dumps({'dates': []}))
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(empty)]) == 2
+    assert (env.tmp/'ops/status.json').read_text() == old
+    assert 'nothing to operate on' in capsys.readouterr().out
+
+
+def test_all_final_start_writes_nothing(env, capsys):
+    env.run.mkdir(parents=True)
+    (env.run/'finals.json').write_text(json.dumps({str(PK): 'x'}))
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 2
+    assert not (env.tmp/'ops/status.json').exists()
+    assert "['all_final']" in capsys.readouterr().out
+
+
+def test_benign_plus_real_failure_is_still_urgent(env):
+    empty = env.tmp/'off_day.json'
+    empty.write_text(json.dumps({'dates': []}))
+    (env.code/'apps/observer/publish_config.json').write_text('{}')  # dirty code is a real fault
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(empty)]) == 2
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    assert status['state'] == 'refused' and [p['key'] for p in status['problems'] if p['active']] == ['start_refused']
+
+
+def test_other_publisher_message_is_short(env, monkeypatch):
+    monkeypatch.setattr(ws, 'process_table', lambda: [
+        (pid, 1, f'/a/python -m observer_app.publisher --out /x{pid}') for pid in (91001, 91002, 91003)])
+    ok, report, _ = ws.preflight(env.cfg(), env.date, upload_requested=False, schedule_file=str(env.schedule))
+    message = [p for k, p in zip(report['problem_keys'], report['problems']) if k == 'other_publishers'][0]
+    assert '(3: first pid 91001 publisher)' in message and '91002' not in message

@@ -334,3 +334,24 @@ def test_start_refusal_alerts_then_next_supervisor_clears_it(rig, monkeypatch):
     assert 'ops_state:refused' not in rig.fired() and 'ops_problem:start_refused' not in rig.fired()
     closed = {e['key'] for e in rig.events if e['kind'] in ('recover', 'closed')}
     assert {'ops_state:refused', 'ops_problem:start_refused'} <= closed
+
+
+def test_off_day_and_all_final_starts_leave_the_watcher_quiet(rig, tmp_path):
+    """REVIEW-003 B3: the daily start on a date with nothing to run (all games final, or no WS game at all) must not
+    page: status.json keeps the clean stop and the watcher stays quiet."""
+    rig.control(final_after=6, interval=0.1)
+    rig.start()
+    assert rig.join() == 'final_settled'
+    rig.watch()
+    rig.watch()
+    assert rig.fired() == {} and rig.events == []
+    before, sent = rig.status_path.read_bytes(), len(rig.fake.sent)
+    # same date again: every game final -> benign refusal, nothing written
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date, '--schedule-file', str(rig.schedule)]) == 2
+    # an off day: no WS game on the date
+    empty = tmp_path/'off_day.json'
+    empty.write_text(json.dumps({'dates': []}))
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date, '--schedule-file', str(empty)]) == 2
+    assert rig.status_path.read_bytes() == before and rig.status()['state'] == 'stopped'
+    rig.watch()
+    assert rig.fired() == {} and rig.events == [] and len(rig.fake.sent) == sent  # nothing new sent

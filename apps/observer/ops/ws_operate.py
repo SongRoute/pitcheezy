@@ -471,6 +471,8 @@ def previous_run(run_dir):
 
 # ----------------------------------------------------------------------------------------------- preflight
 
+# outcomes of a daily start that are expected, not failures: no status write, no alert (REVIEW-003 B3)
+BENIGN = ('no_game', 'all_final', 'hard_end_passed')
 TRANSIENT = ('schedule_failed', 'other_games', 'other_publishers', 'mount', 'disk', 'memory')
 
 
@@ -536,8 +538,9 @@ def preflight(cfg, kst_date, *, upload_requested, schedule_file=None, expect_com
         add('supervisor_lock', 'another ws_operate supervisor holds the lock (status / stop it first)')
     report['other_publishers'] = other_publishers()
     if report['other_publishers']:
-        add('other_publishers', 'another publisher or supervisor is running: '
-                                f'{[(o["pid"], o["kind"]) for o in report["other_publishers"]]}')
+        first = report['other_publishers'][0]
+        add('other_publishers', f'another publisher or supervisor is running ({len(report["other_publishers"])}: '
+                                f'first pid {first["pid"]} {first["kind"]})')
     # machine
     if not os.access(cfg['python'], os.X_OK) and not os.environ.get(FAKE_ENV):
         add('python', f'python {cfg["python"]} missing')
@@ -1228,6 +1231,10 @@ def cmd_start(args, cfg):
     if not ok:
         print(json.dumps(report, indent=1, ensure_ascii=False))
         print('REFUSED: '+'; '.join(report['problems']))
+        keys = report.get('problem_keys') or []
+        if keys and all(k in BENIGN for k in keys):  # no game today / all final / too late: nothing to run, not a fault
+            print(f'status.json: not written (nothing to operate on {kst_date}: {sorted(set(keys))})')
+            return 2
         wrote = write_start_refused(cfg, kst_date, report, games)
         print(f'status.json: {"refused written" if wrote else "not written (a supervisor holds the lock and owns it)"}')
         return 2
