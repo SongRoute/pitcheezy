@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS intents (
   context_asof_pitch_uid TEXT,
   context_asof_receipt_wall_ns INTEGER,
   context_sha256 TEXT NOT NULL,
+  context_source_seq INTEGER,
+  context_source_fetched_ns INTEGER,
   created_wall_ns INTEGER NOT NULL,
   created_mono_ns INTEGER NOT NULL,
   UNIQUE (game_pk, slot_key, target_at_bat_number, target_pitch_number, model_id)
@@ -180,15 +182,17 @@ class Ledger:
                      target_pitch_number: int, model_id: str,
                      context_asof_pitch_uid: Optional[str],
                      context_asof_receipt_wall_ns: Optional[int],
-                     context_sha256: str) -> Optional[str]:
+                     context_sha256: str, context_source_seq: Optional[int] = None,
+                     context_source_fetched_ns: Optional[int] = None) -> Optional[str]:
         """Insert the intent; returns intent_id, or None if one already exists."""
         iid = intent_id_for(self.game_pk, slot_key, model_id,
                             (int(target_at_bat_number), int(target_pitch_number)))
         cur = self.con.execute(
-            "INSERT OR IGNORE INTO intents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO intents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (iid, self.game_pk, slot_key, int(slot_ordinal), int(target_at_bat_number),
              int(target_pitch_number), model_id, self.session_id,
              context_asof_pitch_uid, context_asof_receipt_wall_ns, context_sha256,
+             context_source_seq, context_source_fetched_ns,
              self.clock.wall_ns(), self.clock.mono_ns()))
         return iid if cur.rowcount == 1 else None
 

@@ -86,9 +86,9 @@ def registry() -> dict:
     (lightgbm venv) never imports torch and process A never imports lightgbm."""
     reg = {FrozenFitMarginal.model_id: FrozenFitMarginal}
     for mod, name in (("adapter_t", "TFinalAdapter"), ("adapter_n1", "N1Cal2Adapter"),
-                      ("adapter_step5", "Step5Adapter")):
+                      ("adapter_step5", "Step5Adapter"), ("fit_type_freq", "FitTypeFreq7")):
         mid = {"TFinalAdapter": "T_FINAL_3SEED_TEMP", "N1Cal2Adapter": "SEQ001_N1_3SEED_CAL2",
-               "Step5Adapter": "STEP5_2024_EARLY_3HEAD"}[name]
+               "Step5Adapter": "STEP5_2024_EARLY_3HEAD", "FitTypeFreq7": "FIT_TYPE_FREQ_7"}[name]
 
         def _lazy(mod=mod, name=name):
             return getattr(importlib.import_module(f"{__package__}.{mod}"), name)

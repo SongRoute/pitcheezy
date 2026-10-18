@@ -32,6 +32,31 @@ class Abstain(Exception):
     """Raised by a forecaster that cannot score this context (reason = str)."""
 
 
+# Registered abstain vocabulary (v2): exact codes, or a registered family prefix
+# followed by the accepted pipeline's own reason token.  Free text (exception
+# messages) is cut to the family + exception type so no data reaches the ledger.
+ABSTAIN_CODES = frozenset((
+    "NO_SOURCE_BODY", "SOURCE_BODY_ABSENT", "SOURCE_BODY_SHA_INVALID", "SOURCE_BODY_OTHER_GAME",
+    "SOURCE_SHA_MISMATCH", "BODY_CONTAINS_TARGET", "CONTEXT_DISAGREES", "CONTEXT_STATE_MISMATCH",
+    "NO_REGISTERED_CANDIDATE_SCORED", "NO_CANDIDATE_TYPE", "MODEL_ABSTAIN"))
+ABSTAIN_FAMILIES = ("bridge_", "native_", "bad_schema_or_hash:", "missing_input:",
+                    "missing_profile:", "unsupported_player:", "no_supported_action:",
+                    "predictor_error:", "seq_predictor_error:")
+
+
+def sanitize_reason(reason: str) -> str:
+    import re
+    r = (reason or "MODEL_ABSTAIN").strip()
+    if r in ABSTAIN_CODES:
+        return r
+    for fam in ABSTAIN_FAMILIES:
+        if r.startswith(fam):
+            if fam in ("predictor_error:", "seq_predictor_error:"):
+                return ":".join(r.split(":")[:3 if fam == "predictor_error:" else 2])[:120]
+            return re.sub(r"[^A-Za-z0-9_:.\-]", "_", r)[:120]
+    return "UNLISTED_REASON"
+
+
 class Forecaster(Protocol):
     """Frozen model wrapper.
 
@@ -54,6 +79,7 @@ class SourceSnapshot:
     game_final: bool = False
     source_seq: Optional[int] = None
     source_sha: Optional[str] = None
+    source_fetched_ns: Optional[int] = None
 
 
 class Source(Protocol):
@@ -106,14 +132,17 @@ class GameRunner:
         # post-hoc replays never get the source body: it already contains pitch n
         ctx = build_context(self.game_pk, accepted, n, state, self.profile_sha256,
                             source_seq=None if post_hoc or snap is None else snap.source_seq,
-                            source_sha=None if post_hoc or snap is None else snap.source_sha)
+                            source_sha=None if post_hoc or snap is None else snap.source_sha,
+                            source_fetched_ns=None if post_hoc or snap is None
+                            else snap.source_fetched_ns)
         key = slot_key(ctx.asof_pitch_uid)
         iid = self.ledger.write_intent(
             slot_key=key, slot_ordinal=n, target_at_bat_number=state.at_bat_index,
             target_pitch_number=state.pitch_number, model_id=fc.model_id,
             context_asof_pitch_uid=ctx.asof_pitch_uid,
             context_asof_receipt_wall_ns=ctx.asof_receipt_wall_ns,
-            context_sha256=ctx.sha256())
+            context_sha256=ctx.sha256(), context_source_seq=ctx.source_seq,
+            context_source_fetched_ns=ctx.source_fetched_ns)
         if iid is None:  # first write wins (restart-safe)
             return
         clk = self.ledger.clock
@@ -126,9 +155,9 @@ class GameRunner:
                 if len(v) != len(fc.leaf_order) or abs(sum(v) - 1.0) > 1e-6 or min(v) < 0:
                     raise ValueError("invalid probability vector")
         except Abstain as e:
-            probs, status, reason = None, "ABSTAIN", str(e) or "MODEL_ABSTAIN"
+            probs, status, reason = None, "ABSTAIN", sanitize_reason(str(e))
         except Exception as e:  # noqa: BLE001 - recorded, never fatal for the game
-            probs, status, reason = None, "ERROR", f"{type(e).__name__}: {e}"[:500]
+            probs, status, reason = None, "ERROR", type(e).__name__  # no message text (may carry data)
         t1 = clk.mono_ns()
         gen_wall = clk.wall_ns()
         timing = "POST_HOC_REPLAY" if post_hoc else "PRE_RECEIPT"

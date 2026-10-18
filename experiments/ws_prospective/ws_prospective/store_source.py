@@ -65,12 +65,13 @@ def _receipts(con, game_pk: int) -> Dict[Tuple[int, int], tuple]:
     return out
 
 
-def _latest_body(con, game_pk: int):
-    row = con.execute("SELECT seq, sha, body FROM snapshots WHERE game_pk=? "
+def _latest_body(con, game_pk: int, with_fetched: bool = False):
+    row = con.execute("SELECT seq, sha, body, fetched FROM snapshots WHERE game_pk=? "
                       "ORDER BY seq DESC LIMIT 1", (game_pk,)).fetchone()
     if row is None:
-        return None, None, None
-    return int(row[0]), str(row[1]), json.loads(gzip.decompress(row[2]))
+        return (None, None, None, None) if with_fetched else (None, None, None)
+    out = (int(row[0]), str(row[1]), json.loads(gzip.decompress(row[2])))
+    return out + (_ns(row[3]),) if with_fetched else out
 
 
 def read_snapshot_raw(store_path: Path, seq: int) -> dict:
@@ -116,7 +117,7 @@ def parse_feed(feed: dict, receipts) -> Tuple[List[StorePitch], Optional[PreStat
         pitcher = int(m.get("pitcher", {}).get("id", 0))
         batter = int(m.get("batter", {}).get("id", 0))
         balls = strikes = 0
-        outs_before = int(play.get("_outs_before", 0))
+        outs_before = 0  # not derivable per pitch from GUMBO here; not used by any forecaster
         for ev in play.get("playEvents", []):
             if not ev.get("isPitch"):
                 continue
@@ -172,7 +173,7 @@ class LiveStoreSource:
                 con.execute("COMMIT")
                 return self._cached
             receipts = _receipts(con, self.game_pk)
-            seq, sha, feed = _latest_body(con, self.game_pk)
+            seq, sha, feed, fetched = _latest_body(con, self.game_pk, with_fetched=True)
             con.execute("COMMIT")
         finally:
             con.close()
@@ -180,17 +181,22 @@ class LiveStoreSource:
             return SourceSnapshot([], None, False)
         pitches, state, final = parse_feed(feed, receipts)
         self._cache = tuple(key)
-        self._cached = SourceSnapshot(pitches, state, final, source_seq=seq, source_sha=sha)
+        self._cached = SourceSnapshot(pitches, state, final, source_seq=seq, source_sha=sha,
+                                      source_fetched_ns=fetched)
         return self._cached
 
 
 def final_label_rows(store_path: Path, game_pk: int, *, revision: str) -> Dict[str, dict]:
     """Sealed-analysis only: playEvent bodies by provider id.
 
-    revision='final'  -> last accepted revision (registered primary)
-    revision='first'  -> first accepted revision (registered sensitivity)
+    revision='store_final' -> last accepted revision in the store (registered primary;
+                              the launcher stops polling settle_s=900 s after Final)
+    revision='store_first' -> first accepted revision (registered sensitivity)
+    first_received_ns is the minimum over all accepted revisions of the pitch.
     """
-    if revision not in ("final", "first"):
+    aliases = {"final": "store_final", "first": "store_first"}
+    revision = aliases.get(revision, revision)
+    if revision not in ("store_final", "store_first"):
         raise ValueError(revision)
     con = open_ro(store_path)
     try:
@@ -206,13 +212,42 @@ def final_label_rows(store_path: Path, game_pk: int, *, revision: str) -> Dict[s
     for play in ((feed or {}).get("liveData", {}).get("plays", {}).get("allPlays", [])):
         play_type[int(play.get("about", {}).get("atBatIndex", -1)) + 1] = \
             (play.get("result") or {}).get("eventType")
+    min_first: Dict[str, float] = {}
+    for r in rows:
+        if r[4] is not None:
+            min_first[str(r[0])] = min(min_first.get(str(r[0]), r[4]), r[4])
     out: Dict[str, dict] = {}
     for pid, ab, pn, rev, first, clock, etime, body in rows:
-        if revision == "first" and pid in out:
+        if revision == "store_first" and str(pid) in out:
             continue
         out[str(pid)] = {"at_bat_number": ab, "pitch_number": pn, "revision": rev,
-                         "first_received_ns": _ns(first), "receipt_clock": clock,
+                         "first_received_ns": _ns(min_first.get(str(pid), first)),
+                         "receipt_clock": clock,
                          "provider_event_time": etime,
                          "event": dict(json.loads(gzip.decompress(body)),
                                        _play_event_type=play_type.get(int(ab)))}
     return out
+
+
+def backup_store(store_path: Path, dest: Path) -> str:
+    """Label-source copy for the sealed look (B4): SQLite online backup from a
+    read-only connection (includes WAL content, never blocks the writer for
+    long), then journal_mode=DELETE on the copy.  Returns sha256 of the copy.
+    Refuses to overwrite an existing destination."""
+    import hashlib
+    dest = Path(dest)
+    if dest.exists():
+        raise FileExistsError(dest)
+    src = open_ro(store_path)
+    dst = sqlite3.connect(str(dest))
+    try:
+        src.backup(dst)
+        dst.execute("PRAGMA journal_mode=DELETE")
+    finally:
+        dst.close()
+        src.close()
+    h = hashlib.sha256()
+    with open(dest, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()

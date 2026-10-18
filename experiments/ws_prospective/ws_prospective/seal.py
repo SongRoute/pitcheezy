@@ -52,12 +52,29 @@ def check_unsealed(registration_path: Path, job_dir: Path, *,
     if reg.get("review", {}).get("status") != "PASS":
         raise SealedError("registration has no independent-review PASS")
     now = now_utc or dt.datetime.now(dt.timezone.utc)
-    if now < _parse_utc(seal["not_before_utc"]):
+    not_before = _parse_utc(seal["not_before_utc"])
+    if now < not_before:
         raise SealedError(f"sealed until {seal['not_before_utc']}")
     unseal_path = Path(job_dir) / seal["unseal_file"]
     if not unseal_path.exists():
         raise SealedError(f"missing {unseal_path.name}")
     unseal = json.loads(unseal_path.read_text())
+    # Addenda are separate files listed (with sha) in UNSEAL.json; the only
+    # field they may carry is a LATER not_before_utc.
+    for add in unseal.get("addenda", []):
+        ap = Path(job_dir) / add["file"]
+        if not ap.exists() or file_sha256(ap) != add.get("sha256"):
+            raise SealedError(f"addendum {add.get('file')} missing or sha mismatch")
+        body = json.loads(ap.read_text())
+        if set(body) - {"not_before_utc", "reason"}:
+            raise SealedError("addendum may only move not_before_utc later")
+        if "not_before_utc" in body:
+            nb = _parse_utc(body["not_before_utc"])
+            if nb < not_before:
+                raise SealedError("addendum may only move not_before_utc later")
+            not_before = nb
+            if now < not_before:
+                raise SealedError(f"sealed until {body['not_before_utc']} (addendum)")
     if unseal.get("registration_sha256") != reg_sha:
         raise SealedError("UNSEAL does not quote the current registration sha256")
     if unseal.get("analyst") != seal["analyst"]:

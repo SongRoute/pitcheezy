@@ -21,6 +21,7 @@ import numpy as np
 
 from . import metrics as M
 from .ledger import read_rows
+from .seal import SealedError
 from .seal import check_unsealed, file_sha256, take_look
 
 LabelFn = Callable[[dict], Optional[str]]   # playEvent -> leaf name or None
@@ -33,9 +34,12 @@ def ops_check(ledger_path: Path) -> dict:
     events = read_rows(ledger_path, "events")
     sessions = read_rows(ledger_path, "sessions")
     by = Counter()
+    pa_first = Counter()
     lat: Dict[str, List[float]] = defaultdict(list)
     for it in intents:
         f = forecasts.get(it["intent_id"])
+        pa_first[(it["model_id"], it["target_pitch_number"] == 1,
+                  f["provisional_timing"] if f else "INCOMPLETE")] += 1
         if f is None:
             by[(it["model_id"], "INCOMPLETE_INTENT", "-")] += 1
             continue
@@ -49,6 +53,10 @@ def ops_check(ledger_path: Path) -> dict:
         "compute_ms": {m: {"n": len(v), "p50": float(np.median(v)), "max": float(np.max(v))}
                        for m, v in lat.items() if v},
         "events": dict(Counter(e["kind"] for e in events)),
+        "by_pa_first_pitch": [{"model_id": k[0], "pa_first_pitch": k[1], "timing": k[2], "n": v}
+                              for k, v in sorted(pa_first.items())],
+        "distinct_target_keys_per_slot_gt1": sum(
+            1 for v in Counter((it["model_id"], it["slot_key"]) for it in intents).values() if v > 1),
     }
 
 
@@ -125,10 +133,36 @@ def grade_game(ledger_path, label_rows: Dict[str, dict], *, leaf_of: LabelFn,
     return graded, excl
 
 
+def verify_ledger_pins(reg: dict, games: Dict[int, dict]) -> None:
+    """B1: every ledger must pin this registration, the registered per-game
+    profile and live store path; the label store must be the registered backup
+    copy (sha recorded at backup time).  Runs before LOOK.done / any label."""
+    reg_games = {int(g["game_pk"]): g for g in reg.get("execution", {}).get("games", [])}
+    for pk, g in games.items():
+        rg = reg_games.get(int(pk))
+        if rg is None:
+            raise SealedError(f"game {pk} not in registration.execution.games")
+        if not g.get("ledgers"):
+            raise SealedError(f"game {pk}: no ledgers")
+        for lp in g["ledgers"]:
+            meta = dict((r["key"], r["value"]) for r in read_rows(lp, "ledger_meta"))
+            if meta.get("registration_sha256") != reg["_sha256"]:
+                raise SealedError(f"{lp}: ledger pins a different registration")
+            if str(meta.get("game_pk")) != str(pk):
+                raise SealedError(f"{lp}: ledger game_pk differs")
+            if "profile_sha256" in rg and meta.get("profile_sha256") != rg["profile_sha256"]:
+                raise SealedError(f"{lp}: ledger profile sha differs from registration")
+            if "store_path" in rg and meta.get("store_path") != rg["store_path"]:
+                raise SealedError(f"{lp}: ledger store path differs from registration")
+        if g.get("store_sha256") is None or file_sha256(g["store"]) != g["store_sha256"]:
+            raise SealedError(f"game {pk}: label store copy missing or sha differs from backup record")
+
+
 def sealed_look(registration_path: Path, job_dir: Path, games: Dict[int, dict], *,
                 leaf_of: LabelFn, type_of: TypeFn, label_loader, now_utc=None) -> dict:
     """games: {game_pk: {"ledger": path, "store": path}}; label_loader(store, pk, revision=...)."""
     reg = check_unsealed(registration_path, job_dir, now_utc=now_utc)
+    verify_ledger_pins(reg, games)
     seal = reg["analysis"]["seal"]
     take_look(job_dir, seal["look_marker"],
               {"registration_sha256": reg["_sha256"], "games": sorted(games),

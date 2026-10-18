@@ -1,7 +1,8 @@
 """Pre-pitch context: the only object a forecaster ever receives.
 
 A ``PrePitchContext`` for slot n is built from the accepted pitches with
-ordinal < n (as they were *first accepted* when the runner saw them) plus the
+ordinal < n (as shown in the newest stored snapshot at forecast time, which is
+still before pitch n is stored) plus the
 pre-pitch game state that the store published for slot n.  It deliberately has
 no field for pitch n's identity, result, type, location or velocity, and
 ``build_context`` truncates the history at the slot, so even a catch-up
@@ -79,6 +80,7 @@ class PrePitchContext:
     asof_receipt_wall_ns: Optional[int]
     source_seq: Optional[int] = None   # store snapshots.seq the state came from
     source_sha: Optional[str] = None   # snapshots.sha (canonical body hash)
+    source_fetched_ns: Optional[int] = None  # snapshots.fetched of that body (as-of time)
 
     def sha256(self) -> str:
         return canonical_sha256(asdict(self))
@@ -92,7 +94,8 @@ def slot_key(asof_pitch_uid: Optional[str]) -> str:
 
 def build_context(game_pk: int, accepted: Sequence[StorePitch], slot_ordinal: int,
                   state: PreState, profile_sha256: str, *, source_seq: Optional[int] = None,
-                  source_sha: Optional[str] = None) -> PrePitchContext:
+                  source_sha: Optional[str] = None,
+                  source_fetched_ns: Optional[int] = None) -> PrePitchContext:
     prior = [p for p in accepted if p.ordinal < slot_ordinal]
     prior.sort(key=lambda p: p.ordinal)
     if [p.ordinal for p in prior] != list(range(1, slot_ordinal)):
@@ -106,4 +109,4 @@ def build_context(game_pk: int, accepted: Sequence[StorePitch], slot_ordinal: in
         state=state, profile_sha256=profile_sha256,
         asof_pitch_uid=last.pitch_uid if last else None,
         asof_receipt_wall_ns=last.first_receipt_wall_ns if last else None,
-        source_seq=source_seq, source_sha=source_sha)
+        source_seq=source_seq, source_sha=source_sha, source_fetched_ns=source_fetched_ns)

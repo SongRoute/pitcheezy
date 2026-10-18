@@ -280,11 +280,14 @@ def test_analyzer_refuses_without_every_seal_condition(tmp_path, case):
         check_unsealed(reg, tmp_path, now_utc=AFTER)
 
 
-def test_single_look_then_refuses_second(tmp_path):
+def _played_game(tmp_path, reg_path, store_name="store.sqlite3"):
+    """Run a 4-pitch synthetic game whose ledger pins reg_path; back up the store."""
     clock = FakeClock()
     t0 = clock.wall_ns() / S
-    store = FakeStore(tmp_path / "store.sqlite3", GAME)
-    led = _ledger(tmp_path, clock)
+    store = FakeStore(tmp_path / store_name, GAME)
+    led = Ledger(tmp_path / "game_999001" / "ledger-A.sqlite", game_pk=GAME,
+                 registration_sha256=file_sha256(reg_path), code_commit="c", clock=clock,
+                 meta={"profile_sha256": "p" * 64, "store_path": str(store.path)})
     r = GameRunner(GAME, LiveStoreSource(store.path, GAME),
                    [SpyForecaster("m"), SpyForecaster("base", conditional=False)], led, "p" * 64)
     store.new_plate_appearance(1, received=t0)
@@ -293,9 +296,25 @@ def test_single_look_then_refuses_second(tmp_path):
         clock.advance(20)
         store.add_pitch(1, pitch_event(i + 1, "FF", call), received=clock.wall_ns() / S, uid=f"u{i}")
     led.close()
-    reg = _registration(tmp_path)
+    copy = tmp_path / "store-backup.sqlite3"
+    from ws_prospective.store_source import backup_store
+    backup_store(store.path, copy)  # sqlite online backup (a plain file copy would miss the WAL)
+    return {GAME: {"ledgers": [led.path], "store": copy, "store_sha256": file_sha256(copy)}}
+
+
+def _exec_registration(tmp_path, **kw):
+    reg = _registration(tmp_path, **kw)
+    body = json.loads(reg.read_text())
+    body["execution"] = {"games": [{"game_pk": GAME, "profile_sha256": "p" * 64,
+                                    "store_path": str(tmp_path / "store.sqlite3")}]}
+    reg.write_text(json.dumps(body))
+    return reg
+
+
+def test_single_look_then_refuses_second(tmp_path):
+    reg = _exec_registration(tmp_path)
+    games = _played_game(tmp_path, reg)
     _unseal(tmp_path, reg)
-    games = {GAME: {"ledgers": [led.path], "store": store.path}}
     out = analyzer.sealed_look(reg, tmp_path, games, leaf_of=leaf_of, type_of=type_of,
                                label_loader=final_label_rows, now_utc=AFTER)
     comp = out["revisions"]["final"]["comparisons"][0]
@@ -303,6 +322,44 @@ def test_single_look_then_refuses_second(tmp_path):
     with pytest.raises(SealedError, match="already taken"):
         analyzer.sealed_look(reg, tmp_path, games, leaf_of=leaf_of, type_of=type_of,
                              label_loader=final_label_rows, now_utc=AFTER)
+
+
+@pytest.mark.parametrize("case", ["registration_edited", "store_copy_changed", "profile_differs",
+                                  "store_path_differs"])
+def test_look_refuses_when_ledger_pins_disagree(tmp_path, case):
+    reg = _exec_registration(tmp_path)
+    games = _played_game(tmp_path, reg)
+    body = json.loads(reg.read_text())
+    if case == "registration_edited":  # e.g. analyst swaps the comparison after the Series
+        body["analysis"]["min_paired_pitches"] = 2
+    elif case == "profile_differs":
+        body["execution"]["games"][0]["profile_sha256"] = "q" * 64
+    elif case == "store_path_differs":
+        body["execution"]["games"][0]["store_path"] = "/elsewhere/store.sqlite3"
+    reg.write_text(json.dumps(body))
+    if case == "store_copy_changed":
+        games[GAME]["store_sha256"] = "0" * 64
+    _unseal(tmp_path, reg)  # UNSEAL quotes the (possibly edited) file: must still refuse
+    called = []
+    with pytest.raises(SealedError):
+        analyzer.sealed_look(reg, tmp_path, games, leaf_of=leaf_of, type_of=type_of,
+                             label_loader=lambda *a, **k: called.append(a), now_utc=AFTER)
+    assert not called and not (tmp_path / "LOOK.done").exists()
+
+
+@pytest.mark.parametrize("later", [True, False])
+def test_addendum_may_only_move_seal_later(tmp_path, later):
+    reg = _registration(tmp_path)
+    add = tmp_path / "ADDENDUM-001.json"
+    add.write_text(json.dumps({"not_before_utc": "2026-11-10T00:00:00Z" if later
+                               else "2026-11-01T00:00:00Z"}))
+    (tmp_path / "UNSEAL.json").write_text(json.dumps(
+        {"registration_sha256": file_sha256(reg), "analyst": "fable_analyst",
+         "addenda": [{"file": add.name, "sha256": file_sha256(add)}]}))
+    with pytest.raises(SealedError):
+        check_unsealed(reg, tmp_path, now_utc=AFTER)  # later: still sealed on 11-06; earlier: refused
+    if later:
+        assert check_unsealed(reg, tmp_path, now_utc=dt.datetime(2026, 11, 11, tzinfo=dt.timezone.utc))
 
 
 def test_ops_check_has_no_labels_or_metrics(tmp_path):
@@ -339,11 +396,16 @@ def test_label_rule_matches_registered_mapping():
     assert L.leaf_of(ev("L", count={"strikes": 3})) == "other_strike"
     assert L.leaf_of(ev("L", count={"strikes": 2})) == "foul"
     assert L.leaf_of(ev("H")) == "hit_by_pitch"
-    assert L.leaf_of(ev("X", hitData={"trajectory": "ground_ball"})) == "ground_ball_in_play"
-    assert L.leaf_of(ev("X", hitData={"trajectory": "fly_ball"})) == "other_in_play"
-    assert L.leaf_of(ev("X")) is None
-    assert L.leaf_of(ev("X", hitData={"trajectory": "ground_ball"},
-                        _play_event_type="field_error")) is None
+    gb = {"trajectory": "ground_ball"}
+    assert L.leaf_of(ev("X", hitData=gb, _play_event_type="field_out")) == "ground_ball_in_play"
+    assert L.leaf_of(ev("X", hitData={"trajectory": "fly_ball"},
+                        _play_event_type="home_run")) == "other_in_play"
+    assert L.leaf_of(ev("X", hitData=gb, _play_event_type="grounded_into_double_play")) == \
+        "ground_ball_in_play"
+    assert L.leaf_of(ev("X", _play_event_type="single")) is None  # no trajectory
+    for held in ("field_error", "fielders_choice", "catcher_interf", "triple_play",
+                 "batter_interference", "some_new_event", None):
+        assert L.leaf_of(ev("X", hitData=gb, _play_event_type=held)) is None, held
     assert L.leaf_of(ev("VB")) is None and L.leaf_of(ev("??")) is None
 
 
@@ -383,3 +445,19 @@ def test_fit_marginal_adapter_contract():
     a = resolve("FIT_MARGINAL_7").build({}, {}, None)
     assert isinstance(a, FrozenFitMarginal)
     assert sum(a.predict(None)["*"]) == pytest.approx(1.0)
+
+
+def test_cli_backup_store_records_sha(tmp_path):
+    from ws_prospective import cli
+    store = FakeStore(tmp_path / "store.sqlite3", GAME)
+    store.new_plate_appearance(1, received=1.0)
+    store.add_pitch(1, pitch_event(1, "FF", "B"), received=2.0, uid="b1")
+    rec = tmp_path / "STORE-BACKUPS.jsonl"
+    assert cli.main(["backup-store", "--store", str(store.path), "--dest",
+                     str(tmp_path / "copy.sqlite3"), "--record", str(rec), "--games", str(GAME)]) == 0
+    row = json.loads(rec.read_text().splitlines()[0])
+    assert row["sha256"] == file_sha256(tmp_path / "copy.sqlite3")
+    assert len(final_label_rows(tmp_path / "copy.sqlite3", GAME, revision="store_final")) == 1
+    with pytest.raises(FileExistsError):
+        cli.main(["backup-store", "--store", str(store.path), "--dest",
+                  str(tmp_path / "copy.sqlite3"), "--record", str(rec)])
