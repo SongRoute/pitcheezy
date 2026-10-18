@@ -84,7 +84,7 @@ def cmd_verify(a) -> int:
 
 
 def cmd_run(a) -> int:
-    from .adapters import REGISTRY
+    from .adapters import resolve
     from .ledger import Ledger
     from .runner import GameRunner, Limits
     from .store_source import LiveStoreSource
@@ -119,7 +119,7 @@ def cmd_run(a) -> int:
     led = Ledger(out / f"game_{a.game}" / f"ledger-{a.proc}.sqlite", game_pk=int(a.game),
                  registration_sha256=file_sha256(reg_path), code_commit=commit,
                  meta={"profile_sha256": g["profile_sha256"], "store_path": str(a.store)})
-    forecasters = [REGISTRY[m]() for m in procs[a.proc]["models"]]
+    forecasters = [resolve(m).build(reg, g, out) for m in procs[a.proc]["models"]]
     lim = reg["resources"]
     runner = GameRunner(int(a.game), LiveStoreSource(Path(a.store), int(a.game)), forecasters, led,
                         g["profile_sha256"],

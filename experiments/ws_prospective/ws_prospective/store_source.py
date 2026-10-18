@@ -73,6 +73,27 @@ def _latest_body(con, game_pk: int):
     return int(row[0]), str(row[1]), json.loads(gzip.decompress(row[2]))
 
 
+def read_snapshot_raw(store_path: Path, seq: int) -> dict:
+    """Exact stored snapshot for real adapters: inflated canonical bytes + receipt fields.
+
+    Verifies sha256(inflated bytes) == snapshots.sha before returning."""
+    import hashlib
+    con = open_ro(store_path)
+    try:
+        row = con.execute("SELECT seq, game_pk, sha, first_fetched, fetched, source, body "
+                          "FROM snapshots WHERE seq=?", (int(seq),)).fetchone()
+    finally:
+        con.close()
+    if row is None:
+        raise KeyError(f"snapshot seq {seq} not in store")
+    raw = gzip.decompress(row[6])
+    if hashlib.sha256(raw).hexdigest() != row[2]:
+        raise ValueError("stored snapshot body does not match its sha")
+    return {"seq": int(row[0]), "game_pk": int(row[1]), "sha256": str(row[2]),
+            "first_fetched": float(row[3]), "fetched": float(row[4]), "source": row[5],
+            "body_bytes": raw}
+
+
 def read_snapshot_body(store_path: Path, seq: int) -> dict:
     """For real adapters: the exact body a PRE_RECEIPT context was built from."""
     con = open_ro(store_path)

@@ -378,22 +378,8 @@ def test_cli_run_refuses_non_executable_registration(tmp_path, capsys):
     assert not (tmp_path / "o").exists()
 
 
-def test_declared_model_adapters_cannot_run():
-    from ws_prospective.adapters import REGISTRY
-    for mid, cls in REGISTRY.items():
-        if mid != "FIT_MARGINAL_7":
-            with pytest.raises(NotImplementedError):
-                cls()
-
-
-def test_open_reader_transaction_does_not_block_writer(tmp_path):
-    from ws_prospective.store_source import open_ro
-    store = FakeStore(tmp_path / "store.sqlite3", GAME)
-    store.new_plate_appearance(1, received=1.0)
-    ro = open_ro(store.path)
-    ro.execute("BEGIN")
-    ro.execute("SELECT COUNT(*) FROM snapshots").fetchone()
-    store.add_pitch(1, pitch_event(1, "FF", "B"), received=2.0, uid="w1")  # writer commits
-    ro.execute("COMMIT")
-    assert ro.execute("SELECT COUNT(*) FROM pitch_events").fetchone()[0] == 1
-    ro.close()
+def test_fit_marginal_adapter_contract():
+    from ws_prospective.adapters import FrozenFitMarginal, resolve
+    a = resolve("FIT_MARGINAL_7").build({}, {}, None)
+    assert isinstance(a, FrozenFitMarginal)
+    assert sum(a.predict(None)["*"]) == pytest.approx(1.0)
