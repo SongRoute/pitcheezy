@@ -30,7 +30,7 @@ export const DEFAULTS: Options = {
   list: pick('list', env.VITE_V3_LIST, 'row'),
   stats: pick('stats', env.VITE_V3_STATS, 'table'),
   density: pick('density', env.VITE_V3_DENSITY, 'full'),
-  view: pick('view', env.VITE_V3_VIEW, 'catcher'),
+  view: pick('view', env.VITE_V3_VIEW, 'pitcher'),
 };
 const KEY = 'pitcheezy.v3.options';
 function initial(): Options {
