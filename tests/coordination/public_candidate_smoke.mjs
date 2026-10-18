@@ -8,8 +8,8 @@ import { dirname, extname, join, parse, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg, suiteArg] = process.argv.slice(2);
-assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery', '--partial-body', '--cache-propagation', '--keyboard-sheet', '--resize-sheet'].includes(suiteArg)),
-  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery|--partial-body|--cache-propagation|--keyboard-sheet|--resize-sheet] required');
+assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery', '--partial-body', '--cache-propagation', '--keyboard-sheet', '--resize-sheet', '--game-identity'].includes(suiteArg)),
+  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery|--partial-body|--cache-propagation|--keyboard-sheet|--resize-sheet|--game-identity] required');
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 assert.ok(hex(expectedManifest, 64) && hex(expectedSource, 40));
@@ -197,13 +197,33 @@ function cacheFixtures(base) {
   return [{ name: 'cache_propagation', phases }];
 }
 
+// Two invented games: the second URL initially serves the first game's valid body.
+function gameIdentityFixture(base) {
+  const bodies = structuredClone(liveFixtures(base)[0].phases[0].bodies);
+  const first = bodies[`/v1/game/${base.game}.json`], secondGame = 990002;
+  first.current.batter.name = 'Synthetic Alpha Batter'; first.current.pitcher.name = 'Synthetic Alpha Pitcher';
+  const recoveredBody = structuredClone(first);
+  Object.assign(recoveredBody.game, { game_pk: secondGame, away_team: 'Synthetic Bravo Away', home_team: 'Synthetic Bravo Home' });
+  Object.assign(recoveredBody.current.batter, { id: 990201, name: 'Synthetic Bravo Batter' });
+  Object.assign(recoveredBody.current.pitcher, { id: 990202, name: 'Synthetic Bravo Pitcher' });
+  recoveredBody.current.pa_key = `${secondGame}:1`;
+  recoveredBody.next.pitch_key = recoveredBody.display_state.pitch_key = `${secondGame}:1:1`;
+  Object.assign(recoveredBody.next.rec.candidates[0], { pitch_type: 'SL', pitch_label: '슬라이더' });
+  bodies[`/v1/games/${base.date}.json`].games.push({ ...recoveredBody.game, inning: null, half: null });
+  bodies['/v1/health.json'].game_checks[secondGame] = { ...bodies['/v1/health.json'].game_checks[base.game] };
+  bodies['/v1/health.json'].files_written = 6;
+  bodies[`/v1/game/${secondGame}.json`] = structuredClone(first);
+  return { ...base, secondGame, recoveredBody, bodies,
+    files: new Map(Object.entries(bodies).map(([p, b]) => [p, Buffer.from(JSON.stringify(b))])) };
+}
+
 // Pin validation happens before output creation, browser import, or any listening socket.
 const assets = pinnedAssets(manifestArg, expectedManifest, expectedSource, buildArg);
 const modulePath = noLinks(playwrightArg);
 assert.equal(modulePath.split(sep).slice(-2).join('/'), 'playwright/index.mjs');
 const output = resolve(outArg); noLinks(dirname(output)); mkdirSync(output, { mode: 0o700 });
-const controls = pinControls(output), fixture = syntheticFiles();
-const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : suiteArg === '--withdrawal-recovery' ? withdrawalFixtures(fixture) : suiteArg === '--cache-propagation' ? cacheFixtures(fixture) : ['--keyboard-sheet', '--resize-sheet'].includes(suiteArg) ? [{ name: suiteArg === '--resize-sheet' ? 'resize_sheet' : 'keyboard_sheet', phases: [liveFixtures(fixture)[0].phases[0]] }] : [];
+const controls = pinControls(output), fixture = suiteArg === '--game-identity' ? gameIdentityFixture(syntheticFiles()) : syntheticFiles();
+const liveCases = suiteArg === '--game-identity' ? [{ name: 'game_identity', phases: [{ name: 'misdelivered', bodies: fixture.bodies }], recoveredBody: fixture.recoveredBody }] : suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : suiteArg === '--withdrawal-recovery' ? withdrawalFixtures(fixture) : suiteArg === '--cache-propagation' ? cacheFixtures(fixture) : ['--keyboard-sheet', '--resize-sheet'].includes(suiteArg) ? [{ name: suiteArg === '--resize-sheet' ? 'resize_sheet' : 'keyboard_sheet', phases: [liveFixtures(fixture)[0].phases[0]] }] : [];
 if (liveCases.length) writeFileSync(join(output, 'live-phases.json'), JSON.stringify(liveCases, null, 2), { flag: 'wx' });
 writeFileSync(join(output, 'synthetic-files.json'), JSON.stringify(fixture.bodies, null, 2), { flag: 'wx' });
 const allowed = new Map([...assets.allowed, ...fixture.files]);
@@ -248,6 +268,7 @@ const server = createServer((req, res) => {
   const body = status === 304 ? Buffer.alloc(0) : failed ? (hostError?.body ?? Buffer.from('{"error":"synthetic_local_503"}')) : allowed.get(url.pathname);
   receipt.requests.push({ path: url.pathname, method: req.method, status, sha256: sha(body), bytes: body.length,
     ...(suiteArg === '--partial-body' ? { startedMs: performance.now(), trigger: partialTrigger } : {}),
+    ...(suiteArg === '--game-identity' ? { startedMs: performance.now() } : {}),
     ...(cache ? { ifNoneMatch: req.headers['if-none-match'] ?? null, etag: cache.etag } : {}) });
   res.writeHead(status, { ...(cache ? { ETag: cache.etag } : {}), ...(liveCases.length ? { Date: 'Tue, 01 Jan 2030 00:00:00 GMT' } : {}), 'Content-Type': types[extname(url.pathname)] ?? types['.html'],
     'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; worker-src 'none'" });
@@ -282,7 +303,7 @@ async function scenario(width, failing, hostCase = null, liveCase = null, partia
   fault = failing; hostError = hostCase;
   if (partialCase) { partialBody = true; partialClosed = new Promise(done => { resolvePartialClosed = done; }); }
   if (liveCase) activatePhase(liveCase.phases[0]);
-  const height = keyboardCase && width === 390 ? 844 : 900;
+  const height = (keyboardCase || liveCase?.name === 'game_identity') && width === 390 ? 844 : 900;
   const context = await browser.newContext({ viewport: { width, height }, serviceWorkers: 'block' });
   try {
     await context.route('**/*', route => {
@@ -305,9 +326,63 @@ async function scenario(width, failing, hostCase = null, liveCase = null, partia
         browserResponses.push({ path, status: response.status() });
     });
     page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
-    await page.goto(`${origin}/?${failing || hostCase || liveCase || partialCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}/?${failing || hostCase || (liveCase && liveCase.name !== 'game_identity') || partialCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
     let hostEvidence;
-    if (keyboardCase) {
+    if (liveCase?.name === 'game_identity') {
+      const firstPath = `/v1/game/${fixture.game}.json`, secondPath = `/v1/game/${fixture.secondGame}.json`;
+      hostEvidence = { firstGame: fixture.game, secondGame: fixture.secondGame, trigger: 'unmodified_60s_interval', screenshots: [] };
+      receipt.identityAttempt = hostEvidence;
+      assert.equal(fixture.bodies['/v1/manifest.json'].publish_interval_s, 60);
+      const firstLink = page.locator(`.sv-list .sv-card[href="./?game=${fixture.game}"]`);
+      await firstLink.waitFor(); assert.equal(await page.locator('.sv-list .sv-card').count(), 2);
+      await firstLink.click(); await page.locator('.sv-state[data-state="recommended"] .sv-rec-row').waitFor();
+      assert.equal(new URL(page.url()).searchParams.get('game'), String(fixture.game));
+      assert.equal(await page.locator('.sv-rec-type').innerText(), '포심 패스트볼');
+      assert.match(await page.locator('body').innerText(), /Synthetic Alpha Batter/);
+      assert.match(await page.locator('body').innerText(), /Synthetic Alpha Pitcher/);
+      assert.ok(!(await page.locator('body').innerText()).includes('Synthetic Bravo'));
+      await page.screenshot({ path: join(output, 'game-identity-first-390.png'), fullPage: true });
+      hostEvidence.screenshots.push('game-identity-first-390.png');
+      await page.getByRole('link', { name: '경기 목록으로', exact: true }).click();
+      const secondLink = page.locator(`.sv-list .sv-card[href="./?game=${fixture.secondGame}"]`);
+      await secondLink.waitFor(); assert.equal(await page.locator('.sv-list .sv-card').count(), 2);
+      const wrongResponse = page.waitForResponse(r => r.url() === origin + secondPath);
+      await secondLink.click();
+      const wrong = await wrongResponse; assert.equal(wrong.status(), 200);
+      assert.equal(await bounded(wrong.finished(), 10000), null);
+      await page.getByRole('status').filter({ hasText: '확인 중 · 새 내용을 확인하고 있어요.' }).waitFor();
+      assert.equal(new URL(page.url()).searchParams.get('game'), String(fixture.secondGame));
+      assert.equal(navigations, 4);
+      assert.equal(await page.locator('.sv-rec-row').count(), 0);
+      assert.equal(await page.locator('.sv-alert').count(), 0);
+      assert.ok(!/Synthetic (Alpha|Bravo) (Batter|Pitcher)/.test(await page.locator('body').innerText()));
+      const badRows = receipt.requests.filter(r => r.path === secondPath);
+      assert.equal(badRows.length, 1); assert.equal(badRows[0].sha256, receipt.fixtureHashes[firstPath]);
+      assert.equal(badRows[0].status, 200);
+      Object.assign(hostEvidence, { rejectedBodySHA: badRows[0].sha256, pendingPlayers: 0, pendingRecommendations: 0, pendingNavigation: navigations });
+      await page.screenshot({ path: join(output, 'game-identity-pending-390.png'), fullPage: true });
+      hostEvidence.screenshots.push('game-identity-pending-390.png');
+      const recoveredBytes = Buffer.from(JSON.stringify(fixture.recoveredBody));
+      allowed.set(secondPath, recoveredBytes); hostEvidence.recoveryPreparedMs = performance.now();
+      const good = await page.waitForResponse(r => r.url() === origin + secondPath, { timeout: 70000 });
+      assert.equal(good.status(), 200); assert.equal(await bounded(good.finished(), 10000), null);
+      await page.locator('.sv-state[data-state="recommended"] .sv-rec-row').waitFor();
+      assert.equal(await page.locator('.sv-rec-type').innerText(), '슬라이더');
+      assert.match(await page.locator('body').innerText(), /Synthetic Bravo Batter/);
+      assert.match(await page.locator('body').innerText(), /Synthetic Bravo Pitcher/);
+      assert.ok(!(await page.locator('body').innerText()).includes('Synthetic Alpha'));
+      assert.equal(await page.locator('.sv-rec-row').count(), 1); assert.equal(navigations, 4);
+      assert.equal(new URL(page.url()).searchParams.get('game'), String(fixture.secondGame));
+      const secondRows = receipt.requests.filter(r => r.path === secondPath);
+      assert.equal(secondRows.length, 2); assert.equal(secondRows[1].sha256, sha(recoveredBytes));
+      assert.ok(secondRows[1].startedMs > hostEvidence.recoveryPreparedMs);
+      Object.assign(hostEvidence, { recoveredBodySHA: sha(recoveredBytes), gameRequestElapsedMs: secondRows[1].startedMs - secondRows[0].startedMs,
+        finalNavigation: navigations, recoveredPlayers: ['Synthetic Bravo Batter', 'Synthetic Bravo Pitcher'], recoveredRecommendations: 1 });
+      assert.ok(hostEvidence.gameRequestElapsedMs >= 55000 && hostEvidence.gameRequestElapsedMs <= 70000, '60s interval test tolerance');
+      assert.ok(receipt.requests.slice(begin).every(r => r.status === 200));
+      await page.screenshot({ path: join(output, 'game-identity-recovered-390.png'), fullPage: true });
+      hostEvidence.screenshots.push('game-identity-recovered-390.png');
+    } else if (keyboardCase) {
       const mobile = width < 1200, opener = page.locator('button.sv-reclist');
       await page.locator('.sv-rec-row').waitFor();
       assert.equal(await opener.count(), 1);
