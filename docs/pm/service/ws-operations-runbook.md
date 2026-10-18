@@ -126,3 +126,88 @@
   1. 발견한 쪽 → 연락 채널로 즉시 알림. 담당: _미정_
   2. 화면에 잘못된 내용이 보이면 → 즉시 내림(4.6). 담당: _팀원(미확인)_
   3. 코드·설정 판단이 필요하면 → Song. 응답 기대 시간: _미정_
+
+## 7. 이상 알림 감시기 (2026-10-18, 초안)
+
+`apps/observer/ops/ws_alert.py`(표준 라이브러리만)가 발행이 잘못되면 Song 폰으로 알린다. **읽기만 한다:** 출력 폴더의 `v1/health.json`·`v1/games/<KST 날짜>.json`·`v1/game/<경기>.json`, 상태 파일(`<출력 폴더>.state.json`), 운영 상태 파일(있으면), 프로필 갱신 `RESULTS.log`, `vm_stat`, 디스크 여유. 프로세스 목록을 보거나 신호를 보내지 않고, 발행기 폴더에 쓰지 않는다. 자기 기록은 `~/.pitcheezy/ws-alert/`(`alert_state.json`, 추가 전용 `alerts.jsonl`)에만 남긴다. 기준값은 `apps/observer/ops/ws_alert_config.json`에 있고 **모두 잠정**이다(3절에서 옮기거나 감시기용으로 고른 값, 실경기로 잰 적 없음).
+
+### 7.1 실행
+- 확인만: `python3 apps/observer/ops/ws_alert.py --once --dry-run --out <출력 폴더>` — 무엇이 걸렸고 무엇을 보낼지 출력만 하고, 보내지도 기록하지도 않는다.
+- 한 번: `--once`. 계속: `--loop`(`loop_interval_s` 15초). 경로는 `--out`/`PITCHEEZY_PUBLISH_OUT_DIR`, 상태 파일 `PITCHEEZY_PUBLISH_STATE`(없으면 발행기 기본값), 운영 상태 `--ops-status`/`PITCHEEZY_WS_OPS_STATUS`, 기록 폴더 `--alert-dir`/`PITCHEEZY_ALERT_DIR`.
+- 알림 시험: `--test-notify`는 맥 알림 + `alerts.jsonl`만(로컬). `--test-notify --push`가 아래 폰 알림까지 보낸다.
+- 띄우는 곳: 리허설에서 tmux `runs` 창에 `--loop`로 띄운다(launchd 등록은 아직 안 함, 정하면 여기 적는다). 감시기를 끄는 것은 그 창의 Ctrl-C.
+
+### 7.2 규칙
+"경기 시간대"는 시작 30분 전부터 경기가 final이 될 때까지(최대 시작+6시간). 경기 목록은 발행기의 `games/<어제·오늘·내일>.json`, 운영 상태 파일, 설정 `schedule`(발행기가 아직 목록을 못 만든 경우의 수동 보조)에서 모은다. **경기 시간대가 아니면 경기 관련 규칙은 평가하지 않는다(조용함).**
+
+| 키 | 언제 | 등급 | 경기 시간대만 |
+|---|---|---|---|
+| `health_stalled` | `published_at`이 30초 넘게 안 바뀜 | 경고 | 예 |
+| `publisher_down` | health 없음/읽기 실패, 120초 넘게 멈춤, 또는 운영 상태가 `publisher.running:false` | 긴급 | 예 |
+| `game_check_stalled:<경기>` | 진행 중 경기 `checked_at` 30초 넘게 멈춤, 또는 `game_checks`에 경기 없음 60초 | 경고 | 예 |
+| `feed_down:<경기>` | `feed_ok:false` 또는 `feed_failing_games`가 60초 넘게 계속 | 긴급 | 예 |
+| `feed_delayed:<경기>` | 경기 파일 `display_state.feed.delayed` 또는 `lag_s` > 45초가 20초 넘게 | 경고 | 예 |
+| `file_stuck:<경기>` | 확인(`checked_at`)은 돌고 피드도 정상인데 `file_sequence`가 300초 넘게 그대로, 또는 운영 상태의 `upstream_changed_at`이 그보다 새롭고 60초가 지남 | 경고 | 예 |
+| `game_unavailable:<경기>` | `unavailable_games`에 그 경기 코드가 30초 넘게 | 경고 | 예 |
+| `upload_pending` | `upload.pending` > 0이 30초(3주기) 넘게(늘어나면 문구에 표시) | 경고 | 예 |
+| `upload_errors` | `upload.code`가 60초 넘게, 또는 `rejected`/`retry` 시도 3건 이상 | 경고 | 예 |
+| `upload_conflict` | 상태 파일 `upload_attempts`에 `blocked` 사유 `upload_conflict`(HTTP 412) | 긴급 | 아니오 |
+| `upload_unknown` | `blocked` 사유 `upload_unknown`·`interrupted_unknown`·`legacy_unknown` | 긴급 | 아니오 |
+| `upload_blocked` | 그 밖의 `blocked` 사유, `upload_recovery_blocked` | 긴급 | 아니오 |
+| `state_unreadable` | 상태 파일이 있는데 30초 넘게 못 읽음 | 경고 | 아니오 |
+| `memory_low` | `vm_stat` free+inactive+speculative < 2 GiB가 60초 넘게(메모리 압박 색과 같은 값은 아님) | 경고 | 예 |
+| `disk_low` | 홈·출력 폴더 상위의 여유 < 12.5 GiB | 경고 | 아니오 |
+| `profile_refresh:<날짜>` | 21:20 KST 이후 `RESULTS.log` 마지막 줄이 `ok target=<오늘> cutoff=<어제>`가 아님 | 경고 | 아니오 |
+| `ops_problem:<키>` | 운영 상태 파일 `problems`의 항목(그 파일이 깨졌으면 `ops_problem:unreadable`) | 파일이 준 등급 | 아니오 |
+| `ops_status_stale` | 운영 상태 `updated_at`이 300초 넘게 지남 | 경고 | 예 |
+| `watch_config` | 출력 폴더가 지정되지 않음 | 경고 | 아니오 |
+
+알림 방식:
+- **한 번만:** 조건이 시작되면(유지 시간을 넘긴 뒤) 한 번 알린다. 계속되면 긴급 15분·경고 30분마다 "[계속]"(경기 시간대 밖이면 6시간마다).
+- **복구:** 알렸던 조건이 풀리면 "[복구]" 한 번.
+- **쿨다운:** 풀린 뒤 5분 안에 같은 키가 다시 걸리면 바로 보내지 않고(`suppressed`로 기록만), 5분이 지나도 계속이면 보낸다.
+- **조용히 닫기:** 경기가 끝나 더 평가하지 않는 키는 복구 알림 없이 `closed`로 기록만 한다.
+- 한 번 돌 때 생긴 알림은 **한 메시지로 묶는다**(제목 예: `Pitcheezy 긴급 2건 09:30 KST`). 폰 메시지에는 경로·주소·토큰을 넣지 않는다(경기 번호와 수치만).
+
+### 7.3 운영 상태 파일 연결 규약(감시기 쪽 잠정, H 작업 `ws-ops-status-contract.md`가 나오면 맞춘다)
+JSON 하나. 모르는 키는 무시하고, 형식이 틀린 항목은 건너뛴다.
+```json
+{
+  "schema": "pitcheezy-ws-ops-status-v1",
+  "updated_at": "2026-10-24T00:30:00Z",
+  "games": [{"game_pk": 776001, "start": "2026-10-24T00:08:00Z", "status": "live",
+             "window_start": null, "window_end": null, "upstream_changed_at": "2026-10-24T00:29:51Z"}],
+  "publisher": {"running": true},
+  "problems": [{"key": "recorder_gap", "severity": "critical", "message": "짧은 한국어 문장", "active": true}]
+}
+```
+- `games`(별칭 `schedule`): 경기 시간대를 여는 데 쓴다. `upstream_changed_at`은 발행기와 별개로 본 "경기가 마지막으로 바뀐 시각"(예: 수집기의 마지막 투구 수신)으로, 있으면 `file_stuck`을 더 빨리 판단한다.
+- `publisher.running:false`면 `publisher_down`. `null`/없음이면 health로만 판단한다.
+- `problems`(별칭 `alerts`): 운영 도구가 직접 본 문제를 그대로 알린다. `active:false`면 풀린 것으로 본다.
+
+### 7.4 폰 알림 고르기와 설정(기본 꺼짐)
+맥 알림 + `alerts.jsonl`은 항상 켜져 있다(맥 앞에 없으면 못 본다). 폰 알림은 환경 변수로만 켠다. 저장소에는 비밀 값이 없다.
+
+| 방식 | 장점 | 단점 |
+|---|---|---|
+| **ntfy**(구현, 추천) | 폰 앱 하나, 계정 불필요, 긴급은 우선순위 5로 소리 남. 맥은 HTTPS POST만 함 | 공용 서버 `ntfy.sh`에서는 **주제 이름이 곧 비밀번호**(추측되면 남이 읽음) → 길고 무작위로. 내용이 외부 서버를 지난다(경기 번호·수치만 보냄) |
+| **iMessage**(구현) | 외부 서비스 없음, 폰 기본 앱 | 맥미니 Messages가 로그인돼 있어야 하고 첫 실행 때 자동화 허용 창이 뜬다(GUI 세션 필요). **맥미니와 폰이 같은 Apple ID면 "나에게 보낸 메시지"라 알림이 안 울릴 수 있다** → 다른 Apple ID에서 보내는 것이 확실 |
+| 메일(`mail`, 미구현) | 설정 파일 없음 | 맥의 로컬 메일 발송이 설정돼 있지 않으면 안 가거나 스팸함. 실시간 알림에 부적합 |
+| 텔레그램·Pushover(미구현) | 안정적 푸시 | 봇 토큰·계정이 필요(환경 변수로는 가능). 지금 단계에서는 ntfy로 충분 |
+
+Song이 할 일(ntfy):
+1. 폰에 ntfy 앱 설치 → 주제 구독. 주제 이름은 길고 무작위로(예: 맥에서 `python3 -c "import secrets;print('pz-'+secrets.token_urlsafe(18))"`). 이 이름을 이슈·문서에 적지 않는다.
+2. 감시기를 띄우는 셸에서 `export PITCHEEZY_ALERT_PUSH=ntfy PITCHEEZY_ALERT_NTFY_TOPIC=<주제>`(직접 운영하는 ntfy 서버면 `PITCHEEZY_ALERT_NTFY_SERVER`, 접근 토큰은 파일로 `PITCHEEZY_ALERT_NTFY_TOKEN_FILE`).
+3. `python3 apps/observer/ops/ws_alert.py --test-notify --push`로 폰에 "알림 시험"이 오는지 본다.
+
+Song이 할 일(iMessage, 쓰려면):
+1. 맥미니 Messages에 iMessage 로그인(가능하면 폰과 다른 Apple ID).
+2. `export PITCHEEZY_ALERT_PUSH=imessage PITCHEEZY_ALERT_IMESSAGE_TO=<폰 번호 또는 Apple ID 메일>`(둘 다 쓰려면 `ntfy,imessage`).
+3. 맥 앞에서 `--test-notify --push`를 한 번 돌려 자동화 허용 창에 "허용" → 폰 수신 확인.
+
+맥 알림을 끄려면 `PITCHEEZY_ALERT_MACOS=0`. 알림 경로가 실패하면 감시기는 멈추지 않고 `alerts.jsonl`에 `notify_error`로 남긴다.
+
+### 7.5 아직 안 정한 것
+- 기준값 전부(리허설 E에서 실제 주기·흔들림·피드 지연을 재서 고친다). 특히 `file_stuck` 300초는 이닝 교대·투수 교체로 거짓 경고가 날 수 있다.
+- 감시기 자체가 죽은 것은 알 수 없다(`alert_state.json`의 `last_run`으로만 확인). launchd 등록 여부와 함께 정한다.
+- 운영 상태 파일 규약(7.3)은 H 작업 계약이 나오면 맞춘다.

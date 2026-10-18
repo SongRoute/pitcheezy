@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "note": "World Series publish anomaly watcher (apps/observer/ops/ws_alert.py). Every threshold here is PROVISIONAL: copied from docs/pm/service/ws-operations-runbook.md section 3 or chosen for the watcher, none measured on a live game yet. Paths are never inside the repository; null = taken from env or CLI (see the runbook section 7).",
+  "paths": {
+    "out_dir": null,
+    "out_dir_note": "Publisher output folder (the one holding v1/). null = --out or env PITCHEEZY_PUBLISH_OUT_DIR.",
+    "state_path": null,
+    "state_path_note": "Publisher state file. null = env PITCHEEZY_PUBLISH_STATE, else '<out_dir>.state.json' (the publisher's own default).",
+    "ops_status": null,
+    "ops_status_note": "Operations status file (interface in the runbook section 7.3). null = --ops-status or env PITCHEEZY_WS_OPS_STATUS; absent = not read.",
+    "profile_log": "~/Projects/pitcheezy-pm-jobs/profile-refresh-daily/logs/RESULTS.log",
+    "alert_dir": "~/.pitcheezy/ws-alert",
+    "alert_dir_note": "Watcher state (alert_state.json) and the append-only alerts.jsonl. Env PITCHEEZY_ALERT_DIR or --alert-dir overrides.",
+    "disk_paths": ["~"],
+    "disk_paths_note": "Free space is checked on each of these and on the output folder's parent."
+  },
+  "contract_version": "v1",
+  "loop_interval_s": 15,
+  "game_window": {
+    "before_start_s": 1800,
+    "max_game_s": 21600,
+    "note": "A game is 'in window' from start-before_start_s until it is final, or at most start+max_game_s. Sources: the publisher's games/<KST date>.json (yesterday..tomorrow), the ops status file, and schedule below."
+  },
+  "schedule": [],
+  "schedule_note": "Manual fallback when the publisher has not listed the game: [{\"game_pk\": 123, \"start\": \"2026-10-24T00:08:00Z\"}].",
+  "thresholds": {
+    "health_stale_s": 30,
+    "publisher_down_s": 120,
+    "game_check_stale_s": 30,
+    "game_check_missing_hold_s": 60,
+    "feed_down_hold_s": 60,
+    "feed_lag_s": 45,
+    "feed_delayed_hold_s": 20,
+    "file_stuck_s": 300,
+    "file_stuck_upstream_s": 60,
+    "game_unavailable_hold_s": 30,
+    "upload_pending_hold_s": 30,
+    "upload_code_hold_s": 60,
+    "upload_error_count": 3,
+    "state_unreadable_hold_s": 30,
+    "memory_available_gib": 2.0,
+    "memory_hold_s": 60,
+    "disk_free_gib": 12.5,
+    "profile_deadline_kst": "21:20",
+    "ops_stale_s": 300
+  },
+  "thresholds_note": "Runbook section 3: health stall 30 s (3 cycles), feed_ok false > 60 s, lag > 45 s, pending > 0 beyond 3 cycles, blocked at once, disk floor 12.5 GiB (the refresh skips near 12 GiB), profile ok by 21:20 KST. Watcher-only choices: publisher_down 120 s, file_stuck 300 s (a live game normally changes within a few minutes; between-inning breaks are about 2-3 minutes), memory 2 GiB from vm_stat free+inactive+speculative (an approximation, not the memory pressure colour).",
+  "notify": {
+    "cooldown_s": 300,
+    "renotify_s": {"critical": 900, "warn": 1800},
+    "renotify_outside_game_s": 21600,
+    "note": "A condition notifies once when it starts (after its hold), again every renotify_s while it lasts (renotify_outside_game_s when no game is in window), and once when it clears. After clearing, the same key does not notify again for cooldown_s (flapping)."
+  },
+  "game_gated": ["health_stalled", "publisher_down", "game_check_stalled", "feed_down", "feed_delayed", "file_stuck",
+                 "game_unavailable", "upload_pending", "upload_errors", "memory_low", "ops_status_stale"],
+  "game_gated_note": "Families evaluated only while a game is in window (quiet otherwise). Always on: upload_blocked / upload_conflict / upload_unknown (they never clear by themselves), state_unreadable, disk_low, profile_refresh, ops_problem, watch_config."
+}
