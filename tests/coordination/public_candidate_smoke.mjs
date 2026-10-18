@@ -8,8 +8,8 @@ import { dirname, extname, join, parse, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg, suiteArg] = process.argv.slice(2);
-assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states'].includes(suiteArg)),
-  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states] required');
+assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness'].includes(suiteArg)),
+  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness] required');
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 assert.ok(hex(expectedManifest, 64) && hex(expectedSource, 40));
@@ -148,13 +148,23 @@ function liveFixtures(base) {
   });
 }
 
+function healthFixtures(base) {
+  const normal = liveFixtures(base)[0].phases[0];
+  return [['stale_check', '2029-12-31T00:00:00.000Z'], ['future_check', '2030-01-02T00:00:00.000Z']].map(([name, at]) => {
+    const phase = structuredClone(normal);
+    phase.bodies['/v1/health.json'].game_checks[base.game].checked_at = at;
+    Object.assign(phase, { name, state: 'disconnected', held: true, lineKind: 'publish-late' });
+    return { name, phases: [phase] };
+  });
+}
+
 // Pin validation happens before output creation, browser import, or any listening socket.
 const assets = pinnedAssets(manifestArg, expectedManifest, expectedSource, buildArg);
 const modulePath = noLinks(playwrightArg);
 assert.equal(modulePath.split(sep).slice(-2).join('/'), 'playwright/index.mjs');
 const output = resolve(outArg); noLinks(dirname(output)); mkdirSync(output, { mode: 0o700 });
 const controls = pinControls(output), fixture = syntheticFiles();
-const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : [];
+const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : [];
 if (liveCases.length) writeFileSync(join(output, 'live-phases.json'), JSON.stringify(liveCases, null, 2), { flag: 'wx' });
 writeFileSync(join(output, 'synthetic-files.json'), JSON.stringify(fixture.bodies, null, 2), { flag: 'wx' });
 const allowed = new Map([...assets.allowed, ...fixture.files]);
@@ -242,7 +252,11 @@ async function scenario(width, failing, hostCase = null, liveCase = null) {
           assert.ok(await state.locator('.sv-rec-row').first().isVisible());
           if (phase.held) {
             assert.match(await state.locator('.sv-summary-label').innerText(), /마지막으로 받은 추천/);
-            assert.match(await page.locator('.sv-line-text').innerText(), /연결 끊김/);
+            assert.match(await page.locator('.sv-line-text').innerText(), phase.lineKind === 'publish-late' ? /갱신 지연/ : /연결 끊김/);
+            if (phase.lineKind) {
+              assert.equal(await page.locator('.sv-notice.line').getAttribute('data-kind'), phase.lineKind);
+              assert.match(await state.locator('.sv-chip').innerText(), /^⚠\uFE0E\s*갱신 지연$/);
+            }
             assert.equal(await page.locator('.sv-head .sv-live.on').count(), 0);
           } else await page.locator('.sv-head .sv-live.on').waitFor();
         }
