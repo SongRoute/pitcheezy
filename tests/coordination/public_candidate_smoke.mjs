@@ -8,8 +8,8 @@ import { dirname, extname, join, parse, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg, suiteArg] = process.argv.slice(2);
-assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery', '--partial-body'].includes(suiteArg)),
-  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery|--partial-body] required');
+assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery', '--partial-body', '--cache-propagation'].includes(suiteArg)),
+  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery|--partial-body|--cache-propagation] required');
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 assert.ok(hex(expectedManifest, 64) && hex(expectedSource, 40));
@@ -177,13 +177,33 @@ function withdrawalFixtures(base) {
   return [{ name: 'withdrawal_recovery', phases }];
 }
 
+function cacheFixtures(base) {
+  const normal = liveFixtures(base)[0].phases[0], healthPath = '/v1/health.json', gamePath = `/v1/game/${base.game}.json`;
+  const phases = ['initial_ff', 'pending_file', 'recovered_sl', 'cached_sl'].map((name, i) => {
+    const phase = structuredClone(normal), health = phase.bodies[healthPath], game = phase.bodies[gamePath];
+    if (i) { health.sequence = 2; health.publish.sequence = 2; Object.assign(health.game_checks[base.game], { sequence_checked: 2, file_sequence: 2 }); }
+    if (i >= 2) {
+      game.publish.sequence = 2;
+      Object.assign(game.next.rec.candidates[0], { pitch_type: 'SL', pitch_label: '슬라이더' });
+    }
+    Object.assign(phase, { name, state: i === 1 ? 'unconfirmed' : 'recommended', visibleRows: i === 1 ? 0 : 1,
+      pitchLabel: i >= 2 ? '슬라이더' : '포심 패스트볼', expectLive: i !== 1, expectsGame: i !== 3,
+      cache: {
+        [healthPath]: { status: i >= 2 ? 304 : 200, etag: i ? '"cx26-h2"' : '"cx26-h1"', ifNoneMatch: i ? (i === 1 ? '"cx26-h1"' : '"cx26-h2"') : null },
+        [gamePath]: { status: i === 1 ? 304 : 200, etag: i >= 2 ? '"cx26-g2"' : '"cx26-g1"', ifNoneMatch: i ? (i === 3 ? '"cx26-g2"' : '"cx26-g1"') : null },
+      } });
+    return phase;
+  });
+  return [{ name: 'cache_propagation', phases }];
+}
+
 // Pin validation happens before output creation, browser import, or any listening socket.
 const assets = pinnedAssets(manifestArg, expectedManifest, expectedSource, buildArg);
 const modulePath = noLinks(playwrightArg);
 assert.equal(modulePath.split(sep).slice(-2).join('/'), 'playwright/index.mjs');
 const output = resolve(outArg); noLinks(dirname(output)); mkdirSync(output, { mode: 0o700 });
 const controls = pinControls(output), fixture = syntheticFiles();
-const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : suiteArg === '--withdrawal-recovery' ? withdrawalFixtures(fixture) : [];
+const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : suiteArg === '--health-freshness' ? healthFixtures(fixture) : suiteArg === '--withdrawal-recovery' ? withdrawalFixtures(fixture) : suiteArg === '--cache-propagation' ? cacheFixtures(fixture) : [];
 if (liveCases.length) writeFileSync(join(output, 'live-phases.json'), JSON.stringify(liveCases, null, 2), { flag: 'wx' });
 writeFileSync(join(output, 'synthetic-files.json'), JSON.stringify(fixture.bodies, null, 2), { flag: 'wx' });
 const allowed = new Map([...assets.allowed, ...fixture.files]);
@@ -196,6 +216,7 @@ let browser, browserServer, origin, fault = false, hostError = null, count = 0, 
 let browserLaunchStarted = false, browserLaunchSettled = false;
 let partialBody = false, partialClosed, resolvePartialClosed, partialTrigger = 'initial_navigation';
 const partialResponses = [];
+let cachePhase = null;
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',
   '.svg': 'image/svg+xml', '.json': 'application/json' };
 let rejectBudget;
@@ -218,11 +239,17 @@ const server = createServer((req, res) => {
     return;
   }
   const failed = (fault || hostError) && (url.pathname === `/v1/game/${fixture.game}.json` || url.pathname === '/v1/health.json');
-  const body = failed ? (hostError?.body ?? Buffer.from('{"error":"synthetic_local_503"}')) : allowed.get(url.pathname);
-  const status = failed ? (hostError?.status ?? 503) : 200;
+  const cache = cachePhase?.[url.pathname];
+  if (cache && (req.headers['if-none-match'] ?? null) !== cache.ifNoneMatch) {
+    receipt.blocked.push('conditional_header_mismatch:' + url.pathname);
+    res.writeHead(403); res.end(); rejectBudget(new Error('conditional header mismatch')); return;
+  }
+  const status = failed ? (hostError?.status ?? 503) : cache?.status ?? 200;
+  const body = status === 304 ? Buffer.alloc(0) : failed ? (hostError?.body ?? Buffer.from('{"error":"synthetic_local_503"}')) : allowed.get(url.pathname);
   receipt.requests.push({ path: url.pathname, method: req.method, status, sha256: sha(body), bytes: body.length,
-    ...(suiteArg === '--partial-body' ? { startedMs: performance.now(), trigger: partialTrigger } : {}) });
-  res.writeHead(status, { ...(liveCases.length ? { Date: 'Tue, 01 Jan 2030 00:00:00 GMT' } : {}), 'Content-Type': types[extname(url.pathname)] ?? types['.html'],
+    ...(suiteArg === '--partial-body' ? { startedMs: performance.now(), trigger: partialTrigger } : {}),
+    ...(cache ? { ifNoneMatch: req.headers['if-none-match'] ?? null, etag: cache.etag } : {}) });
+  res.writeHead(status, { ...(cache ? { ETag: cache.etag } : {}), ...(liveCases.length ? { Date: 'Tue, 01 Jan 2030 00:00:00 GMT' } : {}), 'Content-Type': types[extname(url.pathname)] ?? types['.html'],
     'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; worker-src 'none'" });
   res.end(body);
 });
@@ -245,6 +272,7 @@ const hostCases = [
   body: Buffer.from(JSON.stringify({ error: status === 401 ? 'access_required' : 'service_notice',
     message: sentinel, detail: sentinel, ...(id ? { notice: { id, message: sentinel, detail: sentinel } } : {}) })) }));
 function activatePhase(phase) {
+  cachePhase = phase.cache ?? null;
   for (const [path, body] of Object.entries(phase.bodies)) {
     assert.ok(fixture.files.has(path), 'phase outside synthetic allowlist');
     allowed.set(path, Buffer.from(JSON.stringify(body)));
@@ -269,6 +297,12 @@ async function scenario(width, failing, hostCase = null, liveCase = null, partia
     page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
     page.on('pageerror', e => errors.push(String(e)));
     let navigations = 0;
+    const browserResponses = [];
+    if (liveCase?.name === 'cache_propagation') page.on('response', response => {
+      const path = new URL(response.url()).pathname;
+      if (path === '/v1/health.json' || path === `/v1/game/${fixture.game}.json`)
+        browserResponses.push({ path, status: response.status() });
+    });
     page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
     await page.goto(`${origin}/?${failing || hostCase || liveCase || partialCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
     let hostEvidence;
@@ -305,11 +339,21 @@ async function scenario(width, failing, hostCase = null, liveCase = null, partia
         screenshots: ['partial-timeout-390.png', 'partial-recovered-390.png'] };
     } else if (liveCase) {
       const phases = [];
-      let phaseBegin = begin;
+      let phaseBegin = begin, responseBegin = 0;
       for (const [i, phase] of liveCase.phases.entries()) {
         if (i) {
-          phaseBegin = receipt.requests.length; activatePhase(phase);
-          if (liveCase.name === 'withdrawal_recovery') {
+          phaseBegin = receipt.requests.length; responseBegin = browserResponses.length; activatePhase(phase);
+          if (liveCase.name === 'cache_propagation') {
+            const paths = ['/v1/health.json', ...(phase.expectsGame ? [`/v1/game/${fixture.game}.json`] : [])];
+            const responses = paths.map(path => page.waitForResponse(r => r.url() === origin + path));
+            await page.locator('.sv-head .sv-live').click();
+            for (const response of await Promise.all(responses)) {
+              const expected = phase.cache[new URL(response.url()).pathname].status;
+              assert.equal(response.status(), expected);
+              if (expected !== 304) assert.equal(await bounded(response.finished(), 10000), null);
+            }
+            await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+          } else if (liveCase.name === 'withdrawal_recovery') {
             const response = page.waitForResponse(r => r.url() === `${origin}/v1/health.json`);
             await (liveCase.phases[i - 1].withdrawn
               ? page.locator('.sv-unavailable').getByRole('button', { name: '다시 확인', exact: true })
@@ -342,17 +386,42 @@ async function scenario(width, failing, hostCase = null, liveCase = null, partia
           } else await page.locator('.sv-head .sv-live.on').waitFor();
         }
         }
+        if (liveCase.name === 'cache_propagation') {
+          assert.equal(await page.locator('.sv-head .sv-live.on').count(), phase.expectLive ? 1 : 0);
+          if (phase.visibleRows) assert.equal(await page.locator('.sv-state .sv-rec-type').innerText(), phase.pitchLabel);
+          assert.equal(navigations, 1);
+        }
         const servedPhase = receipt.requests.slice(phaseBegin), healthPath = '/v1/health.json';
         const expectedHashes = Object.fromEntries(Object.entries(phase.bodies).map(([p, b]) => [p, sha(Buffer.from(JSON.stringify(b)))]));
+        if (phase.cache) {
+          const gamePath = `/v1/game/${fixture.game}.json`, expectedPaths = [healthPath, ...(phase.expectsGame ? [gamePath] : [])];
+          const observed = browserResponses.slice(responseBegin);
+          for (const path of expectedPaths) {
+            const expected = phase.cache[path], rows = servedPhase.filter(r => r.path === path);
+            assert.equal(rows.length, 1);
+            assert.equal(rows[0].status, expected.status); assert.equal(rows[0].ifNoneMatch, expected.ifNoneMatch);
+            assert.equal(rows[0].etag, expected.etag);
+            assert.equal(rows[0].sha256, expected.status === 304 ? sha(Buffer.alloc(0)) : expectedHashes[path]);
+            if (expected.status === 304) assert.equal(rows[0].bytes, 0);
+            assert.deepEqual(observed.filter(r => r.path === path).map(r => r.status), [expected.status]);
+          }
+          if (!phase.expectsGame) {
+            assert.ok(!servedPhase.some(r => r.path === gamePath));
+            assert.ok(!observed.some(r => r.path === gamePath));
+          }
+          for (const r of servedPhase) if (!phase.cache[r.path]) assert.equal(r.status, 200);
+        } else {
         assert.ok(servedPhase.some(r => r.path === healthPath && r.sha256 === expectedHashes[healthPath]));
         if (phase.withdrawn) assert.ok(!servedPhase.some(r => r.path === `/v1/game/${fixture.game}.json`), 'withdrawn game must not refetch old recommendations');
         if (liveCase.name === 'withdrawal_recovery') assert.equal(navigations, 1, 'one document must retain withdrawal/cache state');
         if (!i || liveCase.name === 'withdrawal_recovery' && !phase.withdrawn) assert.ok(servedPhase.some(r => r.path === `/v1/game/${fixture.game}.json` && r.sha256 === expectedHashes[`/v1/game/${fixture.game}.json`]));
         assert.ok(servedPhase.every(r => r.status === 200));
         for (const r of servedPhase) if (fixture.files.has(r.path)) assert.equal(r.sha256, expectedHashes[r.path]);
+        }
         const screenshot = `${liveCase.name}-${phase.name}-390.png`;
         await page.screenshot({ path: join(output, screenshot), fullPage: true });
-        phases.push({ name: phase.name, expectedState: phase.withdrawn ? 'unavailable' : phase.state, ...(liveCase.name === 'withdrawal_recovery' ? { navigations, withdrawn: phase.withdrawn } : {}), visibleRows: phase.visibleRows, held: phase.held,
+        phases.push({ name: phase.name, expectedState: phase.withdrawn ? 'unavailable' : phase.state, ...(liveCase.name === 'withdrawal_recovery' ? { navigations, withdrawn: phase.withdrawn } : {}),
+          ...(phase.cache ? { navigations, browserResponses: browserResponses.slice(responseBegin), pitchLabel: phase.pitchLabel, expectedLive: phase.expectLive } : {}), visibleRows: phase.visibleRows, held: phase.held,
           payloadCandidateCount: phase.bodies[`/v1/game/${fixture.game}.json`].next.rec.candidates.length,
           requestCount: servedPhase.length, requests: servedPhase, fixtureHashes: expectedHashes, screenshot,
           trigger: i ? (liveCase.phases[i - 1].withdrawn ? 'manual_retry_button' : 'manual_live_button') : 'initial_navigation' });
