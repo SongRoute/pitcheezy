@@ -8,8 +8,8 @@ import { dirname, extname, join, parse, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg, suiteArg] = process.argv.slice(2);
-assert.ok(process.argv.length === 8 || (process.argv.length === 9 && suiteArg === '--host-errors'),
-  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors] required');
+assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states'].includes(suiteArg)),
+  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states] required');
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 assert.ok(hex(expectedManifest, 64) && hex(expectedSource, 40));
@@ -109,18 +109,55 @@ function syntheticFiles() {
   return { date, game, bodies, files: new Map(Object.entries(bodies).map(([p, b]) => [p, Buffer.from(JSON.stringify(b))])) };
 }
 
+// Invented source-shaped live game; no captured rows or publisher execution.
+function liveFixtures(base) {
+  const at = '2030-01-01T00:00:00.000Z', gamePath = `/v1/game/${base.game}.json`;
+  return ['transition', 'unconfirmed', 'missing_display', 'unknown_display'].map(name => {
+    const bodies = structuredClone(base.bodies), game = bodies[gamePath];
+    game.source.kind = 'live'; game.publish.final = false;
+    Object.assign(game.game, { status: 'live', status_text: 'In Progress', live: true, inning: 1, half: 'Top' });
+    game.current = { phase: 'pre_pitch', pa_key: `${base.game}:1`, context: null,
+      batter: { id: 990101, name: 'Synthetic Batter', side: 'R', jersey: null },
+      pitcher: { id: 990102, name: 'Synthetic Pitcher', hand: 'R', jersey: null },
+      situation: { inning: 1, half: 'Top', outs: 0, balls: 0, strikes: 0, bases: 0,
+        away_score: 0, home_score: 0, runners: { first: false, second: false, third: false } } };
+    game.next = { pitch_key: `${base.game}:1:1`, rec: { status: 'ready', reason: null,
+      provenance: 'captured_live', policy: null, recorded_at: at,
+      candidates: [{ rank: 1, pitch_type: 'FF', pitch_label: '포심 패스트볼', zone_id: 'middle', zone_label: '가운데',
+        target: { x: 0, z: 2.25 }, detail: { probability: 1 } }] } };
+    game.display_state = { state: name === 'unconfirmed' ? 'unconfirmed' : name === 'unknown_display' ? 'synthetic_future_state' : 'recommended',
+      reason: 'synthetic_only', pitch_key: game.next.pitch_key, recommendation_shown: true,
+      feed: { ok: true, delayed: false, lag_s: null }, correction: null };
+    if (name === 'missing_display') delete game.display_state;
+    bodies['/v1/games/2030-01-01.json'].games = [structuredClone(game.game)];
+    bodies['/v1/manifest.json'].live_dates = [base.date];
+    for (const body of Object.values(bodies)) body.publish.final = false;
+    const phases = (name === 'transition' ? [true, false, true] : [true]).map((feedOk, i) => {
+      const phaseBodies = structuredClone(bodies), health = phaseBodies['/v1/health.json'];
+      health.sequence = i + 1; health.publish = { ...health.publish, sequence: i + 1 };
+      health.game_checks = { [base.game]: { checked_at: at, sequence_checked: i + 1, file_sequence: 1, feed_ok: feedOk } };
+      return { name: name === 'transition' ? ['recommended', 'disconnected_held', 'recovered'][i] : name,
+        state: name === 'transition' ? (feedOk ? 'recommended' : 'disconnected') : 'unconfirmed',
+        held: !feedOk, visibleRows: name === 'transition' ? 1 : 0, bodies: phaseBodies };
+    });
+    return { name, phases };
+  });
+}
+
 // Pin validation happens before output creation, browser import, or any listening socket.
 const assets = pinnedAssets(manifestArg, expectedManifest, expectedSource, buildArg);
 const modulePath = noLinks(playwrightArg);
 assert.equal(modulePath.split(sep).slice(-2).join('/'), 'playwright/index.mjs');
 const output = resolve(outArg); noLinks(dirname(output)); mkdirSync(output, { mode: 0o700 });
 const controls = pinControls(output), fixture = syntheticFiles();
+const liveCases = suiteArg === '--live-states' ? liveFixtures(fixture) : [];
+if (liveCases.length) writeFileSync(join(output, 'live-phases.json'), JSON.stringify(liveCases, null, 2), { flag: 'wx' });
 writeFileSync(join(output, 'synthetic-files.json'), JSON.stringify(fixture.bodies, null, 2), { flag: 'wx' });
 const allowed = new Map([...assets.allowed, ...fixture.files]);
 const receipt = { schema: 'pitcheezy-current-public-candidate-smoke-v1', status: 'INCOMPLETE',
   source: expectedSource, manifestSHA: expectedManifest, buildHashes: assets.hashes,
   fixtureHashes: Object.fromEntries([...fixture.files].map(([p, b]) => [p, sha(b)])), controls,
-  suite: suiteArg ? 'host-errors' : 'default', transport: 'owned_loopback_HTTP_not_TLS', requests: [], blocked: [], scenarios: [],
+  suite: suiteArg?.slice(2) ?? 'default', transport: 'owned_loopback_HTTP_not_TLS', requests: [], blocked: [], scenarios: [],
   requestCap: 60, executionBudgetMs: 80000, totalBudgetMs: 90000 };
 let browser, browserServer, origin, fault = false, hostError = null, count = 0, routed = 0, timedOut = false;
 let browserLaunchStarted = false, browserLaunchSettled = false;
@@ -139,7 +176,7 @@ const server = createServer((req, res) => {
   const body = failed ? (hostError?.body ?? Buffer.from('{"error":"synthetic_local_503"}')) : allowed.get(url.pathname);
   const status = failed ? (hostError?.status ?? 503) : 200;
   receipt.requests.push({ path: url.pathname, method: req.method, status, sha256: sha(body), bytes: body.length });
-  res.writeHead(status, { 'Content-Type': types[extname(url.pathname)] ?? types['.html'],
+  res.writeHead(status, { ...(liveCases.length ? { Date: 'Tue, 01 Jan 2030 00:00:00 GMT' } : {}), 'Content-Type': types[extname(url.pathname)] ?? types['.html'],
     'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; worker-src 'none'" });
   res.end(body);
 });
@@ -161,8 +198,15 @@ const hostCases = [
 ].map(([name, status, id, expected]) => ({ name, status, expected,
   body: Buffer.from(JSON.stringify({ error: status === 401 ? 'access_required' : 'service_notice',
     message: sentinel, detail: sentinel, ...(id ? { notice: { id, message: sentinel, detail: sentinel } } : {}) })) }));
-async function scenario(width, failing, hostCase = null) {
+function activatePhase(phase) {
+  for (const [path, body] of Object.entries(phase.bodies)) {
+    assert.ok(fixture.files.has(path), 'phase outside synthetic allowlist');
+    allowed.set(path, Buffer.from(JSON.stringify(body)));
+  }
+}
+async function scenario(width, failing, hostCase = null, liveCase = null) {
   fault = failing; hostError = hostCase;
+  if (liveCase) activatePhase(liveCase.phases[0]);
   const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
   try {
     await context.route('**/*', route => {
@@ -177,9 +221,42 @@ async function scenario(width, failing, hostCase = null) {
     const page = await context.newPage(), errors = [], begin = receipt.requests.length;
     page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
     page.on('pageerror', e => errors.push(String(e)));
-    await page.goto(`${origin}/?${failing || hostCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}/?${failing || hostCase || liveCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
     let hostEvidence;
-    if (hostCase) {
+    if (liveCase) {
+      const phases = [];
+      let phaseBegin = begin;
+      for (const [i, phase] of liveCase.phases.entries()) {
+        if (i) {
+          phaseBegin = receipt.requests.length; activatePhase(phase);
+          await page.locator('.sv-head .sv-live').click();
+        }
+        const state = page.locator(`.sv-state[data-state="${phase.state}"]${phase.held ? '.held' : ':not(.held)'}`);
+        await state.waitFor();
+        assert.equal(await state.locator('.sv-rec-row').count(), phase.visibleRows);
+        if (phase.visibleRows) {
+          assert.ok(await state.locator('.sv-rec-row').first().isVisible());
+          if (phase.held) {
+            assert.match(await state.locator('.sv-summary-label').innerText(), /마지막으로 받은 추천/);
+            assert.match(await page.locator('.sv-line-text').innerText(), /연결 끊김/);
+            assert.equal(await page.locator('.sv-head .sv-live.on').count(), 0);
+          } else await page.locator('.sv-head .sv-live.on').waitFor();
+        }
+        const servedPhase = receipt.requests.slice(phaseBegin), healthPath = '/v1/health.json';
+        const expectedHashes = Object.fromEntries(Object.entries(phase.bodies).map(([p, b]) => [p, sha(Buffer.from(JSON.stringify(b)))]));
+        assert.ok(servedPhase.some(r => r.path === healthPath && r.sha256 === expectedHashes[healthPath]));
+        if (!i) assert.ok(servedPhase.some(r => r.path === `/v1/game/${fixture.game}.json` && r.sha256 === expectedHashes[`/v1/game/${fixture.game}.json`]));
+        assert.ok(servedPhase.every(r => r.status === 200));
+        for (const r of servedPhase) if (fixture.files.has(r.path)) assert.equal(r.sha256, expectedHashes[r.path]);
+        const screenshot = `${liveCase.name}-${phase.name}-390.png`;
+        await page.screenshot({ path: join(output, screenshot), fullPage: true });
+        phases.push({ name: phase.name, expectedState: phase.state, visibleRows: phase.visibleRows, held: phase.held,
+          payloadCandidateCount: phase.bodies[`/v1/game/${fixture.game}.json`].next.rec.candidates.length,
+          requestCount: servedPhase.length, requests: servedPhase, fixtureHashes: expectedHashes, screenshot,
+          trigger: i ? 'manual_live_button' : 'initial_navigation' });
+      }
+      hostEvidence = { phases, syntheticHTTPDate: 'Tue, 01 Jan 2030 00:00:00 GMT' };
+    } else if (hostCase) {
       const alert = page.locator('.sv-alert[role=alert]');
       await alert.waitFor();
       assert.equal(await alert.locator('p').first().innerText(), hostCase.expected);
@@ -222,13 +299,13 @@ async function scenario(width, failing, hostCase = null) {
     assert.deepEqual(errors, []); assert.deepEqual(receipt.blocked, []);
     const served = receipt.requests.slice(begin), gamePath = `/v1/game/${fixture.game}.json`;
     assert.ok(served.some(r => r.path === gamePath && r.status === (hostCase?.status ?? (failing ? 503 : 200))));
-    if (!failing && !hostCase) {
+    if (!failing && !hostCase && !liveCase) {
       for (const path of ['/v1/manifest.json', `/v1/games/${fixture.date}.json`, gamePath])
         assert.ok(served.some(r => r.path === path && r.sha256 === receipt.fixtureHashes[path]));
       assert.ok(served.every(r => r.status === 200));
-    } else if (!hostCase) assert.ok(served.some(r => r.path === '/v1/health.json' && r.status === 503));
-    if (!hostCase) await page.screenshot({ path: join(output, `${failing ? '503' : 'final'}-${width}.png`), fullPage: true });
-    receipt.scenarios.push({ kind: hostCase?.name ?? (failing ? '503_no_recommendation' : 'list_to_final'), width, height: 900,
+    } else if (!hostCase && !liveCase) assert.ok(served.some(r => r.path === '/v1/health.json' && r.status === 503));
+    if (!hostCase && !liveCase) await page.screenshot({ path: join(output, `${failing ? '503' : 'final'}-${width}.png`), fullPage: true });
+    receipt.scenarios.push({ kind: liveCase?.name ?? hostCase?.name ?? (failing ? '503_no_recommendation' : 'list_to_final'), width, height: 900,
       requestCount: served.length, pageErrors: errors, fixtureGame: fixture.game, ...(hostEvidence ?? {}) });
   } finally { await bounded(context.close(), 3000); }
 }
@@ -253,7 +330,8 @@ try {
     const driverPort = Number(new URL(browserServer.wsEndpoint()).port);
     assert.ok(driverPort < 8766 || driverPort > 8772, 'protected driver port forbidden');
     browser = await chromium.connect(browserServer.wsEndpoint(), { timeout: 10000 });
-    if (suiteArg) { for (const hostCase of hostCases) await scenario(390, false, hostCase); }
+    if (liveCases.length) { for (const liveCase of liveCases) await scenario(390, false, null, liveCase); }
+    else if (suiteArg) { for (const hostCase of hostCases) await scenario(390, false, hostCase); }
     else { await scenario(390, false); await scenario(1440, false); await scenario(390, true); }
   })(), budget]);
   assert.ok(count <= 60 && !timedOut); assert.deepEqual(receipt.blocked, []);
