@@ -97,7 +97,7 @@ class Acceptance(unittest.TestCase):
         grant = {"plan_sha256": "0" * 64, "expires_epoch": now + 1800}
         args = types.SimpleNamespace(out=str(self.tmp / "out"), ledger=str(self.tmp / "ledger.json"), dry_run=False)
         heads, children = [], []
-        credentials = iter(("cx04-fake-bearer-only", "session=cx04-fake-cookie-only"))
+        credentials = iter(("cx04-fake-bearer-only-0123456789abcdefghijklm", "session=cx04-fake-cookie-only"))
 
         def prompt(_label):
             self.advance(input_delay)
