@@ -34,7 +34,7 @@
 
 | key | severity | 켜지는 때 |
 |---|---|---|
-| `start_refused` | urgent | `start` 명령 자체가 거부됨(재시도 창을 다 써도 일시적 문제가 남았거나, 영구 문제). **할 일이 없어서 끝난 경우(`no_game` 경기 없는 날, `all_final` 이미 모두 종료, `hard_end_passed` 그날 상한 지남)만 있으면 status.json을 쓰지 않는다**(전날의 정상 종료가 그대로 남고 감시기는 조용하다; REVIEW-003 B3). 이런 키가 진짜 문제와 함께 있으면 urgent로 쓴다. 감독이 없으므로 `start`가 직접 status.json을 쓴다(state `refused`, `refused_by: "start"`, `supervisor: null`). 다른 감독이 lock을 잡고 있으면 쓰지 않는다 |
+| `start_refused` | urgent | `start` 명령 자체가 거부됨(재시도 창을 다 써도 일시적 문제가 남았거나, 영구 문제). **할 일이 없어서 끝난 경우(`no_game` 경기 없는 날, `all_final` 이미 모두 종료, `hard_end_passed` 그날 상한 지남)만 있으면 status.json을 쓰지 않는다**(전날의 정상 종료가 그대로 남고 감시기는 조용하다; REVIEW-003 B3). 이런 키가 진짜 문제와 함께 있으면 urgent로 쓴다. 일정 응답은 모양을 확인한다(REVIEW-004 B4): statsapi 응답은 `dates` 목록이 있는 객체여야 하고(`totalGames`가 있으면 경기 수와 같아야 함), 일정 파일은 `rows` 또는 `dates` 목록이 있어야 한다. 오류 본문·`[]`·`{"rows": null}` 같은 것은 '경기 없음'이 아니라 일정 확인 실패로 보고 재시도한 뒤 urgent로 쓴다. 예정된 WS 경기가 연기·취소돼 경기가 없으면 거부 사유에 `called off: <경기> Postponed`가 붙는다(이때도 쓰지 않음). 감독이 없으므로 `start`가 직접 status.json을 쓴다(state `refused`, `refused_by: "start"`, `supervisor: null`). 다른 감독이 lock을 잡고 있으면 쓰지 않는다 |
 | `prestart_refused` | urgent | 시작 점검이 끝내 통과하지 못해 그날 발행기를 띄우지 않음(state `refused`) |
 | `prestart_retrying` | warn | 일시적 문제로 시작 점검을 다시 하는 중(60초 간격, 첫 투구까지) |
 | `restart_limit` | urgent | 재시작 한도(3번)를 넘어 그날 운영을 멈춤(state `failed`) |

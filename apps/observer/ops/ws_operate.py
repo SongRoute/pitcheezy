@@ -291,22 +291,30 @@ def lock_held(path):
 
 def schedule_rows(data):
     """Rows {game_pk, game_type, start_utc, kst_date, abstract, detailed, label} from a statsapi schedule body or a
-    ``pitcheezy-schedule-query-v1`` file."""
+    ``pitcheezy-schedule-query-v1`` file. A body of any other shape raises ValueError (REVIEW-004 B4): an error body,
+    ``[]`` or ``{"rows": null}`` must count as a failed schedule check, never as "no game today"."""
     rows = []
-    if isinstance(data, dict) and isinstance(data.get('rows'), list):
+    if not isinstance(data, dict) or not (isinstance(data.get('rows'), list) or isinstance(data.get('dates'), list)):
+        raise ValueError('schedule body has neither a rows list nor a dates list')
+    if isinstance(data.get('rows'), list):
         for r in data['rows']:
             rows.append({'game_pk': int(r['game_pk']), 'game_type': r.get('game_type'), 'start_utc': r['game_date_utc'],
                          'abstract': r.get('abstract'), 'detailed': r.get('detailed'),
                          'label': f"{r.get('away', '?')} @ {r.get('home', '?')}"})
     else:
-        for day in (data or {}).get('dates', []):
-            for g in day.get('games', []):
+        for day in data['dates']:
+            if not isinstance(day, dict) or not isinstance(day.get('games'), list):
+                raise ValueError('schedule date entry without a games list')
+            for g in day['games']:
                 teams = g.get('teams') or {}
                 name = lambda side: ((teams.get(side) or {}).get('team') or {}).get('name', '?')
                 rows.append({'game_pk': int(g['gamePk']), 'game_type': g.get('gameType'), 'start_utc': g['gameDate'],
                              'abstract': (g.get('status') or {}).get('abstractGameState'),
                              'detailed': (g.get('status') or {}).get('detailedState'),
                              'label': f"{name('away')} @ {name('home')}"})
+        total = data.get('totalGames')
+        if total is not None and (type(total) is not int or total != len(rows)):
+            raise ValueError(f'schedule totalGames {total!r} != {len(rows)} games listed')
     for row in rows:
         row['kst_date'] = datetime.fromtimestamp(parse_utc(row['start_utc']), KST).date().isoformat()
     return sorted(rows, key=lambda r: (r['start_utc'], r['game_pk']))
@@ -505,7 +513,10 @@ def preflight(cfg, kst_date, *, upload_requested, schedule_file=None, expect_com
     open_games = [g for g in games if g.get('abstract') != 'Final' and str(g['game_pk']) not in finals]
     report['games'] = games
     if not games and 'schedule_failed' not in keys:
-        add('no_game', f'no {"/".join(cfg["game_types"])} game scheduled on KST {kst_date}')
+        called_off = [f'{r["game_pk"]} {r.get("detailed")}' for r in rows if r['kst_date'] == kst_date
+                      and r['game_type'] in cfg['game_types'] and r.get('detailed') in ('Postponed', 'Cancelled')]
+        add('no_game', f'no {"/".join(cfg["game_types"])} game scheduled on KST {kst_date}'
+                       + (f' (called off: {", ".join(called_off)})' if called_off else ''))
     elif games and not open_games:
         add('all_final', 'every operated game of this date is already final')
     if games:

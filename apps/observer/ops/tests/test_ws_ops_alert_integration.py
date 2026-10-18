@@ -355,3 +355,14 @@ def test_off_day_and_all_final_starts_leave_the_watcher_quiet(rig, tmp_path):
     assert rig.status_path.read_bytes() == before and rig.status()['state'] == 'stopped'
     rig.watch()
     assert rig.fired() == {} and rig.events == [] and len(rig.fake.sent) == sent  # nothing new sent
+
+
+def test_statsapi_error_body_at_start_pages_instead_of_silence(rig):
+    """REVIEW-004 B4: an error body is a failed schedule check (retried, then urgent), never a quiet off day."""
+    rig.config(start_retry_s=0.1, start_retry_window_s=0.3)
+    rig.schedule.write_text(json.dumps({'messageNumber': 10, 'message': 'Object not found'}))
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 2
+    rig.watch()
+    fired = rig.fired()
+    assert fired['ops_state:refused'] == 'critical' and fired['ops_problem:start_refused'] == 'critical'

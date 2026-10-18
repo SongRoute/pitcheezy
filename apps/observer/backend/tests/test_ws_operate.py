@@ -730,3 +730,61 @@ def test_other_publisher_message_is_short(env, monkeypatch):
     ok, report, _ = ws.preflight(env.cfg(), env.date, upload_requested=False, schedule_file=str(env.schedule))
     message = [p for k, p in zip(report['problem_keys'], report['problems']) if k == 'other_publishers'][0]
     assert '(3: first pid 91001 publisher)' in message and '91002' not in message
+
+
+# ------------------------------------------------------------------------------------------------ review 004 B4 / F1
+
+MALFORMED = [{'messageNumber': 10, 'message': 'Object not found', 'timestamp': '2026-10-24T00:00:00Z'},
+             [], {'rows': None}, {'dates': None}, {'dates': [{'date': '2026-10-24'}]},
+             {'dates': [], 'totalGames': 2}]
+
+
+@pytest.mark.parametrize('body', MALFORMED, ids=['error_body', 'list', 'rows_null', 'dates_null', 'day_no_games',
+                                                 'total_mismatch'])
+def test_malformed_schedule_is_retried_then_refused_urgently(env, monkeypatch, body):
+    fast_start_retries(env, start_retry_window_s=0.35)
+    env.schedule.write_text(json.dumps(body))
+    sleeps = []
+    monkeypatch.setattr(ws, '_sleep', lambda s: sleeps.append(s) or time.sleep(s))
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 2
+    assert len(sleeps) >= 2  # retried as a failed schedule check, not taken as "no game"
+    status = json.loads((env.tmp/'ops/status.json').read_text())
+    row = [p for p in status['problems'] if p['key'] == 'start_refused'][0]
+    assert status['state'] == 'refused' and row['active'] and 'schedule check failed' in row['message']
+
+
+def test_empty_but_well_formed_schedule_is_a_quiet_off_day(env, monkeypatch):
+    monkeypatch.setattr(ws, '_sleep', lambda s: pytest.fail('an off day must not be retried'))
+    env.schedule.write_text(json.dumps({'dates': [], 'totalGames': 0}))
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 2
+    assert not (env.tmp/'ops/status.json').exists()
+
+
+def test_supervisor_prestart_treats_malformed_schedule_as_failure(env):
+    control(env, final_after=3)
+    env.schedule.write_text(json.dumps({'rows': None}))
+    cfg = env.cfg()
+    cfg['prestart_retry_s'] = 600  # no RUN.json and no retry room: refused at once, as a schedule failure
+    sup, reason = supervise(env, cfg=cfg)
+    assert reason == 'prestart_refused'
+    report = json.loads(sorted(env.run.glob('PRESTART-*.json'))[0].read_text())
+    assert report['problem_keys'] == ['schedule_failed'] and fake_events(env) == []
+    rows = ws.schedule_rows(json.loads(json.dumps({'schema': 'pitcheezy-schedule-query-v1', 'rows': [
+        {'game_pk': PK, 'game_type': 'W', 'game_date_utc': '2026-10-24T00:00:00Z'}]})))
+    (env.run/'RUN.json').write_text(json.dumps({'games': rows}))
+    (env.run/'STOP').unlink(missing_ok=True)
+    sup = ws.Supervisor(cfg, env.date, schedule_file=str(env.schedule))
+    sup.run_games = rows  # what main() reads from RUN.json
+    problems, keys = sup.prestart()
+    assert 'schedule_failed' not in keys and sup.problems['schedule_fallback']['active']
+    assert not any('schedule' in p for p in problems)  # with RUN.json: fallback, not a failure
+
+
+def test_called_off_game_is_named_in_the_no_game_reason(env, capsys):
+    start = datetime.fromisoformat(env.date+'T10:00:00+09:00').astimezone(timezone.utc)
+    env.schedule.write_text(json.dumps({'dates': [{'games': [
+        {'gamePk': PK, 'gameType': 'W', 'gameDate': start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+         'status': {'abstractGameState': 'Preview', 'detailedState': 'Postponed'}}]}], 'totalGames': 1}))
+    assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 2
+    out = capsys.readouterr().out
+    assert f'called off: {PK} Postponed' in out and not (env.tmp/'ops/status.json').exists()
