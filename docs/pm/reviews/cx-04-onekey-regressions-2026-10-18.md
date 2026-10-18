@@ -49,8 +49,8 @@ python3 -I -B tests/coordination/test_onekey_acceptance.py \
 
 독립 검토자 `coordination_review`도 같은 명시 CLI 1회(exit1, 정상3 PASS/계약4 FAIL/error0/skip0/guard실패0)와 단일 파일 discovery 1회(exit0,7skip)를 실행했다. F2 probe 목록·F3(1,1)·F4 True가 작성자 결과와 같고 실행 뒤 test/원본 SHA가 불변임을 확인했다. 동일 모델 별도 에이전트의 결과 검토 **PASS**이며 회귀 인계 품질 판정이다. 제품 수리 PASS·실호스트 검증·운영 GO가 아니다.
 
-graphify([COORD-03 확인](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6248632730)): 신규 worktree 루트에 기존 그래프가 없어 전체 저장소 bootstrap은 미실행했다. root의 후속 범위 승인으로 조정자가 `tests/coordination`에서 `graphify update .` 1회 실행해 exit0(48 nodes/62 edges/4 communities)을 확인했다. source_file은 신규 test 1개뿐이며 생성 그래프는 해당 하위 `graphify-out/`의 ignored·비커밋 산출물이다. 정본 그래프 복사·링크 없음, test SHA 불변.
+graphify([전체 저장소 확인](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6248632730), [한 파일 범위 승인](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6248638738)): 신규 worktree 루트에 기존 그래프가 없어 전체 저장소 bootstrap은 미실행했다. root의 후속 범위 승인으로 조정자가 `tests/coordination`에서 `graphify update .` 1회 실행해 exit0(48 nodes/62 edges/4 communities)을 확인했다. source_file은 신규 test 1개뿐이며 생성 그래프는 해당 하위 `graphify-out/`의 ignored·비커밋 산출물이다. 정본 그래프 복사·링크 없음, test SHA 불변.
 
 ## 인계
 
-실행 전 경계 PASS → 작성자 합성 실행·기록 → 독립 재실행·결과 검토 PASS → root 수용까지 완료했다. 동일 7검사의 별도 재실행이며 14개 검사로 합산하지 않는다. COORD-03 선별 커밋으로 인계한다. 계약 회귀 4건의 red는 그대로 보존했으며 수리·운영 GO는 미완이다. 기존 CL-09 소유자에게 회귀를 인계하며 신규 원본 수정 점유를 만들지 않는다.
+실행 전 경계 PASS → 작성자 합성 실행·기록 → 독립 재실행·결과 검토 PASS → root 수용까지 완료했다. 동일 7검사의 별도 재실행이며 14개 검사로 합산하지 않는다. root 수용 완료이며 확정 커밋·점유 반환은 [공동 큐 종료 댓글](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6248654839)과 그 후속 정정을 참조한다. 계약 회귀 4건의 red는 그대로 보존했으며 수리·운영 GO는 미완이다. 기존 CL-09 소유자에게 회귀를 인계하며 신규 원본 수정 점유를 만들지 않는다.
