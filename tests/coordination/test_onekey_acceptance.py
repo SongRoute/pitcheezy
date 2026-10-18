@@ -243,7 +243,7 @@ class Acceptance(unittest.TestCase):
                                  "clock must be a finite int/float within inclusive [-5, 5]")
 
 
-    def deferred_probe(self, target="synthetic.invalid"):
+    def deferred_probe(self, target="synthetic.invalid", transport_error=False):
         pre = {"run_id": "cx04-synthetic", "game_key": "123456",
                "target": {"upload_base": f"https://{target}/_publish/", "public_origin": f"https://{target}"}}
         args = types.SimpleNamespace(out=str(self.tmp / "out"), kind="revoked")
@@ -251,6 +251,8 @@ class Acceptance(unittest.TestCase):
 
         def head(got_pre, relative, _token, _cafile):
             heads.append((got_pre["target"].copy(), relative))
+            if transport_error:
+                raise OSError("synthetic transport failure")
             return 401, {"content_type": "application/json", "cf_mitigated_present": False,
                          "cf_ray_present": False}
 
@@ -283,6 +285,27 @@ class Acceptance(unittest.TestCase):
         self.assertEqual(len(heads), 0, f"different target must stop before HEAD; rc={rc}, result={log.get('result')}, completion={log.get('completion')}")
         self.assertNotEqual(rc, 0)
         self.assertEqual(log["result"], "MAIN_PASS_INCOMPLETE")
+
+
+    def test_deferred_retry_counts_attempts_and_stops_at_budget(self):
+        rc, log, _heads, _children = self.scenario(expired=False, answer="SKIP")
+        self.assertEqual((rc, log["result"], log["post_requests"]), (4, "MAIN_PASS_INCOMPLETE", 0))
+        for failed, expected_rc, post_count in [(True, 4, 1), (False, 0, 2), (False, 0, 3)]:
+            rc, log, heads = self.deferred_probe(transport_error=failed)
+            self.assertEqual((len(heads), rc, log["post_requests"], log["main_requests"]),
+                             (1, expected_rc, post_count, 18))
+            self.assertEqual(log["result"], "MAIN_PASS_INCOMPLETE" if failed else PASS)
+            self.assertEqual(log["completion"], "INCOMPLETE" if failed else "COMPLETE")
+            self.assertEqual([p["kind"] for p in log["probes"]], ["out_of_scope"] + ["revoked"] * post_count)
+            self.assertEqual([p["status"] for p in log["probes"]], [403, None] + [401] * (post_count - 1))
+            self.assertEqual(log["probes"][1]["error"], "OSError")
+            self.assertFalse(log["probes"][1]["pass"])
+            self.assertEqual(log["missing_evidence"], ["revoked"] if failed else [])
+        complete = log
+        rc, log, heads = self.deferred_probe()
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(heads, [], "fourth post attempt must stop before HEAD")
+        self.assertEqual(log, complete, "refusal must preserve the completed log with post3/history4")
 
 
 if __name__ == "__main__":
