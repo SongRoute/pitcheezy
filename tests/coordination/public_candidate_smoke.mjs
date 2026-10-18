@@ -8,8 +8,8 @@ import { dirname, extname, join, parse, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg, suiteArg] = process.argv.slice(2);
-assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery'].includes(suiteArg)),
-  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery] required');
+assert.ok(process.argv.length === 8 || (process.argv.length === 9 && ['--host-errors', '--live-states', '--health-freshness', '--withdrawal-recovery', '--partial-body'].includes(suiteArg)),
+  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors|--live-states|--health-freshness|--withdrawal-recovery|--partial-body] required');
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 assert.ok(hex(expectedManifest, 64) && hex(expectedSource, 40));
@@ -194,6 +194,8 @@ const receipt = { schema: 'pitcheezy-current-public-candidate-smoke-v1', status:
   requestCap: 60, executionBudgetMs: 80000, totalBudgetMs: 90000 };
 let browser, browserServer, origin, fault = false, hostError = null, count = 0, routed = 0, timedOut = false;
 let browserLaunchStarted = false, browserLaunchSettled = false;
+let partialBody = false, partialClosed, resolvePartialClosed, partialTrigger = 'initial_navigation';
+const partialResponses = [];
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',
   '.svg': 'image/svg+xml', '.json': 'application/json' };
 let rejectBudget;
@@ -205,10 +207,21 @@ const server = createServer((req, res) => {
   const permitted = req.method === 'GET' && req.headers.host === new URL(origin).host && allowed.has(url.pathname)
     && (url.pathname === '/' || !url.search);
   if (!permitted) { receipt.blocked.push('server:' + url.pathname); res.writeHead(403); res.end(); return; }
+  if (partialBody && url.pathname === `/v1/game/${fixture.game}.json`) {
+    const body = Buffer.from('{"schema":'), began = performance.now();
+    const row = { path: url.pathname, method: req.method, status: 200, sha256: sha(body), bytes: body.length,
+      partial: true, serverEnded: false, closed: false, startedMs: began, trigger: partialTrigger };
+    receipt.requests.push(row); partialResponses.push(row);
+    res.on('close', () => { row.closed = true; row.closeElapsedMs = performance.now() - began; resolvePartialClosed?.(); });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.flushHeaders(); res.write(body);  // Deliberately no end: the client's body timeout must close this response.
+    return;
+  }
   const failed = (fault || hostError) && (url.pathname === `/v1/game/${fixture.game}.json` || url.pathname === '/v1/health.json');
   const body = failed ? (hostError?.body ?? Buffer.from('{"error":"synthetic_local_503"}')) : allowed.get(url.pathname);
   const status = failed ? (hostError?.status ?? 503) : 200;
-  receipt.requests.push({ path: url.pathname, method: req.method, status, sha256: sha(body), bytes: body.length });
+  receipt.requests.push({ path: url.pathname, method: req.method, status, sha256: sha(body), bytes: body.length,
+    ...(suiteArg === '--partial-body' ? { startedMs: performance.now(), trigger: partialTrigger } : {}) });
   res.writeHead(status, { ...(liveCases.length ? { Date: 'Tue, 01 Jan 2030 00:00:00 GMT' } : {}), 'Content-Type': types[extname(url.pathname)] ?? types['.html'],
     'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; worker-src 'none'" });
   res.end(body);
@@ -237,8 +250,9 @@ function activatePhase(phase) {
     allowed.set(path, Buffer.from(JSON.stringify(body)));
   }
 }
-async function scenario(width, failing, hostCase = null, liveCase = null) {
+async function scenario(width, failing, hostCase = null, liveCase = null, partialCase = false) {
   fault = failing; hostError = hostCase;
+  if (partialCase) { partialBody = true; partialClosed = new Promise(done => { resolvePartialClosed = done; }); }
   if (liveCase) activatePhase(liveCase.phases[0]);
   const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
   try {
@@ -256,9 +270,40 @@ async function scenario(width, failing, hostCase = null, liveCase = null) {
     page.on('pageerror', e => errors.push(String(e)));
     let navigations = 0;
     page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
-    await page.goto(`${origin}/?${failing || hostCase || liveCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}/?${failing || hostCase || liveCase || partialCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
     let hostEvidence;
-    if (liveCase) {
+    if (partialCase) {
+      const alert = page.locator('.sv-alert[role=alert]');
+      await alert.waitFor({ timeout: 25000 });
+      const alertAt = performance.now();
+      assert.equal(partialResponses.length, 1, 'exactly one incomplete response before manual retry');
+      const partial = partialResponses[0], alertElapsedMs = alertAt - partial.startedMs;
+      assert.ok(alertElapsedMs >= 14000 && alertElapsedMs <= 25000, 'body timeout outside 14–25s test tolerance');
+      assert.equal(await alert.locator('p').first().innerText(), '서버 응답을 읽지 못했어요.');
+      assert.equal(await page.locator('.sv-rec-row').count(), 0);
+      await bounded(partialClosed, 2000);
+      assert.equal(partial.closed, true); assert.equal(partial.serverEnded, false);
+      assert.ok(partial.closeElapsedMs >= 14000 && partial.closeElapsedMs <= 25000);
+      await page.screenshot({ path: join(output, 'partial-timeout-390.png'), fullPage: true });
+      const retryBegin = receipt.requests.length, retryAt = performance.now();
+      assert.ok(retryAt - alertAt < 2000, 'manual retry must precede the 4s automatic retry');
+      partialBody = false; partialTrigger = 'manual_retry';
+      await alert.getByRole('button', { name: '다시 시도', exact: true }).click();
+      await page.locator('main.sv-live-layout').waitFor();
+      assert.ok(performance.now() - alertAt < 4000, 'recovery must precede automatic retry');
+      assert.match(await page.locator('.sv-live').innerText(), /종료/);
+      assert.equal(await page.locator('.sv-alert').count(), 0);
+      assert.equal(await page.locator('.sv-rec-row').count(), 0);
+      assert.equal(navigations, 1); assert.equal(partialResponses.length, 1);
+      const recoveredRequests = receipt.requests.slice(retryBegin), gamePath = `/v1/game/${fixture.game}.json`;
+      assert.ok(recoveredRequests.some(r => r.path === gamePath && r.sha256 === receipt.fixtureHashes[gamePath]));
+      assert.ok(recoveredRequests.every(r => r.status === 200 && r.trigger === 'manual_retry' && r.startedMs >= retryAt));
+      await page.screenshot({ path: join(output, 'partial-recovered-390.png'), fullPage: true });
+      hostEvidence = { alertElapsedMs, closeElapsedMs: partial.closeElapsedMs, partialResponses: partialResponses.length,
+        serverEndedPartialResponse: partial.serverEnded, partialResponseClosed: partial.closed, navigations,
+        recoveryTrigger: 'manual_retry_button', retryAfterAlertMs: retryAt - alertAt, recoveredRequests,
+        screenshots: ['partial-timeout-390.png', 'partial-recovered-390.png'] };
+    } else if (liveCase) {
       const phases = [];
       let phaseBegin = begin;
       for (const [i, phase] of liveCase.phases.entries()) {
@@ -356,13 +401,13 @@ async function scenario(width, failing, hostCase = null, liveCase = null) {
     assert.deepEqual(errors, []); assert.deepEqual(receipt.blocked, []);
     const served = receipt.requests.slice(begin), gamePath = `/v1/game/${fixture.game}.json`;
     assert.ok(served.some(r => r.path === gamePath && r.status === (hostCase?.status ?? (failing ? 503 : 200))));
-    if (!failing && !hostCase && !liveCase) {
+    if (!failing && !hostCase && !liveCase && !partialCase) {
       for (const path of ['/v1/manifest.json', `/v1/games/${fixture.date}.json`, gamePath])
         assert.ok(served.some(r => r.path === path && r.sha256 === receipt.fixtureHashes[path]));
       assert.ok(served.every(r => r.status === 200));
-    } else if (!hostCase && !liveCase) assert.ok(served.some(r => r.path === '/v1/health.json' && r.status === 503));
-    if (!hostCase && !liveCase) await page.screenshot({ path: join(output, `${failing ? '503' : 'final'}-${width}.png`), fullPage: true });
-    receipt.scenarios.push({ kind: liveCase?.name ?? hostCase?.name ?? (failing ? '503_no_recommendation' : 'list_to_final'), width, height: 900,
+    } else if (!hostCase && !liveCase && !partialCase) assert.ok(served.some(r => r.path === '/v1/health.json' && r.status === 503));
+    if (!hostCase && !liveCase && !partialCase) await page.screenshot({ path: join(output, `${failing ? '503' : 'final'}-${width}.png`), fullPage: true });
+    receipt.scenarios.push({ kind: liveCase?.name ?? hostCase?.name ?? (partialCase ? 'partial_body_timeout_recovery' : failing ? '503_no_recommendation' : 'list_to_final'), width, height: 900,
       requestCount: served.length, pageErrors: errors, fixtureGame: fixture.game, ...(hostEvidence ?? {}) });
   } finally { await bounded(context.close(), 3000); }
 }
@@ -388,6 +433,7 @@ try {
     assert.ok(driverPort < 8766 || driverPort > 8772, 'protected driver port forbidden');
     browser = await chromium.connect(browserServer.wsEndpoint(), { timeout: 10000 });
     if (liveCases.length) { for (const liveCase of liveCases) await scenario(390, false, null, liveCase); }
+    else if (suiteArg === '--partial-body') await scenario(390, false, null, null, true);
     else if (suiteArg) { for (const hostCase of hostCases) await scenario(390, false, hostCase); }
     else { await scenario(390, false); await scenario(1440, false); await scenario(390, true); }
   })(), budget]);
@@ -412,6 +458,10 @@ try {
   receipt.ownedBrowserClosed = !browserLaunchStarted || Boolean(browserLaunchSettled && ownedProcess
     && (ownedProcess.exitCode !== null || ownedProcess.signalCode !== null));
   receipt.ownedServerClosed = !server.listening;
+  if (suiteArg === '--partial-body') {
+    receipt.partialResponsesClosed = partialResponses.every(r => r.closed);
+    if (!receipt.partialResponsesClosed) { receipt.cleanupError = 'owned partial response remained open'; process.exitCode = 1; }
+  }
   receipt.routedAttempts = routed; receipt.totalCalls = count; receipt.elapsedMs = Date.now() - started;
   if (!receipt.ownedBrowserClosed || !receipt.ownedServerClosed || receipt.elapsedMs > 90000 || receipt.cleanupError) {
     receipt.status = 'FAIL_CLEANUP_OR_BUDGET'; process.exitCode = 1;
