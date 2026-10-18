@@ -114,6 +114,14 @@
 - 협업 규약 초안: 문제가 보이면 두 사람 누구나 공개 화면을 안내 문구로 바꿀 수 있다. 스위치는 팀원 쪽 호스트에 있다. 내린 뒤 이슈에 사유를 적는다.
 - 스위치 위치·방법·누가 누를 수 있는지: **미확인**(팀원 답 대기). 발행기를 끄는 것만으로는 이미 올라간 파일이 사라지지 않는다는 점에 주의한다.
 
+### 4.7 긴급 "schedule check failed: ValueError" (`start_refused`)
+- 뜻: 실행기(`ws_operate.py start`)가 경기 일정 응답을 읽지 못했다. 응답 모양이 이상하거나(경기 목록 없음, 오류 본문) `totalGames`와 실제 경기 수가 다르다. "오늘 경기 없음"으로 보지 않고 일부러 시작을 거부한 것이므로 **발행이 시작되지 않았다.**
+- 운영자가 할 일:
+  1. statsapi 일정을 손으로 확인한다: `https://statsapi.mlb.com/api/v1/schedule?sportId=1&gameType=W&date=<날짜>` (브라우저나 curl 한 번).
+  2. 일정이 정상이면 잠깐(일시 오류) 뒤 `ws_operate.py start --date <KST 날짜>`를 다시 한다. 실행기도 시작 전 창 안에서 스스로 재시도한다.
+  3. 계속 이상하면 정상 일정을 `pitcheezy-schedule-query-v1` 파일(또는 받은 statsapi 본문)로 저장해 `ws_operate.py start --date <날짜> --schedule-file <파일>`로 손으로 시작한다. 먼저 `--dry-run`.
+  4. 일정 확인용 `ws_operate.py plan`도 같은 오류를 한 줄(`schedule check failed (ValueError): ...`)로 내고 종료 코드 2로 끝난다.
+
 ## 5. 배포 규칙
 - **코드 교체는 경기와 경기 사이에만 한다.** 특히 B(결정 키 변경)가 들어간 빌드를 경기 중에 올리면 모든 추천 결정 ID가 바뀌어, 이전 결정의 저장된 추천을 찾지 못하고 같은 공에 새 "최초" 줄이 생긴다.
 - 10/21 이후에는 고장 수정만 허용한다(협업 규칙).
@@ -138,6 +146,11 @@
 - 경로 우선순위: 출력 폴더는 `--out` > 운영 상태 파일의 `out_dir`(그날 실행 폴더) > `PITCHEEZY_PUBLISH_OUT_DIR`. 상태 파일은 운영 상태의 `state_path` > `PITCHEEZY_PUBLISH_STATE` > `<출력 폴더>.state.json`. **상태 파일 이름은 발행기가 실제 쓰는 것과 같아야 한다**(리허설 폴더는 `publisher.state.json`이므로 운영 상태 파일이 없으면 `PITCHEEZY_PUBLISH_STATE`로 꼭 준다). 운영 상태 파일 기본 위치 `~/Projects/pitcheezy-pm-jobs/ws-ops/status.json`(`PITCHEEZY_WS_OPS_ROOT`, `PITCHEEZY_WS_OPS_STATUS`, `--ops-status`로 바꿈, 없으면 읽지 않음). 기록 폴더 `--alert-dir`/`PITCHEEZY_ALERT_DIR`.
 - 알림 시험: `--test-notify`는 맥 알림 + `alerts.jsonl`만(로컬). `--test-notify --push`가 아래 폰 알림까지 보낸다.
 - 띄우는 곳: 리허설에서 tmux `runs` 창에 `--loop`로 띄운다(launchd 등록은 아직 안 함, 정하면 여기 적는다). 감시기를 끄는 것은 그 창의 Ctrl-C.
+
+### 7.1.1 감시기 `schedule` 목록 갱신 (2026-10-18)
+- `ws_alert_config.json`의 `schedule`은 발행기·운영 상태가 경기를 알려 주지 못할 때의 **이중 안전망**이다. 월드시리즈 7경기(`849805, 849802, 849804, 849803, 849799, 849801, 849800`, 2026-10-24~11-01)를 넣어 두었다. **시각이 전부 `T00:00:00Z` 자리표시자라 잠정 — MLB가 확정하면 갱신한다**(config의 `schedule_provisional_note`).
+- 창은 시작 30분 전 ~ final 또는 시작 + 6시간이라 경기 시간대 밖에서는 조용하다(자리표시자 시각이 틀려도 그 시각 근처에서만 울릴 수 있다).
+- 갱신: 저장한 일정(statsapi 본문 또는 `pitcheezy-schedule-query-v1`)에서 `gameType` W인 경기의 `gamePk`·`gameDate`(UTC)를 `{"game_pk": N, "start": "YYYY-MM-DDTHH:MM:SSZ"}`로 바꿔 쓴다. 연기·추가 경기는 줄을 고치거나 더한다. 확정 뒤 `--once --dry-run`으로 확인, 감시기 재시작(`--loop`는 설정을 시작 때 읽는다).
 
 ### 7.2 규칙
 "경기 시간대"는 시작 30분 전부터 경기가 final이 될 때까지(최대 시작+6시간). 경기 목록은 발행기의 `games/<어제·오늘·내일>.json`, 운영 상태 파일(그날 것만), 설정 `schedule`(발행기가 아직 목록을 못 만든 경우의 수동 보조)에서 모은다. 연기(`postponed`, 서스펜디드 포함)·final·other 경기는 시간대를 열지 않는다. 시간대가 열리면 "감시 시작: 경기 <번호>", 닫히면 "감시 끝" 알림을 한 번씩 보낸다 — **경기 날 "감시 시작"이 안 오면 감시기가 꺼진 것이다.** **경기 시간대가 아니면 경기 관련 규칙은 평가하지 않는다(조용함).**
@@ -227,3 +240,9 @@ Song이 할 일(iMessage, 쓰려면):
 7. 끄기: 실행기는 `ws_operate.py stop --date <날짜>`, 감시기는 그 창의 Ctrl-C. 끄는 순서는 상관없다(감시기가 먼저 꺼지면 알림만 없다).
 
 모르는 것(아직 정하지 않음): 감시기를 launchd KeepAlive로 띄울지·실행기 감독 아래 둘지, 폰 알림 방식(ntfy 주제 미설정), 모든 기준값(잠정), 실경기·리허설에서 둘을 같이 돌린 기록 없음, 운영 상태의 `upstream_changed_at`은 실행기가 채우지 않음(`file_stuck`은 300초 기준만).
+
+### 7.7 Song 결정 (2026-10-18)
+- 재시작: 발행기가 예상 밖으로 죽으면 최대 3번, 30/60/120초 간격으로 다시 띄운다.
+- 선행: 첫 투구 30분 전에 실행기가 발행기를 시작한다(`lead_min` 30).
+- 폰 알림: ntfy와 iMessage를 **둘 다** 쓴다(`PITCHEEZY_ALERT_PUSH=ntfy,imessage`, 7.4). 주제·번호는 문서에 적지 않는다.
+- launchd 매일 시작(예시 plist): 월드시리즈 일정이 **확정된 뒤에만** 설치한다. 그 전에는 설치하지 않는다.
