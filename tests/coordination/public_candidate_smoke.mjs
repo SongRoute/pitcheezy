@@ -7,8 +7,9 @@ import { lstatSync, readFileSync, writeFileSync, mkdirSync, rmSync, symlinkSync 
 import { dirname, extname, join, parse, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg] = process.argv.slice(2);
-assert.equal(process.argv.length, 8, 'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output required');
+const [manifestArg, expectedManifest, expectedSource, buildArg, playwrightArg, outArg, suiteArg] = process.argv.slice(2);
+assert.ok(process.argv.length === 8 || (process.argv.length === 9 && suiteArg === '--host-errors'),
+  'manifest manifestSHA sourceSHA build playwright/index.mjs NEW_output [--host-errors] required');
 const sha = b => createHash('sha256').update(b).digest('hex');
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 assert.ok(hex(expectedManifest, 64) && hex(expectedSource, 40));
@@ -119,9 +120,9 @@ const allowed = new Map([...assets.allowed, ...fixture.files]);
 const receipt = { schema: 'pitcheezy-current-public-candidate-smoke-v1', status: 'INCOMPLETE',
   source: expectedSource, manifestSHA: expectedManifest, buildHashes: assets.hashes,
   fixtureHashes: Object.fromEntries([...fixture.files].map(([p, b]) => [p, sha(b)])), controls,
-  transport: 'owned_loopback_HTTP_not_TLS', requests: [], blocked: [], scenarios: [],
+  suite: suiteArg ? 'host-errors' : 'default', transport: 'owned_loopback_HTTP_not_TLS', requests: [], blocked: [], scenarios: [],
   requestCap: 60, executionBudgetMs: 80000, totalBudgetMs: 90000 };
-let browser, browserServer, origin, fault = false, count = 0, routed = 0, timedOut = false;
+let browser, browserServer, origin, fault = false, hostError = null, count = 0, routed = 0, timedOut = false;
 let browserLaunchStarted = false, browserLaunchSettled = false;
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',
   '.svg': 'image/svg+xml', '.json': 'application/json' };
@@ -134,9 +135,9 @@ const server = createServer((req, res) => {
   const permitted = req.method === 'GET' && req.headers.host === new URL(origin).host && allowed.has(url.pathname)
     && (url.pathname === '/' || !url.search);
   if (!permitted) { receipt.blocked.push('server:' + url.pathname); res.writeHead(403); res.end(); return; }
-  const failed = fault && (url.pathname === `/v1/game/${fixture.game}.json` || url.pathname === '/v1/health.json');
-  const body = failed ? Buffer.from('{"error":"synthetic_local_503"}') : allowed.get(url.pathname);
-  const status = failed ? 503 : 200;
+  const failed = (fault || hostError) && (url.pathname === `/v1/game/${fixture.game}.json` || url.pathname === '/v1/health.json');
+  const body = failed ? (hostError?.body ?? Buffer.from('{"error":"synthetic_local_503"}')) : allowed.get(url.pathname);
+  const status = failed ? (hostError?.status ?? 503) : 200;
   receipt.requests.push({ path: url.pathname, method: req.method, status, sha256: sha(body), bytes: body.length });
   res.writeHead(status, { 'Content-Type': types[extname(url.pathname)] ?? types['.html'],
     'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; worker-src 'none'" });
@@ -150,8 +151,18 @@ async function bounded(promise, ms) {
     timer = setTimeout(() => reject(new Error('owned resource cleanup timeout')), ms);
   })]); } finally { clearTimeout(timer); }
 }
-async function scenario(width, failing) {
-  fault = failing;
+const sentinel = 'REMOTE_DETAIL_MUST_NOT_RENDER_CX08';
+const hostCases = [
+  ['access_required', 401, null, '접근 확인이 필요해요. 페이지를 새로고침해 다시 접속해 주세요.'],
+  ['maintenance', 503, 'maintenance', '서비스 점검 중이에요. 잠시 후 다시 확인해 주세요.'],
+  ['data_hold', 503, 'data_hold', '자료를 확인하고 있어요. 확인이 끝나면 다시 보여 드려요.'],
+  ['unknown_notice', 503, 'synthetic_unknown', '서비스 안내로 자료 제공이 잠시 중단됐어요. 잠시 후 다시 확인해 주세요.'],
+  ['retry_final', 503, 'maintenance', '서비스 점검 중이에요. 잠시 후 다시 확인해 주세요.'],
+].map(([name, status, id, expected]) => ({ name, status, expected,
+  body: Buffer.from(JSON.stringify({ error: status === 401 ? 'access_required' : 'service_notice',
+    message: sentinel, detail: sentinel, ...(id ? { notice: { id, message: sentinel, detail: sentinel } } : {}) })) }));
+async function scenario(width, failing, hostCase = null) {
+  fault = failing; hostError = hostCase;
   const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
   try {
     await context.route('**/*', route => {
@@ -166,8 +177,39 @@ async function scenario(width, failing) {
     const page = await context.newPage(), errors = [], begin = receipt.requests.length;
     page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(15000);
     page.on('pageerror', e => errors.push(String(e)));
-    await page.goto(`${origin}/?${failing ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
-    if (failing) {
+    await page.goto(`${origin}/?${failing || hostCase ? `game=${fixture.game}` : `date=${fixture.date}`}`, { waitUntil: 'domcontentloaded' });
+    let hostEvidence;
+    if (hostCase) {
+      const alert = page.locator('.sv-alert[role=alert]');
+      await alert.waitFor();
+      assert.equal(await alert.locator('p').first().innerText(), hostCase.expected);
+      assert.equal(await page.locator('.sv-rec-row').count(), 0);
+      assert.ok(!(await page.locator('body').innerText()).includes(sentinel));
+      const errorRequests = receipt.requests.slice(begin).filter(r => r.path === `/v1/game/${fixture.game}.json` || r.path === '/v1/health.json');
+      assert.ok(errorRequests.some(r => r.path === `/v1/game/${fixture.game}.json`));
+      assert.ok(errorRequests.every(r => r.status === hostCase.status && r.sha256 === sha(hostCase.body)));
+      const initialScreenshot = `${hostCase.name}-390.png`;
+      await page.screenshot({ path: join(output, initialScreenshot), fullPage: true });
+      hostEvidence = { expectedRender: hostCase.expected, initialRecommendationRows: 0, remoteSentinelVisible: false,
+        errorBodySHA: sha(hostCase.body), errorRequests, screenshots: [initialScreenshot], recovered: false };
+      if (hostCase.name === 'retry_final') {
+        const retryBegin = receipt.requests.length;
+        hostError = null;
+        await alert.getByRole('button', { name: '다시 시도', exact: true }).click();
+        await page.locator('main.sv-live-layout').waitFor();
+        assert.match(await page.locator('.sv-live').innerText(), /종료/);
+        assert.equal(await page.locator('.sv-alert').count(), 0);
+        assert.ok(!(await page.locator('body').innerText()).includes(sentinel));
+        const recoveredRequests = receipt.requests.slice(retryBegin);
+        const gamePath = `/v1/game/${fixture.game}.json`;
+        assert.ok(recoveredRequests.some(r => r.path === gamePath && r.status === 200 && r.sha256 === receipt.fixtureHashes[gamePath]));
+        assert.ok(recoveredRequests.every(r => r.status === 200));
+        await page.screenshot({ path: join(output, 'retry_final-recovered-390.png'), fullPage: true });
+        Object.assign(hostEvidence, { recovered: true, recoveryTrigger: 'manual_retry_button', recoveredRequests,
+          consumedFixtureSHA: receipt.fixtureHashes[gamePath] });
+        hostEvidence.screenshots.push('retry_final-recovered-390.png');
+      }
+    } else if (failing) {
       await page.locator('.sv-alert[role=alert]').waitFor();
       assert.equal(await page.locator('.sv-rec-row').count(), 0);
     } else {
@@ -179,15 +221,15 @@ async function scenario(width, failing) {
     }
     assert.deepEqual(errors, []); assert.deepEqual(receipt.blocked, []);
     const served = receipt.requests.slice(begin), gamePath = `/v1/game/${fixture.game}.json`;
-    assert.ok(served.some(r => r.path === gamePath && r.status === (failing ? 503 : 200)));
-    if (!failing) {
+    assert.ok(served.some(r => r.path === gamePath && r.status === (hostCase?.status ?? (failing ? 503 : 200))));
+    if (!failing && !hostCase) {
       for (const path of ['/v1/manifest.json', `/v1/games/${fixture.date}.json`, gamePath])
         assert.ok(served.some(r => r.path === path && r.sha256 === receipt.fixtureHashes[path]));
       assert.ok(served.every(r => r.status === 200));
-    } else assert.ok(served.some(r => r.path === '/v1/health.json' && r.status === 503));
-    await page.screenshot({ path: join(output, `${failing ? '503' : 'final'}-${width}.png`), fullPage: true });
-    receipt.scenarios.push({ kind: failing ? '503_no_recommendation' : 'list_to_final', width, height: 900,
-      requestCount: served.length, pageErrors: errors, fixtureGame: fixture.game });
+    } else if (!hostCase) assert.ok(served.some(r => r.path === '/v1/health.json' && r.status === 503));
+    if (!hostCase) await page.screenshot({ path: join(output, `${failing ? '503' : 'final'}-${width}.png`), fullPage: true });
+    receipt.scenarios.push({ kind: hostCase?.name ?? (failing ? '503_no_recommendation' : 'list_to_final'), width, height: 900,
+      requestCount: served.length, pageErrors: errors, fixtureGame: fixture.game, ...(hostEvidence ?? {}) });
   } finally { await bounded(context.close(), 3000); }
 }
 try {
@@ -211,7 +253,8 @@ try {
     const driverPort = Number(new URL(browserServer.wsEndpoint()).port);
     assert.ok(driverPort < 8766 || driverPort > 8772, 'protected driver port forbidden');
     browser = await chromium.connect(browserServer.wsEndpoint(), { timeout: 10000 });
-    await scenario(390, false); await scenario(1440, false); await scenario(390, true);
+    if (suiteArg) { for (const hostCase of hostCases) await scenario(390, false, hostCase); }
+    else { await scenario(390, false); await scenario(1440, false); await scenario(390, true); }
   })(), budget]);
   assert.ok(count <= 60 && !timedOut); assert.deepEqual(receipt.blocked, []);
   receipt.status = 'PASS_PINNED_CANDIDATE_SYNTHETIC_HTTP';
