@@ -1298,7 +1298,10 @@ class Publisher:
         return (self._schedule_down and self._schedule_asked > 0) or (budget and self.monotonic() >= self._schedule_deadline)
 
     def _shows_held(self, path, held):
-        """Whether the published list at ``path`` shows a card of a game a demo holds (unreadable: assumed yes)."""
+        """Whether the published list at ``path`` shows a card of a game a demo holds. A file that is there but
+        cannot be parsed counts as yes (deleted). ``sink.read`` answering None counts as no (kept): for the local
+        folder sink (and ``MirrorSink``, which reads the local copy) that means no file; a sink that cannot read
+        back at all also answers None, and then the list is kept. The production sinks all read back."""
         try:
             data = self.sink.read(path)
             if data is None:  # nothing published there
@@ -1315,8 +1318,9 @@ class Publisher:
         """Keep a down schedule from holding cycles. ``feed`` is the app's live feed: its ``schedule`` is wrapped
         (on the instance; a later publisher over the same feed rewraps the original). The schedule is DOWN after a
         request fails as an outage does (``outage_error``: no answer, timeout, 5xx or 429 after the feed's
-        retries) before any other request of the cycle was answered; an answer ends it. A day whose last request
-        failed so is asked with a single attempt until it answers. While it is down, inside a cycle the first request is a probe with
+        retries) before any other request of the cycle was answered, for a day not already known to fail; an
+        answer ends it. A day whose last request failed so is asked with a single attempt until it answers, and its
+        repeated failures alone never make the schedule down (nor keep it from recovering). While it is down, inside a cycle the first request is a probe with
         a single attempt (at most one ``timeout_s``; ``_lists`` gives it to each live date in turn) and every
         further request of that cycle is refused at once (``LiveFeedError``, which the list builder turns into
         ``live_ok: false``). A failure that is not an outage (a 4xx, an answer that cannot be read) concerns only
@@ -1344,11 +1348,14 @@ class Publisher:
                 rows = original(day)
             except BaseException as error:
                 if outage_error(error):
-                    if len(self._failing_days) >= 32:  # bounded: only the live window's days matter
-                        self._failing_days.clear()
-                    self._failing_days.add(day)
-                    # one day that keeps failing while others answered in this cycle is that day's problem
-                    self._schedule_down = not self._schedule_answered
+                    if day not in self._failing_days:
+                        # a new failure before anything answered in this cycle: the schedule is down. A day already
+                        # known to fail leaves the state as it is (a lone bad day asked first in a cycle would
+                        # otherwise turn every other cycle down and make the other lists flap)
+                        self._schedule_down = self._schedule_down or not self._schedule_answered
+                        if len(self._failing_days) >= 32:  # bounded: only the live window's days matter
+                            self._failing_days.clear()
+                        self._failing_days.add(day)
                 else:
                     self._failing_days.discard(day)
                 raise
