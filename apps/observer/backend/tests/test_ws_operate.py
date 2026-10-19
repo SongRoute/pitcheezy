@@ -798,3 +798,12 @@ def test_called_off_game_is_named_in_the_no_game_reason(env, capsys):
     assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 2
     out = capsys.readouterr().out
     assert f'called off: {PK} Postponed' in out and not (env.tmp/'ops/status.json').exists()
+
+
+def test_preflight_mount_check_uses_the_shared_helper(env, monkeypatch):
+    """OPS-03: preflight and the running supervisor judge required_mounts with the same helper."""
+    monkeypatch.setattr(ws, 'is_mounted', lambda path: False)
+    cfg = dict(env.cfg(), required_mounts=['/nonexistent/ops03-fake-T7'])
+    assert ws.missing_mounts(cfg) == ['/nonexistent/ops03-fake-T7']
+    ok, report, _ = ws.preflight(cfg, env.date, upload_requested=False, schedule_file=str(env.schedule))
+    assert not ok and 'mount' in report['problem_keys'] and 'mount' in ws.TRANSIENT

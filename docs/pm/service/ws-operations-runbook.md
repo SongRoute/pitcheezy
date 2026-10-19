@@ -157,6 +157,15 @@
   3. 계속 이상하면 정상 일정을 `pitcheezy-schedule-query-v1` 파일(또는 받은 statsapi 본문)로 저장해 `ws_operate.py start --date <날짜> --schedule-file <파일>`로 손으로 시작한다. 먼저 `--dry-run`.
   4. 일정 확인용 `ws_operate.py plan`도 같은 오류를 한 줄(`schedule check failed (ValueError): ...`)로 내고 종료 코드 2로 끝난다.
 
+### 4.8 T7가 빠졌을 때 (2026-10-19, OPS-03)
+추천 모델(ARM-B)의 등록 파일·체크포인트·준비 파일은 모두 T7(`/Volumes/T7 Shield/pitcheezy/pitchmdp`)에 있다. 모델은 시작할 때 메모리에 다 올라가지 않는다. 경기마다 처음 계산할 때와 앞 상황이 바뀌어 다시 묶을 때 체크포인트를 읽고, **투구마다 작은 준비 파일을 T7에서 다시 읽는다.** 경기 상황 발행 자체는 T7을 쓰지 않는다(출력·저장소·원장은 `ops_root` 아래).
+- **경기 중 빠지면:** 발행기는 멈추지도 재시작하지도 않는다. 경기 상황·점수·투구 기록은 계속 나간다. 새 투구마다 추천 칸만 **"추천 없음 — 이 상황의 추천을 계산하지 못했어요."**로 바뀐다. 운영 상태에 경고 `mount_lost`가 켜지고 감시기가 `ops_problem:mount_lost`(경고)를 한 번 보낸다.
+- **할 일:** T7을 다시 꽂고 Finder나 `ls "/Volumes/T7 Shield"`로 같은 이름으로 붙었는지 본다(`T7 Shield 1`처럼 다른 이름이면 꺼냈다 다시 꽂는다). 같은 자리에 붙으면 다음 새 투구부터 추천이 **저절로** 돌아오고 경고도 풀린다. 발행기는 건드리지 않는다.
+- **발행기가 T7 없이 (재)시작됐으면:** 시작은 된다(죽지 않으므로 재시작 반복도 없다). 다만 그 프로세스는 추천 모델을 한 번만 읽으려 하므로 화면은 **"추천 준비 안 됨 — 추천 모델을 준비하지 못했어요."**이고 T7이 돌아와도 그대로다. 운영 상태에는 T7 없는 동안 `mount_lost`, 돌아온 뒤 `mount_restart_needed`가 켜진다. T7을 붙인 뒤 `ws_operate.py stop --date <KST 날짜>` → 감독이 끝나면(`status`로 확인) `ws_operate.py start --date <KST 날짜>`(먼저 `--dry-run`). 같은 커밋이면 경기 중 다시 시작해도 배포 가드에 걸리지 않는다. 다시 시작하는 동안 갱신이 잠시 멈추므로(길이는 미측정) 이닝 교대 때 한다.
+- **실행기가 멈춰 있으면**(state `stopped`/`refused`): T7을 붙이고 `ws_operate.py start --date <KST 날짜>`.
+- **주의:** 시작 전 점검은 T7이 없으면 첫 투구까지 재시도한 뒤 그날 발행을 통째로 거부한다(`prestart_refused`; 추천 없이 경기만 내보내는 길은 없음). 경기 직전에 T7을 확인한다.
+- 근거: `apps/observer/backend/tests/test_publisher_storage_loss.py`(가짜 T7 폴더 이름을 바꿔 빠짐을 흉내냄), `apps/observer/ops/tests/test_ws_ops_alert_integration.py`의 OPS-03 테스트. 실제 T7을 뽑아 본 시험은 아니다(**실기 미검증**).
+
 ## 5. 배포 규칙
 - **코드 교체는 경기와 경기 사이에만 한다.** 특히 B(결정 키 변경)가 들어간 빌드를 경기 중에 올리면 모든 추천 결정 ID가 바뀌어, 이전 결정의 저장된 추천을 찾지 못하고 같은 공에 새 "최초" 줄이 생긴다.
 - 10/21 이후에는 고장 수정만 허용한다(협업 규칙).
@@ -225,7 +234,7 @@ MLB가 월드시리즈 첫 투구 시각을 확정하면 아래 순서로 한다
 | `disk_low` | 홈·출력 폴더 상위의 여유 < 12.5 GiB | 경고 | 아니오 |
 | `profile_refresh:<날짜>` | 21:20 KST 이후 `RESULTS.log` 마지막 줄이 `ok target=<오늘> cutoff=<어제>`가 아님 | 경고 | 아니오 |
 | `ops_state:<상태>` | 운영 감독 `state`가 backoff·refused·failed(긴급), stopped+`hard_end`(경고) | 긴급/경고 | 아니오 |
-| `ops_problem:<키>` | 운영 상태 `problems`(severity `urgent`→긴급), 문자열 `alerts` 중 감시기가 직접 보지 않는 것(`protected_process_changed`는 긴급). 감시기가 같은 근거로 보는 것(`memory_low`, `health_stale`, `feed_failing`, `upload_blocked`)은 되풀이하지 않는다. 파일이 깨졌으면 `ops_problem:unreadable` | 파일이 준 등급 | 아니오 |
+| `ops_problem:<키>` | 운영 상태 `problems`(severity `urgent`→긴급), 문자열 `alerts` 중 감시기가 직접 보지 않는 것(`protected_process_changed`는 긴급). 감시기가 같은 근거로 보는 것(`memory_low`, `health_stale`, `feed_failing`, `upload_blocked`)은 되풀이하지 않는다. T7이 빠지면 `ops_problem:mount_lost`, T7 없이 시작된 발행기는 T7이 돌아온 뒤 `ops_problem:mount_restart_needed`(둘 다 경고, 4.8). 파일이 깨졌으면 `ops_problem:unreadable` | 파일이 준 등급 | 아니오 |
 | `ops_status_stale` | 운영 상태 heartbeat(`updated_at`, 없으면 `written_epoch`)가 running/backoff에서 90초, 그 밖(waiting 등)에서 300초 넘게 지남. stopped/refused/failed와 다른 날짜(`kst_date`) 파일은 보지 않음 | 경고 | 아니오 |
 | `watch_config` | 출력 폴더가 지정되지 않음 | 경고 | 아니오 |
 

@@ -366,3 +366,65 @@ def test_statsapi_error_body_at_start_pages_instead_of_silence(rig):
     rig.watch()
     fired = rig.fired()
     assert fired['ops_state:refused'] == 'critical' and fired['ops_problem:start_refused'] == 'critical'
+
+
+# ---- OPS-03: the T7 artifact drive goes away while the publisher runs (a fake mount path; the real T7 is never read)
+FAKE_MOUNT = '/nonexistent/ops03-fake-T7'
+
+
+def active(status, key):
+    return any(p['key'] == key and p['active'] for p in status['problems'])
+
+
+def test_drive_lost_mid_run_is_one_warning_and_clears_when_it_returns(rig, monkeypatch):
+    up = {'now': True}
+    monkeypatch.setattr(ws, 'is_mounted', lambda path: path == FAKE_MOUNT and up['now'])
+    rig.config(required_mounts=[FAKE_MOUNT])
+    rig.control(interval=0.1)
+    rig.start()
+    rig.until(running_with_health)
+    up['now'] = False
+    status = rig.until(lambda s: active(s, 'mount_lost'))
+    # the publisher is not stopped or restarted for it: only the recommendation goes away
+    assert status['state'] == 'running' and status['publisher']['running'] is True and status['restarts']['count'] == 0
+    assert status['resources']['mounts_missing'] == [FAKE_MOUNT]
+    rig.watch()
+    assert rig.fired() == {'ops_problem:mount_lost': 'warn'}
+    body = rig.fake.sent[-1]['body']
+    assert 'not mounted' in body and FAKE_MOUNT not in body and not rig.fake.sent[-1]['critical']
+    up['now'] = True
+    status = rig.until(lambda s: not active(s, 'mount_lost'))
+    assert not active(status, 'mount_restart_needed')  # this segment loaded with the drive: it recovers by itself
+    rig.watch()
+    assert set(rig.fired('recover')) == {'ops_problem:mount_lost'} and rig.fired() == {}
+    rig.stop()
+    assert rig.result['reason'] == 'operator_stop'
+
+
+def test_segment_started_without_the_drive_asks_for_a_restart_after_it_returns(rig, monkeypatch):
+    calls, up = [], {'now': False}
+
+    def mounted(path):
+        calls.append(path)
+        return len(calls) == 1 or up['now']  # prestart sees it; it is gone when the publisher starts
+    monkeypatch.setattr(ws, 'is_mounted', mounted)
+    rig.config(required_mounts=[FAKE_MOUNT])
+    rig.control(interval=0.1)
+    rig.start()
+    rig.until(lambda s: running_with_health(s) and active(s, 'mount_lost'))
+    up['now'] = True
+    status = rig.until(lambda s: active(s, 'mount_restart_needed') and not active(s, 'mount_lost'))
+    assert status['state'] == 'running' and status['restarts']['count'] == 0
+    rig.watch()
+    assert rig.fired().get('ops_problem:mount_restart_needed') == 'warn'
+    assert 'stop + start' in rig.fake.sent[-1]['body']
+    rig.stop()
+    status = rig.status()
+    assert not active(status, 'mount_restart_needed') and not active(status, 'mount_lost')
+
+
+def test_mount_problem_keys_are_warnings_that_pass_through_the_watcher():
+    """OPS-03 keys: launcher warnings the watcher forwards as ops_problem:<key> (it cannot see the mount itself)."""
+    assert 'mount_lost' in ws.ALERT_KEYS and 'mount_restart_needed' in ws.ALERT_KEYS
+    assert ws.PROBLEM_SEVERITY['mount_lost'] == ws.PROBLEM_SEVERITY['mount_restart_needed'] == 'warn'
+    assert 'mount_lost' not in wa.OPS_ALERTS_COVERED  # the watcher cannot see the mount itself: it passes through
