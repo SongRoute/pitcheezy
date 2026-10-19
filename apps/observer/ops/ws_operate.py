@@ -62,6 +62,10 @@ TOKEN_FILE_ENV = 'PITCHEEZY_WS_OPS_TOKEN_FILE'
 BASE_URL_ENV = 'PITCHEEZY_WS_OPS_UPLOAD_BASE_URL'
 PROFILE_ENV = 'PITCHEEZY_OBSERVER_PROFILE_SOURCES'
 FAKE_ENV = 'PITCHEEZY_WS_OPS_FAKE_PUBLISHER'  # tests only: run this script instead of the real publisher module
+# drills only, and only together with FAKE_ENV: the 'other publishers' guard reads this JSON list of [pid, ppid, command]
+# instead of the real process table, so an offline drill can run beside a live rehearsal (OPS-02). A real publisher is
+# never started with it: without FAKE_ENV it is ignored.
+FAKE_TABLE_ENV = 'PITCHEEZY_WS_OPS_FAKE_PROCESS_TABLE'
 PUBLISHER_MODULE = 'observer_app.publisher'
 PROTECTED_PORTS = tuple(range(8766, 8773))
 DEMO_PORT = 8772
@@ -227,9 +231,21 @@ def publisher_kind(command):
     return None
 
 
+def injected_process_table(env=None):
+    """The drill's process table (FAKE_TABLE_ENV) when the fake publisher is in use, else None. An unreadable or
+    malformed file raises: a drill must not silently fall back to a guard it did not ask for."""
+    env = os.environ if env is None else env
+    if not (env.get(FAKE_ENV) and env.get(FAKE_TABLE_ENV)):
+        return None
+    rows = json.loads(Path(env[FAKE_TABLE_ENV]).read_text())
+    return [(int(pid), int(ppid), str(command)) for pid, ppid, command in rows]
+
+
 def other_publishers(table=None, me=None, extra_mine=()):
     """Publishers and supervisors other than this process, its ancestors, its children and ``extra_mine``."""
-    table = process_table() if table is None else table
+    if table is None:
+        table = injected_process_table()
+        table = process_table() if table is None else table
     me = os.getpid() if me is None else me
     parent = {pid: ppid for pid, ppid, _ in table}
     mine, cursor = {me, *extra_mine}, me
@@ -763,7 +779,8 @@ class Supervisor:
                 'running': True, 'pid': self.proc.pid, 'lstart': self.ident and self.ident['lstart'], 'segment': self.segment,
                 'started_at': now_iso(self.segment_started), 'commit': self.commit, 'commit_dirty': self.commit_dirty,
                 'armb': self.armb, 'fixed_delay_s': self.cfg['fixed_delay_s'], 'upload_enabled': self.upload,
-                'childwatch_pid': self.childwatch_pid, 'fake': bool(os.environ.get(FAKE_ENV))},
+                'childwatch_pid': self.childwatch_pid, 'fake': bool(os.environ.get(FAKE_ENV)),
+                'fake_process_table': bool(os.environ.get(FAKE_ENV) and os.environ.get(FAKE_TABLE_ENV))},
             'health': None if self.health is None else {
                 'sequence': health.get('sequence'), 'published_at': health.get('published_at'),
                 'observed_at': now_iso(self.health_seen_at), 'age_s': round(now-self.health_seen_at, 1),
