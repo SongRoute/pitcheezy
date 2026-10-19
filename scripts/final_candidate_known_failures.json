@@ -10,5 +10,7 @@
   {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_service_context_rev3\\.py::test_every_cutoff_linescore_agrees_with_situation_and_final_matches_feed$", "max": 1,
    "reason": "data-dependent: 849819_final from external feeds (BLK-06 receipt, TST-01 pending)"},
   {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_profile_reference\\.py::test_a_differing_pin_fails_closed_and_importing_leaves_no_trace$", "max": 1,
-   "reason": "environment: a pre-existing external __pycache__ under pm-jobs step5 (BLK-06 receipt, TST-01 pending)"}
+   "reason": "environment: a pre-existing external __pycache__ under pm-jobs step5 (BLK-06 receipt, TST-01 pending)"},
+  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_publisher_background\\.py::test_retry_cursor_passes_large_head_failure_prefix$", "max": 1,
+   "reason": "known flaky: MirrorSink background upload timing, 1 of 3 runs failed in the CL-03d review (ws-operations-runbook.md)"}
 ]
