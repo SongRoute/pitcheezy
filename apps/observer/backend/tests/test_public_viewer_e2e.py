@@ -21,9 +21,11 @@ REPO = Path(__file__).resolve().parents[4]
 WEB = REPO/'apps/observer/web'
 CANDIDATE_ENV = 'OBSERVER_E2E_CANDIDATE'
 CANDIDATE_SCHEMA = 'pitcheezy-public-e2e-candidate-v1'
-# Files that determine the public build bytes; the source pin requires these to equal the pinned commit.
+# Files that determine the public build bytes; the source pin requires these to equal the pinned commit, with no
+# untracked or ignored extras. `vite --mode public` also reads .env, .env.local and .env.public.local from this folder
+# (absent at the pinned commit, so any copy on disk refuses) and lets shell VITE_* variables win (refused below).
 WEB_BUILD_INPUTS = ('index.html', 'public', 'src', 'package.json', 'package-lock.json', 'tsconfig.json',
-                    'vite.config.ts', '.env.public')
+                    'vite.config.ts', '.env', '.env.local', '.env.public', '.env.public.local')
 PR42_RUNTIME = '/Users/song/Projects/pitcheezy-pm-jobs/20261017-ws-launch-prep/I-partner-pack/compat-v4.3/runtime'
 DEFAULT_CANDIDATE = {
     'schema': CANDIDATE_SCHEMA,
@@ -85,6 +87,10 @@ def load_candidate(env=None):
         path = _regular(Path(env[CANDIDATE_ENV]))
         raw = path.read_bytes()
         candidate, origin = json.loads(raw), {'source': str(path), 'sha256': hashlib.sha256(raw).hexdigest()}
+        # A custom candidate names its own smoke script, so that script must be pinned too.
+        digest = candidate.get('smoke', {}).get('sha256') if isinstance(candidate.get('smoke'), dict) else None
+        if not (isinstance(digest, str) and len(digest) == 64 and all(c in '0123456789abcdef' for c in digest)):
+            raise PinMismatch(f'{CANDIDATE_ENV} candidate must pin smoke.sha256 (64 hex)')
     else:
         candidate, origin = DEFAULT_CANDIDATE, {'source': 'DEFAULT_CANDIDATE'}
     if candidate.get('schema') != CANDIDATE_SCHEMA:
@@ -95,8 +101,13 @@ def load_candidate(env=None):
     return candidate, origin
 
 
-def verify_source(candidate, repo=REPO):
-    """Web build inputs in this checkout (working tree included) must equal the pinned source commit."""
+def verify_source(candidate, repo=REPO, env=None):
+    """Web build inputs in this checkout (working tree included, no untracked or ignored extras, no shell VITE_*
+    overrides) must equal the pinned source commit."""
+    env = os.environ if env is None else env
+    overrides = sorted(key for key in env if key.startswith('VITE_'))
+    if overrides:
+        raise PinMismatch(f'shell VITE_* variables would override the pinned build env: {overrides[:5]}')
     commit = candidate['source_commit']
     if not (isinstance(commit, str) and len(commit) == 40 and all(c in '0123456789abcdef' for c in commit)):
         raise PinMismatch('source_commit must be a full 40-hex commit')
@@ -108,6 +119,11 @@ def verify_source(candidate, repo=REPO):
                           capture_output=True, text=True, check=True).stdout.split()
     if diff:
         raise PinMismatch(f'source pin mismatch: web build inputs differ from {commit[:12]}: {diff[:5]}')
+    extra = subprocess.run(['git', '-C', str(repo), 'status', '--porcelain', '--untracked-files=all',
+                            '--ignored=matching', '--', *specs],
+                           capture_output=True, text=True, check=True).stdout.splitlines()
+    if extra:
+        raise PinMismatch(f'source pin mismatch: untracked or ignored web build inputs: {extra[:5]}')
     return commit
 
 
@@ -145,7 +161,8 @@ def verify_gateway(candidate):
 
 
 def verify_smoke(candidate):
-    """Smoke script path (and optional SHA pin); the smoke itself re-checks the build from the candidate JSON."""
+    """Smoke script path and SHA pin (required for OBSERVER_E2E_CANDIDATE, optional for DEFAULT_CANDIDATE);
+    the smoke itself re-checks the build from the candidate JSON."""
     smoke = _regular(_path(candidate['smoke']['path']))
     if candidate['smoke'].get('sha256') and sha(smoke) != candidate['smoke']['sha256']:
         raise PinMismatch('smoke script pin mismatch')
@@ -163,7 +180,9 @@ def pinned_candidate(tmp_path):
     except PinMismatch as error:
         pytest.fail(f'REFUSED candidate pin: {error}')
     candidate_json = tmp_path/'candidate.json'
-    candidate_json.write_text(json.dumps(candidate, sort_keys=True, indent=1) + '\n')
+    # `origin` (candidate JSON path + sha, or DEFAULT_CANDIDATE) and the smoke sha travel to the smoke receipt.
+    origin = {**origin, 'smoke_sha256': sha(smoke)}
+    candidate_json.write_text(json.dumps({**candidate, 'origin': origin}, sort_keys=True, indent=1) + '\n')
     return {'candidate': candidate, 'origin': origin, 'source': source, 'build': build,
             'build_hashes': build_hashes, 'smoke': smoke, 'json': candidate_json}
 
@@ -176,6 +195,8 @@ def assert_receipt_build(result, pinned):
     """The smoke's own receipt must report the candidate's asset hashes (served bytes == pinned bytes)."""
     served = {key.lstrip('/'): digest for key, digest in result['buildHashes'].items()}
     assert served == pinned['build_hashes'], (served, pinned['build_hashes'])
+    assert result['candidateOrigin'] == pinned['origin'], (result.get('candidateOrigin'), pinned['origin'])
+    assert result['candidateSha256'] == sha(pinned['json'])
 
 
 def synthetic_publication(tmp_path, monkeypatch):
@@ -236,7 +257,7 @@ def test_candidate_pins_refuse_mismatch(tmp_path):
         'public_build': {'dir': str(build), 'members': members},
         'gateway': {'commit': '0'*40, 'runtime_dir': str(runtime), 'files': {'gateway.mjs': files['gateway.mjs']},
                     'adapter': {'name': 'local-https-gateway.mjs', 'sha256': files['local-https-gateway.mjs']}},
-        'smoke': {'path': str(smoke)}}
+        'smoke': {'path': str(smoke), 'sha256': sha(smoke)}}
     manifest = tmp_path/'candidate.json'
     manifest.write_text(json.dumps(candidate))
     loaded, origin = load_candidate({CANDIDATE_ENV: str(manifest)})
@@ -268,13 +289,53 @@ def test_candidate_pins_refuse_mismatch(tmp_path):
     with pytest.raises(PinMismatch, match='smoke script pin mismatch'):
         verify_smoke({**loaded, 'smoke': {'path': str(smoke), 'sha256': '0'*64}})
     with pytest.raises(PinMismatch, match='source pin'):
-        verify_source({**loaded, 'source_commit': 'f'*40})
+        verify_source({**loaded, 'source_commit': 'f'*40}, env={})
     # 56b4347 predates the public static build inputs: the web sources differ, so the pin refuses.
     with pytest.raises(PinMismatch, match='source pin mismatch'):
-        verify_source({**loaded, 'source_commit': '56b4347baa9aef4d8c09e23ecd87bee6a20a823f'})
+        verify_source({**loaded, 'source_commit': '56b4347baa9aef4d8c09e23ecd87bee6a20a823f'}, env={})
     manifest.write_text(json.dumps({**candidate, 'schema': 'other'}))
     with pytest.raises(PinMismatch, match='schema'):
         load_candidate({CANDIDATE_ENV: str(manifest)})
+    # A custom candidate must pin its smoke script: missing or malformed smoke.sha256 refuses.
+    for smoke_pin in ({'path': str(smoke)}, {'path': str(smoke), 'sha256': 'abc'}):
+        manifest.write_text(json.dumps({**candidate, 'smoke': smoke_pin}))
+        with pytest.raises(PinMismatch, match='must pin smoke.sha256'):
+            load_candidate({CANDIDATE_ENV: str(manifest)})
+    assert load_candidate({})[1] == {'source': 'DEFAULT_CANDIDATE'}
+
+
+def test_source_pin_refuses_untracked_env_and_shell_overrides(tmp_path):
+    """Synthetic git checkout: clean inputs pass; an untracked source file, a vite .env*(.local) file (tracked-ignored
+    or not) or a shell VITE_* variable refuses."""
+    repo = tmp_path/'repo'
+    web = repo/'apps/observer/web'
+    (web/'src').mkdir(parents=True)
+    (web/'src/main.ts').write_text('export {};\n')
+    (web/'.env.public').write_text('VITE_PUBLISH_BASE=.\n')
+    (repo/'.gitignore').write_text('.env\n')
+    git = ['git', '-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false']
+    subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+    subprocess.run([*git, 'add', '-A'], check=True)
+    subprocess.run([*git, 'commit', '-qm', 'pin'], check=True)
+    commit = subprocess.run([*git, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+    candidate = {'source_commit': commit}
+    assert verify_source(candidate, repo=repo, env={}) == commit
+    (repo/'unrelated.txt').write_text('outside the web build inputs\n')
+    assert verify_source(candidate, repo=repo, env={'PATH': '/usr/bin'}) == commit
+
+    for extra in ('src/new.ts', '.env.local', '.env.public.local', '.env'):
+        (web/extra).write_text('VITE_PUBLISH_BASE=https://elsewhere.invalid\n')
+        with pytest.raises(PinMismatch, match='untracked or ignored web build inputs'):
+            verify_source(candidate, repo=repo, env={})
+        (web/extra).unlink()
+    verify_source(candidate, repo=repo, env={})
+
+    (web/'src/main.ts').write_text('export const changed = 1;\n')
+    with pytest.raises(PinMismatch, match='web build inputs differ'):
+        verify_source(candidate, repo=repo, env={})
+    subprocess.run([*git, 'checkout', '-q', '--', 'apps/observer/web/src/main.ts'], check=True)
+    with pytest.raises(PinMismatch, match='shell VITE_'):
+        verify_source(candidate, repo=repo, env={'VITE_PUBLISH_BASE': 'https://elsewhere.invalid'})
 
 
 def test_smoke_refuses_without_or_with_wrong_candidate(tmp_path):
