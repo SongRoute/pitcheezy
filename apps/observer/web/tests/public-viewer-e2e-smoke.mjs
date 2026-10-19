@@ -18,7 +18,8 @@ const sh = data => createHash('sha256').update(data).digest('hex');
 // mismatch, the smoke refuses before starting a server, so it cannot silently pass on a different build.
 const candidatePath = process.env.PUBLIC_E2E_CANDIDATE;
 assert.ok(candidatePath, 'PUBLIC_E2E_CANDIDATE (candidate JSON with public_build.members) required');
-const candidate = JSON.parse(readFileSync(candidatePath, 'utf8'));
+const candidateRaw = readFileSync(candidatePath);
+const candidate = JSON.parse(candidateRaw.toString('utf8'));
 assert.equal(candidate.schema, 'pitcheezy-public-e2e-candidate-v1', 'candidate schema');
 const members = candidate.public_build?.members ?? {};
 assert.ok(members['index.html'], 'candidate members must include index.html');
@@ -92,6 +93,9 @@ let browser;
 const receipt = { schema: 'pitcheezy-public-viewer-e2e-synthetic-v1', status: 'INCOMPLETE', game,
   transport: gatewayPort === null ? 'direct_static' : 'pinned_local_gateway_via_front',
   buildHashes: Object.fromEntries(Object.entries(assets).filter(([k]) => k !== '/').map(([k, [, sha]]) => [k, sha])),
+  // Which candidate this run tested: the exact JSON bytes read here, and its origin (source JSON path + sha, or
+  // DEFAULT_CANDIDATE, plus the smoke sha) as recorded by the pytest caller.
+  candidateSha256: sh(candidateRaw), candidateOrigin: candidate.origin ?? null,
   runnerHashes, requests, scenarios: [] };
 try {
   await new Promise((done, fail) => server.once('error', fail).listen(0, 'localhost', done));
