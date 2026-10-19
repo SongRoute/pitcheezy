@@ -185,7 +185,22 @@
 ### 7.1.1 감시기 `schedule` 목록 갱신 (2026-10-18)
 - `ws_alert_config.json`의 `schedule`은 발행기·운영 상태가 경기를 알려 주지 못할 때의 **이중 안전망**이다. 월드시리즈 7경기(`849805, 849802, 849804, 849803, 849799, 849801, 849800`, 2026-10-24~11-01)를 넣어 두었다. **시각이 전부 `T00:00:00Z` 자리표시자라 잠정 — MLB가 확정하면 갱신한다**(config의 `schedule_provisional_note`).
 - 창은 시작 30분 전 ~ final 또는 시작 + 6시간이라 경기 시간대 밖에서는 조용하다(자리표시자 시각이 틀려도 그 시각 근처에서만 울릴 수 있다).
-- 갱신: 저장한 일정(statsapi 본문 또는 `pitcheezy-schedule-query-v1`)에서 `gameType` W인 경기의 `gamePk`·`gameDate`(UTC)를 `{"game_pk": N, "start": "YYYY-MM-DDTHH:MM:SSZ"}`로 바꿔 쓴다. 연기·추가 경기는 줄을 고치거나 더한다. 확정 뒤 `--once --dry-run`으로 확인, 감시기 재시작(`--loop`는 설정을 시작 때 읽는다).
+- 갱신: 저장한 일정(statsapi 본문 또는 `pitcheezy-schedule-query-v1`)에서 `gameType` W인 경기의 `gamePk`·`gameDate`(UTC)를 `{"game_pk": N, "start": "YYYY-MM-DDTHH:MM:SSZ"}`로 바꿔 쓴다. 연기·추가 경기는 줄을 고치거나 더한다. 확정 뒤 `--once --dry-run`으로 확인, 감시기 재시작(`--loop`는 설정을 시작 때 읽는다). 손으로 고치는 대신 아래 7.1.2 도구를 쓴다.
+
+### 7.1.2 일정 확정 때 한 번에 준비하기 — `ws_schedule_sync.py` (2026-10-19, CL-04p)
+MLB가 월드시리즈 첫 투구 시각을 확정하면 아래 순서로 한다. 도구는 **launchd를 설치·로드하지 않고**, `--write`를 줄 때만 감시기 설정의 시작 시각을 바꾼다.
+
+1. 확인(기본은 dry-run): `python3 apps/observer/ops/ws_schedule_sync.py --fetch --save-raw <저장소 밖 경로>/schedule-raw.json --out-dir <저장소 밖 폴더>`
+   - statsapi에 7경기 gamePk로 **요청 한 번**만 한다(반복·재시도 없음). 저장해 둔 본문이 있으면 `--fetch` 대신 `--from-file <파일>`.
+   - 출력: 경기별 `자리표시자 → 실제 UTC`(KST 함께), 표시(`tbd`·`midnight_placeholder`·`postponed`·`if_necessary`), 경기별 plist 파일(`com.pitcheezy.ws-operate.<gamePk>.plist`)과 Song이 칠 명령.
+   - plist는 예시 템플릿에서 만든다. `ws_operate.py start --date <그 경기의 KST 날짜>`를 **첫 투구 − (lead_min 30분 + start_retry_window_s 30분) = 60분 전**에 한 번 돌린다(값은 `ws_ops_config.json`에서 읽음). 감독은 그 뒤 첫 투구 30분 전까지 자고, start 자체의 재시도 창(30분)이 발행기 시작 전에 들어간다. 날짜는 KST로 박아 넣으므로 자정을 넘는 경기도 맞는 날짜로 돈다. 발행 코드 위치를 바꾸려면 `--ws-operate <경로>/apps/observer/ops/ws_operate.py`.
+2. 거절(종료 코드 2, 아무것도 쓰지 않음): 7경기 밖 W 경기, 7경기 중 빠진 경기, 아직 `T00:00:00Z` 자리표시자이거나 `startTimeTBD`인 시각(연기·취소 경기는 제외), 같은 KST 날짜 두 경기, 템플릿 키 누락, 출력 폴더가 git 저장소 안이거나 `~/Library/LaunchAgents`.
+3. 검토: 경기별 KST 시각과 plist의 `StartCalendarInterval`(월·일·시·분), `--date`, 경로를 눈으로 본다. `if_necessary`(5~7차전)는 시리즈가 일찍 끝나면 지운다. 연기 경기는 plist를 만들지 않고 시작 시각도 그대로 둔다 → 새 시각이 나오면 다시 돌린다.
+4. Song 승인 뒤:
+   - 감시기 설정: 같은 명령에 `--write` → `ws_alert_config.json`의 `schedule` 시작 시각만 바뀐다. `schedule_provisional_note`는 손으로 고치고 감시기 `--loop`를 다시 띄운다. 커밋은 배포 규칙(5절)대로 경기 사이에.
+   - launchd(출력에 나온 그대로): `cp <폴더>/<파일> ~/Library/LaunchAgents/ && plutil -lint … && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<파일>`. 경기별 작업을 쓰면 **매일 07:00 작업(`com.pitcheezy.ws-operate`)은 같이 설치하지 않는다.**
+   - 지우기: 경기가 끝나거나 열리지 않으면 `launchctl bootout gui/$(id -u)/com.pitcheezy.ws-operate.<gamePk> && rm ~/Library/LaunchAgents/<파일>`. 월·일 지정 작업은 내년 같은 날 다시 돌기 때문에 시리즈 뒤 모두 지운다.
+- 2026-10-19 실제 조회 한 번(dry-run): 7경기 모두 `gameType W`, `startTimeTBD` false, 시각은 전부 `T00:00:00Z` 자리표시자, 5~7차전 `ifNecessary Y`, 상대 팀 `TB/CLE` 미정 → 예상대로 거절(쓴 것 없음).
 
 ### 7.2 규칙
 "경기 시간대"는 시작 30분 전부터 경기가 final이 될 때까지(최대 시작+6시간). 경기 목록은 발행기의 `games/<어제·오늘·내일>.json`, 운영 상태 파일(그날 것만), 설정 `schedule`(발행기가 아직 목록을 못 만든 경우의 수동 보조)에서 모은다. 연기(`postponed`, 서스펜디드 포함)·final·other 경기는 시간대를 열지 않는다. 시간대가 열리면 "감시 시작: 경기 <번호>", 닫히면 "감시 끝" 알림을 한 번씩 보낸다 — **경기 날 "감시 시작"이 안 오면 감시기가 꺼진 것이다.** **경기 시간대가 아니면 경기 관련 규칙은 평가하지 않는다(조용함).**
