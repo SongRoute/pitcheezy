@@ -50,7 +50,7 @@ BUILTIN = {
     'game_window': {'before_start_s': 1800, 'max_game_s': 21600}, 'schedule': [],
     'thresholds': {'health_stale_s': 30, 'publisher_down_s': 120, 'game_check_stale_s': 30,
                    'game_check_missing_hold_s': 60, 'feed_down_hold_s': 60, 'feed_lag_s': 45,
-                   'feed_delayed_hold_s': 20, 'file_stuck_s': 300, 'file_stuck_upstream_s': 60,
+                   'feed_delayed_hold_s': 20, 'file_stuck_s': 450, 'file_stuck_upstream_s': 60,
                    'game_unavailable_hold_s': 30,
                    'state_unreadable_hold_s': 30, 'memory_available_gib': 2.0,
                    'memory_hold_s': 60, 'disk_free_gib': 12.5, 'profile_deadline_kst': '21:20',

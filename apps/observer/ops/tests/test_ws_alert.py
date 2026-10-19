@@ -178,14 +178,14 @@ def test_game_check_stalled(w):
 def test_file_stuck_by_time_and_by_ops_upstream(w):
     w.healthy(T0)
     assert w.run(T0) == []
-    w.health(T0 + 290)
-    assert w.run(T0 + 290) == []  # file_sequence 5 for 290 s: under 300
-    w.health(T0 + 310)
-    assert w.keys(w.run(T0 + 310)) == {f'file_stuck:{PK}'}
+    w.health(T0 + 440)
+    assert w.run(T0 + 440) == []  # file_sequence 5 for 440 s: under 450 (330 s healthy gap seen in rehearsal 849817)
+    w.health(T0 + 460)
+    assert w.keys(w.run(T0 + 460)) == {f'file_stuck:{PK}'}
     # file_sequence moves -> clears
-    w.health(T0 + 320, checks={str(PK): {'checked_at': iso(T0 + 320), 'sequence_checked': 12, 'file_sequence': 12,
+    w.health(T0 + 470, checks={str(PK): {'checked_at': iso(T0 + 470), 'sequence_checked': 12, 'file_sequence': 12,
                                          'feed_ok': True}})
-    assert w.keys(w.run(T0 + 320), 'recover') == {f'file_stuck:{PK}'}
+    assert w.keys(w.run(T0 + 470), 'recover') == {f'file_stuck:{PK}'}
 
 
 def test_file_stuck_sooner_when_ops_reports_upstream_change(w, tmp_path):
@@ -526,10 +526,10 @@ def test_file_stuck_not_in_warmup_or_delay(w):
     w.game_file(text='In Progress')
     w.health(T0 + 900)
     assert w.run(T0 + 900) == []
-    w.health(T0 + 1090)
-    assert w.run(T0 + 1090) == []
-    w.health(T0 + 1110)
-    assert w.keys(w.run(T0 + 1110)) == {f'file_stuck:{PK}'}
+    w.health(T0 + 1240)
+    assert w.run(T0 + 1240) == []
+    w.health(T0 + 1260)
+    assert w.keys(w.run(T0 + 1260)) == {f'file_stuck:{PK}'}
 
 
 def test_postponed_game_opens_no_window(w):
@@ -654,10 +654,12 @@ def test_file_stuck_ignores_clock_only_live_from_ops(w):
         w.ops_path.write_text(json.dumps(ops_v11(T0 + dt, w.tmp, out_dir=None, state_path=None)))
         w.health(T0 + dt)
         assert w.run(T0 + dt) == [], dt
-    # the publisher's games list says live: now the same unchanged file_sequence is stuck after 300 s
+    # the publisher's games list says live: now the same unchanged file_sequence is stuck after 450 s
     w.games(w.game())
-    for dt in (900, 1210):
+    for dt in (900, 1240, 1260):
         w.ops_path.write_text(json.dumps(ops_v11(T0 + dt, w.tmp, out_dir=None, state_path=None)))
         w.health(T0 + dt)
         events = w.run(T0 + dt)
+        if dt < 1260:
+            assert events == [], dt  # 440 s since the last not-in-play sighting (T0+800): still under 450
     assert w.keys(events) == {f'file_stuck:{PK}'}
