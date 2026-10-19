@@ -311,3 +311,27 @@ def test_a_deferred_list_is_deleted_during_a_demo_only_when_it_shows_a_held_game
     assert made._shows_held(made.layout['games'].format(date='2000-01-01'), {1001}) is False  # nothing there
     made.sink.write(path, b'not json')
     assert made._shows_held(path, {9}) is True  # unreadable: not trusted
+
+
+def test_a_lone_failing_day_asked_first_does_not_make_cycles_flap(world, monkeypatch):
+    """REVIEW-003 #1: the US day asked first (by the remembered game's list) hangs alone. Before the fix every
+    other cycle was 'down' (rest refused), so the other lists and the carried game's code flapped and a held
+    alert could never fire. A day already known to fail alone no longer declares the schedule down."""
+    hang = Hang().install(world, monkeypatch)
+    world.cycle(after=AFTER)
+    hang.days = {'2026-10-04': 'hang'}  # first US day of the first list (KST 2026-10-05, the live game's date)
+    outage_cycle(world, hang)  # the outage starts: nothing answered before it, so this cycle is down
+    for turn in range(len(world.publisher.live_dates(world.now[0]))):  # the rotating probe finds a good day
+        outage_cycle(world, hang)
+        if not world.publisher._schedule_down:
+            break
+    assert not world.publisher._schedule_down
+    for _ in range(4):  # ...and from then on every cycle is the same: no flapping
+        health, asked, spent = outage_cycle(world, hang)
+        assert not world.publisher._schedule_down
+        # steady, every cycle: the game's own US day still answers, so its card stays and nothing is carried
+        assert codes(health) == [] and health['feed_failing_games'] == []
+        assert live_lists(world) == {'2026-10-04': False, LIVE_DATE: False, '2026-10-06': True}
+        assert [g['game_pk'] for g in world.read(f'v1/games/{LIVE_DATE}.json')['games']] == [LIVE_GAME]
+        assert health['game_checks'][str(LIVE_GAME)]['checked_at'] == health['published_at']
+        assert spent <= 2*TIMEOUT  # the hanging day once per list that asks it, one attempt each
