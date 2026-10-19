@@ -68,6 +68,11 @@ STATE_FEED_CONTENT = ('provider_order', 'lag_threshold_s', 'thresholds_provision
 # scan reads no more than this much of the end of a file (a bound of the format, not a tunable).
 PUBLISH_TAIL_BYTES = 1024
 PUBLISH_TAIL = re.compile(rb'"publish"\s*:\s*(\{[^{}]*\})\s*\}\s*$')
+# PROVISIONAL, not measured. Seconds of schedule requests one cycle may start (each game list asks the schedule
+# for two US dates, with the live feed's retries and timeouts: a hanging upstream held one cycle for minutes).
+# See ``Publisher.guard_schedule``. ``schedule_budget_s`` in the publish config overrides; null = no guard (every
+# request as the feed makes it, the behaviour before 2026-10-19).
+SCHEDULE_BUDGET_S = 8.0
 
 
 def layout(contract):
@@ -100,6 +105,9 @@ def load_config(path=None, env=None, **overrides):
         raise ValueError('settled_recheck_s must be null or a number of seconds')
     if type(config.setdefault('skip_unchanged_live', True)) is not bool:
         raise ValueError('skip_unchanged_live must be true or false')
+    budget = config.setdefault('schedule_budget_s', SCHEDULE_BUDGET_S)
+    if budget is not None and not (type(budget) in (int, float) and 0 < budget <= 600):  # also refuses NaN and bool
+        raise ValueError('schedule_budget_s must be null or between 0 (exclusive) and 600 seconds')
     for key in ('live_days_back', 'live_days_ahead'):
         if type(config[key]) is not int or not 0 <= config[key] <= 7:
             raise ValueError(f'{key} must be an integer between 0 and 7')
@@ -839,6 +847,8 @@ class Publisher:
         self.bodies, self.sink, self.config, self.setups, self.wall = bodies, sink, config, setups, wall
         self._state_lock = threading.RLock()
         self._closing = False
+        self.monotonic = time.monotonic
+        self._schedule_deadline, self._schedule_asked, self._schedule_down = None, 0, False
         self.commit, self.dates, self.safe = commit, None if dates is None else sorted(set(dates)), safe
         for date in self.dates or []:
             if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
@@ -1070,7 +1080,10 @@ class Publisher:
         with self._state_lock:
             if self._closing:
                 raise Unsafe('publisher_closed')
-            return self._cycle()
+            try:
+                return self._cycle()
+            finally:
+                self._schedule_deadline = None  # outside a cycle the guarded schedule runs unchanged
 
     def _cycle(self):
         """Build and write everything that is due. Returns the health body of this cycle."""
@@ -1079,6 +1092,9 @@ class Publisher:
             raise Unsafe(reason)  # before a sequence is taken or a file is touched
         self._now, self._written, self._unavailable, self._feed_failing, self._game_attempts = self.wall(), [], [], [], {}
         self._schedule_gap = set()
+        budget = self.config.get('schedule_budget_s', SCHEDULE_BUDGET_S)
+        self._schedule_deadline = None if budget is None else self.monotonic()+budget
+        self._schedule_asked = 0
         if isinstance(self.sink, MirrorSink):
             self.sink.attempted.clear()
         self._sequence = self.state['sequence'] = self.state['sequence']+1
@@ -1185,9 +1201,21 @@ class Publisher:
         for date in [date for date, pks in known_live.items() if date not in live_dates or not isinstance(pks, list)
                      or not all(type(pk) is int for pk in pks)]:
             del known_live[date]
-        for date in sorted(set(dates_body['dates']) | set(live_dates)):
+        # Live dates first (those with games to carry first of all): when the time budget runs out it is the
+        # settled lists of other dates that wait for a later cycle.
+        order = sorted(set(dates_body['dates']) | set(live_dates),
+                       key=lambda date: (date not in live_dates, not known_live.get(date), date))
+        for date in order:
             path, live = self.layout['games'].format(date=date), date in live_dates
             if not live and not self._due(path, now):
+                continue
+            if not live and self._schedule_closed():
+                # not asked this cycle (schedule budget spent or schedule down): a settled list stays as it is and
+                # is due again next cycle, unless a demo is on (its card might show a held game's score: no list
+                # then, as for a failed build)
+                if self._embargoed():
+                    failed.append(date)
+                    self._drop(path, force=True)
                 continue
             self.state['checked'][path] = now
             body = None
@@ -1202,19 +1230,21 @@ class Publisher:
                 if not any(int(card['game_pk']) in held and not card.get('embargoed') for card in body['games']):
                     break
                 body = None  # a demo began while the list was being built: once more
+            written = False
             if body is not None:
                 try:
-                    self._put(path, body, always=live)
+                    written = self._put(path, body, always=live) or True
                 except OSError:
                     LOGGER.warning('game list of %s not written', date, exc_info=True)
-                    body = None
-            if body is None:
+            if not written:
                 failed.append(date)
                 if self._embargoed():
                     self._drop(path, force=True)  # no list is better than one that still shows an embargoed score
-                continue  # otherwise the last published list stays
+                # otherwise the last published list stays
+            if body is None and not live:
+                continue
             shown = set()
-            for card in body['games']:
+            for card in (body or {}).get('games', []):
                 if card.get('embargoed'):
                     continue
                 shown.add(int(card['game_pk']))
@@ -1223,14 +1253,62 @@ class Publisher:
                     fast.add(int(card['game_pk']))
             if not live:
                 continue
-            if body.get('live_ok') is False:
+            # A live date whose list is not a good one (no schedule, not built, not asked, or not written) keeps
+            # checking the games its last good list showed: their feed state is reported every cycle instead of
+            # their last check standing still. Only a list built from a working schedule renews what is remembered.
+            if body is None or body.get('live_ok') is False or not written:
                 carried = set(known_live.get(date, []))-shown-self._embargoed()
                 listed |= carried
                 fast |= carried
-                self._schedule_gap |= carried
+                if body is not None and body.get('live_ok') is False:
+                    self._schedule_gap |= carried
             else:
                 known_live[date] = sorted(shown)
         return fast, listed
+
+    def _schedule_closed(self):
+        """True when this cycle asks the schedule no more: its budget is spent, or the schedule is down and this
+        cycle's one probe has been made."""
+        if self._schedule_deadline is None:
+            return False
+        return self.monotonic() >= self._schedule_deadline or (self._schedule_down and self._schedule_asked > 0)
+
+    def guard_schedule(self, feed):
+        """Bound the time a cycle spends on schedule requests (``schedule_budget_s``). ``feed`` is the app's live
+        feed: its ``schedule`` is wrapped (on the instance; a later publisher over the same feed rewraps the
+        original). Inside a cycle a request is refused at once (``LiveFeedError``, which the list builder already
+        turns into ``live_ok: false``) when the cycle's budget is spent, or when the schedule is down (its last
+        request failed) and this cycle has made its one probe; while it is down that probe is a single attempt
+        (no retries, so at most one ``timeout_s``). The first failing request of an outage still runs with the
+        feed's retries: a request in flight is never cut. A request that answers ends the down state. Outside a
+        cycle, or with the budget null, the feed's own ``schedule`` runs unchanged. The publisher is the only
+        caller of its private app (no port), so no other thread uses the feed meanwhile."""
+        from .live_feed import LiveFeedError
+        original = feed.__dict__.get('_unguarded_schedule') or feed.schedule
+        feed._unguarded_schedule = original
+
+        def schedule(day):
+            if self._schedule_deadline is None:
+                return original(day)
+            if self._schedule_closed():
+                raise LiveFeedError('schedule not asked this cycle (budget spent or schedule down)')
+            self._schedule_asked += 1
+            down = self._schedule_down
+            if down:
+                fetch = type(feed)._get
+                feed._get = lambda url, attempts=None, received=None: fetch(feed, url, 1, received)
+            try:
+                rows = original(day)
+            except BaseException:
+                self._schedule_down = True
+                raise
+            finally:
+                if down:
+                    del feed._get
+            self._schedule_down = False
+            return rows
+        feed.schedule = schedule
+        return feed
 
     def _game(self, game_pk, *, fast, archived):
         """One game: decide whether it is due, build it, write it, then its setup file. Nothing that goes wrong
@@ -1393,9 +1471,12 @@ def build(config, *, sink=None, dates=None, commit=None, wall=None, **app_option
         if config.get('upload', {}).get('enabled') or config.get('dry_run_upload'):
             sink = MirrorSink(sink, HttpSink(config['upload'], dry_run=config.get('dry_run_upload', False)),
                               background=config['upload'].get('background', True))
-    return app, Publisher(app.state.service_bodies, sink, config=config,
+    published = Publisher(app.state.service_bodies, sink, config=config,
                           setups=app.state.setups, state_path=state_path, dates=dates, safe=safe,
                           commit=code_commit() if commit is None else commit, **({} if wall is None else {'wall': wall}))
+    if app_options.get('live_feed') is not False:
+        published.guard_schedule(app.state.live_parts())
+    return app, published
 
 
 def main(argv=None):

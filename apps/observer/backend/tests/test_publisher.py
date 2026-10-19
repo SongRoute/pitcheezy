@@ -1378,9 +1378,15 @@ def test_unsupported_example_is_an_unsupported_state_without_reference_card():
 
 
 @pytest.mark.parametrize('failure', ['build', 'write'])
-def test_failed_live_list_does_not_refresh_a_skipped_game_check(world, monkeypatch, failure):
+def test_failed_live_list_keeps_checking_the_games_it_last_showed(world, monkeypatch, failure):
+    """Intent changed 2026-10-19 (CL-03c, review R-pubfix non-blocking #1). Before, a live date whose list could not
+    be built or written stopped checking its in-progress game: its check stood still and only its age said so. The
+    point of that test was that checked_at never moves without a real check of the game; it still never does, but
+    the game is now really checked every cycle (the last good list's games are carried, as for a schedule outage),
+    so a feed fault is reported as such instead of being hidden behind an old check. The date stays in
+    unavailable_dates and the last published list stays."""
     first = world.cycle(settle=False)
-    verified = first['game_checks'][str(LIVE_GAME)]['checked_at']
+    listed = world.read(f'v1/games/{LIVE_DATE}.json')
     before = polls(world)
     if failure == 'build':
         original = world.publisher.bodies.games
@@ -1403,17 +1409,18 @@ def test_failed_live_list_does_not_refresh_a_skipped_game_check(world, monkeypat
     for _ in range(4):
         health = world.cycle(after=12, settle=False)
         assert LIVE_DATE in health['unavailable_dates']
-        assert health['game_checks'][str(LIVE_GAME)]['checked_at'] == verified
-    assert polls(world) == before
-    assert health['game_checks'][str(LIVE_GAME)]['file_sequence'] == first['game_checks'][str(LIVE_GAME)]['file_sequence']
-    lag = datetime.fromisoformat(health['published_at'].replace('Z', '+00:00')).timestamp() - datetime.fromisoformat(verified.replace('Z', '+00:00')).timestamp()
-    assert lag == 48  # the consumer's default 30 s freshness threshold is now crossed
-    monkeypatch.undo()
-    recovered = world.cycle(after=12, settle=False)
-    assert LIVE_DATE not in recovered['unavailable_dates']
+        check = health['game_checks'][str(LIVE_GAME)]
+        assert check['checked_at'] == health['published_at'] and check['feed_ok'] is True  # a real, good check
+        assert world.read(f'v1/games/{LIVE_DATE}.json') == listed  # the last published list stays
     assert polls(world) > before
+    assert health['game_checks'][str(LIVE_GAME)]['file_sequence'] == world.game()['publish']['sequence'] >= first['game_checks'][str(LIVE_GAME)]['file_sequence']
+    # a feed that fails meanwhile is reported, not hidden behind an old check
+    failing = world.cycle(OSError('upstream down'), after=12, settle=False)
+    assert failing['game_checks'][str(LIVE_GAME)]['feed_ok'] is False and LIVE_GAME in failing['feed_failing_games']
+    monkeypatch.undo()
+    recovered = world.cycle(snap(), after=12, settle=False)
+    assert LIVE_DATE not in recovered['unavailable_dates']
     assert recovered['game_checks'][str(LIVE_GAME)]['checked_at'] == recovered['published_at']
-
 
 
 def test_v1_health_without_optional_game_checks_remains_valid(world):
