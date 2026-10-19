@@ -1,6 +1,7 @@
 """Parser, labelling and refusal checks for scripts/final_candidate_receipt.py (no step is actually run)."""
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -155,3 +156,113 @@ def test_step_commands_match_the_manual_receipt(tmp_path):
     assert plan['backend-ops'].env == {'PYTHONPATH': 'apps/observer/backend'}
     assert plan['web-compact'].argv == ['node', 'tests/compact-rev3-fit.mjs', str(tmp_path / 'compact-rev3-fit')]
     assert plan['web-build-public'].argv == ['npm', 'run', 'build:public']
+
+
+# ---- REVIEW-001 follow-ups
+
+
+def test_viewer_delay_failed_summary_is_parsed():
+    r = module.parse_node('ok   a\nFAIL switch off: x\n\n1 FAILED\n')
+    assert (r['summary_found'], r['passed'], r['failed'], r['failures']) == (True, 1, 1, ['switch off: x'])
+
+
+@pytest.mark.parametrize('code', [2, 3, 4, 5])
+def test_pytest_abnormal_exit_is_unexpected_even_if_failures_are_known(code):
+    known = [{'step': 'backend-ops', 'match': 'test_a', 'reason': 'r'}]
+    r = _result(['apps/x.py::test_a'], kind='pytest')
+    c = module.classify('backend-ops', r, code, known)
+    assert len(c['known']) == 1 and any(f'exit code {code}' in u['name'] for u in c['unexpected'])
+    assert not module.classify('backend-ops', r, 1, known)['unexpected']
+
+
+@pytest.mark.parametrize('rule, message', [
+    ({'step': 'web-compat', 'match': 'x', 'reason': 'r'}, 'unknown step'),
+    ({'step': 'web-compact', 'match': 'x', 'reason': 'r', 'max': 0}, 'max'),
+    ({'step': 'web-compact', 'match': 'x', 'reason': 'r', 'max': '4'}, 'max'),
+    ({'step': 'web-compact', 'match': 'x', 'reason': 'r', 'max': True}, 'max'),
+    ({'step': 'web-compact', 'match': 'x', 'reason': 'r', 'flaky': 'yes'}, 'flaky'),
+    ({'step': 'web-compact', 'match': 'x', 'reason': 'r', 'maxx': 1}, 'unknown keys'),
+    ({'step': 'web-compact', 'match': 'x', 'reason': ' '}, 'non-empty'),
+])
+def test_known_rule_format_is_validated(tmp_path, rule, message):
+    path = tmp_path / 'k.json'
+    path.write_text(json.dumps([rule]))
+    with pytest.raises(ValueError, match=message):
+        module.load_known(path)
+
+
+def test_shipped_known_file_has_no_stale_tst01_rules():
+    rules = module.load_known(KNOWN)
+    assert {r['step'] for r in rules} == {'web-compact', 'web-studio', 'backend-ops'}
+    assert [r for r in rules if r['step'] == 'backend-ops'][0]['flaky'] is True
+    assert not any('TST-01' in r['reason'] for r in rules)
+
+
+def _git_repo_with_gitignore(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / '.gitignore').write_text('node_modules/\n')
+    subprocess.run(['git', '-C', str(repo), 'add', '.gitignore'], check=True)
+    subprocess.run(['git', '-C', str(repo), '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'g'],
+                   check=True)
+    return repo
+
+
+def test_ignored_real_node_modules_directory_is_refused(tmp_path, capsys):
+    repo = _git_repo_with_gitignore(tmp_path)
+    (repo / 'apps/observer/web/node_modules').mkdir()
+    assert module.dirty_entries(repo) == []          # gitignored, so the status check alone would miss it
+    assert module.main(['--repo', str(repo), '--out', str(tmp_path / 'out')]) == 2
+    assert 'must be a symlink' in capsys.readouterr().err
+
+
+def test_partial_run_is_marked_and_link_target_recorded(tmp_path, monkeypatch):
+    repo = _git_repo_with_gitignore(tmp_path)
+    target = tmp_path / 'nm'; target.mkdir()
+    (repo / 'apps/observer/web/node_modules').symlink_to(target)
+    fake = tmp_path / 'bin'; fake.mkdir()
+    (fake / 'npm').write_text('#!/bin/sh\necho built\n'); (fake / 'npm').chmod(0o755)
+    monkeypatch.setenv('PATH', f'{fake}:{os.environ["PATH"]}')
+    out = tmp_path / 'out'
+    assert module.main(['--repo', str(repo), '--out', str(out), '--steps', 'web-build', '--python', 'python3']) == 0
+    receipt = json.loads((out / 'receipt.json').read_text())
+    assert receipt['partial'] is True and receipt['steps_requested'] == ['web-build']
+    assert receipt['verdict'] == 'PARTIAL_PASS'
+    assert receipt['node_modules_link'] == str(target.resolve())
+    assert 'PARTIAL' in (out / 'receipt.md').read_text()
+
+
+def _fake_run(outcome):
+    calls = []
+
+    def run_step(step, repo, log_dir, base_env):
+        calls.append(step)
+        return {'command': step.argv, 'start': 's', 'end': 'e', 'log': f'{step.id}.log', **outcome}
+    return run_step, calls
+
+
+def test_flaky_rerun_runs_only_the_flaky_test_and_failing_rerun_is_unexpected(monkeypatch, tmp_path):
+    step = module.steps('PY', tmp_path)[6]
+    name = 'apps/observer/backend/tests/test_publisher_background.py::test_retry_cursor_passes_large_head_failure_prefix'
+    result = {'unexpected': [], 'known': [{'name': name, 'reason': 'r', 'flaky': True}]}
+    run_step, calls = _fake_run({'exit_code': 0, 'passed': 1, 'failed': 0, 'failures': []})
+    monkeypatch.setattr(module, 'run_step', run_step)
+    rerun = module.flaky_rerun(step, result, tmp_path, tmp_path, {})
+    assert calls[0].argv == ['PY', '-m', 'pytest', name, '-q', '-p', 'no:cacheprovider', '-rfE']
+    assert calls[0].env == {'PYTHONPATH': 'apps/observer/backend'}
+    assert rerun['exit_code'] == 0 and not result['unexpected']
+    run_step, _ = _fake_run({'exit_code': 1, 'passed': 0, 'failed': 1, 'failures': [name]})
+    monkeypatch.setattr(module, 'run_step', run_step)
+    module.flaky_rerun(step, result, tmp_path, tmp_path, {})
+    assert 'flaky rerun alone did not pass' in result['unexpected'][0]['name']
+
+
+def test_no_flaky_rerun_when_other_failures_exist(tmp_path):
+    step = module.steps('PY', tmp_path)[6]
+    mixed = {'unexpected': [], 'known': [{'name': 'a', 'reason': 'r', 'flaky': True},
+                                         {'name': 'b', 'reason': 'r', 'flaky': False}]}
+    assert module.flaky_rerun(step, mixed, tmp_path, tmp_path, {}) is None
+    other = {'unexpected': [{'name': 'c', 'reason': None}], 'known': [{'name': 'a', 'reason': 'r', 'flaky': True}]}
+    assert module.flaky_rerun(step, other, tmp_path, tmp_path, {}) is None
+    web = module.steps('PY', tmp_path)[4]
+    assert module.flaky_rerun(web, {'unexpected': [], 'known': [{'name': 'a', 'reason': 'r', 'flaky': True}]},
+                              tmp_path, tmp_path, {}) is None

@@ -1,16 +1,5 @@
 [
-  {"step": "web-compact", "match": "^390x844 \\S+ [LR]( 12p)? score, count and zone above the fold, strip above the tab bar$", "max": 4,
-   "reason": "b2 layout: at 390x844 the card strip bottom sits below the fixed tab bar top 783px (20261017 E-static CLASSIFICATION 776/4)"},
-  {"step": "web-studio", "match": "^390x844 \\S+ key information visible without scrolling$", "max": 3,
-   "reason": "b2 layout: .sv-strip bottom below the tab bar top 783px at 390x844 (20261017 E-static CLASSIFICATION 238/3)"},
-  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_rev3_integration_review\\.py::test_two_way_ohtani_gets_era_as_pitcher_and_avg_ops_once_he_bats$", "max": 1,
-   "reason": "data-dependent: reads external pm-jobs / T7 feeds (BLK-06 receipt, TST-01 pending)"},
-  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_rev3_integration_review\\.py::test_pregame_only_for_revealed_people_at_every_cutoff\\[(849843|813031)\\]$", "max": 2,
-   "reason": "data-dependent: reads external pm-jobs / T7 feeds (BLK-06 receipt, TST-01 pending)"},
-  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_service_context_rev3\\.py::test_every_cutoff_linescore_agrees_with_situation_and_final_matches_feed$", "max": 1,
-   "reason": "data-dependent: 849819_final from external feeds (BLK-06 receipt, TST-01 pending)"},
-  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_profile_reference\\.py::test_a_differing_pin_fails_closed_and_importing_leaves_no_trace$", "max": 1,
-   "reason": "environment: a pre-existing external __pycache__ under pm-jobs step5 (BLK-06 receipt, TST-01 pending)"},
-  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_publisher_background\\.py::test_retry_cursor_passes_large_head_failure_prefix$", "max": 1,
-   "reason": "known flaky: MirrorSink background upload timing, 1 of 3 runs failed in the CL-03d review (ws-operations-runbook.md)"}
+  {"step": "web-compact", "match": "^390x844 \\S+ [LR]( 12p)? score, count and zone above the fold, strip above the tab bar$", "max": 4, "reason": "b2 layout: at 390x844 the card strip bottom sits below the fixed tab bar top 783px (20261017 E-static CLASSIFICATION 776/4)"},
+  {"step": "web-studio", "match": "^390x844 \\S+ key information visible without scrolling$", "max": 3, "reason": "b2 layout: .sv-strip bottom below the tab bar top 783px at 390x844 (20261017 E-static CLASSIFICATION 238/3)"},
+  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_publisher_background\\.py::test_retry_cursor_passes_large_head_failure_prefix$", "max": 1, "reason": "known flaky: MirrorSink background upload timing, 1 of 3 runs failed in the CL-03d review (ws-operations-runbook.md)", "flaky": true}
 ]

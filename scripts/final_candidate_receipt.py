@@ -15,13 +15,17 @@ Runs, on the checked-out commit and in this order, the same steps as the manual 
 
 and writes ``receipt.md`` + ``receipt.json`` + one log per step to ``--out`` (must be outside the repo).
 
-* Refuses a dirty tree. The only tolerated entry is an untracked ``apps/observer/web/node_modules`` that is a symlink.
+* Refuses a dirty tree, and refuses unless ``apps/observer/web/node_modules`` is a symlink (its target is recorded).
 * The public candidate is explicit: ``--candidate <json>`` sets OBSERVER_E2E_CANDIDATE for the pytest steps;
   without it the test's DEFAULT_CANDIDATE is used. Inherited OBSERVER_E2E_CANDIDATE / PUBLIC_E2E_CANDIDATE are
   dropped so a stray shell variable cannot change the candidate silently.
 * ``--known-failures <json>`` labels expected failures; they stay listed in the receipt (never hidden), they just do
   not make the exit code nonzero. Format: ``[{"step": "web-compact", "match": "<regex>", "reason": "...",
-  "max": 4}]`` (``max`` optional: matches beyond it count as unexpected). Rules that matched nothing are listed too.
+  "max": 4, "flaky": false}]`` (``max`` optional: matches beyond it count as unexpected; ``step`` must be a step
+  id). Rules that matched nothing are listed too. When a pytest step's only failures match rules marked
+  ``"flaky": true`` those tests are rerun alone and the rerun is attached (``--no-flaky-rerun`` skips it).
+* pytest exit codes other than 0/1 (interrupted, internal error, usage error, no tests) are always unexpected.
+* ``--steps`` runs a subset; the receipt then records the subset and its verdict starts with ``PARTIAL_``.
 * Exit 0: every failure is known. Exit 1: an unexpected failure (or a step that failed without a parsable failure
   name). Exit 2: refused before running anything.
 
@@ -77,6 +81,9 @@ def steps(python: str, shots: Path) -> list[Step]:
     ]
 
 
+STEP_IDS = tuple(s.id for s in steps('python', Path('shots')))
+
+
 # ---------------------------------------------------------------- parsers
 
 _PYTEST_COUNT = re.compile(r'(\d+) (passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?)\b')
@@ -113,6 +120,7 @@ _NODE_SUMMARIES = [
     (re.compile(r'^(\d+) passed, (\d+) failed\s*$'), lambda m: (int(m[1]), int(m[2]))),   # static-publish-smoke
     (re.compile(r'^(\d+) ok, (\d+) FAIL\s*$'), lambda m: (int(m[1]), int(m[2]))),         # studio-layout-check
     (re.compile(r'^(\d+) FAIL\s*$'), lambda m: (None, int(m[1]))),                         # compact-rev3-fit
+    (re.compile(r'^(\d+) FAILED\s*$'), lambda m: (None, int(m[1]))),                       # viewer-delay-smoke
     (re.compile(r'^all (?:ok|passed)\s*$'), lambda m: (None, 0)),                          # compact / viewer-delay
 ]
 
@@ -161,6 +169,17 @@ def load_known(path: Path | None) -> list[dict]:
     for i, rule in enumerate(rules):
         if not isinstance(rule, dict) or not {'step', 'match', 'reason'} <= rule.keys():
             raise ValueError(f'known-failures entry {i} needs step, match and reason')
+        extra = set(rule) - {'step', 'match', 'reason', 'max', 'flaky'}
+        if extra:
+            raise ValueError(f'known-failures entry {i} has unknown keys {sorted(extra)}')
+        if rule['step'] not in STEP_IDS:
+            raise ValueError(f'known-failures entry {i}: unknown step {rule["step"]!r} (one of {", ".join(STEP_IDS)})')
+        if not isinstance(rule['match'], str) or not isinstance(rule['reason'], str) or not rule['reason'].strip():
+            raise ValueError(f'known-failures entry {i}: match and reason must be non-empty strings')
+        if 'max' in rule and (type(rule['max']) is not int or rule['max'] < 1):
+            raise ValueError(f'known-failures entry {i}: max must be an integer >= 1')
+        if 'flaky' in rule and type(rule['flaky']) is not bool:
+            raise ValueError(f'known-failures entry {i}: flaky must be true or false')
         re.compile(rule['match'])
     return rules
 
@@ -178,7 +197,7 @@ def classify(step_id: str, result: dict, exit_code: int, known: list[dict]) -> d
             unexpected.append({'name': name, 'reason': 'matches a known rule beyond its max' if over else None})
         else:
             used[hit] += 1
-            labelled.append({'name': name, 'reason': rules[hit]['reason']})
+            labelled.append({'name': name, 'reason': rules[hit]['reason'], 'flaky': rules[hit].get('flaky', False)})
     if result['failed'] > len(result['failures']):
         unexpected.append({'name': f'{result["failed"] - len(result["failures"])} failure(s) without a parsable name',
                            'reason': None})
@@ -186,6 +205,9 @@ def classify(step_id: str, result: dict, exit_code: int, known: list[dict]) -> d
         unexpected.append({'name': f'exit code {exit_code} without a parsed failure', 'reason': None})
     if not result.get('summary_found', True):
         unexpected.append({'name': 'no summary line in the output', 'reason': None})
+    if result.get('kind') == 'pytest' and exit_code not in (0, 1):
+        unexpected.append({'name': f'pytest exit code {exit_code} (interrupted / internal / usage error / no tests)',
+                           'reason': None})
     unseen = [r for i, r in enumerate(rules) if used[i] == 0]
     return {'known': labelled, 'unexpected': unexpected,
             'known_not_seen': [{'match': r['match'], 'reason': r['reason']} for r in unseen]}
@@ -259,6 +281,23 @@ def run_step(step: Step, repo: Path, log_dir: Path, base_env: dict[str, str]) ->
             'exit_code': proc.returncode, 'log': log.name, **result}
 
 
+def flaky_rerun(step: Step, result: dict, repo: Path, log_dir: Path, base_env: dict[str, str]) -> dict | None:
+    """When a pytest step's only failures are rules marked flaky, rerun exactly those tests alone (runbook: confirm a
+    flaky failure by a solo rerun). The original failure stays listed as known; a failing rerun is unexpected."""
+    if step.kind != 'pytest' or result['unexpected'] or not result['known']:
+        return None
+    if not all(item['flaky'] for item in result['known']):
+        return None
+    ids = [item['name'] for item in result['known']]
+    rerun = Step(f'{step.id}-flaky-rerun', 'pytest', step.cwd,
+                 step.argv[:3] + ids + ['-q', '-p', 'no:cacheprovider', '-rfE'], step.env)
+    out = run_step(rerun, repo, log_dir, base_env)
+    if out['exit_code'] != 0 or out['failed'] or out['passed'] != len(ids):
+        result['unexpected'].append({'name': f'flaky rerun alone did not pass ({out["passed"]} passed, '
+                                             f'{out["failed"]} failed, exit {out["exit_code"]})', 'reason': None})
+    return {k: out[k] for k in ('command', 'start', 'end', 'exit_code', 'passed', 'failed', 'failures', 'log')}
+
+
 def markdown(receipt: dict) -> str:
     out = [f'# 최종 후보 테스트 영수증 — {receipt["commit"][:8]}', '',
            f'- 커밋: `{receipt["commit"]}` ({receipt["branch"]})',
@@ -267,6 +306,8 @@ def markdown(receipt: dict) -> str:
            f'- 공개 후보: {receipt["candidate"]["source"]}'
            + (f' (`{receipt["candidate"]["path"]}`, sha256 `{receipt["candidate"]["sha256"]}`)'
               if receipt['candidate']['path'] else ''),
+           f'- web node_modules: symlink → `{receipt["node_modules_link"]}`',
+           f'- 실행 단계: {"전체" if not receipt["partial"] else "일부(PARTIAL) " + ", ".join(receipt["steps_requested"])}',
            f'- 알려진 실패 목록: {receipt["known_failures_file"] or "없음"}'
            + (f' (sha256 `{receipt["known_failures_sha256"]}`)' if receipt['known_failures_sha256'] else ''),
            f'- 도구: python `{receipt["tools"]["python"]}`, node `{receipt["tools"]["node"]}`, '
@@ -283,7 +324,11 @@ def markdown(receipt: dict) -> str:
         for item in s['unexpected']:
             out.append(f'  - 예상 밖: `{item["name"]}`')
         for item in s['known']:
-            out.append(f'  - 알려진 실패: `{item["name"]}` — {item["reason"]}')
+            out.append(f'  - 알려진 실패{" (불안정)" if item.get("flaky") else ""}: `{item["name"]}` — {item["reason"]}')
+        if s.get('flaky_rerun'):
+            r = s['flaky_rerun']
+            out.append(f'  - 불안정 테스트 단독 재실행: exit {r["exit_code"]}, {r["passed"]} passed / {r["failed"]} failed, '
+                       f'로그 `logs/{r["log"]}`')
         for item in s['known_not_seen']:
             out.append(f'  - 알려진 실패 중 이번에 안 나옴: `{item["match"]}` — {item["reason"]}')
         for note in s.get('notes', []):
@@ -303,7 +348,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--candidate', type=Path, help='candidate JSON for OBSERVER_E2E_CANDIDATE (default: DEFAULT_CANDIDATE)')
     ap.add_argument('--known-failures', type=Path, help='JSON list of {step, match, reason}')
     ap.add_argument('--python', help='python for pytest (default: <main checkout>/.venv-observer/bin/python)')
-    ap.add_argument('--steps', help='comma-separated subset of step ids (default: all)')
+    ap.add_argument('--steps', help='comma-separated subset of step ids (default: all); the receipt says PARTIAL')
+    ap.add_argument('--no-flaky-rerun', action='store_true',
+                    help='do not rerun alone the tests matched by rules marked "flaky"')
     args = ap.parse_args(argv)
 
     repo = args.repo.resolve()
@@ -315,9 +362,12 @@ def main(argv: list[str] | None = None) -> int:
     if dirty:
         print('REFUSED: dirty tree (commit or remove these first):\n  ' + '\n  '.join(dirty), file=sys.stderr)
         return 2
-    if not (repo / WEB / 'node_modules').exists():
-        print(f'REFUSED: {WEB}/node_modules missing (symlink an existing install; no npm install here)', file=sys.stderr)
+    node_modules = repo / WEB / 'node_modules'
+    if not node_modules.is_symlink() or not node_modules.exists():
+        print(f'REFUSED: {WEB}/node_modules must be a symlink to an existing install (no npm install here)',
+              file=sys.stderr)
         return 2
+    node_modules_link = str(node_modules.resolve())
     if out.exists() and any(out.iterdir()):
         print(f'REFUSED: --out {out} is not empty', file=sys.stderr)
         return 2
@@ -356,6 +406,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f'[{now():%H:%M:%S}] {step.id}: {" ".join(step.argv)}', flush=True)
         result = run_step(step, repo, out / 'logs', base_env)
         result.update(classify(step.id, result, result['exit_code'], known))
+        if not args.no_flaky_rerun:
+            rerun = flaky_rerun(step, result, repo, out / 'logs', base_env)
+            if rerun:
+                result['flaky_rerun'] = rerun
         print(f'[{now():%H:%M:%S}] {step.id}: exit {result["exit_code"]}, {result["passed"]} passed, '
               f'{result["failed"]} failed, unexpected {len(result["unexpected"])}', flush=True)
         results.append(result)
@@ -371,7 +425,8 @@ def main(argv: list[str] | None = None) -> int:
     receipt = {
         'schema': SCHEMA, 'commit': commit, 'branch': branch, 'repo': str(repo),
         'start': start.isoformat(timespec='seconds'), 'end': end.isoformat(timespec='seconds'),
-        'candidate': candidate,
+        'candidate': candidate, 'node_modules_link': node_modules_link,
+        'partial': bool(args.steps), 'steps_requested': [s.id for s in plan],
         'known_failures_file': str(args.known_failures.resolve()) if args.known_failures else None,
         'known_failures_sha256': sha256(args.known_failures) if args.known_failures else None,
         'tools': {'python': tool_version([python, '--version']), 'node': tool_version(['node', '--version']),
@@ -383,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     if unexpected == 0 and receipt['totals']['known'] == 0:
         receipt['verdict'] = 'PASS'
+    if receipt['partial']:
+        receipt['verdict'] = 'PARTIAL_' + receipt['verdict']
     (out / 'receipt.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n')
     (out / 'receipt.md').write_text(markdown(receipt))
     print(f'{receipt["verdict"]}: unexpected {unexpected}, known {receipt["totals"]["known"]} -> {out}/receipt.md')
