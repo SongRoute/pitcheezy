@@ -1,6 +1,18 @@
-"""With the viewer-delay switch OFF (the default) the fan routes answer what the delay-0-fixed code of commit
-a72f1fa answered: the current code is compared with the golden bodies that tree produced for the same fixed sequence
-of feed states (``golden_viewer_off.py`` says how the fixture was made). ``?delay=`` changes nothing while off."""
+"""With the viewer-delay switch OFF (the default) the fan routes answer exactly the baseline bodies: the current
+code is compared with the golden bodies that commit 505932e produced for the same fixed sequence of feed states
+(``golden_viewer_off.py`` says how the fixture was made). ``?delay=`` changes nothing while off.
+
+Baseline history. The first baseline (``golden-a72f1fa.json.gz``, kept as history) was the delay-0-fixed code of
+a72f1fa. It was rebaselined to 505932e on 2026-10-19 (BLK-06, Song's decision) because three intended commits had
+changed the switched-off bodies, and every difference from a72f1fa was traced to exactly one of them (the trees just
+before each commit answer the same as the previous one; 505932e answers the same as 75e25189):
+  0fe66af9  responsive live UI: added body keys (win_expectancy, context boxscore/lineups, game/list series and
+            probable-pitcher fields, pitch tracking) and the event-prefix context of the same-stamp step
+  a52012eb  hold accepted pitches, scope the same-stamp gate, correct only on shown changes (Song 2026-10-12,
+            independently reviewed): the 05 same-stamp step (held pitch, correction, receipts, recommendation)
+  75e25189  policy context inputs in the decision key (reviewed): every ledger decision_id, and the harness feed
+            now writes "Called Strike" for a called strike (step 04; with the harness of 75e25189 the a72f1fa-era
+            backend differs from the old fixture by exactly these 2 descriptions)"""
 import gzip
 import json
 from pathlib import Path
@@ -12,16 +24,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from golden_viewer_off import scenario
 from test_display_state import GAME
 
-GOLDEN = Path(__file__).parent/'fixtures/viewer_off/golden-a72f1fa.json.gz'
-# The ONLY differences allowed, all additive top-level keys that a72f1fa did not send:
+GOLDEN = Path(__file__).parent/'fixtures/viewer_off/golden-505932e.json.gz'
+# The ONLY differences allowed, all additive top-level keys that the golden bodies leave out (a72f1fa did not send them):
 #   features  the public owner switches (game and list bodies), so the screen needs no rebuild to obey them
 #   viewer    live game bodies: the delay this answer was served at (0 while off) and the switch
 ADDED = ('features', 'viewer')
 
 
 def golden():
+    """The baseline bodies without ``ADDED``: the 505932e fixture is the generator's raw output, so it also holds the
+    switched-off ``features``/``viewer`` (asserted on their own below); a72f1fa's had neither."""
     with gzip.open(GOLDEN, 'rt') as handle:
-        return json.load(handle)
+        return {name: strip(step) for name, step in json.load(handle).items()}
 
 
 def strip(step):
@@ -33,7 +47,7 @@ def strip(step):
 
 
 @pytest.mark.parametrize('switch', [None, '0'])
-def test_switched_off_the_fan_routes_answer_exactly_what_a72f1fa_answered(tmp_path, monkeypatch, switch):
+def test_switched_off_the_fan_routes_answer_exactly_the_baseline_bodies(tmp_path, monkeypatch, switch):
     for name in ('VIEWER_DELAY', 'PROFILE_REFERENCE', 'STEP5_EXPECTATION'):  # all three owner switches off
         monkeypatch.delenv(f'PITCHEEZY_OBSERVER_{name}', raising=False)
         if switch is not None:

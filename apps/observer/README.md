@@ -111,7 +111,7 @@ PITCHEEZY_OBSERVER_HOST=tailscale sh apps/observer/serve.sh
   - `PITCHEEZY_OBSERVER_VIEWER_DELAY=1`: 팬 화면 시청 지연. **기본 꺼짐.** 공개 서비스는 지연 0 본문 하나를 모두에게 배포하므로, 시청자별 지연은 이 서버에 직접 붙는 경로(폰 시연·내부)에서만 켠다.
   - `PITCHEEZY_OBSERVER_VIEWER_DELAY_DEFAULT_S`(기본 30), `PITCHEEZY_OBSERVER_VIEWER_SYNC_PROMPT`(0 = 첫 화면에서 묻지 않음).
   - `PITCHEEZY_OBSERVER_PROFILE_REFERENCE`, `PITCHEEZY_OBSERVER_PROFILE_SOURCES`, `PITCHEEZY_OBSERVER_STEP5_EXPECTATION`, `PITCHEEZY_OBSERVER_STEP5_LEDGER`, `PITCHEEZY_OBSERVER_STEP5_ALLOW_REPLAYED`: 기본 꺼짐. 값만 전달하고 동작은 각 모듈이 정한다.
-- 꺼져 있을 때: `?delay=`는 경기·목록에서 무시되고(지연 0), 응답에는 `features`와 `viewer`(`enabled: false`, `delay_s: 0`)만 더해진다. 그 밖의 본문은 a72f1fa와 같다(`tests/test_viewer_off_golden.py`). a72f1fa에 없던 경로와 값: `GET /api/service/features`(200, 스위치의 공개 부분), `GET /api/service/games/{pk}/tap`(어떤 요청이든 404 "이 실행에서는 중계 맞추기를 쓰지 않아요."), `/api/health`의 `service_extras`(운영자용).
+- 꺼져 있을 때: `?delay=`는 경기·목록에서 무시되고(지연 0), 응답에는 `features`와 `viewer`(`enabled: false`, `delay_s: 0`)만 더해진다. 그 밖의 본문은 기준선 505932e와 같다(`tests/test_viewer_off_golden.py`; 처음 기준선 a72f1fa에서 의도된 커밋 0fe66af9·a52012eb·75e25189로 바뀐 본문을 2026-10-19에 다시 잡음). a72f1fa에 없던 경로와 값: `GET /api/service/features`(200, 스위치의 공개 부분), `GET /api/service/games/{pk}/tap`(어떤 요청이든 404 "이 실행에서는 중계 맞추기를 쓰지 않아요."), `/api/health`의 `service_extras`(운영자용).
 - 켜져 있을 때:
   - `GET /api/service/games/{pk}?delay=<초>`: 중계가 그만큼 늦은 시청자의 시점(가장 새 사건이 그만큼 지난 본문 중 최신)으로 본문 전체를 만든다. 상한은 `max_delay_s`(120). 아직 그 시점의 본문이 없으면 점수·투구 없이 `viewer.buffering: true`와 "내 중계 시점까지 기다리는 중이에요 (약 N초)."를 준다. 더 새 본문으로 대신하지 않는다.
   - `GET /api/service/games?date=&delay=`: 진행 중 경기 카드는 점수·이닝 없이 `score_hidden: true`.
