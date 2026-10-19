@@ -38,7 +38,15 @@ OBSERVER = REPO / 'apps/observer'
 DEMO_ROOT = Path('/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/DEMO-WS-2026')
 FEED_URL = 'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live'
 EXPECTED_IDENTITY = 'a6dffaea70976368a9cdc9f1a8bff4267b1c138162ee48aafda00e81e989109c'
-REGISTRATION = REPO / 'configs/ML-POLICY-MATERIALIZATION-v1.json'
+# CL-06: the frozen policy runs from a pinned copy of the D110-era code and registration, because research
+# (D117-D127) later changed configs/ML-POLICY-MATERIALIZATION-v1.json and pitchmdp/policy_runtime.py in place.
+# ``policy_identity`` hashes its source closure by path relative to its own repository root
+# (``parents[3]`` of policy_identity.py), so the copy mirrors the repository layout under LIVE_ROOT: same
+# relative paths, same bytes (git 5c9c31a), hence the same S2 components identity and EXPECTED_IDENTITY.
+LIVE_ROOT = OBSERVER / 'live_runtime_d110'
+LIVE_PROJECT = LIVE_ROOT / 'experiments/pitchmdp'
+REGISTRATION = REPO / 'configs/live/ML-POLICY-MATERIALIZATION-v1.d110.json'
+REGISTRATION_SHA256 = '9f32615e8b9fc2c99a4a29dfef25473593439c8b887f62a2a8237d7ad2d7e0e5'  # the d107 addenda's parent
 ADDENDA = tuple(REPO / f'configs/ML-POLICY-MATERIALIZATION-v1.addendum-{i}-d107.json' for i in range(1, 7))
 BADGE = '검증 전 실험 버전 · 위치는 실제 투구 분포 근사'
 INPUT_LABEL = 'postseason demo input (GUMBO-mapped; display only; not a Statcast holdout or evaluation row)'
@@ -440,10 +448,31 @@ def coverage(decisions):
 
 # ---------------------------------------------------------------- frozen policy (heavy; T7 + main .venv)
 
+def verify_live_runtime(root=LIVE_ROOT, *, isolation=True):
+    """The pinned policy code is byte-identical to its manifest and no policy module of this process was
+    imported from elsewhere (an earlier import from experiments/pitchmdp would shadow the pinned copy)."""
+    root = Path(root).resolve()
+    manifest = json.loads((root / 'MANIFEST.json').read_text())
+    for relative, expected in manifest['files'].items():
+        if _sha_file(root / relative) != expected:
+            raise RuntimeError(f'pinned live policy code changed: {relative}')
+    if _sha_file(REGISTRATION) != REGISTRATION_SHA256:
+        raise RuntimeError(f'pinned live registration changed: {REGISTRATION}')
+    scripts = {Path(r).stem for r in manifest['files'] if r.startswith('experiments/pitchmdp/scripts/')}
+    for name, module in (list(sys.modules.items()) if isolation else []):
+        if name == 'pitchmdp' or name.startswith('pitchmdp.') or name in scripts:
+            source = getattr(module, '__file__', None)
+            if source is None or not Path(source).resolve().is_relative_to(root):
+                raise RuntimeError(f'{name} was imported from outside the pinned live policy code; start an isolated process')
+    return manifest
+
+
 def _paths():
-    for path in (PROJECT, PROJECT / 'scripts', OBSERVER / 'backend'):
-        if str(path) not in sys.path:
-            sys.path.insert(0, str(path))
+    verify_live_runtime()
+    for path in (OBSERVER / 'backend', LIVE_PROJECT / 'scripts', LIVE_PROJECT):
+        if str(path) in sys.path:
+            sys.path.remove(str(path))
+        sys.path.insert(0, str(path))
 
 
 def registration(addenda=ADDENDA, expected=EXPECTED_IDENTITY):
@@ -533,7 +562,8 @@ def _git():
     import subprocess
     run = lambda *a: subprocess.run(['git', *a], cwd=REPO, capture_output=True, text=True).stdout.strip()
     return {'commit': run('rev-parse', 'HEAD'), 'dirty_paths': run('status', '--porcelain', '--', 'scripts', 'experiments',
-                                                                     'src', 'apps/observer/backend').splitlines()}
+                                                                     'src', 'apps/observer/backend',
+                                                                     'apps/observer/live_runtime_d110', 'configs/live').splitlines()}
 
 
 def _check_output_root(output_root):

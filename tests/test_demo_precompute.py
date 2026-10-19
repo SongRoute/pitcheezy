@@ -239,10 +239,40 @@ def _rss_mb():
     return int(subprocess.run(['ps', '-o', 'rss=', '-p', str(os.getpid())], capture_output=True, text=True).stdout) / 1024
 
 
+def _isolated(code, timeout=900):
+    """Run ``code`` in a fresh interpreter next to this file: the pinned live policy code refuses a process
+    that already imported ``pitchmdp`` from experiments/pitchmdp (other test modules do at collection)."""
+    import subprocess
+    return subprocess.run([sys.executable, '-B', '-c', code], cwd=Path(__file__).parent, capture_output=True, text=True,
+                          timeout=timeout)
+
+
+def test_live_policy_code_is_the_pinned_d110_copy():
+    """CL-06: the live registration and policy code are byte copies of git 5c9c31a under the repository-relative
+    paths the S2 identity hashes; a process that already holds the research pitchmdp is refused."""
+    manifest = demo.verify_live_runtime(isolation=False)
+    assert manifest['source_commit'] == '5c9c31a'
+    assert {'experiments/pitchmdp/pitchmdp/policy_runtime.py', 'experiments/pitchmdp/pitchmdp/policy_identity.py',
+            'experiments/pitchmdp/scripts/run_ml_g0_whole.py', 'experiments/pitchmdp/scripts/run_policy_validation.py'} <= set(manifest['files'])
+    # sha256 of policy_runtime.py and of the G0 member loader recorded in the S2 bind identity (S2-bind-probe-a1)
+    assert manifest['files']['experiments/pitchmdp/pitchmdp/policy_runtime.py'] == 'af8674c5031333a212ffca47fce37d83718b1120d8fdbf9f4b17f207a467d0b3'
+    assert manifest['files']['experiments/pitchmdp/scripts/run_ml_g0_whole.py'] == '5430bfbd3849b7f5389ae51194d029e4c48821fdf07252bf999b7cb9db9b0e9a'
+    done = _isolated(f"import sys; sys.path[:0] = [{str(REPO / 'experiments/pitchmdp')!r}, {str(REPO / 'scripts')!r}]\n"
+                     "import pitchmdp, demo_precompute as demo\n"
+                     "try:\n    demo.registration()\nexcept RuntimeError as error:\n    assert 'isolated process' in str(error), error\n"
+                     "else:\n    raise SystemExit('not refused')", timeout=120)
+    assert done.returncode == 0, done.stderr[-3000:]
+
+
 @pytest.mark.skipif(not WATCH.exists(), reason='needs T7 (frozen policy and the 849843 watch-along dataset)')
 def test_live_policy_reuses_one_binding_and_equals_the_precomputed_game():
     """Delayed-live recommendations over 50 rehearsal states of 849843 are bit-identical to the watch-along
     precompute (pending pitch, the PA's earlier pitches, WE), bind once, and do not grow the process."""
+    done = _isolated('import test_demo_precompute as t; t._live_policy_check()')
+    assert done.returncode == 0, done.stderr[-4000:]
+
+
+def _live_policy_check():
     import gc
     import json
     decisions = {f"849843:{d['at_bat_number']}:{d['pitch_number']}": d for d in json.loads(WATCH.read_text())['decisions']}
