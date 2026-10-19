@@ -77,3 +77,10 @@ PYTHONPATH=apps/observer/backend /Users/song/Projects/pitcheezy/.venv-observer/b
 5. 최종 실행(10/21 뒤): 새 후보에서 `npm run build:public` → 새 4파일 SHA·source commit으로 후보 JSON(또는 기본값) 갱신 → 위 명령 실행 → 이 표에 행 추가. smoke를 직접 돌릴 때는 `PUBLIC_E2E_CANDIDATE=<후보 JSON>`이 필수다. 10/20 08:30–09:30 KST(리허설 사전 시작 창)에는 돌리지 않는다.
 
 검토자: (대기) — 작성자와 다른 에이전트가 테스트 diff, 기본값 SHA 대조(pack v4.3.1 manifest·PR42 PINS), 실행 2·3 재현을 확인한다.
+
+## CL-10b 보강 (2026-10-19, 커밋 00db69d8, 검토 Q-cl10/REVIEW-002 PASS_WITH_NOTES)
+- 출처 검사 추가: 빌드 입력 범위에 추적 안 된 파일·무시된 파일(`git status --porcelain --untracked-files=all --ignored=matching`)이 있으면 거부한다. `.env`, `.env.local`, `.env.public.local`을 입력에 넣었고, 셸에 `VITE_*` 변수가 있으면 거부한다.
+- `OBSERVER_E2E_CANDIDATE`로 넘긴 후보는 `smoke.sha256`이 필수다. 영수증에 후보 출처(JSON 경로·sha 또는 DEFAULT_CANDIDATE)와 smoke가 읽은 후보 sha(`candidateSha256`)를 남긴다.
+- smoke 새 sha `77e013dd0ee531bd591bac1f96bf7b6921e5fcd652ad7ceb8630c02893d9733f` (위 표의 9fdba64a…를 대체). 최종 후보 JSON에는 이 값을 넣는다.
+- 실행: 기본 후보 5 passed, smoke sha를 넣은 env 후보 5 passed (루프백만).
+- 남은 메모: R4(커밋 안 된 vite 설정·상위 postcss·NODE_ENV·node_modules는 미검사, 빌드 4파일 바이트 고정이 대신 막음), R5(`src/.DS_Store`도 거부됨), R3(gateway 모듈 5개+어댑터 유지).
