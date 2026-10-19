@@ -48,7 +48,8 @@ BUILTIN = {
               'alert_dir': '~/.pitcheezy/ws-alert', 'disk_paths': ['~']},
     'contract_version': 'v1', 'loop_interval_s': 15,
     'game_window': {'before_start_s': 1800, 'max_game_s': 21600}, 'schedule': [],
-    'thresholds': {'health_stale_s': 30, 'publisher_down_s': 120, 'game_check_stale_s': 30,
+    'thresholds': {'health_stale_s': 30, 'publisher_down_s': 120, 'publisher_down_hold_s': 30,
+                   'game_check_stale_s': 30,
                    'game_check_missing_hold_s': 60, 'feed_down_hold_s': 60, 'feed_lag_s': 45,
                    'feed_delayed_hold_s': 20, 'file_stuck_s': 450, 'file_stuck_upstream_s': 60,
                    'game_unavailable_hold_s': 30,
@@ -329,13 +330,18 @@ def evaluate(cfg, obs, tracker):
         published = parse_time((health or {}).get('published_at')) or obs.get('health_mtime')
         age = None if published is None else max(0.0, now - published)
         ops_says_down = ops_pub.get('running') is False or ops_state in OPS_DOWN_STATES
-        down = health is None or age is None or age > th['publisher_down_s'] or ops_says_down
+        stalled = age is not None and age > th['publisher_down_s']
+        down = health is None or age is None or stalled or ops_says_down
+        # OPS-02 (PM 2026-10-19): the window opens when the launcher starts the publisher, so 'no health.json yet' /
+        # 'publisher.running false' (prestart) is normal for a few seconds: hold those for publisher_down_hold_s.
+        # A launcher that says backoff/failed/refused/stopped, or a health stalled > publisher_down_s, fires at once.
+        hold = 0 if (ops_state in OPS_DOWN_STATES or stalled) else th['publisher_down_hold_s']
         why = ('health.json 없음' if obs.get('health_error') == 'missing' else
                'health.json 읽기 실패' if health is None else
                f'health {_fmt_s(age)} 멈춤' if age is not None and age > th['publisher_down_s'] else
                f'운영 상태 {ops_state or "publisher.running=false"}')
         conds.append(_cond('publisher_down', CRITICAL, down,
-                           f'발행기 꺼진 듯: {why} (경기 {names} 시간대)', age_s=age))
+                           f'발행기 꺼진 듯: {why} (경기 {names} 시간대)', hold, age_s=age))
         conds.append(_cond('health_stalled', WARN, age is not None and age > th['health_stale_s'],
                            f'발행 정체: health {_fmt_s(age or 0)} 안 바뀜(기준 {th["health_stale_s"]}초)', age_s=age))
 

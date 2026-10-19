@@ -10,7 +10,12 @@ v1/game/<pk>.json with the publish block last, and exits 0 on SIGINT. Its behavi
   hang_after: n             stop writing health after n cycles (keeps running)
   final_after: n            game files say final after n cycles (default never)
   upload_blocked: true      state file carries a blocked upload attempt
-Every start/end is appended to <run_dir>/fake_events.jsonl.
+  live: true                game files carry game.status 'live' / status_text 'In Progress' (watcher 'in play')
+  freeze_file: true         health and game_checks keep advancing but the game file and file_sequence stand still
+  hang: true                stop writing anything (keeps running)
+  final: true               game files say final
+live / freeze_file / hang / final are re-read every cycle (a drill flips them while the process runs); the others are
+fixed at start. Every start/end is appended to <run_dir>/fake_events.jsonl.
 """
 import argparse
 import fcntl
@@ -26,6 +31,14 @@ def write(path, body):
     tmp = path.with_name('.'+path.name+'.tmp')
     tmp.write_text(json.dumps(body))
     os.replace(tmp, path)
+
+
+def read_control(run_dir, start_control):
+    """The per-cycle flags (live, freeze_file, hang, final); the start-time control when the file is missing or mid-write."""
+    try:
+        return json.loads((run_dir/'fake_control.json').read_text())
+    except (OSError, ValueError):
+        return start_control
 
 
 def main():
@@ -54,24 +67,33 @@ def main():
     state_path = Path(f'{out}.state.json')
     sequence = (json.loads(state_path.read_text()).get('sequence', 0) if state_path.exists() else 0)
     games = control.get('games', [990001])
-    cycles, code = 0, 0
+    cycles, code, file_sequence = 0, 0, sequence
     try:
         while True:
             cycles += 1
+            live = read_control(run_dir, control)
             if control.get('crash_first', 0) >= n and cycles > control.get('exit_after', 3):
                 code = control.get('exit_code', 3)
                 break
-            if control.get('hang_after') is None or cycles <= control['hang_after']:
+            if (control.get('hang_after') is None or cycles <= control['hang_after']) and not live.get('hang'):
                 sequence += 1
-                final = control.get('final_after') is not None and cycles >= control['final_after']
-                for pk in games:
-                    write(out/f'v1/game/{pk}.json', {'game_pk': pk, 'pitches': [], 'publish': {'sequence': sequence, 'final': final}})
+                final = live.get('final') is True or (control.get('final_after') is not None
+                                                       and cycles >= control['final_after'])
+                if not live.get('freeze_file'):
+                    file_sequence = sequence
+                    for pk in games:
+                        body = {'game_pk': pk, 'pitches': []}
+                        if live.get('live'):
+                            body['game'] = ({'status': 'final', 'status_text': 'Final'} if final else
+                                            {'status': 'live', 'status_text': 'In Progress'})
+                        body['publish'] = {'sequence': sequence, 'final': final}
+                        write(out/f'v1/game/{pk}.json', body)
                 health = {'schema': 'pitcheezy-publish-health-v1', 'sequence': sequence,
                           'published_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'files_written': 2,
                           'unavailable_games': [], 'feed_failing_games': [],
                           'game_checks': {str(pk): {'checked_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                                                     'sequence_checked': sequence,
-                                                    'file_sequence': sequence, 'feed_ok': True} for pk in games}}
+                                                    'file_sequence': file_sequence, 'feed_ok': True} for pk in games}}
                 if config['upload']['enabled']:
                     health['upload'] = {'code': 'upload_failed' if control.get('upload_blocked') else None,
                                         'pending': 1 if control.get('upload_blocked') else 0, 'dry_run': False}

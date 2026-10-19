@@ -35,6 +35,7 @@
   "thresholds": {
     "health_stale_s": 30,
     "publisher_down_s": 120,
+    "publisher_down_hold_s": 30,
     "game_check_stale_s": 30,
     "game_check_missing_hold_s": 60,
     "feed_down_hold_s": 60,
@@ -54,7 +55,7 @@
     "ops_stale_running_s": 90,
     "ops_stale_other_s": 300
   },
-  "thresholds_note": "Runbook section 3: health stall 30 s (3 cycles), feed_ok false > 60 s, lag > 45 s, blocked at once, disk floor 12.5 GiB (the refresh skips near 12 GiB), profile ok by 21:20 KST. Watcher-only choices: publisher_down 120 s, file_stuck 450 s (was 300: the 849817 rehearsal had a 330 s run of live cycles with no game-file write, so 300 could fire on a healthy game, see runbook 3.1; a live game normally changes within a few minutes; between-inning breaks are about 2-3 minutes), upload_pending = above 5 and not decreasing over 4 publish cycles and upload_stalled = oldest queued intent unchanged > 60 s (background upload keeps 2-3 pending every cycle and sets upload.code whenever pending > 0, so neither is an error by itself; REVIEW-001 B1), ops status stale 90 s running/backoff, 300 s otherwise (launcher heartbeat 10 s running / 60 s waiting), memory 2 GiB (kept: rehearsal available_min was 7.56 GB; RS-01 stops itself earlier, at its own 2048-3072 MB floor) from vm_stat free+inactive+speculative (an approximation, not the memory pressure colour).",
+  "thresholds_note": "Runbook section 3: health stall 30 s (3 cycles), feed_ok false > 60 s, lag > 45 s, blocked at once, disk floor 12.5 GiB (the refresh skips near 12 GiB), profile ok by 21:20 KST. Watcher-only choices: publisher_down 120 s (health stalled; at once), publisher_down_hold_s 30 (no health.json yet or publisher.running false while the launcher is not in backoff/failed/refused/stopped: the window opens the moment the launcher starts the publisher, OPS-02 drill + PM decision 2026-10-19; those four states still fire at once), file_stuck 450 s (was 300: the 849817 rehearsal had a 330 s run of live cycles with no game-file write, so 300 could fire on a healthy game, see runbook 3.1; a live game normally changes within a few minutes; between-inning breaks are about 2-3 minutes), upload_pending = above 5 and not decreasing over 4 publish cycles and upload_stalled = oldest queued intent unchanged > 60 s (background upload keeps 2-3 pending every cycle and sets upload.code whenever pending > 0, so neither is an error by itself; REVIEW-001 B1), ops status stale 90 s running/backoff, 300 s otherwise (launcher heartbeat 10 s running / 60 s waiting), memory 2 GiB (kept: rehearsal available_min was 7.56 GB; RS-01 stops itself earlier, at its own 2048-3072 MB floor) from vm_stat free+inactive+speculative (an approximation, not the memory pressure colour).",
   "notify": {
     "cooldown_s": 300,
     "renotify_s": {"critical": 900, "warn": 1800},

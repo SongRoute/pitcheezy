@@ -254,8 +254,12 @@ def test_prestart_retrying_then_refused(rig, monkeypatch):
     rig.watch()
     fired = rig.fired()
     assert fired['ops_problem:prestart_retrying'] == 'warn'
-    assert fired['publisher_down'] == 'critical'  # in window, no health.json yet
+    assert 'publisher_down' not in fired  # in window, no health.json yet: held publisher_down_hold_s (OPS-02)
     assert 'ops_status_stale' not in fired
+    rig.wcfg['thresholds']['publisher_down_hold_s'] = 0.5
+    time.sleep(0.6)
+    rig.watch()
+    assert rig.fired()['publisher_down'] == 'critical'  # still no publisher after the hold: critical
     rig.stop()
     assert rig.result['reason'] == 'operator_stop_before_start'
 
@@ -428,3 +432,148 @@ def test_mount_problem_keys_are_warnings_that_pass_through_the_watcher():
     assert 'mount_lost' in ws.ALERT_KEYS and 'mount_restart_needed' in ws.ALERT_KEYS
     assert ws.PROBLEM_SEVERITY['mount_lost'] == ws.PROBLEM_SEVERITY['mount_restart_needed'] == 'warn'
     assert 'mount_lost' not in wa.OPS_ALERTS_COVERED  # the watcher cannot see the mount itself: it passes through
+
+
+# ---------------------------------------------------------------------------------------------- OPS-02 drill paths
+
+def test_drill_process_table_hook_only_with_the_fake(tmp_path, monkeypatch):
+    """FAKE_TABLE_ENV replaces the guard's process table only while the fake publisher is in use."""
+    table = tmp_path/'table.json'
+    table.write_text('[]')
+    rehearsal = [(57237, 1, '/opt/x/Python -I -B /p/rehearse.py supervise --game 1')]
+    monkeypatch.setattr(ws, 'process_table', lambda: rehearsal)
+    monkeypatch.setenv(ws.FAKE_TABLE_ENV, str(table))
+    monkeypatch.delenv(ws.FAKE_ENV, raising=False)
+    assert ws.injected_process_table() is None
+    assert [o['pid'] for o in ws.other_publishers()] == [57237]  # without the fake: the real guard
+    monkeypatch.setenv(ws.FAKE_ENV, str(FAKE))
+    assert ws.injected_process_table() == [] and ws.other_publishers() == []
+    table.write_text(json.dumps([[4242, 1, '/v/bin/python -B -m observer_app.publisher --out /x']]))
+    assert [o['pid'] for o in ws.other_publishers()] == [4242]
+    table.write_text('not json')
+    with pytest.raises(ValueError):
+        ws.other_publishers()
+
+
+def test_external_kill_of_our_child_restarts_and_alerts_clear(rig):
+    """A publisher killed from outside (SIGKILL of the pid the supervisor recorded) -> backoff (critical) -> restart ->
+    running (recovered) -> operator stop -> stopped/operator_stop, quiet."""
+    import signal
+    rig.config(restart={'max_restarts': 2, 'backoff_s': [1.5], 'health_stall_s': 30, 'startup_grace_s': 10})
+    rig.control(interval=0.1, live=True)
+    sup = rig.start()
+    rig.until(running_with_health)
+    rig.watch()
+    assert rig.fired() == {} and rig.notices() == [f'watch_start:{PK}']
+    ident = json.loads((rig.run_dir/'publisher.identity.json').read_text())
+    assert ident['pid'] == sup.proc.pid and ws.is_our_publisher(ws.ps_identity(ident['pid']),
+                                                                 ident['identity']['lstart'], rig.run_dir)
+    os.kill(ident['pid'], signal.SIGKILL)
+    status = rig.until(lambda s: s['state'] == 'backoff')
+    assert status['restarts']['last_exit']['why'] == 'publisher_exited:-9'
+    rig.watch()
+    fired = rig.fired()
+    assert fired['ops_state:backoff'] == 'critical' and fired['publisher_down'] == 'critical'
+    assert fired['ops_problem:publisher_restarting'] == 'warn'
+    status = rig.until(lambda s: running_with_health(s) and s['publisher']['segment'] == 2)
+    assert status['restarts']['count'] == 1 and status['publisher']['pid'] != ident['pid']
+    time.sleep(0.3)
+    rig.watch()
+    assert {'ops_state:backoff', 'publisher_down', 'ops_problem:publisher_restarting'} <= set(rig.fired('recover'))
+    assert rig.fired() == {}
+    rig.stop()
+    assert rig.result['reason'] == 'operator_stop'
+    status = rig.status()
+    assert status['state'] == 'stopped' and status['state_reason'] == 'operator_stop'
+    assert not any(p['active'] for p in status['problems'])
+
+
+def test_file_stuck_then_hang_publisher_down_and_stall_restart(rig):
+    """Watcher rules on a live game with short drill thresholds: file_stuck (checks advance, file does not), then a
+    hung publisher (health_stalled warn + publisher_down critical) that the launcher restarts (health_stalled)."""
+    rig.config(restart={'max_restarts': 1, 'backoff_s': [2.0], 'health_stall_s': 8, 'startup_grace_s': 0.5})
+    # published_at / checked_at have 1 s resolution: every age below may read up to 1 s high
+    rig.wcfg['thresholds'].update(file_stuck_s=1.0, health_stale_s=1.5, publisher_down_s=4.0, game_check_stale_s=1.5)
+    rig.control(interval=0.1, live=True)
+    rig.start()
+    rig.until(running_with_health)
+    rig.watch()
+    assert rig.fired() == {}
+    rig.control(interval=0.1, live=True, freeze_file=True)
+    time.sleep(0.4)
+    rig.watch()  # tracker starts the clock on the frozen file_sequence
+    time.sleep(1.4)
+    rig.watch()
+    assert rig.fired() == {f'file_stuck:{PK}': 'warn'}
+    rig.control(interval=0.1, live=True)
+    time.sleep(0.4)
+    rig.watch()
+    assert set(rig.fired('recover')) == {f'file_stuck:{PK}'}
+    rig.control(interval=0.1, live=True, hang=True)
+    time.sleep(2.6)
+    rig.watch()
+    # the launcher's own health_stale problem is not repeated by the watcher
+    assert rig.fired() == {'health_stalled': 'warn', f'game_check_stalled:{PK}': 'warn'}
+    time.sleep(2.4)
+    rig.watch()
+    assert rig.fired() == {'publisher_down': 'critical'} and rig.status()['state'] == 'running'
+    status = rig.until(lambda s: (s['restarts'].get('last_exit') or {}).get('why') == 'health_stalled', timeout=20)
+    assert status['state'] in ('stopping', 'backoff') and status['publisher']['running'] is False
+    rig.control(interval=0.1, live=True)  # the restarted segment publishes normally
+    status = rig.until(lambda s: s['publisher'].get('segment') == 2 and running_with_health(s), timeout=20)
+    assert status['restarts']['history'][0]['why'] == 'health_stalled'
+    time.sleep(0.3)
+    rig.watch()
+    assert {'health_stalled', 'publisher_down', f'game_check_stalled:{PK}'} <= set(rig.fired('recover'))
+    rig.stop()
+    assert rig.result['reason'] == 'operator_stop'
+
+
+def test_cli_start_supervisor_really_runs_then_cli_stop(rig, monkeypatch):
+    """OPS-02: the real `start` spawns a detached supervisor process (no thread, no injected spawn). Before the fix its
+    argv put --config after 'supervise', the child died on an argparse error and start still printed success."""
+    table = rig.tmp/'table.json'
+    table.write_text('[]')
+    monkeypatch.setenv(ws.FAKE_TABLE_ENV, str(table))  # the child cannot see this test's monkeypatched process table
+    rig.control(interval=0.1, live=True)
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 0
+    sup = json.loads((rig.run_dir/'supervisor.identity.json').read_text())
+    assert ws.is_our_supervisor(ws.ps_identity(sup['pid']), sup, rig.run_dir)
+    status = rig.until(running_with_health)
+    assert status['supervisor']['pid'] == sup['pid'] and status['publisher']['fake_process_table'] is True
+    rig.watch()
+    assert rig.fired() == {} and rig.notices() == [f'watch_start:{PK}']
+    assert ws.main(['--config', str(rig.cfg_path), 'stop', '--date', rig.date]) == 0
+    status = rig.until(lambda s: s['state'] == 'stopped')
+    assert status['state_reason'] == 'operator_stop'
+    end = time.time()+10
+    while time.time() < end and ws.ps_identity(sup['pid']):
+        time.sleep(0.1)
+    assert not ws.is_our_supervisor(ws.ps_identity(sup['pid']), sup, rig.run_dir)
+
+
+def test_cli_start_reports_a_supervisor_that_dies_at_once(rig, monkeypatch, capsys):
+    """If the detached supervisor never records supervisor_start, start fails loudly and the watcher pages."""
+    rig.config(start_confirm_s=1)
+    monkeypatch.setattr(ws, 'spawn_supervisor', lambda argv, run_dir: 999999)
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 2
+    assert 'did not start' in capsys.readouterr().out
+    status = rig.status()
+    assert status['state'] == 'refused' and status['refused_by'] == 'start'
+    assert 'supervisor_not_started' in [p for p in status['problems'] if p['key'] == 'start_refused'][0]['message']
+    rig.watch()
+    assert rig.fired()['ops_problem:start_refused'] == 'critical'
+
+
+def test_cli_start_slow_but_alive_supervisor_is_a_warning_not_a_refusal(rig, monkeypatch, capsys):
+    """DRILL-REVIEW-001 note: a supervisor still running after start_confirm_s owns status.json; start must not
+    overwrite it with refused."""
+    rig.config(start_confirm_s=0.3)
+    monkeypatch.setattr(ws, 'spawn_supervisor', lambda argv, run_dir: 999999)
+    monkeypatch.setattr(ws, 'is_our_supervisor', lambda ident, recorded, run_dir: True)
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 0
+    assert 'has not recorded supervisor_start yet' in capsys.readouterr().out
+    assert rig.status() is None

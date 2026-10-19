@@ -411,11 +411,15 @@ def test_dry_run_writes_nothing(env, capsys):
 def test_start_spawns_a_detached_supervisor(env, monkeypatch, capsys):
     seen = {}
     monkeypatch.setattr(ws, 'spawn_supervisor', lambda argv, run_dir: seen.setdefault('argv', argv) and 4242)
+    monkeypatch.setattr(ws, 'supervisor_confirmed', lambda run_dir, pid, timeout_s: pid == 4242)
     (env.run).mkdir(parents=True)
     (env.run/'STOP').write_text('old')
     assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 0
     argv = seen['argv']
     assert argv[argv.index('supervise')-1].endswith('ws_operate.py') and argv[argv.index('--date')+1] == env.date
+    # OPS-02: the supervise subcommand must accept --config after it (the real spawn runs in
+    # apps/observer/ops/tests test_cli_start_supervisor_really_runs_then_cli_stop)
+    assert argv[argv.index('--config')+1] == str(env.cfg_path.resolve()) and argv.index('--config') > argv.index('supervise')
     run = json.loads((env.run/'RUN.json').read_text())
     assert run['games'][0]['game_pk'] == PK and (env.run/'RUN-001.json').exists()
     assert not (env.run/'STOP').exists()
@@ -636,6 +640,7 @@ def test_start_retries_a_failed_schedule_request_then_starts(env, monkeypatch, c
             env.schedule.write_text(good)  # the schedule source comes back on the third attempt
     monkeypatch.setattr(ws, '_sleep', sleep)
     monkeypatch.setattr(ws, 'spawn_supervisor', lambda argv, run_dir: 4242)
+    monkeypatch.setattr(ws, 'supervisor_confirmed', lambda run_dir, pid, timeout_s: True)
     assert ws.main(['--config', str(env.cfg_path), 'start', '--date', env.date, '--schedule-file', str(env.schedule)]) == 0
     assert calls == [0.1, 0.1] and (env.run/'RUN.json').exists()
     assert 'transient problems' in capsys.readouterr().out

@@ -118,14 +118,58 @@ def test_health_stalled_then_publisher_down(w):
 def test_publisher_missing_before_first_pitch(w):
     # scheduled game 20 min away, publisher never started: no health.json at all
     w.games(w.game(status='scheduled', start=T0 + 1200))
-    events = w.run(T0)
+    assert 'publisher_down' not in w.keys(w.run(T0))  # held 30 s (OPS-02 publisher_down_hold_s)
+    events = w.run(T0 + 30)
     assert w.keys(events) == {'publisher_down'}
-    assert 'health.json 없음' in w.fake.sent[0]['body']
+    assert 'health.json 없음' in w.fake.sent[-1]['body']
 
 
 def test_manual_schedule_opens_a_window_without_publisher_files(w):
     w.cfg['schedule'] = [{'game_pk': PK, 'start': iso(T0 + 600)}]
-    assert w.keys(w.run(T0)) == {'publisher_down'}
+    assert 'publisher_down' not in w.keys(w.run(T0))
+    assert w.keys(w.run(T0 + 30)) == {'publisher_down'}
+
+
+def test_publisher_down_hold_absorbs_the_window_opening_gap(w):
+    """OPS-02: the window opens as the launcher starts the publisher; prestart (running false) and 'no health.json
+    yet' for a few seconds must not page. Held 30 s, then critical if it lasts."""
+    w.games(w.game(status='scheduled', start=T0 + 1800))
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps(ops_v11(T0, w.tmp, 'prestart', out_dir=str(w.out), state_path=None)))
+    (w.out / 'v1' / 'health.json').unlink(missing_ok=True)
+    assert 'publisher_down' not in w.keys(w.run(T0))
+    w.ops_path.write_text(json.dumps(ops_v11(T0 + 5, w.tmp, 'running', out_dir=str(w.out), state_path=None)))
+    w.health(T0 + 5)
+    events = w.run(T0 + 15)
+    assert not any(e['key'] == 'publisher_down' for e in events)  # never fired, never 'recovered'
+    assert not any('발행기 꺼진 듯' in m['body'] for m in w.fake.sent)
+
+
+def test_publisher_down_hold_expires_and_down_states_fire_at_once(w):
+    w.games(w.game(status='scheduled', start=T0 + 1800))
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps(ops_v11(T0, w.tmp, 'prestart', out_dir=str(w.out), state_path=None)))
+    (w.out / 'v1' / 'health.json').unlink(missing_ok=True)
+    assert 'publisher_down' not in w.keys(w.run(T0))
+    w.ops_path.write_text(json.dumps(ops_v11(T0 + 29, w.tmp, 'prestart', out_dir=str(w.out), state_path=None)))
+    assert 'publisher_down' not in w.keys(w.run(T0 + 29))
+    w.ops_path.write_text(json.dumps(ops_v11(T0 + 31, w.tmp, 'prestart', out_dir=str(w.out), state_path=None)))
+    assert 'publisher_down' in w.keys(w.run(T0 + 31))  # held 30 s, still no publisher: critical
+
+
+@pytest.mark.parametrize('state', ['backoff', 'failed', 'refused', 'stopped'])
+def test_publisher_down_is_immediate_for_backoff_failed_refused_stopped(w, state):
+    w.healthy(T0)
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps(ops_v11(T0, w.tmp, state, out_dir=str(w.out), state_path=None)))
+    assert 'publisher_down' in w.keys(w.run(T0))
+
+
+def test_publisher_down_stalled_health_is_immediate(w):
+    """A health older than publisher_down_s (a hung publisher) is not held again."""
+    w.healthy(T0)
+    w.health(T0, published=T0 - 130)
+    assert 'publisher_down' in w.keys(w.run(T0))
 
 
 def test_shipped_ws_schedule_is_quiet_outside_game_windows(w):
