@@ -1,17 +1,24 @@
 """Golden bodies of the fan routes for a fixed sequence of synthetic feed states (deterministic clock, fake policy).
 
 Why: with the viewer-delay switch OFF (the default) ``/api/service/games/{pk}`` and ``/api/service/games`` must
-answer exactly what the delay-0-fixed code of commit a72f1fa answered. ``fixtures/viewer_off/golden-a72f1fa.json.gz``
-holds what a72f1fa answered; ``test_viewer_off_golden.py`` compares the current code against it on every run.
+answer exactly the baseline bodies. ``fixtures/viewer_off/golden-505932e.json.gz`` holds what commit 505932e answered;
+``test_viewer_off_golden.py`` compares the current code against it on every run (its docstring says why the baseline
+moved from a72f1fa: intended commits 0fe66af9, a52012eb, 75e25189). ``golden-a72f1fa.json.gz`` is kept as history.
 
-How the fixture was made (2026-10-11), out of process against the OLD tree:
+How the current fixture was made (2026-10-19, BLK-06), from the 505932e tree itself:
+
+    PYTHONPATH= .venv-observer/bin/python apps/observer/backend/tests/golden_viewer_off.py \
+        --backend apps/observer/backend --out apps/observer/backend/tests/fixtures/viewer_off/golden-505932e.json.gz
+
+The JSON is deterministic; the gzip header carries the output file's base name (mtime 0), so the same base name gives
+the same bytes. The a72f1fa fixture (2026-10-11) was made out of process against the OLD tree:
 
     git archive a72f1fa apps/observer | tar -x -C <tmp>
     PYTHONPATH= .venv-observer/bin/python apps/observer/backend/tests/golden_viewer_off.py \
         --backend <tmp>/apps/observer/backend --out apps/observer/backend/tests/fixtures/viewer_off/golden-a72f1fa.json.gz
 
-``--backend`` is imported first, so ``observer_app`` is the old code; the feed states and the harness (``snap``, ``Run``
-of ``test_display_state.py``, unchanged since a72f1fa) are this tree's. ``--replay-dir`` runs real recorded bodies
+``--backend`` is imported first, so ``observer_app`` is the code of that tree; the feed states and the harness (``snap``,
+``Run`` of ``test_display_state.py``) are this tree's. ``--replay-dir`` runs real recorded bodies
 instead (one request per body; not committed: used once to compare both trees on the 849831 prefix)."""
 import argparse
 import gzip
