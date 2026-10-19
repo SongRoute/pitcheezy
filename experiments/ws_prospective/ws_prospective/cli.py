@@ -325,7 +325,8 @@ def cmd_analyze(a) -> int:
     games = {int(k): {"ledgers": [Path(x) for x in v["ledgers"]], "store": Path(v["store"]),
                       "store_sha256": v["store_sha256"]}
              for k, v in json.loads(Path(a.games).read_text()).items()}
-    sealed_look(Path(a.registration), Path(a.job), games, leaf_of=labels.leaf_of,
+    regs = [Path(x) for x in a.registration]
+    sealed_look(regs[0] if len(regs) == 1 else regs, Path(a.job), games, leaf_of=labels.leaf_of,
                 type_of=labels.type_of, label_loader=final_label_rows)
     return 0
 
@@ -346,7 +347,9 @@ def main(argv=None) -> int:
         b.add_argument(k, required=True)
     b.add_argument("--games", default="")
     n = sub.add_parser("analyze")
-    for k in ("--registration", "--job", "--games"):
+    n.add_argument("--registration", required=True, nargs="+",
+                   help="one EXEC file, or every per-game EXEC file (listed in UNSEAL.json)")
+    for k in ("--job", "--games"):
         n.add_argument(k, required=True)
     a = p.parse_args(argv)
     return {"verify": cmd_verify, "run": cmd_run, "ops-check": cmd_ops,

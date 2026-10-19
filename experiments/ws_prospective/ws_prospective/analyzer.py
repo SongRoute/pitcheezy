@@ -157,7 +157,8 @@ def verify_ledger_pins(reg: dict, games: Dict[int, dict], job_dir: Optional[Path
             raise SealedError(f"game {pk}: no ledgers")
         for lp in g["ledgers"]:
             meta = dict((r["key"], r["value"]) for r in read_rows(lp, "ledger_meta"))
-            if meta.get("registration_sha256") != reg["_sha256"]:
+            want = reg.get("_exec", {}).get(int(pk), reg["_sha256"])
+            if meta.get("registration_sha256") != want:
                 raise SealedError(f"{lp}: ledger pins a different registration")
             if str(meta.get("game_pk")) != str(pk):
                 raise SealedError(f"{lp}: ledger game_pk differs")
@@ -178,17 +179,25 @@ def verify_ledger_pins(reg: dict, games: Dict[int, dict], job_dir: Optional[Path
 def sealed_look(registration_path: Path, job_dir: Path, games: Dict[int, dict], *,
                 leaf_of: LabelFn, type_of: TypeFn, label_loader, now_utc=None) -> dict:
     """games: {game_pk: {"ledger": path, "store": path}}; label_loader(store, pk, revision=...)."""
-    reg = check_unsealed(registration_path, job_dir, now_utc=now_utc)
+    if isinstance(registration_path, (list, tuple)):
+        from .seal import check_unsealed_set
+        reg = check_unsealed_set(registration_path, job_dir, now_utc=now_utc)
+    else:
+        reg = check_unsealed(registration_path, job_dir, now_utc=now_utc)
     verify_ledger_pins(reg, games, job_dir)
     seal = reg["analysis"]["seal"]
     take_look(job_dir, seal["look_marker"],
-              {"registration_sha256": reg["_sha256"], "games": sorted(games),
+              {"registration_sha256": reg["_sha256"],
+               "exec_sha256_by_game": {str(k): v for k, v in reg.get("_exec", {}).items()},
+               "games": sorted(games),
                "ledger_sha256": {str(k): {str(lp): file_sha256(lp) for lp in v["ledgers"]}
                                  for k, v in games.items()},
                "store_sha256": {str(k): file_sha256(v["store"]) for k, v in games.items()}})
     leaf_order = list(reg["targets"]["leaf_order"])
     an = reg["analysis"]
-    result = {"registration_sha256": reg["_sha256"], "revisions": {}}
+    result = {"registration_sha256": reg["_sha256"],
+              "exec_sha256_by_game": {str(k): v for k, v in reg.get("_exec", {}).items()},
+              "revisions": {}}
     for revision in [an["label_revision_primary"], *an.get("label_revision_sensitivity", [])]:
         pooled: Dict[str, Dict[tuple, tuple]] = defaultdict(dict)
         excl = Counter()

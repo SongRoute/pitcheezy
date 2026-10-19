@@ -537,3 +537,113 @@ def test_protected_window_bounds():
     assert _in_protected_window(dt.datetime(2026, 10, 18, 21, 0, tzinfo=utc))   # 06:00 KST
     assert not _in_protected_window(dt.datetime(2026, 10, 19, 1, 0, tzinfo=utc))  # 10:00 KST
     assert not _in_protected_window(dt.datetime(2026, 10, 18, 11, 0, tzinfo=utc))
+
+
+# ------------------------------------------------- per-game EXEC files (REVIEW-EXEC-001 B-2 1a)
+PKS7 = [849805, 849802, 849804, 849803, 849799, 849801, 849800]
+PH = "<PLACEHOLDER: CL-04>"
+
+
+def _row(pk, tmp_path, filled):
+    if not filled:
+        return {"game_pk": pk, "official_date": PH, "first_pitch_utc": PH, "store_path": PH,
+                "profile_path": PH, "profile_sha256": PH}
+    return {"game_pk": pk, "official_date": "2026-10-24", "first_pitch_utc": "2026-10-25T00:08:00Z",
+            "store_path": str(tmp_path / f"store-{pk}.sqlite3"), "profile_path": f"/p/{pk}/PROFILE.json",
+            "profile_sha256": f"{pk:064d}"}
+
+
+def _exec_files(tmp_path, n=7, mutate=None):
+    base = json.loads(_registration(tmp_path).read_text())
+    base["parent"] = {"file": "REGISTRATION-EXEC-v3.draft.json", "sha256": "a" * 64}
+    files = []
+    for i in range(n):
+        body = json.loads(json.dumps(base))
+        body["execution"] = {"games": [_row(pk, tmp_path, j <= i) for j, pk in enumerate(PKS7)]}
+        if mutate:
+            mutate(i, body)
+        p = tmp_path / f"REGISTRATION-EXEC-G{i + 1}.json"
+        p.write_text(json.dumps(body, sort_keys=True))
+        files.append(p)
+    return files
+
+
+def _play_pk(tmp_path, pk, exec_path):
+    from ws_prospective.store_source import backup_store
+    clock = FakeClock()
+    store = FakeStore(tmp_path / f"store-{pk}.sqlite3", pk)
+    led = Ledger(tmp_path / f"game_{pk}" / "ledger-A.sqlite", game_pk=pk,
+                 registration_sha256=file_sha256(exec_path), code_commit="c", clock=clock,
+                 meta={"profile_sha256": f"{pk:064d}", "store_path": str(store.path)})
+    r = GameRunner(pk, LiveStoreSource(store.path, pk),
+                   [SpyForecaster("m"), SpyForecaster("base", conditional=False)], led, "p" * 64)
+    store.new_plate_appearance(1, received=clock.wall_ns() / S)
+    for i, call in enumerate("BSFC"):
+        r.step()
+        clock.advance(20)
+        store.add_pitch(1, pitch_event(i + 1, "FF", call), received=clock.wall_ns() / S,
+                        uid=f"{pk}-{i}")
+    led.close()
+    copy = tmp_path / f"copy-{pk}.sqlite3"
+    digest = backup_store(store.path, copy)
+    with open(tmp_path / "STORE-BACKUPS.jsonl", "a") as f:
+        f.write(json.dumps({"copy": str(copy), "sha256": digest, "games": [pk]}) + "\n")
+    return {"ledgers": [led.path], "store": copy, "store_sha256": digest}
+
+
+def _unseal_set(tmp_path, files, pks=PKS7):
+    (tmp_path / "UNSEAL.json").write_text(json.dumps(
+        {"analyst": "fable_analyst",
+         "registrations": [{"file": f.name, "sha256": file_sha256(f), "game_pk": pk}
+                           for f, pk in zip(files, pks)]}))
+
+
+def test_per_game_exec_files_pool_at_the_single_look(tmp_path):
+    files = _exec_files(tmp_path)
+    games = {pk: _play_pk(tmp_path, pk, f) for pk, f in zip(PKS7, files)}
+    _unseal_set(tmp_path, files)
+    out = analyzer.sealed_look(files, tmp_path, games, leaf_of=leaf_of, type_of=type_of,
+                               label_loader=final_label_rows, now_utc=AFTER)
+    comp = out["revisions"]["final"]["comparisons"][0]
+    assert comp["n_paired"] == 28 and comp["metrics"]["nll"]["n_games"] == 7
+    assert out["exec_sha256_by_game"] == {str(pk): file_sha256(f) for pk, f in zip(PKS7, files)}
+    assert out["registration_sha256"] == file_sha256(files[0])
+    with pytest.raises(SealedError, match="already taken"):
+        analyzer.sealed_look(files, tmp_path, games, leaf_of=leaf_of, type_of=type_of,
+                             label_loader=final_label_rows, now_utc=AFTER)
+
+
+@pytest.mark.parametrize("case", ["differs_outside_games", "other_parent", "ledger_pins_other_game_sha",
+                                  "unseal_lists_other_shas", "unseal_swaps_games", "row_rewritten"])
+def test_per_game_exec_refusals(tmp_path, case):
+    def mutate(i, body):
+        if case == "differs_outside_games" and i == 3:
+            body["analysis"]["min_paired_pitches"] = 2
+        if case == "other_parent" and i == 5:
+            body["parent"]["sha256"] = "b" * 64
+        if case == "row_rewritten" and i == 6:
+            body["execution"]["games"][0]["profile_sha256"] = "c" * 64
+    files = _exec_files(tmp_path, mutate=mutate)
+    pins = list(files)
+    if case == "ledger_pins_other_game_sha":
+        pins[2], pins[3] = files[3], files[2]  # game 3's ledger launched with game 4's file
+    games = {pk: _play_pk(tmp_path, pk, f) for pk, f in zip(PKS7, pins)}
+    if case == "unseal_lists_other_shas":
+        _unseal_set(tmp_path, files[:6], PKS7[:6])
+    elif case == "unseal_swaps_games":
+        _unseal_set(tmp_path, files, [PKS7[1], PKS7[0]] + PKS7[2:])
+    else:
+        _unseal_set(tmp_path, files)
+    called = []
+    with pytest.raises(SealedError):
+        analyzer.sealed_look(files, tmp_path, games, leaf_of=leaf_of, type_of=type_of,
+                             label_loader=lambda *a, **k: called.append(a), now_utc=AFTER)
+    assert not called and not (tmp_path / "LOOK.done").exists()
+
+
+def test_per_game_exec_still_sealed_before_date(tmp_path):
+    files = _exec_files(tmp_path, n=2)
+    _unseal_set(tmp_path, files, PKS7[:2])
+    from ws_prospective.seal import check_unsealed_set
+    with pytest.raises(SealedError, match="sealed until"):
+        check_unsealed_set(files, tmp_path, now_utc=DURING)
