@@ -183,6 +183,7 @@ def test_pytest_abnormal_exit_is_unexpected_even_if_failures_are_known(code):
     ({'step': 'web-compact', 'match': 'x', 'reason': 'r', 'flaky': 'yes'}, 'flaky'),
     ({'step': 'web-compact', 'match': 'x', 'reason': 'r', 'maxx': 1}, 'unknown keys'),
     ({'step': 'web-compact', 'match': 'x', 'reason': ' '}, 'non-empty'),
+    ({'step': 'web-compact', 'match': '', 'reason': 'r'}, 'non-empty'),
 ])
 def test_known_rule_format_is_validated(tmp_path, rule, message):
     path = tmp_path / 'k.json'

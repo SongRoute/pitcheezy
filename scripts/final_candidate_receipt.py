@@ -174,7 +174,8 @@ def load_known(path: Path | None) -> list[dict]:
             raise ValueError(f'known-failures entry {i} has unknown keys {sorted(extra)}')
         if rule['step'] not in STEP_IDS:
             raise ValueError(f'known-failures entry {i}: unknown step {rule["step"]!r} (one of {", ".join(STEP_IDS)})')
-        if not isinstance(rule['match'], str) or not isinstance(rule['reason'], str) or not rule['reason'].strip():
+        if not isinstance(rule['match'], str) or not rule['match'].strip() or not isinstance(rule['reason'], str) \
+                or not rule['reason'].strip():
             raise ValueError(f'known-failures entry {i}: match and reason must be non-empty strings')
         if 'max' in rule and (type(rule['max']) is not int or rule['max'] < 1):
             raise ValueError(f'known-failures entry {i}: max must be an integer >= 1')
