@@ -7,6 +7,7 @@ moved from a72f1fa: intended commits 0fe66af9, a52012eb, 75e25189). ``golden-a72
 
 How the current fixture was made (2026-10-19, BLK-06), from the 505932e tree itself:
 
+    env -u PITCHEEZY_OBSERVER_VIEWER_DELAY -u PITCHEEZY_OBSERVER_PROFILE_REFERENCE -u PITCHEEZY_OBSERVER_STEP5_EXPECTATION \
     PYTHONPATH= .venv-observer/bin/python apps/observer/backend/tests/golden_viewer_off.py \
         --backend apps/observer/backend --out apps/observer/backend/tests/fixtures/viewer_off/golden-505932e.json.gz
 

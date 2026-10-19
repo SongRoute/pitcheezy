@@ -9,9 +9,10 @@ before each commit answer the same as the previous one; 505932e answers the same
   0fe66af9  responsive live UI: added body keys (win_expectancy, context boxscore/lineups, game/list series and
             probable-pitcher fields, pitch tracking) and the event-prefix context of the same-stamp step
   a52012eb  hold accepted pitches, scope the same-stamp gate, correct only on shown changes (Song 2026-10-12,
-            independently reviewed): the 04/05 same-stamp and correction steps
+            independently reviewed): the 05 same-stamp step (held pitch, correction, receipts, recommendation)
   75e25189  policy context inputs in the decision key (reviewed): every ledger decision_id, and the harness feed
-            now writes "Called Strike" for a called strike"""
+            now writes "Called Strike" for a called strike (step 04; with the harness of 75e25189 the a72f1fa-era
+            backend differs from the old fixture by exactly these 2 descriptions)"""
 import gzip
 import json
 from pathlib import Path
