@@ -1303,6 +1303,9 @@ def cmd_start(args, cfg):
     write_json_atomic(run_dir/f'RUN-{len(prior)+1:03d}.json', run_body)
     write_json_atomic(run_dir/'RUN.json', run_body)
     (run_dir/'STOP').unlink(missing_ok=True)  # an earlier stop of this date must not stop the new supervisor
+    # 'supervise' stays right after the script name: publisher_kind() / is_our_supervisor() recognise a supervisor by
+    # that pair. --config after it is accepted by every subcommand (OPS-02 drill: it used to be a main-parser-only
+    # option, so this argv made every detached supervisor exit at once with an argparse error while start said OK)
     argv = [sys.executable, '-I', '-B', str(Path(__file__).resolve()), 'supervise', '--date', kst_date,
             '--config', cfg['_config_path']]
     if args.upload:
@@ -1314,9 +1317,34 @@ def cmd_start(args, cfg):
     pid = spawn_supervisor(argv, run_dir)
     ident = {'pid': pid, 'identity': ps_identity(pid), 'started_at': now_iso(), 'argv': argv}
     write_json_atomic(run_dir/'supervisor.identity.json', ident)
+    if not supervisor_confirmed(run_dir, pid, cfg.get('start_confirm_s', 15)):
+        tail = (run_dir/'supervisor.log').read_text()[-600:] if (run_dir/'supervisor.log').exists() else ''
+        print(tail)
+        report = dict(report, problems=[f'supervisor pid {pid} did not record supervisor_start within '
+                                        f'{cfg.get("start_confirm_s", 15)} s (see supervisor.log)'],
+                      problem_keys=['supervisor_not_started'])
+        wrote = write_start_refused(cfg, kst_date, report, games)
+        print(f'REFUSED: the detached supervisor did not start; status.json: {"refused written" if wrote else "not written"}')
+        return 2
     print(json.dumps({'run_dir': str(run_dir), 'supervisor': ident, 'timeline': plan['timeline'],
                       'upload': report['upload'], 'warnings': report['warnings']}, indent=1, ensure_ascii=False))
     return 0
+
+
+def supervisor_confirmed(run_dir, pid, timeout_s):
+    """True once the new supervisor wrote its supervisor_start event (it holds the lock and owns status.json then)."""
+    end = time.time()+timeout_s
+    while True:
+        try:
+            for line in (Path(run_dir)/'events.jsonl').read_text().splitlines():
+                row = json.loads(line)
+                if row.get('event') == 'supervisor_start' and row.get('pid') == pid:
+                    return True
+        except (OSError, ValueError):
+            pass
+        if time.time() >= end:
+            return False
+        time.sleep(0.2)
 
 
 def cmd_supervise(args, cfg):
@@ -1450,6 +1478,9 @@ def main(argv=None):
                        ('--supervisor-lstart', str), ('--deadline', float), ('--graceful-s', float),
                        ('--term-s', float), ('--every-s', float)):
         p.add_argument(name, type=kind, required=True)
+    for name, subparser in sub.choices.items():
+        if name != 'childwatch':  # --config before or after the subcommand; SUPPRESS keeps a value given before it
+            subparser.add_argument('--config', default=argparse.SUPPRESS, help='same as the --config before the command')
     args = parser.parse_args(argv)
     if args.cmd == 'childwatch':
         return cmd_childwatch(args, None)

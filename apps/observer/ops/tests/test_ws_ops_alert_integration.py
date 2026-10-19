@@ -523,3 +523,40 @@ def test_file_stuck_then_hang_publisher_down_and_stall_restart(rig):
     assert {'health_stalled', 'publisher_down', f'game_check_stalled:{PK}'} <= set(rig.fired('recover'))
     rig.stop()
     assert rig.result['reason'] == 'operator_stop'
+
+
+def test_cli_start_supervisor_really_runs_then_cli_stop(rig, monkeypatch):
+    """OPS-02: the real `start` spawns a detached supervisor process (no thread, no injected spawn). Before the fix its
+    argv put --config after 'supervise', the child died on an argparse error and start still printed success."""
+    table = rig.tmp/'table.json'
+    table.write_text('[]')
+    monkeypatch.setenv(ws.FAKE_TABLE_ENV, str(table))  # the child cannot see this test's monkeypatched process table
+    rig.control(interval=0.1, live=True)
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 0
+    sup = json.loads((rig.run_dir/'supervisor.identity.json').read_text())
+    assert ws.is_our_supervisor(ws.ps_identity(sup['pid']), sup, rig.run_dir)
+    status = rig.until(running_with_health)
+    assert status['supervisor']['pid'] == sup['pid'] and status['publisher']['fake_process_table'] is True
+    rig.watch()
+    assert rig.fired() == {} and rig.notices() == [f'watch_start:{PK}']
+    assert ws.main(['--config', str(rig.cfg_path), 'stop', '--date', rig.date]) == 0
+    status = rig.until(lambda s: s['state'] == 'stopped')
+    assert status['state_reason'] == 'operator_stop'
+    end = time.time()+10
+    while time.time() < end and ws.ps_identity(sup['pid']):
+        time.sleep(0.1)
+    assert not ws.is_our_supervisor(ws.ps_identity(sup['pid']), sup, rig.run_dir)
+
+
+def test_cli_start_reports_a_supervisor_that_dies_at_once(rig, monkeypatch, capsys):
+    """If the detached supervisor never records supervisor_start, start fails loudly and the watcher pages."""
+    rig.config(start_confirm_s=1)
+    monkeypatch.setattr(ws, 'spawn_supervisor', lambda argv, run_dir: 999999)
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 2
+    assert 'did not start' in capsys.readouterr().out
+    status = rig.status()
+    assert status['state'] == 'refused' and status['refused_by'] == 'start'
+    rig.watch()
+    assert rig.fired()['ops_problem:start_refused'] == 'critical'
