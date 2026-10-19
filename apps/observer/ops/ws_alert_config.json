@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "note": "World Series publish anomaly watcher (apps/observer/ops/ws_alert.py). Every threshold here is still PROVISIONAL (n = 1 game, 849817 first live rehearsal 2026-10-18, F-rehearsal RESULT.json + RESULT-REVIEW-001; runbook section 3.1 holds the per-rule reasoning). All kept; file_stuck_s 300 is recommended to rise to 450 (runbook 3.1) but is held at 300 until test_ws_alert.py (timings ~310 s) and the ws_alert.py default follow. Paths are never inside the repository; null = taken from env or CLI (see the runbook section 7).",
+  "note": "World Series publish anomaly watcher (apps/observer/ops/ws_alert.py). Every threshold here is still PROVISIONAL (n = 1 game, 849817 first live rehearsal 2026-10-18, F-rehearsal RESULT.json + RESULT-REVIEW-001; runbook section 3.1 holds the per-rule reasoning). Only file_stuck_s was changed by it (300 -> 450, runbook 3.1); the others were kept. Paths are never inside the repository; null = taken from env or CLI (see the runbook section 7).",
   "paths": {
     "out_dir": null,
     "out_dir_note": "Publisher output folder (the one holding v1/). null = --out or env PITCHEEZY_PUBLISH_OUT_DIR.",
@@ -40,7 +40,7 @@
     "feed_down_hold_s": 60,
     "feed_lag_s": 45,
     "feed_delayed_hold_s": 20,
-    "file_stuck_s": 300,
+    "file_stuck_s": 450,
     "file_stuck_upstream_s": 60,
     "game_unavailable_hold_s": 30,
     "upload_pending_floor": 5,
@@ -54,7 +54,7 @@
     "ops_stale_running_s": 90,
     "ops_stale_other_s": 300
   },
-  "thresholds_note": "Runbook section 3: health stall 30 s (3 cycles), feed_ok false > 60 s, lag > 45 s, blocked at once, disk floor 12.5 GiB (the refresh skips near 12 GiB), profile ok by 21:20 KST. Watcher-only choices: publisher_down 120 s, file_stuck 300 s (recommended 450: the 849817 rehearsal had a 330 s run of live cycles with no game-file write, so 300 could fire on a healthy game, see runbook 3.1; a live game normally changes within a few minutes; between-inning breaks are about 2-3 minutes), upload_pending = above 5 and not decreasing over 4 publish cycles and upload_stalled = oldest queued intent unchanged > 60 s (background upload keeps 2-3 pending every cycle and sets upload.code whenever pending > 0, so neither is an error by itself; REVIEW-001 B1), ops status stale 90 s running/backoff, 300 s otherwise (launcher heartbeat 10 s running / 60 s waiting), memory 2 GiB (kept: rehearsal available_min was 7.56 GB; RS-01 stops itself earlier, at its own 2048-3072 MB floor) from vm_stat free+inactive+speculative (an approximation, not the memory pressure colour).",
+  "thresholds_note": "Runbook section 3: health stall 30 s (3 cycles), feed_ok false > 60 s, lag > 45 s, blocked at once, disk floor 12.5 GiB (the refresh skips near 12 GiB), profile ok by 21:20 KST. Watcher-only choices: publisher_down 120 s, file_stuck 450 s (was 300: the 849817 rehearsal had a 330 s run of live cycles with no game-file write, so 300 could fire on a healthy game, see runbook 3.1; a live game normally changes within a few minutes; between-inning breaks are about 2-3 minutes), upload_pending = above 5 and not decreasing over 4 publish cycles and upload_stalled = oldest queued intent unchanged > 60 s (background upload keeps 2-3 pending every cycle and sets upload.code whenever pending > 0, so neither is an error by itself; REVIEW-001 B1), ops status stale 90 s running/backoff, 300 s otherwise (launcher heartbeat 10 s running / 60 s waiting), memory 2 GiB (kept: rehearsal available_min was 7.56 GB; RS-01 stops itself earlier, at its own 2048-3072 MB floor) from vm_stat free+inactive+speculative (an approximation, not the memory pressure colour).",
   "notify": {
     "cooldown_s": 300,
     "renotify_s": {"critical": 900, "warn": 1800},
