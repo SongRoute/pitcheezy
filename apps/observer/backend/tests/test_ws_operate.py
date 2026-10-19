@@ -76,6 +76,11 @@ def env(tmp_path, monkeypatch):
     return e
 
 
+
+def configured_delay(env):
+    """The launcher must carry the repository's configured common delay (Song 2026-10-19: 15 s), whatever it is."""
+    return json.loads(env.cfg_path.read_text())['fixed_delay_s']
+
 def control(e, **body):
     e.run.mkdir(parents=True, exist_ok=True)
     (e.run/'fake_control.json').write_text(json.dumps(body))
@@ -331,7 +336,7 @@ def test_status_during_run_has_publisher_identity(env):
         pub = status['publisher']
         assert status['state'] == 'running' and pub['running'] is True and pub['pid'] and pub['lstart']
         assert len(pub['commit']) == 40 and status['games'][0]['status'] == 'scheduled'
-        assert pub['fixed_delay_s'] == 0 and pub['upload_enabled'] is False and pub['fake'] is True
+        assert pub['fixed_delay_s'] == configured_delay(env) and pub['upload_enabled'] is False and pub['fake'] is True
     finally:
         (env.run/'STOP').write_text('now')
         thread.join(timeout=20)
@@ -371,7 +376,7 @@ def test_upload_run_never_writes_the_token(env, monkeypatch, capsys):
     sup, reason = supervise(env, upload=True)
     assert reason == 'final_settled'
     first = [x for x in fake_events(env) if 'start' in x][0]
-    assert first['token_seen'] is True and first['upload'] is True and first['delay'] == 0
+    assert first['token_seen'] is True and first['upload'] is True and first['delay'] == configured_delay(env)
     status = json.loads((env.tmp/'ops/status.json').read_text())
     assert status['upload']['enabled'] is True and status['upload']['blocked'] == 1
     assert status['upload']['last_error_class'] in ('upload_failed', 'conflict_412')
@@ -429,7 +434,7 @@ def test_plan_lists_ws_dates_with_timeline(env, capsys):
     assert ws.main(['--config', str(env.cfg_path), 'plan', '--schedule-file', str(env.schedule)]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out['dates'][0]['kst_date'] == env.date and out['dates'][0]['games'][0]['game_pk'] == PK
-    assert 'publisher_start' in out['dates'][0]['timeline'] and out['fixed_delay_s'] == 0
+    assert 'publisher_start' in out['dates'][0]['timeline'] and out['fixed_delay_s'] == configured_delay(env)
 
 
 def test_plan_malformed_schedule_prints_one_line_not_traceback(env, capsys):
