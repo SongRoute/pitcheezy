@@ -3,6 +3,7 @@ the schedule-outage carry holds for a doubleheader and for games on two live dat
 per carried game per cycle. Fake upstreams and fake builders only; no network, no real waiting (a hanging
 request is simulated by moving the publisher's monotonic clock by the feed's timeout before it fails)."""
 import json
+import urllib.error
 from pathlib import Path
 import sys
 
@@ -13,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import publish_fixture
 from observer_app import publisher
 from observer_app.live_feed import LIVE_CONFIG
-from publish_fixture import LIVE_DATE, LIVE_GAME
+from publish_fixture import ARCHIVE_DATE, LIVE_DATE, LIVE_GAME
 from test_publisher import make, world  # noqa: F401 - fixtures
 
 AFTER = 25.0  # past the feed's poll interval and the 20 s schedule cache of the game list
@@ -27,7 +28,7 @@ class Hang:
     black-holed proxy does), 'slow' (answers after ``slow_s``)."""
 
     def __init__(self):
-        self.mode, self.slow_s, self.clock = 'ok', 0.0, [0.0]
+        self.mode, self.slow_s, self.clock, self.days = 'ok', 0.0, [0.0], {}
 
     def install(self, world, monkeypatch):
         world.publisher.monotonic = lambda: self.clock[0]
@@ -35,7 +36,15 @@ class Hang:
         hang = self
 
         def call(upstream, url, timeout):
-            if 'schedule' in url and hang.mode == 'hang':
+            day = url.rsplit('date=', 1)[-1] if 'schedule' in url else None
+            poison = hang.days.get(day)
+            if poison == '404':
+                upstream.calls.append(url)
+                raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
+            if poison == 'parse':
+                upstream.calls.append(url)
+                return {'dates': [{'games': [{'gamePk': 1}]}]}  # no gameType: KeyError in the feed's parser
+            if poison == 'hang' or ('schedule' in url and hang.mode == 'hang'):
                 upstream.calls.append(url)
                 hang.clock[0] += timeout
                 raise TimeoutError('timed out')
@@ -97,17 +106,82 @@ def test_without_the_budget_a_hanging_schedule_holds_the_cycle_for_every_request
     assert asked == live_dates*2*ATTEMPTS and spent == asked*TIMEOUT  # minutes of one cycle (the review's case)
 
 
-def test_a_slow_schedule_stops_being_asked_once_the_cycle_budget_is_spent(world, monkeypatch):
+def live_lists(world):
+    return {date: world.read(f'v1/games/{date}.json')['live_ok'] for date in world.publisher.live_dates(world.now[0])}
+
+
+def test_a_slow_but_answering_schedule_never_degrades_a_live_list(world, monkeypatch):
+    """REVIEW-002 #1: 3 s per request (5x the 0.6 s measured) used to leave only 3 requests per cycle and publish
+    the other live dates' lists with live_ok false. Live dates are never deferred by the budget now."""
     hang = Hang().install(world, monkeypatch)
     world.cycle(after=AFTER)
-    hang.mode, hang.slow_s = 'slow', 5.0
-    health, asked, spent = outage_cycle(world, hang)
-    budget = publisher.SCHEDULE_BUDGET_S
-    assert asked == 2 and spent == 10.0  # started at 0 and 5 (< 8); the third would start at 10 and is not asked
-    assert spent < budget+hang.slow_s
-    # the live date with the remembered game was asked first: its list is good and the game is not flagged
-    assert world.read(f'v1/games/{LIVE_DATE}.json')['live_ok'] is True and codes(health) == []
-    assert health['game_checks'][str(LIVE_GAME)]['checked_at'] == health['published_at']
+    hang.mode, hang.slow_s = 'slow', 3.0
+    dates = world.publisher.live_dates(world.now[0])
+    for _ in range(3):
+        health, asked, spent = outage_cycle(world, hang)
+        assert asked == 2*len(dates) and spent == asked*hang.slow_s > publisher.SCHEDULE_BUDGET_S
+        assert set(live_lists(world).values()) == {True} and codes(health) == []
+        assert health['game_checks'][str(LIVE_GAME)]['checked_at'] == health['published_at']
+    assert world.publisher.state['schedule_live'][LIVE_DATE] == [LIVE_GAME]
+
+
+def test_the_budget_defers_only_settled_lists_of_other_dates(world, monkeypatch):
+    hang = Hang().install(world, monkeypatch)
+    world.cycle(after=AFTER)
+    path = f'v1/games/{ARCHIVE_DATE}.json'
+    before = world.path(path).read_bytes()
+    hang.mode, hang.slow_s = 'slow', 3.0
+    world.now[0] += world.config['settled_recheck_s']  # the settled list is due
+    _, asked, _ = outage_cycle(world, hang)
+    assert asked == 2*len(world.publisher.live_dates(world.now[0]))  # the live window only: 18 s > 8 s budget
+    assert world.path(path).read_bytes() == before  # deferred, not rewritten, not deleted
+    hang.mode = 'ok'
+    _, asked, _ = outage_cycle(world, hang)
+    assert asked >= 2  # its turn comes once the cycle has budget left
+
+
+@pytest.mark.parametrize('poison', ['404', 'parse'])
+def test_a_poison_date_fails_only_its_own_list_and_never_makes_the_schedule_down(world, monkeypatch, poison):
+    """REVIEW-002 #2: a 4xx or an unreadable answer for one US date is that date's problem only."""
+    hang = Hang().install(world, monkeypatch)
+    world.cycle(after=AFTER)
+    hang.days = {'2026-10-03': poison}  # asked only by the list of KST 2026-10-04
+    for _ in range(3):
+        health, asked, _ = outage_cycle(world, hang)
+        assert asked == 2*len(world.publisher.live_dates(world.now[0]))  # everything still asked
+        assert not world.publisher._schedule_down
+        assert live_lists(world) == {'2026-10-04': False, LIVE_DATE: True, '2026-10-06': True}
+        assert codes(health) == [] and health['game_checks'][str(LIVE_GAME)]['feed_ok'] is True
+
+
+def test_a_date_that_hangs_alone_costs_one_attempt_and_does_not_stop_the_others(world, monkeypatch):
+    hang = Hang().install(world, monkeypatch)
+    world.cycle(after=AFTER)
+    hang.days = {'2026-10-03': 'hang'}
+    _, asked, spent = outage_cycle(world, hang)
+    assert not world.publisher._schedule_down  # other days answered earlier in the cycle
+    assert spent == ATTEMPTS*TIMEOUT  # the first failure ran with the feed's retries
+    for _ in range(3):
+        health, asked, spent = outage_cycle(world, hang)
+        assert spent == TIMEOUT and asked == 2*len(world.publisher.live_dates(world.now[0]))  # one attempt for it
+        assert live_lists(world) == {'2026-10-04': False, LIVE_DATE: True, '2026-10-06': True}
+        assert codes(health) == []
+
+
+def test_while_the_schedule_is_down_the_probe_goes_to_each_live_date_in_turn(world, monkeypatch):
+    hang = Hang().install(world, monkeypatch)
+    world.cycle(after=AFTER)
+    hang.mode = 'hang'
+    outage_cycle(world, hang)
+    probes = []
+    for _ in range(3):
+        count = len(world.upstream.calls)
+        outage_cycle(world, hang)
+        asked = [url.rsplit('date=', 1)[-1] for url in world.upstream.calls[count:] if 'schedule' in url]
+        assert len(asked) == 1
+        probes.append(asked[0])
+    # the first US day each live list asks (KST date minus one): every live date gets the probe once in 3 cycles
+    assert sorted(probes) == ['2026-10-03', '2026-10-04', '2026-10-05']
 
 
 def test_a_restarted_publisher_rewraps_the_feed_schedule_once(world, monkeypatch):
@@ -225,3 +299,15 @@ def test_schedule_down_on_one_date_only_carries_only_that_date(fake):
     health = cycle()
     assert codes(health) == [2001] and sorted(bodies.calls) == ALL
     assert made.state['schedule_live'][D1] == [1001, 1002] and made.state['schedule_live'][D2] == [2001]
+
+
+def test_a_deferred_list_is_deleted_during_a_demo_only_when_it_shows_a_held_game(fake):
+    """REVIEW-002 #4: while the schedule is closed and a demo is on, a settled list stays unless it shows the
+    held game (or cannot be read)."""
+    bodies, made, cycle = fake
+    cycle()
+    path = made.layout['games'].format(date=D1)
+    assert made._shows_held(path, {1001}) is True and made._shows_held(path, {9}) is False
+    assert made._shows_held(made.layout['games'].format(date='2000-01-01'), {1001}) is False  # nothing there
+    made.sink.write(path, b'not json')
+    assert made._shows_held(path, {9}) is True  # unreadable: not trusted

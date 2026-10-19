@@ -68,10 +68,12 @@ STATE_FEED_CONTENT = ('provider_order', 'lag_threshold_s', 'thresholds_provision
 # scan reads no more than this much of the end of a file (a bound of the format, not a tunable).
 PUBLISH_TAIL_BYTES = 1024
 PUBLISH_TAIL = re.compile(rb'"publish"\s*:\s*(\{[^{}]*\})\s*\}\s*$')
-# PROVISIONAL, not measured. Seconds of schedule requests one cycle may start (each game list asks the schedule
-# for two US dates, with the live feed's retries and timeouts: a hanging upstream held one cycle for minutes).
-# See ``Publisher.guard_schedule``. ``schedule_budget_s`` in the publish config overrides; null = no guard (every
-# request as the feed makes it, the behaviour before 2026-10-19).
+# PROVISIONAL. Seconds into a cycle after which the settled game lists of dates outside the live window are not
+# rebuilt in that cycle (each list asks the schedule for two US dates). Live dates are never deferred by it.
+# Measured 2026-10-19 10:30 KST from the Mac mini: 5 schedule requests to statsapi, 0.55-0.60 s each (p50 0.57 s,
+# max 0.60 s), so the live window's 6 requests take ~3.4 s and a settled list ~1.2 s: 8 s leaves a wide margin.
+# ``schedule_budget_s`` in the publish config overrides; null = no guard at all (every request as the feed makes
+# it, no outage probing: the behaviour before 2026-10-19). See ``Publisher.guard_schedule``.
 SCHEDULE_BUDGET_S = 8.0
 
 
@@ -783,6 +785,18 @@ def is_final(body):
                 and (receipts is None or receipts.get('unconfirmed') == 0))
 
 
+def outage_error(error):
+    """True when a failed schedule request looks like the upstream being unreachable rather than this one request
+    being refused or unreadable: a ``LiveFeedError`` (the feed gives up after its retries) that is not an HTTP 4xx
+    other than 429. A 4xx, a ``KeyError`` from an odd answer and the like concern the date asked only."""
+    import urllib.error
+    from .live_feed import LiveFeedError
+    if not isinstance(error, LiveFeedError):
+        return False
+    cause = error.__cause__
+    return not (isinstance(cause, urllib.error.HTTPError) and cause.code < 500 and cause.code != 429)
+
+
 class NotPublic(RuntimeError):
     """A body that is not the plain public view reached the publisher (it is never written)."""
 
@@ -848,7 +862,8 @@ class Publisher:
         self._state_lock = threading.RLock()
         self._closing = False
         self.monotonic = time.monotonic
-        self._schedule_deadline, self._schedule_asked, self._schedule_down = None, 0, False
+        self._schedule_deadline, self._schedule_asked, self._schedule_down, self._probe_turn = None, 0, False, 0
+        self._schedule_answered, self._failing_days = False, set()
         self.commit, self.dates, self.safe = commit, None if dates is None else sorted(set(dates)), safe
         for date in self.dates or []:
             if re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) is None:
@@ -1094,7 +1109,7 @@ class Publisher:
         self._schedule_gap = set()
         budget = self.config.get('schedule_budget_s', SCHEDULE_BUDGET_S)
         self._schedule_deadline = None if budget is None else self.monotonic()+budget
-        self._schedule_asked = 0
+        self._schedule_asked, self._schedule_answered = 0, False
         if isinstance(self.sink, MirrorSink):
             self.sink.attempted.clear()
         self._sequence = self.state['sequence'] = self.state['sequence']+1
@@ -1205,15 +1220,23 @@ class Publisher:
         # settled lists of other dates that wait for a later cycle.
         order = sorted(set(dates_body['dates']) | set(live_dates),
                        key=lambda date: (date not in live_dates, not known_live.get(date), date))
+        if self._schedule_deadline is not None and self._schedule_down:
+            # the schedule is down: this cycle's one probe goes to the next live date in turn, so a date whose
+            # request keeps failing cannot hold every other date's list back
+            lives = [date for date in order if date in live_dates]
+            turn = self._probe_turn % len(lives) if lives else 0
+            self._probe_turn += 1
+            order = lives[turn:]+lives[:turn]+[date for date in order if date not in live_dates]
         for date in order:
             path, live = self.layout['games'].format(date=date), date in live_dates
             if not live and not self._due(path, now):
                 continue
-            if not live and self._schedule_closed():
-                # not asked this cycle (schedule budget spent or schedule down): a settled list stays as it is and
-                # is due again next cycle, unless a demo is on (its card might show a held game's score: no list
-                # then, as for a failed build)
-                if self._embargoed():
+            if not live and self._schedule_closed(budget=True):
+                # deferred (cycle budget spent, or the schedule is down): a settled list stays as it is and is due
+                # again next cycle. While a demo is on, a list that shows a held game (or cannot be read) is
+                # deleted, as for a failed build; other lists stay.
+                held = self._embargoed()
+                if held and self._shows_held(path, held):
                     failed.append(date)
                     self._drop(path, force=True)
                 continue
@@ -1266,46 +1289,77 @@ class Publisher:
                 known_live[date] = sorted(shown)
         return fast, listed
 
-    def _schedule_closed(self):
-        """True when this cycle asks the schedule no more: its budget is spent, or the schedule is down and this
-        cycle's one probe has been made."""
+    def _schedule_closed(self, *, budget=False):
+        """True when this cycle asks the schedule no more: the schedule is down and this cycle's one probe has been
+        made, or (``budget``, asked only for settled lists of dates outside the live window) the cycle's budget is
+        spent."""
         if self._schedule_deadline is None:
             return False
-        return self.monotonic() >= self._schedule_deadline or (self._schedule_down and self._schedule_asked > 0)
+        return (self._schedule_down and self._schedule_asked > 0) or (budget and self.monotonic() >= self._schedule_deadline)
+
+    def _shows_held(self, path, held):
+        """Whether the published list at ``path`` shows a card of a game a demo holds (unreadable: assumed yes)."""
+        try:
+            data = self.sink.read(path)
+            if data is None:  # nothing published there
+                return False
+            body = json.loads(data)
+        except Exception:  # noqa: BLE001 - what cannot be read is not trusted
+            return True
+        try:
+            return any(int(card['game_pk']) in held and not card.get('embargoed') for card in body['games'])
+        except Exception:  # noqa: BLE001
+            return True
 
     def guard_schedule(self, feed):
-        """Bound the time a cycle spends on schedule requests (``schedule_budget_s``). ``feed`` is the app's live
-        feed: its ``schedule`` is wrapped (on the instance; a later publisher over the same feed rewraps the
-        original). Inside a cycle a request is refused at once (``LiveFeedError``, which the list builder already
-        turns into ``live_ok: false``) when the cycle's budget is spent, or when the schedule is down (its last
-        request failed) and this cycle has made its one probe; while it is down that probe is a single attempt
-        (no retries, so at most one ``timeout_s``). The first failing request of an outage still runs with the
-        feed's retries: a request in flight is never cut. A request that answers ends the down state. Outside a
-        cycle, or with the budget null, the feed's own ``schedule`` runs unchanged. The publisher is the only
-        caller of its private app (no port), so no other thread uses the feed meanwhile."""
+        """Keep a down schedule from holding cycles. ``feed`` is the app's live feed: its ``schedule`` is wrapped
+        (on the instance; a later publisher over the same feed rewraps the original). The schedule is DOWN after a
+        request fails as an outage does (``outage_error``: no answer, timeout, 5xx or 429 after the feed's
+        retries) before any other request of the cycle was answered; an answer ends it. A day whose last request
+        failed so is asked with a single attempt until it answers. While it is down, inside a cycle the first request is a probe with
+        a single attempt (at most one ``timeout_s``; ``_lists`` gives it to each live date in turn) and every
+        further request of that cycle is refused at once (``LiveFeedError``, which the list builder turns into
+        ``live_ok: false``). A failure that is not an outage (a 4xx, an answer that cannot be read) concerns only
+        the date asked: it fails that list alone and never makes the schedule down. The first failing request of
+        an outage still runs with the feed's retries: a request in flight is never cut. Outside a cycle, or with
+        ``schedule_budget_s`` null, the feed's own ``schedule`` runs unchanged. The publisher is the only caller
+        of its private app (no port), so no other thread uses the feed meanwhile."""
         from .live_feed import LiveFeedError
         original = feed.__dict__.get('_unguarded_schedule') or feed.schedule
         feed._unguarded_schedule = original
+        missing = object()
 
         def schedule(day):
             if self._schedule_deadline is None:
                 return original(day)
             if self._schedule_closed():
-                raise LiveFeedError('schedule not asked this cycle (budget spent or schedule down)')
+                raise LiveFeedError('schedule not asked this cycle (schedule down, probe made)')
             self._schedule_asked += 1
-            down = self._schedule_down
+            down = self._schedule_down or day in self._failing_days  # a day that just failed: one attempt only
             if down:
+                saved = feed.__dict__.get('_get', missing)
                 fetch = type(feed)._get
                 feed._get = lambda url, attempts=None, received=None: fetch(feed, url, 1, received)
             try:
                 rows = original(day)
-            except BaseException:
-                self._schedule_down = True
+            except BaseException as error:
+                if outage_error(error):
+                    if len(self._failing_days) >= 32:  # bounded: only the live window's days matter
+                        self._failing_days.clear()
+                    self._failing_days.add(day)
+                    # one day that keeps failing while others answered in this cycle is that day's problem
+                    self._schedule_down = not self._schedule_answered
+                else:
+                    self._failing_days.discard(day)
                 raise
             finally:
                 if down:
-                    del feed._get
-            self._schedule_down = False
+                    if saved is missing:
+                        del feed._get
+                    else:
+                        feed._get = saved
+            self._schedule_down, self._schedule_answered = False, True
+            self._failing_days.discard(day)
             return rows
         feed.schedule = schedule
         return feed
