@@ -91,6 +91,24 @@ def test_trailing_non_pitch_event_is_not_counted_before_it_is_released():
     assert view['linescore']['teams']['home']['errors'] == 1 and view['linescore']['teams']['away']['hits'] == 1
 
 
+def test_catcher_interference_is_an_error_on_the_fielding_team():
+    """The scorer charges catcher's interference as an error on the catcher (the feed's final linescore counts it:
+    849819 Braves E=2 = one fielding error + one catcher interference)."""
+    ci = move(12, 0, None, '1B')
+    ci['credits'] = [{'player': {'id': 80}, 'position': {'code': '2'}, 'credit': 'c_catcher_interf'}]
+    feed = feed_of(
+        pa(1, 1, True, 11, 90, [pitch(1, 'B', 1, 0, 0)], [], complete=False),
+        pa(2, 1, True, 12, 90, [pitch(1, 'S', 0, 1, 0)], [ci], event='catcher_interf'),
+        pa(3, 1, True, 13, 90, [pitch(1, 'S', 0, 1, 0)], [], complete=False))
+    feed['liveData']['plays']['allPlays'][0]['about']['isComplete'] = True
+    record = game_history.build(feed)
+    keys = [p['key'] for p in record['pitches']]
+    assert service_api.cut_view(record, keys.index(f'{PK}:1:1'), DEMO)['linescore']['teams']['home']['errors'] == 0
+    line = service_api.cut_view(record, keys.index(f'{PK}:2:1'), DEMO)['linescore']
+    assert line['teams']['home']['errors'] == 1 and line['teams']['away']['errors'] == 0
+    assert line['teams']['away']['hits'] == 0 and line['teams']['away']['bb_hbp'] == 0  # not a hit, not a walk
+
+
 def snapshot(tmp_path, **over):
     raw = {'schema': 'pitcheezy-player-pregame-v1', 'game_pk': PK, 'as_of': '2026-09-28',
            'date_basis': 'regular_season_through_previous_day',

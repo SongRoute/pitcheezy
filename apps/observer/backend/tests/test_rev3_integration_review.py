@@ -27,12 +27,21 @@ def record(pk, f=None):
     return rec
 
 
-def shown_ids(view):
+def shown_ids(view, roles=('batter', 'pitcher')):
+    """Everyone the view itself shows: pitch/PA/current holders, and (contract of 0fe66af9, 2026-10-13 UI connection)
+    the as-of ``current.context`` lineups and box score. Those lists hold only the starting lineup and people an
+    already revealed event brought in (substitutions); ``test_context_people_are_starters_or_revealed`` checks that
+    against the feed, and ``test_813031_future_plays_removed_do_not_change_view`` checks no later play changes them."""
     ids = set()
     for holder in [view['current'], *view['pitches'], *view['pas']]:
-        for role in ('batter', 'pitcher'):
+        for role in roles:
             if (holder or {}).get(role):
                 ids.add(str(holder[role]['id']))
+    context = view['current'].get('context') or {}
+    for team in (context.get('boxscore') or {}).values():
+        ids |= {str(p['id']) for role in roles for p in team[role+'s']}
+    if 'batter' in roles:
+        ids |= {str(p['id']) for team in (context.get('lineups') or {}).values() for p in team}
     return ids
 
 
@@ -48,8 +57,11 @@ def test_two_way_ohtani_gets_era_as_pitcher_and_avg_ops_once_he_bats():
     view = service_api.cut_view(rec, first_pitching, DEMO)
     o = view['pregame']['players'][OHTANI]
     assert o['era'] == '2.87'
-    if first_batting > first_pitching + 1:
-        assert 'avg' not in o and 'ops' not in o  # not revealed as a batter yet
+    # batting stats exactly when the view shows him as a batter. Since the 2026-10-13 contract he is shown as one
+    # before his first PA because he is in the as-of starting lineup (current.context.lineups).
+    assert first_batting > first_pitching + 1
+    assert OHTANI in {str(p['id']) for team in view['current']['context']['lineups'].values() for p in team}
+    assert (('avg' in o) and ('ops' in o)) == (OHTANI in shown_ids(view, roles=('batter',)))
     later = service_api.cut_view(rec, first_batting, DEMO)['pregame']['players'][OHTANI]
     assert (later['era'], later['avg'], later['ops']) == ('2.87', '.282', '1.014')  # both roles kept, no first-role winner
     assert later['as_of'] == '2025-10-16' and view['pregame']['basis'] == 'regular_season_through_previous_day'
@@ -61,6 +73,30 @@ def test_pregame_only_for_revealed_people_at_every_cutoff(pk):
     for cutoff in range(-1, len(rec['pitches'])):
         view = service_api.cut_view(rec, cutoff, DEMO)
         assert set(view['pregame']['players']) <= shown_ids(view), (pk, cutoff)
+
+
+@pytest.mark.parametrize('pk', [849843, 813031])
+def test_context_people_are_starters_or_revealed(pk):
+    """The lineup/box-score people that widen ``shown_ids`` are never a future substitute: each is a starter
+    (battingOrder N00 in the feed) or a player some event at or before the next pitch already names."""
+    f = feed(pk)
+    rec = record(pk, f)
+    starters = {str((p.get('person') or {}).get('id')) for side in ('away', 'home')
+                for p in f['liveData']['boxscore']['teams'][side]['players'].values()
+                if str(p.get('battingOrder', '')).endswith('00')}
+    plays = f['liveData']['plays']['allPlays']
+    for cutoff in range(-1, len(rec['pitches'])):
+        view = service_api.cut_view(rec, cutoff, DEMO)
+        context = view['current'].get('context') or {}
+        people = {str(p['id']) for team in (context.get('boxscore') or {}).values()
+                  for role in ('batters', 'pitchers') for p in team[role]}
+        people |= {str(p['id']) for team in (context.get('lineups') or {}).values() for p in team}
+        upto = rec['pitches'][cutoff+1]['at_bat_number'] if cutoff+1 < len(rec['pitches']) else len(plays)
+        named = set()
+        for play in plays[:upto]:
+            named |= {str(play['matchup'][r]['id']) for r in ('batter', 'pitcher')}
+            named |= {str(e['player']['id']) for e in play.get('playEvents', []) if (e.get('player') or {}).get('id')}
+        assert people <= starters | named, (pk, cutoff, people - starters - named)
 
 
 def test_sixteen_games_present():
