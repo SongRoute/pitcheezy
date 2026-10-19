@@ -46,9 +46,10 @@ PROBLEM_SEVERITY = {
     'upload_blocked': 'urgent', 'another_publisher': 'urgent', 'supervisor_error': 'urgent', 'start_refused': 'urgent',
     'protected_process_changed': 'warn', 'prestart_retrying': 'warn', 'publisher_restarting': 'warn',
     'memory_low': 'warn', 'health_stale': 'warn', 'feed_failing': 'warn', 'schedule_fallback': 'warn',
-    'identity_unreadable': 'warn',
+    'identity_unreadable': 'warn', 'mount_lost': 'warn', 'mount_restart_needed': 'warn',
 }
-ALERT_KEYS = ('memory_low', 'health_stale', 'feed_failing', 'upload_blocked', 'protected_process_changed')
+ALERT_KEYS = ('memory_low', 'health_stale', 'feed_failing', 'upload_blocked', 'protected_process_changed', 'mount_lost',
+              'mount_restart_needed')
 STATUS_KEYS = ('schema', 'schema_version', 'updated_at', 'problems', 'out_dir', 'state_path', 'written_at', 'written_epoch', 'state', 'state_reason', 'kst_date', 'run_dir', 'games', 'timeline',
                'supervisor', 'publisher', 'health', 'game_checks', 'feed_ok', 'upload', 'resources', 'restarts',
                'protected', 'alerts', 'guard')
@@ -162,6 +163,15 @@ def free_disk(path):
     while not path.exists():
         path = path.parent
     return shutil.disk_usage(path).free
+
+
+def is_mounted(path):
+    return os.path.ismount(path)
+
+
+def missing_mounts(cfg):
+    """required_mounts that are not mounted now (the T7 artifact drive the recommendation policy reads)."""
+    return [m for m in cfg.get('required_mounts', []) if not is_mounted(m)]
 
 
 def ps_identity(pid):
@@ -555,9 +565,8 @@ def preflight(cfg, kst_date, *, upload_requested, schedule_file=None, expect_com
     # machine
     if not os.access(cfg['python'], os.X_OK) and not os.environ.get(FAKE_ENV):
         add('python', f'python {cfg["python"]} missing')
-    for mount in cfg.get('required_mounts', []):
-        if not os.path.ismount(mount):
-            add('mount', f'{mount} is not mounted')
+    for mount in missing_mounts(cfg):
+        add('mount', f'{mount} is not mounted')
     report['available_bytes'] = available_bytes()
     report['free_disk_bytes'] = free_disk(paths['root'])
     guards = cfg['guards']
@@ -681,6 +690,7 @@ class Supervisor:
         self.last_sample, self.last_status, self.last_walk, self.last_upload_read = 0.0, 0.0, 0.0, 0.0
         self.run_bytes = 0
         self.childwatch_pid = None
+        self.segment_missing = []  # required mounts missing when the current publisher segment started (OPS-03)
         self.started_at = self.clock()
         self.me = None
         self.problems = {}
@@ -797,6 +807,7 @@ class Supervisor:
                                          stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT,
                                          start_new_session=True)
         self.segment_started = self.clock()
+        self.segment_missing = missing_mounts(self.cfg)
         self.ident = ps_identity(self.proc.pid)
         if self.ident is None:  # childwatch could not match it: say so instead of running without a watchdog silently
             self.event('identity_unreadable', pid=self.proc.pid)
@@ -923,8 +934,9 @@ class Supervisor:
         if self.upload and now-self.last_upload_read >= self.cfg.get('upload_read_s', 30):
             self.last_upload_read = now
             self.read_upload_state()
+        missing = missing_mounts(self.cfg) if self.proc is not None else []
         self.resources = {'publisher_rss_bytes': rss, 'available_bytes': avail, 'free_disk_bytes': disk,
-                          'run_dir_bytes': self.run_bytes, 'sampled_at': now_iso(now)}
+                          'run_dir_bytes': self.run_bytes, 'mounts_missing': missing, 'sampled_at': now_iso(now)}
         self.log('resources.jsonl', self.resources | {'segment': self.segment})
         alerts = []
         if avail is not None and avail < guards['warn_available_bytes']:
@@ -937,12 +949,24 @@ class Supervisor:
             alerts.append('upload_blocked')
         if not self.protected_now.get('ok', True):
             alerts.append('protected_process_changed')
+        # OPS-03: the publisher keeps running without T7 (no crash, no restart): only the recommendation goes away.
+        # Lost mid-run: each new pitch shows compute_failed until it is back (then it recovers by itself). A segment
+        # that STARTED without it keeps recommender_unavailable even after it returns, until the publisher restarts.
+        if missing:
+            alerts.append('mount_lost')
+        elif self.proc is not None and self.segment_missing:
+            alerts.append('mount_restart_needed')
         self.alerts = alerts
         messages = {'memory_low': f'available memory {avail} < {guards["warn_available_bytes"]}',
                     'health_stale': f'health.json not advanced for > {guards["health_stale_warn_s"]} s',
                     'feed_failing': f'feed failing: {(self.health or {}).get("feed_failing_games")}',
                     'upload_blocked': f'upload blocked: {self.upload_view.get("error_classes")}',
-                    'protected_process_changed': f'protected processes changed: {self.protected_now}'}
+                    'protected_process_changed': f'protected processes changed: {self.protected_now}',
+                    # no path in the message: it reaches the phone (runbook 7.2); the paths are in resources
+                    'mount_lost': f'{len(missing)} required mount(s) (T7) not mounted: new pitches show no '
+                                  'recommendation; reconnect it',
+                    'mount_restart_needed': 'required mount (T7) is back, but this publisher started without it: '
+                                            'no recommendation until stop + start'}
         for key in ALERT_KEYS:
             self.set_problem(key, key in alerts, messages[key])
         self.streak['rss'] = self.streak['rss']+1 if rss is not None and rss > guards['stop_rss_bytes'] else 0
@@ -1163,7 +1187,8 @@ class Supervisor:
                                 ('another_publisher', 'another_publisher')):
                 if reason and reason.startswith(prefix):
                     self.set_problem(key, True, reason)
-            for key in ('publisher_restarting', 'health_stale', 'feed_failing', 'memory_low'):
+            for key in ('publisher_restarting', 'health_stale', 'feed_failing', 'memory_low', 'mount_lost',
+                        'mount_restart_needed'):
                 self.set_problem(key, False)  # the publisher is gone: these no longer describe anything
             end = {'at': now_iso(self.clock()), 'reason': reason, 'state': final_state, 'kst_date': self.date,
                    'segments': self.segment, 'restarts': self.restarts, 'finals': self.finals, 'commit': self.commit}

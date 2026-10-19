@@ -50,8 +50,10 @@
 | `feed_failing` | warn | health `feed_failing_games`가 비어 있지 않음 |
 | `schedule_fallback` | warn | 시작 점검의 일정 요청이 실패해 start 때 기록한 경기 목록을 씀 |
 | `identity_unreadable` | warn | 새 발행기의 ps 신원을 읽지 못해 그 세그먼트에 childwatch가 없음 |
+| `mount_lost` | warn | 발행기가 도는 중 `required_mounts`(T7)가 빠짐(OPS-03, 2026-10-19). 발행기는 멈추지도 재시작하지도 않는다. 새 투구마다 추천이 "추천 없음"(`compute_failed`)으로 나가고, 같은 자리에 다시 붙으면 저절로 풀린다. 메시지에 경로는 넣지 않는다(경로는 `resources.mounts_missing`) |
+| `mount_restart_needed` | warn | T7이 돌아왔지만 지금 발행기 세그먼트가 T7 없이 시작됐음. 그 프로세스는 추천 모델을 다시 읽지 않으므로 "추천 준비 안 됨"(`recommender_unavailable`)이 계속된다. `stop` 뒤 `start`로 풀린다(런북 4.8) |
 
-`alerts`(1.0, 문자열 목록: `memory_low`, `health_stale`, `feed_failing`, `upload_blocked`, `protected_process_changed`)는 그대로 둔다. 같은 키가 `problems`에도 있다.
+`alerts`(1.0, 문자열 목록: `memory_low`, `health_stale`, `feed_failing`, `upload_blocked`, `protected_process_changed`, 1.1 OPS-03부터 `mount_lost`, `mount_restart_needed`)는 그대로 둔다. 같은 키가 `problems`에도 있다.
 
 ### `games[]`
 
@@ -73,7 +75,7 @@
 | `game_checks` | obj | 경기별 `{checked_at, feed_ok, file_sequence, sequence_checked, final}` |
 | `feed_ok` | bool/null | `feed_failing_games`가 비고 모든 경기 `feed_ok`가 false가 아니면 true. health를 아직 못 봤으면 null |
 | `upload` | obj | `{enabled}` 항상. 켜져 있으면 `pending`, `code`, `attempts_by_phase`, `blocked`, `error_classes`, `last_error_class`, `pending_in_state`, `recovery_blocked` |
-| `resources` | obj | `{publisher_rss_bytes, available_bytes, free_disk_bytes, run_dir_bytes, sampled_at}` |
+| `resources` | obj | `{publisher_rss_bytes, available_bytes, free_disk_bytes, run_dir_bytes, mounts_missing, sampled_at}`. `mounts_missing`(OPS-03 추가): 발행기가 도는 동안 빠진 `required_mounts` 경로 목록(발행기 없으면 `[]`) |
 | `restarts` | obj | `{count, max, backoff_s, last_exit, next_restart_at, history}` |
 | `protected` | obj | `{ok, pinned_gone, listeners_8772}` |
 | `alerts` | list[str] | 위 참고 |
