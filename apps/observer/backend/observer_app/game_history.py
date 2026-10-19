@@ -25,6 +25,10 @@ EXTRA_EVENTS = {'field_error': '실책 출루', 'catcher_interf': '타격 방해
                 'caught_stealing_2b': '도루 실패', 'caught_stealing_3b': '도루 실패', 'caught_stealing_home': '도루 실패',
                 'pickoff_1b': '견제 아웃', 'pickoff_2b': '견제 아웃', 'pickoff_3b': '견제 아웃',
                 'sac_bunt': '희생 번트', 'strikeout_double_play': '삼진 병살', 'triple_play': '삼중살'}
+# Credits the official scorer charges as an error to the fielding team. Catcher's interference is an error on the
+# catcher (MLB official scoring; the feed's own linescore/boxscore count it, e.g. 849819 Braves E=2: Kim fielding,
+# Baldwin catcher interference). The provenance label below keeps its published name.
+ERROR_CREDITS = ('f_fielding_error', 'f_throwing_error', 'c_catcher_interf')
 LINE_PROVENANCE = {'runs': 'score_deltas', 'hits': 'pa_result_events',
                    'errors': 'fielding_error_credits_dedup', 'bb_hbp': 'pa_result_events(walk,intent_walk,hit_by_pitch)'}
 DEFAULT_ZONE_BOUNDS = {'bottom': 1.6, 'top': 3.3899}
@@ -458,7 +462,7 @@ def build(feed, watch=None, setup=None):
     def credit_errors(ab, runners, top):
         for runner in runners:
             for credit in runner.get('credits') or []:
-                if credit.get('credit') in ('f_fielding_error', 'f_throwing_error'):
+                if credit.get('credit') in ERROR_CREDITS:
                     key = (ab, (runner.get('details') or {}).get('playIndex'), (credit.get('player') or {}).get('id'),
                            credit.get('credit'))
                     if key not in errors_seen:

@@ -269,7 +269,23 @@ def test_pitcher_hand_restricts_the_cell_and_absent_hand_counts_both(tmp_path):
     assert ask(reference, balls=0) == (None, 'cell_below_provisional_minimum')
 
 
+def _bytecode_state(directory):
+    """Every file under ``directory/__pycache__`` with its size and mtime (empty when there is none)."""
+    cache = Path(directory)/'__pycache__'
+    return {str(f): (f.stat().st_size, f.stat().st_mtime_ns) for f in sorted(cache.rglob('*'))} if cache.is_dir() else {}
+
+
 def test_a_differing_pin_fails_closed_and_importing_leaves_no_trace(tmp_path):
+    # "No trace" = this module writes no bytecode next to the pinned source and leaves nothing in sys.modules. It is
+    # checked on private copies of the pinned files (same bytes, so the same pins) in fresh directories: another
+    # tool's earlier import of the shared Step 5 package may already have left a __pycache__ there (one dated
+    # 2026-10-17 exists), which is not this module's trace and not something it refuses (it executes from memory).
+    real_bytecode = {name: _bytecode_state(Path(PR.SOURCE[name]).parent) for name in PR.SOURCE['pins']}
+    copies = dict(PR.SOURCE)
+    for name in PR.SOURCE['pins']:
+        (tmp_path/'src'/name).mkdir(parents=True)
+        copies[name] = str(tmp_path/'src'/name/Path(PR.SOURCE[name]).name)
+        Path(copies[name]).write_bytes(Path(PR.SOURCE[name]).read_bytes())
     good = write_profile(tmp_path/'a')
     wrong = dict(PR.SOURCE) | {'pins': dict(PR.SOURCE['pins']) | {'live_adapter': '0'*64}}
     reference = ref(good, source=wrong)
@@ -279,9 +295,13 @@ def test_a_differing_pin_fails_closed_and_importing_leaves_no_trace(tmp_path):
     gone = dict(PR.SOURCE) | {'features': str(tmp_path/'absent.py')}
     assert 'pinned_source_unusable' in ask(ref(good, source=gone))[1]
     assert ask(ref(good))[0] is not None
+    assert ask(ref(good, source=copies))[0] is not None
     assert 'profile_reader' not in sys.modules and 'live_adapter' not in sys.modules and 'step5' not in sys.modules
     for name in PR.SOURCE['pins']:
-        assert not (Path(PR.SOURCE[name]).parent/'__pycache__').exists()
+        assert not (Path(copies[name]).parent/'__pycache__').exists()
+        assert sorted(p.name for p in Path(copies[name]).parent.iterdir()) == [Path(copies[name]).name]
+        # the real pinned directories: nothing added or rewritten by this test's loads
+        assert _bytecode_state(Path(PR.SOURCE[name]).parent) == real_bytecode[name]
         assert hashlib.sha256(Path(PR.SOURCE[name]).read_bytes()).hexdigest() == PR.SOURCE['pins'][name]
 
 

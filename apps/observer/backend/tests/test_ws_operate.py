@@ -24,6 +24,9 @@ REAL_PUBLISH_CONFIG = Path(__file__).resolve().parents[2]/'publish_config.json'
 KST = timezone(timedelta(hours=9))
 TOKEN = 'T'*20+'secretvalue'+'x'*20  # 51 URL-safe characters, never to appear in any file or output
 PK = 990001
+# The committed common delay (Song decision 2026-10-19, BLK-03: 15 s). The env fixture copies the committed config,
+# so every run below must carry exactly this value from the config to the publisher, status and plan.
+COMMITTED_DELAY = json.loads((OPS/'ws_ops_config.json').read_text())['fixed_delay_s']
 
 spec = importlib.util.spec_from_file_location('ws_operate', OPS/'ws_operate.py')
 ws = importlib.util.module_from_spec(spec)
@@ -331,7 +334,7 @@ def test_status_during_run_has_publisher_identity(env):
         pub = status['publisher']
         assert status['state'] == 'running' and pub['running'] is True and pub['pid'] and pub['lstart']
         assert len(pub['commit']) == 40 and status['games'][0]['status'] == 'scheduled'
-        assert pub['fixed_delay_s'] == 0 and pub['upload_enabled'] is False and pub['fake'] is True
+        assert pub['fixed_delay_s'] == COMMITTED_DELAY and pub['upload_enabled'] is False and pub['fake'] is True
     finally:
         (env.run/'STOP').write_text('now')
         thread.join(timeout=20)
@@ -371,7 +374,7 @@ def test_upload_run_never_writes_the_token(env, monkeypatch, capsys):
     sup, reason = supervise(env, upload=True)
     assert reason == 'final_settled'
     first = [x for x in fake_events(env) if 'start' in x][0]
-    assert first['token_seen'] is True and first['upload'] is True and first['delay'] == 0
+    assert first['token_seen'] is True and first['upload'] is True and first['delay'] == COMMITTED_DELAY
     status = json.loads((env.tmp/'ops/status.json').read_text())
     assert status['upload']['enabled'] is True and status['upload']['blocked'] == 1
     assert status['upload']['last_error_class'] in ('upload_failed', 'conflict_412')
@@ -425,11 +428,16 @@ def test_start_refuses_without_a_ws_game(env, capsys):
     assert not env.run.exists()
 
 
+def test_committed_common_delay_is_the_decided_15_seconds():
+    """docs/decisions.md 2026-10-19 (BLK-03): fixed_delay_s = 15, within the publisher's 0..120 s bound."""
+    assert COMMITTED_DELAY == 15 and ws.load_config(OPS/'ws_ops_config.json')['fixed_delay_s'] == 15
+
+
 def test_plan_lists_ws_dates_with_timeline(env, capsys):
     assert ws.main(['--config', str(env.cfg_path), 'plan', '--schedule-file', str(env.schedule)]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out['dates'][0]['kst_date'] == env.date and out['dates'][0]['games'][0]['game_pk'] == PK
-    assert 'publisher_start' in out['dates'][0]['timeline'] and out['fixed_delay_s'] == 0
+    assert 'publisher_start' in out['dates'][0]['timeline'] and out['fixed_delay_s'] == COMMITTED_DELAY
 
 
 def test_plan_malformed_schedule_prints_one_line_not_traceback(env, capsys):
