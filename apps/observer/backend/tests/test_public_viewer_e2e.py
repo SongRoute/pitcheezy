@@ -53,7 +53,7 @@ DEFAULT_CANDIDATE = {
         'adapter': {'name': 'local-https-gateway.mjs',
                     'sha256': '470c3cf7d760b83011af6f3177ba0421b8d978a420c87a0cdf93c17eff546864'},
     },
-    # Browser smoke run by both E2E tests; its internal asset table must name the same build (checked below).
+    # Browser smoke run by both E2E tests; it receives this candidate via PUBLIC_E2E_CANDIDATE (no built-in table).
     'smoke': {'path': 'apps/observer/web/tests/public-viewer-e2e-smoke.mjs'},
 }
 
@@ -144,30 +144,32 @@ def verify_gateway(candidate):
     return runtime, adapter
 
 
-def verify_smoke(candidate, build_hashes):
-    """The browser smoke hard-codes its own asset table; refuse unless it names exactly the candidate build."""
+def verify_smoke(candidate):
+    """Smoke script path (and optional SHA pin); the smoke itself re-checks the build from the candidate JSON."""
     smoke = _regular(_path(candidate['smoke']['path']))
     if candidate['smoke'].get('sha256') and sha(smoke) != candidate['smoke']['sha256']:
         raise PinMismatch('smoke script pin mismatch')
-    text = smoke.read_text()
-    missing = sorted(name for name, digest in build_hashes.items() if digest not in text)
-    if missing:
-        raise PinMismatch(f'smoke {smoke.name} pins a different public build (missing {missing}); '
-                          'the smoke must accept the candidate pins before this candidate can be tested')
     return smoke
 
 
-def pinned_candidate():
-    """All pins checked up front; any mismatch fails the test before a browser or gateway starts."""
+def pinned_candidate(tmp_path):
+    """All pins checked up front; any mismatch fails the test before a browser or gateway starts.
+    The exact candidate JSON handed to the smoke (PUBLIC_E2E_CANDIDATE) is written under tmp_path."""
     try:
         candidate, origin = load_candidate()
         source = verify_source(candidate)
         build, build_hashes = verify_build(candidate)
-        smoke = verify_smoke(candidate, build_hashes)
+        smoke = verify_smoke(candidate)
     except PinMismatch as error:
         pytest.fail(f'REFUSED candidate pin: {error}')
+    candidate_json = tmp_path/'candidate.json'
+    candidate_json.write_text(json.dumps(candidate, sort_keys=True, indent=1) + '\n')
     return {'candidate': candidate, 'origin': origin, 'source': source, 'build': build,
-            'build_hashes': build_hashes, 'smoke': smoke}
+            'build_hashes': build_hashes, 'smoke': smoke, 'json': candidate_json}
+
+
+def smoke_env(pinned):
+    return {**os.environ, 'PUBLIC_E2E_CANDIDATE': str(pinned['json'])}
 
 
 def assert_receipt_build(result, pinned):
@@ -229,7 +231,7 @@ def test_candidate_pins_refuse_mismatch(tmp_path):
         (runtime/name).write_text(f'// synthetic {name}\n')
         files[name] = sha(runtime/name)
     smoke = tmp_path/'smoke.mjs'
-    smoke.write_text(''.join(f"'{pin['sha256']}'\n" for pin in members.values()))
+    smoke.write_text('// synthetic smoke\n')
     candidate = {'schema': CANDIDATE_SCHEMA, 'source_commit': DEFAULT_CANDIDATE['source_commit'],
         'public_build': {'dir': str(build), 'members': members},
         'gateway': {'commit': '0'*40, 'runtime_dir': str(runtime), 'files': {'gateway.mjs': files['gateway.mjs']},
@@ -241,7 +243,8 @@ def test_candidate_pins_refuse_mismatch(tmp_path):
     assert loaded == candidate and origin['sha256'] == sha(manifest)
     _, hashes = verify_build(loaded)
     verify_gateway(loaded)
-    verify_smoke(loaded, hashes)
+    verify_smoke(loaded)
+    assert hashes == {name: pin['sha256'] for name, pin in members.items()}
 
     (build/'index.html').write_text('changed')
     with pytest.raises(PinMismatch, match='public build pin mismatch'):
@@ -262,9 +265,8 @@ def test_candidate_pins_refuse_mismatch(tmp_path):
     (runtime/'gateway.mjs').write_text('// tampered\n')
     with pytest.raises(PinMismatch, match='gateway pin mismatch'):
         verify_gateway(loaded)
-    smoke.write_text("'0000'\n")
-    with pytest.raises(PinMismatch, match='pins a different public build'):
-        verify_smoke(loaded, hashes)
+    with pytest.raises(PinMismatch, match='smoke script pin mismatch'):
+        verify_smoke({**loaded, 'smoke': {'path': str(smoke), 'sha256': '0'*64}})
     with pytest.raises(PinMismatch, match='source pin'):
         verify_source({**loaded, 'source_commit': 'f'*40})
     # 56b4347 predates the public static build inputs: the web sources differ, so the pin refuses.
@@ -275,14 +277,33 @@ def test_candidate_pins_refuse_mismatch(tmp_path):
         load_candidate({CANDIDATE_ENV: str(manifest)})
 
 
+def test_smoke_refuses_without_or_with_wrong_candidate(tmp_path):
+    """The browser smoke has no built-in asset table: no candidate JSON, or a pin that disagrees, exits before any server."""
+    build = tmp_path/'build'
+    build.mkdir()
+    (build/'index.html').write_bytes(b'synthetic index')
+    smoke = WEB/'tests/public-viewer-e2e-smoke.mjs'
+    argv = ['node', str(smoke), str(build), str(tmp_path/'out'), str(LIVE_GAME), 'cert', 'key', str(tmp_path/'r.json')]
+    env = {key: value for key, value in os.environ.items() if key != 'PUBLIC_E2E_CANDIDATE'}
+    missing = subprocess.run(argv, capture_output=True, text=True, timeout=30, cwd=WEB, env=env)
+    assert missing.returncode != 0 and 'PUBLIC_E2E_CANDIDATE' in missing.stderr
+    wrong = tmp_path/'candidate.json'
+    wrong.write_text(json.dumps({'schema': CANDIDATE_SCHEMA, 'public_build': {'members': {
+        'index.html': {'bytes': 15, 'sha256': '0'*64}}}}))
+    mismatch = subprocess.run(argv, capture_output=True, text=True, timeout=30, cwd=WEB,
+                              env={**env, 'PUBLIC_E2E_CANDIDATE': str(wrong)})
+    assert mismatch.returncode != 0 and 'public build index.html' in mismatch.stderr
+    assert not (tmp_path/'r.json').exists()
+
+
 def test_public_viewer_consumes_synthetic_publisher_bytes(tmp_path, monkeypatch):
-    pinned = pinned_candidate()
+    pinned = pinned_candidate(tmp_path)
     output = synthetic_publication(tmp_path, monkeypatch)
     private_key, certificate = localhost_certificate(tmp_path)
     receipt = tmp_path/'browser-receipt.json'
     process = subprocess.run(['node', str(pinned['smoke']), str(pinned['build']), str(output),
         str(LIVE_GAME), str(certificate), str(private_key), str(receipt)],
-        capture_output=True, text=True, timeout=90, cwd=WEB)
+        capture_output=True, text=True, timeout=90, cwd=WEB, env=smoke_env(pinned))
     assert process.returncode == 0, process.stdout + '\n' + process.stderr
     result = json.loads(receipt.read_text())
     assert result['status'] == 'PASS_SYNTHETIC_LOCAL_HTTPS' and result['ownedServerClosed']

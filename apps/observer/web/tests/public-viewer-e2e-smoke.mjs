@@ -13,19 +13,28 @@ assert.ok(Number.isSafeInteger(game) && game > 0);
 const gatewayPort = gatewayPortArg === undefined ? null : Number(gatewayPortArg);
 assert.ok(gatewayPort === null || (Number.isSafeInteger(gatewayPort) && gatewayPort > 0 && gatewayPort < 65536));
 const sh = data => createHash('sha256').update(data).digest('hex');
-const assets = {
-  '/': ['index.html', 'bccdf2b83ff613d40ae15b766fa0b056a9ec1d894f5ed13caa96859cadd5b8fb'],
-  '/index.html': ['index.html', 'bccdf2b83ff613d40ae15b766fa0b056a9ec1d894f5ed13caa96859cadd5b8fb'],
-  '/favicon.svg': ['favicon.svg', 'bbfd72e5d077bd545b2cf568e5267c6637598d5253746f5b395e0d5f3fb144d9'],
-  '/assets/index-D5DvN5mB.js': ['assets/index-D5DvN5mB.js', '7444fdb7f01e9d8729ec39eb954871d9b7801ec9bdeb02375052b35e67d74231'],
-  '/assets/index-Dw6b8jjM.css': ['assets/index-Dw6b8jjM.css', '3745f095a47d6cea5475b52533bf5a1aab820d9d14bf6c5932f45760e7024a4f'],
-};
+// The asset table is an explicit input: PUBLIC_E2E_CANDIDATE = candidate JSON (pitcheezy-public-e2e-candidate-v1,
+// written by apps/observer/backend/tests/test_public_viewer_e2e.py). No built-in default: without it, or on any
+// mismatch, the smoke refuses before starting a server, so it cannot silently pass on a different build.
+const candidatePath = process.env.PUBLIC_E2E_CANDIDATE;
+assert.ok(candidatePath, 'PUBLIC_E2E_CANDIDATE (candidate JSON with public_build.members) required');
+const candidate = JSON.parse(readFileSync(candidatePath, 'utf8'));
+assert.equal(candidate.schema, 'pitcheezy-public-e2e-candidate-v1', 'candidate schema');
+const members = candidate.public_build?.members ?? {};
+assert.ok(members['index.html'], 'candidate members must include index.html');
+const assets = Object.fromEntries([['/', ['index.html', members['index.html'].sha256]],
+  ...Object.entries(members).map(([rel, pin]) => {
+    assert.ok(/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/.test(rel) && !rel.split('/').includes('..'), `asset path ${rel}`);
+    assert.ok(/^[0-9a-f]{64}$/.test(pin.sha256) && Number.isSafeInteger(pin.bytes), `asset pin ${rel}`);
+    return [`/${rel}`, [rel, pin.sha256, pin.bytes]];
+  })]);
 const allowed = new Map();
-for (const [url, [rel, expected]] of Object.entries(assets)) {
+for (const [url, [rel, expected, bytes]] of Object.entries(assets)) {
   const path = join(build, rel);
-  assert.ok(lstatSync(path).isFile() && !lstatSync(path).isSymbolicLink());
+  assert.ok(lstatSync(path).isFile() && !lstatSync(path).isSymbolicLink(), `public build ${rel} regular file`);
   const data = readFileSync(path);
   assert.equal(sh(data), expected, `public build ${rel}`);
+  if (bytes !== undefined) assert.equal(data.length, bytes, `public build ${rel} bytes`);
   allowed.set(url, data);
 }
 const v1 = ['manifest.json', 'dates.json', 'health.json', 'games/2026-10-05.json', `game/${game}.json`];

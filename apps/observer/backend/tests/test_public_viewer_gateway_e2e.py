@@ -14,7 +14,7 @@ import pytest
 
 from observer_app.publisher import HttpSink, LocalDirSink, MirrorSink, Publisher, load_config
 from test_public_viewer_e2e import (PinMismatch, WEB, assert_receipt_build, localhost_certificate,
-    pinned_candidate, synthetic_publication, verify_gateway)
+    pinned_candidate, smoke_env, synthetic_publication, verify_gateway)
 from test_publisher_replay import LIVE_GAME
 
 TOKEN = 'synthetic-upload-token-never-persisted-0000000000'
@@ -25,7 +25,7 @@ def sha(path):
 
 
 def test_publisher_upload_gateway_and_viewer_bytes(tmp_path, monkeypatch):
-    pinned = pinned_candidate()
+    pinned = pinned_candidate(tmp_path)
     try:
         _, adapter = verify_gateway(pinned['candidate'])
     except PinMismatch as error:
@@ -76,7 +76,7 @@ def test_publisher_upload_gateway_and_viewer_bytes(tmp_path, monkeypatch):
         receipt = tmp_path/'gateway-browser-receipt.json'
         browser = subprocess.run(['node', str(pinned['smoke']), str(pinned['build']), str(output),
             str(LIVE_GAME), str(certificate), str(private_key), str(receipt), str(port)],
-            capture_output=True, text=True, timeout=90, cwd=WEB)
+            capture_output=True, text=True, timeout=90, cwd=WEB, env=smoke_env(pinned))
         assert browser.returncode == 0, browser.stdout + '\n' + browser.stderr
         result = json.loads(receipt.read_text())
         assert result['status'] == 'PASS_SYNTHETIC_LOCAL_HTTPS' and result['ownedServerClosed']
