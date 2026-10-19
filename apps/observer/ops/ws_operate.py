@@ -1325,7 +1325,7 @@ def cmd_start(args, cfg):
     if not confirmed:
         tail = (run_dir/'supervisor.log').read_text()[-600:] if (run_dir/'supervisor.log').exists() else ''
         print(tail)
-        report = dict(report, problems=[f'supervisor pid {pid} did not record supervisor_start within '
+        report = dict(report, problems=[f'supervisor_not_started: supervisor pid {pid} did not record supervisor_start within '
                                         f'{cfg.get("start_confirm_s", 15)} s (see supervisor.log)'],
                       problem_keys=['supervisor_not_started'])
         wrote = write_start_refused(cfg, kst_date, report, games)

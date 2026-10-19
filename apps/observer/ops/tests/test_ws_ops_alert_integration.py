@@ -562,6 +562,7 @@ def test_cli_start_reports_a_supervisor_that_dies_at_once(rig, monkeypatch, caps
     assert 'did not start' in capsys.readouterr().out
     status = rig.status()
     assert status['state'] == 'refused' and status['refused_by'] == 'start'
+    assert 'supervisor_not_started' in [p for p in status['problems'] if p['key'] == 'start_refused'][0]['message']
     rig.watch()
     assert rig.fired()['ops_problem:start_refused'] == 'critical'
 
