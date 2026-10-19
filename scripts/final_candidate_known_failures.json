@@ -1,5 +1,6 @@
 [
   {"step": "web-compact", "match": "^390x844 \\S+ [LR]( 12p)? score, count and zone above the fold, strip above the tab bar$", "max": 4, "reason": "b2 layout: at 390x844 the card strip bottom sits below the fixed tab bar top 783px (20261017 E-static CLASSIFICATION 776/4)"},
   {"step": "web-studio", "match": "^390x844 \\S+ key information visible without scrolling$", "max": 3, "reason": "b2 layout: .sv-strip bottom below the tab bar top 783px at 390x844 (20261017 E-static CLASSIFICATION 238/3)"},
-  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_publisher_background\\.py::test_retry_cursor_passes_large_head_failure_prefix$", "max": 1, "reason": "known flaky: MirrorSink background upload timing, 1 of 3 runs failed in the CL-03d review (ws-operations-runbook.md)", "flaky": true}
+  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_publisher_background\\.py::test_retry_cursor_passes_large_head_failure_prefix$", "max": 1, "reason": "known flaky: MirrorSink background upload timing, 1 of 3 runs failed in the CL-03d review (ws-operations-runbook.md)", "flaky": true},
+  {"step": "backend-ops", "match": "^apps/observer/backend/tests/test_publisher_background\\.py::test_blocked_prefix_cannot_starve_later_eligible_path$", "max": 1, "reason": "known flaky: MirrorSink background upload timing (141 vs 140); seen in CL-10p d6ba9a3f run, CL-15p builder runs (2/14, 1/36) and G4-0 review (1/3); code untouched since v4.3", "flaky": true}
 ]
