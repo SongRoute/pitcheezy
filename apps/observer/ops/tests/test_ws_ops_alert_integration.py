@@ -254,8 +254,12 @@ def test_prestart_retrying_then_refused(rig, monkeypatch):
     rig.watch()
     fired = rig.fired()
     assert fired['ops_problem:prestart_retrying'] == 'warn'
-    assert fired['publisher_down'] == 'critical'  # in window, no health.json yet
+    assert 'publisher_down' not in fired  # in window, no health.json yet: held publisher_down_hold_s (OPS-02)
     assert 'ops_status_stale' not in fired
+    rig.wcfg['thresholds']['publisher_down_hold_s'] = 0.5
+    time.sleep(0.6)
+    rig.watch()
+    assert rig.fired()['publisher_down'] == 'critical'  # still no publisher after the hold: critical
     rig.stop()
     assert rig.result['reason'] == 'operator_stop_before_start'
 
@@ -560,3 +564,15 @@ def test_cli_start_reports_a_supervisor_that_dies_at_once(rig, monkeypatch, caps
     assert status['state'] == 'refused' and status['refused_by'] == 'start'
     rig.watch()
     assert rig.fired()['ops_problem:start_refused'] == 'critical'
+
+
+def test_cli_start_slow_but_alive_supervisor_is_a_warning_not_a_refusal(rig, monkeypatch, capsys):
+    """DRILL-REVIEW-001 note: a supervisor still running after start_confirm_s owns status.json; start must not
+    overwrite it with refused."""
+    rig.config(start_confirm_s=0.3)
+    monkeypatch.setattr(ws, 'spawn_supervisor', lambda argv, run_dir: 999999)
+    monkeypatch.setattr(ws, 'is_our_supervisor', lambda ident, recorded, run_dir: True)
+    assert ws.main(['--config', str(rig.cfg_path), 'start', '--date', rig.date,
+                    '--schedule-file', str(rig.schedule)]) == 0
+    assert 'has not recorded supervisor_start yet' in capsys.readouterr().out
+    assert rig.status() is None

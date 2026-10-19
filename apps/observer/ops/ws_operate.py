@@ -1317,7 +1317,12 @@ def cmd_start(args, cfg):
     pid = spawn_supervisor(argv, run_dir)
     ident = {'pid': pid, 'identity': ps_identity(pid), 'started_at': now_iso(), 'argv': argv}
     write_json_atomic(run_dir/'supervisor.identity.json', ident)
-    if not supervisor_confirmed(run_dir, pid, cfg.get('start_confirm_s', 15)):
+    confirmed = supervisor_confirmed(run_dir, pid, cfg.get('start_confirm_s', 15))
+    if not confirmed and is_our_supervisor(ps_identity(pid), ident, run_dir):
+        # slow but alive (DRILL-REVIEW-001 note): it will take the lock and own status.json; do not write refused
+        print(f'WARNING: supervisor pid {pid} is running but has not recorded supervisor_start yet; check status')
+        confirmed = True
+    if not confirmed:
         tail = (run_dir/'supervisor.log').read_text()[-600:] if (run_dir/'supervisor.log').exists() else ''
         print(tail)
         report = dict(report, problems=[f'supervisor pid {pid} did not record supervisor_start within '
