@@ -1078,6 +1078,7 @@ class Publisher:
         if reason:
             raise Unsafe(reason)  # before a sequence is taken or a file is touched
         self._now, self._written, self._unavailable, self._feed_failing, self._game_attempts = self.wall(), [], [], [], {}
+        self._schedule_gap = set()
         if isinstance(self.sink, MirrorSink):
             self.sink.attempted.clear()
         self._sequence = self.state['sequence'] = self.state['sequence']+1
@@ -1122,6 +1123,10 @@ class Publisher:
             unavailable_dates.clear()
             self._lists(dates_body, live_dates, unavailable_dates)
             self.state['embargoed'] = sorted(embargoed | late)
+        for game_pk in sorted(self._schedule_gap - embargoed - late):
+            # a game whose file is already final needs no schedule: its card would only be noise
+            if (self.state['files'].get(self.layout['game'].format(game_pk=game_pk)) or {}).get('final') is not True:
+                self._fail(game_pk, None, 'schedule_unavailable')
         for game_pk, code in sorted(self.state['pending'].items()):  # still unresolved, asked this cycle or not
             self._fail(int(game_pk), None, code)
         if isinstance(self.sink, MirrorSink) and not self.sink.remote.dry_run:
@@ -1131,10 +1136,11 @@ class Publisher:
                     self._fail(int(match[1]), None, 'upload_failed')
         # Only a real game-body check advances freshness; settled games may skip many cycles.
         self._now = max(now, self.wall())
-        # Setup and remote-upload faults are reported in unavailable_games, but neither says the
-        # game feed/body check failed. In particular, a good final game may lose only its setup file.
+        # Setup, remote-upload and schedule faults are reported in unavailable_games, but none says the
+        # game feed/body check failed. In particular, a good final game may lose only its setup file, and a game
+        # carried over a schedule outage whose own feed answered is fine (its check says so).
         failed_games = {item['game_pk'] for item in self._unavailable
-                        if item['code'] not in ('setup_failed', 'upload_failed')}
+                        if item['code'] not in ('setup_failed', 'upload_failed', 'schedule_unavailable')}
         game_checks = {}
         for game_pk in sorted(listed | known | embargoed | late):
             entry = self.state['files'].get(self.layout['game'].format(game_pk=game_pk))
@@ -1167,6 +1173,18 @@ class Publisher:
         A list never shows a game a demo holds: it is built again if a demo began meanwhile, and a list that
         cannot be built or written while any demo is on is deleted rather than left with its old scores."""
         now, fast, listed = self._now, set(), set()
+        # Games of each live date as the last list built with a working schedule (``live_ok`` not false) showed
+        # them. While the schedule cannot be fetched a list loses its in-progress cards (they come from the schedule
+        # row alone): those games are still checked every cycle, so a feed that is down too is reported for them
+        # (game_checks feed_ok false, feed_failing_games, the file's display state) instead of their last check
+        # standing still; ``schedule_unavailable`` names them in unavailable_games. Nothing is added that the last
+        # good list did not show, and finished games come from the stored records whatever the schedule does.
+        known_live = self.state.get('schedule_live')
+        if not isinstance(known_live, dict):
+            known_live = self.state['schedule_live'] = {}
+        for date in [date for date, pks in known_live.items() if date not in live_dates or not isinstance(pks, list)
+                     or not all(type(pk) is int for pk in pks)]:
+            del known_live[date]
         for date in sorted(set(dates_body['dates']) | set(live_dates)):
             path, live = self.layout['games'].format(date=date), date in live_dates
             if not live and not self._due(path, now):
@@ -1195,12 +1213,23 @@ class Publisher:
                 if self._embargoed():
                     self._drop(path, force=True)  # no list is better than one that still shows an embargoed score
                 continue  # otherwise the last published list stays
+            shown = set()
             for card in body['games']:
                 if card.get('embargoed'):
                     continue
+                shown.add(int(card['game_pk']))
                 listed.add(int(card['game_pk']))
                 if live:
                     fast.add(int(card['game_pk']))
+            if not live:
+                continue
+            if body.get('live_ok') is False:
+                carried = set(known_live.get(date, []))-shown-self._embargoed()
+                listed |= carried
+                fast |= carried
+                self._schedule_gap |= carried
+            else:
+                known_live[date] = sorted(shown)
         return fast, listed
 
     def _game(self, game_pk, *, fast, archived):

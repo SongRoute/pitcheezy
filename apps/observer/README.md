@@ -154,7 +154,7 @@ find "$T/out" -type f
 ### 파일
 
 - `v1/manifest.json` — 계약 버전, 코드 커밋(`commit`, 커밋 안 된 변경이 있으면 `commit_dirty: true`), 발행 시각, 발행 간격, 고정 지연, 매 주기 다시 만드는 날짜.
-- `v1/health.json` — 마지막 발행 시각과 순번. 한 주기의 맨 마지막에 쓴다. 이 파일이 움직이지 않으면 발행이 멈춘 것이다. 이번 주기에 만들거나 쓰지 못한 경기는 `unavailable_games`(`game_pk`, `status`, 정해진 `code`: `refused`·`build_failed`·`write_failed`·`setup_failed`·`not_public`·`withdraw_failed`(지워야 할 파일을 지우지 못함)·`archive_unread`(보관 폴더에 들어온 최종 피드를 읽지 못함, 읽힐 때까지 계속 표시))에, 날짜 목록은 `unavailable_dates`(날짜만)에, 피드가 응답하지 않아 마지막 상태로 만든 경기는 `feed_failing_games`에 남는다. 경로나 오류 문장은 싣지 않는다. 한 경기의 실패는 다른 경기와 health 발행을 막지 않는다.
+- `v1/health.json` — 마지막 발행 시각과 순번. 한 주기의 맨 마지막에 쓴다. 이 파일이 움직이지 않으면 발행이 멈춘 것이다. 이번 주기에 만들거나 쓰지 못한 경기는 `unavailable_games`(`game_pk`, `status`, 정해진 `code`: `refused`·`build_failed`·`write_failed`·`setup_failed`·`not_public`·`withdraw_failed`(지워야 할 파일을 지우지 못함)·`archive_unread`(보관 폴더에 들어온 최종 피드를 읽지 못함, 읽힐 때까지 계속 표시)·`schedule_unavailable`(스케줄을 받지 못해 마지막 정상 목록의 경기를 계속 확인 중, 피드 실패로 세지 않음))에, 날짜 목록은 `unavailable_dates`(날짜만)에, 피드가 응답하지 않아 마지막 상태로 만든 경기는 `feed_failing_games`에 남는다. 경로나 오류 문장은 싣지 않는다. 한 경기의 실패는 다른 경기와 health 발행을 막지 않는다.
 - `v1/dates.json` — `GET /api/service/dates`와 같은 본문.
 - `v1/games/<YYYY-MM-DD>.json` — `GET /api/service/games?date=`와 같은 본문.
 - `v1/game/<game_pk>.json` — `GET /api/service/games/{pk}`와 같은 본문(항상 전체, `after` 없음).
