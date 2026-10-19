@@ -69,13 +69,30 @@
 | 무엇 | 기준 | 근거 |
 |---|---|---|
 | health 정체 | `published_at`이 30초(3주기) 넘게 안 바뀜 | 화면의 "갱신 지연" 기준 `max(VITE_PUBLISH_STALE_S=30, 3×주기)`와 같게 둠. **잠정**(리허설에서 실제 주기·흔들림을 재서 정함) |
-| 경기 확인 정체 | 진행 중 경기 `checked_at`이 30초 넘게 멈춤 | 위와 같음. **잠정** |
+| 경기 확인 정체 | 진행 중 경기 `checked_at`이 30초 넘게 멈춤 | 위와 같음. 리허설 최대 20초(3.1). **잠정** |
 | 피드 끊김 | `feed_ok:false` 또는 `feed_failing_games`에 경기 | 화면이 즉시 "연결 끊김"을 띄움 |
 | 피드 지연 | `delayed:true` (lag > 45초) | `display_state.py` `feed_lag_delayed_s` 45. 10/2 실측 피드 지연 중앙값 약 19초. 45는 **잠정** |
 | 업로드 밀림 | `upload.pending` > 0이 3주기 넘게 계속 | **잠정**(실제 호스트로 재 본 적 없음) |
 | 업로드 막힘 | `upload_attempts`에 `phase=blocked` 하나라도 | 자동으로 풀리지 않으므로 바로 사람 확인 |
 | 맥 메모리 | 메모리 압박 "노랑" 이상, 또는 스왑 증가 | **잠정**. 24 GB 맥에서 수치 기준은 재지 않았다 |
 | 프로필 일일 갱신 | 21:20 KST에 `RESULTS.log` 마지막 줄이 그날 `ok`가 아님 | 하루 실패는 카드가 하루 묵음, 이틀 연속이면 "기록 기준 MM/DD" 표시(1절 참고 카드) |
+
+### 3.1 첫 실경기 리허설 실측으로 본 감시기 기준 (2026-10-19, 단일 경기, 모두 잠정)
+
+근거: 경기 849817 리허설(2026-10-18, `F-rehearsal/RESULT.json` + `RESULT-REVIEW-001.json`). **한 경기·한 구장·ARM-B 끔·로컬 파일만(업로드·호스트 없음)**이라 n이 작다. 그래서 보수적으로 두고, 실측으로 틀린 것이 드러난 하나(`file_stuck`)만 올릴 것을 권고한다(아직 적용 전). 값은 `ws_alert_config.json`.
+
+| 규칙 | 기존 | 새 값 | 실측과 이유 |
+|---|---|---|---|
+| `health_stalled` | 30초 | 30초 유지 | health 간격(H1, 계획 중단 제외) p50 10 / p90 11 / p99 12 / 최대 30초. 최대가 30.0초로 기준과 같아 "30초 넘게" 조건은 한 번도 안 걸렸다(30초 초과 비율 0). 여유는 거의 없다 — 실경기에서 오탐이 나면 45초로 올린다. 최대 30초의 원인은 이 결과로는 못 가린다(계획 재시작·중단 틈은 별도 70초로 분리돼 있음). **잠정, 여유 얇음** |
+| `game_check_stalled` | 30초(없음 60초) | 유지 | `checked_at` 나이(H2, 중단 구간 밖) p50 1 / p99 2 / 최대 20초 → 30초는 최대의 1.5배. 경기 확인 누락 행 0. **잠정** |
+| `feed_down` | 60초 | 유지 | 리허설 중 `feed_ok:false`는 한 번도 없었다(리뷰 한계). 실측이 없어 바꿀 근거가 없다. **미측정, 잠정** |
+| `feed_delayed` | lag > 45초, 20초 유지 | 유지 | 경기 파일 lag(D2) p50 7.0 / p90 15.4 / p99 21.2 / 최대 30.6초, `delayed:true` 0건. 45초는 최대의 1.5배. 투구→파일 지연(C4, 참고)은 p99 33.7 / 최대 36.6초로 45초 아래이나 여유 8초. **잠정** |
+| `file_stuck` | 300초 | 300초 유지, **450초로 올릴 것을 권고** (테스트 `test_ws_alert.py`의 `file_stuck` 3건이 310초 시점을 가정해 같이 고쳐야 하고 `ws_alert.py` 기본값도 따라야 해 이번 작업 범위 밖) | 생방송 주기 1053 중 경기 파일이 안 써진 주기가 665개, 가장 긴 연속이 33주기 = 330초(C3). 건강한 경기에서 300초를 넘었으므로 그대로면 오탐 가능(상태가 `In Progress`일 때). 330초의 정확한 원인(이닝 교대·투수 교체·중단 구간 포함 여부)은 이 결과만으로 모르므로 최댓값의 약 1.4배로 올리는 것을 권한다. 운영 상태의 `upstream_changed_at` 경로(60초)는 값이 아직 안 채워져 미측정. **잠정, 경기 더 보고 재조정** |
+| `upload_pending`·`upload_stalled`·`upload_*` | 5건·4주기, 60초 | 유지 | 로컬 파일 리허설이라 업로드를 쓰지 않았다. **미측정** |
+| `memory_low` | 2 GiB, 60초 | 유지 | 리허설 중 가용 메모리 최저(P1 `available_min`) 7.56 GB(약 7.0 GiB), 발행기 RSS 최대 약 109 MB. 기준 2 GiB와 5 GiB 이상 여유. 감시기 값은 `vm_stat` free+inactive+speculative라 P1의 "가용"과 같은 수는 아니다. 참고: RS-01 드라이런 등록 초안은 자체 하한 `min_free_memory_mb` 3072(RUNBOOK-v2는 현재 2048, 드라이런 뒤 고정)이다 — RS-01 쪽이 스스로 멈추는 값이 감시기 알림(2 GiB)보다 높아, 알림이 오기 전에 RS-01이 먼저 "예측 없음"으로 물러난다. 맞추려면 RS-01 확정 뒤 감시기를 그 값 이상으로 올리는 것을 검토(테스트가 2.0을 고정하고 있어 이번엔 안 바꿈). **잠정** |
+| `disk_low` | 12.5 GiB | 유지 | 리허설 중 디스크 여유 최저 15.38 GB(약 14.3 GiB) — 기준과 약 1.8 GiB 차이. 이번 실행 산출물은 약 42 MB라 문제는 맥의 평소 여유가 적다는 쪽이다. 프로필 갱신이 12 GiB 근처에서 건너뛰므로 12.5는 그대로 둔다. **잠정** |
+
+중단(outage) 시험에서 알게 된 것: 180초 동안 프록시를 막자 경기는 다시 확인되지 않아 `game_check`의 `checked_at`이 멈췄고(최대 약 176초), `feed_ok`는 true로 남고 `feed_failing_games`는 비었다. 즉 **일정과 피드가 같이 끊기는 사고에서 감시기가 잡는 규칙은 `game_check_stalled`뿐이다(`feed_down`은 안 울린다).** 피드만 끊기고 일정은 되는 경우 `feed_failing`이 보고될지는 측정하지 않았다. CL-03a가 들어오기 전까지 이 한 규칙에 의존한다는 점을 알고 있어야 한다(`game_check_stalled`를 끄거나 크게 올리지 말 것).
 
 ## 4. 사고별 대응
 
@@ -162,7 +179,7 @@
 | `game_check_stalled:<경기>` | 진행 중 경기 `checked_at` 30초 넘게 멈춤, 또는 `game_checks`에 경기 없음 60초 | 경고 | 예 |
 | `feed_down:<경기>` | `feed_ok:false` 또는 `feed_failing_games`가 60초 넘게 계속 | 긴급 | 예 |
 | `feed_delayed:<경기>` | 경기 파일 `display_state.feed.delayed`(발행기 판단: lag > max(45초, 시청 지연))가 20초 넘게 | 경고 | 예 |
-| `file_stuck:<경기>` | 경기가 실제 진행 중(`status_text`가 `In Progress`)이고 확인·피드는 정상인데 `file_sequence`가 300초 넘게 그대로, 또는 운영 상태의 `upstream_changed_at`이 그보다 새롭고 60초가 지남. Warmup·Delayed·Suspended·비디오 판독 중에는 보지 않고, 그때마다 시계를 0으로 돌린다. `status_text`가 없을 때 운영 상태 `games[].status: live`만으로는 보지 않는다(실행기의 live는 예정 시각이 지났다는 시계 판단이지 경기 진행 확인이 아님) | 경고 | 예 |
+| `file_stuck:<경기>` | 경기가 실제 진행 중(`status_text`가 `In Progress`)이고 확인·피드는 정상인데 `file_sequence`가 300초(450초 상향 권고, 3.1) 넘게 그대로, 또는 운영 상태의 `upstream_changed_at`이 그보다 새롭고 60초가 지남. Warmup·Delayed·Suspended·비디오 판독 중에는 보지 않고, 그때마다 시계를 0으로 돌린다. `status_text`가 없을 때 운영 상태 `games[].status: live`만으로는 보지 않는다(실행기의 live는 예정 시각이 지났다는 시계 판단이지 경기 진행 확인이 아님) | 경고 | 예 |
 | `game_unavailable:<경기>` | `unavailable_games`에 그 경기 코드가 30초 넘게(`upload_failed`는 제외 — 업로드 규칙이 본다) | 경고 | 예 |
 | `upload_pending` | `upload.pending`이 5건 넘고 4주기 연속 줄지 않음. 백그라운드 업로드에서는 매 주기 2~3건 대기와 `upload.code='upload_failed'`가 **정상**이라 `upload.code`는 쓰지 않는다 | 경고 | 예 |
 | `upload_stalled` | 상태 파일의 대기 중 전송(blocked·rejected 제외) 가운데 가장 오래된 것(revision)이 60초 넘게 그대로 | 경고 | 예 |
@@ -220,7 +237,7 @@ Song이 할 일(iMessage, 쓰려면):
 맥 알림을 끄려면 `PITCHEEZY_ALERT_MACOS=0`. 알림 경로가 실패하면 감시기는 멈추지 않고 `alerts.jsonl`에 `notify_error`로 남긴다.
 
 ### 7.5 아직 안 정한 것
-- 기준값 전부(리허설 E에서 실제 주기·흔들림·피드 지연을 재서 고친다). 특히 `file_stuck` 300초는 이닝 교대·투수 교체로 거짓 경고가 날 수 있다.
+- 기준값 전부(리허설 E에서 실제 주기·흔들림·피드 지연을 재서 고친다). 특히 `file_stuck`은 리허설 실측으로 300→450초 상향을 권고했고(3.1, 아직 적용 전), 여전히 이닝 교대·투수 교체로 거짓 경고가 날 수 있다.
 - 감시기 자체가 죽은 것은 "감시 시작" 알림이 없는 것으로만 안다(그 밖에는 `alert_state.json`의 `last_run`). launchd KeepAlive나 운영 감독 아래에서 띄울지 함께 정한다.
 - ~~운영 상태 v1.1 필드가 실제로 들어오면 가짜 감독 시험으로 한 번 맞춰 본다.~~ 2026-10-18 통합 시험 `apps/observer/ops/tests/test_ws_ops_alert_integration.py`(실제 감독 + 가짜 발행기 + 감시기 `--once`)로 맞췄다. 실경기·리허설에서 같이 돌려 본 적은 아직 없다.
 - 발행기가 죽으면 `publisher_down`·`health_stalled`·`game_check_stalled`가 함께 뜬다(한 메시지로 묶임).
