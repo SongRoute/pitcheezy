@@ -45,3 +45,23 @@ CX19 격리 후보 SHA `05a9cc2066e80bc08a419baf5882d215cfc408dde7f190e77ae7f198
 우리 쪽 두 수정은 별도 v5 실행기에 채택됐고 독립 delta 검토를 통과했으며, 기존 v4는 보존했습니다. 최종 실행 client pin 확정, 체크리스트 정합, main 입력의 토큰 형식 강제 거부와 양측 실행표 확정은 남아 있습니다. 실제 공동 시험은 아직 실시하지 않았습니다.
 
 이번 변경은 이 인계 문서1개다. 기존 보고서·v4/v5 source·등록·체크리스트·테스트는 수정하지 않았고, wrapper import/실행·테스트 재실행·원로그/자격 열람·실호스트·외부 회신 발신은0이다. 공동큐의 인계 기록은 별도이며 작성자는 stage/commit하지 않는다.
+
+## CX41 추가 — 2026-10-20 KST, DOC01 체크리스트 delta
+
+- 작성: Codex `checklist_delta`; base `2330f17b20b4a981848f8d77e03eec487cb9b289`. [CLAIM6285080136](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6285080136). 독립 검토 결과는 고정 커밋을 가리키는 공동큐 REVIEW에 기록한다.
+- [DOC01 완료6259701071](https://github.com/SongRoute/pitcheezy/issues/37#issuecomment-6259701071) 이후의 명시된 비밀 없는 파일만 정적 대조했다. 기존 합성 검사·원로그 검증은 반복하지 않았다.
+
+**N28의 v4 파일명 대기는 해소됐다. 운영 체크리스트 전체 정합이나 실행 준비 완료를 뜻하지 않는다.** 현재 `OPERATOR-CHECKLIST.md` SHA-256은 `e4cb579692dd1b5c6d8e947661f804e231fe07a1a04250e1674a9b3b9e887e02`다. 기준 등록과 check·dry-run·run·deferred probe 명령은 v5를 가리키며, v4 wrapper 이름은13행의 이력 설명에만 남는다. 이 파일명은 실제 v5의 `REGISTRATION` 상수(40행) 및 등록의 `invocation`과 일치한다.
+
+| 새 관측 / 재사용 근거 | 범위와 남은 행동 |
+|---|---|
+| v5 source·REGISTRATION-v5·REVIEW-005의 현재 SHA는 위 CX40 표와 각각 동일 | 기존 delta PASS를 재사용한다. 등록은 여전히 `execute:false`; N27 최종 client 선택·re-pin·독립 검토의 완료 근거가 새로 생긴 것은 아니다 |
+| 체크리스트14행은 여전히 “N23은 CX-04 시험 자료 변경 대기” | CX10/`8f7c257f`·c395 fixture·REVIEW-005 H8의 기존 근거로 해소된 선행조건이다. 소유자가 이 문구와 후속 등록 설명을 바로잡으면 되며 fixture 재수정·동일14검사는 필요 없다 |
+| [#38 발송 회신6267615609](https://github.com/SongRoute/pitcheezy/issues/38#issuecomment-6267615609)도 fixture 대기 때문에 경고를 남길 수 있다고 설명 | 발송 사실과 설명의 정확성을 구분한다. **현재 `cmd_run`은 형식 불일치여도 경고 뒤 키를 소진하고 첫 scope HEAD로 진행할 수 있다**(514,526–531행). “안전한 쪽으로 실패”가 첫 요청 전 거부를 뜻하지 않는다. `cmd_probe`는654–655행에서 이미 형식 강제 거부한다 |
+| [팀원 WS-partner3 완료6270417682](https://github.com/Pitcheezy/transition-models/issues/3#issuecomment-6270417682) | 상대는 v5·14검사를 우리 보고로 구분하고 최종 파일·SHA·client commit은 미수신, N23 설명 차이는 확인 사항으로 보존했다. 상대의 직접 실행본 검증이나 N23 변경 수용으로 해석하지 않는다 |
+
+CL02의 최종 실행본 후속 인계에는 **정상 fixture 대기 제거 → `cmd_run` 첫 요청 전 형식 거부의 구현·변경 범위 검토 → 최종 client pin에 묶인 등록·검토 → 체크리스트 설명 정합**을 연결하면 된다. 이미 거부하는 `cmd_probe`와 보존된 v4를 중복 수정할 요청이 아니다. CL02 소유 파일은 이번에 수정하지 않았고 최종 실행본 버전도 대신 선택하지 않았다.
+
+GATE-06 전체 요청/시간 원장과 정상·긴급 회수 순서의 양측 합의, 시험 창·담당·비공개 자격 전달·해당 창 Song GO는 그대로 남는다. [CX38](cx-38-onekey-joint-run-plan-2026-10-19.md)의 본창18·runner120초 미만과 외부/관리 요청을 구분하며,21 등 부분합을 공동 전체 승인 예산으로 쓰지 않는다.
+
+이번 추가는 기존 보고서만 갱신했다. graphify는 실제 vocab `wrapper token acceptance registration`으로 먼저 query했으나 이 L-onekey 문서 delta 근거를 제공하지 않아 명시 원문을 사용했다. 그래프는 검증 증거로 쓰지 않았으며 갱신하지 않았다. wrapper import/실행·테스트·빌드·원로그/자격 열람·실호스트 요청·제품/원본 수정·외부 회신 발신은0이다.
