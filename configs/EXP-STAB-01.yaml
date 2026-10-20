@@ -1,0 +1,116 @@
+{
+  "protocol": "policy_seed_ensemble_stability_v1",
+  "experiment_id": "EXP-STAB-01",
+  "status": "REGISTERED",
+  "decision": "2026-10-20 Song (via PM): STAB-01 option 2 - Mac mini tonight, stability only, no policy value; DEV July-September 2025 only, no June (S3b) and no 2026 data",
+  "question": "D155 side observation: planning seed 0 -> 1 flips the G0 P3 top-1 pitch type in 11.3% of sealed June decisions. Does averaging the planning Q over K seeds make the top-1 stable between two disjoint K-seed ensembles?",
+  "one_change": "The planning Q is the per-action mean over K planning seeds instead of one seed. Predictor (G0), reference law, support table, delivery pool, WE terminal/cutoff, tau 0.1, samples 6, pitch cap 12 and the request construction are the registered ones.",
+  "execution": {
+    "enabled": true,
+    "runner": "experiments/pitchmdp/scripts/diagnose_policy_seed_ensemble.py",
+    "worktree": "/Users/song/Projects/pitcheezy-worktrees/stab01-1020 (branch exp/stab01-1020 from a971a1d, the EXP-P18-001 code line)",
+    "prefix": "DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib PYTHONPATH='/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:experiments/pitchmdp' /Users/song/Projects/pitcheezy/.venv/bin/python experiments/pitchmdp/scripts/diagnose_policy_seed_ensemble.py --config configs/EXP-STAB-01.yaml --local-config experiments/pitchmdp/configs/local.json",
+    "order": [
+      "smoke : --output <runs>/EXP-STAB-01-smoke --smoke  (three games; the comparison is not computed; cost per decision measured)",
+      "run   : --output <runs>/EXP-STAB-01                (all selected decisions; writes results.json and results/EXP-STAB-01.json)"
+    ],
+    "runs_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924",
+    "machine": "Mac mini only (CPU planner); A5000 not used; no data moved to the server",
+    "queue": "common heavy lock runs/ML-MATRIX-20260924/.heavy.lock (non-blocking, held for the whole run); recorder/demo processes have priority and are never signalled; one process only",
+    "expected_cost": "EXP-P18-001 measured 1,965 s for 40,702 decisions with one seed (0.048 s per decision-seed, 7.2 GB peak RSS). Ten seeds over about 40-45k decisions: roughly 5-6 h (estimate, refined by the smoke); peak RSS expected near 7-8 GB."
+  },
+  "policy_registration": {
+    "config": "configs/ML-POLICY-MATERIALIZATION-v1.json",
+    "config_sha256": "869b2611c027e36573cd4d9a3e766f02bfda9c76a3485cb5e1870f68c7954469",
+    "addenda": [
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-1-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-3-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-4-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-5-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-6-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-7-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json"
+    ],
+    "use": "read-only: sealed BC, support table, style snapshot, S2-certified component identity and the tau freeze are resolved through the registered chain; no stage of that chain is run and nothing is added to it"
+  },
+  "settings": {
+    "tau": 0.1,
+    "samples": 6,
+    "pitch_cap": 12,
+    "seed": 0
+  },
+  "seed_sets": {
+    "A": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "B": [
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "K": [
+      1,
+      3,
+      5
+    ],
+    "nesting": "K-seed set A = A[:K], set B = B[:K]; K = 1 is the control {0} vs {5}; ten planning runs per decision in total",
+    "seed_basis": "seed 0 is the registered planning seed (seeds.planning_main); 1..9 are diagnostic planning seeds; planning_seed() derives a per-decision RNG key from (seed, state, actions), so the result does not depend on order"
+  },
+  "games": {
+    "split": "dev",
+    "exclude": [
+      "S5_V2_V3",
+      "S6_V4"
+    ],
+    "n_games": 150,
+    "salt": 20261020,
+    "rule": "rpv.select_games (month-proportional, salted-hash order, straddling games excluded) on the DEV games that the registered S5 (2 games) and S6 (150 games) selections did not choose (both recomputed with the registered selection_salt)",
+    "why_allowed": "DEV = 2025-07-01..2025-09-30, exposure 'exposed_development' in the policy registration. Not the sealed June S3b sample (exposed_policy_tuning), not 2026. S5/S6 games are excluded so the completed OPE population is not reused; no outcome is read anyway."
+  },
+  "replay": {
+    "decisions": 200,
+    "atol": 0.0
+  },
+  "row_budget_per_seed": 8000000,
+  "row_budget_basis": "safety cap per seed planner only; EXP-P18-001 used 3.81M rows for 40,702 decisions",
+  "deadline_utc": "2026-10-21T07:00:00Z",
+  "deadline_basis": "16:00 KST, one hour before the 17:00 KST hard stop (launch chain starts 18:00). Passing it aborts the run, discards partial results and writes aborted.json.",
+  "metrics": {
+    "primary": [
+      "top-1 agreement between the P3 laws of the set-A and set-B K-seed ensembles (argmax of the law)",
+      "mean TV between those laws"
+    ],
+    "descriptive": [
+      "TV quantiles and share TV > 0.05",
+      "mean max |Q_A - Q_B| on the support",
+      "secondary ensemble = mean of the K single-seed P3 laws",
+      "paired K vs K=1 agreement gain and TV reduction"
+    ],
+    "control_reference": "D155 (sealed June, seed 0 vs 1): top-1 agreement 0.887, mean TV 0.0497 - descriptive reference only, different months and seed pair"
+  },
+  "verdict_rule": {
+    "stable_if_top1_agreement_ci95_lower_at_least": 0.95,
+    "reading_fixed_before_results": {
+      "STABLE_AT_K{k}": "smallest K in {1,3,5} whose top-1 agreement 95% whole-game bootstrap lower bound is >= 0.95",
+      "NOT_STABLE_UP_TO_K5": "no K reaches it",
+      "averaging_improves_agreement": "true if the K=5 minus K=1 paired agreement gain has a 95% lower bound > 0"
+    },
+    "threshold_basis": "0.95 is the D153 service criterion (live vs final top-1 agreement >= 95%), reused as a judgement value; no measured basis for the planner",
+    "not_claimed": "No policy value, OPE or recommendation-quality claim; does not change D131, D155, the policy identity c13cc989 or the service. Adopting K-seed planning would need a new identity and the full validation chain."
+  },
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 20260924,
+    "unit": "whole game"
+  },
+  "data_rules": "No 2026 rows. No June 2025 decisions. DEV (2025-07..09) rows of the selected games; pre-decision fields, logged pitch types and previous-row outcomes as history only (as S3b/S6 request construction). No reward, WE result, events kind or next-row state.",
+  "review": "Independent review (different model) required before the full run; result recomputed by a separate verifier.",
+  "output": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-STAB-01"
+}
