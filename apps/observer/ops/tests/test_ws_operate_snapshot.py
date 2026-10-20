@@ -14,7 +14,7 @@ import ws_operate as ws  # noqa: E402
 @pytest.fixture
 def cfg(tmp_path):
     body = json.loads((OPS/'ws_ops_config.json').read_text())
-    body |= {'code_dir': str(tmp_path/'code'), 'profile_sources': None}
+    body |= {'code_dir': str(tmp_path/'code'), 'profile_sources': None, 'player_snapshot_dir': None}
     return body
 
 
@@ -28,8 +28,11 @@ def cache_dir(tmp_path):
     return path
 
 
-def test_config_default_is_null():
-    assert json.loads((OPS/'ws_ops_config.json').read_text())['player_snapshot_dir'] is None
+def test_shipped_config_value_is_null_or_home_relative():
+    # The WS config points at the pregame cache outside the repo (Song 2026-10-20); it must never be an absolute
+    # personal path or a repo path. The logic tests below set their own value through the fixture.
+    value = json.loads((OPS/'ws_ops_config.json').read_text())['player_snapshot_dir']
+    assert value is None or (isinstance(value, str) and value.startswith('~/') and '..' not in value)
 
 
 def test_absent_when_neither_config_nor_env(cfg, tmp_path):
