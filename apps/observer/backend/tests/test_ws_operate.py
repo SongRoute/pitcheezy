@@ -61,7 +61,7 @@ def env(tmp_path, monkeypatch):
     cfg_path = tmp_path/'ws_ops_config.json'
     cfg_path.write_text(json.dumps(cfg))
     monkeypatch.setenv(ws.FAKE_ENV, str(FAKE))
-    for name in (ws.TOKEN_ENV, ws.TOKEN_FILE_ENV, ws.BASE_URL_ENV, ws.ROOT_ENV, ws.PROFILE_ENV):
+    for name in (ws.TOKEN_ENV, ws.TOKEN_FILE_ENV, ws.BASE_URL_ENV, ws.ROOT_ENV, ws.PROFILE_ENV, ws.SNAPSHOT_ENV):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(ws, 'process_table', lambda: [])
     monkeypatch.setattr(ws, 'protected_processes', lambda: [])

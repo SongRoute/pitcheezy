@@ -61,6 +61,7 @@ TOKEN_ENV = 'PITCHEEZY_PUBLISH_TOKEN'
 TOKEN_FILE_ENV = 'PITCHEEZY_WS_OPS_TOKEN_FILE'
 BASE_URL_ENV = 'PITCHEEZY_WS_OPS_UPLOAD_BASE_URL'
 PROFILE_ENV = 'PITCHEEZY_OBSERVER_PROFILE_SOURCES'
+SNAPSHOT_ENV = 'PITCHEEZY_PLAYER_SNAPSHOT_DIR'  # pre-game season stats cache (service_api snapshot_dir; OPS-06)
 FAKE_ENV = 'PITCHEEZY_WS_OPS_FAKE_PUBLISHER'  # tests only: run this script instead of the real publisher module
 # drills only, and only together with FAKE_ENV: the 'other publishers' guard reads this JSON list of [pid, ppid, command]
 # instead of the real process table, so an offline drill can run beside a live rehearsal (OPS-02). A real publisher is
@@ -437,6 +438,23 @@ def profile_sources(cfg, env=None):
     return os.path.expanduser(value) if value else None
 
 
+def player_snapshot_dir(cfg, env=None):
+    """(directory or None, warning or None) for the pre-game stats cache. Config ``player_snapshot_dir`` wins, else
+    PITCHEEZY_PLAYER_SNAPSHOT_DIR from the launching shell ('~' expanded, as profile_sources). Unset -> (None, None):
+    the publisher gets no such variable, exactly as before OPS-06. Set but not an existing directory, or inside a git
+    checkout -> (None, warning): not forwarded, the start is not refused (pregame stays null, as when unset)."""
+    env = os.environ if env is None else env
+    value = cfg.get('player_snapshot_dir') or env.get(SNAPSHOT_ENV)
+    if not value:
+        return None, None
+    path = Path(os.path.expanduser(value)).resolve()
+    if not path.is_dir():
+        return None, f'{SNAPSHOT_ENV} is set but {path} is not a directory: pregame season stats will be absent'
+    if any((parent/'.git').exists() for parent in (path, *path.parents)):
+        return None, f'{SNAPSHOT_ENV} {path} is inside a git checkout: not used, pregame season stats will be absent'
+    return str(path), None
+
+
 def child_env(cfg, run_dir, armb, upload, env=None):
     """Minimal environment: locale/home basics plus what the publisher needs. Mirrors the rehearsal's set, except the
     reference card (on for the World Series, Song 2026-10-18) and, with upload, the token variable."""
@@ -457,6 +475,9 @@ def child_env(cfg, run_dir, armb, upload, env=None):
     sources = profile_sources(cfg, env)
     if sources:
         child[PROFILE_ENV] = sources
+    snapshots, _ = player_snapshot_dir(cfg, env)
+    if snapshots:
+        child[SNAPSHOT_ENV] = snapshots
     if upload and env.get(TOKEN_ENV):
         child[TOKEN_ENV] = env[TOKEN_ENV]
     return child
@@ -598,6 +619,9 @@ def preflight(cfg, kst_date, *, upload_requested, schedule_file=None, expect_com
     report['profile_sources_present'] = bool(profile_sources(cfg))
     if not report['profile_sources_present']:
         warnings.append(f'{PROFILE_ENV} is not set: the reference card will be absent')
+    _, snapshot_warning = player_snapshot_dir(cfg)
+    if snapshot_warning:
+        warnings.append(snapshot_warning)
     report['fixed_delay_s'] = cfg['fixed_delay_s']
     report['problems'], report['problem_keys'], report['warnings'] = problems, keys, warnings
     return not problems, report, games

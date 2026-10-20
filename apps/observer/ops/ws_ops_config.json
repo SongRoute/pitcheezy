@@ -26,6 +26,8 @@
   "armb_note": "auto = recommendation (ARM-B, MPS) on only if available memory at start >= armb_min_available_bytes (8 GiB, as the rehearsal). '0' / '1' force it; '1' below the floor is refused.",
   "profile_sources": null,
   "profile_sources_note": "null = take PITCHEEZY_OBSERVER_PROFILE_SOURCES from the launching shell (the daily LATEST.json pointer). A missing value is a warning, not a refusal (the reference card is then absent).",
+  "player_snapshot_dir": null,
+  "player_snapshot_dir_note": "Pre-game season stats cache (<game_pk>.json per game; OPS-06). null = take PITCHEEZY_PLAYER_SNAPSHOT_DIR from the launching shell. Must be an existing directory outside any git checkout. Unset: the publisher gets no such variable and pregame is null (unchanged). Set but missing, not a directory or inside a checkout: a warning, not a refusal, and the variable is not forwarded (pregame null). Replace cache files and restart the publisher only between games.",
   "restart": {
     "max_restarts": 3,
     "backoff_s": [30, 60, 120],
