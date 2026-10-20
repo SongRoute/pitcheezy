@@ -2,15 +2,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Bounds, Candidate } from './model';
 
-/** Catcher's view. Data and drawing share plate_x; measured marks never move to avoid overlap.
+/** Pitcher's view. Drawing mirrors the source plate_x; measured marks never move to avoid overlap.
  * Off-window marks use the existing explicit edge-arrow contract. Mitt remains x-only. */
 export type Mark = { x: number; z: number };
 export const PLATE_HALF = .83;
 /** Full detail / mini margins in feet. The live main window uses x=.12, z=.24. */
 export const MARGIN = { main: { x: .42, z: .45 }, mini: { x: .34, z: .36 } };
 const U = 100;  // drawing units per foot
-/** +1 = catcher view; this changes drawing only, never source coordinates. */
-export const VIEW_X = 1;
+/** -1 = pitcher view; this changes drawing only, never source coordinates. */
+export const VIEW_X = -1;
 const ux = (x: number) => VIEW_X * x * U;     // feet (catcher-view plate_x) → screen units
 const uz = (z: number, aspect = 1) => -z * U * aspect;             // z up
 
@@ -29,7 +29,7 @@ export function place(p: Mark, w: ReturnType<typeof zoneWindow>) {
   // dx = SCREEN direction of the clipped-off part (feet direction × VIEW_X), used for the edge inset and the outward arrow
   return { out, x: ux(x), y: uz(z, w.aspect), dx: VIEW_X * Math.sign(p.x - x), dz: Math.sign(p.z - z) };
 }
-const ft = (p: Mark) => `가로 ${p.x.toFixed(2)}ft, 높이 ${p.z.toFixed(2)}ft`;
+const ft = (p: Mark) => `가로 ${p.x.toFixed(2)}ft (포수 기준), 높이 ${p.z.toFixed(2)}ft`;
 
 /** Candidates sharing a target are drawn once with a combined label ('1·3'). */
 export function groupTargets(cands: Candidate[]): { x: number; z: number; ranks: number[] }[] {
@@ -174,7 +174,7 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     return first ? { ...first, box: { x: first.x - labW / 2, y: first.y - lh - u(1), w: labW, h: lh + u(5) } } : null;
   })();
   return <svg ref={ref} style={labels} className={`sv-zone${mini ? ' mini' : ''}`} viewBox={`${room.x} ${room.y} ${room.w} ${room.h}`} preserveAspectRatio="xMidYMid meet" role="img"
-    aria-label={mini ? undefined : `포수 시점 스트라이크존${parts.length ? ': ' + parts.join(', ') : ''}${actuals.length ? `, 이번 타석 ${actuals.length}개 투구` : ''}`} aria-hidden={mini || undefined}>
+    aria-label={mini ? undefined : `투수 시점 스트라이크존${parts.length ? ': ' + parts.join(', ') : ''}${actuals.length ? `, 이번 타석 ${actuals.length}개 투구` : ''}`} aria-hidden={mini || undefined}>
     <rect x={-w.xMax * U} y={uz(w.zHi, w.aspect)} width={2 * w.xMax * U} height={(w.zHi - w.zLo) * U * w.aspect} className="sv-zone-outside" />
     <rect x={left} y={top} width={right - left} height={bottom - top} className="sv-zone-box" />
     {[1, 2].map(i => <line key={`v${i}`} x1={left + (right - left) * i / 3} x2={left + (right - left) * i / 3} y1={top} y2={bottom} className="sv-zone-grid" />)}
@@ -189,6 +189,6 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     {recs.map(g => <g key={g.ranks.join()} className={`sv-rec${g.at.out ? ' out' : ''}`} data-rank={g.ranks.join('·')} data-x={g.x} data-z={g.z} data-out={g.at.out || undefined}>
       <rect x={g.d.x - g.hw} y={g.d.y - g.hh} width={2 * g.hw} height={2 * g.hh} rx="3" />{g.at.out && arrow(g.d, Math.min(g.hw, g.hh))}
       <text x={g.tx} y={g.ty} textAnchor="middle">{g.ranks.join('·')}</text></g>)}
-    {actualGroups.map(p => { const at = place(p, w), d = inset(at, rA); return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined}><circle cx={d.x} cy={d.y} r={rA} />{at.out && arrow(d, rA)}<text x={d.x} y={d.y + u(p.numbers.length > 1 ? -12 : 3.5)} textAnchor="middle" style={{fontSize:px(10),fill:p.numbers.length > 1 ? '#c2571a' : 'white',stroke:'none'}}>{p.numbers.join('·')}</text><title>{p.numbers.join('·')}구 · {ft(p)}{at.out ? ' · 화면 밖' : ''}</title></g>; })}
+    {actualGroups.map(p => { const at = place(p, w), d = inset(at, rA); return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined}><circle cx={d.x} cy={d.y} r={rA} />{at.out && arrow(d, rA)}<text x={d.x} y={d.y + u(p.numbers.length > 1 ? -12 : 3.5)} textAnchor="middle" style={{fontSize:px(10),fill:p.numbers.length > 1 || at.out ? 'var(--sv-actual)' : 'white',stroke:'none'}}>{p.numbers.join('·')}</text><title>{p.numbers.join('·')}구 · {ft(p)}{at.out ? ' · 화면 밖' : ''}</title></g>; })}
   </svg>;
 }

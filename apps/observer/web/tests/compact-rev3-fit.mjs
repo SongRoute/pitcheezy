@@ -8,7 +8,7 @@
 // Migrated to the approved 2026-10-13 redesign (0fe66af, UI-CONNECTION-2026-10-13.md; 2026-10-17): phones scroll vertically under a
 // fixed bottom tab bar, so 'one screen' became 'score/count/zone above the fold, 390x844 strip above the tab bar (precedent:
 // display-state-smoke fitsViewport, ws-responsive-smoke), every control reachable (not stranded under the tab bar, no sideways
-// overflow)'; catcher's view puts a right-handed batter on the LEFT; the card caption's second line may end in ' · <result>'; the
+// overflow)'; pitcher's view puts a right-handed batter on the RIGHT; the card caption's second line may end in ' · <result>'; the
 // strip draws no mini zone (the current PA's last 3 pitches are numbered dots on the main zone instead); on a LIVE game a tapped past
 // card opens the detail sheet only (main view, '시연 중' header and polling continue; the past pitch's ranks/actual are checked in the
 // sheet), on a finished game it also moves the main view. The sheet's '정책 선택 비중' table header is an approved explanation, so the
@@ -25,6 +25,7 @@ const fx = JSON.parse(readFileSync(path.join(here, 'fixtures', 'service-849843.j
 const out = process.argv[2]; if (out) mkdirSync(out, { recursive: true });
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 let failures = 0;
+const numberCases = new Set();
 const ok = (cond, msg, info) => { if (!cond) failures++; console.log(cond ? 'ok  ' : 'FAIL', msg, cond ? '' : JSON.stringify(info)); };
 
 function variant(which, side, many) {
@@ -38,6 +39,8 @@ function variant(which, side, many) {
   for (const r of [b.next, ...b.pitches.map((p) => p.rec)]) if (r?.status === 'ready' && r.candidates.length >= 3 && r.candidates[0].target) {
     r.candidates[2].target = { ...r.candidates[0].target }; }
   for (const p of b.pitches) if (p.rec?.candidates?.[0]?.target && p.actual) { p.actual.x = p.rec.candidates[0].target.x; p.actual.z = p.rec.candidates[0].target.z; }
+  // The existing many-pitch case also covers overlapping numbers and a hollow outside-window dot.
+  if (which === 'live' && many) b.pitches.slice(-3).forEach((p, i) => { p.actual.x = i === 2 ? 1.6 : .3; p.actual.z = 2.4; });
   return b;
 }
 
@@ -107,7 +110,21 @@ async function run(w, h, big, which, state, side, many) {
     const sel = document.querySelector('.sv-strip .sv-card[aria-pressed="true"]:not(.pending) .sv-card-cap > span:first-child')?.textContent.trim() ?? '';
     const minFont = Math.min(...[...document.querySelectorAll('.sv-page *')].filter((e) => e.childNodes.length && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && e.getBoundingClientRect().height > 0 && !e.closest('svg')).map((e) => parseFloat(getComputedStyle(e).fontSize)));
     const dots = r('.sv-card .sv-actual circle');
+    const marks = [...document.querySelectorAll('.sv-zone .sv-actual,.sv-zone .sv-rec,.sv-zone .sv-mitt')].map(g => {
+      const e = g.querySelector('circle,rect,line');
+      const x = e.tagName === 'circle' ? Number(e.getAttribute('cx')) : e.tagName === 'rect' ? Number(e.getAttribute('x')) + Number(e.getAttribute('width')) / 2 : Number(e.getAttribute('x1'));
+      return { kind: g.getAttribute('class'), rawX: Number(g.dataset.x), x };
+    });
+    const lum = color => color.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((a, v, i) => a + v * [.2126, .7152, .0722][i], 0);
+    const numberContrast = paDots.map(g => {
+      const text = g.querySelector('text'), merged = text.textContent.includes('·');
+      // Floating merged numbers use the darker outside-window background as a conservative contrast bound.
+      const bg = getComputedStyle(merged ? g.closest('svg').querySelector('.sv-zone-outside') : g.querySelector('circle')).fill;
+      const fg = getComputedStyle(text).fill, a = lum(fg), b = lum(bg);
+      return { kind: merged ? 'merged' : g.classList.contains('out') ? 'outside' : 'inside', fg, bg, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
+    });
     return { scrollH: se.scrollHeight, innerH: innerHeight, scrollW: se.scrollWidth, innerW: innerWidth,
+      marks, numberContrast,
       zoneDx: box && page ? (box.left + box.width / 2) - (page.left + page.width / 2) : null, zoneH: r('.sv-zone-wrap .sv-zone')?.height ?? 0,
       recs: [...document.querySelectorAll('.sv-zone-wrap .sv-zone .sv-rec')].map((g) => g.getAttribute('data-rank')),
       actual: !!document.querySelector('.sv-zone-wrap .sv-zone .sv-actual'), prev: !!document.querySelector('.sv-prev'),
@@ -140,8 +157,13 @@ async function run(w, h, big, which, state, side, many) {
   ok(L.scrollW <= L.innerW + 1, `${tag} no horizontal page scroll`, L);
   ok(L.zoneDx !== null && Math.abs(L.zoneDx) <= 2, `${tag} zone centred (dx ${L.zoneDx?.toFixed(2)})`, L.zoneDx);
   ok(L.zoneH >= 110, `${tag} zone height ${Math.round(L.zoneH)}`, L.zoneH);
-  // catcher's view (2026-10-13, replaces the pitcher's view): a right-handed batter stands on the screen LEFT (and vice versa); the list is under the zone
-  ok(L.bat === (side === 'R' ? 'left' : 'right') && L.listUnder, `${tag} catcher's view: ${side} batter silhouette on the ${side === 'R' ? 'left' : 'right'}, list under the zone (${L.bat})`, [L.bat, L.listUnder]);
+  // Pitcher's view: a right-handed batter stands on the screen RIGHT (and vice versa); the list is under the zone
+  ok(L.bat === (side === 'R' ? 'right' : 'left') && L.listUnder, `${tag} pitcher's view: ${side} batter silhouette on the ${side === 'R' ? 'right' : 'left'}, list under the zone (${L.bat})`, [L.bat, L.listUnder]);
+  ok(L.marks.length > 0 && L.marks.every(m => Math.sign(m.x) === -Math.sign(m.rawX)), `${tag} main/detail and hidden mini SVG marks mirror source x`, L.marks);
+  if (which === 'live') {
+    L.numberContrast.forEach(c => numberCases.add(c.kind));
+    ok(L.numberContrast.length > 0 && L.numberContrast.every(c => c.ratio >= 4.5), `${tag} pitch numbers have at least 4.5:1 contrast`, L.numberContrast);
+  }
   ok(L.banned.length === 0, `${tag} removed visible texts (main screen)`, L.banned);
   // a tapped past card never leaves the latest view on a live game any more, so '최신으로' must not appear in any of these states
   ok(!L.toLatest, `${tag} no '최신으로' while the main view follows the latest / on a finished game`, [L.toLatest, L.liveText]);
@@ -190,6 +212,7 @@ for (const [w, h] of [[375, 667], [375, 553], [390, 844], [320, 568]]) for (cons
   await run(w, h, big, 'live', 'pinned', side, side === 'L');
 }
 for (const [w, h] of [[375, 553], [320, 568]]) { await run(w, h, false, 'live', 'stale', 'R', false); await run(w, h, false, 'final', 'pinned', 'R', true); }
+ok(['inside', 'outside', 'merged'].every(kind => numberCases.has(kind)), 'number contrast covers inside, hollow outside and merged labels', [...numberCases]);
 await browser.close();
 console.log(failures ? `${failures} FAIL` : 'all ok');
 process.exit(failures ? 1 : 0);
