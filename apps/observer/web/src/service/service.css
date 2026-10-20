@@ -689,8 +689,8 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 .sv-game .sv-strip .sv-card .sv-card-cap>span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 /* Phones: keep the pitch strip above the fixed tab bar at 390x844 (compact-rev3-fit / studio-layout-check).
    The zone row gives back 44px, the stage and page paddings 4px each, the stage gaps 2px each. */
+@media (min-width:360px) and (max-width:759px){.sv-live-layout{padding:12px}}
 @media (max-width:759px){
-  .sv-live-layout{padding:12px}
   .sv-game .sv-stage{padding:12px;gap:6px;border:0;border-bottom:1px solid var(--sv-line);border-radius:0}
   .sv-game .sv-zrow,.sv-game.has-display .sv-zrow{height:216px;min-height:216px}
 }

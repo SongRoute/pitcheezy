@@ -173,6 +173,21 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
       if (!visible(box)) continue; first = first ?? { x, y }; if (!avoid.some(b => hit(b, box))) return { x, y, box }; }
     return first ? { ...first, box: { x: first.x - labW / 2, y: first.y - lh - u(1), w: labW, h: lh + u(5) } } : null;
   })();
+  const paMarks = actualGroups.map(p => { const at = place(p, w); return { p, at, d: inset(at, rA) }; });
+  const paDotBoxes = paMarks.map(({ d }) => ({ x: d.x - rA - u(2), y: d.y - rA - u(2), w: 2 * rA + u(4), h: 2 * rA + u(4) }));
+  const paNumberBoxes: Box[] = [];
+  const paLabels = paMarks.map(({ p, d }) => {
+    if (p.numbers.length === 1) return { x: d.x, y: d.y + u(3.5), halo: false };
+    const tw = u(6 + 7 * p.numbers.join('·').length), side = rA + tw / 2 + u(4);
+    const spots = [[0, -u(12)], [0, u(22)], [side, u(4)], [-side, u(4)], [0, -u(30)], [0, u(40)]]
+      .map(([dx, dy]) => ({ x: d.x + dx - tw / 2, y: d.y + dy - u(11), w: tw, h: u(14) }));
+    const textAvoid = [...numBoxes, ...paDotBoxes, ...paNumberBoxes, ...(mittLabel.box ? [mittLabel.box] : []), ...(actLabel ? [actLabel.box] : [])];
+    const clear = spots.find(b => visible(b) && ![...recBoxes, ...textAvoid].some(a => hit(a, b)));
+    // ponytail: six label positions; dense views fall back to a screen-sized halo. Expand positions only if real cases need it.
+    const box = clear ?? spots.find(b => visible(b) && !textAvoid.some(a => hit(a, b))) ?? spots.find(visible) ?? spots[0];
+    paNumberBoxes.push(box);
+    return { x: box.x + tw / 2, y: box.y + u(11), halo: !clear };
+  });
   return <svg ref={ref} style={labels} className={`sv-zone${mini ? ' mini' : ''}`} viewBox={`${room.x} ${room.y} ${room.w} ${room.h}`} preserveAspectRatio="xMidYMid meet" role="img"
     aria-label={mini ? undefined : `투수 시점 스트라이크존${parts.length ? ': ' + parts.join(', ') : ''}${actuals.length ? `, 이번 타석 ${actuals.length}개 투구` : ''}`} aria-hidden={mini || undefined}>
     <rect x={-w.xMax * U} y={uz(w.zHi, w.aspect)} width={2 * w.xMax * U} height={(w.zHi - w.zLo) * U * w.aspect} className="sv-zone-outside" />
@@ -189,6 +204,6 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     {recs.map(g => <g key={g.ranks.join()} className={`sv-rec${g.at.out ? ' out' : ''}`} data-rank={g.ranks.join('·')} data-x={g.x} data-z={g.z} data-out={g.at.out || undefined}>
       <rect x={g.d.x - g.hw} y={g.d.y - g.hh} width={2 * g.hw} height={2 * g.hh} rx="3" />{g.at.out && arrow(g.d, Math.min(g.hw, g.hh))}
       <text x={g.tx} y={g.ty} textAnchor="middle">{g.ranks.join('·')}</text></g>)}
-    {actualGroups.map(p => { const at = place(p, w), d = inset(at, rA); return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined}><circle cx={d.x} cy={d.y} r={rA} />{at.out && arrow(d, rA)}<text x={d.x} y={d.y + u(p.numbers.length > 1 ? -12 : 3.5)} textAnchor="middle" style={{fontSize:px(10),fill:p.numbers.length > 1 || at.out ? 'var(--sv-actual)' : 'white',stroke:'none'}}>{p.numbers.join('·')}</text><title>{p.numbers.join('·')}구 · {ft(p)}{at.out ? ' · 화면 밖' : ''}</title></g>; })}
+    {paMarks.map(({ p, at, d }, i) => { const label = paLabels[i]; return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined}><circle cx={d.x} cy={d.y} r={rA} />{at.out && arrow(d, rA)}<text x={label.x} y={label.y} textAnchor="middle" style={{fontSize:px(10),fill:p.numbers.length > 1 || at.out ? 'var(--sv-actual)' : 'white',stroke:label.halo ? 'white' : 'none',strokeWidth:label.halo ? px(3) : undefined}}>{p.numbers.join('·')}</text><title>{p.numbers.join('·')}구 · {ft(p)}{at.out ? ' · 화면 밖' : ''}</title></g>; })}
   </svg>;
 }
