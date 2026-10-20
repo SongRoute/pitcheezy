@@ -36,7 +36,7 @@ from pitchmdp.policy_artifacts import load_style_snapshot, load_support_table, l
 from pitchmdp import policy_identity as pid
 from pitchmdp import policy_requests as preq
 from pitchmdp import policy_runtime as prt
-from pitchmdp.rollout_policy import JointSimulator, RolloutImprovement, RowBudget
+from pitchmdp.rollout_policy import BudgetExceeded, JointSimulator, RolloutImprovement, RowBudget
 from run_ml_benchmark import read_json, dump, validate_native_runtime
 from run_ml_matrix import check_location, heavy_lock
 from run_ml_delivery_pool import git_commit, peak
@@ -196,7 +196,7 @@ def run(config, local, local_path, output, smoke):
                                 provenance={'style_snapshot_sha256': content, 'as_of_exclusive': as_of,
                                             'experiment': EXPERIMENT})
     reference, we = runtime.reference, components.we
-    planners = {settings['seed']: runtime.improvement}
+    planners = {}  # seed 0 = the runtime's own planning Q (read from its row; never searched twice)
     for s in sets['A'] + sets['B']:
         if s != settings['seed']:
             planners[s] = RolloutImprovement(reference, JointSimulator(components.inputs.pool, components.g0, we.terminal,
@@ -222,8 +222,7 @@ def run(config, local, local_path, output, smoke):
             require(np.array_equal(mask, np.asarray(result['mask'], dtype=bool))
                     and np.allclose(ref, result['reference'], rtol=0, atol=1e-12), 'Runtime reference differs')
             q_runtime = np.array([np.nan if v is None else v for v in result['q_planning']], dtype=np.float64)
-            q_by_seed = {s: planner.q_values(state)[0] for s, planner in planners.items()}
-            require(np.array_equal(q_by_seed[settings['seed']][mask], q_runtime[mask]), 'Seed-0 Q differs from the ledger')
+            q_by_seed = {settings['seed']: q_runtime, **{s: planner.q_values(state)[0] for s, planner in planners.items()}}
             if len(replay) < config['replay']['decisions']:
                 replay.append(float(np.abs(replay_check.q_values(state)[0][mask] - q_runtime[mask]).max()))
                 require(replay[-1] <= config['replay']['atol'], 'Fresh seed-0 planner does not reproduce the runtime Q')
@@ -292,7 +291,7 @@ def main():
     with heavy_lock(root):
         try:
             run(config, local, args.local_config.resolve(), output, args.smoke)
-        except DeadlinePassed as stop:
+        except (DeadlinePassed, BudgetExceeded) as stop:
             dump(output / 'aborted.json', {'reason': str(stop), 'utc': datetime.now(timezone.utc).isoformat(),
                                            'partial_results_discarded': True})
             print('SEED_ENSEMBLE_ABORTED', str(stop), flush=True)
