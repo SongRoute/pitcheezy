@@ -175,13 +175,12 @@ export function groupPas(pitches: PitchRow[], current: Current | null): Pa[] {
   return out;
 }
 
-/** Plainer zone words; source and drawing both use the catcher's view. */
-
 /** Korean names for Statcast codes the server's PITCH_LABELS lacks (it then sends the feed's English description or the bare code).
  *  Display only; an unknown code shows as the code itself, never an English full name. Approved by Root 2026-10-06 (CONTRACT-AUDIT §4). */
 const EXTRA_PITCH_NAMES: Record<string, string> = { FF:'포심', SI:'싱커', FC:'커터', SL:'슬라이더', ST:'스위퍼', CU:'커브', KC:'너클 커브', CH:'체인지업', FS:'스플리터', SV:'슬러브', CS: '슬로 커브', FO: '포크볼', FA: '패스트볼', KN: '너클볼', EP: '이퓨스', SC: '스크루볼' };
 export const pitchName = (label: string | null | undefined, code: string | null | undefined) =>
   label && /[가-힣]/.test(label) ? label : (code && EXTRA_PITCH_NAMES[code]) || label || code || '구종 미상';
 export const pitcherSide = (label: string) => label.replace(/왼쪽|오른쪽/g, w => w === '왼쪽' ? '오른쪽' : '왼쪽');
-export const plainZone = (label: string) => label.replace('가운데 높이 중앙', '한가운데').replace('가운데 높이 ', '가운데 ');
+/** Raw catcher-view words → pitcher-view display words, once at the adapter (or raw server correction). */
+export const plainZone = (label: string) => pitcherSide(label).replace('가운데 높이 중앙', '한가운데').replace('가운데 높이 ', '가운데 ');
 export const policyShare = (p: number | null) => p === null ? '—' : `${Math.round(p * 100)}%`;

@@ -1,4 +1,4 @@
-// Zone geometry regression (integration rev3, after geometry-review-037; catcher's view since ws-ui-connect-1013). Route-mocked fixture, headless Chromium.
+// Zone geometry regression (integration rev3, after geometry-review-037; pitcher's view (SONG-03)). Route-mocked fixture, headless Chromium.
 // For every probe point: if it lies inside the visible window it must be drawn at its TRUE coordinate (recovered from the
 // drawn zone box within 0.03 ft); if it lies beyond the window it must be an `.out` edge marker drawn OUTSIDE the zone box.
 // A pitch outside the strike zone must never render inside the zone box. Checked for the main zone and the opened full detail zone,
@@ -31,8 +31,8 @@ async function shot(w, h, bounds, [x, z], targets) {
   await p.goto('http://pz.test/watch/849843'); await p.waitForSelector('svg.sv-zone:not(.mini) .sv-zone-box'); await p.waitForTimeout(150);
   const measure = async () => p.evaluate((B) => { const one = (svg) => { const box = svg.querySelector('.sv-zone-box').getBoundingClientRect(); const a = svg.querySelector('.sv-actual');
       if (!a) return null; const cr = a.querySelector('circle').getBoundingClientRect(); const cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
-      // Catcher's view (2026-10-13): screen right = positive plate_x; z unchanged
-      const fx = (cx - (box.left + box.width / 2)) / (box.width / 1.66), fz = B.bottom + (box.bottom - cy) / (box.height / (B.top - B.bottom));
+      // Recover raw catcher coordinates from the mirrored pitcher view; z unchanged
+      const fx = -(cx - (box.left + box.width / 2)) / (box.width / 1.66), fz = B.bottom + (box.bottom - cy) / (box.height / (B.top - B.bottom));
       const inBox = cx >= box.left && cx <= box.right && cy >= box.top && cy <= box.bottom;
       return { fx, fz, inBox, out: a.classList.contains('out'), dataX: Number(a.dataset.x), dataZ: Number(a.dataset.z), screenSide: Math.sign(cx - (box.left + box.width / 2)), boxW: box.width, svgW: svg.getBoundingClientRect().width,
         recs: [...svg.querySelectorAll('.sv-rec')].map(g => { const r = g.querySelector('rect').getBoundingClientRect(); const t = g.querySelector('text').getBoundingClientRect();
@@ -48,7 +48,7 @@ async function shot(w, h, bounds, [x, z], targets) {
   const m = await measure();
   await p.locator('.sv-strip .sv-card').first().click();
   await p.locator('.sv-detail-zone .sv-zone').waitFor();
-  const detail = await p.evaluate(B => { const svg=document.querySelector('.sv-detail-zone .sv-zone'), box=svg.querySelector('.sv-zone-box').getBoundingClientRect(), a=svg.querySelector('.sv-actual'), cr=a.querySelector('circle').getBoundingClientRect(), cx=cr.left+cr.width/2, cy=cr.top+cr.height/2; return {fx:(cx-(box.left+box.width/2))/(box.width/1.66),fz:B.bottom+(box.bottom-cy)/(box.height/(B.top-B.bottom)),out:a.classList.contains('out'),dataX:Number(a.dataset.x),dataZ:Number(a.dataset.z),screenSide:Math.sign(cx-(box.left+box.width/2)),inBox:cx>=box.left&&cx<=box.right&&cy>=box.top&&cy<=box.bottom,boxW:box.width}; },bounds);
+  const detail = await p.evaluate(B => { const svg=document.querySelector('.sv-detail-zone .sv-zone'), box=svg.querySelector('.sv-zone-box').getBoundingClientRect(), a=svg.querySelector('.sv-actual'), cr=a.querySelector('circle').getBoundingClientRect(), cx=cr.left+cr.width/2, cy=cr.top+cr.height/2; return {fx:-(cx-(box.left+box.width/2))/(box.width/1.66),fz:B.bottom+(box.bottom-cy)/(box.height/(B.top-B.bottom)),out:a.classList.contains('out'),dataX:Number(a.dataset.x),dataZ:Number(a.dataset.z),screenSide:Math.sign(cx-(box.left+box.width/2)),inBox:cx>=box.left&&cx<=box.right&&cy>=box.top&&cy<=box.bottom,boxW:box.width}; },bounds);
   m.detail=detail;
   await p.getByRole('button',{name:'닫기',exact:true}).click();
   return { p, c, m };
@@ -64,7 +64,7 @@ for (const [w, h] of [[375, 667], [320, 568]]) for (const [bn, B] of Object.entr
     if (inWin) ok(!r.out && Math.abs(r.fx - pt[0]) < .03 && Math.abs(r.fz - pt[1]) < .03, `${tag}: true coordinate`, r);
     else ok(r.out, `${tag}: beyond window -> edge marker`, r);
     ok(r.dataX === pt[0] && r.dataZ === pt[1], `${tag}: stored coordinate unchanged in data-x/z`, r);
-    if (Math.abs(pt[0]) > .05) ok(r.screenSide === Math.sign(pt[0]), `${tag}: catcher view (plate_x ${pt[0]} drawn on the ${pt[0] > 0 ? 'right' : 'left'})`, r);
+    if (Math.abs(pt[0]) > .05) ok(r.screenSide === -Math.sign(pt[0]), `${tag}: pitcher view (plate_x ${pt[0]} drawn on the ${pt[0] > 0 ? 'left' : 'right'})`, r);
     if (!(strikeX && strikeZ)) ok(!r.inBox, `${tag}: ball not drawn inside zone`, r);
     rows.push({ tag, ...r, recs: undefined });
   }

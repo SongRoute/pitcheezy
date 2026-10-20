@@ -106,7 +106,7 @@ body.sv-locked{overflow:hidden}
 .sv-sheet{width:100%;max-width:560px;max-height:min(86dvh,86vh);display:flex;flex-direction:column;background:var(--sv-paper);border-radius:18px 18px 0 0;padding-bottom:env(safe-area-inset-bottom);outline:none}
 .sv-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--sv-line)}
 .sv-sheet-head h2{font-size:18px;font-weight:900}
-.sv-sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:8px 14px 16px}
+.sv-sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:8px 14px 16px;word-break:keep-all;overflow-wrap:anywhere}
 .sv-pa-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .sv-pa-half{font-size:14px;color:var(--sv-muted);margin:10px 0 2px;font-weight:800}
 .sv-pa-item{width:100%;min-height:56px;display:grid;gap:2px;text-align:left;padding:6px 10px;border:1.5px solid var(--sv-line);border-radius:12px;background:#fff;color:var(--sv-ink)}
@@ -650,7 +650,7 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 .sv-unavailable{display:grid;gap:10px;max-width:420px}.sv-unavailable .sv-btn{min-height:44px}
 
 /* 2026-10-13 responsive live layout. Semantic marks and source coordinates stay unchanged. */
-:root{--sv-ink:#15191e;--sv-muted:#5b636b;--sv-line:#dde1dc;--sv-paper:#fff;--sv-bg:#f4f5f2;--sv-teal:#1e6a4e;--sv-rec:#1e6a4e;--sv-actual:#c2571a;--sv-live:#d6404b}
+:root{--sv-ink:#15191e;--sv-muted:#5b636b;--sv-line:#dde1dc;--sv-paper:#fff;--sv-bg:#f4f5f2;--sv-teal:#1e6a4e;--sv-rec:#1e6a4e;--sv-actual:#b74710;--sv-live:#d6404b}
 .sv-page.sv-game{max-width:1600px;min-height:100dvh;height:auto;padding-bottom:80px;display:block}.sv-game .sv-head,.sv-list-page .sv-top{background:var(--sv-ink);color:#fff;padding:10px 16px}.sv-head-score strong{color:#fff!important}.sv-head-main small,.sv-head-score i{color:#aeb5bc}.sv-game .sv-live{color:white}.sv-game .sv-notice{margin:0;padding:8px 16px}.sv-game .sv-board{background:var(--sv-ink);color:#fff;margin:0;padding:0 16px 8px}.sv-board-row{border:0}.sv-board .sv-inning,.sv-board .sv-inning small{color:#fff}.sv-board .sv-bso i.on{background:#fff;border-color:#fff}.sv-board .sv-bso i{border-color:#8a9299}.sv-board .sv-bso b{color:#fff}.sv-board .sv-bases rect.on{fill:#fff;stroke:#fff}
 .sv-live-layout{display:grid;gap:16px;padding:16px}.sv-game .sv-stage{min-width:0;margin:0;padding:16px;background:#fff;border:1px solid var(--sv-line);border-radius:20px;display:flex;flex-direction:column;gap:12px}.sv-game .sv-context{display:none;min-width:0;margin:0;padding:16px;border-radius:20px;background:white;align-self:start}.sv-game .sv-game-context{display:none;min-width:0;padding:20px;background:#fff;border:1px solid var(--sv-line);border-radius:20px;align-self:start}.sv-game h2{font-size:17px;margin:0}.sv-recommend-heading{display:flex;justify-content:space-between;align-items:center;color:var(--sv-rec);gap:8px}.sv-recommend-heading small{font-size:13px}.sv-game.has-display .sv-duel{height:auto;min-height:44px}.sv-game.has-display .sv-duel b{font-size:13px;white-space:normal}.sv-game .sv-zrow,.sv-game.has-display .sv-zrow{height:300px;min-height:260px;margin:0;--sv-side:28px}.sv-zone-outside{fill:#ecefea}.sv-zone-box{fill:#fff;stroke:var(--sv-ink);stroke-width:2}.sv-zone-grid{stroke:#dde1dc}.sv-rec[data-rank="1"] rect{fill:#1e6a4e;stroke:#1e6a4e;stroke-dasharray:none}.sv-rec[data-rank="1"] text{fill:#fff;stroke:none}.sv-rec[data-rank="2"] rect{fill:#cfe3d8;stroke:#cfe3d8;stroke-dasharray:none}.sv-rec[data-rank="2"] text{fill:#14503a;stroke:none}.sv-rec[data-rank="3"] rect{fill:none;stroke:#1e6a4e;stroke-dasharray:3 2}.sv-mitt line,.sv-mitt text{stroke:#3559b5}.sv-zone-legend{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;font-size:11px;color:var(--sv-muted);margin:0}.sv-zone-legend span:first-child{color:var(--sv-rec)}.sv-zone-legend span:nth-child(2){color:var(--sv-actual)}
 .sv-game .sv-pitch-summary{margin:0;padding:8px 0;min-height:0;display:block}.sv-game .sv-state{height:auto;min-height:90px}.sv-game .sv-state-body{display:block}.sv-game .sv-rec-summary .sv-reclist{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.sv-game .sv-rec-summary .sv-rec-row{padding:8px 4px;background:#f4f5f2;border-radius:10px;display:flex;flex-wrap:wrap;gap:4px;min-height:44px}.sv-game .sv-rec-summary .sv-rec-pct{display:none}.sv-game .sv-rec-summary .sv-rec-type{font-size:13px}.sv-game .sv-state-msg,.sv-game .sv-state-note{font-size:12px;line-height:1.5;margin:6px 0}.sv-section-label{font-size:13px;margin:0}.sv-game .sv-strip{height:auto;padding:0;gap:8px}.sv-game .sv-strip .sv-card{width:100px;height:96px;min-height:96px;padding:6px;border-radius:12px}.sv-strip .sv-zone{display:none}.sv-game .sv-card-cap{font-size:12px;line-height:1.5}.sv-game .sv-card-q{font-size:23px}.sv-game .sv-strip .pending{border:1px dashed #aeb5bc;background:#fff}
@@ -687,3 +687,16 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
    detail sheet. */
 .sv-game .sv-strip .sv-card .sv-card-cap{max-width:100%;min-width:0}
 .sv-game .sv-strip .sv-card .sv-card-cap>span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+/* Phones: keep the pitch strip above the fixed tab bar at 390x844 (compact-rev3-fit / studio-layout-check).
+   The zone row gives back 44px, the stage and page paddings 4px each, the stage gaps 2px each. */
+@media (min-width:360px) and (max-width:759px){.sv-live-layout{padding:12px}}
+@media (max-width:759px){
+  .sv-game .sv-stage{padding:12px;gap:6px;border:0;border-bottom:1px solid var(--sv-line);border-radius:0}
+  .sv-game .sv-zrow,.sv-game.has-display .sv-zrow{height:216px;min-height:216px}
+}
+/* the page's own bottom room follows the tab bar's (which already adds the home-indicator inset) */
+.sv-page.sv-game{padding-bottom:calc(80px + env(safe-area-inset-bottom))}
+@media(min-width:1200px){.sv-page.sv-game{padding-bottom:80px}}
+.sv-zone-legend,.sv-actual-caption{word-break:keep-all}
+/* Reserve the fixed navigation when the browser scrolls a keyboard-focused control into view. */
+@media(max-width:1199px){html:has(.sv-bottom-nav){scroll-padding-bottom:calc(80px + env(safe-area-inset-bottom))}}
