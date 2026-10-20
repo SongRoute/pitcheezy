@@ -1,0 +1,864 @@
+/* Current screen editing map (imported after service-base.css; keep rule/media order).
+ * Colours: :root tokens below, shared by game, list and sheets.
+ * GameScreen.tsx: .sv-live-layout (page spacing), .sv-stage (panel shape/spacing),
+ * .sv-zrow (zone height), .sv-strip .sv-card (card size), .sv-bottom-nav (navigation).
+ * Eight sizing controls: --sv-layout-padding, --sv-stage-padding, --sv-stage-gap,
+ * --sv-zone-height, --sv-pitch-card-width/height, --sv-panel-radius, --sv-nav-space.
+ * Default values also cover fractional gaps between max/min breakpoints. Keep those conditions.
+ * Desktop .detail-open has its own padding/gap. Earlier foundation rules remain intentional. */
+/*2026-10-13 responsive live layout. Semantic marks and source coordinates stay unchanged.*/
+
+:root {
+  --sv-ink: #15191e;
+  --sv-muted: #5b636b;
+  --sv-line: #dde1dc;
+  --sv-paper: #fff;
+  --sv-bg: #f4f5f2;
+  --sv-teal: #1e6a4e;
+  --sv-rec: #1e6a4e;
+  --sv-actual: #b74710;
+  --sv-live: #d6404b;
+  --sv-nav-space: 80px;
+}
+
+.sv-page.sv-game {
+  max-width: 1600px;
+  min-height: 100dvh;
+  height: auto;
+  padding-bottom: var(--sv-nav-space);
+  display: block;
+  --sv-layout-padding: 16px;
+  --sv-stage-padding: 16px;
+  --sv-stage-gap: 8px;
+  --sv-zone-height: 260px;
+  --sv-pitch-card-width: 100px;
+  --sv-pitch-card-height: 64px;
+  --sv-panel-radius: 20px;
+}
+
+.sv-game .sv-head,.sv-list-page .sv-top {
+  background: var(--sv-ink);
+  color: #fff;
+  padding: 10px 16px;
+}
+
+.sv-head-score strong {
+  color: #fff !important;
+}
+
+.sv-head-main small,.sv-head-score i {
+  color: #aeb5bc;
+}
+
+.sv-game .sv-live {
+  color: white;
+}
+
+.sv-game .sv-notice {
+  margin: 0;
+  padding: 8px 16px;
+}
+
+.sv-game .sv-board {
+  background: var(--sv-ink);
+  color: #fff;
+  margin: 0;
+  padding: 0 16px 8px;
+}
+
+.sv-board-row {
+  border: 0;
+}
+
+.sv-board .sv-inning,.sv-board .sv-inning small {
+  color: #fff;
+}
+
+.sv-board .sv-bso i.on {
+  background: #fff;
+  border-color: #fff;
+}
+
+.sv-board .sv-bso i {
+  border-color: #8a9299;
+}
+
+.sv-board .sv-bso b {
+  color: #fff;
+}
+
+.sv-board .sv-bases rect.on {
+  fill: #fff;
+  stroke: #fff;
+}
+
+.sv-live-layout {
+  display: grid;
+  gap: 16px;
+  padding: var(--sv-layout-padding);
+}
+
+.sv-game .sv-stage {
+  min-width: 0;
+  margin: 0;
+  padding: var(--sv-stage-padding);
+  background: #fff;
+  border: 1px solid var(--sv-line);
+  border-radius: var(--sv-panel-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sv-game .sv-context {
+  display: none;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border-radius: var(--sv-panel-radius);
+  background: white;
+  align-self: start;
+}
+
+.sv-game .sv-game-context {
+  display: none;
+  min-width: 0;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid var(--sv-line);
+  border-radius: var(--sv-panel-radius);
+  align-self: start;
+}
+
+.sv-game h2 {
+  font-size: 17px;
+  margin: 0;
+}
+
+.sv-recommend-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--sv-rec);
+  gap: 8px;
+}
+
+.sv-recommend-heading small {
+  font-size: 13px;
+}
+
+.sv-game.has-display .sv-duel {
+  height: auto;
+  min-height: 44px;
+}
+
+.sv-game.has-display .sv-duel b {
+  font-size: 13px;
+  white-space: normal;
+}
+
+.sv-game .sv-zrow,.sv-game.has-display .sv-zrow {
+  height: 300px;
+  min-height: var(--sv-zone-height);
+  margin: 0;
+  --sv-side: 28px;
+}
+
+.sv-zone-outside {
+  fill: #ecefea;
+}
+
+.sv-zone-box {
+  fill: #fff;
+  stroke: var(--sv-ink);
+  stroke-width: 2;
+}
+
+.sv-zone-grid {
+  stroke: #dde1dc;
+}
+
+.sv-rec[data-rank="1"] rect {
+  fill: #1e6a4e;
+  stroke: #1e6a4e;
+  stroke-dasharray: none;
+}
+
+.sv-rec[data-rank="1"] text {
+  fill: #fff;
+  stroke: none;
+}
+
+.sv-rec[data-rank="2"] rect {
+  fill: #cfe3d8;
+  stroke: #cfe3d8;
+  stroke-dasharray: none;
+}
+
+.sv-rec[data-rank="2"] text {
+  fill: #14503a;
+  stroke: none;
+}
+
+.sv-rec[data-rank="3"] rect {
+  fill: none;
+  stroke: #1e6a4e;
+  stroke-dasharray: 3 2;
+}
+
+.sv-mitt line,.sv-mitt text {
+  stroke: #3559b5;
+}
+
+.sv-zone-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--sv-muted);
+  margin: 0;
+}
+
+.sv-zone-legend span:first-child {
+  color: var(--sv-rec);
+}
+
+.sv-zone-legend span:nth-child(2) {
+  color: var(--sv-actual);
+}
+
+.sv-game .sv-pitch-summary {
+  margin: 0;
+  padding: 8px 0;
+  min-height: 0;
+  display: block;
+}
+
+.sv-game .sv-state {
+  height: auto;
+  min-height: 90px;
+}
+
+.sv-game .sv-state-body {
+  display: block;
+}
+
+.sv-game .sv-rec-summary .sv-reclist {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 6px;
+}
+
+.sv-game .sv-rec-summary .sv-rec-row {
+  padding: 8px 4px;
+  background: #f4f5f2;
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 44px;
+}
+
+.sv-game .sv-rec-summary .sv-rec-pct {
+  display: none;
+}
+
+.sv-game .sv-rec-summary .sv-rec-type {
+  font-size: 13px;
+}
+
+.sv-game .sv-state-msg,.sv-game .sv-state-note {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 6px 0;
+}
+
+.sv-section-label {
+  font-size: 13px;
+  margin: 0;
+}
+
+.sv-game .sv-strip {
+  height: auto;
+  padding: 0;
+  gap: 8px;
+}
+
+.sv-game .sv-strip .sv-card {
+  width: var(--sv-pitch-card-width);
+  height: 96px;
+  min-height: 96px;
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.sv-strip .sv-zone {
+  display: none;
+}
+
+.sv-game .sv-card-cap {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sv-game .sv-card-q {
+  font-size: 23px;
+}
+
+.sv-game .sv-strip .pending {
+  border: 1px dashed #aeb5bc;
+  background: #fff;
+}
+
+.sv-previous {
+  margin: 0 16px 16px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--sv-line);
+  border-radius: 18px;
+  font-size: 13px;
+}
+
+.sv-previous summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.sv-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 15;
+  background: #fff;
+  border-top: 1px solid var(--sv-line);
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+}
+
+.sv-bottom-nav button {
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--sv-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sv-panel-link {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: var(--sv-ink);
+  font-weight: 600;
+  padding: 8px 0;
+}
+
+.sv-score-compact {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.sv-score-compact dd {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.sv-recent-pas {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.sv-recent-pas button {
+  display: grid;
+  gap: 5px;
+  min-height: 52px;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid #eef0ec;
+  background: none;
+  text-align: left;
+  color: var(--sv-ink);
+  font-size: 13px;
+}
+
+.sv-recent-pas span {
+  color: var(--sv-muted);
+}
+
+.sv-unmeasured {
+  padding: 20px;
+  margin-top: 16px;
+  border-radius: 14px;
+  background: repeating-linear-gradient(135deg,#f4f5f2 0 5px,#e3e7e2 5px 7px);
+}
+
+.sv-sheet .sv-btn {
+  min-height: 44px;
+}
+
+.sv-sheet-body {
+  overflow-x: hidden;
+}
+
+.sv-table {
+  font-size: 13px;
+}
+
+.sv-backdrop {
+  z-index: 50;
+}
+
+.sv-sheet {
+  max-height: calc(100dvh - 32px);
+}
+
+.sv-list-page {
+  max-width: 800px;
+}
+
+.sv-list h2 {
+  font-size: 16px;
+  margin: 24px 0 10px;
+}
+
+.sv-list .sv-card {
+  border-radius: 20px;
+}
+
+.sv-list .sv-card.live {
+  border-color: var(--sv-ink);
+}
+
+@media (min-width:760px) {
+  .sv-page.sv-game {
+    --sv-layout-padding: 24px;
+    --sv-zone-height: 330px;
+  }
+  .sv-live-layout {
+    grid-template-columns: minmax(0,1.25fr) minmax(280px,1fr);
+    padding: var(--sv-layout-padding);
+    align-items: start;
+  }
+  .sv-game .sv-game-context {
+    display: block;
+  }
+  .sv-game .sv-zrow {
+    height: 340px;
+  }
+  .sv-previous {
+    margin: 0 24px 24px;
+  }
+}
+
+@media (min-width:1200px) {
+  .sv-live-layout {
+    grid-template-columns: minmax(210px,.8fr) minmax(340px,1.35fr) minmax(260px,1fr);
+  }
+  .sv-game .sv-context {
+    display: block;
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .sv-game .sv-stage {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .sv-game .sv-game-context {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .sv-game .sv-players {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .sv-game .sv-player {
+    min-height: 140px;
+    align-items: start;
+    padding: 16px;
+    background: var(--sv-bg);
+    border-radius: 14px;
+  }
+  .sv-game .sv-player-name {
+    display: grid;
+    gap: 8px;
+  }
+  .sv-game .sv-upcoming {
+    display: grid;
+    margin-top: 16px;
+    gap: 10px;
+  }
+  .sv-bottom-nav {
+    position: static;
+    margin: 0 24px;
+    border: 1px solid var(--sv-line);
+    border-radius: 14px;
+    max-width: 600px;
+  }
+  .sv-game.detail-open {
+    padding-right: 420px;
+  }
+  .sv-game.detail-open .sv-live-layout {
+    grid-template-columns: minmax(300px,1.2fr) minmax(230px,1fr);
+    gap: 12px;
+    padding: 16px;
+  }
+  .sv-game.detail-open .sv-context {
+    display: none;
+  }
+  .sv-game.detail-open .sv-stage {
+    grid-column: 1;
+  }
+  .sv-game.detail-open .sv-game-context {
+    grid-column: 2;
+  }
+  .sv-backdrop.nonmodal {
+    position: fixed;
+    left: auto;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 420px;
+    background: none;
+    align-items: stretch;
+    padding: 0;
+    pointer-events: none;
+  }
+  .sv-backdrop.nonmodal .sv-sheet {
+    width: 420px;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    pointer-events: auto;
+    border-left: 1px solid var(--sv-line);
+    box-shadow: -8px 0 24px #15191e0a;
+  }
+  .sv-game .sv-previous {
+    max-width: 650px;
+  }
+}
+
+@media (max-width:359px) {
+  .sv-page.sv-game {
+    --sv-layout-padding: 10px;
+    --sv-stage-padding: 12px;
+  }
+  .sv-live-layout {
+    padding: var(--sv-layout-padding);
+  }
+  .sv-game .sv-stage {
+    padding: var(--sv-stage-padding);
+  }
+  .sv-game .sv-zrow,.sv-game.has-display .sv-zrow {
+    height: var(--sv-zone-height);
+    min-height: var(--sv-zone-height);
+    --sv-side: 20px;
+  }
+  .sv-head-score {
+    gap: 4px;
+  }
+  .sv-head-score strong {
+    font-size: 22px;
+  }
+  .sv-head-score .sv-tn {
+    font-size: 13px;
+  }
+  .sv-game .sv-rec-summary .sv-rec-type {
+    font-size: 11px;
+  }
+}
+
+.sv-card-starters {
+  grid-column: 1/-1;
+  color: var(--sv-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sv-game .sv-strip .sv-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 70px;
+  min-height: 70px;
+  background: #f4f5f2;
+  border: 1px solid var(--sv-line);
+}
+
+.sv-game .sv-strip .sv-card.on {
+  border-color: var(--sv-ink);
+}
+
+.sv-game .sv-zrow,.sv-game.has-display .sv-zrow {
+  height: 240px;
+  min-height: 240px;
+}
+
+.sv-game .sv-state-idle {
+  display: none;
+}
+
+.sv-mobile-we {
+  margin: 0 16px 16px;
+  width: calc(100% - 32px);
+  padding: 12px 16px;
+  border: 1px solid var(--sv-line);
+  border-radius: 18px;
+  background: #fff;
+}
+
+.sv-player-fullname {
+  font-size: 17px;
+}
+
+.sv-game .sv-players .sv-player {
+  grid-template-rows: auto;
+}
+
+@media (min-width:760px) {
+  .sv-mobile-we {
+    display: none;
+  }
+  .sv-game .sv-zrow,.sv-game.has-display .sv-zrow {
+    height: var(--sv-zone-height);
+    min-height: var(--sv-zone-height);
+  }
+}
+
+.sv-game .sv-strip .sv-card {
+  height: var(--sv-pitch-card-height);
+  min-height: var(--sv-pitch-card-height);
+}
+
+.sv-game .sv-zrow,.sv-game.has-display .sv-zrow {
+  height: var(--sv-zone-height);
+  min-height: var(--sv-zone-height);
+}
+
+.sv-game .sv-stage {
+  gap: var(--sv-stage-gap);
+}
+
+.sv-game .sv-state {
+  min-height: 68px;
+}
+
+.sv-game .sv-pitch-summary {
+  padding: 6px 0;
+}
+
+.sv-game .sv-pa-dot {
+  pointer-events: none;
+}
+
+@media (min-width:760px) {
+  .sv-game .sv-zrow,.sv-game.has-display .sv-zrow {
+    height: var(--sv-zone-height);
+    min-height: var(--sv-zone-height);
+  }
+}
+
+.sv-share-bar {
+  display: block;
+  flex-basis: 100%;
+  height: 3px;
+  border-radius: 3px;
+  background: #dde1dc;
+  margin-top: 4px;
+}
+
+.sv-share-bar i {
+  display: block;
+  height: 100%;
+  background: var(--sv-rec);
+  border-radius: 3px;
+}
+
+.sv-game .sv-rec-summary .sv-rec-row:nth-child(2) .sv-share-bar i {
+  background: #84b59b;
+}
+
+.sv-game .sv-rec-summary .sv-rec-row:nth-child(3) .sv-share-bar i {
+  background: #aecdbb;
+}
+
+/*---- WS launch layout (2026-10-17, workstream D; tests/ws-launch-layout-check.mjs) ----
+   Header: the score line never runs under the LIVE/종료 button. It is tightened on phones, and a team name that still does not fit
+   ends in an ellipsis (the full names stay in the heading's aria-label).*/
+
+.sv-head-score {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.sv-head-score .sv-tn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sv-head-score strong,.sv-head-score i {
+  flex: none;
+}
+
+@media (max-width:419px) {
+  .sv-game .sv-head {
+    padding-left: 8px;
+    padding-right: 8px;
+    gap: 2px;
+  }
+  .sv-head-score {
+    gap: 4px;
+  }
+  .sv-head-score .sv-tn {
+    font-size: 14px;
+  }
+  .sv-head-score i {
+    font-size: 12px;
+  }
+  .sv-game .sv-live {
+    padding: 0 6px;
+  }
+}
+
+@media (max-width:359px) {
+  .sv-head-score {
+    gap: 3px;
+  }
+  .sv-head-score .sv-tn {
+    font-size: 13px;
+  }
+  .sv-head-score strong {
+    font-size: 21px;
+  }
+}
+
+/*이닝별 기록: R·H·E·사사구 stay pinned at the right edge; only the inning cells scroll under them (narrow phones, the 420px side sheet).*/
+
+.sv-box th:nth-last-child(-n+4),.sv-box td:nth-last-child(-n+4) {
+  position: sticky;
+  z-index: 1;
+  background: var(--sv-paper);
+  box-sizing: border-box;
+  width: 30px;
+  min-width: 30px;
+}
+
+.sv-box th:last-child,.sv-box td:last-child {
+  right: 0;
+  width: 56px;
+  min-width: 56px;
+}
+
+.sv-box th:nth-last-child(2),.sv-box td:nth-last-child(2) {
+  right: 56px;
+}
+
+.sv-box th:nth-last-child(3),.sv-box td:nth-last-child(3) {
+  right: 86px;
+}
+
+.sv-box th:nth-last-child(4),.sv-box td:nth-last-child(4) {
+  right: 116px;
+  box-shadow: -6px 0 6px -6px rgba(21,25,30,.35);
+}
+
+/*정정됨 on a pitch card (the 10/13 strip draws no mini zone): the tag sits in the card's top corner and the caption starts below it.*/
+
+.sv-game .sv-strip .sv-card:has(.sv-card-tag) {
+  justify-content: flex-end;
+  padding-bottom: 4px;
+}
+
+.sv-game .sv-strip .sv-card-tag {
+  top: 2px;
+  right: 2px;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+/*---- pitch card captions (2026-10-17, workstream E; tests/compact-rev3-fit.mjs) ----
+   Since 2026-10-13 a card's second line is "speed · result". A long result ("138 km/h · 루킹 스트라이크") ran past the 100 px card and
+   under the next card. Each line now ends in an ellipsis inside its own card; the full words stay in the card's aria-label and its
+   detail sheet.*/
+
+.sv-game .sv-strip .sv-card .sv-card-cap {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.sv-game .sv-strip .sv-card .sv-card-cap>span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*Phones: keep the pitch strip above the fixed tab bar at 390x844 (compact-rev3-fit / studio-layout-check).
+   The zone row gives back 44px, the stage and page paddings 4px each, the stage gaps 2px each.*/
+
+@media (min-width:360px) and (max-width:759px) {
+  .sv-page.sv-game {
+    --sv-layout-padding: 12px;
+  }
+  .sv-live-layout {
+    padding: var(--sv-layout-padding);
+  }
+}
+
+@media (max-width:759px) {
+  .sv-page.sv-game {
+    --sv-stage-padding: 12px;
+    --sv-stage-gap: 6px;
+    --sv-zone-height: 216px;
+  }
+  .sv-game .sv-stage {
+    padding: var(--sv-stage-padding);
+    gap: var(--sv-stage-gap);
+    border: 0;
+    border-bottom: 1px solid var(--sv-line);
+    border-radius: 0;
+  }
+  .sv-game .sv-zrow,.sv-game.has-display .sv-zrow {
+    height: var(--sv-zone-height);
+    min-height: var(--sv-zone-height);
+  }
+}
+
+/*the page's own bottom room follows the tab bar's (which already adds the home-indicator inset)*/
+
+.sv-page.sv-game {
+  padding-bottom: calc(var(--sv-nav-space) + env(safe-area-inset-bottom));
+}
+
+@media (min-width:1200px) {
+  .sv-page.sv-game {
+    padding-bottom: var(--sv-nav-space);
+  }
+}
+
+.sv-zone-legend,.sv-actual-caption {
+  word-break: keep-all;
+}
+
+/*Reserve the fixed navigation when the browser scrolls a keyboard-focused control into view.*/
+
+@media (max-width:1199px) {
+  html:has(.sv-bottom-nav) {
+    scroll-padding-bottom: calc(var(--sv-nav-space) + env(safe-area-inset-bottom));
+  }
+}
