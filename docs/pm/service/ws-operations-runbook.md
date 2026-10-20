@@ -9,6 +9,14 @@
 
 ## 1. 켜고 끄기
 
+### 0. 경기 날 시작 순서 (맨 먼저, 2026-10-20 외부 평가 v2 N-2)
+1. **8772 데모 루프 내리기** — `sh <rc-integration 작업 폴더>/demo/stop_demo.sh`(데모 자신의 도구, 신호를 직접 보내지 않는다). WS 경기 날에는 Song이 2026-10-20에 승인했다(경기마다 다시 묻지 않음). 기록기·수집 프로세스는 건드리지 않는다.
+2. **가용 메모리 ≥ 8 GiB 확인** — `vm_stat`의 free+inactive+speculative(리허설·실행기와 같은 계산). 데모를 켠 상태의 가용은 약 7.9 GiB였고, E2 경기 중 최저는 7.77 GiB였다(데모 끈 상태).
+   - 8 GiB 미만이면: 같은 맥의 무거운 작업을 멈추고(4.5절 1단계), 사람 앱(브라우저 탭·안 쓰는 세션)은 Song이 정리한다.
+   - 실행기 동작: `ws_ops_config.json` `armb: "auto"`는 발행기를 띄울 때 가용 메모리가 `armb_min_available_bytes`(8 GiB) 미만이면 **추천을 끄고** 경기 상황만 발행한다(거절이 아님). 발행 시작 자체를 막는 하한은 `start_min_available_bytes`다. 추천 없이 돌면 참고 카드도 사라진다(CL-13).
+3. **발행기 시작** — `ws_operate.py start --date <KST 날짜>`(또는 launchd 예약). start 결과의 `armb`가 true인지 status.json에서 확인한다.
+4. 경기가 끝나 `final_settled`가 되면 데모를 다시 켠다(`start_demo.sh`).
+
 ### 발행기 켜기
 - 명령(코드 기준): `PYTHONPATH=apps/observer/backend .venv-observer/bin/python -m observer_app.publisher --out <출력 폴더>`
   - `--once`를 빼면 `publish_interval_s`(기본 10초, **잠정**)마다 계속 돈다.
