@@ -179,7 +179,7 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
   const paLabels = paMarks.map(({ p, d }) => {
     if (p.numbers.length === 1) return { x: d.x, y: d.y + u(3.5), halo: false };
     const tw = u(6 + 7 * p.numbers.join('·').length), side = rA + tw / 2 + u(4);
-    const spots = [[0, -u(12)], [0, u(22)], [side, u(4)], [-side, u(4)], [0, -u(30)], [0, u(40)]]
+    const spots = [[0, -u(14)], [0, u(22)], [side, u(4)], [-side, u(4)], [0, -u(30)], [0, u(40)]]
       .map(([dx, dy]) => ({ x: d.x + dx - tw / 2, y: d.y + dy - u(11), w: tw, h: u(14) }));
     const textAvoid = [...numBoxes, ...paDotBoxes, ...paNumberBoxes, ...(mittLabel.box ? [mittLabel.box] : []), ...(actLabel ? [actLabel.box] : [])];
     const clear = spots.find(b => visible(b) && ![...recBoxes, ...textAvoid].some(a => hit(a, b)));

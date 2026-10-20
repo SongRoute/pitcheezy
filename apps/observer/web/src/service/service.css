@@ -106,7 +106,7 @@ body.sv-locked{overflow:hidden}
 .sv-sheet{width:100%;max-width:560px;max-height:min(86dvh,86vh);display:flex;flex-direction:column;background:var(--sv-paper);border-radius:18px 18px 0 0;padding-bottom:env(safe-area-inset-bottom);outline:none}
 .sv-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--sv-line)}
 .sv-sheet-head h2{font-size:18px;font-weight:900}
-.sv-sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:8px 14px 16px}
+.sv-sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:8px 14px 16px;word-break:keep-all;overflow-wrap:anywhere}
 .sv-pa-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .sv-pa-half{font-size:14px;color:var(--sv-muted);margin:10px 0 2px;font-weight:800}
 .sv-pa-item{width:100%;min-height:56px;display:grid;gap:2px;text-align:left;padding:6px 10px;border:1.5px solid var(--sv-line);border-radius:12px;background:#fff;color:var(--sv-ink)}
@@ -698,3 +698,5 @@ body:has(.sv-page){background:var(--sv-bg);color:var(--sv-ink)}  /* service page
 .sv-page.sv-game{padding-bottom:calc(80px + env(safe-area-inset-bottom))}
 @media(min-width:1200px){.sv-page.sv-game{padding-bottom:80px}}
 .sv-zone-legend,.sv-actual-caption{word-break:keep-all}
+/* Reserve the fixed navigation when the browser scrolls a keyboard-focused control into view. */
+@media(max-width:1199px){html:has(.sv-bottom-nav){scroll-padding-bottom:calc(80px + env(safe-area-inset-bottom))}}

@@ -43,6 +43,7 @@ function variant(which, side, many, numberCase) {
   if (numberCase) {
     b.pitches.slice(-3).forEach((p, i) => { p.pa_key = key; p.pitch_number = i + 1; p.actual.x = i === 2 ? 1.6 : .3; p.actual.z = 2.4; });
     b.next.rec.candidates[0].target = { x: .3, z: numberCase === 'dense' ? 2.4 : 2.55 };
+    if (numberCase === 'above') b.next.rec.candidates.forEach((c, i) => { c.target = { x: -.65, z: 1.7 + i * .2 }; });
     if (numberCase === 'dense') { b.next.rec.candidates[1].target = { x: .55, z: 2.7 }; b.next.rec.candidates[2].target = { x: .05, z: 2.1 }; }
   }
   return b;
@@ -133,6 +134,7 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
       const svg = g.closest('svg'), b = text.getBoundingClientRect(), v = svg.getBoundingClientRect(), css = getComputedStyle(text);
       const hit = e => { const a = e.getBoundingClientRect(); return b.left < a.right && a.left < b.right && b.top < a.bottom && a.top < b.bottom; };
       return [{ halo: css.stroke, haloScreenPx: parseFloat(css.strokeWidth) * text.getScreenCTM().a, paintOrder: css.paintOrder,
+        baselineOffsetPx: (Number(text.getAttribute('y')) - Number(g.querySelector('circle').getAttribute('cy'))) * text.getScreenCTM().d,
         visible: b.left >= v.left && b.right <= v.right && b.top >= v.top && b.bottom <= v.bottom,
         markOverlap: [...svg.querySelectorAll('.sv-rec rect')].some(hit),
         contentOverlap: [...svg.querySelectorAll('.sv-rec text,.sv-mitt text,.sv-pa-dot circle,.sv-pa-dot text')].filter(e => e !== text).some(hit) }];
@@ -184,6 +186,7 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
     ok(L.mergedNumbers.length === 1 && L.mergedNumbers.every(n => n.visible && !n.contentOverlap), `${tag} merged numbers stay in the SVG and clear other text and dots`, L.mergedNumbers);
     ok(L.mergedNumbers.every(n => numberCase === 'dense' ? n.halo === 'rgb(255, 255, 255)' && n.haloScreenPx >= 2.99 && n.haloScreenPx <= 3.01 && n.paintOrder === 'stroke' : n.halo === 'none' && !n.markOverlap),
       `${tag} ${numberCase === 'dense' ? 'dense fallback uses a 3 screen-pixel white halo' : 'merged numbers avoid recommendation squares'}`, L.mergedNumbers);
+    if (numberCase === 'above') ok(L.mergedNumbers.every(n => Math.abs(n.baselineOffsetPx + 14) < .01), `${tag} first clear position above the dot is actually selected`, L.mergedNumbers);
   }
   ok(L.banned.length === 0, `${tag} removed visible texts (main screen)`, L.banned);
   // a tapped past card never leaves the latest view on a live game any more, so '최신으로' must not appear in any of these states
@@ -233,7 +236,8 @@ for (const [w, h] of [[375, 667], [375, 553], [390, 844], [320, 568]]) for (cons
   await run(w, h, big, 'live', 'pinned', side, side === 'L');
 }
 for (const [w, h] of [[375, 553], [320, 568]]) { await run(w, h, false, 'live', 'stale', 'R', false); await run(w, h, false, 'final', 'pinned', 'R', true); }
-for (const numberCase of ['clear', 'dense']) await run(390, 844, false, 'live', 'latest', 'R', false, numberCase);
+for (const numberCase of ['clear', 'dense', 'above']) await run(390, 844, false, 'live', 'latest', 'R', false, numberCase);
+await run(320, 568, false, 'live', 'latest', 'R', false, 'above');
 ok(['inside', 'outside', 'merged'].every(kind => numberCases.has(kind)), 'number contrast covers inside, hollow outside and merged labels', [...numberCases]);
 await browser.close();
 console.log(failures ? `${failures} FAIL` : 'all ok');
