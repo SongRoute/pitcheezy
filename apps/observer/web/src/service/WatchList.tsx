@@ -136,7 +136,7 @@ export default function WatchList() {
       } catch (e) {
         if (signal.aborted) return false;
         good = false;
-        if (!shown) setError(e instanceof FetchError ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen
+        if (!shown || (e instanceof FetchError && e.notice)) setError(e instanceof FetchError ? e.message : '경기 목록을 불러오지 못했어요.');   // a failed re-read never blanks a list on screen; a service notice does (restored by the next good read)
       }
       return good;
     }, () => listPeriod.current, () => listPeriod.current, () => setHealthFresh(false));
