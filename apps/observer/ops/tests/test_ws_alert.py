@@ -614,6 +614,7 @@ def test_journal_failure_does_not_stop_sends(w, tmp_path):
 def test_missing_out_dir_is_reported(tmp_path):
     cfg = wa.load_config(None, alert_dir=str(tmp_path / 'a'), env={})
     cfg['paths']['profile_log'] = None
+    cfg['paths']['ops_status'] = None  # never the real ws-ops/status.json (it names a live out_dir on game days)
     cfg['paths']['disk_paths'] = []
     cfg['schedule'] = []
     fake = wa.FakeNotifier()
@@ -707,3 +708,55 @@ def test_file_stuck_ignores_clock_only_live_from_ops(w):
         if dt < 1260:
             assert events == [], dt  # 440 s since the last not-in-play sighting (T0+800): still under 450
     assert w.keys(events) == {f'file_stuck:{PK}'}
+
+
+# --- OPS-ALERT-JSON01: valid JSON that is not an object must not stop the watcher (Codex f540f7ff RED case)
+
+@pytest.mark.parametrize('role', ['health', 'games', 'ops', 'state', 'game'])
+def test_non_object_input_is_isolated_and_disk_warning_survives(w, role):
+    w.healthy(T0)
+    w.disk = 11 * GIB  # the independent, ungated disk warning must still fire
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps({}))
+    target = {'health': w.out / 'v1' / 'health.json', 'games': w.out / 'v1' / 'games' / '2026-10-24.json',
+              'ops': w.ops_path, 'state': w.state_path, 'game': w.out / 'v1' / 'game' / f'{PK}.json'}[role]
+    target.write_text(json.dumps([1]))
+    events = w.run(T0)
+    fired = w.keys(events)
+    assert 'disk_low' in fired
+    assert f'input_malformed:{role}' in fired
+    assert not any(k.startswith('input_malformed:') and k != f'input_malformed:{role}' for k in fired)
+
+
+def test_non_object_health_and_games_in_codex_dry_run_shape(w, capsys):
+    """Codex f540f7ff: no active game, health=[1] or games=[1], dry run; disk_low must be in the printed output."""
+    for role in ('health', 'games'):
+        w.healthy(T0)
+        w.games()  # no games: nothing in window, only ungated rules
+        w.health(T0, checks={})
+        w.disk = 0
+        path = w.out / 'v1' / ('health.json' if role == 'health' else 'games/2026-10-24.json')
+        path.write_text(json.dumps([1]))
+        wa.run_once(w.cfg, now=T0, dry_run=True, collect_fn=w.collect)
+        result = json.loads(capsys.readouterr().out)
+        keys = [item['key'] for item in result['active']]
+        assert 'disk_low' in keys and f'input_malformed:{role}' in keys
+    assert not (w.tmp / 'alert').exists()
+
+
+def test_malformed_input_announced_once_then_recovers(w):
+    w.healthy(T0)
+    (w.out / 'v1' / 'health.json').write_text(json.dumps('not an object'))
+    assert 'input_malformed:health' in w.keys(w.run(T0))
+    assert 'input_malformed:health' not in w.keys(w.run(T0 + 15))  # deduped while it lasts
+    w.health(T0 + 30)
+    assert 'input_malformed:health' in w.keys(w.run(T0 + 30), kind='recover')
+
+
+def test_non_list_games_and_non_dict_game_checks_do_not_raise(w):
+    w.healthy(T0)
+    (w.out / 'v1' / 'games' / '2026-10-24.json').write_text(json.dumps({'games': 5}))
+    w.health(T0, checks=[1, 2])
+    w.disk = 11 * GIB
+    fired = w.keys(w.run(T0))
+    assert {'disk_low', 'input_malformed:games'} <= fired

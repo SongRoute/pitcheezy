@@ -64,5 +64,5 @@
   },
   "game_gated": ["health_stalled", "publisher_down", "game_check_stalled", "feed_down", "feed_delayed", "file_stuck",
                  "game_unavailable", "upload_pending", "upload_stalled", "memory_low"],
-  "game_gated_note": "Families evaluated only while a game is in window (quiet otherwise). Always on: upload_blocked / upload_conflict / upload_unknown / upload_rejected (they never clear by themselves), state_unreadable, disk_low, profile_refresh, ops_state, ops_problem, ops_status_stale (the supervisor also runs while waiting), watch_config. All upload rules are skipped while health.upload.dry_run is true."
+  "game_gated_note": "Families evaluated only while a game is in window (quiet otherwise). Always on: upload_blocked / upload_conflict / upload_unknown / upload_rejected (they never clear by themselves), state_unreadable, disk_low, profile_refresh, ops_state, ops_problem, ops_status_stale (the supervisor also runs while waiting), watch_config, input_malformed (an input that is valid JSON but not an object; OPS-ALERT-JSON01). All upload rules are skipped while health.upload.dry_run is true."
 }

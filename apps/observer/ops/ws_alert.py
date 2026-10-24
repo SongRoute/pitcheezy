@@ -41,6 +41,8 @@ IN_PLAY_TEXT = ('In Progress',)
 OPS_DOWN_STATES = ('backoff', 'failed', 'refused', 'stopped')
 # Supervisor alert strings the watcher already judges itself from the same sources: not repeated.
 OPS_ALERTS_COVERED = ('memory_low', 'health_stale', 'feed_failing', 'upload_blocked')
+# Inputs whose shape is checked (collect() names them 'health', 'games/<date>', 'game/<pk>', 'state', 'ops').
+INPUT_ROLES = ('health', 'games', 'game', 'state', 'ops')
 
 BUILTIN = {
     'paths': {'out_dir': None, 'state_path': None, 'ops_status': '~/Projects/pitcheezy-pm-jobs/ws-ops/status.json',
@@ -116,13 +118,18 @@ def parse_time(value):
 
 
 def _read_json(path):
-    """(body, error). error is None, 'missing' or 'unreadable'. One retry covers a file caught mid-replace."""
+    """(body, error). error is None, 'missing', 'unreadable' or 'malformed'. One retry covers a file caught mid-replace.
+
+    Every input the watcher reads is a JSON object. Valid JSON of another shape (a list, a number, a string) is
+    'malformed' with body None, so one bad input never raises inside collect/evaluate and silences the independent
+    rules (OPS-ALERT-JSON01)."""
     if not path:
         return None, 'missing'
     path = Path(path)
     for attempt in range(2):
         try:
-            return json.loads(path.read_text()), None
+            body = json.loads(path.read_text())
+            return (body, None) if isinstance(body, dict) else (None, 'malformed')
         except FileNotFoundError:
             return None, 'missing'
         except (OSError, ValueError):
@@ -174,8 +181,10 @@ def disk_free_bytes(paths):
 def collect(cfg, now, *, memory=memory_available_bytes, disk=disk_free_bytes):
     """Everything the rules look at, read once. Missing inputs are recorded, never raised."""
     paths, version = cfg['paths'], cfg['contract_version']
-    obs = {'now': now, 'games': [], 'game_files': {}}
+    obs = {'now': now, 'games': [], 'game_files': {}, 'malformed': []}
     obs['ops'], obs['ops_error'] = _read_json(paths['ops_status']) if paths.get('ops_status') else (None, None)
+    if obs['ops_error'] == 'malformed':
+        obs['malformed'].append('ops')
     out_dir, state_path = paths.get('out_dir'), paths.get('state_path')
     ops = obs['ops']
     # The ops status (v1.1) names the current day's publisher output and state file: follow it (--out still wins).
@@ -191,26 +200,38 @@ def collect(cfg, now, *, memory=memory_available_bytes, disk=disk_free_bytes):
     root = Path(out_dir) / version if out_dir else None
     if root is not None:
         obs['health'], obs['health_error'] = _read_json(root / 'health.json')
+        if obs['health_error'] == 'malformed':
+            obs['malformed'].append('health')
         try:
             obs['health_mtime'] = (root / 'health.json').stat().st_mtime
         except OSError:
             obs['health_mtime'] = None
         today = datetime.fromtimestamp(now, KST).date()
         for delta in (-1, 0, 1):
-            body, _ = _read_json(root / 'games' / f'{today + timedelta(days=delta)}.json')
-            for game in (body or {}).get('games') or []:
+            day = today + timedelta(days=delta)
+            body, error = _read_json(root / 'games' / f'{day}.json')
+            games = (body or {}).get('games') or []
+            if error == 'malformed' or not isinstance(games, list):
+                obs['malformed'].append(f'games/{day}')
+                continue
+            for game in games:
                 if isinstance(game, dict) and isinstance(game.get('game_pk'), int):
                     obs['games'].append(game)
     obs['state'], obs['state_error'] = _read_json(state_path)
+    if obs['state_error'] == 'malformed':
+        obs['malformed'].append('state')
     pks = {g['game_pk'] for g in obs['games'] if g.get('status') == 'live' or g.get('live')}
-    pks |= {int(k) for k in ((obs.get('health') or {}).get('game_checks') or {}) if str(k).isdigit()}
+    checks = (obs.get('health') or {}).get('game_checks')
+    pks |= {int(k) for k in (checks if isinstance(checks, dict) else {}) if str(k).isdigit()}
     for item in _ops_games(obs['ops']):
         pks.add(item['game_pk'])
     if root is not None:
         for pk in sorted(pks):
-            body, _ = _read_json(root / 'game' / f'{pk}.json')
+            body, error = _read_json(root / 'game' / f'{pk}.json')
             if isinstance(body, dict):
                 obs['game_files'][pk] = body
+            elif error == 'malformed':
+                obs['malformed'].append(f'game/{pk}')
     obs['memory'] = memory()
     disk_paths = list(paths.get('disk_paths') or [])
     if out_dir:
@@ -349,7 +370,7 @@ def evaluate(cfg, obs, tracker):
     files = tracker.setdefault('files', {})
     ops_by_pk = {item['game_pk']: item for item in _ops_games(ops)}
     if in_game and health is not None:
-        checks = health.get('game_checks') or {}
+        checks = health.get('game_checks') if isinstance(health.get('game_checks'), dict) else {}
         failing = set(health.get('feed_failing_games') or [])
         unavailable = {}
         for item in health.get('unavailable_games') or []:
@@ -531,6 +552,15 @@ def evaluate(cfg, obs, tracker):
                                f'(기준 {limit}초)'))
     elif obs.get('ops_error') == 'unreadable':
         conds.append(_cond('ops_problem:unreadable', WARN, True, '운영 상태 파일 읽기 실패', 30))
+
+    # --- input shape (OPS-ALERT-JSON01). Valid JSON that is not an object: that input is set aside (treated as
+    # absent above) and the other rules keep running. One always-on key per input kind, so it is announced once
+    # (dedup/renotify as any other key) and recovers when the file is an object again.
+    bad = obs.get('malformed') or []
+    for role in INPUT_ROLES:
+        names = [name for name in bad if name.split('/')[0] == role]
+        conds.append(_cond(f'input_malformed:{role}', WARN, bool(names),
+                           f'감시 입력 형식 오류: {", ".join(names)} 가 JSON 객체가 아님 — 이 입력만 건너뛰고 나머지 감시는 계속'))
 
     return [c for c in conds if in_game or c['family'] not in gated], in_game
 
