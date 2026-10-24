@@ -417,16 +417,24 @@ def upload_decision(cfg, requested, env=None):
 
 
 def runtime_publish_config(cfg, upload, env=None):
-    """The repository publish_config with the launcher's delay and upload decision (never written back)."""
+    """The repository publish_config with the launcher's delay and upload decision (never written back).
+
+    Credential source (OPS-CRED-01): exactly one of ``token_env`` / ``token_file`` is set, because the publisher's
+    HttpSink refuses a config naming both or neither (upload_config_invalid). Precedence: PITCHEEZY_PUBLISH_TOKEN in
+    the environment wins (env-only, also when a token file is given too); otherwise the file named by
+    PITCHEEZY_WS_OPS_TOKEN_FILE (file-only; the publisher reads it once, strips it, never logs it). Neither: upload
+    is already refused by upload_decision. Upload stays off unless requested and allowed."""
     env = os.environ if env is None else env
     body = json.loads((Path(cfg['code_dir'])/cfg['publish_config']).read_text())
     body['fixed_delay_s'] = cfg['fixed_delay_s']
     body.setdefault('upload', {})['enabled'] = bool(upload)
     if upload:
         body['upload']['base_url'] = env[BASE_URL_ENV]
-        body['upload']['token_env'] = TOKEN_ENV
-        body['upload']['token_file'] = (None if env.get(TOKEN_ENV)
-                                        else str(Path(env[TOKEN_FILE_ENV]).expanduser().resolve()))
+        if env.get(TOKEN_ENV):
+            body['upload']['token_env'], body['upload']['token_file'] = TOKEN_ENV, None
+        else:
+            body['upload']['token_env'] = None
+            body['upload']['token_file'] = str(Path(env[TOKEN_FILE_ENV]).expanduser().resolve())
     else:
         body['upload']['base_url'] = None
     return body

@@ -58,7 +58,7 @@
   "required_mounts": ["/Volumes/T7 Shield"],
   "upload": {
     "allowed": false,
-    "note": "Upload stays off unless this is true AND start is given --upload AND the credentials are present in the environment (token: PITCHEEZY_PUBLISH_TOKEN or a token file path in PITCHEEZY_WS_OPS_TOKEN_FILE; host: PITCHEEZY_WS_OPS_UPLOAD_BASE_URL). Values are never printed or logged, only their presence."
+    "note": "Upload stays off unless this is true AND start is given --upload AND the credentials are present in the environment (token: PITCHEEZY_PUBLISH_TOKEN or a token file path in PITCHEEZY_WS_OPS_TOKEN_FILE — if both are set the env token wins and the file is ignored; the publisher gets exactly one source, OPS-CRED-01; host: PITCHEEZY_WS_OPS_UPLOAD_BASE_URL). Values are never printed or logged, only their presence."
   },
   "schedule": {"source": "statsapi", "timeout_s": 10},
   "tick_s": 1.0,

@@ -603,6 +603,58 @@ def test_token_file_must_be_private(env, monkeypatch, tmp_path_factory):
     assert ws.upload_decision(cfg, True)[0] is True
 
 
+# OPS-CRED-01 (Codex RED db294515): the launcher must hand the publisher exactly one credential source.
+FILE_TOKEN = 'F'*45
+
+
+def _credential_case(env, monkeypatch, tmp_path_factory, *, env_token, file_token):
+    from observer_app.publisher import HttpSink
+    cfg = env.cfg()
+    cfg['upload']['allowed'] = True
+    monkeypatch.setenv(ws.BASE_URL_ENV, 'https://example.invalid/x/_publish')
+    token_path = tmp_path_factory.mktemp('secret')/'token'
+    token_path.write_text(FILE_TOKEN + '\n')  # trailing newline: the publisher strips it
+    os.chmod(token_path, 0o600)
+    if env_token:
+        monkeypatch.setenv(ws.TOKEN_ENV, TOKEN)
+    if file_token:
+        monkeypatch.setenv(ws.TOKEN_FILE_ENV, str(token_path))
+    enabled, problems, _ = ws.upload_decision(cfg, True)
+    if not (env_token or file_token):
+        return enabled, problems, None, None
+    assert enabled and problems == []
+    body = ws.runtime_publish_config(cfg, enabled)
+    sink = HttpSink(body['upload'])  # the publisher's own one-source check; no request is made
+    child = ws.child_env(cfg, env.tmp/'run', None, enabled)
+    return body['upload'], sink._authorization, child, token_path
+
+
+def test_credentials_env_only(env, monkeypatch, tmp_path_factory):
+    upload, auth, child, _ = _credential_case(env, monkeypatch, tmp_path_factory, env_token=True, file_token=False)
+    assert (upload['token_env'], upload['token_file']) == (ws.TOKEN_ENV, None)
+    assert auth == f'Bearer {TOKEN}' and child[ws.TOKEN_ENV] == TOKEN
+
+
+def test_credentials_file_only(env, monkeypatch, tmp_path_factory):
+    upload, auth, child, path = _credential_case(env, monkeypatch, tmp_path_factory, env_token=False, file_token=True)
+    assert (upload['token_env'], upload['token_file']) == (None, str(path.resolve()))
+    assert auth == f'Bearer {FILE_TOKEN}'
+    assert ws.TOKEN_ENV not in child and FILE_TOKEN not in json.dumps(child) and FILE_TOKEN not in json.dumps(upload)
+
+
+def test_credentials_both_env_wins(env, monkeypatch, tmp_path_factory):
+    upload, auth, child, _ = _credential_case(env, monkeypatch, tmp_path_factory, env_token=True, file_token=True)
+    assert (upload['token_env'], upload['token_file']) == (ws.TOKEN_ENV, None)
+    assert auth == f'Bearer {TOKEN}' and child[ws.TOKEN_ENV] == TOKEN
+
+
+def test_credentials_neither_refused_and_default_off(env, monkeypatch, tmp_path_factory):
+    enabled, problems, _, _ = _credential_case(env, monkeypatch, tmp_path_factory, env_token=False, file_token=False)
+    assert not enabled and any(ws.TOKEN_ENV in p and ws.TOKEN_FILE_ENV in p for p in problems)
+    body = ws.runtime_publish_config(env.cfg(), False)
+    assert body['upload']['enabled'] is False and body['upload']['base_url'] is None
+
+
 def test_statsapi_query_has_all_game_types(env, monkeypatch):
     seen = {}
 
