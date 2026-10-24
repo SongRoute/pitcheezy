@@ -86,6 +86,12 @@ def main_run(h, monkeypatch):
     return pre, log
 
 
+def forbid_token_prompt(h, monkeypatch):
+    def never(*_a, **_k):
+        raise AssertionError('read_token must not be reached when the identity binding refuses')
+    monkeypatch.setattr(h.w, 'read_token', never)
+
+
 def probe(h, pre, kind):
     try:
         return h.w.cmd_probe(types.SimpleNamespace(out=str(h.out), kind=kind), pre, True, None), None
@@ -110,7 +116,7 @@ def test_same_identity_completes(h, monkeypatch):
     assert log['completion'] == 'COMPLETE' and len(h.heads) == 3
 
 
-@pytest.mark.parametrize('change', ['game_key_scope', 'expiry_earlier', 'expiry_later', 'scope_only'])
+@pytest.mark.parametrize('change', ['game_key_scope', 'expiry_earlier', 'expiry_later', 'scope_only', 'scope_mode'])
 def test_changed_identity_is_refused_before_any_head(h, monkeypatch, change):
     pre, _ = main_run(h, monkeypatch)
     before_log = (h.out/'wrapper-log.json').read_bytes()
@@ -121,6 +127,9 @@ def test_changed_identity_is_refused_before_any_head(h, monkeypatch, change):
     elif change == 'scope_only':
         tc['publish_key_scope'] = 'v1/game/123457.json'
         h.clock[0] = START + 1210
+    elif change == 'scope_mode':
+        tc['scope_mode'] = 'hostwide'
+        h.clock[0] = START + 1210
     elif change == 'expiry_earlier':
         tc['publish_expires_at'] = iso(START + 600)
         h.clock[0] = START + 610
@@ -128,6 +137,7 @@ def test_changed_identity_is_refused_before_any_head(h, monkeypatch, change):
         tc['publish_expires_at'] = iso(START + 1500)
         h.clock[0] = START + 1510
     heads = len(h.heads)
+    forbid_token_prompt(h, monkeypatch)
     for kind in ('expired', 'revoked'):
         rc, refusal = probe(h, pre, kind)
         assert rc == 2 and refusal.startswith('run_identity_mismatch')
@@ -141,6 +151,7 @@ def test_log_without_binding_is_refused(h, monkeypatch):
     (h.out/'wrapper-log.json').write_text(json.dumps(log))
     h.clock[0] = START + 1210
     heads = len(h.heads)
+    forbid_token_prompt(h, monkeypatch)
     rc, refusal = probe(h, pre, 'expired')
     assert rc == 2 and refusal.startswith('run_identity_missing') and len(h.heads) == heads
 
