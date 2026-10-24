@@ -1,0 +1,255 @@
+{
+  "experiment_id": "EXP-STAB-01",
+  "smoke": false,
+  "settings": {
+    "tau": 0.1,
+    "samples": 6,
+    "pitch_cap": 12,
+    "seed": 0
+  },
+  "seed_sets": {
+    "A": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "B": [
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "K": [
+      1,
+      3,
+      5
+    ],
+    "nesting": "K-seed set A = A[:K], set B = B[:K]; K = 1 is the control {0} vs {5}; ten planning runs per decision in total",
+    "seed_basis": "seed 0 is the registered planning seed (seeds.planning_main); 1..9 are diagnostic planning seeds; planning_seed() derives a per-decision RNG key from (seed, state, actions), so the result does not depend on order"
+  },
+  "games": {
+    "excluded_games": 150,
+    "selected": 150,
+    "games_sha256": "cadb081234e1f02293753b3d744f16c738a64a6eb3075f1a9706f3981edb84d1",
+    "first_date": "2025-07-01",
+    "last_date": "2025-09-28"
+  },
+  "requests": 43992,
+  "statuses": {
+    "SUPPORTED": 37556,
+    "UNSUPPORTED_UNKNOWN_PITCHER": 1189,
+    "UNSUPPORTED_MID_PA": 4694,
+    "UNSUPPORTED_LOGGING_POSITIVITY": 481,
+    "UNSUPPORTED_NO_LOGGED_ACTION": 68,
+    "UNSUPPORTED_MISSING_ACTION_LABEL": 1,
+    "OUTSIDE_POLICY_SUPPORT": 3
+  },
+  "decisions_compared": 37559,
+  "comparison": {
+    "decisions": 37559,
+    "games": 150,
+    "by_K": {
+      "1": {
+        "seeds_A": [
+          0
+        ],
+        "seeds_B": [
+          5
+        ],
+        "top1_agreement": 0.8869511967837269,
+        "top1_agreement_ci95": [
+          0.8786342236730666,
+          0.8951486579797839
+        ],
+        "mean_tv": 0.05036804917414062,
+        "mean_tv_ci95": [
+          0.04737714893183956,
+          0.053467401869452515
+        ],
+        "tv_quantiles": {
+          "0.5": 0.03523690773255711,
+          "0.9": 0.1138047970413979,
+          "0.99": 0.26146671364738805,
+          "1.0": 0.6928007366785268
+        },
+        "share_tv_above_0.05": 0.36092547724912805,
+        "mean_max_abs_q_difference": 0.03417151106327531,
+        "secondary_law_mean": {
+          "top1_agreement": 0.8869511967837269,
+          "mean_tv": 0.05036804917414062
+        },
+        "stable": false
+      },
+      "3": {
+        "seeds_A": [
+          0,
+          1,
+          2
+        ],
+        "seeds_B": [
+          5,
+          6,
+          7
+        ],
+        "top1_agreement": 0.9309885779706595,
+        "top1_agreement_ci95": [
+          0.9251934671190692,
+          0.93650923454943
+        ],
+        "mean_tv": 0.029625102146838216,
+        "mean_tv_ci95": [
+          0.027827334477565475,
+          0.031462488163597244
+        ],
+        "tv_quantiles": {
+          "0.5": 0.02100842617308714,
+          "0.9": 0.0659633489693857,
+          "0.99": 0.14926548266408668,
+          "1.0": 0.5555942570776371
+        },
+        "share_tv_above_0.05": 0.16685747756862537,
+        "mean_max_abs_q_difference": 0.020081860042079104,
+        "secondary_law_mean": {
+          "top1_agreement": 0.9316808221731143,
+          "mean_tv": 0.029275873795084218
+        },
+        "stable": false
+      },
+      "5": {
+        "seeds_A": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "seeds_B": [
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "top1_agreement": 0.9464575734178227,
+        "top1_agreement_ci95": [
+          0.9419126740841831,
+          0.950788137852596
+        ],
+        "mean_tv": 0.023001691756733854,
+        "mean_tv_ci95": [
+          0.0216471907123283,
+          0.024370632684316777
+        ],
+        "tv_quantiles": {
+          "0.5": 0.016346335766440782,
+          "0.9": 0.05072762846627375,
+          "0.99": 0.11449210248526961,
+          "1.0": 0.49527246363684463
+        },
+        "share_tv_above_0.05": 0.10237226763225858,
+        "mean_max_abs_q_difference": 0.015621588424310945,
+        "secondary_law_mean": {
+          "top1_agreement": 0.9460582017625603,
+          "mean_tv": 0.02270065711633371
+        },
+        "stable": false
+      }
+    },
+    "paired_vs_K1": {
+      "K3_minus_K1": {
+        "top1_agreement_gain": 0.04403738118693256,
+        "top1_agreement_gain_ci95": [
+          0.03955036518631638,
+          0.04867435038322001
+        ],
+        "mean_tv_reduction": 0.0207429470273024,
+        "mean_tv_reduction_ci95": [
+          0.019484751914964432,
+          0.022037743660807435
+        ]
+      },
+      "K5_minus_K1": {
+        "top1_agreement_gain": 0.05950637663409569,
+        "top1_agreement_gain_ci95": [
+          0.054315040651167636,
+          0.06464893473304266
+        ],
+        "mean_tv_reduction": 0.02736635741740677,
+        "mean_tv_reduction_ci95": [
+          0.02568194420607183,
+          0.02911128255303363
+        ]
+      }
+    },
+    "verdict": {
+      "stable_if_top1_agreement_ci95_lower_at_least": 0.95,
+      "reading_fixed_before_results": {
+        "STABLE_AT_K{k}": "smallest K in {1,3,5} whose top-1 agreement 95% whole-game bootstrap lower bound is >= 0.95",
+        "NOT_STABLE_UP_TO_K5": "no K reaches it",
+        "averaging_improves_agreement": "true if the K=5 minus K=1 paired agreement gain has a 95% lower bound > 0"
+      },
+      "threshold_basis": "0.95 is the D153 service criterion (live vs final top-1 agreement >= 95%), reused as a judgement value; no measured basis for the planner",
+      "not_claimed": "No policy value, OPE or recommendation-quality claim; does not change D131, D155, the policy identity c13cc989 or the service. Adopting K-seed planning would need a new identity and the full validation chain.",
+      "status": "NOT_STABLE_UP_TO_K5",
+      "averaging_improves_agreement": true,
+      "policy_value": "NOT_MEASURED (2026-10-20 Song decision: stability only)"
+    }
+  },
+  "replay": {
+    "decisions": 200,
+    "max_abs_q_difference": 0.0
+  },
+  "data_version": {
+    "processed_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+    "sources": [
+      {
+        "file": "statcast_2023.parquet",
+        "bytes": 95124285,
+        "sha256": "46c354beae196ce2d501fe989c491725f2ecc47601f58d4b8b0234b982984730"
+      },
+      {
+        "file": "statcast_2024.parquet",
+        "bytes": 103060977,
+        "sha256": "3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274"
+      },
+      {
+        "file": "statcast_2025.parquet",
+        "bytes": 104922105,
+        "sha256": "4c785756d8901f8c46c70891954a4c54b8ad1c6909db67f4a000221691dc0249"
+      }
+    ],
+    "split": "dev (2025-07-01..2025-09-30)",
+    "style_snapshot_sha256": "943e2a10af514c0a7481da0c4ffe41d6785bea56ceea5a4aab132ed1e1db727b",
+    "components_sha256": "5683fb61f7c039cfad8c21e5e1dc48231ec487a7c0a4aab1e72ff3b8d022d074",
+    "ledger_sha256": "21cbfbfd69992ad7e3048528fd3bb2f811252790c6138660c79b894d8fe04832"
+  },
+  "cost": {
+    "seconds": 12586.464344416745,
+    "peak_rss_bytes": 4932943872,
+    "conditional_rows_by_seed": {
+      "0": 3545095,
+      "1": 3543553,
+      "2": 3547946,
+      "3": 3549815,
+      "4": 3540156,
+      "5": 3542580,
+      "6": 3545721,
+      "7": 3540346,
+      "8": 3548413,
+      "9": 3551398
+    }
+  },
+  "git_commit": "941d8eb4615adaa880ca55feea0ad2bc99902753",
+  "outcomes_read": false,
+  "policy_identity_registered": false,
+  "limits": [
+    "Stability of the planning law only; no policy value or OPE estimate",
+    "DEV July-September 2025 is exposed development data (no outcome read here)",
+    "The 0.95 agreement threshold is a judgement value borrowed from the D153 service criterion",
+    "Ensemble = per-action mean planning Q of K seeds; equivalent to more search samples, not a registered policy identity"
+  ],
+  "finished_utc": "2026-10-20T16:52:57.260411+00:00"
+}
