@@ -1,0 +1,119 @@
+{
+  "_comment": "UI 점검용 mock. 값은 전부 가공이며 실제 경기·모델 출력이 아니다. 키 = `${game_id}:${pa_id}`.",
+  "900001:1": {
+    "zone_bounds": { "bottom": 1.55, "top": 3.45 },
+    "terminal_state": { "inning": 1, "half": "Top", "outs": 1, "bases": 0, "home_score": 0, "away_score": 0, "balls": 1, "strikes": 2 },
+    "pitches": [
+      {
+        "id": "mock-900001-1-1", "pitch_number": 1,
+        "state": { "inning": 1, "half": "Top", "outs": 0, "bases": 0, "home_score": 0, "away_score": 0, "balls": 0, "strikes": 0 },
+        "actual": { "pitch_type": "FF", "pitch_label": "포심", "x": 0.42, "z": 3.1, "speed_mph": 95.4, "description": "called_strike", "result_label": "스트라이크(루킹)" },
+        "candidates": [
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_right", "value": 0.512, "delta_pp": 1.8, "support": 412 },
+          { "pitch_type": "SL", "pitch_label": "슬라이더", "zone_id": "low_right", "value": 0.504, "delta_pp": 1.0, "support": 298 },
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_middle", "value": 0.501, "delta_pp": 0.7, "support": 377 }
+        ],
+        "baseline_value": 0.494,
+        "context": {
+          "prior_pitch_count": 0, "times_facing_batter": 1, "condition_inference": false, "reference_window_days": 90, "speed_window": "최근 3경기", "reference_cutoff": "2026-10-23",
+          "speed_by_pitch_type": [
+            { "pitch_type": "FF", "pitch_label": "포심", "recent_pitch_count": 48, "recent_measured_count": 46, "recent_mean_mph": 95.1, "prior90_measured_count": 410, "prior90_mean_mph": 94.6, "delta_mph": 0.5 },
+            { "pitch_type": "SL", "pitch_label": "슬라이더", "recent_pitch_count": 31, "recent_measured_count": 30, "recent_mean_mph": 86.2, "prior90_measured_count": 265, "prior90_mean_mph": 86.4, "delta_mph": -0.2 },
+            { "pitch_type": "CH", "pitch_label": "체인지업", "recent_pitch_count": 6, "recent_measured_count": 2, "recent_mean_mph": 88.0, "prior90_measured_count": 71, "prior90_mean_mph": 87.5, "delta_mph": null }
+          ]
+        },
+        "context_notes": ["(mock) 구속은 경기 전날까지의 기록 기준입니다."]
+      },
+      {
+        "id": "mock-900001-1-2", "pitch_number": 2,
+        "state": { "inning": 1, "half": "Top", "outs": 0, "bases": 0, "home_score": 0, "away_score": 0, "balls": 0, "strikes": 1 },
+        "actual": { "pitch_type": "SL", "pitch_label": "슬라이더", "x": 0.95, "z": 1.7, "speed_mph": 86.0, "description": "ball", "result_label": "볼" },
+        "candidates": [
+          { "pitch_type": "SL", "pitch_label": "슬라이더", "zone_id": "low_right", "value": 0.531, "delta_pp": 2.4, "support": 301 },
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_right", "value": 0.522, "delta_pp": 1.5, "support": 388 },
+          { "pitch_type": "CH", "pitch_label": "체인지업", "zone_id": "low_middle", "value": 0.515, "delta_pp": 0.8, "support": 64 }
+        ],
+        "baseline_value": 0.507,
+        "context": null, "context_notes": []
+      },
+      {
+        "id": "mock-900001-1-3", "pitch_number": 3,
+        "state": { "inning": 1, "half": "Top", "outs": 0, "bases": 0, "home_score": 0, "away_score": 0, "balls": 1, "strikes": 1 },
+        "actual": { "pitch_type": "FF", "pitch_label": "포심", "x": -0.2, "z": 3.3, "speed_mph": 96.1, "description": "foul", "result_label": "파울" },
+        "candidates": [
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_middle", "value": 0.509, "delta_pp": 1.1, "support": 350 },
+          { "pitch_type": "SL", "pitch_label": "슬라이더", "zone_id": "low_right", "value": 0.506, "delta_pp": 0.8, "support": 290 },
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_right", "value": 0.503, "delta_pp": 0.5, "support": 402 }
+        ],
+        "baseline_value": 0.498,
+        "context": null, "context_notes": []
+      },
+      {
+        "id": "mock-900001-1-4", "pitch_number": 4,
+        "state": { "inning": 1, "half": "Top", "outs": 0, "bases": 0, "home_score": 0, "away_score": 0, "balls": 1, "strikes": 2 },
+        "actual": { "pitch_type": "SL", "pitch_label": "슬라이더", "x": 0.7, "z": 1.5, "speed_mph": 85.7, "description": "swinging_strike", "result_label": "스트라이크(헛스윙)" },
+        "candidates": [
+          { "pitch_type": "SL", "pitch_label": "슬라이더", "zone_id": "low_right", "value": 0.571, "delta_pp": 3.2, "support": 311 },
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_middle", "value": 0.556, "delta_pp": 1.7, "support": 360 },
+          { "pitch_type": "CH", "pitch_label": "체인지업", "zone_id": "low_left", "value": 0.549, "delta_pp": 1.0, "support": 52 }
+        ],
+        "baseline_value": 0.539,
+        "context": null, "context_notes": []
+      }
+    ]
+  },
+  "900001:2": {
+    "zone_bounds": { "bottom": 1.6, "top": 3.5 },
+    "terminal_state": { "inning": 1, "half": "Top", "outs": 1, "bases": 1, "home_score": 0, "away_score": 0, "balls": 2, "strikes": 1 },
+    "pitches": [
+      {
+        "id": "mock-900001-2-1", "pitch_number": 1,
+        "state": { "inning": 1, "half": "Top", "outs": 1, "bases": 0, "home_score": 0, "away_score": 0, "balls": 0, "strikes": 0 },
+        "actual": { "pitch_type": "FF", "pitch_label": "포심", "x": -0.6, "z": 2.0, "speed_mph": 94.8, "description": "ball", "result_label": "볼" },
+        "candidates": [
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_left", "value": 0.508, "delta_pp": 1.4, "support": 220 },
+          { "pitch_type": "CH", "pitch_label": "체인지업", "zone_id": "low_right", "value": 0.503, "delta_pp": 0.9, "support": 140 },
+          { "pitch_type": "SL", "pitch_label": "슬라이더", "zone_id": "low_left", "value": 0.499, "delta_pp": 0.5, "support": 190 }
+        ],
+        "baseline_value": 0.494,
+        "context": null, "context_notes": ["(mock) 좌타자 상대 기록 표본이 적습니다."]
+      },
+      {
+        "id": "mock-900001-2-2", "pitch_number": 2,
+        "state": { "inning": 1, "half": "Top", "outs": 1, "bases": 0, "home_score": 0, "away_score": 0, "balls": 1, "strikes": 0 },
+        "actual": { "pitch_type": "FF", "pitch_label": "포심", "x": 0.1, "z": 2.9, "speed_mph": 95.0, "description": "called_strike", "result_label": "스트라이크(루킹)" },
+        "candidates": [
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "middle_middle", "value": 0.489, "delta_pp": 1.2, "support": 260 },
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_left", "value": 0.486, "delta_pp": 0.9, "support": 215 },
+          { "pitch_type": "CH", "pitch_label": "체인지업", "zone_id": "low_right", "value": 0.481, "delta_pp": 0.4, "support": 138 }
+        ],
+        "baseline_value": 0.477,
+        "context": null, "context_notes": []
+      },
+      {
+        "id": "mock-900001-2-3", "pitch_number": 3,
+        "state": { "inning": 1, "half": "Top", "outs": 1, "bases": 0, "home_score": 0, "away_score": 0, "balls": 1, "strikes": 1 },
+        "actual": { "pitch_type": "CH", "pitch_label": "체인지업", "x": 0.9, "z": 1.2, "speed_mph": 87.3, "description": "ball", "result_label": "볼" },
+        "candidates": [
+          { "pitch_type": "CH", "pitch_label": "체인지업", "zone_id": "low_right", "value": 0.497, "delta_pp": 1.6, "support": 141 },
+          { "pitch_type": "SL", "pitch_label": "슬라이더", "zone_id": "low_left", "value": 0.492, "delta_pp": 1.1, "support": 188 },
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_middle", "value": 0.488, "delta_pp": 0.7, "support": 240 }
+        ],
+        "baseline_value": 0.481,
+        "context": null, "context_notes": []
+      },
+      {
+        "id": "mock-900001-2-4", "pitch_number": 4,
+        "state": { "inning": 1, "half": "Top", "outs": 1, "bases": 0, "home_score": 0, "away_score": 0, "balls": 2, "strikes": 1 },
+        "actual": { "pitch_type": "FF", "pitch_label": "포심", "x": 0.3, "z": 2.4, "speed_mph": 94.2, "description": "hit_into_play", "event": "single", "result_label": "안타(1루타)" },
+        "candidates": [
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "high_left", "value": 0.462, "delta_pp": 1.3, "support": 211 },
+          { "pitch_type": "SL", "pitch_label": "슬라이더", "zone_id": "low_left", "value": 0.458, "delta_pp": 0.9, "support": 183 },
+          { "pitch_type": "FF", "pitch_label": "포심", "zone_id": "middle_middle", "value": 0.451, "delta_pp": 0.2, "support": 255 }
+        ],
+        "baseline_value": 0.449,
+        "context": null, "context_notes": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "zones": [
+    {
+      "id": "low_left",
+      "label": "낮은 왼쪽",
+      "column": 0,
+      "row": 0
+    },
+    {
+      "id": "low_middle",
+      "label": "낮은 중앙",
+      "column": 1,
+      "row": 0
+    },
+    {
+      "id": "low_right",
+      "label": "낮은 오른쪽",
+      "column": 2,
+      "row": 0
+    },
+    {
+      "id": "middle_left",
+      "label": "가운데 높이 왼쪽",
+      "column": 0,
+      "row": 1
+    },
+    {
+      "id": "middle_middle",
+      "label": "가운데 높이 중앙",
+      "column": 1,
+      "row": 1
+    },
+    {
+      "id": "middle_right",
+      "label": "가운데 높이 오른쪽",
+      "column": 2,
+      "row": 1
+    },
+    {
+      "id": "high_left",
+      "label": "높은 왼쪽",
+      "column": 0,
+      "row": 2
+    },
+    {
+      "id": "high_middle",
+      "label": "높은 중앙",
+      "column": 1,
+      "row": 2
+    },
+    {
+      "id": "high_right",
+      "label": "높은 오른쪽",
+      "column": 2,
+      "row": 2
+    }
+  ],
+  "coordinate_frame": "catcher_view"
+}

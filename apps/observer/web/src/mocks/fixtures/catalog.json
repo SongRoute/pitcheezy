@@ -1,0 +1,22 @@
+{
+  "model_version": "mock-fixture-v1",
+  "coverage": { "totals": { "games": 1, "plate_appearances": 2 }, "support_rate": 1.0, "gap_notice": "mock 데이터입니다." },
+  "limitations": [
+    "이 화면은 UI 점검용 mock 데이터로 동작합니다. 실제 경기·모델 출력이 아닙니다.",
+    "기록 재생이며 실시간 중계가 아닙니다.",
+    "영상이 없어 포수의 실제 의도와 자동 영상 분석을 제공하지 않습니다."
+  ],
+  "games": [
+    {
+      "id": 900001,
+      "date": "2026-10-24",
+      "home_team": "MOCK Home",
+      "away_team": "MOCK Away",
+      "title": "WS G1 · MOCK Away @ MOCK Home (mock)",
+      "plate_appearances": [
+        { "id": 1, "batter_label": "타자 A (mock)", "pitcher_label": "투수 X (mock)", "inning": 1, "half": "Top", "batter_stand": "R" },
+        { "id": 2, "batter_label": "타자 B (mock)", "pitcher_label": "투수 X (mock)", "inning": 1, "half": "Top", "batter_stand": "L" }
+      ]
+    }
+  ]
+}
