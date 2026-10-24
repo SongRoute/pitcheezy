@@ -760,3 +760,60 @@ def test_non_list_games_and_non_dict_game_checks_do_not_raise(w):
     w.disk = 11 * GIB
     fired = w.keys(w.run(T0))
     assert {'disk_low', 'input_malformed:games'} <= fired
+
+
+# Review follow-up (Codex Astra on b83d314d): recovery only after the input is read again as an object.
+
+def _malformed_paths(w):
+    return {'health': w.out / 'v1' / 'health.json', 'state': w.state_path, 'ops': w.ops_path}
+
+
+@pytest.mark.parametrize('role', ['health', 'state', 'ops'])
+@pytest.mark.parametrize('after', ['missing', 'invalid_json'])
+def test_malformed_then_missing_or_invalid_is_not_recovery(w, role, after):
+    w.healthy(T0)
+    w.cfg['paths']['ops_status'] = str(w.ops_path)
+    w.ops_path.write_text(json.dumps({}))
+    path = _malformed_paths(w)[role]
+    path.write_text(json.dumps([1]))
+    key = f'input_malformed:{role}'
+    assert key in w.keys(w.run(T0))
+    if after == 'missing':
+        path.unlink()
+    else:
+        path.write_text('{not json')
+    for t in (T0 + 15, T0 + 45, T0 + 400):
+        events = w.run(t)
+        assert key not in w.keys(events, kind='recover') and key not in w.keys(events, kind='closed')
+    state = json.loads((w.tmp / 'alert' / 'alert_state.json').read_text())
+    assert state['alerts'][key]['status'] == 'firing'
+    # only an object read is recovery
+    if role == 'health':
+        w.health(T0 + 415)
+    elif role == 'state':
+        w.state()
+    else:
+        w.ops_path.write_text(json.dumps({}))
+    assert key in w.keys(w.run(T0 + 415), kind='recover')
+
+
+@pytest.mark.parametrize('role', ['health', 'state'])
+def test_malformed_then_object_is_recovery(w, role):
+    w.healthy(T0)
+    _malformed_paths(w)[role].write_text(json.dumps(7))
+    key = f'input_malformed:{role}'
+    assert key in w.keys(w.run(T0))
+    w.health(T0 + 15)
+    w.state()
+    assert key in w.keys(w.run(T0 + 15), kind='recover')
+
+
+def test_malformed_input_no_longer_read_closes_silently(w):
+    w.healthy(T0)
+    (w.out / 'v1' / 'game' / f'{PK}.json').write_text(json.dumps([1]))
+    assert 'input_malformed:game' in w.keys(w.run(T0))
+    w.games(w.game(status='final'))       # game over: its file is no longer read
+    w.health(T0 + 15, checks={})
+    events = w.run(T0 + 15)
+    assert 'input_malformed:game' not in w.keys(events, kind='recover')
+    assert 'input_malformed:game' in w.keys(events, kind='closed')

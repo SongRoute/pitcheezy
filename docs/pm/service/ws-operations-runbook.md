@@ -245,7 +245,7 @@ MLB가 월드시리즈 첫 투구 시각을 확정하면 아래 순서로 한다
 | `ops_problem:<키>` | 운영 상태 `problems`(severity `urgent`→긴급), 문자열 `alerts` 중 감시기가 직접 보지 않는 것(`protected_process_changed`는 긴급). 감시기가 같은 근거로 보는 것(`memory_low`, `health_stale`, `feed_failing`, `upload_blocked`)은 되풀이하지 않는다. T7이 빠지면 `ops_problem:mount_lost`, T7 없이 시작된 발행기는 T7이 돌아온 뒤 `ops_problem:mount_restart_needed`(둘 다 경고, 4.8). 파일이 깨졌으면 `ops_problem:unreadable` | 파일이 준 등급 | 아니오 |
 | `ops_status_stale` | 운영 상태 heartbeat(`updated_at`, 없으면 `written_epoch`)가 running/backoff에서 90초, 그 밖(waiting 등)에서 300초 넘게 지남. stopped/refused/failed와 다른 날짜(`kst_date`) 파일은 보지 않음 | 경고 | 아니오 |
 | `watch_config` | 출력 폴더가 지정되지 않음 | 경고 | 아니오 |
-| `input_malformed:<입력>` | 감시 입력(health·games·game·state·ops)이 JSON으로는 읽히지만 객체가 아님(예: `[1]`). 그 입력만 없는 것으로 보고 나머지 규칙(디스크 등)은 계속 돈다. 입력 종류마다 한 번 알리고 객체로 돌아오면 복구(OPS-ALERT-JSON01) | 경고 | 아니오 |
+| `input_malformed:<입력>` | 감시 입력(health·games·game·state·ops)이 JSON으로는 읽히지만 객체가 아님(예: `[1]`). 그 입력만 없는 것으로 보고 나머지 규칙(디스크 등)은 계속 돈다. 입력 종류마다 한 번 알리고, 그 입력이 다시 **객체로 읽혀야만** 복구를 알린다(없어짐·읽기 실패·깨진 JSON은 복구가 아니고 각자의 규칙이 본다. 날짜가 지나거나 더는 보지 않는 경기 파일이면 알림 없이 닫는다, OPS-ALERT-JSON01) | 경고 | 아니오 |
 
 알림 방식:
 - **한 번만:** 조건이 시작되면(유지 시간을 넘긴 뒤) 한 번 알린다. 계속되면 긴급 15분·경고 30분마다 "[계속]"(경기 시간대 밖이면 6시간마다).

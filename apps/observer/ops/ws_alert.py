@@ -181,10 +181,18 @@ def disk_free_bytes(paths):
 def collect(cfg, now, *, memory=memory_available_bytes, disk=disk_free_bytes):
     """Everything the rules look at, read once. Missing inputs are recorded, never raised."""
     paths, version = cfg['paths'], cfg['contract_version']
-    obs = {'now': now, 'games': [], 'game_files': {}, 'malformed': []}
+    # reads: input name -> read result (None = an object was read, else missing/unreadable/malformed), for every input
+    # attempted this run; malformed: the names whose JSON was not an object (OPS-ALERT-JSON01).
+    obs = {'now': now, 'games': [], 'game_files': {}, 'malformed': [], 'reads': {}}
+
+    def note(name, error):
+        obs['reads'][name] = error
+        if error == 'malformed':
+            obs['malformed'].append(name)
+
     obs['ops'], obs['ops_error'] = _read_json(paths['ops_status']) if paths.get('ops_status') else (None, None)
-    if obs['ops_error'] == 'malformed':
-        obs['malformed'].append('ops')
+    if paths.get('ops_status'):
+        note('ops', obs['ops_error'])
     out_dir, state_path = paths.get('out_dir'), paths.get('state_path')
     ops = obs['ops']
     # The ops status (v1.1) names the current day's publisher output and state file: follow it (--out still wins).
@@ -200,8 +208,7 @@ def collect(cfg, now, *, memory=memory_available_bytes, disk=disk_free_bytes):
     root = Path(out_dir) / version if out_dir else None
     if root is not None:
         obs['health'], obs['health_error'] = _read_json(root / 'health.json')
-        if obs['health_error'] == 'malformed':
-            obs['malformed'].append('health')
+        note('health', obs['health_error'])
         try:
             obs['health_mtime'] = (root / 'health.json').stat().st_mtime
         except OSError:
@@ -211,15 +218,16 @@ def collect(cfg, now, *, memory=memory_available_bytes, disk=disk_free_bytes):
             day = today + timedelta(days=delta)
             body, error = _read_json(root / 'games' / f'{day}.json')
             games = (body or {}).get('games') or []
-            if error == 'malformed' or not isinstance(games, list):
-                obs['malformed'].append(f'games/{day}')
+            if error is None and not isinstance(games, list):
+                error = 'malformed'
+            note(f'games/{day}', error)
+            if error is not None:
                 continue
             for game in games:
                 if isinstance(game, dict) and isinstance(game.get('game_pk'), int):
                     obs['games'].append(game)
     obs['state'], obs['state_error'] = _read_json(state_path)
-    if obs['state_error'] == 'malformed':
-        obs['malformed'].append('state')
+    note('state', obs['state_error'])
     pks = {g['game_pk'] for g in obs['games'] if g.get('status') == 'live' or g.get('live')}
     checks = (obs.get('health') or {}).get('game_checks')
     pks |= {int(k) for k in (checks if isinstance(checks, dict) else {}) if str(k).isdigit()}
@@ -228,10 +236,9 @@ def collect(cfg, now, *, memory=memory_available_bytes, disk=disk_free_bytes):
     if root is not None:
         for pk in sorted(pks):
             body, error = _read_json(root / 'game' / f'{pk}.json')
+            note(f'game/{pk}', error)
             if isinstance(body, dict):
                 obs['game_files'][pk] = body
-            elif error == 'malformed':
-                obs['malformed'].append(f'game/{pk}')
     obs['memory'] = memory()
     disk_paths = list(paths.get('disk_paths') or [])
     if out_dir:
@@ -554,13 +561,30 @@ def evaluate(cfg, obs, tracker):
         conds.append(_cond('ops_problem:unreadable', WARN, True, '운영 상태 파일 읽기 실패', 30))
 
     # --- input shape (OPS-ALERT-JSON01). Valid JSON that is not an object: that input is set aside (treated as
-    # absent above) and the other rules keep running. One always-on key per input kind, so it is announced once
-    # (dedup/renotify as any other key) and recovers when the file is an object again.
-    bad = obs.get('malformed') or []
+    # absent above) and the other rules keep running. One always-on key per input kind, announced once (dedup/renotify
+    # as any other key). An input stays 'malformed' (tracker) until it is read again AS AN OBJECT: missing, unreadable
+    # or unparsable afterwards never counts as recovery (those have their own rules). An input no longer read at all
+    # (date rolled over, game no longer watched) is dropped; if that empties its kind, the key closes silently.
+    reads = obs.get('reads') or {}
+    known = tracker.setdefault('malformed', {})
+    cleared = {}
+    for name in list(known):
+        if name not in reads:
+            known.pop(name)
+            cleared.setdefault(name.split('/')[0], set()).add('dropped')
+        elif reads[name] is None:
+            known.pop(name)
+            cleared.setdefault(name.split('/')[0], set()).add('ok')
+    for name, error in reads.items():
+        if error == 'malformed':
+            known[name] = True
     for role in INPUT_ROLES:
-        names = [name for name in bad if name.split('/')[0] == role]
+        names = sorted(name for name in known if name.split('/')[0] == role)
+        if not names and 'dropped' in cleared.get(role, ()):
+            continue
         conds.append(_cond(f'input_malformed:{role}', WARN, bool(names),
-                           f'감시 입력 형식 오류: {", ".join(names)} 가 JSON 객체가 아님 — 이 입력만 건너뛰고 나머지 감시는 계속'))
+                           f'감시 입력 형식 오류: {", ".join(names)} 가 JSON 객체가 아님(객체로 다시 읽힐 때까지 유지) '
+                           '— 이 입력만 건너뛰고 나머지 감시는 계속'))
 
     return [c for c in conds if in_game or c['family'] not in gated], in_game
 
