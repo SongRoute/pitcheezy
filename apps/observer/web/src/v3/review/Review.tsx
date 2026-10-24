@@ -35,6 +35,7 @@ export default function Review() {
         <button key={n} aria-pressed={r.network === n} onClick={() => setReplay({ network: n })}>{t}</button>)}</fieldset>
       <fieldset><legend>바로 가기</legend>{jumps.slice(0, 14).map(({ s, i }) => <button key={i} aria-pressed={r.index === i} onClick={() => setReplay({ index: i, playing: false })}>
         {s.inject !== 'none' ? INJECT[s.inject] : KIND[s.kind]}{s.kind === 'pitch' ? ` ${s.k + 1}` : ''}</button>)}</fieldset>
+      <fieldset><legend>페이지</legend><a className="v3-review-page" href="#parts">요소 시트</a><a className="v3-review-page" href="#game-990003">재생 화면</a><a className="v3-review-page" href="#list">경기 목록</a></fieldset>
     </div>}
   </div>;
 }

@@ -33,7 +33,7 @@ const team = (abbr: string | null | undefined, name: string) => abbr || short(na
 const statusWords = (g: GameCard) => g.status === 'live' ? (g.inning && g.half ? inningText({ inning: g.inning, half: g.half }) : '경기 중')
   : g.status === 'final' ? '경기 종료' : g.status === 'scheduled' ? `${kstTime(g.start)} 시작` : g.status === 'postponed' ? '연기·중단' : g.embargoed ? '진행 정보 없음' : g.status_text || '상태 확인 중';
 
-function LiveCard({ g }: { g: GameCard }) {
+export function LiveCard({ g }: { g: GameCard }) {
   return <a className="v3-livecard" href={gameHref(g.game_pk)} aria-label={`${short(g.away_team)} ${g.away_score ?? ''} 대 ${g.home_score ?? ''} ${short(g.home_team)}, ${statusWords(g)}, 경기 보기`}>
     <span className="v3-chip conn ok"><i aria-hidden="true" />LIVE</span>
     <span className="v3-livecard-score" aria-hidden="true"><span>{team(g.away_abbr, g.away_team)}</span><b>{g.away_score ?? '–'}</b><i>:</i><b>{g.home_score ?? '–'}</b><span>{team(g.home_abbr, g.home_team)}</span></span>
@@ -41,7 +41,7 @@ function LiveCard({ g }: { g: GameCard }) {
     <span className="v3-btn solid" aria-hidden="true">지금 보기</span>
   </a>;
 }
-function Row({ g }: { g: GameCard }) {
+export function Row({ g }: { g: GameCard }) {
   const scored = g.away_score !== null && g.home_score !== null;
   return <li><a className={`v3-gamerow ${g.status}`} href={gameHref(g.game_pk)} aria-label={`${short(g.away_team)} 대 ${short(g.home_team)}${g.double_header ? ` ${g.game_number}차전` : ''}, ${scored ? `${g.away_score} 대 ${g.home_score}, ` : ''}${statusWords(g)}`}>
     <span className="v3-gamerow-teams" aria-hidden="true"><span>{team(g.away_abbr, g.away_team)}<b>{scored ? g.away_score : ''}</b></span><span>{team(g.home_abbr, g.home_team)}<b>{scored ? g.home_score : ''}</b></span></span>

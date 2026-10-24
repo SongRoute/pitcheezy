@@ -108,6 +108,7 @@ body.v3-locked { overflow: hidden; }
 /* recommendation block: the zone is the hero */
 .v3-rec { display: grid; gap: 10px; }
 .v3-rec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.v3-rec-head .v3-link { flex: none; white-space: nowrap; }
 .v3-rec-head h2 { font-size: 15px; font-weight: 700; color: var(--rec); display: flex; align-items: baseline; gap: 8px; }
 .v3-rec-count { font-family: var(--num); font-size: 20px; color: var(--ink); font-weight: 700; }
 .v3-rec.held .v3-rec-head h2 { color: var(--muted); }

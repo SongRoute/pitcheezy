@@ -3,6 +3,9 @@ import Game from './Game';
 import List from './List';
 
 const Review = __PZ_REVIEW__ ? lazy(() => import('./review/Review')) : null;
+/** preview builds only: the element sheet (parts/Parts.tsx), opened with `#parts` */
+const Parts = __PZ_REPLAY__ ? lazy(() => import('./parts/Parts')) : null;
+const isParts = () => __PZ_REPLAY__ && window.location.hash === '#parts';
 
 /** Same address rules as the classic screen (GameScreen.gameIdFromPath): /watch|game|live/<pk>, or `?game=<pk>` (plain digits only in a
  *  public bundle). Copied, not imported, so the classic screen module (and its styles) is not part of a v3 bundle. */
@@ -17,13 +20,14 @@ export const gameIdFromPath = () => {
 export default function App({ gamePk: initial }: { gamePk: number | null }) {
   // preview builds route by hash (see links.ts); a public bundle navigates by real page loads and never listens
   const [gamePk, setGamePk] = useState(initial);
+  const [parts, setParts] = useState(isParts);
   useEffect(() => {
     if (!__PZ_REPLAY__) return;
-    const on = () => { setGamePk(gameIdFromPath()); window.scrollTo(0, 0); };
+    const on = () => { setParts(isParts()); setGamePk(gameIdFromPath()); window.scrollTo(0, 0); };
     window.addEventListener('hashchange', on); return () => window.removeEventListener('hashchange', on);
   }, []);
   return <>
-    {gamePk ? <Game key={gamePk} gamePk={gamePk} /> : <List key="list" />}
+    {Parts && parts ? <Suspense fallback={null}><Parts /></Suspense> : gamePk ? <Game key={gamePk} gamePk={gamePk} /> : <List key="list" />}
     {Review && <Suspense fallback={null}><Review /></Suspense>}
   </>;
 }

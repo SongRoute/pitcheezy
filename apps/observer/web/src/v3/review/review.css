@@ -13,3 +13,4 @@ body:has(.v3-panel) .v3-review:not(.open) { display: none; }
 .v3-review fieldset button { min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; cursor: pointer; font-size: 12px; }
 .v3-review fieldset button[aria-pressed=true] { background: var(--ink); color: #fff; border-color: var(--ink); }
 .v3-review-step { font-family: var(--num); font-size: 14px; margin-left: 4px; }
+.v3-review-page { min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); display: inline-flex; align-items: center; color: var(--ink); text-decoration: none; font-size: 12px; }

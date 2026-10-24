@@ -1,0 +1,68 @@
+/* Element sheet (preview only). The frames reuse the real v3 styles; only what keeps a sample in place is overridden here. */
+.parts { min-height: 100dvh; background: #e4e7e2; color: var(--ink); font-family: var(--txt);
+  padding-block: 28px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.parts-head { max-width: 860px; display: grid; gap: 10px; }
+.parts-head h1 { margin: 0; font-size: 26px; }
+.parts-head p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+.parts-head nav { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.parts-head nav button { border: 0; background: none; padding: 6px 0; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); cursor: pointer;
+  text-decoration: underline; text-decoration-color: #b9c0c6; text-underline-offset: 4px; min-height: 32px; }
+.parts-head nav a { font-size: 14px; color: var(--rec); font-weight: 600; margin-left: auto; }
+.parts-sec { margin-top: 48px; padding-top: 20px; border-top: 1px solid #c9cfc8; display: grid; gap: 14px; }
+.parts-sec h2 { margin: 0; font-size: 20px; display: flex; gap: 10px; align-items: baseline; }
+.parts-sec h2 span { font-family: var(--num); color: var(--muted); }
+.parts-look { margin: 0; font-size: 14px; color: var(--ink-2); max-width: 70ch; line-height: 1.6; }
+.parts-alt { display: grid; gap: 10px; }
+.parts-alt + .parts-alt { margin-top: 18px; }
+.parts-alt h3 { margin: 0; font-size: 16px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.parts-alt h3 span { font-size: 13px; font-weight: 500; color: var(--muted); }
+.parts-row { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+.parts-item { margin: 0; width: 390px; max-width: 100%; display: grid; gap: 6px; min-width: 0; }
+.parts-item.wide { width: 1180px; }
+.parts-item figcaption { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; font-size: 13px; }
+.parts-item figcaption span { color: var(--muted); font-size: 12px; }
+.parts .parts-frame { min-height: 0; background: var(--surface); box-shadow: 0 0 0 1px rgba(21,25,30,.08); overflow: hidden; }
+.parts .parts-frame .v3-board { position: static; }
+.parts .parts-frame .v3-dock { position: static; }
+.parts-pad { padding: 12px 16px; display: grid; gap: 10px; }
+.parts-zone { max-width: 310px; margin: 0 auto; }
+.parts .parts-sheet { position: static; max-height: none; border: 0; }
+.parts .parts-sheet .v3-panel-body { overflow: visible; }
+
+/* ── ① B · 중계 바 ── */
+.v3-board.alt-b { grid-template-columns: 36px auto minmax(0, 1fr) auto; grid-template-areas: 'back teams mid play'; column-gap: 12px; padding: 8px 14px 8px 4px; }
+.alt-b-teams { grid-area: teams; margin: 0; }
+.alt-b-teams > span { display: grid; gap: 1px; }
+.alt-b-team { display: grid; grid-template-columns: 7px 40px 26px; align-items: center; column-gap: 6px; font-family: var(--num); }
+.alt-b-team i { width: 7px; height: 7px; border-radius: 50%; }
+.alt-b-team.bat i { background: #f2c14e; }
+.alt-b-team span { font-size: 16px; font-weight: 600; color: #dfe3e6; letter-spacing: .02em; }
+.alt-b-team b { font-size: 23px; font-weight: 700; text-align: right; line-height: 1.1; }
+.alt-b-mid { grid-area: mid; display: grid; gap: 5px; justify-items: start; min-width: 0; }
+.alt-b-inning { font-size: 15px; font-weight: 700; color: #fff; white-space: nowrap; }
+.v3-board.alt-b .v3-chip.conn { grid-area: auto; justify-self: start; min-height: 22px; padding: 0 9px; font-size: 11px; }
+.alt-b-play { grid-area: play; display: flex; align-items: center; gap: 12px; }
+.alt-b-bases { display: grid; justify-items: center; gap: 4px; }
+.alt-outs { display: flex; gap: 5px; }
+.alt-outs i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #6f7880; }
+.alt-outs i.on { background: #ef6f78; border-color: transparent; }
+.alt-b-count { font-family: var(--num); font-size: 32px; font-weight: 700; line-height: 1; }
+.alt-b-count i { font-style: normal; color: #6f7880; margin: 0 2px; }
+
+/* ── ① C · 밝은 점수판 ── */
+.alt-c { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; grid-template-areas: 'back score chip' 'line line line'; align-items: center; row-gap: 2px;
+  padding: max(6px, env(safe-area-inset-top)) 14px 10px 4px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.alt-c-back { grid-area: back; font-size: 28px; line-height: 1; min-height: 44px; display: grid; place-items: center; color: var(--ink); }
+.alt-c-score { grid-area: score; justify-self: center; margin: 0; }
+.alt-c-score > span { display: flex; align-items: baseline; gap: 10px; font-family: var(--num); }
+.alt-c-score span span { font-size: 18px; font-weight: 600; color: var(--muted); }
+.alt-c-score b { font-size: 38px; line-height: 1; font-weight: 700; }
+.alt-c-score i { font-style: normal; font-size: 24px; color: #aeb5bc; }
+.alt-c-chip { grid-area: chip; }
+.alt-c .v3-chip.conn.ok { background: #fde8ea; color: #a1232d; }
+.alt-c .v3-chip.conn.late { background: var(--late-bg); color: var(--late-fg); }
+.alt-c .v3-chip.conn.lost { background: var(--lost-bg); color: var(--lost-fg); }
+.alt-c .v3-chip.conn.checking { background: var(--chk-bg); color: var(--chk-fg); }
+.alt-c-line { grid-area: line; margin: 0; display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.alt-c .v3-bases rect { stroke: #8a9299; }
+.alt-c .v3-bases rect.on { fill: var(--ink); stroke: var(--ink); }
