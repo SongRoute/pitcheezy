@@ -36,7 +36,10 @@ export function Sheet({ title, onClose, children, labelledBy = 'sv-sheet-title' 
   </div>;
 }
 
-/** Fixed explanations: kept, but only on demand (never on the default screen). */
+export const LIMIT_LINE = '검증 전 실험 · 실제 선택보다 낫다는 근거가 없어요. 정책 선택 비중은 성공 확률이 아니에요.';
+export const SPOILER_LINE = 'TV 중계보다 결과가 먼저 보일 수 있어요.';
+export const publishDelayLine = (seconds: number | null) => seconds === null ? '' : seconds === 0 ? '공통 지연 설정 없이 발행돼요. ' : `공통 ${seconds}초 지연 설정으로 발행돼요. `;
+/** Full explanations remain available from the visible short notices. */
 const LIMITS = [
   '추천은 검증 전 실험 버전이에요. 2026 정규시즌 1회 평가에서는 추천이 실제 선택보다 낫다는 근거를 확인하지 못했어요.',
   '‘정책 선택 비중’은 추천 정책이 이 상황에서 그 구종을 고르는 비중이에요. 성공·적중 확률이 아니에요.',
@@ -44,6 +47,7 @@ const LIMITS = [
   '지난 경기의 추천은 경기 뒤 그 공을 던지기 전 정보만으로 계산한 기록이에요. 경기 중 실시간으로 보여 준 추천이 아니에요.',
   '포수 미트 표시는 중계 영상에서 읽은 가로 위치 추정이며, 높이는 다루지 않아요. 실제 투구 뒤에만 보여요.',
   '날짜와 시간은 모두 한국 시간이에요. 경기 날짜는 원래 예정 시작 시각 기준이에요.',
+  '공개 화면의 지연 설정은 개인의 TV·스트리밍과 맞춘 값이 아니에요. 자료 수신·전송에도 시간이 걸리며, 화면이 중계보다 먼저 결과를 보여 줄 수 있어요.',
 ];
 export function InfoSheet({ onClose, notes }: { onClose: () => void; notes: string[] }) {
   return <Sheet title="이 화면의 기준과 한계" onClose={onClose}>

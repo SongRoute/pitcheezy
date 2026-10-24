@@ -7,7 +7,7 @@ import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, 
 import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, short } from './model';
 import { teamColor } from './teams';
 import Zone from './Zone';
-import { ABSENT_PAST, DetailSheet, InfoSheet, PaSheet, Sheet, absentLine, provenanceText } from './Sheets';
+import { ABSENT_PAST, DetailSheet, InfoSheet, LIMIT_LINE, PaSheet, SPOILER_LINE, Sheet, absentLine, provenanceText, publishDelayLine } from './Sheets';
 import SyncSheet, { FOLD_TEXT } from './SyncSheet';
 import { ExpectationLine, ReferenceSheet, ReferenceTeaser } from './Reference';
 import type { ViewerSetting } from './viewer';
@@ -158,6 +158,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const detailRef = useRef<Detail | null>(null);
   // static mode only: what the last game file and health.json said about publish time
   const [manifestMs, setManifestMs] = useState<number | null>(null);
+  const [fixedDelayS, setFixedDelayS] = useState<number | null>(null);
   useEffect(() => {
     if (!__PZ_STATIC__) return;
     let timer = 0, stopped = false, active = false, period = CADENCE.live;
@@ -166,7 +167,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       window.clearTimeout(timer);
       if (stopped || active || document.hidden) return;
       active = true;
-      try { const m = await fetchPublishedManifest(ctrl.signal); if (!stopped) { setManifestMs(m.pollMs); period = m.pollMs ?? CADENCE.live; } } catch { /* keep the last manifest */ }
+      try { const m = await fetchPublishedManifest(ctrl.signal); if (!stopped) { setManifestMs(m.pollMs); setFixedDelayS(m.fixedDelayS); period = m.pollMs ?? CADENCE.live; } } catch { /* keep the last manifest */ }
       active = false;
       if (!stopped) timer = window.setTimeout(() => void read(), Math.max(60000, period));
     };
@@ -641,6 +642,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       </> : <p className="sv-muted">실제 투구 기록 없음</p>}</div>
       </div>}
 
+      <p className="sv-limit-line">{LIMIT_LINE} <button className="sv-link-btn" onClick={() => openSheet('info')} aria-haspopup="dialog">기준과 한계</button></p>
       <div className="sv-recommend-heading"><h3 className="sv-section-label">이번 타석</h3>{paPitches.length > 3 && <button className="sv-link-btn" onClick={() => setAllPitches(!allPitches)}>{allPitches ? '최근 3구' : '전체 보기'}</button>}</div>
       <div className={`sv-strip-shell${edges.left ? ' fade-left' : ''}${edges.right ? ' fade-right' : ''}`}>
       <div className="sv-strip" ref={stripRef} role="group" aria-label="이 타석의 투구, 좌우로 스크롤">
@@ -661,6 +663,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         {idle && paPitches.length === 0 && <span className="sv-card sv-card-idle" aria-hidden="true" />}
       </div>
       </div>
+      {live && !isDemo && <p className="sv-spoiler-line" role="note"><b>스포일러 주의</b> {__PZ_STATIC__ && publishDelayLine(fixedDelayS)}{SPOILER_LINE}</p>}
     </section>
 
     <section className="sv-context" aria-label="선수와 다음 타자">

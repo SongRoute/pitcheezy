@@ -79,7 +79,7 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
     const se = document.scrollingElement; const r = (s) => document.querySelector(s)?.getBoundingClientRect();
     const page = r('.sv-page'), box = r('.sv-zone-wrap .sv-zone-box'), strip = document.querySelector('.sv-strip');
     const cards = [...document.querySelectorAll('.sv-card')].map((e) => e.getBoundingClientRect());
-    // main screen text only: the detail sheet (.sv-backdrop) is an on-demand explanation and may name '정책 선택 비중'
+    // main screen text only: the detail sheet (.sv-backdrop) is on demand; the short limitation now stays on the main screen.
     const vis = document.querySelector('.sv-page').cloneNode(true); vis.querySelectorAll('.sr-only, .sv-backdrop').forEach((e) => e.remove()); document.body.append(vis); const text = vis.innerText; vis.remove();
     // the fold: the fixed bottom tab bar's top on phones (it covers the viewport's bottom), else the viewport bottom
     const nav = document.querySelector('.sv-bottom-nav'); const navFixed = !!nav && getComputedStyle(nav).position === 'fixed' && nav.getBoundingClientRect().height > 0;
@@ -148,7 +148,7 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
       cardsEqual: cards.every((c) => Math.abs(c.width - cards[0].width) < 1.5 && Math.abs(c.height - cards[0].height) < 1.5), cardsRow: new Set(cards.map((c) => Math.round(c.top))).size <= 1, n: cards.length,
       stripScroll: strip ? strip.scrollWidth > strip.clientWidth : false, dotR: dots ? dots.width / 2 : 0,
       caption: [...(document.querySelector('.sv-card:not(.pending) .sv-card-cap')?.children ?? [])].map((e) => e.textContent.trim()), badge: !!document.querySelector('.sv-card .sv-card-num'),
-      banned: ['선택 비중', '방금 던진 공', '자동 ON', '새로고침'].filter((t) => text.includes(t)), toLatest: text.includes('최신으로'),
+      banned: ['방금 던진 공', '자동 ON', '새로고침'].filter((t) => text.includes(t)), limitText: document.querySelector('.sv-limit-line')?.innerText ?? '', toLatest: text.includes('최신으로'),
       live: document.querySelector('.sv-live')?.className ?? '', liveText: document.querySelector('.sv-live')?.textContent.trim() ?? '', liveDisabled: document.querySelector('.sv-live')?.disabled ?? null, notice: document.querySelector('.sv-notice')?.className ?? '',
       players: [...document.querySelectorAll('.sv-player')].map((e) => e.className + '|' + (e.querySelector('.sv-player-name')?.textContent ?? '')),
       dotsN: document.querySelectorAll('.sv-bso i').length, bat: document.querySelector('.sv-zrow .sv-batband.at-left') ? 'left' : document.querySelector('.sv-zrow .sv-batband.at-right') ? 'right' : 'none', listUnder: (() => { const z = r('.sv-zrow .sv-zone-box'), l = r('.sv-reclist'); return !!z && !!l && l.top >= z.bottom; })(),
@@ -189,6 +189,7 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
     if (numberCase === 'above') ok(L.mergedNumbers.every(n => Math.abs(n.baselineOffsetPx + 14) < .01), `${tag} first clear position above the dot is actually selected`, L.mergedNumbers);
   }
   ok(L.banned.length === 0, `${tag} removed visible texts (main screen)`, L.banned);
+  ok(/검증 전 실험/.test(L.limitText) && /정책 선택 비중은 성공 확률이 아니에요/.test(L.limitText), `${tag} visible limitation explains policy weight`, L.limitText);
   // a tapped past card never leaves the latest view on a live game any more, so '최신으로' must not appear in any of these states
   ok(!L.toLatest, `${tag} no '최신으로' while the main view follows the latest / on a finished game`, [L.toLatest, L.liveText]);
   ok(L.minFont >= 11, `${tag} min text ${L.minFont}px`, L.minFont);

@@ -53,7 +53,7 @@ function body(state) {
 }
 
 // ---------- own loopback server: dist/ answers /api/service/**, dist-public/ answers v1/** (stamped now) ----------
-let dist = DISTS.api, game = null, seq = 200;
+let dist = DISTS.api, game = null, seq = 200, fixedDelay;
 const stamp = (o) => { const at = new Date().toISOString(); return { ...o, publish: { contract: 'v1', sequence: seq, published_at: at } }; };
 const TYPES = { '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.html': 'text/html' };
 const server = createServer((req, res) => {
@@ -67,7 +67,7 @@ const server = createServer((req, res) => {
     seq++;
     const f = u.pathname.slice(4);
     if (f === 'health.json') return json(stamp({ schema: 'pitcheezy-publish-health-v1', sequence: seq, published_at: new Date().toISOString(), publish_interval_s: 2, unavailable_games: [], unavailable_dates: [], feed_failing_games: [] }));
-    if (f === 'manifest.json') return json(stamp({ schema: 'pitcheezy-publish-manifest-v1', contract: 'v1', published_at: new Date().toISOString(), publish_interval_s: 2, fixed_delay_s: 0, live_dates: [card.date_kst] }));
+    if (f === 'manifest.json') return json(stamp({ schema: 'pitcheezy-publish-manifest-v1', contract: 'v1', published_at: new Date().toISOString(), publish_interval_s: 2, ...(fixedDelay === undefined ? {} : { fixed_delay_s: fixedDelay }), live_dates: [card.date_kst] }));
     if (f === 'dates.json') return json(stamp({ schema: 'pitcheezy-service-dates-v2', source: { kind: 'live', session_id: null }, dates: [card.date_kst] }));
     if (f === `games/${card.date_kst}.json`) return json(stamp({ schema: 'pitcheezy-service-games-v2', source: { kind: 'live', session_id: null }, date: card.date_kst, games: [card], live_ok: true }));
     if (f === `game/${PK}.json`) return json(stamp({ schema: 'pitcheezy-service-game-v2', ...game }));
@@ -90,6 +90,7 @@ try {
     dist = DISTS[mode];
     if (!existsSync(path.join(dist, 'index.html'))) { ok(false, `${mode}: ${dist} is missing (build first)`); continue; }
     for (const [width, height] of SIZES) for (const state of ['live', 'confirming', 'final']) {
+      fixedDelay = state === 'live' ? { 320: -1, 375: 15, 390: 0 }[width] : 0;
       game = body(state);
       const ctx = await browser.newContext({ viewport: { width, height } }), page = await ctx.newPage(), errors = [];
       page.on('pageerror', (e) => errors.push(String(e)));
@@ -100,6 +101,24 @@ try {
       await page.waitForTimeout(300);
       const id = `${mode} ${width}x${height} ${state}`;
       ok(await page.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth + 1), `${id}: no side scroll`);
+      if (width === 390) {
+        const strip = await rect(page.locator('.sv-strip'));
+        const nav = await rect(page.locator('.sv-bottom-nav'));
+        ok(strip.b <= nav.t, `${id}: pitch cards clear the fixed tabs (${strip.b.toFixed(1)} ≤ ${nav.t.toFixed(1)})`);
+      }
+      const limit = page.locator('.sv-limit-line');
+      ok(await limit.isVisible() && /검증 전 실험/.test(await limit.innerText()) && /선택 비중은 성공 확률이 아니에요/.test(await limit.innerText()), `${id}: limitation and policy weight explanation stay visible`);
+      if (state === 'live') {
+        const spoiler = page.locator('.sv-game .sv-spoiler-line');
+        const words = await spoiler.innerText();
+        const expected = mode === 'api' || width === 320 || width === 1440 ? !/공통 .*초 지연 설정/.test(words) && !/공통 지연 설정 없이/.test(words)
+          : width === 375 ? /공통 15초 지연 설정/.test(words) : /공통 지연 설정 없이/.test(words);
+        ok(await spoiler.isVisible() && /스포일러 주의/.test(words) && /TV 중계보다 결과가 먼저/.test(words) && expected, `${id}: spoiler copy follows the manifest setting`);
+        if (mode === 'public' && width === 390) {
+          const note = await rect(spoiler), nav = await rect(page.locator('.sv-bottom-nav'));
+          ok(note.b <= nav.t, `${id}: spoiler note stays above fixed tabs (${note.b.toFixed(1)} ≤ ${nav.t.toFixed(1)})`);
+        }
+      } else ok(await page.locator('.sv-game .sv-spoiler-line').count() === (state === 'confirming' ? 1 : 0), `${id}: spoiler only while a game is in progress`);
       // 1. header: each team name and score stays clear of the LIVE / 종료 button
       const live = await rect(page.locator('.sv-head .sv-live'));
       const parts = page.locator('.sv-head-score > *');
@@ -150,6 +169,22 @@ try {
       ok(errors.length === 0, `${id}: no page errors ${errors.join(' | ')}`);
       await ctx.close();
     }
+  }
+  // A long series title must leave a full-width row for team names on a phone list card.
+  dist = DISTS.public; game = body('live');
+  for (const width of [320, 390]) {
+    fixedDelay = width === 320 ? 15 : 0;
+    const ctx = await browser.newContext({ viewport: { width, height: 844 } }), page = await ctx.newPage();
+    await page.goto(`${origin}/?date=${game.game.date_kst}`);
+    const card = page.locator('.sv-list .sv-card.live');
+    await card.waitFor();
+    const teams = await card.locator('.sv-card-team').evaluateAll((els) => els.map((e) => ({ height: e.getBoundingClientRect().height, text: e.textContent.trim() })));
+    const row = await card.locator('.sv-card-teams').evaluate((e) => getComputedStyle(e).gridRowStart);
+    ok(teams.length === 2 && teams.every(t => t.height <= 32) && row === '2', `public list ${width}: team names use their own full-width row (${teams.map(t => `${t.text}:${t.height.toFixed(1)}`).join(', ')})`);
+    const words = await page.locator('.sv-list .sv-spoiler-line').innerText();
+    ok(width === 320 ? /공통 15초 지연 설정/.test(words) : /공통 지연 설정 없이/.test(words), `public list ${width}: spoiler copy follows manifest`);
+    if (shots) await page.screenshot({ path: path.join(shots, `${tag}-public-list-${width}.png`) });
+    await ctx.close();
   }
 } finally { await browser.close(); await new Promise((r) => server.close(r)); }
 console.log(`${passed} passed, ${failures} failed`);

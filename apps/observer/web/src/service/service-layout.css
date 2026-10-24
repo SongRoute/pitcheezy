@@ -274,6 +274,44 @@
   margin: 6px 0;
 }
 
+.sv-limit-line {
+  margin: 0;
+  color: var(--sv-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: keep-all;
+}
+
+.sv-limit-line .sv-link-btn {
+  position: relative;
+  min-height: 0;
+  padding: 0 2px;
+  color: var(--sv-ink);
+  font: inherit;
+  font-weight: 700;
+}
+
+.sv-limit-line .sv-link-btn::after {
+  content: '';
+  position: absolute;
+  inset: -12px -6px;
+}
+
+.sv-spoiler-line {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #fff4dc;
+  color: #4a3300;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: keep-all;
+}
+
+.sv-spoiler-line b { margin-right: 3px; }
+
+.sv-list .sv-spoiler-line { margin: 12px 0; }
+
 .sv-section-label {
   font-size: 13px;
   margin: 0;
@@ -442,6 +480,15 @@
 
 .sv-list .sv-card.live {
   border-color: var(--sv-ink);
+}
+
+@media (max-width:559px) {
+  .sv-list .sv-card {
+    grid-template-columns: minmax(0,1fr) auto;
+  }
+  .sv-list .sv-card-time { min-width: 0; }
+  .sv-list .sv-card-teams { grid-column: 1 / -1; grid-row: 2; }
+  .sv-list .sv-status { grid-column: 2; grid-row: 1; }
 }
 
 @media (min-width:760px) {
@@ -832,6 +879,13 @@
     border: 0;
     border-bottom: 1px solid var(--sv-line);
     border-radius: 0;
+  }
+  .sv-game .sv-stage:has(.sv-pitch-summary:not(.sv-state)) {
+    gap: 3px;
+    padding-bottom: 4px;
+  }
+  .sv-game .sv-pitch-summary:not(.sv-state) .sv-actual-summary {
+    min-height: 62px;
   }
   .sv-game .sv-zrow,.sv-game.has-display .sv-zrow {
     height: var(--sv-zone-height);
