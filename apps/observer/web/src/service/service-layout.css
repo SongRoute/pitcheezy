@@ -897,8 +897,11 @@
 .sv-game-matchup .sv-head-main small { display: flex; justify-content: center; gap: 8px; width: 100%; color: #d9dee2; }
 .sv-game-matchup .sv-head-main small span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sv-game .sv-board { padding-top: 8px; padding-bottom: 6px; }
-.sv-game .sv-board-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; min-height: 48px; }
-.sv-mini-box-scroll { display: block; min-width: 0; max-width: 100%; overflow-x: auto; }
+.sv-game .sv-board-row { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 8px; min-height: 48px; }
+/* the inning button keeps its own width ("2회초 ▾" never breaks one letter per line at 320 px); the inning box takes what is left,
+   stays at the right edge, and scrolls sideways when it does not fit */
+.sv-board .sv-inning { white-space: nowrap; }
+.sv-mini-box-scroll { display: block; min-width: 0; max-width: 100%; overflow-x: auto; justify-self: end; }
 .sv-mini-box { display: block; min-width: max-content; padding: 3px 5px; border: 1px solid #8a9299; border-radius: 8px; color: #fff; background: #343b41; font-size: 11px; text-align: center; }
 .sv-mini-box-grid,.sv-mini-box-row { display: grid; grid-template-columns: 54px repeat(var(--innings), 23px); align-items: center; gap: 1px; }
 .sv-mini-box-row { grid-column: 1 / -1; }
