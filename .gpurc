@@ -1,0 +1,4 @@
+venv ~/venv
+min_free_mb 8000
+link data/cuda-export /home/sds733/pitcheezy-autonomy/20261004/export-49097109
+link runs ~/cc/shared/pitcheezy/direct-confirm-1026/runs
