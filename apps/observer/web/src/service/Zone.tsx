@@ -1,10 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { Bounds, Candidate } from './model';
+import type { Bounds, Candidate, ResultKind } from './model';
 
 /** Pitcher's view. Drawing mirrors the source plate_x; measured marks never move to avoid overlap.
- * Off-window marks use the existing explicit edge-arrow contract. Mitt remains x-only. */
+ * Off-window marks use the existing explicit edge-arrow contract. Mitt remains x-only.
+ * Thrown pitches use the colourless G1 marks (UI 10/26 ②): ball = hollow, strike/foul = grey, in play = dark; the latest one has an
+ * outer ring. `label` replaces the number (pitch-mix map: the type's first letter). */
 export type Mark = { x: number; z: number };
+export type Thrown = Mark & { number: number; kind?: ResultKind; latest?: boolean; label?: string };
 export const PLATE_HALF = .83;
 /** Full detail / mini margins in feet. The live main window uses x=.12, z=.24. */
 export const MARGIN = { main: { x: .42, z: .45 }, mini: { x: .34, z: .36 } };
@@ -29,6 +32,7 @@ export function place(p: Mark, w: ReturnType<typeof zoneWindow>) {
   // dx = SCREEN direction of the clipped-off part (feet direction × VIEW_X), used for the edge inset and the outward arrow
   return { out, x: ux(x), y: uz(z, w.aspect), dx: VIEW_X * Math.sign(p.x - x), dz: Math.sign(p.z - z) };
 }
+export const KIND_WORD: Record<ResultKind, string> = { ball: '볼', strike: '스트라이크·파울', inplay: '타격', unknown: '결과 미확인' };
 const ft = (p: Mark) => `가로 ${p.x.toFixed(2)}ft (포수 기준), 높이 ${p.z.toFixed(2)}ft`;
 
 /** Candidates sharing a target are drawn once with a combined label ('1·3'). */
@@ -42,8 +46,10 @@ export function groupTargets(cands: Candidate[]): { x: number; z: number; ranks:
   return out;
 }
 
-export default function Zone({ bounds, candidates, actual, actualLabel, setupX, mini = false, keepOut = null, fullWindow = false, actuals = [] }:
-  { bounds: Bounds; candidates: Candidate[]; actual: Mark | null; actualLabel: string; setupX: number | null; mini?: boolean; fullWindow?: boolean; actuals?: (Mark & { number: number })[];
+export default function Zone({ bounds, candidates, actual, actualLabel, setupX, mini = false, keepOut = null, fullWindow = false, actuals = [], actualKind = 'unknown', actualNumber = null }:
+  { bounds: Bounds; candidates: Candidate[]; actual: Mark | null; actualLabel: string; setupX: number | null; mini?: boolean; fullWindow?: boolean; actuals?: Thrown[];
+    /** the single selected pitch: its G1 kind and number (drawn with the latest ring); no number → a plain mark as before */
+    actualKind?: ResultKind; actualNumber?: number | null;
     /** CSS selector of a sibling block (the recommendation band) painted over this svg element's top-left/right corner. The drawing
      *  reserves horizontal room, and the recommendation block aligns with the grid top. */
     keepOut?: string | null }) {
@@ -53,8 +59,13 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
   const left = -PLATE_HALF * U, right = PLATE_HALF * U, top = uz(bounds.top, w.aspect), bottom = uz(bounds.bottom, w.aspect);  // symmetric, view-independent
   const groups = groupTargets(candidates).map(g => ({ ...g, at: place(g, w) }));
   const act = actual ? place(actual, w) : null;
-  const actualGroups: (Mark & { numbers: number[] })[] = [];
-  for (const p of actuals) { const g = actualGroups.find(g => g.x === p.x && g.z === p.z); if (g) g.numbers.push(p.number); else actualGroups.push({ ...p, numbers: [p.number] }); }
+  // pitches at the same spot AND of the same result share one mark (numbers '1·3'); a different result at that spot keeps its own mark
+  // (same coordinate, own colour), so no number is drawn in another result's look. The ring follows the newest pitch.
+  const actualGroups: (Thrown & { numbers: (number | string)[]; stacked: boolean })[] = [];
+  for (const p of actuals) { const n = p.label ?? p.number;
+    const g = actualGroups.find(g => g.x === p.x && g.z === p.z && g.kind === p.kind);
+    if (g) { g.numbers.push(n); g.latest = g.latest || p.latest; }
+    else actualGroups.push({ ...p, numbers: [n], stacked: actualGroups.some(o => o.x === p.x && o.z === p.z) }); }
   const parts = [...groups.map(g => `추천 ${g.ranks.join('·')}순위 위치 네모${g.at.out ? `(화면 밖 ${ft(g)})` : ''}`),
     actual ? `실제 투구${actualLabel ? ` ${actualLabel}` : ''} 동그라미${act!.out ? `(화면 밖, ${ft(actual)})` : ''}` : null].filter(Boolean);
   // Labels keep a readable on-screen size whatever the zone's drawn scale (SVG text otherwise scales with the drawing).
@@ -107,7 +118,7 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
   });
   const u = (n: number) => n / scale;  // on-screen px → drawing units
   const px = (n: number) => `${u(n).toFixed(2)}px`;
-  const half = mini ? 0 : u(13), rA = mini ? u(6.5) : u(8), rOut = mini ? u(4.5) : rA;
+  const half = mini ? 0 : u(15), rA = mini ? u(6.5) : u(10.5), rOut = mini ? u(4.5) : rA, ring = u(4);
   const labels = { '--zl-s': px(13), '--zl-m': px(14), '--zl-l': px(15) } as CSSProperties;
   const arrowLen = mini ? u(3) : u(7);
   // An edge marker is not a coordinate (the pitch is beyond the window); it is drawn just inside the window edge so that it and its
@@ -117,9 +128,11 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     const sx_ = Math.min(size + arrowLen, w.margin.x * U - u(3)), sz_ = Math.min(size + arrowLen, w.margin.z * U - u(3));
     return { ...p, x: p.x - p.dx * sx_, y: p.y + p.dz * sz_ };
   };
+  // the outward pointer: a small triangle whose tip is arrowLen beyond the mark's edge (same reach as the former line)
   const arrow = (p: { x: number; y: number; dx: number; dz: number }, r: number) => {
-    const ax = p.dx, ay = -p.dz, n = Math.hypot(ax, ay) || 1, L = r + arrowLen;
-    return <path className="sv-out-arrow" d={`M${p.x + ax / n * r} ${p.y + ay / n * r} L${p.x + ax / n * L} ${p.y + ay / n * L}`} />;
+    const ax = p.dx, ay = -p.dz, n = Math.hypot(ax, ay) || 1, ux_ = ax / n, uy = ay / n, L = r + arrowLen, w = arrowLen * .75;
+    const bx = p.x + ux_ * (r + .5), by = p.y + uy * (r + .5);
+    return <path className="sv-out-arrow" d={`M${p.x + ux_ * L} ${p.y + uy * L} L${bx - uy * w} ${by + ux_ * w} L${bx + uy * w} ${by - ux_ * w}Z`} />;
   };
   const mitt = typeof setupX === 'number' ? place({ x: setupX, z: (bounds.top + bounds.bottom) / 2 }, w) : null;
   // ---- display-only label layout (marks keep their positions) ----
@@ -148,7 +161,8 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     return [{ x: g.d.x - g.hw, y: g.d.y - g.hh, w: 2 * g.hw, h: 2 * g.hh }, { x: g.tx - tw / 2, y: g.ty - u(15), w: tw, h: u(18) }]; });
   const actD = act ? inset(act, act.out ? rOut : rA) : null;
   const rD = act?.out ? rOut : rA;
-  const dotBox: Box | null = actD ? { x: actD.x - rD - u(2), y: actD.y - rD - u(2), w: 2 * rD + u(4), h: 2 * rD + u(4) } : null;
+  const rDot = rD + (actualNumber !== null && !mini ? ring : 0);  // the selected pitch's ring is part of its painted mark
+  const dotBox: Box | null = actD ? { x: actD.x - rDot - u(2), y: actD.y - rDot - u(2), w: 2 * rDot + u(4), h: 2 * rDot + u(4) } : null;
   const mittText = mitt ? (mitt.out ? (mitt.dx > 0 ? '미트→' : '←미트') : '미트') : '';
   const mittW = u(mitt?.out ? 34 : 26), lh = u(16);
   const mittLabel = (() => {
@@ -173,13 +187,25 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
       if (!visible(box)) continue; first = first ?? { x, y }; if (!avoid.some(b => hit(b, box))) return { x, y, box }; }
     return first ? { ...first, box: { x: first.x - labW / 2, y: first.y - lh - u(1), w: labW, h: lh + u(5) } } : null;
   })();
+  // the selected pitch's number sits in its mark unless the mark is under a recommendation square (drawn above it); then it goes just
+  // outside, on the first free side (display only: the mark stays at its coordinate)
+  const actNum = (() => {
+    if (!actD || actualNumber === null || mini) return null;
+    if (!(dotBox && recBoxes.some(bx => hit(bx, dotBox)))) return { x: actD.x, y: actD.y + u(4), out: false };
+    const tw = u(6 + 7 * String(actualNumber).length), R = rD + ring;
+    const spots = [[0, -R - u(6)], [0, R + u(14)], [R + tw / 2 + u(4), u(4)], [-R - tw / 2 - u(4), u(4)]].map(([dx, dy]) => ({ x: actD.x + dx - tw / 2, y: actD.y + dy - u(11), w: tw, h: u(14) }));
+    const avoid = [...recBoxes, ...(mittLabel.box ? [mittLabel.box] : [])];
+    const bx = spots.find(q => visible(q) && !avoid.some(o => hit(o, q))) ?? spots.find(visible) ?? spots[0];
+    return { x: bx.x + tw / 2, y: bx.y + u(11), out: true };
+  })();
   const paMarks = actualGroups.map(p => { const at = place(p, w); return { p, at, d: inset(at, rA) }; });
-  const paDotBoxes = paMarks.map(({ d }) => ({ x: d.x - rA - u(2), y: d.y - rA - u(2), w: 2 * rA + u(4), h: 2 * rA + u(4) }));
+  const paDotBoxes = paMarks.map(({ p, d }) => { const r = rA + (p.latest ? ring : 0); return { x: d.x - r - u(2), y: d.y - r - u(2), w: 2 * r + u(4), h: 2 * r + u(4) }; });
   const paNumberBoxes: Box[] = [];
   const paLabels = paMarks.map(({ p, d }) => {
-    if (p.numbers.length === 1) return { x: d.x, y: d.y + u(3.5), halo: false };
-    const tw = u(6 + 7 * p.numbers.join('·').length), side = rA + tw / 2 + u(4);
-    const spots = [[0, -u(14)], [0, u(22)], [side, u(4)], [-side, u(4)], [0, -u(30)], [0, u(40)]]
+    if (p.numbers.length === 1 && !p.stacked) return { x: d.x, y: d.y + u(4), halo: false };
+    const tw = u(6 + 7 * p.numbers.join('·').length), side = rA + (p.latest ? ring : 0) + tw / 2 + u(4);
+    // positions scale with the drawn dot (and its ring): just above, just below, either side, then one row further out
+    const R = rA + (p.latest ? ring : 0), spots = [[0, -R - u(6)], [0, R + u(14)], [side, u(4)], [-side, u(4)], [0, -R - u(22)], [0, R + u(32)]]
       .map(([dx, dy]) => ({ x: d.x + dx - tw / 2, y: d.y + dy - u(11), w: tw, h: u(14) }));
     const textAvoid = [...numBoxes, ...paDotBoxes, ...paNumberBoxes, ...(mittLabel.box ? [mittLabel.box] : []), ...(actLabel ? [actLabel.box] : [])];
     const clear = spots.find(b => visible(b) && ![...recBoxes, ...textAvoid].some(a => hit(a, b)));
@@ -198,12 +224,26 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
       <line x1={mitt.x} x2={mitt.x} y1={top - u(4)} y2={bottom + u(4)} />
       <text x={mittLabel.x} y={mittLabel.y} textAnchor="middle">{mittText}</text></g>}
     {/* actual is drawn first so recommendation numbers stay on top of it; its label is placed apart from the dot */}
-    {act && <g className={`sv-actual${act.out ? ' out' : ''}`} data-out={act.out || undefined} data-x={actual!.x} data-z={actual!.z}>
+    {act && <g className={`sv-actual${act.out ? ' out' : ''}${actualNumber !== null ? ` g1 ${actualKind} latest` : ''}`} data-out={act.out || undefined} data-x={actual!.x} data-z={actual!.z} data-kind={actualNumber !== null ? actualKind : undefined}>
       <circle cx={actD!.x} cy={actD!.y} r={act.out ? rOut : rA} />{act.out && arrow(actD!, rOut)}
+      {actualNumber !== null && !mini && <><circle className="sv-ring" cx={actD!.x} cy={actD!.y} r={rD + ring} />
+        {actNum && <text className={actNum.out ? 'sv-g1-out' : 'sv-g1-num'} x={actNum.x} y={actNum.y} textAnchor="middle" style={{ fontSize: px(actNum.out ? 11 : 12), stroke: actNum.out ? 'white' : 'none', strokeWidth: actNum.out ? px(3) : undefined }}>{actualNumber}</text>}</>}
       {!mini && actLabel && <text className="sv-actual-label" x={actLabel.x} y={actLabel.y} textAnchor="middle">{actualLabel}</text>}</g>}
-    {recs.map(g => <g key={g.ranks.join()} className={`sv-rec${g.at.out ? ' out' : ''}`} data-rank={g.ranks.join('·')} data-x={g.x} data-z={g.z} data-out={g.at.out || undefined}>
-      <rect x={g.d.x - g.hw} y={g.d.y - g.hh} width={2 * g.hw} height={2 * g.hh} rx="3" />{g.at.out && arrow(g.d, Math.min(g.hw, g.hh))}
+    {recs.map(g => <g key={g.ranks.join()} className={`sv-rec r${g.ranks[0]}${g.at.out ? ' out' : ''}`} data-rank={g.ranks.join('·')} data-x={g.x} data-z={g.z} data-out={g.at.out || undefined}>
+      <rect x={g.d.x - g.hw} y={g.d.y - g.hh} width={2 * g.hw} height={2 * g.hh} rx={u(5)} />{g.at.out && arrow(g.d, Math.min(g.hw, g.hh))}
       <text x={g.tx} y={g.ty} textAnchor="middle">{g.ranks.join('·')}</text></g>)}
-    {paMarks.map(({ p, at, d }, i) => { const label = paLabels[i]; return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined}><circle cx={d.x} cy={d.y} r={rA} />{at.out && arrow(d, rA)}<text x={label.x} y={label.y} textAnchor="middle" style={{fontSize:px(10),fill:p.numbers.length > 1 || at.out ? 'var(--sv-actual)' : 'white',stroke:label.halo ? 'white' : 'none',strokeWidth:label.halo ? px(3) : undefined}}>{p.numbers.join('·')}</text><title>{p.numbers.join('·')}구 · {ft(p)}{at.out ? ' · 화면 밖' : ''}</title></g>; })}
+    {paMarks.map(({ p, at, d }, i) => { const label = paLabels[i]; const inside = p.numbers.length === 1 && !p.stacked && !at.out;
+      return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot g1 ${p.kind ?? 'unknown'}${p.latest ? ' latest' : ''}${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined} data-kind={p.kind ?? 'unknown'}>
+        <circle cx={d.x} cy={d.y} r={rA} />{at.out && arrow(d, rA)}{p.latest && <circle className="sv-ring" cx={d.x} cy={d.y} r={rA + ring} />}
+        <text className={inside ? 'sv-g1-num' : 'sv-g1-out'} x={label.x} y={label.y} textAnchor="middle" style={{ fontSize: px(inside ? 12 : 11), stroke: inside || !label.halo ? 'none' : 'white', strokeWidth: label.halo && !inside ? px(3) : undefined }}>{p.numbers.join('·')}</text>
+        <title>{p.numbers.join('·')}{typeof p.numbers[0] === 'number' ? '구' : ''}{p.kind ? ` · ${KIND_WORD[p.kind]}` : ''} · {ft(p)}{at.out ? ' · 화면 밖' : ''}</title></g>; })}
   </svg>;
 }
+
+/** The same G1 mark outside the drawing (at-bat list, pitch sheet): a small circle with the pitch number. */
+export function G1Dot({ kind, n, ring = false }: { kind: ResultKind; n: number | string; ring?: boolean }) {
+  return <i className={`sv-g1 ${kind}${ring ? ' ring' : ''}`} aria-hidden="true">{n}</i>;
+}
+/** The rank square as on the zone: 1 filled, 2 light, 3 white with a solid border (UI 10/26 ③). */
+export const RankSq = ({ rank }: { rank: number }) => <i className={`sv-rk r${Math.min(rank, 3)}`} aria-hidden="true">{rank}</i>;
+

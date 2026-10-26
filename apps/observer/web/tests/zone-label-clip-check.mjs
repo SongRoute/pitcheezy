@@ -44,7 +44,8 @@ for (const [vw, vh] of [[375, 553], [320, 568], [375, 667], [390, 844]]) for (co
     const vis = { x: Math.max(cr.x, st.x), y: st.y, w: Math.min(cr.x + cr.w, st.x + st.w) - Math.max(cr.x, st.x), h: st.h };
     const miniParts = [...card.querySelectorAll('svg.sv-zone.mini .sv-actual circle, svg.sv-zone.mini .sv-actual path')].map(e => R(e));
     const miniClipped = miniParts.filter(r => !inBox(r, vis)).length;
-    const labelShown = !!main.querySelector('.sv-actual text'); const caption = !!main.querySelector('.sv-zone-caption');
+    // the G1 number inside the mark is part of the mark; what must not be in the drawing is a NAME label for the pitch
+    const labelShown = !!main.querySelector('.sv-actual .sv-actual-label'); const caption = !!main.querySelector('.sv-zone-caption');
     return { clipped, overlaps, miniClipped, miniN: miniParts.length, labelShown, caption, named: (document.querySelector('.sv-actual-caption b')?.textContent ?? '').trim(), out: main.querySelector('.sv-actual')?.classList.contains('out') };
   });
   const tag = `${vw}x${vh} ${bn} (${x},${z}) mitt ${mitt}`;

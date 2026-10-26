@@ -4,8 +4,8 @@ import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, fetc
 import { PUBLISH_CONFIG, gameCheck, gameCheckLag, staleAfterMs, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
 import type { PublishStamp, PublishHealth } from './publish';
 import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Pa, Person, PitchRow, PreviousPick, Rec, Situation } from './model';
-import { inningText, kstTime, pitchName, plainZone, short, surname } from './model';
-import Zone from './Zone';
+import { inningText, kstTime, pitchName, plainZone, resultKind, short, surname } from './model';
+import Zone, { RankSq } from './Zone';
 import { ABSENT_PAST, DetailSheet, InfoSheet, PaSheet, SPOILER_LINE, Sheet, absentLine, provenanceText, publishDelayLine } from './Sheets';
 import SyncSheet, { FOLD_TEXT } from './SyncSheet';
 import { ExpectationLine, ReferenceSheet, ReferenceTeaser } from './Reference';
@@ -124,14 +124,24 @@ function Silhouette({ side }: { side: 'L' | 'R' }) {
   </svg>;
 }
 
-/** Main screen names the ranked pitches; target zone and policy share remain in the detail sheet. */
+/** One-line key under the zone (UI 10/26 ②): the recommendation square and the three G1 result marks, then the view. */
+export function ZoneLegend({ side, actualOnly = null }: { side: 'L' | 'R' | null; actualOnly?: string | null }) {
+  return <div className="sv-zone-legend"><p aria-hidden="true"><span><i className="k rec" />추천</span>{actualOnly ? <span><i className={`k ${actualOnly}`} />실제 ({actualOnly === 'ball' ? '볼' : actualOnly === 'inplay' ? '타격' : actualOnly === 'strike' ? '스트라이크·파울' : '결과 미확인'})</span>
+    : <><span><i className="k ball" />볼</span><span><i className="k strike" />스트라이크·파울</span><span><i className="k inplay" />타격</span></>}{actualOnly && <span>투수 시점</span>}</p>
+    {!actualOnly && <p>투수 시점 · {side === 'L' ? '좌타자' : side === 'R' ? '우타자' : '타석 방향 미확인'}</p>}</div>;
+}
+
+/** Main screen: one ruled row of three cells, rank square + pitch name (UI 10/26 ③; location and numbers stay in the detail sheet, D49).
+ *  Without candidates the cells read '—' and the reason is kept for screen readers. Any cell opens the recommendation sheet. */
 function RecList({ rec, emptyText, onOpen, lead = '', absentText = ABSENT_PAST }: { rec: Rec | null; emptyText: string; onOpen: () => void; lead?: string; absentText?: string }) {
-  if (!rec || rec.status !== 'ready' || !rec.candidates.length) return <button className="sv-reclist empty" onClick={onOpen} aria-haspopup="dialog">
-    <span className="sv-norec">{rec?.status === 'unsupported' ? rec.reason ?? '추천을 지원하지 않는 상황' : rec ? absentLine(rec, absentText) : emptyText}</span></button>;
+  const cands = rec?.status === 'ready' ? [...rec.candidates].sort((a, b) => a.rank - b.rank).slice(0, 3) : [];
+  if (!cands.length) { const why = rec?.status === 'unsupported' ? rec.reason ?? '추천을 지원하지 않는 상황' : rec ? absentLine(rec, absentText) : emptyText;
+    return <button className="sv-reclist empty" onClick={onOpen} aria-haspopup="dialog" aria-label={`${why}. 자세히 보기`}>
+      {[0, 1, 2].map(i => <span key={i} className="sv-rec-cell" aria-hidden="true">—</span>)}</button>; }
   return <button className="sv-reclist" onClick={onOpen} aria-haspopup="dialog"
-    aria-label={`${lead}추천 후보 ${rec.candidates.map(c => `${c.rank}순위 ${c.pitch_label}`).join('; ')}. 자세히 보기`}>
-    {rec.candidates.map((c: Candidate) => <span key={c.rank} className="sv-rec-row" aria-hidden="true">
-      <i className="sv-rk">{c.rank}.</i><span className="sv-rec-type">{c.pitch_label}</span></span>)}
+    aria-label={`${lead}추천 후보 ${cands.map(c => `${c.rank}순위 ${c.pitch_label}`).join('; ')}. 자세히 보기`}>
+    {[0, 1, 2].map(i => { const c: Candidate | undefined = cands[i];
+      return <span key={i} className="sv-rec-cell sv-rec-row" aria-hidden="true">{c ? <><RankSq rank={c.rank} /><b className="sv-rec-type">{c.pitch_label}</b></> : '—'}</span>; })}
   </button>;
 }
 
@@ -510,6 +520,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     if (d!.prev) clientNote = `${d!.sig ? '추천이 갱신됐어요' : '조금 전에 보여 드린 추천은 지금 표시하지 않아요'} (이전: ${d!.prev.top})`;
   }
   const ending = fold ? null : endingShown;
+  // the at-bat's last three published pitches on the main zone (all with 전체 보기), G1 marks from the result; the newest one ringed
+  const thrown = nextPhase && !fold ? paPitches.filter(p => !unconfirmed(p) && p.actual?.x != null && p.actual?.z != null).slice(allPitches ? 0 : -3)
+    .map((p, i, arr) => ({ x: p.actual!.x!, z: p.actual!.z!, number: p.pitch_number, kind: resultKind(p.actual!.description), latest: i === arr.length - 1 })) : [];
   // A2: a reference card rides only on the pending pitch's unsupported state; it is never drawn as a recommendation
   const reference = !maskPublished && stateSlot && latest && nextPhase && !shownRec && disp!.state === 'unsupported' ? detail.reference ?? null : null;
   const fix = stateSlot ? disp!.correction : null;
@@ -591,7 +604,8 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const sheetInfo = info(sheetPerson);
   const shownLine = latest ? detail.linescore_asof : pitch?.line;
   const abbr = (k: 'away' | 'home') => game[`${k}_abbr`] || short(game[`${k}_team`]);
-  const isFinal = game.status === 'final';
+  // a finished game's own header (figure 11) only while the screen is at the end; a selected past pitch keeps its as-of header
+  const isFinal = game.status === 'final' && latest;
   const pregameHead = !isFinal && !situation && !ended && (game.status === 'scheduled' || disp?.state === 'pregame') && pitches.length === 0;
   const curInning = isFinal ? null : (situation ?? ended)?.inning ?? null;
   // the half after the one that just ended, and its first batter only when the server names it (never guessed)
@@ -635,12 +649,13 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <div className={`sv-zrow ${side === 'L' ? 'bat-l' : 'bat-r'}${held ? ' held' : ''}`}>
         {side && <div className={`sv-batband ${side === 'R' ? 'at-right' : 'at-left'}`}><Silhouette side={side} /></div>}
         <div className="sv-zone-wrap">
-          <Zone bounds={detail.zone_bounds} candidates={cands} actuals={nextPhase && !fold ? paPitches.filter(p => !unconfirmed(p) && p.actual?.x != null && p.actual?.z != null).slice(allPitches ? 0 : -3).map(p => ({ x: p.actual!.x!, z: p.actual!.z!, number: p.pitch_number })) : []}
+          <Zone bounds={detail.zone_bounds} candidates={cands} actuals={thrown}
             actual={!nextPhase && !fold && actual && actual.x !== null && actual.z !== null ? { x: actual.x, z: actual.z } : null} actualLabel=""
+            actualKind={resultKind(actual?.description)} actualNumber={!nextPhase && shownPitch ? shownPitch.pitch_number : null}
             setupX={!nextPhase && !fold ? actual?.setup_x ?? null : null} />
         </div>
       </div>
-      <p className="sv-zone-legend">투수 시점 · {side === 'L' ? '좌타자' : side === 'R' ? '우타자' : '타석 방향 미확인'}</p>
+      <ZoneLegend side={side} />
       {stateSlot ? <div className={`sv-pitch-summary sv-state${shownRec ? ' has-rec' : ''}${held ? ' held' : ''}`} data-state={eff!.state} data-pitch={disp!.pitch_key ?? undefined}>
         {/* Recommendation state stays in its message; the game status itself is only in the top button. */}
         <div className="sv-state-head">

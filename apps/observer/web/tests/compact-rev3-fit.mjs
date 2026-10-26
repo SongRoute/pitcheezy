@@ -121,11 +121,13 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
       return { kind: g.getAttribute('class'), rawX: Number(g.dataset.x), x };
     });
     const lum = color => color.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((a, v, i) => a + v * [.2126, .7152, .0722][i], 0);
+    // the paper behind the drawing (UI 10/26: the zone has no grey window any more): first opaque background up the tree
+    const paper = (e) => { for (let x = e; x; x = x.parentElement) { const c = getComputedStyle(x).backgroundColor; if (c && !/rgba\(.*, 0\)|transparent/.test(c)) return c; } return 'rgb(255, 255, 255)'; };
     const numberContrast = paDots.map(g => {
-      const text = g.querySelector('text'), merged = text.textContent.includes('·');
+      const text = g.querySelector('text'), merged = text.textContent.includes('·'), inDot = text.classList.contains('sv-g1-num');
       const css = getComputedStyle(text);
-      // Clear floating numbers use the darker gray background as a bound; dense fallback numbers use their white halo.
-      const bg = merged && css.stroke !== 'none' ? css.stroke : getComputedStyle(merged ? g.closest('svg').querySelector('.sv-zone-outside') : g.querySelector('circle')).fill;
+      // a number in its mark is read against the mark's fill; one beside it against its white halo or the paper behind the drawing
+      const bg = inDot ? getComputedStyle(g.querySelector('circle')).fill : css.stroke !== 'none' ? css.stroke : paper(g.closest('svg'));
       const fg = css.fill, a = lum(fg), b = lum(bg);
       return { kind: merged ? 'merged' : g.classList.contains('out') ? 'outside' : 'inside', fg, bg, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
     });
@@ -135,6 +137,8 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
       const hit = e => { const a = e.getBoundingClientRect(); return b.left < a.right && a.left < b.right && b.top < a.bottom && a.top < b.bottom; };
       return [{ halo: css.stroke, haloScreenPx: parseFloat(css.strokeWidth) * text.getScreenCTM().a, paintOrder: css.paintOrder,
         baselineOffsetPx: (Number(text.getAttribute('y')) - Number(g.querySelector('circle').getAttribute('cy'))) * text.getScreenCTM().d,
+        // the first spot above the mark: its radius (plus the ring of the newest pitch) and 6px
+        aboveSpotPx: -((Number(g.querySelector('circle').getAttribute('r')) + (g.querySelector('.sv-ring') ? Number(g.querySelector('.sv-ring').getAttribute('r')) - Number(g.querySelector('circle').getAttribute('r')) : 0)) * text.getScreenCTM().d + 6),
         visible: b.left >= v.left && b.right <= v.right && b.top >= v.top && b.bottom <= v.bottom,
         markOverlap: [...svg.querySelectorAll('.sv-rec rect')].some(hit),
         contentOverlap: [...svg.querySelectorAll('.sv-rec text,.sv-mitt text,.sv-pa-dot circle,.sv-pa-dot text')].filter(e => e !== text).some(hit) }];
@@ -152,14 +156,14 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
       live: document.querySelector('.sv-hd-status')?.dataset.tone ?? 'none', liveText: document.querySelector('.sv-hd-status')?.textContent.trim() ?? '', liveDisabled: document.querySelector('.sv-hd-status')?.disabled ?? null,
       players: [...document.querySelectorAll('.sv-who')].map((e) => e.className + '|' + (e.querySelector('small')?.textContent ?? '')),
       count: document.querySelector('.sv-mu-count > b')?.textContent.trim() ?? '', outsN: document.querySelectorAll('.sv-mu-count .sv-outs i').length, bat: document.querySelector('.sv-zrow .sv-batband.at-left') ? 'left' : document.querySelector('.sv-zrow .sv-batband.at-right') ? 'right' : 'none', listUnder: (() => { const z = r('.sv-zrow .sv-zone-box'), l = r('.sv-reclist'); return !!z && !!l && l.top >= z.bottom; })(),
-      offscreen, minFont, inDrawingLabel: !!document.querySelector('.sv-zone-wrap .sv-actual:not(.sv-pa-dot) text'), named: (document.querySelector('.sv-actual-caption b')?.textContent ?? '').trim(),
+      offscreen, minFont, inDrawingLabel: !!document.querySelector('.sv-zone-wrap .sv-actual:not(.sv-pa-dot) .sv-actual-label'), named: (document.querySelector('.sv-actual-caption b')?.textContent ?? '').trim(),
       above, sheetOff, capClip, capAria, mainSingleActual: !!document.querySelector('.sv-zone-wrap .sv-zone .sv-actual:not(.sv-pa-dot)'),
       miniHidden: [...document.querySelectorAll('.sv-strip .sv-card .sv-zone')].every((e) => getComputedStyle(e).display === 'none'),
       paNums: paDots.flatMap((g) => (g.querySelector('text')?.textContent ?? '').split('·').map(Number)).sort((a, b) => a - b), paWant: capNums.slice(-3).sort((a, b) => a - b),
       paDotR: Math.min(...paDots.map((g) => (g.querySelector('circle')?.getBoundingClientRect().width ?? 0) / 2)),
       sel, sheetTitle: sh?.querySelector('.sv-sheet-head h2')?.textContent.trim() ?? null, sheetModal: sh?.getAttribute('aria-modal') ?? null,
       sheetRecs: [...(sh?.querySelectorAll('.sv-detail-zone .sv-rec') ?? [])].map((g) => g.getAttribute('data-rank')), sheetActual: !!sh?.querySelector('.sv-detail-zone .sv-actual'),
-      sheetInLabel: !!sh?.querySelector('.sv-detail-zone .sv-actual text'), sheetNamed: (sh?.querySelector('.sv-dl:not(.sv-pair) dd')?.textContent ?? '').trim() };
+      sheetInLabel: !!sh?.querySelector('.sv-detail-zone .sv-actual .sv-actual-label'), sheetNamed: (sh?.querySelector('.sv-dl:not(.sv-pair) dd')?.textContent ?? '').trim() };
   });
   const tag = `${w}x${h}${big ? '@125' : ''} ${which}/${state} ${side}${many ? ' 12p' : ''}${numberCase ? ` numbers-${numberCase}` : ''}`;
   // with 125% text the layout is reported, not asserted (zone row keeps a 15em minimum instead of shrinking; ui-pitcher-view-1006)
@@ -168,8 +172,7 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
   // vertically under a fixed tab bar, so: the key state (score, count, zone) is above the tab bar without scrolling, the pitch
   // strip too at 390x844 (display-state-smoke / ws-responsive-smoke precedent; shorter screens may scroll to it), and every control
   // can be scrolled into view (none stranded under the tab bar or off to the side; sheet controls reachable inside the sheet).
-  // a finished game has no row 3 (UI 10/26 figure 11): its count is not required above the fold
-  const A = L.above, keyAbove = A.score !== null && A.score <= A.fold + 1 && (which === 'final' || (A.bso !== null && A.bso <= A.fold + 1)) && A.zone !== null && A.zone <= A.fold + 1;
+  const A = L.above, keyAbove = A.score !== null && A.score <= A.fold + 1 && A.bso !== null && A.bso <= A.fold + 1 && A.zone !== null && A.zone <= A.fold + 1;
   soft(keyAbove && (w !== 390 || h !== 844 || (A.strip !== null && A.strip <= A.fold + 1)), `${tag} score, count and zone above the fold${w === 390 && h === 844 ? ', strip above the tab bar' : ''}`, A);
   soft(L.offscreen.length === 0 && L.sheetOff.length === 0, `${tag} every control reachable (page scroll / sheet scroll, none under the tab bar)`, { scrollH: L.scrollH, innerH: L.innerH, off: L.offscreen, sheet: L.sheetOff });
   ok(L.scrollW <= L.innerW + 1, `${tag} no horizontal page scroll`, L);
@@ -187,7 +190,7 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
     ok(L.mergedNumbers.length === 1 && L.mergedNumbers.every(n => n.visible && !n.contentOverlap), `${tag} merged numbers stay in the SVG and clear other text and dots`, L.mergedNumbers);
     ok(L.mergedNumbers.every(n => numberCase === 'dense' ? n.halo === 'rgb(255, 255, 255)' && n.haloScreenPx >= 2.99 && n.haloScreenPx <= 3.01 && n.paintOrder === 'stroke' : n.halo === 'none' && !n.markOverlap),
       `${tag} ${numberCase === 'dense' ? 'dense fallback uses a 3 screen-pixel white halo' : 'merged numbers avoid recommendation squares'}`, L.mergedNumbers);
-    if (numberCase === 'above') ok(L.mergedNumbers.every(n => Math.abs(n.baselineOffsetPx + 14) < .01), `${tag} first clear position above the dot is actually selected`, L.mergedNumbers);
+    if (numberCase === 'above') ok(L.mergedNumbers.every(n => Math.abs(n.baselineOffsetPx - n.aboveSpotPx) < .01), `${tag} first clear position above the dot is actually selected`, L.mergedNumbers);
   }
   ok(L.banned.length === 0, `${tag} removed visible texts (main screen)`, L.banned);
   ok(L.limitText === '', `${tag} no always-visible limitation banner`, L.limitText);
@@ -204,9 +207,9 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
   if (which === 'live') {
     ok(L.paNums.length > 0 && JSON.stringify(L.paNums) === JSON.stringify(L.paWant) && L.paDotR >= 5, `${tag} main zone numbers the PA's last pitches (${L.paNums.join(',')}), dot radius ${L.paDotR?.toFixed(1)}px`, { got: L.paNums, want: L.paWant, r: L.paDotR });
   }
-  if (which === 'final') ok(L.count === '' && L.players.length === 0, `${tag} finished game: no row 3 (count / players)`, [L.count, L.players]);
-  else ok(/^\d-\d$/.test(L.count) && L.outsN === 3, `${tag} count '${L.count}' in numbers with three out marks`, [L.count, L.outsN]);
-  if (which !== 'final') ok(L.players.length === 2 && L.players[0].includes('bat') && /^타자/.test(L.players[0].split('|')[1]) && L.players[1].includes('pit') && /^투수/.test(L.players[1].split('|')[1]), `${tag} batter left / pitcher right`, L.players);
+  // a finished game browsed at a pitch keeps that pitch's row 3 (figure 11's row-less header is the end of the game, not a past pitch)
+  ok(/^\d-\d$/.test(L.count) && L.outsN === 3, `${tag} count '${L.count}' in numbers with three out marks`, [L.count, L.outsN]);
+  ok(L.players.length === 2 && L.players[0].includes('bat') && /^타자/.test(L.players[0].split('|')[1]) && L.players[1].includes('pit') && /^투수/.test(L.players[1].split('|')[1]), `${tag} batter left / pitcher right`, L.players);
   ok(!L.prev, `${tag} no previous-pitch marker`, L);
   if (many) ok(L.stripScroll, `${tag} >10 pitches scroll horizontally in the strip`, L);
   // latest: no single 'actual' marker for a thrown pitch (only the PA's numbered dots), demo label without the LIVE dot

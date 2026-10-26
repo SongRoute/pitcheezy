@@ -263,44 +263,41 @@
 .sv-game .sv-bottom-nav svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .sv-game .sv-bottom-nav .sv-sync-open { font-weight: 700; }
 
-/* ---- zone (pre-10/26 marks; replaced in the zone stage) ---- */
-.sv-zone-outside {
-  fill: #ecefea;
-}
-.sv-zone-box {
-  fill: #fff;
-  stroke: var(--sv-ink);
-  stroke-width: 2;
-}
-.sv-zone-grid {
-  stroke: #dde1dc;
-}
-.sv-rec[data-rank="1"] rect {
-  fill: #1e6a4e;
-  stroke: #1e6a4e;
-  stroke-dasharray: none;
-}
-.sv-rec[data-rank="1"] text {
-  fill: #fff;
-  stroke: none;
-}
-.sv-rec[data-rank="2"] rect {
-  fill: #cfe3d8;
-  stroke: #cfe3d8;
-  stroke-dasharray: none;
-}
-.sv-rec[data-rank="2"] text {
-  fill: #14503a;
-  stroke: none;
-}
-.sv-rec[data-rank="3"] rect {
-  fill: none;
-  stroke: #1e6a4e;
-  stroke-dasharray: 3 2;
-}
-.sv-mitt line,.sv-mitt text {
-  stroke: #3559b5;
-}
+/* ---- ② zone (UI 10/26): lines only (no grey window), rank squares 1 filled · 2 light · 3 white with a SOLID border, colourless G1
+   marks for thrown pitches (ball hollow, strike/foul grey, in play dark), a dark outer ring on the newest one. Geometry is Zone.tsx's. ---- */
+.sv-game .sv-zone-outside { fill: none; }
+.sv-game .sv-zone-box { fill: none; stroke: var(--sv-ink); stroke-width: 2; }
+.sv-game .sv-zone-grid { stroke: #c9d4d8; stroke-width: 1; }
+.sv-game .sv-rec rect { fill: #fff; stroke: var(--sv-rec); stroke-width: 2; stroke-dasharray: none; }
+.sv-game .sv-rec text { fill: var(--sv-rec); stroke: none; font-weight: 800; }
+.sv-game .sv-rec.r1 rect { fill: var(--sv-rec); }
+.sv-game .sv-rec.r1 text { fill: #fff; }
+.sv-game .sv-rec.r2 rect { fill: var(--sv-rec2); }
+.sv-game .sv-rec .sv-out-arrow { fill: var(--sv-rec); stroke: none; }
+.sv-game .sv-actual .sv-out-arrow { fill: var(--sv-g1-line); stroke: none; }
+.sv-game .sv-actual.g1 > circle { stroke-dasharray: none; stroke-width: 2; }
+.sv-game .sv-actual.g1.ball > circle, .sv-game .sv-actual.g1.unknown > circle { fill: #fff; stroke: var(--sv-g1-line); }
+.sv-game .sv-actual.g1.unknown > circle { stroke-dasharray: 3 2; }
+.sv-game .sv-actual.g1.strike > circle { fill: var(--sv-g1-strike); stroke: #fff; }
+.sv-game .sv-actual.g1.inplay > circle { fill: var(--sv-g1-play); stroke: #fff; }
+.sv-game .sv-actual.g1 > circle.sv-ring { fill: none; stroke: var(--sv-g1-play); stroke-width: 2.2; }
+.sv-game .sv-actual .sv-g1-num { fill: #fff; stroke: none; font-weight: 700; }
+.sv-game .sv-actual.ball .sv-g1-num, .sv-game .sv-actual.unknown .sv-g1-num { fill: var(--sv-g1-num); }
+.sv-game .sv-actual .sv-g1-out { fill: var(--sv-g1-num); font-weight: 700; paint-order: stroke; }
+.sv-game .sv-zrow.held :is(.sv-rec, .sv-actual, .sv-zone-box, .sv-zone-grid, .sv-batter) { opacity: .45; }
+.sv-game .sv-zone-legend { margin: 0; display: grid; justify-items: center; gap: 3px; font-size: 13px; line-height: 1.35; color: var(--sv-muted); }
+.sv-game .sv-zone-legend p { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 12px; }
+.sv-game .sv-zone-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.sv-game .sv-zone-legend .k { width: 11px; height: 11px; border-radius: 50%; box-sizing: border-box; flex: none; }
+.sv-game .sv-zone-legend .k.rec { border-radius: 3px; background: var(--sv-rec); }
+.sv-game .sv-zone-legend .k.ball { border: 2px solid var(--sv-g1-line); background: #fff; }
+.sv-game .sv-zone-legend .k.unknown { border: 2px dashed var(--sv-g1-line); background: #fff; }
+.sv-game .sv-zone-legend .k.strike { background: var(--sv-g1-strike); }
+.sv-game .sv-zone-legend .k.inplay { background: var(--sv-g1-play); }
+.sv-game .sv-batband { width: auto; }
+.sv-game .sv-batband.at-right { right: 4px; justify-content: flex-end; }
+.sv-game .sv-batband.at-left { left: 4px; justify-content: flex-start; }
+.sv-game .sv-batband .sv-batter { flex: none; height: 124px; width: auto; max-height: none; fill: var(--sv-figure, #d6dfe3); stroke: #9fb0b7; stroke-width: 1.5; }
 
 /* ---- stage (pre-10/26 layout; replaced in the main-screen stage) ---- */
 .sv-live-layout {
@@ -365,21 +362,9 @@
   margin: 0;
   --sv-side: 28px;
 }
-.sv-zone-legend {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-  font-size: 11px;
-  color: var(--sv-muted);
-  margin: 0;
-}
-.sv-zone-legend span:first-child {
-  color: var(--sv-rec);
-}
-.sv-zone-legend span:nth-child(2) {
-  color: var(--sv-actual);
-}
+
+
+
 .sv-game .sv-pitch-summary {
   margin: 0;
   padding: 8px 0;
