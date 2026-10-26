@@ -148,17 +148,30 @@ function serve() {
 const slot = (page) => page.locator('.sv-pitch-summary');
 /** A wait that times out is a FAIL line, not a crash of the whole run. */
 async function waited(message, wait) { try { await wait(); ok(true, message); return true; } catch (e) { ok(false, `${message} — ${String(e).split('\n')[0].slice(0, 160)}`); return false; } }
-/** Words of the status line: the live-region text plus the (aria-hidden) time stamp, without the retry control. */
-const lineWords = (page) => page.evaluate(() => { const l = document.querySelector('.sv-notice.line'); const t = l.querySelector('.sv-line-text').cloneNode(true); t.querySelectorAll('.sr-only').forEach((e) => e.remove()); return [t.textContent, l.querySelector('.sv-line-time')?.textContent ?? ''].join(' ').replace(/\s+/g, ' ').trim(); });
+/** UI 10/26 ⑥: the status line and the slot chip of the old layout are gone; ONE header marker carries the state and its bubble the
+ *  sentences (title, server sentence / change note, receive time). These read them. */
+const chipText = (page) => page.locator('.sv-hd-status').innerText().then((t) => t.trim()).catch(() => '');
+const chipTone = (page) => page.locator('.sv-hd-status').getAttribute('data-tone', { timeout: 1000 }).catch(() => null);
+/** the marker word for a display state: connection trouble first, then a changed recommendation, recommended (and an inning break) read 라이브 */
+const chipFor = (d) => d.state === 'disconnected' || d.state === 'feed_delayed' ? d.label : d.correction ? '추천 바뀜'
+  : d.state === 'recommended' || (d.state === 'waiting' && d.reason === 'between_innings') ? '라이브' : d.label;
+/** Words of the status bubble: opens it from the marker, reads it, closes it with Escape (focus goes back to the marker). */
+async function lineWords(page) {
+  await page.locator('.sv-hd-status').click();
+  const pop = page.locator('#sv-status-pop'); await pop.waitFor({ timeout: 3000 });
+  const t = (await pop.innerText()).replace(/\s+/g, ' ').trim();
+  await page.keyboard.press('Escape'); await pop.waitFor({ state: 'detached', timeout: 3000 });
+  return t;
+}
 /** Everything a fan can read or hear: visible text plus aria-label and title attributes. */
 const spoken = (page) => page.evaluate(() => [document.querySelector('.sv-page').innerText, ...[...document.querySelectorAll('.sv-page [aria-label], .sv-page [title]')].map((e) => `${e.getAttribute('aria-label') ?? ''} ${e.getAttribute('title') ?? ''}`)].join(' \n '));
-const boxes = (page) => page.evaluate(() => Object.fromEntries(['.sv-notice.line', '.sv-board', '.sv-duel', '.sv-zrow', '.sv-zrow .sv-zone-wrap', ].map((sel) => {
-  const r = document.querySelector(sel)?.getBoundingClientRect(); return [sel, r ? [r.left + scrollX, r.top + scrollY, r.width, r.height].map((v) => Math.round(v * 2) / 2).join(',') : 'none']; })));
+const boxes = (page, sels = ['.sv-hd-1', '.sv-hd-2', '.sv-mu', '.sv-zrow', '.sv-zrow .sv-zone-wrap']) => page.evaluate((sels) => Object.fromEntries(sels.map((sel) => {
+  const r = document.querySelector(sel)?.getBoundingClientRect(); return [sel, r ? [r.left + scrollX, r.top + scrollY, r.width, r.height].map((v) => Math.round(v * 2) / 2).join(',') : 'none']; })), sels);
 const sameBoxes = (a, b) => Object.keys(a).filter((k) => a[k] !== b[k]).map((k) => `${k}: ${a[k]} → ${b[k]}`);
 /** Nothing inside the fixed-height slot or the status line spills out of it, and the page has no horizontal scroll. */
 const spill = (page) => page.evaluate(() => {
   const out = [];
-  for (const sel of ['.sv-pitch-summary.sv-state', '.sv-notice.line']) {
+  for (const sel of ['.sv-pitch-summary.sv-state', '#sv-status-pop']) {
     const box = document.querySelector(sel); if (!box) continue;
     const r = box.getBoundingClientRect();
     for (const el of box.querySelectorAll('*')) { if (el.classList.contains('sr-only') || el.closest('.sr-only')) continue; const e = el.getBoundingClientRect(); if (!e.width || !e.height) continue;
@@ -170,7 +183,7 @@ const spill = (page) => page.evaluate(() => {
 const fitsWidth = (page) => page.evaluate(() => document.scrollingElement.scrollWidth <= window.innerWidth + 1);
 const fitsViewport = (page) => page.evaluate(() => {
   const root = document.scrollingElement;
-  const core = document.querySelector('.sv-strip-shell')?.getBoundingClientRect();
+  const core = document.querySelector('.sv-atbat-head')?.getBoundingClientRect();
   return root.scrollWidth <= innerWidth + 1 && (innerWidth !== 390 || innerHeight < 800 || !core || core.bottom + scrollY <= innerHeight + 1);
 });
 const JARGON = /ledger|provider|stamp|diag:|receipt|unconfirmed|recommended|poll_failed|write_failed|[a-z]+_[a-z]+/;
@@ -178,7 +191,9 @@ const JARGON = /ledger|provider|stamp|diag:|receipt|unconfirmed|recommended|poll
 async function shown(page, body, timeout = 6000) {
   const d = { ...body.display_state, label: body.display_state.label ?? FALLBACK.label, message: body.display_state.message ?? (body.display_state.state === 'ledger_unavailable' ? FALLBACK.message : null) };
   await page.locator(`.sv-pitch-summary.sv-state[data-state="${d.state}"]${d.pitch_key ? `[data-pitch="${d.pitch_key}"]` : ''}`).first().waitFor({ timeout });
-  await page.waitForFunction(([label, message]) => { const s = document.querySelector('.sv-pitch-summary.sv-state'); return !!s && s.querySelector('.sv-chip')?.textContent.includes(label) && (message === null || s.textContent.includes(message)); }, [d.label, d.message], { timeout });
+  await page.waitForFunction(([label, message]) => { const s = document.querySelector('.sv-pitch-summary.sv-state'); const chip = document.querySelector('.sv-hd-status')?.textContent ?? '';
+    // the screen's own D1 note (the list changed without a server note) also reads 추천 바뀜 on the marker
+    return !!s && (chip.includes(label) || (chip.includes('추천 바뀜') && !!s.querySelector('.sv-state-note')?.textContent.trim())) && (message === null || s.textContent.includes(message)); }, [chipFor(d), d.message], { timeout });
   await page.waitForTimeout(120);
 }
 
@@ -236,46 +251,53 @@ for (const [width, height] of VIEWPORTS.filter(v => !VIEWPORT || v.join('x') ===
     const expectShown = d.recommendation_shown;
     if (width === 390 && height === 844) {
       ok(await page.locator('.sv-pitch-summary').count() === 1 && await state.getAttribute('data-state') === d.state, `${name}: exactly one state slot, data-state=${d.state}`);
-      ok((await state.locator('.sv-chip').innerText()).includes(d.label), `${name}: chip says "${d.label}" in words`);
+      // UI 10/26 ⑥: the header marker names the state in words (connection first, then a changed recommendation); the slot keeps
+      // data-state and the one polite live region, visually hidden; the sentence and note open in the marker's bubble
+      const chip = await chipText(page);
+      ok(chip === chipFor(d), `${name}: marker says "${chipFor(d)}" in words ("${chip}")`);
       const sentence = state.locator('.sv-state-msg');
       ok(await state.locator('[role="status"]').count() === 1 && await state.locator('.sv-state-live[role="status"]').count() === 1 && await state.locator('.sv-state-live').evaluate((e) => getComputedStyle(e).display !== 'none'), `${name}: one always-present polite live region for sentence + note`);
-      ok(!/Ⅱ/.test(await state.locator('.sv-chip').innerText()), `${name}: chip mark is not a numeral-like glyph`);
+      ok(!/Ⅱ/.test(chip) && await page.locator('.sv-hd-status').count() === 1, `${name}: one marker, no numeral-like glyph`);
       ok(await state.locator('.sv-state-more').count() === 1, `${name}: the slot offers 자세히 in this state`);
-      if (d.message === null) ok((await sentence.innerText()).trim() === '', `${name}: no sentence for a plain recommendation`);
-      else if (expectShown && d.correction) ok(await sentence.evaluate((e) => e.classList.contains('sr-only')) && (await sentence.textContent()) === d.message, `${name}: sentence kept for screen readers beside the change note`);
-      else ok((await sentence.innerText()).trim() === d.message && await sentence.getAttribute('role') === null, `${name}: one calm sentence, server copy: "${d.message}"`);
+      if (d.message === null) ok((await sentence.textContent()).trim() === '', `${name}: no sentence for a plain recommendation`);
+      else ok((await sentence.textContent()) === d.message && await sentence.getAttribute('role') === null, `${name}: one calm sentence in the live region, server copy: "${d.message}"`);
+      ok(await page.locator('.sv-stage').evaluate((e) => [...e.querySelectorAll('p, span, b')].filter((x) => !x.closest('.sr-only') && x.getClientRects().length && /이에요|어요\.|해요/.test(x.textContent)).length === 0), `${name}: no state prose drawn on the main screen`);
       const rows = await state.locator('.sv-rec-row').count(), squares = await page.locator('.sv-zrow .sv-zone .sv-rec').count();
-      ok(expectShown ? rows === 3 && squares >= 1 : rows === 0 && squares === 0, `${name}: ${expectShown ? 'candidates listed (type) and drawn (target squares)' : 'no candidate and no target square'} (rows ${rows}, squares ${squares})`);
+      const recLabel = (await state.locator('.sv-reclist').getAttribute('aria-label')) ?? '', zoneLabel = (await page.locator('.sv-zrow .sv-zone').getAttribute('aria-label')) ?? '';
+      ok(expectShown ? rows === 3 && squares >= 1 : rows === 0 && squares === 0 && !/순위/.test(recLabel + zoneLabel) && (await state.locator('.sv-rec-cell').allInnerTexts()).every((c) => c.trim() === '—'),
+        `${name}: ${expectShown ? 'candidates listed (type) and drawn (target squares)' : "'—' cells, no target square, no candidate in any label"} (rows ${rows}, squares ${squares})`);
       if (expectShown) ok(/싱커/.test(await state.locator('.sv-rec-row').first().innerText()) && await page.locator('.sv-zrow .sv-zone .sv-rec').first().isVisible(), `${name}: pitch type first, target location on the zone`);
       const visible = await spoken(page);
       ok(!JARGON.test(visible) && !/추천 대기 중/.test(visible), `${name}: no reason code, diagnostic or stale wording in text, aria-label or title`);
-      if (variant === 'held') ok(await state.evaluate((e) => e.classList.contains('held')) && /마지막으로 받은 추천/.test(await state.locator('.sv-state-head').innerText()) && Number(await state.locator('.sv-rec-summary').evaluate((e) => getComputedStyle(e).opacity)) < 1 && await page.locator('.sv-live.on').count() === 0, `${name}: kept candidates are dimmed and labelled 마지막으로 받은 추천; LIVE dot off`);
-      const noteText = (await state.locator('.sv-state-note').innerText()).trim();
-      if (d.correction) ok(noteText === `${FIX[d.correction.kind]} (이전: 슬라이더 · 낮은 오른쪽)` && await state.locator('.sv-state-note').isVisible() && await state.locator('.sv-state-live[role="status"] .sv-state-note').count() === 1, `${name}: visible change note with the previous pick, inside the live region: "${noteText}"`);
+      if (variant === 'held') ok(await state.evaluate((e) => e.classList.contains('held')) && /마지막으로 받은 추천/.test(await state.locator('.sv-rec-head').innerText()) && Number(await state.locator('.sv-reclist').evaluate((e) => getComputedStyle(e).opacity)) < 1 && await chipTone(page) !== 'live', `${name}: kept candidates are dimmed and labelled 마지막으로 받은 추천; no live marker`);
+      const noteText = (await state.locator('.sv-state-note').textContent()).trim();
+      if (d.correction) ok(noteText === `${FIX[d.correction.kind]} (이전: 슬라이더 · 낮은 오른쪽)` && await state.locator('.sv-state-live[role="status"] .sv-state-note').count() === 1, `${name}: change note with the previous pick, inside the live region: "${noteText}"`);
       else ok(noteText === '', `${name}: no change note`);
-      const line = page.locator('.sv-notice.line');
       const lineText = await lineWords(page);
-      ok(await line.getAttribute('role') === null && await line.locator('.sv-line-text[role="status"]').count() === 1 && await line.locator('.sv-line-time').getAttribute('aria-hidden') === 'true' && await line.locator('[role="status"] button').count() === 0, `${name}: only the status words are a live region (time stamp hidden from it, retry control outside)`);
-      if (d.state === 'feed_delayed') ok(/자료 늦음 · 52초 넘게 늦음 · \d\d:\d\d 수신/.test(lineText) && !/약/.test(lineText) && await line.getAttribute('data-kind') === 'late', `${name}: status line "${lineText}" (lower bound 52.9 → floor, never '약')`);
-      else if (d.state === 'disconnected') ok(/연결 끊김 · \d\d:\d\d 수신/.test(lineText) && await line.getAttribute('data-kind') === 'feed' && await line.getByRole('button').count() === 1, `${name}: status line "${lineText}" with a retry control`);
-      // game-level 확인 중: the line tells the chip's story (WS launch D, 2026-10-17), never 실시간으로 받는 중 beside it
-      else if (d.state === 'unconfirmed') ok(/^확인 중… · \d\d:\d\d 수신/.test(lineText) && !/실시간으로 받는 중/.test(lineText) && await line.getAttribute('data-kind') === 'ok', `${name}: status line agrees with the chip "${lineText}"`);
-      else ok(/실시간으로 받는 중 · \d\d:\d\d 수신/.test(lineText) && await line.getAttribute('data-kind') === 'ok', `${name}: status line quiet "${lineText}"`);
+      ok(lineText.startsWith(chipFor(d)) && (d.message === null || lineText.includes(d.message)) && (!d.correction || lineText.includes(noteText)), `${name}: the bubble repeats the marker word, the sentence${d.correction ? ' and the note' : ''} ("${lineText}")`);
+      ok(await page.evaluate(() => document.activeElement?.classList.contains('sv-hd-status')), `${name}: Escape closes the bubble and focus returns to the marker`);
+      if (d.state === 'feed_delayed') ok(/52초 넘게 늦음/.test(lineText) && !/약/.test(lineText) && await chipTone(page) === 'late', `${name}: bubble "${lineText}" (lower bound 52.9 → floor, never '약')`);
+      else if (d.state === 'disconnected') ok(/연결 끊김 · \d\d:\d\d 수신/.test(lineText) && await chipTone(page) === 'lost', `${name}: bubble "${lineText}" names the last receive time`);
+      // game-level 확인 중: the marker and bubble tell one story, never 실시간으로 받는 중 beside it
+      else if (d.state === 'unconfirmed') ok(!/실시간으로 받는 중/.test(lineText) && await chipTone(page) === (d.correction ? 'fixed' : 'checking'), `${name}: bubble agrees with the marker "${lineText}"`);
+      else if (d.state === 'recommended' && !d.correction) ok(/실시간으로 받는 중 · \d\d:\d\d 수신/.test(lineText) && await chipTone(page) === 'live', `${name}: bubble quiet "${lineText}"`);
       if (shots) await page.screenshot({ path: path.join(shots, `state-${name.replace(/[/+]/g, '-')}-390x844.png`) });
     }
-    const now = await boxes(page);
+    // design 09: an inning break replaces row 3 by one line, so only the header rows are compared for it (section 13 checks the break)
+    const brk = d.reason === 'between_innings', now = await boxes(page);
     if (first === null) first = now;
-    const moved = sameBoxes(first, now);
+    const moved = sameBoxes(brk ? { '.sv-hd-1': first['.sv-hd-1'], '.sv-hd-2': first['.sv-hd-2'] } : first, brk ? await boxes(page, ['.sv-hd-1', '.sv-hd-2']) : now);
     ok(moved.length === 0, `${tag} ${name}: stable live header, matchup and zone anchors (summary height may grow)${moved.length ? ` — ${moved.join(' | ')}` : ''}`);
     const out = await spill(page);
     ok(out.length === 0, `${tag} ${name}: nothing spills out of the reserved slot, no sideways scroll${out.length ? ` — ${out.join(' | ')}` : ''}`);
     const over = await page.evaluate(() => document.scrollingElement.scrollHeight - window.innerHeight);
     ok(await fitsViewport(page), `${tag} ${name}: no sideways scroll; 390x844 core above fold, shorter screens may scroll (${over}px)`);
     if (opts.names) {
-      await page.waitForFunction((n) => document.querySelector('.sv-duel')?.getAttribute('aria-label')?.includes(n), opts.names[0], { timeout: 6000 }).catch(() => {});
-      const duel = await page.evaluate(() => { const d = document.querySelector('.sv-duel'); const lines = [...d.querySelectorAll('b')].map((b) => Math.round(b.getBoundingClientRect().height / parseFloat(getComputedStyle(b).lineHeight)));
-        return { lines, label: d.getAttribute('aria-label'), titles: [...d.querySelectorAll('span[title]')].map((e) => e.getAttribute('title')) }; });
-      ok(duel.lines.every((n) => n >= 1 && n <= 2) && duel.label === `타자 ${opts.names[0]} 대 투수 ${opts.names[1]}` && duel.titles.join('|') === opts.names.join('|'), `${tag} ${name}: matchup within two readable lines; full names in aria-label and title (${JSON.stringify(duel.lines)})`);
+      await page.waitForFunction((n) => document.querySelector('.sv-who.bat')?.getAttribute('aria-label')?.includes(n), opts.names[0], { timeout: 6000 }).catch(() => {});
+      const duel = await page.evaluate(() => { const who = [...document.querySelectorAll('.sv-who')]; return { lines: who.map((w) => { const b = w.querySelector('b'); return Math.round(b.getBoundingClientRect().height / parseFloat(getComputedStyle(b).lineHeight)); }),
+        labels: who.map((w) => w.getAttribute('aria-label')), titles: who.map((w) => w.getAttribute('title')) }; });
+      // a live row 3 keeps one line per name (a long name ends in an ellipsis, family names below 360px); the full names stay in title and label
+      ok(duel.lines.every((n) => n === 1) && duel.labels[0].includes(`타자 ${opts.names[0]}`) && duel.labels[1].includes(`투수 ${opts.names[1]}`) && duel.titles.join('|') === opts.names.join('|'), `${tag} ${name}: one line per name; full names in aria-label and title (${JSON.stringify(duel.lines)})`);
       if (shots && (width === 375 || width === 320) && opts.names === LONG_NAMES[0] && id.startsWith('recommended')) await page.screenshot({ path: path.join(shots, `long-names-${tag}.png`) });
     }
     if (d.state === 'unconfirmed') {   // (d) every word a fan reads or hears in the 확인 중 family is plain
@@ -312,7 +334,8 @@ if (SECTION_START <= 2 && SECTION_END >= 2) {
   await shown(page, server.body);
   const note = page.locator('.sv-state-note');
   ok((await note.innerText()).trim() === '', 'guard: first list for this pitch, no note');
-  ok(/2구/.test(await page.locator('.sv-state-head').innerText()) && await page.locator('.sv-card.pending').count() === 1, 'guard: pending pitch number and card come from the pitch slot (849843:11:2 → 2구)');
+  await page.locator('.sv-atbat-toggle').click();
+  ok(/2구/.test(await page.locator('.sv-rec-head').innerText()) && /2구 · 다음 공/.test(await page.locator('.sv-atbat-list li.next').innerText()), 'guard: pending pitch number and list row come from the pitch slot (849843:11:2 → 2구)');
   const before = await boxes(page);
   const swapped = live('recommended/ledger_recorded', { pitch_key: key });
   const c = swapped.next.rec.candidates; [c[0].rank, c[1].rank] = [2, 1];   // same pending pitch, another order
@@ -333,7 +356,7 @@ if (SECTION_START <= 2 && SECTION_END >= 2) {
   await page.waitForFunction(() => /싱커/.test(document.querySelector('.sv-state .sv-rec-row')?.textContent ?? ''), null, { timeout: 6000 });
   ok((await note.innerText()).trim() === `${FIX.replaced} (이전: 슬라이더 · 낮은 오른쪽)` && await note.getAttribute('data-kind') === 'replaced', 'guard: a server note wins over the client note');
   server.body = live('recommended/ledger_recorded', { pitch_key: '849843:11:3' });
-  await page.waitForFunction(() => /3구/.test(document.querySelector('.sv-state-head')?.textContent ?? ''), null, { timeout: 6000 });
+  await page.waitForFunction(() => /3구/.test(document.querySelector('.sv-rec-head')?.textContent ?? ''), null, { timeout: 6000 });
   ok((await note.innerText()).trim() === '', 'guard: a new pending pitch starts without a note');
   // reviewer probe P1: A for key K → an answer without a pitch_key → B for the same K, no server note
   const K2 = '849843:11:3';
@@ -350,7 +373,7 @@ if (SECTION_START <= 2 && SECTION_END >= 2) {
   const other = live('waiting/no_pending_pitch', { pitch_key: null });
   other.current = { ...other.current, pa_key: '849843:12', batter: { id: 699393, name: 'Pedro Ramírez', side: 'L' } };
   server.body = other;
-  await waited('guard: next batter shown', () => page.waitForFunction(() => /Pedro/.test(document.querySelector('.sv-duel')?.textContent ?? ''), null, { timeout: 6000 }));
+  await waited('guard: next batter shown', () => page.waitForFunction(() => /Pedro/.test(document.querySelector('.sv-who.bat')?.textContent ?? ''), null, { timeout: 6000 }));
   await page.waitForTimeout(150);
   ok((await note.innerText()).trim() === '', 'guard: a new plate appearance without a key starts clean (no "이전" from the previous batter)');
   ok(errors.length === 0, `guard: no page errors ${errors.join(' | ')}`);
@@ -368,42 +391,51 @@ if (SECTION_START <= 3 && SECTION_END >= 3) {
   await page.goto('http://pz.test/watch/849843');
   await shown(page, server.body);
   await page.evaluate(() => { window.__sameDocument = true; });
-  const line = page.locator('.sv-notice.line');
   const base = await boxes(page);
   server.body = live('disconnected/poll_failed_last_snapshot_only', { feed: { failing_since: '2026-10-11T01:02:03Z', failing_for_s: 12 } });
   await shown(page, server.body);
-  ok(await line.getAttribute('data-kind') === 'feed' && /연결 끊김/.test(await lineWords(page)) && /마지막으로 받은 내용/.test(await slot(page).innerText()), 'feed down: status line 연결 끊김 + calm sentence, last snapshot stays');
+  ok(await chipTone(page) === 'lost' && /연결 끊김/.test(await lineWords(page)) && /마지막으로 받은 내용/.test(await slot(page).textContent()), 'feed down: marker 연결 끊김 + calm sentence, last snapshot stays');
   server.body = live('recommended/ledger_recorded');
   await shown(page, server.body);
-  ok(await line.getAttribute('data-kind') === 'ok' && await slot(page).locator('.sv-rec-row').count() === 3, 'feed back: next poll restores the recommendation and the quiet status line');
+  ok(await chipTone(page) === 'live' && await slot(page).locator('.sv-rec-row').count() === 3, 'feed back: next poll restores the recommendation and the live marker');
   // the client's own requests fail
   server.down = true;
   const failingFrom = asks.length;
-  await waited('client fetch failing: status line turns to 연결 끊김', () => page.locator('.sv-notice.line[data-kind="client"]').waitFor({ timeout: 6000 }));
+  await waited('client fetch failing: the marker turns to 연결 끊김', () => page.locator('.sv-hd-status[data-tone="lost"][data-state="disconnected"]').waitFor({ timeout: 6000 }));
   ok(/연결 끊김 · \d\d:\d\d 수신/.test(await lineWords(page)) && await slot(page).locator('.sv-rec-row').count() === 3, 'client fetch failing: 연결 끊김 with the last received time; the last candidates stay');
-  ok((await slot(page).locator('.sv-chip').innerText()).includes('연결 끊김') && !/다음 공 추천/.test(await slot(page).locator('.sv-chip').innerText()) && await slot(page).getAttribute('data-state') === 'disconnected'
-    && /마지막으로 받은 내용을 보여 드려요\./.test(await slot(page).locator('.sv-state-msg').innerText()), `client fetch failing: the slot no longer looks current (chip "${(await slot(page).locator('.sv-chip').innerText()).replace(/\s+/g, ' ').trim()}", sentence "${(await slot(page).locator('.sv-state-msg').innerText()).trim()}")`);
-  ok(await page.locator('.sv-live.on').count() === 0 && await page.locator('.sv-live i:visible').count() === 0, 'client fetch failing: LIVE dot is off');
-  ok(await slot(page).evaluate((e) => e.classList.contains('held')) && /마지막으로 받은 추천/.test(await slot(page).locator('.sv-state-head').innerText()) && Number(await slot(page).locator('.sv-rec-summary').evaluate((e) => getComputedStyle(e).opacity)) < 1
+  ok(await chipText(page) === '연결 끊김' && await slot(page).getAttribute('data-state') === 'disconnected'
+    && /마지막으로 받은 내용을 보여 드려요\./.test(await slot(page).locator('.sv-state-msg').textContent()), `client fetch failing: the slot no longer looks current (marker "${await chipText(page)}", sentence "${(await slot(page).locator('.sv-state-msg').textContent()).trim()}")`);
+  ok(await chipTone(page) !== 'live', 'client fetch failing: LIVE marker is off');
+  // review 16: the manual retry lives in the marker's bubble — exactly one control, and pressing it asks the server again at once
+  {
+    await page.locator('.sv-hd-status').click(); await page.locator('#sv-status-pop').waitFor();
+    const retry = page.locator('#sv-status-pop').getByRole('button', { name: '다시 확인' });
+    ok(await page.locator('#sv-status-pop .sv-pop-retry').count() === 1 && await retry.count() === 1, 'client fetch failing: the bubble offers exactly one 다시 확인');
+    await retry.waitFor({ state: 'visible' }); await page.waitForFunction(() => !document.querySelector('#sv-status-pop .sv-pop-retry')?.disabled, null, { timeout: 4000 }).catch(() => {});
+    const before = asks.length; await retry.click(); await page.waitForTimeout(400);
+    ok(asks.length > before, `client fetch failing: 다시 확인 sends a request at once (${asks.length - before} new)`);
+    await page.keyboard.press('Escape'); await page.locator('#sv-status-pop').waitFor({ state: 'detached' });
+  }
+  ok(await slot(page).evaluate((e) => e.classList.contains('held')) && /마지막으로 받은 추천/.test(await slot(page).locator('.sv-rec-head').innerText()) && Number(await slot(page).locator('.sv-reclist').evaluate((e) => getComputedStyle(e).opacity)) < 1
     && Number(await page.locator('.sv-zrow .sv-zone .sv-rec').first().evaluate((e) => getComputedStyle(e).opacity)) < 1 && /마지막으로 받은 추천 후보/.test(await slot(page).locator('.sv-reclist').getAttribute('aria-label')), 'client fetch failing: last candidates dimmed (list and zone) and labelled 마지막으로 받은 추천');
   ok(sameBoxes(base, await boxes(page)).length === 0, 'client fetch failing: the status line changes in place (no layout jump)');
   if (shots) await page.screenshot({ path: path.join(shots, 'client-fetch-failing-390x844.png') });
   await page.waitForTimeout(4500);
   ok(asks.length - failingFrom >= 2, `client fetch failing: polling keeps going (${asks.length - failingFrom} more asks in ~5 s)`);
   server.down = false;
-  await waited('client fetch back: recovers on the next poll by itself', () => page.locator('.sv-notice.line[data-kind="ok"]').waitFor({ timeout: 6000 }));
-  ok((await slot(page).locator('.sv-chip').innerText()).includes('다음 공 추천') && await page.locator('.sv-live.on').count() === 1 && !(await slot(page).evaluate((e) => e.classList.contains('held'))), 'client fetch back: chip, LIVE dot and full-strength candidates return');
+  await waited('client fetch back: recovers on the next poll by itself', () => page.locator('.sv-hd-status[data-tone="live"]').waitFor({ timeout: 6000 }));
+  ok(await chipText(page) === '라이브' && !(await slot(page).evaluate((e) => e.classList.contains('held'))), 'client fetch back: live marker and full-strength candidates return');
   // a request that never answers: the client gives up after its timeout, says so, and recovers
   server.hang = true;
-  await waited('timeout: a hung request turns into 연결 끊김 by itself', () => page.locator('.sv-notice.line[data-kind="client"]').waitFor({ timeout: 22000 }));
+  await waited('timeout: a hung request turns into 연결 끊김 by itself', () => page.locator('.sv-hd-status[data-tone="lost"]').waitFor({ timeout: 22000 }));
   server.hang = false;
-  await waited('timeout: the next poll after the timeout loads again', () => page.locator('.sv-notice.line[data-kind="ok"]').waitFor({ timeout: 8000 }));
+  await waited('timeout: the next poll after the timeout loads again', () => page.locator('.sv-hd-status[data-tone="live"]').waitFor({ timeout: 8000 }));
   ok(await page.evaluate(() => window.__sameDocument === true), 'timeout: recovered by polling, the page was never reloaded');
   // old heuristic must not fire when a display state is present: a long break has a large stale_s but an OK feed
   const quiet = live('waiting/between_innings'); quiet.feed = { ...quiet.feed, stale_s: 240 };
   server.body = quiet;
   await shown(page, server.body);
-  ok(await line.getAttribute('data-kind') === 'ok', 'long break: feed.stale_s 240 with display.feed.ok does NOT show a connection warning');
+  ok(await chipTone(page) === 'live', 'long break: feed.stale_s 240 with display.feed.ok does NOT show a connection warning');
   for (const r of server.hung) await r.abort().catch(() => {});
   ok(errors.length === 0, `connection: no page errors ${errors.join(' | ')}`);
   await context.close();
@@ -472,15 +504,20 @@ if (SECTION_START <= 5 && SECTION_END >= 5) {
   const { context, page, asks, errors } = await open({ width: 390, height: 844, handler: server.handler });
   await page.goto('http://pz.test/watch/849843');
   await shown(page, server.body);
-  const cards = page.locator('.sv-strip .sv-card:not(.pending)');
-  ok(await cards.count() === 3 && await page.locator('.sv-card.pending').count() === 1, 'receipts: three thrown pitches + the pending card');
+  // UI 10/26 ④: the at-bat list (opened in place), newest first; a row is found by its pitch number
+  await page.locator('.sv-atbat-toggle').click();
+  const rowsAll = page.locator('.sv-pitch-row');
+  const card = (n) => page.locator('.sv-pitch-row').filter({ has: page.locator('.sv-g1', { hasText: new RegExp(`^${n}$`) }) });
+  const cards = { nth: (i) => card(i + 1), count: () => rowsAll.count() };
+  ok(await cards.count() === 3 && await page.locator('.sv-atbat-list li.next').count() === 1, 'receipts: three thrown pitches + the pending row');
   const un = cards.nth(2);
-  ok(await un.evaluate((e) => e.classList.contains('unconfirmed')) && /3\. 확인 중/.test(await un.innerText()) && await un.getAttribute('aria-label') === '3구 확인 중', `receipts: unconfirmed card says 확인 중 ("${(await un.innerText()).replace(/\s+/g, ' ')}")`);
-  ok(await un.locator('.sv-actual').count() === 0 && !/km\/h|mph|\d{2,3}/.test((await un.innerText()).replace(/^3\./, '')), 'receipts: unconfirmed card has no dot, no speed, no pitch type');
+  ok(await un.evaluate((e) => e.classList.contains('unconfirmed')) && /확인 중/.test(await un.innerText()) && await un.getAttribute('aria-label') === '3구 확인 중', `receipts: unconfirmed row says 확인 중 ("${(await un.innerText()).replace(/\s+/g, ' ')}")`);
+  ok(await un.locator('.sv-g1.unknown').count() === 1 && !/km\/h|mph|\d{2,3}/.test((await un.innerText()).replace(/^\s*3/, '')) && await page.locator('.sv-zrow .sv-pa-dot').evaluateAll((g) => g.every((x) => !/^3구/.test(x.querySelector('title').textContent))),
+    'receipts: unconfirmed row has no result mark, speed or pitch type, and no mark on the zone');
   const all = await page.locator('.sv-page').innerText();
   ok(!/구종 미상|0\s*km\/h|null|undefined|NaN/.test(all), 'receipts: no "구종 미상 0km/h"-style filler anywhere');
   const fixedCard = cards.nth(1);
-  ok(/정정됨/.test(await fixedCard.innerText()) && /기록이 정정된 공/.test(await fixedCard.getAttribute('aria-label')) && await fixedCard.locator('.sv-actual').count() === 1, 'receipts: corrected pitch keeps its record and carries 정정됨 (label "기록이 정정된 공")');
+  ok(/정정됨/.test(await fixedCard.innerText()) && /기록이 정정된 공/.test(await fixedCard.getAttribute('aria-label')) && await fixedCard.locator('.sv-g1:not(.unknown)').count() === 1, 'receipts: corrected pitch keeps its record and carries 정정됨 (label "기록이 정정된 공")');
   ok(await cards.nth(0).locator('.sv-card-tag').count() === 0 && !/정정/.test(await cards.nth(0).getAttribute('aria-label')), 'receipts: an ordinary pitch has no tag');
   if (shots) await page.screenshot({ path: path.join(shots, 'receipts-latest-390x844.png') });
   await page.waitForTimeout(2600);
@@ -488,7 +525,7 @@ if (SECTION_START <= 5 && SECTION_END >= 5) {
   // look at the unconfirmed pitch, then at the corrected one
   const liveBefore = await page.locator('.sv-stage').innerText();
   await un.click();
-  const summary = page.getByRole('dialog').locator('.sv-detail').nth(1);
+  const summary = page.getByRole('dialog').locator('.sv-detail.act');
   { const dialog = page.getByRole('dialog'); await dialog.waitFor(); const t = await summary.innerText();
     ok(/이 공을 다시 확인하고 있어요/.test(t) && !/판정|km\/h|mph/.test(t) && await dialog.locator('.sv-detail-zone, .sv-table').count() === 0,
       'receipts: unconfirmed detail has no actual position, pitch result or recommendation table');
@@ -513,7 +550,7 @@ if (SECTION_START <= 5 && SECTION_END >= 5) {
   await shown(page, server.body);
   const later = asks.slice(mark).map((u) => u.searchParams.get('after'));
   ok(later.includes(null), `receipts.version change: full history taken again (requests after the change: ${later.map((a) => a === null ? 'full' : `after=${a}`).join(', ')})`);
-  ok(await page.locator('.sv-card.unconfirmed').count() === 0 && /싱커|포심|스위퍼|체인지업|커브|커터|슬라이더/.test(await cards.nth(2).innerText()), `receipts.version change: the pitch is shown as received again ("${(await cards.nth(2).innerText()).replace(/\s+/g, ' ')}")`);
+  ok(await page.locator('.sv-pitch-row.unconfirmed').count() === 0 && /싱커|포심|스위퍼|체인지업|커브|커터|슬라이더/.test(await cards.nth(2).innerText()), `receipts.version change: the pitch is shown as received again ("${(await cards.nth(2).innerText()).replace(/\s+/g, ' ')}")`);
   const settled = asks.length;
   await page.waitForTimeout(4500);
   ok(asks.slice(settled).length >= 1 && asks.slice(settled).every((u) => u.searchParams.get('after') === '32'), 'receipts: same version afterwards → incremental polls again (no refetch loop)');
@@ -522,7 +559,7 @@ if (SECTION_START <= 5 && SECTION_END >= 5) {
   for (const p of bare.pitches) delete p.receipt;
   bare.pitches[32].actual = { ...Object.fromEntries(Object.keys(bare.pitches[32].actual).map((k) => [k, null])), result_label: '확인 중', call_label: '확인 중' };
   server.body = bare;
-  await waited('receipts: a row the server blanked to 확인 중 (no receipt key) is still an unconfirmed card', () => page.locator('.sv-card.unconfirmed').waitFor({ timeout: 8000 }));
+  await waited('receipts: a row the server blanked to 확인 중 (no receipt key) is still an unconfirmed row', () => page.locator('.sv-pitch-row.unconfirmed').waitFor({ timeout: 8000 }));
   ok(!/구종 미상/.test(await page.locator('.sv-page').innerText()), 'receipts: … and never reads 구종 미상');
   ok(errors.length === 0, `receipts: no page errors ${errors.join(' | ')}`);
   await context.close();
@@ -539,19 +576,20 @@ if (SECTION_START <= 6 && SECTION_END >= 6) {
   await page.goto('http://pz.test/watch/849843');
   await shown(page, server.body);
   const text = await page.locator('.sv-page').innerText();
-  ok(/경기 전/.test(await slot(page).locator('.sv-chip').innerText()) && /경기 시작 전이에요\./.test(await slot(page).innerText()), 'pregame: chip 경기 전 + "경기 시작 전이에요."');
+  ok(await chipText(page) === '경기 전' && await chipTone(page) === 'pregame' && /경기 시작 전이에요\./.test(await slot(page).textContent()) && /\d\d:\d\d 시작/.test(await page.locator('.sv-hd-2').innerText()) && await page.locator('.sv-mu').count() === 0,
+    'pregame: marker 경기 전, "경기 시작 전이에요." in the live region, row 2 says the start time, no row 3');
   ok(!/추천 대기 중|다음 공 대기 중|추천 기록 없음/.test(text) && await page.locator('.sv-zrow .sv-zone .sv-rec').count() === 0, 'pregame: no stale waiting wording, no mark');
   ok(await fitsViewport(page) && (await spill(page)).length === 0, 'pregame: fits, nothing spills');
   if (shots) await page.screenshot({ path: path.join(shots, 'state-pregame-scheduled-390x844.png') });
   const n = asks.length;
   server.body = live('recommended/ledger_recorded');
   await shown(page, server.body, 14000);
-  ok(asks.length > n && /LIVE/.test(await page.locator('.sv-live').innerText()), 'pregame: the screen starts by itself when the game goes live (slow poll, no reload)');
+  ok(asks.length > n && await chipText(page) === '라이브', 'pregame: the screen starts by itself when the game goes live (slow poll, no reload)');
   server.body = live('final/game_over', { pitch_key: null });
-  await waited('final: the status line says the game is over', () => page.locator('.sv-notice.line', { hasText: '경기가 끝났어요' }).waitFor({ timeout: 6000 }));
+  await waited('final: the header says the game is over', () => page.locator('.sv-hd-2 .sv-inning', { hasText: '경기 종료' }).waitFor({ timeout: 6000 }));
   const end = await page.locator('.sv-page').innerText();
-  ok(/경기가 끝났어요/.test(end) && !/추천 대기 중|다음 공 대기 중/.test(end) && /종료/.test(await page.locator('.sv-live').innerText()), 'final: "경기가 끝났어요" shown calmly, no stale waiting wording, header says 종료');
-  ok(await page.locator('.sv-notice.line').getAttribute('data-kind') === 'ok', 'final: not a warning');
+  ok(!/추천 대기 중|다음 공 대기 중/.test(end) && /경기 종료/.test(await page.locator('.sv-hd-2').innerText()) && await page.locator('.sv-mu').count() === 0, 'final: 경기 종료 in the header, no row 3, no stale waiting wording');
+  ok(await page.locator('.sv-hd-status').count() === 0, 'final: no status marker (not a warning)');
   if (shots) await page.screenshot({ path: path.join(shots, 'state-final-game_over-390x844.png') });
   const stop = asks.length;
   await page.waitForTimeout(4500);
@@ -575,14 +613,15 @@ for (const [name, edit] of [
   await page.locator('.sv-pitch-summary').waitFor();
   await page.waitForTimeout(200);
   const text = await page.locator('.sv-pitch-summary').innerText();
-  ok(await page.locator('.sv-state').count() === 0 && await page.locator('.sv-notice').count() === 0 && await page.locator('.sv-chip').count() === 0, `${name}: no state slot, no status line`);
-  ok(/다음 공 추천 · 2구/.test(text) && /실제 투구/.test(text) && /다음 공 대기 중/.test(text) && await page.locator('.sv-pitch-summary .sv-rec-row').count() === 3 && await page.locator('.sv-actual-summary').count() === 1, `${name}: summary as before (다음 공 추천 · 2구 / 실제 투구 · 다음 공 대기 중, 3 candidates)`);
-  ok(await page.evaluate(() => document.querySelector('.sv-rec-summary').getBoundingClientRect().bottom <= document.querySelector('.sv-actual-summary').getBoundingClientRect().top + 1), `${name}: recommendation precedes actual-pitch status without overlap`);
+  ok(await page.locator('.sv-state').count() === 0 && await page.locator('.sv-pitch-summary [role="status"]').count() === 0 && await chipText(page) === '시연 중' && await chipTone(page) !== 'live', `${name}: no state slot or display state; the demo marker (no LIVE dot)`);
+  ok(/추천 · 2구/.test(text) && await page.locator('.sv-pitch-summary .sv-rec-row').count() === 3 && await page.locator('.sv-actual-line').count() === 0, `${name}: next pitch as before the contract (추천 · 2구, 3 candidates, the pending pitch not described)`);
+  ok(await page.evaluate(() => document.querySelector('.sv-zrow').getBoundingClientRect().bottom <= document.querySelector('.sv-rec-sec').getBoundingClientRect().top + 1), `${name}: recommendation row under the zone without overlap`);
   if (name.startsWith('absent')) {
+    // without a display state the old heuristic stays: feed.stale_s > 30 on a game in play reads as a lost connection
     const old = edit(clone(fx.live)); old.feed = { ...old.feed, stale_s: 40 };
     server.body = old;
-    await waited(`${name}: old notice appears`, () => page.locator('.sv-notice.warn').waitFor({ timeout: 6000 }));
-    ok(await page.locator('.sv-notice.warn').getAttribute('role') === 'alert' && /갱신 늦어짐/.test(await page.locator('.sv-notice.warn').innerText()), `${name}: old feed.stale_s > 30 notice kept without a display state`);
+    await waited(`${name}: the marker turns to 연결 끊김`, () => page.locator('.sv-hd-status[data-tone="lost"]').waitFor({ timeout: 6000 }));
+    ok(await chipText(page) === '연결 끊김' && /연결/.test(await lineWords(page)), `${name}: old feed.stale_s > 30 rule kept without a display state`);
   }
   ok(errors.length === 0, `${name}: no page errors ${errors.join(' | ')}`);
   await context.close();
@@ -609,10 +648,12 @@ for (const [name, edit] of [
     await page.goto('http://pz.test/watch/849843');
     await page.locator('.sv-pitch-summary.sv-state').waitFor();
     if (!first) { await shown(page, server.body); ok(await slot(page).locator('.sv-rec-row').count() === 3, `${tag}: list A on screen first`); server.body = build(); }
-    await waited(`${tag}: slot turns to ${state}`, () => page.waitForFunction(([st, c]) => { const e = document.querySelector('.sv-pitch-summary.sv-state'); return e?.getAttribute('data-state') === st && e.querySelector('.sv-chip')?.textContent.includes(c) && !e.querySelector('.sv-rec-row'); }, [state, chip], { timeout: 6000 }));
+    await waited(`${tag}: slot turns to ${state}`, () => page.waitForFunction(([st, c]) => { const e = document.querySelector('.sv-pitch-summary.sv-state'); const m = document.querySelector('.sv-hd-status')?.textContent ?? '';
+      // the D1 note (the list went away for the same pitch) reads 추천 바뀜 on the marker; the state itself stays in data-state
+      return e?.getAttribute('data-state') === st && (m.includes(c) || (m.includes('추천 바뀜') && !!e.querySelector('.sv-state-note')?.textContent.trim())) && !e.querySelector('.sv-rec-row'); }, [state, chip === '다음 공 추천' ? '라이브' : chip], { timeout: 6000 }));
     await page.waitForTimeout(150);
     ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zrow .sv-zone .sv-rec').count() === 0 && !/추천 \d순위/.test(await page.locator('.sv-zrow .sv-zone').getAttribute('aria-label')), `${tag}: no candidate row, no target square`);
-    ok((await slot(page).locator('.sv-state-msg').innerText()).trim() === message && await page.locator('.sv-notice.line').count() === 1, `${tag}: state box with chip "${chip}" and "${message}", status line present`);
+    ok((await slot(page).locator('.sv-state-msg').textContent()).trim() === message && await page.locator('.sv-hd-status').count() === 1 && (await slot(page).locator('.sv-rec-cell').allInnerTexts()).every((c) => c.trim() === '—'), `${tag}: '—' cells, marker "${chip}" and "${message}" in the live region`);
     const heard = await spoken(page);
     ok(!/싱커|스위퍼/.test(heard.replace(/\(이전: [^)]*\)/g, '')) && !/격리|quarantined|something_new/.test(heard), `${tag}: no candidate named anywhere outside the change note, no unknown label`);
     const note = (await slot(page).locator('.sv-state-note').innerText()).trim();
@@ -633,8 +674,8 @@ for (const [name, edit] of [
     await page.locator('.sv-pitch-summary.sv-state').waitFor();
     await page.waitForTimeout(2600);   // also after an incremental (?after=) answer, which lists no old pitch
     const t = await spoken(page);
-    ok(await slot(page).getAttribute('data-state') === 'unconfirmed' && (await slot(page).locator('.sv-chip').innerText()).includes('확인 중') && (await slot(page).locator('.sv-state-msg').innerText()).trim() === UNSURE && !/경기 전|경기 시작 전/.test(t),
-      `${tag}: chip 확인 중 with the default sentence, never 경기 전 (header "${(await page.locator('.sv-live').innerText()).trim()}")`);
+    ok(await slot(page).getAttribute('data-state') === 'unconfirmed' && await chipText(page) === '확인 중' && (await slot(page).locator('.sv-state-msg').textContent()).trim() === UNSURE && !/경기 전|경기 시작 전/.test(t),
+      `${tag}: marker 확인 중 with the default sentence, never 경기 전 (marker "${await chipText(page)}")`);
     ok(await page.locator('.sv-rec-row').count() === 0 && await page.locator('.sv-zrow .sv-zone .sv-rec').count() === 0 && errors.length === 0, `${tag}: no candidate, no page errors ${errors.join(' | ')}`);
     await context.close();
   }
@@ -644,9 +685,9 @@ for (const [name, edit] of [
     const server = serve(); server.body = build();
     const { context, page } = await open({ width: 390, height: 844, handler: server.handler });
     await page.goto('http://pz.test/watch/849843');
-    await page.locator('.sv-notice.line').waitFor();
+    await page.locator('.sv-hd-score').waitFor(); await page.waitForTimeout(300);
     const t = await spoken(page);
-    ok(!/확인 중|다시 확인하고/.test(t) && (state === null ? /경기가 끝났어요/.test(await lineWords(page)) : (await slot(page).locator('.sv-chip').innerText()).includes(chip)), `fail closed [${name}, no display_state]: reads ${state ?? 'final'}, not 확인 중`);
+    ok(!/확인 중|다시 확인하고/.test(t) && (state === null ? /경기 종료/.test(await page.locator('.sv-hd-2').innerText()) && await page.locator('.sv-hd-status').count() === 0 : await chipText(page) === chip), `fail closed [${name}, no display_state]: reads ${state ?? 'final'}, not 확인 중`);
     await context.close();
   }
 }
@@ -662,19 +703,19 @@ for (const [name, edit] of [
   const n = asks.length;
   await page.waitForTimeout(37000);
   ok(asks.length - n <= 1, `hidden tab: polling pauses (${asks.length - n} request(s) in 37 s)`);
-  ok(await slot(page).getAttribute('data-state') === 'recommended' && await page.locator('.sv-notice.line').getAttribute('data-kind') === 'ok', 'hidden tab: the paused time is not called a lost connection while hidden');
+  ok(await slot(page).getAttribute('data-state') === 'recommended' && await chipTone(page) === 'live', 'hidden tab: the paused time is not called a lost connection while hidden');
   server.delay = 1500;
   await page.evaluate(() => { window.__hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
   const seen = new Set(); const t0 = Date.now();
-  while (Date.now() - t0 < 1300) { seen.add(await page.evaluate(() => `${document.querySelector('.sv-pitch-summary').getAttribute('data-state')}/${document.querySelector('.sv-notice.line').getAttribute('data-kind')}/${document.querySelector('.sv-pitch-summary').classList.contains('held')}`)); await page.waitForTimeout(60); }
-  ok(seen.size === 1 && seen.has('recommended/ok/false'), `hidden tab → visible, answer still on its way: no false 연결 끊김 / 갱신 늦어짐 / dimmed list (${[...seen].join(', ')})`);
+  while (Date.now() - t0 < 1300) { seen.add(await page.evaluate(() => `${document.querySelector('.sv-pitch-summary').getAttribute('data-state')}/${document.querySelector('.sv-hd-status')?.dataset.tone}/${document.querySelector('.sv-pitch-summary').classList.contains('held')}`)); await page.waitForTimeout(60); }
+  ok(seen.size === 1 && seen.has('recommended/live/false'), `hidden tab → visible, answer still on its way: no false 연결 끊김 / 갱신 늦어짐 / dimmed list (${[...seen].join(', ')})`);
   server.delay = 0;
   await page.waitForTimeout(3000);
-  ok(asks.length - n >= 2 && await page.locator('.sv-notice.line').getAttribute('data-kind') === 'ok', 'hidden tab → visible: polling resumed at once');
+  ok(asks.length - n >= 2 && await chipTone(page) === 'live', 'hidden tab → visible: polling resumed at once');
   // a real silence while visible still turns into ONE story: chip and status line both say 연결 끊김
   server.hang = true;
-  await waited('visible and silent for 30 s+: the screen says so', () => page.locator('.sv-notice.line.warn').waitFor({ timeout: 45000 }));
-  ok(/연결 끊김/.test(await lineWords(page)) && !/갱신 늦어짐/.test(await lineWords(page)) && (await slot(page).locator('.sv-chip').innerText()).includes('연결 끊김'), `visible and silent: chip and status line tell the same story ("${await lineWords(page)}")`);
+  await waited('visible and silent for 30 s+: the screen says so', () => page.locator('.sv-hd-status[data-tone="lost"]').waitFor({ timeout: 45000 }));
+  { const words = await lineWords(page); ok(/연결 끊김/.test(words) && !/갱신 늦어짐/.test(words) && await chipText(page) === '연결 끊김' && await slot(page).getAttribute('data-state') === 'disconnected', `visible and silent: marker, bubble and slot tell the same story ("${words}")`); }
   server.hang = false; for (const r of server.hung) await r.abort().catch(() => {});
   ok(errors.length === 0, `hidden tab: no page errors ${errors.join(' | ')}`);
   await context.close();
@@ -728,7 +769,13 @@ for (const [width, height] of [[390, 664], [320, 568]]) {
   let out = await spill(page);
   ok(out.length === 0, `${width}x${height}: ${LONG.length}-character sentence + withdrawn note stay inside the slot${out.length ? ` — ${out.join(' | ')}` : ''}`);
   ok(await fitsViewport(page), `${width}x${height}: core above fold where required, otherwise scrollable`);
-  ok(await page.locator('.sv-state-note').isVisible() && /너클 커브/.test(await page.locator('.sv-state-note').innerText()), `${width}x${height}: the change note stays visible under the cut sentence`);
+  // UI 10/26 ⑥: the sentence and the note are read in the marker's bubble, which fits the screen (wraps, never cut, never sideways)
+  await page.locator('.sv-hd-status').click();
+  const pop = page.locator('#sv-status-pop'); await pop.waitFor();
+  const pb = await pop.evaluate((e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, sw: e.scrollWidth, cw: e.clientWidth }; });
+  ok((await pop.innerText()).replace(/\s+/g, ' ').includes(LONG) && /너클 커브/.test(await pop.innerText()) && pb.l >= 0 && pb.r <= width && pb.b <= height && pb.sw <= pb.cw + 1 && (await spill(page)).length === 0,
+    `${width}x${height}: the whole sentence and the change note are in the bubble, inside the screen`, pb);
+  await page.keyboard.press('Escape'); await pop.waitFor({ state: 'detached' });
   if (shots) await page.screenshot({ path: path.join(shots, `long-sentence-withdrawn-${width}x${height}.png`) });
   await page.locator('.sv-state-more').click();
   const sheet = await page.getByRole('dialog').innerText();
@@ -771,9 +818,9 @@ if (SECTION_START <= 11 && SECTION_END >= 11) {
   final.pitches[1].actual = { ...Object.fromEntries(Object.keys(final.pitches[1].actual).map((k) => [k, null])), result_label: '', call_label: null };
   const { context, page, errors } = await open({ width: 390, height: 844, handler: (route, url) => url.pathname === GAME ? route.fulfill({ json: final }) : route.fulfill({ status: 404, json: { detail: 'x' } }) });
   await page.goto('http://pz.test/watch/849843');
-  await page.locator('.sv-strip .sv-card').first().waitFor();
-  const card = page.locator('.sv-strip .sv-card').nth(1);
-  ok(/구종 미상/.test(await card.innerText()) && !/확인 중/.test(await card.innerText()) && await page.locator('.sv-card.unconfirmed').count() === 0 && await page.locator('.sv-state, .sv-notice').count() === 0, `archive: empty row without a receipt reads as before ("${(await card.innerText()).replace(/\s+/g, ' ')}")`);
+  await page.locator('.sv-atbat-toggle').click();
+  const card = page.locator('.sv-pitch-row').filter({ has: page.locator('.sv-g1', { hasText: new RegExp(`^${final.pitches[1].pitch_number}$`) }) });
+  ok(/구종 미상/.test(await card.innerText()) && !/확인 중/.test(await card.innerText()) && await page.locator('.sv-pitch-row.unconfirmed').count() === 0 && await page.locator('.sv-state').count() === 0 && await page.locator('.sv-hd-status').count() === 0, `archive: empty row without a receipt reads as before ("${(await card.innerText()).replace(/\s+/g, ' ')}")`);
   ok(errors.length === 0, `archive: no page errors ${errors.join(' | ')}`);
   await context.close();
 }
@@ -787,21 +834,21 @@ if (SECTION_START <= 12 && SECTION_END >= 12) {
   const scheduled = (b) => { b.game = { ...b.game, status: 'scheduled', status_text: 'Pre-Game', live: false, away_score: null, home_score: null, inning: null, half: null };
     b.pitches = []; b.pas = []; b.cutoff = { index: -1, pitch_key: null }; b.next = null; b.current = { phase: 'pregame', situation: null, batter: null, pitcher: null, pa_key: null, context: clone(NO_CONTEXT) }; return b; };
   const SHAPES = [
-    ['pregame/scheduled', () => pre('pregame/scheduled'), /예정/],
-    ['pregame/not_live', () => scheduled(pre('pregame/not_live')), /예정/],
-    ['pregame/not_live, card says Suspended', () => { const b = scheduled(pre('pregame/not_live')); b.game.status = 'other'; b.game.status_text = 'Suspended: Rain'; return b; }, /대기/],
-    ['no display_state (older backend), scheduled', () => { const b = scheduled(pre('pregame/scheduled')); delete b.display_state; return b; }, /예정/],
-    ['unknown display state name, scheduled', () => { const b = scheduled(pre('pregame/scheduled')); b.display_state.state = 'something_new'; return b; }, /예정/],
-    ['a state other than pregame while the card is not live (game type out of scope)', () => scheduled(pre('unsupported/game_type_out_of_scope')), /예정/],
+    ['pregame/scheduled', () => pre('pregame/scheduled'), /^(경기 전|진행 중 아님|대기)$/],
+    ['pregame/not_live', () => scheduled(pre('pregame/not_live')), /^(경기 전|진행 중 아님|대기)$/],
+    ['pregame/not_live, card says Suspended', () => { const b = scheduled(pre('pregame/not_live')); b.game.status = 'other'; b.game.status_text = 'Suspended: Rain'; return b; }, /^(경기 전|진행 중 아님|대기)$/],
+    ['no display_state (older backend), scheduled', () => { const b = scheduled(pre('pregame/scheduled')); delete b.display_state; return b; }, /^(경기 전|진행 중 아님|대기)$/],
+    ['unknown display state name, scheduled', () => { const b = scheduled(pre('pregame/scheduled')); b.display_state.state = 'something_new'; return b; }, /^(경기 전|진행 중 아님|대기)$/],
+    ['a state other than pregame while the card is not live (game type out of scope)', () => scheduled(pre('unsupported/game_type_out_of_scope')), /^(경기 전|진행 중 아님|대기)$/],
     // Warmup and "live, no play yet": the card is already live, nobody has thrown; the first pitch slot then arrives by the ordinary poll
-    ['Warmup (card live, no pitch)', () => { const b = live('unavailable/recommender_off', { pitch_key: '849843:1:1' }); b.game.status_text = 'Warmup'; b.pitches = []; b.pas = []; b.cutoff = { index: -1, pitch_key: null }; b.current.pa_key = '849843:1'; return b; }, /LIVE/],
-    ['live with no play yet (nothing pending)', () => { const b = live('waiting/no_pending_pitch', { pitch_key: null }); b.pitches = []; b.pas = []; b.cutoff = { index: -1, pitch_key: null }; b.current = null; b.next = null; return b; }, /LIVE/],
+    ['Warmup (card live, no pitch)', () => { const b = live('unavailable/recommender_off', { pitch_key: '849843:1:1' }); b.game.status_text = 'Warmup'; b.pitches = []; b.pas = []; b.cutoff = { index: -1, pitch_key: null }; b.current.pa_key = '849843:1'; return b; }, /^(추천 꺼짐|대기 중|라이브)$/],
+    ['live with no play yet (nothing pending)', () => { const b = live('waiting/no_pending_pitch', { pitch_key: null }); b.pitches = []; b.pas = []; b.cutoff = { index: -1, pitch_key: null }; b.current = null; b.next = null; return b; }, /^(추천 꺼짐|대기 중|라이브)$/],
     // a suspended game that already has pitches opens on its first pitch; once live it must follow the latest by itself
-    ['not live with earlier pitches (resumed game)', () => { const b = pre('pregame/not_live'); b.game = { ...b.game, status: 'other', status_text: 'Suspended', live: false }; b.next = null; b.current = null; return b; }, /대기/],
+    ['not live with earlier pitches (resumed game)', () => { const b = pre('pregame/not_live'); b.game = { ...b.game, status: 'other', status_text: 'Suspended', live: false }; b.next = null; b.current = null; return b; }, /^(경기 전|진행 중 아님|대기)$/],
     // 'Delayed Start' before the first pitch is not live (review round 1, minor 6): with the server's flag, and from the words alone
-    ['Delayed Start, live:false', () => { const b = scheduled(pre('pregame/scheduled')); b.game.status_text = 'Delayed Start'; return b; }, /예정/],
-    ['Delayed Start, words only (no live flag, no status kind)', () => { const b = scheduled(pre('pregame/scheduled')); delete b.game.live; b.game.status = 'Delayed Start'; b.game.status_text = 'Delayed Start'; return b; }, /예정/],
-    ['503 before the first snapshot, then pregame', () => pre('pregame/scheduled'), /예정/, 503],
+    ['Delayed Start, live:false', () => { const b = scheduled(pre('pregame/scheduled')); b.game.status_text = 'Delayed Start'; return b; }, /^(경기 전|진행 중 아님|대기)$/],
+    ['Delayed Start, words only (no live flag, no status kind)', () => { const b = scheduled(pre('pregame/scheduled')); delete b.game.live; b.game.status = 'Delayed Start'; b.game.status_text = 'Delayed Start'; return b; }, /^(경기 전|진행 중 아님|대기)$/],
+    ['503 before the first snapshot, then pregame', () => pre('pregame/scheduled'), /^(경기 전|진행 중 아님|대기)$/, 503],
   ];
   await Promise.all(SHAPES.map(async ([name, build, label, firstStatus], i) => {
     const server = serve();
@@ -811,21 +858,21 @@ if (SECTION_START <= 12 && SECTION_END >= 12) {
     const { context, page, asks, errors } = await open({ width: 390, height: 844, handler });
     await page.goto('http://pz.test/watch/849843');
     if (firstStatus) { await page.getByRole('alert').waitFor(); ok(/자동으로 다시 연결하고 있어요/.test(await page.getByRole('alert').innerText()), `pregame → live [${name}]: the ${firstStatus} is retried by itself`); }
-    if (!await waited(`pregame → live [${name}]: the screen opens`, () => page.locator('.sv-live').waitFor({ timeout: 15000 }))) { await context.close(); return; }
+    if (!await waited(`pregame → live [${name}]: the screen opens`, () => page.locator('.sv-hd-status').waitFor({ timeout: 15000 }))) { await context.close(); return; }
     await page.waitForTimeout(300);
     await page.evaluate(() => { window.__sameDocument = true; });
-    const before = (await page.locator('.sv-live').innerText()).trim();
-    if (/Delayed Start/.test(name)) { const m0 = asks.length; await page.waitForTimeout(4500); ok(asks.length - m0 <= 1 && await page.locator('.sv-live.on').count() === 0, `pregame → live [${name}]: not LIVE and not on the 2 s poll (${asks.length - m0} request(s) in 4.5 s)`); }
+    const before = await chipText(page);
+    if (/Delayed Start/.test(name)) { const m0 = asks.length; await page.waitForTimeout(4500); ok(asks.length - m0 <= 1 && await chipTone(page) !== 'live', `pregame → live [${name}]: not LIVE and not on the 2 s poll (${asks.length - m0} request(s) in 4.5 s)`); }
     ok(label.test(before) && await page.locator('.sv-rec-row').count() === 0, `pregame → live [${name}]: opened before play (header "${before}", no recommendation)`);
     if (shots && i === 0) await page.screenshot({ path: path.join(shots, 'pregame-to-live-1-opened-pregame-390x844.png') });
     const n = asks.length;
     server.body = live('recommended/ledger_recorded');
     const went = await waited(`pregame → live [${name}]: live state on screen without reload`, () => shown(page, server.body, 16000));
     if (went) {
-      const head = (await page.locator('.sv-live').innerText()).trim();
-      ok(/LIVE/.test(head) && await page.locator('.sv-live.on').count() === 1 && await page.evaluate(() => window.__sameDocument === true) && asks.length > n,
+      const head = await chipText(page);
+      ok(head === '라이브' && await chipTone(page) === 'live' && await page.evaluate(() => window.__sameDocument === true) && asks.length > n,
         `pregame → live [${name}]: header LIVE with the dot, same document, ${asks.length - n} poll(s) after the server went live`);
-      ok(await slot(page).locator('.sv-rec-row').count() === 3 && /Nico Hoerner/.test(await page.locator('.sv-duel').innerText()) && await page.locator('.sv-bso').count() === 1 && await page.locator('.sv-card.pending').count() === 1,
+      ok(await slot(page).locator('.sv-rec-row').count() === 3 && /Nico Hoerner/.test(await page.locator('.sv-who.bat').getAttribute('title')) && await page.locator('.sv-mu-count').count() === 1 && /\d구/.test(await page.locator('.sv-rec-head').innerText()),
         `pregame → live [${name}]: following the latest pitch (candidates, matchup, count and the pending card)`);
       const m = asks.length; await page.waitForTimeout(4500);
       ok(asks.length - m >= 2, `pregame → live [${name}]: ordinary 2 s polling from then on (${asks.length - m} asks in 4.5 s)`);
@@ -840,7 +887,7 @@ if (SECTION_START <= 12 && SECTION_END >= 12) {
     const h = await open({ width: 390, height: 844, handler: s2.handler });
     await h.page.goto('http://pz.test/watch/849843');
     const up = await waited(`mid-game "${words}" with live:true: screen opens`, () => shown(h.page, s2.body));
-    if (up) { const m0 = h.asks.length; await h.page.waitForTimeout(4500); ok(/LIVE/.test(await h.page.locator('.sv-live').innerText()) && h.asks.length - m0 >= 2, `mid-game "${words}" with live:true: stays LIVE on the 2 s poll (${h.asks.length - m0} asks in 4.5 s)`); }
+    if (up) { const m0 = h.asks.length; await h.page.waitForTimeout(4500); ok(await chipText(h.page) === '라이브' && h.asks.length - m0 >= 2, `mid-game "${words}" with live:true: stays LIVE on the 2 s poll (${h.asks.length - m0} asks in 4.5 s)`); }
     await h.context.close();
   }
   // a finished game from the live route is not polled (nothing more will come)
@@ -848,7 +895,7 @@ if (SECTION_START <= 12 && SECTION_END >= 12) {
   server.body = live('final/game_over', { pitch_key: null });
   const { context, page, asks } = await open({ width: 390, height: 844, handler: server.handler });
   await page.goto('http://pz.test/watch/849843');
-  await page.locator('.sv-live').waitFor();
+  await page.locator('.sv-hd-score').waitFor();
   const n = asks.length; await page.waitForTimeout(11500);
   ok(asks.length === n, `final from the live route: not polled (${asks.length - n} asks in 11.5 s)`);
   await context.close();
@@ -867,26 +914,28 @@ for (const [width, height] of [[390, 844], [375, 553], [320, 568]]) {
   await page.goto('http://pz.test/watch/849843');
   await shown(page, server.body);
   await page.evaluate(() => { window.__sameDocument = true; });
-  const inPlay = await boxes(page);
-  ok(/Nico Hoerner/.test(await page.locator('.sv-duel').innerText()) && await page.locator('.sv-bso').count() === 1, `${tag}: in play the matchup and the count are shown`);
+  const inPlay = await boxes(page), HEAD = ['.sv-hd-1', '.sv-hd-2'], headInPlay = await boxes(page, HEAD);
+  ok(/Nico Hoerner/.test(await page.locator('.sv-who.bat').getAttribute('title')) && await page.locator('.sv-mu-count').count() === 1, `${tag}: in play the matchup and the count are shown`);
   // the third out came on a play that also scored a run: the card has no score, the linescore has 1 : 2
   const line = clone(LINESCORE); line.teams.away.runs = 1; line.innings[1].away = 1;
   server.body = live('waiting/between_innings', { pitch_key: null, linescore: line });
   await shown(page, server.body);
   const heard = await spoken(page);
   ok(!/Nico Hoerner|Michael King|Hoerner|King/.test(heard), `${tag}: the previous batter and pitcher are not named anywhere (text, aria-label, title)`);
-  ok(await page.locator('.sv-bso').count() === 0 && await page.locator('.sv-bases').count() === 0 && !/아웃|스트라이크 \d|볼 \d|주자/.test(heard), `${tag}: no count, no outs, no runners of the finished half`);
+  ok(await page.locator('.sv-mu-count').count() === 0 && await page.locator('.sv-runners').count() === 0 && !/아웃|스트라이크 \d|볼 \d|주자/.test(heard), `${tag}: no count, no outs, no runners of the finished half`);
   ok(!/추천 대기 중|다음 공 대기 중|선수 미확인|타자 미확인|타자:|투수:/.test(heard), `${tag}: no stale waiting wording, no placeholder matchup`);
-  ok((await slot(page).locator('.sv-chip').innerText()).includes('공수 교대') && /공수 교대 중이에요\./.test(await slot(page).innerText()) && (await page.locator('.sv-board-idle').innerText()).trim() === '공수 교대', `${tag}: chip 공수 교대 + "공수 교대 중이에요." and the board says 공수 교대`);
+  // design 09: row 3 becomes one line; the next half's first batter is not in the data during the break, so it reads '—' (never guessed)
+  ok(/공수 교대 중이에요\./.test(await slot(page).textContent()) && /^공수 교대 · 다음 2회말 첫 타자 —$/.test((await page.locator('.sv-mu.line').innerText()).trim()), `${tag}: "공수 교대 중이에요." in the live region and row 3 says 공수 교대 · 다음 2회말 첫 타자 —`);
   ok(!/다음 공|\d구/.test(await slot(page).innerText()), `${tag}: the slot names no "next pitch" number during the break ("${(await slot(page).innerText()).replace(/\s+/g, ' ')}")`);
   const inning = page.locator('.sv-inning');
   ok(/2회초 종료/.test(await inning.innerText()) && /2회 초 종료/.test(await inning.getAttribute('aria-label')), `${tag}: the half that just ended is named as ended ("${(await inning.innerText()).replace(/\s+/g, ' ')}")`);
-  ok(/컵스 1 대 2 샌디에이고/.test(await page.locator('.sv-head-main').getAttribute('aria-label')) && /1\s*vs\s*2/.test(await page.locator('.sv-head-score').innerText()), `${tag}: score kept from the as-of linescore, including the run on the last play (${(await page.locator('.sv-head-score').innerText()).replace(/\s+/g, ' ')})`);
-  ok(await page.locator('.sv-strip .sv-card:not(.sv-card-idle)').count() === 0 && await page.locator('.sv-zrow .sv-zone .sv-rec, .sv-zrow .sv-zone .sv-actual').count() === 0 && await page.locator('.sv-batband').count() === 0, `${tag}: no pitch card of the last batter, empty zone, no batter figure`);
-  ok(await page.locator('.sv-player.idle').count() === 2 && await page.locator('.sv-player:not([disabled])').count() === 0 && /^CHC––$/.test((await page.locator('.sv-player.away').innerText()).replace(/\s+/g, '')), `${tag}: player cells show the two teams only ("${(await page.locator('.sv-player.away').innerText()).replace(/\s+/g, ' ')}")`);
-  ok(/LIVE/.test(await page.locator('.sv-live').innerText()) && await page.locator('.sv-notice.line').getAttribute('data-kind') === 'ok', `${tag}: still LIVE, quiet status line`);
-  const moved = sameBoxes(inPlay, await boxes(page));
-  ok(moved.length === 0, `${tag}: entering the break moves nothing (status line, board, zone, state slot, cards, players)${moved.length ? ` — ${moved.join(' | ')}` : ''}`);
+  ok(/컵스 1 대 2 샌디에이고/.test(await page.locator('.sv-hd-score').getAttribute('aria-label')) && /1\s*:\s*2/.test(await page.locator('.sv-hd-score').innerText()), `${tag}: score kept from the as-of linescore, including the run on the last play (${(await page.locator('.sv-hd-score').innerText()).replace(/\s+/g, ' ')})`);
+  ok(await page.locator('.sv-atbat, .sv-pitch-row').count() === 0 && await page.locator('.sv-zrow .sv-zone .sv-rec, .sv-zrow .sv-zone .sv-actual').count() === 0 && await page.locator('.sv-batband').count() === 0, `${tag}: no at-bat of the last batter, empty zone, no batter figure`);
+  ok(await page.locator('.sv-who').count() === 0, `${tag}: no player cells of the finished half`);
+  ok(await chipText(page) === '라이브' && await chipTone(page) === 'live', `${tag}: still 라이브 (design 09), not a warning`);
+  // design 09 replaces row 3 by one line, so the zone moves up by design; the header rows stay put
+  const moved = sameBoxes(headInPlay, await boxes(page, HEAD));
+  ok(moved.length === 0, `${tag}: entering the break moves nothing in the header${moved.length ? ` — ${moved.join(' | ')}` : ''}`);
   ok(await fitsViewport(page) && (await spill(page)).length === 0, `${tag}: no sideways overflow, nothing spills`);
   if (shots) await page.screenshot({ path: path.join(shots, `between-innings-${width}x${height}.png`) });
   // the PA sheet still reaches the finished half
@@ -897,12 +946,12 @@ for (const [width, height] of [[390, 844], [375, 553], [320, 568]]) {
   const bare = live('waiting/between_innings', { pitch_key: null, linescore: line }); delete bare.display_state;
   server.body = bare;
   await page.waitForTimeout(2600);
-  { const t = await spoken(page); ok(await page.locator('.sv-board-idle').count() === 1 && (await slot(page).locator('.sv-chip').innerText()).includes('공수 교대') && !/Hoerner|King|추천 대기 중|확인 중/.test(t) && /공수 교대 중이에요/.test(t) && sameBoxes(inPlay, await boxes(page)).length === 0,
+  { const t = await spoken(page) + (await slot(page).textContent()); ok(await page.locator('.sv-mu.line').count() === 1 && await chipText(page) === '라이브' && !/Hoerner|King|추천 대기 중|확인 중/.test(t) && /공수 교대 중이에요/.test(t) && sameBoxes(headInPlay, await boxes(page, HEAD)).length === 0,
     `${tag}: (no display_state) the break is still drawn from current.phase, with the same slot and no previous matchup`); }
   // the next half starts
   server.body = play();
   await shown(page, server.body);
-  ok(/Nico Hoerner/.test(await page.locator('.sv-duel').innerText()) && await page.locator('.sv-bso').count() === 1 && await page.locator('.sv-board-idle').count() === 0 && sameBoxes(inPlay, await boxes(page)).length === 0, `${tag}: play resumes by polling, same layout`);
+  ok(/Nico Hoerner/.test(await page.locator('.sv-who.bat').getAttribute('title')) && await page.locator('.sv-mu-count').count() === 1 && await page.locator('.sv-mu.line').count() === 0 && sameBoxes(inPlay, await boxes(page)).length === 0, `${tag}: play resumes by polling, same layout`);
   ok(await page.evaluate(() => window.__sameDocument === true) && errors.length === 0, `${tag}: no reload, no page errors ${errors.join(' | ')}`);
   await context.close();
 }
@@ -943,16 +992,18 @@ if (SECTION_START <= 14 && SECTION_END >= 14) {
     const { context, page, errors } = await open({ width, height, handler: server.handler });
     await page.goto('http://pz.test/watch/849843');
     await shown(page, server.body);
-    const cards = page.locator('.sv-strip .sv-card:not(.pending)');
+    // the at-bat list (opened in place, newest first): rows are taken by pitch number (PA 11: 1구 recorded, 2구 none, 3구 unconfirmed)
+    await page.locator('.sv-atbat-toggle').click();
+    const cards = { nth: (k) => page.locator('.sv-pitch-row').filter({ has: page.locator('.sv-g1', { hasText: new RegExp(`^${k + 1}$`) }) }) };
     const mainBefore = await page.locator('.sv-stage').innerText();
     await cards.nth(0).click();
-    const dialog = page.getByRole('dialog'), rec = dialog.locator('.sv-detail').nth(0), actual = dialog.locator('.sv-detail').nth(1);
+    const dialog = page.getByRole('dialog'), rec = dialog.locator('.sv-detail.rec'), actual = dialog.locator('.sv-detail.act');
     await dialog.waitFor();
-    ok(await page.locator('.sv-stage').innerText() === mainBefore && await page.locator('.sv-live.on').count() === 1,
+    ok(await page.locator('.sv-stage').innerText() === mainBefore && await chipTone(page) === 'live',
       `${tag}: history selection changes only detail, current recommendation and LIVE remain`);
-    ok(await dialog.getAttribute('aria-modal') === (width >= 1200 ? null : 'true'), `${tag}: desktop nonmodal / phone modal detail`);
+    ok(await dialog.getAttribute('aria-modal') === 'true', `${tag}: the detail sheet is modal at every width (UI 10/26 frame C)`);
     const rt = (await rec.innerText()).replace(/\s+/g, ' '), at = (await actual.innerText()).replace(/\s+/g, ' ');
-    ok(/이 공을 던지기 전 기록/.test(rt) && /경기 중 투구 전에 기록한 추천 · 11:31 기록/.test(rt) && await rec.locator('tbody tr').count() === 3,
+    ok(/이 공을 던지기 전 추천/.test(rt) && /경기 중 투구 전에 기록한 추천 · 11:31 기록/.test(rt) && await rec.locator('tbody tr').count() === 3,
       `${tag}: recorded recommendation provenance, time and all three candidates`);
     ok(/슬라이더/.test(await rec.locator('tbody tr').first().innerText()) && /낮은 오른쪽/.test(await rec.locator('tbody tr').first().innerText()),
       `${tag}: type and target words match pitcher view`);
@@ -960,6 +1011,17 @@ if (SECTION_START <= 14 && SECTION_END >= 14) {
       `${tag}: detail shows actual pitch and all recorded target marks`);
     ok(/성공·적중 확률이 아니에요/.test(rt) && !/ARM-B|arm-b/i.test(await dialog.innerText()), `${tag}: selection share is not success probability; no policy code`);
     ok(!SCORING.test((await dialog.innerText()).replace('정책 선택 비중은 성공·적중 확률이 아니에요.', '')), `${tag}: no hit/miss scoring or accuracy claim in historical detail`);
+    // review 12: after a past pitch was opened and closed, every recommendation entry opens the CURRENT next-pitch recommendation
+    await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'detached' });
+    for (const [entry, open] of [['자세히', () => page.locator('.sv-rec-sec .sv-state-more').click()], ['recommendation row', () => page.locator('.sv-rec-sec .sv-reclist').click()], ['bottom 추천', () => page.locator('.sv-bottom-nav button', { hasText: '추천' }).click()]]) {
+      await open(); await dialog.waitFor();
+      const title = (await dialog.locator('.sv-sheet-head h2').innerText()).trim(), first = (await dialog.locator('.sv-rec-table tbody tr').first().innerText()).replace(/\s+/g, ' ');
+      ok(/^다음 공 추천 · 4구$/.test(title) && await dialog.locator('.sv-rec-table tbody tr').count() === 3 && first.includes(server.body.next.rec.candidates[0].pitch_label) && !/슬라이더/.test(first)
+        && await dialog.locator('.sv-detail-zone, .sv-pitch-line').count() === 0 && /아직 던지지 않았어요/.test(await dialog.innerText()),
+        `${tag}: ${entry} after a past pitch opens the current recommendation ("${title}", first "${first}")`);
+      await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'detached' });
+    }
+    await cards.nth(0).click(); await dialog.waitFor();
     server.body = body('unconfirmed/prior_pitch_unconfirmed');
     await shown(page, server.body);
     ok(await dialog.count() === 1 && /슬라이더/.test(await rec.innerText()), `${tag}: new live state updates behind a retained past detail`);
@@ -985,10 +1047,11 @@ if (SECTION_START <= 14 && SECTION_END >= 14) {
   const { context, page, errors } = await open({ width: 390, height: 844, handler: server.handler });
   await page.goto('http://pz.test/watch/849843');
   await page.locator('.sv-pitch-summary .sv-rec-row').first().waitFor();
-  ok(/종료/.test(await page.locator('.sv-live').innerText()) && /투구 전에 기록된 추천/.test(await page.locator('.sv-rec-summary').innerText()), 'final screen: first pitch still has its archived recommendation');
-  await page.locator('.sv-strip .sv-card').nth(1).click();
+  ok(/경기 종료/.test(await page.locator('.sv-hd-2').innerText()) && /투구 전에 기록된 추천/.test(await page.locator('.sv-rec-sec .sv-rec-head').innerText()) && await page.locator('.sv-rec-sec .sv-rec-row').count() === 3, 'final screen: first pitch still has its archived recommendation');
+  await page.locator('.sv-atbat-toggle').click();
+  await page.locator('.sv-pitch-row').filter({ has: page.locator('.sv-g1', { hasText: new RegExp(`^${end.pitches[1].pitch_number}$`) }) }).click();
   const dialog = page.getByRole('dialog'); await dialog.waitFor();
-  ok(/이 공은 기록된 추천이 없어요/.test(await dialog.locator('.sv-detail').first().innerText()) && await dialog.locator('.sv-table').count() === 0,
+  ok(/이 공은 기록된 추천이 없어요/.test(await dialog.locator('.sv-detail.rec').innerText()) && await dialog.locator('.sv-table').count() === 0,
     'final detail: missing recorded recommendation is not reconstructed');
   ok(errors.length === 0, `final screen: no page errors ${errors.join(' | ')}`);
   await context.close();

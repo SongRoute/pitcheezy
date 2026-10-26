@@ -207,11 +207,15 @@
 .sv-mu.line p, .sv-mu-idle { max-width: 960px; margin: 0 auto; padding: 12px 18px; font-size: 15px; color: var(--sv-muted); }
 .sv-mu.line b { color: var(--sv-ink); font-weight: 700; }
 .sv-mu-idle { grid-column: 1 / -1; padding: 12px 4px; }
-.sv-who { min-width: 0; display: grid; align-content: center; gap: 1px; padding: 0; border: 0; background: none; color: var(--sv-ink); text-align: left; line-height: 1.25; }
+.sv-who { position: relative; min-width: 0; display: grid; align-content: center; gap: 1px; padding: 0; border: 0; background: none; color: var(--sv-ink); text-align: left; line-height: 1.25; }
 .sv-who.pit { text-align: right; justify-items: end; }
 .sv-who small { font-size: 12px; color: var(--sv-muted); }
 .sv-who b { max-width: 100%; font-size: 16.5px; font-weight: 800; letter-spacing: -.2px; line-height: 1.2; overflow-wrap: anywhere; }  /* a long name wraps, never cut */
 .sv-who .sur { display: none; }
+.sv-who .full { white-space: nowrap; }
+.sv-who.tight .full { position: absolute; visibility: hidden; }  /* measured, not shown */
+.sv-who.tight .sur { display: inline; }
+.sv-game.has-display .sv-who b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* live row 3 keeps one line per name: states never move the zone */
 .sv-who-today { font-size: 14px; color: var(--sv-muted); white-space: nowrap; }
 .sv-who-today b { font-size: inherit; font-weight: 800; color: var(--sv-ink); }
 .sv-mu-count { display: grid; justify-items: center; align-content: center; gap: 4px; min-width: 96px; margin: 0 10px; padding: 0 14px;
@@ -225,6 +229,11 @@
 .sv-outs { display: flex; gap: 4px; }
 .sv-outs i { width: 9px; height: 9px; border-radius: 50%; box-shadow: inset 0 0 0 1.4px #8b9aa1; }
 .sv-outs i.on { background: var(--sv-ink); box-shadow: none; }
+@media (min-width: 360px) and (max-width: 399px) {  /* 360-wide phones (design 02): full names still fit on one line */
+  .sv-who b { font-size: 15px; }
+  .sv-mu-count { min-width: 84px; margin: 0 6px; padding: 0 10px; }
+  .sv-mu:not(.line) { padding-left: 12px; padding-right: 12px; }
+}
 @media (max-width: 359px) {
   .sv-hd-1 { padding-right: 8px; }
   .sv-hd-score > span { gap: 5px; }
@@ -281,6 +290,15 @@
 .sv-game .sv-actual.g1.strike > circle { fill: var(--sv-g1-strike); stroke: #fff; }
 .sv-game .sv-actual.g1.inplay > circle { fill: var(--sv-g1-play); stroke: #fff; }
 .sv-game .sv-actual.g1 > circle.sv-ring { fill: none; stroke: var(--sv-g1-play); stroke-width: 2.2; }
+/* different results at one spot: wedges around the same centre (the transparent anchor keeps the measured centre), numbers in badges */
+.sv-game .sv-actual.g1 > .sv-wedge { stroke-width: 1.5; }
+.sv-game .sv-actual.g1.ball > .sv-wedge, .sv-game .sv-actual.g1.unknown > .sv-wedge { fill: #fff; stroke: var(--sv-g1-line); }
+.sv-game .sv-actual.g1.strike > .sv-wedge { fill: var(--sv-g1-strike); stroke: #fff; }
+.sv-game .sv-actual.g1.inplay > .sv-wedge { fill: var(--sv-g1-play); stroke: #fff; }
+.sv-game .sv-actual > circle.sv-anchor { fill: none; stroke: none; }
+.sv-game .sv-actual > circle.sv-badge { stroke-width: 1.5; }
+.sv-game .sv-rec-lift { font-size: var(--zl-l); font-weight: 800; paint-order: stroke; stroke-width: 3px; fill: var(--sv-rec); stroke: #fff; }
+.sv-game .sv-rec-lift.r1 { fill: #fff; stroke: var(--sv-rec); }
 .sv-game .sv-actual .sv-g1-num { fill: #fff; stroke: none; font-weight: 700; }
 .sv-game .sv-actual.ball .sv-g1-num, .sv-game .sv-actual.unknown .sv-g1-num { fill: var(--sv-g1-num); }
 .sv-game .sv-actual .sv-g1-out { fill: var(--sv-g1-num); font-weight: 700; paint-order: stroke; }
@@ -369,6 +387,7 @@ html:has(.sv-game .sv-bottom-nav) { scroll-padding-bottom: var(--sv-nav-space); 
   transition: height .22s ease, transform .22s ease; box-shadow: 0 -6px 24px rgba(21, 25, 30, .12); }
 .sv-sheet.frame-c.full { height: calc(100dvh - 52px - env(safe-area-inset-top)); }
 .sv-sheet.frame-c.dragging { transition: none; }
+.sv-sheet.frame-c.half .sv-full-only { display: none; }  /* content that the design shows only once the sheet is opened to full */
 .sv-sheet-grip { display: none; }
 .sv-sheet.frame-c .sv-sheet-grip { display: flex; justify-content: center; align-items: center; flex: none; height: 22px; width: 100%; padding: 0; border: 0; background: none; touch-action: none; cursor: grab; }
 .sv-sheet.frame-c .sv-sheet-grip i { width: 40px; height: 4px; border-radius: 2px; background: #c3ccd0; }

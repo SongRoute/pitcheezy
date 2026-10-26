@@ -17,10 +17,16 @@ export const VIEW_X = -1;
 const ux = (x: number) => VIEW_X * x * U;     // feet (catcher-view plate_x) → screen units
 const uz = (z: number, aspect = 1) => -z * U * aspect;             // z up
 
-export function zoneWindow(bounds: Bounds, mini: boolean, _compact = false, fullWindow = false) {
+/** How far a sheet's full window may widen to keep its selected pitch at its true place (feet; beyond this it is an edge marker). */
+export const DETAIL_REACH = { x: 2.2, zLo: -0.5, zHi: 5.5 };
+export function zoneWindow(bounds: Bounds, mini: boolean, _compact = false, fullWindow = false, include: Mark | null = null) {
   const m = mini ? MARGIN.mini : fullWindow ? MARGIN.main : { x: .12, z: .24 };
   const aspect = 1;
-  const xMax = PLATE_HALF + m.x, zLo = bounds.bottom - m.z, zHi = bounds.top + m.z;
+  let xMax = PLATE_HALF + m.x, zLo = bounds.bottom - m.z, zHi = bounds.top + m.z;
+  // a sheet's window (design 19/20) widens to contain its selected pitch, with room for the mark and its ring; the main zone never does
+  if (fullWindow && include) { const room = .3;
+    if (Math.abs(include.x) <= DETAIL_REACH.x) xMax = Math.max(xMax, Math.abs(include.x) + room);
+    if (include.z >= DETAIL_REACH.zLo && include.z <= DETAIL_REACH.zHi) { zLo = Math.min(zLo, include.z - room); zHi = Math.max(zHi, include.z + room); } }
   // drawn area = window + a pad so an edge marker (and its arrow) is fully visible; the pad changes no coordinate or out-of-window rule
   const pad = mini ? .2 : fullWindow ? .16 : .08;
   return { aspect, margin: m, xMin: -xMax, xMax, zLo, zHi, vb: { x: -(xMax + pad) * U, y: uz(zHi + pad, aspect), w: 2 * (xMax + pad) * U, h: (zHi - zLo + 2 * pad) * U * aspect } };
@@ -55,17 +61,18 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     keepOut?: string | null }) {
   const [compact, setCompact] = useState(() => window.innerWidth < 360);
   useEffect(() => { const resize = () => setCompact(window.innerWidth < 360); window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize); }, []);
-  const w = zoneWindow(bounds, mini, compact && !fullWindow, fullWindow);
+  const w = zoneWindow(bounds, mini, compact && !fullWindow, fullWindow, actual);
   const left = -PLATE_HALF * U, right = PLATE_HALF * U, top = uz(bounds.top, w.aspect), bottom = uz(bounds.bottom, w.aspect);  // symmetric, view-independent
   const groups = groupTargets(candidates).map(g => ({ ...g, at: place(g, w) }));
   const act = actual ? place(actual, w) : null;
-  // pitches at the same spot AND of the same result share one mark (numbers '1·3'); a different result at that spot keeps its own mark
-  // (same coordinate, own colour), so no number is drawn in another result's look. The ring follows the newest pitch.
-  const actualGroups: (Thrown & { numbers: (number | string)[]; stacked: boolean })[] = [];
+  // pitches at the same spot AND of the same result share one mark (numbers '1·3'). Different results at one spot are 'stacked': the
+  // mark is split into equal wedges around the SAME centre (one per result), and each number goes beside it in a small badge of its own
+  // result, so no number is drawn in another result's look and no mark moves. The ring follows the newest pitch.
+  const actualGroups: (Thrown & { numbers: (number | string)[]; stacked: boolean; slot: number; slots: number })[] = [];
   for (const p of actuals) { const n = p.label ?? p.number;
     const g = actualGroups.find(g => g.x === p.x && g.z === p.z && g.kind === p.kind);
-    if (g) { g.numbers.push(n); g.latest = g.latest || p.latest; }
-    else actualGroups.push({ ...p, numbers: [n], stacked: actualGroups.some(o => o.x === p.x && o.z === p.z) }); }
+    if (g) { g.numbers.push(n); g.latest = g.latest || p.latest; } else actualGroups.push({ ...p, numbers: [n], stacked: false, slot: 0, slots: 1 }); }
+  for (const g of actualGroups) { const here = actualGroups.filter(o => o.x === g.x && o.z === g.z); g.stacked = here.length > 1; g.slot = here.indexOf(g); g.slots = here.length; }
   const parts = [...groups.map(g => `추천 ${g.ranks.join('·')}순위 위치 네모${g.at.out ? `(화면 밖 ${ft(g)})` : ''}`),
     actual ? `실제 투구${actualLabel ? ` ${actualLabel}` : ''} 동그라미${act!.out ? `(화면 밖, ${ft(actual)})` : ''}` : null].filter(Boolean);
   // Labels keep a readable on-screen size whatever the zone's drawn scale (SVG text otherwise scales with the drawing).
@@ -118,7 +125,8 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
   });
   const u = (n: number) => n / scale;  // on-screen px → drawing units
   const px = (n: number) => `${u(n).toFixed(2)}px`;
-  const half = mini ? 0 : u(15), rA = mini ? u(6.5) : u(10.5), rOut = mini ? u(4.5) : rA, ring = u(4);
+  // the small full-window zone of a sheet uses smaller marks (design 19/20) so a combined square stays within about one cell
+  const half = mini ? 0 : fullWindow ? u(11) : u(15), rA = mini ? u(6.5) : fullWindow ? u(9) : u(10.5), rOut = mini ? u(4.5) : rA, ring = fullWindow ? u(3) : u(4);
   const labels = { '--zl-s': px(13), '--zl-m': px(14), '--zl-l': px(15) } as CSSProperties;
   const arrowLen = mini ? u(3) : u(7);
   // An edge marker is not a coordinate (the pitch is beyond the window); it is drawn just inside the window edge so that it and its
@@ -203,17 +211,23 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
   const paNumberBoxes: Box[] = [];
   const paLabels = paMarks.map(({ p, d }) => {
     if (p.numbers.length === 1 && !p.stacked) return { x: d.x, y: d.y + u(4), halo: false };
-    const tw = u(6 + 7 * p.numbers.join('·').length), side = rA + (p.latest ? ring : 0) + tw / 2 + u(4);
+    // a stacked group's number sits in a badge (a small circle of its result), so its box is at least the badge
+    const tw = Math.max(u(6 + 7 * p.numbers.join('·').length), p.stacked ? u(19) : 0), side = rA + (p.latest ? ring : 0) + tw / 2 + u(4);
     // positions scale with the drawn dot (and its ring): just above, just below, either side, then one row further out
     const R = rA + (p.latest ? ring : 0), spots = [[0, -R - u(6)], [0, R + u(14)], [side, u(4)], [-side, u(4)], [0, -R - u(22)], [0, R + u(32)]]
-      .map(([dx, dy]) => ({ x: d.x + dx - tw / 2, y: d.y + dy - u(11), w: tw, h: u(14) }));
+      .map(([dx, dy]) => ({ x: d.x + dx - tw / 2, y: d.y + dy - u(p.stacked ? 14 : 11), w: tw, h: u(p.stacked ? 19 : 14) }));
     const textAvoid = [...numBoxes, ...paDotBoxes, ...paNumberBoxes, ...(mittLabel.box ? [mittLabel.box] : []), ...(actLabel ? [actLabel.box] : [])];
     const clear = spots.find(b => visible(b) && ![...recBoxes, ...textAvoid].some(a => hit(a, b)));
     // ponytail: six label positions; dense views fall back to a screen-sized halo. Expand positions only if real cases need it.
     const box = clear ?? spots.find(b => visible(b) && !textAvoid.some(a => hit(a, b))) ?? spots.find(visible) ?? spots[0];
     paNumberBoxes.push(box);
-    return { x: box.x + tw / 2, y: box.y + u(11), halo: !clear };
+    return { x: box.x + tw / 2, y: box.y + u(p.stacked ? 14 : 11), halo: !clear && !p.stacked };
   });
+  // the selected pitch is painted ABOVE the squares (its fill and ring stay visible); a rank number its mark would cover is repainted
+  // above it (same place, same words) so both stay readable
+  const lifted = actD && dotBox ? recs.filter(g => { const tw = u(6 + 8 * g.ranks.join('·').length); return hit(dotBox, { x: g.tx - tw / 2, y: g.ty - u(15), w: tw, h: u(18) }); }) : [];
+  const wedge = (cx: number, cy: number, r: number, i: number, n: number) => { const a0 = -Math.PI / 2 + 2 * Math.PI * i / n, a1 = a0 + 2 * Math.PI / n;
+    return `M${cx} ${cy}L${cx + r * Math.cos(a0)} ${cy + r * Math.sin(a0)}A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${cx + r * Math.cos(a1)} ${cy + r * Math.sin(a1)}Z`; };
   return <svg ref={ref} style={labels} className={`sv-zone${mini ? ' mini' : ''}`} viewBox={`${room.x} ${room.y} ${room.w} ${room.h}`} preserveAspectRatio="xMidYMid meet" role="img"
     aria-label={mini ? undefined : `투수 시점 스트라이크존${parts.length ? ': ' + parts.join(', ') : ''}${actuals.length ? `, 이번 타석 ${actuals.length}개 투구` : ''}`} aria-hidden={mini || undefined}>
     <rect x={-w.xMax * U} y={uz(w.zHi, w.aspect)} width={2 * w.xMax * U} height={(w.zHi - w.zLo) * U * w.aspect} className="sv-zone-outside" />
@@ -223,19 +237,22 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
     {mitt && <g className={`sv-mitt${mitt.out ? ' out' : ''}`} data-x={setupX}>
       <line x1={mitt.x} x2={mitt.x} y1={top - u(4)} y2={bottom + u(4)} />
       <text x={mittLabel.x} y={mittLabel.y} textAnchor="middle">{mittText}</text></g>}
-    {/* actual is drawn first so recommendation numbers stay on top of it; its label is placed apart from the dot */}
+    {recs.map(g => <g key={g.ranks.join()} className={`sv-rec r${g.ranks[0]}${g.at.out ? ' out' : ''}`} data-rank={g.ranks.join('·')} data-x={g.x} data-z={g.z} data-out={g.at.out || undefined}>
+      <rect x={g.d.x - g.hw} y={g.d.y - g.hh} width={2 * g.hw} height={2 * g.hh} rx={u(5)} />{g.at.out && arrow(g.d, Math.min(g.hw, g.hh))}
+      <text x={g.tx} y={g.ty} textAnchor="middle" visibility={lifted.includes(g) ? 'hidden' : undefined}>{g.ranks.join('·')}</text></g>)}
+    {/* the selected pitch over the squares, then any rank number it would cover */}
     {act && <g className={`sv-actual${act.out ? ' out' : ''}${actualNumber !== null ? ` g1 ${actualKind} latest` : ''}`} data-out={act.out || undefined} data-x={actual!.x} data-z={actual!.z} data-kind={actualNumber !== null ? actualKind : undefined}>
       <circle cx={actD!.x} cy={actD!.y} r={act.out ? rOut : rA} />{act.out && arrow(actD!, rOut)}
       {actualNumber !== null && !mini && <><circle className="sv-ring" cx={actD!.x} cy={actD!.y} r={rD + ring} />
         {actNum && <text className={actNum.out ? 'sv-g1-out' : 'sv-g1-num'} x={actNum.x} y={actNum.y} textAnchor="middle" style={{ fontSize: px(actNum.out ? 11 : 12), stroke: actNum.out ? 'white' : 'none', strokeWidth: actNum.out ? px(3) : undefined }}>{actualNumber}</text>}</>}
       {!mini && actLabel && <text className="sv-actual-label" x={actLabel.x} y={actLabel.y} textAnchor="middle">{actualLabel}</text>}</g>}
-    {recs.map(g => <g key={g.ranks.join()} className={`sv-rec r${g.ranks[0]}${g.at.out ? ' out' : ''}`} data-rank={g.ranks.join('·')} data-x={g.x} data-z={g.z} data-out={g.at.out || undefined}>
-      <rect x={g.d.x - g.hw} y={g.d.y - g.hh} width={2 * g.hw} height={2 * g.hh} rx={u(5)} />{g.at.out && arrow(g.d, Math.min(g.hw, g.hh))}
-      <text x={g.tx} y={g.ty} textAnchor="middle">{g.ranks.join('·')}</text></g>)}
+    {lifted.map(g => <text key={g.ranks.join()} className={`sv-rec-lift r${g.ranks[0]}`} data-rank={g.ranks.join('·')} x={g.tx} y={g.ty} textAnchor="middle" aria-hidden="true">{g.ranks.join('·')}</text>)}
     {paMarks.map(({ p, at, d }, i) => { const label = paLabels[i]; const inside = p.numbers.length === 1 && !p.stacked && !at.out;
-      return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot g1 ${p.label ? 'label' : p.kind ?? 'unknown'}${p.latest ? ' latest' : ''}${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined} data-kind={p.kind ?? 'unknown'}>
-        <circle cx={d.x} cy={d.y} r={rA} />{at.out && arrow(d, rA)}{p.latest && <circle className="sv-ring" cx={d.x} cy={d.y} r={rA + ring} />}
-        <text className={inside ? 'sv-g1-num' : 'sv-g1-out'} x={label.x} y={label.y} textAnchor="middle" style={{ fontSize: px(inside ? 12 : 11), stroke: inside || !label.halo ? 'none' : 'white', strokeWidth: label.halo && !inside ? px(3) : undefined }}>{p.numbers.join('·')}</text>
+      return <g key={`${p.x}:${p.z}:${p.kind ?? '-'}`} className={`sv-actual sv-pa-dot g1 ${p.label ? 'label' : p.kind ?? 'unknown'}${p.latest ? ' latest' : ''}${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined} data-kind={p.kind ?? 'unknown'}>
+        {p.stacked ? <><circle className="sv-anchor" cx={d.x} cy={d.y} r={rA} /><path className="sv-wedge" d={wedge(d.x, d.y, rA, p.slot, p.slots)} /></> : <circle cx={d.x} cy={d.y} r={rA} />}
+        {at.out && arrow(d, rA)}{p.latest && <circle className="sv-ring" cx={d.x} cy={d.y} r={rA + ring} />}
+        {p.stacked && <circle className="sv-badge" cx={label.x} cy={label.y - u(4)} r={u(8.5)} />}
+        <text className={inside ? 'sv-g1-num' : p.stacked ? 'sv-g1-num badge' : 'sv-g1-out'} x={label.x} y={label.y} textAnchor="middle" style={{ fontSize: px(inside || p.stacked ? 12 : 11), stroke: inside || !label.halo ? 'none' : 'white', strokeWidth: label.halo && !inside ? px(3) : undefined }}>{p.numbers.join('·')}</text>
         <title>{p.numbers.join('·')}{typeof p.numbers[0] === 'number' ? '구' : ''}{p.kind ? ` · ${KIND_WORD[p.kind]}` : ''} · {ft(p)}{at.out ? ' · 화면 밖' : ''}</title></g>; })}
   </svg>;
 }

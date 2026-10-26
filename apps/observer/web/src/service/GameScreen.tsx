@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, fetchPublishedManifest, isGamePublishedSoon, mergeDetail } from './api';
 import { PUBLISH_CONFIG, gameCheck, gameCheckLag, staleAfterMs, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
@@ -84,10 +84,16 @@ function Who({ role, person, hand, team, today, onOpen }: { role: 'b' | 'p'; per
   const name = person?.name ?? null;
   const handed = handText(hand, role);
   const roleWord = role === 'b' ? '타자' : '투수';
-  return <button className={`sv-who ${role === 'b' ? 'bat' : 'pit'}`} onClick={onOpen} aria-haspopup="dialog" title={name ?? undefined}
+  // a full name that does not fit its cell falls back to the family name (as below 360px), never an ellipsis
+  const nameRef = useRef<HTMLElement>(null);
+  const [tight, setTight] = useState(false);
+  useLayoutEffect(() => { const b = nameRef.current; if (!b) return;
+    const fit = () => { const full = b.querySelector<HTMLElement>('.full'); if (full) setTight(full.getBoundingClientRect().width > b.clientWidth + 0.5); };  // an inline span has no scroll width: use its box
+    fit(); const ro = new ResizeObserver(fit); ro.observe(b); return () => ro.disconnect(); }, [name]);
+  return <button className={`sv-who ${role === 'b' ? 'bat' : 'pit'}${tight ? ' tight' : ''}`} onClick={onOpen} aria-haspopup="dialog" title={name ?? undefined}
     aria-label={`${short(team)} ${roleWord} ${name ?? '정보 없음'}${handed ? `, ${handed}` : ''}. 선수 상세 열기`}>
     <small>{roleWord}{handed ? ` · ${handed}` : ''}</small>
-    {name ? <b><span className="full">{name}</span><span className="sur">{surname(name)}</span></b> : <b>—</b>}
+    {name ? <b ref={nameRef}><span className="full">{name}</span><span className="sur">{surname(name)}</span></b> : <b>—</b>}
     <span className="sv-who-today">{today}</span></button>;
 }
 
@@ -498,9 +504,11 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     if (d!.prev) clientNote = `${d!.sig ? '추천이 갱신됐어요' : '조금 전에 보여 드린 추천은 지금 표시하지 않아요'} (이전: ${d!.prev.top})`;
   }
   const ending = fold ? null : endingShown;
-  // the at-bat's last three published pitches on the main zone (all with 전체 보기), G1 marks from the result; the newest one ringed
+  // every published pitch of the at-bat on the main zone, G1 marks from the result. The ring belongs to the at-bat's NEWEST pitch only:
+  // when that pitch has no coordinate or is being confirmed it is not drawn, and no older mark inherits its ring.
+  const newestKey = paPitches[paPitches.length - 1]?.key ?? null;
   const thrown = nextPhase && !fold ? paPitches.filter(p => !unconfirmed(p) && p.actual?.x != null && p.actual?.z != null)
-    .map((p, i, arr) => ({ x: p.actual!.x!, z: p.actual!.z!, number: p.pitch_number, kind: resultKind(p.actual!.description), latest: i === arr.length - 1 })) : [];
+    .map(p => ({ x: p.actual!.x!, z: p.actual!.z!, number: p.pitch_number, kind: resultKind(p.actual!.description), latest: p.key === newestKey })) : [];
   // A2: a reference card rides only on the pending pitch's unsupported state; it is never drawn as a recommendation
   const reference = !maskPublished && stateSlot && latest && nextPhase && !shownRec && disp!.state === 'unsupported' ? detail.reference ?? null : null;
   const fix = stateSlot ? disp!.correction : null;
@@ -522,6 +530,9 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
 
   // Historical detail is keyed independently; selecting it never pauses live polling.
   const pick = (index: number) => { picked.current = true; const p = byIndex.get(index); if (p) { setSel({ kind: 'pitch', key: p.key }); openSheet('detail'); } };
+  // ③ the recommendation entries (cells, 자세히, bottom 추천) open the CURRENT recommendation on a live game: a past pitch opened
+  // from the at-bat list before must not stay selected behind them. A finished game keeps its browsed pitch (that is its current view).
+  const openRec = () => { if (live) { picked.current = false; setSel({ kind: 'latest' }); } openSheet('detail'); };
   const goLatest = () => { picked.current = false; setSel({ kind: 'latest' }); setAuto(true); void load(false, true); };
   // A past pitch of a live game: the recommendation the ledger recorded BEFORE that pitch, next to what was thrown. Never a score.
   const pastUnconfirmed = !nextPhase && unconfirmed(shownPitch);
@@ -539,7 +550,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const when = `${shortGameDate(game.kst_date)} ${kstTime(game.start)}${game.double_header ? ` · ${game.game_number}차전` : ''}`;
   const phase = detail.current?.phase ?? detail.phase ?? null;
   const emptyRec = maskPublished ? '확인 중' : nextPhase ? (phase === 'between_innings' ? '공수 교대 중' : phase === 'resolving' ? '결과 확인 중' : '추천 대기 중') : '이 시점에는 추천이 없어요';
-  const list = <RecList rec={mainRec} emptyText={stateSlot ? eff!.message ?? eff!.label : emptyRec} onOpen={() => openSheet('detail')} lead={held ? '마지막으로 받은 ' : ''} absentText={absentText} />;
+  const list = <RecList rec={mainRec} emptyText={stateSlot ? eff!.message ?? eff!.label : emptyRec} onOpen={openRec} lead={held ? '마지막으로 받은 ' : ''} absentText={absentText} />;
   const recHead = stateSlot ? `${held ? '마지막으로 받은 추천' : '추천'}${nextNumber ? ` · ${nextNumber}구` : ''}` : nextPhase ? `추천${nextNumber ? ` · ${nextNumber}구` : ''}`
     : `${recTitle}${shownPitch ? ` · ${shownPitch.pitch_number}구` : ''}`;
   // a past pitch (finished game): the thrown pitch named in one line under the row; folded / being confirmed say so and nothing more
@@ -648,7 +659,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       {/* ③ one ruled row of three; the state's sentence and change note live in the header bubble and in this polite region */}
       <section className={`sv-rec-sec sv-pitch-summary${stateSlot ? ' sv-state' : ''}${held ? ' held' : ''}`} data-state={stateSlot ? eff!.state : undefined} data-pitch={stateSlot ? disp!.pitch_key ?? undefined : undefined} aria-label="추천">
         <div className="sv-rec-head"><h2>{recHead}</h2>
-          <button className="sv-state-more" onClick={() => openSheet('detail')} aria-haspopup="dialog" aria-label="추천 자세히 보기">자세히</button></div>
+          <button className="sv-state-more" onClick={openRec} aria-haspopup="dialog" aria-label="추천 자세히 보기">자세히</button></div>
         {list}
         {stateSlot && <div className="sv-state-live sr-only" role="status"><p className="sv-state-msg">{eff!.message}</p><p className="sv-state-note" data-kind={note ? (fix ? fix.kind : 'client') : undefined}>{note}</p></div>}
         {reference && eff!.state === 'unsupported' && !note && <ReferenceTeaser card={reference} onOpen={() => openSheet('reference')} />}
@@ -675,7 +686,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     </section>
     </main>
     <nav className="sv-bottom-nav" aria-label="라이브 상세">
-      <button onClick={() => openSheet('detail')} aria-haspopup="dialog"><NavIcon d={ICONS.rec} />추천</button>
+      <button onClick={openRec} aria-haspopup="dialog"><NavIcon d={ICONS.rec} />추천</button>
       <button onClick={() => openSheet('player-b')} aria-haspopup="dialog"><NavIcon d={ICONS.player} />선수</button>
       <button onClick={() => openSheet('mix')} aria-haspopup="dialog"><NavIcon d={ICONS.mix} />구종</button>
       <button onClick={() => openSheet('history')} aria-haspopup="dialog"><NavIcon d={ICONS.record} />기록</button>
@@ -713,7 +724,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         {([['away', game.away_team, 1 - homeProbability], ['home', game.home_team, homeProbability]] as const).map(([sideName, team, value]) => <div className="sv-we-bar" key={sideName} aria-hidden="true"><span>{short(team)}</span><div><i style={{ width: `${value * 100}%`, background: teamColor(team) }} /></div><b>{Math.round(value * 100)}%</b></div>)}</div>}
       <p className="sv-muted">타석 시작 상황으로 학습한 모델 추정이며 볼·스트라이크 카운트는 반영하지 않아요.</p></Sheet>}
     {!maskPublished && sheet === 'mix' && <PitchMixSheet detail={detail} pitcherId={pitcherP?.id ?? null} pitcherName={pitcherP?.name ?? null} fold={fold} onClose={closeSheet} />}
-    {(sheet === 'player-b' || sheet === 'player-p') && <Sheet title={sheetPerson?.name ?? '선수 정보'} onClose={closeSheet}>
+    {(sheet === 'player-b' || sheet === 'player-p') && <Sheet title={sheetPerson?.name ?? '선수 정보'} onClose={closeSheet} half={playerRole === 'p' ? 'max(56dvh, min(420px, calc(100dvh - 56px)))' : null}>
       <div className="sv-tabs" role="tablist" aria-label="선수">{(['b', 'p'] as const).map(r => <button key={r} role="tab" aria-selected={playerRole === r} onClick={() => setSheet(r === 'b' ? 'player-b' : 'player-p')}>{r === 'b' ? '타자' : '투수'}</button>)}</div>
       <div role="tabpanel">
       <p className="sv-player-title"><b>{sheetPerson?.name ?? '—'}</b> <span>{short((playerRole === 'b') === top ? game.away_team : game.home_team)}{handText(playerRole === 'b' ? batterP?.side : pitcherP?.hand, playerRole) ? ` · ${handText(playerRole === 'b' ? batterP?.side : pitcherP?.hand, playerRole)}` : ''}</span></p>

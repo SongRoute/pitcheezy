@@ -42,14 +42,15 @@ export function PitchMixSheet({ detail, pitcherId, pitcherName, fold, onClose }:
   const { rows, groups } = pitchMix(detail, pitcherId, fold);
   const placed = rows.filter(p => p.actual!.x !== null && p.actual!.z !== null);
   const abbr = initials(groups.map(g => g.label));
-  return <Sheet title={`${pitcherName ? surname(pitcherName) : '투수'} 오늘 구종`} onClose={onClose}>
+  return <Sheet title={`${pitcherName ? surname(pitcherName) : '투수'} 오늘 구종`} onClose={onClose} half="max(56dvh, min(420px, calc(100dvh - 56px)))">
     {rows.length > 0 && <p className="sv-muted">받은 기록 중 구종이 확인된 {rows.length}구 기준</p>}
     <MixTable detail={detail} pitcherId={pitcherId} fold={fold} />
-    {placed.length > 0 && <section className="sv-mix-map"><h3 className="sv-sheet-h3">오늘 던진 위치</h3>
+    {/* half = the table only (design 25); the map and the notes appear when the sheet is opened to full (design 26) */}
+    {placed.length > 0 && <section className="sv-mix-map sv-full-only"><h3 className="sv-sheet-h3">오늘 던진 위치</h3>
       <div className="sv-detail-zone small"><Zone fullWindow bounds={detail.zone_bounds} candidates={[]} actual={null} actualLabel="" setupX={null}
         actuals={placed.map(p => ({ x: p.actual!.x!, z: p.actual!.z!, number: p.pitch_number, label: abbr[p.actual!.pitch_label] }))} /></div>
       <p className="sv-mix-key">{groups.map(g => `${abbr[g.label]}=${g.label}`).join(' · ')}</p></section>}
-    {rows.length > 0 && <p className="sv-muted">경기 전체 투구가 모두 수신됐다는 뜻은 아니에요. 구속이 없는 공은 평균에서 제외해요.{placed.length < rows.length ? ` 위치 정보가 없는 ${rows.length - placed.length}구는 그림에서 뺐어요.` : ''}</p>}
-    <p className="sv-muted">시즌별 사용률·헛스윙률·피xwOBA는 아직 연결되지 않았어요.</p>
+    {rows.length > 0 && <p className="sv-muted sv-full-only">경기 전체 투구가 모두 수신됐다는 뜻은 아니에요. 구속이 없는 공은 평균에서 제외해요.{placed.length < rows.length ? ` 위치 정보가 없는 ${rows.length - placed.length}구는 그림에서 뺐어요.` : ''}</p>}
+    <p className="sv-muted sv-full-only">시즌별 사용률·헛스윙률·피xwOBA는 아직 연결되지 않았어요.</p>
   </Sheet>;
 }

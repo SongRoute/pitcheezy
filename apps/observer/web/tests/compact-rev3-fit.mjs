@@ -123,7 +123,7 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
       const text = g.querySelector('text'), merged = text.textContent.includes('·'), inDot = text.classList.contains('sv-g1-num');
       const css = getComputedStyle(text);
       // a number in its mark is read against the mark's fill; one beside it against its white halo or the paper behind the drawing
-      const bg = inDot ? getComputedStyle(g.querySelector('circle')).fill : css.stroke !== 'none' ? css.stroke : paper(g.closest('svg'));
+      const bg = inDot ? getComputedStyle(text.classList.contains('badge') ? g.querySelector('.sv-badge') : g.querySelector('circle:not(.sv-anchor)')).fill : css.stroke !== 'none' ? css.stroke : paper(g.closest('svg'));
       const fg = css.fill, a = lum(fg), b = lum(bg);
       return { kind: merged ? 'merged' : g.classList.contains('out') ? 'outside' : 'inside', fg, bg, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
     });

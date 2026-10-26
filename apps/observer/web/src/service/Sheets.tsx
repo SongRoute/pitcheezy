@@ -14,7 +14,9 @@ export const SheetFrame = createContext<'classic' | 'c'>('classic');
 /** Bottom sheet: the only place with inner scrolling. Esc / backdrop / 닫기 close it and focus returns to the opener.
  *  Frame C (UI 10/26 ⑧): opens at about half the screen so the zone stays visible; dragging the handle or title up, scrolling the
  *  body, or the handle button (keyboard: Enter/Space) opens it to full height; dragging down goes back to half, then closes. */
-export function Sheet({ title, onClose, children, labelledBy = 'sv-sheet-title', headExtra = null }: { title: string; onClose: () => void; children: ReactNode; labelledBy?: string; headExtra?: ReactNode }) {
+export function Sheet({ title, onClose, children, labelledBy = 'sv-sheet-title', headExtra = null, half = null }: { title: string; onClose: () => void; children: ReactNode; labelledBy?: string; headExtra?: ReactNode;
+  /** frame C: this sheet's half height when its upper content needs more than the default (design 23/25: about 56% of the screen) */
+  half?: string | null }) {
   const c = useContext(SheetFrame) === 'c';
   const box = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(() => window.matchMedia('(min-width: 1200px)').matches);
@@ -23,6 +25,7 @@ export function Sheet({ title, onClose, children, labelledBy = 'sv-sheet-title',
   const [full, setFull] = useState(false);
   const [dy, setDy] = useState(0);
   const drag = useRef<number | null>(null);
+  const moved = useRef(false);  // a drag just ended on the handle: the click the browser sends after it is not a tap
   const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -42,15 +45,19 @@ export function Sheet({ title, onClose, children, labelledBy = 'sv-sheet-title',
     return () => { window.removeEventListener('keydown', onKey); document.body.classList.remove('sv-locked'); opener?.focus?.(); };
   }, [modal]);
   // swipe on the handle / title row (buttons in the title row keep their taps)
-  const down = (e: React.PointerEvent) => { if (!c || ((e.target as Element).closest('button') && !(e.target as Element).closest('.sv-sheet-grip'))) return; drag.current = e.clientY; (e.currentTarget as Element).setPointerCapture?.(e.pointerId); };
+  const down = (e: React.PointerEvent) => { if (!c || ((e.target as Element).closest('button') && !(e.target as Element).closest('.sv-sheet-grip'))) return; moved.current = false; drag.current = e.clientY; try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* not an active pointer: the gesture still works without capture */ } };
   const move = (e: React.PointerEvent) => { if (drag.current !== null) setDy(e.clientY - drag.current); };
-  const up = () => { if (drag.current === null) return; const d = dy; drag.current = null; setDy(0);
+  const up = (e: React.PointerEvent) => { if (drag.current === null) return; const d = e.clientY - drag.current; drag.current = null; setDy(0);
+    if (Math.abs(d) > 8) moved.current = true;
     if (d < -40) setFull(true); else if (d > 60) { if (full) setFull(false); else onClose(); } };
-  const swipe = c ? { onPointerDown: down, onPointerMove: move, onPointerUp: up, onPointerCancel: up } : {};
+  // a cancelled gesture (scroll taken over, system gesture) only resets: it never opens, shrinks or closes the sheet
+  const cancel = () => { drag.current = null; moved.current = false; setDy(0); };
+  const dragStyle = () => ({ transform: `translateY(${full ? Math.max(0, dy) : dy > 0 ? dy : 0}px)`, ...(dy < 0 && !full ? { height: `calc(var(--sv-sheet-half) + ${-dy}px)` } : {}) });
+  const swipe = c ? { onPointerDown: down, onPointerMove: move, onPointerUp: up, onPointerCancel: cancel } : {};
   return <div className={`sv-backdrop${modal ? '' : ' nonmodal'}${c ? ' frame-c' : ''}`} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div className={`sv-sheet${c ? ` frame-c ${full ? 'full' : 'half'}${dy ? ' dragging' : ''}` : ''}`} role="dialog" aria-modal={modal ? true : undefined} aria-labelledby={labelledBy} tabIndex={-1} ref={box}
-      style={c && dy ? { transform: `translateY(${full ? Math.max(0, dy) : dy > 0 ? dy : 0}px)`, ...(dy < 0 && !full ? { height: `calc(var(--sv-sheet-half) + ${-dy}px)` } : {}) } : undefined}>
-      {c && <button className="sv-sheet-grip" {...swipe} onClick={() => setFull(f => !f)} aria-expanded={full} aria-label={full ? '시트 반만 보기' : '시트 크게 보기'}><i aria-hidden="true" /></button>}
+      style={c && half ? { ['--sv-sheet-half' as string]: half, ...(dy ? dragStyle() : {}) } : c && dy ? { transform: `translateY(${full ? Math.max(0, dy) : dy > 0 ? dy : 0}px)`, ...(dy < 0 && !full ? { height: `calc(var(--sv-sheet-half) + ${-dy}px)` } : {}) } : undefined}>
+      {c && <button className="sv-sheet-grip" {...swipe} onClick={() => { if (moved.current) { moved.current = false; return; } setFull(f => !f); }} aria-expanded={full} aria-label={full ? '시트 반만 보기' : '시트 크게 보기'}><i aria-hidden="true" /></button>}
       <div className="sv-sheet-head" {...swipe}><h2 id={labelledBy}>{title}</h2>{headExtra}<button className={c ? 'sv-sheet-close' : 'sv-btn'} onClick={onClose}>닫기</button></div>
       <div className="sv-sheet-body" onScroll={c && !full ? e => { if (e.currentTarget.scrollTop > 4) setFull(true); } : undefined}>{children}</div>
     </div>
