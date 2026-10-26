@@ -19,9 +19,16 @@ G0-global member of the same seed s:
       seed under two pre-registered rules (MIX_FIXED = the G15 weight 1/2; MIX_FIT = one weight per seed chosen on
       the June blend split only over FIT_GRID, the ensemble weight chosen the same way on the seed mean), then the
       June frequency blend, compared with G15 on Cpanel DEV after the blend and on whole-MLB DEV blended under the
-      matrix N rule (final stage, 4/5 seeds), Holm across the four candidate tests per split.  Stage B is the
-      PRIMARY comparison; pre-specified primary candidate = tabm_residual_counts MIX_FIT.  STAGE_B_RULES is the
+      matrix N rule (final stage, 4/5 seeds).  Stage B is the PRIMARY comparison and carries exactly ONE
+      confirmatory test: the pre-specified primary candidate tabm_residual_counts MIX_FIT, confirmed by
+      intersection-union (each split passes its own one-sided test at alpha .05; no Holm for a single primary).  The
+      other three candidate rows are secondary / exploratory (per-split Holm across those three as a descriptive
+      adjustment; a combined both-split outcome is labelled exploratory, never confirmed).  STAGE_B_RULES is the
       machine-checked part of config comparison.stage_b (check_stage_b; the runner's config_check calls it too).
+      Every frozen Stage-B input is anchored to a pinned chain (STAGE_B_RULES.inputs.anchors): the G0 bundle
+      listing, the G15 listing, or the EXP-P11-001 analysis manifest pinned by the G0 bundle (whole-MLB G0 members).
+      Pipeline comparison, disclosed: the CUDA heads train with the epoch cap 60, the G15 flatten heads were fitted
+      with the cap 30 on MPS; control at MIX_FIXED (same architecture, same mix) measures that pipeline difference.
 
 Arms: the EXACT earlier registered config entries (same flags, same frozen code paths, no new model code)
   control                   MatrixModel flatten_mlp 128, no workload (direct_tabm_residual_registry.BASELINES)
@@ -108,7 +115,17 @@ STAGE_B_RULES = {
                       '4': 'EXP-P10-001/members/G0-global/seed4'},
         'g0_mlb': {str(s): f'EXP-P11-001/members/G0-global/seed{s}' for s in SEEDS},
         'flatten': {'0': 'EXP-P15-001/0', '1': 'EXP-P15-001/1', '2': 'EXP-P15-001/2', '3': 'EXP-P16-001/3',
-                    '4': 'EXP-P16-001/4'}},
+                    '4': 'EXP-P16-001/4'},
+        # The whole-MLB G0 members are not listed in the G0 bundle itself; the bundle pins the EXP-P11-001 analysis
+        # manifest, whose `inputs` record every P11 member state and archive (scripts/score_ml_g0_whole.py).
+        'p11_manifest': {'g0_bundle_key': 'p11_manifest', 'path': 'EXP-P11-001/analysis/manifest.json'},
+        # Pinned chain of every loaded frozen file: source map and the files that must be listed there.  Any other
+        # pinned map that lists the same file must agree with it.
+        'anchors': {'cpanel_baseline': {'source': 'g0_bundle', 'files': ['archive']},
+                    'mlb_baseline': {'source': 'g0_bundle', 'files': ['archive']},
+                    'g0_cpanel': {'source': 'g0_bundle', 'files': ['state']},
+                    'g0_mlb': {'source': 'p11_manifest', 'files': ['state', 'archive']},
+                    'flatten': {'source': 'g15', 'files': ['state']}}},
     'candidate_arms': ['periodic_residual_counts', 'tabm_residual_counts'],
     'descriptive_arms': ['control'],
     'mix_rules': {MIX_FIXED: {'weight': 0.5},
@@ -119,9 +136,14 @@ STAGE_B_RULES = {
     'splits': ['cpanel_dev_after_blend', 'whole_mlb_dev_blended'],
     'N': {'delta_nll_max': -0.003, 'nll_ci95_upper_max': 0, 'brier_ci95_upper_max': 0.001,
           'required_negative_seeds': 4, 'stage': 'final'},
+    'alpha': 0.05,  # one-sided, == the fixed threshold inside matrix_metrics.prediction_decision
     'bootstrap': {'draws': 10000, 'seed': 20260924, 'unit': 'whole_game'},
-    'multiplicity': 'holm_per_split_across_the_four_candidate_tests',
-    'confirmation': 'predictive_improvement_on_both_splits',
+    'multiplicity': {
+        'primary': 'single_prespecified_test_intersection_union_both_splits_one_sided_alpha_no_adjustment',
+        'secondary': 'holm_per_split_across_the_three_secondary_candidate_rows_descriptive_adjustment',
+        'combined_secondary_outcome': 'exploratory_never_confirmed',
+        'descriptive': 'control_rows_and_unblended_head_rows_no_N_decision'},
+    'confirmation': 'primary_only_predictive_improvement_on_both_splits',
     'reproduction_gate': {
         'tolerance': 1e-9,
         'fields': {'g15_cpanel_dev_after_blend_nll': ['cpanel_dev', 'reports', REFERENCE_ARM, 'primary', 'log_loss'],
@@ -129,8 +151,18 @@ STAGE_B_RULES = {
                                                      'log_loss'],
                    'g0_cpanel_dev_after_blend_nll': ['cpanel_dev', 'reports', G0_CELL, 'primary', 'log_loss'],
                    'g0_whole_mlb_dev_blended_nll': ['mlb_dev_blended', 'comparison', REFERENCE_ARM, 'control',
-                                                    'log_loss']}},
+                                                    'log_loss']},
+        # Per-seed G15 - G0 deltas (seeds 0-4): the aggregate NLL is invariant to swapping members between seeds,
+        # the per-seed pairing used by the 4/5-seed rule is not.
+        'seed_delta_fields': {
+            'g15_minus_g0_cpanel_dev_after_blend_seed_deltas': ['cpanel_dev', 'comparison', REFERENCE_ARM,
+                                                                'seed_deltas'],
+            'g15_minus_g0_whole_mlb_dev_blended_seed_deltas': ['mlb_dev_blended', 'comparison', REFERENCE_ARM,
+                                                               'seed_deltas']}},
 }
+PRIMARY_ROW = f"{STAGE_B_RULES['primary']['arm']}/{STAGE_B_RULES['primary']['mix_rule']}"
+SECONDARY_ROWS = [f'{arm}/{rule}' for arm in STAGE_B_RULES['candidate_arms'] for rule in STAGE_B_RULES['mix_rules']
+                  if f'{arm}/{rule}' != PRIMARY_ROW]
 
 
 def same(value, expected):

@@ -210,11 +210,11 @@
     "split": "temperature"
   },
   "arm_notes": {
-    "control": "MatrixModel flatten_mlp 128, no workload: the same-family CUDA control (exact EXP-P34/P35 entry, runner requirement). Same architecture as the frozen MPS flatten direct head of G15 (EXP-P15-001/P16-001, cap 30), here on CUDA with the cap 60: at MIX_FIXED in Stage B it is the cross-device reproduction / sanity arm (descriptive)",
+    "control": "MatrixModel flatten_mlp 128, no workload: the same-family CUDA control (exact EXP-P34/P35 entry, runner requirement). Same architecture as the frozen MPS flatten direct head of G15 (EXP-P15-001/P16-001, cap 30), here on CUDA with the cap 60: at MIX_FIXED in Stage B (same 1/2 mix as G15) it measures the pipeline difference directly (cap 60 CUDA flatten vs cap 30 MPS flatten); descriptive",
     "periodic_residual_counts": "EXP-P32-001 / EXP-P34-001 / EXP-P35-001 arm unchanged (frozen PLR-lite embedding + residual backbone, blocks Dropout .1, counts workload), old code path; keeps its embed_residual flag",
     "tabm_residual_counts": "EXP-P34-001 arm unchanged as registered in EXP-P35-001 (TabM-mini k=8 on the frozen PLR-lite + residual backbone, counts workload), old code path; keeps its tabm_residual flag",
     "marker": "Both non-control arms keep their earlier flags, so the family is recognised by the top-level marker adoption_confirm and its predicate is tested FIRST in config_check, training_budget, uses_epoch_cap and the Stage-A scorer (pitchmdp/direct_adoption_confirm_registry.py)",
-    "epoch_cap": "Epoch cap 60, patience 5 for every arm (as EXP-P34-001/EXP-P35-001). fit.json records cap, epochs_run, best_epoch and stopped_by per fit. The G15 flatten heads were fitted with cap 30 on MPS (best epochs 6-9 recorded in G15-MIX-RESEARCH-FROZEN-v1.json)",
+    "epoch_cap": "Epoch cap 60, patience 5 for every arm (as EXP-P34-001/EXP-P35-001). fit.json records cap, epochs_run, best_epoch and stopped_by per fit. The G15 flatten heads were fitted with cap 30 on MPS (best epochs 6-9 recorded in G15-MIX-RESEARCH-FROZEN-v1.json), so Stage B is a pipeline comparison (comparison.stage_b.description.pipeline_comparison)",
     "not_compared": "P24-P37 tasks and their numbers are never mixed into this family; Stage B compares only with the frozen G15 members recorded in configs/G15-MIX-RESEARCH-FROZEN-v1.json"
   },
   "control_reuse": "none: fresh control and fresh reference arms on the adoption seeds 0-4; no earlier P24-P37 task is mixed in. The MPS flatten direct heads of EXP-P15-001/EXP-P16-001 enter only Stage B, as the G15 reference",
@@ -422,6 +422,43 @@
             "2": "EXP-P15-001/2",
             "3": "EXP-P16-001/3",
             "4": "EXP-P16-001/4"
+          },
+          "p11_manifest": {
+            "g0_bundle_key": "p11_manifest",
+            "path": "EXP-P11-001/analysis/manifest.json"
+          },
+          "anchors": {
+            "cpanel_baseline": {
+              "source": "g0_bundle",
+              "files": [
+                "archive"
+              ]
+            },
+            "mlb_baseline": {
+              "source": "g0_bundle",
+              "files": [
+                "archive"
+              ]
+            },
+            "g0_cpanel": {
+              "source": "g0_bundle",
+              "files": [
+                "state"
+              ]
+            },
+            "g0_mlb": {
+              "source": "p11_manifest",
+              "files": [
+                "state",
+                "archive"
+              ]
+            },
+            "flatten": {
+              "source": "g15",
+              "files": [
+                "state"
+              ]
+            }
           }
         },
         "candidate_arms": [
@@ -470,13 +507,19 @@
           "required_negative_seeds": 4,
           "stage": "final"
         },
+        "alpha": 0.05,
         "bootstrap": {
           "draws": 10000,
           "seed": 20260924,
           "unit": "whole_game"
         },
-        "multiplicity": "holm_per_split_across_the_four_candidate_tests",
-        "confirmation": "predictive_improvement_on_both_splits",
+        "multiplicity": {
+          "primary": "single_prespecified_test_intersection_union_both_splits_one_sided_alpha_no_adjustment",
+          "secondary": "holm_per_split_across_the_three_secondary_candidate_rows_descriptive_adjustment",
+          "combined_secondary_outcome": "exploratory_never_confirmed",
+          "descriptive": "control_rows_and_unblended_head_rows_no_N_decision"
+        },
+        "confirmation": "primary_only_predictive_improvement_on_both_splits",
         "reproduction_gate": {
           "tolerance": 1e-09,
           "fields": {
@@ -508,6 +551,20 @@
               "control",
               "log_loss"
             ]
+          },
+          "seed_delta_fields": {
+            "g15_minus_g0_cpanel_dev_after_blend_seed_deltas": [
+              "cpanel_dev",
+              "comparison",
+              "G15-direct-g0-mix",
+              "seed_deltas"
+            ],
+            "g15_minus_g0_whole_mlb_dev_blended_seed_deltas": [
+              "mlb_dev_blended",
+              "comparison",
+              "G15-direct-g0-mix",
+              "seed_deltas"
+            ]
           }
         }
       },
@@ -515,14 +572,15 @@
         "role": "PRIMARY comparison of EXP-P48-001; the Stage-A rows are descriptive",
         "scorer": "experiments/pitchmdp/scripts/score_cuda_mix_vs_g15.py --config configs/EXP-P48-001.json --family <pulled runner output: <arm>/<seed>/predictions.npz + mlb_predictions.npz + fit.json + state.json> --g15 configs/G15-MIX-RESEARCH-FROZEN-v1.json --runs-root \"/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924\" --destination <new directory outside the repository results/>. Mac CPU; numpy plus the existing scoring helpers (score_ml_matrix.summarize_cell/assert_aligned, run_ml_direct_head.mixed/paired, matrix_metrics); parameters are read from rules (checked equal to the registry)",
         "reference": "G15-direct-g0-mix (configs/G15-MIX-RESEARCH-FROZEN-v1.json, D145): the frozen MPS flatten direct head of seed s (EXP-P15-001 seeds 0-2, EXP-P16-001 seeds 3-4) mixed 1/2 with the frozen G0-global member of seed s (Cpanel EXP-P4-001 seeds 0-2 and EXP-P10-001 seeds 3-4; whole MLB EXP-P11-001), five-seed mean, June frequency blend selected on the Cpanel June (blend) rows; whole MLB blended with the EXP-P11-001 frequency baseline using the Cpanel June weights (ensemble and per seed), exactly as run_ml_direct_head_confirm.score_arrays",
-        "integrity": "every frozen input is sha-checked before use: the G15 config, the G0 bundle it pins and the recorded EXP-P16-001 results against rules.reference; each member npz against its adjacent *_state.json artifact_hashes; each state file and frequency baseline against the G15 config / G0 bundle listing where listed; member model hashes against the frozen member records",
+        "integrity": "every frozen input is anchored to a pinned chain before any array is read (rules.inputs.anchors, uniform): the G15 config, the G0 bundle it pins and the recorded EXP-P16-001 results against rules.reference; frequency baselines and G0-global Cpanel member states against the G0 bundle listing; flatten member states against the G15 listing; whole-MLB G0-global member states AND archives against the EXP-P11-001 analysis manifest whose sha256 the G0 bundle pins (bundle -> manifest sha -> manifest inputs -> member state -> artifact hashes). A file listed in more than one pinned map must agree with every one; any missing or differing link fails closed. Each member npz is also checked against its adjacent *_state.json artifact_hashes and member model hashes against the frozen member records",
         "alignment": "CUDA archives must carry exactly the Mac baseline rows (EXP-P4-001 blend/dev, EXP-P11-001 mlb_dev; keys, labels, game ids, pitcher ids) with the no-physics marker; a different row order is aligned by the 3-column pitch key with a recorded permutation; any missing or extra key fails closed",
-        "reproduction_gate": "before any candidate is scored, the recomputed G15 Cpanel-after-blend NLL and whole-MLB-blended NLL, and the G0-global values of the same rows, must equal results/EXP-P16-001.json within 1e-9; otherwise abort with nothing scored",
-        "candidates": "for each CUDA arm (control, periodic_residual_counts, tabm_residual_counts) two mix rules, then the June frequency blend as usual: MIX_FIXED (weight 1/2 for every seed and the ensemble, identical to the G15 rule; isolates the head) and MIX_FIT (per seed w on the June blend split only, minimizing the pitch-weighted NLL of w*head + (1-w)*G0 over the grid 0.50, 0.55, ..., 0.95, ties to the smaller w; the ensemble weight chosen the same way on the seed-mean head and seed-mean G0). control at MIX_FIXED is the cross-device reproduction / sanity arm; both control rows are descriptive and outside the multiplicity family",
+        "reproduction_gate": "before any candidate is scored, the recomputed G15 Cpanel-after-blend NLL and whole-MLB-blended NLL, the G0-global values of the same rows and the five per-seed G15 - G0 deltas of both splits must equal results/EXP-P16-001.json within 1e-9; otherwise abort with nothing scored (the aggregate NLL alone is invariant to swapping members between seeds)",
+        "candidates": "for each CUDA arm (control, periodic_residual_counts, tabm_residual_counts) two mix rules, then the June frequency blend as usual: MIX_FIXED (weight 1/2 for every seed and the ensemble, identical to the G15 rule; isolates the head) and MIX_FIT (per seed w on the June blend split only, minimizing the pitch-weighted NLL of w*head + (1-w)*G0 over the grid 0.50, 0.55, ..., 0.95, ties to the smaller w; the ensemble weight chosen the same way on the seed-mean head and seed-mean G0). control at MIX_FIXED measures the pipeline difference (cap 60 CUDA vs cap 30 MPS flatten, same mix); both control rows are descriptive and have no N decision",
         "comparisons": "candidate minus G15 by matrix_metrics.paired_game_comparison (10,000 whole-game draws, seed 20260924) on (i) Cpanel DEV after the June blend and (ii) whole-MLB DEV blended; per-seed deltas against the G15 member of the same seed",
-        "N_rule": "matrix_metrics.prediction_decision, stage final: ensemble delta NLL <= -0.003, paired 95% CI upper < 0, Holm-adjusted one-sided p <= .05, Brier CI upper <= 0.001, at least 4 of 5 seeds improving",
-        "multiplicity": "Holm across the four candidate tests (periodic_residual_counts and tabm_residual_counts x MIX_FIXED and MIX_FIT) separately per split; a candidate is confirmed only if it is a predictive_improvement on BOTH splits (intersection-union, no further adjustment)",
-        "primary_candidate": "tabm_residual_counts MIX_FIT (pre-specified); every other candidate row is secondary, control rows are descriptive",
+        "N_rule": "matrix_metrics.prediction_decision, stage final: ensemble delta NLL <= -0.003, paired 95% CI upper < 0, one-sided p <= .05 (the primary with its own unadjusted p; the secondary rows with the Holm-adjusted p across the three secondary rows of the split), Brier CI upper <= 0.001, at least 4 of 5 seeds improving",
+        "multiplicity": "exactly one confirmatory test: the prespecified primary tabm_residual_counts MIX_FIT, confirmed only by intersection-union, i.e. a predictive_improvement on BOTH splits, each judged with its own unadjusted one-sided test at alpha .05 (no Holm for a single prespecified test). The three other candidate rows (periodic_residual_counts x MIX_FIXED and MIX_FIT, tabm_residual_counts MIX_FIXED) are secondary / exploratory: per split, Holm across those three as a descriptive adjustment; a combined both-split secondary outcome is labelled exploratory, never confirmed. Control rows and the unblended head rows have no N decision",
+        "primary_candidate": "tabm_residual_counts MIX_FIT (pre-specified): the only row that can be confirmed; every other candidate row is secondary / exploratory, control rows are descriptive",
+        "pipeline_comparison": "the CUDA heads of this family train with the epoch cap 60 on CUDA, while the G15 flatten heads were fitted with the cap 30 on MPS (configs/EXP-P16-001.yaml unchanged_from_g0.training), so every candidate - G15 row compares two pipelines, not two architectures; the control MIX_FIXED row (same flatten architecture, same 1/2 mix) measures that pipeline difference directly",
         "descriptive": [
           "unblended calibrated five-seed head (no G0 mix, no June blend) vs the G15 flatten head on Cpanel DEV and whole-MLB DEV",
           "MIX_FIT weights per seed and ensemble with the June-blend NLL of every grid weight",
@@ -532,8 +590,8 @@
         "outputs": "<destination>/results.json and SUMMARY.md (+ SHA256SUMS) with every input sha256, the config sha256, git commit, seconds and peak RSS; the scorer refuses a destination inside a repository results/ directory",
         "reading_fixed_before_results": {
           "pass": "tabm_residual_counts MIX_FIT confirmed on both splits: a candidate for a prospective 2027 / RS-02-style arm and a Song decision recorded in docs/decisions.md. It does not by itself change G15, G0-global, the policy identifier c13cc989 or the service",
-          "fail": "not confirmed: the ceiling of the direct-head line on the exposed 2025 DEV is documented (no further direct-head architecture search on these rows without a new pre-registration); G15 stays the research baseline",
-          "secondary": "a pass of any other candidate row is reported as secondary and is not a confirmation of the primary candidate"
+          "fail": "not confirmed: the ceiling of this direct-head pipeline on the exposed 2025 DEV is documented (not of direct heads in general; no further direct-head architecture search on these rows without a new pre-registration); G15 stays the research baseline",
+          "secondary": "a both-split pass of any other candidate row is reported as exploratory and is never a confirmation, of itself or of the primary candidate"
         }
       }
     }

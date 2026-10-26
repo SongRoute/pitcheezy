@@ -38,6 +38,8 @@ CONFIGS = REPO / 'configs'
 RUN = CONFIGS / 'EXP-P48-001.json'
 P35 = CONFIGS / 'EXP-P35-001.json'
 PREREG = PROJECT / 'docs' / 'PREREG-EXP-P48-001-adoption-seed-confirmation-2026-10-26.md'
+REVIEW = PROJECT / 'docs' / 'reviews' / 'REVIEW-EXP-P48-001-ASTRA-001.md'
+REVIEW_SHA256 = '2e1d9c420da522101ad33fffa335460abc676fdbee5157925fd43f433014df44'  # verbatim copy (evidence)
 EARLIER = sorted(p for p in CONFIGS.glob('EXP-P[34]*-001.json') if p != RUN)  # registered CUDA families P30..P43
 FIVE = ['GPU-edb6bc12-c9aa-d79b-d3e7-9bc28118e4d4', 'GPU-0cc63040-5522-7fea-20d8-93b9196ce019',
         'GPU-18e648d0-b68e-9321-9c77-69da241aad85', 'GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9',
@@ -101,7 +103,9 @@ def test_marker_constants_and_disclosed_seed_reuse():
     assert reg.EARLIER_USES['P24/P25/P27/P29 CUDA arms (MODEL RNG)'] == [0, 1, 2]
     assert reg.EARLIER_USES['EXP-P30-001 CUDA arms (MODEL RNG)'] == [3, 4]
     doc = reg.__doc__
-    for needle in ('P24/P25/P27/P29', 'EXP-P30-001', 'post-selection', 'PRIMARY', 'Stage B', 'FIRST', '2027'):
+    for needle in ('P24/P25/P27/P29', 'EXP-P30-001', 'post-selection', 'PRIMARY', 'Stage B', 'FIRST', '2027',
+                   'exactly ONE', 'intersection-union', 'exploratory, never confirmed', 'Pipeline comparison',
+                   'cap 30 on MPS', 'EXP-P11-001 analysis manifest'):
         assert needle in doc, needle
     assert tuple(FIVE) == reg.GPU_UUIDS and len(set(FIVE)) == 5
 
@@ -127,12 +131,27 @@ def test_stage_b_rules_are_fixed_and_point_at_the_frozen_reference():
     assert (rules['bootstrap']['draws'], rules['bootstrap']['seed']) == (p16['metrics']['bootstrap']['draws'],
                                                                          p16['metrics']['bootstrap']['seed'])
     recorded = read(REPO / ref['recorded_results'])
-    for path in rules['reproduction_gate']['fields'].values():
+    gate = rules['reproduction_gate']
+    for path in gate['fields'].values():
         value = recorded
         for key in path:
             value = value[key]
         assert isinstance(value, float)
-    assert rules['reproduction_gate']['tolerance'] == 1e-9
+    for path in gate['seed_delta_fields'].values():  # per-seed G15 - G0 deltas exist for seeds 0-4 (values not read)
+        value = recorded
+        for key in path:
+            value = value[key]
+        assert isinstance(value, list) and len(value) == 5 and all(isinstance(x, float) for x in value)
+    assert gate['tolerance'] == 1e-9 and not set(gate['fields']) & set(gate['seed_delta_fields'])
+    assert rules['alpha'] == .05 and rules['confirmation'] == 'primary_only_predictive_improvement_on_both_splits'
+    assert set(rules['multiplicity']) == {'primary', 'secondary', 'combined_secondary_outcome', 'descriptive'}
+    assert 'intersection_union' in rules['multiplicity']['primary']
+    assert 'no_adjustment' in rules['multiplicity']['primary']
+    assert 'holm' in rules['multiplicity']['secondary'] and 'three_secondary' in rules['multiplicity']['secondary']
+    assert rules['multiplicity']['combined_secondary_outcome'] == 'exploratory_never_confirmed'
+    assert reg.PRIMARY_ROW == 'tabm_residual_counts/MIX_FIT'
+    assert reg.SECONDARY_ROWS == ['periodic_residual_counts/MIX_FIXED', 'periodic_residual_counts/MIX_FIT',
+                                  'tabm_residual_counts/MIX_FIXED']
     inputs = rules['inputs']
     assert inputs['runs_root_name'] == 'ML-MATRIX-20260924' and sorted(inputs['g0_mlb']) == ['0', '1', '2', '3', '4']
     listed = [entry['path'] for entry in g15['files'].values()]
@@ -144,6 +163,17 @@ def test_stage_b_rules_are_fixed_and_point_at_the_frozen_reference():
         assert path.endswith(f'ML-MATRIX-20260924/{rel}/prediction_state.json')
     assert g0['files']['p4_frequency']['path'].endswith(inputs['cpanel_baseline'])
     assert g0['files']['p11_frequency']['path'].endswith(inputs['mlb_baseline'])
+    # whole-MLB G0 members: not listed in the bundle itself, reached through the P11 analysis manifest it pins
+    assert not any('EXP-P11-001/members' in entry['path'] for entry in g0['files'].values())
+    chain = inputs['p11_manifest']
+    assert g0['files'][chain['g0_bundle_key']]['path'].endswith('ML-MATRIX-20260924/' + chain['path'])
+    assert g0['files'][chain['g0_bundle_key']]['sha256'] == \
+        'aaf5db0d0a3d134b4d92393efa640dc67dba8efb4a4af330d21f2ab66d9ebda9'
+    assert inputs['anchors'] == {'cpanel_baseline': {'source': 'g0_bundle', 'files': ['archive']},
+                                 'mlb_baseline': {'source': 'g0_bundle', 'files': ['archive']},
+                                 'g0_cpanel': {'source': 'g0_bundle', 'files': ['state']},
+                                 'g0_mlb': {'source': 'p11_manifest', 'files': ['state', 'archive']},
+                                 'flatten': {'source': 'g15', 'files': ['state']}}
 
 
 # ------------------------------------------------------------------ config
@@ -330,7 +360,20 @@ def test_prereg_states_the_fixed_design_and_the_draft_config_sha():
     for needle in ('EXP-P48-001', draft, '0, 1, 2, 3, 4', 'control', 'periodic_residual_counts', 'tabm_residual_counts',
                    'MIX_FIXED', 'MIX_FIT', '0.50, 0.55', 'Holm', '4/5', '-0.003', 'G15-MIX-RESEARCH-FROZEN-v1.json',
                    'results/EXP-P16-001.json', '1e-9', 'P24/P25/P27/P29', 'EXP-P30-001', 'post-selection', '2026',
-                   'c13cc989', 'RS-02', '2027', 'not recorded here', '627', '135'):
+                   'c13cc989', 'RS-02', '2027', 'not recorded here', '627', '135', 'Review round 1',
+                   'REVIEW-EXP-P48-001-ASTRA-001.md', 'ceiling of this direct-head pipeline on the exposed 2025 DEV',
+                   'cap 30', 'pipeline comparison', 'intersection-union', 'exploratory', 'never "confirmed"',
+                   'EXP-P11-001 analysis manifest', 'per-seed'):
+        assert needle in text, needle
+    assert 'ceiling of the direct-head line' not in text
+
+
+def test_review_round_1_is_kept_verbatim_with_its_required_fixes():
+    import hashlib
+    assert hashlib.sha256(REVIEW.read_bytes()).hexdigest() == REVIEW_SHA256
+    text = REVIEW.read_text()
+    assert 'VERDICT: FAIL' in text and 'Required fixes before execution' in text
+    for needle in ('P11 analysis manifest', 'seed-array swaps', 'multiplicity claim'):
         assert needle in text, needle
 
 

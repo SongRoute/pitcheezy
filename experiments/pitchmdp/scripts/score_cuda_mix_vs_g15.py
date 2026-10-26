@@ -13,22 +13,31 @@ Every parameter below is read from config comparison.stage_b.rules, which must e
      mlb_dev): the same keys, labels, game and pitcher ids (score_ml_matrix.assert_aligned semantics) and the
      no-physics marker.  A different row order is aligned by the 3-column pitch key with a recorded permutation; a
      missing, extra or repeated key fails closed.  Only metadata is read in this step.
-  2. Frozen inputs (sha-checked before use): the G15 config, the G0 bundle it pins and the recorded EXP-P16-001
-     results (rules.reference); the frequency baselines and G0-global Cpanel member states against the G0 bundle
-     listing; the flatten direct-head member states against the G15 listing; every member npz against the
-     artifact_hashes of its adjacent *_state.json (run_ml_direct_head_confirm.member semantics); member model hashes
-     against the frozen member records.
+  2. Frozen inputs, each anchored to a pinned chain before use (rules.inputs.anchors, uniform): the G15 config, the
+     G0 bundle it pins and the recorded EXP-P16-001 results against rules.reference; the frequency baselines and the
+     G0-global Cpanel member states against the G0 bundle listing; the flatten direct-head member states against the
+     G15 listing; the whole-MLB G0-global member states AND archives against the EXP-P11-001 analysis manifest, whose
+     sha256 the G0 bundle pins (bundle -> manifest sha -> manifest inputs -> member state -> artifact hashes).  A file
+     listed in more than one pinned map must agree with every one; a missing link fails closed.  Every member npz is
+     also checked against the artifact_hashes of its adjacent *_state.json; member model hashes against the frozen
+     member records.
   3. Reference G15 = run_ml_direct_head.mixed(flatten, G0, 1/2) -> score_ml_matrix.summarize_cell (June blend on the
      Cpanel blend rows); whole MLB blended exactly as run_ml_direct_head_confirm.score_arrays (EXP-P11-001 frequency
      baseline, Cpanel June weights, ensemble and per seed).  Reproduction gate: the recomputed G15 Cpanel-after-blend
-     and whole-MLB-blended NLL (and the G0-global values of the same rows) must equal results/EXP-P16-001.json within
-     the registered tolerance, else abort before any candidate probability is read.
+     and whole-MLB-blended NLL, the G0-global values of the same rows and the five per-seed G15 - G0 deltas of both
+     splits must equal results/EXP-P16-001.json within the registered tolerance, else abort before any candidate
+     probability is read (the aggregate NLL alone is invariant to swapping members between seeds).
   4. Candidates: each CUDA arm x {MIX_FIXED (1/2, the G15 rule), MIX_FIT (per-seed grid weight on the June blend rows
      only; ensemble weight chosen the same way on the seed means)}, then the June frequency blend as usual.
   5. candidate - G15 by matrix_metrics.paired_game_comparison on (i) Cpanel DEV after the blend and (ii) whole-MLB
-     DEV blended; N = matrix_metrics.prediction_decision (final stage) with Holm across the four candidate tests per
-     split; a candidate is confirmed only if both splits pass.  Control rows and the unblended head-vs-G15-head rows
-     are descriptive.  No 12-group robustness (R): no such helper in score_ml_matrix or matrix_metrics.
+     DEV blended; N = matrix_metrics.prediction_decision (final stage).  Exactly one confirmatory test: the
+     pre-specified primary (tabm_residual_counts MIX_FIT) is confirmed by intersection-union, i.e. a
+     predictive_improvement on both splits, each judged with its own unadjusted one-sided p at alpha .05.  The three
+     other candidate rows are secondary / exploratory: per-split Holm across those three as a descriptive adjustment,
+     and a both-split outcome is labelled exploratory, never confirmed.  Control rows and the unblended
+     head-vs-G15-head rows are descriptive (no N).  This is a pipeline comparison (CUDA heads with the epoch cap 60
+     vs the G15 MPS flatten heads with the cap 30); control MIX_FIXED measures that difference directly.  No
+     12-group robustness (R): no such helper in score_ml_matrix or matrix_metrics.
   6. <destination>/results.json, SUMMARY.md and SHA256SUMS (read-only) with every input sha256, the config sha256,
      git commit, seconds and peak RSS.  The destination must not exist and must not be inside a repository results/
      directory; nothing is written anywhere else.  Steps 2-6 hold the Mac's common heavy-job lock
@@ -117,7 +126,21 @@ def stage_b_rules(config):
     boot = inspect.signature(paired_game_comparison).parameters
     if (boot['draws'].default, boot['seed'].default) != (rules['bootstrap']['draws'], rules['bootstrap']['seed']):
         raise ValueError('paired_game_comparison defaults differ from the registered bootstrap')
+    if rules['alpha'] != .05:  # prediction_decision judges `p <= .05` (fixed inside matrix_metrics)
+        raise ValueError('Stage-B alpha differs from the matrix_metrics decision threshold')
+    primary, secondary = test_rows(rules)
+    if primary in secondary or len(secondary) != 3:
+        raise ValueError('Stage B needs one primary and three secondary candidate rows')
     return rules
+
+
+def test_rows(rules):
+    """(primary row, secondary rows) of the candidate tests, from the config rules (never from module constants)."""
+    primary = row_name(rules['primary']['arm'], rules['primary']['mix_rule'])
+    candidates = [row_name(arm, rule) for arm in rules['candidate_arms'] for rule in rules['mix_rules']]
+    if primary not in candidates:
+        raise ValueError('The primary candidate is not a candidate test')
+    return primary, [name for name in candidates if name != primary]
 
 
 def check_destination(destination):
@@ -144,14 +167,25 @@ def results_dirs():
     return dirs
 
 
+def relative(path, root_name):
+    """Path below the frozen runs root (posix), or None for a path outside it."""
+    parts = Path(path).parts
+    return Path(*parts[parts.index(root_name) + 1:]).as_posix() if root_name in parts else None
+
+
 def listing(files, root_name):
     """{path relative to the frozen runs root: sha256} of a frozen bundle's `files` entries under that root."""
     out = {}
     for entry in files.values():
-        parts = Path(entry['path']).parts
-        if root_name in parts:
-            out[Path(*parts[parts.index(root_name) + 1:]).as_posix()] = entry['sha256']
+        rel = relative(entry['path'], root_name)
+        if rel is not None:
+            out[rel] = entry['sha256']
     return out
+
+
+def paths_map(hashes, root_name):
+    """{path relative to the frozen runs root: sha256} of a manifest `inputs` map ({absolute path: sha256})."""
+    return {rel: digest for path, digest in hashes.items() if (rel := relative(path, root_name)) is not None}
 
 
 def pinned(path, expected, what, inputs):
@@ -180,16 +214,49 @@ def references(rules, g15_path, g0_bundle=None, recorded_results=None, inputs=No
 
 # ------------------------------------------------------------------ frozen members
 
-def frozen_member(root, rel, state_name, listed, identity, model_sha256, inputs, require_listed, names=None):
-    """Arrays (all, or `names`) of one frozen member after its state (listing), artifact and identity checks."""
+def pinned_maps(rules, runs_root, g15, g0_bundle, inputs):
+    """{source: {path below the runs root: sha256}} of the pinned chains: the G0 bundle listing, the G15 listing and
+    the EXP-P11-001 analysis manifest `inputs`, whose own sha256 the G0 bundle pins (fail closed on any broken link)."""
+    spec = rules['inputs']
+    root_name, chain = spec['runs_root_name'], spec['p11_manifest']
+    maps = {'g0_bundle': listing(g0_bundle['files'], root_name), 'g15': listing(g15['files'], root_name)}
+    entry = g0_bundle['files'].get(chain['g0_bundle_key'])
+    if not isinstance(entry, dict) or relative(entry.get('path', ''), root_name) != chain['path']:
+        raise ValueError('G0 bundle does not pin the EXP-P11-001 analysis manifest at the registered path')
+    path = Path(runs_root) / chain['path']
+    digest = rc.sha256_file(path)
+    if digest != entry['sha256']:
+        raise ValueError('EXP-P11-001 analysis manifest differs from the G0 bundle pin')
+    inputs[str(path.resolve())] = digest
+    maps['p11_manifest'] = paths_map(read_json(path)['inputs'], root_name)
+    if set(spec['anchors']) != {'cpanel_baseline', 'mlb_baseline', 'g0_cpanel', 'g0_mlb', 'flatten'} \
+            or any(a['source'] not in maps or not set(a['files']) <= {'state', 'archive'}
+                   for a in spec['anchors'].values()):
+        raise ValueError('Stage-B anchors must name a pinned chain for every frozen input')
+    return maps
+
+
+def anchored(maps, anchor, kind, rel, digest, record):
+    """`rel` (sha `digest`) must be listed in its anchor chain when `kind` is anchored there, and must agree with every
+    pinned map that lists it; the chain is recorded for the result (uniform for every frozen input)."""
+    source = anchor['source']
+    if kind in anchor['files'] and rel not in maps[source]:
+        raise ValueError(f'{rel}: not reachable from the pinned {source} chain')
+    listed = sorted(name for name, one in maps.items() if rel in one)
+    for name in listed:
+        if maps[name][rel] != digest:
+            raise ValueError(f'{rel}: differs from the pinned {name} record')
+    record[rel] = {'sha256': digest, 'listed_in': listed,
+                   'anchor': source if kind in anchor['files'] else f'{source} -> state artifact_hashes'}
+
+
+def frozen_member(root, rel, state_name, maps, anchor, identity, model_sha256, inputs, record):
+    """Archive path of one frozen member after its anchored state, artifact and identity checks (nothing loaded)."""
     dest = Path(root) / rel
     state_path = dest / state_name
-    digest = rc.sha256_file(state_path)
     key = f'{rel}/{state_name}'
-    if key in listed and listed[key] != digest:
-        raise ValueError(f'{key}: state differs from the frozen listing')
-    if require_listed and key not in listed:
-        raise ValueError(f'{key}: not in the frozen listing')
+    digest = rc.sha256_file(state_path)
+    anchored(maps, anchor, 'state', key, digest, record)
     state = read_json(state_path)
     for name, expected in state['artifact_hashes'].items():
         path = (dest / name).resolve()
@@ -204,44 +271,51 @@ def frozen_member(root, rel, state_name, listed, identity, model_sha256, inputs,
     archive = 'mlb_predictions.npz' if state_name.startswith('mlb_') else 'predictions.npz'
     if archive not in state['artifact_hashes']:
         raise ValueError(f'{key}: state does not cover {archive}')
+    for name, expected in state['artifact_hashes'].items():  # the archive per its anchor, the rest for agreement
+        anchored(maps, anchor if name == archive else {'source': anchor['source'], 'files': []}, 'archive',
+                 f'{rel}/{name}', expected, record)
     inputs[str(state_path.resolve())] = digest
     inputs[str((dest / archive).resolve())] = state['artifact_hashes'][archive]
-    return npz(dest / archive, names)
+    return dest / archive
 
 
-def load_frozen(rules, runs_root, g15, g0_bundle, inputs):
-    """Cpanel/whole-MLB baselines, G0-global members and flatten direct heads (seeds 0-4), all sha-checked."""
+def load_frozen(rules, runs_root, g15, g0_bundle, inputs, record=None):
+    """Cpanel/whole-MLB baselines, G0-global members and flatten direct heads (seeds 0-4), each anchored to a pinned
+    chain (rules.inputs.anchors) before any array is read."""
     spec, runs_root = rules['inputs'], Path(runs_root)
     if runs_root.name != spec['runs_root_name']:
         raise ValueError('runs root must be the frozen ' + spec['runs_root_name'])
-    g0_listed = listing(g0_bundle['files'], spec['runs_root_name'])
-    g15_listed = listing(g15['files'], spec['runs_root_name'])
+    record = {} if record is None else record
+    maps, anchors = pinned_maps(rules, runs_root, g15, g0_bundle, inputs), spec['anchors']
     baselines = {}
     for name in ('cpanel_baseline', 'mlb_baseline'):
         path = runs_root / spec[name]
         digest = rc.sha256_file(path)
-        if g0_listed.get(spec[name]) != digest:
-            raise ValueError(f'{spec[name]}: frequency baseline differs from the G0 bundle listing')
+        anchored(maps, anchors[name], 'archive', spec[name], digest, record)
         inputs[str(path.resolve())] = digest
         baselines[name] = path
     seeds = [str(s) for s in reg.SEEDS]
+    whole = lambda prefix: [prefix, *(prefix + s for s in ('_keys', *META))]  # noqa: E731  calibrated + metadata
+    archives = {}
+    for kind, state_name, names in (('g0_cpanel', 'prediction_state.json', None),
+                                    ('g0_mlb', 'prediction_state.json', whole('dev')),
+                                    ('flatten', 'prediction_state.json', None),
+                                    ('flatten_mlb', 'mlb_prediction_state.json', whole('mlb_dev'))):
+        spec_key = 'flatten' if kind == 'flatten_mlb' else kind
+        archives[kind] = []
+        for s in seeds:
+            if spec_key == 'flatten':
+                expected = {'seed': int(s), 'smoke': False, 'model_sha256': g15['members'][s]['model_sha256']}
+                model = expected['model_sha256']
+            else:
+                expected, model = {'seed': int(s), 'cell': reg.G0_CELL}, g0_bundle['members'][s]['model_sha256']
+            archives[kind].append((frozen_member(runs_root, spec[spec_key][s], state_name, maps, anchors[spec_key],
+                                                 expected, model, inputs, record), names))
+    # every chain above passed before any frozen array is read
     cpanel = npz(baselines['cpanel_baseline'], [p + s for p in ('blend', 'dev') for s in ('', '_raw', '_keys', *META)])
     mlb = npz(baselines['mlb_baseline'], ['mlb_dev', 'mlb_dev_keys', *('mlb_dev' + s for s in META)])
-    g0 = [frozen_member(runs_root, spec['g0_cpanel'][s], 'prediction_state.json', g0_listed,
-                        {'seed': int(s), 'cell': reg.G0_CELL}, g0_bundle['members'][s]['model_sha256'], inputs, True)
-          for s in seeds]
-    whole = lambda prefix: [prefix, *(prefix + s for s in ('_keys', *META))]  # noqa: E731  calibrated + metadata
-    g0_mlb = [frozen_member(runs_root, spec['g0_mlb'][s], 'prediction_state.json', g0_listed,
-                            {'seed': int(s), 'cell': reg.G0_CELL}, g0_bundle['members'][s]['model_sha256'], inputs,
-                            False, whole('dev')) for s in seeds]
-    flatten, flatten_mlb = [], []
-    for s in seeds:
-        expected = {'seed': int(s), 'smoke': False, 'model_sha256': g15['members'][s]['model_sha256']}
-        flatten.append(frozen_member(runs_root, spec['flatten'][s], 'prediction_state.json', g15_listed, expected,
-                                     expected['model_sha256'], inputs, True))
-        flatten_mlb.append(frozen_member(runs_root, spec['flatten'][s], 'mlb_prediction_state.json', g15_listed,
-                                         expected, expected['model_sha256'], inputs, True, whole('mlb_dev')))
-    return cpanel, mlb, g0, g0_mlb, flatten, flatten_mlb
+    loaded = {kind: [npz(path, names) for path, names in items] for kind, items in archives.items()}
+    return cpanel, mlb, loaded['g0_cpanel'], loaded['g0_mlb'], loaded['flatten'], loaded['flatten_mlb']
 
 
 def check_mlb_rows(mlb, members, prefix, what):
@@ -369,35 +443,54 @@ def blend_mlb(report, ensemble_mix_mlb, seed_mix_mlb, frequency):
     return w * ensemble_mix_mlb + (1 - w) * frequency, seeds
 
 
-def g15_reference(flatten, g0, cpanel, flatten_mlb, g0_mlb, frequency, weight, tools):
-    """G15 exactly as EXP-P16-001 (run_ml_direct_head_confirm.score_arrays, MIX arm) plus the G0-global values."""
+def seed_deltas(y, candidate_seeds, reference_seeds):
+    """Per-seed NLL differences exactly as run_ml_direct_head.paired computes `seed_deltas`."""
+    return [float((pitch_losses(y, a) - pitch_losses(y, b))[:, 0].mean())
+            for a, b in zip(candidate_seeds, reference_seeds)]
+
+
+def g15_reference(flatten, g0, cpanel, flatten_mlb, g0_mlb, frequency, y_mlb, weight, tools):
+    """G15 exactly as EXP-P16-001 (run_ml_direct_head_confirm.score_arrays, MIX arm) and the values the reproduction
+    gate compares: G15 / G0-global NLL on both splits and the per-seed G15 - G0 deltas of both splits."""
     assert_aligned, summarize_cell, mixed, _ = tools
     for member in (*flatten, *g0):
         assert_aligned(member, cpanel)
     report, predicted = summarize_cell(mixed(flatten, g0, weight), cpanel)
-    rep_g0, _ = summarize_cell(g0, cpanel)
+    rep_g0, p_g0 = summarize_cell(g0, cpanel)
     b = [m['dev'] for m in g0_mlb]
     a = [weight * d['mlb_dev'] + (1 - weight) * g for d, g in zip(flatten_mlb, b)]
     blended, seeds = blend_mlb(report, np.mean(a, 0), a, frequency)
-    wb = rep_g0['selection']['model_weight']
-    g0_blended = wb * np.mean(b, 0) + (1 - wb) * frequency
+    g0_blended, g0_seeds = blend_mlb(rep_g0, np.mean(b, 0), b, frequency)
+    y = cpanel['dev_y']
+    recomputed = {
+        'g15_cpanel_dev_after_blend_nll': report['primary']['log_loss'],
+        'g15_whole_mlb_dev_blended_nll': prediction_metrics(y_mlb, blended)['log_loss'],
+        'g0_cpanel_dev_after_blend_nll': rep_g0['primary']['log_loss'],
+        'g0_whole_mlb_dev_blended_nll': prediction_metrics(y_mlb, g0_blended)['log_loss'],
+        'g15_minus_g0_cpanel_dev_after_blend_seed_deltas': seed_deltas(y, predicted['seed_primary'],
+                                                                       p_g0['seed_primary']),
+        'g15_minus_g0_whole_mlb_dev_blended_seed_deltas': seed_deltas(y_mlb, seeds, g0_seeds)}
     return {'report': report, 'cpanel': predicted, 'mlb_blended': blended, 'mlb_seed_blended': seeds,
-            'g0_report': rep_g0, 'g0_mlb_blended': g0_blended}
+            'recomputed': recomputed}
 
 
-def reproduction_gate(reference, y_mlb, recorded, gate):
-    """Recomputed G15 / G0 NLL vs the recorded EXP-P16-001 values; raises (nothing scored) on any difference."""
-    recomputed = {'g15_cpanel_dev_after_blend_nll': reference['report']['primary']['log_loss'],
-                  'g15_whole_mlb_dev_blended_nll': prediction_metrics(y_mlb, reference['mlb_blended'])['log_loss'],
-                  'g0_cpanel_dev_after_blend_nll': reference['g0_report']['primary']['log_loss'],
-                  'g0_whole_mlb_dev_blended_nll': prediction_metrics(y_mlb, reference['g0_mlb_blended'])['log_loss']}
-    if set(recomputed) != set(gate['fields']):
+def reproduction_gate(reference, recorded, gate):
+    """Recomputed G15 / G0 NLL and per-seed deltas vs the recorded EXP-P16-001 values; raises (nothing scored) on any
+    difference beyond the tolerance or any missing value."""
+    recomputed = reference['recomputed']
+    if set(recomputed) != set(gate['fields']) | set(gate['seed_delta_fields']) \
+            or set(gate['fields']) & set(gate['seed_delta_fields']):
         raise ValueError('Reproduction gate fields differ from the registered list')
     rows = {}
     for name, path in gate['fields'].items():
         value = float(get_path(recorded, path))
         rows[name] = {'recorded': value, 'recomputed': recomputed[name], 'abs_diff': abs(recomputed[name] - value),
                       'path': path}
+    for name, path in gate['seed_delta_fields'].items():
+        values, mine = [float(v) for v in get_path(recorded, path)], recomputed[name]
+        diff = max((abs(x - v) for x, v in zip(mine, values)), default=float('inf')) \
+            if len(values) == len(mine) == len(reg.SEEDS) else float('inf')
+        rows[name] = {'recorded': values, 'recomputed': mine, 'abs_diff': diff, 'path': path}
     failed = [n for n, r in rows.items() if not r['abs_diff'] <= gate['tolerance']]
     if failed:
         raise ValueError('Reproduction gate failed (nothing scored): ' + ', '.join(
@@ -440,15 +533,23 @@ def candidate(head, g0, cpanel, head_mlb, g0_mlb_dev, frequency, rule, rules, to
             'weights': weights}
 
 
-def decide(rows, family, n_rule):
-    """Final-stage N for the candidate tests (Holm across `family` within one split); other rows descriptive."""
-    adjusted = holm_adjust([rows[name]['paired']['nll']['p_less'] for name in family])
-    for name, p in zip(family, adjusted):
+def decide(rows, primary, secondary, n_rule):
+    """Final-stage N of one split.  The single prespecified primary is judged with its own unadjusted one-sided p
+    (its confirmation is the intersection-union of both splits, outside this function); the three secondary rows
+    with Holm across those three (a descriptive adjustment; their combined outcome is exploratory).  Every other row
+    (control, descriptive) gets no N."""
+    def judge(name, p, adjustment):
         rows[name]['N'] = prediction_decision(rows[name]['paired'], p, rows[name]['seed_deltas'],
                                               minimum_improvement=-n_rule['delta_nll_max'],
                                               brier_margin=n_rule['brier_ci95_upper_max'], stage=n_rule['stage'])
-    for name, row in rows.items():
-        row.setdefault('N', None)
+        rows[name].update(p_decision=p, p_adjustment=adjustment)
+    judge(primary, rows[primary]['paired']['nll']['p_less'], 'none: single prespecified primary test')
+    adjusted = holm_adjust([rows[name]['paired']['nll']['p_less'] for name in secondary])
+    for name, p in zip(secondary, adjusted):
+        judge(name, p, f'holm across the {len(secondary)} secondary rows of this split (descriptive)')
+    for row in rows.values():
+        for key in ('N', 'p_decision', 'p_adjustment'):
+            row.setdefault(key, None)
     return rows
 
 
@@ -468,8 +569,9 @@ def score_arrays(heads, flatten, g0, cpanel, heads_mlb, flatten_mlb, g0_mlb, mlb
     check_mlb_rows(mlb, g0_mlb, 'dev', 'G0 whole-MLB member')
     frequency, y_mlb, games_mlb = mlb['mlb_dev'], mlb['mlb_dev_y'], mlb['mlb_dev_game_pk']
     y, games = cpanel['dev_y'], cpanel['dev_game_pk']
-    reference = g15_reference(flatten, g0, cpanel, flatten_mlb, g0_mlb, frequency, weight, tools)
-    gate = reproduction_gate(reference, y_mlb, recorded, rules['reproduction_gate'])
+    reference = g15_reference(flatten, g0, cpanel, flatten_mlb, g0_mlb, frequency, y_mlb, weight, tools)
+    gate = reproduction_gate(reference, recorded, rules['reproduction_gate'])
+    primary, secondary = test_rows(rules)
     g0_mlb_dev = [m['dev'] for m in g0_mlb]
     flatten_dev, flatten_whole = [m['dev'] for m in flatten], [m['mlb_dev'] for m in flatten_mlb]
     rows = {CPANEL: {}, MLB: {}}
@@ -492,8 +594,8 @@ def score_arrays(heads, flatten, g0, cpanel, heads_mlb, flatten_mlb, g0_mlb, mlb
         for rule in rules['mix_rules']:
             got = candidate(head, g0, cpanel, head_mlb, g0_mlb_dev, frequency, rule, rules, tools)
             name = row_name(arm, rule)
-            role = 'candidate' if arm in rules['candidate_arms'] else (
-                'cross_device_reproduction_descriptive' if rule == reg.MIX_FIXED else 'descriptive')
+            role = 'primary' if name == primary else 'secondary_exploratory' if name in secondary else (
+                'pipeline_difference_descriptive' if rule == reg.MIX_FIXED else 'descriptive')
             rows[CPANEL][name] = {'arm': arm, 'mix_rule': rule, 'role': role,
                                   **paired(y, games, got['cpanel']['primary'], reference['cpanel']['primary'],
                                            got['cpanel']['seed_primary'], reference['cpanel']['seed_primary']),
@@ -506,17 +608,15 @@ def score_arrays(heads, flatten, g0, cpanel, heads_mlb, flatten_mlb, g0_mlb, mlb
             weights[arm][rule] = got['weights']
             del got
         del head, head_mlb
-    family = [row_name(arm, rule) for arm in rules['candidate_arms'] for rule in rules['mix_rules']]
     for split in (CPANEL, MLB):
-        decide(rows[split], family, n_rule)
-    primary = row_name(rules['primary']['arm'], rules['primary']['mix_rule'])
-    if primary not in family:
-        raise ValueError('The primary candidate is not a candidate test')
-    confirmation = {}
-    for name in family:
-        status = {split: rows[split][name]['N']['status'] for split in (CPANEL, MLB)}
-        confirmation[name] = {**status, 'role': 'primary' if name == primary else 'secondary',
-                              'status': 'confirmed' if all(s == PASS for s in status.values()) else 'not_confirmed'}
+        decide(rows[split], primary, secondary, n_rule)
+    status = {split: rows[split][primary]['N']['status'] for split in (CPANEL, MLB)}
+    exploratory = {}
+    for name in secondary:
+        one = {split: rows[split][name]['N']['status'] for split in (CPANEL, MLB)}
+        exploratory[name] = {**one, 'status': 'exploratory',
+                             'both_splits_predictive_improvement': all(s == PASS for s in one.values()),
+                             'p_adjustment': rows[CPANEL][name]['p_adjustment']}
     sanity = row_name('control', reg.MIX_FIXED)
     return {
         'reproduction_gate': gate,
@@ -527,16 +627,30 @@ def score_arrays(heads, flatten, g0, cpanel, heads_mlb, flatten_mlb, g0_mlb, mlb
                             'frequency': prediction_metrics(y_mlb, frequency)}},
         CPANEL: {'n': int(len(y)), 'games': int(len(np.unique(games))), 'rows': rows[CPANEL]},
         MLB: {'n': int(len(y_mlb)), 'games': int(len(np.unique(games_mlb))), 'rows': rows[MLB]},
-        'multiplicity': {'family': family, 'method': rules['multiplicity'],
-                         'note': 'Holm per split across the four candidate tests; control rows and the unblended head '
-                                 'rows are outside the family (descriptive, N = null)'},
-        'confirmation': {'primary': primary, 'primary_status': confirmation[primary]['status'],
-                         'rule': rules['confirmation'], 'rows': confirmation,
+        'multiplicity': {'primary': primary, 'secondary': secondary, 'rules': rules['multiplicity'],
+                         'note': 'one confirmatory test: the prespecified primary, judged on each split with its own '
+                                 'unadjusted one-sided p (alpha .05) and confirmed only by intersection-union of both '
+                                 'splits; the three secondary rows get Holm across those three per split as a '
+                                 'descriptive adjustment and are exploratory; control rows and the unblended head rows '
+                                 'have no N'},
+        'confirmation': {'primary': primary,
+                         'primary_status': 'confirmed' if all(s == PASS for s in status.values()) else 'not_confirmed',
+                         'splits': status, 'rule': rules['confirmation'],
+                         'test': 'intersection-union over the two splits; each split one-sided at alpha .05 with its '
+                                 'own unadjusted p; no Holm (single prespecified test)',
                          'note': 'confirmed = predictive_improvement on both splits (final stage, 4/5 seeds); any '
                                  'adoption is a separate Song decision and changes nothing by itself'},
-        'cross_device_reproduction': {split: {'row': sanity, 'nll': rows[split][sanity]['paired']['nll'],
-                                              'brier': rows[split][sanity]['paired']['brier']}
-                                      for split in (CPANEL, MLB)},
+        'secondary_exploratory': {
+            'rows': exploratory,
+            'note': 'secondary candidate rows: per-split Holm across the three as a descriptive adjustment; a '
+                    'both-split outcome is exploratory, never a confirmation'},
+        'pipeline_difference': {
+            'row': sanity,
+            'note': 'control at MIX_FIXED is the same flatten architecture and the same 1/2 mix as G15, so it measures '
+                    'the pipeline difference directly: CUDA, epoch cap 60, seeds 0-4 of this family vs the frozen MPS '
+                    'G15 flatten heads fitted with the cap 30 (configs/EXP-P16-001.yaml); descriptive',
+            **{split: {'nll': rows[split][sanity]['paired']['nll'], 'brier': rows[split][sanity]['paired']['brier']}
+               for split in (CPANEL, MLB)}},
         'mix_weights': weights,
         'descriptive_unblended_head_vs_g15_head': {
             **heads_vs, 'scope': 'calibrated five-seed head (no G0 mix, no June blend) minus the G15 flatten head '
@@ -603,7 +717,9 @@ def score(config_path, family, g15_path, runs_root, destination, source_manifest
     task_sources, source_record = sc.task_sources(source_manifest)
     tasks, signature = sc.verify_family(family, config, manifest_sha256, task_sources)
     with heavy_lock(runs_root):  # steps 2-6
-        cpanel, mlb, g0, g0_mlb, flatten, flatten_mlb = load_frozen(rules, runs_root, g15, g0_bundle, inputs)
+        anchors = {}
+        cpanel, mlb, g0, g0_mlb, flatten, flatten_mlb = load_frozen(rules, runs_root, g15, g0_bundle, inputs,
+                                                                    anchors)
         plan = cuda_alignment(family, config, cpanel, mlb)
         tools = helpers()
         cache = {}
@@ -621,8 +737,9 @@ def score(config_path, family, g15_path, runs_root, destination, source_manifest
             for seed in config['seeds']:
                 dest = rc.task_dir(family, arm, seed, False)
                 inputs[str((dest / 'state.json').resolve())] = tasks[arm][seed]['state_sha256']
+                hashes = rc.read_json(dest / 'state.json')['artifact_hashes']
                 for archive in CUDA_ARCHIVES:
-                    inputs[str((dest / archive).resolve())] = rc.read_json(dest / 'state.json')['artifact_hashes'][archive]
+                    inputs[str((dest / archive).resolve())] = hashes[archive]
         permuted = sorted(k for k, v in plan.items() if v is not None)
         if own_sources() != sources:
             raise RuntimeError('Stage-B scorer sources changed during scoring')
@@ -634,7 +751,8 @@ def score(config_path, family, g15_path, runs_root, destination, source_manifest
             'primary_candidate': rules['primary'], 'adoption_decision': None, 'policy_effect': None,
             **result,
             'alignment': {'permuted': permuted, 'same_order': len(plan) - len(permuted), 'checked': len(plan),
-                          'rule': '3-column pitch key permutation onto the Mac baseline rows; missing keys fail closed'},
+                          'rule': '3-column pitch key permutation onto the Mac baseline rows; missing keys fail '
+                                  'closed'},
             'limits': ['Cpanel DEV and whole-MLB DEV were repeatedly exposed (G15 numbers read before, P34/P35 read '
                        'before this family was designed): a repeated-DEV result, not an independent confirmation',
                        'Seeds 0-4 are adoption RNG seeds reused across families (0-2 P24/P25/P27/P29 arms, 3-4 '
@@ -642,11 +760,20 @@ def score(config_path, family, g15_path, runs_root, destination, source_manifest
                        'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                        'MIX_FIT weights and June blend weights are both chosen on the June (blend) rows; that '
                        'selection is not part of the bootstrap',
+                       'Pipeline comparison: the CUDA heads train with the epoch cap 60 on CUDA, the G15 flatten heads '
+                       'were fitted with the cap 30 on MPS (configs/EXP-P16-001.yaml); the control MIX_FIXED row '
+                       '(same architecture, same 1/2 mix) measures that pipeline difference directly',
+                       'A not-confirmed primary documents the ceiling of this direct-head pipeline on the exposed 2025 '
+                       'DEV, not of direct heads in general',
+                       'Only the prespecified primary can be confirmed; secondary rows are exploratory',
                        'No 12-group robustness (R) in this family; no 2026 rows; no policy or service claim'],
             'provenance': {
                 'config': {'path': str(Path(config_path).resolve()), 'sha256': config_sha256,
                            'digest': rc.config_digest(config)},
                 'inputs_sha256': inputs,
+                'frozen_anchors': {'chains': {name: spec['source'] for name, spec in
+                                              rules['inputs']['anchors'].items()},
+                                   'files': anchors},
                 'family': {'path': str(Path(family).resolve()),
                            'task_sources': {**source_record, 'source_sha256': task_sources},
                            'task_runtime_signature': signature,
@@ -662,30 +789,40 @@ def score(config_path, family, g15_path, runs_root, destination, source_manifest
 
 
 def summary_markdown(result):
-    """Korean summary: primary verdict, both splits for every row, weights, gate, provenance."""
+    """Korean summary: the one confirmatory verdict, every row of both splits, exploratory rows, weights, gate and
+    inputs."""
     def ci(block):
         lo, hi = block['ci95'] or (float('nan'), float('nan'))
         return f"{block['delta']:+.5f} [{lo:+.5f}, {hi:+.5f}]"
-    conf = result['confirmation']
+    conf, pipe = result['confirmation'], result['pipeline_difference']
     lines = [f"# {result['experiment_id']} Stage B — 채택 시드 헤드 × 동결 G0-global 혼합 vs 동결 G15", '',
-             f"- 주 후보: {conf['primary']} → **{conf['primary_status']}** (두 분할 모두 predictive_improvement여야 "
-             'confirmed). 채택 여부는 Song 결정이며 이 결과만으로 G15·G0·정책 식별자·서비스는 바뀌지 않습니다.',
+             f"- 확인 검정은 하나뿐: 미리 정한 주 후보 {conf['primary']} → **{conf['primary_status']}** "
+             '(두 분할 모두 각자의 단측 검정 α .05로 predictive_improvement여야 confirmed, 교집합-합집합 규칙, Holm 없음).',
+             '- 나머지 후보 행은 보조·탐색 결과입니다(분할마다 세 행 Holm 보정은 참고용). 보조 행은 "confirmed"가 될 수 '
+             '없습니다. 채택 여부는 Song 결정이며 이 결과만으로 G15·G0·정책 식별자·서비스는 바뀌지 않습니다.',
              '- 음수 = G15보다 손실이 낮음. 경기 단위 부트스트랩 95% 구간. 반복 노출된 2025 DEV, 예측만.',
-             f"- 재현 게이트: 통과(허용 오차 {result['reproduction_gate']['tolerance']}).", '']
+             '- 파이프라인 비교: CUDA 헤드는 epoch 상한 60, G15의 flatten 헤드는 MPS에서 상한 30으로 학습했습니다. '
+             f"control/MIX_FIXED 행(같은 구조·같은 반반 혼합)이 그 차이를 직접 잽니다: Cpanel ΔNLL "
+             f"{ci(pipe[CPANEL]['nll'])}, 전체 MLB ΔNLL {ci(pipe[MLB]['nll'])}.",
+             f"- 재현 게이트: 통과(허용 오차 {result['reproduction_gate']['tolerance']}, 시드별 G15−G0 차이 포함).", '']
     for split in (CPANEL, MLB):
         block = result[split]
         lines += [f"## {split} (n={block['n']}, 경기 {block['games']})", '',
-                  '| 행 | 역할 | ΔNLL [95%] | ΔBrier [95%] | 시드별 ΔNLL | N (Holm) |', '|---|---|---|---|---|---|']
+                  '| 행 | 역할 | ΔNLL [95%] | ΔBrier [95%] | 시드별 ΔNLL | N (판정 p, 보정) |', '|---|---|---|---|---|---|']
         for name, row in block['rows'].items():
             seeds = ' / '.join(f'{d:+.4f}' for d in row['seed_deltas'])
-            n = '-' if row['N'] is None else f"{row['N']['status']} (p={row['N'].get('p_holm')})"
+            n = '-' if row['N'] is None else f"{row['N']['status']} (p={row['p_decision']}, {row['p_adjustment']})"
             lines.append(f"| {name} | {row['role']} | {ci(row['paired']['nll'])} | {ci(row['paired']['brier'])} | "
                          f'{seeds} | {n} |')
         lines.append('')
-    lines += ['## 확인 판정 (두 분할 모두 통과해야 confirmed)', '', '| 행 | 역할 | Cpanel | 전체 MLB | 판정 |',
+    lines += ['## 확인 판정 (주 후보 하나, 두 분할 모두 통과해야 confirmed)', '', '| 행 | Cpanel | 전체 MLB | 판정 |',
+              '|---|---|---|---|', f"| {conf['primary']} | {conf['splits'][CPANEL]} | {conf['splits'][MLB]} | "
+                                  f"{conf['primary_status']} |", '',
+              '## 보조 행 (탐색, confirmed 아님)', '', '| 행 | Cpanel | 전체 MLB | 두 분할 모두 통과 | 표시 |',
               '|---|---|---|---|---|']
-    for name, row in conf['rows'].items():
-        lines.append(f"| {name} | {row['role']} | {row[CPANEL]} | {row[MLB]} | {row['status']} |")
+    for name, row in result['secondary_exploratory']['rows'].items():
+        lines.append(f"| {name} | {row[CPANEL]} | {row[MLB]} | {row['both_splits_predictive_improvement']} | "
+                     f"{row['status']} |")
     lines += ['', '## MIX_FIT 가중치 (6월 blend 행에서만 선택)', '', '| 팔 | 시드별 w | 앙상블 w |', '|---|---|---|']
     for arm, rules in result['mix_weights'].items():
         w = rules[reg.MIX_FIT]
@@ -696,10 +833,12 @@ def summary_markdown(result):
         lines.append(f"| {arm} | {ci(heads['cpanel_dev'][arm]['paired']['nll'])} | "
                      f"{ci(heads['whole_mlb_dev'][arm]['paired']['nll'])} |")
     gate = result['reproduction_gate']['fields']
-    lines += ['', '## 재현 게이트 (results/EXP-P16-001.json)', '', '| 항목 | 기록 | 재계산 | 차이 |', '|---|---|---|---|']
+    lines += ['', '## 재현 게이트 (results/EXP-P16-001.json)', '', '| 항목 | 기록 | 재계산 | 최대 차이 |', '|---|---|---|---|']
     lines += [f"| {k} | {v['recorded']!r} | {v['recomputed']!r} | {v['abs_diff']:.3e} |" for k, v in gate.items()]
     prov = result['provenance']
+    chains = ', '.join(f'{k}: {v}' for k, v in prov['frozen_anchors']['chains'].items())
     lines += ['', '## 출처', '', f"- config sha256 {prov['config']['sha256']}", f"- git {prov['git']}",
+              f"- 동결 입력 고정 사슬: {chains} (EXP-P11-001 분석 manifest는 G0 bundle이 sha로 고정)",
               f"- 정렬: 순열 {len(result['alignment']['permuted'])}개 / 확인 {result['alignment']['checked']}개",
               f"- 소요 {prov['seconds']:.1f}초, 최대 RSS {prov['peak_rss']['ru_maxrss']} {prov['peak_rss']['unit']}",
               f"- R(12그룹 강건성): {result['robustness_R']['reason']}", '', '### 입력 sha256', '',

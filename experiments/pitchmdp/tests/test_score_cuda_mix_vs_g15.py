@@ -1,10 +1,12 @@
 """Synthetic tests: scripts/score_cuda_mix_vs_g15.py (EXP-P48-001 Stage B, Mac CPU).
 
 Small synthetic frozen world (3 games per split, 5 seeds, 10 classes): frequency baselines, G0-global Cpanel and
-whole-MLB members, flatten direct heads, G0 bundle / G15 config / recorded EXP-P16-001 results with sha pins, and a
-fake 15-task CUDA family.  Covers key alignment and permutation, the MIX_FIT grid weight (known optimum, blend split
-only), N / Holm plumbing, the reproduction gate (raises before any candidate is read), the written outputs and the
-refusal to write into a repository results/ directory.  No real data, no SSD, no GPU.
+whole-MLB members, flatten direct heads, an EXP-P11-001-style analysis manifest, G0 bundle / G15 config / recorded
+EXP-P16-001 results with sha pins, and a fake 15-task CUDA family.  Covers key alignment and permutation, the MIX_FIT
+grid weight (known optimum, blend split only), the single-primary / exploratory-secondary N plumbing, the pinned
+anchor chains of every frozen input (resealed or seed-swapped whole-MLB G0 members are refused before any candidate is
+read), the reproduction gate incl. per-seed G15 - G0 deltas, the written outputs and the refusal to write into a
+repository results/ directory.  No real data, no SSD, no GPU.  Review round 1: REVIEW-EXP-P48-001-ASTRA-001.
 """
 import copy
 import hashlib
@@ -24,7 +26,7 @@ import run_cuda_direct as rc  # noqa: E402
 import score_cuda_mix_vs_g15 as s  # noqa: E402
 import test_cuda_frontier_run as tf  # noqa: E402  fake CUDA task writer
 from pitchmdp import direct_adoption_confirm_registry as reg  # noqa: E402
-from pitchmdp.matrix_metrics import pitch_losses, prediction_metrics  # noqa: E402
+from pitchmdp.matrix_metrics import pitch_losses  # noqa: E402
 
 RUN = REPO / 'configs' / 'EXP-P48-001.json'
 ROOT_NAME = reg.STAGE_B_RULES['inputs']['runs_root_name']
@@ -98,8 +100,37 @@ def model_sha(tag):
     return hashlib.sha256(tag.encode()).hexdigest()
 
 
+def set_path(value, path, leaf):
+    for key in path[:-1]:
+        value = value.setdefault(key, {})
+    value[path[-1]] = leaf
+
+
+def reseal(dest, name):
+    """Rewrite a member state's artifact_hashes from the files now on disk (identity kept): a consistent replacement."""
+    value = json.loads((dest / name).read_text())
+    value['artifact_hashes'] = {f: rc.sha256_file(dest / f) for f in value['artifact_hashes']}
+    return dump(dest / name, value)
+
+
+def manifest_inputs(root, rels):
+    """{absolute path: sha256} of every file under the given runs-root paths, like the P11 manifest `inputs`."""
+    out = {}
+    for rel in rels:
+        path = root / rel
+        for one in ([path] if path.is_file() else sorted(q for q in path.iterdir() if q.is_file())):
+            out[str(one)] = rc.sha256_file(one)
+    return out
+
+
+def write_manifest(root, inputs):
+    path = root / reg.STAGE_B_RULES['inputs']['p11_manifest']['path']
+    return path, dump(path, {'inputs': inputs, 'results_sha256': 'r', 'predictions_sha256': 'p', 'scoring_sources': {}})
+
+
 def frozen_world(tmp_path, gate_shift=0.):
-    """Frozen inputs under tmp/<runs root name>, G0 bundle, G15 config and recorded results; returns paths + rules."""
+    """Frozen inputs under tmp/<runs root name>, the P11 analysis manifest, G0 bundle, G15 config and recorded results;
+    returns paths, the bundle dicts and the rules pinned to them."""
     root, spec = tmp_path / ROOT_NAME, reg.STAGE_B_RULES['inputs']
     save(root / spec['cpanel_baseline'], {**part('blend', dirichlet('freq', 'blend')),
                                           **part('dev', dirichlet('freq', 'dev'))})
@@ -133,6 +164,11 @@ def frozen_world(tmp_path, gate_shift=0.):
             g15_files[f'seed{k}_{name[:-5]}'] = {'path': str(dest / name), 'sha256': state(dest, name, identity, files)}
     for key, rel in (('p4_frequency', spec['cpanel_baseline']), ('p11_frequency', spec['mlb_baseline'])):
         g0_files[key] = {'path': str(root / rel), 'sha256': rc.sha256_file(root / rel)}
+    # EXP-P11-001 analysis manifest (as scripts/score_ml_g0_whole.py records it): baselines, the G0 Cpanel members and
+    # every whole-MLB G0 member's state and artifacts; the G0 bundle pins its sha256 (`p11_manifest`).
+    manifest_path, manifest_sha = write_manifest(root, manifest_inputs(root, [
+        spec['cpanel_baseline'], spec['mlb_baseline'], *spec['g0_cpanel'].values(), *spec['g0_mlb'].values()]))
+    g0_files['p11_manifest'] = {'path': str(manifest_path), 'sha256': manifest_sha}
     g0_bundle = {'members': {str(x): {'model_sha256': model_sha(f'g0/{x}')} for x in reg.SEEDS}, 'files': g0_files}
     g0_path = tmp_path / 'configs' / 'G0.json'
     g0_sha = dump(g0_path, g0_bundle)
@@ -142,19 +178,17 @@ def frozen_world(tmp_path, gate_shift=0.):
            'files': {**g15_files, 'results_p16': {'path': str(p16_path), 'sha256': None}}}
     rules = copy.deepcopy(reg.STAGE_B_RULES)
     cpanel, mlb, g0, g0_mlb, flatten, flatten_mlb = s.load_frozen(rules, root, g15, g0_bundle, {})
-    ref = s.g15_reference(flatten, g0, cpanel, flatten_mlb, g0_mlb, mlb['mlb_dev'], .5, s.helpers())
-    y = mlb['mlb_dev_y']
-    g15_nll, g0_nll = ref['report']['primary']['log_loss'] + gate_shift, ref['g0_report']['primary']['log_loss']
-    recorded = {'cpanel_dev': {'reports': {MIX: {'primary': {'log_loss': g15_nll}},
-                                           'G0-global': {'primary': {'log_loss': g0_nll}}}},
-                'mlb_dev_blended': {'comparison': {MIX: {
-                    'candidate': {'log_loss': prediction_metrics(y, ref['mlb_blended'])['log_loss']},
-                    'control': {'log_loss': prediction_metrics(y, ref['g0_mlb_blended'])['log_loss']}}}}}
+    ref = s.g15_reference(flatten, g0, cpanel, flatten_mlb, g0_mlb, mlb['mlb_dev'], mlb['mlb_dev_y'], .5, s.helpers())
+    gate, recorded = rules['reproduction_gate'], {}
+    for name, path in {**gate['fields'], **gate['seed_delta_fields']}.items():
+        set_path(recorded, path, ref['recomputed'][name])
+    recorded['cpanel_dev']['reports'][MIX]['primary']['log_loss'] += gate_shift
     g15['files']['results_p16']['sha256'] = dump(p16_path, recorded)
     g15_path = tmp_path / 'configs' / 'G15.json'
     rules['reference'].update(config_sha256=dump(g15_path, g15), g0_bundle_sha256=g0_sha,
                               recorded_results_sha256=g15['files']['results_p16']['sha256'])
-    return {'root': root, 'g15': g15_path, 'g0': g0_path, 'p16': p16_path, 'rules': rules}
+    return {'root': root, 'g15': g15_path, 'g0': g0_path, 'p16': p16_path, 'rules': rules, 'g15_dict': g15,
+            'g0_dict': g0_bundle, 'recorded': recorded}
 
 
 def cuda_family(tmp_path, cfg, permute=(), broken=None, name='fam'):
@@ -286,47 +320,57 @@ def test_mix_fit_weights_use_the_blend_split_only(tmp_path):
     assert fixed == {'seeds': [.5] * 5, 'ensemble': .5, 'selection': None}
 
 
-def test_n_decision_plumbing_holm_across_the_candidate_family_only():
+def test_n_decision_single_primary_unadjusted_and_holm_across_three_secondary_rows():
     def row(delta, p, seeds):
         return {'paired': {'status': 'measured', 'nll': {'delta': delta, 'ci95': [delta - .001, delta + .001],
                                                          'p_less': p},
                            'brier': {'delta': -.001, 'ci95': [-.002, 0.], 'p_less': .01}}, 'seed_deltas': seeds}
     good = [-.01] * 5
-    rows = {'periodic_residual_counts/MIX_FIXED': row(-.01, .02, good),
+    primary, secondary = s.test_rows(reg.STAGE_B_RULES)
+    assert (primary, secondary) == (reg.PRIMARY_ROW, reg.SECONDARY_ROWS) == (
+        'tabm_residual_counts/MIX_FIT',
+        ['periodic_residual_counts/MIX_FIXED', 'periodic_residual_counts/MIX_FIT', 'tabm_residual_counts/MIX_FIXED'])
+    rows = {primary: row(-.01, .04, good),
+            'periodic_residual_counts/MIX_FIXED': row(-.01, .02, good),
             'periodic_residual_counts/MIX_FIT': row(-.01, .02, good),
-            'tabm_residual_counts/MIX_FIXED': row(-.01, .001, good),
-            'tabm_residual_counts/MIX_FIT': row(-.01, .001, [-.01, -.01, -.01, .01, .01]),
+            'tabm_residual_counts/MIX_FIXED': row(-.01, .001, [-.01, -.01, -.01, .01, .01]),
             'control/MIX_FIXED': row(0., .5, [0.] * 5)}
-    family = list(rows)[:4]
-    out = s.decide(rows, family, reg.STAGE_B_RULES['N'])
-    assert out['control/MIX_FIXED']['N'] is None
-    assert out['periodic_residual_counts/MIX_FIXED']['N']['p_holm'] == pytest.approx(.04)  # 2 x .02 (Holm rank 3)
-    assert out['periodic_residual_counts/MIX_FIXED']['N']['status'] == 'predictive_improvement'
-    assert out['tabm_residual_counts/MIX_FIXED']['N']['p_holm'] == pytest.approx(.004)
-    assert out['tabm_residual_counts/MIX_FIT']['N']['status'] == 'inconclusive'  # 3/5 seeds < final-stage 4/5
-    assert not out['tabm_residual_counts/MIX_FIT']['N']['criteria']['seed_direction_stable']
+    out = s.decide(rows, primary, secondary, reg.STAGE_B_RULES['N'])
+    # one confirmatory test: its own unadjusted p (.04 passes at .05; a four-test Holm would have made it .16)
+    assert out[primary]['p_decision'] == .04 and out[primary]['N']['status'] == 'predictive_improvement'
+    assert out[primary]['p_adjustment'].startswith('none')
+    # secondary: Holm across the three -> .001 x 3 = .003, .02 x 2 = .04, max(.04, .02) = .04
+    assert out['tabm_residual_counts/MIX_FIXED']['p_decision'] == pytest.approx(.003)
+    assert out['periodic_residual_counts/MIX_FIXED']['p_decision'] == pytest.approx(.04)
+    assert out['periodic_residual_counts/MIX_FIT']['p_decision'] == pytest.approx(.04)
+    assert all(out[n]['p_adjustment'].startswith('holm across the 3 secondary') for n in secondary)
+    assert out['tabm_residual_counts/MIX_FIXED']['N']['status'] == 'inconclusive'  # 3/5 seeds < final-stage 4/5
+    assert out['control/MIX_FIXED']['N'] is None and out['control/MIX_FIXED']['p_decision'] is None
 
 
-def test_reproduction_gate_raises_on_mismatch_and_before_any_candidate():
-    gate = reg.STAGE_B_RULES['reproduction_gate']
-    y = META['mlb_dev']['y']
-    p = dirichlet('a', 'mlb_dev')
-    reference = {'report': {'primary': {'log_loss': 1.25}}, 'g0_report': {'primary': {'log_loss': 1.5}},
-                 'mlb_blended': p, 'g0_mlb_blended': p}
-    nll = prediction_metrics(y, p)['log_loss']
-    recorded = {'cpanel_dev': {'reports': {MIX: {'primary': {'log_loss': 1.25}},
-                                           'G0-global': {'primary': {'log_loss': 1.5}}}},
-                'mlb_dev_blended': {'comparison': {MIX: {'candidate': {'log_loss': nll},
-                                                         'control': {'log_loss': nll}}}}}
-    result = s.reproduction_gate(reference, y, recorded, gate)
+def recomputed_values(shift=0., seed_shift=0., short=False):
+    seeds = [-.001, -.002, -.003, -.004, -.005]
+    return {'g15_cpanel_dev_after_blend_nll': 1.25 + shift, 'g15_whole_mlb_dev_blended_nll': 1.4,
+            'g0_cpanel_dev_after_blend_nll': 1.5, 'g0_whole_mlb_dev_blended_nll': 1.45,
+            'g15_minus_g0_cpanel_dev_after_blend_seed_deltas': seeds[:4] if short else seeds,
+            'g15_minus_g0_whole_mlb_dev_blended_seed_deltas': [x + seed_shift * (i == 2) for i, x in enumerate(seeds)]}
+
+
+def test_reproduction_gate_compares_scalars_and_per_seed_deltas():
+    gate, recorded = reg.STAGE_B_RULES['reproduction_gate'], {}
+    for name, path in {**gate['fields'], **gate['seed_delta_fields']}.items():
+        set_path(recorded, path, recomputed_values()[name])
+    result = s.reproduction_gate({'recomputed': recomputed_values()}, recorded, gate)
     assert result['passed'] and all(r['abs_diff'] == 0 for r in result['fields'].values())
-    near = copy.deepcopy(recorded)
-    near['cpanel_dev']['reports'][MIX]['primary']['log_loss'] += 5e-10
-    assert s.reproduction_gate(reference, y, near, gate)['passed']
-    far = copy.deepcopy(recorded)
-    far['mlb_dev_blended']['comparison'][MIX]['candidate']['log_loss'] += 2e-9
-    with pytest.raises(ValueError, match='Reproduction gate failed.*g15_whole_mlb_dev_blended_nll'):
-        s.reproduction_gate(reference, y, far, gate)
+    assert s.reproduction_gate({'recomputed': recomputed_values(shift=5e-10)}, recorded, gate)['passed']
+    for bad, match in ((recomputed_values(shift=2e-9), 'g15_cpanel_dev_after_blend_nll'),
+                       (recomputed_values(seed_shift=2e-9), 'g15_minus_g0_whole_mlb_dev_blended_seed_deltas'),
+                       (recomputed_values(short=True), 'g15_minus_g0_cpanel_dev_after_blend_seed_deltas')):
+        with pytest.raises(ValueError, match='Reproduction gate failed.*' + match):
+            s.reproduction_gate({'recomputed': bad}, recorded, gate)
+    with pytest.raises(ValueError, match='fields differ'):
+        s.reproduction_gate({'recomputed': {k: v for k, v in recomputed_values().items() if 'seed' not in k}},
+                            recorded, gate)
 
 
 def test_destination_refuses_repository_results_and_existing_dirs(tmp_path):
@@ -357,34 +401,41 @@ def test_score_writes_outputs_with_gate_rows_confirmation_and_provenance(world, 
     sums = dict(line.split('  ')[::-1] for line in (out / 'SHA256SUMS').read_text().splitlines())
     assert sums == {n: rc.sha256_file(out / n) for n in ('results.json', 'SUMMARY.md')}
     assert results_snapshot() == before  # nothing written into the repository results/
+    gate = reg.STAGE_B_RULES['reproduction_gate']
     assert result['reproduction_gate']['passed'] and set(result['reproduction_gate']['fields']) == \
-        set(reg.STAGE_B_RULES['reproduction_gate']['fields'])
+        set(gate['fields']) | set(gate['seed_delta_fields'])
     names = [f'{a}/{r}' for a in reg.ARM_ORDER for r in (reg.MIX_FIXED, reg.MIX_FIT)]
-    family_names = [f'{a}/{r}' for a in ('periodic_residual_counts', 'tabm_residual_counts')
-                    for r in (reg.MIX_FIXED, reg.MIX_FIT)]
-    assert result['multiplicity']['family'] == family_names
+    primary, secondary = reg.PRIMARY_ROW, reg.SECONDARY_ROWS
+    assert result['multiplicity']['primary'] == primary and result['multiplicity']['secondary'] == secondary
     for split in (s.CPANEL, s.MLB):
         rows = result[split]['rows']
-        assert list(rows) == names
-        assert result[split]['games'] == 3
+        assert list(rows) == names and result[split]['games'] == 3
         for name in names:
             row = rows[name]
             assert len(row['seed_deltas']) == 5
             assert (row['paired']['draws'], row['paired']['seed']) == (10000, 20260924)
-            if name in family_names:
-                assert row['role'] == 'candidate' and row['N']['p_holm'] >= row['paired']['nll']['p_less']
+            if name == primary:
+                assert row['role'] == 'primary' and row['p_decision'] == row['paired']['nll']['p_less']
+            elif name in secondary:
+                assert row['role'] == 'secondary_exploratory' and row['p_decision'] >= row['paired']['nll']['p_less']
             else:
-                assert row['N'] is None and row['role'].endswith('descriptive')
+                assert row['N'] is None and row['p_decision'] is None and row['role'].endswith('descriptive')
         sanity = rows['control/MIX_FIXED']['paired']  # control head == G15 flatten head -> identical mix
         assert sanity['nll']['delta'] == 0 and sanity['nll']['ci95'] == [0, 0] and sanity['brier']['delta'] == 0
-        assert rows['tabm_residual_counts/MIX_FIT']['N']['status'] == s.PASS
+        assert rows[primary]['N']['status'] == s.PASS
         assert rows['tabm_residual_counts/MIX_FIXED']['N']['status'] == s.PASS
         assert rows['periodic_residual_counts/MIX_FIXED']['N']['status'] != s.PASS
     conf = result['confirmation']
-    assert conf['primary'] == 'tabm_residual_counts/MIX_FIT' and conf['primary_status'] == 'confirmed'
-    assert conf['rows']['periodic_residual_counts/MIX_FIXED']['status'] == 'not_confirmed'
-    assert conf['rows']['tabm_residual_counts/MIX_FIXED']['role'] == 'secondary'
-    assert result['cross_device_reproduction'][s.CPANEL]['nll']['delta'] == 0
+    assert conf['primary'] == primary and conf['primary_status'] == 'confirmed'
+    assert conf['splits'] == {s.CPANEL: s.PASS, s.MLB: s.PASS} and 'intersection-union' in conf['test']
+    explored = result['secondary_exploratory']['rows']
+    assert list(explored) == secondary and all(r['status'] == 'exploratory' for r in explored.values())
+    assert explored['tabm_residual_counts/MIX_FIXED']['both_splits_predictive_improvement'] is True  # still exploratory
+    assert explored['periodic_residual_counts/MIX_FIXED']['both_splits_predictive_improvement'] is False
+    assert 'confirmed' not in json.dumps(result['secondary_exploratory'])
+    assert result['pipeline_difference']['row'] == 'control/MIX_FIXED'
+    assert result['pipeline_difference'][s.CPANEL]['nll']['delta'] == 0
+    assert 'cap 30' in result['pipeline_difference']['note']
     weights = result['mix_weights']
     assert weights['tabm_residual_counts'][reg.MIX_FIXED]['ensemble'] == .5
     assert all(w in reg.FIT_GRID for w in weights['tabm_residual_counts'][reg.MIX_FIT]['seeds'])
@@ -393,16 +444,33 @@ def test_score_writes_outputs_with_gate_rows_confirmation_and_provenance(world, 
     assert heads['whole_mlb_dev']['tabm_residual_counts']['paired']['nll']['delta'] < 0
     assert result['robustness_R']['status'] == 'not_computed' and 'score_ml_matrix' in result['robustness_R']['reason']
     assert result['alignment'] == {**result['alignment'], 'permuted': [], 'checked': 45}
+    assert any('ceiling of this direct-head pipeline on the exposed 2025 DEV' in x for x in result['limits'])
+    assert any('cap 30 on MPS' in x for x in result['limits'])
     prov = result['provenance']
     assert prov['config']['sha256'] == rc.sha256_file(world['config'])
     for path in (world['g15'], world['g0'], world['p16'], world['root'] / 'EXP-P4-001/baseline_predictions.npz',
                  world['root'] / 'EXP-P16-001/4/mlb_predictions.npz',
+                 world['root'] / 'EXP-P11-001/members/G0-global/seed3/predictions.npz',
+                 world['root'] / reg.STAGE_B_RULES['inputs']['p11_manifest']['path'],
                  rc.task_dir(family, 'tabm_residual_counts', 4, False) / 'mlb_predictions.npz'):
         assert prov['inputs_sha256'][str(Path(path).resolve())] == rc.sha256_file(path), path
+    anchors = prov['frozen_anchors']
+    assert anchors['chains'] == {'cpanel_baseline': 'g0_bundle', 'mlb_baseline': 'g0_bundle',
+                                 'g0_cpanel': 'g0_bundle', 'g0_mlb': 'p11_manifest', 'flatten': 'g15'}
+    files = anchors['files']
+    for seed in reg.SEEDS:
+        for name in ('prediction_state.json', 'predictions.npz'):
+            one = files[f'EXP-P11-001/members/G0-global/seed{seed}/{name}']
+            assert one['anchor'] == 'p11_manifest' and one['listed_in'] == ['p11_manifest']
+    assert files['EXP-P4-001/members/G0-global/seed0/prediction_state.json']['listed_in'] == ['g0_bundle',
+                                                                                              'p11_manifest']
+    assert files['EXP-P16-001/3/mlb_prediction_state.json']['anchor'] == 'g15'
+    assert files['EXP-P16-001/3/mlb_predictions.npz']['anchor'] == 'g15 -> state artifact_hashes'
     assert prov['git']['commit'] and prov['seconds'] > 0 and prov['peak_rss']['ru_maxrss'] > 0
     assert set(prov['family']['tasks']) == set(reg.ARM_ORDER)
     summary = (out / 'SUMMARY.md').read_text()
-    assert 'tabm_residual_counts/MIX_FIT' in summary and 'confirmed' in summary and prov['config']['sha256'] in summary
+    assert primary in summary and 'confirmed' in summary and prov['config']['sha256'] in summary
+    assert '보조 행 (탐색, confirmed 아님)' in summary and 'exploratory' in summary
     with pytest.raises(FileExistsError):
         run(world, family, tmp_path / 'out')
 
@@ -490,3 +558,124 @@ def test_held_heavy_lock_fails_fast_before_reading_frozen_inputs(world, tmp_path
             run(world, family, tmp_path / 'out')
         fcntl.flock(held.fileno(), fcntl.LOCK_UN)
     assert not (tmp_path / 'out').exists()
+
+
+# ------------------------------------------------------------------ review round 1: pinned chain of the P11 members
+
+def forbid_candidates(monkeypatch):
+    def boom(*args, **kwargs):
+        raise AssertionError('a candidate was read or scored before the frozen chain / gate passed')
+    for name in ('cuda_members', 'candidate', 'score_arrays', 'cuda_alignment'):
+        monkeypatch.setattr(s, name, boom)
+
+
+def p11_member(world, seed):
+    return world['root'] / reg.STAGE_B_RULES['inputs']['g0_mlb'][str(seed)]
+
+
+def test_resealed_p11_member_is_refused_before_any_candidate(world, tmp_path, monkeypatch):
+    """Archive replaced AND adjacent state resealed consistently: the state no longer matches the pinned manifest."""
+    family = cuda_family(tmp_path, world['cfg'])
+    dest = p11_member(world, 2)
+    save(dest / 'predictions.npz', part('mlb_dev', dirichlet('replacement', 'mlb_dev'), 2, prefix='dev'))
+    reseal(dest, 'prediction_state.json')
+    forbid_candidates(monkeypatch)
+    with pytest.raises(ValueError, match='seed2/prediction_state.json: differs from the pinned p11_manifest record'):
+        run(world, family, tmp_path / 'out')
+    assert not (tmp_path / 'out').exists()
+
+
+def test_seed_array_swap_between_p11_members_is_refused_before_any_candidate(world, tmp_path, monkeypatch):
+    """Seed-1 and seed-3 members exchanged two ways: (a) probability archives swapped with both states resealed
+    (identities kept), (b) whole members (archive + original state) moved across the seed directories."""
+    family = cuda_family(tmp_path, world['cfg'])
+    one, three = p11_member(world, 1), p11_member(world, 3)
+    names = ('predictions.npz', 'prediction_state.json')
+    original = {(d, n): (d / n).read_bytes() for d in (one, three) for n in names}
+    forbid_candidates(monkeypatch)
+    (one / names[0]).write_bytes(original[three, names[0]])
+    (three / names[0]).write_bytes(original[one, names[0]])
+    for dest in (one, three):
+        reseal(dest, names[1])
+    with pytest.raises(ValueError, match='seed1/prediction_state.json: differs from the pinned p11_manifest record'):
+        run(world, family, tmp_path / 'a')
+    for name in names:
+        (one / name).write_bytes(original[three, name])
+        (three / name).write_bytes(original[one, name])
+    with pytest.raises(ValueError, match='seed1/prediction_state.json: differs from the pinned p11_manifest record'):
+        run(world, family, tmp_path / 'b')
+    assert not (tmp_path / 'a').exists() and not (tmp_path / 'b').exists()
+
+
+def test_in_memory_seed_swap_keeps_the_aggregate_but_fails_the_per_seed_gate(world):
+    """The reviewer's probe: swapping two whole-MLB G0 members leaves every aggregate NLL unchanged, so only the
+    registered per-seed G15 - G0 deltas can catch it; the gate raises before any head is requested."""
+    rules = world['rules']
+    cpanel, mlb, g0, g0_mlb, flatten, flatten_mlb = s.load_frozen(rules, world['root'], world['g15_dict'],
+                                                                  world['g0_dict'], {})
+    swapped = [g0_mlb[i] for i in (0, 3, 2, 1, 4)]
+    tools = s.helpers()
+    plain = s.g15_reference(flatten, g0, cpanel, flatten_mlb, g0_mlb, mlb['mlb_dev'], mlb['mlb_dev_y'], .5, tools)
+    moved = s.g15_reference(flatten, g0, cpanel, flatten_mlb, swapped, mlb['mlb_dev'], mlb['mlb_dev_y'], .5, tools)
+    for name in rules['reproduction_gate']['fields']:
+        assert moved['recomputed'][name] == pytest.approx(plain['recomputed'][name], abs=1e-12), name
+    seeds = 'g15_minus_g0_whole_mlb_dev_blended_seed_deltas'
+    assert moved['recomputed'][seeds] != plain['recomputed'][seeds]
+
+    def boom(arm):
+        raise AssertionError('a head was requested before the reproduction gate')
+    with pytest.raises(ValueError, match='Reproduction gate failed.*' + seeds):
+        s.score_arrays(boom, flatten, g0, cpanel, boom, flatten_mlb, swapped, mlb, rules, world['recorded'], tools)
+
+
+def rewrite_manifest(world, edit):
+    """Rewrite the P11 manifest with `edit` applied to its inputs; re-pin it in an in-memory copy of the G0 bundle."""
+    root, path = world['root'], world['root'] / reg.STAGE_B_RULES['inputs']['p11_manifest']['path']
+    inputs = json.loads(path.read_text())['inputs']
+    edit(inputs, root)
+    _, digest = write_manifest(root, inputs)
+    bundle = copy.deepcopy(world['g0_dict'])
+    bundle['files']['p11_manifest']['sha256'] = digest
+    return bundle
+
+
+def test_every_link_of_the_p11_manifest_chain_fails_closed(world):
+    load = lambda bundle: s.load_frozen(world['rules'], world['root'], world['g15_dict'], bundle, {})  # noqa: E731
+    load(world['g0_dict'])  # the built chain is intact
+    no_pin = copy.deepcopy(world['g0_dict'])
+    del no_pin['files']['p11_manifest']
+    with pytest.raises(ValueError, match='does not pin the EXP-P11-001 analysis manifest'):
+        load(no_pin)
+    moved = copy.deepcopy(world['g0_dict'])
+    moved['files']['p11_manifest']['path'] = moved['files']['p11_manifest']['path'].replace('analysis', 'other')
+    with pytest.raises(ValueError, match='does not pin the EXP-P11-001 analysis manifest'):
+        load(moved)
+    member = lambda seed, name: str(world['root'] / reg.STAGE_B_RULES['inputs']['g0_mlb'][str(seed)] / name)  # noqa
+    cases = {'not reachable from the pinned p11_manifest chain': [
+                 lambda i, r: i.pop(member(4, 'prediction_state.json')),
+                 lambda i, r: i.pop(member(2, 'predictions.npz'))],
+             'differs from the pinned p11_manifest record': [
+                 lambda i, r: i.update({member(0, 'predictions.npz'): '0' * 64}),
+                 lambda i, r: i.update({str(r / 'EXP-P4-001/members/G0-global/seed1/predictions.npz'): '0' * 64}),
+                 lambda i, r: i.update({str(r / reg.STAGE_B_RULES['inputs']['mlb_baseline']): '0' * 64})]}
+    for match, edits in cases.items():
+        for edit in edits:
+            with pytest.raises(ValueError, match=match):
+                load(rewrite_manifest(world, edit))
+    # the manifest bytes on disk now differ from the sha256 the original bundle pinned (and from any other pin)
+    wrong_pin = copy.deepcopy(world['g0_dict'])
+    wrong_pin['files']['p11_manifest']['sha256'] = 'f' * 64
+    for bundle in (world['g0_dict'], wrong_pin):
+        with pytest.raises(ValueError, match='analysis manifest differs from the G0 bundle pin'):
+            load(bundle)
+
+
+def test_anchor_rules_must_cover_every_frozen_input(world):
+    rules = copy.deepcopy(world['rules'])
+    del rules['inputs']['anchors']['g0_mlb']
+    with pytest.raises(ValueError, match='anchors must name a pinned chain'):
+        s.load_frozen(rules, world['root'], world['g15_dict'], world['g0_dict'], {})
+    rules = copy.deepcopy(world['rules'])
+    rules['inputs']['anchors']['g0_mlb'] = {'source': 'nowhere', 'files': ['state']}
+    with pytest.raises(ValueError, match='anchors must name a pinned chain'):
+        s.load_frozen(rules, world['root'], world['g15_dict'], world['g0_dict'], {})
