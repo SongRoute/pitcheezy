@@ -233,7 +233,7 @@ export default function Zone({ bounds, candidates, actual, actualLabel, setupX, 
       <rect x={g.d.x - g.hw} y={g.d.y - g.hh} width={2 * g.hw} height={2 * g.hh} rx={u(5)} />{g.at.out && arrow(g.d, Math.min(g.hw, g.hh))}
       <text x={g.tx} y={g.ty} textAnchor="middle">{g.ranks.join('·')}</text></g>)}
     {paMarks.map(({ p, at, d }, i) => { const label = paLabels[i]; const inside = p.numbers.length === 1 && !p.stacked && !at.out;
-      return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot g1 ${p.kind ?? 'unknown'}${p.latest ? ' latest' : ''}${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined} data-kind={p.kind ?? 'unknown'}>
+      return <g key={p.numbers.join()} className={`sv-actual sv-pa-dot g1 ${p.label ? 'label' : p.kind ?? 'unknown'}${p.latest ? ' latest' : ''}${at.out ? ' out' : ''}`} data-x={p.x} data-z={p.z} data-out={at.out || undefined} data-kind={p.kind ?? 'unknown'}>
         <circle cx={d.x} cy={d.y} r={rA} />{at.out && arrow(d, rA)}{p.latest && <circle className="sv-ring" cx={d.x} cy={d.y} r={rA + ring} />}
         <text className={inside ? 'sv-g1-num' : 'sv-g1-out'} x={label.x} y={label.y} textAnchor="middle" style={{ fontSize: px(inside ? 12 : 11), stroke: inside || !label.halo ? 'none' : 'white', strokeWidth: label.halo && !inside ? px(3) : undefined }}>{p.numbers.join('·')}</text>
         <title>{p.numbers.join('·')}{typeof p.numbers[0] === 'number' ? '구' : ''}{p.kind ? ` · ${KIND_WORD[p.kind]}` : ''} · {ft(p)}{at.out ? ' · 화면 밖' : ''}</title></g>; })}
@@ -247,3 +247,9 @@ export function G1Dot({ kind, n, ring = false }: { kind: ResultKind; n: number |
 /** The rank square as on the zone: 1 filled, 2 light, 3 white with a solid border (UI 10/26 ③). */
 export const RankSq = ({ rank }: { rank: number }) => <i className={`sv-rk r${Math.min(rank, 3)}`} aria-hidden="true">{rank}</i>;
 
+/** One-line key under the zone (UI 10/26 ②): the recommendation square and the three G1 result marks, then the view. */
+export function ZoneLegend({ side, actualOnly = null }: { side: 'L' | 'R' | null; actualOnly?: string | null }) {
+  return <div className="sv-zone-legend"><p aria-hidden="true"><span><i className="k rec" />추천</span>{actualOnly ? <span><i className={`k ${actualOnly}`} />실제 ({actualOnly === 'ball' ? '볼' : actualOnly === 'inplay' ? '타격' : actualOnly === 'strike' ? '스트라이크·파울' : '결과 미확인'})</span>
+    : <><span><i className="k ball" />볼</span><span><i className="k strike" />스트라이크·파울</span><span><i className="k inplay" />타격</span></>}{actualOnly && <span>투수 시점</span>}</p>
+    {!actualOnly && <p>투수 시점 · {side === 'L' ? '좌타자' : side === 'R' ? '우타자' : '타석 방향 미확인'}</p>}</div>;
+}
