@@ -1,0 +1,593 @@
+{
+  "protocol": "cuda_direct_v1",
+  "experiment_id": "EXP-P48-001",
+  "status": "DRAFT",
+  "adoption_confirm": true,
+  "decision": "DRAFT, not registered: smoke only. Real fits need the committed pre-registration, an independent review of this config, the registry and the Stage-B scorer by an agent other than the author, a CUDA smoke of all 15 tasks, registration (status REGISTERED, execution.enabled true, registration block filled, queue clock fields set) and Song's explicit go (new-experiment rule). No scientific N/G decision, promotion or selection from Stage A. G0-global, the G15 mix (D145), the policy identifier c13cc989 and the service are unchanged by this family whatever its result.",
+  "purpose": "Adoption-seed confirmation (pre-registration experiments/pitchmdp/docs/PREREG-EXP-P48-001-adoption-seed-confirmation-2026-10-26.md, written before any smoke, fit or score of this family; designed after the EXP-P34-001/EXP-P35-001 scores were read on repeatedly exposed DEV: post-selection). Question: does the TabM-mini k=8 head on the periodic-residual backbone with workload counts (tabm_residual_counts), which the P34/P35 exploration read below the same-family flatten control on UNBLENDED head contrasts, still improve on the research baseline G15 mix once it is treated exactly like G15 (mixed with the frozen G0-global member of the same seed, then the June frequency blend) on the adoption seeds 0-4? Stage A (this config, CUDA): 3 arms x 5 seeds = 15 fits with the epoch cap 60 and the unchanged export and calibration chain; unblended contrasts vs the same-family CUDA control are descriptive. Stage B (comparison.stage_b, Mac CPU) is the primary comparison against the frozen G15 mix under the matrix N rule.",
+  "source_configs": {
+    "tabm_residual_registered": {
+      "path": "configs/EXP-P34-001.json",
+      "sha256": "2bfd0e03aa8cdba6923a237b748ec7f59ca23c44331e1ba1149da23ef2111909"
+    },
+    "ple_registered": {
+      "path": "configs/EXP-P35-001.json",
+      "sha256": "0a7cefda17ed961a1563d7fa762888d1eea4f97bf267f7e40f31dd81e870833a"
+    },
+    "g15_reference": {
+      "path": "configs/G15-MIX-RESEARCH-FROZEN-v1.json",
+      "sha256": "b4c19988722c25d994b6f14c9b87b3ff3a177fb95702fe4c61a518fbbb201e6d"
+    },
+    "g0_reference": {
+      "path": "configs/G0-RESEARCH-FROZEN-v1.json",
+      "sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062"
+    },
+    "g15_recorded_results": {
+      "path": "results/EXP-P16-001.json",
+      "sha256": "9d372da26b39fca07d6963a6861044721b31cf42209c92d5edb66f7b8a778597"
+    }
+  },
+  "export": {
+    "splits": [
+      "train",
+      "earlystop",
+      "temperature",
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "fit_splits": [
+      "train"
+    ],
+    "earlystop_split": "earlystop",
+    "temperature_split": "temperature",
+    "predict_splits": [
+      "blend",
+      "dev",
+      "mlb_dev"
+    ],
+    "workload_columns": [
+      "prior_records_per100",
+      "thruorder_minus1_over3",
+      "log_rest_days",
+      "rest_missing"
+    ],
+    "shapes": {
+      "length": 6,
+      "n_token": 38,
+      "n_context": 52,
+      "n_workload": 4
+    },
+    "last_year": 2025,
+    "normalization": "none learned here; arrays are the frozen EXP-P4-001 TRAIN-fitted transforms (parent preparation pinned)",
+    "manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+    "context_layout": {
+      "groups": {
+        "base": [
+          0,
+          28
+        ],
+        "pitcher_profile": [
+          28,
+          51
+        ],
+        "pitcher_support": [
+          51,
+          52
+        ]
+      },
+      "base_features": [
+        "balls",
+        "strikes",
+        "outs",
+        "inning",
+        "defensive_score_lead",
+        "defender_is_home",
+        "first_base",
+        "second_base",
+        "third_base",
+        "batter_left",
+        "pitcher_left",
+        "six_batter_style_rates",
+        "six_style_reliabilities",
+        "five_soft_memberships"
+      ],
+      "style_columns": [
+        "batter_style_contact_prior",
+        "batter_style_swing_prior",
+        "batter_style_walk_prior",
+        "batter_style_strikeout_prior",
+        "batter_style_isolated_power_prior",
+        "batter_style_groundball_prior"
+      ],
+      "reliability_columns": [
+        "batter_style_contact_reliability",
+        "batter_style_swing_reliability",
+        "batter_style_walk_reliability",
+        "batter_style_strikeout_reliability",
+        "batter_style_isolated_power_reliability",
+        "batter_style_groundball_reliability"
+      ],
+      "n_clusters": 5,
+      "pitcher_profile_columns": [
+        "effective_speed",
+        "release_spin_rate",
+        "pfx_x",
+        "pfx_z",
+        "left_share",
+        "type_CH",
+        "type_CS",
+        "type_CU",
+        "type_EP",
+        "type_FA",
+        "type_FC",
+        "type_FF",
+        "type_FO",
+        "type_FS",
+        "type_KC",
+        "type_KN",
+        "type_PO",
+        "type_SC",
+        "type_SI",
+        "type_SL",
+        "type_ST",
+        "type_SV",
+        "type_UN"
+      ],
+      "stripped_tail": 7
+    },
+    "context_layout_source": "export manifest lineage.context_layout (SequenceContext.report features, Archetypes.report style/reliability columns and n_clusters, SharingContext clusters columns); names via direct_frontier_registry.direct_context_names; grouped labels map to names only through these source equivalences",
+    "context_names": [
+      "balls",
+      "strikes",
+      "outs",
+      "inning",
+      "defensive_score_lead",
+      "defender_is_home",
+      "first_base",
+      "second_base",
+      "third_base",
+      "batter_left",
+      "pitcher_left",
+      "batter_style_contact_prior",
+      "batter_style_swing_prior",
+      "batter_style_walk_prior",
+      "batter_style_strikeout_prior",
+      "batter_style_isolated_power_prior",
+      "batter_style_groundball_prior",
+      "batter_style_contact_reliability",
+      "batter_style_swing_reliability",
+      "batter_style_walk_reliability",
+      "batter_style_strikeout_reliability",
+      "batter_style_isolated_power_reliability",
+      "batter_style_groundball_reliability",
+      "batter_archetype_membership_0",
+      "batter_archetype_membership_1",
+      "batter_archetype_membership_2",
+      "batter_archetype_membership_3",
+      "batter_archetype_membership_4",
+      "pitcher_effective_speed",
+      "pitcher_release_spin_rate",
+      "pitcher_pfx_x",
+      "pitcher_pfx_z",
+      "pitcher_left_share",
+      "pitcher_type_CH",
+      "pitcher_type_CS",
+      "pitcher_type_CU",
+      "pitcher_type_EP",
+      "pitcher_type_FA",
+      "pitcher_type_FC",
+      "pitcher_type_FF",
+      "pitcher_type_FO",
+      "pitcher_type_FS",
+      "pitcher_type_KC",
+      "pitcher_type_KN",
+      "pitcher_type_PO",
+      "pitcher_type_SC",
+      "pitcher_type_SI",
+      "pitcher_type_SL",
+      "pitcher_type_ST",
+      "pitcher_type_SV",
+      "pitcher_type_UN",
+      "pitcher_log1p_train_count_over10"
+    ]
+  },
+  "training": {
+    "epochs": 60,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.0005,
+    "loss_weighting": "uniform",
+    "hpo_trials": 0
+  },
+  "calibration": {
+    "method": "minimize_scalar bounded",
+    "bounds": [
+      0.5,
+      2.5
+    ],
+    "chain": "G0 SharingPredictor: log(clip(softmax(logits),1e-30,1)) / T",
+    "split": "temperature"
+  },
+  "arm_notes": {
+    "control": "MatrixModel flatten_mlp 128, no workload: the same-family CUDA control (exact EXP-P34/P35 entry, runner requirement). Same architecture as the frozen MPS flatten direct head of G15 (EXP-P15-001/P16-001, cap 30), here on CUDA with the cap 60: at MIX_FIXED in Stage B it is the cross-device reproduction / sanity arm (descriptive)",
+    "periodic_residual_counts": "EXP-P32-001 / EXP-P34-001 / EXP-P35-001 arm unchanged (frozen PLR-lite embedding + residual backbone, blocks Dropout .1, counts workload), old code path; keeps its embed_residual flag",
+    "tabm_residual_counts": "EXP-P34-001 arm unchanged as registered in EXP-P35-001 (TabM-mini k=8 on the frozen PLR-lite + residual backbone, counts workload), old code path; keeps its tabm_residual flag",
+    "marker": "Both non-control arms keep their earlier flags, so the family is recognised by the top-level marker adoption_confirm and its predicate is tested FIRST in config_check, training_budget, uses_epoch_cap and the Stage-A scorer (pitchmdp/direct_adoption_confirm_registry.py)",
+    "epoch_cap": "Epoch cap 60, patience 5 for every arm (as EXP-P34-001/EXP-P35-001). fit.json records cap, epochs_run, best_epoch and stopped_by per fit. The G15 flatten heads were fitted with cap 30 on MPS (best epochs 6-9 recorded in G15-MIX-RESEARCH-FROZEN-v1.json)",
+    "not_compared": "P24-P37 tasks and their numbers are never mixed into this family; Stage B compares only with the frozen G15 members recorded in configs/G15-MIX-RESEARCH-FROZEN-v1.json"
+  },
+  "control_reuse": "none: fresh control and fresh reference arms on the adoption seeds 0-4; no earlier P24-P37 task is mixed in. The MPS flatten direct heads of EXP-P15-001/EXP-P16-001 enter only Stage B, as the G15 reference",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "seed_rule": "only this registry family (marker adoption_confirm) uses the adoption seeds: exactly [0, 1, 2, 3, 4], no repeat_tag; head seed s of every arm is mixed in Stage B with the frozen G0-global member of seed s. Disclosed reuse: seeds 0-2 were MODEL RNG seeds of other arms in P24/P25/P27/P29 and seeds 3-4 of EXP-P30-001 arms; the same values are the seeds of the G15 flatten heads and of the G0-global members. RNG reuse on the same export is not new data and not a new evaluation population",
+  "fits": 15,
+  "arms": [
+    {
+      "name": "control",
+      "priority": 1,
+      "model": "flatten_mlp",
+      "width": 128,
+      "workload": []
+    },
+    {
+      "name": "periodic_residual_counts",
+      "priority": 1,
+      "embed_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "embed_residual",
+      "model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "name": "tabm_residual_counts",
+      "priority": 1,
+      "tabm_residual": true,
+      "workload": [
+        "prior_records_per100"
+      ],
+      "family": "tabm_residual",
+      "model": "periodic_residual_tabm_mini_mlp",
+      "base_model": "periodic_residual_mlp",
+      "embedding": "periodic",
+      "width": 128,
+      "k": 8,
+      "scaling_init": "normal",
+      "workload_level": "counts",
+      "context_continuous": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    }
+  ],
+  "comparison": {
+    "control_arm": "control",
+    "scorer": "experiments/pitchmdp/scripts/score_cuda_direct.py (Stage A; portable, numpy only; runs on newsrv)",
+    "scope": "Stage A: unblended calibrated direct-head probabilities of every arm vs the same-family, same-device CUDA control on dev and mlb_dev, BEFORE the June blend / G0 mix; descriptive only, no decision, ranking or winner. The pre-registered confirmation is Stage B (stage_b)",
+    "not_compared": "P24-P37 tasks, their numbers or other families (different control, seeds, cap or code); no saved-probability ensemble grid",
+    "adoption_confirm_contrasts": [
+      {
+        "name": "tabm_residual_counts_vs_control",
+        "candidate": "tabm_residual_counts",
+        "reference": "control",
+        "isolates": "tabm_residual_bundle_vs_control",
+        "held": {}
+      },
+      {
+        "name": "periodic_residual_counts_vs_control",
+        "candidate": "periodic_residual_counts",
+        "reference": "control",
+        "isolates": "residual_bundle_vs_control",
+        "held": {
+          "head": "single"
+        }
+      },
+      {
+        "name": "tabm_residual_counts_vs_periodic_residual_counts",
+        "candidate": "tabm_residual_counts",
+        "reference": "periodic_residual_counts",
+        "isolates": "ensemble_head",
+        "held": {
+          "input": "periodic",
+          "workload": "counts",
+          "backbone": "residual"
+        }
+      }
+    ],
+    "adoption_confirm_scope": "3 fixed pairs (candidate minus reference, same seeds, seed-mean ensemble and single fit, whole-game bootstrap), the direct_tabm_residual_registry pairs of these arms: each non-control arm vs control (multi-factor bundles) and the TabM-mini head vs the single head on the residual backbone (ensemble_head; one TabM-mini fit with 8 members vs one single-network fit is not compute-matched). Descriptive, repeated DEV, post-selection",
+    "stage_b": {
+      "rules": {
+        "reference": {
+          "arm": "G15-direct-g0-mix",
+          "rule": "mixed(flatten direct head seed s, frozen G0-global seed s, 0.5) -> June blend",
+          "config": "configs/G15-MIX-RESEARCH-FROZEN-v1.json",
+          "config_sha256": "b4c19988722c25d994b6f14c9b87b3ff3a177fb95702fe4c61a518fbbb201e6d",
+          "g0_bundle": "configs/G0-RESEARCH-FROZEN-v1.json",
+          "g0_bundle_sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062",
+          "recorded_results": "results/EXP-P16-001.json",
+          "recorded_results_sha256": "9d372da26b39fca07d6963a6861044721b31cf42209c92d5edb66f7b8a778597"
+        },
+        "inputs": {
+          "runs_root_name": "ML-MATRIX-20260924",
+          "cpanel_baseline": "EXP-P4-001/baseline_predictions.npz",
+          "mlb_baseline": "EXP-P11-001/baseline_predictions.npz",
+          "g0_cpanel": {
+            "0": "EXP-P4-001/members/G0-global/seed0",
+            "1": "EXP-P4-001/members/G0-global/seed1",
+            "2": "EXP-P4-001/members/G0-global/seed2",
+            "3": "EXP-P10-001/members/G0-global/seed3",
+            "4": "EXP-P10-001/members/G0-global/seed4"
+          },
+          "g0_mlb": {
+            "0": "EXP-P11-001/members/G0-global/seed0",
+            "1": "EXP-P11-001/members/G0-global/seed1",
+            "2": "EXP-P11-001/members/G0-global/seed2",
+            "3": "EXP-P11-001/members/G0-global/seed3",
+            "4": "EXP-P11-001/members/G0-global/seed4"
+          },
+          "flatten": {
+            "0": "EXP-P15-001/0",
+            "1": "EXP-P15-001/1",
+            "2": "EXP-P15-001/2",
+            "3": "EXP-P16-001/3",
+            "4": "EXP-P16-001/4"
+          }
+        },
+        "candidate_arms": [
+          "periodic_residual_counts",
+          "tabm_residual_counts"
+        ],
+        "descriptive_arms": [
+          "control"
+        ],
+        "mix_rules": {
+          "MIX_FIXED": {
+            "weight": 0.5
+          },
+          "MIX_FIT": {
+            "grid": [
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95
+            ],
+            "split": "blend",
+            "probabilities": "calibrated",
+            "objective": "pitch_weighted_nll",
+            "tie_break": "smallest_weight",
+            "ensemble": "weight chosen the same way on the seed-mean head and seed-mean G0"
+          }
+        },
+        "primary": {
+          "arm": "tabm_residual_counts",
+          "mix_rule": "MIX_FIT"
+        },
+        "splits": [
+          "cpanel_dev_after_blend",
+          "whole_mlb_dev_blended"
+        ],
+        "N": {
+          "delta_nll_max": -0.003,
+          "nll_ci95_upper_max": 0,
+          "brier_ci95_upper_max": 0.001,
+          "required_negative_seeds": 4,
+          "stage": "final"
+        },
+        "bootstrap": {
+          "draws": 10000,
+          "seed": 20260924,
+          "unit": "whole_game"
+        },
+        "multiplicity": "holm_per_split_across_the_four_candidate_tests",
+        "confirmation": "predictive_improvement_on_both_splits",
+        "reproduction_gate": {
+          "tolerance": 1e-09,
+          "fields": {
+            "g15_cpanel_dev_after_blend_nll": [
+              "cpanel_dev",
+              "reports",
+              "G15-direct-g0-mix",
+              "primary",
+              "log_loss"
+            ],
+            "g15_whole_mlb_dev_blended_nll": [
+              "mlb_dev_blended",
+              "comparison",
+              "G15-direct-g0-mix",
+              "candidate",
+              "log_loss"
+            ],
+            "g0_cpanel_dev_after_blend_nll": [
+              "cpanel_dev",
+              "reports",
+              "G0-global",
+              "primary",
+              "log_loss"
+            ],
+            "g0_whole_mlb_dev_blended_nll": [
+              "mlb_dev_blended",
+              "comparison",
+              "G15-direct-g0-mix",
+              "control",
+              "log_loss"
+            ]
+          }
+        }
+      },
+      "description": {
+        "role": "PRIMARY comparison of EXP-P48-001; the Stage-A rows are descriptive",
+        "scorer": "experiments/pitchmdp/scripts/score_cuda_mix_vs_g15.py --config configs/EXP-P48-001.json --family <pulled runner output: <arm>/<seed>/predictions.npz + mlb_predictions.npz + fit.json + state.json> --g15 configs/G15-MIX-RESEARCH-FROZEN-v1.json --runs-root \"/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924\" --destination <new directory outside the repository results/>. Mac CPU; numpy plus the existing scoring helpers (score_ml_matrix.summarize_cell/assert_aligned, run_ml_direct_head.mixed/paired, matrix_metrics); parameters are read from rules (checked equal to the registry)",
+        "reference": "G15-direct-g0-mix (configs/G15-MIX-RESEARCH-FROZEN-v1.json, D145): the frozen MPS flatten direct head of seed s (EXP-P15-001 seeds 0-2, EXP-P16-001 seeds 3-4) mixed 1/2 with the frozen G0-global member of seed s (Cpanel EXP-P4-001 seeds 0-2 and EXP-P10-001 seeds 3-4; whole MLB EXP-P11-001), five-seed mean, June frequency blend selected on the Cpanel June (blend) rows; whole MLB blended with the EXP-P11-001 frequency baseline using the Cpanel June weights (ensemble and per seed), exactly as run_ml_direct_head_confirm.score_arrays",
+        "integrity": "every frozen input is sha-checked before use: the G15 config, the G0 bundle it pins and the recorded EXP-P16-001 results against rules.reference; each member npz against its adjacent *_state.json artifact_hashes; each state file and frequency baseline against the G15 config / G0 bundle listing where listed; member model hashes against the frozen member records",
+        "alignment": "CUDA archives must carry exactly the Mac baseline rows (EXP-P4-001 blend/dev, EXP-P11-001 mlb_dev; keys, labels, game ids, pitcher ids) with the no-physics marker; a different row order is aligned by the 3-column pitch key with a recorded permutation; any missing or extra key fails closed",
+        "reproduction_gate": "before any candidate is scored, the recomputed G15 Cpanel-after-blend NLL and whole-MLB-blended NLL, and the G0-global values of the same rows, must equal results/EXP-P16-001.json within 1e-9; otherwise abort with nothing scored",
+        "candidates": "for each CUDA arm (control, periodic_residual_counts, tabm_residual_counts) two mix rules, then the June frequency blend as usual: MIX_FIXED (weight 1/2 for every seed and the ensemble, identical to the G15 rule; isolates the head) and MIX_FIT (per seed w on the June blend split only, minimizing the pitch-weighted NLL of w*head + (1-w)*G0 over the grid 0.50, 0.55, ..., 0.95, ties to the smaller w; the ensemble weight chosen the same way on the seed-mean head and seed-mean G0). control at MIX_FIXED is the cross-device reproduction / sanity arm; both control rows are descriptive and outside the multiplicity family",
+        "comparisons": "candidate minus G15 by matrix_metrics.paired_game_comparison (10,000 whole-game draws, seed 20260924) on (i) Cpanel DEV after the June blend and (ii) whole-MLB DEV blended; per-seed deltas against the G15 member of the same seed",
+        "N_rule": "matrix_metrics.prediction_decision, stage final: ensemble delta NLL <= -0.003, paired 95% CI upper < 0, Holm-adjusted one-sided p <= .05, Brier CI upper <= 0.001, at least 4 of 5 seeds improving",
+        "multiplicity": "Holm across the four candidate tests (periodic_residual_counts and tabm_residual_counts x MIX_FIXED and MIX_FIT) separately per split; a candidate is confirmed only if it is a predictive_improvement on BOTH splits (intersection-union, no further adjustment)",
+        "primary_candidate": "tabm_residual_counts MIX_FIT (pre-specified); every other candidate row is secondary, control rows are descriptive",
+        "descriptive": [
+          "unblended calibrated five-seed head (no G0 mix, no June blend) vs the G15 flatten head on Cpanel DEV and whole-MLB DEV",
+          "MIX_FIT weights per seed and ensemble with the June-blend NLL of every grid weight",
+          "Brier and ECE10 of every row"
+        ],
+        "robustness_R": "not computed: no 12-group robustness helper exists in score_ml_matrix or matrix_metrics; the result states this",
+        "outputs": "<destination>/results.json and SUMMARY.md (+ SHA256SUMS) with every input sha256, the config sha256, git commit, seconds and peak RSS; the scorer refuses a destination inside a repository results/ directory",
+        "reading_fixed_before_results": {
+          "pass": "tabm_residual_counts MIX_FIT confirmed on both splits: a candidate for a prospective 2027 / RS-02-style arm and a Song decision recorded in docs/decisions.md. It does not by itself change G15, G0-global, the policy identifier c13cc989 or the service",
+          "fail": "not confirmed: the ceiling of the direct-head line on the exposed 2025 DEV is documented (no further direct-head architecture search on these rows without a new pre-registration); G15 stays the research baseline",
+          "secondary": "a pass of any other candidate row is reported as secondary and is not a confirmation of the primary candidate"
+        }
+      }
+    }
+  },
+  "device": {
+    "kind": "cuda",
+    "allowed_gpu_uuids": [
+      "GPU-edb6bc12-c9aa-d79b-d3e7-9bc28118e4d4",
+      "GPU-0cc63040-5522-7fea-20d8-93b9196ce019",
+      "GPU-18e648d0-b68e-9321-9c77-69da241aad85",
+      "GPU-c334d905-8ec9-0029-b206-46ce3ac49cd9",
+      "GPU-ae803a24-0d38-791d-ed7c-3f233fcecf99"
+    ],
+    "max_parallel": 5,
+    "cpu_fallback": false
+  },
+  "queue": {
+    "timezone": "Asia/Seoul",
+    "date": "2026-10-27",
+    "date_note": "PLACEHOLDER clock, set at registration: date, no_new_fit_after, kill_own_after and aggregate_by are re-dated at registration from the smoke / timing record (valid HH:MM placeholders only; the queue never launches after no_new_fit_after on this date, so a queue smoke after 2026-10-27 23:00 KST needs these fields re-dated first; a direct run_cuda_direct.py --smoke task does not read them)",
+    "clock_fields_set_at_registration": [
+      "date",
+      "no_new_fit_after",
+      "kill_own_after",
+      "aggregate_by"
+    ],
+    "batch": "DRAFT EXP-P48-001 adoption-seed confirmation, 3 arms x seeds 0-4 = 15 fits, epoch cap 60; smoke only until registration",
+    "no_new_fit_after": "23:00",
+    "kill_own_after": "23:30",
+    "aggregate_by": "23:59",
+    "task_timeout_seconds": 3600,
+    "family_budget_seconds": 36000,
+    "max_attempts": 2,
+    "order": "priority then seed then arm (all 3 arms priority 1; config order)",
+    "start_after": "registration done; `gpu st` immediately before launch shows the chosen allowed GPUs without another user's process (never touch other users' processes or GPUs); no other Pitcheezy family queue on those GPUs; launched through `gpu run` from the registered commit with --lock-dir set to the common per-GPU flock directory; one fit per GPU, at most max_parallel GPUs; co-scheduled fit seconds are recorded as co-scheduled, not as compute cost",
+    "stop_rule": "any task failing twice aborts the family (no partial comparison, failures reported); a projected tabm_residual_counts task > 1800 s at the 60 cap (smoke / timing record at registration) -> redesign before registration, not silently shortened; no extra arms, seeds, mix rules, grid points, contrasts or epochs after any score of this family is read"
+  },
+  "exposure": "No 2026 rows. Cpanel DEV and whole-MLB DEV are the same repeatedly exposed <=2025 rows used by P15/P16 (G15), P24-P37 and others; this family was chosen after reading the P34/P35 scores (post-selection) and the G15 numbers it is compared with were read before (D145). Seeds 0-4 are the adoption RNG seeds (0-2 also used by P24/P25/P27/P29 arms, 3-4 by EXP-P30-001 arms), not new data. Even a Stage-B pass is a repeated-DEV result; the honest confirmation is prospective (2027 season or an RS-02-style arm). No policy, service or promotion claim.",
+  "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks the manifest). DEV/mlb_dev are only predicted, never used for fit, early stop, temperature, mix weights or June blend weights; MIX_FIT weights use the June blend split only, as the June frequency blend does.",
+  "execution": {
+    "enabled": false
+  },
+  "registration": {
+    "note": "Filled at registration, before any real fit: the registering agent records these fields, flips status to REGISTERED and execution.enabled to true and sets the queue clock fields",
+    "source_commit": null,
+    "draft_sha256": null,
+    "preregistration": {
+      "path": "experiments/pitchmdp/docs/PREREG-EXP-P48-001-adoption-seed-confirmation-2026-10-26.md",
+      "sha256": null
+    },
+    "smoke": null,
+    "timing": null,
+    "independent_review": null,
+    "go": null,
+    "registered_kst": null
+  }
+}

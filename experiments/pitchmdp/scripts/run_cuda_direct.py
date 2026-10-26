@@ -117,6 +117,14 @@ arms; the `batter` column comes from the hash-pinned sidecar named by config.bat
 the export, verified in verify_export and attached to every loaded split by with_ids); vocabularies are built per id
 column from TRAIN rows only; fit.json records {id_columns, vocabs, index_source, shuffle_seed}.
 
+Adoption-seed confirmation (EXP-P48-001 DRAFT): top-level marker "adoption_confirm" true = exactly control,
+periodic_residual_counts and tabm_residual_counts (the exact EXP-P34/P35 entries, no new arm or model code) on the
+adoption seeds exactly [0, 1, 2, 3, 4] with the epoch cap 60, at most the five allowed A5000 UUIDs
+(direct_adoption_confirm_registry, which also pins the Stage-B rules).  Its predicate is tested FIRST (config_check,
+training_budget, uses_epoch_cap, scorer) because its arms keep the embed_residual / tabm_residual flags; run_task,
+build and load are the unchanged paths of those flags.  fit.json records the epoch cap as P34-P37.  Head seed s is
+mixed on the Mac with the frozen G0-global member of seed s (scripts/score_cuda_mix_vs_g15.py, Stage B).
+
 Workload arms append their scalars after the 52 stripped context columns, i.e.
 before the 7 sharing columns training_arrays strips (run_ml_direct_workload
 WorkloadContext): routing never enters the network.  Current physics is zero in
@@ -163,6 +171,7 @@ MODEL_SOURCES = ['pitchmdp/matrix_models.py', 'pitchmdp/direct_residual_model.py
                  'pitchmdp/direct_robust_clip_registry.py', 'pitchmdp/direct_embed_type_registry.py',
                  'pitchmdp/direct_pitcher_id_model.py', 'pitchmdp/direct_pitcher_id_registry.py',
                  'pitchmdp/direct_pitcher_batter_id_model.py', 'pitchmdp/batter_sidecar.py',
+                 'pitchmdp/direct_adoption_confirm_registry.py',
                  'pitchmdp/direct_frontier_model.py', 'pitchmdp/direct_frontier_registry.py']
 ARRAYS = ('tokens', 'valid', 'context', 'workload', 'keys', 'y', 'game_pk', 'pitcher', 'date')
 SPLITS = ('train', 'earlystop', 'temperature', 'blend', 'dev', 'mlb_dev')
@@ -297,12 +306,26 @@ def is_pitcher_id_arm(arm):
     return PITCHER_ID_FLAG in arm
 
 
+ADOPTION_CONFIRM_MARKER = 'adoption_confirm'  # == direct_adoption_confirm_registry.MARKER (tested)
+
+
+def uses_adoption_confirm(config):
+    """The P48 DRAFT family predicate (top-level marker); checked FIRST everywhere (its arms keep the embed_residual /
+    tabm_residual flags, so the P34 TabM-residual route would otherwise claim it)."""
+    return ADOPTION_CONFIRM_MARKER in config
+
+
 def uses_epoch_cap(config):
-    return uses_pitcher_id(config) or uses_embed_type(config) or uses_robust_clip(config) or uses_ple(config) or uses_tabm_residual(config)
+    return uses_adoption_confirm(config) or uses_pitcher_id(config) or uses_embed_type(config) or \
+        uses_robust_clip(config) or uses_ple(config) or uses_tabm_residual(config)
 
 
 def training_budget(config):
-    """EXP-P15-001 budget; only the embed-type, robust-clip, PLE and TabM-residual families have their epoch cap."""
+    """EXP-P15-001 budget; only the adoption-confirm, pitcher-ID, embed-type, robust-clip, PLE and TabM-residual families
+    have their epoch cap."""
+    if uses_adoption_confirm(config):
+        from pitchmdp.direct_adoption_confirm_registry import TRAINING as AC_CAPPED  # torch-free
+        return AC_CAPPED
     if uses_pitcher_id(config):
         from pitchmdp.direct_pitcher_id_registry import TRAINING as PID_CAPPED  # torch-free
         return PID_CAPPED
@@ -326,7 +349,10 @@ def config_check(config):
         raise ValueError('Config is not the cuda_direct_v1 protocol')
     if any(is_pitcher_id_arm(arm) for arm in config['arms']) and not uses_pitcher_id(config):
         raise ValueError('Pitcher-ID arms belong to the pitcher-ID marker family only')
-    if uses_pitcher_id(config):
+    if uses_adoption_confirm(config):
+        from pitchmdp.direct_adoption_confirm_registry import check_family  # torch-free; exact arms, seeds 0-4, cap 60
+        check_family(config)
+    elif uses_pitcher_id(config):
         from pitchmdp.direct_pitcher_id_registry import check_family  # torch-free; 2 arms, seeds 44-48, cap 60, GPU3
         check_family(config)
     elif uses_embed_type(config):

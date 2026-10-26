@@ -51,7 +51,13 @@ equal direct_pitcher_id_registry.CONTRASTS and is tested FIRST (both arms keep e
 every candidate fit carries one TRAIN vocabulary record whose ids hash the scorer RE-DERIVES from the export TRAIN
 `pitcher`/`date` arrays (hash-checked); parameters == reference + (n_vocab + 1) x 8 + 128 x 8; the contrast is reported
 on all rows and on the in-vocabulary / UNK subsets (rows mapped with that vocabulary), every seed and the ensemble,
-labelled not parameter- or compute-matched; no verdict.  Data arms must record the config's subset rule over the
+labelled not parameter- or compute-matched; no verdict.
+comparison.adoption_confirm_contrasts (adoption-seed confirmation family, EXP-P48-001 DRAFT, top-level marker
+adoption_confirm) must equal direct_adoption_confirm_registry.CONTRASTS (3 fixed pairs on the adoption seeds 0-4; all 15
+fits must exist first), likewise checked before any read and tested FIRST (its arms keep the embed_residual /
+tabm_residual flags); every fit records the epoch cap 60.  These rows are descriptive Stage A only: the family's
+primary comparison is the Mac-side Stage B (score_cuda_mix_vs_g15.py: each head mixed with the frozen G0-global member
+of the same seed, June blend, vs the frozen G15 mix).  Data arms must record the config's subset rule over the
 export's own TRAIN rows (fit.json train_subset); every other arm must record none.  No raw data, pandas, sklearn, scipy, torch, G0 or Savant.
 
 Scope: UNBLENDED calibrated direct-head probabilities (predictions.npz 'dev',
@@ -105,6 +111,7 @@ from pitchmdp import direct_ple_registry as ple_registry  # noqa: E402  torch-fr
 from pitchmdp import direct_robust_clip_registry as robust_clip_registry  # noqa: E402  torch-free
 from pitchmdp import direct_embed_type_registry as embed_type_registry  # noqa: E402  torch-free
 from pitchmdp import direct_pitcher_id_registry as pid_registry  # noqa: E402  torch-free
+from pitchmdp import direct_adoption_confirm_registry as adoption_registry  # noqa: E402  torch-free
 from pitchmdp import batter_sidecar as bs  # noqa: E402  numpy only (P43 batter ids)
 from pitchmdp.matrix_metrics import paired_game_comparison, pitch_losses, prediction_metrics  # noqa: E402
 
@@ -120,7 +127,7 @@ SCORER_SOURCES = ('scripts/score_cuda_direct.py', 'scripts/run_cuda_direct.py', 
                   'pitchmdp/direct_ema_registry.py', 'pitchmdp/direct_tabm_residual_registry.py',
                   'pitchmdp/direct_ple_registry.py', 'pitchmdp/direct_robust_clip_registry.py',
                   'pitchmdp/direct_embed_type_registry.py', 'pitchmdp/direct_pitcher_id_registry.py',
-                  'pitchmdp/batter_sidecar.py')
+                  'pitchmdp/batter_sidecar.py', 'pitchmdp/direct_adoption_confirm_registry.py')
 RUNTIME_SIGNATURE = ('torch', 'torch_cuda', 'cudnn', 'numpy', 'scipy', 'device_name', 'device_capability',
                      'device_total_memory')
 SCOPE = ('unblended calibrated direct-head probabilities vs the same-family CUDA control, before June blend / G0 mix; '
@@ -379,7 +386,8 @@ def paired_block(y, games, candidate, reference, seeds):
 
 
 def score_family(config, family, rows, seeds, contrasts=None, regularization=None, workload_dropout=None, tabm=None,
-                 embed_residual=None, ema=None, tabm_residual=None, ple=None, robust_clip=None, embed_type=None):
+                 embed_residual=None, ema=None, tabm_residual=None, ple=None, robust_clip=None, embed_type=None,
+                 adoption=None):
     arms = [a['name'] for a in config['arms']]
     control_arm = config.get('comparison', {}).get('control_arm', 'control')
     if control_arm != 'control' or 'control' not in arms:
@@ -395,6 +403,7 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
     embedding_type = {split: {} for split in SPLITS} if ple else None
     preprocessing = {split: {} for split in SPLITS} if robust_clip else None
     embedding_map = {split: {} for split in SPLITS} if embed_type else None
+    confirm = {split: {} for split in SPLITS} if adoption else None
     for split, r in rows.items():
         y, games = r['y'], r['game_pk']
         load = lambda arm: [member(family, arm, s, split, r) for s in seeds]  # noqa: E731  (bounded memory: reload)
@@ -455,6 +464,13 @@ def score_family(config, family, rows, seeds, contrasts=None, regularization=Non
                                                                   'compute_matched', 'held')}
             embedding_map[split][c['name']].update(paired_block(y, games, load(c['candidate']),
                                                                 load(c['reference']), seeds))
+        for c in adoption or ():
+            confirm[split][c['name']] = {'candidate': c['candidate'], 'reference': c['reference'],
+                                         'isolates': c['isolates'], 'held': c['held'],
+                                         **paired_block(y, games, load(c['candidate']), load(c['reference']), seeds)}
+    if adoption:
+        return (out, factorial, paired, joint, head, embedded, averaged, residual_head, embedding_type, preprocessing,
+                embedding_map, confirm)
     if embed_type:
         return (out, factorial, paired, joint, head, embedded, averaged, residual_head, embedding_type, preprocessing,
                 embedding_map)
@@ -618,6 +634,23 @@ def korean_table(result):
                          f"{block['compute_matched']} | {ci(block['ensemble'], 'nll')} | {ci(block['ensemble'], 'brier')} | "
                          f"{pairs[name]}/{len(result['seed_block']['seeds'])} |")
         lines.append('')
+    confirm = result.get('adoption_confirm_contrasts')
+    for split, contrasts in (confirm or {}).items():
+        pairs, seeds = result['seed_block']['same_gpu_pairs'], result['seed_block']['seeds']
+        lines += [f'## {split} 채택 시드 확인 가족 대비 (후보 − 기준, 같은 시드·앙상블 짝 비교, G0 혼합·6월 블렌드 전, 판정 없음)', '',
+                  '이 표는 Stage A 서술 행입니다. 이 가족의 주 비교는 맥 Stage B(score_cuda_mix_vs_g15.py: 같은 시드의 '
+                  'G0-global과 혼합 → 6월 블렌드 → 동결 G15 혼합과 비교)입니다. *_vs_control 행은 여러 요인이 함께 바뀐 '
+                  '묶음 비교이고, ensemble_head 행은 TabM-mini 1회 학습(구성원 8)과 단일 신경망 1회 학습의 비교로 연산량이 '
+                  '같지 않습니다.', '',
+                  f"시드 {', '.join(map(str, seeds))}는 G15·G0의 채택 시드입니다. 0~2는 P24/P25/P27/P29, 3~4는 "
+                  'EXP-P30-001의 다른 팔 난수 시드로 이미 쓰였습니다(새 자료 아님, 같은 DEV·MLB DEV 반복 노출). '
+                  '이 가족은 P34·P35 결과를 읽은 뒤 설계한 사후 선택입니다. 모든 팔의 epoch 상한은 60입니다.', '',
+                  '| 대비 | 분리 요인 | 고정 | ΔNLL [95%] | ΔBrier [95%] | 같은 GPU 짝 |', '|---|---|---|---|---|---|']
+        for name, block in contrasts.items():
+            held = ', '.join(f'{k}={v}' for k, v in block['held'].items())
+            lines.append(f"| {name} | {block['isolates']} | {held} | {ci(block['ensemble'], 'nll')} | "
+                         f"{ci(block['ensemble'], 'brier')} | {pairs[name]}/{len(seeds)} |")
+        lines.append('')
     if mapped:
         lines += ['## 비용 (fit.json, 시드 중앙값 [최소, 최대])', '',
                   '| 팔 | 파라미터 | fit 초 | 학습 루프 초 | 학습 epoch당 초 | 갱신 수 | 갱신당 초 | epoch |',
@@ -628,7 +661,7 @@ def korean_table(result):
                          f"{cell('train_seconds_per_epoch', '{:.2f}')} | {cell('optimizer_updates', '{:.0f}')} | "
                          f"{cell('seconds_per_update', '{:.4f}')} | {cell('epochs_run', '{:.0f}')} |")
         lines.append('')
-    if result.get('tabm_residual_contrasts') or ple or robust or mapped:
+    if result.get('tabm_residual_contrasts') or ple or robust or mapped or confirm:
         caps = {arm: {seed: task['epoch_cap'] for seed, task in seeds.items()}
                 for arm, seeds in result['provenance']['tasks'].items()}
         lines += ['## epoch 상한(60) 도달 여부 (fit별)', '', '| 팔 | 시드별 epochs_run / best_epoch / 멈춘 이유 |', '|---|---|']
@@ -665,8 +698,14 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     robust_clip = robust_clip_registry.check_contrasts(config)
     embed_type = embed_type_registry.check_contrasts(config)
     pitcher_id = pid_registry.check_contrasts(config)
+    adoption = adoption_registry.check_contrasts(config)
     others = (tabm_residual, ema, embed_residual, tabm, workload_dropout, contrasts, regularization)
-    if rc.uses_pitcher_id(config):  # before every family: both arms keep the embed_residual flag
+    if rc.uses_adoption_confirm(config):  # first: its arms keep the embed_residual / tabm_residual flags
+        if adoption is None or any(o is not None for o in (pitcher_id, embed_type, robust_clip, ple, *others)):
+            raise ValueError('The adoption-confirm family is scored only with its fixed contrasts')
+    elif adoption is not None:
+        raise ValueError('adoption_confirm_contrasts belong to the adoption-confirm family only')
+    elif rc.uses_pitcher_id(config):  # before every family: both arms keep the embed_residual flag
         if pitcher_id is None or any(o is not None for o in (embed_type, robust_clip, ple, *others)):
             raise ValueError('The pitcher-ID family is scored only with its fixed contrast')
     elif pitcher_id is not None:
@@ -719,7 +758,7 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
     rc_stats = check_one_stats_hash(tasks) if robust_clip else None
     splits, factorial, paired, *joint = score_family(config, family, rows, config['seeds'], contrasts, regularization,
                                                      workload_dropout, tabm, embed_residual, ema, tabm_residual, ple,
-                                                     robust_clip, embed_type)
+                                                     robust_clip, embed_type, adoption)
     result = {'format': FORMAT, 'family': config['experiment_id'], 'scope': SCOPE, 'decision': None, 'ranking': None,
               'arm_order': 'config order', 'splits': splits,
               **({'factorial_contrasts': factorial} if contrasts else {}),
@@ -790,6 +829,18 @@ def score(config_path, config_sha256, export, manifest_sha256, family, destinati
                           'compute-matched (periodic map does more work per row; early stopping can change epochs '
                           'and updates); cost is reported per fit and never adjusts the NLL contrast; '
                           'same_gpu_pairs is observed, not scheduled'}} if embed_type else {}),
+              **({'adoption_confirm_contrasts': joint[8], 'seed_block': {
+                  'seeds': config['seeds'], 'repeat_tag': None, 'epoch_cap': config['training']['epochs'],
+                  'same_gpu_pairs': same_gpu_pairs(tasks, adoption, config['seeds']),
+                  'stage_b': 'scripts/score_cuda_mix_vs_g15.py (primary comparison of this family)',
+                  'note': 'Stage A, descriptive: unblended head contrasts before the G0 mix and the June blend. The '
+                          'seeds are the adoption seeds 0-4 of G15/G0 (0-2 already MODEL RNG seeds of other arms in '
+                          'P24/P25/P27/P29, 3-4 of EXP-P30-001 arms) on the same export and exposed DEV rows: not new '
+                          'data, not an independent confirmatory test; family designed after reading P34/P35 '
+                          '(post-selection); epoch cap 60 for every arm; *_vs_control rows change several factors; '
+                          'one TabM-mini fit (k=8) vs one single-network fit is not compute-matched; same_gpu_pairs '
+                          'is observed, not scheduled; per-fit cap hits in provenance.tasks.*.epoch_cap'}}
+                 if adoption else {}),
               'limits': ['Cpanel DEV and mlb_dev already exposed: repeated-DEV, descriptive only',
                          'Bootstrap conditions on fixed predictions (no refit, calibration or selection uncertainty)',
                          'Prediction only; no 2026 rows; no policy or service claim'],
