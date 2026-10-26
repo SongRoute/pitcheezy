@@ -207,16 +207,17 @@
 .sv-mu.line p, .sv-mu-idle { max-width: 960px; margin: 0 auto; padding: 12px 18px; font-size: 15px; color: var(--sv-muted); }
 .sv-mu.line b { color: var(--sv-ink); font-weight: 700; }
 .sv-mu-idle { grid-column: 1 / -1; padding: 12px 4px; }
-.sv-who { position: relative; min-width: 0; display: grid; align-content: center; gap: 1px; padding: 0; border: 0; background: none; color: var(--sv-ink); text-align: left; line-height: 1.25; }
+.sv-who { position: relative; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr);  /* the cell's width, never the name's */ align-content: center; gap: 1px; padding: 0; border: 0; background: none; color: var(--sv-ink); text-align: left; line-height: 1.25; }
 .sv-who.pit { text-align: right; justify-items: end; }
+.sv-who > b { justify-self: stretch; }  /* the name box is always the full cell, so the fit check sees the cell, not the shown name */
 .sv-who small { font-size: 12px; color: var(--sv-muted); }
 .sv-who b { max-width: 100%; font-size: 16.5px; font-weight: 800; letter-spacing: -.2px; line-height: 1.2; overflow-wrap: anywhere; }  /* a long name wraps, never cut */
 .sv-who .sur { display: none; }
 .sv-who .full { white-space: nowrap; }
-.sv-who.tight .full { position: absolute; visibility: hidden; }  /* measured, not shown */
+.sv-who.tight .full { position: absolute; top: 0; right: 0; visibility: hidden; }  /* measured, not shown; anchored inside so it never widens the page */
 .sv-who.tight .sur { display: inline; }
 .sv-game.has-display .sv-who b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* live row 3 keeps one line per name: states never move the zone */
-.sv-who-today { font-size: 14px; color: var(--sv-muted); white-space: nowrap; }
+.sv-who-today { font-size: 14px; color: var(--sv-muted); overflow-wrap: anywhere; word-break: keep-all; }  /* wraps inside its cell, never past it */
 .sv-who-today b { font-size: inherit; font-weight: 800; color: var(--sv-ink); }
 .sv-mu-count { display: grid; justify-items: center; align-content: center; gap: 4px; min-width: 96px; margin: 0 10px; padding: 0 14px;
   border-left: 1px solid var(--sv-line); border-right: 1px solid var(--sv-line); }

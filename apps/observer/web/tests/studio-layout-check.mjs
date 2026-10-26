@@ -78,7 +78,9 @@ for (const [width, height] of [[390, 844], [375, 667], [320, 568], [375, 560], [
     const markTop = Math.min(...[...document.querySelectorAll('svg.sv-zone:not(.mini) .sv-rec, svg.sv-zone:not(.mini) .sv-actual')].map(e => e.getBoundingClientRect().top));
     return { head: head.bottom, mu: mu?.top ?? null, muBottom: mu?.bottom ?? null, markTop, zone: zone.top, zoneBottom: zone.bottom, recs: recs.top, atbat: atbat?.top ?? null,
       navTop: document.querySelector('.sv-bottom-nav')?.getBoundingClientRect().top ?? innerHeight, documentHeight: document.documentElement.scrollHeight,
-      horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1 };
+      horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+      // the page must stay at the CONFIGURED width: a mobile page that overflows grows innerWidth with it, so compare with the setting
+      widths: { inner: innerWidth, client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, vv: visualViewport.width, scale: visualViewport.scale } };
   });
   const key = `${width}x${height} ${state}`;
   // Every piece of content is reachable: nothing off to the side, nothing clipped, no nested scroller, every element can be scrolled
@@ -109,6 +111,8 @@ for (const [width, height] of [[390, 844], [375, 667], [320, 568], [375, 560], [
   check(geometry.head <= geometry.zone && (geometry.mu === null || (geometry.head <= geometry.mu + 0.5 && geometry.muBottom + 4 <= geometry.markTop)) && geometry.zoneBottom <= geometry.recs + 2 && (geometry.atbat === null || geometry.recs < geometry.atbat),
     `${key} visual reading order`, geometry);
   check(!geometry.horizontalOverflow, `${key} no horizontal overflow`, geometry);
+  const W = geometry.widths;
+  check(W.inner === width && W.client === width && W.scroll <= width && Math.abs(W.vv - width) < 0.5 && W.scale === 1, `${key} page stays at the configured ${width}px (inner ${W.inner}, client ${W.client}, scroll ${W.scroll}, visual ${W.vv} × ${W.scale})`, W);
   const cells = await page.locator('.sv-rec-sec .sv-rec-cell').allInnerTexts();
   check(cells.length === 3 && cells.every(c => /^\d\s*\S/.test(c.trim())), `${key} three recommendations`, cells);
   if (!final) {
@@ -132,6 +136,24 @@ for (const [width, height] of [[390, 844], [375, 667], [320, 568], [375, 560], [
     check(await page.locator('.sv-actual-line .sv-actual-name').count() === 1, `${key} published actual of the selected pitch remains`);
   }
   if (out) await page.screenshot({ path: path.join(out, `${key.replace(/ /g, '-')}.png`), fullPage: true });
+  if (state === 'live' && width === 390) {
+    // long names: the full name falls back to the family name inside its cell; widening the screen restores it, narrowing falls back
+    // again, and a later poll does not flip it (fit measured against the cell, not against the shown name)
+    const fit = () => page.evaluate(() => [...document.querySelectorAll('.sv-who')].map(w => { const b = w.querySelector(':scope > b'), r = b.getBoundingClientRect(), c = w.getBoundingClientRect();
+      return { tight: w.classList.contains('tight'), shown: getComputedStyle(b.querySelector('.sur')).display !== 'none' ? b.querySelector('.sur').textContent : b.querySelector('.full').textContent, inCell: r.left >= c.left - .5 && r.right <= c.right + .5, cut: b.scrollWidth > b.clientWidth + 1 }; }));
+    const narrow = await fit();
+    check(narrow.every(f => f.tight && f.shown === 'Name' && f.inCell && !f.cut), `${key} long names show the family name inside their cells`, narrow);
+    await page.setViewportSize({ width: 1100, height }); await page.waitForTimeout(400);
+    const wide = await fit();
+    check(wide.every(f => !f.tight && /Extraordinarily/.test(f.shown) && f.inCell && !f.cut), `${key} widened: full names come back`, wide);
+    await page.setViewportSize({ width, height }); await page.waitForTimeout(400);
+    const back = await fit(); await page.waitForTimeout(2600); const later = await fit();
+    const w2 = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, inner: innerWidth }));
+    check(JSON.stringify(back) === JSON.stringify(narrow) && JSON.stringify(later) === JSON.stringify(narrow) && w2.client === width && w2.scroll <= width && w2.inner === width, `${key} narrowed again and after a poll: same fallback, page at ${width}px`, { back, later, w2 });
+    // the bottom bar takes an ordinary tap (nothing outside the configured viewport)
+    await page.locator('.sv-bottom-nav button', { hasText: '구종' }).click({ timeout: 5000 });
+    const dlg = page.getByRole('dialog'); await dlg.waitFor(); check(true, `${key} bottom bar answers an ordinary tap`); await page.keyboard.press('Escape'); await dlg.waitFor({ state: 'detached' });
+  }
   if (state === 'live_real') {
     check((await page.locator('.sv-who.bat .sv-who-today').innerText()).includes('2타수') && (await page.locator('.sv-who.pit .sv-who-today').innerText()).includes('36구'), `${key} current player data preserved in row 3`);
     await page.locator('.sv-rec-sec .sv-reclist').click();
