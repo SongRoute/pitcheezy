@@ -336,7 +336,7 @@ def test_n_decision_single_primary_unadjusted_and_holm_across_three_secondary_ro
             'tabm_residual_counts/MIX_FIXED': row(-.01, .001, [-.01, -.01, -.01, .01, .01]),
             'control/MIX_FIXED': row(0., .5, [0.] * 5)}
     out = s.decide(rows, primary, secondary, reg.STAGE_B_RULES['N'])
-    # one confirmatory test: its own unadjusted p (.04 passes at .05; a four-test Holm would have made it .16)
+    # one confirmatory test: its own unadjusted p (.04 passes at .05; a four-test Holm on this fixture would have made it .06)
     assert out[primary]['p_decision'] == .04 and out[primary]['N']['status'] == 'predictive_improvement'
     assert out[primary]['p_adjustment'].startswith('none')
     # secondary: Holm across the three -> .001 x 3 = .003, .02 x 2 = .04, max(.04, .02) = .04
