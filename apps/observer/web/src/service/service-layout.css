@@ -274,29 +274,6 @@
   margin: 6px 0;
 }
 
-.sv-limit-line {
-  margin: 0;
-  color: var(--sv-muted);
-  font-size: 12px;
-  line-height: 1.4;
-  word-break: keep-all;
-}
-
-.sv-limit-line .sv-link-btn {
-  position: relative;
-  min-height: 0;
-  padding: 0 2px;
-  color: var(--sv-ink);
-  font: inherit;
-  font-weight: 700;
-}
-
-.sv-limit-line .sv-link-btn::after {
-  content: '';
-  position: absolute;
-  inset: -12px -6px;
-}
-
 .sv-spoiler-line {
   margin: 0;
   padding: 6px 8px;
@@ -660,15 +637,6 @@
   display: none;
 }
 
-.sv-mobile-we {
-  margin: 0 16px 16px;
-  width: calc(100% - 32px);
-  padding: 12px 16px;
-  border: 1px solid var(--sv-line);
-  border-radius: 18px;
-  background: #fff;
-}
-
 .sv-player-fullname {
   font-size: 17px;
 }
@@ -678,9 +646,6 @@
 }
 
 @media (min-width:760px) {
-  .sv-mobile-we {
-    display: none;
-  }
   .sv-game .sv-zrow,.sv-game.has-display .sv-zrow {
     height: var(--sv-zone-height);
     min-height: var(--sv-zone-height);
@@ -915,4 +880,61 @@
   html:has(.sv-bottom-nav) {
     scroll-padding-bottom: calc(var(--sv-nav-space) + env(safe-area-inset-bottom));
   }
+}
+
+/* Song's A-layout detail pass: status in the top button, then two compact game bars. */
+.sv-game .sv-head { grid-template-columns: 1fr auto; }
+.sv-game .sv-live { min-height: 44px; }
+.sv-game .sv-live i { visibility: hidden; }
+.sv-game .sv-live.on i,.sv-game .sv-live.delay i,.sv-game .sv-live.final i { visibility: visible; }
+.sv-game .sv-live.on { background: #b42332; border-color: #b42332; color: #fff; }
+.sv-game .sv-live.delay { background: #f7d766; border-color: #9b6800; color: #332300; }
+.sv-game .sv-live.final { background: #176b48; border-color: #176b48; color: #fff; }
+.sv-game .sv-live.quiet { background: #e7eaed; border-color: #9ca5ac; color: #28313a; }
+.sv-game-matchup { background: var(--sv-ink); color: #fff; padding: 0 16px 10px; }
+.sv-game-matchup .sv-head-main { gap: 4px; }
+.sv-game-matchup .sv-head-score { justify-content: center; width: 100%; font-size: 17px; }
+.sv-game-matchup .sv-head-main small { display: flex; justify-content: center; gap: 8px; width: 100%; color: #d9dee2; }
+.sv-game-matchup .sv-head-main small span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sv-game .sv-board { padding-top: 8px; padding-bottom: 6px; }
+.sv-game .sv-board-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; min-height: 48px; }
+.sv-mini-box-scroll { display: block; min-width: 0; max-width: 100%; overflow-x: auto; }
+.sv-mini-box { display: block; min-width: max-content; padding: 3px 5px; border: 1px solid #8a9299; border-radius: 8px; color: #fff; background: #343b41; font-size: 11px; text-align: center; }
+.sv-mini-box-grid,.sv-mini-box-row { display: grid; grid-template-columns: 54px repeat(var(--innings), 23px); align-items: center; gap: 1px; }
+.sv-mini-box-row { grid-column: 1 / -1; }
+.sv-mini-box-grid>span,.sv-mini-box-row>span { min-width: 0; padding: 2px 0; font-variant-numeric: tabular-nums; }
+.sv-mini-box-title,.sv-mini-box-row .team { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-mini-box-grid .current { background: #fff; color: #15191e; border-radius: 3px; font-weight: 800; }
+.sv-board-people { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 8px; align-items: center; min-height: 52px; border-top: 1px solid #4f565c; }
+.sv-board-count { display: grid; justify-items: center; gap: 2px; }
+.sv-board-count .sv-bso { justify-self: center; }
+.sv-board .sv-player { color: #fff; border-top-color: var(--team); min-height: 44px; padding-top: 2px; }
+.sv-board .sv-player:not(.idle) .sv-player-name { display: none; }
+.sv-board .sv-player-name b,.sv-board .sv-player-fullname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-board .sv-player-name small { display: none; }
+.sv-board .sv-player-2,.sv-board .sv-player-3 { display: none; }
+.sv-game .sv-pitch-summary:not(.sv-state) { display: grid; grid-template-columns: minmax(0,1fr); gap: 6px; }
+.sv-game .sv-rec-summary .sv-rec-row { justify-content: center; flex-wrap: nowrap; padding: 6px 3px; }
+.sv-game .sv-rec-summary .sv-rk { border: 0; border-radius: 0; width: auto; height: auto; padding: 0; }
+.sv-game .sv-rec-summary .sv-rec-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-game .sv-actual-summary { min-height: 0; text-align: center; }
+.sv-game .sv-actual-summary .sv-result { text-align: center; }
+.sv-game .sv-actual-summary .sv-actual-caption { justify-content: center; }
+.sv-we-bars { display: grid; gap: 14px; margin: 16px 0; }
+.sv-we-bar { display: grid; grid-template-columns: minmax(0,1fr) minmax(80px,2fr) auto; gap: 10px; align-items: center; }
+.sv-we-bar>span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-we-bar>div { height: 18px; border-radius: 9px; overflow: hidden; background: #e7eaed; }
+.sv-we-bar i { display: block; height: 100%; border-radius: inherit; }
+.sv-we-bar b { font-variant-numeric: tabular-nums; }
+@media (max-width:420px) {
+  .sv-game-matchup { padding-left: 10px; padding-right: 10px; }
+  .sv-game .sv-board { padding-left: 10px; padding-right: 10px; }
+  .sv-mini-box-grid,.sv-mini-box-row { grid-template-columns: 48px repeat(var(--innings), 21px); }
+  .sv-board-people { gap: 4px; }
+  .sv-board .sv-player-name b { font-size: 11px; }
+  .sv-board .sv-player-fullname { font-size: 12px; }
+  .sv-game .sv-stage { padding-top: 8px; }
+}
+@media (max-width:359px) {
+  .sv-board .sv-player-fullname { white-space: normal; overflow-wrap: normal; line-height: 1.1; }
 }

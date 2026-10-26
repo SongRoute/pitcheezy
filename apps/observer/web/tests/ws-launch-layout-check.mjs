@@ -106,8 +106,7 @@ try {
         const nav = await rect(page.locator('.sv-bottom-nav'));
         ok(strip.b <= nav.t, `${id}: pitch cards clear the fixed tabs (${strip.b.toFixed(1)} ≤ ${nav.t.toFixed(1)})`);
       }
-      const limit = page.locator('.sv-limit-line');
-      ok(await limit.isVisible() && /검증 전 실험/.test(await limit.innerText()) && /선택 비중은 성공 확률이 아니에요/.test(await limit.innerText()), `${id}: limitation and policy weight explanation stay visible`);
+      ok(await page.locator('.sv-limit-line').count() === 0, `${id}: main view omits the old limitation banner`);
       if (state === 'live') {
         const spoiler = page.locator('.sv-game .sv-spoiler-line');
         const words = await spoiler.innerText();
@@ -119,12 +118,33 @@ try {
           ok(note.b <= nav.t, `${id}: spoiler note stays above fixed tabs (${note.b.toFixed(1)} ≤ ${nav.t.toFixed(1)})`);
         }
       } else ok(await page.locator('.sv-game .sv-spoiler-line').count() === (state === 'confirming' ? 1 : 0), `${id}: spoiler only while a game is in progress`);
-      // 1. header: each team name and score stays clear of the LIVE / 종료 button
+      // The game score sits in its own bar, clear of the sole top-right status button.
       const live = await rect(page.locator('.sv-head .sv-live'));
       const parts = page.locator('.sv-head-score > *');
       let hit = 0; for (let i = 0; i < await parts.count(); i++) hit += overlap(await rect(parts.nth(i)), live);
       const score = await rect(page.locator('.sv-head-score'));
-      ok(hit === 0 && score.r <= live.l + 0.5, `${id}: team names clear of the status button (score right ${score.r.toFixed(1)} ≤ button left ${live.l.toFixed(1)})`);
+      ok(hit === 0 && score.t >= live.b - 0.5, `${id}: score bar stays below status button (${score.t.toFixed(1)} ≥ ${live.b.toFixed(1)})`);
+      const status = (await page.locator('.sv-head .sv-live').innerText()).trim();
+      ok(state === 'final' ? status === '경기 종료' : status === '라이브', `${id}: top status reflects game transport (${status})`);
+      const box = page.locator('.sv-mini-box');
+      ok(await box.isVisible() && await box.locator('.sv-mini-box-row').count() === 2 && await box.locator('.current').count() >= 1, `${id}: two-team inning grid highlights displayed inning`);
+      if (state === 'live') {
+        await box.click();
+        const bars = page.locator('.sv-sheet .sv-we-bar');
+        ok(await bars.count() === 2 && (await bars.allInnerTexts()).some(t => /61%/.test(t)) && (await bars.allInnerTexts()).some(t => /39%/.test(t)), `${id}: guarded current probability opens two-team 61/39 bars`);
+        if (shots && mode === 'public' && width === 390) await page.screenshot({ path: path.join(shots, `${tag}-public-390x844-synthetic-win-bars.png`) });
+        await page.locator('.sv-sheet').getByRole('button', { name: '닫기' }).first().click();
+        if (width === 390) {
+          await page.locator('.sv-strip .sv-card').first().click();
+          ok((await page.locator('.sv-head .sv-live').innerText()).trim() === '딜레이', `${id}: past detail marks the live game as delayed`);
+          await page.locator('.sv-sheet').getByRole('button', { name: '닫기' }).first().click();
+          ok((await page.locator('.sv-head .sv-live').innerText()).trim() === '라이브', `${id}: closing past detail restores live status`);
+        }
+      } else if (state === 'final' && width === 390) {
+        await box.click();
+        ok(await page.locator('.sv-sheet .sv-we-bar').count() === 0 && /정보 없음/.test(await page.locator('.sv-sheet').innerText()), `${id}: finished game's snapshot is not reused as a current probability`);
+        await page.locator('.sv-sheet').getByRole('button', { name: '닫기' }).first().click();
+      }
       // 1. next batters: when the row is shown, no name is cut (no ellipsis-hidden or horizontally clipped text)
       const up = page.locator('.sv-upcoming');
       if (await up.isVisible()) {
@@ -146,11 +166,12 @@ try {
           ok(capHit === 0, `${id}: 정정됨 tag clear of card ${i + 1}'s text (overlap ${capHit.toFixed(1)} px²)`);
         }
       }
-      // 4. one story: game-level 확인 중 never sits next to 실시간으로 받는 중
-      const line = (await page.locator('.sv-notice.line .sv-line-text').innerText().catch(() => '')).trim();
-      const chip = (await page.locator('.sv-chip').innerText().catch(() => '')).trim();
-      if (state === 'confirming') ok(/확인 중/.test(chip) && !/실시간으로 받는 중/.test(line) && /확인 중/.test(line), `${id}: chip "${chip}" and status line "${line}" agree`);
-      if (state === 'live') ok(/실시간으로 받는 중/.test(line), `${id}: live status line "${line}"`);
+      ok(await page.locator('.sv-notice.line,.sv-chip').count() === 0, `${id}: no duplicate receive-time/status row`);
+      if (state === 'confirming') {
+        const pending = page.locator('.sv-state[data-state="unconfirmed"]');
+        ok(await pending.isVisible() && /확인/.test(await pending.innerText()) && await pending.locator('.sv-rec-summary,.sv-actual-summary').count() === 0,
+          `${id}: unconfirmed recommendation stays explicit without a paired candidate/actual`);
+      }
       if (shots) await page.screenshot({ path: path.join(shots, `${tag}-${mode}-${width}x${height}-${state}.png`), fullPage: true });
       // 3. linescore sheet: R·H·E·사사구 visible without side-scrolling
       if (state === 'live' && mode === 'public') {
@@ -169,6 +190,17 @@ try {
       ok(errors.length === 0, `${id}: no page errors ${errors.join(' | ')}`);
       await ctx.close();
     }
+  }
+  // Missing or out-of-range source values must never become a fabricated probability bar.
+  dist = DISTS.public;
+  for (const [label, value] of [['missing', null], ['out-of-range', 1.1]]) {
+    game = body('live'); fixedDelay = 0;
+    game.win_expectancy = value === null ? null : { status: 'available', home_probability: value, perspective: 'home' };
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } }), page = await ctx.newPage();
+    await page.goto(`${origin}/?game=${PK}`);
+    await page.locator('.sv-mini-box').click();
+    ok(await page.locator('.sv-sheet .sv-we-bar').count() === 0 && /정보 없음/.test(await page.locator('.sv-sheet').innerText()), `public win ${label}: guarded empty state`);
+    await ctx.close();
   }
   // A long series title must leave a full-width row for team names on a phone list card.
   dist = DISTS.public; game = body('live');
