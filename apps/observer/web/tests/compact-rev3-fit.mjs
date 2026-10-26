@@ -68,11 +68,11 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
     return route.fulfill({ body: readFileSync(t), contentType: TYPES[path.extname(t)] ?? 'application/octet-stream' });
   });
   await p.goto(`http://pz.test/watch/849843${which === 'live' ? '?demo=fixture' : ''}`);
-  await p.waitForSelector('.sv-board'); await p.waitForTimeout(250);
+  await p.waitForSelector('.sv-hd-score'); await p.waitForTimeout(250);
   if (state === 'pinned' || state === 'stale') { await p.locator('.sv-card:not(.pending)').first().click(); await p.waitForTimeout(300); }
-  // stale: the card opened the (modal, on phones) detail sheet; close it so the header button is reachable, then fail the next fetch
+  // stale: the card opened the (modal) detail sheet; close it, then fail the next fetches until the screen calls the connection lost
   if (state === 'stale') { await p.keyboard.press('Escape'); await p.waitForTimeout(200); failApi = true;
-    await p.locator('.sv-live').click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(800); }
+    await p.locator('.sv-hd-status[data-tone="lost"]').waitFor({ timeout: 6000 }).catch(() => {}); }
   if (big) { await p.addStyleTag({ content: 'html{font-size:125% !important;-webkit-text-size-adjust:125%}' }); await p.waitForTimeout(250); }
   const pollsBefore = polls; if (state === 'pinned') await p.waitForTimeout(2600);
   const L = await p.evaluate(() => {
@@ -85,7 +85,7 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
     const nav = document.querySelector('.sv-bottom-nav'); const navFixed = !!nav && getComputedStyle(nav).position === 'fixed' && nav.getBoundingClientRect().height > 0;
     const fold = navFixed ? nav.getBoundingClientRect().top : innerHeight; const navH = innerHeight - fold;
     const absBottom = (s) => { const b = r(s); return b && b.height > 0 ? b.bottom + scrollY : null; };
-    const above = { score: absBottom('.sv-head-score'), bso: absBottom('.sv-bso'), zone: absBottom('.sv-zone-wrap .sv-zone-box'), strip: absBottom('.sv-strip'), fold };
+    const above = { score: absBottom('.sv-hd-score'), bso: absBottom('.sv-mu-count'), zone: absBottom('.sv-zone-wrap .sv-zone-box'), strip: absBottom('.sv-strip'), fold };
     // every page control can be brought into view: not wider than the viewport, and (at maximum scroll) not left under the fixed tab bar
     const offscreen = [...document.querySelectorAll('.sv-page button, .sv-page a')].filter((e) => { const b = e.getBoundingClientRect();
       if (!(b.width > 0) || e.closest('.sv-strip, .sv-backdrop, .sv-bottom-nav')) return false;
@@ -149,9 +149,9 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
       stripScroll: strip ? strip.scrollWidth > strip.clientWidth : false, dotR: dots ? dots.width / 2 : 0,
       caption: [...(document.querySelector('.sv-card:not(.pending) .sv-card-cap')?.children ?? [])].map((e) => e.textContent.trim()), badge: !!document.querySelector('.sv-card .sv-card-num'),
       banned: ['방금 던진 공', '자동 ON', '새로고침'].filter((t) => text.includes(t)), limitText: document.querySelector('.sv-limit-line')?.innerText ?? '', toLatest: text.includes('최신으로'),
-      live: document.querySelector('.sv-live')?.className ?? '', liveText: document.querySelector('.sv-live')?.textContent.trim() ?? '', liveDisabled: document.querySelector('.sv-live')?.disabled ?? null, notice: document.querySelector('.sv-notice')?.className ?? '',
-      players: [...document.querySelectorAll('.sv-player')].map((e) => e.className + '|' + (e.querySelector('.sv-player-name')?.textContent ?? '')),
-      dotsN: document.querySelectorAll('.sv-bso i').length, bat: document.querySelector('.sv-zrow .sv-batband.at-left') ? 'left' : document.querySelector('.sv-zrow .sv-batband.at-right') ? 'right' : 'none', listUnder: (() => { const z = r('.sv-zrow .sv-zone-box'), l = r('.sv-reclist'); return !!z && !!l && l.top >= z.bottom; })(),
+      live: document.querySelector('.sv-hd-status')?.dataset.tone ?? 'none', liveText: document.querySelector('.sv-hd-status')?.textContent.trim() ?? '', liveDisabled: document.querySelector('.sv-hd-status')?.disabled ?? null,
+      players: [...document.querySelectorAll('.sv-who')].map((e) => e.className + '|' + (e.querySelector('small')?.textContent ?? '')),
+      count: document.querySelector('.sv-mu-count > b')?.textContent.trim() ?? '', outsN: document.querySelectorAll('.sv-mu-count .sv-outs i').length, bat: document.querySelector('.sv-zrow .sv-batband.at-left') ? 'left' : document.querySelector('.sv-zrow .sv-batband.at-right') ? 'right' : 'none', listUnder: (() => { const z = r('.sv-zrow .sv-zone-box'), l = r('.sv-reclist'); return !!z && !!l && l.top >= z.bottom; })(),
       offscreen, minFont, inDrawingLabel: !!document.querySelector('.sv-zone-wrap .sv-actual:not(.sv-pa-dot) text'), named: (document.querySelector('.sv-actual-caption b')?.textContent ?? '').trim(),
       above, sheetOff, capClip, capAria, mainSingleActual: !!document.querySelector('.sv-zone-wrap .sv-zone .sv-actual:not(.sv-pa-dot)'),
       miniHidden: [...document.querySelectorAll('.sv-strip .sv-card .sv-zone')].every((e) => getComputedStyle(e).display === 'none'),
@@ -168,7 +168,8 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
   // vertically under a fixed tab bar, so: the key state (score, count, zone) is above the tab bar without scrolling, the pitch
   // strip too at 390x844 (display-state-smoke / ws-responsive-smoke precedent; shorter screens may scroll to it), and every control
   // can be scrolled into view (none stranded under the tab bar or off to the side; sheet controls reachable inside the sheet).
-  const A = L.above, keyAbove = A.score !== null && A.score <= A.fold + 1 && A.bso !== null && A.bso <= A.fold + 1 && A.zone !== null && A.zone <= A.fold + 1;
+  // a finished game has no row 3 (UI 10/26 figure 11): its count is not required above the fold
+  const A = L.above, keyAbove = A.score !== null && A.score <= A.fold + 1 && (which === 'final' || (A.bso !== null && A.bso <= A.fold + 1)) && A.zone !== null && A.zone <= A.fold + 1;
   soft(keyAbove && (w !== 390 || h !== 844 || (A.strip !== null && A.strip <= A.fold + 1)), `${tag} score, count and zone above the fold${w === 390 && h === 844 ? ', strip above the tab bar' : ''}`, A);
   soft(L.offscreen.length === 0 && L.sheetOff.length === 0, `${tag} every control reachable (page scroll / sheet scroll, none under the tab bar)`, { scrollH: L.scrollH, innerH: L.innerH, off: L.offscreen, sheet: L.sheetOff });
   ok(L.scrollW <= L.innerW + 1, `${tag} no horizontal page scroll`, L);
@@ -203,12 +204,13 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
   if (which === 'live') {
     ok(L.paNums.length > 0 && JSON.stringify(L.paNums) === JSON.stringify(L.paWant) && L.paDotR >= 5, `${tag} main zone numbers the PA's last pitches (${L.paNums.join(',')}), dot radius ${L.paDotR?.toFixed(1)}px`, { got: L.paNums, want: L.paWant, r: L.paDotR });
   }
-  ok(L.dotsN === 7, `${tag} B3 S2 O2 dots`, L.dotsN);
-  ok(L.players.length === 2 && L.players[0].includes('away') && L.players[1].includes('home'), `${tag} away left / home right`, L.players);
+  if (which === 'final') ok(L.count === '' && L.players.length === 0, `${tag} finished game: no row 3 (count / players)`, [L.count, L.players]);
+  else ok(/^\d-\d$/.test(L.count) && L.outsN === 3, `${tag} count '${L.count}' in numbers with three out marks`, [L.count, L.outsN]);
+  if (which !== 'final') ok(L.players.length === 2 && L.players[0].includes('bat') && /^타자/.test(L.players[0].split('|')[1]) && L.players[1].includes('pit') && /^투수/.test(L.players[1].split('|')[1]), `${tag} batter left / pitcher right`, L.players);
   ok(!L.prev, `${tag} no previous-pitch marker`, L);
   if (many) ok(L.stripScroll, `${tag} >10 pitches scroll horizontally in the strip`, L);
   // latest: no single 'actual' marker for a thrown pitch (only the PA's numbered dots), demo label without the LIVE dot
-  if (state === 'latest' && which === 'live') ok(!L.mainSingleActual && !L.inDrawingLabel && L.liveText === '시연 중' && !L.live.includes('on'), `${tag} latest: no single actual marker, demo label without the LIVE dot`, { single: L.mainSingleActual, liveText: L.liveText, live: L.live });
+  if (state === 'latest' && which === 'live') ok(!L.mainSingleActual && !L.inDrawingLabel && L.liveText === '시연 중' && L.live !== 'live', `${tag} latest: no single actual marker, demo label without the LIVE dot`, { single: L.mainSingleActual, liveText: L.liveText, live: L.live });
   if (state === 'pinned') {
     // the tapped pitch opens its detail sheet (all games): all ranks at once with the combined label and the actual, no label on the
     // actual inside the drawing, the pitch named in words in the sheet
@@ -218,17 +220,17 @@ async function run(w, h, big, which, state, side, many, numberCase = null) {
     if (which === 'live') {
       // live: the main stage stays on the latest (no single actual, the PA's numbered dots stay), the header keeps '시연 중', polling continues
       ok(!L.mainSingleActual && !L.inDrawingLabel, `${tag} live: main stage stays on the latest pitch while the sheet is open`, { single: L.mainSingleActual, label: L.inDrawingLabel });
-      ok(L.liveText === '시연 중' && L.liveDisabled === false && !L.live.includes('on'), `${tag} live: header button stays '${L.liveText}' (enabled, demo has no LIVE dot)`, [L.liveText, L.liveDisabled, L.live]);
+      ok(L.liveText === '시연 중' && L.liveDisabled === false && L.live !== 'live', `${tag} live: header marker stays '${L.liveText}' (enabled, demo has no LIVE dot)`, [L.liveText, L.liveDisabled, L.live]);
       ok(polls > pollsBefore, `${tag} live: polling continues while the detail sheet is open`, { polls, pollsBefore });
     } else {
       // finished game: the selection also moves the main view (all ranks + combined label + actual, pitch named under the zone)
       ok(L.recs.length >= 2 && L.recs.some((x) => x.includes('·')) && L.actual, `${tag} all ranks at once + combined label + actual (${L.recs.join(' ')})`, L.recs);
       ok(!L.inDrawingLabel && L.named.length > 0, `${tag} no label on the actual pitch inside the drawing, pitch named under the zone ('${L.named}')`, [L.inDrawingLabel, L.named]);
-      ok(L.liveText === '종료' && L.liveDisabled === true, `${tag} pinned: header button '${L.liveText}'`, [L.liveText, L.liveDisabled]);
+      ok(L.liveText === '' && L.live === 'none', `${tag} pinned: a finished game has no status marker`, [L.liveText, L.live]);
     }
   }
-  if (state === 'stale') ok(L.notice.includes('warn') && L.liveDisabled === false, `${tag} network failure: warn notice, header button still usable`, L);
-  if (which === 'final') ok(!L.live.includes('on'), `${tag} finished: LIVE gray`, L.live);
+  if (state === 'stale') ok(L.live === 'lost' && L.liveText === '연결 끊김' && L.liveDisabled === false, `${tag} network failure: the marker says 연결 끊김 and still opens its bubble`, [L.live, L.liveText]);
+  if (which === 'final') ok(L.live === 'none', `${tag} finished: no LIVE marker`, L.live);
   if (out) await p.screenshot({ path: path.join(out, `${tag.replace(/[ /@]/g, '_')}.png`) });
   await c.close();
 }

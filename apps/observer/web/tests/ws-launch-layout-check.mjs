@@ -96,7 +96,7 @@ try {
       page.on('pageerror', (e) => errors.push(String(e)));
       await ctx.route('**/*', (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
       await page.goto(origin + (mode === 'public' ? `/?game=${PK}` : `/watch/${PK}`));
-      await page.locator('.sv-head-score').waitFor({ timeout: 10000 });
+      await page.locator('.sv-hd-score').waitFor({ timeout: 10000 });
       await page.locator(`.sv-state[data-state="${game.display_state.state}"]`).waitFor({ timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(300);
       const id = `${mode} ${width}x${height} ${state}`;
@@ -118,32 +118,29 @@ try {
           ok(note.b <= nav.t, `${id}: spoiler note stays above fixed tabs (${note.b.toFixed(1)} ≤ ${nav.t.toFixed(1)})`);
         }
       } else ok(await page.locator('.sv-game .sv-spoiler-line').count() === (state === 'confirming' ? 1 : 0), `${id}: spoiler only while a game is in progress`);
-      // The game score sits in its own bar, clear of the sole top-right status button.
-      const live = await rect(page.locator('.sv-head .sv-live'));
-      const parts = page.locator('.sv-head-score > *');
-      let hit = 0; for (let i = 0; i < await parts.count(); i++) hit += overlap(await rect(parts.nth(i)), live);
-      const score = await rect(page.locator('.sv-head-score'));
-      ok(hit === 0 && score.t >= live.b - 0.5, `${id}: score bar stays below status button (${score.t.toFixed(1)} ≥ ${live.b.toFixed(1)})`);
-      const status = (await page.locator('.sv-head .sv-live').innerText()).trim();
-      ok(state === 'final' ? status === '경기 종료' : status === '라이브', `${id}: top status reflects game transport (${status})`);
-      const box = page.locator('.sv-mini-box');
-      ok(await box.isVisible() && await box.locator('.sv-mini-box-row').count() === 2 && await box.locator('.current').count() >= 1, `${id}: two-team inning grid highlights displayed inning`);
-      if (state === 'live') {
-        await box.click();
-        const bars = page.locator('.sv-sheet .sv-we-bar');
-        ok(await bars.count() === 2 && (await bars.allInnerTexts()).some(t => /61%/.test(t)) && (await bars.allInnerTexts()).some(t => /39%/.test(t)), `${id}: guarded current probability opens two-team 61/39 bars`);
-        if (shots && mode === 'public' && width === 390) await page.screenshot({ path: path.join(shots, `${tag}-public-390x844-synthetic-win-bars.png`) });
-        await page.locator('.sv-sheet').getByRole('button', { name: '닫기' }).first().click();
-        if (width === 390) {
-          await page.locator('.sv-strip .sv-card').first().click();
-          ok((await page.locator('.sv-head .sv-live').innerText()).trim() === '딜레이', `${id}: past detail marks the live game as delayed`);
-          await page.locator('.sv-sheet').getByRole('button', { name: '닫기' }).first().click();
-          ok((await page.locator('.sv-head .sv-live').innerText()).trim() === '라이브', `${id}: closing past detail restores live status`);
-        }
-      } else if (state === 'final' && width === 390) {
-        await box.click();
-        ok(await page.locator('.sv-sheet .sv-we-bar').count() === 0 && /정보 없음/.test(await page.locator('.sv-sheet').innerText()), `${id}: finished game's snapshot is not reused as a current probability`);
-        await page.locator('.sv-sheet').getByRole('button', { name: '닫기' }).first().click();
+      // UI 10/26 ①⑥: row 1 is back · score · ONE status marker (none on a finished game); score and marker never overlap.
+      const scoreBox = await rect(page.locator('.sv-hd-score > span'));
+      const chip = page.locator('.sv-hd .sv-hd-status');
+      if (state === 'final') ok(await chip.count() === 0, `${id}: a finished game has no status marker`);
+      else {
+        const c = await rect(chip);
+        ok(overlap(scoreBox, c) === 0 && c.r <= width + 0.5 && Math.abs((c.t + c.b) / 2 - (scoreBox.t + scoreBox.b) / 2) < 12, `${id}: score and status marker share row 1 without overlap`, { scoreBox, c });
+        const status = (await chip.innerText()).trim();
+        ok(status === (state === 'live' ? '라이브' : '확인 중'), `${id}: status marker reflects the state (${status})`);
+      }
+      // row 2: the linescore (two team rows, R) sits in the header; the half in progress is highlighted, a finished game highlights nothing
+      const ls = page.locator('.sv-hd-2 .sv-ls');
+      const cur = await ls.locator('.cur').count(), teams = await ls.locator('.t').allInnerTexts();
+      ok(await ls.isVisible() && teams.join('|') === 'SF|STL' && (state === 'final' ? cur === 0 : cur === 3), `${id}: header linescore with both teams (${teams.join('|')}, ${cur} highlighted cells)`);
+      // UI 10/26 ⑤: the win probability has no place on the main screen until the game-record sheet is designed
+      ok(!/승리확률|61%|39%/.test(await page.locator('.sv-page').evaluate((e) => { const c = e.cloneNode(true); c.querySelectorAll('.sv-backdrop').forEach((x) => x.remove()); return c.innerText; })), `${id}: no win probability on the main screen`);
+      if (state === 'live' && width === 390) {
+        // a past pitch's detail never changes the live marker (transport state only)
+        await page.locator('.sv-strip .sv-card').first().click();
+        await page.getByRole('dialog').waitFor();
+        ok((await chip.innerText()).trim() === '라이브', `${id}: past detail leaves the live marker as 라이브`);
+        await page.keyboard.press('Escape');
+        await page.getByRole('dialog').waitFor({ state: 'detached' });
       }
       // 1. next batters: when the row is shown, no name is cut (no ellipsis-hidden or horizontally clipped text)
       const up = page.locator('.sv-upcoming');
@@ -173,11 +170,9 @@ try {
           `${id}: unconfirmed recommendation stays explicit without a paired candidate/actual`);
       }
       if (shots) await page.screenshot({ path: path.join(shots, `${tag}-${mode}-${width}x${height}-${state}.png`), fullPage: true });
-      // 3. linescore sheet: R·H·E·사사구 visible without side-scrolling
+      // 3. linescore sheet (opened from the header linescore): R·H·E·사사구 visible without side-scrolling
       if (state === 'live' && mode === 'public') {
-        const link = width >= 760 ? page.locator('.sv-panel-link').filter({ hasText: '이닝별 점수표' }) : page.locator('.sv-inning');
-        await link.first().click();
-        if (width < 760) await page.locator('.sv-sheet').getByRole('button', { name: '박스스코어', exact: true }).click();
+        await page.locator('.sv-hd-2 .sv-ls').click();
         const box = page.locator('.sv-sheet .sv-box');
         if (await box.count()) {
           const scroller = await rect(page.locator('.sv-sheet .sv-box-scroll'));
@@ -191,15 +186,16 @@ try {
       await ctx.close();
     }
   }
-  // Missing or out-of-range source values must never become a fabricated probability bar.
+  // A valid, missing or out-of-range source probability never reaches the screen while it has no designed place (UI 10/26 ⑤).
   dist = DISTS.public;
-  for (const [label, value] of [['missing', null], ['out-of-range', 1.1]]) {
+  for (const [label, value] of [['valid', 0.61], ['missing', null], ['out-of-range', 1.1]]) {
     game = body('live'); fixedDelay = 0;
     game.win_expectancy = value === null ? null : { status: 'available', home_probability: value, perspective: 'home' };
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } }), page = await ctx.newPage();
     await page.goto(`${origin}/?game=${PK}`);
-    await page.locator('.sv-mini-box').click();
-    ok(await page.locator('.sv-sheet .sv-we-bar').count() === 0 && /정보 없음/.test(await page.locator('.sv-sheet').innerText()), `public win ${label}: guarded empty state`);
+    await page.locator('.sv-hd-score').waitFor();
+    await page.locator('.sv-hd-2 .sv-ls').click();
+    ok(!/승리확률|61%|39%|110%/.test(await page.locator('.sv-page').innerText()), `public win ${label}: no probability on the screen or in the linescore sheet`);
     await ctx.close();
   }
   // A long series title must leave a full-width row for team names on a phone list card.
