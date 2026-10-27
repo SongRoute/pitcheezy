@@ -861,6 +861,10 @@ def s5x_rewards(lines, ends, layers):
     return {'R1_0': r0, 'R1_a': ra, 'R1_b': rb}
 
 
+INVALID_REPETITION_REASON = ('invalid repetition: a zero or nonfinite SN normaliser, a nonfinite lambda / M selection '
+                             'objective or a nonfinite estimate (design 5.3)')
+
+
 def repetition_streams(r, repetitions=S5X_REPETITIONS):
     """Repetition r (1..6) of an S5-X run: log j = r - 1 and truth rollouts 2r - 2, 2r - 1 of every start."""
     _require(type(r) is int and 1 <= r <= repetitions, 'repetition index is 1..6')
@@ -962,17 +966,23 @@ def run_s5x(runtime, components, starts, *, run, law, layers, world_predictor=No
         estimates, selected, bad = pipeline(data, rewards)
         pick = list(streams['truth'])
         true_r = float(np.mean([np.mean(truth[i]['candidate'][pick] - truth[i]['reference'][pick]) for i in kept]))
-        reps.append({'gaps': {p: estimates[p] - true_r for p in PAIRS}, 'truth': true_r, 'invalid': sorted(bad),
+        raw = {p: float(estimates[p] - true_r) for p in PAIRS}
+        bad_r = sorted(set(bad) | {p for p in PAIRS if not math.isfinite(raw[p])})
+        # JSON-safe record (review round 2 #1): an invalid gap is null and its pair is listed with the reason
+        reps.append({'gaps': {p: (None if p in bad_r else raw[p]) for p in PAIRS}, 'truth': true_r, 'invalid': bad_r,
+                     'invalid_reason': {p: INVALID_REPETITION_REASON for p in bad_r},
                      'selected': {n: ('inf' if v == INF else str(v)) for n, v in selected.items()}})
-    gaps = {p: np.array([rep['gaps'][p] for rep in reps]) for p in PAIRS}
-    invalid_reps = {p: sum(not math.isfinite(rep['gaps'][p]) or p in rep['invalid'] for rep in reps) for p in PAIRS}
+    gaps = {p: np.array([np.nan if rep['gaps'][p] is None else rep['gaps'][p] for rep in reps]) for p in PAIRS}
+    invalid_reps = {p: sum(p in rep['invalid'] for rep in reps) for p in PAIRS}
     result = {'run': dict(run), 'world_seed': ws, 'starts': len(starts), 'kept_starts': len(kept),
+              'world_predictor': {'kind': 'bound_g0'} if world_predictor is None else dict(world_predictor.identity),
               'excluded_starts': excluded, 'repetitions': reps, 'pairs': {}}
     for p in PAIRS:
         valid = invalid_reps[p] == 0 and np.isfinite(gaps[p]).all()
         result['pairs'][p] = {'gap': float(gaps[p].mean()) if valid else None,
                               'se': float(gaps[p].std(ddof=1) / math.sqrt(repetitions)) if valid else None,
-                              'valid': bool(valid), 'invalid_repetitions': int(invalid_reps[p])}
+                              'valid': bool(valid), 'invalid_repetitions': int(invalid_reps[p]),
+                              'reason': None if valid else INVALID_REPETITION_REASON}
     result['inherited_s5_se'] = _inherited_se(lines, ends, layers, kept, truth, logs_per_start)
     if gamma:
         result['s2'] = {}

@@ -319,16 +319,16 @@ class BootstrapTests(unittest.TestCase):
                                     reg.BASELINE)
         n_bar, ok = ov.sn_normalizers(e0)
         self.assertTrue(ok)
-        fixed_deltas, _, _ = ob.sn_values(pair, 1 / n_bar)
+        fixed_deltas, _, _, _ = ob.sn_values(pair, 1 / n_bar)
         p_rows = np.flatnonzero(point)
         fixed = (r.m @ r.sums(fixed_deltas[p_rows], p_rows)) / (r.m @ r.sums(np.ones(len(p_rows)), p_rows))
         self.assertFalse(np.allclose(stats['sn']['mean_p'], fixed))  # not the fixed full-sample normaliser
         m0 = r.m[0][r.row_cluster]  # replicate 0 by hand: normalisers from the resampled E0 PAs only
         held = pair.sn['held']
         nb = np.array([(m0 @ held[k]) / m0.sum() for k in (0, 1)])
-        d0, _, _ = ob.sn_values(pair, 1 / nb)
+        d0, _, _, _ = ob.sn_values(pair, 1 / nb)
         self.assertAlmostEqual(stats['sn']['mean_p'][0], float(m0[p_rows] @ d0[p_rows] / m0[p_rows].sum()), places=12)
-        full, _, _ = ob.sn_values(pair, 1 / n_bar)
+        full, _, _, _ = ob.sn_values(pair, 1 / n_bar)
         for i in np.flatnonzero(point)[:20]:  # the linear form equals the SN recursion per PA
             line = e0[i]
             value = ov.line_value(line, None, (1 / n_bar[0], 1 / n_bar[1]))
@@ -456,7 +456,18 @@ class BlindingTests(unittest.TestCase):
     def test_s5_and_inf_identity_are_reported(self):
         self.assertEqual(self.public['integrity']['inf_variants_reproduce_baseline'], 'PASS')
         self.assertEqual(self.public['S5'][reg.BASELINE], {'game': 'BASELINE', 'pitcher': 'BASELINE'})
-        self.assertTrue(all(v in ('PASS', 'FAIL', 'INVALID') for p in reg.TOTAL_ORDER for v in self.public['S5'][p].values()))
+        self.assertTrue(all(v in ('PASS', 'FAIL', 'INCONCLUSIVE', 'INVALID')
+                            for p in reg.TOTAL_ORDER for v in self.public['S5'][p].values()))
+        # review round 2 #17: a pair that selected lambda = inf or M = inf equals the baseline, so its shift interval
+        # is [0, 0] in both bootstraps: INCONCLUSIVE, never PASS
+        identical = [name for name, entry in self.sealed['selection'].items() if entry['selected'] == 'inf'
+                     and name.startswith('R1_0')]
+        self.assertTrue(identical)
+        for pair in identical:
+            for b in ('game', 'pitcher'):
+                ci = self.sealed['pairs'][pair]['bootstrap'][b]['shift_p_ci95']
+                self.assertEqual(ci, [0.0, 0.0])
+                self.assertEqual(self.public['S5'][pair][b], 'INCONCLUSIVE')
         self.assertEqual(set(self.sealed['placebo']) - {'population'},
                          {'placebo_delta_hat', 'tau_p', 'placebo_bootstrap_se', 'placebo_sd'})
         self.assertEqual(len(self.sealed['placebo']['placebo_delta_hat']), 4)
@@ -595,6 +606,76 @@ class PointSetTests(unittest.TestCase):
             self.assertEqual(public['S5'][pair], {'game': 'INVALID', 'pitcher': 'INVALID'})
         self.assertEqual(sealed['p_nonpoint'][reg.BASELINE], 0)
         self.assertTrue(public['pairs'][reg.BASELINE]['valid']['game'])
+        for pair in ('R1_0xR2_3', 'R1_axR2_3'):  # the endpoints stay defined although the P mean is not
+            self.assertIsNotNone(public['pairs'][pair]['endpoint_half_width']['lower']['game'])
+            self.assertIsNotNone(public['pairs'][pair]['endpoint_half_width']['upper']['game'])
+
+    def test_sn_keeps_a_p_row_whose_sn_paired_bounds_coincide(self):
+        # PM decision (review round 2 #12): P applies to SN as to every estimator. With every ratio equal to one the
+        # SN normalisers are 1 for both policies, so a shared unknown end still cancels: the P rows stay points.
+        quarter = [0.25] * 4
+        decisions, facts = [], {}
+        rng = np.random.default_rng(7)
+        for i in range(120):
+            game, pa_id = 2000 + i % 30, f'{2000 + i % 30}:{i}'
+            steps = []
+            for _ in range(int(rng.integers(1, 4))):
+                other = [0.25, 0.25, 0.25, 0.25]
+                j = int(rng.integers(1, 4))  # move the candidate mass away from the logged action 0 (ratio stays 1)
+                other[j], other[(j % 3) + 1] = 0.5, 0.0
+                steps.append((other, quarter))
+            rows, _, info = self._shared_end_pa(pa_id, steps)
+            if i % 2:  # half complete with an observed end, half with a shared unknown end
+                info = {**info, 'reward': float(rng.uniform(.2, .8)), 'kind': None, 'reason': None}
+            info = {**info, 'game': game}
+            decisions.extend(rows)
+            facts[pa_id] = info
+        stream = lambda: iter(decisions)
+        result0, rows0, gint = osd.gint_gate(stream, facts, references={}, draws=300, minimum_games=5,
+                                             minimum_pa_starts=10)
+        lines = [ov.pa_line(sorted(r, key=lambda d: d['decision_index']), info) for _, info, r in est.by_pa(decisions, facts)]
+        e0 = [l for l in lines if l['in_population']]
+        point = np.array([reg.in_point_set(r) for r, l in zip(rows0, lines) if l['in_population']])
+        unknown = np.array([not ov.is_point(l) for l in e0])
+        self.assertEqual(int((point & unknown).sum()), 60)  # 60 shared unknown ends, all in P
+        n_bar, ok = ov.sn_normalizers(e0)
+        self.assertTrue(ok and all(np.array_equal(nb, np.ones_like(nb)) for nb in n_bar))
+        sn = ob.sn_pair('sn', e0, point, u=np.vstack((1 / n_bar[0], 1 / n_bar[1])))
+        self.assertEqual(sn.p_nonpoint, 0)
+        dr = ob.fixed_pair(reg.BASELINE, [ov.row_of(l) for l in e0], point)
+        r = ob.Resampler([l['game'] for l in e0], unit='game', draws=300, seed=5, minimum_clusters=1, minimum_pa_starts=1)
+        stats, valid = ob.run_pairs(r, [dr, sn], point, reg.BASELINE)
+        self.assertEqual(int(valid['sn']['p'].sum()), int(valid[reg.BASELINE]['p'].sum()))
+        self.assertEqual(int(valid['sn']['p'].sum()), 300)
+        np.testing.assert_allclose(stats['sn']['mean_p'], stats[reg.BASELINE]['mean_p'], rtol=0, atol=1e-12)
+        deltas, lo, hi, nonpoint = ob.sn_values(sn, np.vstack((1 / n_bar[0], 1 / n_bar[1])))
+        self.assertFalse(nonpoint.any())
+        np.testing.assert_allclose(deltas[point], dr.deltas[point], rtol=0, atol=1e-12)
+        # a row outside P with an unknown end only widens the endpoints; it never invalidates the P statistics
+        censored = point.copy()
+        censored[np.flatnonzero(point & unknown)[:5]] = False
+        sn_c = ob.sn_pair('sn', e0, censored, u=np.vstack((1 / n_bar[0], 1 / n_bar[1])))
+        dr_c = ob.fixed_pair(reg.BASELINE, [ov.row_of(l) for l in e0], censored)
+        stats, valid = ob.run_pairs(r, [dr_c, sn_c], censored, reg.BASELINE)
+        self.assertEqual(int(valid['sn']['p'].sum()), 300)
+        self.assertTrue(valid['sn']['end'].all())
+
+    def test_endpoint_validity_is_separate_from_the_p_mean(self):
+        decisions, facts = synthetic_ledger(seed=3, n_pas=200, n_games=20)
+        lines = [ov.pa_line(sorted(r, key=lambda d: d['decision_index']), info) for _, info, r in est.by_pa(decisions, facts)]
+        e0 = [l for l in lines if l['in_population']]
+        rows = [ov.row_of(l) for l in e0]
+        point = np.array([r['delta_bounds'][0] == r['delta_bounds'][1] for r in rows])
+        broken = [dict(r) for r in rows]
+        i = int(np.flatnonzero(point)[0])
+        broken[i]['delta_bounds'] = [broken[i]['delta_bounds'][0], broken[i]['delta_bounds'][0] + 1e-3]  # a non-point
+        pair = ob.fixed_pair('broken', broken, point)
+        self.assertEqual(pair.p_nonpoint, 1)
+        r = ob.Resampler([l['game'] for l in e0], unit='game', draws=200, seed=2, minimum_clusters=1, minimum_pa_starts=1)
+        stats, valid = ob.run_pairs(r, [ob.fixed_pair(reg.BASELINE, rows, point), pair], point, reg.BASELINE)
+        summary = ob.summarize(stats, valid, r)['broken']
+        self.assertFalse(summary['mean_p']['valid'] or summary['shift_p']['valid'])
+        self.assertTrue(summary['lower_endpoint']['valid'] and summary['upper_endpoint']['valid'])
 
 
 def _decision_inputs(h=None, s5='PASS', net='PASS', tab='PASS', s2='PASS', valid=True):

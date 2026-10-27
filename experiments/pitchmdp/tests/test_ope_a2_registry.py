@@ -224,10 +224,18 @@ class ExecutionGateTests(unittest.TestCase):
             c['registration_input_pins']['output_root'] = root
             with self.subTest(name), self.assertRaisesRegex(IntegrityError, 'disjoint'):
                 reg.check_pins(c)
-        c = registered()
-        c['registration_input_pins']['digest_manifest_path'] = '/tmp/synthetic/s6/digest.jsonl'
-        with self.assertRaisesRegex(IntegrityError, 'digest manifest'):
-            reg.check_pins(c)
+        # review round 2 #8: the digest manifest file lies outside the repository and every pinned input directory
+        for name, path in (('the S6-dr-a5 stage directory', '/tmp/synthetic/s6/digest.jsonl'),
+                           ('the repository', str(reg.REPO / 'results' / 'digest.jsonl')),
+                           ('the repository', str(reg.REPO / 'digest.jsonl')),
+                           ('the processed frame directory', '/tmp/synthetic/artifacts/processed/digest.jsonl')):
+            c = registered()
+            c['registration_input_pins']['digest_manifest_path'] = path
+            with self.subTest(path), self.assertRaisesRegex(IntegrityError, f'digest manifest must be outside {name}|'
+                                                                            f'outside the repository results'):
+                reg.check_pins(c)
+        self.assertTrue(reg.manifest_outside('/tmp/synthetic/digest.jsonl', '/tmp/synthetic/s6'))  # a sibling is fine
+        self.assertFalse(reg.manifest_outside('/tmp/synthetic/s6/x/digest.jsonl', '/tmp/synthetic/s6'))
 
     def test_pin_key_set_is_fixed_even_for_the_draft(self):
         c = load()

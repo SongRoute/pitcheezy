@@ -347,6 +347,13 @@ HANG_GUARDS = {'A2-SM': 7200, 'A2-S0': 7200, 'A2-S1': 7200, 'A2-S2': 9667, 'A2-S
 UPSTREAM = {'A2-SM': (), 'A2-S0': ('A2-SM',), 'A2-S1': ('A2-S0',), 'A2-S2': ('A2-S0',),
             'A2-S3': ('A2-S0',), 'A2-S4': ('A2-S1', 'A2-S2', 'A2-S3')}
 RSS_CAP_GIB, FREE_MEMORY_GIB = 8, 4
+# Guard mechanics (implementation choices, review round 2 #4/#15): the hang guard stays the hard cap (SIGALRM);
+# work stops at the cap minus a finalization reserve so a stage can always hash and seal what it completed
+# (a descriptive TAB stop seals its NOT_RUN cells); a watchdog thread checks memory through every code path,
+# protected calls included, and interrupts the main thread on a violation.
+FINALIZATION_RESERVE_SECONDS = 120.0  # min(120 s, 10% of the hang guard)
+WATCHDOG_INTERVAL_SECONDS = 1.0
+MANIFEST_COMMAND_GUARD = 'A2-S4'  # manifest commands use the A2-S4 hang guard (3,600 s)
 KST = timezone(timedelta(hours=9))
 PROTECTION_WINDOW_KST = (dtime(6, 30), dtime(13, 30))
 
@@ -440,7 +447,7 @@ PUBLIC_SCHEMA = (  # (key path, public type, value constraint); everything else 
     (('pairs', I_PAIR, 'endpoint_half_width', 'lower', I_BOOT), W_, None),
     (('pairs', I_PAIR, 'endpoint_half_width', 'upper', I_BOOT), W_, None),
     (('pairs', I_PAIR, 'valid', I_BOOT), F_, BOOL), (('pairs', I_PAIR, 'invalid_replicates', I_BOOT), CS_, None),
-    (('S5', I_PAIR, I_BOOT), P_, frozenset({'PASS', 'FAIL', 'INVALID', 'BASELINE'})),
+    (('S5', I_PAIR, I_BOOT), P_, frozenset({'PASS', 'FAIL', 'INCONCLUSIVE', 'INVALID', 'BASELINE'})),
     (('R5', 'a', 'decisions'), RF_, None), (('R5', 'a', 'top1_equals_logged', I_POLICY), RF_, None),
     (('R5', 'a', 'mean_pi_logged', I_POLICY), RF_, None), (('R5', 'a', 'tv_candidate_reference', I_DIST), RF_, None),
     (('R5', 'a', 'kl_candidate_reference', I_DIST), RF_, None), (('R5', 'a', 'top1_agreement_candidate_reference'), RF_, None),
@@ -661,13 +668,19 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                       'integrity_tolerance': INTEGRITY_TOL, 'mde_multiplier': MDE_MULTIPLIER,
                       'placebo_flag_ratio': PLACEBO_FLAG, 'replication_2027_ratio': REPLICATION_2027_RATIO},
     'point_set': {'definition': 'E0 PAs whose baseline (R1_0 x R2_0, L1-R) paired delta bounds are equal (float ==)',
-                  'non_point_under_a_pair': 'that pair has no P mean: its P statistics are invalid (fail-safe, counted)'},
+                  'non_point_under_a_pair': 'that pair has no P mean: its P statistics are invalid (fail-safe, counted); '
+                                            'its L1-R endpoints stay defined (separate validity)',
+                  'sn': 'the same P for SN: a P row with an unknown end is a point while its SN paired bounds coincide '
+                        '(full-sample normalisers and every replicate); a drawn non-point P row invalidates that '
+                        'replicate\'s P statistics only'},
     'precision': {'degenerate_se': 'SE = 0 (or a zero half-width) is INCONCLUSIVE, never PASS, except the registered '
                                    'exact S-2 gamma_a invariant at zeta = 0',
                   'condition_ii': 'H(pair) <= 0.7 H(baseline) evaluated directly; a zero baseline or pair half-width '
                                   'is degenerate (INCONCLUSIVE, not a pass)',
                   'invalid_repetition': 'an invalid repetition or replication in an acceptance-relevant run or cell '
-                                        'makes that cell INCONCLUSIVE and the pair non-adoptable',
+                                        'makes that cell INCONCLUSIVE and the pair non-adoptable; records keep it '
+                                        'JSON-safe (null value, invalid flag, count and reason)',
+                's5_degenerate': 'a zero-width or zero-SE S-5 shift interval is INCONCLUSIVE, never PASS',
                   'r1b_table_failure': 'every m nonfinite in a TAB replication: the R1_b pairs are NOT_EVALUABLE, the '
                                        'R1_0 and R1_a pairs continue'},
     'reading': {'smoke': 'pinned processed frame and raw files read by parquet row group: only row groups whose '
@@ -726,9 +739,16 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                 'pair': BASELINE, 'ratio_bootstraps': ['game', 'pitcher'], 'flag_if_any_ratio_above': PLACEBO_FLAG},
     'window': {'treat_every_day_as_game_day': True, 'protection_window_kst': ['06:30', '13:30'],
                'rule': 'the whole command (argument parsing to the completion receipt) must end strictly before 06:30'},
-    'guards': {'coverage': 'hang timer, RSS cap and free-memory guard from argument parsing to the last write (preflight, '
-                           'data acquisition, computation, hashing and sealing; unblind included); the final check runs '
-                           'after the last write, disarms the timer and precedes the completion receipt',
+    'guards': {'coverage': 'hang timer, RSS cap and free-memory guard from argument parsing to the final seal (preflight, '
+                           'data acquisition under the common heavy lock, computation, hashing, every manifest write and '
+                           'the seal; unblind and the manifest commands included); the final check runs after the last '
+                           'write, disarms the timer and precedes the completion receipt',
+               'memory_watchdog': 'a watchdog thread checks the RSS cap and free memory every 1 s through every code path '
+                                  '(the protected estimator included) and interrupts the main thread on a violation',
+               'finalization_reserve': 'work checkpoints stop at the hang guard minus min(120 s, 10%); hashing, the '
+                                       'manifest and the seal run inside that reserve under the unchanged hard cap',
+               'manifest_commands': 'register-digest, record-review, reconcile-attempt and register-addendum run under the '
+                                    'window, memory and hang guards (the A2-S4 hang guard)',
                'attempts': 'an attempt-start receipt is appended before the stage directory exists; at most two starts; '
                            'a start without a receipt counts and needs a recorded reconciliation before the next start',
                'refusals_before_attempt': 'registry, digest, receipts, sources, destination, upstream seals, G-SMOKE, '
@@ -739,6 +759,14 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
     'destination': 'a fresh directory directly under output_root; output_root disjoint (resolved real paths) from the '
                    'repository, the main checkout (git common directory), the S6-dr-a5 stage directory, the processed '
                    'frame directory, the raw root and the G0 bundle and WE directories',
+    'digest_manifest_location': 'the external digest manifest path is checked with the same disjointness rule (resolved '
+                                'real paths; outside every sealed input, both checkouts and results/) before every '
+                                'manifest mutation, the manifest commands included',
+    'terminal_decision': 'A2-S4 may record FAILED_INTEGRITY as soon as a stage exhausted its attempts in a deterministic '
+                         'integrity failure; its unsealed descendants are recorded as BLOCKED and other unsealed stages '
+                         'as NOT_RUN',
+    'tab_descriptive_stop': 'a descriptive cell stopped by the work deadline (after every acceptance cell is sealed) '
+                            'is written as a NOT_RUN cell record and sealed with the stage',
     'smoke_projection_ratio': 'rows of the processed row groups overlapping TRAIN (footer metadata, an upper bound) / rows '
                               'of the smoke subset before the regular-season filter (labelled projection)',
     'smoke': {'eta': 0.0, 'kappa': 0.0, 'zeta': 0.0, 'fixed_m': 20, 'fixed_lambda': 30.0, 'fixed_M': 5.0},
@@ -873,6 +901,11 @@ def _disjoint(a, b):
     return not (a == b or a.is_relative_to(b) or b.is_relative_to(a))
 
 
+def manifest_outside(manifest_path, other):
+    """The digest manifest file lies outside a protected directory (resolved real paths; review round 2 #8)."""
+    return not Path(manifest_path).resolve().is_relative_to(Path(other).resolve())
+
+
 def check_pins(config):
     """Every registration-time input pin filled and well formed (needed before any registered stage).
 
@@ -911,8 +944,9 @@ def check_pins(config):
                         ('the S6-dr-a5 stage directory', Path(pins['s6_dr_a5_ledger_path']).parent),
                         ('the processed frame directory', Path(frame['path']).parent)):
         _require(_disjoint(root, other), f'output_root must be disjoint from {name}')
-    _require(_disjoint(pins['digest_manifest_path'], Path(pins['s6_dr_a5_ledger_path']).parent),
-             'the digest manifest must not live in the sealed S6 stage directory')
+    for name, other in (('the repository', REPO), ('the S6-dr-a5 stage directory', Path(pins['s6_dr_a5_ledger_path']).parent),
+                        ('the processed frame directory', Path(frame['path']).parent)):
+        _require(manifest_outside(pins['digest_manifest_path'], other), f'the digest manifest must be outside {name}')
     r3 = pins.get('r3_status')
     _require(r3 in R3_STATUSES, 'pin r3_status')
     a3 = (pins.get('a3_behavior_policy_sha256'), pins.get('a3_provenance_manifest_sha256'))

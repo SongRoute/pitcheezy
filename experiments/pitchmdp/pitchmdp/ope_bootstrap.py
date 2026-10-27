@@ -80,8 +80,9 @@ def interval(replicates, valid, draws, invalid_share_max=INVALID_SHARE_MAX):
 class PairInputs:
     """Everything a pair contributes to the bootstrap: per-E0-row point deltas (P rows), endpoint
     bounds (all E0 rows), or for the SN pair the linear coefficients in the inverse normalisers.
-    ``p_nonpoint`` counts the P rows that are not a point under this pair (then its P mean is undefined
-    and every P statistic of the pair is invalid: fail-safe)."""
+    ``p_nonpoint`` counts the P rows whose paired bounds do not coincide under this pair (full sample);
+    then its P mean is undefined and its P statistics are invalid (fail-safe), while its L1-R endpoints
+    stay defined."""
     def __init__(self, name, *, deltas=None, lo=None, hi=None, sn=None, p_nonpoint=0):
         self.name, self.deltas, self.lo, self.hi, self.sn, self.p_nonpoint = name, deltas, lo, hi, sn, p_nonpoint
 
@@ -97,9 +98,22 @@ def fixed_pair(name, rows, point):
     return PairInputs(name, deltas=deltas, lo=lo, hi=hi, p_nonpoint=int(nonpoint.sum()))
 
 
-def sn_pair(name, lines, point, rewards=None):
+def row_bounds(kind, bc, br, sc, sr):
+    """The registered L1-R paired bounds of a row with an unknown end (policy_estimator._interval:
+    a shared end -> [min, max] of (bc - br, bc + sc - br - sr); independent ends -> [bc - br - sr,
+    bc + sc - br]), vectorised over replicates."""
+    if kind == 'interval_shared':
+        a, b = bc - br, bc + sc - br - sr
+        return np.minimum(a, b), np.maximum(a, b)
+    return bc - br - sr, bc + sc - br
+
+
+def sn_pair(name, lines, point, rewards=None, u=None):
     """The SN pair: per E0 line, per policy, base coefficients over depth and the slope coefficient
-    (W_T at depth T) so that V = coef . u (+ W_T u_T c); rewards override observed ends (R1 arms)."""
+    (W_T at depth T) so that V = coef . u (+ W_T u_T c); rewards override observed ends (R1 arms).
+    P (the baseline paired-bound set) applies to SN as to every estimator (PM decision, review #12): a P
+    row with an unknown end is a point under SN exactly when its SN paired bounds coincide, checked at
+    the full-sample normalisers ``u`` (p_nonpoint) and again in every bootstrap replicate."""
     paths = weight_paths(lines)
     depth = max(len(p[0]) for p in paths) - 1
     n = len(lines)
@@ -121,42 +135,38 @@ def sn_pair(name, lines, point, rewards=None):
     full[:, np.arange(n), end] += slope * reward[None]
     kinds = np.array([line['end'] for line in lines], dtype=object)
     point = np.asarray(point, dtype=bool)
-    # A P row without a known end (a shared unknown whose baseline slopes cancel) is not a point under SN:
-    # the two policies' normalisers differ, so the slopes no longer cancel.
-    nonpoint = point & ~known
-    return PairInputs(name, sn={'held': held, 'coef': coef, 'full': full, 'slope': slope, 'end': end,
-                                'point': point & known, 'kinds': kinds, 'depth': depth, 'p_invalid': bool(nonpoint.any())},
-                      p_nonpoint=int(nonpoint.sum()))
+    pair = PairInputs(name, sn={'held': held, 'coef': coef, 'full': full, 'slope': slope, 'end': end, 'point': point,
+                                'known': known, 'p_unknown': point & ~known, 'kinds': kinds, 'depth': depth})
+    if u is not None:
+        pair.p_nonpoint = int(sn_values(pair, u)[3].sum())
+    return pair
 
 
 def sn_values(pair, u):
-    """Full-sample SN per-row values for inverse normalisers u [2, D+1]: (deltas on P, lo, hi); the
-    deltas are all NaN when a P row is not a point under SN."""
+    """Full-sample SN per-row values for inverse normalisers u [2, D+1]: (deltas on P, lo, hi, the P rows
+    that are not a point under SN); the deltas are all NaN when a P row is not a point."""
     s = pair.sn
-    point_values = np.einsum('pnd,pd->pn', s['full'], u)
-    deltas = np.where(s['point'], point_values[0] - point_values[1], np.nan)
+    values = np.einsum('pnd,pd->pn', s['full'], u)
     base = np.einsum('pnd,pd->pn', s['coef'], u)
     slope = s['slope'] * u[np.arange(2)[:, None], s['end'][None]]
-    lo, hi = _bounds(base, slope, s['kinds'], s['point'], deltas)
-    if s['p_invalid']:
-        deltas = np.full_like(deltas, np.nan)
-    return deltas, lo, hi
-
-
-def _bounds(base, slope, kinds, point, deltas):
-    bc, br, sc, sr = base[0], base[1], slope[0], slope[1]
-    shared_a, shared_b = bc - br, bc + sc - br - sr
-    lo = np.where(kinds == 'interval_shared', np.minimum(shared_a, shared_b), bc - br - sr)
-    hi = np.where(kinds == 'interval_shared', np.maximum(shared_a, shared_b), bc + sc - br)
-    lo = np.where(point, deltas, lo)
-    hi = np.where(point, deltas, hi)
-    return lo, hi
+    known_delta = values[0] - values[1]
+    lo, hi = known_delta.copy(), known_delta.copy()
+    for kind in set(s['kinds'][~s['known']]):
+        rows = ~s['known'] & (s['kinds'] == kind)
+        lo[rows], hi[rows] = row_bounds(kind, base[0][rows], base[1][rows], slope[0][rows], slope[1][rows])
+    nonpoint = s['p_unknown'] & (lo != hi)
+    deltas = np.where(s['point'], lo, np.nan)
+    if nonpoint.any():
+        deltas = np.full_like(deltas, np.nan)  # no P mean under SN for this sample
+    return deltas, lo, hi, nonpoint
 
 
 def run_pairs(resampler, pairs, point, baseline_name, *, chunk=500, checkpoint=None):
     """Replicates of every pair on the same multiplicities: the P mean, the L1-R endpoints, the
     paired shift to the baseline on P, and the point/censored split of the lower endpoint over the
-    common denominator N (R5 f). Returns {pair: {statistic: replicates}}, validity per replicate.
+    common denominator N (R5 f). Returns {pair: {statistic: replicates}} and, per pair, the validity
+    masks of the P statistics ('p'), of the endpoints ('end') and of the R5 f decomposition, kept
+    separate so an undefined P mean never suppresses defined endpoint intervals (review #12).
     ``checkpoint`` (the runner's memory and hang guard) is called before every pair."""
     point = np.asarray(point, dtype=bool)
     draws = resampler.draws
@@ -169,6 +179,7 @@ def run_pairs(resampler, pairs, point, baseline_name, *, chunk=500, checkpoint=N
     base = next(p for p in pairs if p.name == baseline_name)
     _require(base.sn is None, 'the baseline is the fixed (non-SN) pair')
     base_num = m @ resampler.sums(base.deltas[p_rows], p_rows)
+    cens_rows = np.flatnonzero(~point)
     for pair in pairs:
         if checkpoint is not None:
             checkpoint()
@@ -176,24 +187,29 @@ def run_pairs(resampler, pairs, point, baseline_name, *, chunk=500, checkpoint=N
             num = m @ resampler.sums(pair.deltas[p_rows], p_rows)
             lo_num = m @ resampler.sums(pair.lo)
             hi_num = m @ resampler.sums(pair.hi)
-            cens_rows = np.flatnonzero(~point)
             cens_num = m @ resampler.sums(pair.lo[cens_rows], cens_rows) if len(cens_rows) else np.zeros(draws)
-            ok = (den_p > 0) & (den_all > 0)
+            ok_end = den_all > 0
+            ok_p = ok_end & (den_p > 0)
         else:
-            num, lo_num, hi_num, cens_num, ok = _sn_replicates(resampler, pair, point, den_all, chunk)
-            ok &= den_p > 0
-            if pair.sn['p_invalid']:
-                ok &= False  # no P mean under SN for this sample
+            num, lo_num, hi_num, cens_num, ok_end, ok_p = _sn_replicates(resampler, pair, point, den_all)
+            ok_p = ok_p & (den_p > 0)
         with np.errstate(divide='ignore', invalid='ignore'):
             stats = {'mean_p': num / den_p, 'shift_p': (num - base_num) / den_p, 'lower_endpoint': lo_num / den_all,
                      'upper_endpoint': hi_num / den_all, 'point_part_n': num / den_all,
                      'censored_part_n': cens_num / den_all}
-        good = ok & np.all([np.isfinite(v) for v in stats.values()], axis=0)
-        out[pair.name], valid[pair.name] = stats, good
+        finite = {k: np.isfinite(v) for k, v in stats.items()}
+        p_ok = ok_p & finite['mean_p'] & finite['shift_p']
+        end_ok = ok_end & finite['lower_endpoint'] & finite['upper_endpoint']
+        valid[pair.name] = {'p': p_ok, 'end': end_ok,
+                            'decomposition': p_ok & end_ok & finite['point_part_n'] & finite['censored_part_n']}
+        out[pair.name] = stats
     return out, valid
 
 
-def _sn_replicates(resampler, pair, point, den_all, chunk):
+def _sn_replicates(resampler, pair, point, den_all):
+    """SN replicates with the normalisers recomputed from the resampled E0 PAs. A P row with an unknown
+    end contributes its delta only in the replicates where its SN paired bounds coincide; a drawn P row
+    whose bounds do not coincide makes that replicate's P statistics invalid (its endpoints stay defined)."""
     s = pair.sn
     m = resampler.m
     held = [resampler.sums(s['held'][w]) for w in (0, 1)]  # [G, D+1]
@@ -201,28 +217,29 @@ def _sn_replicates(resampler, pair, point, den_all, chunk):
     with np.errstate(divide='ignore', invalid='ignore'):
         n_bar = [nb / den_all[:, None] for nb in n_bar]
         u = [1.0 / nb for nb in n_bar]
-    ok = (den_all > 0) & np.all([np.isfinite(nb).all(axis=1) & (nb > 0).all(axis=1) for nb in n_bar], axis=0)
-    p_rows = np.flatnonzero(point)
-    full = [m @ resampler.sums(s['full'][w][p_rows], p_rows) for w in (0, 1)]  # [draws, D+1]
+    ok_end = (den_all > 0) & np.all([np.isfinite(nb).all(axis=1) & (nb > 0).all(axis=1) for nb in n_bar], axis=0)
+    known_p = np.flatnonzero(point & s['known'])
+    full = [m @ resampler.sums(s['full'][w][known_p], known_p) for w in (0, 1)]  # [draws, D+1]
     with np.errstate(invalid='ignore'):
         num = np.sum(u[0] * full[0], axis=1) - np.sum(u[1] * full[1], axis=1)
-    cens = np.flatnonzero(~point)
-    lo_cens = np.zeros(resampler.draws)
-    hi_cens = np.zeros(resampler.draws)
-    for i in cens:  # the bounded rows are few; each is evaluated in every replicate
+    widen = np.zeros(resampler.draws)  # P rows that are not a point in a replicate: hi - lo on the upper endpoint
+    point_ok = np.ones(resampler.draws, dtype=bool)
+    lo_cens, hi_cens = np.zeros(resampler.draws), np.zeros(resampler.draws)
+    for i in np.flatnonzero(~s['known']):  # the bounded rows are few; each is evaluated in every replicate
         g = resampler.row_cluster[i]
         with np.errstate(invalid='ignore'):
             base = [u[w] @ s['coef'][w][i] for w in (0, 1)]
             slope = [s['slope'][w][i] * u[w][:, s['end'][i]] for w in (0, 1)]
-        bc, br, sc, sr = base[0], base[1], slope[0], slope[1]
-        if s['kinds'][i] == 'interval_shared':
-            a, b = bc - br, bc + sc - br - sr
-            lo_i, hi_i = np.minimum(a, b), np.maximum(a, b)
-        else:
-            lo_i, hi_i = bc - br - sr, bc + sc - br
-        lo_cens += m[:, g] * lo_i
-        hi_cens += m[:, g] * hi_i
-    return num, num + lo_cens, num + hi_cens, lo_cens, ok
+            lo_i, hi_i = row_bounds(s['kinds'][i], base[0], base[1], slope[0], slope[1])
+            if point[i]:  # in P: its delta is lo = hi only where its SN paired bounds coincide
+                drawn = m[:, g] > 0
+                point_ok &= (lo_i == hi_i) | ~drawn
+                num = num + np.where(drawn, m[:, g] * lo_i, 0.)
+                widen += np.where(drawn, m[:, g] * (hi_i - lo_i), 0.)
+            else:
+                lo_cens += m[:, g] * lo_i
+                hi_cens += m[:, g] * hi_i
+    return num, num + lo_cens, num + widen + hi_cens, lo_cens, ok_end, ok_end & point_ok
 
 
 def summarize(stats, valid, resampler):
@@ -233,9 +250,9 @@ def summarize(stats, valid, resampler):
     out = {'eligible': True, **resampler.record()}
     for name, s in stats.items():
         ok = valid[name]
-        point, shift = interval(s['mean_p'], ok, draws), interval(s['shift_p'], ok, draws)
-        lower, upper = interval(s['lower_endpoint'], ok, draws), interval(s['upper_endpoint'], ok, draws)
-        good = ok & np.isfinite(s['point_part_n']) & np.isfinite(s['censored_part_n'])
+        point, shift = interval(s['mean_p'], ok['p'], draws), interval(s['shift_p'], ok['p'], draws)
+        lower, upper = interval(s['lower_endpoint'], ok['end'], draws), interval(s['upper_endpoint'], ok['end'], draws)
+        good = ok['decomposition']
         if good.sum() >= 2 and (draws - good.sum()) / draws <= INVALID_SHARE_MAX:
             cov = np.cov(s['point_part_n'][good], s['censored_part_n'][good], ddof=1)
             decomposition = {'var_point': float(cov[0, 0]), 'var_censored': float(cov[1, 1]),
@@ -273,12 +290,17 @@ def pigeonhole(game_keys, pitcher_keys, pairs, point, *, draws, seed, chunk=200,
             else:
                 s = pair.sn
                 tot = w.sum(axis=1)
+                known = point & s['known']
                 with np.errstate(divide='ignore', invalid='ignore'):
                     u = [1.0 / ((w @ s['held'][k]) / tot[:, None]) for k in (0, 1)]
-                    num = (np.sum(u[0] * (wp @ s['full'][0][point]), axis=1)
-                           - np.sum(u[1] * (wp @ s['full'][1][point]), axis=1))
-                if s['p_invalid']:
-                    num = np.full(n, np.nan)
+                    num = (np.sum(u[0] * (w[:, known] @ s['full'][0][known]), axis=1)
+                           - np.sum(u[1] * (w[:, known] @ s['full'][1][known]), axis=1))
+                    for i in np.flatnonzero(s['p_unknown']):  # the same per-replicate point rule as run_pairs
+                        base = [u[k] @ s['coef'][k][i] for k in (0, 1)]
+                        slope = [s['slope'][k][i] * u[k][:, s['end'][i]] for k in (0, 1)]
+                        lo_i, hi_i = row_bounds(s['kinds'][i], base[0], base[1], slope[0], slope[1])
+                        drawn = w[:, i] > 0
+                        num = np.where(drawn & (lo_i != hi_i), np.nan, num + np.where(drawn, w[:, i] * lo_i, 0.))
             with np.errstate(divide='ignore', invalid='ignore'):
                 results[pair.name].append(num / den)
         done += n

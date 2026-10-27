@@ -4,9 +4,12 @@ and the S5-X layered world (per-run streams, repetition slices, CRN, the gamma_a
 on the existing synthetic candidate runtime with fake G0/WE, and the X2 single-member predictor).
 No real data, model weights or 2026 access.
 """
+import json
 import math
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -380,6 +383,42 @@ class S5XRunTests(unittest.TestCase):
         self.assertTrue(summary['s2']['R1_axR2_0']['2*zeta_p']['invalid_repetition'])  # run 5 absent: never PASS
         net = summary['nets']['S1'][reg.BASELINE]  # runs 1-3 not present: INCONCLUSIVE with the invalid flag
         self.assertEqual((net['outcome'], net['invalid_repetition']), ('INCONCLUSIVE', True))
+
+    def test_invalid_repetitions_serialize_and_propagate(self):
+        # PM decision (review round 2 #1): an invalid repetition is a JSON-safe record (null value, flag, count and
+        # reason); its INCONCLUSIVE S-2 cell survives a strict write and a reload
+        from pitchmdp.rollout_policy import RowBudget
+        roa = __import__('run_ope_a2')
+        fx, runtime, components, starts, layers = self.fixture('s5x-serialize')
+        law = lambda s: (runtime.bc.actions, runtime.bc.probabilities(s))
+        real, calls = osx.pipeline, {'n': 0}
+
+        def broken(data, rewards, **kwargs):
+            out, selected, invalid = real(data, rewards, **kwargs)
+            calls['n'] += 1
+            if calls['n'] == 2:  # repetition 2: the SN normaliser of R1_axR2_3 is zero
+                return {**out, 'R1_axR2_3': math.nan}, selected, invalid + ['R1_axR2_3']
+            return out, selected, invalid
+        with mock.patch.object(osx, 'pipeline', broken):
+            record = osx.run_s5x(runtime, components, starts, run=dict(reg.S5X_RUNS[3]), law=law, layers=layers, cap=4,
+                                 gamma=True, invariant=True, budget=RowBudget(10 ** 8, seed_count=5))
+        rep = record['repetitions'][1]
+        self.assertIsNone(rep['gaps']['R1_axR2_3'])
+        self.assertIn('R1_axR2_3', rep['invalid'])
+        self.assertIn('SN normaliser', rep['invalid_reason']['R1_axR2_3'])
+        pair = record['pairs']['R1_axR2_3']
+        self.assertEqual((pair['valid'], pair['invalid_repetitions'], pair['gap'], pair['se']), (False, 1, None, None))
+        self.assertIn('invalid repetition', pair['reason'])
+        tmp = Path(tempfile.mkdtemp(prefix='a2-s5x-'))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        roa.dump(tmp / 'run-k04.json', record)  # strict JSON: allow_nan=False
+        loaded = json.loads((tmp / 'run-k04.json').read_text())
+        self.assertNotIn('nonfinite_nulled_paths', loaded)  # nothing had to be nulled: the record is JSON-safe
+        summary = roa.s5x_summary([loaded])
+        cell = summary['s2']['R1_axR2_3']['2*kappa_p']
+        self.assertEqual((cell['outcome'], cell['invalid_repetition']), ('INCONCLUSIVE', True))
+        self.assertEqual(summary, roa.s5x_summary([record]))
+        self.assertEqual(summary['s2']['R1_axR2_0']['2*kappa_p']['outcome'], record['s2']['R1_a']['outcome'])
 
     def test_invariant_violation_is_a_deterministic_failure(self):
         from pitchmdp.rollout_policy import RowBudget

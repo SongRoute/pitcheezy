@@ -1840,6 +1840,11 @@
       "date": "2026-10-27",
       "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
       "what": "code review CODE-REVIEW-A2-astra-001 (FAIL) fixes: pins policy_registration_chain and the processed-frame schema; implementation block updated (point set P on the baseline paired bounds, degenerate SE, invalid repetitions, R1_b table failure, TRAIN-only smoke reading with a pre-attempt footer plan, processed pin, zeta frozen-C0 exception, command-wide guards, attempt-start receipts, review receipts, destination disjointness); still DRAFT_UNREGISTERED, execution disabled"
+    },
+    {
+      "date": "2026-10-27",
+      "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
+      "what": "code review CODE-REVIEW-A2-astra-002 (FAIL) fixes: implementation block updated (JSON-safe invalid repetitions, SN point rule on paired bounds with separate endpoint validity, zero-width S-5 INCONCLUSIVE, memory watchdog and finalization reserve, guarded manifest commands, digest-manifest location rule, NOT_RUN TAB cell records, terminal FAILED_INTEGRITY decision); still DRAFT_UNREGISTERED, execution disabled"
     }
   ],
   "implementation": {
@@ -1860,12 +1865,14 @@
     },
     "point_set": {
       "definition": "E0 PAs whose baseline (R1_0 x R2_0, L1-R) paired delta bounds are equal (float ==)",
-      "non_point_under_a_pair": "that pair has no P mean: its P statistics are invalid (fail-safe, counted)"
+      "non_point_under_a_pair": "that pair has no P mean: its P statistics are invalid (fail-safe, counted); its L1-R endpoints stay defined (separate validity)",
+      "sn": "the same P for SN: a P row with an unknown end is a point while its SN paired bounds coincide (full-sample normalisers and every replicate); a drawn non-point P row invalidates that replicate's P statistics only"
     },
     "precision": {
       "degenerate_se": "SE = 0 (or a zero half-width) is INCONCLUSIVE, never PASS, except the registered exact S-2 gamma_a invariant at zeta = 0",
       "condition_ii": "H(pair) <= 0.7 H(baseline) evaluated directly; a zero baseline or pair half-width is degenerate (INCONCLUSIVE, not a pass)",
-      "invalid_repetition": "an invalid repetition or replication in an acceptance-relevant run or cell makes that cell INCONCLUSIVE and the pair non-adoptable",
+      "invalid_repetition": "an invalid repetition or replication in an acceptance-relevant run or cell makes that cell INCONCLUSIVE and the pair non-adoptable; records keep it JSON-safe (null value, invalid flag, count and reason)",
+      "s5_degenerate": "a zero-width or zero-SE S-5 shift interval is INCONCLUSIVE, never PASS",
       "r1b_table_failure": "every m nonfinite in a TAB replication: the R1_b pairs are NOT_EVALUABLE, the R1_0 and R1_a pairs continue"
     },
     "reading": {
@@ -1960,7 +1967,10 @@
       "rule": "the whole command (argument parsing to the completion receipt) must end strictly before 06:30"
     },
     "guards": {
-      "coverage": "hang timer, RSS cap and free-memory guard from argument parsing to the last write (preflight, data acquisition, computation, hashing and sealing; unblind included); the final check runs after the last write, disarms the timer and precedes the completion receipt",
+      "coverage": "hang timer, RSS cap and free-memory guard from argument parsing to the final seal (preflight, data acquisition under the common heavy lock, computation, hashing, every manifest write and the seal; unblind and the manifest commands included); the final check runs after the last write, disarms the timer and precedes the completion receipt",
+      "memory_watchdog": "a watchdog thread checks the RSS cap and free memory every 1 s through every code path (the protected estimator included) and interrupts the main thread on a violation",
+      "finalization_reserve": "work checkpoints stop at the hang guard minus min(120 s, 10%); hashing, the manifest and the seal run inside that reserve under the unchanged hard cap",
+      "manifest_commands": "register-digest, record-review, reconcile-attempt and register-addendum run under the window, memory and hang guards (the A2-S4 hang guard)",
       "attempts": "an attempt-start receipt is appended before the stage directory exists; at most two starts; a start without a receipt counts and needs a recorded reconciliation before the next start",
       "refusals_before_attempt": "registry, digest, receipts, sources, destination, upstream seals, G-SMOKE, the smoke layout plan and the A2-S4 stage status refuse before the attempt-start"
     },
@@ -1969,6 +1979,9 @@
       "G-REG": "verdict PASS, or PASS_WITH_NOTES with notes closed; config digest = the registered digest"
     },
     "destination": "a fresh directory directly under output_root; output_root disjoint (resolved real paths) from the repository, the main checkout (git common directory), the S6-dr-a5 stage directory, the processed frame directory, the raw root and the G0 bundle and WE directories",
+    "digest_manifest_location": "the external digest manifest path is checked with the same disjointness rule (resolved real paths; outside every sealed input, both checkouts and results/) before every manifest mutation, the manifest commands included",
+    "terminal_decision": "A2-S4 may record FAILED_INTEGRITY as soon as a stage exhausted its attempts in a deterministic integrity failure; its unsealed descendants are recorded as BLOCKED and other unsealed stages as NOT_RUN",
+    "tab_descriptive_stop": "a descriptive cell stopped by the work deadline (after every acceptance cell is sealed) is written as a NOT_RUN cell record and sealed with the stage",
     "smoke_projection_ratio": "rows of the processed row groups overlapping TRAIN (footer metadata, an upper bound) / rows of the smoke subset before the regular-season filter (labelled projection)",
     "smoke": {
       "eta": 0.0,

@@ -16,6 +16,7 @@ import shutil
 import signal
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -30,7 +31,8 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE.parent / 'scripts'))
 
-from ope_a2_fixtures import ToyAdvancement, ToyWE, synthetic_ledger, synthetic_table, synthetic_train_frame  # noqa: E402
+from ope_a2_fixtures import (KINDS, ToyAdvancement, ToyWE, synthetic_ledger, synthetic_pa, synthetic_table,  # noqa: E402
+                             synthetic_train_frame)
 from pitchmdp import ope_redesign_registry as reg  # noqa: E402
 from pitchmdp import ope_sealed as osd  # noqa: E402
 from pitchmdp import ope_surrogate as osg  # noqa: E402
@@ -75,8 +77,8 @@ class ClockEnv(roa.Environment):
 
 
 # ---------------------------------------------------------------- a synthetic registered workspace
-def _frame(start, days, seed, n_pas):
-    frame = synthetic_train_frame(seed=seed, n_pas=n_pas, n_pitchers=12, start=start, days=days)
+def _frame(start, days, seed, n_pas, n_pitchers=12):
+    frame = synthetic_train_frame(seed=seed, n_pas=n_pas, n_pitchers=n_pitchers, start=start, days=days)
     frame['game_pk'] = frame['game_pk'] + 100000 * seed  # unique pitch keys across the synthetic groups
     frame['game_type'] = 'R'
     dates = pd.to_datetime(frame['game_date'])
@@ -103,11 +105,12 @@ class Workspace:
     1 TRAIN 2024-04, 2 the TRAIN subset, 3 DEV 2025-08), raw files, ML-POLICY chain, digest manifest and
     review receipts. Nothing real is referenced."""
     def __init__(self, test, *, smoke=('2024-06-01', '2024-06-20'), subset_start='2024-06-01', subset_days=20,
-                 reps=1, receipts=True, pins=None):
+                 reps=1, receipts=True, pins=None, digest_rel=None, hook=None):
         self.root = tmpdir(test)
         self.artifacts, self.raw = self.root / 'artifacts', self.root / 'raw'
         groups = [_frame('2023-04-01', 20, 1, 300), _frame('2024-04-01', 20, 2, 300),
-                  _frame(subset_start, subset_days, 3, 6000), _frame('2025-08-01', 20, 4, 300)]
+                  _frame(subset_start, subset_days, 3, 6000), _frame('2025-08-01', 20, 4, 2400, n_pitchers=40)]
+        self.groups = groups
         self.processed = self.artifacts / 'processed' / 'pitches.parquet'
         write_groups(self.processed, groups, roa.TRAIN_COLUMNS)
         (self.artifacts / 'reports').mkdir()
@@ -133,12 +136,17 @@ class Workspace:
                   'policy_registration_chain': [{'path': str(chain), 'sha256': reg.file_sha256(chain)}],
                   'new_files_sha256': roa.new_file_hashes(), 'smoke_train_subset': {'game_dates': list(smoke)},
                   'smoke_tab_replications_per_cell': reps}
+        if digest_rel is not None:
+            values['digest_manifest_path'] = str(self.root / digest_rel)
+        if hook is not None:
+            hook(config, self)
         config['registration_input_pins'].update({**values, **(pins or {})})
         self.config = config
         self.config_path = self.root / 'EXP-OPE-RES-01.json'
         self.config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + '\n')
         self.digest = reg.config_digest(config)
         self.manifest = roa.DigestManifest(config['registration_input_pins']['digest_manifest_path'])
+        self.manifest.path.parent.mkdir(parents=True, exist_ok=True)
         self.manifest.append('config_digest', {'digest': self.digest})
         if receipts:
             self.receipt('G-CODE', commit=config['registration_input_pins']['execution_source_commit'])
@@ -169,8 +177,10 @@ class WorkspaceEnv(ClockEnv):
         return {'head': code['execution_source_commit'], 'ancestor': True, 'changed': [], 'dirty': False,
                 'config_committed': True}
 
+    checkouts_extra = ()
+
     def checkouts(self):
-        return [roa.REPO]
+        return [roa.REPO, *self.checkouts_extra]
 
     def local_config(self, base):
         return dict(self.ws.local)
@@ -234,7 +244,7 @@ class FailClosedTests(unittest.TestCase):
                      ['record-review', '--gate', 'G-CODE', '--review', 'r', '--verdict', 'PASS'],
                      ['reconcile-attempt', '--stage', 'A2-S0', '--note', 'n']):
             with self.subTest(argv[0]), self.assertRaisesRegex(IntegrityError, 'not REGISTERED'):
-                roa.main(argv)
+                roa.main(argv, env=ClockEnv())
         self.assertEqual(list(tmp.iterdir()), [])  # nothing was created
 
     def test_data_free_commands(self):
@@ -376,6 +386,56 @@ class GuardTests(unittest.TestCase):
             with roa.command_guard('A2-SM', env) as guard:
                 guard.finish()  # the final check disarms the timer before the completion receipt
                 self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+
+    def test_the_work_deadline_leaves_a_finalization_reserve(self):
+        env = ClockEnv()
+        guard = roa.CommandGuard('A2-S1', env)
+        reserve = min(reg.FINALIZATION_RESERVE_SECONDS, reg.HANG_GUARDS['A2-S1'] / 10)
+        self.assertEqual((guard.seconds, guard.work_seconds), (reg.HANG_GUARDS['A2-S1'], reg.HANG_GUARDS['A2-S1'] - reserve))
+        env.clock = guard.work_seconds + 1  # past the work deadline, inside the hard cap
+        with self.assertRaises(roa.HangGuardExceeded):
+            guard.check()
+        guard.finish()  # the finalization may still hash and seal
+        env.clock = guard.seconds + 1
+        with self.assertRaises(roa.HangGuardExceeded):
+            guard.finish()  # beyond the hard cap the final check refuses the seal
+
+    def test_the_memory_watchdog_interrupts_any_code_path(self):
+        # review round 2 #4: memory checks through code that has no checkpoint of its own (the protected estimator)
+        state = {'low': False}
+
+        def guards():
+            if state['low']:
+                raise roa.MemoryGuardExceeded('synthetic: free memory below the guard')
+        env = ClockEnv(guards=guards)
+        env.alarm = True
+        env.monotonic = time.monotonic
+        previous = signal.getsignal(signal.SIGUSR1)
+        with mock.patch.object(reg, 'WATCHDOG_INTERVAL_SECONDS', 0.05), mock.patch.dict(reg.HANG_GUARDS, {'A2-SM': 30}):
+            t0 = time.monotonic()
+            with self.assertRaises(roa.MemoryGuardExceeded):
+                with roa.command_guard('A2-SM', env):
+                    state['low'] = True
+                    time.sleep(3)  # stands for a long protected call
+            self.assertLess(time.monotonic() - t0, 2.0)
+        self.assertEqual(signal.getsignal(signal.SIGUSR1), previous)
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+        self.assertFalse(any(t.name == 'a2-memory-watchdog' for t in threading.enumerate()))
+
+    def test_manifest_commands_are_guarded(self):
+        ws = Workspace(self)
+        before = ws.manifest.path.read_bytes()
+        argv = ['record-review', '--config', str(ws.config_path), '--gate', 'G-REV', '--review', 'R', '--verdict', 'PASS']
+
+        def low():
+            raise roa.MemoryGuardExceeded('synthetic')
+        with self.assertRaisesRegex(IntegrityError, 'strictly before 06:30'):
+            roa.main(argv, env=WorkspaceEnv(ws, now=kst(28, 9, 0)))
+        with self.assertRaises(roa.MemoryGuardExceeded):
+            roa.main(argv, env=WorkspaceEnv(ws, guards=low))
+        self.assertEqual(ws.manifest.path.read_bytes(), before)  # nothing appended
+        quiet(roa.main, argv, env=WorkspaceEnv(ws))
+        self.assertEqual(ws.manifest.latest('review_reference', gate='G-REV')['payload']['verdict'], 'PASS')
 
     def test_the_final_check_follows_the_last_write_and_precedes_the_seal(self):
         tmp = tmpdir(self)
@@ -594,21 +654,60 @@ class ReaderTests(unittest.TestCase):
             roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
         self.assertEqual((log['opened'], ws.kinds('A2-SM')), ([], []))
 
+    def test_inputs_are_verified_under_the_common_heavy_lock(self):
+        ws = Workspace(self)
+        calls = []
+
+        class Env(WorkspaceEnv):
+            def heavy_lock(self, local):
+                @contextmanager
+                def lock():
+                    calls.append('lock')
+                    yield
+                    calls.append('unlock')
+                return lock()
+
+            def train_plan(self, *args, **kwargs):
+                calls.append('plan')
+                return super().train_plan(*args, **kwargs)
+
+            def train(self, *args, **kwargs):
+                calls.append('train')
+                return super().train(*args, **kwargs)
+        roa.main(ws.argv('smoke', 'A2-SM-a1'), env=Env(ws))
+        self.assertEqual(calls, ['lock', 'plan', 'train', 'unlock'])
+
+    def test_the_digest_manifest_must_avoid_every_pinned_input(self):
+        # PM decision (review round 2 #8): the manifest file is outside every sealed input and both checkouts
+        for rel, name in (('raw/digest.jsonl', 'the raw root'), ('artifacts/reports/digest.jsonl', 'the artifact reports directory'),
+                          ('main-checkout/results/digest.jsonl', 'the checkout')):
+            ws = Workspace(self, digest_rel=rel)
+            env = WorkspaceEnv(ws)
+            env.checkouts_extra = (ws.root / 'main-checkout',)
+            before = ws.manifest.path.read_bytes()
+            with self.subTest(rel), watch_parquet() as log, self.assertRaisesRegex(IntegrityError, f'outside {name}'):
+                roa.main(ws.argv('smoke', 'A2-SM-a1'), env=env)
+            with self.subTest(rel), self.assertRaisesRegex(IntegrityError, f'outside {name}'):
+                roa.main(['record-review', '--config', str(ws.config_path), '--gate', 'G-REV', '--review', 'R',
+                          '--verdict', 'PASS'], env=env)
+            self.assertEqual((log['opened'], ws.manifest.path.read_bytes()), ([], before))  # nothing read or appended
+
     def test_reconcile_attempt_command(self):
         ws = Workspace(self)
+        env = WorkspaceEnv(ws)
         argv = ['reconcile-attempt', '--config', str(ws.config_path), '--stage', 'A2-S0', '--note', 'process killed']
         with self.assertRaisesRegex(IntegrityError, 'nothing to reconcile'):
-            quiet(roa.main, argv)
+            quiet(roa.main, argv, env=env)
         ws.manifest.append('attempt_start', {'stage': 'A2-S0', 'output_dir': str(ws.output('A2-S0-a1'))})
-        quiet(roa.main, argv)
+        quiet(roa.main, argv, env=env)
         entry = ws.manifest.latest('attempt_reconciliation')
         self.assertEqual((entry['payload']['stage'], entry['payload']['counts_as_attempt']), ('A2-S0', True))
         with self.assertRaisesRegex(IntegrityError, 'nothing to reconcile'):
-            quiet(roa.main, argv)
+            quiet(roa.main, argv, env=env)
         review = ['record-review', '--config', str(ws.config_path), '--gate', 'G-CODE', '--review', 'R', '--verdict', 'PASS']
         with self.assertRaisesRegex(IntegrityError, '--commit'):
-            quiet(roa.main, review)
-        quiet(roa.main, [*review, '--commit', 'a' * 40])
+            quiet(roa.main, review, env=env)
+        quiet(roa.main, [*review, '--commit', 'a' * 40], env=env)
         receipt = ws.manifest.latest('review_reference', gate='G-CODE')['payload']
         self.assertEqual((receipt['commit'], receipt['config_digest'], receipt['notes_closed']), ('a' * 40, ws.digest, False))
 
@@ -749,6 +848,28 @@ class S5XSummaryTests(unittest.TestCase):
         self.assertEqual(summary['s2']['R1_axR2_0']['2*kappa_p']['outcome'], 'PASS')  # other pairs unaffected
         self.assertEqual(roa.s5x_summary(fake_runs()[4:])['s2']['R1_axR2_3']['invariant'], 'INVALID')  # run 4 missing
 
+    def test_the_propagation_survives_a_write_and_a_reload(self):
+        # PM decision (review round 2 #1): the INCONCLUSIVE cell is JSON-safe and recomputed identically after a restart
+        tmp = tmpdir(self)
+        runs = fake_runs(invalid={4: 'R1_axR2_3'})
+        roa.dump(tmp / 's5x.json', {'runs': runs, **roa.s5x_summary(runs)})
+        loaded = json.loads((tmp / 's5x.json').read_text())
+        self.assertTrue(roa.require_s5x_consistent(loaded))
+        public, tab, _ = _decision_inputs(h={'R1_axR2_3': 0.5})
+        record = roa.stage_s4(public, tab, loaded, integrity_failures=(), r3_status='NOT_RUN:R3')
+        self.assertEqual(record['label'], 'BIAS_NOT_CERTIFIED:R1_axR2_3')
+        self.assertIn('invalid repetitions in run 4', loaded['s2']['R1_axR2_3']['2*kappa_p']['reason'])
+        loaded['s2']['R1_axR2_3']['2*kappa_p'] = {'outcome': 'PASS'}
+        with self.assertRaisesRegex(IntegrityError, 'differs from its run records'):
+            roa.require_s5x_consistent(loaded)
+
+    def test_dump_writes_strict_json_and_lists_nulled_values(self):
+        tmp = tmpdir(self)
+        roa.dump(tmp / 'x.json', {'a': float('nan'), 'b': [1.0, np.inf], 'c': {'d': np.float64(2.5)}, 'e': np.int64(3)})
+        doc = json.loads((tmp / 'x.json').read_text())
+        self.assertEqual(doc, {'a': None, 'b': [1.0, None], 'c': {'d': 2.5}, 'e': 3,
+                               'nonfinite_nulled_paths': ['$.a', '$.b[1]']})
+
     def test_missing_s5x_descriptive_outputs_fail_the_stage(self):
         # PM decision (review #10): the first-order approximation is an explicit NOT_RUN marker with its reason
         with self.assertRaisesRegex(IntegrityError, 'NOT_RUN marker'):
@@ -798,12 +919,15 @@ class RehearsalOrderTests(unittest.TestCase):
             return roa.rehearsal(lambda: iter(self.decisions), self.facts, self.last, raw_join=raw_join,
                                  game_values=GAME_VALUES, s0=self.s0, references=references, ess_gate=None,
                                  r3_status='NOT_RUN:R3', draws=200, minimum_games=5, minimum_pa_starts=10,
-                                 minimum_pitchers=4, placebos=3)
+                                 minimum_pitchers=4, placebos=3, checkpoint=lambda: order.append('checkpoint'))
 
     def test_gint_runs_first_and_a_mismatch_stops_before_any_surrogate(self):
         order = []
         public, sealed, _, gint = self.run_rehearsal({'s6_dr_a5_record': self.recorded}, order)
-        self.assertEqual(order, ['gint', 'raw_join', 'surrogates'])
+        events = [e for e in order if e != 'checkpoint']
+        self.assertEqual(events, ['gint', 'raw_join', 'surrogates'])
+        # review round 2 #4: memory checkpoints while the protected estimator reads the ledger, before any surrogate
+        self.assertIn('checkpoint', order[order.index('gint') + 1:order.index('raw_join')])
         self.assertEqual(gint['s6_dr_a5_record']['not_comparable'], [])
         self.assertEqual(sealed['gint'], gint)
         self.assertTrue(osd.validate_public(json.loads(osd.seal(public, sealed)[0])))
@@ -814,7 +938,7 @@ class RehearsalOrderTests(unittest.TestCase):
             order = []
             with self.subTest(key), self.assertRaisesRegex(IntegrityError, 'G-INT failed'):
                 self.run_rehearsal({'s6_dr_a5_record': {**self.recorded, key: value}}, order)
-            self.assertEqual(order, ['gint'])  # no raw join, no surrogate, no variant after a failed gate
+            self.assertEqual([e for e in order if e != 'checkpoint'], ['gint'])  # nothing after a failed gate
 
 
 # ================================================================ dependency-injected orchestration
@@ -848,6 +972,170 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(ws.kinds('A2-S4'), [])  # the refusal consumed no attempt
         self.assertEqual([k for k in ws.kinds() if k in ('attempt_start', 'stage_seal')],
                          ['attempt_start', 'stage_seal'] * 3)
+
+
+class TerminalTests(unittest.TestCase):
+    def test_a_descriptive_tab_stop_seals_its_not_run_cells(self):
+        # PM decision (review round 2 #15): the work deadline after the acceptance cells writes NOT_RUN records and
+        # the stage seals inside the finalization reserve
+        ws = Workspace(self)
+        env = WorkspaceEnv(ws)
+        roa.main(ws.argv('smoke', 'A2-SM-a1'), env=env)
+        roa.main(ws.argv('s0', 'A2-S0-a1'), env=env)
+        cells = [reg.tab_cells()[0], reg.tab_cells()[10], reg.tab_cells()[20]]
+        hard = reg.HANG_GUARDS['A2-S1']
+        reserve = min(reg.FINALIZATION_RESERVE_SECONDS, hard / 10)
+        real_cell = osx.tab_cell
+
+        def tab_cell(world, cell, **kwargs):
+            record = real_cell(world, cell, **kwargs)
+            if cell['role'] == 'acceptance':
+                env.clock = hard - reserve + 1  # past the work deadline, inside the hard cap
+            return record
+        small = functools.partial(REAL_STAGE_S1, cells=cells, replications=2)
+        with mock.patch.object(roa, 'stage_s1', small), mock.patch.object(osx, 'tab_cell', tab_cell):
+            roa.main(ws.argv('s1', 'A2-S1-a1'), env=env)
+        out, _ = roa.require_seal(ws.manifest, 'A2-S1')
+        tab = json.loads((out / 'tab.json').read_text())
+        self.assertEqual((tab['not_run'], list(tab['acceptance'])), ([cells[1]['id'], cells[2]['id']], ['T-A1']))
+        for cid in tab['not_run']:
+            record = json.loads((out / 'cells' / f'{cid}.json').read_text())
+            self.assertEqual((record['status'], record['cell']['id']), ('NOT_RUN', cid))
+            self.assertIn('never rerun', record['reason'])
+        seals = [(e['payload']['cell'], e['payload']['status']) for e in ws.manifest.entries() if e['kind'] == 'cell_seal']
+        self.assertEqual(seals, [('T-A1', 'COMPLETED'), (cells[1]['id'], 'NOT_RUN'), (cells[2]['id'], 'NOT_RUN')])
+
+    def test_an_exhausted_s0_integrity_failure_is_a_terminal_decision(self):
+        # PM decision (review round 2 #16): FAILED_INTEGRITY is recorded without running the blocked descendants
+        ws = Workspace(self)
+        env = WorkspaceEnv(ws)
+        roa.main(ws.argv('smoke', 'A2-SM-a1'), env=env)
+        commit = ws.config['registration_input_pins']['execution_source_commit']
+        for attempt in (1, 2):
+            ws.manifest.append('attempt_start', {'stage': 'A2-S0', 'output_dir': str(ws.output(f'A2-S0-a{attempt}'))})
+            ws.manifest.append('stage_failure', {'stage': 'A2-S0', 'class': 'deterministic_integrity',
+                                                 'output_dir': str(ws.output(f'A2-S0-a{attempt}'))})
+            if attempt == 1:
+                ws.manifest.append('bugfix_addendum', {'stage': 'A2-S0', 'fix_commit': commit,
+                                                       'new_files_sha256': roa.new_file_hashes()})
+        with self.assertRaisesRegex(IntegrityError, 'A2-S0 is not sealed'):
+            roa.main(ws.argv('s1', 'A2-S1-a1'), env=env)
+        roa.main(ws.argv('decide', 'A2-S4-a1'), env=env)
+        out, _ = roa.require_seal(ws.manifest, 'A2-S4')
+        record = json.loads((out / 'decision_record.json').read_text())
+        self.assertEqual((record['label'], record['failed_integrity'], record['blocked'], record['not_run']),
+                         ('FAILED_INTEGRITY', ['A2-S0'], ['A2-S1', 'A2-S2', 'A2-S3'], []))
+        self.assertEqual(record['stage_status']['A2-SM'], 'sealed')
+        self.assertEqual(ws.kinds('A2-S1'), [])  # the blocked descendants never started
+
+
+def rehearsal_data(ws):
+    """A synthetic sealed S6 rehearsal on the workspace's DEV row group (one ledger PA per DEV PA, every L1-R
+    resolution) and its dr.json-shaped record from the untouched registered estimator."""
+    dev = ws.groups[3]
+    last = dev.sort_values(roa.KEY).groupby(['game_pk', 'at_bat_number']).tail(1)
+    rng = np.random.default_rng(11)
+    decisions, facts, rows = [], {}, {}
+    for i, (_, row) in enumerate(last.iterrows()):
+        pa_id = f'{row.game_pk}:{row.at_bat_number}'
+        pa_rows, info = synthetic_pa(rng, pa_id, int(row.game_pk), int(row.pitcher), KINDS[i % len(KINDS)])
+        decisions.extend(pa_rows)
+        facts[pa_id] = info
+        rows[pa_id] = row.to_dict()
+    result0, _, _ = osd.gint_gate(lambda: iter(decisions), facts, references={})  # registered draws and minimums
+    s6_dr = roa.json_safe({**result0, 'games': sorted(int(g) for g in last['game_pk'].unique())})
+    return {'decisions': decisions, 'facts': facts, 'last': rows, 's6_dr': s6_dr}
+
+
+def quote_s6(config, ws):
+    """The synthetic registration quotes the synthetic S6 record (G-INT compares both references)."""
+    ws.rehearsal = rehearsal_data(ws)
+    values = osd.gint_values(ws.rehearsal['s6_dr'])
+    s6 = config['mde_from_records']['S6_rehearsal_150_dev_games']
+    for key in ('l1r_delta_bounds', 'l1r_lower_endpoint_ci95', 'l2_ci95', 'worst_case_residual_share_s', 'resolutions',
+                'ess_all_e0_candidate'):
+        s6[key]['value'] = values[key]
+    config['mde_from_records']['reference_magnitudes']['exposed_point_estimates']['S6_l2_delta_mean'] = values['l2_delta_mean']
+
+
+class ChainEnv(WorkspaceEnv):
+    """Synthetic A2-S2 world (the synthetic candidate runtime with fake G0 / WE of test_policy_validation) and
+    synthetic A2-S3 inputs; everything else is the registered code path."""
+    def __init__(self, ws, fx):
+        super().__init__(ws)
+        self.fx = fx
+
+    def s5x_inputs(self, config, local, base, out, checkpoint):
+        fx = self.fx
+
+        class World:
+            game_values = fx.syn.game_values
+
+            def candidate(self, spec_run):
+                return fx.world(f"a2-k{spec_run['k']:02d}")
+        return World()
+
+    def s6_record(self, config):
+        return self.ws.root / 's6' / 'ledger.jsonl', self.ws.rehearsal['s6_dr']
+
+    def rehearsal_inputs(self, config, local, base, ledger_path, s6_dr, out, checkpoint):
+        data = self.ws.rehearsal
+        return roa.Rehearsal(decisions=lambda: iter(data['decisions']), facts=data['facts'], last_rows=data['last'],
+                             window=('2025-08-01', '2025-08-20'), ess_gate=None, game_values=GAME_VALUES)
+
+    def committed(self, path):
+        return True
+
+
+class FullChainTests(unittest.TestCase):
+    """Review round 2 #20: the complete registered path on synthetic inputs, A2-SM to unblind, with the full
+    15-run S5-X matrix (X2 single-member world included) and the A2-S3 evaluator at the registered draws."""
+    def test_smoke_to_unblind(self):
+        import test_policy_validation as tpv
+        fx = tpv.SemiSyntheticTests('test_v2_matches_world_truth_and_is_not_vacuous')
+        fx.setUp()
+        self.addCleanup(shutil.rmtree, fx.root, True)
+        seed = fx.world('a2-probe')[1].g0.models[0].seed
+        ws = Workspace(self, hook=quote_s6, pins={'x2_world_predictor_identity': {'kind': 'g0_single_member', 'seed': seed}})
+        env = ChainEnv(ws, fx)
+        roa.main(ws.argv('smoke', 'A2-SM-a1'), env=env)
+        roa.main(ws.argv('s0', 'A2-S0-a1'), env=env)
+        acceptance = functools.partial(REAL_STAGE_S1, cells=reg.tab_cells()[:4], replications=2)
+        with mock.patch.object(roa, 'stage_s1', acceptance):
+            roa.main(ws.argv('s1', 'A2-S1-a1'), env=env)
+        with mock.patch.object(reg, 'S5X_CAP', 4):
+            roa.main(ws.argv('s2', 'A2-S2-a1'), env=env)
+        s2_dir, _ = roa.require_seal(ws.manifest, 'A2-S2')
+        s5x = json.loads((s2_dir / 's5x.json').read_text())
+        self.assertEqual([r['run']['k'] for r in s5x['runs']], list(range(1, 16)))
+        for record in s5x['runs']:
+            expected = 'g0_single_member' if record['run']['setting'] == 'X2' else 'bound_g0'
+            self.assertEqual(record['world_predictor']['kind'], expected)
+        self.assertEqual({r['world_predictor'].get('seed') for r in s5x['runs'] if r['run']['setting'] == 'X2'}, {seed})
+        self.assertTrue(roa.require_s5x_consistent(s5x))
+        roa.main(ws.argv('s3', 'A2-S3-a1'), env=env)
+        s3_dir, _ = roa.require_seal(ws.manifest, 'A2-S3')
+        public = json.loads((s3_dir / 'public.json').read_text())
+        self.assertTrue(osd.validate_public(public))
+        gint = json.loads((s3_dir / 'gint.json').read_text())
+        self.assertEqual(gint['s6_dr_a5_record']['not_comparable'], [])
+        self.assertEqual(gint['listed_keys_never_compared'], [])
+        self.assertEqual(public['validity'], {'point_set_meets_minimum': True, 'game_bootstrap_eligible': True,
+                                              'pitcher_bootstrap_eligible': True})
+        roa.main(ws.argv('decide', 'A2-S4-a1'), env=env)
+        s4_dir, _ = roa.require_seal(ws.manifest, 'A2-S4')
+        record = json.loads((s4_dir / 'decision_record.json').read_text())
+        self.assertTrue(record['label'] in ('NO_PRECISION_GAIN', 'NOT_EVALUABLE')
+                        or record['label'].startswith(('ADOPT_FOR_2027_PROTOCOL:', 'BIAS_NOT_CERTIFIED:')), record['label'])
+        roa.main(ws.argv('unblind', 'A2-UB-a1', '--decision-record', str(s4_dir / 'decision_record.json')), env=env)
+        ub_dir, _ = roa.require_seal(ws.manifest, 'A2-UB')
+        opened = json.loads((ub_dir / 'unblinded.json').read_text())
+        self.assertEqual(set(opened['pairs']), set(reg.PAIRS))
+        self.assertEqual(opened['decision_record_sha256'], reg.file_sha256(s4_dir / 'decision_record.json'))
+        kinds = [(e['payload'].get('stage'), e['kind']) for e in ws.manifest.entries() if e['kind'] in ('attempt_start',
+                                                                                                     'stage_seal')]
+        self.assertEqual(kinds, [(stage, kind) for stage in ('A2-SM', 'A2-S0', 'A2-S1', 'A2-S2', 'A2-S3', 'A2-S4', 'A2-UB')
+                                 for kind in ('attempt_start', 'stage_seal')])
 
 
 class CommittedTests(unittest.TestCase):

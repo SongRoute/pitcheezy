@@ -20,9 +20,11 @@ directory is opened by A2-S3 only, where G-INT runs on the untouched registered 
 surrogate reward or variant is computed.
 
 Commands that read no data: ``check``, ``pins``; manifest commands: ``register-digest``,
-``record-review``, ``register-addendum``, ``reconcile-attempt``. Every data access of a registered
-command goes through an ``Environment`` (the real one by default) so the orchestration is testable on
-synthetic inputs.
+``record-review``, ``register-addendum``, ``reconcile-attempt`` (under the same window, memory and hang
+guards, after the digest-manifest location check). Work checkpoints stop at the hang guard minus a
+finalization reserve, a memory watchdog thread covers every code path, and records are written as
+strict JSON (nonfinite values null, listed). Every data access of a registered command goes through an
+``Environment`` (the real one by default) so the orchestration is testable on synthetic inputs.
 """
 from __future__ import annotations
 
@@ -40,6 +42,7 @@ import resource
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -63,7 +66,8 @@ COMMANDS = ('check', 'pins', 'register-digest', 'record-review', 'register-adden
 MANIFEST_COMMANDS = ('register-digest', 'record-review', 'register-addendum', 'reconcile-attempt')
 STAGE_OF = {'smoke': 'A2-SM', 's0': 'A2-S0', 's1': 'A2-S1', 's2': 'A2-S2', 's3': 'A2-S3', 'decide': 'A2-S4',
             'unblind': 'A2-UB'}
-GUARD_OF = {**{s: s for s in reg.STAGES}, 'A2-UB': 'A2-S4'}  # unblind belongs to A2-S4 (3,600 s guard)
+GUARD_OF = {**{s: s for s in reg.STAGES}, 'A2-UB': 'A2-S4',  # unblind belongs to A2-S4 (3,600 s guard)
+            'A2-MC': reg.MANIFEST_COMMAND_GUARD}  # the manifest commands (review round 2 #4)
 UPSTREAM = {**reg.UPSTREAM, 'A2-UB': ('A2-S3', 'A2-S4')}
 ATTEMPT_STAGES = (*reg.STAGES, 'A2-UB')
 CODE_PATHS = ('experiments', 'src', 'scripts')
@@ -301,6 +305,15 @@ def check_output(output, config, protected):
     return output
 
 
+def check_manifest_location(manifest, protected):
+    """PM decision (review round 2 #8): the external digest manifest lies outside every sealed input and both
+    checkouts (results/ included), by resolved real paths; checked before any manifest mutation."""
+    for name, other in protected.items():
+        _require(reg.manifest_outside(manifest.path, other),
+                 f'the digest manifest must be outside {name} ({Path(other).resolve()})')
+    return manifest
+
+
 # ---------------------------------------------------------------- guards
 def peak_rss_bytes():
     raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -343,42 +356,77 @@ def _raise_hang(signum, frame):
 
 
 class CommandGuard:
-    """One command's guards (PM decision, review #4): the window rule at entry, the SIGALRM hang timer and
-    the checkpoint (memory guard + elapsed time) used by preflight, every long loop and the final check."""
+    """One command's guards (PM decisions, review #4 rounds 1-2): the window rule at entry; the registered hang
+    guard as the SIGALRM hard cap; work checkpoints (memory + elapsed time) that stop at the hard cap minus the
+    finalization reserve, so completed work can always be hashed and sealed; a memory watchdog thread through
+    every code path (protected calls included); and the final check before the completion receipt."""
     def __init__(self, stage_id, env, entered=None):
         self.stage_id, self.env = stage_id, env
-        self.seconds = reg.HANG_GUARDS[GUARD_OF[stage_id]]
+        self.seconds = float(reg.HANG_GUARDS[GUARD_OF[stage_id]])
+        self.reserve = min(reg.FINALIZATION_RESERVE_SECONDS, self.seconds / 10)
+        self.work_seconds = self.seconds - self.reserve
         self.start, self.t0 = entered if entered is not None else (env.now(), env.monotonic())
         _require(reg.stage_window_ok(self.start, self.seconds),
                  f'{stage_id}: the command would not end strictly before 06:30 KST within its hang guard, or it '
                  f'overlaps the 06:30-13:30 KST protection window; not started')
         self.memory = env.guards()
-        self.armed, self.previous = False, None
+        self.armed, self.previous, self.watchdog, self.stop, self.violation = False, {}, None, None, None
+
+    def elapsed(self):
+        return self.env.monotonic() - self.t0
 
     def check(self):
+        """Work checkpoint: the memory guard, then the work deadline (hang guard minus the reserve)."""
         self.memory()
-        if self.env.monotonic() - self.t0 > self.seconds:
-            raise HangGuardExceeded('registered hang guard exceeded (checkpoint)')
+        if self.elapsed() > self.work_seconds:
+            raise HangGuardExceeded('registered hang guard minus the finalization reserve reached (work checkpoint)')
 
     def arm(self):
-        if self.env.alarm:
-            remaining = self.seconds - (self.env.monotonic() - self.t0)
-            if remaining <= 0:
-                raise HangGuardExceeded('registered hang guard exceeded before arming')
-            self.previous = signal.signal(signal.SIGALRM, _raise_hang)
-            signal.setitimer(signal.ITIMER_REAL, float(remaining))
-            self.armed = True
+        if not self.env.alarm:
+            return
+        remaining = self.seconds - self.elapsed()
+        if remaining <= 0:
+            raise HangGuardExceeded('registered hang guard exceeded before arming')
+        self.previous = {signal.SIGALRM: signal.signal(signal.SIGALRM, _raise_hang),
+                         signal.SIGUSR1: signal.signal(signal.SIGUSR1, self._raise_memory)}
+        signal.setitimer(signal.ITIMER_REAL, float(remaining))
+        self.armed, self.stop = True, threading.Event()
+        main = threading.main_thread().ident
+
+        def watch():  # one interrupt at most, then the thread ends
+            while not self.stop.wait(reg.WATCHDOG_INTERVAL_SECONDS):
+                try:
+                    self.memory()
+                except MemoryGuardExceeded as error:
+                    self.violation = error
+                    signal.pthread_kill(main, signal.SIGUSR1)
+                    return
+        self.watchdog = threading.Thread(target=watch, name='a2-memory-watchdog', daemon=True)
+        self.watchdog.start()
+
+    def _raise_memory(self, signum, frame):
+        raise self.violation or MemoryGuardExceeded('memory watchdog')
 
     def disarm(self):
-        if self.armed:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-            signal.signal(signal.SIGALRM, self.previous)
-            self.armed = False
+        """Idempotent: stop the watchdog (it may deliver its one interrupt while joining; a second call then
+        completes), cancel the timer and restore the handlers."""
+        if not self.armed:
+            return
+        if self.watchdog is not None:
+            self.stop.set()
+            self.watchdog.join()
+            self.watchdog = None
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        for sig, handler in self.previous.items():
+            signal.signal(sig, handler)
+        self.armed = False
 
     def finish(self):
-        """The final check after the last write and before the completion receipt; disarms the timer so
-        the receipt itself is never torn."""
-        self.check()
+        """The final check after the last write and before the completion receipt: memory and the hard cap
+        (the finalization runs inside the reserve), then the guards are disarmed so the receipt is never torn."""
+        self.memory()
+        if self.elapsed() > self.seconds:
+            raise HangGuardExceeded('registered hang guard exceeded (final check)')
         self.disarm()
 
 
@@ -398,8 +446,36 @@ def sha256sums(output):
     return {name: reg.file_sha256(output / name) for name in names}
 
 
+def json_safe(value, path='$', nulled=None):
+    """JSON-safe copy (review round 2 #1): numpy scalars and arrays to Python, nonfinite floats to null with
+    their paths collected in ``nulled`` (invalid flags, counts and reasons are kept by the records)."""
+    nulled = [] if nulled is None else nulled
+    if isinstance(value, dict):
+        return {str(k): json_safe(v, f'{path}.{k}', nulled) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(v, f'{path}[{i}]', nulled) for i, v in enumerate(value)]
+    if isinstance(value, np.ndarray):
+        return json_safe(value.tolist(), path, nulled)
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        if math.isfinite(float(value)):
+            return float(value)
+        nulled.append(path)
+        return None
+    return value
+
+
 def dump(path, value):
-    Path(path).write_text(json.dumps(value, indent=1, ensure_ascii=False, allow_nan=False, default=_default) + '\n')
+    """Strict JSON (no NaN): nonfinite values are written as null and listed in nonfinite_nulled_paths."""
+    nulled = []
+    safe = json_safe(value, '$', nulled)
+    if nulled:
+        _require(isinstance(safe, dict), 'a nonfinite value in a non-object record')
+        safe['nonfinite_nulled_paths'] = nulled
+    Path(path).write_text(json.dumps(safe, indent=1, ensure_ascii=False, allow_nan=False) + '\n')
 
 
 def _default(value):
@@ -858,9 +934,16 @@ def require_s1_descriptive(results, cells):
     return True
 
 
-def stage_s1(s0, *, write_cell, deadline=lambda: None, cells=None, replications=None):
+TAB_NOT_RUN_REASON = ('the work deadline (hang guard minus the finalization reserve) was reached after every acceptance '
+                      'cell was sealed; descriptive cell not run and never rerun (design 4.6)')
+
+
+def stage_s1(s0, *, write_cell, write_not_run=lambda cell, reason: None, deadline=lambda: None, cells=None,
+             replications=None):
     """Acceptance cells first (each written and sealed on completion), then the descriptive cells in
-    the registered order; the first step checks every V2 cell's baseline DP expectation = DP truth."""
+    the registered order; the first step checks every V2 cell's baseline DP expectation = DP truth. A work
+    deadline during the descriptive cells writes each remaining cell as a NOT_RUN record (review round 2 #15),
+    inside the finalization reserve, and the stage seals."""
     marginals = marginals_from_doc(s0['tab_marginals'])
     eta_p = osx.TabWorld.eta_p(marginals)
     cells = reg.tab_cells() if cells is None else cells
@@ -883,6 +966,8 @@ def stage_s1(s0, *, write_cell, deadline=lambda: None, cells=None, replications=
             if cell['role'] == 'acceptance':
                 raise  # before every acceptance cell is sealed: an infrastructure failure
             results['not_run'] = [c['id'] for c in cells if c['index'] >= cell['index']]
+            for remaining in (c for c in cells if c['index'] >= cell['index']):
+                write_not_run(remaining, TAB_NOT_RUN_REASON)
             break
         results['cells'][cell['id']] = record
         write_cell(cell, record)
@@ -933,6 +1018,15 @@ def s5x_summary(runs):
             s2[pair][label] = (((by_k.get(k) or {}).get('s2_pairs') or {}).get(pair)
                                or reg.inconclusive_invalid(f'S5-X run {k} has no S-2 record for {pair}'))
     return {'nets': nets, 's2': s2}
+
+
+def require_s5x_consistent(s5x):
+    """The S-1/S-2/S-4 summary recomputed from the sealed run records equals the stored one (JSON round trip),
+    so an invalid repetition's INCONCLUSIVE propagation survives a restart (review round 2 #1)."""
+    again = json.loads(json.dumps(json_safe(s5x_summary(s5x['runs'])), allow_nan=False))
+    _require(again == {'nets': s5x['nets'], 's2': s5x['s2']},
+             'the stored S5-X summary differs from its run records (deterministic integrity)')
+    return True
 
 
 def stage_s4(public, tab, s5x, *, integrity_failures, r3_status):
@@ -1008,12 +1102,24 @@ def surrogate_rows(last_rows, raw):
     return rows
 
 
+def guarded_stream(decisions, checkpoint, every=20000):
+    """The same decision rows with a checkpoint every ``every`` rows (the protected code is not changed; the
+    memory watchdog covers its bootstrap)."""
+    def stream():
+        for n, row in enumerate(decisions()):
+            if n % every == 0:
+                checkpoint()
+            yield row
+    return stream
+
+
 def rehearsal(decisions, facts, last_rows, *, raw_join, game_values, s0, references, ess_gate, r3_status,
               checkpoint=lambda: None, draws=reg.DRAWS, minimum_games=reg.MIN_GAMES, minimum_pa_starts=reg.MIN_PA_STARTS,
               minimum_pitchers=reg.MIN_PITCHERS, placebos=None):
     """PM decision (review #9): G-INT runs FIRST, on the untouched registered path (policy_estimator on the
     sealed ledger and the recomputed facts), against every listed value of both references; only after it
     passes are the raw quality columns joined, the surrogate rewards built and the variants evaluated."""
+    decisions = guarded_stream(decisions, checkpoint)  # memory checks while the protected estimator reads the ledger
     result0, rows0, gint = osd.gint_gate(decisions, facts, references=references, draws=draws,
                                          minimum_games=minimum_games, minimum_pa_starts=minimum_pa_starts,
                                          ess_gate=ess_gate)
@@ -1105,6 +1211,35 @@ def build_candidate(rpv, policy, inputs, blocks, *, seed, tag, out, budget):
 
 
 # ================================================================ environment (every data access)
+@dataclass
+class Rehearsal:
+    decisions: object
+    facts: dict
+    last_rows: dict
+    window: tuple
+    ess_gate: object
+    game_values: dict
+
+
+class S5XWorld:
+    """The registered A2-S2 inputs: per run, the S5 candidate (run_policy_validation construction) and the
+    registered E0 starts of the dev selection."""
+    def __init__(self, rpv, policy, inputs, blocks, no_pitch, game_values, spec, out):
+        self.rpv, self.policy, self.inputs, self.blocks, self.no_pitch = rpv, policy, inputs, blocks, no_pitch
+        self.game_values, self.spec, self.out = game_values, spec, out
+
+    def candidate(self, spec_run):
+        from pitchmdp import policy_requests as preq
+        runtime, components = build_candidate(self.rpv, self.policy, self.inputs, self.blocks, seed=spec_run['planning_seed'],
+                                              tag=f"k{spec_run['k']}", out=self.out, budget=self.spec['row_budget_per_run'])
+        starts = []
+        for _, positions in self.blocks:
+            requests, _, _ = preq.pa_requests(self.inputs['store'], positions, runtime.sha256, self.no_pitch)
+            if requests and runtime.start_population(requests[0].state, requests[0].pitcher_hand)[0]:
+                starts.append((requests[0].state, requests[0].pitcher_hand))
+        return runtime, components, starts
+
+
 def _resolve(value):
     return Path(value) if Path(value).is_absolute() else REPO / value
 
@@ -1231,6 +1366,40 @@ class Environment:
                  'the pinned ML-POLICY chain differs from the chain the S6-dr-a5 stage ran under')
         return ledger, json.loads((stage_dir / 'dr.json').read_text())
 
+    def s5x_inputs(self, config, local, base, out, checkpoint):
+        """A2-S2: the ML-POLICY registration, the dev S5 selection, the frozen C0 game values and a builder of
+        each run's S2-certified candidate with its E0 starts."""
+        rpv, policy = self.policy_registration(config)
+        pcfg = policy['config']
+        spec = pcfg['le2025_validation_plan']['stages']['S5_V2_V3']
+        inputs = self.policy_inputs(config, local, rpv, policy)
+        checkpoint()
+        frame = inputs['frame']
+        games = rpv.select_games(frame, 'dev', spec['n_games'], rpv.role_seed(pcfg, 'selection_salt'))
+        return S5XWorld(rpv, policy, inputs, rpv.game_blocks(frame, games, 'dev'),
+                        frozenset(pcfg['pa_time_rules']['R3_codes']['no_pitch_descriptions']), self.game_values(base),
+                        spec, out)
+
+    def rehearsal_inputs(self, config, local, base, ledger_path, s6_dr, out, checkpoint):
+        """A2-S3: planner-free facts of the S6 selection, the last row of each PA, the rehearsal date window, the
+        sealed ledger stream and the registered ESS gate."""
+        from pitchmdp import policy_requests as preq
+        rpv, policy = self.policy_registration(config)
+        pcfg = policy['config']
+        inputs = self.policy_inputs(config, local, rpv, policy)
+        checkpoint()
+        blocks = rpv.game_blocks(inputs['frame'], s6_dr['games'], 'dev')
+        no_pitch = frozenset(pcfg['pa_time_rules']['R3_codes']['no_pitch_descriptions'])
+        game_values = self.game_values(base)
+        store_frame = inputs['store'].frame
+        games_table = preq.game_table(store_frame, {int(store_frame.game_pk.iloc[p[0]]) for _, p in blocks})
+        facts, last = recompute_facts(rpv, policy, inputs, blocks, games_table, game_values, no_pitch, out, checkpoint)
+        dates = pd.to_datetime(store_frame['game_date'].iloc[np.concatenate([p for _, p in blocks])])
+        _require(dates.max() <= pd.Timestamp(reg.ALL_STAGES_MAX_DATE), 'a row after 2025 reached the rehearsal')
+        return Rehearsal(decisions=self.ledger_decisions(ledger_path), facts=facts, last_rows=last,
+                         window=(str(dates.min().date()), str(dates.max().date())),
+                         ess_gate=pcfg['ess_gate']['thresholds'], game_values=game_values)
+
     def ledger_decisions(self, ledger_path):
         """The sealed ledger's decision stream (the whole hash chain is replayed and verified; read-only)."""
         from pitchmdp import policy_runtime as prt
@@ -1273,11 +1442,31 @@ def plan_smoke(run):
     return run.env.train_plan(run.config, run.local, window, strict=True)
 
 
+DECISION_STAGES = ('A2-SM', 'A2-S0', 'A2-S1', 'A2-S2', 'A2-S3')
+
+
+def descendants(stages):
+    """Every decision stage downstream of ``stages`` (registered upstream relation)."""
+    out, frontier = set(), set(stages)
+    while frontier:
+        frontier = {s for s in DECISION_STAGES if s not in out and set(reg.UPSTREAM[s]) & (frontier | out)} - out
+        out |= frontier
+    return out - set(stages)
+
+
 def plan_decide(run):
-    status = stage_status(run.manifest)
-    _require(all(v in ('sealed', 'FAILED_INTEGRITY') for v in status.values()),
-             f'upstream stages are not complete (decision needed): {status}')
-    return status
+    """Before the A2-S4 attempt: a stage that exhausted its attempts in a deterministic integrity failure makes
+    the terminal FAILED_INTEGRITY decision available at once (review round 2 #16): its unsealed descendants
+    are BLOCKED, other unsealed stages NOT_RUN; otherwise every stage must be sealed."""
+    status = stage_status(run.manifest, DECISION_STAGES)
+    failed = [s for s in DECISION_STAGES if status[s] == 'FAILED_INTEGRITY']
+    if failed:
+        blocked = sorted(s for s in descendants(failed) if status[s] != 'sealed')
+        return {'terminal': 'FAILED_INTEGRITY', 'stage_status': status, 'failed_integrity': failed, 'blocked': blocked,
+                'not_run': sorted(s for s in DECISION_STAGES
+                                  if status[s] not in ('sealed', 'FAILED_INTEGRITY') and s not in blocked)}
+    _require(all(v == 'sealed' for v in status.values()), f'upstream stages are not complete (decision needed): {status}')
+    return {'terminal': None, 'stage_status': status}
 
 
 PLANS = {'A2-SM': plan_smoke, 'A2-S4': plan_decide}
@@ -1292,18 +1481,20 @@ def run_command(args, env, entered=None):
         _require(args.output is not None, '--output (a new directory under the pinned output root) is required')
         chain = env.chain_documents(config)
         local = env.local_config(chain[0])
-        output = check_output(args.output, config, env.protected_roots(config, local, chain))
-        attempt_gate(manifest, stage_id)
-        if stage_id != 'A2-S4':
-            for upstream in UPSTREAM[stage_id]:
-                require_seal(manifest, upstream)
-        if stage_id in ('A2-S0', 'A2-S1'):
-            smoke_gate(manifest, stage_id)
-        run = Run(args, env, config, chain[0], local, manifest, guard.check)
-        run.plan = PLANS[stage_id](run) if stage_id in PLANS else None
-        guard.check()
+        protected = env.protected_roots(config, local, chain)
+        check_manifest_location(manifest, protected)  # before any manifest mutation
+        output = check_output(args.output, config, protected)
         env.nice()
-        with env.heavy_lock(local):
+        with env.heavy_lock(local):  # every substantive verification and read under the common lock
+            attempt_gate(manifest, stage_id)
+            if stage_id != 'A2-S4':
+                for upstream in UPSTREAM[stage_id]:
+                    require_seal(manifest, upstream)
+            if stage_id in ('A2-S0', 'A2-S1'):
+                smoke_gate(manifest, stage_id)
+            run = Run(args, env, config, chain[0], local, manifest, guard.check)
+            run.plan = PLANS[stage_id](run) if stage_id in PLANS else None
+            guard.check()
             identity = identity_record(config, state.get('head'), {'command': args.command})
             with stage(output, stage_id, identity, manifest=manifest, final_check=guard.finish, start=guard.start) as out:
                 run.out = out
@@ -1356,41 +1547,33 @@ def body_s1(run):
 
     def write_cell(cell, record):  # each cell is sealed on completion (acceptance cells first)
         dump(cell_dir / f"{cell['id']}.json", record)
-        run.manifest.append('cell_seal', {'stage': 'A2-S1', 'cell': cell['id'],
+        run.manifest.append('cell_seal', {'stage': 'A2-S1', 'cell': cell['id'], 'status': 'COMPLETED',
                                           'sha256': reg.file_sha256(cell_dir / f"{cell['id']}.json")})
-    dump(run.out / 'tab.json', stage_s1(s0, write_cell=write_cell, deadline=run.check))
+
+    def write_not_run(cell, reason):  # the permitted descriptive stop: a NOT_RUN record, sealed with the stage
+        dump(cell_dir / f"{cell['id']}.json", {'cell': {k: cell[k] for k in ('id', 'law', 'eta', 'kappa', 'zeta', 'R', 'role',
+                                                                            'drift', 'index')},
+                                              'status': 'NOT_RUN', 'reason': reason})
+        run.manifest.append('cell_seal', {'stage': 'A2-S1', 'cell': cell['id'], 'status': 'NOT_RUN',
+                                          'sha256': reg.file_sha256(cell_dir / f"{cell['id']}.json")})
+    dump(run.out / 'tab.json', stage_s1(s0, write_cell=write_cell, write_not_run=write_not_run, deadline=run.check))
 
 
 def body_s2(run):
-    """S5-X: the registered 15 runs in order."""
-    from pitchmdp import policy_requests as preq
+    """S5-X: the registered 15 runs in order (the candidate of each run and its E0 starts come from the
+    environment: the ML-POLICY registration, the dev selection and the S2-certified components)."""
     from pitchmdp import policy_semisynthetic as pss
     s0_dir, _ = require_seal(run.manifest, 'A2-S0')
     s0 = json.loads((s0_dir / 's0.json').read_text())
     x2 = x2_world_predictor(run.config['registration_input_pins']['x2_world_predictor_identity'])  # refuses up front
-    rpv, policy = run.env.policy_registration(run.config)
-    pcfg = policy['config']
-    spec = pcfg['le2025_validation_plan']['stages']['S5_V2_V3']
-    inputs = run.env.policy_inputs(run.config, run.local, rpv, policy)
-    run.check()
-    frame = inputs['frame']
-    games = rpv.select_games(frame, 'dev', spec['n_games'], rpv.role_seed(pcfg, 'selection_salt'))
-    blocks = rpv.game_blocks(frame, games, 'dev')
-    no_pitch = frozenset(pcfg['pa_time_rules']['R3_codes']['no_pitch_descriptions'])
-    game_values = run.env.game_values(run.base)
+    world = run.env.s5x_inputs(run.config, run.local, run.base, run.out, run.check)
     layer_doc = s0['s5x_layers']
     runs = []
     for spec_run in reg.S5X_RUNS:
         run.check()
-        runtime, components = build_candidate(rpv, policy, inputs, blocks, seed=spec_run['planning_seed'],
-                                              tag=f"k{spec_run['k']}", out=run.out, budget=spec['row_budget_per_run'])
-        starts = []
-        for _, positions in blocks:
-            requests, _, _ = preq.pa_requests(inputs['store'], positions, runtime.sha256, no_pitch)
-            if requests and runtime.start_population(requests[0].state, requests[0].pitcher_hand)[0]:
-                starts.append((requests[0].state, requests[0].pitcher_hand))
+        runtime, components, starts = world.candidate(spec_run)
         layers = osx.S5XLayers.from_components(
-            components, game_values, groups=layer_doc['groups'], x_dist=layer_doc['x_dist'],
+            components, world.game_values, groups=layer_doc['groups'], x_dist=layer_doc['x_dist'],
             class_table=layer_doc['class_table'], signs=layer_doc['signs'], signs_prime=layer_doc['signs_prime'],
             kappa=reg.scale(spec_run['kappa'], layer_doc['kappa_p']), zeta=reg.scale(spec_run['zeta'], layer_doc['zeta_p']))
         law = (pss.tempered_law(runtime.bc, reg.S5X_V3_ALPHA) if spec_run['law'] == 'V3'
@@ -1407,33 +1590,22 @@ def body_s2(run):
 
 
 def body_s3(run):
-    """The blinded rehearsal on the sealed S6-dr-a5 ledger (read-only), no planner call."""
-    from pitchmdp import policy_requests as preq
+    """The blinded rehearsal on the sealed S6-dr-a5 ledger (read-only), no planner call: the PA facts, the
+    last rows and the ledger stream come from the environment; G-INT runs first (``rehearsal``)."""
     pins = run.config['registration_input_pins']
     _require(pins['r3_status'] == 'NOT_RUN:R3', 'R3 is enabled: the A3 artifact path is not implemented; refusing')
     s0_dir, _ = require_seal(run.manifest, 'A2-S0')
     s0 = json.loads((s0_dir / 's0.json').read_text())
     _require(osg.table_sha256(np.asarray(s0['r1_table']), s0['m']) == s0['r1_table_sha256'], 'R1 table differs from its seal')
     ledger_path, s6_dr = run.env.s6_record(run.config)  # the S6 stage directory: A2-S3 only
-    rpv, policy = run.env.policy_registration(run.config)
-    pcfg = policy['config']
-    inputs = run.env.policy_inputs(run.config, run.local, rpv, policy)
-    run.check()
-    blocks = rpv.game_blocks(inputs['frame'], s6_dr['games'], 'dev')
-    no_pitch = frozenset(pcfg['pa_time_rules']['R3_codes']['no_pitch_descriptions'])
-    game_values = run.env.game_values(run.base)
-    store_frame = inputs['store'].frame
-    games_table = preq.game_table(store_frame, {int(store_frame.game_pk.iloc[p[0]]) for _, p in blocks})
-    facts, last = recompute_facts(rpv, policy, inputs, blocks, games_table, game_values, no_pitch, run.out, run.check)
-    dates = pd.to_datetime(store_frame['game_date'].iloc[np.concatenate([p for _, p in blocks])])
-    _require(dates.max() <= pd.Timestamp(reg.ALL_STAGES_MAX_DATE), 'a row after 2025 reached the rehearsal')
-    window = (str(dates.min().date()), str(dates.max().date()))
+    data = run.env.rehearsal_inputs(run.config, run.local, run.base, ledger_path, s6_dr, run.out, run.check)
+    _require(data.window[1] <= reg.ALL_STAGES_MAX_DATE, 'a row after 2025 reached the rehearsal')
     references = {'registration_quoted': osd.registered_gint_reference(run.config),
                   's6_dr_a5_record': osd.recorded_gint_reference(s6_dr)}
     public, sealed, notes, gint = rehearsal(
-        run.env.ledger_decisions(ledger_path), facts, last,
-        raw_join=lambda: raw_rows(pins, run.local, window, checkpoint=run.check), game_values=game_values, s0=s0,
-        references=references, ess_gate=pcfg['ess_gate']['thresholds'], r3_status=pins['r3_status'], checkpoint=run.check)
+        data.decisions, data.facts, data.last_rows,
+        raw_join=lambda: raw_rows(pins, run.local, data.window, checkpoint=run.check), game_values=data.game_values,
+        s0=s0, references=references, ess_gate=data.ess_gate, r3_status=pins['r3_status'], checkpoint=run.check)
     dump(run.out / 'gint.json', gint)  # compared / not comparable keys only (no value)
     public_bytes, sealed_bytes = osd.seal(public, sealed)
     (run.out / 'public.json').write_bytes(public_bytes)
@@ -1442,10 +1614,12 @@ def body_s3(run):
 
 
 def body_decide(run):
-    status = run.plan
+    plan = run.plan
     r3 = run.config['registration_input_pins']['r3_status']
-    if 'FAILED_INTEGRITY' in status.values():
-        dump(run.out / 'decision_record.json', {'label': 'FAILED_INTEGRITY', 'stage_status': status, 'r3_status': r3})
+    if plan['terminal'] == 'FAILED_INTEGRITY':
+        dump(run.out / 'decision_record.json', {'label': 'FAILED_INTEGRITY', 'r3_status': r3,
+                                                **{k: plan[k] for k in ('stage_status', 'failed_integrity', 'blocked',
+                                                                        'not_run')}})
         return
     s1_dir, _ = require_seal(run.manifest, 'A2-S1')
     s2_dir, _ = require_seal(run.manifest, 'A2-S2')
@@ -1454,6 +1628,7 @@ def body_decide(run):
     osd.validate_public(public)
     tab = json.loads((s1_dir / 'tab.json').read_text())
     s5x = json.loads((s2_dir / 's5x.json').read_text())
+    require_s5x_consistent(s5x)  # the stored summary is what the sealed run records give (INCONCLUSIVE survives)
     record = stage_s4(public, tab, s5x, integrity_failures=(), r3_status=r3)
     record['inputs_sha256'] = {'public': reg.file_sha256(s3_dir / 'public.json'), 'tab': reg.file_sha256(s1_dir / 'tab.json'),
                                's5x': reg.file_sha256(s2_dir / 's5x.json')}
@@ -1482,10 +1657,20 @@ BODIES = {'A2-SM': body_smoke, 'A2-S0': body_s0, 'A2-S1': body_s1, 'A2-S2': body
 
 
 # ================================================================ manifest commands (no data)
-def manifest_command(args):
-    config, _ = reg.load_config(args.config)
-    reg.require_executable(config)
-    manifest = DigestManifest(config['registration_input_pins']['digest_manifest_path'])
+def manifest_command(args, env, entered=None):
+    """register-digest, record-review, reconcile-attempt, register-addendum: under the window, memory and hang
+    guards; the manifest location is checked before the append (review round 2 #4, #8)."""
+    with command_guard('A2-MC', env, entered) as guard:
+        config, _ = reg.load_config(args.config)
+        reg.require_executable(config)
+        manifest = DigestManifest(config['registration_input_pins']['digest_manifest_path'])
+        chain = env.chain_documents(config)
+        check_manifest_location(manifest, env.protected_roots(config, env.local_config(chain[0]), chain))
+        guard.check()
+        return _manifest_mutation(args, config, manifest)
+
+
+def _manifest_mutation(args, config, manifest):
     digest = reg.config_digest(config)
     if args.command == 'register-digest':
         _require(args.expect_digest == digest, 'registered config digest differs from the G-CODE reviewed digest')
@@ -1557,7 +1742,7 @@ def main(argv=None, env=None):
         print(json.dumps({'new_files_sha256': new_file_hashes(), 'protected_sources': reg.PROTECTED_SOURCES}, indent=1))
         return 0
     if args.command in MANIFEST_COMMANDS:
-        return manifest_command(args)
+        return manifest_command(args, env, entered)
     return run_command(args, env, entered)
 
 

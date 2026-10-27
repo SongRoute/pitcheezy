@@ -202,7 +202,7 @@ def rehearsal_evaluate(decisions, facts, *, baseline, surrogates, train_residual
                     pairs.append(ob.fixed_pair(f'grid:{name}:{_label(v)}', rows_g, point))
         name = pair_id(comp, 'R2_3')
         if sn_valid:
-            pairs.append(ob.sn_pair(name, e0, point, None if rw is None else rw))
+            pairs.append(ob.sn_pair(name, e0, point, None if rw is None else rw, u=np.vstack(u)))
         else:
             pairs.append(ob.PairInputs(name, deltas=np.full(len(e0), np.nan), lo=np.full(len(e0), np.nan),
                                        hi=np.full(len(e0), np.nan)))
@@ -248,6 +248,8 @@ def rehearsal_evaluate(decisions, facts, *, baseline, surrogates, train_residual
                 s5[b] = 'BASELINE'
             elif shift is None or not shift['valid']:
                 s5[b] = 'INVALID'
+            elif shift['half_width'] == 0 or shift['se'] == 0:
+                s5[b] = 'INCONCLUSIVE'  # a degenerate (zero-width) shift interval is never a pass (review round 2 #17)
             else:
                 s5[b] = 'PASS' if shift['ci95'][0] <= 0 <= shift['ci95'][1] else 'FAIL'
             sealed_pair[b] = None if stats is None else {
@@ -261,7 +263,7 @@ def rehearsal_evaluate(decisions, facts, *, baseline, surrogates, train_residual
         if pair_inputs.sn is not None:
             if u is None:
                 continue
-            deltas, lo, hi = ob.sn_values(pair_inputs, np.vstack(u))
+            deltas, lo, hi, _ = ob.sn_values(pair_inputs, np.vstack(u))
         else:
             deltas, lo, hi = pair_inputs.deltas, pair_inputs.lo, pair_inputs.hi
         on_p = deltas[point]
