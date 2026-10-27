@@ -712,7 +712,9 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
     'reading': {'smoke': 'the pinned split-aligned processed frame and the approved raw files read by parquet row '
                          'group: only row groups whose game_date statistics lie inside TRAIN and overlap the smoke subset '
                          'are decoded, only the listed columns; a straddling row group refuses; raw files of other years '
-                         'are not opened; no S6 access',
+                         'are not opened; no S6 access; the aligned copy holds TRAIN in one row group, so the whole TRAIN '
+                         'group is decoded before the rows are trimmed to the registered smoke week (the smoke '
+                         'load_seconds and peak RSS reflect the full TRAIN decode)',
                 'A2-S0': 'the same reader over TRAIN: processed rows only from TRAIN-only row groups of the split-aligned '
                          'copy; approved raw-file row groups straddling the TRAIN boundary are decoded (listed raw '
                          'columns) and filtered before any use',
@@ -720,13 +722,18 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                                  'A2-S0; A2-S1 reads only the sealed A2-S0 output) decodes the split-aligned, row-for-row '
                                  'identical copy prepared once for A3 EXP-BC-CAL-01 and reused '
                                  '(registration_input_pins.processed_frame_aligned); before any row is decoded the runner '
-                                 'verifies its bytes, the identity-manifest bytes, the manifest result PASS (aligned, '
-                                 'identity PASS) for exactly this file and its source = processed_frame_identity.sha256, and '
-                                 'from the footer that every row group carries game_date statistics and none straddles a '
-                                 'TRAIN boundary; any processed file whose row groups straddle TRAIN is refused; A2-S2 and '
-                                 'A2-S3 keep reading the original processed frame through the registered ML-POLICY loader',
-                'layout_plan': 'the smoke plans its row groups from the parquet footers (schema and game_date statistics) '
-                               'before the attempt-start receipt: a straddling row group refuses without consuming an attempt',
+                                 'verifies the identity-manifest bytes and its certificate as A3 does (tool = '
+                                 'experiments/pitchmdp/scripts/prepare_behavior_calibration_input.py; result PASS; aligned; '
+                                 'identity result PASS with rows_equal and schema_equal true, no differing column and every '
+                                 'column digest equal, the TRAIN columns included; source rows = rewritten rows = the copy\'s '
+                                 'footer rows; source sha256 = processed_frame_identity.sha256; rewritten sha256 = the '
+                                 'copy\'s pin), the copy\'s bytes, and from the footer that it has row groups, every one '
+                                 'carrying game_date statistics and none straddling a TRAIN boundary; any processed file '
+                                 'whose row groups straddle TRAIN is refused; A2-S2 and A2-S3 keep reading the original '
+                                 'processed frame through the registered ML-POLICY loader',
+                'layout_plan': 'the smoke and A2-S0 plan their row groups from the parquet footers (schema and game_date '
+                               'statistics) before the attempt-start receipt and re-plan identically before reading: a '
+                               'straddling row group or a failed copy check refuses without consuming an attempt',
                 'processed_pin': 'path = artifact_root/processed/pitches.parquet, sha256 = the inherited '
                                  'reports/data_quality.json processed_sha256 = the file bytes, checked before any row; the '
                                  'original stays the identity source of the aligned copy',
@@ -848,10 +855,21 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                  'G-REG': 'verdict PASS, or PASS_WITH_NOTES with notes closed; config digest = the registered digest'},
     'destination': 'a fresh directory directly under output_root; output_root disjoint (resolved real paths) from the '
                    'repository, the main checkout (git common directory), the S6-dr-a5 stage directory, the processed '
-                   'frame directory, the raw root and the G0 bundle and WE directories',
+                   'frame directory, the split-aligned copy\'s directory and its identity manifest\'s directory, the '
+                   'artifact reports and cache directories, the raw root, the G0 bundle and WE directories and the '
+                   'directory of every ML-POLICY registered input',
     'digest_manifest_location': 'the external digest manifest path is checked with the same disjointness rule (resolved '
-                                'real paths; outside every sealed input, both checkouts and results/) before every '
-                                'manifest mutation, the manifest commands included',
+                                'real paths; outside every sealed input, the split-aligned copy\'s and its identity '
+                                'manifest\'s directories included, both checkouts and results/) before every manifest '
+                                'mutation, the manifest commands included',
+    'sealing': {'files': 'SHA256SUMS and manifest.json list every file of the stage directory except macOS AppleDouble '
+                         'sidecars; require_seal re-verifies the manifest.json bytes against the seal and every listed '
+                         'artifact',
+                'appledouble': 'a sidecar is a file named ._* that starts with the AppleDouble magic 00051607 '
+                               '(pitchmdp/matrix_policy_artifacts.is_appledouble; macOS writes them beside files on the '
+                               'exFAT output volume): never sealed or verified, so sidecars appearing before or after the '
+                               'seal (._SHA256SUMS and ._manifest.json included) change nothing; a ._* file without the '
+                               'magic is an ordinary artifact, sealed and verified'},
     'digest_manifest_writer': 'one writer at a time: a command holds an exclusive non-blocking fcntl lock on the '
                               'manifest\'s sibling lock file from its location check to its last receipt (every append '
                               'locks too); the chain and its tail digest are verified under the lock before each append; '
@@ -994,6 +1012,7 @@ PIN_KEYS = ('s6_dr_a5_ledger_path', 's6_dr_a5_ledger_sha256', 's6_dr_a5_manifest
 # identical copy of the pinned processed frame, certified by its identity manifest (result PASS, source = the pin)
 ALIGNED_PIN_KEYS = ('path', 'sha256', 'identity_manifest_path', 'identity_manifest_sha256', 'source_sha256')
 ALIGNED_MANIFEST_RESULT = 'PASS'
+ALIGNED_TOOL = 'experiments/pitchmdp/scripts/prepare_behavior_calibration_input.py'  # the A3 preparation tool
 
 
 def _disjoint(a, b):

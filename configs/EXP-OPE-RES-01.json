@@ -1370,7 +1370,7 @@
       "id": "A2-SM",
       "name": "smoke_first_registered_step",
       "after": "G-REG",
-      "reads": "TRAIN rows of registration_input_pins.smoke_train_subset only (approved raw files, listed columns, the split-aligned copy of the processed frame, TRAIN-only row groups) and the synthetic TAB world at kappa = zeta = 0; no DEV start, no S6 ledger",
+      "reads": "TRAIN rows of registration_input_pins.smoke_train_subset only (approved raw files, listed columns, the split-aligned copy of the processed frame, TRAIN-only row groups; its TRAIN rows form one row group, decoded whole before the rows are trimmed to the registered week, so the smoke load time and peak RSS reflect the full TRAIN decode) and the synthetic TAB world at kappa = zeta = 0; no DEV start, no S6 ledger",
       "runs": "the A2-S0 code path (raw join, date guards, event mapping, table fit; tables discarded) and the A2-S1 TAB code path for registration_input_pins.smoke_tab_replications_per_cell replications (outputs discarded), seed role smoke",
       "records": [
         "wall seconds and peak RSS per component",
@@ -1886,6 +1886,11 @@
       "date": "2026-10-27",
       "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
       "what": "PM decision (G-REG dry run: the pinned processed parquet has row groups straddling TRAIN): A2 reuses the split-aligned, row-for-row identical copy prepared for A3 EXP-BC-CAL-01; new pin registration_input_pins.processed_frame_aligned {path, sha256, identity_manifest_path, identity_manifest_sha256, source_sha256}; every TRAIN-only read (smoke, A2-S0) decodes only TRAIN-only row groups of the copy after verifying its bytes, its identity manifest (bytes, result PASS for exactly this copy, source = processed_frame_identity) and its split-aligned footer; A2-S2/A2-S3 unchanged (registered loader on the original); still DRAFT_UNREGISTERED, execution disabled"
+    },
+    {
+      "date": "2026-10-27",
+      "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
+      "what": "diff review of 91e4be96 (Sonnet, PASS_WITH_NOTES) closures: the aligned copy's identity certificate is checked as A3 checks it (tool, rows/schema equal, rows, no differing column, every column digest equal and covering the TRAIN columns, footer rows); a copy without row groups is refused; A2-S0 plans its footer-only reads before its attempt; SHA256SUMS and manifest.json never list macOS AppleDouble sidecars (a ._* file without the magic stays an artifact); destination and smoke prose aligned; still DRAFT_UNREGISTERED, execution disabled"
     }
   ],
   "implementation": {
@@ -1922,10 +1927,10 @@
       "r1b_table_failure": "every m nonfinite in a TAB replication: the R1_b pairs are NOT_EVALUABLE, the R1_0 and R1_a pairs continue"
     },
     "reading": {
-      "smoke": "the pinned split-aligned processed frame and the approved raw files read by parquet row group: only row groups whose game_date statistics lie inside TRAIN and overlap the smoke subset are decoded, only the listed columns; a straddling row group refuses; raw files of other years are not opened; no S6 access",
+      "smoke": "the pinned split-aligned processed frame and the approved raw files read by parquet row group: only row groups whose game_date statistics lie inside TRAIN and overlap the smoke subset are decoded, only the listed columns; a straddling row group refuses; raw files of other years are not opened; no S6 access; the aligned copy holds TRAIN in one row group, so the whole TRAIN group is decoded before the rows are trimmed to the registered smoke week (the smoke load_seconds and peak RSS reflect the full TRAIN decode)",
       "A2-S0": "the same reader over TRAIN: processed rows only from TRAIN-only row groups of the split-aligned copy; approved raw-file row groups straddling the TRAIN boundary are decoded (listed raw columns) and filtered before any use",
-      "aligned_input": "PM decision: every TRAIN-only footer-planned read of the processed frame (the smoke and A2-S0; A2-S1 reads only the sealed A2-S0 output) decodes the split-aligned, row-for-row identical copy prepared once for A3 EXP-BC-CAL-01 and reused (registration_input_pins.processed_frame_aligned); before any row is decoded the runner verifies its bytes, the identity-manifest bytes, the manifest result PASS (aligned, identity PASS) for exactly this file and its source = processed_frame_identity.sha256, and from the footer that every row group carries game_date statistics and none straddles a TRAIN boundary; any processed file whose row groups straddle TRAIN is refused; A2-S2 and A2-S3 keep reading the original processed frame through the registered ML-POLICY loader",
-      "layout_plan": "the smoke plans its row groups from the parquet footers (schema and game_date statistics) before the attempt-start receipt: a straddling row group refuses without consuming an attempt",
+      "aligned_input": "PM decision: every TRAIN-only footer-planned read of the processed frame (the smoke and A2-S0; A2-S1 reads only the sealed A2-S0 output) decodes the split-aligned, row-for-row identical copy prepared once for A3 EXP-BC-CAL-01 and reused (registration_input_pins.processed_frame_aligned); before any row is decoded the runner verifies the identity-manifest bytes and its certificate as A3 does (tool = experiments/pitchmdp/scripts/prepare_behavior_calibration_input.py; result PASS; aligned; identity result PASS with rows_equal and schema_equal true, no differing column and every column digest equal, the TRAIN columns included; source rows = rewritten rows = the copy's footer rows; source sha256 = processed_frame_identity.sha256; rewritten sha256 = the copy's pin), the copy's bytes, and from the footer that it has row groups, every one carrying game_date statistics and none straddling a TRAIN boundary; any processed file whose row groups straddle TRAIN is refused; A2-S2 and A2-S3 keep reading the original processed frame through the registered ML-POLICY loader",
+      "layout_plan": "the smoke and A2-S0 plan their row groups from the parquet footers (schema and game_date statistics) before the attempt-start receipt and re-plan identically before reading: a straddling row group or a failed copy check refuses without consuming an attempt",
       "processed_pin": "path = artifact_root/processed/pitches.parquet, sha256 = the inherited reports/data_quality.json processed_sha256 = the file bytes, checked before any row; the original stays the identity source of the aligned copy",
       "S6": "the S6-dr-a5 stage directory is opened by A2-S3 only; the smoke reads only the first policy_registration_chain link (the ML-POLICY config: WE identity and local-config pin)"
     },
@@ -2041,8 +2046,12 @@
       "G-CODE": "verdict PASS, or PASS_WITH_NOTES with notes closed; commit = the running code commit; config digest = the registered digest",
       "G-REG": "verdict PASS, or PASS_WITH_NOTES with notes closed; config digest = the registered digest"
     },
-    "destination": "a fresh directory directly under output_root; output_root disjoint (resolved real paths) from the repository, the main checkout (git common directory), the S6-dr-a5 stage directory, the processed frame directory, the raw root and the G0 bundle and WE directories",
-    "digest_manifest_location": "the external digest manifest path is checked with the same disjointness rule (resolved real paths; outside every sealed input, both checkouts and results/) before every manifest mutation, the manifest commands included",
+    "destination": "a fresh directory directly under output_root; output_root disjoint (resolved real paths) from the repository, the main checkout (git common directory), the S6-dr-a5 stage directory, the processed frame directory, the split-aligned copy's directory and its identity manifest's directory, the artifact reports and cache directories, the raw root, the G0 bundle and WE directories and the directory of every ML-POLICY registered input",
+    "digest_manifest_location": "the external digest manifest path is checked with the same disjointness rule (resolved real paths; outside every sealed input, the split-aligned copy's and its identity manifest's directories included, both checkouts and results/) before every manifest mutation, the manifest commands included",
+    "sealing": {
+      "files": "SHA256SUMS and manifest.json list every file of the stage directory except macOS AppleDouble sidecars; require_seal re-verifies the manifest.json bytes against the seal and every listed artifact",
+      "appledouble": "a sidecar is a file named ._* that starts with the AppleDouble magic 00051607 (pitchmdp/matrix_policy_artifacts.is_appledouble; macOS writes them beside files on the exFAT output volume): never sealed or verified, so sidecars appearing before or after the seal (._SHA256SUMS and ._manifest.json included) change nothing; a ._* file without the magic is an ordinary artifact, sealed and verified"
+    },
     "digest_manifest_writer": "one writer at a time: a command holds an exclusive non-blocking fcntl lock on the manifest's sibling lock file from its location check to its last receipt (every append locks too); the chain and its tail digest are verified under the lock before each append; a second writer refuses",
     "terminal_decision": "A2-S4 may record FAILED_INTEGRITY as soon as a stage exhausted its attempts in a deterministic integrity failure; its unsealed descendants are recorded as BLOCKED and other unsealed stages as NOT_RUN",
     "tab_descriptive_stop": "a descriptive cell stopped by the work deadline (after every acceptance cell is sealed) is written as a NOT_RUN cell record and sealed with the stage",

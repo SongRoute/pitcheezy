@@ -68,6 +68,7 @@ from pitchmdp import ope_sealed as osd  # noqa: E402
 from pitchmdp import ope_surrogate as osg  # noqa: E402
 from pitchmdp import ope_synthetic_a2 as osx  # noqa: E402
 from pitchmdp.game import GameState  # noqa: E402
+from pitchmdp.matrix_policy_artifacts import is_appledouble  # noqa: E402
 from pitchmdp.policy_artifacts import IntegrityError, _require  # noqa: E402
 
 COMMANDS = ('check', 'pins', 'register-digest', 'record-review', 'register-addendum', 'reconcile-attempt', 'smoke',
@@ -822,7 +823,10 @@ def command_guard(stage_id, env, entered=None):
 
 
 def sha256sums(output):
-    names = sorted(str(p.relative_to(output)) for p in output.rglob('*') if p.is_file())
+    """sha256 of every file of a stage directory except macOS AppleDouble sidecars (a ._* name with the 00051607
+    magic, written beside files on the exFAT output volume; review: a ._* file without the magic stays an
+    artifact). The sidecars are never sealed, so ones appearing before or after the seal change nothing."""
+    names = sorted(str(p.relative_to(output)) for p in output.rglob('*') if p.is_file() and not is_appledouble(p))
     return {name: reg.file_sha256(output / name) for name in names}
 
 
@@ -1025,6 +1029,7 @@ def require_split_aligned(path):
     import pyarrow.parquet as pq
     path = Path(path)
     meta = pq.ParquetFile(path).metadata
+    _require(meta.num_row_groups > 0, f'{path.name} has no row group; the processed file is refused')
     names = [meta.schema.column(i).name for i in range(meta.num_columns)]
     _require('game_date' in names, f'{path.name} lacks game_date')
     index = names.index('game_date')
@@ -1043,9 +1048,12 @@ def require_split_aligned(path):
 def verify_aligned_pin(pins):
     """PM decision (the prepared input of A3 EXP-BC-CAL-01, reused): the split-aligned, row-for-row identical copy
     that every TRAIN-only read decodes, verified before any row is decoded: the identity-manifest bytes equal their
-    pin; the manifest certifies exactly this copy (result PASS, aligned, identity PASS, rewritten sha256 = the copy's
-    pin) made from the identity source (its source sha256 = processed_frame_identity.sha256 = the copy's source
-    pin); the copy's bytes equal their pin; and its footer is split-aligned (``require_split_aligned``)."""
+    pin; its certificate is checked as A3 checks it (the registered preparation tool; result PASS; aligned; identity
+    PASS with equal rows and schema, no differing column and every column digest equal, the TRAIN columns included;
+    equal source and rewritten rows); it certifies exactly this copy (rewritten sha256 = the copy's pin) made from
+    the identity source (source sha256 = processed_frame_identity.sha256 = the copy's source pin); the copy's bytes
+    equal their pin; and its footer (row count = the certified rows) is split-aligned (``require_split_aligned``)."""
+    import pyarrow.parquet as pq
     aligned, identity = pins['processed_frame_aligned'], pins['processed_frame_identity']
     _require(aligned['source_sha256'] == identity['sha256'],
              'the aligned copy names another source than the processed-frame identity pin')
@@ -1053,14 +1061,31 @@ def verify_aligned_pin(pins):
     _require(hashlib.sha256(raw).hexdigest() == aligned['identity_manifest_sha256'],
              'the aligned identity manifest differs from its pin')
     manifest = json.loads(raw)
+    _require(isinstance(manifest, dict) and manifest.get('tool') == reg.ALIGNED_TOOL,
+             'the aligned identity manifest was not written by the registered A3 preparation tool')
+    certificate = manifest.get('identity') if isinstance(manifest.get('identity'), dict) else {}
     _require(manifest.get('result') == reg.ALIGNED_MANIFEST_RESULT and manifest.get('aligned') is True
-             and (manifest.get('identity') or {}).get('result') == reg.ALIGNED_MANIFEST_RESULT,
+             and certificate.get('result') == reg.ALIGNED_MANIFEST_RESULT,
              'the aligned identity manifest does not certify a PASS (result, alignment and identity)')
-    _require((manifest.get('source') or {}).get('sha256') == identity['sha256'],
+    _require(certificate.get('rows_equal') is True and certificate.get('schema_equal') is True,
+             'the aligned identity manifest does not certify equal rows and schema')
+    _require(certificate.get('differing_columns') == [], 'the aligned identity manifest lists differing columns')
+    columns = certificate.get('columns')
+    _require(isinstance(columns, dict) and columns
+             and all(isinstance(c, dict) and c.get('equal') is True for c in columns.values()),
+             'a column digest of the aligned identity manifest is not equal')
+    _require(set(TRAIN_COLUMNS) <= set(columns), 'the aligned identity manifest does not cover every TRAIN column')
+    source = manifest.get('source') if isinstance(manifest.get('source'), dict) else {}
+    rewritten = manifest.get('rewritten') if isinstance(manifest.get('rewritten'), dict) else {}
+    _require(type(source.get('rows')) is int and source.get('rows') == rewritten.get('rows'),
+             'the aligned identity manifest certifies different source and rewritten row counts')
+    _require(source.get('sha256') == identity['sha256'],
              'the aligned identity manifest source is not the processed-frame identity pin')
-    _require((manifest.get('rewritten') or {}).get('sha256') == aligned['sha256'],
+    _require(rewritten.get('sha256') == aligned['sha256'],
              'the aligned identity manifest certifies another file than the pinned copy')
     _require(reg.file_sha256(aligned['path']) == aligned['sha256'], 'aligned processed frame bytes differ from the A2 pin')
+    _require(pq.ParquetFile(aligned['path']).metadata.num_rows == rewritten['rows'],
+             'the aligned copy footer row count differs from its certificate')
     require_split_aligned(aligned['path'])
     return aligned
 
@@ -1083,6 +1108,7 @@ def plan_train_reads(pins, local, window, *, strict):
     aligned = verify_aligned_pin(pins)
     plan = {'window': list(window), 'strict': bool(strict), 'processed_path': aligned['path'],
             'processed': parquet_plan(aligned['path'], TRAIN_COLUMNS, window, strict=True), 'raw': {}}
+    _require(plan['processed']['row_groups'], 'no TRAIN row group of the aligned copy overlaps the window')
     for name, path in raw_files_for(window, local):
         _require(reg.file_sha256(path) == pins['train_raw_files_sha256'][name], f'raw file {name} differs from its pin')
         plan['raw'][name] = parquet_plan(path, RAW_COLUMNS, window, strict=strict)
@@ -1902,6 +1928,12 @@ def plan_smoke(run):
     return run.env.train_plan(run.config, run.local, window, strict=True)
 
 
+def plan_s0(run):
+    """Before the A2-S0 attempt starts (review note 10): the same footer-only plan over TRAIN (pins, the aligned
+    copy's certificate and footer verified), so a failed check refuses without consuming an attempt."""
+    return run.env.train_plan(run.config, run.local, reg.TRAIN_WINDOW, strict=False)
+
+
 DECISION_STAGES = ('A2-SM', 'A2-S0', 'A2-S1', 'A2-S2', 'A2-S3')
 
 
@@ -1929,7 +1961,7 @@ def plan_decide(run):
     return {'terminal': None, 'stage_status': status}
 
 
-PLANS = {'A2-SM': plan_smoke, 'A2-S4': plan_decide}
+PLANS = {'A2-SM': plan_smoke, 'A2-S0': plan_s0, 'A2-S4': plan_decide}
 
 
 def run_command(args, env, entered=None):
@@ -1996,6 +2028,8 @@ def body_smoke(run):
 
 def body_s0(run):
     train, read = run.env.train(run.config, run.local, reg.TRAIN_WINDOW, strict=False, checkpoint=run.check)
+    _require({k: read['plan'][k] for k in ('processed', 'raw')} == {k: run.plan[k] for k in ('processed', 'raw')},
+             'the A2-S0 read differs from its pre-attempt plan (deterministic integrity)')
     run.check()
     s0 = build_s0(train, run.env.game_values(run.base), checkpoint=run.check)
     require_s0_descriptive(s0)
