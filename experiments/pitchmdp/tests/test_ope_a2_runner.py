@@ -5,7 +5,7 @@ and columns watched), the processed-frame pin, G-INT before any surrogate, the d
 checks and dependency-injected orchestration (smoke -> A2-S0 -> A2-S1 -> A2-S4 refusal). Every input is
 a synthetic file the test writes to a temporary directory; no real data, ledger or model is read.
 """
-from contextlib import contextmanager, nullcontext, redirect_stdout
+from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_stdout
 import copy
 from datetime import datetime
 import functools
@@ -624,6 +624,73 @@ class PublicationTests(unittest.TestCase):
                     with roa.stage(out2, 'A2-S2', self.identity, manifest=self.manifest, final_check=guard.final_check) as d:
                         roa.dump(d / 's5x.json', {'runs': []})
         self.assertEqual(roa.require_seal(self.manifest, 'A2-S2')[0], out2)
+
+    def postcommit_fault(self, stat):
+        """The seal's directory sync fails after its rename, then the diagnostic's target lookup misbehaves."""
+        real_sync, real_is_dir, state = roa._fsync_dir, Path.is_dir, {'sealed': False}
+
+        def sync(path):
+            if 'stage_seal' in (self.manifest.path.read_text().splitlines() or [''])[-1]:
+                state['sealed'] = True
+                raise OSError(5, 'synthetic EIO on the directory sync')
+            return real_sync(path)
+
+        def is_dir(path):
+            if state['sealed'] and path.name.startswith('A2-S1'):
+                return stat()
+            return real_is_dir(path)
+        return sync, is_dir
+
+    def assert_seal_stands(self, out):
+        self.assertEqual([e['kind'] for e in self.manifest.entries()], ['attempt_start', 'stage_seal'])
+        self.assertFalse((out / 'ABORTED.json').exists())
+        self.assertEqual(roa.require_seal(self.manifest, 'A2-S1')[0], out)
+        self.assertEqual(roa.stage_status(self.manifest, ('A2-S1',)), {'A2-S1': 'sealed'})
+        with self.assertRaisesRegex(IntegrityError, 'already sealed'):
+            roa.attempt_gate(self.manifest, 'A2-S1')  # a rerun stays refused
+
+    def test_a_failing_postcommit_diagnostic_never_invalidates_the_seal(self):
+        # review round 7 #1: a stat EIO while the post-commit record picks its target
+        def eio():
+            raise OSError(5, 'synthetic EIO on the attempt directory stat')
+        sync, is_dir = self.postcommit_fault(eio)
+        out = self.tmp / 'A2-S1-a1'
+        with mock.patch.object(roa, '_fsync_dir', sync), mock.patch.object(Path, 'is_dir', is_dir), \
+                redirect_stderr(io.StringIO()) as err:
+            with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=lambda: None) as d:
+                roa.dump(d / 'tab.json', {'cells': {}})
+        self.assert_seal_stands(out)
+        self.assertEqual([type(e).__name__ for e in self.manifest.durability_errors], ['OSError', 'OSError'])
+        self.assertIn('the committed receipt stands', err.getvalue())
+
+    def test_a_slow_postcommit_diagnostic_is_bounded_and_never_invalidates_the_seal(self):
+        def slow():
+            time.sleep(0.5)
+            return True
+        sync, is_dir = self.postcommit_fault(slow)
+        out = self.tmp / 'A2-S1-a1'
+        with mock.patch.object(reg, 'PUBLICATION_IO_TIMEOUT_SECONDS', 0.1), mock.patch.object(roa, '_fsync_dir', sync), \
+                mock.patch.object(Path, 'is_dir', is_dir), redirect_stderr(io.StringIO()):
+            t0 = time.monotonic()
+            with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=lambda: None) as d:
+                roa.dump(d / 'tab.json', {'cells': {}})
+            self.assertLess(time.monotonic() - t0, 2.0)
+            time.sleep(0.6)  # the abandoned diagnostic writer finishes its own append-only record
+        self.assert_seal_stands(out)
+        self.assertEqual([type(e).__name__ for e in self.manifest.durability_errors], ['OSError', 'HangGuardExceeded'])
+
+    def test_a_postcommit_failure_under_a_guard_is_reported_after_the_cleanup(self):
+        def eio():
+            raise OSError(5, 'synthetic EIO on the attempt directory stat')
+        sync, is_dir = self.postcommit_fault(eio)
+        out = self.tmp / 'A2-S1-a1'
+        with mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': 30}), mock.patch.object(roa, '_fsync_dir', sync), \
+                mock.patch.object(Path, 'is_dir', is_dir), redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(OSError, 'directory sync'):  # the exit code reports it; the seal stands
+                with roa.command_guard('A2-S1', self.armed_env()) as guard:
+                    with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=guard.final_check) as d:
+                        roa.dump(d / 'tab.json', {'cells': {}})
+        self.assert_seal_stands(out)
 
     def test_one_rule_for_consumption_status_retry_and_decision(self):
         out = self.tmp / 'A2-S3-a1'

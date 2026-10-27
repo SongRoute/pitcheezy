@@ -99,6 +99,8 @@ NET_SE_MAX = 0.005
 TIE_WINDOW = 0.02  # x H_star(baseline)
 TIE_REL_TOL = 1e-12  # |v - v_min| <= 1e-12 * max(1, |v_min|)
 INTEGRITY_TOL = 1e-12
+PROBABILITY_SUM_TOLERANCE = 1e-9  # |sum(p) - 1| of a probability vector (as policy_estimator._probabilities)
+DISPLAY_TOLERANCE = 1e-12  # a probability, share or divergence this close outside its bound is clipped for display
 MDE_MULTIPLIER = 2.801585  # z_0.975 + z_0.80
 MEI = 0.001
 B_V = 0.002734729542731599
@@ -670,6 +672,7 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                       'z_nets_s1_s4': Z_NET, 'net_gap_max': NET_GAP_MAX, 'net_gap_se_max': NET_SE_MAX,
                       'tie_window_share_of_baseline_h_star': TIE_WINDOW, 'minimizer_tie_relative_tolerance': TIE_REL_TOL,
                       'integrity_tolerance': INTEGRITY_TOL, 'mde_multiplier': MDE_MULTIPLIER,
+                      'probability_sum_tolerance': PROBABILITY_SUM_TOLERANCE, 'display_tolerance': DISPLAY_TOLERANCE,
                       'placebo_flag_ratio': PLACEBO_FLAG, 'replication_2027_ratio': REPLICATION_2027_RATIO},
     'point_set': {'definition': 'E0 PAs whose baseline (R1_0 x R2_0, L1-R) paired delta bounds are equal (float ==)',
                   'non_point_under_a_pair': 'that pair has no P mean: its P statistics are invalid (fail-safe, counted); '
@@ -762,10 +765,11 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                               'watchdog violation, re-checked immediately before the rename), then an atomic rename '
                               'commits it; guard interrupts are held as pending during a publication; any failure before '
                               'the rename removes the staging file, publishes no seal and records a non-citable ABORTED '
-                              '(ABORTED.json and a stage_failure receipt); an error after the rename (directory sync) is '
-                              'persisted as an append-only record (postcommit_errors.jsonl in the attempt directory, or '
-                              'beside the manifest) by the bounded writer and reported after the cleanup; the committed '
-                              'receipt stands',
+                              '(ABORTED.json and a stage_failure receipt); after the rename nothing aborts the stage: '
+                              'a directory-sync error is persisted as an append-only record (postcommit_errors.jsonl in '
+                              'the attempt directory, or beside the manifest; target selection and writing together in '
+                              'the bounded writer), and any failure of that diagnostic is reported (stderr, exit code '
+                              'after the cleanup); the committed receipt stands and a rerun stays refused',
                'attempt_rule': 'one rule for seal consumption, status, retry accounting and the terminal decision: an '
                                'attempt is aborted if a stage_failure names it or its directory carries ABORTED.json or '
                                'ABORTED_UNRECORDED.json, committed if its seal was published, reconciled, or unfinished; '

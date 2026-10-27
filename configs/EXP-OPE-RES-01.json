@@ -1865,6 +1865,11 @@
       "date": "2026-10-27",
       "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
       "what": "code review CODE-REVIEW-A2-astra-006 (FAIL) fixes: implementation block updated (the staging create, write, fsync and close bounded together in the worker; post-commit errors persisted append-only in the attempt); still DRAFT_UNREGISTERED, execution disabled"
+    },
+    {
+      "date": "2026-10-27",
+      "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
+      "what": "code review CODE-REVIEW-A2-astra-007 (FAIL) fixes: implementation block updated (nothing after the commit rename aborts the stage: the post-commit diagnostic selects its target and writes inside the bounded writer and only reports its own failure; probability sum tolerance 1e-9 and display tolerance 1e-12 pinned, outside-mask mass summed directly); still DRAFT_UNREGISTERED, execution disabled"
     }
   ],
   "implementation": {
@@ -1880,6 +1885,8 @@
       "minimizer_tie_relative_tolerance": 1e-12,
       "integrity_tolerance": 1e-12,
       "mde_multiplier": 2.801585,
+      "probability_sum_tolerance": 1e-09,
+      "display_tolerance": 1e-12,
       "placebo_flag_ratio": 1.25,
       "replication_2027_ratio": 0.85
     },
@@ -1990,7 +1997,7 @@
     },
     "guards": {
       "coverage": "hang timer, RSS cap and free-memory guard from argument parsing to the final seal (preflight, data acquisition under the common heavy lock, computation, hashing, every manifest write and the seal; unblind and the manifest commands included); the hang timer stays armed through the completion receipt and is disarmed by the bounded cleanup",
-      "publication": "every receipt is published atomically: the verified manifest bytes plus the entry go to a staging file created exclusively under a name unique to the write (pid, counter, kind, stage, attempt) by the bounded writer, whose create, write, fsync and close are bounded by 10 s together (it owns its descriptor and never renames, so a timed-out writer never touches another receipt); for a completion receipt the final guard check runs (memory sample, the cleanup reserve left, then no pending interrupt or watchdog violation, re-checked immediately before the rename), then an atomic rename commits it; guard interrupts are held as pending during a publication; any failure before the rename removes the staging file, publishes no seal and records a non-citable ABORTED (ABORTED.json and a stage_failure receipt); an error after the rename (directory sync) is persisted as an append-only record (postcommit_errors.jsonl in the attempt directory, or beside the manifest) by the bounded writer and reported after the cleanup; the committed receipt stands",
+      "publication": "every receipt is published atomically: the verified manifest bytes plus the entry go to a staging file created exclusively under a name unique to the write (pid, counter, kind, stage, attempt) by the bounded writer, whose create, write, fsync and close are bounded by 10 s together (it owns its descriptor and never renames, so a timed-out writer never touches another receipt); for a completion receipt the final guard check runs (memory sample, the cleanup reserve left, then no pending interrupt or watchdog violation, re-checked immediately before the rename), then an atomic rename commits it; guard interrupts are held as pending during a publication; any failure before the rename removes the staging file, publishes no seal and records a non-citable ABORTED (ABORTED.json and a stage_failure receipt); after the rename nothing aborts the stage: a directory-sync error is persisted as an append-only record (postcommit_errors.jsonl in the attempt directory, or beside the manifest; target selection and writing together in the bounded writer), and any failure of that diagnostic is reported (stderr, exit code after the cleanup); the committed receipt stands and a rerun stays refused",
       "attempt_rule": "one rule for seal consumption, status, retry accounting and the terminal decision: an attempt is aborted if a stage_failure names it or its directory carries ABORTED.json or ABORTED_UNRECORDED.json, committed if its seal was published, reconciled, or unfinished; an unfinished attempt (a crash before the rename) is reconciled into ABORTED_UNRECORDED (non-citable marker in its directory) so a new attempt can proceed",
       "memory_measurement": "an unavailable, unparsable or timed-out free-memory measurement is a memory-guard stop (fail closed), never treated as enough memory",
       "memory_watchdog": "a watchdog thread checks the RSS cap and free memory every 1 s through every code path (the protected estimator included) and interrupts the main thread on a violation",

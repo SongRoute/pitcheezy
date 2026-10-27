@@ -9,6 +9,7 @@ import math
 from pathlib import Path
 import struct
 import sys
+import types
 import unittest
 from unittest import mock
 
@@ -677,6 +678,48 @@ class PointSetTests(unittest.TestCase):
         summary = ob.summarize(stats, valid, r)['broken']
         self.assertFalse(summary['mean_p']['valid'] or summary['shift_p']['valid'])
         self.assertTrue(summary['lower_endpoint']['valid'] and summary['upper_endpoint']['valid'])
+
+
+class RoundingTests(unittest.TestCase):
+    """Review round 7 #2: valid probability rounding never aborts public sealing (registered tolerances)."""
+    def test_the_tolerances_are_pinned_and_match_the_registered_estimator(self):
+        from pitchmdp import ope_diagnostics as od
+        self.assertEqual((reg.PROBABILITY_SUM_TOLERANCE, reg.DISPLAY_TOLERANCE), (1e-9, 1e-12))
+        self.assertEqual(reg.IMPLEMENTATION['numeric_rules']['probability_sum_tolerance'], 1e-9)
+        self.assertEqual(reg.IMPLEMENTATION['numeric_rules']['display_tolerance'], 1e-12)
+        est._probabilities([0.5, 0.5 + 0.9e-9], 2, 'p')  # the protected estimator accepts the same sum tolerance
+        with self.assertRaises(IntegrityError):
+            est._probabilities([0.5, 0.5 + 2e-9], 2, 'p')
+        self.assertEqual(od.clip_display([1 + 5e-13, -5e-13, 0.25], upper=1.0).tolist(), [1.0, 0.0, 0.25])
+        for bad in (1 + 1e-9, -1e-9):
+            with self.subTest(bad), self.assertRaisesRegex(IntegrityError, 'display tolerance'):
+                od.clip_display([bad], upper=1.0)
+
+    def test_a_fully_supported_vector_summing_just_above_one(self):
+        from pitchmdp import ope_diagnostics as od
+        rng = np.random.default_rng(18)
+        logging = rng.dirichlet(np.ones(18))
+        while (total := float(logging.sum())) <= 1.0:  # an 18-action law whose float sum is a few ULPs above one
+            logging = rng.dirichlet(np.ones(18))
+        self.assertLessEqual(abs(total - 1), reg.PROBABILITY_SUM_TOLERANCE)
+        self.assertLess(1 - logging.sum(), 0)  # the old 1 - inside-sum formula would publish a negative mass
+        table = types.SimpleNamespace(mask=np.ones((1, 18), dtype=bool), logging=logging[None], cand=logging[None],
+                                      ref=logging[None], a=np.array([3]))
+        mass = od.logging_mass(_Table(table))
+        self.assertEqual(mass['mean_logging_mass_outside_policy_mask'], 0.0)
+        for key, value in mass.items():
+            self.assertTrue(reg.validate_public({'R5': {'c': {'logging_mass': {key: value}}}}), key)
+        kl = od._kl(logging[None], np.nextafter(logging, 0)[None] / np.nextafter(logging, 0).sum(), np.ones((1, 18), bool))
+        self.assertGreaterEqual(float(kl[0]), 0.0)
+
+
+class _Table:
+    """A one-row decision table (the attributes od.logging_mass reads)."""
+    def __init__(self, ns):
+        self.mask, self.logging, self.cand, self.ref, self.a = ns.mask, ns.logging, ns.cand, ns.ref, ns.a
+
+    def __len__(self):
+        return len(self.a)
 
 
 class VariantPointRuleTests(unittest.TestCase):

@@ -155,6 +155,22 @@ def _create_write(path, data):
         os.close(fd)
 
 
+POSTCOMMIT_ERRORS = (Exception, HangGuardExceeded, MemoryGuardExceeded)
+
+
+def _write_postcommit_record(manifest_path, entry, error):
+    """In the bounded worker: choose the record's target (the attempt directory when it exists, else beside the
+    manifest) and append the record durably."""
+    output_dir = entry['payload'].get('output_dir')
+    target = (Path(output_dir) / 'postcommit_errors.jsonl' if output_dir and Path(output_dir).is_dir()
+              else manifest_path.with_name(manifest_path.name + '.postcommit_errors.jsonl'))
+    record = {'time_utc': datetime.now(timezone.utc).isoformat(), 'receipt_kind': entry['kind'],
+              'receipt_seq': entry['seq'], 'receipt_sha256': entry['sha256'], 'stage': entry['payload'].get('stage'),
+              'output_dir': output_dir, 'error_type': type(error).__name__, 'error': str(error),
+              'effect': 'the receipt was committed by its atomic rename; the directory sync after it failed'}
+    _append_synced(target, (_canonical(record) + '\n').encode())
+
+
 def _append_synced(path, line):
     """Append one line durably (an append-only diagnostic record)."""
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
@@ -284,13 +300,12 @@ class DigestManifest:
             except BaseException:
                 _remove(staging)
                 raise
+            # after the commit point nothing may abort the receipt's stage (review round 7 #1): every failure of the
+            # directory sync or of its diagnostic is caught, persisted if possible and reported
             try:
                 bounded_io(lambda: _fsync_dir(self.path.parent), 'the receipt directory sync')
-            except (OSError, HangGuardExceeded) as error:  # durability after the commit: recorded, the receipt stands
-                self.durability_errors.append(error)
-                self._persist_postcommit_error(entry, error)
-                if guard is not None:
-                    guard.late = guard.late or error
+            except POSTCOMMIT_ERRORS as error:
+                self._postcommit_error(entry, error, guard)
         if guard is not None:
             if commit_check is not None:
                 guard.defer_to_late()
@@ -298,20 +313,21 @@ class DigestManifest:
                 guard.raise_pending()
         return entry
 
-    def _persist_postcommit_error(self, entry, error):
-        """Review round 6 note 8: a post-commit error survives the process as an append-only record in the
-        attempt (postcommit_errors.jsonl in its output directory, or beside the manifest for a receipt without one),
-        written by the bounded writer; the committed receipt is not invalidated."""
-        output_dir = entry['payload'].get('output_dir')
-        target = (Path(output_dir) / 'postcommit_errors.jsonl' if output_dir and Path(output_dir).is_dir()
-                  else self.path.with_name(self.path.name + '.postcommit_errors.jsonl'))
-        record = {'time_utc': datetime.now(timezone.utc).isoformat(), 'receipt_kind': entry['kind'],
-                  'receipt_seq': entry['seq'], 'receipt_sha256': entry['sha256'], 'stage': entry['payload'].get('stage'),
-                  'output_dir': output_dir, 'error_type': type(error).__name__, 'error': str(error),
-                  'effect': 'the receipt was committed by its atomic rename; the directory sync after it failed'}
+    def _postcommit_error(self, entry, error, guard):
+        """A failure after a committed rename: kept, reported (stderr now; the exit code after the cleanup) and
+        persisted as an append-only record by the bounded writer, which also selects the target (review round 7
+        #1). Never raises: the committed receipt stands whatever the diagnostic does."""
+        self.durability_errors.append(error)
+        if guard is not None:
+            guard.late = guard.late or error
         try:
-            bounded_io(lambda: _append_synced(target, (_canonical(record) + '\n').encode()), 'the post-commit error record')
-        except (OSError, HangGuardExceeded) as failure:  # kept process-local and reported after the cleanup
+            print(f'warning: post-commit {type(error).__name__} after {entry["kind"]} seq {entry["seq"]}: {error} '
+                  f'(the committed receipt stands)', file=sys.stderr)
+        except Exception:  # noqa: BLE001 - reporting must not raise
+            pass
+        try:
+            bounded_io(lambda: _write_postcommit_record(self.path, entry, error), 'the post-commit error record')
+        except POSTCOMMIT_ERRORS as failure:
             self.durability_errors.append(failure)
 
     def latest(self, kind, **match):
@@ -821,6 +837,10 @@ def stage(output, stage_id, identity, *, manifest, final_check, start=None):
                                        'manifest_sha256': reg.file_sha256(output / 'manifest.json')},
                         commit_check=final_check)
     except BaseException as error:
+        if publishing and _seal_committed(manifest, stage_id, output):
+            # the seal was committed by its rename before this error: it stands (review round 7 #1); report only
+            manifest.durability_errors.append(error)
+            raise
         kind = ('infrastructure' if isinstance(error, (HangGuardExceeded, MemoryGuardExceeded))
                 else 'deterministic_integrity' if isinstance(error, IntegrityError) else 'error')
         payload = {'stage': stage_id, 'class': kind, 'output_dir': str(output), 'aborted': True,
@@ -835,6 +855,15 @@ def stage(output, stage_id, identity, *, manifest, final_check, start=None):
             payload['failure_sha256'] = reg.file_sha256(output / f'failure-{stamp}.json')
         manifest.append('stage_failure', payload)
         raise
+
+
+def _seal_committed(manifest, stage_id, output):
+    """Whether this attempt's completion receipt is already in the published manifest (False when unreadable)."""
+    try:
+        return any(e['kind'] == 'stage_seal' and e['payload'].get('stage') == stage_id
+                   and e['payload'].get('output_dir') == str(output) for e in manifest.entries())
+    except Exception:  # noqa: BLE001 - an unreadable manifest is not proof of a commit
+        return False
 
 
 def identity_record(config, git_commit, extra=None):

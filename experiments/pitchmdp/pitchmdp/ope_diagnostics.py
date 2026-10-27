@@ -14,7 +14,8 @@ import math
 import numpy as np
 
 from . import policy_estimator as est
-from .ope_redesign_registry import (B_V, MDE_MULTIPLIER, MEI, PLACEBO_FLAG, PLACEBO_KL, PLACEBOS, role_sequence)
+from .ope_redesign_registry import (B_V, DISPLAY_TOLERANCE, MDE_MULTIPLIER, MEI, PLACEBO_FLAG, PLACEBO_KL, PLACEBOS,
+                                    PROBABILITY_SUM_TOLERANCE, role_sequence)
 from .ope_variants import mean_abs_shrink, transform, trigger_rate, weight_paths
 from .policy_artifacts import _require
 
@@ -93,10 +94,20 @@ class DecisionTable:
             return np.where(self.positivity | (logged == 0), 0., probabilities[rows, self.a] / logged)
 
 
+def clip_display(values, lower=0.0, upper=None, name='probability'):
+    """Review round 7 #2: a probability, share or divergence computed with rounding is clipped into its bounds when
+    it lies within the registered display tolerance outside them; farther outside is an integrity failure."""
+    v = np.asarray(values, dtype=np.float64)
+    _require(bool(np.all(v >= lower - DISPLAY_TOLERANCE)) and (upper is None or bool(np.all(v <= upper + DISPLAY_TOLERANCE))),
+             f'{name} outside its bounds beyond the registered display tolerance')
+    v = np.maximum(v, lower)
+    return v if upper is None else np.minimum(v, upper)
+
+
 def _kl(p, q, mask):
     with np.errstate(divide='ignore', invalid='ignore'):
         terms = np.where(mask & (p > 0), p * np.log(p / q), 0.)
-    return terms.sum(axis=1)
+    return clip_display(terms.sum(axis=1), name='KL divergence')  # >= 0; rounding can give -1e-17
 
 
 def _quantiles(values):
@@ -116,10 +127,11 @@ def agreement(table):
     tv = 0.5 * np.abs(table.cand - table.ref).sum(axis=1)
     kl = _kl(table.cand, table.ref, table.mask)
     dist = lambda v: {k: _quantiles(v)[k] for k in ('mean', 'q50', 'q90', 'q99')}
+    unit = lambda v: float(clip_display(v, upper=1.0))
     return {'decisions': len(table),
             'top1_equals_logged': {'candidate': float((top_c == table.a).mean()), 'reference': float((top_r == table.a).mean())},
-            'mean_pi_logged': {'candidate': float(table.cand[rows, table.a].mean()),
-                               'reference': float(table.ref[rows, table.a].mean())},
+            'mean_pi_logged': {'candidate': unit(table.cand[rows, table.a].mean()),
+                               'reference': unit(table.ref[rows, table.a].mean())},
             'tv_candidate_reference': dist(tv), 'kl_candidate_reference': dist(kl),
             'top1_agreement_candidate_reference': float((top_c == top_r).mean())}
 
@@ -185,12 +197,18 @@ def positivity_censoring(result, rows):
 
 
 def logging_mass(table):
+    """R5 c: logging mass outside the policy mask, summed directly over the outside actions (never 1 - the
+    inside sum, which rounding can push below zero: review round 7 #2), the largest target mass outside the
+    mask and the share of logged actions outside it."""
     if not len(table):
         return None
-    outside = 1 - np.where(table.mask, table.logging, 0.).sum(axis=1)
+    _require(bool(np.all(np.abs(table.logging.sum(axis=1) - 1) <= PROBABILITY_SUM_TOLERANCE)),
+             'a logging law is not a probability vector within the registered tolerance')
+    outside = np.where(~table.mask, table.logging, 0.).sum(axis=1)
     target = np.maximum(np.where(~table.mask, table.cand, 0.).sum(axis=1), np.where(~table.mask, table.ref, 0.).sum(axis=1))
-    return {'mean_logging_mass_outside_policy_mask': float(outside.mean()),
-            'target_mass_outside_policy_mask_max': float(target.max()),
+    unit = lambda v: float(clip_display(v, upper=1.0, name='probability mass'))
+    return {'mean_logging_mass_outside_policy_mask': unit(outside.mean()),
+            'target_mass_outside_policy_mask_max': unit(target.max()),
             'logged_outside_policy_mask_share': float((~table.mask[np.arange(len(table)), table.a]).mean())}
 
 
