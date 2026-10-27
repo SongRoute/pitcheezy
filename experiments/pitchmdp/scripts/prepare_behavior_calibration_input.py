@@ -267,7 +267,10 @@ def verify_identity(original, rewritten, check=lambda: None):
 
 def prepare(source, output, manifest=None, *, source_sha256=reg.DATA_PINS['processed_sha256'], now=None):
     """Rewrite ``source`` into split-aligned row groups at ``output``, prove identity, write the
-    manifest. Returns the manifest (result PASS or FAIL)."""
+    manifest. Returns the manifest (result PASS or FAIL). Everything up to publication runs under the
+    window check (the hash loops included); the outputs are published by two renames only after a last
+    window check, so PASS is never published inside 06:30-13:30 KST. Any interruption, refusal or
+    failure before publication removes every file this call created."""
     manifest = manifest or Path(output).with_name(Path(output).stem + '.identity.json')
     source, output, manifest = check_paths(source, output, manifest)
     check = window_check(now)
@@ -277,6 +280,7 @@ def prepare(source, output, manifest=None, *, source_sha256=reg.DATA_PINS['proce
     original = pq.ParquetFile(source)
     plan = plan_segments(read_dates(original))
     partial = output.with_name(output.name + '.partial')
+    manifest_partial = manifest.with_name(manifest.name + '.partial')
     output.parent.mkdir(parents=False, exist_ok=True)
     try:
         rewrite(original, partial, plan, check)
@@ -285,26 +289,35 @@ def prepare(source, output, manifest=None, *, source_sha256=reg.DATA_PINS['proce
         identity = verify_identity(original, rewritten, check)
         if file_sha256(source, check) != source_sha256:
             raise PrepareRefused('the source bytes changed while the tool ran')
+        is_aligned = aligned(ranges, plan)
+        result = 'PASS' if identity['result'] == 'PASS' and is_aligned else 'FAIL'
+        final = output if result == 'PASS' else output.with_name(output.name + '.failed')
+        record = {'experiment': reg.EXPERIMENT_ID,
+                  'tool': 'experiments/pitchmdp/scripts/prepare_behavior_calibration_input.py',
+                  'tool_sha256': file_sha256(Path(__file__), check), 'created_utc': datetime.now(timezone.utc).isoformat(),
+                  'python': platform.python_version(), 'pyarrow': pa.__version__,
+                  'source': {'path': str(source), 'sha256': source_sha256, 'bytes': source.stat().st_size,
+                             'rows': original.metadata.num_rows, 'row_groups': row_group_ranges(original),
+                             'schema_sha256': schema_sha256(original.schema_arrow)},
+                  'rewritten': {'path': str(final), 'sha256': file_sha256(partial, check),
+                                'bytes': partial.stat().st_size, 'rows': rewritten.metadata.num_rows,
+                                'row_groups': ranges, 'schema_sha256': schema_sha256(rewritten.schema_arrow)},
+                  'boundaries': list(BOUNDARIES), 'end': END,
+                  'segments': [{'segment': name, 'first_row': start, 'stop_row': stop} for name, start, stop in plan],
+                  'aligned': is_aligned, 'identity': identity, 'result': result, 'disclosure': DISCLOSURE}
+        manifest_partial.write_text(json.dumps(record, indent=1, sort_keys=True) + '\n')
+        check()  # the last check: publication (two renames) happens only inside the permitted window
     except BaseException:
-        partial.unlink(missing_ok=True)
+        for leftover in (partial, manifest_partial):
+            leftover.unlink(missing_ok=True)
         raise
-    is_aligned = aligned(ranges, plan)
-    result = 'PASS' if identity['result'] == 'PASS' and is_aligned else 'FAIL'
-    final = output if result == 'PASS' else output.with_name(output.name + '.failed')
-    partial.rename(final)
-    record = {'experiment': reg.EXPERIMENT_ID, 'tool': 'experiments/pitchmdp/scripts/prepare_behavior_calibration_input.py',
-              'tool_sha256': file_sha256(Path(__file__)), 'created_utc': datetime.now(timezone.utc).isoformat(),
-              'python': platform.python_version(), 'pyarrow': pa.__version__,
-              'source': {'path': str(source), 'sha256': source_sha256, 'bytes': source.stat().st_size,
-                         'rows': original.metadata.num_rows, 'row_groups': row_group_ranges(original),
-                         'schema_sha256': schema_sha256(original.schema_arrow)},
-              'rewritten': {'path': str(final), 'sha256': file_sha256(final), 'bytes': final.stat().st_size,
-                            'rows': rewritten.metadata.num_rows, 'row_groups': ranges,
-                            'schema_sha256': schema_sha256(rewritten.schema_arrow)},
-              'boundaries': list(BOUNDARIES), 'end': END,
-              'segments': [{'segment': name, 'first_row': start, 'stop_row': stop} for name, start, stop in plan],
-              'aligned': is_aligned, 'identity': identity, 'result': result, 'disclosure': DISCLOSURE}
-    manifest.write_text(json.dumps(record, indent=1, sort_keys=True) + '\n')
+    try:
+        partial.rename(final)
+        manifest_partial.rename(manifest)
+    except BaseException:  # never leave a published file without its manifest (or the reverse)
+        for leftover in (partial, manifest_partial, final, manifest):
+            leftover.unlink(missing_ok=True)
+        raise
     return record
 
 

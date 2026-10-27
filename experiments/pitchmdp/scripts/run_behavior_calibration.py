@@ -26,8 +26,11 @@ budget.jsonl, bound to every stage record; a missing or truncated history refuse
 7,200 s, B2 fit soft cap 3,600 s (warning only), RSS 10 GiB for the runner peak RSS plus the
 supervised child tree (ps); the protection window 06:30-13:30 KST is never entered (refuse to start
 inside it; the memory probe, the preflight tests, inter-stage verification and every stage abort
-when it begins, keeping their outputs). Every unsuccessful attempt ends with a non-citable final.json
-(REFUSED / FAILED_RUNTIME / ABORTED / FAILED_INTEGRITY).
+when it begins, keeping their outputs). Every stage is sealed (stage.json, SHA256SUMS, chain record)
+inside the failure handler, a PASS under the guard. Every unsuccessful attempt ends with a non-citable
+final.json (REFUSED / FAILED_RUNTIME / ABORTED / FAILED_INTEGRITY); the citable final.json is the
+last write of a complete attempt, by publish_final, after decide is sealed, the command budget is
+closed and a final guard check passed.
 
 After registration, outside 06:30-13:30 KST, with the common heavy lock free (torch and LightGBM
 must share one OpenMP runtime: DYLD_LIBRARY_PATH=<venv torch/lib>, never KMP_DUPLICATE_LIB_OK):
@@ -510,27 +513,43 @@ def consumed_seconds(root):
         raise Refused('the attempt already ran a stage but its budget history is missing or empty', terminal=True)
     total, open_start, starts = 0., None, set()
     for row in rows:
-        if row['event'] == 'start':
+        if row.get('event') == 'start':
             if open_start is not None:
                 raise Refused('attempt budget unknown: a command has no end record', terminal=True)
+            before = _duration(row.get('consumed_before'), 'consumed_before')
+            if abs(before - total) > 1e-6:
+                raise Refused(f'budget history is not monotone: a command started at {before} s after {total} s '
+                              'were spent', terminal=True)
             open_start = row
             starts.add(row['sha256'])
-        elif row['event'] == 'end':
+        elif row.get('event') == 'end':
             if open_start is None or row.get('start_sha256') != open_start['sha256']:
                 raise IntegrityError('budget.jsonl end record does not close the open command')
-            total += float(row['seconds'])
+            total += _duration(row.get('seconds'), 'seconds')
             open_start = None
+        else:
+            raise Refused(f'malformed budget record (event {row.get("event")!r})', terminal=True)
     if open_start is not None:
         raise Refused('attempt budget unknown: a command has no end record', terminal=True)
     unbound = [r['stage'] for r in stage_rows if r.get('budget_start_sha256') not in starts]
     if unbound:
         raise Refused(f'stage records {unbound} are not bound to a command of budget.jsonl (history truncated or '
                       'replaced)', terminal=True)
-    recorded = max((float(r.get('attempt_seconds') or 0.) for r in stage_rows), default=0.)
-    if total + 1e-6 < recorded:
-        raise Refused(f'budget history ({total:.1f} s) is shorter than the stage records ({recorded:.1f} s)',
+    recorded = [_duration(r.get('attempt_seconds'), 'attempt_seconds') for r in stage_rows]
+    if any(b < a - 1e-6 for a, b in zip(recorded, recorded[1:])):
+        raise Refused('stage records hold attempt seconds that decrease (not monotone)', terminal=True)
+    if recorded and total + 1e-6 < recorded[-1]:
+        raise Refused(f'budget history ({total:.1f} s) is shorter than the stage records ({recorded[-1]:.1f} s)',
                       terminal=True)
     return total
+
+
+def _duration(value, name):
+    """A budget duration: a finite, nonnegative JSON number (not a boolean, not a string)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise Refused(f'malformed budget duration {name}={value!r} (finite nonnegative number required)',
+                      terminal=True)
+    return float(value)
 
 
 def begin_command(root, command, consumed):
@@ -781,10 +800,53 @@ class Run:
                 raise Refused(f'the config changed since {earlier} ran in this attempt; register a new attempt')
 
 
+def _outcome(exc):
+    """(status, error) of an exception raised by a stage."""
+    if isinstance(exc, Abort):
+        return 'ABORTED', {'reason': exc.reason, 'where': exc.where}
+    if isinstance(exc, KeyboardInterrupt):
+        return 'ABORTED', {'reason': 'INTERRUPTED'}
+    if isinstance(exc, Refused):
+        return 'REFUSED', {'detail': str(exc)}
+    if isinstance(exc, IntegrityError):
+        return 'FAILED_INTEGRITY', {'detail': str(exc)}
+    return 'FAILED_RUNTIME', {'detail': f'{type(exc).__name__}: {exc}', 'traceback': traceback.format_exc()}
+
+
+def seal_stage(run, stage, path, out, record, *, guarded):
+    """stage.json, SHA256SUMS and the stage chain record; the chain record is the last write, and a stage
+    without it never counts as passed. ``guarded`` (a PASS record): the guard runs before and inside every
+    hash loop, so a cap or window crossing while sealing raises and the stage cannot pass. Unguarded (a
+    record that is already non-citable): the outputs are preserved; checksums are skipped once a cap or
+    the protection window is reached."""
+    check = lambda: run.guard.check(f'{stage}:sealing')
+    if guarded:
+        check()
+    out.json('stage.json', record)
+    try:
+        out.text('SHA256SUMS', sha256sums(path, check))
+        sums_sha256 = sha256_file(path / 'SHA256SUMS', check)
+    except Abort:
+        if guarded:
+            raise
+        (path / 'SHA256SUMS').unlink(missing_ok=True)
+        out.json('stage.json', {**record, 'checksums': 'skipped: a cap or the protection window was reached'})
+        sums_sha256 = None
+    row = {'stage': stage, 'status': record['status'], 'stage_json_sha256': sha256_file(path / 'stage.json'),
+           'sha256sums_sha256': sums_sha256, 'budget_start_sha256': run.budget_start,
+           'attempt_seconds': record['budget']['attempt_seconds_at_end']}
+    if guarded:
+        check()
+    append_chain(run.attempt.root / 'stages.jsonl', row)
+
+
 def execute_stage(run, stage):
-    """Verify the earlier stages (under the guard), revalidate the registration, run one stage, write
-    its record, SHA256SUMS and chain entry (bound to this command's budget record); any non-PASS
-    status closes the attempt with a non-citable final.json. Returns the status."""
+    """Verify the earlier stages (under the guard), revalidate the registration, run one stage, then seal
+    it (stage.json, SHA256SUMS, chain record bound to this command's budget record) inside the failure
+    handler; a PASS is sealed under the guard. A non-PASS stage, or a failure / cap or window crossing
+    while sealing a PASS (then ABORTED or FAILED_RUNTIME), closes the attempt with a non-citable
+    final.json. A passed decide stage writes no final.json: the citable outcome is published last by
+    ``publish_final``."""
     run.guard.check(f'{stage}:verification')
     run.require_order(stage)  # hashes every earlier stage; the guard runs inside each hash loop
     path = run.attempt.stage_path(stage)
@@ -801,37 +863,56 @@ def execute_stage(run, stage):
             summary = STAGE_FUNCTIONS[stage](run, out)
             run.guard.check(f'{stage}:end')
         finally:
-            run.guard.stop_stage()  # disarmed before any record is written
+            run.guard.stop_stage()  # the alarm is disarmed; sealing runs under cooperative checks
             run.current_stage = None
-    except Abort as abort:
-        status, error = 'ABORTED', {'reason': abort.reason, 'where': abort.where}
-    except KeyboardInterrupt:
-        status, error = 'ABORTED', {'reason': 'INTERRUPTED'}
-    except Refused as refusal:
-        status, error = 'REFUSED', {'detail': str(refusal)}
-    except IntegrityError as failure:
-        status, error = 'FAILED_INTEGRITY', {'detail': str(failure)}
-    except Exception as failure:  # a bug: recorded; a bug-fix retry is a new attempt before any DEV metric
-        status, error = 'FAILED_RUNTIME', {'detail': f'{type(failure).__name__}: {failure}',
-                                           'traceback': traceback.format_exc()}
+    except (Abort, KeyboardInterrupt, Exception) as exc:  # a bug is recorded as FAILED_RUNTIME
+        status, error = _outcome(exc)
+    attempt_seconds = run.guard.consumed + run.guard.elapsed()
     record = {'experiment': reg.EXPERIMENT_ID, 'stage': stage, 'status': status, 'started_utc': started,
               'ended_utc': datetime.now(timezone.utc).isoformat(), 'seconds': time.perf_counter() - t0,
               'peak_rss_bytes': run.guard.rss(), 'seeds': run.seeds(), 'config_sha256': run.config_sha256,
               'git_commit': run.commit, 'summary': summary, 'error': error, 'warnings': list(run.guard.warnings),
-              'citable': status == 'PASS', 'revalidation': revalidation, 'reads': run.reads(stage),
-              'read_summary': run.log.summary([stage]), 'environment': environment()}
-    attempt_seconds = run.guard.consumed + run.guard.elapsed()
-    record['budget'] = {'command_start_sha256': run.budget_start, 'attempt_seconds_at_end': attempt_seconds}
+              'citable': status == 'PASS' and stage != 'decide', 'revalidation': revalidation,
+              'budget': {'command_start_sha256': run.budget_start, 'attempt_seconds_at_end': attempt_seconds}}
+    if stage == 'decide':
+        record['citable_outcome'] = 'final.json, published last by publish_final (never by this record)'
     run.guard.warnings.clear()
-    out.json('stage.json', record)
-    out.text('SHA256SUMS', sha256sums(path))
-    append_chain(run.attempt.root / 'stages.jsonl',
-                 {'stage': stage, 'status': status, 'stage_json_sha256': sha256_file(path / 'stage.json'),
-                  'sha256sums_sha256': sha256_file(path / 'SHA256SUMS'), 'budget_start_sha256': run.budget_start,
-                  'attempt_seconds': attempt_seconds})
+    try:
+        record.update(reads=run.reads(stage), read_summary=run.log.summary([stage]), environment=environment())
+        seal_stage(run, stage, path, out, record, guarded=status == 'PASS')
+    except (Abort, KeyboardInterrupt, Exception) as exc:  # sealing failed or crossed a cap / the window
+        sealed = 'ABORTED' if isinstance(exc, (Abort, KeyboardInterrupt)) else 'FAILED_RUNTIME'
+        status, error = (sealed if status == 'PASS' else status), {'stage': error, 'sealing': _outcome(exc)[1]}
+        record.update(status=status, error=error, citable=False)
+        try:  # preserve a non-citable record of the stage (best effort; final.json below closes the attempt)
+            seal_stage(run, stage, path, out, record, guarded=False)
+        except (Abort, KeyboardInterrupt, Exception):
+            pass
     if status != 'PASS':
         write_final(run.attempt.root, outcome=status, stage=stage, reason=error, config_sha256=run.config_sha256)
     return status
+
+
+def publish_final(run):
+    """The citable attempt outcome, written last: only when the decide stage is sealed as PASS (verified
+    against its chain digests), after the command budget is closed (launch) and a final guard check
+    passed. Any failure before this write leaves a non-citable terminal record (launch / caller)."""
+    if run.attempt.closed():
+        raise Refused('the attempt is already closed; no outcome is published twice')
+    if not run.attempt.passed('decide'):
+        raise IntegrityError('decide is not sealed as PASS; no citable outcome')
+    record = json.loads((run.attempt.stage_path('decide') / 'stage.json').read_text())
+    label = (record.get('summary') or {}).get('label')
+    if label not in reg.DECISION_LABELS:
+        raise IntegrityError(f'decide recorded no registered decision label ({label!r})')
+    decision = run.attempt.stage_path('decide') / 'decision.json'
+    extra = {'git_commit': run.commit, 'budget_start_sha256': run.budget_start,
+             'decision_sha256': sha256_file(decision) if decision.exists() else None,
+             'decide_stage_json_sha256': run.attempt.record('decide')['stage_json_sha256']}
+    run.guard.check('publish final')  # the last guard check; the write below is the last write
+    write_final(run.attempt.root, outcome=label, stage='decide', reason=None, config_sha256=run.config_sha256,
+                citable=True, extra=extra)
+    return label
 
 
 def environment():
@@ -1489,9 +1570,8 @@ def stage_decide(run, out):
                                                                 'real-data stage)'},
                 'descriptive_only': config['verdict_rule']['descriptive_only'],
                 'not_claimed': 'no OPE value or Delta; DEV is exposed development; no service change'}
+    decision['citable'] = False  # the citable outcome is final.json, published last (publish_final)
     out.json('decision.json', decision)
-    write_final(run.attempt.root, outcome=label, stage='decide', reason=None, config_sha256=run.config_sha256,
-                citable=True, extra={'git_commit': run.commit})
     return {'label': label, 'candidate_status': statuses}
 
 
@@ -1773,7 +1853,9 @@ def launch(config_path, local_config_path, destination, command, env=None):
                     if status != 'PASS':
                         return 3 if status == 'ABORTED' else 2 if status in ('FAILED_INTEGRITY', 'REFUSED') else 1
             finally:
-                end_command(dest, start, guard.elapsed())
+                end_command(dest, start, guard.elapsed())  # the command budget closes before any citable write
+            if command == 'run':
+                print(json.dumps({'final': publish_final(run)}), flush=True)  # the last write of the attempt
     except Abort as abort:
         _close(dest, owned, 'ABORTED', command, {'reason': abort.reason, 'where': abort.where}, config)
         print(json.dumps({'aborted': str(abort)}), file=sys.stderr, flush=True)

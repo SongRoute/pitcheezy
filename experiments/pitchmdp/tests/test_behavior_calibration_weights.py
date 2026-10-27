@@ -202,6 +202,23 @@ def test_t10_malformed_allowlisted_values_duplicates_and_bad_lines_refuse(tmp_pa
                        manifest_sha256=bw.file_sha256(manifest), runtime_sha256='a' * 64)
 
 
+def test_t10_duplicate_members_are_refused_at_every_level():
+    """Review round 3, #4: duplicates inside a skipped object (values never decoded; names compared
+    after JSON unescaping) and inside an allowlisted composite value (header pins) refuse the line."""
+    refused = [('{"kind":"decision","reward":{"a":1,"a":2}}', bw.DECISION_SCHEMA),
+               ('{"kind":"decision","reward":[{"b":{"c":1,"c":[2]}}]}', bw.DECISION_SCHEMA),
+               ('{"kind":"decision","reward":{"a":1,"\\u0061":2}}', bw.DECISION_SCHEMA),
+               ('{"kind":"header","runtime_sha256":"x","pins":{"x":1,"x":2}}', bw.HEADER_SCHEMA),
+               ('{"kind":"decision","result":{"mask":[true],"mask":[false]}}', bw.DECISION_SCHEMA)]
+    for line, schema in refused:
+        with pytest.raises(IntegrityError, match='duplicate'):
+            bw.scan_line(line, schema, {})
+    assert bw.scan_line('{"kind":"decision","reward":{"a":1,"b":{"a":2}}}', bw.DECISION_SCHEMA, {}) == \
+        {'kind': 'decision'}
+    assert bw.scan_line('{"kind":"header","runtime_sha256":"x","pins":{"x":{"y":1},"z":{"y":2}}}',
+                        bw.HEADER_SCHEMA, {})['pins'] == {'x': {'y': 1}, 'z': {'y': 2}}
+
+
 def test_kl_is_infinite_when_new_mass_leaves_the_b0_support():
     """Review finding 9: the registered mean KL is infinite as soon as one decision puts new mass
     outside the B0 support; the finite-only statistic is reported under its own name."""

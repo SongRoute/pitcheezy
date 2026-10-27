@@ -166,6 +166,39 @@ def test_paths_pins_overwrites_order_and_the_window_are_refused(source, tmp_path
                      source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(), now=lambda: AFTERNOON)
 
 
+def test_pass_is_never_published_once_the_window_has_begun(source, tmp_path, monkeypatch):
+    """Review round 3, #1: the window is checked through the final hashing and right before the two
+    publishing renames; if it has begun, nothing (output, manifest, partials) remains and the CLI exits
+    non-zero."""
+    counter = {'n': 0}
+
+    def counting():
+        counter['n'] += 1
+        return AFTERNOON
+    first = tmp_path / 'A3' / 'inputs' / 'first.parquet'
+    assert tool.prepare(source['path'], first, source_sha256=source['sha'], now=counting)['result'] == 'PASS'
+    total = counter['n']
+
+    def late_clock():
+        calls = {'n': 0}
+
+        def now():  # the window begins exactly at the last check, after every hash and the manifest draft
+            calls['n'] += 1
+            return AFTERNOON if calls['n'] < total else MORNING
+        return now, calls
+    now, calls = late_clock()
+    with pytest.raises(tool.PrepareRefused, match='protection window'):
+        run(source, now=now)
+    assert calls['n'] == total
+    assert sorted(p.name for p in source['output'].parent.iterdir()) == ['first.identity.json', 'first.parquet']
+    real_window = tool.window_check
+    now, calls = late_clock()
+    monkeypatch.setattr(tool, 'window_check', lambda clock=None: real_window(now))
+    assert tool.main(['--source', str(source['path']), '--output', str(source['output']),
+                      '--source-sha256', source['sha']]) == 2
+    assert sorted(p.name for p in source['output'].parent.iterdir()) == ['first.identity.json', 'first.parquet']
+
+
 def test_the_tool_reads_no_label_column_into_python_objects(source):
     """Static: the tool's source never calls a value-materializing method, imports no pandas, and turns
     only game_date into numpy values. Runtime: a fresh interpreter prepares a synthetic input without

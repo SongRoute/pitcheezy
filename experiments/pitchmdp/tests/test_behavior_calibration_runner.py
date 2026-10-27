@@ -408,13 +408,21 @@ def test_real_source_revalidation_checks_file_git_and_runner(tmp_path, draft):
         source.revalidate(None, 'calibrate')
 
 
-def stub_all(monkeypatch, clock=None, seconds=0.):
-    def stage(run, out):
-        if clock is not None:
-            clock.t += seconds
-        return {}
+ADOPT = 'ADOPT_FOR_2027_REGISTRATION:B1'
+
+
+def stub_all(monkeypatch, clock=None, seconds=0., label=ADOPT):
+    def make(name):
+        def stage(run, out):
+            if clock is not None:
+                clock.t += seconds
+            if name == 'decide':
+                out.json('decision.json', {'label': label, 'citable': False})
+                return {'label': label}
+            return {}
+        return stage
     for name in reg.STAGES:
-        monkeypatch.setitem(runner.STAGE_FUNCTIONS, name, stage)
+        monkeypatch.setitem(runner.STAGE_FUNCTIONS, name, make(name))
 
 
 def write_registered(tmp_path, draft):
@@ -499,7 +507,8 @@ def test_launch_gate_failure_on_a_running_attempt_is_terminal_and_busy_lock_is_n
     assert final['label'] == 'REFUSED' and 'uncommitted' in final['reason']
 
 
-@pytest.mark.parametrize('damage', ['missing', 'empty', 'cut', 'torn', 'replaced', 'shortened'])
+@pytest.mark.parametrize('damage', ['missing', 'empty', 'cut', 'torn', 'replaced', 'shortened', 'nan_string',
+                                    'negative', 'boolean', 'numeric_string', 'not_monotone'])
 def test_a_started_attempt_needs_its_bound_budget_history(tmp_path, draft, monkeypatch, damage):
     """Review round 2, #5: after a passed smoke, a missing, empty, cut, torn, replaced or shortened
     budget history refuses (fail closed); a fresh 14,400 s budget is never granted."""
@@ -521,16 +530,102 @@ def test_a_started_attempt_needs_its_bound_budget_history(tmp_path, draft, monke
         budget.unlink()
         start = runner.begin_command(destination, 'smoke', 0.)
         runner.end_command(destination, start, 100.)
-    else:  # the same start record, a forged shorter end record
+    elif damage == 'shortened':  # the same start record, a forged shorter end record
         budget.unlink()
         start = runner.append_chain(budget, {k: v for k, v in json.loads(lines[0]).items()
                                              if k not in ('seq', 'prev', 'sha256')})
         runner.end_command(destination, start, 1.)
+    elif damage == 'not_monotone':  # a second command claims it started with nothing consumed
+        start = runner.append_chain(budget, {'event': 'start', 'command': 'run', 'consumed_before': 0.,
+                                             'utc': 'x'})
+        runner.append_chain(budget, {'event': 'end', 'command': 'run', 'start_sha256': start['sha256'],
+                                     'seconds': 5., 'utc': 'y'})
+    else:  # a correctly rehashed end record with a malformed duration (review round 3, #3)
+        bad = {'nan_string': 'nan', 'negative': -100., 'boolean': True, 'numeric_string': '100'}[damage]
+        budget.unlink()
+        start = runner.append_chain(budget, {k: v for k, v in json.loads(lines[0]).items()
+                                             if k not in ('seq', 'prev', 'sha256')})
+        runner.append_chain(budget, {'event': 'end', 'command': 'smoke', 'start_sha256': start['sha256'],
+                                     'seconds': bad, 'utc': 'z'})
     code = runner.launch(path, tmp_path / 'local.json', destination, 'run', launch_env(clock=clock))
     assert code == 2 and not runner.Attempt(destination).stage_path('census').exists()
     final = json.loads((destination / 'final.json').read_text())
     assert final['label'] in ('REFUSED', 'FAILED_INTEGRITY') and final['citable'] is False
-    assert any(word in final['reason'] for word in ('budget', 'chain', 'unreadable', 'end record', 'bound'))
+    assert any(word in final['reason'] for word in ('budget', 'chain', 'unreadable', 'end record', 'bound',
+                                                    'duration', 'monotone'))
+
+
+def test_the_citable_outcome_is_the_last_write_after_sealing_and_budget_closure(tmp_path, draft, monkeypatch):
+    """Review round 3, #2: a complete run publishes the citable final.json last, after decide is sealed
+    and the run command's budget record is closed."""
+    path, destination = write_registered(tmp_path, draft)
+    stub_all(monkeypatch)
+    assert runner.launch(path, tmp_path / 'local.json', destination, 'smoke', launch_env()) == 0
+    seen = {}
+    real_write_final = runner.write_final
+
+    def spy(root, **kwargs):
+        rows = runner.read_chain(Path(root) / runner.BUDGET)
+        seen.update(budget_closed=rows[-1]['event'] == 'end', decide=runner.Attempt(root).status('decide'),
+                    citable=kwargs.get('citable'))
+        return real_write_final(root, **kwargs)
+    monkeypatch.setattr(runner, 'write_final', spy)
+    assert runner.launch(path, tmp_path / 'local.json', destination, 'run', launch_env()) == 0
+    assert seen == {'budget_closed': True, 'decide': 'PASS', 'citable': True}
+    final = json.loads((destination / 'final.json').read_text())
+    assert final['label'] == ADOPT and final['citable'] is True
+    assert final['budget_start_sha256'] == runner.read_chain(destination / runner.BUDGET)[-2]['sha256']
+    decide = json.loads((runner.Attempt(destination).stage_path('decide') / 'stage.json').read_text())
+    assert decide['citable'] is False and 'final.json' in decide['citable_outcome']
+    guard = runner.Guard(reg.CAPS, reg.PROTECTION_WINDOW_KST, now=lambda: AFTERNOON, alarm=False)
+    again = runner.Run(json.loads(path.read_text()), destination=destination, source=StubSource(), guard=guard,
+                       commit='a' * 40)
+    with pytest.raises(runner.Refused, match='closed'):
+        runner.publish_final(again)  # an outcome is published once
+
+
+@pytest.mark.parametrize('failure', ['stage_json', 'checksum_window', 'chain', 'budget_closure', 'publish_window'])
+def test_a_failure_during_finalization_never_leaves_a_citable_adoption(tmp_path, draft, monkeypatch, failure):
+    """Review round 3, #2: failures or a window crossing while sealing decide, closing the command
+    budget or publishing end non-citable (FAILED_RUNTIME / ABORTED); no ADOPT label is ever citable."""
+    path, destination = write_registered(tmp_path, draft)
+    stub_all(monkeypatch)
+    assert runner.launch(path, tmp_path / 'local.json', destination, 'smoke', launch_env()) == 0
+    decide_dir = runner.Attempt(destination).stage_path('decide')
+    now = lambda: AFTERNOON
+    if failure == 'stage_json':
+        real_json = runner.StageDir.json
+
+        def broken(self, name, value):
+            if name == 'stage.json' and self.path == decide_dir:
+                raise OSError('disk full while writing stage.json')
+            return real_json(self, name, value)
+        monkeypatch.setattr(runner.StageDir, 'json', broken)
+    elif failure == 'checksum_window':  # the window begins while the decide checksums are computed
+        now = lambda: MORNING if (decide_dir / 'stage.json').exists() else AFTERNOON
+    elif failure == 'chain':
+        real_append = runner.append_chain
+
+        def broken(target, body):
+            if Path(target).name == 'stages.jsonl' and body.get('stage') == 'decide':
+                raise OSError('disk full while appending the stage chain')
+            return real_append(target, body)
+        monkeypatch.setattr(runner, 'append_chain', broken)
+    elif failure == 'budget_closure':
+        real_end = runner.end_command
+
+        def broken(root, start, seconds):
+            if start['command'] == 'run':
+                raise OSError('disk full while closing the command budget')
+            return real_end(root, start, seconds)
+        monkeypatch.setattr(runner, 'end_command', broken)
+    else:  # the window begins after the budget closure, before the citable write
+        now = lambda: MORNING if len(runner.read_chain(destination / runner.BUDGET)) >= 4 else AFTERNOON
+    code = runner.launch(path, tmp_path / 'local.json', destination, 'run', launch_env(now=now))
+    assert code != 0
+    final = json.loads((destination / 'final.json').read_text())
+    assert final['citable'] is False and final['label'] in ('FAILED_RUNTIME', 'ABORTED')
+    assert final['label'] == ('ABORTED' if 'window' in failure else 'FAILED_RUNTIME')
 
 
 def test_stage_records_are_bound_to_the_command_budget(tmp_path, draft, monkeypatch):

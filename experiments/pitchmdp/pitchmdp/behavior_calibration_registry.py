@@ -207,10 +207,13 @@ IMPLEMENTATION_CHOICES = {
                 'registration pins',
     'ledger_parsing': 'S6 ledger lines are scanned key by key: allowlisted values are decoded, every other value is '
                       'validated against the JSON grammar and skipped without being decoded into a Python object; a '
-                      'malformed line refuses the ledger',
+                      'malformed line or a duplicate member at any level refuses the ledger',
     'attempt_budget': 'the 14,400 s total covers the whole attempt from the smoke command through decide '
-                      '(budget.jsonl, bound to every stage record); a missing, empty or truncated history of a '
-                      'started attempt refuses; preflight and the memory probe are supervised under the same deadline',
+                      '(budget.jsonl, bound to every stage record; durations must be finite nonnegative numbers and '
+                      'cumulative consumption monotone); a missing, empty, truncated or malformed history of a '
+                      'started attempt refuses; preflight and the memory probe are supervised under the same '
+                      'deadline; the citable final.json is the last write, after decide is sealed under the guard, '
+                      'the command budget is closed and a final guard check',
     'memory_rule': 'the 10 GiB RSS cap applies to the runner peak RSS (getrusage) plus the current RSS of every '
                    'process in the supervised child tree (ps, polled every 0.5 s); the peak child-tree RSS is '
                    'recorded',

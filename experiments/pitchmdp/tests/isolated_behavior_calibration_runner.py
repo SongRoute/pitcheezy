@@ -29,8 +29,10 @@ def attempt(tmp_path_factory):
     source = SyntheticSource(world, ledger, root / 'data', extras=extra_rows())
     run = runner.Run(config, destination=destination, source=source, guard=guard, commit='0' * 40)
     statuses = {stage: runner.execute_stage(run, stage) for stage in reg.STAGES}
+    assert not (destination / 'final.json').exists()  # decide sealed: no citable outcome until it is published
+    published = runner.publish_final(run) if all(s == 'PASS' for s in statuses.values()) else None
     return {'run': run, 'statuses': statuses, 'destination': destination, 'config': config, 'world': world,
-            'ledger': ledger, 'guard': guard, 'source': source}
+            'ledger': ledger, 'guard': guard, 'source': source, 'published': published}
 
 
 def stage_json(attempt, stage, name):
@@ -52,7 +54,8 @@ def test_every_stage_passes_in_order_with_records(attempt):
         record = stage_json(attempt, stage, 'stage.json')
         assert record['config_sha256'] == attempt['run'].config_sha256 and record['git_commit'] == '0' * 40
         assert record['seeds'] == attempt['config']['seeds'] and record['peak_rss_bytes'] > 0
-        assert record['seconds'] >= 0 and record['citable'] is True and record['revalidation']['stage'] == stage
+        assert record['seconds'] >= 0 and record['citable'] is (stage != 'decide')
+        assert record['revalidation']['stage'] == stage
     assert [a['addendum'] for a in attempt['run'].attempt.addenda()] == ['smoke', 'freeze-primary', 'freeze-xf']
     assert attempt['source'].opens == 1 and attempt['source'].revalidations == list(reg.STAGES)
 
@@ -137,7 +140,9 @@ def test_integrity_scoring_weights_and_decision(attempt):
     decision = stage_json(attempt, 'decide', 'decision.json')
     assert decision['label'] in reg.DECISION_LABELS and set(decision['candidate_status'].values()) <= set(reg.CANDIDATE_STATUSES)
     final = json.loads((attempt['destination'] / 'final.json').read_text())
-    assert final['label'] == decision['label'] and final['citable'] is True
+    assert final['label'] == decision['label'] == attempt['published'] and final['citable'] is True
+    assert decision['citable'] is False and final['decision_sha256'] == runner.sha256_file(
+        attempt['run'].attempt.stage_path('decide') / 'decision.json')
 
 
 def test_rerun_and_rescoring_are_refused(attempt):

@@ -7,8 +7,9 @@ read by a key-by-key scanner: only the registered allowlist is decoded (header: 
 runtime_sha256, pins; decisions: identity/state fields and result.{mask, logging, reference,
 candidate, logged_index, rho_reference, rho_candidate}); the value of every other member
 (``q_*``, ``mc_se``, fingerprints, details, ...) is validated against the JSON grammar and skipped,
-never decoded into a Python object. A malformed line (bad string, escape, number, literal or
-bracket structure), a duplicate member or a non-UTF-8 line refuses the ledger. ``pa_values.parquet``,
+never decoded into a Python object (only member names of skipped objects are decoded, to refuse
+duplicates). A malformed line (bad string, escape, number, literal or bracket structure), a
+duplicate member at any nesting level or a non-UTF-8 line refuses the ledger. ``pa_values.parquet``,
 ``dr.json`` or any other path is refused. Rewards are never read.
 
 E0 is rebuilt from each PA's first row with ``PolicyRuntime.start_population`` itself (borrowed,
@@ -47,8 +48,9 @@ HEADER_SCHEMA = {'kind': None, **{k: None for k in ALLOWED_HEADER}}
 DECISION_SCHEMA = {**{k: None for k in ALLOWED_DECISION}, 'result': {k: None for k in ALLOWED_RESULT}}
 PARSING_DISCLOSURE = ('ledger lines are scanned key by key: allowlisted values are decoded (strict json raw_decode, '
                       'NaN / Infinity refused); the value of every other member is validated against the JSON grammar '
-                      'and skipped, never decoded into a Python object; a malformed or non-UTF-8 line or a duplicate '
-                      'member refuses the ledger (FAILED_INTEGRITY); the file bytes are sha256-hashed before and after '
+                      'and skipped, never decoded into a Python object (only the member names of skipped objects are '
+                      'decoded, to refuse duplicates); a malformed or non-UTF-8 line or a duplicate member at any '
+                      'level refuses the ledger (FAILED_INTEGRITY); the file bytes are sha256-hashed before and after '
                       'reading as a separate authorized operation')
 
 
@@ -70,7 +72,15 @@ def _reject_constant(name):
     raise IntegrityError(f'non-JSON constant {name} in a ledger line')
 
 
-_DECODER = json.JSONDecoder(parse_constant=_reject_constant)  # strict JSON: NaN / Infinity refused
+def _unique_members(pairs):
+    names = [name for name, _ in pairs]
+    if len(set(names)) != len(names):
+        raise IntegrityError('duplicate member in an allowlisted ledger value')
+    return dict(pairs)
+
+
+# strict JSON for allowlisted values: NaN / Infinity refused, duplicate members refused at every level
+_DECODER = json.JSONDecoder(parse_constant=_reject_constant, object_pairs_hook=_unique_members)
 _WS = re.compile(r'[ \t\n\r]*')
 _STRING = re.compile(r'"(?:[^"\\\x00-\x1f]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*"')
 _NUMBER = re.compile(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?')
@@ -92,7 +102,8 @@ def _boundary(text, end):
 def _skip(text, i, depth=0):
     """Index just past the JSON value starting at ``text[i]``. The value is validated against the JSON
     grammar (strict strings and escapes, numbers, true / false / null, matched arrays and objects with
-    commas and colons) but nothing is decoded into a Python object."""
+    commas and colons, no duplicate member in any object) but no value is decoded into a Python object;
+    only the member names of skipped objects are decoded, for the duplicate check."""
     if depth > MAX_DEPTH:
         raise IntegrityError('ledger value nested too deeply')
     first = text[i] if i < len(text) else ''
@@ -103,13 +114,22 @@ def _skip(text, i, depth=0):
         return match.end()
     if first in '[{':
         close, i = (']' if first == '[' else '}'), _ws(text, i + 1)
+        names = set()
         if text.startswith(close, i):
             return i + 1
         while True:
             if first == '{':
                 if not text.startswith('"', i):
                     raise IntegrityError('expected a member name in a ledger object')
-                i = _ws(text, _skip(text, i, depth + 1))
+                end = _skip(text, i, depth + 1)
+                try:
+                    name, _ = scanstring(text, i + 1)
+                except ValueError as error:
+                    raise IntegrityError(f'malformed member name in a ledger line: {error}') from error
+                if name in names:
+                    raise IntegrityError('duplicate member in a skipped ledger value')
+                names.add(name)
+                i = _ws(text, end)
                 if not text.startswith(':', i):
                     raise IntegrityError("expected ':' in a ledger object")
                 i = _ws(text, i + 1)
