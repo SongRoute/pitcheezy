@@ -67,7 +67,8 @@
       "experiments/pitchmdp/pitchmdp/behavior_calibration.py (fit_temperature, fit_vector, cv_select)",
       "experiments/pitchmdp/pitchmdp/behavior_metrics.py (18-class NLL/Brier/top-label ECE10, game bootstrap, near-zero share, SC-1, SC-3)",
       "experiments/pitchmdp/pitchmdp/behavior_weights.py (allowlisted S6 ledger reader, E0 reconstruction, PA weights, B0 ESS reproduction, weight shift, mean-weight test)",
-      "experiments/pitchmdp/pitchmdp/behavior_calibration_registry.py (registered values, config_check)"
+      "experiments/pitchmdp/pitchmdp/behavior_calibration_registry.py (registered values, config_check)",
+      "experiments/pitchmdp/pitchmdp/behavior_data.py (stage-specific acquisition: ProcessedReader / RawKeysReader / A3Inputs and the read log of every decode)"
     ],
     "reused_read_only": [
       "experiments/pitchmdp/pitchmdp/rollout_policy.py CategoricalBC (:68-124)",
@@ -122,6 +123,7 @@
       "experiments/pitchmdp/tests/test_behavior_calibration_calibration.py",
       "experiments/pitchmdp/tests/test_behavior_calibration_metrics.py",
       "experiments/pitchmdp/tests/test_behavior_calibration_weights.py",
+      "experiments/pitchmdp/tests/test_behavior_calibration_data.py",
       "experiments/pitchmdp/tests/test_behavior_calibration_runner.py"
     ]
   },
@@ -1083,7 +1085,7 @@
       "state_checks": 2000,
       "b2_fits": 2,
       "b2_rounds": 300,
-      "rows": "first train_rows TRAIN BC_P rows in frame order (game_date, game_pk, at_bat_number, pitch_number)"
+      "rows": "first train_rows TRAIN BC_P rows, read only from processed row groups whose game_date statistics end on or before 2025-04-30"
     },
     "run_labels": [
       "ADOPT_FOR_2027_REGISTRATION:B1",
@@ -1091,8 +1093,30 @@
       "KEEP_B0",
       "FAILED_INTEGRITY",
       "NOT_EVALUABLE",
+      "REFUSED",
+      "FAILED_RUNTIME",
       "ABORTED"
     ],
+    "terminal_failures": [
+      "REFUSED",
+      "FAILED_RUNTIME",
+      "ABORTED",
+      "FAILED_INTEGRITY"
+    ],
+    "terminal_failures_rule": "every unsuccessful attempt ends with a non-citable final.json naming one of these outcomes and the failure reason",
+    "read_policy": {
+      "free_columns": ["game_pk", "at_bat_number", "pitch_number", "game_date", "game_type", "pitcher", "batter", "stand", "p_throws", "balls", "strikes", "outs_when_up", "bases", "inning", "inning_topbot", "home_score", "away_score"],
+      "guarded_columns": ["pitch_type", "description", "events", "is_pa_terminal", "launch_angle"],
+      "smoke": "free + guarded columns of processed row groups whose game_date maximum <= 2025-04-30 only",
+      "census": "free columns only (no guarded column is decoded)",
+      "pre_gate_limit": "2025-05-31",
+      "pre_gate": "guarded columns decoded per row group only up to its last row dated <= 2025-05-31 (pyarrow iter_batches with batch_size = that prefix); row groups must be date-sorted",
+      "prefix_margin_rows": 65536,
+      "after_gate": "guarded columns of row groups holding DEV rows only after freeze-primary is pinned and s6-integrity passed",
+      "raw_keys": "raw Statcast files: game_date, game_pk, at_bat_number, pitch_number, pitcher only (workload); the smoke decodes only raw row groups whose game_date maximum <= 2025-04-30"
+    },
+    "reviewed_code_scope": ["experiments", "src", "scripts", "pyproject.toml"],
+    "dependency_pins": {"group": "research-a3", "lightgbm": "4.6.0"},
     "output_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01",
     "heavy_lock": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/.heavy.lock",
     "destination_rule": "a new attempt directory directly under output_root; never a repository results/ directory or a sealed ML-POLICY-VAL-v1 (S5/S6) stage directory",
@@ -1118,7 +1142,11 @@
       "quantiles": "numpy linear quantiles for rho / W_T / CI summaries",
       "smoke": "first 50,000 TRAIN BC_P rows; B2 fitted twice with the registered params and 300 rounds",
       "xf_artifacts": "freeze-xf pins the XF out-of-fold prediction arrays (npy) and their row keys",
-      "config_sha256": "canonical sha256 of the config with code.config_sha256 nulled and registration.addenda_records removed"
+      "config_sha256": "canonical sha256 of the config with code.config_sha256 nulled and registration.addenda_records removed",
+      "previous_keys": "every count table keeps its own sorted previous-label vocabulary; a label absent from it matches no cell (CategoricalBC raw-string semantics)",
+      "read_policy": "stage-specific acquisition (READ_POLICY); rows dated before 2023-05-15 that share a row group with TRAIN rows are decoded and dropped (recorded in the read log)",
+      "ledger_parsing": "S6 ledger lines are scanned key by key: allowlisted values are decoded, every other value is skipped by the scanner and never decoded into a Python object",
+      "attempt_budget": "the 14,400 s total covers the whole attempt from the smoke command through decide (budget.jsonl); preflight and the memory probe are supervised under the same deadline"
     }
   }
 }

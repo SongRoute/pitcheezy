@@ -102,13 +102,49 @@ DATA_PINS = {'processed_sha256': '9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218
 
 STAGES = ('smoke', 'census', 'fit', 'calibrate', 'freeze-primary', 's6-integrity', 'xf-fit', 'freeze-xf',
           'score-dev', 's6-weights', 'decide')
-RUN_LABELS = ('ADOPT_FOR_2027_REGISTRATION:B1', 'ADOPT_FOR_2027_REGISTRATION:B2', 'KEEP_B0', 'FAILED_INTEGRITY',
-              'NOT_EVALUABLE', 'ABORTED')
+DECISION_LABELS = ('ADOPT_FOR_2027_REGISTRATION:B1', 'ADOPT_FOR_2027_REGISTRATION:B2', 'KEEP_B0', 'FAILED_INTEGRITY',
+                   'NOT_EVALUABLE')
+# Terminal, non-citable outcomes the runner writes to final.json for every unsuccessful attempt.
+TERMINAL_FAILURES = ('REFUSED', 'FAILED_RUNTIME', 'ABORTED', 'FAILED_INTEGRITY')
+RUN_LABELS = DECISION_LABELS + ('REFUSED', 'FAILED_RUNTIME', 'ABORTED')
 CANDIDATE_STATUSES = ('ELIGIBLE', 'INELIGIBLE', 'CALIBRATION_FAILED', 'NOT_EVALUABLE')
 REGISTERED_LABELS = ['ADOPT_FOR_2027_REGISTRATION:<candidate>', 'KEEP_B0', 'FAILED_INTEGRITY', 'NOT_EVALUABLE']
 
 SMOKE = {'train_rows': 50000, 'state_checks': 2000, 'b2_fits': 2, 'b2_rounds': 300,
-         'rows': 'first train_rows TRAIN BC_P rows in frame order (game_date, game_pk, at_bat_number, pitch_number)'}
+         'rows': 'first train_rows TRAIN BC_P rows, read only from processed row groups whose game_date '
+                 'statistics end on or before 2025-04-30'}
+
+# Stage-specific acquisition (behavior_data): which processed columns each phase may decode.
+FREE_COLUMNS = ('game_pk', 'at_bat_number', 'pitch_number', 'game_date', 'game_type', 'pitcher', 'batter', 'stand',
+                'p_throws', 'balls', 'strikes', 'outs_when_up', 'bases', 'inning', 'inning_topbot', 'home_score',
+                'away_score')
+GUARDED_COLUMNS = ('pitch_type', 'description', 'events', 'is_pa_terminal', 'launch_angle')
+READ_POLICY = {'free_columns': list(FREE_COLUMNS), 'guarded_columns': list(GUARDED_COLUMNS),
+               'smoke': 'free + guarded columns of processed row groups whose game_date maximum <= 2025-04-30 only',
+               'census': 'free columns only (no guarded column is decoded)',
+               'pre_gate_limit': '2025-05-31',
+               'pre_gate': 'guarded columns decoded per row group only up to its last row dated <= 2025-05-31 '
+                           '(pyarrow iter_batches with batch_size = that prefix); row groups must be date-sorted',
+               'prefix_margin_rows': 65536,
+               'after_gate': 'guarded columns of row groups holding DEV rows only after freeze-primary is pinned '
+                             'and s6-integrity passed',
+               'raw_keys': 'raw Statcast files: game_date, game_pk, at_bat_number, pitch_number, pitcher only '
+                           '(workload); the smoke decodes only raw row groups whose game_date maximum <= 2025-04-30'}
+
+# Registration pins: immutable schema (the config list cannot weaken it). kind -> format check.
+REGISTRATION_PIN_SCHEMA = (('registration.registered_kst', 'kst_datetime'),
+                           ('registration.design_review_reference', 'text'),
+                           ('registration.code_review_reference', 'text'),
+                           ('code.branch', 'text'), ('code.commit', 'sha1'), ('code.config_sha256', 'sha256'),
+                           ('code.runner_sha256', 'sha256'), ('data.s6_ledger.ledger_sha256', 'sha256'),
+                           ('data.s6_ledger.manifest_sha256', 'sha256'),
+                           ('data.s6_ledger.runtime_sha256.value', 'expected_runtime'))
+DRAFT_PIN_FIELDS = ['code.branch', 'code.commit', 'code.config_sha256', 'code.runner_sha256',
+                    'data.s6_ledger.ledger_sha256', 'data.s6_ledger.manifest_sha256',
+                    'data.s6_ledger.runtime_sha256.value']
+REVIEWED_CODE_SCOPE = ('experiments', 'src', 'scripts', 'pyproject.toml')
+DEPENDENCY_GROUP = 'research-a3'
+DEPENDENCY_PINS = {'lightgbm': '4.6.0'}
 
 # Values the design leaves open; fixed here by this implementation (reported, pinned like the rest).
 IMPLEMENTATION_CHOICES = {
@@ -133,6 +169,14 @@ IMPLEMENTATION_CHOICES = {
     'xf_artifacts': 'freeze-xf pins the XF out-of-fold prediction arrays (npy) and their row keys',
     'config_sha256': 'canonical sha256 of the config with code.config_sha256 nulled and '
                      'registration.addenda_records removed',
+    'previous_keys': 'every count table keeps its own sorted previous-label vocabulary; a label absent from it '
+                     'matches no cell (CategoricalBC raw-string semantics)',
+    'read_policy': 'stage-specific acquisition (READ_POLICY); rows dated before 2023-05-15 that share a row group '
+                   'with TRAIN rows are decoded and dropped (recorded in the read log)',
+    'ledger_parsing': 'S6 ledger lines are scanned key by key: allowlisted values are decoded, every other value '
+                      'is skipped by the scanner and never decoded into a Python object',
+    'attempt_budget': 'the 14,400 s total covers the whole attempt from the smoke command through decide '
+                      '(budget.jsonl); preflight and the memory probe are supervised under the same deadline',
 }
 
 
@@ -231,6 +275,11 @@ PINS = {
     'runner.stage_order': list(STAGES),
     'runner.smoke': SMOKE,
     'runner.run_labels': list(RUN_LABELS),
+    'runner.terminal_failures': list(TERMINAL_FAILURES),
+    'runner.read_policy': READ_POLICY,
+    'runner.reviewed_code_scope': list(REVIEWED_CODE_SCOPE),
+    'runner.dependency_pins': {'group': DEPENDENCY_GROUP, **DEPENDENCY_PINS},
+    'registration.fields_pinned_at_registration': DRAFT_PIN_FIELDS,
 }
 
 
@@ -283,6 +332,52 @@ def config_check(config):
     if errors:
         raise RegistrationError('; '.join(errors))
     return config
+
+
+def _hex(value, length):
+    return isinstance(value, str) and len(value) == length and set(value) <= set('0123456789abcdef')
+
+
+def _kst_datetime(value):
+    from datetime import datetime, timedelta
+    try:
+        parsed = datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        return False
+    return parsed is not None and parsed.utcoffset() == timedelta(hours=9)
+
+
+PIN_FORMATS = {'text': lambda v: isinstance(v, str) and bool(v.strip()),
+               'sha1': lambda v: _hex(v, 40), 'sha256': lambda v: _hex(v, 64),
+               'kst_datetime': _kst_datetime,
+               'expected_runtime': lambda v: v == S6['expected_runtime_sha256']}
+
+
+def registration_pin_errors(config):
+    """Every pin of the immutable ``REGISTRATION_PIN_SCHEMA`` present and well formed; the S6 runtime
+    identity equal to the expected D125 identity (c13cc989...). Returns the list of problems."""
+    errors = []
+    for dotted, kind in REGISTRATION_PIN_SCHEMA:
+        value = _field(config, dotted)
+        if value is _MISSING or value is None:
+            errors.append(f'registration pin {dotted} missing')
+        elif not PIN_FORMATS[kind](value):
+            errors.append(f'registration pin {dotted} is not a valid {kind}')
+    return errors
+
+
+def registration_state(config):
+    """Status-neutral consistency of a committed config: 'DRAFT' (DRAFT_UNREGISTERED, every flag false)
+    or 'REGISTERED' (REGISTERED, every flag true, every registration pin valid). Raises otherwise."""
+    flags = [config.get(k) for k in ('registered', 'execute', 'real_data_enabled')]
+    if config.get('status') == 'DRAFT_UNREGISTERED' and flags == [False, False, False]:
+        return 'DRAFT'
+    if config.get('status') == 'REGISTERED' and flags == [True, True, True]:
+        errors = registration_pin_errors(config)
+        if errors:
+            raise RegistrationError('; '.join(errors))
+        return 'REGISTERED'
+    raise RegistrationError(f'inconsistent status {config.get("status")!r} with flags {flags}')
 
 
 def b0_alphas():

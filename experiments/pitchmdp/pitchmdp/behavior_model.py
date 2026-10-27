@@ -36,18 +36,21 @@ from .behavior_calibration_registry import (ACTION_CODES, B1_LEVELS, B2_CATEGORI
                                             b0_alphas)
 from .policy_artifacts import IntegrityError, TrainBCArtifact, load_train_bc
 
-START, UNKNOWN, NO_PITCH, MISSING, OOV = '<START>', '<UNKNOWN>', '<NO_PITCH>', '<MISSING_LABEL>', '<OOV>'
-PREVIOUS_CODES = (*ACTION_CODES, START, UNKNOWN, NO_PITCH, MISSING, OOV)
+START, UNKNOWN = '<START>', '<UNKNOWN>'
 SIDES = ('L', 'R')
 NLL_CLIP = 1e-12  # matrix_metrics.pitch_losses convention
 PACKAGE = Path(__file__).resolve().parent
 CODE_FILES = ('behavior_model.py', 'behavior_calibration.py', 'behavior_calibration_registry.py',
               'rollout_policy.py', 'policy_artifacts.py')
 
-# Composite integer key layout (bits): pitcher 24 | side 2 | balls 2 | strikes 2 | previous 6 |
-# base_out 4 | times-through-order group 2 | batter cluster 3.
-_LAYOUT = (('pitcher', 24), ('side', 2), ('balls', 2), ('strikes', 2), ('previous', 6), ('base_out', 4),
+# Composite integer key layout (bits): pitcher 24 | side 2 | balls 2 | strikes 2 | previous 8 |
+# base_out 4 | times-through-order group 2 | batter cluster 3. The previous component is the index
+# of the RAW previous label in the count table's own sorted vocabulary; UNSEEN is never stored, so a
+# label absent from that vocabulary matches no cell (exactly CategoricalBC's raw-string key).
+_LAYOUT = (('pitcher', 24), ('side', 2), ('balls', 2), ('strikes', 2), ('previous', 8), ('base_out', 4),
            ('tto', 2), ('cluster', 3))
+PREVIOUS_POSITION = 4
+UNSEEN = (1 << 8) - 1
 LEVEL_COMPONENTS = {'pitcher': 1, 'batter_side': 2, 'count': 4, 'previous_type': 5, 'base_out': 6,
                     'times_through_order': 7, 'batter_cluster': 8}  # number of leading layout components
 
@@ -65,12 +68,6 @@ def code_sha256(files=CODE_FILES):
     return digest.hexdigest()
 
 
-def previous_code(values):
-    """Previous-pitch key strings -> PREVIOUS_CODES indices; any other label is the single OOV code."""
-    lookup = {value: i for i, value in enumerate(PREVIOUS_CODES)}
-    return np.array([lookup.get(str(v), lookup[OOV]) for v in values], dtype=np.int64)
-
-
 def side_code(values):
     out = np.array([SIDES.index(v) if v in SIDES else -1 for v in values], dtype=np.int64)
     if (out < 0).any():
@@ -78,20 +75,34 @@ def side_code(values):
     return out
 
 
+def previous_index(labels, vocabulary):
+    """Index of each raw previous label in ``vocabulary``; UNSEEN where absent."""
+    if not len(vocabulary):
+        return np.full(len(labels), UNSEEN, dtype=np.int64)
+    index = pd.Index(list(vocabulary), dtype=object).get_indexer(pd.Index(list(labels), dtype=object))
+    return np.where(index >= 0, index, UNSEEN).astype(np.int64)
+
+
 class Keys:
-    """Integer pre-pitch key components of n rows (the B0 key plus the B1 additions)."""
+    """Pre-pitch key components of n rows: integers plus the raw previous-pitch label strings."""
+    INTEGER = (('pitcher', 24), ('side', 2), ('balls', 2), ('strikes', 2), ('base_out', 4), ('tto', 2), ('cluster', 3))
+
     def __init__(self, pitcher, side, balls, strikes, previous, base_out=None, tto=None, cluster=None):
         n = len(pitcher)
         zeros = np.zeros(n, dtype=np.int64)
         self.values = {}
-        for (name, bits), value in zip(_LAYOUT, (pitcher, side, balls, strikes, previous,
-                                                 zeros if base_out is None else base_out,
-                                                 zeros if tto is None else tto,
-                                                 zeros if cluster is None else cluster)):
+        for (name, bits), value in zip(self.INTEGER, (pitcher, side, balls, strikes,
+                                                      zeros if base_out is None else base_out,
+                                                      zeros if tto is None else tto,
+                                                      zeros if cluster is None else cluster)):
             array = np.asarray(value, dtype=np.int64)
             if array.shape != (n,) or (array < 0).any() or (array >= 1 << bits).any():
                 raise IntegrityError(f'key component {name} outside its registered range')
             self.values[name] = array
+        labels = list(previous)
+        if len(labels) != n or not all(isinstance(v, str) and v for v in labels):
+            raise IntegrityError('previous-pitch labels must be one nonempty string per row')
+        self.previous = np.array(labels, dtype=object)
         self.n = n
 
     def __len__(self):
@@ -103,102 +114,153 @@ class Keys:
         get = lambda name: frame[name].to_numpy(np.int64) if name in frame else None
         return cls(frame.pitcher.to_numpy(np.int64), side_code(frame.batter_side.tolist()),
                    frame.balls.to_numpy(np.int64), frame.strikes.to_numpy(np.int64),
-                   previous_code(frame.previous.tolist()), get('base_out'), get('tto_group'), get('batter_cluster'))
+                   [str(v) for v in frame.previous.tolist()], get('base_out'), get('tto_group'), get('batter_cluster'))
 
     @classmethod
-    def from_state(cls, state, context=None):
+    def from_state(cls, state):
         previous = state.history[-1].action if state.history else START
-        extra = {} if context is None else {'base_out': [int(context['base_out'])], 'tto': [int(context['tto_group'])],
-                                            'cluster': [int(context['batter_cluster'])]}
         return cls([int(state.pitcher)], side_code([state.batter_side]), [int(state.balls)], [int(state.strikes)],
-                   previous_code([previous]), **extra)
+                   [str(previous)])
 
-    def composite(self, components):
-        """int64 key over the first ``components`` layout entries (later entries zero)."""
+    def composite(self, components, vocabulary=None):
+        """int64 key over the first ``components`` layout entries (later entries zero); a key that
+        includes the previous label needs the table's vocabulary."""
         key = np.zeros(self.n, dtype=np.int64)
         for i, (name, bits) in enumerate(_LAYOUT):
             key = key << bits
-            if i < components:
+            if i >= components:
+                continue
+            if name == 'previous':
+                if vocabulary is None:
+                    raise IntegrityError('a previous-type key needs its count-table vocabulary')
+                key = key | previous_index(self.previous, vocabulary)
+            else:
                 key = key | self.values[name]
         return key
 
     def take(self, rows):
         out = Keys.__new__(Keys)
         out.values = {k: v[rows] for k, v in self.values.items()}
-        out.n = len(next(iter(out.values.values())))
+        out.previous = self.previous[rows]
+        out.n = len(out.previous)
         return out
 
     @staticmethod
     def concat(parts):
         out = Keys.__new__(Keys)
-        out.values = {name: np.concatenate([p.values[name] for p in parts]) for name, _ in _LAYOUT}
-        out.n = len(out.values['pitcher'])
+        out.values = {name: np.concatenate([p.values[name] for p in parts]) for name, _ in Keys.INTEGER}
+        out.previous = np.concatenate([p.previous for p in parts])
+        out.n = len(out.previous)
         return out
 
 
 class CountTable:
-    """Exact-match count table: sorted unique int64 keys -> counts [keys, V] (int32)."""
-    def __init__(self, keys, counts):
+    """Exact-match counts for one key level: sorted unique composite keys -> counts [keys, V] (int32).
+    A level whose key includes the previous label carries its own sorted label vocabulary."""
+    def __init__(self, keys, counts, components, vocabulary=None):
         keys, counts = np.asarray(keys, dtype=np.int64), np.asarray(counts)
         if keys.ndim != 1 or counts.ndim != 2 or len(keys) != len(counts) or (counts < 0).any() \
                 or (counts.size and counts.max() >= 1 << 31):
             raise IntegrityError('count table shape')
-        counts = counts.astype(np.int32)
+        if (components > PREVIOUS_POSITION) != (vocabulary is not None):
+            raise IntegrityError('exactly the previous-type levels carry a label vocabulary')
+        if vocabulary is not None:
+            vocabulary = tuple(str(v) for v in vocabulary)
+            if list(vocabulary) != sorted(set(vocabulary)) or len(vocabulary) >= UNSEEN:
+                raise IntegrityError('label vocabulary must be sorted, unique and below the UNSEEN code')
         order = np.argsort(keys, kind='stable')
-        keys, counts = keys[order], counts[order]
+        keys, counts = keys[order], counts[order].astype(np.int32)
         if len(keys) > 1 and (np.diff(keys) <= 0).any():
             raise IntegrityError('count table keys must be unique')
-        self.keys, self.counts = keys, counts
+        self.keys, self.counts, self.components, self.vocabulary = keys, counts, components, vocabulary
 
     @classmethod
-    def from_rows(cls, keys, actions, width):
+    def from_rows(cls, keys, actions, width, components):
         actions = np.asarray(actions, dtype=np.int64)
         if (actions < 0).any() or (actions >= width).any():
             raise IntegrityError('action index outside the vocabulary')
-        unique, inverse = np.unique(np.asarray(keys, dtype=np.int64), return_inverse=True)
+        vocabulary = tuple(sorted(set(keys.previous.tolist()))) if components > PREVIOUS_POSITION else None
+        unique, inverse = np.unique(keys.composite(components, vocabulary), return_inverse=True)
         counts = np.zeros(len(unique) * width, dtype=np.int64)
         np.add.at(counts, inverse * width + actions, 1)
-        return cls(unique, counts.reshape(len(unique), width))
+        return cls(unique, counts.reshape(len(unique), width), components, vocabulary)
+
+    @classmethod
+    def from_counts(cls, keys, counts, components):
+        """One row of counts per key row (artifact cells); distinct raw labels stay distinct."""
+        vocabulary = tuple(sorted(set(keys.previous.tolist()))) if components > PREVIOUS_POSITION else None
+        composite = keys.composite(components, vocabulary)
+        if len(np.unique(composite)) != len(composite):
+            raise IntegrityError('duplicate cell keys')
+        return cls(composite, counts, components, vocabulary)
 
     def lookup(self, keys):
-        keys = np.asarray(keys, dtype=np.int64)
-        position = np.searchsorted(self.keys, keys)
-        position = np.minimum(position, max(len(self.keys) - 1, 0))
-        found = (self.keys[position] == keys) if len(self.keys) else np.zeros(len(keys), dtype=bool)
-        out = np.zeros((len(keys), self.counts.shape[1]), dtype=np.int32)
+        query = keys.composite(self.components, self.vocabulary)
+        position = np.minimum(np.searchsorted(self.keys, query), max(len(self.keys) - 1, 0))
+        found = (self.keys[position] == query) if len(self.keys) else np.zeros(len(query), dtype=bool)
+        out = np.zeros((len(query), self.counts.shape[1]), dtype=np.int32)
         out[found] = self.counts[position[found]]
         return out, found
 
-    def arrays(self):
-        return {'keys': self.keys, 'counts': self.counts}
+    def arrays(self, prefix):
+        out = {f'{prefix}_keys': self.keys, f'{prefix}_counts': self.counts}
+        if self.vocabulary is not None:
+            out[f'{prefix}_vocabulary'] = np.array(self.vocabulary, dtype=str)
+        return out
+
+    @classmethod
+    def from_arrays(cls, arrays, prefix, components):
+        vocabulary = arrays.get(f'{prefix}_vocabulary')
+        return cls(arrays[f'{prefix}_keys'], arrays[f'{prefix}_counts'], components,
+                   None if vocabulary is None else [str(v) for v in vocabulary.tolist()])
 
 
 class RepertoireSupport:
     """R_j = actions with >= minimum_action_count TRAIN rows of pitcher j; unknown -> league support."""
     def __init__(self, league, pitchers, counts, minimum_action_count):
         self.league = np.asarray(league, dtype=np.int64)
-        self.table = CountTable(np.asarray(pitchers, dtype=np.int64), counts)
-        if self.table.counts.shape[1] != len(self.league) or not self.league.sum():
-            raise IntegrityError('support tables need a nonempty league row of the same width')
+        pitchers, counts = np.asarray(pitchers, dtype=np.int64), np.asarray(counts, dtype=np.int64)
+        order = np.argsort(pitchers, kind='stable')
+        self.pitchers, self.pitcher_counts = pitchers[order], counts[order]
+        if (len(self.pitchers) > 1 and (np.diff(self.pitchers) <= 0).any()) or self.pitcher_counts.ndim != 2 \
+                or self.pitcher_counts.shape != (len(self.pitchers), len(self.league)) or not self.league.sum():
+            raise IntegrityError('support tables need unique pitchers and a nonempty league row of one width')
         if type(minimum_action_count) is not int or minimum_action_count < 1:
             raise IntegrityError('minimum_action_count must be a positive integer')
         self.minimum = minimum_action_count
 
     @classmethod
     def from_rows(cls, pitchers, actions, width, minimum_action_count=1):
-        table = CountTable.from_rows(pitchers, actions, width)
-        return cls(table.counts.sum(axis=0), table.keys, table.counts, minimum_action_count)
+        unique, inverse = np.unique(np.asarray(pitchers, dtype=np.int64), return_inverse=True)
+        counts = np.zeros(len(unique) * width, dtype=np.int64)
+        np.add.at(counts, inverse * width + np.asarray(actions, dtype=np.int64), 1)
+        counts = counts.reshape(len(unique), width)
+        return cls(counts.sum(axis=0), unique, counts, minimum_action_count)
+
+    def known(self, pitchers):
+        pitchers = np.asarray(pitchers, dtype=np.int64)
+        position = np.minimum(np.searchsorted(self.pitchers, pitchers), max(len(self.pitchers) - 1, 0))
+        return (self.pitchers[position] == pitchers) if len(self.pitchers) else np.zeros(len(pitchers), dtype=bool)
 
     def counts(self, pitchers):
-        counts, known = self.table.lookup(pitchers)
-        counts[~known] = self.league
-        return counts, known
+        pitchers = np.asarray(pitchers, dtype=np.int64)
+        known = self.known(pitchers)
+        position = np.minimum(np.searchsorted(self.pitchers, pitchers), max(len(self.pitchers) - 1, 0))
+        out = np.broadcast_to(self.league, (len(pitchers), len(self.league))).copy()
+        out[known] = self.pitcher_counts[position[known]]
+        return out, known
 
     def mask(self, pitchers):
         return self.counts(pitchers)[0] >= self.minimum
 
-    def known(self, pitchers):
-        return self.table.lookup(pitchers)[1]
+    def arrays(self, prefix):
+        return {f'{prefix}_league': self.league, f'{prefix}_pitchers': self.pitchers,
+                f'{prefix}_pitcher_counts': self.pitcher_counts}
+
+    @classmethod
+    def from_arrays(cls, arrays, prefix, minimum_action_count):
+        return cls(arrays[f'{prefix}_league'], arrays[f'{prefix}_pitchers'], arrays[f'{prefix}_pitcher_counts'],
+                   minimum_action_count)
 
 
 def _normalized(values, mask, name):
@@ -341,12 +403,12 @@ class VectorBC(_SupportMixin):
     def fit(cls, keys, actions, vocabulary=ACTION_CODES, prior_strength=20., minimum_action_count=1, provenance=None):
         width = len(vocabulary)
         repertoire = RepertoireSupport.from_rows(keys.values['pitcher'], actions, width, minimum_action_count)
-        cells = CountTable.from_rows(keys.composite(LEVEL_COMPONENTS['previous_type']), actions, width)
+        cells = CountTable.from_rows(keys, actions, width, LEVEL_COMPONENTS['previous_type'])
         return cls(vocabulary, repertoire, cells, prior_strength, minimum_action_count, provenance)
 
     @classmethod
     def from_artifact(cls, artifact, vocabulary=ACTION_CODES):
-        """Count tables of a reloaded TRAIN BC artifact (no refit)."""
+        """Count tables of a reloaded TRAIN BC artifact (no refit); raw previous labels kept distinct."""
         bc = artifact.bc if isinstance(artifact, TrainBCArtifact) else artifact
         if tuple(bc.actions) != tuple(vocabulary):
             raise IntegrityError('BC vocabulary differs from the registered 18 codes')
@@ -357,15 +419,12 @@ class VectorBC(_SupportMixin):
                                        bc.minimum_action_count)
         cell_keys = list(bc.cells)
         keys = Keys([int(p) for p, *_ in cell_keys], side_code([k[3] for k in cell_keys]), [k[1] for k in cell_keys],
-                    [k[2] for k in cell_keys], previous_code([k[4] for k in cell_keys]))
-        composite = keys.composite(LEVEL_COMPONENTS['previous_type']) if cell_keys else np.zeros(0, np.int64)
+                    [k[2] for k in cell_keys], [str(k[4]) for k in cell_keys])
         counts = np.array([row(bc.cells[k]) for k in cell_keys], dtype=np.int64).reshape(len(cell_keys), width)
-        if len(np.unique(composite)) != len(composite):
-            raise IntegrityError('two BC cells map to one key (out-of-vocabulary previous labels collide)')
         provenance = {'artifact_file_sha256': getattr(artifact, 'file_sha256', None),
                       'bc_sha256': getattr(artifact, 'sha256', None)}
-        return cls(vocabulary, repertoire, CountTable(composite, counts), bc.prior_strength, bc.minimum_action_count,
-                   provenance)
+        cells = CountTable.from_counts(keys, counts, LEVEL_COMPONENTS['previous_type'])
+        return cls(vocabulary, repertoire, cells, bc.prior_strength, bc.minimum_action_count, provenance)
 
     def batch_keys(self, keys):
         counts, _ = self.repertoire.counts(keys.values['pitcher'])
@@ -375,7 +434,7 @@ class VectorBC(_SupportMixin):
         if not (total > 0).all():
             raise ValueError('no TRAIN-supported actions; abstain')
         prior /= total
-        cell, _ = self.cells.lookup(keys.composite(LEVEL_COMPONENTS['previous_type']))
+        cell, _ = self.cells.lookup(keys)
         p = (cell + self.prior_strength * prior) * mask
         return p / p.sum(axis=1, keepdims=True)
 
@@ -386,16 +445,13 @@ class VectorBC(_SupportMixin):
         return self.batch_keys(Keys.from_state(state))[0]
 
     def arrays(self):
-        return {'league': self.repertoire.league, 'pitchers': self.repertoire.table.keys,
-                'pitcher_counts': self.repertoire.table.counts, 'cell_keys': self.cells.keys,
-                'cell_counts': self.cells.counts}
+        return {**self.repertoire.arrays('support'), **self.cells.arrays('cell')}
 
     @classmethod
     def from_arrays(cls, arrays, prior_strength, minimum_action_count, vocabulary=ACTION_CODES, provenance=None):
-        repertoire = RepertoireSupport(arrays['league'], arrays['pitchers'], arrays['pitcher_counts'],
-                                       minimum_action_count)
-        return cls(vocabulary, repertoire, CountTable(arrays['cell_keys'], arrays['cell_counts']), prior_strength,
-                   minimum_action_count, provenance)
+        repertoire = RepertoireSupport.from_arrays(arrays, 'support', minimum_action_count)
+        cells = CountTable.from_arrays(arrays, 'cell', LEVEL_COMPONENTS['previous_type'])
+        return cls(vocabulary, repertoire, cells, prior_strength, minimum_action_count, provenance)
 
     def identity(self):
         return {'class': f'{__name__}.VectorBC', 'prior_strength': self.prior_strength,
@@ -481,8 +537,7 @@ class BackoffBC(_SupportMixin):
         actions = np.asarray(actions, dtype=np.int64)
         if repertoire is None:
             repertoire = RepertoireSupport.from_rows(keys.values['pitcher'], actions, width)
-        tables = {level: CountTable.from_rows(keys.composite(LEVEL_COMPONENTS[level]), actions, width)
-                  for level in B1_LEVELS[1:]}
+        tables = {level: CountTable.from_rows(keys, actions, width, LEVEL_COMPONENTS[level]) for level in B1_LEVELS[1:]}
         league = np.bincount(actions, minlength=width).astype(np.int64)
         return cls(vocabulary, repertoire, league, tables, b0_alphas() if alphas is None else alphas, provenance)
 
@@ -492,8 +547,7 @@ class BackoffBC(_SupportMixin):
         return mask, p0
 
     def level_counts(self, keys, mask):
-        return [self.tables[level].lookup(keys.composite(LEVEL_COMPONENTS[level]))[0] * mask
-                for level in B1_LEVELS[1:]]
+        return [self.tables[level].lookup(keys)[0] * mask for level in B1_LEVELS[1:]]
 
     @staticmethod
     def chain(p0, mask, counts, alphas):
@@ -551,17 +605,24 @@ class BackoffBC(_SupportMixin):
         return self.tune_record
 
     def arrays(self):
-        out = {'league': self.league, 'support_league': self.repertoire.league,
-               'support_pitchers': self.repertoire.table.keys, 'support_counts': self.repertoire.table.counts}
+        out = {'league': self.league, **self.repertoire.arrays('support')}
         for level, table in self.tables.items():
-            out[f'{level}_keys'], out[f'{level}_counts'] = table.keys, table.counts
+            out.update(table.arrays(level))
         return out
+
+    @staticmethod
+    def array_names():
+        names = ['league', 'support_league', 'support_pitchers', 'support_pitcher_counts']
+        for level in B1_LEVELS[1:]:
+            names += [f'{level}_keys', f'{level}_counts']
+            if LEVEL_COMPONENTS[level] > PREVIOUS_POSITION:
+                names.append(f'{level}_vocabulary')
+        return names
 
     @classmethod
     def from_arrays(cls, arrays, alphas, minimum_action_count=1, vocabulary=ACTION_CODES, provenance=None):
-        repertoire = RepertoireSupport(arrays['support_league'], arrays['support_pitchers'], arrays['support_counts'],
-                                       minimum_action_count)
-        tables = {level: CountTable(arrays[f'{level}_keys'], arrays[f'{level}_counts']) for level in B1_LEVELS[1:]}
+        repertoire = RepertoireSupport.from_arrays(arrays, 'support', minimum_action_count)
+        tables = {level: CountTable.from_arrays(arrays, level, LEVEL_COMPONENTS[level]) for level in B1_LEVELS[1:]}
         return cls(vocabulary, repertoire, arrays['league'], tables, alphas, provenance)
 
     def identity(self):
@@ -653,9 +714,7 @@ class LGBMBehavior(_SupportMixin):
     def identity(self):
         return {'class': f'{__name__}.LGBMBehavior', 'name': 'B2', 'best_round': self.best_round,
                 'model_sha256': hashlib.sha256(self.model_string.encode()).hexdigest(),
-                'support_sha256': arrays_sha256({'league': self.repertoire.league,
-                                                 'pitchers': self.repertoire.table.keys,
-                                                 'counts': self.repertoire.table.counts}),
+                'support_sha256': arrays_sha256(self.repertoire.arrays('support')),
                 'features': list(B2_FEATURES), 'record': {k: v for k, v in self.record.items() if k != 'curve'},
                 'code_sha256': code_sha256()}
 

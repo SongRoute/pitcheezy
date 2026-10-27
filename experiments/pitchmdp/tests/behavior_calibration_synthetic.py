@@ -3,25 +3,98 @@
 ``make_frame`` simulates legal pitch-by-pitch PAs (counts follow the recorded outcomes) for the
 four used splits; every one of the 18 registered codes appears in TRAIN (so a BC fitted on TRAIN
 has the registered vocabulary) and two DEV pitchers throw a code they never threw in TRAIN (S_off).
+Rows of the unused windows (2023-03-30..05-14 'pre', June 2025 'june') are generated on request
+and written to the synthetic processed parquet only (the A3 readers decode and drop them).
+
+Config fixtures never depend on the committed config's status: ``as_draft`` / ``as_registered``
+build explicit DRAFT / REGISTERED forms from it (``A3_CONFIG_PATH`` names another config file,
+used by the registered-preflight test to run the preflight suite against a REGISTERED config).
 """
 from __future__ import annotations
 
+import copy
 import hashlib
+import json
+import os
 from collections import Counter, defaultdict
+from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
 
+from pitchmdp import behavior_calibration_registry as reg
 from pitchmdp.archetypes import Archetypes, add_batter_style_history
 from pitchmdp.behavior_calibration_registry import ACTION_CODES
 from pitchmdp.policy_artifacts import TrainBCArtifact, _canonical_bytes, _envelope, bc_payload, single_hand
 from pitchmdp.rollout_policy import CategoricalBC, BCRecord, PAState, PastPitch
 
-SPLIT_DAYS = {'train': pd.date_range('2023-05-15', '2025-04-30', periods=12),
+PROJECT = Path(__file__).resolve().parents[1]
+REPO = PROJECT.parents[1]
+COMMITTED_CONFIG = REPO / 'configs' / 'EXP-BC-CAL-01.json'
+NESTED = 'A3_NESTED_PREFLIGHT'  # set for a preflight run started by a test (no nested isolated runs)
+SPLIT_DAYS = {'pre': pd.date_range('2023-03-30', '2023-05-14', periods=2),
+              'train': pd.date_range('2023-05-15', '2025-04-30', periods=12),
               'earlystop': pd.date_range('2025-05-01', '2025-05-15', periods=3),
               'temperature': pd.date_range('2025-05-16', '2025-05-31', periods=3),
+              'june': pd.date_range('2025-06-01', '2025-06-30', periods=2),
               'dev': pd.date_range('2025-07-01', '2025-09-30', periods=5)}
+USED = ('train', 'earlystop', 'temperature', 'dev')
 PHYSICS = ('release_speed', 'release_spin_rate', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z', 'sz_top', 'sz_bot')
+
+
+# ---------------------------------------------------------------- config fixtures (status-neutral)
+
+def config_path():
+    return Path(os.environ.get('A3_CONFIG_PATH') or COMMITTED_CONFIG)
+
+
+def load_config():
+    """The committed config (or ``A3_CONFIG_PATH``), whatever its registration status."""
+    return json.loads(config_path().read_text())
+
+
+def _put(config, dotted, value):
+    node = config
+    *parents, last = dotted.split('.')
+    for part in parents:
+        node = node[part]
+    node[last] = value
+
+
+REGISTRATION_TEXT = ('registration.registered_kst', 'registration.design_review_reference',
+                     'registration.code_review_reference')
+
+
+def as_draft(config):
+    """An explicit DRAFT_UNREGISTERED fixture: every flag false and every registration pin null."""
+    out = copy.deepcopy(config)
+    out.update(status='DRAFT_UNREGISTERED', registered=False, execute=False, real_data_enabled=False)
+    for dotted, _ in reg.REGISTRATION_PIN_SCHEMA:
+        _put(out, dotted, None)
+    out.get('registration', {}).pop('addenda_records', None)
+    return out
+
+
+RUNNER_SHA256 = 'e' * 64  # synthetic runner pin (well-formed hex)
+
+
+def as_registered(config, *, runner_sha256=RUNNER_SHA256, commit='a' * 40, runner=None):
+    """An explicit REGISTERED fixture with well-formed synthetic pins (S6 runtime = the expected
+    c13cc989... identity) and a matching config_sha256; ``runner`` overrides runner.* fields."""
+    if str(PROJECT / 'scripts') not in sys.path:
+        sys.path.insert(0, str(PROJECT / 'scripts'))
+    import run_behavior_calibration as runner_module
+    out = as_draft(config)
+    out.update(status='REGISTERED', registered=True, execute=True, real_data_enabled=True)
+    out['registration'].update(registered_kst='2026-10-28T14:00:00+09:00', design_review_reference='design-review-x',
+                               code_review_reference='code-review-x')
+    out['code'].update(branch='research/track-a-a3-1027', commit=commit, runner_sha256=runner_sha256)
+    out['data']['s6_ledger'].update(ledger_sha256='1' * 64, manifest_sha256='2' * 64)
+    out['data']['s6_ledger']['runtime_sha256']['value'] = reg.S6['expected_runtime_sha256']
+    out['runner'].update(runner or {})
+    out['code']['config_sha256'] = runner_module.config_content_sha256(out)
+    return out
 
 
 def _repertoires(rng, pitchers):
@@ -34,7 +107,7 @@ def _repertoires(rng, pitchers):
     return out
 
 
-def make_frame(seed=0, games=None, pas_per_half=3, innings=3):
+def make_frame(seed=0, games=None, pas_per_half=3, innings=3, splits=USED, first_game=700000):
     rng = np.random.default_rng(seed)
     games = games or {'train': 36, 'earlystop': 8, 'temperature': 10, 'dev': 14}
     pitchers = [500000 + i for i in range(14)]
@@ -48,10 +121,10 @@ def make_frame(seed=0, games=None, pas_per_half=3, innings=3):
     repertoire[unknown] = (['FF', 'SL'], np.array([.6, .4]))
     ambiguous = pitchers[3]  # throws with both hands in TRAIN (AMBIGUOUS registry entry)
     new_code = {pitchers[0]: 'SV', pitchers[1]: 'KN'}  # DEV-only codes (S_off)
-    rows, game_pk, cycle = [], 700000, 0
-    for split in ('train', 'earlystop', 'temperature', 'dev'):
+    rows, game_pk, cycle = [], first_game, 0
+    for split in splits:
         days = SPLIT_DAYS[split]
-        for g in range(games[split]):
+        for g in range(games.get(split, 0)):
             game_pk += 1
             date = days[g % len(days)]
             starters = {'Top': pitchers[(2 * g) % 12], 'Bot': pitchers[(2 * g + 1) % 12]}
@@ -266,23 +339,103 @@ def estimator_ess(ledger):
     return result['ess_all_e0']
 
 
-class SyntheticSource:
-    """Runner data source over the synthetic world and ledger (never touches real files)."""
-    def __init__(self, world, ledger):
-        self.world, self.ledger = world, ledger
-        self.loads = 0
+def file_sha256(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
-    def load(self, run):
-        from run_behavior_calibration import Inputs
-        self.loads += 1
-        frame = self.world['frame'].copy()
-        ledger = {'path': str(self.ledger['ledger']), 'manifest_path': str(self.ledger['manifest']),
-                  'ledger_sha256': self.ledger['ledger_sha256'], 'manifest_sha256': self.ledger['manifest_sha256'],
-                  'runtime_sha256': self.ledger['runtime'].sha256}
-        identity = {'source': 'synthetic', 'b0': {'file_sha256': self.world['artifact'].file_sha256}}
-        return Inputs(frame=frame, raw_keys=raw_keys(frame), b0=self.world['b0'], support=self.world['support'],
-                      hands=self.world['hands'], archetypes=self.world['ctx'].archetypes, ledger=ledger,
-                      identity=identity)
+
+def extra_rows(seed=100):
+    """Rows of the unused windows (2023-03-30..05-14 and June 2025) with their own game ids."""
+    return make_frame(seed, games={'pre': 2, 'june': 4}, splits=('pre', 'june'), first_game=790000)
+
+
+def processed_order(frame):
+    out = frame.copy()
+    out['game_date'] = pd.to_datetime(out.game_date).dt.normalize()
+    return out.sort_values(['game_date', 'game_pk', 'at_bat_number', 'pitch_number'], kind='stable').reset_index(drop=True)
+
+
+def default_cuts(ordered):
+    """Row-group boundaries: [pre + first half of TRAIN | rest of TRAIN | earlystop .. June .. first DEV
+    games | rest of DEV] (the third group straddles the 2025-05-31 pre-gate limit and the DEV start)."""
+    dates, n = ordered.game_date, len(ordered)
+    train_end = int((dates <= pd.Timestamp('2025-04-30')).sum())
+    dev_start = int((dates < pd.Timestamp('2025-07-01')).sum())
+    return sorted({0, train_end // 2, train_end, dev_start + (n - dev_start) // 2, n})
+
+
+PROCESSED_COLUMNS = [*reg.FREE_COLUMNS, *reg.GUARDED_COLUMNS, 'release_speed']  # release_speed: never read
+
+
+def write_parquet(path, ordered, columns, cuts):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = ordered[columns]
+    schema = pa.Schema.from_pandas(part, preserve_index=False)
+    with pq.ParquetWriter(path, schema) as writer:
+        for a, b in zip(cuts[:-1], cuts[1:]):
+            if b > a:
+                writer.write_table(pa.Table.from_pandas(part.iloc[a:b], schema=schema, preserve_index=False))
+    return path
+
+
+def write_processed(directory, frame, cuts=None, name='pitches.parquet'):
+    """A processed-shaped parquet (date-sorted, explicit row groups); returns (path, sha256, cuts)."""
+    ordered = processed_order(frame)
+    cuts = default_cuts(ordered) if cuts is None else list(cuts)
+    path = write_parquet(Path(directory) / name, ordered, PROCESSED_COLUMNS, cuts)
+    return path, file_sha256(path), cuts
+
+
+def write_raw(directory, frame):
+    """Two raw Statcast-shaped files (keys, date, pitcher and an unread pitch_type column): rows before
+    2025 in one row group; 2025 rows split at the TRAIN end. Returns (root, {name: sha256})."""
+    ordered = processed_order(frame)
+    root = Path(directory) / 'raw'
+    columns = ['game_date', 'game_pk', 'at_bat_number', 'pitch_number', 'pitcher', 'pitch_type']
+    early = ordered.loc[ordered.game_date.dt.year < 2025].reset_index(drop=True)
+    late = ordered.loc[ordered.game_date.dt.year >= 2025].reset_index(drop=True)
+    cut = int((late.game_date <= pd.Timestamp('2025-04-30')).sum())
+    pins = {}
+    for name, part, cuts in (('statcast_synthetic_a.parquet', early, [0, len(early)]),
+                             ('statcast_synthetic_b.parquet', late, sorted({0, cut, len(late)}))):
+        pins[name] = file_sha256(write_parquet(root / name, part, columns, cuts))
+    return root, pins
+
+
+class SyntheticSource:
+    """Runner data source: the production A3 readers (ProcessedReader / RawKeysReader / A3Inputs) over
+    a synthetic processed parquet and raw key files, the synthetic B0 and ledger (never real files).
+    ``revalidate`` records every per-stage call and runs ``hook`` (a test may make it refuse)."""
+    def __init__(self, world, ledger, directory, *, extras=None, margin=8, hook=None, cuts=None):
+        frame = world['frame'] if extras is None else pd.concat([world['frame'], extras], ignore_index=True)
+        self.processed, self.processed_sha256, self.cuts = write_processed(directory, frame, cuts)
+        self.raw_root, self.raw_pins = write_raw(directory, frame)
+        self.world, self.ledger, self.margin, self.hook = world, ledger, margin, hook
+        self.opens, self.revalidations, self.inputs = 0, [], None
+
+    def revalidate(self, run, stage):
+        self.revalidations.append(stage)
+        if self.hook is not None:
+            self.hook(run, stage)
+        return {'stage': stage, 'registration_gate': 'synthetic source'}
+
+    def open(self, run):
+        from pitchmdp.behavior_data import A3Inputs, ProcessedReader, RawKeysReader, ReadLog
+        self.opens += 1
+        log = ReadLog()
+        reader = ProcessedReader(self.processed, sha256=self.processed_sha256, log=log, margin=self.margin)
+        ledger = None if self.ledger is None else {
+            'path': str(self.ledger['ledger']), 'manifest_path': str(self.ledger['manifest']),
+            'ledger_sha256': self.ledger['ledger_sha256'], 'manifest_sha256': self.ledger['manifest_sha256'],
+            'runtime_sha256': self.ledger['runtime'].sha256}
+        identity = {'source': 'synthetic', 'b0': {'file_sha256': self.world['artifact'].file_sha256},
+                    'processed_sha256': self.processed_sha256, 'raw_sha256': self.raw_pins}
+        self.inputs = A3Inputs(reader=reader, raw_reader=RawKeysReader(self.raw_root, self.raw_pins, log),
+                               b0=self.world['b0'], support=self.world['support'], hands=self.world['hands'],
+                               archetypes=self.world['ctx'].archetypes, ledger=ledger, identity=identity, log=log)
+        return self.inputs
 
 
 def synthetic_config(config, world, ledger, expected_ess):
@@ -315,23 +468,29 @@ def make_context(frame, world):
                           repertoire=ctx.repertoire)
 
 
-def run_isolated(test_file, *args, timeout=600):
-    """Run a pytest file in a fresh interpreter whose torch and LightGBM share ONE OpenMP runtime
+def isolated_env(extra=None):
+    """Environment of a fresh interpreter whose torch and LightGBM share ONE OpenMP runtime
     (DYLD_LIBRARY_PATH=<torch/lib>, the repository rule of run_ml_benchmark.validate_native_runtime;
-    the unsafe KMP_DUPLICATE_LIB_OK override is never set)."""
+    the unsafe KMP_DUPLICATE_LIB_OK override is never set). MPLCONFIGDIR points to a fresh writable
+    directory (LightGBM imports Matplotlib when present; a read-only home must not break it)."""
     import importlib.util
-    import os
-    import subprocess
-    import sys
-    from pathlib import Path
-    project = Path(__file__).resolve().parents[1]
+    import tempfile
     torch_lib = Path(importlib.util.find_spec('torch').origin).resolve().parent / 'lib'
     env = {k: v for k, v in os.environ.items() if k != 'KMP_DUPLICATE_LIB_OK'}
     env['DYLD_LIBRARY_PATH'] = str(torch_lib)
-    env['PYTHONPATH'] = os.pathsep.join([str(project), str(project / 'tests'), str(project / 'scripts'),
+    env['MPLCONFIGDIR'] = tempfile.mkdtemp(prefix='a3-mpl-')
+    env['PYTHONPATH'] = os.pathsep.join([str(PROJECT), str(PROJECT / 'tests'), str(PROJECT / 'scripts'),
                                          env.get('PYTHONPATH', '')])
-    return subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', str(project / 'tests' / test_file),
-                           *args], cwd=project, env=env, capture_output=True, text=True, timeout=timeout)
+    env.update(extra or {})
+    return env
+
+
+def run_isolated(test_file, *args, timeout=900, env=None):
+    """Run a pytest file in a fresh interpreter (``isolated_env``)."""
+    import subprocess
+    return subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider',
+                           str(PROJECT / 'tests' / test_file), *args], cwd=PROJECT, env=isolated_env(env),
+                          capture_output=True, text=True, timeout=timeout)
 
 
 def counts_by_key(records):

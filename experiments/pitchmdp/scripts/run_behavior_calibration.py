@@ -2,19 +2,24 @@
 
 Fail closed. Every real-data stage, the smoke included, is refused unless the config passes the
 registered contract (``behavior_calibration_registry.config_check``) AND ``registration_gate``:
-status REGISTERED, registered / execute / real_data_enabled true, review references and every
-registration pin filled, the config content sha256 and the runner sha256 pinned, and no code
-change since the pinned commit. Order is fixed: smoke (first registered step: TRAIN rows only,
-cost and integrity, no metric) -> census (label-free) -> fit -> calibrate -> freeze-primary ->
-s6-integrity -> xf-fit -> freeze-xf -> score-dev -> s6-weights -> decide. A stage opens only
-after the previous one passed in the same attempt directory; DEV pitch-type labels stay sealed
-until freeze-primary is pinned and s6-integrity passed; no DEV metric is computed before
-freeze-xf is pinned. Each stage writes JSON (+ npy/text artifacts) and SHA256SUMS under the
-attempt directory (never the repository results/), with seeds, config sha256, git commit,
-seconds and peak RSS. Caps: total wall 14,400 s, stage hang guard 7,200 s, B2 fit soft cap
-3,600 s (warning only), RSS 10 GiB; the protection window 06:30-13:30 KST is never entered
-(refuse to start inside it, abort and keep outputs when it begins). Aborted outputs are not
-citable.
+status REGISTERED with every flag true, every pin of the registry's immutable registration schema
+present and well formed (the S6 runtime identity equal to c13cc989...), the config content sha256
+and the runner sha256 pinned, no change since the pinned commit inside the reviewed scope
+(experiments/, src/, scripts/, pyproject.toml), the config committed at HEAD, one OpenMP runtime and
+the pinned research-a3 dependency. The gate is re-run before EVERY stage. Order is fixed: smoke
+(first registered step: TRAIN rows only, cost and integrity, no metric) -> census (label-free) ->
+fit -> calibrate -> freeze-primary -> s6-integrity -> xf-fit -> freeze-xf -> score-dev ->
+s6-weights -> decide. A stage opens only after the previous one passed in the same attempt (each
+stage verified against the digests anchored in stages.jsonl). Data are read stage by stage
+(pitchmdp.behavior_data): DEV pitch types and outcomes are decoded only after freeze-primary is
+pinned and s6-integrity passed, and every decode is logged in the stage record; no DEV metric is
+computed before freeze-xf is pinned. Each stage writes JSON (+ npy/text artifacts) and SHA256SUMS
+under the attempt directory (never the repository results/), with seeds, config sha256, git commit,
+seconds and peak RSS. Caps: total wall 14,400 s over the whole attempt (smoke through decide,
+budget.jsonl), stage hang guard 7,200 s, B2 fit soft cap 3,600 s (warning only), RSS 10 GiB; the
+protection window 06:30-13:30 KST is never entered (refuse to start inside it; the memory probe,
+the preflight tests and every stage abort when it begins, keeping their outputs). Every unsuccessful
+attempt ends with a non-citable final.json (REFUSED / FAILED_RUNTIME / ABORTED / FAILED_INTEGRITY).
 
 After registration, outside 06:30-13:30 KST, with the common heavy lock free (torch and LightGBM
 must share one OpenMP runtime: DYLD_LIBRARY_PATH=<venv torch/lib>, never KMP_DUPLICATE_LIB_OK):
@@ -29,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import fcntl
 import hashlib
@@ -56,9 +62,9 @@ import pandas as pd
 
 from pitchmdp import behavior_calibration_registry as reg
 from pitchmdp.behavior_calibration import CALIBRATION_FAILED, calibrate, calibrator_from_identity, public
-from pitchmdp.behavior_features import (SEALED, FeatureContext, check_splits, census_counts, game_fold,
-                                        guard_dates, label_free_view, population_masks, split_table, style_tables,
-                                        workload_features)
+from pitchmdp.behavior_data import DEV_START, TRAIN_END, A3Inputs, ProcessedReader, RawKeysReader, ReadLog
+from pitchmdp.behavior_features import (FeatureContext, census_counts, game_fold, guard_dates, population_masks,
+                                        split_table, style_tables, workload_features)
 from pitchmdp.behavior_metrics import (group_calibration, holm_adjust, paired_game_bootstrap, prediction_summary,
                                        ratio_bins, strata_metrics)
 from pitchmdp.behavior_model import (BackoffBC, Calibrated, Keys, LGBMBehavior, RegisteredBC, RepertoireSupport,
@@ -72,16 +78,20 @@ from pitchmdp.rollout_policy import PAState, PastPitch
 
 SELF = 'experiments/pitchmdp/scripts/run_behavior_calibration.py'
 KST = timezone(timedelta(hours=9))
-CODE_PATHS = ('experiments', 'src', 'scripts')
 PREFLIGHT_TESTS = ('tests/test_behavior_calibration_registry.py', 'tests/test_behavior_calibration_model.py',
                    'tests/test_behavior_calibration_features.py', 'tests/test_behavior_calibration_calibration.py',
                    'tests/test_behavior_calibration_metrics.py', 'tests/test_behavior_calibration_weights.py',
-                   'tests/test_behavior_calibration_runner.py')
+                   'tests/test_behavior_calibration_data.py', 'tests/test_behavior_calibration_runner.py')
 ARTIFACT_EXCLUDE = ('stage.json', 'SHA256SUMS')
+SINCE_DEV, SINCE_AFTER_TRAIN = str(DEV_START.date()), str((TRAIN_END + pd.Timedelta(days=1)).date())
 
 
 class Refused(Exception):
-    """Registration, destination or stage-order refusal: nothing runs, the refusal is recorded."""
+    """Registration, destination, stage-order or launch refusal. ``terminal`` refusals close the attempt
+    (final.json REFUSED); transient ones (window, busy lock, memory) are only recorded."""
+    def __init__(self, message, terminal=False):
+        super().__init__(message)
+        self.terminal = terminal
 
 
 class Abort(BaseException):
@@ -157,19 +167,19 @@ def _field(config, dotted):
     return node
 
 
-def git_state(commit, config_path=None):
-    """HEAD, uncommitted code-path changes, code paths changed since ``commit`` and whether the
-    config file is committed at HEAD byte for byte."""
+def git_state(commit, config_path=None, scope=reg.REVIEWED_CODE_SCOPE):
+    """HEAD, uncommitted changes and changes since ``commit`` inside the reviewed scope, and whether
+    the config file is committed at HEAD byte for byte."""
     run = lambda *args: subprocess.check_output(['git', *args], cwd=REPO, text=True).strip()
-    state = {'head': run('rev-parse', 'HEAD'),
-             'dirty': bool(run('status', '--porcelain', '--', *CODE_PATHS)), 'commit_is_ancestor': None,
+    state = {'head': run('rev-parse', 'HEAD'), 'scope': list(scope),
+             'dirty': bool(run('status', '--porcelain', '--', *scope)), 'commit_is_ancestor': None,
              'changed_since_commit': None, 'config_committed': None}
     if commit:
         state['commit_is_ancestor'] = subprocess.call(['git', 'merge-base', '--is-ancestor', commit, 'HEAD'], cwd=REPO,
                                                       stderr=subprocess.DEVNULL) == 0
         if state['commit_is_ancestor']:
             state['changed_since_commit'] = [x for x in run('diff', '--name-only', commit, 'HEAD', '--',
-                                                            *CODE_PATHS).splitlines() if x]
+                                                            *scope).splitlines() if x]
     if config_path is not None:
         path = Path(config_path).resolve()
         try:
@@ -182,37 +192,76 @@ def git_state(commit, config_path=None):
 
 
 def registration_gate(config, *, git, runner_sha256):
-    """Refuse unless EXP-BC-CAL-01 is registered and execution-enabled with every pin filled.
-    Runs before any data is touched; the smoke is a registered step and passes through here."""
+    """Refuse unless EXP-BC-CAL-01 is registered and execution-enabled with every pin of the registry's
+    immutable schema present and well formed. Runs before any data is touched and before every stage."""
     try:
         reg.config_check(config)
     except reg.RegistrationError as error:
-        raise Refused(f'config deviates from the registered contract: {error}') from error
+        raise Refused(f'config deviates from the registered contract: {error}', terminal=True) from error
     reasons = []
     if not (config.get('status') == 'REGISTERED' and config.get('registered') is True
             and config.get('execute') is True and config.get('real_data_enabled') is True):
         reasons.append(f'status {config.get("status")!r} is not REGISTERED with execute/real_data_enabled true')
-    registration = config.get('registration') or {}
-    for name in ('registered_kst', 'design_review_reference', 'code_review_reference'):
-        if not registration.get(name):
-            reasons.append(f'registration.{name} missing')
-    for dotted in registration.get('fields_pinned_at_registration') or []:
-        if _field(config, dotted) in (None, ''):
-            reasons.append(f'registration pin {dotted} missing')
+    reasons += reg.registration_pin_errors(config)
     if _field(config, 'code.config_sha256') != config_content_sha256(config):
         reasons.append('code.config_sha256 differs from the config content')
     if _field(config, 'code.runner_sha256') != runner_sha256:
         reasons.append('code.runner_sha256 differs from this runner')
     commit = _field(config, 'code.commit')
+    if git.get('scope') != list(reg.REVIEWED_CODE_SCOPE):
+        reasons.append('git state was not computed over the reviewed code scope')
     if not git.get('commit_is_ancestor') or git.get('changed_since_commit'):
-        reasons.append(f'code at HEAD differs from the registered commit {commit}')
+        reasons.append(f'code at HEAD differs from the registered commit {commit} inside the reviewed scope')
     if git.get('dirty'):
-        reasons.append('uncommitted changes under experiments/, src/ or scripts/')
+        reasons.append('uncommitted changes inside the reviewed scope (experiments/, src/, scripts/, pyproject.toml)')
     if git.get('config_committed') is not True:
         reasons.append('the config file is not committed at HEAD byte for byte')
     if reasons:
-        raise Refused('registration gate: ' + '; '.join(reasons))
+        raise Refused('registration gate: ' + '; '.join(reasons), terminal=True)
     return True
+
+
+def dependency_pins(pyproject=REPO / 'pyproject.toml'):
+    """The research-a3 group of pyproject.toml pins the registered dependency versions, and the installed
+    versions equal them (importlib.metadata; LightGBM is never imported just to be checked)."""
+    import importlib.metadata
+    import tomllib
+    data = Path(pyproject).read_bytes()
+    group = tomllib.loads(data.decode())['project']['optional-dependencies'].get(reg.DEPENDENCY_GROUP)
+    pinned = dict(entry.split('==', 1) for entry in group or [] if '==' in entry)
+    if pinned != reg.DEPENDENCY_PINS:
+        raise Refused(f'pyproject {reg.DEPENDENCY_GROUP} pins {pinned} differ from {reg.DEPENDENCY_PINS}')
+    installed = {}
+    for name, version in pinned.items():
+        try:
+            installed[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            installed[name] = None
+    if installed != pinned:
+        raise Refused(f'installed {installed} differ from the pinned {pinned}')
+    return {'pyproject_sha256': sha256_bytes(data), 'group': reg.DEPENDENCY_GROUP, 'pinned': pinned,
+            'installed': installed}
+
+
+def validate_native_runtime():
+    """run_ml_benchmark.validate_native_runtime rule: torch (pulled in by pitchmdp.model) and
+    LightGBM must share ONE OpenMP runtime; the unsafe duplicate override is refused. (A launch
+    condition the operator can correct: the refusal is recorded, the attempt stays open.)"""
+    import importlib.util
+    if os.environ.get('KMP_DUPLICATE_LIB_OK', '').lower() in ('true', '1', 'yes'):
+        raise Refused('the unsafe KMP_DUPLICATE_LIB_OK override is forbidden')
+    if sys.platform == 'darwin':
+        spec = importlib.util.find_spec('torch')
+        torch_lib = (Path(spec.origin).resolve().parent / 'lib') if spec else None
+        configured = [Path(v).resolve() for v in os.environ.get('DYLD_LIBRARY_PATH', '').split(':') if v]
+        if torch_lib is None or torch_lib.resolve() not in configured:
+            raise Refused(f'launch with DYLD_LIBRARY_PATH={torch_lib} so torch and LightGBM share one OpenMP runtime')
+    return True
+
+
+def native_and_dependencies():
+    validate_native_runtime()
+    return dependency_pins()
 
 
 def check_destination(destination, *, output_root=None, repos=(REPO,)):
@@ -232,20 +281,11 @@ def check_destination(destination, *, output_root=None, repos=(REPO,)):
     return path
 
 
-# ---------------------------------------------------------------- caps, clock, memory
+# ---------------------------------------------------------------- caps, clock, attempt budget, children
 
 def peak_rss_bytes():
     raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return int(raw if sys.platform == 'darwin' else raw * 1024)
-
-
-def free_share():
-    """macOS ``memory_pressure`` system-wide free share (STAB-01 precedent)."""
-    text = subprocess.run(['memory_pressure'], capture_output=True, text=True, timeout=120).stdout
-    match = re.search(r'System-wide memory free percentage:\s*(\d+)%', text)
-    if not match:
-        raise Refused('memory_pressure free percentage unavailable')
-    return int(match.group(1)) / 100
 
 
 def _minutes(text):
@@ -254,14 +294,15 @@ def _minutes(text):
 
 
 class Guard:
-    """Cooperative caps (checked in loops, LightGBM callbacks and at stage ends) plus a SIGALRM
-    backstop for the time limits. RSS is the process peak (ru_maxrss)."""
-    def __init__(self, caps, window, *, clock=time.monotonic, now=None, rss=peak_rss_bytes, alarm=True):
+    """Cooperative caps (loops, LightGBM callbacks, stage ends, supervised children) plus a SIGALRM
+    backstop for the time limits inside stages. ``consumed`` = attempt seconds already spent by earlier
+    commands (budget.jsonl); the total cap covers the whole attempt. RSS is the process peak."""
+    def __init__(self, caps, window, *, clock=time.monotonic, now=None, rss=peak_rss_bytes, alarm=True, consumed=0.):
         self.total_cap, self.stage_cap = caps['total_wall_cap_seconds'], caps['stage_hang_guard_seconds']
         self.rss_cap, self.b2_soft_cap = caps['abort_rss_bytes'], caps['b2_fit_soft_cap_seconds']
         self.window = (_minutes(window['start']), _minutes(window['end']))
         self.clock, self.now = clock, now or (lambda: datetime.now(KST))
-        self.rss, self.alarm = rss, alarm
+        self.rss, self.alarm, self.consumed = rss, alarm, float(consumed)
         self.run_start = self.stage_start = None
         self.stage_name, self.armed = '', False
         self.warnings = []
@@ -278,9 +319,17 @@ class Guard:
             start += timedelta(days=1)
         return (start - t).total_seconds()
 
+    def elapsed(self):
+        return 0. if self.run_start is None else self.clock() - self.run_start
+
+    def remaining(self):
+        return self.total_cap - self.consumed - self.elapsed()
+
     def start_run(self):
         if self.in_window():
             raise Refused('inside the recorder/publisher protection window 06:30-13:30 KST; refusing to start')
+        if self.consumed >= self.total_cap:
+            raise Abort('TOTAL_WALL_CAP', 'attempt budget already consumed')
         self.run_start = self.clock()
 
     def start_stage(self, name):
@@ -296,8 +345,7 @@ class Guard:
             self._arm()
 
     def _arm(self):
-        remaining = min(self.stage_cap - (self.clock() - self.stage_start),
-                        self.total_cap - (self.clock() - self.run_start), self.seconds_to_window())
+        remaining = min(self.stage_cap - (self.clock() - self.stage_start), self.remaining(), self.seconds_to_window())
         signal.setitimer(signal.ITIMER_REAL, max(remaining, 0.05))
 
     def _on_alarm(self, signum, frame):
@@ -308,16 +356,16 @@ class Guard:
 
     def stop_stage(self):
         self.armed = False
+        self.stage_start = None
         if self.alarm:
             signal.setitimer(signal.ITIMER_REAL, 0)
 
     def check(self, where=''):
         if self.in_window():
             raise Abort('PROTECTION_WINDOW', where)
-        now = self.clock()
-        if self.run_start is not None and now - self.run_start > self.total_cap:
+        if self.run_start is not None and self.remaining() < 0:
             raise Abort('TOTAL_WALL_CAP', where)
-        if self.stage_start is not None and now - self.stage_start > self.stage_cap:
+        if self.stage_start is not None and self.clock() - self.stage_start > self.stage_cap:
             raise Abort('STAGE_HANG_GUARD', where)
         if self.rss() > self.rss_cap:
             raise Abort('RSS_CAP', where)
@@ -329,6 +377,83 @@ class Guard:
             self.warnings.append(warning)
             return warning
         return None
+
+
+def _stop_child(process):
+    """Stop only the runner-owned child and its own process group (started in a new session)."""
+    if process.poll() is not None:
+        return
+    for sig, wait in ((signal.SIGTERM, 10), (signal.SIGKILL, 10)):
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            return
+        try:
+            process.wait(timeout=wait)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def supervised(command, guard, *, timeout, where, cwd=None, env=None, poll=0.5):
+    """Run a runner-owned child under the guard: the protection window, the attempt budget and the RSS
+    cap are checked every ``poll`` seconds; on any of them (or ``timeout``) the child is stopped."""
+    started = time.monotonic()
+    process = subprocess.Popen(list(command), cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               text=True, start_new_session=True)
+    try:
+        while True:
+            try:
+                out, err = process.communicate(timeout=poll)
+                return {'returncode': process.returncode, 'stdout': out, 'stderr': err,
+                        'seconds': time.monotonic() - started}
+            except subprocess.TimeoutExpired:
+                pass
+            guard.check(where)
+            if time.monotonic() - started > timeout:
+                raise Refused(f'{where} exceeded its {timeout} s timeout')
+    except BaseException:
+        _stop_child(process)
+        raise
+
+
+def parse_free_share(text):
+    match = re.search(r'System-wide memory free percentage:\s*(\d+)%', text or '')
+    if not match:
+        raise Refused('memory_pressure free percentage unavailable')
+    return int(match.group(1)) / 100
+
+
+BUDGET = 'budget.jsonl'
+
+
+def consumed_seconds(root):
+    """Attempt seconds spent by earlier commands; a command without its end record (a killed process)
+    leaves the budget unknown and the attempt cannot continue."""
+    total, open_start = 0., None
+    for row in read_chain(Path(root) / BUDGET):
+        if row['event'] == 'start':
+            if open_start is not None:
+                raise Refused('attempt budget unknown: a command has no end record', terminal=True)
+            open_start = row
+        elif row['event'] == 'end':
+            if open_start is None or row.get('start_sha256') != open_start['sha256']:
+                raise IntegrityError('budget.jsonl end record does not close the open command')
+            total += float(row['seconds'])
+            open_start = None
+    if open_start is not None:
+        raise Refused('attempt budget unknown: a command has no end record', terminal=True)
+    return total
+
+
+def begin_command(root, command, consumed):
+    return append_chain(Path(root) / BUDGET, {'event': 'start', 'command': command, 'consumed_before': consumed,
+                                              'utc': datetime.now(timezone.utc).isoformat()})
+
+
+def end_command(root, start, seconds):
+    return append_chain(Path(root) / BUDGET, {'event': 'end', 'command': start['command'], 'start_sha256': start['sha256'],
+                                              'seconds': float(seconds), 'utc': datetime.now(timezone.utc).isoformat()})
 
 
 # ---------------------------------------------------------------- attempt directory, records, pins
@@ -400,7 +525,7 @@ class StageDir:
 
 
 class Attempt:
-    """One attempt directory: numbered stage directories, the stages.jsonl and addenda.jsonl chains."""
+    """One attempt directory: numbered stage directories, the stages / addenda / budget chains."""
     def __init__(self, root):
         self.root = Path(root)
 
@@ -410,16 +535,35 @@ class Attempt:
     def records(self):
         return read_chain(self.root / 'stages.jsonl')
 
-    def status(self, stage):
+    def record(self, stage):
         rows = [r for r in self.records() if r['stage'] == stage]
-        return rows[-1]['status'] if rows else None
+        return rows[-1] if rows else None
+
+    def status(self, stage):
+        row = self.record(stage)
+        return None if row is None else row['status']
+
+    def closed(self):
+        return (self.root / 'final.json').exists()
+
+    def started(self):
+        """Any stage ran (a record or a stage directory exists)."""
+        return (self.root / 'stages.jsonl').exists() or any(self.stage_path(s).exists() for s in reg.STAGES)
 
     def passed(self, stage):
-        if self.status(stage) != 'PASS':
+        """PASS in the chain, and the stage directory still matches the digests anchored in the chain:
+        stage.json and SHA256SUMS first, then every file listed in SHA256SUMS."""
+        row = self.record(stage)
+        if row is None or row['status'] != 'PASS':
             return False
         path = self.stage_path(stage)
+        for name, key in (('stage.json', 'stage_json_sha256'), ('SHA256SUMS', 'sha256sums_sha256')):
+            if not (path / name).is_file() or sha256_file(path / name) != row.get(key):
+                raise IntegrityError(f'stage {stage}: {name} differs from the digest anchored in stages.jsonl')
         if not verify_sha256sums(path):
-            raise IntegrityError(f'stage {stage}: SHA256SUMS no longer match its files')
+            raise IntegrityError(f'stage {stage}: files no longer match SHA256SUMS')
+        if json.loads((path / 'stage.json').read_text()).get('status') != 'PASS':
+            raise IntegrityError(f'stage {stage}: stage.json status differs from the chain')
         return True
 
     def addenda(self):
@@ -449,23 +593,12 @@ class Gate:
             raise Refused(f'{purpose} needs a passed {stage} stage in this attempt')
 
 
-class SealedLabels:
-    """DEV pitch-type labels kept out of the frame (SEALED placeholder) until their release."""
-    def __init__(self, frame, split='dev'):
-        mask = frame.split.eq(split)
-        self.index = frame.index[mask]
-        self.values = frame.loc[mask, 'pitch_type'].astype(object).copy()
-        self.sha256 = sha256_bytes('\n'.join('' if pd.isna(v) else str(v) for v in self.values).encode())
-        frame['pitch_type'] = frame['pitch_type'].astype(object)
-        frame.loc[mask, 'pitch_type'] = SEALED
-        self.released = None
-
-    def release(self, frame, gate, purpose):
-        gate.require_pinned('freeze-primary', purpose)
-        gate.require_passed('s6-integrity', purpose)
-        frame.loc[self.index, 'pitch_type'] = self.values
-        self.released = purpose
-        return self.sha256
+def write_final(root, *, outcome, stage, reason, config_sha256, citable=False, extra=None):
+    """Terminal attempt record (TERMINAL_FAILURES for unsuccessful attempts, a decision label otherwise)."""
+    if outcome not in reg.RUN_LABELS:
+        raise IntegrityError(f'unregistered terminal outcome {outcome}')
+    dump_json(Path(root) / 'final.json', {'label': outcome, 'outcome': outcome, 'stage': stage, 'reason': reason,
+                                          'citable': citable, 'config_sha256': config_sha256, **(extra or {})})
 
 
 # ---------------------------------------------------------------- manifests
@@ -510,11 +643,10 @@ def load_frozen_text(root, manifest, rel):
 # ---------------------------------------------------------------- run object
 
 class Run:
-    def __init__(self, config, *, destination, source, guard, commit, preflight=None, output_root=None, lock=None):
+    def __init__(self, config, *, destination, source, guard, commit):
         self.config, self.destination = config, Path(destination)
         self.config_sha256 = config_content_sha256(config)
         self.source, self.guard, self.commit = source, guard, commit
-        self.preflight, self.output_root, self.lock = preflight, output_root, lock
         self.attempt = Attempt(self.destination)
         self.gate = Gate(self.attempt)
         self.state = {}
@@ -522,15 +654,19 @@ class Run:
 
     def inputs(self):
         if self._inputs is None:
-            self._inputs = self.source.load(self)
-            check_splits(self._inputs.frame)
+            self._inputs = self.source.open(self)
         return self._inputs
+
+    def reads(self, stage):
+        return [] if self._inputs is None else self._inputs.reads(stage)
 
     def seeds(self):
         return self.config['seeds']
 
     def require_order(self, stage):
         index = reg.STAGES.index(stage)
+        if self.attempt.closed():
+            raise Refused('this attempt is closed (final.json exists); register a new attempt')
         if self.attempt.status(stage) is not None or self.attempt.stage_path(stage).exists():
             raise Refused(f'{stage} already exists in this attempt; register a new attempt')
         if index and not self.attempt.passed(reg.STAGES[index - 1]):
@@ -539,21 +675,25 @@ class Run:
         if failed:
             raise Refused(f'an earlier stage did not pass ({failed}); no later stage runs in this attempt')
         for earlier in reg.STAGES[:index]:
+            if not self.attempt.passed(earlier):  # every earlier stage against its chain-anchored digests
+                raise Refused(f'{stage} needs every earlier stage passed ({earlier} is not)')
             record = json.loads((self.attempt.stage_path(earlier) / 'stage.json').read_text())
             if record.get('config_sha256') != self.config_sha256:
                 raise Refused(f'the config changed since {earlier} ran in this attempt; register a new attempt')
 
 
 def execute_stage(run, stage):
-    """Run one stage with its record, SHA256SUMS and chain entry; return its status."""
+    """Revalidate the registration, run one stage, write its record, SHA256SUMS and chain entry; any
+    non-PASS status closes the attempt with a non-citable final.json. Returns the status."""
     run.require_order(stage)
     path = run.attempt.stage_path(stage)
     path.mkdir(parents=True, exist_ok=False)
     out = StageDir(path)
     started, t0 = datetime.now(timezone.utc).isoformat(), time.perf_counter()
-    status, error, summary = 'PASS', None, None
+    status, error, summary, revalidation = 'PASS', None, None, None
     try:
         try:
+            revalidation = run.source.revalidate(run, stage)
             run.guard.start_stage(stage)
             summary = STAGE_FUNCTIONS[stage](run, out)
             run.guard.check(f'{stage}:end')
@@ -574,17 +714,16 @@ def execute_stage(run, stage):
               'ended_utc': datetime.now(timezone.utc).isoformat(), 'seconds': time.perf_counter() - t0,
               'peak_rss_bytes': run.guard.rss(), 'seeds': run.seeds(), 'config_sha256': run.config_sha256,
               'git_commit': run.commit, 'summary': summary, 'error': error, 'warnings': list(run.guard.warnings),
-              'citable': status == 'PASS', 'environment': environment()}
+              'citable': status == 'PASS', 'revalidation': revalidation, 'reads': run.reads(stage),
+              'environment': environment()}
     run.guard.warnings.clear()
     out.json('stage.json', record)
     out.text('SHA256SUMS', sha256sums(path))
     append_chain(run.attempt.root / 'stages.jsonl',
                  {'stage': stage, 'status': status, 'stage_json_sha256': sha256_file(path / 'stage.json'),
                   'sha256sums_sha256': sha256_file(path / 'SHA256SUMS')})
-    if status in ('FAILED_INTEGRITY', 'ABORTED'):
-        dump_json(run.attempt.root / 'final.json', {'label': 'FAILED_INTEGRITY' if status == 'FAILED_INTEGRITY'
-                                                    else 'ABORTED', 'stage': stage, 'error': error,
-                                                    'citable': False, 'config_sha256': run.config_sha256})
+    if status != 'PASS':
+        write_final(run.attempt.root, outcome=status, stage=stage, reason=error, config_sha256=run.config_sha256)
     return status
 
 
@@ -593,27 +732,14 @@ def environment():
     import importlib.metadata
     out = {'python': platform.python_version(), 'machine': platform.machine(),
            'dynamic_library_path': os.environ.get('DYLD_LIBRARY_PATH', '')}
-    for name in ('numpy', 'pandas', 'scipy', 'lightgbm', 'torch'):
+    for name in ('numpy', 'pandas', 'scipy', 'pyarrow', 'lightgbm', 'torch'):
         try:
             out[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             out[name] = None
+    pyproject = REPO / 'pyproject.toml'
+    out['pyproject_sha256'] = sha256_file(pyproject) if pyproject.exists() else None
     return out
-
-
-def validate_native_runtime():
-    """run_ml_benchmark.validate_native_runtime rule: torch (pulled in by pitchmdp.model) and
-    LightGBM must share ONE OpenMP runtime; the unsafe duplicate override is refused."""
-    import importlib.util
-    if os.environ.get('KMP_DUPLICATE_LIB_OK', '').lower() in ('true', '1', 'yes'):
-        raise Refused('the unsafe KMP_DUPLICATE_LIB_OK override is forbidden')
-    if sys.platform == 'darwin':
-        spec = importlib.util.find_spec('torch')
-        torch_lib = (Path(spec.origin).resolve().parent / 'lib') if spec else None
-        configured = [Path(v).resolve() for v in os.environ.get('DYLD_LIBRARY_PATH', '').split(':') if v]
-        if torch_lib is None or torch_lib.resolve() not in configured:
-            raise Refused(f'launch with DYLD_LIBRARY_PATH={torch_lib} so torch and LightGBM share one OpenMP runtime')
-    return True
 
 
 # ---------------------------------------------------------------- shared pieces of the stages
@@ -624,12 +750,11 @@ def oof_spec(config):
             'minimum_action_count': int(config['candidates']['B0']['parameters']['minimum_action_count'])}
 
 
-def feature_context(run, frame, train):
+def feature_context(run, frame, train, raw):
     from pitchmdp.policy_requests import volume_edges
     inputs = run.inputs()
     volumes = train.groupby('pitcher').size()
     edges = volume_edges(train, (0.25, 0.75))
-    raw = inputs.raw_keys.loc[inputs.raw_keys.game_pk.isin(frame.game_pk.unique())]
     return FeatureContext(vocabulary=reg.ACTION_CODES, archetypes=inputs.archetypes, b0=inputs.b0.vector,
                           train_volume={int(p): int(n) for p, n in volumes.items()}, volume_edges=tuple(edges),
                           style=style_tables(frame), workload=workload_features(frame, raw), hands=inputs.hands,
@@ -654,13 +779,14 @@ def s_in_rows(table):
 
 def b0_cell_check(b1, b0_vector):
     """B1 at the B0 setting must be fit on exactly the BC_P rows: its league, pitcher and
-    (pitcher, count, side, previous) counts equal the registered artifact's."""
+    (pitcher, count, side, previous) counts and label vocabulary equal the registered artifact's."""
     pitchers, cells = b1.tables['pitcher'], b1.tables['previous_type']
-    expected = b0_vector.repertoire.table
-    return {'league': bool(np.array_equal(b1.league, b0_vector.repertoire.league)),
-            'pitchers': bool(np.array_equal(pitchers.keys >> trailing_bits(1), expected.keys)
-                             and np.array_equal(pitchers.counts, expected.counts)),
-            'cells': bool(np.array_equal(cells.keys, b0_vector.cells.keys)
+    expected = b0_vector.repertoire
+    return {'league': bool(np.array_equal(b1.league, expected.league)),
+            'pitchers': bool(np.array_equal(pitchers.keys >> trailing_bits(1), expected.pitchers)
+                             and np.array_equal(pitchers.counts, expected.pitcher_counts)),
+            'cells': bool(cells.vocabulary == b0_vector.cells.vocabulary
+                          and np.array_equal(cells.keys, b0_vector.cells.keys)
                           and np.array_equal(cells.counts, b0_vector.cells.counts))}
 
 
@@ -688,12 +814,11 @@ def load_arrays(root, manifest, prefix, names):
 # ---------------------------------------------------------------- stages
 
 def stage_smoke(run, out):
-    """First registered step: TRAIN rows only, cost and integrity (wall time, RSS, determinism,
-    hashes). No metric is computed or read."""
+    """First registered step: TRAIN rows only (row groups ending on or before 2025-04-30), cost and
+    integrity (wall time, RSS, determinism, hashes). No metric is computed or read."""
     inputs = run.inputs()
     spec = run.config['runner']['smoke']
-    frame = inputs.frame
-    train = frame.loc[frame.split.eq('train')]
+    train = inputs.smoke_frame('smoke')
     masks = population_masks(train, hands=inputs.hands, repertoire=inputs.b0.repertoire)
     plus = np.flatnonzero(masks['P_plus'])
     n = min(int(spec['train_rows']), len(plus))
@@ -702,7 +827,8 @@ def stage_smoke(run, out):
     part = train.iloc[:plus[n - 1] + 1]
     timings = {}
     t = time.perf_counter()
-    ctx = feature_context(run, part, train)
+    raw = inputs.raw_keys('smoke', part.game_pk.unique(), max_date=TRAIN_END)
+    ctx = feature_context(run, part, train, raw)
     table, info, _, oof_models = split_table(part, 'train', ctx, oof=oof_spec(run.config))
     timings['features_seconds'] = time.perf_counter() - t
     run.guard.check('smoke:features')
@@ -738,17 +864,22 @@ def stage_smoke(run, out):
     deterministic = len({(f['model_sha256'], f['predictions_sha256']) for f in fits}) == 1
     atol = run.config['ope_weight_diagnostics']['integrity_gates']['R1b_atol']
     pinned_b0 = run.config['data']['b0_artifact']['file_sha256']
-    checks = {'b0_artifact_sha256_pinned': inputs.identity['b0']['file_sha256'] == pinned_b0,
+    after_train = inputs.log.rows_at_or_after(SINCE_AFTER_TRAIN, guarded_only=False, phases=['smoke'])
+    checks = {'processed_bytes_unchanged': inputs.verify_unchanged(),
+              'b0_artifact_sha256_pinned': inputs.identity['b0']['file_sha256'] == pinned_b0,
               'vector_b0_equals_categorical_bc_on_train': r1b_train is not None and r1b_train <= atol,
               'b1_at_b0_setting_equals_b0_recipe': b1_equals_b0 <= atol,
-              'b2_deterministic': deterministic, 'no_2026_row': guard_dates(frame) is frame,
-              'dev_labels_sealed': inputs.sealed.released is None}
-    record = {'rows': {'train_slice_rows': int(len(part)), 'train_P_plus_rows': int(len(table)),
-                       'state_checks': int(len(rows))}, 'timings': timings, 'b2_fits': fits,
+              'b2_deterministic': deterministic, 'no_2026_row': guard_dates(train) is train,
+              'no_row_after_train_end_decoded': after_train == 0,
+              'dev_guarded_rows_decoded': inputs.log.rows_at_or_after(SINCE_DEV, guarded_only=True) == 0}
+    record = {'rows': {'train_rows_read': int(len(train)), 'train_slice_rows': int(len(part)),
+                       'train_P_plus_rows': int(len(table)), 'state_checks': int(len(rows))},
+              'timings': timings, 'b2_fits': fits,
               'max_abs_diff': {'vector_vs_categorical': r1b_train, 'b1_b0_setting_vs_vector_fit': b1_equals_b0},
               'checks': checks, 'feature_matrix_sha256': sha256_bytes(features.tobytes()),
               'oof_models_sha256': [arrays_sha256(m.arrays()) for m in oof_models],
-              'metrics_computed': None, 'note': 'cost and integrity only; no comparison metric computed or read'}
+              'rows_decoded_after_train_end': after_train, 'metrics_computed': None,
+              'note': 'cost and integrity only; no comparison metric computed or read'}
     out.json('smoke.json', record)
     if not all(checks.values()):
         raise IntegrityError(f'smoke integrity failed: {[k for k, v in checks.items() if not v]}')
@@ -760,16 +891,20 @@ def stage_smoke(run, out):
 
 def stage_census(run, out):
     inputs = run.inputs()
-    counts = census_counts(label_free_view(inputs.frame), hands=inputs.hands, repertoire=inputs.b0.repertoire)
+    counts = census_counts(inputs.census_view('census'), hands=inputs.hands, repertoire=inputs.b0.repertoire)
+    guarded = [e for e in inputs.reads('census') if e['guarded']]
+    if guarded:
+        raise IntegrityError('the census decoded a guarded column')
     out.json('census.json', counts)
-    return {'splits': {k: v['rows'] for k, v in counts['splits'].items()}}
+    return {'splits': {k: v['rows'] for k, v in counts['splits'].items()}, 'guarded_reads': 0}
 
 
 def stage_fit(run, out):
     inputs, config = run.inputs(), run.config
-    frame = inputs.frame
+    frame = inputs.pre_gate_frame('fit')
     train = frame.loc[frame.split.eq('train')]
-    ctx = feature_context(run, frame, train)
+    raw = inputs.raw_keys('fit', frame.game_pk.unique())
+    ctx = feature_context(run, frame, train, raw)
     run.guard.check('fit:context')
     train_table, train_info, _, oof_models = split_table(train, 'train', ctx, oof=oof_spec(config))
     run.guard.check('fit:train-table')
@@ -785,8 +920,8 @@ def stage_fit(run, out):
     es_rows = s_in_rows(es_table)
     if not len(es_rows):
         raise IntegrityError('no earlystop S_in rows')
-    tune = b1.tune(es_table.keys.take(es_rows), labels(es_table, es_rows), sweeps=config['candidates']['B1']['search']['sweeps'],
-                   guard=run.guard)
+    tune = b1.tune(es_table.keys.take(es_rows), labels(es_table, es_rows),
+                   sweeps=config['candidates']['B1']['search']['sweeps'], guard=run.guard)
     t = time.perf_counter()
     model_string, best, b2_record = LGBMBehavior.train(
         train_table.matrix(reg.B2_FEATURES, None), y, es_table.matrix(reg.B2_FEATURES, es_rows),
@@ -829,7 +964,8 @@ def stage_fit(run, out):
 def stage_calibrate(run, out):
     inputs, config = run.inputs(), run.config
     ctx, b1, b2 = run.state['ctx'], run.state['b1'], run.state['b2']
-    table, info, _, _ = split_table(inputs.frame.loc[inputs.frame.split.eq('temperature')], 'temperature', ctx)
+    frame = inputs.pre_gate_frame('calibrate')
+    table, info, _, _ = split_table(frame.loc[frame.split.eq('temperature')], 'temperature', ctx)
     rows = s_in_rows(table)
     if not len(rows):
         raise IntegrityError('no temperature S_in rows')
@@ -851,13 +987,14 @@ def stage_calibrate(run, out):
 
 
 def stage_freeze_primary(run, out):
-    root = run.attempt.root
+    root, inputs = run.attempt.root, run.inputs()
     files = [p for stage in ('fit', 'calibrate') for p in StageDir(run.attempt.stage_path(stage)).artifacts()]
     train, es, temp = run.state['train_table'], run.state['es_table'], run.state['temp_table']
     ctx = run.state['ctx']
     groups = {
         'B1': {'files': 'b1/', 'input_rows': {'fit': {'split': 'train', 'dates': date_range(train), 'rows': len(train)},
-                                               'alpha_selection': {'split': 'earlystop', 'dates': date_range(es, run.state['es_rows']),
+                                               'alpha_selection': {'split': 'earlystop',
+                                                                   'dates': date_range(es, run.state['es_rows']),
                                                                    'rows': int(len(run.state['es_rows']))}}},
         'B2': {'files': 'b2/', 'input_rows': {'fit': {'split': 'train', 'dates': date_range(train), 'rows': len(train)},
                                                'round_selection': {'split': 'earlystop',
@@ -870,18 +1007,20 @@ def stage_freeze_primary(run, out):
                                                               'dates': ctx.style.input_dates}, 'as_of': reg.STYLE_AS_OF},
         'train_volume': {'files': 'train_volume.json', 'input_rows': {'split': 'train', 'dates': date_range(train)}}}
     latest = max(d[1] for d in collect_dates(groups) if d)
+    inputs.verify_unchanged()
+    dev_guarded = inputs.log.rows_at_or_after(SINCE_DEV, guarded_only=True)
     extra = {'config_sha256': run.config_sha256, 'git_commit': run.commit, 'seeds': run.seeds(),
-             'inputs': run.inputs().identity, 'latest_input_row_date': latest,
+             'inputs': inputs.identity, 'latest_input_row_date': latest,
              'inputs_on_or_before_2025_05_31': latest <= reg.STYLE_INPUT_FILTER['end'],
-             'dev_pitch_type_labels_read': run.inputs().sealed.released is not None,
+             'reads': inputs.reads(), 'dev_guarded_rows_decoded': dev_guarded,
              'calibration_status': {k: v['status'] for k, v in run.state['calibration'].items()}}
-    if extra['dev_pitch_type_labels_read'] or not extra['inputs_on_or_before_2025_05_31']:
-        raise IntegrityError('freeze-primary inputs must be <= 2025-05-31 with DEV labels still sealed')
+    if dev_guarded or inputs.released is not None or not extra['inputs_on_or_before_2025_05_31']:
+        raise IntegrityError('freeze-primary needs inputs <= 2025-05-31 and no DEV guarded row decoded (read log)')
     manifest = build_manifest(root, files, name='freeze-primary', groups=groups, extra=extra)
     data = canonical_bytes(manifest)
     (out.path / 'manifest.json').write_bytes(data)
     append_chain(root / 'addenda.jsonl', {'addendum': 'freeze-primary', 'manifest_sha256': sha256_bytes(data),
-                                          'latest_input_row_date': latest})
+                                          'latest_input_row_date': latest, 'dev_guarded_rows_decoded': dev_guarded})
     reloaded = reload_primary(run, manifest)
     temp, rows = run.state['temp_table'], run.state['temp_rows']
     roundtrip = {name: float(np.abs(reloaded[name].batch(temp, rows) - run.state[key].batch(temp, rows)).max())
@@ -890,7 +1029,8 @@ def stage_freeze_primary(run, out):
         raise IntegrityError(f'frozen models do not reproduce the fitted ones: {roundtrip}')
     run.state.update(manifest_primary=manifest, b1=reloaded['B1'], b2=reloaded['B2'],
                      calibrated=reloaded['calibrated'])
-    return {'manifest_sha256': sha256_bytes(data), 'artifacts': len(manifest['artifacts']), 'roundtrip_max_abs': roundtrip}
+    return {'manifest_sha256': sha256_bytes(data), 'artifacts': len(manifest['artifacts']), 'roundtrip_max_abs': roundtrip,
+            'dev_guarded_rows_decoded': dev_guarded}
 
 
 def reload_primary(run, manifest):
@@ -900,9 +1040,7 @@ def reload_primary(run, manifest):
     fit = run.attempt.stage_path('fit').name
     cal = run.attempt.stage_path('calibrate').name
     b1_meta = json.loads(load_frozen_text(root, manifest, f'{fit}/b1/b1.json'))
-    names = ['league', 'support_league', 'support_pitchers', 'support_counts',
-             *(f'{level}_{part}' for level in reg.B1_LEVELS[1:] for part in ('keys', 'counts'))]
-    b1 = BackoffBC.from_arrays(load_arrays(root, manifest, f'{fit}/b1', names),
+    b1 = BackoffBC.from_arrays(load_arrays(root, manifest, f'{fit}/b1', BackoffBC.array_names()),
                                {k: alpha_from_token(v) for k, v in b1_meta['alphas'].items()},
                                provenance={'frozen': f'{fit}/b1'})
     b2_meta = json.loads(load_frozen_text(root, manifest, f'{fit}/b2/b2.json'))
@@ -940,14 +1078,16 @@ def stage_s6_integrity(run, out):
     if not all(checks.values()):
         raise IntegrityError(f'FAILED_INTEGRITY: {[k for k, v in checks.items() if not v]}')
     run.state.update(ledger_pas=pas, e0=e0)
-    return {'checks': checks, 'e0_pas': sum(v[0] for v in e0.values())}
+    return {'checks': checks, 'e0_pas': sum(v[0] for v in e0.values()), 'ledger_parsing': record['parsing']}
 
 
 def stage_xf_fit(run, out):
     inputs, config = run.inputs(), run.config
-    released = inputs.sealed.release(inputs.frame, run.gate, 'xf-fit')
+    released = inputs.release_dev(run.gate, 'xf-fit')
     ctx, train = run.state['ctx'], run.state['train_table']
-    dev, info, _, _ = split_table(inputs.frame.loc[inputs.frame.split.eq('dev')], 'dev', ctx)
+    frame = inputs.pre_gate_frame('xf-fit')
+    dev, info, _, _ = split_table(frame.loc[frame.split.eq('dev')], 'dev', ctx)
+    inputs.verify_unchanged()  # after the last decode of the attempt
     folds = game_fold(dev.frame.game_pk.to_numpy(), config['seeds']['fold_salts']['dev_xf'],
                       config['cross_fitting']['folds']['k'])
     width = len(reg.ACTION_CODES)
@@ -986,9 +1126,9 @@ def stage_xf_fit(run, out):
                             'b1_xf_calibration': 'frozen primary B1 calibrator' if b1xf is not None else
                             'B1 CALIBRATION_FAILED: raw only',
                             'exposure': 'DEV pitch-type labels of the other four folds fit the XF arms (descriptive)',
-                            'dev_labels_sha256': released,
+                            'dev_release': released,
                             'dev_label_aggregates': 'reported by score-dev only (P, S_in, S_off, P_plus, TRAIN0)'})
-    run.state.update(dev_table=dev, dev_info=info)
+    run.state.update(dev_table=dev, dev_info=info, dev_release=released)
     return {'folds': len(per_fold)}
 
 
@@ -997,7 +1137,7 @@ def stage_freeze_xf(run, out):
     files = StageDir(run.attempt.stage_path('xf-fit')).artifacts()
     manifest = build_manifest(run.attempt.root, files, name='freeze-xf', groups={
         'XF': {'files': 'xf/', 'input_rows': {'fit': 'TRAIN plus the other four DEV folds', 'predict': 'DEV fold k'}}},
-        extra={'config_sha256': run.config_sha256, 'git_commit': run.commit})
+        extra={'config_sha256': run.config_sha256, 'git_commit': run.commit, 'reads': run.inputs().reads()})
     data = canonical_bytes(manifest)
     (out.path / 'manifest.json').write_bytes(data)
     append_chain(run.attempt.root / 'addenda.jsonl', {'addendum': 'freeze-xf', 'manifest_sha256': sha256_bytes(data)})
@@ -1188,7 +1328,7 @@ def candidate_status(partial, e5, integrity_ok):
 
 
 def final_label(integrity_ok, statuses, nll, *, tie_margin, simpler='B1'):
-    """Exhaustive label partition (registry.RUN_LABELS minus ABORTED, which only the runner sets)."""
+    """Exhaustive decision-label partition (registry.DECISION_LABELS)."""
     if not integrity_ok:
         return 'FAILED_INTEGRITY'
     if all(statuses[c] == 'NOT_EVALUABLE' for c in reg.ADOPTION_CANDIDATES):
@@ -1220,13 +1360,13 @@ def stage_decide(run, out):
                 'tie_rule': f"both eligible and |NLL_B1 - NLL_B2| < {config['verdict_rule']['selection']['tie_margin']}"
                             ' (strict) -> B1', 'E4_integrity': integrity_ok,
                 'E4_evidence': {'smoke': run.attempt.status('smoke'), 's6_integrity': run.attempt.status('s6-integrity'),
-                                'preflight_tests': preflight or 'not run by this caller (main runs them before any '
+                                'preflight_tests': preflight or 'not run by this caller (launch runs them before any '
                                                                 'real-data stage)'},
                 'descriptive_only': config['verdict_rule']['descriptive_only'],
                 'not_claimed': 'no OPE value or Delta; DEV is exposed development; no service change'}
     out.json('decision.json', decision)
-    dump_json(run.attempt.root / 'final.json', {'label': label, 'stage': 'decide', 'citable': True,
-                                                'config_sha256': run.config_sha256, 'git_commit': run.commit})
+    write_final(run.attempt.root, outcome=label, stage='decide', reason=None, config_sha256=run.config_sha256,
+                citable=True, extra={'git_commit': run.commit})
     return {'label': label, 'candidate_status': statuses}
 
 
@@ -1238,107 +1378,103 @@ STAGE_FUNCTIONS = {'smoke': stage_smoke, 'census': stage_census, 'fit': stage_fi
 
 # ---------------------------------------------------------------- real inputs (only after the gate)
 
-class Inputs:
-    def __init__(self, *, frame, raw_keys, b0, support, hands, archetypes, ledger, identity):
-        self.frame, self.raw_keys, self.b0 = frame, raw_keys, b0
-        self.support, self.hands, self.archetypes = support, hands, archetypes
-        self.ledger, self.identity = ledger, identity
-        self.sealed = SealedLabels(frame)
-        self.identity['dev_labels_sealed_sha256'] = self.sealed.sha256
-
-
-FRAME_COLUMNS = ['game_pk', 'at_bat_number', 'pitch_number', 'game_date', 'split', 'pitcher', 'batter', 'stand',
-                 'p_throws', 'balls', 'strikes', 'outs_when_up', 'bases', 'inning', 'inning_topbot', 'home_score',
-                 'away_score', 'pitch_type', 'description', 'events', 'is_pa_terminal', 'launch_angle']
+def verify_processed_identity(local, parent, pinned_sha256):
+    """matrix_data.load_verified_processed_cache identity checks WITHOUT decoding any row: the frozen
+    manifests, raw-byte sha256 of the processed parquet and the physics sidecar (never decoded), and
+    equality with the G0 parent preparation's dataset identity and source provenance."""
+    from pitchmdp.data import KEY, RAW_ALLOWLIST, hash_file
+    from pitchmdp.sequence_data import CACHE_VERSION, SIDECAR_COLUMNS
+    if local.get('raw_allowlist') != RAW_ALLOWLIST:
+        raise IntegrityError('configured raw allowlist differs from the approved 2023-25 sources')
+    root = Path(local['artifact_root'])
+    quality = json.loads((root / 'reports/data_quality.json').read_text())
+    metadata = json.loads((root / 'cache/sequence_physics.json').read_text())
+    sources = quality.get('sources')
+    if (not isinstance(sources, list) or [s.get('file') for s in sources] != RAW_ALLOWLIST
+            or any(not isinstance(s.get('bytes'), int) or s['bytes'] <= 0 or not isinstance(s.get('sha256'), str)
+                   or len(s['sha256']) != 64 for s in sources)):
+        raise IntegrityError('frozen quality manifest lacks approved historical raw identities')
+    expected = {'cache_version': CACHE_VERSION, 'sources': sources, 'processed_sha256': quality['processed_sha256'],
+                'rows': quality['rows'], 'key': KEY, 'columns': list(SIDECAR_COLUMNS)}
+    if metadata.get('identity') != expected:
+        raise IntegrityError('physics cache identity differs from the frozen quality manifest')
+    processed, cache = root / 'processed/pitches.parquet', root / 'cache/sequence_physics.parquet'
+    if quality['processed_sha256'] != pinned_sha256 or hash_file(processed) != pinned_sha256 \
+            or hash_file(cache) != metadata.get('sha256'):
+        raise IntegrityError('processed or physics cache bytes differ from their pins')
+    provenance = {'input_mode': 'verified_processed_cache',
+                  'raw_available': all((Path(local['raw_root']) / s['file']).is_file() for s in sources),
+                  'raw_hash_verification': 'historical_only', 'processed_cache_verification': 'current_verified',
+                  'quality_manifest_sha256': hash_file(root / 'reports/data_quality.json'),
+                  'cache_manifest_sha256': hash_file(root / 'cache/sequence_physics.json'),
+                  'processed_sha256': quality['processed_sha256'], 'cache_sha256': metadata['sha256']}
+    if expected != parent['dataset_identity'] or provenance != parent['source_provenance']:
+        raise IntegrityError('processed data differs from the G0 parent preparation')
+    return processed, {'rows': quality['rows'], 'provenance': provenance}
 
 
 class RealSource:
-    """Pinned real inputs. Constructed only by ``main`` after ``registration_gate`` passed."""
-    def __init__(self, config, local, config_path):
-        self.config, self.local, self.config_path = config, local, config_path
+    """Pinned real inputs; the registration gate is re-run before every stage (``revalidate``)."""
+    def __init__(self, config, local, config_path, env):
+        self.config, self.local, self.config_path, self.env = config, local, Path(config_path), env
 
-    def load(self, run):
-        # Defense in depth: the real loader re-runs the registration gate before opening any file.
-        if json.loads(Path(self.config_path).read_bytes()) != self.config:
-            raise Refused('the config in memory differs from the registered config file')
-        registration_gate(self.config, git=git_state(_field(self.config, 'code.commit'), self.config_path),
-                          runner_sha256=sha256_file(Path(__file__)))
-        validate_native_runtime()
-        from pitchmdp.matrix_data import load_verified_processed_cache
+    def revalidate(self, run, stage):
+        if json.loads(self.config_path.read_bytes()) != self.config:
+            raise Refused('the config file changed since this command started', terminal=True)
+        registration_gate(self.config, git=self.env.git_state(_field(self.config, 'code.commit'), self.config_path),
+                          runner_sha256=self.env.runner_sha256())
+        return {'stage': stage, 'registration_gate': 'PASS', 'dependencies': self.env.native_check()}
+
+    def open(self, run):
         from pitchmdp.policy_artifacts import load_hand_registry, load_support_table
         from pitchmdp.policy_identity import pinned_json, pinned_pickle
-        from run_temporal_blend import assign_fold
-        config, pins = self.config, reg.DATA_PINS
+        config, pins, local = self.config, reg.DATA_PINS, self.local
         bundle = pinned_json(REPO / 'configs' / 'G0-RESEARCH-FROZEN-v1.json', pins['g0_bundle_sha256'])
         files = bundle['files']
         parent = pinned_json(files['p4_parent_preparation']['path'], files['p4_parent_preparation']['sha256'])
-        raw = load_verified_processed_cache(self.local)
-        if raw.attrs['sequence_data_identity'] != parent['dataset_identity'] or \
-                raw.attrs['matrix_source_provenance'] != parent['source_provenance']:
-            raise IntegrityError('processed data differs from the G0 parent preparation')
-        if raw.attrs['matrix_source_provenance']['processed_sha256'] != pins['processed_sha256']:
-            raise IntegrityError('processed sha256 differs from the registered data version')
-        frame = raw.loc[raw.game_type.eq('R')]
-        del raw
-        frame = assign_fold(frame, 2025)
-        frame = frame.loc[frame.split.isin(reg.USED_SPLITS), FRAME_COLUMNS]
-        frame = frame.sort_values(['game_date', 'game_pk', 'at_bat_number', 'pitch_number'], kind='stable')
-        frame = check_splits(frame.reset_index(drop=True))
+        processed, identity_record = verify_processed_identity(local, parent, pins['processed_sha256'])
+        log = ReadLog()
+        reader = ProcessedReader(processed, sha256=pins['processed_sha256'], log=log,
+                                 margin=config['runner']['read_policy']['prefix_margin_rows'])
+        if reader.rows != identity_record['rows']:
+            raise IntegrityError('processed row count differs from the frozen quality manifest')
         aux = pinned_pickle(files['p4_auxiliary']['path'], files['p4_auxiliary']['sha256'])
-        archetypes = aux['context'].archetypes
         artifact = config['data']['b0_artifact']
         b0 = RegisteredBC.load(artifact['path'], artifact['file_sha256'])
         support, support_content = load_support_table(artifact['support_table_path'], artifact['support_table_sha256'],
                                                       b0.artifact)
         hands, hands_content = load_hand_registry(artifact['hands_path'], artifact['hands_sha256'], b0.artifact)
-        raw_keys = read_raw_keys(self.local, pins['raw_sha256'], frame)
+        if list(local['raw_allowlist']) != list(pins['raw_sha256']):
+            raise IntegrityError('raw allowlist must be exactly the pinned 2023-2025 Statcast files')
+        raw_reader = RawKeysReader(local['raw_root'], pins['raw_sha256'], log)
         s6 = config['data']['s6_ledger']
         ledger = {'path': s6['path'], 'manifest_path': str(Path(s6['path']).parent / 'manifest.json'),
                   'ledger_sha256': s6['ledger_sha256'], 'manifest_sha256': s6['manifest_sha256'],
                   'runtime_sha256': s6['runtime_sha256']['value']}
-        identity = {'processed_sha256': pins['processed_sha256'], 'g0_bundle_sha256': pins['g0_bundle_sha256'],
-                    'g0_auxiliary_sha256': files['p4_auxiliary']['sha256'],
+        identity = {'processed_sha256': pins['processed_sha256'], 'processed_provenance': identity_record['provenance'],
+                    'g0_bundle_sha256': pins['g0_bundle_sha256'], 'g0_auxiliary_sha256': files['p4_auxiliary']['sha256'],
                     'b0': {'file_sha256': b0.artifact.file_sha256, 'bc_sha256': b0.artifact.sha256,
                            'support_file_sha256': artifact['support_table_sha256'], 'support_content_sha256': support_content,
                            'hands_file_sha256': artifact['hands_sha256'], 'hands_content_sha256': hands_content},
-                    'raw_sha256': pins['raw_sha256'], 'rows_by_split': frame.split.value_counts().sort_index().to_dict(),
+                    'raw_sha256': pins['raw_sha256'], 'processed_row_groups': len(reader.groups),
                     's6_ledger': {k: v for k, v in ledger.items() if k != 'path'}}
-        return Inputs(frame=frame, raw_keys=raw_keys, b0=b0, support=support, hands=hands, archetypes=archetypes,
-                      ledger=ledger, identity=identity)
+        return A3Inputs(reader=reader, raw_reader=raw_reader, b0=b0, support=support, hands=hands,
+                        archetypes=aux['context'].archetypes, ledger=ledger, identity=identity, log=log)
 
 
-def read_raw_keys(local, pins, frame):
-    """Keys/date/pitcher of the pinned 2023-2025 raw Statcast files (run_ml_direct_workload.read_raw),
-    restricted to the frame's games; the bytes parsed are the bytes hashed."""
-    names = list(pins)
-    if list(local['raw_allowlist']) != names:
-        raise IntegrityError('raw allowlist must be exactly the pinned 2023-2025 Statcast files')
-    parts, games = [], set(frame.game_pk.unique().tolist())
-    for name in names:
-        payload = (Path(local['raw_root']) / name).read_bytes()
-        if sha256_bytes(payload) != pins[name]:
-            raise IntegrityError(f'raw Statcast file differs from its pin: {name}')
-        part = pd.read_parquet(io.BytesIO(payload), columns=['game_date', 'game_pk', 'at_bat_number', 'pitch_number',
-                                                            'pitcher'])
-        del payload
-        parts.append(part.loc[part.game_pk.isin(games)])
-    raw = pd.concat(parts, ignore_index=True)
-    raw['game_date'] = pd.to_datetime(raw.game_date)
-    if (raw.game_date > pd.Timestamp(reg.LAST_DATE)).any():
-        raise IntegrityError('raw workload rows after 2025-09-30')
-    return raw
+# ---------------------------------------------------------------- launch
+
+def default_preflight_command():
+    return [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *PREFLIGHT_TESTS]
 
 
-# ---------------------------------------------------------------- CLI
+PREFLIGHT_OVERRIDES = ('A3_CONFIG_PATH', 'A3_NESTED_PREFLIGHT')  # test-only switches of the test files
 
-def preflight_tests():
-    """Leakage and synthetic tests must pass before any real-data stage (E4)."""
-    done = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *PREFLIGHT_TESTS],
-                          cwd=PROJECT, capture_output=True, text=True, timeout=1800)
-    summary = (done.stdout.strip().splitlines() or [''])[-1]
-    if done.returncode != 0:
-        raise Refused(f'synthetic/leakage tests failed: {summary}')
-    return {'returncode': done.returncode, 'summary': summary, 'files': list(PREFLIGHT_TESTS)}
+
+def default_preflight_env():
+    """The launch environment without the test-only switches: a real preflight always tests the
+    committed config and runs the isolated end-to-end tests."""
+    return {k: v for k, v in os.environ.items() if k not in PREFLIGHT_OVERRIDES}
 
 
 class heavy_lock:
@@ -1360,6 +1496,127 @@ class heavy_lock:
         self.stream.close()
 
 
+@dataclass
+class LaunchEnv:
+    """Everything ``launch`` touches outside the attempt, injectable for synthetic tests."""
+    git_state: object = git_state
+    runner_sha256: object = field(default_factory=lambda: (lambda: sha256_file(Path(__file__))))
+    native_check: object = native_and_dependencies
+    memory_command: tuple = ('memory_pressure',)
+    preflight_command: object = default_preflight_command
+    preflight_env: object = default_preflight_env
+    source_factory: object = RealSource
+    now: object = None
+    clock: object = time.monotonic
+    rss: object = peak_rss_bytes
+    alarm: bool = True
+    memory_timeout: float = 120.
+    preflight_timeout: float = 1800.
+
+
+def _close(dest, owned, outcome, command, reason, config):
+    """Terminal, non-citable final.json for an attempt this command owns (once)."""
+    if owned and dest is not None and dest.is_dir() and not Attempt(dest).closed():
+        write_final(dest, outcome=outcome, stage=f'launch:{command}', reason=reason,
+                    config_sha256=config_content_sha256(config))
+
+
+def launch(config_path, local_config_path, destination, command, env=None):
+    """smoke: open a new attempt and run the smoke; run: continue a passed smoke through decide.
+
+    Order: destination rule -> registration gate -> native runtime and dependency pins -> protection
+    window -> heavy lock -> attempt directory -> attempt budget (budget.jsonl; the remaining registered
+    total) -> supervised memory probe -> supervised preflight tests -> stages (each re-runs the
+    registration gate first). Transient refusals (window, busy lock, memory, environment) are recorded
+    in refusals.jsonl and leave the attempt open; a registration-gate or preflight failure, an abort or
+    interruption, an integrity failure or a runtime failure closes the attempt this command owns with a
+    non-citable final.json.
+    Returns the exit code (0 PASS, 2 refused / integrity, 3 aborted, 1 runtime failure)."""
+    env = env or LaunchEnv()
+    config_path = Path(config_path)
+    config = json.loads(config_path.read_bytes())
+    dest, start, owned = None, None, False
+    guard = Guard(reg.CAPS, reg.PROTECTION_WINDOW_KST, clock=env.clock, now=env.now, rss=env.rss, alarm=env.alarm)
+    try:
+        dest = check_destination(destination, output_root=_field(config, 'runner.output_root'))
+        owned = command == 'run' and dest.is_dir()  # run continues exactly this attempt
+        commit = _field(config, 'code.commit')
+        registration_gate(config, git=env.git_state(commit, config_path), runner_sha256=env.runner_sha256())
+        dependencies = env.native_check()
+        if guard.in_window():  # before any directory is created
+            raise Refused('inside the recorder/publisher protection window 06:30-13:30 KST; refusing to start')
+        with heavy_lock(config['runner']['heavy_lock']):
+            attempt = Attempt(dest)
+            if command == 'smoke':
+                # the smoke opens the attempt: a new directory, or one whose earlier launches were refused
+                # before any stage ran (its refusals and budget records are kept and counted)
+                if dest.exists() and (attempt.started() or attempt.closed()):
+                    raise Refused('the smoke opens a new attempt; this attempt already ran a stage or is closed')
+                dest.parent.mkdir(parents=False, exist_ok=True)  # <ML-MATRIX-20260924>/EXP-BC-CAL-01
+                dest.mkdir(parents=False, exist_ok=True)
+                owned = True
+            elif not dest.exists():
+                raise Refused('run continues an attempt whose smoke passed; the attempt directory is missing')
+            if attempt.closed():
+                raise Refused('this attempt is closed (final.json exists); register a new attempt')
+            guard.consumed = consumed_seconds(dest)
+            guard.start_run()
+            start = begin_command(dest, command, guard.consumed)
+            try:
+                probe = supervised(env.memory_command, guard, timeout=env.memory_timeout, where='memory probe')
+                share = parse_free_share(probe['stdout'])
+                if share < config['cost_budget']['memory']['start_requires_free_share_min']:
+                    raise Refused(f'memory_pressure free share {share:.2f} below the registered start minimum')
+                child_env = env.preflight_env()
+                tests = supervised(env.preflight_command(), guard, timeout=env.preflight_timeout, where='preflight',
+                                   cwd=PROJECT, env=child_env)
+                git = env.git_state(commit, config_path)
+                dump_json(dest / f'preflight-{command}.json', {
+                    'tests': {'returncode': tests['returncode'], 'seconds': tests['seconds'],
+                              'files': list(PREFLIGHT_TESTS),
+                              'switches': {k: child_env.get(k) for k in PREFLIGHT_OVERRIDES},
+                              'summary': (tests['stdout'].strip().splitlines() or [''])[-1]},
+                    'free_share': share, 'git': git, 'dependencies': dependencies, 'native_runtime': environment()})
+                if tests['returncode'] != 0:
+                    raise Refused('synthetic/leakage tests failed; no real-data stage runs', terminal=True)
+                local = json.loads(Path(local_config_path).read_bytes()) if Path(local_config_path).exists() else {}
+                run = Run(config, destination=dest, source=env.source_factory(config, local, config_path, env),
+                          guard=guard, commit=git['head'])
+                for stage in ('smoke',) if command == 'smoke' else reg.STAGES[1:]:
+                    status = execute_stage(run, stage)  # a non-PASS stage writes final.json itself
+                    print(json.dumps({'stage': stage, 'status': status}), flush=True)
+                    if status != 'PASS':
+                        return 3 if status == 'ABORTED' else 2 if status in ('FAILED_INTEGRITY', 'REFUSED') else 1
+            finally:
+                end_command(dest, start, guard.elapsed())
+    except Abort as abort:
+        _close(dest, owned, 'ABORTED', command, {'reason': abort.reason, 'where': abort.where}, config)
+        print(json.dumps({'aborted': str(abort)}), file=sys.stderr, flush=True)
+        return 3
+    except KeyboardInterrupt:
+        _close(dest, owned, 'ABORTED', command, {'reason': 'INTERRUPTED', 'where': f'launch:{command}'}, config)
+        print(json.dumps({'aborted': 'INTERRUPTED'}), file=sys.stderr, flush=True)
+        return 3
+    except Refused as refusal:
+        print(json.dumps({'refused': str(refusal)}), file=sys.stderr, flush=True)
+        if dest is not None and dest.is_dir():  # the refusal is recorded in the attempt
+            append_chain(dest / 'refusals.jsonl', {'command': command, 'refused': str(refusal),
+                                                   'terminal': refusal.terminal,
+                                                   'utc': datetime.now(timezone.utc).isoformat()})
+            if refusal.terminal:
+                _close(dest, owned, 'REFUSED', command, str(refusal), config)
+        return 2
+    except IntegrityError as failure:
+        _close(dest, owned, 'FAILED_INTEGRITY', command, str(failure), config)
+        print(json.dumps({'failed_integrity': str(failure)}), file=sys.stderr, flush=True)
+        return 2
+    except Exception as failure:
+        _close(dest, owned, 'FAILED_RUNTIME', command, f'{type(failure).__name__}: {failure}', config)
+        print(json.dumps({'failed_runtime': f'{type(failure).__name__}: {failure}'}), file=sys.stderr, flush=True)
+        return 1
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--config', required=True)
@@ -1367,47 +1624,7 @@ def main(argv=None):
     parser.add_argument('--destination', required=True)
     parser.add_argument('command', choices=('smoke', 'run'))
     args = parser.parse_args(argv)
-    config_path = Path(args.config)
-    config = json.loads(config_path.read_bytes())
-    destination = None
-    try:
-        runner_sha = sha256_file(Path(__file__))
-        commit = _field(config, 'code.commit')
-        registration_gate(config, git=git_state(commit, config_path), runner_sha256=runner_sha)
-        validate_native_runtime()
-        destination = check_destination(args.destination, output_root=config['runner']['output_root'])
-        guard = Guard(reg.CAPS, reg.PROTECTION_WINDOW_KST)
-        guard.start_run()
-        share = free_share()
-        if share < config['cost_budget']['memory']['start_requires_free_share_min']:
-            raise Refused(f'memory_pressure free share {share:.2f} below the registered start minimum')
-        with heavy_lock(config['runner']['heavy_lock']):
-            if args.command == 'smoke' and destination.exists():
-                raise Refused('the smoke opens a new attempt directory; it already exists')
-            if args.command == 'run' and not destination.exists():
-                raise Refused('run continues an attempt whose smoke passed; the attempt directory is missing')
-            destination.parent.mkdir(parents=False, exist_ok=True)  # <ML-MATRIX-20260924>/EXP-BC-CAL-01
-            destination.mkdir(parents=False, exist_ok=args.command == 'run')
-            tests = preflight_tests()
-            git = git_state(commit, config_path)
-            dump_json(destination / f'preflight-{args.command}.json', {'tests': tests, 'free_share': share, 'git': git,
-                                                                       'native_runtime': environment()})
-            local = json.loads(Path(args.local_config).read_bytes())
-            run = Run(config, destination=destination, source=RealSource(config, local, config_path), guard=guard,
-                      commit=git['head'], output_root=config['runner']['output_root'])
-            stages = ('smoke',) if args.command == 'smoke' else reg.STAGES[1:]
-            for stage in stages:
-                status = execute_stage(run, stage)
-                print(json.dumps({'stage': stage, 'status': status}), flush=True)
-                if status != 'PASS':
-                    return 3 if status == 'ABORTED' else 2 if status in ('FAILED_INTEGRITY', 'REFUSED') else 1
-    except Refused as refusal:
-        print(json.dumps({'refused': str(refusal)}), file=sys.stderr, flush=True)
-        if destination is not None and destination.is_dir():  # the refusal is recorded in the attempt
-            append_chain(destination / 'refusals.jsonl', {'command': args.command, 'refused': str(refusal),
-                                                          'utc': datetime.now(timezone.utc).isoformat()})
-        return 2
-    return 0
+    return launch(args.config, args.local_config, args.destination, args.command)
 
 
 if __name__ == '__main__':

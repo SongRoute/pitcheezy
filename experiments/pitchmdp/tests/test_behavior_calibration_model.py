@@ -9,12 +9,13 @@ import pytest
 from behavior_calibration_synthetic import bc_states, make_world, run_isolated
 from pitchmdp.behavior_calibration_registry import ACTION_CODES, b0_alphas
 from pitchmdp.behavior_calibration import Temperature
-from pitchmdp.behavior_model import (BackoffBC, BehaviorModel, BehaviorTable, Calibrated, CountTable, Keys,
-                                     RepertoireSupport, VectorBC, previous_code, side_code)
+from pitchmdp.behavior_model import (LEVEL_COMPONENTS, UNSEEN, BackoffBC, BehaviorModel, BehaviorTable, Calibrated,
+                                     CountTable, Keys, RepertoireSupport, VectorBC, previous_index, side_code)
 from pitchmdp.policy_artifacts import IntegrityError
-from pitchmdp.rollout_policy import CategoricalBC, PAState, PastPitch
+from pitchmdp.rollout_policy import BCRecord, CategoricalBC, PAState, PastPitch
 
 V = len(ACTION_CODES)
+OOV = ('<UNKNOWN>', 'ZZ', 'PITCHOUT?', 'xx')  # previous labels outside the 18 codes (raw strings)
 
 
 @pytest.fixture(scope='module')
@@ -25,7 +26,7 @@ def world():
 def random_states(rng, pitchers, n):
     states = []
     for _ in range(n):
-        previous = rng.choice([*ACTION_CODES, '<START>', '<UNKNOWN>'])
+        previous = rng.choice([*ACTION_CODES, '<START>', *OOV])
         history = () if previous == '<START>' else (PastPitch(str(previous), (), 'unknown', 0, 0),)
         states.append(PAState(int(rng.integers(4)), int(rng.integers(3)), str(rng.choice(pitchers)),
                               str(rng.choice(['L', 'R'])), history))
@@ -35,7 +36,48 @@ def random_states(rng, pitchers, n):
 def keys_of(states):
     return Keys([int(s.pitcher) for s in states], side_code([s.batter_side for s in states]),
                 [s.balls for s in states], [s.strikes for s in states],
-                previous_code([s.history[-1].action if s.history else '<START>' for s in states]))
+                [s.history[-1].action if s.history else '<START>' for s in states])
+
+
+def full_probabilities(bc, state):
+    """CategoricalBC probabilities placed on the 18 registered codes (0 outside its actions)."""
+    return np.array([dict(zip(bc.actions, bc.probabilities(state))).get(a, 0.) for a in ACTION_CODES])
+
+
+def toy_state(previous, pitcher='1'):
+    history = () if previous == '<START>' else (PastPitch(previous, (), 'unknown', 0, 0),)
+    return PAState(0, 0, pitcher, 'L', history)
+
+
+def test_t1_unseen_previous_label_matches_no_cell():
+    """Review counterexample 1: an unseen previous label must not borrow a known OOV label's cell
+    (CategoricalBC: no cell -> prior (0.5, 0.5); the old collapsed key gave (0.75, 0.25))."""
+    records = [BCRecord(toy_state('AA'), 'FF', 'train'), BCRecord(toy_state('<START>'), 'SL', 'train')]
+    bc = CategoricalBC(1., 1).fit(records)
+    ff, sl = ACTION_CODES.index('FF'), ACTION_CODES.index('SL')
+    vector = VectorBC.fit(keys_of([r.state for r in records]), [ACTION_CODES.index(r.action) for r in records],
+                          prior_strength=1., minimum_action_count=1)
+    probe = toy_state('BB')
+    expected = full_probabilities(bc, probe)
+    assert np.allclose(expected[[ff, sl]], [.5, .5], rtol=0, atol=1e-15)
+    assert np.abs(vector.batch_keys(keys_of([probe]))[0] - expected).max() <= 1e-12
+    assert np.abs(vector.batch_keys(keys_of([toy_state('AA')]))[0][[ff, sl]] - [.75, .25]).max() <= 1e-12
+
+
+def test_t1_distinct_oov_labels_stay_distinct_cells():
+    """Review counterexample 2: two distinct OOV labels are two cells (the collapsed key merged them,
+    a 0.25 discrepancy)."""
+    records = [BCRecord(toy_state('AA'), 'FF', 'train'), BCRecord(toy_state('BB'), 'SL', 'train')]
+    bc = CategoricalBC(1., 1).fit(records)
+    vector = VectorBC.fit(keys_of([r.state for r in records]), [ACTION_CODES.index(r.action) for r in records],
+                          prior_strength=1., minimum_action_count=1)
+    probes = [toy_state(p) for p in ('AA', 'BB', 'CC', '<START>', 'FF')]
+    expected = np.array([full_probabilities(bc, s) for s in probes])
+    assert np.abs(vector.batch_keys(keys_of(probes)) - expected).max() <= 1e-12
+    assert vector.cells.vocabulary == ('AA', 'BB') and len(vector.cells.keys) == 2
+    b1 = BackoffBC.fit(keys_of([r.state for r in records]), [ACTION_CODES.index(r.action) for r in records],
+                       alphas={**b0_alphas(), 'previous_type': 1.})
+    assert np.abs(b1.batch_keys(keys_of(probes)) - expected).max() <= 1e-12  # B1 at a B0-shaped setting
 
 
 def test_t1_vector_bc_equals_categorical_bc(world):
@@ -53,8 +95,16 @@ def test_t1_vector_bc_equals_categorical_bc(world):
     fitted = CategoricalBC(20., 1).fit(part)
     refit = VectorBC.fit(keys_of([r.state for r in part]), [ACTION_CODES.index(r.action) for r in part])
     probe = [s for s in random_states(rng, list(fitted.pitchers) + ['42'], 2000)]
-    full = lambda s: np.array([dict(zip(fitted.actions, fitted.probabilities(s))).get(a, 0.) for a in ACTION_CODES])
-    assert np.abs(refit.batch_keys(keys_of(probe)) - np.array([full(s) for s in probe])).max() <= 1e-12
+    assert np.abs(refit.batch_keys(keys_of(probe)) - np.array([full_probabilities(fitted, s) for s in probe])).max() \
+        <= 1e-12
+    # OOV previous labels inside the fit rows stay distinct raw-string cells
+    oov = [BCRecord(PAState(r.state.balls, r.state.strikes, r.state.pitcher, r.state.batter_side,
+                            (PastPitch(OOV[i % len(OOV)], (), 'unknown', 0, 0),)), r.action, 'train')
+           for i, r in enumerate(part[:300])]
+    mixed = CategoricalBC(20., 1).fit(part + oov)
+    remix = VectorBC.fit(keys_of([r.state for r in part + oov]), [ACTION_CODES.index(r.action) for r in part + oov])
+    assert np.abs(remix.batch_keys(keys_of(probe)) - np.array([full_probabilities(mixed, s) for s in probe])).max() \
+        <= 1e-12
 
 
 def test_t1_b1_at_the_b0_setting_is_b0(world):
@@ -152,11 +202,22 @@ def test_behavior_model_protocol_compliance(world):
 
 
 def test_count_table_and_keys_guards():
-    table = CountTable.from_rows(np.array([5, 5, 3]), np.array([0, 1, 1]), 3)
-    counts, found = table.lookup(np.array([3, 4, 5]))
+    keys = Keys([5, 5, 3], [0, 0, 0], [0, 0, 0], [0, 0, 0], ['<START>'] * 3)
+    table = CountTable.from_rows(keys, np.array([0, 1, 1]), 3, LEVEL_COMPONENTS['pitcher'])
+    counts, found = table.lookup(Keys([3, 4, 5], [0, 0, 0], [0, 0, 0], [0, 0, 0], ['x', 'y', 'z']))
     assert found.tolist() == [True, False, True] and counts.tolist() == [[0, 1, 0], [0, 0, 0], [1, 1, 0]]
+    cells = CountTable.from_rows(Keys([5, 5], [0, 0], [0, 0], [0, 0], ['AA', 'FF']), np.array([0, 1]), 3,
+                                 LEVEL_COMPONENTS['previous_type'])
+    assert cells.vocabulary == ('AA', 'FF')
+    _, found = cells.lookup(Keys([5, 5, 5], [0, 0, 0], [0, 0, 0], [0, 0, 0], ['AA', 'BB', 'FF']))
+    assert found.tolist() == [True, False, True]  # an unseen label matches no cell
+    assert previous_index(['AA', 'BB'], ('AA',)).tolist() == [0, UNSEEN]
     with pytest.raises(IntegrityError):
-        Keys([1 << 25], [0], [0], [0], [0])
+        CountTable(cells.keys, cells.counts, LEVEL_COMPONENTS['previous_type'], ('FF', 'AA'))  # unsorted vocabulary
+    with pytest.raises(IntegrityError):
+        Keys([1 << 25], [0], [0], [0], ['<START>'])
+    with pytest.raises(IntegrityError):
+        Keys([1], [0], [0], [0], [''])  # previous labels are nonempty strings
     with pytest.raises(IntegrityError):
         side_code(['S'])
     support = RepertoireSupport.from_rows(np.array([1, 1, 2]), np.array([0, 2, 1]), 3)

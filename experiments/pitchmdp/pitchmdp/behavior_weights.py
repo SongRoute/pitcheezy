@@ -1,12 +1,14 @@
 """S6 ledger reader, E0, PA weights and OPE weight diagnostics of EXP-BC-CAL-01 (design section 7.4).
 
 ``read_ledger`` opens only a ``ledger*.jsonl`` file next to its ``manifest.json``: both sha256
-equal the registration pins before and after reading, the header and every decision row carry the
-pinned runtime identity, and each row is projected at once onto the registered allowlist (header:
+equal the registration pins before and after reading (raw-byte hashing, a separate authorized
+operation), the header and every decision row carry the pinned runtime identity, and every line is
+read by a key-by-key scanner: only the registered allowlist is decoded (header: kind,
 runtime_sha256, pins; decisions: identity/state fields and result.{mask, logging, reference,
-candidate, logged_index, rho_reference, rho_candidate}). ``q_*``, ``mc_se`` and every other field
-are dropped while parsing and never returned; ``pa_values.parquet``, ``dr.json`` or any other
-path is refused. Rewards are never read.
+candidate, logged_index, rho_reference, rho_candidate}); the value of every other member
+(``q_*``, ``mc_se``, fingerprints, details, ...) is skipped by the scanner and never decoded into a
+Python object. ``pa_values.parquet``, ``dr.json`` or any other path is refused. Rewards are never
+read.
 
 E0 is rebuilt from each PA's first row with ``PolicyRuntime.start_population`` itself (borrowed,
 not copied). Weights follow the L1-R rule of policy_estimator (``affine`` unrolled):
@@ -19,7 +21,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from json.decoder import scanstring
+import math
 from pathlib import Path
+import re
 
 import numpy as np
 
@@ -37,6 +42,11 @@ ALLOWED_DECISION = ('kind', 'request_id', 'runtime_sha256', 'pa_id', 'decision_i
                     'context_key')
 ALLOWED_RESULT = ('mask', 'logging', 'reference', 'candidate', 'logged_index', 'rho_reference', 'rho_candidate')
 FORBIDDEN_FILES = ('pa_values.parquet', 'dr.json')
+HEADER_SCHEMA = {'kind': None, **{k: None for k in ALLOWED_HEADER}}
+DECISION_SCHEMA = {**{k: None for k in ALLOWED_DECISION}, 'result': {k: None for k in ALLOWED_RESULT}}
+PARSING_DISCLOSURE = ('ledger lines are scanned key by key: allowlisted values are decoded (json raw_decode); the '
+                      'value of every other member is skipped by the scanner and never decoded into a Python object; '
+                      'the file bytes are sha256-hashed before and after reading as a separate authorized operation')
 
 
 class LedgerRefused(IntegrityError):
@@ -51,11 +61,94 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
-def _project(row):
-    out = {k: row[k] for k in ALLOWED_DECISION if k in row}
-    result = row.get('result')
-    out['result'] = None if result is None else {k: result[k] for k in ALLOWED_RESULT if k in result}
-    return out
+# ---------------------------------------------------------------- allowlist scanner
+
+_DECODER = json.JSONDecoder()
+_WS = re.compile(r'[ \t\n\r]*')
+_STRING = re.compile(r'"(?:[^"\\]|\\.)*"', re.S)
+_STRUCTURE = re.compile(r'[\[\]{}"]')
+_SCALAR = re.compile(r'[^,\]}\s]+')
+
+
+def _ws(text, i):
+    return _WS.match(text, i).end()
+
+
+def _skip(text, i):
+    """Index just past the JSON value starting at ``text[i]``; nothing is decoded."""
+    first = text[i] if i < len(text) else ''
+    if first == '"':
+        match = _STRING.match(text, i)
+        if match is None:
+            raise IntegrityError('unterminated JSON string in a ledger line')
+        return match.end()
+    if first in '[{':
+        depth, j = 0, i
+        while True:
+            match = _STRUCTURE.search(text, j)
+            if match is None:
+                raise IntegrityError('truncated JSON value in a ledger line')
+            char = match.group()
+            if char == '"':
+                string = _STRING.match(text, match.start())
+                if string is None:
+                    raise IntegrityError('unterminated JSON string in a ledger line')
+                j = string.end()
+                continue
+            depth += 1 if char in '[{' else -1
+            j = match.end()
+            if depth == 0:
+                return j
+    match = _SCALAR.match(text, i)
+    if match is None:
+        raise IntegrityError('malformed JSON value in a ledger line')
+    return match.end()
+
+
+def scan_object(text, i, schema, skipped):
+    """Decode only the members of the JSON object at ``text[i]`` named in ``schema`` (None = decode
+    the value; a dict = scan the nested object with that schema); every other member's value is
+    skipped unread and its name counted in ``skipped``. Returns (object, end index)."""
+    i = _ws(text, i)
+    if not text.startswith('{', i):
+        raise IntegrityError('expected a JSON object in a ledger line')
+    i = _ws(text, i + 1)
+    out = {}
+    if text.startswith('}', i):
+        return out, i + 1
+    while True:
+        if not text.startswith('"', i):
+            raise IntegrityError('expected a member name in a ledger line')
+        key, i = scanstring(text, i + 1)
+        i = _ws(text, i)
+        if not text.startswith(':', i):
+            raise IntegrityError("expected ':' in a ledger line")
+        i = _ws(text, i + 1)
+        if key in schema and schema[key] is None:
+            out[key], i = _DECODER.raw_decode(text, i)
+        elif key in schema:
+            if text.startswith('null', i):
+                out[key], i = None, i + 4
+            else:
+                out[key], i = scan_object(text, i, schema[key], skipped)
+        else:
+            i = _skip(text, i)
+            skipped[key] = skipped.get(key, 0) + 1
+        i = _ws(text, i)
+        if text.startswith(',', i):
+            i = _ws(text, i + 1)
+            continue
+        if text.startswith('}', i):
+            return out, i + 1
+        raise IntegrityError("expected ',' or '}' in a ledger line")
+
+
+def scan_line(line, schema, skipped):
+    text = line.decode('utf-8') if isinstance(line, bytes) else line
+    row, end = scan_object(text, 0, schema, skipped)
+    if text[_ws(text, end):]:
+        raise IntegrityError('trailing data after a ledger row')
+    return row
 
 
 def read_ledger(path, *, manifest_path, ledger_sha256, manifest_sha256, runtime_sha256):
@@ -73,10 +166,10 @@ def read_ledger(path, *, manifest_path, ledger_sha256, manifest_sha256, runtime_
     before = {'ledger': file_sha256(path), 'manifest': file_sha256(manifest_path)}
     if before != {'ledger': ledger_sha256, 'manifest': manifest_sha256}:
         raise LedgerRefused('S6 ledger or manifest differs from its registration pin (FAILED_INTEGRITY)')
-    header, decisions, kinds = None, [], {}
+    header, decisions, kinds, skipped = None, [], {}, {}
     with path.open('rb') as stream:
         for seq, line in enumerate(stream):
-            row = json.loads(line)
+            row = scan_line(line, HEADER_SCHEMA if seq == 0 else DECISION_SCHEMA, skipped)
             kind = row.get('kind')
             kinds[kind] = kinds.get(kind, 0) + 1
             if seq == 0:
@@ -84,10 +177,11 @@ def read_ledger(path, *, manifest_path, ledger_sha256, manifest_sha256, runtime_
                     raise IntegrityError('ledger header missing')
                 header = {k: row[k] for k in ALLOWED_HEADER if k in row}
             elif kind == 'decision':
-                decisions.append(_project(row))
+                if 'result' not in row:
+                    row['result'] = None
+                decisions.append(row)
             else:
                 raise IntegrityError(f'ledger contains a {kind!r} row (halted ledger is never read)')
-            del row
     after = {'ledger': file_sha256(path), 'manifest': file_sha256(manifest_path)}
     if after != before:
         raise IntegrityError('S6 ledger or manifest changed while it was read')
@@ -97,8 +191,9 @@ def read_ledger(path, *, manifest_path, ledger_sha256, manifest_sha256, runtime_
     if wrong:
         raise IntegrityError(f'{wrong} decision rows carry another runtime_sha256')
     record = {'sha256_before': before, 'sha256_after': after, 'row_kinds': kinds, 'decisions': len(decisions),
-              'fields_returned': {'header': list(ALLOWED_HEADER), 'decision': list(ALLOWED_DECISION),
-                                  'result': list(ALLOWED_RESULT)}}
+              'fields_decoded': {'header': list(HEADER_SCHEMA), 'decision': list(ALLOWED_DECISION),
+                                 'result': list(ALLOWED_RESULT)},
+              'skipped_unread_members': dict(sorted(skipped.items())), 'parsing': PARSING_DISCLOSURE}
     return header, decisions, record
 
 
@@ -188,13 +283,13 @@ def pa_weights(rows, denominators=None, *, check_recorded=True):
 
 def r1b_logging(decisions, vector_bc):
     """Max |VectorBC(BC_P) - recorded logging vector| over every decision with a recorded result."""
-    from .behavior_model import Keys, previous_code, side_code
+    from .behavior_model import Keys, side_code
     rows = [d for d in decisions if isinstance(d.get('result'), dict) and d['result'].get('logging') is not None]
     if not rows:
         return {'rows': 0, 'max_abs_diff': None}
     keys = Keys([int(d['pitcher']) for d in rows], side_code([d['batter_side'] for d in rows]),
                 [int(d['balls']) for d in rows], [int(d['strikes']) for d in rows],
-                previous_code([d['history_actions'][-1] if d['history_actions'] else '<START>' for d in rows]))
+                [str(d['history_actions'][-1]) if d['history_actions'] else '<START>' for d in rows])
     predicted = vector_bc.batch_keys(keys)
     recorded = np.array([d['result']['logging'] for d in rows], dtype=np.float64)
     if recorded.shape != predicted.shape:
@@ -302,8 +397,13 @@ def weight_diagnostics(pas, e0, *, new_vectors=None, baseline=None, large, mei, 
              for p in POLICIES for level in ('pa', 'game')}
     out['E5'] = {'thresholds': ess_min, 'checks': gates, 'pass': bool(members) and all(gates.values())}
     finite = [v for v in kl if v is not None]
+    infinite = len(kl) - len(finite)
+    finite_mean = float(np.mean(finite)) if finite else None
+    # The registered statistic is the mean over every decision: infinite when any decision puts new
+    # mass outside the B0 support (written as the string 'inf' in JSON).
     out['kl_new_vs_b0'] = None if new_vectors is None else {
-        'mean': float(np.mean(finite)) if finite else None, 'decisions': len(kl), 'infinite_decisions': len(kl) - len(finite)}
+        'mean': (math.inf if infinite else finite_mean), 'finite_only_mean': finite_mean, 'decisions': len(kl),
+        'infinite_decisions': infinite}
     if baseline is not None:
         shift = {}
         for policy in POLICIES:

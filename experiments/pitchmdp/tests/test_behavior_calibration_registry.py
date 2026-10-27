@@ -1,28 +1,70 @@
-"""EXP-BC-CAL-01 registry: the materialized config matches every pin; deviations are rejected."""
+"""EXP-BC-CAL-01 registry: the materialized config matches every pin; deviations are rejected; the
+registration-pin schema is immutable code. Status-neutral: these tests run as the preflight after
+registration too, so they never assume the committed config's status (explicit DRAFT / REGISTERED
+fixtures come from behavior_calibration_synthetic.as_draft / as_registered)."""
 import copy
-import json
 import math
-from pathlib import Path
 
 import pytest
 
+from behavior_calibration_synthetic import as_draft, as_registered, load_config
 from pitchmdp import behavior_calibration_registry as reg
-
-CONFIG = Path(__file__).resolve().parents[3] / 'configs' / 'EXP-BC-CAL-01.json'
 
 
 @pytest.fixture(scope='module')
 def config():
-    return json.loads(CONFIG.read_text())
+    return load_config()
 
 
-def test_config_is_draft_and_passes_the_registered_contract(config):
-    assert config['status'] == 'DRAFT_UNREGISTERED'
-    assert config['registered'] is False and config['execute'] is False and config['real_data_enabled'] is False
+def test_committed_config_is_consistent_and_passes_the_registered_contract(config):
+    assert reg.registration_state(config) in ('DRAFT', 'REGISTERED')
     assert reg.config_check(config) is config
     assert set(config['candidates']) == {'B0', 'B1', 'B2', 'descriptive_arms_not_adoptable'}
     assert set(config['excluded_not_run']) == {'B3', 'B2-XF'}
-    assert config['registration']['fields_pinned_at_registration']
+    assert config['registration']['fields_pinned_at_registration'] == reg.DRAFT_PIN_FIELDS
+
+
+def test_registration_state_of_explicit_fixtures(config):
+    assert reg.registration_state(as_draft(config)) == 'DRAFT'
+    assert reg.registration_state(as_registered(config)) == 'REGISTERED'
+    for mutate in (lambda c: c.update(execute=False), lambda c: c.update(status='DRAFT_UNREGISTERED'),
+                   lambda c: c['code'].update(commit=None),
+                   lambda c: c['data']['s6_ledger']['runtime_sha256'].update(value='0' * 64)):
+        changed = as_registered(config)
+        mutate(changed)
+        with pytest.raises(reg.RegistrationError):
+            reg.registration_state(changed)
+    half = as_draft(config)
+    half.update(registered=True)
+    with pytest.raises(reg.RegistrationError, match='inconsistent'):
+        reg.registration_state(half)
+
+
+def test_registration_pin_schema_is_immutable_and_format_checked(config):
+    good = as_registered(config)
+    assert reg.registration_pin_errors(good) == []
+    assert {d for d, _ in reg.REGISTRATION_PIN_SCHEMA} >= set(reg.DRAFT_PIN_FIELDS) | {
+        'registration.registered_kst', 'registration.design_review_reference', 'registration.code_review_reference'}
+    wrong = {'kst_datetime': '2026-10-28T05:00:00+00:00', 'text': '   ', 'sha1': 'g' * 40, 'sha256': 'A' * 64,
+             'expected_runtime': '0' * 64}
+    for dotted, kind in reg.REGISTRATION_PIN_SCHEMA:
+        missing = copy.deepcopy(good)
+        _set(missing, dotted, None)
+        assert any(dotted in e and 'missing' in e for e in reg.registration_pin_errors(missing)), dotted
+        malformed = copy.deepcopy(good)
+        _set(malformed, dotted, wrong[kind])
+        assert any(dotted in e and kind in e for e in reg.registration_pin_errors(malformed)), dotted
+    naive = copy.deepcopy(good)
+    naive['registration']['registered_kst'] = '2026-10-28T14:00:00'
+    assert reg.registration_pin_errors(naive)
+    # the config's own list cannot weaken the schema: emptying it deviates from the contract and the
+    # immutable schema still reports every null pin
+    emptied = copy.deepcopy(good)
+    emptied['registration']['fields_pinned_at_registration'] = []
+    with pytest.raises(reg.RegistrationError, match='fields_pinned_at_registration'):
+        reg.config_check(emptied)
+    emptied['data']['s6_ledger'].update(ledger_sha256=None, manifest_sha256=None)
+    assert len(reg.registration_pin_errors(emptied)) == 2
 
 
 def _set(config, dotted, value):

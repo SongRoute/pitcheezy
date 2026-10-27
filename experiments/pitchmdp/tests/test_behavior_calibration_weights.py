@@ -117,6 +117,68 @@ def test_t10_reader_allowlist_and_refusals(tmp_path):
                        manifest_sha256=pins[1], runtime_sha256='a' * 64)
 
 
+class SpyDecoder:
+    """Records every value the scanner decodes (json raw_decode is the only decode path)."""
+    def __init__(self):
+        self.values = []
+        self.inner = json.JSONDecoder()
+
+    def raw_decode(self, text, index):
+        value, end = self.inner.raw_decode(text, index)
+        self.values.append(value)
+        return value, end
+
+
+def test_t10_forbidden_members_are_skipped_unread(tmp_path, monkeypatch):
+    """Review finding 7: non-allowlisted members are skipped by the scanner, never decoded into a
+    Python object (no json.loads of a line; raw_decode only for allowlisted values)."""
+    sentinel = 987654.321
+    rows = [row('1:1', 0, 'SUPPORTED', 0, law({0: 1.}), law({0: .5, 1: .5}))]
+    rows[0]['result'].update(q_reference=[sentinel] * V, mc_se={'nested': [sentinel, {'deep': 'S"}{]['}]},
+                             q_planning='quote \\" brace } bracket ] SENTINEL', logging_mass_on_mask=sentinel)
+    rows[0].update(fingerprint='SENTINEL', detail={'a': [1, 2, {'b': 'SENTINEL'}]}, value=sentinel, reward=sentinel,
+                   context_sha256=None)
+    path = tmp_path / 'ledger-dev-0.jsonl'
+    ledger_sha, manifest_sha = write_ledger(path, rows)
+    spy = SpyDecoder()
+    monkeypatch.setattr(bw, '_DECODER', spy)
+    monkeypatch.setattr(bw.json, 'loads', lambda *a, **k: pytest.fail('json.loads must not parse a ledger line'))
+    header, decisions, record = bw.read_ledger(path, manifest_path=tmp_path / 'manifest.json', ledger_sha256=ledger_sha,
+                                               manifest_sha256=manifest_sha, runtime_sha256='a' * 64)
+    decoded = json.dumps(spy.values)
+    assert 'SENTINEL' not in decoded and str(sentinel) not in decoded and spy.values
+    assert decisions[0]['result']['logging'] == rows[0]['result']['logging']  # allowlisted values intact
+    assert decisions[0]['history_actions'] == [] and decisions[0]['context_key'] == '1:1:1'
+    skipped = record['skipped_unread_members']
+    for name in ('q_reference', 'mc_se', 'q_planning', 'logging_mass_on_mask', 'fingerprint', 'detail', 'value',
+                 'reward', 'context_sha256', 'seq', 'prev', 'sha256'):
+        assert skipped.get(name, 0) >= 1, name
+    assert record['parsing'] == bw.PARSING_DISCLOSURE and 'never decoded' in record['parsing']
+    with pytest.raises(IntegrityError):
+        bw.scan_line(b'{"kind": "decision", "q_reference": [1, 2', bw.DECISION_SCHEMA, {})
+    with pytest.raises(IntegrityError):
+        bw.scan_line(b'{"kind": "decision"} trailing', bw.DECISION_SCHEMA, {})
+
+
+def test_kl_is_infinite_when_new_mass_leaves_the_b0_support():
+    """Review finding 9: the registered mean KL is infinite as soon as one decision puts new mass
+    outside the B0 support; the finite-only statistic is reported under its own name."""
+    logging = law({0: .5, 1: .5})
+    pi = law({0: .5, 1: .5})
+    pas = [('1:1', [row('1:1', 0, 'SUPPORTED', 0, pi, logging)]), ('1:2', [row('1:2', 0, 'SUPPORTED', 1, pi, logging)])]
+    e0 = {pa: (True, None) for pa, _ in pas}
+    common = dict(large=10, mei=1e-3, ess_min={'pa': 1, 'game': 1}, draws=50, seed=1)
+    inside = {'1:1:1': law({0: .75, 1: .25}), '1:2:1': law({0: .5, 1: .5})}
+    finite = bw.weight_diagnostics(pas, e0, new_vectors=inside, **common)['kl_new_vs_b0']
+    expected = (.75 * np.log(1.5) + .25 * np.log(.5)) / 2
+    assert finite['infinite_decisions'] == 0 and abs(finite['mean'] - expected) < 1e-15
+    assert finite['finite_only_mean'] == finite['mean']
+    outside = {**inside, '1:2:1': law({0: .5, 1: .25, 2: .25})}
+    kl = bw.weight_diagnostics(pas, e0, new_vectors=outside, **common)['kl_new_vs_b0']
+    assert kl['mean'] == float('inf') and kl['infinite_decisions'] == 1 and kl['decisions'] == 2
+    assert abs(kl['finite_only_mean'] - (.75 * np.log(1.5) + .25 * np.log(.5))) < 1e-15
+
+
 def test_t12_sc2_mean_weight_is_one_under_the_logging_law_and_detects_a_wrong_law():
     rng = np.random.default_rng(4)
     pas, true, wrong = [], {}, {}

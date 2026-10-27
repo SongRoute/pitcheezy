@@ -202,8 +202,9 @@ def history_features(frame, vocabulary=ACTION_CODES):
     (fit_bc: '<UNKNOWN>' when missing)."""
     from .model import outcome_labels
     values = frame.pitch_type.tolist()
-    if any(isinstance(v, str) and v == SEALED for v in values):
-        raise SealedLabelError('a sealed DEV pitch-type label was read before its release')
+    for column in ('pitch_type', 'description', 'events'):
+        if column in frame and frame[column].astype(object).eq(SEALED).any():
+            raise SealedLabelError(f'a sealed DEV {column} value was needed before its release')
     pos = pa_positions(frame)
     index = {code: i for i, code in enumerate(vocabulary)}
     missing = pd.isna(pd.Series(values, dtype=object)).to_numpy()
