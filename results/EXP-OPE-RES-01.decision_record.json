@@ -1,0 +1,367 @@
+{
+ "r3_status": "NOT_RUN:R3",
+ "flags": [],
+ "pairs": {
+  "R1_axR2_0": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 0.951476377697861,
+     "pitcher": 0.9445697261341388
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S2:2*kappa_p": "PASS",
+     "S2:2*zeta_p": "INCONCLUSIVE",
+     "S2:invariant": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": false
+   },
+   "mandatory_valid": true
+  },
+  "R1_bxR2_0": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 0.8282064209223654,
+     "pitcher": 0.8358684687248822
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S2:2*kappa_p": "INCONCLUSIVE",
+     "S2:2*zeta_p": "INCONCLUSIVE",
+     "S2:invariant": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": false
+   },
+   "mandatory_valid": true
+  },
+  "R1_0xR2_3": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 1.023560162548824,
+     "pitcher": 1.0288674624691831
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": true
+   },
+   "mandatory_valid": true
+  },
+  "R1_axR2_3": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 0.9744758873956563,
+     "pitcher": 0.9686556693622144
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S2:2*kappa_p": "PASS",
+     "S2:2*zeta_p": "INCONCLUSIVE",
+     "S2:invariant": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": false
+   },
+   "mandatory_valid": true
+  },
+  "R1_bxR2_3": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 0.8529307244336809,
+     "pitcher": 0.8588345476022694
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S2:2*kappa_p": "INCONCLUSIVE",
+     "S2:2*zeta_p": "INCONCLUSIVE",
+     "S2:invariant": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": false
+   },
+   "mandatory_valid": true
+  },
+  "R1_0xR2_2": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 1.0,
+     "pitcher": 1.0
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "INCONCLUSIVE",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "INCONCLUSIVE",
+     "S5:game": "INCONCLUSIVE",
+     "S5:pitcher": "INCONCLUSIVE"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": false
+   },
+   "mandatory_valid": true
+  },
+  "R1_axR2_2": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 0.951476377697861,
+     "pitcher": 0.9445697261341388
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S2:2*kappa_p": "PASS",
+     "S2:2*zeta_p": "INCONCLUSIVE",
+     "S2:invariant": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": false
+   },
+   "mandatory_valid": true
+  },
+  "R1_bxR2_2": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 0.8282064209223654,
+     "pitcher": 0.8358684687248822
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S2:2*kappa_p": "INCONCLUSIVE",
+     "S2:2*zeta_p": "INCONCLUSIVE",
+     "S2:invariant": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": false
+   },
+   "mandatory_valid": true
+  },
+  "R1_0xR2_1": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 0.8781665003115672,
+     "pitcher": 0.8889141491260103
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": true
+   },
+   "mandatory_valid": true
+  },
+  "R1_axR2_1": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 0.838479954481401,
+     "pitcher": 0.8432572377720836
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S2:2*kappa_p": "PASS",
+     "S2:2*zeta_p": "INCONCLUSIVE",
+     "S2:invariant": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": false
+   },
+   "mandatory_valid": true
+  },
+  "R1_bxR2_1": {
+   "ii": {
+    "valid": true,
+    "degenerate": false,
+    "ratio": {
+     "game": 0.7458269948068607,
+     "pitcher": 0.7581998033854426
+    },
+    "pass": false,
+    "outcome": "FAIL"
+   },
+   "i": {
+    "cells": {
+     "S1": "PASS",
+     "S4": "PASS",
+     "S1_baseline": "PASS",
+     "S4_baseline": "PASS",
+     "S3:T-A1": "PASS",
+     "S3:T-A2": "PASS",
+     "S3:T-A3": "PASS",
+     "S3:T-A4": "PASS",
+     "S2:2*kappa_p": "INCONCLUSIVE",
+     "S2:2*zeta_p": "INCONCLUSIVE",
+     "S2:invariant": "PASS",
+     "S5:game": "PASS",
+     "S5:pitcher": "PASS"
+    },
+    "invalid_cells": [],
+    "valid": true,
+    "pass": false
+   },
+   "mandatory_valid": true
+  }
+ },
+ "nominal_coverage": "per pair and cell; not simultaneous",
+ "label": "NO_PRECISION_GAIN",
+ "inputs_sha256": {
+  "public": "1ab5a07c5cb770fb3ed94c76eb094f922ca552261d7e482c4e290396a276a82a",
+  "tab": "53a7d19b4bfcfb269c92bd73d31bdfe27a2f60ee50644056096a70de7a97e3c8",
+  "s5x": "ee7f14d715610b9036eb49ced3f46432f3708967edde696b8b7e76c1466fd09c"
+ }
+}
