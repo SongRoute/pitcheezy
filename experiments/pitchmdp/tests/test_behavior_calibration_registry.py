@@ -161,7 +161,8 @@ def test_bug_fix_retry_records_are_validated_and_reconciled_in_order(config):
     from behavior_calibration_synthetic import digest_entries_for
     good = as_registered(config)
     assert len(reg.retry_records(good)) >= 1
-    damages = [lambda r: r.update(retry=2), lambda r: r['void_registration'].update(config_digest='x' * 64),
+    damages = [lambda r: r.update(retry=2), lambda r: r.update(retry=True), lambda r: r.update(retry=1.0),
+               lambda r: r['void_registration'].update(config_digest='x' * 64),
                lambda r: r['void_registration'].update(registered_commit='fda4f07c'),
                lambda r: r['void_registration'].pop('registration_commit'),
                lambda r: r.update(aborted_attempt='attempt-1'), lambda r: r.update(aborted_attempt='/x/run-1'),
@@ -186,6 +187,42 @@ def test_bug_fix_retry_records_are_validated_and_reconciled_in_order(config):
         reg.reconcile_registration_chain([chain[0], chain[2], chain[1]], reg.retry_records(second))
     with pytest.raises(reg.RegistrationError, match='every re-registration needs its record'):
         reg.reconcile_registration_chain(chain[:2], reg.retry_records(second))
+
+
+@pytest.mark.parametrize('digest', [['a' * 64], {'config_digest': 'a' * 64}, 7, True, None])
+def test_a_malformed_void_digest_is_a_refusal_never_an_exception(config, digest):
+    """Closure check of a25db2c5, item 1: a list/object (any non-64-hex) void config digest is reported by
+    the record validation and refused (config_check, void_registrations), never a TypeError, also when a
+    second record repeats it."""
+    bad = as_registered(config)
+    bad['bug_fix_retries'][0]['void_registration']['config_digest'] = digest
+    assert reg.retry_record_problems(bad) == [
+        'bug_fix_retries[0].void_registration.config_digest must be a 64-hex config digest']
+    bad['bug_fix_retries'].append({**copy.deepcopy(bad['bug_fix_retries'][0]), 'retry': 2})
+    assert len(reg.retry_record_problems(bad)) == 2
+    for check in (reg.config_check, reg.retry_records, reg.void_registrations):
+        with pytest.raises(reg.RegistrationError, match='config_digest must be a 64-hex config digest'):
+            check(bad)
+
+
+@pytest.mark.parametrize('retry', [True, 1.0, '1', None])
+def test_manifest_retry_indices_are_strict_integers(config, retry):
+    """Closure check of a25db2c5, item 2: a re-registration entry's retry index is a strict integer, as in
+    the config records (true, 1.0, '1' or a missing index refuse); its new digest is 64-hex."""
+    from behavior_calibration_synthetic import digest_entries_for
+    good = as_registered(config)
+    records, chain = reg.retry_records(good), digest_entries_for(good)
+    assert chain[1]['retry'] == 1 and reg.reconcile_registration_chain(chain, records) == chain[-1]
+    bad = copy.deepcopy(chain)
+    if retry is None:
+        bad[1].pop('retry')
+    else:
+        bad[1]['retry'] = retry
+    with pytest.raises(reg.RegistrationError, match='does not reconcile.*retry index'):
+        reg.reconcile_registration_chain(bad, records)
+    for digest in (['a' * 64], 'A' * 64, None):
+        with pytest.raises(reg.RegistrationError, match='new digest'):
+            reg.reconcile_registration_chain([chain[0], {**chain[1], 'config_content_sha256': digest}], records)
 
 
 def test_registered_constants():

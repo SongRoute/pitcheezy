@@ -134,7 +134,9 @@ def test_the_gate_refuses_void_registrations_and_unreconciled_digest_chains(draf
     cases = {'only the original': [original], 'an extra entry': [original, rereg, dict(rereg)],
              'no original': [rereg], 'two originals': [original, original],
              'previous digest': [original, {**rereg, 'previous_digest': '0' * 64}],
-             'retry index': [original, {**rereg, 'retry': 2}],
+             'retry index': [original, {**rereg, 'retry': 2}], 'retry true': [original, {**rereg, 'retry': True}],
+             'retry 1.0': [original, {**rereg, 'retry': 1.0}],
+             'malformed new digest': [original, {**rereg, 'config_content_sha256': ['0' * 64]}],
              'void registration': [original, {**rereg, 'void_registration': {**record['void_registration'],
                                                                                'registration_commit': '0' * 40}}],
              'aborted attempt': [original, {**rereg, 'aborted_attempt': '/elsewhere/attempt-9'}],
@@ -147,6 +149,12 @@ def test_the_gate_refuses_void_registrations_and_unreconciled_digest_chains(draf
         with pytest.raises(runner.Refused, match='digest') as error:
             gate(good, git=GIT_OK, runner_sha256=RUNNER_SHA256, entries=chain)
         assert error.value.terminal, name
+    for digest in (['a' * 64], {'config_digest': 'a' * 64}):  # a malformed void digest: refused, no TypeError
+        malformed = copy.deepcopy(good)
+        malformed['bug_fix_retries'][0]['void_registration']['config_digest'] = digest
+        with pytest.raises(runner.Refused, match='config_digest must be a 64-hex') as error:
+            gate(malformed, git=GIT_OK, runner_sha256=RUNNER_SHA256, entries=entries)
+        assert error.value.terminal
     monkeypatch.setattr(runner, 'config_content_sha256', lambda config: record['void_registration']['config_digest'])
     with pytest.raises(runner.Refused, match='void registration'):
         gate(good, git=GIT_OK, runner_sha256=RUNNER_SHA256)

@@ -410,9 +410,10 @@ ATTEMPT_FOLDER = re.compile(r'attempt-\d+')
 
 def retry_record_problems(config):
     """Problems of the config's bug-fix retry record (``bug_fix_retries``; absent = no retry): retries
-    numbered 1..n in order, each naming the registration it voids (config digest = that registration's
-    code.config_sha256, full registered and registration commits; distinct across retries), the absolute
-    attempt-N folder it aborted, its defects and its fix."""
+    numbered 1..n in order (strict integers), each naming the registration it voids (config digest = that
+    registration's code.config_sha256, full registered and registration commits; distinct across retries),
+    the absolute attempt-N folder it aborted, its defects and its fix. Only validated digests enter the
+    distinctness check, so a malformed value is a reported problem, never an exception."""
     records = config.get('bug_fix_retries', [])
     if not isinstance(records, list):
         return ['bug_fix_retries must be a list of retry records']
@@ -428,12 +429,13 @@ def retry_record_problems(config):
         if not isinstance(void, dict) or set(void) != set(VOID_REGISTRATION_FIELDS):
             problems.append(f'{name}.void_registration must hold exactly ' + ', '.join(VOID_REGISTRATION_FIELDS))
         else:
-            if not _hex(void['config_digest'], 64):
+            if _hex(void['config_digest'], 64):
+                voided.append(void['config_digest'])
+            else:
                 problems.append(f'{name}.void_registration.config_digest must be a 64-hex config digest')
             for key in ('registered_commit', 'registration_commit'):
                 if not _hex(void[key], 40):
                     problems.append(f'{name}.void_registration.{key} must be a full 40-hex commit sha')
-            voided.append(void['config_digest'])
         attempt = record.get('aborted_attempt')
         if not (isinstance(attempt, str) and PurePosixPath(attempt).is_absolute()
                 and ATTEMPT_FOLDER.fullmatch(PurePosixPath(attempt).name)):
@@ -472,10 +474,12 @@ def registration_entries(rows):
 def reconcile_registration_chain(rows, records):
     """The digest manifest's registration chain against the bug-fix retry records (an ordered bijection):
     exactly one original ``registration`` entry, then exactly one ``reregistration`` entry per record, in
-    order. Re-registration k names retry k, the digest of the entry before it as previous_digest (= record
-    k's void config digest; that entry was registered at the record's void registered commit), a copy of
-    the record's void_registration, the record's aborted attempt, a reason and a new digest. An entry
-    without a record or a record without an entry refuses. Returns the active (last) entry."""
+    order. Re-registration k names retry k (a strict integer, as in the records: not true or 1.0), the
+    digest of the entry before it as previous_digest (= record k's void config digest; that entry was
+    registered at the record's void registered commit), a copy of the record's void_registration, the
+    record's aborted attempt, a reason and a new 64-hex digest. An entry without a record or a record
+    without an entry refuses. ``records`` are validated records (``retry_records``). Returns the active
+    (last) entry."""
     entries = registration_entries(rows)
     if not entries or entries[0].get('kind') != 'registration' \
             or any(e.get('kind') != 'reregistration' for e in entries[1:]):
@@ -488,14 +492,15 @@ def reconcile_registration_chain(rows, records):
     for k, (record, before, after) in enumerate(zip(records, entries, entries[1:]), start=1):
         void = record['void_registration']
         mismatches = [name for name, same in (
-            ('retry index', after.get('retry') == k == record['retry']),
+            ('retry index', type(after.get('retry')) is int and after['retry'] == k == record['retry']),
             ('previous_digest', after.get('previous_digest') == before.get('config_content_sha256')
              == void['config_digest']),
             ('void registered commit', before.get('commit') == void['registered_commit']),
             ('void_registration', after.get('void_registration') == void),
             ('aborted_attempt', after.get('aborted_attempt') == record['aborted_attempt']),
             ('reason', isinstance(after.get('reason'), str) and bool(after['reason'].strip())),
-            ('new digest', after.get('config_content_sha256') not in (None, after.get('previous_digest'))),
+            ('new digest', _hex(after.get('config_content_sha256'), 64)
+             and after['config_content_sha256'] != after.get('previous_digest')),
         ) if not same]
         if mismatches:
             raise RegistrationError(f're-registration entry {k + 1} does not reconcile with bug_fix_retries[{k - 1}]: '
