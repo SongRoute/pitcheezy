@@ -1,16 +1,20 @@
 {
   "protocol": "planner_variance_rao_blackwell_v1",
   "experiment_id": "EXP-STAB-02",
-  "status": "DRAFT_UNREGISTERED",
-  "execute": false,
+  "status": "REGISTERED",
+  "execute": true,
   "status_note": "Materialized from docs/pm/research/track-a/A1-planner-variance-registration-draft.json (design review PASS, REVIEW-A1-ASTRA-003). Every real-data stage, the smoke included, refuses until registration sets status REGISTERED, execute true and the registration block (design and code review references, registered commit, code_sha256 of the runner, module and registry).",
   "registration": {
-    "registered_kst": null,
-    "registered_commit": null,
-    "design_review_reference": null,
-    "code_review_reference": null,
-    "code_sha256": null,
-    "digest_manifest_path": null,
+    "registered_kst": "2026-10-27 16:58 KST",
+    "registered_commit": "aeae3390c1b394eb5bea3ca23fd239fbabdd0913",
+    "design_review_reference": "docs/pm/research/track-a/reviews/REVIEW-A1-ASTRA-003.md (gpt-6-astra, VERDICT PASS, 2026-10-27)",
+    "code_review_reference": "docs/pm/research/track-a/reviews/CODE-REVIEW-A1-ASTRA-003.md (PASS_WITH_NOTES, 363b08b4) + 004-CLOSURE (PASS, 04829265) + 005-FIX (FAIL P2, 1d4a7fec) + 006-FIX2 (PASS, aeae3390)",
+    "code_sha256": {
+      "experiments/pitchmdp/pitchmdp/planner_variance.py": "584d7ab9a77a31f457bfb2f830583ac99921f5429b05752ae1b82cc1bc53cc77",
+      "experiments/pitchmdp/pitchmdp/planner_variance_registry.py": "f8fe7ef570a93204f4b6fc92f189547fb84c2bea970787803e5644227069277e",
+      "experiments/pitchmdp/scripts/diagnose_planner_variance.py": "4314b32c8e0f015af5901968f7bfca0a8158794c2326d0ce88dee194499512a3"
+    },
+    "digest_manifest_path": "/Users/song/Projects/pitcheezy-pm-jobs/track-a/EXP-STAB-02/digest-manifest.jsonl",
     "order": "D186 + PM 2026-10-27 (all track-A drafts; gates G1-G2): design review -> review of the code, config and synthetic tests at a fixed commit (code reading only, incl. the smoke code; no real-data execution) -> registration -> smoke as the first registered step -> full run (pass M, then conditional passes C and D); each review must end PASS, or PASS_WITH_NOTES with every note closed or recorded as accepted by the PM",
     "addenda": "append-only, never rewritten: (1) smoke record after the registered smoke (cost and structural integrity only, no comparison metric); (2) if a confirmation slice is run, its 50-game list sha256 before any planning call on it (data.confirmation_slice)",
     "smoke_record": "the smoke receipt (<attempt>/smoke/results.json + SHA256SUMS, receipts.jsonl line) is referenced from the registration block by path and digest; no comparison metric is in it",
