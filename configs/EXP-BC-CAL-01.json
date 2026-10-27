@@ -29,7 +29,9 @@
       "code.runner_sha256",
       "data.s6_ledger.ledger_sha256",
       "data.s6_ledger.manifest_sha256",
-      "data.s6_ledger.runtime_sha256.value"
+      "data.s6_ledger.runtime_sha256.value",
+      "data.a3_input.rechunked_sha256",
+      "data.a3_input.identity_manifest_sha256"
     ],
     "addenda": "append-only, in this order, never rewritten: (1) smoke record (TRAIN-only cost/integrity, no metric); (2) freeze-primary manifest (sha256 and input-row date range of each artifact), pinned before any DEV pitch-type label is read; (3) freeze-xf manifest, pinned before any DEV metric (metrics.dev_metric_definition) is computed (code.stages)"
   },
@@ -68,7 +70,8 @@
       "experiments/pitchmdp/pitchmdp/behavior_metrics.py (18-class NLL/Brier/top-label ECE10, game bootstrap, near-zero share, SC-1, SC-3)",
       "experiments/pitchmdp/pitchmdp/behavior_weights.py (allowlisted S6 ledger reader, E0 reconstruction, PA weights, B0 ESS reproduction, weight shift, mean-weight test)",
       "experiments/pitchmdp/pitchmdp/behavior_calibration_registry.py (registered values, config_check)",
-      "experiments/pitchmdp/pitchmdp/behavior_data.py (stage-specific acquisition: ProcessedReader / RawKeysReader / A3Inputs and the read log of every decode)"
+      "experiments/pitchmdp/pitchmdp/behavior_data.py (stage-specific acquisition: ProcessedReader / RawKeysReader / A3Inputs and the read log of every decode)",
+      "experiments/pitchmdp/scripts/prepare_behavior_calibration_input.py (one-time split-aligned A3 input with a row-for-row identity manifest; run by the registrar, never by the runner)"
     ],
     "reused_read_only": [
       "experiments/pitchmdp/pitchmdp/rollout_policy.py CategoricalBC (:68-124)",
@@ -124,6 +127,7 @@
       "experiments/pitchmdp/tests/test_behavior_calibration_metrics.py",
       "experiments/pitchmdp/tests/test_behavior_calibration_weights.py",
       "experiments/pitchmdp/tests/test_behavior_calibration_data.py",
+      "experiments/pitchmdp/tests/test_behavior_calibration_input.py",
       "experiments/pitchmdp/tests/test_behavior_calibration_runner.py"
     ]
   },
@@ -141,6 +145,26 @@
       "support_table_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize-a3/support_primary.json",
       "hands_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S1-materialize-a3/hands.json",
       "paths_source": "configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d124.json registered_inputs (file sha256 pins)"
+    },
+    "a3_input": {
+      "description": "the A3 processed input: a row-for-row identical copy of data.processed_sha256 whose row-group boundaries are exactly the split dates (one row group per segment), written once before registration by the tool; the reader refuses any file whose row groups span a split date (footer statistics)",
+      "tool": "experiments/pitchmdp/scripts/prepare_behavior_calibration_input.py",
+      "source_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+      "boundaries": [
+        "2023-05-15",
+        "2025-05-01",
+        "2025-05-16",
+        "2025-06-01",
+        "2025-07-01"
+      ],
+      "end": "2025-09-30",
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01/inputs/pitches.split-aligned.parquet",
+      "identity_manifest_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01/inputs/pitches.split-aligned.identity.json",
+      "rechunked_sha256": null,
+      "identity_manifest_sha256": null,
+      "identity_rule": "per column, a canonical sha256 of its values in file order (validity, fixed-width value bytes with null slots zeroed, string lengths and bytes) on the original and the rewritten file, plus equal row counts and equal schemas (metadata included); result PASS required",
+      "disclosure": "the identity hash streams the bytes of every column, pitch_type and the outcome columns included: a byte-level identity check, not a label read; no value is turned into a Python object",
+      "pinned_at_registration": "the registrar runs the tool once (outside 06:30-13:30 KST) and pins rechunked_sha256 and identity_manifest_sha256"
     },
     "s6_ledger": {
       "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S6-dr-a5/ledger-dev-0.jsonl",
@@ -1107,7 +1131,7 @@
     "read_policy": {
       "free_columns": ["game_pk", "at_bat_number", "pitch_number", "game_date", "game_type", "pitcher", "batter", "stand", "p_throws", "balls", "strikes", "outs_when_up", "bases", "inning", "inning_topbot", "home_score", "away_score"],
       "guarded_columns": ["pitch_type", "description", "events", "is_pa_terminal", "launch_angle"],
-      "row_groups": "chosen from footer game_date statistics: a row group wholly outside the phase window is skipped (never read); a straddling row group is read and its out-of-window rows are dropped and counted in the stage record (decoded-then-dropped; straddling row groups only)",
+      "row_groups": "chosen from footer game_date statistics: the processed input must be split-aligned (data.a3_input; the reader refuses a file whose row groups span a split date), so its pre-TRAIN and June row groups are skipped whole; a row group wholly outside the phase window is never read; straddling row groups (raw key files only) are read and their out-of-window rows dropped and counted in the stage record (decoded-then-dropped)",
       "smoke": "free + guarded columns of the row groups lying wholly on or before 2025-04-30",
       "census": "free columns only (no guarded column is read)",
       "pre_gate_window": ["2023-05-15", "2025-05-31"],
@@ -1146,7 +1170,8 @@
       "xf_artifacts": "freeze-xf pins the XF out-of-fold prediction arrays (npy) and their row keys",
       "config_sha256": "canonical sha256 of the config with code.config_sha256 nulled and registration.addenda_records removed",
       "previous_keys": "every count table keeps its own sorted previous-label vocabulary; a label absent from it matches no cell (CategoricalBC raw-string semantics)",
-      "read_policy": "stage-specific acquisition (READ_POLICY): wholly excluded row groups are skipped from footer statistics; rows outside the phase window that share a straddling row group with in-window rows are decoded and dropped, counted per stage (rows_decoded_then_dropped); guarded columns of a DEV-bearing row group are never read before the gate",
+      "read_policy": "stage-specific acquisition (READ_POLICY) of the split-aligned A3 input: wholly excluded row groups are skipped from footer statistics; rows outside the phase window that share a straddling row group (raw key files only) are decoded and dropped, counted per stage (rows_decoded_then_dropped); guarded columns of a DEV-bearing row group are never read before the gate",
+      "a3_input": "the pinned processed parquet is rewritten once before registration by scripts/prepare_behavior_calibration_input.py into row groups bounded exactly by the split dates (row order, schema and values unchanged; pyarrow only); identity is proven per column by a canonical sha256 of its values plus row count and schema, which streams every column byte including pitch_type (a byte-level identity check, not a label read); the rewritten file and its identity manifest are registration pins",
       "ledger_parsing": "S6 ledger lines are scanned key by key: allowlisted values are decoded, every other value is validated against the JSON grammar and skipped without being decoded into a Python object; a malformed line refuses the ledger",
       "attempt_budget": "the 14,400 s total covers the whole attempt from the smoke command through decide (budget.jsonl, bound to every stage record); a missing, empty or truncated history of a started attempt refuses; preflight and the memory probe are supervised under the same deadline",
       "memory_rule": "the 10 GiB RSS cap applies to the runner peak RSS (getrusage) plus the current RSS of every process in the supervised child tree (ps, polled every 0.5 s); the peak child-tree RSS is recorded"

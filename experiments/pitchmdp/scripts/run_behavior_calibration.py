@@ -11,7 +11,10 @@ before it opens any file (only inside an executing stage of an open attempt). Or
 (first registered step: TRAIN rows only, cost and integrity incl. a split-aligned processed layout,
 no metric) -> census (label-free) -> fit -> calibrate -> freeze-primary -> s6-integrity -> xf-fit ->
 freeze-xf -> score-dev -> s6-weights -> decide. A stage opens only after every earlier stage passed in
-the same attempt (verified against the digests anchored in stages.jsonl, under the guard). Data are
+the same attempt (verified against the digests anchored in stages.jsonl, under the guard). The
+processed input is the split-aligned copy (data.a3_input) written once before registration by
+scripts/prepare_behavior_calibration_input.py: its identity manifest and sha256 are registration pins
+and the reader refuses a file whose row groups span a split date. Data are
 read stage by stage (pitchmdp.behavior_data): no guarded column chunk of a DEV-bearing row group is
 passed to pyarrow before freeze-primary is pinned and s6-integrity passed (checked from the
 pyarrow-level read log at freeze-primary); every acquisition is logged before it happens (reads.jsonl
@@ -86,7 +89,8 @@ KST = timezone(timedelta(hours=9))
 PREFLIGHT_TESTS = ('tests/test_behavior_calibration_registry.py', 'tests/test_behavior_calibration_model.py',
                    'tests/test_behavior_calibration_features.py', 'tests/test_behavior_calibration_calibration.py',
                    'tests/test_behavior_calibration_metrics.py', 'tests/test_behavior_calibration_weights.py',
-                   'tests/test_behavior_calibration_data.py', 'tests/test_behavior_calibration_runner.py')
+                   'tests/test_behavior_calibration_data.py', 'tests/test_behavior_calibration_input.py',
+                   'tests/test_behavior_calibration_runner.py')
 ARTIFACT_EXCLUDE = ('stage.json', 'SHA256SUMS')
 SINCE_DEV, SINCE_AFTER_TRAIN = str(DEV_START.date()), str((TRAIN_END + pd.Timedelta(days=1)).date())
 
@@ -287,6 +291,8 @@ def check_destination(destination, *, output_root=None, repos=(REPO,)):
             raise Refused(f'destination inside a repository results/: {path}')
     if 'ML-POLICY-VAL-v1' in path.parts:
         raise Refused('destination inside the sealed ML-POLICY-VAL-v1 (S5/S6) stage directories')
+    if path.name == 'inputs' or 'inputs' in path.parent.parts[-1:]:
+        raise Refused('the inputs/ folder holds the prepared A3 input; an attempt never uses it')
     if output_root is not None and path.parent != Path(output_root).expanduser().resolve():
         raise Refused(f'destination must be a new directory directly under {output_root}')
     return path
@@ -1536,6 +1542,38 @@ def verify_processed_identity(local, parent, pinned_sha256, opened=lambda name, 
     return processed, {'rows': quality['rows'], 'provenance': provenance}
 
 
+def verify_a3_input(config, opened=lambda name, what: None):
+    """The split-aligned A3 input (data.a3_input): its identity manifest, pinned by sha256, must record
+    a PASS rewrite of the pinned processed parquet into the pinned file at the registered split dates
+    (rows equal, schema equal, every column digest equal, aligned). Returns (path, record)."""
+    a3 = config['data']['a3_input']
+    path = Path(a3['identity_manifest_path'])
+    opened(path, 'A3 input identity manifest (pinned sha256)')
+    data = path.read_bytes()
+    if sha256_bytes(data) != a3['identity_manifest_sha256']:
+        raise IntegrityError('A3 input identity manifest differs from its registration pin')
+    manifest = json.loads(data)
+    source, rewritten = manifest.get('source') or {}, manifest.get('rewritten') or {}
+    identity = manifest.get('identity') or {}
+    checks = {'result_pass': manifest.get('result') == 'PASS' and identity.get('result') == 'PASS',
+              'aligned': manifest.get('aligned') is True,
+              'rows_and_schema_equal': identity.get('rows_equal') is True and identity.get('schema_equal') is True
+              and source.get('rows') == rewritten.get('rows'),
+              'every_column_equal': bool(identity.get('columns')) and not identity.get('differing_columns')
+              and all(c.get('equal') is True for c in identity['columns'].values()),
+              'source_is_the_pinned_processed': source.get('sha256') == reg.DATA_PINS['processed_sha256']
+              == a3['source_sha256'],
+              'rewritten_is_the_pinned_input': rewritten.get('sha256') == a3['rechunked_sha256'],
+              'boundaries': manifest.get('boundaries') == a3['boundaries'] and manifest.get('end') == a3['end'],
+              'tool': manifest.get('tool') == a3['tool']}
+    if not all(checks.values()):
+        raise IntegrityError(f'the A3 input identity manifest does not certify the pinned input: '
+                             f'{[k for k, v in checks.items() if not v]}')
+    return Path(a3['path']), {'rechunked_sha256': a3['rechunked_sha256'],
+                              'identity_manifest_sha256': a3['identity_manifest_sha256'], 'checks': checks,
+                              'row_groups': rewritten.get('row_groups')}
+
+
 class RealSource:
     """Pinned real inputs. Defense in depth: besides the per-stage revalidation, ``open`` itself refuses
     unless it is called inside an executing stage of an open attempt and the registration gate passes
@@ -1572,9 +1610,11 @@ class RealSource:
         parent = pinned_json(files['p4_parent_preparation']['path'], files['p4_parent_preparation']['sha256'])
         processed, identity_record = verify_processed_identity(local, parent, pins['processed_sha256'],
                                                                opened=opened)
-        reader = ProcessedReader(processed, sha256=pins['processed_sha256'], log=log, phase=stage)
+        a3_path, a3_record = verify_a3_input(config, opened)
+        reader = ProcessedReader(a3_path, sha256=config['data']['a3_input']['rechunked_sha256'], log=log,
+                                 phase=stage)  # refuses a file that is not split-aligned (footer statistics)
         if reader.rows != identity_record['rows']:
-            raise IntegrityError('processed row count differs from the frozen quality manifest')
+            raise IntegrityError('A3 input row count differs from the frozen quality manifest')
         opened(files['p4_auxiliary']['path'], 'pinned G0 auxiliary (frozen archetypes)')
         aux = pinned_pickle(files['p4_auxiliary']['path'], files['p4_auxiliary']['sha256'])
         artifact = config['data']['b0_artifact']
@@ -1598,7 +1638,7 @@ class RealSource:
                            'support_file_sha256': artifact['support_table_sha256'], 'support_content_sha256': support_content,
                            'hands_file_sha256': artifact['hands_sha256'], 'hands_content_sha256': hands_content},
                     'raw_sha256': pins['raw_sha256'], 'processed_row_groups': len(reader.groups),
-                    's6_ledger': {k: v for k, v in ledger.items() if k != 'path'}}
+                    'a3_input': a3_record, 's6_ledger': {k: v for k, v in ledger.items() if k != 'path'}}
         return A3Inputs(reader=reader, raw_reader=raw_reader, b0=b0, support=support, hands=hands,
                         archetypes=aux['context'].archetypes, ledger=ledger, identity=identity, log=log)
 

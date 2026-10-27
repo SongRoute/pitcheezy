@@ -102,17 +102,18 @@ def test_split_of_matches_the_registered_assign_fold():
     assert set(split_of(dates)) == {'unused', 'train', 'earlystop', 'temperature', 'blend', 'dev'}
 
 
-def test_layout_check_uses_footer_statistics_only(tmp_path, files, frames, spy):
+def test_the_reader_refuses_a_layout_that_is_not_split_aligned_from_the_footer(tmp_path, files, frames, spy):
     inputs = inputs_for(files)
     layout = inputs.layout()
     assert layout['split_aligned'] and not layout['problems'] and spy == []
-    bad_path, bad_sha, cuts = write_processed(tmp_path / 'bad', frames[1], straddling_cuts)
-    bad = inputs_for(files, path=bad_path, sha=bad_sha).layout()
-    assert not bad['split_aligned'] and any('holds pre-gate and DEV rows' in p for p in bad['problems'])
-    bare_path, bare_sha, _ = write_processed(tmp_path / 'bare', frames[1], statistics=False)
-    bare = inputs_for(files, path=bare_path, sha=bare_sha).layout()
-    assert not bare['split_aligned'] and any('statistics missing' in p for p in bare['problems'])
-    assert spy == []  # nothing decoded
+    for name, kwargs, message in (('straddling', {'cuts': straddling_cuts}, 'spans the split dates'),
+                                  ('bare', {'statistics': False}, 'statistics missing')):
+        path, sha, _ = write_processed(tmp_path / name, frames[1], **kwargs)
+        log = ReadLog()
+        with pytest.raises(ReadRefused, match='not split-aligned'):
+            ProcessedReader(path, sha256=sha, log=log)
+        assert any(message in p for p in log.entries[-1]['problems']) and log.entries[-1]['kind'] == 'refused'
+    assert spy == []  # refused from the footer: nothing decoded
 
 
 def test_smoke_reads_only_train_row_groups_and_counts_dropped_rows(files, spy):
@@ -124,8 +125,8 @@ def test_smoke_reads_only_train_row_groups_and_counts_dropped_rows(files, spy):
     assert 0 not in {c['row_group'] for c in processed}  # wholly pre-TRAIN row group skipped
     assert log_calls(inputs.log) == spy  # the reader's own log is exactly what pyarrow received
     summary = inputs.log.summary(['smoke'])
-    pre = int((group_dates(files, 1) < pd.Timestamp('2023-05-15')).sum())
-    assert summary['rows_decoded_then_dropped']['before_window'] == 2 * pre  # free + guarded read of row group 1
+    assert group_dates(files, 0).max() < pd.Timestamp('2023-05-15')  # the pre-TRAIN row group: skipped
+    assert not any(summary['rows_decoded_then_dropped'].values())  # split-aligned: nothing decoded then dropped
     assert summary['row_groups_skipped'] > 0 and summary['dev_bearing_guarded_reads'] == 0
     assert inputs.log.rows_at_or_after('2025-05-01', guarded_only=False) == 0
     raw = inputs.raw_keys('smoke', frame.game_pk.unique(), upper=TRAIN_END)
@@ -145,7 +146,7 @@ def test_census_reads_free_columns_only_and_skips_wholly_excluded_groups(files, 
                                                                                              '2025-06-30').all()]
     assert june_only and not read & set(june_only) and 0 not in read
     summary = inputs.log.summary(['census'])
-    assert summary['rows_decoded_then_dropped']['between_windows'] > 0  # June rows of the straddling group
+    assert not any(summary['rows_decoded_then_dropped'].values())  # June and pre-TRAIN rows never decoded
     assert summary['guarded_reads'] == 0 and log_calls(inputs.log) == spy
 
 
@@ -158,7 +159,7 @@ def test_pre_gate_never_passes_a_dev_bearing_guarded_chunk_to_pyarrow(files, spy
         assert group_dates(files, call['row_group']).max() < DEV_START
     assert inputs.log.dev_bearing_guarded_reads() == 0 and log_calls(inputs.log) == spy
     assert inputs.log.rows_at_or_after('2025-07-01', guarded_only=True) == 0
-    assert inputs.log.summary(['fit'])['rows_decoded_then_dropped']['after_window'] > 0  # June rows of group 3
+    assert not any(inputs.log.summary(['fit'])['rows_decoded_then_dropped'].values())
     dev = frame.split.eq('dev')
     assert dev.any() and frame.loc[dev, 'pitch_type'].eq(SEALED).all()
     assert frame.loc[dev, 'description'].eq(SEALED).all() and frame.loc[dev, 'events'].eq(SEALED).all()
@@ -168,12 +169,15 @@ def test_pre_gate_never_passes_a_dev_bearing_guarded_chunk_to_pyarrow(files, spy
     assert inputs.pre_gate_frame('calibrate') is frame and not inputs.log.reads(['calibrate'])  # cached
 
 
-def test_an_unsafe_layout_is_refused_before_pyarrow_is_called(tmp_path, files, frames, spy):
-    path, sha, cuts = write_processed(tmp_path / 'unsafe', frames[1], straddling_cuts)
-    inputs = inputs_for(files, path=path, sha=sha)
+def test_a_dev_bearing_guarded_chunk_is_refused_before_pyarrow_is_called(files, spy):
+    """Defense in depth: even if a pre-gate row group looked DEV-bearing, no guarded chunk reaches pyarrow."""
+    inputs = inputs_for(files)
+    inputs.census_view('census')
+    target = next(g for g in inputs.reader.groups if g.overlaps(WINDOWS['pre_gate']))
+    target.high = DEV_START  # as if the footer showed a DEV row in a pre-gate row group
     with pytest.raises(ReadRefused, match='DEV-bearing'):
         inputs.pre_gate_frame('fit')
-    assert not [c for c in spy if GUARDED & set(c['columns'])]  # no guarded chunk at all reached pyarrow
+    assert not [c for c in spy if GUARDED & set(c['columns'])]
     refused = [e for e in inputs.log.entries if e['kind'] == 'refused']
     assert refused and all(e['pyarrow_called'] is False and e['dev_bearing'] for e in refused)
     assert inputs.log.dev_bearing_guarded_reads() == 0
@@ -203,26 +207,26 @@ def test_dev_guarded_columns_only_after_the_gate(files, frames):
 
 def test_missing_statistics_null_dates_and_failed_reads_stay_in_the_log(tmp_path, files, frames, spy, monkeypatch):
     world = frames[0]
-    # no statistics: nothing can be skipped or proven DEV-free -> guarded reads refused before pyarrow
+    # no statistics: refused from the footer (nothing can be skipped or proven DEV-free), logged
     bare_path, bare_sha, _ = write_processed(tmp_path / 'bare', world, statistics=False)
     events = []
-    bare = inputs_for(files, events, path=bare_path, sha=bare_sha)
-    with pytest.raises(ReadRefused, match='no processed row group'):
-        bare.smoke_frame('smoke')  # the smoke needs row groups proven to end on or before 2025-04-30
-    with pytest.raises(ReadRefused, match='DEV-bearing'):
-        bare.pre_gate_frame('fit')
-    assert not [c for c in spy if GUARDED & set(c['columns'])]
-    # a 2026 date without statistics: decoded, then refused; the entry keeps the failed validation
+    with pytest.raises(ReadRefused, match='statistics missing'):
+        ProcessedReader(bare_path, sha256=bare_sha, log=ReadLog(sink=events.append))
+    assert [e['event'] for e in events] == ['open', 'refused'] and spy == []
+    # a raw key file without statistics holding a 2026 date: decoded, then refused; the entry keeps
+    # the failed validation and was logged before the read
     late = processed_order(world)
     late.loc[late.index[-3:], 'game_date'] = pd.Timestamp('2026-04-01')
-    late_path = write_parquet(tmp_path / 'late.parquet', late, PROCESSED_COLUMNS, [0, len(late)], statistics=False)
+    raw = write_parquet(tmp_path / 'raw' / 'statcast_x.parquet', late, RAW_KEY_COLUMNS, [0, len(late)], statistics=False)
     events = []
-    reader_inputs = inputs_for(files, events, path=late_path, sha=hashlib.sha256(late_path.read_bytes()).hexdigest())
+    log = ReadLog(sink=events.append)
     with pytest.raises(ReadRefused, match='2026'):
-        reader_inputs.census_view('census')
-    entry = reader_inputs.log.reads()[-1]
+        RawKeysReader(raw.parent, {raw.name: hashlib.sha256(raw.read_bytes()).hexdigest()}, log).read(
+            'fit', world.game_pk.unique(), WINDOWS['used'])
+    entry = log.reads()[-1]
     assert entry['status'] == 'decoded' and entry['validation'].startswith('failed')
-    assert [e['event'] for e in events if e.get('index') == entry['index']][0] == 'begin'  # logged before the read
+    order = [e['event'] for e in events if e.get('index') == entry['index']]
+    assert order[0] == 'begin' and order[-1] == 'finish'
     assert any(e['event'] == 'finish' and str(e.get('validation', '')).startswith('failed') for e in events)
     # null dates with statistics: refused from the footer, nothing decoded
     nulls = processed_order(world)

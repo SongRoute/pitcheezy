@@ -623,6 +623,46 @@ def test_inter_stage_verification_runs_under_the_window_guard(tmp_path, draft, m
     assert not run.attempt.stage_path('census').exists()
 
 
+def test_the_pinned_a3_input_must_be_certified_by_its_identity_manifest(tmp_path, draft):
+    """The real loader reads the split-aligned A3 input only when its pinned identity manifest records a
+    PASS rewrite of the pinned processed parquet into exactly the pinned file at the split dates."""
+    from behavior_calibration_synthetic import extra_rows, prepare_input
+    world = make_frame(2, games={'train': 4, 'earlystop': 1, 'temperature': 1, 'dev': 2})
+    record = prepare_input(tmp_path / 'data', pd.concat([world, extra_rows()], ignore_index=True))
+    manifest_path = Path(record['rewritten']['path']).with_name('pitches.split-aligned.identity.json')
+    good = json.loads(manifest_path.read_text())
+    good['source']['sha256'] = reg.DATA_PINS['processed_sha256']  # as for the real pinned source
+
+    def config_for(manifest):
+        path = tmp_path / f'manifest-{len(list(tmp_path.glob("manifest-*")))}.json'
+        path.write_text(json.dumps(manifest))
+        config = copy.deepcopy(draft)
+        config['data']['a3_input'].update(identity_manifest_path=str(path),
+                                          identity_manifest_sha256=runner.sha256_file(path),
+                                          rechunked_sha256=record['rewritten']['sha256'])
+        return config
+
+    path, checked = runner.verify_a3_input(config_for(good))
+    assert path == Path(draft['data']['a3_input']['path']) and all(checked['checks'].values())
+    damages = [lambda m: m.update(result='FAIL'), lambda m: m['identity'].update(result='FAIL'),
+               lambda m: m.update(aligned=False), lambda m: m['source'].update(sha256='0' * 64),
+               lambda m: m['rewritten'].update(sha256='0' * 64), lambda m: m.update(boundaries=['2025-07-01']),
+               lambda m: m['identity']['columns']['pitch_type'].update(equal=False),
+               lambda m: m['identity'].update(differing_columns=['pitch_type']),
+               lambda m: m['rewritten'].update(rows=1)]
+    for damage in damages:
+        bad = copy.deepcopy(good)
+        damage(bad)
+        with pytest.raises(IntegrityError, match='does not certify'):
+            runner.verify_a3_input(config_for(bad))
+    config = config_for(good)
+    config['data']['a3_input']['identity_manifest_sha256'] = 'f' * 64
+    with pytest.raises(IntegrityError, match='registration pin'):
+        runner.verify_a3_input(config)
+    with pytest.raises(runner.Refused, match='inputs/ folder'):
+        runner.check_destination(tmp_path / 'EXP-BC-CAL-01' / 'inputs', output_root=tmp_path / 'EXP-BC-CAL-01')
+
+
 def test_abort_keeps_outputs_and_stops(tmp_path, draft, monkeypatch):
     run = make_run(tmp_path, draft)
     monkeypatch.setitem(runner.STAGE_FUNCTIONS, 'smoke', stub())

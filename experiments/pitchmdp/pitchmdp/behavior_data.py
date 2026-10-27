@@ -7,14 +7,20 @@ group's footer statistics) and completed afterwards (rows decoded, kept and drop
 The log hands every event to its sink at once (the runner appends them to the attempt's hash-chained
 reads.jsonl), so a failed or interrupted acquisition is never lost.
 
-Row groups are chosen from footer statistics (game_date minimum, maximum and null count):
-- a row group wholly outside the phase window is skipped and never read (recorded as a skip);
-- a row group straddling a window boundary is read, and its out-of-window rows are dropped and
-  counted (decoded-then-dropped, disclosed in the stage record; straddling row groups only);
+The processed input is the split-aligned copy written once by
+scripts/prepare_behavior_calibration_input.py (data.a3_input): ``ProcessedReader`` refuses any file
+whose row groups lack game_date statistics or span a split date (2023-05-15, 2025-05-01,
+2025-05-16, 2025-06-01, 2025-07-01), from the footer alone. Row groups are chosen from footer
+statistics (game_date minimum, maximum and null count):
+- a row group wholly outside the phase window is skipped and never read (recorded as a skip), so the
+  rows before 2023-05-15 and the June (blend) rows of the processed input are never decoded;
+- a row group straddling a window boundary (possible only in the raw key files) is read, and its
+  out-of-window rows are dropped and counted (decoded-then-dropped, disclosed in the stage record);
 - before the gate, GUARDED columns are never read from a DEV-bearing row group (game_date maximum on
-  or after 2025-07-01, or statistics missing): the reader refuses before pyarrow is called. No DEV
-  pitch type, description, event, launch angle or dictionary page can be decoded before the gate,
-  because those column chunks are never passed to pyarrow (physically safe acquisition).
+  or after 2025-07-01, or statistics missing): the reader refuses before pyarrow is called (defense
+  in depth; a split-aligned file has no such row group in the pre-gate window). No DEV pitch type,
+  description, event, launch angle or dictionary page can be decoded before the gate, because those
+  column chunks are never passed to pyarrow (physically safe acquisition).
 
 Phases: smoke = row groups lying wholly on or before 2025-04-30 (FREE + GUARDED); census = FREE only;
 pre-gate (fit .. freeze-primary) = GUARDED of the row groups overlapping 2023-05-15..2025-05-31;
@@ -45,6 +51,7 @@ GUARDED = list(reg.GUARDED_COLUMNS)
 RAW_KEY_COLUMNS = ['game_date', 'game_pk', 'at_bat_number', 'pitch_number', 'pitcher']
 TRAIN_START, TRAIN_END = (pd.Timestamp(d) for d in reg.SPLIT_DATES['train'])
 PRE_GATE_START, PRE_GATE_LIMIT = (pd.Timestamp(d) for d in reg.READ_POLICY['pre_gate_window'])
+SPLIT_BOUNDARIES = tuple(pd.Timestamp(d) for d in reg.A3_INPUT['boundaries'])
 DEV_START, DEV_END = (pd.Timestamp(d) for d in reg.SPLIT_DATES['dev'])
 LAST_DATE = pd.Timestamp(reg.LAST_DATE)
 WINDOWS = {'train': ((TRAIN_START, TRAIN_END),), 'pre_gate': ((PRE_GATE_START, PRE_GATE_LIMIT),),
@@ -53,11 +60,12 @@ STRING_GUARDED = ('pitch_type', 'description', 'events')
 PHASES = {'smoke_frame': ('smoke',), 'census_view': ('census',),
           'pre_gate_frame': ('fit', 'calibrate', 'freeze-primary', 'xf-fit'), 'raw_keys': ('smoke', 'fit'),
           'release_dev': ('xf-fit',)}
-DISCLOSURE = ('row groups wholly outside the phase window are skipped from footer statistics; rows outside the '
-              'window that share a row group with in-window rows (straddling row groups only) are decoded and '
-              'dropped, counted in rows_decoded_then_dropped; guarded columns of a DEV-bearing row group are never '
-              'read before the gate; pyarrow parses each file footer (metadata and statistics of every column chunk) '
-              'on open, of which only game_date statistics and row counts are used')
+DISCLOSURE = ('the processed input is split-aligned (refused otherwise); row groups wholly outside the phase window are '
+              'skipped from footer statistics; rows outside the window that share a row group with in-window rows '
+              '(straddling row groups, possible only in the raw key files) are decoded and dropped, counted in '
+              'rows_decoded_then_dropped; guarded columns of a DEV-bearing row group are never read before the gate; '
+              'pyarrow parses each file footer (metadata and statistics of every column chunk) on open, of which only '
+              'game_date statistics and row counts are used')
 
 
 class ReadRefused(IntegrityError):
@@ -180,6 +188,10 @@ class Group:
     def overlaps(self, windows):
         return not self.known or any(self.low <= end and self.high >= start for start, end in windows)
 
+    def spans(self, boundaries):
+        """Split dates inside this row group (rows on both sides of the date); unknown -> all."""
+        return list(boundaries) if not self.known else [b for b in boundaries if self.low < b <= self.high]
+
     def describe(self):
         return {'row_group': self.index, 'group_rows': self.rows, 'group_low': _day(self.low),
                 'group_high': _day(self.high), 'group_null_dates': self.nulls, 'dev_bearing': self.dev_bearing}
@@ -284,6 +296,12 @@ class ProcessedReader:
         self.groups = _groups(self.file, self.path)
         self.rows = sum(g.rows for g in self.groups)
         self.dates = {}
+        layout = self.layout()
+        if not layout['split_aligned']:
+            log.note(kind='refused', phase=phase, file=self.path.name, pyarrow_called=False,
+                     reason='processed input is not split-aligned', problems=layout['problems'])
+            raise ReadRefused(f'the processed input is not split-aligned (prepare it with '
+                              f'prepare_behavior_calibration_input.py): {layout["problems"]}')
 
     def verify_unchanged(self):
         if file_sha256(self.path) != self.sha256:
@@ -291,12 +309,15 @@ class ProcessedReader:
 
     def layout(self):
         """Footer-statistics layout check (nothing decoded): every row group has game_date statistics
-        without nulls, no row group overlapping the pre-gate window holds DEV rows, and the smoke has a
-        TRAIN row group lying wholly on or before 2025-04-30."""
+        without nulls and spans no split date (so no row group holds pre-gate and DEV rows), and the
+        smoke has a TRAIN row group lying wholly on or before 2025-04-30."""
         problems = []
         for g in self.groups:
             if not g.known:
                 problems.append(f'row group {g.index}: game_date statistics missing')
+            elif g.spans(SPLIT_BOUNDARIES):
+                problems.append(f'row group {g.index} ({_day(g.low)}..{_day(g.high)}) spans the split dates '
+                                f'{[_day(b) for b in g.spans(SPLIT_BOUNDARIES)]}')
             elif g.overlaps(WINDOWS['pre_gate']) and g.dev_bearing:
                 problems.append(f'row group {g.index} ({_day(g.low)}..{_day(g.high)}) holds pre-gate and DEV rows')
         if not any(g.known and g.high <= TRAIN_END and g.overlaps(WINDOWS['train']) for g in self.groups):

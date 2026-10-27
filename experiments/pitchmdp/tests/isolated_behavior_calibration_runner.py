@@ -68,9 +68,10 @@ def test_smoke_reads_train_row_groups_only_and_computes_no_metric(attempt):
     reads = pyarrow_reads(record['reads'])
     assert reads and all(e['rows_at_or_after']['2025-05-01'] == 0 and e['validation'] == 'passed' for e in reads)
     summary = record['read_summary']
-    assert summary['rows_decoded_then_dropped']['before_window'] > 0  # pre-TRAIN rows of a straddling group
+    processed = [e for e in reads if e['file'] == 'pitches.split-aligned.parquet']
+    assert processed and not any(any(e['rows_dropped'].values()) for e in processed)  # split-aligned input
     assert summary['row_groups_skipped'] > 0 and summary['dev_bearing_guarded_reads'] == 0
-    assert 'straddling row groups only' in summary['disclosure']
+    assert 'split-aligned' in summary['disclosure']
 
 
 def test_census_is_label_free_and_dev_labels_wait_for_the_gate(attempt):
@@ -79,7 +80,10 @@ def test_census_is_label_free_and_dev_labels_wait_for_the_gate(attempt):
     fit_record = stage_json(attempt, 'fit', 'stage.json')
     fit = pyarrow_reads(fit_record['reads'])
     assert any(e['guarded'] for e in fit) and not any(e['guarded'] and e['dev_bearing'] for e in fit)
-    assert fit_record['read_summary']['rows_decoded_then_dropped']['after_window'] > 0  # June rows, straddling group
+    skipped = [e for e in fit_record['reads'] + stage_json(attempt, 'census', 'stage.json')['reads']
+               if e['kind'] == 'skip' and e['file'] == 'pitches.split-aligned.parquet']
+    assert {(e['group_low'], e['group_high']) for e in skipped} >= {('2025-06-01', '2025-06-30')}  # June never read
+    assert any(e['group_high'] < '2023-05-15' for e in skipped)  # rows before TRAIN never read
     xf_record = stage_json(attempt, 'xf-fit', 'stage.json')
     assert xf_record['read_summary']['dev_bearing_guarded_reads'] > 0
     for stage in reg.STAGES:

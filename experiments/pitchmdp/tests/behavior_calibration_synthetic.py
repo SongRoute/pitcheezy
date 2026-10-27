@@ -92,6 +92,7 @@ def as_registered(config, *, runner_sha256=RUNNER_SHA256, commit='a' * 40, runne
     out['code'].update(branch='research/track-a-a3-1027', commit=commit, runner_sha256=runner_sha256)
     out['data']['s6_ledger'].update(ledger_sha256='1' * 64, manifest_sha256='2' * 64)
     out['data']['s6_ledger']['runtime_sha256']['value'] = reg.S6['expected_runtime_sha256']
+    out['data']['a3_input'].update(rechunked_sha256='3' * 64, identity_manifest_sha256='4' * 64)
     out['runner'].update(runner or {})
     out['code']['config_sha256'] = runner_module.config_content_sha256(out)
     return out
@@ -354,16 +355,16 @@ def processed_order(frame):
     return out.sort_values(['game_date', 'game_pk', 'at_bat_number', 'pitch_number'], kind='stable').reset_index(drop=True)
 
 
+SPLIT_STARTS = ('2023-05-15', '2025-05-01', '2025-05-16', '2025-06-01', '2025-07-01')
+
+
 def default_cuts(ordered):
-    """Split-aligned row groups (physically safe): [2023-03-30 only: wholly pre-TRAIN, skipped |
-    2023-05-14 + first half of TRAIN: straddles the TRAIN start | rest of TRAIN | earlystop +
-    temperature + 2025-06-01: straddles the pre-gate limit, no DEV row | 2025-06-30 only: wholly June,
-    skipped | first half of DEV | rest of DEV]. Empty groups are left out."""
+    """Split-aligned row groups: a boundary at every split date (no row group spans one), with TRAIN
+    and DEV split once more inside their segments. Empty groups are left out."""
     dates, n = ordered.game_date, len(ordered)
-    at = lambda day: int((dates < pd.Timestamp(day)).sum())
-    train_lo, train_hi, dev = at('2023-05-15'), at('2025-05-01'), at('2025-07-01')
-    return sorted({0, at('2023-05-14'), train_lo + (train_hi - train_lo) // 2, train_hi, at('2025-06-02'), dev,
-                   dev + (n - dev) // 2, n})
+    bounds = [int((dates < pd.Timestamp(day)).sum()) for day in SPLIT_STARTS]
+    train_lo, train_hi, dev = bounds[0], bounds[1], bounds[4]
+    return sorted({0, *bounds, train_lo + (train_hi - train_lo) // 2, dev + (n - dev) // 2, n})
 
 
 def straddling_cuts(ordered):
@@ -416,14 +417,34 @@ def write_raw(directory, frame):
     return root, pins
 
 
+def prepare_input(directory, frame, cuts=None):
+    """The A3 processed input as the registrar makes it: a size-based (not split-aligned) synthetic
+    processed parquet, rewritten by scripts/prepare_behavior_calibration_input.py. Returns the record."""
+    from datetime import datetime
+    if str(PROJECT / 'scripts') not in sys.path:
+        sys.path.insert(0, str(PROJECT / 'scripts'))
+    import prepare_behavior_calibration_input as tool
+    directory = Path(directory)
+    source, sha, _ = write_processed(directory / 'source', frame, straddling_cuts if cuts is None else cuts)
+    (directory / 'A3').mkdir(parents=True, exist_ok=True)
+    record = tool.prepare(source, directory / 'A3' / 'inputs' / 'pitches.split-aligned.parquet', source_sha256=sha,
+                          now=lambda: datetime(2026, 10, 27, 15, 0, tzinfo=tool.KST))
+    if record['result'] != 'PASS':
+        raise AssertionError(f'synthetic A3 input preparation failed: {record["identity"]}')
+    return record
+
+
 class SyntheticSource:
     """Runner data source: the production A3 readers (ProcessedReader / RawKeysReader / A3Inputs) over
-    a synthetic processed parquet and raw key files, the synthetic B0 and ledger (never real files).
-    ``revalidate`` records every per-stage call and runs ``hook`` (a test may make it refuse). The
-    acquisitions go to the run's persisted read log, as with the real source."""
-    def __init__(self, world, ledger, directory, *, extras=None, hook=None, cuts=None):
+    the split-aligned synthetic input written by the preparation tool, raw key files, the synthetic B0
+    and ledger (never real files). ``revalidate`` records every per-stage call and runs ``hook`` (a
+    test may make it refuse). The acquisitions go to the run's persisted read log, as with the real
+    source."""
+    def __init__(self, world, ledger, directory, *, extras=None, hook=None):
         frame = world['frame'] if extras is None else pd.concat([world['frame'], extras], ignore_index=True)
-        self.processed, self.processed_sha256, self.cuts = write_processed(directory, frame, cuts)
+        self.prepared = prepare_input(directory, frame)
+        self.processed = Path(self.prepared['rewritten']['path'])
+        self.processed_sha256 = self.prepared['rewritten']['sha256']
         self.raw_root, self.raw_pins = write_raw(directory, frame)
         self.world, self.ledger, self.hook = world, ledger, hook
         self.opens, self.revalidations, self.inputs = 0, [], None

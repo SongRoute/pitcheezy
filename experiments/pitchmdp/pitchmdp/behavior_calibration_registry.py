@@ -99,6 +99,16 @@ DATA_PINS = {'processed_sha256': '9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218
              'raw_sha256': {'statcast_2023.parquet': '46c354beae196ce2d501fe989c491725f2ecc47601f58d4b8b0234b982984730',
                             'statcast_2024.parquet': '3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274',
                             'statcast_2025.parquet': '4c785756d8901f8c46c70891954a4c54b8ad1c6909db67f4a000221691dc0249'}}
+# The A3 processed input: a row-for-row identical, split-aligned copy of the pinned processed parquet,
+# written once before registration by the tool below (row-group boundaries exactly at the split dates).
+# Its sha256 and the identity-manifest sha256 are registration pins (REGISTRATION_PIN_SCHEMA).
+A3_INPUT_ROOT = '/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01/inputs'
+A3_INPUT = {'tool': 'experiments/pitchmdp/scripts/prepare_behavior_calibration_input.py',
+            'source_sha256': DATA_PINS['processed_sha256'],
+            'boundaries': [SPLIT_DATES[s][0] for s in ('train', 'earlystop', 'temperature', 'blend', 'dev')],
+            'end': SPLIT_DATES['dev'][1],
+            'path': f'{A3_INPUT_ROOT}/pitches.split-aligned.parquet',
+            'identity_manifest_path': f'{A3_INPUT_ROOT}/pitches.split-aligned.identity.json'}
 
 STAGES = ('smoke', 'census', 'fit', 'calibrate', 'freeze-primary', 's6-integrity', 'xf-fit', 'freeze-xf',
           'score-dev', 's6-weights', 'decide')
@@ -120,10 +130,11 @@ FREE_COLUMNS = ('game_pk', 'at_bat_number', 'pitch_number', 'game_date', 'game_t
                 'away_score')
 GUARDED_COLUMNS = ('pitch_type', 'description', 'events', 'is_pa_terminal', 'launch_angle')
 READ_POLICY = {'free_columns': list(FREE_COLUMNS), 'guarded_columns': list(GUARDED_COLUMNS),
-               'row_groups': 'chosen from footer game_date statistics: a row group wholly outside the phase window is '
-                             'skipped (never read); a straddling row group is read and its out-of-window rows are '
-                             'dropped and counted in the stage record (decoded-then-dropped; straddling row groups '
-                             'only)',
+               'row_groups': 'chosen from footer game_date statistics: the processed input must be split-aligned '
+                             '(data.a3_input; the reader refuses a file whose row groups span a split date), so its '
+                             'pre-TRAIN and June row groups are skipped whole; a row group wholly outside the phase '
+                             'window is never read; straddling row groups (raw key files only) are read and their '
+                             'out-of-window rows dropped and counted in the stage record (decoded-then-dropped)',
                'smoke': 'free + guarded columns of the row groups lying wholly on or before 2025-04-30',
                'census': 'free columns only (no guarded column is read)',
                'pre_gate_window': ['2023-05-15', '2025-05-31'],
@@ -147,10 +158,13 @@ REGISTRATION_PIN_SCHEMA = (('registration.registered_kst', 'kst_datetime'),
                            ('code.branch', 'text'), ('code.commit', 'sha1'), ('code.config_sha256', 'sha256'),
                            ('code.runner_sha256', 'sha256'), ('data.s6_ledger.ledger_sha256', 'sha256'),
                            ('data.s6_ledger.manifest_sha256', 'sha256'),
-                           ('data.s6_ledger.runtime_sha256.value', 'expected_runtime'))
+                           ('data.s6_ledger.runtime_sha256.value', 'expected_runtime'),
+                           ('data.a3_input.rechunked_sha256', 'sha256'),
+                           ('data.a3_input.identity_manifest_sha256', 'sha256'))
 DRAFT_PIN_FIELDS = ['code.branch', 'code.commit', 'code.config_sha256', 'code.runner_sha256',
                     'data.s6_ledger.ledger_sha256', 'data.s6_ledger.manifest_sha256',
-                    'data.s6_ledger.runtime_sha256.value']
+                    'data.s6_ledger.runtime_sha256.value', 'data.a3_input.rechunked_sha256',
+                    'data.a3_input.identity_manifest_sha256']
 REVIEWED_CODE_SCOPE = ('experiments', 'src', 'scripts', 'pyproject.toml')
 DEPENDENCY_GROUP = 'research-a3'
 DEPENDENCY_PINS = {'lightgbm': '4.6.0'}
@@ -180,10 +194,17 @@ IMPLEMENTATION_CHOICES = {
                      'registration.addenda_records removed',
     'previous_keys': 'every count table keeps its own sorted previous-label vocabulary; a label absent from it '
                      'matches no cell (CategoricalBC raw-string semantics)',
-    'read_policy': 'stage-specific acquisition (READ_POLICY): wholly excluded row groups are skipped from footer '
-                   'statistics; rows outside the phase window that share a straddling row group with in-window rows '
-                   'are decoded and dropped, counted per stage (rows_decoded_then_dropped); guarded columns of a '
-                   'DEV-bearing row group are never read before the gate',
+    'read_policy': 'stage-specific acquisition (READ_POLICY) of the split-aligned A3 input: wholly excluded row '
+                   'groups are skipped from footer statistics; rows outside the phase window that share a straddling '
+                   'row group (raw key files only) are decoded and dropped, counted per stage '
+                   '(rows_decoded_then_dropped); guarded columns of a DEV-bearing row group are never read before the '
+                   'gate',
+    'a3_input': 'the pinned processed parquet is rewritten once before registration by '
+                'scripts/prepare_behavior_calibration_input.py into row groups bounded exactly by the split dates '
+                '(row order, schema and values unchanged; pyarrow only); identity is proven per column by a canonical '
+                'sha256 of its values plus row count and schema, which streams every column byte including pitch_type '
+                '(a byte-level identity check, not a label read); the rewritten file and its identity manifest are '
+                'registration pins',
     'ledger_parsing': 'S6 ledger lines are scanned key by key: allowlisted values are decoded, every other value is '
                       'validated against the JSON grammar and skipped without being decoded into a Python object; a '
                       'malformed line refuses the ledger',
@@ -229,6 +250,12 @@ PINS = {
     'data.b0_artifact.hands_sha256': B0_ARTIFACT['hands_sha256'],
     'data.b0_artifact.refit': False,
     'data.pins': DATA_PINS,
+    'data.a3_input.tool': A3_INPUT['tool'],
+    'data.a3_input.source_sha256': A3_INPUT['source_sha256'],
+    'data.a3_input.boundaries': A3_INPUT['boundaries'],
+    'data.a3_input.end': A3_INPUT['end'],
+    'data.a3_input.path': A3_INPUT['path'],
+    'data.a3_input.identity_manifest_path': A3_INPUT['identity_manifest_path'],
     'candidates.B1.levels': list(B1_LEVELS),
     'candidates.B1.b0_setting_values': B1_B0_SETTING,
     'candidates.B1.alpha_grid.value': B1_ALPHA_GRID,
