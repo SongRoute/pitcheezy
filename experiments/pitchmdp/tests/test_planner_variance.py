@@ -6,6 +6,7 @@ runtime is the REAL ``PolicyRuntime`` (pinned BC artifact, support table, hash-c
 serialized result rows) around a synthetic candidate wired like ``build_runtime``'s, with a mocked
 clock and a fake heavy lock.
 """
+import builtins
 from collections import Counter
 import contextlib
 import copy
@@ -15,6 +16,7 @@ import hashlib
 import inspect
 import itertools
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -598,6 +600,13 @@ def test_the_registered_commit_must_contain_the_reviewed_sources(tmp_path):
     with pytest.raises(reg.RegistrationError, match='Git provenance'):
         reg.verify_registered_commit(registered_config(**{'registration.registered_commit': 'f' * 40,
                                                           'registration.code_sha256': pins}), repo)
+    branch = git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')
+    for moving in ('HEAD', branch, commit[:12], commit.upper()):  # symbolic, short or non-canonical revisions
+        symbolic = registered_config(**{'registration.registered_commit': moving, 'registration.code_sha256': pins})
+        with pytest.raises(reg.RegistrationError, match='full 40-hex'):
+            reg.verify_registered_commit(symbolic, repo)
+        with pytest.raises(reg.RegistrationError, match='full 40-hex'):
+            reg.registration_gate(symbolic)
     plain_dir = tmp_path / 'not-a-repo'
     plain_dir.mkdir()
     with pytest.raises(reg.RegistrationError, match='Git provenance'):
@@ -791,7 +800,7 @@ class SyntheticEnv:
             b, s = prt.next_count(b, s, outcome)
         return out
 
-    def build_runtime(self, ledger_path, budget):
+    def build_runtime(self, ledger_path, budget, *, in_memory=False):
         reference = self.reference
         improvement = RolloutImprovement(reference, simulator(budget, self.predict), cutoff, samples=6, pitch_cap=12,
                                          seed=0)
@@ -804,8 +813,10 @@ class SyntheticEnv:
             return p, {'q': q + off, 'mc_se': diagnostics['mc_se'] + off, 'q_planning': q + off,
                        'planning_diff_se': prt.paired_difference_se(diagnostics['sample_values'], mask) + off,
                        'source': 'planning_reuse'}
-        runtime = prt.PolicyRuntime(self.art, self.support, self.support_identity, ledger_path, candidate=candidate,
-                                    candidate_identity={'name': 'synthetic P3 (build_runtime wiring)'})
+        with runner.memory_ledger() if in_memory else contextlib.nullcontext():
+            runtime = prt.PolicyRuntime(self.art, self.support, self.support_identity, ledger_path, candidate=candidate,
+                                        candidate_identity={'name': 'synthetic P3 (build_runtime wiring)'})
+        assert isinstance(runtime.ledger, runner.MemoryLedger) == in_memory and prt.Ledger is not runner.MemoryLedger
         runtime.reference, runtime.improvement = reference, improvement
         self.runtime_sha = runtime.sha256
         return runtime
@@ -944,14 +955,43 @@ def walk_files(root):
     return sorted(p for p in Path(root).rglob('*') if p.is_file())
 
 
-def test_smoke_persists_only_allowlisted_structure_in_every_file(tmp_path):
+def watch_writes(monkeypatch):
+    """Every path opened for writing through builtins.open, Path.open or os.open while active."""
+    opened = []
+    real_open, real_path_open, real_os_open = builtins.open, Path.open, os.open
+
+    def spy_open(file, mode='r', *args, **kwargs):
+        if isinstance(file, (str, os.PathLike)) and any(c in mode for c in 'wax+'):
+            opened.append(Path(file).resolve())
+        return real_open(file, mode, *args, **kwargs)
+
+    def spy_path_open(self, mode='r', *args, **kwargs):
+        if any(c in mode for c in 'wax+'):
+            opened.append(self.resolve())
+        return real_path_open(self, mode, *args, **kwargs)
+
+    def spy_os_open(path, flags, *args, **kwargs):
+        if flags & (os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT):
+            opened.append(Path(path).resolve())
+        return real_os_open(path, flags, *args, **kwargs)
+    monkeypatch.setattr(builtins, 'open', spy_open)
+    monkeypatch.setattr(Path, 'open', spy_path_open)
+    monkeypatch.setattr(os, 'open', spy_os_open)
+    return opened
+
+
+def test_smoke_persists_only_allowlisted_structure_in_every_file(tmp_path, monkeypatch):
     attempt, manifest = tmp_path / 'attempt-001', tmp_path / 'digest-manifest.jsonl'
     env = SyntheticEnv(tmp_path)
     lock = FakeLock()
     work = make_runner(registered_config(), env, attempt, lock=lock, manifest=manifest)
+    opened = watch_writes(monkeypatch)
     assert work.advance('smoke') == runner.EXIT_OK
+    monkeypatch.undo()
+    allowed = {attempt / 'receipts.jsonl', manifest, attempt / 'smoke' / 'started.json.tmp',
+               attempt / 'smoke' / 'results.json.tmp', attempt / 'smoke' / 'SHA256SUMS'}
+    assert opened and set(opened) <= {p.resolve() for p in allowed}, sorted(set(opened))  # no ledger, ever
     assert lock.events == ['acquire', 'release'] and env.prepared == ['smoke']
-    assert work.smoke_scratch is not None and not work.smoke_scratch.exists()  # the runtime ledger never persisted
     files = walk_files(attempt) + [manifest]
     assert {p.relative_to(tmp_path).as_posix() for p in files} == {
         'attempt-001/receipts.jsonl', 'attempt-001/smoke/started.json', 'attempt-001/smoke/results.json',
@@ -967,6 +1007,7 @@ def test_smoke_persists_only_allowlisted_structure_in_every_file(tmp_path):
     assert reg.smoke_record_problems(results) == []
     assert results['structural_ok'] and results['structural']['failure_count'] == 0
     assert results['runtime_ledger']['persisted'] is False and results['runtime_ledger']['rows'] > 0
+    assert 'memory' in results['runtime_ledger']['location']
     cost = results['cost']
     rows = cost['rows_by_arm_seed']
     assert results['r_b'] == pytest.approx(np.mean([rows[f'RB6 seed {s}'] / rows[f'A0 seed {s}'] for s in (0, 5)]))
@@ -1138,7 +1179,7 @@ def test_finalization_overruns_abort_and_preparation_time_counts(tmp_path, monke
     over = make_runner(registered_config(), SyntheticEnv(tmp_path), tmp_path / 'attempt-002', clock=late)
     assert over.advance('smoke') == runner.EXIT_STOPPED
     reason = json.loads((tmp_path / 'attempt-002' / 'smoke' / 'aborted.json').read_text())['reason']
-    assert 'final check' in reason and not (tmp_path / 'attempt-002' / 'smoke' / 'results.json').exists()
+    assert reason.startswith('DeadlinePassed') and not (tmp_path / 'attempt-002' / 'smoke' / 'results.json').exists()
     calls = []
 
     def rss():
@@ -1149,7 +1190,22 @@ def test_finalization_overruns_abort_and_preparation_time_counts(tmp_path, monke
     heavy = make_runner(registered_config(), SyntheticEnv(tmp_path), tmp_path / 'attempt-003', rss=rss)
     assert heavy.advance('smoke') == runner.EXIT_STOPPED
     reason = json.loads((tmp_path / 'attempt-003' / 'smoke' / 'aborted.json').read_text())['reason']
-    assert reason.startswith('RSSExceeded') and 'final check' in reason
+    assert reason.startswith('RSSExceeded')
+
+
+def test_an_overrun_while_sealing_aborts_and_no_completion_marker_is_written(tmp_path, monkeypatch):
+    clock = FakeClock(datetime(2026, 10, 27, 14, 0, tzinfo=KST))
+    seal = runner.write_sums
+
+    def slow_seal(folder):
+        clock.jump(4000)  # the cap (3,600 s) and the deadline pass while SHA256SUMS is written
+        return seal(folder)
+    monkeypatch.setattr(runner, 'write_sums', slow_seal)
+    attempt = tmp_path / 'attempt-001'
+    assert make_runner(registered_config(), SyntheticEnv(tmp_path), attempt, clock=clock).advance('smoke') == runner.EXIT_STOPPED
+    reason = json.loads((attempt / 'smoke' / 'aborted.json').read_text())['reason']
+    assert 'final check' in reason and not (attempt / 'smoke' / 'results.json').exists()
+    assert [r['event'] for r in receipts(attempt)] == ['STARTED', 'ABORTED']  # never COMPLETED
 
 
 def test_the_fh_dp_arm_cap_is_enforced(tmp_path, monkeypatch):
@@ -1230,6 +1286,23 @@ def test_confirmation_after_stable_within_cost_with_a_retry_in_the_next_window(t
     assert tomorrow.confirm(pin) == runner.EXIT_OK and not (attempt / 'confirmation' / 'try-03').exists()
 
 
+def test_an_interrupted_confirmation_start_is_recovered_and_retried_in_a_later_window(tmp_path, monkeypatch):
+    config = flow_config(monkeypatch, stable=True)
+    attempt = tmp_path / 'attempt-001'
+    env = SyntheticEnv(tmp_path)
+    assert make_runner(config, env, attempt).advance('D') == runner.EXIT_OK
+    (attempt / 'confirmation' / 'try-01').mkdir(parents=True)  # interrupted before its started.json
+    pin = {'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': env.confirmation_record['games_sha256']}
+    work = make_runner(config, env, attempt)
+    assert work.confirm(pin) == runner.EXIT_DEFERRED  # recovered as an abort; its retry waits for a later window
+    recovered = json.loads((attempt / 'confirmation' / 'try-01' / 'aborted.json').read_text())
+    assert recovered['window_id'] == reg.window_id(work.clock.now()) and not recovered['citable']
+    assert work.confirm(pin) == runner.EXIT_DEFERRED and not (attempt / 'confirmation' / 'try-02').exists()
+    later = make_runner(config, env, attempt, local=datetime(2026, 10, 28, 14, 0, tzinfo=KST))
+    assert later.confirm(pin) == runner.EXIT_OK
+    assert json.loads((attempt / 'confirmation' / 'try-02' / 'results.json').read_text())['confirmation_verdict'] == 'CONFIRMED'
+
+
 def test_an_unsuccessful_smoke_stops_at_once_and_keeps_its_evidence(tmp_path, monkeypatch):
     original = pv.RaoBlackwellFirstStep.q_values
 
@@ -1263,8 +1336,42 @@ def test_a_crashed_pass_folder_is_closed_as_an_abort(tmp_path):
     (attempt / 'smoke' / 'started.json').write_text('{}\n')
     assert make_runner(registered_config(), SyntheticEnv(tmp_path), attempt).advance('smoke') == runner.EXIT_STOPPED
     aborted = json.loads((attempt / 'smoke' / 'aborted.json').read_text())
-    assert 'without results' in aborted['reason'] and not aborted['citable']
+    assert 'without a terminal receipt' in aborted['reason'] and not aborted['citable']
     runner.verify_sums(attempt / 'smoke')
+
+
+def test_pass_contents_must_match_their_terminal_receipt(tmp_path, monkeypatch):
+    attempt, manifest = tmp_path / 'attempt-001', tmp_path / 'digest-manifest.jsonl'
+    env = SyntheticEnv(tmp_path)
+    assert make_runner(registered_config(), env, attempt, manifest=manifest).advance('smoke') == runner.EXIT_OK
+    results = attempt / 'smoke' / 'results.json'
+    record = json.loads(results.read_text())
+    record['r_b'] = 0.01  # a resealed replacement under the same config and code identity
+    results.write_text(json.dumps(record))
+    runner.write_sums(attempt / 'smoke')
+    with pytest.raises(runner.IntegrityFailure, match='differ from its COMPLETED receipt'):
+        make_runner(registered_config(), env, attempt, manifest=manifest).advance('M')
+    second = tmp_path / 'attempt-002'
+    assert make_runner(registered_config(), env, second, manifest=manifest).advance('smoke') == runner.EXIT_OK
+    lines = manifest.read_text().splitlines()
+    manifest.write_text('\n'.join(line for line in lines if 'attempt-002' not in line or '"COMPLETED"' not in line) + '\n')
+    with pytest.raises(runner.IntegrityFailure, match='missing from the digest manifest'):
+        make_runner(registered_config(), env, second, manifest=manifest).advance('smoke')
+    original = runner.PassRunner.receipt
+
+    def crash_before_marker(self, name, event, *args, **kwargs):
+        if event == 'COMPLETED':
+            raise KeyboardInterrupt('process killed after sealing')
+        return original(self, name, event, *args, **kwargs)
+    monkeypatch.setattr(runner.PassRunner, 'receipt', crash_before_marker)
+    third = tmp_path / 'attempt-003'
+    with pytest.raises(KeyboardInterrupt):
+        make_runner(registered_config(), env, third).advance('smoke')
+    assert (third / 'smoke' / 'SHA256SUMS').exists() and (third / 'smoke' / 'results.json').exists()
+    monkeypatch.setattr(runner.PassRunner, 'receipt', original)
+    assert make_runner(registered_config(), env, third).advance('M') == runner.EXIT_STOPPED  # never resumes as complete
+    assert json.loads((third / 'smoke' / 'aborted.json').read_text())['effect'] == 'NO_FULL_RUN'
+    assert not (third / 'mandatory').exists()
 
 
 def test_a_stopped_pass_c_gives_not_stable_with_rb12_aborted_and_keeps_pass_m(tmp_path, monkeypatch):

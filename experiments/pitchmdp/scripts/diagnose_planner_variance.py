@@ -39,7 +39,6 @@ import re
 import resource
 import subprocess
 import sys
-import tempfile
 import time
 import traceback
 
@@ -266,6 +265,60 @@ def vector(values):
     return np.array([np.nan if v is None else v for v in values], dtype=np.float64)
 
 
+class MemoryLedger:
+    """Smoke-only stand-in for ``policy_runtime.Ledger`` with the same interface and the same hash-chained rows
+    (canonical header, seq, prev, sha256) kept in process memory: no file is ever opened, so the smoke runtime's
+    A0 Q and laws never reach the disk. Offsets are row indices."""
+    def __init__(self, path, header):
+        from pitchmdp.matrix_data import canonical_hash
+        from pitchmdp.policy_artifacts import _canonical_bytes
+        self._hash, self.path = canonical_hash, None
+        self.count, self.head, self.size, self.offset, self.kinds, self._rows = 0, None, 0, None, Counter(), []
+        self.header = json.loads(_canonical_bytes({'kind': 'header', **header}))
+        self._append(self.header)
+
+    def _append(self, record):
+        body = {**record, 'seq': self.count, 'prev': self.head}
+        row = {**body, 'sha256': self._hash(body)}
+        self.offset, self.count, self.head = len(self._rows), self.count + 1, row['sha256']
+        self._rows.append(row)
+        self.kinds[row['kind']] += 1
+        return row
+
+    def stream(self):
+        return list(enumerate(self._rows))
+
+    def iter_rows(self):
+        return iter(list(self._rows))
+
+    def iter_decisions(self):
+        return (row for row in self.iter_rows() if row['kind'] == 'decision')
+
+    @property
+    def rows(self):
+        return list(self._rows)
+
+    def decisions(self):
+        return list(self.iter_decisions())
+
+    def read(self, offset):
+        return self._rows[offset]
+
+
+@contextlib.contextmanager
+def memory_ledger():
+    """Narrowly scoped smoke sink: while the smoke runtime is constructed, ``policy_runtime.Ledger`` resolves to
+    ``MemoryLedger`` (frozen source bytes untouched); the module attribute is restored right after, so every other
+    runtime keeps the registered file ledger."""
+    from pitchmdp import policy_runtime as prt
+    original = prt.Ledger
+    prt.Ledger = MemoryLedger
+    try:
+        yield
+    finally:
+        prt.Ledger = original
+
+
 # ---------------------------------------------------------------- the registered data path
 
 class RealEnvironment:
@@ -370,13 +423,16 @@ class RealEnvironment:
         built, _, _ = self.preq.pa_requests(self.store, block, self.runtime_sha, self.no_pitch)
         return built
 
-    def build_runtime(self, ledger_path, budget):
-        runtime = self.prt.build_runtime(
-            *self.bc, *self.support, ledger_path, components=self.components, budget=budget, tau=reg.TAU,
-            samples=reg.SAMPLES, pitch_cap=reg.PITCH_CAP, seed=reg.MAIN_SEED,
-            hand_registry=self.rpv.registered_path(self.registration, 'hands'),
-            provenance={'style_snapshot_sha256': self.snapshot[0], 'as_of_exclusive': self.snapshot[1],
-                        'experiment': EXPERIMENT})
+    def build_runtime(self, ledger_path, budget, *, in_memory=False):
+        """The registered runtime; ``in_memory`` (smoke only) gives it the MemoryLedger sink instead of a file."""
+        with memory_ledger() if in_memory else contextlib.nullcontext():
+            runtime = self.prt.build_runtime(
+                *self.bc, *self.support, ledger_path, components=self.components, budget=budget, tau=reg.TAU,
+                samples=reg.SAMPLES, pitch_cap=reg.PITCH_CAP, seed=reg.MAIN_SEED,
+                hand_registry=self.rpv.registered_path(self.registration, 'hands'),
+                provenance={'style_snapshot_sha256': self.snapshot[0], 'as_of_exclusive': self.snapshot[1],
+                            'experiment': EXPERIMENT})
+        require(isinstance(runtime.ledger, MemoryLedger) == in_memory, 'runtime ledger sink differs from the request')
         self.reference, self.runtime_sha = runtime.reference, runtime.sha256
         return runtime
 
@@ -445,7 +501,7 @@ class PassRunner:
         self.identity, self.clock, self.rss, self.log = identity, clock or SystemClock(), rss, log
         self.lock = lock or (lambda: contextlib.nullcontext())
         self.manifest = None if manifest is None else Path(manifest)
-        self.tau, self.scope, self.aborts, self.smoke_scratch = reg.TAU, None, [], None
+        self.tau, self.scope, self.aborts = reg.TAU, None, []
 
     # ---- attempt bookkeeping
     def folder(self, name, arm=None):
@@ -467,30 +523,55 @@ class PassRunner:
         path = self.attempt / 'receipts.jsonl'
         return reg.read_manifest(path) if path.exists() else []
 
+    def terminal_receipt(self, name, sums_file):
+        """The last COMPLETED/ABORTED receipt of this attempt, pass and SHA256SUMS file (None if there is none); it must
+        carry this config identity and, with a digest manifest, appear identically in that external manifest."""
+        lines = [r for r in self.receipts() if r.get('attempt') == str(self.attempt) and r.get('pass') == name
+                 and r.get('file') == sums_file and r.get('event') in ('COMPLETED', 'ABORTED')]
+        if not lines:
+            return None
+        last = lines[-1]
+        require(last.get('config_digest') == self.identity.get('config_digest'),
+                f'{sums_file}: its receipt was written under another config identity')
+        if self.manifest is not None:
+            require(last in reg.read_manifest(self.manifest), f'{sums_file}: receipt missing from the digest manifest')
+        return last
+
     def status(self, name, arm=None):
-        """('absent' | 'complete' | 'aborted' | 'incomplete', results or the stop record)."""
+        """('absent' | 'complete' | 'aborted' | 'incomplete', results or the stop record). A folder counts as complete
+        or aborted only through its terminal receipt, whose digest must equal the verified SHA256SUMS digest; a folder
+        without one (never finished, or interrupted before its receipt) is incomplete."""
         folder = self.folder(name, arm)
         if not folder.exists():
             return 'absent', None
-        if (folder / 'aborted.json').exists():
-            verify_sums(folder)
+        terminal = self.terminal_receipt(name, self.relative(folder))
+        if terminal is None:
+            return 'incomplete', None
+        digest = verify_sums(folder)
+        require(terminal['sha256'] == digest, f'{folder.name}: contents differ from its {terminal["event"]} receipt')
+        if terminal['event'] == 'ABORTED':
+            require((folder / 'aborted.json').exists(), f'{folder.name}: ABORTED receipt without aborted.json')
             return 'aborted', json.loads((folder / 'aborted.json').read_text())
-        if (folder / 'results.json').exists() and (folder / 'SHA256SUMS').exists():
-            verify_sums(folder)
-            results = json.loads((folder / 'results.json').read_text())
-            same = {k: results['identity'].get(k) for k in self.IDENTITY_KEYS}
-            require(same == {k: self.identity.get(k) for k in self.IDENTITY_KEYS},
-                    f'{folder.name}: written under another config or code; continue only with the same registration')
-            return 'complete', results
-        return 'incomplete', None
+        require((folder / 'results.json').exists() and not (folder / 'aborted.json').exists(),
+                f'{folder.name}: COMPLETED receipt without a clean results.json')
+        results = json.loads((folder / 'results.json').read_text())
+        same = {k: results['identity'].get(k) for k in self.IDENTITY_KEYS}
+        require(same == {k: self.identity.get(k) for k in self.IDENTITY_KEYS},
+                f'{folder.name}: written under another config or code; continue only with the same registration')
+        return 'complete', results
 
     def close_incomplete(self, name, arm=None):
-        """A pass folder without results (crash or interrupt) is an abort: nothing citable."""
+        """A pass folder without a terminal receipt (crash or interrupt, even before its started.json) is an abort:
+        nothing citable. Its retry window is the recorded start window, or conservatively the current one."""
         folder = self.folder(name, arm)
+        try:
+            window = json.loads((folder / 'started.json').read_text())['window_id']
+        except (OSError, ValueError, KeyError, TypeError):
+            window = reg.window_id(self.clock.now())
         write_json(folder / 'aborted.json', {'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm,
-                                             'reason': 'process ended without results (crash or interrupt)',
+                                             'reason': 'process ended without a terminal receipt (crash or interrupt)',
                                              'utc': self.clock.now().isoformat(), 'effect': reg.PASSES[name]['on_stop'],
-                                             'partial_results_discarded': True, 'citable': False})
+                                             'window_id': window, 'partial_results_discarded': True, 'citable': False})
         self.receipt(name, 'ABORTED', 'incomplete folder closed', write_sums(folder), self.relative(folder))
 
     def relative(self, folder):
@@ -538,8 +619,10 @@ class PassRunner:
         body = {k: v for k, v in stored.items() if k not in ('experiment_id', 'utc')}
         require(expected is not None and body == json.loads(json.dumps(plain(expected))),
                 'verdict.json differs from the verdict recomputed from the verified pass records')
-        digests = [r.get('sha256') for r in self.receipts() if r.get('event') == 'VERDICT']
-        require(len(digests) == 1 and digests[0] == sha256_file(path), 'verdict.json differs from its VERDICT receipt')
+        lines = [r for r in self.receipts() if r.get('event') == 'VERDICT' and r.get('attempt') == str(self.attempt)]
+        require(len(lines) == 1 and lines[0].get('sha256') == sha256_file(path), 'verdict.json differs from its VERDICT receipt')
+        if self.manifest is not None:
+            require(lines[0] in reg.read_manifest(self.manifest), 'VERDICT receipt missing from the digest manifest')
         return stored
 
     def write_verdict(self, payload):
@@ -683,8 +766,9 @@ class PassRunner:
         return {'stable': mandatory['rb6_status']['stable'], 'cost_ok': mandatory['rb6_status']['cost_ok']}
 
     def run(self, name, function, cap, *, arm=None):
-        """Start a pass if its cap fits the window; the data preparation, the pass and its finalization run under the
-        watch and the abort handler; a final deadline/cap/RSS check precedes COMPLETED. None = continue."""
+        """Start a pass if its cap fits the window. started.json, the data preparation, the pass, results.json and
+        SHA256SUMS run under the watch and the abort handler; the final deadline/cap/RSS check follows the last write
+        of the pass folder, and only then is the terminal receipt (the completion marker) appended. None = continue."""
         now = self.clock.now()
         decision, deadline = reg.start_decision(now, cap)
         if decision == 'DEFER':
@@ -693,19 +777,20 @@ class PassRunner:
             return EXIT_DEFERRED
         out = self.folder(name, arm)
         out.mkdir(parents=True, exist_ok=False)
-        watch = Watch(self.clock, deadline, cap, self.rss)
-        window = reg.window_id(now)
-        write_json(out / 'started.json', {'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm, 'identity': self.identity,
-                                          'cap_seconds': cap, 'deadline_utc': deadline.isoformat(), 'window_id': window,
-                                          'started_utc': now.isoformat(), 'outcomes_read': False})
-        self.receipt(name, 'STARTED', arm)
+        watch, window, sums_file = Watch(self.clock, deadline, cap, self.rss), reg.window_id(now), self.relative(out)
+        stopped = None
         try:
+            write_json(out / 'started.json', {'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm,
+                                              'identity': self.identity, 'cap_seconds': cap,
+                                              'deadline_utc': deadline.isoformat(), 'window_id': window,
+                                              'started_utc': now.isoformat(), 'outcomes_read': False})
+            self.receipt(name, 'STARTED', arm)
             watch.check('before the data preparation', sample_rss=True)
             self.env.prepare(self.scope)
             preparation = watch.seconds()
             watch.check('after the data preparation', sample_rss=True)
             results = function(out, watch, arm)
-            watch.final_check()
+            watch.check('after the pass computation', sample_rss=True)
             results.update({'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm, 'identity': self.identity,
                             'cap_seconds': cap, 'deadline_utc': deadline.isoformat(), 'window_id': window,
                             'seconds': watch.seconds(), 'preparation_seconds': preparation,
@@ -715,36 +800,44 @@ class PassRunner:
             if name == 'smoke':
                 problems = reg.smoke_record_problems(results)
                 require(not problems, 'the smoke sink refuses the record: ' + '; '.join(problems[:5]))
+                if results['mechanical_rule']['status'] != 'FULL_RUN_ALLOWED':
+                    stopped = results['mechanical_rule']['status']
+            write_json(out / 'results.json', results)
+            if stopped:  # unsuccessful smoke: its cost/structure evidence is kept next to the stop record
+                write_json(out / 'aborted.json', {'experiment_id': EXPERIMENT, 'pass': name, 'reason': stopped,
+                                                  'smoke_status': stopped, 'effect': reg.PASSES['smoke']['on_stop'],
+                                                  'utc': self.clock.now().isoformat(), 'window_id': window,
+                                                  'citable': False,
+                                                  'evidence_kept': 'results.json: cost, structure and identity only'})
+            digest = write_sums(out)
+            watch.final_check()  # after the last write of the pass folder
+            self.receipt(name, 'ABORTED' if stopped else 'COMPLETED', stopped or arm, digest, sums_file)
         except Exception as stop:  # every stop rule: aborted.json, nothing citable
-            effect = reg.PASSES[name]['on_stop']
-            write_json(out / 'aborted.json', {'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm,
-                                              'reason': f'{type(stop).__name__}: {stop}', 'effect': effect,
-                                              'utc': self.clock.now().isoformat(), 'seconds': watch.seconds(),
-                                              'partial_results_discarded': True, 'citable': False})
-            for partial in out.glob('*.npz'):
-                partial.unlink()
-            self.receipt(name, 'ABORTED', f'{arm or ""} {type(stop).__name__}: {stop}'.strip(), write_sums(out),
-                         self.relative(out))
-            self.aborts.append((name, arm))
-            self.log('PLANNER_VARIANCE_ABORTED', name, arm or '', f'{type(stop).__name__}: {stop}')
-            return self.after_abort(name)
-        write_json(out / 'results.json', results)
-        if name == 'smoke' and results['mechanical_rule']['status'] != 'FULL_RUN_ALLOWED':
-            status = results['mechanical_rule']['status']  # unsuccessful smoke: evidence kept, stop record, exit 3
-            write_json(out / 'aborted.json', {'experiment_id': EXPERIMENT, 'pass': name, 'reason': status,
-                                              'smoke_status': status, 'effect': reg.PASSES['smoke']['on_stop'],
-                                              'utc': self.clock.now().isoformat(), 'citable': False,
-                                              'evidence_kept': 'results.json: cost, structure and identity only'})
-            self.receipt(name, 'ABORTED', status, write_sums(out), self.relative(out))
+            return self.abort(name, arm, out, watch, window, stop)
+        if stopped:
             self.aborts.append((name, arm))
             self.settle()
-            self.log('PLANNER_VARIANCE_STOPPED', 'smoke:', status)
+            self.log('PLANNER_VARIANCE_STOPPED', 'smoke:', stopped)
             return EXIT_STOPPED
-        self.receipt(name, 'COMPLETED', arm, write_sums(out), self.relative(out))
         self.log('PLANNER_VARIANCE_PASS_COMPLETE', name, arm or '', round(results['seconds'], 1))
         if name in ('M', 'C'):
             self.settle()
         return None
+
+    def abort(self, name, arm, out, watch, window, stop):
+        """Stop record: aborted.json (replacing any partial record), partial arrays removed, the folder resealed and
+        its ABORTED receipt appended; then the registered pass effect."""
+        write_json(out / 'aborted.json', {'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm,
+                                          'reason': f'{type(stop).__name__}: {stop}', 'effect': reg.PASSES[name]['on_stop'],
+                                          'utc': self.clock.now().isoformat(), 'seconds': watch.seconds(),
+                                          'window_id': window, 'partial_results_discarded': True, 'citable': False})
+        for partial in [*out.glob('*.npz'), out / 'results.json']:
+            partial.unlink(missing_ok=True)
+        self.receipt(name, 'ABORTED', f'{arm or ""} {type(stop).__name__}: {stop}'.strip(), write_sums(out),
+                     self.relative(out))
+        self.aborts.append((name, arm))
+        self.log('PLANNER_VARIANCE_ABORTED', name, arm or '', f'{type(stop).__name__}: {stop}')
+        return self.after_abort(name)
 
     def after_abort(self, name):
         """Registered stop effect: smoke -> no full run, M -> experiment aborted (no verdict label), C -> RB12_ABORTED
@@ -843,17 +936,12 @@ class PassRunner:
 
     # ---- smoke
     def pass_smoke(self, out, watch, arm=None):
-        """The smoke runtime ledger (A0 Q and laws) never persists: it lives in a temporary directory removed when the
-        smoke ends; the runtime Q stays in memory and only allowlisted fields are returned to the sink."""
-        with tempfile.TemporaryDirectory(prefix='exp-stab-02-smoke-runtime-') as scratch:
-            self.smoke_scratch = Path(scratch)
-            return self._smoke(watch, Path(scratch) / 'ledger.jsonl')
-
-    def _smoke(self, watch, ledger_path):
+        """The smoke runtime keeps its ledger rows (A0 Q and laws) in memory (MemoryLedger sink): nothing but the
+        allowlisted cost/structure/identity record is ever written by the smoke."""
         env = self.env
         smoke_games, fh_game = env.smoke_games(), env.fhdp_smoke
         budgets = {('A0', 0): self.budget('A0-MC6', 0)}
-        runtime = env.build_runtime(ledger_path, budgets[('A0', 0)])
+        runtime = env.build_runtime(None, budgets[('A0', 0)], in_memory=True)
         witness = pv.A0Witness(runtime.improvement)
         planners = {}
         for label, arm_name, seed in (('A0', 'A0-MC6', 5), ('RB6', 'RB6', 0), ('RB6', 'RB6', 5),
@@ -948,7 +1036,7 @@ class PassRunner:
                 'mechanical_rule': {'r_b_at_most': reg.THRESHOLDS['smoke_r_b_at_most'], 'structural_ok': structural_ok,
                                     'status': status,
                                     'rb12_cost_condition_met': r_b <= reg.THRESHOLDS['rb12_smoke_r_b_at_most']},
-                'runtime_ledger': {'location': 'system temporary directory, removed when the smoke ends',
+                'runtime_ledger': {'location': 'process memory (MemoryLedger sink; no file opened)',
                                    'persisted': False, 'rows': runtime.ledger.count, 'head_sha256': runtime.ledger.head},
                 'data_version': self.env.data_version(), 'unchanged_sources': reg.UNCHANGED_SHA256}
 
@@ -1142,21 +1230,24 @@ class PassRunner:
                 self.receipt('confirmation', 'DEFERRED', f'selection: {deadline}')
                 return EXIT_DEFERRED
             watch = Watch(self.clock, deadline, cap, self.rss)
+            staged = path.with_suffix('.staged')
             try:
                 watch.check('before the data preparation', sample_rss=True)
                 self.env.prepare(self.scope)
-                watch.final_check()
-                record = {'experiment_id': EXPERIMENT, 'games': self.env.confirmation,
-                          'record': self.env.confirmation_record, 'utc': self.clock.now().isoformat(),
-                          'window_id': reg.window_id(now), 'identity': self.identity,
-                          'note': 'append games_sha256 to the registration block before running the confirmation'}
+                watch.check('after the data preparation', sample_rss=True)
+                write_json(staged, {'experiment_id': EXPERIMENT, 'games': self.env.confirmation,
+                                    'record': self.env.confirmation_record, 'utc': self.clock.now().isoformat(),
+                                    'window_id': reg.window_id(now), 'identity': self.identity,
+                                    'note': 'append games_sha256 to the registration block before the confirmation'})
+                watch.final_check()  # after the last write; the selection is published only afterwards
+                staged.replace(path)
+                self.receipt('confirmation', 'SELECTED', self.env.confirmation_record['games_sha256'],
+                             sha256_file(path), SELECTION_FILE)
             except Exception as stop:
+                staged.unlink(missing_ok=True)
                 self.receipt('confirmation', 'SELECTION_ABORTED', f'{type(stop).__name__}: {stop}')
                 self.log('PLANNER_VARIANCE_ABORTED', 'confirmation selection', f'{type(stop).__name__}: {stop}')
                 return EXIT_STOPPED
-            write_json(path, record)
-            self.receipt('confirmation', 'SELECTED', self.env.confirmation_record['games_sha256'], sha256_file(path),
-                         SELECTION_FILE)
             return EXIT_OK
 
     def confirm(self, pin):
@@ -1172,16 +1263,17 @@ class PassRunner:
             passing = self.require_passing_verdict()
             tries, last_aborted = self.confirmation_tries(), None
             for label in tries:
-                state, _ = self.status('confirmation', label)
+                state, record = self.status('confirmation', label)
                 if state == 'complete':  # CONFIRMED or NOT_CONFIRMED is final
                     return EXIT_OK
-                if state == 'incomplete':
+                if state == 'incomplete':  # interrupted, even before its started.json: recovered as an abort
                     self.close_incomplete('confirmation', label)
-                last_aborted = label
+                    state, record = self.status('confirmation', label)
+                last_aborted = (label, record)
             if last_aborted is not None:
-                window = json.loads((self.folder('confirmation', last_aborted) / 'started.json').read_text())['window_id']
-                if window == reg.window_id(self.clock.now()):
-                    self.receipt('confirmation', 'DEFERRED', f'{last_aborted} aborted in this window: retry in a later one')
+                label, record = last_aborted
+                if record.get('window_id', reg.window_id(self.clock.now())) == reg.window_id(self.clock.now()):
+                    self.receipt('confirmation', 'DEFERRED', f'{label} aborted in this window: retry in a later one')
                     return EXIT_DEFERRED
             cap = reg.pass_cap_seconds('confirmation', r_b=self.smoke_record()['r_b'], arm=passing)
             self.passing, self.pin = passing, pin['confirmation_games_sha256']
