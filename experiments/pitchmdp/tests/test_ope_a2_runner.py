@@ -425,15 +425,15 @@ class PublicationTests(unittest.TestCase):
         return env
 
     def test_an_interrupt_during_publication_is_held_and_aborts_before_the_rename(self):
-        real = roa._write_fd
+        real = roa._create_write
 
-        def staged_then_interrupted(fd, data):
-            real(fd, data)
+        def staged_then_interrupted(path, data):
+            real(path, data)
             if 'stage_seal' in data.decode().splitlines()[-1]:  # the hard cap fires while the seal is staged
                 signal.pthread_kill(threading.main_thread().ident, signal.SIGALRM)
                 time.sleep(0.05)
         out = self.tmp / 'A2-S1-a1'
-        with mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': 30}), mock.patch.object(roa, '_write_fd', staged_then_interrupted):
+        with mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': 30}), mock.patch.object(roa, '_create_write', staged_then_interrupted):
             with self.assertRaises(roa.HangGuardExceeded):
                 with roa.command_guard('A2-S1', self.armed_env()) as guard:
                     with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=guard.final_check) as d:
@@ -442,14 +442,14 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
 
     def test_a_slow_staging_write_is_bounded_and_aborts(self):
-        real = roa._write_fd
+        real = roa._create_write
 
-        def slow(fd, data):
+        def slow(path, data):
             if 'stage_seal' in data.decode().splitlines()[-1]:
                 time.sleep(0.5)
-            real(fd, data)
+            real(path, data)
         out = self.tmp / 'A2-S1-a1'
-        with mock.patch.object(reg, 'PUBLICATION_IO_TIMEOUT_SECONDS', 0.1), mock.patch.object(roa, '_write_fd', slow):
+        with mock.patch.object(reg, 'PUBLICATION_IO_TIMEOUT_SECONDS', 0.1), mock.patch.object(roa, '_create_write', slow):
             with self.assertRaisesRegex(roa.HangGuardExceeded, 'staging write exceeded'):
                 with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=lambda: None) as d:
                     roa.dump(d / 'tab.json', {'cells': {}})
@@ -493,14 +493,14 @@ class PublicationTests(unittest.TestCase):
                 guard.violation = roa.MemoryGuardExceeded('synthetic: free memory below the guard during the final sample')
                 signal.pthread_kill(threading.main_thread().ident, signal.SIGUSR1)  # held: a publication is running
                 time.sleep(0.02)
-        real = roa._write_fd
+        real = roa._create_write
 
-        def staged(fd, data):
-            real(fd, data)
+        def staged(path, data):
+            real(path, data)
             if 'stage_seal' in data.decode().splitlines()[-1]:
                 state['publishing'] = True  # the next memory sample is the final check's
         out = self.tmp / 'A2-S1-a1'
-        with mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': 30}), mock.patch.object(roa, '_write_fd', staged):
+        with mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': 30}), mock.patch.object(roa, '_create_write', staged):
             with self.assertRaisesRegex(roa.MemoryGuardExceeded, 'final sample'):
                 with roa.command_guard('A2-S1', self.guard_env(sampler)) as guard:
                     with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=guard.final_check) as d:
@@ -524,32 +524,73 @@ class PublicationTests(unittest.TestCase):
         self.assert_aborted(out)
 
     def test_a_timed_out_writer_never_overwrites_another_receipt(self):
-        # review round 5 #2: the seal writer times out and wakes only after the failure receipt is staged
-        release, real = threading.Event(), roa._write_fd
+        # review rounds 5 #2 / 6: the abandoned seal writer (blocked before its create) runs while the failure
+        # receipt is staged and before that receipt's rename (the overlapping schedule)
+        release, finished, real = threading.Event(), threading.Event(), roa._create_write
 
-        def blocked_seal(fd, data):
-            if 'stage_seal' in data.decode().splitlines()[-1]:
-                release.wait(5)
-            real(fd, data)
-        real_failure = roa.DigestManifest.append
-
-        def append(manifest, kind, payload, **kwargs):
-            entry = real_failure(manifest, kind, payload, **kwargs)
-            if kind == 'stage_failure':
-                release.set()  # the abandoned seal writer completes now, into its own exclusive staging inode
-                time.sleep(0.2)
-            return entry
+        def writer(path, data):
+            last = data.decode().splitlines()[-1]
+            if 'stage_seal' in last:
+                release.wait(5)  # abandoned by the publication bound
+                real(path, data)  # its own exclusive staging inode, never renamed
+                finished.set()
+                return
+            real(path, data)
+            if 'stage_failure' in last:  # the failure receipt is staged; the old writer runs before its rename
+                release.set()
+                finished.wait(5)
         out = self.tmp / 'A2-S1-a1'
-        with mock.patch.object(reg, 'PUBLICATION_IO_TIMEOUT_SECONDS', 0.1), mock.patch.object(roa, '_write_fd', blocked_seal), \
-                mock.patch.object(roa.DigestManifest, 'append', append):
+        with mock.patch.object(reg, 'PUBLICATION_IO_TIMEOUT_SECONDS', 0.5), mock.patch.object(roa, '_create_write', writer):
             with self.assertRaisesRegex(roa.HangGuardExceeded, 'staging write exceeded'):
                 with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=lambda: None) as d:
                     roa.dump(d / 'tab.json', {'cells': {}})
+        self.assertTrue(finished.is_set())  # the abandoned writer did run inside the overlap
         self.assertEqual([e['kind'] for e in self.manifest.entries()], ['attempt_start', 'stage_failure'])
+        leftovers = self.staging()
+        self.assertEqual(len(leftovers), 1)
+        self.assertIn('stage_seal', leftovers[0])  # only its own never-published inode
         self.assertEqual(roa.stage_status(self.manifest, ('A2-S1',)), {'A2-S1': 'incomplete'})
         self.assertEqual(roa.attempt_gate(self.manifest, 'A2-S1'), {'starts': 1})  # the retry uses a new attempt
         with self.assertRaisesRegex(IntegrityError, 'not sealed'):
             roa.require_seal(self.manifest, 'A2-S1')
+
+    def test_a_blocking_create_is_bounded_and_aborts(self):
+        # review round 6 #1: the staging creation itself runs under the publication bound
+        real, blocked = roa._create_write, threading.Event()
+
+        def blocking_create(path, data):
+            if 'stage_seal' in data.decode().splitlines()[-1]:
+                blocked.wait(5)  # stands for a create that hangs on the filesystem
+            real(path, data)
+        out = self.tmp / 'A2-S1-a1'
+        with mock.patch.object(reg, 'PUBLICATION_IO_TIMEOUT_SECONDS', 0.1), \
+                mock.patch.object(roa, '_create_write', blocking_create):
+            t0 = time.monotonic()
+            with self.assertRaisesRegex(roa.HangGuardExceeded, 'staging write exceeded'):
+                with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=lambda: None) as d:
+                    roa.dump(d / 'tab.json', {'cells': {}})
+            self.assertLess(time.monotonic() - t0, 2.0)  # bounded, not stalled by the hung create
+            blocked.set()
+            time.sleep(0.2)
+        self.assertEqual([e['kind'] for e in self.manifest.entries()], ['attempt_start', 'stage_failure'])
+        with self.assertRaisesRegex(IntegrityError, 'not sealed'):
+            roa.require_seal(self.manifest, 'A2-S1')
+
+    def test_an_alarm_during_the_create_never_publishes(self):
+        real = roa._create_write
+
+        def create_with_alarm(path, data):
+            if 'stage_seal' in data.decode().splitlines()[-1]:  # the hard cap fires while the staging file is created
+                signal.pthread_kill(threading.main_thread().ident, signal.SIGALRM)
+                time.sleep(0.05)
+            real(path, data)
+        out = self.tmp / 'A2-S1-a1'
+        with mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': 30}), mock.patch.object(roa, '_create_write', create_with_alarm):
+            with self.assertRaises(roa.HangGuardExceeded):
+                with roa.command_guard('A2-S1', self.armed_env()) as guard:
+                    with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=guard.final_check) as d:
+                        roa.dump(d / 'tab.json', {'cells': {}})
+        self.assert_aborted(out)
 
     def test_a_post_commit_sync_error_leaves_a_consistent_committed_seal(self):
         # review round 5 #3: a transient OSError after the rename never strands the attempt
@@ -566,6 +607,11 @@ class PublicationTests(unittest.TestCase):
                 roa.dump(d / 'tab.json', {'cells': {}})
         self.assertEqual([type(e).__name__ for e in self.manifest.durability_errors], ['OSError'])
         self.assertFalse((out / 'ABORTED.json').exists())
+        # review round 6 note 8: the error survives the process as an append-only record in the attempt
+        records = [json.loads(line) for line in (out / 'postcommit_errors.jsonl').read_text().splitlines()]
+        self.assertEqual([(r['receipt_kind'], r['error_type'], r['output_dir']) for r in records],
+                         [('stage_seal', 'OSError', str(out))])
+        self.assertEqual(records[0]['receipt_sha256'], self.manifest.latest('stage_seal')['sha256'])
         self.assertEqual(roa.require_seal(self.manifest, 'A2-S1')[0], out)
         self.assertEqual(roa.stage_status(self.manifest, ('A2-S1',)), {'A2-S1': 'sealed'})
         with self.assertRaisesRegex(IntegrityError, 'already sealed'):

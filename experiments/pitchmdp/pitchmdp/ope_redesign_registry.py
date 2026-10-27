@@ -755,14 +755,17 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                            'the completion receipt and is disarmed by the bounded cleanup',
                'publication': 'every receipt is published atomically: the verified manifest bytes plus the entry go to a '
                               'staging file created exclusively under a name unique to the write (pid, counter, kind, '
-                              'stage, attempt; the bounded writer owns its descriptor, so a timed-out writer never touches '
-                              'another receipt), the write and fsync bounded by 10 s; for a completion receipt the final '
+                              'stage, attempt) by the bounded writer, whose create, write, fsync and close are bounded by '
+                              '10 s together (it owns its descriptor and never renames, so a timed-out writer never '
+                              'touches another receipt); for a completion receipt the final '
                               'guard check runs (memory sample, the cleanup reserve left, then no pending interrupt or '
                               'watchdog violation, re-checked immediately before the rename), then an atomic rename '
                               'commits it; guard interrupts are held as pending during a publication; any failure before '
                               'the rename removes the staging file, publishes no seal and records a non-citable ABORTED '
                               '(ABORTED.json and a stage_failure receipt); an error after the rename (directory sync) is '
-                              'recorded and reported, the committed receipt stands',
+                              'persisted as an append-only record (postcommit_errors.jsonl in the attempt directory, or '
+                              'beside the manifest) by the bounded writer and reported after the cleanup; the committed '
+                              'receipt stands',
                'attempt_rule': 'one rule for seal consumption, status, retry accounting and the terminal decision: an '
                                'attempt is aborted if a stage_failure names it or its directory carries ABORTED.json or '
                                'ABORTED_UNRECORDED.json, committed if its seal was published, reconciled, or unfinished; '

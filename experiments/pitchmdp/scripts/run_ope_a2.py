@@ -141,11 +141,25 @@ def bounded_io(fn, what):
 _STAGING_COUNTER = itertools.count()
 
 
-def _write_fd(fd, data):
-    """Write and fsync an exclusively created staging file; the worker owns and closes ``fd`` (the caller never
-    does), so an abandoned worker only ever touches its own inode (review round 5 #2)."""
+def _create_write(path, data):
+    """In the bounded worker (review round 6 #1): exclusive creation of the write's unique staging name, write,
+    fsync and close, all under the publication bound. The worker alone owns the descriptor, so an abandoned
+    worker only ever touches its own never-published inode (review round 5 #2); it never renames."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
     try:
         view = memoryview(data)
+        while view:
+            view = view[os.write(fd, view):]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _append_synced(path, line):
+    """Append one line durably (an append-only diagnostic record)."""
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        view = memoryview(line)
         while view:
             view = view[os.write(fd, view):]
         os.fsync(fd)
@@ -260,9 +274,8 @@ class DigestManifest:
             attempt = Path(str(payload.get('output_dir') or '-')).name
             staging = self.path.with_name(f'{self.path.name}.staging-{os.getpid()}-{next(_STAGING_COUNTER):06d}-{kind}-'
                                           f'{payload.get("stage") or "-"}-{attempt}')
-            fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)  # unique per write, exclusive
             try:
-                bounded_io(lambda: _write_fd(fd, data), 'the receipt staging write')
+                bounded_io(lambda: _create_write(staging, data), 'the receipt staging write')  # create+write+fsync
                 if commit_check is not None:
                     commit_check()
                     if guard is not None:
@@ -275,6 +288,7 @@ class DigestManifest:
                 bounded_io(lambda: _fsync_dir(self.path.parent), 'the receipt directory sync')
             except (OSError, HangGuardExceeded) as error:  # durability after the commit: recorded, the receipt stands
                 self.durability_errors.append(error)
+                self._persist_postcommit_error(entry, error)
                 if guard is not None:
                     guard.late = guard.late or error
         if guard is not None:
@@ -283,6 +297,22 @@ class DigestManifest:
             else:
                 guard.raise_pending()
         return entry
+
+    def _persist_postcommit_error(self, entry, error):
+        """Review round 6 note 8: a post-commit error survives the process as an append-only record in the
+        attempt (postcommit_errors.jsonl in its output directory, or beside the manifest for a receipt without one),
+        written by the bounded writer; the committed receipt is not invalidated."""
+        output_dir = entry['payload'].get('output_dir')
+        target = (Path(output_dir) / 'postcommit_errors.jsonl' if output_dir and Path(output_dir).is_dir()
+                  else self.path.with_name(self.path.name + '.postcommit_errors.jsonl'))
+        record = {'time_utc': datetime.now(timezone.utc).isoformat(), 'receipt_kind': entry['kind'],
+                  'receipt_seq': entry['seq'], 'receipt_sha256': entry['sha256'], 'stage': entry['payload'].get('stage'),
+                  'output_dir': output_dir, 'error_type': type(error).__name__, 'error': str(error),
+                  'effect': 'the receipt was committed by its atomic rename; the directory sync after it failed'}
+        try:
+            bounded_io(lambda: _append_synced(target, (_canonical(record) + '\n').encode()), 'the post-commit error record')
+        except (OSError, HangGuardExceeded) as failure:  # kept process-local and reported after the cleanup
+            self.durability_errors.append(failure)
 
     def latest(self, kind, **match):
         found = [e for e in self.entries() if e['kind'] == kind
