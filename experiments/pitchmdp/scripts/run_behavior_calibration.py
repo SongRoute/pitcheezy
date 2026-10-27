@@ -85,6 +85,7 @@ from pitchmdp.behavior_weights import (EVALUATED as EVALUATED_STATUSES, by_pa, e
                                        public as public_weights, r1b_logging, r2_reproduction, read_ledger,
                                        weight_diagnostics)
 from pitchmdp.matrix_data import canonical_hash
+from pitchmdp.matrix_policy_artifacts import is_appledouble
 from pitchmdp.policy_artifacts import IntegrityError
 from pitchmdp.rollout_policy import PAState, PastPitch
 
@@ -210,9 +211,27 @@ def git_state(commit, config_path=None, scope=reg.REVIEWED_CODE_SCOPE):
     return state
 
 
-def registration_gate(config, *, git, runner_sha256):
+def read_digest_manifest(config):
+    """The rows of the external, append-only digest manifest named by registration.digest_manifest_path
+    (hash-chained, outside the repository); refuses a missing, in-repository or broken manifest."""
+    path = _field(config, 'registration.digest_manifest_path')
+    if not isinstance(path, str) or not Path(path).is_absolute():
+        raise Refused('registration.digest_manifest_path must be an absolute path', terminal=True)
+    path = Path(path).resolve()
+    if REPO.resolve() in path.parents or any((parent / '.git').exists() for parent in path.parents) \
+            or not path.is_file():
+        raise Refused(f'the digest manifest {path} must be an existing file outside every repository', terminal=True)
+    return read_chain(path)
+
+
+def registration_gate(config, *, git, runner_sha256, digest_entries):
     """Refuse unless EXP-BC-CAL-01 is registered and execution-enabled with every pin of the registry's
-    immutable schema present and well formed. Runs before any data is touched and before every stage."""
+    immutable schema present and well formed, its code commit and config digest are not those of a void
+    registration (bug_fix_retries), and the external digest manifest (``digest_entries``) holds one original
+    registration entry then exactly the re-registration entries of the retry records, the last one being
+    this config at this commit (``digest_entries``: the manifest rows, or a callable reading them for the
+    config; a reading failure is one more refusal reason). Runs before any data is touched and before
+    every stage."""
     try:
         reg.config_check(config)
     except reg.RegistrationError as error:
@@ -235,6 +254,21 @@ def registration_gate(config, *, git, runner_sha256):
         reasons.append('uncommitted changes inside the reviewed scope (experiments/, src/, scripts/, pyproject.toml)')
     if git.get('config_committed') is not True:
         reasons.append('the config file is not committed at HEAD byte for byte')
+    void_commits, void_digests = reg.void_registrations(config)
+    if commit in void_commits:
+        reasons.append('code.commit is a commit of a void registration (bug_fix_retries): register the fixed commit')
+    if config_content_sha256(config) in void_digests:
+        reasons.append('the config digest is that of a void registration (bug_fix_retries)')
+    try:
+        rows = digest_entries(config) if callable(digest_entries) else digest_entries
+        active = reg.reconcile_registration_chain(rows or [], reg.retry_records(config))
+    except (reg.RegistrationError, Refused, IntegrityError, OSError, ValueError) as error:
+        reasons.append(f'digest manifest: {error}')
+    else:
+        if active.get('config_content_sha256') != config_content_sha256(config):
+            reasons.append('the active digest-manifest entry is not this config (config_content_sha256)')
+        if active.get('commit') != commit:
+            reasons.append('the active digest-manifest entry was registered at another commit')
     if reasons:
         raise Refused('registration gate: ' + '; '.join(reasons), terminal=True)
     return True
@@ -604,7 +638,9 @@ def append_chain(path, body):
 
 def sha256sums(directory, check=None):
     directory = Path(directory)
-    files = sorted(p for p in directory.rglob('*') if p.is_file() and p.name != 'SHA256SUMS')
+    # macOS AppleDouble sidecars (._name with the 00051607 magic; the exFAT T7 volume writes them beside
+    # files, also after sealing) are metadata, never artifacts; a ._ file without the magic is listed
+    files = sorted(p for p in directory.rglob('*') if p.is_file() and p.name != 'SHA256SUMS' and not is_appledouble(p))
     return ''.join(f'{sha256_file(p, check)}  {p.relative_to(directory).as_posix()}\n' for p in files)
 
 
@@ -637,7 +673,8 @@ class StageDir:
         return target
 
     def artifacts(self):
-        return sorted(p for p in self.path.rglob('*') if p.is_file() and p.name not in ARTIFACT_EXCLUDE)
+        return sorted(p for p in self.path.rglob('*')
+                      if p.is_file() and p.name not in ARTIFACT_EXCLUDE and not is_appledouble(p))
 
 
 class Attempt:
@@ -1692,6 +1729,7 @@ class RealSource:
         if json.loads(self.config_path.read_bytes()) != self.config:
             raise Refused('the config file changed since this command started', terminal=True)
         registration_gate(self.config, git=self.env.git_state(_field(self.config, 'code.commit'), self.config_path),
+                          digest_entries=self.env.digest_entries,
                           runner_sha256=self.env.runner_sha256())
         return {'stage': stage, 'registration_gate': 'PASS', 'dependencies': self.env.native_check()}
 
@@ -1793,6 +1831,7 @@ class LaunchEnv:
     memory_command: tuple = ('memory_pressure',)
     preflight_command: object = default_preflight_command
     preflight_env: object = default_preflight_env
+    digest_entries: object = read_digest_manifest
     source_factory: object = RealSource
     now: object = None
     clock: object = time.monotonic
@@ -1829,7 +1868,8 @@ def launch(config_path, local_config_path, destination, command, env=None):
         dest = check_destination(destination, output_root=_field(config, 'runner.output_root'))
         owned = command == 'run' and dest.is_dir()  # run continues exactly this attempt
         commit = _field(config, 'code.commit')
-        registration_gate(config, git=env.git_state(commit, config_path), runner_sha256=env.runner_sha256())
+        registration_gate(config, git=env.git_state(commit, config_path), runner_sha256=env.runner_sha256(),
+                          digest_entries=env.digest_entries)
         dependencies = env.native_check()
         if guard.in_window():  # before any directory is created
             raise Refused('inside the recorder/publisher protection window 06:30-13:30 KST; refusing to start')

@@ -46,7 +46,7 @@ def test_registration_pin_schema_is_immutable_and_format_checked(config):
     assert {d for d, _ in reg.REGISTRATION_PIN_SCHEMA} >= set(reg.DRAFT_PIN_FIELDS) | {
         'registration.registered_kst', 'registration.design_review_reference', 'registration.code_review_reference'}
     wrong = {'kst_datetime': '2026-10-28T05:00:00+00:00', 'text': '   ', 'sha1': 'g' * 40, 'sha256': 'A' * 64,
-             'expected_candidate': '0' * 64}
+             'expected_candidate': '0' * 64, 'absolute_path': 'relative/digest-manifest.jsonl'}
     for dotted, kind in reg.REGISTRATION_PIN_SCHEMA:
         missing = copy.deepcopy(good)
         _set(missing, dotted, None)
@@ -152,6 +152,40 @@ def test_missing_field_and_type_confusion_are_rejected(config):
     changed['data']['b0_artifact']['refit'] = 0  # bool must stay bool
     with pytest.raises(reg.RegistrationError):
         reg.config_check(changed)
+
+
+def test_bug_fix_retry_records_are_validated_and_reconciled_in_order(config):
+    """bug_fix_retries: numbered 1..n, each voiding one registration (64-hex digest, full commits) with an
+    absolute attempt-N folder, defects and a fix; the digest-manifest chain reconciles with them as an
+    ordered bijection (two retries; swapped re-registrations refuse)."""
+    from behavior_calibration_synthetic import digest_entries_for
+    good = as_registered(config)
+    assert len(reg.retry_records(good)) >= 1
+    damages = [lambda r: r.update(retry=2), lambda r: r['void_registration'].update(config_digest='x' * 64),
+               lambda r: r['void_registration'].update(registered_commit='fda4f07c'),
+               lambda r: r['void_registration'].pop('registration_commit'),
+               lambda r: r.update(aborted_attempt='attempt-1'), lambda r: r.update(aborted_attempt='/x/run-1'),
+               lambda r: r.update(defects=[]), lambda r: r.update(fix=' ')]
+    for damage in damages:
+        bad = copy.deepcopy(good)
+        damage(bad['bug_fix_retries'][0])
+        with pytest.raises(reg.RegistrationError, match='bug_fix_retries'):
+            reg.config_check(bad)
+    twice = copy.deepcopy(good)
+    twice['bug_fix_retries'].append({**copy.deepcopy(good['bug_fix_retries'][0]), 'retry': 2})
+    with pytest.raises(reg.RegistrationError, match='same registration twice'):
+        reg.config_check(twice)
+    second = copy.deepcopy(good)
+    second['bug_fix_retries'].append({**copy.deepcopy(good['bug_fix_retries'][0]), 'retry': 2,
+                                      'void_registration': {'config_digest': 'd' * 64, 'registered_commit': 'b' * 40,
+                                                            'registration_commit': 'c' * 40},
+                                      'aborted_attempt': '/runs/EXP-BC-CAL-01/attempt-2'})
+    chain = digest_entries_for(second)
+    assert reg.reconcile_registration_chain(chain, reg.retry_records(second)) == chain[-1]
+    with pytest.raises(reg.RegistrationError, match='does not reconcile'):
+        reg.reconcile_registration_chain([chain[0], chain[2], chain[1]], reg.retry_records(second))
+    with pytest.raises(reg.RegistrationError, match='every re-registration needs its record'):
+        reg.reconcile_registration_chain(chain[:2], reg.retry_records(second))
 
 
 def test_registered_constants():

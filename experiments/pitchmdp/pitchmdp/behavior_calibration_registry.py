@@ -15,6 +15,8 @@ here reads data.
 from __future__ import annotations
 
 import math
+from pathlib import PurePosixPath
+import re
 
 EXPERIMENT_ID = 'EXP-BC-CAL-01'
 ACTION_CODES = ('CH', 'CS', 'CU', 'EP', 'FA', 'FC', 'FF', 'FO', 'FS', 'KC', 'KN', 'PO', 'SC', 'SI', 'SL', 'ST',
@@ -159,6 +161,7 @@ READ_POLICY = {'free_columns': list(FREE_COLUMNS), 'guarded_columns': list(GUARD
 REGISTRATION_PIN_SCHEMA = (('registration.registered_kst', 'kst_datetime'),
                            ('registration.design_review_reference', 'text'),
                            ('registration.code_review_reference', 'text'),
+                           ('registration.digest_manifest_path', 'absolute_path'),
                            ('code.branch', 'text'), ('code.commit', 'sha1'), ('code.config_sha256', 'sha256'),
                            ('code.runner_sha256', 'sha256'), ('data.s6_ledger.ledger_sha256', 'sha256'),
                            ('data.s6_ledger.manifest_sha256', 'sha256'),
@@ -166,7 +169,8 @@ REGISTRATION_PIN_SCHEMA = (('registration.registered_kst', 'kst_datetime'),
                            ('data.s6_ledger.candidate_sha256', 'expected_candidate'),
                            ('data.a3_input.rechunked_sha256', 'sha256'),
                            ('data.a3_input.identity_manifest_sha256', 'sha256'))
-DRAFT_PIN_FIELDS = ['code.branch', 'code.commit', 'code.config_sha256', 'code.runner_sha256',
+DRAFT_PIN_FIELDS = ['registration.digest_manifest_path', 'code.branch', 'code.commit', 'code.config_sha256',
+                    'code.runner_sha256',
                     'data.s6_ledger.ledger_sha256', 'data.s6_ledger.manifest_sha256',
                     'data.s6_ledger.runtime_sha256.value', 'data.s6_ledger.candidate_sha256',
                     'data.a3_input.rechunked_sha256',
@@ -223,6 +227,16 @@ IMPLEMENTATION_CHOICES = {
     'memory_rule': 'the 10 GiB RSS cap applies to the runner peak RSS (getrusage) plus the current RSS of every '
                    'process in the supervised child tree (ps, polled every 0.5 s); the peak child-tree RSS is '
                    'recorded',
+    'appledouble': 'macOS AppleDouble sidecars (._name with the 00051607 magic, written by the exFAT T7 volume beside '
+                   'files, also after sealing) are metadata: excluded from SHA256SUMS, stage verification and the '
+                   'freeze-manifest file lists (matrix_policy_artifacts.is_appledouble); a ._ file without the magic '
+                   'is an artifact',
+    'bug_fix_retries': 'a bug-fix retry voids its registration (config digest, registered and registration commits) '
+                       'in bug_fix_retries; the external digest manifest (registration.digest_manifest_path) holds '
+                       'one original registration entry, then exactly one reregistration entry per record, in order '
+                       "(previous digest = the void digest, the record's void registration and aborted attempt, a "
+                       'reason, a new digest); the registration gate refuses a void commit or digest and any chain '
+                       'that does not reconcile',
 }
 
 
@@ -381,9 +395,112 @@ def config_check(config):
     family = _field(config, 'verdict_rule.eligibility.E1_nll_superiority.holm_family')
     if family is not _MISSING and isinstance(family, list) and any(name in EXCLUDED_ARMS for name in family):
         errors.append('the Holm family must not contain an excluded arm')
+    errors += retry_record_problems(config)
     if errors:
         raise RegistrationError('; '.join(errors))
     return config
+
+
+# ---------------------------------------------------------------- bug-fix retries and re-registration
+
+VOID_REGISTRATION_FIELDS = ('config_digest', 'registered_commit', 'registration_commit')
+REGISTRATION_KINDS = ('registration', 'reregistration')
+ATTEMPT_FOLDER = re.compile(r'attempt-\d+')
+
+
+def retry_record_problems(config):
+    """Problems of the config's bug-fix retry record (``bug_fix_retries``; absent = no retry): retries
+    numbered 1..n in order, each naming the registration it voids (config digest = that registration's
+    code.config_sha256, full registered and registration commits; distinct across retries), the absolute
+    attempt-N folder it aborted, its defects and its fix."""
+    records = config.get('bug_fix_retries', [])
+    if not isinstance(records, list):
+        return ['bug_fix_retries must be a list of retry records']
+    problems, voided = [], []
+    for index, record in enumerate(records, start=1):
+        name = f'bug_fix_retries[{index - 1}]'
+        if not isinstance(record, dict):
+            problems.append(f'{name} must be an object')
+            continue
+        if type(record.get('retry')) is not int or record['retry'] != index:
+            problems.append(f'{name}.retry must be {index} (retries are numbered 1..n in order)')
+        void = record.get('void_registration')
+        if not isinstance(void, dict) or set(void) != set(VOID_REGISTRATION_FIELDS):
+            problems.append(f'{name}.void_registration must hold exactly ' + ', '.join(VOID_REGISTRATION_FIELDS))
+        else:
+            if not _hex(void['config_digest'], 64):
+                problems.append(f'{name}.void_registration.config_digest must be a 64-hex config digest')
+            for key in ('registered_commit', 'registration_commit'):
+                if not _hex(void[key], 40):
+                    problems.append(f'{name}.void_registration.{key} must be a full 40-hex commit sha')
+            voided.append(void['config_digest'])
+        attempt = record.get('aborted_attempt')
+        if not (isinstance(attempt, str) and PurePosixPath(attempt).is_absolute()
+                and ATTEMPT_FOLDER.fullmatch(PurePosixPath(attempt).name)):
+            problems.append(f'{name}.aborted_attempt must be the absolute path of an attempt-N folder')
+        defects = record.get('defects')
+        if not (isinstance(defects, list) and defects and all(isinstance(d, str) and d.strip() for d in defects)):
+            problems.append(f'{name}.defects must list the defects')
+        if not (isinstance(record.get('fix'), str) and record['fix'].strip()):
+            problems.append(f'{name}.fix must describe the fix')
+    if len(set(voided)) != len(voided):
+        problems.append('bug_fix_retries void the same registration twice')
+    return problems
+
+
+def retry_records(config):
+    """The validated bug-fix retry records (empty without a retry)."""
+    problems = retry_record_problems(config)
+    if problems:
+        raise RegistrationError('; '.join(problems))
+    return list(config.get('bug_fix_retries', []))
+
+
+def void_registrations(config):
+    """(void commits, void config digests) named by the bug-fix retry records."""
+    records = retry_records(config)
+    return ({r['void_registration'][k] for r in records for k in ('registered_commit', 'registration_commit')},
+            {r['void_registration']['config_digest'] for r in records})
+
+
+def registration_entries(rows):
+    """This experiment's registration entries of a digest manifest, in append order."""
+    return [r for r in rows if isinstance(r, dict) and r.get('experiment') == EXPERIMENT_ID
+            and r.get('kind') in REGISTRATION_KINDS]
+
+
+def reconcile_registration_chain(rows, records):
+    """The digest manifest's registration chain against the bug-fix retry records (an ordered bijection):
+    exactly one original ``registration`` entry, then exactly one ``reregistration`` entry per record, in
+    order. Re-registration k names retry k, the digest of the entry before it as previous_digest (= record
+    k's void config digest; that entry was registered at the record's void registered commit), a copy of
+    the record's void_registration, the record's aborted attempt, a reason and a new digest. An entry
+    without a record or a record without an entry refuses. Returns the active (last) entry."""
+    entries = registration_entries(rows)
+    if not entries or entries[0].get('kind') != 'registration' \
+            or any(e.get('kind') != 'reregistration' for e in entries[1:]):
+        raise RegistrationError('the digest manifest needs exactly one original registration entry for '
+                                f'{EXPERIMENT_ID}, followed only by re-registration entries')
+    if len(entries) != len(records) + 1:
+        raise RegistrationError(f'the digest manifest holds {len(entries) - 1} re-registration entries for '
+                                f'{len(records)} bug_fix_retries records: every re-registration needs its record '
+                                'and every record its re-registration entry')
+    for k, (record, before, after) in enumerate(zip(records, entries, entries[1:]), start=1):
+        void = record['void_registration']
+        mismatches = [name for name, same in (
+            ('retry index', after.get('retry') == k == record['retry']),
+            ('previous_digest', after.get('previous_digest') == before.get('config_content_sha256')
+             == void['config_digest']),
+            ('void registered commit', before.get('commit') == void['registered_commit']),
+            ('void_registration', after.get('void_registration') == void),
+            ('aborted_attempt', after.get('aborted_attempt') == record['aborted_attempt']),
+            ('reason', isinstance(after.get('reason'), str) and bool(after['reason'].strip())),
+            ('new digest', after.get('config_content_sha256') not in (None, after.get('previous_digest'))),
+        ) if not same]
+        if mismatches:
+            raise RegistrationError(f're-registration entry {k + 1} does not reconcile with bug_fix_retries[{k - 1}]: '
+                                    + ', '.join(mismatches))
+    return entries[-1]
 
 
 def _hex(value, length):
@@ -402,7 +519,9 @@ def _kst_datetime(value):
 PIN_FORMATS = {'text': lambda v: isinstance(v, str) and bool(v.strip()),
                'sha1': lambda v: _hex(v, 40), 'sha256': lambda v: _hex(v, 64),
                'kst_datetime': _kst_datetime,
-               'expected_candidate': lambda v: v == S6['expected_candidate_sha256']}
+               'expected_candidate': lambda v: v == S6['expected_candidate_sha256'],
+               'absolute_path': lambda v: isinstance(v, str) and PurePosixPath(v).is_absolute()
+               and not v.endswith('/')}
 
 
 def registration_pin_errors(config):

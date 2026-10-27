@@ -23,8 +23,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import run_behavior_calibration as runner  # noqa: E402
-from behavior_calibration_synthetic import (NESTED, RUNNER_SHA256, as_draft, as_registered, extra_rows,  # noqa: E402
-                                            load_config, make_frame, run_isolated, write_processed, write_raw)
+from behavior_calibration_synthetic import (NESTED, RUNNER_SHA256, as_draft, as_registered,  # noqa: E402
+                                            digest_entries_for, extra_rows, load_config, make_frame, run_isolated,
+                                            write_processed, write_raw)
 from pitchmdp import behavior_calibration_registry as reg  # noqa: E402
 from pitchmdp.behavior_data import A3Inputs, ProcessedReader, RawKeysReader, ReadLog  # noqa: E402
 from pitchmdp.behavior_features import SEALED  # noqa: E402
@@ -46,6 +47,12 @@ def registered(config, runner_sha=RUNNER_SHA256, **kwargs):
     return as_registered(config, runner_sha256=runner_sha, **kwargs)
 
 
+def gate(config, *, git, runner_sha256, entries=None):
+    """The registration gate with a digest-manifest chain that reconciles with ``config`` by default."""
+    return runner.registration_gate(config, git=git, runner_sha256=runner_sha256,
+                                    digest_entries=digest_entries_for(config) if entries is None else entries)
+
+
 def _set(config, dotted, value):
     node = config
     *parents, last = dotted.split('.')
@@ -58,13 +65,13 @@ def _set(config, dotted, value):
 
 def test_draft_config_is_refused_before_any_data(draft):
     with pytest.raises(runner.Refused, match='not REGISTERED') as error:
-        runner.registration_gate(draft, git=GIT_OK, runner_sha256=RUNNER_SHA256)
+        gate(draft, git=GIT_OK, runner_sha256=RUNNER_SHA256)
     assert error.value.terminal
 
 
 def test_registered_config_passes_and_every_missing_pin_is_refused(draft):
     good = registered(draft)
-    assert runner.registration_gate(good, git=GIT_OK, runner_sha256=RUNNER_SHA256)
+    assert gate(good, git=GIT_OK, runner_sha256=RUNNER_SHA256)
     cases = [
         (lambda c: c.update(execute=False), 'not REGISTERED'),
         (lambda c: c['registration'].update(code_review_reference=None), 'code_review_reference missing'),
@@ -82,18 +89,18 @@ def test_registered_config_passes_and_every_missing_pin_is_refused(draft):
         changed = copy.deepcopy(good)
         mutate(changed)
         with pytest.raises(runner.Refused, match=message):
-            runner.registration_gate(changed, git=GIT_OK, runner_sha256=RUNNER_SHA256)
+            gate(changed, git=GIT_OK, runner_sha256=RUNNER_SHA256)
     with pytest.raises(runner.Refused, match='runner_sha256'):
-        runner.registration_gate(good, git=GIT_OK, runner_sha256='f' * 64)
+        gate(good, git=GIT_OK, runner_sha256='f' * 64)
     for git in ({'dirty': True}, {'commit_is_ancestor': False}, {'changed_since_commit': ['experiments/x.py']},
                 {'changed_since_commit': ['pyproject.toml']}, {'config_committed': False},
                 {'config_committed': None}, {'scope': ['experiments', 'src', 'scripts']}):
         with pytest.raises(runner.Refused):
-            runner.registration_gate(good, git={**GIT_OK, **git}, runner_sha256=RUNNER_SHA256)
+            gate(good, git={**GIT_OK, **git}, runner_sha256=RUNNER_SHA256)
     deviating = copy.deepcopy(good)
     deviating['candidates']['B3'] = {'mandatory': True}
     with pytest.raises(runner.Refused, match='deviates'):
-        runner.registration_gate(deviating, git=GIT_OK, runner_sha256=RUNNER_SHA256)
+        gate(deviating, git=GIT_OK, runner_sha256=RUNNER_SHA256)
 
 
 def test_review_reproduction_empty_pin_list_null_s6_pins_and_recomputed_digest_is_refused(draft):
@@ -104,12 +111,45 @@ def test_review_reproduction_empty_pin_list_null_s6_pins_and_recomputed_digest_i
     weakened['data']['s6_ledger']['runtime_sha256']['value'] = None
     weakened['code']['config_sha256'] = runner.config_content_sha256(weakened)
     with pytest.raises(runner.Refused) as error:
-        runner.registration_gate(weakened, git=GIT_OK, runner_sha256=RUNNER_SHA256)
+        gate(weakened, git=GIT_OK, runner_sha256=RUNNER_SHA256)
     assert 'fields_pinned_at_registration' in str(error.value) and error.value.terminal
     weakened['registration']['fields_pinned_at_registration'] = list(reg.DRAFT_PIN_FIELDS)
     weakened['code']['config_sha256'] = runner.config_content_sha256(weakened)
     with pytest.raises(runner.Refused, match='ledger_sha256 missing'):
-        runner.registration_gate(weakened, git=GIT_OK, runner_sha256=RUNNER_SHA256)
+        gate(weakened, git=GIT_OK, runner_sha256=RUNNER_SHA256)
+
+
+def test_the_gate_refuses_void_registrations_and_unreconciled_digest_chains(draft, monkeypatch):
+    """Bug-fix retry 1: the gate refuses the void registration's commits and digest, and the digest
+    manifest must hold one original entry then exactly one reconciled re-registration per retry record
+    (an ordered bijection), the last being this config at this commit."""
+    good = registered(draft)
+    record = good['bug_fix_retries'][0]  # the committed config carries the retry record
+    assert gate(good, git=GIT_OK, runner_sha256=RUNNER_SHA256)
+    for commit in (record['void_registration']['registered_commit'], record['void_registration']['registration_commit']):
+        with pytest.raises(runner.Refused, match='void registration'):
+            gate(registered(draft, commit=commit), git=GIT_OK, runner_sha256=RUNNER_SHA256)
+    entries = digest_entries_for(good)
+    original, rereg = entries
+    cases = {'only the original': [original], 'an extra entry': [original, rereg, dict(rereg)],
+             'no original': [rereg], 'two originals': [original, original],
+             'previous digest': [original, {**rereg, 'previous_digest': '0' * 64}],
+             'retry index': [original, {**rereg, 'retry': 2}],
+             'void registration': [original, {**rereg, 'void_registration': {**record['void_registration'],
+                                                                               'registration_commit': '0' * 40}}],
+             'aborted attempt': [original, {**rereg, 'aborted_attempt': '/elsewhere/attempt-9'}],
+             'reason': [original, {**rereg, 'reason': ' '}],
+             'original at another commit': [{**original, 'commit': '0' * 40}, rereg],
+             'active digest': [original, {**rereg, 'config_content_sha256': '0' * 64}],
+             'active commit': [original, {**rereg, 'commit': '0' * 40}],
+             'unreadable manifest': lambda config: (_ for _ in ()).throw(OSError('no such file'))}
+    for name, chain in cases.items():
+        with pytest.raises(runner.Refused, match='digest') as error:
+            gate(good, git=GIT_OK, runner_sha256=RUNNER_SHA256, entries=chain)
+        assert error.value.terminal, name
+    monkeypatch.setattr(runner, 'config_content_sha256', lambda config: record['void_registration']['config_digest'])
+    with pytest.raises(runner.Refused, match='void registration'):
+        gate(good, git=GIT_OK, runner_sha256=RUNNER_SHA256)
 
 
 def test_git_scope_includes_pyproject_and_dependency_pins(tmp_path):
@@ -388,7 +428,8 @@ def launch_env(**overrides):
                native_check=lambda: {'pinned': dict(reg.DEPENDENCY_PINS)},
                memory_command=(sys.executable, '-c', 'print("System-wide memory free percentage: 80%")'),
                preflight_command=lambda: [sys.executable, '-c', 'print("3 passed")'],
-               source_factory=lambda config, local, path, env: StubSource(), now=lambda: AFTERNOON, alarm=False)
+               source_factory=lambda config, local, path, env: StubSource(), now=lambda: AFTERNOON, alarm=False,
+               digest_entries=digest_entries_for)
     env.update(overrides)
     return runner.LaunchEnv(**env)
 
@@ -794,6 +835,51 @@ def test_the_pinned_a3_input_must_be_certified_by_its_identity_manifest(tmp_path
         runner.verify_a3_input(config)
     with pytest.raises(runner.Refused, match='inputs/ folder'):
         runner.check_destination(tmp_path / 'EXP-BC-CAL-01' / 'inputs', output_root=tmp_path / 'EXP-BC-CAL-01')
+
+
+APPLEDOUBLE = bytes.fromhex('00051607') + bytes(4092)  # a 4096-byte macOS AppleDouble sidecar
+
+
+def sidecar(path):
+    path.write_bytes(APPLEDOUBLE)
+    return path
+
+
+@pytest.mark.parametrize('outcome', ['PASS', 'ABORTED'])
+def test_appledouble_sidecars_never_enter_or_break_a_seal(tmp_path, draft, monkeypatch, outcome):
+    """Bug-fix retry 1: the exFAT T7 volume writes AppleDouble sidecars beside files, before and after
+    sealing (._SHA256SUMS included); they are excluded from SHA256SUMS, verification and freeze-manifest
+    file lists, while a ._ file without the AppleDouble magic stays an artifact (refused after sealing)."""
+    run = make_run(tmp_path, draft)
+
+    def body(run, out):
+        out.json('smoke.json', {'rows': 1})
+        sidecar(out.path / '._smoke.json')  # before sealing
+        if outcome == 'ABORTED':
+            raise runner.Abort('RSS_CAP', 'smoke')
+        return {}
+    monkeypatch.setitem(runner.STAGE_FUNCTIONS, 'smoke', body)
+    assert runner.execute_stage(run, 'smoke') == outcome
+    path = run.attempt.stage_path('smoke')
+    sums = (path / 'SHA256SUMS').read_text()
+    assert '._' not in sums and 'smoke.json' in sums and 'stage.json' in sums
+    for name in ('._SHA256SUMS', '._stage.json', '._layout.json'):  # written by the volume after sealing
+        sidecar(path / name)
+    assert runner.verify_sha256sums(path)
+    assert [p.name for p in runner.StageDir(path).artifacts()] == ['smoke.json']
+    impostor = path / '._payload.json'  # a ._ name without the AppleDouble magic is an artifact
+    if outcome == 'PASS':
+        assert run.attempt.passed('smoke')
+        monkeypatch.setitem(runner.STAGE_FUNCTIONS, 'census', stub())
+        assert runner.execute_stage(run, 'census') == 'PASS'  # the next stage verifies the sealed smoke
+        impostor.write_text('{"payload": true}')
+        with pytest.raises(IntegrityError, match='SHA256SUMS'):
+            run.attempt.passed('smoke')
+    else:
+        assert json.loads((run.destination / 'final.json').read_text())['label'] == 'ABORTED'
+        impostor.write_text('{"payload": true}')
+        assert not runner.verify_sha256sums(path)
+    assert impostor in runner.StageDir(path).artifacts()
 
 
 def test_abort_keeps_outputs_and_stops(tmp_path, draft, monkeypatch):

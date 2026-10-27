@@ -11,8 +11,8 @@ import json
 import os
 import sys
 
-from behavior_calibration_synthetic import (NESTED, RUNNER_SHA256, SyntheticSource, as_registered, extra_rows,
-                                            load_config, make_world)
+from behavior_calibration_synthetic import (NESTED, RUNNER_SHA256, SyntheticSource, as_registered,
+                                            digest_entries_for, extra_rows, load_config, make_world)
 import run_behavior_calibration as runner
 from pitchmdp import behavior_calibration_registry as reg
 
@@ -35,7 +35,8 @@ def test_registered_preflight_passes_and_the_smoke_runs(tmp_path, monkeypatch):
                            preflight_command=runner.default_preflight_command,
                            preflight_env=lambda: dict(os.environ),  # keeps the two test switches set above
                            source_factory=lambda c, local, p, e: source,
-                           now=lambda: datetime(2026, 10, 27, 15, 0, tzinfo=runner.KST), alarm=False)
+                           now=lambda: datetime(2026, 10, 27, 15, 0, tzinfo=runner.KST), alarm=False,
+                           digest_entries=digest_entries_for)
     destination = output_root / 'attempt-1'
     code = runner.launch(path, tmp_path / 'local.json', destination, 'smoke', env)
     preflight = json.loads((destination / 'preflight-smoke.json').read_text())

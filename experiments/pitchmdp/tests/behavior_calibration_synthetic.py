@@ -54,6 +54,25 @@ def load_config():
     return json.loads(config_path().read_text())
 
 
+def digest_entries_for(config, reason='bug-fix retry (synthetic test)'):
+    """A digest-manifest chain that reconciles with ``config``: one original registration entry, then one
+    reregistration entry per bug_fix_retries record; the last entry is ``config`` at its code commit."""
+    if str(PROJECT / 'scripts') not in sys.path:
+        sys.path.insert(0, str(PROJECT / 'scripts'))
+    import run_behavior_calibration as runner_module
+    records = config.get('bug_fix_retries') or []
+    digests = [r['void_registration']['config_digest'] for r in records] + [runner_module.config_content_sha256(config)]
+    commits = [r['void_registration']['registered_commit'] for r in records] + [config['code']['commit']]
+    entries = [{'experiment': reg.EXPERIMENT_ID, 'kind': 'registration', 'config_content_sha256': digests[0],
+                'commit': commits[0]}]
+    for k, record in enumerate(records, start=1):
+        entries.append({'experiment': reg.EXPERIMENT_ID, 'kind': 'reregistration', 'retry': k,
+                        'previous_digest': digests[k - 1], 'void_registration': record['void_registration'],
+                        'aborted_attempt': record['aborted_attempt'], 'reason': reason,
+                        'config_content_sha256': digests[k], 'commit': commits[k]})
+    return entries
+
+
 def _put(config, dotted, value):
     node = config
     *parents, last = dotted.split('.')
@@ -88,7 +107,8 @@ def as_registered(config, *, runner_sha256=RUNNER_SHA256, commit='a' * 40, runne
     out = as_draft(config)
     out.update(status='REGISTERED', registered=True, execute=True, real_data_enabled=True)
     out['registration'].update(registered_kst='2026-10-28T14:00:00+09:00', design_review_reference='design-review-x',
-                               code_review_reference='code-review-x')
+                               code_review_reference='code-review-x',
+                               digest_manifest_path='/synthetic/EXP-BC-CAL-01/digest-manifest.jsonl')
     out['code'].update(branch='research/track-a-a3-1027', commit=commit, runner_sha256=runner_sha256)
     out['data']['s6_ledger'].update(ledger_sha256='1' * 64, manifest_sha256='2' * 64)
     out['data']['s6_ledger']['runtime_sha256']['value'] = '5' * 64  # a header-pinned PolicyRuntime identity
