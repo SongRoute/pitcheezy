@@ -678,6 +678,98 @@ class PointSetTests(unittest.TestCase):
         self.assertTrue(summary['lower_endpoint']['valid'] and summary['upper_endpoint']['valid'])
 
 
+class VariantPointRuleTests(unittest.TestCase):
+    """PM decision (review round 3 #1/#4): the P rule applies to SN and to every variant exactly as to DR, in the
+    full sample, in each replicate and for a small P."""
+    @staticmethod
+    def _ledger(seed=1729, n=200):
+        """The reviewer's counterexample: shared unknown ends, non-dyadic probabilities and q, and every logged
+        ratio (hence every SN normaliser) exactly one; the candidate moves only the mass of the other actions."""
+        rng = np.random.default_rng(seed)
+        decisions, facts = [], {}
+        for i in range(n):
+            game, pitcher = 3000 + i % 40, str(500 + i % 35)
+            pa_id = f'{game}:{i}'
+            for t in range(int(rng.integers(1, 4))):
+                logging = rng.dirichlet(np.ones(4) * 2.0)
+                a = int(rng.choice(4, p=logging))
+                candidate = np.empty(4)
+                candidate[a] = logging[a]
+                candidate[[j for j in range(4) if j != a]] = (1 - logging[a]) * rng.dirichlet(np.ones(3))
+                result = {'mask': [True] * 4, 'logging': logging.tolist(), 'reference': logging.tolist(),
+                          'candidate': candidate.tolist(), 'logged_index': a,
+                          'q_reference': rng.uniform(.3, .7, 4).tolist(), 'rho_reference': 1.0, 'rho_candidate': 1.0}
+                decisions.append({'pa_id': pa_id, 'decision_index': t, 'pitcher': pitcher, 'status': 'SUPPORTED',
+                                  'result': result, 'balls': 0, 'strikes': min(t, 2)})
+            facts[pa_id] = {'game': game, 'in_population': True, 'reward': None, 'kind': est.TERMINAL_VALUE_MISSING,
+                            'reason': 'end_state_gap', 'start_pitcher': pitcher, 'problem': None, 'problem_index': None}
+        return decisions, facts
+
+    def test_equal_transformed_slopes_cancel_in_every_path(self):
+        decisions, facts = self._ledger()
+        triples = [(sorted(r, key=lambda d: d['decision_index']), info) for _, info, r in est.by_pa(decisions, facts)]
+        lines = [ov.pa_line(rows, info) for rows, info in triples]
+        point = np.array([reg.in_point_set(est.pa_value(rows, info, 'l1r')) for rows, info in triples])
+        self.assertTrue(0 < point.sum() < len(point))  # the baseline P is the registered rule, unchanged
+        n_bar, ok = ov.sn_normalizers(lines)
+        self.assertTrue(ok and all(np.array_equal(nb, np.ones_like(nb)) for nb in n_bar))
+        u = np.vstack((1 / n_bar[0], 1 / n_bar[1]))
+        sn = ob.sn_pair('sn', lines, point, u=u)
+        s = sn.sn
+        base = np.einsum('pnd,pd->pn', s['coef'], u)
+        slope = s['slope'] * u[np.arange(2)[:, None], s['end'][None]]
+        p_rows = np.flatnonzero(point)
+        self.assertTrue(np.array_equal(slope[0][p_rows], slope[1][p_rows]))  # equal transformed slopes
+        split = [i for i in p_rows if (base[0][i] - base[1][i]) != (base[0][i] + slope[0][i] - base[1][i] - slope[1][i])]
+        self.assertTrue(split)  # the rounding-prone end formula would have split these P rows
+        self.assertEqual(sn.p_nonpoint, 0)
+        deltas, lo, hi, nonpoint = ob.sn_values(sn, u)
+        self.assertFalse(nonpoint.any())
+        self.assertTrue(np.array_equal(lo[p_rows], hi[p_rows]))
+        dr = ob.fixed_pair(reg.BASELINE, [ov.row_of(line) for line in lines], point)
+        r = ob.Resampler([line['game'] for line in lines], unit='game', draws=500, seed=42, minimum_clusters=1,
+                         minimum_pa_starts=1)
+        stats, valid = ob.run_pairs(r, [dr, sn], point, reg.BASELINE)
+        self.assertEqual((int(valid[reg.BASELINE]['p'].sum()), int(valid['sn']['p'].sum())), (500, 500))
+        np.testing.assert_allclose(stats['sn']['mean_p'], stats[reg.BASELINE]['mean_p'], rtol=0, atol=1e-12)
+        p_lines = [line for line, keep in zip(lines, point) if keep]
+        for kind, value in (('shrink', 3.0), ('switch', 2.0)):  # fixed-transform variants follow the same rule
+            self.assertTrue(np.isfinite(ov.point_deltas(p_lines, ov.transform(kind, value), None, None)).all())
+            pair = ob.fixed_pair(kind, [ov.row_of(line, ov.transform(kind, value)) for line in lines], point)
+            self.assertEqual(pair.p_nonpoint, 0)
+        unequal = ov.shared_end_bounds(0.3, 0.1, 0.5, 0.5 + 1e-15)  # genuinely unequal slopes are never merged
+        self.assertNotEqual(unequal[0], unequal[1])
+
+    def test_small_p_invalidates_the_p_statistics_of_every_pair_only(self):
+        decisions, facts = synthetic_ledger(seed=5, n_pas=300, n_games=20, n_pitchers=12)
+        stream = lambda: iter(decisions)
+        result0, rows0, gint = osd.gint_gate(stream, facts, references={}, **GATE)
+        e0 = [row for row in rows0 if row['in_population']]
+        p = sum(reg.in_point_set(row) for row in e0)
+        minimum = (p + len(e0)) // 2 + 1
+        self.assertTrue(p < minimum <= len(e0))  # P below the minimum, E0 above it
+        rng = np.random.default_rng(1)
+        sur = {pa: {'R1_a': (float(np.clip(f['reward'] + rng.normal(0, .02), 0, 1)), 'class'),
+                    'R1_b': (float(np.clip(f['reward'] + rng.normal(0, .01), 0, 1)), 'bip_quality'), 'spray_missing': False}
+               for pa, f in facts.items() if f.get('reward') is not None}
+        public, sealed, _ = osd.rehearsal_evaluate(
+            stream, facts, baseline=(result0, rows0), surrogates=sur, gint=gint,
+            train_residuals={'hit': {'FB': {'n': 10, 'mean_residual': -0.01, 'se': 0.005}}},
+            r1_paths={'rehearsal': osg.path_shares(sur), 'train_census': CENSUS}, r3_status='NOT_RUN:R3', draws=200,
+            minimum_games=5, minimum_pitchers=4, minimum_pa_starts=minimum, placebos=2)
+        self.assertEqual(public['validity'], {'point_set_meets_minimum': False, 'game_bootstrap_eligible': True,
+                                              'pitcher_bootstrap_eligible': True})
+        for pair in reg.PAIRS:  # SN and DR alike
+            self.assertEqual(public['pairs'][pair]['valid'], {'game': False, 'pitcher': False})
+            self.assertIsNone(public['pairs'][pair]['H_point']['game'])
+        for pair in (reg.BASELINE, 'R1_axR2_0', 'R1_0xR2_3'):  # the all-E0 endpoint summaries are kept
+            for b in ('game', 'pitcher'):
+                self.assertIsNotNone(public['pairs'][pair]['endpoint_half_width']['lower'][b])
+                self.assertIsNotNone(public['R5']['e'][pair][b]['mde80_current_rule'])
+                self.assertIsNone(public['R5']['e'][pair][b]['mde80_point'])
+        self.assertTrue(osd.validate_public(json.loads(osd.seal(public, sealed)[0])))
+
+
 def _decision_inputs(h=None, s5='PASS', net='PASS', tab='PASS', s2='PASS', valid=True):
     h = h or {}
     public = {'pairs': {}, 'S5': {}, 'R5': {'h': {'flag': None}}}

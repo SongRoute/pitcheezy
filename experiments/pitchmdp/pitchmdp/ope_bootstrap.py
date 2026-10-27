@@ -99,12 +99,15 @@ def fixed_pair(name, rows, point):
 
 
 def row_bounds(kind, bc, br, sc, sr):
-    """The registered L1-R paired bounds of a row with an unknown end (policy_estimator._interval:
-    a shared end -> [min, max] of (bc - br, bc + sc - br - sr); independent ends -> [bc - br - sr,
-    bc + sc - br]), vectorised over replicates."""
+    """L1-R paired bounds of an SN row with an unknown end, vectorised over replicates. A shared end gives
+    delta(c) = (bc - br) + (sc - sr) c: equal transformed slopes cancel algebraically, so the bounds coincide
+    exactly (review round 3 #1; no tolerance), otherwise [min, max] of (bc - br, bc - br + (sc - sr));
+    independent ends give [bc - br - sr, bc + sc - br] as registered."""
     if kind == 'interval_shared':
-        a, b = bc - br, bc + sc - br - sr
-        return np.minimum(a, b), np.maximum(a, b)
+        d = bc - br
+        s = sc - sr
+        e = np.where(s == 0, d, d + s)
+        return np.minimum(d, e), np.maximum(d, e)
     return bc - br - sr, bc + sc - br
 
 

@@ -352,7 +352,10 @@ RSS_CAP_GIB, FREE_MEMORY_GIB = 8, 4
 # (a descriptive TAB stop seals its NOT_RUN cells); a watchdog thread checks memory through every code path,
 # protected calls included, and interrupts the main thread on a violation.
 FINALIZATION_RESERVE_SECONDS = 120.0  # min(120 s, 10% of the hang guard)
+CLEANUP_RESERVE_SECONDS = 30.0  # min(30 s, 2.5%): the completion receipt and the bounded cleanup (review round 3 #2)
 WATCHDOG_INTERVAL_SECONDS = 1.0
+WATCHDOG_JOIN_SECONDS = 1.0  # the cleanup never waits longer for the watchdog (a stuck sampler cannot signal any more)
+MEMORY_SAMPLE_TIMEOUT_SECONDS = 2.0  # vm_stat bound; a timeout is a memory-guard stop (fail closed)
 MANIFEST_COMMAND_GUARD = 'A2-S4'  # manifest commands use the A2-S4 hang guard (3,600 s)
 KST = timezone(timedelta(hours=9))
 PROTECTION_WINDOW_KST = (dtime(6, 30), dtime(13, 30))
@@ -672,7 +675,12 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                                             'its L1-R endpoints stay defined (separate validity)',
                   'sn': 'the same P for SN: a P row with an unknown end is a point while its SN paired bounds coincide '
                         '(full-sample normalisers and every replicate); a drawn non-point P row invalidates that '
-                        'replicate\'s P statistics only'},
+                        'replicate\'s P statistics only',
+                  'variant_bounds': 'for every variant (SN, finite lambda or M) a shared unknown end cancels '
+                                    'algebraically when the transformed slopes are equal (bounds coincide exactly, no '
+                                    'tolerance); the baseline keeps the registered policy_estimator formula',
+                  'minimum': 'fewer than 50 P PAs: the P statistics of every pair (SN and DR alike) are invalid; the '
+                             'all-E0 endpoint intervals keep only the inherited E0 minimum'},
     'precision': {'degenerate_se': 'SE = 0 (or a zero half-width) is INCONCLUSIVE, never PASS, except the registered '
                                    'exact S-2 gamma_a invariant at zeta = 0',
                   'condition_ii': 'H(pair) <= 0.7 H(baseline) evaluated directly; a zero baseline or pair half-width '
@@ -745,8 +753,12 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                            'write, disarms the timer and precedes the completion receipt',
                'memory_watchdog': 'a watchdog thread checks the RSS cap and free memory every 1 s through every code path '
                                   '(the protected estimator included) and interrupts the main thread on a violation',
-               'finalization_reserve': 'work checkpoints stop at the hang guard minus min(120 s, 10%); hashing, the '
-                                       'manifest and the seal run inside that reserve under the unchanged hard cap',
+               'finalization_reserve': 'work checkpoints stop at the hang guard minus min(120 s, 10%); hashing and the '
+                                       'manifest run inside that reserve under the unchanged hard cap',
+               'cleanup_reserve': 'the final check refuses to seal within the last min(30 s, 2.5%) of the hang guard; '
+                                  'the completion receipt (guard signals blocked while it is written and fsynced) and the '
+                                  'cleanup (watchdog join bounded by 1 s, memory sampling bounded by 2 s, late signals '
+                                  'consumed before the handlers are restored) fit in that reserve',
                'manifest_commands': 'register-digest, record-review, reconcile-attempt and register-addendum run under the '
                                     'window, memory and hang guards (the A2-S4 hang guard)',
                'attempts': 'an attempt-start receipt is appended before the stage directory exists; at most two starts; '
@@ -762,6 +774,9 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
     'digest_manifest_location': 'the external digest manifest path is checked with the same disjointness rule (resolved '
                                 'real paths; outside every sealed input, both checkouts and results/) before every '
                                 'manifest mutation, the manifest commands included',
+    'digest_manifest_writer': 'one writer at a time: a command holds an exclusive non-blocking fcntl lock on the manifest '
+                              'file from its location check to its last receipt (every append locks too); the chain and '
+                              'its tail digest are verified under the lock before each append; a second writer refuses',
     'terminal_decision': 'A2-S4 may record FAILED_INTEGRITY as soon as a stage exhausted its attempts in a deterministic '
                          'integrity failure; its unsealed descendants are recorded as BLOCKED and other unsealed stages '
                          'as NOT_RUN',

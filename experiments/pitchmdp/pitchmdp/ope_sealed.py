@@ -219,10 +219,11 @@ def rehearsal_evaluate(decisions, facts, *, baseline, surrogates, train_residual
     summaries = {}
     for b, resampler in resamplers.items():
         stats, valid = ob.run_pairs(resampler, pairs, point, BASELINE, checkpoint=tick)
-        summary = ob.summarize(stats, valid, resampler)
-        if not eligible_p:
-            summary = {'eligible': False, 'reason': 'P below the registered minimum PA starts', **resampler.record()}
-        summaries[b] = summary
+        if not eligible_p:  # the minimum-P rule (review round 3 #4): P statistics invalid for every pair alike (SN
+            # and DR); the all-E0 endpoint intervals keep the inherited E0 minimum only
+            valid = {name: {**v, 'p': np.zeros_like(v['p']), 'decomposition': np.zeros_like(v['decomposition'])}
+                     for name, v in valid.items()}
+        summaries[b] = ob.summarize(stats, valid, resampler)
     # 6. public and sealed per pair
     public = {'experiment': 'EXP-OPE-RES-01', 'stage': 'A2-S3', 'r3_status': r3_status,
               'pairs': {}, 'S5': {}, 'R5': {}, 'r1_variance': {}, 'integrity': {}, 'validity': {}}

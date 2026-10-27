@@ -154,12 +154,23 @@ def line_value(line, f=None, u=None, reward=None):
         return row
     out = {'candidate_bounds': [bc, bc + sc], 'reference_bounds': [br, br + sr]}
     if end == 'interval_shared':
-        ends = [bc - br, bc + sc - br - sr]
+        if f is None and u is None:  # the registered formula: bit-identical to policy_estimator._interval (baseline P)
+            ends = [bc - br, bc + sc - br - sr]
+        else:  # a variant (review round 3 #1): the shared end cancels exactly when the transformed slopes are equal
+            ends = shared_end_bounds(bc, br, sc, sr)
         out['delta_bounds'] = [min(ends), max(ends)]
     else:
         out['delta_bounds'] = [bc - br - sr, bc + sc - br]
     out.update(weight_candidate=sc, weight_reference=sr)
     return out
+
+
+def shared_end_bounds(bc, br, sc, sr):
+    """Paired delta ends of a variant line with one unknown end value c in [0, 1] shared by both policies:
+    delta(c) = (bc - br) + (sc - sr) c. Equal transformed slopes cancel algebraically (a point, no rounding
+    split); unequal slopes give [bc - br, (bc - br) + (sc - sr)] in either order. No tolerance is used."""
+    d = bc - br
+    return [d, d] if sc == sr else [d, d + (sc - sr)]
 
 
 def pa_value_variant(decisions, info, f=None, u=None, *, natural=est.H_K_REFUSALS):

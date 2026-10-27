@@ -719,7 +719,7 @@
     "primary_metric": {
       "name": "H_point",
       "definition": "half-width of the 95% percentile CI of the paired mean Delta over the point set P",
-      "point_set_P": "E0 PAs whose L1-R value is a point (lower bound = upper bound) under the baseline classification; identical P for every pair; in S6 approximately E0 10131 minus the 7 bounded PAs (worst 6, shared end 1; S6-v3.json:41-46), exact count fixed at run time",
+      "point_set_P": "E0 PAs whose PAIRED Delta L1-R bounds coincide (Delta lower bound == upper bound) under the baseline classification (R1_0 x R2_0) on the registered ledger; the individual policy values of such a PA may remain intervals (shared-end cancellation in the paired difference); the same P for every pair; in S6 approximately E0 10131 minus the 7 bounded PAs (worst 6, shared end 1; S6-v3.json:41-46), exact count fixed at run time",
       "conditional_interpretation": "P is selected from the observed logged trajectories (completion, rho0 or natural-course resolution), so the mean over P is a conditional mean over the PAs in P; a common P makes the pair comparison like-for-like but does not make it the full-E0 policy-value difference (the censoring share is reported separately, D186 3-①); the synthetic worlds do not reproduce this P-selection mechanism",
       "bootstraps": [
         "game",
@@ -915,7 +915,7 @@
     },
     "violation_calibration_train_only": {
       "kappa_p": "2-fold (game_pk parity) cross-fit P_hat(hit | x, dp); per pitch group delta_g = mean(1[hit] - P_hat(hit | x, dp)); kappa_p sets the world's max group residual to max_g(|delta_g| + 1.96 * SE_g) over the groups present in that world; computed from TRAIN marginals in A2-S0, separately for S5-X (5 groups) and TAB (4 groups)",
-      "zeta_p": "same for run-scoring residual (actual runs - frozen C0 advancement expectation) on outs with a runner on third and fewer than two outs",
+      "zeta_p": "same for run-scoring residual (actual runs - frozen C0 advancement expectation) on outs with a runner on third and fewer than two outs; an intentional exception to the cross-fitting rule: the expectation comes from the frozen, pre-registered C0 advancement model and nothing is learned from these rows, so there is nothing to cross-fit (kappa_p's P_hat is newly fit on TRAIN, hence the 2-fold cross-fit)",
       "delta_g_is_also": "TRAIN diagnostic of the exclusion assumption (observational; a magnitude scale only)",
       "values": null,
       "values_status": "unmeasured (A2-S0)"
@@ -1845,6 +1845,11 @@
       "date": "2026-10-27",
       "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
       "what": "code review CODE-REVIEW-A2-astra-002 (FAIL) fixes: implementation block updated (JSON-safe invalid repetitions, SN point rule on paired bounds with separate endpoint validity, zero-width S-5 INCONCLUSIVE, memory watchdog and finalization reserve, guarded manifest commands, digest-manifest location rule, NOT_RUN TAB cell records, terminal FAILED_INTEGRITY decision); still DRAFT_UNREGISTERED, execution disabled"
+    },
+    {
+      "date": "2026-10-27",
+      "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
+      "what": "code review CODE-REVIEW-A2-astra-003 (FAIL) fixes: implementation block updated (variant shared-end bounds cancel algebraically, the minimum-P rule invalidates P statistics only, cleanup reserve with bounded watchdog cleanup and an interruption-safe completion receipt, one manifest writer at a time); point_set_P and zeta_p prose synchronized with the registration draft; still DRAFT_UNREGISTERED, execution disabled"
     }
   ],
   "implementation": {
@@ -1866,7 +1871,9 @@
     "point_set": {
       "definition": "E0 PAs whose baseline (R1_0 x R2_0, L1-R) paired delta bounds are equal (float ==)",
       "non_point_under_a_pair": "that pair has no P mean: its P statistics are invalid (fail-safe, counted); its L1-R endpoints stay defined (separate validity)",
-      "sn": "the same P for SN: a P row with an unknown end is a point while its SN paired bounds coincide (full-sample normalisers and every replicate); a drawn non-point P row invalidates that replicate's P statistics only"
+      "sn": "the same P for SN: a P row with an unknown end is a point while its SN paired bounds coincide (full-sample normalisers and every replicate); a drawn non-point P row invalidates that replicate's P statistics only",
+      "variant_bounds": "for every variant (SN, finite lambda or M) a shared unknown end cancels algebraically when the transformed slopes are equal (bounds coincide exactly, no tolerance); the baseline keeps the registered policy_estimator formula",
+      "minimum": "fewer than 50 P PAs: the P statistics of every pair (SN and DR alike) are invalid; the all-E0 endpoint intervals keep only the inherited E0 minimum"
     },
     "precision": {
       "degenerate_se": "SE = 0 (or a zero half-width) is INCONCLUSIVE, never PASS, except the registered exact S-2 gamma_a invariant at zeta = 0",
@@ -1969,7 +1976,8 @@
     "guards": {
       "coverage": "hang timer, RSS cap and free-memory guard from argument parsing to the final seal (preflight, data acquisition under the common heavy lock, computation, hashing, every manifest write and the seal; unblind and the manifest commands included); the final check runs after the last write, disarms the timer and precedes the completion receipt",
       "memory_watchdog": "a watchdog thread checks the RSS cap and free memory every 1 s through every code path (the protected estimator included) and interrupts the main thread on a violation",
-      "finalization_reserve": "work checkpoints stop at the hang guard minus min(120 s, 10%); hashing, the manifest and the seal run inside that reserve under the unchanged hard cap",
+      "finalization_reserve": "work checkpoints stop at the hang guard minus min(120 s, 10%); hashing and the manifest run inside that reserve under the unchanged hard cap",
+      "cleanup_reserve": "the final check refuses to seal within the last min(30 s, 2.5%) of the hang guard; the completion receipt (guard signals blocked while it is written and fsynced) and the cleanup (watchdog join bounded by 1 s, memory sampling bounded by 2 s, late signals consumed before the handlers are restored) fit in that reserve",
       "manifest_commands": "register-digest, record-review, reconcile-attempt and register-addendum run under the window, memory and hang guards (the A2-S4 hang guard)",
       "attempts": "an attempt-start receipt is appended before the stage directory exists; at most two starts; a start without a receipt counts and needs a recorded reconciliation before the next start",
       "refusals_before_attempt": "registry, digest, receipts, sources, destination, upstream seals, G-SMOKE, the smoke layout plan and the A2-S4 stage status refuse before the attempt-start"
@@ -1980,6 +1988,7 @@
     },
     "destination": "a fresh directory directly under output_root; output_root disjoint (resolved real paths) from the repository, the main checkout (git common directory), the S6-dr-a5 stage directory, the processed frame directory, the raw root and the G0 bundle and WE directories",
     "digest_manifest_location": "the external digest manifest path is checked with the same disjointness rule (resolved real paths; outside every sealed input, both checkouts and results/) before every manifest mutation, the manifest commands included",
+    "digest_manifest_writer": "one writer at a time: a command holds an exclusive non-blocking fcntl lock on the manifest file from its location check to its last receipt (every append locks too); the chain and its tail digest are verified under the lock before each append; a second writer refuses",
     "terminal_decision": "A2-S4 may record FAILED_INTEGRITY as soon as a stage exhausted its attempts in a deterministic integrity failure; its unsealed descendants are recorded as BLOCKED and other unsealed stages as NOT_RUN",
     "tab_descriptive_stop": "a descriptive cell stopped by the work deadline (after every acceptance cell is sealed) is written as a NOT_RUN cell record and sealed with the stage",
     "smoke_projection_ratio": "rows of the processed row groups overlapping TRAIN (footer metadata, an upper bound) / rows of the smoke subset before the regular-season filter (labelled projection)",

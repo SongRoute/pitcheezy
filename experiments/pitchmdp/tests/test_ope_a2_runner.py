@@ -11,9 +11,11 @@ from datetime import datetime
 import functools
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -292,6 +294,83 @@ class ManifestTests(unittest.TestCase):
             roa.require_config_digest(self.manifest, changed)
 
 
+class ManifestWriterTests(unittest.TestCase):
+    """PM decision (review round 3 #3): an exclusive fcntl writer lock, the tail digest verified before every
+    append, a second writer refuses; receipts are written with the guard signals blocked."""
+    def setUp(self):
+        self.tmp = tmpdir(self)
+        self.path = self.tmp / 'digest.jsonl'
+
+    def seal(self, manifest, n):
+        return manifest.append('cell_seal', {'stage': 'A2-S1', 'cell': f'T-{n}', 'status': 'COMPLETED', 'sha256': 'b' * 64})
+
+    def test_a_second_writer_refuses(self):
+        holder, other = roa.DigestManifest(self.path), roa.DigestManifest(self.path)
+        holder.append('config_digest', {'digest': 'a' * 64})
+        with holder.writer():
+            with self.assertRaisesRegex(IntegrityError, 'another writer'):
+                self.seal(other, 1)
+            with self.assertRaisesRegex(IntegrityError, 'another writer'):
+                with other.writer():
+                    pass
+            self.seal(holder, 2)  # the holder appends under its lock
+            code = ('import sys; sys.path[:0] = [sys.argv[2], sys.argv[3]]; import run_ope_a2 as r; '
+                    'r.DigestManifest(sys.argv[1]).append("cell_seal", {"stage": "A2-S1"})')
+            result = subprocess.run([sys.executable, '-c', code, str(self.path), str(HERE.parent / 'scripts'),
+                                     str(HERE.parent)], capture_output=True, text=True, timeout=300)
+            self.assertNotEqual(result.returncode, 0)  # another process refuses as well
+            self.assertIn('another writer', result.stderr)
+        self.seal(other, 3)  # released
+        self.assertEqual([e['seq'] for e in other.entries()], [0, 1, 2])
+
+    def test_concurrent_writers_never_corrupt_the_chain(self):
+        roa.DigestManifest(self.path).append('config_digest', {'digest': 'a' * 64})
+        refused = []
+
+        def writer(tag):
+            manifest = roa.DigestManifest(self.path)
+            done = 0
+            while done < 20:
+                try:
+                    self.seal(manifest, f'{tag}{done}')
+                    done += 1
+                except IntegrityError as error:
+                    refused.append('another writer' in str(error))
+                    time.sleep(0.001)
+        threads = [threading.Thread(target=writer, args=(tag,)) for tag in 'ab']
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        entries = roa.DigestManifest(self.path).entries()  # the whole chain verifies
+        self.assertEqual([e['seq'] for e in entries], list(range(41)))
+        self.assertEqual(len({e['sha256'] for e in entries}), 41)
+        self.assertTrue(all(refused))  # every failed attempt was a refusal, never a corrupt write
+
+    def test_the_tail_digest_is_verified_before_appending(self):
+        manifest = roa.DigestManifest(self.path)
+        manifest.append('config_digest', {'digest': 'a' * 64})
+        self.seal(manifest, 1)
+        lines = self.path.read_text().splitlines()
+        self.path.write_text(lines[0] + '\n' + lines[1].replace('T-1', 'T-9') + '\n')
+        with self.assertRaisesRegex(IntegrityError, 'tampered'):
+            self.seal(manifest, 2)
+        with self.assertRaisesRegex(IntegrityError, 'tampered'):
+            with manifest.writer():
+                pass
+
+    def test_receipts_are_written_with_the_guard_signals_blocked(self):
+        seen, real = [], os.fsync
+
+        def fsync(fd):
+            seen.append(signal.pthread_sigmask(signal.SIG_BLOCK, []))
+            return real(fd)
+        with mock.patch.object(roa.os, 'fsync', fsync):
+            roa.DigestManifest(self.path).append('config_digest', {'digest': 'a' * 64})
+        self.assertTrue({signal.SIGALRM, signal.SIGUSR1} <= seen[0])
+        self.assertFalse({signal.SIGALRM, signal.SIGUSR1} & signal.pthread_sigmask(signal.SIG_BLOCK, []))
+
+
 class ReceiptTests(unittest.TestCase):
     """PM decision (review #3): G-CODE (commit = the running code) and G-REG receipts before any data."""
     def setUp(self):
@@ -384,21 +463,26 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
         with mock.patch.dict(reg.HANG_GUARDS, {'A2-SM': 30}):
             with roa.command_guard('A2-SM', env) as guard:
-                guard.finish()  # the final check disarms the timer before the completion receipt
-                self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+                guard.final_check()  # the timer stays armed through the completion receipt
+                self.assertGreater(signal.getitimer(signal.ITIMER_REAL)[0], 0)
+            self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))  # disarmed by the bounded cleanup
 
-    def test_the_work_deadline_leaves_a_finalization_reserve(self):
+    def test_the_work_deadline_and_the_cleanup_reserve(self):
+        # review rounds 2 #15 / 3 #2 with a mocked clock: work stops at H - reserve; the seal is refused within the
+        # last cleanup reserve, so the receipt and the bounded cleanup end before H
         env = ClockEnv()
         guard = roa.CommandGuard('A2-S1', env)
-        reserve = min(reg.FINALIZATION_RESERVE_SECONDS, reg.HANG_GUARDS['A2-S1'] / 10)
-        self.assertEqual((guard.seconds, guard.work_seconds), (reg.HANG_GUARDS['A2-S1'], reg.HANG_GUARDS['A2-S1'] - reserve))
+        hard = reg.HANG_GUARDS['A2-S1']
+        reserve, cleanup = min(reg.FINALIZATION_RESERVE_SECONDS, hard / 10), min(reg.CLEANUP_RESERVE_SECONDS, hard / 40)
+        self.assertEqual((guard.seconds, guard.work_seconds, guard.seal_seconds), (hard, hard - reserve, hard - cleanup))
+        self.assertGreater(reserve, cleanup)
         env.clock = guard.work_seconds + 1  # past the work deadline, inside the hard cap
         with self.assertRaises(roa.HangGuardExceeded):
             guard.check()
-        guard.finish()  # the finalization may still hash and seal
-        env.clock = guard.seconds + 1
-        with self.assertRaises(roa.HangGuardExceeded):
-            guard.finish()  # beyond the hard cap the final check refuses the seal
+        guard.final_check()  # the finalization may still hash and seal
+        env.clock = guard.seal_seconds + 0.5  # inside the cleanup reserve: no seal
+        with self.assertRaisesRegex(roa.HangGuardExceeded, 'not enough'):
+            guard.final_check()
 
     def test_the_memory_watchdog_interrupts_any_code_path(self):
         # review round 2 #4: memory checks through code that has no checkpoint of its own (the protected estimator)
@@ -421,6 +505,52 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(signal.getsignal(signal.SIGUSR1), previous)
         self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
         self.assertFalse(any(t.name == 'a2-memory-watchdog' for t in threading.enumerate()))
+
+    def test_a_stuck_memory_sampler_cannot_delay_the_cleanup_or_signal_late(self):
+        # review round 3 #2: the watchdog join is bounded and a late violation never reaches restored handlers
+        calls, release = {'n': 0}, threading.Event()
+
+        def guards():
+            calls['n'] += 1
+            if calls['n'] > 1:  # the watchdog's first sample hangs, then reports a violation
+                release.wait(5)
+                raise roa.MemoryGuardExceeded('synthetic late violation')
+        env = ClockEnv(guards=guards)
+        env.alarm = True
+        env.monotonic = time.monotonic
+        hits = []
+        original = signal.signal(signal.SIGUSR1, lambda signum, frame: hits.append(signum))  # a late signal lands here
+        try:
+            with mock.patch.object(reg, 'WATCHDOG_INTERVAL_SECONDS', 0.01), \
+                    mock.patch.object(reg, 'WATCHDOG_JOIN_SECONDS', 0.1), mock.patch.dict(reg.HANG_GUARDS, {'A2-SM': 30}):
+                with roa.command_guard('A2-SM', env):
+                    time.sleep(0.2)  # the watchdog is stuck inside its sample now
+                    leaving = time.monotonic()
+                cleanup = time.monotonic() - leaving
+            self.assertLess(cleanup, 1.0)  # bounded by the 0.1 s join, not by the 5 s sampler
+            release.set()
+            time.sleep(0.3)  # the sampler wakes, sees the cleanup started and does not signal
+            self.assertEqual(hits, [])
+            self.assertEqual(signal.getsignal(signal.SIGALRM), signal.SIG_DFL)
+            self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+        finally:
+            release.set()
+            signal.signal(signal.SIGUSR1, original)
+
+    def test_a_guard_interrupt_during_the_cleanup_is_reported_after_it(self):
+        env = ClockEnv()
+        env.alarm = True
+        env.monotonic = time.monotonic
+        try:
+            with mock.patch.dict(reg.HANG_GUARDS, {'A2-SM': 30}):
+                with self.assertRaisesRegex(roa.HangGuardExceeded, 'during the cleanup'):
+                    with roa.command_guard('A2-SM', env):
+                        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+                        signal.pthread_kill(threading.main_thread().ident, signal.SIGALRM)  # pending at the cleanup
+            self.assertFalse(signal.sigpending() & {signal.SIGALRM})  # consumed while blocked, never delivered later
+            self.assertEqual(signal.getsignal(signal.SIGALRM), signal.SIG_DFL)
+        finally:
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGALRM})
 
     def test_manifest_commands_are_guarded(self):
         ws = Workspace(self)
