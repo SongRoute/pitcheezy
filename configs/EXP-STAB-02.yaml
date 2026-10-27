@@ -1,0 +1,546 @@
+{
+  "protocol": "planner_variance_rao_blackwell_v1",
+  "experiment_id": "EXP-STAB-02",
+  "status": "DRAFT_UNREGISTERED",
+  "execute": false,
+  "status_note": "Materialized from docs/pm/research/track-a/A1-planner-variance-registration-draft.json (design review PASS, REVIEW-A1-ASTRA-003). Every real-data stage, the smoke included, refuses until registration sets status REGISTERED, execute true and the registration block (design and code review references, registered commit, code_sha256 of the runner, module and registry).",
+  "registration": {
+    "registered_kst": null,
+    "registered_commit": null,
+    "design_review_reference": null,
+    "code_review_reference": null,
+    "code_sha256": null,
+    "order": "D186 + PM 2026-10-27 (all track-A drafts; gates G1-G2): design review -> review of the code, config and synthetic tests at a fixed commit (code reading only, incl. the smoke code; no real-data execution) -> registration -> smoke as the first registered step -> full run (pass M, then conditional passes C and D); each review must end PASS, or PASS_WITH_NOTES with every note closed or recorded as accepted by the PM",
+    "addenda": "append-only, never rewritten: (1) smoke record after the registered smoke (cost and structural integrity only, no comparison metric); (2) if a confirmation slice is run, its 50-game list sha256 before any planning call on it (data.confirmation_slice)",
+    "smoke_record": "the smoke receipt (<attempt>/smoke/results.json + SHA256SUMS, receipts.jsonl line) is referenced from the registration block by path and digest; no comparison metric is in it",
+    "deadline_rule": "pinned at registration as a rule: each pass computes its deadline at its start as min(06:00 KST of the next WS game day, pass start + pass cap) (compute.passes); checked per PA block; passing it aborts that pass and discards its partial results"
+  },
+  "design_doc": "docs/pm/research/track-a/A1-planner-variance-design.md",
+  "registration_draft": "docs/pm/research/track-a/A1-planner-variance-registration-draft.json",
+  "decision_basis": "D184 (docs/decisions.md:321): prepare A1-A3 design and registration drafts in parallel with B1. D180 (docs/decisions.md:313) had left follow-ups that raise planning precision to after the World Series; D186 (docs/decisions.md:325, 2026-10-27) decides instead that track A runs without waiting for the end of the WS: order (detailed by the PM 2026-10-27, gates G1-G2) design review -> fixed-commit code review (reading only) -> registration (status REGISTERED, execute true, registration block and null fields filled) -> registered smoke -> full run, on game days in the window after 13:30 KST on the Mac CPU, never inside the recorder/publisher protection window 06:30-13:30 KST; the three track-A experiments run sequentially.",
+  "question": "If the first-pitch outcome draw of the registered planning Q estimator (samples 6, pitch cap 12, CRN across candidate actions) is replaced by its exact expectation over the 10 outcome classes (Rao-Blackwellized first step, RB), is the G0 P3 tau 0.1 law stable between two independent planning seeds, at a per-decision cost of at most 4x the registered planner?",
+  "one_change": "For the first pitch of every candidate action the drawn outcome of the registered planning search is replaced by its exact expectation over the 10 outcome classes of the planner's own conditional law given the sampled delivery (Rao-Blackwellized first step). Same planning_seed key, same U = default_rng(key).random((S, 12, 3)) shared by every action (CRN), same delivery index, BC continuation with U[i,1:,:], cap 12 in total, same cutoff, G0, reference law, support table, delivery pool, WE terminal/cutoff, tau 0.1 and request construction.",
+  "operational_definition_of_stable": "On the registered decision set, the P3 laws of the same planner computed with planning seeds 0 and 5 have top-1 (argmax of the law) agreement whose whole-game bootstrap 95% lower bound is >= 0.95 AND mean total variation 0.5*sum|pi_0 - pi_5| whose 95% upper bound is <= 0.02. Cost = conditional rows per decision relative to the registered planner.",
+  "hypotheses": {
+    "H1_primary": "RB6 is stable at r_rows <= 4.0",
+    "H2_secondary_descriptive": "RB6 top-1 agreement exceeds A0 (paired gain 95% lower bound > 0). Empirical only: Rao-Blackwell keeps the expectation of each Q(a) and of each Q contrast and lowers their variance, but does not guarantee better argmax agreement (a nonlinear statistic) or a positive finite-sample bound; a negative or inconclusive H2 is reported as is and never suppresses or invalidates the registered result",
+    "H3": "RB6 is more efficient than brute-force sampling (VRF / r_rows > 1)",
+    "H4_descriptive": "residual disagreement concentrates in small effective-gap bins (near ties; policy churn)",
+    "H5_descriptive": "lower search noise lowers the mean KL(law || reference) (noise-induced deviation; optimizer's curse)",
+    "H6_optional_descriptive": "frozen-history DP-vs-RB law agreement is reported next to RB-vs-RB agreement; no ordering between them is claimed (DP is a different estimand)"
+  },
+  "execution": {
+    "runner": "experiments/pitchmdp/scripts/diagnose_planner_variance.py",
+    "module": "experiments/pitchmdp/pitchmdp/planner_variance.py",
+    "registry": "experiments/pitchmdp/pitchmdp/planner_variance_registry.py",
+    "tests": "experiments/pitchmdp/tests/test_planner_variance.py (synthetic only)",
+    "worktree": "/Users/song/Projects/pitcheezy-worktrees/track-a-a1-1027 (branch research/track-a-a1-1027 from 6ca4d3da, the EXP-STAB-01 result commit)",
+    "prefix": "DYLD_LIBRARY_PATH=/Users/song/Projects/pitcheezy/.venv/lib/python3.12/site-packages/torch/lib PYTHONPATH='/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/deps:experiments/pitchmdp' /Users/song/Projects/pitcheezy/.venv/bin/python experiments/pitchmdp/scripts/diagnose_planner_variance.py --config configs/EXP-STAB-02.yaml --local-config experiments/pitchmdp/configs/local.json --attempt '/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-STAB-02/attempt-001'",
+    "order": [
+      "smoke        : <prefix> --through smoke        (first registered step; cost and structure only)",
+      "passes M,C,D : <prefix> --through D            (pass M, then pass C if required, then pass D arms if allowed; a pass that does not fit before 06:00 KST is deferred: rerun the same command in the next window)",
+      "confirmation : <prefix> --confirmation-select  then  <prefix> --confirmation <pin.json>  (only after STABLE_WITHIN_COST and Song's confirmation; pin = the appended games sha256)"
+    ],
+    "attempt_parent": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-STAB-02",
+    "machine": "Mac mini M4 24 GB, CPU, single process, common .heavy.lock (runs/ML-MATRIX-20260924/.heavy.lock, non-blocking, run_ml_matrix.py:81-92); no GPU, no data moved to the A5000 server",
+    "exit_codes": {
+      "0": "done or nothing left",
+      "2": "refused (gate, config, path, memory)",
+      "3": "stopped (aborted, lock held, verification failed)",
+      "4": "deferred to the next window"
+    }
+  },
+  "data_rules": "No 2026 rows (statcast 2023-2025 pinned). No June 2025 decisions, no S3b ledger, no S5/S6 outputs, no OPE output. DEV (2025-07..09) rows of the selected games; pre-decision fields, logged pitch types and previous-row outcomes as history only. No reward, WE result, events kind or next-row state.",
+  "exposure_disclosure": [
+    "The 150 DEV games are exposed_development; EXP-STAB-01 already read the planning laws of these exact decisions (no outcomes).",
+    "A1 was motivated by, and its thresholds were chosen after, the EXP-STAB-01 K1/K3/K5 results on these decisions.",
+    "No RB, brute-force-48 or DP output on these decisions has been seen by anyone.",
+    "No arm reads rewards; DEV July-September 2025 cannot serve as independent confirmation."
+  ],
+  "metrics_text": {
+    "primary": [
+      "top-1 agreement between the seed-0 and seed-5 P3 laws of an arm (argmax of the law)",
+      "mean TV between those laws, with quantiles 0.5/0.9/0.99/1.0 and share TV > 0.05",
+      "r_rows(X) = sum of conditional rows of arm X / sum of conditional rows of A0 for the same seed, averaged over the two seeds"
+    ],
+    "secondary_descriptive": [
+      "agreement and mean TV by effective-gap bin; g_eff = tau*log(pi_R[j1]/pi_R[j2]) = (Q_R[j1]-Q_R[j2]) + tau*log(BC[j1]/BC[j2]) for the top-2 actions of the REF-RB6 law, and by raw Q gap g_Q; bins in WE [0,0.0025), [0.0025,0.005), [0.005,0.01), [0.01,0.02), [0.02,0.05), [0.05,inf); |M| = 1 reported separately; the same bins for A0, RB6, STAB-01 K3/K5 columns and optional arms",
+      "mean KL(law || masked reference) per arm (mean of the two seeds) and the paired difference to A0",
+      "VRF = sum_d v_A0(d) / sum_d v_RB6(d) with v_X = sum_{a != a*} Var_i[Y_i(a) - Y_i(a*)] / S, a* = top-1 of the REF-RB6 law, seed-5 pair; efficiency = VRF / r_rows (Q-contrast variance per row versus brute force under variance ~ 1/S; not an agreement claim)",
+      "paired top-1 agreement gain RB6 minus STAB-01 K_c, K_c = cheapest measured K in {3, 5} with K >= r_rows, i.e. a measured point not cheaper than RB6, not an equal-cost comparator (none if r_rows > 5, unless BF48 ran and 8 >= r_rows)",
+      "mean max |Q_0 - Q_5| on the support; paired-difference SE and the D-9 noise ratio (max SE / tau) quantiles",
+      "RB residual: per-decision median of (variance of the terminal-outcome term, which moves only with the first-pitch delivery draw) / (RB sample variance), a descriptive ratio, not an additive share (the covariance with the continuation term is reported next to it); cap-12 truncation share per arm",
+      "planner wall time per decision per arm and seed (time.perf_counter), total seconds, peak RSS",
+      "FH-DP (if run): law agreement and TV versus RB seeds 0/5/100, and RB-RB agreement on the same decisions, side by side with their paired difference (descriptive; no ordering implied); rows and ms per decision"
+    ],
+    "intervals": {
+      "method": "whole-game bootstrap, ratio of per-game sums as in EXP-STAB-01 summarize()",
+      "draws": 10000,
+      "seed": 20260924,
+      "unit": "game",
+      "same_draw_table_as_stab01": true,
+      "paired": "paired differences use the same draws",
+      "subsamples_and_confirmation": "BF48, FH-DP and the confirmation slice each use their own draw table over their own games (data.subsamples.bootstrap, data.confirmation_slice.bootstrap)",
+      "empty_denominator": "a replicate with zero decisions in a bin or stratum leaves that ratio undefined (NaN); intervals use the valid replicates and report their count; a bin empty in the original sample is reported as none"
+    },
+    "not_measured": "policy value, OPE, recommendation quality (no reward, WE result, events kind or next-row state is read; outcomes_read false)",
+    "reference_values": {
+      "seed_noise_june": "EXP-P18-001: mean TV 0.04966830494814267 [0.046584545784024274, 0.05272782730941132], top-1 0.8869834406171687 on 40,702 sealed June decisions (results/EXP-P18-001.json:36-41)",
+      "predictor_swap_june": "EXP-P17-001: mean TV 0.03229061058581878, top-1 0.9278168148985307 (results/EXP-P18-001.json:32-33)",
+      "paired_difference_se_sealed_g0": "median 0.0145, q90 0.0448 WE (docs/results-all.md:1572)",
+      "kl_to_reference_june_g0": "0.00734 (docs/results-all.md:1564)"
+    }
+  },
+  "decision_rules_text": {
+    "verdict": {
+      "precedence": "(0) smoke r_b > 4.0 -> COST_EXCEEDED_AT_SMOKE; (1) some run arm is STABLE and COST_OK -> STABLE_WITHIN_COST:<cheapest such arm>; (2) else some run arm is STABLE -> STABLE_OVER_COST:<that arm> (at least one STABLE arm and no arm both STABLE and COST_OK); (3) else NOT_STABLE",
+      "COST_EXCEEDED_AT_SMOKE": "pre-run stop: smoke r_b > 4.0; the full run is not started (the smoke computes no comparison)",
+      "STABLE_WITHIN_COST": "some run arm X in {RB6, RB12 if run} with STABLE_X and COST_OK_X; the cheapest such X",
+      "STABLE_OVER_COST": "at least one run arm STABLE and no run arm both STABLE and COST_OK",
+      "NOT_STABLE": "no run arm STABLE (incl. an aborted pass C: flag RB12_ABORTED)",
+      "partition": [
+        "RB6 STABLE and COST_OK -> STABLE_WITHIN_COST:RB6 (RB12 not run)",
+        "RB6 STABLE and not COST_OK -> STABLE_OVER_COST:RB6 (RB12 not run)",
+        "RB6 not STABLE, smoke r_b > 2.0 (RB12 not run) -> NOT_STABLE",
+        "RB6 not STABLE, RB12 run, RB12 STABLE and COST_OK -> STABLE_WITHIN_COST:RB12",
+        "RB6 not STABLE, RB12 run, RB12 STABLE and not COST_OK -> STABLE_OVER_COST:RB12 (whatever RB6's COST_OK)",
+        "RB6 not STABLE, RB12 run, RB12 not STABLE -> NOT_STABLE",
+        "RB6 not STABLE, RB12 condition met but pass C aborted -> NOT_STABLE with flag RB12_ABORTED",
+        "pass M aborted -> no verdict label (aborted.json, nothing citable)"
+      ],
+      "exclusivity": "RB12 runs only when RB6 is not STABLE, so at most one arm can be STABLE; the rows above are exhaustive and mutually exclusive"
+    },
+    "secondary_flags_no_verdict_effect": {
+      "rb_improves_over_baseline": "RB6 minus A0 paired top-1 gain 95% lower bound > 0 (H2, descriptive)",
+      "rb_beats_measured_bruteforce": "RB6 minus STAB-01 K_c paired top-1 gain 95% lower bound > 0 (K_c is the cheapest measured K not cheaper than RB6; not an equal-cost comparison)",
+      "efficiency_gt_1": "efficiency 95% lower bound > 1"
+    },
+    "approval": "0.95, 0.02 and 4.0 approved by Song exactly as drafted (D186 4-①, docs/decisions.md:325); fixed before any result is read; they remain judgement values in origin",
+    "judgement_values": {
+      "0.95": "the D153 service criterion (live vs final top-1 agreement >= 95%, docs/decisions.md:254), reused exactly as in EXP-STAB-01 for direct comparability; no measured basis for the planner",
+      "0.02": "below the EXP-STAB-01 K5 mean TV 0.0230 [0.0216, 0.0244] (i.e. better than 5x brute force) and 0.62x the G0->G15 predictor-swap TV 0.0323, so a predictor change of that size would stand above the search noise; read on the upper bound, the same conservative direction as the agreement lower bound",
+      "4.0": "4x brute force equals K=4 seed averaging; the measured K5 (5x) still had lower bound 0.9419, so passing within 4x means meeting, at a cost below K5, thresholds that none of the measured points (K = 1, 3, 5) met; K4 was not measured, so no claim that the arm is cheaper than unmeasured alternatives or that K4 must fail; about 0.13 s per decision on the Mac mini (derived from STAB-01 33 ms per planner call), below 1% of the measured pitch-to-first-receipt latency median 21.0 s (D181, docs/decisions.md:315; the service-path planner latency itself is not measured)"
+    },
+    "reading_fixed_before_results": {
+      "pass": "the cheapest passing RB setting becomes a candidate planner for the A2 / 2027 prospective protocol; using it requires a new policy identity (the search.q descriptor changes), the full validation chain and an e2e policy evaluation; c13cc989, D131, D155, D180 and the service do not change; any tau re-selection permitted by the lower noise belongs to a new registration",
+      "fail": "recorded only; next options (FH-DP fidelity, first-pitch delivery integration, more samples, softer metrics) need a new registration; thresholds are never changed after results",
+      "h2_result": "H2 never enters the verdict; an RB6 agreement below A0 or an inconclusive paired gain is reported as is and does not suppress or invalidate the registered result; results are withheld only for the registered integrity failures and stop rules"
+    }
+  },
+  "integrity_checks_text": [
+    "pass M: selected games_sha256 equals cadb081234e1f02293753b3d744f16c738a64a6eb3075f1a9706f3981edb84d1",
+    "pass M: STAB-01 decisions.npz sha256 equals 8a6d5724bc8d40dcef53c4d743f58e07fda0efefca63625d7f69d28a723a6969 and its request_id sequence equals this run's",
+    "pass M only: A0 per-decision K1_tv and K1_top1_same equal the STAB-01 columns (never in the smoke or another pass; exact equality expected: same code path and batches); stop if fewer than 99.9% of decisions match (judgement value: allowance for environment-level float nondeterminism)",
+    "pass M (RB6, all 6 samples) and pass C (RB12, its first 6 samples, which share the A0-MC6 uniforms by C-order fill): the selected-outcome reconstruction equals the runtime seed-0 Q and the A0 seed-5 Q; the full 12-sample RB12 reconstruction corresponds to MC12 and is verified by a synthetic test, not on real data; RB6's first-pitch batch has the registered depth-0 composition and RB12 evaluates its first-pitch batch in two chunks (samples 0-5 with exactly the A0-MC6 depth-0 composition, then samples 6-11), so zero first-pitch outcome flips are allowed on the compared first 6 samples (stop on any); continuation batches do not match, so rare continuation outcome flips at CDF boundaries from batch-dependent float rounding are possible (network precision not verified): mismatching decisions and their CDF margins are counted; stop if mismatches exceed 0.1% of decisions or any mismatch has a margin > 1e-5 (judgement values)",
+    "pass M: a fresh RB6 seed-0 planner reproduces 200 decisions at atol 0.0; pass C: the same for RB12 seed 0",
+    "every pass: finite Q on the support for every arm and seed; laws sum to 1",
+    "every pass: components.verify(planner) for every planner and runtime.verify_components() at the end",
+    "every pass: S2-certified bind identity unchanged (swap.bind)",
+    "the confirmation slice uses its own list (data.confirmation_slice.integrity)"
+  ],
+  "stop_rules_text": [
+    "smoke r_b > 4.0 -> COST_EXCEEDED_AT_SMOKE, no full run",
+    "any integrity check fails -> stop",
+    "BudgetExceeded on any arm-seed row budget -> stop",
+    "sampled peak RSS > 8 GiB -> stop",
+    "deadline_utc or a pass cap passed -> stop that pass (effects per compute.passes: pass M -> experiment aborted; pass C -> NOT_STABLE with RB12_ABORTED; pass D -> that arm discarded)",
+    "the common heavy lock is held by another job -> do not start",
+    "inside the WS game-day recorder/publisher protection window 06:30-13:30 KST -> do not start (run window: after 13:30 KST, D186)",
+    "memory_pressure free < 50% at start -> do not start",
+    "every stop writes aborted.json, discards partial results (nothing citable), exits 3; bug-fix retries are allowed after being recorded (lightweight gate), with metrics, thresholds, seeds and data unchanged"
+  ],
+  "not_claimed": [
+    "no policy value, OPE or recommendation-quality claim; stability is not correctness (FH-DP is stable by construction yet estimates a different quantity)",
+    "no change to D131, D155, D180, the policy identity c13cc989..., the tau freeze, the service or the demo; passing is not adoption",
+    "not a predictor comparison (G0 only); the mixed-predictor policy re-validation closed by D155 is not reopened",
+    "DEV July-September 2025 is exposed data, not an independent confirmation",
+    "0.95, 0.02 and 4x (approved by Song as drafted, D186) and the gap bins, the budgets and the check tolerances are judgement values",
+    "costs are Mac mini CPU measurements or derivations, not service latency guarantees",
+    "the K = 7-8 and efficiency 1.8 figures are rough extrapolations from three points",
+    "no claim that the Rao-Blackwell variance reduction implies better top-1 agreement (H2 is empirical); passing within 4x is not a measured comparison with K4"
+  ],
+  "implementation_choices": [
+    "Config path configs/EXP-STAB-02.yaml with a JSON body (STAB-01 convention); this registry module is a fifth new file next to the four the design lists; its sha256 is pinned with the runner and module at registration (config registration.code_sha256) and verified by the runner before any data is read.",
+    "RB continuation: one rollouts() call (the registered function) over every non-terminal child of every first pitch, children ordered action, sample, outcome; continuation uniforms U[i,1:,:] of the parent sample; a cap of 1 truncates every child to the cutoff. Children with outcome probability 0 are still rolled out (weight 0).",
+    "RB12 first pitch: chunks of six samples (0-5, then 6-11), action-major inside a chunk; RB6 is one chunk.",
+    "Reconstruction mismatch margin: for a mismatching decision the RB search is re-run once with a tracing twin of JointSimulator.step on a scratch budget (it must reproduce the RB values exactly); a path whose selected first outcome is terminal has margin inf (a first-pitch flip); otherwise its margin is the smallest |u - CDF| over the outcome draws of its selected continuation. Per mismatching action: max over the mismatching samples when A0 per-sample values exist (pass M seed 5, confirmation seed 5), else min over the six samples; the decision margin is the max over its mismatching actions. Stop if any decision margin > 1e-5 (inf counts as a first-pitch flip) or, at the end of the pass, mismatching decisions exceed 0.1% of the compared decisions.",
+    "A0 reproduction (pass M): K1_tv and K1_top1_same from diagnose_policy_seed_ensemble.compare() must equal the STAB-01 columns exactly; the run stops as soon as mismatches exceed floor(0.001 x the STAB-01 decision count).",
+    "r_b (smoke) = mean over seeds 0 and 5 of rows(RB6, seed)/rows(A0, seed) on the three smoke games, the same definition as r_rows; A0 seed-0 rows are the runtime planner rows of those decisions only.",
+    "Smoke projections scale by games: BF48 pass-D time = smoke BF48 seconds x 50/3; FH-DP 10-game time = FH-DP seconds on its 1 smoke game x 10.",
+    "Deadline: the code does not know WS game days, so it treats every day as a game day: a pass may start only outside 06:00-13:30 KST and only if start + cap <= the next 06:00 KST; its deadline is min(next 06:00 KST, start + cap). A pass that does not fit is deferred: receipt DEFERRED, lock released, exit code 4.",
+    "Pass clocks start when the pass starts (after the data load of the process); the deadline and the cap are checked before every PA block, peak RSS (ru_maxrss) every 10 PA blocks.",
+    "Heavy lock held by another job: nothing starts, no pass folder is written, a LOCK_HELD receipt is appended and the process exits 3 (the pass is not marked aborted, so a later window can start it).",
+    "Passes C and D re-create the pass-M decisions without the runtime planner (requests rebuilt from the store, kept by the pass-M request_id sequence, masked reference recomputed and compared with the stored mask and reference, components.check_context/check_support per request); the runtime seed-0 and A0 seed-5 Q come from the sha-verified pass-M arrays (no planner search is repeated).",
+    "Exit codes: 0 done or nothing left, 2 refused (gate, config or path), 3 stopped (aborted, lock held, earlier output failed verification), 4 deferred to the next window.",
+    "Variances (VRF, RB residual, mc_se) use ddof=1 over the samples; the efficiency interval bootstraps the VRF numerator/denominator sums and the per-seed row sums on the same game draws.",
+    "Truncation share: A0 = truncated rollouts / rollouts; RB = probability-weighted truncated children / first-pitch samples (the expected A0 share).",
+    "FH-DP: no registered row budget; its RowBudget limit is sys.maxsize and the 7,200 s cap bounds it; the predictor is called once per decision for all nodes (root 400 draws, other nodes indices 0,10,...,390); unreachable counts reuse the root law and BC rows (they never feed reachable values).",
+    "FH-DP comparison: for RB pairs (0,5), (0,100), (5,100) the per-decision difference agreement(DP, RB_s) - agreement(RB_t, RB_s) and the same for TV are reported with intervals (descriptive).",
+    "Smoke outputs contain no Q vector, law, TV, top-1, KL or reconstruction value (checked by key before writing).",
+    "The final verdict is written once to <attempt>/verdict.json when it becomes final (smoke cost stop, end of pass M without RB12, end or stop of pass C), recomputed from the recorded pass statuses; results/EXP-STAB-02.json is not written by the runner (the PM copies a completed, verified result).",
+    "A pass folder without results (crash or interrupt) is closed as an abort with the pass effect on the next start; a process in which any stop rule fired (pass C or a pass-D arm aborted while later passes ran) exits 3.",
+    "Confirmation retries under the same profile go to <attempt>/confirmation/try-NN; a completed try (CONFIRMED or NOT_CONFIRMED) is final. The 50-game list is recorded by --confirmation-select (no planning call) and its sha256 must equal the pin file passed to --confirmation; Song's go is the PM gate before writing that pin.",
+    "Peak RSS is ru_maxrss (bytes on macOS), conservative against the 8 GiB sampled-RSS cap; RSS per arm is not separable in one process, so the smoke records the peak of the whole smoke pass.",
+    "One data scope per process: smoke (3 smoke games + the FH-DP smoke game), registered (the 150 games; smoke, M, C, D) or confirmation (50 games); the processed sha, statcast 2023-2025 sources, style snapshot, G0 bundle, tau freeze and the S2 bind identity 5683fb61 are checked before any planning call in every scope."
+  ],
+  "settings": {
+    "tau": 0.1,
+    "samples": 6,
+    "pitch_cap": 12,
+    "seed": 0
+  },
+  "tau_freeze": {
+    "selected_tau": 0.1,
+    "setting": {
+      "samples": 6,
+      "pitch_cap": 12
+    },
+    "planning_main_seed": 0
+  },
+  "policy_registration": {
+    "config": "configs/ML-POLICY-MATERIALIZATION-v1.json",
+    "config_sha256": "869b2611c027e36573cd4d9a3e766f02bfda9c76a3485cb5e1870f68c7954469",
+    "addenda": [
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-1-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-3-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-4-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-5-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-6-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-7-d127.json",
+      "configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json"
+    ]
+  },
+  "g0_bundle": {
+    "path": "configs/G0-RESEARCH-FROZEN-v1.json",
+    "file_sha256": "c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062"
+  },
+  "registered_policy_identity": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+  "components_sha256": "5683fb61f7c039cfad8c21e5e1dc48231ec487a7c0a4aab1e72ff3b8d022d074",
+  "data": {
+    "processed_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27",
+    "style_snapshot_sha256": "943e2a10af514c0a7481da0c4ffe41d6785bea56ceea5a4aab132ed1e1db727b",
+    "sources": [
+      {
+        "file": "statcast_2023.parquet",
+        "bytes": 95124285,
+        "sha256": "46c354beae196ce2d501fe989c491725f2ecc47601f58d4b8b0234b982984730"
+      },
+      {
+        "file": "statcast_2024.parquet",
+        "bytes": 103060977,
+        "sha256": "3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274"
+      },
+      {
+        "file": "statcast_2025.parquet",
+        "bytes": 104922105,
+        "sha256": "4c785756d8901f8c46c70891954a4c54b8ad1c6909db67f4a000221691dc0249"
+      }
+    ],
+    "dev_dates": [
+      "2025-07-01",
+      "2025-10-01"
+    ]
+  },
+  "games": {
+    "split": "dev",
+    "exclude": [
+      "S5_V2_V3",
+      "S6_V4"
+    ],
+    "n_games": 150,
+    "salt": 20261020,
+    "games_sha256": "cadb081234e1f02293753b3d744f16c738a64a6eb3075f1a9706f3981edb84d1",
+    "smoke_games": 3
+  },
+  "subsamples": {
+    "salt": 20261027,
+    "BF48": 50,
+    "FH-DP": 10,
+    "fhdp_smoke_games": 1
+  },
+  "confirmation_slice": {
+    "n_games": 50,
+    "salt": 20261028,
+    "exclude": [
+      "S5_V2_V3",
+      "S6_V4",
+      "EXP-STAB-01"
+    ],
+    "text": {
+      "role": "the A1 confirmation path after a pass (README consolidated decision 5); run only if the verdict is STABLE_WITHIN_COST; started after the pass is reported and Song confirms (the D186 text does not fix its timing), in the same run window and gate order",
+      "selection": "50 new DEV games by rpv.select_games on DEV minus the S5, S6 and EXP-STAB-01 games, salt 20261028; the list sha256 is appended to the registration before any planning call on it; the 150-game sha cadb0812... and the STAB-01 request-order checks do not apply",
+      "arms_seeds": "A0-MC6 (seed 0 = runtime, seed 5) and the passing RB arm (seeds 0 and 5) only; no REF-RB6, K5-STAB01 or optional arm",
+      "inherited_metrics": [
+        "primary: top-1 agreement, mean TV, r_rows",
+        "descriptive: KL to the masked reference, Q level, RB residual and truncation, resources, H2 paired gain"
+      ],
+      "not_inherited": [
+        "gap bins and VRF (need REF-RB6)",
+        "K_c comparison (no STAB-01 columns for these games)"
+      ],
+      "thresholds": "fixed now, same values: top-1 agreement 95% lower bound >= 0.95, mean TV 95% upper bound <= 0.02, r_rows <= 4.0; CONFIRMED if the passing arm meets all three, otherwise NOT_CONFIRMED; the 150-game verdict is not changed",
+      "integrity": [
+        "50-game list sha256 equals the appended pin",
+        "selected-outcome reconstruction of the passing arm (RB6: all 6 samples; RB12: its first 6 samples) equals the runtime seed-0 Q and the A0 seed-5 Q with the pass M/C tolerances and first-pitch batching rule (first-pitch flips 0)",
+        "a fresh seed-0 planner of the passing arm reproduces 200 decisions at atol 0.0",
+        "finite Q on the support; laws sum to 1",
+        "components.verify and runtime.verify_components()",
+        "S2-certified bind identity unchanged"
+      ],
+      "limits": "compute.passes.confirmation (cap, deadline, output folder, failure effect)",
+      "bootstrap": "its own draw table over the 50 games: np.unique(game_pk), 10,000 draws, seed 20260924, ratio of per-game sums",
+      "cost_projection": "(2 + 2 r_b) U x 50/150 (passing arm RB12: (2 + 4 r_b) U x 50/150) = about 2,517-4,195 s for r_b 2-4, assuming decisions scale with games (STAB-01 mean 250.4 per game); derived, not measured",
+      "exposure": "DEV exposed_development; new to planning-law analysis but not an independent confirmation"
+    }
+  },
+  "stab01": {
+    "config": "configs/EXP-STAB-01.yaml",
+    "config_sha256": "4b0de55c2916bc6097f3f8f6a9b008192d068bd5bc7c31fbb9496f1b6629982f",
+    "decisions_npz": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-STAB-01/decisions.npz",
+    "decisions_npz_sha256": "8a6d5724bc8d40dcef53c4d743f58e07fda0efefca63625d7f69d28a723a6969",
+    "decisions_compared": 37559
+  },
+  "arms": {
+    "A0-MC6": {
+      "estimator": "RolloutImprovement",
+      "samples": 6,
+      "pitch_cap": 12,
+      "seeds": [
+        0,
+        5
+      ],
+      "seed_0_source": "runtime",
+      "games": "registered",
+      "pass": "M",
+      "mandatory": true,
+      "row_budget": {
+        "0": 8000000,
+        "5": 8000000
+      }
+    },
+    "RB6": {
+      "estimator": "RaoBlackwellFirstStep",
+      "samples": 6,
+      "pitch_cap": 12,
+      "seeds": [
+        0,
+        5
+      ],
+      "games": "registered",
+      "pass": "M",
+      "mandatory": true,
+      "row_budget": {
+        "0": 18000000,
+        "5": 18000000
+      }
+    },
+    "REF-RB6": {
+      "estimator": "RaoBlackwellFirstStep",
+      "samples": 6,
+      "pitch_cap": 12,
+      "seeds": [
+        100
+      ],
+      "games": "registered",
+      "pass": "M",
+      "mandatory": true,
+      "row_budget": {
+        "100": 18000000
+      }
+    },
+    "K5-STAB01": {
+      "estimator": "none (EXP-STAB-01 per-decision columns joined by request_id)",
+      "seeds": [],
+      "games": "registered",
+      "pass": "M",
+      "mandatory": true,
+      "row_budget": {}
+    },
+    "RB12": {
+      "estimator": "RaoBlackwellFirstStep",
+      "samples": 12,
+      "pitch_cap": 12,
+      "seeds": [
+        0,
+        5
+      ],
+      "games": "registered",
+      "pass": "C",
+      "mandatory": false,
+      "row_budget": {
+        "0": 36000000,
+        "5": 36000000
+      },
+      "run_condition": "smoke r_b <= 2.0 and RB6 not STABLE; enters the verdict"
+    },
+    "BF48": {
+      "estimator": "RolloutImprovement",
+      "samples": 48,
+      "pitch_cap": 12,
+      "seeds": [
+        0,
+        5
+      ],
+      "games": "BF48 subsample",
+      "pass": "D",
+      "mandatory": false,
+      "row_budget": {
+        "0": 12000000,
+        "5": 12000000
+      },
+      "run_condition": "RB6 not (STABLE and COST_OK) and the smoke projection fits the BF48 cap; descriptive only"
+    },
+    "FH-DP": {
+      "estimator": "FrozenHistoryDP",
+      "seeds": [],
+      "games": "FH-DP subsample",
+      "pass": "D",
+      "mandatory": false,
+      "row_budget": {},
+      "run_condition": "RB6 not (STABLE and COST_OK) and the 1-game smoke extrapolates 10 games to <= 7,200 s; descriptive only"
+    }
+  },
+  "seeds": {
+    "pair": [
+      0,
+      5
+    ],
+    "reference": 100,
+    "stab01_sets": {
+      "A": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "B": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    }
+  },
+  "first_pitch_chunk": 6,
+  "bootstrap": {
+    "draws": 10000,
+    "seed": 20260924,
+    "unit": "whole game",
+    "method": "ratio of per-game sums"
+  },
+  "metrics": {
+    "gap_bins": [
+      0.0,
+      0.0025,
+      0.005,
+      0.01,
+      0.02,
+      0.05
+    ],
+    "tv_quantiles": [
+      0.5,
+      0.9,
+      0.99,
+      1.0
+    ],
+    "tv_share_above": 0.05,
+    "noise_quantiles": [
+      0.5,
+      0.9,
+      0.99
+    ]
+  },
+  "decision_rules": {
+    "top1_lower_at_least": 0.95,
+    "mean_tv_upper_at_most": 0.02,
+    "r_rows_at_most": 4.0,
+    "smoke_r_b_at_most": 4.0,
+    "rb12_smoke_r_b_at_most": 2.0
+  },
+  "integrity": {
+    "replay_decisions": 200,
+    "replay_atol": 0.0,
+    "stab01_k1_match_min": 0.999,
+    "reconstruction_mismatch_share_max": 0.001,
+    "reconstruction_margin_max": 1e-05,
+    "first_pitch_flips_max": 0,
+    "law_sum_atol": 1e-12,
+    "reference_atol": 1e-12
+  },
+  "cost": {
+    "unit_U_seconds": 1258.65,
+    "rss_cap_bytes": 8589934592,
+    "rss_sample_every_pa_blocks": 10,
+    "memory_pressure_free_min_percent": 50
+  },
+  "passes": {
+    "smoke": {
+      "output": "smoke",
+      "cap_seconds": 3600,
+      "mode": "runtime",
+      "on_stop": "NO_FULL_RUN"
+    },
+    "M": {
+      "output": "mandatory",
+      "cap_seconds": 21600,
+      "mode": "runtime",
+      "on_stop": "EXPERIMENT_ABORTED"
+    },
+    "C": {
+      "output": "rb12",
+      "cap_rule": {
+        "factor": 1.2,
+        "units_per_r_b": 4
+      },
+      "mode": "replay",
+      "on_stop": "RB12_ABORTED"
+    },
+    "D": {
+      "output": "descriptive",
+      "mode": "replay",
+      "on_stop": "ARM_DISCARDED",
+      "BF48_cap_rule": {
+        "factor": 1.2,
+        "units": 16,
+        "games": [
+          50,
+          150
+        ]
+      },
+      "FH-DP_cap_seconds": 7200
+    },
+    "confirmation": {
+      "output": "confirmation",
+      "mode": "runtime",
+      "on_stop": "CONFIRMATION_ABORTED",
+      "cap_rule": {
+        "factor": 1.2,
+        "constant_units": 2,
+        "units_per_r_b": {
+          "RB6": 2,
+          "RB12": 4
+        },
+        "games": [
+          50,
+          150
+        ]
+      }
+    }
+  },
+  "run_window": {
+    "utc_offset_hours": 9,
+    "deadline_kst": "06:00",
+    "no_start_kst": [
+      "06:00",
+      "13:30"
+    ],
+    "protection_window_kst": [
+      "06:30",
+      "13:30"
+    ],
+    "game_days": "not known to the code: every day is treated as a game day"
+  }
+}
