@@ -8,24 +8,24 @@
   },
   "id": "EXP-OPE-RES-01",
   "track": "A2_ope_redesign_for_resolution",
-  "status": "DRAFT_UNREGISTERED",
-  "registered": false,
-  "preregistration_complete": false,
+  "status": "REGISTERED",
+  "registered": true,
+  "preregistration_complete": true,
   "created": "2026-10-27",
   "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
   "task": "D184 track A: A2 design and registration draft (design only)",
   "author": "research-design worker (claude-opus-5-5) delegated by the Claude PM session",
   "execution": {
-    "enabled": false,
-    "reason": "Draft only. No TRAIN table fit, sealed-ledger read, synthetic world run, smoke, rehearsal, bootstrap or any other real-data computation is authorized by this file. Order: independent design review by a model different from the author (G-REV, PASS, blocker 0) -> fixed-commit code review by a different model (G-CODE; code reading and synthetic tests only, no real data) -> registration configs/EXP-OPE-RES-01.json (G-REG: status REGISTERED, registered true, execution enabled, every registration-time input pin filled; stage-output seals stay null until their stage completes) -> smoke A2-SM as the first registered step (TRAIN and synthetic only, cost and integrity only, no metric computed or read) -> A2-S0..A2-S4 on game days in the window after 13:30 KST on the Mac CPU. Review -> registration -> execution is Song D186 (docs/decisions.md:325); G-CODE and the smoke position are PM design-stage decisions (docs/pm/research/track-a/README.md). D186 is Song's run approval for that registered plan (G-SIGN)."
+    "enabled": true,
+    "reason": "Registered 2026-10-27 20:25 KST (G-REG by the PM, register_operes01.py). Every real-data command still refuses unless the runner gate passes: config digest and G-CODE / G-REG receipts in the external digest manifest, the code at HEAD equal to execution_source_commit, the config committed byte for byte, protected sources and pins verified; stages run in order A2-SM, A2-S0, A2-S1/A2-S2/A2-S3, A2-S4 under the D186 window, heavy lock and memory guards."
   },
   "registration": {
     "target": "configs/EXP-OPE-RES-01.json",
     "order": "G-REV design review (different model) PASS -> G-CODE fixed-commit code review (different model) PASS -> G-REG registration -> A2-SM smoke (first registered step) -> A2-S0..A2-S4 (D186: review -> registration -> execution; G-CODE and the smoke position are PM design-stage decisions)",
     "on_registration": "status REGISTERED, registered true, preregistration_complete true, execution.enabled true",
-    "registered_kst": null,
-    "review_reference": null,
-    "code_review_reference": null,
+    "registered_kst": "2026-10-27 20:25 KST",
+    "review_reference": "REVIEW-A2-ASTRA-001..004 (design review, gpt-6-astra; final PASS_WITH_NOTES, notes closed; design amendments 2026-10-27 incl. aligned input reuse)",
+    "code_review_reference": "CODE-REVIEW-A2-ASTRA-001..008 (gpt-6-astra) + CODE-REVIEW-A2-SONNET-009 PASS_WITH_NOTES at 4e34a5d7; closures 408fbc7e verified by PM tests; aligned-input diff 91e4be96 CODE-REVIEW-A2-SONNET-010-ALIGNED PASS_WITH_NOTES; closures + AppleDouble-safe sealing bee59509 CODE-REVIEW-A2-SONNET-011-CLOSURE PASS_WITH_NOTES (minor prose lag in 3 registered strings accepted by PM as documented note)",
     "input_pins_at_registration": [
       "registration_input_pins (every field, including r3_status and the smoke pins)",
       "seeds.roles values (derived in this draft; re-verified at G-CODE and pinned)"
@@ -1601,17 +1601,17 @@
     {
       "id": "G-REV",
       "what": "independent design review by a model different from the author (D182 gates 1 and 3: pre-execution registration, sealed/OPE boundary; docs/decisions.md:317); scope: arm definitions, synthetic matrix and acceptance, decision rule (incl. the D186 fixed values), blinding, data guards; PASS with blocker 0 before G-CODE",
-      "status": "open"
+      "status": "PASS_WITH_NOTES"
     },
     {
       "id": "G-CODE",
       "what": "after G-REV PASS: a model different from the author reviews the fixed commit (new modules, runner, synthetic tests on synthetic ledgers only) and the config to be registered with every registration-time input pin filled; code reading and synthetic tests only, no real-data execution; PASS with blocker 0; the reviewed commit becomes registration_input_pins.execution_source_commit",
-      "status": "open"
+      "status": "PASS_WITH_NOTES"
     },
     {
       "id": "G-REG",
       "what": "after G-CODE PASS: configs/EXP-OPE-RES-01.json registered from this draft with all judgment values, grids, seeds, registration_input_pins and the R3 status fixed; stage_output_seals stay null in the config; the config digest (registration.config_digest) is appended to the external digest manifest and must equal the digest of the G-CODE-reviewed config; status REGISTERED, registered=true and execution enabled only then",
-      "status": "open"
+      "status": "PASS"
     },
     {
       "id": "G-SMOKE",
@@ -1690,32 +1690,101 @@
     "pin_status": "fixed identities (copied from the 2026 preregistration, not re-verified here); registration-time inputs are in registration_input_pins, stage outputs in stage_output_seals"
   },
   "registration_input_pins": {
-    "s6_dr_a5_ledger_path": null,
-    "s6_dr_a5_ledger_sha256": null,
-    "s6_dr_a5_manifest_sha256": null,
+    "s6_dr_a5_ledger_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S6-dr-a5/ledger-dev-0.jsonl",
+    "s6_dr_a5_ledger_sha256": "4555989946a6f72fb593b3b8cdb905205b65338b007788b170206e04e208a4a0",
+    "s6_dr_a5_manifest_sha256": "0bf8981b5bcbefe33c30de614ad36c6a441e9be15f9bac16c0e4cf61fcadfd17",
     "train_raw_files_sha256": {
-      "statcast_2023.parquet": null,
-      "statcast_2024.parquet": null,
-      "statcast_2025.parquet": null
+      "statcast_2023.parquet": "46c354beae196ce2d501fe989c491725f2ecc47601f58d4b8b0234b982984730",
+      "statcast_2024.parquet": "3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274",
+      "statcast_2025.parquet": "4c785756d8901f8c46c70891954a4c54b8ad1c6909db67f4a000221691dc0249"
     },
-    "processed_frame_identity": null,
-    "processed_frame_aligned": null,
-    "policy_registration_chain": null,
-    "x2_world_predictor_identity": null,
-    "execution_source_commit": null,
-    "new_files_sha256": null,
+    "processed_frame_identity": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/processed/pitches.parquet",
+      "sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27"
+    },
+    "processed_frame_aligned": {
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01/inputs/pitches.split-aligned.parquet",
+      "sha256": "b10eaa519049a110862441a44ad70e11045fd5ef208220ce38b90413a348ea16",
+      "identity_manifest_path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01/inputs/pitches.split-aligned.identity.json",
+      "identity_manifest_sha256": "a567efbf161a12c9d8b9a7f9ab1fd81920c4acb16417aca42dcb6061d2f91c6f",
+      "source_sha256": "9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27"
+    },
+    "policy_registration_chain": [
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/ML-POLICY-MATERIALIZATION-v1.json",
+        "sha256": "869b2611c027e36573cd4d9a3e766f02bfda9c76a3485cb5e1870f68c7954469"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/ML-POLICY-MATERIALIZATION-v1.addendum-1-d127.json",
+        "sha256": "ccb6fb5f3857486d0692d002c7b54ffb70acb4261b564905a93d13827c992d90"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/ML-POLICY-MATERIALIZATION-v1.addendum-2-d127.json",
+        "sha256": "827d5e388a410738a6bc09299652b3cb28d9d9ddde85ce8c51e81928de9cdcad"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/ML-POLICY-MATERIALIZATION-v1.addendum-3-d127.json",
+        "sha256": "0c0965a31ba105a609074b20afd0614a323c215d834f0ecb7665747ba1559f1b"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/ML-POLICY-MATERIALIZATION-v1.addendum-4-d127.json",
+        "sha256": "6e3ba6210f37b83244db95b8ba589d2efe3706d579b7645ac2178d35af35487c"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/ML-POLICY-MATERIALIZATION-v1.addendum-5-d127.json",
+        "sha256": "49d3c59794ada271692cd0fb0ff30ff1a645d4cbba7ff43d509a35355d71a32c"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/ML-POLICY-MATERIALIZATION-v1.addendum-6-d127.json",
+        "sha256": "4cd224d35dc7696ff651c4b8e0f19fb59fa1a01a442408f619ce60b62dcd5e33"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/ML-POLICY-MATERIALIZATION-v1.addendum-7-d127.json",
+        "sha256": "7ca90595b5c6a8c44289b7f79d57735a177eef3ef3cad68166befaf8bc2dad94"
+      },
+      {
+        "path": "/Users/song/Projects/pitcheezy/configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json",
+        "sha256": "2c93dddaf9e6866724fdf0c7035054051c56693561ec4bc110ff8b249bddf39c"
+      }
+    ],
+    "x2_world_predictor_identity": {
+      "kind": "g0_single_member",
+      "seed": 0
+    },
+    "execution_source_commit": "bee59509732b856bc32ae38648bc04a7a82029a8",
+    "new_files_sha256": {
+      "experiments/pitchmdp/pitchmdp/ope_redesign_registry.py": "166edab99ef113a8f41feb63d9e25e8cfb9162ba79aa6f077f4084dbbf5b1a34",
+      "experiments/pitchmdp/pitchmdp/ope_surrogate.py": "2ab2d4ad3511bcd0ec38d55e40ffb1502b80805684a0ca2ebbedb62f155b04b1",
+      "experiments/pitchmdp/pitchmdp/ope_variants.py": "6bb9c6d7032718e0a1ca6ddfc60c40372c974386331bc3e5dad114be715ee992",
+      "experiments/pitchmdp/pitchmdp/ope_bootstrap.py": "394cdfb033b08b1c538bf113c99cd07c493310880e618653478b965bb32c8d5f",
+      "experiments/pitchmdp/pitchmdp/ope_diagnostics.py": "7d333173648500c8b552a1063125ae11cf3cb9997e4b5041836b0712e7ecc3d5",
+      "experiments/pitchmdp/pitchmdp/ope_decision.py": "cdf3e5c0df73f307a8f237d96bb20dcf1dde2278cf83323193559279baa30435",
+      "experiments/pitchmdp/pitchmdp/ope_sealed.py": "4874a1a71e18df01a4212e757bedae4e174f4652468048a67511afdcd0b1e8f7",
+      "experiments/pitchmdp/pitchmdp/ope_synthetic_a2.py": "63836da8a7f3b0d9901dc5cc6bee8e5d5085f4daac0d7e52bd561748e5037413",
+      "experiments/pitchmdp/scripts/run_ope_a2.py": "a3fc3c5d4c16b32a18253f2efefb4ecc07f8d01715d9b33115bb047053733ccc",
+      "experiments/pitchmdp/tests/ope_a2_fixtures.py": "d2ddb20f740d7511315a63d125367063739f20ce950a5cdca08127ad599c59a2",
+      "experiments/pitchmdp/tests/test_ope_a2_registry.py": "3ef7484ee9808b36591d2a988cb3f633eef979a731c8d0d90d0d9fb179c5db67",
+      "experiments/pitchmdp/tests/test_ope_a2_estimators.py": "366af5629ba5c427d758f4baae55dec4fcfb8850ca18864e1bb21a58104b129e",
+      "experiments/pitchmdp/tests/test_ope_a2_synthetic.py": "4fec896d2f7a55d69559024b7b252ad7613d16f4536a9347a8996967b3473ff4",
+      "experiments/pitchmdp/tests/test_ope_a2_runner.py": "fb864b7c99d318f43fe142bdbed893985c4d96a8514f61989a2a6a3e63de9524"
+    },
     "new_files_sha256_scope": "every new source file of design section 6 items 1-6 and the new tests; excludes the registration config configs/EXP-OPE-RES-01.json itself, whose identity is the config digest (registration.config_digest)",
-    "digest_manifest_path": null,
-    "output_root": null,
-    "r3_status": null,
+    "digest_manifest_path": "/Users/song/Projects/pitcheezy-pm-jobs/track-a/EXP-OPE-RES-01/digest-manifest.jsonl",
+    "output_root": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-OPE-RES-01",
+    "r3_status": "NOT_RUN:R3",
     "r3_status_allowed": [
       "ENABLED_DIAGNOSTIC_ONLY",
       "NOT_RUN:R3"
     ],
-    "a3_behavior_policy_sha256": null,
-    "a3_provenance_manifest_sha256": null,
-    "smoke_train_subset": null,
-    "smoke_tab_replications_per_cell": null,
+    "a3_behavior_policy_sha256": "NOT_APPLICABLE",
+    "a3_provenance_manifest_sha256": "NOT_APPLICABLE",
+    "smoke_train_subset": {
+      "game_dates": [
+        "2024-06-03",
+        "2024-06-09"
+      ]
+    },
+    "smoke_tab_replications_per_cell": 20,
     "rule": "all filled at G-REG from sources that exist before any registered stage runs (reviewed at G-CODE); a3 fields are the literal NOT_APPLICABLE when r3_status is NOT_RUN:R3; the smoke subset lies inside TRAIN; processed_frame_identity = {\"path\", \"sha256\"} (the identity source); processed_frame_aligned = {\"path\", \"sha256\", \"identity_manifest_path\", \"identity_manifest_sha256\", \"source_sha256\"} = the split-aligned, row-for-row identical copy prepared once for A3 EXP-BC-CAL-01 and reused (PM decision), with source_sha256 = processed_frame_identity.sha256; every TRAIN-only read decodes it after the runner verifies its bytes, its identity manifest (bytes, result PASS for exactly this copy, source = the identity pin) and its split-aligned footer; policy_registration_chain = [{\"path\", \"sha256\"}] (ML-POLICY config first, then its addenda); x2_world_predictor_identity = {\"kind\": \"g0_single_member\", \"seed\": int}"
   },
   "stage_output_seals": {
