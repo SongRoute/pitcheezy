@@ -50,6 +50,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 
 PROJECT = Path(__file__).resolve().parents[1]
 REPO = PROJECT.parents[1]
@@ -224,6 +225,15 @@ def _remove(path):
         pass
 
 
+def _discard(path):
+    """Remove a never-published staging file within the publication bound (review round 9 #8); a leftover is
+    removed by the next writer, and the original error is what the caller raises."""
+    try:
+        bounded_io(lambda: _remove(path), 'the staging removal')
+    except POSTCOMMIT_ERRORS:
+        pass
+
+
 class DigestManifest:
     """Append-only JSONL outside results/: each entry carries the previous entry's sha256 (hash chain); a
     published prefix is never changed. One writer at a time (review round 3 #3): an exclusive non-blocking
@@ -295,20 +305,22 @@ class DigestManifest:
             prev = entry['sha256']
         return out
 
+    def _read_raw(self):
+        return self.path.read_bytes() if self.path.exists() else b''
+
     def entries(self):
-        if not self.path.exists():
-            return []
-        return self._parse(self.path.read_bytes())
+        return self._parse(self._read_raw())
 
     def append(self, kind, payload, *, commit_check=None):
-        """Publish one entry: staging copy (verified chain + entry, bounded write and fsync), ``commit_check``
-        (the final guard check of a completion receipt), atomic rename (the commit point), bounded directory
-        sync. A guard interrupt during the publication is held; before the commit it aborts the publication
-        (through ``commit_check``), after the commit it is raised (or, for a completion receipt, reported after
-        the cleanup: the published receipt stands)."""
+        """Publish one entry: the manifest read and the staging copy (verified chain + entry; create, write and
+        fsync) in the bounded writer, ``commit_check`` (the final guard check of a completion receipt), the atomic
+        rename os.replace (THE commit point, run synchronously in this thread), bounded directory sync. A guard
+        interrupt during the publication is held; before the commit it aborts the publication (through
+        ``commit_check``) and the staging file is removed (bounded), after the commit it is raised (or, for a
+        completion receipt, reported after the cleanup: the published receipt stands)."""
         _require(kind in self.KINDS, f'unknown manifest entry kind {kind!r}')
         with self._locked(), deferred_interrupts() as guard:
-            raw = self.path.read_bytes() if self.path.exists() else b''
+            raw = bounded_io(self._read_raw, 'the manifest read')  # bounded like every step here (review round 9 #8)
             entries = self._parse(raw)  # verified under the lock: the new entry chains to the verified tail
             body = {'seq': len(entries), 'time_utc': datetime.now(timezone.utc).isoformat(), 'kind': kind,
                     'payload': payload, 'prev': entries[-1]['sha256'] if entries else None}
@@ -323,9 +335,11 @@ class DigestManifest:
                     commit_check()
                     if guard is not None:
                         guard.publication_boundary()  # an interrupt observed so far aborts the receipt
-                os.replace(staging, self.path)  # the commit point (atomic)
+                # THE COMMIT POINT: the atomic rename, run synchronously in this thread (never in a worker that could
+                # be abandoned and commit later), so the receipt is committed exactly when it returns
+                os.replace(staging, self.path)
             except BaseException:
-                _remove(staging)
+                _discard(staging)
                 raise
             self.committed.append(entry)
             # after the commit point nothing may abort the receipt's stage (review round 7 #1): every failure of the
@@ -664,7 +678,7 @@ class CommandGuard:
     def io_budget(self):
         """How long a bounded I/O step may still wait: the time left before the hard cap minus the bounded
         cleanup's own share (the watchdog join), so the command still ends before the cap."""
-        return self.remaining() - min(reg.WATCHDOG_JOIN_SECONDS + 0.5, self.cleanup / 2)
+        return self.remaining() - min(reg.WATCHDOG_JOIN_SECONDS + reg.IO_CLEANUP_SLACK_SECONDS, self.cleanup / 2)
 
     def check(self):
         """Work checkpoint: the memory guard, then the work deadline (hang guard minus the reserve)."""
@@ -895,7 +909,8 @@ def stage(output, stage_id, identity, *, manifest, final_check, start=None):
         if output.is_dir():
             stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
             record = {'stage': stage_id, 'status': 'ABORTED', 'class': kind, 'error_type': type(error).__name__,
-                      'error': str(error), 'during_publication': publishing, 'seconds': time.perf_counter() - t0,
+                      'error': str(error), 'traceback': traceback.format_exc()[-reg.TRACEBACK_TAIL_CHARS:],
+                      'during_publication': publishing, 'seconds': time.perf_counter() - t0,
                       'peak_rss_bytes': peak_rss_bytes(), 'citable': False, 'partial_outputs_preserved': True}
             dump(output / f'failure-{stamp}.json', record)
             dump(output / 'ABORTED.json', record)  # non-citable; no completion receipt was published
@@ -906,14 +921,15 @@ def stage(output, stage_id, identity, *, manifest, final_check, start=None):
 
 def _seal_committed(manifest, stage_id, output):
     """Whether this attempt's completion receipt is published: known without I/O once its atomic rename returned
-    in this process (review round 8 #1), else read from the manifest (False when unreadable)."""
+    in this process (review round 8 #1), else read from the manifest by the bounded writer (False when the read
+    fails or exceeds its bound: review round 9 #8)."""
     seal = lambda e: (e['kind'] == 'stage_seal' and e['payload'].get('stage') == stage_id
                       and e['payload'].get('output_dir') == str(output))
     if any(seal(e) for e in manifest.committed):
         return True
-    try:
-        return any(seal(e) for e in manifest.entries())
-    except Exception:  # noqa: BLE001 - an unreadable manifest is not proof of a commit
+    try:  # bounded (review round 9 #8)
+        return any(seal(e) for e in bounded_io(manifest.entries, 'the manifest read (seal check)'))
+    except POSTCOMMIT_ERRORS:  # an unreadable or slow manifest is not proof of a commit
         return False
 
 
@@ -2149,14 +2165,27 @@ def main(argv=None, env=None):
 
 def cli(argv=None, env=None):
     """The command-line entry (review round 8 #1): the final report runs in a bounded writer and the process
-    exits at once (os._exit: no unbounded flush at interpreter exit); a failure exits nonzero (3 for a guard
-    stop), and a committed seal stands."""
+    exits at once (os._exit: no unbounded flush at interpreter exit). An argparse exit passes its code through
+    (--help 0, a usage error 2; review round 9 #6); a failure exits nonzero (3 for a guard stop, else 1) with its
+    message and the tail of its traceback (review round 9 #7); a committed seal stands."""
     try:
         code, message = main(argv, env) or 0, None
+    except SystemExit as error:  # argparse (or an explicit exit): an int or None code passes through
+        code, message = exit_code(error.code)
     except BaseException as error:  # noqa: BLE001 - every failure exits nonzero
         code = 3 if isinstance(error, (HangGuardExceeded, MemoryGuardExceeded)) else 1
-        message = f'run_ope_a2: {type(error).__name__}: {error}'
+        message = (f'run_ope_a2: {type(error).__name__}: {error}\n'
+                   f'{traceback.format_exc()[-reg.TRACEBACK_TAIL_CHARS:]}').rstrip('\n')
     os._exit(finish(code, message))
+
+
+def exit_code(code):
+    """SystemExit semantics: None is 0, an int passes through, any other value is reported and exits 1."""
+    if code is None:
+        return 0, None
+    if isinstance(code, int):
+        return int(code), None
+    return 1, f'run_ope_a2: {code}'
 
 
 def finish(code, message=None):

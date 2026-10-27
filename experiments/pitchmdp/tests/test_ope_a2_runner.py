@@ -390,6 +390,8 @@ class PublicationTests(unittest.TestCase):
                          (True, True, 'infrastructure'))
         aborted = json.loads((out / 'ABORTED.json').read_text())
         self.assertEqual((aborted['status'], aborted['citable']), ('ABORTED', False))
+        self.assertIn(aborted['error_type'], aborted['traceback'])  # the traceback tail (review round 9 #7)
+        self.assertLessEqual(len(aborted['traceback']), reg.TRACEBACK_TAIL_CHARS)
         self.assertEqual(self.staging(), [])  # the staging artifacts are gone
         with self.assertRaisesRegex(IntegrityError, 'not sealed'):
             roa.require_seal(self.manifest, stage_id)
@@ -693,10 +695,11 @@ class PublicationTests(unittest.TestCase):
                         roa.dump(d / 'tab.json', {'cells': {}})
         self.assert_seal_stands(out)
 
-    def run_stalled(self, name, stall_patch):
+    def run_stalled(self, name, stall_patch, sync_stall=None):
         """Review round 8 #1 with a mocked clock: once the seal's rename returns only 0.6 s of the hang guard is
-        left (an I/O budget of about 0.2 s after the cleanup share); the directory sync fails and a post-commit
-        step stalls for 5 s. The command ends at once with HardDeadlineReached and the seal stands."""
+        left (an I/O budget of about 0.2 s after the cleanup share); the directory sync fails (or, with
+        ``sync_stall``, stalls itself) and a post-commit step stalls for 5 s. The command ends at once with
+        HardDeadlineReached and the seal stands."""
         self.manifest = roa.DigestManifest(self.tmp / f'digest-{name}.jsonl')
         env, hard = ClockEnv(), 30.0
         env.alarm = True
@@ -708,7 +711,9 @@ class PublicationTests(unittest.TestCase):
                 env.clock = hard - 0.6  # the mocked clock: the hard cap is near once the seal is committed
 
         def sync(path):
-            if env.clock > 0:
+            if env.clock > 0 and sync_stall is not None:
+                sync_stall.wait(5)
+            elif env.clock > 0:
                 raise OSError(5, 'synthetic EIO on the directory sync')
             return real_sync(path)
         out = self.tmp / f'A2-S1-{name}'
@@ -748,6 +753,29 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(names, ['OSError', 'HardDeadlineReached', 'HardDeadlineReached'])
         record = json.loads((out / 'postcommit_errors.jsonl').read_text())  # the record came first and was kept
         self.assertEqual((record['receipt_kind'], record['error_type']), ('stage_seal', 'OSError'))
+
+    def test_a_directory_sync_reaching_the_hard_deadline_ends_the_command_at_once(self):
+        stall = threading.Event()
+        try:
+            out, names = self.run_stalled('sync', nullcontext(), sync_stall=stall)
+        finally:
+            stall.set()
+        self.assertEqual(names, ['HardDeadlineReached', 'HardDeadlineReached'])  # no record or warning step after it
+        self.assertFalse((out / 'postcommit_errors.jsonl').exists())
+
+    def test_the_cleanup_share_and_report_bound_are_pinned(self):
+        # review round 9 #10: the numbers in the registry guard prose are the ones the runner uses
+        numbers = reg.IMPLEMENTATION['guards']['guard_numbers']
+        self.assertEqual((numbers['watchdog_join_seconds'], numbers['io_cleanup_slack_seconds'],
+                          numbers['report_timeout_seconds'], numbers['publication_io_timeout_seconds'],
+                          numbers['cleanup_reserve_seconds'], numbers['cleanup_reserve_share_of_H'],
+                          numbers['traceback_tail_chars']), (1.0, 0.5, 1.0, 10.0, 30.0, 0.025, 4000))
+        self.assertIn('min(1.5 s, cleanup reserve / 2)', reg.IMPLEMENTATION['guards']['publication'])
+        self.assertIn('REPORT_TIMEOUT_SECONDS 1 s', reg.IMPLEMENTATION['guards']['publication'])
+        for hard, share in ((30.0, 0.375), (4 * 3600.0, 1.5)):  # min(1.5 s, min(30 s, H / 40) / 2)
+            with self.subTest(hard=hard), mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': hard}):
+                guard = roa.CommandGuard('A2-S1', ClockEnv())
+                self.assertAlmostEqual(guard.remaining() - guard.io_budget(), share)
 
     def test_the_final_report_is_bounded_by_the_hard_cap(self):
         # review round 8 #1: the command-line entry's final report never outlives its bound or the hard cap
@@ -790,6 +818,74 @@ class PublicationTests(unittest.TestCase):
         failed = cli('check', '--config', str(self.tmp / 'missing.json'))
         self.assertEqual(failed.returncode, 1)
         self.assertIn('run_ope_a2: ', failed.stderr)
+        self.assertIn('Traceback (most recent call last)', failed.stderr)  # the bounded traceback tail (#7)
+        usage = cli('--help')  # review round 9 #6: argparse codes pass through
+        self.assertEqual(usage.returncode, 0, usage.stderr[-500:])
+        self.assertIn('usage:', usage.stdout)
+        bad = cli('no-such-command')
+        self.assertEqual(bad.returncode, 2)
+        self.assertIn('invalid choice', bad.stderr)
+
+    def test_the_command_line_exit_mapping(self):
+        # review round 9 #6/#7/#10: every outcome of main maps to one exit code; the report carries the traceback
+        class Exited(BaseException):
+            pass
+
+        def fake_exit(code):
+            raise Exited(code)
+
+        def boom():
+            raise ValueError('synthetic failure')
+        cases = [(lambda: 0, 0, None), (lambda: None, 0, None), (boom, 1, 'ValueError: synthetic failure'),
+                 (functools.partial(roa._require, False, 'synthetic integrity'), 1, 'IntegrityError'),
+                 (lambda: (_ for _ in ()).throw(roa.HangGuardExceeded('synthetic')), 3, 'HangGuardExceeded'),
+                 (lambda: (_ for _ in ()).throw(roa.MemoryGuardExceeded('synthetic')), 3, 'MemoryGuardExceeded'),
+                 (lambda: (_ for _ in ()).throw(roa.HardDeadlineReached('synthetic')), 3, 'HardDeadlineReached'),
+                 (lambda: sys.exit(0), 0, None), (lambda: sys.exit(None), 0, None), (lambda: sys.exit(2), 2, None),
+                 (lambda: sys.exit(5), 5, None), (lambda: sys.exit('synthetic message'), 1, 'synthetic message')]
+        for body, code, text in cases:
+            with self.subTest(code=code, text=text), mock.patch.object(roa, 'main', lambda argv, env: body()), \
+                    mock.patch.object(roa.os, '_exit', fake_exit), mock.patch.object(roa, 'LAST_GUARD', []), \
+                    redirect_stderr(io.StringIO()) as err:
+                with self.assertRaises(Exited) as exited:
+                    roa.cli([])
+                self.assertEqual(exited.exception.args[0], code)
+                if text is None:
+                    self.assertEqual(err.getvalue(), '')
+                else:
+                    self.assertIn(text, err.getvalue())
+                if code in (1, 3) and text != 'synthetic message':
+                    self.assertIn('Traceback (most recent call last)', err.getvalue())
+                    self.assertLessEqual(len(err.getvalue()), reg.TRACEBACK_TAIL_CHARS + 500)
+
+    def test_pre_commit_reads_and_removals_are_bounded(self):
+        # review round 9 #8: the manifest read of an append, the staging removal after a pre-commit failure and the
+        # seal check's fallback read all run in the bounded writer
+        stall = threading.Event()
+        self.manifest.append('config_digest', {'digest': 'a' * 64})
+        before = self.manifest.path.read_bytes()
+        try:
+            with mock.patch.object(reg, 'PUBLICATION_IO_TIMEOUT_SECONDS', 0.1):
+                t0 = time.monotonic()
+                with mock.patch.object(roa.DigestManifest, '_read_raw', lambda manifest: stall.wait(5)):
+                    with self.assertRaisesRegex(roa.HangGuardExceeded, 'the manifest read'):
+                        self.manifest.append('stage_seal', {'stage': 'A2-S1'})
+                    self.assertFalse(roa._seal_committed(self.manifest, 'A2-S1', self.tmp / 'A2-S1-x'))
+
+                def refuse():
+                    raise roa.MemoryGuardExceeded('synthetic: refused at the final check')
+                with mock.patch.object(roa, '_remove', lambda path: stall.wait(5)):
+                    with self.assertRaises(roa.MemoryGuardExceeded):  # the original error, not the slow removal
+                        self.manifest.append('stage_seal', {'stage': 'A2-S1'}, commit_check=refuse)
+                self.assertLess(time.monotonic() - t0, 1.5)
+        finally:
+            stall.set()
+        self.assertEqual(self.manifest.path.read_bytes(), before)  # nothing was published
+        self.assertEqual(len(self.staging()), 1)  # the never-published staging file of the abandoned removal
+        with self.manifest.writer():
+            pass
+        self.assertEqual(self.staging(), [])  # removed by the next writer
+
 
     def test_one_rule_for_consumption_status_retry_and_decision(self):
         out = self.tmp / 'A2-S3-a1'

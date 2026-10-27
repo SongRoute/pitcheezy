@@ -100,7 +100,10 @@ TIE_WINDOW = 0.02  # x H_star(baseline)
 TIE_REL_TOL = 1e-12  # |v - v_min| <= 1e-12 * max(1, |v_min|)
 INTEGRITY_TOL = 1e-12
 PROBABILITY_SUM_TOLERANCE = 1e-9  # |sum(p) - 1| of a probability vector (as policy_estimator._probabilities)
-DISPLAY_TOLERANCE = 1e-12  # a probability, share or divergence this close outside its bound is clipped for display
+# PM decision (review round 9 #9): the display tolerance is the protected estimator's sum tolerance, so a probability
+# vector that estimator accepts never costs an attempt at display; a probability, share or divergence at most this far
+# outside its bound is clipped for display, farther is an integrity failure
+DISPLAY_TOLERANCE = PROBABILITY_SUM_TOLERANCE
 MDE_MULTIPLIER = 2.801585  # z_0.975 + z_0.80
 MEI = 0.001
 B_V = 0.002734729542731599
@@ -360,6 +363,8 @@ WATCHDOG_JOIN_SECONDS = 1.0  # the cleanup never waits longer for the watchdog (
 MEMORY_SAMPLE_TIMEOUT_SECONDS = 2.0  # vm_stat bound; a timeout is a memory-guard stop (fail closed)
 PUBLICATION_IO_TIMEOUT_SECONDS = 10.0  # each bounded receipt write / fsync (review round 4 #2), never past the cap
 REPORT_TIMEOUT_SECONDS = 1.0  # the bounded final report of the command-line entry (never past the cap), then exit
+IO_CLEANUP_SLACK_SECONDS = 0.5  # cleanup share = min(WATCHDOG_JOIN_SECONDS + 0.5 s, cleanup reserve / 2)
+TRACEBACK_TAIL_CHARS = 4000  # the traceback tail kept in a failure report and in an ABORTED record
 MANIFEST_COMMAND_GUARD = 'A2-S4'  # manifest commands use the A2-S4 hang guard (3,600 s)
 KST = timezone(timedelta(hours=9))
 PROTECTION_WINDOW_KST = (dtime(6, 30), dtime(13, 30))
@@ -688,8 +693,11 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                   'minimum': 'fewer than 50 P PAs: the P statistics of every pair (SN and DR alike) are invalid; the '
                              'all-E0 endpoint intervals keep only the inherited E0 minimum',
                   'display_clipping': 'only public display values (probabilities, shares, KL) are clipped into their bounds '
-                                      'when they lie within the display tolerance outside them (farther outside is a '
-                                      'deterministic integrity failure of the display); internal arithmetic (the placebo '
+                                      'when they lie within the display tolerance outside them; the display tolerance is '
+                                      'the protected estimator\'s probability sum tolerance (1e-9: |sum(p) - 1| <= 1e-9 '
+                                      'accepted, per-value excursions <= 1e-9 clipped at display), so a vector that '
+                                      'estimator accepts never costs an attempt at display; farther outside is a '
+                                      'deterministic integrity failure of the display; internal arithmetic (the placebo '
                                       'tau tuning and every statistic) uses raw values and is never clipped'},
     'precision': {'degenerate_se': 'SE = 0 (or a zero half-width) is INCONCLUSIVE, never PASS, except the registered '
                                    'exact S-2 gamma_a invariant at zeta = 0',
@@ -761,27 +769,47 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                            'data acquisition under the common heavy lock, computation, hashing, every manifest write and '
                            'the seal; unblind and the manifest commands included); the hang timer stays armed through '
                            'the completion receipt and is disarmed by the bounded cleanup',
-               'publication': 'every receipt is published atomically: the verified manifest bytes plus the entry go to a '
+               'publication': 'every receipt is published atomically: the verified manifest bytes (read by the bounded '
+                              'writer) plus the entry go to a '
                               'staging file created exclusively under a name unique to the write (pid, counter, kind, '
                               'stage, attempt) by the bounded writer, whose create, write, fsync and close are bounded by '
                               '10 s together (it owns its descriptor and never renames, so a timed-out writer never '
                               'touches another receipt); for a completion receipt the final '
                               'guard check runs (memory sample, the cleanup reserve left, then no pending interrupt or '
-                              'watchdog violation, re-checked immediately before the rename), then an atomic rename '
-                              'commits it; guard interrupts are held as pending during a publication; any failure before '
-                              'the rename removes the staging file, publishes no seal and records a non-citable ABORTED '
-                              '(ABORTED.json and a stage_failure receipt); after the rename nothing aborts the stage: '
+                              'watchdog violation, re-checked immediately before the rename), then the atomic rename '
+                              '(os.replace) is the commit point: it runs synchronously in the command thread, never in '
+                              'a worker that could be abandoned, so the receipt is committed exactly when it returns '
+                              '(known in memory, no manifest read needed); guard interrupts are held as pending during a '
+                              'publication; any failure before '
+                              'the rename removes the staging file (bounded; a leftover is removed by the next writer), '
+                              'publishes no seal and records a non-citable ABORTED '
+                              '(ABORTED.json with the last 4000 characters of the traceback, and a stage_failure '
+                              'receipt); after the rename nothing aborts the stage: '
                               'a directory-sync error is persisted as an append-only record (postcommit_errors.jsonl in '
                               'the attempt directory, or beside the manifest; target selection and writing together in '
                               'the bounded writer), and any failure of that diagnostic is reported by a bounded stderr '
                               'write and the exit code after the cleanup; the committed receipt stands and a rerun stays '
                               'refused; every bounded publication step waits at most min(10 s, the time left before the '
-                              'hang guard minus the cleanup share); a post-commit step stopped by that hard deadline '
+                              'hard cap minus the cleanup share), the cleanup share being min(1.5 s, cleanup reserve / 2) '
+                              '= min(WATCHDOG_JOIN_SECONDS 1 s + 0.5 s, min(30 s, 2.5% of H) / 2); a post-commit step '
+                              'stopped by that hard deadline '
                               'ends the command at once with a nonzero exit (HardDeadlineReached, exit 3; no further '
                               'step runs and the committed receipt stands); the command-line entry writes its final '
-                              'report and flushes the standard streams within min(1 s, the time left before the hard '
-                              'cap), then exits at once (os._exit), nonzero on a failure or when that report could not '
-                              'complete',
+                              'report and flushes the standard streams within min(REPORT_TIMEOUT_SECONDS 1 s, the time '
+                              'left before the hard cap), then exits at once (os._exit): an argparse exit passes its '
+                              'code through (--help 0, a usage error 2), a failure exits 3 for a guard stop or else 1 '
+                              'with its message and the last 4000 characters of its traceback, and an incomplete '
+                              'report makes the exit nonzero',
+               'guard_numbers': {'publication_io_timeout_seconds': PUBLICATION_IO_TIMEOUT_SECONDS,
+                                 'watchdog_join_seconds': WATCHDOG_JOIN_SECONDS,
+                                 'io_cleanup_slack_seconds': IO_CLEANUP_SLACK_SECONDS,
+                                 'cleanup_reserve_seconds': CLEANUP_RESERVE_SECONDS, 'cleanup_reserve_share_of_H': 0.025,
+                                 'io_cleanup_share': 'min(watchdog_join_seconds + io_cleanup_slack_seconds, cleanup '
+                                                     'reserve / 2) = min(1.5 s, min(30 s, H / 40) / 2)',
+                                 'report_timeout_seconds': REPORT_TIMEOUT_SECONDS,
+                                 'memory_sample_timeout_seconds': MEMORY_SAMPLE_TIMEOUT_SECONDS,
+                                 'finalization_reserve_seconds': FINALIZATION_RESERVE_SECONDS,
+                                 'traceback_tail_chars': TRACEBACK_TAIL_CHARS},
                'attempt_rule': 'one rule for seal consumption, status, retry accounting and the terminal decision: an '
                                'attempt is aborted if a stage_failure names it or its directory carries ABORTED.json or '
                                'ABORTED_UNRECORDED.json, committed if its seal was published, reconciled, or unfinished; '

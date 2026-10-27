@@ -681,19 +681,49 @@ class PointSetTests(unittest.TestCase):
 
 
 class RoundingTests(unittest.TestCase):
-    """Review round 7 #2: valid probability rounding never aborts public sealing (registered tolerances)."""
+    """Review round 7 #2 and round 9 #9 (PM decision): valid probability rounding never aborts public sealing; the
+    display tolerance is the protected estimator's sum tolerance."""
     def test_the_tolerances_are_pinned_and_match_the_registered_estimator(self):
         from pitchmdp import ope_diagnostics as od
-        self.assertEqual((reg.PROBABILITY_SUM_TOLERANCE, reg.DISPLAY_TOLERANCE), (1e-9, 1e-12))
+        self.assertEqual((reg.PROBABILITY_SUM_TOLERANCE, reg.DISPLAY_TOLERANCE), (1e-9, 1e-9))
         self.assertEqual(reg.IMPLEMENTATION['numeric_rules']['probability_sum_tolerance'], 1e-9)
-        self.assertEqual(reg.IMPLEMENTATION['numeric_rules']['display_tolerance'], 1e-12)
+        self.assertEqual(reg.IMPLEMENTATION['numeric_rules']['display_tolerance'], 1e-9)
         est._probabilities([0.5, 0.5 + 0.9e-9], 2, 'p')  # the protected estimator accepts the same sum tolerance
         with self.assertRaises(IntegrityError):
             est._probabilities([0.5, 0.5 + 2e-9], 2, 'p')
-        self.assertEqual(od.clip_display([1 + 5e-13, -5e-13, 0.25], upper=1.0).tolist(), [1.0, 0.0, 0.25])
-        for bad in (1 + 1e-9, -1e-9):
+        self.assertEqual(od.clip_display([1 + 9e-10, -9e-10, 0.25], upper=1.0).tolist(), [1.0, 0.0, 0.25])
+        for bad in (1 + 2e-9, -2e-9):
             with self.subTest(bad), self.assertRaisesRegex(IntegrityError, 'display tolerance'):
                 od.clip_display([bad], upper=1.0)
+
+    def test_an_accepted_float64_vector_never_costs_an_attempt_at_display(self):
+        # PM decision (review round 9 #9): float64-normalised laws the protected estimator accepts, including
+        # near-degenerate ones, laws equal up to float64 rounding and the reviewer's within-tolerance vector, always
+        # display
+        from pitchmdp import ope_diagnostics as od
+        rng = np.random.default_rng(91)
+        full = [rng.dirichlet(np.full(18, alpha)) for alpha in (0.5, 1.0, 10.0) for _ in range(40)]
+        full += [np.full(18, 1 / 18), np.r_[1 - 17e-12, np.full(17, 1e-12)]]
+        full = [law / law.sum() for law in full]  # float64 normalisation: sums within a few ulps of one
+        degenerate = [np.eye(18)[3], np.r_[1.0, 1e-300, np.zeros(16)] / (1.0 + 1e-300)]
+        near = [law * (1 + 1e-15 * rng.uniform(-1, 1, 18)) for law in full]
+        near = [law / law.sum() for law in near]  # the same laws up to float64 rounding
+        for law in full + degenerate + near:
+            est._probabilities(law, 18, 'law')  # accepted by the protected estimator
+
+        def displays(cand, ref):
+            t = _Table(types.SimpleNamespace(mask=np.ones((len(ref), 18), dtype=bool), logging=np.array(ref),
+                                             cand=np.array(cand), ref=np.array(ref),
+                                             a=np.array([int(np.argmax(r)) for r in ref])))
+            return reg.validate_public({'R5': {'a': od.agreement(t), 'c': {'logging_mass': od.logging_mass(t)}}})
+        self.assertTrue(displays(full + degenerate, full + degenerate))  # KL exactly zero
+        self.assertTrue(displays(near, full))  # KL within float64 rounding of zero, of either sign
+        self.assertTrue(displays(full[1:] + full[:1], full))  # distinct full-support laws
+        within = np.array([[0.50000000025, 0.50000000025]])  # |sum - 1| = 5e-10 <= 1e-9, accepted
+        est._probabilities(within[0], 2, 'reference')
+        kl = od._kl(np.array([[0.5, 0.5]]), within, np.ones((1, 2), dtype=bool))
+        self.assertLess(float(kl[0]), 0)  # about -5e-10 raw, within the display tolerance
+        self.assertEqual(od.clip_display(kl, name='KL divergence').tolist(), [0.0])
 
     def test_a_fully_supported_vector_summing_just_above_one(self):
         from pitchmdp import ope_diagnostics as od
@@ -750,7 +780,8 @@ class DisplaySeparationTests(unittest.TestCase):
             self.assertEqual(run(table(within)), (public, sealed))  # no display rule at all: the same ratio
         self.assertEqual(run(table(within)), (public, sealed))  # the display rule in force: unchanged
         raw = od._kl
-        with mock.patch.object(od, '_kl', lambda p, q_, m: od.clip_display(raw(p, q_, m), name='KL divergence')):
+        with mock.patch.object(od, '_kl', lambda p, q_, m: od.clip_display(raw(p, q_, m), name='KL divergence')), \
+                mock.patch.object(od, 'DISPLAY_TOLERANCE', 1e-12):
             with self.assertRaisesRegex(IntegrityError, 'display tolerance'):  # the round-7 placement rejected it
                 run(table(within))
         normalised, _ = run(table([0.5, 0.5]))  # and the vector acts as its normalised self up to rounding

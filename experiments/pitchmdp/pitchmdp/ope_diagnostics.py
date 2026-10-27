@@ -95,8 +95,9 @@ class DecisionTable:
 
 
 def clip_display(values, lower=0.0, upper=None, name='probability'):
-    """Review round 7 #2: a probability, share or divergence computed with rounding is clipped into its bounds when
-    it lies within the registered display tolerance outside them; farther outside is an integrity failure."""
+    """Review round 7 #2 and round 9 #9 (PM decision): a public probability, share or divergence computed with
+    rounding is clipped into its bounds when it lies within the registered display tolerance (the protected
+    estimator's probability sum tolerance) outside them; farther outside is an integrity failure."""
     v = np.asarray(values, dtype=np.float64)
     _require(bool(np.all(v >= lower - DISPLAY_TOLERANCE)) and (upper is None or bool(np.all(v <= upper + DISPLAY_TOLERANCE))),
              f'{name} outside its bounds beyond the registered display tolerance')
