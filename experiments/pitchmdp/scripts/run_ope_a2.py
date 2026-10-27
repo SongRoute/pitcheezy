@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import fcntl
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -137,11 +138,19 @@ def bounded_io(fn, what):
     return box.get('value')
 
 
-def _write_synced(path, data):
-    with open(path, 'wb') as stream:
-        stream.write(data)
-        stream.flush()
-        os.fsync(stream.fileno())
+_STAGING_COUNTER = itertools.count()
+
+
+def _write_fd(fd, data):
+    """Write and fsync an exclusively created staging file; the worker owns and closes ``fd`` (the caller never
+    does), so an abandoned worker only ever touches its own inode (review round 5 #2)."""
+    try:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(fd, view):]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _fsync_dir(path):
@@ -176,6 +185,7 @@ class DigestManifest:
                  'the digest manifest must live outside the repository results/')
         self.lock_path = self.path.with_name(self.path.name + '.lock')
         self._fd = None
+        self.durability_errors = []  # post-commit directory-sync errors (the committed receipts stand)
 
     def _open_locked(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -247,18 +257,24 @@ class DigestManifest:
                     'payload': payload, 'prev': entries[-1]['sha256'] if entries else None}
             entry = {**body, 'sha256': hashlib.sha256(_canonical(body).encode()).hexdigest()}
             data = raw + (_canonical(entry) + '\n').encode()
-            staging = self.path.with_name(f'{self.path.name}.staging-{os.getpid()}')
+            attempt = Path(str(payload.get('output_dir') or '-')).name
+            staging = self.path.with_name(f'{self.path.name}.staging-{os.getpid()}-{next(_STAGING_COUNTER):06d}-{kind}-'
+                                          f'{payload.get("stage") or "-"}-{attempt}')
+            fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)  # unique per write, exclusive
             try:
-                bounded_io(lambda: _write_synced(staging, data), 'the receipt staging write')
+                bounded_io(lambda: _write_fd(fd, data), 'the receipt staging write')
                 if commit_check is not None:
                     commit_check()
+                    if guard is not None:
+                        guard.publication_boundary()  # an interrupt observed so far aborts the receipt
                 os.replace(staging, self.path)  # the commit point (atomic)
             except BaseException:
                 _remove(staging)
                 raise
             try:
                 bounded_io(lambda: _fsync_dir(self.path.parent), 'the receipt directory sync')
-            except HangGuardExceeded as error:  # durability after the commit: reported, the receipt stands
+            except (OSError, HangGuardExceeded) as error:  # durability after the commit: recorded, the receipt stands
+                self.durability_errors.append(error)
                 if guard is not None:
                     guard.late = guard.late or error
         if guard is not None:
@@ -302,14 +318,59 @@ def require_reviews(manifest, config, code_commit):
     return receipts
 
 
+ABORT_MARKERS = ('ABORTED.json', 'ABORTED_UNRECORDED.json')
+
+
+def attempts(entries, stage_id):
+    """The one authoritative attempt rule (review round 5 #3), used by seal consumption, status, retry accounting
+    and the terminal decision. An attempt (an attempt_start, or a legacy receipt without one) is 'aborted' if a
+    stage_failure names it or its directory carries an abort marker, else 'committed' if its stage_seal was
+    published, else 'reconciled' if a reconciliation names it, else 'unfinished'. Receipts are matched to their
+    attempt by output_dir (a reconciliation also by its attempt_start_seq), else to the latest earlier start."""
+    out, by_dir = [], {}
+    keys = {'stage_seal': 'seal', 'stage_failure': 'failure', 'attempt_reconciliation': 'reconciled'}
+    for e in entries:
+        payload = e['payload']
+        if payload.get('stage') != stage_id:
+            continue
+        if e['kind'] == 'attempt_start':
+            attempt = {'start': e, 'output_dir': payload.get('output_dir'), 'seal': None, 'failure': None, 'reconciled': None}
+            out.append(attempt)
+            by_dir[payload.get('output_dir')] = attempt
+        elif e['kind'] in keys:
+            target = by_dir.get(payload.get('output_dir')) if payload.get('output_dir') is not None else None
+            if target is None and payload.get('attempt_start_seq') is not None:
+                target = next((a for a in out if a['start'] is not None and a['start']['seq'] == payload['attempt_start_seq']),
+                              None)
+            if target is None and out and payload.get('output_dir') is None:
+                target = out[-1]
+            if target is None:  # a receipt without a start (legacy): an attempt of its own
+                target = {'start': None, 'output_dir': payload.get('output_dir'), 'seal': None, 'failure': None,
+                          'reconciled': None}
+                out.append(target)
+                by_dir[payload.get('output_dir')] = target
+            if target[keys[e['kind']]] is None:
+                target[keys[e['kind']]] = e
+    for attempt in out:
+        marked = attempt['output_dir'] is not None and any((Path(attempt['output_dir']) / m).exists() for m in ABORT_MARKERS)
+        attempt['state'] = ('aborted' if attempt['failure'] is not None or (attempt['seal'] is not None and marked)
+                            else 'committed' if attempt['seal'] is not None
+                            else 'reconciled' if attempt['reconciled'] is not None else 'unfinished')
+    return out
+
+
 def require_seal(manifest, stage_id):
-    """The latest seal of an upstream stage, re-verified against its output manifest bytes."""
-    entry = manifest.latest('stage_seal', stage=stage_id)
-    _require(entry is not None, f'upstream stage {stage_id} is not sealed in the digest manifest')
+    """The latest committed attempt of an upstream stage (the authoritative rule), re-verified against its output
+    manifest bytes; an aborted attempt is never usable."""
+    entries = manifest.entries()
+    committed = [a for a in attempts(entries, stage_id) if a['state'] == 'committed']
+    if not committed:
+        aborted = [a for a in attempts(entries, stage_id) if a['state'] == 'aborted' and a['seal'] is not None]
+        _require(not aborted, f'{stage_id} attempt {aborted[-1]["output_dir"] if aborted else ""} was aborted; its '
+                              f'outputs are not citable')
+    _require(committed, f'upstream stage {stage_id} is not sealed in the digest manifest')
+    entry = max((a['seal'] for a in committed), key=lambda e: e['seq'])
     out = Path(entry['payload']['output_dir'])
-    _require(not (out / 'ABORTED.json').exists() and not any(
-        e['kind'] == 'stage_failure' and e['payload'].get('output_dir') == str(out) for e in manifest.entries()),
-        f'{stage_id} attempt {out} was aborted; its outputs are not citable')
     _require(reg.file_sha256(out / 'manifest.json') == entry['payload']['manifest_sha256'],
              f'{stage_id} output manifest differs from its seal (deterministic integrity)')
     listed = json.loads((out / 'manifest.json').read_text())['artifact_sha256']
@@ -318,61 +379,52 @@ def require_seal(manifest, stage_id):
     return out, entry
 
 
-def _stage_entries(entries, stage_id, kinds):
-    return [e for e in entries if e['kind'] in kinds and e['payload'].get('stage') == stage_id]
-
-
 def unfinished_start(manifest, stage_id):
-    """The latest attempt start of a stage with no failure, seal or reconciliation after it, or None."""
-    entries = manifest.entries()
-    starts = _stage_entries(entries, stage_id, ('attempt_start',))
-    if not starts:
-        return None
-    after = [e for e in _stage_entries(entries, stage_id, ('stage_failure', 'stage_seal', 'attempt_reconciliation'))
-             if e['seq'] > starts[-1]['seq']]
-    return None if after else starts[-1]
+    """The attempt start of a stage's latest attempt if it ended without any receipt, or None."""
+    real = [a for a in attempts(manifest.entries(), stage_id) if a['start'] is not None]
+    return real[-1]['start'] if real and real[-1]['state'] == 'unfinished' else None
 
 
 def attempt_gate(manifest, stage_id):
-    """Registered attempts (design 6, PM decision review #5): a sealed stage never reruns; the attempt-start
-    receipt precedes the stage directory, so a start counts even when the process dies; a third start
-    refuses; a retry after a deterministic-integrity failure needs a bug-fix addendum after it, after a
-    start without any receipt a recorded reconciliation."""
+    """Registered attempts (design 6, PM decision review #5), by the authoritative rule: a committed stage never
+    reruns; the attempt-start receipt precedes the stage directory, so a start counts even when the process dies;
+    a third start refuses; a retry after a deterministic-integrity failure needs a bug-fix addendum after it, after
+    a start without any receipt a recorded reconciliation (ABORTED_UNRECORDED)."""
     entries = manifest.entries()
-    _require(not _stage_entries(entries, stage_id, ('stage_seal',)),
-             f'{stage_id} is already sealed; a registered stage is not rerun')
-    starts = _stage_entries(entries, stage_id, ('attempt_start',))
-    _require(len(starts) < 2, f'{stage_id}: two attempts already started; a third start refuses')
-    if starts:
-        after = [e for e in entries if e['seq'] > starts[-1]['seq'] and e['payload'].get('stage') == stage_id]
-        failure = next((e for e in after if e['kind'] == 'stage_failure'), None)
-        if failure is None:
-            _require(any(e['kind'] == 'attempt_reconciliation' for e in after),
-                     f'{stage_id}: the previous attempt ended without a receipt (it counts); record a reconciliation '
-                     f'before the next start')
-        elif failure['payload']['class'] == 'deterministic_integrity':
-            _require(any(e['kind'] == 'bugfix_addendum' and e['seq'] > failure['seq'] for e in after),
+    every = attempts(entries, stage_id)
+    _require(not any(a['state'] == 'committed' for a in every), f'{stage_id} is already sealed; a registered stage is not rerun')
+    real = [a for a in every if a['start'] is not None]
+    _require(len(real) < 2, f'{stage_id}: two attempts already started; a third start refuses')
+    if real:
+        last = real[-1]
+        if last['state'] == 'unfinished':
+            _require(False, f'{stage_id}: the previous attempt ended without a receipt (it counts); record a '
+                            f'reconciliation before the next start')
+        if last['state'] == 'aborted' and last['failure'] is not None \
+                and last['failure']['payload']['class'] == 'deterministic_integrity':
+            _require(any(e['kind'] == 'bugfix_addendum' and e['seq'] > last['failure']['seq']
+                         and e['payload'].get('stage') == stage_id for e in entries),
                      f'{stage_id}: a retry after an integrity failure needs a recorded bug-fix addendum')
-    return {'starts': len(starts)}
+    return {'starts': len(real)}
 
 
 def stage_status(manifest, stages=('A2-S0', 'A2-S1', 'A2-S2', 'A2-S3')):
-    """Per stage: 'sealed'; 'FAILED_INTEGRITY' (both attempts used, the last ended in a deterministic
-    integrity failure); 'DECISION_NEEDED' (both attempts used otherwise: infrastructure, error or no
-    receipt); 'incomplete' (an attempt remains)."""
+    """Per stage, by the authoritative rule: 'sealed' (a committed attempt); 'FAILED_INTEGRITY' (both attempts
+    used, the last aborted by a deterministic integrity failure); 'DECISION_NEEDED' (both attempts used
+    otherwise); 'incomplete' (an attempt remains)."""
     entries = manifest.entries()
     out = {}
     for stage_id in stages:
-        if _stage_entries(entries, stage_id, ('stage_seal',)):
+        every = attempts(entries, stage_id)
+        real = [a for a in every if a['start'] is not None]
+        if any(a['state'] == 'committed' for a in every):
             out[stage_id] = 'sealed'
-            continue
-        starts = _stage_entries(entries, stage_id, ('attempt_start',))
-        if len(starts) < 2:
+        elif len(real) < 2:
             out[stage_id] = 'incomplete'
-            continue
-        failures = [e for e in _stage_entries(entries, stage_id, ('stage_failure',)) if e['seq'] > starts[-1]['seq']]
-        integrity = bool(failures) and failures[0]['payload']['class'] == 'deterministic_integrity'
-        out[stage_id] = 'FAILED_INTEGRITY' if integrity else 'DECISION_NEEDED'
+        else:
+            last = real[-1]
+            integrity = last['failure'] is not None and last['failure']['payload']['class'] == 'deterministic_integrity'
+            out[stage_id] = 'FAILED_INTEGRITY' if integrity else 'DECISION_NEEDED'
     return out
 
 
@@ -529,15 +581,24 @@ class CommandGuard:
             raise HangGuardExceeded('registered hang guard minus the finalization reserve reached (work checkpoint)')
 
     def final_check(self):
-        """The final guard check of a completion receipt (between its staging write and its atomic rename): no
-        interrupt pending, the memory guard, and enough of the hard cap left for the rename and the bounded
-        cleanup (the cleanup reserve). Any failure aborts the publication: no receipt is published."""
-        if self.pending is not None:
-            error, self.pending = self.pending, None
-            raise error
+        """The final guard check of a completion receipt (between its staging write and its atomic rename): the
+        memory guard, enough of the hard cap left for the rename and the bounded cleanup (the cleanup reserve),
+        and, after the sample, no interrupt pending (review round 5 #1). Any failure aborts the publication."""
         self.memory()
         if self.elapsed() > self.seal_seconds:
             raise HangGuardExceeded('not enough of the registered hang guard is left to seal and clean up (final check)')
+        self.publication_boundary()
+
+    def publication_boundary(self):
+        """Immediately before the atomic rename of a completion receipt: a pending interrupt, a watchdog violation
+        or a guard signal not yet delivered aborts it (no seal is published with a pending interrupt)."""
+        if self.pending is not None:
+            error, self.pending = self.pending, None
+            raise error
+        if self.violation is not None:
+            raise self.violation
+        if threading.current_thread() is threading.main_thread() and signal.sigpending() & set(GUARD_SIGNALS):
+            raise HangGuardExceeded('a guard interrupt is pending at the publication boundary')
 
     def _on_alarm(self, signum, frame):
         error = HangGuardExceeded('registered hang guard exceeded; partial outputs preserved, not citable')
@@ -1411,6 +1472,9 @@ def build_candidate(rpv, policy, inputs, blocks, *, seed, tag, out, budget):
     frame = inputs['frame']
     first = pd.to_datetime(frame.game_date.iloc[np.concatenate([p for _, p in blocks])]).min()
     _require(first >= pd.Timestamp(as_of), 'evaluation blocks start before the style as-of date')
+    from pitchmdp import policy_requests as preq
+    check = preq.snapshot_rolling_mismatches(frame.loc[frame.split.eq('dev')], snapshot, as_of)  # as snapshot_for
+    _require(check['mismatches'] == 0, f'snapshot differs from rolling priors on the as-of date: {check}')
     contexts, style = rpv.pa_contexts(inputs['store'], blocks, snapshot, as_of)
     bc_path, bc_sha = rpv.registered_path(policy, 'bc')
     support_path, support_sha = rpv.registered_path(policy, 'support')
@@ -1419,7 +1483,8 @@ def build_candidate(rpv, policy, inputs, blocks, *, seed, tag, out, budget):
                                      member_loader=inputs['member_loader'], classes=ident['classes'],
                                      we_contract_sha256=ident['we_contract_sha256'])
     _require(components.sha256 == pre['components_sha256'], 'bound components differ from the S2-certified identity')
-    provenance = {'style_snapshot_sha256': content, 'as_of_exclusive': as_of, 'style_report': style}
+    provenance = {'style_snapshot_sha256': content, 'as_of_exclusive': as_of, 'rolling_check': check,
+                  'style_report': style}
     runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, out / f'ledger-s5x-{tag}.jsonl',
                                 components=components, budget=RowBudget(int(budget), seed_count=5),
                                 tau=freeze['selected_tau'], samples=setting['samples'], pitch_cap=setting['pitch_cap'],
@@ -1913,9 +1978,13 @@ def _manifest_mutation(args, config, manifest):
         _require(args.stage in ATTEMPT_STAGES and bool(args.note), '--stage and --note are required')
         start = unfinished_start(manifest, args.stage)
         _require(start is not None, f'{args.stage} has no attempt start without a receipt; nothing to reconcile')
+        out = Path(start['payload']['output_dir'])
+        if out.is_dir():  # a stage that ended without its receipt is non-citable (review round 5 #3)
+            dump(out / 'ABORTED_UNRECORDED.json', {'stage': args.stage, 'status': 'ABORTED_UNRECORDED', 'citable': False,
+                                                   'attempt_start_seq': start['seq'], 'note': args.note})
         print(json.dumps(manifest.append('attempt_reconciliation', {
             'stage': args.stage, 'attempt_start_seq': start['seq'], 'output_dir': start['payload']['output_dir'],
-            'note': args.note, 'counts_as_attempt': True}), indent=1))
+            'status': 'ABORTED_UNRECORDED', 'note': args.note, 'counts_as_attempt': True}), indent=1))
         return 0
     _require(args.stage in ATTEMPT_STAGES and args.failing_test and args.review,
              '--stage, --failing-test and --review required')

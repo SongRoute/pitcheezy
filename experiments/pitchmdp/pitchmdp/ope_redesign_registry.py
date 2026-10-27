@@ -754,11 +754,20 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                            'the seal; unblind and the manifest commands included); the hang timer stays armed through '
                            'the completion receipt and is disarmed by the bounded cleanup',
                'publication': 'every receipt is published atomically: the verified manifest bytes plus the entry go to a '
-                              'staging file (write and fsync bounded by 10 s), the final guard check runs (completion '
-                              'receipt: memory, no pending interrupt, the cleanup reserve left), then an atomic rename '
+                              'staging file created exclusively under a name unique to the write (pid, counter, kind, '
+                              'stage, attempt; the bounded writer owns its descriptor, so a timed-out writer never touches '
+                              'another receipt), the write and fsync bounded by 10 s; for a completion receipt the final '
+                              'guard check runs (memory sample, the cleanup reserve left, then no pending interrupt or '
+                              'watchdog violation, re-checked immediately before the rename), then an atomic rename '
                               'commits it; guard interrupts are held as pending during a publication; any failure before '
                               'the rename removes the staging file, publishes no seal and records a non-citable ABORTED '
-                              '(ABORTED.json and a stage_failure receipt), which downstream readers refuse',
+                              '(ABORTED.json and a stage_failure receipt); an error after the rename (directory sync) is '
+                              'recorded and reported, the committed receipt stands',
+               'attempt_rule': 'one rule for seal consumption, status, retry accounting and the terminal decision: an '
+                               'attempt is aborted if a stage_failure names it or its directory carries ABORTED.json or '
+                               'ABORTED_UNRECORDED.json, committed if its seal was published, reconciled, or unfinished; '
+                               'an unfinished attempt (a crash before the rename) is reconciled into ABORTED_UNRECORDED '
+                               '(non-citable marker in its directory) so a new attempt can proceed',
                'memory_measurement': 'an unavailable, unparsable or timed-out free-memory measurement is a memory-guard '
                                      'stop (fail closed), never treated as enough memory',
                'memory_watchdog': 'a watchdog thread checks the RSS cap and free memory every 1 s through every code path '
