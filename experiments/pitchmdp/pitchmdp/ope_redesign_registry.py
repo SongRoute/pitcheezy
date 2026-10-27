@@ -358,7 +358,8 @@ CLEANUP_RESERVE_SECONDS = 30.0  # min(30 s, 2.5%): the completion receipt and th
 WATCHDOG_INTERVAL_SECONDS = 1.0
 WATCHDOG_JOIN_SECONDS = 1.0  # the cleanup never waits longer for the watchdog (a stuck sampler cannot signal any more)
 MEMORY_SAMPLE_TIMEOUT_SECONDS = 2.0  # vm_stat bound; a timeout is a memory-guard stop (fail closed)
-PUBLICATION_IO_TIMEOUT_SECONDS = 10.0  # each bounded receipt write / fsync (review round 4 #2)
+PUBLICATION_IO_TIMEOUT_SECONDS = 10.0  # each bounded receipt write / fsync (review round 4 #2), never past the cap
+REPORT_TIMEOUT_SECONDS = 1.0  # the bounded final report of the command-line entry (never past the cap), then exit
 MANIFEST_COMMAND_GUARD = 'A2-S4'  # manifest commands use the A2-S4 hang guard (3,600 s)
 KST = timezone(timedelta(hours=9))
 PROTECTION_WINDOW_KST = (dtime(6, 30), dtime(13, 30))
@@ -685,7 +686,11 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                                     'algebraically when the transformed slopes are equal (bounds coincide exactly, no '
                                     'tolerance); the baseline keeps the registered policy_estimator formula',
                   'minimum': 'fewer than 50 P PAs: the P statistics of every pair (SN and DR alike) are invalid; the '
-                             'all-E0 endpoint intervals keep only the inherited E0 minimum'},
+                             'all-E0 endpoint intervals keep only the inherited E0 minimum',
+                  'display_clipping': 'only public display values (probabilities, shares, KL) are clipped into their bounds '
+                                      'when they lie within the display tolerance outside them (farther outside is a '
+                                      'deterministic integrity failure of the display); internal arithmetic (the placebo '
+                                      'tau tuning and every statistic) uses raw values and is never clipped'},
     'precision': {'degenerate_se': 'SE = 0 (or a zero half-width) is INCONCLUSIVE, never PASS, except the registered '
                                    'exact S-2 gamma_a invariant at zeta = 0',
                   'condition_ii': 'H(pair) <= 0.7 H(baseline) evaluated directly; a zero baseline or pair half-width '
@@ -768,8 +773,15 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                               '(ABORTED.json and a stage_failure receipt); after the rename nothing aborts the stage: '
                               'a directory-sync error is persisted as an append-only record (postcommit_errors.jsonl in '
                               'the attempt directory, or beside the manifest; target selection and writing together in '
-                              'the bounded writer), and any failure of that diagnostic is reported (stderr, exit code '
-                              'after the cleanup); the committed receipt stands and a rerun stays refused',
+                              'the bounded writer), and any failure of that diagnostic is reported by a bounded stderr '
+                              'write and the exit code after the cleanup; the committed receipt stands and a rerun stays '
+                              'refused; every bounded publication step waits at most min(10 s, the time left before the '
+                              'hang guard minus the cleanup share); a post-commit step stopped by that hard deadline '
+                              'ends the command at once with a nonzero exit (HardDeadlineReached, exit 3; no further '
+                              'step runs and the committed receipt stands); the command-line entry writes its final '
+                              'report and flushes the standard streams within min(1 s, the time left before the hard '
+                              'cap), then exits at once (os._exit), nonzero on a failure or when that report could not '
+                              'complete',
                'attempt_rule': 'one rule for seal consumption, status, retry accounting and the terminal decision: an '
                                'attempt is aborted if a stage_failure names it or its directory carries ABORTED.json or '
                                'ABORTED_UNRECORDED.json, committed if its seal was published, reconciled, or unfinished; '

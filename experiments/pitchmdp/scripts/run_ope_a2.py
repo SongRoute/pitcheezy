@@ -6,7 +6,9 @@ KST and never enter 06:30-13:30 KST), the SIGALRM hang guard and the RSS / free-
 preflight, data acquisition, computation, hashing and sealing; the hang timer stays armed through the
 completion receipt (stage seal), which is staged, checked by the final guard check and committed by an
 atomic rename (a failure before the rename publishes nothing and records a non-citable ABORTED); the
-bounded cleanup then disarms the guards. Preflight refuses (fail
+bounded cleanup then disarms the guards. Every post-commit step and the command-line entry's final report
+are bounded by the time left before the hard cap; reaching it ends the command at once with a nonzero exit,
+the committed seal standing. Preflight refuses (fail
 closed) unless configs/EXP-OPE-RES-01.json passes the registry check with status REGISTERED, execution
 enabled, every pin filled, the registration references recorded and the gates passed; the external
 append-only digest manifest (outside results/) holds the registered config digest and the G-CODE
@@ -93,6 +95,11 @@ class MemoryGuardExceeded(BaseException):
     """Infrastructure stop: RSS cap or free-memory guard (the recorder keeps priority)."""
 
 
+class HardDeadlineReached(HangGuardExceeded):
+    """A bounded step stopped by the time left before the armed hang guard (not by its own publication bound): the
+    command ends at once with a nonzero exit, a committed receipt still standing (review round 8 #1)."""
+
+
 # ---------------------------------------------------------------- digest manifest (external, append-only)
 def _canonical(obj):
     return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
@@ -100,6 +107,7 @@ def _canonical(obj):
 
 GUARD_SIGNALS = (signal.SIGALRM, signal.SIGUSR1)
 ACTIVE_GUARDS = []  # the armed CommandGuard of this process (at most one)
+LAST_GUARD = []  # the latest command guard of this process: its hard cap also bounds the final report (cli)
 
 
 @contextmanager
@@ -117,9 +125,20 @@ def deferred_interrupts():
         guard.deferring -= 1
 
 
-def bounded_io(fn, what):
+def bounded_io(fn, what, bound=None):
     """Blocking publication I/O in a helper thread (guard signals blocked there), waited for at most the
-    registered publication bound: a slow write or fsync aborts the publication instead of stalling it."""
+    registered publication bound and never past the armed hang guard (review round 8 #1): a slow create, write,
+    fsync, diagnostic or report aborts or skips the step instead of stalling the command. A step stopped by the
+    time left before the hard cap raises HardDeadlineReached (the command then ends at once); one stopped by its
+    own publication bound raises HangGuardExceeded."""
+    bound = reg.PUBLICATION_IO_TIMEOUT_SECONDS if bound is None else bound
+    guard = ACTIVE_GUARDS[-1] if ACTIVE_GUARDS else None
+    capped = False  # whether the hard deadline, not the publication bound, limits the wait
+    if guard is not None:
+        budget = guard.io_budget()
+        if budget <= 0:
+            raise HardDeadlineReached(f'{what}: no time left before the registered hang guard')
+        capped, bound = budget < bound, min(bound, budget)
     box = {}
 
     def run():
@@ -130,9 +149,11 @@ def bounded_io(fn, what):
             box['error'] = error
     worker = threading.Thread(target=run, name='a2-publication-io', daemon=True)
     worker.start()
-    worker.join(reg.PUBLICATION_IO_TIMEOUT_SECONDS)
+    worker.join(bound)
     if worker.is_alive():
-        raise HangGuardExceeded(f'{what} exceeded its registered bound ({reg.PUBLICATION_IO_TIMEOUT_SECONDS} s)')
+        if capped:
+            raise HardDeadlineReached(f'{what} reached the time left before the registered hang guard ({bound:.3g} s)')
+        raise HangGuardExceeded(f'{what} exceeded its bound ({bound:.3g} s)')
     if 'error' in box:
         raise box['error']
     return box.get('value')
@@ -169,6 +190,11 @@ def _write_postcommit_record(manifest_path, entry, error):
               'output_dir': output_dir, 'error_type': type(error).__name__, 'error': str(error),
               'effect': 'the receipt was committed by its atomic rename; the directory sync after it failed'}
     _append_synced(target, (_canonical(record) + '\n').encode())
+
+
+def _emit(text):
+    sys.stderr.write(text + '\n')
+    sys.stderr.flush()
 
 
 def _append_synced(path, line):
@@ -216,6 +242,7 @@ class DigestManifest:
         self.lock_path = self.path.with_name(self.path.name + '.lock')
         self._fd = None
         self.durability_errors = []  # post-commit directory-sync errors (the committed receipts stand)
+        self.committed = []  # entries whose atomic rename returned in this process (known without any I/O)
 
     def _open_locked(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -300,6 +327,7 @@ class DigestManifest:
             except BaseException:
                 _remove(staging)
                 raise
+            self.committed.append(entry)
             # after the commit point nothing may abort the receipt's stage (review round 7 #1): every failure of the
             # directory sync or of its diagnostic is caught, persisted if possible and reported
             try:
@@ -314,21 +342,30 @@ class DigestManifest:
         return entry
 
     def _postcommit_error(self, entry, error, guard):
-        """A failure after a committed rename: kept, reported (stderr now; the exit code after the cleanup) and
-        persisted as an append-only record by the bounded writer, which also selects the target (review round 7
-        #1). Never raises: the committed receipt stands whatever the diagnostic does."""
+        """A failure after a committed rename: kept, persisted as an append-only record by the bounded writer
+        (which also selects the target) and reported by a bounded stderr write, the exit code following after
+        the cleanup (review round 7 #1); the committed receipt stands whatever the diagnostic does. Each step is
+        bounded by the publication bound and by the time left before the hard cap; once that hard deadline is
+        reached no further step runs and HardDeadlineReached ends the command at once, nonzero, the receipt still
+        standing (review round 8 #1). Nothing else is raised."""
         self.durability_errors.append(error)
         if guard is not None:
             guard.late = guard.late or error
-        try:
-            print(f'warning: post-commit {type(error).__name__} after {entry["kind"]} seq {entry["seq"]}: {error} '
-                  f'(the committed receipt stands)', file=sys.stderr)
-        except Exception:  # noqa: BLE001 - reporting must not raise
-            pass
-        try:
-            bounded_io(lambda: _write_postcommit_record(self.path, entry, error), 'the post-commit error record')
-        except POSTCOMMIT_ERRORS as failure:
-            self.durability_errors.append(failure)
+        deadline = error if isinstance(error, HardDeadlineReached) else None
+        message = (f'warning: post-commit {type(error).__name__} after {entry["kind"]} seq {entry["seq"]}: {error} '
+                   f'(the committed receipt stands)')
+        for step, what in ((lambda: _write_postcommit_record(self.path, entry, error), 'the post-commit error record'),
+                           (lambda: _emit(message), 'the post-commit warning')):
+            if deadline is not None:
+                break
+            try:
+                bounded_io(step, what)
+            except POSTCOMMIT_ERRORS as failure:
+                self.durability_errors.append(failure)
+                deadline = failure if isinstance(failure, HardDeadlineReached) else None
+        if deadline is not None:
+            raise HardDeadlineReached(f'{deadline}; after {entry["kind"]} seq {entry["seq"]} the command ends at once '
+                                      f'(the committed receipt stands)') from deadline
 
     def latest(self, kind, **match):
         found = [e for e in self.entries() if e['kind'] == kind
@@ -620,6 +657,15 @@ class CommandGuard:
     def elapsed(self):
         return self.env.monotonic() - self.t0
 
+    def remaining(self):
+        """The time left before the hard cap."""
+        return self.seconds - self.elapsed()
+
+    def io_budget(self):
+        """How long a bounded I/O step may still wait: the time left before the hard cap minus the bounded
+        cleanup's own share (the watchdog join), so the command still ends before the cap."""
+        return self.remaining() - min(reg.WATCHDOG_JOIN_SECONDS + 0.5, self.cleanup / 2)
+
     def check(self):
         """Work checkpoint: the memory guard, then the work deadline (hang guard minus the reserve)."""
         self.memory()
@@ -747,6 +793,7 @@ class CommandGuard:
 @contextmanager
 def command_guard(stage_id, env, entered=None):
     guard = CommandGuard(stage_id, env, entered)
+    LAST_GUARD[:] = [guard]
     guard.arm()
     late = None
     try:
@@ -858,10 +905,14 @@ def stage(output, stage_id, identity, *, manifest, final_check, start=None):
 
 
 def _seal_committed(manifest, stage_id, output):
-    """Whether this attempt's completion receipt is already in the published manifest (False when unreadable)."""
+    """Whether this attempt's completion receipt is published: known without I/O once its atomic rename returned
+    in this process (review round 8 #1), else read from the manifest (False when unreadable)."""
+    seal = lambda e: (e['kind'] == 'stage_seal' and e['payload'].get('stage') == stage_id
+                      and e['payload'].get('output_dir') == str(output))
+    if any(seal(e) for e in manifest.committed):
+        return True
     try:
-        return any(e['kind'] == 'stage_seal' and e['payload'].get('stage') == stage_id
-                   and e['payload'].get('output_dir') == str(output) for e in manifest.entries())
+        return any(seal(e) for e in manifest.entries())
     except Exception:  # noqa: BLE001 - an unreadable manifest is not proof of a commit
         return False
 
@@ -2096,5 +2147,45 @@ def main(argv=None, env=None):
     return run_command(args, env, entered)
 
 
+def cli(argv=None, env=None):
+    """The command-line entry (review round 8 #1): the final report runs in a bounded writer and the process
+    exits at once (os._exit: no unbounded flush at interpreter exit); a failure exits nonzero (3 for a guard
+    stop), and a committed seal stands."""
+    try:
+        code, message = main(argv, env) or 0, None
+    except BaseException as error:  # noqa: BLE001 - every failure exits nonzero
+        code = 3 if isinstance(error, (HangGuardExceeded, MemoryGuardExceeded)) else 1
+        message = f'run_ope_a2: {type(error).__name__}: {error}'
+    os._exit(finish(code, message))
+
+
+def finish(code, message=None):
+    """The bounded final report: the failure message (if any) and the flush of the standard streams, waited
+    for at most min(REPORT_TIMEOUT_SECONDS, the time left before the latest command's hard cap). Returns the
+    exit code: nonzero when the report could not complete (3 when the time ran out, 1 on an error)."""
+    box = {}
+
+    def report():
+        signal.pthread_sigmask(signal.SIG_BLOCK, GUARD_SIGNALS)
+        try:
+            if message is not None:
+                sys.stderr.write(message + '\n')
+            for stream in (sys.stdout, sys.stderr):
+                stream.flush()
+            box['done'] = True
+        except BaseException as error:  # noqa: BLE001 - reported through the exit code
+            box['error'] = error
+    bound = reg.REPORT_TIMEOUT_SECONDS
+    if LAST_GUARD:
+        bound = min(bound, LAST_GUARD[-1].remaining())
+    if bound > 0:
+        worker = threading.Thread(target=report, name='a2-report', daemon=True)
+        worker.start()
+        worker.join(bound)
+    if box.get('done'):
+        return code
+    return code or (1 if 'error' in box else 3)
+
+
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(cli())

@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -691,6 +692,104 @@ class PublicationTests(unittest.TestCase):
                     with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=guard.final_check) as d:
                         roa.dump(d / 'tab.json', {'cells': {}})
         self.assert_seal_stands(out)
+
+    def run_stalled(self, name, stall_patch):
+        """Review round 8 #1 with a mocked clock: once the seal's rename returns only 0.6 s of the hang guard is
+        left (an I/O budget of about 0.2 s after the cleanup share); the directory sync fails and a post-commit
+        step stalls for 5 s. The command ends at once with HardDeadlineReached and the seal stands."""
+        self.manifest = roa.DigestManifest(self.tmp / f'digest-{name}.jsonl')
+        env, hard = ClockEnv(), 30.0
+        env.alarm = True
+        real_replace, real_sync = roa.os.replace, roa._fsync_dir
+
+        def replace(src, dst):
+            real_replace(src, dst)
+            if Path(dst) == self.manifest.path and 'stage_seal' in Path(dst).read_text().splitlines()[-1]:
+                env.clock = hard - 0.6  # the mocked clock: the hard cap is near once the seal is committed
+
+        def sync(path):
+            if env.clock > 0:
+                raise OSError(5, 'synthetic EIO on the directory sync')
+            return real_sync(path)
+        out = self.tmp / f'A2-S1-{name}'
+        t0 = time.monotonic()
+        with mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': hard}), mock.patch.object(roa.os, 'replace', replace), \
+                mock.patch.object(roa, '_fsync_dir', sync), mock.patch.object(roa, 'LAST_GUARD', []), stall_patch:
+            with self.assertRaisesRegex(roa.HardDeadlineReached, 'the committed receipt stands'):
+                with roa.command_guard('A2-S1', env) as guard:
+                    with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest,
+                                   final_check=guard.final_check) as d:
+                        roa.dump(d / 'tab.json', {'cells': {}})
+            self.assertAlmostEqual(roa.LAST_GUARD[-1].remaining(), 0.6)
+        self.assertLess(time.monotonic() - t0, 2.0)  # not held by the stalled step (5 s)
+        self.assert_seal_stands(out)
+        return out, [type(e).__name__ for e in self.manifest.durability_errors]
+
+    def test_a_postcommit_record_stalled_at_the_hard_deadline_ends_the_command_at_once(self):
+        stall = threading.Event()
+        try:
+            _, names = self.run_stalled('record', mock.patch.object(roa, '_write_postcommit_record',
+                                                                    lambda *args: stall.wait(5)))
+        finally:
+            stall.set()
+        self.assertEqual(names, ['OSError', 'HardDeadlineReached', 'HardDeadlineReached'])  # no step after it
+
+    def test_a_postcommit_warning_stalled_at_the_hard_deadline_ends_the_command_at_once(self):
+        stall = threading.Event()
+
+        class SlowStderr(io.StringIO):
+            def write(self, text):
+                stall.wait(5)
+                return super().write(text)
+        try:
+            out, names = self.run_stalled('warning', mock.patch.object(sys, 'stderr', SlowStderr()))
+        finally:
+            stall.set()
+        self.assertEqual(names, ['OSError', 'HardDeadlineReached', 'HardDeadlineReached'])
+        record = json.loads((out / 'postcommit_errors.jsonl').read_text())  # the record came first and was kept
+        self.assertEqual((record['receipt_kind'], record['error_type']), ('stage_seal', 'OSError'))
+
+    def test_the_final_report_is_bounded_by_the_hard_cap(self):
+        # review round 8 #1: the command-line entry's final report never outlives its bound or the hard cap
+        stall = threading.Event()
+
+        class SlowStderr(io.StringIO):
+            def write(self, text):
+                stall.wait(5)
+                return super().write(text)
+
+        class BrokenStderr(io.StringIO):
+            def write(self, text):
+                raise BrokenPipeError(32, 'synthetic broken pipe')
+        try:
+            with mock.patch.object(sys, 'stderr', SlowStderr()), mock.patch.object(reg, 'REPORT_TIMEOUT_SECONDS', 0.2), \
+                    mock.patch.object(roa, 'LAST_GUARD', []):
+                t0 = time.monotonic()
+                self.assertEqual(roa.finish(1, 'run_ope_a2: synthetic failure'), 1)  # a failure stays nonzero
+                self.assertEqual(roa.finish(0, 'a stalled report'), 3)  # the report could not complete in time
+                roa.LAST_GUARD.append(types.SimpleNamespace(remaining=lambda: 0.0))
+                self.assertEqual(roa.finish(0), 3)  # no time left before the hard cap: nonzero at once
+                self.assertLess(time.monotonic() - t0, 1.0)
+        finally:
+            stall.set()
+        with mock.patch.object(roa, 'LAST_GUARD', []):
+            with mock.patch.object(sys, 'stderr', BrokenStderr()):
+                self.assertEqual(roa.finish(0, 'unwritable'), 1)
+            with redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(roa.finish(0, 'done'), 0)
+        self.assertEqual(err.getvalue(), 'done\n')
+
+    def test_the_command_line_entry_flushes_its_report_and_exits(self):
+        def cli(*argv):
+            code = 'import sys; sys.path[:0] = sys.argv[1:3]; import run_ope_a2 as r; r.cli(sys.argv[3:])'
+            return subprocess.run([sys.executable, '-c', code, str(HERE.parent / 'scripts'), str(HERE.parent), *argv],
+                                  capture_output=True, text=True, timeout=300)
+        ok = cli('check')  # os._exit after the bounded flush: the output is delivered
+        self.assertEqual(ok.returncode, 0, ok.stderr[-500:])
+        self.assertEqual(json.loads(ok.stdout)['status'], 'DRAFT_UNREGISTERED')
+        failed = cli('check', '--config', str(self.tmp / 'missing.json'))
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn('run_ope_a2: ', failed.stderr)
 
     def test_one_rule_for_consumption_status_retry_and_decision(self):
         out = self.tmp / 'A2-S3-a1'

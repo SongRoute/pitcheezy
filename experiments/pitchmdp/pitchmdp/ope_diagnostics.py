@@ -105,9 +105,10 @@ def clip_display(values, lower=0.0, upper=None, name='probability'):
 
 
 def _kl(p, q, mask):
+    """Raw KL rows (internal arithmetic, e.g. the placebo tau tuning, uses them unclipped: review round 8 note 3)."""
     with np.errstate(divide='ignore', invalid='ignore'):
         terms = np.where(mask & (p > 0), p * np.log(p / q), 0.)
-    return clip_display(terms.sum(axis=1), name='KL divergence')  # >= 0; rounding can give -1e-17
+    return terms.sum(axis=1)
 
 
 def _quantiles(values):
@@ -125,7 +126,7 @@ def agreement(table):
     rows = np.arange(len(table))
     top_c, top_r = table.cand.argmax(axis=1), table.ref.argmax(axis=1)
     tv = 0.5 * np.abs(table.cand - table.ref).sum(axis=1)
-    kl = _kl(table.cand, table.ref, table.mask)
+    kl = clip_display(_kl(table.cand, table.ref, table.mask), name='KL divergence')  # public display only
     dist = lambda v: {k: _quantiles(v)[k] for k in ('mean', 'q50', 'q90', 'q99')}
     unit = lambda v: float(clip_display(v, upper=1.0))
     return {'decisions': len(table),

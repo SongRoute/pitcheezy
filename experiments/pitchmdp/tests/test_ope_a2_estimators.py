@@ -713,6 +713,51 @@ class RoundingTests(unittest.TestCase):
         self.assertGreaterEqual(float(kl[0]), 0.0)
 
 
+class DisplaySeparationTests(unittest.TestCase):
+    """Review round 8 note 3: display clipping never touches internal arithmetic (placebo tau tuning)."""
+    def test_the_placebo_tuning_uses_raw_values(self):
+        from pitchmdp import ope_diagnostics as od
+        ref = np.array([[0.50000000025, 0.50000000025]])  # within the estimator's 1e-9 sum tolerance
+        mask = np.ones((1, 2), dtype=bool)
+        est._probabilities(ref[0], 2, 'reference')
+        self.assertLess(float(od._kl(od.placebo_policy(ref, mask, np.array([[0.1, -0.1]]), 1e4), ref, mask)[0]), 0)
+        tau = od.tune_tau(ref, mask, np.array([[0.1, -0.1]]))  # the raw high-bracket KL (about -4.5e-10) is accepted
+        self.assertTrue(math.isfinite(tau) and tau > 0)
+
+    def test_a_vector_within_tolerance_leaves_the_placebo_ratio_unchanged(self):
+        from pitchmdp import ope_diagnostics as od
+        rng = np.random.default_rng(29)
+        n = 60
+        q, a, ends = rng.uniform(-1, 1, (n, 2)), rng.integers(0, 2, n), rng.uniform(0, 1, n)
+
+        def table(reference):
+            return od.DecisionTable([{'pa': i, 'pitcher': f'p{i % 6}', 'balls': i % 4, 'strikes': i % 3,
+                                      'mask': [True, True], 'logging': [0.5, 0.5], 'candidate': [0.5, 0.5],
+                                      'reference': list(reference), 'q': list(q[i]), 'a': int(a[i]),
+                                      'positivity': False} for i in range(n)])
+        resampler = ob.Resampler([f'g{i % 12}' for i in range(n)], unit='game', draws=50, seed=7, minimum_clusters=10)
+        run = lambda t: od.placebo_check([[i] for i in range(n)], t, {'game': (resampler, np.arange(n))},
+                                         rewards=ends, placebos=6)
+        within = [0.50000000025, 0.50000000025]  # the reviewer's vector: |sum - 1| = 5e-10, within 1e-9
+        est._probabilities(np.array(within), 2, 'reference')  # accepted by the protected estimator
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError('display clipping reached the placebo computation')
+        with mock.patch.object(od, 'clip_display', forbidden):
+            public, sealed = run(table(within))
+        self.assertIsNotNone(public['sd_ratio']['game'])
+        with mock.patch.object(od, 'clip_display', lambda values, *args, **kwargs: np.asarray(values, dtype=np.float64)):
+            self.assertEqual(run(table(within)), (public, sealed))  # no display rule at all: the same ratio
+        self.assertEqual(run(table(within)), (public, sealed))  # the display rule in force: unchanged
+        raw = od._kl
+        with mock.patch.object(od, '_kl', lambda p, q_, m: od.clip_display(raw(p, q_, m), name='KL divergence')):
+            with self.assertRaisesRegex(IntegrityError, 'display tolerance'):  # the round-7 placement rejected it
+                run(table(within))
+        normalised, _ = run(table([0.5, 0.5]))  # and the vector acts as its normalised self up to rounding
+        self.assertAlmostEqual(public['sd_ratio']['game'], normalised['sd_ratio']['game'],
+                               delta=1e-6 * abs(normalised['sd_ratio']['game']))
+
+
 class _Table:
     """A one-row decision table (the attributes od.logging_mass reads)."""
     def __init__(self, ns):
