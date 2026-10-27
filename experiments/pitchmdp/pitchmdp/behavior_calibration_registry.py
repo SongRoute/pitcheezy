@@ -81,7 +81,11 @@ CAPS = {'stage_hang_guard_seconds': 7200, 'total_wall_cap_seconds': 14400, 'b2_f
 assert CAPS['abort_rss_bytes'] == 10 * 1024 ** 3
 PROTECTION_WINDOW_KST = {'start': '06:30', 'end': '13:30', 'timezone': 'Asia/Seoul'}
 
-S6 = {'expected_runtime_sha256': 'c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c',
+# S6 ledger identities: the header's pins.candidate.sha256 must be the sealed policy identity below
+# (D125 final identity c13cc989...); the header's runtime_sha256 is the PolicyRuntime's own identity
+# (policy_runtime.py:291 self.sha256, also in every decision row, :489), pinned FROM THE HEADER at
+# registration (data.s6_ledger.runtime_sha256.value) - the two are different hashes.
+S6 = {'expected_candidate_sha256': 'c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c',
       'r1b_atol': 1e-12, 'r2_rtol': 1e-9,
       'expected_ess': {'candidate': {'pa': 9120.218896471748, 'game': 144.2828223791589},
                        'reference': {'pa': 9725.694335061527, 'game': 144.16008032451504}},
@@ -158,12 +162,14 @@ REGISTRATION_PIN_SCHEMA = (('registration.registered_kst', 'kst_datetime'),
                            ('code.branch', 'text'), ('code.commit', 'sha1'), ('code.config_sha256', 'sha256'),
                            ('code.runner_sha256', 'sha256'), ('data.s6_ledger.ledger_sha256', 'sha256'),
                            ('data.s6_ledger.manifest_sha256', 'sha256'),
-                           ('data.s6_ledger.runtime_sha256.value', 'expected_runtime'),
+                           ('data.s6_ledger.runtime_sha256.value', 'sha256'),
+                           ('data.s6_ledger.candidate_sha256', 'expected_candidate'),
                            ('data.a3_input.rechunked_sha256', 'sha256'),
                            ('data.a3_input.identity_manifest_sha256', 'sha256'))
 DRAFT_PIN_FIELDS = ['code.branch', 'code.commit', 'code.config_sha256', 'code.runner_sha256',
                     'data.s6_ledger.ledger_sha256', 'data.s6_ledger.manifest_sha256',
-                    'data.s6_ledger.runtime_sha256.value', 'data.a3_input.rechunked_sha256',
+                    'data.s6_ledger.runtime_sha256.value', 'data.s6_ledger.candidate_sha256',
+                    'data.a3_input.rechunked_sha256',
                     'data.a3_input.identity_manifest_sha256']
 REVIEWED_CODE_SCOPE = ('experiments', 'src', 'scripts', 'pyproject.toml')
 DEPENDENCY_GROUP = 'research-a3'
@@ -308,7 +314,7 @@ PINS = {
     'ope_weight_diagnostics.integrity_gates.R2_rtol': S6['r2_rtol'],
     'ope_weight_diagnostics.large_weight_threshold.value': THRESHOLDS['large_weight'],
     'ope_weight_diagnostics.mei': THRESHOLDS['mei'],
-    'data.s6_ledger.runtime_sha256.expected_value': S6['expected_runtime_sha256'],
+    'data.s6_ledger.expected_candidate_sha256': S6['expected_candidate_sha256'],
     'data.s6_ledger.allowed_header_fields': S6['allowed_header_fields'],
     'data.s6_ledger.allowed_fields': S6['allowed_fields'],
     'cost_budget.hang_guard_seconds_per_stage.value': CAPS['stage_hang_guard_seconds'],
@@ -396,12 +402,13 @@ def _kst_datetime(value):
 PIN_FORMATS = {'text': lambda v: isinstance(v, str) and bool(v.strip()),
                'sha1': lambda v: _hex(v, 40), 'sha256': lambda v: _hex(v, 64),
                'kst_datetime': _kst_datetime,
-               'expected_runtime': lambda v: v == S6['expected_runtime_sha256']}
+               'expected_candidate': lambda v: v == S6['expected_candidate_sha256']}
 
 
 def registration_pin_errors(config):
-    """Every pin of the immutable ``REGISTRATION_PIN_SCHEMA`` present and well formed; the S6 runtime
-    identity equal to the expected D125 identity (c13cc989...). Returns the list of problems."""
+    """Every pin of the immutable ``REGISTRATION_PIN_SCHEMA`` present and well formed: the S6 candidate
+    identity (header pins.candidate.sha256) equal to the sealed D125 identity c13cc989..., the S6
+    runtime identity (header runtime_sha256) a sha256 pinned from the header. Returns the problems."""
     errors = []
     for dotted, kind in REGISTRATION_PIN_SCHEMA:
         value = _field(config, dotted)

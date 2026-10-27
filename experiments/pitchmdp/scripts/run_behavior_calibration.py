@@ -3,7 +3,8 @@
 Fail closed. Every real-data stage, the smoke included, is refused unless the config passes the
 registered contract (``behavior_calibration_registry.config_check``) AND ``registration_gate``:
 status REGISTERED with every flag true, every pin of the registry's immutable registration schema
-present and well formed (the S6 runtime identity equal to c13cc989...), the config content sha256
+present and well formed (the S6 header's pins.candidate.sha256 equal to the sealed c13cc989..., the
+header runtime identity pinned from the header), the config content sha256
 and the runner sha256 pinned, no change since the pinned commit inside the reviewed scope
 (experiments/, src/, scripts/, pyproject.toml), the config committed at HEAD, one OpenMP runtime and
 the pinned research-a3 dependency. The gate is re-run before EVERY stage and again by the loader
@@ -1288,15 +1289,20 @@ def stage_s6_integrity(run, out):
     header, decisions, record = read_ledger(ledger['path'], manifest_path=ledger['manifest_path'],
                                             ledger_sha256=ledger['ledger_sha256'],
                                             manifest_sha256=ledger['manifest_sha256'],
-                                            runtime_sha256=ledger['runtime_sha256'])
+                                            runtime_sha256=ledger['runtime_sha256'],
+                                            candidate_sha256=ledger['candidate_sha256'])
     pas = by_pa(decisions)
     e0 = e0_from_ledger(pas, inputs.b0.bc, inputs.support, inputs.hands)
     gates = config['ope_weight_diagnostics']['integrity_gates']
     r1b = r1b_logging(decisions, inputs.b0.vector)
     r2 = r2_reproduction(pas, e0, gates['R2']['expected'], gates['R2_rtol'])
     s6 = config['data']['s6_ledger']
+    # identities: the header's pins.candidate.sha256 is the sealed policy identity (registered expectation)
+    # and every decision row carries the PolicyRuntime identity pinned from the header at registration
     checks = {'S6_identity': record['sha256_before'] == record['sha256_after']
-              and ledger['runtime_sha256'] == s6['runtime_sha256']['expected_value'],
+              and record['header_runtime_sha256'] == ledger['runtime_sha256'] == s6['runtime_sha256']['value']
+              and record['header_candidate_sha256'] == ledger['candidate_sha256'] == s6['candidate_sha256']
+              == s6['expected_candidate_sha256'],
               'R1': inputs.identity['b0']['file_sha256'] == config['data']['b0_artifact']['file_sha256'],
               'R1b': r1b['rows'] > 0 and r1b['max_abs_diff'] <= gates['R1b_atol'], 'R2': r2['pass']}
     out.json('s6_integrity.json', {'ledger': record, 'pas': len(pas), 'e0_pas': sum(v[0] for v in e0.values()),
@@ -1732,7 +1738,7 @@ class RealSource:
         s6 = config['data']['s6_ledger']
         ledger = {'path': s6['path'], 'manifest_path': str(Path(s6['path']).parent / 'manifest.json'),
                   'ledger_sha256': s6['ledger_sha256'], 'manifest_sha256': s6['manifest_sha256'],
-                  'runtime_sha256': s6['runtime_sha256']['value']}
+                  'runtime_sha256': s6['runtime_sha256']['value'], 'candidate_sha256': s6['candidate_sha256']}
         identity = {'processed_sha256': pins['processed_sha256'], 'processed_provenance': identity_record['provenance'],
                     'g0_bundle_sha256': pins['g0_bundle_sha256'], 'g0_auxiliary_sha256': files['p4_auxiliary']['sha256'],
                     'b0': {'file_sha256': b0.artifact.file_sha256, 'bc_sha256': b0.artifact.sha256,

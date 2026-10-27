@@ -29,7 +29,7 @@ def test_registration_state_of_explicit_fixtures(config):
     assert reg.registration_state(as_registered(config)) == 'REGISTERED'
     for mutate in (lambda c: c.update(execute=False), lambda c: c.update(status='DRAFT_UNREGISTERED'),
                    lambda c: c['code'].update(commit=None),
-                   lambda c: c['data']['s6_ledger']['runtime_sha256'].update(value='0' * 64)):
+                   lambda c: c['data']['s6_ledger'].update(candidate_sha256='0' * 64)):
         changed = as_registered(config)
         mutate(changed)
         with pytest.raises(reg.RegistrationError):
@@ -46,7 +46,7 @@ def test_registration_pin_schema_is_immutable_and_format_checked(config):
     assert {d for d, _ in reg.REGISTRATION_PIN_SCHEMA} >= set(reg.DRAFT_PIN_FIELDS) | {
         'registration.registered_kst', 'registration.design_review_reference', 'registration.code_review_reference'}
     wrong = {'kst_datetime': '2026-10-28T05:00:00+00:00', 'text': '   ', 'sha1': 'g' * 40, 'sha256': 'A' * 64,
-             'expected_runtime': '0' * 64}
+             'expected_candidate': '0' * 64}
     for dotted, kind in reg.REGISTRATION_PIN_SCHEMA:
         missing = copy.deepcopy(good)
         _set(missing, dotted, None)
@@ -111,7 +111,7 @@ DEVIATIONS = [
     ('calibration.methods.temperature.bounds', [0.25, 4.0]),
     ('calibration.selection.margin', 0.0),
     ('positivity.P1.threshold', 0.01),
-    ('data.s6_ledger.runtime_sha256.expected_value', '0' * 64),
+    ('data.s6_ledger.expected_candidate_sha256', '0' * 64),
     ('ope_weight_diagnostics.integrity_gates.R2.expected',
      {'candidate': {'pa': 1.0, 'game': 1.0}, 'reference': {'pa': 1.0, 'game': 1.0}}),
     ('ope_weight_diagnostics.integrity_gates.R1b_atol', 1e-9),
@@ -160,7 +160,7 @@ def test_registered_constants():
     assert reg.THRESHOLDS['E1_nll_margin'] == -0.005 and reg.THRESHOLDS['holm_family'] == ['B1', 'B2']
     assert reg.THRESHOLDS['tie_margin'] == 0.001 and reg.THRESHOLDS['tie_comparator'] == 'strict <'
     assert reg.STYLE_AS_OF == {'earlystop': '2025-05-01', 'temperature': '2025-05-16', 'dev': '2025-07-01'}
-    assert reg.S6['expected_runtime_sha256'].startswith('c13cc98994ae')
+    assert reg.S6['expected_candidate_sha256'].startswith('c13cc98994ae')
     assert len(reg.B2_FEATURES) == 63 and set(reg.B2_CATEGORICAL) <= set(reg.B2_FEATURES)
     assert reg.STAGES[0] == 'smoke' and reg.STAGES[-1] == 'decide'
     assert 'B3' not in reg.ADOPTION_CANDIDATES and reg.XF_ARMS == ('B0-XF', 'B1-XF')

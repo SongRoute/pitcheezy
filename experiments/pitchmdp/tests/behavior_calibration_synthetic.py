@@ -91,7 +91,8 @@ def as_registered(config, *, runner_sha256=RUNNER_SHA256, commit='a' * 40, runne
                                code_review_reference='code-review-x')
     out['code'].update(branch='research/track-a-a3-1027', commit=commit, runner_sha256=runner_sha256)
     out['data']['s6_ledger'].update(ledger_sha256='1' * 64, manifest_sha256='2' * 64)
-    out['data']['s6_ledger']['runtime_sha256']['value'] = reg.S6['expected_runtime_sha256']
+    out['data']['s6_ledger']['runtime_sha256']['value'] = '5' * 64  # a header-pinned PolicyRuntime identity
+    out['data']['s6_ledger']['candidate_sha256'] = reg.S6['expected_candidate_sha256']
     out['data']['a3_input'].update(rechunked_sha256='3' * 64, identity_manifest_sha256='4' * 64)
     out['runner'].update(runner or {})
     out['code']['config_sha256'] = runner_module.config_content_sha256(out)
@@ -280,14 +281,41 @@ OUTCOME_OF = {'ball': 'ball', 'automatic_ball': 'ball', 'called_strike': 'strike
               'foul': 'foul'}
 
 
+SYNTHETIC_CANDIDATE_SHA256 = hashlib.sha256(b'synthetic sealed candidate policy (EXP-BC-CAL-01 tests)').hexdigest()
+
+
+def reference_pair_runtime(bc_path, bc_sha256, support_path, support_sha256, ledger_path, hand_registry):
+    """policy_runtime.build_reference_pair_runtime with a candidate identity that carries a sha256, as
+    the sealed S6 header does (pins.candidate.sha256 = the policy identity, distinct from the
+    PolicyRuntime's own runtime_sha256)."""
+    from pitchmdp.policy_artifacts import load_hand_registry, load_support_table, load_train_bc
+    from pitchmdp.policy_runtime import MaskedReference, PolicyRuntime
+    artifact = load_train_bc(bc_path, bc_sha256)
+    support, support_identity = load_support_table(support_path, support_sha256, artifact)
+    independent = MaskedReference(load_train_bc(bc_path, bc_sha256).bc,
+                                  load_support_table(support_path, support_sha256, artifact)[0])
+    hands, hands_identity = load_hand_registry(*hand_registry, artifact)
+
+    def candidate(state):
+        mask = independent.support(state)
+        zero, missing = np.where(mask, 0., np.nan), np.full(len(mask), np.nan)
+        return independent.probabilities(state), {'q': zero, 'mc_se': missing, 'q_planning': zero,
+                                                  'planning_diff_se': missing, 'source': 'paired_identity_zero_q'}
+    return PolicyRuntime(artifact, support, support_identity, ledger_path, candidate=candidate,
+                         candidate_identity={'name': 'synthetic candidate (independent MaskedReference)',
+                                             'sha256': SYNTHETIC_CANDIDATE_SHA256},
+                         hand_registry=hands, hand_registry_sha256=hands_identity, positivity_record=True)
+
+
 def make_ledger(directory, world, games=6):
     """A synthetic S6-shaped ledger written by the real PolicyRuntime (runtime v3, reference-pair
-    candidate) over the first ``games`` DEV games, with its manifest.json and the PA facts that
-    policy_estimator.estimate needs (synthetic reward 0.5; never real data)."""
+    candidate whose identity carries a sha256) over the first ``games`` DEV games, with its
+    manifest.json and the PA facts that policy_estimator.estimate needs (synthetic reward 0.5; never
+    real data)."""
     from pathlib import Path
     from pitchmdp.policy_artifacts import save_hand_registry, save_support_table
     from pitchmdp.policy_requests import logged_label
-    from pitchmdp.policy_runtime import DecisionRequest, build_reference_pair_runtime
+    from pitchmdp.policy_runtime import DecisionRequest
     import json
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -301,9 +329,9 @@ def make_ledger(directory, world, games=6):
     stage = directory / 'S6-synthetic'
     stage.mkdir()
     ledger_path = stage / 'ledger-dev-0.jsonl'
-    runtime = build_reference_pair_runtime(bc_path, artifact.file_sha256, directory / 'support_primary.json',
-                                           support_sha, ledger_path, hand_registry=(directory / 'hands.json', hands_sha),
-                                           positivity_record=True)
+    runtime = reference_pair_runtime(bc_path, artifact.file_sha256, directory / 'support_primary.json', support_sha,
+                                     ledger_path, (directory / 'hands.json', hands_sha))
+    assert runtime.sha256 != SYNTHETIC_CANDIDATE_SHA256  # the two identities differ, as in S6
     dev = frame.loc[frame.split.eq('dev')]
     chosen = list(dict.fromkeys(dev.game_pk))[:games]
     facts = {}
@@ -328,6 +356,7 @@ def make_ledger(directory, world, games=6):
     return {'ledger': ledger_path, 'manifest': manifest, 'runtime': runtime, 'facts': facts,
             'support_path': directory / 'support_primary.json', 'support_sha256': support_sha,
             'hands_path': directory / 'hands.json', 'hands_sha256': hands_sha, 'bc_path': bc_path,
+            'candidate_sha256': SYNTHETIC_CANDIDATE_SHA256,
             'ledger_sha256': hashlib.sha256(ledger_path.read_bytes()).hexdigest(),
             'manifest_sha256': hashlib.sha256(manifest.read_bytes()).hexdigest()}
 
@@ -463,7 +492,7 @@ class SyntheticSource:
         ledger = None if self.ledger is None else {
             'path': str(self.ledger['ledger']), 'manifest_path': str(self.ledger['manifest']),
             'ledger_sha256': self.ledger['ledger_sha256'], 'manifest_sha256': self.ledger['manifest_sha256'],
-            'runtime_sha256': self.ledger['runtime'].sha256}
+            'runtime_sha256': self.ledger['runtime'].sha256, 'candidate_sha256': self.ledger['candidate_sha256']}
         identity = {'source': 'synthetic', 'b0': {'file_sha256': self.world['artifact'].file_sha256},
                     'processed_sha256': self.processed_sha256, 'raw_sha256': self.raw_pins}
         self.inputs = A3Inputs(reader=reader, raw_reader=RawKeysReader(self.raw_root, self.raw_pins, log),
@@ -478,8 +507,9 @@ def synthetic_config(config, world, ledger, expected_ess):
     import copy
     out = copy.deepcopy(config)
     out['data']['b0_artifact']['file_sha256'] = world['artifact'].file_sha256
-    out['data']['s6_ledger']['runtime_sha256']['expected_value'] = ledger['runtime'].sha256
-    out['data']['s6_ledger']['runtime_sha256']['value'] = ledger['runtime'].sha256
+    out['data']['s6_ledger']['runtime_sha256']['value'] = ledger['runtime'].sha256  # pinned from the header
+    out['data']['s6_ledger']['candidate_sha256'] = ledger['candidate_sha256']
+    out['data']['s6_ledger']['expected_candidate_sha256'] = ledger['candidate_sha256']
     out['ope_weight_diagnostics']['integrity_gates']['R2']['expected'] = expected_ess
     out['candidates']['B2']['params']['min_data_in_leaf'] = 20
     out['candidates']['B2']['rounds']['train_rounds'] = 10

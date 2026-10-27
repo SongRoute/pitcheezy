@@ -30,6 +30,7 @@
       "data.s6_ledger.ledger_sha256",
       "data.s6_ledger.manifest_sha256",
       "data.s6_ledger.runtime_sha256.value",
+      "data.s6_ledger.candidate_sha256",
       "data.a3_input.rechunked_sha256",
       "data.a3_input.identity_manifest_sha256"
     ],
@@ -174,10 +175,12 @@
       "sha_source": "pinned at registration: ledger_sha256 and manifest_sha256 are computed read-only by the registrar from the sealed S6-dr-a5 directory and checked against the manifest's own record; both re-verified before and after reading; any mismatch -> FAILED_INTEGRITY",
       "runtime_sha256": {
         "value": null,
-        "expected": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c (D125 final identity; configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:303 final_identity_sha256; results/ML-POLICY-VAL-v1-S6-v3.json:111)",
-        "rule": "the ledger header and every decision row carry runtime_sha256 (policy_runtime.py:291, :489); the registrar confirms the header value and pins it; any row with another value -> FAILED_INTEGRITY",
-        "expected_value": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c"
+        "source": "the PolicyRuntime's own identity (policy_runtime.py:291 self.sha256 = canonical hash of the header pins), written in the ledger header and in every decision row (:489); not the policy identity",
+        "rule": "pinned FROM THE HEADER at registration (read-only header line); every decision row must carry the pinned value, else FAILED_INTEGRITY"
       },
+      "candidate_sha256": null,
+      "expected_candidate_sha256": "c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c",
+      "candidate_rule": "the ledger header's pins.candidate.sha256 must equal the sealed policy identity expected_candidate_sha256 (D125 final identity; configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:303 final_identity_sha256; results/ML-POLICY-VAL-v1-S6-v3.json:111); pinned at registration from the header (candidate_sha256); any other value refuses the registration and the S6 read (FAILED_INTEGRITY)",
       "sealed_dr_json_reference": "the sealed S6-dr-a5 dr.json is pinned by configs/ML-POLICY-MATERIALIZATION-v1.addendum-8-d127.json (5e56119ddff97215bea0e459af03257e72bdb55c6bd4d602e3bdba5568f27d38); A3 neither opens nor hashes it",
       "mode": "read-only, allowlisted fields only",
       "allowed_header_fields": [

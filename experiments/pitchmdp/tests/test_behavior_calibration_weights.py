@@ -75,7 +75,8 @@ def test_t9_weight_rules_and_ess():
 
 
 def write_ledger(path, rows, header=None):
-    header = header or {'kind': 'header', 'runtime_sha256': 'a' * 64, 'pins': {'candidate': 'x'}, 'seq': 0, 'prev': None,
+    header = header or {'kind': 'header', 'runtime_sha256': 'a' * 64, 'pins': {'candidate': {'sha256': 'c' * 64}},
+                        'seq': 0, 'prev': None,
                         'sha256': 'h'}
     path.write_text('\n'.join(json.dumps(r) for r in [header, *rows]) + '\n')
     manifest = path.parent / 'manifest.json'
@@ -90,7 +91,7 @@ def test_t10_reader_allowlist_and_refusals(tmp_path):
     path = tmp_path / 'ledger-dev-0.jsonl'
     ledger_sha, manifest_sha = write_ledger(path, rows)
     kwargs = dict(manifest_path=tmp_path / 'manifest.json', ledger_sha256=ledger_sha, manifest_sha256=manifest_sha,
-                  runtime_sha256='a' * 64)
+                  runtime_sha256='a' * 64, candidate_sha256='c' * 64)
     header, decisions, record = bw.read_ledger(path, **kwargs)
     assert set(header) == {'runtime_sha256', 'pins'}
     assert set(decisions[0]) <= set(bw.ALLOWED_DECISION) | {'result'}
@@ -114,7 +115,34 @@ def test_t10_reader_allowlist_and_refusals(tmp_path):
     pins = write_ledger(aborted / 'ledger-dev-0.jsonl', [*rows, {'kind': 'aborted', 'detail': 'wall cap'}])
     with pytest.raises(IntegrityError, match='aborted'):
         bw.read_ledger(aborted / 'ledger-dev-0.jsonl', manifest_path=aborted / 'manifest.json', ledger_sha256=pins[0],
-                       manifest_sha256=pins[1], runtime_sha256='a' * 64)
+                       manifest_sha256=pins[1], runtime_sha256='a' * 64, candidate_sha256='c' * 64)
+
+
+def test_t10_runtime_and_candidate_identities_are_distinct_pins(tmp_path):
+    """The header's runtime_sha256 (the PolicyRuntime's own identity, pinned from the header) and its
+    pins.candidate.sha256 (the sealed policy identity) are different hashes: both must match their pins;
+    a decision row with another runtime identity is FAILED_INTEGRITY, a wrong candidate is refused."""
+    runtime, candidate = 'af' * 32, 'c13c' * 16
+    header = {'kind': 'header', 'runtime_sha256': runtime, 'pins': {'candidate': {'sha256': candidate, 'name': 'P3'}},
+              'seq': 0, 'prev': None, 'sha256': 'h'}
+    rows = [{**row('1:1', 0, 'SUPPORTED', 0, law({0: 1.}), law({0: .5, 1: .5})), 'runtime_sha256': runtime}]
+    path = tmp_path / 'ledger-dev-0.jsonl'
+    pins = write_ledger(path, rows, header)
+    kwargs = dict(manifest_path=tmp_path / 'manifest.json', ledger_sha256=pins[0], manifest_sha256=pins[1],
+                  runtime_sha256=runtime, candidate_sha256=candidate)
+    head, decisions, record = bw.read_ledger(path, **kwargs)
+    assert (record['header_runtime_sha256'], record['header_candidate_sha256']) == (runtime, candidate)
+    with pytest.raises(bw.LedgerRefused, match='candidate'):
+        bw.read_ledger(path, **{**kwargs, 'candidate_sha256': runtime})  # the runtime identity is not the policy's
+    with pytest.raises(IntegrityError, match='runtime_sha256'):
+        bw.read_ledger(path, **{**kwargs, 'runtime_sha256': candidate})
+    other = tmp_path / 'other'
+    other.mkdir()
+    mixed = [*rows, {**row('1:1', 1, 'SUPPORTED', 0, law({0: 1.}), law({0: .5, 1: .5})), 'runtime_sha256': 'b' * 64}]
+    pins = write_ledger(other / 'ledger-dev-0.jsonl', mixed, header)
+    with pytest.raises(IntegrityError, match='1 decision rows carry another runtime_sha256'):
+        bw.read_ledger(other / 'ledger-dev-0.jsonl', **{**kwargs, 'manifest_path': other / 'manifest.json',
+                                                        'ledger_sha256': pins[0], 'manifest_sha256': pins[1]})
 
 
 class SpyDecoder:
@@ -144,7 +172,7 @@ def test_t10_forbidden_members_are_skipped_unread(tmp_path, monkeypatch):
     monkeypatch.setattr(bw, '_DECODER', spy)
     monkeypatch.setattr(bw.json, 'loads', lambda *a, **k: pytest.fail('json.loads must not parse a ledger line'))
     header, decisions, record = bw.read_ledger(path, manifest_path=tmp_path / 'manifest.json', ledger_sha256=ledger_sha,
-                                               manifest_sha256=manifest_sha, runtime_sha256='a' * 64)
+                                               manifest_sha256=manifest_sha, runtime_sha256='a' * 64, candidate_sha256='c' * 64)
     decoded = json.dumps(spy.values)
     assert 'SENTINEL' not in decoded and str(sentinel) not in decoded and spy.values
     assert decisions[0]['result']['logging'] == rows[0]['result']['logging']  # allowlisted values intact
@@ -199,7 +227,7 @@ def test_t10_malformed_allowlisted_values_duplicates_and_bad_lines_refuse(tmp_pa
     manifest = tmp_path / 'manifest.json'
     with pytest.raises(IntegrityError):
         bw.read_ledger(path, manifest_path=manifest, ledger_sha256=bw.file_sha256(path),
-                       manifest_sha256=bw.file_sha256(manifest), runtime_sha256='a' * 64)
+                       manifest_sha256=bw.file_sha256(manifest), runtime_sha256='a' * 64, candidate_sha256='c' * 64)
 
 
 def test_t10_duplicate_members_are_refused_at_every_level():
@@ -277,8 +305,11 @@ def test_e0_r1b_and_r2_on_a_runtime_written_ledger(synthetic_s6):
     world, ledger = synthetic_s6
     header, decisions, _ = bw.read_ledger(ledger['ledger'], manifest_path=ledger['manifest'],
                                           ledger_sha256=ledger['ledger_sha256'], manifest_sha256=ledger['manifest_sha256'],
-                                          runtime_sha256=ledger['runtime'].sha256)
+                                          runtime_sha256=ledger['runtime'].sha256,
+                                          candidate_sha256=ledger['candidate_sha256'])
     assert header['runtime_sha256'] == ledger['runtime'].sha256
+    assert bw.header_identities(header) == (ledger['runtime'].sha256, ledger['candidate_sha256'])
+    assert ledger['runtime'].sha256 != ledger['candidate_sha256']  # distinct, as in the sealed S6 header
     pas = bw.by_pa(decisions)
     support, _ = load_support_table(ledger['support_path'], ledger['support_sha256'], world['artifact'])
     hands, _ = load_hand_registry(ledger['hands_path'], ledger['hands_sha256'], world['artifact'])

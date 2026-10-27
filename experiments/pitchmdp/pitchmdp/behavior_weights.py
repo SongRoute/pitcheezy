@@ -212,8 +212,19 @@ def scan_line(line, schema, skipped):
     return row
 
 
-def read_ledger(path, *, manifest_path, ledger_sha256, manifest_sha256, runtime_sha256):
-    """Allowlisted, pinned, read-only S6 ledger: (header, decisions, record)."""
+def header_identities(header):
+    """(runtime_sha256, pins.candidate.sha256) of a scanned ledger header (None where absent)."""
+    pins = header.get('pins') if isinstance(header, dict) else None
+    candidate = pins.get('candidate') if isinstance(pins, dict) else None
+    return header.get('runtime_sha256') if isinstance(header, dict) else None, \
+        candidate.get('sha256') if isinstance(candidate, dict) else None
+
+
+def read_ledger(path, *, manifest_path, ledger_sha256, manifest_sha256, runtime_sha256, candidate_sha256):
+    """Allowlisted, pinned, read-only S6 ledger: (header, decisions, record). Identities: the header's
+    pins.candidate.sha256 must be ``candidate_sha256`` (the sealed policy identity; else refused) and
+    the header's and every decision row's runtime_sha256 must be ``runtime_sha256`` (the PolicyRuntime
+    identity pinned from the header at registration; else FAILED_INTEGRITY)."""
     path, manifest_path = Path(path), Path(manifest_path)
     if path.name in FORBIDDEN_FILES or manifest_path.name in FORBIDDEN_FILES:
         raise LedgerRefused(f'forbidden file requested: {path.name}')
@@ -221,9 +232,9 @@ def read_ledger(path, *, manifest_path, ledger_sha256, manifest_sha256, runtime_
         raise LedgerRefused(f'only a ledger*.jsonl file may be read, not {path.name}')
     if manifest_path.name != 'manifest.json' or manifest_path.parent.resolve() != path.parent.resolve():
         raise LedgerRefused('the pinned manifest.json must sit next to the ledger')
-    for value in (ledger_sha256, manifest_sha256, runtime_sha256):
+    for value in (ledger_sha256, manifest_sha256, runtime_sha256, candidate_sha256):
         if not (isinstance(value, str) and len(value) == 64):
-            raise LedgerRefused('ledger, manifest and runtime sha256 pins are required')
+            raise LedgerRefused('ledger, manifest, runtime and candidate sha256 pins are required')
     before = {'ledger': file_sha256(path), 'manifest': file_sha256(manifest_path)}
     if before != {'ledger': ledger_sha256, 'manifest': manifest_sha256}:
         raise LedgerRefused('S6 ledger or manifest differs from its registration pin (FAILED_INTEGRITY)')
@@ -246,12 +257,17 @@ def read_ledger(path, *, manifest_path, ledger_sha256, manifest_sha256, runtime_
     after = {'ledger': file_sha256(path), 'manifest': file_sha256(manifest_path)}
     if after != before:
         raise IntegrityError('S6 ledger or manifest changed while it was read')
-    if header is None or header.get('runtime_sha256') != runtime_sha256:
-        raise IntegrityError('ledger header runtime_sha256 differs from the registered identity')
+    header_runtime, header_candidate = header_identities(header)
+    if header_candidate != candidate_sha256:
+        raise LedgerRefused(f'ledger header pins.candidate.sha256 {header_candidate!r} is not the sealed policy '
+                            f'identity {candidate_sha256}')
+    if header_runtime != runtime_sha256:
+        raise IntegrityError('ledger header runtime_sha256 differs from the identity pinned from it at registration')
     wrong = sum(d.get('runtime_sha256') != runtime_sha256 for d in decisions)
     if wrong:
-        raise IntegrityError(f'{wrong} decision rows carry another runtime_sha256')
+        raise IntegrityError(f'{wrong} decision rows carry another runtime_sha256 than the pinned header value')
     record = {'sha256_before': before, 'sha256_after': after, 'row_kinds': kinds, 'decisions': len(decisions),
+              'header_runtime_sha256': header_runtime, 'header_candidate_sha256': header_candidate,
               'fields_decoded': {'header': list(HEADER_SCHEMA), 'decision': list(ALLOWED_DECISION),
                                  'result': list(ALLOWED_RESULT)},
               'skipped_unread_members': dict(sorted(skipped.items())), 'parsing': PARSING_DISCLOSURE}
