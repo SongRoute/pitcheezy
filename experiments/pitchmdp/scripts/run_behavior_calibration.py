@@ -538,6 +538,10 @@ class Run:
         failed = [r['stage'] for r in self.attempt.records() if r['status'] != 'PASS']
         if failed:
             raise Refused(f'an earlier stage did not pass ({failed}); no later stage runs in this attempt')
+        for earlier in reg.STAGES[:index]:
+            record = json.loads((self.attempt.stage_path(earlier) / 'stage.json').read_text())
+            if record.get('config_sha256') != self.config_sha256:
+                raise Refused(f'the config changed since {earlier} ran in this attempt; register a new attempt')
 
 
 def execute_stage(run, stage):
@@ -1210,9 +1214,14 @@ def stage_decide(run, out):
     nll = {c: (run.state['score']['summaries'].get(c) or {}).get('nll') for c in reg.ADOPTION_CANDIDATES}
     label = final_label(integrity_ok, statuses, nll, tie_margin=config['verdict_rule']['selection']['tie_margin'],
                         simpler=config['verdict_rule']['selection']['simpler'])
+    preflight = {path.name: json.loads(path.read_text()).get('tests')
+                 for path in sorted(run.attempt.root.glob('preflight-*.json'))}
     decision = {'label': label, 'candidate_status': statuses, 'criteria': criteria, 'dev_nll': nll,
                 'tie_rule': f"both eligible and |NLL_B1 - NLL_B2| < {config['verdict_rule']['selection']['tie_margin']}"
                             ' (strict) -> B1', 'E4_integrity': integrity_ok,
+                'E4_evidence': {'smoke': run.attempt.status('smoke'), 's6_integrity': run.attempt.status('s6-integrity'),
+                                'preflight_tests': preflight or 'not run by this caller (main runs them before any '
+                                                                'real-data stage)'},
                 'descriptive_only': config['verdict_rule']['descriptive_only'],
                 'not_claimed': 'no OPE value or Delta; DEV is exposed development; no service change'}
     out.json('decision.json', decision)

@@ -186,6 +186,11 @@ def test_fixed_stage_order_and_fail_closed_after_a_failure(tmp_path, draft, monk
         runner.execute_stage(run, 'smoke')
     with pytest.raises(runner.Refused, match='needs a passed fit'):
         runner.execute_stage(run, 'calibrate')
+    changed = copy.deepcopy(draft)
+    changed['seeds']['bootstrap'] += 1
+    other = runner.Run(changed, destination=run.destination, source=None, guard=run.guard, commit='a' * 40)
+    with pytest.raises(runner.Refused, match='config changed since smoke'):
+        runner.execute_stage(other, 'census')
     assert runner.execute_stage(run, 'census') == 'PASS'
     assert runner.execute_stage(run, 'fit') == 'FAILED_INTEGRITY'
     final = json.loads((run.destination / 'final.json').read_text())
