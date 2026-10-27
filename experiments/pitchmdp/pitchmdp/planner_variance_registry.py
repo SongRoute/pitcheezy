@@ -217,11 +217,14 @@ IMPLEMENTATION_CHOICES = [
     'Smoke projections scale by games: BF48 pass-D time = smoke BF48 seconds x 50/3; FH-DP 10-game time = '
     'FH-DP seconds on its 1 smoke game x 10.',
     'Smoke sink: the smoke runtime is built with a MemoryLedger (same interface and hash-chained rows as '
-    'policy_runtime.Ledger, kept in process memory) by resolving policy_runtime.Ledger to it only while that runtime '
-    'is constructed (frozen source bytes unchanged; every other runtime keeps the file ledger), so the A0 Q and laws '
-    'are never written to disk; results.json passes an allowlist of cost/structure/identity fields with no metric-like '
-    'key and no float vector, else the write is refused. An unsuccessful smoke (structural failure or r_b > 4.0) keeps '
-    'that evidence, writes the stop record aborted.json and exits 3 at once.',
+    'policy_runtime.Ledger, kept in process memory, rows re-verified and copied on read) by resolving '
+    'policy_runtime.Ledger to it only while that runtime is constructed (frozen source bytes unchanged). The runner is '
+    'a synchronous single-process, single-threaded CLI: the substitution refuses when another Python thread is alive '
+    'or a substitution is already active and restores the file ledger on any exit, so every runtime built outside that '
+    'block (passes M and confirmation) keeps the file ledger. The A0 Q and laws are never written to disk; results.json '
+    'passes an allowlist of cost/structure/identity fields with no metric-like key and no float vector, else the write '
+    'is refused. An unsuccessful smoke (structural failure or r_b > 4.0) keeps that evidence, writes the stop record '
+    'aborted.json and exits 3 at once.',
     'Deadline: the code does not know WS game days, so it treats every day as a game day: a pass may start only '
     'outside 06:00-13:30 KST and only if start + cap <= the next 06:00 KST; its deadline is min(next 06:00 KST, '
     'start + cap). A pass that does not fit is deferred: receipt DEFERRED, lock released, exit code 4.',
@@ -229,8 +232,13 @@ IMPLEMENTATION_CHOICES = [
     'arrays), results.json and SHA256SUMS all run under the deadline/cap/RSS watch and the abort handler; the deadline '
     'and the cap are checked before every PA block and the peak RSS every 10 PA blocks; the final deadline/cap/RSS '
     'check follows the last write of the pass folder and only then is the terminal receipt (COMPLETED, the completion '
-    'marker) appended. The confirmation selection is staged, checked and only then published. Pass-D arms (BF48, '
-    'FH-DP 7,200 s) each have their own watch.',
+    'marker) appended; it carries the post-sealing measurements (seconds_total, utc, process peak RSS), while the '
+    'fields kept in results.json are labelled pre-sealing. Both abort paths remove unfinished runner-owned JSON '
+    'staging files (*.tmp) and partial arrays before sealing; sealing refuses a folder that still holds one. The '
+    'confirmation selection is staged, hashed and checked, then published by rename and its SELECTED receipt; '
+    'publication means file plus matching SELECTED receipt (also in the digest manifest), an unreceipted leftover is '
+    'recovered (removed and recorded), and the confirmation verifies the publication against its pin. Pass-D arms '
+    '(BF48, FH-DP 7,200 s) each have their own watch.',
     'Heavy lock held by another job: nothing starts, no pass folder is written, a LOCK_HELD receipt is appended and '
     'the process exits 3 (the pass is not marked aborted, so a later window can start it).',
     'Passes C and D re-create the pass-M decisions without the runtime planner (requests rebuilt from the store, '
@@ -623,8 +631,10 @@ FORBIDDEN_SMOKE_KEY_PARTS = ('tv', 'top1', 'agreement', 'kl', 'law', 'verdict', 
 # The smoke sink persists only these fields (cost, structure, identity); anything else refuses the write.
 SMOKE_RECORD_FIELDS = {
     'experiment_id': None, 'pass': None, 'arm': None, 'identity': None, 'cap_seconds': None, 'deadline_utc': None,
-    'window_id': None, 'seconds': None, 'preparation_seconds': None, 'peak_rss_bytes_process_lifetime': None,
-    'finished_utc': None, 'outcomes_read': None, 'policy_identity_registered': None, 'seeds': None, 'limits': None,
+    'window_id': None, 'seconds_pre_sealing': None, 'preparation_seconds': None,
+    'peak_rss_bytes_process_lifetime_pre_sealing': None, 'computed_utc_pre_sealing': None,
+    'post_sealing_measurements': None, 'outcomes_read': None, 'policy_identity_registered': None, 'seeds': None,
+    'limits': None,
     'requests': None, 'statuses': None, 'decisions': None, 'fhdp_decisions': None, 'fhdp_only_game_statuses': None,
     'structural_ok': None, 'r_b': None, 'r_b_definition': None, 'data_version': None, 'unchanged_sources': None,
     'games': {'smoke_games', 'fhdp_smoke_game', 'registered_games_sha256'},

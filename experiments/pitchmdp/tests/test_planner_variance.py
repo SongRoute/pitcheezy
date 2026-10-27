@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 
 import numpy as np
 import pytest
@@ -1013,7 +1014,7 @@ def test_smoke_persists_only_allowlisted_structure_in_every_file(tmp_path, monke
     assert results['r_b'] == pytest.approx(np.mean([rows[f'RB6 seed {s}'] / rows[f'A0 seed {s}'] for s in (0, 5)]))
     assert {'RB12 seed 0', 'BF48 seed 5', 'REF-RB6 seed 100', 'RB6-rerun seed 0', 'FH-DP'} <= set(rows)
     assert 'A0 seed 0' in cost['planner_ms_per_decision_median'] and cost['runtime_submit_seconds'] > 0
-    assert 'peak_rss_bytes_process_lifetime' in results and results['decisions'] == 3 * 2 * len(OUTCOME_PLAN)
+    assert 'peak_rss_bytes_process_lifetime_pre_sealing' in results and results['decisions'] == 3 * 2 * len(OUTCOME_PLAN)
     runner.verify_sums(attempt / 'smoke')
     assert [r['event'] for r in receipts(attempt)] == ['STARTED', 'COMPLETED']
     assert len(manifest.read_text().splitlines()) == 2  # receipts mirrored to the external digest manifest
@@ -1171,7 +1172,7 @@ def test_finalization_overruns_abort_and_preparation_time_counts(tmp_path, monke
     work = make_runner(registered_config(), env, tmp_path / 'attempt-001', clock=clock)
     assert work.advance('smoke') == runner.EXIT_OK
     results = json.loads((tmp_path / 'attempt-001' / 'smoke' / 'results.json').read_text())
-    assert results['preparation_seconds'] >= 120 and results['seconds'] >= 120
+    assert results['preparation_seconds'] >= 120 and results['seconds_pre_sealing'] >= 120
     original = runner.PassRunner.pass_smoke
     late = FakeClock(datetime(2026, 10, 27, 14, 0, tzinfo=KST))
     monkeypatch.setattr(runner.PassRunner, 'pass_smoke',
@@ -1266,12 +1267,17 @@ def test_confirmation_after_stable_within_cost_with_a_retry_in_the_next_window(t
     verdict = json.loads((attempt / 'verdict.json').read_text())['verdict']
     assert verdict['label'] == 'STABLE_WITHIN_COST:RB6' and verdict['row'] == 1
     assert not (attempt / 'rb12').exists() and not (attempt / 'descriptive').exists()  # C and D not required
-    assert work.confirm({'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': 'f' * 64}) == runner.EXIT_STOPPED
-    aborted = json.loads((attempt / 'confirmation' / 'try-01' / 'aborted.json').read_text())
-    assert aborted['effect'] == 'CONFIRMATION_ABORTED' and 'pin' in aborted['reason']
+    with pytest.raises(runner.IntegrityFailure, match='published selection'):  # nothing published yet
+        work.confirm({'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': 'f' * 64})
     assert work.confirm_select() == runner.EXIT_OK
     selection = json.loads((attempt / runner.SELECTION_FILE).read_text())
     pin = {'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': selection['record']['games_sha256']}
+    with pytest.raises(runner.IntegrityFailure, match='published selection'):  # a pin that is not the publication
+        work.confirm({'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': 'f' * 64})
+    slow = make_runner(config, env, attempt, tick=3000.)
+    assert slow.confirm(pin) == runner.EXIT_STOPPED  # the try overruns its window: CONFIRMATION_ABORTED
+    aborted = json.loads((attempt / 'confirmation' / 'try-01' / 'aborted.json').read_text())
+    assert aborted['effect'] == 'CONFIRMATION_ABORTED' and not aborted['citable']
     assert work.confirm(pin) == runner.EXIT_DEFERRED  # same window as the aborted try
     assert not (attempt / 'confirmation' / 'try-02').exists()
     tomorrow = make_runner(config, env, attempt, local=datetime(2026, 10, 28, 14, 0, tzinfo=KST))
@@ -1291,12 +1297,17 @@ def test_an_interrupted_confirmation_start_is_recovered_and_retried_in_a_later_w
     attempt = tmp_path / 'attempt-001'
     env = SyntheticEnv(tmp_path)
     assert make_runner(config, env, attempt).advance('D') == runner.EXIT_OK
-    (attempt / 'confirmation' / 'try-01').mkdir(parents=True)  # interrupted before its started.json
+    assert make_runner(config, env, attempt).confirm_select() == runner.EXIT_OK
+    interrupted = attempt / 'confirmation' / 'try-01'
+    interrupted.mkdir(parents=True)  # interrupted inside write_json: only the unfinished staging file exists
+    (interrupted / 'started.json.tmp').write_text('{"experiment_id": "EXP-STAB-')
     pin = {'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': env.confirmation_record['games_sha256']}
     work = make_runner(config, env, attempt)
     assert work.confirm(pin) == runner.EXIT_DEFERRED  # recovered as an abort; its retry waits for a later window
     recovered = json.loads((attempt / 'confirmation' / 'try-01' / 'aborted.json').read_text())
     assert recovered['window_id'] == reg.window_id(work.clock.now()) and not recovered['citable']
+    assert not (interrupted / 'started.json.tmp').exists()
+    runner.verify_sums(interrupted)
     assert work.confirm(pin) == runner.EXIT_DEFERRED and not (attempt / 'confirmation' / 'try-02').exists()
     later = make_runner(config, env, attempt, local=datetime(2026, 10, 28, 14, 0, tzinfo=KST))
     assert later.confirm(pin) == runner.EXIT_OK
@@ -1387,3 +1398,101 @@ def test_a_stopped_pass_c_gives_not_stable_with_rb12_aborted_and_keeps_pass_m(tm
     runner.verify_sums(attempt / 'mandatory')  # pass M evidence kept
     assert make_runner(config, env, attempt).advance('D') == runner.EXIT_OK  # pass D may still run
     assert (attempt / 'descriptive' / 'BF48' / 'results.json').exists()
+
+
+def test_selection_publication_is_anchored_on_its_receipt_and_recovers_from_interruption(tmp_path, monkeypatch):
+    config = flow_config(monkeypatch, stable=True)
+    attempt, manifest = tmp_path / 'attempt-001', tmp_path / 'digest-manifest.jsonl'
+    env = SyntheticEnv(tmp_path)
+    assert make_runner(config, env, attempt, manifest=manifest).advance('D') == runner.EXIT_OK
+    original = runner.PassRunner.receipt
+
+    def failing(self, name, event, *args, **kwargs):
+        if event == 'SELECTED':
+            raise OSError('receipt write failed after the rename')
+        return original(self, name, event, *args, **kwargs)
+    monkeypatch.setattr(runner.PassRunner, 'receipt', failing)
+    assert make_runner(config, env, attempt, manifest=manifest).confirm_select() == runner.EXIT_STOPPED
+    assert not (attempt / runner.SELECTION_FILE).exists() and receipts(attempt)[-1]['event'] == 'SELECTION_ABORTED'
+
+    def killed(self, name, event, *args, **kwargs):
+        if event == 'SELECTED':
+            raise KeyboardInterrupt('process killed after the rename')
+        return original(self, name, event, *args, **kwargs)
+    monkeypatch.setattr(runner.PassRunner, 'receipt', killed)
+    with pytest.raises(KeyboardInterrupt):
+        make_runner(config, env, attempt, manifest=manifest).confirm_select()
+    assert (attempt / runner.SELECTION_FILE).exists()  # renamed, never receipted
+    monkeypatch.setattr(runner.PassRunner, 'receipt', original)
+    pin = {'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': env.confirmation_record['games_sha256']}
+    with pytest.raises(runner.IntegrityFailure, match='published selection'):
+        make_runner(config, env, attempt, manifest=manifest).confirm(pin)
+    assert not (attempt / runner.SELECTION_FILE).exists() and receipts(attempt)[-1]['event'] == 'SELECTION_RECOVERED'
+    work = make_runner(config, env, attempt, manifest=manifest)
+    assert work.confirm_select() == runner.EXIT_OK and work.confirm_select() == runner.EXIT_OK  # published once
+    assert [r['event'] for r in receipts(attempt)].count('SELECTED') == 1
+    published = attempt / runner.SELECTION_FILE
+    published.write_text(published.read_text().replace('"selected": 2', '"selected": 3'))
+    with pytest.raises(runner.IntegrityFailure, match='SELECTED receipt'):
+        make_runner(config, env, attempt, manifest=manifest).confirm(pin)
+
+
+def test_the_terminal_receipt_carries_post_sealing_measurements(tmp_path, monkeypatch):
+    clock = FakeClock(datetime(2026, 10, 27, 14, 0, tzinfo=KST))
+    seal = runner.write_sums
+    state = {'sealed': False}
+
+    def slow_seal(folder):
+        clock.jump(100)  # a successful, sub-cap sealing delay
+        state['sealed'] = True
+        return seal(folder)
+    monkeypatch.setattr(runner, 'write_sums', slow_seal)
+    rss = lambda: (3 << 30) if state['sealed'] else (1 << 30)  # noqa: E731  (the peak grows while sealing)
+    attempt = tmp_path / 'attempt-001'
+    assert make_runner(registered_config(), SyntheticEnv(tmp_path), attempt, clock=clock, rss=rss).advance('smoke') == runner.EXIT_OK
+    results = json.loads((attempt / 'smoke' / 'results.json').read_text())
+    completed = receipts(attempt)[-1]
+    assert completed['event'] == 'COMPLETED'
+    final = completed['measurements']
+    assert final['seconds_total'] >= results['seconds_pre_sealing'] + 100
+    assert final['peak_rss_bytes_process_lifetime'] == 3 << 30 > results['peak_rss_bytes_process_lifetime_pre_sealing']
+    assert final['utc'] > results['computed_utc_pre_sealing']
+
+
+def test_the_memory_ledger_is_guarded_restored_and_hash_chain_equivalent(tmp_path):
+    original = prt.Ledger
+    with pytest.raises(ValueError, match='inside'):
+        with runner.memory_ledger():
+            assert prt.Ledger is runner.MemoryLedger
+            raise ValueError('failure inside the substitution')
+    assert prt.Ledger is original  # restored on an exception
+    with runner.memory_ledger():
+        with pytest.raises(runner.IntegrityFailure, match='single-threaded'):
+            with runner.memory_ledger():  # nested or overlapping substitution refused
+                pass
+        assert prt.Ledger is runner.MemoryLedger
+    assert prt.Ledger is original
+    release = threading.Event()
+    other = threading.Thread(target=release.wait)
+    other.start()
+    try:
+        with pytest.raises(runner.IntegrityFailure, match='single-threaded'):
+            with runner.memory_ledger():
+                pass
+    finally:
+        release.set()
+        other.join()
+    assert prt.Ledger is original
+    header = {'runtime_sha256': 'synthetic', 'pins': {'contract': 'ML-POLICY-RUNTIME-v2'}}
+    records = [{'kind': 'decision', 'request_id': f'g:1:{k}', 'result': {'q_planning': [.5 + k / 10, None]}}
+               for k in range(3)]
+    on_disk, in_memory = prt.Ledger(tmp_path / 'ledger.jsonl', header), runner.MemoryLedger(None, header)
+    for record in records:
+        assert on_disk._append(copy.deepcopy(record)) == in_memory._append(copy.deepcopy(record))
+    assert in_memory.rows == on_disk.rows and (in_memory.count, in_memory.head) == (on_disk.count, on_disk.head)
+    first = in_memory.read(1)
+    first['result']['q_planning'][0] = -1.  # a caller mutating what it read cannot change the ledger
+    assert in_memory.read(1)['result']['q_planning'][0] == .5
+    in_memory._rows[2]['result'] = {'q_planning': [0.]}
+    with pytest.raises(runner.IntegrityFailure, match='tampered'):
+        in_memory.read(2)

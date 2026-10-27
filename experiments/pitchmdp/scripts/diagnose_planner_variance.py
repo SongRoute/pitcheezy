@@ -5,8 +5,8 @@ Pass runner of the registered design (docs/pm/research/track-a/A1-planner-varian
   smoke         first registered step: the 3 EXP-STAB-01 smoke games (FH-DP: the first game of the
                 subsample order). Cost of every arm (rows, planner and runtime-submit time, process peak RSS,
                 r_b) and structural integrity only (shapes, finite Q on the support, laws summing to 1, RB6
-                seed-0 rerun identical, hashes). Its runtime ledger lives in a temporary directory removed when
-                the smoke ends; the smoke sink persists only allowlisted cost/structure/identity fields.
+                seed-0 rerun identical, hashes). Its runtime keeps the ledger rows in memory (MemoryLedger sink,
+                nothing written); the smoke sink persists only allowlisted cost/structure/identity fields.
   M (mandatory) A0-MC6 (seed 0 = the runtime's own planning Q, seed 5), RB6 (seeds 0, 5), REF-RB6 (seed
                 100) on the 150 registered DEV games, joined with the EXP-STAB-01 K1/K3/K5 columns;
                 reconstruction against first-step evidence captured during the original A0 searches;
@@ -39,6 +39,7 @@ import re
 import resource
 import subprocess
 import sys
+import threading
 import time
 import traceback
 
@@ -49,7 +50,7 @@ sys.path.insert(0, str(PROJECT / 'scripts'))
 import numpy as np  # noqa: E402
 from pitchmdp import planner_variance as pv  # noqa: E402
 from pitchmdp import planner_variance_registry as reg  # noqa: E402
-from pitchmdp.policy_runtime import EVALUATED, paired_difference_se  # noqa: E402
+from pitchmdp.policy_runtime import EVALUATED, Ledger as FILE_LEDGER, paired_difference_se  # noqa: E402
 from pitchmdp.rollout_policy import RowBudget  # noqa: E402
 
 EXPERIMENT = reg.EXPERIMENT_ID
@@ -156,9 +157,16 @@ def sha256_file(path):
     return reg.file_sha256(path)
 
 
+def remove_staging(folder):
+    """Runner-owned unfinished JSON staging files (``write_json``'s ``*.tmp``) of an interrupted write."""
+    for staged in Path(folder).rglob('*.tmp'):
+        staged.unlink()
+
+
 def write_sums(folder):
     folder = Path(folder)
-    files = sorted(p for p in folder.rglob('*') if p.is_file() and p.name != 'SHA256SUMS' and not p.name.endswith('.tmp'))
+    require(not list(folder.rglob('*.tmp')), f'{folder.name}: unfinished staging file in a folder being sealed')
+    files = sorted(p for p in folder.rglob('*') if p.is_file() and p.name != 'SHA256SUMS')
     lines = [f'{sha256_file(p)}  {p.relative_to(folder).as_posix()}' for p in files]
     (folder / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
     return sha256_file(folder / 'SHA256SUMS')
@@ -281,42 +289,55 @@ class MemoryLedger:
         body = {**record, 'seq': self.count, 'prev': self.head}
         row = {**body, 'sha256': self._hash(body)}
         self.offset, self.count, self.head = len(self._rows), self.count + 1, row['sha256']
-        self._rows.append(row)
+        self._rows.append(json.loads(json.dumps(row)))  # a stored copy: later mutation of ``row`` cannot reach it
         self.kinds[row['kind']] += 1
         return row
 
+    def _verified(self, row):
+        """Re-verified copy (own hash), as the file ledger re-verifies each row it reads back."""
+        if row.get('sha256') != self._hash({k: v for k, v in row.items() if k != 'sha256'}):
+            raise IntegrityFailure('in-memory ledger row tampered')
+        return json.loads(json.dumps(row))
+
     def stream(self):
-        return list(enumerate(self._rows))
+        return [(offset, self._verified(row)) for offset, row in enumerate(self._rows)]
 
     def iter_rows(self):
-        return iter(list(self._rows))
+        return (row for _, row in self.stream())
 
     def iter_decisions(self):
         return (row for row in self.iter_rows() if row['kind'] == 'decision')
 
     @property
     def rows(self):
-        return list(self._rows)
+        return list(self.iter_rows())
 
     def decisions(self):
         return list(self.iter_decisions())
 
     def read(self, offset):
-        return self._rows[offset]
+        return self._verified(self._rows[offset])
+
+
+_SUBSTITUTION = threading.Lock()
 
 
 @contextlib.contextmanager
 def memory_ledger():
-    """Narrowly scoped smoke sink: while the smoke runtime is constructed, ``policy_runtime.Ledger`` resolves to
-    ``MemoryLedger`` (frozen source bytes untouched); the module attribute is restored right after, so every other
-    runtime keeps the registered file ledger."""
+    """Narrowly scoped smoke sink for synchronous, single-threaded CLI construction only: while the smoke runtime is
+    constructed, ``policy_runtime.Ledger`` resolves to ``MemoryLedger`` (frozen source bytes untouched). It refuses
+    when another Python thread is alive or a substitution is already active (no concurrent or nested construction can
+    see it), and on any exit restores the registered file ledger, which every runtime built outside this block uses."""
     from pitchmdp import policy_runtime as prt
-    original = prt.Ledger
-    prt.Ledger = MemoryLedger
+    if threading.active_count() != 1 or not _SUBSTITUTION.acquire(blocking=False):
+        raise IntegrityFailure('the in-memory smoke ledger needs synchronous, single-threaded construction')
     try:
+        require(prt.Ledger is FILE_LEDGER, 'policy_runtime.Ledger is already substituted')
+        prt.Ledger = MemoryLedger
         yield
     finally:
-        prt.Ledger = original
+        prt.Ledger = FILE_LEDGER
+        _SUBSTITUTION.release()
 
 
 # ---------------------------------------------------------------- the registered data path
@@ -508,13 +529,14 @@ class PassRunner:
         base = self.attempt / self.PASS_FOLDERS[name]
         return base / arm if arm else base
 
-    def receipt(self, name, event, detail=None, digest=None, file=None):
-        """Append-only receipt in <attempt>/receipts.jsonl and in the external digest manifest."""
+    def receipt(self, name, event, detail=None, digest=None, file=None, measurements=None):
+        """Append-only receipt in <attempt>/receipts.jsonl and in the external digest manifest; a terminal receipt
+        carries the measurements taken after sealing (whole pass seconds, time, process peak RSS)."""
         self.attempt.mkdir(parents=True, exist_ok=True)
         line = {'utc': self.clock.now().isoformat(), 'experiment_id': EXPERIMENT, 'kind': 'receipt',
                 'attempt': str(self.attempt), 'pass': name, 'event': event, 'detail': detail, 'file': file,
                 'sha256': digest, 'config_sha256': self.identity.get('config_sha256'),
-                'config_digest': self.identity.get('config_digest')}
+                'config_digest': self.identity.get('config_digest'), 'measurements': measurements}
         append_line(self.attempt / 'receipts.jsonl', line)
         if self.manifest is not None:
             append_line(self.manifest, line)
@@ -568,6 +590,9 @@ class PassRunner:
             window = json.loads((folder / 'started.json').read_text())['window_id']
         except (OSError, ValueError, KeyError, TypeError):
             window = reg.window_id(self.clock.now())
+        remove_staging(folder)  # e.g. a started.json.tmp of an interrupted start
+        for partial in [*folder.glob('*.npz'), folder / 'results.json']:
+            partial.unlink(missing_ok=True)
         write_json(folder / 'aborted.json', {'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm,
                                              'reason': 'process ended without a terminal receipt (crash or interrupt)',
                                              'utc': self.clock.now().isoformat(), 'effect': reg.PASSES[name]['on_stop'],
@@ -793,8 +818,10 @@ class PassRunner:
             watch.check('after the pass computation', sample_rss=True)
             results.update({'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm, 'identity': self.identity,
                             'cap_seconds': cap, 'deadline_utc': deadline.isoformat(), 'window_id': window,
-                            'seconds': watch.seconds(), 'preparation_seconds': preparation,
-                            'peak_rss_bytes_process_lifetime': watch.peak, 'finished_utc': self.clock.now().isoformat(),
+                            'seconds_pre_sealing': watch.seconds(), 'preparation_seconds': preparation,
+                            'peak_rss_bytes_process_lifetime_pre_sealing': watch.peak,
+                            'computed_utc_pre_sealing': self.clock.now().isoformat(),
+                            'post_sealing_measurements': 'in the terminal receipt (seconds_total, utc, peak RSS)',
                             'outcomes_read': False, 'policy_identity_registered': False, 'seeds': SEEDS,
                             'limits': LIMITS})
             if name == 'smoke':
@@ -811,7 +838,8 @@ class PassRunner:
                                                   'evidence_kept': 'results.json: cost, structure and identity only'})
             digest = write_sums(out)
             watch.final_check()  # after the last write of the pass folder
-            self.receipt(name, 'ABORTED' if stopped else 'COMPLETED', stopped or arm, digest, sums_file)
+            self.receipt(name, 'ABORTED' if stopped else 'COMPLETED', stopped or arm, digest, sums_file,
+                         self.measurements(watch))
         except Exception as stop:  # every stop rule: aborted.json, nothing citable
             return self.abort(name, arm, out, watch, window, stop)
         if stopped:
@@ -819,7 +847,7 @@ class PassRunner:
             self.settle()
             self.log('PLANNER_VARIANCE_STOPPED', 'smoke:', stopped)
             return EXIT_STOPPED
-        self.log('PLANNER_VARIANCE_PASS_COMPLETE', name, arm or '', round(results['seconds'], 1))
+        self.log('PLANNER_VARIANCE_PASS_COMPLETE', name, arm or '', round(watch.seconds(), 1))
         if name in ('M', 'C'):
             self.settle()
         return None
@@ -833,11 +861,16 @@ class PassRunner:
                                           'window_id': window, 'partial_results_discarded': True, 'citable': False})
         for partial in [*out.glob('*.npz'), out / 'results.json']:
             partial.unlink(missing_ok=True)
+        remove_staging(out)
         self.receipt(name, 'ABORTED', f'{arm or ""} {type(stop).__name__}: {stop}'.strip(), write_sums(out),
-                     self.relative(out))
+                     self.relative(out), self.measurements(watch))
         self.aborts.append((name, arm))
         self.log('PLANNER_VARIANCE_ABORTED', name, arm or '', f'{type(stop).__name__}: {stop}')
         return self.after_abort(name)
+
+    def measurements(self, watch):
+        return {'seconds_total': watch.seconds(), 'utc': self.clock.now().isoformat(),
+                'peak_rss_bytes_process_lifetime': watch.peak}
 
     def after_abort(self, name):
         """Registered stop effect: smoke -> no full run, M -> experiment aborted (no verdict label), C -> RB12_ABORTED
@@ -1212,17 +1245,41 @@ class PassRunner:
         require(label.startswith('STABLE_WITHIN_COST:'), f'confirmation runs only after STABLE_WITHIN_COST (got {label})')
         return label.split(':', 1)[1]
 
+    def selection(self):
+        """The published confirmation selection, or None. Publication is the selection file together with its SELECTED
+        receipt (the last selection receipt of this attempt, same digest and config identity, present in the digest
+        manifest). A leftover file of an interrupted publication is recovered (removed and recorded); a file that
+        differs from its SELECTED receipt, or a receipt whose file is gone, is an integrity failure."""
+        path = self.attempt / SELECTION_FILE
+        lines = [r for r in self.receipts() if r.get('attempt') == str(self.attempt) and r.get('file') == SELECTION_FILE
+                 and r.get('event') in ('SELECTED', 'SELECTION_ABORTED', 'SELECTION_RECOVERED')]
+        last = lines[-1] if lines else None
+        published = (last is not None and last['event'] == 'SELECTED'
+                     and last.get('config_digest') == self.identity.get('config_digest')
+                     and (self.manifest is None or last in reg.read_manifest(self.manifest)))
+        if published:
+            require(path.exists() and sha256_file(path) == last['sha256'], 'selection differs from its SELECTED receipt')
+            return json.loads(path.read_text())
+        if path.exists():  # not published: an interrupted publication leaves no valid selection
+            digest = sha256_file(path)
+            path.unlink()
+            self.receipt('confirmation', 'SELECTION_RECOVERED', 'unpublished selection file removed', digest, SELECTION_FILE)
+        return None
+
     def confirm_select(self):
         """Record the 50-game confirmation list and its sha256 (no planning call), under the same window and
-        deadline/cap/RSS watch as a pass; a stopped selection writes nothing and can be repeated."""
+        deadline/cap/RSS watch as a pass: staged, hashed and checked, then published by rename and its SELECTED
+        receipt; any failure removes the staged and the unreceipted file, so the selection can be repeated."""
         self.scope = 'confirmation'
         with self.locked('confirmation') as held:
             if not held:
                 return EXIT_STOPPED
             self.verify_attempt()
             passing = self.require_passing_verdict()
+            if self.selection() is not None:
+                self.log('PLANNER_VARIANCE_SELECTION', 'already published')
+                return EXIT_OK
             path = self.attempt / SELECTION_FILE
-            require(not path.exists(), 'confirmation selection already recorded')
             cap = reg.pass_cap_seconds('confirmation', r_b=self.smoke_record()['r_b'], arm=passing)
             now = self.clock.now()
             decision, deadline = reg.start_decision(now, cap)
@@ -1239,13 +1296,15 @@ class PassRunner:
                                     'record': self.env.confirmation_record, 'utc': self.clock.now().isoformat(),
                                     'window_id': reg.window_id(now), 'identity': self.identity,
                                     'note': 'append games_sha256 to the registration block before the confirmation'})
+                digest = sha256_file(staged)
                 watch.final_check()  # after the last write; the selection is published only afterwards
                 staged.replace(path)
-                self.receipt('confirmation', 'SELECTED', self.env.confirmation_record['games_sha256'],
-                             sha256_file(path), SELECTION_FILE)
+                self.receipt('confirmation', 'SELECTED', self.env.confirmation_record['games_sha256'], digest,
+                             SELECTION_FILE, self.measurements(watch))
             except Exception as stop:
                 staged.unlink(missing_ok=True)
-                self.receipt('confirmation', 'SELECTION_ABORTED', f'{type(stop).__name__}: {stop}')
+                path.unlink(missing_ok=True)  # renamed but not receipted: not a publication
+                self.receipt('confirmation', 'SELECTION_ABORTED', f'{type(stop).__name__}: {stop}', None, SELECTION_FILE)
                 self.log('PLANNER_VARIANCE_ABORTED', 'confirmation selection', f'{type(stop).__name__}: {stop}')
                 return EXIT_STOPPED
             return EXIT_OK
@@ -1261,6 +1320,9 @@ class PassRunner:
                 return EXIT_STOPPED
             self.verify_attempt()
             passing = self.require_passing_verdict()
+            selection = self.selection()
+            require(selection is not None and selection['record']['games_sha256'] == pin['confirmation_games_sha256'],
+                    'the confirmation needs a published selection equal to the pin')
             tries, last_aborted = self.confirmation_tries(), None
             for label in tries:
                 state, record = self.status('confirmation', label)
