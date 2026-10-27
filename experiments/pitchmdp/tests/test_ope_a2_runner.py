@@ -371,6 +371,123 @@ class ManifestWriterTests(unittest.TestCase):
         self.assertFalse({signal.SIGALRM, signal.SIGUSR1} & signal.pthread_sigmask(signal.SIG_BLOCK, []))
 
 
+class PublicationTests(unittest.TestCase):
+    """PM decision (review round 4 #2): a completion receipt is staged, final-checked and committed by an atomic
+    rename; a guard failure before the rename leaves no usable seal and records a non-citable ABORTED."""
+    def setUp(self):
+        self.tmp = tmpdir(self)
+        self.manifest = roa.DigestManifest(self.tmp / 'digest.jsonl')
+        self.identity = {'config_digest': 'c' * 64, 'git_commit': 'd' * 40, 'seeds': {'a2_base': reg.A2_BASE}}
+
+    def staging(self):
+        return sorted(p.name for p in self.tmp.iterdir() if '.staging-' in p.name)
+
+    def assert_aborted(self, out, stage_id='A2-S1'):
+        self.assertEqual([e['kind'] for e in self.manifest.entries()], ['attempt_start', 'stage_failure'])
+        failure = self.manifest.entries()[-1]['payload']
+        self.assertEqual((failure['aborted'], failure['during_publication'], failure['class']),
+                         (True, True, 'infrastructure'))
+        aborted = json.loads((out / 'ABORTED.json').read_text())
+        self.assertEqual((aborted['status'], aborted['citable']), ('ABORTED', False))
+        self.assertEqual(self.staging(), [])  # the staging artifacts are gone
+        with self.assertRaisesRegex(IntegrityError, 'not sealed'):
+            roa.require_seal(self.manifest, stage_id)
+        self.assertEqual(roa.attempt_gate(self.manifest, stage_id), {'starts': 1})  # an infrastructure retry remains
+
+    def test_a_failed_commit_check_publishes_nothing(self):
+        self.manifest.append('config_digest', {'digest': 'a' * 64})
+        before = self.manifest.path.read_bytes()
+
+        def refuse():
+            raise roa.MemoryGuardExceeded('synthetic: free memory below the guard at the final check')
+        with self.assertRaises(roa.MemoryGuardExceeded):
+            self.manifest.append('stage_seal', {'stage': 'A2-S1'}, commit_check=refuse)
+        self.assertEqual((self.manifest.path.read_bytes(), self.staging()), (before, []))
+
+    def test_a_guard_failure_between_staging_and_rename_leaves_no_seal(self):
+        calls = {'n': 0}
+
+        def final_check():  # the early check passes, the check between staging and rename fails
+            calls['n'] += 1
+            if calls['n'] == 2:
+                self.assertTrue(self.staging())  # the staged receipt exists, unpublished
+                raise roa.HangGuardExceeded('synthetic: the hard cap reached between staging and rename')
+        out = self.tmp / 'A2-S1-a1'
+        with self.assertRaises(roa.HangGuardExceeded):
+            with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=final_check) as d:
+                roa.dump(d / 'tab.json', {'cells': {}})
+        self.assert_aborted(out)
+
+    def armed_env(self):
+        env = ClockEnv()
+        env.alarm = True
+        env.monotonic = time.monotonic
+        return env
+
+    def test_an_interrupt_during_publication_is_held_and_aborts_before_the_rename(self):
+        real = roa._write_synced
+
+        def staged_then_interrupted(path, data):
+            real(path, data)
+            if 'stage_seal' in data.decode().splitlines()[-1]:  # the hard cap fires while the seal is staged
+                signal.pthread_kill(threading.main_thread().ident, signal.SIGALRM)
+                time.sleep(0.05)
+        out = self.tmp / 'A2-S1-a1'
+        with mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': 30}), mock.patch.object(roa, '_write_synced', staged_then_interrupted):
+            with self.assertRaises(roa.HangGuardExceeded):
+                with roa.command_guard('A2-S1', self.armed_env()) as guard:
+                    with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=guard.final_check) as d:
+                        roa.dump(d / 'tab.json', {'cells': {}})
+        self.assert_aborted(out)
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+
+    def test_a_slow_staging_write_is_bounded_and_aborts(self):
+        real = roa._write_synced
+
+        def slow(path, data):
+            if 'stage_seal' in data.decode().splitlines()[-1]:
+                time.sleep(0.5)
+            real(path, data)
+        out = self.tmp / 'A2-S1-a1'
+        with mock.patch.object(reg, 'PUBLICATION_IO_TIMEOUT_SECONDS', 0.1), mock.patch.object(roa, '_write_synced', slow):
+            with self.assertRaisesRegex(roa.HangGuardExceeded, 'staging write exceeded'):
+                with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=lambda: None) as d:
+                    roa.dump(d / 'tab.json', {'cells': {}})
+            time.sleep(0.6)  # the abandoned writer finishes; it never renames
+        self.assertEqual([e['kind'] for e in self.manifest.entries()], ['attempt_start', 'stage_failure'])
+        with self.assertRaisesRegex(IntegrityError, 'not sealed'):
+            roa.require_seal(self.manifest, 'A2-S1')
+        with self.manifest.writer():
+            pass  # the next writer removes any never-published staging leftover
+        self.assertEqual(self.staging(), [])
+
+    def test_an_interrupt_after_the_rename_keeps_the_seal_and_is_reported(self):
+        real = roa.os.replace
+
+        def replace_then_interrupted(src, dst):
+            real(src, dst)
+            if 'digest.jsonl' in str(dst) and 'stage_seal' in Path(dst).read_text().splitlines()[-1]:
+                signal.pthread_kill(threading.main_thread().ident, signal.SIGALRM)
+                time.sleep(0.05)
+        out = self.tmp / 'A2-S1-a1'
+        with mock.patch.dict(reg.HANG_GUARDS, {'A2-S1': 30}), mock.patch.object(roa.os, 'replace', replace_then_interrupted):
+            with self.assertRaisesRegex(roa.HangGuardExceeded, 'hang guard'):
+                with roa.command_guard('A2-S1', self.armed_env()) as guard:
+                    with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=guard.final_check) as d:
+                        roa.dump(d / 'tab.json', {'cells': {}})
+        self.assertEqual(roa.require_seal(self.manifest, 'A2-S1')[0], out)  # committed before the interrupt: it stands
+        self.assertFalse((out / 'ABORTED.json').exists())
+
+    def test_an_aborted_attempt_is_never_usable(self):
+        out = self.tmp / 'A2-S1-a1'
+        with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=lambda: None) as d:
+            roa.dump(d / 'tab.json', {'cells': {}})
+        roa.require_seal(self.manifest, 'A2-S1')
+        roa.dump(out / 'ABORTED.json', {'status': 'ABORTED'})
+        with self.assertRaisesRegex(IntegrityError, 'aborted'):
+            roa.require_seal(self.manifest, 'A2-S1')
+
+
 class ReceiptTests(unittest.TestCase):
     """PM decision (review #3): G-CODE (commit = the running code) and G-REG receipts before any data."""
     def setUp(self):
@@ -438,7 +555,22 @@ class GuardTests(unittest.TestCase):
             roa.Guards(rss=lambda: 9 * roa.GIB, free=lambda: 10 * roa.GIB)()
         with self.assertRaises(roa.MemoryGuardExceeded):
             roa.Guards(rss=lambda: roa.GIB, free=lambda: 3 * roa.GIB)()
-        roa.Guards(rss=lambda: roa.GIB, free=lambda: None)()
+        roa.Guards(rss=lambda: roa.GIB, free=lambda: 5 * roa.GIB)()
+        # review round 4 #3: an unavailable or unparsable measurement is a memory-guard stop, never "enough"
+        with self.assertRaisesRegex(roa.MemoryGuardExceeded, 'could not be measured'):
+            roa.Guards(rss=lambda: roa.GIB, free=lambda: None)()
+        garbage = subprocess.CompletedProcess(['vm_stat'], 0, stdout='no page size here\n', stderr='')
+        with mock.patch.object(roa.platform, 'system', lambda: 'Darwin'), \
+                mock.patch.object(roa.subprocess, 'run', lambda *a, **k: garbage):
+            self.assertIsNone(roa.free_memory_bytes())
+            with self.assertRaisesRegex(roa.MemoryGuardExceeded, 'could not be measured'):
+                roa.Guards(rss=lambda: roa.GIB)()
+
+        def slow(*args, **kwargs):
+            raise subprocess.TimeoutExpired(['vm_stat'], reg.MEMORY_SAMPLE_TIMEOUT_SECONDS)
+        with mock.patch.object(roa.platform, 'system', lambda: 'Darwin'), mock.patch.object(roa.subprocess, 'run', slow):
+            with self.assertRaisesRegex(roa.MemoryGuardExceeded, 'timeout'):
+                roa.Guards(rss=lambda: roa.GIB)()
         self.assertGreater(roa.peak_rss_bytes(), 0)
 
     def test_the_checkpoint_counts_elapsed_time(self):

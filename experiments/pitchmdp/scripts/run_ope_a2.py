@@ -3,8 +3,10 @@
 A real-data command (smoke, s0, s1, s2, s3, decide, unblind) is guarded from argument parsing to its
 completion receipt: the run-window rule (the whole hang guard must end strictly before the next 06:30
 KST and never enter 06:30-13:30 KST), the SIGALRM hang guard and the RSS / free-memory checkpoint cover
-preflight, data acquisition, computation, hashing and sealing; the final check runs after the last
-write, disarms the timer and precedes the completion receipt (stage seal). Preflight refuses (fail
+preflight, data acquisition, computation, hashing and sealing; the hang timer stays armed through the
+completion receipt (stage seal), which is staged, checked by the final guard check and committed by an
+atomic rename (a failure before the rename publishes nothing and records a non-citable ABORTED); the
+bounded cleanup then disarms the guards. Preflight refuses (fail
 closed) unless configs/EXP-OPE-RES-01.json passes the registry check with status REGISTERED, execution
 enabled, every pin filled, the registration references recorded and the gates passed; the external
 append-only digest manifest (outside results/) holds the registered config digest and the G-CODE
@@ -96,28 +98,74 @@ def _canonical(obj):
 
 
 GUARD_SIGNALS = (signal.SIGALRM, signal.SIGUSR1)
+ACTIVE_GUARDS = []  # the armed CommandGuard of this process (at most one)
 
 
 @contextmanager
-def guard_signals_blocked():
-    """The hang and memory interrupts wait (pending) while a receipt is written and fsynced, so a receipt is
-    never torn; they are delivered right after."""
-    if threading.current_thread() is not threading.main_thread():
-        yield
+def deferred_interrupts():
+    """Inside, a guard interrupt (hang guard, memory watchdog) is held as pending instead of raised, whichever
+    thread the OS delivered it to, so a receipt is never torn (review round 4 #2). Yields the active guard."""
+    guard = ACTIVE_GUARDS[-1] if ACTIVE_GUARDS else None
+    if guard is None:
+        yield None
         return
-    previous = signal.pthread_sigmask(signal.SIG_BLOCK, GUARD_SIGNALS)
+    guard.deferring += 1
     try:
-        yield
+        yield guard
     finally:
-        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+        guard.deferring -= 1
+
+
+def bounded_io(fn, what):
+    """Blocking publication I/O in a helper thread (guard signals blocked there), waited for at most the
+    registered publication bound: a slow write or fsync aborts the publication instead of stalling it."""
+    box = {}
+
+    def run():
+        signal.pthread_sigmask(signal.SIG_BLOCK, GUARD_SIGNALS)
+        try:
+            box['value'] = fn()
+        except BaseException as error:  # handed to the caller
+            box['error'] = error
+    worker = threading.Thread(target=run, name='a2-publication-io', daemon=True)
+    worker.start()
+    worker.join(reg.PUBLICATION_IO_TIMEOUT_SECONDS)
+    if worker.is_alive():
+        raise HangGuardExceeded(f'{what} exceeded its registered bound ({reg.PUBLICATION_IO_TIMEOUT_SECONDS} s)')
+    if 'error' in box:
+        raise box['error']
+    return box.get('value')
+
+
+def _write_synced(path, data):
+    with open(path, 'wb') as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _fsync_dir(path):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _remove(path):
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
 
 
 class DigestManifest:
-    """Append-only JSONL outside results/: each entry carries the previous entry's sha256 (hash chain);
-    entries are never rewritten. One writer at a time (review round 3 #3): ``writer()`` holds an exclusive
-    non-blocking fcntl lock on the manifest file for a whole command, and every append takes the same lock (or
-    reuses the held one), verifies the chain and its tail digest under it, then writes the entry in one
-    interruption-safe write + fsync. A second writer refuses."""
+    """Append-only JSONL outside results/: each entry carries the previous entry's sha256 (hash chain); a
+    published prefix is never changed. One writer at a time (review round 3 #3): an exclusive non-blocking
+    fcntl lock on the sibling lock file, held by ``writer()`` for a whole command and by every append; a
+    second writer refuses. Each append is published atomically (review round 4 #2): the verified bytes plus
+    the new entry go to a staging file (bounded write + fsync), an optional final check runs, then an atomic
+    rename publishes it; any failure before the rename removes the staging file and publishes nothing."""
     KINDS = ('config_digest', 'review_reference', 'attempt_start', 'attempt_reconciliation', 'stage_seal', 'cell_seal',
              'stage_failure', 'bugfix_addendum')
 
@@ -126,11 +174,12 @@ class DigestManifest:
         _require(self.path.is_absolute(), 'digest manifest path must be absolute')
         _require(not self.path.resolve().is_relative_to((REPO / 'results').resolve()),
                  'the digest manifest must live outside the repository results/')
+        self.lock_path = self.path.with_name(self.path.name + '.lock')
         self._fd = None
 
     def _open_locked(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o644)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -146,6 +195,8 @@ class DigestManifest:
         self._fd = fd
         try:
             self.entries()  # the chain and its tail digest, verified under the lock
+            for stale in self.path.parent.glob(f'{self.path.name}.staging-*'):  # never-published staging leftovers
+                _remove(stale)
             yield self
         finally:
             self._fd = None
@@ -155,20 +206,19 @@ class DigestManifest:
     @contextmanager
     def _locked(self):
         if self._fd is not None:
-            yield self._fd
+            yield
             return
         fd = self._open_locked()
         try:
-            yield fd
+            yield
         finally:
             fcntl.flock(fd, fcntl.LOCK_UN)
             os.close(fd)
 
-    def entries(self):
-        if not self.path.exists():
-            return []
+    @staticmethod
+    def _parse(raw):
         out, prev = [], None
-        for seq, line in enumerate(self.path.read_bytes().splitlines()):
+        for seq, line in enumerate(raw.splitlines()):
             entry = json.loads(line)
             body = {k: v for k, v in entry.items() if k != 'sha256'}
             _require(entry.get('seq') == seq and entry.get('prev') == prev
@@ -178,19 +228,44 @@ class DigestManifest:
             prev = entry['sha256']
         return out
 
-    def append(self, kind, payload):
+    def entries(self):
+        if not self.path.exists():
+            return []
+        return self._parse(self.path.read_bytes())
+
+    def append(self, kind, payload, *, commit_check=None):
+        """Publish one entry: staging copy (verified chain + entry, bounded write and fsync), ``commit_check``
+        (the final guard check of a completion receipt), atomic rename (the commit point), bounded directory
+        sync. A guard interrupt during the publication is held; before the commit it aborts the publication
+        (through ``commit_check``), after the commit it is raised (or, for a completion receipt, reported after
+        the cleanup: the published receipt stands)."""
         _require(kind in self.KINDS, f'unknown manifest entry kind {kind!r}')
-        with self._locked() as fd:
-            entries = self.entries()  # verified under the lock: the new entry chains to the verified tail
+        with self._locked(), deferred_interrupts() as guard:
+            raw = self.path.read_bytes() if self.path.exists() else b''
+            entries = self._parse(raw)  # verified under the lock: the new entry chains to the verified tail
             body = {'seq': len(entries), 'time_utc': datetime.now(timezone.utc).isoformat(), 'kind': kind,
                     'payload': payload, 'prev': entries[-1]['sha256'] if entries else None}
             entry = {**body, 'sha256': hashlib.sha256(_canonical(body).encode()).hexdigest()}
-            data = (_canonical(entry) + '\n').encode()
-            with guard_signals_blocked():
-                view = memoryview(data)
-                while view:
-                    view = view[os.write(fd, view):]
-                os.fsync(fd)
+            data = raw + (_canonical(entry) + '\n').encode()
+            staging = self.path.with_name(f'{self.path.name}.staging-{os.getpid()}')
+            try:
+                bounded_io(lambda: _write_synced(staging, data), 'the receipt staging write')
+                if commit_check is not None:
+                    commit_check()
+                os.replace(staging, self.path)  # the commit point (atomic)
+            except BaseException:
+                _remove(staging)
+                raise
+            try:
+                bounded_io(lambda: _fsync_dir(self.path.parent), 'the receipt directory sync')
+            except HangGuardExceeded as error:  # durability after the commit: reported, the receipt stands
+                if guard is not None:
+                    guard.late = guard.late or error
+        if guard is not None:
+            if commit_check is not None:
+                guard.defer_to_late()
+            else:
+                guard.raise_pending()
         return entry
 
     def latest(self, kind, **match):
@@ -232,6 +307,9 @@ def require_seal(manifest, stage_id):
     entry = manifest.latest('stage_seal', stage=stage_id)
     _require(entry is not None, f'upstream stage {stage_id} is not sealed in the digest manifest')
     out = Path(entry['payload']['output_dir'])
+    _require(not (out / 'ABORTED.json').exists() and not any(
+        e['kind'] == 'stage_failure' and e['payload'].get('output_dir') == str(out) for e in manifest.entries()),
+        f'{stage_id} attempt {out} was aborted; its outputs are not citable')
     _require(reg.file_sha256(out / 'manifest.json') == entry['payload']['manifest_sha256'],
              f'{stage_id} output manifest differs from its seal (deterministic integrity)')
     listed = json.loads((out / 'manifest.json').read_text())['artifact_sha256']
@@ -412,20 +490,19 @@ class Guards:
             free = self.free()
         except subprocess.TimeoutExpired:
             raise MemoryGuardExceeded('free-memory sampling exceeded its registered timeout (fail closed)') from None
-        if free is not None and free < self.free_min:
+        if free is None:  # review round 4 #3: an unavailable or unparsable measurement is never "enough memory"
+            raise MemoryGuardExceeded('free memory could not be measured (fail closed)')
+        if free < self.free_min:
             raise MemoryGuardExceeded('free memory below the registered guard; stopping to protect the recorder')
 
 
-def _raise_hang(signum, frame):
-    raise HangGuardExceeded('registered hang guard exceeded; partial outputs preserved, not citable')
-
-
 class CommandGuard:
-    """One command's guards (PM decisions, review #4 rounds 1-3): the window rule at entry; the registered hang
-    guard H as the SIGALRM hard cap; work checkpoints (memory + elapsed time) that stop at H minus the
-    finalization reserve; the final check, which refuses to seal within the last cleanup reserve of H, so the
-    completion receipt and the bounded cleanup end before H; and a memory watchdog thread through every code
-    path (protected calls included) that can no longer signal once the cleanup has started."""
+    """One command's guards (PM decisions, review #4 rounds 1-4): the window rule at entry; the registered hang
+    guard H as the SIGALRM hard cap, armed from entry to the cleanup; work checkpoints (memory + elapsed time)
+    that stop at H minus the finalization reserve; the final check of a completion receipt (memory, no pending
+    interrupt, and the cleanup reserve of H left), run between its staging write and its atomic rename; a memory
+    watchdog thread through every code path; interrupts held as pending inside a publication (whatever thread
+    received the signal) and never raised inside a receipt; a bounded cleanup."""
     def __init__(self, stage_id, env, entered=None):
         self.stage_id, self.env = stage_id, env
         self.seconds = float(reg.HANG_GUARDS[GUARD_OF[stage_id]])
@@ -440,6 +517,7 @@ class CommandGuard:
         self.memory = env.guards()
         self.armed, self.previous, self.watchdog, self.stop, self.violation = False, {}, None, None, None
         self.lock, self.closed, self.late = threading.Lock(), False, None
+        self.deferring, self.pending = 0, None
 
     def elapsed(self):
         return self.env.monotonic() - self.t0
@@ -451,11 +529,41 @@ class CommandGuard:
             raise HangGuardExceeded('registered hang guard minus the finalization reserve reached (work checkpoint)')
 
     def final_check(self):
-        """After the last output write and before the completion receipt: the memory guard and enough of the hard
-        cap left for the receipt and the bounded cleanup (the cleanup reserve)."""
+        """The final guard check of a completion receipt (between its staging write and its atomic rename): no
+        interrupt pending, the memory guard, and enough of the hard cap left for the rename and the bounded
+        cleanup (the cleanup reserve). Any failure aborts the publication: no receipt is published."""
+        if self.pending is not None:
+            error, self.pending = self.pending, None
+            raise error
         self.memory()
         if self.elapsed() > self.seal_seconds:
             raise HangGuardExceeded('not enough of the registered hang guard is left to seal and clean up (final check)')
+
+    def _on_alarm(self, signum, frame):
+        error = HangGuardExceeded('registered hang guard exceeded; partial outputs preserved, not citable')
+        if self.deferring:
+            self.pending = self.pending or error
+            return
+        raise error
+
+    def _on_memory(self, signum, frame):
+        error = self.violation or MemoryGuardExceeded('memory watchdog')
+        if self.deferring:
+            self.pending = self.pending or error
+            return
+        raise error
+
+    def raise_pending(self):
+        """After a published receipt: a held interrupt takes effect now."""
+        if self.pending is not None and not self.deferring:
+            error, self.pending = self.pending, None
+            raise error
+
+    def defer_to_late(self):
+        """After a published completion receipt: a held interrupt is reported after the cleanup (the receipt,
+        published by its atomic rename after the final check, stands)."""
+        if self.pending is not None and not self.deferring:
+            self.late, self.pending = self.late or self.pending, None
 
     def arm(self):
         if not self.env.alarm:
@@ -463,13 +571,15 @@ class CommandGuard:
         remaining = self.seconds - self.elapsed()
         if remaining <= 0:
             raise HangGuardExceeded('registered hang guard exceeded before arming')
-        self.previous = {signal.SIGALRM: signal.signal(signal.SIGALRM, _raise_hang),
-                         signal.SIGUSR1: signal.signal(signal.SIGUSR1, self._raise_memory)}
+        self.previous = {signal.SIGALRM: signal.signal(signal.SIGALRM, self._on_alarm),
+                         signal.SIGUSR1: signal.signal(signal.SIGUSR1, self._on_memory)}
         signal.setitimer(signal.ITIMER_REAL, float(remaining))
         self.armed, self.stop = True, threading.Event()
+        ACTIVE_GUARDS.append(self)
         main = threading.main_thread().ident
 
         def watch():  # one interrupt at most, never after the cleanup started
+            signal.pthread_sigmask(signal.SIG_BLOCK, GUARD_SIGNALS)  # process signals go to the main thread only
             while not self.stop.wait(reg.WATCHDOG_INTERVAL_SECONDS):
                 try:
                     self.memory()
@@ -485,9 +595,6 @@ class CommandGuard:
                 return
         self.watchdog = threading.Thread(target=watch, name='a2-memory-watchdog', daemon=True)
         self.watchdog.start()
-
-    def _raise_memory(self, signum, frame):
-        raise self.violation or MemoryGuardExceeded('memory watchdog')
 
     def _disarm_once(self):
         previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, GUARD_SIGNALS)  # nothing interrupts the cleanup
@@ -507,18 +614,26 @@ class CommandGuard:
                                           self.violation or MemoryGuardExceeded('memory watchdog (during the cleanup)'))
             for sig, handler in self.previous.items():
                 signal.signal(sig, handler)
+            if self in ACTIVE_GUARDS:
+                ACTIVE_GUARDS.remove(self)
             self.armed = False
         finally:
             signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
 
     def disarm(self):
-        """Bounded and idempotent cleanup; returns the guard interrupt that arrived while the cleanup ran (raised by
-        the caller after the cleanup, so a completed receipt is never torn), else None."""
-        while self.armed:
-            try:
-                self._disarm_once()
-            except (HangGuardExceeded, MemoryGuardExceeded) as error:
-                self.late = self.late or error
+        """Bounded and idempotent cleanup (interrupts held meanwhile); returns the guard interrupt that arrived
+        while it ran or after a published completion receipt (raised by the caller after the cleanup)."""
+        self.deferring += 1
+        try:
+            while self.armed:
+                try:
+                    self._disarm_once()
+                except (HangGuardExceeded, MemoryGuardExceeded) as error:
+                    self.late = self.late or error
+        finally:
+            self.deferring -= 1
+        if self.pending is not None:
+            self.late, self.pending = self.late or self.pending, None
         return self.late
 
 
@@ -588,13 +703,15 @@ def _default(value):
 @contextmanager
 def stage(output, stage_id, identity, *, manifest, final_check, start=None):
     """Attempt-start receipt (before the directory exists), fresh stage directory, outputs, SHA256SUMS and
-    manifest.json; the final check after the last write; then the completion receipt (stage seal). Any
-    failure keeps the directory and appends a classified failure receipt."""
+    manifest.json; an early final check; then the completion receipt (stage seal), staged, checked by the
+    final guard check and committed by an atomic rename. Any failure before the commit keeps the directory,
+    writes a non-citable ABORTED record and appends a classified failure receipt; no seal is published."""
     output = Path(output)
     _require(not output.exists(), f'stage output exists; preserve it and use a new attempt directory: {output}')
     started = (start or datetime.now(timezone.utc)).isoformat()
     manifest.append('attempt_start', {'stage': stage_id, 'output_dir': str(output), 'started_utc': started})
     t0, cpu0 = time.perf_counter(), time.process_time()
+    publishing = False
     try:
         output.mkdir(parents=True)
         dump(output / 'started.json', {'stage': stage_id, 'started_utc': started, **identity})
@@ -606,21 +723,27 @@ def stage(output, stage_id, identity, *, manifest, final_check, start=None):
             'peak_rss_bytes': peak_rss_bytes()},
             'artifact_sha256': {**sums, 'SHA256SUMS': reg.file_sha256(output / 'SHA256SUMS')},
             **{k: identity[k] for k in ('config_digest', 'git_commit', 'seeds') if k in identity}})
-        final_check()  # after the last write, before the completion receipt
+        final_check()  # after the last write (early stop)
+        publishing = True
+        # the completion receipt: staged, final guard check, atomic rename (review round 4 #2)
+        manifest.append('stage_seal', {'stage': stage_id, 'output_dir': str(output),
+                                       'manifest_sha256': reg.file_sha256(output / 'manifest.json')},
+                        commit_check=final_check)
     except BaseException as error:
         kind = ('infrastructure' if isinstance(error, (HangGuardExceeded, MemoryGuardExceeded))
                 else 'deterministic_integrity' if isinstance(error, IntegrityError) else 'error')
-        payload = {'stage': stage_id, 'class': kind, 'output_dir': str(output)}
+        payload = {'stage': stage_id, 'class': kind, 'output_dir': str(output), 'aborted': True,
+                   'during_publication': publishing}
         if output.is_dir():
-            failure = output / f"failure-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}.json"
-            dump(failure, {'stage': stage_id, 'class': kind, 'error_type': type(error).__name__, 'error': str(error),
-                           'seconds': time.perf_counter() - t0, 'peak_rss_bytes': peak_rss_bytes(), 'citable': False,
-                           'partial_outputs_preserved': True})
-            payload['failure_sha256'] = reg.file_sha256(failure)
+            stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+            record = {'stage': stage_id, 'status': 'ABORTED', 'class': kind, 'error_type': type(error).__name__,
+                      'error': str(error), 'during_publication': publishing, 'seconds': time.perf_counter() - t0,
+                      'peak_rss_bytes': peak_rss_bytes(), 'citable': False, 'partial_outputs_preserved': True}
+            dump(output / f'failure-{stamp}.json', record)
+            dump(output / 'ABORTED.json', record)  # non-citable; no completion receipt was published
+            payload['failure_sha256'] = reg.file_sha256(output / f'failure-{stamp}.json')
         manifest.append('stage_failure', payload)
         raise
-    manifest.append('stage_seal', {'stage': stage_id, 'output_dir': str(output),
-                                   'manifest_sha256': reg.file_sha256(output / 'manifest.json')})
 
 
 def identity_record(config, git_commit, extra=None):

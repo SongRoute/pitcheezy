@@ -116,7 +116,8 @@ def sn_pair(name, lines, point, rewards=None, u=None):
     (W_T at depth T) so that V = coef . u (+ W_T u_T c); rewards override observed ends (R1 arms).
     P (the baseline paired-bound set) applies to SN as to every estimator (PM decision, review #12): a P
     row with an unknown end is a point under SN exactly when its SN paired bounds coincide, checked at
-    the full-sample normalisers ``u`` (p_nonpoint) and again in every bootstrap replicate."""
+    the full-sample normalisers ``u`` (p_nonpoint) and again in every bootstrap replicate; a full-sample
+    non-point (an undefined full-sample P mean) invalidates every SN P statistic (review round 4 #1)."""
     paths = weight_paths(lines)
     depth = max(len(p[0]) for p in paths) - 1
     n = len(lines)
@@ -196,6 +197,8 @@ def run_pairs(resampler, pairs, point, baseline_name, *, chunk=500, checkpoint=N
         else:
             num, lo_num, hi_num, cens_num, ok_end, ok_p = _sn_replicates(resampler, pair, point, den_all)
             ok_p = ok_p & (den_p > 0)
+            if pair.p_nonpoint:  # review round 4 #1: an undefined full-sample P mean gates every replicate
+                ok_p = np.zeros_like(ok_p)
         with np.errstate(divide='ignore', invalid='ignore'):
             stats = {'mean_p': num / den_p, 'shift_p': (num - base_num) / den_p, 'lower_endpoint': lo_num / den_all,
                      'upper_endpoint': hi_num / den_all, 'point_part_n': num / den_all,
@@ -298,6 +301,8 @@ def pigeonhole(game_keys, pitcher_keys, pairs, point, *, draws, seed, chunk=200,
                     u = [1.0 / ((w @ s['held'][k]) / tot[:, None]) for k in (0, 1)]
                     num = (np.sum(u[0] * (w[:, known] @ s['full'][0][known]), axis=1)
                            - np.sum(u[1] * (w[:, known] @ s['full'][1][known]), axis=1))
+                    if pair.p_nonpoint:  # the full-sample P mean is undefined: no P-based statistic
+                        num = np.full(n, np.nan)
                     for i in np.flatnonzero(s['p_unknown']):  # the same per-replicate point rule as run_pairs
                         base = [u[k] @ s['coef'][k][i] for k in (0, 1)]
                         slope = [s['slope'][k][i] * u[k][:, s['end'][i]] for k in (0, 1)]

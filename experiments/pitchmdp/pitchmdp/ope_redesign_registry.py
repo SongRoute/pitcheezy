@@ -356,6 +356,7 @@ CLEANUP_RESERVE_SECONDS = 30.0  # min(30 s, 2.5%): the completion receipt and th
 WATCHDOG_INTERVAL_SECONDS = 1.0
 WATCHDOG_JOIN_SECONDS = 1.0  # the cleanup never waits longer for the watchdog (a stuck sampler cannot signal any more)
 MEMORY_SAMPLE_TIMEOUT_SECONDS = 2.0  # vm_stat bound; a timeout is a memory-guard stop (fail closed)
+PUBLICATION_IO_TIMEOUT_SECONDS = 10.0  # each bounded receipt write / fsync (review round 4 #2)
 MANIFEST_COMMAND_GUARD = 'A2-S4'  # manifest commands use the A2-S4 hang guard (3,600 s)
 KST = timezone(timedelta(hours=9))
 PROTECTION_WINDOW_KST = (dtime(6, 30), dtime(13, 30))
@@ -674,8 +675,9 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                   'non_point_under_a_pair': 'that pair has no P mean: its P statistics are invalid (fail-safe, counted); '
                                             'its L1-R endpoints stay defined (separate validity)',
                   'sn': 'the same P for SN: a P row with an unknown end is a point while its SN paired bounds coincide '
-                        '(full-sample normalisers and every replicate); a drawn non-point P row invalidates that '
-                        'replicate\'s P statistics only',
+                        '(full-sample normalisers and every replicate); a full-sample non-point P row (an undefined '
+                        'full-sample P mean) invalidates every SN P statistic of the pair, whatever the replicates '
+                        'give; a drawn non-point P row invalidates that replicate\'s P statistics',
                   'variant_bounds': 'for every variant (SN, finite lambda or M) a shared unknown end cancels '
                                     'algebraically when the transformed slopes are equal (bounds coincide exactly, no '
                                     'tolerance); the baseline keeps the registered policy_estimator formula',
@@ -749,16 +751,24 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                'rule': 'the whole command (argument parsing to the completion receipt) must end strictly before 06:30'},
     'guards': {'coverage': 'hang timer, RSS cap and free-memory guard from argument parsing to the final seal (preflight, '
                            'data acquisition under the common heavy lock, computation, hashing, every manifest write and '
-                           'the seal; unblind and the manifest commands included); the final check runs after the last '
-                           'write, disarms the timer and precedes the completion receipt',
+                           'the seal; unblind and the manifest commands included); the hang timer stays armed through '
+                           'the completion receipt and is disarmed by the bounded cleanup',
+               'publication': 'every receipt is published atomically: the verified manifest bytes plus the entry go to a '
+                              'staging file (write and fsync bounded by 10 s), the final guard check runs (completion '
+                              'receipt: memory, no pending interrupt, the cleanup reserve left), then an atomic rename '
+                              'commits it; guard interrupts are held as pending during a publication; any failure before '
+                              'the rename removes the staging file, publishes no seal and records a non-citable ABORTED '
+                              '(ABORTED.json and a stage_failure receipt), which downstream readers refuse',
+               'memory_measurement': 'an unavailable, unparsable or timed-out free-memory measurement is a memory-guard '
+                                     'stop (fail closed), never treated as enough memory',
                'memory_watchdog': 'a watchdog thread checks the RSS cap and free memory every 1 s through every code path '
                                   '(the protected estimator included) and interrupts the main thread on a violation',
                'finalization_reserve': 'work checkpoints stop at the hang guard minus min(120 s, 10%); hashing and the '
                                        'manifest run inside that reserve under the unchanged hard cap',
                'cleanup_reserve': 'the final check refuses to seal within the last min(30 s, 2.5%) of the hang guard; '
-                                  'the completion receipt (guard signals blocked while it is written and fsynced) and the '
-                                  'cleanup (watchdog join bounded by 1 s, memory sampling bounded by 2 s, late signals '
-                                  'consumed before the handlers are restored) fit in that reserve',
+                                  'the rename and the cleanup (watchdog join bounded by 1 s, memory sampling bounded by '
+                                  '2 s, late signals consumed before the handlers are restored) fit in that reserve; an '
+                                  'interrupt after the committed rename is reported after the cleanup, the seal stands',
                'manifest_commands': 'register-digest, record-review, reconcile-attempt and register-addendum run under the '
                                     'window, memory and hang guards (the A2-S4 hang guard)',
                'attempts': 'an attempt-start receipt is appended before the stage directory exists; at most two starts; '
@@ -774,9 +784,10 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
     'digest_manifest_location': 'the external digest manifest path is checked with the same disjointness rule (resolved '
                                 'real paths; outside every sealed input, both checkouts and results/) before every '
                                 'manifest mutation, the manifest commands included',
-    'digest_manifest_writer': 'one writer at a time: a command holds an exclusive non-blocking fcntl lock on the manifest '
-                              'file from its location check to its last receipt (every append locks too); the chain and '
-                              'its tail digest are verified under the lock before each append; a second writer refuses',
+    'digest_manifest_writer': 'one writer at a time: a command holds an exclusive non-blocking fcntl lock on the '
+                              'manifest\'s sibling lock file from its location check to its last receipt (every append '
+                              'locks too); the chain and its tail digest are verified under the lock before each append; '
+                              'a second writer refuses',
     'terminal_decision': 'A2-S4 may record FAILED_INTEGRITY as soon as a stage exhausted its attempts in a deterministic '
                          'integrity failure; its unsealed descendants are recorded as BLOCKED and other unsealed stages '
                          'as NOT_RUN',

@@ -1850,6 +1850,11 @@
       "date": "2026-10-27",
       "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
       "what": "code review CODE-REVIEW-A2-astra-003 (FAIL) fixes: implementation block updated (variant shared-end bounds cancel algebraically, the minimum-P rule invalidates P statistics only, cleanup reserve with bounded watchdog cleanup and an interruption-safe completion receipt, one manifest writer at a time); point_set_P and zeta_p prose synchronized with the registration draft; still DRAFT_UNREGISTERED, execution disabled"
+    },
+    {
+      "date": "2026-10-27",
+      "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
+      "what": "code review CODE-REVIEW-A2-astra-004 (FAIL) fixes: implementation block updated (an undefined full-sample SN P mean invalidates every SN P statistic; receipts staged, final-checked and committed by an atomic rename with ABORTED on failure; unavailable memory measurement fails closed; guard prose aligned); still DRAFT_UNREGISTERED, execution disabled"
     }
   ],
   "implementation": {
@@ -1871,7 +1876,7 @@
     "point_set": {
       "definition": "E0 PAs whose baseline (R1_0 x R2_0, L1-R) paired delta bounds are equal (float ==)",
       "non_point_under_a_pair": "that pair has no P mean: its P statistics are invalid (fail-safe, counted); its L1-R endpoints stay defined (separate validity)",
-      "sn": "the same P for SN: a P row with an unknown end is a point while its SN paired bounds coincide (full-sample normalisers and every replicate); a drawn non-point P row invalidates that replicate's P statistics only",
+      "sn": "the same P for SN: a P row with an unknown end is a point while its SN paired bounds coincide (full-sample normalisers and every replicate); a full-sample non-point P row (an undefined full-sample P mean) invalidates every SN P statistic of the pair, whatever the replicates give; a drawn non-point P row invalidates that replicate's P statistics",
       "variant_bounds": "for every variant (SN, finite lambda or M) a shared unknown end cancels algebraically when the transformed slopes are equal (bounds coincide exactly, no tolerance); the baseline keeps the registered policy_estimator formula",
       "minimum": "fewer than 50 P PAs: the P statistics of every pair (SN and DR alike) are invalid; the all-E0 endpoint intervals keep only the inherited E0 minimum"
     },
@@ -1974,10 +1979,12 @@
       "rule": "the whole command (argument parsing to the completion receipt) must end strictly before 06:30"
     },
     "guards": {
-      "coverage": "hang timer, RSS cap and free-memory guard from argument parsing to the final seal (preflight, data acquisition under the common heavy lock, computation, hashing, every manifest write and the seal; unblind and the manifest commands included); the final check runs after the last write, disarms the timer and precedes the completion receipt",
+      "coverage": "hang timer, RSS cap and free-memory guard from argument parsing to the final seal (preflight, data acquisition under the common heavy lock, computation, hashing, every manifest write and the seal; unblind and the manifest commands included); the hang timer stays armed through the completion receipt and is disarmed by the bounded cleanup",
+      "publication": "every receipt is published atomically: the verified manifest bytes plus the entry go to a staging file (write and fsync bounded by 10 s), the final guard check runs (completion receipt: memory, no pending interrupt, the cleanup reserve left), then an atomic rename commits it; guard interrupts are held as pending during a publication; any failure before the rename removes the staging file, publishes no seal and records a non-citable ABORTED (ABORTED.json and a stage_failure receipt), which downstream readers refuse",
+      "memory_measurement": "an unavailable, unparsable or timed-out free-memory measurement is a memory-guard stop (fail closed), never treated as enough memory",
       "memory_watchdog": "a watchdog thread checks the RSS cap and free memory every 1 s through every code path (the protected estimator included) and interrupts the main thread on a violation",
       "finalization_reserve": "work checkpoints stop at the hang guard minus min(120 s, 10%); hashing and the manifest run inside that reserve under the unchanged hard cap",
-      "cleanup_reserve": "the final check refuses to seal within the last min(30 s, 2.5%) of the hang guard; the completion receipt (guard signals blocked while it is written and fsynced) and the cleanup (watchdog join bounded by 1 s, memory sampling bounded by 2 s, late signals consumed before the handlers are restored) fit in that reserve",
+      "cleanup_reserve": "the final check refuses to seal within the last min(30 s, 2.5%) of the hang guard; the rename and the cleanup (watchdog join bounded by 1 s, memory sampling bounded by 2 s, late signals consumed before the handlers are restored) fit in that reserve; an interrupt after the committed rename is reported after the cleanup, the seal stands",
       "manifest_commands": "register-digest, record-review, reconcile-attempt and register-addendum run under the window, memory and hang guards (the A2-S4 hang guard)",
       "attempts": "an attempt-start receipt is appended before the stage directory exists; at most two starts; a start without a receipt counts and needs a recorded reconciliation before the next start",
       "refusals_before_attempt": "registry, digest, receipts, sources, destination, upstream seals, G-SMOKE, the smoke layout plan and the A2-S4 stage status refuse before the attempt-start"
@@ -1988,7 +1995,7 @@
     },
     "destination": "a fresh directory directly under output_root; output_root disjoint (resolved real paths) from the repository, the main checkout (git common directory), the S6-dr-a5 stage directory, the processed frame directory, the raw root and the G0 bundle and WE directories",
     "digest_manifest_location": "the external digest manifest path is checked with the same disjointness rule (resolved real paths; outside every sealed input, both checkouts and results/) before every manifest mutation, the manifest commands included",
-    "digest_manifest_writer": "one writer at a time: a command holds an exclusive non-blocking fcntl lock on the manifest file from its location check to its last receipt (every append locks too); the chain and its tail digest are verified under the lock before each append; a second writer refuses",
+    "digest_manifest_writer": "one writer at a time: a command holds an exclusive non-blocking fcntl lock on the manifest's sibling lock file from its location check to its last receipt (every append locks too); the chain and its tail digest are verified under the lock before each append; a second writer refuses",
     "terminal_decision": "A2-S4 may record FAILED_INTEGRITY as soon as a stage exhausted its attempts in a deterministic integrity failure; its unsealed descendants are recorded as BLOCKED and other unsealed stages as NOT_RUN",
     "tab_descriptive_stop": "a descriptive cell stopped by the work deadline (after every acceptance cell is sealed) is written as a NOT_RUN cell record and sealed with the stage",
     "smoke_projection_ratio": "rows of the processed row groups overlapping TRAIN (footer metadata, an upper bound) / rows of the smoke subset before the regular-season filter (labelled projection)",

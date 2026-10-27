@@ -428,6 +428,19 @@ class PointSetTests(unittest.TestCase):
         self.assertFalse(reg.in_point_set({'in_population': False, 'delta_bounds': [0.0, 0.0]}))
 
 
+class GuardProseTests(unittest.TestCase):
+    def test_the_pinned_guard_prose_matches_the_publication_protocol(self):
+        # review round 4 #4: the implementation block describes the revised guard and publication protocol
+        guards = load()['implementation']['guards']
+        self.assertEqual(guards, reg.IMPLEMENTATION['guards'])
+        self.assertIn('stays armed through the completion receipt', guards['coverage'])
+        self.assertNotIn('disarms the timer and precedes', guards['coverage'])
+        self.assertIn('atomic rename', guards['publication'])
+        self.assertIn('ABORTED', guards['publication'])
+        self.assertIn('fail closed', guards['memory_measurement'])
+        self.assertIn('full-sample', reg.IMPLEMENTATION['point_set']['sn'])
+
+
 class SourceTests(unittest.TestCase):
     def test_new_modules_stay_outside_the_policy_identity_closure(self):
         from pitchmdp import ope_bootstrap, ope_decision, ope_diagnostics, ope_sealed, ope_surrogate  # noqa: F401

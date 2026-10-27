@@ -10,6 +10,7 @@ from pathlib import Path
 import struct
 import sys
 import unittest
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -739,6 +740,63 @@ class VariantPointRuleTests(unittest.TestCase):
             self.assertEqual(pair.p_nonpoint, 0)
         unequal = ov.shared_end_bounds(0.3, 0.1, 0.5, 0.5 + 1e-15)  # genuinely unequal slopes are never merged
         self.assertNotEqual(unequal[0], unequal[1])
+
+    def test_an_undefined_full_sample_sn_mean_gates_every_replicate(self):
+        # PM decision (review round 4 #1), the reviewer's case: the full-sample normalisers differ by one ULP (another
+        # accumulation order) while the cluster-first replicate normalisers coincide, so every replicate cancels
+        decisions, facts = self._ledger(seed=3, n=240)
+        rng = np.random.default_rng(3)
+        for i, pa_id in enumerate(list(facts)):
+            if i % 2:  # half of the PAs end on an observed value
+                facts[pa_id] = {**facts[pa_id], 'reward': float(rng.uniform(.2, .8)), 'kind': None, 'reason': None}
+        triples = [(sorted(r, key=lambda d: d['decision_index']), info) for _, info, r in est.by_pa(decisions, facts)]
+        lines = [ov.pa_line(rows, info) for rows, info in triples]
+        point = np.array([reg.in_point_set(est.pa_value(rows, info, 'l1r')) for rows, info in triples])
+        n_bar, ok = ov.sn_normalizers(lines)
+        self.assertTrue(ok and all(np.array_equal(nb, np.ones_like(nb)) for nb in n_bar))
+
+        candidate = n_bar[0].copy()
+        candidate[1:] = np.nextafter(candidate[1:], 0)
+        u = np.vstack((1 / candidate, 1 / n_bar[1]))
+        sn = ob.sn_pair('sn', lines, point, u=u)
+        self.assertGreater(sn.p_nonpoint, 0)  # the full-sample P mean is undefined
+        r = ob.Resampler([line['game'] for line in lines], unit='game', draws=500, seed=42, minimum_clusters=1,
+                         minimum_pa_starts=1)
+        dr = ob.fixed_pair(reg.BASELINE, [ov.row_of(line) for line in lines], point)
+        stats, valid = ob.run_pairs(r, [dr, sn], point, reg.BASELINE)
+        self.assertEqual(int(valid['sn']['p'].sum()), 0)  # gated although every replicate cancels
+        self.assertTrue(valid['sn']['end'].all())  # the endpoints stay defined
+        summary = ob.summarize(stats, valid, r)['sn']
+        self.assertFalse(summary['mean_p']['valid'] or summary['shift_p']['valid'] or summary['decomposition']['valid'])
+        self.assertTrue(summary['lower_endpoint']['valid'] and summary['upper_endpoint']['valid'])
+        # the whole evaluator: nothing P-based is published for the SN pairs
+        real = ov.sn_normalizers
+
+        def one_ulp(e0):
+            nb, valid_sn = real(e0)
+            nb = nb.copy()
+            nb[0][1:] = np.nextafter(nb[0][1:], 0)
+            return nb, valid_sn
+        sur = {pa: {'R1_a': (float(f['reward']), 'class'), 'R1_b': (float(f['reward']), 'bip_quality'),
+                    'spray_missing': False} for pa, f in facts.items() if f.get('reward') is not None}
+        stream = lambda: iter(decisions)
+        result0, rows0, gint = osd.gint_gate(stream, facts, references={}, **GATE)
+        with mock.patch.object(osd.ov, 'sn_normalizers', one_ulp):
+            public, sealed, _ = osd.rehearsal_evaluate(
+                stream, facts, baseline=(result0, rows0), surrogates=sur, gint=gint,
+                train_residuals={'hit': {'FB': {'n': 10, 'mean_residual': -0.01, 'se': 0.005}}},
+                r1_paths={'rehearsal': osg.path_shares(sur), 'train_census': CENSUS}, r3_status='NOT_RUN:R3',
+                draws=200, minimum_games=5, minimum_pitchers=4, minimum_pa_starts=10, placebos=2)
+        for pair in ('R1_0xR2_3', 'R1_axR2_3', 'R1_bxR2_3'):
+            self.assertGreater(sealed['p_nonpoint'][pair], 0)
+            self.assertEqual(public['pairs'][pair]['valid'], {'game': False, 'pitcher': False})
+            self.assertEqual(public['S5'][pair], {'game': 'INVALID', 'pitcher': 'INVALID'})
+            self.assertIsNone(public['pairs'][pair]['H_point']['game'])
+            self.assertIsNone(public['R5']['e'][pair]['game']['mde80_point'])
+            self.assertIsNone(public['R5']['f'][pair]['game']['var_point'])
+            self.assertIsNone(sealed['pairs'][pair]['center']['mean_p'])
+            self.assertIsNotNone(public['pairs'][pair]['endpoint_half_width']['lower']['game'])
+        self.assertTrue(public['pairs'][reg.BASELINE]['valid']['game'])
 
     def test_small_p_invalidates_the_p_statistics_of_every_pair_only(self):
         decisions, facts = synthetic_ledger(seed=5, n_pas=300, n_games=20, n_pitchers=12)
