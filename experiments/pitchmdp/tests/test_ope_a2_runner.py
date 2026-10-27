@@ -2038,6 +2038,198 @@ class FullChainTests(unittest.TestCase):
                                  for kind in ('attempt_start', 'stage_seal')])
 
 
+class S6RecordTests(unittest.TestCase):
+    """The real ``Environment.s6_record`` on a synthetic S6-dr-a5 stage directory (bug-fix addendum 1: A2-S3
+    attempt 1 of 2026-10-27 aborted deterministically). The stage ran under an earlier registration chain of the
+    same ML-POLICY config and the same candidate identity (the D125 chain config + addendum-1..7-d124; the pinned
+    chain is the D127 chain config + addendum-1..8-d127); the first version demanded byte equality of the two
+    chains, which can never hold. The stage is tied to the pinned candidate by identity (dr.json, ledger header)
+    and lineage (the committed blob at its recorded commit, its addenda unchanged). Synthetic files only: no real
+    data, ledger or model is read; the committed-blob lookup is injected."""
+    IDENTITY = 'c1' * 32
+    OTHER = 'd2' * 32
+    COMMIT = 'a' * 40
+
+    def setUp(self):
+        self.root = tmpdir(self)
+        self.main = self.root / 'main' / 'configs'
+        self.main.mkdir(parents=True)
+        self.old_config = b'{"identity_registration": {}, "version": "D125"}\n'
+        self.old_sha = roa.hashlib.sha256(self.old_config).hexdigest()
+        (self.main / 'ml-policy.json').write_bytes(b'{"identity_registration": {}, "version": "D127", "mlb2026_ope": {}}\n')
+        (self.main / 'ml-policy.addendum-1-d124.json').write_text('{"parent_sha256": "old"}\n')
+        (self.main / 'ml-policy.addendum-1-d127.json').write_text('{"parent_sha256": "new"}\n')
+        (self.main / 'ml-policy.addendum-2-d127.json').write_text('{"parent_sha256": "new-2"}\n')
+        self.stage = self.root / 'ML-POLICY-VAL-v1' / 'S6-dr-a5'
+        self.stage.mkdir(parents=True)
+        self.header = {'kind': 'header', 'pins': {'candidate': {'contract': 'ML-POLICY-IDENTITY-v1', 'sha256': self.IDENTITY},
+                                                  'reference': {}}, 'prev': None, 'runtime_sha256': 'af' * 32, 'seq': 0,
+                       'sha256': 'ee' * 32}
+        self.dr = {'identity_sha256': self.IDENTITY, 'games': [1, 2, 3], 'status': 'COMPLETE'}
+        self.started = {'command': 'dr-evaluate', 'config_sha256': self.old_sha,
+                        'registration_chain': [{'path': 'configs/ml-policy.json', 'sha256': self.old_sha},
+                                               {'path': 'configs/ml-policy.addendum-1-d124.json',
+                                                'sha256': reg.file_sha256(self.main / 'ml-policy.addendum-1-d124.json')}],
+                        'git': {'commit': self.COMMIT, 'code_dirty': False}}
+        self.blobs = {(self.COMMIT, 'configs/ml-policy.json'): self.old_sha}
+
+    def write_stage(self):
+        ledger = self.stage / 'ledger-dev-0.jsonl'
+        ledger.write_text(json.dumps(self.header) + '\n' + json.dumps({'kind': 'decision', 'seq': 1}) + '\n')
+        (self.stage / 'dr.json').write_text(json.dumps(self.dr))
+        (self.stage / 'started.json').write_text(json.dumps(self.started))
+        listed = {name: reg.file_sha256(self.stage / name) for name in ('started.json', 'dr.json', ledger.name)}
+        (self.stage / 'manifest.json').write_text(json.dumps({'command': 'dr-evaluate', 'artifact_sha256': listed}))
+        chain = [{'path': str(self.main / name), 'sha256': reg.file_sha256(self.main / name)}
+                 for name in ('ml-policy.json', 'ml-policy.addendum-1-d127.json', 'ml-policy.addendum-2-d127.json')]
+        config = {'identities': {'candidate_policy_sha256': self.IDENTITY},
+                  'registration_input_pins': {'s6_dr_a5_ledger_path': str(ledger),
+                                              's6_dr_a5_ledger_sha256': reg.file_sha256(ledger),
+                                              's6_dr_a5_manifest_sha256': reg.file_sha256(self.stage / 'manifest.json'),
+                                              'policy_registration_chain': chain}}
+        return ledger, config
+
+    def env(self):
+        test = self
+
+        class Env(roa.Environment):
+            def blob_sha256(self, commit, relative_posix_path):
+                return test.blobs.get((commit, relative_posix_path))
+        return Env()
+
+    def test_an_earlier_registration_of_the_same_candidate_is_accepted(self):
+        """The A2-S3 attempt-1 situation: the chains share no link; identity and lineage agree."""
+        ledger, config = self.write_stage()
+        recorded = [link['sha256'] for link in self.started['registration_chain']]
+        pinned = [link['sha256'] for link in config['registration_input_pins']['policy_registration_chain']]
+        self.assertFalse(set(recorded) & set(pinned))
+        self.assertNotEqual(len(recorded), len(pinned))
+        path, dr = self.env().s6_record(config)
+        self.assertEqual((path, dr), (ledger, self.dr))
+
+    def test_an_absolute_recorded_path_under_the_main_checkout_is_accepted(self):
+        self.started['registration_chain'][0]['path'] = str(self.main / 'ml-policy.json')
+        self.started['registration_chain'][1]['path'] = str(self.main / 'ml-policy.addendum-1-d124.json')
+        ledger, config = self.write_stage()
+        self.assertEqual(self.env().s6_record(config)[0], ledger)
+
+    def test_another_candidate_identity_is_refused(self):
+        for where in ('dr', 'header', 'both'):
+            with self.subTest(where=where):
+                self.setUp()
+                if where in ('dr', 'both'):
+                    self.dr['identity_sha256'] = self.OTHER
+                if where in ('header', 'both'):
+                    self.header['pins']['candidate']['sha256'] = self.OTHER
+                _, config = self.write_stage()
+                with self.assertRaisesRegex(IntegrityError, 'another candidate identity than the pinned one'):
+                    self.env().s6_record(config)
+
+    def test_the_header_identity_contract_is_required(self):
+        for pins in ({'candidate': {'sha256': self.IDENTITY}}, {'candidate': {'contract': 'OTHER', 'sha256': self.IDENTITY}}, {}):
+            with self.subTest(pins=pins):
+                self.setUp()
+                self.header['pins'] = pins
+                _, config = self.write_stage()
+                with self.assertRaisesRegex(IntegrityError, 'ledger header pins another candidate identity'):
+                    self.env().s6_record(config)
+
+    def test_another_registration_file_is_refused(self):
+        self.started['registration_chain'][0]['path'] = 'configs/other-policy.json'
+        self.blobs[(self.COMMIT, 'configs/other-policy.json')] = self.old_sha
+        _, config = self.write_stage()
+        with self.assertRaisesRegex(IntegrityError, 'another ML-POLICY registration file'):
+            self.env().s6_record(config)
+
+    def test_an_absolute_recorded_path_outside_the_checkout_is_refused(self):
+        elsewhere = tmpdir(self) / 'configs'
+        elsewhere.mkdir()
+        (elsewhere / 'ml-policy.json').write_bytes(self.old_config)
+        self.started['registration_chain'][0]['path'] = str(elsewhere / 'ml-policy.json')
+        _, config = self.write_stage()
+        with self.assertRaisesRegex(IntegrityError, "outside the pinned chain's checkout"):
+            self.env().s6_record(config)
+
+    def test_the_recorded_config_must_be_the_committed_blob_at_the_recorded_commit(self):
+        for blobs in ({}, {(self.COMMIT, 'configs/ml-policy.json'): self.OTHER}, {('b' * 40, 'configs/ml-policy.json'): self.old_sha}):
+            with self.subTest(blobs=blobs):
+                self.setUp()
+                self.blobs = blobs
+                _, config = self.write_stage()
+                with self.assertRaisesRegex(IntegrityError, 'committed blob'):
+                    self.env().s6_record(config)
+
+    def test_a_changed_or_missing_addendum_is_refused(self):
+        for action in ('change', 'remove'):
+            with self.subTest(action=action):
+                self.setUp()
+                _, config = self.write_stage()
+                target = self.main / 'ml-policy.addendum-1-d124.json'
+                target.write_text('{"parent_sha256": "edited"}\n') if action == 'change' else target.unlink()
+                with self.assertRaisesRegex(IntegrityError, 'addendum missing or changed'):
+                    self.env().s6_record(config)
+
+    def test_a_missing_chain_or_commit_is_refused(self):
+        for field, value, message in (('registration_chain', [], 'records no ML-POLICY registration chain'),
+                                      ('registration_chain', [{'path': 'configs/ml-policy.json'}], 'records no ML-POLICY registration chain'),
+                                      ('git', {}, 'records no source commit'), ('git', {'commit': 'HEAD'}, 'records no source commit')):
+            with self.subTest(field=field, value=value):
+                self.setUp()
+                self.started[field] = value
+                _, config = self.write_stage()
+                with self.assertRaisesRegex(IntegrityError, message):
+                    self.env().s6_record(config)
+
+    def test_the_stage_bytes_stay_pinned(self):
+        ledger, config = self.write_stage()
+        (self.stage / 'dr.json').write_text(json.dumps({**self.dr, 'games': [1, 2]}))
+        with self.assertRaisesRegex(IntegrityError, 'dr.json differs from its stage manifest'):
+            self.env().s6_record(config)
+        self.setUp()
+        ledger, config = self.write_stage()
+        ledger.write_text(ledger.read_text() + json.dumps({'kind': 'decision', 'seq': 2}) + '\n')
+        with self.assertRaisesRegex(IntegrityError, 'ledger differs from its pin'):
+            self.env().s6_record(config)
+        self.setUp()
+        _, config = self.write_stage()
+        config['registration_input_pins']['s6_dr_a5_manifest_sha256'] = '0' * 64
+        with self.assertRaisesRegex(IntegrityError, 'manifest differs from its registration pin'):
+            self.env().s6_record(config)
+
+    def test_the_real_blob_lookup_reads_this_repository(self):
+        """``Environment.blob_sha256`` hashes a committed blob of this repository and is None otherwise."""
+        env = roa.Environment()
+        head = roa.git('rev-parse', 'HEAD')
+        rel = 'experiments/pitchmdp/pitchmdp/ope_redesign_registry.py'
+        expected = roa.hashlib.sha256(subprocess.check_output(['git', 'show', f'{head}:{rel}'], cwd=roa.REPO)).hexdigest()
+        self.assertEqual(env.blob_sha256(head, rel), expected)
+        self.assertIsNone(env.blob_sha256(head, 'configs/does-not-exist.json'))
+        self.assertIsNone(env.blob_sha256('0' * 40, rel))
+
+    def test_policy_registration_requires_the_pinned_candidate_identity(self):
+        """A pinned chain whose addendum registers another expected identity is refused; the pinned one loads."""
+        for expected, ok in ((self.IDENTITY, True), (self.OTHER, False), (None, True)):
+            with self.subTest(expected=expected):
+                root = tmpdir(self)
+                config_path = root / 'ml-policy.json'
+                config_path.write_text(json.dumps({'identity_registration': {}, 'registered_inputs': {}}))
+                addendum = {'parent_sha256': reg.file_sha256(config_path), 'stage': 'v2-world'}
+                if expected is not None:
+                    addendum['expected_identity_sha256'] = expected
+                addendum_path = root / 'ml-policy.addendum-1.json'
+                addendum_path.write_text(json.dumps(addendum))
+                config = {'identities': {'candidate_policy_sha256': self.IDENTITY},
+                          'registration_input_pins': {'policy_registration_chain': [
+                              {'path': str(config_path), 'sha256': reg.file_sha256(config_path)},
+                              {'path': str(addendum_path), 'sha256': reg.file_sha256(addendum_path)}]}}
+                if ok:
+                    rpv, policy = roa.Environment().policy_registration(config)
+                    self.assertEqual(policy['expected_identity_sha256'], expected)
+                else:
+                    with self.assertRaisesRegex(IntegrityError, 'another candidate identity than the pinned one'):
+                        roa.Environment().policy_registration(config)
+
+
 class CommittedTests(unittest.TestCase):
     def test_files_outside_the_repository_are_never_committed(self):
         with tempfile.NamedTemporaryFile() as handle:

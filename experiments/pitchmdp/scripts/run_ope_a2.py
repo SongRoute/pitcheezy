@@ -45,6 +45,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import platform
 import resource
 import signal
@@ -1724,6 +1725,50 @@ class S5XWorld:
         return runtime, components, starts
 
 
+def ledger_header(ledger_path):
+    """The first record of a sealed ledger (its header: pins, runtime, contract), parsed; nothing else is read."""
+    with Path(ledger_path).open('rb') as stream:
+        return json.loads(stream.readline())
+
+
+def verify_s6_identity(started, dr, header, pins, identity, *, blob_sha256):
+    """The S6-dr-a5 stage is the rehearsal of the pinned candidate (identities.candidate_policy_sha256):
+    (1) its dr.json identity and its ledger header candidate pin (contract ML-POLICY-IDENTITY-v1) equal the pinned
+    identity; (2) it ran under a registration chain of the same ML-POLICY config file as the pinned chain: the
+    first link has the pinned file's name and its recorded bytes are the committed blob of that file at the
+    stage's recorded commit, and every later link (an addendum) still exists in the main checkout with its
+    recorded sha256. Byte equality between the two chains is not required: a later registration of the same
+    candidate (new addenda, appended sections) keeps the identity; a different candidate does not pass (1)."""
+    _require(dr.get('identity_sha256') == identity, 'S6-dr-a5 dr.json evaluates another candidate identity than the pinned one')
+    candidate = (header.get('pins') or {}).get('candidate') or {}
+    _require(candidate.get('contract') == 'ML-POLICY-IDENTITY-v1' and candidate.get('sha256') == identity,
+             'S6-dr-a5 ledger header pins another candidate identity than the pinned one')
+    chain = started.get('registration_chain') or []
+    pinned = pins['policy_registration_chain']
+    _require(bool(chain) and all(isinstance(link, dict) and {'path', 'sha256'} <= set(link) for link in chain),
+             'S6-dr-a5 started.json records no ML-POLICY registration chain')
+    main = Path(pinned[0]['path']).resolve().parents[1]  # <main checkout>/configs/<config>.json
+    first = Path(chain[0]['path'])
+    _require(first.name == Path(pinned[0]['path']).name,
+             'the S6-dr-a5 stage ran under another ML-POLICY registration file than the pinned chain')
+    commit = (started.get('git') or {}).get('commit')
+    _require(isinstance(commit, str) and re.fullmatch(r'[0-9a-f]{40}', commit) is not None,
+             'S6-dr-a5 started.json records no source commit for its registration chain')
+    relative = first
+    if first.is_absolute():
+        try:
+            relative = first.resolve().relative_to(main)
+        except ValueError:
+            _require(False, "the S6-dr-a5 registration config lies outside the pinned chain's checkout")
+    _require(blob_sha256(commit, relative.as_posix()) == chain[0]['sha256'],
+             'the S6-dr-a5 registration config is not the committed blob at the stage\'s recorded commit')
+    for link in chain[1:]:
+        path = Path(link['path'])
+        path = path if path.is_absolute() else main / path
+        _require(path.is_file() and reg.file_sha256(path) == link['sha256'],
+                 f'S6-dr-a5 registration addendum missing or changed: {Path(link["path"]).name}')
+
+
 def _resolve(value):
     return Path(value) if Path(value).is_absolute() else REPO / value
 
@@ -1829,6 +1874,8 @@ class Environment:
         policy = rpv.load_registration(_resolve(chain[0]['path']), [_resolve(link['path']) for link in chain[1:]])
         _require([link['sha256'] for link in policy['chain']] == [link['sha256'] for link in chain],
                  'the loaded ML-POLICY chain differs from its pins')
+        _require(policy['expected_identity_sha256'] in (None, config['identities']['candidate_policy_sha256']),
+                 'the pinned ML-POLICY chain registers another candidate identity than the pinned one')
         return rpv, policy
 
     def policy_inputs(self, config, local, rpv, policy):
@@ -1836,7 +1883,12 @@ class Environment:
         return rpv.load_inputs(policy['config'], local, store=True)
 
     def s6_record(self, config):
-        """A2-S3 only: the pinned S6-dr-a5 stage (manifest, started.json chain, dr.json, ledger bytes)."""
+        """A2-S3 only: the pinned S6-dr-a5 stage (manifest, ledger bytes, started.json, dr.json) and its identity
+        (``verify_s6_identity``). Bug-fix addendum 1 (A2-S3 attempt 1, 2026-10-27): the stage ran on 2026-09-30
+        under the D125 chain (config + addendum-1..7-d124); D126/D127 then appended addendum 8 and the 2026 OPE
+        section without changing the candidate identity, so byte equality between that chain and today's pinned
+        chain, which the first version required, can never hold. The stage is tied to the pinned candidate by its
+        identity and its registration lineage instead."""
         pins = config['registration_input_pins']
         ledger = Path(pins['s6_dr_a5_ledger_path'])
         stage_dir = ledger.parent
@@ -1847,10 +1899,20 @@ class Environment:
         for name in ('started.json', 'dr.json', ledger.name):
             _require(reg.file_sha256(stage_dir / name) == listed[name], f'S6-dr-a5 {name} differs from its stage manifest')
         started = json.loads((stage_dir / 'started.json').read_text())
-        _require([link['sha256'] for link in started['registration_chain']]
-                 == [link['sha256'] for link in pins['policy_registration_chain']],
-                 'the pinned ML-POLICY chain differs from the chain the S6-dr-a5 stage ran under')
-        return ledger, json.loads((stage_dir / 'dr.json').read_text())
+        dr = json.loads((stage_dir / 'dr.json').read_text())
+        verify_s6_identity(started, dr, ledger_header(ledger), pins, config['identities']['candidate_policy_sha256'],
+                           blob_sha256=self.blob_sha256)
+        return ledger, dr
+
+    def blob_sha256(self, commit, relative_posix_path):
+        """sha256 of the committed blob ``commit:path`` of this repository (the worktree shares the main checkout's
+        objects); None when the commit or the path is not in the repository."""
+        try:
+            raw = subprocess.check_output(['git', 'show', f'{commit}:{relative_posix_path}'], cwd=REPO,
+                                          stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            return None
+        return hashlib.sha256(raw).hexdigest()
 
     def s5x_inputs(self, config, local, base, out, checkpoint):
         """A2-S2: the ML-POLICY registration, the dev S5 selection, the frozen C0 game values and a builder of
