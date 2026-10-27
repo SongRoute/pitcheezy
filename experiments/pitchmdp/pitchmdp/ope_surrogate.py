@@ -253,7 +253,7 @@ def surrogate_rewards(facts, rows, terminal, table):
         for value in (r_a, r_b):
             _require(math.isfinite(value) and 0 <= value <= 1, 'surrogate WE outside [0, 1]')
         out[pa_id] = {'R1_a': (r_a, path_a), 'R1_b': (r_b, path_b),
-                      'spray_missing': bool(cell >= 0 and cell_parts(cell)[2] == 3)}
+                      'spray_missing': bool(path_b == 'bip_quality' and cell_parts(cell)[2] == 3)}
     return out
 
 
@@ -266,10 +266,10 @@ def path_shares(surrogates):
             'bip_with_ev_la': bip, 'bip_missing_ev_la': count('R1_b', 'bip_missing_ev_la_fallback'),
             'non_bip_class': count('R1_b', 'non_bip_class'), 'pass_through': count('R1_a', 'pass_through'),
             'spray_missing_among_bip': sum(v['spray_missing'] for v in surrogates.values()),
-            'shares': None if not n else {'bip_with_ev_la': bip / n,
-                                          'bip_missing_ev_la': count('R1_b', 'bip_missing_ev_la_fallback') / n,
-                                          'non_bip_class': count('R1_b', 'non_bip_class') / n,
-                                          'pass_through': count('R1_a', 'pass_through') / n}}
+            'shares': {'bip_with_ev_la': bip / n if n else None,
+                       'bip_missing_ev_la': count('R1_b', 'bip_missing_ev_la_fallback') / n if n else None,
+                       'non_bip_class': count('R1_b', 'non_bip_class') / n if n else None,
+                       'pass_through': count('R1_a', 'pass_through') / n if n else None}}
 
 
 # ---------------------------------------------------------------- violation calibration (TRAIN only)

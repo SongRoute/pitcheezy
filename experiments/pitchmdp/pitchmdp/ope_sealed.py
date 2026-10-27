@@ -1,23 +1,22 @@
-"""EXP-OPE-RES-01 A2-S3 sealed evaluator and the typed public allowlist (design section 3, blinding).
+"""EXP-OPE-RES-01 A2-S3 sealed evaluator, the G-INT gate and the strict public file (design section 3).
 
-``rehearsal_evaluate`` computes EVERY signed real-data quantity internally: Delta centers and CIs per
-pair and grid value, paired shifts Delta_pair - Delta_baseline with their CIs (S-5), lambda/M
-objective values and the selected values, per-grid-value half-widths, placebo Delta_hat values,
-corr(r, r~). They go to the sealed document only (written as centers.sealed.json; only its sha256 is
-printed). The public document is built from the typed allowlist only and ``validate_public`` rejects
-any key or value outside its public type (in particular any signed effect or shift and any endpoint
-of an effect or shift interval, and any key naming a selected value). Before any new arm is
-computed the evaluator runs the deterministic integrity gates: G-INT (the registered estimator on the
-sealed ledger reproduces the recorded S6 values within 1e-12), the variant path reproducing every
-baseline row bit for bit, and the lambda = inf / M = inf variants reproducing the baseline within
-1e-12. ``unblind`` opens the sealed file only after a committed decision record.
+``gint_gate`` runs FIRST, on the untouched registered path (``policy_estimator.estimate`` on the sealed
+ledger and the recomputed facts), before any surrogate reward or variant is computed: every value the
+design lists (L1-R bounds, both endpoint CIs, L2 CI and mean, the worst-case share s, the resolution
+counts, both policies' ESS) must reproduce the recorded S6 values within 1e-12 (exact for counts), both
+the values quoted in the registration and the pinned S6-dr-a5 record; a value absent from a reference is
+recorded as not comparable. ``rehearsal_evaluate`` then computes EVERY signed real-data quantity
+internally (Delta centers and CIs per pair and grid value, paired shifts and their CIs (S-5), lambda/M
+objectives and selections, per-grid half-widths, placebo Delta_hat, corr(r, r~), pigeonhole); they go
+to the sealed document only. The public document holds exactly the (key, type) pairs of the strict
+registry allowlist (``ope_redesign_registry.validate_public``); everything else is sealed. ``unblind``
+opens the sealed file only after a committed decision record.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import math
-import re
 
 import numpy as np
 
@@ -26,107 +25,17 @@ from . import ope_diagnostics as od
 from . import ope_variants as ov
 from . import policy_estimator as est
 from .ope_redesign_registry import (BASELINE, DRAWS, GAME_BOOTSTRAP_SEED, INF, INTEGRITY_TOL, INVALID_SHARE_MAX,
-                                    LAMBDA_GRID, M_GRID, MIN_GAMES, MIN_PA_STARTS, MIN_PITCHERS, PAIRS, PUBLIC_TYPES,
-                                    R1, ROLE_VALUES, pair_id)
+                                    LAMBDA_GRID, M_GRID, MIN_GAMES, MIN_PA_STARTS, MIN_PITCHERS, PAIRS, R1, ROLE_VALUES,
+                                    in_point_set, pair_id)
+from .ope_redesign_registry import validate_public  # noqa: F401  (the one strict allowlist, re-exported)
 from .policy_artifacts import IntegrityError, _require
 
 BOOTS = ('game', 'pitcher')
-PASS_FAIL = ('PASS', 'FAIL', 'INVALID', 'BASELINE')
-FLAGS = ('SE_CALIBRATION_WARNING', 'ENABLED_DIAGNOSTIC_ONLY', 'NOT_RUN:R3', 'EXP-OPE-RES-01', 'A2-S3', 'PASS', 'FAIL')
-_HEX64 = re.compile(r'[0-9a-f]{64}')
-W, P, RF, CS, WV, G, T, V, F = PUBLIC_TYPES  # the nine registered public types, in allowlist order
-
-# Typed allowlist: (path pattern, public type). '*' = any key; '**' = any subtree.
-PAIR, BOOT = '<pair>', '<boot>'
-SCHEMA = (
-    (('experiment',), F), (('stage',), F), (('r3_status',), F), (('sealed_sha256',), F),
-    (('pairs', PAIR, 'H_point', BOOT), W), (('pairs', PAIR, 'SE', BOOT), W),
-    (('pairs', PAIR, 'endpoint_half_width', 'lower', BOOT), W), (('pairs', PAIR, 'endpoint_half_width', 'upper', BOOT), W),
-    (('pairs', PAIR, 'valid', BOOT), F), (('pairs', PAIR, 'invalid_replicates', BOOT), CS),
-    (('S5', PAIR, BOOT), P),
-    (('R5', 'a', '**'), RF), (('R5', 'b', '**'), RF), (('R5', 'c', '**'), RF),
-    (('R5', 'd', '**'), CS), (('R5', 'i', 'paths', '**'), CS),
-    (('R5', 'e', PAIR, BOOT, '*'), WV), (('R5', 'f', PAIR, BOOT, '*'), WV),
-    (('R5', 'h', 'sd_ratio', BOOT), WV), (('R5', 'h', 'placebos'), CS), (('R5', 'h', 'flag'), F),
-    (('R5', 'h', 'decision_input'), F),
-    (('R5', 'g', '**'), G), (('R5', 'i', 'train_residuals', '**'), T),
-    (('r1_variance', '*'), V),
-    (('integrity', '*'), F), (('validity', '**'), F),
-)
-
-
-def _match(pattern, path):
-    if pattern and pattern[-1] == '**':
-        head = pattern[:-1]
-        return len(path) > len(head) and all(_seg(p, s) for p, s in zip(head, path))
-    return len(pattern) == len(path) and all(_seg(p, s) for p, s in zip(pattern, path))
-
-
-def _seg(pattern, segment):
-    if pattern == PAIR:
-        return segment in PAIRS or (segment.startswith('R3x') and segment[3:] in PAIRS)
-    if pattern == BOOT:
-        return segment in BOOTS
-    return pattern == '*' or pattern == segment
-
-
-def _number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
-
-
-def _type_ok(kind, value, key):
-    if value is None:
-        return True
-    if kind in (W, V):
-        return _number(value) and value >= 0
-    if kind == P:
-        return value in PASS_FAIL
-    if kind == RF:
-        return _number(value) and value >= 0
-    if kind == CS:
-        return (isinstance(value, int) and not isinstance(value, bool) and value >= 0) or (
-            isinstance(value, float) and math.isfinite(value) and 0 <= value <= 1)
-    if kind == WV:
-        return _number(value) and (value >= 0 or str(key).startswith('cov_'))
-    if kind == G:
-        return _number(value) or (isinstance(value, list) and len(value) == 2 and all(map(_number, value)))
-    if kind == T:
-        return _number(value)
-    if kind == F:
-        return isinstance(value, bool) or (isinstance(value, str) and (_HEX64.fullmatch(value) or value in FLAGS))
-    return False
-
-
-EMPTY = object()
-
-
-def _leaves(node, path=()):
-    """(path, value) of every leaf; an empty container is a leaf too (its path must still be allowlisted)."""
-    if isinstance(node, dict) and node:
-        for key, value in node.items():
-            _require(isinstance(key, str), 'public keys must be strings')
-            yield from _leaves(value, (*path, key))
-    elif isinstance(node, list) and node and not (len(node) == 2 and all(map(_number, node))):
-        for i, value in enumerate(node):
-            yield from _leaves(value, (*path, str(i)))
-    elif isinstance(node, (dict, list)) and not node:
-        yield path, EMPTY
-    else:
-        yield path, node
-
-
-def validate_public(document):
-    """Every leaf of the public document has one allowlisted path and a value of its public type.
-    Refuses unknown keys, signed values outside the R5 g / R5 i types, interval endpoints outside R5 g,
-    and any key naming a selection (the selected lambda / M is sealed)."""
-    for path, value in _leaves(document):
-        _require(not any('select' in str(p).lower() or 'center' in str(p).lower() or 'delta' == str(p).lower()
-                         for p in path), f'public key names a sealed quantity: {".".join(path)}')
-        kinds = [kind for pattern, kind in SCHEMA if _match(pattern, path)]
-        _require(kinds, f'public key outside the typed allowlist: {".".join(path)}')
-        _require(value is EMPTY or _type_ok(kinds[0], value, path[-1]),
-                 f'public value outside its type {kinds[0]!r}: {".".join(path)}')
-    return True
+NOTES = {'R5_f_normalization': 'the point part of R5 f uses the common denominator N (all E0 PAs); H_point is a mean '
+                               'over P, a different normalisation',
+         'coverage': '95% bounds are nominal per pair and cell, not simultaneous over the selected pair',
+         'point_set': 'P = E0 PAs whose baseline paired delta bounds are equal; a pair under which a P PA is not a '
+                      'point has no P mean (its P statistics are invalid)'}
 
 
 def canonical_bytes(document):
@@ -138,31 +47,66 @@ def sha256_bytes(data):
 
 
 # ---------------------------------------------------------------- G-INT
-def gint_compare(result, reference):
-    """Registered baseline values vs the recomputed baseline (1e-12; counts exact). Returns failures."""
+GINT_KEYS = ('l1r_delta_bounds', 'l1r_lower_endpoint_ci95', 'l1r_upper_endpoint_ci95', 'l2_ci95', 'l2_delta_mean',
+             'worst_case_residual_share_s', 'resolutions', 'ess_all_e0_candidate', 'ess_all_e0_reference')
+
+
+def gint_values(result):
+    """The design's G-INT quantities of one estimate result (policy_estimator.estimate, L1-R)."""
     rule = result.get('censoring_rule') or {}
     boot = result.get('bootstrap') or {}
     l2 = (result.get('layers') or {}).get('L2_complete_conditional') or {}
-    got = {'l1r_delta_bounds': result['layers']['L1_start_population']['delta_bounds'],
-           'l1r_lower_endpoint_ci95': boot.get('L1_lower_endpoint_ci95'), 'l2_ci95': boot.get('L2_conditional_ci95'),
-           'l2_delta_mean': l2.get('delta_mean'), 'worst_case_residual_share_s': rule.get('worst_case_residual_share'),
-           'resolutions': rule.get('resolutions'), 'ess_all_e0_candidate': (result.get('ess_all_e0') or {}).get('candidate')}
-    failures = []
-    for key, expected in reference.items():
-        value = got.get(key)
-        if isinstance(expected, dict) and key == 'resolutions':
-            ok = value == expected
-        elif isinstance(expected, dict):
-            ok = isinstance(value, dict) and set(value) >= set(expected) and all(
-                value[k] is not None and abs(value[k] - expected[k]) <= INTEGRITY_TOL for k in expected)
-        elif isinstance(expected, list):
-            ok = isinstance(value, list) and len(value) == len(expected) and all(
-                abs(a - b) <= INTEGRITY_TOL for a, b in zip(value, expected))
-        else:
-            ok = value is not None and abs(value - expected) <= INTEGRITY_TOL
-        if not ok:
-            failures.append(key)
-    return failures
+    ess = result.get('ess_all_e0') or {}
+    return {'l1r_delta_bounds': ((result.get('layers') or {}).get('L1_start_population') or {}).get('delta_bounds'),
+            'l1r_lower_endpoint_ci95': boot.get('L1_lower_endpoint_ci95'),
+            'l1r_upper_endpoint_ci95': boot.get('L1_upper_endpoint_ci95'),
+            'l2_ci95': boot.get('L2_conditional_ci95'), 'l2_delta_mean': l2.get('delta_mean'),
+            'worst_case_residual_share_s': rule.get('worst_case_residual_share'), 'resolutions': rule.get('resolutions'),
+            'ess_all_e0_candidate': ess.get('candidate'), 'ess_all_e0_reference': ess.get('reference')}
+
+
+def _same(value, expected):
+    if isinstance(expected, dict) and all(isinstance(v, int) and not isinstance(v, bool) for v in expected.values()):
+        return value == expected  # counts: exact
+    if isinstance(expected, dict):
+        return isinstance(value, dict) and set(value) >= set(expected) and all(
+            value[k] is not None and abs(value[k] - expected[k]) <= INTEGRITY_TOL for k in expected)
+    if isinstance(expected, list):
+        return isinstance(value, list) and len(value) == len(expected) and all(
+            abs(a - b) <= INTEGRITY_TOL for a, b in zip(value, expected))
+    return value is not None and abs(value - expected) <= INTEGRITY_TOL
+
+
+def gint_compare(result, reference):
+    """Mismatching keys (1e-12; counts exact) of the recomputed baseline against one reference."""
+    got = gint_values(result)
+    return [key for key, expected in reference.items() if expected is not None and not _same(got.get(key), expected)]
+
+
+def gint_record(result, references):
+    """Per reference: compared keys, mismatches and the listed keys it cannot compare (absent)."""
+    out = {}
+    for name, reference in references.items():
+        present = {k: v for k, v in (reference or {}).items() if k in GINT_KEYS and v is not None}
+        out[name] = {'compared': sorted(present), 'not_comparable': sorted(set(GINT_KEYS) - set(present)),
+                     'mismatches': gint_compare(result, present)}
+    return out
+
+
+def gint_gate(decisions, facts, *, references, draws=DRAWS, minimum_games=MIN_GAMES, minimum_pa_starts=MIN_PA_STARTS,
+              ess_gate=None):
+    """G-INT on the untouched registered path, before any surrogate or variant computation. Raises
+    IntegrityError on any mismatch; returns (result0, rows0, record)."""
+    boot = {'draws': draws, 'seed': GAME_BOOTSTRAP_SEED, 'invalid_share_max': INVALID_SHARE_MAX,
+            'minimum': {'games': minimum_games, 'pa_starts': minimum_pa_starts}}
+    result0, rows0 = est.estimate(decisions(), facts, **boot, ess_gate=ess_gate, censoring='l1r')
+    record = gint_record(result0, references)
+    failures = {name: entry['mismatches'] for name, entry in record.items() if entry['mismatches']}
+    if failures:
+        raise IntegrityError(f'G-INT failed (deterministic integrity): {failures}; no new arm is computed')
+    covered = set().union(*(set(entry['compared']) for entry in record.values())) if record else set()
+    record['listed_keys_never_compared'] = sorted(set(GINT_KEYS) - covered)
+    return result0, rows0, record
 
 
 def registered_gint_reference(config):
@@ -175,27 +119,31 @@ def registered_gint_reference(config):
             'resolutions': s6['resolutions']['value'], 'ess_all_e0_candidate': s6['ess_all_e0_candidate']['value']}
 
 
-# ---------------------------------------------------------------- the evaluator
+def recorded_gint_reference(dr_record):
+    """Every listed G-INT value of the pinned S6-dr-a5 record (dr.json = the estimate result it sealed)."""
+    return gint_values(dr_record)
+
+
 def _bits(value):
     return json.dumps(value, sort_keys=True, default=lambda v: float(v)) if value is not None else None
 
 
-def rehearsal_evaluate(decisions, facts, *, surrogates, gint_reference, train_residuals, r1_paths, r3_status,
-                       ess_gate=None, draws=DRAWS, minimum_games=MIN_GAMES, minimum_pitchers=MIN_PITCHERS,
-                       minimum_pa_starts=MIN_PA_STARTS, placebos=None):
-    """The blinded rehearsal. ``decisions()`` returns a fresh stream of the sealed ledger's decision
-    rows; ``facts``: {pa_id: info} in ledger order (start_pitcher for the pitcher bootstrap);
-    ``surrogates``: ope_surrogate.surrogate_rewards output. Returns (public, sealed, integrity)."""
-    # 1. registered baseline path (byte-identical code) and G-INT before anything new is computed
-    boot = {'draws': draws, 'seed': GAME_BOOTSTRAP_SEED, 'invalid_share_max': INVALID_SHARE_MAX,
-            'minimum': {'games': minimum_games, 'pa_starts': minimum_pa_starts}}
-    result0, rows0 = est.estimate(decisions(), facts, **boot, ess_gate=ess_gate, censoring='l1r')
-    failures = gint_compare(result0, gint_reference) if gint_reference is not None else []
-    if failures:
-        raise IntegrityError(f'G-INT failed (deterministic integrity): {failures}; no new arm is computed')
+def rehearsal_evaluate(decisions, facts, *, baseline, surrogates, train_residuals, r1_paths, r3_status,
+                       draws=DRAWS, minimum_games=MIN_GAMES, minimum_pitchers=MIN_PITCHERS,
+                       minimum_pa_starts=MIN_PA_STARTS, placebos=None, gint=None, checkpoint=None):
+    """The blinded rehearsal after the G-INT gate. ``baseline`` = (result0, rows0) from ``gint_gate``;
+    ``decisions()`` returns a fresh stream of the sealed ledger's decision rows; ``facts``: {pa_id:
+    info} in ledger order (start_pitcher for the pitcher bootstrap); ``surrogates``:
+    ope_surrogate.surrogate_rewards output (computed after the gate); ``checkpoint``: the runner's memory
+    and hang guard, called inside every long loop. Returns (public, sealed, notes)."""
+    tick = checkpoint if checkpoint is not None else (lambda: None)
+    _require(gint is not None, 'the G-INT record is required (G-INT runs before the rehearsal)')
+    result0, rows0 = baseline
     # 2. variant lines, identity reproduction (bit for bit)
     lines, by_pa = [], {}
-    for pa_id, info, rows in est.by_pa(decisions(), facts):
+    for n, (pa_id, info, rows) in enumerate(est.by_pa(decisions(), facts)):
+        if n % 1000 == 0:
+            tick()
         rows = sorted(rows, key=lambda d: d['decision_index'])
         line = ov.pa_line(rows, info)
         line['pa_id'] = pa_id
@@ -208,7 +156,8 @@ def rehearsal_evaluate(decisions, facts, *, surrogates, gint_reference, train_re
                  f'variant path differs from the registered estimator on PA {line["pa_id"]} (deterministic integrity)')
     e0 = [line for line in lines if line['in_population']]
     _require(e0, 'no E0 PA in the rehearsal')
-    point = np.array([ov.is_point(line) for line in e0])
+    e0_rows = [row for line, row in zip(lines, rows0) if line['in_population']]
+    point = np.array([in_point_set(row) for row in e0_rows])  # P from the BASELINE paired bounds (registry)
     p_lines = [line for line, keep in zip(e0, point) if keep]
     games = [line['game'] for line in e0]
     pitchers = [line['pitcher'] for line in e0]
@@ -221,11 +170,12 @@ def rehearsal_evaluate(decisions, facts, *, surrogates, gint_reference, train_re
                          for line in e0]
     p_rewards = {c: (None if r is None else [r[i] for i in np.flatnonzero(point)]) for c, r in rewards.items()}
     # 4. per R1 component: R2_0, the lambda/M grids and their selection (sealed), the SN pair
-    sealed = {'selection': {}, 'grid_points': {}, 'gint': {'reference_keys': sorted(gint_reference or {}), 'failures': []}}
+    sealed = {'selection': {}, 'grid_points': {}, 'gint': gint, 'notes': NOTES}
     pairs, inf_ok = [], True
     n_bar, sn_valid = ov.sn_normalizers(e0)
     u = (1 / n_bar[0], 1 / n_bar[1]) if sn_valid else None
     for comp in R1:
+        tick()
         rw = rewards[comp]
         rows_r20 = [ov.row_of(line, None, None, None if rw is None else rw[i]) for i, line in enumerate(e0)]
         pairs.append(ob.fixed_pair(pair_id(comp, 'R2_0'), rows_r20, point))
@@ -257,6 +207,9 @@ def rehearsal_evaluate(decisions, facts, *, surrogates, gint_reference, train_re
             pairs.append(ob.PairInputs(name, deltas=np.full(len(e0), np.nan), lo=np.full(len(e0), np.nan),
                                        hi=np.full(len(e0), np.nan)))
     _require(inf_ok, 'lambda = inf / M = inf variants do not reproduce the baseline (deterministic integrity)')
+    sealed['p_nonpoint'] = {pi.name: pi.p_nonpoint for pi in pairs}
+    sealed['p_counts'] = {'p': int(point.sum()), 'p_known_end': int(sum(ov.is_point(l) for l in p_lines)),
+                          'p_shared_unknown_end': int(sum(not ov.is_point(l) for l in p_lines))}
     # 5. bootstraps (paired, same replicates for every pair)
     resamplers = {'game': ob.Resampler(games, unit='game', draws=draws, seed=GAME_BOOTSTRAP_SEED,
                                        minimum_clusters=minimum_games, minimum_pa_starts=minimum_pa_starts),
@@ -265,7 +218,7 @@ def rehearsal_evaluate(decisions, facts, *, surrogates, gint_reference, train_re
     eligible_p = int(point.sum()) >= minimum_pa_starts
     summaries = {}
     for b, resampler in resamplers.items():
-        stats, valid = ob.run_pairs(resampler, pairs, point, BASELINE)
+        stats, valid = ob.run_pairs(resampler, pairs, point, BASELINE, checkpoint=tick)
         summary = ob.summarize(stats, valid, resampler)
         if not eligible_p:
             summary = {'eligible': False, 'reason': 'P below the registered minimum PA starts', **resampler.record()}
@@ -311,7 +264,8 @@ def rehearsal_evaluate(decisions, facts, *, surrogates, gint_reference, train_re
             deltas, lo, hi = ob.sn_values(pair_inputs, np.vstack(u))
         else:
             deltas, lo, hi = pair_inputs.deltas, pair_inputs.lo, pair_inputs.hi
-        center = {'mean_p': float(np.nanmean(deltas[point])) if point.any() else None,
+        on_p = deltas[point]
+        center = {'mean_p': float(on_p.mean()) if len(on_p) and np.isfinite(on_p).all() else None,  # no P mean: None
                   'l1r_bounds': [float(np.mean(lo)), float(np.mean(hi))]}
         sealed['pairs'].setdefault(pair_inputs.name, {})['center'] = center
     base_center = sealed['pairs'][BASELINE]['center']['mean_p']
@@ -348,14 +302,20 @@ def rehearsal_evaluate(decisions, facts, *, surrogates, gint_reference, train_re
     step_rows = {}
     for i, entry in enumerate(table.entries):
         step_rows.setdefault(entry['pa'], {})[entry['index']] = i
-    p_steps = []
-    for line in p_lines:
+    p_steps, placebo_lines, placebo_index = [], [], []
+    for k, (line, index) in enumerate(zip(p_lines, np.flatnonzero(point))):
+        if not ov.is_point(line):  # a shared unknown end: a placebo tilt breaks the slope cancellation
+            continue
         rows_of = step_rows.get(line['pa_id'], {})
         p_steps.append([rows_of[t] for t in range(len(line['steps']))])
-    p_index = np.flatnonzero(point)
+        placebo_lines.append(line)
+        placebo_index.append(index)
     placebo_public, placebo_sealed = od.placebo_check(
-        p_steps, table, {b: (resamplers[b] if eligible_p else None, p_index) for b in BOOTS},
-        rewards=[line['reward'] for line in p_lines], **({} if placebos is None else {'placebos': placebos}))
+        p_steps, table, {b: (resamplers[b] if eligible_p else None, np.array(placebo_index, dtype=np.int64))
+                         for b in BOOTS},
+        rewards=[line['reward'] for line in placebo_lines], checkpoint=tick,
+        **({} if placebos is None else {'placebos': placebos}))
+    placebo_sealed['population'] = 'P PAs with a known end (complete or shared point)'
     public['R5']['h'] = {'sd_ratio': placebo_public['sd_ratio'], 'placebos': placebo_public['placebos'],
                          'flag': placebo_public['flag'], 'decision_input': False}
     sealed['placebo'] = placebo_sealed
@@ -368,13 +328,14 @@ def rehearsal_evaluate(decisions, facts, *, surrogates, gint_reference, train_re
     for comp in ('R1_a', 'R1_b'):
         comp_rewards[comp] = p_rewards[comp]
     public['r1_variance'] = od.r1_variance(p_lines, last_q, comp_rewards)
+    observed = lambda values: np.array([v for v, o in zip(values, obs) if o], dtype=np.float64)  # P ends observed
     with np.errstate(invalid='ignore', divide='ignore'):
-        sealed['corr_r_r_tilde'] = {comp: float(np.corrcoef(np.array(comp_rewards['R1_0'])[obs],
-                                                             np.array(comp_rewards[comp])[obs])[0, 1])
+        sealed['corr_r_r_tilde'] = {comp: float(np.corrcoef(observed(comp_rewards['R1_0']),
+                                                             observed(comp_rewards[comp]))[0, 1])
                                     if sum(obs) > 2 else None for comp in ('R1_a', 'R1_b')}
     main_pairs = [pi for pi in pairs if pi.name in PAIRS and (pi.sn is None or u is not None)]
     sealed['pigeonhole'] = ob.pigeonhole(games, pitchers, main_pairs, point, draws=draws,
-                                         seed=ROLE_VALUES['pigeonhole'])  # descriptive, sealed only
+                                         seed=ROLE_VALUES['pigeonhole'], checkpoint=tick)  # descriptive, sealed only
     public['integrity'] = {'G_INT': 'PASS', 'variant_identity': 'PASS', 'inf_variants_reproduce_baseline': 'PASS',
                            'sn_normalizer_full_sample_valid': bool(sn_valid)}
     public['validity'] = {'point_set_meets_minimum': bool(eligible_p),
@@ -382,7 +343,36 @@ def rehearsal_evaluate(decisions, facts, *, surrogates, gint_reference, train_re
                           'pitcher_bootstrap_eligible': bool(summaries['pitcher'].get('eligible'))}
     sealed['baseline_result'] = {k: result0.get(k) for k in ('layers', 'bootstrap', 'censoring_rule', 'ess_all_e0', 'ess')}
     sealed['counts'] = {'e0': len(e0), 'p': int(point.sum())}
-    return public, sealed, {'gint_failures': failures}
+    require_descriptive(public, sealed)
+    return public, sealed, NOTES
+
+
+REQUIRED_PUBLIC = (('R5', 'a'), ('R5', 'b'), ('R5', 'c'), ('R5', 'd'), ('R5', 'e'), ('R5', 'f'), ('R5', 'g'),
+                   ('R5', 'h'), ('R5', 'i'), ('r1_variance',), ('integrity',), ('validity',))
+REQUIRED_SEALED = ('selection', 'grid_points', 'grid_bootstrap', 'pairs', 'placebo', 'corr_r_r_tilde', 'pigeonhole',
+                   'baseline_result', 'p_nonpoint', 'p_counts', 'gint', 'notes')
+
+
+def require_descriptive(public, sealed):
+    """Every descriptive output the design requires is present (a missing one is a stage integrity
+    failure, never silent): R5 a-i, Var(r - q) vs Var(r~ - q), the integrity flags, and in the sealed file
+    the selections and objectives, per-grid points and half-widths, the paired shifts with their CIs
+    (Delta_R1 - Delta_R0 included), corr(r, r~), the pigeonhole bootstrap and the placebo values."""
+    for path in REQUIRED_PUBLIC:
+        node = public
+        for part in path:
+            node = node.get(part) if isinstance(node, dict) else None
+        _require(node is not None, f'descriptive output missing: {".".join(path)} (stage integrity)')
+    for key in REQUIRED_SEALED:
+        _require(sealed.get(key) is not None, f'sealed descriptive output missing: {key} (stage integrity)')
+    sn_ok = bool(public['integrity'].get('sn_normalizer_full_sample_valid'))
+    for pair in PAIRS:
+        record = sealed['pairs'].get(pair) or {}
+        _require('bootstrap' in record, f'sealed bootstrap record missing: {pair} (stage integrity)')
+        _require('center' in record or (pair.endswith('R2_3') and not sn_ok),
+                 f'sealed center missing: {pair} (stage integrity)')
+        _require(pair == BASELINE or 'shift_center' in record, f'sealed paired shift missing: {pair} (stage integrity)')
+    return True
 
 
 def _label(value):

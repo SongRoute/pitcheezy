@@ -26,17 +26,25 @@ def load():
     return json.loads(CONFIG.read_text())
 
 
-def registered(config=None):
-    """The config with the registration step applied and synthetic (non-real) pins filled."""
+def registered(config=None, root='/tmp/synthetic'):
+    """The config with the registration step applied (references recorded, G-REV / G-CODE / G-REG passed)
+    and synthetic (non-real) pins filled under ``root``."""
     c = copy.deepcopy(config or load())
     c.update(status=reg.REGISTERED, registered=True, preregistration_complete=True)
     c['execution'] = {**c['execution'], 'enabled': True}
+    c['registration'].update(registered_kst='2026-10-28T14:00+09:00', review_reference='REVIEW-A2-SYNTHETIC',
+                             code_review_reference='CODE-REVIEW-A2-SYNTHETIC')
+    for gate in c['pre_run_gates']:
+        if gate['id'] in reg.GATES_PASSED:
+            gate['status'] = 'PASS'
     pins = c['registration_input_pins']
-    pins.update(s6_dr_a5_ledger_path='/tmp/synthetic/ledger.jsonl', s6_dr_a5_ledger_sha256='a' * 64,
+    pins.update(s6_dr_a5_ledger_path=f'{root}/s6/ledger.jsonl', s6_dr_a5_ledger_sha256='a' * 64,
                 s6_dr_a5_manifest_sha256='b' * 64, train_raw_files_sha256={n: 'c' * 64 for n in reg.RAW_ALLOWLIST},
-                processed_frame_identity={'synthetic': True}, x2_world_predictor_identity={'kind': 'g0_single_member', 'seed': 0},
+                processed_frame_identity={'path': f'{root}/artifacts/processed/pitches.parquet', 'sha256': 'f' * 64},
+                policy_registration_chain=[{'path': f'{root}/ml-policy.json', 'sha256': '1' * 64}],
+                x2_world_predictor_identity={'kind': 'g0_single_member', 'seed': 0},
                 execution_source_commit='d' * 40, new_files_sha256={f: 'e' * 64 for f in reg.NEW_FILES},
-                digest_manifest_path='/tmp/synthetic/digest.jsonl', output_root='/tmp/synthetic/out',
+                digest_manifest_path=f'{root}/digest.jsonl', output_root=f'{root}/out',
                 r3_status='NOT_RUN:R3', a3_behavior_policy_sha256='NOT_APPLICABLE',
                 a3_provenance_manifest_sha256='NOT_APPLICABLE', smoke_train_subset={'game_dates': ['2024-06-01', '2024-06-30']},
                 smoke_tab_replications_per_cell=5)
@@ -145,7 +153,8 @@ class ExecutionGateTests(unittest.TestCase):
     def test_registered_needs_every_pin(self):
         reg.require_executable(registered())
         for key in ('s6_dr_a5_ledger_sha256', 'execution_source_commit', 'digest_manifest_path', 'output_root',
-                    'r3_status', 'smoke_train_subset', 'x2_world_predictor_identity', 'processed_frame_identity'):
+                    'r3_status', 'smoke_train_subset', 'x2_world_predictor_identity', 'processed_frame_identity',
+                    'policy_registration_chain'):
             c = registered()
             c['registration_input_pins'][key] = None
             with self.subTest(key), self.assertRaises(IntegrityError):
@@ -176,6 +185,59 @@ class ExecutionGateTests(unittest.TestCase):
         c['registration_input_pins']['smoke_tab_replications_per_cell'] = 0
         with self.assertRaises(IntegrityError):
             reg.check_pins(c)
+        for bad in ({'synthetic': True}, {'path': 'relative/pitches.parquet', 'sha256': 'f' * 64},
+                    {'path': '/tmp/synthetic/artifacts/processed/pitches.parquet', 'sha256': 'F' * 64}):
+            c = registered()
+            c['registration_input_pins']['processed_frame_identity'] = bad
+            with self.subTest(processed=bad), self.assertRaisesRegex(IntegrityError, 'processed_frame_identity'):
+                reg.check_pins(c)
+        for bad in ([], [{'path': '/tmp/synthetic/ml-policy.json'}], [{'path': 1, 'sha256': '1' * 64}]):
+            c = registered()
+            c['registration_input_pins']['policy_registration_chain'] = bad
+            with self.subTest(chain=bad), self.assertRaisesRegex(IntegrityError, 'policy_registration_chain'):
+                reg.check_pins(c)
+
+    def test_receipt_gates_and_registration_references(self):
+        # PM decision (review #3): the registered config records the reviews and the gates passed
+        for gate in reg.GATES_PASSED:
+            c = registered()
+            next(g for g in c['pre_run_gates'] if g['id'] == gate)['status'] = 'open'
+            with self.subTest(gate), self.assertRaisesRegex(IntegrityError, f'pre-run gate {gate}'):
+                reg.require_executable(c)
+        c = registered()
+        next(g for g in c['pre_run_gates'] if g['id'] == 'G-CODE')['status'] = 'PASS_WITH_NOTES'
+        reg.require_executable(c)
+        for key in ('registered_kst', 'review_reference', 'code_review_reference'):
+            c = registered()
+            c['registration'][key] = None
+            with self.subTest(key), self.assertRaisesRegex(IntegrityError, f'registration.{key}'):
+                reg.require_executable(c)
+
+    def test_output_root_is_disjoint_from_sealed_inputs(self):
+        # PM decision (review #8): resolved real paths, neither inside nor around a sealed input
+        cases = {'inside the S6 stage directory': '/tmp/synthetic/s6/out',
+                 'around the S6 stage directory': '/tmp/synthetic', 'the S6 stage directory': '/tmp/synthetic/s6',
+                 'inside the processed directory': '/tmp/synthetic/artifacts/processed/a2',
+                 'inside the repository': str(reg.REPO / 'runs-a2'), 'around the repository': str(reg.REPO.parent)}
+        for name, root in cases.items():
+            c = registered()
+            c['registration_input_pins']['output_root'] = root
+            with self.subTest(name), self.assertRaisesRegex(IntegrityError, 'disjoint'):
+                reg.check_pins(c)
+        c = registered()
+        c['registration_input_pins']['digest_manifest_path'] = '/tmp/synthetic/s6/digest.jsonl'
+        with self.assertRaisesRegex(IntegrityError, 'digest manifest'):
+            reg.check_pins(c)
+
+    def test_pin_key_set_is_fixed_even_for_the_draft(self):
+        c = load()
+        c['registration_input_pins']['extra_pin'] = None
+        with self.assertRaisesRegex(IntegrityError, 'registration_input_pins keys'):
+            reg.config_check(c)
+        c = load()
+        del c['registration_input_pins']['policy_registration_chain']
+        with self.assertRaisesRegex(IntegrityError, 'registration_input_pins keys'):
+            reg.config_check(c)
 
 
 class DigestTests(unittest.TestCase):
@@ -277,6 +339,15 @@ class RuleTests(unittest.TestCase):
     def test_cell_outcome_precision_gate_and_bounds(self):
         B = reg.B
         self.assertEqual(B, 1.26e-05)
+        # PM decision (review #13): a degenerate SE = 0 is INCONCLUSIVE, never PASS, unless the registered exact
+        # invariant allows it (S-2 gamma_a at zeta = 0)
+        self.assertEqual(reg.cell_outcome(0.0, 0.0)['outcome'], 'INCONCLUSIVE')
+        self.assertTrue(reg.cell_outcome(0.0, 0.0)['degenerate_se'])
+        self.assertEqual(reg.cell_outcome(0.0, 0.0, exact_zero_allowed=True)['outcome'], 'PASS')
+        self.assertEqual(reg.cell_outcome(1e-3, 0.0, exact_zero_allowed=True)['outcome'], 'FAIL')
+        self.assertEqual(reg.cell_outcome(None, None, not_evaluable=True)['outcome'], 'NOT_EVALUABLE')
+        flagged = reg.inconclusive_invalid('one invalid repetition')
+        self.assertEqual((flagged['outcome'], flagged['invalid_repetition']), ('INCONCLUSIVE', True))
         self.assertEqual(reg.cell_outcome(0.0, B / 2 + 1e-12)['outcome'], 'INCONCLUSIVE')  # never PASS without precision
         self.assertEqual(reg.cell_outcome(0.0, 1e-6)['outcome'], 'PASS')
         self.assertEqual(reg.cell_outcome(B - 1.96 * 1e-6, 1e-6)['outcome'], 'PASS')
@@ -298,7 +369,12 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(reg.net_outcome([.02, .02, .02], [.02, .02, .02])['outcome'], 'FAIL')  # |gap| > 0.01
         self.assertEqual(reg.net_outcome([.0, .0, .0], [.009, .009, .009])['outcome'], 'FAIL')  # SE > 0.005
         self.assertEqual(reg.net_outcome([.004, .004, .004], [.001, .001, .001])['outcome'], 'FAIL')  # excludes 0
-        self.assertEqual(reg.net_outcome([.0, .0], [.001, .001], valid=False)['outcome'], 'INVALID')
+        invalid = reg.net_outcome([.0, .0], [.001, .001], valid=False)  # PM decision (review #1)
+        self.assertEqual((invalid['outcome'], invalid['invalid_repetition']), ('INCONCLUSIVE', True))
+        self.assertEqual(reg.net_outcome([.0, None], [.001, .001])['outcome'], 'INCONCLUSIVE')
+        self.assertEqual(reg.net_outcome([.0, math.nan], [.001, .001])['outcome'], 'INCONCLUSIVE')
+        degenerate = reg.net_outcome([.0, .0], [.0, .0])
+        self.assertEqual((degenerate['outcome'], degenerate['degenerate_se']), ('INCONCLUSIVE', True))
         z = reg.net_outcome([0.00129], [0.000576])  # 0.00129 - 2.2414 * 0.000576 = 0.00000 (inside at 97.5%)
         self.assertEqual(z['outcome'], 'PASS')
 
@@ -324,12 +400,24 @@ class WindowTests(unittest.TestCase):
         self.assertFalse(reg.stage_window_ok(self.kst(28, 12, 0), 60))  # inside the protection window
         self.assertFalse(reg.stage_window_ok(self.kst(28, 4, 0), 9667))  # 06:41 end
         self.assertTrue(reg.stage_window_ok(self.kst(28, 3, 40), 9667))  # 06:21 end
-        self.assertTrue(reg.stage_window_ok(self.kst(28, 4, 30), 7200))  # ends exactly at 06:30
+        self.assertFalse(reg.stage_window_ok(self.kst(28, 4, 30), 7200))  # ends exactly at 06:30: not before it
+        self.assertTrue(reg.stage_window_ok(self.kst(28, 4, 29), 7200))  # 06:29 end
         self.assertFalse(reg.stage_window_ok(self.kst(27, 13, 29), 60))
         utc = self.kst(27, 14, 0).astimezone(timezone.utc)
         self.assertTrue(reg.stage_window_ok(utc, 3600))
         with self.assertRaises(IntegrityError):
             reg.stage_window_ok(datetime(2026, 10, 27, 14, 0), 60)  # naive time refused
+
+
+class PointSetTests(unittest.TestCase):
+    def test_point_set_is_the_baseline_paired_bound_equality(self):
+        # PM decision (review #12): P = E0 PAs whose BASELINE paired delta bounds coincide (lower == upper)
+        self.assertEqual(reg.P_DEFINITION, 'baseline_paired_delta_bounds_equal')
+        self.assertIn('paired delta bounds are equal', reg.IMPLEMENTATION['point_set']['definition'])
+        self.assertTrue(reg.in_point_set({'in_population': True, 'delta_bounds': [0.0, 0.0]}))
+        self.assertTrue(reg.in_point_set({'in_population': True, 'delta_bounds': [-0.25, -0.25]}))
+        self.assertFalse(reg.in_point_set({'in_population': True, 'delta_bounds': [-0.25, -0.25 + 1e-15]}))
+        self.assertFalse(reg.in_point_set({'in_population': False, 'delta_bounds': [0.0, 0.0]}))
 
 
 class SourceTests(unittest.TestCase):

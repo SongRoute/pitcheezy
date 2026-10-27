@@ -26,31 +26,49 @@ def _width(public, pair, boot):
 
 
 def condition_ii(public, pair):
+    """(ii) H_point(pair) <= (1 - X) H_point(baseline), evaluated directly under each bootstrap. A zero
+    (degenerate) baseline or pair half-width is INCONCLUSIVE, never a pass; the ratio is reporting only."""
     base = {b: _width(public, BASELINE, b) for b in BOOTS}
     own = {b: _width(public, pair, b) for b in BOOTS}
     valid = all(v is not None for v in (*base.values(), *own.values()))
+    degenerate = valid and any(base[b] == 0 or own[b] == 0 for b in BOOTS)
     ratio = {b: (own[b] / base[b] if valid and base[b] > 0 else None) for b in BOOTS}
-    passed = valid and all(ratio[b] is not None and own[b] <= (1 - X) * base[b] for b in BOOTS)
-    return {'valid': valid, 'ratio': ratio, 'pass': bool(passed)}
+    passed = valid and not degenerate and all(own[b] <= (1 - X) * base[b] for b in BOOTS)
+    return {'valid': valid, 'degenerate': bool(degenerate), 'ratio': ratio, 'pass': bool(passed),
+            'outcome': 'INVALID' if not valid else 'INCONCLUSIVE' if degenerate else 'PASS' if passed else 'FAIL'}
+
+
+BLOCKING = ('INVALID', 'NOT_EVALUABLE', None)
+
+
+def _cell(record):
+    """(outcome, invalid) of one bias cell record (a dict with 'outcome', or a bare outcome string)."""
+    if isinstance(record, dict):
+        return record.get('outcome'), bool(record.get('invalid_repetition')) or record.get('outcome') in BLOCKING
+    return record, record in BLOCKING
 
 
 def condition_i(pair, public, tab, s5x):
-    """Every registered bias cell of the pair: returns per-net outcomes, validity and the pass flag."""
+    """Every registered bias cell of the pair; an invalid repetition, replication or missing cell makes the
+    pair non-adoptable (mandatory statistic invalid) and never counts as PASS."""
     r1, _ = split_pair(pair)
     nets = s5x['nets']
-    cells = {'S1': nets['S1'][pair]['outcome'], 'S4': nets['S4'][pair]['outcome'],
-             'S1_baseline': nets['S1'][BASELINE]['outcome'], 'S4_baseline': nets['S4'][BASELINE]['outcome']}
+    cells = {'S1': nets['S1'][pair], 'S4': nets['S4'][pair], 'S1_baseline': nets['S1'][BASELINE],
+             'S4_baseline': nets['S4'][BASELINE]}
     for cell in TAB_ACCEPTANCE:
-        cells[f"S3:{cell['id']}"] = tab['acceptance'][cell['id']][pair]['outcome']
+        cells[f"S3:{cell['id']}"] = tab['acceptance'][cell['id']][pair]
     if r1 in ('R1_a', 'R1_b'):
-        s2 = s5x['s2']
-        cells['S2:2*kappa_p'] = s2[r1]['2*kappa_p']['outcome']
-        cells['S2:2*zeta_p'] = s2[r1]['2*zeta_p']['outcome']
-        cells['S2:invariant'] = s2['invariant']
+        s2 = (s5x['s2'].get(pair) or {})
+        for label in ('2*kappa_p', '2*zeta_p'):
+            cells[f'S2:{label}'] = s2.get(label)
+        cells['S2:invariant'] = s2.get('invariant')
     cells['S5:game'] = public['S5'][pair]['game']
     cells['S5:pitcher'] = public['S5'][pair]['pitcher']
-    valid = all(v not in ('INVALID', None) for v in cells.values())
-    return {'cells': cells, 'valid': valid, 'pass': bool(valid and all(v == 'PASS' for v in cells.values()))}
+    parsed = {name: _cell(record) for name, record in cells.items()}
+    valid = not any(invalid for _, invalid in parsed.values())
+    outcomes = {name: outcome for name, (outcome, _) in parsed.items()}
+    return {'cells': outcomes, 'invalid_cells': sorted(n for n, (_, bad) in parsed.items() if bad), 'valid': valid,
+            'pass': bool(valid and all(o == 'PASS' for o in outcomes.values()))}
 
 
 def decide(public, tab, s5x, *, integrity_failures=(), r3_status):
@@ -92,6 +110,7 @@ def check_inputs(public, tab, s5x):
         _require(set(tab['acceptance'][cell['id']]) >= {BASELINE, *TOTAL_ORDER}, f'TAB {cell["id"]} misses a pair')
     for net in ('S1', 'S4'):
         _require(set(s5x['nets'][net]) >= {BASELINE, *TOTAL_ORDER}, f'S5-X {net} misses a pair')
-    for r1 in R1[1:]:
-        _require({'2*kappa_p', '2*zeta_p'} <= set(s5x['s2'][r1]), f'S5-X S2 misses {r1}')
+    for pair in TOTAL_ORDER:
+        if split_pair(pair)[0] in R1[1:]:
+            _require({'2*kappa_p', '2*zeta_p', 'invariant'} <= set(s5x['s2'].get(pair) or {}), f'S5-X S2 misses {pair}')
     return True

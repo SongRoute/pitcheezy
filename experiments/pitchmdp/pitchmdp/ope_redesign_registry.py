@@ -158,15 +158,24 @@ def cluster_se(values, clusters):
     return float(math.sqrt(g / (g - 1) * float(np.sum((t - n * mean) ** 2)) / n.sum() ** 2))
 
 
-def cell_outcome(b_hat, se, *, beta_0=None, valid=True):
-    """Acceptance cell outcome, in the registered order: invalid -> INVALID; (1) SE > B/2 ->
-    INCONCLUSIVE (never PASS); (2) U = |b| + 1.96 SE <= bound -> PASS; (3) L = |b| - 1.96 SE > bound ->
-    FAIL; (4) otherwise INCONCLUSIVE. bound = B, or |beta_0| + B for a V3 (relative) cell."""
+CELL_OUTCOMES = ('PASS', 'FAIL', 'INCONCLUSIVE', 'INVALID', 'NOT_EVALUABLE')
+
+
+def cell_outcome(b_hat, se, *, beta_0=None, valid=True, not_evaluable=False, exact_zero_allowed=False):
+    """Acceptance cell outcome, in the registered order: an unfit R1_b table -> NOT_EVALUABLE; invalid ->
+    INVALID; (1) SE > B/2 -> INCONCLUSIVE (never PASS); a degenerate SE = 0 -> INCONCLUSIVE unless the
+    registered exact invariant allows it (S-2 gamma_a at zeta = 0); (2) U = |b| + 1.96 SE <= bound -> PASS;
+    (3) L = |b| - 1.96 SE > bound -> FAIL; (4) otherwise INCONCLUSIVE. bound = B, or |beta_0| + B for a V3
+    (relative) cell. Every outcome other than PASS means not certified."""
+    if not_evaluable:
+        return {'outcome': 'NOT_EVALUABLE', 'b_hat': None, 'se': None, 'U': None, 'L': None, 'bound': None,
+                'reason': 'R1_b table selection failed (every m nonfinite); only the R1_b arms are affected'}
     if not valid or b_hat is None or se is None or not (math.isfinite(b_hat) and math.isfinite(se)) or se < 0:
         return {'outcome': 'INVALID', 'b_hat': b_hat, 'se': se, 'U': None, 'L': None, 'bound': None}
     bound = B if beta_0 is None else abs(float(beta_0)) + B
     upper, lower = abs(b_hat) + Z_BOUND * se, abs(b_hat) - Z_BOUND * se
-    if se > PRECISION_SE_MAX:
+    degenerate = se == 0 and not exact_zero_allowed
+    if se > PRECISION_SE_MAX or degenerate:
         outcome = 'INCONCLUSIVE'
     elif upper <= bound:
         outcome = 'PASS'
@@ -175,18 +184,31 @@ def cell_outcome(b_hat, se, *, beta_0=None, valid=True):
     else:
         outcome = 'INCONCLUSIVE'
     return {'outcome': outcome, 'b_hat': float(b_hat), 'se': float(se), 'U': upper, 'L': lower, 'bound': bound,
-            'precision_met': bool(se <= PRECISION_SE_MAX), 'rule': 'absolute' if beta_0 is None else 'relative'}
+            'precision_met': bool(se <= PRECISION_SE_MAX), 'degenerate_se': bool(se == 0),
+            'rule': 'absolute' if beta_0 is None else 'relative'}
+
+
+def inconclusive_invalid(reason):
+    """PM decision (round-1 review #1): an invalid repetition/replication in an acceptance-relevant run or
+    cell makes that cell INCONCLUSIVE (never PASS) and the pair non-adoptable (mandatory statistic invalid)."""
+    return {'outcome': 'INCONCLUSIVE', 'invalid_repetition': True, 'reason': reason, 'b_hat': None, 'se': None}
 
 
 def net_outcome(gaps, ses, *, valid=True):
     """S1/S4 coarse net over independent runs: pooled gap = mean of the run gaps, SE = sqrt(sum SE_s^2) / n;
     PASS iff the 97.5% interval (z = 2.2414) contains 0, |gap| <= 0.01 and SE <= 0.005."""
+    if not valid or not gaps or len(gaps) != len(ses) or any(v is None for v in (*gaps, *ses)):
+        return {**inconclusive_invalid('a run of the net has an invalid repetition or is missing'), 'gap': None,
+                'interval': None}
     gaps, ses = [float(g) for g in gaps], [float(s) for s in ses]
-    if not valid or not gaps or len(gaps) != len(ses) or not all(map(math.isfinite, gaps + ses)):
-        return {'outcome': 'INVALID', 'gap': None, 'se': None, 'interval': None}
+    if not all(map(math.isfinite, gaps + ses)):
+        return {**inconclusive_invalid('nonfinite run gap or SE'), 'gap': None, 'interval': None}
     gap = sum(gaps) / len(gaps)
     se = math.sqrt(sum(s * s for s in ses)) / len(ses)
     interval = [gap - Z_NET * se, gap + Z_NET * se]
+    if se == 0:
+        return {'outcome': 'INCONCLUSIVE', 'gap': gap, 'se': se, 'interval': interval, 'degenerate_se': True,
+                'runs': len(gaps)}
     passed = interval[0] <= 0 <= interval[1] and abs(gap) <= NET_GAP_MAX and se <= NET_SE_MAX
     return {'outcome': 'PASS' if passed else 'FAIL', 'gap': gap, 'se': se, 'interval': interval,
             'interval_contains_zero': bool(interval[0] <= 0 <= interval[1]), 'abs_gap_ok': bool(abs(gap) <= NET_GAP_MAX),
@@ -330,9 +352,9 @@ PROTECTION_WINDOW_KST = (dtime(6, 30), dtime(13, 30))
 
 
 def stage_window_ok(start, guard_seconds):
-    """A stage may start only if [start, start + hang guard] avoids every 06:30-13:30 KST protection
-    window (D186 2-2; every day is treated as a game day, the conservative reading). ``start`` is an
-    aware datetime."""
+    """A command may start only if its whole hang guard [start, start + guard] ends strictly BEFORE the
+    next 06:30 KST and never enters a 06:30-13:30 KST protection window (D186 2-2; every day is treated as
+    a game day, the conservative reading). Starting at 13:30 exactly is allowed. ``start`` is aware."""
     _require(isinstance(start, datetime) and start.tzinfo is not None, 'aware start time required')
     _require(isinstance(guard_seconds, (int, float)) and guard_seconds > 0, 'positive hang guard required')
     begin = start.astimezone(KST)
@@ -341,7 +363,7 @@ def stage_window_ok(start, guard_seconds):
     while datetime.combine(day, PROTECTION_WINDOW_KST[0], KST) <= end:
         lo = datetime.combine(day, PROTECTION_WINDOW_KST[0], KST)
         hi = datetime.combine(day, PROTECTION_WINDOW_KST[1], KST)
-        if begin < hi and lo < end:
+        if begin < hi and lo <= end:
             return False
         day += timedelta(days=1)
     return True
@@ -352,6 +374,181 @@ PUBLIC_TYPES = ('width_or_se', 'pass_fail_only', 'reward_free_weight_or_policy_d
                 'width_se_or_variance (no center)', 'reward_free_weight_statistic_with_ci (signed values and CI endpoints allowed)',
                 'train_only_signed_diagnostic (allowed)', 'variance', 'flag_or_hash')
 R3_STATUSES = ('ENABLED_DIAGNOSTIC_ONLY', 'NOT_RUN:R3')
+
+# Point set P (PM decision, round-1 review #12): the E0 PAs whose PAIRED delta L1-R bounds coincide exactly
+# (lower == upper, float equality) under the BASELINE classification (R1_0 x R2_0 rows of the registered
+# policy_estimator on the registered ledger). A shared-end PA with equal policy slopes is in P although
+# each policy's own value stays an interval. Every pair uses this same P; a pair under which a P PA is not a
+# point (a transform or the SN normalisers break the slope cancellation) has no P mean: its P statistics
+# are invalid (fail-safe; counted in the sealed file).
+P_DEFINITION = 'baseline_paired_delta_bounds_equal'
+
+
+def in_point_set(baseline_row):
+    """P membership from one baseline (policy_estimator.pa_value, L1-R) row."""
+    lo, hi = baseline_row['delta_bounds']
+    return bool(baseline_row['in_population'] and lo == hi)
+
+
+# Review receipts (PM decision, round-1 review #3): every real-data command needs, in the external digest
+# manifest, a G-CODE receipt (verdict PASS, or PASS_WITH_NOTES with notes closed; commit = the running
+# code's commit; config digest = the registered digest) and a G-REG receipt (same digest).
+REQUIRED_RECEIPTS = ('G-CODE', 'G-REG')
+RECEIPT_VERDICTS = ('PASS', 'PASS_WITH_NOTES')
+GATES_PASSED = ('G-REV', 'G-CODE', 'G-REG')
+
+
+def grid_label(value):
+    return 'inf' if value == INF else str(float(value))
+
+
+# ---------------------------------------------------------------- strict typed public allowlist (review #7)
+class Ident:
+    """A validated identifier position in a public key path (only the listed identifiers match)."""
+    def __init__(self, name, values=None, pattern=None):
+        self.name, self.values, self.pattern = name, (frozenset(values) if values is not None else None), pattern
+
+    def match(self, segment):
+        if self.values is not None:
+            return segment in self.values
+        return re.fullmatch(self.pattern, segment) is not None
+
+
+I_PAIR = Ident('pair', PAIRS)
+I_BOOT = Ident('bootstrap', ('game', 'pitcher'))
+I_POLICY = Ident('policy', ('candidate', 'reference'))
+I_DIST = Ident('distribution', ('mean', 'q50', 'q90', 'q99'))
+I_QSTAT = Ident('quantile', ('q01', 'q05', 'q25', 'q50', 'q75', 'q90', 'q95', 'q99', 'mean', 'max', 'zero_share'))
+I_VARIANT = Ident('variant', ('identity', 'sn', *(f'shrink:{grid_label(v)}' for v in LAMBDA_GRID),
+                              *(f'switch:{grid_label(v)}' for v in M_GRID)))
+I_SUBSET = Ident('subset', ('all_e0', 'complete', 'censored'))
+I_LEVEL = Ident('level', ('pa', 'game'))
+I_LAMBDA = Ident('lambda', tuple(grid_label(v) for v in LAMBDA_GRID))
+I_M = Ident('M', tuple(grid_label(v) for v in M_GRID))
+I_RESOLUTION = Ident('resolution', ('rho_zero', 'rho_zero_before_node', 'natural_course', 'shared_end_unknown',
+                                    'worst_case_residual', 'worst_case_residual_gap'))
+I_COUNT = Ident('count', pattern=r'(0|[1-9][0-9]{0,5})')
+I_EVENT = Ident('event', TRAIN_EVENT_MAP)
+I_GROUP = Ident('group', S5X_GROUPS)
+I_R1 = Ident('r1', R1)
+W_, P_, RF_, CS_, WV_, G_, T_, V_, F_ = PUBLIC_TYPES
+BOOL, HEX = 'bool', 'hex'
+PUBLIC_SCHEMA = (  # (key path, public type, value constraint); everything else is sealed
+    (('experiment',), F_, frozenset({EXPERIMENT_ID})), (('stage',), F_, frozenset({'A2-S3'})),
+    (('r3_status',), F_, frozenset(R3_STATUSES)), (('sealed_sha256',), F_, HEX),
+    (('pairs', I_PAIR, 'H_point', I_BOOT), W_, None), (('pairs', I_PAIR, 'SE', I_BOOT), W_, None),
+    (('pairs', I_PAIR, 'endpoint_half_width', 'lower', I_BOOT), W_, None),
+    (('pairs', I_PAIR, 'endpoint_half_width', 'upper', I_BOOT), W_, None),
+    (('pairs', I_PAIR, 'valid', I_BOOT), F_, BOOL), (('pairs', I_PAIR, 'invalid_replicates', I_BOOT), CS_, None),
+    (('S5', I_PAIR, I_BOOT), P_, frozenset({'PASS', 'FAIL', 'INVALID', 'BASELINE'})),
+    (('R5', 'a', 'decisions'), RF_, None), (('R5', 'a', 'top1_equals_logged', I_POLICY), RF_, None),
+    (('R5', 'a', 'mean_pi_logged', I_POLICY), RF_, None), (('R5', 'a', 'tv_candidate_reference', I_DIST), RF_, None),
+    (('R5', 'a', 'kl_candidate_reference', I_DIST), RF_, None), (('R5', 'a', 'top1_agreement_candidate_reference'), RF_, None),
+    (('R5', 'b', I_VARIANT, I_POLICY, I_SUBSET, I_LEVEL), RF_, None),
+    (('R5', 'c', 'weights', I_POLICY, I_QSTAT), RF_, None),
+    (('R5', 'c', 'switch_trigger_rate', I_M, I_POLICY), RF_, None),
+    (('R5', 'c', 'shrink_mean_abs_change', I_LAMBDA, I_POLICY), RF_, None),
+    (('R5', 'c', 'logging_mass', 'mean_logging_mass_outside_policy_mask'), RF_, None),
+    (('R5', 'c', 'logging_mass', 'target_mass_outside_policy_mask_max'), RF_, None),
+    (('R5', 'c', 'logging_mass', 'logged_outside_policy_mask_share'), RF_, None),
+    (('R5', 'd', 'logging_positivity_pas'), CS_, None), (('R5', 'd', 'resolutions', I_RESOLUTION), CS_, None),
+    (('R5', 'd', 'worst_case_residual_share'), CS_, None), (('R5', 'd', 'censored_share'), CS_, None),
+    (('R5', 'd', 'worst_case_pas_per_game_distribution', I_COUNT), CS_, None),
+    *((('R5', 'e', I_PAIR, I_BOOT, key), WV_, None) for key in ('mde80_point', 'mde80_current_rule',
+                                                                  'mde80_current_rule_bias_adjusted')),
+    *((('R5', 'f', I_PAIR, I_BOOT, key), WV_, None) for key in ('var_point', 'var_censored', 'var_lower_endpoint',
+                                                                  'cov_point_censored')),
+    *((('R5', 'g', I_POLICY, key), G_, None) for key in ('mean_rho_logged', 'mean_pa_end_weight',
+                                                         'mean_rho_logged_ci95', 'mean_pa_end_weight_ci95')),
+    (('R5', 'g', I_POLICY, 'mean_rho_logged_ci_excludes_1'), F_, BOOL),
+    (('R5', 'g', I_POLICY, 'mean_pa_end_weight_ci_excludes_1'), F_, BOOL),
+    (('R5', 'h', 'sd_ratio', I_BOOT), WV_, None), (('R5', 'h', 'placebos'), CS_, None),
+    (('R5', 'h', 'flag'), F_, frozenset({'SE_CALIBRATION_WARNING'})), (('R5', 'h', 'decision_input'), F_, BOOL),
+    *((('R5', 'i', 'paths', 'rehearsal', key), CS_, None) for key in (
+        'pas_with_reward', 'bip_with_ev_la', 'bip_missing_ev_la', 'non_bip_class', 'pass_through', 'spray_missing_among_bip')),
+    *((('R5', 'i', 'paths', 'rehearsal', 'shares', key), CS_, None) for key in (
+        'bip_with_ev_la', 'bip_missing_ev_la', 'non_bip_class', 'pass_through')),
+    *((('R5', 'i', 'paths', 'train_census', key), CS_, None) for key in (
+        'train_rows', 'bip_rows', 'bip_missing_ev_or_la', 'bip_unmapped_event', 'bip_used',
+        'dp_ineligible_double_play_to_out', 'spray_missing_among_used')),
+    (('R5', 'i', 'paths', 'train_census', 'mapping_counts', I_EVENT), CS_, None),
+    *((('R5', 'i', 'train_residuals', kind, I_GROUP, key), T_, None) for kind in ('hit', 'run')
+      for key in ('n', 'mean_residual', 'se')),
+    (('r1_variance', I_R1), V_, None),
+    *((('integrity', key), F_, frozenset({'PASS', 'FAIL'}) if key != 'sn_normalizer_full_sample_valid' else BOOL)
+      for key in ('G_INT', 'variant_identity', 'inf_variants_reproduce_baseline', 'sn_normalizer_full_sample_valid')),
+    *((('validity', key), F_, BOOL) for key in ('point_set_meets_minimum', 'game_bootstrap_eligible',
+                                                 'pitcher_bootstrap_eligible')),
+)
+_HEXRE = re.compile(r'[0-9a-f]{64}')
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def public_value_ok(kind, constraint, value, key):
+    """The value constraint of one allowlisted key (None is an unmeasured value of any type)."""
+    if value is None:
+        return True
+    if constraint == BOOL:
+        return isinstance(value, bool)
+    if constraint == HEX:
+        return isinstance(value, str) and _HEXRE.fullmatch(value) is not None
+    if isinstance(constraint, frozenset):
+        return isinstance(value, str) and value in constraint
+    if kind in (W_, V_, RF_):
+        return _number(value) and value >= 0
+    if kind == CS_:
+        return (isinstance(value, int) and not isinstance(value, bool) and value >= 0) or (
+            isinstance(value, float) and math.isfinite(value) and 0 <= value <= 1)
+    if kind == WV_:
+        return _number(value) and (value >= 0 or str(key).startswith('cov_'))
+    if kind == G_:
+        return _number(value) or (isinstance(value, list) and len(value) == 2 and all(map(_number, value)))
+    if kind == T_:
+        return _number(value)
+    return False
+
+
+def _schema_match(pattern, path):
+    return len(pattern) == len(path) and all(
+        seg.match(part) if isinstance(seg, Ident) else seg == part for seg, part in zip(pattern, path))
+
+
+def _prefix_match(pattern, path):
+    return len(path) < len(pattern) and all(
+        seg.match(part) if isinstance(seg, Ident) else seg == part for seg, part in zip(pattern, path))
+
+
+def _public_leaves(node, path=()):
+    if isinstance(node, dict) and node:
+        for key, value in node.items():
+            _require(isinstance(key, str), 'public keys must be strings')
+            yield from _public_leaves(value, (*path, key))
+    elif isinstance(node, dict):
+        yield path, {}
+    elif isinstance(node, list) and not (len(node) == 2 and all(map(_number, node))):
+        _require(False, f'public lists are not allowed except two-number CIs: {".".join(path)}')
+    else:
+        yield path, node
+
+
+def validate_public(document):
+    """Strict allowlist: every leaf is exactly one allowlisted (key path, type) with a value of that type;
+    an empty mapping must be a prefix of an allowlisted path. Anything else is rejected (it belongs in the
+    sealed file)."""
+    for path, value in _public_leaves(document):
+        if value == {}:
+            _require(any(_prefix_match(pattern, path) for pattern, _, _ in PUBLIC_SCHEMA),
+                     f'public key outside the typed allowlist: {".".join(path)}')
+            continue
+        found = [(kind, constraint) for pattern, kind, constraint in PUBLIC_SCHEMA if _schema_match(pattern, path)]
+        _require(found, f'public key outside the typed allowlist: {".".join(path)}')
+        kind, constraint = found[0]
+        _require(public_value_ok(kind, constraint, value, path[-1]),
+                 f'public value outside its type {kind!r}: {".".join(path)}')
+    return True
 LABELS = ('FAILED_INTEGRITY', 'NOT_EVALUABLE', 'ADOPT_FOR_2027_PROTOCOL:<pair>', 'BIAS_NOT_CERTIFIED:<pairs>',
           'NO_PRECISION_GAIN')
 
@@ -463,14 +660,42 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                       'tie_window_share_of_baseline_h_star': TIE_WINDOW, 'minimizer_tie_relative_tolerance': TIE_REL_TOL,
                       'integrity_tolerance': INTEGRITY_TOL, 'mde_multiplier': MDE_MULTIPLIER,
                       'placebo_flag_ratio': PLACEBO_FLAG, 'replication_2027_ratio': REPLICATION_2027_RATIO},
+    'point_set': {'definition': 'E0 PAs whose baseline (R1_0 x R2_0, L1-R) paired delta bounds are equal (float ==)',
+                  'non_point_under_a_pair': 'that pair has no P mean: its P statistics are invalid (fail-safe, counted)'},
+    'precision': {'degenerate_se': 'SE = 0 (or a zero half-width) is INCONCLUSIVE, never PASS, except the registered '
+                                   'exact S-2 gamma_a invariant at zeta = 0',
+                  'condition_ii': 'H(pair) <= 0.7 H(baseline) evaluated directly; a zero baseline or pair half-width '
+                                  'is degenerate (INCONCLUSIVE, not a pass)',
+                  'invalid_repetition': 'an invalid repetition or replication in an acceptance-relevant run or cell '
+                                        'makes that cell INCONCLUSIVE and the pair non-adoptable',
+                  'r1b_table_failure': 'every m nonfinite in a TAB replication: the R1_b pairs are NOT_EVALUABLE, the '
+                                       'R1_0 and R1_a pairs continue'},
+    'reading': {'smoke': 'pinned processed frame and raw files read by parquet row group: only row groups whose '
+                         'game_date statistics lie inside TRAIN and overlap the smoke subset are decoded, only the listed '
+                         'columns; a straddling row group refuses; raw files of other years are not opened; no S6 access',
+                'A2-S0': 'the same reader over TRAIN; row groups straddling the TRAIN boundary are decoded and filtered '
+                         'before any use',
+                'layout_plan': 'the smoke plans its row groups from the parquet footers (schema and game_date statistics) '
+                               'before the attempt-start receipt: a straddling row group refuses without consuming an attempt',
+                'processed_pin': 'path = artifact_root/processed/pitches.parquet, sha256 = the inherited '
+                                 'reports/data_quality.json processed_sha256 = the file bytes, checked before any row',
+                'S6': 'the S6-dr-a5 stage directory is opened by A2-S3 only; the smoke reads only the first '
+                      'policy_registration_chain link (the ML-POLICY config: WE identity and local-config pin)'},
     'r1': {'root_level': 'maximum likelihood P(e | dp)', 'dp0_double_play_mapping': 'out',
            'spray_boundaries': 'pull if phi > +15, oppo if phi < -15, center otherwise, missing if hc_x, hc_y or stand missing or phi nonfinite',
            'pull_sign': 'phi negated for stand R, kept for stand L',
            'cv_log_loss': 'total held-out negative log-likelihood over both game_pk-parity folds / held-out rows',
            'missing_ev_or_la': 'R1_a fallback', 'source_of_launch_columns': 'processed frame if present, else approved raw join',
-           'raw_join_columns': ['hc_x', 'hc_y', 'bb_type', 'launch_speed', 'launch_angle']},
-    'calibration': {'se_g': 'sample SD (ddof 1) / sqrt(n_g) of the cross-fitted residuals',
-                    'cross_fit': 'game_pk parity two folds, both directions pooled',
+           'raw_join_columns': ['hc_x', 'hc_y', 'bb_type', 'launch_speed', 'launch_angle', 'estimated_woba_using_speedangle'],
+           'spray_missing_share': 'TRAIN: among the used in-play rows (hit_into_play, finite EV and LA, mapped event); '
+                                  'rehearsal: among the PAs on the bip_quality path only',
+           'xwoba_diagnostic': 'TRAIN Pearson correlation of estimated_woba_using_speedangle with the table P_hat(hit | x, dp) '
+                               'and the table expected total bases (descriptive)'},
+    'calibration': {'se_g': 'sample SD (ddof 1) / sqrt(n_g) of the residuals',
+                    'cross_fit': 'kappa: game_pk parity two folds, both directions pooled (P_hat is fitted here)',
+                    'zeta_residuals': 'actual runs - frozen C0 EmpiricalAdvancement expectation: an intentional exception '
+                                      'to cross-fitting because C0 is a frozen, pre-registered model (nothing is fitted '
+                                      'here); recorded in the A2-S0 output provenance',
                     'world_residual': 'TRAIN empirical (two-strike, dp, x) distribution of the group',
                     'bisection_relative_tolerance': 1e-10, 'bisection_max_upper': 1000.0,
                     'zeta_tilt': 'logit of the scoring-outcome mass of the C0 out distribution plus zeta * u_prime; relative masses within scoring and non-scoring outcomes kept'},
@@ -484,18 +709,38 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                   'eta_p': 'bisection so that the exact top-label ECE10 (weights: pi_b visitation x pi_b) equals 2 x 0.0087',
                   'tau': 'bisection so that the pi_b-visitation-weighted mean KL(pi_c || pi_b) equals 0.0074',
                   'synthetic_train': 'multinomial counts over (fold, dp, x, e), fold iid with probability 1/2',
-                  'drift': 'world class law clip(P_hat + (P_hat_second_half - P_hat_first_half), 0) renormalized; synthetic TRAIN from the undrifted law'},
+                  'drift': 'world class law clip(P_hat + (P_hat_second_half - P_hat_first_half), 0) renormalized; synthetic TRAIN from the undrifted law',
+                  'surrogate_truth': 'exact DP Delta_true(r~) for R1_a (C0 class values) and R1_b (the A2-S0 table), with '
+                                     'the surrogate share Delta_true(r~) - Delta_true(r) (descriptive)'},
     's5x': {'gamma_in_play_probability': 'exact 400-draw integral (policy_identity.integrated_predictions)',
             'layer_uniforms_per_pitch': ['quality x', 'class e', 'advancement'],
             'in_play_event': 'the G0 10-class draw lands on an in-play class (same uniform as the S5 world)',
-            'x2_world_predictor': 'loader must be named by registration_input_pins.x2_world_predictor_identity'},
+            'x2_world_predictor': 'kind g0_single_member: one member (pinned seed) of the bound five-member G0',
+            'first_order_reference_approximation': 'NOT_RUN (needs planner calls at reference-visited states); '
+                                                   'emitted as an explicit marker'},
     'bootstrap': {'se': 'SD of the valid replicates (ddof 1)', 'percentile': 'numpy.quantile linear',
                   'cluster_order': 'sorted by str (as policy_estimator.game_bootstrap)',
                   'pitcher_cluster': 'first-row pitcher of the PA (facts start_pitcher, else first ledger row)',
                   'pitcher_minimum_pa_starts': MIN_PA_STARTS, 'pigeonhole': 'sealed (descriptive), never public'},
     'placebo': {'count_buckets': ['ahead (strikes > balls)', 'even', 'behind (balls > strikes)'],
                 'pair': BASELINE, 'ratio_bootstraps': ['game', 'pitcher'], 'flag_if_any_ratio_above': PLACEBO_FLAG},
-    'window': {'treat_every_day_as_game_day': True, 'protection_window_kst': ['06:30', '13:30']},
+    'window': {'treat_every_day_as_game_day': True, 'protection_window_kst': ['06:30', '13:30'],
+               'rule': 'the whole command (argument parsing to the completion receipt) must end strictly before 06:30'},
+    'guards': {'coverage': 'hang timer, RSS cap and free-memory guard from argument parsing to the last write (preflight, '
+                           'data acquisition, computation, hashing and sealing; unblind included); the final check runs '
+                           'after the last write, disarms the timer and precedes the completion receipt',
+               'attempts': 'an attempt-start receipt is appended before the stage directory exists; at most two starts; '
+                           'a start without a receipt counts and needs a recorded reconciliation before the next start',
+               'refusals_before_attempt': 'registry, digest, receipts, sources, destination, upstream seals, G-SMOKE, '
+                                          'the smoke layout plan and the A2-S4 stage status refuse before the attempt-start'},
+    'receipts': {'G-CODE': 'verdict PASS, or PASS_WITH_NOTES with notes closed; commit = the running code commit; '
+                           'config digest = the registered digest',
+                 'G-REG': 'verdict PASS, or PASS_WITH_NOTES with notes closed; config digest = the registered digest'},
+    'destination': 'a fresh directory directly under output_root; output_root disjoint (resolved real paths) from the '
+                   'repository, the main checkout (git common directory), the S6-dr-a5 stage directory, the processed '
+                   'frame directory, the raw root and the G0 bundle and WE directories',
+    'smoke_projection_ratio': 'rows of the processed row groups overlapping TRAIN (footer metadata, an upper bound) / rows '
+                              'of the smoke subset before the regular-season filter (labelled projection)',
     'smoke': {'eta': 0.0, 'kappa': 0.0, 'zeta': 0.0, 'fixed_m': 20, 'fixed_lambda': 30.0, 'fixed_M': 5.0},
 }
 
@@ -504,6 +749,8 @@ def config_check(config):
     """Reject any deviation from the registry. Returns the config status."""
     _require(isinstance(config, dict), 'config must be a JSON object')
     _expect(config, '$.id', EXPERIMENT_ID)
+    _require(set(_get(config, '$.registration_input_pins')) == set(PIN_KEYS),
+             'registration_input_pins keys deviate from the registry')
     _expect(config, '$.protocol', PROTOCOL)
     status = config.get('status')
     _require(status in (DRAFT, REGISTERED), f'unknown status {status!r}')
@@ -614,26 +861,58 @@ def _outside_results(path_text, name):
     return path
 
 
+PIN_KEYS = ('s6_dr_a5_ledger_path', 's6_dr_a5_ledger_sha256', 's6_dr_a5_manifest_sha256', 'train_raw_files_sha256',
+            'processed_frame_identity', 'policy_registration_chain', 'x2_world_predictor_identity',
+            'execution_source_commit', 'new_files_sha256', 'new_files_sha256_scope', 'digest_manifest_path', 'output_root',
+            'r3_status', 'r3_status_allowed', 'a3_behavior_policy_sha256', 'a3_provenance_manifest_sha256',
+            'smoke_train_subset', 'smoke_tab_replications_per_cell', 'rule')
+
+
+def _disjoint(a, b):
+    a, b = Path(a).resolve(), Path(b).resolve()
+    return not (a == b or a.is_relative_to(b) or b.is_relative_to(a))
+
+
 def check_pins(config):
-    """Every registration-time input pin filled and well formed (needed before any registered stage)."""
+    """Every registration-time input pin filled and well formed (needed before any registered stage).
+
+    processed_frame_identity = {"path": absolute processed/pitches.parquet, "sha256": its bytes}; the
+    runner also checks it against the inherited quality manifest before any row is decoded.
+    policy_registration_chain = [{"path", "sha256"}, ...]: the ML-POLICY config first, then its addenda
+    (the S1-S6 registered inputs); stages before A2-S3 never open the S6 stage directory."""
     pins = _get(config, '$.registration_input_pins')
+    _require(set(pins) == set(PIN_KEYS), 'registration_input_pins keys deviate from the registry')
     hex64 = lambda v: isinstance(v, str) and _HEX64.fullmatch(v) is not None
-    _require(isinstance(pins.get('s6_dr_a5_ledger_path'), str) and Path(pins['s6_dr_a5_ledger_path']).is_absolute(),
-             'pin s6_dr_a5_ledger_path')
+    absolute = lambda v: isinstance(v, str) and Path(v).is_absolute()
+    _require(absolute(pins.get('s6_dr_a5_ledger_path')), 'pin s6_dr_a5_ledger_path')
     for key in ('s6_dr_a5_ledger_sha256', 's6_dr_a5_manifest_sha256'):
         _require(hex64(pins.get(key)), f'pin {key}')
     raw = pins.get('train_raw_files_sha256')
     _require(isinstance(raw, dict) and set(raw) == set(RAW_ALLOWLIST) and all(hex64(v) for v in raw.values()),
              'pin train_raw_files_sha256 (the three approved raw files)')
-    _require(pins.get('processed_frame_identity') is not None, 'pin processed_frame_identity')
-    _require(pins.get('x2_world_predictor_identity') is not None, 'pin x2_world_predictor_identity')
+    frame = pins.get('processed_frame_identity')
+    _require(isinstance(frame, dict) and set(frame) == {'path', 'sha256'} and absolute(frame['path'])
+             and hex64(frame['sha256']), 'pin processed_frame_identity = {"path": absolute, "sha256": hex}')
+    chain = pins.get('policy_registration_chain')
+    _require(isinstance(chain, list) and chain and all(isinstance(c, dict) and set(c) == {'path', 'sha256'}
+                                                      and isinstance(c['path'], str) and hex64(c['sha256']) for c in chain),
+             'pin policy_registration_chain = [{"path", "sha256"}, ...] (ML-POLICY config first)')
+    x2 = pins.get('x2_world_predictor_identity')
+    _require(isinstance(x2, dict) and x2.get('kind') == 'g0_single_member' and type(x2.get('seed')) is int,
+             'pin x2_world_predictor_identity = {"kind": "g0_single_member", "seed": int}')
     _require(isinstance(pins.get('execution_source_commit'), str) and _HEX40.fullmatch(pins['execution_source_commit']),
              'pin execution_source_commit (40-hex)')
     files = pins.get('new_files_sha256')
     _require(isinstance(files, dict) and set(files) == set(NEW_FILES) and all(hex64(v) for v in files.values()),
              'pin new_files_sha256 must cover exactly the new source and test files')
     _outside_results(pins.get('digest_manifest_path'), 'digest_manifest_path')
-    _outside_results(pins.get('output_root'), 'output_root')
+    root = _outside_results(pins.get('output_root'), 'output_root')
+    for name, other in (('the repository', REPO), ('the repository results/', REPO / 'results'),
+                        ('the S6-dr-a5 stage directory', Path(pins['s6_dr_a5_ledger_path']).parent),
+                        ('the processed frame directory', Path(frame['path']).parent)):
+        _require(_disjoint(root, other), f'output_root must be disjoint from {name}')
+    _require(_disjoint(pins['digest_manifest_path'], Path(pins['s6_dr_a5_ledger_path']).parent),
+             'the digest manifest must not live in the sealed S6 stage directory')
     r3 = pins.get('r3_status')
     _require(r3 in R3_STATUSES, 'pin r3_status')
     a3 = (pins.get('a3_behavior_policy_sha256'), pins.get('a3_provenance_manifest_sha256'))
@@ -652,12 +931,19 @@ def check_pins(config):
 
 
 def require_executable(config):
-    """Fail closed: every real-data stage (smoke included) refuses unless registered and enabled."""
+    """Fail closed: every real-data command (smoke included) refuses unless registered, enabled, every
+    registration-time pin filled, the registration references recorded and G-REV / G-CODE / G-REG passed."""
     status = config_check(config)
     _require(status == REGISTERED and config.get('registered') is True and config.get('preregistration_complete') is True
              and (config.get('execution') or {}).get('enabled') is True,
              'EXP-OPE-RES-01 is not REGISTERED and execution-enabled; refusing to run (fail closed)')
     check_pins(config)
+    registration = config['registration']
+    for key in ('registered_kst', 'review_reference', 'code_review_reference'):
+        _require(isinstance(registration.get(key), str) and registration[key], f'registration.{key} is not recorded')
+    gates = {g.get('id'): g.get('status') for g in config['pre_run_gates']}
+    for gate in GATES_PASSED:
+        _require(gates.get(gate) in RECEIPT_VERDICTS, f'pre-run gate {gate} has not passed ({gates.get(gate)!r})')
     return config
 
 

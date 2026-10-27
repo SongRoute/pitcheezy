@@ -226,6 +226,9 @@ def self_consistency(lines, table, resampler):
                 cnt = m @ np.bincount(cluster, minlength=resampler.n_clusters).astype(np.float64)
                 with np.errstate(divide='ignore', invalid='ignore'):
                     entry['mean_rho_logged_ci95'] = interval(num / cnt, cnt > 0, resampler.draws)['ci95']
+        for key in ('mean_pa_end_weight', 'mean_rho_logged'):  # the A3 signal: a CI excluding 1
+            ci = entry.get(f'{key}_ci95')
+            entry[f'{key}_ci_excludes_1'] = None if ci is None else bool(ci[0] > 1 or ci[1] < 1)
         out[name] = entry
     return out
 
@@ -261,7 +264,7 @@ def tune_tau(ref, mask, xi, target=PLACEBO_KL):
     return math.sqrt(lo * hi)
 
 
-def placebo_check(point_lines_steps, table, resamplers, *, rewards, placebos=PLACEBOS):
+def placebo_check(point_lines_steps, table, resamplers, *, rewards, placebos=PLACEBOS, checkpoint=None):
     """K placebo tilts pi_p proportional to pi_r exp(xi / tau_p), xi ~ N(0, 1) fixed per (pitcher,
     pitch type, count bucket) from seed role 'placebo' substream [k]; Delta_hat_k = mean over P of the
     DR difference V(pi_p) - V(pi_r) (same q-hat, rewards and logging law; no planner). Returns the
@@ -290,6 +293,8 @@ def placebo_check(point_lines_steps, table, resamplers, *, rewards, placebos=PLA
     value_r = base_r + slope_r * ends
     deltas, ses, taus = [], {name: [] for name in resamplers}, []
     for k in range(placebos):
+        if checkpoint is not None:
+            checkpoint()
         xi = np.random.default_rng(role_sequence('placebo', k)).standard_normal((len(keys), n_actions))[row_key]
         tau = tune_tau(table.ref, table.mask, xi)
         pi_p = placebo_policy(table.ref, table.mask, xi, tau)

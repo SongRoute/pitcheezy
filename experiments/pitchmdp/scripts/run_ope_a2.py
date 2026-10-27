@@ -1,24 +1,34 @@
 """EXP-OPE-RES-01 (track A2) stage runner: A2-SM smoke, A2-S0 ... A2-S4 and unblind.
 
-Every real-data command refuses (fail closed) unless configs/EXP-OPE-RES-01.json passes the registry
-check with status REGISTERED, registered = true, preregistration_complete = true, execution enabled
-and every registration-time input pin filled; the protected sources and the pinned new files are
-byte-identical, HEAD's code is the registered execution source commit and the config is committed;
-the external append-only digest manifest (outside the repository results/) holds the registered
-config digest and every upstream stage seal; the output is a fresh directory under the pinned output
-root (never inside results/); and the stage's hang guard would end before the next 06:30 KST
-protection window. Each stage writes JSON outputs, SHA256SUMS and manifest.json (seeds, config
-digest, git commit, seconds, peak RSS) and appends its seal to the digest manifest; downstream stages
-verify the seals before reading. Deterministic integrity failures stop the stage (no new arm from its
-outputs); statistical outcomes are recorded as they are.
+A real-data command (smoke, s0, s1, s2, s3, decide, unblind) is guarded from argument parsing to its
+completion receipt: the run-window rule (the whole hang guard must end strictly before the next 06:30
+KST and never enter 06:30-13:30 KST), the SIGALRM hang guard and the RSS / free-memory checkpoint cover
+preflight, data acquisition, computation, hashing and sealing; the final check runs after the last
+write, disarms the timer and precedes the completion receipt (stage seal). Preflight refuses (fail
+closed) unless configs/EXP-OPE-RES-01.json passes the registry check with status REGISTERED, execution
+enabled, every pin filled, the registration references recorded and the gates passed; the external
+append-only digest manifest (outside results/) holds the registered config digest and the G-CODE
+(commit = the running code's commit) and G-REG review receipts; the protected sources and the pinned
+new files are byte-identical and HEAD's code is the registered (or recorded bug-fix) commit. The
+destination is a fresh directory directly under the pinned output root, which is disjoint from every
+sealed input and protected root (resolved real paths). An attempt-start receipt is appended before the
+stage directory exists (at most two starts per stage; a retry after a deterministic integrity failure
+needs a recorded bug-fix addendum, after a start without any receipt a recorded reconciliation). The
+smoke reads TRAIN rows and listed columns only: its row groups are planned from the parquet footers
+before the attempt starts and only row groups lying inside TRAIN are decoded; the S6-dr-a5 stage
+directory is opened by A2-S3 only, where G-INT runs on the untouched registered path before any
+surrogate reward or variant is computed.
 
-Commands that read no data: ``check`` (config check, digest, protected sources) and ``pins`` (sha256
-of the new files for the registration pin). Run from the repository root with the project venv.
+Commands that read no data: ``check``, ``pins``; manifest commands: ``register-digest``,
+``record-review``, ``register-addendum``, ``reconcile-attempt``. Every data access of a registered
+command goes through an ``Environment`` (the real one by default) so the orchestration is testable on
+synthetic inputs.
 """
 from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -48,11 +58,23 @@ from pitchmdp import ope_synthetic_a2 as osx  # noqa: E402
 from pitchmdp.game import GameState  # noqa: E402
 from pitchmdp.policy_artifacts import IntegrityError, _require  # noqa: E402
 
-COMMANDS = ('check', 'pins', 'register-digest', 'record-review', 'register-addendum', 'smoke', 's0', 's1', 's2', 's3',
-            'decide', 'unblind')
-STAGE_OF = {'smoke': 'A2-SM', 's0': 'A2-S0', 's1': 'A2-S1', 's2': 'A2-S2', 's3': 'A2-S3', 'decide': 'A2-S4'}
+COMMANDS = ('check', 'pins', 'register-digest', 'record-review', 'register-addendum', 'reconcile-attempt', 'smoke',
+            's0', 's1', 's2', 's3', 'decide', 'unblind')
+MANIFEST_COMMANDS = ('register-digest', 'record-review', 'register-addendum', 'reconcile-attempt')
+STAGE_OF = {'smoke': 'A2-SM', 's0': 'A2-S0', 's1': 'A2-S1', 's2': 'A2-S2', 's3': 'A2-S3', 'decide': 'A2-S4',
+            'unblind': 'A2-UB'}
+GUARD_OF = {**{s: s for s in reg.STAGES}, 'A2-UB': 'A2-S4'}  # unblind belongs to A2-S4 (3,600 s guard)
+UPSTREAM = {**reg.UPSTREAM, 'A2-UB': ('A2-S3', 'A2-S4')}
+ATTEMPT_STAGES = (*reg.STAGES, 'A2-UB')
 CODE_PATHS = ('experiments', 'src', 'scripts')
 GIB = 1024 ** 3
+KEY = ['game_pk', 'at_bat_number', 'pitch_number']
+TRAIN_COLUMNS = ('game_pk', 'at_bat_number', 'pitch_number', 'game_date', 'game_type', 'split', 'pitch_type', 'pitcher',
+                 'stand', 'balls', 'strikes', 'outs_when_up', 'inning', 'inning_topbot', 'home_score', 'away_score',
+                 'post_home_score', 'post_away_score', 'on_1b', 'on_2b', 'on_3b', 'events', 'description',
+                 'launch_speed', 'launch_angle')
+RAW_COLUMNS = ('game_pk', 'at_bat_number', 'pitch_number', 'game_date', 'hc_x', 'hc_y', 'bb_type', 'launch_speed',
+               'launch_angle', 'estimated_woba_using_speedangle')
 
 
 class HangGuardExceeded(BaseException):
@@ -70,10 +92,9 @@ def _canonical(obj):
 
 class DigestManifest:
     """Append-only JSONL outside results/: each entry carries the previous entry's sha256 (hash chain);
-    entries are never rewritten. Kinds: config_digest, review_reference, smoke_record, stage_seal,
-    bugfix_addendum."""
-    KINDS = ('config_digest', 'review_reference', 'smoke_record', 'stage_seal', 'cell_seal', 'stage_failure',
-             'bugfix_addendum')
+    entries are never rewritten."""
+    KINDS = ('config_digest', 'review_reference', 'attempt_start', 'attempt_reconciliation', 'stage_seal', 'cell_seal',
+             'stage_failure', 'bugfix_addendum')
 
     def __init__(self, path):
         self.path = Path(path)
@@ -121,6 +142,27 @@ def require_config_digest(manifest, config):
     return entry
 
 
+def require_reviews(manifest, config, code_commit):
+    """G-CODE and G-REG receipts (PM decision, review #3): the latest receipt of each gate has verdict
+    PASS, or PASS_WITH_NOTES with its notes closed, and names the registered config digest; the G-CODE
+    receipt names the commit of the code that is running. Missing or mismatching receipts refuse."""
+    digest = reg.config_digest(config)
+    receipts = {}
+    for gate in reg.REQUIRED_RECEIPTS:
+        entry = manifest.latest('review_reference', gate=gate)
+        _require(entry is not None, f'no {gate} review receipt in the digest manifest; refusing to run')
+        r = entry['payload']
+        _require(r.get('verdict') in reg.RECEIPT_VERDICTS, f'{gate} receipt verdict {r.get("verdict")!r} is not a pass')
+        _require(r.get('verdict') == 'PASS' or r.get('notes_closed') is True,
+                 f'{gate} receipt is PASS_WITH_NOTES with open notes; refusing to run')
+        _require(r.get('config_digest') == digest, f'{gate} receipt names another config digest')
+        if gate == 'G-CODE':
+            _require(r.get('commit') == code_commit,
+                     f'the G-CODE receipt commit {r.get("commit")!r} is not the running code commit {code_commit}')
+        receipts[gate] = r
+    return receipts
+
+
 def require_seal(manifest, stage_id):
     """The latest seal of an upstream stage, re-verified against its output manifest bytes."""
     entry = manifest.latest('stage_seal', stage=stage_id)
@@ -134,7 +176,76 @@ def require_seal(manifest, stage_id):
     return out, entry
 
 
-# ---------------------------------------------------------------- sources, git and output location
+def _stage_entries(entries, stage_id, kinds):
+    return [e for e in entries if e['kind'] in kinds and e['payload'].get('stage') == stage_id]
+
+
+def unfinished_start(manifest, stage_id):
+    """The latest attempt start of a stage with no failure, seal or reconciliation after it, or None."""
+    entries = manifest.entries()
+    starts = _stage_entries(entries, stage_id, ('attempt_start',))
+    if not starts:
+        return None
+    after = [e for e in _stage_entries(entries, stage_id, ('stage_failure', 'stage_seal', 'attempt_reconciliation'))
+             if e['seq'] > starts[-1]['seq']]
+    return None if after else starts[-1]
+
+
+def attempt_gate(manifest, stage_id):
+    """Registered attempts (design 6, PM decision review #5): a sealed stage never reruns; the attempt-start
+    receipt precedes the stage directory, so a start counts even when the process dies; a third start
+    refuses; a retry after a deterministic-integrity failure needs a bug-fix addendum after it, after a
+    start without any receipt a recorded reconciliation."""
+    entries = manifest.entries()
+    _require(not _stage_entries(entries, stage_id, ('stage_seal',)),
+             f'{stage_id} is already sealed; a registered stage is not rerun')
+    starts = _stage_entries(entries, stage_id, ('attempt_start',))
+    _require(len(starts) < 2, f'{stage_id}: two attempts already started; a third start refuses')
+    if starts:
+        after = [e for e in entries if e['seq'] > starts[-1]['seq'] and e['payload'].get('stage') == stage_id]
+        failure = next((e for e in after if e['kind'] == 'stage_failure'), None)
+        if failure is None:
+            _require(any(e['kind'] == 'attempt_reconciliation' for e in after),
+                     f'{stage_id}: the previous attempt ended without a receipt (it counts); record a reconciliation '
+                     f'before the next start')
+        elif failure['payload']['class'] == 'deterministic_integrity':
+            _require(any(e['kind'] == 'bugfix_addendum' and e['seq'] > failure['seq'] for e in after),
+                     f'{stage_id}: a retry after an integrity failure needs a recorded bug-fix addendum')
+    return {'starts': len(starts)}
+
+
+def stage_status(manifest, stages=('A2-S0', 'A2-S1', 'A2-S2', 'A2-S3')):
+    """Per stage: 'sealed'; 'FAILED_INTEGRITY' (both attempts used, the last ended in a deterministic
+    integrity failure); 'DECISION_NEEDED' (both attempts used otherwise: infrastructure, error or no
+    receipt); 'incomplete' (an attempt remains)."""
+    entries = manifest.entries()
+    out = {}
+    for stage_id in stages:
+        if _stage_entries(entries, stage_id, ('stage_seal',)):
+            out[stage_id] = 'sealed'
+            continue
+        starts = _stage_entries(entries, stage_id, ('attempt_start',))
+        if len(starts) < 2:
+            out[stage_id] = 'incomplete'
+            continue
+        failures = [e for e in _stage_entries(entries, stage_id, ('stage_failure',)) if e['seq'] > starts[-1]['seq']]
+        integrity = bool(failures) and failures[0]['payload']['class'] == 'deterministic_integrity'
+        out[stage_id] = 'FAILED_INTEGRITY' if integrity else 'DECISION_NEEDED'
+    return out
+
+
+def smoke_gate(manifest, stage_id):
+    """G-SMOKE: A2-S0 and A2-S1 start only if the sealed smoke's projected cost (projection term
+    included) fits their hang guard; otherwise the stage is not started (decision needed; guards
+    unchanged). The record is read from the sealed A2-SM stage (its bytes are covered by the seal)."""
+    out, _ = require_seal(manifest, 'A2-SM')
+    record = json.loads((out / 'smoke_record.json').read_text())
+    _require(record['projection']['within_guard'].get(stage_id) is True,
+             f'G-SMOKE: the projected cost of {stage_id} exceeds its hang guard; not started (decision needed)')
+    return record
+
+
+# ---------------------------------------------------------------- sources, git and destination
 def git(*args):
     return subprocess.check_output(['git', *args], cwd=REPO, text=True).strip()
 
@@ -156,8 +267,7 @@ def new_file_hashes(root=REPO):
 
 
 def code_pins(config, manifest=None):
-    """The registered code identity, replaced by the latest recorded bug-fix addendum (design 6:
-    a deterministic-integrity fix is recorded append-only with its commit, test and review)."""
+    """The registered code identity, replaced by the latest recorded bug-fix addendum (design 6)."""
     pins = config['registration_input_pins']
     out = {'execution_source_commit': pins['execution_source_commit'], 'new_files_sha256': pins['new_files_sha256']}
     if manifest is not None:
@@ -168,31 +278,26 @@ def code_pins(config, manifest=None):
     return out
 
 
-def enforce_sources(config, config_path, state=None, manifest=None):
+def enforce_sources(config, config_path, state, manifest=None):
     """Protected sources byte-identical to the base; new files equal their pins; HEAD's code equals the
-    registered execution source commit (registration commits may follow); config committed."""
+    effective execution commit (registration commits may follow); config committed."""
     reg.verify_protected_sources(REPO)
     pins = code_pins(config, manifest)
     _require(new_file_hashes() == pins['new_files_sha256'], 'new source/test files differ from their registration pins')
-    source = pins['execution_source_commit']
-    if state is None:
-        state = {'head': git('rev-parse', 'HEAD'),
-                 'ancestor': subprocess.call(['git', 'merge-base', '--is-ancestor', source, 'HEAD'], cwd=REPO,
-                                             stderr=subprocess.DEVNULL) == 0,
-                 'changed': [x for x in git('diff', '--name-only', source, 'HEAD', '--', *CODE_PATHS).splitlines() if x],
-                 'dirty': bool(git('status', '--porcelain', '--', *CODE_PATHS)),
-                 'config_committed': committed(config_path)}
     _require(state['ancestor'] and not state['changed'], 'code at HEAD differs from the registered execution source commit')
     _require(not state['dirty'], 'uncommitted changes under the code paths; refusing to run')
     _require(state['config_committed'], 'the registered config is not committed at HEAD byte for byte')
     return state
 
 
-def check_output(output, config):
+def check_output(output, config, protected):
+    """PM decision (review #8): a fresh directory directly under the pinned output root, and the root is
+    neither inside nor around any sealed input or protected root (resolved real paths)."""
     root = Path(config['registration_input_pins']['output_root']).resolve()
     output = Path(output).resolve()
-    _require(not output.is_relative_to((REPO / 'results').resolve()), 'outputs never go to the repository results/')
     _require(output.parent == root and not output.exists(), f'output must be a new directory directly under {root}')
+    for name, other in protected.items():
+        _require(reg._disjoint(root, other), f'the output root must be disjoint from {name} ({Path(other).resolve()})')
     return output
 
 
@@ -220,8 +325,7 @@ def free_memory_bytes():
 
 
 class Guards:
-    """Checkpoint guard: RSS cap (8 GiB) and free memory (>= 4 GiB) checked at every call; the hang
-    guard itself is a SIGALRM timer armed by ``stage``."""
+    """RSS cap (8 GiB) and free memory (>= 4 GiB) checked at every call."""
     def __init__(self, *, rss_cap=reg.RSS_CAP_GIB * GIB, free_min=reg.FREE_MEMORY_GIB * GIB, rss=peak_rss_bytes,
                  free=free_memory_bytes):
         self.rss_cap, self.free_min, self.rss, self.free = rss_cap, free_min, rss, free
@@ -236,6 +340,57 @@ class Guards:
 
 def _raise_hang(signum, frame):
     raise HangGuardExceeded('registered hang guard exceeded; partial outputs preserved, not citable')
+
+
+class CommandGuard:
+    """One command's guards (PM decision, review #4): the window rule at entry, the SIGALRM hang timer and
+    the checkpoint (memory guard + elapsed time) used by preflight, every long loop and the final check."""
+    def __init__(self, stage_id, env, entered=None):
+        self.stage_id, self.env = stage_id, env
+        self.seconds = reg.HANG_GUARDS[GUARD_OF[stage_id]]
+        self.start, self.t0 = entered if entered is not None else (env.now(), env.monotonic())
+        _require(reg.stage_window_ok(self.start, self.seconds),
+                 f'{stage_id}: the command would not end strictly before 06:30 KST within its hang guard, or it '
+                 f'overlaps the 06:30-13:30 KST protection window; not started')
+        self.memory = env.guards()
+        self.armed, self.previous = False, None
+
+    def check(self):
+        self.memory()
+        if self.env.monotonic() - self.t0 > self.seconds:
+            raise HangGuardExceeded('registered hang guard exceeded (checkpoint)')
+
+    def arm(self):
+        if self.env.alarm:
+            remaining = self.seconds - (self.env.monotonic() - self.t0)
+            if remaining <= 0:
+                raise HangGuardExceeded('registered hang guard exceeded before arming')
+            self.previous = signal.signal(signal.SIGALRM, _raise_hang)
+            signal.setitimer(signal.ITIMER_REAL, float(remaining))
+            self.armed = True
+
+    def disarm(self):
+        if self.armed:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, self.previous)
+            self.armed = False
+
+    def finish(self):
+        """The final check after the last write and before the completion receipt; disarms the timer so
+        the receipt itself is never torn."""
+        self.check()
+        self.disarm()
+
+
+@contextmanager
+def command_guard(stage_id, env, entered=None):
+    guard = CommandGuard(stage_id, env, entered)
+    guard.arm()
+    try:
+        guard.check()
+        yield guard
+    finally:
+        guard.disarm()
 
 
 def sha256sums(output):
@@ -260,60 +415,196 @@ def _default(value):
 
 
 @contextmanager
-def stage(output, stage_id, identity, *, manifest, now=None, guard_seconds=None, alarm=True):
-    """Fresh stage directory with the registered hang guard; seals on success, preserves on failure.
-    A stage starts only if its hang guard would end outside every 06:30-13:30 KST window."""
-    guard_seconds = reg.HANG_GUARDS[stage_id] if guard_seconds is None else guard_seconds
-    start = now() if now is not None else datetime.now(timezone.utc)
-    _require(reg.stage_window_ok(start, reg.HANG_GUARDS[stage_id]),
-             f'{stage_id} would overlap the 06:30-13:30 KST protection window within its hang guard; not started')
+def stage(output, stage_id, identity, *, manifest, final_check, start=None):
+    """Attempt-start receipt (before the directory exists), fresh stage directory, outputs, SHA256SUMS and
+    manifest.json; the final check after the last write; then the completion receipt (stage seal). Any
+    failure keeps the directory and appends a classified failure receipt."""
     output = Path(output)
     _require(not output.exists(), f'stage output exists; preserve it and use a new attempt directory: {output}')
-    output.mkdir(parents=True)
+    started = (start or datetime.now(timezone.utc)).isoformat()
+    manifest.append('attempt_start', {'stage': stage_id, 'output_dir': str(output), 'started_utc': started})
     t0, cpu0 = time.perf_counter(), time.process_time()
-    dump(output / 'started.json', {'stage': stage_id, 'started_utc': start.isoformat(), **identity})
-    previous = None
-    if alarm:
-        previous = signal.signal(signal.SIGALRM, _raise_hang)
-        signal.setitimer(signal.ITIMER_REAL, float(guard_seconds))
     try:
+        output.mkdir(parents=True)
+        dump(output / 'started.json', {'stage': stage_id, 'started_utc': started, **identity})
         yield output
+        sums = sha256sums(output)
+        (output / 'SHA256SUMS').write_text(''.join(f'{sha}  {name}\n' for name, sha in sums.items()))
+        dump(output / 'manifest.json', {'stage': stage_id, 'cost': {
+            'wall_seconds': time.perf_counter() - t0, 'cpu_seconds': time.process_time() - cpu0,
+            'peak_rss_bytes': peak_rss_bytes()},
+            'artifact_sha256': {**sums, 'SHA256SUMS': reg.file_sha256(output / 'SHA256SUMS')},
+            **{k: identity[k] for k in ('config_digest', 'git_commit', 'seeds') if k in identity}})
+        final_check()  # after the last write, before the completion receipt
     except BaseException as error:
-        stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
         kind = ('infrastructure' if isinstance(error, (HangGuardExceeded, MemoryGuardExceeded))
                 else 'deterministic_integrity' if isinstance(error, IntegrityError) else 'error')
-        failure = output / f'failure-{stamp}.json'
-        dump(failure, {'stage': stage_id, 'class': kind, 'error_type': type(error).__name__,
-                       'error': str(error), 'seconds': time.perf_counter() - t0,
-                       'peak_rss_bytes': peak_rss_bytes(), 'citable': False, 'partial_outputs_preserved': True})
-        manifest.append('stage_failure', {'stage': stage_id, 'class': kind, 'output_dir': str(output),
-                                          'failure_sha256': reg.file_sha256(failure)})
+        payload = {'stage': stage_id, 'class': kind, 'output_dir': str(output)}
+        if output.is_dir():
+            failure = output / f"failure-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}.json"
+            dump(failure, {'stage': stage_id, 'class': kind, 'error_type': type(error).__name__, 'error': str(error),
+                           'seconds': time.perf_counter() - t0, 'peak_rss_bytes': peak_rss_bytes(), 'citable': False,
+                           'partial_outputs_preserved': True})
+            payload['failure_sha256'] = reg.file_sha256(failure)
+        manifest.append('stage_failure', payload)
         raise
-    finally:
-        if alarm:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-            signal.signal(signal.SIGALRM, previous)
-    sums = sha256sums(output)
-    (output / 'SHA256SUMS').write_text(''.join(f'{sha}  {name}\n' for name, sha in sums.items()))
-    dump(output / 'manifest.json', {'stage': stage_id, 'cost': {
-        'wall_seconds': time.perf_counter() - t0, 'cpu_seconds': time.process_time() - cpu0,
-        'peak_rss_bytes': peak_rss_bytes()}, 'artifact_sha256': {**sums, 'SHA256SUMS': reg.file_sha256(output / 'SHA256SUMS')},
-        **{k: identity[k] for k in ('config_digest', 'git_commit', 'seeds') if k in identity}})
     manifest.append('stage_seal', {'stage': stage_id, 'output_dir': str(output),
                                    'manifest_sha256': reg.file_sha256(output / 'manifest.json')})
 
 
-def identity_record(config, extra=None):
-    return {'experiment': reg.EXPERIMENT_ID, 'config_digest': reg.config_digest(config),
-            'git_commit': git('rev-parse', 'HEAD'),
+def identity_record(config, git_commit, extra=None):
+    return {'experiment': reg.EXPERIMENT_ID, 'config_digest': reg.config_digest(config), 'git_commit': git_commit,
             'seeds': {'game_bootstrap': reg.GAME_BOOTSTRAP_SEED, 'a2_base': reg.A2_BASE, 'roles': reg.ROLE_VALUES,
                       'world_seeds': {r['k']: reg.world_seed(r['k']) for r in reg.S5X_RUNS}},
             'python': sys.executable, 'python_version': platform.python_version(), 'numpy': np.__version__,
             'pandas': pd.__version__, **(extra or {})}
 
 
+# ================================================================ pinned readers (TRAIN-only for the smoke)
+def _stat_day(value):
+    if isinstance(value, bytes):
+        value = value.decode()
+    stamp = pd.Timestamp(value)
+    return (stamp.tz_localize(None) if stamp.tzinfo is not None else stamp).normalize()
+
+
+def _naive_days(values):
+    days = pd.to_datetime(pd.Series(values).reset_index(drop=True))
+    if getattr(days.dt, 'tz', None) is not None:
+        days = days.dt.tz_localize(None)
+    return days.dt.normalize()
+
+
+def parquet_plan(path, columns, window, *, strict):
+    """Row groups of one parquet file whose game_date statistics overlap ``window``, from the footer only
+    (schema and statistics; no row is decoded). ``strict`` (the smoke): each selected row group must carry
+    statistics and lie inside TRAIN, otherwise refuse (before the attempt starts)."""
+    import pyarrow.parquet as pq
+    path = Path(path)
+    _require('2026' not in path.name, 'a 2026 path reached a reader; stopping')
+    meta = pq.ParquetFile(path).metadata
+    names = [meta.schema.column(i).name for i in range(meta.num_columns)]
+    _require(all(c in names for c in columns), f'{path.name} lacks a listed column')
+    index = names.index('game_date')
+    lo, hi = pd.Timestamp(window[0]), pd.Timestamp(window[1])
+    train_lo, train_hi = pd.Timestamp(reg.TRAIN_WINDOW[0]), pd.Timestamp(reg.TRAIN_WINDOW[1])
+    groups, rows = [], 0
+    for rg in range(meta.num_row_groups):
+        stats = meta.row_group(rg).column(index).statistics
+        if stats is None or not stats.has_min_max:
+            _require(not strict, f'{path.name} row group {rg} has no game_date statistics; the TRAIN-only read refuses')
+        else:
+            first, last = _stat_day(stats.min), _stat_day(stats.max)
+            if last < lo or first > hi:
+                continue  # never decoded
+            if strict:
+                _require(first >= train_lo and last <= train_hi,
+                         f'{path.name} row group {rg} holds non-TRAIN dates ({first.date()}..{last.date()}); the '
+                         f'TRAIN-only read refuses')
+        groups.append(rg)
+        rows += meta.row_group(rg).num_rows
+    return {'file': path.name, 'row_groups': groups, 'rows': int(rows), 'num_row_groups': meta.num_row_groups}
+
+
+def read_planned(path, plan, columns, window, *, checkpoint=lambda: None, log=None):
+    """Decode only the planned row groups and listed columns; keep the rows dated inside ``window``."""
+    import pyarrow.parquet as pq
+    handle = pq.ParquetFile(path)
+    lo, hi = pd.Timestamp(window[0]), pd.Timestamp(window[1])
+    frames = []
+    for rg in plan['row_groups']:
+        checkpoint()
+        frame = handle.read_row_group(rg, columns=list(columns)).to_pandas()
+        if log is not None:
+            log.append({'file': Path(path).name, 'row_group': int(rg), 'columns': list(columns)})
+        days = _naive_days(frame['game_date'])
+        frames.append(frame.loc[((days >= lo) & (days <= hi)).to_numpy()])
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=list(columns))
+
+
+def verify_processed_pin(pins, local):
+    """PM decision (review #6): the A2 processed-frame pin is the registered loader's file and equals the
+    inherited quality manifest and the file bytes, checked before any row is decoded."""
+    root = Path(local['artifact_root'])
+    pin = pins['processed_frame_identity']
+    _require(Path(pin['path']).resolve() == (root / 'processed' / 'pitches.parquet').resolve(),
+             'processed_frame_identity path differs from the registered processed frame')
+    quality = json.loads((root / 'reports' / 'data_quality.json').read_text())
+    _require(quality.get('processed_sha256') == pin['sha256'],
+             'the A2 processed-frame pin differs from the inherited quality manifest (processed_sha256)')
+    _require(reg.file_sha256(pin['path']) == pin['sha256'], 'processed frame bytes differ from the A2 pin')
+    return pin
+
+
+def raw_files_for(window, local):
+    """The approved raw files whose season overlaps the window (the others are never opened)."""
+    first, last = int(str(window[0])[:4]), int(str(window[1])[:4])
+    for name in reg.RAW_ALLOWLIST:
+        if first <= int(name.split('_')[1].split('.')[0]) <= last:
+            yield name, Path(local['raw_root']) / name
+
+
+def plan_train_reads(pins, local, window, *, strict):
+    """Footer-only plan of a TRAIN read after the pins are verified (processed pin first): the processed
+    and raw row groups that would be decoded and the processed rows of the row groups overlapping TRAIN
+    (an upper bound for the smoke's labelled projection)."""
+    _require(reg.TRAIN_WINDOW[0] <= window[0] <= window[1] <= reg.TRAIN_WINDOW[1], 'a TRAIN read stays inside TRAIN')
+    pin = verify_processed_pin(pins, local)
+    plan = {'window': list(window), 'strict': bool(strict),
+            'processed': parquet_plan(pin['path'], TRAIN_COLUMNS, window, strict=strict), 'raw': {}}
+    for name, path in raw_files_for(window, local):
+        _require(reg.file_sha256(path) == pins['train_raw_files_sha256'][name], f'raw file {name} differs from its pin')
+        plan['raw'][name] = parquet_plan(path, RAW_COLUMNS, window, strict=strict)
+    _require(plan['raw'], 'no approved raw file overlaps the window')
+    plan['train_rows_upper_bound'] = parquet_plan(pin['path'], ('game_date',), reg.TRAIN_WINDOW, strict=False)['rows']
+    return plan
+
+
+def join_raw(frame, raw):
+    """Raw quality columns joined on the pitch key (unique on both sides); launch columns from the
+    processed frame when present, else from the approved raw file."""
+    _require(not raw.duplicated(KEY).any() and not frame.duplicated(KEY).any(),
+             'join keys are not unique (deterministic integrity)')
+    joined = frame[KEY].merge(raw.drop(columns=['game_date']), on=KEY, how='left', validate='one_to_one',
+                              suffixes=('', '_raw'))
+    frame = frame.copy()
+    for column in ('hc_x', 'hc_y', 'bb_type', 'estimated_woba_using_speedangle'):
+        frame[column] = joined[column].to_numpy()
+    for column in ('launch_speed', 'launch_angle'):
+        frame[column] = frame[column].where(frame[column].notna(), joined[column].to_numpy())
+    return frame
+
+
+def train_rows(pins, local, window, *, strict, checkpoint=lambda: None, log=None):
+    """Regular-season TRAIN rows inside ``window`` (pinned processed frame, listed columns) with the raw
+    quality columns of the overlapping approved files joined. Returns (frame, read record)."""
+    plan = plan_train_reads(pins, local, window, strict=strict)
+    frame = read_planned(pins['processed_frame_identity']['path'], plan['processed'], TRAIN_COLUMNS, window,
+                         checkpoint=checkpoint, log=log)
+    rows_all_types = int(len(frame))
+    frame = frame.loc[frame['game_type'].eq('R').to_numpy()].reset_index(drop=True)
+    _require(bool(frame['split'].eq('train').all()), 'a TRAIN-window row is outside the train split (deterministic integrity)')
+    raw = pd.concat([read_planned(Path(local['raw_root']) / name, entry, RAW_COLUMNS, window, checkpoint=checkpoint,
+                                  log=log) for name, entry in plan['raw'].items()], ignore_index=True)
+    frame = join_raw(frame, raw)
+    osg.guard_train(frame['game_date'])
+    return frame, {'plan': plan, 'rows_in_window_all_types': rows_all_types, 'regular_season_rows': int(len(frame))}
+
+
+def raw_rows(pins, local, window, *, checkpoint=lambda: None):
+    """A2-S3: the approved raw quality columns of the rehearsal window (pinned files, listed columns)."""
+    frames = []
+    for name, path in raw_files_for(window, local):
+        _require(reg.file_sha256(path) == pins['train_raw_files_sha256'][name], f'raw file {name} differs from its pin')
+        frames.append(read_planned(path, parquet_plan(path, RAW_COLUMNS, window, strict=False), RAW_COLUMNS, window,
+                                   checkpoint=checkpoint))
+    _require(frames, 'no approved raw file overlaps the rehearsal window')
+    return pd.concat(frames, ignore_index=True)
+
+
 # ================================================================ A2-S0 (pure on TRAIN rows)
 TAB_OUTCOME_OF_10 = np.array([0, 1, 2, 4, 4, 4, 4, 4, 3, 4])  # ball, strike, foul, in play x5, hbp, double play
+TB_WEIGHTS = np.array([0., 1., 2., 3., 4., 0.])  # out, single, double, triple, home run, double play
 
 
 def _bases(frame):
@@ -414,16 +705,19 @@ def marginals_from_doc(doc):
     return osx.TabMarginals(**values)
 
 
-def zeta_inputs(train, cells, classes, index, game_values, names):
-    """Per eligible TRAIN out (runner on third, < 2 outs): actual runs - C0 expectation, the C0 scoring
-    mass and run gap (zeta calibration), with the pitch group."""
+def zeta_inputs(train, cells, classes, index, game_values, names, checkpoint=lambda: None):
+    """Per eligible TRAIN out (runner on third, < 2 outs): actual runs - frozen C0 expectation, the C0
+    scoring mass and run gap (zeta calibration), with the pitch group. C0 is a frozen, pre-registered
+    model (nothing is fitted here), the registered exception to cross-fitting."""
     rows = train.iloc[index]
     bases, outs = _bases(rows), rows['outs_when_up'].to_numpy()
     sel = (classes == osg.OUT_INDEX) & ((bases & 4) > 0) & (outs < 2)
     part = rows.loc[sel]
     groups = _groups(part, names)
     cache, residual, p_score, run_gap = {}, [], [], []
-    for (_, row), b in zip(part.iterrows(), bases[sel]):
+    for n, ((_, row), b) in enumerate(zip(part.iterrows(), bases[sel])):
+        if n % 2000 == 0:
+            checkpoint()
         state = GameState(int(row.inning), str(row.inning_topbot), int(row.outs_when_up), int(b), int(row.home_score),
                           int(row.away_score))
         if state not in cache:
@@ -437,11 +731,36 @@ def zeta_inputs(train, cells, classes, index, game_values, names):
     return np.array(residual), np.array(p_score), np.array(run_gap), groups
 
 
+def xwoba_diagnostic(train, cells, index, table):
+    """TRAIN Pearson correlation of MLB estimated_woba_using_speedangle with the table's P_hat(hit | x, dp)
+    and expected total bases (descriptive only; never a surrogate)."""
+    if 'estimated_woba_using_speedangle' not in train:
+        return {'status': 'NOT_AVAILABLE', 'reason': 'the column was not joined'}
+    x = pd.to_numeric(train['estimated_woba_using_speedangle'], errors='coerce').to_numpy(dtype=np.float64)[index]
+    ok = np.isfinite(x)
+    if ok.sum() < 3:
+        return {'status': 'NOT_AVAILABLE', 'reason': 'fewer than three used in-play rows carry the column'}
+    table = np.asarray(table)
+    hit = osg.hit_probability(table, cells)[ok]
+    total_bases = (table[np.asarray(cells, dtype=np.int64)] @ TB_WEIGHTS)[ok]
+
+    def corr(a, b):
+        if np.std(a) == 0 or np.std(b) == 0:
+            return None
+        return float(np.corrcoef(a, b)[0, 1])
+    return {'status': 'COMPUTED', 'n': int(ok.sum()), 'corr_hit_probability': corr(x[ok], hit),
+            'corr_expected_total_bases': corr(x[ok], total_bases),
+            'label': 'TRAIN correlation diagnostic only; not a surrogate (design R1_b)'}
+
+
 SMOKE_MIN_PITCHES = 50  # the smoke's short TRAIN subset: archetype eligibility only (outputs discarded)
+PROVENANCE = {'kappa_residuals': 'cross-fitted: game_pk parity two folds, P_hat refitted on the other fold',
+              'zeta_residuals': reg.IMPLEMENTATION['calibration']['zeta_residuals'],
+              'rows': 'TRAIN rows only (2023-05-15..2025-04-30), regular season'}
 
 
 def build_s0(train, game_values, *, smoke=False, seed_role='tab_world', fixed_m=None,
-             min_pitches=reg.IMPLEMENTATION['tab_world']['archetype_min_train_pitches']):
+             min_pitches=reg.IMPLEMENTATION['tab_world']['archetype_min_train_pitches'], checkpoint=lambda: None):
     """A2-S0 on guarded TRAIN rows (raw columns already joined). ``smoke``: the same code path with a
     fixed m, no cross-validated log-loss, no delta_g, kappa_p or zeta_p (zero signs), outputs discarded."""
     timings = {}
@@ -450,9 +769,11 @@ def build_s0(train, game_values, *, smoke=False, seed_role='tab_world', fixed_m=
     cells, classes, index, census = osg.train_bip_rows(train)
     folds = (train['game_pk'].to_numpy()[index] % 2).astype(np.int64)
     timings['rows_and_mapping'] = time.perf_counter() - t
+    checkpoint()
     t = time.perf_counter()
     fit = osg.fit_r1b(cells, classes, folds, m=fixed_m if smoke else None)
     timings['table_fit'] = time.perf_counter() - t
+    checkpoint()
     m, table = fit['m'], fit['table']
     dates = pd.to_datetime(train['game_date']).to_numpy()[index]
     median = np.sort(dates)[len(dates) // 2] if len(dates) else None
@@ -460,7 +781,7 @@ def build_s0(train, game_values, *, smoke=False, seed_role='tab_world', fixed_m=
     _require(all(h.any() for h in halves), 'both TRAIN halves need in-play rows (era drift cell)')
     half_tables = [osg.fit_table(osg.class_counts(cells[h], classes[h]), m) for h in halves]
     out = {'census': census, 'm': m, 'cv_log_loss': fit['cv_log_loss'], 'r1_table': table,
-           'r1_table_sha256': osg.table_sha256(table, m), 'timings': timings}
+           'r1_table_sha256': osg.table_sha256(table, m), 'timings': timings, 'provenance': PROVENANCE}
     zero = {g: 0 for g in reg.S5X_GROUPS}
     if smoke:
         signs, signs_prime, kappa, zeta = zero, zero, {'S5X': 0.0, 'TAB': 0.0}, {'S5X': 0.0, 'TAB': 0.0}
@@ -469,15 +790,19 @@ def build_s0(train, game_values, *, smoke=False, seed_role='tab_world', fixed_m=
         residual = osg.crossfit_hit_residuals(cells, classes, folds, groups, m)
         delta = osg.group_residuals(residual, groups, reg.S5X_GROUPS)
         hit = osg.hit_probability(table, cells)
-        z_res, p_score, run_gap, z_groups = zeta_inputs(train, cells, classes, index, game_values, reg.S5X_GROUPS)
+        checkpoint()
+        z_res, p_score, run_gap, z_groups = zeta_inputs(train, cells, classes, index, game_values, reg.S5X_GROUPS,
+                                                        checkpoint)
         delta_prime = osg.group_residuals(z_res, z_groups, reg.S5X_GROUPS)
         kappa, zeta = {}, {}
         for world, names in (('S5X', reg.S5X_GROUPS), ('TAB', reg.TAB_GROUPS)):
             kappa[world] = osg.calibrate_kappa(hit, groups, delta, names)
             zeta[world] = osg.calibrate_zeta(p_score, run_gap, z_groups, delta_prime, names)
+            checkpoint()
         signs = kappa['S5X']['signs']
         signs_prime = zeta['S5X']['signs']
-        out.update(train_residuals={'hit': delta, 'run': delta_prime}, kappa_calibration=kappa, zeta_calibration=zeta)
+        out.update(train_residuals={'hit': delta, 'run': delta_prime}, kappa_calibration=kappa, zeta_calibration=zeta,
+                   xwoba_train_diagnostic=xwoba_diagnostic(train, cells, index, table))
         kappa = {w: v['kappa_p'] for w, v in kappa.items()}
         zeta = {w: v['zeta_p'] for w, v in zeta.items()}
     out.update(signs=signs, signs_prime=signs_prime, kappa_p=kappa, zeta_p=zeta)
@@ -491,10 +816,48 @@ def build_s0(train, game_values, *, smoke=False, seed_role='tab_world', fixed_m=
                          'signs': [signs[g] for g in reg.S5X_GROUPS], 'signs_prime': [signs_prime[g] for g in reg.S5X_GROUPS],
                          'kappa_p': kappa['S5X'], 'zeta_p': zeta['S5X']}
     timings['marginals'] = time.perf_counter() - t
+    checkpoint()
     return out
 
 
+S0_REQUIRED = ('census', 'm', 'cv_log_loss', 'r1_table', 'r1_table_sha256', 'provenance', 'train_residuals',
+               'kappa_calibration', 'zeta_calibration', 'xwoba_train_diagnostic', 'kappa_p', 'zeta_p', 'tab_marginals',
+               's5x_layers')
+
+
+def require_s0_descriptive(s0):
+    missing = [k for k in S0_REQUIRED if k not in s0]
+    _require(not missing, f'A2-S0 descriptive output missing: {missing} (stage integrity)')
+    return True
+
+
 # ================================================================ A2-S1 TAB (pure on sealed A2-S0 outputs)
+S1_CELL_KEYS = ('cell', 'delta_true', 'beta_0', 'tau', 'expected_delta_hat_0', 'delta_true_surrogate', 'pairs', 'selections')
+S1_PAIR_KEYS = ('b_hat', 'se', 'sd', 'rmse', 'invalid_replications', 'not_evaluable_replications', 'R')
+S1_SURROGATE_KEYS = ('R1_0_realized', 'R1_a', 'R1_b', 'R1_a_surrogate_share', 'R1_b_surrogate_share')
+
+
+def require_s1_descriptive(results, cells):
+    """Every descriptive TAB output the design requires (PM decision, review #10): each registered cell
+    is recorded or listed as not run after the guard, with its per-pair statistics, selections and the
+    exact surrogate-truth decomposition; a missing output is a stage integrity failure."""
+    _require(set(results['cells']) | set(results['not_run']) == {c['id'] for c in cells}
+             and not set(results['cells']) & set(results['not_run']), 'TAB cells missing (stage integrity)')
+    for cid, record in results['cells'].items():
+        _require(all(k in record for k in S1_CELL_KEYS), f'TAB cell {cid}: descriptive output missing (stage integrity)')
+        _require(set(record['pairs']) == set(reg.PAIRS) and all(all(k in v for k in S1_PAIR_KEYS)
+                                                                for v in record['pairs'].values()),
+                 f'TAB cell {cid}: per-pair outputs missing (stage integrity)')
+        _require(all(k in (record['delta_true_surrogate'] or {}) for k in S1_SURROGATE_KEYS),
+                 f'TAB cell {cid}: the surrogate-truth decomposition is missing (stage integrity)')
+        if record['cell']['role'] == 'acceptance':
+            _require(all('outcome' in v for v in record['pairs'].values()), f'TAB cell {cid}: outcomes missing')
+    wanted = {c['id'] for c in cells}
+    _require(set(results['acceptance']) == {c['id'] for c in reg.TAB_ACCEPTANCE if c['id'] in wanted},
+             'TAB acceptance cells missing (stage integrity)')
+    return True
+
+
 def stage_s1(s0, *, write_cell, deadline=lambda: None, cells=None, replications=None):
     """Acceptance cells first (each written and sealed on completion), then the descriptive cells in
     the registered order; the first step checks every V2 cell's baseline DP expectation = DP truth."""
@@ -507,14 +870,12 @@ def stage_s1(s0, *, write_cell, deadline=lambda: None, cells=None, replications=
     integrity = {}
     for cell in cells:
         if cell['law'] == 'V2':
+            deadline()
             world = worlds(cell)
             osx.tab_integrity(world)
             integrity[cell['id']] = {'expected_delta_hat_0_minus_truth': world.expected_delta_hat_0 - world.delta_true}
     results = {'eta_p': eta_p, 'first_step_v2_dp_check': integrity, 'cells': {}, 'not_run': []}
-    acceptance_done = False
     for cell in cells:
-        if cell['role'] != 'acceptance' and not acceptance_done:
-            acceptance_done = True
         try:
             record = osx.tab_cell(worlds(cell), cell, n_train=marginals.n_train_bip, replications=replications,
                                   deadline=deadline)
@@ -527,28 +888,56 @@ def stage_s1(s0, *, write_cell, deadline=lambda: None, cells=None, replications=
         write_cell(cell, record)
     results['acceptance'] = {c['id']: results['cells'][c['id']]['pairs'] for c in reg.TAB_ACCEPTANCE
                              if c['id'] in results['cells']}
+    require_s1_descriptive(results, cells)
     return results
 
 
-# ================================================================ A2-S4 decision (pure)
-def stage_s4(public, tab, s5x, *, integrity_failures, r3_status):
-    odc.check_inputs(public, tab, s5x)
-    return odc.decide(public, tab, s5x, integrity_failures=integrity_failures, r3_status=r3_status)
+# ================================================================ A2-S2 summary and A2-S4 decision (pure)
+INVARIANT_RUNS = tuple(r['k'] for r in reg.S5X_RUNS if r['setting'] == 'X1' and r['zeta'] == '0')
+S2_RUN_OF = {'2*kappa_p': next(r['k'] for r in reg.S5X_RUNS if r['role'] == 'S2' and r['kappa'] == '2*kappa_p'),
+             '2*zeta_p': next(r['k'] for r in reg.S5X_RUNS if r['role'] == 'S2' and r['zeta'] == '2*zeta_p')}
+
+
+def require_s2_descriptive(runs):
+    """Every descriptive S5-X output the design requires: per run the six repetitions, every pair and the
+    inherited S5 SE; per X1 run the S-2 cells, the per-pair cells and the explicit NOT_RUN marker of the
+    first-order reference-trajectory approximation; per zeta = 0 X1 run the invariant record."""
+    _require([r['run']['k'] for r in runs] == [r['k'] for r in reg.S5X_RUNS], 'S5-X runs missing (stage integrity)')
+    for record in runs:
+        k = record['run']['k']
+        _require(len(record.get('repetitions') or []) == reg.S5X_REPETITIONS and 'inherited_s5_se' in record
+                 and set(record.get('pairs') or {}) == set(reg.PAIRS), f'S5-X run {k}: descriptive output missing')
+        if record['run']['setting'] == 'X1':
+            marker = record.get('first_order_reference_approximation') or {}
+            _require({'s2', 's2_pairs'} <= set(record) and marker.get('status') == 'NOT_RUN' and marker.get('reason'),
+                     f'S5-X run {k}: S-2 outputs or the NOT_RUN marker missing (stage integrity)')
+            if record['run']['zeta'] == '0':
+                _require(record.get('invariant') is not None, f'S5-X run {k}: invariant record missing (stage integrity)')
+    return True
 
 
 def s5x_summary(runs):
-    """S-1/S-4 nets, S-2 cells and the gamma_a invariant from the S5-X run records."""
+    """S-1/S-4 nets, per-pair S-2 cells (runs 4 and 5: an invalid repetition of the pair in that run makes
+    its cell INCONCLUSIVE, never PASS) and the gamma_a invariant (runs 4, 9, 10) from the run records."""
     nets = osx.nets(runs)
     by_k = {r['run']['k']: r for r in runs}
+    recorded = [by_k[k].get('invariant') for k in INVARIANT_RUNS if k in by_k]
+    invariant = ('PASS' if S2_RUN_OF['2*kappa_p'] in by_k and recorded
+                 and all(r is not None and r.get('outcome') == 'PASS' for r in recorded) else 'INVALID')
     s2 = {}
-    for comp in ('R1_a', 'R1_b'):
-        s2[comp] = {}
-        for label, k in (('2*kappa_p', 4), ('2*zeta_p', 5)):
-            entry = (by_k.get(k) or {}).get('s2') or {}
-            s2[comp][label] = entry.get(comp) or {'outcome': 'INVALID'}
-    invariant_runs = [by_k[k]['invariant'] for k in (4, 9, 10) if k in by_k and by_k[k].get('invariant')]
-    s2['invariant'] = 'PASS' if invariant_runs and all(r['outcome'] == 'PASS' for r in invariant_runs) else 'INVALID'
+    for pair in reg.PAIRS:
+        if reg.split_pair(pair)[0] not in ('R1_a', 'R1_b'):
+            continue
+        s2[pair] = {'invariant': invariant}
+        for label, k in S2_RUN_OF.items():
+            s2[pair][label] = (((by_k.get(k) or {}).get('s2_pairs') or {}).get(pair)
+                               or reg.inconclusive_invalid(f'S5-X run {k} has no S-2 record for {pair}'))
     return {'nets': nets, 's2': s2}
+
+
+def stage_s4(public, tab, s5x, *, integrity_failures, r3_status):
+    odc.check_inputs(public, tab, s5x)
+    return odc.decide(public, tab, s5x, integrity_failures=integrity_failures, r3_status=r3_status)
 
 
 # ================================================================ A2-SM smoke (pure parts)
@@ -563,24 +952,22 @@ def smoke_tab(s0_subset, *, replications, guards=lambda: None):
     build = time.perf_counter() - t
     osx.tab_integrity(world)
     fixed = {'m': choice['fixed_m'], 'lambda': choice['fixed_lambda'], 'M': choice['fixed_M']}
-    walls = []
-    first = None
+    walls, first = [], None
     for j in range(replications):
         guards()
         t = time.perf_counter()
-        estimates, _, _ = osx.tab_replication(world, 0, j, n_train=marginals.n_train_bip, smoke=fixed)
+        estimates = osx.tab_replication(world, 0, j, n_train=marginals.n_train_bip, smoke=fixed)[0]
         walls.append(time.perf_counter() - t)
         if j == 0:
             first = estimates
-    again, _, _ = osx.tab_replication(world, 0, 0, n_train=marginals.n_train_bip, smoke=fixed)
-    reproducible = json.dumps(first, sort_keys=True) == json.dumps(again, sort_keys=True)
-    _require(reproducible, 'smoke TAB replication is not bit-reproducible with the same seed (deterministic integrity)')
-    rng = np.random.default_rng(reg.role_sequence('smoke', 2, 0))
-    data = world.simulate(rng)
+    again = osx.tab_replication(world, 0, 0, n_train=marginals.n_train_bip, smoke=fixed)[0]
+    _require(json.dumps(first, sort_keys=True) == json.dumps(again, sort_keys=True),
+             'smoke TAB replication is not bit-reproducible with the same seed (deterministic integrity)')
+    data = world.simulate(np.random.default_rng(reg.role_sequence('smoke', 2, 0)))
     steps, lengths = data['steps'], data['lengths']
-    t = time.perf_counter()
-    f = osx._transform_array('shrink', choice['fixed_lambda'])
     from pitchmdp.ope_diagnostics import affine_padded
+    f = osx._transform_array('shrink', choice['fixed_lambda'])
+    t = time.perf_counter()
     affine_padded(steps['v_c'], steps['q_a'], f(steps['rho_c']), lengths)
     affine_padded(steps['v_r'], steps['q_a'], f(np.where(np.arange(steps['v_r'].shape[1])[None] < lengths[:, None], 1., 0.)),
                   lengths)
@@ -604,270 +991,81 @@ def smoke_projection(smoke_s0_seconds, table_fit_unit, variant_unit, replication
             'rule': 'a projection above its hang guard -> that stage is not started (decision needed); guards unchanged'}
 
 
-# ================================================================ real-data glue (registered runs only)
-def registered_context(config_path):
-    """Registry gate (fail closed) + sources + digest manifest. Nothing touches data before this."""
-    config, _ = reg.load_config(config_path)
-    reg.require_executable(config)
-    manifest = DigestManifest(config['registration_input_pins']['digest_manifest_path'])
-    require_config_digest(manifest, config)
-    state = enforce_sources(config, config_path, manifest=manifest)
-    return config, manifest, state
+# ================================================================ A2-S3 core (G-INT first)
+def surrogate_rows(last_rows, raw):
+    """The last pitch row of each PA with the approved raw quality columns (hc_x, hc_y; launch columns
+    when the processed row lacks them)."""
+    _require(not raw.duplicated(KEY).any(), 'raw join keys are not unique (deterministic integrity)')
+    keys = pd.DataFrame([{k: int(row[k]) for k in KEY} for row in last_rows.values()], columns=KEY)
+    joined = keys.merge(raw.drop(columns=['game_date']), on=KEY, how='left', validate='one_to_one')
+    rows = {}
+    for (pa_id, row), (_, extra) in zip(last_rows.items(), joined.iterrows()):
+        record = {**dict(row), 'hc_x': extra['hc_x'], 'hc_y': extra['hc_y']}
+        for column in ('launch_speed', 'launch_angle'):
+            if column not in record or pd.isna(record[column]):
+                record[column] = extra[column]
+        rows[pa_id] = record
+    return rows
 
 
-def attempt_gate(manifest, stage_id):
-    """Registered attempts (design 6): a sealed stage never reruns; at most 2 attempts per stage; a
-    retry after a deterministic-integrity failure needs a bug-fix addendum recorded after it; two
-    deterministic failures -> FAILED_INTEGRITY; two infrastructure failures -> decision needed."""
-    entries = manifest.entries()
-    _require(not any(e['kind'] == 'stage_seal' and e['payload']['stage'] == stage_id for e in entries),
-             f'{stage_id} is already sealed; a registered stage is not rerun')
-    failures = [e for e in entries if e['kind'] == 'stage_failure' and e['payload']['stage'] == stage_id]
-    integrity = [e for e in failures if e['payload']['class'] == 'deterministic_integrity']
-    infra = [e for e in failures if e['payload']['class'] != 'deterministic_integrity']
-    _require(len(integrity) < 2, f'{stage_id}: two deterministic-integrity failures -> FAILED_INTEGRITY (no further attempt)')
-    _require(len(infra) < 2, f'{stage_id}: two infrastructure failures -> decision needed (Song)')
-    _require(len(failures) < 2, f'{stage_id}: at most two attempts per stage')
-    if integrity:
-        last = integrity[-1]['seq']
-        _require(any(e['kind'] == 'bugfix_addendum' and e['seq'] > last and e['payload'].get('stage') == stage_id
-                     for e in entries), f'{stage_id}: a retry after an integrity failure needs a recorded bug-fix addendum')
-    return {'failures': len(failures), 'integrity_failures': len(integrity)}
+def rehearsal(decisions, facts, last_rows, *, raw_join, game_values, s0, references, ess_gate, r3_status,
+              checkpoint=lambda: None, draws=reg.DRAWS, minimum_games=reg.MIN_GAMES, minimum_pa_starts=reg.MIN_PA_STARTS,
+              minimum_pitchers=reg.MIN_PITCHERS, placebos=None):
+    """PM decision (review #9): G-INT runs FIRST, on the untouched registered path (policy_estimator on the
+    sealed ledger and the recomputed facts), against every listed value of both references; only after it
+    passes are the raw quality columns joined, the surrogate rewards built and the variants evaluated."""
+    result0, rows0, gint = osd.gint_gate(decisions, facts, references=references, draws=draws,
+                                         minimum_games=minimum_games, minimum_pa_starts=minimum_pa_starts,
+                                         ess_gate=ess_gate)
+    checkpoint()
+    rows = surrogate_rows(last_rows, raw_join())
+    surrogates = osg.surrogate_rewards(facts, rows, osg.TerminalValues(game_values['we'], game_values['advancement']),
+                                       np.asarray(s0['r1_table']))
+    checkpoint()
+    public, sealed, notes = osd.rehearsal_evaluate(
+        decisions, facts, baseline=(result0, rows0), surrogates=surrogates, gint=gint,
+        train_residuals=s0.get('train_residuals'), r1_paths={'rehearsal': osg.path_shares(surrogates),
+                                                             'train_census': s0['census']},
+        r3_status=r3_status, draws=draws, minimum_games=minimum_games, minimum_pitchers=minimum_pitchers,
+        minimum_pa_starts=minimum_pa_starts, placebos=placebos, checkpoint=checkpoint)
+    return public, sealed, notes, gint
 
 
-def smoke_gate(manifest, stage_id):
-    """G-SMOKE: A2-S0 and A2-S1 start only if the smoke's projected cost (projection term included)
-    fits their hang guard; otherwise the stage is not started (decision needed; guards unchanged)."""
-    entry = manifest.latest('smoke_record')
-    _require(entry is not None, 'G-SMOKE: no smoke record in the digest manifest')
-    _require(entry['payload']['projection']['within_guard'].get(stage_id) is True,
-             f'G-SMOKE: the projected cost of {stage_id} exceeds its hang guard; not started (decision needed)')
-    return entry
+def recompute_facts(rpv, policy, inputs, blocks, games_table, game_values, no_pitch, out, checkpoint=lambda: None):
+    """Planner-free PA facts of the S6 selection: requests and structural problems, E0 membership from
+    a reference-only runtime (as the S4 denominators stage), PA-end reward from the frozen C0 WE."""
+    from pitchmdp import policy_requests as preq
+    from pitchmdp import policy_runtime as prt
+    runtime = prt.build_runtime(*rpv.registered_path(policy, 'bc'), *rpv.registered_path(policy, 'support'),
+                                out / 'facts-reference-ledger.jsonl', hand_registry=rpv.registered_path(policy, 'hands'))
+    we = game_values['we']
+    defense = lambda state, home: float(we.predict_defense(state, home))  # = BoundComponents.defense_we
+    facts, last_rows = {}, {}
+    frame = inputs['store'].frame  # as the registered runner: blocks index the store's frame
+    for n, (pa_id, positions) in enumerate(blocks):
+        if n % 500 == 0:
+            checkpoint()
+        requests, problem, index = preq.pa_requests(inputs['store'], positions, runtime.sha256, no_pitch)
+        info = {'game': int(frame.game_pk.iloc[positions[0]]), 'problem': problem, 'problem_index': index,
+                'positions': positions, 'submitted': len(requests), **preq.pa_manifest(frame, positions)}
+        if requests:
+            inside, reason = runtime.start_population(requests[0].state, requests[0].pitcher_hand)
+        else:
+            inside, reason = False, f'unsubmittable:{problem}'
+        info.update(in_population=inside, start_reason=reason)
+        info.update(preq.pa_outcome(frame, positions, defense, games_table, rule='structural-end-v1',
+                                    score_source='next_row'))
+        facts[pa_id] = info
+        last_rows[pa_id] = frame.iloc[positions[-1]]
+    return facts, last_rows
 
 
-def failed_integrity(manifest, stages=('A2-S0', 'A2-S1', 'A2-S2', 'A2-S3')):
-    """Stages that ended unresolved: two deterministic-integrity failures and no seal."""
-    entries = manifest.entries()
-    out = []
-    for stage_id in stages:
-        sealed = any(e['kind'] == 'stage_seal' and e['payload']['stage'] == stage_id for e in entries)
-        integrity = sum(e['kind'] == 'stage_failure' and e['payload']['stage'] == stage_id
-                        and e['payload']['class'] == 'deterministic_integrity' for e in entries)
-        if not sealed and integrity >= 2:
-            out.append(stage_id)
-    return out
-
-
-def policy_registration(config):
-    """The ML-POLICY registration chain recorded by the pinned S6-dr-a5 stage (started.json), with every
-    file re-hashed; then run_policy_validation's loaders (imported only here)."""
-    import run_policy_validation as rpv
-    pins = config['registration_input_pins']
-    ledger = Path(pins['s6_dr_a5_ledger_path'])
-    stage_dir = ledger.parent
-    _require(reg.file_sha256(stage_dir / 'manifest.json') == pins['s6_dr_a5_manifest_sha256'],
-             'S6-dr-a5 manifest differs from its registration pin')
-    _require(reg.file_sha256(ledger) == pins['s6_dr_a5_ledger_sha256'], 'S6-dr-a5 ledger differs from its pin')
-    listed = json.loads((stage_dir / 'manifest.json').read_text())['artifact_sha256']
-    for name in ('started.json', 'dr.json', ledger.name):
-        _require(reg.file_sha256(stage_dir / name) == listed[name], f'S6-dr-a5 {name} differs from its stage manifest')
-    started = json.loads((stage_dir / 'started.json').read_text())
-    chain = started['registration_chain']
-    resolve = lambda path: Path(path) if Path(path).is_absolute() else REPO / path  # the runner's CLI is run from the root
-    for link in chain:
-        _require(reg.file_sha256(resolve(link['path'])) == link['sha256'],
-                 f'ML-POLICY registration link changed: {link["path"]}')
-    policy = rpv.load_registration(resolve(chain[0]['path']), [resolve(link['path']) for link in chain[1:]])
-    return rpv, policy, stage_dir, json.loads((stage_dir / 'dr.json').read_text())
-
-
-def load_game_values(rpv, policy, inputs):
-    from pitchmdp import policy_identity as pid
-    ident = policy['config']['identity_registration']
-    values, _ = pid.load_pinned_we(inputs['paths'], ident['we_contract_sha256'], ident['classes']['we'])
-    return values
-
-
-def raw_quality_columns(local, pins, keys_frame, date_range):
-    """hc_x, hc_y, bb_type, launch_speed, launch_angle from the three approved raw files (sha256 pinned),
-    only rows dated inside ``date_range``; join keys must be unique."""
-    import pyarrow.parquet as pq
-    frames = []
-    for name in reg.RAW_ALLOWLIST:
-        _require('2026' not in name, 'a 2026 path reached the raw join; stopping')
-        path = Path(local['raw_root']) / name
-        _require(reg.file_sha256(path) == pins['train_raw_files_sha256'][name], f'raw file {name} differs from its pin')
-        cols = ['game_date', 'game_pk', 'at_bat_number', 'pitch_number', 'hc_x', 'hc_y', 'bb_type', 'launch_speed',
-                'launch_angle']
-        table = pq.read_table(path, columns=cols).to_pandas()
-        dates = pd.to_datetime(table['game_date']).dt.normalize()
-        frames.append(table.loc[(dates >= pd.Timestamp(date_range[0])) & (dates <= pd.Timestamp(date_range[1]))])
-    raw = pd.concat(frames, ignore_index=True)
-    key = ['game_pk', 'at_bat_number', 'pitch_number']
-    _require(not raw.duplicated(key).any(), 'raw join keys are not unique (deterministic integrity)')
-    wanted = keys_frame[key].merge(raw, on=key, how='left', validate='one_to_one')
-    return wanted
-
-
-def train_rows(rpv, policy, local, pins, date_range):
-    """Guarded TRAIN rows of the processed frame with the raw quality columns joined (TRAIN dates only)."""
-    inputs = rpv.load_inputs(policy['config'], local, store=False)
-    frame = inputs['frame']
-    dates = pd.to_datetime(frame['game_date']).dt.normalize()
-    keep = frame['split'].eq('train').to_numpy() & (dates >= pd.Timestamp(date_range[0])).to_numpy() & (
-        dates <= pd.Timestamp(date_range[1])).to_numpy()
-    train = frame.loc[keep].reset_index(drop=True)
-    joined = raw_quality_columns(local, pins, train, date_range)
-    for column in ('hc_x', 'hc_y', 'bb_type'):
-        train[column] = joined[column].to_numpy()
-    for column in ('launch_speed', 'launch_angle'):
-        if column not in train:
-            train[column] = joined[column].to_numpy()
-    osg.guard_train(train['game_date'])
-    return inputs, train
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=COMMANDS)
-    parser.add_argument('--config', type=Path, default=REPO / reg.CONFIG_PATH)
-    parser.add_argument('--local-config', type=Path, default=PROJECT / 'configs' / 'local.json')
-    parser.add_argument('--output', type=Path)
-    parser.add_argument('--expect-digest')
-    parser.add_argument('--decision-record', type=Path)
-    parser.add_argument('--stage')
-    parser.add_argument('--failing-test')
-    parser.add_argument('--review')
-    parser.add_argument('--gate')
-    args = parser.parse_args(argv)
-    if args.command == 'check':
-        config, sha = reg.load_config(args.config)
-        print(json.dumps({'status': config['status'], 'config_file_sha256': sha, 'config_digest': reg.config_digest(config),
-                          'protected_sources': 'unchanged' if reg.verify_protected_sources(REPO) else None}, indent=1))
-        return 0
-    if args.command == 'pins':
-        print(json.dumps({'new_files_sha256': new_file_hashes(), 'protected_sources': reg.PROTECTED_SOURCES}, indent=1))
-        return 0
-    if args.command == 'register-digest':
-        config, _ = reg.load_config(args.config)
-        reg.require_executable(config)
-        digest = reg.config_digest(config)
-        _require(args.expect_digest == digest, 'registered config digest differs from the G-CODE reviewed digest')
-        manifest = DigestManifest(config['registration_input_pins']['digest_manifest_path'])
-        _require(manifest.latest('config_digest') is None, 'the config digest is registered once')
-        print(json.dumps(manifest.append('config_digest', {'digest': digest, 'config_path': str(args.config)}), indent=1))
-        return 0
-    if args.command == 'register-addendum':
-        return register_addendum(args)
-    if args.command == 'record-review':
-        config, _ = reg.load_config(args.config)
-        reg.require_executable(config)
-        manifest = DigestManifest(config['registration_input_pins']['digest_manifest_path'])
-        require_config_digest(manifest, config)
-        _require(args.gate in ('G-REV', 'G-CODE', 'G-REG') and args.review, '--gate (G-REV, G-CODE or G-REG) and --review')
-        print(json.dumps(manifest.append('review_reference', {'gate': args.gate, 'reference': args.review}), indent=1))
-        return 0
-    config, manifest, state = registered_context(args.config)  # fail closed before any data
-    return run_registered(args, config, manifest, state)
-
-
-def register_addendum(args):
-    """Append a bug-fix addendum after a deterministic-integrity failure: the fix commit (HEAD, clean
-    tree), the new file hashes, the failing test and the different-model review reference."""
-    config, _ = reg.load_config(args.config)
-    reg.require_executable(config)
-    manifest = DigestManifest(config['registration_input_pins']['digest_manifest_path'])
-    require_config_digest(manifest, config)
-    _require(args.stage in reg.STAGES and args.failing_test and args.review, '--stage, --failing-test and --review required')
-    _require(any(e['kind'] == 'stage_failure' and e['payload']['stage'] == args.stage
-                 and e['payload']['class'] == 'deterministic_integrity' for e in manifest.entries()),
-             'a bug-fix addendum follows a recorded deterministic-integrity failure of that stage')
-    _require(not git('status', '--porcelain', '--', *CODE_PATHS), 'commit the fix first (clean code paths)')
-    reg.verify_protected_sources(REPO)
-    entry = manifest.append('bugfix_addendum', {'stage': args.stage, 'fix_commit': git('rev-parse', 'HEAD'),
-                                                'new_files_sha256': new_file_hashes(), 'failing_test': args.failing_test,
-                                                'review_reference': args.review})
-    print(json.dumps(entry, indent=1))
-    return 0
-
-
-def run_registered(args, config, manifest, state):
-    """Registered stages. Each verifies its upstream seals, then runs inside its guarded stage."""
-    stage_id = STAGE_OF.get(args.command)
-    if args.command == 'unblind':
-        return unblind_command(args, config, manifest)
-    _require(args.output is not None, '--output (a new directory under the pinned output root) is required')
-    output = check_output(args.output, config)
-    attempt_gate(manifest, stage_id)
-    if args.command != 'decide':
-        for upstream in reg.UPSTREAM[stage_id]:
-            require_seal(manifest, upstream)
-    if stage_id in ('A2-S0', 'A2-S1'):
-        smoke_gate(manifest, stage_id)
-    local_raw = args.local_config.read_bytes()
-    rpv, policy, s6_dir, s6_dr = policy_registration(config)
-    _require(hashlib.sha256(local_raw).hexdigest() == policy['config']['le2025_validation_plan']['local_config']['sha256'],
-             'local config differs from its ML-POLICY pin')
-    local = json.loads(local_raw)
-    from run_ml_matrix import heavy_lock  # the common heavy lock (imported only for registered runs)
-    root = Path(local['artifact_root']).resolve()
-    os.nice(10)
-    guards = Guards()
-    guards()
-    pins = config['registration_input_pins']
-    with heavy_lock(root), stage(output, stage_id, identity_record(config, {'command': args.command}),
-                                 manifest=manifest) as out:
-        if args.command == 'smoke':
-            run_smoke(rpv, policy, local, pins, out, guards, manifest)
-        elif args.command == 's0':
-            inputs, train = train_rows(rpv, policy, local, pins, reg.TRAIN_WINDOW)
-            guards()
-            s0 = build_s0(train, load_game_values(rpv, policy, inputs))
-            dump(out / 's0.json', s0)
-        elif args.command == 's1':
-            s0_dir, _ = require_seal(manifest, 'A2-S0')
-            s0 = json.loads((s0_dir / 's0.json').read_text())
-            cell_dir = out / 'cells'
-            cell_dir.mkdir()
-
-            def write_cell(cell, record):  # each cell is sealed on completion (acceptance cells first)
-                dump(cell_dir / f"{cell['id']}.json", record)
-                manifest.append('cell_seal', {'stage': 'A2-S1', 'cell': cell['id'],
-                                              'sha256': reg.file_sha256(cell_dir / f"{cell['id']}.json")})
-            results = stage_s1(s0, write_cell=write_cell, deadline=guards)
-            dump(out / 'tab.json', results)
-        elif args.command == 's2':
-            run_s2(rpv, policy, local, config, out, guards, manifest)
-        elif args.command == 's3':
-            run_s3(rpv, policy, local, config, s6_dir, s6_dr, out, guards, manifest)
-        elif args.command == 'decide':
-            run_decide(config, out, manifest)
-    return 0
-
-
-def run_smoke(rpv, policy, local, pins, out, guards, manifest):
-    first, last = pins['smoke_train_subset']['game_dates']
-    t = time.perf_counter()
-    inputs, train = train_rows(rpv, policy, local, pins, (first, last))
-    load = time.perf_counter() - t
-    guards()
-    t = time.perf_counter()
-    s0 = build_s0(train, load_game_values(rpv, policy, inputs), smoke=True, seed_role='smoke',
-                  fixed_m=reg.IMPLEMENTATION['smoke']['fixed_m'], min_pitches=SMOKE_MIN_PITCHES)
-    s0_seconds = time.perf_counter() - t
-    tab = smoke_tab(s0, replications=pins['smoke_tab_replications_per_cell'], guards=guards)
-    full_train = int((inputs['frame']['split'] == 'train').sum())
-    record = {'stage': 'A2-SM', 'subset': [first, last], 'rows': int(len(train)), 'train_rows': full_train,
-              'load_seconds': load, 's0_seconds': s0_seconds, 'census_counts': s0['census'],
-              'table_fit_unit_seconds': s0['timings']['table_fit'], 'tab': tab,
-              'projection': smoke_projection(s0_seconds, s0['timings']['table_fit'], tab['variant_estimate_unit_seconds'],
-                                             tab['replication_seconds'], full_train / max(len(train), 1)),
-              'peak_rss_bytes': peak_rss_bytes(),
-              'never_computed': ['cross-validated log-loss', 'm selection', 'lambda/M selection', 'delta_g', 'kappa_p',
-                                 'zeta_p', 'bias, SD or RMSE', 'acceptance cells', 'H_point', 'R5 diagnostics']}
-    dump(out / 'smoke_record.json', record)
-    manifest.append('smoke_record', {'record_sha256': reg.file_sha256(out / 'smoke_record.json'),
-                                     'projection': record['projection']})
+def x2_world_predictor(identity):
+    """X2 world predictor (design: 'a frozen <=2025 G0-family member different from the planner's
+    predictor, identified at registration'). Supported kind: {'kind': 'g0_single_member', 'seed': s}."""
+    _require(isinstance(identity, dict) and identity.get('kind') == 'g0_single_member'
+             and type(identity.get('seed')) is int, f'unsupported X2 world-predictor identity {identity!r}')
+    return lambda components: osx.SingleMemberPredictor(components.g0, identity['seed'])
 
 
 def build_candidate(rpv, policy, inputs, blocks, *, seed, tag, out, budget):
@@ -876,6 +1074,7 @@ def build_candidate(rpv, policy, inputs, blocks, *, seed, tag, out, budget):
     from pitchmdp import policy_identity as pid
     from pitchmdp import policy_runtime as prt
     from pitchmdp.policy_artifacts import load_style_snapshot, load_train_bc
+    from pitchmdp.rollout_policy import RowBudget
     config = policy['config']
     ident = config['identity_registration']
     stages = config['le2025_validation_plan']['stages']
@@ -897,7 +1096,6 @@ def build_candidate(rpv, policy, inputs, blocks, *, seed, tag, out, budget):
                                      we_contract_sha256=ident['we_contract_sha256'])
     _require(components.sha256 == pre['components_sha256'], 'bound components differ from the S2-certified identity')
     provenance = {'style_snapshot_sha256': content, 'as_of_exclusive': as_of, 'style_report': style}
-    from pitchmdp.rollout_policy import RowBudget
     runtime = prt.build_runtime(bc_path, bc_sha, support_path, support_sha, out / f'ledger-s5x-{tag}.jsonl',
                                 components=components, budget=RowBudget(int(budget), seed_count=5),
                                 tau=freeze['selected_tau'], samples=setting['samples'], pitch_cap=setting['pitch_cap'],
@@ -906,27 +1104,286 @@ def build_candidate(rpv, policy, inputs, blocks, *, seed, tag, out, budget):
     return runtime, components
 
 
-def run_s2(rpv, policy, local, config, out, guards, manifest):
-    """S5-X: the registered 15 runs in order; X2 needs a registered world-predictor loader."""
+# ================================================================ environment (every data access)
+def _resolve(value):
+    return Path(value) if Path(value).is_absolute() else REPO / value
+
+
+class Environment:
+    """The real dependencies of a registered command; tests subclass it with synthetic inputs. Nothing
+    here is called before the window check, and no data is read before the registry gate in ``preflight``."""
+    alarm = True
+
+    def __init__(self, args=None):
+        self.args = args
+
+    def now(self):
+        return datetime.now(timezone.utc)
+
+    def monotonic(self):
+        return time.monotonic()
+
+    def guards(self):
+        return Guards()
+
+    def git_state(self, config_path, code):
+        source = code['execution_source_commit']
+        return {'head': git('rev-parse', 'HEAD'),
+                'ancestor': subprocess.call(['git', 'merge-base', '--is-ancestor', source, 'HEAD'], cwd=REPO,
+                                            stderr=subprocess.DEVNULL) == 0,
+                'changed': [x for x in git('diff', '--name-only', source, 'HEAD', '--', *CODE_PATHS).splitlines() if x],
+                'dirty': bool(git('status', '--porcelain', '--', *CODE_PATHS)), 'config_committed': committed(config_path)}
+
+    def committed(self, path):
+        return committed(path)
+
+    def checkouts(self):
+        """This checkout and the main checkout of its git common directory (protected roots)."""
+        common = Path(git('rev-parse', '--path-format=absolute', '--git-common-dir'))
+        return sorted({REPO.resolve(), common.parent.resolve()})
+
+    def chain_documents(self, config):
+        """The pinned ML-POLICY registration chain (config first, then its addenda): configuration files
+        only, each sha256 verified; no stage directory is opened."""
+        docs = []
+        for link in config['registration_input_pins']['policy_registration_chain']:
+            raw = _resolve(link['path']).read_bytes()
+            _require(hashlib.sha256(raw).hexdigest() == link['sha256'], f'ML-POLICY chain link changed: {link["path"]}')
+            docs.append(json.loads(raw))
+        return docs
+
+    def local_config(self, base):
+        raw = Path(self.args.local_config).read_bytes()
+        _require(hashlib.sha256(raw).hexdigest() == base['le2025_validation_plan']['local_config']['sha256'],
+                 'local config differs from its ML-POLICY pin')
+        return json.loads(raw)
+
+    def protected_roots(self, config, local, chain):
+        """Directories the output root must be disjoint from: the checkouts (results/ included), the S6-dr-a5
+        stage directory, the processed frame, its reports and cache, the raw root, the G0 bundle and WE
+        directories and the directory of every ML-POLICY registered input."""
+        pins = config['registration_input_pins']
+        ident = chain[0]['identity_registration']
+        artifact = Path(local['artifact_root'])
+        roots = {'the S6-dr-a5 stage directory': Path(pins['s6_dr_a5_ledger_path']).parent,
+                 'the processed frame directory': Path(pins['processed_frame_identity']['path']).parent,
+                 'the artifact reports directory': artifact / 'reports', 'the artifact cache directory': artifact / 'cache',
+                 'the raw root': Path(local['raw_root']), 'the G0 bundle directory': _resolve(ident['g0_bundle']['path']).parent}
+        for role, value in ident['we_paths'].items():
+            roots[f'the WE {role} directory'] = _resolve(value).parent
+        for doc in chain:
+            for name, entry in (doc.get('registered_inputs') or {}).items():
+                roots[f'the registered input {name} directory'] = _resolve(entry['path']).parent
+        for root in self.checkouts():
+            roots[f'the checkout {root}'] = root
+        return roots
+
+    def heavy_lock(self, local):
+        from run_ml_matrix import heavy_lock  # the common heavy lock (imported only for registered runs)
+        return heavy_lock(Path(local['artifact_root']).resolve())
+
+    def nice(self):
+        os.nice(10)
+
+    def game_values(self, base):
+        """The frozen C0 WE and advancement (the ML-POLICY WE identity; model files, no rows)."""
+        from pitchmdp import policy_identity as pid
+        ident = base['identity_registration']
+        paths = {role: _resolve(value) for role, value in ident['we_paths'].items()}
+        values, _ = pid.load_pinned_we(paths, ident['we_contract_sha256'], ident['classes']['we'])
+        return values
+
+    def train_plan(self, config, local, window, *, strict):
+        return plan_train_reads(config['registration_input_pins'], local, window, strict=strict)
+
+    def train(self, config, local, window, *, strict, checkpoint, log=None):
+        return train_rows(config['registration_input_pins'], local, window, strict=strict, checkpoint=checkpoint, log=log)
+
+    def policy_registration(self, config):
+        """The full ML-POLICY registration (A2-S2 / A2-S3): the pinned chain through the registered loader."""
+        import run_policy_validation as rpv
+        chain = config['registration_input_pins']['policy_registration_chain']
+        for link in chain:
+            _require(reg.file_sha256(_resolve(link['path'])) == link['sha256'], f'ML-POLICY chain link changed: {link["path"]}')
+        policy = rpv.load_registration(_resolve(chain[0]['path']), [_resolve(link['path']) for link in chain[1:]])
+        _require([link['sha256'] for link in policy['chain']] == [link['sha256'] for link in chain],
+                 'the loaded ML-POLICY chain differs from its pins')
+        return rpv, policy
+
+    def policy_inputs(self, config, local, rpv, policy):
+        verify_processed_pin(config['registration_input_pins'], local)  # before any row is decoded
+        return rpv.load_inputs(policy['config'], local, store=True)
+
+    def s6_record(self, config):
+        """A2-S3 only: the pinned S6-dr-a5 stage (manifest, started.json chain, dr.json, ledger bytes)."""
+        pins = config['registration_input_pins']
+        ledger = Path(pins['s6_dr_a5_ledger_path'])
+        stage_dir = ledger.parent
+        _require(reg.file_sha256(stage_dir / 'manifest.json') == pins['s6_dr_a5_manifest_sha256'],
+                 'S6-dr-a5 manifest differs from its registration pin')
+        _require(reg.file_sha256(ledger) == pins['s6_dr_a5_ledger_sha256'], 'S6-dr-a5 ledger differs from its pin')
+        listed = json.loads((stage_dir / 'manifest.json').read_text())['artifact_sha256']
+        for name in ('started.json', 'dr.json', ledger.name):
+            _require(reg.file_sha256(stage_dir / name) == listed[name], f'S6-dr-a5 {name} differs from its stage manifest')
+        started = json.loads((stage_dir / 'started.json').read_text())
+        _require([link['sha256'] for link in started['registration_chain']]
+                 == [link['sha256'] for link in pins['policy_registration_chain']],
+                 'the pinned ML-POLICY chain differs from the chain the S6-dr-a5 stage ran under')
+        return ledger, json.loads((stage_dir / 'dr.json').read_text())
+
+    def ledger_decisions(self, ledger_path):
+        """The sealed ledger's decision stream (the whole hash chain is replayed and verified; read-only)."""
+        from pitchmdp import policy_runtime as prt
+        with Path(ledger_path).open('rb') as stream:
+            first = json.loads(stream.readline())
+        header = {k: v for k, v in first.items() if k not in ('kind', 'seq', 'prev', 'sha256')}
+        return prt.Ledger(Path(ledger_path), header).iter_decisions
+
+
+# ================================================================ commands
+@dataclass
+class Run:
+    args: argparse.Namespace
+    env: Environment
+    config: dict
+    base: dict
+    local: dict
+    manifest: DigestManifest
+    check: object
+    plan: object = None
+    out: Path = None
+
+
+def preflight(args, env):
+    """Registry gate, digest, sources and review receipts (fail closed, before any data)."""
+    config, _ = reg.load_config(args.config)
+    reg.require_executable(config)
+    manifest = DigestManifest(config['registration_input_pins']['digest_manifest_path'])
+    require_config_digest(manifest, config)
+    code = code_pins(config, manifest)
+    state = enforce_sources(config, args.config, env.git_state(args.config, code), manifest=manifest)
+    require_reviews(manifest, config, code['execution_source_commit'])
+    return config, manifest, state
+
+
+def plan_smoke(run):
+    """Before the attempt starts: the footer-only TRAIN read plan of the smoke subset (refuses on a
+    straddling row group without consuming an attempt)."""
+    window = tuple(run.config['registration_input_pins']['smoke_train_subset']['game_dates'])
+    return run.env.train_plan(run.config, run.local, window, strict=True)
+
+
+def plan_decide(run):
+    status = stage_status(run.manifest)
+    _require(all(v in ('sealed', 'FAILED_INTEGRITY') for v in status.values()),
+             f'upstream stages are not complete (decision needed): {status}')
+    return status
+
+
+PLANS = {'A2-SM': plan_smoke, 'A2-S4': plan_decide}
+
+
+def run_command(args, env, entered=None):
+    """One registered command, guarded from argument parsing to its completion receipt."""
+    stage_id = STAGE_OF[args.command]
+    with command_guard(stage_id, env, entered) as guard:
+        config, manifest, state = preflight(args, env)
+        guard.check()
+        _require(args.output is not None, '--output (a new directory under the pinned output root) is required')
+        chain = env.chain_documents(config)
+        local = env.local_config(chain[0])
+        output = check_output(args.output, config, env.protected_roots(config, local, chain))
+        attempt_gate(manifest, stage_id)
+        if stage_id != 'A2-S4':
+            for upstream in UPSTREAM[stage_id]:
+                require_seal(manifest, upstream)
+        if stage_id in ('A2-S0', 'A2-S1'):
+            smoke_gate(manifest, stage_id)
+        run = Run(args, env, config, chain[0], local, manifest, guard.check)
+        run.plan = PLANS[stage_id](run) if stage_id in PLANS else None
+        guard.check()
+        env.nice()
+        with env.heavy_lock(local):
+            identity = identity_record(config, state.get('head'), {'command': args.command})
+            with stage(output, stage_id, identity, manifest=manifest, final_check=guard.finish, start=guard.start) as out:
+                run.out = out
+                BODIES[stage_id](run)
+    return 0
+
+
+def body_smoke(run):
+    pins = run.config['registration_input_pins']
+    window = tuple(pins['smoke_train_subset']['game_dates'])
+    log = []
+    t = time.perf_counter()
+    train, read = run.env.train(run.config, run.local, window, strict=True, checkpoint=run.check, log=log)
+    _require(read['plan']['processed']['row_groups'] == run.plan['processed']['row_groups'],
+             'the smoke read differs from its pre-attempt plan (deterministic integrity)')
+    load = time.perf_counter() - t
+    run.check()
+    t = time.perf_counter()
+    s0 = build_s0(train, run.env.game_values(run.base), smoke=True, seed_role='smoke',
+                  fixed_m=reg.IMPLEMENTATION['smoke']['fixed_m'], min_pitches=SMOKE_MIN_PITCHES, checkpoint=run.check)
+    s0_seconds = time.perf_counter() - t
+    tab = smoke_tab(s0, replications=pins['smoke_tab_replications_per_cell'], guards=run.check)
+    ratio = run.plan['train_rows_upper_bound'] / max(read['rows_in_window_all_types'], 1)
+    record = {'stage': 'A2-SM', 'subset': list(window), 'rows': read['regular_season_rows'],
+              'rows_in_window_all_types': read['rows_in_window_all_types'], 'decoded': log, 'plan': run.plan,
+              'load_seconds': load, 's0_seconds': s0_seconds, 'census_counts': s0['census'],
+              'table_fit_unit_seconds': s0['timings']['table_fit'], 'tab': tab,
+              'train_row_ratio': ratio, 'train_row_ratio_basis': reg.IMPLEMENTATION['smoke_projection_ratio'],
+              'projection': smoke_projection(s0_seconds, s0['timings']['table_fit'], tab['variant_estimate_unit_seconds'],
+                                             tab['replication_seconds'], ratio),
+              'peak_rss_bytes': peak_rss_bytes(),
+              'never_computed': ['cross-validated log-loss', 'm selection', 'lambda/M selection', 'delta_g', 'kappa_p',
+                                 'zeta_p', 'bias, SD or RMSE', 'acceptance cells', 'H_point', 'R5 diagnostics']}
+    dump(run.out / 'smoke_record.json', record)
+
+
+def body_s0(run):
+    train, read = run.env.train(run.config, run.local, reg.TRAIN_WINDOW, strict=False, checkpoint=run.check)
+    run.check()
+    s0 = build_s0(train, run.env.game_values(run.base), checkpoint=run.check)
+    require_s0_descriptive(s0)
+    dump(run.out / 's0.json', {**s0, 'read': read})
+
+
+def body_s1(run):
+    s0_dir, _ = require_seal(run.manifest, 'A2-S0')
+    s0 = json.loads((s0_dir / 's0.json').read_text())
+    cell_dir = run.out / 'cells'
+    cell_dir.mkdir()
+
+    def write_cell(cell, record):  # each cell is sealed on completion (acceptance cells first)
+        dump(cell_dir / f"{cell['id']}.json", record)
+        run.manifest.append('cell_seal', {'stage': 'A2-S1', 'cell': cell['id'],
+                                          'sha256': reg.file_sha256(cell_dir / f"{cell['id']}.json")})
+    dump(run.out / 'tab.json', stage_s1(s0, write_cell=write_cell, deadline=run.check))
+
+
+def body_s2(run):
+    """S5-X: the registered 15 runs in order."""
     from pitchmdp import policy_requests as preq
     from pitchmdp import policy_semisynthetic as pss
-    s0_dir, _ = require_seal(manifest, 'A2-S0')
+    s0_dir, _ = require_seal(run.manifest, 'A2-S0')
     s0 = json.loads((s0_dir / 's0.json').read_text())
+    x2 = x2_world_predictor(run.config['registration_input_pins']['x2_world_predictor_identity'])  # refuses up front
+    rpv, policy = run.env.policy_registration(run.config)
     pcfg = policy['config']
     spec = pcfg['le2025_validation_plan']['stages']['S5_V2_V3']
-    inputs = rpv.load_inputs(pcfg, local, store=True)
+    inputs = run.env.policy_inputs(run.config, run.local, rpv, policy)
+    run.check()
     frame = inputs['frame']
     games = rpv.select_games(frame, 'dev', spec['n_games'], rpv.role_seed(pcfg, 'selection_salt'))
     blocks = rpv.game_blocks(frame, games, 'dev')
     no_pitch = frozenset(pcfg['pa_time_rules']['R3_codes']['no_pitch_descriptions'])
-    game_values = load_game_values(rpv, policy, inputs)
+    game_values = run.env.game_values(run.base)
     layer_doc = s0['s5x_layers']
     runs = []
-    x2 = x2_world_predictor(config['registration_input_pins']['x2_world_predictor_identity'])  # refuses up front
-    for run in reg.S5X_RUNS:
-        guards()
-        runtime, components = build_candidate(rpv, policy, inputs, blocks, seed=run['planning_seed'], tag=f"k{run['k']}",
-                                              out=out, budget=spec['row_budget_per_run'])
+    for spec_run in reg.S5X_RUNS:
+        run.check()
+        runtime, components = build_candidate(rpv, policy, inputs, blocks, seed=spec_run['planning_seed'],
+                                              tag=f"k{spec_run['k']}", out=run.out, budget=spec['row_budget_per_run'])
         starts = []
         for _, positions in blocks:
             requests, _, _ = preq.pa_requests(inputs['store'], positions, runtime.sha256, no_pitch)
@@ -935,140 +1392,173 @@ def run_s2(rpv, policy, local, config, out, guards, manifest):
         layers = osx.S5XLayers.from_components(
             components, game_values, groups=layer_doc['groups'], x_dist=layer_doc['x_dist'],
             class_table=layer_doc['class_table'], signs=layer_doc['signs'], signs_prime=layer_doc['signs_prime'],
-            kappa=reg.scale(run['kappa'], layer_doc['kappa_p']), zeta=reg.scale(run['zeta'], layer_doc['zeta_p']))
-        law = (pss.tempered_law(runtime.bc, reg.S5X_V3_ALPHA) if run['law'] == 'V3'
+            kappa=reg.scale(spec_run['kappa'], layer_doc['kappa_p']), zeta=reg.scale(spec_run['zeta'], layer_doc['zeta_p']))
+        law = (pss.tempered_law(runtime.bc, reg.S5X_V3_ALPHA) if spec_run['law'] == 'V3'
                else (lambda bc: (lambda s: (bc.actions, bc.probabilities(s))))(runtime.bc))
-        predictor = x2(components) if run['setting'] == 'X2' else None
-        record = osx.run_s5x(runtime, components, starts, run=run, law=law, layers=layers, world_predictor=predictor,
+        predictor = x2(components) if spec_run['setting'] == 'X2' else None
+        record = osx.run_s5x(runtime, components, starts, run=spec_run, law=law, layers=layers, world_predictor=predictor,
                              logs_per_start=reg.S5X_LOGS_PER_START, truth_rollouts=reg.S5X_TRUTH_ROLLOUTS,
-                             cap=reg.S5X_CAP, gamma=run['setting'] == 'X1',
-                             invariant=run['setting'] == 'X1' and run['zeta'] == '0', deadline=guards)
-        dump(out / f"run-k{run['k']:02d}.json", record)
+                             cap=reg.S5X_CAP, gamma=spec_run['setting'] == 'X1',
+                             invariant=spec_run['setting'] == 'X1' and spec_run['zeta'] == '0', deadline=run.check)
+        dump(run.out / f"run-k{spec_run['k']:02d}.json", record)
         runs.append(record)
-    dump(out / 's5x.json', {'runs': runs, **s5x_summary(runs)})
+    require_s2_descriptive(runs)
+    dump(run.out / 's5x.json', {'runs': runs, **s5x_summary(runs)})
 
 
-def x2_world_predictor(identity):
-    """X2 world predictor (design: 'a frozen <=2025 G0-family member different from the planner's
-    predictor, identified at registration'). Supported kind: {'kind': 'g0_single_member', 'seed': s},
-    one member of the bound five-member G0 (ope_synthetic_a2.SingleMemberPredictor). Any other
-    identity refuses before the stage runs anything."""
-    _require(isinstance(identity, dict) and identity.get('kind') == 'g0_single_member'
-             and type(identity.get('seed')) is int, f'unsupported X2 world-predictor identity {identity!r}')
-    return lambda components: osx.SingleMemberPredictor(components.g0, identity['seed'])
-
-
-def recompute_facts(rpv, policy, inputs, blocks, games_table, game_values, no_pitch, out):
-    """Planner-free PA facts of the S6 selection: requests and structural problems, E0 membership from
-    a reference-only runtime (as the S4 denominators stage), PA-end reward from the frozen C0 WE."""
-    from pitchmdp import policy_requests as preq
-    from pitchmdp import policy_runtime as prt
-    runtime = prt.build_runtime(*rpv.registered_path(policy, 'bc'), *rpv.registered_path(policy, 'support'),
-                                out / 'facts-reference-ledger.jsonl', hand_registry=rpv.registered_path(policy, 'hands'))
-    we = game_values['we']
-    defense = lambda state, home: float(we.predict_defense(state, home))  # = BoundComponents.defense_we
-    facts, last_rows = {}, {}
-    frame = inputs['store'].frame  # as the registered runner: blocks index the store's frame
-    for pa_id, positions in blocks:
-        requests, problem, index = preq.pa_requests(inputs['store'], positions, runtime.sha256, no_pitch)
-        info = {'game': int(frame.game_pk.iloc[positions[0]]), 'problem': problem, 'problem_index': index,
-                'positions': positions, 'submitted': len(requests), **preq.pa_manifest(frame, positions)}
-        if requests:
-            inside, reason = runtime.start_population(requests[0].state, requests[0].pitcher_hand)
-        else:
-            inside, reason = False, f'unsubmittable:{problem}'
-        info.update(in_population=inside, start_reason=reason)
-        info.update(preq.pa_outcome(frame, positions, defense, games_table, rule='structural-end-v1',
-                                    score_source='next_row'))
-        facts[pa_id] = info
-        last_rows[pa_id] = frame.iloc[positions[-1]]
-    return facts, last_rows
-
-
-def run_s3(rpv, policy, local, config, s6_dir, s6_dr, out, guards, manifest):
+def body_s3(run):
     """The blinded rehearsal on the sealed S6-dr-a5 ledger (read-only), no planner call."""
     from pitchmdp import policy_requests as preq
-    from pitchmdp import policy_runtime as prt
-    pins = config['registration_input_pins']
-    _require(pins['r3_status'] == 'NOT_RUN:R3', 'R3 is enabled: the A3 artifact path must be added before running')
-    s0_dir, _ = require_seal(manifest, 'A2-S0')
+    pins = run.config['registration_input_pins']
+    _require(pins['r3_status'] == 'NOT_RUN:R3', 'R3 is enabled: the A3 artifact path is not implemented; refusing')
+    s0_dir, _ = require_seal(run.manifest, 'A2-S0')
     s0 = json.loads((s0_dir / 's0.json').read_text())
     _require(osg.table_sha256(np.asarray(s0['r1_table']), s0['m']) == s0['r1_table_sha256'], 'R1 table differs from its seal')
+    ledger_path, s6_dr = run.env.s6_record(run.config)  # the S6 stage directory: A2-S3 only
+    rpv, policy = run.env.policy_registration(run.config)
     pcfg = policy['config']
-    inputs = rpv.load_inputs(pcfg, local, store=True)
-    frame = inputs['frame']
-    games = s6_dr['games']
-    blocks = rpv.game_blocks(frame, games, 'dev')
+    inputs = run.env.policy_inputs(run.config, run.local, rpv, policy)
+    run.check()
+    blocks = rpv.game_blocks(inputs['frame'], s6_dr['games'], 'dev')
     no_pitch = frozenset(pcfg['pa_time_rules']['R3_codes']['no_pitch_descriptions'])
-    game_values = load_game_values(rpv, policy, inputs)
+    game_values = run.env.game_values(run.base)
     store_frame = inputs['store'].frame
     games_table = preq.game_table(store_frame, {int(store_frame.game_pk.iloc[p[0]]) for _, p in blocks})
-    facts, last = recompute_facts(rpv, policy, inputs, blocks, games_table, game_values, no_pitch, out)
-    guards()
-    dates = pd.to_datetime(frame['game_date'].iloc[np.concatenate([p for _, p in blocks])])
+    facts, last = recompute_facts(rpv, policy, inputs, blocks, games_table, game_values, no_pitch, run.out, run.check)
+    dates = pd.to_datetime(store_frame['game_date'].iloc[np.concatenate([p for _, p in blocks])])
     _require(dates.max() <= pd.Timestamp(reg.ALL_STAGES_MAX_DATE), 'a row after 2025 reached the rehearsal')
-    keys = pd.DataFrame([{'game_pk': int(r.game_pk), 'at_bat_number': int(r.at_bat_number),
-                          'pitch_number': int(r.pitch_number)} for r in last.values()])
-    raw = raw_quality_columns(local, pins, keys, (str(dates.min().date()), str(dates.max().date())))
-    rows = {}
-    for (pa_id, row), (_, extra) in zip(last.items(), raw.iterrows()):
-        record = {**row.to_dict(), 'hc_x': extra['hc_x'], 'hc_y': extra['hc_y']}
-        for column in ('launch_speed', 'launch_angle'):
-            if column not in record:
-                record[column] = extra[column]
-        rows[pa_id] = record
-    terminal = osg.TerminalValues(game_values['we'], game_values['advancement'])
-    surrogates = osg.surrogate_rewards(facts, rows, terminal, np.asarray(s0['r1_table']))
-    ledger_path = Path(pins['s6_dr_a5_ledger_path'])
-    with ledger_path.open('rb') as stream:
-        first = json.loads(stream.readline())
-    header = {k: v for k, v in first.items() if k not in ('kind', 'seq', 'prev', 'sha256')}
-    ledger = prt.Ledger(ledger_path, header)  # replays and verifies the whole chain; read-only for an existing file
-    ess_gate = pcfg['ess_gate']['thresholds']
-    public, sealed, _ = osd.rehearsal_evaluate(
-        ledger.iter_decisions, facts, surrogates=surrogates, gint_reference=osd.registered_gint_reference(config),
-        train_residuals=s0.get('train_residuals'), r1_paths={'rehearsal': osg.path_shares(surrogates),
-                                                             'train_census': s0['census']},
-        r3_status=pins['r3_status'], ess_gate=ess_gate)
+    window = (str(dates.min().date()), str(dates.max().date()))
+    references = {'registration_quoted': osd.registered_gint_reference(run.config),
+                  's6_dr_a5_record': osd.recorded_gint_reference(s6_dr)}
+    public, sealed, notes, gint = rehearsal(
+        run.env.ledger_decisions(ledger_path), facts, last,
+        raw_join=lambda: raw_rows(pins, run.local, window, checkpoint=run.check), game_values=game_values, s0=s0,
+        references=references, ess_gate=pcfg['ess_gate']['thresholds'], r3_status=pins['r3_status'], checkpoint=run.check)
+    dump(run.out / 'gint.json', gint)  # compared / not comparable keys only (no value)
     public_bytes, sealed_bytes = osd.seal(public, sealed)
-    (out / 'public.json').write_bytes(public_bytes)
-    (out / 'centers.sealed.json').write_bytes(sealed_bytes)
-    print(json.dumps({'centers.sealed.json sha256': osd.sha256_bytes(sealed_bytes)}))
+    (run.out / 'public.json').write_bytes(public_bytes)
+    (run.out / 'centers.sealed.json').write_bytes(sealed_bytes)
+    dump(run.out / 'notes.json', notes)
 
 
-def run_decide(config, out, manifest):
-    unresolved = failed_integrity(manifest)
-    if unresolved:
-        dump(out / 'decision_record.json', {'label': 'FAILED_INTEGRITY', 'integrity_failures': unresolved,
-                                            'r3_status': config['registration_input_pins']['r3_status']})
+def body_decide(run):
+    status = run.plan
+    r3 = run.config['registration_input_pins']['r3_status']
+    if 'FAILED_INTEGRITY' in status.values():
+        dump(run.out / 'decision_record.json', {'label': 'FAILED_INTEGRITY', 'stage_status': status, 'r3_status': r3})
         return
-    s1_dir, _ = require_seal(manifest, 'A2-S1')
-    s2_dir, _ = require_seal(manifest, 'A2-S2')
-    s3_dir, _ = require_seal(manifest, 'A2-S3')
+    s1_dir, _ = require_seal(run.manifest, 'A2-S1')
+    s2_dir, _ = require_seal(run.manifest, 'A2-S2')
+    s3_dir, _ = require_seal(run.manifest, 'A2-S3')
     public = json.loads((s3_dir / 'public.json').read_text())
     osd.validate_public(public)
     tab = json.loads((s1_dir / 'tab.json').read_text())
     s5x = json.loads((s2_dir / 's5x.json').read_text())
-    record = stage_s4(public, tab, s5x, integrity_failures=(),
-                      r3_status=config['registration_input_pins']['r3_status'])
+    record = stage_s4(public, tab, s5x, integrity_failures=(), r3_status=r3)
     record['inputs_sha256'] = {'public': reg.file_sha256(s3_dir / 'public.json'), 'tab': reg.file_sha256(s1_dir / 'tab.json'),
                                's5x': reg.file_sha256(s2_dir / 's5x.json')}
-    dump(out / 'decision_record.json', record)
+    dump(run.out / 'decision_record.json', record)
 
 
-def unblind_command(args, config, manifest):
-    """Open the sealed file only after the decision record is committed at HEAD byte for byte."""
-    s3_dir, _ = require_seal(manifest, 'A2-S3')
-    s4_dir, _ = require_seal(manifest, 'A2-S4')
-    record_path = args.decision_record
-    _require(record_path is not None and committed(record_path), 'the decision record must be committed before unblinding')
+def body_unblind(run):
+    """Open the sealed file only after the decision record is committed at HEAD byte for byte (guarded
+    like every registered command; the opened values go to the sealed unblind stage directory)."""
+    s3_dir, _ = require_seal(run.manifest, 'A2-S3')
+    s4_dir, _ = require_seal(run.manifest, 'A2-S4')
+    record_path = run.args.decision_record
+    _require(record_path is not None and run.env.committed(record_path),
+             'the decision record must be committed before unblinding')
     sealed = osd.unblind((s3_dir / 'centers.sealed.json').read_bytes(),
                          json.loads((s3_dir / 'public.json').read_text())['sealed_sha256'],
                          Path(record_path).read_bytes(), reg.file_sha256(s4_dir / 'decision_record.json'),
                          committed=True)
-    print(json.dumps({'selection': sealed.get('selection'), 'pairs': {
-        p: (sealed['pairs'].get(p) or {}).get('center') for p in reg.PAIRS}}, indent=1, default=_default))
+    dump(run.out / 'unblinded.json', {'selection': sealed.get('selection'),
+                                      'pairs': {p: (sealed['pairs'].get(p) or {}) for p in reg.PAIRS},
+                                      'decision_record_sha256': reg.file_sha256(s4_dir / 'decision_record.json')})
+
+
+BODIES = {'A2-SM': body_smoke, 'A2-S0': body_s0, 'A2-S1': body_s1, 'A2-S2': body_s2, 'A2-S3': body_s3,
+          'A2-S4': body_decide, 'A2-UB': body_unblind}
+
+
+# ================================================================ manifest commands (no data)
+def manifest_command(args):
+    config, _ = reg.load_config(args.config)
+    reg.require_executable(config)
+    manifest = DigestManifest(config['registration_input_pins']['digest_manifest_path'])
+    digest = reg.config_digest(config)
+    if args.command == 'register-digest':
+        _require(args.expect_digest == digest, 'registered config digest differs from the G-CODE reviewed digest')
+        _require(manifest.latest('config_digest') is None, 'the config digest is registered once')
+        print(json.dumps(manifest.append('config_digest', {'digest': digest, 'config_path': str(args.config)}), indent=1))
+        return 0
+    require_config_digest(manifest, config)
+    if args.command == 'record-review':
+        _require(args.gate in ('G-REV', 'G-CODE', 'G-REG') and bool(args.review) and args.verdict in reg.RECEIPT_VERDICTS,
+                 '--gate (G-REV, G-CODE or G-REG), --review and --verdict (PASS or PASS_WITH_NOTES) are required')
+        _require(args.gate != 'G-CODE' or (isinstance(args.commit, str) and len(args.commit) == 40),
+                 'a G-CODE receipt names the reviewed code commit (--commit, 40 hex)')
+        payload = {'gate': args.gate, 'reference': args.review, 'verdict': args.verdict,
+                   'notes_closed': bool(args.notes_closed), 'commit': args.commit, 'config_digest': digest}
+        print(json.dumps(manifest.append('review_reference', payload), indent=1))
+        return 0
+    if args.command == 'reconcile-attempt':
+        _require(args.stage in ATTEMPT_STAGES and bool(args.note), '--stage and --note are required')
+        start = unfinished_start(manifest, args.stage)
+        _require(start is not None, f'{args.stage} has no attempt start without a receipt; nothing to reconcile')
+        print(json.dumps(manifest.append('attempt_reconciliation', {
+            'stage': args.stage, 'attempt_start_seq': start['seq'], 'output_dir': start['payload']['output_dir'],
+            'note': args.note, 'counts_as_attempt': True}), indent=1))
+        return 0
+    _require(args.stage in ATTEMPT_STAGES and args.failing_test and args.review,
+             '--stage, --failing-test and --review required')
+    _require(any(e['kind'] == 'stage_failure' and e['payload']['stage'] == args.stage
+                 and e['payload']['class'] == 'deterministic_integrity' for e in manifest.entries()),
+             'a bug-fix addendum follows a recorded deterministic-integrity failure of that stage')
+    _require(not git('status', '--porcelain', '--', *CODE_PATHS), 'commit the fix first (clean code paths)')
+    reg.verify_protected_sources(REPO)
+    entry = manifest.append('bugfix_addendum', {'stage': args.stage, 'fix_commit': git('rev-parse', 'HEAD'),
+                                                'new_files_sha256': new_file_hashes(), 'failing_test': args.failing_test,
+                                                'review_reference': args.review})
+    print(json.dumps(entry, indent=1))
     return 0
+
+
+def parse(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=COMMANDS)
+    parser.add_argument('--config', type=Path, default=REPO / reg.CONFIG_PATH)
+    parser.add_argument('--local-config', type=Path, default=PROJECT / 'configs' / 'local.json')
+    parser.add_argument('--output', type=Path)
+    parser.add_argument('--expect-digest')
+    parser.add_argument('--decision-record', type=Path)
+    parser.add_argument('--stage')
+    parser.add_argument('--failing-test')
+    parser.add_argument('--review')
+    parser.add_argument('--gate')
+    parser.add_argument('--verdict')
+    parser.add_argument('--notes-closed', action='store_true')
+    parser.add_argument('--commit')
+    parser.add_argument('--note')
+    return parser.parse_args(argv)
+
+
+def main(argv=None, env=None):
+    env = env if env is not None else Environment()
+    entered = (env.now(), env.monotonic())  # the guards count from argument parsing
+    args = parse(argv)
+    env.args = args
+    if args.command == 'check':
+        config, sha = reg.load_config(args.config)
+        print(json.dumps({'status': config['status'], 'config_file_sha256': sha, 'config_digest': reg.config_digest(config),
+                          'protected_sources': 'unchanged' if reg.verify_protected_sources(REPO) else None}, indent=1))
+        return 0
+    if args.command == 'pins':
+        print(json.dumps({'new_files_sha256': new_file_hashes(), 'protected_sources': reg.PROTECTED_SOURCES}, indent=1))
+        return 0
+    if args.command in MANIFEST_COMMANDS:
+        return manifest_command(args)
+    return run_command(args, env, entered)
 
 
 if __name__ == '__main__':

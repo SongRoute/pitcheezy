@@ -33,8 +33,8 @@ from .ope_diagnostics import affine_padded
 from .ope_redesign_registry import (BASELINE, BIP_CLASSES, HIT_CLASSES, INF, INTEGRITY_TOL, LAMBDA_GRID, M_GRID,
                                     N_CELLS, N_X, PAIRS, R1, S5X_REPETITIONS, TAB_DATASET_PAS,
                                     TAB_ECE_FACTOR, TAB_ECE_RECORDED, TAB_PLANNING_SIGMA, TAB_PSEUDO_GAMES,
-                                    TAB_TARGET_KL, TERMINALS9, Z_BOUND, cell_outcome, cluster_se_index, pair_id,
-                                    role_sequence, select_minimizer)
+                                    TAB_TARGET_KL, TERMINALS9, Z_BOUND, cell_outcome, cluster_se_index,
+                                    inconclusive_invalid, pair_id, role_sequence, select_minimizer)
 from .ope_surrogate import N_CLASSES, fit_table, select_m, tilted_out_mass
 from .planner import OUTCOMES
 from .policy_artifacts import IntegrityError, _require
@@ -341,6 +341,28 @@ class TabWorld:
         self.law_cdf = safe_cdf(self.law_k)
         self.adv = self._advancement_tables()
 
+    def surrogate_truth(self):
+        """Descriptive exact DP decomposition: Delta_true(r~) for R1_a (C0 class values of the realized
+        class) and R1_b (the A2-S0 TRAIN table over the world's x law), and the surrogate share
+        Delta_true(r~) - Delta_true(r) (realized WE)."""
+        mg, S, G = self.mg, self.S, self.G
+        dp = np.array([s.dp for s in mg.situations]).astype(int)
+        ts = self.ts.astype(int)
+        tv_bip = self.tv[:, [T9[e] for e in BIP_CLASSES]]  # [S, 6]
+        table_x = np.asarray(mg.class_table, dtype=np.float64).reshape(N_X, 2, N_CLASSES)
+        tcls = np.einsum('gtx,xde->gtde', np.asarray(mg.x_dist, dtype=np.float64), table_x)  # [G, ts, dp, 6]
+        p5 = self.p5[:, None]
+        out = {'R1_0_realized': self.delta_true}
+        for name, cls in (('R1_a', self.pcls), ('R1_b', tcls)):
+            law = np.moveaxis(cls[:, ts][:, :, dp], 0, 2)  # [12, S, G, 6]
+            imm = p5[..., 3] * self.hbp[None, :, None, None] + p5[..., 4] * ((law * tv_bip[None, :, None]).sum(-1))[:, :, None, :]
+            values = {pol: _solve(policy, self.pb, self.ps, self.pf, imm, self.walk, self.strikeout)[0][0, 0]
+                      for pol, policy in (('candidate', self.pi_c), ('reference', self.pi_b_full))}
+            delta = float((values['candidate'] - values['reference']).mean())
+            out[name] = delta
+            out[f'{name}_surrogate_share'] = delta - self.delta_true
+        return out
+
     def _tune_tau(self, target):
         w = self.visits  # [12, S, A] expected visits under pi_b
 
@@ -566,11 +588,14 @@ def pipeline(data, rewards, *, smoke=None, per_pa=False):
 
 
 def tab_rewards(world, data, table):
-    """R1_0 realized WE, R1_a class-expected C0 value, R1_b quality-expected value (replication table)."""
+    """R1_0 realized WE, R1_a class-expected C0 value, R1_b quality-expected value (replication table;
+    NaN when the replication's table could not be fitted)."""
     tv = world.tv  # [S, 9]
     sit, term9, cell = data['sit'], data['term9'], data['cell']
     r0 = data['reward']
     ra = tv[sit, term9]
+    if table is None:
+        return {'R1_0': r0, 'R1_a': ra, 'R1_b': np.full_like(ra, np.nan)}
     rb = ra.copy()
     ip = cell >= 0
     tv_bip = tv[:, [T9[e] for e in BIP_CLASSES]]
@@ -579,9 +604,10 @@ def tab_rewards(world, data, table):
 
 
 def tab_replication(world, cell_index, replication, *, n_train, smoke=None):
-    """One full replication of one cell: synthetic TRAIN (+ m selection), dataset, every pair.
-    Registered stream [1, cell_index, replication] of role tab_world; the smoke uses its own role
-    'smoke' with key [1, replication] (never a registered stream)."""
+    """One full replication of one cell: synthetic TRAIN (+ m selection), dataset, every pair. Registered
+    stream [1, cell_index, replication] of role tab_world; the smoke uses its own role 'smoke' with key
+    [1, replication] (never a registered stream). If every m is nonfinite the R1_b table is not fitted:
+    only the R1_b pairs are NOT_EVALUABLE in this replication; R1_0 and R1_a continue."""
     if world.seed_role == 'tab_world':
         rng = np.random.default_rng(role_sequence('tab_world', 1, cell_index, replication))
     else:
@@ -595,56 +621,65 @@ def tab_replication(world, cell_index, replication, *, n_train, smoke=None):
             m = None
     else:
         m = smoke['m']
-    if m is None:
-        return None, {}, ['R1_b table: every m nonfinite']
-    table = fit_table(folds[0] + folds[1], m)
+    table = None if m is None else fit_table(folds[0] + folds[1], m)
     data = world.simulate(rng)
-    estimates, selected, invalid = pipeline(data, tab_rewards(world, data, table), smoke=smoke)
-    return estimates, {**selected, 'm': m}, invalid
+    rewards = tab_rewards(world, data, table)
+    estimates, selected, invalid = pipeline(data, rewards, smoke=smoke)
+    not_evaluable = [] if table is not None else [p for p in PAIRS if p.startswith('R1_b')]
+    invalid = [p for p in invalid if p not in not_evaluable]
+    return estimates, {**selected, 'm': m}, invalid, not_evaluable
 
 
 def tab_cell(world, cell, *, n_train, replications=None, deadline=None):
     """Combined realized-WE bias of every pair in one cell (design 4.5): b_hat, SE, SD, RMSE, the
-    lambda / M / m selections and invalid replications; acceptance outcome for acceptance cells."""
+    lambda / M / m selections, invalid and not-evaluable replications, the exact DP truth and the
+    descriptive surrogate-truth decomposition; acceptance outcome for acceptance cells (the baseline's
+    own row is the exact DP value beta_0, marked EXACT_DP, not a certification cell)."""
     R = cell['R'] if replications is None else replications
     estimates = {p: np.full(R, np.nan) for p in PAIRS}
-    picks, invalid = {}, {p: 0 for p in PAIRS}
+    picks, invalid, not_evaluable = {}, {p: 0 for p in PAIRS}, {p: 0 for p in PAIRS}
     for j in range(R):
         if deadline is not None:
             deadline()
-        est_j, sel, bad = tab_replication(world, cell['index'], j, n_train=n_train)
-        if est_j is None:
-            for p in PAIRS:
-                invalid[p] += 1
-            continue
+        est_j, sel, bad, skipped = tab_replication(world, cell['index'], j, n_train=n_train)
         for p in PAIRS:
             estimates[p][j] = est_j[p]
-            if p in bad:
-                invalid[p] += 1
+            invalid[p] += p in bad
+            not_evaluable[p] += p in skipped
         for name, value in sel.items():
-            picks.setdefault(name, {}).setdefault('inf' if value == INF else str(value), 0)
-            picks[name]['inf' if value == INF else str(value)] += 1
+            label = 'none' if value is None else ('inf' if value == INF else str(value))
+            picks.setdefault(name, {}).setdefault(label, 0)
+            picks[name][label] += 1
     base = estimates[BASELINE]
     out = {}
     for p in PAIRS:
         diff = estimates[p] - base
-        valid = invalid[p] == 0 and invalid[BASELINE] == 0 and np.isfinite(diff).all()
+        valid = invalid[p] == 0 and invalid[BASELINE] == 0 and not_evaluable[p] == 0 and np.isfinite(diff).all()
         if p == BASELINE:
             b_hat, se = world.beta_0, 0.0
         else:
             b_hat = float(np.mean(diff)) + world.beta_0 if valid else None
             se = float(np.std(diff, ddof=1) / math.sqrt(R)) if valid and R > 1 else None
-        record = {'b_hat': b_hat, 'se': se, 'invalid_replications': invalid[p], 'R': R,
-                  'sd': float(np.std(estimates[p], ddof=1)) if np.isfinite(estimates[p]).all() and R > 1 else None,
-                  'rmse': float(np.sqrt(np.mean((estimates[p] - world.delta_true) ** 2)))
-                  if np.isfinite(estimates[p]).all() else None}
+        finite = np.isfinite(estimates[p])
+        record = {'b_hat': b_hat, 'se': se, 'invalid_replications': invalid[p],
+                  'not_evaluable_replications': not_evaluable[p], 'R': R,
+                  'sd': float(np.std(estimates[p][finite], ddof=1)) if finite.sum() > 1 else None,
+                  'rmse': float(np.sqrt(np.mean((estimates[p][finite] - world.delta_true) ** 2))) if finite.any() else None}
         if cell['role'] == 'acceptance':
-            record.update(cell_outcome(b_hat, se, beta_0=world.beta_0 if cell['law'] == 'V3' else None,
-                                       valid=valid))
+            if p == BASELINE:
+                record.update(outcome='EXACT_DP', note='beta_0 by exact dynamic programming; not a certification cell')
+            elif not_evaluable[p]:
+                record.update(cell_outcome(None, None, not_evaluable=True))
+            elif invalid[p] or invalid[BASELINE]:
+                record.update(inconclusive_invalid(f'{invalid[p] + invalid[BASELINE]} invalid replications'),
+                              b_hat=b_hat, se=se)
+            else:
+                record.update(cell_outcome(b_hat, se, beta_0=world.beta_0 if cell['law'] == 'V3' else None, valid=valid))
         out[p] = record
     return {'cell': {k: cell[k] for k in ('id', 'law', 'eta', 'kappa', 'zeta', 'R', 'role', 'drift', 'index')},
             'delta_true': world.delta_true, 'beta_0': world.beta_0, 'tau': world.tau,
-            'expected_delta_hat_0': world.expected_delta_hat_0, 'pairs': out, 'selections': picks}
+            'expected_delta_hat_0': world.expected_delta_hat_0, 'delta_true_surrogate': world.surrogate_truth(),
+            'pairs': out, 'selections': picks}
 
 
 def tab_integrity(world):
@@ -916,7 +951,7 @@ def run_s5x(runtime, components, starts, *, run, law, layers, world_predictor=No
                              f'(deterministic integrity)')
     runtime.verify_components()
     # six complete repetitions over the fixed starts
-    reps, invalid = [], set()
+    reps = []
     for r in range(1, repetitions + 1):
         streams = repetition_streams(r, repetitions)
         ids = [f'w{i}:{streams["log"]}' for i in kept]
@@ -925,30 +960,52 @@ def run_s5x(runtime, components, starts, *, run, law, layers, world_predictor=No
         data = {'steps': steps, 'lengths': lengths, 'game': np.array(kept)}
         rewards = s5x_rewards(rep_lines, [ends[pa] for pa in ids], layers)
         estimates, selected, bad = pipeline(data, rewards)
-        invalid.update(bad)
         pick = list(streams['truth'])
         true_r = float(np.mean([np.mean(truth[i]['candidate'][pick] - truth[i]['reference'][pick]) for i in kept]))
-        reps.append({'gaps': {p: estimates[p] - true_r for p in PAIRS}, 'truth': true_r,
+        reps.append({'gaps': {p: estimates[p] - true_r for p in PAIRS}, 'truth': true_r, 'invalid': sorted(bad),
                      'selected': {n: ('inf' if v == INF else str(v)) for n, v in selected.items()}})
     gaps = {p: np.array([rep['gaps'][p] for rep in reps]) for p in PAIRS}
+    invalid_reps = {p: sum(not math.isfinite(rep['gaps'][p]) or p in rep['invalid'] for rep in reps) for p in PAIRS}
     result = {'run': dict(run), 'world_seed': ws, 'starts': len(starts), 'kept_starts': len(kept),
               'excluded_starts': excluded, 'repetitions': reps, 'pairs': {}}
     for p in PAIRS:
-        valid = p not in invalid and np.isfinite(gaps[p]).all()
+        valid = invalid_reps[p] == 0 and np.isfinite(gaps[p]).all()
         result['pairs'][p] = {'gap': float(gaps[p].mean()) if valid else None,
                               'se': float(gaps[p].std(ddof=1) / math.sqrt(repetitions)) if valid else None,
-                              'valid': bool(valid)}
+                              'valid': bool(valid), 'invalid_repetitions': int(invalid_reps[p])}
     result['inherited_s5_se'] = _inherited_se(lines, ends, layers, kept, truth, logs_per_start)
     if gamma:
         result['s2'] = {}
+        exact = invariant and run.get('zeta') == '0'  # the registered gamma_a = 0 invariant at zeta = 0
         for col, comp in ((0, 'R1_a'), (1, 'R1_b')):
             diffs = np.array([g_sums[i, 'candidate'][:, col] - g_sums[i, 'reference'][:, col] for i in kept])
             n = len(kept)
             b_hat = float(diffs.mean(axis=1).sum() / n)
             se = float(math.sqrt(float((diffs.std(axis=1, ddof=1) ** 2 / truth_rollouts).sum())) / n)
-            result['s2'][comp] = {'b_hat': b_hat, 'se': se, **cell_outcome(b_hat, se)}
+            result['s2'][comp] = {'b_hat': b_hat, 'se': se,
+                                  **cell_outcome(b_hat, se, exact_zero_allowed=bool(exact and comp == 'R1_a'))}
+        result['s2_pairs'] = s2_pair_cells(result['s2'], result['pairs'], k)
+        result['first_order_reference_approximation'] = {
+            'status': 'NOT_RUN', 'reason': 'sum_a (pi_c - pi_r)(a | s) gamma(s, a) along the reference rollouts needs the '
+                                          'candidate policy (planner calls) at every reference-visited state; descriptive '
+                                          'only in the design and omitted by the registered implementation choice'}
     result['invariant'] = None if not invariant else {'max_abs_gamma_a': invariant_max, 'outcome': 'PASS'}
     return result
+
+
+def s2_pair_cells(s2, pairs, k):
+    """Per R1_a / R1_b pair: the component's S-2 cell of run k only if the pair has no invalid repetition
+    (SN normaliser, lambda / M selection or nonfinite estimate) in that run; otherwise INCONCLUSIVE with
+    the invalid-repetition flag (PM decision, review #1: never PASS, the pair is not adoptable)."""
+    out = {}
+    for p in PAIRS:
+        comp = p.split('x')[0]
+        if comp not in ('R1_a', 'R1_b'):
+            continue
+        entry = pairs[p]
+        out[p] = (dict(s2[comp]) if entry['valid'] else
+                  inconclusive_invalid(f"{entry['invalid_repetitions']} invalid repetitions in run {k}"))
+    return out
 
 
 def _gamma(components, world, state, action, budget):

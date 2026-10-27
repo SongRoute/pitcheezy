@@ -96,19 +96,19 @@ class TabWorldTests(unittest.TestCase):
 
     def test_replications_are_seeded_and_complete(self):
         world = osx.TabWorld(self.mg, law='V2', eta=0.1, kappa=0.0, zeta=0.0)
-        a, sel_a, bad_a = osx.tab_replication(world, 0, 0, n_train=self.mg.n_train_bip)
-        b, sel_b, _ = osx.tab_replication(world, 0, 0, n_train=self.mg.n_train_bip)
-        c, _, _ = osx.tab_replication(world, 0, 1, n_train=self.mg.n_train_bip)
-        d, _, _ = osx.tab_replication(world, 1, 0, n_train=self.mg.n_train_bip)
+        a, sel_a, bad_a, skipped_a = osx.tab_replication(world, 0, 0, n_train=self.mg.n_train_bip)
+        b, sel_b, _, _ = osx.tab_replication(world, 0, 0, n_train=self.mg.n_train_bip)
+        c = osx.tab_replication(world, 0, 1, n_train=self.mg.n_train_bip)[0]
+        d = osx.tab_replication(world, 1, 0, n_train=self.mg.n_train_bip)[0]
         self.assertEqual(a, b)  # same seed, bit-identical
-        self.assertEqual((sel_a, bad_a), (sel_b, []))
+        self.assertEqual((sel_a, bad_a, skipped_a), (sel_b, [], []))
         self.assertNotEqual(a, c)
         self.assertNotEqual(a, d)
         self.assertEqual(set(a), set(reg.PAIRS))
         self.assertIn(sel_a['m'], reg.M_SMOOTH_GRID)
         smoke_world = osx.TabWorld(self.mg, law='V2', eta=0.0, kappa=0.0, zeta=0.0, seed_role='smoke')
-        e, sel_e, _ = osx.tab_replication(smoke_world, 0, 0, n_train=self.mg.n_train_bip,
-                                          smoke={'m': 20, 'lambda': 30.0, 'M': 5.0})
+        e, sel_e, _, _ = osx.tab_replication(smoke_world, 0, 0, n_train=self.mg.n_train_bip,
+                                             smoke={'m': 20, 'lambda': 30.0, 'M': 5.0})
         self.assertEqual(sel_e['m'], 20)
         self.assertNotEqual(e, osx.tab_replication(osx.TabWorld(self.mg, law='V2', eta=0.0, kappa=0.0, zeta=0.0), 0, 0,
                                                    n_train=self.mg.n_train_bip, smoke={'m': 20, 'lambda': 30.0, 'M': 5.0})[0])
@@ -118,7 +118,7 @@ class TabWorldTests(unittest.TestCase):
         cell = dict(reg.tab_cells()[0])
         record = osx.tab_cell(world, cell, n_train=self.mg.n_train_bip, replications=3)
         base = record['pairs'][reg.BASELINE]
-        self.assertEqual((base['b_hat'], base['se'], base['outcome']), (world.beta_0, 0.0, 'PASS'))
+        self.assertEqual((base['b_hat'], base['se'], base['outcome']), (world.beta_0, 0.0, 'EXACT_DP'))
         for pair in reg.TOTAL_ORDER:
             self.assertIn(record['pairs'][pair]['outcome'], ('PASS', 'FAIL', 'INCONCLUSIVE'))
         real = osx.pipeline
@@ -128,10 +128,89 @@ class TabWorldTests(unittest.TestCase):
             return {**out, 'R1_bxR2_3': math.nan}, selected, invalid + ['R1_bxR2_3']
         with mock.patch.object(osx, 'pipeline', broken):
             record = osx.tab_cell(world, cell, n_train=self.mg.n_train_bip, replications=2)
-        self.assertEqual(record['pairs']['R1_bxR2_3']['outcome'], 'INVALID')  # never dropped and re-averaged
-        self.assertEqual(record['pairs']['R1_bxR2_3']['invalid_replications'], 2)
+        broken_pair = record['pairs']['R1_bxR2_3']  # PM decision (review #1): INCONCLUSIVE, never dropped or PASS
+        self.assertEqual((broken_pair['outcome'], broken_pair['invalid_repetition']), ('INCONCLUSIVE', True))
+        self.assertEqual(broken_pair['invalid_replications'], 2)
+        self.assertNotIn('invalid_repetition', record['pairs']['R1_bxR2_2'])
         descriptive = osx.tab_cell(world, dict(reg.tab_cells()[10]), n_train=self.mg.n_train_bip, replications=2)
         self.assertNotIn('outcome', descriptive['pairs'][reg.BASELINE])
+
+    def test_r1b_table_failure_invalidates_only_the_r1b_pairs(self):
+        # review #11: every m nonfinite -> the R1_b pairs are NOT_EVALUABLE; R1_0 and R1_a continue
+        world = osx.TabWorld(self.mg, law='V2', eta=0.1, kappa=0.0, zeta=0.0)
+
+        def no_finite_m(folds):
+            raise IntegrityError('synthetic: every m nonfinite')
+        with mock.patch.object(osx, 'select_m', no_finite_m):
+            estimates, selected, invalid, skipped = osx.tab_replication(world, 0, 0, n_train=self.mg.n_train_bip)
+            record = osx.tab_cell(world, dict(reg.tab_cells()[0]), n_train=self.mg.n_train_bip, replications=2)
+        r1b = [p for p in reg.PAIRS if p.startswith('R1_b')]
+        self.assertEqual(sorted(skipped), sorted(r1b))
+        self.assertIsNone(selected['m'])
+        self.assertTrue(all(math.isnan(estimates[p]) for p in r1b))
+        self.assertTrue(all(math.isfinite(estimates[p]) for p in reg.PAIRS if p not in r1b))
+        self.assertFalse(set(invalid) & set(r1b))
+        for pair in reg.PAIRS:
+            outcome = record['pairs'][pair]['outcome']
+            with self.subTest(pair):
+                if pair in r1b:
+                    self.assertEqual((outcome, record['pairs'][pair]['not_evaluable_replications']), ('NOT_EVALUABLE', 2))
+                elif pair == reg.BASELINE:
+                    self.assertEqual(outcome, 'EXACT_DP')
+                else:
+                    self.assertIn(outcome, ('PASS', 'FAIL', 'INCONCLUSIVE'))
+                    self.assertNotIn('invalid_repetition', record['pairs'][pair])
+
+    def test_surrogate_truth_decomposition(self):
+        # PM decision (review #10): the exact DP Delta_true(r~) for R1_a and R1_b and the surrogate share
+        cases = {'no violation': (dict(kappa=0.0, zeta=0.0), (0.0, 0.0)),
+                 'kappa': (dict(kappa=0.4, zeta=0.0), (0.0, None)), 'zeta': (dict(kappa=0.0, zeta=0.9), (None, None)),
+                 'drift': (dict(kappa=0.0, zeta=0.0, drift=True), (0.0, None))}
+        for name, (kw, (share_a, share_b)) in cases.items():
+            world = osx.TabWorld(self.mg, law='V2', eta=0.1, **kw)
+            truth = world.surrogate_truth()
+            with self.subTest(name):
+                self.assertEqual(truth['R1_0_realized'], world.delta_true)
+                for comp, expected in (('R1_a', share_a), ('R1_b', share_b)):
+                    self.assertEqual(truth[f'{comp}_surrogate_share'], truth[comp] - world.delta_true)
+                    if expected is None:  # the violation moves the surrogate truth away from the realized truth
+                        self.assertGreater(abs(truth[f'{comp}_surrogate_share']), 1e-9)
+                    else:
+                        self.assertLessEqual(abs(truth[f'{comp}_surrogate_share']), 1e-12)
+        record = osx.tab_cell(osx.TabWorld(self.mg, law='V2', eta=0.1, kappa=0.0, zeta=0.0), dict(reg.tab_cells()[10]),
+                              n_train=self.mg.n_train_bip, replications=2)
+        self.assertEqual(set(record['delta_true_surrogate']), {'R1_0_realized', 'R1_a', 'R1_b', 'R1_a_surrogate_share',
+                                                               'R1_b_surrogate_share'})
+
+    def test_invalid_sn_normalizers_and_selection_objectives_mark_the_pairs(self):
+        # review #1: an invalid SN normaliser or a nonfinite selection objective makes the pair invalid in that
+        # repetition (it is then INCONCLUSIVE in an acceptance-relevant cell, never PASS)
+        rng = np.random.default_rng(4)
+        n, L = 40, 3
+        steps = {'v_c': rng.uniform(.3, .7, (n, L)), 'v_r': rng.uniform(.3, .7, (n, L)), 'q_a': rng.uniform(.3, .7, (n, L)),
+                 'rho_c': rng.uniform(.5, 1.5, (n, L))}
+        data = {'steps': steps, 'lengths': np.full(n, L), 'game': np.arange(n) % 8}
+        rewards = {c: rng.uniform(0, 1, n) for c in reg.R1}
+        out, selected, invalid = osx.pipeline(data, rewards)
+        self.assertEqual(invalid, [])
+        zero = dict(data, steps={**steps, 'rho_c': np.where(np.arange(L)[None] == 0, 0.0, steps['rho_c'])})
+        out, selected, invalid = osx.pipeline(zero, rewards)  # every candidate weight is 0 after step 0
+        self.assertEqual(sorted(p for p in invalid if p.endswith('R2_3')), ['R1_0xR2_3', 'R1_axR2_3', 'R1_bxR2_3'])
+        self.assertTrue(all(math.isnan(out[p]) for p in ('R1_0xR2_3', 'R1_axR2_3', 'R1_bxR2_3')))
+        out, selected, invalid = osx.pipeline(data, {**rewards, 'R1_b': np.full(n, np.nan)})  # nonfinite objectives
+        self.assertTrue({'R1_bxR2_1', 'R1_bxR2_2'} <= set(invalid))
+        self.assertNotIn('R1_bxR2_1', selected)
+        self.assertFalse({'R1_axR2_1', 'R1_0xR2_1'} & set(invalid))
+
+    def test_s2_pair_cells_carry_the_pair_validity(self):
+        s2 = {'R1_a': reg.cell_outcome(0.0, 1e-6), 'R1_b': reg.cell_outcome(0.0, 1e-6)}
+        pairs = {p: {'valid': True, 'invalid_repetitions': 0} for p in reg.PAIRS}
+        pairs['R1_axR2_3'] = {'valid': False, 'invalid_repetitions': 1}
+        cells = osx.s2_pair_cells(s2, pairs, 4)
+        self.assertEqual(set(cells), {p for p in reg.PAIRS if p.startswith(('R1_a', 'R1_b'))})
+        self.assertEqual((cells['R1_axR2_3']['outcome'], cells['R1_axR2_3']['invalid_repetition']), ('INCONCLUSIVE', True))
+        self.assertEqual(cells['R1_axR2_0']['outcome'], 'PASS')
+        self.assertEqual(cells['R1_bxR2_3']['outcome'], 'PASS')
 
     def test_synthetic_train_folds(self):
         world = osx.TabWorld(self.mg, law='V2', eta=0.0, kappa=0.4, zeta=0.0)
@@ -286,11 +365,21 @@ class S5XRunTests(unittest.TestCase):
         self.assertEqual(result['invariant']['outcome'], 'PASS')
         self.assertEqual(set(result['s2']), {'R1_a', 'R1_b'})
         self.assertEqual(result['s2']['R1_a']['b_hat'], 0.0)  # zeta = 0 and matching advancement: no R1_a bias
+        self.assertEqual(result['s2']['R1_a']['se'], 0.0)
+        self.assertEqual(result['s2']['R1_a']['outcome'], 'PASS')  # the registered exact invariant allows SE = 0
+        self.assertEqual(set(result['s2_pairs']), {p for p in reg.PAIRS if p.startswith(('R1_a', 'R1_b'))})
+        self.assertEqual(result['s2_pairs']['R1_axR2_0']['outcome'], result['s2']['R1_a']['outcome'])
+        marker = result['first_order_reference_approximation']  # review #10: explicit NOT_RUN marker with reason
+        self.assertEqual(marker['status'], 'NOT_RUN')
+        self.assertIn('planner calls', marker['reason'])
         ledger_pas = {r['pa_id'] for r in runtime.ledger.iter_decisions()}
         self.assertEqual(len(ledger_pas), 6 * result['kept_starts'])
         summary = __import__('run_ope_a2').s5x_summary([result])
-        self.assertEqual(summary['s2']['invariant'], 'PASS')
-        self.assertEqual(summary['nets']['S1'][reg.BASELINE]['outcome'], 'INVALID')  # runs 1-3 not present
+        self.assertEqual(summary['s2']['R1_axR2_0']['invariant'], 'PASS')
+        self.assertEqual(summary['s2']['R1_axR2_0']['2*kappa_p']['outcome'], 'PASS')
+        self.assertTrue(summary['s2']['R1_axR2_0']['2*zeta_p']['invalid_repetition'])  # run 5 absent: never PASS
+        net = summary['nets']['S1'][reg.BASELINE]  # runs 1-3 not present: INCONCLUSIVE with the invalid flag
+        self.assertEqual((net['outcome'], net['invalid_repetition']), ('INCONCLUSIVE', True))
 
     def test_invariant_violation_is_a_deterministic_failure(self):
         from pitchmdp.rollout_policy import RowBudget

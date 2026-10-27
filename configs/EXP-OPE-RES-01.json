@@ -1699,6 +1699,7 @@
       "statcast_2025.parquet": null
     },
     "processed_frame_identity": null,
+    "policy_registration_chain": null,
     "x2_world_predictor_identity": null,
     "execution_source_commit": null,
     "new_files_sha256": null,
@@ -1714,7 +1715,7 @@
     "a3_provenance_manifest_sha256": null,
     "smoke_train_subset": null,
     "smoke_tab_replications_per_cell": null,
-    "rule": "all filled at G-REG from sources that exist before any registered stage runs (reviewed at G-CODE); a3 fields are the literal NOT_APPLICABLE when r3_status is NOT_RUN:R3; the smoke subset lies inside TRAIN"
+    "rule": "all filled at G-REG from sources that exist before any registered stage runs (reviewed at G-CODE); a3 fields are the literal NOT_APPLICABLE when r3_status is NOT_RUN:R3; the smoke subset lies inside TRAIN; processed_frame_identity = {\"path\", \"sha256\"}; policy_registration_chain = [{\"path\", \"sha256\"}] (ML-POLICY config first, then its addenda); x2_world_predictor_identity = {\"kind\": \"g0_single_member\", \"seed\": int}"
   },
   "stage_output_seals": {
     "A2-SM_smoke_record_sha256": null,
@@ -1834,6 +1835,11 @@
       "date": "2026-10-27",
       "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
       "what": "materialized as configs/EXP-OPE-RES-01.json for G-CODE (implementation commit); still DRAFT_UNREGISTERED, execution disabled; registration_input_pins (incl. the added output_root) to be filled before G-CODE; no real data read"
+    },
+    {
+      "date": "2026-10-27",
+      "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
+      "what": "code review CODE-REVIEW-A2-astra-001 (FAIL) fixes: pins policy_registration_chain and the processed-frame schema; implementation block updated (point set P on the baseline paired bounds, degenerate SE, invalid repetitions, R1_b table failure, TRAIN-only smoke reading with a pre-attempt footer plan, processed pin, zeta frozen-C0 exception, command-wide guards, attempt-start receipts, review receipts, destination disjointness); still DRAFT_UNREGISTERED, execution disabled"
     }
   ],
   "implementation": {
@@ -1852,6 +1858,23 @@
       "placebo_flag_ratio": 1.25,
       "replication_2027_ratio": 0.85
     },
+    "point_set": {
+      "definition": "E0 PAs whose baseline (R1_0 x R2_0, L1-R) paired delta bounds are equal (float ==)",
+      "non_point_under_a_pair": "that pair has no P mean: its P statistics are invalid (fail-safe, counted)"
+    },
+    "precision": {
+      "degenerate_se": "SE = 0 (or a zero half-width) is INCONCLUSIVE, never PASS, except the registered exact S-2 gamma_a invariant at zeta = 0",
+      "condition_ii": "H(pair) <= 0.7 H(baseline) evaluated directly; a zero baseline or pair half-width is degenerate (INCONCLUSIVE, not a pass)",
+      "invalid_repetition": "an invalid repetition or replication in an acceptance-relevant run or cell makes that cell INCONCLUSIVE and the pair non-adoptable",
+      "r1b_table_failure": "every m nonfinite in a TAB replication: the R1_b pairs are NOT_EVALUABLE, the R1_0 and R1_a pairs continue"
+    },
+    "reading": {
+      "smoke": "pinned processed frame and raw files read by parquet row group: only row groups whose game_date statistics lie inside TRAIN and overlap the smoke subset are decoded, only the listed columns; a straddling row group refuses; raw files of other years are not opened; no S6 access",
+      "A2-S0": "the same reader over TRAIN; row groups straddling the TRAIN boundary are decoded and filtered before any use",
+      "layout_plan": "the smoke plans its row groups from the parquet footers (schema and game_date statistics) before the attempt-start receipt: a straddling row group refuses without consuming an attempt",
+      "processed_pin": "path = artifact_root/processed/pitches.parquet, sha256 = the inherited reports/data_quality.json processed_sha256 = the file bytes, checked before any row",
+      "S6": "the S6-dr-a5 stage directory is opened by A2-S3 only; the smoke reads only the first policy_registration_chain link (the ML-POLICY config: WE identity and local-config pin)"
+    },
     "r1": {
       "root_level": "maximum likelihood P(e | dp)",
       "dp0_double_play_mapping": "out",
@@ -1865,12 +1888,16 @@
         "hc_y",
         "bb_type",
         "launch_speed",
-        "launch_angle"
-      ]
+        "launch_angle",
+        "estimated_woba_using_speedangle"
+      ],
+      "spray_missing_share": "TRAIN: among the used in-play rows (hit_into_play, finite EV and LA, mapped event); rehearsal: among the PAs on the bip_quality path only",
+      "xwoba_diagnostic": "TRAIN Pearson correlation of estimated_woba_using_speedangle with the table P_hat(hit | x, dp) and the table expected total bases (descriptive)"
     },
     "calibration": {
-      "se_g": "sample SD (ddof 1) / sqrt(n_g) of the cross-fitted residuals",
-      "cross_fit": "game_pk parity two folds, both directions pooled",
+      "se_g": "sample SD (ddof 1) / sqrt(n_g) of the residuals",
+      "cross_fit": "kappa: game_pk parity two folds, both directions pooled (P_hat is fitted here)",
+      "zeta_residuals": "actual runs - frozen C0 EmpiricalAdvancement expectation: an intentional exception to cross-fitting because C0 is a frozen, pre-registered model (nothing is fitted here); recorded in the A2-S0 output provenance",
       "world_residual": "TRAIN empirical (two-strike, dp, x) distribution of the group",
       "bisection_relative_tolerance": 1e-10,
       "bisection_max_upper": 1000.0,
@@ -1889,7 +1916,8 @@
       "eta_p": "bisection so that the exact top-label ECE10 (weights: pi_b visitation x pi_b) equals 2 x 0.0087",
       "tau": "bisection so that the pi_b-visitation-weighted mean KL(pi_c || pi_b) equals 0.0074",
       "synthetic_train": "multinomial counts over (fold, dp, x, e), fold iid with probability 1/2",
-      "drift": "world class law clip(P_hat + (P_hat_second_half - P_hat_first_half), 0) renormalized; synthetic TRAIN from the undrifted law"
+      "drift": "world class law clip(P_hat + (P_hat_second_half - P_hat_first_half), 0) renormalized; synthetic TRAIN from the undrifted law",
+      "surrogate_truth": "exact DP Delta_true(r~) for R1_a (C0 class values) and R1_b (the A2-S0 table), with the surrogate share Delta_true(r~) - Delta_true(r) (descriptive)"
     },
     "s5x": {
       "gamma_in_play_probability": "exact 400-draw integral (policy_identity.integrated_predictions)",
@@ -1899,7 +1927,8 @@
         "advancement"
       ],
       "in_play_event": "the G0 10-class draw lands on an in-play class (same uniform as the S5 world)",
-      "x2_world_predictor": "loader must be named by registration_input_pins.x2_world_predictor_identity"
+      "x2_world_predictor": "kind g0_single_member: one member (pinned seed) of the bound five-member G0",
+      "first_order_reference_approximation": "NOT_RUN (needs planner calls at reference-visited states); emitted as an explicit marker"
     },
     "bootstrap": {
       "se": "SD of the valid replicates (ddof 1)",
@@ -1927,8 +1956,20 @@
       "protection_window_kst": [
         "06:30",
         "13:30"
-      ]
+      ],
+      "rule": "the whole command (argument parsing to the completion receipt) must end strictly before 06:30"
     },
+    "guards": {
+      "coverage": "hang timer, RSS cap and free-memory guard from argument parsing to the last write (preflight, data acquisition, computation, hashing and sealing; unblind included); the final check runs after the last write, disarms the timer and precedes the completion receipt",
+      "attempts": "an attempt-start receipt is appended before the stage directory exists; at most two starts; a start without a receipt counts and needs a recorded reconciliation before the next start",
+      "refusals_before_attempt": "registry, digest, receipts, sources, destination, upstream seals, G-SMOKE, the smoke layout plan and the A2-S4 stage status refuse before the attempt-start"
+    },
+    "receipts": {
+      "G-CODE": "verdict PASS, or PASS_WITH_NOTES with notes closed; commit = the running code commit; config digest = the registered digest",
+      "G-REG": "verdict PASS, or PASS_WITH_NOTES with notes closed; config digest = the registered digest"
+    },
+    "destination": "a fresh directory directly under output_root; output_root disjoint (resolved real paths) from the repository, the main checkout (git common directory), the S6-dr-a5 stage directory, the processed frame directory, the raw root and the G0 bundle and WE directories",
+    "smoke_projection_ratio": "rows of the processed row groups overlapping TRAIN (footer metadata, an upper bound) / rows of the smoke subset before the regular-season filter (labelled projection)",
     "smoke": {
       "eta": 0.0,
       "kappa": 0.0,

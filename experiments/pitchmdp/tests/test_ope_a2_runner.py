@@ -1,59 +1,248 @@
-"""SYNTHETIC-ONLY tests for the EXP-OPE-RES-01 stage runner: every real-data command refuses on the draft
-config (fail closed), the external append-only digest manifest and stage seals, output location rules,
-the run-window, hang and memory guards with a mocked clock, attempt accounting, and the A2-S0 / A2-S1 /
-smoke / A2-S4 code paths on synthetic TRAIN rows and synthetic worlds. No real data is read.
+"""SYNTHETIC-ONLY tests for the EXP-OPE-RES-01 stage runner: fail-closed refusals, the external append-only
+digest manifest, review receipts, attempt-start receipts and reconciliation, the command-wide window,
+hang and memory guards, destination disjointness, the TRAIN-only pinned smoke reader (files, row groups
+and columns watched), the processed-frame pin, G-INT before any surrogate, the descriptive-output
+checks and dependency-injected orchestration (smoke -> A2-S0 -> A2-S1 -> A2-S4 refusal). Every input is
+a synthetic file the test writes to a temporary directory; no real data, ledger or model is read.
 """
+from contextlib import contextmanager, nullcontext, redirect_stdout
 import copy
 from datetime import datetime
+import functools
 import io
 import json
-from contextlib import redirect_stdout
 from pathlib import Path
+import shutil
+import signal
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE.parent / 'scripts'))
 
-from ope_a2_fixtures import ToyAdvancement, ToyWE, synthetic_train_frame  # noqa: E402
+from ope_a2_fixtures import ToyAdvancement, ToyWE, synthetic_ledger, synthetic_table, synthetic_train_frame  # noqa: E402
 from pitchmdp import ope_redesign_registry as reg  # noqa: E402
+from pitchmdp import ope_sealed as osd  # noqa: E402
+from pitchmdp import ope_surrogate as osg  # noqa: E402
+from pitchmdp import ope_synthetic_a2 as osx  # noqa: E402
 from pitchmdp.policy_artifacts import IntegrityError  # noqa: E402
 import run_ope_a2 as roa  # noqa: E402
-from test_ope_a2_estimators import _decision_inputs  # noqa: E402
-from test_ope_a2_registry import registered  # noqa: E402
+from test_ope_a2_estimators import CENSUS, _decision_inputs  # noqa: E402
+from test_ope_a2_registry import load, registered  # noqa: E402
 
 GAME_VALUES = {'we': ToyWE(), 'advancement': ToyAdvancement()}
-AFTERNOON = lambda: datetime(2026, 10, 27, 14, 0, tzinfo=reg.KST)
+AFTERNOON = datetime(2026, 10, 27, 14, 0, tzinfo=reg.KST)
+REAL_PARQUET_FILE = pq.ParquetFile
+REAL_STAGE_S1 = roa.stage_s1
 
 
+def kst(day, hour, minute=0):
+    return datetime(2026, 10, day, hour, minute, tzinfo=reg.KST)
+
+
+def tmpdir(test):
+    path = Path(tempfile.mkdtemp(prefix='a2-runner-')).resolve()
+    test.addCleanup(shutil.rmtree, path, True)
+    return path
+
+
+class ClockEnv(roa.Environment):
+    """No data: a fixed clock, a settable monotonic clock, no SIGALRM, an injectable memory guard."""
+    alarm = False
+
+    def __init__(self, now=AFTERNOON, guards=None):
+        super().__init__()
+        self._now, self._guards, self.clock = now, guards or (lambda: None), 0.0
+
+    def now(self):
+        return self._now
+
+    def monotonic(self):
+        return self.clock
+
+    def guards(self):
+        return self._guards
+
+
+# ---------------------------------------------------------------- a synthetic registered workspace
+def _frame(start, days, seed, n_pas):
+    frame = synthetic_train_frame(seed=seed, n_pas=n_pas, n_pitchers=12, start=start, days=days)
+    frame['game_pk'] = frame['game_pk'] + 100000 * seed  # unique pitch keys across the synthetic groups
+    frame['game_type'] = 'R'
+    dates = pd.to_datetime(frame['game_date'])
+    frame['split'] = np.select([dates < '2023-05-15', dates <= '2025-04-30', dates <= '2025-06-30'],
+                               ['history', 'train', 'calibration'], 'dev')
+    rng = np.random.default_rng(seed)
+    frame['estimated_woba_using_speedangle'] = np.where(frame['description'].eq('hit_into_play').to_numpy(),
+                                                        rng.uniform(0, 1.5, len(frame)), np.nan)
+    return frame
+
+
+def write_groups(path, frames, columns):
+    """One parquet row group per frame (game_date statistics are written per row group)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    columns = list(columns)
+    schema = pa.Table.from_pandas(pd.concat(frames, ignore_index=True)[columns], preserve_index=False).schema
+    with pq.ParquetWriter(path, schema) as writer:
+        for frame in frames:
+            writer.write_table(pa.Table.from_pandas(frame[columns].reset_index(drop=True), preserve_index=False).cast(schema))
+
+
+class Workspace:
+    """A registered synthetic configuration with its own processed frame (row groups: 0 history 2023-04,
+    1 TRAIN 2024-04, 2 the TRAIN subset, 3 DEV 2025-08), raw files, ML-POLICY chain, digest manifest and
+    review receipts. Nothing real is referenced."""
+    def __init__(self, test, *, smoke=('2024-06-01', '2024-06-20'), subset_start='2024-06-01', subset_days=20,
+                 reps=1, receipts=True, pins=None):
+        self.root = tmpdir(test)
+        self.artifacts, self.raw = self.root / 'artifacts', self.root / 'raw'
+        groups = [_frame('2023-04-01', 20, 1, 300), _frame('2024-04-01', 20, 2, 300),
+                  _frame(subset_start, subset_days, 3, 6000), _frame('2025-08-01', 20, 4, 300)]
+        self.processed = self.artifacts / 'processed' / 'pitches.parquet'
+        write_groups(self.processed, groups, roa.TRAIN_COLUMNS)
+        (self.artifacts / 'reports').mkdir()
+        self.quality = self.artifacts / 'reports' / 'data_quality.json'
+        self.quality.write_text(json.dumps({'processed_sha256': reg.file_sha256(self.processed), 'synthetic': True}))
+        by_year = {}
+        for frame in groups:
+            by_year.setdefault(str(pd.to_datetime(frame['game_date']).iloc[0].year), []).append(frame)
+        for year in ('2023', '2024', '2025'):
+            write_groups(self.raw / f'statcast_{year}.parquet', by_year[year], roa.RAW_COLUMNS)
+        self.base = {'identity_registration': {'g0_bundle': {'path': str(self.root / 'g0' / 'bundle.json')},
+                                               'we_paths': {'we_contract': str(self.root / 'we' / 'contract.json')},
+                                               'we_contract_sha256': '0' * 64, 'classes': {'we': {}}},
+                     'le2025_validation_plan': {'local_config': {'sha256': '0' * 64}},
+                     'registered_inputs': {'bc': {'path': str(self.root / 'ml-policy-runs' / 'bc' / 'bc.json'),
+                                                  'file_sha256': '0' * 64}}}
+        chain = self.root / 'ml-policy.json'
+        chain.write_text(json.dumps(self.base))
+        self.local = {'artifact_root': str(self.artifacts), 'raw_root': str(self.raw)}
+        config = registered(load(), root=str(self.root))
+        values = {'processed_frame_identity': {'path': str(self.processed), 'sha256': reg.file_sha256(self.processed)},
+                  'train_raw_files_sha256': {n: reg.file_sha256(self.raw / n) for n in reg.RAW_ALLOWLIST},
+                  'policy_registration_chain': [{'path': str(chain), 'sha256': reg.file_sha256(chain)}],
+                  'new_files_sha256': roa.new_file_hashes(), 'smoke_train_subset': {'game_dates': list(smoke)},
+                  'smoke_tab_replications_per_cell': reps}
+        config['registration_input_pins'].update({**values, **(pins or {})})
+        self.config = config
+        self.config_path = self.root / 'EXP-OPE-RES-01.json'
+        self.config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + '\n')
+        self.digest = reg.config_digest(config)
+        self.manifest = roa.DigestManifest(config['registration_input_pins']['digest_manifest_path'])
+        self.manifest.append('config_digest', {'digest': self.digest})
+        if receipts:
+            self.receipt('G-CODE', commit=config['registration_input_pins']['execution_source_commit'])
+            self.receipt('G-REG')
+
+    def receipt(self, gate, *, verdict='PASS', notes_closed=False, commit=None, digest=None):
+        return self.manifest.append('review_reference', {'gate': gate, 'reference': f'SYNTHETIC-{gate}', 'verdict': verdict,
+                                                         'notes_closed': notes_closed, 'commit': commit,
+                                                         'config_digest': digest or self.digest})
+
+    def output(self, name):
+        return Path(self.config['registration_input_pins']['output_root']) / name
+
+    def argv(self, command, name, *extra):
+        return [command, '--config', str(self.config_path), '--output', str(self.output(name)), *extra]
+
+    def kinds(self, stage=None):
+        return [e['kind'] for e in self.manifest.entries() if stage is None or e['payload'].get('stage') == stage]
+
+
+class WorkspaceEnv(ClockEnv):
+    """The registered environment on a synthetic workspace (only data access is injected)."""
+    def __init__(self, ws, **kw):
+        super().__init__(**kw)
+        self.ws = ws
+
+    def git_state(self, config_path, code):
+        return {'head': code['execution_source_commit'], 'ancestor': True, 'changed': [], 'dirty': False,
+                'config_committed': True}
+
+    def checkouts(self):
+        return [roa.REPO]
+
+    def local_config(self, base):
+        return dict(self.ws.local)
+
+    def heavy_lock(self, local):
+        return nullcontext()
+
+    def nice(self):
+        pass
+
+    def game_values(self, base):
+        return GAME_VALUES
+
+    def s6_record(self, config):
+        raise AssertionError('the S6-dr-a5 stage directory is opened by A2-S3 only')
+
+    def policy_registration(self, config):
+        raise AssertionError('the full ML-POLICY registration is loaded by A2-S2 / A2-S3 only')
+
+
+@contextmanager
+def watch_parquet():
+    """Every parquet file opened and every row group decoded (file, index, columns); whole-file reads fail."""
+    log = {'opened': [], 'reads': []}
+
+    class Spy:
+        def __init__(self, path, *args, **kwargs):
+            self._name = Path(path).name
+            log['opened'].append(self._name)
+            self._file = REAL_PARQUET_FILE(path, *args, **kwargs)
+
+        @property
+        def metadata(self):
+            return self._file.metadata
+
+        def read_row_group(self, i, columns=None, **kwargs):
+            log['reads'].append((self._name, i, tuple(columns or ())))
+            return self._file.read_row_group(i, columns=columns, **kwargs)
+
+    def whole_file(*args, **kwargs):
+        raise AssertionError('a whole-file parquet read')
+    with mock.patch.object(pq, 'ParquetFile', Spy), mock.patch.object(pq, 'read_table', whole_file), \
+            mock.patch.object(pd, 'read_parquet', whole_file):
+        yield log
+
+
+def quiet(fn, *args, **kwargs):
+    with redirect_stdout(io.StringIO()):
+        return fn(*args, **kwargs)
+
+
+# ================================================================ refusals
 class FailClosedTests(unittest.TestCase):
     def test_every_real_data_command_refuses_the_draft(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            for command in ('smoke', 's0', 's1', 's2', 's3', 'decide', 'unblind', 'register-digest'):
-                argv = [command, '--output', str(Path(tmp) / command), '--expect-digest', 'x']
-                with self.subTest(command), self.assertRaisesRegex(IntegrityError, 'not REGISTERED'):
-                    roa.main(argv)
-            with self.assertRaisesRegex(IntegrityError, 'not REGISTERED'):
-                roa.main(['register-addendum', '--stage', 'A2-S0', '--failing-test', 't', '--review', 'r'])
-            with self.assertRaisesRegex(IntegrityError, 'not REGISTERED'):
-                roa.main(['record-review', '--gate', 'G-CODE', '--review', 'r'])
-            self.assertEqual(list(Path(tmp).iterdir()), [])  # nothing was created
+        tmp = tmpdir(self)
+        for command in ('smoke', 's0', 's1', 's2', 's3', 'decide', 'unblind'):
+            with self.subTest(command), self.assertRaisesRegex(IntegrityError, 'not REGISTERED'):
+                roa.main([command, '--output', str(tmp / command)], env=ClockEnv())
+        for argv in (['register-digest', '--expect-digest', 'x'],
+                     ['register-addendum', '--stage', 'A2-S0', '--failing-test', 't', '--review', 'r'],
+                     ['record-review', '--gate', 'G-CODE', '--review', 'r', '--verdict', 'PASS'],
+                     ['reconcile-attempt', '--stage', 'A2-S0', '--note', 'n']):
+            with self.subTest(argv[0]), self.assertRaisesRegex(IntegrityError, 'not REGISTERED'):
+                roa.main(argv)
+        self.assertEqual(list(tmp.iterdir()), [])  # nothing was created
 
     def test_data_free_commands(self):
-        out = io.StringIO()
-        with redirect_stdout(out):
-            self.assertEqual(roa.main(['check']), 0)
-        report = json.loads(out.getvalue())
+        report = json.loads(quiet(lambda: (roa.main(['check']), sys.stdout.getvalue())[1]))
         self.assertEqual(report['status'], reg.DRAFT)
-        self.assertEqual(report['config_digest'], reg.config_digest(json.loads((reg.REPO / reg.CONFIG_PATH).read_text())))
-        out = io.StringIO()
-        with redirect_stdout(out):
-            roa.main(['pins'])
-        self.assertEqual(set(json.loads(out.getvalue())['new_files_sha256']), set(reg.NEW_FILES))
+        self.assertEqual(report['config_digest'], reg.config_digest(load()))
+        pins = json.loads(quiet(lambda: (roa.main(['pins']), sys.stdout.getvalue())[1]))
+        self.assertEqual(set(pins['new_files_sha256']), set(reg.NEW_FILES))
 
     def test_x2_identity_must_name_a_supported_loader(self):
         with self.assertRaisesRegex(IntegrityError, 'X2'):
@@ -63,12 +252,12 @@ class FailClosedTests(unittest.TestCase):
 
 class ManifestTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
+        self.tmp = tmpdir(self)
         self.manifest = roa.DigestManifest(self.tmp / 'digest.jsonl')
 
     def test_append_only_chain_and_tamper_detection(self):
         a = self.manifest.append('config_digest', {'digest': 'a' * 64})
-        b = self.manifest.append('smoke_record', {'record_sha256': 'b' * 64})
+        b = self.manifest.append('cell_seal', {'stage': 'A2-S1', 'cell': 'T-A1', 'sha256': 'b' * 64})
         self.assertEqual([e['seq'] for e in self.manifest.entries()], [0, 1])
         self.assertEqual(b['prev'], a['sha256'])
         self.assertEqual(self.manifest.latest('config_digest')['payload']['digest'], 'a' * 64)
@@ -77,12 +266,12 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(IntegrityError, 'tampered'):
             self.manifest.entries()
         with self.assertRaisesRegex(IntegrityError, 'unknown manifest entry'):
-            roa.DigestManifest(self.tmp / 'x.jsonl').append('note', {})
+            roa.DigestManifest(self.tmp / 'x.jsonl').append('smoke_record', {})
         with self.assertRaisesRegex(IntegrityError, 'outside the repository results'):
             roa.DigestManifest(reg.REPO / 'results' / 'digest.jsonl')
 
     def test_config_digest_must_match(self):
-        config = json.loads((reg.REPO / reg.CONFIG_PATH).read_text())
+        config = load()
         with self.assertRaisesRegex(IntegrityError, 'config digest'):
             roa.require_config_digest(self.manifest, config)
         self.manifest.append('config_digest', {'digest': reg.config_digest(config)})
@@ -93,99 +282,233 @@ class ManifestTests(unittest.TestCase):
             roa.require_config_digest(self.manifest, changed)
 
 
-class StageTests(unittest.TestCase):
+class ReceiptTests(unittest.TestCase):
+    """PM decision (review #3): G-CODE (commit = the running code) and G-REG receipts before any data."""
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
-        self.manifest = roa.DigestManifest(self.tmp / 'digest.jsonl')
-        self.identity = {'config_digest': 'c' * 64, 'git_commit': 'd' * 40, 'seeds': {'a2_base': reg.A2_BASE}}
+        self.config = registered()
+        self.digest = reg.config_digest(self.config)
+        self.tmp = tmpdir(self)
 
-    def test_success_writes_sums_manifest_and_seal(self):
-        out = self.tmp / 'A2-S1-a1'
-        with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, now=AFTERNOON, alarm=False) as d:
-            roa.dump(d / 'tab.json', {'cells': {}})
-        manifest = json.loads((out / 'manifest.json').read_text())
-        self.assertEqual(set(manifest), {'stage', 'cost', 'artifact_sha256', 'config_digest', 'git_commit', 'seeds'})
-        self.assertEqual(set(manifest['cost']), {'wall_seconds', 'cpu_seconds', 'peak_rss_bytes'})
-        self.assertIn('SHA256SUMS', manifest['artifact_sha256'])
-        sums = (out / 'SHA256SUMS').read_text().splitlines()
-        self.assertTrue(any(line.endswith('  tab.json') for line in sums))
-        sealed, entry = roa.require_seal(self.manifest, 'A2-S1')
-        self.assertEqual(sealed, out)
-        (out / 'tab.json').write_text('{"cells": {"x": 1}}\n')
-        with self.assertRaisesRegex(IntegrityError, 'differs from its seal'):
-            roa.require_seal(self.manifest, 'A2-S1')
+    def manifest(self, *receipts):
+        manifest = roa.DigestManifest(self.tmp / f'digest-{len(list(self.tmp.iterdir()))}.jsonl')
+        for gate, payload in receipts:
+            manifest.append('review_reference', {'gate': gate, 'reference': 'R', 'verdict': 'PASS', 'notes_closed': False,
+                                                 'commit': None, 'config_digest': self.digest, **payload})
+        return manifest
 
-    def test_window_refusal_creates_nothing(self):
-        early = lambda: datetime(2026, 10, 28, 5, 30, tzinfo=reg.KST)
-        with self.assertRaisesRegex(IntegrityError, 'protection window'):
-            with roa.stage(self.tmp / 'x', 'A2-S0', self.identity, manifest=self.manifest, now=early, alarm=False):
-                pass
-        self.assertFalse((self.tmp / 'x').exists())
-        self.assertEqual(self.manifest.entries(), [])
+    def test_receipts(self):
+        commit = 'd' * 40
+        good = [('G-CODE', {'commit': commit}), ('G-REG', {})]
+        self.assertEqual(set(roa.require_reviews(self.manifest(*good), self.config, commit)), {'G-CODE', 'G-REG'})
+        roa.require_reviews(self.manifest(('G-CODE', {'commit': commit, 'verdict': 'PASS_WITH_NOTES', 'notes_closed': True}),
+                                          ('G-REG', {})), self.config, commit)
+        cases = {'no receipt': ([], 'no G-CODE review receipt'),
+                 'no G-REG': ([('G-CODE', {'commit': commit})], 'no G-REG review receipt'),
+                 'other commit': ([('G-CODE', {'commit': 'e' * 40}), ('G-REG', {})], 'running code commit'),
+                 'open notes': ([('G-CODE', {'commit': commit, 'verdict': 'PASS_WITH_NOTES'}), ('G-REG', {})], 'open notes'),
+                 'failed review': ([('G-CODE', {'commit': commit, 'verdict': 'FAIL'}), ('G-REG', {})], 'not a pass'),
+                 'other digest': ([('G-CODE', {'commit': commit}), ('G-REG', {'config_digest': 'f' * 64})],
+                                  'another config digest'),
+                 'latest receipt counts': ([('G-CODE', {'commit': commit}), ('G-REG', {}),
+                                            ('G-CODE', {'commit': commit, 'verdict': 'FAIL'})], 'not a pass')}
+        for name, (receipts, message) in cases.items():
+            with self.subTest(name), self.assertRaisesRegex(IntegrityError, message):
+                roa.require_reviews(self.manifest(*receipts), self.config, commit)
+        fix = self.manifest(*good)
+        fix.append('bugfix_addendum', {'stage': 'A2-S0', 'fix_commit': 'e' * 40, 'new_files_sha256': {}})
+        with self.assertRaisesRegex(IntegrityError, 'running code commit'):  # a recorded fix needs its own G-CODE
+            roa.require_reviews(fix, self.config, roa.code_pins(self.config, fix)['execution_source_commit'])
 
-    def test_failures_are_classified_and_recorded(self):
-        with self.assertRaises(IntegrityError):
-            with roa.stage(self.tmp / 'f1', 'A2-S2', self.identity, manifest=self.manifest, now=AFTERNOON, alarm=False):
-                raise IntegrityError('synthetic deterministic defect')
-        failure = json.loads(next((self.tmp / 'f1').glob('failure-*.json')).read_text())
-        self.assertEqual((failure['class'], failure['citable']), ('deterministic_integrity', False))
-        with self.assertRaises(roa.HangGuardExceeded):
-            with roa.stage(self.tmp / 'f2', 'A2-S2', self.identity, manifest=self.manifest, now=AFTERNOON,
-                           guard_seconds=0.05):
-                time.sleep(1.0)
-        failure = json.loads(next((self.tmp / 'f2').glob('failure-*.json')).read_text())
-        self.assertEqual(failure['class'], 'infrastructure')
-        kinds = [(e['kind'], e['payload']['class']) for e in self.manifest.entries()]
-        self.assertEqual(kinds, [('stage_failure', 'deterministic_integrity'), ('stage_failure', 'infrastructure')])
-        with self.assertRaisesRegex(IntegrityError, 'at most two attempts'):
-            roa.attempt_gate(self.manifest, 'A2-S2')
+    def test_a_command_without_receipts_refuses_before_any_data(self):
+        ws = Workspace(self, receipts=False)
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'no G-CODE review receipt'):
+            roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
+        self.assertEqual((log['opened'], ws.kinds('A2-SM'), ws.output('A2-SM-a1').exists()), ([], [], False))
 
-    def test_attempt_gate(self):
-        roa.attempt_gate(self.manifest, 'A2-S0')
-        self.manifest.append('stage_failure', {'stage': 'A2-S0', 'class': 'deterministic_integrity'})
-        with self.assertRaisesRegex(IntegrityError, 'bug-fix addendum'):
-            roa.attempt_gate(self.manifest, 'A2-S0')
-        self.manifest.append('bugfix_addendum', {'stage': 'A2-S0', 'fix_commit': 'e' * 40, 'new_files_sha256': {}})
-        roa.attempt_gate(self.manifest, 'A2-S0')
-        self.manifest.append('stage_failure', {'stage': 'A2-S0', 'class': 'deterministic_integrity'})
-        with self.assertRaisesRegex(IntegrityError, 'FAILED_INTEGRITY'):
-            roa.attempt_gate(self.manifest, 'A2-S0')
-        self.assertEqual(roa.failed_integrity(self.manifest), ['A2-S0'])
-        self.manifest.append('stage_seal', {'stage': 'A2-S1', 'output_dir': str(self.tmp), 'manifest_sha256': 'f' * 64})
-        with self.assertRaisesRegex(IntegrityError, 'already sealed'):
-            roa.attempt_gate(self.manifest, 'A2-S1')
-        config = registered()
-        pins = roa.code_pins(config, self.manifest)
-        self.assertEqual(pins['execution_source_commit'], 'e' * 40)  # the recorded fix replaces the code identity
 
-    def test_smoke_gate(self):
-        with self.assertRaisesRegex(IntegrityError, 'no smoke record'):
-            roa.smoke_gate(self.manifest, 'A2-S0')
-        self.manifest.append('smoke_record', {'record_sha256': 'a' * 64,
-                                              'projection': {'within_guard': {'A2-S0': True, 'A2-S1': False}}})
-        roa.smoke_gate(self.manifest, 'A2-S0')
-        with self.assertRaisesRegex(IntegrityError, 'decision needed'):
-            roa.smoke_gate(self.manifest, 'A2-S1')
+# ================================================================ guards and the run window
+class GuardTests(unittest.TestCase):
+    def test_the_window_refuses_before_preflight(self):
+        missing = ['--config', '/nonexistent/EXP-OPE-RES-01.json', '--output', '/nonexistent/out']
+        for command in ('smoke', 's0', 's1', 's2', 's3', 'decide', 'unblind'):
+            with self.subTest(command), self.assertRaisesRegex(IntegrityError, 'strictly before 06:30'):
+                roa.main([command, *missing], env=ClockEnv(now=kst(28, 9, 0)))  # inside the protection window
+        with self.assertRaisesRegex(IntegrityError, 'strictly before 06:30'):  # 7,200 s would end exactly at 06:30
+            roa.main(['smoke', *missing], env=ClockEnv(now=kst(28, 4, 30)))
+        with self.assertRaisesRegex(IntegrityError, 'strictly before 06:30'):  # unblind: the A2-S4 guard, 3,600 s
+            roa.main(['unblind', *missing], env=ClockEnv(now=kst(28, 5, 30)))
+        with self.assertRaises(FileNotFoundError):  # 05:29 + 3,600 s ends 06:29: the window passes, preflight reads
+            roa.main(['unblind', *missing], env=ClockEnv(now=kst(28, 5, 29)))
 
-    def test_output_location(self):
-        config = registered()
-        config['registration_input_pins']['output_root'] = str(self.tmp)
-        self.assertEqual(roa.check_output(self.tmp / 'A2-S0-a1', config), (self.tmp / 'A2-S0-a1').resolve())
-        with self.assertRaisesRegex(IntegrityError, 'directly under'):
-            roa.check_output(self.tmp / 'a' / 'b', config)
-        (self.tmp / 'exists').mkdir()
-        with self.assertRaisesRegex(IntegrityError, 'directly under'):
-            roa.check_output(self.tmp / 'exists', config)
-        with self.assertRaisesRegex(IntegrityError, 'results/'):
-            roa.check_output(reg.REPO / 'results' / 'a2', config)
-
-    def test_guards(self):
+    def test_the_memory_guard_covers_preflight(self):
+        def low():
+            raise roa.MemoryGuardExceeded('synthetic: free memory below the guard')
+        with self.assertRaises(roa.MemoryGuardExceeded):
+            roa.main(['s0', '--config', '/nonexistent.json', '--output', '/nonexistent/out'], env=ClockEnv(guards=low))
         with self.assertRaises(roa.MemoryGuardExceeded):
             roa.Guards(rss=lambda: 9 * roa.GIB, free=lambda: 10 * roa.GIB)()
         with self.assertRaises(roa.MemoryGuardExceeded):
             roa.Guards(rss=lambda: roa.GIB, free=lambda: 3 * roa.GIB)()
         roa.Guards(rss=lambda: roa.GIB, free=lambda: None)()
         self.assertGreater(roa.peak_rss_bytes(), 0)
+
+    def test_the_checkpoint_counts_elapsed_time(self):
+        env = ClockEnv()
+        guard = roa.CommandGuard('A2-UB', env)
+        self.assertEqual(guard.seconds, reg.HANG_GUARDS['A2-S4'])
+        guard.check()
+        env.clock = reg.HANG_GUARDS['A2-S4'] + 1
+        with self.assertRaises(roa.HangGuardExceeded):
+            guard.check()
+
+    def test_the_sigalrm_hang_guard_covers_the_command_and_is_disarmed(self):
+        env = ClockEnv()
+        env.alarm = True
+        env.monotonic = time.monotonic
+        with mock.patch.dict(reg.HANG_GUARDS, {'A2-SM': 0.2}):
+            t0 = time.monotonic()
+            with self.assertRaises(roa.HangGuardExceeded):
+                with roa.command_guard('A2-SM', env):
+                    time.sleep(3)
+            self.assertLess(time.monotonic() - t0, 2.5)
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+        with mock.patch.dict(reg.HANG_GUARDS, {'A2-SM': 30}):
+            with roa.command_guard('A2-SM', env) as guard:
+                guard.finish()  # the final check disarms the timer before the completion receipt
+                self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+
+    def test_the_final_check_follows_the_last_write_and_precedes_the_seal(self):
+        tmp = tmpdir(self)
+        manifest = roa.DigestManifest(tmp / 'digest.jsonl')
+        seen = {}
+
+        def final_check():
+            seen['manifest_written'] = (tmp / 'A2-S2-a1' / 'manifest.json').exists()
+            seen['kinds'] = [e['kind'] for e in manifest.entries()]
+            raise roa.HangGuardExceeded('synthetic: the guard elapsed during sealing')
+        with self.assertRaises(roa.HangGuardExceeded):
+            with roa.stage(tmp / 'A2-S2-a1', 'A2-S2', {'config_digest': 'c' * 64}, manifest=manifest,
+                           final_check=final_check) as out:
+                roa.dump(out / 's5x.json', {'runs': []})
+        self.assertEqual(seen, {'manifest_written': True, 'kinds': ['attempt_start']})
+        self.assertEqual([(e['kind'], e['payload'].get('class')) for e in manifest.entries()],
+                         [('attempt_start', None), ('stage_failure', 'infrastructure')])
+        self.assertTrue((tmp / 'A2-S2-a1' / 's5x.json').exists())  # partial outputs preserved, not sealed
+        with self.assertRaisesRegex(IntegrityError, 'not sealed'):
+            roa.require_seal(manifest, 'A2-S2')
+
+
+# ================================================================ stages, attempts and destinations
+class StageTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tmpdir(self)
+        self.manifest = roa.DigestManifest(self.tmp / 'digest.jsonl')
+        self.identity = {'config_digest': 'c' * 64, 'git_commit': 'd' * 40, 'seeds': {'a2_base': reg.A2_BASE}}
+
+    def test_success_writes_sums_manifest_and_seal(self):
+        out = self.tmp / 'A2-S1-a1'
+        with roa.stage(out, 'A2-S1', self.identity, manifest=self.manifest, final_check=lambda: None) as d:
+            roa.dump(d / 'tab.json', {'cells': {}})
+        manifest = json.loads((out / 'manifest.json').read_text())
+        self.assertEqual(set(manifest), {'stage', 'cost', 'artifact_sha256', 'config_digest', 'git_commit', 'seeds'})
+        self.assertEqual(set(manifest['cost']), {'wall_seconds', 'cpu_seconds', 'peak_rss_bytes'})
+        self.assertIn('SHA256SUMS', manifest['artifact_sha256'])
+        self.assertTrue(any(line.endswith('  tab.json') for line in (out / 'SHA256SUMS').read_text().splitlines()))
+        self.assertEqual([e['kind'] for e in self.manifest.entries()], ['attempt_start', 'stage_seal'])
+        sealed, _ = roa.require_seal(self.manifest, 'A2-S1')
+        self.assertEqual(sealed, out)
+        (out / 'tab.json').write_text('{"cells": {"x": 1}}\n')
+        with self.assertRaisesRegex(IntegrityError, 'differs from its seal'):
+            roa.require_seal(self.manifest, 'A2-S1')
+
+    def test_failures_are_classified_and_recorded(self):
+        with self.assertRaises(IntegrityError):
+            with roa.stage(self.tmp / 'f1', 'A2-S2', self.identity, manifest=self.manifest, final_check=lambda: None):
+                raise IntegrityError('synthetic deterministic defect')
+        failure = json.loads(next((self.tmp / 'f1').glob('failure-*.json')).read_text())
+        self.assertEqual((failure['class'], failure['citable']), ('deterministic_integrity', False))
+        self.assertEqual([(e['kind'], e['payload'].get('class')) for e in self.manifest.entries()],
+                         [('attempt_start', None), ('stage_failure', 'deterministic_integrity')])
+        with self.assertRaisesRegex(IntegrityError, 'stage output exists'):
+            with roa.stage(self.tmp / 'f1', 'A2-S2', self.identity, manifest=self.manifest, final_check=lambda: None):
+                pass
+        self.assertEqual(len(self.manifest.entries()), 2)  # an existing directory refuses before the start receipt
+
+    def test_the_attempt_start_receipt_precedes_the_directory(self):
+        (self.tmp / 'blocked').write_text('a file where the stage directory would go')
+        with self.assertRaises(OSError):
+            with roa.stage(self.tmp / 'blocked' / 'A2-S0-a1', 'A2-S0', self.identity, manifest=self.manifest,
+                           final_check=lambda: None):
+                pass
+        self.assertEqual([(e['kind'], e['payload'].get('class')) for e in self.manifest.entries()],
+                         [('attempt_start', None), ('stage_failure', 'error')])  # the start counts
+
+    def test_attempt_accounting(self):
+        # PM decision (review #5): a start without a receipt counts (crash) and needs a reconciliation; a third
+        # start refuses; a retry after an integrity failure needs a bug-fix addendum
+        roa.attempt_gate(self.manifest, 'A2-S0')
+        self.manifest.append('attempt_start', {'stage': 'A2-S0', 'output_dir': str(self.tmp / 'a1')})  # then killed
+        self.assertIsNotNone(roa.unfinished_start(self.manifest, 'A2-S0'))
+        with self.assertRaisesRegex(IntegrityError, 'reconciliation'):
+            roa.attempt_gate(self.manifest, 'A2-S0')
+        self.manifest.append('attempt_reconciliation', {'stage': 'A2-S0', 'note': 'process killed'})
+        self.assertIsNone(roa.unfinished_start(self.manifest, 'A2-S0'))
+        self.assertEqual(roa.attempt_gate(self.manifest, 'A2-S0'), {'starts': 1})
+        self.manifest.append('attempt_start', {'stage': 'A2-S0', 'output_dir': str(self.tmp / 'a2')})
+        self.manifest.append('stage_failure', {'stage': 'A2-S0', 'class': 'infrastructure'})
+        with self.assertRaisesRegex(IntegrityError, 'third start refuses'):
+            roa.attempt_gate(self.manifest, 'A2-S0')
+        self.assertEqual(roa.stage_status(self.manifest)['A2-S0'], 'DECISION_NEEDED')
+        self.manifest.append('attempt_start', {'stage': 'A2-S1', 'output_dir': str(self.tmp / 'b1')})
+        self.manifest.append('stage_failure', {'stage': 'A2-S1', 'class': 'deterministic_integrity'})
+        with self.assertRaisesRegex(IntegrityError, 'bug-fix addendum'):
+            roa.attempt_gate(self.manifest, 'A2-S1')
+        self.manifest.append('bugfix_addendum', {'stage': 'A2-S1', 'fix_commit': 'e' * 40, 'new_files_sha256': {}})
+        roa.attempt_gate(self.manifest, 'A2-S1')
+        self.manifest.append('attempt_start', {'stage': 'A2-S1', 'output_dir': str(self.tmp / 'b2')})
+        self.manifest.append('stage_failure', {'stage': 'A2-S1', 'class': 'deterministic_integrity'})
+        self.manifest.append('stage_seal', {'stage': 'A2-S2', 'output_dir': str(self.tmp), 'manifest_sha256': 'f' * 64})
+        self.assertEqual(roa.stage_status(self.manifest), {'A2-S0': 'DECISION_NEEDED', 'A2-S1': 'FAILED_INTEGRITY',
+                                                           'A2-S2': 'sealed', 'A2-S3': 'incomplete'})
+        with self.assertRaisesRegex(IntegrityError, 'already sealed'):
+            roa.attempt_gate(self.manifest, 'A2-S2')
+        self.assertEqual(roa.code_pins(registered(), self.manifest)['execution_source_commit'], 'e' * 40)
+
+    def test_smoke_gate_reads_the_sealed_smoke_record(self):
+        with self.assertRaisesRegex(IntegrityError, 'not sealed'):
+            roa.smoke_gate(self.manifest, 'A2-S0')
+        with roa.stage(self.tmp / 'A2-SM-a1', 'A2-SM', self.identity, manifest=self.manifest, final_check=lambda: None) as out:
+            roa.dump(out / 'smoke_record.json', {'projection': {'within_guard': {'A2-S0': True, 'A2-S1': False}}})
+        roa.smoke_gate(self.manifest, 'A2-S0')
+        with self.assertRaisesRegex(IntegrityError, 'decision needed'):
+            roa.smoke_gate(self.manifest, 'A2-S1')
+
+    def test_output_location_is_disjoint_from_every_sealed_input(self):
+        # PM decision (review #8): a fresh child of the pinned root; the root is neither inside nor around a protected
+        # root (resolved real paths; the main checkout's results/ included)
+        config = registered()
+        root = self.tmp / 'out'
+        config['registration_input_pins']['output_root'] = str(root)
+        main = self.tmp / 'main-checkout'
+        protected = {'the S6-dr-a5 stage directory': self.tmp / 's6', 'the checkout main': main}
+        self.assertEqual(roa.check_output(root / 'A2-S0-a1', config, protected), (root / 'A2-S0-a1').resolve())
+        with self.assertRaisesRegex(IntegrityError, 'directly under'):
+            roa.check_output(root / 'a' / 'b', config, protected)
+        root.mkdir()
+        (root / 'exists').mkdir()
+        with self.assertRaisesRegex(IntegrityError, 'directly under'):
+            roa.check_output(root / 'exists', config, protected)
+        for name, bad_root in (('inside the S6 stage directory', self.tmp / 's6' / 'out'),
+                               ('the S6 stage directory', self.tmp / 's6'),
+                               ('around the S6 stage directory', self.tmp),
+                               ('inside the main checkout results', main / 'results' / 'a2')):
+            config['registration_input_pins']['output_root'] = str(bad_root)
+            with self.subTest(name), self.assertRaisesRegex(IntegrityError, 'disjoint'):
+                roa.check_output(bad_root / 'A2-S0-a1', config, protected)
+        (self.tmp / 'link').symlink_to(self.tmp / 's6', target_is_directory=True)  # a symlinked alias resolves
+        config['registration_input_pins']['output_root'] = str(self.tmp / 'link')
+        with self.assertRaisesRegex(IntegrityError, 'disjoint'):
+            roa.check_output(self.tmp / 'link' / 'A2-S0-a1', config, protected)
 
     def test_enforce_sources_with_a_mocked_git_state(self):
         config = registered()
@@ -201,27 +524,132 @@ class StageTests(unittest.TestCase):
             roa.enforce_sources(config, reg.REPO / reg.CONFIG_PATH, state=ok)
 
 
+# ================================================================ the TRAIN-only reader and the processed pin
+class ReaderTests(unittest.TestCase):
+    def test_the_smoke_reads_train_rows_and_columns_only(self):
+        # PM decision (review #2): smoke = TRAIN rows/columns only, no S6 access, other raw years never opened
+        ws = Workspace(self)
+        with watch_parquet() as log:
+            self.assertEqual(roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws)), 0)
+        self.assertEqual(sorted(set(log['opened'])), ['pitches.parquet', 'statcast_2024.parquet'])
+        self.assertEqual(sorted({(f, rg) for f, rg, _ in log['reads']}),
+                         [('pitches.parquet', 2), ('statcast_2024.parquet', 1)])  # the subset's TRAIN row groups only
+        for name, _, columns in log['reads']:
+            self.assertEqual(columns, roa.TRAIN_COLUMNS if name == 'pitches.parquet' else roa.RAW_COLUMNS)
+        self.assertEqual(ws.kinds(), ['config_digest', 'review_reference', 'review_reference', 'attempt_start',
+                                      'stage_seal'])
+        out, _ = roa.require_seal(ws.manifest, 'A2-SM')
+        record = json.loads((out / 'smoke_record.json').read_text())
+        self.assertEqual(record['decoded'], [{'file': f, 'row_group': rg, 'columns': list(c)} for f, rg, c in log['reads']])
+        self.assertEqual(record['plan']['processed']['row_groups'], [2])
+        self.assertEqual(record['plan']['train_rows_upper_bound'],
+                         REAL_PARQUET_FILE(ws.processed).metadata.row_group(1).num_rows
+                         + REAL_PARQUET_FILE(ws.processed).metadata.row_group(2).num_rows)
+        self.assertEqual(record['projection']['label'], 'projection (not a measurement)')
+        text = json.dumps({k: v for k, v in record.items() if k != 'never_computed'})
+        for word in ('b_hat', 'rmse', 'H_point', 'delta_true', 'kappa_calibration'):
+            self.assertNotIn(word, text)
+
+    def test_a_straddling_row_group_refuses_before_the_attempt(self):
+        ws = Workspace(self, smoke=('2023-05-15', '2023-06-05'), subset_start='2023-05-10', subset_days=27)
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'non-TRAIN dates'):
+            roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
+        self.assertEqual(log['reads'], [])  # nothing decoded
+        self.assertEqual((ws.kinds('A2-SM'), ws.output('A2-SM-a1').exists()), ([], False))  # no attempt consumed
+
+    def test_the_processed_pin_is_verified_before_any_row(self):
+        # PM decision (review #6): path, inherited quality manifest and bytes before anything is decoded
+        ws = Workspace(self)
+        quality = json.loads(ws.quality.read_text())
+        ws.quality.write_text(json.dumps({**quality, 'processed_sha256': 'f' * 64}))
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'inherited quality manifest'):
+            roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
+        self.assertEqual((log['opened'], ws.kinds('A2-SM')), ([], []))
+        ws.quality.write_text(json.dumps(quality))
+        with ws.processed.open('ab') as stream:
+            stream.write(b'\0')
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'bytes differ from the A2 pin'):
+            roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
+        self.assertEqual(log['opened'], [])
+        other = Workspace(self, pins={'processed_frame_identity': {'path': '/nonexistent-a2/processed/pitches.parquet',
+                                                                   'sha256': 'f' * 64}})
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'path differs'):
+            roa.main(other.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(other))
+        self.assertEqual(log['opened'], [])
+
+    def test_the_destination_must_avoid_every_pinned_input(self):
+        tmp = tmpdir(self)
+        ws = Workspace(self, pins={'output_root': str(tmp)})
+        ws.config['registration_input_pins']['output_root'] = str(ws.raw / 'out')  # inside the raw root
+        ws.config_path.write_text(json.dumps(ws.config, indent=2, ensure_ascii=False) + '\n')
+        ws.digest = reg.config_digest(ws.config)
+        ws.manifest = roa.DigestManifest(tmp / 'other-digest.jsonl')
+        ws.config['registration_input_pins']['digest_manifest_path'] = str(tmp / 'other-digest.jsonl')
+        ws.config_path.write_text(json.dumps(ws.config, indent=2, ensure_ascii=False) + '\n')
+        ws.digest = reg.config_digest(ws.config)
+        ws.manifest.append('config_digest', {'digest': ws.digest})
+        ws.receipt('G-CODE', commit=ws.config['registration_input_pins']['execution_source_commit'])
+        ws.receipt('G-REG')
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'disjoint from the raw root'):
+            roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
+        self.assertEqual((log['opened'], ws.kinds('A2-SM')), ([], []))
+
+    def test_reconcile_attempt_command(self):
+        ws = Workspace(self)
+        argv = ['reconcile-attempt', '--config', str(ws.config_path), '--stage', 'A2-S0', '--note', 'process killed']
+        with self.assertRaisesRegex(IntegrityError, 'nothing to reconcile'):
+            quiet(roa.main, argv)
+        ws.manifest.append('attempt_start', {'stage': 'A2-S0', 'output_dir': str(ws.output('A2-S0-a1'))})
+        quiet(roa.main, argv)
+        entry = ws.manifest.latest('attempt_reconciliation')
+        self.assertEqual((entry['payload']['stage'], entry['payload']['counts_as_attempt']), ('A2-S0', True))
+        with self.assertRaisesRegex(IntegrityError, 'nothing to reconcile'):
+            quiet(roa.main, argv)
+        review = ['record-review', '--config', str(ws.config_path), '--gate', 'G-CODE', '--review', 'R', '--verdict', 'PASS']
+        with self.assertRaisesRegex(IntegrityError, '--commit'):
+            quiet(roa.main, review)
+        quiet(roa.main, [*review, '--commit', 'a' * 40])
+        receipt = ws.manifest.latest('review_reference', gate='G-CODE')['payload']
+        self.assertEqual((receipt['commit'], receipt['config_digest'], receipt['notes_closed']), ('a' * 40, ws.digest, False))
+
+
+# ================================================================ pure stage logic
 class StageLogicTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.train = synthetic_train_frame()
 
     def test_s0_full_and_smoke(self):
-        s0 = roa.build_s0(self.train, GAME_VALUES, min_pitches=100)
+        train = self.train.copy()
+        rng = np.random.default_rng(0)
+        train['estimated_woba_using_speedangle'] = np.where(train['description'].eq('hit_into_play').to_numpy(),
+                                                            rng.uniform(0, 1.5, len(train)), np.nan)
+        s0 = roa.build_s0(train, GAME_VALUES, min_pitches=100)
+        self.assertTrue(roa.require_s0_descriptive(s0))
         self.assertEqual(s0['r1_table_sha256'], roa.osg.table_sha256(s0['r1_table'], s0['m']))
         self.assertIn(s0['m'], reg.M_SMOOTH_GRID)
         self.assertEqual(set(s0['kappa_p']), {'S5X', 'TAB'})
         self.assertTrue(all(v > 0 for v in s0['kappa_p'].values()))
         self.assertEqual(set(s0['train_residuals']['hit']), set(reg.S5X_GROUPS))
+        # PM decision (review #14): the frozen-C0 zeta residuals are a disclosed exception to cross-fitting
+        self.assertIn('intentional exception to cross-fitting', s0['provenance']['zeta_residuals'])
+        self.assertIn('frozen, pre-registered', s0['provenance']['zeta_residuals'])
+        self.assertIn('cross-fitted', s0['provenance']['kappa_residuals'])
+        self.assertEqual(s0['xwoba_train_diagnostic']['status'], 'COMPUTED')
+        self.assertEqual(s0['xwoba_train_diagnostic']['n'], s0['census']['bip_used'])
+        self.assertEqual(roa.build_s0(self.train, GAME_VALUES, min_pitches=100)['xwoba_train_diagnostic']['status'],
+                         'NOT_AVAILABLE')
         marginals = roa.marginals_from_doc(json.loads(json.dumps(s0['tab_marginals'], default=roa._default)))
         self.assertEqual(len(marginals.situations), reg.TAB_SITUATIONS)
         smoke = roa.build_s0(self.train, GAME_VALUES, smoke=True, seed_role='smoke', fixed_m=20, min_pitches=50)
         self.assertIsNone(smoke['cv_log_loss'])
-        for key in ('train_residuals', 'kappa_calibration', 'zeta_calibration'):
+        for key in ('train_residuals', 'kappa_calibration', 'zeta_calibration', 'xwoba_train_diagnostic'):
             self.assertNotIn(key, smoke)
         self.assertEqual((smoke['kappa_p'], smoke['zeta_p']), ({'S5X': 0.0, 'TAB': 0.0}, {'S5X': 0.0, 'TAB': 0.0}))
+        with self.assertRaisesRegex(IntegrityError, 'descriptive output missing'):
+            roa.require_s0_descriptive(smoke)
         bad = self.train.copy()
-        bad.loc[0, 'game_date'] = '2026-04-01'
+        bad.loc[0, 'game_date'] = pd.Timestamp('2026-04-01')
         with self.assertRaisesRegex(IntegrityError, '2026'):
             roa.build_s0(bad, GAME_VALUES, min_pitches=100)
 
@@ -238,9 +666,8 @@ class StageLogicTests(unittest.TestCase):
         for word in ('b_hat', 'rmse', 'H_point', '"sd"', 'gap', 'delta_true', 'log_loss'):
             self.assertNotIn(word, text)
 
-    def test_s1_cells_order_and_not_run(self):
-        doc = roa.build_s0(self.train, GAME_VALUES, min_pitches=100)
-        doc = json.loads(json.dumps(doc, default=roa._default))
+    def test_s1_cells_order_not_run_and_descriptive_outputs(self):
+        doc = json.loads(json.dumps(roa.build_s0(self.train, GAME_VALUES, min_pitches=100), default=roa._default))
         cells = [reg.tab_cells()[0], reg.tab_cells()[5], reg.tab_cells()[30]]
         written = []
         results = roa.stage_s1(doc, write_cell=lambda cell, record: written.append(cell['id']), cells=cells, replications=2)
@@ -249,11 +676,21 @@ class StageLogicTests(unittest.TestCase):
         self.assertTrue(all(abs(v['expected_delta_hat_0_minus_truth']) <= 1e-12
                             for v in results['first_step_v2_dp_check'].values()))
         self.assertEqual(set(results['acceptance']), {'T-A1'})
+        for record in results['cells'].values():  # PM decision (review #10): the surrogate-truth decomposition
+            self.assertEqual(set(record['delta_true_surrogate']), set(roa.S1_SURROGATE_KEYS))
+        broken = copy.deepcopy(results)
+        del broken['cells']['T-A1']['delta_true_surrogate']['R1_b_surrogate_share']
+        with self.assertRaisesRegex(IntegrityError, 'surrogate-truth decomposition'):
+            roa.require_s1_descriptive(broken, cells)
+        broken = copy.deepcopy(results)
+        del broken['cells'][cells[2]['id']]
+        with self.assertRaisesRegex(IntegrityError, 'TAB cells missing'):
+            roa.require_s1_descriptive(broken, cells)
         calls = {'n': 0}
 
-        def deadline():
+        def deadline():  # 2 calls for the V2 DP checks, then one per replication
             calls['n'] += 1
-            if calls['n'] > 2:  # the guard trips during the descriptive cells
+            if calls['n'] > 4:  # the guard trips during the descriptive cells
                 raise roa.HangGuardExceeded('synthetic')
         results = roa.stage_s1(doc, write_cell=lambda cell, record: None, cells=cells, replications=2, deadline=deadline)
         self.assertEqual(results['not_run'], [cells[1]['id'], cells[2]['id']])
@@ -269,6 +706,148 @@ class StageLogicTests(unittest.TestCase):
         del tab['acceptance']['T-A2'][reg.BASELINE]
         with self.assertRaisesRegex(IntegrityError, 'T-A2'):
             roa.stage_s4(public, tab, s5x, integrity_failures=(), r3_status='NOT_RUN:R3')
+
+
+def fake_runs(invalid=None, drop_marker=None):
+    """S5-X run records with the registered shape (synthetic numbers)."""
+    runs = []
+    for spec in reg.S5X_RUNS:
+        pairs = {p: {'gap': 0.0, 'se': 0.001, 'valid': True, 'invalid_repetitions': 0} for p in reg.PAIRS}
+        for k, pair in (invalid or {}).items():
+            if k == spec['k']:
+                pairs[pair] = {'gap': None, 'se': None, 'valid': False, 'invalid_repetitions': 1}
+        record = {'run': dict(spec), 'repetitions': [{}] * reg.S5X_REPETITIONS, 'inherited_s5_se': 0.001, 'pairs': pairs,
+                  'invariant': None}
+        if spec['setting'] == 'X1':
+            record['s2'] = {'R1_a': reg.cell_outcome(0.0, 1e-6), 'R1_b': reg.cell_outcome(0.0, 1e-6)}
+            record['s2_pairs'] = osx.s2_pair_cells(record['s2'], pairs, spec['k'])
+            if spec['k'] != drop_marker:
+                record['first_order_reference_approximation'] = {'status': 'NOT_RUN', 'reason': 'needs planner calls'}
+            if spec['zeta'] == '0':
+                record['invariant'] = {'max_abs_gamma_a': 0.0, 'outcome': 'PASS'}
+        runs.append(record)
+    return runs
+
+
+class S5XSummaryTests(unittest.TestCase):
+    def test_invalid_repetitions_propagate_to_the_decision(self):
+        # PM decision (review #1): an invalid repetition in an acceptance-relevant run never supports adoption
+        public, tab, _ = _decision_inputs(h={'R1_axR2_3': 0.5})
+        decide = lambda s5x: roa.stage_s4(public, tab, s5x, integrity_failures=(), r3_status='NOT_RUN:R3')['label']
+        runs = fake_runs()
+        self.assertTrue(roa.require_s2_descriptive(runs))
+        summary = roa.s5x_summary(runs)
+        self.assertEqual(summary['s2']['R1_axR2_3']['invariant'], 'PASS')
+        self.assertEqual(decide(summary), 'ADOPT_FOR_2027_PROTOCOL:R1_axR2_3')
+        for k in (4, 5, 2, 7):  # S-2 (runs 4, 5), S-1 (run 2) and S-4 (run 7)
+            summary = roa.s5x_summary(fake_runs(invalid={k: 'R1_axR2_3'}))
+            with self.subTest(run=k):
+                self.assertEqual(decide(summary), 'BIAS_NOT_CERTIFIED:R1_axR2_3')
+        summary = roa.s5x_summary(fake_runs(invalid={4: 'R1_axR2_3'}))
+        cell = summary['s2']['R1_axR2_3']['2*kappa_p']
+        self.assertEqual((cell['outcome'], cell['invalid_repetition']), ('INCONCLUSIVE', True))
+        self.assertEqual(summary['s2']['R1_axR2_0']['2*kappa_p']['outcome'], 'PASS')  # other pairs unaffected
+        self.assertEqual(roa.s5x_summary(fake_runs()[4:])['s2']['R1_axR2_3']['invariant'], 'INVALID')  # run 4 missing
+
+    def test_missing_s5x_descriptive_outputs_fail_the_stage(self):
+        # PM decision (review #10): the first-order approximation is an explicit NOT_RUN marker with its reason
+        with self.assertRaisesRegex(IntegrityError, 'NOT_RUN marker'):
+            roa.require_s2_descriptive(fake_runs(drop_marker=9))
+        with self.assertRaisesRegex(IntegrityError, 'runs missing'):
+            roa.require_s2_descriptive(fake_runs()[:-1])
+        runs = fake_runs()
+        runs[3]['invariant'] = None
+        with self.assertRaisesRegex(IntegrityError, 'invariant record missing'):
+            roa.require_s2_descriptive(runs)
+
+
+class RehearsalOrderTests(unittest.TestCase):
+    """PM decision (review #9): G-INT on the untouched baseline path before any surrogate or variant."""
+    def setUp(self):
+        self.decisions, self.facts = synthetic_ledger(seed=5, n_pas=300, n_games=20, n_pitchers=12)
+        self.last = {pa: {'game_pk': 900000 + i, 'at_bat_number': 1, 'pitch_number': 1, 'inning': 3, 'inning_topbot': 'Top',
+                          'outs_when_up': 1, 'bases': 1, 'home_score': 1, 'away_score': 2, 'stand': 'R',
+                          'events': 'single', 'description': 'hit_into_play', 'launch_speed': 95.0, 'launch_angle': 12.0}
+                     for i, pa in enumerate(self.facts)}
+        self.raw = pd.DataFrame([{'game_pk': r['game_pk'], 'at_bat_number': 1, 'pitch_number': 1,
+                                  'game_date': pd.Timestamp('2025-08-01'), 'hc_x': 100.0, 'hc_y': 120.0, 'bb_type': 'line_drive',
+                                  'launch_speed': np.nan, 'launch_angle': np.nan, 'estimated_woba_using_speedangle': 0.5}
+                                 for r in self.last.values()])
+        self.s0 = {'r1_table': synthetic_table(np.random.default_rng(0)), 'census': CENSUS,
+                   'train_residuals': {'hit': {'FB': {'n': 10, 'mean_residual': -0.01, 'se': 0.005}}}}
+        result, _ = roa.osd.est.estimate(self.decisions, self.facts, draws=200, seed=reg.GAME_BOOTSTRAP_SEED,
+                                         invalid_share_max=reg.INVALID_SHARE_MAX, minimum={'games': 5, 'pa_starts': 10},
+                                         censoring='l1r')
+        self.recorded = osd.recorded_gint_reference(result)
+
+    def run_rehearsal(self, references, order):
+        real_gate, real_surrogates = osd.gint_gate, osg.surrogate_rewards
+
+        def gate(*args, **kwargs):
+            order.append('gint')
+            return real_gate(*args, **kwargs)
+
+        def surrogates(*args, **kwargs):
+            order.append('surrogates')
+            return real_surrogates(*args, **kwargs)
+
+        def raw_join():
+            order.append('raw_join')
+            return self.raw
+        with mock.patch.object(osd, 'gint_gate', gate), mock.patch.object(osg, 'surrogate_rewards', surrogates):
+            return roa.rehearsal(lambda: iter(self.decisions), self.facts, self.last, raw_join=raw_join,
+                                 game_values=GAME_VALUES, s0=self.s0, references=references, ess_gate=None,
+                                 r3_status='NOT_RUN:R3', draws=200, minimum_games=5, minimum_pa_starts=10,
+                                 minimum_pitchers=4, placebos=3)
+
+    def test_gint_runs_first_and_a_mismatch_stops_before_any_surrogate(self):
+        order = []
+        public, sealed, _, gint = self.run_rehearsal({'s6_dr_a5_record': self.recorded}, order)
+        self.assertEqual(order, ['gint', 'raw_join', 'surrogates'])
+        self.assertEqual(gint['s6_dr_a5_record']['not_comparable'], [])
+        self.assertEqual(sealed['gint'], gint)
+        self.assertTrue(osd.validate_public(json.loads(osd.seal(public, sealed)[0])))
+        upper = list(self.recorded['l1r_upper_endpoint_ci95'])
+        for key, value in (('l1r_upper_endpoint_ci95', [upper[0], upper[1] + 1e-9]),
+                           ('ess_all_e0_reference', {**self.recorded['ess_all_e0_reference'],
+                                                     'pa': self.recorded['ess_all_e0_reference']['pa'] + 1e-9})):
+            order = []
+            with self.subTest(key), self.assertRaisesRegex(IntegrityError, 'G-INT failed'):
+                self.run_rehearsal({'s6_dr_a5_record': {**self.recorded, key: value}}, order)
+            self.assertEqual(order, ['gint'])  # no raw join, no surrogate, no variant after a failed gate
+
+
+# ================================================================ dependency-injected orchestration
+class OrchestrationTests(unittest.TestCase):
+    def test_smoke_then_s0_then_s1_then_decide_refuses_before_its_attempt(self):
+        ws = Workspace(self)
+        env = WorkspaceEnv(ws)
+        with self.assertRaisesRegex(IntegrityError, 'A2-SM is not sealed'):  # S0 needs the sealed smoke first
+            roa.main(ws.argv('s0', 'A2-S0-a1'), env=env)
+        self.assertEqual(ws.kinds('A2-S0'), [])
+        roa.main(ws.argv('smoke', 'A2-SM-a1'), env=env)
+        with self.assertRaisesRegex(IntegrityError, 'already sealed'):
+            roa.main(ws.argv('smoke', 'A2-SM-a2'), env=env)
+        with watch_parquet() as log:
+            roa.main(ws.argv('s0', 'A2-S0-a1'), env=env)
+        self.assertNotIn('statcast_2025.parquet', {f for f, _, _ in log['reads']})  # DEV row groups never decoded
+        self.assertEqual(sorted({rg for f, rg, _ in log['reads'] if f == 'pitches.parquet'}), [1, 2])
+        s0_dir, _ = roa.require_seal(ws.manifest, 'A2-S0')
+        s0 = json.loads((s0_dir / 's0.json').read_text())
+        self.assertIn('intentional exception to cross-fitting', s0['provenance']['zeta_residuals'])
+        small = functools.partial(REAL_STAGE_S1, cells=[reg.tab_cells()[0], reg.tab_cells()[10]], replications=2)
+        with mock.patch.object(roa, 'stage_s1', small):
+            roa.main(ws.argv('s1', 'A2-S1-a1'), env=env)
+        cells = [e['payload']['cell'] for e in ws.manifest.entries() if e['kind'] == 'cell_seal']
+        self.assertEqual(cells, ['T-A1', reg.tab_cells()[10]['id']])
+        tab_dir, _ = roa.require_seal(ws.manifest, 'A2-S1')
+        tab = json.loads((tab_dir / 'tab.json').read_text())
+        self.assertEqual(tab['cells']['T-A1']['pairs'][reg.BASELINE]['outcome'], 'EXACT_DP')
+        with self.assertRaisesRegex(IntegrityError, 'decision needed'):
+            roa.main(ws.argv('decide', 'A2-S4-a1'), env=env)
+        self.assertEqual(ws.kinds('A2-S4'), [])  # the refusal consumed no attempt
+        self.assertEqual([k for k in ws.kinds() if k in ('attempt_start', 'stage_seal')],
+                         ['attempt_start', 'stage_seal'] * 3)
 
 
 class CommittedTests(unittest.TestCase):

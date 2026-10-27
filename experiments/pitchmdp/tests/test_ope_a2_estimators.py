@@ -180,7 +180,11 @@ class SurrogateTests(unittest.TestCase):
                 'bip_missing': {**row, 'events': 'single', 'description': 'hit_into_play', 'launch_speed': np.nan,
                                 'launch_angle': 14.0, 'hc_x': 80.0, 'hc_y': 120.0},
                 'k': {**row, 'events': 'strikeout', 'description': 'swinging_strike'},
-                'odd': {**row, 'events': 'caught_stealing_home', 'description': 'ball'}}
+                'odd': {**row, 'events': 'caught_stealing_home', 'description': 'ball'},
+                'k_with_ev': {**row, 'events': 'strikeout', 'description': 'foul_tip', 'launch_speed': 80.0,
+                              'launch_angle': 5.0, 'hc_x': np.nan, 'hc_y': np.nan},
+                'bip_no_spray': {**row, 'events': 'single', 'description': 'hit_into_play', 'launch_speed': 101.0,
+                                 'launch_angle': 14.0, 'hc_x': np.nan, 'hc_y': np.nan}}
         facts = {k: {'reward': .55} for k in rows}
         facts['censored'] = {'reward': None}
         before = copy.deepcopy(facts)
@@ -197,7 +201,12 @@ class SurrogateTests(unittest.TestCase):
         self.assertEqual(out['k']['R1_b'], (tv['strikeout'], 'non_bip_class'))
         self.assertEqual(out['odd']['R1_a'], (.55, 'pass_through'))
         shares = osg.path_shares(out)
-        self.assertEqual((shares['pas_with_reward'], shares['bip_with_ev_la'], shares['pass_through']), (4, 1, 1))
+        self.assertEqual((shares['pas_with_reward'], shares['bip_with_ev_la'], shares['pass_through']), (6, 2, 1))
+        # review #14: a spray-missing count only among PAs on the bip_quality path (a non-BIP row with EV/LA is not one)
+        self.assertEqual(out['k_with_ev']['R1_b'][1], 'non_bip_class')
+        self.assertFalse(out['k_with_ev']['spray_missing'])
+        self.assertTrue(out['bip_no_spray']['spray_missing'])
+        self.assertEqual(shares['spray_missing_among_bip'], 1)
 
     def test_bins_spray_and_dp(self):
         self.assertEqual(osg._edge_bin([59.9, 60.0, 109.99, 110.0, np.nan], reg.EV_EDGES).tolist(), [0, 1, 10, 11, -1])
@@ -349,16 +358,28 @@ class BootstrapTests(unittest.TestCase):
                                places=12)
 
 
-def _evaluate(seed=5, gint=None, **kw):
+GATE = {'draws': 200, 'minimum_games': 5, 'minimum_pa_starts': 10}
+CENSUS = {'train_rows': 1000, 'bip_rows': 200, 'bip_missing_ev_or_la': 9, 'bip_unmapped_event': 3, 'bip_used': 188,
+          'dp_ineligible_double_play_to_out': 2, 'spray_missing_among_used': 4,
+          'mapping_counts': {'field_out': 120, 'single': 50, 'double': 18}}  # synthetic A2-S0 census shape
+
+
+def _evaluate(seed=5, references=None, extra=(), **kw):
+    """G-INT (gint_gate) first, then the sealed evaluator, on a synthetic ledger (+ ``extra`` PAs)."""
     decisions, facts = synthetic_ledger(seed=seed, n_pas=300, n_games=20, n_pitchers=12)
+    for rows, pa_id, info in extra:
+        decisions.extend(rows)
+        facts[pa_id] = info
     rng = np.random.default_rng(1)
     sur = {pa: {'R1_a': (float(np.clip(f['reward'] + rng.normal(0, .02), 0, 1)), 'class'),
                 'R1_b': (float(np.clip(f['reward'] + rng.normal(0, .01), 0, 1)), 'bip_quality'), 'spray_missing': False}
            for pa, f in facts.items() if f.get('reward') is not None}
-    return osd.rehearsal_evaluate(lambda: iter(decisions), facts, surrogates=sur, gint_reference=gint,
+    stream = lambda: iter(decisions)
+    result0, rows0, gint = osd.gint_gate(stream, facts, references=references or {}, **GATE)
+    return osd.rehearsal_evaluate(stream, facts, baseline=(result0, rows0), surrogates=sur, gint=gint,
                                   train_residuals={'hit': {'FB': {'n': 10, 'mean_residual': -0.01, 'se': 0.005}}},
-                                  r1_paths=osg.path_shares(sur), r3_status='NOT_RUN:R3', draws=200, minimum_games=5,
-                                  minimum_pitchers=4, minimum_pa_starts=10, placebos=4, **kw), decisions, facts
+                                  r1_paths={'rehearsal': osg.path_shares(sur), 'train_census': CENSUS},
+                                  r3_status='NOT_RUN:R3', minimum_pitchers=4, placebos=4, **GATE, **kw), decisions, facts
 
 
 class BlindingTests(unittest.TestCase):
@@ -391,6 +412,16 @@ class BlindingTests(unittest.TestCase):
             'unknown section': lambda d: d.__setitem__('centers', {}),
             'signed diagnostic outside g/i': lambda d: d['R5']['a'].__setitem__('mean_shift', -0.2),
             'negative variance': lambda d: d['r1_variance'].__setitem__('R1_0', -1.0),
+            # the reviewer's probes (review #7): an unlisted metric name never passes, whatever its type
+            'R5.g.effect_ci95': lambda d: d['R5']['g'].__setitem__('effect_ci95', [-0.0001, 0.0002]),
+            'R5.a.mean_shift': lambda d: d['R5']['a'].__setitem__('mean_shift', 0.0002),
+            'R5.g.lambda': lambda d: d['R5']['g'].__setitem__('lambda', 30),
+            'unlisted R5.c metric': lambda d: d['R5']['c']['weights']['candidate'].__setitem__('q999', 2.0),
+            'unlisted grid value': lambda d: d['R5']['c']['switch_trigger_rate'].__setitem__('7.0', {'candidate': 0.1}),
+            'unlisted policy': lambda d: d['R5']['g'].__setitem__('planner', {'mean_rho_logged': 1.0}),
+            'R5-g indicator not a bool': lambda d: d['R5']['g']['candidate'].__setitem__('mean_rho_logged_ci_excludes_1',
+                                                                                        0.0),
+            'unlisted top-level key': lambda d: d.__setitem__('note', 'x'),
         }
         for name, mutate in leaks.items():
             doc = copy.deepcopy(good)
@@ -402,6 +433,12 @@ class BlindingTests(unittest.TestCase):
         allowed['R5']['i']['train_residuals']['hit']['FB']['mean_residual'] = -0.03  # TRAIN-only signed: allowed
         allowed['R5']['f'][reg.BASELINE]['game']['cov_point_censored'] = -1e-9  # a covariance may be negative
         self.assertTrue(osd.validate_public(allowed))
+        for policy in ('candidate', 'reference'):  # review #14: the typed CI-excludes-1 indicators are public
+            g = good['R5']['g'][policy]
+            self.assertIsInstance(g['mean_rho_logged_ci_excludes_1'], bool)
+            self.assertIsInstance(g['mean_pa_end_weight_ci_excludes_1'], bool)
+            lo, hi = g['mean_rho_logged_ci95']
+            self.assertEqual(g['mean_rho_logged_ci_excludes_1'], not (lo <= 1 <= hi))
 
     def test_unblind_needs_the_committed_record_and_matching_seals(self):
         public_bytes, sealed_bytes = osd.seal(self.public, self.sealed)
@@ -420,37 +457,144 @@ class BlindingTests(unittest.TestCase):
         self.assertEqual(self.public['integrity']['inf_variants_reproduce_baseline'], 'PASS')
         self.assertEqual(self.public['S5'][reg.BASELINE], {'game': 'BASELINE', 'pitcher': 'BASELINE'})
         self.assertTrue(all(v in ('PASS', 'FAIL', 'INVALID') for p in reg.TOTAL_ORDER for v in self.public['S5'][p].values()))
-        self.assertEqual(set(self.sealed['placebo']), {'placebo_delta_hat', 'tau_p', 'placebo_bootstrap_se', 'placebo_sd'})
+        self.assertEqual(set(self.sealed['placebo']) - {'population'},
+                         {'placebo_delta_hat', 'tau_p', 'placebo_bootstrap_se', 'placebo_sd'})
         self.assertEqual(len(self.sealed['placebo']['placebo_delta_hat']), 4)
+
+    def test_missing_descriptive_output_is_a_stage_integrity_failure(self):
+        # PM decision (review #10): every required descriptive output, else IntegrityError (never silent)
+        for path in (('R5', 'f'), ('r1_variance',), ('validity',)):
+            public = copy.deepcopy(self.public)
+            node = public
+            for part in path[:-1]:
+                node = node[part]
+            del node[path[-1]]
+            with self.subTest(path), self.assertRaisesRegex(IntegrityError, 'descriptive output missing'):
+                osd.require_descriptive(public, self.sealed)
+        for key in ('pigeonhole', 'gint', 'p_nonpoint', 'grid_points'):
+            sealed = dict(self.sealed)
+            del sealed[key]
+            with self.subTest(key), self.assertRaisesRegex(IntegrityError, 'sealed descriptive output missing'):
+                osd.require_descriptive(self.public, sealed)
+        sealed = copy.deepcopy(self.sealed)
+        del sealed['pairs']['R1_axR2_1']['shift_center']
+        with self.assertRaisesRegex(IntegrityError, 'paired shift missing'):
+            osd.require_descriptive(self.public, sealed)
+        with self.assertRaisesRegex(IntegrityError, 'G-INT record is required'):
+            osd.rehearsal_evaluate(lambda: iter(self.decisions), self.facts, baseline=(None, None), surrogates={},
+                                   train_residuals=None, r1_paths={}, r3_status='NOT_RUN:R3', gint=None)
 
 
 class GintTests(unittest.TestCase):
-    def test_gint_reproduction_and_failure_stops_before_new_arms(self):
-        decisions, facts = synthetic_ledger(seed=5, n_pas=300, n_games=20, n_pitchers=12)
-        result, _ = est.estimate(decisions, facts, draws=200, seed=reg.GAME_BOOTSTRAP_SEED, invalid_share_max=0.05,
-                                 minimum={'games': 5, 'pa_starts': 10}, censoring='l1r')
-        rule, boot = result['censoring_rule'], result['bootstrap']
-        reference = {'l1r_delta_bounds': result['layers']['L1_start_population']['delta_bounds'],
-                     'l1r_lower_endpoint_ci95': boot['L1_lower_endpoint_ci95'], 'l2_ci95': boot['L2_conditional_ci95'],
-                     'l2_delta_mean': result['layers']['L2_complete_conditional']['delta_mean'],
-                     'worst_case_residual_share_s': rule['worst_case_residual_share'], 'resolutions': rule['resolutions'],
-                     'ess_all_e0_candidate': result['ess_all_e0']['candidate']}
-        self.assertEqual(osd.gint_compare(result, reference), [])
-        bad = copy.deepcopy(reference)
-        bad['l2_ci95'] = [bad['l2_ci95'][0] + 2e-12, bad['l2_ci95'][1]]
-        self.assertEqual(osd.gint_compare(result, bad), ['l2_ci95'])
-        ok = copy.deepcopy(reference)
-        ok['l2_ci95'] = [ok['l2_ci95'][0] + 5e-13, ok['l2_ci95'][1]]
-        self.assertEqual(osd.gint_compare(result, ok), [])
-        (_, _, integrity), _, _ = _evaluate(gint=reference)
-        self.assertEqual(integrity['gint_failures'], [])
-        with self.assertRaisesRegex(IntegrityError, 'G-INT failed'):
-            _evaluate(gint=bad)
+    def setUp(self):
+        self.decisions, self.facts = synthetic_ledger(seed=5, n_pas=300, n_games=20, n_pitchers=12)
+        self.stream = lambda: iter(self.decisions)
+        result, _ = est.estimate(self.decisions, self.facts, draws=200, seed=reg.GAME_BOOTSTRAP_SEED,
+                                 invalid_share_max=reg.INVALID_SHARE_MAX, minimum={'games': 5, 'pa_starts': 10},
+                                 censoring='l1r')
+        self.recorded = osd.recorded_gint_reference({**result, 'games': [1000, 1001]})  # the S6 dr.json layout
+
+    def test_every_listed_value_is_compared_against_the_pinned_record(self):
+        self.assertEqual(set(self.recorded), set(osd.GINT_KEYS))
+        self.assertTrue(all(self.recorded[k] is not None for k in osd.GINT_KEYS))
+        quoted = {k: v for k, v in self.recorded.items() if k not in ('l1r_upper_endpoint_ci95', 'ess_all_e0_reference')}
+        _, _, record = osd.gint_gate(self.stream, self.facts, references={'registration_quoted': quoted,
+                                                                          's6_dr_a5_record': self.recorded}, **GATE)
+        self.assertEqual(record['registration_quoted']['not_comparable'], ['ess_all_e0_reference', 'l1r_upper_endpoint_ci95'])
+        self.assertEqual(record['s6_dr_a5_record']['compared'], sorted(osd.GINT_KEYS))
+        self.assertEqual(record['s6_dr_a5_record']['not_comparable'], [])
+        self.assertEqual(record['listed_keys_never_compared'], [])
+        _, _, alone = osd.gint_gate(self.stream, self.facts, references={'registration_quoted': quoted}, **GATE)
+        self.assertEqual(alone['listed_keys_never_compared'], ['ess_all_e0_reference', 'l1r_upper_endpoint_ci95'])
+
+    def test_a_mismatch_in_any_listed_value_stops_the_stage(self):
+        def perturb(value, eps):
+            if isinstance(value, list):
+                return [value[0] + eps, *value[1:]]
+            if isinstance(value, dict):
+                key = sorted(value)[0]
+                return {**value, key: value[key] + (1 if isinstance(value[key], int) else eps)}
+            return value + eps
+        for key in osd.GINT_KEYS:
+            bad = {**self.recorded, key: perturb(self.recorded[key], 2e-12)}
+            with self.subTest(key), self.assertRaisesRegex(IntegrityError, 'G-INT failed'):
+                osd.gint_gate(self.stream, self.facts, references={'s6_dr_a5_record': bad}, **GATE)
+        close = {**self.recorded, 'l2_ci95': perturb(self.recorded['l2_ci95'], 5e-13)}
+        osd.gint_gate(self.stream, self.facts, references={'s6_dr_a5_record': close}, **GATE)  # within 1e-12
+
+    def test_registration_quotes(self):
         config = json.loads((reg.REPO / reg.CONFIG_PATH).read_text())
         quoted = osd.registered_gint_reference(config)
         self.assertEqual(quoted['resolutions'], {'rho_zero': 401, 'natural_course': 55, 'worst_case_residual': 6,
                                                  'shared_end_unknown': 1})
         self.assertEqual(quoted['l1r_delta_bounds'], [-0.0006478399045356745, 0.000539688464028487])
+        self.assertNotIn('l1r_upper_endpoint_ci95', quoted)  # not quoted: compared against the pinned S6 record only
+
+
+class PointSetTests(unittest.TestCase):
+    """PM decision (review #12): P = E0 PAs whose BASELINE paired delta bounds coincide exactly."""
+    @staticmethod
+    def _decision(pa_id, t, candidate, reference, q, logged=0):
+        logging = [0.25, 0.25, 0.25, 0.25]
+        return {'pa_id': pa_id, 'decision_index': t, 'pitcher': '501', 'status': 'SUPPORTED', 'balls': 0, 'strikes': t,
+                'result': {'mask': [True] * 4, 'logging': logging, 'reference': reference, 'candidate': candidate,
+                           'logged_index': logged, 'q_reference': q,
+                           'rho_reference': reference[logged] / logging[logged],
+                           'rho_candidate': candidate[logged] / logging[logged]}}
+
+    def _shared_end_pa(self, pa_id, steps):
+        """A shared-end PA (one unknown end value for both policies) from dyadic probabilities (exact sums)."""
+        rows = [self._decision(pa_id, t, c, r, [0.5, 0.75, 0.25, 0.5]) for t, (c, r) in enumerate(steps)]
+        info = {'game': 999, 'in_population': True, 'reward': None, 'kind': est.TERMINAL_VALUE_MISSING,
+                'reason': 'end_state_gap', 'start_pitcher': '501', 'problem': None, 'problem_index': None}
+        return rows, pa_id, info
+
+    def test_equal_nonzero_shared_slopes_are_in_p(self):
+        quarter = [0.25] * 4
+        # the candidate keeps the reference probability of the logged action (equal ratios, slope 1 for both) but moves
+        # the other mass, so the paired delta is a nonzero point while each policy's own value stays an interval
+        rows, pa_id, info = self._shared_end_pa('999:0', [([0.25, 0.5, 0.25, 0.0], quarter), ([0.25, 0.0, 0.5, 0.25], quarter)])
+        row = est.pa_value(rows, info, 'l1r')
+        self.assertEqual(row['resolution'], 'shared_end_unknown')
+        lo, hi = row['delta_bounds']
+        self.assertEqual(lo, hi)
+        self.assertNotEqual(lo, 0.0)
+        self.assertLess(row['candidate_bounds'][0], row['candidate_bounds'][1])
+        self.assertEqual(row['weight_candidate'], row['weight_reference'])
+        self.assertNotEqual(row['weight_candidate'], 0.0)
+        self.assertTrue(reg.in_point_set(row))
+        line = ov.pa_line(rows, info)
+        self.assertFalse(ov.is_point(line))  # its end is unknown: the old end-label rule would have excluded it
+        self.assertEqual(ov.point_deltas([line], None, None, None).tolist(), [lo])
+
+    def test_a_transformation_that_breaks_the_cancellation_invalidates_the_pair(self):
+        quarter = [0.25] * 4
+        # ratios (2, 1/2) for the candidate and (1, 1) for the reference: equal slope products at the baseline,
+        # unequal after a shrinkage or switch transform (and under the policy-specific SN normalisers)
+        extra = [self._shared_end_pa('999:0', [([0.5, 0.25, 0.25, 0.0], quarter), ([0.125, 0.375, 0.25, 0.25], quarter)])]
+        rows, pa_id, info = extra[0]
+        base = est.pa_value(rows, info, 'l1r')
+        self.assertTrue(reg.in_point_set(base))
+        line = ov.pa_line(rows, info)
+        for kind, value in (('shrink', 3.0), ('switch', 1.5)):
+            lo, hi = ov.line_value(line, ov.transform(kind, value))['delta_bounds']
+            self.assertNotEqual(lo, hi)
+            self.assertTrue(np.isnan(ov.point_deltas([line], ov.transform(kind, value), None, None)).all())
+        (public, sealed, _), _, _ = _evaluate(extra=extra)
+        self.assertGreaterEqual(sealed['p_counts']['p_shared_unknown_end'], 1)
+        grid = {name: count for name, count in sealed['p_nonpoint'].items() if name.startswith('grid:')}
+        shrink = {name: count for name, count in grid.items() if 'R2_1:' in name}
+        switch = {name: count for name, count in grid.items() if 'R2_2:' in name}
+        self.assertTrue(shrink and all(count == 1 for count in shrink.values()), grid)  # every finite lambda breaks it
+        self.assertTrue(switch and all(count == 0 for count in switch.values()), grid)  # M >= 2 keeps both ratios
+        for comp in reg.R1:
+            # a broken grid value has no P mean (nonfinite objective) and is never selected
+            self.assertEqual(sealed['selection'][f'{comp}xR2_1']['selected'], 'inf')
+        for pair in ('R1_0xR2_3', 'R1_axR2_3', 'R1_bxR2_3'):  # SN: per-policy normalisers break it as well
+            self.assertEqual(public['pairs'][pair]['valid'], {'game': False, 'pitcher': False})
+            self.assertEqual(public['S5'][pair], {'game': 'INVALID', 'pitcher': 'INVALID'})
+        self.assertEqual(sealed['p_nonpoint'][reg.BASELINE], 0)
+        self.assertTrue(public['pairs'][reg.BASELINE]['valid']['game'])
 
 
 def _decision_inputs(h=None, s5='PASS', net='PASS', tab='PASS', s2='PASS', valid=True):
@@ -463,8 +607,8 @@ def _decision_inputs(h=None, s5='PASS', net='PASS', tab='PASS', s2='PASS', valid
                               'pitcher': 'BASELINE' if pair == reg.BASELINE else s5}
     tab_doc = {'acceptance': {c['id']: {p: {'outcome': tab} for p in reg.PAIRS} for c in reg.TAB_ACCEPTANCE}}
     s5x = {'nets': {n: {p: {'outcome': net} for p in reg.PAIRS} for n in ('S1', 'S4')},
-           's2': {'R1_a': {'2*kappa_p': {'outcome': s2}, '2*zeta_p': {'outcome': s2}},
-                  'R1_b': {'2*kappa_p': {'outcome': s2}, '2*zeta_p': {'outcome': s2}}, 'invariant': 'PASS'}}
+           's2': {p: {'2*kappa_p': {'outcome': s2}, '2*zeta_p': {'outcome': s2}, 'invariant': 'PASS'}
+                  for p in reg.PAIRS if reg.split_pair(p)[0] in ('R1_a', 'R1_b')}}
     return public, tab_doc, s5x
 
 
@@ -487,13 +631,61 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(decide(*_decision_inputs(h={'R1_0xR2_3': 0.7000001}))['label'], 'NO_PRECISION_GAIN')
         self.assertEqual(decide(*_decision_inputs(h={'R1_0xR2_3': 0.7}))['label'], 'ADOPT_FOR_2027_PROTOCOL:R1_0xR2_3')
         public, tab, s5x = _decision_inputs(h={'R1_axR2_0': 0.5, 'R1_0xR2_3': 0.5})
-        s5x['s2']['R1_a']['2*zeta_p']['outcome'] = 'FAIL'  # S-2 binds only the R1_a / R1_b pairs
+        s5x['s2']['R1_axR2_0']['2*zeta_p']['outcome'] = 'FAIL'  # S-2 binds only the R1_a / R1_b pairs
         self.assertEqual(decide(public, tab, s5x)['label'], 'ADOPT_FOR_2027_PROTOCOL:R1_0xR2_3')
         public, tab, s5x = _decision_inputs(h={'R1_axR2_0': 0.5})
         s5x['nets']['S1'][reg.BASELINE]['outcome'] = 'FAIL'  # the baseline's shared net binds every pair
         self.assertEqual(decide(public, tab, s5x)['label'], 'BIAS_NOT_CERTIFIED:R1_axR2_0')
         public['R5']['h']['flag'] = 'SE_CALIBRATION_WARNING'
         self.assertEqual(decide(public, tab, s5x)['flags'], ['SE_CALIBRATION_WARNING'])
+
+    def test_invalid_repetitions_never_support_adoption(self):
+        # PM decision (review #1): an invalid repetition or replication in an acceptance-relevant run or cell makes
+        # that cell INCONCLUSIVE (never PASS) and the pair non-adoptable
+        decide = lambda *a: odc.decide(*a, r3_status='NOT_RUN:R3')
+        gains = {'R1_axR2_3': 0.5}
+        self.assertEqual(decide(*_decision_inputs(h=gains))['label'], 'ADOPT_FOR_2027_PROTOCOL:R1_axR2_3')
+        cases = {
+            'S-2 run 4 invalid repetition': lambda s, t: s['s2']['R1_axR2_3'].__setitem__(
+                '2*kappa_p', reg.inconclusive_invalid('1 invalid repetitions in run 4')),
+            'S-2 run 5 missing': lambda s, t: s['s2']['R1_axR2_3'].pop('2*zeta_p'),
+            'S-1 net with an invalid repetition': lambda s, t: s['nets']['S1'].__setitem__(
+                'R1_axR2_3', reg.net_outcome([0.0, 0.0, 0.0], [0.001] * 3, valid=False)),
+            'S-4 net without an outcome': lambda s, t: s['nets']['S4'].__setitem__('R1_axR2_3', {'outcome': None}),
+            'invariant invalid': lambda s, t: s['s2']['R1_axR2_3'].__setitem__('invariant', 'INVALID'),
+            'invalid flag on a PASS': lambda s, t: s['s2']['R1_axR2_3'].__setitem__(
+                '2*zeta_p', {'outcome': 'PASS', 'invalid_repetition': True}),
+            'TAB cell with invalid replications': lambda s, t: t['acceptance']['T-A3'].__setitem__(
+                'R1_axR2_3', reg.inconclusive_invalid('2 invalid replications')),
+        }
+        for name, mutate in cases.items():
+            public, tab, s5x = _decision_inputs(h=gains)
+            mutate(s5x, tab)
+            out = decide(public, tab, s5x)
+            with self.subTest(name):
+                self.assertEqual(out['label'], 'BIAS_NOT_CERTIFIED:R1_axR2_3')
+                self.assertFalse(out['pairs']['R1_axR2_3']['mandatory_valid'])
+        # review #11: an R1_b table failure is NOT_EVALUABLE for the R1_b pair only; the other pairs continue
+        public, tab, s5x = _decision_inputs(h={'R1_bxR2_0': 0.5, 'R1_axR2_0': 0.55})
+        tab['acceptance']['T-A1']['R1_bxR2_0'] = reg.cell_outcome(None, None, not_evaluable=True)
+        self.assertEqual(decide(public, tab, s5x)['label'], 'ADOPT_FOR_2027_PROTOCOL:R1_axR2_0')
+
+    def test_degenerate_half_widths_are_inconclusive(self):
+        # PM decision (review #13): (ii) is the registered inequality evaluated directly; a zero half-width is
+        # INCONCLUSIVE (never a pass); the ratio is reporting only
+        public, tab, s5x = _decision_inputs(h={'R1_axR2_3': 0.0})
+        ii = odc.condition_ii(public, 'R1_axR2_3')
+        self.assertEqual((ii['outcome'], ii['pass'], ii['degenerate']), ('INCONCLUSIVE', False, True))
+        self.assertEqual(odc.decide(public, tab, s5x, r3_status='NOT_RUN:R3')['label'], 'NO_PRECISION_GAIN')
+        public, _, _ = _decision_inputs(h={reg.BASELINE: 0.0, 'R1_axR2_3': 0.0})
+        ii = odc.condition_ii(public, 'R1_axR2_3')
+        self.assertEqual((ii['outcome'], ii['pass'], ii['ratio']['game']), ('INCONCLUSIVE', False, None))
+        public, _, _ = _decision_inputs(h={'R1_axR2_3': 0.69})
+        ii = odc.condition_ii(public, 'R1_axR2_3')
+        self.assertEqual((ii['outcome'], ii['pass']), ('PASS', True))
+        self.assertAlmostEqual(ii['ratio']['game'], 0.69, places=15)
+        public['pairs']['R1_axR2_3']['valid']['pitcher'] = False
+        self.assertEqual(odc.condition_ii(public, 'R1_axR2_3')['outcome'], 'INVALID')
 
 
 if __name__ == '__main__':

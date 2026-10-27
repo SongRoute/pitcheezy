@@ -103,7 +103,8 @@ def pa_line(decisions, info, *, natural=est.H_K_REFUSALS):
 
 
 def is_point(line):
-    """Member of the point set P: an E0 PA whose registered L1-R value is unknown-free."""
+    """An E0 line whose per-policy values are both unknown-free (complete or shared point). NOT the point
+    set P: P is defined from the baseline rows' paired bounds (registry.in_point_set)."""
     return line['in_population'] and line['end'] in POINT_ENDS
 
 
@@ -310,12 +311,14 @@ def estimate_variant(ledger_decisions, pas, *, f=None, sn=False, draws, seed, in
 
 # ---------------------------------------------------------------- per-pair point deltas and selection
 def point_deltas(lines, f=None, u=None, rewards=None):
-    """Delta_i on the point set P (lines already restricted to P), with optional R1 reward overrides."""
+    """Delta_i on the point set P (lines already restricted to P), with optional R1 reward overrides: the
+    paired delta when its bounds coincide under this variant, NaN when the variant breaks the baseline's
+    slope cancellation (the pair then has no P mean for that value)."""
     out = np.empty(len(lines))
     for i, line in enumerate(lines):
-        (bc, sc), (br, sr) = _lines_of(line, f, u)
-        c = line['reward'] if rewards is None or line['reward_source'] != 'observed' else float(rewards[i])
-        out[i] = (bc + sc * c) - (br + sr * c)
+        reward = None if rewards is None else rewards[i]
+        lo, hi = line_value(line, f, u, reward)['delta_bounds']
+        out[i] = lo if lo == hi else np.nan
     return out
 
 

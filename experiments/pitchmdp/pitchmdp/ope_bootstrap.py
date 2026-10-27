@@ -79,18 +79,22 @@ def interval(replicates, valid, draws, invalid_share_max=INVALID_SHARE_MAX):
 
 class PairInputs:
     """Everything a pair contributes to the bootstrap: per-E0-row point deltas (P rows), endpoint
-    bounds (all E0 rows), or for the SN pair the linear coefficients in the inverse normalisers."""
-    def __init__(self, name, *, deltas=None, lo=None, hi=None, sn=None):
-        self.name, self.deltas, self.lo, self.hi, self.sn = name, deltas, lo, hi, sn
+    bounds (all E0 rows), or for the SN pair the linear coefficients in the inverse normalisers.
+    ``p_nonpoint`` counts the P rows that are not a point under this pair (then its P mean is undefined
+    and every P statistic of the pair is invalid: fail-safe)."""
+    def __init__(self, name, *, deltas=None, lo=None, hi=None, sn=None, p_nonpoint=0):
+        self.name, self.deltas, self.lo, self.hi, self.sn, self.p_nonpoint = name, deltas, lo, hi, sn, p_nonpoint
 
 
 def fixed_pair(name, rows, point):
-    """A non-SN pair from its E0 rows (pa_value-style dicts, E0 order) and the P membership mask."""
+    """A non-SN pair from its E0 rows (pa_value-style dicts, E0 order) and the baseline P mask."""
     lo = np.array([r['delta_bounds'][0] for r in rows], dtype=np.float64)
     hi = np.array([r['delta_bounds'][1] for r in rows], dtype=np.float64)
-    deltas = np.where(point, lo, np.nan)
-    _require(np.array_equal(lo[point], hi[point]), f'{name}: a P row is not a point')
-    return PairInputs(name, deltas=deltas, lo=lo, hi=hi)
+    nonpoint = point & (lo != hi)
+    deltas = np.where(point & ~nonpoint, lo, np.nan)
+    if nonpoint.any():
+        deltas = np.where(point, np.nan, deltas)  # no P mean under this pair
+    return PairInputs(name, deltas=deltas, lo=lo, hi=hi, p_nonpoint=int(nonpoint.sum()))
 
 
 def sn_pair(name, lines, point, rewards=None):
@@ -116,19 +120,26 @@ def sn_pair(name, lines, point, rewards=None):
     full = coef.copy()
     full[:, np.arange(n), end] += slope * reward[None]
     kinds = np.array([line['end'] for line in lines], dtype=object)
-    _require(np.array_equal(known, point), f'{name}: P differs from the point lines')
+    point = np.asarray(point, dtype=bool)
+    # A P row without a known end (a shared unknown whose baseline slopes cancel) is not a point under SN:
+    # the two policies' normalisers differ, so the slopes no longer cancel.
+    nonpoint = point & ~known
     return PairInputs(name, sn={'held': held, 'coef': coef, 'full': full, 'slope': slope, 'end': end,
-                                'point': known, 'kinds': kinds, 'depth': depth})
+                                'point': point & known, 'kinds': kinds, 'depth': depth, 'p_invalid': bool(nonpoint.any())},
+                      p_nonpoint=int(nonpoint.sum()))
 
 
 def sn_values(pair, u):
-    """Full-sample SN per-row values for inverse normalisers u [2, D+1]: (deltas on P, lo, hi)."""
+    """Full-sample SN per-row values for inverse normalisers u [2, D+1]: (deltas on P, lo, hi); the
+    deltas are all NaN when a P row is not a point under SN."""
     s = pair.sn
     point_values = np.einsum('pnd,pd->pn', s['full'], u)
     deltas = np.where(s['point'], point_values[0] - point_values[1], np.nan)
     base = np.einsum('pnd,pd->pn', s['coef'], u)
     slope = s['slope'] * u[np.arange(2)[:, None], s['end'][None]]
     lo, hi = _bounds(base, slope, s['kinds'], s['point'], deltas)
+    if s['p_invalid']:
+        deltas = np.full_like(deltas, np.nan)
     return deltas, lo, hi
 
 
@@ -142,10 +153,11 @@ def _bounds(base, slope, kinds, point, deltas):
     return lo, hi
 
 
-def run_pairs(resampler, pairs, point, baseline_name, *, chunk=500):
+def run_pairs(resampler, pairs, point, baseline_name, *, chunk=500, checkpoint=None):
     """Replicates of every pair on the same multiplicities: the P mean, the L1-R endpoints, the
     paired shift to the baseline on P, and the point/censored split of the lower endpoint over the
-    common denominator N (R5 f). Returns {pair: {statistic: replicates}}, validity per replicate."""
+    common denominator N (R5 f). Returns {pair: {statistic: replicates}}, validity per replicate.
+    ``checkpoint`` (the runner's memory and hang guard) is called before every pair."""
     point = np.asarray(point, dtype=bool)
     draws = resampler.draws
     p_rows = np.flatnonzero(point)
@@ -158,6 +170,8 @@ def run_pairs(resampler, pairs, point, baseline_name, *, chunk=500):
     _require(base.sn is None, 'the baseline is the fixed (non-SN) pair')
     base_num = m @ resampler.sums(base.deltas[p_rows], p_rows)
     for pair in pairs:
+        if checkpoint is not None:
+            checkpoint()
         if pair.sn is None:
             num = m @ resampler.sums(pair.deltas[p_rows], p_rows)
             lo_num = m @ resampler.sums(pair.lo)
@@ -168,6 +182,8 @@ def run_pairs(resampler, pairs, point, baseline_name, *, chunk=500):
         else:
             num, lo_num, hi_num, cens_num, ok = _sn_replicates(resampler, pair, point, den_all, chunk)
             ok &= den_p > 0
+            if pair.sn['p_invalid']:
+                ok &= False  # no P mean under SN for this sample
         with np.errstate(divide='ignore', invalid='ignore'):
             stats = {'mean_p': num / den_p, 'shift_p': (num - base_num) / den_p, 'lower_endpoint': lo_num / den_all,
                      'upper_endpoint': hi_num / den_all, 'point_part_n': num / den_all,
@@ -232,7 +248,7 @@ def summarize(stats, valid, resampler):
     return out
 
 
-def pigeonhole(game_keys, pitcher_keys, pairs, point, *, draws, seed, chunk=200):
+def pigeonhole(game_keys, pitcher_keys, pairs, point, *, draws, seed, chunk=200, checkpoint=None):
     """Descriptive two-way (game x pitcher) reweighting bootstrap (Owen 2007, unverified): PA weight =
     game multiplicity x pitcher multiplicity; the SN normalisers are recomputed with the same weights.
     Sealed only (not in the public allowlist)."""
@@ -243,6 +259,8 @@ def pigeonhole(game_keys, pitcher_keys, pairs, point, *, draws, seed, chunk=200)
     results = {p.name: [] for p in pairs}
     done = 0
     while done < draws:
+        if checkpoint is not None:
+            checkpoint()
         n = min(chunk, draws - done)
         mg = _mult(rng.integers(len(games), size=(n, len(games))), len(games))
         mp = _mult(rng.integers(len(pitchers), size=(n, len(pitchers))), len(pitchers))
@@ -259,6 +277,8 @@ def pigeonhole(game_keys, pitcher_keys, pairs, point, *, draws, seed, chunk=200)
                     u = [1.0 / ((w @ s['held'][k]) / tot[:, None]) for k in (0, 1)]
                     num = (np.sum(u[0] * (wp @ s['full'][0][point]), axis=1)
                            - np.sum(u[1] * (wp @ s['full'][1][point]), axis=1))
+                if s['p_invalid']:
+                    num = np.full(n, np.nan)
             with np.errstate(divide='ignore', invalid='ignore'):
                 results[pair.name].append(num / den)
         done += n
