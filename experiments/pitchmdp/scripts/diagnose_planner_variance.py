@@ -49,6 +49,7 @@ sys.path.insert(0, str(PROJECT))
 sys.path.insert(0, str(PROJECT / 'scripts'))
 import numpy as np  # noqa: E402
 from pitchmdp import planner_variance as pv  # noqa: E402
+from pitchmdp.matrix_policy_artifacts import is_appledouble  # noqa: E402
 from pitchmdp import planner_variance_registry as reg  # noqa: E402
 from pitchmdp.policy_runtime import EVALUATED, Ledger as FILE_LEDGER, paired_difference_se  # noqa: E402
 from pitchmdp.rollout_policy import RowBudget  # noqa: E402
@@ -157,23 +158,38 @@ def sha256_file(path):
     return reg.file_sha256(path)
 
 
+def sealed_files(folder):
+    """The runner's files of a folder: every regular file except SHA256SUMS and macOS AppleDouble sidecars, which a
+    non-APFS volume (the T7 drive) creates beside each written file, also after sealing (operating-system metadata)."""
+    return sorted(p for p in Path(folder).rglob('*')
+                  if p.is_file() and p.name != 'SHA256SUMS' and not is_appledouble(p))
+
+
 def remove_staging(folder):
     """Runner-owned unfinished JSON staging files (``write_json``'s ``*.tmp``) of an interrupted write."""
-    for staged in Path(folder).rglob('*.tmp'):
-        staged.unlink()
+    for staged in sealed_files(folder):
+        if staged.name.endswith('.tmp'):
+            staged.unlink()
 
 
 def write_sums(folder):
     folder = Path(folder)
-    require(not list(folder.rglob('*.tmp')), f'{folder.name}: unfinished staging file in a folder being sealed')
-    files = sorted(p for p in folder.rglob('*') if p.is_file() and p.name != 'SHA256SUMS')
+    files = sealed_files(folder)
+    require(not [p for p in files if p.name.endswith('.tmp')], f'{folder.name}: unfinished staging file in a folder being sealed')
     lines = [f'{sha256_file(p)}  {p.relative_to(folder).as_posix()}' for p in files]
     (folder / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
     return sha256_file(folder / 'SHA256SUMS')
 
 
+def seal(folder):
+    """Write SHA256SUMS over the final folder contents and verify it at once; returns its digest."""
+    digest = write_sums(folder)
+    require(verify_sums(folder) == digest, f'{Path(folder).name}: seal does not verify')
+    return digest
+
+
 def verify_sums(folder):
-    """Every file of a finished pass folder is exactly the one its SHA256SUMS lists."""
+    """Every runner file of a finished pass folder is exactly the one its SHA256SUMS lists."""
     folder = Path(folder)
     sums = folder / 'SHA256SUMS'
     require(sums.is_file(), f'{folder.name}: SHA256SUMS missing')
@@ -181,7 +197,7 @@ def verify_sums(folder):
     for line in sums.read_text().splitlines():
         digest, _, name = line.partition('  ')
         listed[name] = digest
-    present = {p.relative_to(folder).as_posix() for p in folder.rglob('*') if p.is_file() and p.name != 'SHA256SUMS'}
+    present = {p.relative_to(folder).as_posix() for p in sealed_files(folder)}
     require(set(listed) == present, f'{folder.name}: files differ from SHA256SUMS')
     for name, digest in listed.items():
         require(sha256_file(folder / name) == digest, f'{folder.name}/{name}: sha256 differs from SHA256SUMS')
@@ -597,7 +613,7 @@ class PassRunner:
                                              'reason': 'process ended without a terminal receipt (crash or interrupt)',
                                              'utc': self.clock.now().isoformat(), 'effect': reg.PASSES[name]['on_stop'],
                                              'window_id': window, 'partial_results_discarded': True, 'citable': False})
-        self.receipt(name, 'ABORTED', 'incomplete folder closed', write_sums(folder), self.relative(folder))
+        self.receipt(name, 'ABORTED', 'incomplete folder closed', seal(folder), self.relative(folder))
 
     def relative(self, folder):
         return (Path(folder) / 'SHA256SUMS').relative_to(self.attempt).as_posix()
@@ -836,7 +852,7 @@ class PassRunner:
                                                   'utc': self.clock.now().isoformat(), 'window_id': window,
                                                   'citable': False,
                                                   'evidence_kept': 'results.json: cost, structure and identity only'})
-            digest = write_sums(out)
+            digest = seal(out)
             watch.final_check()  # after the last write of the pass folder
             self.receipt(name, 'ABORTED' if stopped else 'COMPLETED', stopped or arm, digest, sums_file,
                          self.measurements(watch))
@@ -862,7 +878,7 @@ class PassRunner:
         for partial in [*out.glob('*.npz'), out / 'results.json']:
             partial.unlink(missing_ok=True)
         remove_staging(out)
-        self.receipt(name, 'ABORTED', f'{arm or ""} {type(stop).__name__}: {stop}'.strip(), write_sums(out),
+        self.receipt(name, 'ABORTED', f'{arm or ""} {type(stop).__name__}: {stop}'.strip(), seal(out),
                      self.relative(out), self.measurements(watch))
         self.aborts.append((name, arm))
         self.log('PLANNER_VARIANCE_ABORTED', name, arm or '', f'{type(stop).__name__}: {stop}')

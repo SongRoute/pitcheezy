@@ -61,6 +61,8 @@ def make_bc():
                 state = PAState(b, s, 'p', 'R', history, 'ctx')
                 for action, k in zip(ACTIONS, rng.integers(1, 6, 3)):
                     records += [BCRecord(state, action, 'train')] * int(k)
+    # pitcher q never threw C in TRAIN: a logged C is a logging-positivity refusal of the real runtime
+    records += [BCRecord(PAState(0, 0, 'q', 'R', (), 'ctx'), action, 'train') for action in ('A', 'A', 'B')]
     return CategoricalBC(prior_strength=3.).fit(records)
 
 
@@ -749,6 +751,7 @@ class PlannedPA:
     game: int
     pa: int
     actions: tuple
+    pitcher: str = 'p'
 
 
 class SyntheticEnv:
@@ -757,11 +760,12 @@ class SyntheticEnv:
     build_runtime from bound components in a real run) is synthetic, wired exactly like build_runtime's."""
     MASK = np.array([True, True, False])  # C off the intervention support: OUTSIDE_POLICY_SUPPORT rows
 
-    def __init__(self, root, games=(101, 102, 103, 104), predict=predictor):
+    def __init__(self, root, games=(101, 102, 103, 104), predict=predictor, refusals=False):
         self.root = Path(tempfile.mkdtemp(dir=root, prefix='synthetic-artifacts-'))  # frozen files are write-once
         self.art = pa.save_train_bc(BC, self.root / 'bc.json', PROV)
-        _, file_sha = pa.save_support_table(self.art, [('p', 'R', self.MASK & self.art.bc.support(state()))],
-                                            self.root / 'support.json')
+        rows = [(pitcher, 'R', self.MASK & self.art.bc.support(PAState(0, 0, pitcher, 'R', (), 'ctx')))
+                for pitcher in ('p', 'q')]
+        _, file_sha = pa.save_support_table(self.art, rows, self.root / 'support.json')
         self.support, self.support_identity = pa.load_support_table(self.root / 'support.json', file_sha, self.art)
         self.reference = prt.MaskedReference(self.art.bc, self.support)
         self.predict, self.runtime_sha = predict, 'replay-without-runtime'
@@ -774,6 +778,9 @@ class SyntheticEnv:
         self.confirmation_record = {'games_sha256': canonical_hash(sorted(self.confirmation)), 'selected': 2}
         self.plans = {g: [PlannedPA(g, k, tuple(ACTIONS[(g + k + i) % 3] for i in range(len(OUTCOME_PLAN))))
                           for k in range(2)] for g in self.games + self.confirmation}
+        if refusals:  # real runtime refusals: logging positivity (q logs C) and an unknown pitcher, then MID_PA rows
+            self.plans[self.games[0]] += [PlannedPA(self.games[0], 2, ('C', 'A', 'B', 'A'), 'q'),
+                                          PlannedPA(self.games[0], 3, ('A', 'B', 'A', 'B'), 'z')]
         self.prepared, self.prepare_hook, self.verified, self._stab01 = [], None, 0, None
         self.tiny_a0_seed5_budget = False
 
@@ -794,7 +801,7 @@ class SyntheticEnv:
         """Consistent PA: 0-0 start, each history token is the previous logged pitch and its outcome."""
         out, history, (b, s) = [], (), (0, 0)
         for i, (action, outcome) in enumerate(zip(plan.actions, OUTCOME_PLAN)):
-            st = PAState(b, s, 'p', 'R', history, f'{plan.game}-{plan.pa}')
+            st = PAState(b, s, plan.pitcher, 'R', history, f'{plan.game}-{plan.pa}')
             out.append(prt.DecisionRequest(f'{plan.game}:{plan.pa}:{i + 1}', f'{plan.game}:{plan.pa}', i, st, action,
                                            self.runtime_sha, 'R'))
             history = history + (PastPitch(action, (.1 + .2 * i + .01 * plan.pa,), outcome, b, s),)
@@ -849,8 +856,15 @@ class SyntheticEnv:
             planners = {s: RolloutImprovement(self.reference, simulator(predict=self.predict), cutoff, samples=6,
                                               pitch_cap=12, seed=s) for s in range(10)}
             columns = {k: [] for k in reg.STAB01_COLUMNS}
+            with runner.memory_ledger():  # statuses from a scratch real runtime: only evaluated decisions count
+                scratch = prt.PolicyRuntime(self.art, self.support, self.support_identity, None,
+                                            candidate=self.reference.probabilities, candidate_identity={'name': 'scratch'})
             for g, plan in self.blocks(self.games):
-                for request in self.requests(plan):
+                runtime_sha, self.runtime_sha = self.runtime_sha, scratch.sha256
+                requests, self.runtime_sha = self.requests(plan), runtime_sha
+                for request in requests:
+                    if scratch.submit(request)['status'] not in prt.EVALUATED:
+                        continue
                     s = request.state
                     mask, reference = self.reference.support(s), self.reference.probabilities(s)
                     q = {seed: planner.q_values(s)[0] for seed, planner in planners.items()}
@@ -1496,3 +1510,80 @@ def test_the_memory_ledger_is_guarded_restored_and_hash_chain_equivalent(tmp_pat
     in_memory._rows[2]['result'] = {'q_planning': [0.]}
     with pytest.raises(runner.IntegrityFailure, match='tampered'):
         in_memory.read(2)
+
+
+def test_the_smoke_record_accepts_exactly_the_runtime_status_vocabulary():
+    counts = {status: 1 for status in prt.STATUSES}  # incl. UNSUPPORTED_LOGGING_POSITIVITY ("logging")
+    record = {'r_b': 2.1, 'statuses': counts, 'fhdp_only_game_statuses': dict(counts),
+              'mechanical_rule': {'status': 'FULL_RUN_ALLOWED'}}
+    assert reg.runtime_statuses() == tuple(prt.STATUSES) and reg.smoke_record_problems(record) == []
+    assert reg.smoke_metric_keys(record) == []
+    assert reg.smoke_record_problems({**record, 'statuses': {**counts, 'mean_tv': 1}})  # not a runtime status
+    assert reg.smoke_record_problems({**record, 'statuses': {'SUPPORTED': .5}})  # not a count
+    assert reg.smoke_record_problems({**record, 'cost': {'logging_law': 1}})  # metric-like keys elsewhere still refused
+
+
+def test_a_smoke_with_real_runtime_refusals_completes(tmp_path):
+    attempt = tmp_path / 'attempt-001'
+    env = SyntheticEnv(tmp_path, refusals=True)
+    assert make_runner(registered_config(), env, attempt).advance('smoke') == runner.EXIT_OK
+    statuses = json.loads((attempt / 'smoke' / 'results.json').read_text())['statuses']
+    assert {'UNSUPPORTED_LOGGING_POSITIVITY', 'UNSUPPORTED_UNKNOWN_PITCHER', 'UNSUPPORTED_MID_PA', 'SUPPORTED'} <= set(statuses)
+    assert set(statuses) <= set(prt.STATUSES) and all(type(v) is int for v in statuses.values())
+
+
+APPLEDOUBLE = bytes.fromhex('00051607') + b'\x00' * 60  # what macOS writes beside files on a non-APFS volume
+
+
+def sidecars(folder):
+    for path in list(Path(folder).iterdir()):
+        if path.is_file() and not path.name.startswith('._'):
+            (path.parent / f'._{path.name}').write_bytes(APPLEDOUBLE)
+
+
+def test_appledouble_sidecars_never_break_a_seal_and_the_abort_path_reseals(tmp_path, monkeypatch):
+    attempt = tmp_path / 'attempt-001'
+    env = SyntheticEnv(tmp_path)
+    assert make_runner(registered_config(), env, attempt).advance('smoke') == runner.EXIT_OK
+    sidecars(attempt / 'smoke')  # created after sealing, as on the T7 drive (._SHA256SUMS included)
+    assert make_runner(registered_config(), env, attempt).status('smoke')[0] == 'complete'
+    (attempt / 'smoke' / '._payload').write_bytes(b'not AppleDouble')  # same prefix, no magic: a real file
+    with pytest.raises(runner.IntegrityFailure, match='files differ'):
+        make_runner(registered_config(), env, attempt).status('smoke')
+    second = tmp_path / 'attempt-002'
+    original = reg.smoke_record_problems
+    monkeypatch.setattr(reg, 'smoke_record_problems', lambda record: original(record) + ['injected sink refusal'])
+    seal = runner.write_sums
+
+    def sealing_with_sidecars(folder):
+        sidecars(folder)  # sidecars of started.json/aborted.json exist when the abort path seals
+        return seal(folder)
+    monkeypatch.setattr(runner, 'write_sums', sealing_with_sidecars)
+    assert make_runner(registered_config(), env, second).advance('smoke') == runner.EXIT_STOPPED
+    sidecars(second / 'smoke')  # ._SHA256SUMS and ._aborted.json appear after the seal
+    monkeypatch.undo()
+    state, record = make_runner(registered_config(), env, second).status('smoke')
+    assert state == 'aborted' and 'injected sink refusal' in record['reason']
+    listed = [line.split('  ')[1] for line in (second / 'smoke' / 'SHA256SUMS').read_text().splitlines()]
+    assert listed == ['aborted.json', 'started.json']  # the final runner files, resealed after aborted.json
+    assert make_runner(registered_config(), env, second).advance('smoke') == runner.EXIT_STOPPED  # no IntegrityFailure
+
+
+def test_the_digest_manifest_accepts_a_chained_reregistration(tmp_path):
+    manifest = tmp_path / 'digest-manifest.jsonl'
+    config = registered_config(**{'registration.digest_manifest_path': str(manifest)})
+    void = {'experiment_id': reg.EXPERIMENT_ID, 'kind': 'config_digest', 'digest': '9' * 64,
+            'registered_commit': '1' * 40, 'code_sha256': {}}
+    active = {'experiment_id': reg.EXPERIMENT_ID, 'kind': 'config_digest_reregistration', 'previous_digest': '9' * 64,
+              'reason': 'bug-fix retry 1', 'aborted_attempt': '/runs/EXP-STAB-02/attempt-001',
+              'digest': reg.config_digest(config), 'registered_commit': config['registration']['registered_commit'],
+              'code_sha256': config['registration']['code_sha256']}
+    manifest.write_text(json.dumps(void) + '\n' + json.dumps({'kind': 'receipt'}) + '\n' + json.dumps(active) + '\n')
+    assert reg.verify_digest_manifest(config, REPO) == manifest.resolve()
+    for broken in ({**active, 'previous_digest': '8' * 64}, {**active, 'reason': ''}, {**active, 'kind': 'config_digest'}):
+        manifest.write_text(json.dumps(void) + '\n' + json.dumps(broken) + '\n')
+        with pytest.raises(reg.RegistrationError, match='re-registration|exactly one'):
+            reg.verify_digest_manifest(config, REPO)
+    manifest.write_text(json.dumps(void) + '\n')  # the void registration alone does not match this config
+    with pytest.raises(reg.RegistrationError, match='digest differs'):
+        reg.verify_digest_manifest(config, REPO)

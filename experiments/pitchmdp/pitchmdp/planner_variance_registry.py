@@ -189,9 +189,11 @@ IMPLEMENTATION_CHOICES = [
     'registration block (code_sha256) and verified before any data is read.',
     'Config digest as A2/RS-03: sha256 of canonical JSON (sort_keys, indent 2, one trailing newline) with exactly '
     'DIGEST_NULLED_PATHS set to null; no in-config digest field; the digest, the registered commit and code_sha256 '
-    'are one config_digest entry of the external append-only digest manifest (registration.digest_manifest_path, '
-    'outside the repository), which also receives every pass receipt. The registered commit must contain the '
-    'reviewed sources and a config with the same digest and be an ancestor of HEAD; missing Git provenance refuses.',
+    'are the registration entry of the external append-only digest manifest (registration.digest_manifest_path, '
+    'outside the repository), which also receives every pass receipt: one original config_digest entry, then only '
+    'config_digest_reregistration entries after a bug-fix retry (previous_digest, reason, aborted attempt); the last '
+    'entry is the active registration. The registered commit must contain the reviewed sources and a config with the '
+    'same digest and be an ancestor of HEAD; missing Git provenance refuses.',
     'RB continuation: one rollouts() call (the registered function) over every non-terminal child of every first '
     'pitch, children ordered action, sample, outcome; continuation uniforms U[i,1:,:] of the parent sample; a cap of '
     '1 truncates every child to the cutoff. Children with outcome probability 0 are still rolled out (weight 0).',
@@ -273,6 +275,13 @@ IMPLEMENTATION_CHOICES = [
     'Resources: A0 seed-0 planner time is measured inside runtime.submit (recording q_values) and reported next to '
     'the whole submit time; other arms time q_values; pass seconds include data preparation; peak RSS is ru_maxrss, '
     'a process-lifetime peak (bytes on macOS), conservative against the 8 GiB cap and labelled as such.',
+    'Smoke status counts: statuses.* and fhdp_only_game_statuses.* may carry exactly the runtime decision statuses '
+    '(policy_runtime.STATUSES, e.g. UNSUPPORTED_LOGGING_POSITIVITY) with non-negative integer counts; they are '
+    'structural counts, exempt from the metric-like key scan, while every other key and every float vector is still '
+    'refused.',
+    'macOS AppleDouble sidecars (the ._ prefix and AppleDouble magic, matrix_policy_artifacts.is_appledouble), which '
+    'non-APFS volumes such as the T7 drive create beside every written file, even after sealing, are operating-system '
+    'metadata: SHA256SUMS sealing and verification ignore them; every seal is verified at once.',
     'One data scope per process: smoke (3 smoke games + the FH-DP smoke game), registered (the 150 games; smoke, M, C, D) '
     'or confirmation (50 games); the processed sha, statcast 2023-2025 sources, style snapshot, G0 bundle, tau freeze '
     'and the S2 bind identity 5683fb61 are checked before any planning call in every scope.',
@@ -416,19 +425,34 @@ def read_manifest(path):
     return [json.loads(line) for line in lines]
 
 
+REGISTRATION_KINDS = ('config_digest', 'config_digest_reregistration')
+
+
+def registration_entries(path):
+    """This experiment's registration entries of a digest manifest, in append order."""
+    return [e for e in read_manifest(path) if e.get('experiment_id') == EXPERIMENT_ID and e.get('kind') in REGISTRATION_KINDS]
+
+
 def verify_digest_manifest(config, repo):
-    """The external append-only digest manifest (path pinned at registration, outside the repository) holds exactly
-    one config-digest entry for this experiment, equal to the digest of this config and to its registration pins."""
+    """The external append-only digest manifest (path pinned at registration, outside the repository) holds one
+    original config_digest entry for this experiment, then only re-registration entries after bug-fix retries, each
+    naming the previous digest, a reason and the aborted attempt; the last (active) entry equals the digest of this
+    config and its registration pins."""
     path = config['registration']['digest_manifest_path']
     if not isinstance(path, str) or not Path(path).is_absolute():
         raise RegistrationError('registration.digest_manifest_path must be an absolute path')
     path = Path(path).resolve()
     if path.is_relative_to(Path(repo).resolve()) or not path.is_file():
         raise RegistrationError('the digest manifest must be an existing file outside the repository')
-    entries = [e for e in read_manifest(path) if e.get('experiment_id') == EXPERIMENT_ID and e.get('kind') == 'config_digest']
-    if len(entries) != 1:
-        raise RegistrationError('the digest manifest needs exactly one config_digest entry for ' + EXPERIMENT_ID)
-    entry, registration = entries[0], config['registration']
+    entries = registration_entries(path)
+    if not entries or entries[0].get('kind') != 'config_digest':
+        raise RegistrationError('the digest manifest needs exactly one original config_digest entry for ' + EXPERIMENT_ID)
+    for before, after in zip(entries, entries[1:]):
+        if (after.get('kind') != 'config_digest_reregistration' or after.get('previous_digest') != before.get('digest')
+                or not after.get('reason') or not after.get('aborted_attempt')):
+            raise RegistrationError('a later entry must be a re-registration naming the previous digest, a reason and '
+                                    'the aborted attempt (exactly one original config_digest entry)')
+    entry, registration = entries[-1], config['registration']
     if entry.get('digest') != config_digest(config):
         raise RegistrationError('config digest differs from the registered digest manifest entry')
     if entry.get('registered_commit') != registration['registered_commit'] or \
@@ -648,11 +672,23 @@ SMOKE_RECORD_FIELDS = {
 }
 
 
+STATUS_COUNT_FIELDS = ('statuses', 'fhdp_only_game_statuses')  # runtime decision-status counts (structural)
+
+
+def runtime_statuses():
+    """The registered runtime's decision-status vocabulary (policy_runtime.STATUSES, read only)."""
+    from .policy_runtime import STATUSES
+    return tuple(STATUSES)
+
+
 def smoke_metric_keys(record, prefix=''):
-    """Keys of a smoke record that look like a comparison metric or a Q/law value (must be empty)."""
+    """Keys of a smoke record that look like a comparison metric or a Q/law value (must be empty). The top-level
+    status-count objects are checked separately against the runtime status vocabulary."""
     found = []
     if isinstance(record, dict):
         for key, value in record.items():
+            if not prefix and key in STATUS_COUNT_FIELDS:
+                continue
             name = str(key).lower()
             path = f'{prefix}.{key}' if prefix else str(key)
             if any(part in name for part in FORBIDDEN_SMOKE_KEY_PARTS):
@@ -688,6 +724,15 @@ def smoke_record_problems(record):
                 problems.append(f'{key} must be an object')
             else:
                 problems += [f'field not permitted in the smoke record: {key}.{k}' for k in value if k not in allowed]
+    vocabulary = set(runtime_statuses())
+    for key in STATUS_COUNT_FIELDS:
+        if key in record:
+            counts = record[key]
+            if not isinstance(counts, dict):
+                problems.append(f'{key} must be an object of status counts')
+                continue
+            problems += [f'{key}.{k} is not a runtime decision status' for k in counts if k not in vocabulary]
+            problems += [f'{key}.{k} is not a count' for k, v in counts.items() if not (type(v) is int and v >= 0)]
     problems += [f'metric-like key in the smoke record: {k}' for k in smoke_metric_keys(record)]
     problems += [f'float vector in the smoke record: {k}' for k in float_vectors(record)]
     return problems

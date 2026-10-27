@@ -1,25 +1,21 @@
 {
   "protocol": "planner_variance_rao_blackwell_v1",
   "experiment_id": "EXP-STAB-02",
-  "status": "REGISTERED",
-  "execute": true,
+  "status": "DRAFT_UNREGISTERED",
+  "execute": false,
   "status_note": "Materialized from docs/pm/research/track-a/A1-planner-variance-registration-draft.json (design review PASS, REVIEW-A1-ASTRA-003). Every real-data stage, the smoke included, refuses until registration sets status REGISTERED, execute true and the registration block (design and code review references, registered commit, code_sha256 of the runner, module and registry).",
   "registration": {
-    "registered_kst": "2026-10-27 14:27 KST",
-    "registered_commit": "048292651e129971a5a96af2378292745e9fe96a",
-    "design_review_reference": "docs/pm/research/track-a/reviews/REVIEW-A1-ASTRA-003.md (gpt-6-astra, VERDICT PASS, 2026-10-27)",
-    "code_review_reference": "docs/pm/research/track-a/reviews/CODE-REVIEW-A1-ASTRA-003.md (PASS_WITH_NOTES, 363b08b4) + CODE-REVIEW-A1-ASTRA-004-CLOSURE.md (PASS, 04829265)",
-    "code_sha256": {
-      "experiments/pitchmdp/pitchmdp/planner_variance.py": "584d7ab9a77a31f457bfb2f830583ac99921f5429b05752ae1b82cc1bc53cc77",
-      "experiments/pitchmdp/pitchmdp/planner_variance_registry.py": "6f04d31f812bbbcfb284d85b58deb75f538b5b9748616fc6948d74e18415a473",
-      "experiments/pitchmdp/scripts/diagnose_planner_variance.py": "2291eb65f4943521e1ecbfdf3380fb99be3ce5118964f8970b8605eac05bf9c7"
-    },
-    "digest_manifest_path": "/Users/song/Projects/pitcheezy-pm-jobs/track-a/EXP-STAB-02/digest-manifest.jsonl",
+    "registered_kst": null,
+    "registered_commit": null,
+    "design_review_reference": null,
+    "code_review_reference": null,
+    "code_sha256": null,
+    "digest_manifest_path": null,
     "order": "D186 + PM 2026-10-27 (all track-A drafts; gates G1-G2): design review -> review of the code, config and synthetic tests at a fixed commit (code reading only, incl. the smoke code; no real-data execution) -> registration -> smoke as the first registered step -> full run (pass M, then conditional passes C and D); each review must end PASS, or PASS_WITH_NOTES with every note closed or recorded as accepted by the PM",
     "addenda": "append-only, never rewritten: (1) smoke record after the registered smoke (cost and structural integrity only, no comparison metric); (2) if a confirmation slice is run, its 50-game list sha256 before any planning call on it (data.confirmation_slice)",
     "smoke_record": "the smoke receipt (<attempt>/smoke/results.json + SHA256SUMS, receipts.jsonl line) is referenced from the registration block by path and digest; no comparison metric is in it",
     "deadline_rule": "pinned at registration as a rule: each pass computes its deadline at its start as min(06:00 KST of the next WS game day, pass start + pass cap) (compute.passes); checked per PA block; passing it aborts that pass and discards its partial results",
-    "config_digest_rule": "digest = sha256 of the UTF-8 bytes of json.dumps(config, ensure_ascii=False, sort_keys=True, indent=2) + one trailing newline with exactly these paths set to null: status, execute, registration.registered_kst, registration.registered_commit, registration.design_review_reference, registration.code_review_reference, registration.code_sha256, registration.digest_manifest_path; the config carries no digest field: the digest, registered_commit and code_sha256 form one config_digest entry of the external append-only digest manifest at digest_manifest_path (outside the repository), which also receives every pass receipt",
+    "config_digest_rule": "digest = sha256 of the UTF-8 bytes of json.dumps(config, ensure_ascii=False, sort_keys=True, indent=2) + one trailing newline with exactly these paths set to null: status, execute, registration.registered_kst, registration.registered_commit, registration.design_review_reference, registration.code_review_reference, registration.code_sha256, registration.digest_manifest_path; the config carries no digest field: the digest, registered_commit and code_sha256 form one config_digest entry of the external append-only digest manifest at digest_manifest_path (outside the repository), which also receives every pass receipt; a re-registration after a bug-fix retry appends one config_digest_reregistration entry naming the previous digest, the reason and the aborted attempt, and the last entry of that chain is the active registration (bug_fix_retries)",
     "registered_commit_rule": "an immutable full 40-hex commit sha (never a branch, tag, HEAD or short revision) that resolves to itself, equals the digest-manifest entry, contains the reviewed sources and is an ancestor of HEAD"
   },
   "design_doc": "docs/pm/research/track-a/A1-planner-variance-design.md",
@@ -168,7 +164,7 @@
   ],
   "implementation_choices": [
     "Config path configs/EXP-STAB-02.yaml with a JSON body (STAB-01 convention); this registry module is a fifth new file next to the four the design lists; the runner, module and registry sha256 are pinned in the config registration block (code_sha256) and verified before any data is read.",
-    "Config digest as A2/RS-03: sha256 of canonical JSON (sort_keys, indent 2, one trailing newline) with exactly DIGEST_NULLED_PATHS set to null; no in-config digest field; the digest, the registered commit and code_sha256 are one config_digest entry of the external append-only digest manifest (registration.digest_manifest_path, outside the repository), which also receives every pass receipt. The registered commit must contain the reviewed sources and a config with the same digest and be an ancestor of HEAD; missing Git provenance refuses.",
+    "Config digest as A2/RS-03: sha256 of canonical JSON (sort_keys, indent 2, one trailing newline) with exactly DIGEST_NULLED_PATHS set to null; no in-config digest field; the digest, the registered commit and code_sha256 are the registration entry of the external append-only digest manifest (registration.digest_manifest_path, outside the repository), which also receives every pass receipt: one original config_digest entry, then only config_digest_reregistration entries after a bug-fix retry (previous_digest, reason, aborted attempt); the last entry is the active registration. The registered commit must contain the reviewed sources and a config with the same digest and be an ancestor of HEAD; missing Git provenance refuses.",
     "RB continuation: one rollouts() call (the registered function) over every non-terminal child of every first pitch, children ordered action, sample, outcome; continuation uniforms U[i,1:,:] of the parent sample; a cap of 1 truncates every child to the cutoff. Children with outcome probability 0 are still rolled out (weight 0).",
     "RB12 first pitch: chunks of six samples (0-5, then 6-11), action-major inside a chunk; RB6 is one chunk.",
     "A0 first-step evidence: the runtime seed-0 planner and the A0 seed-5 planner are observed during their original searches (instance-level FirstStepObserver over the same bound pool/predictor/terminal/budget and a recording q_values; registered code unchanged, no second search): the first-pitch outcome index and the value of every (action, sample) path and the planner time. The evidence must reproduce the A0 Q exactly; it is stored in the pass-M and confirmation decisions.npz and pass C reads it from pass M.",
@@ -190,6 +186,8 @@
     "A pass folder counts as complete or aborted only through its terminal receipt (the last COMPLETED/ABORTED line of the same attempt, pass and SHA256SUMS file, with this config digest, present identically in the external digest manifest) whose digest equals the verified SHA256SUMS digest; this is checked on every resume and before any dependent pass. A folder without a terminal receipt (interrupted at any point, even before its started.json) is closed as an abort with the pass effect; its retry window is its recorded start window or, if that is missing, conservatively the current one. A process in which any stop rule fired (pass C or a pass-D arm aborted while later passes ran) exits 3.",
     "Confirmation: --confirmation-select records the 50-game list (no planning call) under the same window/watch check as a pass; --confirmation runs against a pin file whose games sha256 must equal it (Song's go is the PM gate before writing that pin). Retries go to <attempt>/confirmation/try-NN; a try after an aborted one starts only in a later run window (window id = the 06:00 KST that closes the window); a completed try is final.",
     "Resources: A0 seed-0 planner time is measured inside runtime.submit (recording q_values) and reported next to the whole submit time; other arms time q_values; pass seconds include data preparation; peak RSS is ru_maxrss, a process-lifetime peak (bytes on macOS), conservative against the 8 GiB cap and labelled as such.",
+    "Smoke status counts: statuses.* and fhdp_only_game_statuses.* may carry exactly the runtime decision statuses (policy_runtime.STATUSES, e.g. UNSUPPORTED_LOGGING_POSITIVITY) with non-negative integer counts; they are structural counts, exempt from the metric-like key scan, while every other key and every float vector is still refused.",
+    "macOS AppleDouble sidecars (the ._ prefix and AppleDouble magic, matrix_policy_artifacts.is_appledouble), which non-APFS volumes such as the T7 drive create beside every written file, even after sealing, are operating-system metadata: SHA256SUMS sealing and verification ignore them; every seal is verified at once.",
     "One data scope per process: smoke (3 smoke games + the FH-DP smoke game), registered (the 150 games; smoke, M, C, D) or confirmation (50 games); the processed sha, statcast 2023-2025 sources, style snapshot, G0 bundle, tau freeze and the S2 bind identity 5683fb61 are checked before any planning call in every scope."
   ],
   "settings": {
@@ -551,5 +549,26 @@
       "13:30"
     ],
     "game_days": "not known to the code: every day is treated as a game day"
-  }
+  },
+  "bug_fix_retries": [
+    {
+      "retry": 1,
+      "void_registration": {
+        "config_digest": "9a4767abbb03ed85826a7a2859c7aa1450ba3c1b688cd30e6608700b81378e47",
+        "registered_commit": "048292651e129971a5a96af2378292745e9fe96a",
+        "registration_commit": "8f3d08c9"
+      },
+      "aborted_attempt": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-STAB-02/attempt-001",
+      "aborted_pass": "smoke",
+      "aborted_utc": "2026-10-27T07:25:59Z",
+      "result": "none (NO_FULL_RUN, non-citable)",
+      "defects": [
+        "the smoke sink treated the runtime decision-status count key statuses.UNSUPPORTED_LOGGING_POSITIVITY as a metric-like key (its \"logging\" part) and refused the record",
+        "macOS AppleDouble sidecars that the T7 volume creates beside written files (._SHA256SUMS after sealing) made the aborted smoke folder differ from its SHA256SUMS"
+      ],
+      "fix": "status counts allowlisted from policy_runtime.STATUSES; sealing and verification ignore AppleDouble sidecars and every seal is verified at once; the harness is otherwise unchanged",
+      "unchanged": "arms, seeds, metrics, thresholds, decision set, data, row budgets, caps and the scientific path",
+      "rule": "bug-fix retry of the lightweight gate: recorded, re-registered at the fixed commit (new config digest chained to the void one in the digest manifest), smoke rerun in a new attempt folder"
+    }
+  ]
 }
