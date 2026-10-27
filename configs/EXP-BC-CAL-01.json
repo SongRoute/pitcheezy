@@ -742,7 +742,7 @@
     "e0_reconstruction": "first-row pre-decision fields and frozen TRAIN artifacts only, PolicyRuntime.start_population rule (policy_runtime.py:340-360)",
     "integrity_gates": {
       "stage": "s6-integrity, before xf-fit and score-dev (code.stages); any failure -> FAILED_INTEGRITY, no later stage",
-      "S6_identity": "ledger and manifest sha256 and every runtime_sha256 equal the registration pins (data.s6_ledger), checked first; R1b and R2 are content checks, not identity",
+      "S6_identity": "ledger and manifest sha256 equal their registration pins; the header's pins.candidate.sha256 equals the sealed policy identity c13cc989... (data.s6_ledger.candidate_sha256); the header's runtime_sha256 (the PolicyRuntime's own identity) and every decision row's runtime_sha256 equal the value pinned as-is from the header (data.s6_ledger.runtime_sha256.value); checked first; R1b and R2 are content checks, not identity",
       "R1": "BC_P file sha256 b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11",
       "R1b": "VectorBC reproduces every ledger logging vector, max abs diff <= 1e-12",
       "R2": {
@@ -924,7 +924,7 @@
     "protection_window_rule": "applied every day (game days are not detected): never start inside 06:30-13:30 KST, abort and preserve when 06:30 KST is reached"
   },
   "stop_rules": [
-    "S6 identity pin mismatch (ledger or manifest sha256, any runtime_sha256) or B0 reproduction (R1, R1b, R2) failure -> FAILED_INTEGRITY, no xf-fit and no DEV scoring",
+    "S6 identity pin mismatch (ledger or manifest sha256; header pins.candidate.sha256 other than c13cc989...; a header or decision-row runtime_sha256 other than the value pinned from the header) or B0 reproduction (R1, R1b, R2) failure -> FAILED_INTEGRITY, no xf-fit and no DEV scoring",
     "a stage-order violation (smoke before registration, a DEV pitch-type label before freeze-primary, a DEV metric (metrics.dev_metric_definition; the s6-integrity checks excepted) before freeze-xf) -> the runner refuses, stops and records",
     "leakage or synthetic tests fail -> no real-data stage starts",
     "a 2026 row or a date after 2025-09-30 is read -> stop immediately",
@@ -1021,13 +1021,13 @@
     "whether STAB-01 ledgers preserved logged_index (moot for this registration: D186 chose the S6 ledger)",
     "all A3 population counts, B0 whole-MLB DEV NLL/ECE and all A3 costs are not measured",
     "S6 ledger file size, the materialize.json cell count 81,132 and the logging_mass_on_mask quantiles have no committed summary (T7 only) and are unverified within the review boundary",
-    "whether the S6-dr-a5 ledger's runtime_sha256 equals c13cc989...: confirmed by the registrar from the ledger header before pinning (data.s6_ledger.runtime_sha256)"
+    "the S6-dr-a5 ledger header identities, read by the registrar from the header line only before pinning: pins.candidate.sha256 must equal c13cc989... (data.s6_ledger.candidate_sha256); runtime_sha256 is the PolicyRuntime's own identity (af59057b... at the read-only header check) and is pinned as-is (data.s6_ledger.runtime_sha256.value), not compared with c13cc989..."
   ],
   "sources": {
     "review_round_1_fixes": [
       "experiments/pitchmdp/pitchmdp/policy_requests.py:277-298 (style snapshot; history columns :284)",
       "experiments/pitchmdp/pitchmdp/policy_estimator.py:142-157 (affine recursion)",
-      "experiments/pitchmdp/pitchmdp/policy_runtime.py:291, :489 (runtime_sha256), :327-338 (hand check)",
+      "experiments/pitchmdp/pitchmdp/policy_runtime.py:291, :489 (runtime_sha256 = the PolicyRuntime identity; the policy identity is the header pins.candidate.sha256), :327-338 (hand check)",
       "experiments/pitchmdp/pitchmdp/rollout_policy.py:103-105 (fallback support)",
       "configs/MLB-2026-OPE-PREREG-DRAFT-v1.json:303, :800-828",
       "configs/ML-POLICY-MATERIALIZATION-v1.json:506-514",
