@@ -182,7 +182,9 @@ def test_config_is_the_draft_family_with_p35_export_and_five_gpus():
     raw, cfg, p35 = RUN.read_text(), read(RUN), read(P35)
     assert raw.isascii() and raw == json.dumps(cfg, indent=2) + '\n'
     assert cfg['protocol'] == 'cuda_direct_v1' and cfg['experiment_id'] == 'EXP-P48-001'
-    assert cfg['status'] == 'DRAFT' and cfg['execution'] == {'enabled': False} and cfg[reg.MARKER] is True
+    # DRAFT before registration; REGISTERED (execution enabled) after the 2026-10-27 registration edit
+    assert cfg['status'] in ('DRAFT', 'REGISTERED') and cfg['execution'] == {'enabled': cfg['status'] == 'REGISTERED'}
+    assert cfg[reg.MARKER] is True
     assert 'repeat_tag' not in cfg and cfg['seeds'] == [0, 1, 2, 3, 4] and cfg['fits'] == 15
     for key in ('export', 'calibration'):
         assert cfg[key] == p35[key], key  # copied verbatim (manifest sha, splits, shapes, workload, context layout)
@@ -205,10 +207,17 @@ def test_config_is_the_draft_family_with_p35_export_and_five_gpus():
     for needle in ('No 2026 rows', 'post-selection', 'not new data', 'prospective'):
         assert needle in cfg['exposure'], needle
     registration = cfg['registration']
-    assert {k for k, v in registration.items() if v is None} == {'source_commit', 'draft_sha256', 'smoke', 'timing',
-                                                                  'independent_review', 'go', 'registered_kst'}
-    assert registration['preregistration'] == {'path': str(PREREG.relative_to(REPO)), 'sha256': None}
-    with pytest.raises(ValueError, match='REGISTERED'):
+    assert registration['preregistration']['path'] == str(PREREG.relative_to(REPO))
+    if cfg['status'] == 'DRAFT':  # before registration: the registration block is empty and real fits refuse
+        assert {k for k, v in registration.items() if v is None} == {'source_commit', 'draft_sha256', 'smoke', 'timing',
+                                                                      'independent_review', 'go', 'registered_kst'}
+        assert registration['preregistration']['sha256'] is None
+        with pytest.raises(ValueError, match='REGISTERED'):
+            rc.require_executable(cfg, smoke=False)
+    else:  # after the 2026-10-27 registration edit: every field filled, the pre-registration pinned, real fits allowed
+        assert not {k for k, v in registration.items() if v is None}
+        assert registration['preregistration']['sha256'] == rc.sha256_file(PREREG)
+        assert registration['independent_review']['verdict'] in ('PASS', 'PASS_WITH_NOTES')
         rc.require_executable(cfg, smoke=False)
     rc.require_executable(cfg, smoke=True)
 
@@ -381,8 +390,10 @@ def test_review_round_1_is_kept_verbatim_with_its_required_fixes():
 
 def test_draft_refuses_real_fits(export, tmp_path):
     path, digest, _ = export
+    draft = load()
+    draft['status'], draft['execution'] = 'DRAFT', {'enabled': False}  # the DRAFT precondition, independent of the shipped status
     with pytest.raises(ValueError, match='REGISTERED'):
-        rc.run_task(load(), path, digest, tmp_path / 'real', 'tabm_residual_counts', 0, 'cpu', {})
+        rc.run_task(draft, path, digest, tmp_path / 'real', 'tabm_residual_counts', 0, 'cpu', {})
 
 
 @pytest.mark.parametrize('arm', reg.ARM_ORDER)
@@ -528,4 +539,5 @@ def test_queue_runs_the_15_tasks_on_up_to_five_allowed_gpus(tmp_path):
                        'unknown': ['GPU-00000000-0000-0000-0000-000000000006'], 'none': []}.items():
         with pytest.raises(ValueError):
             make(gpus, name)
-    assert cq.Deadlines(cfg['queue']).no_new.isoformat().startswith('2026-10-27T23:00')
+    q = cfg['queue']  # clock fields are placeholders before registration and the real deadlines after it
+    assert cq.Deadlines(q).no_new.isoformat().startswith(f"{q['date']}T{q['no_new_fit_after']}")

@@ -1,9 +1,9 @@
 {
   "protocol": "cuda_direct_v1",
   "experiment_id": "EXP-P48-001",
-  "status": "DRAFT",
+  "status": "REGISTERED",
   "adoption_confirm": true,
-  "decision": "DRAFT, not registered: smoke only. Real fits need the committed pre-registration, an independent review of this config, the registry and the Stage-B scorer by an agent other than the author, a CUDA smoke of all 15 tasks, registration (status REGISTERED, execution.enabled true, registration block filled, queue clock fields set) and Song's explicit go (new-experiment rule). No scientific N/G decision, promotion or selection from Stage A. G0-global, the G15 mix (D145), the policy identifier c13cc989 and the service are unchanged by this family whatever its result.",
+  "decision": "None. REGISTERED for Stage A (CUDA fits + descriptive same-family contrasts) and Stage B (Mac mix vs G15 under the fixed N rule). No winner, promotion, policy or service claim; G15, G0-global, c13cc989 unchanged.",
   "purpose": "Adoption-seed confirmation (pre-registration experiments/pitchmdp/docs/PREREG-EXP-P48-001-adoption-seed-confirmation-2026-10-26.md, written before any smoke, fit or score of this family; designed after the EXP-P34-001/EXP-P35-001 scores were read on repeatedly exposed DEV: post-selection). Question: does the TabM-mini k=8 head on the periodic-residual backbone with workload counts (tabm_residual_counts), which the P34/P35 exploration read below the same-family flatten control on UNBLENDED head contrasts, still improve on the research baseline G15 mix once it is treated exactly like G15 (mixed with the frozen G0-global member of the same seed, then the June frequency blend) on the adoption seeds 0-4? Stage A (this config, CUDA): 3 arms x 5 seeds = 15 fits with the epoch cap 60 and the unchanged export and calibration chain; unblended contrasts vs the same-family CUDA control are descriptive. Stage B (comparison.stage_b, Mac CPU) is the primary comparison against the frozen G15 mix under the matrix N rule.",
   "source_configs": {
     "tabm_residual_registered": {
@@ -611,17 +611,17 @@
   "queue": {
     "timezone": "Asia/Seoul",
     "date": "2026-10-27",
-    "date_note": "PLACEHOLDER clock, set at registration: date, no_new_fit_after, kill_own_after and aggregate_by are re-dated at registration from the smoke / timing record (valid HH:MM placeholders only; the queue never launches after no_new_fit_after on this date, so a queue smoke after 2026-10-27 23:00 KST needs these fields re-dated first; a direct run_cuda_direct.py --smoke task does not read them)",
+    "date_note": "Clock set at registration from the smoke record: queue never launches a task after no_new_fit_after on this KST date; own process groups still running at kill_own_after are terminated.",
     "clock_fields_set_at_registration": [
       "date",
       "no_new_fit_after",
       "kill_own_after",
       "aggregate_by"
     ],
-    "batch": "DRAFT EXP-P48-001 adoption-seed confirmation, 3 arms x seeds 0-4 = 15 fits, epoch cap 60; smoke only until registration",
-    "no_new_fit_after": "23:00",
-    "kill_own_after": "23:30",
-    "aggregate_by": "23:59",
+    "batch": "EXP-P48-001 adoption-seed confirmation, 3 arms x seeds 0-4 = 15 fits, epoch cap 60; REGISTERED",
+    "no_new_fit_after": "18:00",
+    "kill_own_after": "19:00",
+    "aggregate_by": "19:30",
     "task_timeout_seconds": 3600,
     "family_budget_seconds": 36000,
     "max_attempts": 2,
@@ -632,20 +632,83 @@
   "exposure": "No 2026 rows. Cpanel DEV and whole-MLB DEV are the same repeatedly exposed <=2025 rows used by P15/P16 (G15), P24-P37 and others; this family was chosen after reading the P34/P35 scores (post-selection) and the G15 numbers it is compared with were read before (D145). Seeds 0-4 are the adoption RNG seeds (0-2 also used by P24/P25/P27/P29 arms, 3-4 by EXP-P30-001 arms), not new data. Even a Stage-B pass is a repeated-DEV result; the honest confirmation is prospective (2027 season or an RS-02-style arm). No policy, service or promotion claim.",
   "data_rules": "No 2026 rows (exporter guard_dates + per-split year check; runner rechecks the manifest). DEV/mlb_dev are only predicted, never used for fit, early stop, temperature, mix weights or June blend weights; MIX_FIT weights use the June blend split only, as the June frequency blend does.",
   "execution": {
-    "enabled": false
+    "enabled": true
   },
   "registration": {
     "note": "Filled at registration, before any real fit: the registering agent records these fields, flips status to REGISTERED and execution.enabled to true and sets the queue clock fields",
-    "source_commit": null,
-    "draft_sha256": null,
+    "source_commit": "011c257fc29f021626d90b1c128c653183baab51",
+    "draft_sha256": "d8cb1a7f70815f9721903718b5d34785110de8e8a6f9252c2a0bd77acd7a9179",
     "preregistration": {
       "path": "experiments/pitchmdp/docs/PREREG-EXP-P48-001-adoption-seed-confirmation-2026-10-26.md",
-      "sha256": null
+      "sha256": "4ca5ba3c79a0daf8468192c04a64afeb1b5d0f3cb4b53ef7a86d71181673ff74"
     },
-    "smoke": null,
-    "timing": null,
-    "independent_review": null,
-    "go": null,
-    "registered_kst": null
+    "smoke": {
+      "job": "261027-145240-p48-smoke",
+      "gpu": "GPU-18e648d0-b68e-9321-9c77-69da241aad85 (idx2)",
+      "started_kst": "2026-10-27 14:52:45",
+      "written_kst": "2026-10-27 14:55:12",
+      "counts": {
+        "done": 15,
+        "failed": 0
+      },
+      "family_seconds": 140.03,
+      "task_seconds_min_max": [
+        5.0,
+        10.0
+      ],
+      "on_time": true,
+      "comparison_allowed": true,
+      "config_sha256": "d8cb1a7f70815f9721903718b5d34785110de8e8a6f9252c2a0bd77acd7a9179",
+      "export_manifest_sha256": "49097109b4f522a5a94d1557e00c52d88a8089c725977fe263c592214fb1f578",
+      "runner_sha256": "184502e758748143b995ae6702c63201fc82f357703e7cb2a661bf91c87a56d2",
+      "queue_dir": "~/cc/shared/pitcheezy/direct-confirm-1026/runs/queue-p48-smoke",
+      "output": "~/cc/shared/pitcheezy/direct-confirm-1026/runs/EXP-P48-001-smoke (15M)",
+      "source_commit": "011c257fc29f021626d90b1c128c653183baab51"
+    },
+    "timing": {
+      "source": "newsrv /home/sds733/pitcheezy-autonomy/20261004/runs/EXP-P34-001 and EXP-P35-001 fit.json (10 fits per arm, A5000, one fit per GPU co-scheduled), read 2026-10-27 10:1x KST",
+      "fit_seconds": {
+        "control": {
+          "min": 73,
+          "mean": 95,
+          "max": 135
+        },
+        "periodic_residual_counts": {
+          "min": 142,
+          "mean": 211,
+          "max": 250
+        },
+        "tabm_residual_counts": {
+          "min": 370,
+          "mean": 534,
+          "max": 701
+        }
+      },
+      "epochs_run": {
+        "control": "10-15",
+        "periodic_residual_counts": "10-14",
+        "tabm_residual_counts": "20-38",
+        "stopped_by": "patience in all 30 fits"
+      },
+      "peak_device_bytes_max": {
+        "control": 1513975808,
+        "periodic_residual_counts": 1621360640,
+        "tabm_residual_counts": 1653562368,
+        "unit": "torch.cuda.max_memory_allocated (GiB 1.41/1.51/1.54)"
+      },
+      "host": {
+        "max_rss_bytes_periodic_arm_p38_resource_v2": 6979338240,
+        "nvidia_smi_peak_used_bytes_p38_resource_v2": 2006974464
+      },
+      "stop_rule_check": "max tabm_residual_counts fit 701 s < 1800 s projection limit (config queue.stop_rule)",
+      "projection_not_measurement": "15 fits on 3 GPUs (idx2, idx1, idx3) about 25-30 min wall; arithmetic on the recorded values above"
+    },
+    "independent_review": {
+      "path": "docs/reviews/REVIEW-EXP-P48-001-ASTRA-002.md",
+      "verdict": "PASS_WITH_NOTES",
+      "reviewer": "Codex gpt-6-astra (read-only sandbox), distinct from the Opus author"
+    },
+    "go": "Song D185 (2026-10-27 10:3x KST): option 1-1 -- GPU idx2 smoke at 14:50, then registration, then the 15-fit run on GPU idx2/idx1/idx3; D184 decision 1 = recommended option (proceed with B1)",
+    "registered_kst": "2026-10-27 15:19 KST"
   }
 }
