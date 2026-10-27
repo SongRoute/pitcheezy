@@ -557,7 +557,7 @@ def test_config_digest_ignores_only_the_registration_fields():
 
 def test_the_external_digest_manifest_pins_the_config(tmp_path):
     manifest = tmp_path / 'digest-manifest.jsonl'
-    config = registered_config(**{'registration.digest_manifest_path': str(manifest)})
+    config = registered_config(bug_fix_retries=[], **{'registration.digest_manifest_path': str(manifest)})
     entry = {'experiment_id': reg.EXPERIMENT_ID, 'kind': 'config_digest', 'digest': reg.config_digest(config),
              'registered_commit': config['registration']['registered_commit'],
              'code_sha256': config['registration']['code_sha256']}
@@ -566,8 +566,8 @@ def test_the_external_digest_manifest_pins_the_config(tmp_path):
     manifest.write_text(json.dumps(entry) + '\n')
     assert reg.verify_digest_manifest(config, REPO) == manifest.resolve()
     with pytest.raises(reg.RegistrationError, match='digest differs'):
-        reg.verify_digest_manifest(registered_config(question='x', **{'registration.digest_manifest_path': str(manifest)}),
-                                   REPO)
+        reg.verify_digest_manifest(registered_config(question='x', bug_fix_retries=[],
+                                                     **{'registration.digest_manifest_path': str(manifest)}), REPO)
     manifest.write_text(json.dumps(entry) + '\n' + json.dumps(entry) + '\n')
     with pytest.raises(reg.RegistrationError, match='exactly one'):
         reg.verify_digest_manifest(config, REPO)
@@ -1569,21 +1569,93 @@ def test_appledouble_sidecars_never_break_a_seal_and_the_abort_path_reseals(tmp_
     assert make_runner(registered_config(), env, second).advance('smoke') == runner.EXIT_STOPPED  # no IntegrityFailure
 
 
-def test_the_digest_manifest_accepts_a_chained_reregistration(tmp_path):
+def chain_for(config, record=None, **changes):
+    """The digest-manifest registration chain of ``config`` after its recorded retry: the void original entry and the
+    re-registration that reconciles with the record; ``changes`` edit the re-registration entry."""
+    record = record or config['bug_fix_retries'][0]
+    void = record['void_registration']
+    original = {'experiment_id': reg.EXPERIMENT_ID, 'kind': 'config_digest', 'digest': void['config_digest'],
+                'registered_commit': void['registered_commit'], 'code_sha256': {}}
+    active = {'experiment_id': reg.EXPERIMENT_ID, 'kind': 'config_digest_reregistration', 'retry': record['retry'],
+              'previous_digest': void['config_digest'], 'void_registration': dict(void), 'reason': 'bug-fix retry',
+              'aborted_attempt': record['aborted_attempt'], 'digest': reg.config_digest(config),
+              'registered_commit': config['registration']['registered_commit'],
+              'code_sha256': config['registration']['code_sha256'], **changes}
+    return [original, active]
+
+
+def write_chain(manifest, entries):
+    manifest.write_text(''.join(json.dumps(e) + '\n' for e in [entries[0], {'kind': 'receipt'}, *entries[1:]]))
+
+
+def test_the_digest_manifest_reconciles_every_reregistration_with_its_retry_record(tmp_path):
     manifest = tmp_path / 'digest-manifest.jsonl'
     config = registered_config(**{'registration.digest_manifest_path': str(manifest)})
-    void = {'experiment_id': reg.EXPERIMENT_ID, 'kind': 'config_digest', 'digest': '9' * 64,
-            'registered_commit': '1' * 40, 'code_sha256': {}}
-    active = {'experiment_id': reg.EXPERIMENT_ID, 'kind': 'config_digest_reregistration', 'previous_digest': '9' * 64,
-              'reason': 'bug-fix retry 1', 'aborted_attempt': '/runs/EXP-STAB-02/attempt-001',
-              'digest': reg.config_digest(config), 'registered_commit': config['registration']['registered_commit'],
-              'code_sha256': config['registration']['code_sha256']}
-    manifest.write_text(json.dumps(void) + '\n' + json.dumps({'kind': 'receipt'}) + '\n' + json.dumps(active) + '\n')
+    record = config['bug_fix_retries'][0]  # the recorded retry 1 of the committed config
+    assert record['retry'] == 1 and record['void_registration']['config_digest'].startswith('9a4767ab')
+    write_chain(manifest, chain_for(config))
     assert reg.verify_digest_manifest(config, REPO) == manifest.resolve()
-    for broken in ({**active, 'previous_digest': '8' * 64}, {**active, 'reason': ''}, {**active, 'kind': 'config_digest'}):
-        manifest.write_text(json.dumps(void) + '\n' + json.dumps(broken) + '\n')
-        with pytest.raises(reg.RegistrationError, match='re-registration|exactly one'):
+    original, active = chain_for(config)
+    void = record['void_registration']
+    broken = {  # each mismatch with the record refuses
+        'previous_digest': [original, {**active, 'previous_digest': '8' * 64}],
+        'previous_digest ': [{**original, 'digest': '7' * 64}, {**active, 'previous_digest': '7' * 64}],
+        'void registered commit': [{**original, 'registered_commit': '2' * 40}, active],
+        'void_registration': [original, {**active, 'void_registration': {**void, 'registration_commit': '3' * 40}}],
+        'aborted_attempt': [original, {**active, 'aborted_attempt': '/runs/EXP-STAB-02/attempt-009'}],
+        'retry index': [original, {**active, 'retry': 2}],
+        'reason': [original, {**active, 'reason': ' '}],
+    }
+    for name, entries in broken.items():
+        write_chain(manifest, entries)
+        with pytest.raises(reg.RegistrationError, match=f'does not reconcile.*{name.strip()}'):
             reg.verify_digest_manifest(config, REPO)
-    manifest.write_text(json.dumps(void) + '\n')  # the void registration alone does not match this config
-    with pytest.raises(reg.RegistrationError, match='digest differs'):
+    with pytest.raises(reg.RegistrationError, match='new digest'):  # a re-registration must change the digest
+        reg.reconcile_registration_chain([original, {**active, 'digest': void['config_digest']}], [record])
+    write_chain(manifest, [original, {**active, 'kind': 'config_digest'}])
+    with pytest.raises(reg.RegistrationError, match='exactly one'):
         reg.verify_digest_manifest(config, REPO)
+    # a record without its re-registration entry: a fresh original-only entry carrying the current pins refuses
+    write_chain(manifest, [{**active, 'kind': 'config_digest'}])
+    with pytest.raises(reg.RegistrationError, match='0 re-registration entries for 1 bug_fix_retries'):
+        reg.verify_digest_manifest(config, REPO)
+    # a re-registration entry without its record refuses
+    unrecorded = registered_config(bug_fix_retries=[], **{'registration.digest_manifest_path': str(manifest)})
+    write_chain(manifest, chain_for(unrecorded, record))
+    with pytest.raises(reg.RegistrationError, match='1 re-registration entries for 0 bug_fix_retries'):
+        reg.verify_digest_manifest(unrecorded, REPO)
+    # two retries reconcile only in order
+    second = {**record, 'retry': 2, 'aborted_attempt': '/runs/EXP-STAB-02/attempt-002',
+              'void_registration': {'config_digest': '4' * 64, 'registered_commit': '5' * 40,
+                                    'registration_commit': '6' * 40}}
+    twice = registered_config(bug_fix_retries=[record, second], **{'registration.digest_manifest_path': str(manifest)})
+    middle = {**chain_for(twice, record)[1], 'digest': '4' * 64, 'registered_commit': '5' * 40}
+    last = chain_for(twice, second)[1]
+    write_chain(manifest, [original, middle, last])
+    assert reg.verify_digest_manifest(twice, REPO) == manifest.resolve()
+    write_chain(manifest, [original, last, middle])
+    with pytest.raises(reg.RegistrationError, match='does not reconcile'):
+        reg.verify_digest_manifest(twice, REPO)
+
+
+def test_retry_records_are_validated_and_void_registrations_never_pass_the_gate():
+    record = CONFIG['bug_fix_retries'][0]
+    assert reg.retry_records(CONFIG) == [record] and reg.retry_records({}) == []
+    void = record['void_registration']
+    malformed = {
+        'retry must be 1': [{**record, 'retry': 2}],
+        'registration_commit must be a full': [{**record, 'void_registration': {**void, 'registration_commit': '8f3d08c9'}}],
+        'config_digest must be a 64-hex': [{**record, 'void_registration': {**void, 'config_digest': 'void'}}],
+        'void_registration must hold exactly': [{**record, 'void_registration': {'config_digest': void['config_digest']}}],
+        'aborted_attempt must be the absolute': [{**record, 'aborted_attempt': 'attempt-001'}],
+        'aborted_pass must be': [{**record, 'aborted_pass': 'warmup'}],
+        'the same registration twice': [record, {**record, 'retry': 2}],
+        'must be a list': {'retry': 1},
+    }
+    for message, records in malformed.items():
+        with pytest.raises(reg.RegistrationError, match=message):
+            reg.config_check({**CONFIG, 'bug_fix_retries': records})
+    for commit in (void['registered_commit'], void['registration_commit']):
+        with pytest.raises(reg.RegistrationError, match='void registration'):
+            reg.registration_gate(registered_config(**{'registration.registered_commit': commit}))
+    assert reg.registration_gate(registered_config())['status'] == reg.STATUS_REGISTERED

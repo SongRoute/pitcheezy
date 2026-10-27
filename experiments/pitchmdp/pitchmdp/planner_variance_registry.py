@@ -190,10 +190,13 @@ IMPLEMENTATION_CHOICES = [
     'Config digest as A2/RS-03: sha256 of canonical JSON (sort_keys, indent 2, one trailing newline) with exactly '
     'DIGEST_NULLED_PATHS set to null; no in-config digest field; the digest, the registered commit and code_sha256 '
     'are the registration entry of the external append-only digest manifest (registration.digest_manifest_path, '
-    'outside the repository), which also receives every pass receipt: one original config_digest entry, then only '
-    'config_digest_reregistration entries after a bug-fix retry (previous_digest, reason, aborted attempt); the last '
-    'entry is the active registration. The registered commit must contain the reviewed sources and a config with the '
-    'same digest and be an ancestor of HEAD; missing Git provenance refuses.',
+    'outside the repository), which also receives every pass receipt: one original config_digest entry, then exactly '
+    'one config_digest_reregistration entry per bug_fix_retries record, in order, each reconciled with its record '
+    '(retry index, previous digest = the void config digest, void registered and registration commits, aborted '
+    'attempt; plus a reason and a new digest); an entry without a record or a record without an entry refuses; the '
+    'last entry is the active registration, whose commit and digest are never a void one. The registered commit must '
+    'contain the reviewed sources and a config with the same digest and be an ancestor of HEAD; missing Git '
+    'provenance refuses.',
     'RB continuation: one rollouts() call (the registered function) over every non-terminal child of every first '
     'pitch, children ordered action, sample, outcome; continuation uniforms U[i,1:,:] of the parent sample; a cap of '
     '1 truncates every child to the cutoff. Children with outcome probability 0 are still rolled out (weight 0).',
@@ -289,6 +292,9 @@ IMPLEMENTATION_CHOICES = [
 
 
 FULL_SHA = re.compile(r'[0-9a-f]{40}')
+SHA256_HEX = re.compile(r'[0-9a-f]{64}')
+ATTEMPT_FOLDER = re.compile(r'attempt-\d{3}')
+VOID_REGISTRATION_FIELDS = ('config_digest', 'registered_commit', 'registration_commit')
 
 
 class RegistrationError(ValueError):
@@ -353,9 +359,53 @@ def config_check(config):
             problems.append('registration fields stay null until registration')
     elif status == STATUS_REGISTERED and execute is not True:
         problems.append('a REGISTERED config must set execute true')
+    problems += retry_record_problems(config)
     if problems:
         raise RegistrationError('; '.join(problems))
     return config
+
+
+def retry_record_problems(config):
+    """Problems of the config's bug-fix retry record (``bug_fix_retries``; absent = no retry): retries numbered 1..n
+    in order, each naming the registration it voids (config digest, full registered and registration commits, all
+    distinct across retries), the absolute attempt-NNN folder and the registered pass that aborted."""
+    records = config.get('bug_fix_retries', [])
+    if not isinstance(records, list):
+        return ['bug_fix_retries must be a list of retry records']
+    problems, voided = [], []
+    for index, record in enumerate(records, start=1):
+        name = f'bug_fix_retries[{index - 1}]'
+        if not isinstance(record, dict):
+            problems.append(f'{name} must be an object')
+            continue
+        if type(record.get('retry')) is not int or record['retry'] != index:
+            problems.append(f'{name}.retry must be {index} (retries are numbered 1..n in order)')
+        void = record.get('void_registration')
+        if not isinstance(void, dict) or set(void) != set(VOID_REGISTRATION_FIELDS):
+            problems.append(f'{name}.void_registration must hold exactly ' + ', '.join(VOID_REGISTRATION_FIELDS))
+        else:
+            if not (isinstance(void['config_digest'], str) and SHA256_HEX.fullmatch(void['config_digest'])):
+                problems.append(f'{name}.void_registration.config_digest must be a 64-hex config digest')
+            for key in ('registered_commit', 'registration_commit'):
+                if not (isinstance(void[key], str) and FULL_SHA.fullmatch(void[key])):
+                    problems.append(f'{name}.void_registration.{key} must be a full 40-hex commit sha')
+            voided.append(void['config_digest'])
+        attempt = record.get('aborted_attempt')
+        if not (isinstance(attempt, str) and Path(attempt).is_absolute() and ATTEMPT_FOLDER.fullmatch(Path(attempt).name)):
+            problems.append(f'{name}.aborted_attempt must be the absolute path of an attempt-NNN folder')
+        if record.get('aborted_pass') not in PASS_ORDER:
+            problems.append(f'{name}.aborted_pass must be a registered pass')
+    if len(set(voided)) != len(voided):
+        problems.append('bug_fix_retries void the same registration twice')
+    return problems
+
+
+def retry_records(config):
+    """The validated bug-fix retry records (empty without a retry)."""
+    problems = retry_record_problems(config)
+    if problems:
+        raise RegistrationError('; '.join(problems))
+    return list(config.get('bug_fix_retries', []))
 
 
 def registration_gate(config):
@@ -376,6 +426,12 @@ def registration_gate(config):
         missing.append('code_sha256 for ' + ', '.join(NEW_CODE))
     if missing:
         raise RegistrationError('registration fields missing: ' + ', '.join(missing))
+    records = retry_records(config)
+    if commit in {r['void_registration'][k] for r in records for k in ('registered_commit', 'registration_commit')}:
+        raise RegistrationError('registered_commit is a commit of a void registration (bug_fix_retries): register the '
+                                'fixed commit')
+    if config_digest(config) in {r['void_registration']['config_digest'] for r in records}:
+        raise RegistrationError('the config digest is that of a void registration (bug_fix_retries)')
     return config
 
 
@@ -433,26 +489,52 @@ def registration_entries(path):
     return [e for e in read_manifest(path) if e.get('experiment_id') == EXPERIMENT_ID and e.get('kind') in REGISTRATION_KINDS]
 
 
+def reconcile_registration_chain(entries, records):
+    """The manifest's registration chain against the config's bug-fix retry records: one original config_digest
+    entry, then exactly one config_digest_reregistration entry per record, in order. Re-registration k names retry k,
+    the digest of the entry before it as previous_digest (= record k's void config digest; that entry was registered
+    at the record's void registered commit), a copy of the record's void_registration, the record's aborted attempt,
+    a reason and a new digest. An entry without a record, or a record without an entry, refuses. Returns the active
+    (last) entry."""
+    if not entries or entries[0].get('kind') != 'config_digest':
+        raise RegistrationError('the digest manifest needs exactly one original config_digest entry for ' + EXPERIMENT_ID)
+    if len(entries) != len(records) + 1:
+        raise RegistrationError(f'the digest manifest holds {len(entries) - 1} re-registration entries for '
+                                f'{len(records)} bug_fix_retries records: every re-registration needs its record and '
+                                'every record its re-registration entry (exactly one original config_digest entry)')
+    for k, (record, before, after) in enumerate(zip(records, entries, entries[1:]), start=1):
+        if after.get('kind') != 'config_digest_reregistration':
+            raise RegistrationError(f'entry {k + 1} must be the config_digest_reregistration of bug_fix_retries[{k - 1}] '
+                                    '(exactly one original config_digest entry)')
+        void = record['void_registration']
+        mismatches = [name for name, same in (
+            ('retry index', after.get('retry') == k == record['retry']),
+            ('previous_digest', after.get('previous_digest') == before.get('digest') == void['config_digest']),
+            ('void registered commit', before.get('registered_commit') == void['registered_commit']),
+            ('void_registration', after.get('void_registration') == void),
+            ('aborted_attempt', after.get('aborted_attempt') == record['aborted_attempt']),
+            ('reason', isinstance(after.get('reason'), str) and bool(after['reason'].strip())),
+            ('new digest', after.get('digest') != after.get('previous_digest')),
+        ) if not same]
+        if mismatches:
+            raise RegistrationError(f're-registration entry {k + 1} does not reconcile with bug_fix_retries[{k - 1}]: '
+                                    + ', '.join(mismatches))
+    return entries[-1]
+
+
 def verify_digest_manifest(config, repo):
     """The external append-only digest manifest (path pinned at registration, outside the repository) holds one
-    original config_digest entry for this experiment, then only re-registration entries after bug-fix retries, each
-    naming the previous digest, a reason and the aborted attempt; the last (active) entry equals the digest of this
-    config and its registration pins."""
+    original config_digest entry for this experiment, then exactly the re-registration entries of the config's
+    bug-fix retry records, reconciled with them in order (``reconcile_registration_chain``); the last (active) entry
+    equals the digest of this config and its registration pins."""
     path = config['registration']['digest_manifest_path']
     if not isinstance(path, str) or not Path(path).is_absolute():
         raise RegistrationError('registration.digest_manifest_path must be an absolute path')
     path = Path(path).resolve()
     if path.is_relative_to(Path(repo).resolve()) or not path.is_file():
         raise RegistrationError('the digest manifest must be an existing file outside the repository')
-    entries = registration_entries(path)
-    if not entries or entries[0].get('kind') != 'config_digest':
-        raise RegistrationError('the digest manifest needs exactly one original config_digest entry for ' + EXPERIMENT_ID)
-    for before, after in zip(entries, entries[1:]):
-        if (after.get('kind') != 'config_digest_reregistration' or after.get('previous_digest') != before.get('digest')
-                or not after.get('reason') or not after.get('aborted_attempt')):
-            raise RegistrationError('a later entry must be a re-registration naming the previous digest, a reason and '
-                                    'the aborted attempt (exactly one original config_digest entry)')
-    entry, registration = entries[-1], config['registration']
+    entry = reconcile_registration_chain(registration_entries(path), retry_records(config))
+    registration = config['registration']
     if entry.get('digest') != config_digest(config):
         raise RegistrationError('config digest differs from the registered digest manifest entry')
     if entry.get('registered_commit') != registration['registered_commit'] or \

@@ -164,7 +164,7 @@
   ],
   "implementation_choices": [
     "Config path configs/EXP-STAB-02.yaml with a JSON body (STAB-01 convention); this registry module is a fifth new file next to the four the design lists; the runner, module and registry sha256 are pinned in the config registration block (code_sha256) and verified before any data is read.",
-    "Config digest as A2/RS-03: sha256 of canonical JSON (sort_keys, indent 2, one trailing newline) with exactly DIGEST_NULLED_PATHS set to null; no in-config digest field; the digest, the registered commit and code_sha256 are the registration entry of the external append-only digest manifest (registration.digest_manifest_path, outside the repository), which also receives every pass receipt: one original config_digest entry, then only config_digest_reregistration entries after a bug-fix retry (previous_digest, reason, aborted attempt); the last entry is the active registration. The registered commit must contain the reviewed sources and a config with the same digest and be an ancestor of HEAD; missing Git provenance refuses.",
+    "Config digest as A2/RS-03: sha256 of canonical JSON (sort_keys, indent 2, one trailing newline) with exactly DIGEST_NULLED_PATHS set to null; no in-config digest field; the digest, the registered commit and code_sha256 are the registration entry of the external append-only digest manifest (registration.digest_manifest_path, outside the repository), which also receives every pass receipt: one original config_digest entry, then exactly one config_digest_reregistration entry per bug_fix_retries record, in order, each reconciled with its record (retry index, previous digest = the void config digest, void registered and registration commits, aborted attempt; plus a reason and a new digest); an entry without a record or a record without an entry refuses; the last entry is the active registration, whose commit and digest are never a void one. The registered commit must contain the reviewed sources and a config with the same digest and be an ancestor of HEAD; missing Git provenance refuses.",
     "RB continuation: one rollouts() call (the registered function) over every non-terminal child of every first pitch, children ordered action, sample, outcome; continuation uniforms U[i,1:,:] of the parent sample; a cap of 1 truncates every child to the cutoff. Children with outcome probability 0 are still rolled out (weight 0).",
     "RB12 first pitch: chunks of six samples (0-5, then 6-11), action-major inside a chunk; RB6 is one chunk.",
     "A0 first-step evidence: the runtime seed-0 planner and the A0 seed-5 planner are observed during their original searches (instance-level FirstStepObserver over the same bound pool/predictor/terminal/budget and a recording q_values; registered code unchanged, no second search): the first-pitch outcome index and the value of every (action, sample) path and the planner time. The evidence must reproduce the A0 Q exactly; it is stored in the pass-M and confirmation decisions.npz and pass C reads it from pass M.",
@@ -556,7 +556,7 @@
       "void_registration": {
         "config_digest": "9a4767abbb03ed85826a7a2859c7aa1450ba3c1b688cd30e6608700b81378e47",
         "registered_commit": "048292651e129971a5a96af2378292745e9fe96a",
-        "registration_commit": "8f3d08c9"
+        "registration_commit": "8f3d08c9c0974c230f9485ba32ad80dc410ca16b"
       },
       "aborted_attempt": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-STAB-02/attempt-001",
       "aborted_pass": "smoke",
