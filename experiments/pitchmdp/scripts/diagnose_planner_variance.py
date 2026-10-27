@@ -3,11 +3,13 @@
 Pass runner of the registered design (docs/pm/research/track-a/A1-planner-variance-design.md):
 
   smoke         first registered step: the 3 EXP-STAB-01 smoke games (FH-DP: the first game of the
-                subsample order). Cost of every arm (rows, ms, RSS, r_b) and structural integrity only
-                (shapes, finite Q on the support, laws summing to 1, RB6 seed-0 rerun identical, hashes).
-                No comparison metric, no Q vector is computed into or stored in its output.
+                subsample order). Cost of every arm (rows, planner and runtime-submit time, process peak RSS,
+                r_b) and structural integrity only (shapes, finite Q on the support, laws summing to 1, RB6
+                seed-0 rerun identical, hashes). Its runtime ledger lives in a temporary directory removed when
+                the smoke ends; the smoke sink persists only allowlisted cost/structure/identity fields.
   M (mandatory) A0-MC6 (seed 0 = the runtime's own planning Q, seed 5), RB6 (seeds 0, 5), REF-RB6 (seed
                 100) on the 150 registered DEV games, joined with the EXP-STAB-01 K1/K3/K5 columns;
+                reconstruction against first-step evidence captured during the original A0 searches;
                 metrics and the RB6 status; the verdict unless RB12 is required.
   C             RB12 (seeds 0, 5) only if smoke r_b <= 2.0 and RB6 is not STABLE; enters the verdict.
   D             BF48 (50-game subsample) and FH-DP (10-game subsample), descriptive only, each only if RB6
@@ -15,13 +17,15 @@ Pass runner of the registered design (docs/pm/research/track-a/A1-planner-varian
   confirmation  50 new DEV games, A0 and the passing arm, only after STABLE_WITHIN_COST and Song's
                 confirmation, against the appended games pin.
 
-Every stage refuses unless the config is REGISTERED with execute true (``registration_gate``); the
-registered planner path must be byte-identical to its pins and the new code to its registration pins.
-Every pass writes JSON + SHA256SUMS into <attempt>/<pass folder> outside the repository (never
-results/), appends a receipt to <attempt>/receipts.jsonl, starts only if its cap fits before 06:00 KST
-(else it is deferred and the heavy lock released), and stops on the registered stop rules
-(aborted.json, nothing citable, exit 3). No reward, WE result, events kind or next-row state is read;
-no policy value is estimated; nothing is registered as a policy identity.
+Every stage refuses unless the config is REGISTERED with execute true (``registration_gate``), its digest
+equals the external digest manifest entry, the registered commit contains the reviewed sources, the
+registered planner path is byte-identical to its pins and the new code to its registration pins. Every
+pass writes JSON + SHA256SUMS into <attempt>/<pass folder> outside the repository (never results/),
+appends receipts to <attempt>/receipts.jsonl and to the digest manifest, starts only if its cap fits
+before 06:00 KST (else it is deferred and the heavy lock released), runs its data preparation and its
+finalization under the deadline/cap/RSS watch, and stops on the registered stop rules (aborted.json,
+nothing citable, exit 3). No reward, WE result, events kind or next-row state is read; no policy value is
+estimated; nothing is registered as a policy identity.
 """
 from __future__ import annotations
 
@@ -35,6 +39,7 @@ import re
 import resource
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 
@@ -58,6 +63,7 @@ SOURCES = ('scripts/diagnose_planner_variance.py', 'pitchmdp/planner_variance.py
            'pitchmdp/matrix_sharing.py')
 ATTEMPT_NAME = re.compile(r'attempt-\d{3}')
 TRY_NAME = re.compile(r'try-\d{2}')  # confirmation retries under the same profile (bug-fix retry rule)
+SELECTION_FILE = 'confirmation-selection.json'
 KINDS = {'RolloutImprovement': 'MC', 'RaoBlackwellFirstStep': 'RB', 'FrozenHistoryDP': 'DP'}
 SEEDS = {'planning_main': reg.MAIN_SEED, 'pair': list(reg.PAIR), 'reference': reg.REFERENCE_SEED,
          'stab01_sets': reg.STAB01_SEEDS, 'bootstrap': {'draws': reg.BOOTSTRAP['draws'], 'seed': reg.BOOTSTRAP['seed']},
@@ -67,6 +73,8 @@ LIMITS = ['Stability of the planning law only; no policy value, OPE or recommend
           'DEV July-September 2025 is exposed development data (no outcome read here)',
           '0.95, 0.02, 4x, the gap bins, budgets and tolerances are judgement values (D186 approved the three '
           'thresholds); costs are Mac mini CPU measurements, not service latency guarantees',
+          'peak_rss_bytes_process_lifetime is ru_maxrss: the peak of the whole process, so a later pass in the '
+          'same process inherits the peak of an earlier one',
           'RB / BF48 / FH-DP planners are diagnostics, not a registered policy identity (c13cc989 unchanged)']
 
 
@@ -98,18 +106,22 @@ def _stab():
 
 
 def peak_rss():
+    """ru_maxrss: the peak resident set of the whole process so far (bytes on macOS)."""
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 
 
-def git_state():
+def git_state(repo=REPO):
+    """(HEAD commit, dirty) of the repository; missing Git provenance refuses."""
     try:
-        commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=REPO, capture_output=True, text=True,
+        commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=repo, capture_output=True, text=True,
                                 check=True).stdout.strip()
-        dirty = bool(subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=REPO,
+        dirty = bool(subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=repo,
                                     capture_output=True, text=True, check=True).stdout.strip())
-        return commit, dirty
-    except (OSError, subprocess.CalledProcessError):
-        return None, None
+    except (OSError, subprocess.CalledProcessError) as missing:
+        raise reg.RegistrationError(f'Git provenance unavailable: {missing}') from None
+    if not re.fullmatch(r'[0-9a-f]{40}', commit):
+        raise reg.RegistrationError('Git provenance unavailable: no HEAD commit')
+    return commit, dirty
 
 
 def plain(value):
@@ -134,6 +146,11 @@ def write_json(path, payload):
     temporary = path.with_suffix(path.suffix + '.tmp')
     temporary.write_text(json.dumps(plain(payload), indent=2, ensure_ascii=False, allow_nan=False) + '\n')
     temporary.replace(path)
+
+
+def append_line(path, payload):
+    with Path(path).open('a') as stream:
+        stream.write(json.dumps(plain(payload), sort_keys=True, allow_nan=False) + '\n')
 
 
 def sha256_file(path):
@@ -200,27 +217,34 @@ class SystemClock:
 
 
 class Watch:
-    """Deadline, pass cap and sampled-RSS stop rules, checked before every PA block."""
+    """Deadline, pass cap and sampled-RSS stop rules: before the data preparation, after it, before every PA
+    block, and once more immediately before a pass publishes its results."""
     def __init__(self, clock, deadline, cap_seconds, rss):
         self.clock, self.deadline, self.cap, self.rss = clock, deadline, float(cap_seconds), rss
         self.start, self.peak = clock.monotonic(), 0
 
-    def check(self, block_index):
+    def check(self, where, *, sample_rss=False):
         if self.clock.now() >= self.deadline:
-            raise DeadlinePassed(f'deadline {self.deadline.isoformat()} passed at PA block {block_index}')
+            raise DeadlinePassed(f'deadline {self.deadline.isoformat()} passed {where}')
         if self.clock.monotonic() - self.start > self.cap:
-            raise CapExceeded(f'pass cap {self.cap:.0f} s exceeded at PA block {block_index}')
-        if block_index % reg.COST['rss_sample_every_pa_blocks'] == 0:
+            raise CapExceeded(f'pass cap {self.cap:.0f} s exceeded {where}')
+        if sample_rss:
             self.peak = max(self.peak, int(self.rss()))
             if self.peak > reg.COST['rss_cap_bytes']:
-                raise RSSExceeded(f'peak RSS {self.peak} B > {reg.COST["rss_cap_bytes"]} B')
+                raise RSSExceeded(f'process peak RSS {self.peak} B > {reg.COST["rss_cap_bytes"]} B {where}')
+
+    def block(self, index):
+        self.check(f'at PA block {index}', sample_rss=index % reg.COST['rss_sample_every_pa_blocks'] == 0)
+
+    def final_check(self):
+        self.check('at the final check before publishing', sample_rss=True)
 
     def seconds(self):
         return self.clock.monotonic() - self.start
 
 
 def search(planner, state):
-    """(q, diagnostics, conditional rows, ms) of one planner call on its own row budget."""
+    """(q, diagnostics, conditional rows, planner ms) of one planner call on its own row budget."""
     budget = planner.simulator.budget
     before = budget.conditional_rows
     started = time.perf_counter()
@@ -391,12 +415,6 @@ class RealEnvironment:
         require(set(int(g) for g in columns['game_pk']) <= set(self.games), 'EXP-STAB-01 games differ')
         return columns
 
-    def identity(self, config_path, local_path):
-        commit, dirty = git_state()
-        return {'config_sha256': sha256_file(config_path), 'local_config_sha256': sha256_file(local_path),
-                'git_commit': commit, 'git_dirty': dirty, 'pins_sha256': reg.pins_digest(),
-                'source_hashes': {rel: sha256_file(PROJECT / rel) for rel in SOURCES}}
-
     def data_version(self):
         dataset = self.inputs['parent'].get('dataset_identity', {})
         return {'processed_sha256': dataset.get('processed_sha256'), 'sources': dataset.get('sources'),
@@ -404,33 +422,53 @@ class RealEnvironment:
                 'components_sha256': self.components.sha256, 'registration_chain': self.registration['chain']}
 
 
+def run_identity(config, config_path, local_path, repo=REPO):
+    """Identity recorded in every pass: config file sha256 and registered digest, Git commit (required), pins and
+    source hashes."""
+    commit, dirty = git_state(repo)
+    return {'config_sha256': sha256_file(config_path), 'config_digest': reg.config_digest(config),
+            'local_config_sha256': sha256_file(local_path), 'git_commit': commit, 'git_dirty': dirty,
+            'registered_commit': config['registration']['registered_commit'], 'pins_sha256': reg.pins_digest(),
+            'source_hashes': {rel: sha256_file(PROJECT / rel) for rel in SOURCES}}
+
+
 # ---------------------------------------------------------------- passes
 
 class PassRunner:
     """Runs the registered passes of one attempt folder in order, under the common heavy lock."""
     PASS_FOLDERS = {name: spec['output'] for name, spec in reg.PASSES.items()}
+    IDENTITY_KEYS = ('config_sha256', 'config_digest', 'source_hashes', 'pins_sha256')
 
-    def __init__(self, config, env, attempt, *, identity, clock=None, lock=None, rss=peak_rss, log=print):
+    def __init__(self, config, env, attempt, *, identity, clock=None, lock=None, rss=peak_rss, log=print, manifest=None):
         reg.registration_gate(config)  # fail closed: no real-data stage on a draft
         self.config, self.env, self.attempt = config, env, Path(attempt)
         self.identity, self.clock, self.rss, self.log = identity, clock or SystemClock(), rss, log
         self.lock = lock or (lambda: contextlib.nullcontext())
-        self.tau = reg.TAU
+        self.manifest = None if manifest is None else Path(manifest)
+        self.tau, self.scope, self.aborts, self.smoke_scratch = reg.TAU, None, [], None
 
     # ---- attempt bookkeeping
     def folder(self, name, arm=None):
         base = self.attempt / self.PASS_FOLDERS[name]
         return base / arm if arm else base
 
-    def receipt(self, name, event, detail=None, sums=None):
+    def receipt(self, name, event, detail=None, digest=None, file=None):
+        """Append-only receipt in <attempt>/receipts.jsonl and in the external digest manifest."""
         self.attempt.mkdir(parents=True, exist_ok=True)
-        line = {'utc': self.clock.now().isoformat(), 'experiment_id': EXPERIMENT, 'pass': name, 'event': event,
-                'detail': detail, 'sha256sums_sha256': sums, 'config_sha256': self.identity.get('config_sha256')}
-        with (self.attempt / 'receipts.jsonl').open('a') as stream:
-            stream.write(json.dumps(plain(line), sort_keys=True, allow_nan=False) + '\n')
+        line = {'utc': self.clock.now().isoformat(), 'experiment_id': EXPERIMENT, 'kind': 'receipt',
+                'attempt': str(self.attempt), 'pass': name, 'event': event, 'detail': detail, 'file': file,
+                'sha256': digest, 'config_sha256': self.identity.get('config_sha256'),
+                'config_digest': self.identity.get('config_digest')}
+        append_line(self.attempt / 'receipts.jsonl', line)
+        if self.manifest is not None:
+            append_line(self.manifest, line)
+
+    def receipts(self):
+        path = self.attempt / 'receipts.jsonl'
+        return reg.read_manifest(path) if path.exists() else []
 
     def status(self, name, arm=None):
-        """('absent' | 'complete' | 'aborted' | 'incomplete', results or aborted record)."""
+        """('absent' | 'complete' | 'aborted' | 'incomplete', results or the stop record)."""
         folder = self.folder(name, arm)
         if not folder.exists():
             return 'absent', None
@@ -440,8 +478,8 @@ class PassRunner:
         if (folder / 'results.json').exists() and (folder / 'SHA256SUMS').exists():
             verify_sums(folder)
             results = json.loads((folder / 'results.json').read_text())
-            same = {k: results['identity'].get(k) for k in ('config_sha256', 'source_hashes', 'pins_sha256')}
-            require(same == {k: self.identity.get(k) for k in same},
+            same = {k: results['identity'].get(k) for k in self.IDENTITY_KEYS}
+            require(same == {k: self.identity.get(k) for k in self.IDENTITY_KEYS},
                     f'{folder.name}: written under another config or code; continue only with the same registration')
             return 'complete', results
         return 'incomplete', None
@@ -453,31 +491,29 @@ class PassRunner:
                                              'reason': 'process ended without results (crash or interrupt)',
                                              'utc': self.clock.now().isoformat(), 'effect': reg.PASSES[name]['on_stop'],
                                              'partial_results_discarded': True, 'citable': False})
-        self.receipt(name, 'ABORTED', 'incomplete folder closed', write_sums(folder))
+        self.receipt(name, 'ABORTED', 'incomplete folder closed', write_sums(folder), self.relative(folder))
 
-    def write_verdict(self, payload):
-        path = self.attempt / 'verdict.json'
-        require(not path.exists(), 'the verdict is written once')
-        write_json(path, {'experiment_id': EXPERIMENT, 'utc': self.clock.now().isoformat(), **payload})
-        self.receipt('-', 'VERDICT', payload['verdict']['label'], sha256_file(path))
+    def relative(self, folder):
+        return (Path(folder) / 'SHA256SUMS').relative_to(self.attempt).as_posix()
 
-    def settle(self):
-        """Write <attempt>/verdict.json once the registered verdict is final, recomputed from the recorded pass
-        statuses (smoke r_b and status, RB6 status of pass M, RB12 status or abort of pass C)."""
-        if (self.attempt / 'verdict.json').exists():
-            return
-        state, smoke = self.status('smoke')
-        if state != 'complete' or smoke['mechanical_rule']['status'] == 'STRUCTURAL_FAILURE':
-            return
-        if smoke['mechanical_rule']['status'] == 'COST_EXCEEDED_AT_SMOKE':
-            return self.write_verdict({'verdict': reg.verdict(smoke_r_b=smoke['r_b'], pass_m='not_run')})
+    # ---- the verdict
+    def expected_verdict(self):
+        """The final verdict payload recomputed from the verified smoke/M/C records (None while not final)."""
+        state, record = self.status('smoke')
+        if state == 'aborted':
+            if record.get('smoke_status') != 'COST_EXCEEDED_AT_SMOKE':
+                return None
+            results = json.loads((self.folder('smoke') / 'results.json').read_text())
+            return {'verdict': reg.verdict(smoke_r_b=results['r_b'], pass_m='not_run')}
+        if state != 'complete':
+            return None
+        smoke = record
         state, mandatory = self.status('M')
         if state == 'aborted':
-            return self.write_verdict({'verdict': reg.verdict(smoke_r_b=smoke['r_b'], pass_m='aborted')})
+            return {'verdict': reg.verdict(smoke_r_b=smoke['r_b'], pass_m='aborted')}
         if state != 'complete':
-            return
-        rb6, payload = self.rb6(mandatory), {'rb6_status': mandatory['rb6_status']}
-        rb12 = None
+            return None
+        rb6, payload, rb12 = self.rb6(mandatory), {'rb6_status': mandatory['rb6_status']}, None
         if reg.rb12_required(smoke['r_b'], rb6['stable']):
             state, results = self.status('C')
             if state == 'aborted':
@@ -487,27 +523,58 @@ class PassRunner:
                         'cost_ok': results['rb12_status']['cost_ok']}
                 payload['rb12_status'] = results['rb12_status']
             else:
-                return
+                return None
         verdict = reg.verdict(smoke_r_b=smoke['r_b'], pass_m='completed', rb6=rb6, rb12=rb12)
-        if verdict['final']:
-            self.write_verdict({'verdict': verdict, **payload})
+        return {'verdict': verdict, **payload} if verdict['final'] else None
+
+    def check_verdict(self):
+        """verdict.json (if written) must equal the verdict recomputed from the verified records and the digest of
+        its VERDICT receipt; returns it (or None)."""
+        path = self.attempt / 'verdict.json'
+        if not path.exists():
+            return None
+        stored = json.loads(path.read_text())
+        expected = self.expected_verdict()
+        body = {k: v for k, v in stored.items() if k not in ('experiment_id', 'utc')}
+        require(expected is not None and body == json.loads(json.dumps(plain(expected))),
+                'verdict.json differs from the verdict recomputed from the verified pass records')
+        digests = [r.get('sha256') for r in self.receipts() if r.get('event') == 'VERDICT']
+        require(len(digests) == 1 and digests[0] == sha256_file(path), 'verdict.json differs from its VERDICT receipt')
+        return stored
+
+    def write_verdict(self, payload):
+        path = self.attempt / 'verdict.json'
+        require(not path.exists(), 'the verdict is written once')
+        write_json(path, {'experiment_id': EXPERIMENT, 'utc': self.clock.now().isoformat(), **payload})
+        self.receipt('-', 'VERDICT', payload['verdict']['label'], sha256_file(path), 'verdict.json')
+
+    def settle(self):
+        """Write verdict.json once the registered verdict is final; an existing one is re-checked instead."""
+        if (self.attempt / 'verdict.json').exists():
+            self.check_verdict()
+            return
+        expected = self.expected_verdict()
+        if expected is not None:
+            self.write_verdict(expected)
 
     # ---- orchestration
+    def confirmation_tries(self):
+        base = self.folder('confirmation')
+        return sorted(p.name for p in base.iterdir() if p.is_dir() and TRY_NAME.fullmatch(p.name)) if base.exists() else []
+
     def verify_attempt(self):
-        """Every finished pass folder still matches its SHA256SUMS and was written under this registration."""
+        """Every finished pass folder still matches its SHA256SUMS and was written under this registration, and
+        verdict.json equals the verdict recomputed from them."""
         for name in reg.PASS_ORDER:
             for arm in (('BF48', 'FH-DP') if name == 'D' else (None,)):
                 self.status(name, arm)
         for label in self.confirmation_tries():
             self.status('confirmation', label)
-
-    def confirmation_tries(self):
-        base = self.folder('confirmation')
-        return sorted(p.name for p in base.iterdir() if p.is_dir() and TRY_NAME.fullmatch(p.name)) if base.exists() else []
+        self.check_verdict()
 
     @contextlib.contextmanager
     def locked(self, name):
-        """The common heavy lock (non-blocking); None when another job holds it (nothing starts)."""
+        """The common heavy lock (non-blocking); False when another job holds it (nothing starts)."""
         with contextlib.ExitStack() as stack:
             try:
                 stack.enter_context(self.lock())
@@ -537,6 +604,10 @@ class PassRunner:
         state, results = self.status('smoke')
         return results if state == 'complete' else None
 
+    def mandatory_record(self):
+        state, results = self.status('M')
+        return results if state == 'complete' else None
+
     def step_smoke(self):
         state, _ = self.status('smoke')
         if state == 'complete':
@@ -545,17 +616,14 @@ class PassRunner:
             self.close_incomplete('smoke')
             state = 'aborted'
         if state == 'aborted':
-            self.log('PLANNER_VARIANCE_STOPPED', 'smoke aborted: no full run under this attempt')
+            self.settle()
+            self.log('PLANNER_VARIANCE_STOPPED', 'smoke stopped: no full run under this attempt')
             return EXIT_STOPPED
         return self.run('smoke', self.pass_smoke, reg.pass_cap_seconds('smoke'))
 
     def step_M(self):
         smoke = self.smoke_record()
         require(smoke is not None, 'pass M needs a completed smoke')
-        if smoke['mechanical_rule']['status'] != 'FULL_RUN_ALLOWED':
-            self.settle()
-            self.log('PLANNER_VARIANCE_STOPPED', 'no full run:', smoke['mechanical_rule']['status'])
-            return EXIT_STOPPED
         state, _ = self.status('M')
         if state == 'complete':
             return None
@@ -567,10 +635,6 @@ class PassRunner:
             self.log('PLANNER_VARIANCE_STOPPED', 'pass M aborted: experiment aborted, nothing citable')
             return EXIT_STOPPED
         return self.run('M', self.pass_mandatory, reg.pass_cap_seconds('M'))
-
-    def mandatory_record(self):
-        state, results = self.status('M')
-        return results if state == 'complete' else None
 
     def step_C(self):
         smoke, mandatory = self.smoke_record(), self.mandatory_record()
@@ -619,34 +683,38 @@ class PassRunner:
         return {'stable': mandatory['rb6_status']['stable'], 'cost_ok': mandatory['rb6_status']['cost_ok']}
 
     def run(self, name, function, cap, *, arm=None):
-        """Start a pass if its cap fits the window; stop rules write aborted.json. None = continue."""
-        decision, info = reg.start_decision(self.clock.now(), cap)
+        """Start a pass if its cap fits the window; the data preparation, the pass and its finalization run under the
+        watch and the abort handler; a final deadline/cap/RSS check precedes COMPLETED. None = continue."""
+        now = self.clock.now()
+        decision, deadline = reg.start_decision(now, cap)
         if decision == 'DEFER':
-            self.receipt(name, 'DEFERRED', f'{arm or ""} {info}'.strip())
-            self.log('PLANNER_VARIANCE_DEFERRED', name, arm or '', info)
-            return EXIT_DEFERRED
-        self.env.prepare(self.scope)
-        decision, info = reg.start_decision(self.clock.now(), cap)  # the data load took time
-        if decision == 'DEFER':
-            self.receipt(name, 'DEFERRED', f'{arm or ""} {info}'.strip())
+            self.receipt(name, 'DEFERRED', f'{arm or ""} {deadline}'.strip())
+            self.log('PLANNER_VARIANCE_DEFERRED', name, arm or '', deadline)
             return EXIT_DEFERRED
         out = self.folder(name, arm)
         out.mkdir(parents=True, exist_ok=False)
-        write_json(out / 'started.json', {'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm,
-                                          'identity': self.identity, 'cap_seconds': cap, 'deadline_utc': info.isoformat(),
-                                          'started_utc': self.clock.now().isoformat(), 'outcomes_read': False})
+        watch = Watch(self.clock, deadline, cap, self.rss)
+        window = reg.window_id(now)
+        write_json(out / 'started.json', {'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm, 'identity': self.identity,
+                                          'cap_seconds': cap, 'deadline_utc': deadline.isoformat(), 'window_id': window,
+                                          'started_utc': now.isoformat(), 'outcomes_read': False})
         self.receipt(name, 'STARTED', arm)
-        watch = Watch(self.clock, info, cap, self.rss)
         try:
+            watch.check('before the data preparation', sample_rss=True)
+            self.env.prepare(self.scope)
+            preparation = watch.seconds()
+            watch.check('after the data preparation', sample_rss=True)
             results = function(out, watch, arm)
+            watch.final_check()
             results.update({'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm, 'identity': self.identity,
-                            'cap_seconds': cap, 'deadline_utc': info.isoformat(), 'seconds': watch.seconds(),
-                            'peak_rss_bytes': max(watch.peak, int(self.rss())),
-                            'finished_utc': self.clock.now().isoformat(), 'outcomes_read': False,
-                            'policy_identity_registered': False, 'seeds': SEEDS, 'limits': LIMITS})
+                            'cap_seconds': cap, 'deadline_utc': deadline.isoformat(), 'window_id': window,
+                            'seconds': watch.seconds(), 'preparation_seconds': preparation,
+                            'peak_rss_bytes_process_lifetime': watch.peak, 'finished_utc': self.clock.now().isoformat(),
+                            'outcomes_read': False, 'policy_identity_registered': False, 'seeds': SEEDS,
+                            'limits': LIMITS})
             if name == 'smoke':
-                found = reg.smoke_metric_keys(results)
-                require(not found, 'smoke record would store comparison metrics: ' + ', '.join(found))
+                problems = reg.smoke_record_problems(results)
+                require(not problems, 'the smoke sink refuses the record: ' + '; '.join(problems[:5]))
         except Exception as stop:  # every stop rule: aborted.json, nothing citable
             effect = reg.PASSES[name]['on_stop']
             write_json(out / 'aborted.json', {'experiment_id': EXPERIMENT, 'pass': name, 'arm': arm,
@@ -655,26 +723,35 @@ class PassRunner:
                                               'partial_results_discarded': True, 'citable': False})
             for partial in out.glob('*.npz'):
                 partial.unlink()
-            self.receipt(name, 'ABORTED', f'{arm or ""} {type(stop).__name__}: {stop}'.strip(), write_sums(out))
-            self.aborts = [*getattr(self, 'aborts', []), (name, arm)]
+            self.receipt(name, 'ABORTED', f'{arm or ""} {type(stop).__name__}: {stop}'.strip(), write_sums(out),
+                         self.relative(out))
+            self.aborts.append((name, arm))
             self.log('PLANNER_VARIANCE_ABORTED', name, arm or '', f'{type(stop).__name__}: {stop}')
             return self.after_abort(name)
         write_json(out / 'results.json', results)
-        self.receipt(name, 'COMPLETED', arm, write_sums(out))
-        self.log('PLANNER_VARIANCE_PASS_COMPLETE', name, arm or '', round(watch.seconds(), 1))
-        self.after_complete(name, results)
+        if name == 'smoke' and results['mechanical_rule']['status'] != 'FULL_RUN_ALLOWED':
+            status = results['mechanical_rule']['status']  # unsuccessful smoke: evidence kept, stop record, exit 3
+            write_json(out / 'aborted.json', {'experiment_id': EXPERIMENT, 'pass': name, 'reason': status,
+                                              'smoke_status': status, 'effect': reg.PASSES['smoke']['on_stop'],
+                                              'utc': self.clock.now().isoformat(), 'citable': False,
+                                              'evidence_kept': 'results.json: cost, structure and identity only'})
+            self.receipt(name, 'ABORTED', status, write_sums(out), self.relative(out))
+            self.aborts.append((name, arm))
+            self.settle()
+            self.log('PLANNER_VARIANCE_STOPPED', 'smoke:', status)
+            return EXIT_STOPPED
+        self.receipt(name, 'COMPLETED', arm, write_sums(out), self.relative(out))
+        self.log('PLANNER_VARIANCE_PASS_COMPLETE', name, arm or '', round(results['seconds'], 1))
+        if name in ('M', 'C'):
+            self.settle()
         return None
 
     def after_abort(self, name):
         """Registered stop effect: smoke -> no full run, M -> experiment aborted (no verdict label), C -> RB12_ABORTED
         (NOT_STABLE), D -> that arm discarded, confirmation -> CONFIRMATION_ABORTED."""
-        if name in ('M', 'C'):
-            self.settle()
-        return None if name in ('C', 'D') else EXIT_STOPPED
-
-    def after_complete(self, name, results):
         if name in ('smoke', 'M', 'C'):
             self.settle()
+        return None if name in ('C', 'D') else EXIT_STOPPED
 
     def budget(self, arm, seed):
         """The registered per arm-seed safety row budget (FH-DP has none: its cap bounds it)."""
@@ -687,18 +764,21 @@ class PassRunner:
         return self.env.planner(KINDS[spec['estimator']], spec.get('samples'), seed, budget or self.budget(arm, seed))
 
     # ---- decision streams
-    def runtime_decisions(self, games, runtime, budget, watch, statuses):
-        """Evaluated decisions of ``games`` through the registered runtime (seed-0 Q read from its row)."""
+    def runtime_decisions(self, games, runtime, witness, budget, watch, statuses):
+        """Evaluated decisions of ``games`` through the registered runtime: the seed-0 Q is read from its serialized
+        row (``q_planning``, ``q_planning_diff_se``), its first-step evidence and planner time from the witness of
+        the same call (no second search)."""
         improvement = runtime.improvement
         for block_index, (game, block) in enumerate(self.env.blocks(games)):
-            watch.check(block_index)
+            watch.block(block_index)
             for request in self.env.requests(block):
                 rows, before = budget.conditional_rows, dict(improvement.diagnostics)
                 started = time.perf_counter()
                 row = runtime.submit(request)
-                ms = (time.perf_counter() - started) * 1000.
+                submit_ms = (time.perf_counter() - started) * 1000.
                 statuses[row['status']] += 1
                 if row['status'] not in EVALUATED:
+                    witness.discard()
                     continue
                 result, state = row['result'], request.state
                 mask = np.asarray(self.env.reference.support(state), dtype=bool)
@@ -706,10 +786,14 @@ class PassRunner:
                 require(np.array_equal(mask, np.asarray(result['mask'], dtype=bool))
                         and np.allclose(reference, result['reference'], rtol=0, atol=reg.INTEGRITY['reference_atol']),
                         'Runtime reference differs')
+                q = vector(result['q_planning'])
+                evidence = witness.take(state)
+                require(np.array_equal(q[mask], evidence['q'][mask]), 'the runtime row differs from its observed search')
                 after = improvement.diagnostics
                 yield Decision(game, request.request_id, state, request.pitcher_hand, mask, reference, {
-                    'q': vector(result['q_planning']), 'diff_se': vector(result['planning_diff_se']),
-                    'rows': budget.conditional_rows - rows, 'ms': ms,
+                    'q': q, 'diff_se': vector(result['q_planning_diff_se']), 'rows': budget.conditional_rows - rows,
+                    'ms': evidence['ms'], 'submit_ms': submit_ms, 'first': evidence['first'],
+                    'samples': evidence['samples'],
                     'truncated': after['search_truncated'] - before['search_truncated'],
                     'rollouts': after['search_rollouts'] - before['search_rollouts']})
 
@@ -717,12 +801,11 @@ class PassRunner:
         """Pass-M decisions of ``games`` without the runtime planner: requests rebuilt from the store, kept by the
         pass-M request_id sequence, masked reference recomputed and equal to the stored one."""
         wanted = set(int(g) for g in games)
-        ids = [str(r) for r in expected['request_id']]
-        index = {rid: k for k, rid in enumerate(ids)}
+        index = {str(rid): k for k, rid in enumerate(expected['request_id'])}
         sequence = [k for k, g in enumerate(expected['game_pk']) if int(g) in wanted]
         position = 0
         for block_index, (game, block) in enumerate(self.env.blocks(sorted(wanted))):
-            watch.check(block_index)
+            watch.block(block_index)
             for request in self.env.requests(block):
                 k = index.get(request.request_id)
                 if k is None:
@@ -746,12 +829,32 @@ class PassRunner:
         with np.load(self.folder(name, arm) / 'decisions.npz', allow_pickle=False) as data:
             return {k: np.array(data[k]) for k in data.files}
 
+    def reconstruct(self, planner, diagnostics, a0, decision, samples):
+        """Untraced comparison first; only differing paths are traced and receive their own boundary margins."""
+        check = pv.reconstruction_compare(diagnostics, a0, decision.mask, samples)
+        if check['first_pitch_flips'] or not check['differing_paths']:
+            return check
+        return pv.classify_paths(check, diagnostics, planner.trace(decision.state)[1])
+
+    def tally(self):
+        return pv.ReconstructionTally(reg.INTEGRITY['reconstruction_margin_max'],
+                                      reg.INTEGRITY['reconstruction_mismatch_share_max'],
+                                      reg.INTEGRITY['first_pitch_flips_max'])
+
     # ---- smoke
     def pass_smoke(self, out, watch, arm=None):
+        """The smoke runtime ledger (A0 Q and laws) never persists: it lives in a temporary directory removed when the
+        smoke ends; the runtime Q stays in memory and only allowlisted fields are returned to the sink."""
+        with tempfile.TemporaryDirectory(prefix='exp-stab-02-smoke-runtime-') as scratch:
+            self.smoke_scratch = Path(scratch)
+            return self._smoke(watch, Path(scratch) / 'ledger.jsonl')
+
+    def _smoke(self, watch, ledger_path):
         env = self.env
         smoke_games, fh_game = env.smoke_games(), env.fhdp_smoke
         budgets = {('A0', 0): self.budget('A0-MC6', 0)}
-        runtime = env.build_runtime(out / 'ledger-dev-0.jsonl', budgets[('A0', 0)])
+        runtime = env.build_runtime(ledger_path, budgets[('A0', 0)])
+        witness = pv.A0Witness(runtime.improvement)
         planners = {}
         for label, arm_name, seed in (('A0', 'A0-MC6', 5), ('RB6', 'RB6', 0), ('RB6', 'RB6', 5),
                                       ('REF-RB6', 'REF-RB6', 100), ('RB12', 'RB12', 0), ('RB12', 'RB12', 5),
@@ -760,12 +863,9 @@ class PassRunner:
             planners[(label, seed)] = self.make(arm_name, seed, budgets[(label, seed)])
         rerun = self.make('RB6', 0)
         dp = self.make('FH-DP', None)
-        rows, ms = Counter(), defaultdict(list)
-        checks = Counter()
-        failures = []
-        statuses = Counter()
-        a0_rows = 0
-        decisions = fh_decisions = 0
+        rows, ms, submit = Counter(), defaultdict(list), []
+        checks, failures, statuses, fh_statuses = Counter(), [], Counter(), Counter()
+        a0_rows = decisions = fh_decisions = 0
 
         def structural(label, q, decision):
             try:
@@ -782,10 +882,11 @@ class PassRunner:
             structural('FH-DP', q, decision)
             fh_decisions += 1
 
-        for decision in self.runtime_decisions(smoke_games, runtime, budgets[('A0', 0)], watch, statuses):
+        for decision in self.runtime_decisions(smoke_games, runtime, witness, budgets[('A0', 0)], watch, statuses):
             decisions += 1
             a0_rows += decision.runtime['rows']
             ms[('A0', 0)].append(decision.runtime['ms'])
+            submit.append(decision.runtime['submit_ms'])
             structural('A0 seed 0 (runtime)', decision.runtime['q'], decision)
             first = None
             for key, planner in planners.items():
@@ -804,9 +905,8 @@ class PassRunner:
             if decision.game_pk == fh_game:
                 run_dp(decision)
         rows[('A0', 0)] = a0_rows
-        fh_statuses = Counter()
         if fh_game not in smoke_games:  # the FH-DP smoke game: runtime decisions plus FH-DP only
-            for decision in self.runtime_decisions([fh_game], runtime, budgets[('A0', 0)], watch, fh_statuses):
+            for decision in self.runtime_decisions([fh_game], runtime, witness, budgets[('A0', 0)], watch, fh_statuses):
                 run_dp(decision)
         try:
             env.verify([runtime.improvement, *planners.values(), rerun, dp], runtime)
@@ -816,16 +916,16 @@ class PassRunner:
             components_verified = False
         require(decisions > 0, 'no smoke decision evaluated')
         r_b = float(np.mean([rows[('RB6', s)] / rows[('A0', s)] for s in reg.PAIR]))
-        seconds = {f'{label} seed {seed}' if seed is not None else label: sum(values) / 1000.
-                   for (label, seed), values in ms.items()}
-        bf48_seconds = seconds['BF48 seed 0'] + seconds['BF48 seed 5']
+        name = lambda label, seed: label if seed is None else f'{label} seed {seed}'  # noqa: E731
+        seconds = {name(*key): sum(values) / 1000. for key, values in ms.items()}
         projections = {
-            'BF48_pass_D_seconds': bf48_seconds * reg.SUBSAMPLES['BF48'] / reg.GAMES['smoke_games'],
+            'BF48_pass_D_seconds': (seconds['BF48 seed 0'] + seconds['BF48 seed 5'])
+                                   * reg.SUBSAMPLES['BF48'] / reg.GAMES['smoke_games'],
             'BF48_cap_seconds': reg.pass_cap_seconds('D', arm='BF48'),
             'FH-DP_pass_D_seconds': seconds.get('FH-DP', 0.) * reg.SUBSAMPLES['FH-DP'] / reg.SUBSAMPLES['fhdp_smoke_games'],
             'FH-DP_cap_seconds': reg.pass_cap_seconds('D', arm='FH-DP'),
             'pass_C_cap_seconds': reg.pass_cap_seconds('C', r_b=r_b),
-            'basis': 'smoke seconds scaled by games (BF48 x 50/3, FH-DP x 10); caps from the registration'}
+            'basis': 'smoke planner seconds scaled by games (BF48 x 50/3, FH-DP x 10); caps from the registration'}
         structural_ok = not failures and components_verified and fh_decisions > 0
         status = ('STRUCTURAL_FAILURE' if not structural_ok else
                   'COST_EXCEEDED_AT_SMOKE' if r_b > reg.THRESHOLDS['smoke_r_b_at_most'] else 'FULL_RUN_ALLOWED')
@@ -837,20 +937,20 @@ class PassRunner:
                                'failures': failures[:50], 'failure_count': len(failures),
                                'components_verified': components_verified},
                 'structural_ok': structural_ok,
-                'cost': {'rows_by_arm_seed': {f'{label} seed {seed}' if seed is not None else label: int(value)
-                                              for (label, seed), value in rows.items()},
-                         'seconds_by_arm_seed': seconds,
-                         'ms_per_decision_median': {f'{label} seed {seed}' if seed is not None else label:
-                                                    float(np.median(values)) for (label, seed), values in ms.items()}},
+                'cost': {'rows_by_arm_seed': {name(*key): int(value) for key, value in rows.items()},
+                         'planner_seconds_by_arm_seed': seconds,
+                         'planner_ms_per_decision_median': {name(*key): float(np.median(values))
+                                                            for key, values in ms.items()},
+                         'runtime_submit_seconds': sum(submit) / 1000.,
+                         'runtime_submit_ms_per_decision_median': float(np.median(submit))},
                 'r_b': r_b, 'r_b_definition': 'mean over seeds 0 and 5 of rows(RB6)/rows(A0) on the smoke decisions',
                 'projections': projections,
                 'mechanical_rule': {'r_b_at_most': reg.THRESHOLDS['smoke_r_b_at_most'], 'structural_ok': structural_ok,
                                     'status': status,
                                     'rb12_cost_condition_met': r_b <= reg.THRESHOLDS['rb12_smoke_r_b_at_most']},
-                'data_version': self.data_version(), 'unchanged_sources': reg.UNCHANGED_SHA256}
-
-    def data_version(self):
-        return self.env.data_version()
+                'runtime_ledger': {'location': 'system temporary directory, removed when the smoke ends',
+                                   'persisted': False, 'rows': runtime.ledger.count, 'head_sha256': runtime.ledger.head},
+                'data_version': self.env.data_version(), 'unchanged_sources': reg.UNCHANGED_SHA256}
 
     # ---- pass M
     def pass_mandatory(self, out, watch, arm=None):
@@ -863,22 +963,25 @@ class PassRunner:
                    ('RB6', 0): self.budget('RB6', 0), ('RB6', 5): self.budget('RB6', 5),
                    ('REF', 100): self.budget('REF-RB6', reg.REFERENCE_SEED)}
         runtime = env.build_runtime(out / 'ledger-dev-0.jsonl', budgets[('A0', 0)])
+        witness0 = pv.A0Witness(runtime.improvement)
         planners = {('A0', 5): self.make('A0-MC6', 5, budgets[('A0', 5)]),
                     ('RB6', 0): self.make('RB6', 0, budgets[('RB6', 0)]),
                     ('RB6', 5): self.make('RB6', 5, budgets[('RB6', 5)]),
                     ('REF', 100): self.make('REF-RB6', reg.REFERENCE_SEED, budgets[('REF', 100)])}
+        witness5 = pv.A0Witness(planners[('A0', 5)])
         replay = self.make('RB6', 0)  # fresh seed-0 planner on its own budget (200-decision replay)
-        tally = pv.ReconstructionTally(reg.INTEGRITY['reconstruction_margin_max'],
-                                       reg.INTEGRITY['reconstruction_mismatch_share_max'], reg.INTEGRITY['first_pitch_flips_max'])
-        c = Columns()
+        tally, c = self.tally(), Columns()
         statuses, replay_max, k1_mismatches = Counter(), [], 0
         sets = {'A': [0], 'B': [5], 'K': [1]}
-        for decision in self.runtime_decisions(env.games, runtime, budgets[('A0', 0)], watch, statuses):
+        for decision in self.runtime_decisions(env.games, runtime, witness0, budgets[('A0', 0)], watch, statuses):
             k = len(c.request_id)
             require(k < len(stab01['request_id']) and str(stab01['request_id'][k]) == decision.request_id,
                     'request_id sequence differs from EXP-STAB-01')
             q0 = decision.runtime['q']
             results = {key: search(planner, decision.state) for key, planner in planners.items()}
+            evidence5 = witness5.take(decision.state)
+            a0 = {0: {'q': q0, 'first': decision.runtime['first'], 'samples': decision.runtime['samples']},
+                  5: {'q': results[('A0', 5)][0], 'first': evidence5['first'], 'samples': evidence5['samples']}}
             laws = {('A0', 0): checked_law(q0, decision, tau, 'A0 seed 0')}
             for key, (q, _, _, _) in results.items():
                 laws[key] = checked_law(q, decision, tau, f'{key[0]} seed {key[1]}')
@@ -886,12 +989,9 @@ class PassRunner:
                 again = replay.q_values(decision.state)[0]
                 replay_max.append(float(np.abs(again[decision.mask] - results[('RB6', 0)][0][decision.mask]).max()))
                 require(replay_max[-1] <= reg.INTEGRITY['replay_atol'], 'Fresh RB6 seed-0 planner does not reproduce')
-            checks = {'RB6 seed 0 vs runtime': self.reconstruct(planners[('RB6', 0)], results[('RB6', 0)][1], q0,
-                                                                decision, reg.SAMPLES),
-                      'RB6 seed 5 vs A0 seed 5': self.reconstruct(planners[('RB6', 5)], results[('RB6', 5)][1],
-                                                                  results[('A0', 5)][0], decision, reg.SAMPLES,
-                                                                  results[('A0', 5)][1]['sample_values'])}
-            tally.add(decision.request_id, checks)
+            tally.add(decision.request_id, {
+                f'RB6 seed {s} vs A0 seed {s}': self.reconstruct(planners[('RB6', s)], results[('RB6', s)][1], a0[s],
+                                                                 decision, reg.SAMPLES) for s in reg.PAIR})
             k1 = stab.compare({0: q0, 5: results[('A0', 5)][0]}, decision.reference, decision.mask, tau, sets)
             match = (k1['K1_tv'] == float(stab01['K1_tv'][k]) and k1['K1_top1_same'] == bool(stab01['K1_top1_same'][k]))
             k1_mismatches += int(not match)
@@ -899,6 +999,9 @@ class PassRunner:
                     f'A0 does not reproduce the EXP-STAB-01 K1 columns ({k1_mismatches} mismatches)')
             c.add_decision(decision, laws, results, tau, k1_match=match)
             c.add_stab01(stab01, k)
+            c.extra(a0_first_0=a0[0]['first'], a0_samples_0=a0[0]['samples'], a0_first_5=a0[5]['first'],
+                    a0_samples_5=a0[5]['samples'], **{f'rb_first_RB6_{s}': results[('RB6', s)][1]['first_outcome'][:, :reg.SAMPLES]
+                                                       for s in reg.PAIR})
         require(len(c.request_id) == len(stab01['request_id']), 'decision count differs from EXP-STAB-01')
         require(len(replay_max) == min(reg.REPLAY_DECISIONS, len(c.request_id)), 'Replay count short')
         reconstruction = tally.finish()
@@ -922,17 +1025,8 @@ class PassRunner:
                               'reconstruction': reconstruction,
                               'replay': {'decisions': len(replay_max), 'max_abs_q_difference': max(replay_max)},
                               'components_verified': True},
-                'data_version': self.data_version(),
+                'data_version': self.env.data_version(),
                 'cost': {'conditional_rows_by_arm_seed': {f'{a} seed {s}': b.conditional_rows for (a, s), b in budgets.items()}}}
-
-    def reconstruct(self, planner, diagnostics, a0_q, decision, samples, a0_sample_values=None):
-        """Selected-outcome reconstruction; a mismatch is explained by the traced re-run of the same search."""
-        check = pv.reconstruction_check(diagnostics, a0_q, decision.mask, samples, a0_sample_values=a0_sample_values)
-        if check['mismatch'] is False:
-            return check
-        trace = planner.trace(decision.state)[1]
-        return pv.reconstruction_check(diagnostics, a0_q, decision.mask, samples, a0_sample_values=a0_sample_values,
-                                       trace=trace)
 
     # ---- pass C
     def pass_rb12(self, out, watch, arm=None):
@@ -942,9 +1036,7 @@ class PassRunner:
         budgets = {s: self.budget('RB12', s) for s in reg.PAIR}
         planners = {s: self.make('RB12', s, budgets[s]) for s in reg.PAIR}
         replay = self.make('RB12', 0)
-        tally = pv.ReconstructionTally(reg.INTEGRITY['reconstruction_margin_max'],
-                                       reg.INTEGRITY['reconstruction_mismatch_share_max'], reg.INTEGRITY['first_pitch_flips_max'])
-        c, replay_max = Columns(), []
+        tally, c, replay_max = self.tally(), Columns(), []
         for k, decision in self.replay_decisions(env.games, expected, watch):
             results = {('RB12', s): search(planners[s], decision.state) for s in reg.PAIR}
             laws = {key: checked_law(r[0], decision, tau, f'RB12 seed {key[1]}') for key, r in results.items()}
@@ -952,10 +1044,13 @@ class PassRunner:
                 again = replay.q_values(decision.state)[0]
                 replay_max.append(float(np.abs(again[decision.mask] - results[('RB12', 0)][0][decision.mask]).max()))
                 require(replay_max[-1] <= reg.INTEGRITY['replay_atol'], 'Fresh RB12 seed-0 planner does not reproduce')
-            checks = {f'RB12 seed {s} first 6 vs A0 seed {s}': self.reconstruct(
-                planners[s], results[('RB12', s)][1], expected[f'q_A0_{s}'][k], decision, reg.SAMPLES) for s in reg.PAIR}
-            tally.add(decision.request_id, checks)
+            a0 = {s: {'q': expected[f'q_A0_{s}'][k], 'first': expected[f'a0_first_{s}'][k],
+                      'samples': expected[f'a0_samples_{s}'][k]} for s in reg.PAIR}
+            tally.add(decision.request_id, {
+                f'RB12 seed {s} first 6 vs A0 seed {s}': self.reconstruct(planners[s], results[('RB12', s)][1], a0[s],
+                                                                          decision, reg.SAMPLES) for s in reg.PAIR})
             c.add_decision(decision, laws, results, tau, index=k)
+            c.extra(**{f'rb_first_RB12_{s}': results[('RB12', s)][1]['first_outcome'][:, :reg.SAMPLES] for s in reg.PAIR})
         require(len(c.request_id) == len(expected['request_id']), 'pass C decisions differ from pass M')
         require(len(replay_max) == min(reg.REPLAY_DECISIONS, len(c.request_id)), 'Replay count short')
         reconstruction = tally.finish()
@@ -965,15 +1060,14 @@ class PassRunner:
         summary = summarize_arm(arrays, expected, 'RB12')
         rb12 = {'stable': reg.stable(summary['primary']['top1_agreement_ci95'], summary['primary']['mean_tv_ci95']),
                 'cost_ok': reg.cost_ok(summary['r_rows']), 'r_rows': summary['r_rows']}
-        rb6 = self.rb6(mandatory)
-        verdict = reg.verdict(smoke_r_b=smoke['r_b'], pass_m='completed', rb6=rb6,
+        verdict = reg.verdict(smoke_r_b=smoke['r_b'], pass_m='completed', rb6=self.rb6(mandatory),
                               rb12={'state': 'completed', 'stable': rb12['stable'], 'cost_ok': rb12['cost_ok']})
         return {'decisions_compared': len(c.request_id), 'comparison': summary, 'rb12_status': rb12,
                 'rb6_status': mandatory['rb6_status'], 'verdict': verdict,
                 'integrity': {'reconstruction': reconstruction,
                               'replay': {'decisions': len(replay_max), 'max_abs_q_difference': max(replay_max)},
                               'components_verified': True, 'pass_M_sha256sums': verify_sums(self.folder('M'))},
-                'data_version': self.data_version(),
+                'data_version': self.env.data_version(),
                 'cost': {'conditional_rows_by_seed': {str(s): b.conditional_rows for s, b in budgets.items()}}}
 
     # ---- pass D
@@ -996,13 +1090,13 @@ class PassRunner:
             summary = summarize_arm(arrays, expected, 'BF48')
             summary['rb6_minus_bf48'] = rb6_vs_bruteforce(arrays, expected, mandatory)
             return {'games': games, 'decisions': len(c.request_id), 'comparison': summary, 'descriptive_only': True,
-                    'data_version': self.data_version(),
+                    'data_version': self.env.data_version(),
                     'cost': {'conditional_rows_by_seed': {str(s): b.conditional_rows for s, b in budgets.items()}}}
         require(arm == 'FH-DP', f'unknown pass-D arm {arm}')
         dp = self.make('FH-DP', None)
         columns = defaultdict(list)
         for k, decision in self.replay_decisions(games, expected, watch):
-            q, diagnostics, used, took = search(dp, decision.state)
+            q, _, used, took = search(dp, decision.state)
             p = checked_law(q, decision, tau, 'FH-DP')
             columns['index'].append(k)
             columns['request_id'].append(decision.request_id)
@@ -1019,36 +1113,55 @@ class PassRunner:
         arrays = {k: np.array(v) for k, v in columns.items()}
         np.savez_compressed(out / 'decisions.npz', **arrays)
         return {'games': games, 'decisions': len(arrays['request_id']), 'comparison': summarize_fhdp(arrays, expected),
-                'descriptive_only': True, 'data_version': self.data_version(),
+                'descriptive_only': True, 'data_version': self.env.data_version(),
                 'cost': {'conditional_rows': int(np.sum(arrays['rows']))}}
 
     # ---- confirmation slice
+    def require_passing_verdict(self):
+        stored = self.check_verdict()
+        require(stored is not None, 'no final verdict in this attempt')
+        label = stored['verdict']['label'] or ''
+        require(label.startswith('STABLE_WITHIN_COST:'), f'confirmation runs only after STABLE_WITHIN_COST (got {label})')
+        return label.split(':', 1)[1]
+
     def confirm_select(self):
-        """Compute and record the 50-game confirmation list and its sha256 (no planning call)."""
+        """Record the 50-game confirmation list and its sha256 (no planning call), under the same window and
+        deadline/cap/RSS watch as a pass; a stopped selection writes nothing and can be repeated."""
         self.scope = 'confirmation'
         with self.locked('confirmation') as held:
             if not held:
                 return EXIT_STOPPED
             self.verify_attempt()
-            self.require_passing_verdict()
-            path = self.attempt / 'confirmation-selection.json'
+            passing = self.require_passing_verdict()
+            path = self.attempt / SELECTION_FILE
             require(not path.exists(), 'confirmation selection already recorded')
-            self.env.prepare(self.scope)
-            write_json(path, {'experiment_id': EXPERIMENT, 'games': self.env.confirmation,
-                              'record': self.env.confirmation_record, 'utc': self.clock.now().isoformat(),
-                              'note': 'append games_sha256 to the registration block before running the confirmation'})
-            self.receipt('confirmation', 'SELECTED', self.env.confirmation_record['games_sha256'], sha256_file(path))
+            cap = reg.pass_cap_seconds('confirmation', r_b=self.smoke_record()['r_b'], arm=passing)
+            now = self.clock.now()
+            decision, deadline = reg.start_decision(now, cap)
+            if decision == 'DEFER':
+                self.receipt('confirmation', 'DEFERRED', f'selection: {deadline}')
+                return EXIT_DEFERRED
+            watch = Watch(self.clock, deadline, cap, self.rss)
+            try:
+                watch.check('before the data preparation', sample_rss=True)
+                self.env.prepare(self.scope)
+                watch.final_check()
+                record = {'experiment_id': EXPERIMENT, 'games': self.env.confirmation,
+                          'record': self.env.confirmation_record, 'utc': self.clock.now().isoformat(),
+                          'window_id': reg.window_id(now), 'identity': self.identity,
+                          'note': 'append games_sha256 to the registration block before running the confirmation'}
+            except Exception as stop:
+                self.receipt('confirmation', 'SELECTION_ABORTED', f'{type(stop).__name__}: {stop}')
+                self.log('PLANNER_VARIANCE_ABORTED', 'confirmation selection', f'{type(stop).__name__}: {stop}')
+                return EXIT_STOPPED
+            write_json(path, record)
+            self.receipt('confirmation', 'SELECTED', self.env.confirmation_record['games_sha256'], sha256_file(path),
+                         SELECTION_FILE)
             return EXIT_OK
 
-    def require_passing_verdict(self):
-        path = self.attempt / 'verdict.json'
-        require(path.exists(), 'no final verdict in this attempt')
-        label = json.loads(path.read_text())['verdict']['label'] or ''
-        require(label.startswith('STABLE_WITHIN_COST:'), f'confirmation runs only after STABLE_WITHIN_COST (got {label})')
-        return label.split(':', 1)[1]
-
     def confirm(self, pin):
-        """Run the confirmation slice against the appended games pin (Song's go recorded by the PM)."""
+        """Run the confirmation slice against the appended games pin (Song's go recorded by the PM). A try after an
+        aborted one starts only in a later run window."""
         require(isinstance(pin, dict) and pin.get('experiment_id') == EXPERIMENT and isinstance(
             pin.get('confirmation_games_sha256'), str), 'confirmation games pin required')
         self.scope = 'confirmation'
@@ -1057,13 +1170,19 @@ class PassRunner:
                 return EXIT_STOPPED
             self.verify_attempt()
             passing = self.require_passing_verdict()
-            tries = self.confirmation_tries()
+            tries, last_aborted = self.confirmation_tries(), None
             for label in tries:
                 state, _ = self.status('confirmation', label)
                 if state == 'complete':  # CONFIRMED or NOT_CONFIRMED is final
                     return EXIT_OK
                 if state == 'incomplete':
                     self.close_incomplete('confirmation', label)
+                last_aborted = label
+            if last_aborted is not None:
+                window = json.loads((self.folder('confirmation', last_aborted) / 'started.json').read_text())['window_id']
+                if window == reg.window_id(self.clock.now()):
+                    self.receipt('confirmation', 'DEFERRED', f'{last_aborted} aborted in this window: retry in a later one')
+                    return EXIT_DEFERRED
             cap = reg.pass_cap_seconds('confirmation', r_b=self.smoke_record()['r_b'], arm=passing)
             self.passing, self.pin = passing, pin['confirmation_games_sha256']
             code = self.run('confirmation', self.pass_confirmation, cap, arm=f'try-{len(tries) + 1:02d}')
@@ -1076,16 +1195,19 @@ class PassRunner:
         for s in reg.PAIR:
             budgets[(passing, s)] = self.budget(passing, s)
         runtime = env.build_runtime(out / 'ledger-dev-0.jsonl', budgets[('A0', 0)])
+        witness0 = pv.A0Witness(runtime.improvement)
         planners = {('A0', 5): self.make('A0-MC6', 5, budgets[('A0', 5)]),
                     (passing, 0): self.make(passing, 0, budgets[(passing, 0)]),
                     (passing, 5): self.make(passing, 5, budgets[(passing, 5)])}
+        witness5 = pv.A0Witness(planners[('A0', 5)])
         replay = self.make(passing, 0)
-        tally = pv.ReconstructionTally(reg.INTEGRITY['reconstruction_margin_max'],
-                                       reg.INTEGRITY['reconstruction_mismatch_share_max'], reg.INTEGRITY['first_pitch_flips_max'])
-        c, statuses, replay_max = Columns(), Counter(), []
-        for decision in self.runtime_decisions(env.confirmation, runtime, budgets[('A0', 0)], watch, statuses):
+        tally, c, statuses, replay_max = self.tally(), Columns(), Counter(), []
+        for decision in self.runtime_decisions(env.confirmation, runtime, witness0, budgets[('A0', 0)], watch, statuses):
             q0 = decision.runtime['q']
             results = {key: search(planner, decision.state) for key, planner in planners.items()}
+            evidence5 = witness5.take(decision.state)
+            a0 = {0: {'q': q0, 'first': decision.runtime['first'], 'samples': decision.runtime['samples']},
+                  5: {'q': results[('A0', 5)][0], 'first': evidence5['first'], 'samples': evidence5['samples']}}
             laws = {('A0', 0): checked_law(q0, decision, tau, 'A0 seed 0')}
             for key, (q, _, _, _) in results.items():
                 laws[key] = checked_law(q, decision, tau, f'{key[0]} seed {key[1]}')
@@ -1093,13 +1215,13 @@ class PassRunner:
                 again = replay.q_values(decision.state)[0]
                 replay_max.append(float(np.abs(again[decision.mask] - results[(passing, 0)][0][decision.mask]).max()))
                 require(replay_max[-1] <= reg.INTEGRITY['replay_atol'], f'Fresh {passing} seed-0 planner does not reproduce')
-            checks = {f'{passing} seed 0 vs runtime': self.reconstruct(planners[(passing, 0)], results[(passing, 0)][1], q0,
-                                                                       decision, reg.SAMPLES),
-                      f'{passing} seed 5 vs A0 seed 5': self.reconstruct(
-                          planners[(passing, 5)], results[(passing, 5)][1], results[('A0', 5)][0], decision, reg.SAMPLES,
-                          results[('A0', 5)][1]['sample_values'])}
-            tally.add(decision.request_id, checks)
+            tally.add(decision.request_id, {
+                f'{passing} seed {s} vs A0 seed {s}': self.reconstruct(planners[(passing, s)], results[(passing, s)][1],
+                                                                       a0[s], decision, reg.SAMPLES) for s in reg.PAIR})
             c.add_decision(decision, laws, results, tau)
+            c.extra(a0_first_0=a0[0]['first'], a0_samples_0=a0[0]['samples'], a0_first_5=a0[5]['first'],
+                    a0_samples_5=a0[5]['samples'],
+                    **{f'rb_first_{passing}_{s}': results[(passing, s)][1]['first_outcome'][:, :reg.SAMPLES] for s in reg.PAIR})
         require(len(c.request_id) > 0, 'no confirmation decision evaluated')
         require(len(replay_max) == min(reg.REPLAY_DECISIONS, len(c.request_id)), 'Replay count short')
         reconstruction = tally.finish()
@@ -1116,7 +1238,7 @@ class PassRunner:
                 'integrity': {'reconstruction': reconstruction,
                               'replay': {'decisions': len(replay_max), 'max_abs_q_difference': max(replay_max)},
                               'components_verified': True},
-                'data_version': self.data_version(),
+                'data_version': self.env.data_version(),
                 'cost': {'conditional_rows_by_arm_seed': {f'{a} seed {s}': b.conditional_rows for (a, s), b in budgets.items()}}}
 
 
@@ -1127,6 +1249,10 @@ class Columns:
     def __init__(self):
         self.data = defaultdict(list)
         self.request_id = self.data['request_id']
+
+    def extra(self, **columns):
+        for key, value in columns.items():
+            self.data[key].append(value)
 
     def add_decision(self, decision, laws, results, tau, *, k1_match=None, index=None):
         d = self.data
@@ -1144,6 +1270,7 @@ class Columns:
             d['q_A0_0'].append(runtime['q'])
             d['rows_A0_0'].append(runtime['rows'])
             d['ms_A0_0'].append(runtime['ms'])
+            d['submit_ms_A0_0'].append(runtime['submit_ms'])
             d['truncated_A0_0'].append(runtime['truncated'])
             d['rollouts_A0_0'].append(runtime['rollouts'])
             d['max_diff_se_A0_0'].append(pv.max_finite(runtime['diff_se'], decision.mask))
@@ -1163,8 +1290,7 @@ class Columns:
             else:
                 d[f'truncated_{label}'].append(diagnostics['truncated'])
             d[f'rollouts_{label}'].append(diagnostics['rollouts'])
-        arms = sorted({arm for arm, _ in laws if arm != 'REF'})
-        for arm in arms:
+        for arm in sorted({arm for arm, _ in laws if arm != 'REF'}):
             if (arm, 0) in laws and (arm, 5) in laws:
                 same, tv = pv.pair(laws[(arm, 0)], laws[(arm, 5)])
                 d[f'top1_same_{arm}'].append(same)
@@ -1192,10 +1318,7 @@ class Columns:
     def arrays(self):
         out = {}
         for key, values in self.data.items():
-            if key == 'request_id':
-                out[key] = np.array([str(v) for v in values])
-            else:
-                out[key] = np.array(values)
+            out[key] = np.array([str(v) for v in values]) if key == 'request_id' else np.array(values)
         return out
 
 
@@ -1218,8 +1341,17 @@ def noise(arrays, labels):
 
 
 def resources(arrays, labels):
-    return {label: {'ms_mean': float(np.mean(arrays[f'ms_{label}'])), 'ms_median': float(np.median(arrays[f'ms_{label}'])),
-                    'rows': int(np.sum(arrays[f'rows_{label}']))} for label in labels if f'ms_{label}' in arrays}
+    """Planner time per arm-seed (A0 seed 0: its search inside runtime.submit) and, for A0 seed 0, the whole submit."""
+    out = {}
+    for label in labels:
+        if f'ms_{label}' not in arrays:
+            continue
+        out[label] = {'planner_ms_mean': float(np.mean(arrays[f'ms_{label}'])),
+                      'planner_ms_median': float(np.median(arrays[f'ms_{label}'])),
+                      'rows': int(np.sum(arrays[f'rows_{label}']))}
+        if f'submit_ms_{label}' in arrays:
+            out[label]['runtime_submit_ms_mean'] = float(np.mean(arrays[f'submit_ms_{label}']))
+    return out
 
 
 def truncation(arrays, labels):
@@ -1294,8 +1426,7 @@ def summarize_mandatory(a, smoke_r_b):
     h2 = pv.paired_gain(a['top1_same_RB6'], a['top1_same_A0'], boot)
     k_c = 3 if rows_ratio <= 3 else 5 if rows_ratio <= 5 else None
     k_c_gain = None if k_c is None else pv.paired_gain(a['top1_same_RB6'], a[f'stab01_K{k_c}_top1_same'], boot)
-    # VRF and efficiency on the same draws (seed-5 pair, anchor = REF-RB6 top-1)
-    vrf = boot.ratio(a['v_A0_5'], a['v_RB6_5'])
+    vrf = boot.ratio(a['v_A0_5'], a['v_RB6_5'])  # seed-5 pair, anchor = REF-RB6 top-1, same draws
     with np.errstate(divide='ignore', invalid='ignore'):
         vrf_rep = boot.sums(a['v_A0_5']) / boot.sums(a['v_RB6_5'])
         rows_rep = np.mean([boot.sums(a[f'rows_RB6_{s}']) / boot.sums(a0_rows[s]) for s in reg.PAIR], axis=0)
@@ -1310,6 +1441,7 @@ def summarize_mandatory(a, smoke_r_b):
              'rb_beats_measured_bruteforce': None if k_c_gain is None else bool(k_c_gain['ci95'][0] > 0),
              'efficiency_gt_1': None if efficiency['ci95'] is None else bool(efficiency['ci95'][0] > 1),
              'note': 'descriptive; never a verdict input (H2 is empirical)'}
+    labels = ('A0_0', 'A0_5', 'RB6_0', 'RB6_5', 'REF_100')
     return {'decisions': len(a['request_id']), 'games': len(boot.unique), 'arms': arms, 'r_rows': {'RB6': rows_ratio},
             'rb6_status': rb6,
             'stab01_reference': {f'K{k}': pv.primary(a[f'stab01_K{k}_top1_same'], a[f'stab01_K{k}_tv'], boot)
@@ -1321,10 +1453,9 @@ def summarize_mandatory(a, smoke_r_b):
                           'gap_bins': gap_bins(a, sets, boot),
                           'kl': {'A0-MC6': kl_summary(a, 'A0', boot), 'RB6': kl_summary(a, 'RB6', boot)},
                           'q_level': {'A0-MC6': q_level(a, 'A0'), 'RB6': q_level(a, 'RB6'),
-                                      'noise_ratio_quantiles': noise(a, ('A0_0', 'A0_5', 'RB6_0', 'RB6_5', 'REF_100'))},
+                                      'noise_ratio_quantiles': noise(a, labels)},
                           'rb_residual': residual(a, ('RB6_0', 'RB6_5', 'REF_100')),
-                          'truncation_share': truncation(a, ('A0_0', 'A0_5', 'RB6_0', 'RB6_5', 'REF_100')),
-                          'resources': resources(a, ('A0_0', 'A0_5', 'RB6_0', 'RB6_5', 'REF_100'))},
+                          'truncation_share': truncation(a, labels), 'resources': resources(a, labels)},
             'secondary_flags': flags, 'smoke_r_b': smoke_r_b}
 
 
@@ -1335,15 +1466,13 @@ def summarize_arm(a, expected, arm):
             'decisions differ from pass M')
     boot = bootstrap(a['game_pk'])
     a0_rows = {s: expected[f'rows_A0_{s}'][index] for s in reg.PAIR}
-    main = pv.primary(a[f'top1_same_{arm}'], a[f'tv_{arm}'], boot)
-    ref = {k: expected[k][index] for k in ('bin_eff', 'bin_q')}
     sets = {arm: (a[f'top1_same_{arm}'], a[f'tv_{arm}']),
             'A0-MC6': (expected['top1_same_A0'][index], expected['tv_A0'][index]),
             'RB6': (expected['top1_same_RB6'][index], expected['tv_RB6'][index])}
-    merged = {**a, **ref}
+    merged = {**a, **{k: expected[k][index] for k in ('bin_eff', 'bin_q')}}
     a0_kl = {f'kl_A0_{s}': expected[f'kl_A0_{s}'][index] for s in reg.PAIR}
     labels = [f'{arm}_{s}' for s in reg.PAIR]
-    return {'primary': main, 'r_rows': r_rows(a, arm, a0_rows),
+    return {'primary': pv.primary(a[f'top1_same_{arm}'], a[f'tv_{arm}'], boot), 'r_rows': r_rows(a, arm, a0_rows),
             'gap_bins': gap_bins(merged, sets, boot),
             'kl': kl_summary({**a, **a0_kl}, arm, boot), 'q_level': q_level(a, arm),
             'noise_ratio_quantiles': noise(a, labels), 'rb_residual': residual(a, labels),
@@ -1355,8 +1484,7 @@ def rb6_vs_bruteforce(a, expected, mandatory):
     """Descriptive paired RB6 - BF48 top-1 agreement on the BF48 subsample (its own draw table); the section 5-7
     comparator when 5 < r_rows(RB6) <= 8."""
     index = a['index']
-    boot = bootstrap(a['game_pk'])
-    gain = pv.paired_gain(expected['top1_same_RB6'][index], a['top1_same_BF48'], boot)
+    gain = pv.paired_gain(expected['top1_same_RB6'][index], a['top1_same_BF48'], bootstrap(a['game_pk']))
     rows_ratio = mandatory['rb6_status']['r_rows']
     return {**gain, 'serves_as_k_c_comparator': bool(5 < rows_ratio <= 8), 'rb6_r_rows': rows_ratio}
 
@@ -1381,7 +1509,7 @@ def summarize_fhdp(a, expected):
             'dp_minus_rb_agreement': pv.paired_gain(a[f'dp_vs_{s}_top1_same'], same, boot),
             'dp_minus_rb_tv': pv.paired_gain(a[f'dp_vs_{s}_tv'], tv, boot)}
     out['rows_per_decision_mean'] = float(np.mean(a['rows']))
-    out['ms_per_decision_mean'] = float(np.mean(a['ms']))
+    out['planner_ms_per_decision_mean'] = float(np.mean(a['ms']))
     out['note'] = 'FH-DP estimates a different quantity (frozen history, no cap); no ordering is claimed'
     return out
 
@@ -1428,8 +1556,11 @@ def main(argv=None):
         reg.registration_gate(config)  # fail closed before anything else reads data
         reg.verify_unchanged_sources(REPO)
         reg.verify_registered_code(config, REPO)
+        reg.verify_registered_commit(config, REPO)  # reviewed sources in the registered commit; Git provenance
+        manifest = reg.verify_digest_manifest(config, REPO)  # external config digest pin
         attempt = assert_attempt_path(args.attempt)
         local = json.loads(args.local_config.read_text())
+        identity = run_identity(config, args.config.resolve(), args.local_config.resolve())
         from run_ml_matrix import check_location, heavy_lock
         from run_ml_benchmark import validate_native_runtime
         root = check_location(local, attempt)
@@ -1441,9 +1572,8 @@ def main(argv=None):
     except (reg.RegistrationError, IntegrityFailure, ValueError, OSError, subprocess.SubprocessError) as refused:
         print('PLANNER_VARIANCE_REFUSED', f'{type(refused).__name__}: {refused}', flush=True)
         return EXIT_REFUSED
-    env = RealEnvironment(config, local)
-    runner = PassRunner(config, env, attempt, identity=env.identity(args.config.resolve(), args.local_config.resolve()),
-                        lock=lambda: heavy_lock(root), log=lambda *parts: print(*parts, flush=True))
+    runner = PassRunner(config, RealEnvironment(config, local), attempt, identity=identity,
+                        lock=lambda: heavy_lock(root), log=lambda *parts: print(*parts, flush=True), manifest=manifest)
     try:
         if args.through:
             return runner.advance(args.through)
@@ -1453,7 +1583,7 @@ def main(argv=None):
     except (IntegrityFailure, reg.RegistrationError) as stopped:
         print('PLANNER_VARIANCE_STOPPED', f'{type(stopped).__name__}: {stopped}', flush=True)
         return EXIT_STOPPED
-    except Exception as unexpected:  # e.g. a data-load failure before any pass folder exists: fail closed
+    except Exception as unexpected:  # fail closed: traceback, nothing citable
         traceback.print_exc()
         print('PLANNER_VARIANCE_STOPPED', f'{type(unexpected).__name__}: {unexpected}', flush=True)
         return EXIT_STOPPED

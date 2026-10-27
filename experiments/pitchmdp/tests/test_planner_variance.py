@@ -1,19 +1,25 @@
 """Synthetic-only tests for EXP-STAB-02 (track A1). No real data, no T7, no 2026, no outcome reads.
 
 Every fixture is built here: a three-action TRAIN BC, frozen 400-draw pools, deterministic row-wise
-conditional predictors, WE tables and a fake runtime. The pass runner is driven through a synthetic
-environment with a mocked clock and a fake heavy lock.
+conditional predictors and WE tables. The pass runner is driven through a synthetic environment whose
+runtime is the REAL ``PolicyRuntime`` (pinned BC artifact, support table, hash-chained ledger and its
+serialized result rows) around a synthetic candidate wired like ``build_runtime``'s, with a mocked
+clock and a fake heavy lock.
 """
 from collections import Counter
 import contextlib
 import copy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import hashlib
 import inspect
 import itertools
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import tempfile
 
 import numpy as np
 import pytest
@@ -23,10 +29,13 @@ REPO = PROJECT.parents[1]
 sys.path[:0] = [str(PROJECT), str(PROJECT / 'scripts')]
 from pitchmdp import planner_variance as pv  # noqa: E402
 from pitchmdp import planner_variance_registry as reg  # noqa: E402
+from pitchmdp import policy_artifacts as pa  # noqa: E402
+from pitchmdp import policy_runtime as prt  # noqa: E402
 from pitchmdp.matrix_data import canonical_hash  # noqa: E402
-from pitchmdp.planner import OUTCOMES, TERMINALS, solve_pa  # noqa: E402
+from pitchmdp.planner import OUTCOMES, solve_pa  # noqa: E402
 from pitchmdp.rollout_policy import (BCRecord, BudgetExceeded, CategoricalBC, DeliveryPool, JointSimulator,  # noqa: E402
-                                     PAState, PastPitch, RolloutImprovement, RowBudget, probabilities, rollouts)
+                                     PAState, PastPitch, RolloutImprovement, RowBudget, kl_policy, probabilities,
+                                     rollouts)
 import diagnose_planner_variance as runner  # noqa: E402
 
 CONFIG = json.loads((REPO / 'configs' / 'EXP-STAB-02.yaml').read_text())
@@ -112,6 +121,13 @@ def rb(samples, seed, budget=None, predict=predictor, chunk=6, cap=12):
                                     first_pitch_chunk=chunk)
 
 
+def evidence(planner, root):
+    """A0 search with its first-step evidence captured during the call (A0Witness)."""
+    witness = pv.A0Witness(planner)
+    q, diagnostics = planner.q_values(root)
+    return q, diagnostics, witness.take(root)
+
+
 # ---------------------------------------------------------------- the Rao-Blackwell first step
 
 def toy_predictor(states, actions, physical):
@@ -170,16 +186,19 @@ def test_rb_sample_is_the_probability_weighted_sum_of_outcome_forced_registered_
                 assert np.sum(p * w) == diagnostics['sample_values'][r, i]
 
 
-def test_same_seed_selected_paths_reproduce_the_registered_planner_and_nest():
+def test_same_seed_selected_paths_and_first_outcomes_reproduce_the_registered_planner_and_nest():
     for root in STATES:
-        q6, d6 = mc(6, 5).q_values(root)
-        q12, d12 = mc(12, 5).q_values(root)
+        q6, d6, e6 = evidence(mc(6, 5), root)
+        q12, d12, e12 = evidence(mc(12, 5), root)
         r6, rd6 = rb(6, 5).q_values(root)
         r12, rd12 = rb(12, 5).q_values(root)
         mask = BC.support(root)
         np.testing.assert_array_equal(rd6['selected_values'][mask], d6['sample_values'][mask])
         np.testing.assert_array_equal(rd12['selected_values'][mask], d12['sample_values'][mask])  # MC12, all 12
         np.testing.assert_array_equal(rd12['selected_values'][mask, :6], d6['sample_values'][mask])  # first 6 = MC6
+        np.testing.assert_array_equal(rd6['first_outcome'][mask], e6['first'][mask])  # zero first-pitch flips
+        np.testing.assert_array_equal(rd12['first_outcome'][mask], e12['first'][mask])
+        np.testing.assert_array_equal(rd12['first_outcome'][mask, :6], e6['first'][mask])
         np.testing.assert_array_equal(pv.selected_q(rd6, 6)[mask], q6[mask])
         np.testing.assert_array_equal(pv.selected_q(rd12, 6)[mask], q6[mask])
         np.testing.assert_array_equal(pv.selected_q(rd12, 12)[mask], q12[mask])
@@ -190,6 +209,26 @@ def test_same_seed_selected_paths_reproduce_the_registered_planner_and_nest():
         again = rb(6, 5).q_values(root)  # fresh planner, same seed: deterministic
         np.testing.assert_array_equal(again[0], r6)
         assert (q6[~mask] == -np.inf).all() and (r6[~mask] == -np.inf).all()
+
+
+def test_the_a0_witness_observes_without_changing_the_search_or_its_wiring():
+    for root in STATES:
+        plain_q, plain_d = mc(6, 5).q_values(root)
+        budget = RowBudget(10**6)
+        planner = mc(6, 5, budget)
+        sim = planner.simulator
+        witness = pv.A0Witness(planner)
+        assert (planner.simulator.predictor is sim.predictor and planner.simulator.pool is sim.pool
+                and planner.simulator.terminal is sim.terminal and planner.simulator.budget is budget)
+        q, d = planner.q_values(root)
+        ev = witness.take(root)
+        np.testing.assert_array_equal(q, plain_q)
+        np.testing.assert_array_equal(d['sample_values'], plain_d['sample_values'])
+        np.testing.assert_array_equal(ev['q'], q)
+        mask = BC.support(root)
+        assert (ev['first'][mask] >= 0).all() and (ev['first'][~mask] == -1).all() and ev['ms'] >= 0
+        with pytest.raises(pv.SearchIntegrityError):  # evidence is taken once, for the state searched
+            witness.take(root)
 
 
 def test_first_pitch_children_and_traced_steps_equal_joint_simulator_step():
@@ -236,67 +275,65 @@ def test_rb_row_accounting_and_budget_stop():
 
 # ---------------------------------------------------------------- reconstruction (integrity)
 
-def test_reconstruction_passes_on_matching_streams_and_fails_on_tampered_streams():
+def test_reconstruction_compares_first_outcomes_and_paths_and_traces_only_differing_paths():
     tally = pv.ReconstructionTally(1e-5, .001)
     for root in STATES:
-        planner = rb(6, 5)
-        _, diagnostics = planner.q_values(root)
-        q0, d0 = mc(6, 5).q_values(root)
+        _, diagnostics = rb(6, 5).q_values(root)
+        q0, _, ev = evidence(mc(6, 5), root)
         mask = BC.support(root)
-        good = pv.reconstruction_check(diagnostics, q0, mask, 6, a0_sample_values=d0['sample_values'])
-        assert good == {'mismatch': False, 'actions': [], 'margin': None, 'first_pitch_flip': False}
-        tally.add('ok', {'seed 5': good})
+        check = pv.reconstruction_compare(diagnostics, ev, mask, 6)
+        assert not check['mismatch'] and check['first_pitch_flips'] == [] and check['differing_paths'] == []
+        tally.add('ok', {'seed 5': check})
     assert tally.finish()['mismatched_decisions'] == 0
     root = STATES[1]
     planner = rb(6, 5)
     _, diagnostics = planner.q_values(root)
+    q0, _, ev = evidence(mc(6, 5), root)
     mask = BC.support(root)
-    other = mc(6, 6).q_values(root)[0]  # a different stream
-    with pytest.raises(pv.SearchIntegrityError, match='traced'):
-        pv.reconstruction_check(diagnostics, other, mask, 6)
-    bad = pv.reconstruction_check(diagnostics, other, mask, 6, trace=planner.trace(root)[1])
-    assert bad['mismatch'] and bad['margin'] > 1e-5
-    with pytest.raises(pv.SearchIntegrityError):
-        pv.ReconstructionTally(1e-5, .001).add('tampered', {'seed 5': bad})
-    q0, d0 = mc(6, 5).q_values(root)
-    samples = d0['sample_values'].copy()
     r = int(np.flatnonzero(mask)[0])
-    samples[r, 2] += .1
-    tampered = q0.copy()
-    tampered[r] = samples[r].mean()
-    check = pv.reconstruction_check(diagnostics, tampered, mask, 6, a0_sample_values=samples,
-                                    trace=planner.trace(root)[1])
-    assert check['actions'] == [r] and check['margin'] > 1e-5
+    flipped = {**ev, 'first': ev['first'].copy()}
+    flipped['first'][r, 2] = (flipped['first'][r, 2] + 1) % 10  # a first-pitch flip that leaves every Q unchanged
+    check = pv.reconstruction_compare(diagnostics, flipped, mask, 6)
+    assert check['first_pitch_flips'] == [(r, 2)] and check['differing_paths'] == []
+    with pytest.raises(pv.SearchIntegrityError, match='first-pitch'):
+        pv.ReconstructionTally(1e-5, .001).add('flip', {'seed 5': check})
+    i = next(i for i in range(6) if not diagnostics['first_outcome_terminal'][r, i])
+    tampered = {**ev, 'samples': ev['samples'].copy(), 'q': ev['q'].copy()}
+    tampered['samples'][r, i] += .1
+    tampered['q'][r] = np.ascontiguousarray(tampered['samples'][r]).mean()
+    check = pv.reconstruction_compare(diagnostics, tampered, mask, 6)
+    assert check['differing_paths'] == [(r, i)] and check['margin'] is None
+    with pytest.raises(pv.SearchIntegrityError, match='not traced'):  # a differing path needs its traced margin
+        pv.ReconstructionTally(1e-5, .001).add('untraced', {'seed 5': check})
+    classified = pv.classify_paths(check, diagnostics, planner.trace(root)[1])
+    assert len(classified['path_margins']) == 1 and classified['margin'] == classified['path_margins'][0]
+    with pytest.raises(pv.SearchIntegrityError, match='margin'):
+        pv.ReconstructionTally(1e-5, .001).add('far', {'seed 5': classified})
     trace = planner.trace(root)[1]
-    tampered_trace = dict(trace, sample_values=trace['sample_values'] + 1e-9)
     with pytest.raises(pv.SearchIntegrityError, match='reproduce'):
-        pv.reconstruction_check(diagnostics, other, mask, 6, trace=tampered_trace)
+        pv.classify_paths(check, diagnostics, dict(trace, sample_values=trace['sample_values'] + 1e-9))
+    with pytest.raises(pv.SearchIntegrityError, match='A0 Q'):
+        pv.reconstruction_compare(diagnostics, {**ev, 'q': ev['q'] + 1e-6}, mask, 6)
 
 
-def test_reconstruction_margin_rule_flips_and_share():
-    width, S = 3, 6
-    base = {'selected_values': np.full((width, S), .5), 'sample_values': np.full((width, S), .5)}
-    mask = np.array([True, True, False])
-    a0 = np.array([.5, .5 + 1e-3, -np.inf])
-    near = {**base, 'first_outcome_terminal': np.zeros((width, S), bool), 'selected_margin': np.full((width, S), 1e-7)}
-    check = pv.reconstruction_check(base, a0, mask, S, trace=near)
-    assert check['mismatch'] and check['actions'] == [1] and check['margin'] == pytest.approx(1e-7)
+def test_reconstruction_tally_near_boundary_share_and_far_rules():
+    near = {'mismatch': True, 'first_pitch_flips': [], 'differing_paths': [(1, 0)], 'path_margins': [1e-7],
+            'margin': 1e-7}
+    ok = {'mismatch': False, 'first_pitch_flips': [], 'differing_paths': [], 'path_margins': None, 'margin': None}
     tally = pv.ReconstructionTally(1e-5, .001)
-    tally.add('near-boundary', {'seed 0': check})  # a float-rounding flip next to a CDF boundary is tolerated
+    tally.add('near-boundary', {'seed 0': near})  # a float-rounding flip next to a CDF boundary is tolerated
     for k in range(999):
-        tally.add(f'ok-{k}', {'seed 0': {'mismatch': False}})
+        tally.add(f'ok-{k}', {'seed 0': ok})
     assert tally.finish()['mismatched_decisions'] == 1  # 1 / 1000 = 0.1%: allowed
-    tally.add('second', {'seed 0': check})
+    tally.add('second', {'seed 0': near})
     with pytest.raises(pv.SearchIntegrityError, match='exceed'):
         tally.finish()
-    terminal_first = {**near, 'first_outcome_terminal': np.ones((width, S), bool)}
-    flip = pv.reconstruction_check(base, a0, mask, S, trace=terminal_first)
-    assert flip['first_pitch_flip'] and np.isinf(flip['margin'])
-    with pytest.raises(pv.SearchIntegrityError, match='first-pitch'):
-        pv.ReconstructionTally(1e-5, .001).add('flip', {'seed 0': flip})
-    far = {**near, 'selected_margin': np.full((width, S), .2)}
+    far = dict(near, path_margins=[.2], margin=.2)
     with pytest.raises(pv.SearchIntegrityError, match='margin'):
-        pv.ReconstructionTally(1e-5, .001).add('far', {'seed 0': pv.reconstruction_check(base, a0, mask, S, trace=far)})
+        pv.ReconstructionTally(1e-5, .001).add('far', {'seed 0': far})
+    terminal_path = dict(near, path_margins=[np.inf], margin=np.inf)
+    with pytest.raises(pv.SearchIntegrityError, match='margin'):
+        pv.ReconstructionTally(1e-5, .001).add('terminal', {'seed 0': terminal_path})
 
 
 # ---------------------------------------------------------------- the frozen-history DP oracle
@@ -405,14 +442,15 @@ def test_metric_functions_ties_one_action_support_and_bin_edges():
     assert only['valid_replicates'] < 500 and only['value'] == pytest.approx(values[games == 3].mean())
 
 
-# ---------------------------------------------------------------- registry: config, gate, verdict, window
+# ---------------------------------------------------------------- registry: config, gate, provenance, verdict, window
 
 def registered_config(**overrides):
     config = copy.deepcopy(CONFIG)
     config['status'], config['execute'] = reg.STATUS_REGISTERED, True
     config['registration'].update(registered_kst='synthetic test', registered_commit='0' * 40,
                                   design_review_reference='REVIEW-A1-ASTRA-003', code_review_reference='synthetic',
-                                  code_sha256={rel: '0' * 64 for rel in reg.NEW_CODE})
+                                  code_sha256={rel: '0' * 64 for rel in reg.NEW_CODE},
+                                  digest_manifest_path='/nonexistent/digest-manifest.jsonl')
     for dotted, value in overrides.items():
         node = config
         *head, last = dotted.split('.')
@@ -480,10 +518,11 @@ def test_status_and_registration_rules():
         reg.config_check({**copy.deepcopy(CONFIG), 'execute': True})
     with pytest.raises(reg.RegistrationError, match='execute true'):
         reg.config_check(registered_config(execute=False))
-    missing = registered_config()
-    missing['registration']['code_review_reference'] = None
-    with pytest.raises(reg.RegistrationError, match='code_review_reference'):
-        reg.registration_gate(missing)
+    for field in ('code_review_reference', 'digest_manifest_path'):
+        missing = registered_config()
+        missing['registration'][field] = None
+        with pytest.raises(reg.RegistrationError, match=field):
+            reg.registration_gate(missing)
     wrong_code = registered_config()
     wrong_code['registration']['code_sha256'] = {'x.py': '0' * 64}
     with pytest.raises(reg.RegistrationError, match='code_sha256'):
@@ -494,6 +533,75 @@ def test_status_and_registration_rules():
     draft_with_fields['registration']['registered_commit'] = 'abc'
     with pytest.raises(reg.RegistrationError, match='stay null'):
         reg.config_check(draft_with_fields)
+
+
+def test_config_digest_ignores_only_the_registration_fields():
+    assert reg.config_digest(CONFIG) == reg.config_digest(registered_config())
+    changed = registered_config(question='another question')
+    assert reg.config_digest(changed) != reg.config_digest(CONFIG)
+    obj = copy.deepcopy(CONFIG)
+    for dotted in reg.DIGEST_NULLED_PATHS:
+        *head, last = dotted.split('.')
+        node = obj
+        for part in head:
+            node = node[part]
+        node[last] = None
+    text = json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=2) + '\n'
+    assert reg.config_digest(CONFIG) == hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def test_the_external_digest_manifest_pins_the_config(tmp_path):
+    manifest = tmp_path / 'digest-manifest.jsonl'
+    config = registered_config(**{'registration.digest_manifest_path': str(manifest)})
+    entry = {'experiment_id': reg.EXPERIMENT_ID, 'kind': 'config_digest', 'digest': reg.config_digest(config),
+             'registered_commit': config['registration']['registered_commit'],
+             'code_sha256': config['registration']['code_sha256']}
+    with pytest.raises(reg.RegistrationError, match='existing file'):
+        reg.verify_digest_manifest(config, REPO)
+    manifest.write_text(json.dumps(entry) + '\n')
+    assert reg.verify_digest_manifest(config, REPO) == manifest.resolve()
+    with pytest.raises(reg.RegistrationError, match='digest differs'):
+        reg.verify_digest_manifest(registered_config(question='x', **{'registration.digest_manifest_path': str(manifest)}),
+                                   REPO)
+    manifest.write_text(json.dumps(entry) + '\n' + json.dumps(entry) + '\n')
+    with pytest.raises(reg.RegistrationError, match='exactly one'):
+        reg.verify_digest_manifest(config, REPO)
+    inside = registered_config(**{'registration.digest_manifest_path': str(REPO / 'configs' / 'EXP-STAB-02.yaml')})
+    with pytest.raises(reg.RegistrationError, match='outside the repository'):
+        reg.verify_digest_manifest(inside, REPO)
+
+
+def git(repo, *args):
+    return subprocess.run(['git', '-c', 'user.name=synthetic', '-c', 'user.email=synthetic@example.invalid',
+                           '-c', 'commit.gpgsign=false', *args], cwd=repo, capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def test_the_registered_commit_must_contain_the_reviewed_sources(tmp_path):
+    repo = tmp_path / 'repo'
+    for rel in (*reg.NEW_CODE, reg.CONFIG_PATH):
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO / rel, repo / rel)
+    git(repo, 'init', '-q')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'reviewed')
+    commit = git(repo, 'rev-parse', 'HEAD')
+    pins = {rel: reg.file_sha256(repo / rel) for rel in reg.NEW_CODE}
+    config = registered_config(**{'registration.registered_commit': commit, 'registration.code_sha256': pins})
+    assert reg.verify_registered_commit(config, repo)['registered_commit'] == commit
+    assert runner.git_state(repo)[0] == commit
+    with pytest.raises(reg.RegistrationError, match='reviewed sources'):
+        reg.verify_registered_commit(registered_config(**{'registration.registered_commit': commit}), repo)
+    with pytest.raises(reg.RegistrationError, match='beyond the registration fields'):
+        reg.verify_registered_commit(registered_config(question='changed', **{
+            'registration.registered_commit': commit, 'registration.code_sha256': pins}), repo)
+    with pytest.raises(reg.RegistrationError, match='Git provenance'):
+        reg.verify_registered_commit(registered_config(**{'registration.registered_commit': 'f' * 40,
+                                                          'registration.code_sha256': pins}), repo)
+    plain_dir = tmp_path / 'not-a-repo'
+    plain_dir.mkdir()
+    with pytest.raises(reg.RegistrationError, match='Git provenance'):
+        runner.git_state(plain_dir)
 
 
 def test_new_modules_stay_outside_the_s2_bind_identity_source_closure():
@@ -600,6 +708,7 @@ def test_caps_window_and_deadline_rule():
     assert reg.start_decision(at(0, 1, day=28), 21600)[0] == 'DEFER'
     assert reg.next_deadline_utc(at(23)) == at(6, day=28)
     assert reg.next_deadline_utc(at(3, day=28)) == at(6, day=28)
+    assert reg.window_id(at(14)) == reg.window_id(at(3, day=28)) != reg.window_id(at(14, day=28))
 
 
 def test_run_conditions_of_the_optional_arms():
@@ -608,41 +717,44 @@ def test_run_conditions_of_the_optional_arms():
     assert not reg.descriptive_allowed(True, True, 100., 200.) and not reg.descriptive_allowed(False, False, 300., 200.)
 
 
+def test_the_smoke_sink_refuses_anything_but_allowlisted_structure():
+    record = {'r_b': 2.1, 'cost': {'rows_by_arm_seed': {'RB6 seed 0': 10}}, 'mechanical_rule': {'status': 'FULL_RUN_ALLOWED'}}
+    assert reg.smoke_record_problems(record) == []
+    assert reg.smoke_record_problems({**record, 'q_planning': [None, .5]})
+    assert reg.smoke_record_problems({**record, 'cost': {'rows_by_arm_seed': {}, 'mean_tv': .1}})
+    assert reg.smoke_record_problems({**record, 'statuses': {'SUPPORTED': 3}, 'identity': {'law': [.5, .5]}})
+    assert reg.smoke_record_problems({**record, 'data_version': {'scores': [.25, .75]}})  # a float vector
+
+
 # ---------------------------------------------------------------- the pass runner on a synthetic environment
 
+PROV = {'train_start': '2023-05-15', 'train_end': '2025-04-30', 'dates': 'declared_unverified',
+        'train_rows': int(sum(BC.league.values())), 'source_ids': {'synthetic': 'a' * 64}, 'config_sha256': 'b' * 64,
+        'code_commit': 'f83caea2d8540992a446b168b498f910111478b0', 'data_version': 'synthetic-v1'}
+OUTCOME_PLAN = ('ball', 'strike', 'foul', 'ball')  # decisions at 0-0, 1-0, 1-1 and 1-2
+
+
 @dataclass
-class Request:
-    request_id: str
-    pa_id: str
-    state: PAState
-    pitcher_hand: str = 'R'
-
-
-class FakeRuntime:
-    """The registered runtime's contract as the runner uses it: submit -> row with the seed-0 planning Q."""
-    def __init__(self, env, ledger_path, budget):
-        self.reference, self.sha256 = env.reference, 'synthetic-runtime'
-        self.improvement = RolloutImprovement(env.reference, simulator(budget, env.predict), cutoff, samples=6,
-                                              pitch_cap=12, seed=0)
-        Path(ledger_path).write_text('{"kind": "header", "synthetic": true}\n')
-
-    def submit(self, request):
-        s = request.state
-        mask, reference = self.reference.support(s), self.reference.probabilities(s)
-        q, diagnostics = self.improvement.q_values(s)
-        off = np.where(mask, 0., np.nan)
-        listed = lambda v: [None if not np.isfinite(x) else float(x) for x in v]  # noqa: E731
-        se = runner.paired_difference_se(diagnostics['sample_values'], mask)
-        return {'status': 'SUPPORTED', 'result': {'mask': mask.tolist(), 'reference': reference.tolist(),
-                                                  'q_planning': listed(q + off), 'planning_diff_se': listed(se + off)}}
-
-    def verify_components(self):
-        return True
+class PlannedPA:
+    game: int
+    pa: int
+    actions: tuple
 
 
 class SyntheticEnv:
-    def __init__(self, counts=((0, 0), (1, 1), (3, 2)), games=(101, 102, 103, 104), predict=predictor):
-        self.predict, self.reference = predict, BC
+    """The runner's environment contract on synthetic data around the REAL PolicyRuntime: pinned BC artifact and
+    support table files, a hash-chained ledger and serialized result rows; only the candidate (built by
+    build_runtime from bound components in a real run) is synthetic, wired exactly like build_runtime's."""
+    MASK = np.array([True, True, False])  # C off the intervention support: OUTSIDE_POLICY_SUPPORT rows
+
+    def __init__(self, root, games=(101, 102, 103, 104), predict=predictor):
+        self.root = Path(tempfile.mkdtemp(dir=root, prefix='synthetic-artifacts-'))  # frozen files are write-once
+        self.art = pa.save_train_bc(BC, self.root / 'bc.json', PROV)
+        _, file_sha = pa.save_support_table(self.art, [('p', 'R', self.MASK & self.art.bc.support(state()))],
+                                            self.root / 'support.json')
+        self.support, self.support_identity = pa.load_support_table(self.root / 'support.json', file_sha, self.art)
+        self.reference = prt.MaskedReference(self.art.bc, self.support)
+        self.predict, self.runtime_sha = predict, 'replay-without-runtime'
         self.games = list(games)
         self.games_record = {'games_sha256': 'synthetic', 'selected': len(self.games)}
         order = runner.subsample_order(self.games)
@@ -650,63 +762,85 @@ class SyntheticEnv:
         self.fhdp_smoke = order[0]
         self.confirmation = [201, 202]
         self.confirmation_record = {'games_sha256': canonical_hash(sorted(self.confirmation)), 'selected': 2}
-        self.pas = {}
-        for g in self.games + self.confirmation:
-            blocks = []
-            for pa in range(2):
-                history, requests = (), []
-                for k, (b, s) in enumerate(counts):
-                    requests.append(Request(f'{g}:{pa}:{k + 1}', f'{g}:{pa}', state(b, s, history, f'{g}-{pa}')))
-                    history = history + (PastPitch(ACTIONS[(g + pa + k) % 3], (.1 + .2 * k,), 'foul', b, s),)
-                blocks.append(requests)
-            self.pas[g] = blocks
-        self.prepared, self.verified, self._stab01 = [], 0, None
+        self.plans = {g: [PlannedPA(g, k, tuple(ACTIONS[(g + k + i) % 3] for i in range(len(OUTCOME_PLAN))))
+                          for k in range(2)] for g in self.games + self.confirmation}
+        self.prepared, self.prepare_hook, self.verified, self._stab01 = [], None, 0, None
+        self.tiny_a0_seed5_budget = False
 
     def prepare(self, scope):
         self.prepared.append(scope)
+        if self.prepare_hook is not None:
+            self.prepare_hook()
 
     def smoke_games(self):
         return self.games[:reg.GAMES['smoke_games']]
 
     def blocks(self, games):
         for g in sorted(set(games)):
-            for block in self.pas[g]:
-                yield g, block
+            for plan in self.plans[g]:
+                yield g, plan
 
-    def requests(self, block):
-        return block
+    def requests(self, plan):
+        """Consistent PA: 0-0 start, each history token is the previous logged pitch and its outcome."""
+        out, history, (b, s) = [], (), (0, 0)
+        for i, (action, outcome) in enumerate(zip(plan.actions, OUTCOME_PLAN)):
+            st = PAState(b, s, 'p', 'R', history, f'{plan.game}-{plan.pa}')
+            out.append(prt.DecisionRequest(f'{plan.game}:{plan.pa}:{i + 1}', f'{plan.game}:{plan.pa}', i, st, action,
+                                           self.runtime_sha, 'R'))
+            history = history + (PastPitch(action, (.1 + .2 * i + .01 * plan.pa,), outcome, b, s),)
+            b, s = prt.next_count(b, s, outcome)
+        return out
 
     def build_runtime(self, ledger_path, budget):
-        return FakeRuntime(self, ledger_path, budget)
+        reference = self.reference
+        improvement = RolloutImprovement(reference, simulator(budget, self.predict), cutoff, samples=6, pitch_cap=12,
+                                         seed=0)
+
+        def candidate(s):  # build_runtime's candidate (policy_runtime.py), here over synthetic components
+            mask = reference.support(s)
+            q, diagnostics = improvement.q_values(s)
+            p = kl_policy(q, reference.probabilities(s), mask, reg.TAU)
+            off = np.where(mask, 0., np.nan)
+            return p, {'q': q + off, 'mc_se': diagnostics['mc_se'] + off, 'q_planning': q + off,
+                       'planning_diff_se': prt.paired_difference_se(diagnostics['sample_values'], mask) + off,
+                       'source': 'planning_reuse'}
+        runtime = prt.PolicyRuntime(self.art, self.support, self.support_identity, ledger_path, candidate=candidate,
+                                    candidate_identity={'name': 'synthetic P3 (build_runtime wiring)'})
+        runtime.reference, runtime.improvement = reference, improvement
+        self.runtime_sha = runtime.sha256
+        return runtime
 
     def planner(self, kind, samples, seed, budget):
-        if getattr(self, 'tiny_a0_seed5_budget', False) and kind == 'MC' and seed == 5:
+        if self.tiny_a0_seed5_budget and kind == 'MC' and seed == 5:
             budget = RowBudget(50, seed_count=5)
         sim = simulator(budget, self.predict)
         if kind == 'MC':
-            return RolloutImprovement(BC, sim, cutoff, samples=samples, pitch_cap=12, seed=seed)
+            return RolloutImprovement(self.reference, sim, cutoff, samples=samples, pitch_cap=12, seed=seed)
         if kind == 'RB':
-            return pv.RaoBlackwellFirstStep(BC, sim, cutoff, samples=samples, pitch_cap=12, seed=seed)
-        return pv.FrozenHistoryDP(BC, sim, cutoff)
+            return pv.RaoBlackwellFirstStep(self.reference, sim, cutoff, samples=samples, pitch_cap=12, seed=seed)
+        return pv.FrozenHistoryDP(self.reference, sim, cutoff)
 
     def check_request(self, request, mask):
         assert request.state.pitcher == 'p'
 
     def verify(self, planners, runtime=None):
-        for planner in planners:
-            assert planner.simulator.predictor is self.predict and planner.cutoff is cutoff
+        for planner in (*planners, *((runtime.improvement,) if runtime is not None else ())):
+            sim = planner.simulator
+            assert sim.predictor is self.predict and sim.pool is pool and sim.terminal is terminal
+            assert planner.cutoff is cutoff
         self.verified += 1
 
     def stab01(self):
         if self._stab01 is None:
             stab = runner._stab()
             sets = {'A': [0, 1, 2, 3, 4], 'B': [5, 6, 7, 8, 9], 'K': [1, 3, 5]}
-            planners = {s: mc(6, s, predict=self.predict) for s in range(10)}
+            planners = {s: RolloutImprovement(self.reference, simulator(predict=self.predict), cutoff, samples=6,
+                                              pitch_cap=12, seed=s) for s in range(10)}
             columns = {k: [] for k in reg.STAB01_COLUMNS}
-            for g, block in self.blocks(self.games):
-                for request in block:
+            for g, plan in self.blocks(self.games):
+                for request in self.requests(plan):
                     s = request.state
-                    mask, reference = BC.support(s), BC.probabilities(s)
+                    mask, reference = self.reference.support(s), self.reference.probabilities(s)
                     q = {seed: planner.q_values(s)[0] for seed, planner in planners.items()}
                     q[0] = q[0] + np.where(mask, 0., np.nan)  # the runtime row convention (NaN off the support)
                     columns['request_id'].append(request.request_id)
@@ -733,6 +867,10 @@ class FakeClock:
     def monotonic(self):
         return self.mono
 
+    def jump(self, seconds):
+        self.t += timedelta(seconds=seconds)
+        self.mono += seconds
+
 
 class FakeLock:
     def __init__(self, held=False):
@@ -749,48 +887,23 @@ class FakeLock:
             self.events.append('release')
 
 
-def identity():
-    return {'config_sha256': 'synthetic-config', 'source_hashes': {'pitchmdp/planner_variance.py': 'synthetic'},
-            'pins_sha256': reg.pins_digest()}
+def identity(config=None):
+    return {'config_sha256': 'synthetic-config', 'config_digest': reg.config_digest(config or registered_config()),
+            'source_hashes': {'pitchmdp/planner_variance.py': 'synthetic'}, 'pins_sha256': reg.pins_digest()}
 
 
-def make_runner(config, env, attempt, local=datetime(2026, 10, 27, 14, 0, tzinfo=KST), tick=0., lock=None, rss=None):
-    return runner.PassRunner(config, env, attempt, identity=identity(), clock=FakeClock(local, tick),
-                             lock=lock or FakeLock(), rss=rss or (lambda: 1 << 30), log=lambda *a: None)
+def make_runner(config, env, attempt, local=datetime(2026, 10, 27, 14, 0, tzinfo=KST), tick=0., lock=None, rss=None,
+                manifest=None, clock=None):
+    return runner.PassRunner(config, env, attempt, identity=identity(config), clock=clock or FakeClock(local, tick),
+                             lock=lock or FakeLock(), rss=rss or (lambda: 1 << 30), log=lambda *a: None,
+                             manifest=manifest)
 
 
 def receipts(attempt):
     return [json.loads(line) for line in (attempt / 'receipts.jsonl').read_text().splitlines()]
 
 
-def test_smoke_records_cost_and_structure_only(tmp_path):
-    attempt = tmp_path / 'attempt-001'
-    env = SyntheticEnv()
-    lock = FakeLock()
-    work = make_runner(registered_config(), env, attempt, lock=lock)
-    assert work.advance('smoke') == runner.EXIT_OK
-    assert lock.events == ['acquire', 'release'] and env.prepared == ['smoke']
-    folder = attempt / 'smoke'
-    results = json.loads((folder / 'results.json').read_text())
-    assert reg.smoke_metric_keys(results) == []
-    assert not list(folder.glob('*.npz'))
-    assert results['structural_ok'] and results['structural']['failure_count'] == 0
-    assert results['mechanical_rule']['status'] in ('FULL_RUN_ALLOWED', 'COST_EXCEEDED_AT_SMOKE')
-    rows = results['cost']['rows_by_arm_seed']
-    assert results['r_b'] == pytest.approx(np.mean([rows[f'RB6 seed {s}'] / rows[f'A0 seed {s}'] for s in (0, 5)]))
-    assert {'RB12 seed 0', 'BF48 seed 5', 'REF-RB6 seed 100', 'RB6-rerun seed 0', 'FH-DP'} <= set(rows)
-    assert results['decisions'] == 3 * 2 * 3 and results['fhdp_decisions'] >= 6
-    text = (folder / 'results.json').read_text()
-    assert '"q_' not in text and 'top1' not in text and '"tv' not in text
-    runner.verify_sums(folder)
-    assert [r['event'] for r in receipts(attempt)] == ['STARTED', 'COMPLETED']
-    assert work.advance('smoke') == runner.EXIT_OK  # nothing left: no rerun into a finished folder
-    assert [r['event'] for r in receipts(attempt)] == ['STARTED', 'COMPLETED']
-    with pytest.raises(runner.IntegrityFailure):  # the smoke key guard refuses metric-looking keys
-        runner.require(not reg.smoke_metric_keys({'cost': {'mean_tv': 0.1}}), 'metric key')
-
-
-def flow_config(monkeypatch, *, stable=False, rb12_cap=10.0):
+def flow_config(monkeypatch, *, stable=False, rb12_cap=10.0, **integrity):
     """Registry pins moved for a synthetic flow test; the config is rewritten to agree with them."""
     rules = dict(reg.THRESHOLDS)
     if stable:
@@ -800,31 +913,96 @@ def flow_config(monkeypatch, *, stable=False, rb12_cap=10.0):
     rules.update(rb12_smoke_r_b_at_most=rb12_cap)
     for key, value in rules.items():
         monkeypatch.setitem(reg.THRESHOLDS, key, value)
-    return registered_config(decision_rules=dict(reg.THRESHOLDS))
+    for key, value in integrity.items():
+        monkeypatch.setitem(reg.INTEGRITY, key, value)
+    return registered_config(decision_rules=dict(reg.THRESHOLDS), integrity=dict(reg.INTEGRITY))
+
+
+def test_runtime_rows_are_read_from_the_real_policy_runtime_serialization(tmp_path):
+    env = SyntheticEnv(tmp_path)
+    work = make_runner(registered_config(), env, tmp_path / 'attempt-001')
+    budget = RowBudget(10**6, seed_count=5)
+    runtime = env.build_runtime(tmp_path / 'ledger.jsonl', budget)
+    witness = pv.A0Witness(runtime.improvement)
+    watch = runner.Watch(work.clock, work.clock.now() + timedelta(hours=1), 3600, lambda: 1 << 30)
+    statuses = Counter()
+    decisions = list(work.runtime_decisions([101], runtime, witness, budget, watch, statuses))
+    rows = [json.loads(line) for line in (tmp_path / 'ledger.jsonl').read_text().splitlines()]
+    rows = [r for r in rows if r.get('kind') == 'decision']
+    assert len(decisions) == len(rows) == 2 * len(OUTCOME_PLAN)
+    assert set(statuses) <= set(prt.EVALUATED) and 'OUTSIDE_POLICY_SUPPORT' in statuses
+    for decision, row in zip(decisions, rows):
+        result = row['result']
+        assert 'q_planning_diff_se' in result and 'planning_diff_se' not in result  # the serialized contract
+        np.testing.assert_array_equal(decision.runtime['q'], runner.vector(result['q_planning']))
+        np.testing.assert_array_equal(decision.runtime['diff_se'], runner.vector(result['q_planning_diff_se']))
+        assert decision.runtime['rows'] > 0 and decision.runtime['first'].shape == (3, 6)
+        assert decision.runtime['submit_ms'] >= decision.runtime['ms'] >= 0
+
+
+def walk_files(root):
+    return sorted(p for p in Path(root).rglob('*') if p.is_file())
+
+
+def test_smoke_persists_only_allowlisted_structure_in_every_file(tmp_path):
+    attempt, manifest = tmp_path / 'attempt-001', tmp_path / 'digest-manifest.jsonl'
+    env = SyntheticEnv(tmp_path)
+    lock = FakeLock()
+    work = make_runner(registered_config(), env, attempt, lock=lock, manifest=manifest)
+    assert work.advance('smoke') == runner.EXIT_OK
+    assert lock.events == ['acquire', 'release'] and env.prepared == ['smoke']
+    assert work.smoke_scratch is not None and not work.smoke_scratch.exists()  # the runtime ledger never persisted
+    files = walk_files(attempt) + [manifest]
+    assert {p.relative_to(tmp_path).as_posix() for p in files} == {
+        'attempt-001/receipts.jsonl', 'attempt-001/smoke/started.json', 'attempt-001/smoke/results.json',
+        'attempt-001/smoke/SHA256SUMS', 'digest-manifest.jsonl'}
+    for path in files:
+        text = path.read_text()
+        assert 'ledger' not in path.name and 'q_planning' not in text and 'q_reference' not in text
+        records = ([json.loads(line) for line in text.splitlines()] if path.suffix == '.jsonl' else
+                   [json.loads(text)] if path.suffix == '.json' else [])
+        for record in records:
+            assert reg.smoke_metric_keys(record) == [] and reg.float_vectors(record) == [], path
+    results = json.loads((attempt / 'smoke' / 'results.json').read_text())
+    assert reg.smoke_record_problems(results) == []
+    assert results['structural_ok'] and results['structural']['failure_count'] == 0
+    assert results['runtime_ledger']['persisted'] is False and results['runtime_ledger']['rows'] > 0
+    cost = results['cost']
+    rows = cost['rows_by_arm_seed']
+    assert results['r_b'] == pytest.approx(np.mean([rows[f'RB6 seed {s}'] / rows[f'A0 seed {s}'] for s in (0, 5)]))
+    assert {'RB12 seed 0', 'BF48 seed 5', 'REF-RB6 seed 100', 'RB6-rerun seed 0', 'FH-DP'} <= set(rows)
+    assert 'A0 seed 0' in cost['planner_ms_per_decision_median'] and cost['runtime_submit_seconds'] > 0
+    assert 'peak_rss_bytes_process_lifetime' in results and results['decisions'] == 3 * 2 * len(OUTCOME_PLAN)
+    runner.verify_sums(attempt / 'smoke')
+    assert [r['event'] for r in receipts(attempt)] == ['STARTED', 'COMPLETED']
+    assert len(manifest.read_text().splitlines()) == 2  # receipts mirrored to the external digest manifest
+    assert work.advance('smoke') == runner.EXIT_OK  # nothing left: no rerun into a finished folder
 
 
 def test_mandatory_rb12_deferral_lock_release_and_continuation(tmp_path, monkeypatch):
     config = flow_config(monkeypatch)
     attempt = tmp_path / 'attempt-001'
-    env = SyntheticEnv(counts=((3, 2), (2, 2), (3, 1)))
-    first_lock = FakeLock()
-    assert make_runner(config, env, attempt, lock=first_lock).advance('M') == runner.EXIT_OK
+    env = SyntheticEnv(tmp_path)
+    assert make_runner(config, env, attempt).advance('M') == runner.EXIT_OK
     mandatory = json.loads((attempt / 'mandatory' / 'results.json').read_text())
     assert mandatory['rb12_required'] and mandatory['verdict'] == {'row': None, 'label': None,
                                                                    'flags': ['PENDING_PASS_C'], 'final': False}
-    assert mandatory['integrity']['stab01_k1_match_rate'] == 1.0
-    assert mandatory['integrity']['reconstruction']['mismatched_decisions'] == 0
-    assert mandatory['integrity']['replay']['max_abs_q_difference'] == 0.0
+    integrity = mandatory['integrity']
+    assert integrity['stab01_k1_match_rate'] == 1.0 and integrity['replay']['max_abs_q_difference'] == 0.0
+    assert integrity['reconstruction']['mismatched_decisions'] == 0 and integrity['reconstruction']['first_pitch_flips'] == 0
     secondary = mandatory['comparison']['secondary']
     assert set(secondary['gap_bins']['effective_gap']) == {'support_1', '[0.0, 0.0025)', '[0.0025, 0.005)',
                                                             '[0.005, 0.01)', '[0.01, 0.02)', '[0.02, 0.05)', '[0.05, inf)'}
     assert 'rb_improves_over_baseline' in mandatory['comparison']['secondary_flags']
+    assert 'runtime_submit_ms_mean' in secondary['resources']['A0_0']
     with np.load(attempt / 'mandatory' / 'decisions.npz') as data:
-        assert {'q_A0_0', 'q_A0_5', 'q_RB6_0', 'q_RB6_5', 'q_REF_100', 'rows_A0_0', 'v_RB6_5', 'bin_eff',
-                'stab01_K5_top1_same', 'k1_match'} <= set(data.files)
+        assert {'q_A0_0', 'q_A0_5', 'q_RB6_0', 'q_RB6_5', 'q_REF_100', 'rows_A0_0', 'v_RB6_5', 'bin_eff', 'k1_match',
+                'stab01_K5_top1_same', 'a0_first_0', 'a0_samples_0', 'a0_first_5', 'a0_samples_5', 'rb_first_RB6_0',
+                'submit_ms_A0_0'} <= set(data.files)
+        np.testing.assert_array_equal(data['rb_first_RB6_5'], data['a0_first_5'])  # zero first-pitch flips
         assert len(data['request_id']) == len(env.stab01()['request_id'])
-    assert not (attempt / 'verdict.json').exists()
-    late = make_runner(config, env, attempt, local=datetime(2026, 10, 28, 5, 50, tzinfo=KST), lock=FakeLock())
+    assert (attempt / 'mandatory' / 'ledger-dev-0.jsonl').exists() and not (attempt / 'verdict.json').exists()
+    late = make_runner(config, env, attempt, local=datetime(2026, 10, 28, 5, 50, tzinfo=KST))
     assert late.advance('D') == runner.EXIT_DEFERRED  # pass C does not fit before 06:00 KST
     assert not (attempt / 'rb12').exists() and receipts(attempt)[-1]['event'] == 'DEFERRED'
     next_lock = FakeLock()
@@ -846,29 +1024,93 @@ def test_mandatory_rb12_deferral_lock_release_and_continuation(tmp_path, monkeyp
         make_runner(config, env, attempt).advance('D')
 
 
+def perturb_rb6_seed5(monkeypatch, margin):
+    """Make one RB6 seed-5 path differ from A0 (same first outcome, different value) in the untraced and the traced
+    search alike, and give that path the traced boundary margin ``margin``."""
+    original = pv.RaoBlackwellFirstStep._search
+    target = {}
+
+    def search(self, s, first, continuation, *, count):
+        q, d = original(self, s, first, continuation, count=count)
+        if self.seed == 5 and self.samples == 6 and target.setdefault('state', s) == s:
+            r = int(np.flatnonzero(np.isfinite(q))[0])
+            i = next(i for i in range(6) if not d['first_outcome_terminal'][r, i])
+            d['selected_values'] = d['selected_values'].copy()
+            d['selected_values'][r, i] += .01
+            if 'selected_margin' in d:
+                d['selected_margin'] = d['selected_margin'].copy()
+                d['selected_margin'][r, i] = margin
+        return q, d
+    monkeypatch.setattr(pv.RaoBlackwellFirstStep, '_search', search)
+
+
+def test_the_runner_traces_a_differing_path_and_accepts_a_near_boundary_margin(tmp_path, monkeypatch):
+    config = flow_config(monkeypatch, reconstruction_mismatch_share_max=1.0)
+    perturb_rb6_seed5(monkeypatch, 1e-7)
+    traced = []
+    trace = pv.RaoBlackwellFirstStep.trace
+    monkeypatch.setattr(pv.RaoBlackwellFirstStep, 'trace', lambda self, s: (traced.append(self.seed), trace(self, s))[1])
+    attempt = tmp_path / 'attempt-001'
+    assert make_runner(config, SyntheticEnv(tmp_path), attempt).advance('M') == runner.EXIT_OK
+    reconstruction = json.loads((attempt / 'mandatory' / 'results.json').read_text())['integrity']['reconstruction']
+    assert reconstruction['mismatched_decisions'] == 1 and reconstruction['max_margin'] == pytest.approx(1e-7)
+    assert traced == [5]  # only the differing decision was traced, only for the seed whose path differs
+
+
+def test_the_runner_rejects_a_far_boundary_margin_and_never_traces_matching_paths(tmp_path, monkeypatch):
+    config = flow_config(monkeypatch)
+    perturb_rb6_seed5(monkeypatch, .2)
+    attempt = tmp_path / 'attempt-001'
+    assert make_runner(config, SyntheticEnv(tmp_path), attempt).advance('M') == runner.EXIT_STOPPED
+    reason = json.loads((attempt / 'mandatory' / 'aborted.json').read_text())['reason']
+    assert 'margin' in reason and 'SearchIntegrityError' in reason
+
+
+def test_the_runner_stops_on_a_first_pitch_flip_that_leaves_every_q_unchanged(tmp_path, monkeypatch):
+    config = flow_config(monkeypatch)
+    original = pv.A0Witness.take
+
+    def take(self, s):
+        ev = original(self, s)
+        if self.improvement.seed == 5:
+            r = int(np.flatnonzero(ev['first'][:, 0] >= 0)[0])
+            ev['first'][r, 0] = (ev['first'][r, 0] + 1) % 10
+        return ev
+    monkeypatch.setattr(pv.A0Witness, 'take', take)
+    monkeypatch.setattr(pv.RaoBlackwellFirstStep, 'trace', lambda self, s: pytest.fail('a flip is never traced'))
+    attempt = tmp_path / 'attempt-001'
+    assert make_runner(config, SyntheticEnv(tmp_path), attempt).advance('M') == runner.EXIT_STOPPED
+    assert 'first-pitch' in json.loads((attempt / 'mandatory' / 'aborted.json').read_text())['reason']
+
+
 def test_a_held_lock_starts_nothing(tmp_path):
     attempt = tmp_path / 'attempt-001'
-    work = make_runner(registered_config(), SyntheticEnv(), attempt, lock=FakeLock(held=True))
+    work = make_runner(registered_config(), SyntheticEnv(tmp_path), attempt, lock=FakeLock(held=True))
     assert work.advance('smoke') == runner.EXIT_STOPPED
     assert not (attempt / 'smoke').exists() and receipts(attempt)[-1]['event'] == 'LOCK_HELD'
 
 
-def test_window_deferral_and_deadline_rss_and_budget_stops(tmp_path, monkeypatch):
-    early = make_runner(registered_config(), SyntheticEnv(), tmp_path / 'attempt-001',
+def test_window_deferral_deadline_rss_budget_and_preparation_stops(tmp_path, monkeypatch):
+    early = make_runner(registered_config(), SyntheticEnv(tmp_path), tmp_path / 'attempt-001',
                         local=datetime(2026, 10, 27, 10, 0, tzinfo=KST))
     assert early.advance('smoke') == runner.EXIT_DEFERRED and not (tmp_path / 'attempt-001' / 'smoke').exists()
-    slow = make_runner(registered_config(), SyntheticEnv(), tmp_path / 'attempt-002', tick=1000.)
+    slow = make_runner(registered_config(), SyntheticEnv(tmp_path), tmp_path / 'attempt-002', tick=1000.)
     assert slow.advance('smoke') == runner.EXIT_STOPPED
     aborted = json.loads((tmp_path / 'attempt-002' / 'smoke' / 'aborted.json').read_text())
     assert aborted['reason'].startswith('DeadlinePassed') and aborted['effect'] == 'NO_FULL_RUN'
     assert not aborted['citable'] and not (tmp_path / 'attempt-002' / 'smoke' / 'results.json').exists()
     runner.verify_sums(tmp_path / 'attempt-002' / 'smoke')
     assert slow.advance('M') == runner.EXIT_STOPPED  # an aborted smoke means no full run
-    heavy = make_runner(registered_config(), SyntheticEnv(), tmp_path / 'attempt-003', rss=lambda: 9 << 30)
+    heavy = make_runner(registered_config(), SyntheticEnv(tmp_path), tmp_path / 'attempt-003', rss=lambda: 9 << 30)
     assert heavy.advance('smoke') == runner.EXIT_STOPPED
     assert 'RSSExceeded' in json.loads((tmp_path / 'attempt-003' / 'smoke' / 'aborted.json').read_text())['reason']
+    broken = SyntheticEnv(tmp_path)
+    broken.prepare_hook = lambda: runner.require(False, 'processed sha differs from its pin')
+    assert make_runner(registered_config(), broken, tmp_path / 'attempt-005').advance('smoke') == runner.EXIT_STOPPED
+    reason = json.loads((tmp_path / 'attempt-005' / 'smoke' / 'aborted.json').read_text())['reason']
+    assert 'processed sha differs' in reason  # a preparation failure leaves its abort record
     config = flow_config(monkeypatch)
-    env = SyntheticEnv()
+    env = SyntheticEnv(tmp_path)
     assert make_runner(config, env, tmp_path / 'attempt-004').advance('smoke') == runner.EXIT_OK
     env.tiny_a0_seed5_budget = True  # the A0 seed-5 row budget is exceeded inside pass M
     budget = make_runner(config, env, tmp_path / 'attempt-004')
@@ -881,9 +1123,57 @@ def test_window_deferral_and_deadline_rss_and_budget_stops(tmp_path, monkeypatch
     assert budget.advance('D') == runner.EXIT_STOPPED  # nothing after an aborted pass M
 
 
+def test_finalization_overruns_abort_and_preparation_time_counts(tmp_path, monkeypatch):
+    clock = FakeClock(datetime(2026, 10, 27, 14, 0, tzinfo=KST))
+    env = SyntheticEnv(tmp_path)
+    env.prepare_hook = lambda: clock.jump(120)
+    work = make_runner(registered_config(), env, tmp_path / 'attempt-001', clock=clock)
+    assert work.advance('smoke') == runner.EXIT_OK
+    results = json.loads((tmp_path / 'attempt-001' / 'smoke' / 'results.json').read_text())
+    assert results['preparation_seconds'] >= 120 and results['seconds'] >= 120
+    original = runner.PassRunner.pass_smoke
+    late = FakeClock(datetime(2026, 10, 27, 14, 0, tzinfo=KST))
+    monkeypatch.setattr(runner.PassRunner, 'pass_smoke',
+                        lambda self, out, watch, arm=None: (original(self, out, watch, arm), late.jump(4000))[0])
+    over = make_runner(registered_config(), SyntheticEnv(tmp_path), tmp_path / 'attempt-002', clock=late)
+    assert over.advance('smoke') == runner.EXIT_STOPPED
+    reason = json.loads((tmp_path / 'attempt-002' / 'smoke' / 'aborted.json').read_text())['reason']
+    assert 'final check' in reason and not (tmp_path / 'attempt-002' / 'smoke' / 'results.json').exists()
+    calls = []
+
+    def rss():
+        calls.append(1)
+        return 9 << 30 if getattr(rss, 'finished', False) else 1 << 30
+    monkeypatch.setattr(runner.PassRunner, 'pass_smoke',
+                        lambda self, out, watch, arm=None: (original(self, out, watch, arm), setattr(rss, 'finished', True))[0])
+    heavy = make_runner(registered_config(), SyntheticEnv(tmp_path), tmp_path / 'attempt-003', rss=rss)
+    assert heavy.advance('smoke') == runner.EXIT_STOPPED
+    reason = json.loads((tmp_path / 'attempt-003' / 'smoke' / 'aborted.json').read_text())['reason']
+    assert reason.startswith('RSSExceeded') and 'final check' in reason
+
+
+def test_the_fh_dp_arm_cap_is_enforced(tmp_path, monkeypatch):
+    config = flow_config(monkeypatch)
+    attempt = tmp_path / 'attempt-001'
+    env = SyntheticEnv(tmp_path)
+    assert make_runner(config, env, attempt).advance('C') == runner.EXIT_OK
+    original = runner.PassRunner.pass_descriptive
+    clock = FakeClock(datetime(2026, 10, 27, 16, 0, tzinfo=KST))
+
+    def slow_fhdp(self, out, watch, arm):
+        if arm == 'FH-DP':
+            clock.tick = 2500.
+        return original(self, out, watch, arm)
+    monkeypatch.setattr(runner.PassRunner, 'pass_descriptive', slow_fhdp)
+    assert make_runner(config, env, attempt, clock=clock).advance('D') == runner.EXIT_STOPPED
+    aborted = json.loads((attempt / 'descriptive' / 'FH-DP' / 'aborted.json').read_text())
+    assert aborted['effect'] == 'ARM_DISCARDED' and aborted['reason'].split(':')[0] in ('DeadlinePassed', 'CapExceeded')
+    assert (attempt / 'descriptive' / 'BF48' / 'results.json').exists()  # the other arm is kept
+
+
 def test_pass_m_stops_when_a0_does_not_reproduce_stab01(tmp_path, monkeypatch):
     config = flow_config(monkeypatch)
-    env = SyntheticEnv()
+    env = SyntheticEnv(tmp_path)
     columns = env.stab01()
     columns['K1_top1_same'] = ~columns['K1_top1_same'].astype(bool)
     work = make_runner(config, env, tmp_path / 'attempt-001')
@@ -892,10 +1182,27 @@ def test_pass_m_stops_when_a0_does_not_reproduce_stab01(tmp_path, monkeypatch):
     assert 'does not reproduce the EXP-STAB-01 K1' in reason
 
 
-def test_confirmation_after_stable_within_cost(tmp_path, monkeypatch):
+def test_a_substituted_verdict_is_refused_on_resume_and_before_confirmation(tmp_path, monkeypatch):
+    config = flow_config(monkeypatch, rb12_cap=0.5)  # RB12 not required: the verdict is final after pass M
+    attempt = tmp_path / 'attempt-001'
+    env = SyntheticEnv(tmp_path)
+    assert make_runner(config, env, attempt).advance('M') == runner.EXIT_OK
+    path = attempt / 'verdict.json'
+    assert json.loads(path.read_text())['verdict']['label'] == 'NOT_STABLE'
+    forged = json.loads(path.read_text())
+    forged['verdict'].update(row=4, label='STABLE_WITHIN_COST:RB12')
+    path.write_text(json.dumps(forged))
+    with pytest.raises(runner.IntegrityFailure, match='recomputed'):
+        make_runner(config, env, attempt).advance('D')
+    with pytest.raises(runner.IntegrityFailure, match='recomputed'):
+        make_runner(config, env, attempt).confirm({'experiment_id': reg.EXPERIMENT_ID,
+                                                   'confirmation_games_sha256': env.confirmation_record['games_sha256']})
+
+
+def test_confirmation_after_stable_within_cost_with_a_retry_in_the_next_window(tmp_path, monkeypatch):
     config = flow_config(monkeypatch, stable=True)
     attempt = tmp_path / 'attempt-001'
-    env = SyntheticEnv()
+    env = SyntheticEnv(tmp_path)
     work = make_runner(config, env, attempt)
     with pytest.raises(runner.IntegrityFailure, match='no final verdict'):
         work.confirm({'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': 'f' * 64})
@@ -903,53 +1210,58 @@ def test_confirmation_after_stable_within_cost(tmp_path, monkeypatch):
     verdict = json.loads((attempt / 'verdict.json').read_text())['verdict']
     assert verdict['label'] == 'STABLE_WITHIN_COST:RB6' and verdict['row'] == 1
     assert not (attempt / 'rb12').exists() and not (attempt / 'descriptive').exists()  # C and D not required
-    wrong = {'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': 'f' * 64}
-    assert work.confirm(wrong) == runner.EXIT_STOPPED
+    assert work.confirm({'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': 'f' * 64}) == runner.EXIT_STOPPED
     aborted = json.loads((attempt / 'confirmation' / 'try-01' / 'aborted.json').read_text())
     assert aborted['effect'] == 'CONFIRMATION_ABORTED' and 'pin' in aborted['reason']
     assert work.confirm_select() == runner.EXIT_OK
-    selection = json.loads((attempt / 'confirmation-selection.json').read_text())
+    selection = json.loads((attempt / runner.SELECTION_FILE).read_text())
     pin = {'experiment_id': reg.EXPERIMENT_ID, 'confirmation_games_sha256': selection['record']['games_sha256']}
-    assert work.confirm(pin) == runner.EXIT_OK  # same-profile retry in try-02
+    assert work.confirm(pin) == runner.EXIT_DEFERRED  # same window as the aborted try
+    assert not (attempt / 'confirmation' / 'try-02').exists()
+    tomorrow = make_runner(config, env, attempt, local=datetime(2026, 10, 28, 14, 0, tzinfo=KST))
+    assert tomorrow.confirm(pin) == runner.EXIT_OK  # same-profile retry in the next window
     confirmation = json.loads((attempt / 'confirmation' / 'try-02' / 'results.json').read_text())
     assert confirmation['confirmation_verdict'] == 'CONFIRMED' and confirmation['passing_arm'] == 'RB6'
     assert confirmation['integrity']['reconstruction']['mismatched_decisions'] == 0
     assert 'gap_bins' not in confirmation['comparison']  # not inherited by the confirmation slice
+    with np.load(attempt / 'confirmation' / 'try-02' / 'decisions.npz') as data:
+        assert {'a0_first_0', 'a0_samples_0', 'a0_first_5', 'a0_samples_5'} <= set(data.files)
     runner.verify_sums(attempt / 'confirmation' / 'try-02')
-    assert work.confirm(pin) == runner.EXIT_OK and not (attempt / 'confirmation' / 'try-03').exists()
+    assert tomorrow.confirm(pin) == runner.EXIT_OK and not (attempt / 'confirmation' / 'try-03').exists()
 
 
-def test_cost_exceeded_at_smoke_writes_the_verdict_and_blocks_the_full_run(tmp_path, monkeypatch):
-    monkeypatch.setitem(reg.THRESHOLDS, 'smoke_r_b_at_most', 0.5)
-    config = registered_config(decision_rules=dict(reg.THRESHOLDS))
-    attempt = tmp_path / 'attempt-001'
-    assert make_runner(config, SyntheticEnv(), attempt).advance('D') == runner.EXIT_STOPPED
-    assert json.loads((attempt / 'verdict.json').read_text())['verdict']['label'] == 'COST_EXCEEDED_AT_SMOKE'
-    assert not (attempt / 'mandatory').exists()
-
-
-def test_a_smoke_structural_failure_blocks_the_full_run(tmp_path, monkeypatch):
+def test_an_unsuccessful_smoke_stops_at_once_and_keeps_its_evidence(tmp_path, monkeypatch):
     original = pv.RaoBlackwellFirstStep.q_values
 
     def broken(self, s):
         q, diagnostics = original(self, s)
         q = q.copy()
-        q[np.flatnonzero(BC.support(s))[0]] = np.nan
+        q[np.flatnonzero(np.isfinite(q))[0]] = np.nan
         return q, diagnostics
     monkeypatch.setattr(pv.RaoBlackwellFirstStep, 'q_values', broken)
     attempt = tmp_path / 'attempt-001'
-    assert make_runner(registered_config(), SyntheticEnv(), attempt).advance('M') == runner.EXIT_STOPPED
-    smoke = json.loads((attempt / 'smoke' / 'results.json').read_text())
-    assert not smoke['structural_ok'] and smoke['mechanical_rule']['status'] == 'STRUCTURAL_FAILURE'
-    assert smoke['structural']['failure_count'] > 0 and reg.smoke_metric_keys(smoke) == []
-    assert not (attempt / 'mandatory').exists() and not (attempt / 'verdict.json').exists()
+    assert make_runner(registered_config(), SyntheticEnv(tmp_path), attempt).advance('smoke') == runner.EXIT_STOPPED
+    smoke, stop = (json.loads((attempt / 'smoke' / name).read_text()) for name in ('results.json', 'aborted.json'))
+    assert not smoke['structural_ok'] and smoke['structural']['failure_count'] > 0
+    assert stop['smoke_status'] == 'STRUCTURAL_FAILURE' and stop['effect'] == 'NO_FULL_RUN'
+    assert receipts(attempt)[-1]['event'] == 'ABORTED' and not (attempt / 'verdict.json').exists()
+    runner.verify_sums(attempt / 'smoke')
+    monkeypatch.setattr(pv.RaoBlackwellFirstStep, 'q_values', original)
+    monkeypatch.setitem(reg.THRESHOLDS, 'smoke_r_b_at_most', 0.5)
+    config = registered_config(decision_rules=dict(reg.THRESHOLDS))
+    second = tmp_path / 'attempt-002'
+    assert make_runner(config, SyntheticEnv(tmp_path), second).advance('smoke') == runner.EXIT_STOPPED
+    assert json.loads((second / 'smoke' / 'aborted.json').read_text())['smoke_status'] == 'COST_EXCEEDED_AT_SMOKE'
+    assert json.loads((second / 'verdict.json').read_text())['verdict']['label'] == 'COST_EXCEEDED_AT_SMOKE'
+    assert make_runner(config, SyntheticEnv(tmp_path), second).advance('D') == runner.EXIT_STOPPED
+    assert not (second / 'mandatory').exists()
 
 
 def test_a_crashed_pass_folder_is_closed_as_an_abort(tmp_path):
     attempt = tmp_path / 'attempt-001'
     (attempt / 'smoke').mkdir(parents=True)
     (attempt / 'smoke' / 'started.json').write_text('{}\n')
-    assert make_runner(registered_config(), SyntheticEnv(), attempt).advance('smoke') == runner.EXIT_STOPPED
+    assert make_runner(registered_config(), SyntheticEnv(tmp_path), attempt).advance('smoke') == runner.EXIT_STOPPED
     aborted = json.loads((attempt / 'smoke' / 'aborted.json').read_text())
     assert 'without results' in aborted['reason'] and not aborted['citable']
     runner.verify_sums(attempt / 'smoke')
@@ -958,7 +1270,7 @@ def test_a_crashed_pass_folder_is_closed_as_an_abort(tmp_path):
 def test_a_stopped_pass_c_gives_not_stable_with_rb12_aborted_and_keeps_pass_m(tmp_path, monkeypatch):
     config = flow_config(monkeypatch)
     attempt = tmp_path / 'attempt-001'
-    env = SyntheticEnv(counts=((3, 2), (2, 2), (3, 1)))
+    env = SyntheticEnv(tmp_path)
     assert make_runner(config, env, attempt).advance('M') == runner.EXIT_OK
     assert make_runner(config, env, attempt, tick=3000.).advance('C') == runner.EXIT_STOPPED
     aborted = json.loads((attempt / 'rb12' / 'aborted.json').read_text())

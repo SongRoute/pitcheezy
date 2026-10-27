@@ -13,11 +13,13 @@ exhaustive verdict partition; H2 is not one of its inputs.  Nothing here reads d
 """
 from __future__ import annotations
 
+import copy
 from datetime import datetime, time as clock_time, timedelta, timezone
 import hashlib
 import json
 import math
 from pathlib import Path
+import subprocess
 
 EXPERIMENT_ID = 'EXP-STAB-02'
 PROTOCOL = 'planner_variance_rao_blackwell_v1'
@@ -170,43 +172,66 @@ PINNED_FIELDS = {
     'run_window': RUN_WINDOW,
 }
 REGISTRATION_FIELDS = ('registered_kst', 'registered_commit', 'design_review_reference', 'code_review_reference',
-                       'code_sha256')
+                       'code_sha256', 'digest_manifest_path')
+# Config digest (same approach as A2/RS-03): sha256 of the UTF-8 bytes of json.dumps(obj, ensure_ascii=False,
+# sort_keys=True, indent=2) + one trailing newline, obj = the parsed config with exactly these paths set to null.
+# They are the only fields registration changes, so the digest of the reviewed draft equals that of the registered
+# config; the digest lives only in the external append-only digest manifest (no in-config digest field).
+DIGEST_NULLED_PATHS = ('status', 'execute', 'registration.registered_kst', 'registration.registered_commit',
+                       'registration.design_review_reference', 'registration.code_review_reference',
+                       'registration.code_sha256', 'registration.digest_manifest_path')
 
 # Points the design leaves to the implementation (simplest deterministic option, pinned here).
 IMPLEMENTATION_CHOICES = [
     'Config path configs/EXP-STAB-02.yaml with a JSON body (STAB-01 convention); this registry module is a fifth '
-    'new file next to the four the design lists; its sha256 is pinned with the runner and module at registration '
-    '(config registration.code_sha256) and verified by the runner before any data is read.',
+    'new file next to the four the design lists; the runner, module and registry sha256 are pinned in the config '
+    'registration block (code_sha256) and verified before any data is read.',
+    'Config digest as A2/RS-03: sha256 of canonical JSON (sort_keys, indent 2, one trailing newline) with exactly '
+    'DIGEST_NULLED_PATHS set to null; no in-config digest field; the digest, the registered commit and code_sha256 '
+    'are one config_digest entry of the external append-only digest manifest (registration.digest_manifest_path, '
+    'outside the repository), which also receives every pass receipt. The registered commit must contain the '
+    'reviewed sources and a config with the same digest and be an ancestor of HEAD; missing Git provenance refuses.',
     'RB continuation: one rollouts() call (the registered function) over every non-terminal child of every first '
     'pitch, children ordered action, sample, outcome; continuation uniforms U[i,1:,:] of the parent sample; a cap of '
     '1 truncates every child to the cutoff. Children with outcome probability 0 are still rolled out (weight 0).',
     'RB12 first pitch: chunks of six samples (0-5, then 6-11), action-major inside a chunk; RB6 is one chunk.',
-    'Reconstruction mismatch margin: for a mismatching decision the RB search is re-run once with a tracing twin of '
-    'JointSimulator.step on a scratch budget (it must reproduce the RB values exactly); a path whose selected first '
-    'outcome is terminal has margin inf (a first-pitch flip); otherwise its margin is the smallest |u - CDF| over '
-    'the outcome draws of its selected continuation. Per mismatching action: max over the mismatching samples when '
-    'A0 per-sample values exist (pass M seed 5, confirmation seed 5), else min over the six samples; the decision '
-    'margin is the max over its mismatching actions. Stop if any decision margin > 1e-5 (inf counts as a '
-    'first-pitch flip) or, at the end of the pass, mismatching decisions exceed 0.1% of the compared decisions.',
+    'A0 first-step evidence: the runtime seed-0 planner and the A0 seed-5 planner are observed during their original '
+    'searches (instance-level FirstStepObserver over the same bound pool/predictor/terminal/budget and a recording '
+    'q_values; registered code unchanged, no second search): the first-pitch outcome index and the value of every '
+    '(action, sample) path and the planner time. The evidence must reproduce the A0 Q exactly; it is stored in the '
+    'pass-M and confirmation decisions.npz and pass C reads it from pass M.',
+    'Reconstruction: first the untraced comparison of the first six RB selected-outcome paths with the A0 evidence of '
+    'the same seed: any first-outcome index difference is a first-pitch flip (zero allowed, stop); a path with the same '
+    'first outcome and a different value is a differing path. Only then the RB search is re-run once with a tracing '
+    'twin of JointSimulator.step on a scratch budget (it must reproduce the search exactly) and each differing path '
+    'gets its own margin, the smallest |u - CDF| over the outcome draws of its continuation (inf if its first outcome '
+    'ends the PA). Stop if any differing-path margin > 1e-5; at the end of the pass, stop if decisions with a '
+    'differing path exceed 0.1% of the compared decisions.',
     'A0 reproduction (pass M): K1_tv and K1_top1_same from diagnose_policy_seed_ensemble.compare() must equal the '
     'STAB-01 columns exactly; the run stops as soon as mismatches exceed floor(0.001 x the STAB-01 decision count).',
     'r_b (smoke) = mean over seeds 0 and 5 of rows(RB6, seed)/rows(A0, seed) on the three smoke games, the same '
     'definition as r_rows; A0 seed-0 rows are the runtime planner rows of those decisions only.',
     'Smoke projections scale by games: BF48 pass-D time = smoke BF48 seconds x 50/3; FH-DP 10-game time = '
     'FH-DP seconds on its 1 smoke game x 10.',
+    'Smoke sink: the smoke runtime ledger (A0 Q, laws) lives in a system temporary directory removed when the smoke '
+    'ends; the runtime Q stays in memory; results.json passes an allowlist of cost/structure/identity fields with no '
+    'metric-like key and no float vector, else the write is refused. An unsuccessful smoke (structural failure or '
+    'r_b > 4.0) keeps that evidence, writes the stop record aborted.json and exits 3 at once.',
     'Deadline: the code does not know WS game days, so it treats every day as a game day: a pass may start only '
     'outside 06:00-13:30 KST and only if start + cap <= the next 06:00 KST; its deadline is min(next 06:00 KST, '
     'start + cap). A pass that does not fit is deferred: receipt DEFERRED, lock released, exit code 4.',
-    'Pass clocks start when the pass starts (after the data load of the process); the deadline and the cap are '
-    'checked before every PA block, peak RSS (ru_maxrss) every 10 PA blocks.',
+    'A pass clock starts before its data preparation (preparation is inside the deadline/cap/RSS watch and the abort '
+    'handler); the deadline and the cap are checked before every PA block and the peak RSS every 10 PA blocks; a '
+    'final deadline/cap/RSS check runs immediately before COMPLETED is written. Pass-D arms (BF48, FH-DP 7,200 s) '
+    'each have their own watch.',
     'Heavy lock held by another job: nothing starts, no pass folder is written, a LOCK_HELD receipt is appended and '
     'the process exits 3 (the pass is not marked aborted, so a later window can start it).',
     'Passes C and D re-create the pass-M decisions without the runtime planner (requests rebuilt from the store, '
     'kept by the pass-M request_id sequence, masked reference recomputed and compared with the stored mask and '
-    'reference, components.check_context/check_support per request); the runtime seed-0 and A0 seed-5 Q come from '
-    'the sha-verified pass-M arrays (no planner search is repeated).',
-    'Exit codes: 0 done or nothing left, 2 refused (gate, config or path), 3 stopped (aborted, lock held, earlier '
-    'output failed verification), 4 deferred to the next window.',
+    'reference, components.check_context/check_support per request); the runtime seed-0 and A0 seed-5 Q and their '
+    'first-step evidence come from the sha-verified pass-M arrays (no planner search is repeated).',
+    'Exit codes: 0 done or nothing left, 2 refused (gate, config, provenance, path, memory), 3 stopped (an abort, an '
+    'unsuccessful smoke, lock held, failed verification), 4 deferred to the next window.',
     'Variances (VRF, RB residual, mc_se) use ddof=1 over the samples; the efficiency interval bootstraps the VRF '
     'numerator/denominator sums and the per-seed row sums on the same game draws.',
     'Truncation share: A0 = truncated rollouts / rollouts; RB = probability-weighted truncated children / '
@@ -216,17 +241,18 @@ IMPLEMENTATION_CHOICES = [
     'unreachable counts reuse the root law and BC rows (they never feed reachable values).',
     'FH-DP comparison: for RB pairs (0,5), (0,100), (5,100) the per-decision difference '
     'agreement(DP, RB_s) - agreement(RB_t, RB_s) and the same for TV are reported with intervals (descriptive).',
-    'Smoke outputs contain no Q vector, law, TV, top-1, KL or reconstruction value (checked by key before writing).',
-    'The final verdict is written once to <attempt>/verdict.json when it becomes final (smoke cost stop, end of '
-    'pass M without RB12, end or stop of pass C), recomputed from the recorded pass statuses; '
-    'results/EXP-STAB-02.json is not written by the runner (the PM copies a completed, verified result).',
+    'The final verdict is written once to <attempt>/verdict.json, recomputed from the verified smoke/M/C records; on '
+    'every resume and before any confirmation it is recomputed again and must equal verdict.json and the digest of its '
+    'VERDICT receipt; results/EXP-STAB-02.json is not written by the runner (the PM copies a verified result).',
     'A pass folder without results (crash or interrupt) is closed as an abort with the pass effect on the next start; '
     'a process in which any stop rule fired (pass C or a pass-D arm aborted while later passes ran) exits 3.',
-    'Confirmation retries under the same profile go to <attempt>/confirmation/try-NN; a completed try (CONFIRMED or '
-    'NOT_CONFIRMED) is final. The 50-game list is recorded by --confirmation-select (no planning call) and its sha256 '
-    'must equal the pin file passed to --confirmation; Song\'s go is the PM gate before writing that pin.',
-    'Peak RSS is ru_maxrss (bytes on macOS), conservative against the 8 GiB sampled-RSS cap; RSS per arm is not '
-    'separable in one process, so the smoke records the peak of the whole smoke pass.',
+    'Confirmation: --confirmation-select records the 50-game list (no planning call) under the same window/watch '
+    'check as a pass; --confirmation runs against a pin file whose games sha256 must equal it (Song\'s go is the PM '
+    'gate before writing that pin). Retries go to <attempt>/confirmation/try-NN; a try after an aborted one starts '
+    'only in a later run window (window id = the 06:00 KST that closes the window); a completed try is final.',
+    'Resources: A0 seed-0 planner time is measured inside runtime.submit (recording q_values) and reported next to '
+    'the whole submit time; other arms time q_values; pass seconds include data preparation; peak RSS is ru_maxrss, '
+    'a process-lifetime peak (bytes on macOS), conservative against the 8 GiB cap and labelled as such.',
     'One data scope per process: smoke (3 smoke games + the FH-DP smoke game), registered (the 150 games; smoke, M, C, D) '
     'or confirmation (50 games); the processed sha, statcast 2023-2025 sources, style snapshot, G0 bundle, tau freeze '
     'and the S2 bind identity 5683fb61 are checked before any planning call in every scope.',
@@ -341,6 +367,74 @@ def verify_registered_code(config, repo):
     if changed:
         raise RegistrationError('code differs from its registration pin: ' + ', '.join(changed))
     return dict(pins)
+
+
+def config_digest(config):
+    """Registered config digest over canonical JSON with the registration-time paths nulled."""
+    obj = copy.deepcopy(config)
+    for dotted in DIGEST_NULLED_PATHS:
+        *head, last = dotted.split('.')
+        node = obj
+        for part in head:
+            if not isinstance(node.get(part), dict):
+                node[part] = {}
+            node = node[part]
+        node[last] = None
+    text = json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=2) + '\n'
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def read_manifest(path):
+    lines = [line for line in Path(path).read_text().splitlines() if line.strip()]
+    return [json.loads(line) for line in lines]
+
+
+def verify_digest_manifest(config, repo):
+    """The external append-only digest manifest (path pinned at registration, outside the repository) holds exactly
+    one config-digest entry for this experiment, equal to the digest of this config and to its registration pins."""
+    path = config['registration']['digest_manifest_path']
+    if not isinstance(path, str) or not Path(path).is_absolute():
+        raise RegistrationError('registration.digest_manifest_path must be an absolute path')
+    path = Path(path).resolve()
+    if path.is_relative_to(Path(repo).resolve()) or not path.is_file():
+        raise RegistrationError('the digest manifest must be an existing file outside the repository')
+    entries = [e for e in read_manifest(path) if e.get('experiment_id') == EXPERIMENT_ID and e.get('kind') == 'config_digest']
+    if len(entries) != 1:
+        raise RegistrationError('the digest manifest needs exactly one config_digest entry for ' + EXPERIMENT_ID)
+    entry, registration = entries[0], config['registration']
+    if entry.get('digest') != config_digest(config):
+        raise RegistrationError('config digest differs from the registered digest manifest entry')
+    if entry.get('registered_commit') != registration['registered_commit'] or \
+            entry.get('code_sha256') != registration['code_sha256']:
+        raise RegistrationError('digest manifest entry differs from the registration pins')
+    return path
+
+
+def _git(repo, *args, binary=False):
+    out = subprocess.run(['git', *args], cwd=repo, capture_output=True, check=True)
+    return out.stdout if binary else out.stdout.decode().strip()
+
+
+def verify_registered_commit(config, repo):
+    """The registered commit exists, contains the reviewed sources (code_sha256) and a config whose digest equals
+    this config's, and is an ancestor of HEAD; missing Git provenance refuses."""
+    registration = config['registration']
+    try:
+        commit = _git(repo, 'rev-parse', '--verify', f"{registration['registered_commit']}^{{commit}}")
+        head = _git(repo, 'rev-parse', 'HEAD')
+        sources = {rel: hashlib.sha256(_git(repo, 'show', f'{commit}:{rel}', binary=True)).hexdigest() for rel in NEW_CODE}
+        reviewed = json.loads(_git(repo, 'show', f'{commit}:{CONFIG_PATH}', binary=True))
+        ancestor = subprocess.run(['git', 'merge-base', '--is-ancestor', commit, head], cwd=repo,
+                                  capture_output=True).returncode == 0
+    except (OSError, subprocess.CalledProcessError, ValueError) as missing:
+        raise RegistrationError(f'Git provenance unavailable or incomplete: {missing}') from None
+    if sources != registration['code_sha256']:
+        raise RegistrationError('the registered commit does not contain the reviewed sources')
+    if config_digest(reviewed) != config_digest(config):
+        raise RegistrationError('the config differs from the reviewed config beyond the registration fields')
+    if not ancestor:
+        raise RegistrationError('HEAD does not descend from the registered commit')
+    return {'registered_commit': commit, 'head': head}
 
 
 def pins_digest():
@@ -477,6 +571,11 @@ def next_deadline_utc(now_utc):
     return target.astimezone(timezone.utc)
 
 
+def window_id(now_utc):
+    """Identifier of the run window containing ``now_utc``: the 06:00 KST that closes it (UTC isoformat)."""
+    return next_deadline_utc(now_utc).isoformat()
+
+
 def start_decision(now_utc, cap_seconds):
     """('START', deadline_utc) if a pass with this cap may start now, else ('DEFER', reason)."""
     if now_utc.tzinfo is None:
@@ -495,7 +594,23 @@ def start_decision(now_utc, cap_seconds):
 
 FORBIDDEN_SMOKE_KEY_PARTS = ('tv', 'top1', 'agreement', 'kl', 'law', 'verdict', 'stable', 'vrf', 'efficiency',
                              'gap', 'bin', 'reconstruct', 'k1', 'k3', 'k5', 'h2', 'gain', 'q_values', 'q_vector',
-                             'sample_values', 'max_abs')
+                             'sample_values', 'max_abs', 'q_planning', 'q_reference', 'candidate', 'logging')
+# The smoke sink persists only these fields (cost, structure, identity); anything else refuses the write.
+SMOKE_RECORD_FIELDS = {
+    'experiment_id': None, 'pass': None, 'arm': None, 'identity': None, 'cap_seconds': None, 'deadline_utc': None,
+    'window_id': None, 'seconds': None, 'preparation_seconds': None, 'peak_rss_bytes_process_lifetime': None,
+    'finished_utc': None, 'outcomes_read': None, 'policy_identity_registered': None, 'seeds': None, 'limits': None,
+    'requests': None, 'statuses': None, 'decisions': None, 'fhdp_decisions': None, 'fhdp_only_game_statuses': None,
+    'structural_ok': None, 'r_b': None, 'r_b_definition': None, 'data_version': None, 'unchanged_sources': None,
+    'games': {'smoke_games', 'fhdp_smoke_game', 'registered_games_sha256'},
+    'structural': {'checks_passed', 'rerun_decisions', 'failures', 'failure_count', 'components_verified'},
+    'cost': {'rows_by_arm_seed', 'planner_seconds_by_arm_seed', 'planner_ms_per_decision_median',
+             'runtime_submit_seconds', 'runtime_submit_ms_per_decision_median'},
+    'projections': {'BF48_pass_D_seconds', 'BF48_cap_seconds', 'FH-DP_pass_D_seconds', 'FH-DP_cap_seconds',
+                    'pass_C_cap_seconds', 'basis'},
+    'mechanical_rule': {'r_b_at_most', 'structural_ok', 'status', 'rb12_cost_condition_met'},
+    'runtime_ledger': {'location', 'persisted', 'rows', 'head_sha256'},
+}
 
 
 def smoke_metric_keys(record, prefix=''):
@@ -512,6 +627,35 @@ def smoke_metric_keys(record, prefix=''):
         for i, value in enumerate(record):
             found += smoke_metric_keys(value, f'{prefix}[{i}]')
     return found
+
+
+def float_vectors(record, prefix=''):
+    """Paths of lists holding floats (a Q vector or a law would be one): must be empty in a smoke record."""
+    found = []
+    if isinstance(record, dict):
+        for key, value in record.items():
+            found += float_vectors(value, f'{prefix}.{key}' if prefix else str(key))
+    elif isinstance(record, (list, tuple)):
+        if any(isinstance(v, float) for v in record):
+            found.append(prefix or '<root>')
+        for i, value in enumerate(record):
+            found += float_vectors(value, f'{prefix}[{i}]')
+    return found
+
+
+def smoke_record_problems(record):
+    """Every reason the smoke sink must refuse ``record``: unknown fields, metric-like keys, float vectors."""
+    problems = [f'field not permitted in the smoke record: {k}' for k in record if k not in SMOKE_RECORD_FIELDS]
+    for key, allowed in SMOKE_RECORD_FIELDS.items():
+        if allowed is not None and key in record:
+            value = record[key]
+            if not isinstance(value, dict):
+                problems.append(f'{key} must be an object')
+            else:
+                problems += [f'field not permitted in the smoke record: {key}.{k}' for k in value if k not in allowed]
+    problems += [f'metric-like key in the smoke record: {k}' for k in smoke_metric_keys(record)]
+    problems += [f'float vector in the smoke record: {k}' for k in float_vectors(record)]
+    return problems
 
 
 def utc_now():

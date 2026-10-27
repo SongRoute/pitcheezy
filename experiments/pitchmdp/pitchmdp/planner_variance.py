@@ -18,6 +18,7 @@ S2-certified component identity (``policy_identity.project_sources``) does not c
 from __future__ import annotations
 
 import sys
+import time
 
 import numpy as np
 
@@ -417,6 +418,75 @@ def max_finite(values, mask):
     return float(v.max()) if len(v) else float('nan')
 
 
+# ---------------------------------------------------------------- A0 first-step evidence (observation only)
+
+class FirstStepObserver:
+    """Delegating view of a bound ``JointSimulator``: it exposes the same pool, predictor, terminal and budget
+    objects (so ``BoundComponents.verify`` still sees the bound wiring) and every step runs the registered
+    ``JointSimulator.step`` unchanged; the first step after ``arm()`` (the depth-0 batch of one search, rows in
+    action-major, sample-minor order) is recorded as the outcome index of every row."""
+    def __init__(self, simulator):
+        self.inner = simulator
+        self.pool, self.predictor, self.terminal = simulator.pool, simulator.predictor, simulator.terminal
+        self.budget = simulator.budget
+        self.armed, self.first = False, None
+
+    def arm(self):
+        self.armed, self.first = True, None
+
+    def step(self, states, actions, uniforms):
+        steps = self.inner.step(states, actions, uniforms)
+        if self.armed:
+            self.armed = False
+            self.first = [OUTCOMES.index(step.outcome) for step in steps]
+        return steps
+
+
+class A0Witness:
+    """First-pitch outcome, sample values and planner time of every search of one registered
+    ``RolloutImprovement`` (the runtime's own seed-0 planner or a fresh A0 planner), captured during the original
+    call: the planner's simulator is replaced by a ``FirstStepObserver`` over the same bound components and its
+    ``q_values`` by a recording call (instance attributes only; the registered classes and sources are unchanged
+    and no search is repeated)."""
+    def __init__(self, improvement):
+        self.improvement = improvement
+        self.observer = FirstStepObserver(improvement.simulator)
+        improvement.simulator = self.observer
+        self._search = improvement.q_values
+        improvement.q_values = self._record
+        self.last = None
+
+    def _record(self, state):
+        self.observer.arm()
+        started = time.perf_counter()
+        q, diagnostics = self._search(state)
+        elapsed = (time.perf_counter() - started) * 1000.
+        first, self.observer.armed = self.observer.first, False
+        self.last = (state, q, diagnostics, first, elapsed)
+        return q, diagnostics
+
+    def discard(self):
+        self.last = None
+
+    def take(self, state):
+        """Evidence of the search just made for ``state``: {'q', 'first' [V,S] (-1 off the support),
+        'samples' [V,S], 'ms'}."""
+        if self.last is None or self.last[0] is not state:
+            raise SearchIntegrityError('no A0 search was observed for this decision')
+        _, q, diagnostics, first, ms = self.last
+        self.last = None
+        planner = self.improvement
+        names = [a for a, ok in zip(planner.bc.actions, planner.bc.support(state)) if ok]
+        S = planner.samples
+        if first is None or len(first) != len(names) * S:
+            raise SearchIntegrityError('the A0 search left no complete first-step evidence (cache hit?)')
+        out = np.full((len(planner.bc.actions), S), -1, dtype=np.int8)
+        for j, action in enumerate(names):
+            out[planner.bc.actions.index(action)] = first[j * S:(j + 1) * S]
+        return {'q': np.array(q, dtype=np.float64), 'first': out,
+                'samples': np.array(diagnostics['sample_values'], dtype=np.float64), 'ms': ms}
+
+
 # ---------------------------------------------------------------- reconstruction (integrity)
 
 def selected_q(diagnostics, samples):
@@ -431,61 +501,66 @@ def selected_q(diagnostics, samples):
     return out
 
 
-def reconstruction_check(diagnostics, a0_q, mask, samples, *, a0_sample_values=None, trace=None):
-    """Selected-outcome reconstruction of an RB search against the A0-MC search of the same seed.
-
-    ``diagnostics``: the RB search; its first ``samples`` samples use the A0 uniforms. ``a0_q``: the A0 Q
-    (runtime row for seed 0). Exact equality on the support is expected; a mismatch needs ``trace`` (the
-    traced re-run of the same RB search) to compute its boundary margin. A path whose RB first outcome is
-    terminal has margin inf (only a first-pitch flip explains it); else its margin is the smallest
-    |u - CDF| of its traced continuation. Per mismatching action: max over the mismatching samples when
-    ``a0_sample_values`` are given, else min over the samples; the decision margin is the max over the
-    mismatching actions. Returns {'mismatch', 'actions', 'margin', 'first_pitch_flip'}."""
+def reconstruction_compare(diagnostics, a0, mask, samples):
+    """Initial comparison (no tracing) of the first ``samples`` RB selected-outcome paths with the A0 search of
+    the same seed. ``a0``: {'q', 'first', 'samples'} captured during the A0 call. The A0 evidence must reproduce
+    the A0 Q exactly; a path whose RB first-pitch outcome index differs from A0's is a first-pitch flip (zero
+    allowed); a path with the same first outcome but a different value is a differing (continuation) path."""
     mask = np.asarray(mask, dtype=bool)
-    q_sel = selected_q(diagnostics, samples)
-    bad = [int(r) for r in np.flatnonzero(mask) if not q_sel[r] == np.asarray(a0_q, dtype=np.float64)[r]]
-    if not bad:
-        return {'mismatch': False, 'actions': [], 'margin': None, 'first_pitch_flip': False}
-    if trace is None:
-        raise SearchIntegrityError('a reconstruction mismatch needs the traced RB search')
-    if not (np.array_equal(trace['sample_values'], diagnostics['sample_values'], equal_nan=True)
-            and np.array_equal(trace['selected_values'], diagnostics['selected_values'], equal_nan=True)):
-        raise SearchIntegrityError('the traced RB search does not reproduce the RB search')
-    margins = np.where(trace['first_outcome_terminal'], np.inf, trace['selected_margin'])
-    worst = 0.0
-    for r in bad:
-        if a0_sample_values is not None:
-            row = np.asarray(a0_sample_values, dtype=np.float64)[r, :samples]
-            k = [i for i in range(samples) if not diagnostics['selected_values'][r, i] == row[i]]
-            action_margin = max(float(margins[r, i]) for i in k) if k else float('inf')
-        else:
-            action_margin = min(float(margins[r, i]) for i in range(samples))
-        worst = max(worst, action_margin)
-    return {'mismatch': True, 'actions': bad, 'margin': worst, 'first_pitch_flip': bool(np.isinf(worst))}
+    rows = [int(r) for r in np.flatnonzero(mask)]
+    a0_first, a0_samples = np.asarray(a0['first']), np.asarray(a0['samples'], dtype=np.float64)
+    a0_q = np.asarray(a0['q'], dtype=np.float64)
+    for r in rows:
+        if not np.ascontiguousarray(a0_samples[r, :samples]).mean() == a0_q[r]:
+            raise SearchIntegrityError('the captured A0 evidence does not reproduce the A0 Q')
+    rb_first, rb_values = diagnostics['first_outcome'], diagnostics['selected_values']
+    flips = [(r, i) for r in rows for i in range(samples) if int(rb_first[r, i]) != int(a0_first[r, i])]
+    differing = [(r, i) for r in rows for i in range(samples)
+                 if int(rb_first[r, i]) == int(a0_first[r, i]) and not rb_values[r, i] == a0_samples[r, i]]
+    return {'mismatch': bool(flips or differing), 'first_pitch_flips': flips, 'differing_paths': differing,
+            'path_margins': None, 'margin': None}
+
+
+def classify_paths(compare, diagnostics, trace):
+    """Boundary margins of exactly the differing paths, from the traced re-run of the same RB search (which must
+    reproduce the untraced search exactly). A path whose RB first outcome ends the PA has no continuation draw:
+    margin inf."""
+    for key in ('sample_values', 'selected_values', 'first_outcome'):
+        if not np.array_equal(trace[key], diagnostics[key], equal_nan=key != 'first_outcome'):
+            raise SearchIntegrityError('the traced RB search does not reproduce the RB search')
+    margins = [float(np.inf if trace['first_outcome_terminal'][r, i] else trace['selected_margin'][r, i])
+               for r, i in compare['differing_paths']]
+    return {**compare, 'path_margins': margins, 'margin': max(margins) if margins else None}
 
 
 class ReconstructionTally:
-    """Pass-level reconstruction rule: no decision margin above ``margin_max`` (immediate stop), and at most
-    ``share_max`` of the compared decisions mismatching (checked by ``finish``)."""
+    """Registered reconstruction rule: zero first-pitch flips and no differing path with a boundary margin above
+    ``margin_max`` (immediate stop); at most ``share_max`` of the compared decisions with a differing path
+    (checked by ``finish``)."""
     def __init__(self, margin_max, share_max, first_pitch_flips_max=0):
         self.margin_max, self.share_max, self.flips_max = margin_max, share_max, first_pitch_flips_max
         self.decisions, self.mismatched, self.flips, self.margins, self.records = 0, 0, 0, [], []
 
     def add(self, request_id, checks):
-        """``checks``: {label: reconstruction_check result} of one decision."""
+        """``checks``: {label: reconstruction_compare/classify_paths result} of one decision."""
         self.decisions += 1
-        bad = {label: c for label, c in checks.items() if c['mismatch']}
+        flips = sum(len(c['first_pitch_flips']) for c in checks.values())
+        if flips:
+            self.flips += flips
+            self.records.append({'request_id': request_id, 'first_pitch_flips': flips})
+            if self.flips > self.flips_max:
+                raise SearchIntegrityError(f'first-pitch outcome flip in the reconstruction of {request_id}')
+        bad = {label: c for label, c in checks.items() if c['differing_paths']}
         if not bad:
             return
+        if any(c['margin'] is None for c in bad.values()):
+            raise SearchIntegrityError(f'differing reconstruction paths of {request_id} were not traced')
         self.mismatched += 1
         margin = max(c['margin'] for c in bad.values())
-        flip = any(c['first_pitch_flip'] for c in bad.values())
-        self.flips += int(flip)
         self.margins.append(margin)
         self.records.append({'request_id': request_id, 'checks': sorted(bad),
-                             'margin': None if np.isinf(margin) else margin, 'first_pitch_flip': flip})
-        if flip and self.flips > self.flips_max:
-            raise SearchIntegrityError(f'first-pitch outcome flip in the reconstruction of {request_id}')
+                             'paths': {label: len(c['differing_paths']) for label, c in bad.items()},
+                             'margin': None if np.isinf(margin) else margin})
         if margin > self.margin_max:
             raise SearchIntegrityError(f'reconstruction mismatch with margin {margin} > {self.margin_max} at {request_id}')
 
