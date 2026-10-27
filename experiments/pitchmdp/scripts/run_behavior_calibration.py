@@ -374,11 +374,15 @@ class Guard:
         self.check(f'{self.stage_name}:alarm')
         self._arm()
 
-    def stop_stage(self):
+    def disarm(self):
+        """Stop the alarm but keep the stage clock: cooperative checks still apply the stage cap."""
         self.armed = False
-        self.stage_start = None
         if self.alarm:
             signal.setitimer(signal.ITIMER_REAL, 0)
+
+    def stop_stage(self):
+        self.disarm()
+        self.stage_start = None
 
     def check(self, where=''):
         if self.in_window():
@@ -853,34 +857,51 @@ def execute_stage(run, stage):
     path.mkdir(parents=True, exist_ok=False)
     out = StageDir(path)
     started, t0 = datetime.now(timezone.utc).isoformat(), time.perf_counter()
-    status, error, summary, revalidation = 'PASS', None, None, None
     try:
+        status, error, summary, revalidation = 'PASS', None, None, None
         try:
-            run.current_stage = stage
-            revalidation = run.source.revalidate(run, stage)
-            run.guard.check(f'{stage}:revalidation')
-            run.guard.start_stage(stage)
-            summary = STAGE_FUNCTIONS[stage](run, out)
-            run.guard.check(f'{stage}:end')
-        finally:
-            run.guard.stop_stage()  # the alarm is disarmed; sealing runs under cooperative checks
-            run.current_stage = None
-    except (Abort, KeyboardInterrupt, Exception) as exc:  # a bug is recorded as FAILED_RUNTIME
-        status, error = _outcome(exc)
-    attempt_seconds = run.guard.consumed + run.guard.elapsed()
-    record = {'experiment': reg.EXPERIMENT_ID, 'stage': stage, 'status': status, 'started_utc': started,
-              'ended_utc': datetime.now(timezone.utc).isoformat(), 'seconds': time.perf_counter() - t0,
-              'peak_rss_bytes': run.guard.rss(), 'seeds': run.seeds(), 'config_sha256': run.config_sha256,
-              'git_commit': run.commit, 'summary': summary, 'error': error, 'warnings': list(run.guard.warnings),
-              'citable': status == 'PASS' and stage != 'decide', 'revalidation': revalidation,
-              'budget': {'command_start_sha256': run.budget_start, 'attempt_seconds_at_end': attempt_seconds}}
-    if stage == 'decide':
-        record['citable_outcome'] = 'final.json, published last by publish_final (never by this record)'
-    run.guard.warnings.clear()
+            try:
+                run.current_stage = stage
+                revalidation = run.source.revalidate(run, stage)
+                run.guard.check(f'{stage}:revalidation')
+                run.guard.start_stage(stage)
+                summary = STAGE_FUNCTIONS[stage](run, out)
+                run.guard.check(f'{stage}:end')
+            finally:
+                run.current_stage = None
+        except (Abort, KeyboardInterrupt, Exception) as exc:  # a bug is recorded as FAILED_RUNTIME
+            status, error = _outcome(exc)
+        return _finish_stage(run, stage, path, out, status, error, summary, revalidation, started, t0)
+    finally:
+        run.guard.stop_stage()  # only now: the stage clock and alarm stay on through the sealing of a PASS
+
+
+def _finish_stage(run, stage, path, out, status, error, summary, revalidation, started, t0):
+    """Seal one stage. A PASS is sealed with the stage clock, the alarm, the total budget, the RSS cap
+    and the window all still in force: a breach while sealing is a non-citable ABORTED (a failure a
+    FAILED_RUNTIME), never a cap reset or bypass. A record that is already non-citable is preserved with
+    the alarm disarmed but the stage clock kept, so any cap (the stage cap included) or the window skips
+    its checksums; the abort reason is kept in the record and in final.json."""
+    record = {'experiment': reg.EXPERIMENT_ID, 'stage': stage, 'status': status, 'error': error, 'citable': False,
+              'budget': {'command_start_sha256': run.budget_start,
+                         'attempt_seconds_at_end': run.guard.consumed + run.guard.elapsed()}}
     try:
+        if status != 'PASS':
+            run.guard.disarm()
+        attempt_seconds = run.guard.consumed + run.guard.elapsed()
+        record.update({'started_utc': started, 'ended_utc': datetime.now(timezone.utc).isoformat(),
+                       'seconds': time.perf_counter() - t0, 'peak_rss_bytes': run.guard.rss(), 'seeds': run.seeds(),
+                       'config_sha256': run.config_sha256, 'git_commit': run.commit, 'summary': summary,
+                       'warnings': list(run.guard.warnings), 'citable': status == 'PASS' and stage != 'decide',
+                       'revalidation': revalidation,
+                       'budget': {'command_start_sha256': run.budget_start, 'attempt_seconds_at_end': attempt_seconds}})
+        if stage == 'decide':
+            record['citable_outcome'] = 'final.json, published last by publish_final (never by this record)'
+        run.guard.warnings.clear()
         record.update(reads=run.reads(stage), read_summary=run.log.summary([stage]), environment=environment())
         seal_stage(run, stage, path, out, record, guarded=status == 'PASS')
     except (Abort, KeyboardInterrupt, Exception) as exc:  # sealing failed or crossed a cap / the window
+        run.guard.disarm()  # no alarm while the non-citable record is preserved; the stage clock is kept
         sealed = 'ABORTED' if isinstance(exc, (Abort, KeyboardInterrupt)) else 'FAILED_RUNTIME'
         status, error = (sealed if status == 'PASS' else status), {'stage': error, 'sealing': _outcome(exc)[1]}
         record.update(status=status, error=error, citable=False)

@@ -134,6 +134,8 @@ def test_a_failed_check_leaves_no_usable_output(source, monkeypatch):
     assert record['result'] == 'FAIL' and 'pitch_type' in record['identity']['differing_columns']
     assert not source['output'].exists() and source['output'].with_name(source['output'].name + '.failed').exists()
     assert json.loads(source['manifest'].read_text())['result'] == 'FAIL'
+    real_window = tool.window_check
+    monkeypatch.setattr(tool, 'window_check', lambda clock=None: real_window(lambda: AFTERNOON))  # any time of day
     cli = tool.main(['--source', str(source['path']), '--output', str(source['output'].with_name('again.parquet')),
                      '--source-sha256', source['sha']])
     assert cli == 1

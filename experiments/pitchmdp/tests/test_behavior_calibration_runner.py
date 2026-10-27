@@ -528,7 +528,8 @@ def test_a_started_attempt_needs_its_bound_budget_history(tmp_path, draft, monke
         budget.write_bytes(lines[0] + b'\n' + lines[1][:len(lines[1]) // 2] + b'\n')
     elif damage == 'replaced':  # a valid chain, but not the one the stage records are bound to
         budget.unlink()
-        start = runner.begin_command(destination, 'smoke', 0.)
+        start = runner.append_chain(budget, {'event': 'start', 'command': 'smoke', 'consumed_before': 0.,
+                                             'utc': 'replaced'})
         runner.end_command(destination, start, 100.)
     elif damage == 'shortened':  # the same start record, a forged shorter end record
         budget.unlink()
@@ -626,6 +627,41 @@ def test_a_failure_during_finalization_never_leaves_a_citable_adoption(tmp_path,
     final = json.loads((destination / 'final.json').read_text())
     assert final['citable'] is False and final['label'] in ('FAILED_RUNTIME', 'ABORTED')
     assert final['label'] == ('ABORTED' if 'window' in failure else 'FAILED_RUNTIME')
+
+
+def test_the_stage_cap_still_applies_while_a_pass_is_sealed(tmp_path, draft, monkeypatch):
+    """Review round 4, #1: a stage body ending at 7,199 s whose checksums reach 7,201 s is a non-citable
+    STAGE_HANG_GUARD abort (the stage clock stays on through sealing), and the preserved record skips its
+    checksums once the cap is reached."""
+    destination = tmp_path / 'EXP-BC-CAL-01' / 'attempt-1'
+    destination.mkdir(parents=True)
+    smoke_dir = runner.Attempt(destination).stage_path('smoke')
+
+    class SealingClock:
+        """Mocked monotonic clock: +7,199 s inside the stage body, +2 s more once stage.json exists."""
+        def __init__(self):
+            self.t = 0.
+
+        def __call__(self):
+            return self.t + (2. if (smoke_dir / 'stage.json').exists() else 0.)
+    clock = SealingClock()
+    guard = runner.Guard(reg.CAPS, reg.PROTECTION_WINDOW_KST, clock=clock, now=lambda: AFTERNOON, alarm=False)
+    run = runner.Run(draft, destination=destination, source=StubSource(), guard=guard, commit='a' * 40)
+
+    def body(run, out):
+        out.json('artifact.json', {'rows': 1})
+        clock.t += reg.CAPS['stage_hang_guard_seconds'] - 1  # the body ends at 7,199 s: within the cap
+        return {}
+    monkeypatch.setitem(runner.STAGE_FUNCTIONS, 'smoke', body)
+    assert runner.execute_stage(run, 'smoke') == 'ABORTED'
+    record = json.loads((smoke_dir / 'stage.json').read_text())
+    assert record['status'] == 'ABORTED' and record['citable'] is False
+    assert record['error']['sealing']['reason'] == 'STAGE_HANG_GUARD' and record['error']['stage'] is None
+    assert 'skipped' in record['checksums'] and not (smoke_dir / 'SHA256SUMS').exists()
+    assert [r['status'] for r in run.attempt.records()] == ['ABORTED'] and not run.attempt.passed('smoke')
+    final = json.loads((destination / 'final.json').read_text())
+    assert final['label'] == 'ABORTED' and final['citable'] is False
+    assert guard.stage_start is None and guard.armed is False  # cleared only after sealing
 
 
 def test_stage_records_are_bound_to_the_command_budget(tmp_path, draft, monkeypatch):
