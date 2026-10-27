@@ -103,12 +103,30 @@ def write_groups(path, frames, columns):
             writer.write_table(pa.Table.from_pandas(frame[columns].reset_index(drop=True), preserve_index=False).cast(schema))
 
 
+def write_aligned_copy(processed, aligned, manifest, frames, *, manifest_hook=None):
+    """A synthetic split-aligned copy of ``processed`` (one row group per frame) and its identity manifest in the
+    A3 prepare_behavior_calibration_input schema (result, aligned, identity, source and rewritten sha256)."""
+    write_groups(aligned, frames, roa.TRAIN_COLUMNS)
+    record = {'experiment': 'EXP-BC-CAL-01', 'synthetic': True, 'aligned': True, 'identity': {'result': 'PASS'},
+              'result': 'PASS', 'source': {'path': str(processed), 'sha256': reg.file_sha256(processed)},
+              'rewritten': {'path': str(aligned), 'sha256': reg.file_sha256(aligned)}}
+    if manifest_hook is not None:
+        manifest_hook(record)
+    manifest.write_text(json.dumps(record, indent=1, sort_keys=True) + '\n')
+    return {'path': str(aligned), 'sha256': reg.file_sha256(aligned), 'identity_manifest_path': str(manifest),
+            'identity_manifest_sha256': reg.file_sha256(manifest), 'source_sha256': reg.file_sha256(processed)}
+
+
+ALIGNED_NAME = 'pitches.split-aligned.parquet'
+
+
 class Workspace:
     """A registered synthetic configuration with its own processed frame (row groups: 0 history 2023-04,
-    1 TRAIN 2024-04, 2 the TRAIN subset, 3 DEV 2025-08), raw files, ML-POLICY chain, digest manifest and
-    review receipts. Nothing real is referenced."""
+    1 TRAIN 2024-04, 2 the TRAIN subset, 3 DEV 2025-08), its split-aligned copy with an identity manifest (by
+    default the same row groups; ``aligned_groups`` replaces them), raw files, ML-POLICY chain, digest manifest
+    and review receipts. Nothing real is referenced."""
     def __init__(self, test, *, smoke=('2024-06-01', '2024-06-20'), subset_start='2024-06-01', subset_days=20,
-                 reps=1, receipts=True, pins=None, digest_rel=None, hook=None):
+                 reps=1, receipts=True, pins=None, digest_rel=None, hook=None, aligned_groups=None, manifest_hook=None):
         self.root = tmpdir(test)
         self.artifacts, self.raw = self.root / 'artifacts', self.root / 'raw'
         groups = [_frame('2023-04-01', 20, 1, 300), _frame('2024-04-01', 20, 2, 300),
@@ -119,6 +137,11 @@ class Workspace:
         (self.artifacts / 'reports').mkdir()
         self.quality = self.artifacts / 'reports' / 'data_quality.json'
         self.quality.write_text(json.dumps({'processed_sha256': reg.file_sha256(self.processed), 'synthetic': True}))
+        self.aligned = self.root / 'inputs' / ALIGNED_NAME
+        self.identity_manifest = self.root / 'inputs' / 'pitches.split-aligned.identity.json'
+        aligned_pin = write_aligned_copy(self.processed, self.aligned, self.identity_manifest,
+                                         groups if aligned_groups is None else aligned_groups(groups),
+                                         manifest_hook=manifest_hook)
         by_year = {}
         for frame in groups:
             by_year.setdefault(str(pd.to_datetime(frame['game_date']).iloc[0].year), []).append(frame)
@@ -135,6 +158,7 @@ class Workspace:
         self.local = {'artifact_root': str(self.artifacts), 'raw_root': str(self.raw)}
         config = registered(load(), root=str(self.root))
         values = {'processed_frame_identity': {'path': str(self.processed), 'sha256': reg.file_sha256(self.processed)},
+                  'processed_frame_aligned': aligned_pin,
                   'train_raw_files_sha256': {n: reg.file_sha256(self.raw / n) for n in reg.RAW_ALLOWLIST},
                   'policy_registration_chain': [{'path': str(chain), 'sha256': reg.file_sha256(chain)}],
                   'new_files_sha256': roa.new_file_hashes(), 'smoke_train_subset': {'game_dates': list(smoke)},
@@ -1288,31 +1312,79 @@ class ReaderTests(unittest.TestCase):
         ws = Workspace(self)
         with watch_parquet() as log:
             self.assertEqual(roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws)), 0)
-        self.assertEqual(sorted(set(log['opened'])), ['pitches.parquet', 'statcast_2024.parquet'])
+        self.assertEqual(sorted(set(log['opened'])), [ALIGNED_NAME, 'statcast_2024.parquet'])  # never the original
         self.assertEqual(sorted({(f, rg) for f, rg, _ in log['reads']}),
-                         [('pitches.parquet', 2), ('statcast_2024.parquet', 1)])  # the subset's TRAIN row groups only
+                         [(ALIGNED_NAME, 2), ('statcast_2024.parquet', 1)])  # the subset's TRAIN row groups only
         for name, _, columns in log['reads']:
-            self.assertEqual(columns, roa.TRAIN_COLUMNS if name == 'pitches.parquet' else roa.RAW_COLUMNS)
+            self.assertEqual(columns, roa.TRAIN_COLUMNS if name == ALIGNED_NAME else roa.RAW_COLUMNS)
         self.assertEqual(ws.kinds(), ['config_digest', 'review_reference', 'review_reference', 'attempt_start',
                                       'stage_seal'])
         out, _ = roa.require_seal(ws.manifest, 'A2-SM')
         record = json.loads((out / 'smoke_record.json').read_text())
         self.assertEqual(record['decoded'], [{'file': f, 'row_group': rg, 'columns': list(c)} for f, rg, c in log['reads']])
         self.assertEqual(record['plan']['processed']['row_groups'], [2])
+        self.assertEqual(record['plan']['processed_path'], str(ws.aligned))
         self.assertEqual(record['plan']['train_rows_upper_bound'],
-                         REAL_PARQUET_FILE(ws.processed).metadata.row_group(1).num_rows
-                         + REAL_PARQUET_FILE(ws.processed).metadata.row_group(2).num_rows)
+                         REAL_PARQUET_FILE(ws.aligned).metadata.row_group(1).num_rows
+                         + REAL_PARQUET_FILE(ws.aligned).metadata.row_group(2).num_rows)
         self.assertEqual(record['projection']['label'], 'projection (not a measurement)')
         text = json.dumps({k: v for k, v in record.items() if k != 'never_computed'})
         for word in ('b_hat', 'rmse', 'H_point', 'delta_true', 'kappa_calibration'):
             self.assertNotIn(word, text)
 
     def test_a_straddling_row_group_refuses_before_the_attempt(self):
+        # a processed file whose row groups straddle TRAIN is refused (footer only), whatever its manifest says
         ws = Workspace(self, smoke=('2023-05-15', '2023-06-05'), subset_start='2023-05-10', subset_days=27)
-        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'non-TRAIN dates'):
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'straddles a TRAIN boundary'):
             roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
         self.assertEqual(log['reads'], [])  # nothing decoded
         self.assertEqual((ws.kinds('A2-SM'), ws.output('A2-SM-a1').exists()), ([], False))  # no attempt consumed
+
+    def test_a_misaligned_copy_refuses_every_train_read(self):
+        # PM decision: the smoke and the A2-S0 TRAIN reads refuse a copy whose row groups straddle TRAIN, even with
+        # a PASS manifest; the raw files and the copy's rows are never decoded and no attempt is consumed
+        merge = lambda groups: [pd.concat(groups[:2], ignore_index=True), *groups[2:]]  # history + TRAIN in one group
+        ws = Workspace(self, aligned_groups=merge)
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'straddles a TRAIN boundary'):
+            roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
+        self.assertEqual((log['reads'], ws.kinds('A2-SM')), ([], []))
+        pins = ws.config['registration_input_pins']
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'straddles a TRAIN boundary'):
+            roa.plan_train_reads(pins, ws.local, reg.TRAIN_WINDOW, strict=False)  # the A2-S0 read
+        self.assertEqual(log['reads'], [])
+
+    def test_a_tampered_identity_manifest_or_copy_refuses(self):
+        ws = Workspace(self)
+        good = ws.config['registration_input_pins']
+        record = json.loads(ws.identity_manifest.read_text())
+
+        def pins_for(change):  # a re-pinned manifest (bytes match their pin) that certifies something else
+            path = ws.root / 'inputs' / f'alt-{len(change)}-{sorted(change)[0]}.identity.json'
+            path.write_text(json.dumps(change(record) if callable(change) else {**record, **change}, sort_keys=True))
+            return {**good, 'processed_frame_aligned': {**good['processed_frame_aligned'], 'identity_manifest_path': str(path),
+                                                        'identity_manifest_sha256': reg.file_sha256(path)}}
+        cases = [('result FAIL', pins_for({'result': 'FAIL'}), 'does not certify a PASS'),
+                 ('not aligned', pins_for({'aligned': False}), 'does not certify a PASS'),
+                 ('identity FAIL', pins_for({'identity': {'result': 'FAIL'}}), 'does not certify a PASS'),
+                 ('another source', pins_for({'source': {**record['source'], 'sha256': 'e' * 64}}), 'source is not'),
+                 ('another copy', pins_for({'rewritten': {**record['rewritten'], 'sha256': 'e' * 64}}), 'another file'),
+                 ('another source pin', {**good, 'processed_frame_aligned': {**good['processed_frame_aligned'],
+                                                                             'source_sha256': 'e' * 64}}, 'another source')]
+        for name, pins, message in cases:
+            with self.subTest(name), watch_parquet() as log, self.assertRaisesRegex(IntegrityError, message):
+                roa.plan_train_reads(pins, ws.local, ('2024-06-01', '2024-06-20'), strict=True)
+            self.assertEqual(log['reads'], [])
+        with ws.identity_manifest.open('a') as stream:  # the pinned manifest's bytes changed
+            stream.write(' ')
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'identity manifest differs from its pin'):
+            roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
+        self.assertEqual((log['opened'], ws.kinds('A2-SM')), ([], []))
+        ws.identity_manifest.write_text(json.dumps(record, indent=1, sort_keys=True) + '\n')
+        with ws.aligned.open('ab') as stream:  # the copy's bytes changed
+            stream.write(b'\0')
+        with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'aligned processed frame bytes differ'):
+            roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
+        self.assertEqual((log['opened'], ws.kinds('A2-SM')), ([], []))
 
     def test_the_processed_pin_is_verified_before_any_row(self):
         # PM decision (review #6): path, inherited quality manifest and bytes before anything is decoded
@@ -1328,8 +1400,15 @@ class ReaderTests(unittest.TestCase):
         with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'bytes differ from the A2 pin'):
             roa.main(ws.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(ws))
         self.assertEqual(log['opened'], [])
-        other = Workspace(self, pins={'processed_frame_identity': {'path': '/nonexistent-a2/processed/pitches.parquet',
-                                                                   'sha256': 'f' * 64}})
+        other = Workspace(self, hook=lambda config, w: None)
+        other.config['registration_input_pins']['processed_frame_identity'] = {
+            'path': '/nonexistent-a2/processed/pitches.parquet', 'sha256': 'f' * 64}
+        other.config['registration_input_pins']['processed_frame_aligned']['source_sha256'] = 'f' * 64
+        other.config_path.write_text(json.dumps(other.config, indent=2, ensure_ascii=False) + '\n')
+        other.digest = reg.config_digest(other.config)
+        other.manifest.append('config_digest', {'digest': other.digest})
+        other.receipt('G-CODE', commit=other.config['registration_input_pins']['execution_source_commit'])
+        other.receipt('G-REG')
         with watch_parquet() as log, self.assertRaisesRegex(IntegrityError, 'path differs'):
             roa.main(other.argv('smoke', 'A2-SM-a1'), env=WorkspaceEnv(other))
         self.assertEqual(log['opened'], [])
@@ -1652,7 +1731,8 @@ class OrchestrationTests(unittest.TestCase):
         with watch_parquet() as log:
             roa.main(ws.argv('s0', 'A2-S0-a1'), env=env)
         self.assertNotIn('statcast_2025.parquet', {f for f, _, _ in log['reads']})  # DEV row groups never decoded
-        self.assertEqual(sorted({rg for f, rg, _ in log['reads'] if f == 'pitches.parquet'}), [1, 2])
+        self.assertEqual(sorted({rg for f, rg, _ in log['reads'] if f == ALIGNED_NAME}), [1, 2])
+        self.assertNotIn('pitches.parquet', {f for f, _, _ in log['reads']})  # the original is never decoded
         s0_dir, _ = roa.require_seal(ws.manifest, 'A2-S0')
         s0 = json.loads((s0_dir / 's0.json').read_text())
         self.assertIn('intentional exception to cross-fitting', s0['provenance']['zeta_residuals'])

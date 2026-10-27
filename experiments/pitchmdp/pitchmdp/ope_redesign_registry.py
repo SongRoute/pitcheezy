@@ -709,15 +709,27 @@ IMPLEMENTATION = {  # implementation choices fixed in the config (reviewed at G-
                 's5_degenerate': 'a zero-width or zero-SE S-5 shift interval is INCONCLUSIVE, never PASS',
                   'r1b_table_failure': 'every m nonfinite in a TAB replication: the R1_b pairs are NOT_EVALUABLE, the '
                                        'R1_0 and R1_a pairs continue'},
-    'reading': {'smoke': 'pinned processed frame and raw files read by parquet row group: only row groups whose '
-                         'game_date statistics lie inside TRAIN and overlap the smoke subset are decoded, only the listed '
-                         'columns; a straddling row group refuses; raw files of other years are not opened; no S6 access',
-                'A2-S0': 'the same reader over TRAIN; row groups straddling the TRAIN boundary are decoded and filtered '
-                         'before any use',
+    'reading': {'smoke': 'the pinned split-aligned processed frame and the approved raw files read by parquet row '
+                         'group: only row groups whose game_date statistics lie inside TRAIN and overlap the smoke subset '
+                         'are decoded, only the listed columns; a straddling row group refuses; raw files of other years '
+                         'are not opened; no S6 access',
+                'A2-S0': 'the same reader over TRAIN: processed rows only from TRAIN-only row groups of the split-aligned '
+                         'copy; approved raw-file row groups straddling the TRAIN boundary are decoded (listed raw '
+                         'columns) and filtered before any use',
+                'aligned_input': 'PM decision: every TRAIN-only footer-planned read of the processed frame (the smoke and '
+                                 'A2-S0; A2-S1 reads only the sealed A2-S0 output) decodes the split-aligned, row-for-row '
+                                 'identical copy prepared once for A3 EXP-BC-CAL-01 and reused '
+                                 '(registration_input_pins.processed_frame_aligned); before any row is decoded the runner '
+                                 'verifies its bytes, the identity-manifest bytes, the manifest result PASS (aligned, '
+                                 'identity PASS) for exactly this file and its source = processed_frame_identity.sha256, and '
+                                 'from the footer that every row group carries game_date statistics and none straddles a '
+                                 'TRAIN boundary; any processed file whose row groups straddle TRAIN is refused; A2-S2 and '
+                                 'A2-S3 keep reading the original processed frame through the registered ML-POLICY loader',
                 'layout_plan': 'the smoke plans its row groups from the parquet footers (schema and game_date statistics) '
                                'before the attempt-start receipt: a straddling row group refuses without consuming an attempt',
                 'processed_pin': 'path = artifact_root/processed/pitches.parquet, sha256 = the inherited '
-                                 'reports/data_quality.json processed_sha256 = the file bytes, checked before any row',
+                                 'reports/data_quality.json processed_sha256 = the file bytes, checked before any row; the '
+                                 'original stays the identity source of the aligned copy',
                 'S6': 'the S6-dr-a5 stage directory is opened by A2-S3 only; the smoke reads only the first '
                       'policy_registration_chain link (the ML-POLICY config: WE identity and local-config pin)'},
     'r1': {'root_level': 'maximum likelihood P(e | dp)', 'dp0_double_play_mapping': 'out',
@@ -972,10 +984,16 @@ def _outside_results(path_text, name):
 
 
 PIN_KEYS = ('s6_dr_a5_ledger_path', 's6_dr_a5_ledger_sha256', 's6_dr_a5_manifest_sha256', 'train_raw_files_sha256',
-            'processed_frame_identity', 'policy_registration_chain', 'x2_world_predictor_identity',
+            'processed_frame_identity', 'processed_frame_aligned', 'policy_registration_chain', 'x2_world_predictor_identity',
             'execution_source_commit', 'new_files_sha256', 'new_files_sha256_scope', 'digest_manifest_path', 'output_root',
             'r3_status', 'r3_status_allowed', 'a3_behavior_policy_sha256', 'a3_provenance_manifest_sha256',
             'smoke_train_subset', 'smoke_tab_replications_per_cell', 'rule')
+
+
+# PM decision (prepared input reused from A3 EXP-BC-CAL-01): the TRAIN-only reads use a split-aligned, row-for-row
+# identical copy of the pinned processed frame, certified by its identity manifest (result PASS, source = the pin)
+ALIGNED_PIN_KEYS = ('path', 'sha256', 'identity_manifest_path', 'identity_manifest_sha256', 'source_sha256')
+ALIGNED_MANIFEST_RESULT = 'PASS'
 
 
 def _disjoint(a, b):
@@ -992,7 +1010,10 @@ def check_pins(config):
     """Every registration-time input pin filled and well formed (needed before any registered stage).
 
     processed_frame_identity = {"path": absolute processed/pitches.parquet, "sha256": its bytes}; the
-    runner also checks it against the inherited quality manifest before any row is decoded.
+    runner also checks it against the inherited quality manifest before any row is decoded; it stays the
+    identity source. processed_frame_aligned = {"path", "sha256", "identity_manifest_path",
+    "identity_manifest_sha256", "source_sha256"}: the split-aligned copy every TRAIN-only read decodes,
+    with source_sha256 = processed_frame_identity.sha256 (verified against its identity manifest at run time).
     policy_registration_chain = [{"path", "sha256"}, ...]: the ML-POLICY config first, then its addenda
     (the S1-S6 registered inputs); stages before A2-S3 never open the S6 stage directory."""
     pins = _get(config, '$.registration_input_pins')
@@ -1008,6 +1029,17 @@ def check_pins(config):
     frame = pins.get('processed_frame_identity')
     _require(isinstance(frame, dict) and set(frame) == {'path', 'sha256'} and absolute(frame['path'])
              and hex64(frame['sha256']), 'pin processed_frame_identity = {"path": absolute, "sha256": hex}')
+    aligned = pins.get('processed_frame_aligned')
+    _require(isinstance(aligned, dict) and set(aligned) == set(ALIGNED_PIN_KEYS) and absolute(aligned['path'])
+             and absolute(aligned['identity_manifest_path'])
+             and all(hex64(aligned[k]) for k in ('sha256', 'identity_manifest_sha256', 'source_sha256')),
+             'pin processed_frame_aligned = {"path", "sha256", "identity_manifest_path", "identity_manifest_sha256", '
+             '"source_sha256"} (absolute paths, hex digests)')
+    _require(aligned['source_sha256'] == frame['sha256'],
+             'processed_frame_aligned.source_sha256 must equal processed_frame_identity.sha256 (the identity source)')
+    _require(Path(aligned['path']).resolve() != Path(frame['path']).resolve()
+             and Path(aligned['identity_manifest_path']).resolve() != Path(aligned['path']).resolve(),
+             'the aligned copy and its identity manifest are files of their own')
     chain = pins.get('policy_registration_chain')
     _require(isinstance(chain, list) and chain and all(isinstance(c, dict) and set(c) == {'path', 'sha256'}
                                                       and isinstance(c['path'], str) and hex64(c['sha256']) for c in chain),
@@ -1022,12 +1054,13 @@ def check_pins(config):
              'pin new_files_sha256 must cover exactly the new source and test files')
     _outside_results(pins.get('digest_manifest_path'), 'digest_manifest_path')
     root = _outside_results(pins.get('output_root'), 'output_root')
-    for name, other in (('the repository', REPO), ('the repository results/', REPO / 'results'),
-                        ('the S6-dr-a5 stage directory', Path(pins['s6_dr_a5_ledger_path']).parent),
-                        ('the processed frame directory', Path(frame['path']).parent)):
+    inputs = (('the S6-dr-a5 stage directory', Path(pins['s6_dr_a5_ledger_path']).parent),
+              ('the processed frame directory', Path(frame['path']).parent),
+              ('the aligned processed frame directory', Path(aligned['path']).parent),
+              ('the aligned identity manifest directory', Path(aligned['identity_manifest_path']).parent))
+    for name, other in (('the repository', REPO), ('the repository results/', REPO / 'results'), *inputs):
         _require(_disjoint(root, other), f'output_root must be disjoint from {name}')
-    for name, other in (('the repository', REPO), ('the S6-dr-a5 stage directory', Path(pins['s6_dr_a5_ledger_path']).parent),
-                        ('the processed frame directory', Path(frame['path']).parent)):
+    for name, other in (('the repository', REPO), *inputs):
         _require(manifest_outside(pins['digest_manifest_path'], other), f'the digest manifest must be outside {name}')
     r3 = pins.get('r3_status')
     _require(r3 in R3_STATUSES, 'pin r3_status')

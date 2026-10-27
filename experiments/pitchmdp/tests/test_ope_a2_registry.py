@@ -41,6 +41,9 @@ def registered(config=None, root='/tmp/synthetic'):
     pins.update(s6_dr_a5_ledger_path=f'{root}/s6/ledger.jsonl', s6_dr_a5_ledger_sha256='a' * 64,
                 s6_dr_a5_manifest_sha256='b' * 64, train_raw_files_sha256={n: 'c' * 64 for n in reg.RAW_ALLOWLIST},
                 processed_frame_identity={'path': f'{root}/artifacts/processed/pitches.parquet', 'sha256': 'f' * 64},
+                processed_frame_aligned={'path': f'{root}/inputs/pitches.split-aligned.parquet', 'sha256': '9' * 64,
+                                         'identity_manifest_path': f'{root}/inputs/pitches.split-aligned.identity.json',
+                                         'identity_manifest_sha256': '8' * 64, 'source_sha256': 'f' * 64},
                 policy_registration_chain=[{'path': f'{root}/ml-policy.json', 'sha256': '1' * 64}],
                 x2_world_predictor_identity={'kind': 'g0_single_member', 'seed': 0},
                 execution_source_commit='d' * 40, new_files_sha256={f: 'e' * 64 for f in reg.NEW_FILES},
@@ -154,7 +157,7 @@ class ExecutionGateTests(unittest.TestCase):
         reg.require_executable(registered())
         for key in ('s6_dr_a5_ledger_sha256', 'execution_source_commit', 'digest_manifest_path', 'output_root',
                     'r3_status', 'smoke_train_subset', 'x2_world_predictor_identity', 'processed_frame_identity',
-                    'policy_registration_chain'):
+                    'processed_frame_aligned', 'policy_registration_chain'):
             c = registered()
             c['registration_input_pins'][key] = None
             with self.subTest(key), self.assertRaises(IntegrityError):
@@ -195,6 +198,38 @@ class ExecutionGateTests(unittest.TestCase):
             c = registered()
             c['registration_input_pins']['policy_registration_chain'] = bad
             with self.subTest(chain=bad), self.assertRaisesRegex(IntegrityError, 'policy_registration_chain'):
+                reg.check_pins(c)
+
+    def test_the_aligned_copy_pin(self):
+        # PM decision: the split-aligned copy reused from A3; its source is the processed-frame identity pin
+        good = registered()['registration_input_pins']['processed_frame_aligned']
+        self.assertEqual(set(good), set(reg.ALIGNED_PIN_KEYS))
+        for name, change in (('missing', None), ('extra key', {**good, 'rows': 1}),
+                             ('relative path', {**good, 'path': 'inputs/pitches.split-aligned.parquet'}),
+                             ('relative manifest', {**good, 'identity_manifest_path': 'x.identity.json'}),
+                             ('upper-case digest', {**good, 'sha256': 'A' * 64}),
+                             ('short manifest digest', {**good, 'identity_manifest_sha256': '8' * 63})):
+            c = registered()
+            c['registration_input_pins']['processed_frame_aligned'] = change
+            with self.subTest(name), self.assertRaisesRegex(IntegrityError, 'processed_frame_aligned'):
+                reg.check_pins(c)
+        c = registered()
+        c['registration_input_pins']['processed_frame_aligned']['source_sha256'] = 'e' * 64
+        with self.assertRaisesRegex(IntegrityError, 'identity source'):
+            reg.check_pins(c)
+        for name, change in (('the original itself', {'path': '/tmp/synthetic/artifacts/processed/pitches.parquet'}),
+                             ('the manifest is the copy', {'identity_manifest_path': good['path']})):
+            c = registered()
+            c['registration_input_pins']['processed_frame_aligned'].update(change)
+            with self.subTest(name), self.assertRaisesRegex(IntegrityError, 'files of their own'):
+                reg.check_pins(c)
+        for name, field, value in (('output root inside the copy directory', 'output_root', '/tmp/synthetic/inputs/out'),
+                                   ('output root around the copy', 'output_root', '/tmp/synthetic'),
+                                   ('manifest in the copy directory', 'digest_manifest_path',
+                                    '/tmp/synthetic/inputs/digest.jsonl')):
+            c = registered()
+            c['registration_input_pins'][field] = value
+            with self.subTest(name), self.assertRaisesRegex(IntegrityError, 'aligned processed frame directory|disjoint'):
                 reg.check_pins(c)
 
     def test_receipt_gates_and_registration_references(self):

@@ -1370,7 +1370,7 @@
       "id": "A2-SM",
       "name": "smoke_first_registered_step",
       "after": "G-REG",
-      "reads": "TRAIN rows of registration_input_pins.smoke_train_subset only (approved raw files, listed columns, processed frame) and the synthetic TAB world at kappa = zeta = 0; no DEV start, no S6 ledger",
+      "reads": "TRAIN rows of registration_input_pins.smoke_train_subset only (approved raw files, listed columns, the split-aligned copy of the processed frame, TRAIN-only row groups) and the synthetic TAB world at kappa = zeta = 0; no DEV start, no S6 ledger",
       "runs": "the A2-S0 code path (raw join, date guards, event mapping, table fit; tables discarded) and the A2-S1 TAB code path for registration_input_pins.smoke_tab_replications_per_cell replications (outputs discarded), seed role smoke",
       "records": [
         "wall seconds and peak RSS per component",
@@ -1409,7 +1409,7 @@
     {
       "id": "A2-S0",
       "name": "train_tables_and_census",
-      "reads": "TRAIN rows of the approved raw files (listed columns) and the processed frame",
+      "reads": "TRAIN rows of the approved raw files (listed columns) and of the processed frame, the latter from the TRAIN-only row groups of its split-aligned copy (registration_input_pins.processed_frame_aligned)",
       "outputs": [
         "R1 tables (r1_table_sha256)",
         "m selection",
@@ -1699,6 +1699,7 @@
       "statcast_2025.parquet": null
     },
     "processed_frame_identity": null,
+    "processed_frame_aligned": null,
     "policy_registration_chain": null,
     "x2_world_predictor_identity": null,
     "execution_source_commit": null,
@@ -1715,7 +1716,7 @@
     "a3_provenance_manifest_sha256": null,
     "smoke_train_subset": null,
     "smoke_tab_replications_per_cell": null,
-    "rule": "all filled at G-REG from sources that exist before any registered stage runs (reviewed at G-CODE); a3 fields are the literal NOT_APPLICABLE when r3_status is NOT_RUN:R3; the smoke subset lies inside TRAIN; processed_frame_identity = {\"path\", \"sha256\"}; policy_registration_chain = [{\"path\", \"sha256\"}] (ML-POLICY config first, then its addenda); x2_world_predictor_identity = {\"kind\": \"g0_single_member\", \"seed\": int}"
+    "rule": "all filled at G-REG from sources that exist before any registered stage runs (reviewed at G-CODE); a3 fields are the literal NOT_APPLICABLE when r3_status is NOT_RUN:R3; the smoke subset lies inside TRAIN; processed_frame_identity = {\"path\", \"sha256\"} (the identity source); processed_frame_aligned = {\"path\", \"sha256\", \"identity_manifest_path\", \"identity_manifest_sha256\", \"source_sha256\"} = the split-aligned, row-for-row identical copy prepared once for A3 EXP-BC-CAL-01 and reused (PM decision), with source_sha256 = processed_frame_identity.sha256; every TRAIN-only read decodes it after the runner verifies its bytes, its identity manifest (bytes, result PASS for exactly this copy, source = the identity pin) and its split-aligned footer; policy_registration_chain = [{\"path\", \"sha256\"}] (ML-POLICY config first, then its addenda); x2_world_predictor_identity = {\"kind\": \"g0_single_member\", \"seed\": int}"
   },
   "stage_output_seals": {
     "A2-SM_smoke_record_sha256": null,
@@ -1880,6 +1881,11 @@
       "date": "2026-10-27",
       "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
       "what": "code review round 9 (PASS_WITH_NOTES) closing fixes: implementation block updated (argparse exit codes pass through the command-line entry; failure reports and ABORTED records keep the last 4000 characters of the traceback; the manifest read, the staging removal and the seal-check fallback read are bounded, os.replace stated as the commit point; PM decision: the display tolerance equals the protected estimator's probability sum tolerance 1e-9; cleanup share min(1.5 s, cleanup reserve / 2) and the 1 s report bound pinned numerically); still DRAFT_UNREGISTERED, execution disabled"
+    },
+    {
+      "date": "2026-10-27",
+      "base_commit": "11eeb6e2bcb10206d1f7eccfb37118184920bc58",
+      "what": "PM decision (G-REG dry run: the pinned processed parquet has row groups straddling TRAIN): A2 reuses the split-aligned, row-for-row identical copy prepared for A3 EXP-BC-CAL-01; new pin registration_input_pins.processed_frame_aligned {path, sha256, identity_manifest_path, identity_manifest_sha256, source_sha256}; every TRAIN-only read (smoke, A2-S0) decodes only TRAIN-only row groups of the copy after verifying its bytes, its identity manifest (bytes, result PASS for exactly this copy, source = processed_frame_identity) and its split-aligned footer; A2-S2/A2-S3 unchanged (registered loader on the original); still DRAFT_UNREGISTERED, execution disabled"
     }
   ],
   "implementation": {
@@ -1916,10 +1922,11 @@
       "r1b_table_failure": "every m nonfinite in a TAB replication: the R1_b pairs are NOT_EVALUABLE, the R1_0 and R1_a pairs continue"
     },
     "reading": {
-      "smoke": "pinned processed frame and raw files read by parquet row group: only row groups whose game_date statistics lie inside TRAIN and overlap the smoke subset are decoded, only the listed columns; a straddling row group refuses; raw files of other years are not opened; no S6 access",
-      "A2-S0": "the same reader over TRAIN; row groups straddling the TRAIN boundary are decoded and filtered before any use",
+      "smoke": "the pinned split-aligned processed frame and the approved raw files read by parquet row group: only row groups whose game_date statistics lie inside TRAIN and overlap the smoke subset are decoded, only the listed columns; a straddling row group refuses; raw files of other years are not opened; no S6 access",
+      "A2-S0": "the same reader over TRAIN: processed rows only from TRAIN-only row groups of the split-aligned copy; approved raw-file row groups straddling the TRAIN boundary are decoded (listed raw columns) and filtered before any use",
+      "aligned_input": "PM decision: every TRAIN-only footer-planned read of the processed frame (the smoke and A2-S0; A2-S1 reads only the sealed A2-S0 output) decodes the split-aligned, row-for-row identical copy prepared once for A3 EXP-BC-CAL-01 and reused (registration_input_pins.processed_frame_aligned); before any row is decoded the runner verifies its bytes, the identity-manifest bytes, the manifest result PASS (aligned, identity PASS) for exactly this file and its source = processed_frame_identity.sha256, and from the footer that every row group carries game_date statistics and none straddles a TRAIN boundary; any processed file whose row groups straddle TRAIN is refused; A2-S2 and A2-S3 keep reading the original processed frame through the registered ML-POLICY loader",
       "layout_plan": "the smoke plans its row groups from the parquet footers (schema and game_date statistics) before the attempt-start receipt: a straddling row group refuses without consuming an attempt",
-      "processed_pin": "path = artifact_root/processed/pitches.parquet, sha256 = the inherited reports/data_quality.json processed_sha256 = the file bytes, checked before any row",
+      "processed_pin": "path = artifact_root/processed/pitches.parquet, sha256 = the inherited reports/data_quality.json processed_sha256 = the file bytes, checked before any row; the original stays the identity source of the aligned copy",
       "S6": "the S6-dr-a5 stage directory is opened by A2-S3 only; the smoke reads only the first policy_registration_chain link (the ML-POLICY config: WE identity and local-config pin)"
     },
     "r1": {

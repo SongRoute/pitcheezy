@@ -19,7 +19,9 @@ sealed input and protected root (resolved real paths). An attempt-start receipt 
 stage directory exists (at most two starts per stage; a retry after a deterministic integrity failure
 needs a recorded bug-fix addendum, after a start without any receipt a recorded reconciliation). The
 smoke reads TRAIN rows and listed columns only: its row groups are planned from the parquet footers
-before the attempt starts and only row groups lying inside TRAIN are decoded; the S6-dr-a5 stage
+before the attempt starts and only row groups lying inside TRAIN are decoded. Every TRAIN-only read of the
+processed frame (the smoke and A2-S0) decodes the pinned split-aligned copy (prepared once for A3 and reused),
+verified first against its identity manifest and the processed-frame identity pin; the S6-dr-a5 stage
 directory is opened by A2-S3 only, where G-INT runs on the untouched registered path before any
 surrogate reward or variant is computed.
 
@@ -1017,6 +1019,52 @@ def verify_processed_pin(pins, local):
     return pin
 
 
+def require_split_aligned(path):
+    """Footer only (no row decoded): every row group of a processed file carries game_date statistics and lies
+    wholly inside or wholly outside TRAIN; a file with a row group straddling a TRAIN boundary is refused."""
+    import pyarrow.parquet as pq
+    path = Path(path)
+    meta = pq.ParquetFile(path).metadata
+    names = [meta.schema.column(i).name for i in range(meta.num_columns)]
+    _require('game_date' in names, f'{path.name} lacks game_date')
+    index = names.index('game_date')
+    lo, hi = pd.Timestamp(reg.TRAIN_WINDOW[0]), pd.Timestamp(reg.TRAIN_WINDOW[1])
+    for rg in range(meta.num_row_groups):
+        stats = meta.row_group(rg).column(index).statistics
+        _require(stats is not None and stats.has_min_max,
+                 f'{path.name} row group {rg} has no game_date statistics; the processed file is not split-aligned')
+        first, last = _stat_day(stats.min), _stat_day(stats.max)
+        _require(last < lo or first > hi or (first >= lo and last <= hi),
+                 f'{path.name} row group {rg} ({first.date()}..{last.date()}) straddles a TRAIN boundary; the processed '
+                 f'file is not split-aligned and is refused')
+    return meta.num_row_groups
+
+
+def verify_aligned_pin(pins):
+    """PM decision (the prepared input of A3 EXP-BC-CAL-01, reused): the split-aligned, row-for-row identical copy
+    that every TRAIN-only read decodes, verified before any row is decoded: the identity-manifest bytes equal their
+    pin; the manifest certifies exactly this copy (result PASS, aligned, identity PASS, rewritten sha256 = the copy's
+    pin) made from the identity source (its source sha256 = processed_frame_identity.sha256 = the copy's source
+    pin); the copy's bytes equal their pin; and its footer is split-aligned (``require_split_aligned``)."""
+    aligned, identity = pins['processed_frame_aligned'], pins['processed_frame_identity']
+    _require(aligned['source_sha256'] == identity['sha256'],
+             'the aligned copy names another source than the processed-frame identity pin')
+    raw = Path(aligned['identity_manifest_path']).read_bytes()
+    _require(hashlib.sha256(raw).hexdigest() == aligned['identity_manifest_sha256'],
+             'the aligned identity manifest differs from its pin')
+    manifest = json.loads(raw)
+    _require(manifest.get('result') == reg.ALIGNED_MANIFEST_RESULT and manifest.get('aligned') is True
+             and (manifest.get('identity') or {}).get('result') == reg.ALIGNED_MANIFEST_RESULT,
+             'the aligned identity manifest does not certify a PASS (result, alignment and identity)')
+    _require((manifest.get('source') or {}).get('sha256') == identity['sha256'],
+             'the aligned identity manifest source is not the processed-frame identity pin')
+    _require((manifest.get('rewritten') or {}).get('sha256') == aligned['sha256'],
+             'the aligned identity manifest certifies another file than the pinned copy')
+    _require(reg.file_sha256(aligned['path']) == aligned['sha256'], 'aligned processed frame bytes differ from the A2 pin')
+    require_split_aligned(aligned['path'])
+    return aligned
+
+
 def raw_files_for(window, local):
     """The approved raw files whose season overlaps the window (the others are never opened)."""
     first, last = int(str(window[0])[:4]), int(str(window[1])[:4])
@@ -1026,18 +1074,20 @@ def raw_files_for(window, local):
 
 
 def plan_train_reads(pins, local, window, *, strict):
-    """Footer-only plan of a TRAIN read after the pins are verified (processed pin first): the processed
-    and raw row groups that would be decoded and the processed rows of the row groups overlapping TRAIN
-    (an upper bound for the smoke's labelled projection)."""
+    """Footer-only plan of a TRAIN read after the pins are verified (the processed-frame identity pin first, then
+    its split-aligned copy): the row groups of the aligned copy (always TRAIN-only: strict) and of the approved raw
+    files (``strict`` for the smoke) that would be decoded, and the aligned rows of the TRAIN row groups (an upper
+    bound for the smoke's labelled projection)."""
     _require(reg.TRAIN_WINDOW[0] <= window[0] <= window[1] <= reg.TRAIN_WINDOW[1], 'a TRAIN read stays inside TRAIN')
-    pin = verify_processed_pin(pins, local)
-    plan = {'window': list(window), 'strict': bool(strict),
-            'processed': parquet_plan(pin['path'], TRAIN_COLUMNS, window, strict=strict), 'raw': {}}
+    verify_processed_pin(pins, local)  # the original stays the identity source
+    aligned = verify_aligned_pin(pins)
+    plan = {'window': list(window), 'strict': bool(strict), 'processed_path': aligned['path'],
+            'processed': parquet_plan(aligned['path'], TRAIN_COLUMNS, window, strict=True), 'raw': {}}
     for name, path in raw_files_for(window, local):
         _require(reg.file_sha256(path) == pins['train_raw_files_sha256'][name], f'raw file {name} differs from its pin')
         plan['raw'][name] = parquet_plan(path, RAW_COLUMNS, window, strict=strict)
     _require(plan['raw'], 'no approved raw file overlaps the window')
-    plan['train_rows_upper_bound'] = parquet_plan(pin['path'], ('game_date',), reg.TRAIN_WINDOW, strict=False)['rows']
+    plan['train_rows_upper_bound'] = parquet_plan(aligned['path'], ('game_date',), reg.TRAIN_WINDOW, strict=True)['rows']
     return plan
 
 
@@ -1060,8 +1110,7 @@ def train_rows(pins, local, window, *, strict, checkpoint=lambda: None, log=None
     """Regular-season TRAIN rows inside ``window`` (pinned processed frame, listed columns) with the raw
     quality columns of the overlapping approved files joined. Returns (frame, read record)."""
     plan = plan_train_reads(pins, local, window, strict=strict)
-    frame = read_planned(pins['processed_frame_identity']['path'], plan['processed'], TRAIN_COLUMNS, window,
-                         checkpoint=checkpoint, log=log)
+    frame = read_planned(plan['processed_path'], plan['processed'], TRAIN_COLUMNS, window, checkpoint=checkpoint, log=log)
     rows_all_types = int(len(frame))
     frame = frame.loc[frame['game_type'].eq('R').to_numpy()].reset_index(drop=True)
     _require(bool(frame['split'].eq('train').all()), 'a TRAIN-window row is outside the train split (deterministic integrity)')
@@ -1704,13 +1753,15 @@ class Environment:
 
     def protected_roots(self, config, local, chain):
         """Directories the output root must be disjoint from: the checkouts (results/ included), the S6-dr-a5
-        stage directory, the processed frame, its reports and cache, the raw root, the G0 bundle and WE
-        directories and the directory of every ML-POLICY registered input."""
+        stage directory, the processed frame, its split-aligned copy and identity manifest, its reports and cache,
+        the raw root, the G0 bundle and WE directories and the directory of every ML-POLICY registered input."""
         pins = config['registration_input_pins']
         ident = chain[0]['identity_registration']
         artifact = Path(local['artifact_root'])
         roots = {'the S6-dr-a5 stage directory': Path(pins['s6_dr_a5_ledger_path']).parent,
                  'the processed frame directory': Path(pins['processed_frame_identity']['path']).parent,
+                 'the aligned processed frame directory': Path(pins['processed_frame_aligned']['path']).parent,
+                 'the aligned identity manifest directory': Path(pins['processed_frame_aligned']['identity_manifest_path']).parent,
                  'the artifact reports directory': artifact / 'reports', 'the artifact cache directory': artifact / 'cache',
                  'the raw root': Path(local['raw_root']), 'the G0 bundle directory': _resolve(ident['g0_bundle']['path']).parent}
         for role, value in ident['we_paths'].items():
