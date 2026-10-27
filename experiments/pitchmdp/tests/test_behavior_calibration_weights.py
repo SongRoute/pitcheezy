@@ -160,6 +160,48 @@ def test_t10_forbidden_members_are_skipped_unread(tmp_path, monkeypatch):
         bw.scan_line(b'{"kind": "decision"} trailing', bw.DECISION_SCHEMA, {})
 
 
+MALFORMED = ['tru', '01', '[}', '"\\q"', '1.', '-', '+1', '.5', '1e', '1e+', '00', '-01', 'NaN', 'Infinity', 'nul',
+             'true1', '[1,]', '[,]', '[1 2]', '[1]]', '{"a" 1}', '{"a":1,}', '{"a":1 "b":2}', '{1:2}',
+             '{"a":[1,{"b":}]}', "'x'", '"abc', '"a\x01b"', '[', '{"a":1']
+WELL_FORMED = ['true', 'false', 'null', '0', '-0', '1.5e-7', '-2.5E+3', '123', '"x"', '[]', '{}',
+               '"\\"\\\\\\/\\b\\f\\n\\r\\t\\u00e9"', '[1, [2, {"a": [null, true]}], "s"]',
+               '{"a": {"b": {"c": []}}, "d": "\\u0041"}', '"é中"', ' [ 1 , 2 ] ']
+
+
+@pytest.mark.parametrize('value', MALFORMED)
+def test_t10_a_malformed_skipped_value_refuses_the_line(value):
+    """Review round 2, #7: the non-materializing skip validates the JSON grammar; a malformed value of
+    a non-allowlisted member is an integrity failure, never accepted."""
+    with pytest.raises(IntegrityError):
+        bw.scan_line('{"kind":"decision","reward":' + value + '}', bw.DECISION_SCHEMA, {})
+
+
+@pytest.mark.parametrize('value', WELL_FORMED)
+def test_t10_well_formed_nested_escaped_and_exponent_values_are_skipped(value):
+    skipped = {}
+    row = bw.scan_line('{"kind":"decision","reward":' + value + ',"status":"SUPPORTED"}', bw.DECISION_SCHEMA, skipped)
+    assert row == {'kind': 'decision', 'status': 'SUPPORTED'} and skipped == {'reward': 1}
+
+
+def test_t10_malformed_allowlisted_values_duplicates_and_bad_lines_refuse(tmp_path):
+    for value in ('tru', '01', '[}', '"\\q"', 'NaN', '1.'):
+        with pytest.raises(IntegrityError):
+            bw.scan_line('{"kind":"decision","status":' + value + '}', bw.DECISION_SCHEMA, {})
+    for line in (b'{"kind":"decision","status":"a","status":"b"}', b'{"kind":"decision","\\q":1}',
+                 b'{"kind":"decision","reward":"\xff"}', b'["kind"]', b'{"kind":"decision"}{}'):
+        with pytest.raises(IntegrityError):
+            bw.scan_line(line, bw.DECISION_SCHEMA, {})
+    rows = [row('1:1', 0, 'SUPPORTED', 0, law({0: 1.}), law({0: .5, 1: .5}))]
+    path = tmp_path / 'ledger-dev-0.jsonl'
+    write_ledger(path, rows)
+    text = path.read_text().splitlines()
+    path.write_text(text[0] + '\n' + text[1][:-1] + ',"reward":tru}\n')  # one malformed member value
+    manifest = tmp_path / 'manifest.json'
+    with pytest.raises(IntegrityError):
+        bw.read_ledger(path, manifest_path=manifest, ledger_sha256=bw.file_sha256(path),
+                       manifest_sha256=bw.file_sha256(manifest), runtime_sha256='a' * 64)
+
+
 def test_kl_is_infinite_when_new_mass_leaves_the_b0_support():
     """Review finding 9: the registered mean KL is infinite as soon as one decision puts new mass
     outside the B0 support; the finite-only statistic is reported under its own name."""

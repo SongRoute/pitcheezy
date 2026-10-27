@@ -37,6 +37,10 @@ def stage_json(attempt, stage, name):
     return json.loads((attempt['run'].attempt.stage_path(stage) / name).read_text())
 
 
+def pyarrow_reads(entries):
+    return [e for e in entries if e['kind'] == 'read']
+
+
 def test_every_stage_passes_in_order_with_records(attempt):
     failures = {s: stage_json(attempt, s, 'stage.json')['error'] for s, v in attempt['statuses'].items() if v != 'PASS'}
     assert not failures, failures
@@ -58,29 +62,45 @@ def test_smoke_reads_train_row_groups_only_and_computes_no_metric(attempt):
     assert smoke['metrics_computed'] is None and all(smoke['checks'].values())
     assert smoke['checks']['b2_deterministic'] and smoke['checks']['no_row_after_train_end_decoded']
     assert smoke['rows_decoded_after_train_end'] == 0 and 'nll' not in json.dumps(smoke).lower()
-    reads = stage_json(attempt, 'smoke', 'stage.json')['reads']
-    assert reads and all(e['rows_at_or_after']['2025-05-01'] == 0 for e in reads)
-    assert any(e['date_min'] < '2023-05-15' for e in reads)  # pre-TRAIN rows decoded and dropped (disclosed)
+    assert smoke['checks']['processed_layout_split_aligned'] and smoke['checks']['no_dev_bearing_guarded_chunk_read']
+    assert stage_json(attempt, 'smoke', 'layout.json')['split_aligned'] is True
+    record = stage_json(attempt, 'smoke', 'stage.json')
+    reads = pyarrow_reads(record['reads'])
+    assert reads and all(e['rows_at_or_after']['2025-05-01'] == 0 and e['validation'] == 'passed' for e in reads)
+    summary = record['read_summary']
+    assert summary['rows_decoded_then_dropped']['before_window'] > 0  # pre-TRAIN rows of a straddling group
+    assert summary['row_groups_skipped'] > 0 and summary['dev_bearing_guarded_reads'] == 0
+    assert 'straddling row groups only' in summary['disclosure']
 
 
 def test_census_is_label_free_and_dev_labels_wait_for_the_gate(attempt):
-    census = stage_json(attempt, 'census', 'stage.json')['reads']
+    census = pyarrow_reads(stage_json(attempt, 'census', 'stage.json')['reads'])
     assert census and not any(e['guarded'] for e in census)
-    fit = stage_json(attempt, 'fit', 'stage.json')['reads']
-    assert any(e['guarded'] for e in fit) and all(e['rows_at_or_after']['2025-07-01'] == 0 for e in fit if e['guarded'])
-    xf = stage_json(attempt, 'xf-fit', 'stage.json')['reads']
-    assert any(e['guarded'] and e['rows_at_or_after']['2025-07-01'] > 0 for e in xf)
+    fit_record = stage_json(attempt, 'fit', 'stage.json')
+    fit = pyarrow_reads(fit_record['reads'])
+    assert any(e['guarded'] for e in fit) and not any(e['guarded'] and e['dev_bearing'] for e in fit)
+    assert fit_record['read_summary']['rows_decoded_then_dropped']['after_window'] > 0  # June rows, straddling group
+    xf_record = stage_json(attempt, 'xf-fit', 'stage.json')
+    assert xf_record['read_summary']['dev_bearing_guarded_reads'] > 0
     for stage in reg.STAGES:
         if stage != 'xf-fit':
-            reads = stage_json(attempt, stage, 'stage.json')['reads']
-            assert not any(e['guarded'] and e['rows_at_or_after']['2025-07-01'] for e in reads), stage
+            reads = pyarrow_reads(stage_json(attempt, stage, 'stage.json')['reads'])
+            assert not any(e['guarded'] and e['dev_bearing'] for e in reads), stage
+    events = runner.read_chain(attempt['destination'] / 'reads.jsonl')  # persisted, hash-chained, event by event
+    begun = {e['index'] for e in events if e['event'] == 'begin'}
+    assert begun and all(e['index'] in begun for e in events if e['event'] == 'finish')
+    first = {}
+    for position, e in enumerate(events):
+        first.setdefault((e['index'], e['event']), position)
+    assert all(first[(i, 'begin')] < first[(i, 'finish')] for i in begun)  # logged before the read completed
 
 
 def test_freeze_primary_precedes_dev_labels_and_reproduces(attempt):
     manifest = json.loads((attempt['run'].attempt.stage_path('freeze-primary') / 'manifest.json').read_text())
     assert manifest['dev_guarded_rows_decoded'] == 0 and manifest['inputs_on_or_before_2025_05_31'] is True
+    assert manifest['dev_bearing_guarded_chunks_read'] == 0 and manifest['read_summary']['pyarrow_reads'] > 0
     assert manifest['latest_input_row_date'] <= '2025-05-31' and manifest['reads']
-    assert all(not (e['guarded'] and e['rows_at_or_after']['2025-07-01']) for e in manifest['reads'])
+    assert not any(e['guarded'] and e['dev_bearing'] for e in pyarrow_reads(manifest['reads']))
     assert set(manifest['groups']) == {'B1', 'B2', 'calibrators', 'oof_encoders', 'style_snapshots', 'train_volume'}
     runner.verify_manifest(attempt['destination'], manifest)
     pin = attempt['run'].attempt.pin('freeze-primary')

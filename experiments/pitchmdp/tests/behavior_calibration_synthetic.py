@@ -355,8 +355,19 @@ def processed_order(frame):
 
 
 def default_cuts(ordered):
-    """Row-group boundaries: [pre + first half of TRAIN | rest of TRAIN | earlystop .. June .. first DEV
-    games | rest of DEV] (the third group straddles the 2025-05-31 pre-gate limit and the DEV start)."""
+    """Split-aligned row groups (physically safe): [2023-03-30 only: wholly pre-TRAIN, skipped |
+    2023-05-14 + first half of TRAIN: straddles the TRAIN start | rest of TRAIN | earlystop +
+    temperature + 2025-06-01: straddles the pre-gate limit, no DEV row | 2025-06-30 only: wholly June,
+    skipped | first half of DEV | rest of DEV]. Empty groups are left out."""
+    dates, n = ordered.game_date, len(ordered)
+    at = lambda day: int((dates < pd.Timestamp(day)).sum())
+    train_lo, train_hi, dev = at('2023-05-15'), at('2025-05-01'), at('2025-07-01')
+    return sorted({0, at('2023-05-14'), train_lo + (train_hi - train_lo) // 2, train_hi, at('2025-06-02'), dev,
+                   dev + (n - dev) // 2, n})
+
+
+def straddling_cuts(ordered):
+    """An unsafe layout: one row group holds earlystop .. June .. the first DEV games."""
     dates, n = ordered.game_date, len(ordered)
     train_end = int((dates <= pd.Timestamp('2025-04-30')).sum())
     dev_start = int((dates < pd.Timestamp('2025-07-01')).sum())
@@ -366,25 +377,26 @@ def default_cuts(ordered):
 PROCESSED_COLUMNS = [*reg.FREE_COLUMNS, *reg.GUARDED_COLUMNS, 'release_speed']  # release_speed: never read
 
 
-def write_parquet(path, ordered, columns, cuts):
+def write_parquet(path, ordered, columns, cuts, statistics=True):
     import pyarrow as pa
     import pyarrow.parquet as pq
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     part = ordered[columns]
     schema = pa.Schema.from_pandas(part, preserve_index=False)
-    with pq.ParquetWriter(path, schema) as writer:
+    with pq.ParquetWriter(path, schema, write_statistics=statistics) as writer:
         for a, b in zip(cuts[:-1], cuts[1:]):
             if b > a:
                 writer.write_table(pa.Table.from_pandas(part.iloc[a:b], schema=schema, preserve_index=False))
     return path
 
 
-def write_processed(directory, frame, cuts=None, name='pitches.parquet'):
-    """A processed-shaped parquet (date-sorted, explicit row groups); returns (path, sha256, cuts)."""
+def write_processed(directory, frame, cuts=None, name='pitches.parquet', statistics=True):
+    """A processed-shaped parquet (date-sorted, explicit row groups); returns (path, sha256, cuts).
+    ``cuts`` may be a list of positions or a function of the date-ordered frame."""
     ordered = processed_order(frame)
-    cuts = default_cuts(ordered) if cuts is None else list(cuts)
-    path = write_parquet(Path(directory) / name, ordered, PROCESSED_COLUMNS, cuts)
+    cuts = default_cuts(ordered) if cuts is None else (cuts(ordered) if callable(cuts) else list(cuts))
+    path = write_parquet(Path(directory) / name, ordered, PROCESSED_COLUMNS, cuts, statistics)
     return path, file_sha256(path), cuts
 
 
@@ -407,12 +419,13 @@ def write_raw(directory, frame):
 class SyntheticSource:
     """Runner data source: the production A3 readers (ProcessedReader / RawKeysReader / A3Inputs) over
     a synthetic processed parquet and raw key files, the synthetic B0 and ledger (never real files).
-    ``revalidate`` records every per-stage call and runs ``hook`` (a test may make it refuse)."""
-    def __init__(self, world, ledger, directory, *, extras=None, margin=8, hook=None, cuts=None):
+    ``revalidate`` records every per-stage call and runs ``hook`` (a test may make it refuse). The
+    acquisitions go to the run's persisted read log, as with the real source."""
+    def __init__(self, world, ledger, directory, *, extras=None, hook=None, cuts=None):
         frame = world['frame'] if extras is None else pd.concat([world['frame'], extras], ignore_index=True)
         self.processed, self.processed_sha256, self.cuts = write_processed(directory, frame, cuts)
         self.raw_root, self.raw_pins = write_raw(directory, frame)
-        self.world, self.ledger, self.margin, self.hook = world, ledger, margin, hook
+        self.world, self.ledger, self.hook = world, ledger, hook
         self.opens, self.revalidations, self.inputs = 0, [], None
 
     def revalidate(self, run, stage):
@@ -422,10 +435,10 @@ class SyntheticSource:
         return {'stage': stage, 'registration_gate': 'synthetic source'}
 
     def open(self, run):
-        from pitchmdp.behavior_data import A3Inputs, ProcessedReader, RawKeysReader, ReadLog
+        from pitchmdp.behavior_data import A3Inputs, ProcessedReader, RawKeysReader
         self.opens += 1
-        log = ReadLog()
-        reader = ProcessedReader(self.processed, sha256=self.processed_sha256, log=log, margin=self.margin)
+        log = run.log
+        reader = ProcessedReader(self.processed, sha256=self.processed_sha256, log=log, phase=run.current_stage)
         ledger = None if self.ledger is None else {
             'path': str(self.ledger['ledger']), 'manifest_path': str(self.ledger['manifest']),
             'ledger_sha256': self.ledger['ledger_sha256'], 'manifest_sha256': self.ledger['manifest_sha256'],

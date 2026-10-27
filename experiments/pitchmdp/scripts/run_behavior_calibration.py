@@ -6,20 +6,25 @@ status REGISTERED with every flag true, every pin of the registry's immutable re
 present and well formed (the S6 runtime identity equal to c13cc989...), the config content sha256
 and the runner sha256 pinned, no change since the pinned commit inside the reviewed scope
 (experiments/, src/, scripts/, pyproject.toml), the config committed at HEAD, one OpenMP runtime and
-the pinned research-a3 dependency. The gate is re-run before EVERY stage. Order is fixed: smoke
-(first registered step: TRAIN rows only, cost and integrity, no metric) -> census (label-free) ->
-fit -> calibrate -> freeze-primary -> s6-integrity -> xf-fit -> freeze-xf -> score-dev ->
-s6-weights -> decide. A stage opens only after the previous one passed in the same attempt (each
-stage verified against the digests anchored in stages.jsonl). Data are read stage by stage
-(pitchmdp.behavior_data): DEV pitch types and outcomes are decoded only after freeze-primary is
-pinned and s6-integrity passed, and every decode is logged in the stage record; no DEV metric is
+the pinned research-a3 dependency. The gate is re-run before EVERY stage and again by the loader
+before it opens any file (only inside an executing stage of an open attempt). Order is fixed: smoke
+(first registered step: TRAIN rows only, cost and integrity incl. a split-aligned processed layout,
+no metric) -> census (label-free) -> fit -> calibrate -> freeze-primary -> s6-integrity -> xf-fit ->
+freeze-xf -> score-dev -> s6-weights -> decide. A stage opens only after every earlier stage passed in
+the same attempt (verified against the digests anchored in stages.jsonl, under the guard). Data are
+read stage by stage (pitchmdp.behavior_data): no guarded column chunk of a DEV-bearing row group is
+passed to pyarrow before freeze-primary is pinned and s6-integrity passed (checked from the
+pyarrow-level read log at freeze-primary); every acquisition is logged before it happens (reads.jsonl
+and the stage record, decoded-then-dropped rows of straddling row groups counted); no DEV metric is
 computed before freeze-xf is pinned. Each stage writes JSON (+ npy/text artifacts) and SHA256SUMS
 under the attempt directory (never the repository results/), with seeds, config sha256, git commit,
 seconds and peak RSS. Caps: total wall 14,400 s over the whole attempt (smoke through decide,
-budget.jsonl), stage hang guard 7,200 s, B2 fit soft cap 3,600 s (warning only), RSS 10 GiB; the
-protection window 06:30-13:30 KST is never entered (refuse to start inside it; the memory probe,
-the preflight tests and every stage abort when it begins, keeping their outputs). Every unsuccessful
-attempt ends with a non-citable final.json (REFUSED / FAILED_RUNTIME / ABORTED / FAILED_INTEGRITY).
+budget.jsonl, bound to every stage record; a missing or truncated history refuses), stage hang guard
+7,200 s, B2 fit soft cap 3,600 s (warning only), RSS 10 GiB for the runner peak RSS plus the
+supervised child tree (ps); the protection window 06:30-13:30 KST is never entered (refuse to start
+inside it; the memory probe, the preflight tests, inter-stage verification and every stage abort
+when it begins, keeping their outputs). Every unsuccessful attempt ends with a non-citable final.json
+(REFUSED / FAILED_RUNTIME / ABORTED / FAILED_INTEGRITY).
 
 After registration, outside 06:30-13:30 KST, with the common heavy lock free (torch and LightGBM
 must share one OpenMP runtime: DYLD_LIBRARY_PATH=<venv torch/lib>, never KMP_DUPLICATE_LIB_OK):
@@ -139,10 +144,16 @@ def sha256_bytes(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def sha256_file(path):
+def sha256_file(path, check=None):
+    """sha256 of a file; ``check`` (the guard) runs before every 8 MiB chunk."""
     digest = hashlib.sha256()
     with Path(path).open('rb') as stream:
-        while chunk := stream.read(8 << 20):
+        while True:
+            if check is not None:
+                check()
+            chunk = stream.read(8 << 20)
+            if not chunk:
+                break
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -379,37 +390,90 @@ class Guard:
         return None
 
 
+def process_tree_rss(root_pid):
+    """{pid: RSS bytes} of ``root_pid`` and every descendant, found through parent pids (``ps``; RSS in
+    KiB), so children that started their own session are included. None when ``ps`` fails."""
+    try:
+        done = subprocess.run(['ps', '-A', '-o', 'pid=,ppid=,rss='], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if done.returncode != 0:
+        return None
+    children, rss = {}, {}
+    for line in done.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and all(p.isdigit() for p in parts):
+            pid, ppid, kib = (int(p) for p in parts)
+            children.setdefault(ppid, []).append(pid)
+            rss[pid] = kib * 1024
+    tree, stack = {}, [root_pid]
+    while stack:
+        pid = stack.pop()
+        if pid in tree or pid not in rss:
+            continue
+        tree[pid] = rss[pid]
+        stack.extend(children.get(pid, ()))
+    return tree
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
+
+
 def _stop_child(process):
-    """Stop only the runner-owned child and its own process group (started in a new session)."""
-    if process.poll() is not None:
-        return
-    for sig, wait in ((signal.SIGTERM, 10), (signal.SIGKILL, 10)):
+    """Stop the runner-owned child, its process group and every descendant (collected first); no other
+    process is signalled."""
+    descendants = [pid for pid in (process_tree_rss(process.pid) or {}) if pid != process.pid]
+    for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 5)):
+        for pid in descendants:
+            try:
+                os.kill(pid, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
         try:
             os.killpg(process.pid, sig)
-        except ProcessLookupError:
-            return
+        except (ProcessLookupError, PermissionError):
+            pass
         try:
             process.wait(timeout=wait)
-            return
         except subprocess.TimeoutExpired:
             continue
+        if not any(_alive(pid) for pid in descendants):
+            break
+    for stream in (process.stdout, process.stderr):
+        if stream is not None:
+            stream.close()
 
 
-def supervised(command, guard, *, timeout, where, cwd=None, env=None, poll=0.5):
-    """Run a runner-owned child under the guard: the protection window, the attempt budget and the RSS
-    cap are checked every ``poll`` seconds; on any of them (or ``timeout``) the child is stopped."""
+def supervised(command, guard, *, timeout, where, cwd=None, env=None, poll=0.5, tree=process_tree_rss):
+    """Run a runner-owned child under the guard: every ``poll`` seconds the protection window, the
+    attempt budget and the memory rule are checked; on any of them (or ``timeout``) the child tree is
+    stopped. Memory rule: runner peak RSS + current RSS of the whole child tree <= the registered cap
+    (the peak child-tree RSS is returned)."""
     started = time.monotonic()
     process = subprocess.Popen(list(command), cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, start_new_session=True)
+    peak = 0
     try:
         while True:
             try:
                 out, err = process.communicate(timeout=poll)
                 return {'returncode': process.returncode, 'stdout': out, 'stderr': err,
-                        'seconds': time.monotonic() - started}
+                        'seconds': time.monotonic() - started, 'peak_tree_rss_bytes': peak}
             except subprocess.TimeoutExpired:
                 pass
+            sizes = tree(process.pid)
+            if sizes is None:
+                raise Refused(f'{where}: the memory of the child process tree cannot be measured')
+            child = int(sum(sizes.values()))
+            peak = max(peak, child)
             guard.check(where)
+            if guard.rss() + child > guard.rss_cap:
+                raise Abort('RSS_CAP', f'{where} (runner {guard.rss()} B + child tree {child} B)')
             if time.monotonic() - started > timeout:
                 raise Refused(f'{where} exceeded its {timeout} s timeout')
     except BaseException:
@@ -428,14 +492,23 @@ BUDGET = 'budget.jsonl'
 
 
 def consumed_seconds(root):
-    """Attempt seconds spent by earlier commands; a command without its end record (a killed process)
-    leaves the budget unknown and the attempt cannot continue."""
-    total, open_start = 0., None
-    for row in read_chain(Path(root) / BUDGET):
+    """Attempt seconds spent by earlier commands. Fail closed: a command without its end record (a
+    killed process) leaves the budget unknown; an attempt that already ran a stage needs a nonempty
+    budget history that every stage record is bound to (the command start it ran under) and that is
+    not shorter than the attempt seconds those records hold (missing, empty, truncated or replaced
+    histories refuse; a fresh budget is never granted)."""
+    root = Path(root)
+    rows, attempt = read_chain(root / BUDGET), Attempt(root)
+    stage_rows = attempt.records()
+    if attempt.started() and not rows:
+        raise Refused('the attempt already ran a stage but its budget history is missing or empty', terminal=True)
+    total, open_start, starts = 0., None, set()
+    for row in rows:
         if row['event'] == 'start':
             if open_start is not None:
                 raise Refused('attempt budget unknown: a command has no end record', terminal=True)
             open_start = row
+            starts.add(row['sha256'])
         elif row['event'] == 'end':
             if open_start is None or row.get('start_sha256') != open_start['sha256']:
                 raise IntegrityError('budget.jsonl end record does not close the open command')
@@ -443,6 +516,14 @@ def consumed_seconds(root):
             open_start = None
     if open_start is not None:
         raise Refused('attempt budget unknown: a command has no end record', terminal=True)
+    unbound = [r['stage'] for r in stage_rows if r.get('budget_start_sha256') not in starts]
+    if unbound:
+        raise Refused(f'stage records {unbound} are not bound to a command of budget.jsonl (history truncated or '
+                      'replaced)', terminal=True)
+    recorded = max((float(r.get('attempt_seconds') or 0.) for r in stage_rows), default=0.)
+    if total + 1e-6 < recorded:
+        raise Refused(f'budget history ({total:.1f} s) is shorter than the stage records ({recorded:.1f} s)',
+                      terminal=True)
     return total
 
 
@@ -469,7 +550,12 @@ def read_chain(path):
     if not Path(path).exists():
         return rows
     for seq, line in enumerate(Path(path).read_bytes().splitlines()):
-        row = json.loads(line)
+        try:
+            row = json.loads(line)
+        except ValueError as error:
+            raise IntegrityError(f'{Path(path).name}: unreadable row {seq} (truncated or edited)') from error
+        if not isinstance(row, dict):
+            raise IntegrityError(f'{Path(path).name}: row {seq} is not an object')
         body = {k: v for k, v in row.items() if k != 'sha256'}
         if row.get('seq') != seq or row.get('prev') != prev or sha256_bytes(canonical_bytes(body)) != row.get('sha256'):
             raise IntegrityError(f'{Path(path).name}: chain broken at row {seq}')
@@ -486,16 +572,16 @@ def append_chain(path, body):
     return row
 
 
-def sha256sums(directory):
+def sha256sums(directory, check=None):
     directory = Path(directory)
     files = sorted(p for p in directory.rglob('*') if p.is_file() and p.name != 'SHA256SUMS')
-    return ''.join(f'{sha256_file(p)}  {p.relative_to(directory).as_posix()}\n' for p in files)
+    return ''.join(f'{sha256_file(p, check)}  {p.relative_to(directory).as_posix()}\n' for p in files)
 
 
-def verify_sha256sums(directory):
+def verify_sha256sums(directory, check=None):
     directory = Path(directory)
     listed = (directory / 'SHA256SUMS').read_text() if (directory / 'SHA256SUMS').exists() else None
-    return listed is not None and listed == sha256sums(directory)
+    return listed is not None and listed == sha256sums(directory, check)
 
 
 class StageDir:
@@ -525,9 +611,10 @@ class StageDir:
 
 
 class Attempt:
-    """One attempt directory: numbered stage directories, the stages / addenda / budget chains."""
-    def __init__(self, root):
-        self.root = Path(root)
+    """One attempt directory: numbered stage directories, the stages / addenda / budget / reads chains.
+    ``check`` (the guard) runs inside every verification hash loop."""
+    def __init__(self, root, check=None):
+        self.root, self.check = Path(root), check
 
     def stage_path(self, stage):
         return self.root / f'{reg.STAGES.index(stage):02d}-{stage}'
@@ -558,9 +645,9 @@ class Attempt:
             return False
         path = self.stage_path(stage)
         for name, key in (('stage.json', 'stage_json_sha256'), ('SHA256SUMS', 'sha256sums_sha256')):
-            if not (path / name).is_file() or sha256_file(path / name) != row.get(key):
+            if not (path / name).is_file() or sha256_file(path / name, self.check) != row.get(key):
                 raise IntegrityError(f'stage {stage}: {name} differs from the digest anchored in stages.jsonl')
-        if not verify_sha256sums(path):
+        if not verify_sha256sums(path, self.check):
             raise IntegrityError(f'stage {stage}: files no longer match SHA256SUMS')
         if json.loads((path / 'stage.json').read_text()).get('status') != 'PASS':
             raise IntegrityError(f'stage {stage}: stage.json status differs from the chain')
@@ -647,10 +734,16 @@ class Run:
         self.config, self.destination = config, Path(destination)
         self.config_sha256 = config_content_sha256(config)
         self.source, self.guard, self.commit = source, guard, commit
-        self.attempt = Attempt(self.destination)
+        self.attempt = Attempt(self.destination, check=lambda: self.guard.check('verification'))
         self.gate = Gate(self.attempt)
         self.state = {}
         self._inputs = None
+        self.current_stage = None  # set by execute_stage while a stage runs (the loader refuses otherwise)
+        self.budget_start = None  # sha256 of this command's budget.jsonl start record (launch)
+        self.log = ReadLog(sink=self._persist_read)  # every acquisition, persisted event by event
+
+    def _persist_read(self, event):
+        append_chain(self.destination / 'reads.jsonl', event)
 
     def inputs(self):
         if self._inputs is None:
@@ -658,7 +751,7 @@ class Run:
         return self._inputs
 
     def reads(self, stage):
-        return [] if self._inputs is None else self._inputs.reads(stage)
+        return self.log.for_phase(stage)
 
     def seeds(self):
         return self.config['seeds']
@@ -683,9 +776,11 @@ class Run:
 
 
 def execute_stage(run, stage):
-    """Revalidate the registration, run one stage, write its record, SHA256SUMS and chain entry; any
-    non-PASS status closes the attempt with a non-citable final.json. Returns the status."""
-    run.require_order(stage)
+    """Verify the earlier stages (under the guard), revalidate the registration, run one stage, write
+    its record, SHA256SUMS and chain entry (bound to this command's budget record); any non-PASS
+    status closes the attempt with a non-citable final.json. Returns the status."""
+    run.guard.check(f'{stage}:verification')
+    run.require_order(stage)  # hashes every earlier stage; the guard runs inside each hash loop
     path = run.attempt.stage_path(stage)
     path.mkdir(parents=True, exist_ok=False)
     out = StageDir(path)
@@ -693,12 +788,15 @@ def execute_stage(run, stage):
     status, error, summary, revalidation = 'PASS', None, None, None
     try:
         try:
+            run.current_stage = stage
             revalidation = run.source.revalidate(run, stage)
+            run.guard.check(f'{stage}:revalidation')
             run.guard.start_stage(stage)
             summary = STAGE_FUNCTIONS[stage](run, out)
             run.guard.check(f'{stage}:end')
         finally:
             run.guard.stop_stage()  # disarmed before any record is written
+            run.current_stage = None
     except Abort as abort:
         status, error = 'ABORTED', {'reason': abort.reason, 'where': abort.where}
     except KeyboardInterrupt:
@@ -715,13 +813,16 @@ def execute_stage(run, stage):
               'peak_rss_bytes': run.guard.rss(), 'seeds': run.seeds(), 'config_sha256': run.config_sha256,
               'git_commit': run.commit, 'summary': summary, 'error': error, 'warnings': list(run.guard.warnings),
               'citable': status == 'PASS', 'revalidation': revalidation, 'reads': run.reads(stage),
-              'environment': environment()}
+              'read_summary': run.log.summary([stage]), 'environment': environment()}
+    attempt_seconds = run.guard.consumed + run.guard.elapsed()
+    record['budget'] = {'command_start_sha256': run.budget_start, 'attempt_seconds_at_end': attempt_seconds}
     run.guard.warnings.clear()
     out.json('stage.json', record)
     out.text('SHA256SUMS', sha256sums(path))
     append_chain(run.attempt.root / 'stages.jsonl',
                  {'stage': stage, 'status': status, 'stage_json_sha256': sha256_file(path / 'stage.json'),
-                  'sha256sums_sha256': sha256_file(path / 'SHA256SUMS')})
+                  'sha256sums_sha256': sha256_file(path / 'SHA256SUMS'), 'budget_start_sha256': run.budget_start,
+                  'attempt_seconds': attempt_seconds})
     if status != 'PASS':
         write_final(run.attempt.root, outcome=status, stage=stage, reason=error, config_sha256=run.config_sha256)
     return status
@@ -814,10 +915,16 @@ def load_arrays(root, manifest, prefix, names):
 # ---------------------------------------------------------------- stages
 
 def stage_smoke(run, out):
-    """First registered step: TRAIN rows only (row groups ending on or before 2025-04-30), cost and
-    integrity (wall time, RSS, determinism, hashes). No metric is computed or read."""
+    """First registered step: TRAIN rows only (row groups lying wholly on or before 2025-04-30), cost
+    and integrity (wall time, RSS, determinism, hashes, the split-aligned processed layout). No metric
+    is computed or read."""
     inputs = run.inputs()
     spec = run.config['runner']['smoke']
+    layout = inputs.layout()  # footer statistics only; refuse before any decode when not split-aligned
+    out.json('layout.json', layout)
+    if not layout['split_aligned']:
+        raise IntegrityError(f'processed row-group layout is not split-aligned (physically safe acquisition '
+                             f'impossible): {layout["problems"]}')
     train = inputs.smoke_frame('smoke')
     masks = population_masks(train, hands=inputs.hands, repertoire=inputs.b0.repertoire)
     plus = np.flatnonzero(masks['P_plus'])
@@ -827,7 +934,7 @@ def stage_smoke(run, out):
     part = train.iloc[:plus[n - 1] + 1]
     timings = {}
     t = time.perf_counter()
-    raw = inputs.raw_keys('smoke', part.game_pk.unique(), max_date=TRAIN_END)
+    raw = inputs.raw_keys('smoke', part.game_pk.unique(), upper=TRAIN_END)
     ctx = feature_context(run, part, train, raw)
     table, info, _, oof_models = split_table(part, 'train', ctx, oof=oof_spec(run.config))
     timings['features_seconds'] = time.perf_counter() - t
@@ -865,12 +972,14 @@ def stage_smoke(run, out):
     atol = run.config['ope_weight_diagnostics']['integrity_gates']['R1b_atol']
     pinned_b0 = run.config['data']['b0_artifact']['file_sha256']
     after_train = inputs.log.rows_at_or_after(SINCE_AFTER_TRAIN, guarded_only=False, phases=['smoke'])
-    checks = {'processed_bytes_unchanged': inputs.verify_unchanged(),
+    checks = {'processed_layout_split_aligned': layout['split_aligned'],
+              'processed_bytes_unchanged': inputs.verify_unchanged(),
               'b0_artifact_sha256_pinned': inputs.identity['b0']['file_sha256'] == pinned_b0,
               'vector_b0_equals_categorical_bc_on_train': r1b_train is not None and r1b_train <= atol,
               'b1_at_b0_setting_equals_b0_recipe': b1_equals_b0 <= atol,
               'b2_deterministic': deterministic, 'no_2026_row': guard_dates(train) is train,
               'no_row_after_train_end_decoded': after_train == 0,
+              'no_dev_bearing_guarded_chunk_read': inputs.log.dev_bearing_guarded_reads() == 0,
               'dev_guarded_rows_decoded': inputs.log.rows_at_or_after(SINCE_DEV, guarded_only=True) == 0}
     record = {'rows': {'train_rows_read': int(len(train)), 'train_slice_rows': int(len(part)),
                        'train_P_plus_rows': int(len(table)), 'state_checks': int(len(rows))},
@@ -878,7 +987,8 @@ def stage_smoke(run, out):
               'max_abs_diff': {'vector_vs_categorical': r1b_train, 'b1_b0_setting_vs_vector_fit': b1_equals_b0},
               'checks': checks, 'feature_matrix_sha256': sha256_bytes(features.tobytes()),
               'oof_models_sha256': [arrays_sha256(m.arrays()) for m in oof_models],
-              'rows_decoded_after_train_end': after_train, 'metrics_computed': None,
+              'rows_decoded_after_train_end': after_train, 'read_summary': inputs.log.summary(['smoke']),
+              'metrics_computed': None,
               'note': 'cost and integrity only; no comparison metric computed or read'}
     out.json('smoke.json', record)
     if not all(checks.values()):
@@ -892,9 +1002,9 @@ def stage_smoke(run, out):
 def stage_census(run, out):
     inputs = run.inputs()
     counts = census_counts(inputs.census_view('census'), hands=inputs.hands, repertoire=inputs.b0.repertoire)
-    guarded = [e for e in inputs.reads('census') if e['guarded']]
+    guarded = [e for e in inputs.log.reads(['census']) if e['guarded']]
     if guarded:
-        raise IntegrityError('the census decoded a guarded column')
+        raise IntegrityError('the census read a guarded column chunk')
     out.json('census.json', counts)
     return {'splits': {k: v['rows'] for k, v in counts['splits'].items()}, 'guarded_reads': 0}
 
@@ -1008,19 +1118,25 @@ def stage_freeze_primary(run, out):
         'train_volume': {'files': 'train_volume.json', 'input_rows': {'split': 'train', 'dates': date_range(train)}}}
     latest = max(d[1] for d in collect_dates(groups) if d)
     inputs.verify_unchanged()
+    # zero DEV decode, from the reader's own pyarrow-level log: no guarded column chunk of a DEV-bearing
+    # row group was passed to pyarrow (whatever it would have returned), and no DEV guarded row came back
+    dev_chunks = inputs.log.dev_bearing_guarded_reads()
     dev_guarded = inputs.log.rows_at_or_after(SINCE_DEV, guarded_only=True)
     extra = {'config_sha256': run.config_sha256, 'git_commit': run.commit, 'seeds': run.seeds(),
              'inputs': inputs.identity, 'latest_input_row_date': latest,
              'inputs_on_or_before_2025_05_31': latest <= reg.STYLE_INPUT_FILTER['end'],
-             'reads': inputs.reads(), 'dev_guarded_rows_decoded': dev_guarded,
+             'reads': inputs.reads(), 'read_summary': inputs.log.summary(),
+             'dev_bearing_guarded_chunks_read': dev_chunks, 'dev_guarded_rows_decoded': dev_guarded,
              'calibration_status': {k: v['status'] for k, v in run.state['calibration'].items()}}
-    if dev_guarded or inputs.released is not None or not extra['inputs_on_or_before_2025_05_31']:
-        raise IntegrityError('freeze-primary needs inputs <= 2025-05-31 and no DEV guarded row decoded (read log)')
+    if dev_chunks or dev_guarded or inputs.released is not None or not extra['inputs_on_or_before_2025_05_31']:
+        raise IntegrityError('freeze-primary needs inputs <= 2025-05-31 and no guarded chunk of a DEV-bearing row '
+                             'group read (pyarrow-level read log)')
     manifest = build_manifest(root, files, name='freeze-primary', groups=groups, extra=extra)
     data = canonical_bytes(manifest)
     (out.path / 'manifest.json').write_bytes(data)
     append_chain(root / 'addenda.jsonl', {'addendum': 'freeze-primary', 'manifest_sha256': sha256_bytes(data),
-                                          'latest_input_row_date': latest, 'dev_guarded_rows_decoded': dev_guarded})
+                                          'latest_input_row_date': latest, 'dev_guarded_rows_decoded': dev_guarded,
+                                          'dev_bearing_guarded_chunks_read': dev_chunks})
     reloaded = reload_primary(run, manifest)
     temp, rows = run.state['temp_table'], run.state['temp_rows']
     roundtrip = {name: float(np.abs(reloaded[name].batch(temp, rows) - run.state[key].batch(temp, rows)).max())
@@ -1030,7 +1146,7 @@ def stage_freeze_primary(run, out):
     run.state.update(manifest_primary=manifest, b1=reloaded['B1'], b2=reloaded['B2'],
                      calibrated=reloaded['calibrated'])
     return {'manifest_sha256': sha256_bytes(data), 'artifacts': len(manifest['artifacts']), 'roundtrip_max_abs': roundtrip,
-            'dev_guarded_rows_decoded': dev_guarded}
+            'dev_guarded_rows_decoded': dev_guarded, 'dev_bearing_guarded_chunks_read': dev_chunks}
 
 
 def reload_primary(run, manifest):
@@ -1058,6 +1174,9 @@ def stage_s6_integrity(run, out):
     run.gate.require_pinned('freeze-primary', 's6-integrity')
     inputs, config = run.inputs(), run.config
     ledger = inputs.ledger
+    for name, what in ((ledger['path'], 'S6 ledger (sha256, then the allowlisted scan)'),
+                       (ledger['manifest_path'], 'S6 manifest (sha256)')):
+        inputs.log.note(kind='open', phase='s6-integrity', file=str(name), what=what)
     header, decisions, record = read_ledger(ledger['path'], manifest_path=ledger['manifest_path'],
                                             ledger_sha256=ledger['ledger_sha256'],
                                             manifest_sha256=ledger['manifest_sha256'],
@@ -1378,7 +1497,7 @@ STAGE_FUNCTIONS = {'smoke': stage_smoke, 'census': stage_census, 'fit': stage_fi
 
 # ---------------------------------------------------------------- real inputs (only after the gate)
 
-def verify_processed_identity(local, parent, pinned_sha256):
+def verify_processed_identity(local, parent, pinned_sha256, opened=lambda name, what: None):
     """matrix_data.load_verified_processed_cache identity checks WITHOUT decoding any row: the frozen
     manifests, raw-byte sha256 of the processed parquet and the physics sidecar (never decoded), and
     equality with the G0 parent preparation's dataset identity and source provenance."""
@@ -1387,7 +1506,9 @@ def verify_processed_identity(local, parent, pinned_sha256):
     if local.get('raw_allowlist') != RAW_ALLOWLIST:
         raise IntegrityError('configured raw allowlist differs from the approved 2023-25 sources')
     root = Path(local['artifact_root'])
+    opened(root / 'reports/data_quality.json', 'frozen quality manifest (json)')
     quality = json.loads((root / 'reports/data_quality.json').read_text())
+    opened(root / 'cache/sequence_physics.json', 'frozen physics cache manifest (json)')
     metadata = json.loads((root / 'cache/sequence_physics.json').read_text())
     sources = quality.get('sources')
     if (not isinstance(sources, list) or [s.get('file') for s in sources] != RAW_ALLOWLIST
@@ -1399,6 +1520,8 @@ def verify_processed_identity(local, parent, pinned_sha256):
     if metadata.get('identity') != expected:
         raise IntegrityError('physics cache identity differs from the frozen quality manifest')
     processed, cache = root / 'processed/pitches.parquet', root / 'cache/sequence_physics.parquet'
+    opened(processed, 'sha256 of the processed parquet bytes (no decode)')
+    opened(cache, 'sha256 of the physics sidecar bytes (never decoded)')
     if quality['processed_sha256'] != pinned_sha256 or hash_file(processed) != pinned_sha256 \
             or hash_file(cache) != metadata.get('sha256'):
         raise IntegrityError('processed or physics cache bytes differ from their pins')
@@ -1414,7 +1537,9 @@ def verify_processed_identity(local, parent, pinned_sha256):
 
 
 class RealSource:
-    """Pinned real inputs; the registration gate is re-run before every stage (``revalidate``)."""
+    """Pinned real inputs. Defense in depth: besides the per-stage revalidation, ``open`` itself refuses
+    unless it is called inside an executing stage of an open attempt and the registration gate passes
+    again, before any data or artifact file is opened; every file it opens is logged first."""
     def __init__(self, config, local, config_path, env):
         self.config, self.local, self.config_path, self.env = config, local, Path(config_path), env
 
@@ -1425,24 +1550,40 @@ class RealSource:
                           runner_sha256=self.env.runner_sha256())
         return {'stage': stage, 'registration_gate': 'PASS', 'dependencies': self.env.native_check()}
 
+    def check_stage_state(self, run):
+        stage = getattr(run, 'current_stage', None)
+        attempt = getattr(run, 'attempt', None)
+        if stage not in reg.STAGES or attempt is None or attempt.closed() or not attempt.stage_path(stage).is_dir() \
+                or (attempt.stage_path(stage) / 'stage.json').exists():
+            raise Refused('the loader opens files only inside an executing stage of an open attempt', terminal=True)
+        return stage
+
     def open(self, run):
+        stage = self.check_stage_state(run)  # loader-level gate: no file is opened before these pass
+        self.revalidate(run, f'loader:{stage}')
         from pitchmdp.policy_artifacts import load_hand_registry, load_support_table
         from pitchmdp.policy_identity import pinned_json, pinned_pickle
-        config, pins, local = self.config, reg.DATA_PINS, self.local
+        config, pins, local, log = self.config, reg.DATA_PINS, self.local, run.log
+        opened = lambda name, what: log.note(kind='open', phase=stage, file=str(name), what=what)
+        opened(REPO / 'configs' / 'G0-RESEARCH-FROZEN-v1.json', 'pinned G0 bundle (json)')
         bundle = pinned_json(REPO / 'configs' / 'G0-RESEARCH-FROZEN-v1.json', pins['g0_bundle_sha256'])
         files = bundle['files']
+        opened(files['p4_parent_preparation']['path'], 'pinned parent preparation (json)')
         parent = pinned_json(files['p4_parent_preparation']['path'], files['p4_parent_preparation']['sha256'])
-        processed, identity_record = verify_processed_identity(local, parent, pins['processed_sha256'])
-        log = ReadLog()
-        reader = ProcessedReader(processed, sha256=pins['processed_sha256'], log=log,
-                                 margin=config['runner']['read_policy']['prefix_margin_rows'])
+        processed, identity_record = verify_processed_identity(local, parent, pins['processed_sha256'],
+                                                               opened=opened)
+        reader = ProcessedReader(processed, sha256=pins['processed_sha256'], log=log, phase=stage)
         if reader.rows != identity_record['rows']:
             raise IntegrityError('processed row count differs from the frozen quality manifest')
+        opened(files['p4_auxiliary']['path'], 'pinned G0 auxiliary (frozen archetypes)')
         aux = pinned_pickle(files['p4_auxiliary']['path'], files['p4_auxiliary']['sha256'])
         artifact = config['data']['b0_artifact']
+        opened(artifact['path'], 'registered BC_P artifact (B0)')
         b0 = RegisteredBC.load(artifact['path'], artifact['file_sha256'])
+        opened(artifact['support_table_path'], 'BC_P support table')
         support, support_content = load_support_table(artifact['support_table_path'], artifact['support_table_sha256'],
                                                       b0.artifact)
+        opened(artifact['hands_path'], 'BC_P hand registry')
         hands, hands_content = load_hand_registry(artifact['hands_path'], artifact['hands_sha256'], b0.artifact)
         if list(local['raw_allowlist']) != list(pins['raw_sha256']):
             raise IntegrityError('raw allowlist must be exactly the pinned 2023-2025 Statcast files')
@@ -1576,12 +1717,16 @@ def launch(config_path, local_config_path, destination, command, env=None):
                               'files': list(PREFLIGHT_TESTS),
                               'switches': {k: child_env.get(k) for k in PREFLIGHT_OVERRIDES},
                               'summary': (tests['stdout'].strip().splitlines() or [''])[-1]},
+                    'memory_rule': 'runner peak RSS + current RSS of the supervised child tree <= the registered cap',
+                    'peak_child_tree_rss_bytes': {'memory_probe': probe['peak_tree_rss_bytes'],
+                                                  'preflight': tests['peak_tree_rss_bytes']},
                     'free_share': share, 'git': git, 'dependencies': dependencies, 'native_runtime': environment()})
                 if tests['returncode'] != 0:
                     raise Refused('synthetic/leakage tests failed; no real-data stage runs', terminal=True)
                 local = json.loads(Path(local_config_path).read_bytes()) if Path(local_config_path).exists() else {}
                 run = Run(config, destination=dest, source=env.source_factory(config, local, config_path, env),
                           guard=guard, commit=git['head'])
+                run.budget_start = start['sha256']  # every stage record of this command is bound to it
                 for stage in ('smoke',) if command == 'smoke' else reg.STAGES[1:]:
                     status = execute_stage(run, stage)  # a non-PASS stage writes final.json itself
                     print(json.dumps({'stage': stage, 'status': status}), flush=True)

@@ -52,7 +52,10 @@ def test_registered_preflight_passes_and_the_smoke_runs(tmp_path, monkeypatch):
     failed = [name for name, ok in smoke['checks'].items() if not ok]
     assert failed == ['b0_artifact_sha256_pinned']  # the synthetic B0 is not the registered BC_P
     assert smoke['rows_decoded_after_train_end'] == 0 and smoke['metrics_computed'] is None
-    assert record['reads'] and all(e['rows_at_or_after']['2025-05-01'] == 0 for e in record['reads'])
+    reads = [e for e in record['reads'] if e['kind'] == 'read']
+    assert reads and all(e['rows_at_or_after']['2025-05-01'] == 0 and not e['dev_bearing'] for e in reads)
+    assert json.loads((runner.Attempt(destination).stage_path('smoke') / 'layout.json').read_text())['split_aligned']
+    assert preflight['peak_child_tree_rss_bytes']['preflight'] > 0
     final = json.loads((destination / 'final.json').read_text())
     assert final['label'] == 'FAILED_INTEGRITY' and final['citable'] is False
     assert [r['event'] for r in runner.read_chain(destination / runner.BUDGET)] == ['start', 'end']

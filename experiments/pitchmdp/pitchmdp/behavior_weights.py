@@ -6,9 +6,10 @@ operation), the header and every decision row carry the pinned runtime identity,
 read by a key-by-key scanner: only the registered allowlist is decoded (header: kind,
 runtime_sha256, pins; decisions: identity/state fields and result.{mask, logging, reference,
 candidate, logged_index, rho_reference, rho_candidate}); the value of every other member
-(``q_*``, ``mc_se``, fingerprints, details, ...) is skipped by the scanner and never decoded into a
-Python object. ``pa_values.parquet``, ``dr.json`` or any other path is refused. Rewards are never
-read.
+(``q_*``, ``mc_se``, fingerprints, details, ...) is validated against the JSON grammar and skipped,
+never decoded into a Python object. A malformed line (bad string, escape, number, literal or
+bracket structure), a duplicate member or a non-UTF-8 line refuses the ledger. ``pa_values.parquet``,
+``dr.json`` or any other path is refused. Rewards are never read.
 
 E0 is rebuilt from each PA's first row with ``PolicyRuntime.start_population`` itself (borrowed,
 not copied). Weights follow the L1-R rule of policy_estimator (``affine`` unrolled):
@@ -44,9 +45,11 @@ ALLOWED_RESULT = ('mask', 'logging', 'reference', 'candidate', 'logged_index', '
 FORBIDDEN_FILES = ('pa_values.parquet', 'dr.json')
 HEADER_SCHEMA = {'kind': None, **{k: None for k in ALLOWED_HEADER}}
 DECISION_SCHEMA = {**{k: None for k in ALLOWED_DECISION}, 'result': {k: None for k in ALLOWED_RESULT}}
-PARSING_DISCLOSURE = ('ledger lines are scanned key by key: allowlisted values are decoded (json raw_decode); the '
-                      'value of every other member is skipped by the scanner and never decoded into a Python object; '
-                      'the file bytes are sha256-hashed before and after reading as a separate authorized operation')
+PARSING_DISCLOSURE = ('ledger lines are scanned key by key: allowlisted values are decoded (strict json raw_decode, '
+                      'NaN / Infinity refused); the value of every other member is validated against the JSON grammar '
+                      'and skipped, never decoded into a Python object; a malformed or non-UTF-8 line or a duplicate '
+                      'member refuses the ledger (FAILED_INTEGRITY); the file bytes are sha256-hashed before and after '
+                      'reading as a separate authorized operation')
 
 
 class LedgerRefused(IntegrityError):
@@ -63,72 +66,107 @@ def file_sha256(path):
 
 # ---------------------------------------------------------------- allowlist scanner
 
-_DECODER = json.JSONDecoder()
+def _reject_constant(name):
+    raise IntegrityError(f'non-JSON constant {name} in a ledger line')
+
+
+_DECODER = json.JSONDecoder(parse_constant=_reject_constant)  # strict JSON: NaN / Infinity refused
 _WS = re.compile(r'[ \t\n\r]*')
-_STRING = re.compile(r'"(?:[^"\\]|\\.)*"', re.S)
-_STRUCTURE = re.compile(r'[\[\]{}"]')
-_SCALAR = re.compile(r'[^,\]}\s]+')
+_STRING = re.compile(r'"(?:[^"\\\x00-\x1f]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*"')
+_NUMBER = re.compile(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?')
+_LITERALS = ('true', 'false', 'null')
+_SCALAR_END = ' \t\n\r,]}'
+MAX_DEPTH = 64
 
 
 def _ws(text, i):
     return _WS.match(text, i).end()
 
 
-def _skip(text, i):
-    """Index just past the JSON value starting at ``text[i]``; nothing is decoded."""
+def _boundary(text, end):
+    if end < len(text) and text[end] not in _SCALAR_END:
+        raise IntegrityError('invalid JSON scalar in a ledger line')
+    return end
+
+
+def _skip(text, i, depth=0):
+    """Index just past the JSON value starting at ``text[i]``. The value is validated against the JSON
+    grammar (strict strings and escapes, numbers, true / false / null, matched arrays and objects with
+    commas and colons) but nothing is decoded into a Python object."""
+    if depth > MAX_DEPTH:
+        raise IntegrityError('ledger value nested too deeply')
     first = text[i] if i < len(text) else ''
     if first == '"':
         match = _STRING.match(text, i)
         if match is None:
-            raise IntegrityError('unterminated JSON string in a ledger line')
+            raise IntegrityError('invalid JSON string in a ledger line')
         return match.end()
     if first in '[{':
-        depth, j = 0, i
+        close, i = (']' if first == '[' else '}'), _ws(text, i + 1)
+        if text.startswith(close, i):
+            return i + 1
         while True:
-            match = _STRUCTURE.search(text, j)
-            if match is None:
-                raise IntegrityError('truncated JSON value in a ledger line')
-            char = match.group()
-            if char == '"':
-                string = _STRING.match(text, match.start())
-                if string is None:
-                    raise IntegrityError('unterminated JSON string in a ledger line')
-                j = string.end()
+            if first == '{':
+                if not text.startswith('"', i):
+                    raise IntegrityError('expected a member name in a ledger object')
+                i = _ws(text, _skip(text, i, depth + 1))
+                if not text.startswith(':', i):
+                    raise IntegrityError("expected ':' in a ledger object")
+                i = _ws(text, i + 1)
+            i = _ws(text, _skip(text, i, depth + 1))
+            if text.startswith(',', i):
+                i = _ws(text, i + 1)
                 continue
-            depth += 1 if char in '[{' else -1
-            j = match.end()
-            if depth == 0:
-                return j
-    match = _SCALAR.match(text, i)
+            if text.startswith(close, i):
+                return i + 1
+            raise IntegrityError(f"expected ',' or '{close}' in a ledger line")
+    for literal in _LITERALS:
+        if text.startswith(literal, i):
+            return _boundary(text, i + len(literal))
+    match = _NUMBER.match(text, i)
     if match is None:
-        raise IntegrityError('malformed JSON value in a ledger line')
-    return match.end()
+        raise IntegrityError('invalid JSON value in a ledger line')
+    return _boundary(text, match.end())
+
+
+def _decode(text, i):
+    try:
+        return _DECODER.raw_decode(text, i)
+    except ValueError as error:
+        raise IntegrityError(f'malformed allowlisted JSON value in a ledger line: {error}') from error
 
 
 def scan_object(text, i, schema, skipped):
     """Decode only the members of the JSON object at ``text[i]`` named in ``schema`` (None = decode
     the value; a dict = scan the nested object with that schema); every other member's value is
-    skipped unread and its name counted in ``skipped``. Returns (object, end index)."""
+    validated and skipped unread and its name counted in ``skipped``. Any grammar error or duplicate
+    member raises IntegrityError (the ledger is refused). Returns (object, end index)."""
     i = _ws(text, i)
     if not text.startswith('{', i):
         raise IntegrityError('expected a JSON object in a ledger line')
     i = _ws(text, i + 1)
-    out = {}
+    out, seen = {}, set()
     if text.startswith('}', i):
         return out, i + 1
     while True:
         if not text.startswith('"', i):
             raise IntegrityError('expected a member name in a ledger line')
-        key, i = scanstring(text, i + 1)
+        try:
+            key, i = scanstring(text, i + 1)
+        except ValueError as error:
+            raise IntegrityError(f'malformed member name in a ledger line: {error}') from error
+        if key in seen:
+            raise IntegrityError(f'duplicate member {key!r} in a ledger line')
+        seen.add(key)
         i = _ws(text, i)
         if not text.startswith(':', i):
             raise IntegrityError("expected ':' in a ledger line")
         i = _ws(text, i + 1)
         if key in schema and schema[key] is None:
-            out[key], i = _DECODER.raw_decode(text, i)
+            out[key], i = _decode(text, i)
         elif key in schema:
             if text.startswith('null', i):
-                out[key], i = None, i + 4
+                out[key], i = None, _boundary(text, i + 4)
             else:
                 out[key], i = scan_object(text, i, schema[key], skipped)
         else:
@@ -144,7 +182,10 @@ def scan_object(text, i, schema, skipped):
 
 
 def scan_line(line, schema, skipped):
-    text = line.decode('utf-8') if isinstance(line, bytes) else line
+    try:
+        text = line.decode('utf-8') if isinstance(line, bytes) else line
+    except UnicodeDecodeError as error:
+        raise IntegrityError('a ledger line is not UTF-8') from error
     row, end = scan_object(text, 0, schema, skipped)
     if text[_ws(text, end):]:
         raise IntegrityError('trailing data after a ledger row')

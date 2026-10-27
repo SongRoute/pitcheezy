@@ -120,16 +120,25 @@ FREE_COLUMNS = ('game_pk', 'at_bat_number', 'pitch_number', 'game_date', 'game_t
                 'away_score')
 GUARDED_COLUMNS = ('pitch_type', 'description', 'events', 'is_pa_terminal', 'launch_angle')
 READ_POLICY = {'free_columns': list(FREE_COLUMNS), 'guarded_columns': list(GUARDED_COLUMNS),
-               'smoke': 'free + guarded columns of processed row groups whose game_date maximum <= 2025-04-30 only',
-               'census': 'free columns only (no guarded column is decoded)',
-               'pre_gate_limit': '2025-05-31',
-               'pre_gate': 'guarded columns decoded per row group only up to its last row dated <= 2025-05-31 '
-                           '(pyarrow iter_batches with batch_size = that prefix); row groups must be date-sorted',
-               'prefix_margin_rows': 65536,
-               'after_gate': 'guarded columns of row groups holding DEV rows only after freeze-primary is pinned '
+               'row_groups': 'chosen from footer game_date statistics: a row group wholly outside the phase window is '
+                             'skipped (never read); a straddling row group is read and its out-of-window rows are '
+                             'dropped and counted in the stage record (decoded-then-dropped; straddling row groups '
+                             'only)',
+               'smoke': 'free + guarded columns of the row groups lying wholly on or before 2025-04-30',
+               'census': 'free columns only (no guarded column is read)',
+               'pre_gate_window': ['2023-05-15', '2025-05-31'],
+               'pre_gate': 'guarded columns of the row groups overlapping the pre-gate window; a DEV-bearing row '
+                           'group (game_date maximum on or after 2025-07-01, or no statistics) is refused before '
+                           'pyarrow is called (physically safe acquisition); the smoke fails when the layout is not '
+                           'split-aligned',
+               'after_gate': 'guarded columns of the row groups overlapping DEV, only after freeze-primary is pinned '
                              'and s6-integrity passed',
                'raw_keys': 'raw Statcast files: game_date, game_pk, at_bat_number, pitch_number, pitcher only '
-                           '(workload); the smoke decodes only raw row groups whose game_date maximum <= 2025-04-30'}
+                           '(workload); the smoke reads only raw row groups lying wholly on or before 2025-04-30',
+               'footer': 'pyarrow parses each file footer (metadata and statistics of every column chunk) on open; '
+                         'only game_date statistics and row counts are used',
+               'log': 'every acquisition is logged before pyarrow is called and completed after (rows decoded, kept, '
+                      'dropped, validation) in the hash-chained reads.jsonl and in the stage record'}
 
 # Registration pins: immutable schema (the config list cannot weaken it). kind -> format check.
 REGISTRATION_PIN_SCHEMA = (('registration.registered_kst', 'kst_datetime'),
@@ -171,12 +180,19 @@ IMPLEMENTATION_CHOICES = {
                      'registration.addenda_records removed',
     'previous_keys': 'every count table keeps its own sorted previous-label vocabulary; a label absent from it '
                      'matches no cell (CategoricalBC raw-string semantics)',
-    'read_policy': 'stage-specific acquisition (READ_POLICY); rows dated before 2023-05-15 that share a row group '
-                   'with TRAIN rows are decoded and dropped (recorded in the read log)',
-    'ledger_parsing': 'S6 ledger lines are scanned key by key: allowlisted values are decoded, every other value '
-                      'is skipped by the scanner and never decoded into a Python object',
+    'read_policy': 'stage-specific acquisition (READ_POLICY): wholly excluded row groups are skipped from footer '
+                   'statistics; rows outside the phase window that share a straddling row group with in-window rows '
+                   'are decoded and dropped, counted per stage (rows_decoded_then_dropped); guarded columns of a '
+                   'DEV-bearing row group are never read before the gate',
+    'ledger_parsing': 'S6 ledger lines are scanned key by key: allowlisted values are decoded, every other value is '
+                      'validated against the JSON grammar and skipped without being decoded into a Python object; a '
+                      'malformed line refuses the ledger',
     'attempt_budget': 'the 14,400 s total covers the whole attempt from the smoke command through decide '
-                      '(budget.jsonl); preflight and the memory probe are supervised under the same deadline',
+                      '(budget.jsonl, bound to every stage record); a missing, empty or truncated history of a '
+                      'started attempt refuses; preflight and the memory probe are supervised under the same deadline',
+    'memory_rule': 'the 10 GiB RSS cap applies to the runner peak RSS (getrusage) plus the current RSS of every '
+                   'process in the supervised child tree (ps, polled every 0.5 s); the peak child-tree RSS is '
+                   'recorded',
 }
 
 

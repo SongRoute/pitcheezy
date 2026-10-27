@@ -499,6 +499,130 @@ def test_launch_gate_failure_on_a_running_attempt_is_terminal_and_busy_lock_is_n
     assert final['label'] == 'REFUSED' and 'uncommitted' in final['reason']
 
 
+@pytest.mark.parametrize('damage', ['missing', 'empty', 'cut', 'torn', 'replaced', 'shortened'])
+def test_a_started_attempt_needs_its_bound_budget_history(tmp_path, draft, monkeypatch, damage):
+    """Review round 2, #5: after a passed smoke, a missing, empty, cut, torn, replaced or shortened
+    budget history refuses (fail closed); a fresh 14,400 s budget is never granted."""
+    path, destination = write_registered(tmp_path, draft)
+    clock = Clock()
+    stub_all(monkeypatch, clock, seconds=100.)
+    assert runner.launch(path, tmp_path / 'local.json', destination, 'smoke', launch_env(clock=clock)) == 0
+    budget = destination / runner.BUDGET
+    lines = budget.read_bytes().splitlines()
+    if damage == 'missing':
+        budget.unlink()
+    elif damage == 'empty':
+        budget.write_bytes(b'')
+    elif damage == 'cut':
+        budget.write_bytes(lines[0] + b'\n')  # the end record is gone
+    elif damage == 'torn':
+        budget.write_bytes(lines[0] + b'\n' + lines[1][:len(lines[1]) // 2] + b'\n')
+    elif damage == 'replaced':  # a valid chain, but not the one the stage records are bound to
+        budget.unlink()
+        start = runner.begin_command(destination, 'smoke', 0.)
+        runner.end_command(destination, start, 100.)
+    else:  # the same start record, a forged shorter end record
+        budget.unlink()
+        start = runner.append_chain(budget, {k: v for k, v in json.loads(lines[0]).items()
+                                             if k not in ('seq', 'prev', 'sha256')})
+        runner.end_command(destination, start, 1.)
+    code = runner.launch(path, tmp_path / 'local.json', destination, 'run', launch_env(clock=clock))
+    assert code == 2 and not runner.Attempt(destination).stage_path('census').exists()
+    final = json.loads((destination / 'final.json').read_text())
+    assert final['label'] in ('REFUSED', 'FAILED_INTEGRITY') and final['citable'] is False
+    assert any(word in final['reason'] for word in ('budget', 'chain', 'unreadable', 'end record', 'bound'))
+
+
+def test_stage_records_are_bound_to_the_command_budget(tmp_path, draft, monkeypatch):
+    path, destination = write_registered(tmp_path, draft)
+    stub_all(monkeypatch)
+    assert runner.launch(path, tmp_path / 'local.json', destination, 'smoke', launch_env()) == 0
+    start = runner.read_chain(destination / runner.BUDGET)[0]
+    row = runner.Attempt(destination).record('smoke')
+    assert row['budget_start_sha256'] == start['sha256'] and row['attempt_seconds'] >= 0
+    record = json.loads((runner.Attempt(destination).stage_path('smoke') / 'stage.json').read_text())
+    assert record['budget']['command_start_sha256'] == start['sha256'] and 'read_summary' in record
+
+
+def test_loader_gate_opens_no_file_for_a_draft_or_changed_config(tmp_path, draft, monkeypatch):
+    """Review round 2, #4: the real loader re-checks the stage state and the registration itself;
+    called directly, it opens no data or artifact file (only the config is read by the gate)."""
+    import builtins
+    import io
+    opened = []
+    real_open = io.open
+
+    def spy_open(file, *args, **kwargs):
+        opened.append(str(file))
+        return real_open(file, *args, **kwargs)
+
+    def loader_for(config):
+        path = tmp_path / f'config-{len(opened)}-{config["status"]}.json'
+        path.write_text(json.dumps(config))
+        source = runner.RealSource(config, {'artifact_root': str(tmp_path / 'nowhere'), 'raw_root': str(tmp_path),
+                                            'raw_allowlist': []}, path, launch_env())
+        run = make_run(tmp_path / f'run-{len(opened)}-{config["status"]}', config, source=source)
+        return run, path
+
+    run, path = loader_for(draft)
+    monkeypatch.setattr(io, 'open', spy_open)
+    monkeypatch.setattr(builtins, 'open', spy_open)
+    with pytest.raises(runner.Refused, match='inside an executing stage'):
+        run.inputs()  # not inside a stage: refused before anything is read
+    assert opened == []
+    run.current_stage = 'smoke'
+    run.attempt.stage_path('smoke').mkdir()
+    with pytest.raises(runner.Refused, match='not REGISTERED'):
+        run.inputs()
+    assert set(opened) == {str(path)}
+    good = registered(draft)
+    run, path = loader_for(good)
+    run.current_stage = 'smoke'
+    run.attempt.stage_path('smoke').mkdir()
+    path.write_text(json.dumps({**good, 'execute': False}))  # changed on disk after the command started
+    opened.clear()
+    with pytest.raises(runner.Refused, match='config file changed'):
+        run.inputs()
+    assert set(opened) == {str(path)} and run.log.entries == []
+
+
+def test_the_memory_rule_counts_the_supervised_child_tree(tmp_path):
+    """Review round 2, #11: RSS of the child tree (a grandchild in its own session included) counts
+    against the registered cap together with the runner's own peak; the whole owned tree is stopped."""
+    pid_file = tmp_path / 'grandchild.pid'
+    hog = (f'import os, time; open({str(pid_file)!r}, "w").write(str(os.getpid())); data = b"x" * (160 << 20); '
+           'time.sleep(60)')
+    child = [sys.executable, '-c', 'import subprocess, sys, time; '
+             f'subprocess.Popen([sys.executable, "-c", {hog!r}], start_new_session=True); time.sleep(60)']
+    caps = {**reg.CAPS, 'abort_rss_bytes': runner.peak_rss_bytes() + (96 << 20)}
+    guard = runner.Guard(caps, reg.PROTECTION_WINDOW_KST, now=lambda: AFTERNOON, alarm=False)
+    guard.start_run()
+    assert guard.rss() <= guard.rss_cap  # the runner alone is under the cap
+    with pytest.raises(runner.Abort, match='RSS_CAP') as error:
+        runner.supervised(child, guard, timeout=60, where='preflight', poll=0.2)
+    assert 'child tree' in error.value.where
+    pid = int(pid_file.read_text())
+    for _ in range(100):
+        if not runner._alive(pid):
+            break
+        time.sleep(0.05)
+    assert not runner._alive(pid)  # the grandchild (own session) was stopped too
+    tree = runner.process_tree_rss(os.getpid())
+    assert tree and os.getpid() in tree and all(v >= 0 for v in tree.values())
+
+
+def test_inter_stage_verification_runs_under_the_window_guard(tmp_path, draft, monkeypatch):
+    """Review round 2, #12: hashing earlier stages checks the guard inside its loops."""
+    run = make_run(tmp_path, draft)
+    monkeypatch.setitem(runner.STAGE_FUNCTIONS, 'smoke', stub(artifact='smoke.json'))
+    assert runner.execute_stage(run, 'smoke') == 'PASS'
+    run.guard.now = Now(2)  # the window begins inside the first hash loop of the verification
+    with pytest.raises(runner.Abort) as error:
+        runner.execute_stage(run, 'census')
+    assert error.value.reason == 'PROTECTION_WINDOW' and error.value.where == 'verification'
+    assert not run.attempt.stage_path('census').exists()
+
+
 def test_abort_keeps_outputs_and_stops(tmp_path, draft, monkeypatch):
     run = make_run(tmp_path, draft)
     monkeypatch.setitem(runner.STAGE_FUNCTIONS, 'smoke', stub())
@@ -580,7 +704,7 @@ def test_dev_labels_and_dev_metrics_are_gated(tmp_path, draft):
     path, sha, _ = write_processed(tmp_path / 'data', frame)
     root, pins = write_raw(tmp_path / 'data', frame)
     log = ReadLog()
-    inputs = A3Inputs(reader=ProcessedReader(path, sha256=sha, log=log, margin=8),
+    inputs = A3Inputs(reader=ProcessedReader(path, sha256=sha, log=log),
                       raw_reader=RawKeysReader(root, pins, log), b0=None, support=None, hands=None, archetypes=None,
                       ledger=None, identity={}, log=log)
     loaded = inputs.pre_gate_frame('fit')
