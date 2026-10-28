@@ -197,3 +197,46 @@ def b2_vectors(decisions, seed=11, scale=0.4, zero_at=None):
             vector[result['logged_index']] = 0.
         out[key] = (vector / vector.sum()).tolist()
     return out
+
+
+# ---------------------------------------------------------------- synthetic public files and phase-2 records
+def public_doc(widths=None, s5=None, *, baseline=(1.0e-3, 1.1e-3), flag=None, b2_pass=False):
+    """A minimal typed A2b-S3 public file: H_point per row and bootstrap (default: the baseline widths; rows in
+    ``widths`` {row: (game, pitcher)} override, None = invalid), S-5 per row ({row: (game, pitcher)}, default
+    PASS), the R5 h flag and the B2 precision flag."""
+    widths, s5 = dict(widths or {}), dict(s5 or {})
+    pairs, s5_out = {}, {}
+    for row in rb.ROWS:
+        h = baseline if row == rb.BASELINE else widths.get(row, baseline)
+        h = (None, None) if h is None else h
+        pairs[row] = {'H_point': {'game': h[0], 'pitcher': h[1]},
+                      'valid': {'game': h[0] is not None, 'pitcher': h[1] is not None}}
+        s5_out[row] = ({'game': 'BASELINE', 'pitcher': 'BASELINE'} if row == rb.BASELINE else
+                       dict(zip(('game', 'pitcher'), s5.get(row, ('PASS', 'PASS')))))
+    return {'experiment': rb.EXPERIMENT_ID, 'stage': 'A2b-S3', 'r3_status': rb.R3_STATUS_DECIDED, 'pairs': pairs,
+            'S5': s5_out, 'R5': {'h': {'flag': flag, 'decision_input': False}},
+            'flags': {'B2_PRECISION_PASS_DIAGNOSTIC': b2_pass}}
+
+
+def a2_tab(outcome='PASS', override=None):
+    """Reused EXP-OPE-RES-01 TAB acceptance records {T-A id: {A2 pair: cell}} (override {(id, pair): outcome})."""
+    from pitchmdp import ope_redesign_registry as a2
+    override = override or {}
+    return {spec['id']: {pair: {'outcome': override.get((spec['id'], pair), outcome)} for pair in a2.PAIRS}
+            for spec in a2.TAB_ACCEPTANCE}
+
+
+def a2_nets(outcome='PASS'):
+    from pitchmdp import ope_redesign_registry as a2
+    return {net: {pair: {'outcome': outcome} for pair in a2.PAIRS} for net in ('S1', 'S4')}
+
+
+def pooled(cell, outcome='PASS', *, invariant='PASS', invalid_tuple=None):
+    """A pooled S-2' cell record in the ope_synthetic_a2b.pool_cell shape."""
+    record = {'cell': cell, 'n_prime': rb.N_PRIME[cell], 'components': {c: {'outcome': outcome} for c in ('R1_a', 'R1_b')},
+              'tuples': {}, 'invariant': {'outcome': invariant, 'max_abs_gamma_a': 0.0} if invariant else None,
+              'decision_input': cell in rb.S2P_DECISION_CELLS}
+    for t in ('R1_axR2_0xB0', 'R1_axR2_1xB0', 'R1_bxR2_0xB0', 'R1_bxR2_1xB0'):
+        record['tuples'][t] = ({'outcome': 'INCONCLUSIVE', 'invalid_repetition': True} if t == invalid_tuple
+                               else {'outcome': outcome})
+    return record
