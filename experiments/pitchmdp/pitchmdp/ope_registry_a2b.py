@@ -576,6 +576,8 @@ ADDED_PIN_KEYS = (  # implementation needs (reported for G-REG; the draft has no
     'a3_s6_weights_record',  # {"path", "sha256"}: A3 09-s6-weights weights.json (G-INT-R3 reference)
     'policy_registration_chain',  # [{"path", "sha256"}]: ML-POLICY config first, then addenda 1-8 d127
     'processed_frame_identity',  # {"path", "sha256"}: the original processed frame (identity source)
+    'train_raw_files_sha256',  # the three approved raw files (TRAIN kappa_p' inputs, S6 / DEV R1_b quality join)
+    'a3_weight_settings',  # the A3 s6-weights settings G-INT-R3 reproduces (large, mei, draws, seed, E5)
 )
 PIN_KEYS = (*DRAFT_PIN_KEYS, *ADDED_PIN_KEYS)
 CONFIG_EXPECTATIONS = (  # (json path, registered value)
@@ -700,10 +702,14 @@ def check_pins(config):
                                                  '03-calibrate/calibrators/B2.json'} and all(map(_hex64, b2.values())),
              'pin a3_b2_artifacts_sha256 (the three frozen B2 files)')
     aligned = pins['processed_frame_aligned']
-    _require(isinstance(aligned, dict) and set(aligned) == {'path', 'sha256', 'identity_manifest_sha256', 'source_sha256'}
-             and _absolute(aligned['path']) and all(_hex64(aligned[k]) for k in ('sha256', 'identity_manifest_sha256',
-                                                                                'source_sha256')),
-             'pin processed_frame_aligned')
+    _require(isinstance(aligned, dict) and set(aligned) == set(a2.ALIGNED_PIN_KEYS) and _absolute(aligned['path'])
+             and _absolute(aligned['identity_manifest_path'])
+             and all(_hex64(aligned[k]) for k in ('sha256', 'identity_manifest_sha256', 'source_sha256')),
+             'pin processed_frame_aligned = the EXP-OPE-RES-01 form (path, sha256, identity_manifest_path, '
+             'identity_manifest_sha256, source_sha256)')
+    raw = pins['train_raw_files_sha256']
+    _require(isinstance(raw, dict) and set(raw) == set(a2.RAW_ALLOWLIST) and all(map(_hex64, raw.values())),
+             'pin train_raw_files_sha256 (the three approved raw files)')
     _require(_file_pin(pins['processed_frame_identity']) and _absolute(pins['processed_frame_identity']['path'])
              and pins['processed_frame_identity']['sha256'] == aligned['source_sha256'],
              'pin processed_frame_identity (its sha256 = processed_frame_aligned.source_sha256)')
@@ -721,6 +727,12 @@ def check_pins(config):
         _require(not Path(pins[key]).resolve().is_relative_to(REPO.resolve()), f'{key} must be outside the repository')
     for key in ('a2_results_file', 'a3_s6_weights_record'):
         _require(_file_pin(pins[key]), f'pin {key} = {{"path", "sha256"}}')
+    settings = pins['a3_weight_settings']
+    _require(isinstance(settings, dict) and set(settings) == {'large_weight_threshold', 'mei', 'bootstrap_draws',
+                                                            'bootstrap_seed', 'E5_thresholds'}
+             and type(settings['bootstrap_draws']) is int and type(settings['bootstrap_seed']) is int
+             and settings['E5_thresholds'] == {'pa': 100, 'game': 30},
+             'pin a3_weight_settings (the A3 s6-weights large threshold, MEI, bootstrap draws and seed, E5)')
     chain = pins['policy_registration_chain']
     _require(isinstance(chain, list) and len(chain) == 9 and all(_file_pin(c) for c in chain),
              'pin policy_registration_chain = the ML-POLICY config and its addenda 1-8 d127')
