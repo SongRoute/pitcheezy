@@ -590,12 +590,12 @@ class ChainData:
     SMALL = {'draws': 200, 'minimum_games': 1, 'minimum_pitchers': 1, 'minimum_pa_starts': 1, 'placebos': 2}
     RECORDED = (5, 11, 12)  # the 2 zeta_p family the gate is steered to open
 
-    def __init__(self, test):
+    def __init__(self, cleanup):
         import itertools
         from ope_a2b_fixtures import ml_policy_world, read_s6, synthetic_a2_s0
         from pitchmdp import ledger_a2b as lg
         self.world = world = ml_policy_world()
-        test.addCleanup(shutil.rmtree, world.root, True)
+        cleanup(shutil.rmtree, world.root, True)
         self.header, self.s6_decisions, self.s6_pins = read_s6(world)
         self.s6_ledger = world.s6 / 'ledger-dev-0.jsonl'
         self.s6_games = lg.ledger_games(self.s6_decisions)
@@ -608,7 +608,7 @@ class ChainData:
         self.b2_vectors = {}
         fx = world.tpv.SemiSyntheticTests('test_v2_matches_world_truth_and_is_not_vacuous')
         fx.setUp()
-        test.addCleanup(shutil.rmtree, fx.root, True)
+        cleanup(shutil.rmtree, fx.root, True)
         names = itertools.count()
 
         class S2World:  # the S-2' fixture world (fake G0 + WE) in place of the S5 DEV selection
@@ -788,21 +788,24 @@ class ChainEnv(WorkEnv):
         return self.data.s5x_world
 
 
-class FullChainTests(unittest.TestCase):
-    """G-CODE MINOR-5 (second part; the A2 FullChainTests pattern): every A2b stage body runs once through ``main``
-    on a SYNTHETIC environment - SM, S0, L (with the driver equivalence, path A), S3:R3, S3 (G-INT-A2, G-INT-EVAL, the
-    25 rows), G, a small phase 2 (the G-INT-S2EQ runs and record of the 2 zeta_p family, its 10 new-seed runs, the
-    pooling, the TAB re-run), S4 and UB. Minimal sizes: the registered draws, minimums, TAB R, dataset size and S-2'
-    cap are patched small; the gate is steered (S-5 and (ii) patched) to open the R1_a tuples. No real data."""
-    def test_smoke_to_unblind(self):
+class ChainCase(unittest.TestCase):
+    """The synthetic chain inputs (ChainData) built once per class, and per test a fresh registered workspace with
+    the chain's patches: the synthetic candidate identity in the config expectations and the minimal sizes (the
+    registered draws, minimums, TAB R and dataset size, S-2' cap). No real data."""
+    @classmethod
+    def setUpClass(cls):
+        cls.data = ChainData(cls.addClassCleanup)
+        root = Path(tempfile.mkdtemp(prefix='a2b-chain-')).resolve()
+        cls.addClassCleanup(shutil.rmtree, root, True)
+        cls.data.a2_outputs(root, ChainEnv(None, cls.data), None)  # the synthetic hooks never read the config
+
+    def chain_workspace(self, *extra_patches):
         import functools
-        import time
         from pitchmdp import ledger_a2b as lg
         from pitchmdp import ope_sealed_a2b as sa
         from pitchmdp import ope_synthetic_a2b as sx
-        t0 = time.perf_counter()
-        data = ChainData(self)
-        world, rpv, policy = data.world, data.world.rpv, data.world.policy
+        data = self.data
+        rpv, policy = data.world.rpv, data.world.policy
         style_path, style_sha = rpv.registered_path(policy, 'style_dev')
         pins = {'s6_dr_a5_ledger_path': str(data.s6_ledger), 's6_dr_a5_ledger_sha256': data.s6_pins['ledger_sha256'],
                 's6_dr_a5_manifest_sha256': data.s6_pins['manifest_sha256'],
@@ -817,6 +820,47 @@ class FullChainTests(unittest.TestCase):
         candidate = data.s6_pins['candidate_sha256']  # the synthetic candidate identity replaces c13cc989...
         expectations = tuple((p, candidate if p == '$.identities.candidate_policy_sha256' else v)
                              for p, v in rb.CONFIG_EXPECTATIONS)
+        patches = [mock.patch.object(rb, 'CONFIG_EXPECTATIONS', expectations),
+                   mock.patch.object(lg, 'N_GAMES', 2), mock.patch.object(rb, 'TAB_DATASET_PAS', 300),
+                   mock.patch.dict(rb.S2P_WORLD, {'cap': 4}),
+                   mock.patch.object(roa, 'rehearsal', functools.partial(roa.rehearsal, **ChainData.SMALL)),
+                   mock.patch.object(sa, 'evaluate', functools.partial(sa.evaluate, **ChainData.SMALL)),
+                   mock.patch.object(roa, 'require_s5x_consistent', lambda s5x: True),  # the synthetic A2-S2 has no runs
+                   mock.patch.object(sx, 'tab_rerun', functools.partial(sx.tab_rerun, replications=2)), *extra_patches]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        ws = Workspace(self, pins=pins, identities={'candidate_policy_sha256': candidate})
+        env = ws.env = ChainEnv(ws, data)  # ws.commit records into this environment
+        return ws, env, lambda command, name, *extra: rr.main([*ws.argv(command, name), *extra], env)
+
+    def stages(self, main, *commands):
+        for command in commands:
+            self.assertEqual(main(command, command), 0)
+
+    @staticmethod
+    def sealed(ws, stage):
+        return roa.require_seal(ws.manifest, stage)[0]
+
+    def failures(self, ws, stage):
+        """The aborted attempts of ``stage`` (each a deterministic integrity failure; the stage never sealed)."""
+        entries = ws.manifest.entries()
+        self.assertFalse([e for e in entries if e['kind'] == 'stage_seal' and e['payload']['stage'] == stage])
+        failed = [e['payload'] for e in entries if e['kind'] == 'stage_failure' and e['payload']['stage'] == stage]
+        self.assertTrue(failed)
+        self.assertEqual({f['class'] for f in failed}, {'deterministic_integrity'})
+        return [Path(f['output_dir']) for f in failed]
+
+
+class FullChainTests(ChainCase):
+    """G-CODE MINOR-5 (second part; the A2 FullChainTests pattern): every A2b stage body runs once through ``main``
+    on a SYNTHETIC environment - SM, S0, L (with the driver equivalence, path A), S3:R3, S3 (G-INT-A2, G-INT-EVAL, the
+    25 rows), G, a small phase 2 (the G-INT-S2EQ runs and record of the 2 zeta_p family, its 10 new-seed runs, the
+    pooling, the TAB re-run), S4 and UB, with minimal sizes; the gate is steered (S-5 and (ii) patched) to open the
+    R1_a tuples. The run takes a few seconds (measured about 6 s on the Mac mini; no wall-clock assertion, NOTE-E)."""
+    def test_smoke_to_unblind(self):
+        from pitchmdp import ledger_a2b as lg
+        data = self.data
         steer = lambda view, row: ((True, {'game': 'PASS', 'pitcher': 'PASS'}) if row.startswith('R1_axR2_')
                                    else (False, {'game': 'FAIL', 'pitcher': 'FAIL'}))
         real_ii = dc.condition_ii
@@ -827,34 +871,25 @@ class FullChainTests(unittest.TestCase):
                 return out
             return {**out, 'valid': True, 'degenerate': False, 'pass': True, 'outcome': 'PASS',
                     'per_bootstrap': {'game': True, 'pitcher': True}}
-        patches = [mock.patch.object(rb, 'CONFIG_EXPECTATIONS', expectations),
-                   mock.patch.object(lg, 'N_GAMES', 2), mock.patch.object(rb, 'TAB_DATASET_PAS', 300),
-                   mock.patch.dict(rb.S2P_WORLD, {'cap': 4}), mock.patch.object(dc, 'condition_ii', steer_ii),
-                   mock.patch.object(dc, 's5_pass', steer),
-                   mock.patch.object(roa, 'rehearsal', functools.partial(roa.rehearsal, **ChainData.SMALL)),
-                   mock.patch.object(sa, 'evaluate', functools.partial(sa.evaluate, **ChainData.SMALL)),
-                   mock.patch.object(roa, 'require_s5x_consistent', lambda s5x: True),  # the synthetic A2-S2 has no runs
-                   mock.patch.object(sx, 'tab_rerun', functools.partial(sx.tab_rerun, replications=2))]
-        for patch in patches:
-            patch.start()
-            self.addCleanup(patch.stop)
-        ws = Workspace(self, pins=pins, identities={'candidate_policy_sha256': candidate})
-        env = ws.env = ChainEnv(ws, data)  # ws.commit records into this environment
-        data.a2_outputs(ws.root / 'inputs', env, ws.config)
-        built = time.perf_counter() - t0
-        main = lambda command, name, *extra: self.assertEqual(rr.main([*ws.argv(command, name), *extra], env), 0)
+        ws, env, run = self.chain_workspace(mock.patch.object(dc, 'condition_ii', steer_ii),
+                                            mock.patch.object(dc, 's5_pass', steer))
+        main = lambda command, name, *extra: self.assertEqual(run(command, name, *extra), 0)
         for command in ('smoke', 's0', 'ledger', 's3-r3', 's3', 'gate'):
             main(command, command)
-        sealed = lambda stage: roa.require_seal(ws.manifest, stage)[0]
+        sealed = lambda stage: self.sealed(ws, stage)
         s0_record = json.loads((sealed('A2b-S0') / 's0_record.json').read_text())
         self.assertEqual(s0_record['kappa_p_prime']['groups'], ['FB', 'FC', 'BR', 'OS'])  # no TRAIN row was read
         ledger = json.loads((sealed('A2b-L') / 'ledger_record.json').read_text())
+        self.assertTrue(rb.validate_ledger_record(ledger))  # NOTE-A: the written record is its type
+        self.assertEqual(json.loads((sealed('A2b-L') / 'driver_equivalence.json').read_text()),
+                         ledger['driver_equivalence'])
         equivalence = ledger['driver_equivalence']
         self.assertEqual((equivalence['path'], equivalence['pass'], equivalence['style_source'], equivalence['games']),
                          ('s6_two_game_replay', True, 'header', [lg.game_of(data.s6_decisions[0]),
                                                                  lg.game_of(data.s6_decisions[-1])]))
         self.assertEqual(equivalence['max_abs_delta'], 0.0)
-        self.assertEqual(ledger['registered_pins_compared']['runtime_setting'], pins['runtime_setting'])
+        self.assertEqual(ledger['registered_pins_compared']['runtime_setting'],
+                         ws.config['registration_input_pins']['runtime_setting'])
         self.assertTrue(ledger['m10']['pass'] and all(ledger['identity']['checks'].values()))
         r3 = json.loads((sealed('A2b-S3:R3') / 'b2_record.json').read_text())
         self.assertEqual((r3['gint_r3']['result'], r3['validity']['pass']), ('PASS', True))
@@ -906,8 +941,129 @@ class FullChainTests(unittest.TestCase):
         self.assertEqual(len([e for e in ws.manifest.entries() if e['kind'] == 'run_public']), 10)
         self.assertEqual(set(json.loads((sealed('A2b-S1') / 'tab_rerun.json').read_text())['acceptance']),
                          {c['id'] for c in rb.TAB_ACCEPTANCE})
-        self.assertLess(time.perf_counter() - t0, 120)  # minimal sizes (measured about 6 s on the Mac mini)
 
+
+class FailClosedWiringTests(ChainCase):
+    """G-CODE 2nd closure MINOR-A: the runner's fail-closed wires on the synthetic chain - removing any of them makes
+    a test here fail (a failed driver equivalence, a path-B identity that is not the new ledger runtime, a pyproject
+    pin mismatch, a G-INT key record or an A2b-L record outside its type)."""
+    def test_a_failed_driver_equivalence_never_seals_the_ledger_stage(self):
+        from pitchmdp import ledger_a2b as lg
+        ws, env, main = self.chain_workspace()
+        self.stages(main, 'smoke', 's0')
+        real = lg.driver_equivalence
+
+        def failing(*args, **kwargs):  # a well-typed failing record (one mismatched field)
+            record = real(*args, **kwargs)
+            return {**record, 'pass': False, 'mismatched_fields': 1,
+                    'mismatched_keys_shown': ['x#0.result.logging.[0]']}
+        with mock.patch.object(lg, 'driver_equivalence', failing), \
+                self.assertRaisesRegex(IntegrityError, 'driver equivalence failed on path s6_two_game_replay'):
+            main('ledger', 'ledger-fail')
+        out, = self.failures(ws, 'A2b-L')
+        written = json.loads((out / 'driver_equivalence.json').read_text())  # written before its pass is required
+        self.assertEqual((written['pass'], written['mismatched_fields']), (False, 1))
+        self.assertFalse((out / 'ledger-dev-0.jsonl').exists())  # stopped before the new DEV ledger
+        self.assertFalse((out / 'ledger_record.json').exists())
+
+    def test_the_a2b_l_records_are_validated_before_they_are_written(self):
+        from pitchmdp import ledger_a2b as lg
+        ws, env, main = self.chain_workspace()
+        self.stages(main, 'smoke', 's0')
+        real = lg.driver_equivalence
+        with mock.patch.object(lg, 'driver_equivalence', lambda *a, **k: {**real(*a, **k), 'reward': 0.5}), \
+                self.assertRaisesRegex(IntegrityError, 'driver equivalence record: keys outside its type'):
+            main('ledger', 'ledger-untyped')
+        out, = self.failures(ws, 'A2b-L')
+        self.assertFalse((out / 'driver_equivalence.json').exists())
+
+    def test_a_ledger_record_outside_its_type_is_never_written(self):
+        from pitchmdp import ledger_a2b as lg
+        ws, env, main = self.chain_workspace()
+        self.stages(main, 'smoke', 's0')
+        real = lg.require_runtime_pins
+        with mock.patch.object(lg, 'require_runtime_pins', lambda *a, **k: {**real(*a, **k), 'extra_pin': 'x'}), \
+                self.assertRaisesRegex(IntegrityError, 'A2b-L record: registered pins compared'):
+            main('ledger', 'ledger-record-untyped')
+        out, = self.failures(ws, 'A2b-L')
+        self.assertTrue((out / 'driver_equivalence.json').exists())
+        self.assertFalse((out / 'ledger_record.json').exists())
+
+    def test_path_b_must_have_run_the_new_ledger_runtime(self):
+        from pitchmdp import ledger_a2b as lg
+        ws, env, main = self.chain_workspace()
+        self.stages(main, 'smoke', 's0')
+        real = lg.driver_equivalence
+
+        def other_identity(*args, **kwargs):  # a well-typed passing path-B record of another runtime
+            record = real(*args, **kwargs)
+            return {**record, 'path': 'same_request_twice', 'reason': 'runtime_sha_not_reproduced',
+                    'runtime_sha256_reproduced': False, 'games': record['games'][:1], 'runtime_sha256': 'e' * 64}
+        with mock.patch.object(lg, 'driver_equivalence', other_identity), \
+                self.assertRaisesRegex(IntegrityError, 'path-B runtimes are not the new ledger runtime'):
+            main('ledger', 'ledger-other-b')
+        self.failures(ws, 'A2b-L')
+
+    def test_the_real_path_b_seals_the_ledger_stage(self):
+        """The positive control of the path-B identity wire: the S6 header without its style report and with another
+        runtime sha256 sends the runner down path B, whose runtimes are the new ledger's."""
+        from pitchmdp import ledger_a2b as lg
+        ws, env, main = self.chain_workspace()
+        self.stages(main, 'smoke', 's0')
+        real = lg.driver_equivalence
+
+        def unreproducible(*args, **kwargs):
+            header = kwargs['s6_header']
+            provenance = {k: v for k, v in header['pins']['provenance'].items() if k != 'style_report'}
+            header = {**header, 'runtime_sha256': 'e' * 64, 'pins': {**header['pins'], 'provenance': provenance}}
+            return real(*args, **{**kwargs, 's6_header': header})
+        with mock.patch.object(lg, 'driver_equivalence', unreproducible):
+            self.stages(main, 'ledger')
+        ledger = json.loads((self.sealed(ws, 'A2b-L') / 'ledger_record.json').read_text())
+        equivalence = ledger['driver_equivalence']
+        self.assertEqual((equivalence['path'], equivalence['pass'], equivalence['reason']),
+                         ('same_request_twice', True, 'runtime_sha_not_reproduced'))
+        self.assertEqual(equivalence['runtime_sha256'], ledger['runtime_sha256'])
+
+    def test_a_pyproject_mismatch_voids_only_the_b2_rows(self):
+        ws, env, main = self.chain_workspace(mock.patch.object(ChainEnv, 'pyproject_sha256', lambda env: 'f' * 64))
+        self.stages(main, 'smoke', 's0', 'ledger')
+        with self.assertRaisesRegex(IntegrityError, 'pyproject.toml differs from the B2 inference environment pin'):
+            main('s3-r3', 'r3-1')
+        ws.manifest.append('bugfix_addendum', {'stage': rr.R3_STAGE, 'fix_commit': 'c' * 40,
+                                               'failing_test': 'synthetic', 'new_files_sha256': rr.new_file_hashes(),
+                                               'review_reference': 'synthetic'})
+        with self.assertRaisesRegex(IntegrityError, 'pyproject.toml differs from the B2 inference environment pin'):
+            main('s3-r3', 'r3-2')  # the second registered attempt
+        self.assertEqual(len(self.failures(ws, rr.R3_STAGE)), 2)
+        self.assertEqual(roa.stage_status(ws.manifest, (rr.R3_STAGE,))[rr.R3_STAGE], 'FAILED_INTEGRITY')
+        self.stages(main, 's3')  # A2b-S3 still runs: the B2 rows only are void (design 9.6)
+        public = json.loads((self.sealed(ws, 'A2b-S3') / 'public.json').read_text())
+        self.assertFalse(public['B2']['validity']['pass'])
+        for row in rb.B2_ROWS:
+            self.assertEqual(public['pairs'][row]['valid'], {'game': False, 'pitcher': False}, row)
+        self.assertTrue(public['pairs'][rb.BASELINE]['valid']['game'])
+
+    def test_a_gint_r3_record_outside_its_type_is_never_written(self):
+        from pitchmdp import ope_denominator_a2b as dn
+        ws, env, main = self.chain_workspace()
+        self.stages(main, 'smoke', 's0', 'ledger')
+        real = dn.gint_r3
+        with mock.patch.object(dn, 'gint_r3', lambda *a, **k: {**real(*a, **k), 'center': 1e-4}), \
+                self.assertRaisesRegex(IntegrityError, 'gint_r3: keys outside its type'):
+            main('s3-r3', 'r3-untyped')
+        out, = self.failures(ws, rr.R3_STAGE)
+        self.assertFalse((out / 'gint_r3.json').exists())
+
+    def test_a_gint_a2_record_outside_its_type_is_never_written(self):
+        ws, env, main = self.chain_workspace()
+        self.stages(main, 'smoke', 's0', 'ledger', 's3-r3')
+        real = rr.gint_a2_record
+        with mock.patch.object(rr, 'gint_a2_record', lambda *a, **k: {**real(*a, **k), 'b_hat': 1e-5}), \
+                self.assertRaisesRegex(IntegrityError, 'gint_a2: keys outside its type'):
+            main('s3', 's3-untyped')
+        out, = self.failures(ws, 'A2b-S3')
+        self.assertFalse((out / 'gint_a2.json').exists())
 
 if __name__ == '__main__':
     unittest.main()
