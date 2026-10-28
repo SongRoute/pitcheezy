@@ -1,0 +1,568 @@
+"""EXP-BC-CAL-01 (track A3) registered values and the fail-closed config check.
+
+The design (docs/pm/research/track-a/A3-behavior-policy-design.md) and its registration draft fix
+every value pinned here: arms B0/B1/B2 plus the descriptive cross-fit arms B0-XF/B1-XF (B3 and
+B2-XF excluded by D186 5-1), seeds, splits and data roles including the A3-own batter-style
+snapshot dates, the verdict thresholds, the cost caps and the recorder/publisher protection
+window. ``IMPLEMENTATION_CHOICES`` lists the values the design leaves open and this code fixes
+(they are pinned the same way so a reviewer sees one complete contract).
+
+``config_check`` compares a config with these pins and raises ``RegistrationError`` naming every
+deviation. It does not decide whether a config may run: ``registration_gate`` (in the runner)
+additionally requires status REGISTERED, execution enabled and the registration pins. Nothing
+here reads data.
+"""
+from __future__ import annotations
+
+import math
+from pathlib import PurePosixPath
+import re
+
+EXPERIMENT_ID = 'EXP-BC-CAL-01'
+ACTION_CODES = ('CH', 'CS', 'CU', 'EP', 'FA', 'FC', 'FF', 'FO', 'FS', 'KC', 'KN', 'PO', 'SC', 'SI', 'SL', 'ST',
+                'SV', 'UN')
+BASELINE = 'B0'
+ADOPTION_CANDIDATES = ('B1', 'B2')
+XF_ARMS = ('B0-XF', 'B1-XF')
+DESCRIPTIVE_ARM_KEYS = ('B0-T', 'B1_raw_B2_raw', 'B0-XF', 'B1-XF', 'off_repertoire_mass')
+EXCLUDED_ARMS = ('B3', 'B2-XF')
+CANDIDATE_KEYS = ('B0', 'B1', 'B2', 'descriptive_arms_not_adoptable')
+
+SEEDS = {'bootstrap': 20260924, 'bootstrap_draws': 10000, 'lightgbm': 20261043,
+         'fold_salts': {'train_oof': 'EXP-BC-CAL-01/te', 'dev_xf': 'EXP-BC-CAL-01/xf'},
+         'calibration_cv': 20260924}
+FOLDS = 5
+
+SPLIT_DATES = {'train': ['2023-05-15', '2025-04-30'], 'earlystop': ['2025-05-01', '2025-05-15'],
+               'temperature': ['2025-05-16', '2025-05-31'], 'blend': ['2025-06-01', '2025-06-30'],
+               'dev': ['2025-07-01', '2025-09-30']}
+USED_SPLITS = ('train', 'earlystop', 'temperature', 'dev')  # blend (June) and 2023-03-30..05-14 are not read
+LAST_DATE = '2025-09-30'  # the loader refuses any later date and any 2026 row
+STYLE_AS_OF = {'earlystop': '2025-05-01', 'temperature': '2025-05-16', 'dev': '2025-07-01'}
+STYLE_INPUT_FILTER = {'start': '2023-05-15', 'splits': ['train', 'earlystop', 'temperature'],
+                      'end': '2025-05-31'}
+
+B0_PARAMETERS = {'prior_strength': 20.0, 'minimum_action_count': 1}
+B1_LEVELS = ('league', 'pitcher', 'batter_side', 'count', 'previous_type', 'base_out', 'times_through_order',
+             'batter_cluster')
+B1_B0_SETTING = {'pitcher': 0, 'batter_side': 'inf', 'count': 'inf', 'previous_type': 20, 'base_out': 'inf',
+                 'times_through_order': 'inf', 'batter_cluster': 'inf'}
+B1_ALPHA_GRID = [0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 'inf']  # 0 only for the pitcher level
+B1_SWEEPS = 2
+
+B2_PARAMS = {'objective': 'multiclass', 'num_class': 18, 'learning_rate': 0.05, 'num_leaves': 15, 'max_bin': 63,
+             'min_data_in_leaf': 100, 'lambda_l2': 1.0, 'feature_fraction': 1.0, 'bagging_fraction': 1.0,
+             'deterministic': True, 'force_col_wise': True, 'num_threads': 2, 'seed': 20261043, 'verbosity': -1}
+B2_TRAIN_ROUNDS = 300
+B2_CATEGORICAL = ['count_id', 'prev_type_1', 'prev_type_2', 'prev_type_3', 'prev_type_4', 'prev_type_5',
+                  'prev_outcome_1', 'prev_outcome_2', 'prev_outcome_3', 'prev_outcome_4', 'prev_outcome_5']
+STYLE_NAMES = ('contact', 'swing', 'walk', 'strikeout', 'isolated_power', 'groundball')
+B2_FEATURES = ([f'b0_p_{code}' for code in ACTION_CODES] + ['pitcher_train_log_volume']
+               + ['balls', 'strikes', 'count_id', 'pa_pitch_index']
+               + [f'prev_type_{k}' for k in range(1, 6)] + [f'prev_outcome_{k}' for k in range(1, 6)]
+               + ['outs', 'first_base', 'second_base', 'third_base', 'inning', 'defensive_score_lead',
+                  'defender_is_home']
+               + ['batter_left', 'pitcher_left', 'same_hand']
+               + [f'style_rate_{n}' for n in STYLE_NAMES] + [f'style_reliability_{n}' for n in STYLE_NAMES]
+               + [f'membership_{k}' for k in range(5)]
+               + ['prior_pitches_game', 'times_through_order', 'is_game_starter'])
+assert len(B2_FEATURES) == 63 and len(set(B2_FEATURES)) == 63
+
+CALIBRATION = {'temperature_bounds': [0.5, 2.5], 'vector_l2': 0.001, 'vector_margin': 0.0005, 'cv_folds': 5}
+
+THRESHOLDS = {'E1_nll_margin': -0.005, 'E2_ece_margin': 0.002, 'E3_p1_margin': 0.0005, 'holm_alpha': 0.05,
+              'holm_family': ['B1', 'B2'], 'tie_margin': 0.001, 'tie_comparator': 'strict <', 'tie_simpler': 'B1',
+              'P1_threshold': 0.001, 'P2_threshold': 0.01, 'E5_ess_min': {'pa': 100, 'game': 30},
+              'large_weight': 10, 'mei': 0.001, 'ece_bins': 10,
+              'sc3_bins': [0, 0.001, 0.01, 0.05, 0.2, 0.5, 1.0]}
+SC1_GROUPS = {'fastball': ['FF', 'SI', 'FC', 'FA'], 'breaking': ['SL', 'ST', 'CU', 'KC', 'SV', 'CS'],
+              'offspeed': ['CH', 'FS', 'FO', 'SC'], 'other': ['KN', 'EP', 'PO', 'UN']}
+
+CAPS = {'stage_hang_guard_seconds': 7200, 'total_wall_cap_seconds': 14400, 'b2_fit_soft_cap_seconds': 3600,
+        'b2_soft_cap_action': 'warn_and_continue', 'start_free_share_min': 0.4, 'abort_rss_bytes': 10737418240}
+assert CAPS['abort_rss_bytes'] == 10 * 1024 ** 3
+PROTECTION_WINDOW_KST = {'start': '06:30', 'end': '13:30', 'timezone': 'Asia/Seoul'}
+
+# S6 ledger identities: the header's pins.candidate.sha256 must be the sealed policy identity below
+# (D125 final identity c13cc989...); the header's runtime_sha256 is the PolicyRuntime's own identity
+# (policy_runtime.py:291 self.sha256, also in every decision row, :489), pinned FROM THE HEADER at
+# registration (data.s6_ledger.runtime_sha256.value) - the two are different hashes.
+S6 = {'expected_candidate_sha256': 'c13cc98994ae9eb08a8f939a583ebe712312594ac25c05314a9ca790bd46f73c',
+      'r1b_atol': 1e-12, 'r2_rtol': 1e-9,
+      'expected_ess': {'candidate': {'pa': 9120.218896471748, 'game': 144.2828223791589},
+                       'reference': {'pa': 9725.694335061527, 'game': 144.16008032451504}},
+      'allowed_header_fields': ['runtime_sha256', 'pins'],
+      'allowed_fields': ['kind', 'request_id', 'runtime_sha256', 'pa_id', 'decision_index', 'status', 'pitcher',
+                         'pitcher_hand', 'batter_side', 'balls', 'strikes', 'history_actions', 'logged_action',
+                         'context_key', 'result.mask', 'result.logging', 'result.reference', 'result.candidate',
+                         'result.logged_index', 'result.rho_reference', 'result.rho_candidate'],
+      'never_opened': ['pa_values.parquet', 'dr.json']}
+B0_ARTIFACT = {'file_sha256': 'b4f274eb39089553f813ae4d4419de5ddbb6b4edb381b0fe84ef5c9b49168e11',
+               'support_table_sha256': '152cdab41e87faba57f0f46a402ec7796c4e131d41d6ff4a758a53616c6342d4',
+               'hands_sha256': '0be0326e9d35a951b19749ada641097d240d0db6b7d8f6aadf90fa5c5cfd18ad'}
+DATA_PINS = {'processed_sha256': '9f65d1dbf28374d6879dbf0c19c5c98834a2e1e95a6218c83e213c955e8ede27',
+             'g0_bundle_sha256': 'c839dbf710c02ca5a1baafcc168e6ca3eaa6d80e269a99f71f08d7d537ec8062',
+             'raw_sha256': {'statcast_2023.parquet': '46c354beae196ce2d501fe989c491725f2ecc47601f58d4b8b0234b982984730',
+                            'statcast_2024.parquet': '3cf05edddd22a2eac3d55be11cc56e00fe56f7fcf75823a8ecc8fa89e7e9a274',
+                            'statcast_2025.parquet': '4c785756d8901f8c46c70891954a4c54b8ad1c6909db67f4a000221691dc0249'}}
+# The A3 processed input: a row-for-row identical, split-aligned copy of the pinned processed parquet,
+# written once before registration by the tool below (row-group boundaries exactly at the split dates).
+# Its sha256 and the identity-manifest sha256 are registration pins (REGISTRATION_PIN_SCHEMA).
+A3_INPUT_ROOT = '/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01/inputs'
+A3_INPUT = {'tool': 'experiments/pitchmdp/scripts/prepare_behavior_calibration_input.py',
+            'source_sha256': DATA_PINS['processed_sha256'],
+            'boundaries': [SPLIT_DATES[s][0] for s in ('train', 'earlystop', 'temperature', 'blend', 'dev')],
+            'end': SPLIT_DATES['dev'][1],
+            'path': f'{A3_INPUT_ROOT}/pitches.split-aligned.parquet',
+            'identity_manifest_path': f'{A3_INPUT_ROOT}/pitches.split-aligned.identity.json'}
+
+STAGES = ('smoke', 'census', 'fit', 'calibrate', 'freeze-primary', 's6-integrity', 'xf-fit', 'freeze-xf',
+          'score-dev', 's6-weights', 'decide')
+DECISION_LABELS = ('ADOPT_FOR_2027_REGISTRATION:B1', 'ADOPT_FOR_2027_REGISTRATION:B2', 'KEEP_B0', 'FAILED_INTEGRITY',
+                   'NOT_EVALUABLE')
+# Terminal, non-citable outcomes the runner writes to final.json for every unsuccessful attempt.
+TERMINAL_FAILURES = ('REFUSED', 'FAILED_RUNTIME', 'ABORTED', 'FAILED_INTEGRITY')
+RUN_LABELS = DECISION_LABELS + ('REFUSED', 'FAILED_RUNTIME', 'ABORTED')
+CANDIDATE_STATUSES = ('ELIGIBLE', 'INELIGIBLE', 'CALIBRATION_FAILED', 'NOT_EVALUABLE')
+REGISTERED_LABELS = ['ADOPT_FOR_2027_REGISTRATION:<candidate>', 'KEEP_B0', 'FAILED_INTEGRITY', 'NOT_EVALUABLE']
+
+SMOKE = {'train_rows': 50000, 'state_checks': 2000, 'b2_fits': 2, 'b2_rounds': 300,
+         'rows': 'first train_rows TRAIN BC_P rows, read only from processed row groups whose game_date '
+                 'statistics end on or before 2025-04-30'}
+
+# Stage-specific acquisition (behavior_data): which processed columns each phase may decode.
+FREE_COLUMNS = ('game_pk', 'at_bat_number', 'pitch_number', 'game_date', 'game_type', 'pitcher', 'batter', 'stand',
+                'p_throws', 'balls', 'strikes', 'outs_when_up', 'bases', 'inning', 'inning_topbot', 'home_score',
+                'away_score')
+GUARDED_COLUMNS = ('pitch_type', 'description', 'events', 'is_pa_terminal', 'launch_angle')
+READ_POLICY = {'free_columns': list(FREE_COLUMNS), 'guarded_columns': list(GUARDED_COLUMNS),
+               'row_groups': 'chosen from footer game_date statistics: the processed input must be split-aligned '
+                             '(data.a3_input; the reader refuses a file whose row groups span a split date), so its '
+                             'pre-TRAIN and June row groups are skipped whole; a row group wholly outside the phase '
+                             'window is never read; straddling row groups (raw key files only) are read and their '
+                             'out-of-window rows dropped and counted in the stage record (decoded-then-dropped)',
+               'smoke': 'free + guarded columns of the row groups lying wholly on or before 2025-04-30',
+               'census': 'free columns only (no guarded column is read)',
+               'pre_gate_window': ['2023-05-15', '2025-05-31'],
+               'pre_gate': 'guarded columns of the row groups overlapping the pre-gate window; a DEV-bearing row '
+                           'group (game_date maximum on or after 2025-07-01, or no statistics) is refused before '
+                           'pyarrow is called (physically safe acquisition); the smoke fails when the layout is not '
+                           'split-aligned',
+               'after_gate': 'guarded columns of the row groups overlapping DEV, only after freeze-primary is pinned '
+                             'and s6-integrity passed',
+               'raw_keys': 'raw Statcast files: game_date, game_pk, at_bat_number, pitch_number, pitcher only '
+                           '(workload); the smoke reads only raw row groups lying wholly on or before 2025-04-30',
+               'footer': 'pyarrow parses each file footer (metadata and statistics of every column chunk) on open; '
+                         'only game_date statistics and row counts are used',
+               'log': 'every acquisition is logged before pyarrow is called and completed after (rows decoded, kept, '
+                      'dropped, validation) in the hash-chained reads.jsonl and in the stage record'}
+
+# Registration pins: immutable schema (the config list cannot weaken it). kind -> format check.
+REGISTRATION_PIN_SCHEMA = (('registration.registered_kst', 'kst_datetime'),
+                           ('registration.design_review_reference', 'text'),
+                           ('registration.code_review_reference', 'text'),
+                           ('registration.digest_manifest_path', 'absolute_path'),
+                           ('code.branch', 'text'), ('code.commit', 'sha1'), ('code.config_sha256', 'sha256'),
+                           ('code.runner_sha256', 'sha256'), ('data.s6_ledger.ledger_sha256', 'sha256'),
+                           ('data.s6_ledger.manifest_sha256', 'sha256'),
+                           ('data.s6_ledger.runtime_sha256.value', 'sha256'),
+                           ('data.s6_ledger.candidate_sha256', 'expected_candidate'),
+                           ('data.a3_input.rechunked_sha256', 'sha256'),
+                           ('data.a3_input.identity_manifest_sha256', 'sha256'))
+DRAFT_PIN_FIELDS = ['registration.digest_manifest_path', 'code.branch', 'code.commit', 'code.config_sha256',
+                    'code.runner_sha256',
+                    'data.s6_ledger.ledger_sha256', 'data.s6_ledger.manifest_sha256',
+                    'data.s6_ledger.runtime_sha256.value', 'data.s6_ledger.candidate_sha256',
+                    'data.a3_input.rechunked_sha256',
+                    'data.a3_input.identity_manifest_sha256']
+REVIEWED_CODE_SCOPE = ('experiments', 'src', 'scripts', 'pyproject.toml')
+DEPENDENCY_GROUP = 'research-a3'
+DEPENDENCY_PINS = {'lightgbm': '4.6.0'}
+
+# Values the design leaves open; fixed here by this implementation (reported, pinned like the rest).
+IMPLEMENTATION_CHOICES = {
+    'seeds.calibration_cv': 'cv_folds (ported from experiments/ws_seq/calibrate_logits.py:324) needs a seed; '
+                            'the registered bootstrap seed 20260924 is reused',
+    'calibration.vector_a_lower_bound': 'a_c > 0 is enforced with L-BFGS-B bounds a_c >= 1e-6 (b_c free)',
+    'calibration.optimizer': 'temperature: scipy minimize_scalar bounded [0.5, 2.5], default xatol; vector: '
+                             'scipy L-BFGS-B with the analytic gradient, default options, init a = 1/T, b = 0',
+    'calibration.failure': 'failure = optimizer not successful or non-finite objective/parameters',
+    'b1.tie': 'ties on the earlystop S_in NLL are exact float64 equality',
+    'b1.unseen_cell': 'a level whose key has no TRAIN count keeps the parent distribution (any alpha, incl. 0)',
+    'b2.round_selection': 'masked/renormalized earlystop S_in NLL per round from a LightGBM feval (no extra params)',
+    'b2.matrix_dtype': 'feature matrix float32 for training and prediction',
+    'is_game_starter': 'pitcher equals the first pitcher of (game_pk, inning_topbot) in frame order',
+    'batter_cluster': 'argmax of the five frozen-G0 soft memberships; unknown (5) when mean reliability is 0',
+    'b1_xf_calibration': 'B1-XF applies the frozen primary B1 calibrator (no fold-specific calibration)',
+    'style_train_rows': 'TRAIN rolling style values are hashed in the freeze manifest, not stored',
+    'protection_window': 'applied every day (game days are not detected): never start inside 06:30-13:30 KST, '
+                         'abort and preserve when 06:30 KST is reached',
+    'quantiles': 'numpy linear quantiles for rho / W_T / CI summaries',
+    'smoke': 'first 50,000 TRAIN BC_P rows; B2 fitted twice with the registered params and 300 rounds',
+    'xf_artifacts': 'freeze-xf pins the XF out-of-fold prediction arrays (npy) and their row keys',
+    'config_sha256': 'canonical sha256 of the config with code.config_sha256 nulled and '
+                     'registration.addenda_records removed',
+    'previous_keys': 'every count table keeps its own sorted previous-label vocabulary; a label absent from it '
+                     'matches no cell (CategoricalBC raw-string semantics)',
+    'read_policy': 'stage-specific acquisition (READ_POLICY) of the split-aligned A3 input: wholly excluded row '
+                   'groups are skipped from footer statistics; rows outside the phase window that share a straddling '
+                   'row group (raw key files only) are decoded and dropped, counted per stage '
+                   '(rows_decoded_then_dropped); guarded columns of a DEV-bearing row group are never read before the '
+                   'gate',
+    'a3_input': 'the pinned processed parquet is rewritten once before registration by '
+                'scripts/prepare_behavior_calibration_input.py into row groups bounded exactly by the split dates '
+                '(row order, schema and values unchanged; pyarrow only); identity is proven per column by a canonical '
+                'sha256 of its values plus row count and schema, which streams every column byte including pitch_type '
+                '(a byte-level identity check, not a label read); the rewritten file and its identity manifest are '
+                'registration pins',
+    'ledger_parsing': 'S6 ledger lines are scanned key by key: allowlisted values are decoded, every other value is '
+                      'validated against the JSON grammar and skipped without being decoded into a Python object; a '
+                      'malformed line or a duplicate member at any level refuses the ledger',
+    'attempt_budget': 'the 14,400 s total covers the whole attempt from the smoke command through decide '
+                      '(budget.jsonl, bound to every stage record; durations must be finite nonnegative numbers and '
+                      'cumulative consumption monotone); a missing, empty, truncated or malformed history of a '
+                      'started attempt refuses; preflight and the memory probe are supervised under the same '
+                      'deadline; the citable final.json is the last write, after decide is sealed under the guard, '
+                      'the command budget is closed and a final guard check',
+    'memory_rule': 'the 10 GiB RSS cap applies to the runner peak RSS (getrusage) plus the current RSS of every '
+                   'process in the supervised child tree (ps, polled every 0.5 s); the peak child-tree RSS is '
+                   'recorded',
+    'appledouble': 'macOS AppleDouble sidecars (._name with the 00051607 magic, written by the exFAT T7 volume beside '
+                   'files, also after sealing) are metadata: excluded from SHA256SUMS, stage verification and the '
+                   'freeze-manifest file lists (matrix_policy_artifacts.is_appledouble); a ._ file without the magic '
+                   'is an artifact',
+    'bug_fix_retries': 'a bug-fix retry voids its registration (config digest, registered and registration commits) '
+                       'in bug_fix_retries; the external digest manifest (registration.digest_manifest_path) holds '
+                       'one original registration entry, then exactly one reregistration entry per record, in order '
+                       "(previous digest = the void digest, the record's void registration and aborted attempt, a "
+                       'reason, a new digest); the registration gate refuses a void commit or digest and any chain '
+                       'that does not reconcile',
+}
+
+
+class RegistrationError(ValueError):
+    """The config deviates from the registered EXP-BC-CAL-01 contract (fail closed)."""
+
+
+def alpha_value(value):
+    """Registered alpha token -> float ('inf' -> math.inf)."""
+    if value == 'inf':
+        return math.inf
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise RegistrationError(f'invalid alpha {value!r}')
+    return float(value)
+
+
+def _field(config, dotted):
+    node = config
+    for part in dotted.split('.'):
+        if not isinstance(node, dict) or part not in node:
+            return _MISSING
+        node = node[part]
+    return node
+
+
+_MISSING = object()
+
+PINS = {
+    'id': EXPERIMENT_ID,
+    'action_space.codes': list(ACTION_CODES),
+    'candidates.B0.parameters': B0_PARAMETERS,
+    'data.b0_artifact.file_sha256': B0_ARTIFACT['file_sha256'],
+    'data.b0_artifact.support_table_sha256': B0_ARTIFACT['support_table_sha256'],
+    'data.b0_artifact.hands_sha256': B0_ARTIFACT['hands_sha256'],
+    'data.b0_artifact.refit': False,
+    'data.pins': DATA_PINS,
+    'data.a3_input.tool': A3_INPUT['tool'],
+    'data.a3_input.source_sha256': A3_INPUT['source_sha256'],
+    'data.a3_input.boundaries': A3_INPUT['boundaries'],
+    'data.a3_input.end': A3_INPUT['end'],
+    'data.a3_input.path': A3_INPUT['path'],
+    'data.a3_input.identity_manifest_path': A3_INPUT['identity_manifest_path'],
+    'candidates.B1.levels': list(B1_LEVELS),
+    'candidates.B1.b0_setting_values': B1_B0_SETTING,
+    'candidates.B1.alpha_grid.value': B1_ALPHA_GRID,
+    'candidates.B1.search.sweeps': B1_SWEEPS,
+    'candidates.B1.search.tie': 'larger_alpha',
+    'candidates.B2.params': B2_PARAMS,
+    'candidates.B2.categorical_features': B2_CATEGORICAL,
+    'candidates.B2.rounds.train_rounds': B2_TRAIN_ROUNDS,
+    'candidates.B2.features': B2_FEATURES,
+    'calibration.methods.temperature.bounds': CALIBRATION['temperature_bounds'],
+    'calibration.methods.vector_scaling.l2_penalty.value': CALIBRATION['vector_l2'],
+    'calibration.selection.margin': CALIBRATION['vector_margin'],
+    'calibration.selection.cv': {'k': CALIBRATION['cv_folds'], 'seed': SEEDS['calibration_cv'],
+                                 'assignment': 'cv_folds'},
+    'calibration.vector_a_lower_bound': 1e-6,
+    'seeds.bootstrap': SEEDS['bootstrap'],
+    'seeds.bootstrap_draws': SEEDS['bootstrap_draws'],
+    'seeds.lightgbm': SEEDS['lightgbm'],
+    'seeds.fold_salts': SEEDS['fold_salts'],
+    'seeds.calibration_cv': SEEDS['calibration_cv'],
+    'cross_fitting.folds.k': FOLDS,
+    'splits.train.dates': SPLIT_DATES['train'],
+    'splits.earlystop.dates': SPLIT_DATES['earlystop'],
+    'splits.temperature.dates': SPLIT_DATES['temperature'],
+    'splits.blend.dates': SPLIT_DATES['blend'],
+    'splits.dev.dates': SPLIT_DATES['dev'],
+    'splits.style_as_of': STYLE_AS_OF,
+    'splits.style_input_filter': STYLE_INPUT_FILTER,
+    'splits.last_date': LAST_DATE,
+    'positivity.P1.threshold': THRESHOLDS['P1_threshold'],
+    'positivity.P2.threshold': THRESHOLDS['P2_threshold'],
+    'self_consistency.SC3_small_probability_ratio.bins': THRESHOLDS['sc3_bins'],
+    'self_consistency.SC1_groups': SC1_GROUPS,
+    'metrics.ece_bins': THRESHOLDS['ece_bins'],
+    'verdict_rule.eligibility.E1_nll_superiority.margin': THRESHOLDS['E1_nll_margin'],
+    'verdict_rule.eligibility.E1_nll_superiority.holm_family': THRESHOLDS['holm_family'],
+    'verdict_rule.eligibility.E1_nll_superiority.holm_alpha': THRESHOLDS['holm_alpha'],
+    'verdict_rule.eligibility.E2_ece_noninferiority.margin': THRESHOLDS['E2_ece_margin'],
+    'verdict_rule.eligibility.E3_positivity_noninferiority.margin': THRESHOLDS['E3_p1_margin'],
+    'verdict_rule.eligibility.E5_thresholds': THRESHOLDS['E5_ess_min'],
+    'verdict_rule.selection.tie_margin': THRESHOLDS['tie_margin'],
+    'verdict_rule.selection.comparator': THRESHOLDS['tie_comparator'],
+    'verdict_rule.selection.simpler': THRESHOLDS['tie_simpler'],
+    'verdict_rule.labels': REGISTERED_LABELS,
+    'ope_weight_diagnostics.integrity_gates.R2.expected': S6['expected_ess'],
+    'ope_weight_diagnostics.integrity_gates.R1b_atol': S6['r1b_atol'],
+    'ope_weight_diagnostics.integrity_gates.R2_rtol': S6['r2_rtol'],
+    'ope_weight_diagnostics.large_weight_threshold.value': THRESHOLDS['large_weight'],
+    'ope_weight_diagnostics.mei': THRESHOLDS['mei'],
+    'data.s6_ledger.expected_candidate_sha256': S6['expected_candidate_sha256'],
+    'data.s6_ledger.allowed_header_fields': S6['allowed_header_fields'],
+    'data.s6_ledger.allowed_fields': S6['allowed_fields'],
+    'cost_budget.hang_guard_seconds_per_stage.value': CAPS['stage_hang_guard_seconds'],
+    'cost_budget.total_wall_cap_mandatory_seconds.value': CAPS['total_wall_cap_seconds'],
+    'cost_budget.b2_per_fit_soft_cap_seconds.value': CAPS['b2_fit_soft_cap_seconds'],
+    'cost_budget.b2_per_fit_soft_cap_seconds.mode': CAPS['b2_soft_cap_action'],
+    'cost_budget.memory.start_requires_free_share_min': CAPS['start_free_share_min'],
+    'cost_budget.memory.abort_rss_bytes': CAPS['abort_rss_bytes'],
+    'cost_budget.protection_window_kst': PROTECTION_WINDOW_KST,
+    'runner.stage_order': list(STAGES),
+    'runner.smoke': SMOKE,
+    'runner.run_labels': list(RUN_LABELS),
+    'runner.terminal_failures': list(TERMINAL_FAILURES),
+    'runner.read_policy': READ_POLICY,
+    'runner.reviewed_code_scope': list(REVIEWED_CODE_SCOPE),
+    'runner.dependency_pins': {'group': DEPENDENCY_GROUP, **DEPENDENCY_PINS},
+    'registration.fields_pinned_at_registration': DRAFT_PIN_FIELDS,
+}
+
+
+def _same(actual, expected):
+    """Exact structural equality; numbers compare by value but bool never equals a number."""
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        return type(actual) is type(expected) and actual == expected
+    if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
+        return actual == expected
+    if isinstance(expected, dict):
+        return isinstance(actual, dict) and set(actual) == set(expected) and all(
+            _same(actual[k], expected[k]) for k in expected)
+    if isinstance(expected, (list, tuple)):
+        return isinstance(actual, (list, tuple)) and len(actual) == len(expected) and all(
+            _same(a, e) for a, e in zip(actual, expected))
+    return type(actual) is type(expected) and actual == expected
+
+
+def config_check(config):
+    """Raise ``RegistrationError`` unless every registered value of EXP-BC-CAL-01 is unchanged.
+
+    Checks the pinned fields, the arm partition (B0/B1/B2 + descriptive B0-T, raw, B0-XF, B1-XF only;
+    B3 and B2-XF excluded and never an arm) and the protection-window / cap types. Status and
+    execution flags are NOT checked here (``registration_gate`` does that)."""
+    errors = []
+    if not isinstance(config, dict):
+        raise RegistrationError('config must be a JSON object')
+    for dotted, expected in PINS.items():
+        actual = _field(config, dotted)
+        if actual is _MISSING:
+            errors.append(f'missing registered field {dotted}')
+        elif not _same(actual, expected):
+            errors.append(f'{dotted} differs from the registered value')
+    candidates = config.get('candidates')
+    if isinstance(candidates, dict):
+        if set(candidates) != set(CANDIDATE_KEYS):
+            errors.append(f'candidate arms must be exactly {list(CANDIDATE_KEYS)}')
+        descriptive = candidates.get('descriptive_arms_not_adoptable')
+        if not isinstance(descriptive, dict) or set(descriptive) != set(DESCRIPTIVE_ARM_KEYS):
+            errors.append(f'descriptive arms must be exactly {list(DESCRIPTIVE_ARM_KEYS)}')
+        for name in EXCLUDED_ARMS:
+            if name in candidates or (isinstance(descriptive, dict) and name in descriptive):
+                errors.append(f'{name} is excluded (D186 5-1) and must not be an arm')
+    excluded = config.get('excluded_not_run')
+    if not isinstance(excluded, dict) or set(excluded) != set(EXCLUDED_ARMS):
+        errors.append(f'excluded_not_run must list exactly {list(EXCLUDED_ARMS)}')
+    family = _field(config, 'verdict_rule.eligibility.E1_nll_superiority.holm_family')
+    if family is not _MISSING and isinstance(family, list) and any(name in EXCLUDED_ARMS for name in family):
+        errors.append('the Holm family must not contain an excluded arm')
+    errors += retry_record_problems(config)
+    if errors:
+        raise RegistrationError('; '.join(errors))
+    return config
+
+
+# ---------------------------------------------------------------- bug-fix retries and re-registration
+
+VOID_REGISTRATION_FIELDS = ('config_digest', 'registered_commit', 'registration_commit')
+REGISTRATION_KINDS = ('registration', 'reregistration')
+ATTEMPT_FOLDER = re.compile(r'attempt-\d+')
+
+
+def retry_record_problems(config):
+    """Problems of the config's bug-fix retry record (``bug_fix_retries``; absent = no retry): retries
+    numbered 1..n in order (strict integers), each naming the registration it voids (config digest = that
+    registration's code.config_sha256, full registered and registration commits; distinct across retries),
+    the absolute attempt-N folder it aborted, its defects and its fix. Only validated digests enter the
+    distinctness check, so a malformed value is a reported problem, never an exception."""
+    records = config.get('bug_fix_retries', [])
+    if not isinstance(records, list):
+        return ['bug_fix_retries must be a list of retry records']
+    problems, voided = [], []
+    for index, record in enumerate(records, start=1):
+        name = f'bug_fix_retries[{index - 1}]'
+        if not isinstance(record, dict):
+            problems.append(f'{name} must be an object')
+            continue
+        if type(record.get('retry')) is not int or record['retry'] != index:
+            problems.append(f'{name}.retry must be {index} (retries are numbered 1..n in order)')
+        void = record.get('void_registration')
+        if not isinstance(void, dict) or set(void) != set(VOID_REGISTRATION_FIELDS):
+            problems.append(f'{name}.void_registration must hold exactly ' + ', '.join(VOID_REGISTRATION_FIELDS))
+        else:
+            if _hex(void['config_digest'], 64):
+                voided.append(void['config_digest'])
+            else:
+                problems.append(f'{name}.void_registration.config_digest must be a 64-hex config digest')
+            for key in ('registered_commit', 'registration_commit'):
+                if not _hex(void[key], 40):
+                    problems.append(f'{name}.void_registration.{key} must be a full 40-hex commit sha')
+        attempt = record.get('aborted_attempt')
+        if not (isinstance(attempt, str) and PurePosixPath(attempt).is_absolute()
+                and ATTEMPT_FOLDER.fullmatch(PurePosixPath(attempt).name)):
+            problems.append(f'{name}.aborted_attempt must be the absolute path of an attempt-N folder')
+        defects = record.get('defects')
+        if not (isinstance(defects, list) and defects and all(isinstance(d, str) and d.strip() for d in defects)):
+            problems.append(f'{name}.defects must list the defects')
+        if not (isinstance(record.get('fix'), str) and record['fix'].strip()):
+            problems.append(f'{name}.fix must describe the fix')
+    if len(set(voided)) != len(voided):
+        problems.append('bug_fix_retries void the same registration twice')
+    return problems
+
+
+def retry_records(config):
+    """The validated bug-fix retry records (empty without a retry)."""
+    problems = retry_record_problems(config)
+    if problems:
+        raise RegistrationError('; '.join(problems))
+    return list(config.get('bug_fix_retries', []))
+
+
+def void_registrations(config):
+    """(void commits, void config digests) named by the bug-fix retry records."""
+    records = retry_records(config)
+    return ({r['void_registration'][k] for r in records for k in ('registered_commit', 'registration_commit')},
+            {r['void_registration']['config_digest'] for r in records})
+
+
+def registration_entries(rows):
+    """This experiment's registration entries of a digest manifest, in append order."""
+    return [r for r in rows if isinstance(r, dict) and r.get('experiment') == EXPERIMENT_ID
+            and r.get('kind') in REGISTRATION_KINDS]
+
+
+def reconcile_registration_chain(rows, records):
+    """The digest manifest's registration chain against the bug-fix retry records (an ordered bijection):
+    exactly one original ``registration`` entry, then exactly one ``reregistration`` entry per record, in
+    order. Re-registration k names retry k (a strict integer, as in the records: not true or 1.0), the
+    digest of the entry before it as previous_digest (= record k's void config digest; that entry was
+    registered at the record's void registered commit), a copy of the record's void_registration, the
+    record's aborted attempt, a reason and a new 64-hex digest. An entry without a record or a record
+    without an entry refuses. ``records`` are validated records (``retry_records``). Returns the active
+    (last) entry."""
+    entries = registration_entries(rows)
+    if not entries or entries[0].get('kind') != 'registration' \
+            or any(e.get('kind') != 'reregistration' for e in entries[1:]):
+        raise RegistrationError('the digest manifest needs exactly one original registration entry for '
+                                f'{EXPERIMENT_ID}, followed only by re-registration entries')
+    if len(entries) != len(records) + 1:
+        raise RegistrationError(f'the digest manifest holds {len(entries) - 1} re-registration entries for '
+                                f'{len(records)} bug_fix_retries records: every re-registration needs its record '
+                                'and every record its re-registration entry')
+    for k, (record, before, after) in enumerate(zip(records, entries, entries[1:]), start=1):
+        void = record['void_registration']
+        mismatches = [name for name, same in (
+            ('retry index', type(after.get('retry')) is int and after['retry'] == k == record['retry']),
+            ('previous_digest', after.get('previous_digest') == before.get('config_content_sha256')
+             == void['config_digest']),
+            ('void registered commit', before.get('commit') == void['registered_commit']),
+            ('void_registration', after.get('void_registration') == void),
+            ('aborted_attempt', after.get('aborted_attempt') == record['aborted_attempt']),
+            ('reason', isinstance(after.get('reason'), str) and bool(after['reason'].strip())),
+            ('new digest', _hex(after.get('config_content_sha256'), 64)
+             and after['config_content_sha256'] != after.get('previous_digest')),
+        ) if not same]
+        if mismatches:
+            raise RegistrationError(f're-registration entry {k + 1} does not reconcile with bug_fix_retries[{k - 1}]: '
+                                    + ', '.join(mismatches))
+    return entries[-1]
+
+
+def _hex(value, length):
+    return isinstance(value, str) and len(value) == length and set(value) <= set('0123456789abcdef')
+
+
+def _kst_datetime(value):
+    from datetime import datetime, timedelta
+    try:
+        parsed = datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        return False
+    return parsed is not None and parsed.utcoffset() == timedelta(hours=9)
+
+
+PIN_FORMATS = {'text': lambda v: isinstance(v, str) and bool(v.strip()),
+               'sha1': lambda v: _hex(v, 40), 'sha256': lambda v: _hex(v, 64),
+               'kst_datetime': _kst_datetime,
+               'expected_candidate': lambda v: v == S6['expected_candidate_sha256'],
+               'absolute_path': lambda v: isinstance(v, str) and PurePosixPath(v).is_absolute()
+               and not v.endswith('/')}
+
+
+def registration_pin_errors(config):
+    """Every pin of the immutable ``REGISTRATION_PIN_SCHEMA`` present and well formed: the S6 candidate
+    identity (header pins.candidate.sha256) equal to the sealed D125 identity c13cc989..., the S6
+    runtime identity (header runtime_sha256) a sha256 pinned from the header. Returns the problems."""
+    errors = []
+    for dotted, kind in REGISTRATION_PIN_SCHEMA:
+        value = _field(config, dotted)
+        if value is _MISSING or value is None:
+            errors.append(f'registration pin {dotted} missing')
+        elif not PIN_FORMATS[kind](value):
+            errors.append(f'registration pin {dotted} is not a valid {kind}')
+    return errors
+
+
+def registration_state(config):
+    """Status-neutral consistency of a committed config: 'DRAFT' (DRAFT_UNREGISTERED, every flag false)
+    or 'REGISTERED' (REGISTERED, every flag true, every registration pin valid). Raises otherwise."""
+    flags = [config.get(k) for k in ('registered', 'execute', 'real_data_enabled')]
+    if config.get('status') == 'DRAFT_UNREGISTERED' and flags == [False, False, False]:
+        return 'DRAFT'
+    if config.get('status') == 'REGISTERED' and flags == [True, True, True]:
+        errors = registration_pin_errors(config)
+        if errors:
+            raise RegistrationError('; '.join(errors))
+        return 'REGISTERED'
+    raise RegistrationError(f'inconsistent status {config.get("status")!r} with flags {flags}')
+
+
+def b0_alphas():
+    """The B0 special case of the B1 chain as floats per level (pitcher .. batter_cluster)."""
+    return {level: alpha_value(B1_B0_SETTING[level]) for level in B1_LEVELS[1:]}
+
+
+def alpha_grid(level):
+    """Registered grid for one level: 0 only at the pitcher level; 'inf' skips the level."""
+    values = [alpha_value(v) for v in B1_ALPHA_GRID]
+    return values if level == 'pitcher' else [v for v in values if v != 0]

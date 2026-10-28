@@ -20,6 +20,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# EXP-BC-CAL-01 (track A3) B2 behavior model; the matrix environment's recorded version
+# (configs/ML-POLICY-MATERIALIZATION-v1.json environment.versions). Launch with
+# DYLD_LIBRARY_PATH=<venv torch/lib> so torch and LightGBM share one OpenMP runtime.
+research-a3 = ["lightgbm==4.6.0"]
 
 [tool.setuptools]
 package-dir = { "" = "src" }
