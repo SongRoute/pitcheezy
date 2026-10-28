@@ -542,6 +542,7 @@ NEW_FILES = (  # registration_input_pins.new_files_sha256 scope (design 9.1 item
     'experiments/pitchmdp/tests/test_ope_a2b_synthetic.py',
     'experiments/pitchmdp/tests/test_ope_a2b_decision.py',
     'experiments/pitchmdp/tests/test_ope_a2b_denominator.py',
+    'experiments/pitchmdp/tests/isolated_ope_a2b_denominator_lightgbm.py',
     'experiments/pitchmdp/tests/test_ope_a2b_ledger.py',
     'experiments/pitchmdp/tests/test_ope_a2b_runner.py',
 )
