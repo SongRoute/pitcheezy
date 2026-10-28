@@ -205,6 +205,8 @@ class LedgerWorld:
     s6_games: list
     no_pitch: frozenset
     game_values: dict
+    s6_header: dict = None  # the allowlisted S6-dr-a5 ledger header (runtime_sha256, pins)
+    s6_replay_rows: list = None  # the allowlisted S6 rows of the first and the last game in ledger order
 
 
 class Environment(roa.Environment):
@@ -288,21 +290,24 @@ class Environment(roa.Environment):
 
     def ledger_world(self, config, local, base, checkpoint):
         """A2b-L: the ML-POLICY registration (pinned chain), the loaded frame and store, the S6-dr-a5 ledger's game
-        set through the allowlisted A3 reader (dr.json is never opened) and the frozen C0 game values."""
+        set, header and the rows of its first and last game (the driver-equivalence replay) through the allowlisted
+        A3 reader (allowlisted fields only; dr.json is never opened) and the frozen C0 game values."""
         from pitchmdp import behavior_weights as bw
         pins = config['registration_input_pins']
         rpv, policy = self.policy_registration(config)
         inputs = self.policy_inputs(config, local, rpv, policy)
         checkpoint()
         ledger = Path(pins['s6_dr_a5_ledger_path'])
-        _, decisions, _ = bw.read_ledger(ledger, manifest_path=ledger.parent / 'manifest.json',
-                                         ledger_sha256=pins['s6_dr_a5_ledger_sha256'],
-                                         manifest_sha256=pins['s6_dr_a5_manifest_sha256'],
-                                         runtime_sha256=pins['s6_runtime_sha256_header'],
-                                         candidate_sha256=config['identities']['candidate_policy_sha256'])
+        header, decisions, _ = bw.read_ledger(ledger, manifest_path=ledger.parent / 'manifest.json',
+                                              ledger_sha256=pins['s6_dr_a5_ledger_sha256'],
+                                              manifest_sha256=pins['s6_dr_a5_manifest_sha256'],
+                                              runtime_sha256=pins['s6_runtime_sha256_header'],
+                                              candidate_sha256=config['identities']['candidate_policy_sha256'])
+        replay = lg.replay_games(decisions)
         pcfg = policy['config']
         return LedgerWorld(rpv, policy, inputs, lg.ledger_games(decisions),
-                           frozenset(pcfg['pa_time_rules']['R3_codes']['no_pitch_descriptions']), self.game_values(base))
+                           frozenset(pcfg['pa_time_rules']['R3_codes']['no_pitch_descriptions']), self.game_values(base),
+                           s6_header=header, s6_replay_rows=[r for r in decisions if lg.game_of(r) in replay])
 
     def s6_allowlisted(self, config):
         """The S6 decisions through the allowlisted reader (G-INT-R3: reward-free fields only)."""
@@ -325,6 +330,10 @@ class Environment(roa.Environment):
         from pitchmdp.behavior_model import VectorBC
         from pitchmdp.policy_artifacts import load_train_bc
         return VectorBC.from_artifact(load_train_bc(*world.rpv.registered_path(world.policy, 'bc')))
+
+    def pyproject_sha256(self):
+        """sha256 of this checkout's pyproject.toml (the B2 inference environment pin, A3 record)."""
+        return rb.file_sha256(REPO / 'pyproject.toml')
 
 
 # ---------------------------------------------------------------- commands
@@ -604,17 +613,31 @@ class _Deadline:
 
 
 def body_ledger(run):
-    """Selection, the reward-free ledger, M-10 and the identity checks; no DR estimate, center or reward written."""
+    """The registered runtime pins against the assembly (G-CODE MINOR-3), the selection, the driver equivalence
+    BEFORE the new ledger (design 9.2, G-CODE MAJOR-4: written first, then its pass required), the reward-free ledger,
+    M-10 and the identity checks; no DR estimate, center or reward written."""
     pins = run.config['registration_input_pins']
     world = run.env.ledger_world(run.config, run.local, run.base, run.check)
     rpv, policy, inputs = world.rpv, world.policy, world.inputs
+    pre = rpv.prerequisites('dr-evaluate', policy)
+    compared_pins = lg.require_runtime_pins(pins, rpv, policy, pre)
     selection = lg.selection(inputs['frame'], rpv.select_games, rpv.straddling_games, s6_ledger_games=world.s6_games,
-                             expected=pins['selection'])
+                             n_games=lg.N_GAMES, expected=pins['selection'])
     blocks = rpv.game_blocks(inputs['frame'], selection['new_games'], 'dev')
     dates = lg.guard_rehearsal_dates(inputs['frame'], blocks)
-    pre = rpv.prerequisites('dr-evaluate', policy)
+    run.check()
+    (run.out / 'driver_equivalence').mkdir()
+    equivalence = lg.driver_equivalence(rpv, policy, inputs, pre=pre, s6_header=world.s6_header,
+                                        s6_rows=world.s6_replay_rows, s6_games=world.s6_games,
+                                        new_games=selection['new_games'], out=run.out / 'driver_equivalence',
+                                        deadline=_Deadline(run.check), no_pitch=world.no_pitch)
+    roa.dump(run.out / 'driver_equivalence.json', equivalence)
+    lg.require_equivalence(equivalence)
     run.check()
     runtime, components, provenance = lg.candidate(rpv, policy, inputs, blocks, run.out, pre=pre)
+    if equivalence['path'] == 'same_request_twice':  # path B compared the new ledger's runtime identity
+        _require(equivalence['runtime_sha256'] == runtime.sha256,
+                 'the path-B runtimes are not the new ledger runtime (deterministic integrity)')
     expected = rpv.census_pas(pre['census']['dev'], selection['new_games'])
     facts, sealed = lg.submit(rpv, runtime, inputs['store'], blocks, _Deadline(run.check), no_pitch=world.no_pitch,
                               expected_pas=expected)
@@ -633,6 +656,7 @@ def body_ledger(run):
     roa.dump(run.out / 'facts.reward_free.json', lg.reward_free_facts(facts))
     roa.dump(run.out / 'ledger_record.json', {'stage': 'A2b-L', 'sealed_counts': sealed, 'e0_count': lg.e0_count(facts),
                                                'pas': len(facts), 'dates': dates, 'identity': identity, 'm10': m10,
+                                               'driver_equivalence': equivalence, 'registered_pins_compared': compared_pins,
                                                'runtime_sha256': runtime.sha256, 'summary': runtime.summary(),
                                                'rewards_written': False})
     lg.check_no_reward_outputs(run.out)
@@ -673,6 +697,8 @@ def body_s3_r3(run):
     from pitchmdp import behavior_weights as bw
     pins = run.config['registration_input_pins']
     settings = pins['a3_weight_settings']
+    _require(run.env.pyproject_sha256() == pins['b2_inference_environment']['pyproject_sha256'],
+             'pyproject.toml differs from the B2 inference environment pin (A3 record; G-CODE MINOR-3)')
     world = run.env.ledger_world(run.config, run.local, run.base, run.check)
     model = run.env.b2_model(run.config, run.env.repertoire(world))
     bc, support, hands = b0_artifacts(world)
@@ -1065,7 +1091,9 @@ def main(argv=None, env=None):
     if args.command == 'pins':
         print(json.dumps({'new_files_sha256': new_file_hashes(), 'protected_sources': rb.PROTECTED_SOURCES,
                           'registration_input_pins_expected_keys': list(rb.PIN_KEYS),
-                          'added_to_the_draft_pin_keys': list(rb.ADDED_PIN_KEYS)}, indent=1))
+                          'added_to_the_draft_pin_keys': list(rb.ADDED_PIN_KEYS),
+                          'pins_compared_at_run': rb.COMPARED_AT_RUN, 'record_only_pins': rb.RECORD_ONLY_PINS},
+                         indent=1))
         return 0
     if args.command == 'select':
         return select_command(args, env, entered)

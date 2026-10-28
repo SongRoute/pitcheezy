@@ -7,10 +7,14 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
+import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -202,6 +206,130 @@ def b2_vectors(decisions, seed=11, scale=0.4, zero_at=None):
             vector[result['logged_index']] = 0.
         out[key] = (vector / vector.sum()).tolist()
     return out
+
+
+# ---------------------------------------------------------------- a synthetic ML-POLICY registration (dispatch chain)
+def a2b_game_frame(n_dev_games=4):
+    """``test_policy_validation.game_frame`` with ``n_dev_games`` DEV games (2 = that frame exactly): the S6 rehearsal
+    takes its registered 2-game selection, the other DEV games form the A2b new list."""
+    import test_policy_validation as tpv
+    from pitchmdp.archetypes import add_batter_style_history
+    from pitchmdp.sequence_data import PHYSICAL_COLUMNS
+    rng, rows = np.random.default_rng(3), []
+    for g in range(8):  # TRAIN
+        date = (pd.Timestamp('2024-06-01') + pd.Timedelta(days=g)).strftime('%Y-%m-%d')
+        for ab in range(1, 7):
+            rows += tpv.pa_rows(100 + g, ab, date, 'train', ('short', 'long')[ab % 2], event=('single', 'field_out')[ab % 2])
+    for ab in range(1, 4):  # one May game (profile starts)
+        rows += tpv.pa_rows(150, ab, '2025-05-20', 'temperature', 'short')
+    for g in range(2):  # two June games (tau selection)
+        for ab in range(1, 4):
+            rows += tpv.pa_rows(160 + g, ab, f'2025-06-1{g}', 'blend', ('short', 'long')[ab % 2])
+    for g in range(n_dev_games):  # DEV
+        date = (pd.Timestamp('2025-07-01') + pd.Timedelta(days=g)).strftime('%Y-%m-%d')
+        for ab, (kind, extra) in enumerate(tpv.DEV_SCRIPT, start=1):
+            rows += tpv.pa_rows(200 + g, ab, date, 'dev', kind, **extra)
+    frame = pd.DataFrame(rows)
+    for c in PHYSICAL_COLUMNS:
+        frame[c] = rng.normal(size=len(frame))
+    last = ~frame.duplicated(['game_pk', 'at_bat_number'], keep='last')
+    frame['is_pa_terminal'] = last & frame.events.notna() & frame.events.ne('truncated_pa')
+    for game, part in frame.groupby('game_pk'):  # home wins every game: final result is determined
+        frame.loc[part.index[-1], ['post_home_score', 'post_away_score']] = (1, 0)
+    return add_batter_style_history(frame)
+
+
+def ml_policy_world(n_dev_games=4):
+    """A SYNTHETIC ML-POLICY registration built through the registered ``run_policy_validation.dispatch`` (the
+    ``test_policy_validation.DispatchTests`` chain: census, materialize-bc, style-snapshot, the labelled bind-probe
+    stub, v5-denominators, profile, tau-select, v2-world, dr-evaluate on runtime v3 with the L1-R estimator block),
+    on ``a2b_game_frame(n_dev_games)`` with the fake pinned G0 / WE files. Returns a namespace (``rpv``, ``policy``,
+    ``inputs`` with the store, ``s6`` = the sealed dr-evaluate stage directory, ``root`` - removed by the caller)."""
+    import test_policy_validation as tpv
+    from pitchmdp import policy_estimator as est
+    from pitchmdp import policy_runtime as pr
+    from pitchmdp.matrix_data import ordered_key_hash
+    rpv = tpv.rpv
+    fx = tpv.DispatchTests('test_registered_chain_through_dispatch')
+    fx.setUp()
+    fx.frame = a2b_game_frame(n_dev_games)
+    fx.store = tpv.build_store(fx.frame)
+    runs, config = fx.config()
+    config['le2025_validation_plan']['stages']['S6_V4']['estimator'] = {
+        'runtime': pr.CONTRACT_V3, 'censoring': 'l1r', 'natural_course_refusals': list(est.H_K_REFUSALS), 'gr_cap': .5,
+        'c_deltas': [.008, .0278], 'mei': .001, 'v3_law': 'tempered_alpha_0.5'}
+    root = fx.root
+    config_path = root / 'config.json'
+    config_path.write_text(json.dumps(config))
+    bundle_path, bundle_sha = fx.syn.bundle_file()
+    keys_path = root / 'train_keys.parquet'
+    fx.keys.to_parquet(keys_path, index=False)
+    files = {**fx.syn.bundle['files'], 'p4_train_keys': {'path': str(keys_path), 'sha256': tpv.sha(keys_path)}}
+    inputs = {'bundle_path': bundle_path, 'bundle_sha': bundle_sha, 'files': files,
+              'paths': {**fx.syn.paths, 'p4_train_keys': keys_path},
+              'prep': {'features': {'tokens': {'type_vocabulary': tpv.TYPES}},
+                       'samples': {'train': {'n': len(fx.keys), 'rows_sha256': ordered_key_hash(fx.keys)}}},
+              'parent': {'dataset_identity': {'sources': [{'file': 'synthetic', 'sha256': 'a' * 64}],
+                                              'processed_sha256': 'f' * 64}},
+              'frame': fx.frame, 'member_loader': tpv.load_member}
+    chain = [config_path]
+
+    def load(store):
+        return {**inputs, 'store': fx.store if store else None}
+
+    def run(command, name):
+        rpv.dispatch(command, rpv.load_registration(chain[0], chain[1:]), {}, runs / name, load)
+        return runs / name
+
+    def register(stage, entries):
+        path = root / f'addendum-{len(chain)}.json'
+        path.write_text(json.dumps({'parent_sha256': rpv.hash_file_bytes(chain[-1].read_bytes()), 'stage': stage,
+                                    'registered_inputs': {n: {'path': str(p), 'file_sha256': tpv.sha(p)}
+                                                          for n, p in entries.items()}}))
+        chain.append(path)
+    runs.mkdir(parents=True)
+    # a MagicMock, not a function of this module: the bound-components identity hashes the repository source closure
+    # reachable from module namespaces (policy_identity.project_sources), so a lambda here would put this file in the
+    # closure while patched and make later bindings (outside the patch) differ from the registered bind identity
+    with mock.patch('run_ml_matrix.check_location', return_value=root / 'artifact'):
+        census = run('census', 'S0')
+        register('S0', {'census': census / 'census.json'})
+        s1 = run('materialize-bc', 'S1')
+        s1b = run('style-snapshot', 'S1b')
+        stub = runs / 'S2-stub'  # bind-probe needs sealed G0 archives; its sealed record is a labelled stub
+        stub.mkdir()
+        bound = fx.syn.bind(tpv.pa.load_train_bc(s1 / 'bc_BC_P.json', tpv.sha(s1 / 'bc_BC_P.json')),
+                            rpv.pa_contexts(fx.store, tpv.blocks_of(fx.frame, 'dev')[:1])[0])
+        (stub / 'probe.json').write_text(json.dumps({'pass': True, 'synthetic_stub': True}))
+        (stub / 'identity.json').write_text(json.dumps({'sha256': bound.sha256}))
+        (stub / 'manifest.json').write_text(json.dumps({'command': 'bind-probe', 'artifact_sha256': {
+            'probe.json': tpv.sha(stub / 'probe.json'), 'identity.json': tpv.sha(stub / 'identity.json')}}))
+        register('S1-S2', {'bc': s1 / 'bc_BC_P.json', 'hands': s1 / 'hands.json', 'support': s1 / 'support_primary.json',
+                           'materialize': s1 / 'materialize.json',
+                           **{f'style_{s}': s1b / f'style_{s}.json' for s in ('dev', 'temperature', 'blend')},
+                           'bind_probe': stub / 'probe.json', 'bind_identity': stub / 'identity.json'})
+        v5 = run('v5-denominators', 'S4')
+        profile = run('profile', 'S3')
+        register('S3-S4', {'profile': profile / 'profile.json', 'v5': v5 / 'v5.json'})
+        freeze = run('tau-select', 'S3b')
+        register('S3b', {'tau_freeze': freeze / 'tau_freeze.json'})
+        v2 = run('v2-world', 'S5')
+        register('S5', {'v2': v2 / 'v2.json'})
+        s6 = run('dr-evaluate', 'S6')
+    policy = rpv.load_registration(chain[0], chain[1:])
+    return SimpleNamespace(rpv=rpv, policy=policy, inputs=load(True), root=root, s6=s6, chain=list(chain), fx=fx,
+                           frame=fx.frame, store=fx.store, syn=fx.syn, no_pitch=tpv.NO_PITCH, tpv=tpv)
+
+
+def read_s6(world):
+    """The synthetic S6 ledger through the allowlisted A3 reader: (header, decisions, pins)."""
+    from pitchmdp import behavior_weights as bw
+    ledger = world.s6 / 'ledger-dev-0.jsonl'
+    first = json.loads(ledger.read_text().splitlines()[0])
+    pins = {'ledger_sha256': world.tpv.sha(ledger), 'manifest_sha256': world.tpv.sha(world.s6 / 'manifest.json'),
+            'runtime_sha256': first['runtime_sha256'], 'candidate_sha256': first['pins']['candidate']['sha256']}
+    header, decisions, _ = bw.read_ledger(ledger, manifest_path=world.s6 / 'manifest.json', **pins)
+    return header, decisions, pins
 
 
 # ---------------------------------------------------------------- synthetic public files and phase-2 records

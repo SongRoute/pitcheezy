@@ -5,12 +5,14 @@ date guards; the reward-free submission (no PA end bound), the M-10 paired ident
 only, the identity checks, the driver-equivalence comparator and the no-DR / no-center output check. The runtime
 is the existing synthetic candidate runtime (fake G0 + WE, test_policy_validation); no real data is read.
 """
+import copy
 import json
 from pathlib import Path
 import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -21,6 +23,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE.parent / 'scripts'))
 
 import run_policy_validation as rpv  # noqa: E402
+from ope_a2b_fixtures import ml_policy_world, read_s6  # noqa: E402
 from pitchmdp import ledger_a2b as lg  # noqa: E402
 from pitchmdp import ope_registry_a2b as rb  # noqa: E402
 from pitchmdp import policy_requests as preq  # noqa: E402
@@ -172,12 +175,19 @@ class LedgerStageTests(unittest.TestCase):
         part = self.blocks[:3]
         lg.submit(rpv, second, self.fx.store, part, rpv.Deadline(), no_pitch=self.tpv.NO_PITCH, expected_pas=len(part))
         reference, rerun = list(first.ledger.iter_decisions()), list(second.ledger.iter_decisions())
-        record = lg.compare_allowed_fields(reference, rerun)
+        replayed = {r['pa_id'] for r in rerun}
+        record = lg.compare_allowed_fields([r for r in reference if r['pa_id'] in replayed], rerun)
         self.assertTrue(record['pass'], record)  # the same requests through a fresh runtime: identical allowed fields
-        self.assertEqual(record['compared'], len(rerun))
+        self.assertEqual(record['compared_decisions'], len(rerun))
+        self.assertEqual(record['max_abs_delta'], 0.0)
+        partial = lg.compare_allowed_fields(reference, rerun)  # every reference decision must be re-run
+        self.assertFalse(partial['pass'])
+        self.assertEqual(partial['missing_decisions'], len(reference) - len(rerun))
         changed = [dict(r) for r in rerun]
         changed[0] = {**changed[0], 'result': {**changed[0]['result'], 'candidate': list(np.roll(changed[0]['result']['candidate'], 1))}}
-        self.assertFalse(lg.compare_allowed_fields(reference, changed)['pass'])
+        self.assertFalse(lg.compare_allowed_fields([r for r in reference if r['pa_id'] in replayed], changed)['pass'])
+        self.assertEqual(lg.ALLOWED_FIELDS, __import__('pitchmdp.behavior_weights', fromlist=['x']).ALLOWED_DECISION)
+        self.assertEqual(lg.ALLOWED_RESULT, __import__('pitchmdp.behavior_weights', fromlist=['x']).ALLOWED_RESULT)
 
     def test_forbidden_outputs_are_refused(self):
         root = Path(tempfile.mkdtemp(prefix='a2b-l-')).resolve()
@@ -213,6 +223,150 @@ class LedgerStageTests(unittest.TestCase):
         (root / '._notes.json').write_text(json.dumps({'center': 1e-4}))  # no AppleDouble magic: an artifact
         with self.assertRaisesRegex(IntegrityError, 'reward / center key'):
             lg.check_no_reward_outputs(root)
+
+
+class DriverEquivalenceTests(unittest.TestCase):
+    """G-CODE MAJOR-4 (design 9.2, PM decision) on a SYNTHETIC ML-POLICY registration built through the registered
+    dispatch chain (its S6 = a runtime-v3 dr-evaluate stage of 2 of 4 synthetic DEV games): the path rule, PASS and
+    FAIL of path A ``s6_two_game_replay`` and path B ``same_request_twice``, the absolute 1e-12 tolerance; the S6
+    rows come through the allowlisted reader only. No real data, ledger or model is read."""
+    @classmethod
+    def setUpClass(cls):
+        cls.world = ml_policy_world()
+        cls.addClassCleanup(shutil.rmtree, cls.world.root, True)
+        cls.header, cls.decisions, cls.pins = read_s6(cls.world)
+        w = cls.world
+        cls.pre = w.rpv.prerequisites('dr-evaluate', w.policy)
+        cls.s6_games = lg.ledger_games(cls.decisions)
+        cls.selection = lg.selection(w.inputs['frame'], w.rpv.select_games, w.rpv.straddling_games,
+                                     s6_ledger_games=cls.s6_games, n_games=2)
+        cls.replay = lg.replay_games(cls.decisions)
+        cls.rows = [r for r in cls.decisions if lg.game_of(r) in cls.replay]
+
+    def run_check(self, header=None, rows=None):
+        w = self.world
+        out = Path(tempfile.mkdtemp(prefix='a2b-eq-', dir=w.root)).resolve()
+        return lg.driver_equivalence(w.rpv, w.policy, w.inputs, pre=self.pre, s6_header=header or self.header,
+                                     s6_rows=self.rows if rows is None else rows, s6_games=self.s6_games,
+                                     new_games=self.selection['new_games'], out=out, deadline=rpv.Deadline(),
+                                     no_pitch=w.no_pitch)
+
+    def without_style(self, header):
+        pins = dict(header['pins'])
+        pins['provenance'] = {k: v for k, v in pins['provenance'].items() if k != 'style_report'}
+        return {**header, 'pins': pins}
+
+    def test_path_a_replays_the_first_and_last_s6_games_on_the_reproduced_runtime(self):
+        self.assertEqual(self.selection['new_games'], sorted(set(range(200, 204)) - set(self.s6_games)))
+        self.assertIsNotNone(lg.s6_style_report(self.header))
+        record = self.run_check()
+        self.assertEqual((record['path'], record['pass'], record['style_source'], record['reason']),
+                         ('s6_two_game_replay', True, 'header', None))
+        self.assertTrue(record['runtime_sha256_reproduced'])
+        self.assertEqual(record['runtime_sha256'], self.pins['runtime_sha256'])
+        self.assertEqual(record['games'], [lg.game_of(self.decisions[0]), lg.game_of(self.decisions[-1])])
+        self.assertEqual(record['compared_decisions'], len(self.rows))
+        self.assertGreater(record['compared_fields'], 10 * len(self.rows))
+        self.assertEqual(record['max_abs_delta'], 0.0)
+        self.assertFalse(record['rewards_read'])
+        text = json.dumps(record)
+        for word in ('reward', 'delta_bounds', 'center', '"logging"'):  # pass / fail, counts and key names only
+            self.assertNotIn(word, text.replace('rewards_read', ''))
+        self.assertTrue(all(set(r) <= {*lg.ALLOWED_FIELDS, 'result'} for r in self.rows))  # the allowlisted reader
+        recomputed = self.run_check(self.without_style(self.header))  # the style report from the S6 game list
+        self.assertEqual((recomputed['path'], recomputed['pass'], recomputed['style_source']),
+                         ('s6_two_game_replay', True, 'recomputed_from_the_s6_game_list'))
+        self.assertTrue(lg.require_equivalence(record))
+
+    def test_path_a_compares_floats_absolutely_and_the_rest_exactly(self):
+        def tampered(delta=None, index=None, drop=False):
+            rows = copy.deepcopy(self.rows)
+            target = next(r for r in rows if isinstance(r.get('result'), dict))
+            if delta is not None:
+                target['result']['logging'] = [v + delta if v > 0 else v for v in target['result']['logging']]
+            if index is not None:
+                target['result']['logged_index'] = target['result']['logged_index'] + index
+            return [r for r in rows if r is not target] if drop else rows
+        self.assertTrue(self.run_check(rows=tampered(5e-13))['pass'])  # within the absolute 1e-12
+        far = self.run_check(rows=tampered(2e-12))
+        self.assertFalse(far['pass'])
+        self.assertGreater(far['mismatched_fields'], 0)
+        self.assertGreater(far['max_abs_delta'], 1e-12)
+        self.assertTrue(far['mismatched_keys_shown'][0].endswith('result.logging.[0]') or far['mismatched_keys_shown'])
+        with self.assertRaisesRegex(IntegrityError, 'driver equivalence failed on path s6_two_game_replay'):
+            lg.require_equivalence(far)
+        self.assertFalse(self.run_check(rows=tampered(index=1))['pass'])  # an integer field: equality
+        dropped = self.run_check(rows=tampered(drop=True))
+        self.assertEqual((dropped['pass'], dropped['extra_decisions']), (False, 1))  # the re-run has one more
+
+    def test_path_b_when_the_s6_runtime_is_not_reproduced(self):
+        w = self.world
+        other = {**self.without_style(self.header), 'runtime_sha256': 'e' * 64}
+        record = self.run_check(other)
+        self.assertEqual((record['path'], record['pass'], record['reason'], record['style_source']),
+                         ('same_request_twice', True, 'runtime_sha_not_reproduced', 'recomputed_from_the_s6_game_list'))
+        self.assertFalse(record['runtime_sha256_reproduced'])
+        first_new = int(w.frame.game_pk.iloc[w.rpv.game_blocks(w.frame, self.selection['new_games'], 'dev')[0][1][0]])
+        self.assertEqual(record['games'], [first_new])
+        self.assertGreater(record['compared_decisions'], 0)
+        out = Path(tempfile.mkdtemp(prefix='a2b-main-', dir=w.root))  # path B ran the new DEV ledger's identity
+        main, _, _ = lg.candidate(w.rpv, w.policy, w.inputs, w.rpv.game_blocks(w.frame, self.selection['new_games'], 'dev'),
+                                  out, pre=self.pre)
+        self.assertEqual(record['runtime_sha256'], main.sha256)
+        styled = self.run_check({**self.header, 'runtime_sha256': 'e' * 64})  # header style, sha not reproduced
+        self.assertEqual((styled['path'], styled['style_source']), ('same_request_twice', 'header'))
+
+    def test_path_b_detects_two_runtimes_that_disagree(self):
+        real = lg.candidate
+
+        def drifting(*args, **kwargs):
+            runtime, components, provenance = real(*args, **kwargs)
+            if kwargs.get('ledger_name') == lg.EQUIVALENCE_LEDGERS['twice'][1]:
+                original = runtime.ledger.decisions
+
+                def decisions():
+                    rows = original()
+                    target = next(r for r in rows if isinstance(r.get('result'), dict))
+                    target['result']['rho_candidate'] = target['result']['rho_candidate'] + 1e-9
+                    return rows
+                runtime.ledger.decisions = decisions
+            return runtime, components, provenance
+        with mock.patch.object(lg, 'candidate', drifting):
+            record = self.run_check({**self.header, 'runtime_sha256': 'e' * 64})
+        self.assertEqual((record['path'], record['pass'], record['mismatched_fields']), ('same_request_twice', False, 1))
+        with self.assertRaisesRegex(IntegrityError, 'same_request_twice'):
+            lg.require_equivalence(record)
+
+    def test_the_replay_pair(self):
+        self.assertEqual(lg.replay_games([{'pa_id': '9:1'}, {'pa_id': '7:2'}, {'pa_id': '8:1'}]), (9, 8))
+        with self.assertRaisesRegex(IntegrityError, 'two distinct games'):
+            lg.replay_games([{'pa_id': '9:1'}, {'pa_id': '9:2'}])
+        with self.assertRaises(IntegrityError):
+            lg.replay_games([])
+
+    def test_the_registered_runtime_pins_equal_the_assembly(self):
+        """G-CODE MINOR-3: runtime_setting and dev_style_snapshot are compared with what candidate() uses."""
+        w = self.world
+        used = lg.runtime_setting_used(w.policy, self.pre)
+        path, sha = w.rpv.registered_path(w.policy, 'style_dev')
+        pins = {'runtime_setting': dict(used),
+                'dev_style_snapshot': {'path': str(path), 'sha256': sha, 'as_of_exclusive': '2025-07-01'}}
+        record = lg.require_runtime_pins(pins, w.rpv, w.policy, self.pre)
+        self.assertEqual(record['runtime_setting'], used)
+        self.assertEqual(used['evaluation_role'], 'evaluation')  # the frozen dr_q source is the evaluation seed
+        self.assertEqual(used['planning_seed'], 0)
+        for key, value in (('selected_tau', used['selected_tau'] * 2), ('samples', used['samples'] + 1),
+                           ('pitch_cap', used['pitch_cap'] + 1), ('row_budget', 9000000), ('planning_seed', 1),
+                           ('evaluation_role', None), ('samples', float(used['samples']))):
+            bad = copy.deepcopy(pins)
+            bad['runtime_setting'][key] = value
+            with self.subTest(key=key, value=value), self.assertRaisesRegex(IntegrityError, 'runtime_setting'):
+                lg.require_runtime_pins(bad, w.rpv, w.policy, self.pre)
+        for key, value in (('sha256', 'f' * 64), ('path', str(w.root / 'style_dev.json')), ('as_of_exclusive', '2025-06-01')):
+            bad = copy.deepcopy(pins)
+            bad['dev_style_snapshot'][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(IntegrityError, 'dev_style_snapshot'):
+                lg.require_runtime_pins(bad, w.rpv, w.policy, self.pre)
 
 
 if __name__ == '__main__':

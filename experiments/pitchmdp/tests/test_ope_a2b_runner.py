@@ -173,6 +173,11 @@ class FailClosedTests(unittest.TestCase):
         pins = json.loads(buffer.getvalue())
         self.assertEqual(set(pins['new_files_sha256']), set(rb.NEW_FILES))
         self.assertIn('a3_weight_settings', pins['added_to_the_draft_pin_keys'])
+        self.assertEqual(set(pins['record_only_pins']), {'g0_bundle_sha256', 'a2_execution_source_commit',
+                                                        'a3_reader_commit', 'x2_world_predictor_identity'})
+        self.assertTrue(all(v.startswith('record-only pin (no comparison)') for v in pins['record_only_pins'].values()))
+        self.assertEqual(set(pins['pins_compared_at_run']), {'runtime_setting', 'dev_style_snapshot',
+                                                            'b2_inference_environment'})
 
     def test_window_and_hang_guards_refuse_before_preflight(self):
         ws = Workspace(self, draft=True)

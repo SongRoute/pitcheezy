@@ -592,6 +592,18 @@ ADDED_PIN_KEYS = (  # implementation needs (reported for G-REG; the draft has no
     'a3_weight_settings',  # the A3 s6-weights settings G-INT-R3 reproduces (large, mei, draws, seed, E5)
 )
 PIN_KEYS = (*DRAFT_PIN_KEYS, *ADDED_PIN_KEYS)
+COMPARED_AT_RUN = {  # G-CODE MINOR-3: pins compared with the value the code actually uses (beyond their form)
+    'runtime_setting': 'A2b-L start: = the setting candidate() assembles the runtime with (ledger_a2b.require_runtime_pins)',
+    'dev_style_snapshot': 'A2b-L start: = the registered style_dev input (path, file sha256) and the DEV as-of',
+    'b2_inference_environment': 'A2b-S3:R3: pyproject_sha256 = sha256 of pyproject.toml; lightgbm = the installed version',
+}
+RECORD_ONLY_PINS = {  # G-CODE MINOR-3: registered for the record; no code compares them with a used value
+    'g0_bundle_sha256': 'record-only pin (no comparison): the G0 bundle is loaded through the pinned ML-POLICY chain',
+    'a2_execution_source_commit': 'record-only pin (no comparison): the commit that ran EXP-OPE-RES-01',
+    'a3_reader_commit': 'record-only pin (no comparison): the commit of the A3 allowlisted ledger reader',
+    'x2_world_predictor_identity': 'record-only pin (no comparison): A2b runs no X2 world (A2-S2 only)',
+}
+assert set(COMPARED_AT_RUN) <= set(PIN_KEYS) and set(RECORD_ONLY_PINS) <= set(PIN_KEYS)
 CONFIG_EXPECTATIONS = (  # (json path, registered value)
     ('$.id', EXPERIMENT_ID), ('$.protocol', PROTOCOL), ('$.base_commit', BASE_COMMIT),
     ('$.seeds.a2b_base.value', A2B_BASE),

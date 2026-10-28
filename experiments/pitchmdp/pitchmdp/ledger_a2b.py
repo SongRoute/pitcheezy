@@ -11,15 +11,18 @@ recomputed here (they must match).
 
 Ledger stage: the ML-POLICY dr-evaluate runtime assembly re-implemented outside ``dispatch`` (its ``bind``,
 ``snapshot_for`` and ``candidate`` closures, runner :1211, :1219, :1230; ``prerequisites`` :1119 is a module-level
-function and is called unchanged), the reward-free submission ``submit_pas(..., outcome=None)`` (runner :642, as
-``run_v5`` :678-680), the M-10 cand=ref paired identity run (``paired_identity_run`` :736-750, PA-end facts bound
-internally, only pass/fail and counts written), the identity checks (header ``pins.candidate.sha256`` = the sealed
+function and is called unchanged), the registered runtime pins compared with the values the assembly uses (G-CODE
+MINOR-3), the driver equivalence before the new ledger (design 9.2, G-CODE MAJOR-4: the S6-dr-a5 first and last
+games re-run on a runtime whose sha256 reproduces the S6 header, else the same requests on two fresh runtimes of the
+new DEV identity), the reward-free submission ``submit_pas(..., outcome=None)`` (runner :642, as ``run_v5``
+:678-680), the M-10 cand=ref paired identity run (``paired_identity_run`` :736-750, PA-end facts bound internally,
+only pass/fail and counts written) and the identity checks (header ``pins.candidate.sha256`` = the sealed
 candidate, runtime sha256 recorded, bound components = the D127 bind identity, the vectorized B0 recipe reproduces
-the ledger logging vectors within 1e-12) and the driver-equivalence comparator. No DR estimate, center, reward or
-pa_values file is written.
+the ledger logging vectors within 1e-12). No DR estimate, center, reward or pa_values file is written.
 """
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
 import math
@@ -48,9 +51,22 @@ def game_list_sha256(games):
     return hashlib.sha256(json.dumps(sorted(int(g) for g in games), separators=(',', ':')).encode()).hexdigest()
 
 
+def game_of(row):
+    """The game_pk of a ledger decision row from its PA id (game:at_bat)."""
+    return int(str(row['pa_id']).split(':')[0])
+
+
 def ledger_games(decisions):
     """The game_pk set of a ledger from its decision rows' PA ids (game:at_bat)."""
-    return sorted({int(str(row['pa_id']).split(':')[0]) for row in decisions})
+    return sorted({game_of(row) for row in decisions})
+
+
+def replay_games(decisions):
+    """The first and the last game of a ledger in ledger order (the driver-equivalence replay pair)."""
+    _require(decisions, 'the S6 ledger has no decision row')
+    first, last = game_of(decisions[0]), game_of(decisions[-1])
+    _require(first != last, 'the S6 ledger order needs two distinct games for the driver-equivalence replay')
+    return first, last
 
 
 def month_quota_table(frame, split, n_games, chosen, straddling):
@@ -174,6 +190,35 @@ def candidate(rpv, policy, inputs, blocks, out, *, pre, ledger_name='ledger-dev-
     return runtime, components, provenance
 
 
+def runtime_setting_used(policy, pre):
+    """The dr-evaluate (S6_V4) setting ``candidate`` assembles the runtime with (the registration_input_pins
+    runtime_setting form)."""
+    config = policy['config']
+    freeze, setting = pre['freeze'], pre['setting']
+    return {'selected_tau': freeze['selected_tau'], 'samples': setting['samples'], 'pitch_cap': setting['pitch_cap'],
+            'row_budget': int(config['le2025_validation_plan']['stages']['S6_V4']['row_budget']),
+            'planning_seed': config['seeds']['planning_main'],
+            'evaluation_role': 'evaluation' if freeze['dr_q']['source'] == 'evaluation_seed' else None}
+
+
+def require_runtime_pins(pins, rpv, policy, pre):
+    """G-CODE MINOR-3, at the start of A2b-L: the registered ``runtime_setting`` equals the setting ``candidate``
+    uses (tau, samples, pitch cap, S6_V4 row budget, planning seed, evaluation role) and ``dev_style_snapshot`` is the
+    registered style_dev input (path, file sha256) with the registered DEV as-of. Returns what was compared."""
+    used = runtime_setting_used(policy, pre)
+    pinned = pins['runtime_setting']
+    _require(isinstance(pinned, dict) and set(pinned) == set(used), 'runtime_setting pin keys differ from the used setting')
+    wrong = sorted(k for k, v in used.items() if not (pinned[k] == v and type(pinned[k]) is type(v)))
+    _require(not wrong, f'runtime_setting pin differs from the setting the runtime is assembled with: {wrong}')
+    path, sha = rpv.registered_path(policy, 'style_dev')
+    as_of = policy['config']['le2025_validation_plan']['stages']['S1b_style_snapshot']['as_of_exclusive']['dev']
+    style = pins['dev_style_snapshot']
+    _require(Path(style['path']).resolve() == Path(path).resolve() and style['sha256'] == sha
+             and style['as_of_exclusive'] == as_of,
+             'dev_style_snapshot pin differs from the registered style_dev input (path, sha256, as-of)')
+    return {'runtime_setting': used, 'dev_style_snapshot': {'sha256': sha, 'as_of_exclusive': as_of}}
+
+
 def pair_runtime(rpv, policy, out, provenance):
     """The M-10 cand=ref runtime of the dr-evaluate stage (its own ledger file in the stage directory)."""
     from . import policy_runtime as prt
@@ -245,15 +290,124 @@ def allowed_view(row):
     return out
 
 
+def allowed_document(rows):
+    """{'pa_id#decision_index': allowed fields} of ledger decision rows (the A3 allowlist; nothing else)."""
+    out = {}
+    for row in rows:
+        key = f"{row['pa_id']}#{row['decision_index']}"
+        _require(key not in out, f'duplicate ledger decision {key}')
+        out[key] = allowed_view(row)
+    return out
+
+
+MISMATCH_KEYS_SHOWN = 20
+
+
 def compare_allowed_fields(reference_rows, new_rows):
-    """Driver equivalence (design 9.2): the A3-allowlisted fields of the re-run decisions equal the reference
-    ledger's bit for bit, matched by (pa_id, decision_index). Returns (pass, compared, mismatched keys)."""
-    ref = {(r['pa_id'], r['decision_index']): allowed_view(r) for r in reference_rows}
-    new = {(r['pa_id'], r['decision_index']): allowed_view(r) for r in new_rows}
-    _require(set(new) <= set(ref), 'the re-run produced decisions the reference ledger does not hold')
-    mismatched = sorted(f'{k[0]}#{k[1]}' for k in new if json.dumps(new[k], sort_keys=True) !=
-                        json.dumps(ref[k], sort_keys=True))
-    return {'pass': not mismatched and bool(new), 'compared': len(new), 'mismatched': mismatched}
+    """Driver equivalence (design 9.2): the A3-allowlisted fields of the re-run decisions against the reference rows,
+    matched by (pa_id, decision_index): the same decision set, floats within an ABSOLUTE 1e-12 (the G-INT-A2 form,
+    ``ope_registry_a2b.integrity_equal``), every other leaf - ints, strings, booleans, None, list lengths - exactly.
+    Returns pass / fail, counts, the first mismatched key names and the maximum |delta| (no field value)."""
+    ref, new = allowed_document(reference_rows), allowed_document(new_rows)
+    missing, extra = sorted(set(ref) - set(new)), sorted(set(new) - set(ref))
+    common = sorted(set(ref) & set(new))
+    compared, not_comparable, mismatched, max_delta = rb.compare_documents({k: new[k] for k in common},
+                                                                           {k: ref[k] for k in common})
+    ok = bool(common) and not (missing or extra or mismatched or not_comparable)
+    return {'pass': bool(ok), 'compared_decisions': len(common), 'compared_fields': len(compared),
+            'missing_decisions': len(missing), 'extra_decisions': len(extra), 'mismatched_fields': len(mismatched),
+            'not_comparable_fields': len(not_comparable), 'max_abs_delta': float(max_delta),
+            'mismatched_keys_shown': (missing + extra + mismatched + not_comparable)[:MISMATCH_KEYS_SHOWN],
+            'tolerance': {'float_absolute': rb.INTEGRITY_TOL, 'other_leaves': 'equality'}}
+
+
+DRIVER_PATHS = ('s6_two_game_replay', 'same_request_twice')
+EQUIVALENCE_LEDGERS = {'s6': 'ledger-dev-equivalence-s6.jsonl',
+                       'twice': ('ledger-dev-equivalence-twice-1.jsonl', 'ledger-dev-equivalence-twice-2.jsonl')}
+
+
+def s6_style_report(header):
+    """The style report the S6-dr-a5 runtime carried (ledger header ``pins.provenance.style_report``), or None."""
+    pins = header.get('pins') if isinstance(header, dict) else None
+    provenance = pins.get('provenance') if isinstance(pins, dict) else None
+    return provenance.get('style_report') if isinstance(provenance, dict) else None
+
+
+def selection_style(rpv, policy, inputs, games):
+    """The style report of a whole DEV selection under the registered DEV snapshot and as-of rule (the
+    ``snapshot_for`` checks), from the few columns ``pa_contexts`` reads (``run_policy_validation.style_report``,
+    the D125 batched-binding form)."""
+    blocks = rpv.game_blocks(inputs['frame'], list(games), 'dev')
+    snapshot, as_of, _ = snapshot_for(rpv, policy, inputs['frame'], 'dev', blocks)
+    return rpv.style_report(inputs['store'], blocks, snapshot, as_of)
+
+
+def driver_equivalence(rpv, policy, inputs, *, pre, s6_header, s6_rows, s6_games, new_games, out, deadline, no_pitch):
+    """Design 9.2 driver equivalence, run BEFORE the new DEV ledger (G-CODE MAJOR-4, PM decision); every runtime is
+    its own instance (own RowBudget, own ledger file under ``out``), reward-free:
+
+    - path A ``s6_two_game_replay`` (primary): ``candidate`` assembles the runtime for the first and the last game of
+      the S6 ledger order with style = the S6 header's ``pins.provenance.style_report`` (else the report recomputed
+      over the S6 game list with the registered DEV snapshot and as-of rule of ``snapshot_for``); only when its
+      sha256 equals the S6 header runtime sha256 are the two games re-submitted and their A3-allowlisted fields
+      compared with the S6 rows (``compare_allowed_fields``);
+    - path B ``same_request_twice`` (reason ``runtime_sha_not_reproduced``): otherwise two fresh runtimes of the new
+      DEV identity (style = the new selection's report) take the same requests - the first game of the new DEV
+      ledger order - and their allowlisted fields are compared the same way (a PolicyRuntime replays a stored
+      request, so "twice" is two independently assembled runtimes; the caller checks the identity equals the new
+      ledger's runtime).
+
+    ``s6_rows``: the S6 decision rows of the two replay games through the allowlisted reader (``bw.read_ledger``:
+    no reward field exists in them). Returns the record (path, pass / fail, games, counts, maximum |delta|; no
+    field value); the caller writes it and requires the pass (a mismatch is a deterministic integrity failure)."""
+    from .behavior_weights import header_identities
+    frame, store = inputs['frame'], inputs['store']
+    header_sha, _ = header_identities(s6_header)
+    _require(isinstance(header_sha, str) and len(header_sha) == 64, 'the S6 header carries no runtime sha256')
+    first, last = replay_games(s6_rows)
+    _require(first in s6_games and last in s6_games, 'the replay games are not S6 games')
+    style, source = s6_style_report(s6_header), 'header'
+    if style is None:
+        style, source = selection_style(rpv, policy, inputs, s6_games), 'recomputed_from_the_s6_game_list'
+    out = Path(out)
+    replay = rpv.game_blocks(frame, [first, last], 'dev')
+    runtime, _, _ = candidate(rpv, policy, inputs, replay, out, pre=pre, ledger_name=EQUIVALENCE_LEDGERS['s6'],
+                              style=style)
+    record = {'check': 'driver_equivalence', 'style_source': source, 'runtime_sha256_reproduced': runtime.sha256 == header_sha,
+              's6_runtime_sha256': header_sha, 'rewards_read': False}
+    if runtime.sha256 == header_sha:
+        submit(rpv, runtime, store, replay, deadline, no_pitch=no_pitch,
+               expected_pas=rpv.census_pas(pre['census']['dev'], [first, last]))
+        reference = [r for r in s6_rows if game_of(r) in (first, last)]
+        return {**record, 'path': 's6_two_game_replay', 'reason': None, 'games': [first, last],
+                'runtime_sha256': header_sha, **compare_allowed_fields(reference, runtime.ledger.decisions())}
+    del runtime  # the bound components are released before the two path-B runtimes
+    gc.collect()
+    new_blocks = rpv.game_blocks(frame, list(new_games), 'dev')
+    _require(new_blocks, 'the new DEV selection has no PA')
+    game = int(frame.game_pk.iloc[new_blocks[0][1][0]])  # the first game of the new DEV ledger order
+    style_new = selection_style(rpv, policy, inputs, new_games)
+    blocks = rpv.game_blocks(frame, [game], 'dev')
+    expected = rpv.census_pas(pre['census']['dev'], [game])
+    rows, shas = [], []
+    for name in EQUIVALENCE_LEDGERS['twice']:
+        twin, _, _ = candidate(rpv, policy, inputs, blocks, out, pre=pre, ledger_name=name, style=style_new)
+        submit(rpv, twin, store, blocks, deadline, no_pitch=no_pitch, expected_pas=expected)
+        rows.append(twin.ledger.decisions())
+        shas.append(twin.sha256)
+        del twin
+        gc.collect()
+    _require(shas[0] == shas[1], 'two assemblies of the same runtime differ in sha256 (deterministic integrity)')
+    return {**record, 'path': 'same_request_twice', 'reason': 'runtime_sha_not_reproduced', 'games': [game],
+            'runtime_sha256': shas[0], **compare_allowed_fields(rows[0], rows[1])}
+
+
+def require_equivalence(record):
+    if not record['pass']:
+        raise IntegrityError(f"driver equivalence failed on path {record['path']} (deterministic integrity): "
+                             f"{record['mismatched_fields']} mismatched fields, {record['missing_decisions']} missing and "
+                             f"{record['extra_decisions']} extra decisions, max |delta| {record['max_abs_delta']}")
+    return record
 
 
 def reward_free_facts(facts):
