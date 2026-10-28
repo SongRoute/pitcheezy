@@ -370,6 +370,13 @@ class RegisteredTests(unittest.TestCase):
         record = ws.root / 'gate.json'
         record.write_bytes((ws.output('gate') / 'gate_record.json').read_bytes())
         ws.commit(record)
+        for k in rb.GINT_S2EQ_RUNS['2*zeta_p']:
+            ws.seal(f'A2b-S2a:gint:2*zeta_p:k{k}', {'run.json': {'k': k}})
+        ws.seal('A2b-S2a:gint:2*zeta_p', {'gint_s2eq.json': {'result': 'PASS'}})
+        for k in rb.RUN_INDEX['2*zeta_p']:
+            ws.seal(f'A2b-S2a:k{k}', {'run.sealed.json': {'k': k}})
+        with self.assertRaisesRegex(IntegrityError, 'not complete'):  # the pooled cell is still missing
+            rr.main([*ws.argv('decide', 'decide-early'), '--gate-record', str(record)], ws.env)
         ws.seal('A2b-S2a:pool:2*zeta_p', {'pooled.json': pooled('2*zeta_p')})
         self.assertEqual(rr.main([*ws.argv('decide', 'decide'), '--gate-record', str(record)], ws.env), 0)
         decision = json.loads((ws.output('decide') / 'decision_record.json').read_text())
@@ -391,8 +398,18 @@ class RegisteredTests(unittest.TestCase):
         record = ws.root / 'gate.json'
         record.write_bytes((ws.output('gate') / 'gate_record.json').read_bytes())
         ws.commit(record)
-        with self.assertRaisesRegex(IntegrityError, 'not sealed'):
+        with self.assertRaisesRegex(IntegrityError, 'not complete'):
             rr.main([*ws.argv('decide', 'decide'), '--gate-record', str(record)], ws.env)
+        for attempt in (1, 2):  # an exhausted deterministic failure of a phase-2 stage: FAILED_INTEGRITY is available
+            out = ws.output(f'gint-record-{attempt}')
+            ws.manifest.append('attempt_start', {'stage': 'A2b-S2a:gint:2*zeta_p', 'output_dir': str(out),
+                                                 'started_utc': 'x'})
+            ws.manifest.append('stage_failure', {'stage': 'A2b-S2a:gint:2*zeta_p', 'class': 'deterministic_integrity',
+                                                 'output_dir': str(out), 'aborted': True, 'during_publication': False})
+        self.assertEqual(rr.main([*ws.argv('decide', 'decide-terminal'), '--gate-record', str(record)], ws.env), 0)
+        decision = json.loads((ws.output('decide-terminal') / 'decision_record.json').read_text())
+        self.assertEqual(decision['label'], 'FAILED_INTEGRITY')
+        self.assertEqual(decision['failed_integrity'], ['A2b-S2a:gint:2*zeta_p'])
 
     def test_manifest_commands(self):
         ws = Workspace(self)

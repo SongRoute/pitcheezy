@@ -448,7 +448,8 @@ INTEGRITY_RECORD_KEYS = {  # items 13-14: pass/fail, maximum |delta|, tolerance,
     'gint_eval': ('experiment', 'check', 'result', 'max_abs_delta', 'tolerance', 'compared_keys', 'not_comparable_keys',
                   'mismatched_keys', 'rows', 'refused_rows', 'reference'),
     'gint_s2eq': ('experiment', 'check', 'result', 'max_abs_delta', 'tolerance', 'run_indices', 'cells', 'paths',
-                  'compared_keys', 'mismatched_keys', 'auxiliary_statistical_form', 'reference'),
+                  'compared_keys', 'mismatched_keys', 'auxiliary_statistical_form', 'reference',
+                  'reference_cross_check'),
 }
 _TOLERANCE = {'float_absolute': INTEGRITY_TOL, 'counts_strings_selected_lambda_M': 'equality (inf by equality)'}
 
@@ -478,6 +479,10 @@ def validate_integrity_record(document, kind):
         _require(isinstance(document['paths'], dict) and set(document['paths']) == {'exact_form', 'statistical_form',
                                                                                     'new_seed_runs'}
                  and all(isinstance(v, str) for v in document['paths'].values()), 'gint_s2eq: paths of each form')
+        cross = document['reference_cross_check']
+        _require(isinstance(cross, dict) and set(cross) == {'sealed_a2_s2_run_records', 'equal', 'mismatched_keys'}
+                 and isinstance(cross['equal'], (bool, type(None))) and isinstance(cross['mismatched_keys'], list),
+                 'gint_s2eq: the reference cross-check (sealed A2-S2 run records vs the results file; key lists only)')
         aux = document['auxiliary_statistical_form']
         _require(isinstance(aux, dict) and set(aux) == {'result', 'detection_limit_B', 'decision_input'}
                  and aux['result'] in ('PASS', 'FAIL') and aux['decision_input'] is False, 'gint_s2eq: auxiliary form')

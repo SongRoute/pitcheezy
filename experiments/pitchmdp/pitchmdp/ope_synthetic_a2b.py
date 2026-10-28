@@ -275,7 +275,26 @@ def recorded_runs(results):
     return out
 
 
-def gint_s2eq_record(cells, results_by_k, recorded, *, reference):
+def reference_cross_check(recorded, sealed):
+    """Review 004 note 3 c: the results-file values (k = 9-12 were PM-extracted) against the sealed A2-S2 run records
+    ({k: {comp: (b_hat, se)}} or None when not supplied); key lists only."""
+    if sealed is None:
+        return {'sealed_a2_s2_run_records': 'not supplied', 'equal': None, 'mismatched_keys': []}
+    mismatched = sorted(f'k{k}.{c}.{name}' for k in recorded for c in COMPONENTS for name, i in (('b_hat', 0), ('se', 1))
+                        if k not in sealed or not rb.integrity_equal(recorded[k][c][i], sealed[k][c][i]))
+    return {'sealed_a2_s2_run_records': 'compared', 'equal': not mismatched, 'mismatched_keys': mismatched}
+
+
+def sealed_runs(directory, ks):
+    """{k: {R1_a/R1_b: (b_hat, se)}} from the sealed A2-S2 run records run-kNN.json."""
+    out = {}
+    for k in ks:
+        record = json.loads((directory / f'run-k{k:02d}.json').read_text())
+        out[k] = {c: (record['s2'][c]['b_hat'], record['s2'][c]['se']) for c in COMPONENTS}
+    return out
+
+
+def gint_s2eq_record(cells, results_by_k, recorded, *, reference, sealed=None):
     """G-INT-S2EQ (public item 14): the new driver in the A2 seed scheme reproduces the recorded per-run R1_a /
     R1_b b_hat and SE of the opened cells' dose family (2 zeta_p -> k = 5, 11, 12; 2 kappa_p -> k = 4, 9, 10)
     within an ABSOLUTE 1e-12 (the registered exact form). The statistical form |delta b_hat| <= 3 sqrt(SE_rec^2 +
@@ -312,7 +331,8 @@ def gint_s2eq_record(cells, results_by_k, recorded, *, reference):
               'compared_keys': compared, 'mismatched_keys': mismatched,
               'auxiliary_statistical_form': {'result': 'PASS' if aux_ok else 'FAIL', 'detection_limit_B': limits,
                                              'decision_input': False},
-              'reference': dict(reference)}
+              'reference': dict(reference),
+              'reference_cross_check': reference_cross_check({k: recorded[k] for k in ks}, sealed)}
     rb.validate_integrity_record(record, 'gint_s2eq')
     return record
 

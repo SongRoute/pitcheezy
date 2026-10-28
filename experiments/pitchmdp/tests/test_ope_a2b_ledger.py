@@ -197,3 +197,12 @@ class LedgerStageTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TrainGuardTests(unittest.TestCase):
+    def test_the_reused_train_guard_refuses_2026_and_non_train_rows(self):
+        from pitchmdp import ope_surrogate as osg
+        osg.guard_train(pd.Series(['2023-05-15', '2025-04-30']))
+        for dates in (['2026-04-01'], ['2025-05-01'], ['2023-05-14']):
+            with self.subTest(dates), self.assertRaises(IntegrityError):
+                osg.guard_train(pd.Series(dates))

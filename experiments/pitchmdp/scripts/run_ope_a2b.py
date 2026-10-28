@@ -381,14 +381,20 @@ def plan_decide(run):
     """Before the A2b-S4 attempt (no attempt consumed by a refusal): the committed gate record and the stage status
     (a stage that exhausted its attempts in a deterministic integrity failure makes FAILED_INTEGRITY available)."""
     gate = gate_committed(run)
-    status = roa.stage_status(run.manifest, ('A2b-SM', 'A2b-S0', 'A2b-L', 'A2b-S3', 'A2b-G'))
-    failed = [s for s, v in status.items() if v == 'FAILED_INTEGRITY']
+    phase_2 = []
+    for cell in gate['work_list']['S2_prime_cells']:
+        if cell in rb.S2P_DECISION_CELLS:
+            phase_2 += [f'A2b-S2a:gint:{cell}:k{k}' for k in rb.GINT_S2EQ_RUNS[cell]] + [f'A2b-S2a:gint:{cell}']
+        phase_2 += [f'A2b-S2a:k{k}' for k in rb.RUN_INDEX[cell]] + [f'A2b-S2a:pool:{cell}']
+    if gate['work_list']['tab']['rerun']:
+        phase_2.append('A2b-S1')
+    status = roa.stage_status(run.manifest, ('A2b-SM', 'A2b-S0', 'A2b-L', 'A2b-S3', 'A2b-G', *phase_2))
+    failed = [s for s, v in status.items() if v == 'FAILED_INTEGRITY']  # an exhausted common-stage failure
     if not failed:
-        _require(all(v == 'sealed' for v in status.values()), f'upstream stages are not complete (decision needed): {status}')
+        pending = {s: v for s, v in status.items() if v != 'sealed'}
+        _require(not pending, f'stages not complete (decision needed): {pending}')
         for cell in gate['work_list']['S2_prime_cells']:
             roa.require_seal(run.manifest, f'A2b-S2a:pool:{cell}')
-        if gate['work_list']['tab']['rerun']:
-            roa.require_seal(run.manifest, 'A2b-S1')
     return {'gate': gate, 'status': status, 'failed': failed}
 
 
@@ -781,7 +787,8 @@ def body_s2a_gint_record(run):
     for k in rb.GINT_S2EQ_RUNS[cell]:
         out, _ = roa.require_seal(run.manifest, f'A2b-S2a:gint:{cell}:k{k}')
         runs[k] = json.loads((out / 'run.json').read_text())
-    record = sx.gint_s2eq_record([cell], runs, sx.recorded_runs(results), reference=reference)
+    sealed = sx.sealed_runs(run.env.a2_sealed(run.config, 'A2-S2'), rb.GINT_S2EQ_RUNS[cell])
+    record = sx.gint_s2eq_record([cell], runs, sx.recorded_runs(results), reference=reference, sealed=sealed)
     roa.dump(run.out / 'gint_s2eq.json', record)
     sx.gint_s2eq_scope(record)
 

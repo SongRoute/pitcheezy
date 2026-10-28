@@ -159,6 +159,15 @@ class S2PrimeDriverTests(unittest.TestCase):
         with self.assertRaisesRegex(IntegrityError, 'exactly the recorded runs'):
             sx.gint_s2eq_record(['2*kappa_p', '2*zeta_p'], runs, recorded, reference=reference)
         self.assertTrue(rb.validate_integrity_record(record, 'gint_s2eq'))
+        self.assertEqual(record['reference_cross_check']['sealed_a2_s2_run_records'], 'not supplied')
+        crossed = sx.gint_s2eq_record(['2*kappa_p'], runs, recorded, reference=reference, sealed=copy.deepcopy(recorded))
+        self.assertEqual(crossed['reference_cross_check'], {'sealed_a2_s2_run_records': 'compared', 'equal': True,
+                                                            'mismatched_keys': []})
+        extracted = copy.deepcopy(recorded)
+        extracted[10]['R1_b'] = (extracted[10]['R1_b'][0], extracted[10]['R1_b'][1] * 1.01)  # a PM-extraction slip
+        slip = sx.gint_s2eq_record(['2*kappa_p'], runs, recorded, reference=reference, sealed=extracted)
+        self.assertEqual(slip['reference_cross_check']['mismatched_keys'], ['k10.R1_b.se'])
+        self.assertEqual(slip['result'], 'PASS')  # the registered reference (results file) still decides
         floats = sorted(v for _, v in rb.leaves(record) if isinstance(v, float))
         self.assertTrue(all(v in (0.0, 1e-12) or v == limit or v >= 0 for v in floats))
         self.assertNotIn('b_hat', str(record['auxiliary_statistical_form']))

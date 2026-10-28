@@ -220,7 +220,8 @@ class PublicSchemaTests(unittest.TestCase):
         return {**common, 'check': 'G-INT-S2EQ', 'run_indices': [4, 9, 10], 'cells': ['2*kappa_p'],
                 'paths': {'exact_form': rb.S2P_PATH, 'statistical_form': rb.S2P_PATH, 'new_seed_runs': rb.S2P_PATH},
                 'auxiliary_statistical_form': {'result': 'PASS', 'detection_limit_B': {'k4': {'R1_b': 7.8}},
-                                               'decision_input': False}}
+                                               'decision_input': False},
+                'reference_cross_check': {'sealed_a2_s2_run_records': 'compared', 'equal': True, 'mismatched_keys': []}}
 
     def test_integrity_records_hold_only_their_type(self):
         for kind in ('gint_eval', 'gint_s2eq'):
