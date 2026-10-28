@@ -372,9 +372,9 @@ class DriverEquivalenceTests(unittest.TestCase):
         record = lg.require_runtime_pins(pins, w.rpv, w.policy, self.pre)
         self.assertEqual(record['runtime_setting'], used)
         self.assertEqual(used['evaluation_role'], 'evaluation')  # the frozen dr_q source is the evaluation seed
-        self.assertEqual(used['planning_seed'], 0)
+        self.assertEqual((used['planning_seed'], used['row_budget']), (0, 9000000))
         for key, value in (('selected_tau', used['selected_tau'] * 2), ('samples', used['samples'] + 1),
-                           ('pitch_cap', used['pitch_cap'] + 1), ('row_budget', 9000000), ('planning_seed', 1),
+                           ('pitch_cap', used['pitch_cap'] + 1), ('row_budget', 10 ** 8), ('planning_seed', 1),
                            ('evaluation_role', None), ('samples', float(used['samples']))):
             bad = copy.deepcopy(pins)
             bad['runtime_setting'][key] = value

@@ -255,6 +255,7 @@ def ml_policy_world(n_dev_games=4):
     fx.frame = a2b_game_frame(n_dev_games)
     fx.store = tpv.build_store(fx.frame)
     runs, config = fx.config()
+    config['le2025_validation_plan']['stages']['S6_V4']['row_budget'] = 9000000  # the registered S6_V4 value
     config['le2025_validation_plan']['stages']['S6_V4']['estimator'] = {
         'runtime': pr.CONTRACT_V3, 'censoring': 'l1r', 'natural_course_refusals': list(est.H_K_REFUSALS), 'gr_cap': .5,
         'c_deltas': [.008, .0278], 'mei': .001, 'v3_law': 'tempered_alpha_0.5'}

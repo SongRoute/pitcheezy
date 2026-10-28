@@ -302,6 +302,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_registered_pins_and_d192_single_values(self):
         root = Path(tempfile.mkdtemp(prefix='a2b-reg-')).resolve()
+        self.addCleanup(__import__('shutil').rmtree, root, True)
         config = registered_config(root)
         self.assertEqual(rb.config_check(config), rb.REGISTERED)
         self.assertIs(rb.require_executable(config), config)
