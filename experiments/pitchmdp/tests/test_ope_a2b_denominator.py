@@ -24,6 +24,11 @@ from pitchmdp.behavior_model import BehaviorTable  # noqa: E402
 from pitchmdp.policy_artifacts import IntegrityError  # noqa: E402
 
 
+def target_index(decisions, key):
+    """The logged action index of the decision ``key`` = (pa_id, decision_index)."""
+    return next(d['result']['logged_index'] for d in decisions if (d['pa_id'], d['decision_index']) == key)
+
+
 class StreamTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -76,8 +81,20 @@ class StreamTests(unittest.TestCase):
         malformed = dict(self.vectors)
         malformed[key] = [v * 1.01 for v in malformed[key]]
         self.assertEqual(dn.b2_validity(self.decisions, malformed, self.e0_ids)['malformed_vectors'], 1)
+        self.assertFalse(dn.b2_validity(self.decisions, malformed, self.e0_ids)['pass'])
         with self.assertRaisesRegex(IntegrityError, 'B2 denominator invalid'):
             dn.require_valid_vectors(bad)
+        # G-CODE MINOR-6 (design 4.1): a B2 support differing from B0 while the logged action keeps positive B2 mass
+        # (here B2 zero at a non-logged action B0 supports) is counted, never invalidating
+        narrower = dict(self.vectors)
+        vector = np.asarray(self.vectors[key], dtype=np.float64).copy()
+        other = next(i for i, v in enumerate(vector) if v > 0 and i != target_index(self.decisions, key))
+        vector[other] = 0.
+        narrower[key] = (vector / vector.sum()).tolist()
+        support = dn.b2_validity(self.decisions, narrower, self.e0_ids)
+        self.assertEqual((support['support_differs_from_b0'], support['zero_mass_with_positive_pi'],
+                          support['nonfinite_rho'], support['pass']), (1, 0, 0, True))
+        self.assertTrue(dn.require_valid_vectors(support))
 
     def test_weight_diagnostics_and_the_identity_denominator(self):
         common = dict(large=10.0, mei=0.001, draws=100, seed=3287529750)
@@ -111,6 +128,15 @@ class StreamTests(unittest.TestCase):
         flag = copy.deepcopy(weights)
         flag['E5']['pass'] = not flag['E5']['pass']
         self.assertEqual(dn.gint_r3(weights, flag)['result'], 'FAIL')
+        self.assertEqual(record['compared_keys'], list(dn.GINT_R3_KEYS))
+        for key in dn.GINT_R3_KEYS:  # G-CODE MINOR-4: a key absent from the A3 record is a FAIL, not a vacuous PASS
+            partial = {k: v for k, v in copy.deepcopy(weights).items() if k != key}
+            with self.subTest(key=key):
+                missing = dn.gint_r3(weights, partial)
+                self.assertEqual(missing['result'], 'FAIL')
+                self.assertEqual(missing['mismatched_keys'], [f'{key} (absent from the A3 record)'])
+        self.assertEqual(dn.gint_r3(weights, {})['result'], 'FAIL')
+        self.assertEqual(set(record), {'check', 'result', 'rtol', 'compared_keys', 'mismatched_keys'})
 
 
 class VectorTests(unittest.TestCase):

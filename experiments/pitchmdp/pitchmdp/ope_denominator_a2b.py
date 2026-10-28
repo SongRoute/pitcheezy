@@ -8,8 +8,10 @@ decisions, the rho recomputation, B2 validity, E5 and the reward-free weight dia
 - ``decision_vectors``: pi_b_hat_B2 at every evaluated decision of an E0 PA (the evaluated prefix, as the A3
   s6-weights stage), through the frozen pre-pitch context row of its ``context_key`` (pitcher, side, count and the
   previous type checked against the ledger row), keyed by (pa_id, decision_index).
-- ``b2_validity`` and ``b2_decision_stream``: the B2 rule (a decision with pi(logged) > 0 and pi_b_hat_B2(logged)
-  = 0, or a nonfinite rho, invalidates every B2 row; counts reported) and the same decision rows with
+- ``b2_validity`` and ``b2_decision_stream``: the B2 rule of design 4.1 (a decision with pi(logged) > 0 and
+  pi_b_hat_B2(logged) = 0, or a nonfinite rho, invalidates every B2 row; a missing or malformed vector cannot give a
+  rho and invalidates them too; counts reported, a B2 support differing from B0's is a descriptive count only) and
+  the same decision rows with
   ``logging`` := pi_b_hat_B2 and rho = pi / pi_b_hat_B2 recomputed for both policies (target policies, q-hat, the
   L1-R classification and the point set P unchanged; a LOGGING_POSITIVITY row keeps rho = 0 under any
   denominator).
@@ -140,9 +142,11 @@ def dev_feature_table(frame, raw, *, games, archetypes, b0, hands):
 
 # ---------------------------------------------------------------- validity and the B2 stream
 def b2_validity(decisions, vectors, e0_ids):
-    """The B2 rule: counts of decisions with pi(logged) > 0 and pi_b_hat_B2(logged) = 0, of nonfinite rho and of
-    supports differing from B0 (the logged action must stay inside the B0 support R_j); any count > 0 or a
-    missing / malformed vector invalidates every B2 row."""
+    """The B2 rule (design 4.1): counts of decisions with pi(logged) > 0 and pi_b_hat_B2(logged) = 0 and of
+    nonfinite rho; any such decision, or a missing / malformed vector (no rho can be formed from it), invalidates
+    every B2 row. ``support_differs_from_b0`` (B2 positive where B0 is zero or the reverse) is reported as a
+    descriptive count only - it is not a validity condition (G-CODE MINOR-6): rho at the logged action is all the
+    B2 rows use."""
     checked = zero_mass = nonfinite = support = missing = malformed = 0
     for pa_id, rows in bw.by_pa(decisions):
         if pa_id not in e0_ids:
@@ -172,9 +176,10 @@ def b2_validity(decisions, vectors, e0_ids):
                 support += 1
     record = {'decisions_checked': checked, 'zero_mass_with_positive_pi': zero_mass, 'nonfinite_rho': nonfinite,
               'support_differs_from_b0': support, 'missing_vectors': missing, 'malformed_vectors': malformed}
-    record['pass'] = checked > 0 and all(v == 0 for k, v in record.items() if k != 'decisions_checked')
-    record['rule'] = ('pi(logged) > 0 with pi_b_hat_B2(logged) = 0, a nonfinite rho, a support differing from B0, a '
-                      'missing or malformed vector: every B2 row invalid on this ledger')
+    invalidating = ('zero_mass_with_positive_pi', 'nonfinite_rho', 'missing_vectors', 'malformed_vectors')
+    record['pass'] = checked > 0 and all(record[k] == 0 for k in invalidating)
+    record['rule'] = ('pi(logged) > 0 with pi_b_hat_B2(logged) = 0, a nonfinite rho, a missing or malformed vector: '
+                      'every B2 row invalid on this ledger (design 4.1); support_differs_from_b0 is descriptive')
     return record
 
 
@@ -250,11 +255,15 @@ GINT_R3_KEYS = ('e0_pas', 'policies', 'candidate_over_reference_ess', 'E5', 'kl_
 
 def gint_r3(new, recorded, *, rtol=GINT_R3_RTOL):
     """G-INT-R3: the B2 diagnostics recomputed on S6 (allowlisted reader, frozen B2) reproduce the recorded A3
-    S6 B2 diagnostics at relative 1e-9 (counts and flags exactly). Returns the record (pass/fail and keys)."""
-    compared = [k for k in GINT_R3_KEYS if k in recorded]
+    S6 B2 diagnostics at relative 1e-9 (counts and flags exactly). Every one of the six keys must be in the record
+    (the A3 ``weights.json`` arms.B2 carries all six; a record without one is a FAIL, never a vacuous PASS - G-CODE
+    MINOR-4). Returns the record (pass/fail, tolerance and key lists only)."""
+    compared = [k for k in GINT_R3_KEYS if isinstance(recorded, dict) and k in recorded]
+    absent = [k for k in GINT_R3_KEYS if k not in compared]
     mismatched = [k for k in compared if not _relative_same(new.get(k), recorded[k], rtol)]
-    return {'check': 'G-INT-R3', 'result': 'FAIL' if mismatched else 'PASS', 'rtol': rtol, 'compared_keys': compared,
-            'mismatched_keys': mismatched}
+    ok = not mismatched and len(compared) == len(GINT_R3_KEYS)
+    return {'check': 'G-INT-R3', 'result': 'PASS' if ok else 'FAIL', 'rtol': rtol, 'compared_keys': compared,
+            'mismatched_keys': mismatched + [f'{k} (absent from the A3 record)' for k in absent]}
 
 
 def require_valid_vectors(record):
