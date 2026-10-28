@@ -107,6 +107,37 @@ def decision_vectors(model, table, rows):
     return {(r['pa_id'], r['decision_index']): vectors[i] for i, r in enumerate(rows)}
 
 
+RAW_KEY_COLUMNS = ['game_date', 'game_pk', 'at_bat_number', 'pitch_number', 'pitcher']  # behavior_data / workload
+
+
+def dev_feature_table(frame, raw, *, games, archetypes, b0, hands):
+    """The frozen pre-pitch B2 feature table of the given DEV games, rebuilt as the A3 runner builds it
+    (``feature_context`` then ``split_table``): ``frame`` = processed regular-season rows (any split labels; the A3
+    labels are recomputed from the dates, only the A3 used splits kept, A3 order), ``raw`` = the raw Statcast keys
+    (RAW_KEY_COLUMNS) of at least the DEV games (workload), ``b0`` = the registered BC_P (``RegisteredBC``),
+    ``hands`` = its hand registry, ``archetypes`` = the frozen G0 archetypes. Style tables use TRAIN / earlystop /
+    temperature rows (<= 2025-05-31, the DEV snapshot as of 2025-07-01); the workload and every row feature are
+    game-local, so restricting them to the chosen games changes no value (tested against the A3 construction)."""
+    import pandas as pd
+    from .behavior_calibration_registry import ACTION_CODES, USED_SPLITS
+    from .behavior_data import split_of
+    from .behavior_features import FeatureContext, KEY, split_table, style_tables, workload_features
+    from .policy_requests import volume_edges
+    used = frame.assign(split=split_of(frame.game_date))
+    used = used.loc[used.split.isin(USED_SPLITS)].sort_values(['game_date', *KEY], kind='stable').reset_index(drop=True)
+    _require(not pd.to_datetime(used.game_date).dt.year.ge(2026).any(), 'a 2026 row reached the B2 feature table')
+    chosen = set(int(g) for g in games)
+    dev = used.loc[used.split.eq('dev') & used.game_pk.isin(chosen)]
+    _require(set(dev.game_pk.astype(int)) == chosen, 'a chosen game has no DEV rows')
+    train = used.loc[used.split.eq('train')]
+    keys = raw.loc[raw.game_pk.isin(chosen), RAW_KEY_COLUMNS].reset_index(drop=True)
+    ctx = FeatureContext(vocabulary=ACTION_CODES, archetypes=archetypes, b0=b0.vector,
+                         train_volume={int(p): int(n) for p, n in train.groupby('pitcher').size().items()},
+                         volume_edges=tuple(volume_edges(train, (.25, .75))), style=style_tables(used),
+                         workload=workload_features(dev, keys), hands=hands, repertoire=b0.repertoire)
+    return split_table(dev, 'dev', ctx)[0]
+
+
 # ---------------------------------------------------------------- validity and the B2 stream
 def b2_validity(decisions, vectors, e0_ids):
     """The B2 rule: counts of decisions with pi(logged) > 0 and pi_b_hat_B2(logged) = 0, of nonfinite rho and of

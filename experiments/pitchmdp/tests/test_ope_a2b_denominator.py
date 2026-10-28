@@ -162,3 +162,27 @@ class IsolatedLightGBMTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FeatureTableTests(unittest.TestCase):
+    def test_the_rebuilt_dev_table_equals_the_a3_construction(self):
+        """The A2b reconstruction (A3 split labels from the dates, chosen games only) gives the A3 runner's DEV
+        feature rows bit for bit (the A3 synthetic world; no real data)."""
+        from behavior_calibration_synthetic import make_world, raw_keys
+        from pitchmdp.behavior_calibration_registry import B2_FEATURES
+        from pitchmdp.behavior_features import split_table
+        world = make_world(0)
+        frame = world['frame']
+        reference = split_table(frame.loc[frame.split.eq('dev')], 'dev', world['ctx'])[0]
+        games = sorted(set(frame.loc[frame.split.eq('dev'), 'game_pk'].astype(int)))[:3]
+        relabeled = frame.assign(split='other-labels')  # the ML-POLICY frame carries its own split names
+        table = dn.dev_feature_table(relabeled, raw_keys(frame), games=games, archetypes=world['ctx'].archetypes,
+                                     b0=world['b0'], hands=world['hands'])
+        rows = reference.positions(table.pitch_keys)
+        self.assertTrue((rows >= 0).all())
+        np.testing.assert_array_equal(table.matrix(B2_FEATURES, None, dtype=np.float64),
+                                      reference.matrix(B2_FEATURES, rows, dtype=np.float64))
+        self.assertEqual(set(table.frame.game_pk.astype(int)), set(games))
+        with self.assertRaisesRegex(IntegrityError, 'no DEV rows'):
+            dn.dev_feature_table(relabeled, raw_keys(frame), games=[1], archetypes=world['ctx'].archetypes,
+                                 b0=world['b0'], hands=world['hands'])

@@ -250,12 +250,27 @@ class Environment(roa.Environment):
                                  lightgbm_version=pins['b2_inference_environment']['lightgbm'])
 
     def b2_dev_table(self, config, local, world, games):
-        """The frozen pre-pitch B2 feature table of the given DEV games (A3 ``feature_context`` + ``split_table`` on
-        released DEV rows, the A3 inputs: style tables from TRAIN / earlystop / temperature, raw-key workload, the G0
-        archetypes, the BC_P support and hands). NOT WIRED in this commit: G-CODE item (the A3 input reader for the
-        A2b games); every pure B2 step after it is implemented and tested."""
-        raise IntegrityError('A2b: the DEV B2 feature-table assembly from the A3 inputs is not wired (G-CODE item); '
-                             'no B2 row is computed')
+        """The frozen pre-pitch B2 feature table of the given DEV games (``ope_denominator_a2b.dev_feature_table``,
+        the A3 construction): the ML-POLICY processed regular-season frame, the raw Statcast keys of the games from the
+        pinned 2025 raw file (listed columns, DEV window), the pinned G0 auxiliary's frozen archetypes and the
+        registered BC_P with its hand registry. Its fidelity to A3 is what G-INT-R3 checks on S6 (relative 1e-9)."""
+        from pitchmdp import policy_identity as pid
+        from pitchmdp.behavior_model import RegisteredBC
+        from pitchmdp.policy_artifacts import load_hand_registry
+        rpv, policy, inputs = world.rpv, world.policy, world.inputs
+        window = ('2025-07-01', '2025-09-30')
+        pins = config['registration_input_pins']
+        frames = []
+        for name, path in roa.raw_files_for(window, local):
+            _require(rb.file_sha256(path) == pins['train_raw_files_sha256'][name], f'raw file {name} differs from its pin')
+            plan = roa.parquet_plan(path, dn.RAW_KEY_COLUMNS, window, strict=False)
+            frames.append(roa.read_planned(path, plan, dn.RAW_KEY_COLUMNS, window))
+        raw = pd.concat(frames, ignore_index=True)
+        aux = pid.pinned_pickle(inputs['paths']['p4_auxiliary'], inputs['files']['p4_auxiliary']['sha256'])
+        b0 = RegisteredBC.load(*rpv.registered_path(policy, 'bc'))
+        hands, _ = load_hand_registry(*rpv.registered_path(policy, 'hands'), b0.artifact)
+        return dn.dev_feature_table(inputs['frame'], raw, games=games, archetypes=aux['context'].archetypes, b0=b0,
+                                    hands=hands)
 
     def kappa_prime_inputs(self, config, local, s0, checkpoint):
         """TRAIN in-play rows (the A2-S0 pinned TRAIN reader) -> hit probability under the sealed R1_b table, the S5-X
