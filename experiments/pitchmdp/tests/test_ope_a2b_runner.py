@@ -417,6 +417,70 @@ class RegisteredTests(unittest.TestCase):
         decision = json.loads((ws.output('decide-terminal') / 'decision_record.json').read_text())
         self.assertEqual(decision['label'], 'FAILED_INTEGRITY')
         self.assertEqual(decision['failed_integrity'], ['A2b-S2a:gint:2*zeta_p'])
+        self.assertEqual(decision['blocked'], sorted([*(f'A2b-S2a:k{k}' for k in rb.RUN_INDEX['2*zeta_p']),
+                                                      'A2b-S2a:pool:2*zeta_p']))
+        self.assertEqual(decision['not_run'], sorted(f'A2b-S2a:gint:2*zeta_p:k{k}' for k in (5, 11, 12)))
+        self.assertEqual(decision['gate_record_sha256'], dc.gate_sha256(json.loads(record.read_text())))
+
+    def exhaust(self, ws, stage, cls='deterministic_integrity'):
+        """Two attempts of ``stage`` aborted by failures of ``cls`` (the stage's attempts are used up)."""
+        for attempt in (1, 2):
+            out = ws.output(f'{stage.replace(":", "_").replace("*", "x")}-failed-{attempt}')
+            ws.manifest.append('attempt_start', {'stage': stage, 'output_dir': str(out), 'started_utc': 'x'})
+            ws.manifest.append('stage_failure', {'stage': stage, 'class': cls, 'output_dir': str(out), 'aborted': True,
+                                                 'during_publication': False})
+
+    def test_an_exhausted_common_stage_is_terminal_without_a_gate_record(self):
+        """G-CODE MAJOR-3 (the A2 rule, review round 2 #16): A2b-L exhausted by deterministic integrity failures ->
+        the decision records FAILED_INTEGRITY at once, with no A2b-G seal and no gate record; its unsealed
+        descendants are BLOCKED. An exhausted infrastructure failure is a decision need, never a label."""
+        ws = Workspace(self)
+        ws.seal('A2b-SM', {'smoke_record.json': {'stage': 'A2b-SM'}})
+        ws.seal('A2b-S0', {'s0_record.json': {'stage': 'A2b-S0'}})
+        self.exhaust(ws, 'A2b-L')
+        self.assertEqual(rr.main(ws.argv('decide', 'decide-terminal'), ws.env), 0)  # no --gate-record
+        decision = json.loads((ws.output('decide-terminal') / 'decision_record.json').read_text())
+        self.assertEqual(decision['label'], 'FAILED_INTEGRITY')
+        self.assertEqual(decision['failed_integrity'], ['A2b-L'])
+        self.assertEqual(decision['blocked'], ['A2b-G', 'A2b-S3'])
+        self.assertEqual(decision['not_run'], [])
+        self.assertIsNone(decision['gate_record_sha256'])
+        self.assertEqual({k: decision['stage_status'][k] for k in ('A2b-SM', 'A2b-S0', 'A2b-L')},
+                         {'A2b-SM': 'sealed', 'A2b-S0': 'sealed', 'A2b-L': 'FAILED_INTEGRITY'})
+        self.assertTrue(decision['phase_2'].startswith('NOT_OPENED'))
+        with self.assertRaisesRegex(IntegrityError, 'already sealed'):
+            rr.main(ws.argv('decide', 'decide-again'), ws.env)
+        early = Workspace(self)  # an exhausted A2b-S0: everything after it is blocked, A2b-SM never ran
+        self.exhaust(early, 'A2b-S0')
+        self.assertEqual(rr.main(early.argv('decide', 'decide-s0'), early.env), 0)
+        record = json.loads((early.output('decide-s0') / 'decision_record.json').read_text())
+        self.assertEqual((record['failed_integrity'], record['blocked'], record['not_run']),
+                         (['A2b-S0'], ['A2b-G', 'A2b-L', 'A2b-S3'], ['A2b-SM']))
+        infra = Workspace(self)
+        infra.seal('A2b-SM', {'smoke_record.json': {'stage': 'A2b-SM'}})
+        infra.seal('A2b-S0', {'s0_record.json': {'stage': 'A2b-S0'}})
+        self.exhaust(infra, 'A2b-L', cls='infrastructure')
+        with self.assertRaisesRegex(IntegrityError, 'A2b-G is not sealed'):  # refused before the attempt (no label)
+            rr.main(infra.argv('decide', 'decide-infra'), infra.env)
+        self.assertFalse(infra.output('decide-infra').exists())
+        self.assertEqual(roa.stage_status(infra.manifest, ('A2b-L', 'A2b-S4')),
+                         {'A2b-L': 'DECISION_NEEDED', 'A2b-S4': 'incomplete'})
+
+    def test_an_exhausted_r3_stage_voids_the_b2_rows_only(self):
+        """G-CODE MAJOR-3: A2b-S3:R3 exhausted by integrity failures is not terminal - A2b-S3 may still run (B2 rows
+        invalid) and the decision carries the r3_stage_failed_integrity flag."""
+        ws = Workspace(self)
+        self.exhaust(ws, rr.R3_STAGE)
+        self.assertEqual(rr.plan_s3(run_of(ws, 's3'))['r3'], 'FAILED_INTEGRITY')  # A2b-S3 may proceed
+        self.sealed_phase_1(ws, {})
+        rr.main(ws.argv('gate', 'gate'), ws.env)
+        record = ws.root / 'gate.json'
+        record.write_bytes((ws.output('gate') / 'gate_record.json').read_bytes())
+        ws.commit(record)
+        self.assertEqual(rr.main([*ws.argv('decide', 'decide'), '--gate-record', str(record)], ws.env), 0)
+        decision = json.loads((ws.output('decide') / 'decision_record.json').read_text())
+        self.assertEqual(decision['label'], 'NO_PRECISION_GAIN')
+        self.assertIn('r3_stage_failed_integrity', decision['flags'])
 
     def test_manifest_commands(self):
         ws = Workspace(self)

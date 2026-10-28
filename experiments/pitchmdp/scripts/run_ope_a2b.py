@@ -13,10 +13,12 @@ the gates passed; the digest manifest holds the registered config digest (the A2
 and the G-CODE / G-REG receipts; the protected sources and the pinned new files are byte-identical and HEAD's code
 is the registered (or recorded bug-fix) commit.
 
-Phase order: smoke -> s0 -> ledger -> s3 -> gate; every phase-2 command (s2a-gint, s2a, s2a-pool, s1) and decide
-require the gate record COMMITTED at HEAD byte for byte (G-GATE); s2a runs only after the cell's G-INT-S2EQ record
-passed, stops at the cost gate (first run x N' > 2 x the cell projection: decision needed, N' unchanged) and seals
-each run; s2a-pool pools only after every registered run of the cell is sealed (operator-blind); unblind opens the
+Phase order: smoke -> s0 -> ledger -> s3-r3 -> s3 -> gate; every phase-2 command (s2a-gint, s2a, s2a-pool, s1) and
+decide require the gate record COMMITTED at HEAD byte for byte (G-GATE) - except the terminal decision: a common stage
+(SM, S0, L, S3, G) that exhausted its attempts in a deterministic integrity failure is recorded FAILED_INTEGRITY by
+decide without any gate record (the A2 rule; A2b-S3:R3 voids the B2 rows only); s2a runs only after the cell's
+G-INT-S2EQ record passed, stops at the cost gate (first run x N' > 2 x the cell projection: decision needed, N'
+unchanged) and seals each run; s2a-pool pools only after every registered run of the cell is sealed (operator-blind); unblind opens the
 sealed file only after the committed decision record. Every data access goes through an ``Environment`` (the real
 one by default; tests subclass it with synthetic inputs). The A2b config is never written by this runner.
 """
@@ -392,25 +394,75 @@ def cost_gate(run, cell):
     return gate
 
 
-def plan_decide(run):
-    """Before the A2b-S4 attempt (no attempt consumed by a refusal): the committed gate record and the stage status
-    (a stage that exhausted its attempts in a deterministic integrity failure makes FAILED_INTEGRITY available)."""
-    gate = gate_committed(run)
-    phase_2 = []
+COMMON_STAGES = ('A2b-SM', 'A2b-S0', 'A2b-L', 'A2b-S3', 'A2b-G')  # an exhausted integrity failure here is terminal
+
+
+def _closure(stages, universe, upstream):
+    """Every stage of ``universe`` downstream of ``stages`` under ``upstream`` (the A2 ``descendants`` rule)."""
+    out, frontier = set(), set(stages)
+    while frontier:
+        frontier = {s for s in universe if s not in out and set(upstream(s)) & (frontier | out)} - out
+        out |= frontier
+    return out - set(stages)
+
+
+def phase_2_stages(gate):
+    """The phase-2 attempt stages the committed gate record opened, in run order."""
+    out = []
     for cell in gate['work_list']['S2_prime_cells']:
         if cell in rb.S2P_DECISION_CELLS:
-            phase_2 += [f'A2b-S2a:gint:{cell}:k{k}' for k in rb.GINT_S2EQ_RUNS[cell]] + [f'A2b-S2a:gint:{cell}']
-        phase_2 += [f'A2b-S2a:k{k}' for k in rb.RUN_INDEX[cell]] + [f'A2b-S2a:pool:{cell}']
+            out += [f'A2b-S2a:gint:{cell}:k{k}' for k in rb.GINT_S2EQ_RUNS[cell]] + [f'A2b-S2a:gint:{cell}']
+        out += [f'A2b-S2a:k{k}' for k in rb.RUN_INDEX[cell]] + [f'A2b-S2a:pool:{cell}']
     if gate['work_list']['tab']['rerun']:
-        phase_2.append('A2b-S1')
-    status = roa.stage_status(run.manifest, ('A2b-SM', 'A2b-S0', 'A2b-L', 'A2b-S3', 'A2b-G', *phase_2))
-    failed = [s for s, v in status.items() if v == 'FAILED_INTEGRITY']  # an exhausted common-stage failure
-    if not failed:
-        pending = {s: v for s, v in status.items() if v != 'sealed'}
-        _require(not pending, f'stages not complete (decision needed): {pending}')
-        for cell in gate['work_list']['S2_prime_cells']:
-            roa.require_seal(run.manifest, f'A2b-S2a:pool:{cell}')
-    return {'gate': gate, 'status': status, 'failed': failed}
+        out.append('A2b-S1')
+    return out
+
+
+def phase_2_upstream(stage):
+    """The registered order inside phase 2: a cell's G-INT-S2EQ record needs its reproduced runs, a new-seed run
+    the sealed PASS of its family's record (kappa_p' rides on the kappa family), the pooling every run of its cell."""
+    parts = stage.split(':')
+    if stage.startswith('A2b-S2a:gint:') and len(parts) == 3:
+        return tuple(f'{stage}:k{k}' for k in rb.GINT_S2EQ_RUNS[parts[2]])
+    if stage.startswith('A2b-S2a:k'):
+        cell = rb.registered_run(int(parts[1][1:]))
+        return (f'A2b-S2a:gint:{cell if cell in rb.S2P_DECISION_CELLS else "2*kappa_p"}',)
+    if stage.startswith('A2b-S2a:pool:'):
+        return tuple(f'A2b-S2a:k{k}' for k in rb.RUN_INDEX[parts[2]])
+    return ()
+
+
+def plan_decide(run):
+    """Before the A2b-S4 attempt (a refusal consumes no attempt), the A2 rule (``run_ope_a2.plan_decide``, review
+    round 2 #16; G-CODE MAJOR-3): the common stages SM, S0, L, S3:R3, S3 and G are read first, and one of SM, S0, L,
+    S3, G that exhausted its attempts in a deterministic integrity failure makes the terminal FAILED_INTEGRITY
+    decision available at once WITHOUT a gate record (its unsealed descendants BLOCKED, the other unsealed common
+    stages NOT_RUN; phase 2 was never opened). The R3-only stage A2b-S3:R3 is never terminal: its exhausted failure
+    voids the B2 rows only (``plan_s3``, flag r3_stage_failed_integrity). Otherwise the committed gate record names
+    the phase-2 stages; an exhausted phase-2 failure is terminal as well (its unsealed phase-2 descendants BLOCKED),
+    else every stage and every opened cell's pooled record must be sealed."""
+    status = roa.stage_status(run.manifest, (*COMMON_STAGES[:3], R3_STAGE, *COMMON_STAGES[3:]))
+    failed = [s for s in COMMON_STAGES if status[s] == 'FAILED_INTEGRITY']
+    if failed:
+        blocked = sorted(s for s in _closure(failed, COMMON_STAGES, lambda s: rb.UPSTREAM[s]) if status[s] != 'sealed')
+        not_run = sorted(s for s in COMMON_STAGES if status[s] not in ('sealed', 'FAILED_INTEGRITY') and s not in blocked)
+        return {'terminal': 'FAILED_INTEGRITY', 'gate': None, 'stage_status': status, 'failed_integrity': failed,
+                'blocked': blocked, 'not_run': not_run,
+                'phase_2': 'NOT_OPENED: no gate record (a common stage exhausted its attempts in an integrity failure)'}
+    gate = gate_committed(run)
+    phase_2 = phase_2_stages(gate)
+    status.update(roa.stage_status(run.manifest, phase_2))
+    failed = [s for s in phase_2 if status[s] == 'FAILED_INTEGRITY']
+    if failed:
+        blocked = sorted(s for s in _closure(failed, phase_2, phase_2_upstream) if status[s] != 'sealed')
+        not_run = sorted(s for s in phase_2 if status[s] not in ('sealed', 'FAILED_INTEGRITY') and s not in blocked)
+        return {'terminal': 'FAILED_INTEGRITY', 'gate': gate, 'stage_status': status, 'failed_integrity': failed,
+                'blocked': blocked, 'not_run': not_run, 'phase_2': phase_2}
+    pending = {s: v for s, v in status.items() if v != 'sealed' and s != R3_STAGE}  # (plan_s3 gates A2b-S3 on R3)
+    _require(not pending, f'stages not complete (decision needed): {pending}')
+    for cell in gate['work_list']['S2_prime_cells']:
+        roa.require_seal(run.manifest, f'A2b-S2a:pool:{cell}')
+    return {'terminal': None, 'gate': gate, 'stage_status': status, 'failed_integrity': [], 'phase_2': phase_2}
 
 
 def plan_unblind(run):
@@ -455,8 +507,9 @@ def run_command(args, env, entered=None):
         env.nice()
         with manifest.writer(), env.heavy_lock(local):
             roa.attempt_gate(manifest, stage_id)
-            for upstream in rb.UPSTREAM[stage_id.split(':')[0]]:
-                roa.require_seal(manifest, upstream)
+            if stage_id != 'A2b-S4':  # the decision reads the stage status itself (terminal label, G-CODE MAJOR-3)
+                for upstream in rb.UPSTREAM[stage_id.split(':')[0]]:
+                    roa.require_seal(manifest, upstream)
             run = Run(args, env, config, chain[0], local, manifest, guard.check)
             run.plan = PLANS[args.command](run) if args.command in PLANS else None
             guard.check()
@@ -847,11 +900,14 @@ def body_s1(run):
 
 
 def body_decide(run):
-    gate, status, failed = run.plan['gate'], run.plan['status'], run.plan['failed']
+    plan = run.plan
+    gate, status = plan['gate'], plan['stage_status']
     r3 = run.config['registration_input_pins']['r3_status']
-    if failed:
-        roa.dump(run.out / 'decision_record.json', {'label': 'FAILED_INTEGRITY', 'r3_status': r3, 'stage_status': status,
-                                                    'failed_integrity': failed})
+    if plan['terminal'] == 'FAILED_INTEGRITY':  # design 8.2 label 1 (the A2 terminal record)
+        roa.dump(run.out / 'decision_record.json', {
+            'experiment': rb.EXPERIMENT_ID, 'label': 'FAILED_INTEGRITY', 'r3_status': r3,
+            **{k: plan[k] for k in ('stage_status', 'failed_integrity', 'blocked', 'not_run', 'phase_2')},
+            'gate_record_sha256': None if gate is None else dc.gate_sha256(gate)})
         return
     public_dir, _ = roa.require_seal(run.manifest, 'A2b-S3')
     public = json.loads((public_dir / 'public.json').read_text())
@@ -864,7 +920,7 @@ def body_decide(run):
     for cell in gate['work_list']['S2_prime_cells']:
         s2[cell], _ = sealed_json(run, f'A2b-S2a:pool:{cell}', 'pooled.json')
     dc.check_inputs(tab, s0_record['reused']['nets'], s2, gate)
-    r3_failed = roa.stage_status(run.manifest, (R3_STAGE,))[R3_STAGE] == 'FAILED_INTEGRITY'
+    r3_failed = status[R3_STAGE] == 'FAILED_INTEGRITY'  # B2 rows void only (never terminal)
     record = dc.require_label(dc.decide(public, gate, tab=tab, nets=s0_record['reused']['nets'], s2_prime=s2,
                                         r3_status=r3, r3_stage_failed_integrity=r3_failed))
     record['inputs_sha256'] = {'public': rb.file_sha256(public_dir / 'public.json'), 'gate': dc.gate_sha256(gate)}
