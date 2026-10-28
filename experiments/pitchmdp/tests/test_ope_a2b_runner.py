@@ -151,9 +151,11 @@ def run_of(ws, command, **kw):
 class FailClosedTests(unittest.TestCase):
     def test_every_real_data_and_manifest_command_refuses_the_draft(self):
         ws = Workspace(self, draft=True)
-        extra = {'s2a': ('--k', '11'), 's2a-gint': ('--cell', '2*kappa_p'), 's2a-pool': ('--cell', '2*zeta_p')}
-        for command in ('smoke', 's0', 'ledger', 's3', 'gate', 's2a', 's2a-gint', 's2a-pool', 's1', 'decide', 'unblind',
-                        'register-digest', 'record-review', 'register-addendum', 'reconcile-attempt'):
+        extra = {'s2a': ('--k', '11'), 's2a-gint': ('--cell', '2*kappa_p', '--k', '4'),
+                 's2a-gint-record': ('--cell', '2*kappa_p'), 's2a-pool': ('--cell', '2*zeta_p')}
+        for command in ('smoke', 's0', 'ledger', 's3-r3', 's3', 'gate', 's2a', 's2a-gint', 's2a-gint-record', 's2a-pool',
+                        's1', 'decide', 'unblind', 'register-digest', 'record-review', 'register-addendum',
+                        'reconcile-attempt'):
             with self.subTest(command), self.assertRaisesRegex(IntegrityError, 'not REGISTERED'):
                 rr.main(ws.argv(command, command, *extra.get(command, ())), ws.env)
 
@@ -192,7 +194,12 @@ class FailClosedTests(unittest.TestCase):
 
     def test_attempt_stage_ids_and_arguments(self):
         self.assertEqual(rr.attempt_stage(rr.parse(['s2a', '--k', '11'])), 'A2b-S2a:k11')
-        self.assertEqual(rr.attempt_stage(rr.parse(['s2a-gint', '--cell', '2*kappa_p'])), 'A2b-S2a:gint:2*kappa_p')
+        self.assertEqual(rr.attempt_stage(rr.parse(['s2a-gint', '--cell', '2*kappa_p', '--k', '9'])),
+                         'A2b-S2a:gint:2*kappa_p:k9')
+        self.assertEqual(rr.attempt_stage(rr.parse(['s2a-gint-record', '--cell', '2*kappa_p'])), 'A2b-S2a:gint:2*kappa_p')
+        self.assertEqual(rr.attempt_stage(rr.parse(['s3-r3'])), 'A2b-S3:R3')
+        with self.assertRaises(IntegrityError):
+            rr.parse(['s2a-gint', '--cell', '2*kappa_p', '--k', '5'])  # k = 5 belongs to the 2 zeta_p family
         self.assertEqual(rr.attempt_stage(rr.parse(['s2a-pool', '--cell', '2*zeta_p'])), 'A2b-S2a:pool:2*zeta_p')
         self.assertEqual(rr.attempt_stage(rr.parse(['ledger'])), 'A2b-L')
         with self.assertRaises(IntegrityError):
@@ -235,21 +242,21 @@ class RegisteredTests(unittest.TestCase):
         self.assertEqual(record['gated'], ['R1_axR2_1xB0'])
         self.assertEqual(record['work_list']['S2_prime_cells'], ['2*zeta_p'])
         with self.assertRaisesRegex(IntegrityError, 'G-GATE'):
-            rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*zeta_p', gate_record=record_path))
+            rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*zeta_p', k=5, gate_record=record_path))
         copy_path = ws.root / 'committed_gate_record.json'
         copy_path.write_bytes(record_path.read_bytes())
         ws.commit(copy_path)
-        plan = rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*zeta_p', gate_record=copy_path))
+        plan = rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*zeta_p', k=5, gate_record=copy_path))
         self.assertEqual(plan['cell'], '2*zeta_p')
         with self.assertRaisesRegex(IntegrityError, 'did not open'):
-            rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*kappa_p', gate_record=copy_path))
+            rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*kappa_p', k=4, gate_record=copy_path))
         with self.assertRaisesRegex(IntegrityError, 'did not require a TAB re-run'):
             rr.plan_phase_2(run_of(ws, 's1', gate_record=copy_path))
         tampered = ws.root / 'tampered.json'
         tampered.write_bytes(record_path.read_bytes().replace(b'R1_axR2_1xB0', b'R1_bxR2_1xB0', 1))
         ws.commit(tampered)
         with self.assertRaisesRegex(IntegrityError, 'G-GATE'):
-            rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*zeta_p', gate_record=tampered))
+            rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*zeta_p', k=5, gate_record=tampered))
         with self.assertRaisesRegex(IntegrityError, 'already sealed'):
             rr.main(ws.argv('gate', 'gate-again'), ws.env)
 
@@ -285,6 +292,59 @@ class RegisteredTests(unittest.TestCase):
         self.assertEqual(stops[0]['payload']['n_prime'], 55)
         ws2.manifest.append('run_public', {'stage': 'A2b-S2a:k11', **{**public, 'wall_seconds': 800.0}})
         self.assertEqual(rr.plan_phase_2(run_of(ws2, 's2a', k=12, gate_record=record2))['cell'], '2*kappa_p')
+
+    def test_the_r3_only_stage_scopes_its_failure_to_the_b2_rows(self):
+        import numpy as np
+        ws = Workspace(self)
+        with self.assertRaisesRegex(IntegrityError, 'run s3-r3 first'):
+            rr.plan_s3(run_of(ws, 's3'))
+        for attempt in (1, 2):  # two attempts aborted by a deterministic integrity failure (the stage is exhausted)
+            out = ws.output(f'r3-{attempt}')
+            ws.manifest.append('attempt_start', {'stage': rr.R3_STAGE, 'output_dir': str(out), 'started_utc': 'x'})
+            ws.manifest.append('stage_failure', {'stage': rr.R3_STAGE, 'class': 'deterministic_integrity',
+                                                 'output_dir': str(out), 'aborted': True, 'during_publication': False})
+        plan = rr.plan_s3(run_of(ws, 's3'))
+        self.assertEqual(plan['r3'], 'FAILED_INTEGRITY')
+        run = run_of(ws, 's3')
+        run.plan = plan
+        b2, stream, gint_r3 = rr.r3_inputs(run, [], set())
+        self.assertFalse(b2['validity']['pass'])
+        self.assertTrue(b2['validity']['r3_stage_failed_integrity'])
+        self.assertIsNone(stream)
+        self.assertEqual(gint_r3, {'result': 'FAILED_INTEGRITY'})
+        ws2 = Workspace(self)
+        decisions = [{'pa_id': '1:1', 'decision_index': 0, 'status': 'SUPPORTED',
+                      'result': {'logging': [0.5, 0.5], 'candidate': [0.4, 0.6], 'reference': [0.5, 0.5],
+                                 'logged_index': 1, 'rho_candidate': 1.2, 'rho_reference': 1.0, 'mask': [True, True]}}]
+        out = ws2.seal(rr.R3_STAGE, {'b2_keys.json': [['1:1', 0]],
+                                     'b2_record.json': {'validity': {'pass': True}, 'weights': None,
+                                                        'gint_r3': {'result': 'PASS'}}})
+        np.save(out / 'b2_vectors.npy', np.array([[0.25, 0.75]]))
+        run = run_of(ws2, 's3')
+        run.plan = {'r3': 'sealed', 'r3_dir': out}
+        b2, stream, gint_r3 = rr.r3_inputs(run, decisions, {'1:1'})
+        self.assertEqual(gint_r3, {'result': 'PASS'})
+        row = list(stream())[0]
+        self.assertEqual(row['result']['logging'], [0.25, 0.75])
+        self.assertEqual(row['result']['rho_candidate'], 0.6 / 0.75)
+
+    def test_g_int_s2eq_runs_one_by_one_then_the_record(self):
+        ws = Workspace(self)
+        self.sealed_phase_1(ws, {'R1_bxR2_0xB0': GOOD})
+        rr.main(ws.argv('gate', 'gate'), ws.env)
+        record = ws.root / 'gate.json'
+        record.write_bytes((ws.output('gate') / 'gate_record.json').read_bytes())
+        ws.commit(record)
+        self.assertEqual(rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*kappa_p', k=9, gate_record=record))['cell'],
+                         '2*kappa_p')
+        with self.assertRaisesRegex(IntegrityError, 'not a recorded run'):
+            rr.plan_phase_2(run_of(ws, 's2a-gint', cell='2*kappa_p', k=11, gate_record=record))
+        with self.assertRaisesRegex(IntegrityError, 'not sealed'):
+            rr.plan_phase_2(run_of(ws, 's2a-gint-record', cell='2*kappa_p', gate_record=record))
+        for k in (4, 9, 10):
+            ws.seal(f'A2b-S2a:gint:2*kappa_p:k{k}', {'run.json': {'k': k}})
+        self.assertEqual(rr.plan_phase_2(run_of(ws, 's2a-gint-record', cell='2*kappa_p', gate_record=record))['cell'],
+                         '2*kappa_p')
 
     def test_pooling_waits_for_every_run_seal(self):
         ws = Workspace(self)

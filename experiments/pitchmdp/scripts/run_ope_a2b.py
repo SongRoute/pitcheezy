@@ -60,12 +60,15 @@ from pitchmdp import ope_synthetic_a2b as sx  # noqa: E402
 from pitchmdp.policy_artifacts import IntegrityError, _require  # noqa: E402
 
 COMMANDS = ('check', 'pins', 'select', 'register-digest', 'record-review', 'register-addendum', 'reconcile-attempt',
-            'smoke', 's0', 'ledger', 's3', 'gate', 's2a-gint', 's2a', 's2a-pool', 's1', 'decide', 'unblind')
+            'smoke', 's0', 'ledger', 's3-r3', 's3', 'gate', 's2a-gint', 's2a-gint-record', 's2a', 's2a-pool', 's1',
+            'decide', 'unblind')
 MANIFEST_COMMANDS = ('register-digest', 'record-review', 'register-addendum', 'reconcile-attempt')
-STAGE_OF = {'smoke': 'A2b-SM', 's0': 'A2b-S0', 'ledger': 'A2b-L', 's3': 'A2b-S3', 'gate': 'A2b-G', 's2a-gint': 'A2b-S2a',
-            's2a': 'A2b-S2a', 's2a-pool': 'A2b-S2a', 's1': 'A2b-S1', 'decide': 'A2b-S4', 'unblind': 'A2b-UB',
+STAGE_OF = {'smoke': 'A2b-SM', 's0': 'A2b-S0', 'ledger': 'A2b-L', 's3-r3': 'A2b-S3', 's3': 'A2b-S3', 'gate': 'A2b-G',
+            's2a-gint': 'A2b-S2a', 's2a-gint-record': 'A2b-S2a', 's2a': 'A2b-S2a', 's2a-pool': 'A2b-S2a', 's1': 'A2b-S1',
+            'decide': 'A2b-S4', 'unblind': 'A2b-UB',
             'select': 'A2b-S4'}  # 'select' (G-REG helper, reward-free) and manifest commands use the 3,600 s guard
-PHASE_2 = ('s2a-gint', 's2a', 's2a-pool', 's1')
+PHASE_2 = ('s2a-gint', 's2a-gint-record', 's2a', 's2a-pool', 's1')
+R3_STAGE = 'A2b-S3:R3'  # the R3-only stage (G-INT-R3 and the B2 vectors): its unresolved failure voids the B2 rows only
 CODE_PATHS = roa.CODE_PATHS
 KST = rb.KST
 GIB = roa.GIB
@@ -81,7 +84,11 @@ def attempt_stage(args):
     if args.command == 's2a':
         return f'A2b-S2a:k{args.k}'
     if args.command == 's2a-gint':
+        return f'A2b-S2a:gint:{args.cell}:k{args.k}'
+    if args.command == 's2a-gint-record':
         return f'A2b-S2a:gint:{args.cell}'
+    if args.command == 's3-r3':
+        return R3_STAGE
     if args.command == 's2a-pool':
         return f'A2b-S2a:pool:{args.cell}'
     return stage
@@ -330,11 +337,16 @@ def gate_committed(run):
 def plan_phase_2(run):
     gate = gate_committed(run)
     command = run.args.command
-    if command in ('s2a-gint', 's2a', 's2a-pool'):
+    if command in ('s2a-gint', 's2a-gint-record', 's2a', 's2a-pool'):
         cell = run.args.cell if command != 's2a' else rb.registered_run(run.args.k)
         _require(cell in gate['work_list']['S2_prime_cells'], f'the gate record did not open the S-2\' cell {cell}')
-        if command == 's2a-gint':
+        if command in ('s2a-gint', 's2a-gint-record'):
             _require(cell in rb.S2P_DECISION_CELLS, 'G-INT-S2EQ runs for the decision cells only')
+        if command == 's2a-gint':
+            _require(run.args.k in rb.GINT_S2EQ_RUNS[cell], f'run {run.args.k} is not a recorded run of the {cell} family')
+        if command == 's2a-gint-record':  # every reproduced run sealed before the record attempt
+            for k in rb.GINT_S2EQ_RUNS[cell]:
+                roa.require_seal(run.manifest, f'A2b-S2a:gint:{cell}:k{k}')
         if command == 's2a':
             family = cell if cell in rb.S2P_DECISION_CELLS else '2*kappa_p'  # kappa_p' rides on the kappa family
             out, _ = roa.require_seal(run.manifest, f'A2b-S2a:gint:{family}')
@@ -392,8 +404,20 @@ def plan_unblind(run):
     return {'s3': s3_dir, 's4': s4_dir, 'record': Path(path)}
 
 
-PLANS = {'s2a-gint': plan_phase_2, 's2a': plan_phase_2, 's2a-pool': plan_phase_2, 's1': plan_phase_2,
-         'decide': plan_decide, 'unblind': plan_unblind}
+def plan_s3(run):
+    """Before the A2b-S3 attempt: the R3-only stage is sealed, or it ended in an unresolved deterministic integrity
+    failure (both attempts used) - then every B2 row is invalid and r3_stage_failed_integrity is recorded; otherwise
+    refuse (run s3-r3 first)."""
+    status = roa.stage_status(run.manifest, (R3_STAGE,))[R3_STAGE]
+    if status == 'sealed':
+        out, _ = roa.require_seal(run.manifest, R3_STAGE)
+        return {'r3': 'sealed', 'r3_dir': out}
+    _require(status == 'FAILED_INTEGRITY', f'the R3-only stage {R3_STAGE} is {status}: run s3-r3 first (decision needed)')
+    return {'r3': 'FAILED_INTEGRITY', 'r3_dir': None}
+
+
+PLANS = {'s2a-gint': plan_phase_2, 's2a-gint-record': plan_phase_2, 's2a': plan_phase_2, 's2a-pool': plan_phase_2,
+         's1': plan_phase_2, 'decide': plan_decide, 'unblind': plan_unblind, 's3': plan_s3}
 
 
 def run_command(args, env, entered=None):
@@ -558,80 +582,130 @@ def gint_a2_record(public, sealed, results, reference):
             'mismatched_keys': mismatched, 'reference': reference}
 
 
-def body_s3(run):
-    """G-INT-A2 (the original A2 evaluator on S6, A2 seeds), G-INT-R3, G-INT-EVAL (the new evaluator's 12-row S6
-    mode) and then the 25 rows on the new ledger; centers only in centers.sealed.json."""
+def b0_artifacts(world):
+    """The registered BC_P artifact, support table and hand registry (A3 e0_from_ledger inputs)."""
+    from pitchmdp.policy_artifacts import load_hand_registry, load_support_table, load_train_bc
+    rpv, policy = world.rpv, world.policy
+    artifact = load_train_bc(*rpv.registered_path(policy, 'bc'))
+    support, _ = load_support_table(*rpv.registered_path(policy, 'support'), artifact)
+    hands, _ = load_hand_registry(*rpv.registered_path(policy, 'hands'), artifact)
+    return artifact.bc, support, hands
+
+
+def body_s3_r3(run):
+    """The R3-only stage: G-INT-R3 (the frozen B2 on the S6 allowlisted fields reproduces the recorded A3 S6 B2
+    diagnostics at relative 1e-9) and the B2 vectors, validity and weight diagnostics on the new ledger (reward-free).
+    An unresolved failure here voids only the B2 rows (design 9.6)."""
+    from pitchmdp import behavior_weights as bw
     pins = run.config['registration_input_pins']
-    sealed_json(run, 'A2b-S0', 's0_record.json')  # the pins and r3_status were verified there
-    a2_s0 = json.loads((run.env.a2_sealed(run.config, 'A2-S0') / 's0.json').read_text())
     settings = pins['a3_weight_settings']
-    results, reference = run.env.a2_results(run.config)
-    # 1. G-INT-A2 on the untouched A2 path
-    ledger_path, s6_dr = run.env.s6_record(run.config)
-    data = run.env.rehearsal_inputs(run.config, run.local, run.base, ledger_path, s6_dr, run.out, run.check)
-    _require(data.window[1] <= a2.ALL_STAGES_MAX_DATE, 'a row after 2025 reached the rehearsal')
-    references = {'s6_dr_a5_record': osd.recorded_gint_reference(s6_dr)}  # the A2 G-INT values (then the A2 record)
-    raw = lambda window: run.env.raw_join(run.config, run.local, window, run.check)
-    public_a2, sealed_a2, _, gint = roa.rehearsal(
-        data.decisions, data.facts, data.last_rows, raw_join=lambda: raw(data.window), game_values=data.game_values,
-        s0=a2_s0, references=references, ess_gate=data.ess_gate, r3_status='NOT_RUN:R3', checkpoint=run.check)
-    gint_a2 = sa.require_gint_pass(gint_a2_record(public_a2, sealed_a2, results, reference), 'G-INT-A2')
-    del public_a2, sealed_a2
-    run.check()
-    # 2. G-INT-R3 (allowlisted S6 fields, frozen B2) - the B2 feature table hook decides whether B2 is wired
     world = run.env.ledger_world(run.config, run.local, run.base, run.check)
     model = run.env.b2_model(run.config, run.env.repertoire(world))
+    bc, support, hands = b0_artifacts(world)
     s6_decisions = run.env.s6_allowlisted(run.config)
-    s6_e0 = dn.e0_map(data.facts)
-    s6_table = run.env.b2_dev_table(run.config, run.local, world, sorted({int(i['game']) for i in data.facts.values()}))
+    s6_e0 = bw.e0_from_ledger(bw.by_pa(s6_decisions), bc, support, hands)
+    s6_table = run.env.b2_dev_table(run.config, run.local, world, lg.ledger_games(s6_decisions))
     s6_vectors = dn.decision_vectors(model, s6_table, dn.b2_decision_rows(s6_decisions, s6_e0))
-    recorded = run.env.a3_s6_weights(run.config)
     s6_weights, _ = dn.b2_weights(s6_decisions, s6_e0, s6_vectors, large=settings['large_weight_threshold'],
                                   mei=settings['mei'], draws=settings['bootstrap_draws'], seed=settings['bootstrap_seed'],
                                   ess_min=settings['E5_thresholds'])
-    gint_r3 = dn.gint_r3(s6_weights, recorded)
+    gint_r3 = dn.gint_r3(s6_weights, run.env.a3_s6_weights(run.config))
+    roa.dump(run.out / 'gint_r3.json', gint_r3)
     _require(gint_r3['result'] == 'PASS', f'G-INT-R3 failed (R3-only stage): {gint_r3["mismatched_keys"]}')
-    # 3. G-INT-EVAL: the new evaluator, S6 mode, A2 seeds, the 12 A2 pair rows only
-    rows = roa.surrogate_rows(data.last_rows, raw(data.window))
-    from pitchmdp.ope_surrogate import TerminalValues
-    terminal = TerminalValues(data.game_values['we'], data.game_values['advancement'])
-    surrogates = osg.surrogate_rewards(data.facts, rows, terminal, np.asarray(a2_s0['r1_table']))
-    common = {'train_residuals': a2_s0.get('train_residuals'), 'ess_gate': data.ess_gate, 'checkpoint': run.check}
-    public6, sealed6, _ = sa.evaluate(roa.guarded_stream(data.decisions, run.check), data.facts, mode=rb.MODE_S6,
-                                      surrogates=surrogates, gint={'G-INT-A2': gint_a2},
-                                      r1_paths={'rehearsal': osg.path_shares(surrogates), 'train_census': a2_s0['census']},
-                                      **common)
-    gint_eval = sa.require_gint_pass(sa.gint_eval_record(public6, sealed6, results, reference=reference), 'G-INT-EVAL')
-    roa.dump(run.out / 'gint_eval.json', gint_eval)
-    del public6, sealed6
     run.check()
-    # 4. the 25 rows on the new ledger (A2b seeds)
     ledger_dir, _ = roa.require_seal(run.manifest, 'A2b-L')
     selection = json.loads((ledger_dir / 'selection.json').read_text())
-    written = json.loads((ledger_dir / 'facts.reward_free.json').read_text())
-    new = run.env.rehearsal_inputs(run.config, run.local, run.base, ledger_dir / 'ledger-dev-0.jsonl',
-                                   {'games': selection['new_games']}, run.out, run.check)
-    _require({p: bool(i['in_population']) for p, i in new.facts.items()} ==
-             {p: bool(i['in_population']) for p, i in written.items()},
-             'the recomputed E0 differs from the A2b-L ledger facts (deterministic integrity)')
-    new_rows = roa.surrogate_rows(new.last_rows, raw(new.window))
-    new_sur = osg.surrogate_rewards(new.facts, new_rows, terminal, np.asarray(a2_s0['r1_table']))
-    decisions = list(new.decisions())
-    e0 = dn.e0_map(new.facts)
+    facts = json.loads((ledger_dir / 'facts.reward_free.json').read_text())
+    decisions = list(run.env.ledger_decisions(ledger_dir / 'ledger-dev-0.jsonl')())
+    e0 = dn.e0_map(facts)
     e0_ids = {p for p, (inside, _) in e0.items() if inside}
     table = run.env.b2_dev_table(run.config, run.local, world, selection['new_games'])
-    vectors = dn.decision_vectors(model, table, dn.b2_decision_rows(decisions, e0))
+    rows = dn.b2_decision_rows(decisions, e0)
+    vectors = dn.decision_vectors(model, table, rows)
     validity = dn.b2_validity(decisions, vectors, e0_ids)
     weights = None
     if validity['pass']:
         weights, _ = dn.b2_weights(decisions, e0, vectors, large=settings['large_weight_threshold'], mei=settings['mei'],
                                    draws=rb.DRAWS, seed=rb.ROLE_VALUES['game_bootstrap'], ess_min=settings['E5_thresholds'])
+    keys = [[r['pa_id'], r['decision_index']] for r in rows]
+    np.save(run.out / 'b2_vectors.npy', np.asarray([vectors[(p, i)] for p, i in keys], dtype=np.float64))
+    roa.dump(run.out / 'b2_keys.json', keys)
+    roa.dump(run.out / 'b2_record.json', {'stage': R3_STAGE, 'gint_r3': gint_r3, 'validity': validity, 'weights': weights,
+                                          'rewards_read': False})
+
+
+def r3_inputs(run, decisions, e0_ids):
+    """The B2 inputs of the 25-row evaluation from the sealed R3-only stage, or (an unresolved R3 failure) an invalid
+    B2 denominator with r3_stage_failed_integrity."""
+    if run.plan['r3'] != 'sealed':
+        zero = {'pass': False, 'decisions_checked': 0, 'zero_mass_with_positive_pi': 0, 'nonfinite_rho': 0,
+                'support_differs_from_b0': 0, 'r3_stage_failed_integrity': True}
+        return {'validity': zero, 'weights': None}, None, {'result': 'FAILED_INTEGRITY'}
+    out = run.plan['r3_dir']
+    record = json.loads((out / 'b2_record.json').read_text())
+    keys = [tuple(k) for k in json.loads((out / 'b2_keys.json').read_text())]
+    vectors = dict(zip(keys, np.load(out / 'b2_vectors.npy', allow_pickle=False)))
+    stream = dn.b2_decision_stream(decisions, vectors, e0_ids) if record['validity']['pass'] else None
+    return {'validity': record['validity'], 'weights': record['weights']}, stream, record['gint_r3']
+
+
+def body_s3(run):
+    """G-INT-A2 (the original A2 evaluator on S6, A2 seeds), G-INT-EVAL (the new evaluator's 12-row S6 mode, A2
+    seeds) and the 25 rows on the new ledger (A2b seeds; the B2 rows from the R3-only stage); centers only in
+    centers.sealed.json; the integrity records are written before their pass is required."""
+    sealed_json(run, 'A2b-S0', 's0_record.json')  # the pins and r3_status were verified there
+    a2_s0 = json.loads((run.env.a2_sealed(run.config, 'A2-S0') / 's0.json').read_text())
+    results, reference = run.env.a2_results(run.config)
+    raw = lambda window: run.env.raw_join(run.config, run.local, window, run.check)
+    from pitchmdp.ope_surrogate import TerminalValues
+    # 1. G-INT-A2 on the untouched A2 path (its own subdirectory for the facts' reference ledger)
+    ledger_path, s6_dr = run.env.s6_record(run.config)
+    (run.out / 's6').mkdir()
+    data = run.env.rehearsal_inputs(run.config, run.local, run.base, ledger_path, s6_dr, run.out / 's6', run.check)
+    _require(data.window[1] <= a2.ALL_STAGES_MAX_DATE, 'a row after 2025 reached the rehearsal')
+    references = {'s6_dr_a5_record': osd.recorded_gint_reference(s6_dr)}  # the A2 G-INT values (then the A2 record)
+    public_a2, sealed_a2, _, gint = roa.rehearsal(
+        data.decisions, data.facts, data.last_rows, raw_join=lambda: raw(data.window), game_values=data.game_values,
+        s0=a2_s0, references=references, ess_gate=data.ess_gate, r3_status='NOT_RUN:R3', checkpoint=run.check)
+    gint_a2 = gint_a2_record(public_a2, sealed_a2, results, reference)
+    roa.dump(run.out / 'gint_a2.json', {k: v for k, v in gint_a2.items()})
+    sa.require_gint_pass(gint_a2, 'G-INT-A2')
+    del public_a2, sealed_a2
+    run.check()
+    # 2. G-INT-EVAL: the new evaluator, S6 mode, A2 seeds, the 12 A2 pair rows only
+    terminal = TerminalValues(data.game_values['we'], data.game_values['advancement'])
+    surrogates = osg.surrogate_rewards(data.facts, roa.surrogate_rows(data.last_rows, raw(data.window)), terminal,
+                                       np.asarray(a2_s0['r1_table']))
+    common = {'train_residuals': a2_s0.get('train_residuals'), 'ess_gate': data.ess_gate, 'checkpoint': run.check}
+    public6, sealed6, _ = sa.evaluate(roa.guarded_stream(data.decisions, run.check), data.facts, mode=rb.MODE_S6,
+                                      surrogates=surrogates, gint={'G-INT-A2': gint_a2['result'], 'G-INT': gint},
+                                      r1_paths={'rehearsal': osg.path_shares(surrogates), 'train_census': a2_s0['census']},
+                                      **common)
+    gint_eval = sa.gint_eval_record(public6, sealed6, results, reference=reference)
+    roa.dump(run.out / 'gint_eval.json', gint_eval)
+    sa.require_gint_pass(gint_eval, 'G-INT-EVAL')
+    del public6, sealed6, data
+    run.check()
+    # 3. the 25 rows on the new ledger (A2b seeds)
+    ledger_dir, _ = roa.require_seal(run.manifest, 'A2b-L')
+    selection = json.loads((ledger_dir / 'selection.json').read_text())
+    written = json.loads((ledger_dir / 'facts.reward_free.json').read_text())
+    (run.out / 'new').mkdir()
+    new = run.env.rehearsal_inputs(run.config, run.local, run.base, ledger_dir / 'ledger-dev-0.jsonl',
+                                   {'games': selection['new_games']}, run.out / 'new', run.check)
+    _require({p: bool(i['in_population']) for p, i in new.facts.items()} ==
+             {p: bool(i['in_population']) for p, i in written.items()},
+             'the recomputed E0 differs from the A2b-L ledger facts (deterministic integrity)')
+    new_sur = osg.surrogate_rewards(new.facts, roa.surrogate_rows(new.last_rows, raw(new.window)), terminal,
+                                    np.asarray(a2_s0['r1_table']))
+    decisions = list(new.decisions())
+    e0_ids = {p for p, info in new.facts.items() if info['in_population']}
+    b2, stream, gint_r3 = r3_inputs(run, decisions, e0_ids)
     public, sealed, notes = sa.evaluate(
         roa.guarded_stream(lambda: iter(decisions), run.check), new.facts, mode=rb.MODE_REHEARSAL, surrogates=new_sur,
-        gint={'G-INT-A2': gint_a2, 'G-INT-R3': gint_r3, 'G-INT-EVAL': gint_eval},
-        decisions_b2=dn.b2_decision_stream(decisions, vectors, e0_ids) if validity['pass'] else None,
-        b2={'validity': validity, 'weights': weights},
-        r1_paths={'rehearsal': osg.path_shares(new_sur), 'train_census': a2_s0['census']}, **common)
+        gint={'G-INT-A2': gint_a2['result'], 'G-INT-R3': gint_r3, 'G-INT-EVAL': gint_eval['result']},
+        decisions_b2=stream, b2=b2, r1_paths={'rehearsal': osg.path_shares(new_sur), 'train_census': a2_s0['census']},
+        **common)
     public_bytes, sealed_bytes = sa.seal(public, sealed)
     (run.out / 'public.json').write_bytes(public_bytes)
     (run.out / 'centers.sealed.json').write_bytes(sealed_bytes)
@@ -692,12 +766,24 @@ def one_s2_run(run, s0_record, world, k, scheme):
 
 
 def body_s2a_gint(run):
-    cell = run.plan['cell']
+    """One recorded EXP-OPE-RES-01 dose-family run reproduced by the new driver in the A2 seed scheme (its own
+    attempt and 1,800 s guard; the full synthetic run record is sealed for the record step)."""
     s0_record, world = s2_world(run)
+    roa.dump(run.out / 'run.json', one_s2_run(run, s0_record, world, run.args.k, 'A2'))
+
+
+def body_s2a_gint_record(run):
+    """G-INT-S2EQ (public item 14): written first, then its exact form required (a failure is a deterministic
+    integrity failure; no new-seed run of the family starts without a sealed PASS)."""
+    cell = run.plan['cell']
     results, reference = run.env.a2_results(run.config)
-    runs = {k: one_s2_run(run, s0_record, world, k, 'A2') for k in rb.GINT_S2EQ_RUNS[cell]}
-    record = sx.gint_s2eq_scope(sx.gint_s2eq_record([cell], runs, sx.recorded_runs(results), reference=reference))
+    runs = {}
+    for k in rb.GINT_S2EQ_RUNS[cell]:
+        out, _ = roa.require_seal(run.manifest, f'A2b-S2a:gint:{cell}:k{k}')
+        runs[k] = json.loads((out / 'run.json').read_text())
+    record = sx.gint_s2eq_record([cell], runs, sx.recorded_runs(results), reference=reference)
     roa.dump(run.out / 'gint_s2eq.json', record)
+    sx.gint_s2eq_scope(record)
 
 
 def body_s2a(run):
@@ -756,8 +842,9 @@ def body_decide(run):
     for cell in gate['work_list']['S2_prime_cells']:
         s2[cell], _ = sealed_json(run, f'A2b-S2a:pool:{cell}', 'pooled.json')
     dc.check_inputs(tab, s0_record['reused']['nets'], s2, gate)
+    r3_failed = roa.stage_status(run.manifest, (R3_STAGE,))[R3_STAGE] == 'FAILED_INTEGRITY'
     record = dc.require_label(dc.decide(public, gate, tab=tab, nets=s0_record['reused']['nets'], s2_prime=s2,
-                                        r3_status=r3))
+                                        r3_status=r3, r3_stage_failed_integrity=r3_failed))
     record['inputs_sha256'] = {'public': rb.file_sha256(public_dir / 'public.json'), 'gate': dc.gate_sha256(gate)}
     roa.dump(run.out / 'decision_record.json', record)
 
@@ -772,9 +859,9 @@ def body_unblind(run):
                                           'decision_record_sha256': rb.file_sha256(s4_dir / 'decision_record.json')})
 
 
-BODIES = {'smoke': body_smoke, 's0': body_s0, 'ledger': body_ledger, 's3': body_s3, 'gate': body_gate,
-          's2a-gint': body_s2a_gint, 's2a': body_s2a, 's2a-pool': body_s2a_pool, 's1': body_s1, 'decide': body_decide,
-          'unblind': body_unblind}
+BODIES = {'smoke': body_smoke, 's0': body_s0, 'ledger': body_ledger, 's3-r3': body_s3_r3, 's3': body_s3,
+          'gate': body_gate, 's2a-gint': body_s2a_gint, 's2a-gint-record': body_s2a_gint_record, 's2a': body_s2a,
+          's2a-pool': body_s2a_pool, 's1': body_s1, 'decide': body_decide, 'unblind': body_unblind}
 
 
 # ---------------------------------------------------------------- manifest commands and the G-REG selection helper
@@ -872,8 +959,11 @@ def parse(argv=None):
     if args.command == 's2a':
         _require(type(args.k) is int, 's2a needs --k (a registered run index)')
         rb.registered_run(args.k)
-    if args.command in ('s2a-gint', 's2a-pool'):
+    if args.command in ('s2a-gint', 's2a-gint-record', 's2a-pool'):
         _require(args.cell is not None, f'{args.command} needs --cell')
+    if args.command == 's2a-gint':
+        _require(type(args.k) is int and args.cell in rb.GINT_S2EQ_RUNS and args.k in rb.GINT_S2EQ_RUNS[args.cell],
+                 's2a-gint needs --cell (a decision cell) and --k (one of its recorded A2 runs)')
     return args
 
 
