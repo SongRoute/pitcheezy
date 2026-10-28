@@ -128,6 +128,58 @@ def registered_config(root):
 
 
 # ---------------------------------------------------------------- B2-denominator streams over A2 synthetic ledgers
+def with_request_ids(decisions):
+    """The synthetic A2 ledger rows with a request id (the real ledger carries one per decision)."""
+    for row in decisions:
+        row['request_id'] = f"{row['pa_id']}:{row['decision_index']}"
+    return decisions
+
+
+def evaluator_inputs(seed=5, n_pas=300, n_games=20, n_pitchers=12):
+    """A synthetic ledger, facts and surrogate rewards in the shape the A2 tests use (_evaluate)."""
+    from ope_a2_fixtures import synthetic_ledger
+    from pitchmdp import ope_surrogate as osg
+    decisions, facts = synthetic_ledger(seed=seed, n_pas=n_pas, n_games=n_games, n_pitchers=n_pitchers)
+    with_request_ids(decisions)
+    rng = np.random.default_rng(1)
+    sur = {pa: {'R1_a': (float(np.clip(f['reward'] + rng.normal(0, .02), 0, 1)), 'class'),
+                'R1_b': (float(np.clip(f['reward'] + rng.normal(0, .01), 0, 1)), 'bip_quality'), 'spray_missing': False}
+           for pa, f in facts.items() if f.get('reward') is not None}
+    census = {'train_rows': 1000, 'bip_rows': 200, 'bip_missing_ev_or_la': 9, 'bip_unmapped_event': 3, 'bip_used': 188,
+              'dp_ineligible_double_play_to_out': 2, 'spray_missing_among_used': 4,
+              'mapping_counts': {'field_out': 120, 'single': 50, 'double': 18}}
+    common = {'surrogates': sur, 'train_residuals': {'hit': {'FB': {'n': 10, 'mean_residual': -0.01, 'se': 0.005}}},
+              'r1_paths': {'rehearsal': osg.path_shares(sur), 'train_census': census}, 'minimum_pitchers': 4,
+              'placebos': 4, 'draws': 200, 'minimum_games': 5, 'minimum_pa_starts': 10}
+    return decisions, facts, common
+
+
+def e0_ids_of(facts):
+    return {pa for pa, info in facts.items() if info['in_population']}
+
+
+def b2_stream(decisions, vectors, e0_ids):
+    """Test-side reference of the B2 stream (independent of ope_denominator_a2b): logging := the vector and rho
+    recomputed in the evaluated prefix of each E0 PA; every other row unchanged."""
+    def stream():
+        stop = set()
+        for row in decisions:
+            pa = row['pa_id']
+            if pa not in e0_ids or pa in stop or row['status'] not in est.EVALUATED:
+                if pa in e0_ids and row['status'] not in est.EVALUATED:
+                    stop.add(pa)
+                yield row
+                continue
+            v = np.asarray(vectors[(pa, row['decision_index'])], dtype=np.float64)
+            result = dict(row['result'])
+            a = result['logged_index']
+            result['logging'] = v.tolist()
+            for policy in ('candidate', 'reference'):
+                result[f'rho_{policy}'] = float(np.asarray(result[policy], dtype=np.float64)[a] / v[a])
+            yield {**row, 'result': result}
+    return stream
+
+
 def b2_vectors(decisions, seed=11, scale=0.4, zero_at=None):
     """A synthetic pi_b_hat_B2 vector per evaluated decision: the recorded B0 logging law tilted inside its own
     support (same support as B0, renormalized); ``zero_at``: request keys whose logged action gets no B2 mass."""
