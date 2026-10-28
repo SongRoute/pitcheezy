@@ -13,7 +13,7 @@ export function RecordSheet({ detail, fold, onClose, onPick }: { detail: Detail;
     {tab === '박스' && (['away', 'home'] as const).map(side => <section key={side}><h3>{short(detail.game[`${side}_team`])}</h3>{context?.boxscore?.[side] ? <>
       <table className="sv-table"><thead><tr><th>타자</th><th>타수</th><th>안타</th><th>출루</th></tr></thead><tbody>{context.boxscore[side].batters.map(p => <tr key={p.id}><td>{p.name}</td><td>{p.at_bats ?? '—'}</td><td>{p.hits ?? '—'}</td><td>{p.on_base ?? '—'}</td></tr>)}</tbody></table>
       <table className="sv-table"><thead><tr><th>투수</th><th>투구</th><th>삼진</th><th>자책</th></tr></thead><tbody>{context.boxscore[side].pitchers.map(p => <tr key={p.id}><td>{p.name}</td><td>{p.pitches ?? '—'}</td><td>{p.strikeouts ?? '—'}</td><td>{p.earned_runs ?? '—'}</td></tr>)}</tbody></table></> : <p className="sv-muted">박스 기록 정보 없음</p>}</section>)}
-    {tab === '분석' && <div className="sv-unmeasured"><h3>분석 정보 없음</h3><p>성분별 책임 분해·기대실점·타구 예상 결과는 아직 연결되지 않았어요.</p></div>}
+    {tab === '분석' && <div className="sv-unmeasured"><h3>분석 <span className="sv-tag">준비 중</span></h3><p>성분별 책임 분해·기대실점·타구 예상 결과는 아직 연결되지 않았어요.</p></div>}
     <p className="sv-muted">공개된 시점까지의 기록이며 이후 정정될 수 있어요. 출루는 안타·볼넷·몸에 맞는 공을 합한 값이에요.</p>
   </Sheet>;
 }
