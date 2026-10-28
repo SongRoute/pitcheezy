@@ -300,7 +300,7 @@ def allowed_document(rows):
     return out
 
 
-MISMATCH_KEYS_SHOWN = 20
+MISMATCH_KEYS_SHOWN = rb.MISMATCH_KEYS_SHOWN_MAX  # 20 (the typed record allows no more, NOTE-A)
 
 
 def compare_allowed_fields(reference_rows, new_rows):
@@ -318,7 +318,7 @@ def compare_allowed_fields(reference_rows, new_rows):
             'missing_decisions': len(missing), 'extra_decisions': len(extra), 'mismatched_fields': len(mismatched),
             'not_comparable_fields': len(not_comparable), 'max_abs_delta': float(max_delta),
             'mismatched_keys_shown': (missing + extra + mismatched + not_comparable)[:MISMATCH_KEYS_SHOWN],
-            'tolerance': {'float_absolute': rb.INTEGRITY_TOL, 'other_leaves': 'equality'}}
+            'tolerance': dict(rb.EQUIVALENCE_TOLERANCE)}  # absolute 1e-12 for floats, equality otherwise
 
 
 DRIVER_PATHS = ('s6_two_game_replay', 'same_request_twice')

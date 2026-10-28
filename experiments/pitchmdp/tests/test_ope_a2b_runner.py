@@ -177,12 +177,17 @@ class FailClosedTests(unittest.TestCase):
         pins = json.loads(buffer.getvalue())
         self.assertEqual(set(pins['new_files_sha256']), set(rb.NEW_FILES))
         self.assertIn('a3_weight_settings', pins['added_to_the_draft_pin_keys'])
-        self.assertEqual(set(pins['record_only_pins']), {'g0_bundle_sha256', 'a2_execution_source_commit',
-                                                        'a3_reader_commit', 'x2_world_predictor_identity',
-                                                        'smoke_train_subset', 'processed_frame_aligned'})
+        self.assertTrue({'g0_bundle_sha256', 'a2_execution_source_commit', 'a3_reader_commit',
+                         'x2_world_predictor_identity', 'smoke_train_subset', 'processed_frame_aligned'}
+                        <= set(pins['record_only_pins']))
         self.assertTrue(all(v.startswith('record-only') for v in pins['record_only_pins'].values()))
-        self.assertEqual(set(pins['pins_compared_at_run']), {'runtime_setting', 'dev_style_snapshot',
-                                                            'b2_inference_environment'})
+        self.assertTrue({'runtime_setting', 'dev_style_snapshot', 'b2_inference_environment'}
+                        <= set(pins['pins_compared_at_run']))
+        self.assertEqual(set(pins['registration_time_pins']), {'ml_policy_d127_chain', 's2_prime_runs',
+                                                               'rehearsal_population'})  # NOTE-D
+        classes = ('pins_compared_at_run', 'registration_time_pins', 'record_only_pins')
+        self.assertEqual(sorted(k for c in classes for k in pins[c]),
+                         sorted(pins['registration_input_pins_expected_keys']))
 
     def test_the_select_helper_takes_the_heavy_lock_and_nice(self):
         """G-CODE MINOR-2: the G-REG selection helper (draft config allowed) loads data only under os.nice(10) and the

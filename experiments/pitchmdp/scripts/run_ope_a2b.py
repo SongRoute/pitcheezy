@@ -633,6 +633,7 @@ def body_ledger(run):
                                         s6_rows=world.s6_replay_rows, s6_games=world.s6_games,
                                         new_games=selection['new_games'], out=run.out / 'driver_equivalence',
                                         deadline=_Deadline(run.check), no_pitch=world.no_pitch)
+    rb.validate_equivalence_record(roa.json_safe(equivalence))  # the typed record as written (NOTE-A)
     roa.dump(run.out / 'driver_equivalence.json', equivalence)
     lg.require_equivalence(equivalence)
     run.check()
@@ -656,11 +657,12 @@ def body_ledger(run):
                        facts, decisions, no_pitch=world.no_pitch, kwargs=kwargs, outcome=outcome)
     roa.dump(run.out / 'selection.json', selection)
     roa.dump(run.out / 'facts.reward_free.json', lg.reward_free_facts(facts))
-    roa.dump(run.out / 'ledger_record.json', {'stage': 'A2b-L', 'sealed_counts': sealed, 'e0_count': lg.e0_count(facts),
-                                               'pas': len(facts), 'dates': dates, 'identity': identity, 'm10': m10,
-                                               'driver_equivalence': equivalence, 'registered_pins_compared': compared_pins,
-                                               'runtime_sha256': runtime.sha256, 'summary': runtime.summary(),
-                                               'rewards_written': False})
+    record = {'stage': 'A2b-L', 'sealed_counts': sealed, 'e0_count': lg.e0_count(facts), 'pas': len(facts),
+              'dates': dates, 'identity': identity, 'm10': m10, 'driver_equivalence': equivalence,
+              'registered_pins_compared': compared_pins, 'runtime_sha256': runtime.sha256, 'summary': runtime.summary(),
+              'rewards_written': False}
+    rb.validate_ledger_record(roa.json_safe(record))  # the typed public record as written (NOTE-A)
+    roa.dump(run.out / 'ledger_record.json', record)
     lg.check_no_reward_outputs(run.out)
 
 
@@ -1104,7 +1106,8 @@ def main(argv=None, env=None):
         print(json.dumps({'new_files_sha256': new_file_hashes(), 'protected_sources': rb.PROTECTED_SOURCES,
                           'registration_input_pins_expected_keys': list(rb.PIN_KEYS),
                           'added_to_the_draft_pin_keys': list(rb.ADDED_PIN_KEYS),
-                          'pins_compared_at_run': rb.COMPARED_AT_RUN, 'record_only_pins': rb.RECORD_ONLY_PINS},
+                          'pins_compared_at_run': rb.COMPARED_AT_RUN, 'record_only_pins': rb.RECORD_ONLY_PINS,
+                          'registration_time_pins': rb.REGISTRATION_TIME_PINS},
                          indent=1))
         return 0
     if args.command == 'select':

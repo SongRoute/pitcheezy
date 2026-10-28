@@ -534,6 +534,141 @@ def validate_key_record(document, kind):
     return True
 
 
+# ---------------------------------------------------------------- the A2b-L public records (NOTE-A)
+EQUIVALENCE_RECORD_KEYS = ('check', 'path', 'reason', 'pass', 'games', 'style_source', 'runtime_sha256_reproduced',
+                           's6_runtime_sha256', 'runtime_sha256', 'rewards_read', 'tolerance', 'compared_decisions',
+                           'compared_fields', 'missing_decisions', 'extra_decisions', 'mismatched_fields',
+                           'not_comparable_fields', 'max_abs_delta', 'mismatched_keys_shown')
+EQUIVALENCE_PATHS = {'s6_two_game_replay': {'reason': None, 'reproduced': True, 'games': 2},
+                     'same_request_twice': {'reason': 'runtime_sha_not_reproduced', 'reproduced': False, 'games': 1}}
+EQUIVALENCE_STYLE_SOURCES = ('header', 'recomputed_from_the_s6_game_list')
+EQUIVALENCE_TOLERANCE = {'float_absolute': INTEGRITY_TOL, 'other_leaves': 'equality'}
+EQUIVALENCE_COUNTS = ('compared_decisions', 'compared_fields', 'missing_decisions', 'extra_decisions',
+                      'mismatched_fields', 'not_comparable_fields')
+MISMATCH_KEYS_SHOWN_MAX = 20
+LEDGER_RECORD_KEYS = ('stage', 'sealed_counts', 'e0_count', 'pas', 'dates', 'identity', 'm10', 'driver_equivalence',
+                      'registered_pins_compared', 'runtime_sha256', 'summary', 'rewards_written')
+IDENTITY_CHECK_KEYS = ('header_candidate_identity', 'header_runtime_sha256', 'rows_carry_runtime_sha256',
+                       'components_equal_bind_identity', 'vectorized_b0_reproduces_logging')
+M10_KEYS = ('check', 'pass', 'complete_pas', 'complete_sets_equal', 'max_abs_delta_is_zero', 'runtime_sha256')
+RUNTIME_SETTING_KEYS = ('selected_tau', 'samples', 'pitch_cap', 'row_budget', 'planning_seed', 'evaluation_role')
+SUMMARY_KEYS = ('requests', 'request_status', 'pas', 'pa_status', 'pa_first_refusal', 'conflicts', 'malformed',
+                'aborted', 'run_status', 'ledger_rows', 'ledger_head_sha256', 'runtime_sha256', 'population_value')
+SUMMARY_OPTIONAL_KEYS = ('positivity_candidate_searches',)  # runtime v3
+
+
+def _is_count(value):
+    return type(value) is int and value >= 0
+
+
+def _is_hex64(value):
+    return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value) is not None
+
+
+def _is_day(value):
+    return isinstance(value, str) and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', value) is not None
+
+
+def _is_status_counts(value):
+    return isinstance(value, dict) and all(isinstance(k, str) and _is_count(v) for k, v in value.items())
+
+
+def validate_equivalence_record(document):
+    """driver_equivalence.json and ledger_record.json['driver_equivalence'] (design 9.2, NOTE-A), in their written
+    (JSON) form: exactly EQUIVALENCE_RECORD_KEYS; the path, its reason, the reproduction flag and the number of games
+    agree (path A replays two distinct S6 games on the S6 runtime itself); sha256 values are 64-hex; the only floats
+    are max |delta| and the registered absolute tolerance; counts are non-negative ints and ``pass`` equals them;
+    at most 20 mismatched key names, strings only, exactly the first ones of the counted mismatches. No field value
+    of a decision, no reward."""
+    _require(isinstance(document, dict) and set(document) == set(EQUIVALENCE_RECORD_KEYS),
+             'driver equivalence record: keys outside its type')
+    _require(document['check'] == 'driver_equivalence' and document['path'] in EQUIVALENCE_PATHS
+             and document['style_source'] in EQUIVALENCE_STYLE_SOURCES,
+             'driver equivalence record: check / path / style')
+    rule = EQUIVALENCE_PATHS[document['path']]
+    _require(document['reason'] == rule['reason'] and document['runtime_sha256_reproduced'] is rule['reproduced'],
+             'driver equivalence record: the path, its reason and the reproduction flag disagree')
+    games = document['games']
+    _require(isinstance(games, list) and len(games) == rule['games'] and len(set(games)) == len(games)
+             and all(type(g) is int and g > 0 for g in games), 'driver equivalence record: games (game_pk ints)')
+    path_a_on_s6 = (document['path'] != 's6_two_game_replay'
+                    or document['runtime_sha256'] == document['s6_runtime_sha256'])
+    _require(_is_hex64(document['s6_runtime_sha256']) and _is_hex64(document['runtime_sha256']) and path_a_on_s6,
+             'driver equivalence record: runtime sha256 values (path A runs the S6 runtime)')
+    _require(document['rewards_read'] is False and document['tolerance'] == EQUIVALENCE_TOLERANCE,
+             'driver equivalence record: rewards_read false and the registered absolute 1e-12 tolerance')
+    _require(all(_is_count(document[k]) for k in EQUIVALENCE_COUNTS), 'driver equivalence record: counts')
+    m = document['max_abs_delta']
+    _require(isinstance(m, float) and math.isfinite(m) and m >= 0, 'driver equivalence record: max |delta|')
+    flagged = sum(document[k] for k in EQUIVALENCE_COUNTS[2:])
+    shown = document['mismatched_keys_shown']
+    _require(isinstance(shown, list) and len(shown) <= MISMATCH_KEYS_SHOWN_MAX
+             and all(isinstance(v, str) for v in shown) and len(shown) == min(flagged, MISMATCH_KEYS_SHOWN_MAX),
+             'driver equivalence record: at most 20 mismatched key names (strings), the first of the counted ones')
+    clean = document['compared_decisions'] > 0 and not flagged
+    _require(type(document['pass']) is bool and document['pass'] == clean,
+             'driver equivalence record: pass must equal its counts')
+    return True
+
+
+def validate_ledger_record(document):
+    """ledger_record.json of A2b-L (NOTE-A), in its written (JSON) form: exactly LEDGER_RECORD_KEYS - the seal
+    counts, the E0 and PA counts, the DEV date range, the identity checks (all true, as identity_checks requires),
+    M-10 pass / counts, the driver-equivalence record (``validate_equivalence_record``), the registered pins
+    compared, the runtime sha256 and the reward-free ledger summary; rewards_written false. The only floats are the
+    vectorized-B0 maximum |difference| (<= 1e-12) and the registered tau; no reward, delta or center."""
+    _require(isinstance(document, dict) and set(document) == set(LEDGER_RECORD_KEYS),
+             'A2b-L record: keys outside its type')
+    _require(document['stage'] == 'A2b-L' and document['rewards_written'] is False,
+             'A2b-L record: stage / rewards_written')
+    sealed = document['sealed_counts']
+    _require(isinstance(sealed, dict) and set(sealed) == {'pas', 'requests'} and all(map(_is_count, sealed.values())),
+             'A2b-L record: sealed_counts')
+    _require(_is_count(document['e0_count']) and _is_count(document['pas']) and document['pas'] == sealed['pas']
+             and document['e0_count'] <= document['pas'], 'A2b-L record: E0 and PA counts')
+    dates = document['dates']
+    _require(isinstance(dates, dict) and set(dates) == {'first', 'last', 'rows'} and _is_day(dates['first'])
+             and _is_day(dates['last']) and dates['first'] <= dates['last'] and _is_count(dates['rows']),
+             'A2b-L record: dates')
+    runtime = document['runtime_sha256']
+    _require(_is_hex64(runtime), 'A2b-L record: runtime sha256')
+    identity = document['identity']
+    _require(isinstance(identity, dict) and set(identity) == {'checks', 'runtime_sha256', 'candidate_sha256',
+                                                              'vectorized_b0_rows', 'vectorized_b0_max_abs_diff'}
+             and isinstance(identity['checks'], dict) and set(identity['checks']) == set(IDENTITY_CHECK_KEYS)
+             and all(v is True for v in identity['checks'].values()) and identity['runtime_sha256'] == runtime
+             and _is_hex64(identity['candidate_sha256']) and _is_count(identity['vectorized_b0_rows'])
+             and isinstance(identity['vectorized_b0_max_abs_diff'], float)
+             and 0 <= identity['vectorized_b0_max_abs_diff'] <= INTEGRITY_TOL, 'A2b-L record: identity checks')
+    m10 = document['m10']
+    _require(isinstance(m10, dict) and set(m10) == set(M10_KEYS) and m10['check'] == 'M-10'
+             and all(type(m10[k]) is bool for k in ('pass', 'complete_sets_equal', 'max_abs_delta_is_zero'))
+             and _is_count(m10['complete_pas']) and _is_hex64(m10['runtime_sha256']),
+             'A2b-L record: M-10 pass / counts')
+    validate_equivalence_record(document['driver_equivalence'])
+    pins = document['registered_pins_compared']
+    _require(isinstance(pins, dict) and set(pins) == {'runtime_setting', 'dev_style_snapshot'},
+             'A2b-L record: registered pins compared')
+    setting, style = pins['runtime_setting'], pins['dev_style_snapshot']
+    tau = setting.get('selected_tau') if isinstance(setting, dict) else None
+    _require(isinstance(setting, dict) and set(setting) == set(RUNTIME_SETTING_KEYS)
+             and isinstance(tau, (int, float)) and not isinstance(tau, bool) and math.isfinite(tau) and tau > 0
+             and all(_is_count(setting[k]) and setting[k] > 0 for k in ('samples', 'pitch_cap', 'row_budget'))
+             and _is_count(setting['planning_seed']) and setting['evaluation_role'] in ('evaluation', None),
+             'A2b-L record: runtime_setting compared')
+    _require(isinstance(style, dict) and set(style) == {'sha256', 'as_of_exclusive'} and _is_hex64(style['sha256'])
+             and _is_day(style['as_of_exclusive']), 'A2b-L record: dev_style_snapshot compared')
+    summary = document['summary']
+    counted = ('requests', 'pas', 'conflicts', 'malformed', 'aborted', 'ledger_rows', *SUMMARY_OPTIONAL_KEYS)
+    _require(isinstance(summary, dict) and set(SUMMARY_KEYS) <= set(summary) <= {*SUMMARY_KEYS, *SUMMARY_OPTIONAL_KEYS}
+             and all(_is_count(summary[k]) for k in counted if k in summary)
+             and all(_is_status_counts(summary[k]) for k in ('request_status', 'pa_status', 'pa_first_refusal'))
+             and summary['run_status'] in ('OK', 'HALTED') and _is_hex64(summary['ledger_head_sha256'])
+             and summary['runtime_sha256'] == runtime and summary['population_value'] is None,
+             'A2b-L record: the reward-free ledger summary')
+    return True
+
+
 RUN_PUBLIC_KEYS = ('experiment', 'stage', 'cell', 'k', 'wall_seconds', 'peak_rss_bytes', 'integrity', 'sealed_sha256')
 
 
@@ -626,12 +761,42 @@ ADDED_PIN_KEYS = (  # implementation needs (reported for G-REG; the draft has no
     'a3_weight_settings',  # the A3 s6-weights settings G-INT-R3 reproduces (large, mei, draws, seed, E5)
 )
 PIN_KEYS = (*DRAFT_PIN_KEYS, *ADDED_PIN_KEYS)
-COMPARED_AT_RUN = {  # G-CODE MINOR-3: pins compared with the value the code actually uses (beyond their form)
+# Every registration pin in exactly one class (G-CODE MINOR-3, NOTE-D); printed by the runner's pins command.
+COMPARED_AT_RUN = {  # checked against what a stage reads or builds at run time, or the input the stage runs with
+    'r3_status': 'A2b-S0 re-asserts DIAGNOSTIC_ONLY:DECIDED; the gate and the decision read it',
+    's6_dr_a5_ledger_path': 'opened by the allowlisted reader (A2b-L, A2b-S3:R3) and by A2b-S3; a protected root',
+    's6_dr_a5_ledger_sha256': 'the S6 ledger bytes before and after every read',
+    's6_dr_a5_manifest_sha256': 'the S6 stage manifest bytes before and after every read',
+    's6_runtime_sha256_header': 'the S6 header and every S6 row carry it; the driver-equivalence path A target',
+    'a2_s0_outputs_manifest_sha256': 'the sealed A2-S0 manifest entry, whenever A2-S0 is read (A2b-SM, S0, S3)',
+    'a2_s2_outputs_manifest_sha256': 'the sealed A2-S2 manifest entry, whenever A2-S2 is read (A2b-S0, S2a record)',
+    'a2_digest_manifest_sha256': 'the A2 digest manifest bytes before any A2 seal is read',
+    'a2_digest_manifest_path': 'opened to locate the sealed A2 stage outputs; a protected root',
+    'a2_results_file': 'the committed EXP-OPE-RES-01 results bytes (G-INT-A2, G-INT-EVAL, G-INT-S2EQ references)',
+    'a3_b2_artifacts_sha256': 'each frozen B2 file and its manifest entry (A2b-S3:R3)',
+    'a3_freeze_primary_manifest_sha256': 'the A3 freeze-primary manifest bytes (A2b-S3:R3)',
+    'a3_freeze_primary_manifest_path': 'opened by the frozen-B2 loader; a protected root',
+    'a3_s6_weights_record': 'the A3 S6 weights bytes (the G-INT-R3 reference); a protected root',
+    'a3_weight_settings': 'the settings G-INT-R3 and the B2 weight diagnostics run with (A2b-S3:R3)',
+    'execution_source_commit': 'HEAD descends from it without a code change; the G-CODE receipt names it',
+    'new_files_sha256': 'the bytes of every new A2b file, before any data (preflight)',
+    'digest_manifest_path': 'the append-only A2b digest manifest every command reads and appends to',
+    'output_root': 'every stage directory lies directly under it, disjoint from every protected root',
+    'policy_registration_chain': 'every ML-POLICY chain link\'s bytes before the registration is loaded',
+    'processed_frame_identity': 'the processed frame path, quality manifest and bytes before any row is decoded',
+    'train_raw_files_sha256': 'each approved raw file before its rows are read (R1_b quality join, DEV B2 keys)',
+    'selection': 'A2b-L recomputes both game lists and the month quotas and requires equality',
+    'smoke_tab_replications_per_cell': 'the TAB replication count A2b-SM runs',
     'runtime_setting': 'A2b-L start: = the setting candidate() assembles the runtime with (require_runtime_pins)',
     'dev_style_snapshot': 'A2b-L start: = the registered style_dev input (path, file sha256) and the DEV as-of',
     'b2_inference_environment': 'A2b-S3:R3: pyproject_sha256 = sha256 of pyproject.toml; lightgbm = the installed version',
 }
-RECORD_ONLY_PINS = {  # G-CODE MINOR-3: registered for the record; no code compares them with a used value
+REGISTRATION_TIME_PINS = {  # NOTE-D: an identity check at registration (check_pins) only; no stage reads it
+    'ml_policy_d127_chain': 'registration-time identity only: its sha256 list equals policy_registration_chain',
+    's2_prime_runs': 'registration-time identity only: equals the D192 N\' (10, 55, 5); the runner uses the registry',
+    'rehearsal_population': 'registration-time identity only: equals NEW_DEV_150 (D192); A2b-S0 copies it',
+}
+RECORD_ONLY_PINS = {  # registered for the record; no code compares them with a used value
     'g0_bundle_sha256': 'record-only pin (no comparison): the G0 bundle is loaded through the pinned ML-POLICY chain',
     'a2_execution_source_commit': 'record-only pin (no comparison): the commit that ran EXP-OPE-RES-01',
     'a3_reader_commit': 'record-only pin (no comparison): the commit of the A3 allowlisted ledger reader',
@@ -639,8 +804,16 @@ RECORD_ONLY_PINS = {  # G-CODE MINOR-3: registered for the record; no code compa
     'smoke_train_subset': 'record-only pin (no comparison): A2b-SM reads the sealed A2-S0 marginals, no TRAIN row',
     'processed_frame_aligned': 'record-only for its sha256 fields (A2b reads no TRAIN row, G-CODE MINOR-1); its two '
                                'paths stay protected roots of the output root',
+    'rehearsal_population_allowed': 'record-only (no comparison): the allowed list; the decided value is pinned apart',
+    'r3_status_allowed': 'record-only (no comparison): the allowed list; the decided value is pinned apart',
+    'new_files_sha256_scope': 'record-only (no comparison): the text naming the new_files_sha256 scope',
+    'rule': 'record-only (no comparison): the registration text of the pin rules',
+    'r3_status_rule': 'record-only (no comparison): the registration text of the r3_status rule',
 }
-assert set(COMPARED_AT_RUN) <= set(PIN_KEYS) and set(RECORD_ONLY_PINS) <= set(PIN_KEYS)
+PIN_CLASSES = {'compared_at_run': COMPARED_AT_RUN, 'registration_time': REGISTRATION_TIME_PINS,
+               'record_only': RECORD_ONLY_PINS}
+assert set(COMPARED_AT_RUN) | set(REGISTRATION_TIME_PINS) | set(RECORD_ONLY_PINS) == set(PIN_KEYS)
+assert sum(map(len, PIN_CLASSES.values())) == len(PIN_KEYS) == len(set(PIN_KEYS))  # the three classes are disjoint
 CONFIG_EXPECTATIONS = (  # (json path, registered value)
     ('$.id', EXPERIMENT_ID), ('$.protocol', PROTOCOL), ('$.base_commit', BASE_COMMIT),
     ('$.seeds.a2b_base.value', A2B_BASE),

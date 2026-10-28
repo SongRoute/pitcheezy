@@ -295,6 +295,8 @@ class DriverEquivalenceTests(unittest.TestCase):
         self.assertEqual((recomputed['path'], recomputed['pass'], recomputed['style_source']),
                          ('s6_two_game_replay', True, 'recomputed_from_the_s6_game_list'))
         self.assertTrue(lg.require_equivalence(record))
+        for written in (record, recomputed):  # NOTE-A: the records as written are their type
+            self.assertTrue(rb.validate_equivalence_record(json.loads(json.dumps(written))))
 
     def test_path_a_compares_floats_absolutely_and_the_rest_exactly(self):
         def tampered(delta=None, index=None, drop=False):
@@ -316,6 +318,16 @@ class DriverEquivalenceTests(unittest.TestCase):
         self.assertFalse(self.run_check(rows=tampered(index=1))['pass'])  # an integer field: equality
         dropped = self.run_check(rows=tampered(drop=True))
         self.assertEqual((dropped['pass'], dropped['extra_decisions']), (False, 1))  # the re-run has one more
+        for written in (far, dropped):  # failing records are well typed too (NOTE-A)
+            self.assertTrue(rb.validate_equivalence_record(json.loads(json.dumps(written))))
+        many = copy.deepcopy(self.rows)
+        for row in many:
+            if isinstance(row.get('result'), dict):
+                row['result']['logging'] = [v + 1e-6 for v in row['result']['logging']]
+        spread = self.run_check(rows=many)
+        self.assertGreater(spread['mismatched_fields'], lg.MISMATCH_KEYS_SHOWN)
+        self.assertEqual(len(spread['mismatched_keys_shown']), lg.MISMATCH_KEYS_SHOWN)  # capped at 20 names
+        self.assertTrue(rb.validate_equivalence_record(json.loads(json.dumps(spread))))
 
     def test_path_b_when_the_s6_runtime_is_not_reproduced(self):
         w = self.world
@@ -333,6 +345,8 @@ class DriverEquivalenceTests(unittest.TestCase):
         self.assertEqual(record['runtime_sha256'], main.sha256)
         styled = self.run_check({**self.header, 'runtime_sha256': 'e' * 64})  # header style, sha not reproduced
         self.assertEqual((styled['path'], styled['style_source']), ('same_request_twice', 'header'))
+        for written in (record, styled):
+            self.assertTrue(rb.validate_equivalence_record(json.loads(json.dumps(written))))
 
     def test_path_b_detects_two_runtimes_that_disagree(self):
         real = lg.candidate

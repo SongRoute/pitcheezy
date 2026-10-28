@@ -264,6 +264,147 @@ class PublicSchemaTests(unittest.TestCase):
             rb.validate_run_public({**doc, 'b_hat': 1e-5})
 
 
+class PinClassTests(unittest.TestCase):
+    def test_every_registration_pin_is_in_exactly_one_class(self):
+        """G-CODE MINOR-3 / 2nd closure NOTE-D: compared at run, registration-time identity only, or record only."""
+        classes = (rb.COMPARED_AT_RUN, rb.REGISTRATION_TIME_PINS, rb.RECORD_ONLY_PINS)
+        self.assertEqual(set().union(*classes), set(rb.PIN_KEYS))
+        self.assertEqual(sum(map(len, classes)), len(rb.PIN_KEYS))  # disjoint
+        self.assertEqual(set(rb.REGISTRATION_TIME_PINS),
+                         {'ml_policy_d127_chain', 's2_prime_runs', 'rehearsal_population'})
+        self.assertTrue(all(v.startswith('registration-time identity only')
+                            for v in rb.REGISTRATION_TIME_PINS.values()))
+        self.assertTrue(all(v.startswith('record-only') for v in rb.RECORD_ONLY_PINS.values()))
+        self.assertTrue(all(isinstance(v, str) and v for c in classes for v in c.values()))
+        self.assertEqual(rb.PIN_CLASSES, {'compared_at_run': rb.COMPARED_AT_RUN,
+                                          'registration_time': rb.REGISTRATION_TIME_PINS,
+                                          'record_only': rb.RECORD_ONLY_PINS})
+
+
+def equivalence_record(path='s6_two_game_replay', **override):
+    """A well-typed driver-equivalence record (the ledger_a2b.driver_equivalence form)."""
+    a = path == 's6_two_game_replay'
+    record = {'check': 'driver_equivalence', 'path': path, 'reason': None if a else 'runtime_sha_not_reproduced',
+              'pass': True, 'games': [776001, 776150] if a else [777003], 'style_source': 'header',
+              'runtime_sha256_reproduced': a, 's6_runtime_sha256': 'a' * 64,
+              'runtime_sha256': 'a' * 64 if a else 'b' * 64,
+              'rewards_read': False, 'tolerance': {'float_absolute': 1e-12, 'other_leaves': 'equality'},
+              'compared_decisions': 4100, 'compared_fields': 106600, 'missing_decisions': 0, 'extra_decisions': 0,
+              'mismatched_fields': 0, 'not_comparable_fields': 0, 'max_abs_delta': 0.0, 'mismatched_keys_shown': []}
+    return {**record, **override}
+
+
+def ledger_record(**override):
+    """A well-typed A2b-L ledger_record.json (the run_ope_a2b.body_ledger form)."""
+    record = {'stage': 'A2b-L', 'sealed_counts': {'pas': 11800, 'requests': 44100}, 'e0_count': 10050, 'pas': 11800,
+              'dates': {'first': '2025-07-01', 'last': '2025-09-28', 'rows': 44500},
+              'identity': {'checks': {k: True for k in rb.IDENTITY_CHECK_KEYS}, 'runtime_sha256': 'c' * 64,
+                           'candidate_sha256': 'd' * 64, 'vectorized_b0_rows': 40000,
+                           'vectorized_b0_max_abs_diff': 0.0},
+              'm10': {'check': 'M-10', 'pass': True, 'complete_pas': 9000, 'complete_sets_equal': True,
+                      'max_abs_delta_is_zero': True, 'runtime_sha256': 'e' * 64},
+              'driver_equivalence': equivalence_record(),
+              'registered_pins_compared': {'runtime_setting': {'selected_tau': 0.003, 'samples': 16, 'pitch_cap': 8,
+                                                               'row_budget': 9000000, 'planning_seed': 0,
+                                                               'evaluation_role': 'evaluation'},
+                                           'dev_style_snapshot': {'sha256': 'f' * 64, 'as_of_exclusive': '2025-07-01'}},
+              'runtime_sha256': 'c' * 64,
+              'summary': {'requests': 44100,
+                          'request_status': {'SUPPORTED': 40000, 'UNSUPPORTED_LOGGING_POSITIVITY': 100},
+                          'pas': 11800, 'pa_status': {'SUPPORTED': 9000}, 'pa_first_refusal': {}, 'conflicts': 0,
+                          'malformed': 0, 'aborted': 0, 'run_status': 'OK', 'ledger_rows': 44101,
+                          'ledger_head_sha256': '0' * 64, 'runtime_sha256': 'c' * 64, 'population_value': None,
+                          'positivity_candidate_searches': 7},
+              'rewards_written': False}
+    return {**record, **override}
+
+
+class LedgerRecordTypeTests(unittest.TestCase):
+    """2nd closure NOTE-A: the typed allowlists of driver_equivalence.json and ledger_record.json."""
+    def test_well_typed_records_pass(self):
+        self.assertTrue(rb.validate_equivalence_record(equivalence_record()))
+        path_b = equivalence_record('same_request_twice', style_source='recomputed_from_the_s6_game_list')
+        self.assertTrue(rb.validate_equivalence_record(path_b))
+        failing = equivalence_record(**{'pass': False, 'mismatched_fields': 25, 'missing_decisions': 1,
+                                        'mismatched_keys_shown': [f'1:1#{i}' for i in range(20)]})
+        self.assertTrue(rb.validate_equivalence_record(failing))  # 26 counted, the first 20 names shown
+        self.assertTrue(rb.validate_ledger_record(ledger_record()))
+        summary = {k: v for k, v in ledger_record()['summary'].items() if k != 'positivity_candidate_searches'}
+        self.assertTrue(rb.validate_ledger_record(ledger_record(summary=summary)))  # runtime v2 summary form
+
+    def test_equivalence_records_outside_their_type_are_refused(self):
+        bad = {
+            'extra key': equivalence_record(reward=0.5),
+            'missing key': {k: v for k, v in equivalence_record().items() if k != 'tolerance'},
+            '21 mismatched names': equivalence_record(**{'pass': False, 'mismatched_fields': 21,
+                                                         'mismatched_keys_shown': [f'1:1#{i}' for i in range(21)]}),
+            'a name that is no string': equivalence_record(**{'pass': False, 'mismatched_fields': 1,
+                                                              'mismatched_keys_shown': [1e-4]}),
+            'names not matching the counts': equivalence_record(**{'pass': False, 'mismatched_fields': 3}),
+            'pass against its counts': equivalence_record(mismatched_fields=1, mismatched_keys_shown=['1:1#0.x']),
+            'nothing compared but pass': equivalence_record(compared_decisions=0),
+            'path A with a reason': equivalence_record(reason='runtime_sha_not_reproduced'),
+            'path A not reproduced': equivalence_record(runtime_sha256_reproduced=False),
+            'path A on another runtime': equivalence_record(runtime_sha256='b' * 64),
+            'path A on one game': equivalence_record(games=[776001]),
+            'path A on one game twice': equivalence_record(games=[776001, 776001]),
+            'path B reproduced': equivalence_record('same_request_twice', runtime_sha256_reproduced=True),
+            'path B on two games': equivalence_record('same_request_twice', games=[1, 2]),
+            'unknown path': equivalence_record(path='replay_everything'),
+            'unknown style source': equivalence_record(style_source='guessed'),
+            'rewards read': equivalence_record(rewards_read=True),
+            'relative tolerance': equivalence_record(tolerance={'float_relative': 1e-12}),
+            'float count': equivalence_record(compared_decisions=4100.0),
+            'negative count': equivalence_record(extra_decisions=-1),
+            'nonfinite max delta': equivalence_record(max_abs_delta=float('inf')),
+            'integer max delta': equivalence_record(max_abs_delta=0),
+            'short sha': equivalence_record(s6_runtime_sha256='a' * 63),
+            'game as a string': equivalence_record(games=['776001', 776150]),
+        }
+        for name, record in bad.items():
+            with self.subTest(name), self.assertRaisesRegex(IntegrityError, 'driver equivalence record'):
+                rb.validate_equivalence_record(record)
+
+    def test_ledger_records_outside_their_type_are_refused(self):
+        record = ledger_record()
+
+        def nested(path, value):
+            out = copy.deepcopy(record)
+            node = out
+            for key in path[:-1]:
+                node = node[key]
+            node[path[-1]] = value
+            return out
+        bad = {
+            'extra key': ledger_record(delta_bounds=[0.0, 1.0]),
+            'missing key': {k: v for k, v in record.items() if k != 'm10'},
+            'rewards written': ledger_record(rewards_written=True),
+            'another stage': ledger_record(stage='A2b-S3'),
+            'E0 above the PAs': ledger_record(e0_count=11801),
+            'PAs differ from the seal': ledger_record(pas=11799),
+            'an identity check false': nested(('identity', 'checks', 'header_runtime_sha256'), False),
+            'an extra identity check': nested(('identity', 'checks', 'reward_check'), True),
+            'identity of another runtime': nested(('identity', 'runtime_sha256'), 'b' * 64),
+            'B0 difference above 1e-12': nested(('identity', 'vectorized_b0_max_abs_diff'), 2e-12),
+            'M-10 extra key': nested(('m10', 'max_abs_delta'), 0.0),
+            'M-10 pass not a bool': nested(('m10', 'pass'), 1),
+            'an untyped equivalence record': nested(('driver_equivalence', 'center'), 1e-4),
+            'runtime setting extra key': nested(('registered_pins_compared', 'runtime_setting', 'reward'), 0.5),
+            'tau not positive': nested(('registered_pins_compared', 'runtime_setting', 'selected_tau'), 0.0),
+            'samples as a float': nested(('registered_pins_compared', 'runtime_setting', 'samples'), 16.0),
+            'evaluation role': nested(('registered_pins_compared', 'runtime_setting', 'evaluation_role'), 'planning'),
+            'style as-of': nested(('registered_pins_compared', 'dev_style_snapshot', 'as_of_exclusive'), 'July'),
+            'summary extra key': nested(('summary', 'reward_sum'), 12.5),
+            'summary population value': nested(('summary', 'population_value'), 0.51),
+            'summary of another runtime': nested(('summary', 'runtime_sha256'), 'b' * 64),
+            'summary status counts': nested(('summary', 'pa_status'), {'SUPPORTED': 9000.5}),
+            'dates out of order': nested(('dates', 'first'), '2025-10-01'),
+        }
+        for name, document in bad.items():
+            with self.subTest(name), self.assertRaisesRegex(IntegrityError, 'A2b-L record|driver equivalence record'):
+                rb.validate_ledger_record(document)
+
+
 class ConfigTests(unittest.TestCase):
     def test_synthetic_draft_passes_and_deviations_refuse(self):
         config = draft_config()
