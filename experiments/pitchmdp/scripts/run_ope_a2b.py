@@ -276,18 +276,6 @@ class Environment(roa.Environment):
         return dn.dev_feature_table(inputs['frame'], raw, games=games, archetypes=aux['context'].archetypes, b0=b0,
                                     hands=hands)
 
-    def kappa_prime_inputs(self, config, local, s0, checkpoint):
-        """TRAIN in-play rows (the A2-S0 pinned TRAIN reader) -> hit probability under the sealed R1_b table, the S5-X
-        group of each row and the sealed cross-fitted group diagnostics; the recomputed census must equal the sealed
-        A2-S0 census."""
-        train, _ = self.train(config, local, a2.TRAIN_WINDOW, strict=False, checkpoint=checkpoint)
-        cells, classes, index, census = osg.train_bip_rows(train)
-        _require(json.loads(json.dumps(census)) == json.loads(json.dumps(s0['census'])),
-                 'the TRAIN census differs from the sealed A2-S0 census (deterministic integrity)')
-        hit = osg.hit_probability(np.asarray(s0['r1_table']), cells)
-        groups = roa._groups(train.iloc[index], a2.S5X_GROUPS)
-        return hit, groups, s0['train_residuals']['hit']
-
     def ledger_world(self, config, local, base, checkpoint):
         """A2b-L: the ML-POLICY registration (pinned chain), the loaded frame and store, the S6-dr-a5 ledger's game
         set, header and the rows of its first and last game (the driver-equivalence replay) through the allowlisted
@@ -577,10 +565,23 @@ def body_smoke(run):
     roa.dump(run.out / 'smoke_record.json', record)
 
 
+def kappa_prime_from_s0(s0):
+    """The descriptive kappa_p' (design 5.2, review NOTE N2) = the sealed A2-S0 TAB kappa calibration (G-CODE
+    MINOR-1): A2-S0 ran ``calibrate_kappa(hit, groups, delta, names)`` once per world with the SAME hit
+    probabilities, groups and cross-fitted residuals (run_ope_a2.py:1355-1357), and the TAB world's names are the four
+    large groups FB, FC, BR, OS (``TAB_GROUPS``) - exactly the kappa_p' rule; no TRAIN row is read again."""
+    _require(tuple(a2.TAB_GROUPS) == rb.KAPPA_PRIME_GROUPS, 'the TAB groups are not the kappa_p\' groups')
+    tab = s0['kappa_calibration']['TAB']
+    _require(set(tab) == {'kappa_p', 'target', 'signs', 'groups'} and set(tab['signs']) == set(rb.KAPPA_PRIME_GROUPS)
+             and set(tab['groups']) <= set(rb.KAPPA_PRIME_GROUPS) and tab['kappa_p'] == s0['kappa_p']['TAB'],
+             'the sealed A2-S0 TAB kappa calibration is malformed (deterministic integrity)')
+    return {k: tab[k] for k in ('kappa_p', 'target', 'signs', 'groups')}
+
+
 def body_s0(run):
     """Input pins (sealed A2 and A3 outputs, the committed A2 results file), r3_status = DIAGNOSTIC_ONLY:DECIDED,
-    the reused A2 TAB / net records and eta_p, and the descriptive kappa_p' (TRAIN rows, the A2 rule over FB, FC, BR,
-    OS)."""
+    the reused A2 TAB / net records and eta_p, and the descriptive kappa_p' (the sealed A2-S0 TAB kappa calibration:
+    the A2 rule over FB, FC, BR, OS; G-CODE MINOR-1 - sealed outputs and pins only, no TRAIN row)."""
     pins = run.config['registration_input_pins']
     _require(pins['r3_status'] == rb.R3_STATUS_DECIDED, 'r3_status must be DIAGNOSTIC_ONLY:DECIDED (D192 2 3)')
     s0_dir = run.env.a2_sealed(run.config, 'A2-S0')
@@ -592,13 +593,13 @@ def body_s0(run):
     roa.require_s5x_consistent(s5x)
     results, reference = run.env.a2_results(run.config)
     run.check()
-    hit, groups, diagnostics = run.env.kappa_prime_inputs(run.config, run.local, s0, run.check)
-    prime = sx.kappa_prime(hit, groups, diagnostics)
+    prime = kappa_prime_from_s0(s0)
     record = {'stage': 'A2b-S0', 'r3_status': pins['r3_status'], 'rehearsal_population': pins['rehearsal_population'],
               'a2_results_file': reference, 'eta_p': s1['eta_p'],
               'reused': {'tab_acceptance': s1['acceptance'], 'nets': s5x['nets'],
                          's2_recorded': results['S2_s5x_summary']['dose_response_s2_by_run']['runs']},
-              'kappa_p_prime': {**prime, 'kappa_2x': 2 * prime['kappa_p'], 'decision_input': False},
+              'kappa_p_prime': {**prime, 'kappa_2x': 2 * prime['kappa_p'], 'decision_input': False,
+                                'source': 'sealed A2-S0 kappa_calibration.TAB (same inputs, groups FB, FC, BR, OS)'},
               's5x_layers': s0['s5x_layers'], 'tab_marginals': s0['tab_marginals']}
     roa.dump(run.out / 's0_record.json', record)
 

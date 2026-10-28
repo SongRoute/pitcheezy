@@ -349,8 +349,10 @@ def gint_s2eq_scope(record):
 
 
 def kappa_prime(hit_probability, groups, diagnostics):
-    """The descriptive kappa_p' (design 5.2, review NOTE N2): the A2 kappa rule (ope_surrogate.calibrate_kappa)
-    over the four large groups FB, FC, BR, OS only (TRAIN rows: hit probability under the sealed table and group)."""
+    """The descriptive kappa_p' rule (design 5.2, review NOTE N2): the A2 kappa rule (ope_surrogate.calibrate_kappa)
+    over the four large groups FB, FC, BR, OS only. A2-S0 already applied exactly this rule to the same TRAIN inputs
+    for its TAB world (``TAB_GROUPS``), so A2b-S0 reads the sealed ``kappa_calibration.TAB`` instead of recomputing it
+    (G-CODE MINOR-1); this function documents and tests the identity."""
     from .ope_surrogate import calibrate_kappa
     return calibrate_kappa(hit_probability, groups, diagnostics, rb.KAPPA_PRIME_GROUPS)
 

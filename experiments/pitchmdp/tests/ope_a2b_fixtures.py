@@ -321,6 +321,16 @@ def ml_policy_world(n_dev_games=4):
                            frame=fx.frame, store=fx.store, syn=fx.syn, no_pitch=tpv.NO_PITCH, tpv=tpv)
 
 
+def synthetic_a2_s0(seed=0):
+    """A SYNTHETIC sealed-A2-S0 document: the EXP-OPE-RES-01 ``build_s0`` on the A2 synthetic TRAIN frame (toy WE),
+    JSON round-tripped as the sealed s0.json. Returns (train frame, document)."""
+    import run_ope_a2 as roa
+    from ope_a2_fixtures import ToyAdvancement, ToyWE, synthetic_train_frame
+    train = synthetic_train_frame(seed)
+    s0 = roa.build_s0(train, {'we': ToyWE(), 'advancement': ToyAdvancement()}, min_pitches=100)
+    return train, json.loads(json.dumps(s0, default=roa._default))
+
+
 def read_s6(world):
     """The synthetic S6 ledger through the allowlisted A3 reader: (header, decisions, pins)."""
     from pitchmdp import behavior_weights as bw

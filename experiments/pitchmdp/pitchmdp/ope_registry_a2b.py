@@ -588,7 +588,7 @@ ADDED_PIN_KEYS = (  # implementation needs (reported for G-REG; the draft has no
     'a3_s6_weights_record',  # {"path", "sha256"}: A3 09-s6-weights weights.json (G-INT-R3 reference)
     'policy_registration_chain',  # [{"path", "sha256"}]: ML-POLICY config first, then addenda 1-8 d127
     'processed_frame_identity',  # {"path", "sha256"}: the original processed frame (identity source)
-    'train_raw_files_sha256',  # the three approved raw files (TRAIN kappa_p' inputs, S6 / DEV R1_b quality join)
+    'train_raw_files_sha256',  # the three approved raw files (S6 / DEV R1_b quality join, DEV B2 raw keys)
     'a3_weight_settings',  # the A3 s6-weights settings G-INT-R3 reproduces (large, mei, draws, seed, E5)
 )
 PIN_KEYS = (*DRAFT_PIN_KEYS, *ADDED_PIN_KEYS)
@@ -602,6 +602,9 @@ RECORD_ONLY_PINS = {  # G-CODE MINOR-3: registered for the record; no code compa
     'a2_execution_source_commit': 'record-only pin (no comparison): the commit that ran EXP-OPE-RES-01',
     'a3_reader_commit': 'record-only pin (no comparison): the commit of the A3 allowlisted ledger reader',
     'x2_world_predictor_identity': 'record-only pin (no comparison): A2b runs no X2 world (A2-S2 only)',
+    'smoke_train_subset': 'record-only pin (no comparison): A2b-SM reads the sealed A2-S0 marginals, no TRAIN row',
+    'processed_frame_aligned': 'record-only for its sha256 fields (A2b reads no TRAIN row, G-CODE MINOR-1); its two '
+                               'paths stay protected roots of the output root',
 }
 assert set(COMPARED_AT_RUN) <= set(PIN_KEYS) and set(RECORD_ONLY_PINS) <= set(PIN_KEYS)
 CONFIG_EXPECTATIONS = (  # (json path, registered value)

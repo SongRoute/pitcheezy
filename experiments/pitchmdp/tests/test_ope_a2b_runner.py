@@ -22,7 +22,8 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE.parent / 'scripts'))
 
-from ope_a2b_fixtures import a2_nets, a2_tab, draft_config, pooled, public_doc, registered_config  # noqa: E402
+from ope_a2b_fixtures import (a2_nets, a2_tab, draft_config, pooled, public_doc, registered_config,  # noqa: E402
+                              synthetic_a2_s0)
 import run_ope_a2 as roa  # noqa: E402
 import run_ope_a2b as rr  # noqa: E402
 from pitchmdp import ope_decision_a2b as dc  # noqa: E402
@@ -65,7 +66,7 @@ class ClockEnv(rr.Environment):
     def _real(self, *args, **kwargs):
         raise AssertionError('a real-data hook was called by a synthetic test')
     s5x_inputs = rehearsal_inputs = s6_record = policy_registration = ledger_world = b2_dev_table = _real
-    kappa_prime_inputs = train = a2_sealed = a2_results = _real
+    train = train_plan = a2_sealed = a2_results = _real
 
 
 class WorkEnv(ClockEnv):
@@ -174,8 +175,9 @@ class FailClosedTests(unittest.TestCase):
         self.assertEqual(set(pins['new_files_sha256']), set(rb.NEW_FILES))
         self.assertIn('a3_weight_settings', pins['added_to_the_draft_pin_keys'])
         self.assertEqual(set(pins['record_only_pins']), {'g0_bundle_sha256', 'a2_execution_source_commit',
-                                                        'a3_reader_commit', 'x2_world_predictor_identity'})
-        self.assertTrue(all(v.startswith('record-only pin (no comparison)') for v in pins['record_only_pins'].values()))
+                                                        'a3_reader_commit', 'x2_world_predictor_identity',
+                                                        'smoke_train_subset', 'processed_frame_aligned'})
+        self.assertTrue(all(v.startswith('record-only') for v in pins['record_only_pins'].values()))
         self.assertEqual(set(pins['pins_compared_at_run']), {'runtime_setting', 'dev_style_snapshot',
                                                             'b2_inference_environment'})
 
@@ -503,6 +505,33 @@ class RegisteredTests(unittest.TestCase):
         with self.assertRaisesRegex(IntegrityError, 'follows a recorded deterministic-integrity failure'):
             rr.main(['register-addendum', '--config', str(ws.config_path), '--stage', 'A2b-S3', '--failing-test', 't',
                      '--review', 'r'], ws.env)
+
+
+class KappaPrimeTests(unittest.TestCase):
+    def test_kappa_prime_is_the_sealed_a2_s0_tab_calibration(self):
+        """G-CODE MINOR-1: A2-S0 calibrated kappa for the TAB world with the same hit probabilities, groups and
+        cross-fitted residuals as for S5-X (run_ope_a2.py:1355-1357) over the four large groups - the kappa_p' rule -
+        so the sealed kappa_calibration.TAB equals the removed TRAIN re-read path bit for bit."""
+        import numpy as np
+        from pitchmdp import ope_redesign_registry as a2
+        from pitchmdp import ope_surrogate as osg
+        from pitchmdp import ope_synthetic_a2b as sx
+        train, doc = synthetic_a2_s0()
+        cells, classes, index, census = osg.train_bip_rows(train)
+        hit = osg.hit_probability(np.asarray(doc['r1_table']), cells)
+        groups = roa._groups(train.iloc[index], a2.S5X_GROUPS)
+        recomputed = sx.kappa_prime(hit, groups, doc['train_residuals']['hit'])  # the A2b TRAIN path it replaces
+        prime = rr.kappa_prime_from_s0(doc)
+        self.assertEqual(prime, recomputed)
+        self.assertEqual(prime['groups'], ['FB', 'FC', 'BR', 'OS'])
+        self.assertEqual(a2.TAB_GROUPS, rb.KAPPA_PRIME_GROUPS)
+        for mutate in (lambda d: d['kappa_calibration']['TAB']['signs'].__setitem__('other', 1),
+                       lambda d: d['kappa_p'].__setitem__('TAB', d['kappa_p']['TAB'] * 2),
+                       lambda d: d['kappa_calibration']['TAB'].__setitem__('extra', 1)):
+            bad = copy.deepcopy(doc)
+            mutate(bad)
+            with self.assertRaisesRegex(IntegrityError, 'kappa calibration is malformed'):
+                rr.kappa_prime_from_s0(bad)
 
 
 if __name__ == '__main__':
