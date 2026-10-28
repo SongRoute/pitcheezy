@@ -37,6 +37,9 @@ class SeedTests(unittest.TestCase):
             value = int(np.random.SeedSequence([20261028, index]).generate_state(1)[0])
             self.assertEqual(value, rb.ROLE_VALUES[role], role)
         self.assertEqual(rb.A2B_SELECTION_SALT, 759396736)
+        self.assertEqual((rb.ROLES['pigeonhole'], rb.ROLE_VALUES['pigeonhole']), (9, 3206983116))  # PM, G-CODE (c)3
+        self.assertEqual(int(np.random.SeedSequence([20261028, 9]).generate_state(1)[0]), 3206983116)
+        self.assertEqual(sorted(rb.ROLES.values()), list(range(10)))
         self.assertEqual(rb.S6_SELECTION_SALT_RECOMPUTED, int(np.random.SeedSequence([20260929, 3]).generate_state(1)[0]))
         # the same rule reproduces the EXP-OPE-RES-01 / S6 role values (design 9.4)
         self.assertEqual(rb.derive_seed(20261027, 0), 3624346705)
@@ -74,6 +77,8 @@ class SeedTests(unittest.TestCase):
         self.assertEqual(rb.EVALUATOR_SEEDS[rb.MODE_S6]['pitcher'], 3624346705)
         self.assertEqual(rb.EVALUATOR_SEEDS[rb.MODE_REHEARSAL]['game'], 3287529750)
         self.assertEqual(rb.EVALUATOR_SEEDS[rb.MODE_REHEARSAL]['pitcher'], 1876336626)
+        self.assertEqual(rb.EVALUATOR_SEEDS[rb.MODE_REHEARSAL]['pigeonhole'], 3206983116)
+        self.assertEqual(rb.EVALUATOR_SEEDS[rb.MODE_S6]['pigeonhole'], a2.ROLE_VALUES['pigeonhole'])
         a2_stream = rb.placebo_stream(('EXP-OPE-RES-01', 'placebo'))(3)
         self.assertEqual(list(a2_stream.entropy), [20261027, 1, 3])  # EXP-OPE-RES-01 role placebo (index 1)
         new = rb.placebo_stream(('EXP-OPE-RES-02', 'placebo'))(3)
@@ -228,7 +233,8 @@ class PublicSchemaTests(unittest.TestCase):
                 'paths': {'exact_form': rb.S2P_PATH, 'statistical_form': rb.S2P_PATH, 'new_seed_runs': rb.S2P_PATH},
                 'auxiliary_statistical_form': {'result': 'PASS', 'detection_limit_B': {'k4': {'R1_b': 7.8}},
                                                'decision_input': False},
-                'reference_cross_check': {'sealed_a2_s2_run_records': 'compared', 'equal': True, 'mismatched_keys': []}}
+                'reference_cross_check': {'sealed_a2_s2_run_records': 'compared', 'equal': True, 'mismatched_keys': []},
+                'failure_scope': 'all'}
 
     def test_integrity_records_hold_only_their_type(self):
         for kind in ('gint_eval', 'gint_s2eq'):
@@ -241,6 +247,10 @@ class PublicSchemaTests(unittest.TestCase):
                 mutate(bad)
                 with self.subTest(kind), self.assertRaises(IntegrityError):
                     rb.validate_integrity_record(bad, kind)
+        scoped = self._record('gint_s2eq')
+        scoped['failure_scope'] = '2*zeta_p tuples'  # NOTE-8: the registered scope is every tuple (design 9.6)
+        with self.assertRaisesRegex(IntegrityError, 'failure_scope'):
+            rb.validate_integrity_record(scoped, 'gint_s2eq')
         bad = self._record('gint_eval')
         bad['rows'] = list(rb.ROWS)  # the 13 B2 / lambda-fixed rows are never part of the S6 record
         with self.assertRaises(IntegrityError):
@@ -260,6 +270,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(rb.config_check(config), rb.DRAFT)
         mutations = {
             'seed role value': lambda c: c['seeds']['roles']['placebo'].__setitem__('value', 1),
+            'role 9 missing (the 9-role draft)': lambda c: c['seeds']['roles'].pop('pigeonhole'),
+            'role 9 value': lambda c: c['seeds']['roles']['pigeonhole'].__setitem__('value', 1),
             'world seed list': lambda c: c['seeds']['world_seeds_derived']['k_1_to_76'].__setitem__(3, 1),
             'X': lambda c: c['decision_rules']['condition_ii_half_width']['X'].__setitem__('value', 0.25),
             'B': lambda c: c['synthetic_bias_check']['acceptance']['B'].__setitem__('value', 1.3e-5),

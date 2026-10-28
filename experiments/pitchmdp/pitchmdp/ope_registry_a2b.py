@@ -6,7 +6,7 @@ five B0 candidates, 5 option 1 X = 0.30). Nothing here reads data. The EXP-OPE-R
 (``ope_redesign_registry``) is imported unchanged for the inherited rules (cell outcomes, nets, minimiser, run
 window, the strict public allowlist machinery and its nine public types); every A2b value lives here.
 
-- seeds: base 20261028, nine roles int(SeedSequence([20261028, r]).generate_state(1)[0]) checked against the
+- seeds: base 20261028, ten roles int(SeedSequence([20261028, r]).generate_state(1)[0]) checked against the
   registered values at import; S-2' world seeds SeedSequence([20261028, 5, k]) for k = 1..76 checked against the
   registered list and disjoint from every EXP-OPE-RES-01 world seed, role value and from each other;
 - rows: the 25 phase-1 rows (12 B0 = the A2 pairs, 12 B2, the selection-free lambda = 100 row), of which the 24
@@ -116,10 +116,11 @@ REHEARSAL_EXPOSURE = 'OPE_FIRST_USE_DEV'
 # ---------------------------------------------------------------- seeds (design 9.4)
 A2B_BASE = 20261028
 ROLES = {'game_bootstrap': 0, 'pitcher_bootstrap': 1, 'placebo': 2, 'tab_world': 3, 's5x_layers': 4,
-         's5x_world_seed': 5, 'selection_salt': 6, 'd2_field': 7, 'smoke': 8}
+         's5x_world_seed': 5, 'selection_salt': 6, 'd2_field': 7, 'smoke': 8,
+         'pigeonhole': 9}  # role 9: PM decision on G-CODE (c)3 - the sealed descriptive two-way bootstrap, A2 style
 ROLE_VALUES = {'game_bootstrap': 3287529750, 'pitcher_bootstrap': 1876336626, 'placebo': 1525748996,
                'tab_world': 1290308336, 's5x_layers': 840755410, 's5x_world_seed': 1332778283,
-               'selection_salt': 759396736, 'd2_field': 24791393, 'smoke': 2536502601}
+               'selection_salt': 759396736, 'd2_field': 24791393, 'smoke': 2536502601, 'pigeonhole': 3206983116}
 A2B_SELECTION_SALT = ROLE_VALUES['selection_salt']  # a2b_selection_salt
 S6_SELECTION_SALT_RECOMPUTED = 2021242497  # ML-POLICY role_seed(config, 'selection_salt') = SeedSequence([20260929, 3])
 ML_POLICY_SEED_BASE = a2.S6_SEED_BASE  # 20260929
@@ -184,7 +185,7 @@ EVALUATOR_SEEDS = {
     MODE_S6: {'game': a2.GAME_BOOTSTRAP_SEED, 'pitcher': a2.ROLE_VALUES['pitcher_bootstrap'],
               'placebo': ('EXP-OPE-RES-01', 'placebo'), 'pigeonhole': a2.ROLE_VALUES['pigeonhole']},
     MODE_REHEARSAL: {'game': ROLE_VALUES['game_bootstrap'], 'pitcher': ROLE_VALUES['pitcher_bootstrap'],
-                     'placebo': ('EXP-OPE-RES-02', 'placebo'), 'pigeonhole': None},  # no A2b pigeonhole role: NOT_RUN
+                     'placebo': ('EXP-OPE-RES-02', 'placebo'), 'pigeonhole': ROLE_VALUES['pigeonhole']},
 }
 
 
@@ -456,8 +457,9 @@ INTEGRITY_RECORD_KEYS = {  # items 13-14: pass/fail, maximum |delta|, tolerance,
                   'mismatched_keys', 'rows', 'refused_rows', 'reference'),
     'gint_s2eq': ('experiment', 'check', 'result', 'max_abs_delta', 'tolerance', 'run_indices', 'cells', 'paths',
                   'compared_keys', 'mismatched_keys', 'auxiliary_statistical_form', 'reference',
-                  'reference_cross_check'),
+                  'reference_cross_check', 'failure_scope'),
 }
+GINT_S2EQ_FAILURE_SCOPE = 'all'  # design 9.6 (PM, NOTE-8): an unresolved G-INT-S2EQ failure is FAILED_INTEGRITY overall
 _TOLERANCE = {'float_absolute': INTEGRITY_TOL, 'counts_strings_selected_lambda_M': 'equality (inf by equality)'}
 
 
@@ -481,6 +483,8 @@ def validate_integrity_record(document, kind):
                  and document['refused_rows'] == list(S6_REFUSED_ROWS), 'gint_eval: rows')
     else:
         _require(document['check'] == 'G-INT-S2EQ', 'gint_s2eq: check')
+        _require(document['failure_scope'] == GINT_S2EQ_FAILURE_SCOPE,
+                 'gint_s2eq: failure_scope must be "all" (an unresolved failure is FAILED_INTEGRITY for every tuple)')
         _require(all(type(k) is int for k in document['run_indices'])
                  and all(c in S2P_DECISION_CELLS for c in document['cells']), 'gint_s2eq: runs / cells')
         _require(isinstance(document['paths'], dict) and set(document['paths']) == {'exact_form', 'statistical_form',

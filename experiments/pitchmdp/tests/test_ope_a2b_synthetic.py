@@ -49,6 +49,10 @@ def tab_marginals(seed=0):
     return mg
 
 
+def run_of_k(k):
+    return next(r for r in reg.S5X_RUNS if r['k'] == k)
+
+
 class S2PrimeDriverTests(unittest.TestCase):
     """The fixture world of the EXP-OPE-RES-01 S5-X tests (cap 4 for speed; the registered run uses cap 12)."""
     @classmethod
@@ -92,6 +96,7 @@ class S2PrimeDriverTests(unittest.TestCase):
                             'inherited_s5_se'):
                     self.assertEqual(bits(new[key]), bits(old[key]), (k, key))
                 self.assertEqual(new['run']['path'], 'a2_order_with_log_phase')
+                self.assertEqual((new['run']['kappa'], new['run']['zeta']), (run_of_k(k)['kappa'], run_of_k(k)['zeta']))
         self.assertNotEqual(records[4]['s2']['R1_b']['b_hat'], 0.0)  # kappa > 0 moves R1_b (not a vacuous identity)
         self.assertGreater(records[4]['s2']['R1_b']['se'], 0.0)
         self.assertEqual(records[4]['invariant']['outcome'], 'PASS')
@@ -118,6 +123,9 @@ class S2PrimeDriverTests(unittest.TestCase):
         with self.assertRaisesRegex(IntegrityError, 'not a registered run of'):
             sx.run_s2_prime(runtime3, components3, starts3, k=3, scheme='A2b', cell='2*kappa_p', law=law3,
                             layers=layers3, cap=4, budget=budget3)
+        with self.assertRaisesRegex(IntegrityError, 'not a recorded run of the 2\\*zeta_p dose family'):
+            sx.run_s2_prime(runtime3, components3, starts3, k=4, scheme='A2', cell='2*zeta_p', law=law3,
+                            layers=layers3, cap=4, budget=budget3)  # k = 4 belongs to the kappa family
         with self.assertRaises(IntegrityError):
             sx.scheme_seeds('A2', 16)
         with self.assertRaises(IntegrityError):
@@ -130,10 +138,15 @@ class S2PrimeDriverTests(unittest.TestCase):
             runs[k] = sx.run_s2_prime(runtime, components, starts, k=k, scheme='A2', cell='2*kappa_p', law=law,
                                       layers=layers, cap=4, budget=budget)
         recorded = {k: {c: (r['s2'][c]['b_hat'], r['s2'][c]['se']) for c in ('R1_a', 'R1_b')} for k, r in runs.items()}
+        # NOTE-2: an A2-scheme run carries the recorded run's own levels (metadata; b_hat and SE are the A2 values)
+        self.assertEqual({k: (r['run']['kappa'], r['run']['zeta']) for k, r in runs.items()},
+                         {4: ('2*kappa_p', '0'), 9: ('kappa_p', '0'), 10: ('5*kappa_p', '0')})
+        self.assertTrue(all(r['invariant']['outcome'] == 'PASS' for r in runs.values()))  # zeta = 0 runs
         reference = {'path': 'results/EXP-OPE-RES-01.json', 'sha256': 'a' * 64}
         record = sx.gint_s2eq_record(['2*kappa_p'], runs, recorded, reference=reference)
         self.assertEqual((record['result'], record['max_abs_delta']), ('PASS', 0.0))
         self.assertEqual(record['run_indices'], [4, 9, 10])
+        self.assertEqual(record['failure_scope'], 'all')  # NOTE-8: written explicitly
         self.assertEqual(set(record['paths'].values()), {'a2_order_with_log_phase'})
         self.assertEqual(record['auxiliary_statistical_form']['result'], 'PASS')
         self.assertFalse(record['auxiliary_statistical_form']['decision_input'])

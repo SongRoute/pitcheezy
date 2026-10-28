@@ -269,6 +269,19 @@ class EvaluatorTests(unittest.TestCase):
         with self.assertRaises(IntegrityError):
             sa.seal(leak, self.sealed25)
 
+    def test_the_rehearsal_runs_the_pigeonhole_with_role_9_sealed_only(self):
+        """PM decision (G-CODE (c)3): the rehearsal's descriptive two-way bootstrap runs with the A2b role 9 seed and
+        stays in the sealed file (as in EXP-OPE-RES-01); the S6 mode keeps the A2 seed."""
+        public, sealed, _ = sa.evaluate(self.stream, self.facts, mode=rb.MODE_REHEARSAL, gint=self.gint,
+                                        decisions_b2=b2_stream(self.decisions, self.vectors, self.e0_ids),
+                                        b2=weights_record(), **self.common)
+        self.assertEqual(sealed['seeds']['pigeonhole'], 3206983116)
+        self.assertNotEqual(sealed['pigeonhole'].get('status'), 'NOT_RUN')
+        self.assertEqual(set(sealed['pigeonhole']), set(self.sealed6['pigeonhole']))
+        self.assertNotEqual(bits(sealed['pigeonhole']), bits(self.sealed6['pigeonhole']))  # another seed and rows
+        self.assertNotIn('pigeonhole', sa.seal(public, sealed)[0].decode())
+        self.assertEqual(self.sealed6['seeds']['pigeonhole'], reg.ROLE_VALUES['pigeonhole'])
+
     def test_placebo_copy_matches_the_a2_function(self):
         table = od.DecisionTable.from_ledger(iter(self.decisions), self.e0_ids)
         steps = [[i] for i in range(min(len(table), 40))]

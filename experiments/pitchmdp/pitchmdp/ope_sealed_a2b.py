@@ -50,8 +50,8 @@ NOTES = {'R5_f_normalization': 'the point part of R5 f uses the common denominat
                     'computed per denominator (B2: public items 10-11)',
          'lambda_fixed_row': 'R1_b x R2_1 x B0 with lambda fixed at 100 (no selection; review NOTE N1); its public-form '
                              'items are sealed until A2b-UB (G-CODE MAJOR-1) and are never a gate or decision input',
-         'pigeonhole': 'the descriptive two-way bootstrap is run only with a registered seed (the S6 mode, A2 seed); '
-                       'the A2b registration lists no pigeonhole role, so the rehearsal records NOT_RUN'}
+         'pigeonhole': 'the descriptive two-way bootstrap (sealed only, as in EXP-OPE-RES-01): the S6 mode with the '
+                       'A2 seed, the rehearsal with the A2b role 9 seed 3206983116 (PM decision, G-CODE (c)3)'}
 
 
 def _label(value):
@@ -420,8 +420,8 @@ def evaluate(decisions, facts, *, mode, surrogates, train_residuals, r1_paths, g
         main_pairs = [pi for pi in pairs if pi.name in rb.B0_ROWS and (pi.sn is None or u is not None)]
         sealed['pigeonhole'] = ob.pigeonhole(games, pitchers, main_pairs, point, draws=draws, seed=seeds['pigeonhole'],
                                              checkpoint=tick)  # descriptive, sealed only
-    else:
-        sealed['pigeonhole'] = {'status': 'NOT_RUN', 'reason': 'no registered A2b pigeonhole seed role (design 9.4)'}
+    else:  # only an explicit seeds={..., 'pigeonhole': None} (tests); both registered modes carry a seed
+        sealed['pigeonhole'] = {'status': 'NOT_RUN', 'reason': 'no pigeonhole seed was given'}
     public['integrity'] = {'G_INT': 'PASS', 'variant_identity': 'PASS', 'inf_variants_reproduce_baseline': 'PASS',
                            'sn_normalizer_full_sample_valid': bool(sn_valid)}
     public['validity'] = {'point_set_meets_minimum': bool(eligible_p),

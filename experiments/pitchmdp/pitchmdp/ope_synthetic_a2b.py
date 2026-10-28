@@ -65,7 +65,12 @@ def run_s2_prime(runtime, components, starts, *, k, scheme, cell, law, layers, w
     _require(cell in rb.S2P_CELLS, f'unknown S-2\' cell {cell!r}')
     _require(runtime.components is components and runtime.improvement is not None, 'candidate runtime required')
     _require(logs_per_start == repetitions and truth_rollouts == 2 * repetitions, 'repetitions split the S5 budget')
-    kappa_label, zeta_label = rb.S2P_CELL_LEVELS[cell]
+    if scheme == 'A2':  # the recorded run's own levels (k = 9-12 are kappa_p, 5 kappa_p, zeta_p, 5 zeta_p; NOTE-2)
+        _require(k in rb.GINT_S2EQ_RUNS.get(cell, ()), f'run {k} is not a recorded run of the {cell} dose family')
+        spec = next(r for r in a2.S5X_RUNS if r['k'] == k)
+        kappa_label, zeta_label = spec['kappa'], spec['zeta']
+    else:
+        kappa_label, zeta_label = rb.S2P_CELL_LEVELS[cell]
     if scheme == 'A2b':
         _require(rb.registered_run(k) == cell, f'run {k} is not a registered run of the {cell} cell')
     run = {'k': k, 'cell': cell, 'scheme': scheme, 'setting': rb.S2P_WORLD['setting'], 'law': rb.S2P_WORLD['law'],
@@ -332,7 +337,8 @@ def gint_s2eq_record(cells, results_by_k, recorded, *, reference, sealed=None):
               'auxiliary_statistical_form': {'result': 'PASS' if aux_ok else 'FAIL', 'detection_limit_B': limits,
                                              'decision_input': False},
               'reference': dict(reference),
-              'reference_cross_check': reference_cross_check({k: recorded[k] for k in ks}, sealed)}
+              'reference_cross_check': reference_cross_check({k: recorded[k] for k in ks}, sealed),
+              'failure_scope': rb.GINT_S2EQ_FAILURE_SCOPE}  # design 9.6: not narrowed to the S-2' tuples (NOTE-8)
     rb.validate_integrity_record(record, 'gint_s2eq')
     return record
 
