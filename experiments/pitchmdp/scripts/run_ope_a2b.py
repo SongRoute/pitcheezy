@@ -1033,18 +1033,26 @@ def _manifest_mutation(args, config, manifest):
 
 def select_command(args, env, entered=None):
     """G-REG helper (reward-free): the selection record (both lists' sha256 and the month quota table) from the
-    registered rule on game_pk / game_date / split, printed for the PM to pin. Runs under the window, memory and hang
-    guards and reads no reward; the config may still be a draft."""
+    registered rule on game_pk / game_date / split, printed for the PM to pin.
+
+    The one command that may run on a DRAFT config (deliberate exception, design 9.6 / G-CODE MINOR-2): the selection
+    pins it prints are inputs of the registration itself, so it cannot wait for REGISTERED. It still runs under the
+    run window, the hang and memory guards, os.nice(10) and the common heavy lock (the data load - the ML-POLICY frame
+    and store, the S6-dr-a5 ledger through the allowlisted reader - happens inside the lock), reads no reward, writes
+    no stage directory and appends nothing to the digest manifest."""
     with command_guard('A2b-S4', env, entered) as guard:
         config, _ = rb.load_config(args.config)
         chain = env.chain_documents(config)
         local = env.local_config(chain[0])
         guard.check()
-        world = env.ledger_world(config, local, chain[0], guard.check)
-        record = lg.selection(world.inputs['frame'], world.rpv.select_games, world.rpv.straddling_games,
-                              s6_ledger_games=world.s6_games)
-        print(json.dumps({k: record[k] for k in ('selection_s6_game_list_sha256', 'a2b_new_game_list_sha256',
-                                                 'month_quota_table', 'straddling_games_excluded', 'salts')}, indent=1))
+        env.nice()
+        with env.heavy_lock(local):
+            world = env.ledger_world(config, local, chain[0], guard.check)
+            record = lg.selection(world.inputs['frame'], world.rpv.select_games, world.rpv.straddling_games,
+                                  s6_ledger_games=world.s6_games, n_games=lg.N_GAMES)
+            print(json.dumps({k: record[k] for k in ('selection_s6_game_list_sha256', 'a2b_new_game_list_sha256',
+                                                     'month_quota_table', 'straddling_games_excluded', 'salts')},
+                             indent=1))
         return 0
 
 

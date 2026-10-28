@@ -7,6 +7,7 @@ directory; no real data, ledger or model is read (real-data hooks raise in the t
 """
 from contextlib import nullcontext
 import argparse
+from unittest import mock
 import copy
 from datetime import datetime
 import hashlib
@@ -180,6 +181,44 @@ class FailClosedTests(unittest.TestCase):
         self.assertTrue(all(v.startswith('record-only') for v in pins['record_only_pins'].values()))
         self.assertEqual(set(pins['pins_compared_at_run']), {'runtime_setting', 'dev_style_snapshot',
                                                             'b2_inference_environment'})
+
+    def test_the_select_helper_takes_the_heavy_lock_and_nice(self):
+        """G-CODE MINOR-2: the G-REG selection helper (draft config allowed) loads data only under os.nice(10) and the
+        common heavy lock, inside the run window."""
+        import contextlib
+        import io
+        from test_ope_a2b_ledger import selection_frame
+        import run_policy_validation as rpv
+        ws = Workspace(self, draft=True)
+        calls = []
+
+        class LockEnv(WorkEnv):
+            def nice(self):
+                calls.append('nice')
+
+            @contextlib.contextmanager
+            def heavy_lock(self, local):
+                calls.append('lock')
+                yield
+                calls.append('unlock')
+
+            def ledger_world(self, config, local, base, checkpoint):
+                calls.append('data')
+                frame = selection_frame()
+                return rr.LedgerWorld(rpv, {}, {'frame': frame}, rpv.select_games(frame, 'dev', 6, rb.S6_SELECTION_SALT_RECOMPUTED),
+                                      frozenset(), {})
+        env = LockEnv(ws)
+        buffer = io.StringIO()
+        with mock.patch.object(rr.lg, 'N_GAMES', 6), contextlib.redirect_stdout(buffer):
+            self.assertEqual(rr.main(['select', '--config', str(ws.config_path)], env), 0)
+        self.assertEqual(calls, ['nice', 'lock', 'data', 'unlock'])
+        self.assertEqual(set(json.loads(buffer.getvalue())), {'selection_s6_game_list_sha256', 'a2b_new_game_list_sha256',
+                                                              'month_quota_table', 'straddling_games_excluded', 'salts'})
+        env._now = kst(17, 7, 0)  # inside the protection window: refused before any data
+        calls.clear()
+        with self.assertRaisesRegex(IntegrityError, 'protection window'):
+            rr.main(['select', '--config', str(ws.config_path)], env)
+        self.assertEqual(calls, [])
 
     def test_window_and_hang_guards_refuse_before_preflight(self):
         ws = Workspace(self, draft=True)
