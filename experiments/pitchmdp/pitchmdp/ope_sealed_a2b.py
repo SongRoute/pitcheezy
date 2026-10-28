@@ -9,7 +9,10 @@ seeds and IDs. Every computation of a B0 row is the A2 code path line for line, 
 Modes (``ope_registry_a2b``):
 - ``REHEARSAL`` (the new DEV 150 ledger, A2b seeds): the 25 rows - the 12 B0 rows (= the A2 pairs), the 12 B2 rows
   (the same lines with rho recomputed from pi_b_hat_B2: ``decisions_b2``; descriptive under D192 2 3) and the
-  selection-free R1_b x R2_1 x B0 row at lambda = 100;
+  selection-free R1_b x R2_1 x B0 row at lambda = 100, whose public-form items (pairs, S5, R5 e / f) are written to
+  the sealed file only (``sealed['lambda_fixed_row_public']``, opened with ``unblinded.json`` at A2b-UB; G-CODE
+  MAJOR-1: next to the R1_b x R2_1 row it would reveal a selected lambda = 100 before the decision, and it is a
+  per-grid-value half-width, design 9.5); the public file holds the 24 ``PUBLIC_ROWS``;
 - ``S6_GINT_EVAL`` (the S6 record, the A2 seeds): the 12 B0 rows ONLY - the 13 B2 and lambda-fixed rows are refused
   (never computed or written on S6, design 9.3 / review R3-MINOR-1).
 
@@ -45,7 +48,8 @@ NOTES = {'R5_f_normalization': 'the point part of R5 f uses the common denominat
          'b2_rows': 'B2 rows recompute rho = pi / pi_b_hat_B2 on the same lines (descriptive: D192 decision 2 '
                     'option 3); R5 a, d, h and i are denominator-free and computed once (B0); R5 b, c and g are '
                     'computed per denominator (B2: public items 10-11)',
-         'lambda_fixed_row': 'R1_b x R2_1 x B0 with lambda fixed at 100 (no selection; review NOTE N1)',
+         'lambda_fixed_row': 'R1_b x R2_1 x B0 with lambda fixed at 100 (no selection; review NOTE N1); its public-form '
+                             'items are sealed until A2b-UB (G-CODE MAJOR-1) and are never a gate or decision input',
          'pigeonhole': 'the descriptive two-way bootstrap is run only with a registered seed (the S6 mode, A2 seed); '
                        'the A2b registration lists no pigeonhole role, so the rehearsal records NOT_RUN'}
 
@@ -298,6 +302,8 @@ def evaluate(decisions, facts, *, mode, surrogates, train_residuals, r1_paths, g
     # 6. public and sealed per row
     public = {'experiment': rb.EXPERIMENT_ID, 'stage': 'A2b-S3', 'r3_status': rb.R3_STATUS_DECIDED,
               'pairs': {}, 'S5': {}, 'R5': {}, 'r1_variance': {}, 'integrity': {}, 'validity': {}}
+    held = {'pairs': {}, 'S5': {}, 'R5': {'e': {}, 'f': {}}}  # public-form items of the rows sealed until A2b-UB
+    target = lambda row: held if row in rb.SEALED_UNTIL_UNBLIND_ROWS else public
     sealed['pairs'] = {}
     for row in requested:
         entry = {'H_point': {}, 'SE': {}, 'endpoint_half_width': {'lower': {}, 'upper': {}}, 'valid': {},
@@ -327,8 +333,8 @@ def evaluate(decisions, facts, *, mode, surrogates, train_residuals, r1_paths, g
             sealed_row[b] = None if stats is None else {
                 'mean_p_ci95': stats['mean_p']['ci95'], 'shift_p_ci95': stats['shift_p']['ci95'],
                 'lower_endpoint_ci95': stats['lower_endpoint']['ci95'], 'upper_endpoint_ci95': stats['upper_endpoint']['ci95']}
-        public['pairs'][row] = entry
-        public['S5'][row] = s5
+        target(row)['pairs'][row] = entry
+        target(row)['S5'][row] = s5
         sealed['pairs'][row] = {'bootstrap': sealed_row}
     # 7. full-sample centers (sealed only)
     u_of = {'B0': u, 'B2': u_b2}
@@ -362,15 +368,16 @@ def evaluate(decisions, facts, *, mode, surrogates, train_residuals, r1_paths, g
     s_share = (result0.get('censoring_rule') or {}).get('worst_case_residual_share')
     public['R5']['e'], public['R5']['f'] = {}, {}
     for row in requested:
-        public['R5']['e'][row], public['R5']['f'][row] = {}, {}
+        r5 = target(row)['R5']
+        r5['e'][row], r5['f'][row] = {}, {}
         for b in BOOTS:
             summary = summaries[b]
             stats = summary.get(row) if summary.get('eligible') else None
             se_p = None if stats is None or not stats['mean_p']['valid'] else stats['mean_p']['se']
             se_lo = None if stats is None or not stats['lower_endpoint']['valid'] else stats['lower_endpoint']['se']
-            public['R5']['e'][row][b] = od.mde(se_p, se_lo, s_share)
+            r5['e'][row][b] = od.mde(se_p, se_lo, s_share)
             dec = None if stats is None else stats['decomposition']
-            public['R5']['f'][row][b] = ({k: dec[k] for k in ('var_point', 'var_censored', 'var_lower_endpoint')}
+            r5['f'][row][b] = ({k: dec[k] for k in ('var_point', 'var_censored', 'var_lower_endpoint')}
                                          | {'cov_point_censored': dec['cov_point_censored']}) if dec and dec['valid'] else {
                 'var_point': None, 'var_censored': None, 'var_lower_endpoint': None, 'cov_point_censored': None}
     public['R5']['g'] = od.self_consistency(e0, table, resamplers['game'])
@@ -428,9 +435,30 @@ def evaluate(decisions, facts, *, mode, surrogates, train_residuals, r1_paths, g
                                  e0_ids={l['pa_id'] for l in e0}, games=games, resampler=resamplers['game'],
                                  grids=grids, u_b2=u_b2, sn_valid_b2=sn_valid_b2)
         public['flags'] = {'B2_PRECISION_PASS_DIAGNOSTIC': b2_precision_pass(public)}
-        public['counts'] = {'rows': len(requested)}
+        public['counts'] = {'rows': len(public['pairs'])}  # the 24 public rows (the lambda-fixed row is sealed)
+        sealed['lambda_fixed_row_public'] = lambda_fixed_row_public(held, public)
     require_descriptive(public, sealed, requested, mode)
     return public, sealed, NOTES
+
+
+LAMBDA_FIXED_COMPARED_ROW = 'R1_bxR2_1xB0'  # the selected-lambda row the fixed row would be read against
+
+
+def lambda_fixed_row_public(held, public):
+    """The lambda = 100 row's public-form items (pairs, S5, R5 e / f), sealed until A2b-UB and opened with
+    ``unblinded.json`` (G-CODE MAJOR-1). ``equals_R1_bxR2_1xB0``: whether they are bit-identical to the public
+    R1_b x R2_1 row (i.e. whether lambda = 100 was selected) - descriptive, written only here, never a gate or
+    decision input."""
+    row = rb.LAMBDA_FIXED_ROW
+    _require(set(held['pairs']) == {row} and set(held['S5']) == {row}, 'the sealed-until-unblind rows are the lambda-fixed '
+                                                                        'row only (stage integrity)')
+    items = lambda pairs, s5, r5, name: [_bits(pairs[name]), _bits(s5[name]), _bits(r5['e'][name]), _bits(r5['f'][name])]
+    same = (items(held['pairs'], held['S5'], held['R5'], row)
+            == items(public['pairs'], public['S5'], public['R5'], LAMBDA_FIXED_COMPARED_ROW))
+    return {'row': row, 'lambda': rb.LAMBDA_FIXED_VALUE, 'pairs': held['pairs'][row], 'S5': held['S5'][row],
+            'R5': {'e': held['R5']['e'][row], 'f': held['R5']['f'][row]},
+            'equals_R1_bxR2_1xB0': bool(same), 'decision_input': False,
+            'disclosure': 'sealed until A2b-UB (G-CODE MAJOR-1); opened in unblinded.json with the selection'}
 
 
 def _by_pa(decisions, facts):
@@ -500,7 +528,15 @@ def require_descriptive(public, sealed, rows, mode):
         _require(node is not None, f'descriptive output missing: {".".join(path)} (stage integrity)')
     for key in REQUIRED_SEALED:
         _require(sealed.get(key) is not None, f'sealed descriptive output missing: {key} (stage integrity)')
-    _require(set(public['pairs']) == set(rows) and set(public['S5']) == set(rows), 'public rows differ from the mode')
+    shown = [r for r in rows if r not in rb.SEALED_UNTIL_UNBLIND_ROWS]
+    _require(set(public['pairs']) == set(shown) and set(public['S5']) == set(shown)
+             and set(public['R5']['e']) == set(shown) and set(public['R5']['f']) == set(shown),
+             'public rows differ from the mode (the lambda-fixed row is never public before A2b-UB)')
+    if any(r in rb.SEALED_UNTIL_UNBLIND_ROWS for r in rows):
+        held = sealed.get('lambda_fixed_row_public')
+        _require(isinstance(held, dict) and held.get('row') == rb.LAMBDA_FIXED_ROW
+                 and all(held.get(k) is not None for k in ('pairs', 'S5', 'R5')),
+                 'sealed lambda-fixed row items missing (stage integrity)')
     sn_ok = {'B0': bool(public['integrity'].get('sn_normalizer_full_sample_valid')),
              'B2': bool((public.get('B2') or {}).get('sn_normalizer_full_sample_valid'))}
     b2_valid = bool(((public.get('B2') or {}).get('validity') or {}).get('pass'))
@@ -511,7 +547,7 @@ def require_descriptive(public, sealed, rows, mode):
         _require('center' in record or (row.endswith('R2_3x' + den) and not sn_ok[den]),
                  f'sealed center missing: {row} (stage integrity)')
         _require(row == rb.BASELINE or 'shift_center' in record, f'sealed paired shift missing: {row} (stage integrity)')
-        if den == 'B2' and not b2_valid:
+        if den == 'B2' and not b2_valid:  # every B2 row is a public row
             _require(not any(public['pairs'][row]['valid'].values()), f'an invalid B2 denominator gave a valid {row}')
     return True
 

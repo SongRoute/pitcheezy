@@ -362,7 +362,11 @@ class RegisteredTests(unittest.TestCase):
         ws.seal('A2b-SM', {'smoke_record.json': {'stage': 'A2b-SM'}})
         ws.seal('A2b-S0', {'s0_record.json': {'stage': 'A2b-S0', 'reused': {'tab_acceptance': a2_tab(), 'nets': a2_nets()}}})
         ws.seal('A2b-L', {'ledger_record.json': {'stage': 'A2b-L', 'e0_count': 10131}})
-        sealed_bytes = b'{"pairs": {}, "selection": {"R1_axR2_1xB0": {"selected": "100.0"}}}\n'
+        fixed = {'row': rb.LAMBDA_FIXED_ROW, 'lambda': 100.0, 'pairs': {'H_point': {'game': 7e-4, 'pitcher': 8e-4}},
+                 'S5': {'game': 'PASS', 'pitcher': 'PASS'}, 'R5': {'e': {}, 'f': {}}, 'equals_R1_bxR2_1xB0': False,
+                 'decision_input': False, 'disclosure': 'sealed until A2b-UB'}
+        sealed_bytes = (json.dumps({'pairs': {}, 'selection': {'R1_axR2_1xB0': {'selected': '100.0'}},
+                                    'lambda_fixed_row_public': fixed}) + '\n').encode()
         doc = {**public_doc(widths), 'sealed_sha256': hashlib.sha256(sealed_bytes).hexdigest()}
         ws.seal('A2b-S3', {'public.json': (json.dumps(doc, sort_keys=True) + '\n').encode(),
                            'centers.sealed.json': sealed_bytes})
@@ -390,6 +394,9 @@ class RegisteredTests(unittest.TestCase):
         self.assertEqual(rr.main([*ws.argv('unblind', 'ub1'), '--decision-record', str(committed)], ws.env), 0)
         opened = json.loads((ws.output('ub1') / 'unblinded.json').read_text())
         self.assertEqual(opened['selection'], {'R1_axR2_1xB0': {'selected': '100.0'}})
+        self.assertEqual(opened['lambda_fixed_row_public'], fixed)  # G-CODE MAJOR-1: opened with the selection
+        self.assertNotIn(rb.LAMBDA_FIXED_ROW, json.dumps(json.loads(
+            (roa.require_seal(ws.manifest, 'A2b-S3')[0] / 'public.json').read_text())))
 
     def test_decide_needs_the_pooled_cells_the_gate_opened(self):
         ws = Workspace(self)

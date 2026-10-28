@@ -206,12 +206,12 @@ def b2_vectors(decisions, seed=11, scale=0.4, zero_at=None):
 
 # ---------------------------------------------------------------- synthetic public files and phase-2 records
 def public_doc(widths=None, s5=None, *, baseline=(1.0e-3, 1.1e-3), flag=None, b2_pass=False):
-    """A minimal typed A2b-S3 public file: H_point per row and bootstrap (default: the baseline widths; rows in
-    ``widths`` {row: (game, pitcher)} override, None = invalid), S-5 per row ({row: (game, pitcher)}, default
-    PASS), the R5 h flag and the B2 precision flag."""
+    """A minimal typed A2b-S3 public file: H_point per public row and bootstrap (default: the baseline widths; rows
+    in ``widths`` {row: (game, pitcher)} override, None = invalid), S-5 per row ({row: (game, pitcher)}, default
+    PASS), the R5 h flag and the B2 precision flag. The lambda-fixed row is never public (sealed until A2b-UB)."""
     widths, s5 = dict(widths or {}), dict(s5 or {})
     pairs, s5_out = {}, {}
-    for row in rb.ROWS:
+    for row in rb.PUBLIC_ROWS:
         h = baseline if row == rb.BASELINE else widths.get(row, baseline)
         h = (None, None) if h is None else h
         pairs[row] = {'H_point': {'game': h[0], 'pitcher': h[1]},

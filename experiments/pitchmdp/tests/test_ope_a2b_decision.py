@@ -7,6 +7,7 @@ import copy
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -59,6 +60,29 @@ class GateTests(unittest.TestCase):
         self.assertEqual(record['gated'], [])
         self.assertTrue(record['b2_precision_pass_diagnostic'])
         self.assertEqual(record['work_list']['b2_phase_2'], [])
+
+    def test_the_gate_and_the_decision_never_read_the_lambda_fixed_row(self):
+        """G-CODE MAJOR-1: the lambda = 100 row is no public key; the gate and the decision read only allowlisted
+        public paths and none of them names it (a public file carrying it is refused)."""
+        public = public_doc({'R1_bxR2_1xB0': GOOD, 'R1_axR2_0xB0': GOOD})
+        reads, real = [], dc.PublicView.get
+
+        def spy(view, *path):
+            reads.append(path)
+            return real(view, *path)
+        with mock.patch.object(dc.PublicView, 'get', spy):
+            gate = dc.gate_record(public, e0_count=10131)
+            pooled_all = {c: pooled(c) for c in rb.S2P_CELLS}
+            dc.decide(public, gate, tab=a2_tab(), nets=a2_nets(), s2_prime=pooled_all)
+        self.assertTrue(reads)
+        self.assertFalse([p for p in reads if rb.LAMBDA_FIXED_ROW in p])
+        self.assertNotIn(rb.LAMBDA_FIXED_ROW, gate['candidates'])
+        leak = copy.deepcopy(public)
+        leak['pairs'][rb.LAMBDA_FIXED_ROW] = copy.deepcopy(leak['pairs']['R1_bxR2_1xB0'])
+        with self.assertRaises(IntegrityError):
+            dc.gate_record(leak, e0_count=10131)
+        with self.assertRaises(IntegrityError):
+            dc.PublicView(public).get('pairs', rb.LAMBDA_FIXED_ROW, 'H_point', 'game')
 
     def test_center_keys_and_the_sealed_file_are_refused(self):
         public = public_doc({'R1_bxR2_1xB0': GOOD})

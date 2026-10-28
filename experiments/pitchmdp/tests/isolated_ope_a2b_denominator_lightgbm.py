@@ -99,7 +99,8 @@ def test_b2_rows_end_to_end_on_a_synthetic_s6_shaped_ledger(world, frozen, tmp_p
         decisions_b2=dn.b2_decision_stream(decisions, vectors, e0_ids), b2={'validity': validity, 'weights': weights},
         surrogates=surrogates, train_residuals={}, r1_paths={}, draws=50, minimum_games=2, minimum_pitchers=1,
         minimum_pa_starts=5, placebos=2)
-    assert set(public['pairs']) == set(rb.ROWS)
+    assert set(public['pairs']) == set(rb.PUBLIC_ROWS)  # the lambda-fixed row is sealed until A2b-UB
+    assert sealed['lambda_fixed_row_public']['row'] == rb.LAMBDA_FIXED_ROW
     assert public['B2']['validity']['pass'] is True
     assert 'R5_g' in public['B2'] and 'ess' in public['B2']
     public_bytes, _ = sa.seal(public, sealed)

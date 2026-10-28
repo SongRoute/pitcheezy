@@ -1,8 +1,8 @@
 """SYNTHETIC-ONLY tests for the EXP-OPE-RES-02 sealed evaluator: the 12 B0 rows of the 25-row evaluator are
 bit-identical to the EXP-OPE-RES-01 ``rehearsal_evaluate`` on a synthetic ledger at the same seeds; the S6 mode
 computes and records only the 12 A2 pair rows and refuses the 13 others; the S6 mode equals the 12-row part of the
-25-row mode; the lambda-fixed row equals R2_1 when the selection returns lambda = 100 (else the sealed lambda = 100
-grid row); lambda = inf identity; the B2 rows (identity denominator = B0 rows, invalid denominator = invalid rows,
+25-row mode; the lambda-fixed row never reaches the public file (selected lambda 100 or not) and its public-form items
+are sealed until A2b-UB (G-CODE MAJOR-1); lambda = inf identity; the B2 rows (identity denominator = B0 rows, invalid denominator = invalid rows,
 classification checked); the strict public file; the G-INT-EVAL integrity record (absolute 1e-12, counts and
 lambda / M by equality). No real data, ledger or model is read.
 """
@@ -109,7 +109,9 @@ class EvaluatorTests(unittest.TestCase):
             self.assertEqual(bits(self.sealed25['pairs'][row]), bits(self.a2_sealed['pairs'][pair]), row)
         for section in ('a', 'b', 'c', 'd', 'g', 'h', 'i'):
             self.assertEqual(bits(self.public25['R5'][section]), bits(self.a2_public['R5'][section]), section)
-        self.assertEqual(len(self.public25['pairs']), 25)
+        self.assertEqual(set(self.public25['pairs']), set(rb.PUBLIC_ROWS))  # 24 public rows
+        self.assertEqual(set(self.sealed25['pairs']) & set(rb.ROWS), set(rb.ROWS))  # 25 computed rows, sealed records
+        self.assertEqual(self.public25['counts'], {'rows': 24})
 
     def test_s6_mode_equals_the_12_row_part_of_the_25_row_mode(self):
         for row in rb.S6_MODE_ROWS:
@@ -137,31 +139,60 @@ class EvaluatorTests(unittest.TestCase):
                         seeds=dict(rb.EVALUATOR_SEEDS[rb.MODE_REHEARSAL]), **self.common)
         self.assertEqual(set(self.public6['pairs']), set(rb.S6_MODE_ROWS))
         self.assertFalse(any(k.endswith('xB2') or k == rb.LAMBDA_FIXED_ROW for k in self.sealed6['pairs']))
+        self.assertNotIn('lambda_fixed_row_public', self.sealed6)
         self.assertNotIn('B2', self.public6)
         with self.assertRaisesRegex(IntegrityError, 'integrity record is required'):
             sa.evaluate(self.stream, self.facts, mode=rb.MODE_S6, gint=None, **self.common)
 
-    def test_the_lambda_fixed_row(self):
-        selected = self.sealed25['selection']['R1_bxR2_1xB0']['selected']
-        fixed, chosen = self.public25['pairs'][rb.LAMBDA_FIXED_ROW], self.public25['pairs']['R1_bxR2_1xB0']
-        if selected == '100.0':
-            self.assertEqual(bits(fixed), bits(chosen))
-            self.assertEqual(bits(self.sealed25['pairs'][rb.LAMBDA_FIXED_ROW]['center']),
-                             bits(self.sealed25['pairs']['R1_bxR2_1xB0']['center']))
+    def forced(self, value):
+        """The 25-row evaluation with the selected lambda forced to ``value`` (every component and denominator)."""
         real = ov.select_parameter
 
-        def thirty(kind, by_value, clusters):  # force another selected lambda: the fixed row keeps lambda = 100
+        def force(kind, by_value, clusters):
             chosen_value, objectives = real(kind, by_value, clusters)
-            return (30.0 if kind == 'shrink' else chosen_value), objectives
-        with mock.patch.object(sa.ov, 'select_parameter', thirty):
-            public, sealed, _ = sa.evaluate(
+            return (value if kind == 'shrink' else chosen_value), objectives
+        with mock.patch.object(sa.ov, 'select_parameter', force):
+            return sa.evaluate(
                 self.stream, self.facts, mode=rb.MODE_REHEARSAL, seeds=A2_SEEDS, gint=self.gint,
                 decisions_b2=b2_stream(self.decisions, self.vectors, self.e0_ids), b2=weights_record(), **self.common)
-        self.assertEqual(sealed['selection']['R1_bxR2_1xB0']['selected'], '30.0')
-        grid = sealed['grid_bootstrap']['game']['grid:R1_bxR2_1xB0:100.0']['mean_p']
-        self.assertEqual(public['pairs'][rb.LAMBDA_FIXED_ROW]['H_point']['game'], grid['half_width'])
-        self.assertEqual(bits(public['pairs'][rb.LAMBDA_FIXED_ROW]), bits(self.public25['pairs'][rb.LAMBDA_FIXED_ROW]))
-        self.assertNotEqual(bits(public['pairs']['R1_bxR2_1xB0']), bits(public['pairs'][rb.LAMBDA_FIXED_ROW]))
+
+    def test_the_lambda_fixed_row_is_sealed_until_unblind(self):
+        """G-CODE MAJOR-1: whether lambda = 100 is selected or not, the public file carries no key and no value of the
+        lambda = 100 row (next to R1_b x R2_1 it would reveal the selection); its public-form items (pairs, S5, R5 e /
+        f) are in the sealed file only, with the descriptive equality flag."""
+        held = {}
+        for value in (100.0, 30.0):
+            with self.subTest(selected=value):
+                public, sealed, _ = self.forced(value)
+                self.assertEqual(sealed['selection']['R1_bxR2_1xB0']['selected'], str(value))
+                public_bytes, sealed_bytes = sa.seal(public, sealed)
+                shown = json.loads(public_bytes)
+                self.assertNotIn(rb.LAMBDA_FIXED_ROW, public_bytes.decode())
+                self.assertNotIn('lambda100', public_bytes.decode())
+                for section in (shown['pairs'], shown['S5'], shown['R5']['e'], shown['R5']['f']):
+                    self.assertEqual(set(section), set(rb.PUBLIC_ROWS))
+                self.assertEqual(shown['counts'], {'rows': 24})
+                fixed = held[value] = sealed['lambda_fixed_row_public']
+                self.assertEqual((fixed['row'], fixed['lambda'], fixed['decision_input']), (rb.LAMBDA_FIXED_ROW, 100.0, False))
+                self.assertEqual(set(fixed), {'row', 'lambda', 'pairs', 'S5', 'R5', 'equals_R1_bxR2_1xB0', 'decision_input',
+                                              'disclosure'})
+                self.assertIn('lambda_fixed_row_public', sealed_bytes.decode())
+                chosen = public['pairs']['R1_bxR2_1xB0']
+                if value == 100.0:
+                    self.assertTrue(fixed['equals_R1_bxR2_1xB0'])
+                    self.assertEqual(bits(fixed['pairs']), bits(chosen))  # shown once only, as the selected row
+                else:
+                    self.assertFalse(fixed['equals_R1_bxR2_1xB0'])
+                    grid = sealed['grid_bootstrap']['game']['grid:R1_bxR2_1xB0:100.0']['mean_p']
+                    self.assertEqual(fixed['pairs']['H_point']['game'], grid['half_width'])
+                    secret = {v for _, v in rb.leaves([fixed['pairs'], fixed['R5']]) if isinstance(v, float) and v != 0.0}
+                    floats = {v for _, v in rb.leaves(shown) if isinstance(v, float)}
+                    self.assertTrue(secret)
+                    self.assertFalse(secret & floats)  # no value of the lambda = 100 row reaches the public file
+        self.assertEqual(bits(held[100.0]['pairs']), bits(held[30.0]['pairs']))  # the fixed row ignores the selection
+        self.assertEqual(bits(held[100.0]['R5']), bits(held[30.0]['R5']))
+        self.assertNotIn(rb.LAMBDA_FIXED_ROW, self.public25['pairs'])
+        self.assertIn('center', self.sealed25['pairs'][rb.LAMBDA_FIXED_ROW])  # its sealed record as every row's
 
     def test_lambda_inf_identity(self):
         self.assertEqual(self.public25['integrity']['inf_variants_reproduce_baseline'], 'PASS')
@@ -221,10 +252,20 @@ class EvaluatorTests(unittest.TestCase):
         for word in ('selected', 'center', '"delta"', 'shift', 'objective', 'placebo_delta', 'mean_p_ci95'):
             self.assertNotIn(word, text)
         self.assertEqual(public['experiment'], 'EXP-OPE-RES-02')
-        self.assertEqual(len(public['pairs']), 25)
+        self.assertEqual(len(public['pairs']), 24)
         self.assertIn('selected', sealed_bytes.decode())
         leak = copy.deepcopy(self.public25)
-        leak['pairs'][rb.LAMBDA_FIXED_ROW]['center'] = 1e-4
+        leak['pairs']['R1_bxR2_1xB0']['center'] = 1e-4
+        with self.assertRaises(IntegrityError):
+            sa.seal(leak, self.sealed25)
+        fixed = self.sealed25['lambda_fixed_row_public']
+        for section, value in (('pairs', fixed['pairs']), ('S5', fixed['S5'])):  # the fixed row is no public key
+            leak = copy.deepcopy(self.public25)
+            leak[section][rb.LAMBDA_FIXED_ROW] = copy.deepcopy(value)
+            with self.subTest(section), self.assertRaises(IntegrityError):
+                sa.seal(leak, self.sealed25)
+        leak = copy.deepcopy(self.public25)
+        leak['R5']['e'][rb.LAMBDA_FIXED_ROW] = copy.deepcopy(fixed['R5']['e'])
         with self.assertRaises(IntegrityError):
             sa.seal(leak, self.sealed25)
 
@@ -252,6 +293,14 @@ class EvaluatorTests(unittest.TestCase):
         del sealed['pairs'][rb.LAMBDA_FIXED_ROW]['shift_center']
         with self.assertRaisesRegex(IntegrityError, 'paired shift missing'):
             sa.require_descriptive(self.public25, sealed, rb.ROWS, rb.MODE_REHEARSAL)
+        sealed = copy.deepcopy(self.sealed25)
+        del sealed['lambda_fixed_row_public']
+        with self.assertRaisesRegex(IntegrityError, 'lambda-fixed row items missing'):
+            sa.require_descriptive(self.public25, sealed, rb.ROWS, rb.MODE_REHEARSAL)
+        public = copy.deepcopy(self.public25)
+        public['pairs'][rb.LAMBDA_FIXED_ROW] = self.sealed25['lambda_fixed_row_public']['pairs']
+        with self.assertRaisesRegex(IntegrityError, 'never public before A2b-UB'):
+            sa.require_descriptive(public, self.sealed25, rb.ROWS, rb.MODE_REHEARSAL)
 
 
 class GintEvalTests(unittest.TestCase):

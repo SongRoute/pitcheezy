@@ -9,8 +9,11 @@ window, the strict public allowlist machinery and its nine public types); every 
 - seeds: base 20261028, nine roles int(SeedSequence([20261028, r]).generate_state(1)[0]) checked against the
   registered values at import; S-2' world seeds SeedSequence([20261028, 5, k]) for k = 1..76 checked against the
   registered list and disjoint from every EXP-OPE-RES-01 world seed, role value and from each other;
-- rows: the 25 phase-1 rows (12 B0 = the A2 pairs, 12 B2, the selection-free lambda = 100 row), the five adoption
-  candidates in their total order and the label precedence (label 4 is kept although unreachable under D192 2 3);
+- rows: the 25 phase-1 rows (12 B0 = the A2 pairs, 12 B2, the selection-free lambda = 100 row), of which the 24
+  PUBLIC_ROWS enter the A2b-S3 public file and the lambda = 100 row's public-form items stay sealed until A2b-UB
+  (G-CODE MAJOR-1: next to R1_b x R2_1 it would reveal a selected lambda = 100, and it is a per-grid-value
+  half-width, design 9.5); the five adoption candidates in their total order and the label precedence (label 4 is
+  kept although unreachable under D192 2 3);
 - rules: condition (ii) per bootstrap, the gate, the TAB reuse rule, the exact-value cell rule, the integrity
   comparison (absolute 1e-12 for floats, equality for counts, strings and the selected lambda / M incl. inf),
   hang guards, the run window and the S-2' cost gate;
@@ -69,10 +72,13 @@ B2_ROWS = tuple(f'{p}xB2' for p in a2.PAIRS)
 LAMBDA_FIXED_ROW = 'R1_bxR2_1xB0_lambda100'  # selection-free row (review NOTE N1): lambda fixed at 100
 LAMBDA_FIXED_VALUE = 100.0
 ROWS = (*B0_ROWS, *B2_ROWS, LAMBDA_FIXED_ROW)  # the 25 phase-1 rows
+SEALED_UNTIL_UNBLIND_ROWS = (LAMBDA_FIXED_ROW,)  # G-CODE MAJOR-1: public-form items sealed, opened at A2b-UB
+PUBLIC_ROWS = tuple(r for r in ROWS if r not in SEALED_UNTIL_UNBLIND_ROWS)  # the 24 rows of the A2b-S3 public file
 S6_MODE_ROWS = B0_ROWS  # G-INT-EVAL computes these 12 rows only on S6
 S6_REFUSED_ROWS = (*B2_ROWS, LAMBDA_FIXED_ROW)  # the 13 rows never computed or written on S6
 DESCRIPTIVE_ROWS = tuple(r for r in ROWS if r != BASELINE and r not in CANDIDATES)  # 6 B0 + 12 B2 + 1 fixed = 19
-assert len(ROWS) == 25 and len(S6_REFUSED_ROWS) == 13 and len(DESCRIPTIVE_ROWS) == 19
+assert len(ROWS) == 25 and len(S6_REFUSED_ROWS) == 13 and len(DESCRIPTIVE_ROWS) == 19 and len(PUBLIC_ROWS) == 24
+assert BASELINE in PUBLIC_ROWS and set(CANDIDATES) <= set(PUBLIC_ROWS) and set(B2_ROWS) <= set(PUBLIC_ROWS)
 assert set(CANDIDATES) <= set(B0_ROWS) and BASELINE == f'{a2.BASELINE}xB0'
 
 
@@ -377,15 +383,16 @@ PUBLIC_TYPES = (*a2.PUBLIC_TYPES, 'flag_or_cost', 'integrity_record')  # A2 item
 W_, P_, RF_, CS_, WV_, G_, T_, V_, F_ = a2.PUBLIC_TYPES
 FC_, IR_ = 'flag_or_cost', 'integrity_record'
 Ident = a2.Ident
-I_ROW = Ident('row', ROWS)
+I_ROW = Ident('row', PUBLIC_ROWS)  # the lambda-fixed row is never a public key (sealed until A2b-UB)
 I_BOOT, I_POLICY, I_LEVEL = a2.I_BOOT, a2.I_POLICY, a2.I_LEVEL
 I_QS = Ident('quantile', ('q50', 'q90', 'q99', 'max'))
 BOOL, HEX = a2.BOOL, a2.HEX
 
 
 def _row_schema():
-    """A2's schema with the A2 pair identifier replaced by the 25 A2b rows; the B0-only R5 sections keep their
-    A2 shape; the header constraints name EXP-OPE-RES-02 / A2b-S3 and the A2b r3 status."""
+    """A2's schema with the A2 pair identifier replaced by the 24 public A2b rows (the lambda-fixed row is sealed
+    until A2b-UB); the B0-only R5 sections keep their A2 shape; the header constraints name EXP-OPE-RES-02 / A2b-S3
+    and the A2b r3 status."""
     out = []
     for pattern, kind, constraint in a2.PUBLIC_SCHEMA:
         if pattern == ('experiment',):

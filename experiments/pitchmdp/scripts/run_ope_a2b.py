@@ -872,12 +872,19 @@ def body_decide(run):
 
 
 def body_unblind(run):
+    """Open the sealed file after the committed decision record: the selection, every row's sealed record and the
+    lambda = 100 row's public-form items, sealed until now (G-CODE MAJOR-1; with the descriptive flag whether they
+    equal the R1_b x R2_1 row, i.e. whether lambda = 100 was selected - never a decision input)."""
     s3_dir, s4_dir, record_path = run.plan['s3'], run.plan['s4'], run.plan['record']
     sealed = osd.unblind((s3_dir / 'centers.sealed.json').read_bytes(),
                          json.loads((s3_dir / 'public.json').read_text())['sealed_sha256'],
                          Path(record_path).read_bytes(), rb.file_sha256(s4_dir / 'decision_record.json'), committed=True)
+    fixed = sealed.get('lambda_fixed_row_public')
+    _require(isinstance(fixed, dict) and fixed.get('row') == rb.LAMBDA_FIXED_ROW,
+             'the sealed file lacks the lambda-fixed row items (stage integrity)')
     roa.dump(run.out / 'unblinded.json', {'selection': sealed.get('selection'),
                                           'pairs': {r: (sealed['pairs'].get(r) or {}) for r in rb.ROWS},
+                                          'lambda_fixed_row_public': fixed,
                                           'decision_record_sha256': rb.file_sha256(s4_dir / 'decision_record.json')})
 
 

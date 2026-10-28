@@ -85,6 +85,9 @@ class SeedTests(unittest.TestCase):
 class RowTests(unittest.TestCase):
     def test_rows_candidates_and_the_s6_split(self):
         self.assertEqual(len(rb.ROWS), 25)
+        self.assertEqual(rb.PUBLIC_ROWS, (*rb.B0_ROWS, *rb.B2_ROWS))  # G-CODE MAJOR-1: 24 public rows
+        self.assertEqual(rb.SEALED_UNTIL_UNBLIND_ROWS, (rb.LAMBDA_FIXED_ROW,))
+        self.assertNotIn(rb.LAMBDA_FIXED_ROW, rb.I_ROW.values)
         self.assertEqual(rb.BASELINE, 'R1_0xR2_0xB0')
         self.assertEqual(rb.CANDIDATES, ('R1_axR2_0xB0', 'R1_bxR2_0xB0', 'R1_0xR2_1xB0', 'R1_axR2_1xB0', 'R1_bxR2_1xB0'))
         self.assertEqual(rb.TOTAL_ORDER, rb.CANDIDATES)
@@ -190,7 +193,7 @@ class RuleTests(unittest.TestCase):
 class PublicSchemaTests(unittest.TestCase):
     def test_rows_and_new_items_are_typed(self):
         doc = {'experiment': 'EXP-OPE-RES-02', 'stage': 'A2b-S3', 'r3_status': 'DIAGNOSTIC_ONLY:DECIDED',
-               'pairs': {r: {'H_point': {'game': 1e-4, 'pitcher': 2e-4}} for r in rb.ROWS},
+               'pairs': {r: {'H_point': {'game': 1e-4, 'pitcher': 2e-4}} for r in rb.PUBLIC_ROWS},
                'S5': {'R1_axR2_0xB2': {'game': 'PASS', 'pitcher': 'FAIL'}},
                'B2': {'validity': {'pass': True, 'decisions_checked': 12},
                       'R5_g': {'candidate': {'mean_rho_logged_ci95': [-0.2, 1.1]}},
@@ -200,6 +203,10 @@ class PublicSchemaTests(unittest.TestCase):
         leaks = {'center': lambda d: d['pairs'][rb.BASELINE].__setitem__('center', 1e-4),
                  'signed width': lambda d: d['pairs'][rb.BASELINE]['H_point'].__setitem__('game', -1.0),
                  'unknown row': lambda d: d['pairs'].__setitem__('R1_cxR2_0xB0', {'H_point': {'game': 1.0}}),
+                 'lambda-fixed row (sealed until A2b-UB)': lambda d: d['pairs'].__setitem__(
+                     rb.LAMBDA_FIXED_ROW, {'H_point': {'game': 1e-4}}),
+                 'lambda-fixed S5': lambda d: d['S5'].__setitem__(rb.LAMBDA_FIXED_ROW, {'game': 'PASS'}),
+                 'lambda-fixed R5 e': lambda d: d.__setitem__('R5', {'e': {rb.LAMBDA_FIXED_ROW: {'game': None}}}),
                  'selected lambda': lambda d: d['B2'].__setitem__('selected_lambda', 100.0),
                  'shift': lambda d: d['S5'][rb.BASELINE if False else 'R1_axR2_0xB2'].__setitem__('game', 0.001),
                  'A2 experiment id': lambda d: d.__setitem__('experiment', 'EXP-OPE-RES-01'),
