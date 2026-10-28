@@ -1,0 +1,147 @@
+"""SYNTHETIC-ONLY fixtures for the EXP-OPE-RES-02 (A2b) tests: a synthetic DRAFT config with the registered
+structure (never the real draft or configs/EXP-OPE-RES-02.json), a filled REGISTERED variant with synthetic paths,
+B2-denominator decision streams over the A2 synthetic ledgers, and small synthetic records. No real data, ledger,
+model, T7 path or 2026 file is read.
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+import sys
+from pathlib import Path
+
+import numpy as np
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent))
+
+from pitchmdp import ope_registry_a2b as rb  # noqa: E402
+from pitchmdp import policy_estimator as est  # noqa: E402
+
+
+def _sha(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def draft_config():
+    """A synthetic DRAFT config carrying exactly the fields the A2b registry checks (values from the registry)."""
+    roles = {name: {'index': rb.ROLES[name], 'value': rb.ROLE_VALUES[name]} for name in rb.ROLES}
+    roles['selection_salt']['name'] = 'a2b_selection_salt'
+    return {
+        'id': rb.EXPERIMENT_ID, 'protocol': rb.PROTOCOL, 'status': rb.DRAFT, 'registered': False,
+        'preregistration_complete': False, 'base_commit': rb.BASE_COMMIT,
+        'execution': {'enabled': False, 'reason': 'synthetic draft fixture'},
+        'registration': {'target': rb.CONFIG_PATH, 'registered_kst': None, 'review_reference': None,
+                         'codex_reconfirmation_reference': None, 'code_review_reference': None,
+                         'code_review_phase2_reference': None,
+                         'config_digest': {'in_config_digest_field': 'none', 'hash_target': 'see registry',
+                                           'nulled_json_paths': list(rb.NULLED_PATHS)}},
+        'seeds': {'a2b_base': {'value': rb.A2B_BASE}, 'roles': roles,
+                  'world_seeds_derived': {'k_1_to_76': list(rb.WORLD_SEEDS_DERIVED)},
+                  'run_index_map_decided_plan': {'S2_prime_2zeta': [1, 10], 'S2_prime_2kappa': [11, 65],
+                                                 'descriptive_kappa_prime': [66, 70]},
+                  's6_selection_salt_recomputed': {'value': rb.S6_SELECTION_SALT_RECOMPUTED},
+                  'planning_seeds_S5X': [0, 1, 2],
+                  'bootstrap_seed_by_option': {
+                      'G-INT-A2_always': dict(rb.EVALUATOR_SEEDS[rb.MODE_S6], placebo=None, pigeonhole=None),
+                      'rehearsal_options_2_3': dict(rb.EVALUATOR_SEEDS[rb.MODE_REHEARSAL], placebo=None,
+                                                    pigeonhole=None)}},
+        'arms': {'tuples': {'adoption_candidates': list(rb.CANDIDATES), 'count_phase_1_rows': 25},
+                 'R4_bootstrap': {'game': {'draws': rb.DRAWS}, 'pitcher': {'draws': rb.DRAWS}}},
+        'decision_rules': {'condition_ii_half_width': {'X': {'value': 0.3}},
+                           'labels_in_precedence': [{'label': label} for label in rb.LABELS],
+                           'selection': {'total_order': {'value': list(rb.TOTAL_ORDER)}}},
+        'synthetic_bias_check': {'acceptance': {'B': {'value': 1.26e-05}},
+                                 'S2_prime': {'N_prime_decided': {'zeta_2x': 10, 'kappa_2x': 55,
+                                                                  'descriptive_kappa_prime': 5}},
+                                 'reuse_from_EXP_OPE_RES_01': {'eta_p': rb.ETA_P}},
+        'cost_budget': {'hang_guards_seconds': {k: {'value': v} for k, v in rb.HANG_GUARDS.items()},
+                        'rss_cap_gib': {'value': 8}, 'free_memory_guard_gib': {'value': 4}},
+        'stages': [{'id': s} for s in rb.CONFIG_STAGES],
+        'governing_rules': {'not_modified_paths': list(rb.PROTECTED_SOURCES)},
+        'identities': {'candidate_policy_sha256': rb.CANDIDATE_POLICY_SHA256,
+                       'exp_ope_res_01': {'results_file_sha256': _sha('synthetic A2 results file')},
+                       'a3_run': {'config_sha256': _sha('a foreign config (allowed name)')}},
+        'a3_record': {'config_sha256': {'value': _sha('A3 config'), 'source': 'synthetic'}},
+        'registration_input_pins': {key: None for key in rb.PIN_KEYS},
+        'pre_run_gates': [{'id': g, 'status': 'open'} for g in ('G-CLAIM', 'G-REV', 'G-CODE', 'G-REG', 'G-SIGN')],
+        'stage_output_seals': {'A2b-L_ledger_sha256': None, 'A2b-S3_public_outputs_sha256': None,
+                               'rule': 'sealed in the external manifest'},
+    }
+
+
+def registered_config(root):
+    """The synthetic draft filled as a REGISTERED config (synthetic absolute paths under ``root``)."""
+    root = Path(root)
+    config = draft_config()
+    config.update(status=rb.REGISTERED, registered=True, preregistration_complete=True)
+    config['execution'] = {'enabled': True, 'reason': 'synthetic'}
+    config['registration'].update(registered_kst='2026-11-10T22:00+09:00', review_reference='REVIEW-A2B-SYN',
+                                  codex_reconfirmation_reference='CODEX-SYN', code_review_reference='GCODE-SYN')
+    for gate in config['pre_run_gates']:
+        if gate['id'] in rb.GATES_PASSED:
+            gate['status'] = 'PASS'
+    h = lambda name: _sha(name)
+    chain = [{'path': str(root / 'inputs' / f'chain{i}.json'), 'sha256': h(f'chain{i}')} for i in range(9)]
+    config['registration_input_pins'].update({
+        'rehearsal_population': rb.REHEARSAL_POPULATION, 'rehearsal_population_allowed': [rb.REHEARSAL_POPULATION],
+        'r3_status': rb.R3_STATUS_DECIDED, 'r3_status_allowed': [rb.R3_STATUS_DECIDED],
+        's2_prime_runs': {'zeta_2x': 10, 'kappa_2x': 55, 'descriptive_kappa_prime': 5},
+        's6_dr_a5_ledger_path': str(root / 'inputs' / 's6' / 'ledger-dev-0.jsonl'),
+        's6_dr_a5_ledger_sha256': h('ledger'), 's6_dr_a5_manifest_sha256': h('manifest'),
+        's6_runtime_sha256_header': h('runtime'), 'a2_s0_outputs_manifest_sha256': h('a2s0'),
+        'a2_s2_outputs_manifest_sha256': h('a2s2'), 'a2_digest_manifest_sha256': h('a2dm'),
+        'a2_execution_source_commit': 'a' * 40, 'a3_reader_commit': 'b' * 40, 'execution_source_commit': 'c' * 40,
+        'a3_b2_artifacts_sha256': {'02-fit/b2/model.txt': h('model'), '02-fit/b2/b2.json': h('b2'),
+                                   '03-calibrate/calibrators/B2.json': h('cal')},
+        'a3_freeze_primary_manifest_sha256': h('freeze'),
+        'processed_frame_aligned': {'path': str(root / 'inputs' / 'aligned.parquet'), 'sha256': h('aligned'),
+                                    'identity_manifest_sha256': h('identity'), 'source_sha256': h('processed')},
+        'processed_frame_identity': {'path': str(root / 'inputs' / 'pitches.parquet'), 'sha256': h('processed')},
+        'x2_world_predictor_identity': {'kind': 'g0_single_member', 'seed': 3},
+        'new_files_sha256': {rel: h(rel) for rel in rb.NEW_FILES},
+        'new_files_sha256_scope': 'design 9.1 items 1-7 and the new tests',
+        'digest_manifest_path': str(root / 'manifests' / 'a2b-digest.jsonl'),
+        'output_root': str(root / 'outputs'),
+        'a2_digest_manifest_path': str(root / 'inputs' / 'a2-digest.jsonl'),
+        'a2_results_file': {'path': 'results/EXP-OPE-RES-01.json',
+                            'sha256': config['identities']['exp_ope_res_01']['results_file_sha256']},
+        'a3_freeze_primary_manifest_path': str(root / 'inputs' / 'a3' / '04-freeze-primary' / 'manifest.json'),
+        'a3_s6_weights_record': {'path': str(root / 'inputs' / 'a3' / 'weights.json'), 'sha256': h('weights')},
+        'policy_registration_chain': chain,
+        'ml_policy_d127_chain': {'config_sha256': chain[0]['sha256'],
+                                 'addenda_1_to_8_d127_sha256': [c['sha256'] for c in chain[1:]],
+                                 'member_loader_pin': {'file': 'loader.py', 'sha256': h('loader')}},
+        'selection': {'selection_s6_game_list_sha256': h('s6 list'), 'a2b_new_game_list_sha256': h('new list'),
+                      'month_quota_table': {'2025-07': 50, '2025-08': 52, '2025-09': 48}},
+        'runtime_setting': {'selected_tau': 0.003, 'samples': 16, 'pitch_cap': 8, 'row_budget': 9000000,
+                            'planning_seed': 0, 'evaluation_role': 'evaluation'},
+        'dev_style_snapshot': {'path': str(root / 'inputs' / 'style_dev.json'), 'sha256': h('style'),
+                               'as_of_exclusive': '2025-07-01'},
+        'g0_bundle_sha256': h('g0'),
+        'b2_inference_environment': {'lightgbm': '4.6.0', 'pyproject_sha256': h('pyproject')},
+        'smoke_train_subset': {'game_dates': ['2024-06-01', '2024-06-07']},
+        'smoke_tab_replications_per_cell': 3,
+        'rule': 'synthetic', 'r3_status_rule': 'synthetic'})
+    return config
+
+
+# ---------------------------------------------------------------- B2-denominator streams over A2 synthetic ledgers
+def b2_vectors(decisions, seed=11, scale=0.4, zero_at=None):
+    """A synthetic pi_b_hat_B2 vector per evaluated decision: the recorded B0 logging law tilted inside its own
+    support (same support as B0, renormalized); ``zero_at``: request keys whose logged action gets no B2 mass."""
+    rng = np.random.default_rng(seed)
+    out = {}
+    for row in decisions:
+        result = row.get('result')
+        if row['status'] not in est.EVALUATED or not isinstance(result, dict):
+            continue
+        logging = np.asarray(result['logging'], dtype=np.float64)
+        tilt = np.exp(rng.normal(0, scale, len(logging)))
+        vector = np.where(logging > 0, logging * tilt, 0.)
+        key = (row['pa_id'], row['decision_index'])
+        if zero_at is not None and key in zero_at:
+            vector[result['logged_index']] = 0.
+        out[key] = (vector / vector.sum()).tolist()
+    return out
