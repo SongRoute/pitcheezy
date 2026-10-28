@@ -19,6 +19,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(HERE.parent / 'scripts'))
 
 from ope_a2b_fixtures import b2_stream, b2_vectors, e0_ids_of, evaluator_inputs  # noqa: E402
 from pitchmdp import ope_diagnostics as od  # noqa: E402
@@ -243,6 +244,23 @@ class EvaluatorTests(unittest.TestCase):
             sa.evaluate(self.stream, self.facts, mode=rb.MODE_REHEARSAL, gint=self.gint, decisions_b2=stream,
                         b2=weights_record(), **self.common)
 
+    def test_a_b2_line_never_changes_a_zero_ratio(self):
+        """MINOR-5 (check_b2_lines :144-145): rho0 is denominator-free - a zero ratio stays zero and a nonzero one
+        stays nonzero under B2; values and q-hat never change."""
+        line = {key: None for key in sa.LINE_INVARIANT}
+        b0 = [{**line, 'pa_id': 'x', 'steps': [[0.1, 0.2, 0.3, 0.0, 1.0], [0.4, 0.5, 0.6, 0.8, 0.9]]}]
+        same = [{**line, 'pa_id': 'x', 'steps': [[0.1, 0.2, 0.3, 0.0, 1.3], [0.4, 0.5, 0.6, 0.7, 1.1]]}]
+        self.assertTrue(sa.check_b2_lines(b0, same))
+        for step, value in ((0, 0.5), (1, 0.0)):  # zero -> nonzero and nonzero -> zero
+            changed = copy.deepcopy(same)
+            changed[0]['steps'][step][3] = value
+            with self.subTest(step=step), self.assertRaisesRegex(IntegrityError, 'changes a zero ratio'):
+                sa.check_b2_lines(b0, changed)
+        moved = copy.deepcopy(same)
+        moved[0]['steps'][0][2] = 0.31
+        with self.assertRaisesRegex(IntegrityError, 'values or q-hat differ'):
+            sa.check_b2_lines(b0, moved)
+
     def test_public_file_is_the_typed_allowlist_and_centers_stay_sealed(self):
         public_bytes, sealed_bytes = sa.seal(self.public25, self.sealed25)
         public = json.loads(public_bytes)
@@ -325,6 +343,7 @@ class GintEvalTests(unittest.TestCase):
                                              minimum_pa_starts=10)
         public, sealed, _ = osd.rehearsal_evaluate(stream, facts, baseline=(result0, rows0), gint=gint,
                                                    r3_status='NOT_RUN:R3', **common)
+        cls.a2_public, cls.a2_sealed = public, sealed
         cls.results = a2_results(public, sealed)
         cls.public6, cls.sealed6, _ = sa.evaluate(stream, facts, mode=rb.MODE_S6, gint={'G-INT-A2': 'PASS'}, **common)
         cls.reference = {'path': 'results/EXP-OPE-RES-01.json', 'sha256': 'a' * 64}
@@ -367,6 +386,27 @@ class GintEvalTests(unittest.TestCase):
         self.assertEqual(mutated(width, lambda v: v * (1 + 1e-6))['result'], 'FAIL')
         with self.assertRaises(IntegrityError):
             sa.require_gint_pass(bad, 'G-INT-EVAL')
+
+    def test_gint_a2_and_gint_r3_records_hold_no_value(self):
+        """NOTE-4: gint_a2.json (the original A2 evaluator against the A2 record) and gint_r3.json carry pass / fail,
+        the tolerance, max |delta| and key names only - no center, b_hat or shift."""
+        import run_ope_a2b as rr
+        from pitchmdp import ope_denominator_a2b as dn
+        record = rr.gint_a2_record(self.a2_public, self.a2_sealed, self.results, self.reference)
+        self.assertEqual((record['result'], record['max_abs_delta']), ('PASS', 0.0))
+        self.assertTrue(rb.validate_key_record(record, 'gint_a2'))
+        self.assertEqual(sorted(v for _, v in rb.leaves(record) if isinstance(v, float)), [0.0, 1e-12])
+        self.assertGreater(len(record['compared_keys']), 500)
+        weights = {k: {'value': 1.0} for k in dn.GINT_R3_KEYS}
+        r3 = dn.gint_r3(weights, weights)
+        self.assertTrue(rb.validate_key_record(r3, 'gint_r3'))
+        self.assertEqual([v for _, v in rb.leaves(r3) if isinstance(v, float)], [1e-9])
+        for kind, doc in (('gint_a2', record), ('gint_r3', r3)):
+            for leak in ('center', 'b_hat', 'shift_center', 'mean_p'):
+                with self.subTest(kind=kind, leak=leak), self.assertRaisesRegex(IntegrityError, 'keys outside its type'):
+                    rb.validate_key_record({**doc, leak: 1e-4}, kind)
+        with self.assertRaises(IntegrityError):
+            rb.validate_key_record({**record, 'compared_keys': [1e-4]}, 'gint_a2')
 
     def test_the_record_takes_the_12_row_s6_output_only(self):
         public = copy.deepcopy(self.public6)

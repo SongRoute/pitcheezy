@@ -711,6 +711,7 @@ def body_s3_r3(run):
                                   mei=settings['mei'], draws=settings['bootstrap_draws'], seed=settings['bootstrap_seed'],
                                   ess_min=settings['E5_thresholds'])
     gint_r3 = dn.gint_r3(s6_weights, run.env.a3_s6_weights(run.config))
+    rb.validate_key_record(gint_r3, 'gint_r3')  # key lists and pass / fail only (NOTE-4)
     roa.dump(run.out / 'gint_r3.json', gint_r3)
     _require(gint_r3['result'] == 'PASS', f'G-INT-R3 failed (R3-only stage): {gint_r3["mismatched_keys"]}')
     run.check()
@@ -769,6 +770,7 @@ def body_s3(run):
         data.decisions, data.facts, data.last_rows, raw_join=lambda: raw(data.window), game_values=data.game_values,
         s0=a2_s0, references=references, ess_gate=data.ess_gate, r3_status='NOT_RUN:R3', checkpoint=run.check)
     gint_a2 = gint_a2_record(public_a2, sealed_a2, results, reference)
+    rb.validate_key_record(gint_a2, 'gint_a2')  # key lists, max |delta| and pass / fail only (NOTE-4)
     roa.dump(run.out / 'gint_a2.json', {k: v for k, v in gint_a2.items()})
     sa.require_gint_pass(gint_a2, 'G-INT-A2')
     del public_a2, sealed_a2

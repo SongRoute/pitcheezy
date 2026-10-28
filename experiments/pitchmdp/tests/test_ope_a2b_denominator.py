@@ -186,10 +186,6 @@ class IsolatedLightGBMTests(unittest.TestCase):
         self.assertNotIn('failed', done.stdout)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class FeatureTableTests(unittest.TestCase):
     def test_the_rebuilt_dev_table_equals_the_a3_construction(self):
         """The A2b reconstruction (A3 split labels from the dates, chosen games only) gives the A3 runner's DEV
@@ -212,3 +208,22 @@ class FeatureTableTests(unittest.TestCase):
         with self.assertRaisesRegex(IntegrityError, 'no DEV rows'):
             dn.dev_feature_table(relabeled, raw_keys(frame), games=[1], archetypes=world['ctx'].archetypes,
                                  b0=world['b0'], hands=world['hands'])
+        # MINOR-5 (guard :128): a 2026 row that reached a used split (here a split rule leaking it into DEV) stops
+        from unittest import mock
+        from pitchmdp import behavior_data as bd
+        late = frame.loc[frame.split.eq('dev')].iloc[:3].assign(game_date='2026-04-01')
+        real = bd.split_of
+
+        def leaky(dates):
+            out = real(dates)
+            out[pd.to_datetime(pd.Series(dates)).dt.year.ge(2026).to_numpy()] = 'dev'
+            return out
+        with mock.patch.object(bd, 'split_of', leaky), \
+                self.assertRaisesRegex(IntegrityError, 'a 2026 row reached the B2 feature table'):
+            dn.dev_feature_table(pd.concat([relabeled, late.assign(split='other-labels')], ignore_index=True),
+                                 raw_keys(frame), games=games, archetypes=world['ctx'].archetypes, b0=world['b0'],
+                                 hands=world['hands'])
+
+
+if __name__ == '__main__':  # NOTE-11: after every test class
+    unittest.main()

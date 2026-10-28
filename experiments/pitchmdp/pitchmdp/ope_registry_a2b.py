@@ -504,6 +504,34 @@ def validate_integrity_record(document, kind):
     return True
 
 
+KEY_RECORD_KEYS = {  # gint_a2.json (A2b-S3) and gint_r3.json (A2b-S3:R3): NOTE-4
+    'gint_a2': ('check', 'result', 'max_abs_delta', 'tolerance', 'compared_keys', 'not_comparable_keys', 'mismatched_keys',
+                'reference'),
+    'gint_r3': ('check', 'result', 'rtol', 'compared_keys', 'mismatched_keys'),
+}
+KEY_RECORD_CHECK = {'gint_a2': 'G-INT-A2', 'gint_r3': 'G-INT-R3'}
+
+
+def validate_key_record(document, kind):
+    """gint_a2.json / gint_r3.json (NOTE-4): pass / fail, the maximum |delta| (absolute 1e-12 form) or the relative
+    tolerance, the reference and key-name lists only - never a center, b_hat, shift or other value."""
+    _require(kind in KEY_RECORD_KEYS, f'unknown key record {kind!r}')
+    _require(isinstance(document, dict) and set(document) == set(KEY_RECORD_KEYS[kind]), f'{kind}: keys outside its type')
+    _require(document['check'] == KEY_RECORD_CHECK[kind] and document['result'] in ('PASS', 'FAIL'), f'{kind}: check / result')
+    lists = ('compared_keys', 'mismatched_keys') + (('not_comparable_keys',) if kind == 'gint_a2' else ())
+    _require(all(isinstance(document[k], list) and all(isinstance(v, str) for v in document[k]) for k in lists),
+             f'{kind}: key lists must be lists of key names')
+    if kind == 'gint_a2':
+        m = document['max_abs_delta']
+        _require(isinstance(m, float) and math.isfinite(m) and m >= 0 and document['tolerance'] == _TOLERANCE,
+                 'gint_a2: max |delta| and the registered absolute 1e-12 tolerance')
+        _require(isinstance(document['reference'], dict) and set(document['reference']) <= {'path', 'sha256', 'keys'}
+                 and all(isinstance(v, (str, list)) for v in document['reference'].values()), 'gint_a2: reference')
+    else:
+        _require(isinstance(document['rtol'], float) and document['rtol'] == 1e-9, 'gint_r3: the relative 1e-9 tolerance')
+    return True
+
+
 RUN_PUBLIC_KEYS = ('experiment', 'stage', 'cell', 'k', 'wall_seconds', 'peak_rss_bytes', 'integrity', 'sealed_sha256')
 
 

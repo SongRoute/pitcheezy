@@ -113,6 +113,8 @@ class DecisionTests(unittest.TestCase):
         public = public_doc({'R1_bxR2_1xB0': GOOD})
         self.assertEqual(self.decide(public, integrity_failures=['A2b-S3'])['label'], 'FAILED_INTEGRITY')
         self.assertEqual(self.decide(public_doc(baseline=(None, None)))['label'], 'NOT_EVALUABLE')
+        both = self.decide(public_doc(baseline=(None, None)), integrity_failures=['A2b-S3'])
+        self.assertEqual(both['label'], 'FAILED_INTEGRITY')  # MINOR-5: label 1 precedes label 2
         self.assertEqual(self.decide(public, s2=self.full_s2())['label'], 'ADOPT_FOR_2027_PROTOCOL:R1_bxR2_1xB0')
         bias = self.decide(public, s2=self.full_s2(outcome='INCONCLUSIVE'))
         self.assertEqual(bias['label'], 'BIAS_NOT_CERTIFIED:R1_bxR2_1xB0')

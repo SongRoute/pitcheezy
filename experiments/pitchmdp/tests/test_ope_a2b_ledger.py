@@ -204,6 +204,24 @@ class LedgerStageTests(unittest.TestCase):
         with self.assertRaisesRegex(IntegrityError, 'a PA end reached'):
             lg.reward_free_facts({'1:1': {'game': 1, 'reward': 0.5}})
 
+    def test_the_reward_free_submission_binds_no_pa_end(self):
+        """MINOR-5 (lg.submit :192): the submission runs with outcome=None and refuses facts carrying a PA end."""
+        from types import SimpleNamespace
+        calls = {}
+
+        def stub(facts):
+            def submit_pas(runtime, store, blocks, deadline, *, no_pitch, outcome):
+                calls['outcome'] = outcome
+                return facts
+            return SimpleNamespace(submit_pas=submit_pas, seal_counts=lambda f, runtime, expected: {'pas': len(f)})
+        clean = {'1:1': {'game': 1, 'in_population': True, 'positions': [0, 1]}}
+        self.assertEqual(lg.submit(stub(clean), None, None, [], None, no_pitch=frozenset(), expected_pas=1)[1], {'pas': 1})
+        self.assertIsNone(calls['outcome'])
+        for key in ('reward', 'reason', 'kind', 'end_kind'):
+            with self.subTest(key), self.assertRaisesRegex(IntegrityError, 'bound a PA end'):
+                lg.submit(stub({'1:1': {**clean['1:1'], key: 0.5}}), None, None, [], None, no_pitch=frozenset(),
+                          expected_pas=1)
+
     def test_appledouble_sidecars_are_skipped(self):
         """G-CODE MAJOR-2: macOS writes ``._*`` AppleDouble sidecars next to every file on an exFAT output root (T7);
         the last guard of A2b-L must skip them (they are binary, not JSON), while an ordinary ``._`` file and the
@@ -369,10 +387,6 @@ class DriverEquivalenceTests(unittest.TestCase):
                 lg.require_runtime_pins(bad, w.rpv, w.policy, self.pre)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class TrainGuardTests(unittest.TestCase):
     def test_the_reused_train_guard_refuses_2026_and_non_train_rows(self):
         from pitchmdp import ope_surrogate as osg
@@ -380,3 +394,7 @@ class TrainGuardTests(unittest.TestCase):
         for dates in (['2026-04-01'], ['2025-05-01'], ['2023-05-14']):
             with self.subTest(dates), self.assertRaises(IntegrityError):
                 osg.guard_train(pd.Series(dates))
+
+
+if __name__ == '__main__':  # NOTE-11: after every test class
+    unittest.main()

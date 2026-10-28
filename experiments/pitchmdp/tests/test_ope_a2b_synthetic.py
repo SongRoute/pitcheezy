@@ -131,6 +131,29 @@ class S2PrimeDriverTests(unittest.TestCase):
         with self.assertRaises(IntegrityError):
             sx.scheme_seeds('A2b', 71)
 
+    def test_the_s2_prime_budget_split_is_required(self):
+        """MINOR-5 (guard :67): logs per start = repetitions and truth rollouts = 2 x repetitions."""
+        from types import SimpleNamespace
+        components = object()
+        runtime = SimpleNamespace(components=components, improvement=object())
+        for logs, truth in ((5, 12), (6, 10), (6, 13), (7, 14)):
+            with self.subTest(logs=logs, truth=truth), \
+                    self.assertRaisesRegex(IntegrityError, 'repetitions split the S5 budget'):
+                sx.run_s2_prime(runtime, components, [], k=11, scheme='A2b', cell='2*kappa_p', law=None, layers=None,
+                                logs_per_start=logs, truth_rollouts=truth)
+
+    def test_a_gamma_a_violation_at_zeta_zero_is_an_integrity_failure(self):
+        """MINOR-5 (guard :140-142): at zeta = 0 every gamma_a is exactly 0; one off by 1e-9 raises."""
+        runtime, components, starts, layers, law, budget = self.fixture('gamma-violation')
+        real = sx.osx._gamma
+
+        def off(*args, **kwargs):
+            g_a, g_b = real(*args, **kwargs)
+            return g_a + 1e-9, g_b
+        with mock.patch.object(sx.osx, '_gamma', off), self.assertRaisesRegex(IntegrityError, 'invariant violated'):
+            sx.run_s2_prime(runtime, components, starts, k=11, scheme='A2b', cell='2*kappa_p', law=law, layers=layers,
+                            cap=4, budget=budget)
+
     def test_gint_s2eq_record(self):
         runs = {}
         for k in (4, 9, 10):
@@ -237,6 +260,20 @@ class PoolingTests(unittest.TestCase):
         self.assertEqual(ok['n_prime'], 55)
         descriptive = sx.pool_cell('descriptive_kappa_prime', self.runs('descriptive_kappa_prime'))
         self.assertFalse(descriptive['decision_input'])
+
+    def test_a_run_is_valid_only_with_finite_values_and_its_invariant(self):
+        """MINOR-5 (run_record :200-204): an invariant that did not PASS, or a nonfinite b_hat / SE, makes the run
+        invalid (its cell INVALID at pooling)."""
+        result = {'run': {'scheme': 'A2b', 'cell': '2*kappa_p', 'k': 11, 'path': rb.S2P_PATH},
+                  'world_seed': rb.world_seed(11), 'kept_starts': 3,
+                  's2': {'R1_a': {'b_hat': 0.0, 'se': 0.0}, 'R1_b': {'b_hat': 1e-5, 'se': 2e-5}},
+                  'invariant': {'max_abs_gamma_a': 0.0, 'outcome': 'PASS'}, 'pairs': {p: {'valid': True} for p in reg.PAIRS}}
+        self.assertTrue(sx.run_record(result)['valid'])
+        self.assertTrue(sx.run_record({**result, 'invariant': None})['valid'])  # a zeta run has no invariant
+        self.assertFalse(sx.run_record({**result, 'invariant': {'max_abs_gamma_a': 1e-9, 'outcome': 'FAIL'}})['valid'])
+        nan = copy.deepcopy(result)
+        nan['s2']['R1_b']['se'] = math.nan
+        self.assertFalse(sx.run_record(nan)['valid'])
 
     def test_only_fresh_a2b_runs_are_sealed(self):
         result = {'run': {'scheme': 'A2', 'cell': '2*kappa_p', 'k': 4, 'path': rb.S2P_PATH}}
