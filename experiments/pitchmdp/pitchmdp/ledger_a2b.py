@@ -30,6 +30,7 @@ import pandas as pd
 
 from . import ope_registry_a2b as rb
 from . import policy_estimator as est
+from .matrix_policy_artifacts import is_appledouble
 from .policy_artifacts import IntegrityError, _require
 
 N_GAMES = 150  # S6 and the new DEV sample (decision 1 option 2)
@@ -270,9 +271,11 @@ def e0_count(facts):
 
 def check_no_reward_outputs(directory):
     """Every file the ledger stage wrote is neither a DR / center / pa_values file nor a JSON carrying a reward,
-    delta or center key (deterministic integrity)."""
+    delta or center key (deterministic integrity). AppleDouble sidecars (``._*`` with the AppleDouble magic, written
+    by macOS on an exFAT output root such as T7) are metadata, never read as JSON (G-CODE MAJOR-2; the A2 rule,
+    ``matrix_policy_artifacts.is_appledouble`` as ``run_ope_a2`` uses it)."""
     directory = Path(directory)
-    for path in sorted(p for p in directory.rglob('*') if p.is_file()):
+    for path in sorted(p for p in directory.rglob('*') if p.is_file() and not is_appledouble(p)):
         _require(path.name not in FORBIDDEN_OUTPUTS, f'the ledger stage wrote a forbidden file: {path.name}')
         if path.suffix == '.json':
             def walk(node):

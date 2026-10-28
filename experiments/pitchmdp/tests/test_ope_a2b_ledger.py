@@ -194,6 +194,26 @@ class LedgerStageTests(unittest.TestCase):
         with self.assertRaisesRegex(IntegrityError, 'a PA end reached'):
             lg.reward_free_facts({'1:1': {'game': 1, 'reward': 0.5}})
 
+    def test_appledouble_sidecars_are_skipped(self):
+        """G-CODE MAJOR-2: macOS writes ``._*`` AppleDouble sidecars next to every file on an exFAT output root (T7);
+        the last guard of A2b-L must skip them (they are binary, not JSON), while an ordinary ``._`` file and the
+        forbidden names stay checked."""
+        from pitchmdp.matrix_policy_artifacts import APPLEDOUBLE_MAGIC
+        root = Path(tempfile.mkdtemp(prefix='a2b-l-ad-')).resolve()
+        self.addCleanup(shutil.rmtree, root, True)
+        sidecar = APPLEDOUBLE_MAGIC + bytes.fromhex('00020000') + b'Mac OS X        ' + bytes([0x80, 0xff, 0x00]) * 40
+        for name in ('selection.json', 'facts.reward_free.json', 'ledger_record.json'):
+            (root / name).write_text(json.dumps({'pas': 3, 'rewards_written': False}))
+            (root / f'._{name}').write_bytes(sidecar)
+        (root / 'sub').mkdir()
+        (root / 'sub' / '._ledger-dev-0.jsonl').write_bytes(sidecar)
+        with self.assertRaises(UnicodeDecodeError):  # what the unguarded JSON read did
+            (root / '._selection.json').read_text()
+        self.assertTrue(lg.check_no_reward_outputs(root))
+        (root / '._notes.json').write_text(json.dumps({'center': 1e-4}))  # no AppleDouble magic: an artifact
+        with self.assertRaisesRegex(IntegrityError, 'reward / center key'):
+            lg.check_no_reward_outputs(root)
+
 
 if __name__ == '__main__':
     unittest.main()
