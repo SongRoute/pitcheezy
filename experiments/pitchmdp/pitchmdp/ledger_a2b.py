@@ -373,8 +373,9 @@ def driver_equivalence(rpv, policy, inputs, *, pre, s6_header, s6_rows, s6_games
     replay = rpv.game_blocks(frame, [first, last], 'dev')
     runtime, _, _ = candidate(rpv, policy, inputs, replay, out, pre=pre, ledger_name=EQUIVALENCE_LEDGERS['s6'],
                               style=style)
-    record = {'check': 'driver_equivalence', 'style_source': source, 'runtime_sha256_reproduced': runtime.sha256 == header_sha,
-              's6_runtime_sha256': header_sha, 'rewards_read': False}
+    record = {'check': 'driver_equivalence', 'style_source': source,
+              'runtime_sha256_reproduced': runtime.sha256 == header_sha, 's6_runtime_sha256': header_sha,
+              'rewards_read': False}
     if runtime.sha256 == header_sha:
         submit(rpv, runtime, store, replay, deadline, no_pitch=no_pitch,
                expected_pas=rpv.census_pas(pre['census']['dev'], [first, last]))

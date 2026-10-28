@@ -267,7 +267,8 @@ class PoolingTests(unittest.TestCase):
         result = {'run': {'scheme': 'A2b', 'cell': '2*kappa_p', 'k': 11, 'path': rb.S2P_PATH},
                   'world_seed': rb.world_seed(11), 'kept_starts': 3,
                   's2': {'R1_a': {'b_hat': 0.0, 'se': 0.0}, 'R1_b': {'b_hat': 1e-5, 'se': 2e-5}},
-                  'invariant': {'max_abs_gamma_a': 0.0, 'outcome': 'PASS'}, 'pairs': {p: {'valid': True} for p in reg.PAIRS}}
+                  'invariant': {'max_abs_gamma_a': 0.0, 'outcome': 'PASS'},
+                  'pairs': {p: {'valid': True} for p in reg.PAIRS}}
         self.assertTrue(sx.run_record(result)['valid'])
         self.assertTrue(sx.run_record({**result, 'invariant': None})['valid'])  # a zeta run has no invariant
         self.assertFalse(sx.run_record({**result, 'invariant': {'max_abs_gamma_a': 1e-9, 'outcome': 'FAIL'}})['valid'])

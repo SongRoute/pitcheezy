@@ -380,7 +380,8 @@ class DriverEquivalenceTests(unittest.TestCase):
             bad['runtime_setting'][key] = value
             with self.subTest(key=key, value=value), self.assertRaisesRegex(IntegrityError, 'runtime_setting'):
                 lg.require_runtime_pins(bad, w.rpv, w.policy, self.pre)
-        for key, value in (('sha256', 'f' * 64), ('path', str(w.root / 'style_dev.json')), ('as_of_exclusive', '2025-06-01')):
+        for key, value in (('sha256', 'f' * 64), ('path', str(w.root / 'style_dev.json')),
+                           ('as_of_exclusive', '2025-06-01')):
             bad = copy.deepcopy(pins)
             bad['dev_style_snapshot'][key] = value
             with self.subTest(key=key), self.assertRaisesRegex(IntegrityError, 'dev_style_snapshot'):

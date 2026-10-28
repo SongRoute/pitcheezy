@@ -2,8 +2,8 @@
 bit-identical to the EXP-OPE-RES-01 ``rehearsal_evaluate`` on a synthetic ledger at the same seeds; the S6 mode
 computes and records only the 12 A2 pair rows and refuses the 13 others; the S6 mode equals the 12-row part of the
 25-row mode; the lambda-fixed row never reaches the public file (selected lambda 100 or not) and its public-form items
-are sealed until A2b-UB (G-CODE MAJOR-1); lambda = inf identity; the B2 rows (identity denominator = B0 rows, invalid denominator = invalid rows,
-classification checked); the strict public file; the G-INT-EVAL integrity record (absolute 1e-12, counts and
+are sealed until A2b-UB (G-CODE MAJOR-1); lambda = inf identity; the B2 rows (identity denominator = B0 rows,
+invalid denominator = invalid rows, classification checked); the strict public file; the G-INT-EVAL integrity record (absolute 1e-12, counts and
 lambda / M by equality). No real data, ledger or model is read.
 """
 import copy
@@ -174,7 +174,8 @@ class EvaluatorTests(unittest.TestCase):
                     self.assertEqual(set(section), set(rb.PUBLIC_ROWS))
                 self.assertEqual(shown['counts'], {'rows': 24})
                 fixed = held[value] = sealed['lambda_fixed_row_public']
-                self.assertEqual((fixed['row'], fixed['lambda'], fixed['decision_input']), (rb.LAMBDA_FIXED_ROW, 100.0, False))
+                self.assertEqual((fixed['row'], fixed['lambda'], fixed['decision_input']),
+                                 (rb.LAMBDA_FIXED_ROW, 100.0, False))
                 self.assertEqual(set(fixed), {'row', 'lambda', 'pairs', 'S5', 'R5', 'equals_R1_bxR2_1xB0', 'decision_input',
                                               'disclosure'})
                 self.assertIn('lambda_fixed_row_public', sealed_bytes.decode())

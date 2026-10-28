@@ -516,8 +516,10 @@ def validate_key_record(document, kind):
     """gint_a2.json / gint_r3.json (NOTE-4): pass / fail, the maximum |delta| (absolute 1e-12 form) or the relative
     tolerance, the reference and key-name lists only - never a center, b_hat, shift or other value."""
     _require(kind in KEY_RECORD_KEYS, f'unknown key record {kind!r}')
-    _require(isinstance(document, dict) and set(document) == set(KEY_RECORD_KEYS[kind]), f'{kind}: keys outside its type')
-    _require(document['check'] == KEY_RECORD_CHECK[kind] and document['result'] in ('PASS', 'FAIL'), f'{kind}: check / result')
+    _require(isinstance(document, dict) and set(document) == set(KEY_RECORD_KEYS[kind]),
+             f'{kind}: keys outside its type')
+    _require(document['check'] == KEY_RECORD_CHECK[kind] and document['result'] in ('PASS', 'FAIL'),
+             f'{kind}: check / result')
     lists = ('compared_keys', 'mismatched_keys') + (('not_comparable_keys',) if kind == 'gint_a2' else ())
     _require(all(isinstance(document[k], list) and all(isinstance(v, str) for v in document[k]) for k in lists),
              f'{kind}: key lists must be lists of key names')
@@ -625,7 +627,7 @@ ADDED_PIN_KEYS = (  # implementation needs (reported for G-REG; the draft has no
 )
 PIN_KEYS = (*DRAFT_PIN_KEYS, *ADDED_PIN_KEYS)
 COMPARED_AT_RUN = {  # G-CODE MINOR-3: pins compared with the value the code actually uses (beyond their form)
-    'runtime_setting': 'A2b-L start: = the setting candidate() assembles the runtime with (ledger_a2b.require_runtime_pins)',
+    'runtime_setting': 'A2b-L start: = the setting candidate() assembles the runtime with (require_runtime_pins)',
     'dev_style_snapshot': 'A2b-L start: = the registered style_dev input (path, file sha256) and the DEV as-of',
     'b2_inference_environment': 'A2b-S3:R3: pyproject_sha256 = sha256 of pyproject.toml; lightgbm = the installed version',
 }

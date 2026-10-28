@@ -207,8 +207,8 @@ class FailClosedTests(unittest.TestCase):
             def ledger_world(self, config, local, base, checkpoint):
                 calls.append('data')
                 frame = selection_frame()
-                return rr.LedgerWorld(rpv, {}, {'frame': frame}, rpv.select_games(frame, 'dev', 6, rb.S6_SELECTION_SALT_RECOMPUTED),
-                                      frozenset(), {})
+                s6 = rpv.select_games(frame, 'dev', 6, rb.S6_SELECTION_SALT_RECOMPUTED)
+                return rr.LedgerWorld(rpv, {}, {'frame': frame}, s6, frozenset(), {})
         env = LockEnv(ws)
         buffer = io.StringIO()
         with mock.patch.object(rr.lg, 'N_GAMES', 6), contextlib.redirect_stdout(buffer):
@@ -806,7 +806,8 @@ class FullChainTests(unittest.TestCase):
                                                              'month_quota_table')},
                 'runtime_setting': lg.runtime_setting_used(policy, data.pre),
                 'dev_style_snapshot': {'path': str(style_path), 'sha256': style_sha, 'as_of_exclusive': '2025-07-01'},
-                'b2_inference_environment': {'lightgbm': '4.6.0', 'pyproject_sha256': rb.file_sha256(rr.REPO / 'pyproject.toml')},
+                'b2_inference_environment': {'lightgbm': '4.6.0',
+                                             'pyproject_sha256': rb.file_sha256(rr.REPO / 'pyproject.toml')},
                 'smoke_tab_replications_per_cell': 1}
         candidate = data.s6_pins['candidate_sha256']  # the synthetic candidate identity replaces c13cc989...
         expectations = tuple((p, candidate if p == '$.identities.candidate_policy_sha256' else v)

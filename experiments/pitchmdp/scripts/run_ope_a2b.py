@@ -18,9 +18,10 @@ decide require the gate record COMMITTED at HEAD byte for byte (G-GATE) - except
 (SM, S0, L, S3, G) that exhausted its attempts in a deterministic integrity failure is recorded FAILED_INTEGRITY by
 decide without any gate record (the A2 rule; A2b-S3:R3 voids the B2 rows only); s2a runs only after the cell's
 G-INT-S2EQ record passed, stops at the cost gate (first run x N' > 2 x the cell projection: decision needed, N'
-unchanged) and seals each run; s2a-pool pools only after every registered run of the cell is sealed (operator-blind); unblind opens the
-sealed file only after the committed decision record. Every data access goes through an ``Environment`` (the real
-one by default; tests subclass it with synthetic inputs). The A2b config is never written by this runner.
+unchanged) and seals each run; s2a-pool pools only after every registered run of the cell is sealed (operator-blind);
+unblind opens the sealed file only after the committed decision record. Every data access goes through an
+``Environment`` (the real one by default; tests subclass it with synthetic inputs). The A2b config is never written by
+this runner.
 """
 from __future__ import annotations
 

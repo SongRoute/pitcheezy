@@ -219,7 +219,8 @@ def a2b_game_frame(n_dev_games=4):
     for g in range(8):  # TRAIN
         date = (pd.Timestamp('2024-06-01') + pd.Timedelta(days=g)).strftime('%Y-%m-%d')
         for ab in range(1, 7):
-            rows += tpv.pa_rows(100 + g, ab, date, 'train', ('short', 'long')[ab % 2], event=('single', 'field_out')[ab % 2])
+            rows += tpv.pa_rows(100 + g, ab, date, 'train', ('short', 'long')[ab % 2],
+                                event=('single', 'field_out')[ab % 2])
     for ab in range(1, 4):  # one May game (profile starts)
         rows += tpv.pa_rows(150, ab, '2025-05-20', 'temperature', 'short')
     for g in range(2):  # two June games (tau selection)
