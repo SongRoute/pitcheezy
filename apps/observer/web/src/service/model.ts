@@ -32,7 +32,16 @@ export type PitchRow = { /** B2, optional: the sentence for a past key-moment pi
   /** live store receipt (display-state contract 2026-10-11). `unconfirmed` = the record is not admitted yet: `actual` is blank and
    *  must never be presented as an observed pitch. `corrected` = the record changed after it was first received. Absent = store off / archive. */
   receipt?: Receipt | null };
-export type Receipt = { status: 'received' | 'unconfirmed'; corrected: boolean };
+export type Receipt = { status: 'received' | 'unconfirmed'; corrected: boolean;
+  /** the server's reason code (`held_last_accepted` = the feed re-sent this pitch, the re-sent body was refused and the last accepted
+   *  record is shown); null for a settled record. Never shown as words. */
+  reason?: string | null };
+/** `held_last_accepted`: the publisher shows the last ACCEPTED body of a pitch whose newest feed body it refused (display-state contract,
+ *  Song 2026-10-12). Such a pitch's `corrected` mark comes from a feed that is still re-sending it; the 정정됨 tag on a card is kept
+ *  for a settled record (reason null) and the held ones are counted in one line of the record sheet instead (DEMO-WS-GAPS-1028). */
+export const HELD_REASON = 'held_last_accepted';
+export const heldReceipt = (r: Receipt | null | undefined) => r?.status === 'received' && r.reason === HELD_REASON;
+export const settledCorrection = (r: Receipt | null | undefined) => r?.status === 'received' && r.corrected === true && !r.reason;
 /** ONE explicit state of the pending pitch slot of a live game (`display_state`, schema pitcheezy-display-state-v1). Copy (`label`,
  *  `message`) is server-authored; reason codes and diagnostics are kept out of this shape on purpose (never shown to fans). */
 export const DISPLAY_STATES = ['recommended', 'unconfirmed', 'unsupported', 'feed_delayed', 'disconnected', 'ledger_unavailable',

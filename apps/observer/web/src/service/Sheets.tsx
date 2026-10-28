@@ -84,10 +84,17 @@ const LEGACY_ABSENT = '이 투구의 저장된 추천이 없습니다.';
 export const absentLine = (rec: Rec, fallback = ABSENT_PAST) => rec.reason && rec.reason.trim() !== LEGACY_ABSENT ? rec.reason : fallback;
 export const provenanceText = (rec: Rec) => PROVENANCE[rec.provenance];
 
-export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false, pair = null, absentText = ABSENT_PAST, actualFolded = null, actualExtra = null }:
+/** Tracking numbers as the sheet prints them: one decimal for lengths and speeds measured in tenths, whole numbers for spin, angle and
+ *  distance (the feed sends 6.64219001212026 ft; the fan reads 6.6 ft). A missing value is '—', never 0. */
+export const fixed1 = (v: number | null | undefined) => v == null ? null : (Math.round(v * 10) / 10).toFixed(1);
+export const whole = (v: number | null | undefined) => v == null ? null : String(Math.round(v));
+
+export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paResult, notes, speed, extra, bounds, recNote = null, actualPending = false, actualCorrected = false, actualHeld = false, pair = null, absentText = ABSENT_PAST, actualFolded = null, actualExtra = null }:
   { onClose: () => void; rec: Rec | null; recTitle: string; actual: Actual | null; actualTitle: string; paResult: string | null; notes: string[]; speed: (mph: number | null) => string; extra?: ReactNode; bounds?: Bounds;
     /** live display state: the server's sentence (and any change note) for the pending pitch */
     recNote?: string | null; actualPending?: boolean; actualCorrected?: boolean;
+    /** the publisher refused the feed's newest body of this pitch and shows the last accepted one (`held_last_accepted`) */
+    actualHeld?: boolean;
     /** viewer delay, device not synced yet: the thrown pitch is not described */
     actualFolded?: string | null;
     /** an optional quiet line that belongs to the thrown pitch (never shown while the pitch is folded or being confirmed) */
@@ -113,16 +120,17 @@ export function DetailSheet({ onClose, rec, recTitle, actual, actualTitle, paRes
       <h3>{actualTitle}</h3>
       {actualFolded ? <p className="sv-muted">{actualFolded}. 화면 위쪽의 ‘중계 맞추기’에서 내 중계에 맞추면 구종·위치·결과를 보여 드려요.</p>
       : actualPending ? <p className="sv-muted">이 공을 다시 확인하고 있어요. 확인되면 구종과 위치를 보여 드려요.</p> : <>
-      {actualCorrected && <p className="sv-muted">이 공의 기록은 처음 받은 뒤에 정정됐어요.</p>}
+      {actualHeld ? <p className="sv-muted">공식 피드가 이 공을 다시 보냈지만 받아들이지 않아, 마지막으로 받아들인 기록을 보여 드려요.{actualCorrected ? ' 받아들인 기록도 처음 받은 뒤에 바뀐 적이 있어요.' : ''}</p>
+        : actualCorrected && <p className="sv-muted">이 공의 기록은 처음 받은 뒤에 정정됐어요.</p>}
       {actual && bounds && <div className="sv-detail-zone"><Zone fullWindow bounds={bounds} candidates={rec?.candidates ?? []} actual={actual.x !== null && actual.z !== null ? {x:actual.x,z:actual.z} : null} actualLabel="" setupX={actual.setup_x} /></div>}
       {actual === null ? <p className="sv-muted">아직 던지지 않았어요.</p> : <dl className="sv-dl">
         <dt>구종</dt><dd>{actual.pitch_label}{actual.speed_mph !== null ? ` · ${speed(actual.speed_mph)}` : ''}</dd>
         <dt>원본 좌표</dt><dd>{actual.x !== null && actual.z !== null ? `가로 ${actual.x.toFixed(2)} ft · 높이 ${actual.z.toFixed(2)} ft (포수 기준)` : '위치 정보 없음'}</dd><dt>판정</dt><dd>{actual.result_label || '기록 없음'}</dd>
         <dt>위치</dt><dd>{actual.zone_label || '위치 정보 없음'}</dd>
-        <dt>회전수</dt><dd>{actual.tracking?.spin_rate_rpm == null ? '—' : `${actual.tracking.spin_rate_rpm} rpm`}</dd>
-        <dt>익스텐션</dt><dd>{actual.tracking?.extension_feet == null ? '—' : `${actual.tracking.extension_feet} ft`}</dd>
-        <dt>타구 속도</dt><dd>{actual.tracking?.exit_velocity_mph == null ? '—' : `${actual.tracking.exit_velocity_mph} mph`}</dd>
-        <dt>발사각 / 비거리</dt><dd>{actual.tracking?.launch_angle_deg == null ? '—' : `${actual.tracking.launch_angle_deg}°`} / {actual.tracking?.distance_feet == null ? '—' : `${actual.tracking.distance_feet} ft`}</dd>
+        <dt>회전수</dt><dd>{whole(actual.tracking?.spin_rate_rpm) === null ? '—' : `${whole(actual.tracking!.spin_rate_rpm)} rpm`}</dd>
+        <dt>익스텐션</dt><dd>{fixed1(actual.tracking?.extension_feet) === null ? '—' : `${fixed1(actual.tracking!.extension_feet)} ft`}</dd>
+        <dt>타구 속도</dt><dd>{fixed1(actual.tracking?.exit_velocity_mph) === null ? '—' : `${fixed1(actual.tracking!.exit_velocity_mph)} mph`}</dd>
+        <dt>발사각 / 비거리</dt><dd>{whole(actual.tracking?.launch_angle_deg) === null ? '—' : `${whole(actual.tracking!.launch_angle_deg)}°`} / {whole(actual.tracking?.distance_feet) === null ? '—' : `${whole(actual.tracking!.distance_feet)} ft`}</dd>
         {paResult && <><dt>타석 결과</dt><dd>{paResult}</dd></>}
         {actual.play_text && <><dt>원본 기록</dt><dd lang="en">{actual.play_text}</dd></>}
       </dl>}{actual !== null && actualExtra}</>}

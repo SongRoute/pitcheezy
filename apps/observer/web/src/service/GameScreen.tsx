@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, fetchPublishedManifest, isGamePublishedSoon, mergeDetail } from './api';
+import { FetchError, fetchDetail, fetchPublishHealth, fetchPublishedDetail, fetchPublishedGames, fetchPublishedManifest, isGamePublishedSoon, mergeDetail } from './api';
 import { PUBLISH_CONFIG, gameCheck, gameCheckLag, staleAfterMs, clockWindowMs, isPublishStale, lostAfterMs, publicListHref, publishLag, serverNow } from './publish';
 import type { PublishStamp, PublishHealth } from './publish';
 import type { Actual, Candidate, Detail, DisplayStateName, GameCard, Linescore, Pa, Person, PitchRow, PlayerInfo, PreviousPick, Rec, Situation } from './model';
-import { dateHeading, inningText, kstTime, pitchName, plainZone, policyShare, short } from './model';
+import { dateHeading, heldReceipt, inningText, kstTime, pitchName, plainZone, policyShare, settledCorrection, short } from './model';
 import { teamColor } from './teams';
 import Zone from './Zone';
 import { ABSENT_PAST, DetailSheet, InfoSheet, PaSheet, Sheet, absentLine, provenanceText } from './Sheets';
@@ -12,7 +12,7 @@ import SyncSheet, { FOLD_TEXT } from './SyncSheet';
 import { ExpectationLine, ReferenceSheet, ReferenceTeaser } from './Reference';
 import type { ViewerSetting } from './viewer';
 import { VIEWER_KEY, learnViewer, readViewer, reloadViewer, requestDelay, wantedDelay, writeViewer } from './viewer';
-import { RecordSheet, PitchMixSheet } from './LivePanels';
+import { RecordSheet, PitchMixSheet, pasAsOf } from './LivePanels';
 import './service.css';
 
 /** One game screen for live, demo and finished games (UI redesign 2026-10-05).
@@ -376,6 +376,18 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     return () => { ro.disconnect(); el.removeEventListener('scroll', measure); };
   }, [detail, sel]);
 
+  // public bundle: the game file's own card carries no series words (the publisher leaves `series_description` null there), while the
+  // date list's row for the same game does ("World Series · 4차전"). Read that row once; without it the header simply shows no series.
+  const [listCard, setListCard] = useState<GameCard | null>(null);
+  const seriesDate = detail?.game.kst_date ?? null, seriesKnown = Boolean(detail?.game.series_description);
+  useEffect(() => {
+    if (!__PZ_STATIC__ || seriesDate === null || seriesKnown) return;
+    const ctrl = new AbortController();
+    fetchPublishedGames(seriesDate, ctrl.signal).then(list => { if (!ctrl.signal.aborted) setListCard(list.find(g => g.game_pk === gamePk) ?? null); })
+      .catch(() => { /* no list for the date: the header stays without series words */ });
+    return () => ctrl.abort();
+  }, [seriesDate, seriesKnown, gamePk]);
+
   const byIndex = useMemo(() => new Map(detail?.pitches.map(p => [p.index, p]) ?? []), [detail?.pitches]);
   // The sync sheet sits beside the page (not inside it) so it stays open, with its own state, while a changed delay reloads the game.
   const closeSync = () => { if (!readViewer().asked) setSetting(writeViewer({ asked: true })); closeSheet(); };
@@ -549,14 +561,23 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
   const sheetPerson = playerRole === 'b' ? batterP : pitcherP;
   const sheetInfo = info(sheetPerson);
   const canShowWe = !maskPublished && !error && !stale && !publishChecking && !lateNow && phase === 'pre_pitch' && disp?.state === 'recommended' && disp.shown && detail.win_expectancy?.status === 'available';
-  const weText = canShowWe ? `${Math.round(detail.win_expectancy!.home_probability! * 100)}%` : '—';
+  // Public bundle only: the win-probability entry exists while the game is live or when the file carries the model's slot at all
+  // (`win_expectancy`); a published replay of a finished game without it shows no entry, and a slot the server marks unavailable reads
+  // 미측정 (no value was computed), never a number of our own. The API screen keeps its entry and its '—' exactly as before.
+  const weKnown = !__PZ_STATIC__ || live || detail.win_expectancy != null;
+  const weText = canShowWe ? `${Math.round(detail.win_expectancy!.home_probability! * 100)}%` : __PZ_STATIC__ && detail.win_expectancy?.status === 'unavailable' ? '미측정' : '—';
+  // series words: the game's own card first, else the date list's row (public bundle); none → nothing
+  const series = game.series_description ? game : listCard?.series_description ? listCard : null;
+  const seriesText = series ? `${series.series_description}${series.series_game_number ? ` · ${series.series_game_number}차전` : ''}` : '';
+  // sheets that list the game's record follow the pitch on screen: a past pitch shows the record up to that pitch, the latest shows all
+  const asOfIndex = latest ? null : pitch!.index;
 
   return <><div className={`sv-page sv-game${disp ? ' has-display' : ''}${sheet ? ' detail-open' : ''}`}>
     <header className="sv-top sv-head">
       <a className="sv-back" href={backHref()} aria-label="경기 목록으로">‹</a>
-      <h1 className="sv-head-main" aria-label={`${short(game.away_team)} ${awayScore ?? '–'} 대 ${homeScore ?? '–'} ${short(game.home_team)}. ${venue}${dateHeading(game.kst_date)} ${kstTime(game.start)} 시작`}>
+      <h1 className="sv-head-main" aria-label={`${seriesText ? `${seriesText}. ` : ''}${short(game.away_team)} ${awayScore ?? '–'} 대 ${homeScore ?? '–'} ${short(game.home_team)}. ${venue}${dateHeading(game.kst_date)} ${kstTime(game.start)} 시작`}>
         <span className="sv-head-score" aria-hidden="true"><span className="sv-tn">{short(game.away_team)}</span><strong style={{ color: scoreColor(game.away_team) }}>{awayScore ?? '–'}</strong><i>vs</i><strong style={{ color: scoreColor(game.home_team) }}>{homeScore ?? '–'}</strong><span className="sv-tn">{short(game.home_team)}</span></span>
-        <small aria-hidden="true">{game.series_description && <span>{game.series_description}{game.series_game_number ? ` · ${game.series_game_number}차전` : ''}</span>}{game.venue && <span>{game.venue}</span>}<span>{when} KST</span></small>
+        <small aria-hidden="true">{seriesText && <span className="sv-head-series">{seriesText}</span>}{game.venue && <span>{game.venue}</span>}<span>{when} KST</span></small>
       </h1>
       <button className={`sv-live ${liveDot ? 'on' : ''}`} onClick={live ? goLatest : undefined} disabled={!live}
         aria-label={`${isDemo ? '지난 경기 시연. ' : ''}${statusLabel}${live ? ', 최신 공으로 이동하고 자동 갱신 켜기' : ''}`}>
@@ -636,7 +657,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
         <p className="sv-muted">이 공을 다시 확인하고 있어요.</p>
       </> : actual ? <>
         <p className="sv-actual-caption"><i className="sv-key-actual" /><b>{actual.pitch_label}</b>{actual.zone_label && <span className="sv-actual-zone"> · {actual.zone_label}</span>}
-          {shownPitch?.receipt?.corrected && <span className="sv-tag" role="note" aria-label="기록이 정정된 공">정정됨</span>}</p>
+          {settledCorrection(shownPitch?.receipt) && <span className="sv-tag" role="note" aria-label="기록이 정정된 공">정정됨</span>}</p>
         <p className="sv-result">{actual.speed_mph !== null && <small className="sv-actual-speed"><b>{unit === 'kmh' ? Math.round(actual.speed_mph * 1.609344) : actual.speed_mph.toFixed(1)}</b>{unit === 'kmh' ? 'km/h' : 'mph'}</small>}{ending ?? actual.result_label}</p>
       </> : <p className="sv-muted">실제 투구 기록 없음</p>}</div>
       </div>}
@@ -644,7 +665,7 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       <div className="sv-recommend-heading"><h3 className="sv-section-label">이번 타석</h3>{paPitches.length > 3 && <button className="sv-link-btn" onClick={() => setAllPitches(!allPitches)}>{allPitches ? '최근 3구' : '전체 보기'}</button>}</div>
       <div className={`sv-strip-shell${edges.left ? ' fade-left' : ''}${edges.right ? ' fade-right' : ''}`}>
       <div className="sv-strip" ref={stripRef} role="group" aria-label="이 타석의 투구, 좌우로 스크롤">
-        {paPitches.map(p => { const on = selectedPitch?.key === p.key; const a = p.actual; const un = unconfirmed(p); const fixed = !un && p.receipt?.corrected === true;
+        {paPitches.map(p => { const on = selectedPitch?.key === p.key; const a = p.actual; const un = unconfirmed(p); const fixed = !un && settledCorrection(p.receipt);
           const sp = a?.speed_mph != null ? (unit === 'kmh' ? Math.round(a.speed_mph * 1.609344) : a.speed_mph.toFixed(1)) : '';
           if (fold) return <button key={p.index} className={`sv-card folded ${on ? 'on' : ''}`} aria-pressed={on} onClick={openSync} aria-haspopup="dialog" aria-label={`${p.pitch_number}구, ${FOLD_TEXT}`}>
             <Zone mini bounds={detail.zone_bounds} candidates={[]} actualLabel="" setupX={null} actual={null} />
@@ -672,17 +693,18 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
     </section>
 
     <section className="sv-game-context" aria-label="경기 기록">
-      <h2>경기 흐름</h2><button className="sv-panel-link" onClick={() => openSheet('win')}>홈팀 승리확률 <span>{weText} ›</span></button>
+      <h2>경기 흐름</h2>{weKnown && <button className="sv-panel-link" onClick={() => openSheet('win')}>홈팀 승리확률 <span>{weText} ›</span></button>}
       <button className="sv-panel-link" onClick={() => openSheet('box')}>이닝별 점수표 <span>›</span></button>
       <dl className="sv-score-compact"><dt>{short(game.away_team)}</dt><dd>{awayScore ?? '—'}</dd><dt>{short(game.home_team)}</dt><dd>{homeScore ?? '—'}</dd></dl>
       <button className="sv-panel-link" onClick={() => openSheet('history')}>기록 · 라인업 · 박스 <span>›</span></button>
-      {!maskPublished && <ol className="sv-recent-pas">{detail.pas.slice(-4).reverse().map(p => <li key={p.pa_key}><button onClick={() => { if (byIndex.has(p.first)) pick(p.first); else { setEmptyPa(p); openSheet('pa-empty'); } }}><b>{p.batter}</b><span>{fold ? FOLD_TEXT : p.result}</span></button></li>)}</ol>}
+      {/* the last four plate appearances up to the pitch on screen (the same cut as the record sheet): a past pitch never shows later play */}
+      {!maskPublished && <ol className="sv-recent-pas">{pasAsOf(detail, asOfIndex).slice(-4).reverse().map(p => <li key={p.pa_key}><button onClick={() => { if (byIndex.has(p.first)) pick(p.first); else { setEmptyPa(p); openSheet('pa-empty'); } }}><b>{p.batter}</b><span>{fold ? FOLD_TEXT : p.result}</span></button></li>)}</ol>}
       <button className="sv-panel-link" onClick={() => openSheet('mix')}>{pitcherP?.name ?? '투수'} · 오늘 구종 <span>›</span></button>
       <p className="sv-muted">{pitcherToday.text}</p>
     </section>
     </main>
     <details className="sv-previous"><summary>직전 타석 · 분석과 기록</summary><p className="sv-muted">성분별 책임 분해는 아직 연결되지 않았어요. 기록된 타석 결과를 확인할 수 있어요.</p><button className="sv-btn" onClick={() => openSheet('history')}>타석 기록 보기</button></details>
-    <button className="sv-mobile-we sv-panel-link" onClick={() => openSheet('win')}>홈팀 승리확률 · {weText} <span>›</span></button>
+    {weKnown && <button className="sv-mobile-we sv-panel-link" onClick={() => openSheet('win')}>홈팀 승리확률 · {weText} <span>›</span></button>}
     <nav className="sv-bottom-nav" aria-label="라이브 상세"><button onClick={() => { setSel({ kind: 'latest' }); openSheet('detail'); }}>추천</button><button onClick={() => openSheet(top ? 'player-away' : 'player-home')}>선수</button><button onClick={() => openSheet('mix')}>구종</button><button onClick={() => openSheet('history')}>기록</button></nav>
 
     {!maskPublished && sheet === 'pa' && <PaSheet pas={detail.pas} selected={paKey} onClose={closeSheet} onBox={() => setSheet('box')} foldText={fold ? FOLD_TEXT : null}
@@ -699,18 +721,18 @@ export default function GameScreen({ gamePk }: { gamePk: number }) {
       pair={pairText} absentText={absentText}
       actual={nextPhase ? null : actual} actualTitle={actualTitle} paResult={ending} actualFolded={fold && !nextPhase && actual !== null ? FOLD_TEXT : null}
       actualExtra={!nextPhase && !fold && shownPitch?.expectation && shownPitch.actual?.event ? <ExpectationLine e={shownPitch.expectation} /> : null} notes={detail.notes} speed={mph => speedText(mph, unit)}
-      recNote={stateSlot ? [eff!.message, note].filter(Boolean).join(' ') || null : pastUnconfirmed ? '이 공을 확인하는 동안에는 추천을 함께 보여 드리지 않아요.' : null} actualPending={!nextPhase && unconfirmed(shownPitch)} actualCorrected={!nextPhase && shownPitch?.receipt?.corrected === true}
+      recNote={stateSlot ? [eff!.message, note].filter(Boolean).join(' ') || null : pastUnconfirmed ? '이 공을 확인하는 동안에는 추천을 함께 보여 드리지 않아요.' : null} actualPending={!nextPhase && unconfirmed(shownPitch)} actualCorrected={!nextPhase && shownPitch?.receipt?.corrected === true} actualHeld={!nextPhase && heldReceipt(shownPitch?.receipt)}
       extra={<div className="sv-row"><button className="sv-btn" onClick={() => setSheet('info')}>기준과 한계 보기</button>
         <button className="sv-btn" onClick={() => { const u = unit === 'kmh' ? 'mph' : 'kmh'; setUnit(u); try { localStorage.setItem(UNIT_KEY, u); } catch { /* ignore */ } }}
           aria-label={`속도 단위 바꾸기, 지금 ${unit === 'kmh' ? 'km/h' : 'mph'}`}>속도 단위: {unit === 'kmh' ? 'km/h' : 'mph'}</button></div>} />}
     {!maskPublished && sheet === 'detail' && selectedPitch && <DetailSheet bounds={detail.zone_bounds} onClose={closeSheet}
       rec={selectedPitch.rec} recTitle="이 공을 던지기 전 기록" actual={selectedPitch.actual} actualTitle={`${inningText(selectedPitch.situation)} · ${selectedPitch.pitch_number}구 · ${selectedPitch.batter.name ?? '타자'}`}
       paResult={selectedPitch.actual?.event ? detail.pas.find(p => p.pa_key === selectedPitch.pa_key && p.complete)?.result ?? null : null} notes={[]} speed={mph => speedText(mph, unit)}
-      actualFolded={fold ? FOLD_TEXT : null} actualPending={unconfirmed(selectedPitch)} actualCorrected={selectedPitch.receipt?.corrected === true}
+      actualFolded={fold ? FOLD_TEXT : null} actualPending={unconfirmed(selectedPitch)} actualCorrected={selectedPitch.receipt?.corrected === true} actualHeld={heldReceipt(selectedPitch.receipt)}
       extra={<div className="sv-row">{pitches.filter(p => p.pa_key === selectedPitch.pa_key).map(p => <button className="sv-btn" key={p.key} aria-pressed={p.key === selectedPitch.key} onClick={() => pick(p.index)}>{p.pitch_number}구</button>)}</div>} />}
     {sheet === 'win' && <Sheet title="현재 상황의 승리확률 · 모델 추정" onClose={closeSheet}><h3>{short(game.home_team)} {canShowWe ? weText : '승리확률 정보 없음'}</h3><p className="sv-muted">타석 시작 상황으로 학습한 모델이며 볼·스트라이크 카운트는 반영하지 않아요.</p><p className="sv-muted">시계열·LI·WPA·경기 전 예상은 아직 연결되지 않았어요.</p></Sheet>}
-    {!maskPublished && sheet === 'history' && <RecordSheet detail={detail} fold={fold} onClose={closeSheet} onPick={pick} />}
-    {!maskPublished && sheet === 'mix' && <PitchMixSheet detail={detail} pitcherId={pitcherP?.id ?? null} fold={fold} onClose={closeSheet} />}
+    {!maskPublished && sheet === 'history' && <RecordSheet detail={detail} fold={fold} onClose={closeSheet} onPick={pick} asOfIndex={asOfIndex} />}
+    {!maskPublished && sheet === 'mix' && <PitchMixSheet detail={detail} pitcherId={pitcherP?.id ?? null} fold={fold} onClose={closeSheet} asOfIndex={asOfIndex} />}
     {(sheet === 'player-away' || sheet === 'player-home') && <Sheet title={sheetPerson?.name ?? '선수 정보'} onClose={closeSheet}>
       <div className="sv-row"><button className="sv-btn" onClick={() => setSheet(top ? 'player-away' : 'player-home')}>타자</button><button className="sv-btn" onClick={() => setSheet(top ? 'player-home' : 'player-away')}>투수</button></div>
       <dl className="sv-dl"><dt>팀</dt><dd>{short(playerSheetSide === 'away' ? game.away_team : game.home_team)} · {playerRole === 'b' ? '타자' : '투수'}</dd>

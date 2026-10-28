@@ -5,14 +5,15 @@
 //   npm run build:public && node tests/ui-preview.mjs                 # loopback, random port, committed fixture, fresh clock
 //   node tests/ui-preview.mjs --phone                                  # Tailscale address of this Mac, port 8780 (open on the phone)
 //   node tests/ui-preview.mjs --fixture <dir> --clock fixture          # <dir> holds v1/ (or is v1/ itself)
-//   node tests/ui-preview.mjs --ws                                     # World Series replay (fixtures/publish-ws: G1 849805 + G3 849804), fixture clock
+//   node tests/ui-preview.mjs --ws                                     # World Series replay (fixtures/publish-ws: G1 849805 + G3 849804 + G4 849803), fixture clock
 //   node tests/ui-preview.mjs --dev                                    # hot reload: also starts `vite --mode public` reading this server
 //
 // --fixture can be given more than once: the folders are layered (a game or games file comes from the first folder that has it) and
-// the three index files are joined when answered (dates.json `dates`, manifest.json `live_dates`, health.json `game_checks` and its
-// lists; every other field from the folder whose file was published last). One folder is served exactly as before.
-// --ws             the two World Series publish folders copied byte for byte from the live runs of 10/24 and 10/27 KST (see
-//                  fixtures/publish-ws/README.md); --clock defaults to fixture with it. Both games are final: no `next`, no live state.
+// the three index files are joined when answered (tests/publish-join.mjs: dates.json `dates`, manifest.json `live_dates`, health.json
+// `game_checks` and its lists; every other field from the folder whose file was published last). One folder is served exactly as
+// before. tests/publish-merge.mjs writes the same join into one new folder for a static host.
+// --ws             the three World Series publish folders copied byte for byte from the live runs of 10/24, 10/27 and 10/28 KST (see
+//                  fixtures/publish-ws/README.md); --clock defaults to fixture with it. All games are final: no `next`, no live state.
 //
 // --clock now      (default) real Date header; the publish stamps of each answer (publish.published_at/sequence, health/manifest
 //                  published_at/sequence, health game_checks checked_at/sequence_*) are moved to "now" and the sequence steps once per
@@ -29,11 +30,12 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { INDEX as INDEX_FILES, joinIndex } from './publish-join.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const web = path.join(here, '..');
 const USAGE = 'usage: node tests/ui-preview.mjs [--fixture <dir>]... [--ws] [--dist <dir>] [--clock now|fixture|raw] [--host <ip>] [--port <n>] [--phone] [--dev] [--dev-port <n>] [--exit-after <s>]';
-const WS = ['2026-10-24', '2026-10-27'].map((d) => path.join(here, 'fixtures', 'publish-ws', d));   // G1 849805, G3 849804
+const WS = ['2026-10-24', '2026-10-27', '2026-10-28'].map((d) => path.join(here, 'fixtures', 'publish-ws', d));   // G1 849805, G3 849804, G4 849803
 
 const args = { fixtures: [], ws: false, dist: process.env.PZ_WEB_DIST_PUBLIC ?? path.join(web, 'dist-public'),
   clock: null, host: null, port: null, phone: false, dev: false, devPort: null, exitAfter: null };
@@ -85,22 +87,9 @@ const intervalS = Number(manifest.publish_interval_s) > 0 ? Number(manifest.publ
 const names = (sub) => [...new Set(v1s.flatMap((d) => existsSync(path.join(d, sub)) ? readdirSync(path.join(d, sub)).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)) : []))];
 const games = names('game'), dates = names('games');
 
-// several folders: the index files are joined per answer (never on disk); every field not joined comes from the newest file
-const INDEX = ['/dates.json', '/manifest.json', '/health.json'];
-function joined(name) {
-  const all = v1s.map((d) => readJson(path.join(d, name))).filter((j) => j && typeof j === 'object' && !Array.isArray(j));
-  if (!all.length) return null;
-  const at = (j) => Date.parse(j.published_at ?? j.publish?.published_at ?? '') || 0;
-  const out = all.reduce((a, b) => (at(b) > at(a) ? b : a));      // fresh parses: changing it changes nothing on disk
-  const union = (k) => { const seen = new Map(); for (const j of all) if (Array.isArray(j[k])) for (const v of j[k]) seen.set(JSON.stringify(v), v); return [...seen.values()]; };
-  if (name === '/dates.json') out.dates = union('dates');
-  if (name === '/manifest.json') out.live_dates = union('live_dates');
-  if (name === '/health.json') {
-    out.game_checks = Object.assign({}, ...all.map((j) => j.game_checks ?? {}));
-    for (const k of ['unavailable_games', 'unavailable_dates', 'feed_failing_games']) out[k] = union(k);
-  }
-  return out;
-}
+// several folders: the index files are joined per answer (never on disk) by tests/publish-join.mjs, the rule publish-merge.mjs writes
+const INDEX = INDEX_FILES.map((f) => `/${f}`);
+const joined = (name) => joinIndex(name.slice(1), v1s.map((d) => readJson(path.join(d, name))));   // fresh parses: nothing on disk changes
 
 // ---- clock ----
 const started = Date.now();

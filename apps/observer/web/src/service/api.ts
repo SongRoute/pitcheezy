@@ -245,7 +245,7 @@ function actual(raw: Raw | null | undefined): Actual | null {
  *  row the server already blanked to '확인 중', which stays unconfirmed so it is never drawn as an observed pitch. */
 function receipt(raw: Raw): Receipt | undefined {
   const r = raw.receipt;
-  if (r && typeof r === 'object') return { status: r.status === 'received' ? 'received' : 'unconfirmed', corrected: r.corrected === true };
+  if (r && typeof r === 'object') return { status: r.status === 'received' ? 'received' : 'unconfirmed', corrected: r.corrected === true, reason: typeof r.reason === 'string' && r.reason ? r.reason : null };
   return raw.actual && isBlank(raw.actual) && raw.actual.result_label === BLANK_LABEL ? { status: 'unconfirmed', corrected: false } : undefined;
 }
 function pitchRow(raw: Raw, provenance: Rec['provenance']): PitchRow {
@@ -399,7 +399,11 @@ export function normalizeDetail(raw: Raw): Detail {
   let next = raw.next ? normalizeRec(nextRaw, provenance === 'captured_live' ? 'captured_live' : 'asof_replay') : null;
   // the server says nothing is shown for the pending pitch: candidates never reach the screen, whatever `next.rec` carries
   if (next && display && !display.shown) next = { ...next, status: next.status === 'ready' ? 'missing' : next.status, candidates: [], provenance: next.status === 'ready' ? 'absent' : next.provenance };
-  return { win_expectancy: raw.win_expectancy?.status === 'available' && raw.win_expectancy.perspective === 'home' && num(raw.win_expectancy.home_probability) !== null && raw.win_expectancy.home_probability >= 0 && raw.win_expectancy.home_probability <= 1 ? { status: 'available', home_probability: raw.win_expectancy.home_probability } : null, session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game, pitches, pas: Array.isArray(raw.pas) ? raw.pas.map((p: Raw) => pa(p, unsurePas.has(p.pa_key))) : groupPas(pitches, current).map(p => unsurePas.has(p.pa_key) ? { ...p, result: BLANK_LABEL } : p), current,
+  // win expectancy: a usable home-perspective value → available; the slot present but unusable/unavailable → unavailable (the screen says
+  // 미측정); no slot in the answer (published replays) → null, and the screen shows no entry at all
+  const we = raw.win_expectancy;
+  const weAvailable = we?.status === 'available' && we.perspective === 'home' && num(we.home_probability) !== null && we.home_probability >= 0 && we.home_probability <= 1;
+  return { win_expectancy: weAvailable ? { status: 'available', home_probability: we.home_probability } : we && typeof we === 'object' && !Array.isArray(we) ? { status: 'unavailable', home_probability: null } : null, session_status: raw.source?.session_status ?? null, current_context: raw.current?.context ?? raw.current_context ?? null, game, pitches, pas: Array.isArray(raw.pas) ? raw.pas.map((p: Raw) => pa(p, unsurePas.has(p.pa_key))) : groupPas(pitches, current).map(p => unsurePas.has(p.pa_key) ? { ...p, result: BLANK_LABEL } : p), current,
     next, display, receipts_version: text(raw.receipts?.version), phase: PHASES.includes(cur?.phase) ? cur.phase : null, live_source: provenance === 'captured_live',
     cutoff: num(raw.cutoff?.index), session: raw.source?.session_id ?? null, feed: { as_of: raw.feed?.as_of ?? null, ok: raw.feed?.ok !== false, stale_s: num(raw.feed?.stale_s) },
     zone_bounds: raw.zone_bounds ?? ZONE, notes: (raw.notes ?? []).filter((n: unknown) => typeof n === 'string'),

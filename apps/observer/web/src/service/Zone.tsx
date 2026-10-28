@@ -8,11 +8,11 @@ export type Mark = { x: number; z: number };
 export const PLATE_HALF = .83;
 /** Full detail / mini margins in feet. The live main window uses x=.12, z=.24. */
 export const MARGIN = { main: { x: .42, z: .45 }, mini: { x: .34, z: .36 } };
-const U = 100;  // drawing units per foot
+export const U = 100;  // drawing units per foot
 /** -1 = pitcher view; this changes drawing only, never source coordinates. */
 export const VIEW_X = -1;
-const ux = (x: number) => VIEW_X * x * U;     // feet (catcher-view plate_x) → screen units
-const uz = (z: number, aspect = 1) => -z * U * aspect;             // z up
+export const ux = (x: number) => VIEW_X * x * U;     // feet (catcher-view plate_x) → screen units
+export const uz = (z: number, aspect = 1) => -z * U * aspect;             // z up
 
 export function zoneWindow(bounds: Bounds, mini: boolean, _compact = false, fullWindow = false) {
   const m = mini ? MARGIN.mini : fullWindow ? MARGIN.main : { x: .12, z: .24 };
