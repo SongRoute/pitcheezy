@@ -16,6 +16,9 @@ DEMO-WS-MOMENTS-1029 (Song 결정 2026-10-29 "장부 값으로 진행"), 재생 
 | `reference-card` | `next.reference`(A2 참고 카드)가 처음 붙은 주기 | 12회초 2:2, Ian Seymour ↔ Cooper Pratt, `849803:83:1` (주기 1614, 317구) | '추천 없음'(2025년까지 기록 없는 투수) + 참고 카드(포심 29%·스위퍼 24%·체인지업 20%·싱커 15%, 기록 기준 2026-10-25) |
 | `last-rec` | 추천이 마지막으로 보인 주기 | 12회말 3:2, Antonio Senzatela ↔ Liam Hicks, `849803:89:1` (주기 1726, 352구) | '다음 공 추천 · 1구' |
 
+전시 대본의 장면(Song 2026-10-29 결정, DEMO-WS-MOMENTS-1029): **`first-rec`**(1회초 0:0, 추천 3개)과 **`reference-card`**(12회초 2:2 Seymour, '추천 없음' + 참고 카드)
+두 시점. `mid-rec`·`last-rec`는 보조. 전시 기기는 두 서버(시점당 하나)를 띄우거나 장면 사이에 서버를 바꿔 연다. 종료 경기 화면은 `--ws`(기본 경기 4차전 `?game=849803`).
+
 보는 법 (공개 번들 `npm run build:public` 뒤):
 
 ```bash
