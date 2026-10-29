@@ -1,0 +1,23 @@
+{
+  "id": "EVAL-PREPITCH-001",
+  "mode": "SYNTHETIC_ONLY",
+  "real_data_gate": "CLOSED",
+  "schema": "pitchmdp-ten-v1",
+  "labels": ["ball", "strike", "foul", "out", "single", "double", "triple", "home_run", "hbp", "double_play"],
+  "primary_pair": ["synthetic_control", "synthetic_candidate"],
+  "bootstrap": {"seed": 20261029, "draws": 1000},
+  "synthetic_holdout_start": "2000-01-02T00:00:00Z",
+  "training_cutoffs": {"synthetic_control": "2000-01-01T00:00:00Z", "synthetic_candidate": "2000-01-01T00:00:00Z"},
+  "input_contract": "synthetic-prepitch-v1",
+  "strata": {"count": ["0-0", "1-0"], "handed_matchup": ["R-R", "R-L"], "prior_history": ["none", "available"]},
+  "real_data_prerequisites": {
+    "data_manifest": null,
+    "exposure_audit": null,
+    "fit_select_cal_test_split": null,
+    "eligibility_and_target_mapping": null,
+    "input_availability_evidence": null,
+    "model_source_and_artifact_pins": null,
+    "practical_improvement_rule": null,
+    "independent_review": null
+  }
+}
