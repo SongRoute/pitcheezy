@@ -4,6 +4,7 @@
 - 최초 고정 검토 커밋: `c1423e9f93469d6c9f512774f53a7dd41c913e1e`
 - 최종 실행 후보: `5e8b7e4e545ff17ebd3ae8fea229b5c85b595e8c`
 - 버그 수정 재시도 후보: `0f3ec92d6137e6ce390373920392ecb7f03303a7` — 아래 추가 검토가 attempt002에 적용된다.
+- 추가 학습 없는 복구 후보: `d8a006002eaf29bcba518bd90d83590191b64ece` — 아래 복구 검토는 원학습 실행의 성공 판정이 아니다.
 - 작성자: Codex `evaluation_author`; 검토자: 별도 Codex `evaluation_review` 에이전트. 같은 모델 계열의 별도 에이전트 검토이며 독립 모델 검토라고 주장하지 않는다.
 - 범위: 등록·설정·신규 adapter/tree·runner·의존성 pin·합성 검사, 기존 가변K 점수/경기 구간 재사용. 검토자는 원자료/가공 자료/기존 결과/가중치/봉인 OPE·RS를 읽거나 서버에 접근하지 않았다.
 - 판정: **PASS — Root 수용 후 지정한 역사 개발 파일럿 단일 실행에 한정**. 차단할 미해결 사항 없음. 실험 성공·성능 개선·승격 판정은 아님.
@@ -55,3 +56,15 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=experiments/pitchmdp python -m pytest -p no
 새 `test_complete_runner_writes_provenance_without_absolute_relative_mismatch`를 독립 실행하여 **1 passed, 0.73초**를 확인했다. 이 검사는 자료 loader와 모델 계산을 mock하고 임시 source 파일로 runner의 실제 provenance/hash 생성과 세 출력 파일 쓰기를 실행한다. 원자료 decode나 실제 모델 학습까지 포함한 전체 실행 성공 검사가 아니다. 기존 97개와 CPU lock 검사는 과학/잠금 코드 불변이므로 반복하지 않았다.
 
 추가 판정: **PASS — Root 재시도 GO 이후 동일 조건 attempt002 한 번에 한정**. 실제 성공 여부는 새 실행의 종료코드·등록 버전·출력·분모·집계와 별도 결과 검토로 확인해야 한다. 재시도 staging은 수정 커밋과 hash로 다시 고정하며 실패 디렉터리/로그/receipt를 덮어쓰지 않는다. 리뷰 기록 갱신 전 큐를 재조회했고 다른 작업과의 범위 충돌은 없었다.
+
+## attempt002 직렬화 실패 이후 학습 없는 복구 검토
+
+작성자 보고에 따르면 attempt002도 고정 fit·점수 계산 뒤 `tree.leaves`의 numpy.int64를 JSON으로 쓰다가 종료코드 1로 끝났다. predictions/제외원장은 작성됐고 metrics는 일부만 작성됐다. 누적 실제 fit은 2회이며 세 번째 fit는 허용하지 않는다. 검토자는 합성 `evaluate_frame`의 실제 반환값을 JSON 직렬화하여 `leaves`만 int64인 동일 오류를 독립 재현했다. 앞선 추가 검사에서 자료와 모델을 mock했기 때문에 실제 반환 타입 경계를 검증하지 못한 한계를 인정한다.
+
+복구 후보 `d8a006002eaf29bcba518bd90d83590191b64ece`는 `int(tree.get_n_leaves())` 한 줄과 별도 no-fit helper, 제한 등록 및 회귀를 추가한다. 기존 저장 확률을 바꾸거나 새 예측을 만들지 않는다. `recover_pitch_type_pilot.py`는 등록 config hash와 attempt002의 predictions/원장/partial metrics 세 파일 hash를 고정한다. 동일 원천 17열에 `load_registered → prepare`만 적용해 저장 audit의 키·정답·입력·단계별 FIT 지원수와 제외원장을 완전히 대사한다. 모델 fit/인코더 fit/추론 호출은 없다.
+
+확률 유효성 검사 후 고정된 손실·전체 경기 구간을 재계산하고 partial metrics에서 완결된 최상위 점수/구간/분모/coverage/fallback/경기수를 엄격 추출해 정확 일치를 요구한다. 입력 행 정렬 및 C-contiguous 확률 배열은 원계산의 합산 순서를 유지한다. 불일치하면 중단한다. 원파일을 고치거나 잘린 JSON을 닫지 않으며 tree 구조 통계는 null로 남긴다. 원모형 실행 커밋 `0f3ec92d…`, 새 복구 커밋/helper hash, 추가 fit 0/이전 fit 2/원실행 종료코드 1을 구분해 새 파일에 기록한다. CPU 전용·task lock·8GiB/1800초와 exclusive output을 유지한다.
+
+신규 두 회귀를 독립 실행해 **2 passed, 0.85초**를 확인했다. 첫 검사는 실제 합성 tree 반환값의 JSON 직렬화와 fit 호출 금지 상태의 재채점 동치를 확인한다. 두 번째는 실제 합성 모델 산출물을 parquet/원장/직렬화 중단 JSON으로 저장한 뒤 복구 main을 실행하여 새 결과·원파일 hash 보존·덮어쓰기 거절을 확인한다. 이 검사도 실제 원천 데이터 또는 서버 복구 실행 결과는 아니다. 기존 과학 검사는 반복하지 않았다.
+
+복구 사전 판정: **PASS — Root 복구 GO 후 등록된 원천 한 개 17열과 지정한 자체 산출물 세 개를 읽어 한 번 재검증·재채점하는 범위**. 추가 실제 fit/새 후보/분할·지표 선택은 허용하지 않는다. 복구 성공 여부와 실제 결과는 종료·출처·집계의 후속 검토가 필요하다. 원 attempt001/002 실패를 성공으로 재기록하지 않는다. 큐 개정 `6492896778`과 충돌 없는 파일 범위를 확인한 뒤 이 기록을 작성자에게 반환한다.
