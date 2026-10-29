@@ -1,0 +1,28 @@
+{
+  "id": "EVAL-PITCH-TYPE-003",
+  "mode": "SYNTHETIC_ONLY",
+  "real_data_gate": "CLOSED",
+  "schema": "synthetic-pitch-type-v1",
+  "fixture_version": "four-types-v1",
+  "labels": ["FF", "SL", "CH", "OTHER"],
+  "label_map": {"FF": "FF", "SL": "SL", "CH": "CH", "OTHER": "OTHER"},
+  "features": ["pitcher", "balls", "strikes", "batter_side", "pitcher_hand", "bases", "outs", "score_diff"],
+  "hierarchy": {
+    "global": [], "pitcher": ["pitcher"], "count": ["pitcher", "balls", "strikes"],
+    "matchup": ["pitcher", "balls", "strikes", "batter_side", "pitcher_hand"],
+    "situation": ["pitcher", "balls", "strikes", "batter_side", "pitcher_hand", "bases", "outs", "score_diff"]
+  },
+  "primary_pair": ["context_control", "hypothetical_candidate"],
+  "candidate_kind": "HYPOTHETICAL_NOT_FITTED_TREE",
+  "smoothing": {"global": 4, "pitcher": 4, "count": 4, "matchup": 4, "situation": 4},
+  "bootstrap": {"seed": 20261029, "draws": 1000},
+  "training_cutoff": "2000-01-02T00:00:00Z",
+  "holdout_start": "2000-01-03T00:00:00Z",
+  "source_audit_base": "3863ba1b80b57ac702a969a976a6b70827586bc7",
+  "real_data_prerequisites": {
+    "data_manifest": null, "label_mapping_and_eligibility": null,
+    "exposure_audit": null, "fit_select_cal_test_split": null,
+    "availability_evidence": null, "tree_model_pin": null,
+    "practical_and_coverage_rule": null, "independent_registration_review": null
+  }
+}
