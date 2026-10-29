@@ -96,3 +96,13 @@
 - attempt001: RootGO 후 등록 source17열 decode와 고정1fit/점수계산을 수행했으나, 결과쓰기 전 provenance의 상대경로를 절대 cwd에 relative_to한 오류로 종료코드1. 출력 디렉토리는 비어 있으며 점수 열람0이다. 이 실행도 실제 fit1회로 센다.
 - 국소수정은 상대 source 경로를 그대로 기록하는 runner 한 줄이다. 전체 runner의 합성 mock 성공 경로(출력3개/hash/provenance) 회귀를 추가한다. 과학 코드·모델·데이터·분할·설정은 바꾸지 않는다.
 - Root 승인에 따라 새 고정커밋의 독립 diff PASS 뒤 **attempt002 한 번** 재시도한다. 예산은 각 attempt1fit, 누적 최대2fit(실패1+재시도1)이다. 결과 선택/추가 후보 탐색이 아니며 기존 attempt001은 보존한다.
+
+## 두 번째 저장 실패와 fit 없는 복구 등록
+
+- attempt002도 실제 고정 fit/점수계산 뒤 `tree.leaves`의 numpy.int64 JSON 직렬화 오류로 rc1. 누적 실학습2회, 저장실패2회다. mocked runner 성공검사가 실제 반환 scalar를 검사하지 못했다.
+- 국소수정은 `int(tree.get_n_leaves())` 한 줄이며 실제 evaluate_frame 결과 전체의 JSON 직렬화 회귀를 추가한다. **추가 fit는 하지 않는다.**
+- attempt002의 predictions.parquet(62642행43열, SHA e5d95310f0a52b68ad7124bbe3ae56d2628c3ad0083ed31e7650df8758dfee8f), exclusions.jsonl(1277줄, SHA ace2560a8a137d4767678343034a53464238b4abc6ded10a069d402453b9d579), partial metrics.json(SHA 9d80cd0fd60285fce6f0474c5718a6473229e50c0932fcb4e27253481e8af786)은 보존한다. footer/원장JSON 완결성과 회수hash까지 확인했고 점수는 아직 열람하지 않았다.
+- 고정 `recover_pitch_type_pilot.py` 한 개를 별도 검토한다. 동일 raw17열의 load_registered→prepare만 다시 실행하고 저장된 key/label/입력/지원수·제외원장을 정확히 대사한다. fit/encoder/예측 생성은 하지 않는다.
+- 저장된 27확률의 유효성을 검사하고 NLL/Brier/topk/같은 경기CI를 그대로 재계산한다. 원partial의 완결된 최상위 점수/분모/구간과 provenance만 엄격 추출해 대조한다. partialJSON을 닫거나 원파일을 덮어 성공으로 만들지 않는다.
+- 잘린 tree 구조통계는 미측정(null)로 두고 원실행실패1을 명시한 새 `metrics-recovered.json`을 exclusive 작성한다. JSON 전체 직렬화를 먼저 완료한다. 원모형 커밋0f3ec92d와 복구 커밋/입출력hash를 별도 기록한다.
+- Root 복구GO 후 동일 CPU tasklock/1thread/8GiB/1800초로 한 번 재산출한다. 추가fit0·새후보0·분할/설정/지표 변경0. 복구 성공은 저장된 개발 비교를 회수한 것이며 원학습job의 rc1을 성공으로 바꾸지 않는다.

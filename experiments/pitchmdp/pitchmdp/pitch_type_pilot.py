@@ -148,7 +148,7 @@ def predict(fit, query, c):
     candidate = np.array([(leaf_counts[int(leaf)] + alpha * prior) / (leaf_counts[int(leaf)].sum() + alpha)
                           for leaf in tree.apply(xquery)])
     return dict(zip(MODELS, (np.asarray(reference), np.asarray(control), candidate))), supports, {
-        'node_count': tree.tree_.node_count, 'depth': tree.get_depth(), 'leaves': tree.get_n_leaves(),
+        'node_count': tree.tree_.node_count, 'depth': tree.get_depth(), 'leaves': int(tree.get_n_leaves()),
         'fit_class_counts': np.bincount(y, minlength=k).tolist(), 'global_prior': prior.tolist()}
 
 

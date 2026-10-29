@@ -184,3 +184,23 @@ def test_complete_runner_writes_provenance_without_absolute_relative_mismatch(tm
     result = json.loads((out/'metrics.json').read_text())
     assert result['provenance']['source_sha256'] == {'experiments/pitchmdp/mock.py':digest(source)}
     assert sorted(p.name for p in out.iterdir()) == ['exclusions.jsonl','metrics.json','predictions.parquet']
+
+
+def test_actual_evaluation_payload_serializes_and_nofit_recovery_matches(monkeypatch):
+    import importlib.util
+    from sklearn.tree import DecisionTreeClassifier
+    original, ledger, audit = evaluate_frame(fixture(), config())
+    json.dumps(original, allow_nan=False)  # Real tree.leaves, not mocked payload.
+    assert type(original['tree']['leaves']) is int
+    spec = importlib.util.spec_from_file_location('recovery',ROOT/'experiments/pitchmdp/scripts/recover_pitch_type_pilot.py')
+    recovery = importlib.util.module_from_spec(spec);spec.loader.exec_module(recovery)
+    monkeypatch.setattr(DecisionTreeClassifier,'fit',lambda *a,**k: pytest.fail('recovery must not fit'))
+    restored = recovery.recover(fixture(),audit.sample(frac=1,random_state=3),ledger,config())
+    json.dumps(restored,allow_nan=False)
+    for name in ('metrics_common_valid_inputs','comparison','populations','coverage','fallback_counts','unseen_pitcher_queries'):
+        assert original[name] == restored[name]
+    partial=json.dumps(original,indent=2,sort_keys=True).split('    "leaves":')[0]+'    "leaves": '
+    assert recovery.completed_field(partial,'comparison') == original['comparison']
+    with pytest.raises(json.JSONDecodeError): recovery.completed_field(partial,'tree')
+    bad=audit.copy();bad.iloc[0,bad.columns.get_loc('tree_candidate_FF')]=np.nan
+    with pytest.raises(ValueError,match='finite'):recovery.recover(fixture(),bad,ledger,config())
