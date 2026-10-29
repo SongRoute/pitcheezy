@@ -6,6 +6,7 @@
 //   node tests/ui-preview.mjs --phone                                  # Tailscale address of this Mac, port 8780 (open on the phone)
 //   node tests/ui-preview.mjs --fixture <dir> --clock fixture          # <dir> holds v1/ (or is v1/ itself)
 //   node tests/ui-preview.mjs --ws                                     # World Series replay (fixtures/publish-ws: G1 849805 + G3 849804 + G4 849803), fixture clock
+//   node tests/ui-preview.mjs --ws-moment first-rec [--ws]            # one replayed MID-GAME moment of G4 (fixtures/publish-ws-moments/849803/<label>), clock now
 //   node tests/ui-preview.mjs --dev                                    # hot reload: also starts `vite --mode public` reading this server
 //
 // --fixture can be given more than once: the folders are layered (a game or games file comes from the first folder that has it) and
@@ -14,6 +15,9 @@
 // before. tests/publish-merge.mjs writes the same join into one new folder for a static host.
 // --ws             the three World Series publish folders copied byte for byte from the live runs of 10/24, 10/27 and 10/28 KST (see
 //                  fixtures/publish-ws/README.md); --clock defaults to fixture with it. All games are final: no `next`, no live state.
+// --ws-moment      a moment folder of fixtures/publish-ws-moments/849803 (README there: REPLAYED bodies from the live run's store, the
+//                  recommendation being the one the live ledger recorded; not live-published bytes). Served first, so with --ws its game
+//                  and date files win and the game shows mid-game with `next`; --clock defaults to now with it.
 //
 // --clock now      (default) real Date header; the publish stamps of each answer (publish.published_at/sequence, health/manifest
 //                  published_at/sequence, health game_checks checked_at/sequence_*) are moved to "now" and the sequence steps once per
@@ -34,15 +38,17 @@ import { INDEX as INDEX_FILES, joinIndex } from './publish-join.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const web = path.join(here, '..');
-const USAGE = 'usage: node tests/ui-preview.mjs [--fixture <dir>]... [--ws] [--dist <dir>] [--clock now|fixture|raw] [--host <ip>] [--port <n>] [--phone] [--dev] [--dev-port <n>] [--exit-after <s>]';
+const USAGE = 'usage: node tests/ui-preview.mjs [--fixture <dir>]... [--ws] [--ws-moment <label>]... [--dist <dir>] [--clock now|fixture|raw] [--host <ip>] [--port <n>] [--phone] [--dev] [--dev-port <n>] [--exit-after <s>]';
 const WS = ['2026-10-24', '2026-10-27', '2026-10-28'].map((d) => path.join(here, 'fixtures', 'publish-ws', d));   // G1 849805, G3 849804, G4 849803
+const MOMENTS = path.join(here, 'fixtures', 'publish-ws-moments', '849803');   // replayed mid-game bodies of G4 (README there): not live-published bytes
 
-const args = { fixtures: [], ws: false, dist: process.env.PZ_WEB_DIST_PUBLIC ?? path.join(web, 'dist-public'),
+const args = { fixtures: [], ws: false, moments: [], dist: process.env.PZ_WEB_DIST_PUBLIC ?? path.join(web, 'dist-public'),
   clock: null, host: null, port: null, phone: false, dev: false, devPort: null, exitAfter: null };
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i], next = () => { const v = process.argv[++i]; if (v === undefined) die(`${a} needs a value`); return v; };
   if (a === '--fixture') args.fixtures.push(path.resolve(next()));
   else if (a === '--ws') args.ws = true;
+  else if (a === '--ws-moment') args.moments.push(next());
   else if (a === '--dist') args.dist = path.resolve(next());
   else if (a === '--clock') args.clock = next();
   else if (a === '--host') args.host = next();
@@ -55,9 +61,13 @@ for (let i = 2; i < process.argv.length; i++) {
   else die(`unknown option ${a}\n${USAGE}`);
 }
 function die(msg) { console.error(msg); process.exit(2); }
+for (const label of args.moments) {   // a moment goes FIRST: its game and date files win over the final ones of --ws
+  if (!/^[a-z0-9-]+$/.test(label) || !existsSync(path.join(MOMENTS, label, 'v1', 'manifest.json'))) die(`no such moment: ${label} (see ${path.join(MOMENTS, 'README.md')})`);
+  args.fixtures.push(path.join(MOMENTS, label));
+}
 if (args.ws) args.fixtures.push(...WS);
 if (!args.fixtures.length) args.fixtures.push(path.join(here, 'fixtures', 'publish'));
-args.clock ??= args.ws ? 'fixture' : 'now';
+args.clock ??= args.moments.length ? 'now' : args.ws ? 'fixture' : 'now';   // a moment is a live body: with the fixture clock it would read 갱신 지연 after 30 s
 if (!['now', 'fixture', 'raw'].includes(args.clock)) die('--clock must be now, fixture or raw');
 
 // ---- where ----

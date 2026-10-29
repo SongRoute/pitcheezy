@@ -21,6 +21,14 @@ any difference fails the run.
 The run stops at the first broken invariant, outside write, integrity or policy failure, memory or time cap; what
 was written until then stays. ``SUMMARY.json`` exists from the first moment with ``incomplete: true`` and is the
 ONE record of how the run stands; its final form is the last thing written.
+``--policy ledger`` (DEMO-WS-MOMENTS-1029): the recommendation of every pending state is READ from a copy of the
+live run's own store (``--ledger-db``: its ``served_recommendations`` rows, matched by ``state_sha256``) instead of
+being computed (``observer_app.ledger_policy``); the pitchers the live policy refused are named by a registered
+support map (``--ledger-support``). No model, T7 or MPS is touched; the copy and the map must sit inside the job
+folder and have their registered sha256. ``--keep-moments`` keeps, under ``<run>/moments/<cycle>/``, a gzip copy of
+every published file of each cycle whose game body changed and holds a pending pitch (``next``), with
+``moments/INDEX.jsonl`` naming the cycle, pitch key and display state: the mid-game bodies a static demo can serve.
+
 Exit codes: 0 completed, 2 refused before start (nothing written), 3 stopped or failed, 87 killed by its own
 watchdog.
 """
@@ -354,9 +362,11 @@ def mark(run_dir, status, **more):
 def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs_audit=None, schemas=None,
         publish_config=None, perf=time.perf_counter, rss=lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
         free_memory=free_memory_bytes, mps=mps_bytes, finalize=True, live_wait_s=None,
-        compute_clock=time.perf_counter,
+        compute_clock=time.perf_counter, keep_moments=False, policy_source=None,
         log=lambda text: print(text, file=sys.stderr, flush=True)):
     """Replay ``rows`` through a publisher that lives entirely in ``run_dir``. Returns the summary (also written).
+    ``keep_moments``: gzip copies of each changed live cycle's published files under ``moments/`` (module text).
+    ``policy_source``: the name the summary gives the policy ('armb', 'off', 'ledger'); None = by ``policy_factory``.
     Whatever happens inside (a stop condition, any exception, a termination signal) ends in a written summary and
     status. If the process dies without getting there, ``SUMMARY.json`` still says RUNNING and ``incomplete``."""
     from observer_app import publish_audit, publish_schema, publisher
@@ -525,6 +535,33 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
 
     written_times = [0]
     published_decisions = set()
+    moments = {'kept': 0, 'raw_bytes': 0, 'gzip_bytes': 0}
+
+    def keep_moment(cycle, sequence, present, game_body, facts):
+        """This cycle's published files, gzip, under ``moments/<cycle>/`` (the same relative paths plus ``.gz``), and
+        one ``moments/INDEX.jsonl`` line: cycle, pitch key, display state, counts and each file's raw sha256. Names
+        and counts only, no values of the game."""
+        folder = run_dir/'moments'/f'{cycle:05d}'
+        files = []
+        for name, path in sorted(present.items()):
+            data = path.read_bytes()
+            packed = gzip.compress(data, compresslevel=6)
+            target = folder/(name+'.gz')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(packed)
+            files.append({'path': name, 'bytes': len(data), 'gzip_bytes': len(packed), 'sha256': hashlib.sha256(data).hexdigest()})
+            moments['raw_bytes'] += len(data)
+            moments['gzip_bytes'] += len(packed)
+        moments['kept'] += 1
+        following = game_body.get('next') or {}
+        line = {'cycle': cycle, 'folder': f'moments/{cycle:05d}', 'sequence': sequence, 'simulated': round(clock(), 3),
+                'pitch_key': following.get('pitch_key'), 'state': facts['state'], 'reason': facts['reason'],
+                'recommendation': facts['recommendation'], 'reference': facts['reference'], 'phase': facts['phase'],
+                'pitches': facts['pitches'], 'unconfirmed': facts['unconfirmed'], 'held': facts.get('held', 0),
+                'game_sha256': shas.get(game_path), 'files': files}
+        with open(run_dir/'moments'/'INDEX.jsonl', 'a') as handle:
+            handle.write(json.dumps(line, ensure_ascii=False)+'\n')
+        return line['folder']
 
     def one_cycle(label):
         nonlocal final_published, over_interval
@@ -589,11 +626,14 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
             recs[facts['recommendation'] if facts['recommendation'] == 'published' else f"none|{facts['state']}|{facts['reason']}"] += 1
             if facts['final'] is True and final_published is None:
                 final_published = {'simulated': clock(), 'cycle': len(cycles)+1, 'sequence': health['sequence']}
+        kept = None
+        if keep_moments and facts is not None and game_path in written and isinstance(game_body.get('next'), dict):
+            kept = keep_moment(len(cycles)+1, health['sequence'], present, game_body, facts)
         for item in health['unavailable_games']:
             codes[item['code']] += 1
         ledger_now = len(store.served_recommendations(game_pk))
         checked = len(cycles) % limits['free_check_every_cycles'] == 0
-        row = {'cycle': len(cycles)+1, 'label': label, 'simulated': round(clock(), 3), 'capture_index': transport.index(),
+        row = {'cycle': len(cycles)+1, 'label': label, 'moment': kept, 'simulated': round(clock(), 3), 'capture_index': transport.index(),
                'sequence': health['sequence'], 'wall_s': round(wall_s, 6), 'settle_s': round(settle_s, 6),
                'files_written': len(written), 'written': written, 'bytes': sizes, 'game': facts,
                'health': {'unavailable_games': [item['code'] for item in health['unavailable_games']],
@@ -740,6 +780,9 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
                       'pitches_in_last_file': next((row['game']['pitches'] for row in reversed(cycles) if row['game']), None),
                       'paired_past_recommendations_in_last_file': next((row['game']['paired_past_recommendations'] for row in reversed(cycles) if row['game']), None)},
         'health_codes': dict(codes),
+        'moments': moments | {'requested': bool(keep_moments), 'index': 'moments/INDEX.jsonl' if moments['kept'] else None,
+                              'rule': 'every cycle whose game body changed and holds a pending pitch (next): gzip copies of all '
+                                      'published files of that cycle, under moments/<cycle>/'},
         'ledger': {'rows': safely(lambda: len(store.served_recommendations(game_pk))),
                    'first_rows': safely(lambda: sum(row['outcome'] == 'first' for row in store.served_recommendations(game_pk))),
                    'distinct_decisions': safely(lambda: len({row['decision_id'] for row in store.served_recommendations(game_pk)})),
@@ -766,7 +809,10 @@ def run(*, rows, info, run_dir, game_pk, commit, limits, policy_factory=None, fs
         'fs_audit': None if fs_audit is None else {'kind': 'tripwire (Python audit events only; native-library I/O is not seen)',
                                                    'violations': fs_audit.violations[:200], 'violation_count': len(fs_audit.violations),
                                                    'files_read_under_watch': dict(sorted(fs_audit.read.items()))},
-        'policy': policy | {'final_status': safely(lambda: armb.status()), 'binds': safely(lambda: getattr(armb.policy, 'binds', None)),
+        'policy': policy | {'source': policy_source or ('armb' if policy_factory else 'off'),
+                            # a ledger-backed policy (observer_app.ledger_policy) says how it answered each state; others have no record
+                            'ledger': safely(lambda: armb.policy.record() if armb.policy is not None and hasattr(armb.policy, 'record') else None),
+                            'final_status': safely(lambda: armb.status()), 'binds': safely(lambda: getattr(armb.policy, 'binds', None)),
                             'failed_states': safely(lambda: len(armb.failed), 0),
                             'computations': len(computed), 'compute_s': spread(computed),
                             'live_wait_s': live_wait,
@@ -828,6 +874,10 @@ def summary_text(s):
              f"- 주기 실제 소요(초): 중앙값 {show(s['cycles']['wall_s'].get('p50'))}, p99 {show(s['cycles']['wall_s'].get('p99'))}, 최대 {show(s['cycles']['wall_s'].get('max'))}",
              f"- 최대 RSS(바이트): {s['memory']['peak_rss_bytes']} / MPS 최대(바이트): {show(s['memory']['mps_driver_allocated_peak_bytes'])}",
              f"- 정책 장치: 등록 {show(s['policy'].get('registered_device'))}, 실제 {show(s['policy'].get('devices_seen'))}",
+             f"- 정책 출처: {show(s['policy'].get('source'))}" + (
+                 f" — 장부 행 {show(s['policy']['ledger'].get('rows'))}, 응답 {show(s['policy']['ledger'].get('answers'))}"
+                 if isinstance(s['policy'].get('ledger'), dict) else ''),
+             f"- 보존한 시점(moments): {show((s.get('moments') or {}).get('kept'))}개" if (s.get('moments') or {}).get('requested') else '- 보존한 시점(moments): 요청 안 함',
              f"- 종료 표시까지(재생 시계 초): {show(s['final']['simulated_seconds_from_feed_final_to_publish_final'])}",
              f"- 정책 계산: 전체 {show(s['policy'].get('computations'))}회(표시 판정이 막은 상태 포함), 그중 추천이 실제로 발행된 것 {show((s['policy'].get('published') or {}).get('computations'))}회, 발행된 것 중 {show(s['policy'].get('live_wait_s'))}초 초과 {show((s['policy'].get('published') or {}).get('computations_over_the_live_wait'))}회 — 이 기계에서 이 재생 중에 잰 **오프라인 추정**이며 실시간 측정이 아니다",
              f"- 추천 원장 행: {show(s['ledger']['rows'])}", '', '## 불변 조건', '']
@@ -865,6 +915,15 @@ def armb_factory(run_dir, style_sha256, style_dir=STYLE_DIR, make_policy=live_po
                 raise RuntimeError(f'style file {name} does not have its registered sha256')
             (target/name).write_bytes(data)
         return make_policy(Path(run_dir)/'policy-root', LIVE_CONFIG.get('max_bound_games', 2))
+    return factory
+
+
+def ledger_factory(rows, support, game_pk):
+    """The ledger-backed stand-in policy (``observer_app.ledger_policy.LedgerPolicy``) over rows and a support map
+    already read and checked by ``execute``: the factory touches no file, folder or volume."""
+    def factory():
+        from observer_app.ledger_policy import LedgerPolicy
+        return LedgerPolicy(rows, support, game_pk=game_pk)
     return factory
 
 
@@ -1018,7 +1077,12 @@ def parse(argv):
     parser.add_argument('--commit', required=True)
     parser.add_argument('--config', required=True, help='replay_config.json (limits, pace, pins)')
     parser.add_argument('--config-sha256', required=True)
-    parser.add_argument('--policy', choices=('armb', 'off'), required=True)
+    parser.add_argument('--policy', choices=('armb', 'off', 'ledger'), required=True)
+    parser.add_argument('--ledger-db', help='ledger: COPY of the live run store (served_recommendations) inside the job folder')
+    parser.add_argument('--ledger-sha256', help='ledger: registered sha256 of that copy')
+    parser.add_argument('--ledger-support', help='ledger: support map file (pitcheezy-ledger-support-v1) inside the job folder')
+    parser.add_argument('--ledger-support-sha256', help='ledger: registered sha256 of the support map')
+    parser.add_argument('--keep-moments', action='store_true', help='keep gzip copies of the published files of every changed live cycle under <run>/moments/')
     parser.add_argument('--allow-dirty', action='store_true', help='synthetic tests only')
     return parser.parse_args(argv)
 
@@ -1060,6 +1124,29 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
         if min(free, in_process) < limits['min_free_bytes']:
             raise Refused(f'free memory (vm_stat {free}, in-process {in_process}) is below the registered minimum {limits["min_free_bytes"]}')
         policy_on = args.policy == 'armb'  # OFF: no policy folder, style file or external volume is touched below, at all
+        ledger_on, ledger_rows, ledger_support, ledger_input = args.policy == 'ledger', None, None, None
+        if ledger_on:  # LEDGER: two frozen inputs inside the job folder, read and checked here, before anything is written
+            given = {'--ledger-db': args.ledger_db, '--ledger-sha256': args.ledger_sha256,
+                     '--ledger-support': args.ledger_support, '--ledger-support-sha256': args.ledger_support_sha256}
+            if not all(given.values()):
+                raise Refused(f'--policy ledger needs {[name for name, value in given.items() if not value]}')
+            ledger_db, support_path = Path(args.ledger_db).resolve(), Path(args.ledger_support).resolve()
+            for name, path, sha in (('ledger copy', ledger_db, args.ledger_sha256), ('support map', support_path, args.ledger_support_sha256)):
+                if not path.is_relative_to(job) or not path.is_file():
+                    raise Refused(f'the {name} must be a file inside the job folder')
+                if sha256_file(path) != sha:
+                    raise Refused(f'the {name} does not have the registered sha256')
+            from observer_app import ledger_policy  # imports no other module of the app (see its header)
+            try:
+                ledger_rows, ledger_support = ledger_policy.load_rows(ledger_db, args.game), ledger_policy.load_support(support_path)
+            except ledger_policy.LedgerUnusable as error:
+                raise Refused(f'ledger input unusable: {error}') from None
+            ledger_input = {'db': str(ledger_db), 'db_sha256': args.ledger_sha256, 'rows': len(ledger_rows),
+                            'live_policy_identity': next(iter(ledger_rows.values()))['policy_identity'],
+                            'support': str(support_path), 'support_sha256': args.ledger_support_sha256,
+                            'unsupported_pitchers': {str(k): v for k, v in sorted(ledger_support.items())}}
+        elif any((args.ledger_db, args.ledger_sha256, args.ledger_support, args.ledger_support_sha256)):
+            raise Refused('--ledger-* options belong to --policy ledger')
         absent = [str(folder) for folder in (limits['capture_original_dir'], *(limits['policy_dirs'] if policy_on else ()))
                   if not Path(folder).is_dir()]
         if absent:
@@ -1106,12 +1193,14 @@ def execute(argv=None, *, make_policy=live_policy, style_dir=STYLE_DIR, volume=T
         (run_dir/'RUN.json').write_text(json.dumps({
             'argv': sys.argv if argv is None else list(argv), 'commit': args.commit, 'capture_sha256_before': before,
             'config_sha256': args.config_sha256, 'free_memory_bytes_at_start': {'vm_stat': free, 'in_process': in_process},
-            'limits': limits, 'policy': args.policy, 'python': sys.version, 'versions': versions(), 'threads': threads(),
+            'limits': limits, 'policy': args.policy, 'ledger': ledger_input, 'keep_moments': bool(args.keep_moments),
+            'python': sys.version, 'versions': versions(), 'threads': threads(),
             'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}, indent=1)+'\n')
         try:
             summary = run(rows=rows, info=info, run_dir=run_dir, game_pk=args.game, commit=args.commit, limits=limits,
-                          policy_factory=armb_factory(run_dir, limits['style_sha256'], style_dir, make_policy) if policy_on else None,
-                          fs_audit=fs_audit, schemas=schemas, finalize=False)
+                          policy_factory=(armb_factory(run_dir, limits['style_sha256'], style_dir, make_policy) if policy_on else
+                                          ledger_factory(ledger_rows, ledger_support, args.game) if ledger_on else None),
+                          fs_audit=fs_audit, schemas=schemas, finalize=False, keep_moments=bool(args.keep_moments), policy_source=args.policy)
         finally:
             info['db'].close()
         tripped = len(fs_audit.violations)
