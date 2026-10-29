@@ -24,8 +24,11 @@ Order (fail closed; IntegrityError = refusal before the output exists (exit 2), 
 4. one streamed ledger pass (G-INT, D, populations), prediag.json (G-free: gate per family x tau x contrast) FIRST;
    ``--check`` writes check.json; ``--run`` computes every G-dependent section, the registered ``decide`` step
    (results.json ``decision``), per_tau.csv; SHA256SUMS last.
-Guards: the registered hang guard (seconds) and peak-RSS guard (GiB) from the config (CLI values may only tighten
-them); a fired guard leaves failed.json (exit 3). Every run records wall/CPU seconds, peak RSS, seeds, the git commit
+Guards: the registered hang guard (seconds) and peak-RSS guard (GiB via ru_maxrss) from the config (CLI values may only
+tighten them); a fired guard leaves failed.json (exit 3); the run refuses to start when the available memory (vm_stat
+free + inactive pages x page size) is below the registered ``min_available_gb``. The deterministic row identity and
+the tau = inf identity (study-level ESTIMATOR_SUSPECT) run in both modes before prediag.json.
+Every run records wall/CPU seconds, peak RSS, seeds, the git commit
 and the python/numpy/pandas versions.
 """
 from __future__ import annotations
@@ -192,12 +195,14 @@ def validate_config(config):
     _require(all(_int(v) for v in boot['seeds'].values()), 'bootstrap seeds must be nonnegative ints')
     _require(_number(boot['invalid_share_max']) and 0 <= boot['invalid_share_max'] <= 1, 'bootstrap.invalid_share_max')
     decision = config['decision']
-    _keys(decision, 'decision', ('alpha_one_sided', 'mde_multiplier'))
+    _keys(decision, 'decision', ('alpha_one_sided', 'mde_multiplier', 'mde_multiplier_holm_first'))
     _require(_number(decision['alpha_one_sided']) and 0 < decision['alpha_one_sided'] < .5
-             and _number(decision['mde_multiplier']) and decision['mde_multiplier'] > 0, 'decision: alpha in (0, .5), MDE')
+             and all(_number(decision[k]) and decision[k] > 0 for k in ('mde_multiplier', 'mde_multiplier_holm_first')),
+             'decision: alpha in (0, .5), positive MDE multipliers')
     guards = config['guards']
-    _keys(guards, 'guards', ('max_seconds', 'max_rss_gb'))
-    _require(all(_number(v) and v > 0 for v in guards.values()), 'guards: positive max_seconds and max_rss_gb')
+    _keys(guards, 'guards', ('max_seconds', 'max_rss_gb', 'min_available_gb'))
+    _require(all(_number(v) and v > 0 for v in guards.values()),
+             'guards: positive max_seconds, max_rss_gb (GiB, ru_maxrss) and min_available_gb (vm_stat free + inactive)')
     source = config.get('source_commit')
     _require(source is None or _sha(source, 40), 'source_commit: null or a 40-hex commit')
     _require(config.get('interpretations', ope.INTERPRETATIONS) == ope.INTERPRETATIONS,
@@ -230,7 +235,9 @@ def validate_config(config):
         'sensitivities': dict(sens), 'placebos': {**plac, 'kl_tolerance': float(plac['kl_tolerance'])},
         'bootstrap': {'draws': boot['draws'], 'seeds': dict(boot['seeds'])},
         'invalid_share_max': float(boot['invalid_share_max']), 'alpha': float(decision['alpha_one_sided']),
-        'mde_multiplier': float(decision['mde_multiplier']), 'guards': dict(guards), 'source_commit': source,
+        'mde_multipliers': {'one_sided_alpha': float(decision['mde_multiplier']),
+                            'holm_first_step': float(decision['mde_multiplier_holm_first'])},
+        'guards': dict(guards), 'source_commit': source,
         'outputs': outputs,
         'pa_facts': {'source': 'frame', 'split': facts['split'],
                      'policy_registration': {'config': _pin(registration['config'], 'policy_registration.config'),
@@ -271,7 +278,8 @@ class Environment:
 
     def git_state(self, source_commit):
         run = lambda *args: subprocess.check_output(['git', *args], cwd=REPO, text=True).strip()
-        state = {'commit': run('rev-parse', 'HEAD'), 'code_paths': list(CODE_PATHS),
+        state = {'commit': run('rev-parse', 'HEAD'), 'branch': run('rev-parse', '--abbrev-ref', 'HEAD'),
+                 'worktree': run('rev-parse', '--show-toplevel'), 'code_paths': list(CODE_PATHS),
                  'code_dirty': bool(run('status', '--porcelain', '--', *CODE_PATHS)), 'source_commit': source_commit,
                  'source_is_ancestor': None, 'code_changed_since_source': None}
         if source_commit:
@@ -280,6 +288,18 @@ class Environment:
             state['code_changed_since_source'] = [x for x in run('diff', '--name-only', source_commit, 'HEAD', '--',
                                                                  *CODE_PATHS).splitlines() if x]
         return state
+
+    def available_memory_bytes(self):
+        """Free + inactive pages x page size (macOS vm_stat); MemAvailable elsewhere."""
+        if sys.platform == 'darwin':
+            text = subprocess.check_output(['vm_stat'], text=True)
+            page = int(text.split('page size of', 1)[1].split('bytes', 1)[0])
+            pages = {line.split(':')[0].strip(): int(line.split(':')[1].strip().rstrip('.'))
+                     for line in text.splitlines()[1:] if ':' in line}
+            return (pages['Pages free'] + pages['Pages inactive']) * page
+        with open('/proc/meminfo') as stream:
+            info = {line.split(':')[0]: int(line.split()[1]) for line in stream}
+        return info['MemAvailable'] * 1024
 
     def load_frame_and_we(self, spec, checkpoint):
         """(frame, defense_we, ML-POLICY config, provenance) through the registered loaders. Every ML-POLICY chain link,
@@ -461,13 +481,19 @@ def execute(spec, mode, verified, manifest, env, guard, write):
                   'ledger': {'rows': stream.rows, 'head_sha256': stream.head, 'kinds': dict(stream.kinds), 'header': head},
                   'pa_facts': {'source': 'frame', 'provenance': facts_provenance, 'crosscheck': check.record()},
                   'interpretations': ope.INTERPRETATIONS,
-                  'identity_check': records['identity_check'], 'q_source': records['q_source'],
+                  'identity_check': records['identity_check'], 'row_identity': records['row_identity'],
+                  'se_ties': records['se_ties'], 'q_source': records['q_source'],
                   'vocabulary_size': records['vocabulary_size'],
                   'seeds': {'bootstrap': spec['bootstrap']['seeds'], 'perm_placebo': spec['placebos']['perm_seed'],
                             'outcome_shuffle_null': spec['placebos']['outcome_shuffle_null_seed']}}
     counts = {'by_status': records['by_status'], **records['counts'], 'disagreement': records['disagreement']}
     guard.checkpoint()
     diag = ope.prediag(tab, spec['gate'])
+    p = spec['placebos']
+    setup = ope.perm_setup(tab, draws_k=p['perm_draws'], seed=p['perm_seed'], kl_tol=p['kl_tolerance'],
+                           factor=p['tau_bracket_factor'], iterations=p['bisection_iterations'],
+                           checkpoint=guard.checkpoint)
+    diag['perm_placebo_setup'] = {'tau_p': setup.record, 'row_identity': setup.identity, 'draws': len(setup.perms)}
     write('prediag.json', {'provenance': provenance, 'counts': counts, 'prediag': diag,
                            'note': 'written before any G-dependent number is computed'})
     doc = {'provenance': provenance, 'counts': counts, 'prediag': diag}
@@ -482,8 +508,8 @@ def execute(spec, mode, verified, manifest, env, guard, write):
         rule = {'primary_tau': spec['sealed_tau'], 'variants': spec['variants'], 'main_families': spec['main_families'],
                 'margins': spec['margins'], 'bootstrap': spec['bootstrap'], 'invalid_share_max': spec['invalid_share_max'],
                 'minima': spec['minima'], 'placebos': spec['placebos'], 'sensitivities': spec['sensitivities'],
-                'alpha': spec['alpha'], 'mde_multiplier': spec['mde_multiplier']}
-        sections, csv_sections, inputs = ope.analysis(tab, diag, rule=rule, checkpoint=guard.checkpoint)
+                'alpha': spec['alpha'], 'mde_multipliers': spec['mde_multipliers']}
+        sections, csv_sections, inputs = ope.analysis(tab, diag, rule=rule, perm=setup, checkpoint=guard.checkpoint)
         doc.update(sections)
         doc['decision'] = {'inputs': inputs, **decide(inputs), 'interpretations': ope.INTERPRETATIONS}
         doc['reading'] = ('stage 1 is EXPLORATORY_REANALYSIS on exposed <=2025 DEV: the decision is the registered '
@@ -588,6 +614,10 @@ def main(argv=None, env=None):
             _require(git['source_is_ancestor'] is True and not git['code_changed_since_source'] and not git['code_dirty'],
                      'code at HEAD differs from the registered source commit (or uncommitted code changes)')
         verified, manifest = verify_stage(spec)
+        available = env.available_memory_bytes()
+        _require(available >= spec['guards']['min_available_gb'] * 2 ** 30,
+                 f'available memory {available / 2 ** 30:.2f} GiB below the registered start condition '
+                 f'{spec["guards"]["min_available_gb"]} GiB (vm_stat free + inactive)')
     except (ValueError, OSError) as error:  # IntegrityError is a ValueError
         print(f'REFUSED: {error}', file=sys.stderr)
         return EXIT['refused']
@@ -597,7 +627,8 @@ def main(argv=None, env=None):
     run_info = {'mode': mode, 'argv': list(sys.argv if argv is None else argv), 'config_path': str(args.config),
                 'config_sha256': hashlib.sha256(raw).hexdigest(), 'started_utc': datetime.now(timezone.utc).isoformat(),
                 'git': git, 'source_commit_enforced': spec['source_commit'] is not None, 'environment': environment(),
-                'guards': {'max_seconds': max_seconds, 'max_rss_gb': max_rss_gb, 'registered': spec['guards']}}
+                'guards': {'max_seconds': max_seconds, 'max_rss_gb': max_rss_gb, 'registered': spec['guards'],
+                           'available_memory_bytes_at_start': available}}
     dump(out / 'started.json', {**run_info, 'config': config})
     guard = Guard(max_seconds, max_rss_gb)
     previous = signal.signal(signal.SIGALRM, _raise_hang)
@@ -613,7 +644,8 @@ def main(argv=None, env=None):
         code = (EXIT['refused'] if isinstance(error, IntegrityError) else
                 EXIT['guard'] if isinstance(error, (HangGuardExceeded, MemoryGuardExceeded)) else EXIT['error'])
         dump(out / 'failed.json', {**run_info, 'error_type': type(error).__name__, 'error': str(error),
-                                   'study_label': 'INVALID' if isinstance(error, IntegrityError) else None,
+                                   'study_label': ('ESTIMATOR_SUSPECT' if isinstance(error, ope.EstimatorSuspect) else
+                                                   'INVALID' if isinstance(error, IntegrityError) else None),
                                    'traceback': traceback.format_exc(limit=8), 'wall_seconds': time.monotonic() - wall,
                                    'peak_rss_bytes': peak_rss_bytes(), 'citable': False})
         print(f'{type(error).__name__}: {error}', file=sys.stderr)
