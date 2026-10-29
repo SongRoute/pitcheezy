@@ -17,8 +17,10 @@ Order (fail closed; IntegrityError = refusal before the output exists (exit 2), 
    the WE contract are verified against their pins before they are read; the registered PA-end reward and WE_start
    are recomputed through the registered loaders (run_policy_validation.load_inputs with store=False,
    policy_identity.load_pinned_we, select_games / game_blocks, policy_requests.game_table / pa_outcome / pa_manifest)
-   and checked PA by PA against the sealed pa_values columns (pa_id, game, in_population, status, kind, reason,
-   end_kind; policy_estimator.pa_value re-run) plus the aggregate L2 reward of dr.json. No ``derived`` source;
+   and the sealed pa_values rows are reproduced PA by PA (policy_estimator.pa_value re-run; columns pa_id, game,
+   in_population, status, kind, reason, end_kind, resolution, candidate, reference, delta, l2): phase (a) with the
+   reward value masked before prediag, phase (b) with the real reward after prediag.json and before any estimate
+   (a second verified ledger pass), plus the aggregate L2 reward of dr.json. No ``derived`` source;
 4. one streamed ledger pass (G-INT, D, populations), prediag.json (G-free: gate per family x tau x contrast) FIRST;
    ``--check`` writes check.json; ``--run`` computes every G-dependent section, the registered ``decide`` step
    (results.json ``decision``), per_tau.csv; SHA256SUMS last.
@@ -65,7 +67,7 @@ REQUIRED = ('experiment_id', 'stage_dir', 'ledger', 'pins', 'output_dir', 'tau_g
             'identity_tolerance', 'ratio_rtol', 'expected_dr_q_source', 'candidate_identity_sha256', 'families',
             'primary', 'confirmatory', 'disagreement', 'eligibility', 'gate', 'sample_minima', 'placebos',
             'sensitivities', 'bootstrap', 'decision', 'guards', 'pa_facts')
-OPTIONAL = ('exposure_label', 'source_commit', 'outputs', 'notes')
+OPTIONAL = ('exposure_label', 'source_commit', 'outputs', 'notes', 'interpretations')
 CODE_PATHS = ('experiments/pitchmdp',)
 EXIT = {'ok': 0, 'error': 1, 'refused': 2, 'guard': 3}
 HEX = set('0123456789abcdef')
@@ -198,6 +200,8 @@ def validate_config(config):
     _require(all(_number(v) and v > 0 for v in guards.values()), 'guards: positive max_seconds and max_rss_gb')
     source = config.get('source_commit')
     _require(source is None or _sha(source, 40), 'source_commit: null or a 40-hex commit')
+    _require(config.get('interpretations', ope.INTERPRETATIONS) == ope.INTERPRETATIONS,
+             'interpretations differ from the ones this code implements (ope_onestep.INTERPRETATIONS)')
     outputs = config.get('outputs', {'decisions_parquet': False})
     _keys(outputs, 'outputs', ('decisions_parquet',))
     _require(isinstance(outputs['decisions_parquet'], bool), 'outputs.decisions_parquet: bool')
@@ -435,7 +439,7 @@ def execute(spec, mode, verified, manifest, env, guard, write):
                     margins=spec['margins'], expected_q_source=spec['expected_dr_q_source'],
                     runtime_sha256=head['runtime_sha256'])
     stream = ope.LedgerStream(ledger_path)
-    check = ope.FactsCheck(censoring)
+    check = ope.FactsCheck(censoring, spec['pa_facts']['value_tolerance'])
     scan.run(stream.decisions(), pas, sealed=sealed, facts_check=check, checkpoint=guard.checkpoint)
     _require(stream.sha256 == spec['pins'][spec['ledger']], 'ledger bytes changed after their pin was verified')
     _require(stream.header == header, 'streamed ledger header differs from the header read first')
@@ -455,8 +459,8 @@ def execute(spec, mode, verified, manifest, env, guard, write):
                                                                     'registration_chain')},
                             'games': len(dr['games']), 'censoring_rule_of_pa_values': censoring},
                   'ledger': {'rows': stream.rows, 'head_sha256': stream.head, 'kinds': dict(stream.kinds), 'header': head},
-                  'pa_facts': {'source': 'frame', 'provenance': facts_provenance,
-                               'crosscheck': check.record(dr, spec['pa_facts']['value_tolerance'])},
+                  'pa_facts': {'source': 'frame', 'provenance': facts_provenance, 'crosscheck': check.record()},
+                  'interpretations': ope.INTERPRETATIONS,
                   'identity_check': records['identity_check'], 'q_source': records['q_source'],
                   'vocabulary_size': records['vocabulary_size'],
                   'seeds': {'bootstrap': spec['bootstrap']['seeds'], 'perm_placebo': spec['placebos']['perm_seed'],
@@ -469,6 +473,11 @@ def execute(spec, mode, verified, manifest, env, guard, write):
     doc = {'provenance': provenance, 'counts': counts, 'prediag': diag}
     files = {}
     if mode == 'run':
+        guard.checkpoint()  # phase (b): the sealed rows reproduced with the real reward, before any estimate
+        second = ope.LedgerStream(ledger_path)
+        ope.reproduce(second.decisions(), pas, sealed, check, guard.checkpoint)
+        _require(second.sha256 == spec['pins'][spec['ledger']], 'ledger bytes changed between the two passes')
+        provenance['pa_facts']['crosscheck'] = check.record(dr)
         guard.checkpoint()
         rule = {'primary_tau': spec['sealed_tau'], 'variants': spec['variants'], 'main_families': spec['main_families'],
                 'margins': spec['margins'], 'bootstrap': spec['bootstrap'], 'invalid_share_max': spec['invalid_share_max'],
@@ -476,7 +485,7 @@ def execute(spec, mode, verified, manifest, env, guard, write):
                 'alpha': spec['alpha'], 'mde_multiplier': spec['mde_multiplier']}
         sections, csv_sections, inputs = ope.analysis(tab, diag, rule=rule, checkpoint=guard.checkpoint)
         doc.update(sections)
-        doc['decision'] = {'inputs': inputs, **decide(inputs)}
+        doc['decision'] = {'inputs': inputs, **decide(inputs), 'interpretations': ope.INTERPRETATIONS}
         doc['reading'] = ('stage 1 is EXPLORATORY_REANALYSIS on exposed <=2025 DEV: the decision is the registered '
                           'stage-2 entry rule, not an adoption label; non-evaluable rows are descriptive')
         files['per_tau.csv'] = per_tau_csv(ope.per_tau_rows(csv_sections))

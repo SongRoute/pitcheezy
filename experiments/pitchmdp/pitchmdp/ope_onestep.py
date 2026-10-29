@@ -91,6 +91,16 @@ UNITS = ('game', 'pitcher')
 CI_LEVELS = (0.025, 0.975)
 STATS = ('delta', 'M_dr', 'M_pi', 'C', 'R', 'R_pi')
 CONFIRMATORY = {'P': 'all', 'P_D': 'D:1se'}
+INTERPRETATIONS = {  # the readings this implementation registers where the review text left a choice
+    'noise_exemption': 'the noise-criterion exemption applies to the policy (temperature, tau 0.1), hence to both '
+                       'confirmatory contrasts P and P_D (the ESS and cluster criteria still apply to each)',
+    'stage2_tau_ranking': 'with no GAIN, stage 2 takes the tau in E with the largest delta_hat / max(SE_game, '
+                          'SE_pitcher); ties -> the larger tau',
+    'holm_not_evaluable': 'a NOT_EVALUABLE contrast enters Holm with p = 1; m stays 2',
+    's_pos_rule': 'S-pos keeps the sign and its 95% CI excludes 0 in both bootstraps',
+    'reproduction_phase_a': 'phase (a) classifies with the reward value masked (presence kept, value replaced by 0.5), '
+                            'so no G value is read before prediag; the values are reproduced in phase (b)'}
+MASKED_REWARD = .5
 ESTIMAND = {
     'confirmatory': 'P = (temperature, tau 0.1, all, DR), P_D = (temperature, tau 0.1, D_1se, DR): mean over the '
                     'estimation population of A_t = sum_a [pi(a) - reference(a)] Q_b(H_t, a); WE per decision',
@@ -338,7 +348,8 @@ def gint(row, d, sealed_tau, tol, rtol):
 
 # ---------------------------------------------------------------- sealed pa_values, frame facts
 
-PA_VALUE_COLUMNS = ('pa_id', 'game', 'in_population', 'status', 'kind', 'reason', 'end_kind')
+PA_VALUE_COLUMNS = ('pa_id', 'game', 'in_population', 'status', 'kind', 'reason', 'end_kind', 'resolution', 'candidate',
+                    'reference', 'delta', 'l2')  # never terminal_residual or the *_bounds columns
 
 
 def plain(value):
@@ -388,44 +399,87 @@ def estimator_info(pa_row, facts, n_decisions):
             'problem_index': index, **{k: facts[k] for k in ('reward', 'kind', 'reason', 'end', 'end_kind', 'flags')}}
 
 
-class FactsCheck:
-    """Per PA, policy_estimator.pa_value re-run on the ledger rows and the frame facts must reproduce the sealed status,
-    kind, reason and in_population; game and end_kind must equal the frame facts. The L2 set's rewards are accumulated
-    for the aggregate check against dr.json (L2 PAs, observed mean end value)."""
-    def __init__(self, censoring):
-        _require(censoring in est.CENSORING, 'cross-check censoring rule')
-        self.censoring, self.pas, self.l2_pas, self.l2_rewards = censoring, 0, 0, []
-        self.missing_reward = Counter()
+def _same(a, b, tol):
+    if a is None or b is None:
+        return a is None and b is None, 0.
+    diff = abs(float(a) - float(b))
+    return diff <= tol, diff
 
-    def check(self, pa_id, decisions, info, pa_row, facts):
+
+class FactsCheck:
+    """The per-PA reproduction of the sealed pa_values rows by policy_estimator.pa_value (censoring of the sealed run)
+    on the ledger rows and the frame facts, in two phases. Phase (a), G-free (in --check and before prediag): the reward
+    value is masked (presence kept), status / kind / reason / in_population must equal the sealed row and game /
+    end_kind the frame facts. Phase (b), after prediag (--run only): the real reward; status / kind / reason /
+    resolution / l2 exact and candidate / reference / delta within ``tol`` (None and NaN alike). Phase (b) also feeds
+    the aggregate check against dr.json (L2 PAs exact, their mean reward within ``tol``). Any mismatch raises
+    IntegrityError (study-level INVALID)."""
+    def __init__(self, censoring, tol):
+        _require(censoring in est.CENSORING and isinstance(tol, float) and 0 <= tol < 1e-6, 'cross-check settings')
+        self.censoring, self.tol = censoring, tol
+        self.phase = {'a': 0, 'b': 0}
+        self.max_abs = {k: 0. for k in ('candidate', 'reference', 'delta')}
+        self.l2_pas, self.l2_rewards, self.missing_reward = 0, [], Counter()
+
+    def _exact(self, pa_id, phase, pa_row, got, keys):
+        for key in keys:
+            _require(pa_row[key] == plain(got.get(key)), f'pa_values reproduction ({phase}) {pa_id}: {key} '
+                                                         f'{pa_row[key]!r} != recomputed {plain(got.get(key))!r}')
+
+    def phase_a(self, pa_id, decisions, info, pa_row):
+        masked = {**info, 'reward': None if info['reward'] is None else MASKED_REWARD}
+        got = est.pa_value(decisions, masked, self.censoring)
+        self._exact(pa_id, 'a', pa_row, got, ('status', 'kind', 'reason', 'in_population'))
+        _require(pa_row['game'] == info['game'], f'pa_values reproduction (a) {pa_id}: game differs')
+        _require(pa_row['end_kind'] == info['end_kind'], f'pa_values reproduction (a) {pa_id}: end_kind differs')
+        self.phase['a'] += 1
+        if info['reward'] is None:
+            self.missing_reward[f'{info["kind"]}:{info["reason"]}'] += 1
+
+    def phase_b(self, pa_id, decisions, info, pa_row):
         got = est.pa_value(decisions, info, self.censoring)
-        for key in ('status', 'kind', 'reason', 'in_population'):
-            _require(pa_row[key] == plain(got.get(key)),
-                     f'pa_values cross-check {pa_id}: {key} {pa_row[key]!r} != recomputed {plain(got.get(key))!r}')
-        _require(pa_row['game'] == facts['game'], f'pa_values cross-check {pa_id}: game differs')
-        _require(pa_row['end_kind'] == facts['end_kind'], f'pa_values cross-check {pa_id}: end_kind differs')
-        self.pas += 1
-        if facts['reward'] is None:
-            self.missing_reward[f'{facts["kind"]}:{facts["reason"]}'] += 1
+        self._exact(pa_id, 'b', pa_row, got, ('status', 'kind', 'reason', 'resolution', 'l2', 'in_population'))
+        for key in self.max_abs:
+            same, diff = _same(pa_row[key], plain(got.get(key)), self.tol)
+            _require(same, f'pa_values reproduction (b) {pa_id}: {key} {pa_row[key]!r} != recomputed {got.get(key)!r}')
+            self.max_abs[key] = max(self.max_abs[key], diff)
+        self.phase['b'] += 1
         if got['in_population'] and got.get('l2', got['status'] == est.COMPLETE):
             self.l2_pas += 1
-            if facts['reward'] is not None:
-                self.l2_rewards.append(float(facts['reward']))
+            if info['reward'] is not None:
+                self.l2_rewards.append(float(info['reward']))
 
-    def record(self, dr=None, tol=1e-12):
-        """The per-PA record and, with the sealed dr.json, the aggregate reward check (exact count, mean within tol)."""
-        out = {'rule': 'policy_estimator.pa_value on the ledger rows + frame facts reproduces the sealed status, kind, '
-                       'reason, in_population; game and end_kind equal', 'censoring': self.censoring, 'pas': self.pas,
-               'missing_reward_pas': dict(self.missing_reward), 'l2_pas': self.l2_pas,
-               'l2_mean_reward': float(np.mean(self.l2_rewards)) if self.l2_rewards else None, 'aggregate_check': None}
+    def record(self, dr=None):
+        """The reproduction record; after phase (b) and with the sealed dr.json, the aggregate reward check."""
+        out = {'rule': 'policy_estimator.pa_value on the ledger rows + frame facts reproduces the sealed pa_values row',
+               'censoring': self.censoring, 'tolerance': self.tol, 'columns_read': list(PA_VALUE_COLUMNS),
+               'phase_a_pas': self.phase['a'], 'phase_b_pas': self.phase['b'] or None,
+               'phase_b_max_abs_diff': dict(self.max_abs) if self.phase['b'] else None,
+               'missing_reward_pas': dict(self.missing_reward), 'aggregate_check': 'not run (phase b only)'}
+        if not self.phase['b']:
+            return out
         layer = ((dr or {}).get('layers') or {}).get('L2_complete_conditional') or {}
-        if layer.get('observed_mean_end_value') is not None:
-            _require(layer.get('pas') == self.l2_pas, f'L2 PAs {self.l2_pas} differ from the sealed {layer.get("pas")}')
-            diff = abs(out['l2_mean_reward'] - float(layer['observed_mean_end_value']))
-            _require(diff <= tol, f'mean frame reward over the L2 PAs differs from the sealed value by {diff!r}')
-            out['aggregate_check'] = {'sealed_pas': layer['pas'], 'sealed_mean': layer['observed_mean_end_value'],
-                                      'abs_diff': diff, 'tolerance': tol}
+        mean = float(np.mean(self.l2_rewards)) if self.l2_rewards else None
+        out.update(l2_pas=self.l2_pas, l2_mean_reward=mean)
+        if layer.get('observed_mean_end_value') is None:
+            out['aggregate_check'] = 'skipped: dr.json has no L2 observed_mean_end_value'
+            return out
+        _require(layer.get('pas') == self.l2_pas, f'L2 PAs {self.l2_pas} differ from the sealed {layer.get("pas")}')
+        diff = abs(mean - float(layer['observed_mean_end_value']))
+        _require(diff <= self.tol, f'mean frame reward over the L2 PAs differs from the sealed value by {diff!r}')
+        out['aggregate_check'] = {'sealed_pas': layer['pas'], 'sealed_mean': layer['observed_mean_end_value'],
+                                  'abs_diff': diff}
         return out
+
+
+def reproduce(decisions, pas, sealed, facts_check, checkpoint=None):
+    """Phase (b): a second streamed pass, every PA's sealed row reproduced with the real reward."""
+    for k, (pa_id, info, rows) in enumerate(est.by_pa(decisions, pas)):
+        if checkpoint is not None and k % 200 == 0:
+            checkpoint()
+        rows = sorted(rows, key=lambda d: d['decision_index'])
+        facts_check.phase_b(pa_id, rows, estimator_info(sealed[pa_id], info, len(rows)), sealed[pa_id])
+    return facts_check
 
 
 def frame_facts(frame, blocks, games_table, defense):
@@ -499,7 +553,7 @@ class Scan:
     def _pa(self, k, pa_id, info, rows, sealed, facts_check):
         self.pa['pas'] += 1
         if facts_check is not None:
-            facts_check.check(pa_id, rows, estimator_info(sealed[pa_id], info, len(rows)), sealed[pa_id], info)
+            facts_check.phase_a(pa_id, rows, estimator_info(sealed[pa_id], info, len(rows)), sealed[pa_id])
         if rows:
             _require(str(rows[0]['pitcher']) == str(info['start_pitcher']),
                      f'PA {pa_id}: first ledger row pitcher differs from the frame start pitcher')

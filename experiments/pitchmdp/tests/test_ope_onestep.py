@@ -653,27 +653,32 @@ class RunnerTests(StageCase):
             self.assertEqual(facts[pa_id]['we_start'], defense(GameState.from_row(first), first.inning_topbot == 'Top'))
         sealed = ope.sealed_rows(pd.read_parquet(self.stage.dir / 'pa_values.parquet',
                                                  columns=list(ope.PA_VALUE_COLUMNS)).to_dict('records'))
-        check = ope.FactsCheck('l1r')
         pas = {p: {**facts[p], 'in_population': sealed[p]['in_population']} for p in sealed}
         by = {p: rows for p, _, rows in est.by_pa(self.stage.ledger.iter_decisions(), pas)}
-        for p in sealed:
-            check.check(p, by[p], ope.estimator_info(sealed[p], pas[p], len(by[p])), sealed[p], pas[p])
+
+        def run(check, phase, facts_by_pa):
+            for p in sealed:
+                getattr(check, phase)(p, by[p], ope.estimator_info(sealed[p], facts_by_pa[p], len(by[p])), sealed[p])
+            return check
         dr = json.loads((self.stage.dir / 'dr.json').read_text())
-        record = check.record(dr)
-        self.assertEqual(record['pas'], len(sealed))
+        record = run(run(ope.FactsCheck('l1r', 1e-12), 'phase_a', pas), 'phase_b', pas).record(dr)
+        self.assertEqual((record['phase_a_pas'], record['phase_b_pas']), (len(sealed), len(sealed)))
+        self.assertEqual(record['phase_b_max_abs_diff'], {'candidate': 0., 'reference': 0., 'delta': 0.})
         self.assertEqual(record['aggregate_check']['abs_diff'], 0.)  # the frame rewards reproduce the sealed L2 mean
-        wrong = {p: {**f, 'reward': None if f['reward'] is None else f['reward'] * .5} for p, f in pas.items()}
-        shifted = ope.FactsCheck('l1r')
-        for p in sealed:
-            shifted.check(p, by[p], ope.estimator_info(sealed[p], wrong[p], len(by[p])), sealed[p], wrong[p])
-        with self.assertRaisesRegex(pa.IntegrityError, 'mean frame reward over the L2 PAs'):
-            shifted.record(dr)
+        self.assertEqual(run(ope.FactsCheck('l1r', 1e-12), 'phase_a', pas).record()['aggregate_check'],
+                         'not run (phase b only)')
+        nudged = {p: {**f, 'reward': None if f['reward'] is None else (f['reward'] - 1e-6 if f['reward'] > .5
+                                                                        else f['reward'] + 1e-6)} for p, f in pas.items()}
+        run(ope.FactsCheck('l1r', 1e-12), 'phase_a', nudged)  # phase (a) never reads a G value
+        with self.assertRaisesRegex(pa.IntegrityError, r'pa_values reproduction \(b\)'):
+            run(ope.FactsCheck('l1r', 1e-12), 'phase_b', nudged)
         missing = dict(pas)
         p0 = next(p for p in sealed if sealed[p]['status'] == est.COMPLETE)
         missing[p0] = {**pas[p0], 'reward': None, 'kind': preq.NO_TERMINAL, 'reason': 'no_terminal_event'}
-        with self.assertRaisesRegex(pa.IntegrityError, 'pa_values cross-check'):
-            ope.FactsCheck('l1r').check(p0, by[p0], ope.estimator_info(sealed[p0], missing[p0], len(by[p0])), sealed[p0],
-                                        missing[p0])
+        with self.assertRaisesRegex(pa.IntegrityError, r'pa_values reproduction \(a\)'):
+            run(ope.FactsCheck('l1r', 1e-12), 'phase_a', missing)
+        self.assertNotIn('terminal_residual', ope.PA_VALUE_COLUMNS)
+        self.assertFalse(any(c.endswith('_bounds') for c in ope.PA_VALUE_COLUMNS))
 
     def test_runner_refuses_bad_pins_and_existing_output_before_reading(self):
         path, out = self.write_config('pins', pins={**make_config(self.stage.dir, '/x')['pins'], 'dr.json': '0' * 64})
@@ -747,7 +752,9 @@ class RunnerTests(StageCase):
         self.assertEqual((header['dr_q']['source'], header['candidate_sha256']), ('evaluation_seed',
                                                                                   self.stage.identity['sha256']))
         crosscheck = doc['provenance']['pa_facts']['crosscheck']
-        self.assertEqual((crosscheck['pas'], crosscheck['aggregate_check']['abs_diff']), (16, 0.))
+        self.assertEqual((crosscheck['phase_a_pas'], crosscheck['phase_b_pas'], crosscheck['aggregate_check']),
+                         (16, None, 'not run (phase b only)'))  # --check reads no G value
+        self.assertEqual(doc['provenance']['interpretations'], ope.INTERPRETATIONS)
         self.assertNotIn('dose_response', doc)  # --check computes no G-dependent number
         prediag = json.loads((out / 'check' / 'prediag.json').read_text())['prediag']
         self.assertEqual(prediag['common']['prediag_minus_estimation'], 4)
@@ -801,7 +808,12 @@ class RunnerTests(StageCase):
             self.assertAlmostEqual(cell['M_pi']['mean'], float(np.mean(models_pi)), places=13)
             self.assertAlmostEqual(doc['dose_response']['temperature']['ips'][repr(tau)]['delta']['mean'],
                                    float(np.mean(ips)), places=13)
+        crosscheck = doc['provenance']['pa_facts']['crosscheck']
+        self.assertEqual((crosscheck['phase_a_pas'], crosscheck['phase_b_pas']), (16, 16))
+        self.assertEqual(crosscheck['phase_b_max_abs_diff'], {'candidate': 0., 'reference': 0., 'delta': 0.})
+        self.assertEqual(crosscheck['aggregate_check']['abs_diff'], 0.)
         decision = doc['decision']
+        self.assertEqual(decision['interpretations'], ope.INTERPRETATIONS)
         self.assertIn(decision['contrasts']['P']['label'], ('GAIN', 'HARM', 'NO_DIFFERENCE_ESTABLISHED',
                                                             'NO_DIFFERENCE_ESTABLISHED:SENSITIVE'))
         self.assertEqual(set(decision['inputs']['contrasts']), {'P', 'P_D'})
@@ -836,13 +848,38 @@ class RunnerTests(StageCase):
         self.assertTrue(doc['dose_response']['temperature']['dr']['0.1']['descriptive'])
         self.assertIsNone(doc['trend']['temperature']['slope'])
 
+    def test_a_wrong_frame_reward_stops_invalid_after_prediag_before_estimates(self):
+        class Nudged(SyntheticEnvironment):  # the frozen WE off by 1e-6: every next-row reward moves
+            def load_frame_and_we(self, spec, checkpoint):
+                frame, defense, config, provenance = super().load_frame_and_we(spec, checkpoint)
+                return frame, (lambda state, home: defense(state, home) + 1e-6), config, provenance
+        path, out = self.write_config('nudged')
+        self.assertEqual(runner.main(['--config', str(path), '--run'], env=Nudged(self.stage.frame)), 2)
+        failed = json.loads((out / 'run' / 'failed.json').read_text())
+        self.assertEqual(failed['study_label'], 'INVALID')
+        self.assertIn('pa_values reproduction (b)', failed['error'])
+        self.assertTrue((out / 'run' / 'prediag.json').exists())  # written before phase (b)
+        self.assertFalse((out / 'run' / 'results.json').exists())  # no estimate after a failed reproduction
+        path, out = self.write_config('nudged-check')
+        self.assertEqual(runner.main(['--config', str(path), '--check'], env=Nudged(self.stage.frame)), 0)  # G-free
+
     def test_the_registration_template_matches_the_schema(self):
         template = json.loads((HERE.parent / 'scripts' / 'run_ope_onestep.config-template.json').read_text())
-        with self.assertRaises(pa.IntegrityError):  # the FILL placeholders are refused as they are
+        self.assertIsNone(template['output_dir'])
+        self.assertIsNone(template['source_commit'])
+        with self.assertRaises(pa.IntegrityError):  # output_dir stays null until the PM registers it
             runner.validate_config(template)
-        filled = json.loads(json.dumps(template).replace('"FILL_FROM_S6_MANIFEST"', '"' + 'e' * 64 + '"'))
-        filled.update(output_dir=str(self.root / 'template-out'), source_commit=None)
+        filled = {**template, 'output_dir': str(self.root / 'template-out')}
         spec = runner.validate_config(filled)
+        self.assertEqual(template['interpretations'], ope.INTERPRETATIONS)
+        with self.assertRaisesRegex(pa.IntegrityError, 'interpretations differ'):
+            runner.validate_config({**filled, 'interpretations': {**ope.INTERPRETATIONS, 'holm_not_evaluable': 'drop'}})
+        self.assertEqual(template['pins'], {
+            'ledger-dev-0.jsonl': '4555989946a6f72fb593b3b8cdb905205b65338b007788b170206e04e208a4a0',
+            'pa_values.parquet': '57284a76e26db6534d65f425f30ede8ef789841e97d4654d5038f781bb625db7',
+            'dr.json': '5e56119ddff97215bea0e459af03257e72bdb55c6bd4d602e3bdba5568f27d38',
+            'manifest.json': '0bf8981b5bcbefe33c30de614ad36c6a441e9be15f9bac16c0e4cf61fcadfd17',
+            'started.json': '1fa9a703c82e59f045762ac094178ee7a47db69c59454a9f66d17274510a76b0'})
         self.assertEqual(len(spec['pa_facts']['policy_registration']['addenda']), 8)
         self.assertEqual(spec['guards'], {'max_seconds': 7200, 'max_rss_gb': 8})
         self.assertEqual(spec['placebos']['outcome_shuffle_null_seed'], 3477356613)

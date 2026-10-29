@@ -1,17 +1,24 @@
 {
   "experiment_id": "EXP-OPE-1STEP-01",
   "exposure_label": "EXPLORATORY_REANALYSIS",
-  "notes": "Template (spec v3). Replace every FILL_* value at registration; the runner refuses non-sha placeholders. Pins taken from configs/EXP-OPE-RES-01.json (A2) and configs/ML-POLICY-MATERIALIZATION-v1.json at ca55f47c: the 9 chain links were re-hashed in this worktree and match. pa_values / dr.json / started.json pins: copy them from the sealed S6-dr-a5 manifest.json artifact_sha256 (the runner checks the manifest lists them). Relative paths resolve against the runner's checkout.",
+  "notes": "Template (spec v3). The PM fills output_dir (a new absolute directory) and source_commit at registration; the runner refuses null there. Stage pins: ledger and manifest from configs/EXP-OPE-RES-01.json (A2), pa_values / dr.json / started.json from the sealed S6-dr-a5 manifest.json artifact_sha256 (the runner checks the manifest lists them; ledger-dev-paired-identity.jsonl e73fa3deb863d02bcc0b566305d3accb3521ab9a1e2a17bc9b989b01277f85ba is listed there but not read, so it has no slot). The 9 ML-POLICY chain links were re-hashed at ca55f47c and match. Relative paths resolve against the runner checkout. interpretations must equal ope_onestep.INTERPRETATIONS.",
+  "interpretations": {
+      "noise_exemption": "the noise-criterion exemption applies to the policy (temperature, tau 0.1), hence to both confirmatory contrasts P and P_D (the ESS and cluster criteria still apply to each)",
+      "stage2_tau_ranking": "with no GAIN, stage 2 takes the tau in E with the largest delta_hat / max(SE_game, SE_pitcher); ties -> the larger tau",
+      "holm_not_evaluable": "a NOT_EVALUABLE contrast enters Holm with p = 1; m stays 2",
+      "s_pos_rule": "S-pos keeps the sign and its 95% CI excludes 0 in both bootstraps",
+      "reproduction_phase_a": "phase (a) classifies with the reward value masked (presence kept, value replaced by 0.5), so no G value is read before prediag; the values are reproduced in phase (b)"
+  },
   "stage_dir": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/ML-POLICY-VAL-v1/S6-dr-a5",
   "ledger": "ledger-dev-0.jsonl",
   "pins": {
     "ledger-dev-0.jsonl": "4555989946a6f72fb593b3b8cdb905205b65338b007788b170206e04e208a4a0",
-    "pa_values.parquet": "FILL_FROM_S6_MANIFEST",
-    "dr.json": "FILL_FROM_S6_MANIFEST",
+    "pa_values.parquet": "57284a76e26db6534d65f425f30ede8ef789841e97d4654d5038f781bb625db7",
+    "dr.json": "5e56119ddff97215bea0e459af03257e72bdb55c6bd4d602e3bdba5568f27d38",
     "manifest.json": "0bf8981b5bcbefe33c30de614ad36c6a441e9be15f9bac16c0e4cf61fcadfd17",
-    "started.json": "FILL_FROM_S6_MANIFEST"
+    "started.json": "1fa9a703c82e59f045762ac094178ee7a47db69c59454a9f66d17274510a76b0"
   },
-  "output_dir": "FILL_NEW_ABSOLUTE_DIRECTORY",
+  "output_dir": null,
   "tau_grid": ["inf", 0.5, 0.2, 0.1, 0.09, 0.07, 0.05, 0.02],
   "sealed_tau": 0.1,
   "identity_tolerance": 1e-12,
@@ -57,6 +64,6 @@
     "value_tolerance": 1e-12,
     "check_selection": true
   },
-  "source_commit": "FILL_CODE_COMMIT_OR_NULL",
+  "source_commit": null,
   "outputs": {"decisions_parquet": false}
 }
