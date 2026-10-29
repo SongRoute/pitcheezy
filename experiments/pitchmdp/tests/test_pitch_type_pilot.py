@@ -204,3 +204,35 @@ def test_actual_evaluation_payload_serializes_and_nofit_recovery_matches(monkeyp
     with pytest.raises(json.JSONDecodeError): recovery.completed_field(partial,'tree')
     bad=audit.copy();bad.iloc[0,bad.columns.get_loc('tree_candidate_FF')]=np.nan
     with pytest.raises(ValueError,match='finite'):recovery.recover(fixture(),bad,ledger,config())
+
+
+def test_complete_recovery_with_actual_synthetic_payload(tmp_path, monkeypatch):
+    import importlib.util
+    import sys
+    from pitchmdp.pitch_type_pilot import digest
+    spec=importlib.util.spec_from_file_location('recovery_complete',ROOT/'experiments/pitchmdp/scripts/recover_pitch_type_pilot.py')
+    recovery=importlib.util.module_from_spec(spec);spec.loader.exec_module(recovery)
+    result,ledger,audit=evaluate_frame(fixture(),config())
+    result['provenance']={'source_commit':'0f3ec92d6137e6ce390373920392ecb7f03303a7',
+        'config_sha256':recovery.CONFIG_SHA,'data_sha256':config()['source']['sha256']}
+    result['tree']['leaves']=np.int64(result['tree']['leaves'])
+    attempt=tmp_path/'attempt002';attempt.mkdir()
+    with (attempt/'metrics.json').open('w') as f:
+        with pytest.raises(TypeError):json.dump(result,f,sort_keys=True,indent=2,allow_nan=False)
+    (attempt/'exclusions.jsonl').write_text(''.join(json.dumps(x)+'\n' for x in ledger))
+    audit.to_parquet(attempt/'predictions.parquet',index=False)
+    pins={name:digest(attempt/name) for name in recovery.PINS}
+    monkeypatch.setattr(recovery,'PINS',pins)
+    monkeypatch.setattr(recovery,'load_registered',lambda *a:fixture())
+    monkeypatch.setattr(recovery.resource,'setrlimit',lambda *a:None)
+    monkeypatch.setattr(recovery.signal,'alarm',lambda *a:None)
+    out=tmp_path/'metrics-recovered.json'
+    monkeypatch.setattr(sys,'argv',['recovery','--config',str(ROOT/'configs/EVAL-PITCH-TYPE-004.json'),
+        '--input',str(tmp_path/'never-real'),'--attempt',str(attempt),'--output',str(out),
+        '--cpu-lock',str(tmp_path/'cpu.lock'),'--recovery-commit','synthetic'])
+    recovery.main()
+    recovered=json.loads(out.read_text())
+    assert recovered['metrics_common_valid_inputs']==result['metrics_common_valid_inputs']
+    assert recovered['tree'] is None and recovered['recovery']['fit_count']==0
+    assert {name:digest(attempt/name) for name in pins}==pins
+    with pytest.raises(FileExistsError):recovery.main()

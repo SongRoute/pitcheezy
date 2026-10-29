@@ -38,7 +38,7 @@ def recover(frame, audit, ledger, c):
         support.append(values)
     metrics, losses = {}, {}
     for model in MODELS:
-        p = audit[[f'{model}_{v}' for v in c['labels']]].to_numpy()
+        p = np.ascontiguousarray(audit[[f'{model}_{v}' for v in c['labels']]].to_numpy())
         metrics[model], losses[model] = probability_scores(query.label.to_numpy(dtype=int),p,len(c['labels']))
     comparison = _paired_interval(losses['tree_candidate']-losses['context_control'],query.game_pk.to_numpy(),c['bootstrap'])
     support = np.asarray(support).T
