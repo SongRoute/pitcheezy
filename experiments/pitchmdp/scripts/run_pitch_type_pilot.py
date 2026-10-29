@@ -40,7 +40,7 @@ def main():
         result['provenance'] = {'source_commit': args.source_commit, 'config_sha256': args.config_sha256,
             'data_sha256': c['source']['sha256'], 'python': os.sys.version.split()[0],
             'packages': {name: importlib.metadata.version(name) for name in ('numpy','pandas','pyarrow','scikit-learn','scipy')},
-            'source_sha256': {str(path.relative_to(Path.cwd())): digest(path) for path in sorted(Path('experiments/pitchmdp').rglob('*.py'))},
+            'source_sha256': {str(path): digest(path) for path in sorted(Path('experiments/pitchmdp').rglob('*.py'))},
             'elapsed_seconds': time.time()-started,
             'max_rss_kib_linux': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
         with (args.output/'exclusions.jsonl').open('x') as f:

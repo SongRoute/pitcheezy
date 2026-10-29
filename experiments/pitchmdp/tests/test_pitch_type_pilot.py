@@ -160,3 +160,27 @@ def test_runner_exclusive_output_and_cpu_lock(tmp_path, monkeypatch):
     with pytest.raises(FileExistsError): runner.main()
     assert runner.os.environ['CUDA_VISIBLE_DEVICES'] == ''
     assert not list(output.iterdir())
+
+
+def test_complete_runner_writes_provenance_without_absolute_relative_mismatch(tmp_path, monkeypatch):
+    import importlib.util
+    import sys
+    from pitchmdp.pitch_type_pilot import digest
+    script = ROOT/'experiments/pitchmdp/scripts/run_pitch_type_pilot.py'
+    spec = importlib.util.spec_from_file_location('pilot_runner_complete',script)
+    runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
+    source = tmp_path/'experiments/pitchmdp/mock.py'; source.parent.mkdir(parents=True)
+    source.write_text('# source-only synthetic runner regression\n')
+    cpath = ROOT/'configs/EVAL-PITCH-TYPE-004.json'; out = tmp_path/'attempt'
+    monkeypatch.setattr(sys,'argv',[str(script),'--config',str(cpath),'--config-sha256',digest(cpath),
+        '--input',str(tmp_path/'not-real'),'--output',str(out),'--source-commit','synthetic',
+        '--cpu-lock',str(tmp_path/'cpu.lock')])
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(runner.resource,'setrlimit',lambda *a: None)
+    monkeypatch.setattr(runner.signal,'alarm',lambda *a: None)
+    monkeypatch.setattr(runner,'load_registered',lambda *a: None)
+    monkeypatch.setattr(runner,'evaluate_frame',lambda *a: ({'synthetic':True},[],pd.DataFrame({'synthetic':[1]})))
+    runner.main()
+    result = json.loads((out/'metrics.json').read_text())
+    assert result['provenance']['source_sha256'] == {'experiments/pitchmdp/mock.py':digest(source)}
+    assert sorted(p.name for p in out.iterdir()) == ['exclusions.jsonl','metrics.json','predictions.parquet']
