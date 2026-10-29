@@ -6,7 +6,7 @@
 //   node tests/ui-preview.mjs --phone                                  # Tailscale address of this Mac, port 8780 (open on the phone)
 //   node tests/ui-preview.mjs --fixture <dir> --clock fixture          # <dir> holds v1/ (or is v1/ itself)
 //   node tests/ui-preview.mjs --ws                                     # World Series replay (fixtures/publish-ws: G1 849805 + G3 849804 + G4 849803), fixture clock
-//   node tests/ui-preview.mjs --ws-moment first-rec [--ws]            # one replayed MID-GAME moment of G4 (fixtures/publish-ws-moments/849803/<label>), clock now
+//   node tests/ui-preview.mjs --ws-moment first-rec                   # one replayed MID-GAME moment of G4 (fixtures/publish-ws-moments/849803/<label>), alone, clock now
 //   node tests/ui-preview.mjs --dev                                    # hot reload: also starts `vite --mode public` reading this server
 //
 // --fixture can be given more than once: the folders are layered (a game or games file comes from the first folder that has it) and
@@ -16,8 +16,9 @@
 // --ws             the three World Series publish folders copied byte for byte from the live runs of 10/24, 10/27 and 10/28 KST (see
 //                  fixtures/publish-ws/README.md); --clock defaults to fixture with it. All games are final: no `next`, no live state.
 // --ws-moment      a moment folder of fixtures/publish-ws-moments/849803 (README there: REPLAYED bodies from the live run's store, the
-//                  recommendation being the one the live ledger recorded; not live-published bytes). Served first, so with --ws its game
-//                  and date files win and the game shows mid-game with `next`; --clock defaults to now with it.
+//                  recommendation being the one the live ledger recorded; not live-published bytes). Served ALONE: with --ws or --fixture
+//                  it is refused, because the moment's empty date files would hide the other games and the joined health.json would carry
+//                  the final file's sequence, so the screen would not apply the moment's lower one. --clock defaults to now with it.
 //
 // --clock now      (default) real Date header; the publish stamps of each answer (publish.published_at/sequence, health/manifest
 //                  published_at/sequence, health game_checks checked_at/sequence_*) are moved to "now" and the sequence steps once per
@@ -61,7 +62,8 @@ for (let i = 2; i < process.argv.length; i++) {
   else die(`unknown option ${a}\n${USAGE}`);
 }
 function die(msg) { console.error(msg); process.exit(2); }
-for (const label of args.moments) {   // the moment goes before the --ws folders (after any --fixture given): its game and date files win over the final ones
+if (args.moments.length && (args.ws || args.fixtures.length)) die('--ws-moment is served alone: with --ws or --fixture the layered date files and health sequence disagree (see the moments README)');
+for (const label of args.moments) {
   if (!/^[a-z0-9-]+$/.test(label) || !existsSync(path.join(MOMENTS, label, 'v1', 'manifest.json'))) die(`no such moment: ${label} (see ${path.join(MOMENTS, 'README.md')})`);
   args.fixtures.push(path.join(MOMENTS, label));
 }
