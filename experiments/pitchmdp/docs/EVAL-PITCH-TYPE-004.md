@@ -72,8 +72,8 @@
 - `gpu run -g 0,1`은 정확 source/config만 들어있는 별도 staging git에서 사용한다. 큰 repo/결과/봉인자료 전체 패킹은 하지 않는다.
   staging 파일 hash가 검토 커밋과 일치함을 launch receipt에 기록한다. raw 파일 한 개만 승인 이후 task-owned input에 복사한다.
 - 실행 직전 gpu st의 로그열은 읽지 않도록 메모리에서 last_line을 비활성화한 동일 도구 status를 사용한다.
-  UUID/프로세스 메타 확인, GPU0/1 공통 UUID flock을 nonblocking 획득 후 재검증한다. 남의 프로세스에는 신호를 보내지 않는다.
-- 실제 연산은 **CPU, CUDA_VISIBLE_DEVICES=''**. 두 lock은 이번 실행 중에만 유지한다. 사용자 GPU0/1 배정은 후속 GPU후보 판단을 위해 기록만 유지한다.
+  UUID/프로세스 메타 확인에서 GPU0/1에 다른 compute PID가 발견됐으며 owner는 현재 namespace에서 UNKNOWN이다. 남의 프로세스에는 신호를 보내지 않는다.
+- 실제 연산은 **CPU, CUDA_VISIBLE_DEVICES=''**. task-owned CPU flock만 실행 중 nonblocking 보유한다. 물리GPU lock/유휴를 요구하지 않는다. gpu run의0/1은 transport metadata이며 물리 사용이 아니다. 사용자 GPU0/1 배정 의도는 유지하되 실제 GPU실험은 소유조정 전 대기한다.
 - 새 attempt001 디렉토리 exclusive create, 기존 산출물 overwrite 금지. own metrics.json/exclusions.jsonl/predictions.parquet만 회수한다.
   외부 실행 종료코드0과 metrics 존재/해시를 확인해야 완료다. timeout/부분 산출물은 성공으로 해석하지 않는다.
 - raw row·개별 예측/제외원장은 task-owned 비공개 산출물에만 보존. repo 결과 문서는 집계/한계/재현 정보만 담는다.
@@ -88,3 +88,5 @@
 
 완료조건: 사전 합성검사 → 별도 등록/코드 검토 → Root 수용 → 단일 등록 실행 → 종료/버전/집계 확인 → 별도 결과 검토.
 현재 문서 작성은 실자료 결과가 아니며 미완 단계는 실행 기록과 최종 검토에서 구분한다.
+
+실행준비 개정: GPU 점유 발견 후 Root 지시로 CPU 전용 lock으로 좁혔다. 과학적 모델/기간/지표는 불변이며 새 runner 고정커밋을 재검토한다.

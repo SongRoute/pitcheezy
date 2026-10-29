@@ -135,3 +135,28 @@ def test_single_game_uncertainty_and_no_claim():
     assert result['comparison']['status'] == 'insufficient_games'
     assert result['comparison']['nll']['ci95'] is None
     assert result['scientific_winner'] is None and result['timeliness'] == 'unmeasured_retrospective'
+
+
+def test_runner_exclusive_output_and_cpu_lock(tmp_path, monkeypatch):
+    import fcntl
+    import importlib.util
+    import sys
+    from pitchmdp.pitch_type_pilot import digest
+    script = ROOT/'experiments/pitchmdp/scripts/run_pitch_type_pilot.py'
+    spec = importlib.util.spec_from_file_location('pilot_runner', script)
+    runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
+    cpath = ROOT/'configs/EVAL-PITCH-TYPE-004.json'
+    output, lockpath = tmp_path/'attempt', tmp_path/'cpu.lock'
+    argv = [str(script),'--config',str(cpath),'--config-sha256',digest(cpath),
+        '--input',str(tmp_path/'never-open'),'--output',str(output),
+        '--source-commit','synthetic-check','--cpu-lock',str(lockpath)]
+    monkeypatch.setattr(sys,'argv',argv)
+    monkeypatch.setattr(runner,'load_registered',lambda *a: pytest.fail('raw access before guards'))
+    monkeypatch.setattr(runner.resource,'setrlimit',lambda *a: None)
+    monkeypatch.setattr(runner.signal,'alarm',lambda *a: None)
+    with lockpath.open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(BlockingIOError): runner.main()
+    with pytest.raises(FileExistsError): runner.main()
+    assert runner.os.environ['CUDA_VISIBLE_DEVICES'] == ''
+    assert not list(output.iterdir())
