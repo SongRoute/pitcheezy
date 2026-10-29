@@ -1,14 +1,15 @@
 {
   "experiment_id": "EXP-OPE-1STEP-01",
+  "stage_label": "S6_EXPLORATORY",
   "exposure_label": "EXPLORATORY_REANALYSIS",
-  "notes": "Template (spec v4 = SPEC DELTA 3). The PM fills output_dir (a new absolute directory) and source_commit at registration; the runner refuses null there. Stage pins: ledger and manifest from configs/EXP-OPE-RES-01.json (A2), pa_values / dr.json / started.json from the sealed S6-dr-a5 manifest.json artifact_sha256 (the runner checks the manifest lists them; ledger-dev-paired-identity.jsonl e73fa3deb863d02bcc0b566305d3accb3521ab9a1e2a17bc9b989b01277f85ba is listed there but not read, so it has no slot). The 9 ML-POLICY chain links were re-hashed at ca55f47c and match. Relative paths resolve against the runner checkout. interpretations must equal ope_onestep.INTERPRETATIONS.",
+  "notes": "Template (spec v4 = SPEC DELTA 3 + CODE-REVIEW-SONNET-001 fixes). The PM fills output_dir (a new absolute directory) and source_commit (the fixed code commit) at registration: the runner refuses null there, a null candidate_identity_sha256, check_selection other than true, and an eligibility status set other than the registered three. Stage pins: ledger and manifest from configs/EXP-OPE-RES-01.json (A2), pa_values / dr.json / started.json from the sealed S6-dr-a5 manifest.json artifact_sha256 (the runner checks the manifest lists them). recorded_not_read pins are copied into provenance and never read. The 9 ML-POLICY chain links were re-hashed at ca55f47c and match. Relative paths resolve against the runner checkout. min_available_gb uses (free + inactive + speculative) pages x page size from vm_stat. interpretations must equal ope_onestep.INTERPRETATIONS.",
   "interpretations": {
     "noise_exemption": "the noise-criterion exemption applies to the policy (temperature, tau 0.1), hence to both confirmatory contrasts P and P_D (the ESS and cluster criteria still apply to each)",
-    "stage2_tau_ranking": "with no GAIN, path (ii) takes the tau in E with the largest delta_hat / max(SE_game, SE_pitcher); ties -> the larger tau",
+    "stage2_tau_ranking": "with no GAIN, path (ii) takes the tau in E with the largest max-t statistic t_tau = delta_hat / SE_tau, SE_tau = max(SE_game, SE_pitcher) (the same SE as max-t); ties -> the larger tau",
     "holm_not_evaluable": "a NOT_EVALUABLE contrast enters Holm with p = 1; m stays 2",
     "s_pos_rule": "S-pos keeps the sign and its 95% CI excludes 0 in the same direction in both bootstraps",
-    "reproduction_phase_a": "phase (a) classifies with the reward value masked (presence kept, value replaced by 0.5), so no G value is read before prediag; the values are reproduced in phase (b)",
-    "gate_population": "the gate is evaluated on the estimation-eligible decisions of each contrast subset (P: all, P_D: D_1se); family x tau diagnostics use the prediag population",
+    "reproduction_phase_a": "before prediag only the 7 G-free pa_values columns are read and phase (a) classifies with the reward value masked; the value columns and the PA-end values enter only after prediag.json (phase b, attach_rewards)",
+    "gate_population": "every prediag metric and the gate are computed on the estimation-eligible decisions (P: all, P_D: D_1se); the all-kept-rows count is reported second",
     "shuffle_donors": "outcome_shuffle_null donors are drawn with replacement among the same pitcher's eligible PAs in other games (never the PA itself or its game)",
     "path_ii": "path (ii) needs |E| >= 2, a significant max-t, and at the chosen tau the perm paired CI > 0 and S-pos retention (subset all)"
   },
@@ -123,7 +124,7 @@
   "guards": {
     "max_seconds": 7200,
     "max_rss_gb": 8,
-    "min_available_gb": 10
+    "min_available_gb": 6
   },
   "pa_facts": {
     "source": "frame",
@@ -183,5 +184,21 @@
   "source_commit": null,
   "outputs": {
     "decisions_parquet": false
+  },
+  "recorded_not_read": {
+    "ledger-dev-paired-identity.jsonl": {
+      "sha256": "e73fa3deb863d02bcc0b566305d3accb3521ab9a1e2a17bc9b989b01277f85ba",
+      "note": "S6-dr-a5 manifest; the cand=ref paired identity ledger is not read"
+    },
+    "processed_frame_aligned": {
+      "sha256": "b10eaa519049a110862441a44ad70e11045fd5ef208220ce38b90413a348ea16",
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01/inputs/pitches.split-aligned.parquet",
+      "note": "A2 split-aligned copy; the loader reads processed/pitches.parquet instead"
+    },
+    "processed_frame_aligned_identity_manifest": {
+      "sha256": "a567efbf161a12c9d8b9a7f9ab1fd81920c4acb16417aca42dcb6061d2f91c6f",
+      "path": "/Volumes/T7 Shield/pitcheezy/pitchmdp/runs/ML-MATRIX-20260924/EXP-BC-CAL-01/inputs/pitches.split-aligned.identity.json",
+      "note": "identity manifest of the aligned copy; not read"
+    }
   }
 }

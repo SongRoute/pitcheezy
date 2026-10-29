@@ -66,11 +66,11 @@ from pitchmdp.policy_artifacts import IntegrityError, _require
 
 MODES = ('check', 'run')
 FIXED_PINS = ('pa_values.parquet', 'dr.json', 'manifest.json', 'started.json')
-REQUIRED = ('experiment_id', 'stage_dir', 'ledger', 'pins', 'output_dir', 'tau_grid', 'sealed_tau',
+REQUIRED = ('experiment_id', 'stage_label', 'stage_dir', 'ledger', 'pins', 'output_dir', 'tau_grid', 'sealed_tau',
             'identity_tolerance', 'ratio_rtol', 'expected_dr_q_source', 'candidate_identity_sha256', 'families',
             'primary', 'confirmatory', 'disagreement', 'eligibility', 'gate', 'sample_minima', 'placebos',
             'sensitivities', 'bootstrap', 'decision', 'guards', 'pa_facts')
-OPTIONAL = ('exposure_label', 'source_commit', 'outputs', 'notes', 'interpretations')
+OPTIONAL = ('exposure_label', 'source_commit', 'outputs', 'notes', 'interpretations', 'recorded_not_read')
 CODE_PATHS = ('experiments/pitchmdp',)
 EXIT = {'ok': 0, 'error': 1, 'refused': 2, 'guard': 3}
 HEX = set('0123456789abcdef')
@@ -140,7 +140,8 @@ def validate_config(config):
     _require(isinstance(config['expected_dr_q_source'], str) and config['expected_dr_q_source'],
              'expected_dr_q_source required (e.g. "evaluation_seed")')
     identity = config['candidate_identity_sha256']
-    _require(identity is None or _sha(identity), 'candidate_identity_sha256: null or a sha256')
+    _require(_sha(identity), 'candidate_identity_sha256 must be the registered candidate sha256 (null is refused)')
+    _require(config['stage_label'] in ope.STAGE_LABELS, f'stage_label must be one of {ope.STAGE_LABELS}')
     families = config['families']
     _require(isinstance(families, list) and families and families[0] == 'temperature'
              and set(families) <= set(ope.MAIN_FAMILIES) and len(set(families)) == len(families),
@@ -159,8 +160,8 @@ def validate_config(config):
              'disagreement: q "q_planning", ties "not_in_D", margins [0, ..., "1se"], confident "1se"')
     elig = config['eligibility']
     _keys(elig, 'eligibility', ('statuses', 'population', 'require_reward'))
-    _require(isinstance(elig['statuses'], list) and elig['statuses'] and set(elig['statuses']) <= set(ope.RESULT_STATUSES)
-             and len(set(elig['statuses'])) == len(elig['statuses']), f'eligibility.statuses within {ope.RESULT_STATUSES}')
+    _require(isinstance(elig['statuses'], list) and sorted(elig['statuses']) == sorted(ope.RESULT_STATUSES),
+             f'eligibility.statuses must be exactly the registered set {list(ope.RESULT_STATUSES)}')
     _require(elig['population'] == 'E0' and elig['require_reward'] is True,
              'eligibility: population "E0" and require_reward true (whole PAs without a reward are excluded)')
     gate = config['gate']
@@ -204,7 +205,10 @@ def validate_config(config):
     _require(all(_number(v) and v > 0 for v in guards.values()),
              'guards: positive max_seconds, max_rss_gb (GiB, ru_maxrss) and min_available_gb (vm_stat free + inactive)')
     source = config.get('source_commit')
-    _require(source is None or _sha(source, 40), 'source_commit: null or a 40-hex commit')
+    _require(_sha(source, 40), 'source_commit must be the registered 40-hex code commit (null is refused)')
+    unread = config.get('recorded_not_read', {})
+    _require(isinstance(unread, dict) and all(isinstance(v, dict) and _sha(v.get('sha256')) for v in unread.values()),
+             'recorded_not_read: {name: {sha256, ...}} (pins recorded in provenance, never read)')
     _require(config.get('interpretations', ope.INTERPRETATIONS) == ope.INTERPRETATIONS,
              'interpretations differ from the ones this code implements (ope_onestep.INTERPRETATIONS)')
     outputs = config.get('outputs', {'decisions_parquet': False})
@@ -221,10 +225,11 @@ def validate_config(config):
     _require(_sha(facts['we_contract_sha256']), 'pa_facts.we_contract_sha256 must be a sha256')
     value_tol = facts.get('value_tolerance', 1e-12)
     _require(_number(value_tol) and 0 <= value_tol < 1e-6, 'pa_facts.value_tolerance in [0, 1e-6)')
-    _require(isinstance(facts.get('check_selection', True), bool), 'pa_facts.check_selection: bool')
+    _require(facts.get('check_selection', True) is True, 'pa_facts.check_selection must be true (the registered rule)')
     scan_families = [*families, *(['cross_replicate'] if sens['cross_replicate'] else []), *(['neg'] if plac['neg'] else [])]
     return {
         'experiment_id': config['experiment_id'], 'exposure_label': config.get('exposure_label'),
+        'stage_label': config['stage_label'], 'recorded_not_read': dict(unread),
         'stage_dir': Path(config['stage_dir']), 'ledger': config['ledger'], 'pins': dict(pins),
         'output_dir': Path(config['output_dir']), 'taus': taus, 'sealed_tau': sealed_tau,
         'identity_tolerance': float(config['identity_tolerance']), 'ratio_rtol': float(config['ratio_rtol']),
@@ -289,14 +294,12 @@ class Environment:
                                                                  *CODE_PATHS).splitlines() if x]
         return state
 
+    MEMORY_FORMULA = '(Pages free + Pages inactive + Pages speculative) x page size (vm_stat)'
+
     def available_memory_bytes(self):
-        """Free + inactive pages x page size (macOS vm_stat); MemAvailable elsewhere."""
+        """MEMORY_FORMULA on macOS (the registration's wording); MemAvailable elsewhere."""
         if sys.platform == 'darwin':
-            text = subprocess.check_output(['vm_stat'], text=True)
-            page = int(text.split('page size of', 1)[1].split('bytes', 1)[0])
-            pages = {line.split(':')[0].strip(): int(line.split(':')[1].strip().rstrip('.'))
-                     for line in text.splitlines()[1:] if ':' in line}
-            return (pages['Pages free'] + pages['Pages inactive']) * page
+            return parse_vm_stat(subprocess.check_output(['vm_stat'], text=True))
         with open('/proc/meminfo') as stream:
             info = {line.split(':')[0]: int(line.split()[1]) for line in stream}
         return info['MemAvailable'] * 1024
@@ -347,6 +350,14 @@ class Environment:
                       'frame_rows': int(len(inputs['frame'])),
                       'loaders': ['run_policy_validation.load_inputs(store=False)', 'policy_identity.load_pinned_we']}
         return inputs['frame'], defense, config, provenance
+
+
+def parse_vm_stat(text):
+    """Bytes of (free + inactive + speculative) pages from ``vm_stat`` output."""
+    page = int(text.split('page size of', 1)[1].split('bytes', 1)[0])
+    pages = {line.split(':')[0].strip(): int(line.split(':')[1].strip().rstrip('.'))
+             for line in text.splitlines()[1:] if ':' in line}
+    return (pages['Pages free'] + pages['Pages inactive'] + pages.get('Pages speculative', 0)) * page
 
 
 def frame_pa_facts(env, spec, dr, checkpoint):
@@ -448,8 +459,8 @@ def execute(spec, mode, verified, manifest, env, guard, write):
     censoring = censoring_of(dr)
     facts, facts_provenance = frame_pa_facts(env, spec['pa_facts'], dr, guard.checkpoint)
     guard.checkpoint()
-    table = pd.read_parquet(io.BytesIO(verified['pa_values.parquet']), columns=list(ope.PA_VALUE_COLUMNS))
-    sealed = ope.sealed_rows(table.to_dict('records'))
+    table = pd.read_parquet(io.BytesIO(verified['pa_values.parquet']), columns=list(ope.PHASE_A_COLUMNS))
+    sealed = ope.sealed_rows(table.to_dict('records'), ope.PHASE_A_COLUMNS)
     del table
     _require(list(sealed) == list(facts), 'pa_values PAs differ from the frame blocks of the stage games (ids or order)')
     pas = {pa_id: {**facts[pa_id], 'in_population': sealed[pa_id]['in_population'], 'pa_status': sealed[pa_id]['status']}
@@ -480,7 +491,8 @@ def execute(spec, mode, verified, manifest, env, guard, write):
                             'games': len(dr['games']), 'censoring_rule_of_pa_values': censoring},
                   'ledger': {'rows': stream.rows, 'head_sha256': stream.head, 'kinds': dict(stream.kinds), 'header': head},
                   'pa_facts': {'source': 'frame', 'provenance': facts_provenance, 'crosscheck': check.record()},
-                  'interpretations': ope.INTERPRETATIONS,
+                  'interpretations': ope.INTERPRETATIONS, 'stage_label': spec['stage_label'],
+                  'recorded_not_read': spec['recorded_not_read'],
                   'identity_check': records['identity_check'], 'row_identity': records['row_identity'],
                   'se_ties': records['se_ties'], 'q_source': records['q_source'],
                   'vocabulary_size': records['vocabulary_size'],
@@ -500,6 +512,10 @@ def execute(spec, mode, verified, manifest, env, guard, write):
     files = {}
     if mode == 'run':
         guard.checkpoint()  # phase (b): the sealed rows reproduced with the real reward, before any estimate
+        values = pd.read_parquet(io.BytesIO(verified['pa_values.parquet']), columns=list(ope.PHASE_B_COLUMNS))
+        ope.add_value_columns(sealed, ope.sealed_rows(values.to_dict('records'), ope.PHASE_B_COLUMNS))
+        del values
+        ope.attach_rewards(tab, pas)
         second = ope.LedgerStream(ledger_path)
         ope.reproduce(second.decisions(), pas, sealed, check, guard.checkpoint)
         _require(second.sha256 == spec['pins'][spec['ledger']], 'ledger bytes changed between the two passes')
@@ -508,7 +524,7 @@ def execute(spec, mode, verified, manifest, env, guard, write):
         rule = {'primary_tau': spec['sealed_tau'], 'variants': spec['variants'], 'main_families': spec['main_families'],
                 'margins': spec['margins'], 'bootstrap': spec['bootstrap'], 'invalid_share_max': spec['invalid_share_max'],
                 'minima': spec['minima'], 'placebos': spec['placebos'], 'sensitivities': spec['sensitivities'],
-                'alpha': spec['alpha'], 'mde_multipliers': spec['mde_multipliers']}
+                'alpha': spec['alpha'], 'mde_multipliers': spec['mde_multipliers'], 'stage_label': spec['stage_label']}
         sections, csv_sections, inputs = ope.analysis(tab, diag, rule=rule, perm=setup, checkpoint=guard.checkpoint)
         doc.update(sections)
         doc['decision'] = {'inputs': inputs, **decide(inputs), 'interpretations': ope.INTERPRETATIONS}
@@ -562,12 +578,17 @@ def write_exclusive(path, data):
         stream.write(data)
 
 
+def encode(value):
+    return (json.dumps(ope.jsonable(value), indent=1, ensure_ascii=False, allow_nan=False) + '\n').encode()
+
+
 def dump(path, value):
-    write_exclusive(path, (json.dumps(ope.jsonable(value), indent=1, ensure_ascii=False, allow_nan=False) + '\n').encode())
+    write_exclusive(path, encode(value))
 
 
 def sha256sums(out):
-    names = sorted(p.name for p in out.iterdir() if p.is_file() and p.name != 'SHA256SUMS' and not is_appledouble(p))
+    names = sorted(p.name for p in out.iterdir() if p.is_file() and p.name != 'SHA256SUMS' and not is_appledouble(p)
+                   and not p.name.endswith('.partial'))
     write_exclusive(out / 'SHA256SUMS', ''.join(f'{file_sha256(out / n)}  {n}\n' for n in names).encode())
 
 
@@ -610,14 +631,13 @@ def main(argv=None, env=None):
         _require(not out.exists(), f'output exists: {out}; preserve it and register a new output directory')
         _require(not out.resolve().is_relative_to(spec['stage_dir'].resolve()), 'output inside the sealed stage directory')
         git = env.git_state(spec['source_commit'])
-        if spec['source_commit'] is not None:
-            _require(git['source_is_ancestor'] is True and not git['code_changed_since_source'] and not git['code_dirty'],
-                     'code at HEAD differs from the registered source commit (or uncommitted code changes)')
+        _require(git['source_is_ancestor'] is True and not git['code_changed_since_source'] and not git['code_dirty'],
+                 'code at HEAD differs from the registered source commit (or uncommitted code changes)')
         verified, manifest = verify_stage(spec)
         available = env.available_memory_bytes()
         _require(available >= spec['guards']['min_available_gb'] * 2 ** 30,
                  f'available memory {available / 2 ** 30:.2f} GiB below the registered start condition '
-                 f'{spec["guards"]["min_available_gb"]} GiB (vm_stat free + inactive)')
+                 f'{spec["guards"]["min_available_gb"]} GiB ({Environment.MEMORY_FORMULA})')
     except (ValueError, OSError) as error:  # IntegrityError is a ValueError
         print(f'REFUSED: {error}', file=sys.stderr)
         return EXIT['refused']
@@ -626,9 +646,10 @@ def main(argv=None, env=None):
     max_rss_gb = min(spec['guards']['max_rss_gb'], args.max_rss_gb or math.inf)
     run_info = {'mode': mode, 'argv': list(sys.argv if argv is None else argv), 'config_path': str(args.config),
                 'config_sha256': hashlib.sha256(raw).hexdigest(), 'started_utc': datetime.now(timezone.utc).isoformat(),
-                'git': git, 'source_commit_enforced': spec['source_commit'] is not None, 'environment': environment(),
+                'git': git, 'source_commit_enforced': True, 'environment': environment(),
                 'guards': {'max_seconds': max_seconds, 'max_rss_gb': max_rss_gb, 'registered': spec['guards'],
-                           'available_memory_bytes_at_start': available}}
+                           'available_memory_bytes_at_start': available,
+                           'available_memory_formula': Environment.MEMORY_FORMULA}}
     dump(out / 'started.json', {**run_info, 'config': config})
     guard = Guard(max_seconds, max_rss_gb)
     previous = signal.signal(signal.SIGALRM, _raise_hang)
@@ -637,11 +658,23 @@ def main(argv=None, env=None):
     def write(name, value):
         dump(out / name, {**value, 'run': {**run_info, 'wall_seconds_so_far': time.monotonic() - wall,
                                            'peak_rss_bytes': peak_rss_bytes()}})
+    writing = False
     try:
         doc, files = execute(spec, mode, verified, manifest, env, guard, write)
+        _stop_alarm(max_seconds, previous)
+        writing = True
+        doc['provenance']['run'] = {**run_info, 'wall_seconds': time.monotonic() - wall,
+                                    'cpu_seconds': time.process_time() - cpu, 'peak_rss_bytes': peak_rss_bytes(),
+                                    'finished_utc': datetime.now(timezone.utc).isoformat()}
+        final = {('results.json' if mode == 'run' else 'check.json'): encode(doc), **files}
+        for name, data in final.items():  # complete files first, renamed only when every one is written
+            write_exclusive(out / f'{name}.partial', data)
+        for name in final:
+            (out / f'{name}.partial').rename(out / name)
+        sha256sums(out)
     except BaseException as error:
         _stop_alarm(max_seconds, previous)
-        code = (EXIT['refused'] if isinstance(error, IntegrityError) else
+        code = (EXIT['refused'] if writing or isinstance(error, (IntegrityError, OSError)) else
                 EXIT['guard'] if isinstance(error, (HangGuardExceeded, MemoryGuardExceeded)) else EXIT['error'])
         dump(out / 'failed.json', {**run_info, 'error_type': type(error).__name__, 'error': str(error),
                                    'study_label': ('ESTIMATOR_SUSPECT' if isinstance(error, ope.EstimatorSuspect) else
@@ -649,17 +682,9 @@ def main(argv=None, env=None):
                                    'traceback': traceback.format_exc(limit=8), 'wall_seconds': time.monotonic() - wall,
                                    'peak_rss_bytes': peak_rss_bytes(), 'citable': False})
         print(f'{type(error).__name__}: {error}', file=sys.stderr)
-        if code == EXIT['error'] and not isinstance(error, Exception):
+        if not isinstance(error, Exception) and not isinstance(error, (HangGuardExceeded, MemoryGuardExceeded)):
             raise
         return code
-    _stop_alarm(max_seconds, previous)
-    doc['provenance']['run'] = {**run_info, 'wall_seconds': time.monotonic() - wall,
-                                'cpu_seconds': time.process_time() - cpu, 'peak_rss_bytes': peak_rss_bytes(),
-                                'finished_utc': datetime.now(timezone.utc).isoformat()}
-    dump(out / ('results.json' if mode == 'run' else 'check.json'), doc)
-    for name, data in files.items():
-        write_exclusive(out / name, data)
-    sha256sums(out)
     print(f'{mode.upper()}_OK {out}')
     return EXIT['ok']
 

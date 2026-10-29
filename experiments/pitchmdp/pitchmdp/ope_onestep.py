@@ -99,17 +99,19 @@ UNITS = ('game', 'pitcher')
 CI_LEVELS = (0.025, 0.975)
 STATS = ('delta', 'M_dr', 'M_pi', 'C', 'R', 'R_pi')
 CONFIRMATORY = {'P': 'all', 'P_D': 'D:1se'}
+STAGE_LABELS = ('S6_EXPLORATORY', 'DEV_STATISTICAL')  # stage 1 (this S6 reanalysis) and stage 2
 INTERPRETATIONS = {  # the readings this implementation registers where the review text left a choice
     'noise_exemption': 'the noise-criterion exemption applies to the policy (temperature, tau 0.1), hence to both '
                        'confirmatory contrasts P and P_D (the ESS and cluster criteria still apply to each)',
-    'stage2_tau_ranking': 'with no GAIN, path (ii) takes the tau in E with the largest delta_hat / max(SE_game, '
-                          'SE_pitcher); ties -> the larger tau',
+    'stage2_tau_ranking': 'with no GAIN, path (ii) takes the tau in E with the largest max-t statistic t_tau = delta_hat '
+                          '/ SE_tau, SE_tau = max(SE_game, SE_pitcher) (the same SE as max-t); ties -> the larger tau',
     'holm_not_evaluable': 'a NOT_EVALUABLE contrast enters Holm with p = 1; m stays 2',
     's_pos_rule': 'S-pos keeps the sign and its 95% CI excludes 0 in the same direction in both bootstraps',
-    'reproduction_phase_a': 'phase (a) classifies with the reward value masked (presence kept, value replaced by 0.5), '
-                            'so no G value is read before prediag; the values are reproduced in phase (b)',
-    'gate_population': 'the gate is evaluated on the estimation-eligible decisions of each contrast subset (P: all, P_D: '
-                       'D_1se); family x tau diagnostics use the prediag population',
+    'reproduction_phase_a': 'before prediag only the 7 G-free pa_values columns are read and phase (a) classifies with '
+                            'the reward value masked; the value columns and the PA-end values enter only after '
+                            'prediag.json (phase b, attach_rewards)',
+    'gate_population': 'every prediag metric and the gate are computed on the estimation-eligible decisions (P: all, '
+                       'P_D: D_1se); the all-kept-rows count is reported second',
     'shuffle_donors': 'outcome_shuffle_null donors are drawn with replacement among the same pitcher\'s eligible PAs '
                       'in other games (never the PA itself or its game)',
     'path_ii': 'path (ii) needs |E| >= 2, a significant max-t, and at the chosen tau the perm paired CI > 0 and S-pos '
@@ -224,7 +226,7 @@ def decision_arrays(row, n):
     logging = np.asarray(result['logging'], dtype=np.float64)
     reference = policies['reference']
     on = bool(mask[a])
-    rho_ref = float(reference[a] / logging[a]) if on else 0.
+    rho_ref = ratio(reference, logging, a, on)
     return {'status': status, 'mask': mask, 'logging': logging, 'reference': reference, 'candidate': policies['candidate'],
             'q_dr': q_dr, 'q_pi': q_pi, 'se': se, 'best': best, 'se_ties': se_ties, 'a': int(a), 'on_mask': on,
             'b_a': float(logging[a]),
@@ -298,17 +300,31 @@ def family_policy(name, d, tau, fq=None):
     return tilt(q, d['reference'], d['mask'], tau / c)
 
 
+def ratio(p, logging, a, on):
+    """The estimator's importance ratio p(a)/logging(a) of logged action(s) ``a`` on the mask, exactly 0 off it (no
+    division). Scalar or vectorised over an array of actions."""
+    a, on = np.asarray(a), np.asarray(on, dtype=bool)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        out = np.where(on, np.asarray(p)[a] / np.where(on, np.asarray(logging)[a], 1.), 0.)
+    return float(out) if out.ndim == 0 else out
+
+
+def model_term(pi, reference, mask, q_hat):
+    """The estimator's model term sum_mask (pi(a) - reference(a)) q_hat(a)."""
+    return float((pi[mask] - reference[mask]) @ q_hat[mask])
+
+
 def onestep_terms(pi, d, reward, q_hat=None):
-    """(M, C, IPS, rho') of one decision for target law ``pi`` (q_hat defaults to q_dr). Off the mask C = IPS = rho' = 0
-    and q_hat[a_t] is never read."""
+    """(M, C, IPS, rho') of one decision for target law ``pi`` (q_hat defaults to q_dr): ``model_term``, ``ratio`` and
+    ``row_correction`` (the estimator's row functions). Off the mask C = IPS = rho' = 0 and q_hat[a_t] is never read."""
     q_hat = d['q_dr'] if q_hat is None else q_hat
-    mask = d['mask']
-    model = float((pi[mask] - d['reference'][mask]) @ q_hat[mask])
-    if not d['on_mask']:
-        return model, 0., 0., 0.
-    rho_pi = float(pi[d['a']] / d['b_a'])
-    diff = rho_pi - d['rho_ref']
-    return model, diff * (float(reward) - float(q_hat[d['a']])), diff * float(reward), rho_pi
+    model = model_term(pi, d['reference'], d['mask'], q_hat)
+    on = d['on_mask']
+    rho_pi = ratio(pi, d['logging'], d['a'], on)
+    qa = float(q_hat[d['a']]) if on else 0.
+    corr = float(row_correction(rho_pi, d['rho_ref'], on, float(reward), qa))
+    ips = float(row_correction(rho_pi, d['rho_ref'], on, float(reward), 0.))
+    return model, corr, ips, rho_pi
 
 
 def kl(pi, reference, mask):
@@ -329,15 +345,14 @@ def row_term(model, rho, rho_ref, on, reward, qa):
 
 
 def row_identity(pi, reference, logging, mask, q_hat, model, reward):
-    """S = sum over actions a with logging(a) > 0 of logging(a) row_term(a; G') for a hypothetical logged action a (on
-    the mask: rho' = pi(a)/logging(a), rho_r = ref(a)/logging(a); off it: model term only). Exactly 0 in exact
-    arithmetic for any G'."""
-    pos = logging > 0
-    safe = np.where(pos, logging, 1.)
-    on = mask & pos
-    terms = row_term(model, np.where(on, pi / safe, 0.), np.where(on, reference / safe, 0.), on, reward,
-                     np.where(on, q_hat, 0.))
-    return float(np.sum(np.where(pos, logging * terms, 0.)))
+    """S = sum over actions a with logging(a) > 0 of logging(a) row_term(a; G') for a hypothetical logged action a, built
+    from the estimator's own row functions (``ratio`` for rho' and rho_r, ``row_term`` for the per-decision term; the
+    model term ``model`` comes from ``model_term``). Exactly 0 in exact arithmetic for any G'."""
+    actions = np.flatnonzero(logging > 0)
+    on = mask[actions]
+    terms = row_term(model, ratio(pi, logging, actions, on), ratio(reference, logging, actions, on), on, reward,
+                     np.where(on, q_hat[actions], 0.))
+    return float(np.sum(logging[actions] * terms))
 
 
 def disagreement(q, reference, mask, se, margins):
@@ -392,8 +407,9 @@ def gint(row, d, sealed_tau, tol, rtol):
 
 # ---------------------------------------------------------------- sealed pa_values, frame facts
 
-PA_VALUE_COLUMNS = ('pa_id', 'game', 'in_population', 'status', 'kind', 'reason', 'end_kind', 'resolution', 'candidate',
-                    'reference', 'delta', 'l2')  # never terminal_residual or the *_bounds columns
+PHASE_A_COLUMNS = ('pa_id', 'game', 'in_population', 'status', 'kind', 'reason', 'end_kind')  # G-free
+PHASE_B_COLUMNS = ('pa_id', 'resolution', 'candidate', 'reference', 'delta', 'l2')  # read only after prediag.json
+PA_VALUE_COLUMNS = PHASE_A_COLUMNS + PHASE_B_COLUMNS[1:]  # never terminal_residual or the *_bounds columns
 
 
 def plain(value):
@@ -414,16 +430,26 @@ def plain(value):
     return None if value is pd.NA or value is pd.NaT else value
 
 
-def sealed_rows(records):
-    """{pa_id: row} of the sealed pa_values records (file order kept), only PA_VALUE_COLUMNS."""
+def sealed_rows(records, columns=PHASE_A_COLUMNS):
+    """{pa_id: row} of the sealed pa_values records (file order kept) with exactly ``columns``."""
     out = {}
     for record in records:
-        row = {k: plain(record.get(k)) for k in PA_VALUE_COLUMNS}
+        _require(set(record) == set(columns), f'pa_values read with columns {sorted(record)} instead of {list(columns)}')
+        row = {k: plain(record.get(k)) for k in columns}
         _require(isinstance(row['pa_id'], str) and row['pa_id'] not in out, 'pa_values: PA ids must be unique strings')
-        _require(row['in_population'] == (row['status'] in (est.COMPLETE, est.CENSORED)),
-                 f'pa_values {row["pa_id"]}: in_population differs from its status')
+        if 'status' in row:
+            _require(row['in_population'] == (row['status'] in (est.COMPLETE, est.CENSORED)),
+                     f'pa_values {row["pa_id"]}: in_population differs from its status')
         out[row['pa_id']] = row
     return out
+
+
+def add_value_columns(sealed, values):
+    """Phase (b): the value columns (PHASE_B_COLUMNS) joined to the phase (a) rows by pa_id, same PAs in the same order."""
+    _require(list(values) == list(sealed), 'pa_values value columns cover other PAs (ids or order)')
+    for pa_id, row in values.items():
+        sealed[pa_id].update({k: v for k, v in row.items() if k != 'pa_id'})
+    return sealed
 
 
 def estimator_info(pa_row, facts, n_decisions):
@@ -481,6 +507,7 @@ class FactsCheck:
             self.missing_reward[f'{info["kind"]}:{info["reason"]}'] += 1
 
     def phase_b(self, pa_id, decisions, info, pa_row):
+        _require(set(PHASE_B_COLUMNS) <= set(pa_row), 'phase (b) needs the pa_values value columns (add_value_columns)')
         got = est.pa_value(decisions, info, self.censoring)
         self._exact(pa_id, 'b', pa_row, got, ('status', 'kind', 'reason', 'resolution', 'l2', 'in_population'))
         for key in self.max_abs:
@@ -496,7 +523,8 @@ class FactsCheck:
     def record(self, dr=None):
         """The reproduction record; after phase (b) and with the sealed dr.json, the aggregate reward check."""
         out = {'rule': 'policy_estimator.pa_value on the ledger rows + frame facts reproduces the sealed pa_values row',
-               'censoring': self.censoring, 'tolerance': self.tol, 'columns_read': list(PA_VALUE_COLUMNS),
+               'censoring': self.censoring, 'tolerance': self.tol,
+               'columns_read': {'phase_a': list(PHASE_A_COLUMNS), 'phase_b': list(PHASE_B_COLUMNS[1:])},
                'phase_a_pas': self.phase['a'], 'phase_b_pas': self.phase['b'] or None,
                'phase_b_max_abs_diff': dict(self.max_abs) if self.phase['b'] else None,
                'missing_reward_pas': dict(self.missing_reward), 'aggregate_check': 'not run (phase b only)'}
@@ -709,7 +737,7 @@ class Scan:
         for key, value in (('pa_index', k), ('pa_id', pa_id), ('game', game), ('pitcher', str(info['start_pitcher'])),
                            ('decision_index', int(row['decision_index'])), ('balls', int(row['balls'])),
                            ('strikes', int(row['strikes'])), ('status', d['status']), ('on_mask', d['on_mask']),
-                           ('observed', reward is not None), ('G', np.nan if reward is None else float(reward)),
+                           ('observed', reward is not None), ('G', np.nan),  # values: attach_rewards after prediag
                            ('we_start', np.nan if we_start is None else float(we_start)), ('rho_ref', d['rho_ref']),
                            ('b_a', d['b_a']), ('a', d['a']), ('sha8', int(row['sha256'][:8], 16)), ('D', list(flags)),
                            ('tie', tie), ('mask', d['mask']), ('ref', d['reference']), ('q_pi', d['q_pi']),
@@ -810,6 +838,14 @@ def _table_subset(table, name, rows=None):
     return keep
 
 
+def attach_rewards(table, pas):
+    """After prediag.json: the PA-end rewards enter the table (until then only their presence, ``observed``, is in it)."""
+    rewards = np.array([np.nan if pas[p]['reward'] is None else float(pas[p]['reward']) for p in table['pa_id']])
+    _require(np.array_equal(np.isfinite(rewards), table['observed']), 'reward presence differs from the scanned table')
+    table['G'] = rewards
+    return table
+
+
 def estimation_eligible(table):
     """The ESTIMATION-ELIGIBLE decisions of a table of kept rows (every kept row is of an E0 PA and has a recorded
     result): those whose PA-end reward is observed. The single definition used by the gate, the sample minima and the
@@ -842,60 +878,72 @@ def gate_record(table, rows, f, j, gate, exempt):
     return out
 
 
+def _restrict(table, rows):
+    """The per-row arrays of ``table`` at ``rows`` (lists and scalars kept)."""
+    n = len(table['observed'])
+    return {k: (v[rows] if isinstance(v, np.ndarray) and v.shape[:1] == (n,) else v) for k, v in table.items()}
+
+
 def prediag(table, gate, *, gate_subsets=tuple(CONFIRMATORY.values())):
-    """G-free diagnostics on the prediag population (every kept row, observed G or not) per family x tau, the
-    eligibility gate per family x tau x contrast subset on the estimation-eligible decisions of the subset, the
-    PA-product ESS (DESCRIPTIVE), the D smoke assertion p(D_1se) < p(D_0) (else INVALID) and the tau = inf identity
-    (else ESTIMATOR_SUSPECT)."""
-    n = int(table['n'])
-    _require(n > 0, 'no E0 decision with a recorded result')
+    """G-free diagnostics (v4.1 R4-4): every metric on the ESTIMATION-ELIGIBLE decisions (the all-kept-rows count is
+    reported second): per family x tau ESS / weight share / clusters / noise / KL / M, the eligibility gate per family x
+    tau x contrast subset, the PA-product ESS (DESCRIPTIVE), the D smoke assertion p(D_1se) < p(D_0) (else INVALID) and
+    the tau = inf identity on every kept row (else ESTIMATOR_SUSPECT)."""
+    _require(int(table['n']) > 0, 'no E0 decision with a recorded result')
     identity = inf_identity(table)
     if not identity['zero']:
         raise EstimatorSuspect(f'tau = inf identity failed (pi = reference must give D = 0 exactly): {identity}')
     eligible = estimation_eligible(table)
+    sub = _restrict(table, eligible)
+    n = int(eligible.sum())
+    _require(n > 0, 'no estimation-eligible decision')
     keys = [margin_key(m) for m in table['margins']]
-    p_d = {f'D:{k}': float(table['D'][:, i].mean()) for i, k in enumerate(keys)}
+    p_d = {f'D:{k}': float(sub['D'][:, i].mean()) for i, k in enumerate(keys)}
     _require(p_d['D:1se'] < p_d['D:0'], f'smoke assertion failed: p(D_1se) {p_d["D:1se"]} >= p(D_0) {p_d["D:0"]}')
-    obs = table['observed']
-    status, pa = table['status'], table['pa_index']
-    ref_w, starts = _pa_products(table['rho_ref'], pa)
-    pa_games = table['game'][starts]
+    status, pa = sub['status'], sub['pa_index']
+    ref_w, starts = _pa_products(sub['rho_ref'], pa)
+    pa_games = sub['game'][starts]
     ref_pa_ess = est.effective_sample_size(ref_w)
     exempt = {(e['family'], float(e['tau'])) for e in gate['noise_exempt']}
-    common = {'prediag_decisions': n, 'estimation_decisions': int(obs.sum()),
-              'prediag_minus_estimation': n - int(obs.sum()), 'prediag_pas': int(len(starts)),
-              'estimation_pas': int(len(set(pa[obs].tolist()))), 'games': int(len(set(table['game'].tolist()))),
-              'pitchers': int(len(set(table['pitcher'].tolist()))), 'p_D': p_d,
+    common = {'population': 'estimation-eligible decisions (E0 PA, observed G, result recorded)',
+              'estimation_eligible_decisions': n, 'all_kept_decisions': int(table['n']),
+              'all_minus_eligible': int(table['n']) - n, 'estimation_eligible_pas': int(len(starts)),
+              'games': int(len(set(sub['game'].tolist()))), 'pitchers': int(len(set(sub['pitcher'].tolist()))),
+              'p_D': p_d,
               'p_out': {'decision': float(np.mean(status == OUTSIDE_POLICY_SUPPORT)),
-                        'pa': float(np.mean(table['pa_out'][starts]))},
+                        'pa': float(np.mean(sub['pa_out'][starts]))},
               'p_pos': {'decision': float(np.mean(status == LOGGING_POSITIVITY)),
-                        'pa': float(np.mean(table['pa_pos'][starts]))},
-              'reference': {'decision_ess': kish(table['rho_ref']), 'pa_ess_descriptive': ref_pa_ess},
+                        'pa': float(np.mean(sub['pa_pos'][starts]))},
+              'reference': {'decision_ess': kish(sub['rho_ref']), 'pa_ess_descriptive': ref_pa_ess},
               'gate': {k: v for k, v in gate.items()}}
+    everything = np.ones(n, dtype=bool)
     families, gates = {}, {}
     for f, fam in enumerate(table['families']):
         rows, by_gate = {}, {}
         for j, tau in enumerate(table['taus']):
-            rho = table['rho'][:, f, j]
+            rho = sub['rho'][:, f, j]
             w, _ = _pa_products(rho, pa)
             pa_ess = est.effective_sample_size(w)
-            m_dr, m_pi = table['model_dr'][:, f, j], table['model_pi'][:, f, j]
-            metrics = gate_record(table, np.ones(n, dtype=bool), f, j, gate, (fam, tau) in exempt)
+            m_dr, m_pi = sub['model_dr'][:, f, j], sub['model_pi'][:, f, j]
+            metrics = gate_record(sub, everything, f, j, gate, (fam, tau) in exempt)
             rows[tau_key(tau)] = {
-                **{k: v for k, v in metrics.items() if k not in ('pass', 'checks')}, 'population': 'prediag',
-                'mean_kl': float(table['kl'][:, f, j].mean()), 'mean_M_dr': float(m_dr.mean()),
+                **{k: v for k, v in metrics.items() if k not in ('pass', 'checks')},
+                'population': 'estimation-eligible',
+                'mean_kl': float(sub['kl'][:, f, j].mean()), 'mean_M_dr': float(m_dr.mean()),
                 'mean_M_pi': float(m_pi.mean()), 'max_rho': float(rho.max()),
                 'mean_M_dr_by_class': {s: (float(m_dr[status == s].mean()) if (status == s).any() else None)
                                        for s in RESULT_STATUSES},
                 'pa_product_ess_descriptive': pa_ess,
                 'pa_product_ess_ratio_descriptive': None if pa_ess is None or not ref_pa_ess else pa_ess / ref_pa_ess,
                 'pa_product_game_ess_descriptive': est.effective_sample_size(w, pa_games)}
-            by_gate[tau_key(tau)] = {sub: {**gate_record(table, _table_subset(table, sub) & eligible, f, j, gate,
-                                                         (fam, tau) in exempt), 'population': 'estimation-eligible'}
-                                     for sub in gate_subsets}
+            by_gate[tau_key(tau)] = {name: {**gate_record(sub, _table_subset(sub, name), f, j, gate, (fam, tau) in exempt),
+                                            'population': 'estimation-eligible'} for name in gate_subsets}
         families[fam], gates[fam] = rows, by_gate
-    shrink = table['c']
+    shrink = sub['c']
+    finite_taus = [tau_key(t) for t in table['taus'] if t != INF]
+    any_evaluable = any(gates[fam][k]['all']['pass'] for fam in gates if fam in MAIN_FAMILIES for k in finite_taus)
     return {'common': common, 'families': families, 'gates': gates, 'tau_inf_identity': identity,
+            'any_main_family_tau_evaluable': any_evaluable,
             'noise_numerator': 'c x max_mask(q_planning_diff_se) (c = 1 except shrinkage; cross_replicate uses '
                                'q_planning_diff_se as a proxy)',
             'shrinkage_c': ({str(q): float(np.quantile(shrink, q)) for q in (0., .1, .5, .9, 1.)}
@@ -1012,6 +1060,7 @@ class Engine:
                   for k, v in table.items()}
         self.n = int(obs.sum())
         _require(self.n > 0, 'no estimation-eligible decision')
+        _require(np.isfinite(self.t['G']).all(), 'rewards are not attached (attach_rewards after prediag)')
         self.taus, self.families = table['taus'], table['families']
         self.draws, self.minima, self.share = draws, dict(minima), invalid_share_max
         keys = {'game': self.t['game'].tolist(), 'pitcher': self.t['pitcher'].tolist()}
@@ -1184,36 +1233,39 @@ def trend(cell, taus, used_keys, draws, invalid_share_max, stat='delta'):
 
 
 def max_t(cell, taus, used_keys, draws, invalid_share_max, alpha, stat='delta'):
-    """One-sided joint max-t over ``used_keys`` (the evaluable finite T taus): t_j = point_j / se_j, null T* = max_j
-    (rep_j - point_j) / se_j on the shared centered replicates, p = share(T* >= max t) per unit; the contrast p is the
-    larger of the two units' p; significant when <= alpha."""
+    """One-sided joint max-t over ``used_keys`` (the evaluable finite T taus) with ONE standard error per tau, SE_tau =
+    max(SE_game, SE_pitcher) (each the SD, ddof 1, of that bootstrap's replicates valid at every used tau): t_tau =
+    delta_tau / SE_tau; per bootstrap the null T* = max_tau (rep_tau - delta_tau) / SE_tau on its centered shared
+    replicates and p = share(T* >= max t); the contrast p is the larger of the two; significant when <= alpha."""
     used = [j for j, t in enumerate(taus) if t != INF and tau_key(t) in used_keys]
     out = {'taus': [tau_key(taus[j]) for j in used], 'one_sided': 'H0: every delta <= 0', 'alpha': alpha, 'p': None,
-           'significant': False}
+           'significant': False, 'se_rule': 'SE_tau = max(SE_game, SE_pitcher), shared by t_obs and both nulls'}
     if not used:
         return {**out, 'reason': 'no evaluable finite tau'}
     point = cell.point[stat][used]
+    reps, ok, ses = {}, {}, {}
+    for unit in cell.reps:
+        reps[unit] = cell.reps[unit][stat][:, used]
+        ok[unit] = cell.valid[unit][stat][:, used].all(axis=1)
+        if (draws - ok[unit].sum()) / draws > invalid_share_max or ok[unit].sum() < 2:
+            out[unit] = {'valid': False, 'reason': 'INVALID: invalid replicate share above the registered maximum'}
+            return out
+        ses[unit] = reps[unit][ok[unit]].std(axis=0, ddof=1)
+    se = np.maximum.reduce([ses[u] for u in cell.reps])
+    if not (se > 0).all():
+        return {**out, 'reason': 'zero bootstrap SE at a used tau'}
+    t_obs = point / se
+    out.update(se_tau={tau_key(taus[j]): float(v) for j, v in zip(used, se)},
+               t={tau_key(taus[j]): float(v) for j, v in zip(used, t_obs)}, max_t=float(t_obs.max()))
     ps = []
     for unit in cell.reps:
-        reps = cell.reps[unit][stat][:, used]
-        ok = cell.valid[unit][stat][:, used].all(axis=1)
-        if (draws - ok.sum()) / draws > invalid_share_max or ok.sum() < 2:
-            out[unit] = {'valid': False, 'reason': 'INVALID: invalid replicate share above the registered maximum'}
-            continue
-        se = reps[ok].std(axis=0, ddof=1)
-        if not (se > 0).all():
-            out[unit] = {'valid': False, 'reason': 'zero bootstrap SE at a used tau'}
-            continue
-        t_obs = point / se
-        null = ((reps[ok] - point) / se).max(axis=1)
+        null = ((reps[unit][ok[unit]] - point) / se).max(axis=1)
         p = float(np.mean(null >= t_obs.max()))
-        out[unit] = {'valid': True, 't': {tau_key(taus[j]): float(v) for j, v in zip(used, t_obs)},
-                     'max_t': float(t_obs.max()), 'p_value': p, 'critical_95': float(np.quantile(null, .95)),
-                     'replicates': int(ok.sum())}
+        out[unit] = {'valid': True, 'se': {tau_key(taus[j]): float(v) for j, v in zip(used, ses[unit])}, 'p_value': p,
+                     'critical_95': float(np.quantile(null, .95)), 'replicates': int(ok[unit].sum())}
         ps.append(p)
-    if len(ps) == len(cell.reps):
-        out['p'] = max(ps)
-        out['significant'] = out['p'] <= alpha
+    out['p'] = max(ps)
+    out['significant'] = out['p'] <= alpha
     return out
 
 
@@ -1253,7 +1305,8 @@ class FlatRows:
         obs = estimation_eligible(table)
         mask, ref = table['mask'][obs], table['ref'][obs]
         r, c = np.nonzero(mask)
-        self.row, self.n = r, mask.shape[0]
+        self.row, self.col, self.n = r, c, mask.shape[0]
+        self.mask_full, self.ref_full = mask, ref
         self.starts = np.flatnonzero(np.r_[True, r[1:] != r[:-1]])
         _require(len(self.starts) == self.n, 'every decision needs a nonempty mask')
         self.lengths = np.diff(np.r_[self.starts, len(r)])
@@ -1351,10 +1404,19 @@ def perm_setup(table, *, draws_k, seed, kl_tol, factor, iterations, checkpoint=N
     obs = estimation_eligible(table)
     f = table['families'].index('temperature')
     d1se = table['D'][obs, [margin_key(m) for m in table['margins']].index('1se')]
+    worst_real = 0.  # the flat arithmetic against the kl_policy columns of the scan, every row and tau
+    for j, tau in enumerate(table['taus']):
+        pi = flat.tilt(flat.q_pi, tau)
+        worst_real = max(worst_real, float(np.abs(np.where(flat.on, pi[flat.pos_a] / flat.b_safe, 0.)
+                                                  - table['rho'][obs, f, j]).max()),
+                         float(np.abs(flat.segment((pi - flat.ref) * flat.q_dr) - table['model_dr'][obs, f, j]).max()))
+    if not worst_real <= IDENTITY_TOL:
+        raise EstimatorSuspect(f'the vectorised policy differs from kl_policy on the real family: {worst_real!r}')
     perms = np.stack([flat.permutation(seed, k) for k in range(draws_k)]) if draws_k else np.zeros((0, len(flat.row)),
                                                                                                     dtype=np.int64)
     tick()
-    record, tau_p, worst = {}, [], 0.
+    record, tau_p, worst, worst_perm = {}, [], 0., 0.
+    sample = np.arange(0, flat.n, max(1, flat.n // 500))  # every k-th row: at least 500 rows (all when fewer)
     for j, tau in enumerate(table['taus']):
         target = float(table['kl'][obs, f, j].mean())
         tp, value, status = (common_tau(flat, perms, target, tau, factor=factor, iterations=iterations, tol=kl_tol)
@@ -1374,6 +1436,8 @@ def perm_setup(table, *, draws_k, seed, kl_tol, factor, iterations, checkpoint=N
         if not worst <= IDENTITY_TOL:
             raise EstimatorSuspect(f'row identity failed for a perm / estimator_stress policy at tau {tau_key(tau)}: '
                                    f'max |S| = {worst!r}')
+        if tp != INF and draws_k:
+            worst_perm = max(worst_perm, perm_vector_check(flat, perms, tp, sample))
         real_d = float(table['kl'][obs, f, j][d1se].mean()) if d1se.any() else None
         record[tau_key(tau)] = {'target_mean_kl': target, 'tau_p': None if tp == INF else tp, 'mean_kl': value,
                                 'relative_kl_mismatch': None if not target > 0 else abs(value / target - 1),
@@ -1382,8 +1446,32 @@ def perm_setup(table, *, draws_k, seed, kl_tol, factor, iterations, checkpoint=N
                                 'kl_ratio_D1se_placebo_over_real': (float(np.mean(kl_d)) / real_d
                                                                     if kl_d and real_d else None)}
         tick()
-    return PermSetup(flat, perms, tau_p, record, {'max_abs': worst, 'G': list(IDENTITY_G), 'tolerance': IDENTITY_TOL,
-                                                  'policies': 'perm and estimator_stress, every draw and tau'}, seed)
+    if not worst_perm <= IDENTITY_TOL:
+        raise EstimatorSuspect(f'perm policy vectors differ from kl_policy: max |diff| = {worst_perm!r}')
+    return PermSetup(flat, perms, tau_p, record, {
+        'max_abs': worst, 'G': list(IDENTITY_G), 'tolerance': IDENTITY_TOL,
+        'policies': 'perm and estimator_stress, every draw and tau',
+        'kl_policy_check': {'real_family_every_row_max_abs': worst_real,
+                            'perm_vectors_max_abs': worst_perm, 'perm_rows_checked': int(len(sample)),
+                            'perm_draws_checked': sorted({0, max(draws_k - 1, 0)}) if draws_k else [],
+                            'rule': 'flat placebo arithmetic == rollout_policy.kl_policy within 1e-12'}}, seed)
+
+
+def perm_vector_check(flat, perms, tau, sample):
+    """max |flat perm policy - kl_policy| over the sampled rows of the first and last draw at placebo temperature tau."""
+    worst = 0.
+    for k in sorted({0, len(perms) - 1}):
+        q_perm = flat.q_pi[perms[k]]
+        pi = flat.tilt(q_perm, tau)
+        for i in sample:
+            s, m = flat.starts[i], flat.lengths[i]
+            q = np.full(flat.mask_full.shape[1], -np.inf)
+            q[flat.col[s:s + m]] = q_perm[s:s + m]
+            expected = kl_policy(q, flat.ref_full[i], flat.mask_full[i], tau)
+            got = np.zeros_like(expected)
+            got[flat.col[s:s + m]] = pi[s:s + m]
+            worst = max(worst, float(np.abs(got - expected).max()))
+    return worst
 
 
 def perm_placebo(engine, table, setup, *, subsets, checkpoint=None):
@@ -1630,23 +1718,25 @@ def decision_inputs(eng, confirm, perm_paired, spos, real, maxt, used, prediag_r
             'perm_paired_ci': None if perm_cell is None else {u: perm_cell['delta'][u]['ci95'] for u in UNITS},
             's_pos': {'delta': spos_cell['delta']['mean'], 'ci': {u: spos_cell['delta'][u]['ci95'] for u in UNITS}}}
     path_ii = {}
+    t_values, se_tau = maxt.get('t') or {}, maxt.get('se_tau') or {}
     for k in used:
         jj = keys.index(k)
         c = real.at(jj, eng.draws, eng.share, k)
-        ses = [c['delta'][u]['se'] for u in UNITS]
         perm = perm_paired.get('P')
         perm_cell = None if perm is None else perm.at(jj, eng.draws, eng.share, k)
         spos_cell = spos['P'].at(jj, eng.draws, eng.share, k)
-        path_ii[k] = {'delta': c['delta']['mean'], 'se': dict(zip(UNITS, ses)),
-                      'studentized': (c['delta']['mean'] / max(ses) if c['delta']['mean'] is not None
-                                      and all(v is not None and v > 0 for v in ses) else None),
+        path_ii[k] = {'delta': c['delta']['mean'], 'se_tau': se_tau.get(k),
+                      'studentized': t_values.get(k),  # the max-t statistic itself: delta / max(SE_game, SE_pitcher)
                       'perm_paired_ci': None if perm_cell is None else {u: perm_cell['delta'][u]['ci95'] for u in UNITS},
                       's_pos': {'delta': spos_cell['delta']['mean'],
                                 'ci': {u: spos_cell['delta'][u]['ci95'] for u in UNITS}}}
-    return {'study': {'estimator_suspect': False, 'reasons': []}, 'contrasts': contrasts,
+    return {'study': {'estimator_suspect': False, 'reasons': [],
+                      'note': 'INVALID and ESTIMATOR_SUSPECT stop the run before estimates (failed.json)'},
+            'contrasts': contrasts,
             'max_t': {'E': list(used), 'p': maxt.get('p'), 'significant': maxt.get('significant', False)},
             'path_ii': path_ii, 'alpha': rule['alpha'], 'mde_multipliers': dict(rule['mde_multipliers']),
-            'primary_tau': key}
+            'primary_tau': key, 'stage_label': rule['stage_label'],
+            'any_main_family_tau_evaluable': bool(prediag_record['any_main_family_tau_evaluable'])}
 
 
 # ---------------------------------------------------------------- the decision procedure
@@ -1705,6 +1795,9 @@ def decide(inputs):
             values = list(c[f'p_{side}'].values())
             p[side][name] = (max(values) if c['evaluable'] and values and all(v is not None for v in values) else 1.)
     tests = {side: holm(p[side], alpha) for side in p}
+    stage = inputs['stage_label']
+    _require(stage in STAGE_LABELS, f'stage label must be one of {STAGE_LABELS}')
+    gain, harm_label = f'ONESTEP_GAIN_{stage}', f'ONESTEP_HARM_{stage}'
     contrasts, flags = {}, []
     for name, c in inputs['contrasts'].items():
         perm_ok, keeps_gain, keeps_harm = _gain_evidence(c.get('perm_paired_ci'), c.get('s_pos'))
@@ -1715,19 +1808,21 @@ def decide(inputs):
             rec['label'] = f'NOT_EVALUABLE:{name}'
             rec['reasons'] = c['not_evaluable_reasons']
         elif name in tests['plus']['rejected']:
-            rec['label'] = 'GAIN' if (perm_ok and keeps_gain) else 'NO_DIFFERENCE_ESTABLISHED:SENSITIVE'
+            rec['label'] = gain if (perm_ok and keeps_gain) else 'NO_DIFFERENCE_ESTABLISHED:SENSITIVE'
         elif name in tests['minus']['rejected']:
-            rec['label'] = 'HARM' if keeps_harm else 'NO_DIFFERENCE_ESTABLISHED:SENSITIVE'
+            rec['label'] = harm_label if keeps_harm else 'NO_DIFFERENCE_ESTABLISHED:SENSITIVE'
         else:
             rec['label'] = 'NO_DIFFERENCE_ESTABLISHED'
         ses = [v for v in c['se'].values() if v is not None]
         rec['mde'] = ({f'x{m}': m * max(ses) for m in inputs['mde_multipliers'].values()}
                       if rec['label'] == 'NO_DIFFERENCE_ESTABLISHED' and ses else None)
         contrasts[name] = rec
-    harm = any(r['label'] == 'HARM' for r in contrasts.values())
-    gains = [n for n in names if contrasts[n]['label'] == 'GAIN']
+    harm = any(r['label'] == harm_label for r in contrasts.values())
+    gains = [n for n in names if contrasts[n]['label'] == gain]
     if harm:
         flags.append('HARM_ESCALATE')
+    if not inputs.get('any_main_family_tau_evaluable', True):
+        flags.append('NOT_EVALUABLE_ALL')
     path = {'E': list(inputs['max_t']['E']), 'max_t_significant': bool(inputs['max_t'].get('significant')),
             'applied': False, 'tau': None, 'reason': None}
     candidates = {k: v for k, v in inputs.get('path_ii', {}).items() if v.get('studentized') is not None}
@@ -1752,11 +1847,12 @@ def decide(inputs):
     else:
         chosen = [{'contrast': 'path_ii', 'family': 'temperature', 'tau': path['tau'], 'subset': 'all',
                    'studentized': path['studentized']}]
-    reason = ('study-level label' if study else 'HARM (HARM_ESCALATE)' if harm else 'GAIN' if gains else
+    reason = ('study-level label' if study else 'HARM (HARM_ESCALATE)' if harm else gain if gains else
               'path (ii)' if path['applied'] else 'no GAIN and path (ii) not applied')
-    return {'study_label': study, 'study_reasons': inputs['study'].get('reasons', []), 'alpha_one_sided': alpha,
-            'holm': tests, 'contrasts': contrasts, 'max_t': {**inputs['max_t'], 'alpha': alpha}, 'path_ii': path,
-            'flags': flags, 'stage2': {'enter': enter, 'contrasts': chosen, 'reason': reason}}
+    return {'study_label': study, 'study_reasons': inputs['study'].get('reasons', []),
+            'study_summary': [label for label in (study, *flags) if label], 'stage_label': stage,
+            'alpha_one_sided': alpha, 'holm': tests, 'contrasts': contrasts, 'max_t': {**inputs['max_t'], 'alpha': alpha},
+            'path_ii': path, 'flags': flags, 'stage2': {'enter': enter, 'contrasts': chosen, 'reason': reason}}
 
 
 # ---------------------------------------------------------------- output helpers

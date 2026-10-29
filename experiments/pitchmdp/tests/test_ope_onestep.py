@@ -49,6 +49,15 @@ STRICT = {'ess_ratio_min': .5, 'max_weight_share': .01, 'games_min': 30, 'pitche
           'noise_exempt': [{'family': 'temperature', 'tau': TAU}]}
 
 
+def pytest_approx(values, tol=1e-15):
+    """A list of floats equal to ``values`` within tol (list comparison helper)."""
+    class Approx(float):
+        def __eq__(self, other):
+            return abs(float(self) - float(other)) <= tol
+        __hash__ = float.__hash__
+    return [Approx(v) for v in values]
+
+
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -150,11 +159,13 @@ class SyntheticEnvironment(runner.Environment):
 
 
 def make_config(stage_dir, output_dir, **overrides):
+    candidate = ope.read_header(Path(stage_dir) / LEDGER)['pins']['candidate']['sha256']
     config = {
-        'experiment_id': 'EXP-OPE-1STEP-01-SYNTHETIC', 'exposure_label': 'SYNTHETIC', 'stage_dir': str(stage_dir),
+        'experiment_id': 'EXP-OPE-1STEP-01-SYNTHETIC', 'stage_label': 'S6_EXPLORATORY', 'exposure_label': 'SYNTHETIC',
+        'stage_dir': str(stage_dir), 'source_commit': 'f' * 40,
         'ledger': LEDGER, 'pins': {name: sha(Path(stage_dir) / name) for name in STAGE_FILES},
         'output_dir': str(output_dir), 'tau_grid': GRID, 'sealed_tau': TAU, 'identity_tolerance': 1e-12,
-        'ratio_rtol': 1e-12, 'expected_dr_q_source': 'evaluation_seed', 'candidate_identity_sha256': None,
+        'ratio_rtol': 1e-12, 'expected_dr_q_source': 'evaluation_seed', 'candidate_identity_sha256': candidate,
         'families': ['temperature', 'shrinkage'],
         'primary': {'family': 'temperature', 'tau': TAU, 'subset': 'all', 'variant': 'dr'},
         'confirmatory': {'P': 'all', 'P_D': 'D:1se'},
@@ -488,7 +499,7 @@ def power_table(shift, seed=11, n_pa=1500, games=60, pitchers=40):
 
 class BootstrapTests(StageCase):
     def engine(self, draws=300):
-        table = self.stage.scan().table()
+        table = ope.attach_rewards(self.stage.scan().table(), self.stage.pas())
         return table, ope.Engine(table, draws=draws, seeds={'game': 5, 'pitcher': 6}, invalid_share_max=.5,
                                  minima={'games': 1, 'pas': 1, 'pitchers': 1})
 
@@ -567,6 +578,35 @@ class BootstrapTests(StageCase):
             straddle.reps[unit]['M_dr'][:, j] = np.linspace(.5, 1., eng.draws)
         self.assertIsInstance(straddle.at(j, eng.draws, eng.share, '0.05')['R'], dict)
 
+    def test_max_t_uses_one_se_per_tau_on_a_hand_computable_toy(self):
+        taus = [ope.INF, .1, .05]
+        point = np.array([0., .2, .3])
+        game = np.array([[0., .1, .3], [0., .3, .3], [0., .2, .1], [0., .2, .5]])
+        pitcher = np.array([[0., 0., .25], [0., .4, .35], [0., .2, .3], [0., .2, .3]])
+        valid = np.ones((4, 3), dtype=bool)
+        cell = ope.Cell({'delta': point}, {'game': {'delta': game}, 'pitcher': {'delta': pitcher}},
+                        {'game': {'delta': valid}, 'pitcher': {'delta': valid}}, {})
+        out = ope.max_t(cell, taus, ['0.1', '0.05'], 4, 1., .025)
+        se_game = np.array([np.sqrt(.02 / 3), np.sqrt(.08 / 3)])  # SD (ddof 1) of each bootstrap at tau .1, .05
+        se_pitcher = np.array([np.sqrt(.08 / 3), np.sqrt(.005 / 3)])
+        se = np.maximum(se_game, se_pitcher)  # = [sqrt(.08/3), sqrt(.08/3)]: SE_game != SE_pitcher at both taus
+        self.assertEqual(list(out['se_tau'].values()), pytest_approx(se))
+        t_obs = np.array([.2, .3]) / se  # [1.2247, 1.8371]
+        self.assertAlmostEqual(out['t']['0.1'], 1.224744871391589, places=12)
+        self.assertAlmostEqual(out['max_t'], 1.8371173070873836, places=12)
+        null_game = ((game[:, 1:] - point[1:]) / se).max(axis=1)  # [0, .6124, 0, 1.2247]
+        null_pitcher = ((pitcher[:, 1:] - point[1:]) / se).max(axis=1)  # [-.3062, 1.2247, 0, 0]
+        self.assertTrue(np.allclose(null_game, [0., .6123724356957945, 0., 1.224744871391589]))
+        self.assertTrue(np.allclose(null_pitcher, [-.30618621784789724, 1.224744871391589, 0., 0.]))
+        self.assertEqual((out['game']['p_value'], out['pitcher']['p_value'], out['p']), (0., 0., 0.))
+        self.assertTrue(out['significant'])
+        lower = ope.Cell({'delta': np.array([0., .05, .06])}, cell.reps, cell.valid, {})  # small deltas: p > 0
+        weak = ope.max_t(lower, taus, ['0.1', '0.05'], 4, 1., .025)
+        t_weak = np.array([.05, .06]) / se
+        expected = [float(np.mean(((r[:, 1:] - [.05, .06]) / se).max(axis=1) >= t_weak.max())) for r in (game, pitcher)]
+        self.assertEqual((weak['game']['p_value'], weak['pitcher']['p_value']), tuple(expected))
+        self.assertEqual(weak['p'], max(expected))
+
     def test_trend_max_t(self):
         _, eng = self.engine()
         cell = eng.family_cell('temperature', 'dr', 'all')
@@ -618,13 +658,16 @@ def decision_inputs(**contrast_overrides):
                             's_pos': {'delta': .002, 'ci': {'game': [.0003, .004], 'pitcher': [.0002, .004]}}}
                         for k, v in (('0.5', 1.), ('0.2', 2.5), ('0.1', 2.5))},
             'alpha': .025, 'mde_multipliers': {'one_sided_alpha': 2.8016, 'holm_first_step': 3.083},
-            'primary_tau': '0.1'}
+            'primary_tau': '0.1', 'stage_label': 'S6_EXPLORATORY', 'any_main_family_tau_evaluable': True}
+
+
+GAIN, HARM = 'ONESTEP_GAIN_S6_EXPLORATORY', 'ONESTEP_HARM_S6_EXPLORATORY'
 
 
 class DecideTests(unittest.TestCase):
     def test_every_label_branch(self):
         out = ope.decide(decision_inputs())
-        self.assertEqual([out['contrasts'][n]['label'] for n in ('P', 'P_D')], ['GAIN', 'GAIN'])
+        self.assertEqual([out['contrasts'][n]['label'] for n in ('P', 'P_D')], [GAIN, GAIN])
         self.assertEqual((out['stage2']['enter'], [c['contrast'] for c in out['stage2']['contrasts']]),
                          (True, ['P', 'P_D']))
         self.assertEqual(out['holm']['plus']['steps'][0]['threshold'], .0125)  # alpha / 2 first, then alpha
@@ -645,7 +688,8 @@ class DecideTests(unittest.TestCase):
         harm_side = {'delta': -.002, 'p_plus': {'game': .999, 'pitcher': .998}, 'p_minus': {'game': .001, 'pitcher': .002},
                      's_pos': {'delta': -.0019, 'ci': {'game': [-.0035, -.0003], 'pitcher': [-.0036, -.0002]}}}
         harm = ope.decide(decision_inputs(P=harm_side))
-        self.assertEqual(harm['contrasts']['P']['label'], 'HARM')
+        self.assertEqual(harm['contrasts']['P']['label'], HARM)
+        self.assertEqual(harm['study_summary'], ['HARM_ESCALATE'])
         self.assertEqual((harm['flags'], harm['stage2']['enter']), (['HARM_ESCALATE'], False))
         weak_harm = ope.decide(decision_inputs(P={**harm_side, 's_pos': {'delta': .001, 'ci': {
             'game': [-.001, .002], 'pitcher': [-.001, .002]}}}))
@@ -688,11 +732,11 @@ class DecideTests(unittest.TestCase):
         harm_side = {'delta': -.002, 'p_plus': {'game': .999, 'pitcher': .998}, 'p_minus': {'game': .001, 'pitcher': .002},
                      's_pos': {'delta': -.0019, 'ci': {'game': [-.0035, -.0003], 'pitcher': [-.0036, -.0002]}}}
         mixed = ope.decide(decision_inputs(P_D=harm_side))  # GAIN on P and HARM on P_D at the same time
-        self.assertEqual([mixed['contrasts'][n]['label'] for n in ('P', 'P_D')], ['GAIN', 'HARM'])
+        self.assertEqual([mixed['contrasts'][n]['label'] for n in ('P', 'P_D')], [GAIN, HARM])
         self.assertEqual((mixed['flags'], mixed['stage2']['enter']), (['HARM_ESCALATE'], False))
         gated = ope.decide(decision_inputs(P_D={'evaluable': False, 'not_evaluable_reasons': ['gate']}))
         self.assertEqual((gated['contrasts']['P_D']['label'], gated['contrasts']['P']['label']),
-                         ('NOT_EVALUABLE:P_D', 'GAIN'))  # P alone at alpha/2 = 0.0125
+                         ('NOT_EVALUABLE:P_D', GAIN))  # P alone at alpha/2 = 0.0125
 
 
 class RunnerTests(StageCase):
@@ -719,7 +763,12 @@ class RunnerTests(StageCase):
             first = frame.iloc[info['positions'][0]]
             self.assertEqual(facts[pa_id]['we_start'], defense(GameState.from_row(first), first.inning_topbot == 'Top'))
         sealed = ope.sealed_rows(pd.read_parquet(self.stage.dir / 'pa_values.parquet',
-                                                 columns=list(ope.PA_VALUE_COLUMNS)).to_dict('records'))
+                                                 columns=list(ope.PHASE_A_COLUMNS)).to_dict('records'))
+        values = ope.sealed_rows(pd.read_parquet(self.stage.dir / 'pa_values.parquet',
+                                                 columns=list(ope.PHASE_B_COLUMNS)).to_dict('records'), ope.PHASE_B_COLUMNS)
+        with self.assertRaisesRegex(pa.IntegrityError, 'value columns'):
+            ope.FactsCheck('l1r', 1e-12).phase_b(next(iter(sealed)), [], {}, sealed[next(iter(sealed))])
+        ope.add_value_columns(sealed, values)
         pas = {p: {**facts[p], 'in_population': sealed[p]['in_population']} for p in sealed}
         by = {p: rows for p, _, rows in est.by_pa(self.stage.ledger.iter_decisions(), pas)}
 
@@ -824,7 +873,9 @@ class RunnerTests(StageCase):
         self.assertEqual(doc['provenance']['interpretations'], ope.INTERPRETATIONS)
         self.assertNotIn('dose_response', doc)  # --check computes no G-dependent number
         prediag = json.loads((out / 'check' / 'prediag.json').read_text())['prediag']
-        self.assertEqual(prediag['common']['prediag_minus_estimation'], 4)
+        self.assertEqual((prediag['common']['estimation_eligible_decisions'], prediag['common']['all_kept_decisions'],
+                          prediag['common']['all_minus_eligible']), (43, 47, 4))  # R4-4: eligible first, all rows second
+        self.assertEqual(prediag['families']['temperature']['0.1']['decisions'], 43)
         self.assertLess(prediag['common']['p_D']['D:1se'], prediag['common']['p_D']['D:0'])
         gate = prediag['gates']['temperature']['0.1']['all']
         for key in ('ess_ratio', 'max_weight_share', 'games', 'pitchers', 'noise_ratio_q90', 'checks', 'pass'):
@@ -881,8 +932,11 @@ class RunnerTests(StageCase):
         self.assertEqual(crosscheck['aggregate_check']['abs_diff'], 0.)
         decision = doc['decision']
         self.assertEqual(decision['interpretations'], ope.INTERPRETATIONS)
-        self.assertIn(decision['contrasts']['P']['label'], ('GAIN', 'HARM', 'NO_DIFFERENCE_ESTABLISHED',
+        self.assertIn(decision['contrasts']['P']['label'], ('ONESTEP_GAIN_S6_EXPLORATORY', 'ONESTEP_HARM_S6_EXPLORATORY',
+                                                            'NO_DIFFERENCE_ESTABLISHED',
                                                             'NO_DIFFERENCE_ESTABLISHED:SENSITIVE'))
+        self.assertEqual(decision['stage_label'], 'S6_EXPLORATORY')
+        self.assertEqual(set(doc['provenance']['recorded_not_read']), set())
         self.assertEqual(set(decision['inputs']['contrasts']), {'P', 'P_D'})
         self.assertEqual(decision['inputs']['contrasts']['P_D']['subset'], 'D:1se')
         placebos = doc['placebos']
@@ -912,6 +966,7 @@ class RunnerTests(StageCase):
         self.assertEqual([doc['decision']['contrasts'][n]['label'] for n in ('P', 'P_D')],
                          ['NOT_EVALUABLE:P', 'NOT_EVALUABLE:P_D'])
         self.assertFalse(doc['decision']['stage2']['enter'])
+        self.assertIn('NOT_EVALUABLE_ALL', doc['decision']['study_summary'])
         self.assertTrue(doc['dose_response']['temperature']['dr']['0.1']['descriptive'])
         self.assertIsNone(doc['trend']['temperature']['slope'])
 
@@ -964,6 +1019,106 @@ class RunnerTests(StageCase):
         self.assertEqual(doc['decision']['contrasts']['P_D']['label'], 'NOT_EVALUABLE:P_D')
         self.assertNotEqual(doc['decision']['contrasts']['P']['label'], 'NOT_EVALUABLE:P')
 
+    def test_registration_essentials_are_refused_when_null_or_partial(self):
+        for name, override in (('null-source', {'source_commit': None}),
+                               ('null-candidate', {'candidate_identity_sha256': None}),
+                               ('no-selection', {'pa_facts': {**make_config(self.stage.dir, '/x')['pa_facts'],
+                                                              'check_selection': False}}),
+                               ('partial-statuses', {'eligibility': {'statuses': [pr.SUPPORTED], 'population': 'E0',
+                                                                     'require_reward': True}}),
+                               ('stage-label', {'stage_label': 'S6'})):
+            path, out = self.write_config(name, **override)
+            self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 2, name)
+            self.assertFalse(out.exists(), name)
+
+    def test_phase_a_never_loads_the_value_columns(self):
+        reads = []
+        original = runner.pd.read_parquet
+
+        def spy(source, columns=None, **kwargs):
+            prediag_written = any(p.name == 'prediag.json' for p in out.rglob('prediag.json'))
+            reads.append((tuple(columns or ()), prediag_written))
+            return original(source, columns=columns, **kwargs)
+        runner.pd.read_parquet = spy
+        try:
+            path, out = self.write_config('columns-check')
+            self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 0)
+            self.assertEqual(reads, [(ope.PHASE_A_COLUMNS, False)])  # --check: the 7 G-free columns only
+            reads.clear()
+            path, out = self.write_config('columns-run')
+            self.assertEqual(runner.main(['--config', str(path), '--run'], env=self.env()), 0)
+            self.assertEqual(reads, [(ope.PHASE_A_COLUMNS, False), (ope.PHASE_B_COLUMNS, True)])  # values after prediag
+        finally:
+            runner.pd.read_parquet = original
+        for column in ('resolution', 'candidate', 'reference', 'delta', 'l2'):
+            self.assertNotIn(column, ope.PHASE_A_COLUMNS)
+
+    def test_a_broken_estimator_correction_fails_the_row_identity(self):
+        original = ope.row_correction
+        try:  # the estimator's own correction loses the reference ratio
+            ope.row_correction = lambda rho, rho_ref, on, reward, qa: np.where(on, rho * np.where(on, reward - qa, 0.), 0.)
+            with self.assertRaisesRegex(ope.EstimatorSuspect, 'row identity failed'):
+                self.stage.scan()
+        finally:
+            ope.row_correction = original
+        original = ope.ratio
+        try:  # the estimator's own ratio reads the wrong action
+            ope.ratio = lambda p, logging, a, on: original(p, logging, np.roll(np.atleast_1d(a), 1)
+                                                           if np.ndim(a) else a, on)
+            with self.assertRaisesRegex(ope.EstimatorSuspect, 'row identity failed'):
+                self.stage.scan()
+        finally:
+            ope.ratio = original
+        self.assertLessEqual(self.stage.scan().row_identity['max_abs'], 1e-12)  # restored
+
+    def test_final_write_failure_leaves_failed_json_and_exit_2(self):
+        original = runner.encode
+
+        def failing(value):
+            if 'decision' in value:
+                raise pa.IntegrityError('not a JSON value: synthetic')
+            return original(value)
+        runner.encode = failing
+        try:
+            path, out = self.write_config('write-failure')
+            self.assertEqual(runner.main(['--config', str(path), '--run'], env=self.env()), 2)
+        finally:
+            runner.encode = original
+        failed = json.loads((out / 'run' / 'failed.json').read_text())
+        self.assertEqual(failed['study_label'], 'INVALID')
+        self.assertFalse((out / 'run' / 'results.json').exists())
+        self.assertFalse((out / 'run' / 'SHA256SUMS').exists())
+
+    def test_placebo_vectors_are_checked_against_kl_policy_at_run_time(self):
+        path, out = self.write_config('kl-check')
+        self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 0)
+        check = json.loads((out / 'check' / 'prediag.json').read_text())['prediag']['perm_placebo_setup']
+        record = check['row_identity']['kl_policy_check']
+        self.assertEqual(record['perm_rows_checked'], 43)  # all rows when fewer than 500
+        self.assertLessEqual(max(record['real_family_every_row_max_abs'], record['perm_vectors_max_abs']), 1e-12)
+        original = ope.FlatRows.tilt
+        try:  # a drifting vectorised placebo law is caught and stops the run
+            ope.FlatRows.tilt = lambda self, q, tau: original(self, q, tau) * (1 + 1e-9)
+            path, out = self.write_config('kl-broken')
+            self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 2)
+            self.assertEqual(json.loads((out / 'check' / 'failed.json').read_text())['study_label'], 'ESTIMATOR_SUSPECT')
+        finally:
+            ope.FlatRows.tilt = original
+        rows = flat_table(n=40)  # tilt_rows (the power-test helper) is kl_policy too
+        for tau in (.5, .05):
+            mirror = ope.tilt_rows(rows['q_pi'], rows['ref'], rows['mask'], tau)
+            for i in range(40):
+                self.assertLessEqual(float(np.abs(mirror[i] - ope.tilt(rows['q_pi'][i], rows['ref'][i], rows['mask'][i],
+                                                                       tau)).max()), 1e-15)
+
+    def test_vm_stat_parser_counts_free_inactive_and_speculative(self):
+        text = ('Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               '
+                '1000.\nPages active:                            5000.\nPages inactive:                          '
+                '2000.\nPages speculative:                        300.\nPages wired down:                         '
+                '400.\n')
+        self.assertEqual(runner.parse_vm_stat(text), (1000 + 2000 + 300) * 16384)
+        self.assertIn('speculative', runner.Environment.MEMORY_FORMULA)
+
     def test_memory_start_condition(self):
         path, out = self.write_config('low-memory')
         stderr, old = io.StringIO(), sys.stderr
@@ -979,6 +1134,7 @@ class RunnerTests(StageCase):
         self.assertEqual(runner.main(['--config', str(path), '--check'], env=self.env()), 0)
         started = json.loads((out / 'check' / 'started.json').read_text())
         self.assertEqual(started['guards']['available_memory_bytes_at_start'], 64 * 2 ** 30)
+        self.assertEqual(started['guards']['available_memory_formula'], runner.Environment.MEMORY_FORMULA)
         self.assertEqual((started['git']['branch'], started['git']['worktree']), ('research/side-onestep-1029',
                                                                                   '/synthetic'))
 
@@ -988,8 +1144,13 @@ class RunnerTests(StageCase):
         self.assertIsNone(template['source_commit'])
         with self.assertRaises(pa.IntegrityError):  # output_dir stays null until the PM registers it
             runner.validate_config(template)
-        filled = {**template, 'output_dir': str(self.root / 'template-out')}
+        with self.assertRaisesRegex(pa.IntegrityError, 'source_commit'):  # null source_commit is refused too
+            runner.validate_config({**template, 'output_dir': str(self.root / 'template-out')})
+        filled = {**template, 'output_dir': str(self.root / 'template-out'), 'source_commit': 'b' * 40}
         spec = runner.validate_config(filled)
+        self.assertEqual((spec['stage_label'], spec['guards']['min_available_gb']), ('S6_EXPLORATORY', 6))
+        self.assertEqual(set(spec['recorded_not_read']), {'ledger-dev-paired-identity.jsonl', 'processed_frame_aligned',
+                                                          'processed_frame_aligned_identity_manifest'})
         self.assertEqual(template['interpretations'], ope.INTERPRETATIONS)
         with self.assertRaisesRegex(pa.IntegrityError, 'interpretations differ'):
             runner.validate_config({**filled, 'interpretations': {**ope.INTERPRETATIONS, 'holm_not_evaluable': 'drop'}})
@@ -1000,7 +1161,7 @@ class RunnerTests(StageCase):
             'manifest.json': '0bf8981b5bcbefe33c30de614ad36c6a441e9be15f9bac16c0e4cf61fcadfd17',
             'started.json': '1fa9a703c82e59f045762ac094178ee7a47db69c59454a9f66d17274510a76b0'})
         self.assertEqual(len(spec['pa_facts']['policy_registration']['addenda']), 8)
-        self.assertEqual(spec['guards'], {'max_seconds': 7200, 'max_rss_gb': 8, 'min_available_gb': 10})
+        self.assertEqual(spec['guards'], {'max_seconds': 7200, 'max_rss_gb': 8, 'min_available_gb': 6})
         self.assertEqual(spec['placebos']['outcome_shuffle_null_seed'], 3477356613)
         self.assertEqual([ope.tau_key(t) for t in spec['taus']], ['inf', '0.5', '0.2', '0.1', '0.09', '0.07', '0.05',
                                                                    '0.02'])
